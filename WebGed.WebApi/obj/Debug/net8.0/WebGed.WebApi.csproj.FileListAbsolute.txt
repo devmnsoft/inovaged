@@ -1,0 +1,6 @@
+C:\MNSOFT\InovaGed\WebGed.WebApi\obj\Debug\net8.0\WebGed.WebApi.csproj.AssemblyReference.cache
+C:\MNSOFT\InovaGed\WebGed.WebApi\obj\Debug\net8.0\WebGed.WebApi.GeneratedMSBuildEditorConfig.editorconfig
+C:\MNSOFT\InovaGed\WebGed.WebApi\obj\Debug\net8.0\WebGed.WebApi.AssemblyInfoInputs.cache
+C:\MNSOFT\InovaGed\WebGed.WebApi\obj\Debug\net8.0\WebGed.WebApi.AssemblyInfo.cs
+C:\MNSOFT\InovaGed\WebGed.WebApi\obj\Debug\net8.0\WebGed.WebApi.csproj.CoreCompileInputs.cache
+C:\MNSOFT\InovaGed\WebGed.WebApi\obj\Debug\net8.0\WebGed.WebApi.MvcApplicationPartsAssemblyInfo.cache

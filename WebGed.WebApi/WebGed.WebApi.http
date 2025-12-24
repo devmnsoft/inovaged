@@ -1,0 +1,6 @@
+@WebGed.WebApi_HostAddress = http://localhost:5136
+
+GET {{WebGed.WebApi_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

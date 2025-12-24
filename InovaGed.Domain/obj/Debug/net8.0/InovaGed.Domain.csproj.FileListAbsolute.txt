@@ -1,0 +1,11 @@
+C:\MNSOFT\InovaGed\InovaGed.Domain\bin\Debug\net8.0\InovaGed.Domain.deps.json
+C:\MNSOFT\InovaGed\InovaGed.Domain\bin\Debug\net8.0\InovaGed.Domain.dll
+C:\MNSOFT\InovaGed\InovaGed.Domain\bin\Debug\net8.0\InovaGed.Domain.pdb
+C:\MNSOFT\InovaGed\InovaGed.Domain\obj\Debug\net8.0\InovaGed.Domain.GeneratedMSBuildEditorConfig.editorconfig
+C:\MNSOFT\InovaGed\InovaGed.Domain\obj\Debug\net8.0\InovaGed.Domain.AssemblyInfoInputs.cache
+C:\MNSOFT\InovaGed\InovaGed.Domain\obj\Debug\net8.0\InovaGed.Domain.AssemblyInfo.cs
+C:\MNSOFT\InovaGed\InovaGed.Domain\obj\Debug\net8.0\InovaGed.Domain.csproj.CoreCompileInputs.cache
+C:\MNSOFT\InovaGed\InovaGed.Domain\obj\Debug\net8.0\InovaGed.Domain.dll
+C:\MNSOFT\InovaGed\InovaGed.Domain\obj\Debug\net8.0\refint\InovaGed.Domain.dll
+C:\MNSOFT\InovaGed\InovaGed.Domain\obj\Debug\net8.0\InovaGed.Domain.pdb
+C:\MNSOFT\InovaGed\InovaGed.Domain\obj\Debug\net8.0\ref\InovaGed.Domain.dll

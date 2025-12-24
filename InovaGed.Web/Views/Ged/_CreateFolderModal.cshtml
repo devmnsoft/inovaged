@@ -1,0 +1,43 @@
+@using InovaGed.Web.Models.Ged
+@model InovaGed.Web.Models.Ged.GedExplorerVM
+
+@{
+    var parentId = Model?.CurrentFolderId;
+}
+
+<div class="modal fade" id="modalCreateFolder" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form asp-controller="Ged" asp-action="CreateFolder" method="post">
+                @Html.AntiForgeryToken()
+
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-folder-plus me-1"></i> Nova pasta</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                </div>
+
+                <div class="modal-body">
+                    <input type="hidden" name="ParentId" value="@parentId" />
+
+                    <!-- IMPORTANT: se DepartmentId for Guid? no command, vazio vira NULL -->
+                    <input type="hidden" name="DepartmentId" value="" />
+
+                    <div class="mb-3">
+                        <label class="form-label">Nome da pasta</label>
+                        <input class="form-control" name="Name" maxlength="200" required />
+                        <div class="form-text">
+                            A pasta será criada dentro da pasta selecionada. Se nenhuma estiver selecionada, será criada na raiz.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check2 me-1"></i> Criar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>

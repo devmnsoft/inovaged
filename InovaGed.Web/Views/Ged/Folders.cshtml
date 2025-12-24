@@ -1,0 +1,213 @@
+@using InovaGed.Web.Models.Ged
+@model FoldersPageVM
+
+@{
+    ViewData["Title"] = "Pastas / Dossiês";
+}
+
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <div>
+        <h3 class="m-0">@ViewData["Title"]</h3>
+        <div class="text-muted">Crie e organize a estrutura de pastas do GED.</div>
+    </div>
+    <div class="d-flex gap-2">
+        <a class="btn btn-outline-secondary" asp-controller="Ged" asp-action="Index">
+            <i class="bi bi-arrow-left me-1"></i> Voltar
+        </a>
+        <button class="btn btn-primary" type="button" data-bs-toggle="modal" data-bs-target="#modalNovaPasta">
+            <i class="bi bi-folder-plus me-1"></i> Nova pasta
+        </button>
+    </div>
+</div>
+
+@if (TempData["ok"] != null)
+{
+    <div class="alert alert-success">@TempData["ok"]</div>
+}
+@if (TempData["erro"] != null)
+{
+    <div class="alert alert-danger">@TempData["erro"]</div>
+}
+
+<div class="row g-3">
+    <div class="col-12 col-lg-5">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-diagram-3 me-1"></i> Árvore</span>
+                <span class="badge bg-light text-dark">@Model.Tree.Count</span>
+            </div>
+            <div class="card-body">
+                @if (Model.Tree == null || !Model.Tree.Any())
+                {
+                    <div class="text-muted">Nenhuma pasta cadastrada.</div>
+                }
+                else
+                {
+                    <ul class="list-unstyled mb-0">
+                        @foreach (var f in Model.Tree)
+                        {
+                            <li class="d-flex align-items-center justify-content-between py-1 border-bottom">
+                                <div class="d-flex align-items-center gap-2">
+                                    <i class="bi bi-folder"></i>
+                                    <span>@f.Name</span>
+                                </div>
+                                <div class="btn-group btn-group-sm">
+                                    <button class="btn btn-outline-secondary"
+                                            type="button"
+                                            data-bs-toggle="modal"
+                                            data-bs-target="#modalRenomearPasta"
+                                            data-id="@f.Id"
+                                            data-nome="@f.Name">
+                                        <i class="bi bi-pencil"></i>
+                                    </button>
+
+                                    <button class="btn btn-outline-danger"
+                                            type="button"
+                                            data-bs-toggle="modal"
+                                            data-bs-target="#modalExcluirPasta"
+                                            data-id="@f.Id"
+                                            data-nome="@f.Name">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </div>
+                            </li>
+                        }
+                    </ul>
+                }
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-lg-7">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-info-circle me-1"></i> Observações
+            </div>
+            <div class="card-body">
+                <ul class="mb-0">
+                    <li>Exclusão é lógica (campo <code>is_active</code> = false).</li>
+                    <li>Renomear e excluir respeitam <code>tenant_id</code>.</li>
+                    <li>A hierarquia é baseada em <code>parent_id</code>.</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Nova Pasta -->
+<div class="modal fade" id="modalNovaPasta" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form asp-controller="Ged" asp-action="CriarPasta" method="post">
+                @Html.AntiForgeryToken()
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-folder-plus me-1"></i> Nova pasta</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Nome da pasta</label>
+                        <input name="Nome" class="form-control" maxlength="200" required />
+                    </div>
+
+                    <div class="mb-0">
+                        <label class="form-label">Pasta pai (opcional)</label>
+                        <select name="ParentId" class="form-select">
+                            <option value="">(Sem pasta pai)</option>
+                            @foreach (var f in Model.Tree)
+                            {
+                                <option value="@f.Id">@f.Name</option>
+                            }
+                        </select>
+                        <div class="text-muted small mt-1">Se você escolher uma pasta pai, a nova pasta vira subpasta.</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">Cancelar</button>
+                    <button class="btn btn-primary" type="submit"><i class="bi bi-check2 me-1"></i> Criar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Renomear -->
+<div class="modal fade" id="modalRenomearPasta" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form asp-controller="Ged" asp-action="RenomearPasta" method="post">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="Id" id="rename-id" />
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-pencil me-1"></i> Renomear pasta</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-2 text-muted">
+                        Pasta: <strong id="rename-old"></strong>
+                    </div>
+                    <div class="mb-0">
+                        <label class="form-label">Novo nome</label>
+                        <input name="Nome" id="rename-nome" class="form-control" maxlength="200" required />
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">Cancelar</button>
+                    <button class="btn btn-primary" type="submit"><i class="bi bi-check2 me-1"></i> Salvar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Excluir -->
+<div class="modal fade" id="modalExcluirPasta" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form asp-controller="Ged" asp-action="ExcluirPasta" method="post">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="Id" id="del-id" />
+                <div class="modal-header">
+                    <h5 class="modal-title text-danger"><i class="bi bi-trash me-1"></i> Excluir pasta</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-0">
+                        Confirma a exclusão da pasta <strong id="del-nome"></strong>?
+                        <br />
+                        <span class="text-muted small">A exclusão é lógica (a pasta fica inativa).</span>
+                    </p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">Cancelar</button>
+                    <button class="btn btn-danger" type="submit"><i class="bi bi-trash me-1"></i> Excluir</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        const renameModal = document.getElementById('modalRenomearPasta');
+        renameModal?.addEventListener('show.bs.modal', function (event) {
+            const btn = event.relatedTarget;
+            const id = btn.getAttribute('data-id');
+            const nome = btn.getAttribute('data-nome');
+
+            document.getElementById('rename-id').value = id;
+            document.getElementById('rename-old').textContent = nome;
+            document.getElementById('rename-nome').value = nome;
+        });
+
+        const delModal = document.getElementById('modalExcluirPasta');
+        delModal?.addEventListener('show.bs.modal', function (event) {
+            const btn = event.relatedTarget;
+            const id = btn.getAttribute('data-id');
+            const nome = btn.getAttribute('data-nome');
+
+            document.getElementById('del-id').value = id;
+            document.getElementById('del-nome').textContent = nome;
+        });
+    </script>
+}

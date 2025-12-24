@@ -1,0 +1,43 @@
+@model InovaGed.Web.Models.Auth.LoginVM
+@{
+    ViewData["Title"] = "Login";
+}
+
+<div class="container" style="max-width:420px; margin-top:80px;">
+    <h3 class="mb-3">InovaGED</h3>
+
+    <form asp-action="Login" method="post">
+        @Html.AntiForgeryToken()
+
+        <input type="hidden" asp-for="ReturnUrl" />
+
+        <div class="mb-3">
+            <label asp-for="TenantSlug" class="form-label"></label>
+            <input asp-for="TenantSlug" class="form-control" />
+            <span asp-validation-for="TenantSlug" class="text-danger"></span>
+        </div>
+
+        <div class="mb-3">
+            <label asp-for="Email" class="form-label"></label>
+            <input asp-for="Email" class="form-control" />
+            <span asp-validation-for="Email" class="text-danger"></span>
+        </div>
+
+        <div class="mb-3">
+            <label asp-for="Password" class="form-label"></label>
+            <input asp-for="Password" type="password" class="form-control" />
+            <span asp-validation-for="Password" class="text-danger"></span>
+        </div>
+
+        @if (!ViewData.ModelState.IsValid)
+        {
+            <div class="text-danger mb-2">@Html.ValidationSummary()</div>
+        }
+
+        <button class="btn btn-primary w-100" type="submit">Entrar</button>
+    </form>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

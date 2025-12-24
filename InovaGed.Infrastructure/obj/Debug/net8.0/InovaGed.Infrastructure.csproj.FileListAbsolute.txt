@@ -1,0 +1,17 @@
+C:\MNSOFT\InovaGed\InovaGed.Infrastructure\obj\Debug\net8.0\InovaGed.Infrastructure.csproj.AssemblyReference.cache
+C:\MNSOFT\InovaGed\InovaGed.Infrastructure\obj\Debug\net8.0\InovaGed.Infrastructure.GeneratedMSBuildEditorConfig.editorconfig
+C:\MNSOFT\InovaGed\InovaGed.Infrastructure\obj\Debug\net8.0\InovaGed.Infrastructure.AssemblyInfoInputs.cache
+C:\MNSOFT\InovaGed\InovaGed.Infrastructure\obj\Debug\net8.0\InovaGed.Infrastructure.AssemblyInfo.cs
+C:\MNSOFT\InovaGed\InovaGed.Infrastructure\obj\Debug\net8.0\InovaGed.Infrastructure.csproj.CoreCompileInputs.cache
+C:\MNSOFT\InovaGed\InovaGed.Infrastructure\bin\Debug\net8.0\InovaGed.Infrastructure.deps.json
+C:\MNSOFT\InovaGed\InovaGed.Infrastructure\bin\Debug\net8.0\InovaGed.Infrastructure.dll
+C:\MNSOFT\InovaGed\InovaGed.Infrastructure\bin\Debug\net8.0\InovaGed.Infrastructure.pdb
+C:\MNSOFT\InovaGed\InovaGed.Infrastructure\bin\Debug\net8.0\InovaGed.Application.dll
+C:\MNSOFT\InovaGed\InovaGed.Infrastructure\bin\Debug\net8.0\InovaGed.Domain.dll
+C:\MNSOFT\InovaGed\InovaGed.Infrastructure\bin\Debug\net8.0\InovaGed.Application.pdb
+C:\MNSOFT\InovaGed\InovaGed.Infrastructure\bin\Debug\net8.0\InovaGed.Domain.pdb
+C:\MNSOFT\InovaGed\InovaGed.Infrastructure\obj\Debug\net8.0\InovaGed.D80696DC.Up2Date
+C:\MNSOFT\InovaGed\InovaGed.Infrastructure\obj\Debug\net8.0\InovaGed.Infrastructure.dll
+C:\MNSOFT\InovaGed\InovaGed.Infrastructure\obj\Debug\net8.0\refint\InovaGed.Infrastructure.dll
+C:\MNSOFT\InovaGed\InovaGed.Infrastructure\obj\Debug\net8.0\InovaGed.Infrastructure.pdb
+C:\MNSOFT\InovaGed\InovaGed.Infrastructure\obj\Debug\net8.0\ref\InovaGed.Infrastructure.dll

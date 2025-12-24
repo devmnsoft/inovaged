@@ -1,0 +1,142 @@
+﻿using InovaGed.Application;
+using InovaGed.Application.Auditing;
+using InovaGed.Application.Auth;
+using InovaGed.Application.Common.Database; 
+using InovaGed.Application.Common.Storage;
+using InovaGed.Application.Documents;
+using InovaGed.Application.Ged;
+using InovaGed.Application.Identity;
+using InovaGed.Application.Workflow;
+using InovaGed.Infrastructure.Auditing;
+using InovaGed.Infrastructure.Auth;
+using InovaGed.Infrastructure.Database;
+using InovaGed.Infrastructure.Documents;
+using InovaGed.Infrastructure.Ged;
+using InovaGed.Infrastructure.Preview;
+using InovaGed.Infrastructure.Storage;
+using InovaGed.Infrastructure.Workflow;
+
+using InovaGed.Web.Security;
+
+using Microsoft.AspNetCore.Authentication.Cookies;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// =======================================================
+// MVC + Razor (DEV com hot reload)
+// =======================================================
+var mvc = builder.Services.AddControllersWithViews();
+
+#if DEBUG
+mvc.AddRazorRuntimeCompilation();
+#endif
+
+builder.Services.AddHttpContextAccessor();
+
+// =======================================================
+// Current User (Tenant / User)
+// =======================================================
+builder.Services.AddScoped<ICurrentUser, CurrentUser>();
+
+// =======================================================
+// Database (PostgreSQL)
+// =======================================================
+builder.Services.AddSingleton<IDbConnectionFactory>(sp =>
+{
+    var cs = builder.Configuration.GetConnectionString("DefaultConnection")
+        ?? throw new InvalidOperationException(
+            "ConnectionString 'DefaultConnection' não configurada.");
+
+    return new NpgsqlConnectionFactory(cs);
+});
+
+// =======================================================
+// Storage Local
+// appsettings.json -> Storage:Local:RootPath
+// =======================================================
+builder.Services.Configure<LocalStorageOptions>(
+    builder.Configuration.GetSection("Storage:Local"));
+
+builder.Services.AddScoped<IFileStorage, LocalFileStorage>();
+
+// =======================================================
+// Preview (XLSX / DOCX → PDF | imagens direto)
+// =======================================================
+builder.Services.AddScoped<IPreviewGenerator, LibreOfficePreviewGenerator>();
+
+// =======================================================
+// Auth
+// =======================================================
+builder.Services.AddScoped<IAuthRepository, AuthRepository>();
+
+// =======================================================
+// GED – Queries
+// =======================================================
+builder.Services.AddScoped<IFolderQueries, FolderQueries>();
+builder.Services.AddScoped<IDocumentQueries, DocumentQueries>();
+builder.Services.AddScoped<IDocumentWorkflowQueries, DocumentWorkflowQueries>();
+builder.Services.AddScoped<IWorkflowQueries, WorkflowQueries>();
+
+// =======================================================
+// GED – Commands
+// =======================================================
+builder.Services.AddScoped<IFolderCommands, FolderCommands>();
+builder.Services.AddScoped<IDocumentWorkflowCommands, DocumentWorkflowCommands>();
+builder.Services.AddScoped<IWorkflowCommands, WorkflowCommands>();
+
+// =======================================================
+// Document Write + Audit
+// =======================================================
+builder.Services.AddScoped<IDocumentWriteRepository, DocumentWriteRepository>();
+builder.Services.AddScoped<IAuditLogWriter, AuditLogWriter>();
+
+// =======================================================
+// Application Services
+// =======================================================
+builder.Services.AddScoped<DocumentAppService>();
+
+// =======================================================
+// Authentication / Authorization
+// =======================================================
+builder.Services
+    .AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddCookie(opt =>
+    {
+        opt.LoginPath = "/Account/Login";
+        opt.AccessDeniedPath = "/Account/AccessDenied";
+        opt.SlidingExpiration = true;
+        opt.ExpireTimeSpan = TimeSpan.FromHours(8);
+    });
+
+builder.Services.AddAuthorization();
+
+// =======================================================
+// Build
+// =======================================================
+var app = builder.Build();
+
+// =======================================================
+// Pipeline
+// =======================================================
+if (!app.Environment.IsDevelopment())
+{
+    app.UseExceptionHandler("/Home/Error");
+    app.UseHsts();
+}
+
+app.UseHttpsRedirection();
+app.UseStaticFiles();
+
+app.UseRouting();
+
+app.UseAuthentication();
+app.UseAuthorization();
+
+// =======================================================
+// Routes
+// =======================================================
+app.MapControllerRoute(
+    name: "default",
+    pattern: "{controller=Home}/{action=Index}/{id?}");
+
+app.Run();

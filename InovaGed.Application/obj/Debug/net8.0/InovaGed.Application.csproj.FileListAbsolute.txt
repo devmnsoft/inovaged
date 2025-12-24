@@ -1,0 +1,15 @@
+C:\MNSOFT\InovaGed\InovaGed.Application\bin\Debug\net8.0\InovaGed.Application.deps.json
+C:\MNSOFT\InovaGed\InovaGed.Application\bin\Debug\net8.0\InovaGed.Application.dll
+C:\MNSOFT\InovaGed\InovaGed.Application\bin\Debug\net8.0\InovaGed.Application.pdb
+C:\MNSOFT\InovaGed\InovaGed.Application\bin\Debug\net8.0\InovaGed.Domain.dll
+C:\MNSOFT\InovaGed\InovaGed.Application\bin\Debug\net8.0\InovaGed.Domain.pdb
+C:\MNSOFT\InovaGed\InovaGed.Application\obj\Debug\net8.0\InovaGed.Application.csproj.AssemblyReference.cache
+C:\MNSOFT\InovaGed\InovaGed.Application\obj\Debug\net8.0\InovaGed.Application.GeneratedMSBuildEditorConfig.editorconfig
+C:\MNSOFT\InovaGed\InovaGed.Application\obj\Debug\net8.0\InovaGed.Application.AssemblyInfoInputs.cache
+C:\MNSOFT\InovaGed\InovaGed.Application\obj\Debug\net8.0\InovaGed.Application.AssemblyInfo.cs
+C:\MNSOFT\InovaGed\InovaGed.Application\obj\Debug\net8.0\InovaGed.Application.csproj.CoreCompileInputs.cache
+C:\MNSOFT\InovaGed\InovaGed.Application\obj\Debug\net8.0\InovaGed.8700155D.Up2Date
+C:\MNSOFT\InovaGed\InovaGed.Application\obj\Debug\net8.0\InovaGed.Application.dll
+C:\MNSOFT\InovaGed\InovaGed.Application\obj\Debug\net8.0\refint\InovaGed.Application.dll
+C:\MNSOFT\InovaGed\InovaGed.Application\obj\Debug\net8.0\InovaGed.Application.pdb
+C:\MNSOFT\InovaGed\InovaGed.Application\obj\Debug\net8.0\ref\InovaGed.Application.dll

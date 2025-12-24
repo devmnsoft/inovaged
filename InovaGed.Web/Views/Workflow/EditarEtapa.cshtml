@@ -1,0 +1,63 @@
+@using InovaGed.Web.Models.Workflow
+@model WorkflowStageFormVM
+
+@{
+    var isEdit = Model.Id.HasValue;
+    ViewData["Title"] = isEdit ? "Editar etapa" : "Nova etapa";
+}
+
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <div>
+        <h3 class="m-0">@ViewData["Title"]</h3>
+        <div class="text-muted">Etapas do workflow.</div>
+    </div>
+    <a class="btn btn-outline-secondary" asp-action="Index" asp-route-id="@Model.WorkflowId">
+        <i class="bi bi-arrow-left me-1"></i> Voltar
+    </a>
+</div>
+
+<form method="post">
+    @Html.AntiForgeryToken()
+    <input type="hidden" asp-for="WorkflowId" />
+    @if (isEdit) { <input type="hidden" asp-for="Id" /> }
+
+    <div class="row g-3">
+        <div class="col-md-3">
+            <label class="form-label">Código</label>
+            <input asp-for="Code" class="form-control" />
+            <span asp-validation-for="Code" class="text-danger"></span>
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">Nome</label>
+            <input asp-for="Name" class="form-control" />
+            <span asp-validation-for="Name" class="text-danger"></span>
+        </div>
+        <div class="col-md-3">
+            <label class="form-label">Ordem</label>
+            <input asp-for="SortOrder" class="form-control" type="number" min="0" max="999" />
+        </div>
+
+        <div class="col-md-4">
+            <label class="form-label">Role exigida (opcional)</label>
+            <input asp-for="RequiredRole" class="form-control" />
+        </div>
+
+        <div class="col-md-8 d-flex align-items-end gap-3">
+            <div class="form-check">
+                <input asp-for="IsStart" class="form-check-input" />
+                <label class="form-check-label">É etapa inicial</label>
+            </div>
+            <div class="form-check">
+                <input asp-for="IsFinal" class="form-check-input" />
+                <label class="form-check-label">É etapa final</label>
+            </div>
+        </div>
+    </div>
+
+    <div class="mt-3 d-flex gap-2">
+        <button class="btn btn-primary" type="submit"><i class="bi bi-check2 me-1"></i> Salvar</button>
+        <a class="btn btn-outline-secondary" asp-action="Index" asp-route-id="@Model.WorkflowId">Cancelar</a>
+    </div>
+</form>
+
+@section Scripts { <partial name="_ValidationScriptsPartial" /> }

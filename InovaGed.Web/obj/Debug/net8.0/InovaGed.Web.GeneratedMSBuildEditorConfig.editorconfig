@@ -1,0 +1,101 @@
+is_global = true
+build_property.TargetFramework = net8.0
+build_property.TargetPlatformMinVersion = 
+build_property.UsingMicrosoftNETSdkWeb = true
+build_property.ProjectTypeGuids = 
+build_property.InvariantGlobalization = 
+build_property.PlatformNeutralAssembly = 
+build_property.EnforceExtendedAnalyzerRules = 
+build_property._SupportedPlatformList = Linux,macOS,Windows
+build_property.RootNamespace = InovaGed.Web
+build_property.RootNamespace = InovaGed.Web
+build_property.ProjectDir = C:\MNSOFT\InovaGed\InovaGed.Web\
+build_property.EnableComHosting = 
+build_property.EnableGeneratedComInterfaceComImportInterop = 
+build_property.RazorLangVersion = 8.0
+build_property.SupportLocalizedComponentNames = 
+build_property.GenerateRazorMetadataSourceChecksumAttributes = true
+build_property.MSBuildProjectDirectory = C:\MNSOFT\InovaGed\InovaGed.Web
+build_property._RazorSourceGeneratorDebug = 
+build_property.EffectiveAnalysisLevelStyle = 8.0
+build_property.EnableCodeStyleSeverity = 
+
+[C:/MNSOFT/InovaGed/InovaGed.Web/Views/Account/AccessDenied.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcQWNjb3VudFxBY2Nlc3NEZW5pZWQuY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/MNSOFT/InovaGed/InovaGed.Web/Views/Account/Login.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcQWNjb3VudFxMb2dpbi5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/MNSOFT/InovaGed/InovaGed.Web/Views/Error.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcRXJyb3IuY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/MNSOFT/InovaGed/InovaGed.Web/Views/Ged/Create.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcR2VkXENyZWF0ZS5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/MNSOFT/InovaGed/InovaGed.Web/Views/Ged/Details.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcR2VkXERldGFpbHMuY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/MNSOFT/InovaGed/InovaGed.Web/Views/Ged/Folders.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcR2VkXEZvbGRlcnMuY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/MNSOFT/InovaGed/InovaGed.Web/Views/Ged/Index.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcR2VkXEluZGV4LmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/MNSOFT/InovaGed/InovaGed.Web/Views/Ged/_CreateFolderModal.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcR2VkXF9DcmVhdGVGb2xkZXJNb2RhbC5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/MNSOFT/InovaGed/InovaGed.Web/Views/Shared/Error.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcU2hhcmVkXEVycm9yLmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/MNSOFT/InovaGed/InovaGed.Web/Views/Shared/_ValidationScriptsPartial.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcU2hhcmVkXF9WYWxpZGF0aW9uU2NyaXB0c1BhcnRpYWwuY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/MNSOFT/InovaGed/InovaGed.Web/Views/Workflow/Editar.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcV29ya2Zsb3dcRWRpdGFyLmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/MNSOFT/InovaGed/InovaGed.Web/Views/Workflow/EditarEtapa.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcV29ya2Zsb3dcRWRpdGFyRXRhcGEuY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/MNSOFT/InovaGed/InovaGed.Web/Views/Workflow/EditarTransicao.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcV29ya2Zsb3dcRWRpdGFyVHJhbnNpY2FvLmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/MNSOFT/InovaGed/InovaGed.Web/Views/Workflow/Index.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcV29ya2Zsb3dcSW5kZXguY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/MNSOFT/InovaGed/InovaGed.Web/Views/Workflow/NovaEtapa.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcV29ya2Zsb3dcTm92YUV0YXBhLmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/MNSOFT/InovaGed/InovaGed.Web/Views/Workflow/NovaTransicao.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcV29ya2Zsb3dcTm92YVRyYW5zaWNhby5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/MNSOFT/InovaGed/InovaGed.Web/Views/Workflow/Novo.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcV29ya2Zsb3dcTm92by5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/MNSOFT/InovaGed/InovaGed.Web/Views/_ViewImports.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcX1ZpZXdJbXBvcnRzLmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/MNSOFT/InovaGed/InovaGed.Web/Views/_ViewStart.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcX1ZpZXdTdGFydC5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/MNSOFT/InovaGed/InovaGed.Web/Views/Shared/_Layout.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcU2hhcmVkXF9MYXlvdXQuY3NodG1s
+build_metadata.AdditionalFiles.CssScope = b-0b7iya5c0r

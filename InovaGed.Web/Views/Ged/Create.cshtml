@@ -1,0 +1,27 @@
+@using InovaGed.Web.Models.Ged
+@model CreateDocumentPageVM
+
+@{
+    ViewData["Title"] = "Novo documento";
+}
+
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <div>
+        <h3 class="m-0">@ViewData["Title"]</h3>
+        <div class="text-muted">Esta rota existe para navegação. O upload principal fica em Documentos.</div>
+    </div>
+    <a class="btn btn-outline-secondary" asp-controller="Ged" asp-action="Index">
+        <i class="bi bi-arrow-left me-1"></i> Voltar
+    </a>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <p class="mb-2">
+            Pasta selecionada: <strong>@(Model.FolderId?.ToString() ?? "Nenhuma")</strong>
+        </p>
+        <a class="btn btn-primary" asp-controller="Ged" asp-action="Index" asp-route-folderId="@Model.FolderId">
+            <i class="bi bi-cloud-upload me-1"></i> Ir para Upload
+        </a>
+    </div>
+</div>

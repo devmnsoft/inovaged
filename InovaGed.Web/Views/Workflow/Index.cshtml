@@ -1,0 +1,202 @@
+@using InovaGed.Web.Models.Workflow
+@model WorkflowIndexVM
+
+@{
+    ViewData["Title"] = "Workflow";
+    var q = (string)(ViewBag.Q ?? "");
+}
+
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <div>
+        <h3 class="m-0">@ViewData["Title"]</h3>
+        <div class="text-muted">Definições, etapas e transições.</div>
+    </div>
+    <div class="d-flex gap-2">
+        <a class="btn btn-outline-secondary" asp-controller="Ged" asp-action="Index">
+            <i class="bi bi-arrow-left me-1"></i> Voltar ao GED
+        </a>
+        <a class="btn btn-primary" asp-action="Novo"><i class="bi bi-plus-lg me-1"></i> Novo workflow</a>
+    </div>
+</div>
+
+@if (TempData["ok"] != null) { <div class="alert alert-success">@TempData["ok"]</div> }
+@if (TempData["erro"] != null) { <div class="alert alert-danger">@TempData["erro"]</div> }
+
+<form class="d-flex gap-2 mb-3" method="get" asp-action="Index">
+    <input class="form-control" name="q" value="@q" placeholder="Pesquisar por código ou nome..." />
+    <button class="btn btn-outline-primary" type="submit"><i class="bi bi-search me-1"></i> Buscar</button>
+</form>
+
+<div class="row g-3">
+    <div class="col-12 col-lg-4">
+        <div class="card">
+            <div class="card-header"><i class="bi bi-list-check me-1"></i> Workflows</div>
+            <div class="card-body p-0">
+                <div class="list-group list-group-flush">
+                    @foreach (var w in Model.Workflows)
+                    {
+                        var active = (Model.Selected?.Id == w.Id) ? "active" : "";
+                        <a class="list-group-item list-group-item-action @active"
+                           asp-action="Index" asp-route-id="@w.Id" asp-route-q="@q">
+                            <div class="d-flex justify-content-between">
+                                <div>
+                                    <div class="fw-semibold">@w.Code</div>
+                                    <div class="small">@w.Name</div>
+                                </div>
+                                <span class="badge @(w.IsActive ? "bg-success" : "bg-secondary")">
+                                    @(w.IsActive ? "Ativo" : "Inativo")
+                                </span>
+                            </div>
+                        </a>
+                    }
+                    @if (!Model.Workflows.Any())
+                    {
+                        <div class="p-3 text-muted">Nenhum workflow cadastrado.</div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-lg-8">
+        @if (Model.Selected == null)
+        {
+            <div class="alert alert-info">Selecione um workflow à esquerda para ver etapas e transições.</div>
+        }
+        else
+        {
+            <div class="card mb-3">
+                <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div>
+                        <i class="bi bi-diagram-3 me-1"></i>
+                        <strong>@Model.Selected.Code</strong> - @Model.Selected.Name
+                    </div>
+                    <div class="d-flex gap-2">
+                        <a class="btn btn-sm btn-outline-secondary" asp-action="Editar" asp-route-id="@Model.Selected.Id">
+                            <i class="bi bi-pencil"></i> Editar
+                        </a>
+                        <form asp-action="Desativar" method="post">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="id" value="@Model.Selected.Id" />
+                            <button class="btn btn-sm btn-outline-danger" type="submit" @(Model.Selected.IsActive ? "" : "disabled")>
+                                <i class="bi bi-x-circle"></i> Desativar
+                            </button>
+                        </form>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="text-muted">@Model.Selected.Description</div>
+                </div>
+            </div>
+
+            <div class="row g-3">
+                <div class="col-12 col-xl-6">
+                    <div class="card">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <span><i class="bi bi-flag me-1"></i> Etapas</span>
+                            <a class="btn btn-sm btn-primary" asp-action="NovaEtapa" asp-route-workflowId="@Model.Selected.Id">
+                                <i class="bi bi-plus-lg"></i>
+                            </a>
+                        </div>
+                        <div class="card-body p-0">
+                            <div class="table-responsive">
+                                <table class="table table-sm table-striped mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th>Ordem</th><th>Código</th><th>Nome</th><th>Flags</th><th class="text-end">Ações</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var s in Model.Stages)
+                                        {
+                                            <tr>
+                                                <td>@s.SortOrder</td>
+                                                <td>@s.Code</td>
+                                                <td>@s.Name</td>
+                                                <td>
+                                                    @if (s.IsStart) { <span class="badge bg-info">Start</span> }
+                                                    @if (s.IsFinal) { <span class="badge bg-success">Final</span> }
+                                                    @if (!string.IsNullOrWhiteSpace(s.RequiredRole)) { <span class="badge bg-light text-dark">@s.RequiredRole</span> }
+                                                </td>
+                                                <td class="text-end">
+                                                    <a class="btn btn-sm btn-outline-secondary"
+                                                       asp-action="EditarEtapa"
+                                                       asp-route-id="@s.Id"
+                                                       asp-route-workflowId="@Model.Selected.Id"><i class="bi bi-pencil"></i></a>
+
+                                                    <form asp-action="ExcluirEtapa" method="post" class="d-inline">
+                                                        @Html.AntiForgeryToken()
+                                                        <input type="hidden" name="id" value="@s.Id" />
+                                                        <input type="hidden" name="workflowId" value="@Model.Selected.Id" />
+                                                        <button class="btn btn-sm btn-outline-danger" type="submit">
+                                                            <i class="bi bi-trash"></i>
+                                                        </button>
+                                                    </form>
+                                                </td>
+                                            </tr>
+                                        }
+                                        @if (!Model.Stages.Any())
+                                        {
+                                            <tr><td colspan="5" class="p-3 text-muted">Nenhuma etapa cadastrada.</td></tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-12 col-xl-6">
+                    <div class="card">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <span><i class="bi bi-shuffle me-1"></i> Transições</span>
+                            <a class="btn btn-sm btn-primary" asp-action="NovaTransicao" asp-route-workflowId="@Model.Selected.Id">
+                                <i class="bi bi-plus-lg"></i>
+                            </a>
+                        </div>
+                        <div class="card-body p-0">
+                            <div class="table-responsive">
+                                <table class="table table-sm table-striped mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th>Nome</th><th>Reason?</th><th class="text-end">Ações</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var t in Model.Transitions)
+                                        {
+                                            <tr>
+                                                <td>@t.Name</td>
+                                                <td>@(t.RequiresReason ? "Sim" : "Não")</td>
+                                                <td class="text-end">
+                                                    <a class="btn btn-sm btn-outline-secondary"
+                                                       asp-action="EditarTransicao"
+                                                       asp-route-id="@t.Id"
+                                                       asp-route-workflowId="@Model.Selected.Id"><i class="bi bi-pencil"></i></a>
+
+                                                    <form asp-action="ExcluirTransicao" method="post" class="d-inline">
+                                                        @Html.AntiForgeryToken()
+                                                        <input type="hidden" name="id" value="@t.Id" />
+                                                        <input type="hidden" name="workflowId" value="@Model.Selected.Id" />
+                                                        <button class="btn btn-sm btn-outline-danger" type="submit">
+                                                            <i class="bi bi-trash"></i>
+                                                        </button>
+                                                    </form>
+                                                </td>
+                                            </tr>
+                                        }
+                                        @if (!Model.Transitions.Any())
+                                        {
+                                            <tr><td colspan="3" class="p-3 text-muted">Nenhuma transição cadastrada.</td></tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        }
+    </div>
+</div>
