@@ -12,6 +12,7 @@ using InovaGed.Domain.Documents;
 using InovaGed.Domain.Ged;
 using InovaGed.Infrastructure.Documents;
 using InovaGed.Application;
+using System.Text;
 
 namespace InovaGed.Web.Controllers;
 
@@ -27,7 +28,7 @@ public sealed class GedController : Controller
     private readonly IDocumentQueries _docs;
     private readonly DocumentAppService _documentApp;
     private readonly IFileStorage _storage;
-
+    private readonly IOcrService _ocr;
     // Workflow
     private readonly IWorkflowQueries _workflowQ;
     private readonly IWorkflowCommands _workflowC;
@@ -38,6 +39,7 @@ public sealed class GedController : Controller
         ILogger<GedController> logger,
         ICurrentUser currentUser,
         IFolderQueries folders,
+        IOcrService ocr,
         IFolderCommands folderCommands,
         IDocumentQueries docs,
         DocumentAppService documentApp,
@@ -58,6 +60,7 @@ public sealed class GedController : Controller
         _documentApp = documentApp;
         _storage = storage;
         _preview = preview;
+        _ocr = ocr;
 
         _workflowQ = workflowQ;
         _workflowC = workflowC;
@@ -553,43 +556,100 @@ public sealed class GedController : Controller
 
         var tenantId = _currentUser.TenantId;
 
-        var v = await _docs.GetVersionForDownloadAsync(tenantId, versionId, ct);
-        if (v is null) return NotFound();
-
-        if (!await _storage.ExistsAsync(v.StoragePath, ct))
-            return NotFound("Arquivo não encontrado no storage.");
-
-        // ✅ imagem = imagem
-        if (IsImage(v.ContentType, v.FileName))
+        try
         {
-            var img = await _storage.OpenReadAsync(v.StoragePath, ct);
-            Response.Headers["Content-Disposition"] = $"inline; filename=\"{v.FileName}\"";
-            return File(img, string.IsNullOrWhiteSpace(v.ContentType) ? "image/*" : v.ContentType);
-        }
+            var v = await _docs.GetVersionForDownloadAsync(tenantId, versionId, ct);
+            if (v is null) return NotFound();
 
-        // ✅ pdf = pdf
-        if (IsPdf(v.ContentType, v.FileName))
+            if (!await _storage.ExistsAsync(v.StoragePath, ct))
+                return NotFound("Arquivo não encontrado no storage.");
+
+            // ✅ Imagem
+            if (IsImage(v.ContentType, v.FileName))
+            {
+                var img = await _storage.OpenReadAsync(v.StoragePath, ct);
+                Response.Headers["Content-Disposition"] = $"inline; filename=\"{v.FileName}\"";
+                return File(img,
+                    string.IsNullOrWhiteSpace(v.ContentType) ? "image/*" : v.ContentType,
+                    enableRangeProcessing: true);
+            }
+
+            // ✅ PDF original
+            if (IsPdf(v.ContentType, v.FileName))
+            {
+                var pdf = await _storage.OpenReadAsync(v.StoragePath, ct);
+                Response.Headers["Content-Disposition"] = $"inline; filename=\"{v.FileName}\"";
+                return File(pdf, "application/pdf", enableRangeProcessing: true);
+            }
+
+            // ✅ Outros formatos: tentar preview convertido, mas sem travar a request para sempre
+            // Estratégia: gera com timeout; se estourar, devolve HTML "gerando..." que recarrega sozinho.
+            var timeoutSeconds = 25;
+
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
+
+            try
+            {
+                var previewPath = await _preview.GetOrCreatePreviewPdfAsync(
+                    tenantId,
+                    v.DocumentId,
+                    versionId,
+                    v.StoragePath,
+                    v.FileName,
+                    cts.Token);
+
+                if (!await _storage.ExistsAsync(previewPath, ct))
+                    return StatusCode(500, "Falha ao gerar preview (arquivo não encontrado após geração).");
+
+                var preview = await _storage.OpenReadAsync(previewPath, ct);
+                Response.Headers["Content-Disposition"] =
+                    $"inline; filename=\"{Path.GetFileNameWithoutExtension(v.FileName)}.pdf\"";
+
+                return File(preview, "application/pdf", enableRangeProcessing: true);
+            }
+            catch (OperationCanceledException)
+            {
+                // Timeout (ou cancelamento): não deixa o usuário preso.
+                var retryUrl = Url.Action("PreviewVersion", "Ged", new { versionId })!;
+                var html = $@"
+                <!doctype html>
+                <html>
+                <head>
+                  <meta charset='utf-8' />
+                  <meta name='viewport' content='width=device-width, initial-scale=1' />
+                  <title>Gerando visualização…</title>
+                  <style>
+                    body{{font-family:system-ui;margin:0;background:#f6f7fb;color:#222}}
+                    .box{{max-width:720px;margin:10vh auto;padding:24px;background:#fff;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.08)}}
+                    .muted{{color:#666}}
+                    .spinner{{width:24px;height:24px;border:3px solid #ddd;border-top-color:#333;border-radius:50%;animation:spin 1s linear infinite;display:inline-block;vertical-align:middle;margin-right:10px}}
+                    @keyframes spin{{to{{transform:rotate(360deg)}}}}
+                    a{{color:#0b5ed7}}
+                  </style>
+                </head>
+                <body>
+                  <div class='box'>
+                    <div><span class='spinner'></span><strong>Gerando / atualizando visualização…</strong></div>
+                    <p class='muted'>Isso pode levar alguns segundos dependendo do tipo do arquivo. A página vai tentar novamente automaticamente.</p>
+                    <p class='muted'>Se demorar muito, clique em <a href='{retryUrl}'>tentar novamente</a> ou use o botão <strong>Regenerar preview</strong>.</p>
+                  </div>
+
+                  <script>
+                    setTimeout(() => location.href = '{retryUrl}', 2500);
+                  </script>
+                </body>
+                </html>";
+                return Content(html, "text/html; charset=utf-8");
+            }
+        }
+        catch (Exception ex)
         {
-            var pdf = await _storage.OpenReadAsync(v.StoragePath, ct);
-            Response.Headers["Content-Disposition"] = $"inline; filename=\"{v.FileName}\"";
-            return File(pdf, "application/pdf");
+            _logger.LogError(ex, "Erro em PreviewVersion. Tenant={TenantId}, VersionId={VersionId}", tenantId, versionId);
+            return StatusCode(500, "Erro ao gerar/abrir visualização.");
         }
-
-        // ✅ tudo que não for imagem: converte -> pdf
-        var previewPath = await _preview.GetOrCreatePreviewPdfAsync(
-            tenantId,
-            v.DocumentId,
-            versionId,
-            v.StoragePath,
-            v.FileName,
-            ct);
-
-        var preview = await _storage.OpenReadAsync(previewPath, ct);
-        Response.Headers["Content-Disposition"] =
-            $"inline; filename=\"{Path.GetFileNameWithoutExtension(v.FileName)}.pdf\"";
-
-        return File(preview, "application/pdf");
     }
+
 
     private static bool IsPdf(string? ct, string name)
         => (!string.IsNullOrWhiteSpace(ct) && ct.Contains("pdf", StringComparison.OrdinalIgnoreCase))
@@ -622,5 +682,219 @@ public sealed class GedController : Controller
     //    return ext is ".png" or ".jpg" or ".jpeg" or ".webp" or ".gif";
     //}
 
+
+    [HttpGet]
+    public async Task<IActionResult> PreviewInline(Guid versionId, CancellationToken ct)
+    {
+        if (!_currentUser.IsAuthenticated) return Unauthorized();
+        var tenantId = _currentUser.TenantId;
+
+        var v = await _docs.GetVersionForDownloadAsync(tenantId, versionId, ct);
+        if (v is null) return NotFound();
+
+        // Se for imagem -> mostra <img> com zoom
+        if (IsImage(v.ContentType, v.FileName))
+        {
+            var url = Url.Action("PreviewVersion", "Ged", new { versionId })!;
+            var html = $@"
+<!doctype html>
+<html>
+<head>
+<meta charset='utf-8' />
+<meta name='viewport' content='width=device-width, initial-scale=1' />
+<style>
+  html,body{{height:100%;margin:0;background:#f5f5f7;}}
+  .wrap{{height:100%;display:flex;align-items:center;justify-content:center;overflow:auto;}}
+  img{{max-width:100%;max-height:100%;transform:scale(1);transform-origin:center center;transition:transform .08s linear;}}
+  .hint{{position:fixed;bottom:10px;left:10px;color:#666;font:12px/1.2 system-ui;}}
+</style>
+</head>
+<body>
+<div class='wrap'><img id='img' src='{url}' alt='preview' /></div>
+<div class='hint'>Dica: use os botões de zoom na tela principal.</div>
+<script>
+  // Permite zoom via postMessage vindo do parent
+  let scale=1;
+  const img=document.getElementById('img');
+  window.addEventListener('message',(e)=>{{
+    const m=e.data||{{}};
+    if(m.type==='zoom'){{ scale=Math.max(0.2,Math.min(5,scale+m.delta)); img.style.transform='scale('+scale+')'; }}
+    if(m.type==='zoomReset'){{ scale=1; img.style.transform='scale(1)'; }}
+  }});
+</script>
+</body>
+</html>";
+            return Content(html, "text/html", Encoding.UTF8);
+        }
+
+        // PDF (ou qualquer outro): retorna iframe com PDF (convertido se precisar)
+        var previewUrl = Url.Action("PreviewVersion", "Ged", new { versionId })!;
+        var htmlPdf = $@"
+<!doctype html>
+<html>
+<head>
+<meta charset='utf-8' />
+<meta name='viewport' content='width=device-width, initial-scale=1' />
+<style>html,body{{height:100%;margin:0;}} iframe{{width:100%;height:100%;border:0;}}</style>
+</head>
+<body>
+<iframe src='{previewUrl}'></iframe>
+</body>
+</html>";
+        return Content(htmlPdf, "text/html", Encoding.UTF8);
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> RegeneratePreview(Guid versionId, CancellationToken ct)
+    {
+        if (!_currentUser.IsAuthenticated) return Unauthorized();
+        var tenantId = _currentUser.TenantId;
+
+        var v = await _docs.GetVersionForDownloadAsync(tenantId, versionId, ct);
+        if (v is null) return NotFound();
+
+        // Só faz sentido regerar preview se NÃO for imagem e NÃO for PDF
+        if (IsImage(v.ContentType, v.FileName) || IsPdf(v.ContentType, v.FileName))
+            return RedirectToAction("Details", new { id = v.DocumentId });
+
+        // Calcula o caminho do preview cacheado (tem que bater com o PreviewGenerator)
+        var baseName = Path.GetFileNameWithoutExtension(v.FileName);
+        if (string.IsNullOrWhiteSpace(baseName)) baseName = "preview";
+
+        var previewRelPath = Path.Combine(
+            tenantId.ToString("N"),
+            "previews",
+            v.DocumentId.ToString("N"),
+            versionId.ToString("N"),
+            baseName + ".pdf"
+        ).Replace('\\', '/');
+
+        // Remove o PDF cacheado (se existir)
+        await _storage.DeleteIfExistsAsync(previewRelPath, ct);
+
+        // Força gerar de novo já agora (opcional)
+        _ = await _preview.GetOrCreatePreviewPdfAsync(tenantId, v.DocumentId, versionId, v.StoragePath, v.FileName, ct);
+
+        TempData["ok"] = "Preview regerado com sucesso.";
+        return RedirectToAction("Details", new { id = v.DocumentId });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> RunOcr(Guid versionId, bool force = false, CancellationToken ct = default)
+    {
+        if (!_currentUser.IsAuthenticated) return Unauthorized();
+        var tenantId = _currentUser.TenantId;
+
+        var v = await _docs.GetVersionForDownloadAsync(tenantId, versionId, ct);
+        if (v is null) return NotFound();
+
+        // 1) Determina qual PDF será OCRizado (PDF original ou preview convertido)
+        string pdfPath;
+
+        if (IsPdf(v.ContentType, v.FileName))
+        {
+            pdfPath = v.StoragePath;
+        }
+        else
+        {
+            // Word/Excel/PPT -> gera preview PDF e OCRiza o preview
+            pdfPath = await _preview.GetOrCreatePreviewPdfAsync(
+                tenantId,
+                v.DocumentId,
+                versionId,
+                v.StoragePath,
+                v.FileName,
+                ct);
+        }
+
+        try
+        {
+            // 2) roda OCR (sem invalidar assinatura se force=false)
+            var ocr = await _ocr.OcrizePdfAsync(
+                pdfStoragePath: pdfPath,
+                invalidateDigitalSignatures: force,
+                ct: ct);
+
+            // 3) cria NOVA VERSÃO (PDF pesquisável)
+            var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "";
+            var ua = Request.Headers.UserAgent.ToString();
+
+            var newFileName = $"{Path.GetFileNameWithoutExtension(v.FileName)}_OCR.pdf";
+
+            await using var ms = new MemoryStream(ocr.OcrPdfBytes);
+
+            var add = await _documentApp.AddVersionAsync(
+                documentId: v.DocumentId,
+                content: ms,
+                fileName: newFileName,
+                contentType: "application/pdf",
+                ip: ip,
+                userAgent: ua,
+                ct: ct);
+
+            if (!add.Success)
+            {
+                TempData["erro"] = add.Error?.Message ?? "Falha ao salvar nova versão OCR.";
+                return RedirectToAction("Details", new { id = v.DocumentId });
+            }
+
+            // (Opcional) se você quiser salvar o texto extraído em storage (derivado)
+            // Ajuste conforme seu storage (se tiver SaveDerivedAsync):
+            // var derivedPath = $"{tenantId:N}/ocr/{v.DocumentId:N}/{add.Value:N}/ocr.txt";
+            // await using var txt = new MemoryStream(Encoding.UTF8.GetBytes(ocr.ExtractedText ?? ""));
+            // await _storage.SaveDerivedAsync(derivedPath, txt, "text/plain; charset=utf-8", ct);
+
+            TempData["ok"] = force
+                ? "OCR concluído (assinatura digital foi invalidada na versão OCR). Nova versão criada!"
+                : "OCR concluído. Nova versão criada com sucesso!";
+
+            return RedirectToAction("Details", new { id = v.DocumentId });
+        }
+        catch (PdfHasDigitalSignatureException)
+        {
+            // ✅ pede confirmação (sem travar / sem 500)
+            TempData["warning"] =
+                "Este documento possui assinatura digital. Para criar a versão OCR pesquisável, " +
+                "a assinatura da versão OCR será invalidada. Clique em “Forçar OCR” para continuar.";
+
+            // manda também qual versionId disparou o alerta (pra view montar o botão certo)
+            TempData["ocr_version_id"] = versionId.ToString();
+            return RedirectToAction("Details", new { id = v.DocumentId });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Falha no OCR. VersionId={VersionId}", versionId);
+            TempData["erro"] = "Falha ao executar OCR.";
+            return RedirectToAction("Details", new { id = v.DocumentId });
+        }
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> OcrText(Guid versionId, CancellationToken ct)
+    {
+        if (!_currentUser.IsAuthenticated) return Unauthorized();
+        var tenantId = _currentUser.TenantId;
+
+        var v = await _docs.GetVersionForDownloadAsync(tenantId, versionId, ct);
+        if (v is null) return NotFound();
+
+        var ocrRelPath = Path.Combine(
+            tenantId.ToString("N"),
+            "ocr",
+            v.DocumentId.ToString("N"),
+            versionId.ToString("N"),
+            "ocr.txt"
+        ).Replace('\\', '/');
+
+        if (!await _storage.ExistsAsync(ocrRelPath, ct))
+            return NotFound("OCR ainda não gerado.");
+
+        var stream = await _storage.OpenReadAsync(ocrRelPath, ct);
+        return File(stream, "text/plain; charset=utf-8");
+    }
+
+   
 
 }

@@ -145,4 +145,33 @@ public sealed class LocalFileStorage : IFileStorage
             name = name.Replace(c, '_');
         return string.IsNullOrWhiteSpace(name) ? "file.bin" : name.Trim();
     }
+
+    public Task DeleteIfExistsAsync(string path, CancellationToken ct)
+    {
+        var full = Map(path);
+
+        try
+        {
+            if (File.Exists(full))
+                File.Delete(full);
+        }
+        catch
+        {
+            // ignora
+        }
+
+        return Task.CompletedTask;
+    }
+    private string Map(string storagePath)
+    {
+        if (string.IsNullOrWhiteSpace(storagePath))
+            throw new ArgumentException("storagePath inválido.", nameof(storagePath));
+
+        return Path.Combine(
+            _opt.RootPath,
+            storagePath.Replace('/', Path.DirectorySeparatorChar)
+        );
+    }
+
+
 }

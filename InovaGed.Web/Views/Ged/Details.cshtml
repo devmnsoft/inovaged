@@ -1,141 +1,220 @@
-﻿@model InovaGed.Web.Models.Ged.GedDetailsVM
-
-@{
-    ViewData["Title"] = "Detalhes do Documento";
+﻿@{
     var currentVersionId = Model.CurrentVersionId;
 }
 
-<div class="container-fluid">
-
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <div>
-            <h3 class="mb-0">
-                <i class="bi bi-file-earmark-text"></i>
-                @Model.Title
-            </h3>
-            <small class="text-muted">Documento: <strong>@Model.Id</strong></small>
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div class="d-flex align-items-center gap-2">
+            <i class="bi bi-eye"></i>
+            <strong>Visualização</strong>
         </div>
 
-        <div class="btn-group">
-            <a class="btn btn-outline-secondary"
-               asp-controller="Ged"
-               asp-action="Index"
-               asp-route-folderId="@Model.FolderId">
-                <i class="bi bi-arrow-left"></i> Voltar
-            </a>
-
-            @if (currentVersionId.HasValue)
+        <div class="d-flex gap-2 flex-wrap">
+            @if (currentVersionId != null)
             {
-                <a class="btn btn-outline-primary"
-                   asp-controller="Ged"
-                   asp-action="Download"
-                   asp-route-id="@currentVersionId.Value">
-                    <i class="bi bi-download"></i> Baixar
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="btnZoomOut" title="Zoom -">
+                    <i class="bi bi-zoom-out"></i>
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="btnZoomIn" title="Zoom +">
+                    <i class="bi bi-zoom-in"></i>
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="btnZoomReset" title="Reset Zoom">
+                    <i class="bi bi-aspect-ratio"></i>
+                </button>
+
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="btnFull" title="Tela cheia">
+                    <i class="bi bi-fullscreen"></i>
+                </button>
+
+                <a class="btn btn-sm btn-outline-primary"
+                   target="_blank"
+                   href="@Url.Action("PreviewVersion","Ged", new { versionId = currentVersionId })">
+                    Abrir
                 </a>
+
+                <form asp-action="RegeneratePreview" asp-controller="Ged" method="post" class="d-inline">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="versionId" value="@currentVersionId" />
+                    <button type="submit" class="btn btn-sm btn-outline-warning">
+                        Regerar preview
+                    </button>
+                </form>
+
+                <form asp-action="RunOcr" asp-controller="Ged" method="post" class="d-inline" id="ocrForm">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="versionId" value="@currentVersionId" />
+                    <input type="hidden" name="force" value="false" />
+                    <button type="submit" class="btn btn-sm btn-outline-success" id="btnOcr">
+                        OCR
+                    </button>
+                </form>
+
+                <!-- aparece só se o back responder 409 (PDF assinado) -->
+                <form asp-action="RunOcr" asp-controller="Ged" method="post" class="d-inline d-none" id="ocrForceForm">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="versionId" value="@currentVersionId" />
+                    <input type="hidden" name="force" value="true" />
+                    <button type="submit" class="btn btn-sm btn-warning" id="btnOcrForce" title="Forçar OCR (invalidará assinatura na versão OCR)">
+                        Forçar OCR
+                    </button>
+                </form>
+
+                <span class="badge bg-light text-dark">Versão atual</span>
             }
         </div>
     </div>
 
-    <div class="row g-3">
-        <div class="col-12 col-xl-7">
-            <div class="card">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <span><i class="bi bi-eye me-1"></i> Visualização</span>
-                    @if (currentVersionId.HasValue)
-                    {
-                        <span class="badge bg-light text-dark">Versão atual</span>
-                    }
-                </div>
-
-                <div class="card-body p-0" style="min-height:650px;">
-                    @if (currentVersionId.HasValue)
-                    {
-                        <iframe src="@Url.Action("Preview","Ged", new { id = currentVersionId.Value })"
-                                style="width:100%; height:650px; border:0;">
-                        </iframe>
-                    }
-                    else
-                    {
-                        <div class="p-3 text-muted">Documento ainda não possui versão para visualização.</div>
-                    }
-                </div>
-            </div>
+    <!-- alerta de assinatura -->
+    <div class="card-body pb-0">
+        <div class="alert alert-warning d-none" id="ocrSignedAlert">
+            <strong>Atenção:</strong> este documento possui <strong>assinatura digital</strong>.
+            Para criar uma versão PDF pesquisável, a assinatura será <strong>invalidada na versão OCR</strong>.
         </div>
+    </div>
 
-        <div class="col-12 col-xl-5">
-            <div class="card mb-3">
-                <div class="card-header"><i class="bi bi-info-circle me-1"></i> Informações</div>
-                <div class="card-body">
-                    <dl class="row mb-0">
-                        <dt class="col-5">Confidencial</dt>
-                        <dd class="col-7">@((Model.IsConfidential) ? "Sim" : "Não")</dd>
-
-                        <dt class="col-5">Descrição</dt>
-                        <dd class="col-7">@(!string.IsNullOrWhiteSpace(Model.Description) ? Model.Description : "-")</dd>
-                    </dl>
+    <div class="card-body p-0 position-relative" id="previewContainer" style="height: 75vh;">
+        @if (currentVersionId == null)
+        {
+            <div class="d-flex align-items-center justify-content-center h-100 text-muted">
+                Nenhuma versão disponível para visualização.
+            </div>
+        }
+        else
+        {
+            <!-- Spinner overlay -->
+            <div id="previewLoading"
+                 class="position-absolute top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center"
+                 style="background: rgba(255,255,255,.75); z-index:10;">
+                <div class="text-center">
+                    <div class="spinner-border" role="status"></div>
+                    <div class="mt-2 text-muted">Carregando / gerando visualização…</div>
                 </div>
             </div>
 
-            <div class="card">
-                <div class="card-header"><i class="bi bi-layers me-1"></i> Versões</div>
-                <div class="card-body p-0">
-                    <table class="table table-sm table-hover mb-0">
-                        <thead class="table-light">
-                            <tr>
-                                <th>V</th>
-                                <th>Arquivo</th>
-                                <th class="text-end">Ações</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @if (Model.Versions != null && Model.Versions.Any())
-                            {
-                                foreach (var v in Model.Versions)
-                                {
-                                    <tr>
-                                        <td>@v.VersionNumber</td>
-                                        <td class="text-truncate" style="max-width:220px">@v.FileName</td>
-                                        <td class="text-end">
-                                            <a class="btn btn-sm btn-outline-primary"
-                                               asp-controller="Ged"
-                                               asp-action="Preview"
-                                               asp-route-id="@v.Id"
-                                               title="Visualizar">
-                                                <i class="bi bi-eye"></i>
-                                            </a>
-                                            <a class="btn btn-sm btn-outline-secondary"
-                                               asp-controller="Ged"
-                                               asp-action="Download"
-                                               asp-route-id="@v.Id"
-                                               title="Baixar">
-                                                <i class="bi bi-download"></i>
-                                            </a>
-                                            <a class="btn btn-sm btn-outline-primary"
-                                               target="_blank"
-                                               href="@Url.Action("PreviewVersion", "Ged", new { versionId = v.Id })">
-                                                Visualizar
-                                            </a>
+            <iframe id="previewFrame"
+                    src="@Url.Action("PreviewInline","Ged", new { versionId = currentVersionId })"
+                    style="width:100%; height:100%; border:0; background:#f5f5f7;"
+                    loading="lazy">
+            </iframe>
+        }
+    </div>
 
-                                            <a class="btn btn-sm btn-outline-secondary"
-                                               href="@Url.Action("DownloadVersion", "Ged", new { versionId = v.Id })">
-                                                Baixar
-                                            </a>
-
-                                        </td>
-                                    </tr>
-                                }
-                            }
-                            else
-                            {
-                                <tr>
-                                    <td colspan="3" class="text-muted text-center p-3">Nenhuma versão registrada.</td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
+    <div class="card-footer">
+        <div class="collapse" id="ocrBox">
+            <div class="alert alert-light mb-0">
+                <strong>Texto OCR</strong>
+                <pre id="ocrText" style="white-space:pre-wrap; margin:0;"></pre>
             </div>
- 
         </div>
     </div>
 </div>
+
+@section Scripts {
+    <script>
+        (function(){
+            const frame = document.getElementById('previewFrame');
+            const loading = document.getElementById('previewLoading');
+            const container = document.getElementById('previewContainer');
+
+            if(frame){
+                frame.addEventListener('load', () => { if(loading) loading.style.display = 'none'; });
+                setTimeout(() => { if(loading) loading.style.display = 'none'; }, 15000);
+            }
+
+            // fullscreen
+            const btnFull = document.getElementById('btnFull');
+            if(btnFull && container){
+                btnFull.addEventListener('click', async () => {
+                    if (!document.fullscreenElement) await container.requestFullscreen();
+                    else await document.exitFullscreen();
+                });
+            }
+
+            // zoom (funciona para imagem via postMessage; pdf depende do viewer do navegador)
+            function sendZoom(delta){ if(frame) frame.contentWindow.postMessage({type:'zoom', delta:delta}, '*'); }
+            function zoomReset(){ if(frame) frame.contentWindow.postMessage({type:'zoomReset'}, '*'); }
+
+            const zi = document.getElementById('btnZoomIn');
+            const zo = document.getElementById('btnZoomOut');
+            const zr = document.getElementById('btnZoomReset');
+
+            if(zi) zi.addEventListener('click', ()=>sendZoom(+0.15));
+            if(zo) zo.addEventListener('click', ()=>sendZoom(-0.15));
+            if(zr) zr.addEventListener('click', ()=>zoomReset());
+
+            // OCR via fetch (mantém antiforgery via FormData)
+            const ocrForm = document.getElementById('ocrForm');
+            const ocrForceForm = document.getElementById('ocrForceForm');
+            const btnOcr = document.getElementById('btnOcr');
+            const btnOcrForce = document.getElementById('btnOcrForce');
+
+            const signedAlert = document.getElementById('ocrSignedAlert');
+
+            async function runOcr(form, isForce){
+                if(isForce){
+                    if(btnOcrForce){ btnOcrForce.disabled = true; btnOcrForce.textContent = 'Forçando OCR…'; }
+                }else{
+                    if(btnOcr){ btnOcr.disabled = true; btnOcr.textContent = 'OCR…'; }
+                }
+
+                try{
+                    const formData = new FormData(form);
+                    const resp = await fetch(form.action, { method:'POST', body: formData });
+
+                    // ✅ OK
+                    if(resp.ok){
+                        // carrega texto OCR (mantém teu padrão)
+                        const versionId = formData.get('versionId');
+                        const txt = await fetch('@Url.Action("OcrText", "Ged")' + '?versionId=' + versionId).then(r => r.text());
+                        document.getElementById('ocrText').textContent = txt;
+
+                        const box = document.getElementById('ocrBox');
+                        if(box) new bootstrap.Collapse(box, { toggle: true });
+
+                        // esconde aviso/botão force se existiam
+                        if(signedAlert) signedAlert.classList.add('d-none');
+                        if(ocrForceForm) ocrForceForm.classList.add('d-none');
+
+                        return;
+                    }
+
+                    // ✅ PDF assinado: back retorna 409 + JSON
+                    if(resp.status === 409){
+                        let payload = null;
+                        try{ payload = await resp.json(); }catch{}
+                        if(signedAlert) signedAlert.classList.remove('d-none');
+                        if(ocrForceForm) ocrForceForm.classList.remove('d-none');
+
+                        const msg = payload?.message ?? 'Documento assinado. Clique em "Forçar OCR" para continuar.';
+                        // opcional: mostra um alert simples além do banner
+                        // alert(msg);
+                        return;
+                    }
+
+                    // outros erros
+                    alert('Falha ao rodar OCR.');
+                }catch(e){
+                    console.error(e);
+                    alert('Falha ao rodar OCR.');
+                }finally{
+                    if(btnOcr){ btnOcr.disabled = false; btnOcr.textContent = 'OCR'; }
+                    if(btnOcrForce){ btnOcrForce.disabled = false; btnOcrForce.textContent = 'Forçar OCR'; }
+                }
+            }
+
+            if(ocrForm){
+                ocrForm.addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    await runOcr(ocrForm, false);
+                });
+            }
+
+            if(ocrForceForm){
+                ocrForceForm.addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    await runOcr(ocrForceForm, true);
+                });
+            }
+        })();
+    </script>
+}

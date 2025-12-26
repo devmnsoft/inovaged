@@ -21,4 +21,7 @@ public interface IFileStorage
     Task<Stream> OpenReadAsync(string storagePath, CancellationToken ct);
     Task<bool> ExistsAsync(string storagePath, CancellationToken ct);
     Task DeleteAsync(string storagePath, CancellationToken ct);
+
+    Task DeleteIfExistsAsync(string path, CancellationToken ct);
+
 }

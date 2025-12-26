@@ -20,6 +20,8 @@ public sealed class DocumentAppService
     private readonly ICurrentUser _currentUser;
     private readonly IDbConnectionFactory _db;
     private readonly IDocumentWriteRepository _writeRepo;
+    private readonly IPreviewGenerator _preview;
+    private readonly IPdfTextExtractor _ocr;
     private readonly IAuditLogWriter _audit;
     private readonly IFileStorage _storage;
     private readonly ILogger<DocumentAppService> _logger;
@@ -27,6 +29,8 @@ public sealed class DocumentAppService
     public DocumentAppService(
         ICurrentUser currentUser,
         IDbConnectionFactory db,
+        IPreviewGenerator preview,
+        IPdfTextExtractor ocr,
         IDocumentWriteRepository writeRepo,
         IAuditLogWriter audit,
         IFileStorage storage,
@@ -34,6 +38,8 @@ public sealed class DocumentAppService
     {
         _currentUser = currentUser;
         _db = db;
+        _preview = preview;
+        _ocr = ocr;
         _writeRepo = writeRepo;
         _audit = audit;
         _storage = storage;
@@ -299,4 +305,128 @@ public sealed class DocumentAppService
 
     private static string EscapeJson(string? s)
         => (s ?? "").Replace("\\", "\\\\").Replace("\"", "\\\"");
+
+    public async Task ProcessPreviewAndOcrAsync(
+      Guid tenantId,
+      Guid documentId,
+      Guid versionId,
+      string storagePath,
+      string fileName,
+      CancellationToken ct)
+    {
+        // 1️⃣ gera preview PDF (se aplicável)
+        var previewPath = await _preview.GetOrCreatePreviewPdfAsync(
+            tenantId,
+            documentId,
+            versionId,
+            storagePath,
+            fileName,
+            ct);
+
+        // 2️⃣ OCR / extração de texto
+        var extractedText = await _ocr.ExtractTextAsync(previewPath, ct);
+
+        if (!string.IsNullOrWhiteSpace(extractedText))
+        {
+            // Aqui você pode:
+            // - salvar em document_text
+            // - indexar
+            // - usar em busca full-text
+        }
+    }
+
+    public async Task<Result<Guid>> AddVersionAsync(
+    Guid documentId,
+    Stream content,
+    string fileName,
+    string contentType,
+    string ip,
+    string userAgent,
+    CancellationToken ct)
+    {
+        if (!_currentUser.IsAuthenticated)
+            return Result<Guid>.Fail("AUTH", "Usuário não autenticado.");
+
+        if (documentId == Guid.Empty)
+            return Result<Guid>.Fail("VALIDATION", "Documento inválido.");
+
+        if (content is null || content == Stream.Null)
+            return Result<Guid>.Fail("FILE", "Arquivo inválido.");
+
+        var tenantId = _currentUser.TenantId;
+        var userId = _currentUser.UserId;
+
+        var versionId = Guid.NewGuid();
+
+        var ext = Path.GetExtension(fileName ?? "");
+        var fileExtension = string.IsNullOrWhiteSpace(ext) ? "" : (ext.StartsWith(".") ? ext[1..] : ext);
+
+        try
+        {
+            using var conn = await _db.OpenAsync(ct);
+            using var tx = conn.BeginTransaction();
+
+            // 1) próximo número da versão
+            var nextVersion = await _writeRepo.GetNextVersionNumberAsync(tenantId, documentId, tx, ct);
+
+            // 2) salvar no storage (gera path real + size + hashes)
+            if (content.CanSeek) content.Position = 0;
+
+            var (storagePath, realSizeBytes, md5, sha256) = await _storage.SaveAsync(
+                content,
+                fileName,
+                contentType,
+                tenantId,
+                documentId,
+                versionId,
+                ct);
+
+            // 3) insert document_version
+            await _writeRepo.InsertVersionAsync(new DocumentVersionRow
+            {
+                Id = versionId,
+                TenantId = tenantId,
+                DocumentId = documentId,
+                VersionNumber = nextVersion,
+                FileName = fileName.Trim(),
+                FileExtension = fileExtension,
+                FileSizeBytes = realSizeBytes,
+                StoragePath = storagePath,
+                ChecksumMd5 = md5,
+                ChecksumSha256 = sha256,
+                ContentType = string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType.Trim(),
+                CreatedBy = userId
+            }, tx, ct);
+
+            // 4) update current_version_id
+            await _writeRepo.UpdateCurrentVersionAsync(tenantId, documentId, versionId, userId, tx, ct);
+
+            // 5) auditoria (não bloqueia)
+            try
+            {
+                await _audit.InsertAsync(new AuditLogRow
+                {
+                    TenantId = tenantId,
+                    EntityName = "document",
+                    EntityId = documentId,
+                    Action = "ADD_VERSION",
+                    UserId = userId,
+                    DetailsJson = $"{{\"file\":\"{EscapeJson(fileName)}\",\"ip\":\"{EscapeJson(ip)}\",\"ua\":\"{EscapeJson(userAgent)}\"}}"
+                }, tx, ct);
+            }
+            catch (Exception auditEx)
+            {
+                _logger.LogWarning(auditEx, "Falha ao gravar audit_log (não bloqueia AddVersion).");
+            }
+
+            tx.Commit();
+            return Result<Guid>.Ok(versionId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro ao adicionar nova versão. Doc={DocId}", documentId);
+            return Result<Guid>.Fail("ERR", "Erro ao adicionar nova versão.");
+        }
+    }
+
 }
