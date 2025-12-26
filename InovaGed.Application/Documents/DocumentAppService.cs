@@ -46,15 +46,15 @@ public sealed class DocumentAppService
         _logger = logger;
     }
 
+    // ==========================================================
+    // UPLOAD (cria documento + versão 1)
+    // ==========================================================
     public async Task<Result<Guid>> UploadAsync(
         UploadDocumentCommand cmd,
         string ip,
         string userAgent,
         CancellationToken ct)
     {
-        // =========================
-        // validações
-        // =========================
         if (!_currentUser.IsAuthenticated)
             return Result<Guid>.Fail("AUTH", "Usuário não autenticado.");
 
@@ -70,21 +70,17 @@ public sealed class DocumentAppService
         var tenantId = _currentUser.TenantId;
         var userId = _currentUser.UserId;
 
-        // ids
         var documentId = Guid.NewGuid();
         var versionId = Guid.NewGuid();
 
-        // nome / extensão
         var fileName = string.IsNullOrWhiteSpace(cmd.FileName) ? "arquivo" : cmd.FileName.Trim();
         var ext = Path.GetExtension(fileName);
         var fileExtension = ext.StartsWith(".") ? ext[1..] : ext;
 
-        // content-type
         var contentType = string.IsNullOrWhiteSpace(cmd.ContentType)
             ? "application/octet-stream"
             : cmd.ContentType.Trim();
 
-        // tamanho (best-effort) + reset do stream
         long sizeBytes = 0;
         if (cmd.Content.CanSeek)
         {
@@ -92,22 +88,18 @@ public sealed class DocumentAppService
             cmd.Content.Position = 0;
         }
 
-        // visibilidade (enum do banco: PRIVATE | INTERNAL | PUBLIC)
         var visibility = NormalizeVisibility(cmd.Visibility);
 
-        // confidencial (se true, força PRIVATE por padrão)
         var isConfidential = cmd.IsConfidential ?? false;
         if (isConfidential)
             visibility = "PRIVATE";
 
-        // code único (evita ux_document_tenant_code)
         static string NewCode()
         {
             var suffix = Guid.NewGuid().ToString("N")[..20].ToUpperInvariant();
             var code = $"DOC-{DateTime.UtcNow:yyyyMMddHHmmss}-{suffix}";
             return code.Length <= 50 ? code : code[..50];
         }
-
 
         var code = NewCode();
 
@@ -116,10 +108,7 @@ public sealed class DocumentAppService
             using var conn = await _db.OpenAsync(ct);
             using var tx = conn.BeginTransaction();
 
-            // ==========================================================
-            // 1) insere DOCUMENT (metadados)
-            // ==========================================================
-            // Retry simples: se por algum motivo raríssimo colidir code, gera outro
+            // 1) insert DOCUMENT (metadados)
             for (var attempt = 0; attempt < 2; attempt++)
             {
                 try
@@ -142,33 +131,30 @@ public sealed class DocumentAppService
                         IsConfidential = isConfidential
                     }, tx, ct);
 
-                    break; // ok
+                    break;
                 }
                 catch (PostgresException pg) when (pg.SqlState == "23505" &&
-                                                  (pg.ConstraintName ?? "").Equals("ux_document_tenant_code", StringComparison.OrdinalIgnoreCase))
+                                                  (pg.ConstraintName ?? "")
+                                                  .Equals("ux_document_tenant_code", StringComparison.OrdinalIgnoreCase))
                 {
                     code = NewCode();
                     if (attempt == 1) throw;
                 }
             }
 
-            // ==========================================================
-            // 2) salva ARQUIVO no storage e recebe o storagePath REAL
-            // ==========================================================
+            // 2) storage
             if (cmd.Content.CanSeek) cmd.Content.Position = 0;
 
             var (storagePath, realSizeBytes, md5, sha256) = await _storage.SaveAsync(
                 cmd.Content,
-                fileName,     // ✅ aqui é o NOME ORIGINAL, NÃO o storagePath
+                fileName,
                 contentType,
                 tenantId,
                 documentId,
                 versionId,
                 ct);
 
-            // ==========================================================
-            // 3) insere VERSION (aponta para o storagePath REAL)
-            // ==========================================================
+            // 3) insert VERSION
             await _writeRepo.InsertVersionAsync(new DocumentVersionRow
             {
                 Id = versionId,
@@ -178,21 +164,30 @@ public sealed class DocumentAppService
                 FileName = fileName,
                 FileExtension = fileExtension,
                 FileSizeBytes = (realSizeBytes > 0 ? realSizeBytes : sizeBytes),
-                StoragePath = storagePath,        // ✅ ESSENCIAL
+                StoragePath = storagePath,
                 ChecksumMd5 = md5,
                 ChecksumSha256 = sha256,
                 ContentType = contentType,
                 CreatedBy = userId
             }, tx, ct);
 
-            // ==========================================================
-            // 4) garante current_version_id
-            // ==========================================================
+            // 4) current_version_id
             await _writeRepo.UpdateCurrentVersionAsync(tenantId, documentId, versionId, userId, tx, ct);
 
-            // ==========================================================
-            // 5) auditoria (não bloqueia upload)
-            // ==========================================================
+            // 4.5) SEARCH INDEX (metadados + OCR vazio no upload)
+            await UpsertSearchAsync(
+                tx,
+                tenantId: tenantId,
+                documentId: documentId,
+                versionId: versionId,
+                title: cmd.Title.Trim(),
+                description: cmd.Description ?? "",
+                code: code,
+                fileName: fileName,
+                ocrText: "", // upload normal ainda sem OCR
+                ct: ct);
+
+            // 5) auditoria (não bloqueia)
             try
             {
                 await _audit.InsertAsync(new AuditLogRow
@@ -221,8 +216,7 @@ public sealed class DocumentAppService
     }
 
     // ==========================================================
-    // LEGADO: mantém caso alguma tela antiga chame isso
-    // (assume que o arquivo já foi salvo e o storagePath já está correto)
+    // LEGADO (mantém como está)
     // ==========================================================
     public async Task InsertDocumentWithVersionAsync(
         Guid tenantId,
@@ -249,7 +243,6 @@ public sealed class DocumentAppService
             var code = $"DOC-{DateTime.UtcNow:yyyyMMddHHmmss}-{Guid.NewGuid():N}".ToUpperInvariant();
             var visibility = isConfidential ? "PRIVATE" : "INTERNAL";
 
-            // document (schema ged)
             await _writeRepo.InsertDocumentAsync(new DocumentRow
             {
                 Id = documentId,
@@ -266,7 +259,6 @@ public sealed class DocumentAppService
                 CreatedBy = createdBy
             }, tx, ct);
 
-            // version (schema ged)
             await _writeRepo.InsertVersionAsync(new DocumentVersionRow
             {
                 Id = versionId,
@@ -283,6 +275,9 @@ public sealed class DocumentAppService
 
             await _writeRepo.UpdateCurrentVersionAsync(tenantId, documentId, versionId, createdBy, tx, ct);
 
+            // search index (opcional) - aqui você pode indexar também se quiser:
+            // await UpsertSearchAsync(tx, tenantId, documentId, versionId, title, description ?? "", code, fileName, "", ct);
+
             tx.Commit();
         }
         catch (Exception ex)
@@ -292,29 +287,17 @@ public sealed class DocumentAppService
         }
     }
 
-    private static string NormalizeVisibility(string? value)
-    {
-        var v = (value ?? "INTERNAL").Trim().ToUpperInvariant();
-        return v switch
-        {
-            "PRIVATE" => "PRIVATE",
-            "PUBLIC" => "PUBLIC",
-            _ => "INTERNAL"
-        };
-    }
-
-    private static string EscapeJson(string? s)
-        => (s ?? "").Replace("\\", "\\\\").Replace("\"", "\\\"");
-
+    // ==========================================================
+    // Preview + OCR (mantido; usado se você quiser processamento assíncrono)
+    // ==========================================================
     public async Task ProcessPreviewAndOcrAsync(
-      Guid tenantId,
-      Guid documentId,
-      Guid versionId,
-      string storagePath,
-      string fileName,
-      CancellationToken ct)
+        Guid tenantId,
+        Guid documentId,
+        Guid versionId,
+        string storagePath,
+        string fileName,
+        CancellationToken ct)
     {
-        // 1️⃣ gera preview PDF (se aplicável)
         var previewPath = await _preview.GetOrCreatePreviewPdfAsync(
             tenantId,
             documentId,
@@ -323,26 +306,74 @@ public sealed class DocumentAppService
             fileName,
             ct);
 
-        // 2️⃣ OCR / extração de texto
         var extractedText = await _ocr.ExtractTextAsync(previewPath, ct);
 
-        if (!string.IsNullOrWhiteSpace(extractedText))
-        {
-            // Aqui você pode:
-            // - salvar em document_text
-            // - indexar
-            // - usar em busca full-text
-        }
+        // Se quiser indexar aqui também (quando esse fluxo for usado),
+        // você precisará buscar title/description/code do document e chamar UpsertSearchAsync com extractedText.
+        // Mantive neutro para não mudar fluxo atual.
+        _logger.LogInformation("ProcessPreviewAndOcrAsync concluído. Doc={DocId}, Ver={VerId}, HasText={HasText}",
+            documentId, versionId, !string.IsNullOrWhiteSpace(extractedText));
     }
 
-    public async Task<Result<Guid>> AddVersionAsync(
-    Guid documentId,
-    Stream content,
-    string fileName,
-    string contentType,
-    string ip,
-    string userAgent,
-    CancellationToken ct)
+    // ==========================================================
+    // ADD VERSION (compatível) - sem OCR
+    // ==========================================================
+    public Task<Result<Guid>> AddVersionAsync(
+        Guid documentId,
+        Stream content,
+        string fileName,
+        string contentType,
+        string ip,
+        string userAgent,
+        CancellationToken ct)
+    {
+        return AddVersionInternalAsync(
+            documentId,
+            content,
+            fileName,
+            contentType,
+            ocrText: "",
+            ip,
+            userAgent,
+            ct);
+    }
+
+    // ==========================================================
+    // ADD VERSION (OCR) - para o RunOcr passar extractedText real
+    // ==========================================================
+    public Task<Result<Guid>> AddVersionWithOcrAsync(
+        Guid documentId,
+        Stream content,
+        string fileName,
+        string contentType,
+        string ocrText,
+        string ip,
+        string userAgent,
+        CancellationToken ct)
+    {
+        return AddVersionInternalAsync(
+            documentId,
+            content,
+            fileName,
+            contentType,
+            ocrText: ocrText ?? "",
+            ip,
+            userAgent,
+            ct);
+    }
+
+    // ==========================================================
+    // IMPLEMENTAÇÃO ÚNICA
+    // ==========================================================
+    private async Task<Result<Guid>> AddVersionInternalAsync(
+        Guid documentId,
+        Stream content,
+        string fileName,
+        string contentType,
+        string ocrText,
+        string ip,
+        string userAgent,
+        CancellationToken ct)
     {
         if (!_currentUser.IsAuthenticated)
             return Result<Guid>.Fail("AUTH", "Usuário não autenticado.");
@@ -366,10 +397,10 @@ public sealed class DocumentAppService
             using var conn = await _db.OpenAsync(ct);
             using var tx = conn.BeginTransaction();
 
-            // 1) próximo número da versão
+            // 1) próximo número
             var nextVersion = await _writeRepo.GetNextVersionNumberAsync(tenantId, documentId, tx, ct);
 
-            // 2) salvar no storage (gera path real + size + hashes)
+            // 2) storage
             if (content.CanSeek) content.Position = 0;
 
             var (storagePath, realSizeBytes, md5, sha256) = await _storage.SaveAsync(
@@ -381,7 +412,7 @@ public sealed class DocumentAppService
                 versionId,
                 ct);
 
-            // 3) insert document_version
+            // 3) insert version
             await _writeRepo.InsertVersionAsync(new DocumentVersionRow
             {
                 Id = versionId,
@@ -398,8 +429,33 @@ public sealed class DocumentAppService
                 CreatedBy = userId
             }, tx, ct);
 
-            // 4) update current_version_id
+            // 4) current_version_id
             await _writeRepo.UpdateCurrentVersionAsync(tenantId, documentId, versionId, userId, tx, ct);
+
+            // 4.5) SEARCH INDEX (metadados + OCR REAL quando vier)
+            const string sqlDoc = @"
+SELECT 
+  code        AS ""Code"",
+  title       AS ""Title"",
+  COALESCE(description,'') AS ""Description""
+FROM ged.document
+WHERE tenant_id = @tenantId
+  AND id = @documentId;
+";
+            var meta = await tx.Connection!.QuerySingleAsync<(string Code, string Title, string Description)>(
+                new CommandDefinition(sqlDoc, new { tenantId, documentId }, tx, cancellationToken: ct));
+
+            await UpsertSearchAsync(
+                tx,
+                tenantId: tenantId,
+                documentId: documentId,
+                versionId: versionId,
+                title: meta.Title,
+                description: meta.Description,
+                code: meta.Code,
+                fileName: fileName.Trim(),
+                ocrText: ocrText ?? "",
+                ct: ct);
 
             // 5) auditoria (não bloqueia)
             try
@@ -409,7 +465,7 @@ public sealed class DocumentAppService
                     TenantId = tenantId,
                     EntityName = "document",
                     EntityId = documentId,
-                    Action = "ADD_VERSION",
+                    Action = "ADD_VERSION", // atenção: precisa existir no enum do banco
                     UserId = userId,
                     DetailsJson = $"{{\"file\":\"{EscapeJson(fileName)}\",\"ip\":\"{EscapeJson(ip)}\",\"ua\":\"{EscapeJson(userAgent)}\"}}"
                 }, tx, ct);
@@ -429,4 +485,46 @@ public sealed class DocumentAppService
         }
     }
 
+    // ==========================================================
+    // Helpers
+    // ==========================================================
+    private static string NormalizeVisibility(string? value)
+    {
+        var v = (value ?? "INTERNAL").Trim().ToUpperInvariant();
+        return v switch
+        {
+            "PRIVATE" => "PRIVATE",
+            "PUBLIC" => "PUBLIC",
+            _ => "INTERNAL"
+        };
+    }
+
+    private static string EscapeJson(string? s)
+        => (s ?? "").Replace("\\", "\\\\").Replace("\"", "\\\"");
+
+    private static async Task UpsertSearchAsync(
+        IDbTransaction tx,
+        Guid tenantId,
+        Guid documentId,
+        Guid versionId,
+        string title,
+        string description,
+        string code,
+        string fileName,
+        string ocrText,
+        CancellationToken ct)
+    {
+        // Ordem correta: code, title, description, fileName, ocrText
+        const string sql = @"
+SELECT ged.upsert_document_search(
+  @tenantId, @documentId, @versionId,
+  @code, @title, @description, @fileName, @ocrText
+);";
+
+        await tx.Connection!.ExecuteAsync(new CommandDefinition(
+            sql,
+            new { tenantId, documentId, versionId, code, title, description, fileName, ocrText },
+            tx,
+            cancellationToken: ct));
+    }
 }

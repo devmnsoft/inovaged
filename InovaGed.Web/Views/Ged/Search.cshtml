@@ -1,0 +1,89 @@
+﻿@model IReadOnlyList<InovaGed.Application.Search.DocumentSearchRowDto>
+
+@{
+    ViewData["Title"] = "Pesquisa de Documentos";
+    var q = (string)(ViewBag.Query ?? "");
+    var folderId = ViewBag.FolderId as Guid?;
+}
+
+<div class="container-fluid mt-3">
+
+    <!-- Cabeçalho -->
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4 class="mb-0">
+            <i class="bi bi-search"></i>
+            Pesquisa de Documentos
+        </h4>
+
+        <a asp-action="Index"
+           asp-controller="Ged"
+           asp-route-folderId="@folderId"
+           class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-arrow-left"></i>
+            Voltar
+        </a>
+    </div>
+
+    <!-- Formulário de busca -->
+    <form method="get" class="row g-2 mb-4">
+        <div class="col-md-9">
+            <input type="text"
+                   name="q"
+                   value="@q"
+                   class="form-control"
+                   placeholder="Digite palavras, código, nome do arquivo, conteúdo OCR..." />
+        </div>
+        <div class="col-md-3">
+            <button type="submit" class="btn btn-primary w-100">
+                <i class="bi bi-search"></i>
+                Buscar
+            </button>
+        </div>
+    </form>
+
+    <!-- Resultados -->
+    @if (Model == null || Model.Count == 0)
+    {
+        <div class="alert alert-light text-muted">
+            <i class="bi bi-info-circle"></i>
+            Nenhum documento encontrado.
+        </div>
+    }
+    else
+    {
+        <div class="list-group">
+            @foreach (var r in Model)
+            {
+                <a asp-action="Details"
+                   asp-controller="Ged"
+                   asp-route-id="@r.DocumentId"
+                   class="list-group-item list-group-item-action">
+
+                    <div class="d-flex justify-content-between align-items-start gap-3">
+                        <div>
+                            <div class="fw-bold">
+                                @(string.IsNullOrWhiteSpace(r.Title) ? "(Sem título)" : r.Title)
+                            </div>
+
+                            <div class="text-muted small">
+                                Código: <strong>@(r.Code ?? "-")</strong>
+                                · Arquivo: @(r.FileName ?? "-")
+                            </div>
+
+                            @if (!string.IsNullOrWhiteSpace(r.Snippet))
+                            {
+                                <div class="mt-2 text-secondary">
+                                    @Html.Raw(r.Snippet)
+                                </div>
+                            }
+                        </div>
+
+                        <span class="badge bg-secondary">
+                            rank @r.Rank.ToString("0.000")
+                        </span>
+                    </div>
+                </a>
+            }
+        </div>
+    }
+</div>

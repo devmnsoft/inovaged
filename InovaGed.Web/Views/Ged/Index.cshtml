@@ -4,13 +4,17 @@
 }
 
 <div class="row">
+    <!-- COLUNA PASTAS -->
     <div class="col-12 col-xl-3">
         <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <span>Pastas</span>
-                <a class="btn btn-sm btn-outline-primary" asp-action="Folders" asp-controller="Ged"><i class="bi bi-folder-plus"></i> Nova</a>
+                <a class="btn btn-sm btn-outline-primary"
+                   asp-action="Folders" asp-controller="Ged">
+                    <i class="bi bi-folder-plus"></i> Nova
+                </a>
             </div>
-            <div class="card-body p-2" style="max-height: 70vh; overflow:auto;">
+            <div class="card-body p-2" style="max-height:70vh; overflow:auto;">
                 @if (!Model.Folders.Any())
                 {
                     <div class="text-muted small">Nenhuma pasta cadastrada.</div>
@@ -18,25 +22,19 @@
                 else
                 {
                     <ul class="list-unstyled mb-0">
-                        @{
-                            var rootActive = Model.CurrentFolderId == null ? "fw-bold" : "";
-                        }
-                        <li class="py-1">
-                            <a class="text-decoration-none @rootActive" asp-controller="Ged" asp-action="Index">
-                                <i class="bi bi-house-door"></i> Raiz (todas as pastas)
+                        <li class="mb-1">
+                            <a class="d-flex align-items-center gap-2 text-decoration-none @(Model.CurrentFolderId == null ? "fw-bold" : "")"
+                               asp-action="Index" asp-controller="Ged">
+                                <i class="bi bi-house"></i> Raiz
                             </a>
                         </li>
 
                         @foreach (var f in Model.Folders)
                         {
-                            var active = Model.CurrentFolderId == f.Id ? "fw-bold" : "";
-                            <li class="py-1">
-                                <a class="text-decoration-none @active"
-                                   asp-controller="Ged" asp-action="Index"
-                                   asp-route-folderId="@f.Id">
-                                    <span style="padding-left:@(f.Level * 14)px">
-                                        <i class="bi bi-folder2-open"></i> @f.Name
-                                    </span>
+                            <li class="mb-1">
+                                <a class="d-flex align-items-center gap-2 text-decoration-none @(Model.CurrentFolderId == f.Id ? "fw-bold" : "")"
+                                   asp-action="Index" asp-controller="Ged" asp-route-folderId="@f.Id">
+                                    <i class="bi bi-folder"></i> @f.Name
                                 </a>
                             </li>
                         }
@@ -46,135 +44,133 @@
         </div>
     </div>
 
+    <!-- COLUNA DOCUMENTOS -->
     <div class="col-12 col-xl-9">
-        @if (TempData["Error"] != null)
-        {
-            <div class="alert alert-danger">@TempData["Error"]</div>
-        }
-        @if (TempData["Success"] != null)
-        {
-            <div class="alert alert-success">@TempData["Success"]</div>
-        }
-
         <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-                <form class="d-flex gap-2" method="get" asp-action="Index" asp-controller="Ged">
-                    <input type="hidden" name="folderId" value="@Model.CurrentFolderId" />
-                    <input class="form-control" style="min-width:280px"
-                           name="q" value="@Model.Query" placeholder="Pesquisar por título, tipo, arquivo ou texto (OCR)..." />
-                    <button class="btn btn-outline-secondary" type="submit" title="Pesquisar">
-                        <i class="bi bi-search"></i>
-                    </button>
-                </form>
+                <div class="d-flex align-items-center gap-2">
+                    <i class="bi bi-files"></i>
+                    <strong>Documentos</strong>
+                </div>
 
-                <button class="btn btn-primary"
-                        data-bs-toggle="modal" data-bs-target="#modalUpload"
-                @(Model.CurrentFolderId == null ? "disabled" : "")>
-                    <i class="bi bi-upload"></i> Upload
-                </button>
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <!-- 🔍 BUSCA OCR -->
+                    <form class="d-flex gap-2"
+                          method="get"
+                          asp-action="Search"
+                          asp-controller="Ged">
+                        <input type="hidden" name="folderId" value="@Model.CurrentFolderId" />
+                        <input class="form-control"
+                               style="min-width:280px"
+                               name="q"
+                               placeholder="Pesquisar por nome ou conteúdo (OCR)..." />
+                        <button class="btn btn-outline-secondary" type="submit">
+                            <i class="bi bi-search"></i>
+                        </button>
+                    </form>
+
+                    <!-- UPLOAD -->
+                    <button class="btn btn-primary"
+                            data-bs-toggle="modal"
+                            data-bs-target="#modalUpload"
+                    @(Model.CurrentFolderId == null ? "disabled" : "")>
+                        <i class="bi bi-upload"></i> Upload
+                    </button>
+                </div>
             </div>
 
-            <div class="table-responsive">
-                <table class="table table-hover align-middle mb-0">
-                    <thead>
-                        <tr>
-                            <th>Título</th>
-                            <th>Tipo</th>
-                            <th>Tamanho</th>
-                            <th>Criado em</th>
-                            <th class="text-end">Ações</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @if (Model.CurrentFolderId == null)
-                        {
-                            <tr>
-                                <td colspan="5" class="text-muted p-4">Selecione uma pasta para visualizar os documentos.</td>
-                            </tr>
-                        }
-                        else if (!Model.Documents.Any())
-                        {
-                            <tr>
-                                <td colspan="5" class="text-muted p-4">Nenhum documento nesta pasta.</td>
-                            </tr>
-                        }
-                        else
-                        {
-                            foreach (var d in Model.Documents)
-                            {
+            <div class="card-body p-0">
+                @if (!Model.Documents.Any())
+                {
+                    <div class="p-3 text-muted">
+                        Nenhum documento nesta pasta.
+                    </div>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0 align-middle">
+                            <thead class="table-light">
                                 <tr>
-                                    <td>
-                                        <div class="d-flex align-items-center gap-2">
-                                            <i class="bi bi-file-earmark-text"></i>
-                                            <div>
-                                                <div class="fw-semibold">@d.Title</div>
-                                                <div class="text-muted small">@d.FileName</div>
-                                            </div>
-                                            @if (d.IsConfidential)
-                                            {
-                                                <span class="badge bg-warning text-dark">Privado</span>
-                                            }
-                                        </div>
-                                    </td>
-                                    <td>@(d.TypeName ?? "-")</td>
-                                    <td>@(Math.Round(d.SizeBytes / 1024.0, 1)) KB</td>
-                                    <td class="text-muted small">@d.CreatedAt.ToString("dd/MM/yyyy HH:mm")</td>
-                                    <td class="text-end">
-                                        <a class="btn btn-sm btn-outline-primary"
-                                           asp-action="Details" asp-route-id="@d.Id" title="Detalhes">
-                                            <i class="bi bi-eye"></i>
-                                        </a>
-                                    </td>
+                                    <th>Título</th>
+                                    <th style="width:200px;">Tipo</th>
+                                    <th style="width:240px;">Arquivo</th>
+                                    <th style="width:180px;">Ações</th>
                                 </tr>
-                            }
-                        }
-                    </tbody>
-                </table>
+                            </thead>
+                            <tbody>
+                                @foreach (var d in Model.Documents)
+                                {
+                                    <tr>
+                                        <td class="fw-semibold">@d.Title</td>
+                                        <td>@(d.TypeName ?? "-")</td>
+                                        <td class="text-muted small">@d.FileName</td>
+                                        <td class="d-flex gap-2 flex-wrap">
+                                            <a class="btn btn-sm btn-outline-primary"
+                                               asp-action="Details"
+                                               asp-controller="Ged"
+                                               asp-route-id="@d.Id">
+                                                <i class="bi bi-eye"></i> Abrir
+                                            </a>
+
+                                            <form method="post"
+                                                  asp-action="Delete"
+                                                  asp-controller="Ged"
+                                                  class="d-inline">
+                                                @Html.AntiForgeryToken()
+                                                <input type="hidden" name="id" value="@d.Id" />
+                                                <button class="btn btn-sm btn-outline-danger"
+                                                        type="submit"
+                                                        onclick="return confirm('Deseja excluir este documento?');">
+                                                    <i class="bi bi-trash"></i> Excluir
+                                                </button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
             </div>
         </div>
     </div>
 </div>
 
-<!-- Modal Upload -->
+<!-- MODAL UPLOAD -->
 <div class="modal fade" id="modalUpload" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
         <div class="modal-content">
-            <form asp-action="Upload" method="post" enctype="multipart/form-data">
-                @Html.AntiForgeryToken()
-                <input type="hidden" name="folderId" value="@Model.CurrentFolderId" />
+            <div class="modal-header">
+                <h5 class="modal-title">Upload de Documento</h5>
+                <button class="btn-close" type="button" data-bs-dismiss="modal"></button>
+            </div>
 
-                <div class="modal-header">
-                    <h5 class="modal-title">Upload de Documento</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
-                </div>
+            <form method="post"
+                  enctype="multipart/form-data"
+                  asp-action="Upload"
+                  asp-controller="Ged">
+                @Html.AntiForgeryToken()
 
                 <div class="modal-body">
-                    <div class="row g-3">
-                        <div class="col-12">
-                            <label class="form-label">Arquivo</label>
-                            <input class="form-control" type="file" name="file" required />
-                            <div class="form-text">Selecione um arquivo (PDF, DOCX, imagem, etc.).</div>
-                        </div>
+                    <input type="hidden" name="folderId" value="@Model.CurrentFolderId" />
 
-                        <div class="col-12">
-                            <label class="form-label">Título</label>
-                            <input class="form-control" name="title" placeholder="Opcional (usa o nome do arquivo)" />
-                        </div>
+                    <div class="mb-3">
+                        <label class="form-label">Arquivo</label>
+                        <input class="form-control" type="file" name="file" required />
+                    </div>
 
-                        <div class="col-12">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" name="isConfidential" id="isConfidential">
-                                <label class="form-check-label" for="isConfidential">
-                                    Documento privado (visibilidade PRIVATE)
-                                </label>
-                            </div>
-                        </div>
+                    <div class="mb-3">
+                        <label class="form-label">Título</label>
+                        <input class="form-control" type="text" name="title" />
                     </div>
                 </div>
 
                 <div class="modal-footer">
                     <button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancelar</button>
-                    <button class="btn btn-primary" type="submit" @(Model.CurrentFolderId == null ? "disabled" : "")>
+                    <button class="btn btn-primary"
+                            type="submit"
+                    @(Model.CurrentFolderId == null ? "disabled" : "")>
                         Enviar
                     </button>
                 </div>

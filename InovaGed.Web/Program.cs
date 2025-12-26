@@ -6,6 +6,7 @@ using InovaGed.Application.Common.Storage;
 using InovaGed.Application.Documents;
 using InovaGed.Application.Ged;
 using InovaGed.Application.Identity;
+using InovaGed.Application.Search;
 using InovaGed.Application.Workflow;
 using InovaGed.Infrastructure;
 using InovaGed.Infrastructure.Auditing;
@@ -15,6 +16,7 @@ using InovaGed.Infrastructure.Documents;
 using InovaGed.Infrastructure.Ged;
 using InovaGed.Infrastructure.Ocr;
 using InovaGed.Infrastructure.Preview;
+using InovaGed.Infrastructure.Search;
 using InovaGed.Infrastructure.Storage;
 using InovaGed.Infrastructure.Workflow;
 
@@ -63,7 +65,9 @@ builder.Services.AddScoped<IFileStorage, LocalFileStorage>();
 builder.Services.AddScoped<IOcrService, OcrMyPdfOcrService>();
 builder.Services.AddScoped<IPdfTextExtractor, PopplerPdfTextExtractor>();
 builder.Services.AddScoped<IPreviewGenerator, LibreOfficePreviewGenerator>();
-builder.Services.AddScoped<DocumentAppService>(); 
+builder.Services.AddScoped<DocumentAppService>();
+builder.Services.AddScoped<IDocumentSearchQueries, DocumentSearchQueries>();
+
 // =======================================================
 // Preview (XLSX / DOCX → PDF | imagens direto)
 // =======================================================

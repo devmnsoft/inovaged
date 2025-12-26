@@ -21,14 +21,11 @@ public sealed class LibreOfficePreviewGenerator : IPreviewGenerator
         _logger = logger;
 
         var configured = (cfg["Preview:LibreOfficePath"] ?? "").Trim();
-        _sofficePath = !string.IsNullOrWhiteSpace(configured) ? configured : (TryFindLibreOfficePath() ?? "");
-
-        if (string.IsNullOrWhiteSpace(_sofficePath) || !File.Exists(_sofficePath))
-        {
-            throw new InvalidOperationException(
-                "LibreOffice (soffice.exe) não encontrado. Configure Preview:LibreOfficePath no appsettings.json " +
-                "(ex.: C:\\Program Files\\LibreOffice\\program\\soffice.exe ou C:\\Program Files (x86)\\LibreOffice\\program\\soffice.exe).");
-        }
+        _sofficePath = !string.IsNullOrWhiteSpace(configured)
+            ? configured
+            : TryFindLibreOfficePath()
+              ?? throw new InvalidOperationException(
+                  "LibreOffice (soffice.exe) não encontrado. Configure Preview:LibreOfficePath no appsettings.json.");
     }
 
     public async Task<string> GetOrCreatePreviewPdfAsync(
@@ -51,66 +48,75 @@ public sealed class LibreOfficePreviewGenerator : IPreviewGenerator
             baseName + ".pdf"
         ).Replace('\\', '/');
 
+        // 🔹 cache
         if (await _storage.ExistsAsync(previewRelPath, ct))
             return previewRelPath;
 
-        var tempRoot = Path.Combine(Path.GetTempPath(), "InovaGedPreview", Guid.NewGuid().ToString("N"));
+        var tempRoot = Path.Combine(
+            Path.GetTempPath(),
+            "InovaGedPreview",
+            Guid.NewGuid().ToString("N"));
+
         Directory.CreateDirectory(tempRoot);
 
         var localInput = Path.Combine(tempRoot, Path.GetFileName(originalFileName));
-        var outDir = tempRoot;
 
         try
         {
-            // baixa do storage
+            // 1) baixa do storage
             await using (var src = await _storage.OpenReadAsync(sourceStoragePath, ct))
-            await using (var dst = new FileStream(localInput, FileMode.Create, FileAccess.Write, FileShare.None))
+            await using (var dst = new FileStream(localInput, FileMode.Create, FileAccess.Write))
                 await src.CopyToAsync(dst, ct);
 
-            // converte para PDF
+            // 2) prepara processo
             var psi = new ProcessStartInfo
             {
                 FileName = _sofficePath,
-                Arguments = $"--headless --nologo --nofirststartwizard --convert-to pdf --outdir \"{outDir}\" \"{localInput}\"",
+                Arguments =
+                    $"--headless --nologo --nofirststartwizard " +
+                    $"--convert-to pdf --outdir \"{tempRoot}\" \"{localInput}\"",
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 CreateNoWindow = true,
-                WorkingDirectory = outDir
+                WorkingDirectory = tempRoot
             };
 
-            using var p = Process.Start(psi);
-            if (p is null)
-                throw new InvalidOperationException("Falha ao iniciar o processo do LibreOffice.");
+            using var process = Process.Start(psi);
+            if (process is null)
+                throw new InvalidOperationException("Falha ao iniciar LibreOffice.");
 
-            var stdoutTask = p.StandardOutput.ReadToEndAsync();
-            var stderrTask = p.StandardError.ReadToEndAsync();
-
-            await p.WaitForExitAsync(ct);
-
-            var stdout = await stdoutTask;
-            var stderr = await stderrTask;
-
-            if (p.ExitCode != 0)
+            // 3) timeout REAL (30s)
+            var exited = await Task.Run(() => process.WaitForExit(30000), ct);
+            if (!exited)
             {
-                _logger.LogError("LibreOffice falhou. ExitCode={ExitCode}. Err={Err}. Out={Out}",
-                    p.ExitCode, stderr, stdout);
+                try { process.Kill(true); } catch { }
+                throw new TimeoutException("LibreOffice excedeu o tempo limite.");
+            }
+
+            var stdout = await process.StandardOutput.ReadToEndAsync();
+            var stderr = await process.StandardError.ReadToEndAsync();
+
+            if (process.ExitCode != 0)
+            {
+                _logger.LogError(
+                    "LibreOffice falhou. ExitCode={ExitCode}. Err={Err}. Out={Out}",
+                    process.ExitCode, stderr, stdout);
+
                 throw new Exception("Falha ao converter arquivo para PDF.");
             }
 
-            var pdfFiles = Directory.GetFiles(outDir, "*.pdf", SearchOption.TopDirectoryOnly);
+            // 4) pega o PDF mais recente gerado
+            var pdf = Directory
+                .GetFiles(tempRoot, "*.pdf", SearchOption.TopDirectoryOnly)
+                .OrderByDescending(File.GetLastWriteTimeUtc)
+                .FirstOrDefault();
 
-            if (pdfFiles.Length == 0)
-            {
-                throw new FileNotFoundException(
-                    "PDF não foi gerado pelo LibreOffice. Nenhum arquivo .pdf encontrado no diretório de saída.");
-            }
+            if (pdf is null)
+                throw new FileNotFoundException("LibreOffice não gerou PDF.");
 
-            var producedPdf = pdfFiles[0]; // pega o primeiro (sempre só gera 1)
-
-
-            // cache no storage
-            await using var pdfStream = new FileStream(producedPdf, FileMode.Open, FileAccess.Read, FileShare.Read);
+            // 5) salva no storage como derivado
+            await using var pdfStream = new FileStream(pdf, FileMode.Open, FileAccess.Read);
             await _storage.SaveDerivedAsync(previewRelPath, pdfStream, "application/pdf", ct);
 
             return previewRelPath;

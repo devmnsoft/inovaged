@@ -13,6 +13,7 @@ using InovaGed.Domain.Ged;
 using InovaGed.Infrastructure.Documents;
 using InovaGed.Application;
 using System.Text;
+using InovaGed.Application.Search;
 
 namespace InovaGed.Web.Controllers;
 
@@ -29,6 +30,8 @@ public sealed class GedController : Controller
     private readonly DocumentAppService _documentApp;
     private readonly IFileStorage _storage;
     private readonly IOcrService _ocr;
+    private readonly IDocumentSearchQueries _search;
+
     // Workflow
     private readonly IWorkflowQueries _workflowQ;
     private readonly IWorkflowCommands _workflowC;
@@ -39,6 +42,7 @@ public sealed class GedController : Controller
         ILogger<GedController> logger,
         ICurrentUser currentUser,
         IFolderQueries folders,
+        IDocumentSearchQueries search, 
         IOcrService ocr,
         IFolderCommands folderCommands,
         IDocumentQueries docs,
@@ -52,6 +56,8 @@ public sealed class GedController : Controller
     {
         _logger = logger;
         _currentUser = currentUser;
+        _search = search;
+
 
         _folders = folders;
         _folderCommands = folderCommands;
@@ -817,19 +823,27 @@ public sealed class GedController : Controller
                 invalidateDigitalSignatures: force,
                 ct: ct);
 
-            // 3) cria NOVA VERSÃO (PDF pesquisável)
+            if (ocr?.OcrPdfBytes is null || ocr.OcrPdfBytes.Length == 0)
+            {
+                TempData["erro"] = "OCR não retornou um PDF válido.";
+                return RedirectToAction("Details", new { id = v.DocumentId });
+            }
+
+            // 3) cria NOVA VERSÃO (PDF pesquisável + INDEXA TEXTO OCR REAL)
             var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "";
             var ua = Request.Headers.UserAgent.ToString();
 
             var newFileName = $"{Path.GetFileNameWithoutExtension(v.FileName)}_OCR.pdf";
 
             await using var ms = new MemoryStream(ocr.OcrPdfBytes);
+            ms.Position = 0;
 
-            var add = await _documentApp.AddVersionAsync(
+            var add = await _documentApp.AddVersionWithOcrAsync(
                 documentId: v.DocumentId,
                 content: ms,
                 fileName: newFileName,
                 contentType: "application/pdf",
+                ocrText: ocr.ExtractedText ?? "", // ✅ AQUI: TEXTO OCR REAL VAI PRO ÍNDICE
                 ip: ip,
                 userAgent: ua,
                 ct: ct);
@@ -840,15 +854,9 @@ public sealed class GedController : Controller
                 return RedirectToAction("Details", new { id = v.DocumentId });
             }
 
-            // (Opcional) se você quiser salvar o texto extraído em storage (derivado)
-            // Ajuste conforme seu storage (se tiver SaveDerivedAsync):
-            // var derivedPath = $"{tenantId:N}/ocr/{v.DocumentId:N}/{add.Value:N}/ocr.txt";
-            // await using var txt = new MemoryStream(Encoding.UTF8.GetBytes(ocr.ExtractedText ?? ""));
-            // await _storage.SaveDerivedAsync(derivedPath, txt, "text/plain; charset=utf-8", ct);
-
             TempData["ok"] = force
-                ? "OCR concluído (assinatura digital foi invalidada na versão OCR). Nova versão criada!"
-                : "OCR concluído. Nova versão criada com sucesso!";
+                ? "OCR concluído (assinatura digital foi invalidada na versão OCR). Nova versão criada e indexada!"
+                : "OCR concluído. Nova versão criada e indexada com sucesso!";
 
             return RedirectToAction("Details", new { id = v.DocumentId });
         }
@@ -859,7 +867,6 @@ public sealed class GedController : Controller
                 "Este documento possui assinatura digital. Para criar a versão OCR pesquisável, " +
                 "a assinatura da versão OCR será invalidada. Clique em “Forçar OCR” para continuar.";
 
-            // manda também qual versionId disparou o alerta (pra view montar o botão certo)
             TempData["ocr_version_id"] = versionId.ToString();
             return RedirectToAction("Details", new { id = v.DocumentId });
         }
@@ -895,6 +902,27 @@ public sealed class GedController : Controller
         return File(stream, "text/plain; charset=utf-8");
     }
 
-   
+
+    [HttpGet]
+    public async Task<IActionResult> Search(string? q, Guid? folderId, int limit = 25, CancellationToken ct = default)
+    {
+        if (!_currentUser.IsAuthenticated)
+            return RedirectToAction("Login", "Account");
+
+        var tenantId = _currentUser.TenantId;
+
+        var rows = await _search.SearchAsync(
+            tenantId: tenantId,
+            q: q ?? "",
+            folderId: folderId,
+            limit: limit,
+            ct: ct);
+
+        ViewBag.Query = q ?? "";
+        ViewBag.FolderId = folderId;
+
+        return View(rows);
+    }
+
 
 }
