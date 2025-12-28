@@ -6,6 +6,7 @@ using InovaGed.Application.Common.Storage;
 using InovaGed.Application.Documents;
 using InovaGed.Application.Ged;
 using InovaGed.Application.Identity;
+using InovaGed.Application.Ocr;
 using InovaGed.Application.Search;
 using InovaGed.Application.Workflow;
 using InovaGed.Infrastructure;
@@ -92,12 +93,14 @@ builder.Services.AddScoped<IWorkflowQueries, WorkflowQueries>();
 builder.Services.AddScoped<IFolderCommands, FolderCommands>();
 builder.Services.AddScoped<IDocumentWorkflowCommands, DocumentWorkflowCommands>();
 builder.Services.AddScoped<IWorkflowCommands, WorkflowCommands>();
-
+builder.Services.AddScoped<IOcrJobRepository, OcrJobRepository>();
+builder.Services.AddHostedService<OcrWorker>();
 // =======================================================
 // Document Write + Audit
 // =======================================================
 builder.Services.AddScoped<IDocumentWriteRepository, DocumentWriteRepository>();
 builder.Services.AddScoped<IAuditLogWriter, AuditLogWriter>();
+builder.Services.AddScoped<IOcrStatusQueries, OcrStatusQueries>(); 
 
 // =======================================================
 // Application Services
