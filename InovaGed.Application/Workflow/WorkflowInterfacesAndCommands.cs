@@ -27,4 +27,5 @@ public interface IWorkflowCommands
     Task<Result<Guid>> CreateTransitionAsync(Guid tenantId, CreateWorkflowTransitionCommand cmd, Guid? userId, CancellationToken ct);
     Task<Result> UpdateTransitionAsync(Guid tenantId, UpdateWorkflowTransitionCommand cmd, Guid? userId, CancellationToken ct);
     Task<Result> DeleteTransitionAsync(Guid tenantId, Guid id, CancellationToken ct);
+
 }

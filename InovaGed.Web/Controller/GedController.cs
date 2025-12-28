@@ -14,6 +14,7 @@ using InovaGed.Infrastructure.Documents;
 using InovaGed.Application;
 using System.Text;
 using InovaGed.Application.Search;
+using InovaGed.Application.Ocr;
 
 namespace InovaGed.Web.Controllers;
 
@@ -25,7 +26,9 @@ public sealed class GedController : Controller
 
     private readonly IFolderQueries _folders;
     private readonly IFolderCommands _folderCommands;
+    private readonly IOcrJobRepository _ocrJobs;
 
+    private readonly IOcrStatusQueries _ocrStatus;
     private readonly IDocumentQueries _docs;
     private readonly DocumentAppService _documentApp;
     private readonly IFileStorage _storage;
@@ -42,7 +45,9 @@ public sealed class GedController : Controller
         ILogger<GedController> logger,
         ICurrentUser currentUser,
         IFolderQueries folders,
-        IDocumentSearchQueries search, 
+        IOcrStatusQueries ocrStatus,
+        IDocumentSearchQueries search,
+        IOcrJobRepository ocrJobs,
         IOcrService ocr,
         IFolderCommands folderCommands,
         IDocumentQueries docs,
@@ -57,7 +62,8 @@ public sealed class GedController : Controller
         _logger = logger;
         _currentUser = currentUser;
         _search = search;
-
+        _ocrJobs = ocrJobs;
+        _ocrStatus = ocrStatus;
 
         _folders = folders;
         _folderCommands = folderCommands;
@@ -228,14 +234,16 @@ public sealed class GedController : Controller
     }
 
     // =========================
-    // DETAILS
+    // DETAILS (com auto-switch + toast)
     // =========================
     [HttpGet]
-    [HttpGet]
-    public async Task<IActionResult> Details(Guid id, CancellationToken ct)
+    public async Task<IActionResult> Details(Guid id, Guid? versionId, CancellationToken ct)
     {
         try
         {
+            if (!_currentUser.IsAuthenticated)
+                return RedirectToAction("Login", "Account");
+
             var tenantId = _currentUser.TenantId;
 
             var doc = await _docs.GetAsync(tenantId, id, ct);
@@ -243,6 +251,60 @@ public sealed class GedController : Controller
 
             var versions = await _docs.ListVersionsAsync(tenantId, id, ct);
 
+            // =========
+            // WORKFLOW: estado atual + transições + histórico + workflows disponíveis
+            // =========
+            var wfState = await _docWfQ.GetCurrentAsync(tenantId, id, ct);
+
+            var wfVm = new GedDetailsVM.WorkflowVM
+            {
+                HasActiveWorkflow = wfState is not null,
+                DocumentWorkflowId = wfState?.DocumentWorkflowId,
+                WorkflowId = wfState?.WorkflowId,
+                WorkflowName = wfState?.WorkflowName,
+                CurrentStageId = wfState?.CurrentStageId,
+                CurrentStageName = wfState?.CurrentStageName,
+                IsCompleted = wfState?.IsCompleted ?? false,
+                StartedAt = wfState?.StartedAt,
+                StartedBy = wfState?.StartedBy
+            };
+
+            // Workflows disponíveis (para iniciar)
+            var defs = await _workflowQ.ListDefinitionsAsync(tenantId, q: null, ct);
+            wfVm.AvailableWorkflows = defs
+                .Where(x => x.IsActive)
+                .Select(x => new GedDetailsVM.WorkflowVM.WorkflowDefinitionRow { Id = x.Id, Name = $"{x.Code} - {x.Name}" })
+                .ToList();
+
+            // Se tem workflow ativo e não concluído, carrega transições/histórico
+            if (wfState is not null && !wfState.IsCompleted)
+            {
+                var transitions = await _docWfQ.ListAvailableTransitionsAsync(tenantId, id, ct);
+                wfVm.AvailableTransitions = transitions.Select(t => new GedDetailsVM.WorkflowVM.TransitionRow
+                {
+                    Id = t.Id,
+                    Name = t.Name,
+                    ToStageId = t.ToStageId,
+                    ToStageName = t.ToStageName,
+                    RequiresReason = t.RequiresReason
+                }).ToList();
+            }
+
+            var history = await _docWfQ.ListHistoryAsync(tenantId, id, ct);
+            wfVm.History = history.Select(h => new GedDetailsVM.WorkflowVM.HistoryRow
+            {
+                Id = h.Id,
+                FromStageName = h.FromStageName,
+                ToStageName = h.ToStageName,
+                PerformedAt = h.PerformedAt,
+                PerformedBy = h.PerformedBy,
+                Reason = h.Reason,
+                Comments = h.Comments
+            }).ToList();
+
+            // =========
+            // VM
+            // =========
             var vm = new GedDetailsVM
             {
                 Id = doc.Id,
@@ -261,9 +323,22 @@ public sealed class GedController : Controller
                     SizeBytes = v.SizeBytes,
                     CreatedAt = v.CreatedAt,
                     CreatedBy = v.CreatedBy,
-                    IsCurrent = doc.CurrentVersionId.HasValue && v.Id == doc.CurrentVersionId.Value
-                }).ToList()
+                    IsCurrent = doc.CurrentVersionId.HasValue && v.Id == doc.CurrentVersionId.Value,
+
+                    // se teu DTO já tem OCR (se não tiver, deixa null/false)
+                    OcrStatus = v.OcrStatus,
+                    OcrJobId = v.OcrJobId,
+                    OcrErrorMessage = v.OcrErrorMessage,
+                    OcrRequestedAt = v.OcrRequestedAt,
+                    OcrStartedAt = v.OcrStartedAt,
+                    OcrFinishedAt = v.OcrFinishedAt,
+                    OcrInvalidateDigitalSignatures = v.OcrInvalidateDigitalSignatures
+                }).ToList(),
+                Workflow = wfVm
             };
+
+            // versão selecionada no preview (se vier, usa; senão usa current)
+            vm.SelectedVersionId = versionId ?? vm.CurrentVersionId ?? vm.Versions.OrderByDescending(x => x.VersionNumber).FirstOrDefault()?.Id;
 
             return View(vm);
         }
@@ -275,7 +350,7 @@ public sealed class GedController : Controller
         }
     }
 
-
+   
     // =========================
     // DOWNLOAD (por versionId)
     // =========================
@@ -785,98 +860,43 @@ public sealed class GedController : Controller
         TempData["ok"] = "Preview regerado com sucesso.";
         return RedirectToAction("Details", new { id = v.DocumentId });
     }
-
+    // =========================
+    // RUN OCR (enfileira)
+    // =========================
     [HttpPost]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> RunOcr(Guid versionId, bool force = false, CancellationToken ct = default)
     {
-        if (!_currentUser.IsAuthenticated) return Unauthorized();
-        var tenantId = _currentUser.TenantId;
-
-        var v = await _docs.GetVersionForDownloadAsync(tenantId, versionId, ct);
-        if (v is null) return NotFound();
-
-        // 1) Determina qual PDF será OCRizado (PDF original ou preview convertido)
-        string pdfPath;
-
-        if (IsPdf(v.ContentType, v.FileName))
-        {
-            pdfPath = v.StoragePath;
-        }
-        else
-        {
-            // Word/Excel/PPT -> gera preview PDF e OCRiza o preview
-            pdfPath = await _preview.GetOrCreatePreviewPdfAsync(
-                tenantId,
-                v.DocumentId,
-                versionId,
-                v.StoragePath,
-                v.FileName,
-                ct);
-        }
-
         try
         {
-            // 2) roda OCR (sem invalidar assinatura se force=false)
-            var ocr = await _ocr.OcrizePdfAsync(
-                pdfStoragePath: pdfPath,
+            if (!_currentUser.IsAuthenticated) return Unauthorized();
+
+            var tenantId = _currentUser.TenantId;
+
+            var v = await _docs.GetVersionForDownloadAsync(tenantId, versionId, ct);
+            if (v is null) return NotFound();
+
+            var jobId = await _ocrJobs.EnqueueAsync(
+                tenantId: tenantId,
+                documentVersionId: versionId,
+                requestedBy: _currentUser.UserId,
                 invalidateDigitalSignatures: force,
                 ct: ct);
 
-            if (ocr?.OcrPdfBytes is null || ocr.OcrPdfBytes.Length == 0)
-            {
-                TempData["erro"] = "OCR não retornou um PDF válido.";
-                return RedirectToAction("Details", new { id = v.DocumentId });
-            }
-
-            // 3) cria NOVA VERSÃO (PDF pesquisável + INDEXA TEXTO OCR REAL)
-            var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "";
-            var ua = Request.Headers.UserAgent.ToString();
-
-            var newFileName = $"{Path.GetFileNameWithoutExtension(v.FileName)}_OCR.pdf";
-
-            await using var ms = new MemoryStream(ocr.OcrPdfBytes);
-            ms.Position = 0;
-
-            var add = await _documentApp.AddVersionWithOcrAsync(
-                documentId: v.DocumentId,
-                content: ms,
-                fileName: newFileName,
-                contentType: "application/pdf",
-                ocrText: ocr.ExtractedText ?? "", // ✅ AQUI: TEXTO OCR REAL VAI PRO ÍNDICE
-                ip: ip,
-                userAgent: ua,
-                ct: ct);
-
-            if (!add.Success)
-            {
-                TempData["erro"] = add.Error?.Message ?? "Falha ao salvar nova versão OCR.";
-                return RedirectToAction("Details", new { id = v.DocumentId });
-            }
-
             TempData["ok"] = force
-                ? "OCR concluído (assinatura digital foi invalidada na versão OCR). Nova versão criada e indexada!"
-                : "OCR concluído. Nova versão criada e indexada com sucesso!";
+                ? $"OCR enfileirado (FORÇAR). Job #{jobId}."
+                : $"OCR enfileirado. Job #{jobId}.";
 
-            return RedirectToAction("Details", new { id = v.DocumentId });
-        }
-        catch (PdfHasDigitalSignatureException)
-        {
-            // ✅ pede confirmação (sem travar / sem 500)
-            TempData["warning"] =
-                "Este documento possui assinatura digital. Para criar a versão OCR pesquisável, " +
-                "a assinatura da versão OCR será invalidada. Clique em “Forçar OCR” para continuar.";
-
-            TempData["ocr_version_id"] = versionId.ToString();
-            return RedirectToAction("Details", new { id = v.DocumentId });
+            return RedirectToAction(nameof(Details), new { id = v.DocumentId });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Falha no OCR. VersionId={VersionId}", versionId);
-            TempData["erro"] = "Falha ao executar OCR.";
-            return RedirectToAction("Details", new { id = v.DocumentId });
+            _logger.LogError(ex, "Erro ao enfileirar OCR. VersionId={VersionId}", versionId);
+            TempData["Error"] = "Erro ao enfileirar OCR.";
+            return RedirectToAction(nameof(Index));
         }
     }
+
 
     [HttpGet]
     public async Task<IActionResult> OcrText(Guid versionId, CancellationToken ct)
@@ -923,6 +943,101 @@ public sealed class GedController : Controller
 
         return View(rows);
     }
+
+
+    [HttpGet]
+    public async Task<IActionResult> OcrStatus(Guid versionId, CancellationToken ct)
+    {
+        try
+        {
+            if (!_currentUser.IsAuthenticated)
+                return Unauthorized();
+
+            var tenantId = _currentUser.TenantId;
+
+            // 1) pegar versão e docId (você já tem esse método)
+            var v = await _docs.GetVersionForDownloadAsync(tenantId, versionId, ct);
+            if (v is null) return NotFound();
+
+            // 2) listar versões do documento para localizar a _OCR.pdf equivalente
+            var versions = await _docs.ListVersionsAsync(tenantId, v.DocumentId, ct);
+
+            static bool IsOcrFile(string? fileName)
+                => !string.IsNullOrWhiteSpace(fileName)
+                   && fileName.EndsWith("_OCR.pdf", StringComparison.OrdinalIgnoreCase);
+
+            // base: versionId pode ser uma versão OCR (se usuário estiver vendo OCR),
+            // então encontramos a "base" pelo nome (tirando _OCR)
+            var source = versions.FirstOrDefault(x => x.Id == versionId);
+            if (source is null) return NotFound();
+
+            // se a versão informada for OCR, tenta achar a base correspondente
+            Guid sourceVersionId = source.Id;
+
+            if (IsOcrFile(source.FileName))
+            {
+                var baseName = source.FileName[..^"_OCR.pdf".Length] + Path.GetExtension(source.FileName); // tenta voltar pro nome original
+                                                                                                           // essa linha acima pode não acertar se original não era PDF.
+                                                                                                           // melhor: remove o sufixo e procura por "prefixo" com qualquer extensão:
+                var prefix = source.FileName[..^"_OCR.pdf".Length]; // sem extensão
+                var baseCandidate = versions.FirstOrDefault(x =>
+                    !IsOcrFile(x.FileName) &&
+                    Path.GetFileNameWithoutExtension(x.FileName).Equals(prefix, StringComparison.OrdinalIgnoreCase));
+
+                if (baseCandidate != null)
+                    sourceVersionId = baseCandidate.Id;
+            }
+
+            // 3) achar versão OCR correspondente à base
+            Guid? ocrVersionId = null;
+            {
+                var baseFileNoExt = Path.GetFileNameWithoutExtension(
+                    versions.First(x => x.Id == sourceVersionId).FileName);
+
+                var expectedOcrName = baseFileNoExt + "_OCR.pdf";
+
+                var ocrV = versions
+                    .Where(x => IsOcrFile(x.FileName) && x.FileName.Equals(expectedOcrName, StringComparison.OrdinalIgnoreCase))
+                    .OrderByDescending(x => x.VersionNumber)
+                    .FirstOrDefault();
+
+                ocrVersionId = ocrV?.Id;
+            }
+
+            // 4) status do job: pegamos o último job da versão BASE
+            var map = await _ocrStatus.GetLatestByVersionIdsAsync(tenantId, new[] { sourceVersionId }, ct);
+
+            if (!map.TryGetValue(sourceVersionId, out var job))
+            {
+                return Json(new OcrStatusResponse
+                {
+                    Status = "NONE",
+                    DocumentId = v.DocumentId,
+                    SourceVersionId = sourceVersionId,
+                    OcrVersionId = ocrVersionId
+                });
+            }
+
+            return Json(new OcrStatusResponse
+            {
+                Status = job.Status.ToString().ToUpperInvariant(),
+                ErrorMessage = job.ErrorMessage,
+                DocumentId = v.DocumentId,
+                SourceVersionId = sourceVersionId,
+                OcrVersionId = ocrVersionId
+            });
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return new StatusCodeResult(499); // client closed request (ok)
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro ao consultar status OCR. VersionId={VersionId}", versionId);
+            return StatusCode(500);
+        }
+    }
+
 
 
 }

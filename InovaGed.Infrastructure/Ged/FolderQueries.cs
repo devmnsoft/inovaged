@@ -23,7 +23,6 @@ public sealed class FolderQueries : IFolderQueries
         {
             _logger.LogInformation("Carregando árvore de pastas. Tenant={TenantId}", tenantId);
 
-            // ✅ Tabela real no seu bdged.sql: ged.folder
             const string sql = @"
 WITH RECURSIVE t AS (
     SELECT 
@@ -34,7 +33,6 @@ WITH RECURSIVE t AS (
     FROM ged.folder f
     WHERE f.tenant_id = @tenantId
       AND f.parent_id IS NULL
-      AND f.is_active = TRUE
 
     UNION ALL
 
@@ -46,24 +44,29 @@ WITH RECURSIVE t AS (
     FROM ged.folder c
     JOIN t ON t.id = c.parent_id
     WHERE c.tenant_id = @tenantId
-      AND c.is_active = TRUE
 )
-SELECT 
-    id           AS ""Id"",
-    ""ParentId"",
-    ""Name"",
-    ""Level""
-FROM t
+SELECT * FROM t
 ORDER BY ""Level"", ""Name"";";
 
             using var conn = await _db.OpenAsync(ct);
-            var rows = await conn.QueryAsync<FolderNodeDto>(new CommandDefinition(sql, new { tenantId }, cancellationToken: ct));
+
+            var rows = await conn.QueryAsync<FolderNodeDto>(
+                new CommandDefinition(sql, new { tenantId }, cancellationToken: ct));
+
             return rows.AsList();
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            _logger.LogInformation(
+                "Carregamento da árvore de pastas foi cancelado. Tenant={TenantId}", tenantId);
+            throw;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Erro ao carregar árvore de pastas.");
-            return Array.Empty<FolderNodeDto>();
+            _logger.LogError(ex,
+                "Erro ao carregar árvore de pastas. Tenant={TenantId}", tenantId);
+            throw;
         }
     }
+
 }

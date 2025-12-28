@@ -33,7 +33,13 @@
         public bool IsCurrent { get; init; }
 
         public string? FileExtension { get; init; }
-
+        public string OcrStatus { get; set; }
+        public long? OcrJobId { get; set; }
+        public string OcrErrorMessage { get; set; }
+        public DateTime? OcrRequestedAt { get; set; }
+        public DateTime? OcrStartedAt { get; set; }
+        public DateTime? OcrFinishedAt { get; set; }
+        public bool OcrInvalidateDigitalSignatures { get; set; }
     }
 
     public sealed class DocumentVersionDownloadDto

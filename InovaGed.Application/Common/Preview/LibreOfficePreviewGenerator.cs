@@ -26,6 +26,9 @@ public sealed class LibreOfficePreviewGenerator : IPreviewGenerator
             : TryFindLibreOfficePath()
               ?? throw new InvalidOperationException(
                   "LibreOffice (soffice.exe) não encontrado. Configure Preview:LibreOfficePath no appsettings.json.");
+
+        if (!File.Exists(_sofficePath))
+            throw new FileNotFoundException("LibreOffice (soffice.exe) não encontrado no caminho informado.", _sofficePath);
     }
 
     public async Task<string> GetOrCreatePreviewPdfAsync(
@@ -48,15 +51,11 @@ public sealed class LibreOfficePreviewGenerator : IPreviewGenerator
             baseName + ".pdf"
         ).Replace('\\', '/');
 
-        // 🔹 cache
+        // cache
         if (await _storage.ExistsAsync(previewRelPath, ct))
             return previewRelPath;
 
-        var tempRoot = Path.Combine(
-            Path.GetTempPath(),
-            "InovaGedPreview",
-            Guid.NewGuid().ToString("N"));
-
+        var tempRoot = Path.Combine(Path.GetTempPath(), "InovaGedPreview", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempRoot);
 
         var localInput = Path.Combine(tempRoot, Path.GetFileName(originalFileName));
@@ -65,15 +64,15 @@ public sealed class LibreOfficePreviewGenerator : IPreviewGenerator
         {
             // 1) baixa do storage
             await using (var src = await _storage.OpenReadAsync(sourceStoragePath, ct))
-            await using (var dst = new FileStream(localInput, FileMode.Create, FileAccess.Write))
+            await using (var dst = new FileStream(localInput, FileMode.Create, FileAccess.Write, FileShare.None))
                 await src.CopyToAsync(dst, ct);
 
-            // 2) prepara processo
+            // 2) executa conversão headless
             var psi = new ProcessStartInfo
             {
                 FileName = _sofficePath,
                 Arguments =
-                    $"--headless --nologo --nofirststartwizard " +
+                    $"--headless --nologo --nolockcheck --nodefault --nofirststartwizard " +
                     $"--convert-to pdf --outdir \"{tempRoot}\" \"{localInput}\"",
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
@@ -86,7 +85,7 @@ public sealed class LibreOfficePreviewGenerator : IPreviewGenerator
             if (process is null)
                 throw new InvalidOperationException("Falha ao iniciar LibreOffice.");
 
-            // 3) timeout REAL (30s)
+            // 3) timeout real (30s)
             var exited = await Task.Run(() => process.WaitForExit(30000), ct);
             if (!exited)
             {
@@ -99,24 +98,22 @@ public sealed class LibreOfficePreviewGenerator : IPreviewGenerator
 
             if (process.ExitCode != 0)
             {
-                _logger.LogError(
-                    "LibreOffice falhou. ExitCode={ExitCode}. Err={Err}. Out={Out}",
+                _logger.LogError("LibreOffice falhou. ExitCode={ExitCode}. Err={Err}. Out={Out}",
                     process.ExitCode, stderr, stdout);
-
                 throw new Exception("Falha ao converter arquivo para PDF.");
             }
 
-            // 4) pega o PDF mais recente gerado
+            // 4) pega o PDF mais recente gerado (LibreOffice nem sempre respeita nome)
             var pdf = Directory
                 .GetFiles(tempRoot, "*.pdf", SearchOption.TopDirectoryOnly)
                 .OrderByDescending(File.GetLastWriteTimeUtc)
                 .FirstOrDefault();
 
-            if (pdf is null)
+            if (pdf is null || !File.Exists(pdf))
                 throw new FileNotFoundException("LibreOffice não gerou PDF.");
 
-            // 5) salva no storage como derivado
-            await using var pdfStream = new FileStream(pdf, FileMode.Open, FileAccess.Read);
+            // 5) salva derivado
+            await using var pdfStream = new FileStream(pdf, FileMode.Open, FileAccess.Read, FileShare.Read);
             await _storage.SaveDerivedAsync(previewRelPath, pdfStream, "application/pdf", ct);
 
             return previewRelPath;
