@@ -10,6 +10,9 @@ public sealed class OcrJobRepository : IOcrJobRepository
     private readonly IDbConnectionFactory _db;
     private readonly ILogger<OcrJobRepository> _logger;
 
+    // você pode ajustar via config também; aqui fixo em 10 min
+    private static readonly TimeSpan LeaseDuration = TimeSpan.FromMinutes(10);
+
     public OcrJobRepository(IDbConnectionFactory db, ILogger<OcrJobRepository> logger)
     {
         _db = db;
@@ -41,41 +44,62 @@ RETURNING id;";
                 invalidate = invalidateDigitalSignatures
             }, cancellationToken: ct));
 
-        _logger.LogInformation("OCR job enfileirado. JobId={JobId}, Tenant={TenantId}, Version={VersionId}", id, tenantId, documentVersionId);
+        _logger.LogInformation("OCR job enfileirado. JobId={JobId}, Tenant={TenantId}, Version={VersionId}",
+            id, tenantId, documentVersionId);
+
         return id;
     }
 
     public async Task<OcrJobDto?> DequeueAndMarkProcessingAsync(CancellationToken ct)
     {
-        // 1) pega 1 pendente com lock (SKIP LOCKED)
-        // 2) marca PROCESSING e started_at
+        // ✅ pega PENDING ou PROCESSING expirado (lease vencido)
         const string sql = @"
 WITH cte AS (
   SELECT id
   FROM ged.ocr_job
-  WHERE status = 'PENDING'::ged.ocr_status_enum
+  WHERE
+    status = 'PENDING'::ged.ocr_status_enum
+    OR (status = 'PROCESSING'::ged.ocr_status_enum AND lease_expires_at IS NOT NULL AND lease_expires_at < now())
   ORDER BY requested_at
   FOR UPDATE SKIP LOCKED
   LIMIT 1
 )
 UPDATE ged.ocr_job j
 SET status = 'PROCESSING'::ged.ocr_status_enum,
-    started_at = now()
+    started_at = COALESCE(j.started_at, now()),
+    lease_expires_at = now() + (@leaseSeconds || ' seconds')::interval,
+    error_message = null
 FROM cte
 WHERE j.id = cte.id
 RETURNING
-  j.id              AS Id,
-  j.tenant_id       AS TenantId,
-  j.document_version_id AS DocumentVersionId,
-  j.invalidate_digital_signatures AS InvalidateDigitalSignatures;
-";
+  j.id                            AS Id,
+  j.tenant_id                     AS TenantId,
+  j.document_version_id           AS DocumentVersionId,
+  j.invalidate_digital_signatures AS InvalidateDigitalSignatures;";
 
         var conn = await _db.OpenAsync(ct);
 
-        var job = await conn.QuerySingleOrDefaultAsync<OcrJobDto>(
-            new CommandDefinition(sql, cancellationToken: ct));
+        return await conn.QuerySingleOrDefaultAsync<OcrJobDto>(
+            new CommandDefinition(sql, new
+            {
+                leaseSeconds = (int)LeaseDuration.TotalSeconds
+            }, cancellationToken: ct));
+    }
 
-        return job;
+    public async Task RenewLeaseAsync(long jobId, CancellationToken ct)
+    {
+        const string sql = @"
+UPDATE ged.ocr_job
+SET lease_expires_at = now() + (@leaseSeconds || ' seconds')::interval
+WHERE id = @jobId
+  AND status = 'PROCESSING'::ged.ocr_status_enum;";
+
+        var conn = await _db.OpenAsync(ct);
+        await conn.ExecuteAsync(new CommandDefinition(sql, new
+        {
+            jobId,
+            leaseSeconds = (int)LeaseDuration.TotalSeconds
+        }, cancellationToken: ct));
     }
 
     public async Task MarkCompletedAsync(long jobId, CancellationToken ct)
@@ -84,6 +108,7 @@ RETURNING
 UPDATE ged.ocr_job
 SET status = 'COMPLETED'::ged.ocr_status_enum,
     finished_at = now(),
+    lease_expires_at = null,
     error_message = null
 WHERE id = @jobId;";
 
@@ -97,6 +122,7 @@ WHERE id = @jobId;";
 UPDATE ged.ocr_job
 SET status = 'ERROR'::ged.ocr_status_enum,
     finished_at = now(),
+    lease_expires_at = null,
     error_message = @error
 WHERE id = @jobId;";
 

@@ -20,9 +20,10 @@ public sealed class DocumentQueries : IDocumentQueries
 
     public async Task<IReadOnlyList<DocumentRowDto>> ListAsync(Guid tenantId, Guid? folderId, string? q, CancellationToken ct)
     {
-        try
-        {
-            const string sql = @"
+        _logger.LogInformation("DocumentQueries.ListAsync START | Tenant={TenantId} Folder={FolderId} Q={Q}",
+            tenantId, folderId, q);
+
+        const string sql = @"
 SELECT
     d.id                           AS ""Id"",
     d.title                        AS ""Title"",
@@ -43,98 +44,139 @@ WHERE d.tenant_id = @tenantId
         OR
         (@folderId IS NOT NULL AND d.folder_id = @folderId)
       )
+  AND d.status <> 'ARCHIVED'::ged.document_status_enum
   AND (@q IS NULL OR @q = '' OR
        d.title ILIKE ('%'||@q||'%') OR
        cv.file_name ILIKE ('%'||@q||'%') OR
        dt.name ILIKE ('%'||@q||'%'))
 ORDER BY d.created_at DESC;";
 
+        _logger.LogDebug("DocumentQueries.ListAsync SQL:\n{Sql}", sql);
+
+        try
+        {
             using var conn = await _db.OpenAsync(ct);
+
             var rows = await conn.QueryAsync<DocumentRowDto>(
                 new CommandDefinition(sql, new { tenantId, folderId, q }, cancellationToken: ct));
 
-            return rows.AsList();
+            var list = rows.AsList();
+
+            _logger.LogInformation("DocumentQueries.ListAsync SUCCESS | Count={Count}", list.Count);
+            return list;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Erro ao listar documentos. Tenant={TenantId}, Folder={FolderId}", tenantId, folderId);
-            return Array.Empty<DocumentRowDto>();
+            _logger.LogError(ex, "DocumentQueries.ListAsync ERROR | Tenant={TenantId} Folder={FolderId}", tenantId, folderId);
+            throw;
         }
     }
 
     public async Task<DocumentDetailsDto?> GetAsync(Guid tenantId, Guid documentId, CancellationToken ct)
     {
-        try
-        {
-            const string sql = @"
+        _logger.LogInformation("DocumentQueries.GetAsync START | Tenant={TenantId} Doc={DocId}",
+            tenantId, documentId);
+
+        const string sql = @"
 SELECT
-    d.id                          AS ""Id"",
-    d.folder_id                   AS ""FolderId"",
-    d.code                        AS ""Code"",
-    d.title                       AS ""Title"",
-    d.description                 AS ""Description"",
-    d.current_version_id          AS ""CurrentVersionId"",
-    COALESCE(cv.version_number,0) AS ""CurrentVersion"",
-    (d.visibility = 'CONFIDENTIAL'::ged.document_visibility_enum) AS ""IsConfidential"",
-    d.created_at                  AS ""CreatedAt"",
-    d.created_by                  AS ""CreatedBy""
+    d.id                 AS ""Id"",
+    d.tenant_id          AS ""TenantId"",
+    d.folder_id          AS ""FolderId"",
+    d.title              AS ""Title"",
+    d.type_id            AS ""TypeId"",
+    d.visibility         AS ""Visibility"",
+    d.created_at         AS ""CreatedAt"",
+    d.created_by         AS ""CreatedBy"",
+    d.updated_at         AS ""UpdatedAt"",
+    d.updated_by         AS ""UpdatedBy"",
+    d.status             AS ""Status"",
+    d.current_version_id AS ""CurrentVersionId""
 FROM ged.document d
-LEFT JOIN ged.document_version cv
-       ON cv.id = d.current_version_id AND cv.tenant_id = d.tenant_id
 WHERE d.tenant_id = @tenantId
   AND d.id = @documentId;";
 
+        _logger.LogDebug("DocumentQueries.GetAsync SQL:\n{Sql}", sql);
+
+        try
+        {
             using var conn = await _db.OpenAsync(ct);
-            return await conn.QuerySingleOrDefaultAsync<DocumentDetailsDto>(
+
+            var dto = await conn.QueryFirstOrDefaultAsync<DocumentDetailsDto>(
                 new CommandDefinition(sql, new { tenantId, documentId }, cancellationToken: ct));
+
+            if (dto is null)
+                _logger.LogWarning("DocumentQueries.GetAsync NOT FOUND | Tenant={TenantId} Doc={DocId}", tenantId, documentId);
+            else
+                _logger.LogInformation("DocumentQueries.GetAsync SUCCESS | Doc={DocId}", documentId);
+
+            return dto;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Erro ao carregar detalhes do documento. Tenant={TenantId}, Doc={DocId}", tenantId, documentId);
-            return null;
+            _logger.LogError(ex, "DocumentQueries.GetAsync ERROR | Tenant={TenantId} Doc={DocId}", tenantId, documentId);
+            throw;
         }
     }
 
     public async Task<IReadOnlyList<DocumentVersionDto>> ListVersionsAsync(Guid tenantId, Guid documentId, CancellationToken ct)
     {
+        _logger.LogInformation("DocumentQueries.ListVersionsAsync START | Tenant={TenantId} Doc={DocId}",
+            tenantId, documentId);
+
+        // ✅ NÃO existe v.is_current no seu banco.
+        // ✅ IsCurrent é calculado por v.id = d.current_version_id
+        const string sql = @"
+SELECT
+    v.id              AS ""Id"",
+    v.document_id     AS ""DocumentId"",
+    v.file_name       AS ""FileName"",
+    v.content_type    AS ""ContentType"",
+    v.file_size_bytes AS ""SizeBytes"",
+    v.storage_path    AS ""StoragePath"",
+    v.created_at      AS ""CreatedAt"",
+    v.created_by      AS ""CreatedBy"",
+    (v.id = d.current_version_id) AS ""IsCurrent""
+FROM ged.document_version v
+JOIN ged.document d
+  ON d.tenant_id = v.tenant_id
+ AND d.id = v.document_id
+WHERE v.tenant_id = @tenantId
+  AND v.document_id = @documentId
+ORDER BY v.created_at DESC;";
+
+        _logger.LogWarning("DocumentQueries.ListVersionsAsync SQL EM USO:\n{Sql}", sql);
+
         try
         {
-            const string sql = @"
-            SELECT
-                v.id              AS ""Id"",
-                v.version_number  AS ""VersionNumber"",
-                v.file_name       AS ""FileName"",
-                v.file_size_bytes AS ""SizeBytes"",
-                v.content_type    AS ""ContentType"",
-                v.created_at      AS ""CreatedAt"",
-                v.created_by      AS ""CreatedBy""
-            FROM ged.document_version v
-            WHERE v.tenant_id = @tenantId
-              AND v.document_id = @documentId
-            ORDER BY v.version_number DESC;";
-
             using var conn = await _db.OpenAsync(ct);
+
             var rows = await conn.QueryAsync<DocumentVersionDto>(
                 new CommandDefinition(sql, new { tenantId, documentId }, cancellationToken: ct));
 
-            return rows.AsList();
+            var list = rows.AsList();
+
+            _logger.LogInformation("DocumentQueries.ListVersionsAsync SUCCESS | Doc={DocId} Count={Count}",
+                documentId, list.Count);
+
+            return list;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Erro ao listar versões. Tenant={TenantId}, Doc={DocId}", tenantId, documentId);
-            return Array.Empty<DocumentVersionDto>();
+            _logger.LogError(ex, "DocumentQueries.ListVersionsAsync ERROR | Tenant={TenantId} Doc={DocId}",
+                tenantId, documentId);
+            throw;
         }
     }
 
     public async Task<DocumentVersionDownloadDto?> GetVersionForDownloadAsync(Guid tenantId, Guid versionId, CancellationToken ct)
     {
-        try
-        {
-            const string sql = @"
+        _logger.LogInformation("DocumentQueries.GetVersionForDownloadAsync START | Tenant={TenantId} Version={VersionId}",
+            tenantId, versionId);
+
+        const string sql = @"
 SELECT
-    v.id           AS ""Id"",
+    v.id           AS ""VersionId"",
     v.document_id  AS ""DocumentId"",
-    v.version_number AS ""VersionNumber"",
     v.file_name    AS ""FileName"",
     v.content_type AS ""ContentType"",
     v.storage_path AS ""StoragePath""
@@ -142,14 +184,28 @@ FROM ged.document_version v
 WHERE v.tenant_id = @tenantId
   AND v.id = @versionId;";
 
+        _logger.LogDebug("DocumentQueries.GetVersionForDownloadAsync SQL:\n{Sql}", sql);
+
+        try
+        {
             using var conn = await _db.OpenAsync(ct);
-            return await conn.QuerySingleOrDefaultAsync<DocumentVersionDownloadDto>(
-                new CommandDefinition(sql, new { tenantId, versionId }, cancellationToken: ct));
+
+            var dto = await conn.QuerySingleOrDefaultAsync<DocumentVersionDownloadDto>(
+           new CommandDefinition(sql, new { tenantId, versionId }, cancellationToken: ct));
+
+
+            if (dto is null)
+                _logger.LogWarning("DocumentQueries.GetVersionForDownloadAsync NOT FOUND | Tenant={TenantId} Version={VersionId}", tenantId, versionId);
+            else
+                _logger.LogInformation("DocumentQueries.GetVersionForDownloadAsync SUCCESS | Version={VersionId}", versionId);
+
+            return dto;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Erro ao buscar versão para download. Tenant={TenantId}, VersionId={VersionId}", tenantId, versionId);
-            return null;
+            _logger.LogError(ex, "DocumentQueries.GetVersionForDownloadAsync ERROR | Tenant={TenantId} Version={VersionId}",
+                tenantId, versionId);
+            throw;
         }
     }
 }

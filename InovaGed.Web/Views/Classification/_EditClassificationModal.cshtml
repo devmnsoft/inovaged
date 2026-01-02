@@ -1,0 +1,61 @@
+﻿@model InovaGed.Web.Models.Classification.EditClassificationVM
+
+<div class="modal fade" id="modalEditClassification" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <form id="formEditClassification">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="DocumentId" value="@Model.DocumentId" />
+
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-tags me-1"></i> Classificar documento
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                </div>
+
+                <div class="modal-body">
+
+                    <div class="mb-3">
+                        <label class="form-label">Tipo documental</label>
+                        <select class="form-select" name="DocumentTypeId">
+                            <option value="">(Sem classificação)</option>
+                            @foreach (var t in Model.AvailableTypes)
+                            {
+                                <option value="@t.Id" selected="@(Model.DocumentTypeId == t.Id)">
+                                    @t.Name
+                                </option>
+                            }
+                        </select>
+                        <div class="form-text">
+                            Defina o tipo do documento para habilitar regras, workflow e relatórios.
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Tags</label>
+                        <input class="form-control" name="TagsCsv" value="@Model.TagsCsv" placeholder="Ex: contrato, financeiro, 2025" />
+                        <div class="form-text">Separe por vírgula.</div>
+                    </div>
+
+                    <div class="mb-0">
+                        <label class="form-label">Metadados</label>
+                        <textarea class="form-control" rows="5" name="MetadataLines"
+                                  placeholder="chave=valor (uma linha por item)">@Model.MetadataLines</textarea>
+                        <div class="form-text">Ex: numero=12345</div>
+                    </div>
+
+                </div>
+
+                <div class="modal-footer">
+                    <button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">
+                        Cancelar
+                    </button>
+                    <button class="btn btn-primary" type="submit">
+                        <i class="bi bi-check2 me-1"></i> Salvar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>

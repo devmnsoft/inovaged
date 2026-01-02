@@ -40,6 +40,7 @@
         public DateTime? OcrStartedAt { get; set; }
         public DateTime? OcrFinishedAt { get; set; }
         public bool OcrInvalidateDigitalSignatures { get; set; }
+        public string? OcrText { get; set; }
     }
 
     public sealed class DocumentVersionDownloadDto

@@ -1,16 +1,31 @@
 ﻿@using System
 @using System.Linq
+@using System.Threading
+@using InovaGed.Application.Identity
+@using InovaGed.Application.Classification
 @model InovaGed.Web.Models.Ged.GedDetailsVM
 
+@inject ICurrentUser CurrentUser
+@inject IDocumentClassificationQueries ClassificationQueries
+
 @{
+
+
+
     var versions = Model.Versions ?? new System.Collections.Generic.List<InovaGed.Web.Models.Ged.GedDetailsVM.VersionVM>();
 
     var selectedVersionId = Model.SelectedVersionId ?? Model.CurrentVersionId;
-    var selectedVersion = versions.FirstOrDefault(v => v.Id == selectedVersionId)
-                       ?? versions.FirstOrDefault(v => v.IsCurrent);
+
+
+
+    var selectedVersion = versions.FirstOrDefault(v => v.Id == selectedVersionId);
 
     var isViewingOcr = (selectedVersion?.FileName ?? "").EndsWith("_OCR.pdf", StringComparison.OrdinalIgnoreCase);
     var showToast = (ViewBag.OcrSwitched is bool b && b);
+
+    // Para abrir modal automaticamente quando vier do Index
+    var openClassify = (Context.Request.Query["openClassify"].ToString() ?? "")
+        .Equals("true", StringComparison.OrdinalIgnoreCase);
 }
 
 @if (showToast)
@@ -159,9 +174,19 @@
         </div>
     </div>
 
-    <!-- RIGHT: WORKFLOW -->
+    <!-- RIGHT -->
     <div class="col-lg-4">
-        <div class="card">
+
+        <!-- ✅ painel de classificação -->
+        <div id="classification-panel">
+            @{
+                var cls = await ClassificationQueries.GetAsync(CurrentUser.TenantId, Model.Id, CancellationToken.None);
+            }
+            @await Html.PartialAsync("_DocumentClassificationPanel", cls)
+        </div>
+
+        <!-- Workflow -->
+        <div class="card mt-3">
             <div class="card-header">
                 <strong>Workflow</strong>
             </div>
@@ -308,6 +333,85 @@
 
 @section Scripts {
     <script>
+        // =========================
+        // CLASSIFICAÇÃO (MODAL + AJAX)
+        // =========================
+        async function refreshClassificationPanel(documentId) {
+            const url = '@Url.Action("Panel", "Classification")' + '?documentId=' + encodeURIComponent(documentId);
+            const html = await fetch(url, { credentials: 'include', cache: 'no-store' }).then(r => r.text());
+            document.getElementById('classification-panel').innerHTML = html;
+        }
+
+        async function openClassificationModal(documentId) {
+            const host = document.getElementById('classification-modal-host');
+            if (!host) return;
+
+            const url = '@Url.Action("EditModal", "Classification")' + '?documentId=' + encodeURIComponent(documentId);
+            const html = await fetch(url, { credentials: 'include', cache: 'no-store' }).then(r => r.text());
+            host.innerHTML = html;
+
+            const modalEl = document.getElementById('modalEditClassification');
+            if (!modalEl) return;
+
+            const modal = new bootstrap.Modal(modalEl);
+            modal.show();
+
+            const form = modalEl.querySelector('#formEditClassification');
+            if (form) {
+                form.addEventListener('submit', async (e) => {
+                    e.preventDefault();
+
+                    const resp = await fetch('@Url.Action("SaveManual", "Classification")', {
+                        method: 'POST',
+                        body: new FormData(form),
+                        credentials: 'include'
+                    });
+
+                    if (resp.ok) {
+                        modal.hide();
+                        await refreshClassificationPanel(documentId);
+                    } else {
+                        alert('Falha ao salvar classificação.');
+                    }
+                });
+            }
+
+            modalEl.addEventListener('hidden.bs.modal', function () {
+                host.innerHTML = '';
+            }, { once: true });
+        }
+
+        async function applyClassificationSuggestion(documentId) {
+            const resp = await fetch('@Url.Action("ApplySuggestion", "Classification")', {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'documentId=' + encodeURIComponent(documentId) + '&__RequestVerificationToken=' + encodeURIComponent(getAntiForgeryToken())
+            });
+
+            if (resp.ok) {
+                await refreshClassificationPanel(documentId);
+            } else {
+                alert('Não foi possível aplicar a sugestão.');
+            }
+        }
+
+        function getAntiForgeryToken() {
+            const tokenInput = document.querySelector('input[name="__RequestVerificationToken"]');
+            return tokenInput ? tokenInput.value : '';
+        }
+
+        // Auto abrir modal (vindo do Index -> openClassify=true)
+        (function(){
+            const mustOpen = @((openClassify ? "true" : "false"));
+            if (mustOpen) {
+                openClassificationModal('@Model.Id');
+            }
+        })();
+
+        // =========================
+        // SEU SCRIPT EXISTENTE (OCR + workflow reason etc.)
+        // =========================
         (function(){
             const frame = document.getElementById('previewFrame');
             const loading = document.getElementById('previewLoading');
@@ -357,8 +461,6 @@
             // ===== OCR polling (via endpoint OcrStatus) =====
             const selectedVersionId = "@(selectedVersionId ?? Guid.Empty)";
             const badgeWrap = document.getElementById('ocrStatusBadge');
-            const ocrForm = document.getElementById('ocrForm');
-            const ocrForceForm = document.getElementById('ocrForceForm');
             const btnOcr = document.getElementById('btnOcr');
             const btnOcrForce = document.getElementById('btnOcrForce');
 
@@ -389,7 +491,7 @@
                 try{
                     const url = '@Url.Action("OcrStatus", "Ged")' + '?versionId=' + encodeURIComponent(selectedVersionId);
                     const resp = await fetch(url, { method:'GET', cache:'no-store', credentials:'include' });
-                    if(resp.status === 401){ stopPolling(); window.location.href='@Url.Action("Login", "Account")'; return; }
+                    if(resp.status === 401){ stopPolling(); return; }
                     if(!resp.ok) return;
 
                     const data = await resp.json();
@@ -413,50 +515,45 @@
                 }catch(e){}
             }
 
+            const ocrForm = document.getElementById('ocrForm');
+            const ocrForceForm = document.getElementById('ocrForceForm');
+
             async function enqueue(form){
                 if(!form) return;
                 if(btnOcr) btnOcr.disabled = true;
                 if(btnOcrForce) btnOcrForce.disabled = true;
 
                 try{
-                    const fd = new FormData(form);
                     const resp = await fetch(form.action, {
-                        method:'POST',
-                        body: fd,
-                        credentials:'include',
-                        redirect:'follow'
+                        method: 'POST',
+                        body: new FormData(form),
+                        credentials: 'include'
                     });
 
-                    if(resp.status === 401){
-                        window.location.href = '@Url.Action("Login", "Account")';
-                        return;
-                    }
-
                     if(resp.ok){
-                        setBadge("PENDING");
                         startPolling();
-                        return;
                     }
-
-                    alert('Falha ao enfileirar OCR.');
-                }catch(e){
-                    alert('Falha ao enfileirar OCR.');
-                }finally{
+                } catch(e) {}
+                finally{
                     if(btnOcr) btnOcr.disabled = false;
                     if(btnOcrForce) btnOcrForce.disabled = false;
                 }
             }
 
             if(ocrForm){
-                ocrForm.addEventListener('submit', async (e) => { e.preventDefault(); await enqueue(ocrForm); });
+                ocrForm.addEventListener('submit', function(e){
+                    e.preventDefault();
+                    enqueue(ocrForm);
+                });
             }
             if(ocrForceForm){
-                ocrForceForm.addEventListener('submit', async (e) => { e.preventDefault(); await enqueue(ocrForceForm); });
+                ocrForceForm.addEventListener('submit', function(e){
+                    e.preventDefault();
+                    enqueue(ocrForceForm);
+                });
             }
 
-            // Se tiver job em andamento, o endpoint vai dizer PENDING/PROCESSING quando começar.
-            // Se você quiser iniciar polling sempre, descomente:
-            // startPolling();
+            startPolling();
         })();
     </script>
 }

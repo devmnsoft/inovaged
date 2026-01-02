@@ -1,0 +1,146 @@
+﻿@model InovaGed.Application.Classification.DocumentClassificationViewDto?
+
+@{
+    var hasModel = Model != null;
+    var documentId = hasModel ? Model!.DocumentId : Guid.Empty;
+}
+
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <div>
+            <strong>Classificação</strong>
+
+            @if (hasModel)
+            {
+                <span class="badge bg-secondary ms-2">@Model!.Method</span>
+
+                @if (Model!.Confidence.HasValue)
+                {
+                    <span class="badge bg-info ms-1">Conf: @(Model.Confidence.Value.ToString("0.00"))</span>
+                }
+            }
+        </div>
+
+        <div class="d-flex gap-2">
+            @if (hasModel)
+            {
+                <form method="post"
+                      action="@Url.Action("Reclassify", "Classification", new { documentId = documentId })"
+                      class="m-0">
+                    @Html.AntiForgeryToken()
+                    <button type="submit" class="btn btn-sm btn-outline-primary">
+                        Reclassificar
+                    </button>
+                </form>
+
+                <button type="button"
+                        class="btn btn-sm btn-outline-secondary"
+                        data-bs-toggle="modal"
+                        data-bs-target="#editClassificationModal"
+                        onclick="loadClassificationEdit('@documentId')">
+                    Editar
+                </button>
+            }
+            else
+            {
+                <span class="text-muted small">Sem classificação</span>
+            }
+        </div>
+    </div>
+
+    <div class="card-body">
+        @if (!hasModel)
+        {
+            <div class="text-muted">Ainda não há classificação para este documento.</div>
+        }
+        else
+        {
+            <div class="mb-2">
+                <div class="text-muted small">Tipo documental</div>
+                <div>
+                    @if (!string.IsNullOrWhiteSpace(Model!.DocumentTypeName))
+                    {
+                        <span class="badge bg-success">@Model.DocumentTypeName</span>
+                    }
+                    else
+                    {
+                        <span class="text-muted">Não identificado</span>
+                    }
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <div class="text-muted small">Tags</div>
+                <div>
+                    @if (Model!.Tags?.Count > 0)
+                    {
+                        foreach (var t in Model.Tags)
+                        {
+                            <span class="badge bg-dark me-1">@t</span>
+                        }
+                    }
+                    else
+                    {
+                        <span class="text-muted">Sem tags</span>
+                    }
+                </div>
+            </div>
+
+            <div class="mb-2">
+                <div class="text-muted small">Metadados</div>
+                @if (Model!.Metadata?.Count > 0)
+                {
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Chave</th>
+                                <th>Valor</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var kv in Model.Metadata)
+                            {
+                                <tr>
+                                    <td><code>@kv.Key</code></td>
+                                    <td>@kv.Value</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+                else
+                {
+                    <div class="text-muted">Nenhum metadado identificado.</div>
+                }
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(Model!.Summary))
+            {
+                <div class="mt-3">
+                    <div class="text-muted small">Resumo</div>
+                    <div>@Model.Summary</div>
+                </div>
+            }
+        }
+    </div>
+</div>
+
+<!-- Modal (PASSO 12) -->
+<div class="modal fade" id="editClassificationModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content" id="editClassificationModalContent">
+            <div class="modal-body text-muted">
+                Carregando…
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    async function loadClassificationEdit(documentId) {
+        const url = '@Url.Action("EditModal", "Classification")' + '?documentId=' + encodeURIComponent(documentId);
+        const resp = await fetch(url, { method: 'GET', credentials: 'include', cache: 'no-store' });
+        const html = await resp.text();
+        document.getElementById('editClassificationModalContent').innerHTML = html;
+    }
+</script>

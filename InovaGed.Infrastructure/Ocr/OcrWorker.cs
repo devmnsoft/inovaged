@@ -1,7 +1,9 @@
 ﻿using InovaGed.Application;
+using InovaGed.Application.Classification;
 using InovaGed.Application.Common.Storage;
 using InovaGed.Application.Documents;
 using InovaGed.Application.Ocr;
+using InovaGed.Infrastructure.Preview;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -31,22 +33,22 @@ public sealed class OcrWorker : BackgroundService
 
                 var jobs = scope.ServiceProvider.GetRequiredService<IOcrJobRepository>();
                 var docs = scope.ServiceProvider.GetRequiredService<IDocumentQueries>();
-                var storage = scope.ServiceProvider.GetRequiredService<IFileStorage>();
                 var preview = scope.ServiceProvider.GetRequiredService<IPreviewGenerator>();
                 var ocr = scope.ServiceProvider.GetRequiredService<IOcrService>();
                 var app = scope.ServiceProvider.GetRequiredService<DocumentAppService>();
 
-                // tenta pegar 1 job pendente
                 var job = await jobs.DequeueAndMarkProcessingAsync(stoppingToken);
                 if (job is null)
                 {
-                    await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken);
+                    await Task.Delay(TimeSpan.FromSeconds(20), stoppingToken); 
                     continue;
                 }
 
                 _logger.LogInformation("Processando OCR JobId={JobId}, VersionId={VersionId}", job.Id, job.DocumentVersionId);
 
-                // carrega versão (precisa de tenant)
+                // renova lease já no começo
+                await jobs.RenewLeaseAsync(job.Id, stoppingToken);
+
                 var v = await docs.GetVersionForDownloadAsync(job.TenantId, job.DocumentVersionId, stoppingToken);
                 if (v is null)
                 {
@@ -54,7 +56,9 @@ public sealed class OcrWorker : BackgroundService
                     continue;
                 }
 
-                // determina PDF base (PDF original ou preview convertido)
+                // renova lease antes da parte pesada
+                await jobs.RenewLeaseAsync(job.Id, stoppingToken);
+
                 string pdfPath;
                 if (IsPdf(v.ContentType, v.FileName))
                 {
@@ -71,7 +75,9 @@ public sealed class OcrWorker : BackgroundService
                         stoppingToken);
                 }
 
-                // roda OCR
+                // renova lease antes do OCR
+                await jobs.RenewLeaseAsync(job.Id, stoppingToken);
+
                 try
                 {
                     var result = await ocr.OcrizePdfAsync(
@@ -85,11 +91,13 @@ public sealed class OcrWorker : BackgroundService
                         continue;
                     }
 
-                    // cria nova versão OCR (indexa texto OCR real)
                     var newFileName = $"{Path.GetFileNameWithoutExtension(v.FileName)}_OCR.pdf";
 
                     await using var ms = new MemoryStream(result.OcrPdfBytes);
                     ms.Position = 0;
+
+                    // renova lease antes de salvar versão
+                    await jobs.RenewLeaseAsync(job.Id, stoppingToken);
 
                     var add = await app.AddVersionWithOcrAsync(
                         documentId: v.DocumentId,
@@ -107,19 +115,67 @@ public sealed class OcrWorker : BackgroundService
                         continue;
                     }
 
+                    // classificação automática (não bloqueia)
+                    try
+                    {
+                        var classifier = scope.ServiceProvider.GetRequiredService<IDocumentClassifier>();
+                        var classRepo = scope.ServiceProvider.GetRequiredService<IDocumentClassificationRepository>();
+
+                        var classified = await classifier.ClassifyAsync(
+                            tenantId: job.TenantId,
+                            documentId: v.DocumentId,
+                            documentVersionId: add.Value,
+                            ocrText: result.ExtractedText ?? "",
+                            ct: stoppingToken);
+
+                        await classRepo.UpsertClassificationAsync(
+                            tenantId: job.TenantId,
+                            documentId: v.DocumentId,
+                            documentVersionId: add.Value,
+                            documentTypeId: classified.DocumentTypeId,
+                            confidence: classified.Confidence,
+                            method: classified.Method,
+                            summary: classified.Summary,
+                            classifiedBy: null,
+                            ct: stoppingToken);
+
+                        await classRepo.UpsertTagsAsync(
+                            tenantId: job.TenantId,
+                            documentId: v.DocumentId,
+                            tags: classified.Tags,
+                            method: classified.Method,
+                            assignedBy: null,
+                            ct: stoppingToken);
+
+                        await classRepo.UpsertMetadataAsync(
+                            tenantId: job.TenantId,
+                            documentId: v.DocumentId,
+                            metadata: classified.Metadata,
+                            method: classified.Method,
+                            ct: stoppingToken);
+
+                        _logger.LogInformation("Classificação automática aplicada. Doc={DocId}, Ver={VerId}", v.DocumentId, add.Value);
+                    }
+                    catch (Exception exClassify)
+                    {
+                        _logger.LogWarning(exClassify, "Falha na classificação automática (não bloqueia OCR). Doc={DocId}", v.DocumentId);
+                    }
+
                     await jobs.MarkCompletedAsync(job.Id, stoppingToken);
                     _logger.LogInformation("OCR concluído. JobId={JobId}, NewVersion={NewVersionId}", job.Id, add.Value);
+
+                    // pequeno cooldown
+                    await Task.Delay(TimeSpan.FromMilliseconds(300), stoppingToken);
                 }
                 catch (PdfHasDigitalSignatureException)
                 {
-                    // aqui o OCR não pode seguir sem force
                     await jobs.MarkErrorAsync(job.Id, "Documento possui assinatura digital. Reexecute com FORÇAR OCR.", stoppingToken);
                 }
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Falha inesperada no OCR Worker.");
-                await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
+                await Task.Delay(TimeSpan.FromSeconds(20), stoppingToken); 
             }
         }
 

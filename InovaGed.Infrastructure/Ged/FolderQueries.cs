@@ -21,7 +21,7 @@ public sealed class FolderQueries : IFolderQueries
     {
         try
         {
-            _logger.LogInformation("Carregando árvore de pastas. Tenant={TenantId}", tenantId);
+            _logger.LogInformation("Carregando árvore de pastas. Tenant={Tenant}", tenantId);
 
             const string sql = @"
 WITH RECURSIVE t AS (
@@ -33,6 +33,8 @@ WITH RECURSIVE t AS (
     FROM ged.folder f
     WHERE f.tenant_id = @tenantId
       AND f.parent_id IS NULL
+      AND f.is_active = TRUE
+      AND f.reg_status = 'A'
 
     UNION ALL
 
@@ -44,6 +46,8 @@ WITH RECURSIVE t AS (
     FROM ged.folder c
     JOIN t ON t.id = c.parent_id
     WHERE c.tenant_id = @tenantId
+      AND c.is_active = TRUE
+      AND c.reg_status = 'A'
 )
 SELECT * FROM t
 ORDER BY ""Level"", ""Name"";";
@@ -55,18 +59,15 @@ ORDER BY ""Level"", ""Name"";";
 
             return rows.AsList();
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (OperationCanceledException)
         {
-            _logger.LogInformation(
-                "Carregamento da árvore de pastas foi cancelado. Tenant={TenantId}", tenantId);
+            _logger.LogInformation("Carregamento da árvore de pastas foi cancelado. Tenant={TenantId}", tenantId);
             throw;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex,
-                "Erro ao carregar árvore de pastas. Tenant={TenantId}", tenantId);
+            _logger.LogError(ex, "Erro ao carregar árvore de pastas. Tenant={TenantId}", tenantId);
             throw;
         }
     }
-
 }

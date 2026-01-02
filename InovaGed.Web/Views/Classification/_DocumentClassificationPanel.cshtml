@@ -1,0 +1,122 @@
+﻿@model InovaGed.Application.Classification.DocumentClassificationViewDto
+
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <div class="d-flex align-items-center gap-2">
+            <i class="bi bi-tags"></i>
+            <strong>Classificação</strong>
+        </div>
+
+        <div class="d-flex gap-2">
+            <button type="button"
+                    class="btn btn-sm btn-outline-primary"
+                    onclick="openClassificationModal('@Model?.DocumentId')">
+                <i class="bi bi-pencil-square me-1"></i> Classificar
+            </button>
+        </div>
+    </div>
+
+    <div class="card-body">
+        @* Estado atual *@
+        @if (Model == null || Model.DocumentTypeId == null)
+        {
+            <div class="mb-2">
+                <div class="fw-semibold">Sem classificação</div>
+                <div class="text-muted small">Ainda não há classificação para este documento.</div>
+            </div>
+        }
+        else
+        {
+            <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+                <div>
+                    <div class="fw-semibold">@Model.DocumentTypeName</div>
+                    <div class="text-muted small">
+                        Método: <span class="badge bg-light text-dark">@Model.Method</span>
+                        @if (Model.Confidence.HasValue)
+                        {
+                            <span class="ms-2">Confiança: <span class="badge bg-light text-dark">@($"{Model.Confidence:P0}")</span></span>
+                        }
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(Model.Summary))
+                    {
+                        <div class="text-muted small mt-1">@Model.Summary</div>
+                    }
+                </div>
+
+                <div class="d-flex gap-2">
+                    <button type="button"
+                            class="btn btn-sm btn-outline-secondary"
+                            onclick="reclassifyDocument('@Model.DocumentId')">
+                        <i class="bi bi-arrow-repeat me-1"></i> Reprocessar
+                    </button>
+                </div>
+            </div>
+        }
+
+        <hr class="my-3" />
+
+        @* Sugestão OCR/Text *@
+        <div class="d-flex align-items-start justify-content-between flex-wrap gap-2">
+            <div>
+                <div class="text-muted small mb-1">
+                    <i class="bi bi-magic me-1"></i> Sugestão (OCR / Texto)
+                </div>
+
+                @if (Model?.SuggestedTypeId == null)
+                {
+                    <div class="text-muted small">Nenhuma sugestão gerada ainda.</div>
+                }
+                else
+                {
+                    <div class="fw-semibold">@Model.SuggestedTypeName</div>
+                    <div class="text-muted small">
+                        @if (Model.SuggestedConfidence.HasValue)
+                        {
+                            <span>Confiança: <span class="badge bg-light text-dark">@($"{Model.SuggestedConfidence:P0}")</span></span>
+                        }
+                        @if (Model.SuggestedAt.HasValue)
+                        {
+                            <span class="ms-2">Em: @Model.SuggestedAt.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</span>
+                        }
+                    </div>
+
+                    @if (!string.IsNullOrWhiteSpace(Model.SuggestedSummary))
+                    {
+                        <div class="text-muted small mt-1">@Model.SuggestedSummary</div>
+                    }
+                }
+            </div>
+
+            <div class="d-flex gap-2">
+                <button type="button"
+                        class="btn btn-sm btn-outline-primary"
+                        onclick="suggestByOcr('@Model?.DocumentId')">
+                    <i class="bi bi-lightning-charge me-1"></i> Gerar sugestão
+                </button>
+
+                <button type="button"
+                        class="btn btn-sm btn-primary"
+                @(Model?.SuggestedTypeId == null ? "disabled" : "")
+                        onclick="applySuggestion('@Model?.DocumentId')">
+                    <i class="bi bi-check2-circle me-1"></i> Aplicar sugestão
+                </button>
+            </div>
+        </div>
+
+        @* Tags *@
+        @if (Model?.Tags is { Count: > 0 })
+        {
+            <hr class="my-3" />
+            <div class="text-muted small mb-1">Tags</div>
+            <div class="d-flex flex-wrap gap-1">
+                @foreach (var t in Model.Tags)
+                {
+                    <span class="badge bg-light text-dark">@t</span>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+<!-- Host do modal (carregado via AJAX) -->
+<div id="classification-modal-host"></div>

@@ -1,6 +1,24 @@
 ﻿@model InovaGed.Web.Models.Ged.GedExplorerVM
+@using InovaGed.Application.Identity
+@using InovaGed.Application.Classification
+@using System.Threading
+
+@inject ICurrentUser CurrentUser
+@inject IDocumentClassificationQueries ClassificationQueries
+
 @{
     ViewData["Title"] = "GED - Documentos";
+
+    // KPI: documentos não classificados (na pasta atual)
+    var unclassifiedCount = 0;
+    if (CurrentUser.IsAuthenticated)
+    {
+        unclassifiedCount = await ClassificationQueries.CountUnclassifiedAsync(
+            CurrentUser.TenantId,
+            Model.CurrentFolderId,
+            CancellationToken.None
+        );
+    }
 }
 
 <div class="row">
@@ -11,16 +29,12 @@
                 <span>Pastas</span>
                 <a class="btn btn-sm btn-outline-primary"
                    asp-action="Folders" asp-controller="Ged">
-                    <i class="bi bi-folder-plus"></i> Nova
+                    <i class="bi bi-gear"></i> Gerenciar
                 </a>
             </div>
 
             <div class="card-body p-2" style="max-height:70vh; overflow:auto;">
                 @{
-                    // ===========================
-                    // ÁRVORE DE PASTAS (Explorer)
-                    // ✅ FIX: NÃO usar null como chave do Dictionary
-                    // ===========================
                     var byParent = Model.Folders
                     .Where(x => x.ParentId != null)
                     .GroupBy(x => x.ParentId!.Value)
@@ -44,8 +58,6 @@
                             {
                                 var hasChildren = byParent.ContainsKey(n.Id);
                                 var isActive = Model.CurrentFolderId == n.Id;
-
-                                // Link SEM taghelper
                                 var href = Url.Action("Index", "Ged", new { folderId = n.Id }) ?? "#";
 
                                 <li class="ged-tree-node"
@@ -67,7 +79,41 @@
 
                                         <i class="bi bi-folder2 ged-tree-folder"></i>
 
-                                        <a class="ged-tree-link" href="@href">@n.Name</a>
+                                        <a class="ged-tree-link flex-grow-1" href="@href">@n.Name</a>
+
+                                        <!-- ✅ AÇÕES DA PASTA -->
+                                        <div class="dropdown">
+                                            <button class="btn btn-sm btn-link text-muted p-0"
+                                                    type="button"
+                                                    data-bs-toggle="dropdown"
+                                                    aria-expanded="false"
+                                                    title="Ações">
+                                                <i class="bi bi-three-dots-vertical"></i>
+                                            </button>
+                                            <ul class="dropdown-menu dropdown-menu-end">
+                                                <li>
+                                                    <button class="dropdown-item"
+                                                            type="button"
+                                                            data-bs-toggle="modal"
+                                                            data-bs-target="#modalRenomearPastaExplorer"
+                                                            data-id="@n.Id"
+                                                            data-nome="@n.Name">
+                                                        <i class="bi bi-pencil me-1"></i> Renomear
+                                                    </button>
+                                                </li>
+                                                <li><hr class="dropdown-divider" /></li>
+                                                <li>
+                                                    <button class="dropdown-item text-danger"
+                                                            type="button"
+                                                            data-bs-toggle="modal"
+                                                            data-bs-target="#modalExcluirPastaExplorer"
+                                                            data-id="@n.Id"
+                                                            data-nome="@n.Name">
+                                                        <i class="bi bi-trash me-1"></i> Excluir
+                                                    </button>
+                                                </li>
+                                            </ul>
+                                        </div>
                                     </div>
 
                                     <div class="ged-tree-children" style="display:none;">
@@ -99,13 +145,11 @@
                     </ul>
 
                     <div class="mt-2">
-                        <!-- ✅ Render ROOT folders primeiro (ParentId = null) -->
                         <ul class="ged-tree">
                             @foreach (var n in rootFolders)
                             {
                                 var hasChildren = byParent.ContainsKey(n.Id);
                                 var isActive = Model.CurrentFolderId == n.Id;
-
                                 var href = Url.Action("Index", "Ged", new { folderId = n.Id }) ?? "#";
 
                                 <li class="ged-tree-node"
@@ -126,7 +170,41 @@
                                         }
 
                                         <i class="bi bi-folder2 ged-tree-folder"></i>
-                                        <a class="ged-tree-link" href="@href">@n.Name</a>
+                                        <a class="ged-tree-link flex-grow-1" href="@href">@n.Name</a>
+
+                                        <!-- ✅ AÇÕES DA PASTA -->
+                                        <div class="dropdown">
+                                            <button class="btn btn-sm btn-link text-muted p-0"
+                                                    type="button"
+                                                    data-bs-toggle="dropdown"
+                                                    aria-expanded="false"
+                                                    title="Ações">
+                                                <i class="bi bi-three-dots-vertical"></i>
+                                            </button>
+                                            <ul class="dropdown-menu dropdown-menu-end">
+                                                <li>
+                                                    <button class="dropdown-item"
+                                                            type="button"
+                                                            data-bs-toggle="modal"
+                                                            data-bs-target="#modalRenomearPastaExplorer"
+                                                            data-id="@n.Id"
+                                                            data-nome="@n.Name">
+                                                        <i class="bi bi-pencil me-1"></i> Renomear
+                                                    </button>
+                                                </li>
+                                                <li><hr class="dropdown-divider" /></li>
+                                                <li>
+                                                    <button class="dropdown-item text-danger"
+                                                            type="button"
+                                                            data-bs-toggle="modal"
+                                                            data-bs-target="#modalExcluirPastaExplorer"
+                                                            data-id="@n.Id"
+                                                            data-nome="@n.Name">
+                                                        <i class="bi bi-trash me-1"></i> Excluir
+                                                    </button>
+                                                </li>
+                                            </ul>
+                                        </div>
                                     </div>
 
                                     <div class="ged-tree-children" style="display:none;">
@@ -150,10 +228,14 @@
                 <div class="d-flex align-items-center gap-2">
                     <i class="bi bi-files"></i>
                     <strong>Documentos</strong>
+
+                    <span class="badge bg-light text-dark ms-2" title="Documentos sem classificação na pasta atual">
+                        <i class="bi bi-exclamation-triangle me-1"></i>
+                        Não classificados: @unclassifiedCount
+                    </span>
                 </div>
 
                 <div class="d-flex align-items-center gap-2 flex-wrap">
-                    <!-- 🔍 BUSCA OCR -->
                     <form class="d-flex gap-2"
                           method="get"
                           asp-action="Search"
@@ -168,7 +250,6 @@
                         </button>
                     </form>
 
-                    <!-- UPLOAD -->
                     <button class="btn btn-primary"
                             data-bs-toggle="modal"
                             data-bs-target="#modalUpload"
@@ -192,17 +273,30 @@
                             <thead class="table-light">
                                 <tr>
                                     <th>Título</th>
-                                    <th style="width:200px;">Tipo</th>
-                                    <th style="width:240px;">Arquivo</th>
-                                    <th style="width:180px;">Ações</th>
+                                    <th style="width:220px;">Tipo</th>
+                                    <th style="width:260px;">Arquivo</th>
+                                    <th style="width:240px;">Ações</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 @foreach (var d in Model.Documents)
                                 {
+                                    var isUnclassified = string.IsNullOrWhiteSpace(d.TypeName) || d.TypeName == "-";
+
                                     <tr>
                                         <td class="fw-semibold">@d.Title</td>
-                                        <td>@(d.TypeName ?? "-")</td>
+                                        <td>
+                                            @if (isUnclassified)
+                                            {
+                                                <span class="badge bg-secondary">Sem classificação</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge bg-light text-dark">
+                                                    <i class="bi bi-tags me-1"></i>@d.TypeName
+                                                </span>
+                                            }
+                                        </td>
                                         <td class="text-muted small">@d.FileName</td>
                                         <td class="d-flex gap-2 flex-wrap">
                                             <a class="btn btn-sm btn-outline-primary"
@@ -212,14 +306,22 @@
                                                 <i class="bi bi-eye"></i> Abrir
                                             </a>
 
-                                            <form method="post"
-                                                  asp-action="Delete"
-                                                  asp-controller="Ged"
-                                                  class="d-inline">
+                                            @if (isUnclassified)
+                                            {
+                                                <a class="btn btn-sm btn-outline-success"
+                                                   asp-action="Details"
+                                                   asp-controller="Ged"
+                                                   asp-route-id="@d.Id"
+                                                   asp-route-openClassify="true">
+                                                    <i class="bi bi-pencil-square"></i> Classificar
+                                                </a>
+                                            }
+
+                                            <form method="post" asp-controller="Ged" asp-action="DeleteDocument" class="d-inline">
                                                 @Html.AntiForgeryToken()
                                                 <input type="hidden" name="id" value="@d.Id" />
-                                                <button class="btn btn-sm btn-outline-danger"
-                                                        type="submit"
+                                                <input type="hidden" name="folderId" value="@Model.CurrentFolderId" />
+                                                <button type="submit" class="btn btn-sm btn-outline-danger"
                                                         onclick="return confirm('Deseja excluir este documento?');">
                                                     <i class="bi bi-trash"></i> Excluir
                                                 </button>
@@ -232,6 +334,64 @@
                     </div>
                 }
             </div>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL RENOMEAR PASTA (EXPLORER) -->
+<div class="modal fade" id="modalRenomearPastaExplorer" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form asp-controller="Ged" asp-action="RenomearPastaExplorer" method="post">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="id" id="exp-rename-id" />
+                <input type="hidden" name="folderId" value="@Model.CurrentFolderId" />
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-pencil me-1"></i> Renomear pasta</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-2 text-muted">
+                        Pasta: <strong id="exp-rename-old"></strong>
+                    </div>
+                    <div class="mb-0">
+                        <label class="form-label">Novo nome</label>
+                        <input name="nome" id="exp-rename-nome" class="form-control" maxlength="200" required />
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">Cancelar</button>
+                    <button class="btn btn-primary" type="submit"><i class="bi bi-check2 me-1"></i> Salvar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL EXCLUIR PASTA (EXPLORER) -->
+<div class="modal fade" id="modalExcluirPastaExplorer" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form asp-controller="Ged" asp-action="ExcluirPastaExplorer" method="post">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="id" id="exp-del-id" />
+                <input type="hidden" name="folderId" value="@Model.CurrentFolderId" />
+                <div class="modal-header">
+                    <h5 class="modal-title text-danger"><i class="bi bi-trash me-1"></i> Excluir pasta</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-0">
+                        Confirma a exclusão da pasta <strong id="exp-del-nome"></strong>?
+                        <br />
+                        <span class="text-muted small">A exclusão é lógica (pasta fica inativa).</span>
+                    </p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">Cancelar</button>
+                    <button class="btn btn-danger" type="submit"><i class="bi bi-trash me-1"></i> Excluir</button>
+                </div>
+            </form>
         </div>
     </div>
 </div>
@@ -380,13 +540,11 @@
             saveOpenSet(openSet);
         }
 
-        // Aplica estado salvo
         nodes.forEach(li => {
             const id = li.getAttribute("data-id");
             if (openSet.has(id)) setNodeOpen(li, true);
         });
 
-        // Click no toggle
         document.addEventListener("click", (e) => {
             const btn = e.target.closest(".ged-tree-toggle");
             if (!btn) return;
@@ -400,7 +558,6 @@
             e.stopPropagation();
         });
 
-        // Auto-expande a cadeia de pais da pasta atual (linha ativa)
         const active = document.querySelector(".ged-tree-row.active");
         if (active) {
             let li = active.closest(".ged-tree-node");
@@ -413,5 +570,28 @@
                 li = document.querySelector(`.ged-tree-node[data-id="${parentId}"]`);
             }
         }
+
+        // Modais Pasta Explorer
+        const renameModal = document.getElementById('modalRenomearPastaExplorer');
+        renameModal?.addEventListener('show.bs.modal', function (event) {
+            const btn = event.relatedTarget;
+            const id = btn.getAttribute('data-id');
+            const nome = btn.getAttribute('data-nome');
+
+            document.getElementById('exp-rename-id').value = id;
+            document.getElementById('exp-rename-old').textContent = nome;
+            document.getElementById('exp-rename-nome').value = nome;
+        });
+
+        const delModal = document.getElementById('modalExcluirPastaExplorer');
+        delModal?.addEventListener('show.bs.modal', function (event) {
+            const btn = event.relatedTarget;
+            const id = btn.getAttribute('data-id');
+            const nome = btn.getAttribute('data-nome');
+
+            document.getElementById('exp-del-id').value = id;
+            document.getElementById('exp-del-nome').textContent = nome;
+        });
+
     })();
 </script>
