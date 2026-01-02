@@ -18,8 +18,9 @@ public interface IFolderCommands
         string newName,
         CancellationToken ct);
 
-    Task<Result> DeactivateAsync(
-        Guid tenantId,
-        Guid folderId,
-        CancellationToken ct);
+
+    Task DeactivateAsync(Guid tenantId, Guid folderId, Guid? userId, CancellationToken ct);
+    Task<Result> DeleteRecursiveAsync(Guid tenantId, Guid folderId, Guid? userId, CancellationToken ct);
+
+
 }
