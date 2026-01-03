@@ -87,6 +87,13 @@ builder.Services.AddScoped<IDocumentTypeCatalogQueries, DocumentTypeCatalogQueri
 builder.Services.Configure<LibreOfficeOptions>(builder.Configuration.GetSection("Preview"));
 builder.Services.AddScoped<IPreviewGenerator, LibreOfficePreviewGenerator>();
 builder.Services.AddScoped<IFolderClassificationRuleRepository, FolderClassificationRuleRepository>();
+builder.Services.AddScoped<IOcrTextProvider, DbOcrTextProvider>();
+builder.Services.AddScoped<IOcrAutoClassificationService, OcrAutoClassificationService>(); 
+builder.Services.AddScoped<IDocumentClassificationCommands, DocumentClassificationCommands>(); 
+
+// já deve existir:
+builder.Services.AddScoped<SimpleTextDocumentTypeSuggester>();
+builder.Services.AddScoped<HybridDocumentTypeSuggester>();
 
 // =======================================================
 // Search
@@ -112,6 +119,9 @@ builder.Services.AddScoped<SimpleTextDocumentTypeSuggester>();
 builder.Services.AddScoped<IFolderCommands, FolderCommands>();
 builder.Services.AddScoped<IDocumentWorkflowCommands, DocumentWorkflowCommands>();
 builder.Services.AddScoped<IWorkflowCommands, WorkflowCommands>();
+  
+builder.Services.AddScoped<IDocumentSearchTextQueries, DocumentSearchTextQueries>(); 
+
 
 // =======================================================
 // OCR Jobs + Worker (SOMENTE ESTE WORKER)
@@ -126,6 +136,8 @@ if (ocrEnabled)
 // =======================================================
 // Document Write + Audit
 // =======================================================
+builder.Services.AddScoped<ICurrentUserAccessor, CurrentUserAccessorAdapter>();
+
 builder.Services.AddScoped<IDocumentWriteRepository, DocumentWriteRepository>();
 builder.Services.AddScoped<IAuditLogWriter, AuditLogWriter>();
 builder.Services.AddScoped<IOcrStatusQueries, OcrStatusQueries>();

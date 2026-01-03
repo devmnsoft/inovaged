@@ -1,125 +1,260 @@
 ﻿using Dapper;
 using InovaGed.Application.Classification;
 using InovaGed.Application.Common.Database;
+using Microsoft.Extensions.Logging;
 
 namespace InovaGed.Infrastructure.Classification;
 
 public sealed class DocumentClassificationQueries : IDocumentClassificationQueries
 {
     private readonly IDbConnectionFactory _db;
+    private readonly ILogger<DocumentClassificationQueries> _logger;
 
-    public DocumentClassificationQueries(IDbConnectionFactory db)
+    public DocumentClassificationQueries(
+        IDbConnectionFactory db,
+        ILogger<DocumentClassificationQueries> logger)
     {
         _db = db;
+        _logger = logger;
     }
 
-    public async Task<DocumentClassificationViewDto?> GetAsync(Guid tenantId, Guid documentId, CancellationToken ct)
+    public Task<DocumentClassificationViewDto?> GetAsync(
+        Guid tenantId,
+        Guid documentId,
+        CancellationToken ct)
+        => GetViewAsync(tenantId, documentId, ct);
+
+    public async Task<DocumentClassificationViewDto?> GetViewAsync(
+        Guid tenantId,
+        Guid documentId,
+        CancellationToken ct)
     {
-        const string sql = @"
--- 1) classificação
+        _logger.LogDebug(
+            "GetViewAsync | Tenant={TenantId} Document={DocumentId}",
+            tenantId, documentId);
+
+        const string headSql = @"
 SELECT
-  c.document_id         AS DocumentId,
-  c.tenant_id           AS TenantId,
-  c.document_type_id    AS DocumentTypeId,
-  dt.name               AS DocumentTypeName,
-  c.confidence          AS Confidence,
-  c.method              AS Method,
-  c.summary             AS Summary,
-  c.classified_at       AS ClassifiedAt,
-  c.suggested_type_id   AS SuggestedTypeId,
-  sdt.name              AS SuggestedTypeName,
-  c.suggested_confidence AS SuggestedConfidence,
-  c.suggested_summary   AS SuggestedSummary,
-  c.suggested_at        AS SuggestedAt
-FROM ged.document_classification c
+  d.id                         AS ""DocumentId"",
+  d.tenant_id                  AS ""TenantId"",
+  COALESCE(dv.id, '00000000-0000-0000-0000-000000000000'::uuid) AS ""DocumentVersionId"",
+
+  dc.document_type_id          AS ""DocumentTypeId"",
+  dt.name                      AS ""DocumentTypeName"",
+  dc.confidence                AS ""Confidence"",
+  COALESCE(dc.method,'RULES')  AS ""Method"",
+  dc.summary                   AS ""Summary"",
+  COALESCE(dc.classified_at, d.created_at) AS ""ClassifiedAt"",
+
+  dc.suggested_type_id         AS ""SuggestedTypeId"",
+  dts.name                     AS ""SuggestedTypeName"",
+  dc.suggested_confidence      AS ""SuggestedConfidence"",
+  dc.suggested_summary         AS ""SuggestedSummary"",
+  dc.suggested_at              AS ""SuggestedAt""
+FROM ged.document d
+LEFT JOIN LATERAL (
+  SELECT id
+  FROM ged.document_versions
+  WHERE tenant_id = d.tenant_id
+    AND document_id = d.id
+  ORDER BY created_at DESC
+  LIMIT 1
+) dv ON true
+LEFT JOIN ged.document_classification dc
+  ON dc.document_id = d.id
+ AND dc.tenant_id = d.tenant_id
+ AND dc.reg_status = 'A'
 LEFT JOIN ged.document_type dt
-  ON dt.id = c.document_type_id
- AND dt.tenant_id = c.tenant_id
-LEFT JOIN ged.document_type sdt
-  ON sdt.id = c.suggested_type_id
- AND sdt.tenant_id = c.tenant_id
-WHERE c.tenant_id = @tenantId
-  AND c.document_id = @documentId
+  ON dt.id = dc.document_type_id
+ AND dt.tenant_id = d.tenant_id
+LEFT JOIN ged.document_type dts
+  ON dts.id = dc.suggested_type_id
+ AND dts.tenant_id = d.tenant_id
+WHERE d.tenant_id = @TenantId
+  AND d.id = @DocumentId
+  AND d.status <> 'DELETED'
 LIMIT 1;
-
--- 2) tags
-SELECT t.name
-FROM ged.document_tag x
-JOIN ged.tag t ON t.id = x.tag_id AND t.tenant_id = x.tenant_id
-WHERE x.tenant_id = @tenantId
-  AND x.document_id = @documentId
-ORDER BY t.name;
-
--- 3) metadata
-SELECT key, value
-FROM ged.document_metadata
-WHERE tenant_id = @tenantId
-  AND document_id = @documentId
-ORDER BY key;
 ";
 
-        var conn = await _db.OpenAsync(ct);
-        using var multi = await conn.QueryMultipleAsync(
-            new CommandDefinition(sql, new { tenantId, documentId }, cancellationToken: ct));
-
-        var cls = await multi.ReadSingleOrDefaultAsync<DocumentClassificationViewDto?>();
-        if (cls is null) return null;
-
-        var tags = (await multi.ReadAsync<string>()).ToList();
-        var metaRows = await multi.ReadAsync<(string key, string value)>();
-
-        return new DocumentClassificationViewDto
+        try
         {
-            DocumentId = cls.DocumentId,
-            TenantId = cls.TenantId,
-            DocumentTypeId = cls.DocumentTypeId,
-            DocumentTypeName = cls.DocumentTypeName,
-            Confidence = cls.Confidence,
-            Method = string.IsNullOrWhiteSpace(cls.Method) ? "RULES" : cls.Method,
-            Summary = cls.Summary,
-            ClassifiedAt = cls.ClassifiedAt,
+             var con = await _db.OpenAsync(ct);
 
-            SuggestedTypeId = cls.SuggestedTypeId,
-            SuggestedTypeName = cls.SuggestedTypeName,
-            SuggestedConfidence = cls.SuggestedConfidence,
-            SuggestedSummary = cls.SuggestedSummary,
-            SuggestedAt = cls.SuggestedAt,
+            var dto = await con.QueryFirstOrDefaultAsync<DocumentClassificationViewDto>(
+                new CommandDefinition(
+                    headSql,
+                    new { TenantId = tenantId, DocumentId = documentId },
+                    cancellationToken: ct));
 
-            Tags = tags,
-            Metadata = metaRows.ToDictionary(x => x.key, x => x.value)
-        };
+            if (dto is null) return null;
+
+            const string tagsSql = @"
+SELECT t.name
+FROM ged.document_tag dt
+JOIN ged.tag t
+  ON t.id = dt.tag_id
+ AND t.tenant_id = dt.tenant_id
+WHERE dt.tenant_id = @TenantId
+  AND dt.document_id = @DocumentId
+ORDER BY lower(t.name);
+";
+            var tags = (await con.QueryAsync<string>(
+                new CommandDefinition(
+                    tagsSql,
+                    new { TenantId = tenantId, DocumentId = documentId },
+                    cancellationToken: ct)))
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            const string metaSql = @"
+SELECT key, value
+FROM ged.document_metadata
+WHERE tenant_id = @TenantId
+  AND document_id = @DocumentId
+ORDER BY lower(key);
+";
+            var meta = (await con.QueryAsync<(string key, string value)>(
+                new CommandDefinition(
+                    metaSql,
+                    new { TenantId = tenantId, DocumentId = documentId },
+                    cancellationToken: ct)))
+                .Where(x => !string.IsNullOrWhiteSpace(x.key))
+                .GroupBy(x => x.key, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.Last().value ?? "",
+                    StringComparer.OrdinalIgnoreCase);
+
+            dto.Tags.AddRange(tags);
+            foreach (var kv in meta)
+                dto.Metadata[kv.Key] = kv.Value;
+
+            return dto;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Erro em GetViewAsync | Tenant={TenantId} Document={DocumentId}",
+                tenantId, documentId);
+            throw;
+        }
     }
 
-    // ✅ Novo: usado para travar workflow
-    public async Task<bool> HasClassificationAsync(Guid tenantId, Guid documentId, CancellationToken ct)
+    public async Task<bool> HasClassificationAsync(
+        Guid tenantId,
+        Guid documentId,
+        CancellationToken ct)
     {
         const string sql = @"
-SELECT EXISTS(
-    SELECT 1
-    FROM ged.document_classification c
-    WHERE c.tenant_id = @tenantId
-      AND c.document_id = @documentId
-      AND c.document_type_id IS NOT NULL
-);";
-        var conn = await _db.OpenAsync(ct);
-        return await conn.ExecuteScalarAsync<bool>(
-            new CommandDefinition(sql, new { tenantId, documentId }, cancellationToken: ct));
+SELECT EXISTS (
+  SELECT 1
+  FROM ged.document_classification dc
+  WHERE dc.tenant_id = @TenantId
+    AND dc.document_id = @DocumentId
+    AND dc.document_type_id IS NOT NULL
+    AND dc.reg_status = 'A'
+);
+";
+        try
+        {
+            _logger.LogDebug(
+                "HasClassificationAsync | Tenant={TenantId} Document={DocumentId}",
+                tenantId, documentId);
+
+           var con = await _db.OpenAsync(ct);
+
+            return await con.ExecuteScalarAsync<bool>(
+                new CommandDefinition(
+                    sql,
+                    new { TenantId = tenantId, DocumentId = documentId },
+                    cancellationToken: ct));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Erro em HasClassificationAsync | Tenant={TenantId} Document={DocumentId}",
+                tenantId, documentId);
+            throw;
+        }
     }
 
-    // ✅ Novo: KPI “Documentos não classificados”
-    public async Task<int> CountUnclassifiedAsync(Guid tenantId, Guid? folderId, CancellationToken ct)
+    public async Task<int> CountUnclassifiedAsync(
+        Guid tenantId,
+        Guid? folderId,
+        CancellationToken ct)
     {
         const string sql = @"
 SELECT COUNT(1)
 FROM ged.document d
-LEFT JOIN ged.document_classification c
-  ON c.tenant_id = d.tenant_id
- AND c.document_id = d.id
-WHERE d.tenant_id = @tenantId
-  AND (@folderId IS NULL OR d.folder_id = @folderId)
-  AND c.document_type_id IS NULL;";
-        var conn = await _db.OpenAsync(ct);
-        return await conn.ExecuteScalarAsync<int>(
-            new CommandDefinition(sql, new { tenantId, folderId }, cancellationToken: ct));
+LEFT JOIN ged.document_classification dc
+  ON dc.document_id = d.id
+ AND dc.tenant_id = d.tenant_id
+ AND dc.reg_status = 'A'
+WHERE d.tenant_id = @TenantId
+  AND d.status <> 'DELETED'
+  AND (@FolderId IS NULL OR d.folder_id = @FolderId)
+  AND dc.document_type_id IS NULL;
+";
+        try
+        {
+            _logger.LogDebug(
+                "CountUnclassifiedAsync | Tenant={TenantId} Folder={FolderId}",
+                tenantId, folderId);
+
+            var con = await _db.OpenAsync(ct);
+
+            return await con.ExecuteScalarAsync<int>(
+                new CommandDefinition(
+                    sql,
+                    new { TenantId = tenantId, FolderId = folderId },
+                    cancellationToken: ct));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Erro em CountUnclassifiedAsync | Tenant={TenantId} Folder={FolderId}",
+                tenantId, folderId);
+            throw;
+        }
+    }
+
+    public async Task<IReadOnlyList<DocumentTypeRowDto>> ListTypesAsync(
+        Guid tenantId,
+        CancellationToken ct)
+    {
+        const string sql = @"
+SELECT id AS ""Id"", name AS ""Name""
+FROM ged.document_type
+WHERE tenant_id = @TenantId
+ORDER BY lower(name);
+";
+        try
+        {
+            _logger.LogDebug(
+                "ListTypesAsync | Tenant={TenantId}",
+                tenantId);
+
+            var con = await _db.OpenAsync(ct);
+
+            var rows = await con.QueryAsync<DocumentTypeRowDto>(
+                new CommandDefinition(
+                    sql,
+                    new { TenantId = tenantId },
+                    cancellationToken: ct));
+
+            return rows.ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Erro em ListTypesAsync | Tenant={TenantId}",
+                tenantId);
+            throw;
+        }
     }
 }

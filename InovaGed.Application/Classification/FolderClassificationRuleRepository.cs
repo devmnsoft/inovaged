@@ -1,16 +1,21 @@
 ﻿using Dapper;
 using InovaGed.Application.Classification;
 using InovaGed.Application.Common.Database;
+using Microsoft.Extensions.Logging;
 
 namespace InovaGed.Infrastructure.Classification;
 
 public sealed class FolderClassificationRuleRepository : IFolderClassificationRuleRepository
 {
     private readonly IDbConnectionFactory _db;
+    private readonly ILogger<FolderClassificationRuleRepository> _logger;
 
-    public FolderClassificationRuleRepository(IDbConnectionFactory db)
+    public FolderClassificationRuleRepository(
+        IDbConnectionFactory db,
+        ILogger<FolderClassificationRuleRepository> logger)
     {
         _db = db;
+        _logger = logger;
     }
 
     public async Task<Guid?> GetDefaultTypeAsync(Guid tenantId, Guid folderId, CancellationToken ct)
@@ -23,15 +28,34 @@ WHERE tenant_id = @tenantId
   AND reg_status = 'A'
 LIMIT 1;
 ";
-        var conn = await _db.OpenAsync(ct);
-        return await conn.ExecuteScalarAsync<Guid?>(
-            new CommandDefinition(sql, new { tenantId, folderId }, cancellationToken: ct));
+        try
+        {
+            _logger.LogDebug(
+                "GetDefaultTypeAsync | Tenant={TenantId} Folder={FolderId}",
+                tenantId, folderId);
+
+             var conn = await _db.OpenAsync(ct);
+
+            return await conn.ExecuteScalarAsync<Guid?>(
+                new CommandDefinition(sql, new { tenantId, folderId }, cancellationToken: ct));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Erro ao obter tipo padrão da pasta | Tenant={TenantId} Folder={FolderId}",
+                tenantId, folderId);
+            throw;
+        }
     }
 
-    public async Task SetDefaultTypeAsync(Guid tenantId, Guid folderId, Guid? documentTypeId, Guid? userId, CancellationToken ct)
+    public async Task SetDefaultTypeAsync(
+        Guid tenantId,
+        Guid folderId,
+        Guid? documentTypeId,
+        Guid? userId,
+        CancellationToken ct)
     {
-        // Se sua tabela folder não tem default_document_type_id, você precisa criar coluna.
-        // Eu já estou usando ela porque é a forma mais simples/performática.
         const string sql = @"
 UPDATE ged.folder
 SET default_document_type_id = @documentTypeId,
@@ -41,8 +65,27 @@ WHERE tenant_id = @tenantId
   AND id = @folderId
   AND reg_status = 'A';
 ";
-        var conn = await _db.OpenAsync(ct);
-        await conn.ExecuteAsync(new CommandDefinition(sql, new { tenantId, folderId, documentTypeId, userId }, cancellationToken: ct));
+        try
+        {
+            _logger.LogDebug(
+                "SetDefaultTypeAsync | Tenant={TenantId} Folder={FolderId} Type={DocumentTypeId}",
+                tenantId, folderId, documentTypeId);
+
+           var conn = await _db.OpenAsync(ct);
+
+            await conn.ExecuteAsync(
+                new CommandDefinition(sql,
+                    new { tenantId, folderId, documentTypeId, userId },
+                    cancellationToken: ct));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Erro ao definir tipo padrão da pasta | Tenant={TenantId} Folder={FolderId}",
+                tenantId, folderId);
+            throw;
+        }
     }
 
     public async Task<bool> HasClassificationAsync(Guid tenantId, Guid documentId, CancellationToken ct)
@@ -56,9 +99,25 @@ SELECT EXISTS (
       AND c.document_type_id IS NOT NULL
 );
 ";
-        var conn = await _db.OpenAsync(ct);
-        return await conn.ExecuteScalarAsync<bool>(
-            new CommandDefinition(sql, new { tenantId, documentId }, cancellationToken: ct));
+        try
+        {
+            _logger.LogDebug(
+                "HasClassificationAsync | Tenant={TenantId} Document={DocumentId}",
+                tenantId, documentId);
+
+            var conn = await _db.OpenAsync(ct);
+
+            return await conn.ExecuteScalarAsync<bool>(
+                new CommandDefinition(sql, new { tenantId, documentId }, cancellationToken: ct));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Erro ao verificar classificação do documento | Tenant={TenantId} Document={DocumentId}",
+                tenantId, documentId);
+            throw;
+        }
     }
 
     public async Task SetSuggestionAsync(
@@ -70,8 +129,6 @@ SELECT EXISTS (
         DateTimeOffset? suggestedAt,
         CancellationToken ct)
     {
-        // Guarda sugestão na própria tabela de classification (campos opcionais)
-        // Caso você NÃO tenha suggested_type_id etc., a gente cria ou altera para usar colunas existentes.
         const string sql = @"
 INSERT INTO ged.document_classification
 (
@@ -92,37 +149,72 @@ DO UPDATE SET
     method = EXCLUDED.method,
     suggested_at = EXCLUDED.suggested_at;
 ";
-        var conn = await _db.OpenAsync(ct);
-        await conn.ExecuteAsync(new CommandDefinition(sql,
-            new
-            {
-                tenantId,
-                documentId,
-                suggestedTypeId,
-                confidence,
-                method = string.IsNullOrWhiteSpace(method) ? "RULES" : method,
-                suggestedAt = suggestedAt ?? DateTimeOffset.UtcNow
-            },
-            cancellationToken: ct));
+        try
+        {
+            _logger.LogDebug(
+                "SetSuggestionAsync | Tenant={TenantId} Document={DocumentId} SuggestedType={SuggestedTypeId} Method={Method}",
+                tenantId, documentId, suggestedTypeId, method);
+
+             var conn = await _db.OpenAsync(ct);
+
+            await conn.ExecuteAsync(
+                new CommandDefinition(sql,
+                    new
+                    {
+                        tenantId,
+                        documentId,
+                        suggestedTypeId,
+                        confidence,
+                        method = string.IsNullOrWhiteSpace(method) ? "RULES" : method,
+                        suggestedAt = suggestedAt ?? DateTimeOffset.UtcNow
+                    },
+                    cancellationToken: ct));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Erro ao salvar sugestão de classificação | Tenant={TenantId} Document={DocumentId}",
+                tenantId, documentId);
+            throw;
+        }
     }
 
     public async Task<int> CountUnclassifiedAsync(Guid tenantId, Guid? folderId, CancellationToken ct)
     {
-        // Documentos ativos sem document_type_id definido
-        // (assumindo reg_status em document e classification)
         const string sql = @"
-SELECT COUNT(*)
+SELECT COUNT(1)
 FROM ged.document d
-LEFT JOIN ged.document_classification c
-  ON c.tenant_id = d.tenant_id
- AND c.document_id = d.id
-WHERE d.tenant_id = @tenantId
-  AND d.reg_status = 'A'
-  AND (@folderId IS NULL OR d.folder_id = @folderId)
-  AND (c.document_type_id IS NULL);
+LEFT JOIN ged.document_classification dc
+  ON dc.document_id = d.id
+ AND dc.tenant_id = d.tenant_id
+ AND dc.reg_status = 'A'
+WHERE d.tenant_id = @TenantId
+  AND d.status <> 'DELETED'
+  AND (@FolderId IS NULL OR d.folder_id = @FolderId)
+  AND dc.document_type_id IS NULL;
 ";
-        var conn = await _db.OpenAsync(ct);
-        return await conn.ExecuteScalarAsync<int>(
-            new CommandDefinition(sql, new { tenantId, folderId }, cancellationToken: ct));
+        try
+        {
+            _logger.LogDebug(
+                "CountUnclassifiedAsync | Tenant={TenantId} Folder={FolderId}",
+                tenantId, folderId);
+
+            var con = await _db.OpenAsync(ct);
+
+            return await con.ExecuteScalarAsync<int>(
+                new CommandDefinition(
+                    sql,
+                    new { TenantId = tenantId, FolderId = folderId },
+                    cancellationToken: ct));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Erro ao contar documentos não classificados | Tenant={TenantId} Folder={FolderId}",
+                tenantId, folderId);
+            throw;
+        }
     }
 }

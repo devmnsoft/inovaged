@@ -1,0 +1,93 @@
+﻿@model InovaGed.Web.Models.Classification.ClassificationDashboardVM
+@using System.Linq
+@{
+    ViewData["Title"] = "Pendências de Classificação";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h4 class="mb-0"><i class="bi bi-exclamation-triangle me-2"></i>Pendências de Classificação</h4>
+        <div class="text-muted">Documentos sem tipo definido.</div>
+    </div>
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-12 col-md-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="text-muted small">Total pendente</div>
+                <div class="display-6">@Model.TotalPending.ToString("N0")</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-md-8">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="text-muted small mb-2">Por pasta</div>
+                <div class="d-flex flex-wrap gap-2">
+                    @foreach (var b in Model.ByFolder.Take(12))
+                    {
+                        <a class="badge bg-light text-dark text-decoration-none"
+                           href="@Url.Action("Index","ClassificationDashboard", new { folderId = b.FolderId })">
+                            <i class="bi bi-folder2 me-1"></i>@b.FolderName: @b.Count
+                        </a>
+                    }
+                </div>
+                @if (Model.ByFolder.Count > 12)
+                {
+                    <div class="text-muted small mt-2">Mostrando 12 pastas com mais pendências.</div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <strong>Documentos pendentes</strong>
+        <a class="btn btn-sm btn-outline-secondary" href="@Url.Action("Index","ClassificationDashboard")">
+            <i class="bi bi-x-circle me-1"></i> Limpar filtro
+        </a>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>Título</th>
+                    <th>Pasta</th>
+                    <th>Arquivo</th>
+                    <th>Criado</th>
+                    <th style="width:180px;">Ação</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (!Model.Items.Any())
+                {
+                    <tr>
+                        <td colspan="5" class="text-muted p-3">Nenhuma pendência encontrada.</td>
+                    </tr>
+                }
+                else
+                {
+                    foreach (var d in Model.Items)
+                    {
+                        <tr>
+                            <td class="fw-semibold">@d.Title</td>
+                            <td class="text-muted">@d.FolderName</td>
+                            <td class="text-muted small">@d.FileName</td>
+                            <td class="text-muted small">@d.CreatedAt.ToString("dd/MM/yyyy HH:mm")</td>
+                            <td>
+                                <a class="btn btn-sm btn-outline-success"
+                                   href="@Url.Action("Details","Ged", new { id = d.Id, openClassify = true })">
+                                    <i class="bi bi-pencil-square me-1"></i> Classificar
+                                </a>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+</div>

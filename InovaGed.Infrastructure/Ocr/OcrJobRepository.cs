@@ -129,4 +129,40 @@ WHERE id = @jobId;";
         var conn = await _db.OpenAsync(ct);
         await conn.ExecuteAsync(new CommandDefinition(sql, new { jobId, error = errorMessage }, cancellationToken: ct));
     }
+
+    public async Task<OcrJobLease?> LeaseNextAsync(TimeSpan leaseTime, CancellationToken ct)
+    {
+        var con = await _db.OpenAsync(ct);
+
+        const string sql = @"
+WITH cte AS (
+  SELECT id
+  FROM ged.ocr_job
+  WHERE status = 'PENDING'
+    AND (lease_expires_at IS NULL OR lease_expires_at < now())
+  ORDER BY requested_at
+  LIMIT 1
+  FOR UPDATE SKIP LOCKED
+)
+UPDATE ged.ocr_job j
+SET status = 'PROCESSING',
+    started_at = COALESCE(started_at, now()),
+    lease_expires_at = now() + (@LeaseSeconds || ' seconds')::interval
+FROM cte
+WHERE j.id = cte.id
+RETURNING j.id, j.tenant_id, j.document_version_id, j.invalidate_digital_signatures;
+";
+
+        var row = await con.QueryFirstOrDefaultAsync(sql, new { LeaseSeconds = (int)leaseTime.TotalSeconds });
+
+        if (row == null) return null;
+
+        return new OcrJobLease(
+            JobId: (long)row.id,
+            TenantId: (Guid)row.tenant_id,
+            DocumentVersionId: (Guid)row.document_version_id,
+            InvalidateDigitalSignatures: (bool)row.invalidate_digital_signatures
+        );
+    }
+
 }

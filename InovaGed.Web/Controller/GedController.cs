@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System.Globalization;
+using System.Text;
 using InovaGed.Application;
 using InovaGed.Application.Classification;
 using InovaGed.Application.Common.Storage;
@@ -13,6 +14,7 @@ using InovaGed.Domain.Primitives;
 using InovaGed.Web.Models.Ged;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Net.Http.Headers;
 
 namespace InovaGed.Web.Controllers;
 
@@ -505,6 +507,9 @@ public sealed class GedController : Controller
     // =========================
     // PREVIEW (inline antigo)
     // =========================
+    // =========================
+    // PREVIEW (inline antigo)
+    // =========================
     [HttpGet]
     public async Task<IActionResult> Preview(Guid id, CancellationToken ct)
     {
@@ -521,9 +526,12 @@ public sealed class GedController : Controller
         var stream = await _storage.OpenReadAsync(v.StoragePath, ct);
         var contentType = string.IsNullOrWhiteSpace(v.ContentType) ? "application/octet-stream" : v.ContentType;
 
-        Response.Headers["Content-Disposition"] = $"inline; filename=\"{v.FileName}\"";
+        // ✅ FIX: header seguro p/ nomes com acento/cedilha
+        SetInlineContentDisposition(v.FileName);
+
         return File(stream, contentType);
     }
+
 
     [HttpGet]
     public async Task<IActionResult> DownloadVersion(Guid versionId, CancellationToken ct)
@@ -696,6 +704,9 @@ public sealed class GedController : Controller
     // =========================
     // PREVIEW INLINE (iframe wrapper)
     // =========================
+    // =========================
+    // PREVIEW INLINE (iframe wrapper)
+    // =========================
     [HttpGet]
     public async Task<IActionResult> PreviewInline(Guid versionId, CancellationToken ct)
     {
@@ -743,6 +754,7 @@ public sealed class GedController : Controller
         return Content(htmlPdf, "text/html", Encoding.UTF8);
     }
 
+
     // =========================
     // PREVIEW VERSION (inline) - usado no iframe
     // =========================
@@ -765,20 +777,29 @@ public sealed class GedController : Controller
             if (IsImage(v.ContentType, v.FileName))
             {
                 var img = await _storage.OpenReadAsync(v.StoragePath, ct);
-                Response.Headers["Content-Disposition"] = $"inline; filename=\"{v.FileName}\"";
-                return File(img, string.IsNullOrWhiteSpace(v.ContentType) ? "image/*" : v.ContentType, enableRangeProcessing: true);
+
+                // ✅ FIX: header seguro (UTF-8)
+                SetInlineContentDisposition(v.FileName);
+
+                return File(
+                    img,
+                    string.IsNullOrWhiteSpace(v.ContentType) ? "image/*" : v.ContentType,
+                    enableRangeProcessing: true
+                );
             }
 
             // PDF original
             if (IsPdf(v.ContentType, v.FileName))
             {
                 var pdf = await _storage.OpenReadAsync(v.StoragePath, ct);
-                Response.Headers["Content-Disposition"] = $"inline; filename=\"{v.FileName}\"";
+
+                // ✅ FIX: header seguro (UTF-8)
+                SetInlineContentDisposition(v.FileName);
+
                 return File(pdf, "application/pdf", enableRangeProcessing: true);
             }
 
             // Outros formatos -> preview convertido
-            // se ainda não existir, o generator cria e retorna o caminho final
             var previewPath = await _preview.GetOrCreatePreviewPdfAsync(
                 tenantId,
                 v.DocumentId,
@@ -790,8 +811,11 @@ public sealed class GedController : Controller
             if (await _storage.ExistsAsync(previewPath, ct))
             {
                 var preview = await _storage.OpenReadAsync(previewPath, ct);
-                Response.Headers["Content-Disposition"] =
-                    $"inline; filename=\"{Path.GetFileNameWithoutExtension(v.FileName)}.pdf\"";
+
+                // ✅ FIX: também pode quebrar se o baseName tiver acento
+                var previewName = $"{Path.GetFileNameWithoutExtension(v.FileName)}.pdf";
+                SetInlineContentDisposition(previewName);
+
                 return File(preview, "application/pdf", enableRangeProcessing: true);
             }
 
@@ -853,6 +877,7 @@ public sealed class GedController : Controller
             return Content(htmlErr, "text/html; charset=utf-8");
         }
     }
+
 
     // =========================
     // RUN OCR (enfileira)
@@ -1061,4 +1086,68 @@ public sealed class GedController : Controller
 
         return RedirectToAction(nameof(Index), new { folderId });
     }
+
+     
+
+    private void SetInlineContentDisposition(string fileName)
+    {
+        fileName = SanitizeFileName(fileName);
+
+        // ASCII fallback (clientes antigos / regra do header)
+        var asciiFallback = ToAsciiFileName(fileName);
+        if (string.IsNullOrWhiteSpace(asciiFallback))
+            asciiFallback = "preview";
+
+        var cd = new ContentDispositionHeaderValue("inline")
+        {
+            FileName = QuoteIfNeeded(asciiFallback),
+            FileNameStar = fileName // ✅ UTF-8 correto (RFC 5987)
+        };
+
+        Response.Headers[HeaderNames.ContentDisposition] = cd.ToString();
+    }
+
+    private static string SanitizeFileName(string fileName)
+    {
+        fileName = (fileName ?? "").Trim()
+            .Replace("\r", "")
+            .Replace("\n", "")
+            .Replace("\"", "'");
+
+        if (fileName.Length > 180)
+            fileName = fileName[..180];
+
+        return fileName;
+    }
+
+    private static string ToAsciiFileName(string fileName)
+    {
+        var normalized = fileName.Normalize(NormalizationForm.FormD);
+
+        Span<char> buffer = stackalloc char[normalized.Length];
+        var idx = 0;
+
+        foreach (var ch in normalized)
+        {
+            var uc = CharUnicodeInfo.GetUnicodeCategory(ch);
+            if (uc == UnicodeCategory.NonSpacingMark) continue;
+
+            // mantém apenas ASCII imprimível
+            if (ch >= 32 && ch <= 126)
+                buffer[idx++] = ch;
+        }
+
+        var ascii = new string(buffer[..idx]);
+
+        // remove inválidos de nome de arquivo
+        foreach (var bad in Path.GetInvalidFileNameChars())
+            ascii = ascii.Replace(bad.ToString(), "");
+
+        // remove separadores problemáticos comuns
+        return ascii.Replace(";", "_").Replace(",", "_").Trim();
+    }
+
+    private static string QuoteIfNeeded(string value)
+        => value.Contains(' ') ? $"\"{value}\"" : value;
+
 }

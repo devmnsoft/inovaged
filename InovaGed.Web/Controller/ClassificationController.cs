@@ -64,6 +64,8 @@ public sealed class ClassificationController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> SaveManual(EditClassificationVM vm, CancellationToken ct)
     {
+        if (!_currentUser.IsAuthenticated) return Unauthorized();
+
         await _app.SaveManualAsync(
             documentId: vm.DocumentId,
             documentTypeId: vm.DocumentTypeId,
@@ -79,6 +81,8 @@ public sealed class ClassificationController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> ApplySuggestion([FromForm] Guid documentId, CancellationToken ct)
     {
+        if (!_currentUser.IsAuthenticated) return Unauthorized();
+
         var dto = await _queries.GetAsync(_currentUser.TenantId, documentId, ct);
         if (dto?.SuggestedTypeId == null)
             return BadRequest("Não há sugestão para aplicar.");
@@ -87,9 +91,35 @@ public sealed class ClassificationController : Controller
             documentId: documentId,
             documentTypeId: dto.SuggestedTypeId,
             tagsCsv: dto.Tags is { Count: > 0 } ? string.Join(", ", dto.Tags) : null,
-            metadataLines: dto.Metadata is { Count: > 0 } ? string.Join("\n", dto.Metadata.Select(kv => $"{kv.Key}={kv.Value}")) : null,
+            metadataLines: dto.Metadata is { Count: > 0 }
+                ? string.Join("\n", dto.Metadata.Select(kv => $"{kv.Key}={kv.Value}"))
+                : null,
             ct: ct);
 
         return Ok();
+    }
+
+    // ✅ Endpoint "antigo" mantido por compatibilidade
+    // Agora ele só delega para o fluxo novo do AppService
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SaveClassification(
+        Guid documentId,
+        Guid documentTypeId,
+        Guid? planId, // mantém o parâmetro para não quebrar a UI antiga
+        CancellationToken ct)
+    {
+        if (!_currentUser.IsAuthenticated) return Unauthorized();
+
+        // planId hoje não é usado na gravação manual
+        // (se no futuro você quiser usar, o local correto é dentro do AppService/Commands)
+        await _app.SaveManualAsync(
+            documentId: documentId,
+            documentTypeId: documentTypeId,
+            tagsCsv: null,
+            metadataLines: null,
+            ct: ct);
+
+        return RedirectToAction("Details", "Ged", new { id = documentId, openClassify = true });
     }
 }

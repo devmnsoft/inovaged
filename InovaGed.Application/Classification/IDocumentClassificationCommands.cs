@@ -1,18 +1,36 @@
-﻿// IDocumentClassificationCommands.cs
+﻿using System;
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
+
 namespace InovaGed.Application.Classification;
 
 public interface IDocumentClassificationCommands
 {
-    Task UpsertAsync(
+    Task SaveManualAsync(
+        Guid tenantId,
         Guid documentId,
         Guid? documentTypeId,
+        Guid? userId,
         IReadOnlyList<string> tags,
         IReadOnlyDictionary<string, string> metadata,
-        string? source,
-        Guid? suggestedTypeId,
-        decimal? suggestedConf,
-        DateTimeOffset? suggestedAt,
         CancellationToken ct);
 
-    Task SetSuggestionAsync(Guid documentId, Guid? suggestedTypeId, decimal? conf, DateTimeOffset? at, CancellationToken ct);
+    Task ApplySuggestionAsync(
+        Guid tenantId,
+        Guid documentId,
+        Guid suggestedTypeId,
+        decimal? suggestedConfidence,
+        string? suggestedSummary,
+        Guid? userId,
+        CancellationToken ct);
+
+    // ✅ ADICIONE
+    Task SaveSuggestionOnlyAsync(
+        Guid tenantId,
+        Guid documentId,
+        Guid suggestedTypeId,
+        decimal? suggestedConfidence,
+        string? suggestedSummary,
+        CancellationToken ct);
 }

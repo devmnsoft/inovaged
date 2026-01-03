@@ -117,6 +117,8 @@ public sealed class SimpleTextDocumentTypeSuggester
 
     public sealed record Suggestion(Guid? SuggestedTypeId, decimal? Confidence, string? Method, string? Summary)
     {
+        public object TypeName { get; internal set; }
+
         public static Suggestion Empty(string? method = null, decimal? confidence = null)
             => new(null, confidence, method, null);
     }
