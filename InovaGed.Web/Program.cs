@@ -14,7 +14,7 @@ using InovaGed.Application.Workflow;
 using InovaGed.Infrastructure.Auditing;
 using InovaGed.Infrastructure.Auth;
 using InovaGed.Infrastructure.Classification;
-using InovaGed.Infrastructure.Database;
+using InovaGed.Infrastructure.Common.Database;
 using InovaGed.Infrastructure.Documents;
 using InovaGed.Infrastructure.Ged;
 using InovaGed.Infrastructure.Ocr;
@@ -88,8 +88,11 @@ builder.Services.Configure<LibreOfficeOptions>(builder.Configuration.GetSection(
 builder.Services.AddScoped<IPreviewGenerator, LibreOfficePreviewGenerator>();
 builder.Services.AddScoped<IFolderClassificationRuleRepository, FolderClassificationRuleRepository>();
 builder.Services.AddScoped<IOcrTextProvider, DbOcrTextProvider>();
-builder.Services.AddScoped<IOcrAutoClassificationService, OcrAutoClassificationService>(); 
-builder.Services.AddScoped<IDocumentClassificationCommands, DocumentClassificationCommands>(); 
+builder.Services.AddScoped<IOcrAutoClassificationService, OcrAutoClassificationService>();
+builder.Services.AddScoped<IDocumentClassificationCommands, DocumentClassificationCommands>();
+builder.Services.AddScoped<IClassificationPendingCounter, ClassificationPendingCounter>();
+builder.Services.AddScoped<IClassificationDashboardQueries, ClassificationDashboardQueries>(); 
+
 
 // já deve existir:
 builder.Services.AddScoped<SimpleTextDocumentTypeSuggester>();
@@ -119,8 +122,8 @@ builder.Services.AddScoped<SimpleTextDocumentTypeSuggester>();
 builder.Services.AddScoped<IFolderCommands, FolderCommands>();
 builder.Services.AddScoped<IDocumentWorkflowCommands, DocumentWorkflowCommands>();
 builder.Services.AddScoped<IWorkflowCommands, WorkflowCommands>();
-  
-builder.Services.AddScoped<IDocumentSearchTextQueries, DocumentSearchTextQueries>(); 
+
+builder.Services.AddScoped<IDocumentSearchTextQueries, DocumentSearchTextQueries>();
 
 
 // =======================================================

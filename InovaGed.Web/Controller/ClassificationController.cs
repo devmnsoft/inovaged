@@ -1,4 +1,5 @@
-﻿using InovaGed.Application.Classification;
+﻿using System.Text.Json;
+using InovaGed.Application.Classification;
 using InovaGed.Application.Identity;
 using InovaGed.Web.Models.Classification;
 using Microsoft.AspNetCore.Authorization;
@@ -7,119 +8,249 @@ using Microsoft.AspNetCore.Mvc;
 namespace InovaGed.Web.Controllers;
 
 [Authorize]
+[Route("Classification")]
 public sealed class ClassificationController : Controller
 {
+    private readonly ILogger<ClassificationController> _logger;
     private readonly ICurrentUser _currentUser;
     private readonly IDocumentClassificationQueries _queries;
-    private readonly DocumentClassificationAppService _app;
-    private readonly IDocumentTypeCatalogQueries _types;
+    private readonly IDocumentClassificationCommands _commands;
 
     public ClassificationController(
+        ILogger<ClassificationController> logger,
         ICurrentUser currentUser,
         IDocumentClassificationQueries queries,
-        DocumentClassificationAppService app,
-        IDocumentTypeCatalogQueries types)
+        IDocumentClassificationCommands commands)
     {
+        _logger = logger;
         _currentUser = currentUser;
         _queries = queries;
-        _app = app;
-        _types = types;
+        _commands = commands;
     }
 
-    [HttpGet]
+    // ✅ /Classification
+    // ✅ /Classification?documentId=GUID -> redireciona pro GED/Details com openClassify=true
+    [HttpGet("")]
+    public IActionResult Index(Guid? documentId = null)
+    {
+        try
+        {
+            if (!_currentUser.IsAuthenticated)
+                return RedirectToAction("Login", "Account");
+
+            if (documentId.HasValue && documentId.Value != Guid.Empty)
+            {
+                return RedirectToAction("Details", "Ged", new
+                {
+                    id = documentId.Value,
+                    openClassify = true
+                });
+            }
+
+            return RedirectToAction("Index", "Ged");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro em Classification/Index. documentId={DocumentId}", documentId);
+            TempData["Error"] = "Erro ao abrir classificação.";
+            return RedirectToAction("Index", "Ged");
+        }
+    }
+
+    // ✅ /Classification/Reclassify?documentId=GUID
+    [HttpGet("Reclassify")]
+    public IActionResult Reclassify([FromQuery] Guid documentId)
+    {
+        return RedirectToAction("Details", "Ged", new { id = documentId, openClassify = true });
+    }
+
+
+    // ✅ usado pelo Details.cshtml: refreshClassificationPanel()
+    // GET /Classification/Panel?documentId=GUID
+    [HttpGet("Panel")]
     public async Task<IActionResult> Panel(Guid documentId, CancellationToken ct)
     {
-        var dto = await _queries.GetAsync(_currentUser.TenantId, documentId, ct);
-        return PartialView("_DocumentClassificationPanel", dto);
+        try
+        {
+            if (!_currentUser.IsAuthenticated) return Unauthorized();
+            var tenantId = _currentUser.TenantId;
+
+            var cls = await _queries.GetAsync(tenantId, documentId, ct);
+
+            // ✅ PartialView não aceita 3 args -> injeta via ViewData
+            ViewData["DocumentId"] = documentId;
+
+            // ⚠️ Ajuste o nome do partial se o seu for diferente
+            return PartialView("_DocumentClassificationPanel", cls);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro em Classification/Panel. DocumentId={DocumentId}", documentId);
+            return StatusCode(500, "Erro ao carregar painel de classificação.");
+        }
     }
 
-    [HttpGet]
+    // ✅ usado pelo Details.cshtml: openClassificationModal()
+    // GET /Classification/EditModal?documentId=GUID
+    [HttpGet("EditModal")]
     public async Task<IActionResult> EditModal(Guid documentId, CancellationToken ct)
     {
-        var dto = await _queries.GetAsync(_currentUser.TenantId, documentId, ct);
-        var typeList = await _types.ListAsync(_currentUser.TenantId, ct);
-
-        var vm = new EditClassificationVM
+        try
         {
-            DocumentId = documentId,
-            DocumentTypeId = dto?.DocumentTypeId,
-            TagsCsv = dto?.Tags is { Count: > 0 } ? string.Join(", ", dto.Tags) : "",
-            MetadataLines = dto?.Metadata is { Count: > 0 }
-                ? string.Join("\n", dto.Metadata.Select(kv => $"{kv.Key}={kv.Value}"))
-                : "",
-            AvailableTypes = typeList
-                .OrderBy(x => x.Name)
-                .Select(t => new EditClassificationVM.DocumentTypeItemVM
+            if (!_currentUser.IsAuthenticated) return Unauthorized();
+            var tenantId = _currentUser.TenantId;
+
+            // Classificação atual (pode ser null / sem tipo ainda)
+            var cls = await _queries.GetAsync(tenantId, documentId, ct);
+
+            // ✅ Carrega SEMPRE os tipos do banco (já existe no seu Queries)
+            var types = await _queries.ListTypesAsync(tenantId, ct);
+
+            var vm = new EditClassificationVM
+            {
+                DocumentId = documentId,
+                DocumentTypeId = cls?.DocumentTypeId,
+
+                TagsCsv = (cls?.Tags is { Count: > 0 })
+                    ? string.Join(", ", cls.Tags)
+                    : "",
+
+                MetadataLines = (cls?.Metadata is { Count: > 0 })
+                    ? string.Join(Environment.NewLine, cls.Metadata.Select(kv => $"{kv.Key}={kv.Value}"))
+                    : ""
+            };
+
+            vm.AvailableTypes = types
+                .Select(t => new EditClassificationVM.DocumentTypeItem
                 {
                     Id = t.Id,
                     Name = t.Name
                 })
-                .ToList()
-        };
+                .ToList();
 
-        return PartialView("_EditClassificationModal", vm);
+            return PartialView("_EditClassificationModal", vm);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro em Classification/EditModal. DocumentId={DocumentId}", documentId);
+            return StatusCode(500, "Erro ao abrir modal de edição.");
+        }
     }
 
-    [HttpPost]
+    // ✅ usado pelo Details (submit do modal)
+    // POST /Classification/SaveManual
+    //
+    // Assinatura real:
+    // SaveManualAsync(Guid tenantId, Guid documentId, Guid? documentTypeId, Guid? userId,
+    //                IReadOnlyList<string> tags, IReadOnlyDictionary<string,string> metadata, CancellationToken ct)
+    //
+    // Eu vou aceitar tags + metadata via form de um jeito flexível:
+    // - tagsCsv: "tag1,tag2"
+    // - metadataJson: {"chave":"valor"}
+    [HttpPost("SaveManual")]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> SaveManual(EditClassificationVM vm, CancellationToken ct)
-    {
-        if (!_currentUser.IsAuthenticated) return Unauthorized();
-
-        await _app.SaveManualAsync(
-            documentId: vm.DocumentId,
-            documentTypeId: vm.DocumentTypeId,
-            tagsCsv: vm.TagsCsv,
-            metadataLines: vm.MetadataLines,
-            ct: ct);
-
-        return Ok();
-    }
-
-    // ✅ Aplicar sugestão (OCR / regras) como classificação manual
-    [HttpPost]
-    [ValidateAntiForgeryToken]
-    public async Task<IActionResult> ApplySuggestion([FromForm] Guid documentId, CancellationToken ct)
-    {
-        if (!_currentUser.IsAuthenticated) return Unauthorized();
-
-        var dto = await _queries.GetAsync(_currentUser.TenantId, documentId, ct);
-        if (dto?.SuggestedTypeId == null)
-            return BadRequest("Não há sugestão para aplicar.");
-
-        await _app.SaveManualAsync(
-            documentId: documentId,
-            documentTypeId: dto.SuggestedTypeId,
-            tagsCsv: dto.Tags is { Count: > 0 } ? string.Join(", ", dto.Tags) : null,
-            metadataLines: dto.Metadata is { Count: > 0 }
-                ? string.Join("\n", dto.Metadata.Select(kv => $"{kv.Key}={kv.Value}"))
-                : null,
-            ct: ct);
-
-        return Ok();
-    }
-
-    // ✅ Endpoint "antigo" mantido por compatibilidade
-    // Agora ele só delega para o fluxo novo do AppService
-    [HttpPost]
-    [ValidateAntiForgeryToken]
-    public async Task<IActionResult> SaveClassification(
-        Guid documentId,
-        Guid documentTypeId,
-        Guid? planId, // mantém o parâmetro para não quebrar a UI antiga
+    public async Task<IActionResult> SaveManual(
+        [FromForm] Guid documentId,
+        [FromForm] Guid? documentTypeId,
+        [FromForm] string? tagsCsv,
+        [FromForm] string? metadataJson,
         CancellationToken ct)
     {
-        if (!_currentUser.IsAuthenticated) return Unauthorized();
+        try
+        {
+            if (!_currentUser.IsAuthenticated) return Unauthorized();
 
-        // planId hoje não é usado na gravação manual
-        // (se no futuro você quiser usar, o local correto é dentro do AppService/Commands)
-        await _app.SaveManualAsync(
-            documentId: documentId,
-            documentTypeId: documentTypeId,
-            tagsCsv: null,
-            metadataLines: null,
-            ct: ct);
+            var tenantId = _currentUser.TenantId;
+            var userId = _currentUser.UserId;
 
-        return RedirectToAction("Details", "Ged", new { id = documentId, openClassify = true });
+            var tags = ParseTags(tagsCsv);
+            var metadata = ParseMetadata(metadataJson);
+
+            await _commands.SaveManualAsync(
+                tenantId: tenantId,
+                documentId: documentId,
+                documentTypeId: documentTypeId,
+                userId: userId,
+                tags: tags,
+                metadata: metadata,
+                ct: ct);
+
+            return Ok(new { success = true });
+        }
+        catch (JsonException jex)
+        {
+            _logger.LogWarning(jex, "JSON inválido em SaveManual. DocumentId={DocumentId}", documentId);
+            return BadRequest("Metadata JSON inválido.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro em Classification/SaveManual. DocumentId={DocumentId}", documentId);
+            return StatusCode(500, "Erro ao salvar classificação.");
+        }
+    }
+
+    // ✅ usado pelo Details: applyClassificationSuggestion()
+    //
+    // Sua interface exige:
+    // ApplySuggestionAsync(Guid tenantId, Guid documentId, Guid suggestedTypeId,
+    //                      decimal? suggestedConfidence, string? suggestedSummary, Guid? userId, CancellationToken ct)
+    //
+    // Então precisamos receber esses campos no POST.
+    [HttpPost("ApplySuggestion")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ApplySuggestion(
+        [FromForm] Guid documentId,
+        [FromForm] Guid suggestedTypeId,
+        [FromForm] decimal? suggestedConfidence,
+        [FromForm] string? suggestedSummary,
+        CancellationToken ct)
+    {
+        try
+        {
+            if (!_currentUser.IsAuthenticated) return Unauthorized();
+
+            var tenantId = _currentUser.TenantId;
+            var userId = _currentUser.UserId;
+
+            await _commands.ApplySuggestionAsync(
+                tenantId: tenantId,
+                documentId: documentId,
+                suggestedTypeId: suggestedTypeId,
+                suggestedConfidence: suggestedConfidence,
+                suggestedSummary: suggestedSummary,
+                userId: userId,
+                ct: ct);
+
+            return Ok(new { success = true });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro em Classification/ApplySuggestion. DocumentId={DocumentId}", documentId);
+            return StatusCode(500, "Erro ao aplicar sugestão.");
+        }
+    }
+
+    // =========================
+    // Helpers
+    // =========================
+    private static IReadOnlyList<string> ParseTags(string? tagsCsv)
+    {
+        if (string.IsNullOrWhiteSpace(tagsCsv))
+            return Array.Empty<string>();
+
+        return tagsCsv
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(t => t.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static IReadOnlyDictionary<string, string> ParseMetadata(string? metadataJson)
+    {
+        if (string.IsNullOrWhiteSpace(metadataJson))
+            return new Dictionary<string, string>();
+
+        var dict = JsonSerializer.Deserialize<Dictionary<string, string>>(metadataJson);
+        return dict ?? new Dictionary<string, string>();
     }
 }

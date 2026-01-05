@@ -1,5 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using InovaGed.Application.Classification;
 
 namespace InovaGed.Web.Models.Classification;
 
@@ -9,26 +8,16 @@ public sealed class ClassificationDashboardVM
 
     public int TotalPending { get; set; }
 
-    public List<ByFolderVM> ByFolder { get; set; } = new();
+    public List<ClassificationFolderCountDto> ByFolder { get; set; } = new();
 
-    public List<ItemVM> Items { get; set; } = new();
+    public List<UnclassifiedRowDto> Items { get; set; } = new();
 
     public int Page { get; set; } = 1;
     public int PageSize { get; set; } = 20;
 
-    public sealed class ByFolderVM
-    {
-        public Guid FolderId { get; set; }
-        public string FolderName { get; set; } = "";
-        public int Count { get; set; }
-    }
+    public int TotalPages =>
+        PageSize <= 0 ? 1 : Math.Max(1, (int)Math.Ceiling(TotalPending / (double)PageSize));
 
-    public sealed class ItemVM
-    {
-        public Guid Id { get; set; }
-        public string Title { get; set; } = "";
-        public string FolderName { get; set; } = "";
-        public string FileName { get; set; } = "";
-        public DateTimeOffset CreatedAt { get; set; }
-    }
+    public bool HasPrev => Page > 1;
+    public bool HasNext => Page < TotalPages;
 }

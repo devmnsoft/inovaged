@@ -26,6 +26,8 @@
 
     <!-- Formulário de busca -->
     <form method="get" class="row g-2 mb-4">
+        <input type="hidden" name="folderId" value="@folderId" />
+
         <div class="col-md-9">
             <input type="text"
                    name="q"
@@ -40,6 +42,7 @@
             </button>
         </div>
     </form>
+
 
     <!-- Resultados -->
     @if (Model == null || Model.Count == 0)

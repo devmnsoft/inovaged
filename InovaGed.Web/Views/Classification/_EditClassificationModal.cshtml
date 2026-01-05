@@ -3,7 +3,7 @@
 <div class="modal fade" id="modalEditClassification" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-centered">
         <div class="modal-content">
-            <form id="formEditClassification">
+            <form id="formEditClassification" method="post">
                 @Html.AntiForgeryToken()
                 <input type="hidden" name="DocumentId" value="@Model.DocumentId" />
 
@@ -18,18 +18,38 @@
 
                     <div class="mb-3">
                         <label class="form-label">Tipo documental</label>
-                        <select class="form-select" name="DocumentTypeId">
-                            <option value="">(Sem classificação)</option>
-                            @foreach (var t in Model.AvailableTypes)
-                            {
-                                <option value="@t.Id" selected="@(Model.DocumentTypeId == t.Id)">
-                                    @t.Name
-                                </option>
-                            }
-                        </select>
-                        <div class="form-text">
-                            Defina o tipo do documento para habilitar regras, workflow e relatórios.
-                        </div>
+
+                        @if (Model.AvailableTypes == null || Model.AvailableTypes.Count == 0)
+                        {
+                            <div class="alert alert-warning mb-0">
+                                Não foi possível carregar a lista de tipos documentais.
+                                <div class="small text-muted mt-1">
+                                    Verifique se o controller está preenchendo <code>AvailableTypes</code>.
+                                </div>
+                            </div>
+                        }
+                        else
+                        {
+                            <select class="form-select" name="DocumentTypeId">
+                                <option value="">(Sem classificação)</option>
+                                @foreach (var t in Model.AvailableTypes)
+                                {
+                                    if (Model.DocumentTypeId == t.Id)
+                                    {
+                                        <option value="@t.Id" selected>@t.Name</option>
+                                    }
+                                    else
+                                    {
+                                        <option value="@t.Id">@t.Name</option>
+                                    }
+                                }
+
+                            </select>
+
+                            <div class="form-text">
+                                Defina o tipo do documento para habilitar regras, workflow e relatórios.
+                            </div>
+                        }
                     </div>
 
                     <div class="mb-3">
@@ -51,8 +71,15 @@
                     <button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">
                         Cancelar
                     </button>
+
                     <button class="btn btn-primary" type="submit">
-                        <i class="bi bi-check2 me-1"></i> Salvar
+                        <span class="btn-text">
+                            <i class="bi bi-check2 me-1"></i> Salvar
+                        </span>
+                        <span class="btn-loading d-none">
+                            <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                            Salvando...
+                        </span>
                     </button>
                 </div>
             </form>

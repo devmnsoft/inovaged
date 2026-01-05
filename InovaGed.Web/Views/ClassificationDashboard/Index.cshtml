@@ -1,42 +1,58 @@
 ﻿@model InovaGed.Web.Models.Classification.ClassificationDashboardVM
-@using System.Linq
 @{
     ViewData["Title"] = "Pendências de Classificação";
+    ViewData["Subtitle"] = "Itens sem tipo definido ou aguardando revisão";
 }
-
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <div>
-        <h4 class="mb-0"><i class="bi bi-exclamation-triangle me-2"></i>Pendências de Classificação</h4>
-        <div class="text-muted">Documentos sem tipo definido.</div>
-    </div>
-</div>
 
 <div class="row g-3 mb-3">
     <div class="col-12 col-md-4">
         <div class="card h-100">
+            <div class="card-header">
+                <i class="bi bi-exclamation-triangle me-1"></i> Pendentes
+            </div>
             <div class="card-body">
-                <div class="text-muted small">Total pendente</div>
-                <div class="display-6">@Model.TotalPending.ToString("N0")</div>
+                <div class="display-6 fw-semibold">@Model.TotalPending</div>
+                <div class="text-muted small">Total de itens no recorte atual.</div>
             </div>
         </div>
     </div>
 
     <div class="col-12 col-md-8">
         <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <div><i class="bi bi-diagram-3 me-1"></i> Top pastas com pendências</div>
+                <a class="btn btn-sm btn-outline-secondary"
+                   asp-controller="ClassificationDashboard" asp-action="Index">
+                    <i class="bi bi-arrow-counterclockwise"></i> Limpar filtro
+                </a>
+            </div>
             <div class="card-body">
-                <div class="text-muted small mb-2">Por pasta</div>
-                <div class="d-flex flex-wrap gap-2">
-                    @foreach (var b in Model.ByFolder.Take(12))
-                    {
-                        <a class="badge bg-light text-dark text-decoration-none"
-                           href="@Url.Action("Index","ClassificationDashboard", new { folderId = b.FolderId })">
-                            <i class="bi bi-folder2 me-1"></i>@b.FolderName: @b.Count
-                        </a>
-                    }
-                </div>
-                @if (Model.ByFolder.Count > 12)
+                @if (Model.ByFolder == null || Model.ByFolder.Count == 0)
                 {
-                    <div class="text-muted small mt-2">Mostrando 12 pastas com mais pendências.</div>
+                    <div class="text-muted">Sem agrupamentos para exibir.</div>
+                }
+                else
+                {
+                    var max = Math.Max(1, Model.ByFolder.Max(x => x.Count));
+                    foreach (var f in Model.ByFolder.Take(8))
+                    {
+                        var pct = (int)Math.Round((f.Count * 100.0) / max);
+
+                        <div class="mb-2">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <a class="text-decoration-none"
+                                   asp-controller="ClassificationDashboard"
+                                   asp-action="Index"
+                                   asp-route-folderId="@f.FolderId">
+                                    <i class="bi bi-folder me-1"></i>@f.FolderName
+                                </a>
+                                <span class="badge text-bg-warning">@f.Count</span>
+                            </div>
+                            <div class="progress" style="height:8px;">
+                                <div class="progress-bar" role="progressbar" style="width:@pct%"></div>
+                            </div>
+                        </div>
+                    }
                 }
             </div>
         </div>
@@ -44,29 +60,36 @@
 </div>
 
 <div class="card">
-    <div class="card-header d-flex justify-content-between align-items-center">
-        <strong>Documentos pendentes</strong>
-        <a class="btn btn-sm btn-outline-secondary" href="@Url.Action("Index","ClassificationDashboard")">
-            <i class="bi bi-x-circle me-1"></i> Limpar filtro
-        </a>
+    <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <div><i class="bi bi-list-check me-1"></i> Itens pendentes</div>
+
+        <form class="d-flex gap-2" method="get" asp-action="Index" asp-controller="ClassificationDashboard">
+            <input class="form-control form-control-sm"
+                   name="folderId"
+                   value="@(Model.FolderId?.ToString() ?? "")"
+                   placeholder="Filtrar por FolderId (GUID)..." style="min-width:260px" />
+            <button class="btn btn-sm btn-outline-primary" type="submit">
+                <i class="bi bi-funnel"></i>
+            </button>
+        </form>
     </div>
 
     <div class="table-responsive">
-        <table class="table table-hover mb-0 align-middle">
+        <table class="table table-hover align-middle mb-0">
             <thead class="table-light">
                 <tr>
                     <th>Título</th>
                     <th>Pasta</th>
                     <th>Arquivo</th>
-                    <th>Criado</th>
+                    <th>Criado em</th>
                     <th style="width:180px;">Ação</th>
                 </tr>
             </thead>
             <tbody>
-                @if (!Model.Items.Any())
+                @if (Model.Items == null || Model.Items.Count == 0)
                 {
                     <tr>
-                        <td colspan="5" class="text-muted p-3">Nenhuma pendência encontrada.</td>
+                        <td colspan="5" class="text-center text-muted py-4">Nenhum item pendente encontrado.</td>
                     </tr>
                 }
                 else
@@ -75,7 +98,7 @@
                     {
                         <tr>
                             <td class="fw-semibold">@d.Title</td>
-                            <td class="text-muted">@d.FolderName</td>
+                            <td class="text-muted small">@d.FolderName</td>
                             <td class="text-muted small">@d.FileName</td>
                             <td class="text-muted small">@d.CreatedAt.ToString("dd/MM/yyyy HH:mm")</td>
                             <td>
@@ -89,5 +112,31 @@
                 }
             </tbody>
         </table>
+    </div>
+
+    <div class="card-footer d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div class="text-muted small">
+            Clique em <strong>Classificar</strong> para abrir o documento já com o painel.
+        </div>
+
+        <div class="d-flex gap-2">
+            @{
+                var prev = Math.Max(1, Model.Page - 1);
+                var next = Model.Page + 1;
+            }
+            <a class="btn btn-sm btn-outline-secondary"
+               asp-action="Index" asp-controller="ClassificationDashboard"
+               asp-route-folderId="@Model.FolderId"
+               asp-route-page="@prev" asp-route-pageSize="@Model.PageSize">
+                <i class="bi bi-chevron-left"></i> Anterior
+            </a>
+
+            <a class="btn btn-sm btn-outline-secondary"
+               asp-action="Index" asp-controller="ClassificationDashboard"
+               asp-route-folderId="@Model.FolderId"
+               asp-route-page="@next" asp-route-pageSize="@Model.PageSize">
+                Próxima <i class="bi bi-chevron-right"></i>
+            </a>
+        </div>
     </div>
 </div>

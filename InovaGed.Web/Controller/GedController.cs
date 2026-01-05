@@ -1,7 +1,9 @@
 ﻿using System.Globalization;
 using System.Text;
+using Dapper;
 using InovaGed.Application;
 using InovaGed.Application.Classification;
+using InovaGed.Application.Common.Database;
 using InovaGed.Application.Common.Storage;
 using InovaGed.Application.Documents;
 using InovaGed.Application.Ged;
@@ -24,13 +26,15 @@ public sealed class GedController : Controller
     private readonly ILogger<GedController> _logger;
     private readonly ICurrentUser _currentUser;
 
+    private readonly IDbConnectionFactory _db;
+
     private readonly IDocumentCommands _documentCommands;
 
     private readonly IFolderQueries _folders;
     private readonly IFolderCommands _folderCommands;
 
     private readonly IOcrJobRepository _ocrJobs;
-    private readonly IOcrStatusQueries _ocrStatus;
+    private readonly IOcrStatusQueries _ocrStatus; // (mantido)
 
     private readonly IDocumentQueries _docs;
     private readonly DocumentAppService _documentApp;
@@ -51,6 +55,7 @@ public sealed class GedController : Controller
     public GedController(
         ILogger<GedController> logger,
         ICurrentUser currentUser,
+        IDbConnectionFactory db,                    // ✅ ADICIONADO
         IFolderQueries folders,
         IOcrStatusQueries ocrStatus,
         IDocumentSearchQueries search,
@@ -69,6 +74,7 @@ public sealed class GedController : Controller
     {
         _logger = logger;
         _currentUser = currentUser;
+        _db = db;
 
         _folders = folders;
         _folderCommands = folderCommands;
@@ -93,55 +99,68 @@ public sealed class GedController : Controller
         _documentCommands = documentCommands;
     }
 
+    private bool IsAjaxRequest()
+        => string.Equals(Request.Headers["X-Requested-With"], "XMLHttpRequest", StringComparison.OrdinalIgnoreCase)
+           || (Request.Headers.TryGetValue("Accept", out var a) && a.ToString().Contains("application/json", StringComparison.OrdinalIgnoreCase));
+
     // =========================
     // EXPLORER
     // =========================
     [HttpGet]
     public async Task<IActionResult> Index(Guid? folderId, string? q, CancellationToken ct)
     {
-        if (!_currentUser.IsAuthenticated)
-            return RedirectToAction("Login", "Account");
-
-        var tenantId = _currentUser.TenantId;
-
-        var tree = await _folders.TreeAsync(tenantId, ct);
-
-        // se não veio folderId, tenta apontar para a "primeira" pasta da árvore
-        var effectiveFolderId = folderId ?? tree.FirstOrDefault()?.Id;
-
-        var docs = effectiveFolderId.HasValue
-            ? await _docs.ListAsync(tenantId, effectiveFolderId.Value, q, ct)
-            : Array.Empty<DocumentRowDto>();
-
-        // ✅ KPI: documentos não classificados (filtra por pasta quando houver)
-        ViewBag.UnclassifiedCount = await _clsQ.CountUnclassifiedAsync(tenantId, effectiveFolderId, ct);
-
-        var vm = new GedExplorerVM
+        try
         {
-            CurrentFolderId = effectiveFolderId, // <<< ESSENCIAL
-            FolderId = effectiveFolderId,
-            Query = q,
-            Folders = tree.Select(x => new GedExplorerVM.FolderNodeVM
-            {
-                Id = x.Id,
-                ParentId = x.ParentId,
-                Name = x.Name,
-                Level = x.Level
-            }).ToList(),
-            Documents = docs.Select(d => new GedExplorerVM.DocumentRowVM
-            {
-                Id = d.Id,
-                Title = d.Title,
-                TypeName = d.TypeName,
-                FileName = d.FileName,
-                SizeBytes = d.SizeBytes,
-                CreatedAt = d.CreatedAt,
-                CreatedBy = d.CreatedBy,
-                IsConfidential = d.IsConfidential
-            }).ToList()
-        };
+            if (!_currentUser.IsAuthenticated)
+                return RedirectToAction("Login", "Account");
 
-        return View(vm);
+            var tenantId = _currentUser.TenantId;
+
+            var tree = await _folders.TreeAsync(tenantId, ct);
+
+            // se não veio folderId, tenta apontar para a "primeira" pasta da árvore
+            var effectiveFolderId = folderId ?? tree.FirstOrDefault()?.Id;
+
+            var docs = effectiveFolderId.HasValue
+                ? await _docs.ListAsync(tenantId, effectiveFolderId.Value, q, ct)
+                : Array.Empty<DocumentRowDto>();
+
+            // ✅ KPI: documentos não classificados (filtra por pasta quando houver)
+            ViewBag.UnclassifiedCount = await _clsQ.CountUnclassifiedAsync(tenantId, effectiveFolderId, ct);
+
+            var vm = new GedExplorerVM
+            {
+                CurrentFolderId = effectiveFolderId,
+                FolderId = effectiveFolderId,
+                Query = q,
+                Folders = tree.Select(x => new GedExplorerVM.FolderNodeVM
+                {
+                    Id = x.Id,
+                    ParentId = x.ParentId,
+                    Name = x.Name,
+                    Level = x.Level
+                }).ToList(),
+                Documents = docs.Select(d => new GedExplorerVM.DocumentRowVM
+                {
+                    Id = d.Id,
+                    Title = d.Title,
+                    TypeName = d.TypeName,
+                    FileName = d.FileName,
+                    SizeBytes = d.SizeBytes,
+                    CreatedAt = d.CreatedAt,
+                    CreatedBy = d.CreatedBy,
+                    IsConfidential = d.IsConfidential
+                }).ToList()
+            };
+
+            return View(vm);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro ao carregar Explorer. FolderId={FolderId} q={q}", folderId, q);
+            TempData["erro"] = "Erro ao carregar Explorer.";
+            return View(new GedExplorerVM());
+        }
     }
 
     // =========================
@@ -162,9 +181,7 @@ public sealed class GedController : Controller
 
             var versions = await _docs.ListVersionsAsync(tenantId, id, ct);
 
-            // =========
-            // WORKFLOW: estado atual + transições + histórico + workflows disponíveis
-            // =========
+            // ========= WORKFLOW =========
             var wfState = await _docWfQ.GetCurrentAsync(tenantId, id, ct);
 
             var wfVm = new GedDetailsVM.WorkflowVM
@@ -180,7 +197,6 @@ public sealed class GedController : Controller
                 StartedBy = wfState?.StartedBy
             };
 
-            // Workflows disponíveis (para iniciar)
             var defs = await _workflowQ.ListDefinitionsAsync(tenantId, q: null, ct);
             wfVm.AvailableWorkflows = defs
                 .Where(x => x.IsActive)
@@ -191,10 +207,8 @@ public sealed class GedController : Controller
                 })
                 .ToList();
 
-            // Se tem workflow ativo e não concluído, carrega transições
             if (wfState is not null && !wfState.IsCompleted)
             {
-                // ✅ assinatura real: (tenantId, documentId, ct)
                 var transitions = await _docWfQ.ListAvailableTransitionsAsync(tenantId, id, ct);
                 wfVm.AvailableTransitions = transitions.Select(t => new GedDetailsVM.WorkflowVM.TransitionRow
                 {
@@ -206,7 +220,6 @@ public sealed class GedController : Controller
                 }).ToList();
             }
 
-            // Histórico
             var history = await _docWfQ.ListHistoryAsync(tenantId, id, ct);
             wfVm.History = history.Select(h => new GedDetailsVM.WorkflowVM.HistoryRow
             {
@@ -219,9 +232,6 @@ public sealed class GedController : Controller
                 Comments = h.Comments
             }).ToList();
 
-            // =========
-            // VM
-            // =========
             var vm = new GedDetailsVM
             {
                 Id = doc.Id,
@@ -242,7 +252,7 @@ public sealed class GedController : Controller
                     CreatedBy = v.CreatedBy,
                     IsCurrent = doc.CurrentVersionId.HasValue && v.Id == doc.CurrentVersionId.Value,
 
-                    // OCR (se seu DTO tiver, mantém; se não tiver, remova essas linhas)
+                    // OCR (se existir no DTO)
                     OcrStatus = v.OcrStatus,
                     OcrJobId = v.OcrJobId,
                     OcrErrorMessage = v.OcrErrorMessage,
@@ -254,13 +264,11 @@ public sealed class GedController : Controller
                 Workflow = wfVm
             };
 
-            // versão selecionada no preview (se vier, usa; senão usa current; senão usa a última)
             vm.SelectedVersionId =
                 versionId
                 ?? vm.CurrentVersionId
                 ?? vm.Versions.OrderByDescending(x => x.VersionNumber).FirstOrDefault()?.Id;
 
-            // flags para a view
             ViewBag.OpenClassify = openClassify == true;
             ViewBag.OcrSwitched = ocrSwitched == true;
 
@@ -292,7 +300,6 @@ public sealed class GedController : Controller
             var tenantId = _currentUser.TenantId;
             var userId = _currentUser.UserId;
 
-            // ✅ trava workflow se não estiver classificado
             var hasCls = await _clsQ.HasClassificationAsync(tenantId, documentId, ct);
             if (!hasCls)
             {
@@ -312,7 +319,7 @@ public sealed class GedController : Controller
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Erro StartWorkflow");
+            _logger.LogError(ex, "Erro StartWorkflow. DocId={DocId} WorkflowId={WorkflowId}", documentId, workflowId);
             TempData["Error"] = "Erro inesperado ao iniciar workflow.";
             return RedirectToAction(nameof(Details), new { id = documentId });
         }
@@ -338,7 +345,6 @@ public sealed class GedController : Controller
             var tenantId = _currentUser.TenantId;
             var userId = _currentUser.UserId;
 
-            // ✅ trava workflow se não estiver classificado
             var hasCls = await _clsQ.HasClassificationAsync(tenantId, documentId, ct);
             if (!hasCls)
             {
@@ -366,7 +372,7 @@ public sealed class GedController : Controller
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Erro ApplyTransition");
+            _logger.LogError(ex, "Erro ApplyTransition. DocId={DocId} TransitionId={TransitionId}", documentId, transitionId);
             TempData["Error"] = "Erro inesperado ao aplicar transição.";
             return RedirectToAction(nameof(Details), new { id = documentId });
         }
@@ -409,7 +415,7 @@ public sealed class GedController : Controller
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Erro ao criar pasta.");
+            _logger.LogError(ex, "Erro ao criar pasta. ParentId={ParentId} Name={Name}", cmd.ParentId, cmd.Name);
             TempData["Error"] = "Erro ao criar pasta.";
             return RedirectToAction(nameof(Index), new { folderId = cmd.ParentId });
         }
@@ -484,65 +490,86 @@ public sealed class GedController : Controller
     [HttpGet]
     public async Task<IActionResult> Download(Guid id, CancellationToken ct)
     {
-        if (!_currentUser.IsAuthenticated)
+        try
         {
-            TempData["Error"] = "Usuário não autenticado.";
-            return RedirectToAction(nameof(Index));
+            if (!_currentUser.IsAuthenticated)
+            {
+                TempData["Error"] = "Usuário não autenticado.";
+                return RedirectToAction(nameof(Index));
+            }
+
+            var tenantId = _currentUser.TenantId;
+
+            var v = await _docs.GetVersionForDownloadAsync(tenantId, id, ct);
+            if (v == null) return NotFound();
+
+            if (!await _storage.ExistsAsync(v.StoragePath, ct))
+                return NotFound("Arquivo não encontrado no storage.");
+
+            var stream = await _storage.OpenReadAsync(v.StoragePath, ct);
+            var contentType = string.IsNullOrWhiteSpace(v.ContentType) ? "application/octet-stream" : v.ContentType;
+
+            return File(stream, contentType, v.FileName);
         }
-
-        var tenantId = _currentUser.TenantId;
-
-        var v = await _docs.GetVersionForDownloadAsync(tenantId, id, ct);
-        if (v == null) return NotFound();
-
-        if (!await _storage.ExistsAsync(v.StoragePath, ct))
-            return NotFound("Arquivo não encontrado no storage.");
-
-        var stream = await _storage.OpenReadAsync(v.StoragePath, ct);
-        var contentType = string.IsNullOrWhiteSpace(v.ContentType) ? "application/octet-stream" : v.ContentType;
-
-        return File(stream, contentType, v.FileName);
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro em Download. VersionId={VersionId}", id);
+            return StatusCode(500);
+        }
     }
 
-    // =========================
-    // PREVIEW (inline antigo)
-    // =========================
     // =========================
     // PREVIEW (inline antigo)
     // =========================
     [HttpGet]
     public async Task<IActionResult> Preview(Guid id, CancellationToken ct)
     {
-        if (!_currentUser.IsAuthenticated) return Unauthorized();
+        try
+        {
+            if (!_currentUser.IsAuthenticated) return Unauthorized();
 
-        var tenantId = _currentUser.TenantId;
+            var tenantId = _currentUser.TenantId;
 
-        var v = await _docs.GetVersionForDownloadAsync(tenantId, id, ct);
-        if (v == null) return NotFound();
+            var v = await _docs.GetVersionForDownloadAsync(tenantId, id, ct);
+            if (v == null) return NotFound();
 
-        if (!await _storage.ExistsAsync(v.StoragePath, ct))
-            return NotFound("Arquivo não encontrado no storage.");
+            if (!await _storage.ExistsAsync(v.StoragePath, ct))
+                return NotFound("Arquivo não encontrado no storage.");
 
-        var stream = await _storage.OpenReadAsync(v.StoragePath, ct);
-        var contentType = string.IsNullOrWhiteSpace(v.ContentType) ? "application/octet-stream" : v.ContentType;
+            var stream = await _storage.OpenReadAsync(v.StoragePath, ct);
+            var contentType = string.IsNullOrWhiteSpace(v.ContentType) ? "application/octet-stream" : v.ContentType;
 
-        // ✅ FIX: header seguro p/ nomes com acento/cedilha
-        SetInlineContentDisposition(v.FileName);
+            SetInlineContentDisposition(v.FileName);
 
-        return File(stream, contentType);
+            return File(stream, contentType);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro em Preview. VersionId={VersionId}", id);
+            return StatusCode(500);
+        }
     }
-
 
     [HttpGet]
     public async Task<IActionResult> DownloadVersion(Guid versionId, CancellationToken ct)
     {
-        var tenantId = _currentUser.TenantId;
+        try
+        {
+            if (!_currentUser.IsAuthenticated) return Unauthorized();
 
-        var v = await _docs.GetVersionForDownloadAsync(tenantId, versionId, ct);
-        if (v is null) return NotFound();
+            var tenantId = _currentUser.TenantId;
 
-        var stream = await _storage.OpenReadAsync(v.StoragePath, ct);
-        return File(stream, v.ContentType, v.FileName);
+            var v = await _docs.GetVersionForDownloadAsync(tenantId, versionId, ct);
+            if (v is null) return NotFound();
+
+            var stream = await _storage.OpenReadAsync(v.StoragePath, ct);
+            return File(stream, v.ContentType, v.FileName);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro em DownloadVersion. VersionId={VersionId}", versionId);
+            return StatusCode(500);
+        }
     }
 
     [HttpGet]
@@ -704,22 +731,21 @@ public sealed class GedController : Controller
     // =========================
     // PREVIEW INLINE (iframe wrapper)
     // =========================
-    // =========================
-    // PREVIEW INLINE (iframe wrapper)
-    // =========================
     [HttpGet]
     public async Task<IActionResult> PreviewInline(Guid versionId, CancellationToken ct)
     {
-        if (!_currentUser.IsAuthenticated) return Unauthorized();
-        var tenantId = _currentUser.TenantId;
-
-        var v = await _docs.GetVersionForDownloadAsync(tenantId, versionId, ct);
-        if (v is null) return NotFound();
-
-        if (IsImage(v.ContentType, v.FileName))
+        try
         {
-            var url = Url.Action("PreviewVersion", "Ged", new { versionId })!;
-            var html = $@"
+            if (!_currentUser.IsAuthenticated) return Unauthorized();
+            var tenantId = _currentUser.TenantId;
+
+            var v = await _docs.GetVersionForDownloadAsync(tenantId, versionId, ct);
+            if (v is null) return NotFound();
+
+            if (IsImage(v.ContentType, v.FileName))
+            {
+                var url = Url.Action("PreviewVersion", "Ged", new { versionId })!;
+                var html = $@"
 <!doctype html>
 <html>
 <head>
@@ -735,11 +761,11 @@ public sealed class GedController : Controller
 <div class='wrap'><img src='{url}' alt='preview' /></div>
 </body>
 </html>";
-            return Content(html, "text/html", Encoding.UTF8);
-        }
+                return Content(html, "text/html", Encoding.UTF8);
+            }
 
-        var previewUrl = Url.Action("PreviewVersion", "Ged", new { versionId })!;
-        var htmlPdf = $@"
+            var previewUrl = Url.Action("PreviewVersion", "Ged", new { versionId })!;
+            var htmlPdf = $@"
 <!doctype html>
 <html>
 <head>
@@ -751,9 +777,14 @@ public sealed class GedController : Controller
 <iframe src='{previewUrl}'></iframe>
 </body>
 </html>";
-        return Content(htmlPdf, "text/html", Encoding.UTF8);
+            return Content(htmlPdf, "text/html", Encoding.UTF8);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro em PreviewInline. VersionId={VersionId}", versionId);
+            return StatusCode(500);
+        }
     }
-
 
     // =========================
     // PREVIEW VERSION (inline) - usado no iframe
@@ -773,12 +804,9 @@ public sealed class GedController : Controller
             if (!await _storage.ExistsAsync(v.StoragePath, ct))
                 return NotFound("Arquivo não encontrado no storage.");
 
-            // Imagem
             if (IsImage(v.ContentType, v.FileName))
             {
                 var img = await _storage.OpenReadAsync(v.StoragePath, ct);
-
-                // ✅ FIX: header seguro (UTF-8)
                 SetInlineContentDisposition(v.FileName);
 
                 return File(
@@ -788,18 +816,14 @@ public sealed class GedController : Controller
                 );
             }
 
-            // PDF original
             if (IsPdf(v.ContentType, v.FileName))
             {
                 var pdf = await _storage.OpenReadAsync(v.StoragePath, ct);
-
-                // ✅ FIX: header seguro (UTF-8)
                 SetInlineContentDisposition(v.FileName);
 
                 return File(pdf, "application/pdf", enableRangeProcessing: true);
             }
 
-            // Outros formatos -> preview convertido
             var previewPath = await _preview.GetOrCreatePreviewPdfAsync(
                 tenantId,
                 v.DocumentId,
@@ -812,14 +836,12 @@ public sealed class GedController : Controller
             {
                 var preview = await _storage.OpenReadAsync(previewPath, ct);
 
-                // ✅ FIX: também pode quebrar se o baseName tiver acento
                 var previewName = $"{Path.GetFileNameWithoutExtension(v.FileName)}.pdf";
                 SetInlineContentDisposition(previewName);
 
                 return File(preview, "application/pdf", enableRangeProcessing: true);
             }
 
-            // se não existe ainda, cai na tela "gerando..."
             var retryUrl = Url.Action("PreviewVersion", "Ged", new { versionId })!;
             var html = $@"
 <!doctype html>
@@ -878,7 +900,6 @@ public sealed class GedController : Controller
         }
     }
 
-
     // =========================
     // RUN OCR (enfileira)
     // =========================
@@ -902,6 +923,13 @@ public sealed class GedController : Controller
                 invalidateDigitalSignatures: force,
                 ct: ct);
 
+            _logger.LogInformation("OCR enfileirado. Tenant={TenantId} VersionId={VersionId} JobId={JobId} Force={Force}",
+                tenantId, versionId, jobId, force);
+
+            // ✅ Se veio via fetch (AJAX), devolve JSON para a view atualizar badge/spinner sem reload
+            if (IsAjaxRequest())
+                return Ok(new { jobId });
+
             TempData["ok"] = force
                 ? $"OCR enfileirado (FORÇAR). Job #{jobId}."
                 : $"OCR enfileirado. Job #{jobId}.";
@@ -910,7 +938,11 @@ public sealed class GedController : Controller
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Erro ao enfileirar OCR. VersionId={VersionId}", versionId);
+            _logger.LogError(ex, "Erro ao enfileirar OCR. VersionId={VersionId} Force={Force}", versionId, force);
+
+            if (IsAjaxRequest())
+                return StatusCode(500, new { error = "Erro ao enfileirar OCR." });
+
             TempData["Error"] = "Erro ao enfileirar OCR.";
             return RedirectToAction(nameof(Index));
         }
@@ -919,45 +951,71 @@ public sealed class GedController : Controller
     [HttpGet]
     public async Task<IActionResult> OcrText(Guid versionId, CancellationToken ct)
     {
-        if (!_currentUser.IsAuthenticated) return Unauthorized();
-        var tenantId = _currentUser.TenantId;
+        try
+        {
+            if (!_currentUser.IsAuthenticated) return Unauthorized();
+            var tenantId = _currentUser.TenantId;
 
-        var v = await _docs.GetVersionForDownloadAsync(tenantId, versionId, ct);
-        if (v is null) return NotFound();
+            var v = await _docs.GetVersionForDownloadAsync(tenantId, versionId, ct);
+            if (v is null) return NotFound();
 
-        var ocrRelPath = Path.Combine(
-            tenantId.ToString("N"),
-            "ocr",
-            v.DocumentId.ToString("N"),
-            versionId.ToString("N"),
-            "ocr.txt"
-        ).Replace('\\', '/');
+            var ocrRelPath = Path.Combine(
+                tenantId.ToString("N"),
+                "ocr",
+                v.DocumentId.ToString("N"),
+                versionId.ToString("N"),
+                "ocr.txt"
+            ).Replace('\\', '/');
 
-        if (!await _storage.ExistsAsync(ocrRelPath, ct))
-            return NotFound("OCR ainda não gerado.");
+            if (!await _storage.ExistsAsync(ocrRelPath, ct))
+                return NotFound("OCR ainda não gerado.");
 
-        var stream = await _storage.OpenReadAsync(ocrRelPath, ct);
-        return File(stream, "text/plain; charset=utf-8");
+            var stream = await _storage.OpenReadAsync(ocrRelPath, ct);
+            return File(stream, "text/plain; charset=utf-8");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro em OcrText. VersionId={VersionId}", versionId);
+            return StatusCode(500);
+        }
     }
 
+    // =========================
+    // SEARCH (FULL-TEXT)
+    // =========================
     [HttpGet]
     public async Task<IActionResult> Search(string? q, Guid? folderId, int limit = 25, CancellationToken ct = default)
     {
-        if (!_currentUser.IsAuthenticated)
-            return RedirectToAction("Login", "Account");
+        try
+        {
+            if (!_currentUser.IsAuthenticated)
+                return RedirectToAction("Login", "Account");
 
-        var tenantId = _currentUser.TenantId;
+            var tenantId = _currentUser.TenantId;
 
-        _ = await _search.SearchAsync(
-            tenantId: tenantId,
-            q: q ?? "",
-            folderId: folderId,
-            limit: limit,
-            ct: ct);
+            var rows = await _search.SearchAsync(
+                tenantId: tenantId,
+                q: q ?? "",
+                folderId: folderId,
+                limit: limit,
+                ct: ct);
 
-        return RedirectToAction(nameof(Index), new { folderId, q });
+            ViewBag.Query = q ?? "";
+            ViewBag.FolderId = folderId;
+
+            return View("Search", rows);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro em Search. FolderId={FolderId} q={q}", folderId, q);
+            TempData["erro"] = "Erro ao pesquisar.";
+            return RedirectToAction(nameof(Index), new { folderId });
+        }
     }
 
+    // =========================
+    // OCR STATUS (✅ IMPLEMENTADO)
+    // =========================
     [HttpGet]
     public async Task<IActionResult> OcrStatus(Guid versionId, CancellationToken ct)
     {
@@ -968,13 +1026,51 @@ public sealed class GedController : Controller
 
             var tenantId = _currentUser.TenantId;
 
-            var v = await _docs.GetVersionForDownloadAsync(tenantId, versionId, ct);
-            if (v is null) return NotFound();
+            // Busca o job mais recente daquela version
+            const string sql = @"
+SELECT
+  oj.status::text                 AS ""Status"",
+  oj.error_message                AS ""ErrorMessage"",
+  dv.document_id                  AS ""DocumentId"",
+  oj.output_version_id            AS ""OcrVersionId"",
+  oj.id                           AS ""JobId"",
+  oj.requested_at                 AS ""RequestedAt"",
+  oj.started_at                   AS ""StartedAt"",
+  oj.finished_at                  AS ""FinishedAt""
+FROM ged.ocr_job oj
+JOIN ged.document_version dv
+  ON dv.id = oj.document_version_id
+WHERE oj.tenant_id = @tenantId
+  AND oj.document_version_id = @versionId
+ORDER BY oj.requested_at DESC, oj.id DESC
+LIMIT 1;";
 
-            // mantém a sua implementação atual (se já existir no projeto).
-            // Se precisar, me manda seu OcrStatusResponse e eu ajusto aqui.
+            await using var conn = await _db.OpenAsync(ct);
+            var row = await conn.QueryFirstOrDefaultAsync(sql, new { tenantId, versionId });
 
-            return StatusCode(501, "OcrStatus não implementado nesta versão do controller.");
+            if (row is null)
+            {
+                // Sem job: a view entende como "NONE"
+                return Ok(new
+                {
+                    status = "NONE",
+                    errorMessage = (string?)null,
+                    documentId = Guid.Empty,
+                    ocrVersionId = (Guid?)null
+                });
+            }
+
+            return Ok(new
+            {
+                status = (string?)row.Status ?? "NONE",
+                errorMessage = (string?)row.ErrorMessage,
+                documentId = (Guid)row.DocumentId,
+                ocrVersionId = (Guid?)row.OcrVersionId,
+                jobId = (long?)row.JobId,
+                requestedAt = (DateTime?)row.RequestedAt,
+                startedAt = (DateTime?)row.StartedAt,
+                finishedAt = (DateTime?)row.FinishedAt
+            });
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -994,30 +1090,38 @@ public sealed class GedController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> RegeneratePreview(Guid versionId, CancellationToken ct)
     {
-        if (!_currentUser.IsAuthenticated) return Unauthorized();
-        var tenantId = _currentUser.TenantId;
+        try
+        {
+            if (!_currentUser.IsAuthenticated) return Unauthorized();
+            var tenantId = _currentUser.TenantId;
 
-        var v = await _docs.GetVersionForDownloadAsync(tenantId, versionId, ct);
-        if (v is null) return NotFound();
+            var v = await _docs.GetVersionForDownloadAsync(tenantId, versionId, ct);
+            if (v is null) return NotFound();
 
-        if (IsImage(v.ContentType, v.FileName) || IsPdf(v.ContentType, v.FileName))
+            if (IsImage(v.ContentType, v.FileName) || IsPdf(v.ContentType, v.FileName))
+                return RedirectToAction(nameof(Details), new { id = v.DocumentId });
+
+            var previewRelPath = Path.Combine(
+                tenantId.ToString("N"),
+                "previews",
+                v.DocumentId.ToString("N"),
+                versionId.ToString("N"),
+                "preview.pdf"
+            ).Replace('\\', '/');
+
+            await _storage.DeleteIfExistsAsync(previewRelPath, ct);
+
+            _ = await _preview.GetOrCreatePreviewPdfAsync(tenantId, v.DocumentId, versionId, v.StoragePath, v.FileName, ct);
+
+            TempData["ok"] = "Preview regerado com sucesso.";
             return RedirectToAction(nameof(Details), new { id = v.DocumentId });
-
-        // apaga o preview e força recriação
-        var previewRelPath = Path.Combine(
-            tenantId.ToString("N"),
-            "previews",
-            v.DocumentId.ToString("N"),
-            versionId.ToString("N"),
-            "preview.pdf"
-        ).Replace('\\', '/');
-
-        await _storage.DeleteIfExistsAsync(previewRelPath, ct);
-
-        _ = await _preview.GetOrCreatePreviewPdfAsync(tenantId, v.DocumentId, versionId, v.StoragePath, v.FileName, ct);
-
-        TempData["ok"] = "Preview regerado com sucesso.";
-        return RedirectToAction(nameof(Details), new { id = v.DocumentId });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro em RegeneratePreview. VersionId={VersionId}", versionId);
+            TempData["erro"] = "Erro ao regerar preview.";
+            return RedirectToAction(nameof(Index));
+        }
     }
 
     [HttpPost]
@@ -1074,7 +1178,7 @@ public sealed class GedController : Controller
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "EXCEPTION em DeleteDocument controller");
+            _logger.LogError(ex, "EXCEPTION em DeleteDocument controller. DocId={DocId}", id);
             TempData["erro"] = "Erro inesperado ao excluir documento.";
             return RedirectToAction(nameof(Index), new { folderId });
         }
@@ -1087,13 +1191,13 @@ public sealed class GedController : Controller
         return RedirectToAction(nameof(Index), new { folderId });
     }
 
-     
-
+    // =========================
+    // Content-Disposition seguro
+    // =========================
     private void SetInlineContentDisposition(string fileName)
     {
         fileName = SanitizeFileName(fileName);
 
-        // ASCII fallback (clientes antigos / regra do header)
         var asciiFallback = ToAsciiFileName(fileName);
         if (string.IsNullOrWhiteSpace(asciiFallback))
             asciiFallback = "preview";
@@ -1101,7 +1205,7 @@ public sealed class GedController : Controller
         var cd = new ContentDispositionHeaderValue("inline")
         {
             FileName = QuoteIfNeeded(asciiFallback),
-            FileNameStar = fileName // ✅ UTF-8 correto (RFC 5987)
+            FileNameStar = fileName
         };
 
         Response.Headers[HeaderNames.ContentDisposition] = cd.ToString();
@@ -1132,22 +1236,18 @@ public sealed class GedController : Controller
             var uc = CharUnicodeInfo.GetUnicodeCategory(ch);
             if (uc == UnicodeCategory.NonSpacingMark) continue;
 
-            // mantém apenas ASCII imprimível
             if (ch >= 32 && ch <= 126)
                 buffer[idx++] = ch;
         }
 
         var ascii = new string(buffer[..idx]);
 
-        // remove inválidos de nome de arquivo
         foreach (var bad in Path.GetInvalidFileNameChars())
             ascii = ascii.Replace(bad.ToString(), "");
 
-        // remove separadores problemáticos comuns
         return ascii.Replace(";", "_").Replace(",", "_").Trim();
     }
 
     private static string QuoteIfNeeded(string value)
         => value.Contains(' ') ? $"\"{value}\"" : value;
-
 }

@@ -1,4 +1,5 @@
-﻿namespace InovaGed.Application.Classification;
+﻿
+namespace InovaGed.Application.Classification;
 
 public sealed class DocumentClassificationViewDto
 {
@@ -25,4 +26,11 @@ public sealed class DocumentClassificationViewDto
     public decimal? SuggestedConfidence { get; set; }
     public string? SuggestedSummary { get; set; }
     public DateTimeOffset? SuggestedAt { get; set; }
+    public List<DocumentTypeItemVM> AvailableTypes { get; set; } = new();
+}
+public sealed class DocumentTypeItemVM
+{
+    public Guid Id { get; set; }
+    public string Name { get; set; } = "";
+    // ✅ REMOVIDO: Code
 }

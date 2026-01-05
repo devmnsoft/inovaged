@@ -1,8 +1,8 @@
-﻿using System.Data;
+﻿using Npgsql;
 
 namespace InovaGed.Application.Common.Database;
 
 public interface IDbConnectionFactory
 {
-    Task<IDbConnection> OpenAsync(CancellationToken ct);
+    Task<NpgsqlConnection> OpenAsync(CancellationToken ct);
 }

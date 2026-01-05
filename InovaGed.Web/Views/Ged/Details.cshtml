@@ -10,30 +10,11 @@
 
 @{
     var versions = Model.Versions ?? new System.Collections.Generic.List<InovaGed.Web.Models.Ged.GedDetailsVM.VersionVM>();
-
     var selectedVersionId = Model.SelectedVersionId ?? Model.CurrentVersionId;
     var selectedVersion = versions.FirstOrDefault(v => v.Id == selectedVersionId);
 
-    var isViewingOcr = (selectedVersion?.FileName ?? "").EndsWith("_OCR.pdf", StringComparison.OrdinalIgnoreCase);
-    var showToast = (ViewBag.OcrSwitched is bool b && b);
-
-    // Para abrir modal automaticamente quando vier do Index
     var openClassify = (Context.Request.Query["openClassify"].ToString() ?? "")
         .Equals("true", StringComparison.OrdinalIgnoreCase);
-}
-
-@if (showToast)
-{
-    <div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 1200;">
-        <div id="ocrToast" class="toast align-items-center text-bg-success border-0" role="alert" aria-live="assertive" aria-atomic="true">
-            <div class="d-flex">
-                <div class="toast-body">
-                    ✅ OCR concluído — abrindo versão OCR…
-                </div>
-                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Fechar"></button>
-            </div>
-        </div>
-    </div>
 }
 
 <div class="row g-3">
@@ -44,11 +25,6 @@
                 <div class="d-flex align-items-center gap-2">
                     <i class="bi bi-eye"></i>
                     <strong>Visualização</strong>
-
-                    @if (isViewingOcr)
-                    {
-                        <span class="badge bg-success ms-2" title="Você está visualizando a versão OCR">OCR</span>
-                    }
                 </div>
 
                 <div class="d-flex gap-2 flex-wrap align-items-center">
@@ -77,16 +53,11 @@
                             <input type="hidden" name="versionId" value="@selectedVersionId" />
                             <input type="hidden" name="force" value="false" />
                             <button type="submit" class="btn btn-sm btn-outline-success" id="btnOcr">
-                                @(isViewingOcr ? "Refazer OCR" : "OCR")
-                            </button>
-                        </form>
-
-                        <form asp-action="RunOcr" asp-controller="Ged" method="post" class="d-inline" id="ocrForceForm">
-                            @Html.AntiForgeryToken()
-                            <input type="hidden" name="versionId" value="@selectedVersionId" />
-                            <input type="hidden" name="force" value="true" />
-                            <button type="submit" class="btn btn-sm btn-warning" id="btnOcrForce" title="Forçar OCR (pode invalidar assinatura)">
-                                Forçar OCR
+                                <span class="btn-text">OCR</span>
+                                <span class="btn-loading d-none">
+                                    <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                                    Processando...
+                                </span>
                             </button>
                         </form>
 
@@ -170,152 +141,19 @@
 
     <!-- RIGHT -->
     <div class="col-lg-4">
-        <!-- ✅ painel de classificação -->
+        <!-- Painel de classificação -->
         <div id="classification-panel">
             @{
                 var cls = await ClassificationQueries.GetAsync(CurrentUser.TenantId, Model.Id, CancellationToken.None);
-                var vd = new ViewDataDictionary(ViewData);
-                vd["DocumentId"] = Model.Id;
+                ViewData["DocumentId"] = Model.Id;
             }
-            @await Html.PartialAsync("_DocumentClassificationPanel", cls, vd)
+            @await Html.PartialAsync("_DocumentClassificationPanel", cls)
         </div>
 
-        <!-- ✅ Host do modal (necessário para injetar _EditClassificationModal.cshtml) -->
+        <!-- ✅ host único do modal (NÃO coloque isso dentro do partial) -->
         <div id="classification-modal-host"></div>
 
-        <!-- Workflow -->
-        <div class="card mt-3">
-            <div class="card-header">
-                <strong>Workflow</strong>
-            </div>
-
-            <div class="card-body">
-                @if (!Model.Workflow.HasActiveWorkflow)
-                {
-                    <div class="alert alert-info">
-                        Nenhum workflow ativo neste documento.
-                    </div>
-
-                    <form asp-action="StartWorkflow" asp-controller="Ged" method="post">
-                        @Html.AntiForgeryToken()
-                        <input type="hidden" name="documentId" value="@Model.Id" />
-
-                        <div class="mb-2">
-                            <label class="form-label">Iniciar workflow</label>
-                            <select class="form-select" name="workflowId" required>
-                                <option value="">Selecione...</option>
-                                @foreach (var w in Model.Workflow.AvailableWorkflows.OrderBy(x => x.Name))
-                                {
-                                    <option value="@w.Id">@w.Name</option>
-                                }
-                            </select>
-                        </div>
-
-                        <button class="btn btn-primary w-100" type="submit">Iniciar</button>
-                    </form>
-                }
-                else
-                {
-                    <div class="mb-2">
-                        <div class="text-muted small">Workflow</div>
-                        <div class="fw-semibold">@Model.Workflow.WorkflowName</div>
-                    </div>
-
-                    <div class="mb-3">
-                        <div class="text-muted small">Etapa atual</div>
-                        <div class="fw-semibold">
-                            @Model.Workflow.CurrentStageName
-                            @if (Model.Workflow.IsCompleted)
-                            {
-                                <span class="badge bg-success ms-2">Finalizado</span>
-                            }
-                            else
-                            {
-                                <span class="badge bg-info text-dark ms-2">Em andamento</span>
-                            }
-                        </div>
-                        <div class="text-muted small">
-                            Iniciado em @Model.Workflow.StartedAt?.ToString("dd/MM/yyyy HH:mm")
-                        </div>
-                    </div>
-
-                    @if (!Model.Workflow.IsCompleted)
-                    {
-                        <form asp-action="ApplyTransition" asp-controller="Ged" method="post">
-                            @Html.AntiForgeryToken()
-                            <input type="hidden" name="documentId" value="@Model.Id" />
-
-                            <div class="mb-2">
-                                <label class="form-label">Ação</label>
-                                <select class="form-select" name="transitionId" id="transitionId" required>
-                                    <option value="">Selecione...</option>
-                                    @foreach (var t in Model.Workflow.AvailableTransitions)
-                                    {
-                                        <option value="@t.Id" data-requires-reason="@(t.RequiresReason ? "1" : "0")">
-                                            @t.Name → @t.ToStageName
-                                        </option>
-                                    }
-                                </select>
-                            </div>
-
-                            <div class="mb-2" id="grpReason" style="display:none;">
-                                <label class="form-label">Motivo</label>
-                                <input class="form-control" name="reason" id="reason" maxlength="400" />
-                                <div class="form-text">Obrigatório quando a transição exigir justificativa.</div>
-                            </div>
-
-                            <div class="mb-3">
-                                <label class="form-label">Comentários</label>
-                                <textarea class="form-control" name="comments" rows="3" maxlength="2000"></textarea>
-                            </div>
-
-                            <button class="btn btn-success w-100" type="submit">Aplicar transição</button>
-                        </form>
-                    }
-
-                    <hr class="my-3" />
-
-                    <div class="d-flex justify-content-between align-items-center">
-                        <strong>Histórico</strong>
-                        <span class="badge bg-light text-dark">@Model.Workflow.History.Count</span>
-                    </div>
-
-                    <div class="mt-2" style="max-height: 45vh; overflow:auto;">
-                        @if (Model.Workflow.History.Count == 0)
-                        {
-                            <div class="text-muted small">Sem histórico.</div>
-                        }
-                        else
-                        {
-                            <div class="list-group list-group-flush">
-                                @foreach (var h in Model.Workflow.History)
-                                {
-                                    <div class="list-group-item">
-                                        <div class="d-flex justify-content-between">
-                                            <div class="fw-semibold">
-                                                @(string.IsNullOrWhiteSpace(h.FromStageName) ? "Início" : h.FromStageName)
-                                                → @h.ToStageName
-                                            </div>
-                                            <div class="text-muted small">@h.PerformedAt.ToString("dd/MM HH:mm")</div>
-                                        </div>
-
-                                        @if (!string.IsNullOrWhiteSpace(h.Reason))
-                                        {
-                                            <div class="small"><strong>Motivo:</strong> @h.Reason</div>
-                                        }
-                                        @if (!string.IsNullOrWhiteSpace(h.Comments))
-                                        {
-                                            <div class="small text-muted">@h.Comments</div>
-                                        }
-                                    </div>
-                                }
-                            </div>
-                        }
-                    </div>
-                }
-            </div>
-        </div>
-
+        <!-- Documento info -->
         <div class="card mt-3">
             <div class="card-body">
                 <div class="text-muted small">Documento</div>
@@ -329,127 +167,287 @@
     </div>
 </div>
 
-<!-- ✅ Token dedicado para as chamadas AJAX (evita pegar o token de outro form) -->
 <form id="ajax-antiforgery-form" method="post" style="display:none">
     @Html.AntiForgeryToken()
 </form>
 
 @section Scripts {
     <script>
-        // ============================================================
-        // Helpers
-        // ============================================================
+        // =========================
+        // Helpers UI
+        // =========================
         function getAjaxAntiForgeryToken() {
             const tokenInput = document.querySelector('#ajax-antiforgery-form input[name="__RequestVerificationToken"]');
             return tokenInput ? tokenInput.value : '';
         }
 
-        // ============================================================
-        // CLASSIFICAÇÃO (MODAL + AJAX)  -> precisa ser GLOBAL (window.*)
-        // ============================================================
+        function setBtnLoading(btn, loading) {
+            if (!btn) return;
+            const t = btn.querySelector('.btn-text');
+            const l = btn.querySelector('.btn-loading');
+            if (loading) {
+                btn.disabled = true;
+                if (t) t.classList.add('d-none');
+                if (l) l.classList.remove('d-none');
+            } else {
+                btn.disabled = false;
+                if (t) t.classList.remove('d-none');
+                if (l) l.classList.add('d-none');
+            }
+        }
+
+        // =========================
+        // Classificação (somente Editar)
+        // =========================
         window.refreshClassificationPanel = async function (documentId) {
             const url = '@Url.Action("Panel", "Classification")' + '?documentId=' + encodeURIComponent(documentId);
-            const html = await fetch(url, { credentials: 'include', cache: 'no-store' }).then(r => r.text());
-            const el = document.getElementById('classification-panel');
-            if (el) el.innerHTML = html;
+            const resp = await fetch(url, { credentials: 'include', cache: 'no-store' });
+            if (!resp.ok) return;
+            const html = await resp.text();
+            const panel = document.getElementById('classification-panel');
+            if (panel) panel.innerHTML = html;
         };
 
-        window.openClassificationModal = async function (documentId) {
+        window.openClassificationModal = async function (documentId, btn) {
+            if (!documentId) return;
+
+            // Se vier botão, mostra loading nele
+            if (btn) setBtnLoading(btn, true);
+
             const host = document.getElementById('classification-modal-host');
             if (!host) return;
 
-            const url = '@Url.Action("EditModal", "Classification")' + '?documentId=' + encodeURIComponent(documentId);
-            const html = await fetch(url, { credentials: 'include', cache: 'no-store' }).then(r => r.text());
-            host.innerHTML = html;
+            try {
+                const url = '@Url.Action("EditModal", "Classification")' + '?documentId=' + encodeURIComponent(documentId);
+                const resp = await fetch(url, { credentials: 'include', cache: 'no-store' });
 
-            const modalEl = document.getElementById('modalEditClassification');
-            if (!modalEl) return;
+                if (!resp.ok) {
+                    const txt = await resp.text().catch(() => '');
+                    alert('Falha ao abrir classificação. ' + txt);
+                    return;
+                }
 
-            const modal = new bootstrap.Modal(modalEl);
-            modal.show();
+                host.innerHTML = await resp.text();
 
-            const form = modalEl.querySelector('#formEditClassification');
-            if (form) {
-                form.addEventListener('submit', async (e) => {
-                    e.preventDefault();
+                const modalEl = document.getElementById('modalEditClassification');
+                if (!modalEl) {
+                    alert('Modal não encontrado no HTML retornado.');
+                    return;
+                }
 
-                    const resp = await fetch('@Url.Action("SaveManual", "Classification")', {
-                        method: 'POST',
-                        body: new FormData(form),
-                        credentials: 'include'
-                    });
+                const modal = new bootstrap.Modal(modalEl);
+                modal.show();
 
-                    if (resp.ok) {
-                        modal.hide();
-                        await window.refreshClassificationPanel(documentId);
-                    } else {
-                        const txt = await resp.text().catch(() => '');
-                        alert('Falha ao salvar classificação. ' + txt);
-                    }
+                // wire submit (sem depender de <script> no partial)
+                const form = modalEl.querySelector('#formEditClassification');
+                if (form) {
+                    form.addEventListener('submit', async (e) => {
+                        e.preventDefault();
+
+                        const submitBtn = form.querySelector('button[type="submit"]');
+                        setBtnLoading(submitBtn, true);
+
+                        try {
+                            // MetadataLines -> metadataJson
+                            const lines = (form.querySelector('[name="MetadataLines"]')?.value || '');
+                            const obj = {};
+                            lines.split(/\r?\n/).map(x => (x || '').trim()).filter(Boolean).forEach(line => {
+                                if (line.startsWith('#')) return;
+                                const idx = line.indexOf('=');
+                                if (idx <= 0) return;
+                                const k = line.substring(0, idx).trim();
+                                const v = line.substring(idx + 1).trim();
+                                if (!k) return;
+                                obj[k] = v;
+                            });
+
+                            let hidden = form.querySelector('[name="metadataJson"]');
+                            if (!hidden) {
+                                hidden = document.createElement('input');
+                                hidden.type = 'hidden';
+                                hidden.name = 'metadataJson';
+                                form.appendChild(hidden);
+                            }
+                            hidden.value = JSON.stringify(obj);
+
+                            // POST SaveManual
+                            const r = await fetch('@Url.Action("SaveManual", "Classification")', {
+                                method: 'POST',
+                                body: new FormData(form),
+                                credentials: 'include'
+                            });
+
+                            if (!r.ok) {
+                                const txt = await r.text().catch(() => '');
+                                alert('Falha ao salvar classificação. ' + txt);
+                                return;
+                            }
+
+                            modal.hide();
+                            await window.refreshClassificationPanel(documentId);
+                        } finally {
+                            setBtnLoading(submitBtn, false);
+                        }
+                    }, { once: true });
+                }
+
+                modalEl.addEventListener('hidden.bs.modal', function () {
+                    host.innerHTML = '';
                 }, { once: true });
-            }
 
-            modalEl.addEventListener('hidden.bs.modal', function () {
-                host.innerHTML = '';
-            }, { once: true });
+            } finally {
+                if (btn) setBtnLoading(btn, false);
+            }
         };
 
-        window.applyClassificationSuggestion = async function (documentId) {
+        window.applyClassificationSuggestion = async function (documentId, btn) {
             const token = getAjaxAntiForgeryToken();
+            const typeId = btn?.dataset?.suggestedTypeId;
+            const conf = btn?.dataset?.suggestedConfidence;
+            const summary = btn?.dataset?.suggestedSummary || '';
 
-            const resp = await fetch('@Url.Action("ApplySuggestion", "Classification")', {
-                method: 'POST',
-                credentials: 'include',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                    'RequestVerificationToken': token
-                },
-                body: 'documentId=' + encodeURIComponent(documentId)
-            });
+            if (!typeId) {
+                alert('Sugestão inválida (tipo não informado).');
+                return;
+            }
 
-            if (resp.ok) {
+            setBtnLoading(btn, true);
+            try {
+                const body =
+                    'documentId=' + encodeURIComponent(documentId) +
+                    '&suggestedTypeId=' + encodeURIComponent(typeId) +
+                    '&suggestedConfidence=' + encodeURIComponent(conf || '') +
+                    '&suggestedSummary=' + encodeURIComponent(summary);
+
+                const resp = await fetch('@Url.Action("ApplySuggestion", "Classification")', {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'RequestVerificationToken': token
+                    },
+                    body
+                });
+
+                if (!resp.ok) {
+                    const txt = await resp.text().catch(() => '');
+                    alert('Falha ao aplicar sugestão. ' + txt);
+                    return;
+                }
+
                 await window.refreshClassificationPanel(documentId);
-            } else {
-                const txt = await resp.text().catch(() => '');
-                alert('Não foi possível aplicar a sugestão. (' + resp.status + ') ' + txt);
+            } finally {
+                setBtnLoading(btn, false);
             }
         };
 
-        // Auto abrir modal (vindo do Index -> openClassify=true)
-        ;(() => {
+        // auto-open (opcional; se você quiser manter deep link via openClassify)
+        (function () {
             const mustOpen = @((openClassify ? "true" : "false"));
-            if (mustOpen) {
-                window.openClassificationModal('@Model.Id');
-            }
+            if (mustOpen) window.openClassificationModal('@Model.Id');
         })();
 
-        // ============================================================
-        // PREVIEW (overlay)
-        // ============================================================
-        ;(() => {
-            function bindPreview() {
-                const frame = document.getElementById('previewFrame');
-                const loading = document.getElementById('previewLoading');
-
-                if (!frame || !loading) return;
-
-                loading.style.display = 'flex';
-                frame.addEventListener('load', () => { loading.style.display = 'none'; });
-
-                setTimeout(() => { if (loading) loading.style.display = 'none'; }, 15000);
+        // =========================
+        // Preview overlay (evita "carregando" infinito)
+        // =========================
+        (function () {
+            function hideLoading() {
+                const el = document.getElementById('previewLoading');
+                if (el) el.style.display = 'none';
             }
 
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', bindPreview);
-            } else {
-                bindPreview();
-            }
+            const frame = document.getElementById('previewFrame');
+            if (!frame) return;
+
+            frame.addEventListener('load', hideLoading);
+
+            // Fallback: some sempre
+            setTimeout(hideLoading, 2000);
+            setTimeout(hideLoading, 8000);
         })();
 
-        // ============================================================
-        // OCR Toast + Fullscreen + Workflow reason + OCR polling
-        // ============================================================
-        ;(() => {
+        // =========================
+        // OCR: spinner no botão + polling simples
+        // =========================
+        (function () {
+            const form = document.getElementById('ocrForm');
+            const btn = document.getElementById('btnOcr');
+            const badgeWrap = document.getElementById('ocrStatusBadge');
+            const versionId = "@(selectedVersionId ?? Guid.Empty)";
+
+            function setBadge(status, err) {
+                if (!badgeWrap) return;
+                const st = (status || "").toUpperCase();
+
+                if (st === "PROCESSING") badgeWrap.innerHTML = '<span class="badge bg-info text-dark">🔄 OCR processando</span>';
+                else if (st === "PENDING") badgeWrap.innerHTML = '<span class="badge bg-secondary">⏳ OCR pendente</span>';
+                else if (st === "COMPLETED") badgeWrap.innerHTML = '<span class="badge bg-success">✅ OCR concluído</span>';
+                else if (st === "ERROR") badgeWrap.innerHTML = `<span class="badge bg-danger" title="${(err||'Falha no OCR').replaceAll('"','&quot;')}">❌ OCR falhou</span>`;
+                else badgeWrap.innerHTML = '<span class="badge bg-light text-dark">— OCR</span>';
+            }
+
+            let timer = null;
+
+            async function poll() {
+                try {
+                    const url = '@Url.Action("OcrStatus", "Ged")' + '?versionId=' + encodeURIComponent(versionId);
+                    const resp = await fetch(url, { credentials:'include', cache:'no-store' });
+                    if (!resp.ok) return;
+
+                    const data = await resp.json();
+                    setBadge(data.status, data.errorMessage);
+
+                    const st = (data.status || "").toUpperCase();
+                    if (st === "COMPLETED" && data.ocrVersionId) {
+                        clearInterval(timer);
+                        timer = null;
+                        // abre versão OCR automaticamente
+                        window.location.href =
+                            '@Url.Action("Details", "Ged")' +
+                            '?id=' + encodeURIComponent(data.documentId) +
+                            '&versionId=' + encodeURIComponent(data.ocrVersionId);
+                    }
+                    if (st !== "PENDING" && st !== "PROCESSING") {
+                        clearInterval(timer);
+                        timer = null;
+                    }
+                } catch {}
+            }
+
+            if (form) {
+                form.addEventListener('submit', async function (e) {
+                    e.preventDefault();
+                    setBtnLoading(btn, true);
+                    try {
+                        const resp = await fetch(form.action, {
+                            method: 'POST',
+                            body: new FormData(form),
+                            credentials: 'include',
+                            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                        });
+
+                        if (resp.ok) {
+                            setBadge("PROCESSING");
+                            if (!timer) timer = setInterval(poll, 2500);
+                            poll();
+                        } else {
+                            setBadge("ERROR", "Falha ao iniciar OCR.");
+                        }
+                    } catch {
+                        setBadge("ERROR", "Falha ao iniciar OCR.");
+                    } finally {
+                        setBtnLoading(btn, false);
+                    }
+                });
+            }
+
+            // start polling on load
+            if (!timer) timer = setInterval(poll, 5000);
+            poll();
+        })();
+
+        // Fullscreen
+        (function () {
             const container = document.getElementById('previewContainer');
             const btnFull = document.getElementById('btnFull');
             if (btnFull && container) {
@@ -458,131 +456,6 @@
                     else await document.exitFullscreen();
                 });
             }
-
-            const showToast = @((showToast ? "true" : "false"));
-            if (showToast) {
-                const el = document.getElementById('ocrToast');
-                if (el && window.bootstrap && bootstrap.Toast) {
-                    new bootstrap.Toast(el, { delay: 2500 }).show();
-                }
-            }
-
-            // ===== Workflow: reason obrigatório =====
-            const transitionSel = document.getElementById('transitionId');
-            const grpReason = document.getElementById('grpReason');
-            const reasonInput = document.getElementById('reason');
-
-            function refreshReason() {
-                if (!transitionSel || !grpReason) return;
-                const opt = transitionSel.options[transitionSel.selectedIndex];
-                const req = opt && opt.getAttribute('data-requires-reason') === '1';
-                grpReason.style.display = req ? '' : 'none';
-                if (reasonInput) {
-                    reasonInput.required = req;
-                    if (!req) reasonInput.value = '';
-                }
-            }
-            if (transitionSel) {
-                transitionSel.addEventListener('change', refreshReason);
-                refreshReason();
-            }
-
-            // ===== OCR polling =====
-            const selectedVersionId = "@(selectedVersionId ?? Guid.Empty)";
-            const badgeWrap = document.getElementById('ocrStatusBadge');
-            const btnOcr = document.getElementById('btnOcr');
-            const btnOcrForce = document.getElementById('btnOcrForce');
-
-            function setBadge(status, error) {
-                if (!badgeWrap) return;
-                const st = (status || "").toUpperCase();
-                if (st === "NONE") {
-                    badgeWrap.innerHTML = '<span class="badge bg-light text-dark">— OCR</span>';
-                } else if (st === "PENDING") {
-                    badgeWrap.innerHTML = '<span class="badge bg-secondary">⏳ OCR pendente</span>';
-                } else if (st === "PROCESSING") {
-                    badgeWrap.innerHTML = '<span class="badge bg-info text-dark">🔄 OCR processando</span>';
-                } else if (st === "COMPLETED") {
-                    badgeWrap.innerHTML = '<span class="badge bg-success">✅ OCR concluído</span>';
-                } else if (st === "ERROR") {
-                    const msg = (error || "Falha no OCR").replaceAll('"', '&quot;');
-                    badgeWrap.innerHTML = `<span class="badge bg-danger" title="${msg}">❌ OCR falhou</span>`;
-                } else {
-                    badgeWrap.innerHTML = '<span class="badge bg-light text-dark">— OCR</span>';
-                }
-            }
-
-            let pollTimer = null;
-            function startPolling() { if (pollTimer) return; pollTimer = setInterval(pollOcr, 2500); pollOcr(); }
-            function stopPolling() { if (!pollTimer) return; clearInterval(pollTimer); pollTimer = null; }
-
-            async function pollOcr() {
-                try {
-                    const url = '@Url.Action("OcrStatus", "Ged")' + '?versionId=' + encodeURIComponent(selectedVersionId);
-                    const resp = await fetch(url, { method: 'GET', cache: 'no-store', credentials: 'include' });
-                    if (resp.status === 401) { stopPolling(); return; }
-                    if (!resp.ok) return;
-
-                    const data = await resp.json();
-                    setBadge(data.status, data.errorMessage);
-
-                    const st = (data.status || "").toUpperCase();
-                    if (st === "COMPLETED" && data.ocrVersionId) {
-                        stopPolling();
-                        const target =
-                            '@Url.Action("Details", "Ged")'
-                            + '?id=' + encodeURIComponent(data.documentId)
-                            + '&versionId=' + encodeURIComponent(data.ocrVersionId)
-                            + '&ocrSwitched=true';
-                        window.location.href = target;
-                        return;
-                    }
-
-                    if (st !== "PENDING" && st !== "PROCESSING") {
-                        stopPolling();
-                    }
-                } catch (e) { }
-            }
-
-            const ocrForm = document.getElementById('ocrForm');
-            const ocrForceForm = document.getElementById('ocrForceForm');
-
-            async function enqueue(form) {
-                if (!form) return;
-                if (btnOcr) btnOcr.disabled = true;
-                if (btnOcrForce) btnOcrForce.disabled = true;
-
-                try {
-                    const resp = await fetch(form.action, {
-                        method: 'POST',
-                        body: new FormData(form),
-                        credentials: 'include'
-                    });
-
-                    if (resp.ok) {
-                        startPolling();
-                    }
-                } catch (e) { }
-                finally {
-                    if (btnOcr) btnOcr.disabled = false;
-                    if (btnOcrForce) btnOcrForce.disabled = false;
-                }
-            }
-
-            if (ocrForm) {
-                ocrForm.addEventListener('submit', function (e) {
-                    e.preventDefault();
-                    enqueue(ocrForm);
-                });
-            }
-            if (ocrForceForm) {
-                ocrForceForm.addEventListener('submit', function (e) {
-                    e.preventDefault();
-                    enqueue(ocrForceForm);
-                });
-            }
-
-            startPolling();
         })();
     </script>
 }

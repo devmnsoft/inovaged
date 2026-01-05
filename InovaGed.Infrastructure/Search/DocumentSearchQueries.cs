@@ -29,8 +29,16 @@ public sealed class DocumentSearchQueries : IDocumentSearchQueries
         limit = Math.Clamp(limit, 1, 100);
 
         const string sql = @"
-WITH query AS (
-  SELECT plainto_tsquery('portuguese', @q) AS tsq
+WITH tokens AS (
+  SELECT
+    regexp_replace(lower(t), '[^[:alnum:]À-ÿ_]+', '', 'g') AS tok
+  FROM regexp_split_to_table(trim(@q), '\s+') AS t
+),
+query AS (
+  SELECT
+    to_tsquery('portuguese', string_agg(tok || ':*', ' & ')) AS tsq
+  FROM tokens
+  WHERE tok <> ''
 )
 SELECT
   d.id AS ""DocumentId"",
@@ -38,7 +46,8 @@ SELECT
   d.code AS ""Code"",
   d.title AS ""Title"",
   s.file_name AS ""FileName"",
-  ts_headline('portuguese',
+  ts_headline(
+    'portuguese',
     COALESCE(s.ocr_text, d.description, ''),
     (SELECT tsq FROM query),
     'StartSel=<mark>, StopSel=</mark>, MaxFragments=2, FragmentDelimiter= … , MaxWords=20, MinWords=8'
@@ -48,8 +57,8 @@ FROM ged.document_search s
 JOIN ged.document d
   ON d.tenant_id = s.tenant_id
  AND d.id = s.document_id
-JOIN query ON true
 WHERE s.tenant_id = @tenantId
+  AND (SELECT tsq FROM query) IS NOT NULL
   AND s.search_vector @@ (SELECT tsq FROM query)
   AND (@folderId IS NULL OR d.folder_id = @folderId)
 ORDER BY ""Rank"" DESC, d.created_at DESC
@@ -62,7 +71,7 @@ LIMIT @limit;
             var rows = await conn.QueryAsync<DocumentSearchRowDto>(
                 new CommandDefinition(sql, new { tenantId, q, folderId, limit }, cancellationToken: ct));
 
-            return rows.ToList();
+            return rows.AsList();
         }
         catch (Exception ex)
         {

@@ -1,20 +1,19 @@
-﻿using InovaGed.Application.Common.Database;
-using Npgsql;
-using System.Data;
+﻿using Npgsql;
+using InovaGed.Application.Common.Database;
 
-namespace InovaGed.Infrastructure.Database;
+namespace InovaGed.Infrastructure.Common.Database;
 
 public sealed class NpgsqlConnectionFactory : IDbConnectionFactory
 {
-    private readonly string _connectionString;
+    private readonly string _cs;
 
     public NpgsqlConnectionFactory(string connectionString)
-        => _connectionString = connectionString;
+        => _cs = connectionString;
 
-    public async Task<IDbConnection> OpenAsync(CancellationToken ct)
+    public async Task<NpgsqlConnection> OpenAsync(CancellationToken ct)
     {
-        var conn = new NpgsqlConnection(_connectionString);
+        var conn = new NpgsqlConnection(_cs);
         await conn.OpenAsync(ct);
-        return conn;
+        return conn; // ✅ quem chama deve usar await using
     }
 }
