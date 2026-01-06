@@ -7,6 +7,14 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="Models\Users\UserListVM.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="Models\Users\UserListVM.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Só deixa o RuntimeCompilation, que realmente é um pacote separado -->
     <PackageReference Include="BCrypt.Net-Core" Version="1.6.0" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Core" Version="2.3.0" />
@@ -17,6 +25,10 @@
     <ProjectReference Include="..\InovaGed.Application\InovaGed.Application.csproj" />
     <ProjectReference Include="..\InovaGed.Domain\InovaGed.Domain.csproj" />
     <ProjectReference Include="..\InovaGed.Infrastructure\InovaGed.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Models\Classification\" />
   </ItemGroup>
 
 </Project>
