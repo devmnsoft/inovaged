@@ -29,10 +29,6 @@ public sealed class DocumentClassificationQueries : IDocumentClassificationQueri
         Guid documentId,
         CancellationToken ct)
     {
-        _logger.LogDebug(
-            "GetViewAsync | Tenant={TenantId} Document={DocumentId}",
-            tenantId, documentId);
-
         const string headSql = @"
 SELECT
   d.id                         AS ""DocumentId"",
@@ -78,7 +74,9 @@ LIMIT 1;
 
         try
         {
-             var con = await _db.OpenAsync(ct);
+            _logger.LogDebug("GetViewAsync | Tenant={TenantId} Document={DocumentId}", tenantId, documentId);
+
+            await using var con = await _db.OpenAsync(ct);
 
             var dto = await con.QueryFirstOrDefaultAsync<DocumentClassificationViewDto>(
                 new CommandDefinition(
@@ -88,6 +86,7 @@ LIMIT 1;
 
             if (dto is null) return null;
 
+            // TAGS
             const string tagsSql = @"
 SELECT t.name
 FROM ged.document_tag dt
@@ -107,6 +106,7 @@ ORDER BY lower(t.name);
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
+            // METADATA
             const string metaSql = @"
 SELECT key, value
 FROM ged.document_metadata
@@ -134,18 +134,12 @@ ORDER BY lower(key);
         }
         catch (Exception ex)
         {
-            _logger.LogError(
-                ex,
-                "Erro em GetViewAsync | Tenant={TenantId} Document={DocumentId}",
-                tenantId, documentId);
+            _logger.LogError(ex, "Erro em GetViewAsync | Tenant={TenantId} Document={DocumentId}", tenantId, documentId);
             throw;
         }
     }
 
-    public async Task<bool> HasClassificationAsync(
-        Guid tenantId,
-        Guid documentId,
-        CancellationToken ct)
+    public async Task<bool> HasClassificationAsync(Guid tenantId, Guid documentId, CancellationToken ct)
     {
         const string sql = @"
 SELECT EXISTS (
@@ -159,32 +153,18 @@ SELECT EXISTS (
 ";
         try
         {
-            _logger.LogDebug(
-                "HasClassificationAsync | Tenant={TenantId} Document={DocumentId}",
-                tenantId, documentId);
-
-           var con = await _db.OpenAsync(ct);
-
+            await using var con = await _db.OpenAsync(ct);
             return await con.ExecuteScalarAsync<bool>(
-                new CommandDefinition(
-                    sql,
-                    new { TenantId = tenantId, DocumentId = documentId },
-                    cancellationToken: ct));
+                new CommandDefinition(sql, new { TenantId = tenantId, DocumentId = documentId }, cancellationToken: ct));
         }
         catch (Exception ex)
         {
-            _logger.LogError(
-                ex,
-                "Erro em HasClassificationAsync | Tenant={TenantId} Document={DocumentId}",
-                tenantId, documentId);
+            _logger.LogError(ex, "Erro em HasClassificationAsync | Tenant={TenantId} Document={DocumentId}", tenantId, documentId);
             throw;
         }
     }
 
-    public async Task<int> CountUnclassifiedAsync(
-        Guid tenantId,
-        Guid? folderId,
-        CancellationToken ct)
+    public async Task<int> CountUnclassifiedAsync(Guid tenantId, Guid? folderId, CancellationToken ct)
     {
         const string sql = @"
 SELECT COUNT(1)
@@ -200,31 +180,18 @@ WHERE d.tenant_id = @TenantId
 ";
         try
         {
-            _logger.LogDebug(
-                "CountUnclassifiedAsync | Tenant={TenantId} Folder={FolderId}",
-                tenantId, folderId);
-
-            var con = await _db.OpenAsync(ct);
-
+            await using var con = await _db.OpenAsync(ct);
             return await con.ExecuteScalarAsync<int>(
-                new CommandDefinition(
-                    sql,
-                    new { TenantId = tenantId, FolderId = folderId },
-                    cancellationToken: ct));
+                new CommandDefinition(sql, new { TenantId = tenantId, FolderId = folderId }, cancellationToken: ct));
         }
         catch (Exception ex)
         {
-            _logger.LogError(
-                ex,
-                "Erro em CountUnclassifiedAsync | Tenant={TenantId} Folder={FolderId}",
-                tenantId, folderId);
+            _logger.LogError(ex, "Erro em CountUnclassifiedAsync | Tenant={TenantId} Folder={FolderId}", tenantId, folderId);
             throw;
         }
     }
 
-    public async Task<IReadOnlyList<DocumentTypeRowDto>> ListTypesAsync(
-        Guid tenantId,
-        CancellationToken ct)
+    public async Task<IReadOnlyList<DocumentTypeRowDto>> ListTypesAsync(Guid tenantId, CancellationToken ct)
     {
         const string sql = @"
 SELECT id AS ""Id"", name AS ""Name""
@@ -234,26 +201,14 @@ ORDER BY lower(name);
 ";
         try
         {
-            _logger.LogDebug(
-                "ListTypesAsync | Tenant={TenantId}",
-                tenantId);
-
-            var con = await _db.OpenAsync(ct);
-
+            await using var con = await _db.OpenAsync(ct);
             var rows = await con.QueryAsync<DocumentTypeRowDto>(
-                new CommandDefinition(
-                    sql,
-                    new { TenantId = tenantId },
-                    cancellationToken: ct));
-
+                new CommandDefinition(sql, new { TenantId = tenantId }, cancellationToken: ct));
             return rows.ToList();
         }
         catch (Exception ex)
         {
-            _logger.LogError(
-                ex,
-                "Erro em ListTypesAsync | Tenant={TenantId}",
-                tenantId);
+            _logger.LogError(ex, "Erro em ListTypesAsync | Tenant={TenantId}", tenantId);
             throw;
         }
     }

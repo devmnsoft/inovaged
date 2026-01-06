@@ -1191,6 +1191,50 @@ LIMIT 1;";
         return RedirectToAction(nameof(Index), new { folderId });
     }
 
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ReprocessOcr(Guid versionId, CancellationToken ct = default)
+    {
+        try
+        {
+            if (!_currentUser.IsAuthenticated) return Unauthorized();
+
+            var tenantId = _currentUser.TenantId;
+
+            var v = await _docs.GetVersionForDownloadAsync(tenantId, versionId, ct);
+            if (v is null) return NotFound();
+
+            // força reprocesso (invalidateDigitalSignatures=true)
+            var jobId = await _ocrJobs.EnqueueAsync(
+                tenantId: tenantId,
+                documentVersionId: versionId,
+                requestedBy: _currentUser.UserId,
+                invalidateDigitalSignatures: true,
+                ct: ct);
+
+            _logger.LogInformation("OCR reprocessado. Tenant={TenantId} VersionId={VersionId} JobId={JobId}",
+                tenantId, versionId, jobId);
+
+            // AJAX friendly
+            if (Request.Headers.TryGetValue("Accept", out var a) && a.ToString().Contains("application/json", StringComparison.OrdinalIgnoreCase))
+                return Ok(new { success = true, jobId });
+
+            TempData["ok"] = $"OCR reenfileirado. Job #{jobId}.";
+            return RedirectToAction(nameof(Details), new { id = v.DocumentId });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro ao reenfileirar OCR. VersionId={VersionId}", versionId);
+
+            if (Request.Headers.TryGetValue("Accept", out var a) && a.ToString().Contains("application/json", StringComparison.OrdinalIgnoreCase))
+                return StatusCode(500, new { error = "Erro ao reenfileirar OCR." });
+
+            TempData["erro"] = "Erro ao reenfileirar OCR.";
+            return RedirectToAction(nameof(Index));
+        }
+    }
+
+
     // =========================
     // Content-Disposition seguro
     // =========================

@@ -43,6 +43,37 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />
     <link rel="stylesheet" href="~/css/inovaged.css" asp-append-version="true" />
 
+    <style>
+        .topbar-user-avatar {
+            width: 28px;
+            height: 28px;
+            border-radius: .85rem;
+            background: linear-gradient(135deg,#2563eb,#22c55e);
+            color: #fff;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            font-size: .85rem;
+        }
+
+        .sidebar-brand .logo {
+            width: 40px;
+            height: 40px;
+            border-radius: 1rem;
+            background: linear-gradient(135deg,#2563eb,#22c55e);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            font-weight: 900;
+        }
+
+        .dropdown-menu .dropdown-item i {
+            width: 18px;
+        }
+    </style>
+
     @RenderSection("Styles", required: false)
 </head>
 
@@ -81,7 +112,6 @@
                         <i class="bi bi-diagram-3"></i><span>Classificação</span>
                     </a>
 
-                    <!-- Dashboard de Classificação + badge -->
                     <a asp-controller="ClassificationDashboard" asp-action="Index" class="@ActiveAny("ClassificationDashboard")">
                         <i class="bi bi-inboxes"></i>
                         <span class="d-flex align-items-center gap-2">
@@ -94,15 +124,32 @@
                         <i class="bi bi-shuffle"></i><span>Workflows</span>
                     </a>
 
-                    <div class="sidebar-section-title">Conta</div>
-                    <a asp-controller="Account" asp-action="Logout">
-                        <i class="bi bi-box-arrow-right"></i><span>Sair</span>
+                    <div class="sidebar-section-title">Administração</div>
+
+                    <!-- ✅ NOVO: LISTAGEM -->
+                    <a asp-controller="Users" asp-action="Index" class="@Active("Users","Index")">
+                        <i class="bi bi-people"></i><span>Usuários</span>
                     </a>
+
+                    <!-- ✅ MANTIDO: CRIAR -->
+                    <a asp-controller="Users" asp-action="Create" class="@Active("Users","Create")">
+                        <i class="bi bi-person-plus"></i><span>Criar Usuário</span>
+                    </a>
+
+                    <div class="sidebar-section-title">Conta</div>
+
+                    <form asp-controller="Account" asp-action="Logout" method="post" class="m-0 p-0">
+                        @Html.AntiForgeryToken()
+                        <button type="submit" class="btn btn-link sidebar-link text-start p-0 w-100" style="text-decoration:none;">
+                            <span class="d-flex align-items-center gap-2 px-3 py-2">
+                                <i class="bi bi-box-arrow-right"></i><span>Sair</span>
+                            </span>
+                        </button>
+                    </form>
                 </nav>
 
                 <div class="sidebar-footer">
                     <div>© @DateTime.Now.Year InovaGED</div>
-                    <div class="text-muted">ASP.NET Core + PostgreSQL</div>
                 </div>
             </aside>
 
@@ -110,7 +157,8 @@
             <div class="offcanvas offcanvas-start" tabindex="-1" id="ocSidebar" aria-labelledby="ocSidebarLabel">
                 <div class="offcanvas-header border-bottom">
                     <div class="d-flex align-items-center gap-2">
-                        <span class="logo" style="width:32px;height:32px;border-radius:.9rem;background:linear-gradient(135deg,#2563eb,#22c55e);display:inline-flex;align-items:center;justify-content:center;font-weight:700;color:#fff;font-size:.95rem;">IG</span>
+                        <span class="logo"
+                              style="width:32px;height:32px;border-radius:.9rem;background:linear-gradient(135deg,#2563eb,#22c55e);display:inline-flex;align-items:center;justify-content:center;font-weight:800;color:#fff;font-size:.95rem;">IG</span>
                         <div>
                             <div id="ocSidebarLabel" class="fw-semibold">InovaGED</div>
                             <div class="text-muted small">Gestão Eletrônica de Documentos</div>
@@ -150,17 +198,34 @@
                             <i class="bi bi-shuffle"></i><span>Workflows</span>
                         </a>
 
-                        <div class="sidebar-section-title">Conta</div>
-                        <a asp-controller="Account" asp-action="Logout" data-bs-dismiss="offcanvas">
-                            <i class="bi bi-box-arrow-right"></i><span>Sair</span>
+                        <div class="sidebar-section-title">Administração</div>
+
+                        <!-- ✅ NOVO: LISTAGEM -->
+                        <a asp-controller="Users" asp-action="Index" class="@Active("Users","Index")" data-bs-dismiss="offcanvas">
+                            <i class="bi bi-people"></i><span>Usuários</span>
                         </a>
+
+                        <!-- ✅ MANTIDO: CRIAR -->
+                        <a asp-controller="Users" asp-action="Create" class="@Active("Users","Create")" data-bs-dismiss="offcanvas">
+                            <i class="bi bi-person-plus"></i><span>Criar Usuário</span>
+                        </a>
+
+                        <div class="sidebar-section-title">Conta</div>
+
+                        <form asp-controller="Account" asp-action="Logout" method="post" class="m-0 p-0">
+                            @Html.AntiForgeryToken()
+                            <button type="submit" class="btn btn-link sidebar-link text-start p-0 w-100" style="text-decoration:none;" data-bs-dismiss="offcanvas">
+                                <span class="d-flex align-items-center gap-2 px-3 py-2">
+                                    <i class="bi bi-box-arrow-right"></i><span>Sair</span>
+                                </span>
+                            </button>
+                        </form>
                     </nav>
                 </div>
             </div>
 
             <!-- ===== MAIN ===== -->
             <div class="main">
-
                 <header class="topbar">
                     <div class="d-flex align-items-center gap-2">
                         <button class="btn btn-sm btn-outline-secondary d-inline-flex d-lg-none"
@@ -194,11 +259,37 @@
                                 <span class="d-none d-md-inline">@userName</span>
                                 <i class="bi bi-chevron-down small"></i>
                             </button>
+
                             <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                                <li class="px-3 py-2">
+                                    <div class="small text-muted">Logado como</div>
+                                    <div class="fw-semibold">@userName</div>
+                                </li>
+                                <li><hr class="dropdown-divider" /></li>
+
+                                <!-- ✅ NOVO: listagem -->
                                 <li>
-                                    <a class="dropdown-item" asp-controller="Account" asp-action="Logout">
-                                        <i class="bi bi-box-arrow-right me-2"></i>Sair
+                                    <a class="dropdown-item" asp-controller="Users" asp-action="Index">
+                                        <i class="bi bi-people me-2"></i>Usuários
                                     </a>
+                                </li>
+
+                                <!-- ✅ Mantém criar -->
+                                <li>
+                                    <a class="dropdown-item" asp-controller="Users" asp-action="Create">
+                                        <i class="bi bi-person-plus me-2"></i>Criar Usuário
+                                    </a>
+                                </li>
+
+                                <li><hr class="dropdown-divider" /></li>
+
+                                <li>
+                                    <form asp-controller="Account" asp-action="Logout" method="post" class="px-2">
+                                        @Html.AntiForgeryToken()
+                                        <button type="submit" class="dropdown-item">
+                                            <i class="bi bi-box-arrow-right me-2"></i>Sair
+                                        </button>
+                                    </form>
                                 </li>
                             </ul>
                         </div>
@@ -223,7 +314,6 @@
     @RenderSection("Scripts", required: false)
 
     <script>
-        // Badge de pendências (desktop + mobile)
         (function () {
             async function loadBadge() {
                 try {
@@ -243,7 +333,7 @@
                         elm.textContent = total;
                         elm.classList.toggle('d-none', total <= 0);
                     }
-                } catch { /* silencia */ }
+                } catch { }
             }
             if (document.readyState === 'loading') {
                 document.addEventListener('DOMContentLoaded', loadBadge);

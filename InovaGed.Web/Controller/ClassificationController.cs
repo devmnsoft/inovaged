@@ -15,17 +15,20 @@ public sealed class ClassificationController : Controller
     private readonly ICurrentUser _currentUser;
     private readonly IDocumentClassificationQueries _queries;
     private readonly IDocumentClassificationCommands _commands;
+    private readonly IDocumentClassificationAuditQueries _auditQueries;
 
     public ClassificationController(
         ILogger<ClassificationController> logger,
         ICurrentUser currentUser,
         IDocumentClassificationQueries queries,
-        IDocumentClassificationCommands commands)
+        IDocumentClassificationCommands commands,
+        IDocumentClassificationAuditQueries auditQueries)
     {
         _logger = logger;
         _currentUser = currentUser;
         _queries = queries;
         _commands = commands;
+        _auditQueries = auditQueries;
     }
 
     // ✅ /Classification
@@ -57,15 +60,6 @@ public sealed class ClassificationController : Controller
         }
     }
 
-    // ✅ /Classification/Reclassify?documentId=GUID
-    [HttpGet("Reclassify")]
-    public IActionResult Reclassify([FromQuery] Guid documentId)
-    {
-        return RedirectToAction("Details", "Ged", new { id = documentId, openClassify = true });
-    }
-
-
-    // ✅ usado pelo Details.cshtml: refreshClassificationPanel()
     // GET /Classification/Panel?documentId=GUID
     [HttpGet("Panel")]
     public async Task<IActionResult> Panel(Guid documentId, CancellationToken ct)
@@ -77,10 +71,7 @@ public sealed class ClassificationController : Controller
 
             var cls = await _queries.GetAsync(tenantId, documentId, ct);
 
-            // ✅ PartialView não aceita 3 args -> injeta via ViewData
             ViewData["DocumentId"] = documentId;
-
-            // ⚠️ Ajuste o nome do partial se o seu for diferente
             return PartialView("_DocumentClassificationPanel", cls);
         }
         catch (Exception ex)
@@ -90,7 +81,6 @@ public sealed class ClassificationController : Controller
         }
     }
 
-    // ✅ usado pelo Details.cshtml: openClassificationModal()
     // GET /Classification/EditModal?documentId=GUID
     [HttpGet("EditModal")]
     public async Task<IActionResult> EditModal(Guid documentId, CancellationToken ct)
@@ -100,32 +90,21 @@ public sealed class ClassificationController : Controller
             if (!_currentUser.IsAuthenticated) return Unauthorized();
             var tenantId = _currentUser.TenantId;
 
-            // Classificação atual (pode ser null / sem tipo ainda)
             var cls = await _queries.GetAsync(tenantId, documentId, ct);
-
-            // ✅ Carrega SEMPRE os tipos do banco (já existe no seu Queries)
             var types = await _queries.ListTypesAsync(tenantId, ct);
 
             var vm = new EditClassificationVM
             {
                 DocumentId = documentId,
                 DocumentTypeId = cls?.DocumentTypeId,
-
-                TagsCsv = (cls?.Tags is { Count: > 0 })
-                    ? string.Join(", ", cls.Tags)
-                    : "",
-
+                TagsCsv = (cls?.Tags is { Count: > 0 }) ? string.Join(", ", cls.Tags) : "",
                 MetadataLines = (cls?.Metadata is { Count: > 0 })
                     ? string.Join(Environment.NewLine, cls.Metadata.Select(kv => $"{kv.Key}={kv.Value}"))
                     : ""
             };
 
-            vm.AvailableTypes = types
-                .Select(t => new EditClassificationVM.DocumentTypeItem
-                {
-                    Id = t.Id,
-                    Name = t.Name
-                })
+            vm.AvailableTypes = (types ?? Array.Empty<DocumentTypeRowDto>())
+                .Select(t => new EditClassificationVM.DocumentTypeItem { Id = t.Id, Name = t.Name })
                 .ToList();
 
             return PartialView("_EditClassificationModal", vm);
@@ -137,16 +116,7 @@ public sealed class ClassificationController : Controller
         }
     }
 
-    // ✅ usado pelo Details (submit do modal)
     // POST /Classification/SaveManual
-    //
-    // Assinatura real:
-    // SaveManualAsync(Guid tenantId, Guid documentId, Guid? documentTypeId, Guid? userId,
-    //                IReadOnlyList<string> tags, IReadOnlyDictionary<string,string> metadata, CancellationToken ct)
-    //
-    // Eu vou aceitar tags + metadata via form de um jeito flexível:
-    // - tagsCsv: "tag1,tag2"
-    // - metadataJson: {"chave":"valor"}
     [HttpPost("SaveManual")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> SaveManual(
@@ -189,13 +159,7 @@ public sealed class ClassificationController : Controller
         }
     }
 
-    // ✅ usado pelo Details: applyClassificationSuggestion()
-    //
-    // Sua interface exige:
-    // ApplySuggestionAsync(Guid tenantId, Guid documentId, Guid suggestedTypeId,
-    //                      decimal? suggestedConfidence, string? suggestedSummary, Guid? userId, CancellationToken ct)
-    //
-    // Então precisamos receber esses campos no POST.
+    // POST /Classification/ApplySuggestion
     [HttpPost("ApplySuggestion")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> ApplySuggestion(
@@ -248,9 +212,30 @@ public sealed class ClassificationController : Controller
     private static IReadOnlyDictionary<string, string> ParseMetadata(string? metadataJson)
     {
         if (string.IsNullOrWhiteSpace(metadataJson))
-            return new Dictionary<string, string>();
+            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         var dict = JsonSerializer.Deserialize<Dictionary<string, string>>(metadataJson);
-        return dict ?? new Dictionary<string, string>();
+        return dict ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    }
+
+
+    [HttpGet("Audit")]
+    public async Task<IActionResult> Audit(Guid documentId, int take = 20, CancellationToken ct = default)
+    {
+        try
+        {
+            if (!_currentUser.IsAuthenticated) return Unauthorized();
+            var tenantId = _currentUser.TenantId;
+
+            var rows = await _auditQueries.ListByDocumentAsync(tenantId, documentId, take, ct);
+
+            ViewData["DocumentId"] = documentId;
+            return PartialView("_DocumentClassificationAuditTimeline", rows);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro em Classification/Audit. DocumentId={DocumentId}", documentId);
+            return StatusCode(500, "Erro ao carregar histórico de classificação.");
+        }
     }
 }

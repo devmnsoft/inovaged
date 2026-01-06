@@ -5,10 +5,12 @@ using InovaGed.Application.Classification;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Common.Storage;
 using InovaGed.Application.Documents;
+using InovaGed.Application.Documents.Workflow;
 using InovaGed.Application.Ged;
 using InovaGed.Application.Identity;
 using InovaGed.Application.Ocr;
 using InovaGed.Application.Search;
+using InovaGed.Application.Users;
 using InovaGed.Application.Workflow;
 
 using InovaGed.Infrastructure.Auditing;
@@ -20,7 +22,9 @@ using InovaGed.Infrastructure.Ged;
 using InovaGed.Infrastructure.Ocr;
 using InovaGed.Infrastructure.Preview;
 using InovaGed.Infrastructure.Search;
+using InovaGed.Infrastructure.Security;
 using InovaGed.Infrastructure.Storage;
+using InovaGed.Infrastructure.Users;
 using InovaGed.Infrastructure.Workflow;
 
 using InovaGed.Web.Security;
@@ -91,10 +95,13 @@ builder.Services.AddScoped<IOcrTextProvider, DbOcrTextProvider>();
 builder.Services.AddScoped<IOcrAutoClassificationService, OcrAutoClassificationService>();
 builder.Services.AddScoped<IDocumentClassificationCommands, DocumentClassificationCommands>();
 builder.Services.AddScoped<IClassificationPendingCounter, ClassificationPendingCounter>();
-builder.Services.AddScoped<IClassificationDashboardQueries, ClassificationDashboardQueries>(); 
-
-
-// já deve existir:
+builder.Services.AddScoped<IClassificationDashboardQueries, ClassificationDashboardQueries>();
+builder.Services.AddScoped<IDocumentClassificationAuditQueries, DocumentClassificationAuditQueries>();
+builder.Services.AddScoped<IUserAdminRepository, UserAdminRepository>();
+builder.Services.AddScoped<IUserAdminQueries, UserAdminQueries>();
+builder.Services.AddScoped<IDocumentWorkflowRepository, DocumentWorkflowRepository>();
+builder.Services.AddScoped<IDocumentWorkflowService, DocumentWorkflowService>();
+builder.Services.AddScoped<IPermissionChecker, AllowAllPermissionChecker>();
 builder.Services.AddScoped<SimpleTextDocumentTypeSuggester>();
 builder.Services.AddScoped<HybridDocumentTypeSuggester>();
 

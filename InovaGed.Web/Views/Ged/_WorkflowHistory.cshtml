@@ -1,0 +1,35 @@
+﻿@using InovaGed.Application.Documents.Workflow
+@using InovaGed.Application.Workflow
+@model IReadOnlyList<WorkflowLogRow>
+
+@if (Model is null || Model.Count == 0)
+{
+    <div class="text-muted small">Sem histórico de workflow.</div>
+}
+else
+{
+    <div class="list-group">
+        @foreach (var r in Model)
+        {
+            <div class="list-group-item">
+                <div class="d-flex justify-content-between align-items-start gap-2">
+                    <div>
+                        <div class="fw-semibold">
+                            @r.FromStatus → @r.ToStatus
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(r.Reason))
+                        {
+                            <div class="text-muted small">@r.Reason</div>
+                        }
+                        <div class="text-muted small">
+                            @(string.IsNullOrWhiteSpace(r.UserName) ? "—" : r.UserName)
+                        </div>
+                    </div>
+                    <div class="text-muted small text-end" style="min-width:140px;">
+                        @r.CreatedAt.ToString("dd/MM/yyyy HH:mm")
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}

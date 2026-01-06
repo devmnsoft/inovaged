@@ -1,5 +1,4 @@
 using InovaGed.Domain.Primitives;
-using InovaGed.Domain.Workflow;
 
 namespace InovaGed.Application.Workflow;
 
@@ -17,12 +16,10 @@ public interface IDocumentWorkflowQueries
         Guid documentId,
         CancellationToken ct);
 
+    Task<IReadOnlyList<WorkflowLogRow>> ListAsync(Guid tenantId, Guid documentId, int take, CancellationToken ct);
+
+
 }
- 
-
- 
-
-
 public interface IDocumentWorkflowCommands
 {
     Task<Result<Guid>> StartAsync(Guid tenantId, Guid documentId, Guid workflowId, Guid? userId, CancellationToken ct);
@@ -35,6 +32,14 @@ public interface IDocumentWorkflowCommands
          Guid? userId,
          CancellationToken ct);
 }
+
+public sealed record WorkflowLogRow(
+  DateTimeOffset CreatedAt,
+  string FromStatus,
+  string ToStatus,
+  string? Reason,
+  Guid? CreatedBy,
+  string? UserName);
 
 public sealed record DocumentWorkflowStateDto(
     Guid DocumentWorkflowId,
@@ -64,4 +69,3 @@ public sealed record DocumentWorkflowHistoryDto(
     string? Reason,
     string? Comments
 );
- 

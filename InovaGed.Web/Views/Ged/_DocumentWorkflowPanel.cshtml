@@ -1,0 +1,131 @@
+﻿@using InovaGed.Domain.Documents
+@model InovaGed.Web.Models.Ged.GedDetailsVM
+
+@{
+    string StatusBadge(DocumentStatus st) => st switch
+    {
+        DocumentStatus.Draft => "bg-secondary",
+        DocumentStatus.InReview => "bg-info text-dark",
+        DocumentStatus.InSignature => "bg-warning text-dark",
+        DocumentStatus.Published => "bg-success",
+        DocumentStatus.Archived => "bg-dark",
+        _ => "bg-light text-dark"
+    };
+
+    string StatusLabel(DocumentStatus st) => st switch
+    {
+        DocumentStatus.Draft => "Rascunho",
+        DocumentStatus.InReview => "Em análise",
+        DocumentStatus.InSignature => "Em assinatura",
+        DocumentStatus.Published => "Publicado",
+        DocumentStatus.Archived => "Arquivado",
+        _ => st.ToString()
+    };
+}
+
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <strong><i class="bi bi-diagram-3 me-1"></i>Workflow</strong>
+        <span class="badge @StatusBadge(Model.Status)">
+            @StatusLabel(Model.Status)
+        </span>
+    </div>
+
+    <div class="card-body">
+        <div class="d-grid gap-2">
+            @* Transições: a validação REAL fica no back-end *@
+
+            @if (Model.Status == DocumentStatus.Draft)
+            {
+                <button class="btn btn-outline-primary"
+                        onclick="openWorkflowModal('@Model.Id','@((int)DocumentStatus.InReview)','Enviar para análise', true)">
+                    <i class="bi bi-send me-1"></i> Enviar para análise
+                </button>
+            }
+
+            @if (Model.Status == DocumentStatus.InReview)
+            {
+                <button class="btn btn-outline-success"
+                        onclick="openWorkflowModal('@Model.Id','@((int)DocumentStatus.InSignature)','Aprovar para assinatura', true)">
+                    <i class="bi bi-check2-circle me-1"></i> Aprovar (Assinatura)
+                </button>
+
+                <button class="btn btn-outline-danger"
+                        onclick="openWorkflowModal('@Model.Id','@((int)DocumentStatus.Draft)','Reprovar (voltar para rascunho)', true)">
+                    <i class="bi bi-arrow-counterclockwise me-1"></i> Reprovar
+                </button>
+            }
+
+            @if (Model.Status == DocumentStatus.InSignature)
+            {
+                <button class="btn btn-outline-success"
+                        onclick="openWorkflowModal('@Model.Id','@((int)DocumentStatus.Published)','Publicar', false)">
+                    <i class="bi bi-megaphone me-1"></i> Publicar
+                </button>
+
+                <button class="btn btn-outline-secondary"
+                        onclick="openWorkflowModal('@Model.Id','@((int)DocumentStatus.InReview)','Voltar para análise', true)">
+                    <i class="bi bi-arrow-left-circle me-1"></i> Voltar para análise
+                </button>
+            }
+
+            @if (Model.Status == DocumentStatus.Published)
+            {
+                <button class="btn btn-outline-dark"
+                        onclick="openWorkflowModal('@Model.Id','@((int)DocumentStatus.Archived)','Arquivar', true)">
+                    <i class="bi bi-archive me-1"></i> Arquivar
+                </button>
+            }
+
+            <button class="btn btn-outline-secondary"
+                    id="btnWorkflowHistory"
+                    onclick="toggleWorkflowHistory('@Model.Id', this)">
+                <span class="btn-text"><i class="bi bi-clock-history me-1"></i> Ver histórico</span>
+                <span class="btn-loading d-none">
+                    <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                    Carregando...
+                </span>
+            </button>
+
+            <div id="workflow-history-container" class="d-none mt-2"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal -->
+<div class="modal fade" id="modalWorkflow" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <form id="formWorkflow" method="post" action="@Url.Action("ChangeStatus","DocumentWorkflow")">
+                @Html.AntiForgeryToken()
+                <div class="modal-header">
+                    <h5 class="modal-title" id="workflowTitle">Alterar status</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" name="documentId" id="wfDocumentId" />
+                    <input type="hidden" name="toStatus" id="wfToStatus" />
+
+                    <div class="mb-2 text-muted small" id="wfSubtitle"></div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Motivo</label>
+                        <textarea class="form-control" rows="3" name="reason" id="wfReason"
+                                  placeholder="Descreva o motivo desta ação..."></textarea>
+                        <div class="form-text" id="wfReasonHelp"></div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-primary" id="wfSubmit">
+                        <span class="btn-text">Confirmar</span>
+                        <span class="btn-loading d-none">
+                            <span class="spinner-border spinner-border-sm me-1"></span>
+                            Salvando...
+                        </span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>

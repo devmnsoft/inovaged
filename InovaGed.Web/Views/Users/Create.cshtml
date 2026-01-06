@@ -1,0 +1,85 @@
+﻿@model InovaGed.Web.Models.Users.CreateUserVM
+
+@{
+    ViewData["Title"] = "Criar Usuário";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="mb-0"><i class="bi bi-person-plus me-2"></i>@ViewData["Title"]</h4>
+</div>
+
+@if (TempData["Success"] is string ok && !string.IsNullOrWhiteSpace(ok))
+{
+    <div class="alert alert-success">@ok</div>
+}
+
+<div class="card">
+    <div class="card-body">
+        <form asp-action="Create" asp-controller="Users" method="post">
+            @Html.AntiForgeryToken()
+
+            <div asp-validation-summary="ModelOnly" class="text-danger mb-2"></div>
+
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label">Nome</label>
+                    <input asp-for="Name" class="form-control" placeholder="Nome completo" />
+                    <span asp-validation-for="Name" class="text-danger"></span>
+                </div>
+
+                <div class="col-md-6">
+                    <label class="form-label">E-mail</label>
+                    <input asp-for="Email" class="form-control" placeholder="email@dominio.com" />
+                    <span asp-validation-for="Email" class="text-danger"></span>
+                </div>
+
+                <div class="col-md-6">
+                    <label class="form-label">Senha</label>
+                    <input asp-for="Password" class="form-control" />
+                    <div class="form-text">Mínimo 8 caracteres.</div>
+                    <span asp-validation-for="Password" class="text-danger"></span>
+                </div>
+
+                <div class="col-md-6">
+                    <label class="form-label">Confirmar senha</label>
+                    <input asp-for="ConfirmPassword" class="form-control" />
+                    <span asp-validation-for="ConfirmPassword" class="text-danger"></span>
+                </div>
+
+                <div class="col-md-6">
+                    <label class="form-label">Perfis / Roles</label>
+                    <select asp-for="SelectedRoleIds" class="form-select" multiple size="6">
+                        @foreach (var r in Model.AvailableRoles)
+                        {
+                            <option value="@r.Id">@r.Name</option>
+                        }
+                    </select>
+                    <div class="form-text">Segure CTRL para selecionar múltiplos.</div>
+                </div>
+
+                <div class="col-md-6 d-flex align-items-center">
+                    <div class="form-check mt-3">
+                        <input class="form-check-input" asp-for="IsActive" />
+                        <label class="form-check-label">Ativo</label>
+                    </div>
+                </div>
+            </div>
+
+            <hr class="my-3" />
+
+            <div class="d-flex gap-2">
+                <button class="btn btn-primary" type="submit">
+                    <i class="bi bi-check2-circle me-1"></i> Criar usuário
+                </button>
+
+                <a class="btn btn-outline-secondary" href="@Url.Action("Index","Ged")">
+                    Voltar
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

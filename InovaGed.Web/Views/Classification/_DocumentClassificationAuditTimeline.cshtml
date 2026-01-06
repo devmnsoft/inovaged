@@ -1,0 +1,104 @@
+﻿@using System.Text.Json
+@model IReadOnlyList<InovaGed.Application.Classification.ClassificationAuditRowDto>
+
+@{
+    string Badge(string? method)
+    {
+        var m = (method ?? "").Trim().ToUpperInvariant();
+        return m switch
+        {
+            "MANUAL" => "bg-primary",
+            "SUGGESTION" => "bg-info text-dark",
+            "OCR" => "bg-success",
+            _ => "bg-secondary"
+        };
+    }
+
+    string Title(string action)
+    {
+        return (action ?? "").ToUpperInvariant() switch
+        {
+            "MANUAL_SAVE" => "Salvou classificação (Manual)",
+            "APPLY_SUGGESTION" => "Aplicou sugestão (OCR/Texto)",
+            "OCR_REPROCESS" => "Reprocessou OCR",
+            _ => action
+        };
+    }
+
+    string? TryExtractTypeName(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("documentTypeName", out var p) && p.ValueKind == JsonValueKind.String)
+                return p.GetString();
+        }
+        catch { }
+        return null;
+    }
+}
+
+@if (Model == null || Model.Count == 0)
+{
+    <div class="text-muted small">Nenhum registro de histórico ainda.</div>
+}
+else
+{
+    <div class="list-group list-group-flush">
+        @foreach (var r in Model)
+        {
+            var afterType = TryExtractTypeName(r.AfterJson);
+            var beforeType = TryExtractTypeName(r.BeforeJson);
+
+            <div class="list-group-item px-0">
+                <div class="d-flex justify-content-between align-items-start gap-2">
+                    <div>
+                        <div class="fw-semibold">
+                            @Title(r.Action)
+                            @if (!string.IsNullOrWhiteSpace(r.Method))
+                            {
+                                <span class="badge @Badge(r.Method) ms-2">@r.Method</span>
+                            }
+                        </div>
+
+                        <div class="text-muted small">
+                            @r.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+                            @if (!string.IsNullOrWhiteSpace(r.Source))
+                            {
+                                <span class="ms-2">• @r.Source</span>
+                            }
+                        </div>
+
+                        @if (!string.IsNullOrWhiteSpace(beforeType) || !string.IsNullOrWhiteSpace(afterType))
+                        {
+                            <div class="small mt-1">
+                                <span class="text-muted">Tipo:</span>
+                                <span class="badge bg-light text-dark">@((beforeType ?? "-"))</span>
+                                <span class="mx-1">→</span>
+                                <span class="badge bg-light text-dark">@((afterType ?? "-"))</span>
+                            </div>
+                        }
+                    </div>
+
+                    <button type="button"
+                            class="btn btn-sm btn-outline-secondary"
+                            data-bs-toggle="collapse"
+                            data-bs-target="#audit-json-@r.Id.ToString("N")">
+                        Detalhes
+                    </button>
+                </div>
+
+                <div class="collapse mt-2" id="audit-json-@r.Id.ToString("N")">
+                    <div class="border rounded p-2 bg-light">
+                        <div class="small fw-semibold mb-1">After</div>
+                        <pre class="small mb-2" style="white-space:pre-wrap">@((r.AfterJson ?? "{}"))</pre>
+
+                        <div class="small fw-semibold mb-1">Before</div>
+                        <pre class="small mb-0" style="white-space:pre-wrap">@((r.BeforeJson ?? "{}"))</pre>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}

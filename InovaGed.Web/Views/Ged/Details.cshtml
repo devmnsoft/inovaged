@@ -1,461 +1,719 @@
-﻿@using System
-@using System.Linq
-@using System.Threading
-@using InovaGed.Application.Identity
-@using InovaGed.Application.Classification
+﻿@using InovaGed.Domain.Documents
 @model InovaGed.Web.Models.Ged.GedDetailsVM
 
-@inject ICurrentUser CurrentUser
-@inject IDocumentClassificationQueries ClassificationQueries
-
 @{
-    var versions = Model.Versions ?? new System.Collections.Generic.List<InovaGed.Web.Models.Ged.GedDetailsVM.VersionVM>();
-    var selectedVersionId = Model.SelectedVersionId ?? Model.CurrentVersionId;
-    var selectedVersion = versions.FirstOrDefault(v => v.Id == selectedVersionId);
+    ViewData["Title"] = "Detalhes do Documento";
 
-    var openClassify = (Context.Request.Query["openClassify"].ToString() ?? "")
-        .Equals("true", StringComparison.OrdinalIgnoreCase);
+    string ToSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        var kb = bytes / 1024d;
+        if (kb < 1024) return $"{kb:N1} KB";
+        var mb = kb / 1024d;
+        if (mb < 1024) return $"{mb:N1} MB";
+        var gb = mb / 1024d;
+        return $"{gb:N1} GB";
+    }
+
+    string StatusBadge(DocumentStatus st) => st switch
+    {
+        DocumentStatus.Draft => "bg-secondary",
+        DocumentStatus.InReview => "bg-info text-dark",
+        DocumentStatus.InSignature => "bg-warning text-dark",
+        DocumentStatus.Published => "bg-success",
+        DocumentStatus.Archived => "bg-dark",
+        _ => "bg-light text-dark"
+    };
+
+    string StatusLabel(DocumentStatus st) => st switch
+    {
+        DocumentStatus.Draft => "Rascunho",
+        DocumentStatus.InReview => "Em análise",
+        DocumentStatus.InSignature => "Em assinatura",
+        DocumentStatus.Published => "Publicado",
+        DocumentStatus.Archived => "Arquivado",
+        _ => st.ToString()
+    };
+
+    // versão selecionada para preview
+    var selectedId = Model.SelectedVersionId
+        ?? Model.CurrentVersionId
+        ?? Model.Versions.OrderByDescending(v => v.VersionNumber).FirstOrDefault()?.Id;
+
+    var selected = selectedId.HasValue
+        ? Model.Versions.FirstOrDefault(v => v.Id == selectedId.Value)
+        : null;
+
+    // flags de UI vindas do controller
+    var openClassify = (ViewBag.OpenClassify as bool?) == true;
+    var ocrSwitched = (ViewBag.OcrSwitched as bool?) == true;
 }
 
-<div class="row g-3">
-    <!-- LEFT -->
-    <div class="col-lg-8">
-        <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-                <div class="d-flex align-items-center gap-2">
-                    <i class="bi bi-eye"></i>
-                    <strong>Visualização</strong>
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-start mb-3">
+        <div>
+            <h3 class="mb-1">
+                <i class="bi bi-file-earmark-text me-1"></i> @Model.Title
+            </h3>
+
+            <div class="text-muted small d-flex flex-wrap gap-2 align-items-center">
+                <span class="badge @StatusBadge(Model.Status)">
+                    @StatusLabel(Model.Status)
+                </span>
+
+                @if (Model.IsConfidential)
+                {
+                    <span class="badge bg-danger">
+                        <i class="bi bi-shield-lock me-1"></i> Confidencial
+                    </span>
+                }
+
+                <span>Doc: <code>@Model.Id</code></span>
+                @if (Model.FolderId.HasValue)
+                {
+                    <span>Pasta: <code>@Model.FolderId</code></span>
+                }
+
+                @if (ocrSwitched)
+                {
+                    <span class="badge bg-warning text-dark">
+                        <i class="bi bi-magic me-1"></i> Preview alternado para OCR
+                    </span>
+                }
+            </div>
+        </div>
+
+        <div class="d-flex gap-2">
+            <a class="btn btn-light" href="@Url.Action("Index","Ged", new { folderId = Model.FolderId })">
+                <i class="bi bi-arrow-left me-1"></i> Voltar
+            </a>
+
+            <a class="btn btn-outline-primary" href="@Url.Action("Index","Classification", new { documentId = Model.Id })">
+                <i class="bi bi-tags me-1"></i> Classificação
+            </a>
+        </div>
+    </div>
+
+    <div class="row g-3">
+        <!-- LEFT -->
+        <div class="col-lg-8">
+
+            <!-- PREVIEW -->
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <strong><i class="bi bi-eye me-1"></i> Visualização</strong>
+
+                    <div class="d-flex align-items-center gap-2">
+                        @if (selected is not null)
+                        {
+                            <span class="text-muted small">
+                                Versão @selected.VersionNumber · @ToSize(selected.SizeBytes)
+                            </span>
+
+                            <a class="btn btn-sm btn-outline-secondary"
+                               href="@Url.Action("Download","Ged", new { id = selected.Id })">
+                                <i class="bi bi-download me-1"></i> Baixar
+                            </a>
+                        }
+                    </div>
                 </div>
 
-                <div class="d-flex gap-2 flex-wrap align-items-center">
-                    @if (selectedVersionId != null)
+                <div class="card-body p-0">
+                    @if (selected is null)
                     {
-                        <button type="button" class="btn btn-sm btn-outline-secondary" id="btnFull" title="Tela cheia">
-                            <i class="bi bi-fullscreen"></i>
-                        </button>
-
-                        <a class="btn btn-sm btn-outline-primary"
-                           target="_blank"
-                           href="@Url.Action("PreviewVersion","Ged", new { versionId = selectedVersionId })">
-                            Abrir
-                        </a>
-
-                        <form asp-action="RegeneratePreview" asp-controller="Ged" method="post" class="d-inline">
-                            @Html.AntiForgeryToken()
-                            <input type="hidden" name="versionId" value="@selectedVersionId" />
-                            <button type="submit" class="btn btn-sm btn-outline-warning">
-                                Regerar preview
-                            </button>
-                        </form>
-
-                        <form asp-action="RunOcr" asp-controller="Ged" method="post" class="d-inline" id="ocrForm">
-                            @Html.AntiForgeryToken()
-                            <input type="hidden" name="versionId" value="@selectedVersionId" />
-                            <input type="hidden" name="force" value="false" />
-                            <button type="submit" class="btn btn-sm btn-outline-success" id="btnOcr">
-                                <span class="btn-text">OCR</span>
-                                <span class="btn-loading d-none">
-                                    <span class="spinner-border spinner-border-sm me-1" role="status"></span>
-                                    Processando...
-                                </span>
-                            </button>
-                        </form>
-
-                        <span id="ocrStatusBadge" class="ms-1">
-                            <span class="badge bg-light text-dark">— OCR</span>
-                        </span>
+                        <div class="p-3 text-muted">Nenhuma versão selecionada.</div>
+                    }
+                    else
+                    {
+                        <iframe src="@Url.Action("PreviewInline","Ged", new { versionId = selected.Id })"
+                                style="width:100%; height:75vh; border:0;">
+                        </iframe>
                     }
                 </div>
             </div>
 
-            <div class="card-body p-0 position-relative" id="previewContainer" style="height: 70vh;">
-                @if (selectedVersionId == null)
-                {
-                    <div class="d-flex align-items-center justify-content-center h-100 text-muted">
-                        Nenhuma versão disponível para visualização.
-                    </div>
-                }
-                else
-                {
-                    <div id="previewLoading"
-                         class="position-absolute top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center"
-                         style="background: rgba(255,255,255,.75); z-index:10;">
-                        <div class="text-center">
-                            <div class="spinner-border" role="status"></div>
-                            <div class="mt-2 text-muted">Carregando / gerando visualização…</div>
-                        </div>
-                    </div>
+            <!-- VERSÕES -->
+            <div class="card mt-3">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <strong><i class="bi bi-layers me-1"></i> Versões</strong>
 
-                    <iframe id="previewFrame"
-                            src="@Url.Action("PreviewInline","Ged", new { versionId = selectedVersionId })"
-                            style="width:100%; height:100%; border:0; background:#f5f5f7;"
-                            loading="lazy">
-                    </iframe>
-                }
+                    <div class="d-flex gap-2 align-items-center">
+                        <span class="text-muted small">
+                            Total: @Model.Versions.Count
+                        </span>
+                    </div>
+                </div>
+
+                <div class="card-body">
+                    @if (Model.Versions.Count == 0)
+                    {
+                        <div class="text-muted">Nenhuma versão cadastrada.</div>
+                    }
+                    else
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-sm align-middle">
+                                <thead>
+                                    <tr>
+                                        <th style="width:80px;">Ver.</th>
+                                        <th>Arquivo</th>
+                                        <th style="width:120px;">Tamanho</th>
+                                        <th style="width:140px;">OCR</th>
+                                        <th style="width:280px;" class="text-end">Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var v in Model.Versions.OrderByDescending(x => x.VersionNumber))
+                                    {
+                                        var isSelected = selectedId.HasValue && v.Id == selectedId.Value;
+                                        <tr class="@(isSelected ? "table-active" : "")">
+                                            <td>
+                                                <span class="badge @(v.IsCurrent ? "bg-primary" : "bg-light text-dark")">
+                                                    @v.VersionNumber
+                                                </span>
+                                            </td>
+
+                                            <td>
+                                                <div class="fw-semibold">@v.FileName</div>
+                                                <div class="text-muted small">@v.ContentType</div>
+                                            </td>
+
+                                            <td>@ToSize(v.SizeBytes)</td>
+
+                                            <td>
+                                                @if (!string.IsNullOrWhiteSpace(v.OcrStatus))
+                                                {
+                                                    <span class="badge bg-light text-dark">@v.OcrStatus</span>
+                                                    @if (v.OcrJobId.HasValue)
+                                                    {
+                                                        <div class="text-muted small">Job #@v.OcrJobId</div>
+                                                    }
+                                                }
+                                                else
+                                                {
+                                                    <span class="text-muted small">—</span>
+                                                }
+
+                                                @if (!string.IsNullOrWhiteSpace(v.OcrErrorMessage))
+                                                {
+                                                    <div class="text-danger small mt-1">@v.OcrErrorMessage</div>
+                                                }
+                                            </td>
+
+                                            <td class="text-end">
+                                                <div class="btn-group">
+
+                                                    <a class="btn btn-sm btn-outline-secondary"
+                                                       title="Visualizar esta versão"
+                                                       href="@Url.Action("Details","Ged", new { id = Model.Id, versionId = v.Id })">
+                                                        <i class="bi bi-eye"></i>
+                                                    </a>
+
+                                                    <a class="btn btn-sm btn-outline-secondary"
+                                                       title="Baixar"
+                                                       href="@Url.Action("Download","Ged", new { id = v.Id })">
+                                                        <i class="bi bi-download"></i>
+                                                    </a>
+
+                                                    <a class="btn btn-sm btn-outline-secondary"
+                                                       title="Abrir OCR texto (se existir)"
+                                                       target="_blank"
+                                                       href="@Url.Action("OcrText","Ged", new { versionId = v.Id })">
+                                                        <i class="bi bi-filetype-txt"></i>
+                                                    </a>
+
+                                                    <form method="post" action="@Url.Action("RunOcr","Ged")" class="d-inline">
+                                                        @Html.AntiForgeryToken()
+                                                        <input type="hidden" name="versionId" value="@v.Id" />
+                                                        <input type="hidden" name="force" value="false" />
+                                                        <button type="submit" class="btn btn-sm btn-outline-primary" title="Solicitar OCR">
+                                                            <i class="bi bi-text-paragraph"></i>
+                                                        </button>
+                                                    </form>
+
+                                                    <form method="post" action="@Url.Action("ReprocessOcr","Ged")" class="d-inline">
+                                                        @Html.AntiForgeryToken()
+                                                        <input type="hidden" name="versionId" value="@v.Id" />
+                                                        <button type="submit" class="btn btn-sm btn-outline-warning" title="Reprocessar OCR (forçar)">
+                                                            <i class="bi bi-arrow-clockwise"></i>
+                                                        </button>
+                                                    </form>
+
+                                                    <form method="post" action="@Url.Action("RegeneratePreview","Ged")" class="d-inline">
+                                                        @Html.AntiForgeryToken()
+                                                        <input type="hidden" name="versionId" value="@v.Id" />
+                                                        <button type="submit" class="btn btn-sm btn-outline-dark" title="Regerar preview">
+                                                            <i class="bi bi-arrow-repeat"></i>
+                                                        </button>
+                                                    </form>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
             </div>
+
+            <!-- CLASSIFICAÇÃO (painel via partial) -->
+            <div class="card mt-3" id="classifyCard">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <strong><i class="bi bi-tags me-1"></i> Classificação</strong>
+                    <button class="btn btn-sm btn-outline-primary" type="button" id="btnOpenClassify">
+                        <i class="bi bi-pencil-square me-1"></i> Editar classificação
+                    </button>
+                </div>
+                <div class="card-body">
+                    <div id="classifyPanelLoading" class="text-muted small d-none">
+                        <span class="spinner-border spinner-border-sm me-1"></span> Carregando painel...
+                    </div>
+                    <div id="classifyPanel"></div>
+                </div>
+            </div>
+
         </div>
 
-        <!-- Versions -->
-        <div class="card mt-3">
-            <div class="card-header">
-                <strong>Versões</strong>
-            </div>
-            <div class="table-responsive">
-                <table class="table table-sm align-middle mb-0">
-                    <thead class="table-light">
-                        <tr>
-                            <th>#</th>
-                            <th>Arquivo</th>
-                            <th>Criado em</th>
-                            <th></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var v in versions.OrderByDescending(x => x.VersionNumber))
+        <!-- RIGHT -->
+        <div class="col-lg-4">
+
+            <!-- CICLO DE VIDA (DocumentStatus) -->
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <strong><i class="bi bi-diagram-3 me-1"></i> Ciclo de Vida</strong>
+                    <span class="badge @StatusBadge(Model.Status)">@StatusLabel(Model.Status)</span>
+                </div>
+                <div class="card-body">
+                    <div class="d-grid gap-2">
+
+                        @if (Model.Status == DocumentStatus.Draft)
                         {
-                            var isSelected = selectedVersionId.HasValue && v.Id == selectedVersionId.Value;
-                            <tr class="@(isSelected ? "table-primary" : "")">
-                                <td>@v.VersionNumber</td>
-                                <td>
-                                    <div class="fw-semibold">@v.FileName</div>
-                                    <div class="text-muted small">@v.ContentType • @v.SizeBytes.ToString("N0") bytes</div>
-                                </td>
-                                <td class="text-muted">@v.CreatedAt.ToString("dd/MM/yyyy HH:mm")</td>
-                                <td class="text-end">
-                                    <a class="btn btn-sm btn-outline-secondary"
-                                       href="@Url.Action("Details","Ged", new { id = Model.Id, versionId = v.Id })">
-                                        Ver
-                                    </a>
-                                    <a class="btn btn-sm btn-outline-primary"
-                                       href="@Url.Action("DownloadVersion","Ged", new { versionId = v.Id })">
-                                        Baixar
-                                    </a>
-                                </td>
-                            </tr>
+                            <button class="btn btn-outline-primary"
+                                    onclick="openLifeModal('@Model.Id','@((int)DocumentStatus.InReview)','Enviar para análise', true)">
+                                <i class="bi bi-send me-1"></i> Enviar para análise
+                            </button>
                         }
-                    </tbody>
-                </table>
+
+                        @if (Model.Status == DocumentStatus.InReview)
+                        {
+                            <button class="btn btn-outline-success"
+                                    onclick="openLifeModal('@Model.Id','@((int)DocumentStatus.InSignature)','Aprovar para assinatura', true)">
+                                <i class="bi bi-check2-circle me-1"></i> Aprovar (Assinatura)
+                            </button>
+
+                            <button class="btn btn-outline-danger"
+                                    onclick="openLifeModal('@Model.Id','@((int)DocumentStatus.Draft)','Reprovar (voltar para rascunho)', true)">
+                                <i class="bi bi-arrow-counterclockwise me-1"></i> Reprovar
+                            </button>
+                        }
+
+                        @if (Model.Status == DocumentStatus.InSignature)
+                        {
+                            <button class="btn btn-outline-success"
+                                    onclick="openLifeModal('@Model.Id','@((int)DocumentStatus.Published)','Publicar', false)">
+                                <i class="bi bi-megaphone me-1"></i> Publicar
+                            </button>
+
+                            <button class="btn btn-outline-secondary"
+                                    onclick="openLifeModal('@Model.Id','@((int)DocumentStatus.InReview)','Voltar para análise', true)">
+                                <i class="bi bi-arrow-left-circle me-1"></i> Voltar para análise
+                            </button>
+                        }
+
+                        @if (Model.Status == DocumentStatus.Published)
+                        {
+                            <button class="btn btn-outline-dark"
+                                    onclick="openLifeModal('@Model.Id','@((int)DocumentStatus.Archived)','Arquivar', true)">
+                                <i class="bi bi-archive me-1"></i> Arquivar
+                            </button>
+                        }
+
+                        <button class="btn btn-outline-secondary"
+                                id="btnLifeHistory"
+                                onclick="toggleLifeHistory('@Model.Id', this)">
+                            <span class="btn-text"><i class="bi bi-clock-history me-1"></i> Ver histórico</span>
+                            <span class="btn-loading d-none">
+                                <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                                Carregando...
+                            </span>
+                        </button>
+
+                        <div id="life-history-container" class="d-none mt-2"></div>
+                    </div>
+                </div>
             </div>
+
+            <!-- WORKFLOW DE PROCESSO (etapas/transições) -->
+            <div class="card mt-3">
+                <div class="card-header">
+                    <strong><i class="bi bi-gear me-1"></i> Workflow de Processo</strong>
+                </div>
+                <div class="card-body">
+
+                    @if (!Model.Workflow.HasActiveWorkflow)
+                    {
+                        <div class="text-muted small mb-2">Nenhum workflow ativo para este documento.</div>
+
+                        @if (Model.Workflow.AvailableWorkflows.Count > 0)
+                        {
+                            <form method="post" action="@Url.Action("StartWorkflow","Ged")" class="mt-2">
+                                @Html.AntiForgeryToken()
+                                <input type="hidden" name="documentId" value="@Model.Id" />
+
+                                <label class="form-label">Selecionar workflow</label>
+                                <select class="form-select mb-2" name="workflowId">
+                                    @foreach (var wf in Model.Workflow.AvailableWorkflows)
+                                    {
+                                        <option value="@wf.Id">@wf.Name</option>
+                                    }
+                                </select>
+
+                                <button type="submit" class="btn btn-outline-primary w-100">
+                                    <i class="bi bi-play-circle me-1"></i> Iniciar workflow
+                                </button>
+
+                                <div class="form-text mt-2">
+                                    * O controller já valida classificação antes de iniciar.
+                                </div>
+                            </form>
+                        }
+                        else
+                        {
+                            <div class="text-muted small">Nenhum workflow disponível (definições inativas ou inexistentes).</div>
+                        }
+                    }
+                    else
+                    {
+                        <div class="mb-2">
+                            <div class="text-muted small">Workflow</div>
+                            <div class="fw-semibold">@Model.Workflow.WorkflowName</div>
+                        </div>
+
+                        <div class="mb-3">
+                            <div class="text-muted small">Etapa atual</div>
+                            <div>@Model.Workflow.CurrentStageName</div>
+                        </div>
+
+                        @if (!Model.Workflow.IsCompleted && Model.Workflow.AvailableTransitions.Count > 0)
+                        {
+                            <form method="post" action="@Url.Action("ApplyTransition","Ged")" id="formTransition">
+                                @Html.AntiForgeryToken()
+                                <input type="hidden" name="documentId" value="@Model.Id" />
+
+                                <label class="form-label">Transição</label>
+                                <select class="form-select mb-2" name="transitionId" id="transitionId">
+                                    @foreach (var t in Model.Workflow.AvailableTransitions)
+                                    {
+                                        <option value="@t.Id" data-requires-reason="@(t.RequiresReason ? "1" : "0")">
+                                            @t.Name → @t.ToStageName
+                                        </option>
+                                    }
+                                </select>
+
+                                <div class="mb-2">
+                                    <label class="form-label">Motivo</label>
+                                    <textarea class="form-control" rows="2" name="reason" id="transitionReason"></textarea>
+                                    <div class="form-text" id="transitionReasonHelp"></div>
+                                </div>
+
+                                <div class="mb-2">
+                                    <label class="form-label">Comentários</label>
+                                    <textarea class="form-control" rows="2" name="comments"></textarea>
+                                </div>
+
+                                <button type="submit" class="btn btn-outline-success w-100">
+                                    <i class="bi bi-shuffle me-1"></i> Aplicar transição
+                                </button>
+                            </form>
+                        }
+                        else
+                        {
+                            <div class="text-muted small">Sem transições disponíveis (workflow finalizado ou sem permissões).</div>
+                        }
+
+                        @if (Model.Workflow.History.Count > 0)
+                        {
+                            <hr />
+                            <div class="fw-semibold mb-2"><i class="bi bi-clock-history me-1"></i> Histórico do processo</div>
+                            <div class="list-group">
+                                @foreach (var h in Model.Workflow.History.OrderByDescending(x => x.PerformedAt))
+                                {
+                                    <div class="list-group-item">
+                                        <div class="fw-semibold">@h.FromStageName → @h.ToStageName</div>
+
+                                        @if (!string.IsNullOrWhiteSpace(h.Reason))
+                                        {
+                                            <div class="text-muted small">@h.Reason</div>
+                                        }
+
+                                        @if (!string.IsNullOrWhiteSpace(h.Comments))
+                                        {
+                                            <div class="text-muted small">@h.Comments</div>
+                                        }
+
+                                        <div class="text-muted small">@h.PerformedAt.ToString("dd/MM/yyyy HH:mm")</div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    }
+                </div>
+            </div>
+
+            <!-- METADADOS -->
+            <div class="card mt-3">
+                <div class="card-header">
+                    <strong><i class="bi bi-info-circle me-1"></i> Metadados</strong>
+                </div>
+                <div class="card-body">
+                    <div class="mb-2">
+                        <div class="text-muted small">Descrição</div>
+                        <div>@(string.IsNullOrWhiteSpace(Model.Description) ? "-" : Model.Description)</div>
+                    </div>
+
+                    <div class="mb-2">
+                        <div class="text-muted small">Criado por</div>
+                        <div>@(Model.CreatedBy?.ToString() ?? "-")</div>
+                    </div>
+
+                    <div class="mb-2">
+                        <div class="text-muted small">Versão atual</div>
+                        <div>@(Model.CurrentVersionId?.ToString() ?? "-")</div>
+                    </div>
+                </div>
+            </div>
+
         </div>
     </div>
+</div>
 
-    <!-- RIGHT -->
-    <div class="col-lg-4">
-        <!-- Painel de classificação -->
-        <div id="classification-panel">
-            @{
-                var cls = await ClassificationQueries.GetAsync(CurrentUser.TenantId, Model.Id, CancellationToken.None);
-                ViewData["DocumentId"] = Model.Id;
-            }
-            @await Html.PartialAsync("_DocumentClassificationPanel", cls)
+<!-- MODAL: Ciclo de vida (DocumentStatus) -->
+<div class="modal fade" id="modalLife" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <form id="formLife" method="post" action="@Url.Action("ChangeStatus","DocumentWorkflow")">
+                @Html.AntiForgeryToken()
+
+                <div class="modal-header">
+                    <h5 class="modal-title" id="lifeTitle">Alterar status</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                </div>
+
+                <div class="modal-body">
+                    <input type="hidden" name="documentId" id="lifeDocumentId" />
+                    <input type="hidden" name="toStatus" id="lifeToStatus" />
+
+                    <div class="mb-2 text-muted small" id="lifeSubtitle"></div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Motivo</label>
+                        <textarea class="form-control" rows="3" name="reason" id="lifeReason"
+                                  placeholder="Descreva o motivo desta ação..."></textarea>
+                        <div class="form-text" id="lifeReasonHelp"></div>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-primary" id="lifeSubmit">
+                        <span class="btn-text">Confirmar</span>
+                        <span class="btn-loading d-none">
+                            <span class="spinner-border spinner-border-sm me-1"></span>
+                            Salvando...
+                        </span>
+                    </button>
+                </div>
+
+            </form>
         </div>
+    </div>
+</div>
 
-        <!-- ✅ host único do modal (NÃO coloque isso dentro do partial) -->
-        <div id="classification-modal-host"></div>
-
-        <!-- Documento info -->
-        <div class="card mt-3">
-            <div class="card-body">
-                <div class="text-muted small">Documento</div>
-                <div class="fw-semibold">@Model.Title</div>
-                @if (!string.IsNullOrWhiteSpace(Model.Description))
-                {
-                    <div class="text-muted small mt-1">@Model.Description</div>
-                }
+<!-- MODAL: Classificação (carregado via GET /Classification/EditModal) -->
+<div class="modal fade" id="modalClassify" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content" id="classifyModalContent">
+            <div class="p-4 text-muted">
+                <span class="spinner-border spinner-border-sm me-1"></span> Carregando…
             </div>
         </div>
     </div>
 </div>
 
-<form id="ajax-antiforgery-form" method="post" style="display:none">
-    @Html.AntiForgeryToken()
-</form>
-
 @section Scripts {
     <script>
-        // =========================
-        // Helpers UI
-        // =========================
-        function getAjaxAntiForgeryToken() {
-            const tokenInput = document.querySelector('#ajax-antiforgery-form input[name="__RequestVerificationToken"]');
-            return tokenInput ? tokenInput.value : '';
-        }
-
         function setBtnLoading(btn, loading) {
             if (!btn) return;
             const t = btn.querySelector('.btn-text');
             const l = btn.querySelector('.btn-loading');
             if (loading) {
-                btn.disabled = true;
-                if (t) t.classList.add('d-none');
-                if (l) l.classList.remove('d-none');
+                t && t.classList.add('d-none');
+                l && l.classList.remove('d-none');
+                btn.setAttribute('disabled', 'disabled');
             } else {
-                btn.disabled = false;
-                if (t) t.classList.remove('d-none');
-                if (l) l.classList.add('d-none');
+                t && t.classList.remove('d-none');
+                l && l.classList.add('d-none');
+                btn.removeAttribute('disabled');
             }
         }
 
         // =========================
-        // Classificação (somente Editar)
+        // Ciclo de vida: modal + history
         // =========================
-        window.refreshClassificationPanel = async function (documentId) {
-            const url = '@Url.Action("Panel", "Classification")' + '?documentId=' + encodeURIComponent(documentId);
-            const resp = await fetch(url, { credentials: 'include', cache: 'no-store' });
-            if (!resp.ok) return;
-            const html = await resp.text();
-            const panel = document.getElementById('classification-panel');
-            if (panel) panel.innerHTML = html;
+        window.openLifeModal = function (documentId, toStatusInt, title, reasonRequired) {
+            const modalEl = document.getElementById('modalLife');
+            if (!modalEl) return;
+
+            document.getElementById('lifeDocumentId').value = documentId;
+            document.getElementById('lifeToStatus').value = toStatusInt;
+
+            document.getElementById('lifeTitle').innerText = title || 'Alterar status';
+            document.getElementById('lifeSubtitle').innerText = 'Esta ação registra histórico do ciclo de vida.';
+            const reason = document.getElementById('lifeReason');
+            const help = document.getElementById('lifeReasonHelp');
+
+            reason.value = '';
+            if (reasonRequired) {
+                reason.setAttribute('required', 'required');
+                help.innerText = 'Motivo obrigatório para esta transição.';
+            } else {
+                reason.removeAttribute('required');
+                help.innerText = 'Motivo opcional.';
+            }
+
+            const modal = new bootstrap.Modal(modalEl);
+            modal.show();
+
+            const form = document.getElementById('formLife');
+            const btn = document.getElementById('lifeSubmit');
+            if (form && btn) {
+                form.addEventListener('submit', function () {
+                    setBtnLoading(btn, true);
+                }, { once: true });
+            }
         };
 
-        window.openClassificationModal = async function (documentId, btn) {
-            if (!documentId) return;
+        window.toggleLifeHistory = async function (documentId, btn) {
+            const container = document.getElementById('life-history-container');
+            if (!container) return;
 
-            // Se vier botão, mostra loading nele
+            if (!container.classList.contains('d-none')) {
+                container.classList.add('d-none');
+                container.innerHTML = '';
+                if (btn && btn.querySelector('.btn-text')) btn.querySelector('.btn-text').innerHTML = '<i class="bi bi-clock-history me-1"></i> Ver histórico';
+                return;
+            }
+
             if (btn) setBtnLoading(btn, true);
 
-            const host = document.getElementById('classification-modal-host');
-            if (!host) return;
-
             try {
-                const url = '@Url.Action("EditModal", "Classification")' + '?documentId=' + encodeURIComponent(documentId);
+                const url = '@Url.Action("History", "GedWorkflow")' + '?documentId=' + encodeURIComponent(documentId) + '&take=20';
                 const resp = await fetch(url, { credentials: 'include', cache: 'no-store' });
 
                 if (!resp.ok) {
                     const txt = await resp.text().catch(() => '');
-                    alert('Falha ao abrir classificação. ' + txt);
+                    container.innerHTML = `<div class="text-danger small">Falha ao carregar histórico. ${txt}</div>`;
+                    container.classList.remove('d-none');
                     return;
                 }
 
-                host.innerHTML = await resp.text();
-
-                const modalEl = document.getElementById('modalEditClassification');
-                if (!modalEl) {
-                    alert('Modal não encontrado no HTML retornado.');
-                    return;
-                }
-
-                const modal = new bootstrap.Modal(modalEl);
-                modal.show();
-
-                // wire submit (sem depender de <script> no partial)
-                const form = modalEl.querySelector('#formEditClassification');
-                if (form) {
-                    form.addEventListener('submit', async (e) => {
-                        e.preventDefault();
-
-                        const submitBtn = form.querySelector('button[type="submit"]');
-                        setBtnLoading(submitBtn, true);
-
-                        try {
-                            // MetadataLines -> metadataJson
-                            const lines = (form.querySelector('[name="MetadataLines"]')?.value || '');
-                            const obj = {};
-                            lines.split(/\r?\n/).map(x => (x || '').trim()).filter(Boolean).forEach(line => {
-                                if (line.startsWith('#')) return;
-                                const idx = line.indexOf('=');
-                                if (idx <= 0) return;
-                                const k = line.substring(0, idx).trim();
-                                const v = line.substring(idx + 1).trim();
-                                if (!k) return;
-                                obj[k] = v;
-                            });
-
-                            let hidden = form.querySelector('[name="metadataJson"]');
-                            if (!hidden) {
-                                hidden = document.createElement('input');
-                                hidden.type = 'hidden';
-                                hidden.name = 'metadataJson';
-                                form.appendChild(hidden);
-                            }
-                            hidden.value = JSON.stringify(obj);
-
-                            // POST SaveManual
-                            const r = await fetch('@Url.Action("SaveManual", "Classification")', {
-                                method: 'POST',
-                                body: new FormData(form),
-                                credentials: 'include'
-                            });
-
-                            if (!r.ok) {
-                                const txt = await r.text().catch(() => '');
-                                alert('Falha ao salvar classificação. ' + txt);
-                                return;
-                            }
-
-                            modal.hide();
-                            await window.refreshClassificationPanel(documentId);
-                        } finally {
-                            setBtnLoading(submitBtn, false);
-                        }
-                    }, { once: true });
-                }
-
-                modalEl.addEventListener('hidden.bs.modal', function () {
-                    host.innerHTML = '';
-                }, { once: true });
-
+                container.innerHTML = await resp.text();
+                container.classList.remove('d-none');
+                if (btn && btn.querySelector('.btn-text')) btn.querySelector('.btn-text').innerHTML = '<i class="bi bi-clock-history me-1"></i> Ocultar histórico';
             } finally {
                 if (btn) setBtnLoading(btn, false);
             }
         };
 
-        window.applyClassificationSuggestion = async function (documentId, btn) {
-            const token = getAjaxAntiForgeryToken();
-            const typeId = btn?.dataset?.suggestedTypeId;
-            const conf = btn?.dataset?.suggestedConfidence;
-            const summary = btn?.dataset?.suggestedSummary || '';
+        // =========================
+        // Workflow de processo: exige motivo conforme transição
+        // =========================
+        (function () {
+            const sel = document.getElementById('transitionId');
+            const txt = document.getElementById('transitionReason');
+            const help = document.getElementById('transitionReasonHelp');
+            if (!sel || !txt) return;
 
-            if (!typeId) {
-                alert('Sugestão inválida (tipo não informado).');
+            function apply() {
+                const opt = sel.options[sel.selectedIndex];
+                const req = opt?.getAttribute('data-requires-reason') === '1';
+                if (req) {
+                    txt.setAttribute('required', 'required');
+                    if (help) help.innerText = 'Motivo obrigatório para esta transição.';
+                } else {
+                    txt.removeAttribute('required');
+                    if (help) help.innerText = 'Motivo opcional.';
+                }
+            }
+
+            sel.addEventListener('change', apply);
+            apply();
+        })();
+
+        // =========================
+        // Classificação: panel + modal
+        // =========================
+        async function loadClassifyPanel() {
+            const loading = document.getElementById('classifyPanelLoading');
+            const panel = document.getElementById('classifyPanel');
+            if (!panel) return;
+
+            loading && loading.classList.remove('d-none');
+
+            try {
+                const url = '@Url.Action("Panel", "Classification")' + '?documentId=@Model.Id';
+                const resp = await fetch(url, { credentials: 'include', cache: 'no-store' });
+                if (!resp.ok) {
+                    const txt = await resp.text().catch(() => '');
+                    panel.innerHTML = `<div class="text-danger small">Erro ao carregar painel de classificação. ${txt}</div>`;
+                    return;
+                }
+                panel.innerHTML = await resp.text();
+            } finally {
+                loading && loading.classList.add('d-none');
+            }
+        }
+
+        async function openClassifyModal() {
+            const content = document.getElementById('classifyModalContent');
+            if (!content) return;
+
+            content.innerHTML = `<div class="p-4 text-muted"><span class="spinner-border spinner-border-sm me-1"></span> Carregando…</div>`;
+            const modal = new bootstrap.Modal(document.getElementById('modalClassify'));
+            modal.show();
+
+            const url = '@Url.Action("EditModal", "Classification")' + '?documentId=@Model.Id';
+            const resp = await fetch(url, { credentials: 'include', cache: 'no-store' });
+
+            if (!resp.ok) {
+                const txt = await resp.text().catch(() => '');
+                content.innerHTML = `<div class="p-4 text-danger">Erro ao abrir modal. ${txt}</div>`;
                 return;
             }
 
-            setBtnLoading(btn, true);
-            try {
-                const body =
-                    'documentId=' + encodeURIComponent(documentId) +
-                    '&suggestedTypeId=' + encodeURIComponent(typeId) +
-                    '&suggestedConfidence=' + encodeURIComponent(conf || '') +
-                    '&suggestedSummary=' + encodeURIComponent(summary);
+            content.innerHTML = await resp.text();
+        }
 
-                const resp = await fetch('@Url.Action("ApplySuggestion", "Classification")', {
-                    method: 'POST',
-                    credentials: 'include',
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded',
-                        'RequestVerificationToken': token
-                    },
-                    body
-                });
+        document.addEventListener('DOMContentLoaded', function () {
+            loadClassifyPanel();
 
-                if (!resp.ok) {
-                    const txt = await resp.text().catch(() => '');
-                    alert('Falha ao aplicar sugestão. ' + txt);
-                    return;
-                }
+            const btn = document.getElementById('btnOpenClassify');
+            btn && btn.addEventListener('click', function (e) {
+                e.preventDefault();
+                openClassifyModal();
+            });
 
-                await window.refreshClassificationPanel(documentId);
-            } finally {
-                setBtnLoading(btn, false);
+            // se veio openClassify=true, já abre modal
+            const shouldOpen = @((openClassify ? "true" : "false"));
+            if (shouldOpen) {
+                setTimeout(() => openClassifyModal(), 150);
             }
+        });
+
+        // hook opcional: o modal de classificação pode chamar isso após salvar
+        window.refreshClassificationPanel = function () {
+            loadClassifyPanel();
         };
-
-        // auto-open (opcional; se você quiser manter deep link via openClassify)
-        (function () {
-            const mustOpen = @((openClassify ? "true" : "false"));
-            if (mustOpen) window.openClassificationModal('@Model.Id');
-        })();
-
-        // =========================
-        // Preview overlay (evita "carregando" infinito)
-        // =========================
-        (function () {
-            function hideLoading() {
-                const el = document.getElementById('previewLoading');
-                if (el) el.style.display = 'none';
-            }
-
-            const frame = document.getElementById('previewFrame');
-            if (!frame) return;
-
-            frame.addEventListener('load', hideLoading);
-
-            // Fallback: some sempre
-            setTimeout(hideLoading, 2000);
-            setTimeout(hideLoading, 8000);
-        })();
-
-        // =========================
-        // OCR: spinner no botão + polling simples
-        // =========================
-        (function () {
-            const form = document.getElementById('ocrForm');
-            const btn = document.getElementById('btnOcr');
-            const badgeWrap = document.getElementById('ocrStatusBadge');
-            const versionId = "@(selectedVersionId ?? Guid.Empty)";
-
-            function setBadge(status, err) {
-                if (!badgeWrap) return;
-                const st = (status || "").toUpperCase();
-
-                if (st === "PROCESSING") badgeWrap.innerHTML = '<span class="badge bg-info text-dark">🔄 OCR processando</span>';
-                else if (st === "PENDING") badgeWrap.innerHTML = '<span class="badge bg-secondary">⏳ OCR pendente</span>';
-                else if (st === "COMPLETED") badgeWrap.innerHTML = '<span class="badge bg-success">✅ OCR concluído</span>';
-                else if (st === "ERROR") badgeWrap.innerHTML = `<span class="badge bg-danger" title="${(err||'Falha no OCR').replaceAll('"','&quot;')}">❌ OCR falhou</span>`;
-                else badgeWrap.innerHTML = '<span class="badge bg-light text-dark">— OCR</span>';
-            }
-
-            let timer = null;
-
-            async function poll() {
-                try {
-                    const url = '@Url.Action("OcrStatus", "Ged")' + '?versionId=' + encodeURIComponent(versionId);
-                    const resp = await fetch(url, { credentials:'include', cache:'no-store' });
-                    if (!resp.ok) return;
-
-                    const data = await resp.json();
-                    setBadge(data.status, data.errorMessage);
-
-                    const st = (data.status || "").toUpperCase();
-                    if (st === "COMPLETED" && data.ocrVersionId) {
-                        clearInterval(timer);
-                        timer = null;
-                        // abre versão OCR automaticamente
-                        window.location.href =
-                            '@Url.Action("Details", "Ged")' +
-                            '?id=' + encodeURIComponent(data.documentId) +
-                            '&versionId=' + encodeURIComponent(data.ocrVersionId);
-                    }
-                    if (st !== "PENDING" && st !== "PROCESSING") {
-                        clearInterval(timer);
-                        timer = null;
-                    }
-                } catch {}
-            }
-
-            if (form) {
-                form.addEventListener('submit', async function (e) {
-                    e.preventDefault();
-                    setBtnLoading(btn, true);
-                    try {
-                        const resp = await fetch(form.action, {
-                            method: 'POST',
-                            body: new FormData(form),
-                            credentials: 'include',
-                            headers: { 'X-Requested-With': 'XMLHttpRequest' }
-                        });
-
-                        if (resp.ok) {
-                            setBadge("PROCESSING");
-                            if (!timer) timer = setInterval(poll, 2500);
-                            poll();
-                        } else {
-                            setBadge("ERROR", "Falha ao iniciar OCR.");
-                        }
-                    } catch {
-                        setBadge("ERROR", "Falha ao iniciar OCR.");
-                    } finally {
-                        setBtnLoading(btn, false);
-                    }
-                });
-            }
-
-            // start polling on load
-            if (!timer) timer = setInterval(poll, 5000);
-            poll();
-        })();
-
-        // Fullscreen
-        (function () {
-            const container = document.getElementById('previewContainer');
-            const btnFull = document.getElementById('btnFull');
-            if (btnFull && container) {
-                btnFull.addEventListener('click', async () => {
-                    if (!document.fullscreenElement) await container.requestFullscreen();
-                    else await document.exitFullscreen();
-                });
-            }
-        })();
     </script>
 }

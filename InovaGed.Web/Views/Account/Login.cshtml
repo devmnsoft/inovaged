@@ -1,43 +1,142 @@
 @model InovaGed.Web.Models.Auth.LoginVM
 @{
-    ViewData["Title"] = "Login";
+    ViewData["Title"] = "Entrar";
+    Layout = "_LayoutAuth";
 }
 
-<div class="container" style="max-width:420px; margin-top:80px;">
-    <h3 class="mb-3">InovaGED</h3>
+<div class="card shadow-lg border-0 auth-card">
+    <div class="auth-topbar"></div>
 
-    <form asp-action="Login" method="post">
-        @Html.AntiForgeryToken()
+    <div class="card-body p-4 p-md-5">
 
-        <input type="hidden" asp-for="ReturnUrl" />
+        <!-- BRAND -->
+        <div class="text-center mb-4">
+            <div class="d-inline-flex align-items-center justify-content-center mb-3"
+                 style="width:68px;height:68px;border-radius:1.25rem;
+                        background:linear-gradient(135deg,#2563eb,#22c55e);
+                        color:#fff;font-weight:900;font-size:1.35rem;">
+                IG
+            </div>
 
-        <div class="mb-3">
-            <label asp-for="TenantSlug" class="form-label"></label>
-            <input asp-for="TenantSlug" class="form-control" />
-            <span asp-validation-for="TenantSlug" class="text-danger"></span>
+            <h4 class="mb-1 fw-bold">Bem-vindo ao InovaGED</h4>
+            <div class="text-muted small">
+                Entre com seu tenant e usuário para acessar o sistema.
+            </div>
         </div>
 
-        <div class="mb-3">
-            <label asp-for="Email" class="form-label"></label>
-            <input asp-for="Email" class="form-control" />
-            <span asp-validation-for="Email" class="text-danger"></span>
+        <form asp-action="Login" method="post" novalidate>
+            @Html.AntiForgeryToken()
+            <input type="hidden" asp-for="ReturnUrl" />
+
+            <!-- Tenant -->
+            <div class="mb-3">
+                <label asp-for="TenantSlug" class="form-label small fw-semibold"></label>
+                <div class="input-group">
+                    <span class="input-group-text bg-white">
+                        <i class="bi bi-buildings"></i>
+                    </span>
+                    <input asp-for="TenantSlug" class="form-control" placeholder="ex: prefeitura-x" autocomplete="organization" />
+                </div>
+                <span asp-validation-for="TenantSlug" class="text-danger small"></span>
+            </div>
+
+            <!-- Email -->
+            <div class="mb-3">
+                <label asp-for="Email" class="form-label small fw-semibold"></label>
+                <div class="input-group">
+                    <span class="input-group-text bg-white">
+                        <i class="bi bi-person-circle"></i>
+                    </span>
+                    <input asp-for="Email" class="form-control" placeholder="email@dominio.com" autocomplete="username" />
+                </div>
+                <span asp-validation-for="Email" class="text-danger small"></span>
+            </div>
+
+            <!-- Password -->
+            <div class="mb-3">
+                <label asp-for="Password" class="form-label small fw-semibold"></label>
+                <div class="input-group">
+                    <span class="input-group-text bg-white">
+                        <i class="bi bi-lock"></i>
+                    </span>
+
+                    <input asp-for="Password"
+                           type="password"
+                           class="form-control"
+                           id="passwordInput"
+                           placeholder="••••••••"
+                           autocomplete="current-password" />
+
+                    <button type="button"
+                            class="btn btn-outline-secondary"
+                            title="Mostrar/ocultar senha"
+                            tabindex="-1"
+                            onclick="togglePassword()">
+                        <i class="bi bi-eye" id="passwordIcon"></i>
+                    </button>
+                </div>
+                <span asp-validation-for="Password" class="text-danger small"></span>
+            </div>
+
+            <!-- ERROS (mais elegante) -->
+            @if (!ViewData.ModelState.IsValid)
+            {
+                <div class="alert alert-danger py-2 small mb-3">
+                    <div class="d-flex align-items-start gap-2">
+                        <i class="bi bi-exclamation-triangle mt-1"></i>
+                        <div>
+                            @Html.ValidationSummary(excludePropertyErrors: true)
+                        </div>
+                    </div>
+                </div>
+            }
+
+            <!-- SUBMIT -->
+            <button type="submit" class="btn btn-primary w-100 py-2 fw-semibold">
+                <i class="bi bi-box-arrow-in-right me-1"></i>
+                Entrar
+            </button>
+
+            <!-- ÚNICO LINK REAL (EXISTE) -->
+            <div class="text-center mt-3 small">
+                <a class="text-decoration-none" href="@Url.Action("Create", "Users")">
+                    <i class="bi bi-person-plus me-1"></i>
+                    Criar usuário
+                </a>
+            </div>
+        </form>
+
+        <!-- Extra: Dica de UX -->
+        <div class="mt-4 p-3 rounded bg-light border small text-muted">
+            <div class="fw-semibold text-dark mb-1">
+                <i class="bi bi-lightbulb me-1"></i> Dica rápida
+            </div>
+            <div>
+                O <strong>Tenant</strong> é o identificador do órgão/empresa (ex: <code>prefeitura-x</code>).
+                O <strong>usuário</strong> é o seu e-mail cadastrado.
+            </div>
         </div>
-
-        <div class="mb-3">
-            <label asp-for="Password" class="form-label"></label>
-            <input asp-for="Password" type="password" class="form-control" />
-            <span asp-validation-for="Password" class="text-danger"></span>
-        </div>
-
-        @if (!ViewData.ModelState.IsValid)
-        {
-            <div class="text-danger mb-2">@Html.ValidationSummary()</div>
-        }
-
-        <button class="btn btn-primary w-100" type="submit">Entrar</button>
-    </form>
+    </div>
 </div>
 
 @section Scripts {
     <partial name="_ValidationScriptsPartial" />
+
+    <script>
+        function togglePassword() {
+            const input = document.getElementById('passwordInput');
+            const icon = document.getElementById('passwordIcon');
+            if (!input || !icon) return;
+
+            if (input.type === 'password') {
+                input.type = 'text';
+                icon.classList.remove('bi-eye');
+                icon.classList.add('bi-eye-slash');
+            } else {
+                input.type = 'password';
+                icon.classList.remove('bi-eye-slash');
+                icon.classList.add('bi-eye');
+            }
+        }
+    </script>
 }

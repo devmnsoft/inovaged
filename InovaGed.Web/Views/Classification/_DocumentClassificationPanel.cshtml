@@ -1,7 +1,6 @@
 ﻿@model InovaGed.Application.Classification.DocumentClassificationViewDto
 
 @{
-    // Garante um DocumentId mesmo quando Model vier null (ex: primeiro load)
     var docId =
         (Model?.DocumentId is Guid mid && mid != Guid.Empty)
             ? mid
@@ -21,14 +20,13 @@
         <div class="d-flex gap-2 align-items-center">
             <button type="button"
                     class="btn btn-sm btn-outline-primary"
-                    id="btnOpenClassification"
             @(canOpen ? "" : "disabled")
                     onclick="openClassificationModal('@docIdStr', this)">
                 <span class="btn-text">
                     <i class="bi bi-pencil-square me-1"></i> Editar
                 </span>
                 <span class="btn-loading d-none">
-                    <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                    <span class="spinner-border spinner-border-sm me-1" role="status"></span>
                     Abrindo...
                 </span>
             </button>
@@ -72,7 +70,7 @@
 
         <hr class="my-3" />
 
-        @* ===== Sugestão (OCR / Texto) ===== *@
+        @* ===== Sugestão OCR / Texto ===== *@
         <div class="text-muted small mb-1">
             <i class="bi bi-magic me-1"></i> Sugestão (OCR / Texto)
         </div>
@@ -112,14 +110,13 @@
                         data-suggested-summary="@Model.SuggestedSummary">
                     <span class="btn-text">Aplicar sugestão</span>
                     <span class="btn-loading d-none">
-                        <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                        <span class="spinner-border spinner-border-sm me-1" role="status"></span>
                         Aplicando...
                     </span>
                 </button>
             </div>
         }
 
-        @* ===== Tags ===== *@
         @if (Model?.Tags is { Count: > 0 })
         {
             <hr class="my-3" />
@@ -131,207 +128,26 @@
                 }
             </div>
         }
+
+        <hr class="my-3" />
+
+        @* ===== HISTÓRICO ===== *@
+        <div class="d-flex justify-content-between align-items-center">
+            <div class="text-muted small">
+                <i class="bi bi-clock-history me-1"></i> Histórico
+            </div>
+
+            <button type="button"
+                    class="btn btn-sm btn-outline-secondary"
+                    onclick="toggleClassificationAudit('@docIdStr', this)">
+                <span class="btn-text">Ver</span>
+                <span class="btn-loading d-none">
+                    <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                    Carregando...
+                </span>
+            </button>
+        </div>
+
+        <div id="classification-audit-container" class="mt-2 d-none"></div>
     </div>
 </div>
-
-<div id="classification-modal-host"></div>
-
-<script>
-    function toggleBtnLoading(btn, isLoading) {
-        if (!btn) return;
-        const t = btn.querySelector('.btn-text');
-        const l = btn.querySelector('.btn-loading');
-        if (isLoading) {
-            btn.setAttribute('disabled', 'disabled');
-            if (t) t.classList.add('d-none');
-            if (l) l.classList.remove('d-none');
-        } else {
-            btn.removeAttribute('disabled');
-            if (t) t.classList.remove('d-none');
-            if (l) l.classList.add('d-none');
-        }
-    }
-
-    async function openClassificationModal(documentId, btn) {
-        if (!documentId) return;
-
-        toggleBtnLoading(btn, true);
-        try {
-            // Abre o modal via endpoint dedicado
-            const resp = await fetch(`/Classification/EditModal?documentId=${encodeURIComponent(documentId)}`, {
-                headers: { 'X-Requested-With': 'XMLHttpRequest' }
-            });
-
-            if (!resp.ok) {
-                const msg = await resp.text();
-                console.error('EditModal failed:', msg);
-                alert('Não foi possível abrir o modal de classificação.');
-                return;
-            }
-
-            const html = await resp.text();
-            const host = document.getElementById('classification-modal-host');
-            host.innerHTML = html;
-
-            const modalEl = document.getElementById('modalEditClassification');
-            if (!modalEl) {
-                alert('Modal não encontrado no HTML retornado.');
-                return;
-            }
-
-            const modal = new bootstrap.Modal(modalEl);
-            modal.show();
-
-            // Wire submit (se ainda não wired)
-            wireClassificationForm(documentId);
-        } catch (e) {
-            console.error(e);
-            alert('Erro ao abrir classificação.');
-        } finally {
-            toggleBtnLoading(btn, false);
-        }
-    }
-
-    function wireClassificationForm(documentId) {
-        const form = document.getElementById('formEditClassification');
-        if (!form) return;
-
-        // evita múltiplos binds
-        if (form.dataset.wired === "1") return;
-        form.dataset.wired = "1";
-
-        form.addEventListener('submit', async function (ev) {
-            ev.preventDefault();
-
-            const btn = form.querySelector('button[type="submit"]');
-            toggleBtnLoading(btn, true);
-
-            try {
-                // Converte MetadataLines (linhas "chave=valor") para JSON
-                const tagsCsv = (form.querySelector('[name="TagsCsv"]')?.value || '').trim();
-                const metadataLines = (form.querySelector('[name="MetadataLines"]')?.value || '').trim();
-
-                const metadataObj = {};
-                if (metadataLines) {
-                    metadataLines.split('\n')
-                        .map(x => x.trim())
-                        .filter(Boolean)
-                        .forEach(line => {
-                            const idx = line.indexOf('=');
-                            if (idx > 0) {
-                                const k = line.substring(0, idx).trim();
-                                const v = line.substring(idx + 1).trim();
-                                if (k) metadataObj[k] = v;
-                            }
-                        });
-                }
-
-                const metadataJson = JSON.stringify(metadataObj);
-
-                // Monta form-data
-                const fd = new FormData(form);
-
-                // Garantias
-                fd.set('DocumentId', documentId);
-                fd.set('TagsCsv', tagsCsv);
-                fd.set('MetadataLines', metadataLines);
-
-                // Enviamos metadataJson como esperado pelo controller (se você adotou esse campo)
-                // Se seu controller lê MetadataLines diretamente, pode remover a linha abaixo.
-                fd.set('metadataJson', metadataJson);
-
-                const resp = await fetch('/Classification/SaveManual', {
-                    method: 'POST',
-                    body: fd,
-                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
-                });
-
-                if (!resp.ok) {
-                    const msg = await resp.text();
-                    console.error('SaveManual failed:', msg);
-                    alert('Falha ao salvar classificação.');
-                    return;
-                }
-
-                // Fecha modal
-                const modalEl = document.getElementById('modalEditClassification');
-                const modal = bootstrap.Modal.getInstance(modalEl);
-                modal?.hide();
-
-                // Recarrega o painel para refletir a mudança
-                await refreshClassificationPanel(documentId);
-            } catch (e) {
-                console.error(e);
-                alert('Erro ao salvar classificação.');
-            } finally {
-                toggleBtnLoading(btn, false);
-            }
-        });
-    }
-
-    async function applyClassificationSuggestion(documentId, btn) {
-        if (!documentId) return;
-
-        const suggestedTypeId = btn.getAttribute('data-suggested-type-id');
-        const suggestedConfidence = btn.getAttribute('data-suggested-confidence');
-        const suggestedSummary = btn.getAttribute('data-suggested-summary');
-
-        toggleBtnLoading(btn, true);
-        try {
-            const fd = new FormData();
-            fd.append('documentId', documentId);
-            fd.append('suggestedTypeId', suggestedTypeId || '');
-            fd.append('suggestedConfidence', suggestedConfidence || '');
-            fd.append('suggestedSummary', suggestedSummary || '');
-
-            // antiforgery (se existir na página)
-            const af = document.querySelector('input[name="__RequestVerificationToken"]');
-            if (af && af.value) fd.append('__RequestVerificationToken', af.value);
-
-            const resp = await fetch('/Classification/ApplySuggestion', {
-                method: 'POST',
-                body: fd,
-                headers: { 'X-Requested-With': 'XMLHttpRequest' }
-            });
-
-            if (!resp.ok) {
-                const msg = await resp.text();
-                console.error('ApplySuggestion failed:', msg);
-                alert('Falha ao aplicar sugestão.');
-                return;
-            }
-
-            await refreshClassificationPanel(documentId);
-        } catch (e) {
-            console.error(e);
-            alert('Erro ao aplicar sugestão.');
-        } finally {
-            toggleBtnLoading(btn, false);
-        }
-    }
-
-    async function refreshClassificationPanel(documentId) {
-        try {
-            const resp = await fetch(`/Classification/Panel?documentId=${encodeURIComponent(documentId)}`, {
-                headers: { 'X-Requested-With': 'XMLHttpRequest' }
-            });
-            if (!resp.ok) return;
-
-            const html = await resp.text();
-
-            // Substitui o card inteiro (este partial) pelo novo HTML
-            // Procura o container pai mais próximo para não quebrar layout
-            const currentCard = document.getElementById('btnOpenClassification')?.closest('.card');
-            if (currentCard) {
-                const wrapper = currentCard.parentElement; // normalmente a coluna/section
-                // Se wrapper contiver só esse card, substitui wrapper; senão substitui card.
-                currentCard.outerHTML = html;
-            } else {
-                // fallback: recarrega página
-                location.reload();
-            }
-        } catch (e) {
-            console.error(e);
-        }
-    }
-</script>

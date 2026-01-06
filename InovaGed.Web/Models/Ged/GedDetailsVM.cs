@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using InovaGed.Domain.Documents;
 
 namespace InovaGed.Web.Models.Ged;
 
@@ -23,6 +24,7 @@ public sealed class GedDetailsVM
     // ✅ se estiver visualizando OCR, qual é a versão base (origem)
     public Guid? OcrSourceVersionId { get; set; }
 
+    public DocumentStatus Status { get; set; } = DocumentStatus.Draft;
     // ✅ versões
     public List<VersionVM> Versions { get; set; } = new();
 

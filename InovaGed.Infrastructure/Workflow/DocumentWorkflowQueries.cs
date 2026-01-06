@@ -126,4 +126,37 @@ ORDER BY h.performed_at DESC, h.id DESC;";
             throw;
         }
     }
+
+
+    public async Task<IReadOnlyList<WorkflowLogRow>> ListAsync(Guid tenantId, Guid documentId, int take, CancellationToken ct)
+    {
+        try
+        {
+            const string sql = @"
+SELECT
+    l.created_at      AS ""CreatedAt"",
+    COALESCE(l.from_status::text,'') AS ""FromStatus"",
+    l.to_status::text AS ""ToStatus"",
+    l.reason          AS ""Reason"",
+    l.created_by      AS ""CreatedBy"",
+    COALESCE(u.name, u.email, '') AS ""UserName""
+FROM ged.document_workflow_log l
+LEFT JOIN core.usuario u ON u.id = l.created_by AND u.tenant_id = l.tenant_id
+WHERE l.tenant_id = @tenantId
+  AND l.document_id = @documentId
+ORDER BY l.created_at DESC
+LIMIT @take;";
+
+            await using var conn = await _db.OpenAsync(ct);
+            var rows = await conn.QueryAsync<WorkflowLogRow>(new CommandDefinition(
+                sql, new { tenantId, documentId, take }, cancellationToken: ct));
+
+            return rows.AsList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro ao listar workflow log. Tenant={TenantId} Doc={DocId}", tenantId, documentId);
+            return Array.Empty<WorkflowLogRow>();
+        }
+    }
 }
