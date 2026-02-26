@@ -10,7 +10,7 @@ public sealed class OcrJobRepository : IOcrJobRepository
     private readonly IDbConnectionFactory _db;
     private readonly ILogger<OcrJobRepository> _logger;
 
-    // você pode ajustar via config também; aqui fixo em 10 min
+    // Ajuste se quiser via config
     private static readonly TimeSpan LeaseDuration = TimeSpan.FromMinutes(10);
 
     public OcrJobRepository(IDbConnectionFactory db, ILogger<OcrJobRepository> logger)
@@ -33,26 +33,34 @@ VALUES
   (@tenantId, @documentVersionId, 'PENDING'::ged.ocr_status_enum, @requestedBy, @invalidate)
 RETURNING id;";
 
-        var conn = await _db.OpenAsync(ct);
+        try
+        {
+            await using var conn = await _db.OpenAsync(ct);
 
-        var id = await conn.ExecuteScalarAsync<long>(
-            new CommandDefinition(sql, new
-            {
-                tenantId,
-                documentVersionId,
-                requestedBy,
-                invalidate = invalidateDigitalSignatures
-            }, cancellationToken: ct));
+            var id = await conn.ExecuteScalarAsync<long>(
+                new CommandDefinition(sql, new
+                {
+                    tenantId,
+                    documentVersionId,
+                    requestedBy,
+                    invalidate = invalidateDigitalSignatures
+                }, cancellationToken: ct));
 
-        _logger.LogInformation("OCR job enfileirado. JobId={JobId}, Tenant={TenantId}, Version={VersionId}",
-            id, tenantId, documentVersionId);
+            _logger.LogInformation(
+                "OCR job enfileirado. JobId={JobId}, Tenant={TenantId}, Version={VersionId}, RequestedBy={RequestedBy}",
+                id, tenantId, documentVersionId, requestedBy);
 
-        return id;
+            return id;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro ao enfileirar OCR. Tenant={TenantId}, Version={VersionId}", tenantId, documentVersionId);
+            throw;
+        }
     }
 
     public async Task<OcrJobDto?> DequeueAndMarkProcessingAsync(CancellationToken ct)
     {
-        // ✅ pega PENDING ou PROCESSING expirado (lease vencido)
         const string sql = @"
 WITH cte AS (
   SELECT id
@@ -75,15 +83,28 @@ RETURNING
   j.id                            AS Id,
   j.tenant_id                     AS TenantId,
   j.document_version_id           AS DocumentVersionId,
+  j.requested_by                  AS RequestedBy,
   j.invalidate_digital_signatures AS InvalidateDigitalSignatures;";
 
-        var conn = await _db.OpenAsync(ct);
+        try
+        {
+            await using var conn = await _db.OpenAsync(ct);
+            await using var tx = await conn.BeginTransactionAsync(ct);
 
-        return await conn.QuerySingleOrDefaultAsync<OcrJobDto>(
-            new CommandDefinition(sql, new
-            {
-                leaseSeconds = (int)LeaseDuration.TotalSeconds
-            }, cancellationToken: ct));
+            var job = await conn.QuerySingleOrDefaultAsync<OcrJobDto>(
+                new CommandDefinition(sql, new
+                {
+                    leaseSeconds = (int)LeaseDuration.TotalSeconds
+                }, transaction: tx, cancellationToken: ct));
+
+            await tx.CommitAsync(ct);
+            return job;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro no DequeueAndMarkProcessingAsync");
+            throw;
+        }
     }
 
     public async Task RenewLeaseAsync(long jobId, CancellationToken ct)
@@ -94,12 +115,20 @@ SET lease_expires_at = now() + (@leaseSeconds || ' seconds')::interval
 WHERE id = @jobId
   AND status = 'PROCESSING'::ged.ocr_status_enum;";
 
-        var conn = await _db.OpenAsync(ct);
-        await conn.ExecuteAsync(new CommandDefinition(sql, new
+        try
         {
-            jobId,
-            leaseSeconds = (int)LeaseDuration.TotalSeconds
-        }, cancellationToken: ct));
+            await using var conn = await _db.OpenAsync(ct);
+            await conn.ExecuteAsync(new CommandDefinition(sql, new
+            {
+                jobId,
+                leaseSeconds = (int)LeaseDuration.TotalSeconds
+            }, cancellationToken: ct));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro ao renovar lease. JobId={JobId}", jobId);
+            throw;
+        }
     }
 
     public async Task MarkCompletedAsync(long jobId, CancellationToken ct)
@@ -112,8 +141,16 @@ SET status = 'COMPLETED'::ged.ocr_status_enum,
     error_message = null
 WHERE id = @jobId;";
 
-        var conn = await _db.OpenAsync(ct);
-        await conn.ExecuteAsync(new CommandDefinition(sql, new { jobId }, cancellationToken: ct));
+        try
+        {
+            await using var conn = await _db.OpenAsync(ct);
+            await conn.ExecuteAsync(new CommandDefinition(sql, new { jobId }, cancellationToken: ct));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro ao marcar COMPLETED. JobId={JobId}", jobId);
+            throw;
+        }
     }
 
     public async Task MarkErrorAsync(long jobId, string errorMessage, CancellationToken ct)
@@ -126,43 +163,64 @@ SET status = 'ERROR'::ged.ocr_status_enum,
     error_message = @error
 WHERE id = @jobId;";
 
-        var conn = await _db.OpenAsync(ct);
-        await conn.ExecuteAsync(new CommandDefinition(sql, new { jobId, error = errorMessage }, cancellationToken: ct));
+        try
+        {
+            await using var conn = await _db.OpenAsync(ct);
+            await conn.ExecuteAsync(new CommandDefinition(sql, new { jobId, error = errorMessage }, cancellationToken: ct));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro ao marcar ERROR. JobId={JobId}", jobId);
+            throw;
+        }
     }
 
+    // Usado pelo OcrWorkerHostedService (se você ainda usar)
     public async Task<OcrJobLease?> LeaseNextAsync(TimeSpan leaseTime, CancellationToken ct)
     {
-        var con = await _db.OpenAsync(ct);
-
         const string sql = @"
 WITH cte AS (
   SELECT id
   FROM ged.ocr_job
-  WHERE status = 'PENDING'
+  WHERE status = 'PENDING'::ged.ocr_status_enum
     AND (lease_expires_at IS NULL OR lease_expires_at < now())
   ORDER BY requested_at
   LIMIT 1
   FOR UPDATE SKIP LOCKED
 )
 UPDATE ged.ocr_job j
-SET status = 'PROCESSING',
+SET status = 'PROCESSING'::ged.ocr_status_enum,
     started_at = COALESCE(started_at, now()),
-    lease_expires_at = now() + (@LeaseSeconds || ' seconds')::interval
+    lease_expires_at = now() + (@LeaseSeconds || ' seconds')::interval,
+    error_message = null
 FROM cte
 WHERE j.id = cte.id
-RETURNING j.id, j.tenant_id, j.document_version_id, j.invalidate_digital_signatures;
+RETURNING j.id, j.tenant_id, j.document_version_id, j.requested_by, j.invalidate_digital_signatures;
 ";
 
-        var row = await con.QueryFirstOrDefaultAsync(sql, new { LeaseSeconds = (int)leaseTime.TotalSeconds });
+        try
+        {
+            await using var conn = await _db.OpenAsync(ct);
+            await using var tx = await conn.BeginTransactionAsync(ct);
 
-        if (row == null) return null;
+            var row = await conn.QueryFirstOrDefaultAsync(
+                new CommandDefinition(sql, new { LeaseSeconds = (int)leaseTime.TotalSeconds }, transaction: tx, cancellationToken: ct));
 
-        return new OcrJobLease(
-            JobId: (long)row.id,
-            TenantId: (Guid)row.tenant_id,
-            DocumentVersionId: (Guid)row.document_version_id,
-            InvalidateDigitalSignatures: (bool)row.invalidate_digital_signatures
-        );
+            await tx.CommitAsync(ct);
+
+            if (row is null) return null;
+
+            return new OcrJobLease(
+                JobId: (long)row.id,
+                TenantId: (Guid)row.tenant_id,
+                DocumentVersionId: (Guid)row.document_version_id,
+                InvalidateDigitalSignatures: (bool)row.invalidate_digital_signatures
+            );
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro no LeaseNextAsync");
+            throw;
+        }
     }
-
 }

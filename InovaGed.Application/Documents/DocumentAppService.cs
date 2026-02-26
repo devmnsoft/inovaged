@@ -105,8 +105,8 @@ public sealed class DocumentAppService
 
         try
         {
-            using var conn = await _db.OpenAsync(ct);
-            using var tx = conn.BeginTransaction();
+            await using var conn = await _db.OpenAsync(ct);
+            await using var tx = await conn.BeginTransactionAsync(ct);
 
             // 1) insert DOCUMENT (metadados)
             for (var attempt = 0; attempt < 2; attempt++)
@@ -184,7 +184,7 @@ public sealed class DocumentAppService
                 description: cmd.Description ?? "",
                 code: code,
                 fileName: fileName,
-                ocrText: "", // upload normal ainda sem OCR
+                ocrText: "",
                 ct: ct);
 
             // 5) auditoria (não bloqueia)
@@ -205,7 +205,7 @@ public sealed class DocumentAppService
                 _logger.LogWarning(auditEx, "Falha ao gravar audit_log (não bloqueia upload).");
             }
 
-            tx.Commit();
+            await tx.CommitAsync(ct);
             return Result<Guid>.Ok(documentId);
         }
         catch (Exception ex)
@@ -237,8 +237,8 @@ public sealed class DocumentAppService
     {
         try
         {
-            using var conn = await _db.OpenAsync(ct);
-            using var tx = conn.BeginTransaction();
+            await using var conn = await _db.OpenAsync(ct);
+            await using var tx = await conn.BeginTransactionAsync(ct);
 
             var code = $"DOC-{DateTime.UtcNow:yyyyMMddHHmmss}-{Guid.NewGuid():N}".ToUpperInvariant();
             var visibility = isConfidential ? "PRIVATE" : "INTERNAL";
@@ -275,10 +275,7 @@ public sealed class DocumentAppService
 
             await _writeRepo.UpdateCurrentVersionAsync(tenantId, documentId, versionId, createdBy, tx, ct);
 
-            // search index (opcional) - aqui você pode indexar também se quiser:
-            // await UpsertSearchAsync(tx, tenantId, documentId, versionId, title, description ?? "", code, fileName, "", ct);
-
-            tx.Commit();
+            await tx.CommitAsync(ct);
         }
         catch (Exception ex)
         {
@@ -288,7 +285,7 @@ public sealed class DocumentAppService
     }
 
     // ==========================================================
-    // Preview + OCR (mantido; usado se você quiser processamento assíncrono)
+    // Preview + OCR (mantido)
     // ==========================================================
     public async Task ProcessPreviewAndOcrAsync(
         Guid tenantId,
@@ -308,9 +305,6 @@ public sealed class DocumentAppService
 
         var extractedText = await _ocr.ExtractTextAsync(previewPath, ct);
 
-        // Se quiser indexar aqui também (quando esse fluxo for usado),
-        // você precisará buscar title/description/code do document e chamar UpsertSearchAsync com extractedText.
-        // Mantive neutro para não mudar fluxo atual.
         _logger.LogInformation("ProcessPreviewAndOcrAsync concluído. Doc={DocId}, Ver={VerId}, HasText={HasText}",
             documentId, versionId, !string.IsNullOrWhiteSpace(extractedText));
     }
@@ -363,7 +357,41 @@ public sealed class DocumentAppService
     }
 
     // ==========================================================
-    // IMPLEMENTAÇÃO ÚNICA
+    // ✅ ADD VERSION (OCR) - BACKGROUND (não depende de CurrentUser)
+    // ==========================================================
+    public async Task<Result<Guid>> AddVersionWithOcrAsyncBackground(
+        Guid tenantId,
+        Guid actorId,
+        Guid documentId,
+        Stream content,
+        string fileName,
+        string contentType,
+        string ocrText,
+        string ip,
+        string userAgent,
+        CancellationToken ct)
+    {
+        if (tenantId == Guid.Empty)
+            return Result<Guid>.Fail("VALIDATION", "TenantId inválido.");
+
+        if (actorId == Guid.Empty)
+            return Result<Guid>.Fail("VALIDATION", "ActorId inválido.");
+
+        return await AddVersionCoreAsync(
+            tenantId: tenantId,
+            actorId: actorId,
+            documentId: documentId,
+            content: content,
+            fileName: fileName,
+            contentType: contentType,
+            ocrText: ocrText ?? "",
+            ip: ip,
+            userAgent: userAgent,
+            ct: ct);
+    }
+
+    // ==========================================================
+    // IMPLEMENTAÇÃO "HTTP" (usa CurrentUser) -> chama CORE
     // ==========================================================
     private async Task<Result<Guid>> AddVersionInternalAsync(
         Guid documentId,
@@ -378,24 +406,58 @@ public sealed class DocumentAppService
         if (!_currentUser.IsAuthenticated)
             return Result<Guid>.Fail("AUTH", "Usuário não autenticado.");
 
+        var tenantId = _currentUser.TenantId;
+        var userId = _currentUser.UserId;
+
+        if (userId == null || userId == Guid.Empty)
+            return Result<Guid>.Fail("AUTH", "Usuário inválido.");
+
+        return await AddVersionCoreAsync(
+            tenantId: tenantId,
+            actorId: userId,
+            documentId: documentId,
+            content: content,
+            fileName: fileName,
+            contentType: contentType,
+            ocrText: ocrText ?? "",
+            ip: ip,
+            userAgent: userAgent,
+            ct: ct);
+    }
+
+    // ==========================================================
+    // ✅ CORE ÚNICO (reutilizado por HTTP e Background)
+    // ==========================================================
+    private async Task<Result<Guid>> AddVersionCoreAsync(
+        Guid tenantId,
+        Guid actorId,
+        Guid documentId,
+        Stream content,
+        string fileName,
+        string contentType,
+        string ocrText,
+        string ip,
+        string userAgent,
+        CancellationToken ct)
+    {
         if (documentId == Guid.Empty)
             return Result<Guid>.Fail("VALIDATION", "Documento inválido.");
 
         if (content is null || content == Stream.Null)
             return Result<Guid>.Fail("FILE", "Arquivo inválido.");
 
-        var tenantId = _currentUser.TenantId;
-        var userId = _currentUser.UserId;
+        if (string.IsNullOrWhiteSpace(fileName))
+            return Result<Guid>.Fail("VALIDATION", "Nome do arquivo inválido.");
 
         var versionId = Guid.NewGuid();
 
-        var ext = Path.GetExtension(fileName ?? "");
+        var ext = Path.GetExtension(fileName);
         var fileExtension = string.IsNullOrWhiteSpace(ext) ? "" : (ext.StartsWith(".") ? ext[1..] : ext);
 
         try
         {
-            using var conn = await _db.OpenAsync(ct);
-            using var tx = conn.BeginTransaction();
+            await using var conn = await _db.OpenAsync(ct);
+            await using var tx = await conn.BeginTransactionAsync(ct);
 
             // 1) próximo número
             var nextVersion = await _writeRepo.GetNextVersionNumberAsync(tenantId, documentId, tx, ct);
@@ -426,13 +488,13 @@ public sealed class DocumentAppService
                 ChecksumMd5 = md5,
                 ChecksumSha256 = sha256,
                 ContentType = string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType.Trim(),
-                CreatedBy = userId
+                CreatedBy = actorId
             }, tx, ct);
 
             // 4) current_version_id
-            await _writeRepo.UpdateCurrentVersionAsync(tenantId, documentId, versionId, userId, tx, ct);
+            await _writeRepo.UpdateCurrentVersionAsync(tenantId, documentId, versionId, actorId, tx, ct);
 
-            // 4.5) SEARCH INDEX (metadados + OCR REAL quando vier)
+            // 4.5) SEARCH INDEX
             const string sqlDoc = @"
 SELECT 
   code        AS ""Code"",
@@ -440,8 +502,8 @@ SELECT
   COALESCE(description,'') AS ""Description""
 FROM ged.document
 WHERE tenant_id = @tenantId
-  AND id = @documentId;
-";
+  AND id = @documentId;";
+
             var meta = await tx.Connection!.QuerySingleAsync<(string Code, string Title, string Description)>(
                 new CommandDefinition(sqlDoc, new { tenantId, documentId }, tx, cancellationToken: ct));
 
@@ -465,8 +527,8 @@ WHERE tenant_id = @tenantId
                     TenantId = tenantId,
                     EntityName = "document",
                     EntityId = documentId,
-                    Action = "ADD_VERSION", // atenção: precisa existir no enum do banco
-                    UserId = userId,
+                    Action = "ADD_VERSION",
+                    UserId = actorId,
                     DetailsJson = $"{{\"file\":\"{EscapeJson(fileName)}\",\"ip\":\"{EscapeJson(ip)}\",\"ua\":\"{EscapeJson(userAgent)}\"}}"
                 }, tx, ct);
             }
@@ -475,7 +537,7 @@ WHERE tenant_id = @tenantId
                 _logger.LogWarning(auditEx, "Falha ao gravar audit_log (não bloqueia AddVersion).");
             }
 
-            tx.Commit();
+            await tx.CommitAsync(ct);
             return Result<Guid>.Ok(versionId);
         }
         catch (Exception ex)
@@ -514,7 +576,6 @@ WHERE tenant_id = @tenantId
         string ocrText,
         CancellationToken ct)
     {
-        // Ordem correta: code, title, description, fileName, ocrText
         const string sql = @"
 SELECT ged.upsert_document_search(
   @tenantId, @documentId, @versionId,

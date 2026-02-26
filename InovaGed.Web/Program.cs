@@ -9,6 +9,7 @@ using InovaGed.Application.Documents.Workflow;
 using InovaGed.Application.Ged;
 using InovaGed.Application.Identity;
 using InovaGed.Application.Ocr;
+using InovaGed.Application.Pacs;
 using InovaGed.Application.Search;
 using InovaGed.Application.Users;
 using InovaGed.Application.Workflow;
@@ -20,6 +21,7 @@ using InovaGed.Infrastructure.Common.Database;
 using InovaGed.Infrastructure.Documents;
 using InovaGed.Infrastructure.Ged;
 using InovaGed.Infrastructure.Ocr;
+using InovaGed.Infrastructure.Pacs;
 using InovaGed.Infrastructure.Preview;
 using InovaGed.Infrastructure.Search;
 using InovaGed.Infrastructure.Security;
@@ -30,6 +32,7 @@ using InovaGed.Infrastructure.Workflow;
 using InovaGed.Web.Security;
 
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.Extensions.DependencyInjection;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -104,6 +107,15 @@ builder.Services.AddScoped<IDocumentWorkflowService, DocumentWorkflowService>();
 builder.Services.AddScoped<IPermissionChecker, AllowAllPermissionChecker>();
 builder.Services.AddScoped<SimpleTextDocumentTypeSuggester>();
 builder.Services.AddScoped<HybridDocumentTypeSuggester>();
+
+builder.Services.Configure<PacsIntegrationOptions>(
+    builder.Configuration.GetSection("PacsIntegration"));
+
+builder.Services.Configure<StorageLocalOptions>(builder.Configuration.GetSection("Storage:Local"));
+
+builder.Services.AddScoped<ITicketRepository, TicketRepository>();
+builder.Services.AddScoped<IOcrQueue, OcrQueue>();
+builder.Services.AddScoped<PacsIntegrationService>();
 
 // =======================================================
 // Search

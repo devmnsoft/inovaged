@@ -10,6 +10,12 @@ using Microsoft.Extensions.Logging;
 
 namespace InovaGed.Infrastructure.Ocr;
 
+internal static class SystemUsers
+{
+    // GUID fixo para ações automáticas do OCR Worker
+    public static readonly Guid OcrWorker = Guid.Parse("00000000-0000-0000-0000-000000000999");
+}
+
 public sealed class OcrWorker : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
@@ -40,13 +46,16 @@ public sealed class OcrWorker : BackgroundService
                 var job = await jobs.DequeueAndMarkProcessingAsync(stoppingToken);
                 if (job is null)
                 {
-                    await Task.Delay(TimeSpan.FromSeconds(20), stoppingToken); 
+                    await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
                     continue;
                 }
 
-                _logger.LogInformation("Processando OCR JobId={JobId}, VersionId={VersionId}", job.Id, job.DocumentVersionId);
+                var actorId = job.RequestedBy ?? SystemUsers.OcrWorker;
 
-                // renova lease já no começo
+                _logger.LogInformation(
+                    "Processando OCR JobId={JobId}, VersionId={VersionId}, Actor={ActorId}",
+                    job.Id, job.DocumentVersionId, actorId);
+
                 await jobs.RenewLeaseAsync(job.Id, stoppingToken);
 
                 var v = await docs.GetVersionForDownloadAsync(job.TenantId, job.DocumentVersionId, stoppingToken);
@@ -56,7 +65,6 @@ public sealed class OcrWorker : BackgroundService
                     continue;
                 }
 
-                // renova lease antes da parte pesada
                 await jobs.RenewLeaseAsync(job.Id, stoppingToken);
 
                 string pdfPath;
@@ -75,7 +83,6 @@ public sealed class OcrWorker : BackgroundService
                         stoppingToken);
                 }
 
-                // renova lease antes do OCR
                 await jobs.RenewLeaseAsync(job.Id, stoppingToken);
 
                 try
@@ -96,10 +103,12 @@ public sealed class OcrWorker : BackgroundService
                     await using var ms = new MemoryStream(result.OcrPdfBytes);
                     ms.Position = 0;
 
-                    // renova lease antes de salvar versão
                     await jobs.RenewLeaseAsync(job.Id, stoppingToken);
 
-                    var add = await app.AddVersionWithOcrAsync(
+                    // ✅ NÃO depende de usuário autenticado (worker não tem HttpContext)
+                    var add = await app.AddVersionWithOcrAsyncBackground(
+                        tenantId: job.TenantId,
+                        actorId: actorId,
                         documentId: v.DocumentId,
                         content: ms,
                         fileName: newFileName,
@@ -115,7 +124,7 @@ public sealed class OcrWorker : BackgroundService
                         continue;
                     }
 
-                    // classificação automática (não bloqueia)
+                    // classificação automática (não bloqueia OCR)
                     try
                     {
                         var classifier = scope.ServiceProvider.GetRequiredService<IDocumentClassifier>();
@@ -136,7 +145,7 @@ public sealed class OcrWorker : BackgroundService
                             confidence: classified.Confidence,
                             method: classified.Method,
                             summary: classified.Summary,
-                            classifiedBy: null,
+                            classifiedBy: actorId, // ✅ registra ator
                             ct: stoppingToken);
 
                         await classRepo.UpsertTagsAsync(
@@ -144,7 +153,7 @@ public sealed class OcrWorker : BackgroundService
                             documentId: v.DocumentId,
                             tags: classified.Tags,
                             method: classified.Method,
-                            assignedBy: null,
+                            assignedBy: actorId, // ✅ registra ator
                             ct: stoppingToken);
 
                         await classRepo.UpsertMetadataAsync(
@@ -164,7 +173,6 @@ public sealed class OcrWorker : BackgroundService
                     await jobs.MarkCompletedAsync(job.Id, stoppingToken);
                     _logger.LogInformation("OCR concluído. JobId={JobId}, NewVersion={NewVersionId}", job.Id, add.Value);
 
-                    // pequeno cooldown
                     await Task.Delay(TimeSpan.FromMilliseconds(300), stoppingToken);
                 }
                 catch (PdfHasDigitalSignatureException)
@@ -175,7 +183,7 @@ public sealed class OcrWorker : BackgroundService
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Falha inesperada no OCR Worker.");
-                await Task.Delay(TimeSpan.FromSeconds(20), stoppingToken); 
+                await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
             }
         }
 

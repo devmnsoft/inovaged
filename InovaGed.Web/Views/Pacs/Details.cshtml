@@ -1,0 +1,77 @@
+﻿@model IReadOnlyList<InovaGed.Application.Pacs.TicketFileDto>
+
+@{
+    ViewData["Title"] = "Detalhes do Chamado (PACS)";
+    var t = ((Guid Id, string ProtocolCode, string Status, string? PatientName, string? PatientId, string? Modality, string? ExamType, string? StudyUid, string? Notes, DateTimeOffset CreatedAt))ViewBag.Ticket;
+}
+
+<div class="d-flex align-items-start justify-content-between mb-3">
+    <div>
+        <h2 class="mb-1">Chamado: @t.ProtocolCode</h2>
+        <div class="text-muted">
+            Status: <span class="fw-semibold">@t.Status</span> · Criado: @t.CreatedAt.ToString("dd/MM/yyyy HH:mm")
+        </div>
+        <div class="mt-2 small">
+            <div><b>Paciente:</b> @(t.PatientName ?? "-")</div>
+            <div><b>Prontuário:</b> @(t.PatientId ?? "-")</div>
+            <div><b>Modalidade:</b> @(t.Modality ?? "-")</div>
+            <div><b>Exame:</b> @(t.ExamType ?? "-")</div>
+            <div><b>Study UID:</b> @(t.StudyUid ?? "-")</div>
+        </div>
+    </div>
+
+    <a class="btn btn-outline-secondary" href="/Pacs">
+        <i class="bi bi-arrow-left"></i> Voltar
+    </a>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(t.Notes))
+{
+    <div class="alert alert-info">
+        <b>Observações:</b> @t.Notes
+    </div>
+}
+
+<div class="row g-3">
+    @foreach (var f in Model)
+    {
+        <div class="col-md-6 col-lg-4">
+            <div class="card h-100">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <div class="text-truncate" title="@f.OriginalFileName">@f.OriginalFileName</div>
+                    <span class="badge bg-secondary">@f.OcrStatus</span>
+                </div>
+
+                <div class="card-body">
+                    <div class="ratio ratio-4x3 mb-2">
+                        <img src="/Pacs/Arquivo/@f.Id" style="object-fit:contain;" />
+                    </div>
+
+                    <div class="small text-muted mb-2">
+                        <div><b>Size:</b> @f.FileSize</div>
+                        <div class="text-truncate"><b>SHA:</b> @f.Sha256</div>
+                        <div class="text-truncate"><b>Path:</b> @f.StorageRelPath</div>
+                    </div>
+
+                    @if (!string.IsNullOrWhiteSpace(f.OcrText))
+                    {
+                        <div class="border rounded p-2 small" style="max-height:160px; overflow:auto;">
+                            <div class="fw-semibold mb-1">OCR</div>
+                            <pre class="mb-0">@f.OcrText</pre>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="text-muted small">OCR ainda não processado (fila PENDING/PROCESSING).</div>
+                    }
+                </div>
+
+                <div class="card-footer d-flex justify-content-end">
+                    <a class="btn btn-sm btn-outline-primary" href="/Pacs/Arquivo/@f.Id" target="_blank">
+                        <i class="bi bi-download"></i> Abrir/Download
+                    </a>
+                </div>
+            </div>
+        </div>
+    }
+</div>

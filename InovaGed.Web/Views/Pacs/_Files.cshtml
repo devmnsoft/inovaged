@@ -1,0 +1,46 @@
+﻿@model IReadOnlyList<InovaGed.Application.Pacs.PacsInboundFileVM>
+
+@if (Model is null || Model.Count == 0)
+{
+    <div class="text-muted">Nenhum arquivo permitido encontrado.</div>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-sm align-middle">
+            <thead>
+                <tr>
+                    <th>Arquivo</th>
+                    <th style="width:120px;">Ext</th>
+                    <th style="width:140px;" class="text-end">Tamanho</th>
+                    <th style="width:160px;">Ação</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var f in Model)
+                {
+                    var isOcr = f.Ext == ".jpg" || f.Ext == ".jpeg" || f.Ext == ".png" || f.Ext == ".pdf";
+                    <tr>
+                        <td class="text-truncate" style="max-width:520px;">@f.Name</td>
+                        <td><span class="badge bg-secondary">@f.Ext</span></td>
+                        <td class="text-end">@($"{Math.Round(f.SizeBytes / 1024d, 2)} KB")</td>
+                        <td>
+                            @if (isOcr)
+                            {
+                                <span class="badge bg-success">OCR</span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-info">Armazenar</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <div class="small text-muted">
+        OCR será enfileirado para JPG/PNG/PDF. DICOM será armazenado e pode gerar imagem derivada depois.
+    </div>
+}

@@ -1,5 +1,9 @@
+@using Dapper
 @using Microsoft.AspNetCore.Mvc.TagHelpers
 @addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+@using InovaGed.Application.Common.Database
+@inject IDbConnectionFactory DbFactory
+
 @{
     var isAuthenticated = User?.Identity?.IsAuthenticated ?? false;
 
@@ -30,6 +34,16 @@
     }
 
     var userName = User?.Identity?.Name ?? "Usuário";
+
+    // ✅ PACS: contador pendências (mesmo padrão do seu layout)
+    int pacsBadge = 0;
+    try
+    {
+        using var conn = await DbFactory.OpenAsync(Context.RequestAborted);
+        pacsBadge = await conn.ExecuteScalarAsync<int>(
+            "select count(*) from pacs.ocr_job where status='PENDING'");
+    }
+    catch { pacsBadge = 0; }
 }
 
 <!DOCTYPE html>
@@ -107,6 +121,15 @@
                         <i class="bi bi-folder"></i><span>Pastas / Dossiês</span>
                     </a>
 
+                    <!-- ✅ PACS: link no menu desktop -->
+                    <a asp-controller="Pacs" asp-action="Index" class="@ActiveAny("Pacs")">
+                        <i class="bi bi-heart-pulse"></i>
+                        <span class="d-flex align-items-center gap-2">
+                            Sistema de Imagem
+                            <span id="pacsBadge" class="badge text-bg-danger @(pacsBadge > 0 ? "" : "d-none")">@pacsBadge</span>
+                        </span>
+                    </a>
+
                     <div class="sidebar-section-title">Governança</div>
                     <a asp-controller="Classification" asp-action="Index" class="@ActiveAny("Classification")">
                         <i class="bi bi-diagram-3"></i><span>Classificação</span>
@@ -126,12 +149,10 @@
 
                     <div class="sidebar-section-title">Administração</div>
 
-                    <!-- ✅ NOVO: LISTAGEM -->
                     <a asp-controller="Users" asp-action="Index" class="@Active("Users","Index")">
                         <i class="bi bi-people"></i><span>Usuários</span>
                     </a>
 
-                    <!-- ✅ MANTIDO: CRIAR -->
                     <a asp-controller="Users" asp-action="Create" class="@Active("Users","Create")">
                         <i class="bi bi-person-plus"></i><span>Criar Usuário</span>
                     </a>
@@ -182,6 +203,15 @@
                             <i class="bi bi-folder"></i><span>Pastas / Dossiês</span>
                         </a>
 
+                        <!-- ✅ PACS: link no menu mobile -->
+                        <a asp-controller="Pacs" asp-action="Index" class="@ActiveAny("Pacs")" data-bs-dismiss="offcanvas">
+                            <i class="bi bi-heart-pulse"></i>
+                            <span class="d-flex align-items-center gap-2">
+                                Sistema de Imagem
+                                <span id="pacsBadgeMobile" class="badge text-bg-danger @(pacsBadge > 0 ? "" : "d-none")">@pacsBadge</span>
+                            </span>
+                        </a>
+
                         <div class="sidebar-section-title">Governança</div>
                         <a asp-controller="Classification" asp-action="Index" class="@ActiveAny("Classification")" data-bs-dismiss="offcanvas">
                             <i class="bi bi-diagram-3"></i><span>Classificação</span>
@@ -200,12 +230,10 @@
 
                         <div class="sidebar-section-title">Administração</div>
 
-                        <!-- ✅ NOVO: LISTAGEM -->
                         <a asp-controller="Users" asp-action="Index" class="@Active("Users","Index")" data-bs-dismiss="offcanvas">
                             <i class="bi bi-people"></i><span>Usuários</span>
                         </a>
 
-                        <!-- ✅ MANTIDO: CRIAR -->
                         <a asp-controller="Users" asp-action="Create" class="@Active("Users","Create")" data-bs-dismiss="offcanvas">
                             <i class="bi bi-person-plus"></i><span>Criar Usuário</span>
                         </a>
@@ -267,14 +295,12 @@
                                 </li>
                                 <li><hr class="dropdown-divider" /></li>
 
-                                <!-- ✅ NOVO: listagem -->
                                 <li>
                                     <a class="dropdown-item" asp-controller="Users" asp-action="Index">
                                         <i class="bi bi-people me-2"></i>Usuários
                                     </a>
                                 </li>
 
-                                <!-- ✅ Mantém criar -->
                                 <li>
                                     <a class="dropdown-item" asp-controller="Users" asp-action="Create">
                                         <i class="bi bi-person-plus me-2"></i>Criar Usuário

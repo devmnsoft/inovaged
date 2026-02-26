@@ -29,6 +29,7 @@
 
   <ItemGroup>
     <Folder Include="Models\Classification\" />
+    <Folder Include="Models\Pacs\" />
   </ItemGroup>
 
 </Project>

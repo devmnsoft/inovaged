@@ -21,4 +21,9 @@ public sealed class OcrJobDto
     // seu worker usa InvalidateDigitalSignatures:
     public bool InvalidateDigitalSignatures { get; init; }
      
+    public Guid? RequestedBy { get; init; } // ✅ NOVO 
+    public object TicketId { get; set; }
+    public object TicketFileId { get; set; }
+    public string InputDiskPath { get; set; }
+    public int Priority { get; set; }
 }

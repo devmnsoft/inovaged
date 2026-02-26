@@ -1,0 +1,57 @@
+﻿@model IReadOnlyList<(Guid Id, string ProtocolCode, string Status, DateTimeOffset CreatedAt)>
+
+@{
+    ViewData["Title"] = "Integração com Sistema de Imagem (PACS)";
+    var q = (string?)ViewBag.Q;
+}
+
+<div class="d-flex align-items-center justify-content-between mb-3">
+    <div>
+        <h2 class="mb-0">Integração com Sistema de Imagem</h2>
+        <div class="text-muted">Chamados de integração + imagens recebidas via API / upload e fila de OCR.</div>
+    </div>
+    <a class="btn btn-primary" href="/Pacs/Novo">
+        <i class="bi bi-plus-lg"></i> Novo Chamado
+    </a>
+</div>
+
+<form method="get" class="row g-2 mb-3">
+    <div class="col-md-6">
+        <input class="form-control" name="q" value="@q" placeholder="Pesquisar por protocolo, paciente, prontuário..." />
+    </div>
+    <div class="col-md-2">
+        <button class="btn btn-outline-secondary w-100" type="submit">
+            <i class="bi bi-search"></i> Buscar
+        </button>
+    </div>
+</form>
+
+<div class="card">
+    <div class="table-responsive">
+        <table class="table table-hover mb-0">
+            <thead>
+                <tr>
+                    <th>Protocolo</th>
+                    <th>Status</th>
+                    <th>Criado em</th>
+                    <th style="width:140px;"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var it in Model)
+                {
+                    <tr>
+                        <td class="fw-semibold">@it.ProtocolCode</td>
+                        <td>@it.Status</td>
+                        <td>@it.CreatedAt.ToString("dd/MM/yyyy HH:mm")</td>
+                        <td class="text-end">
+                            <a class="btn btn-sm btn-outline-primary" href="/Pacs/Detalhes/@it.Id">
+                                <i class="bi bi-eye"></i> Abrir
+                            </a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>

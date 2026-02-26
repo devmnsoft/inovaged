@@ -1,0 +1,59 @@
+﻿@model InovaGed.Web.Controllers.PacsMvcCreateVM
+@{
+    ViewData["Title"] = "Novo Chamado - Integração com Sistema de Imagem";
+}
+
+<h2 class="mb-1">Novo Chamado</h2>
+<div class="text-muted mb-3">Integração com sistema de imagem (PACS). As imagens serão salvas no disco e enfileiradas para OCR.</div>
+
+<form method="post" enctype="multipart/form-data" class="card p-3">
+    @Html.AntiForgeryToken()
+
+    <div class="row g-3">
+        <div class="col-md-3">
+            <label class="form-label">Protocolo *</label>
+            <input class="form-control" name="ProtocolCode" required />
+        </div>
+        <div class="col-md-5">
+            <label class="form-label">Paciente</label>
+            <input class="form-control" name="PatientName" />
+        </div>
+        <div class="col-md-4">
+            <label class="form-label">Prontuário / Identificador</label>
+            <input class="form-control" name="PatientId" />
+        </div>
+
+        <div class="col-md-2">
+            <label class="form-label">Modalidade</label>
+            <input class="form-control" name="Modality" placeholder="CT, MR, XR..." />
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">Tipo de Exame</label>
+            <input class="form-control" name="ExamType" placeholder="Ex: TC Tórax" />
+        </div>
+        <div class="col-md-4">
+            <label class="form-label">Study UID</label>
+            <input class="form-control" name="StudyUid" />
+        </div>
+
+        <div class="col-12">
+            <label class="form-label">Observações</label>
+            <textarea class="form-control" rows="3" name="Notes"></textarea>
+        </div>
+
+        <div class="col-12">
+            <label class="form-label">Imagens *</label>
+            <input class="form-control" type="file" name="Files" multiple required />
+            <div class="form-text">
+                Dica: este upload simula o que chega via API. As imagens ficam em <code>Storage:Local:RootPath\pacs\TENANT\TICKET\original</code>.
+            </div>
+        </div>
+
+        <div class="col-12 d-flex gap-2 justify-content-end">
+            <a class="btn btn-outline-secondary" href="/Pacs">Cancelar</a>
+            <button class="btn btn-primary" type="submit">
+                <i class="bi bi-cloud-upload"></i> Criar e Enviar
+            </button>
+        </div>
+    </div>
+</form>

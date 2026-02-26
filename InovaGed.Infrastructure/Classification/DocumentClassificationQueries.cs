@@ -29,11 +29,14 @@ public sealed class DocumentClassificationQueries : IDocumentClassificationQueri
         Guid documentId,
         CancellationToken ct)
     {
+        // ✅ 1) usa d.current_version_id
+        // ✅ 2) junta com ged.document_version (singular)
+        // ✅ 3) pega a classificação mais recente (por suggested_at/classified_at)
         const string headSql = @"
 SELECT
   d.id                         AS ""DocumentId"",
   d.tenant_id                  AS ""TenantId"",
-  COALESCE(dv.id, '00000000-0000-0000-0000-000000000000'::uuid) AS ""DocumentVersionId"",
+  COALESCE(d.current_version_id, '00000000-0000-0000-0000-000000000000'::uuid) AS ""DocumentVersionId"",
 
   dc.document_type_id          AS ""DocumentTypeId"",
   dt.name                      AS ""DocumentTypeName"",
@@ -49,17 +52,14 @@ SELECT
   dc.suggested_at              AS ""SuggestedAt""
 FROM ged.document d
 LEFT JOIN LATERAL (
-  SELECT id
-  FROM ged.document_versions
-  WHERE tenant_id = d.tenant_id
-    AND document_id = d.id
-  ORDER BY created_at DESC
+  SELECT *
+  FROM ged.document_classification x
+  WHERE x.tenant_id = d.tenant_id
+    AND x.document_id = d.id
+    AND x.reg_status = 'A'
+  ORDER BY x.suggested_at DESC NULLS LAST, x.classified_at DESC NULLS LAST
   LIMIT 1
-) dv ON true
-LEFT JOIN ged.document_classification dc
-  ON dc.document_id = d.id
- AND dc.tenant_id = d.tenant_id
- AND dc.reg_status = 'A'
+) dc ON true
 LEFT JOIN ged.document_type dt
   ON dt.id = dc.document_type_id
  AND dt.tenant_id = d.tenant_id

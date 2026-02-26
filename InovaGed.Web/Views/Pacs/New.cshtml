@@ -1,0 +1,173 @@
+﻿@model InovaGed.Application.Pacs.NewPacsTicketVM
+@using InovaGed.Application.Pacs
+@{
+    ViewData["Title"] = "Novo Chamado (Integração de Imagens)";
+    var folders = (IReadOnlyList<PacsInboundFolderVM>)(ViewBag.Folders ?? new List<PacsInboundFolderVM>());
+}
+
+<div class="container-fluid py-3">
+    <div class="d-flex align-items-center justify-content-between gap-2 mb-3">
+        <div>
+            <h3 class="mb-0">Novo Chamado – Integração com Sistema de Imagem</h3>
+            <div class="text-muted">Selecione uma pasta integrada (PACS/RIS) para importar, salvar no disco e disparar OCR.</div>
+        </div>
+        <a class="btn btn-outline-secondary" href="javascript:location.reload()">
+            <i class="bi bi-arrow-repeat"></i> Atualizar
+        </a>
+    </div>
+
+    @if (TempData["Ok"] is string ok)
+    {
+        <div class="alert alert-success">@ok</div>
+    }
+
+    <div class="row g-3">
+        <div class="col-lg-4">
+            <div class="card shadow-sm">
+                <div class="card-header d-flex align-items-center justify-content-between">
+                    <strong>Pastas integradas</strong>
+                    <span class="badge bg-secondary">@folders.Count</span>
+                </div>
+                <div class="card-body p-2" style="max-height: 520px; overflow:auto;">
+                    @if (folders.Count == 0)
+                    {
+                        <div class="p-2 text-muted">
+                            Nenhuma pasta encontrada no diretório de integração.
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="list-group list-group-flush">
+                            @foreach (var f in folders)
+                            {
+                                <button type="button"
+                                        class="list-group-item list-group-item-action"
+                                        onclick="selectFolder('@f.Name')">
+                                    <div class="d-flex justify-content-between">
+                                        <div class="fw-semibold">@f.Name</div>
+                                        <div class="text-muted small">@f.FileCount arquivos</div>
+                                    </div>
+                                    <div class="text-muted small">
+                                        @(Math.Round(f.TotalBytes / 1024d / 1024d, 2)) MB •
+                                        @f.LastWriteTimeUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+                                    </div>
+                                </button>
+                            }
+                        </div>
+                    }
+                </div>
+                <div class="card-footer text-muted small">
+                    Dica: cada pasta deve conter apenas arquivos do mesmo “estudo/chamado”.
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-8">
+            <form method="post" class="card shadow-sm">
+                @Html.AntiForgeryToken()
+
+                <div class="card-header">
+                    <strong>Dados do chamado</strong>
+                </div>
+
+                <div class="card-body">
+                    <div class="alert alert-info small mb-3">
+                        <div class="fw-semibold">Como funciona:</div>
+                        <ul class="mb-0">
+                            <li>Ao salvar, o sistema <b>copia os arquivos para o storage em disco</b> (sem depender de upload).</li>
+                            <li>Arquivos <b>JPG/PNG/PDF</b> entram na fila de <b>OCR</b>.</li>
+                            <li>Arquivos <b>DICOM</b> são armazenados no disco; OCR em DICOM pode ser habilitado depois via “derivação de imagem”.</li>
+                        </ul>
+                    </div>
+
+                    <div asp-validation-summary="All" class="text-danger"></div>
+
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Pasta integrada *</label>
+                            <input asp-for="FolderName" class="form-control" readonly />
+                            <div class="form-text">Selecione à esquerda.</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Título do Chamado *</label>
+                            <input asp-for="Title" class="form-control" placeholder="Ex.: TC Tórax – Importação PACS" />
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label">Paciente</label>
+                            <input asp-for="PatientName" class="form-control" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">ID/Prontuário</label>
+                            <input asp-for="PatientId" class="form-control" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Data do exame</label>
+                            <input asp-for="ExamDate" type="date" class="form-control" />
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label">Tipo do exame</label>
+                            <input asp-for="ExamType" class="form-control" placeholder="Ex.: TC TORAX" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Observações</label>
+                            <input asp-for="Notes" class="form-control" />
+                        </div>
+                    </div>
+
+                    <hr class="my-4" />
+
+                    <div class="d-flex align-items-center justify-content-between">
+                        <strong>Arquivos encontrados na pasta</strong>
+                        <span class="text-muted small" id="filesHint">Selecione uma pasta para listar.</span>
+                    </div>
+
+                    <div class="mt-2" id="filesPanel">
+                        <div class="text-muted">Nenhuma pasta selecionada.</div>
+                    </div>
+                </div>
+
+                <div class="card-footer d-flex justify-content-end gap-2">
+                    <a class="btn btn-outline-secondary" href="/Tickets">Cancelar</a>
+                    <button class="btn btn-primary" type="submit" id="btnSave" disabled>
+                        <i class="bi bi-check2-circle"></i> Criar Chamado e Importar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        async function selectFolder(folderName) {
+            const folderInput = document.getElementById("@Html.IdFor(m => m.FolderName)");
+            const titleInput  = document.getElementById("@Html.IdFor(m => m.Title)");
+            const panel       = document.getElementById("filesPanel");
+            const hint        = document.getElementById("filesHint");
+            const btnSave     = document.getElementById("btnSave");
+
+            folderInput.value = folderName;
+
+            if (!titleInput.value) {
+                titleInput.value = "Importação PACS - " + folderName;
+            }
+
+            hint.innerText = "Carregando arquivos...";
+            panel.innerHTML = `<div class="text-muted">Carregando...</div>`;
+            btnSave.disabled = true;
+
+            try {
+                const resp = await fetch(`/Pacs/Arquivos?folder=${encodeURIComponent(folderName)}`);
+                const html = await resp.text();
+                panel.innerHTML = html;
+                hint.innerText = "Revise os arquivos antes de salvar.";
+                btnSave.disabled = false;
+            } catch (e) {
+                panel.innerHTML = `<div class="text-danger">Falha ao listar arquivos.</div>`;
+                hint.innerText = "Erro ao carregar.";
+            }
+        }
+    </script>
+}

@@ -1,4 +1,5 @@
 
+using InovaGed.Application.Documents.Workflow;
 using InovaGed.Domain.Documents;
 using InovaGed.Domain.Ged;
 
@@ -11,9 +12,7 @@ public interface IDocumentQueries
     Task<DocumentDetailsDto?> GetAsync(
         Guid tenantId, Guid documentId, CancellationToken ct);
 
-    Task<IReadOnlyList<DocumentVersionDto>> ListVersionsAsync(
-        Guid tenantId, Guid documentId, CancellationToken ct);
-
+    Task<IReadOnlyList<DocumentVersionDto>> ListVersionsAsync(Guid tenantId, Guid documentId, CancellationToken ct);
     Task<DocumentVersionDownloadDto?> GetVersionForDownloadAsync(
         Guid tenantId, Guid versionId, CancellationToken ct);
 }
