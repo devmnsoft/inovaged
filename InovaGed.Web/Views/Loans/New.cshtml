@@ -1,0 +1,73 @@
+﻿@using InovaGed.Application.Ged.Loans
+@model LoanCreateVM
+
+@{
+    ViewData["Title"] = "Novo Empréstimo";
+}
+
+<h2>Novo Empréstimo</h2>
+
+@if (TempData["Err"] is not null)
+{
+    <div class="alert alert-danger">@TempData["Err"]</div>
+}
+
+<form method="post" class="card card-body">
+    @Html.AntiForgeryToken()
+
+    <div class="row g-2">
+        <div class="col-md-6">
+            <label class="form-label">Solicitante (nome)</label>
+            <input class="form-control" name="RequesterName" value="@Model.RequesterName" />
+        </div>
+        <div class="col-md-3">
+            <label class="form-label">Vencimento</label>
+            <input type="date" class="form-control" name="DueAt"
+                   value="@(Model.DueAt?.ToString("yyyy-MM-dd"))" />
+        </div>
+        <div class="col-md-3">
+            <label class="form-label">Físico?</label>
+            <select class="form-select" name="IsPhysical">
+                <option value="true" selected="@(Model.IsPhysical)">Sim</option>
+                <option value="false" selected="@(!Model.IsPhysical)">Não</option>
+            </select>
+        </div>
+
+        <div class="col-12">
+            <label class="form-label">Documentos (GUIDs) — 1 por linha (PoC)</label>
+            <textarea class="form-control" rows="5" id="docIds"></textarea>
+            <div class="form-text">
+                Na próxima iteração a gente troca isso por um modal de busca de documentos.
+            </div>
+        </div>
+
+        <div class="col-12">
+            <label class="form-label">Observações</label>
+            <textarea class="form-control" name="Notes" rows="3">@Model.Notes</textarea>
+        </div>
+
+        <div class="col-12 d-flex gap-2">
+            <button class="btn btn-primary" type="submit" onclick="applyDocIds()">Salvar</button>
+            <a class="btn btn-outline-secondary" href="/Loans">Voltar</a>
+        </div>
+    </div>
+
+    <div id="hidden"></div>
+</form>
+
+<script>
+    function applyDocIds() {
+        const area = document.getElementById('docIds');
+        const hidden = document.getElementById('hidden');
+        hidden.innerHTML = '';
+
+        const ids = area.value.split(/\r?\n/).map(x => x.trim()).filter(x => x.length > 0);
+        ids.forEach((id, idx) => {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'DocumentIds[' + idx + ']';
+            input.value = id;
+            hidden.appendChild(input);
+        });
+    }
+</script>

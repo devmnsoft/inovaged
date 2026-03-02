@@ -151,14 +151,12 @@
                         <i class="bi bi-folder"></i><span>Pastas / Dossiês</span>
                     </a>
 
-                    <!-- ✅ PACS: link no menu desktop -->
+                    <!-- ✅ PACS: link externo -->
                     <a href="https://yndustech.com.br/GedDocs"
                        target="_blank"
                        rel="noopener noreferrer"
                        class="@ActiveAny("Pacs")">
-
                         <i class="bi bi-heart-pulse"></i>
-
                         <span class="d-flex align-items-center gap-2">
                             Sistema de Imagem
                             <span id="pacsBadge"
@@ -188,12 +186,10 @@
                     <!-- ✅ TEMPORALIDADE / DESTINAÇÃO -->
                     <div class="sidebar-section-title">Temporalidade</div>
 
-                    <!-- ✅ Central de Temporalidade -->
                     <a asp-controller="Temporalidade" asp-action="Index" class="@ActiveAny("Temporalidade")">
                         <i class="bi bi-hourglass-split"></i><span>Central de Temporalidade</span>
                     </a>
 
-                    <!-- ✅ Opcional: se existir Retention/Queue -->
                     <a asp-controller="Retention" asp-action="Queue" class="@Active("Retention","Queue")">
                         <i class="bi bi-list-check"></i><span>Fila (Operacional)</span>
                     </a>
@@ -210,19 +206,64 @@
                         </span>
                     </a>
 
-                    <!-- ✅ Casos (se sua rota for /RetentionCases use href fixo; senão asp-controller normal) -->
                     <a href="/RetentionCases" class="@ActivePath("/retentioncases")">
                         <i class="bi bi-journal-text"></i><span>Casos de Temporalidade</span>
                     </a>
 
-                    <!-- ✅ Termos (controller tem [Route("RetentionTerms")]) -->
                     <a href="/RetentionTerms" class="@ActivePath("/retentionterms")">
                         <i class="bi bi-file-earmark-text"></i><span>Termos de Destinação</span>
                     </a>
 
-                    <!-- ✅ Relatório (se existir) -->
                     <a asp-controller="Disposition" asp-action="Terms" class="@Active("Disposition","Terms")">
                         <i class="bi bi-card-list"></i><span>Relatório de Termos</span>
+                    </a>
+
+                    <!-- ✅ NOVO: PROCESSOS (Empréstimos / Lotes / etc.) -->
+                    <div class="sidebar-section-title">Processos</div>
+
+                    <a asp-controller="Loans" asp-action="Index" class="@ActiveAny("Loans")">
+                        <i class="bi bi-journal-arrow-up"></i><span>Empréstimos</span>
+                    </a>
+
+                    <a asp-controller="Loans" asp-action="Overdue" class="@Active("Loans","Overdue")">
+                        <i class="bi bi-alarm"></i><span>Empréstimos Vencidos</span>
+                    </a>
+
+                    <a asp-controller="Batches" asp-action="Index" class="@ActiveAny("Batches")">
+                        <i class="bi bi-box-seam"></i><span>Lotes Físicos</span>
+                    </a>
+
+                    <!-- ✅ NOVO: GUARDA FÍSICA -->
+                    <div class="sidebar-section-title">Guarda Física</div>
+
+                    <a asp-controller="Physical" asp-action="Locations" class="@Active("Physical","Locations")">
+                        <i class="bi bi-geo-alt"></i><span>Localização Física</span>
+                    </a>
+
+                    <a asp-controller="Physical" asp-action="Boxes" class="@Active("Physical","Boxes")">
+                        <i class="bi bi-inbox"></i><span>Caixas</span>
+                    </a>
+
+                    <!-- ✅ NOVO: RELATÓRIOS -->
+                    <div class="sidebar-section-title">Relatórios</div>
+
+                    <a asp-controller="Reports" asp-action="SignatureValidation" class="@Active("Reports","SignatureValidation")">
+                        <i class="bi bi-patch-check"></i><span>Validação Assinaturas (ICP)</span>
+                    </a>
+
+                    <a asp-controller="Reports" asp-action="Loans" class="@Active("Reports","Loans")">
+                        <i class="bi bi-file-earmark-text"></i><span>Relatório de Empréstimos</span>
+                    </a>
+
+                    <!-- ✅ NOVO: AUDITORIA -->
+                    <div class="sidebar-section-title">Auditoria</div>
+
+                    <a asp-controller="Audit" asp-action="Index" class="@ActiveAny("Audit")">
+                        <i class="bi bi-shield-lock"></i><span>Log de Auditoria</span>
+                    </a>
+
+                    <a asp-controller="Audit" asp-action="AccessDenied" class="@Active("Audit","AccessDenied")">
+                        <i class="bi bi-shield-x"></i><span>Falhas de Acesso</span>
                     </a>
 
                     <div class="sidebar-section-title">Administração</div>
@@ -281,8 +322,11 @@
                             <i class="bi bi-folder"></i><span>Pastas / Dossiês</span>
                         </a>
 
-                        <!-- ✅ PACS -->
-                        <a asp-controller="Pacs" asp-action="Index" class="@ActiveAny("Pacs")" data-bs-dismiss="offcanvas">
+                        <!-- ✅ PACS (MOBILE) - link externo -->
+                        <a href="https://yndustech.com.br/GedDocs"
+                           target="_blank"
+                           rel="noopener noreferrer"
+                           class="@ActiveAny("Pacs")">
                             <i class="bi bi-heart-pulse"></i>
                             <span class="d-flex align-items-center gap-2">
                                 Sistema de Imagem
@@ -306,7 +350,6 @@
                             <i class="bi bi-shuffle"></i><span>Workflows</span>
                         </a>
 
-                        <!-- ✅ TEMPORALIDADE -->
                         <div class="sidebar-section-title">Temporalidade</div>
 
                         <a asp-controller="Temporalidade" asp-action="Index" class="@ActiveAny("Temporalidade")" data-bs-dismiss="offcanvas">
@@ -339,6 +382,54 @@
 
                         <a asp-controller="Disposition" asp-action="Terms" class="@Active("Disposition","Terms")" data-bs-dismiss="offcanvas">
                             <i class="bi bi-card-list"></i><span>Relatório de Termos</span>
+                        </a>
+
+                        <!-- ✅ NOVO: PROCESSOS (MOBILE) -->
+                        <div class="sidebar-section-title">Processos</div>
+
+                        <a asp-controller="Loans" asp-action="Index" class="@ActiveAny("Loans")" data-bs-dismiss="offcanvas">
+                            <i class="bi bi-journal-arrow-up"></i><span>Empréstimos</span>
+                        </a>
+
+                        <a asp-controller="Loans" asp-action="Overdue" class="@Active("Loans","Overdue")" data-bs-dismiss="offcanvas">
+                            <i class="bi bi-alarm"></i><span>Empréstimos Vencidos</span>
+                        </a>
+
+                        <a asp-controller="Batches" asp-action="Index" class="@ActiveAny("Batches")" data-bs-dismiss="offcanvas">
+                            <i class="bi bi-box-seam"></i><span>Lotes Físicos</span>
+                        </a>
+
+                        <!-- ✅ NOVO: GUARDA FÍSICA (MOBILE) -->
+                        <div class="sidebar-section-title">Guarda Física</div>
+
+                        <a asp-controller="Physical" asp-action="Locations" class="@Active("Physical","Locations")" data-bs-dismiss="offcanvas">
+                            <i class="bi bi-geo-alt"></i><span>Localização Física</span>
+                        </a>
+
+                        <a asp-controller="Physical" asp-action="Boxes" class="@Active("Physical","Boxes")" data-bs-dismiss="offcanvas">
+                            <i class="bi bi-inbox"></i><span>Caixas</span>
+                        </a>
+
+                        <!-- ✅ NOVO: RELATÓRIOS (MOBILE) -->
+                        <div class="sidebar-section-title">Relatórios</div>
+
+                        <a asp-controller="Reports" asp-action="SignatureValidation" class="@Active("Reports","SignatureValidation")" data-bs-dismiss="offcanvas">
+                            <i class="bi bi-patch-check"></i><span>Validação Assinaturas (ICP)</span>
+                        </a>
+
+                        <a asp-controller="Reports" asp-action="Loans" class="@Active("Reports","Loans")" data-bs-dismiss="offcanvas">
+                            <i class="bi bi-file-earmark-text"></i><span>Relatório de Empréstimos</span>
+                        </a>
+
+                        <!-- ✅ NOVO: AUDITORIA (MOBILE) -->
+                        <div class="sidebar-section-title">Auditoria</div>
+
+                        <a asp-controller="Audit" asp-action="Index" class="@ActiveAny("Audit")" data-bs-dismiss="offcanvas">
+                            <i class="bi bi-shield-lock"></i><span>Log de Auditoria</span>
+                        </a>
+
+                        <a asp-controller="Audit" asp-action="AccessDenied" class="@Active("Audit","AccessDenied")" data-bs-dismiss="offcanvas">
+                            <i class="bi bi-shield-x"></i><span>Falhas de Acesso</span>
                         </a>
 
                         <div class="sidebar-section-title">Administração</div>
@@ -424,6 +515,27 @@
                                 <li>
                                     <a class="dropdown-item" href="/RetentionTerms">
                                         <i class="bi bi-file-earmark-text me-2"></i>Termos
+                                    </a>
+                                </li>
+
+                                <!-- ✅ NOVO: atalhos -->
+                                <li><hr class="dropdown-divider" /></li>
+
+                                <li>
+                                    <a class="dropdown-item" asp-controller="Loans" asp-action="Index">
+                                        <i class="bi bi-journal-arrow-up me-2"></i>Empréstimos
+                                    </a>
+                                </li>
+
+                                <li>
+                                    <a class="dropdown-item" asp-controller="Audit" asp-action="Index">
+                                        <i class="bi bi-shield-lock me-2"></i>Auditoria
+                                    </a>
+                                </li>
+
+                                <li>
+                                    <a class="dropdown-item" asp-controller="Reports" asp-action="SignatureValidation">
+                                        <i class="bi bi-patch-check me-2"></i>Validação ICP
                                     </a>
                                 </li>
 

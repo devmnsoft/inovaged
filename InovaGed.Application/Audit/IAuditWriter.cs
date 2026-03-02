@@ -1,16 +1,19 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using InovaGed.Domain.Primitives;
 
 namespace InovaGed.Application.Audit
 {
     public interface IAuditWriter
     {
-        Task WriteAsync(Guid tenantId, Guid? userId, string? userDisplay,
-            string action, string? entityType, Guid? entityId,
-            bool success, object? details, string? ip, string? userAgent,
+        Task<Result> WriteAsync(
+            Guid tenantId,
+            Guid? userId,
+            string action,            // usa enum no banco (audit_action_enum) como string
+            string entityName,
+            Guid? entityId,
+            string? summary,
+            string? ipAddress,
+            string? userAgent,
+            object? data,
             CancellationToken ct);
     }
 

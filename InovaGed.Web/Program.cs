@@ -8,6 +8,10 @@ using InovaGed.Application.Common.Database;
 using InovaGed.Application.Common.Storage;
 using InovaGed.Application.Documents;
 using InovaGed.Application.Ged;
+using InovaGed.Application.Ged.Batches;
+using InovaGed.Application.Ged.Loans;
+using InovaGed.Application.Ged.Physical;
+using InovaGed.Application.Ged.Reports;
 using InovaGed.Application.Identity;
 using InovaGed.Application.Ocr;
 using InovaGed.Application.Pacs;
@@ -27,6 +31,10 @@ using InovaGed.Infrastructure.ClassificationPlans;
 using InovaGed.Infrastructure.Common.Database;
 using InovaGed.Infrastructure.Documents;
 using InovaGed.Infrastructure.Ged;
+using InovaGed.Infrastructure.Ged.Batches;
+using InovaGed.Infrastructure.Ged.Loans;
+using InovaGed.Infrastructure.Ged.Physical;
+using InovaGed.Infrastructure.Ged.Reports;
 using InovaGed.Infrastructure.Instruments;
 using InovaGed.Infrastructure.Ocr;
 using InovaGed.Infrastructure.Pacs;
@@ -224,6 +232,18 @@ builder.Services.AddScoped<IPermissionChecker, AllowAllPermissionChecker>();
 builder.Services.AddScoped<PermissionService>();
 builder.Services.AddScoped<InovaGed.Infrastructure.Retention.RetentionRecalculateService>();
 
+builder.Services.AddScoped<IAuditWriter, AuditWriter>();
+
+builder.Services.AddScoped<ILoanQueries, LoanQueries>();
+builder.Services.AddScoped<ILoanCommands, LoanCommands>();
+
+builder.Services.AddScoped<IBatchQueries, BatchQueries>();
+builder.Services.AddScoped<IBatchCommands, BatchCommands>();
+
+builder.Services.AddScoped<IPhysicalQueries, PhysicalQueries>();
+builder.Services.AddScoped<IPhysicalCommands, PhysicalCommands>();
+
+builder.Services.AddScoped<IReportService, ReportService>();
 
 // =======================================================
 // Instruments (se você realmente usa DI por classe concreta, ok)

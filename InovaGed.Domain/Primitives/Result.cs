@@ -7,6 +7,8 @@
         public bool Success { get; }
         public bool IsFailure => !Success;
         public Error? Error { get; }
+        public bool IsSuccess { get; set; }
+        public string ErrorMessage { get; set; }
 
         protected Result(bool success, Error? error)
         {
