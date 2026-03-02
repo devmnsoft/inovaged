@@ -1,172 +1,294 @@
 ﻿@model IReadOnlyList<InovaGed.Application.Retention.RetentionQueueRow>
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+
 @{
-    ViewData["Title"] = "Central de Temporalidade";
+    ViewData["Title"] ??= "Central Operacional de Temporalidade";
+
     string? status = ViewBag.Status as string;
     DateTimeOffset? dueUntil = ViewBag.DueUntil as DateTimeOffset?;
     string? q = ViewBag.Q as string;
-}
 
-@if (TempData["Error"] is string err)
-{
-    <div class="alert alert-danger">@err</div>
-}
+    status = (status ?? "").Trim().ToUpperInvariant();
 
-@functions {
-    string Badge(string? s) => s switch
+    string StatusBadge(string s)
     {
-        "OVERDUE" => "badge bg-danger",
-        "DUE_SOON" => "badge bg-warning text-dark",
-        "OK" => "badge bg-success",
-        _ => "badge bg-secondary"
-    };
-    string Label(string? s) => s switch
+        s = (s ?? "").Trim().ToUpperInvariant();
+        return s switch
+        {
+            "OVERDUE" => "text-bg-danger",
+            "DUE_SOON" => "text-bg-warning",
+            "SEM_CLASSIFICACAO" => "text-bg-secondary",
+            _ => "text-bg-success"
+        };
+    }
+
+    string StatusLabel(string s)
     {
-        "OVERDUE" => "Vencido",
-        "DUE_SOON" => "A vencer",
-        "OK" => "Em dia",
-        _ => "Sem dado"
-    };
+        s = (s ?? "").Trim().ToUpperInvariant();
+        return s switch
+        {
+            "OVERDUE" => "Vencido",
+            "DUE_SOON" => "A vencer",
+            "SEM_CLASSIFICACAO" => "Sem classificação",
+            _ => "OK"
+        };
+    }
+
+    string DestBadge(string? dest)
+    {
+        dest = (dest ?? "").Trim().ToUpperInvariant();
+        return dest switch
+        {
+            "ELIMINAR" => "text-bg-danger",
+            "TRANSFERIR" => "text-bg-primary",
+            "RECOLHER" => "text-bg-dark",
+            "REAVALIAR" => "text-bg-warning",
+            _ => "text-bg-secondary"
+        };
+    }
+
+    string DestLabel(string? dest)
+    {
+        dest = (dest ?? "").Trim().ToUpperInvariant();
+        return dest switch
+        {
+            "ELIMINAR" => "Eliminar",
+            "TRANSFERIR" => "Transferir",
+            "RECOLHER" => "Recolher",
+            "REAVALIAR" => "Reavaliar",
+            "" => "—",
+            _ => dest
+        };
+    }
 }
 
-<div class="d-flex justify-content-between align-items-start mb-3">
+<div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
     <div>
-        <h2 class="mb-0">Central de Temporalidade</h2>
-        <div class="text-muted">Filtre vencidos e a vencer. Selecione e exporte CSV.</div>
+        <h2 class="mb-1">
+            <i class="bi bi-list-check me-2"></i>@ViewData["Title"]
+        </h2>
+        <div class="text-muted">
+            Filtros + seleção + exportação CSV (PoC).
+        </div>
     </div>
+
     <div class="d-flex gap-2">
-        <a class="btn btn-outline-secondary" href="/Retention">
-            <i class="bi bi-speedometer2"></i> Dashboard
+        <a class="btn btn-outline-secondary" href="/Temporalidade">
+            <i class="bi bi-hourglass-split me-1"></i> Ir para Central (Buckets)
         </a>
-        <button class="btn btn-primary" type="button" onclick="ret.exportCsv()">
-            <i class="bi bi-download"></i> Exportar CSV
+
+        <button type="button" class="btn btn-success" onclick="exportCsv()">
+            <i class="bi bi-download me-1"></i> Exportar CSV (selecionados)
         </button>
     </div>
 </div>
 
-<form class="card mb-3" method="get" action="/Retention/Queue">
-    <div class="card-body">
-        <div class="row g-2 align-items-end">
-            <div class="col-md-3">
+@if (TempData["Error"] is string e)
+{
+    <div class="alert alert-danger">@e</div>
+}
+
+<div class="card shadow-sm mb-3">
+    <div class="card-header">
+        <form method="get" asp-controller="Retention" asp-action="Queue" class="row g-2 align-items-end">
+            <div class="col-12 col-md-3">
                 <label class="form-label">Status</label>
                 <select class="form-select" name="status">
-                    <option value="" selected="@(string.IsNullOrEmpty(status) ? "selected" : null)">Todos</option>
-                    <option value="OVERDUE" selected="@(status=="OVERDUE" ? "selected" : null)">Vencidos</option>
-                    <option value="DUE_SOON" selected="@(status=="DUE_SOON" ? "selected" : null)">A vencer (<=30d)</option>
-                    <option value="OK" selected="@(status=="OK" ? "selected" : null)">Em dia</option>
-                    <option value="SEM_CLASSIFICACAO" selected="@(status=="SEM_CLASSIFICACAO" ? "selected" : null)">Sem classificação</option>
+                    <option value="">(Todos)</option>
+                    <option value="OVERDUE" selected="@(status=="OVERDUE")">OVERDUE (Vencido)</option>
+                    <option value="DUE_SOON" selected="@(status=="DUE_SOON")">DUE_SOON (A vencer)</option>
+                    <option value="OK" selected="@(status=="OK")">OK</option>
+                    <option value="SEM_CLASSIFICACAO" selected="@(status=="SEM_CLASSIFICACAO")">SEM_CLASSIFICACAO</option>
                 </select>
             </div>
-            <div class="col-md-3">
-                <label class="form-label">Vencer até</label>
-                <input class="form-control" name="dueUntil" type="date" value="@(dueUntil?.ToString("yyyy-MM-dd"))" />
+
+            <div class="col-12 col-md-3">
+                <label class="form-label">Vence até</label>
+                <input class="form-control" type="datetime-local" name="dueUntil"
+                       value="@(dueUntil.HasValue ? dueUntil.Value.ToLocalTime().ToString("yyyy-MM-ddTHH:mm") : "")" />
+                <div class="form-text">Filtra DueAt &lt;= esta data.</div>
             </div>
-            <div class="col-md-4">
+
+            <div class="col-12 col-md-4">
                 <label class="form-label">Busca</label>
-                <input class="form-control" name="q" value="@q" placeholder="título, código, classe..." />
+                <input class="form-control" type="text" name="q" value="@(q ?? "")"
+                       placeholder="Código / Título / Classe..." />
             </div>
-            <div class="col-md-2 d-grid">
-                <button class="btn btn-outline-primary" type="submit"><i class="bi bi-funnel"></i> Filtrar</button>
+
+            <div class="col-12 col-md-2 d-grid">
+                <button class="btn btn-primary" type="submit">
+                    <i class="bi bi-search me-1"></i> Filtrar
+                </button>
             </div>
+        </form>
+    </div>
+
+    <div class="card-body py-2 d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div class="d-flex align-items-center gap-2">
+            <span class="badge text-bg-primary">@(Model?.Count ?? 0)</span>
+            <span class="text-muted">itens</span>
+            <span id="selCount" class="badge text-bg-secondary d-none">0 selecionados</span>
+        </div>
+
+        <div class="d-flex gap-2">
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleAll(true)">
+                <i class="bi bi-check2-square me-1"></i> Marcar todos
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleAll(false)">
+                <i class="bi bi-square me-1"></i> Desmarcar
+            </button>
         </div>
     </div>
-</form>
 
-<div class="card">
-    <div class="card-body table-responsive">
-        <table class="table table-striped align-middle">
+    <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
             <thead>
                 <tr>
-                    <th style="width:36px;">
-                        <input type="checkbox" onclick="ret.toggleAll(this)" />
-                    </th>
+                    <th style="width:40px"></th>
                     <th>Documento</th>
-                    <th>Classificação</th>
-                    <th style="width:180px;">Vencimento</th>
-                    <th style="width:140px;">Status</th>
-                    <th style="width:120px;"></th>
+                    <th>Classe</th>
+                    <th>Vencimento</th>
+                    <th>Status</th>
+                    <th>Destino sugerido</th>
+                    <th class="text-end">Ações</th>
                 </tr>
             </thead>
             <tbody>
-                @foreach (var r in Model)
+                @if (Model == null || Model.Count == 0)
                 {
                     <tr>
-                        <td>
-                            <input type="checkbox" class="ret-check" value="@r.DocumentId" />
-                        </td>
-                        <td>
-                            <div class="fw-semibold">@(!string.IsNullOrWhiteSpace(r.Title) ? r.Title : "(sem título)")</div>
-                            <div class="text-muted small">@r.Code</div>
-                        </td>
-                        <td>
-                            <div class="fw-semibold">@r.ClassificationCode</div>
-                            <div class="text-muted small">@r.ClassificationName</div>
-                        </td>
-                        <td>
-                            @if (r.DueAt is null)
-                            {
-                                <span class="text-muted">—</span>
-                            }
-                            else
-                            {
-                                <span>@r.DueAt.Value.ToString("dd/MM/yyyy")</span>
-                            }
-                        </td>
-                        <td>
-                            <span class="@Badge(r.Status)">@Label(r.Status)</span>
-                        </td>
-                        <td class="text-end">
-                            <a class="btn btn-sm btn-outline-secondary" href="/Ged/Details?id=@r.DocumentId">
-                                <i class="bi bi-box-arrow-up-right"></i> Abrir
-                            </a>
+                        <td colspan="7" class="text-muted py-4">
+                            Nenhum item encontrado.
                         </td>
                     </tr>
                 }
+                else
+                {
+                    foreach (var i in Model)
+                    {
+                        <tr>
+                            <td>
+                                <input class="form-check-input js-item"
+                                       type="checkbox"
+                                       value="@i.DocumentId"
+                                       onchange="refreshSelCount()" />
+                            </td>
+
+                            <td>
+                                <div class="fw-semibold">@i.Code</div>
+                                <div class="text-muted small text-truncate" style="max-width:520px">@i.Title</div>
+                            </td>
+
+                            <td>
+                                <div class="fw-semibold">@i.ClassificationCode</div>
+                                @if (!string.IsNullOrWhiteSpace(i.ClassificationName))
+                                {
+                                    <div class="text-muted small">@i.ClassificationName</div>
+                                }
+                            </td>
+
+                            <td>@(i.DueAt?.ToString("dd/MM/yyyy") ?? "—")</td>
+
+                            <td>
+                                <span class="badge @StatusBadge(i.Status)">@StatusLabel(i.Status)</span>
+                                @if (i.DaysToDue.HasValue)
+                                {
+                                    <span class="text-muted small ms-2">(@i.DaysToDue dias)</span>
+                                }
+                            </td>
+
+                            <td>
+                                <span class="badge @DestBadge(i.SuggestedDestination)">
+                                    @DestLabel(i.SuggestedDestination)
+                                </span>
+                            </td>
+
+                            <td class="text-end">
+                                <a class="btn btn-sm btn-outline-secondary" href="/Ged/Details?id=@i.DocumentId" title="Abrir documento">
+                                    <i class="bi bi-eye"></i>
+                                </a>
+                            </td>
+                        </tr>
+                    }
+                }
             </tbody>
         </table>
-
-        @if (!Model.Any())
-        {
-            <div class="text-muted">Nenhum registro encontrado para os filtros atuais.</div>
-        }
     </div>
 </div>
 
-@section Scripts {
-    <script>
-        window.ret = {
-          selectedIds() {
-            return Array.from(document.querySelectorAll(".ret-check:checked")).map(x => x.value);
-          },
-          toggleAll(master) {
-            document.querySelectorAll(".ret-check").forEach(x => x.checked = master.checked);
-          },
-          async exportCsv() {
-            const ids = this.selectedIds();
-            if(!ids.length) { alert("Selecione ao menos 1 documento."); return; }
+<script>
+    function toggleAll(mark) {
+        document.querySelectorAll('.js-item').forEach(cb => cb.checked = mark);
+        refreshSelCount();
+    }
 
-            const res = await fetch("/Retention/ExportCsv", {
-              method: "POST",
-              headers: { "Content-Type":"application/json" },
-              body: JSON.stringify({ documentIds: ids })
+    function refreshSelCount() {
+        const total = Array.from(document.querySelectorAll('.js-item')).filter(x => x.checked).length;
+        const el = document.getElementById('selCount');
+        if (!el) return;
+        el.textContent = total + ' selecionados';
+        el.classList.toggle('d-none', total <= 0);
+    }
+
+    function selectedIds() {
+        return Array.from(document.querySelectorAll('.js-item'))
+            .filter(x => x.checked)
+            .map(x => x.value);
+    }
+
+    async function exportCsv() {
+        const ids = selectedIds();
+        if (ids.length === 0) {
+            alert('Selecione ao menos 1 documento.');
+            return;
+        }
+
+        try {
+            const res = await fetch('/Retention/ExportCsv', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ documentIds: ids })
             });
 
-            if(!res.ok){
-              const j = await res.json().catch(()=>null);
-              alert(j?.error || "Falha ao exportar.");
-              return;
+            if (!res.ok) {
+                let msg = 'Falha ao exportar CSV.';
+                try {
+                    const j = await res.json();
+                    if (j && j.error) msg = j.error;
+                } catch { }
+                alert(msg);
+                return;
             }
 
-            // download
+            // baixa arquivo retornado
             const blob = await res.blob();
             const url = window.URL.createObjectURL(blob);
-            const a = document.createElement("a");
+
+            const a = document.createElement('a');
             a.href = url;
-            a.download = "";
+
+            // tenta extrair nome do header
+            const cd = res.headers.get('content-disposition');
+            let fileName = 'temporalidade.csv';
+            if (cd && cd.includes('filename=')) {
+                fileName = cd.split('filename=')[1].replaceAll('"', '').trim();
+            }
+            a.download = fileName;
+
             document.body.appendChild(a);
             a.click();
             a.remove();
+
             window.URL.revokeObjectURL(url);
-          }
+        } catch (e) {
+            alert('Erro inesperado ao exportar. Ver console/logs.');
+            console.error(e);
         }
-    </script>
-}
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', refreshSelCount);
+    } else {
+        refreshSelCount();
+    }
+</script>

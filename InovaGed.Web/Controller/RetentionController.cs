@@ -1,6 +1,7 @@
 ﻿using System.Text;
 using InovaGed.Application.Common.Context;
 using InovaGed.Application.Retention;
+using InovaGed.Infrastructure.Retention;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 
@@ -10,22 +11,15 @@ namespace InovaGed.Web.Controllers;
 public sealed class RetentionController : Controller
 {
     private readonly IRetentionJobRepository _repo;
-    private readonly RetentionRecalcService _svc;
+    private readonly RetentionRecalculateService _svc;
     private readonly IRetentionQueueQueries _queue;
     private readonly IRetentionAuditWriter _audit;
     private readonly ILogger<RetentionController> _logger;
     private readonly ICurrentContext _ctx;
 
-   
-
-
-    // ✅ Ajuste para seu contexto real depois
-    private Guid TenantId => Guid.Parse("00000000-0000-0000-0000-000000000001");
-    private Guid UserId => Guid.Empty;
-
     public RetentionController(
         IRetentionJobRepository repo,
-        RetentionRecalcService svc,
+        RetentionRecalculateService svc,
         IRetentionQueueQueries queue,
         IRetentionAuditWriter audit,
         ILogger<RetentionController> logger,
@@ -39,41 +33,78 @@ public sealed class RetentionController : Controller
         _ctx = ctx;
     }
 
+    private Guid TenantIdOrThrow()
+    {
+        var tid = _ctx.TenantId;
+        if (tid == Guid.Empty) throw new InvalidOperationException("TenantId não encontrado no contexto.");
+        return tid;
+    }
+
+    private Guid UserIdOrEmpty() => _ctx.UserId;
+
+    // GET /Retention
     [HttpGet("")]
     public async Task<IActionResult> Index(CancellationToken ct)
     {
-        var vm = await _repo.GetDashboardAsync(TenantId, dueSoonDays: 30, ct);
+        var tenantId = TenantIdOrThrow();
+
+        // seu dashboard atual
+        var vm = await _repo.GetDashboardAsync(tenantId, dueSoonDays: 30, ct);
         return View(vm);
     }
 
+    // POST /Retention/Recalculate
     [HttpPost("Recalculate")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Recalculate(CancellationToken ct)
     {
-        await _svc.RunAsync(TenantId, dueSoonDays: 30, ct);
-        TempData["Success"] = "Temporalidade recalculada com sucesso.";
-        return RedirectToAction("Index");
+        try
+        {
+            var tenantId = TenantIdOrThrow();
+
+            // ✅ recalcular (manual)
+            // Se seu service retorna dados, você pode mostrar em TempData (igual no TemporalidadeController)
+            await _svc.ExecuteAsync(tenantId, UserIdOrEmpty(), ct);
+
+            TempData["Success"] = "Temporalidade recalculada com sucesso.";
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Retention.Recalculate failed Tenant={Tenant}", _ctx.TenantId);
+            TempData["Error"] = "Falha ao recalcular temporalidade. Ver logs.";
+        }
+
+        return RedirectToAction(nameof(Index));
     }
 
-    // ✅ NOVO: Central Operacional
+    // ✅ Central Operacional
+    // GET /Retention/Queue?status=OVERDUE&dueUntil=...&q=...
     [HttpGet("Queue")]
     public async Task<IActionResult> Queue(string? status, DateTimeOffset? dueUntil, string? q, CancellationToken ct)
     {
         try
         {
-            var filter = new RetentionQueueFilter { Status = status, DueUntil = dueUntil, Q = q };
-            var rows = await _queue.ListAsync(TenantId, filter, ct);
+            var tenantId = TenantIdOrThrow();
+
+            var filter = new RetentionQueueFilter
+            {
+                Status = status,
+                DueUntil = dueUntil,
+                Q = q
+            };
+
+            var rows = await _queue.ListAsync(tenantId, filter, ct);
 
             ViewBag.Status = status;
             ViewBag.DueUntil = dueUntil;
             ViewBag.Q = q;
 
-            return View(rows);
+            return View(rows); // Views/Retention/Queue.cshtml
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Retention Queue error");
-            TempData["Error"] = "Erro ao carregar a central de temporalidade.";
+            _logger.LogError(ex, "Retention.Queue error Tenant={Tenant}", _ctx.TenantId);
+            TempData["Error"] = "Erro ao carregar a central operacional de temporalidade.";
             return View(Array.Empty<RetentionQueueRow>());
         }
     }
@@ -83,24 +114,37 @@ public sealed class RetentionController : Controller
         public Guid[] DocumentIds { get; set; } = Array.Empty<Guid>();
     }
 
-    // ✅ NOVO: Export CSV dos selecionados
+    // ✅ Export CSV dos selecionados
+    // POST /Retention/ExportCsv  (JSON body)
     [HttpPost("ExportCsv")]
+    // Se quiser antiforgery depois, você vai precisar mandar o token no header do fetch.
+    // [ValidateAntiForgeryToken]
     public async Task<IActionResult> ExportCsv([FromBody] ExportRequest req, CancellationToken ct)
     {
-        if (req.DocumentIds.Length == 0)
-            return BadRequest(new { ok = false, error = "Selecione ao menos 1 documento." });
+        try
+        {
+            var tenantId = TenantIdOrThrow();
 
-        var rows = await _queue.ListByIdsAsync(TenantId, req.DocumentIds, ct);
+            if (req?.DocumentIds == null || req.DocumentIds.Length == 0)
+                return BadRequest(new { ok = false, error = "Selecione ao menos 1 documento." });
 
-        // Auditoria (1 por doc)
-        foreach (var r in rows)
-            await _audit.WriteAsync(TenantId, UserId, r.DocumentId, "EXPORT_CSV", null, ct);
+            var rows = await _queue.ListByIdsAsync(tenantId, req.DocumentIds, ct);
 
-        var csv = BuildCsv(rows);
-        var bytes = Encoding.UTF8.GetBytes(csv);
+            // Auditoria (1 por doc)
+            foreach (var r in rows)
+                await _audit.WriteAsync(tenantId, UserIdOrEmpty(), r.DocumentId, "EXPORT_CSV", null, ct);
 
-        var fileName = $"temporalidade_{DateTime.Now:yyyyMMdd_HHmm}.csv";
-        return File(bytes, "text/csv; charset=utf-8", fileName);
+            var csv = BuildCsv(rows);
+            var bytes = Encoding.UTF8.GetBytes(csv);
+
+            var fileName = $"temporalidade_{DateTime.Now:yyyyMMdd_HHmm}.csv";
+            return File(bytes, "text/csv; charset=utf-8", fileName);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Retention.ExportCsv failed Tenant={Tenant}", _ctx.TenantId);
+            return BadRequest(new { ok = false, error = "Falha ao exportar CSV. Ver logs." });
+        }
     }
 
     private static string BuildCsv(IReadOnlyList<RetentionQueueRow> rows)
@@ -114,7 +158,9 @@ public sealed class RetentionController : Controller
         }
 
         var sb = new StringBuilder();
-        sb.AppendLine("document_id,doc_code,doc_title,class_code,class_name,due_at,status");
+
+        // ✅ incluo destino sugerido agora (já existe na sua Row)
+        sb.AppendLine("document_id,doc_code,doc_title,class_code,class_name,due_at,status,suggested_destination");
 
         foreach (var r in rows)
         {
@@ -124,7 +170,8 @@ public sealed class RetentionController : Controller
               .Append(Esc(r.ClassificationCode)).Append(',')
               .Append(Esc(r.ClassificationName)).Append(',')
               .Append(Esc(r.DueAt?.ToString("yyyy-MM-dd HH:mm"))).Append(',')
-              .Append(Esc(r.Status))
+              .Append(Esc(r.Status)).Append(',')
+              .Append(Esc(r.SuggestedDestination))
               .AppendLine();
         }
 

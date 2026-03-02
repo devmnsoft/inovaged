@@ -1,0 +1,47 @@
+﻿@model List<InovaGed.Web.Models.Temporalidade.RetentionQueueItemVM>
+
+<div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+        <thead>
+            <tr>
+                <th>Documento</th>
+                <th>Classe</th>
+                <th>Vencimento</th>
+                <th>Destino sugerido</th>
+                <th class="text-end">Ações</th>
+            </tr>
+        </thead>
+        <tbody>
+            @if (Model.Count == 0)
+            {
+                <tr><td colspan="5" class="text-muted py-3">Nenhum vencido encontrado.</td></tr>
+            }
+            else
+            {
+                foreach (var i in Model)
+                {
+                    <tr>
+                        <td>
+                            <div class="fw-semibold">@i.DocCode</div>
+                            <div class="text-muted small text-truncate" style="max-width: 520px">@i.Title</div>
+                        </td>
+                        <td>
+                            <div class="fw-semibold">@i.ClassificationCode</div>
+                            <div class="text-muted small">@i.ClassificationName</div>
+                        </td>
+                        <td>@(i.DueAt?.ToString("dd/MM/yyyy") ?? "—")</td>
+                        <td><span class="badge text-bg-warning">@i.SuggestedDestination</span></td>
+                        <td class="text-end">
+                            <a class="btn btn-sm btn-outline-secondary" href="/Ged/Details?id=@i.DocumentId">
+                                <i class="bi bi-eye"></i>
+                            </a>
+                            <a class="btn btn-sm btn-outline-primary" href="/RetentionCases">
+                                <i class="bi bi-journal-text"></i>
+                            </a>
+                        </td>
+                    </tr>
+                }
+            }
+        </tbody>
+    </table>
+</div>

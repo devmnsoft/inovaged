@@ -1,114 +1,265 @@
 ﻿@model InovaGed.Web.Controllers.TemporalidadeIndexVM
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
 
 @{
-    ViewData["Title"] = "Painel de Temporalidade";
-    string b = (Model.Bucket ?? "overdue").ToLowerInvariant();
+    ViewData["Title"] ??= "Central de Temporalidade";
+    var bucket = (Model.Bucket ?? "overdue").Trim().ToLowerInvariant();
 
-    string Active(string x) => b == x ? "active" : "";
-    string UrlB(string x) => Url.Action("Index", "Temporalidade", new { bucket = x })!;
+    string Active(string b) => bucket == b ? "active" : "";
+
+    string StatusBadge(string status)
+    {
+        status = (status ?? "").Trim().ToUpperInvariant();
+        return status switch
+        {
+            "OVERDUE" => "text-bg-danger",
+            "DUE_SOON" => "text-bg-warning",
+            "SEM_CLASSIFICACAO" => "text-bg-secondary",
+            _ => "text-bg-success" // OK
+        };
+    }
+
+    string StatusLabel(string status)
+    {
+        status = (status ?? "").Trim().ToUpperInvariant();
+        return status switch
+        {
+            "OVERDUE" => "Vencido",
+            "DUE_SOON" => "A vencer",
+            "SEM_CLASSIFICACAO" => "Sem classificação",
+            _ => "OK"
+        };
+    }
+
+    string DestBadge(string? dest)
+    {
+        dest = (dest ?? "").Trim().ToUpperInvariant();
+        return dest switch
+        {
+            "ELIMINAR" => "text-bg-danger",
+            "TRANSFERIR" => "text-bg-primary",
+            "RECOLHER" => "text-bg-dark",
+            "REAVALIAR" => "text-bg-warning",
+            _ => "text-bg-secondary"
+        };
+    }
+
+    string DestLabel(string? dest)
+    {
+        dest = (dest ?? "").Trim().ToUpperInvariant();
+        return dest switch
+        {
+            "ELIMINAR" => "Eliminar",
+            "TRANSFERIR" => "Transferir",
+            "RECOLHER" => "Recolher",
+            "REAVALIAR" => "Reavaliar",
+            "" => "—",
+            _ => dest
+        };
+    }
 }
 
 <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
     <div>
-        <h2 class="mb-1"><i class="bi bi-hourglass-split"></i> Painel de Temporalidade</h2>
+        <h2 class="mb-1"><i class="bi bi-hourglass-split me-2"></i>@ViewData["Title"]</h2>
         <div class="text-muted">
-            Lista automática de vencidos e a vencer (PoC Itens 5–6). Use “Gerar fila agora” para recalcular.
+            Fila de temporalidade (vencidos / a vencer 30/60/90) + criação de Caso/Termo.
         </div>
     </div>
 
     <div class="d-flex gap-2">
-        <form method="post" asp-action="GenerateNow" asp-controller="Temporalidade">
+        <!-- ✅ Recalcular agora -->
+        <form asp-controller="Temporalidade" asp-action="Recalculate" method="post" class="m-0">
             @Html.AntiForgeryToken()
-            <input type="hidden" name="bucket" value="@Model.Bucket" />
-            <button class="btn btn-primary" type="submit">
-                <i class="bi bi-arrow-repeat"></i> Gerar fila agora
+            <input type="hidden" name="bucket" value="@bucket" />
+            <button type="submit" class="btn btn-primary">
+                <i class="bi bi-arrow-repeat me-1"></i> Recalcular agora
+            </button>
+        </form>
+
+        <!-- ✅ Gerar fila -->
+        <form asp-controller="Temporalidade" asp-action="GenerateNow" method="post" class="m-0">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="bucket" value="@bucket" />
+            <button type="submit" class="btn btn-outline-secondary">
+                <i class="bi bi-list-check me-1"></i> Gerar fila
             </button>
         </form>
     </div>
 </div>
 
-@if (TempData["Ok"] is string ok && !string.IsNullOrWhiteSpace(ok))
+@if (TempData["Ok"] is string ok)
 {
     <div class="alert alert-success">@ok</div>
 }
-@if (TempData["Err"] is string err && !string.IsNullOrWhiteSpace(err))
+@if (TempData["Err"] is string err)
 {
     <div class="alert alert-danger">@err</div>
 }
 
+<!-- ✅ Tabs de bucket -->
 <ul class="nav nav-tabs mb-3">
-    <li class="nav-item"><a class="nav-link @Active("overdue")" href="@UrlB("overdue")">Vencidos</a></li>
-    <li class="nav-item"><a class="nav-link @Active("due30")" href="@UrlB("due30")">A vencer (30d)</a></li>
-    <li class="nav-item"><a class="nav-link @Active("due60")" href="@UrlB("due60")">A vencer (60d)</a></li>
-    <li class="nav-item"><a class="nav-link @Active("due90")" href="@UrlB("due90")">A vencer (90d)</a></li>
-    <li class="nav-item"><a class="nav-link @Active("all")" href="@UrlB("all")">Todos</a></li>
+    <li class="nav-item">
+        <a class="nav-link @Active("overdue")" href="/Temporalidade?bucket=overdue">
+            <i class="bi bi-exclamation-triangle me-1"></i> Vencidos
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link @Active("due30")" href="/Temporalidade?bucket=due30">
+            <i class="bi bi-calendar2-event me-1"></i> A vencer (30)
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link @Active("due60")" href="/Temporalidade?bucket=due60">
+            <i class="bi bi-calendar2-event me-1"></i> A vencer (60)
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link @Active("due90")" href="/Temporalidade?bucket=due90">
+            <i class="bi bi-calendar2-event me-1"></i> A vencer (90)
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link @Active("all")" href="/Temporalidade?bucket=all">
+            <i class="bi bi-card-list me-1"></i> Todos
+        </a>
+    </li>
 </ul>
 
-<form method="post" asp-action="CreateTerm" asp-controller="Temporalidade">
+<!-- ✅ Form principal para seleção + Criar Termo -->
+<form asp-controller="Temporalidade" asp-action="CreateTerm" method="post" id="frmCreateTerm" onsubmit="return validateSelection();">
     @Html.AntiForgeryToken()
-    <input type="hidden" name="bucket" value="@Model.Bucket" />
+    <input type="hidden" name="bucket" value="@bucket" />
 
-    <div class="card">
+    <div class="card shadow-sm">
         <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-            <strong>Itens (@Model.Items.Count)</strong>
+            <div class="d-flex align-items-center gap-2">
+                <span class="badge text-bg-primary">@((Model.Items?.Count ?? 0))</span>
+                <span class="text-muted">itens na fila</span>
+                <span id="selCount" class="badge text-bg-secondary ms-2 d-none">0 selecionados</span>
+            </div>
 
-            <button class="btn btn-outline-secondary btn-sm" type="submit" @(Model.Items.Count == 0 ? "disabled" : "")>
-                <i class="bi bi-file-earmark-text"></i> Marcar para Termo (IN_TERM)
-            </button>
-        </div>
+            <div class="d-flex gap-2">
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleAll(true)">
+                    <i class="bi bi-check2-square me-1"></i> Marcar todos
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleAll(false)">
+                    <i class="bi bi-square me-1"></i> Desmarcar
+                </button>
 
-        <div class="card-body p-0">
-            <div class="table-responsive">
-                <table class="table table-striped table-hover align-middle mb-0">
-                    <thead>
-                        <tr>
-                            <th style="width:42px;">
-                                <input type="checkbox" onclick="toggleAll(this)" />
-                            </th>
-                            <th>Documento</th>
-                            <th style="width:160px;">Classe</th>
-                            <th style="width:190px;">Vencimento</th>
-                            <th style="width:120px;">Status</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @if (Model.Items.Count == 0)
-                        {
-                            <tr>
-                                <td colspan="5" class="p-4 text-muted">Sem itens no filtro atual.</td>
-                            </tr>
-                        }
-                        else
-                        {
-                            foreach (var it in Model.Items)
-                            {
-                                <tr>
-                                    <td>
-                                        <input type="checkbox" name="selectedQueueIds" value="@it.Id" />
-                                    </td>
-                                    <td style="font-family:monospace;">
-                                        @it.DocumentId
-                                    </td>
-                                    <td>@(it.ClassCode ?? "-")</td>
-                                    <td>@it.DueAt</td>
-                                    <td><span class="badge bg-warning text-dark">@it.Status</span></td>
-                                </tr>
-                            }
-                        }
-                    </tbody>
-                </table>
+                <button type="submit" class="btn btn-sm btn-success">
+                    <i class="bi bi-file-earmark-text me-1"></i> Criar Caso/Termo (selecionados)
+                </button>
             </div>
         </div>
 
-        <div class="card-footer text-muted" style="font-size:12px;">
-            PoC: selecione vencidos → marcar IN_TERM → (na próxima etapa) criar Case e gerar RetentionTerm.
+        <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th style="width:40px"></th>
+                        <th>Documento</th>
+                        <th>Classe</th>
+                        <th>Vencimento</th>
+                        <th>Status</th>
+                        <th>Destino sugerido</th>
+                        <th class="text-end">Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (Model.Items == null || Model.Items.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="7" class="text-muted py-4">
+                                Nenhum item encontrado para este bucket.
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+                        foreach (var i in Model.Items)
+                        {
+                            var docId = i.DocumentId;
+
+                            <tr>
+                                <td>
+                                    <input class="form-check-input js-item"
+                                           type="checkbox"
+                                           name="selectedDocumentIds"
+                                           value="@docId"
+                                           onchange="refreshSelCount()" />
+                                </td>
+
+                                <td>
+                                    <div class="fw-semibold">@i.Code</div>
+                                    <div class="text-muted small text-truncate" style="max-width:520px">@i.Title</div>
+                                </td>
+
+                                <td>
+                                    <div class="fw-semibold">@i.ClassificationCode</div>
+                                    @if (!string.IsNullOrWhiteSpace(i.ClassificationName))
+                                    {
+                                        <div class="text-muted small">@i.ClassificationName</div>
+                                    }
+                                </td>
+
+                                <td>@(i.DueAt?.ToString("dd/MM/yyyy") ?? "—")</td>
+
+                                <td>
+                                    <span class="badge @StatusBadge(i.Status)">@StatusLabel(i.Status)</span>
+                                    @if (i.DaysToDue.HasValue)
+                                    {
+                                        <span class="text-muted small ms-2">(@i.DaysToDue dias)</span>
+                                    }
+                                </td>
+
+                                <td>
+                                    <span class="badge @DestBadge(i.SuggestedDestination)">
+                                        @DestLabel(i.SuggestedDestination)
+                                    </span>
+                                </td>
+
+                                <td class="text-end">
+                                    <a class="btn btn-sm btn-outline-secondary" href="/Ged/Details?id=@docId" title="Abrir documento">
+                                        <i class="bi bi-eye"></i>
+                                    </a>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
         </div>
     </div>
 </form>
 
 <script>
-    function toggleAll(master) {
-        const boxes = document.querySelectorAll('input[name="selectedQueueIds"]');
-        boxes.forEach(b => b.checked = master.checked);
+    function toggleAll(mark) {
+        document.querySelectorAll('.js-item').forEach(cb => cb.checked = mark);
+        refreshSelCount();
+    }
+
+    function refreshSelCount() {
+        const total = Array.from(document.querySelectorAll('.js-item')).filter(x => x.checked).length;
+        const el = document.getElementById('selCount');
+        if (!el) return;
+        el.textContent = total + ' selecionados';
+        el.classList.toggle('d-none', total <= 0);
+    }
+
+    function validateSelection() {
+        const total = Array.from(document.querySelectorAll('.js-item')).filter(x => x.checked).length;
+        if (total <= 0) {
+            alert('Selecione ao menos 1 item da fila.');
+            return false;
+        }
+        return true;
+    }
+
+    // inicializa contagem ao carregar
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', refreshSelCount);
+    } else {
+        refreshSelCount();
     }
 </script>

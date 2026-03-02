@@ -1,7 +1,7 @@
-﻿using System.Security.Claims;
-using InovaGed.Application.Common.Context; // se existir; senão remova
+﻿using InovaGed.Application.Common.Context;
 using InovaGed.Application.Retention;
 using InovaGed.Application.RetentionCases;
+using InovaGed.Infrastructure.Retention;
 using Microsoft.AspNetCore.Mvc;
 
 namespace InovaGed.Web.Controllers;
@@ -9,126 +9,192 @@ namespace InovaGed.Web.Controllers;
 [Route("[controller]")]
 public sealed class TemporalidadeController : Controller
 {
+    private readonly RetentionRecalculateService _svc;
     private readonly IRetentionQueueRepository _repo;
     private readonly IRetentionCaseRepository _cases;
     private readonly IRetentionQueueJob _job;
     private readonly ILogger<TemporalidadeController> _logger;
-    private readonly ICurrentContext? _ctx;
+    private readonly ICurrentContext _ctx;
 
     public TemporalidadeController(
+        RetentionRecalculateService svc,
         IRetentionQueueRepository repo,
-          IRetentionCaseRepository cases,
+        IRetentionCaseRepository cases,
         IRetentionQueueJob job,
         ILogger<TemporalidadeController> logger,
-        IServiceProvider sp)
+        ICurrentContext ctx)
     {
+        _svc = svc;
         _repo = repo;
         _cases = cases;
         _job = job;
         _logger = logger;
-        _ctx = sp.GetService(typeof(ICurrentContext)) as ICurrentContext;
+        _ctx = ctx;
     }
 
     private Guid TenantIdOrThrow()
     {
-        var tid = _ctx?.TenantId ?? Guid.Empty;
-        if (tid == Guid.Empty) throw new InvalidOperationException("TenantId não encontrado no _ctx.");
+        var tid = _ctx.TenantId;
+        if (tid == Guid.Empty)
+            throw new InvalidOperationException("TenantId não encontrado no contexto.");
         return tid;
     }
 
-    private Guid? UserId()
+    private Guid UserIdOrEmpty() => _ctx.UserId; // pode ser Guid.Empty mesmo (PoC)
+
+    // ✅ Normaliza bucket e garante default
+    private static string NormalizeBucket(string? bucket)
     {
-        var uid = _ctx?.UserId;
-        if (uid.HasValue && uid.Value != Guid.Empty) return uid;
+        bucket = (bucket ?? "").Trim().ToLowerInvariant();
 
-        var s = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
-        return Guid.TryParse(s, out var g) ? g : null;
+        // ✅ ajuste aqui se o seu repo aceitar nomes diferentes
+        // buckets típicos: overdue | due30 | due60 | due90 | all
+        return bucket switch
+        {
+            "" => "overdue",
+            "vencidos" => "overdue",
+            "overdue" => "overdue",
+
+            "30" => "due30",
+            "due30" => "due30",
+            "a_vencer_30" => "due30",
+
+            "60" => "due60",
+            "due60" => "due60",
+            "a_vencer_60" => "due60",
+
+            "90" => "due90",
+            "due90" => "due90",
+            "a_vencer_90" => "due90",
+
+            "all" => "all",
+            _ => "overdue"
+        };
     }
-
-    private string? UserName() => _ctx?.UserDisplay ?? User.Identity?.Name;
 
     // GET /Temporalidade?bucket=overdue
     [HttpGet("")]
     public async Task<IActionResult> Index([FromQuery] string? bucket, CancellationToken ct)
     {
-        bucket ??= "overdue";
+        var b = NormalizeBucket(bucket);
         var tenantId = TenantIdOrThrow();
-        var rows = await _repo.ListQueueAsync(tenantId, bucket, ct);
+
+        var rows = await _repo.ListQueueAsync(tenantId, b, ct);
 
         var vm = new TemporalidadeIndexVM
         {
-            Bucket = bucket,
+            Bucket = b,
             Items = rows
         };
 
-        return View(vm); // Views/Temporalidade/Index.cshtml
+        return View(vm);
     }
 
-    // POST /Temporalidade/GenerateNow
-    [HttpPost("GenerateNow")]
+    /// <summary>
+    /// ✅ Botão manual "Recalcular agora"
+    /// - Mantém o bucket atual ao voltar
+    /// - Usa TenantId/UserId do contexto
+    /// </summary>
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> GenerateNow([FromForm] string bucket, CancellationToken ct)
+    [HttpPost("Recalculate")]
+    public async Task<IActionResult> Recalculate([FromForm] string? bucket, CancellationToken ct)
     {
+        var b = NormalizeBucket(bucket);
+
         try
         {
             var tenantId = TenantIdOrThrow();
-            var inserted = await _job.RunAsync(tenantId, UserId(), UserName(), ct);
-            TempData["Ok"] = $"Fila gerada. Novos itens inseridos: {inserted}.";
+            var userId = UserIdOrEmpty();
+
+            var r = await _svc.ExecuteAsync(tenantId, userId, ct);
+
+            TempData["Ok"] = r.CaseId.HasValue
+                ? $"Recalcular concluído: {r.UpdatedDocs} docs atualizados. Caso gerado: {r.CaseId}. Itens: {r.CreatedItems}."
+                : $"Recalcular concluído: {r.UpdatedDocs} docs atualizados. Nenhum vencido novo.";
+
+            // ✅ volta para o bucket onde o usuário estava
+            return RedirectToAction(nameof(Index), new { bucket = b });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "GenerateNow failed");
+            _logger.LogError(ex, "Manual Recalculate failed Tenant={Tenant}", _ctx.TenantId);
+            TempData["Err"] = ex.Message;
+            return RedirectToAction(nameof(Index), new { bucket = b });
+        }
+    }
+
+    /// <summary>
+    /// ✅ Gera/atualiza a fila (se você tiver processo separado de geração)
+    /// </summary>
+    [HttpPost("GenerateNow")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> GenerateNow([FromForm] string? bucket, CancellationToken ct)
+    {
+        var b = NormalizeBucket(bucket);
+
+        try
+        {
+            var tenantId = TenantIdOrThrow();
+
+            var inserted = await _job.RunAsync(
+                tenantId,
+                _ctx.UserId == Guid.Empty ? null : _ctx.UserId,
+                _ctx.UserDisplay,
+                ct);
+
+            TempData["Ok"] = $"Fila gerada/atualizada. Novos itens inseridos: {inserted}.";
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "GenerateNow failed Tenant={Tenant}", _ctx.TenantId);
             TempData["Err"] = "Falha ao gerar fila. Ver logs.";
         }
 
-        return RedirectToAction(nameof(Index), new { bucket });
+        return RedirectToAction(nameof(Index), new { bucket = b });
     }
 
-    // POST /Temporalidade/CreateTerm
-    // PoC: cria termo a partir de um "case" — na prática você pode:
-    // 1) Agrupar documentos vencidos em um Case de Retenção (CaseId)
-    // 2) Chamar RetentionTerms/CreateFromCase
-    //
-    // Aqui vou deixar um “hook”: você seleciona documentos, cria case e redireciona.
+    /// <summary>
+    /// ✅ Cria Caso de Destinação a partir dos itens selecionados e redireciona para gerar Termo
+    /// </summary>
     [HttpPost("CreateTerm")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> CreateTerm(
-        [FromForm] string bucket,
-        [FromForm] Guid[] selectedQueueIds,
+        [FromForm] string? bucket,
+        [FromForm] Guid[] selectedDocumentIds,
         CancellationToken ct)
     {
-        if (selectedQueueIds == null || selectedQueueIds.Length == 0)
+        var b = NormalizeBucket(bucket);
+
+        if (selectedDocumentIds == null || selectedDocumentIds.Length == 0)
         {
             TempData["Err"] = "Selecione ao menos 1 item da fila.";
-            return RedirectToAction("Index", new { bucket });
+            return RedirectToAction(nameof(Index), new { bucket = b });
         }
 
         try
         {
-            // 1) cria case a partir da fila
-            var title = $"Case de Destinação (bucket={bucket})";
-            var notes = $"Gerado a partir do painel de temporalidade em {DateTimeOffset.Now:dd/MM/yyyy HH:mm}.";
+            var tenantId = TenantIdOrThrow();
+            var userId = UserIdOrEmpty();
 
-            var caseId = await _cases.CreateFromQueueAsync(
-                tenantId: _ctx.TenantId,
-                userId: _ctx.UserId == Guid.Empty ? null : _ctx.UserId,
-                userDisplay: _ctx.UserDisplay,
-                queueIds: selectedQueueIds,
-                title: title,
-                notes: notes,
-                ct: ct);
+            var req = new CreateRetentionCaseRequest
+            {
+                DocumentIds = selectedDocumentIds.Distinct().ToArray(),
+                Title = $"Case de Destinação (bucket={b})",
+                Notes = $"Gerado via Temporalidade em {DateTimeOffset.Now:dd/MM/yyyy HH:mm}."
+            };
 
-            TempData["Ok"] = $"Case criado com sucesso. CaseId={caseId}";
+            var caseId = await _cases.CreateAsync(tenantId, userId, req, ct);
 
-            // 2) redireciona para o módulo RetentionTerms criar o termo a partir do case
-            // ✅ este endpoint você já vai ter no RetentionTerms (vamos ajustar se precisar):
+            TempData["Ok"] = "Caso criado com sucesso. Abrindo criação do termo...";
+
+            // ✅ seu controller de termos é [Route("RetentionTerms")]
             return Redirect($"/RetentionTerms/CreateFromCase?caseId={caseId}");
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "CreateTerm failed Tenant={Tenant}", _ctx.TenantId);
-            TempData["Err"] = "Falha ao criar o Case/Termo. Ver logs.";
-            return RedirectToAction("Index", new { bucket });
+            TempData["Err"] = "Falha ao criar Caso/Termo. Ver logs.";
+            return RedirectToAction(nameof(Index), new { bucket = b });
         }
     }
 }
@@ -137,4 +203,11 @@ public sealed class TemporalidadeIndexVM
 {
     public string Bucket { get; set; } = "overdue";
     public IReadOnlyList<RetentionQueueRow> Items { get; set; } = Array.Empty<RetentionQueueRow>();
+
+    // ✅ opcional: para facilitar a view (tabs)
+    public bool IsOverdue => string.Equals(Bucket, "overdue", StringComparison.OrdinalIgnoreCase);
+    public bool IsDue30 => string.Equals(Bucket, "due30", StringComparison.OrdinalIgnoreCase);
+    public bool IsDue60 => string.Equals(Bucket, "due60", StringComparison.OrdinalIgnoreCase);
+    public bool IsDue90 => string.Equals(Bucket, "due90", StringComparison.OrdinalIgnoreCase);
+    public bool IsAll => string.Equals(Bucket, "all", StringComparison.OrdinalIgnoreCase);
 }

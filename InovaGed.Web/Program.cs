@@ -1,23 +1,29 @@
 ﻿using InovaGed.Application;
+using InovaGed.Application.Audit;
 using InovaGed.Application.Auditing;
 using InovaGed.Application.Auth;
 using InovaGed.Application.Classification;
+using InovaGed.Application.Common.Context;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Common.Storage;
 using InovaGed.Application.Documents;
-using InovaGed.Application.Documents.Workflow;
 using InovaGed.Application.Ged;
 using InovaGed.Application.Identity;
 using InovaGed.Application.Ocr;
 using InovaGed.Application.Pacs;
+using InovaGed.Application.Reports;
 using InovaGed.Application.Retention;
+using InovaGed.Application.RetentionCases;
+using InovaGed.Application.RetentionTerms;
 using InovaGed.Application.Search;
+using InovaGed.Application.Signatures;
 using InovaGed.Application.Users;
 using InovaGed.Application.Workflow;
 using InovaGed.Infrastructure.Audit;
 using InovaGed.Infrastructure.Auditing;
 using InovaGed.Infrastructure.Auth;
 using InovaGed.Infrastructure.Classification;
+using InovaGed.Infrastructure.ClassificationPlans;
 using InovaGed.Infrastructure.Common.Database;
 using InovaGed.Infrastructure.Documents;
 using InovaGed.Infrastructure.Ged;
@@ -25,24 +31,27 @@ using InovaGed.Infrastructure.Instruments;
 using InovaGed.Infrastructure.Ocr;
 using InovaGed.Infrastructure.Pacs;
 using InovaGed.Infrastructure.Preview;
+using InovaGed.Infrastructure.Reports;
 using InovaGed.Infrastructure.Retention;
+using InovaGed.Infrastructure.RetentionCases;
+using InovaGed.Infrastructure.RetentionTerms;
 using InovaGed.Infrastructure.Search;
 using InovaGed.Infrastructure.Security;
+using InovaGed.Infrastructure.Signatures;
 using InovaGed.Infrastructure.Storage;
 using InovaGed.Infrastructure.Users;
 using InovaGed.Infrastructure.Workflow;
 using InovaGed.Web.Auth;
+using InovaGed.Web.Common.Context;
 using InovaGed.Web.Security;
-
 using Microsoft.AspNetCore.Authentication.Cookies;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // =======================================================
-// MVC + Razor (DEV com runtime compilation)
+// MVC + Razor
 // =======================================================
 var mvc = builder.Services.AddControllersWithViews();
-
 #if DEBUG
 mvc.AddRazorRuntimeCompilation();
 #endif
@@ -54,87 +63,81 @@ builder.Services.AddHttpContextAccessor();
 // =======================================================
 builder.Services.AddScoped<ICurrentUser, CurrentUser>();
 
+// ✅ ICurrentContext (TenantId / UserId / UserDisplay)
+builder.Services.AddScoped<ICurrentContext, CurrentContext>();
 
 // =======================================================
 // Database (PostgreSQL)
 // appsettings.json -> ConnectionStrings:DefaultConnection
 // =======================================================
-builder.Services.AddSingleton<IDbConnectionFactory>(sp =>
+builder.Services.AddSingleton<IDbConnectionFactory>(_ =>
 {
     var cs = builder.Configuration.GetConnectionString("DefaultConnection")
-        ?? throw new InvalidOperationException(
-            "ConnectionString 'DefaultConnection' não configurada.");
-
+        ?? throw new InvalidOperationException("ConnectionString 'DefaultConnection' não configurada.");
     return new NpgsqlConnectionFactory(cs);
 });
 
 // =======================================================
-// Storage Local
-// appsettings.json -> Storage:Local:RootPath
+// Storage
 // =======================================================
-builder.Services.Configure<LocalStorageOptions>(
-    builder.Configuration.GetSection("Storage:Local"));
-
+builder.Services.Configure<LocalStorageOptions>(builder.Configuration.GetSection("Storage:Local"));
 builder.Services.AddScoped<IFileStorage, LocalFileStorage>();
 
-builder.Services.Configure<InovaGed.Infrastructure.Preview.LibreOfficeOptions>(
-    builder.Configuration.GetSection("LibreOffice"));
+builder.Services.Configure<InovaGed.Infrastructure.Preview.LibreOfficeOptions>(builder.Configuration.GetSection("LibreOffice"));
+builder.Services.Configure<LibreOfficeOptions>(builder.Configuration.GetSection("Preview"));
+builder.Services.AddScoped<IPreviewGenerator, LibreOfficePreviewGenerator>();
 
+builder.Services.Configure<StorageLocalOptions>(builder.Configuration.GetSection("Storage:Local"));
 
 // =======================================================
-// OCR / Preview pipeline (usado pelo OcrWorker)
+// OCR / Preview pipeline
 // =======================================================
 builder.Services.AddScoped<IOcrService, OcrMyPdfOcrService>();
 builder.Services.AddScoped<IPdfTextExtractor, PopplerPdfTextExtractor>();
+
 builder.Services.AddScoped<IDocumentClassifier, RuleBasedDocumentClassifier>();
 builder.Services.AddScoped<IDocumentClassificationRepository, DocumentClassificationRepository>();
-builder.Services.AddScoped<IDocumentTypeQueries, DocumentTypeQueries>(); // se ainda não existir, eu te   
+builder.Services.AddScoped<IDocumentTypeQueries, DocumentTypeQueries>();
 builder.Services.AddScoped<IDocumentClassificationQueries, DocumentClassificationQueries>();
 builder.Services.AddScoped<DocumentClassificationAppService>();
+
 builder.Services.AddScoped<IDocumentCommands, DocumentCommands>();
 builder.Services.AddScoped<IDocumentTypeCatalogQueries, DocumentTypeCatalogQueries>();
-builder.Services.Configure<LibreOfficeOptions>(builder.Configuration.GetSection("Preview"));
-builder.Services.AddScoped<IPreviewGenerator, LibreOfficePreviewGenerator>();
 builder.Services.AddScoped<IFolderClassificationRuleRepository, FolderClassificationRuleRepository>();
 builder.Services.AddScoped<IOcrTextProvider, DbOcrTextProvider>();
 builder.Services.AddScoped<IOcrAutoClassificationService, OcrAutoClassificationService>();
 builder.Services.AddScoped<IDocumentClassificationCommands, DocumentClassificationCommands>();
+
 builder.Services.AddScoped<IClassificationPendingCounter, ClassificationPendingCounter>();
 builder.Services.AddScoped<IClassificationDashboardQueries, ClassificationDashboardQueries>();
 builder.Services.AddScoped<IDocumentClassificationAuditQueries, DocumentClassificationAuditQueries>();
-builder.Services.AddScoped<IUserAdminRepository, UserAdminRepository>();
-builder.Services.AddScoped<IUserAdminQueries, UserAdminQueries>();
-builder.Services.AddScoped<IDocumentWorkflowRepository, DocumentWorkflowRepository>();
-builder.Services.AddScoped<IDocumentWorkflowService, DocumentWorkflowService>();
-builder.Services.AddScoped<IPermissionChecker, AllowAllPermissionChecker>();
+
 builder.Services.AddScoped<SimpleTextDocumentTypeSuggester>();
 builder.Services.AddScoped<HybridDocumentTypeSuggester>();
 
-builder.Services.Configure<PacsIntegrationOptions>(
-    builder.Configuration.GetSection("PacsIntegration"));
-
-builder.Services.Configure<StorageLocalOptions>(builder.Configuration.GetSection("Storage:Local"));
-
+// =======================================================
+// PACS
+// =======================================================
+builder.Services.Configure<PacsIntegrationOptions>(builder.Configuration.GetSection("PacsIntegration"));
 builder.Services.AddScoped<ITicketRepository, TicketRepository>();
 builder.Services.AddScoped<IOcrQueue, OcrQueue>();
 builder.Services.AddScoped<PacsIntegrationService>();
 
+// =======================================================
+// Seed
+// =======================================================
 builder.Services.AddHostedService<InovaGed.Infrastructure.Setup.SystemSeedHostedService>();
-builder.Services.AddScoped<InovaGed.Application.ClassificationPlans.IClassificationPlanRepository,
-                          InovaGed.Infrastructure.ClassificationPlans.ClassificationPlanRepository>();
 
-builder.Services.AddScoped<InovaGed.Application.RetentionCases.IRetentionCaseExecutionRepository,
-                          InovaGed.Infrastructure.RetentionCases.RetentionCaseExecutionRepository>();
-
-builder.Services.AddScoped<InovaGed.Application.RetentionCases.RetentionCaseExecutionService>();
-
-builder.Services.AddScoped<InovaGed.Application.RetentionTerms.IRetentionTermRepository,
-                          InovaGed.Infrastructure.RetentionTerms.RetentionTermRepository>();
+// =======================================================
+// Classification Plan
+// =======================================================
+builder.Services.AddScoped<InovaGed.Application.ClassificationPlans.IClassificationPlanRepository, ClassificationPlanRepository>();
 
 // =======================================================
 // Search
 // =======================================================
 builder.Services.AddScoped<IDocumentSearchQueries, DocumentSearchQueries>();
+builder.Services.AddScoped<IDocumentSearchTextQueries, DocumentSearchTextQueries>();
 
 // =======================================================
 // Auth
@@ -148,7 +151,7 @@ builder.Services.AddScoped<IFolderQueries, FolderQueries>();
 builder.Services.AddScoped<IDocumentQueries, DocumentQueries>();
 builder.Services.AddScoped<IDocumentWorkflowQueries, DocumentWorkflowQueries>();
 builder.Services.AddScoped<IWorkflowQueries, WorkflowQueries>();
-builder.Services.AddScoped<SimpleTextDocumentTypeSuggester>();
+
 // =======================================================
 // GED – Commands
 // =======================================================
@@ -156,58 +159,85 @@ builder.Services.AddScoped<IFolderCommands, FolderCommands>();
 builder.Services.AddScoped<IDocumentWorkflowCommands, DocumentWorkflowCommands>();
 builder.Services.AddScoped<IWorkflowCommands, WorkflowCommands>();
 
-builder.Services.AddScoped<IDocumentSearchTextQueries, DocumentSearchTextQueries>();
-
-
 // =======================================================
-// OCR Jobs + Worker (SOMENTE ESTE WORKER)
+// OCR Jobs + Worker
 // =======================================================
 builder.Services.AddScoped<IOcrJobRepository, OcrJobRepository>();
-var ocrEnabled = builder.Configuration.GetValue<bool>("OcrWorker:Enabled");
-if (ocrEnabled)
+if (builder.Configuration.GetValue<bool>("OcrWorker:Enabled"))
 {
     builder.Services.AddHostedService<OcrWorker>();
 }
 
 // =======================================================
-// Document Write + Audit
+// Document Write + AuditLog (não confundir com IAuditWriter)
 // =======================================================
 builder.Services.AddScoped<ICurrentUserAccessor, CurrentUserAccessorAdapter>();
-
 builder.Services.AddScoped<IDocumentWriteRepository, DocumentWriteRepository>();
 builder.Services.AddScoped<IAuditLogWriter, AuditLogWriter>();
 builder.Services.AddScoped<IOcrStatusQueries, OcrStatusQueries>();
 
-// Retention
-builder.Services.AddScoped<InovaGed.Application.Retention.IRetentionJobRepository,
-                          InovaGed.Infrastructure.Retention.RetentionJobRepository>();
+// =======================================================
+// Retention (Dashboard + Queue + Job + Worker diário)
+// =======================================================
+builder.Services.AddScoped<IRetentionJobRepository, RetentionJobRepository>();
+builder.Services.AddScoped<RetentionRecalcService>();
+builder.Services.AddScoped<IRetentionRecalcService, RetentionRecalcService>();
 
-builder.Services.AddScoped<InovaGed.Application.Retention.RetentionRecalcService>();
+builder.Services.AddScoped<IRetentionQueueQueries, RetentionQueueQueries>();
+builder.Services.AddScoped<IRetentionAuditWriter, RetentionAuditWriter>();
 
-builder.Services.AddHostedService<InovaGed.Infrastructure.Retention.RetentionDailyWorker>();
+// ✅ REPOSITORY da fila (Geração da fila)
+builder.Services.AddScoped<IRetentionQueueRepository, RetentionQueueRepository>();
 
-builder.Services.AddScoped<InovaGed.Application.Retention.IRetentionQueueQueries,
-                          InovaGed.Infrastructure.Retention.RetentionQueueQueries>();
+// ✅ JOB (Controller Temporalidade depende da INTERFACE)
+builder.Services.AddScoped<IRetentionQueueJob, RetentionQueueJob>();
 
-builder.Services.AddScoped<InovaGed.Application.Retention.IRetentionAuditWriter,
-                          InovaGed.Infrastructure.Retention.RetentionAuditWriter>();
+// Worker diário (HostedService)
+builder.Services.AddHostedService<RetentionDailyWorker>();
 
-builder.Services.AddScoped<InovaGed.Application.RetentionCases.IRetentionCaseRepository,
-                          InovaGed.Infrastructure.RetentionCases.RetentionCaseRepository>();
+// =======================================================
+// Retention Cases
+// =======================================================
+builder.Services.AddScoped<IRetentionCaseRepository, RetentionCaseRepository>();
+builder.Services.AddScoped<IRetentionCaseExecutionRepository, RetentionCaseExecutionRepository>();
+builder.Services.AddScoped<RetentionCaseExecutionService>();
 
-builder.Services.AddScoped<InovaGed.Application.Reports.IDispositionReportsQueries,
-                          InovaGed.Infrastructure.Reports.DispositionReportsQueries>();
+// =======================================================
+// Retention Terms
+// =======================================================
+builder.Services.AddScoped<IRetentionTermRepository, RetentionTermRepository>();
+builder.Services.AddScoped<ITermPdfGenerator, LibreOfficeTermPdfGenerator>();
 
-builder.Services.AddScoped<InovaGed.Application.Signatures.ISignatureProvider,
-                          InovaGed.Infrastructure.Signatures.InternalSignatureProvider>();
+// =======================================================
+// Reports / Signatures
+// =======================================================
+builder.Services.AddScoped<IDispositionReportsQueries, DispositionReportsQueries>();
+builder.Services.AddScoped<ISignatureProvider, InternalSignatureProvider>();
 
-builder.Services.AddHttpContextAccessor();
-builder.Services.AddScoped<InovaGed.Application.Common.Context.ICurrentContext,
-                          InovaGed.Web.Common.Context.CurrentContext>();
+// =======================================================
+// Users / Permissions
+// =======================================================
+builder.Services.AddScoped<IUserAdminRepository, UserAdminRepository>();
+builder.Services.AddScoped<IUserAdminQueries, UserAdminQueries>();
 
-builder.Services.AddScoped<InovaGed.Infrastructure.RetentionTerms.ITermPdfGenerator,
-                          InovaGed.Infrastructure.RetentionTerms.LibreOfficeTermPdfGenerator>();
+builder.Services.AddScoped<IPermissionChecker, AllowAllPermissionChecker>();
+builder.Services.AddScoped<PermissionService>();
+builder.Services.AddScoped<InovaGed.Infrastructure.Retention.RetentionRecalculateService>();
 
+
+// =======================================================
+// Instruments (se você realmente usa DI por classe concreta, ok)
+// =======================================================
+builder.Services.AddScoped<InstrumentRepository>();
+
+// =======================================================
+// AUDITORIA (a que o RetentionQueueJob usa)
+// =======================================================
+builder.Services.AddScoped<IAuditWriter, AuditWriter>();
+
+// =======================================================
+// Authorization Policies
+// =======================================================
 builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy(Policies.CanViewRetention,
@@ -220,34 +250,11 @@ builder.Services.AddAuthorization(options =>
         p => p.RequireRole(Roles.Admin, Roles.Archivist));
 
     options.AddPolicy(Policies.CanExecuteFinal,
-        p => p.RequireRole(Roles.Admin)); // só admin por padrão
+        p => p.RequireRole(Roles.Admin));
 });
 
-
-builder.Services.AddScoped<InstrumentRepository>();
-builder.Services.AddScoped<AuditWriter>();
-builder.Services.AddScoped<PermissionService>();
-
-builder.Services.AddScoped<RetentionQueueRepository>();
-builder.Services.AddScoped<RetentionQueueJob>();
-builder.Services.AddScoped<InovaGed.Application.Retention.IRetentionQueueQueries, InovaGed.Infrastructure.Retention.RetentionQueueQueries>();
-// Scoped (ok)
-builder.Services.AddScoped<InovaGed.Application.Retention.RetentionRecalcService>();
-
-// HostedService (sempre singleton) (ok)
-builder.Services.AddHostedService<InovaGed.Infrastructure.Retention.RetentionDailyWorker>();
-
-builder.Services.AddScoped<IRetentionRecalcService, RetentionRecalcService>();
- 
-builder.Services.AddHostedService<RetentionDailyWorker>();
 // =======================================================
-// Application Services
-// =======================================================
-builder.Services.AddScoped<DocumentAppService>();
-
-
-// =======================================================
-// Authentication / Authorization
+// Authentication
 // =======================================================
 builder.Services
     .AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
@@ -259,16 +266,16 @@ builder.Services
         opt.ExpireTimeSpan = TimeSpan.FromHours(8);
     });
 
-builder.Services.AddAuthorization();
+// =======================================================
+// Application Services
+// =======================================================
+builder.Services.AddScoped<DocumentAppService>();
 
 // =======================================================
-// Build
+// Build + Pipeline
 // =======================================================
 var app = builder.Build();
 
-// =======================================================
-// Pipeline
-// =======================================================
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Home/Error");
@@ -283,9 +290,6 @@ app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();
 
-// =======================================================
-// Routes
-// =======================================================
 app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Home}/{action=Index}/{id?}");

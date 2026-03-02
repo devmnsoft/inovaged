@@ -1,59 +1,124 @@
-﻿@model IReadOnlyList<InovaGed.Application.RetentionTerms.RetentionTermRow>
+﻿@model InovaGed.Web.Controllers.TemporalidadeIndexVM
+
 @{
-    ViewData["Title"] = "Termos";
+    ViewData["Title"] = "Painel de Temporalidade";
+    string b = (Model.Bucket ?? "overdue").ToLowerInvariant();
+
+    string Active(string x) => b == x ? "active" : "";
+    string UrlB(string x) => Url.Action("Index", "Temporalidade", new { bucket = x })!;
 }
 
-@if (TempData["Error"] is string err)
-{
-     <div class="alert alert-danger">@err</div>
-}
-@if (TempData["Success"] is string ok)
-{
-     <div class="alert alert-success">@ok</div>
-}
-
-<div class="d-flex justify-content-between align-items-start mb-3">
+<div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
     <div>
-        <h2 class="mb-0">Termos de Destinação</h2>
-        <div class="text-muted">Crie termos a partir de casos EXECUTED/APPROVED e conduza assinatura/execução final.</div>
+        <h2 class="mb-1"><i class="bi bi-hourglass-split"></i> Painel de Temporalidade</h2>
+        <div class="text-muted">
+            Lista automática de vencidos e a vencer (PoC Itens 5–6). Use “Gerar fila agora” para recalcular.
+        </div>
     </div>
+
     <div class="d-flex gap-2">
-        <a class="btn btn-outline-secondary" href="/RetentionCases"><i class="bi bi-folder2-open"></i> Casos</a>
+        <form method="post" asp-action="GenerateNow" asp-controller="Temporalidade">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="bucket" value="@Model.Bucket" />
+            <button class="btn btn-primary" type="submit">
+                <i class="bi bi-arrow-repeat"></i> Gerar fila agora
+            </button>
+        </form>
     </div>
 </div>
 
-<div class="card">
-    <div class="card-body table-responsive">
-        <table class="table table-striped align-middle">
-            <thead>
-                <tr>
-                    <th style="width:120px;">Nº</th>
-                    <th>Tipo</th>
-                    <th style="width:140px;">Status</th>
-                    <th style="width:200px;">Criado</th>
-                    <th style="width:140px;"></th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var t in Model)
-                {
-                    <tr>
-                        <td><span class="badge bg-secondary">#@t.TermNo</span></td>
-                        <td>@t.TermType</td>
-                        <td><span class="badge bg-info text-dark">@t.Status</span></td>
-                        <td>@t.CreatedAt.ToString("dd/MM/yyyy HH:mm")</td>
-                        <td class="text-end">
-                            <a class="btn btn-sm btn-outline-secondary" href="/RetentionTerms/Details?id=@t.Id">
-                                <i class="bi bi-box-arrow-up-right"></i> Abrir
-                            </a>
-                        </td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-        @if (!Model.Any())
-        {
-            <div class="text-muted">Nenhum termo.</div>
-        }
+@if (TempData["Ok"] is string ok && !string.IsNullOrWhiteSpace(ok))
+{
+    <div class="alert alert-success">@ok</div>
+}
+@if (TempData["Err"] is string err && !string.IsNullOrWhiteSpace(err))
+{
+    <div class="alert alert-danger">@err</div>
+}
+
+<ul class="nav nav-tabs mb-3">
+    <li class="nav-item"><a class="nav-link @Active("overdue")" href="@UrlB("overdue")">Vencidos</a></li>
+    <li class="nav-item"><a class="nav-link @Active("due30")" href="@UrlB("due30")">A vencer (30d)</a></li>
+    <li class="nav-item"><a class="nav-link @Active("due60")" href="@UrlB("due60")">A vencer (60d)</a></li>
+    <li class="nav-item"><a class="nav-link @Active("due90")" href="@UrlB("due90")">A vencer (90d)</a></li>
+    <li class="nav-item"><a class="nav-link @Active("all")" href="@UrlB("all")">Todos</a></li>
+</ul>
+
+<form method="post" asp-action="CreateTerm" asp-controller="Temporalidade">
+    @Html.AntiForgeryToken()
+    <input type="hidden" name="bucket" value="@Model.Bucket" />
+
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <strong>Itens (@Model.Items.Count)</strong>
+
+            <button class="btn btn-outline-secondary btn-sm" type="submit" @(Model.Items.Count == 0 ? "disabled" : "")>
+                <i class="bi bi-file-earmark-text"></i> Criar Caso + Termo
+            </button>
+        </div>
+
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-striped table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th style="width:42px;">
+                                <input type="checkbox" onclick="toggleAll(this)" />
+                            </th>
+                            <th>Documento</th>
+                            <th style="width:200px;">Classificação</th>
+                            <th style="width:190px;">Vencimento</th>
+                            <th style="width:120px;">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (Model.Items.Count == 0)
+                        {
+                            <tr>
+                                <td colspan="5" class="p-4 text-muted">Sem itens no filtro atual.</td>
+                            </tr>
+                        }
+                        else
+                        {
+                            foreach (var it in Model.Items)
+                            {
+                                <tr>
+                                    <td>
+                                        <!-- ✅ agora seleciona pelo DocumentId -->
+                                        <input type="checkbox" name="selectedDocumentIds" value="@it.DocumentId" />
+                                    </td>
+                                    <td style="font-family:monospace;">
+                                        @it.DocumentId
+                                    </td>
+                                    <td>@(string.IsNullOrWhiteSpace(it.ClassificationCode) ? "-" : it.ClassificationCode)</td>
+                                    <td>
+                                        @if (it.DueAt is null)
+                                        {
+                                            <span class="text-muted">—</span>
+                                        }
+                                        else
+                                        {
+                                            <span>@it.DueAt.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</span>
+                                        }
+                                    </td>
+                                    <td><span class="badge bg-warning text-dark">@it.Status</span></td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card-footer text-muted" style="font-size:12px;">
+            PoC: selecione itens → cria Caso → cria Termo (RetentionTerms/CreateFromCase).
+        </div>
     </div>
-</div>
+</form>
+
+<script>
+    function toggleAll(master) {
+        const boxes = document.querySelectorAll('input[name="selectedDocumentIds"]');
+        boxes.forEach(b => b.checked = master.checked);
+    }
+</script>

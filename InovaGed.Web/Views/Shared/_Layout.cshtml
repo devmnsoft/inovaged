@@ -67,6 +67,13 @@
     }
 
     int dispTotalBadge = dispElimBadge + dispTransBadge + dispReviewBadge;
+
+    // ✅ Helpers de rota fixa (para controllers com [Route("...")] e evitar mismatch)
+    string ActivePath(string startsWith)
+    {
+        var path = Context.Request.Path.Value?.ToLowerInvariant() ?? "";
+        return path.StartsWith(startsWith.ToLowerInvariant()) ? "active" : "";
+    }
 }
 
 <!DOCTYPE html>
@@ -145,11 +152,19 @@
                     </a>
 
                     <!-- ✅ PACS: link no menu desktop -->
-                    <a asp-controller="Pacs" asp-action="Index" class="@ActiveAny("Pacs")">
+                    <a href="https://yndustech.com.br/GedDocs"
+                       target="_blank"
+                       rel="noopener noreferrer"
+                       class="@ActiveAny("Pacs")">
+
                         <i class="bi bi-heart-pulse"></i>
+
                         <span class="d-flex align-items-center gap-2">
                             Sistema de Imagem
-                            <span id="pacsBadge" class="badge text-bg-danger @(pacsBadge > 0 ? "" : "d-none")">@pacsBadge</span>
+                            <span id="pacsBadge"
+                                  class="badge text-bg-danger @(pacsBadge > 0 ? "" : "d-none")">
+                                @pacsBadge
+                            </span>
                         </span>
                     </a>
 
@@ -170,8 +185,18 @@
                         <i class="bi bi-shuffle"></i><span>Workflows</span>
                     </a>
 
-                    <!-- ✅ NOVO: TEMPORALIDADE / DESTINAÇÃO -->
+                    <!-- ✅ TEMPORALIDADE / DESTINAÇÃO -->
                     <div class="sidebar-section-title">Temporalidade</div>
+
+                    <!-- ✅ Central de Temporalidade -->
+                    <a asp-controller="Temporalidade" asp-action="Index" class="@ActiveAny("Temporalidade")">
+                        <i class="bi bi-hourglass-split"></i><span>Central de Temporalidade</span>
+                    </a>
+
+                    <!-- ✅ Opcional: se existir Retention/Queue -->
+                    <a asp-controller="Retention" asp-action="Queue" class="@Active("Retention","Queue")">
+                        <i class="bi bi-list-check"></i><span>Fila (Operacional)</span>
+                    </a>
 
                     <a asp-controller="Disposition" asp-action="Index" class="@ActiveAny("Disposition")">
                         <i class="bi bi-archive"></i><span>Painel de Destinação</span>
@@ -185,14 +210,17 @@
                         </span>
                     </a>
 
-                    <a asp-controller="RetentionCase" asp-action="Index" class="@ActiveAny("RetentionCase","RetentionCases")">
+                    <!-- ✅ Casos (se sua rota for /RetentionCases use href fixo; senão asp-controller normal) -->
+                    <a href="/RetentionCases" class="@ActivePath("/retentioncases")">
                         <i class="bi bi-journal-text"></i><span>Casos de Temporalidade</span>
                     </a>
 
-                    <a asp-controller="RetentionTerm" asp-action="Index" class="@ActiveAny("RetentionTerm","RetentionTerms")">
+                    <!-- ✅ Termos (controller tem [Route("RetentionTerms")]) -->
+                    <a href="/RetentionTerms" class="@ActivePath("/retentionterms")">
                         <i class="bi bi-file-earmark-text"></i><span>Termos de Destinação</span>
                     </a>
 
+                    <!-- ✅ Relatório (se existir) -->
                     <a asp-controller="Disposition" asp-action="Terms" class="@Active("Disposition","Terms")">
                         <i class="bi bi-card-list"></i><span>Relatório de Termos</span>
                     </a>
@@ -253,7 +281,7 @@
                             <i class="bi bi-folder"></i><span>Pastas / Dossiês</span>
                         </a>
 
-                        <!-- ✅ PACS: link no menu mobile -->
+                        <!-- ✅ PACS -->
                         <a asp-controller="Pacs" asp-action="Index" class="@ActiveAny("Pacs")" data-bs-dismiss="offcanvas">
                             <i class="bi bi-heart-pulse"></i>
                             <span class="d-flex align-items-center gap-2">
@@ -278,8 +306,16 @@
                             <i class="bi bi-shuffle"></i><span>Workflows</span>
                         </a>
 
-                        <!-- ✅ NOVO: TEMPORALIDADE / DESTINAÇÃO -->
+                        <!-- ✅ TEMPORALIDADE -->
                         <div class="sidebar-section-title">Temporalidade</div>
+
+                        <a asp-controller="Temporalidade" asp-action="Index" class="@ActiveAny("Temporalidade")" data-bs-dismiss="offcanvas">
+                            <i class="bi bi-hourglass-split"></i><span>Central de Temporalidade</span>
+                        </a>
+
+                        <a asp-controller="Retention" asp-action="Queue" class="@Active("Retention","Queue")" data-bs-dismiss="offcanvas">
+                            <i class="bi bi-list-check"></i><span>Fila (Operacional)</span>
+                        </a>
 
                         <a asp-controller="Disposition" asp-action="Index" class="@ActiveAny("Disposition")" data-bs-dismiss="offcanvas">
                             <i class="bi bi-archive"></i><span>Painel de Destinação</span>
@@ -293,11 +329,11 @@
                             </span>
                         </a>
 
-                        <a asp-controller="RetentionCase" asp-action="Index" class="@ActiveAny("RetentionCase","RetentionCases")" data-bs-dismiss="offcanvas">
+                        <a href="/RetentionCases" class="@ActivePath("/retentioncases")" data-bs-dismiss="offcanvas">
                             <i class="bi bi-journal-text"></i><span>Casos de Temporalidade</span>
                         </a>
 
-                        <a asp-controller="RetentionTerm" asp-action="Index" class="@ActiveAny("RetentionTerm","RetentionTerms")" data-bs-dismiss="offcanvas">
+                        <a href="/RetentionTerms" class="@ActivePath("/retentionterms")" data-bs-dismiss="offcanvas">
                             <i class="bi bi-file-earmark-text"></i><span>Termos de Destinação</span>
                         </a>
 
@@ -372,11 +408,22 @@
                                 </li>
                                 <li><hr class="dropdown-divider" /></li>
 
-                                <!-- ✅ opcional: atalho no dropdown -->
                                 <li>
                                     <a class="dropdown-item" asp-controller="Disposition" asp-action="Index">
                                         <i class="bi bi-archive me-2"></i>Destinação
                                         <span class="badge text-bg-danger ms-2 @(dispTotalBadge>0?"":"d-none")">@dispTotalBadge</span>
+                                    </a>
+                                </li>
+
+                                <li>
+                                    <a class="dropdown-item" asp-controller="Temporalidade" asp-action="Index">
+                                        <i class="bi bi-hourglass-split me-2"></i>Temporalidade
+                                    </a>
+                                </li>
+
+                                <li>
+                                    <a class="dropdown-item" href="/RetentionTerms">
+                                        <i class="bi bi-file-earmark-text me-2"></i>Termos
                                     </a>
                                 </li>
 

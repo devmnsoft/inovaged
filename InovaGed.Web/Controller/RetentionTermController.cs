@@ -15,15 +15,18 @@ public sealed class RetentionTermController : Controller
     private readonly ICurrentContext _ctx;
     private readonly IDispositionReportsQueries _reports;
 
-
-
-    public RetentionTermController(IRetentionTermRepository repo, ILogger<RetentionTermController> logger, ICurrentContext ctx, IDispositionReportsQueries reports)
+    public RetentionTermController(
+        IRetentionTermRepository repo,
+        ILogger<RetentionTermController> logger,
+        ICurrentContext ctx,
+        IDispositionReportsQueries reports)
     {
         _repo = repo;
         _logger = logger;
         _ctx = ctx;
         _reports = reports;
     }
+
     [HttpGet("")]
     public async Task<IActionResult> Index(DateTimeOffset? from, DateTimeOffset? to, string? status, CancellationToken ct)
     {
@@ -31,9 +34,7 @@ public sealed class RetentionTermController : Controller
         ViewBag.To = to;
         ViewBag.Status = status;
 
-        // ✅ aqui é o módulo (RetentionTermRow)
         var rows = await _repo.ListAsync(_ctx.TenantId, from, to, status, ct);
-
         return View(rows); // Views/RetentionTerm/Index.cshtml
     }
 
@@ -43,29 +44,44 @@ public sealed class RetentionTermController : Controller
     {
         try
         {
-            // ✅ A assinatura recebe CreateTermRequest (não recebe caseId direto)
             var req = new CreateTermRequest
             {
                 CaseId = caseId,
-                TermType = "ELIMINATION", // ou "TRANSFER" / "COLLECTION"
+                TermType = "ELIMINATION",
                 Notes = $"Gerado via fluxo Temporalidade em {DateTimeOffset.Now:dd/MM/yyyy HH:mm}."
             };
 
-            var termId = await _repo.CreateFromCaseAsync(
-                tenantId: _ctx.TenantId,
-                userId: _ctx.UserId,
-                req: req,
-                ct: ct);
+            var termId = await _repo.CreateFromCaseAsync(_ctx.TenantId, _ctx.UserId, req, ct);
 
-            TempData["Ok"] = "Termo criado com sucesso.";
-            return RedirectToAction("Details", new { id = termId });
+            TempData["Success"] = "Termo criado com sucesso.";
+            return RedirectToAction(nameof(Details), new { id = termId });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "CreateFromCase failed Tenant={Tenant} Case={Case}", _ctx.TenantId, caseId);
-            TempData["Err"] = "Falha ao criar termo a partir do caso.";
+            TempData["Error"] = "Falha ao criar termo a partir do caso.";
             return Redirect("/Temporalidade");
         }
+    }
+
+    // ✅ FALTAVA ESTE ENDPOINT (sua View chama ele)
+    [HttpPost("ReadyToSign")]
+    [ValidateAntiForgeryToken]
+    [Authorize(Policy = Policies.CanSignRetention)]
+    public async Task<IActionResult> ReadyToSign(Guid termId, CancellationToken ct)
+    {
+        try
+        {
+            await _repo.MarkReadyToSignAsync(_ctx.TenantId, _ctx.UserId, termId, ct);
+            TempData["Success"] = "Termo marcado como READY_TO_SIGN.";
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "ReadyToSign failed Tenant={Tenant} Term={Term}", _ctx.TenantId, termId);
+            TempData["Error"] = ex.Message;
+        }
+
+        return RedirectToAction(nameof(Details), new { id = termId });
     }
 
     [HttpPost("Sign")]
@@ -79,11 +95,13 @@ public sealed class RetentionTermController : Controller
         }
         catch (Exception ex)
         {
+            _logger.LogError(ex, "Sign failed Tenant={Tenant} Term={Term}", _ctx.TenantId, req.TermId);
             return BadRequest(new { ok = false, error = ex.Message });
         }
     }
 
     [HttpPost("ExecuteFinal")]
+    [ValidateAntiForgeryToken]
     [Authorize(Policy = Policies.CanExecuteFinal)]
     public async Task<IActionResult> ExecuteFinal(Guid termId, CancellationToken ct)
     {
@@ -91,17 +109,17 @@ public sealed class RetentionTermController : Controller
         {
             await _repo.ExecuteFinalAsync(_ctx.TenantId, _ctx.UserId, termId, ct);
             TempData["Success"] = "Execução final concluída.";
-            return RedirectToAction("Details", new { id = termId });
         }
         catch (Exception ex)
         {
+            _logger.LogError(ex, "ExecuteFinal failed Tenant={Tenant} Term={Term}", _ctx.TenantId, termId);
             TempData["Error"] = ex.Message;
-            return RedirectToAction("Details", new { id = termId });
         }
+
+        return RedirectToAction(nameof(Details), new { id = termId });
     }
 
     [HttpGet("Pdf")]
-    [Authorize(Policy = Policies.CanViewRetention)]
     public async Task<IActionResult> Pdf(Guid id, CancellationToken ct, [FromServices] ITermPdfGenerator pdf)
     {
         var data = await _repo.GetAsync(_ctx.TenantId, id, ct);
@@ -112,15 +130,12 @@ public sealed class RetentionTermController : Controller
 
         return File(bytes, "application/pdf", $"termo_{term.TermNo:0000}.pdf");
     }
-     
-    
-    // GET /RetentionTerms/Details?id=...
+
     [HttpGet("Details")]
     public async Task<IActionResult> Details(Guid id, CancellationToken ct)
     {
         var vm = await _repo.GetAsync(_ctx.TenantId, id, ct);
         if (vm is null) return NotFound();
-        return View(vm);
+        return View(vm); // Views/RetentionTerm/Details.cshtml
     }
 }
- 

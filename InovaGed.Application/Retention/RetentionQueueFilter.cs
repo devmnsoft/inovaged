@@ -2,9 +2,13 @@
 
 public sealed class RetentionQueueFilter
 {
-    public string? Status { get; set; }          // OVERDUE | DUE_SOON | OK | SEM_CLASSIFICACAO
-    public DateTimeOffset? DueUntil { get; set; } // filtra retention_due_at <= DueUntil
-    public string? Q { get; set; }               // busca textual
+    public string? Status { get; set; }              // OVERDUE | DUE_SOON | OK | SEM_CLASSIFICACAO
+    public DateTimeOffset? DueUntil { get; set; }    // opcional
+    public string? Q { get; set; }                   // busca textual
+
+    // ✅ NOVO: permite buckets por faixa (ex.: 31..60, 61..90)
+    public int? DaysFrom { get; set; }               // inclusive
+    public int? DaysTo { get; set; }                 // inclusive
 }
 
 public sealed class RetentionQueueRow
@@ -32,6 +36,10 @@ public sealed class RetentionQueueRow
     // negativo = vencido
 
     public DateTimeOffset GeneratedAt { get; set; }
+     
+    // ✅ NOVO
+    public string? SuggestedDestination { get; set; }
+     
 }
 
 public interface IRetentionQueueQueries
