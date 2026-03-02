@@ -1,0 +1,84 @@
+﻿@model IReadOnlyList<InovaGed.Application.ClassificationPlans.ClassificationVersionRow>
+@{
+    ViewData["Title"] = "Versões PCD/TTD";
+}
+
+@if (TempData["Error"] is string err)
+{
+    <div class="alert alert-danger">@err</div>
+}
+
+<div class="d-flex align-items-center justify-content-between mb-3">
+    <div>
+        <h2 class="mb-0">Versões do PCD/TTD</h2>
+        <div class="text-muted">Publicar versão cria snapshot e permite imprimir evidência.</div>
+    </div>
+    <div class="d-flex gap-2">
+        <a class="btn btn-outline-secondary" href="/ClassificationPlan">
+            <i class="bi bi-diagram-3"></i> Voltar
+        </a>
+        <button class="btn btn-primary" type="button" onclick="publishVersion()">
+            <i class="bi bi-cloud-arrow-up"></i> Publicar
+        </button>
+    </div>
+</div>
+
+<form id="publishForm" method="post" action="/ClassificationPlan/Publish">
+    @Html.AntiForgeryToken()
+</form>
+
+<div class="card">
+    <div class="card-body table-responsive">
+        <table class="table table-striped align-middle">
+            <thead>
+                <tr>
+                    <th style="width:100px">Versão</th>
+                    <th>Título</th>
+                    <th style="width:200px">Publicado em</th>
+                    <th style="width:180px"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var v in Model)
+                {
+                    <tr>
+                        <td><span class="badge bg-secondary">V@v.VersionNo</span></td>
+                        <td>@v.Title</td>
+                        <td>@v.PublishedAt.ToString("dd/MM/yyyy HH:mm")</td>
+                        <td class="text-end">
+                            <a class="btn btn-sm btn-outline-secondary" target="_blank"
+                               href="/ClassificationPlan/PrintVersion?versionId=@v.Id">
+                                <i class="bi bi-printer"></i> Imprimir
+                            </a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        async function publishVersion(){
+            const title = prompt("Título da versão (ex.: PCD/TTD - V1):");
+            if(!title) return;
+
+            const notes = prompt("Notas (opcional):") || "";
+
+            const form = document.getElementById("publishForm");
+            const fd = new FormData(form);
+            fd.append("title", title);
+            fd.append("notes", notes);
+
+            const r = await fetch(form.action, { method:"POST", body: fd });
+            const j = await r.json().catch(()=>null);
+
+            if(!r.ok || !j?.ok){
+                alert(j?.error || "Falha ao publicar.");
+                return;
+            }
+            location.reload();
+        }
+    </script>
+}

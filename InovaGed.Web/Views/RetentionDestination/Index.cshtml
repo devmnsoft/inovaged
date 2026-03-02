@@ -1,0 +1,55 @@
+﻿@model IReadOnlyList<InovaGed.Application.Retention.DestinationBatchRow>
+@{
+    ViewData["Title"] = "Lotes de Destinação";
+}
+
+@if (TempData["Error"] is string err)
+{
+     <div class="alert alert-danger">@err</div>
+}
+@if (TempData["Success"] is string ok)
+{
+     <div class="alert alert-success">@ok</div>
+}
+
+<div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+        <h2 class="mb-0">Lotes de Destinação</h2>
+        <div class="text-muted">Gere lotes a partir da Central de Temporalidade (fase anterior).</div>
+    </div>
+    <a class="btn btn-outline-secondary" href="/Retention/Queue">
+        <i class="bi bi-list-check"></i> Central de Temporalidade
+    </a>
+</div>
+
+<div class="card">
+    <div class="card-body table-responsive">
+        <table class="table table-striped align-middle">
+            <thead>
+                <tr>
+                    <th>Destino</th>
+                    <th>Status</th>
+                    <th>PCD versão</th>
+                    <th>Criado em</th>
+                    <th style="width:160px;"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var b in Model)
+                {
+                    <tr>
+                        <td><span class="badge bg-secondary">@b.Destination</span></td>
+                        <td>@b.Status</td>
+                        <td>@(b.PcdVersionId?.ToString() ?? "—")</td>
+                        <td>@b.CreatedAt.ToString("dd/MM/yyyy HH:mm")</td>
+                        <td class="text-end">
+                            <a class="btn btn-sm btn-outline-primary" href="/Retention/Destination/Details?batchId=@b.Id">
+                                <i class="bi bi-eye"></i> Abrir
+                            </a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>

@@ -1,0 +1,54 @@
+﻿@model InovaGed.Application.Reports.DispositionKpiVM
+@{
+    ViewData["Title"] = "Destinação";
+}
+
+<div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+        <h2 class="mb-0">Painel de Destinação</h2>
+        <div class="text-muted">Fila operacional pós-execução de casos/termos.</div>
+    </div>
+    <div class="d-flex gap-2">
+        <a class="btn btn-outline-secondary" href="/Disposition/Queue"><i class="bi bi-inbox"></i> Ver fila</a>
+        <a class="btn btn-outline-secondary" href="/Disposition/Terms"><i class="bi bi-file-earmark-text"></i> Termos</a>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body">
+                <div class="text-muted">Eliminação pronta</div>
+                <div class="display-6">@Model.EliminationReady</div>
+                <a class="btn btn-sm btn-outline-danger mt-2" href="/Disposition/Queue?status=ELIMINATION_READY">Abrir</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body">
+                <div class="text-muted">Transferência pronta</div>
+                <div class="display-6">@Model.TransferReady</div>
+                <a class="btn btn-sm btn-outline-primary mt-2" href="/Disposition/Queue?status=TRANSFER_READY">Abrir</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body">
+                <div class="text-muted">Revisão requerida</div>
+                <div class="display-6">@Model.ReviewRequired</div>
+                <a class="btn btn-sm btn-outline-warning mt-2" href="/Disposition/Queue?status=REVIEW_REQUIRED">Abrir</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body">
+                <div class="text-muted">Baixados (30 dias)</div>
+                <div class="display-6">@Model.DisposedLast30D</div>
+                <a class="btn btn-sm btn-outline-success mt-2" href="/Disposition/Queue?status=DISPOSED">Abrir</a>
+            </div>
+        </div>
+    </div>
+</div>

@@ -1,0 +1,59 @@
+﻿@model IReadOnlyList<InovaGed.Application.RetentionTerms.RetentionTermRow>
+@{
+    ViewData["Title"] = "Termos";
+}
+
+@if (TempData["Error"] is string err)
+{
+     <div class="alert alert-danger">@err</div>
+}
+@if (TempData["Success"] is string ok)
+{
+     <div class="alert alert-success">@ok</div>
+}
+
+<div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+        <h2 class="mb-0">Termos de Destinação</h2>
+        <div class="text-muted">Crie termos a partir de casos EXECUTED/APPROVED e conduza assinatura/execução final.</div>
+    </div>
+    <div class="d-flex gap-2">
+        <a class="btn btn-outline-secondary" href="/RetentionCases"><i class="bi bi-folder2-open"></i> Casos</a>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body table-responsive">
+        <table class="table table-striped align-middle">
+            <thead>
+                <tr>
+                    <th style="width:120px;">Nº</th>
+                    <th>Tipo</th>
+                    <th style="width:140px;">Status</th>
+                    <th style="width:200px;">Criado</th>
+                    <th style="width:140px;"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var t in Model)
+                {
+                    <tr>
+                        <td><span class="badge bg-secondary">#@t.TermNo</span></td>
+                        <td>@t.TermType</td>
+                        <td><span class="badge bg-info text-dark">@t.Status</span></td>
+                        <td>@t.CreatedAt.ToString("dd/MM/yyyy HH:mm")</td>
+                        <td class="text-end">
+                            <a class="btn btn-sm btn-outline-secondary" href="/RetentionTerms/Details?id=@t.Id">
+                                <i class="bi bi-box-arrow-up-right"></i> Abrir
+                            </a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        @if (!Model.Any())
+        {
+            <div class="text-muted">Nenhum termo.</div>
+        }
+    </div>
+</div>

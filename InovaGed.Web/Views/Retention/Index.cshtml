@@ -1,0 +1,73 @@
+﻿@model InovaGed.Application.Retention.RetentionDashboardVM
+@{
+    ViewData["Title"] = "Temporalidade";
+}
+
+@if (TempData["Error"] is string err)
+{
+    <div class="alert alert-danger">@err</div>
+}
+@if (TempData["Success"] is string ok)
+{
+    <div class="alert alert-success">@ok</div>
+}
+
+<div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+        <h2 class="mb-0">Temporalidade (PCD/TTD)</h2>
+        <div class="text-muted">Monitoramento de prazos por classificação: a vencer e vencidos.</div>
+    </div>
+    <form method="post" action="/Retention/Recalculate">
+        @Html.AntiForgeryToken()
+        <button class="btn btn-primary" type="submit">
+            <i class="bi bi-arrow-repeat"></i> Recalcular agora
+        </button>
+    </form>
+</div>
+
+<div class="row g-3">
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body">
+                <div class="text-muted">Documentos classificados</div>
+                <div class="display-6">@Model.TotalClassified</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-warning">
+            <div class="card-body">
+                <div class="text-muted">A vencer (30 dias)</div>
+                <div class="display-6">@Model.DueSoon</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-danger">
+            <div class="card-body">
+                <div class="text-muted">Vencidos</div>
+                <div class="display-6">@Model.Overdue</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-secondary">
+            <div class="card-body">
+                <div class="text-muted">Sem classificação</div>
+                <div class="display-6">@Model.WithoutClassification</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<hr class="my-4" />
+
+<div class="alert alert-info">
+    <strong>Como isso funciona:</strong>
+    <ul class="mb-0">
+        <li>O documento recebe uma classe do PCD/TTD (campo <code>classification_id</code>).</li>
+        <li>O sistema calcula a data-base do evento (abertura/inclusão/arquivamento/encerramento).</li>
+        <li>Somatório (corrente + intermediária) define <code>retention_due_at</code>.</li>
+        <li>Status: <code>OK</code>, <code>DUE_SOON</code> (<=30 dias), <code>OVERDUE</code> (vencido).</li>
+    </ul>
+</div>

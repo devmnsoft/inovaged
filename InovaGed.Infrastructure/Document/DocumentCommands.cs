@@ -104,4 +104,36 @@ where tenant_id = @tenantId
             _logger.LogInformation(">>> DocumentCommands.DeleteAsync END");
         }
     }
+
+
+    public async Task ApplyClassificationAsync(Guid tenantId, Guid userId, Guid documentId, Guid classificationId, CancellationToken ct)
+    {
+        const string sql = @"
+update ged.document
+set classification_id = @classificationId,
+    classification_version_id = (
+      select v.id
+      from ged.classification_plan_version v
+      where v.tenant_id = @tenantId
+      order by v.version_no desc
+      limit 1
+    ),
+    updated_at = now(),
+    updated_by = @userId
+where tenant_id = @tenantId
+  and id = @documentId;";
+
+        try
+        {
+            await using var conn = await _db.OpenAsync(ct);
+            var rows = await conn.ExecuteAsync(new CommandDefinition(sql, new { tenantId, userId, documentId, classificationId }, cancellationToken: ct));
+            if (rows == 0) throw new InvalidOperationException("Documento não encontrado para aplicar classificação.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "ApplyClassificationAsync failed. Tenant={TenantId} Doc={DocId} Class={ClassId}",
+                tenantId, documentId, classificationId);
+            throw;
+        }
+    }
 }

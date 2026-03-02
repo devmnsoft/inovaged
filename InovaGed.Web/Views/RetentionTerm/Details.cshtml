@@ -1,0 +1,77 @@
+﻿@model (InovaGed.Application.RetentionTerms.RetentionTermRow Term, string Html)
+@{
+    ViewData["Title"] = $"Termo #{Model.Term.TermNo}";
+}
+
+@if (TempData["Error"] is string err)
+{
+     <div class="alert alert-danger">@err</div>
+}
+@if (TempData["Success"] is string ok)
+{
+     <div class="alert alert-success">@ok</div>
+}
+
+<div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+        <h2 class="mb-0">Termo #@Model.Term.TermNo</h2>
+        <div class="text-muted">Tipo: <strong>@Model.Term.TermType</strong> • Status: <strong>@Model.Term.Status</strong></div>
+    </div>
+    <div class="d-flex gap-2">
+        <a class="btn btn-outline-secondary" href="/RetentionTerms"><i class="bi bi-list"></i> Voltar</a>
+        <a class="btn btn-outline-secondary" target="_blank" href="/RetentionTerms/Details?id=@Model.Term.Id&view=print"><i class="bi bi-printer"></i> Imprimir</a>
+    </div>
+</div>
+
+<div class="card mb-3">
+    <div class="card-body d-flex flex-wrap gap-2">
+        <form method="post" action="/RetentionTerms/ReadyToSign">
+            <input type="hidden" name="termId" value="@Model.Term.Id" />
+            <button class="btn btn-outline-primary" type="submit"><i class="bi bi-pen"></i> Marcar READY_TO_SIGN</button>
+        </form>
+
+        <button class="btn btn-success" type="button" onclick="termUi.sign()">
+            <i class="bi bi-pencil-square"></i> Assinar (placeholder)
+        </button>
+
+        <form method="post" action="/RetentionTerms/ExecuteFinal">
+            <input type="hidden" name="termId" value="@Model.Term.Id" />
+            <button class="btn btn-danger" type="submit" @(Model.Term.Status != "SIGNED" ? "disabled" : "")>
+                <i class="bi bi-check2-circle"></i> Executar Final (DISPOSED)
+            </button>
+        </form>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <iframe style="width:100%;height:70vh;border:1px solid #ddd;border-radius:8px"
+                srcdoc="@Html.Raw(Model.Html.Replace("\"","&quot;"))"></iframe>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        window.termUi = {
+          async sign(){
+            const signerName = prompt("Nome do assinante:") || "";
+            if(!signerName){ alert("Informe o nome."); return; }
+            const signerRole = prompt("Cargo/Função (opcional):") || "";
+            const signerDocument = prompt("Documento (CPF/ID) (opcional):") || "";
+
+            const res = await fetch("/RetentionTerms/Sign", {
+              method: "POST",
+              headers: {"Content-Type":"application/json"},
+              body: JSON.stringify({ termId: "@Model.Term.Id", signerName, signerRole, signerDocument })
+            });
+
+            const j = await res.json().catch(()=>null);
+            if(!res.ok || !j?.ok){
+              alert(j?.error || "Falha ao assinar.");
+              return;
+            }
+            location.reload();
+          }
+        }
+    </script>
+}

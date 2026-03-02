@@ -1,0 +1,172 @@
+﻿@model IReadOnlyList<InovaGed.Application.Retention.RetentionQueueRow>
+@{
+    ViewData["Title"] = "Central de Temporalidade";
+    string? status = ViewBag.Status as string;
+    DateTimeOffset? dueUntil = ViewBag.DueUntil as DateTimeOffset?;
+    string? q = ViewBag.Q as string;
+}
+
+@if (TempData["Error"] is string err)
+{
+    <div class="alert alert-danger">@err</div>
+}
+
+@functions {
+    string Badge(string? s) => s switch
+    {
+        "OVERDUE" => "badge bg-danger",
+        "DUE_SOON" => "badge bg-warning text-dark",
+        "OK" => "badge bg-success",
+        _ => "badge bg-secondary"
+    };
+    string Label(string? s) => s switch
+    {
+        "OVERDUE" => "Vencido",
+        "DUE_SOON" => "A vencer",
+        "OK" => "Em dia",
+        _ => "Sem dado"
+    };
+}
+
+<div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+        <h2 class="mb-0">Central de Temporalidade</h2>
+        <div class="text-muted">Filtre vencidos e a vencer. Selecione e exporte CSV.</div>
+    </div>
+    <div class="d-flex gap-2">
+        <a class="btn btn-outline-secondary" href="/Retention">
+            <i class="bi bi-speedometer2"></i> Dashboard
+        </a>
+        <button class="btn btn-primary" type="button" onclick="ret.exportCsv()">
+            <i class="bi bi-download"></i> Exportar CSV
+        </button>
+    </div>
+</div>
+
+<form class="card mb-3" method="get" action="/Retention/Queue">
+    <div class="card-body">
+        <div class="row g-2 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label">Status</label>
+                <select class="form-select" name="status">
+                    <option value="" selected="@(string.IsNullOrEmpty(status) ? "selected" : null)">Todos</option>
+                    <option value="OVERDUE" selected="@(status=="OVERDUE" ? "selected" : null)">Vencidos</option>
+                    <option value="DUE_SOON" selected="@(status=="DUE_SOON" ? "selected" : null)">A vencer (<=30d)</option>
+                    <option value="OK" selected="@(status=="OK" ? "selected" : null)">Em dia</option>
+                    <option value="SEM_CLASSIFICACAO" selected="@(status=="SEM_CLASSIFICACAO" ? "selected" : null)">Sem classificação</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Vencer até</label>
+                <input class="form-control" name="dueUntil" type="date" value="@(dueUntil?.ToString("yyyy-MM-dd"))" />
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Busca</label>
+                <input class="form-control" name="q" value="@q" placeholder="título, código, classe..." />
+            </div>
+            <div class="col-md-2 d-grid">
+                <button class="btn btn-outline-primary" type="submit"><i class="bi bi-funnel"></i> Filtrar</button>
+            </div>
+        </div>
+    </div>
+</form>
+
+<div class="card">
+    <div class="card-body table-responsive">
+        <table class="table table-striped align-middle">
+            <thead>
+                <tr>
+                    <th style="width:36px;">
+                        <input type="checkbox" onclick="ret.toggleAll(this)" />
+                    </th>
+                    <th>Documento</th>
+                    <th>Classificação</th>
+                    <th style="width:180px;">Vencimento</th>
+                    <th style="width:140px;">Status</th>
+                    <th style="width:120px;"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var r in Model)
+                {
+                    <tr>
+                        <td>
+                            <input type="checkbox" class="ret-check" value="@r.DocumentId" />
+                        </td>
+                        <td>
+                            <div class="fw-semibold">@(!string.IsNullOrWhiteSpace(r.Title) ? r.Title : "(sem título)")</div>
+                            <div class="text-muted small">@r.Code</div>
+                        </td>
+                        <td>
+                            <div class="fw-semibold">@r.ClassificationCode</div>
+                            <div class="text-muted small">@r.ClassificationName</div>
+                        </td>
+                        <td>
+                            @if (r.DueAt is null)
+                            {
+                                <span class="text-muted">—</span>
+                            }
+                            else
+                            {
+                                <span>@r.DueAt.Value.ToString("dd/MM/yyyy")</span>
+                            }
+                        </td>
+                        <td>
+                            <span class="@Badge(r.Status)">@Label(r.Status)</span>
+                        </td>
+                        <td class="text-end">
+                            <a class="btn btn-sm btn-outline-secondary" href="/Ged/Details?id=@r.DocumentId">
+                                <i class="bi bi-box-arrow-up-right"></i> Abrir
+                            </a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        @if (!Model.Any())
+        {
+            <div class="text-muted">Nenhum registro encontrado para os filtros atuais.</div>
+        }
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        window.ret = {
+          selectedIds() {
+            return Array.from(document.querySelectorAll(".ret-check:checked")).map(x => x.value);
+          },
+          toggleAll(master) {
+            document.querySelectorAll(".ret-check").forEach(x => x.checked = master.checked);
+          },
+          async exportCsv() {
+            const ids = this.selectedIds();
+            if(!ids.length) { alert("Selecione ao menos 1 documento."); return; }
+
+            const res = await fetch("/Retention/ExportCsv", {
+              method: "POST",
+              headers: { "Content-Type":"application/json" },
+              body: JSON.stringify({ documentIds: ids })
+            });
+
+            if(!res.ok){
+              const j = await res.json().catch(()=>null);
+              alert(j?.error || "Falha ao exportar.");
+              return;
+            }
+
+            // download
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "";
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(url);
+          }
+        }
+    </script>
+}

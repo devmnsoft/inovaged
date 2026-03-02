@@ -1,0 +1,45 @@
+﻿@model IReadOnlyList<dynamic>
+@{
+    ViewData["Title"] = "Auditoria do Documento";
+    var docId = (Guid)ViewBag.DocumentId;
+}
+
+<div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+        <h2 class="mb-0">Auditoria do Documento</h2>
+        <div class="text-muted">@docId</div>
+    </div>
+    <div>
+        <a class="btn btn-outline-secondary" href="/Ged/Details?id=@docId"><i class="bi bi-box-arrow-up-right"></i> Voltar</a>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body table-responsive">
+        <table class="table table-striped align-middle">
+            <thead>
+                <tr>
+                    <th style="width:200px;">Quando</th>
+                    <th style="width:220px;">Evento</th>
+                    <th style="width:220px;">Ator</th>
+                    <th>Dados</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var r in Model)
+                {
+                    <tr>
+                        <td>@(((DateTimeOffset)r.eventat).ToString("dd/MM/yyyy HH:mm:ss"))</td>
+                        <td><span class="badge bg-secondary">@r.eventtype</span></td>
+                        <td>@(r.actoremail ?? "—")</td>
+                        <td><pre class="mb-0" style="white-space:pre-wrap">@((string)(r.data?.ToString() ?? ""))</pre></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        @if (!Model.Any())
+        {
+            <div class="text-muted">Sem eventos.</div>
+        }
+    </div>
+</div>

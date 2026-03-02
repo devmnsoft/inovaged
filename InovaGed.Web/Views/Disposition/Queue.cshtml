@@ -1,0 +1,79 @@
+﻿@model InovaGed.Application.Common.Paging.PagedResult<InovaGed.Application.Reports.DispositionRowVM>
+@{
+  ViewData["Title"] = "Fila de Destinação";
+  var items = Model.Items;
+  long total = Model.Total;
+  int page = Model.Page;
+  int pageSize = Model.PageSize;
+
+  string? status = ViewBag.Status as string;
+  string? q = ViewBag.Q as string;
+  DateTimeOffset? from = ViewBag.From as DateTimeOffset?;
+  DateTimeOffset? to = ViewBag.To as DateTimeOffset?;
+
+  int totalPages = (int)Math.Ceiling(total / (double)pageSize);
+  string Qs(int p) => $"/Disposition/Queue?status={status}&q={q}&from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}&page={p}&pageSize={pageSize}";
+}
+
+<div class="d-flex justify-content-between align-items-start mb-3">
+  <div>
+    <h2 class="mb-0">Fila de Destinação</h2>
+    <div class="text-muted">Total: <strong>@total</strong>  @totalPages</div>
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-outline-secondary" href="/Disposition"><i class="bi bi-speedometer2"></i> Painel</a>
+    <a class="btn btn-outline-secondary" href="/Disposition/QueueCsv?status=@status&q=@q&from=@from&to=@to"><i class="bi bi-download"></i> CSV</a>
+  </div>
+</div>
+
+<!-- tabela -->
+<div class="card">
+  <div class="card-body table-responsive">
+    <table class="table table-striped align-middle">
+      <thead>
+        <tr>
+          <th>Documento</th>
+          <th>Classificação</th>
+          <th style="width:180px;">Status</th>
+          <th style="width:200px;">Data</th>
+          <th style="width:140px;"></th>
+        </tr>
+      </thead>
+      <tbody>
+      @foreach(var r in items)
+      {
+        <tr>
+          <td>
+            <div class="fw-semibold">@r.DocTitle</div>
+            <div class="text-muted small">@r.DocCode</div>
+          </td>
+          <td>
+            <div class="fw-semibold">@r.ClassCode</div>
+            <div class="text-muted small">@r.ClassName</div>
+          </td>
+          <td><span class="badge bg-secondary">@r.DispositionStatus</span></td>
+          <td>@(r.DispositionAt?.ToString("dd/MM/yyyy HH:mm") ?? "—")</td>
+          <td class="text-end">
+            <a class="btn btn-sm btn-outline-secondary" href="/Ged/Details?id=@r.DocumentId">
+              <i class="bi bi-box-arrow-up-right"></i> Abrir
+            </a>
+          </td>
+        </tr>
+      }
+      </tbody>
+    </table>
+    @if(!items.Any()){ <div class="text-muted">Nenhum registro.</div> }
+  </div>
+</div>
+
+<!-- paginação -->
+@if (totalPages > 1)
+{
+  <nav class="mt-3">
+    <ul class="pagination">
+      <li class="page-item @(page<=1?"disabled":"")"><a class="page-link" href="@(page<=1?"#":Qs(page-1))">Anterior</a></li>
+      <li class="page-item disabled"><span class="page-link">Página @totalPages</span></li>
+      <li class="page-item @(page>=totalPages?"disabled":"")"><a class="page-link" href="@(page>=totalPages?"#":Qs(page+1))">Próxima</a></li>
+    </ul>
+  </nav>
+}

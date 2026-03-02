@@ -1,0 +1,18 @@
+﻿@using InovaGed.Web.Models.Instruments
+@model InstrumentsPrintVM
+
+@{
+    Layout = null; // para abrir limpo em nova aba
+}
+
+<!doctype html>
+<html lang="pt-br">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>@Model.Type - Impressão</title>
+</head>
+<body>
+    @Html.Raw(Model.Html)
+</body>
+</html>

@@ -1,0 +1,229 @@
+﻿@using InovaGed.Web.Models.Instruments
+@using InovaGed.Application.Instruments
+@model InstrumentsNodesVM
+
+@{
+    ViewData["Title"] = $"Editar {Model.Type}";
+    string type = Model.Type;
+
+    string ParentLabel(Guid? parentId)
+    {
+        if (!parentId.HasValue) return "(Raiz)";
+        var p = Model.Nodes.FirstOrDefault(x => x.Id == parentId.Value);
+        return p == null ? "(Pai não encontrado)" : $"{p.Code} - {p.Title}";
+    }
+}
+
+<div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+    <div>
+        <h2 class="mb-1"><i class="bi bi-diagram-3"></i> @type — Árvore da versão</h2>
+        <div class="text-muted">Crie/edite itens, mova de pai, ajuste ordem e nível de sigilo (PoC Itens 1–4).</div>
+    </div>
+    <div class="d-flex gap-2">
+        <a class="btn btn-outline-secondary"
+           href="@Url.Action("Index","Instruments", new { type })">
+            <i class="bi bi-arrow-left"></i> Voltar
+        </a>
+        <a class="btn btn-outline-secondary"
+           href="@Url.Action("Print","Instruments", new { type, versionId = Model.VersionId })"
+           target="_blank">
+            <i class="bi bi-printer"></i> Imprimir
+        </a>
+    </div>
+</div>
+
+@if (TempData["Ok"] is string ok && !string.IsNullOrWhiteSpace(ok))
+{
+    <div class="alert alert-success">@ok</div>
+}
+@if (TempData["Err"] is string err && !string.IsNullOrWhiteSpace(err))
+{
+    <div class="alert alert-danger">@err</div>
+}
+
+<div class="row g-3">
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-header">
+                <strong>@(Model.Edit != null ? "Editar item" : "Novo item")</strong>
+            </div>
+            <div class="card-body">
+                <form method="post" asp-action="NodeUpsert" asp-controller="Instruments">
+                    @Html.AntiForgeryToken()
+
+                    <input type="hidden" name="Type" value="@type" />
+                    <input type="hidden" name="VersionId" value="@Model.VersionId" />
+                    <input type="hidden" name="Id" value="@(Model.Edit?.Id.ToString() ?? "")" />
+
+                    <div class="mb-2">
+                        <label class="form-label">Pai</label>
+                        <select class="form-select" name="ParentId">
+                            <option value="">(Raiz)</option>
+                            @foreach (var n in Model.Nodes.OrderBy(x => x.Code))
+                            {
+                                // evita apontar pai para ele mesmo
+                                if (Model.Edit != null && n.Id == Model.Edit.Id) { continue; }
+
+                                var selected = Model.Edit?.ParentId == n.Id ? "selected" : "";
+                                <option value="@n.Id" selected="@selected">@n.Code - @n.Title</option>
+                            }
+                        </select>
+                    </div>
+
+                    <div class="mb-2">
+                        <label class="form-label">Código</label>
+                        <input class="form-control" name="Code" value="@(Model.Edit?.Code ?? "")" placeholder="Ex: 01.02.003" />
+                    </div>
+
+                    <div class="mb-2">
+                        <label class="form-label">Título</label>
+                        <input class="form-control" name="Title" value="@(Model.Edit?.Title ?? "")" placeholder="Nome da classe/assunto" />
+                    </div>
+
+                    <div class="mb-2">
+                        <label class="form-label">Descrição</label>
+                        <textarea class="form-control" name="Description" rows="3" placeholder="Opcional">@Model.Edit?.Description</textarea>
+                    </div>
+
+                    <div class="row g-2">
+                        <div class="col-6">
+                            <label class="form-label">Ordem</label>
+                            <input class="form-control" type="number" name="SortOrder" value="@(Model.Edit?.SortOrder ?? 0)" />
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Sigilo</label>
+                            <select class="form-select" name="SecurityLevel">
+                                @{
+                                    string sec = (Model.Edit?.SecurityLevel ?? "PUBLIC").ToUpperInvariant();
+                                }
+                                <option value="PUBLIC" selected="@(sec=="PUBLIC")">PUBLIC</option>
+                                <option value="RESTRICTED" selected="@(sec=="RESTRICTED")">RESTRICTED</option>
+                                <option value="CONFIDENTIAL" selected="@(sec=="CONFIDENTIAL")">CONFIDENTIAL</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="d-flex gap-2 mt-3">
+                        <button class="btn btn-primary" type="submit">
+                            <i class="bi bi-save"></i> Salvar
+                        </button>
+
+                        @if (Model.Edit != null)
+                        {
+                            <a class="btn btn-outline-secondary"
+                               href="@Url.Action("Nodes","Instruments", new { type, versionId = Model.VersionId })">
+                                Cancelar
+                            </a>
+                        }
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="card mt-3">
+            <div class="card-header">
+                <strong>Versões @type</strong>
+            </div>
+            <div class="card-body">
+                <select class="form-select" onchange="location.href=this.value">
+                    @foreach (var v in Model.Versions.OrderByDescending(x => x.VersionNo))
+                    {
+                        var url = Url.Action("Nodes", "Instruments", new { type, versionId = v.Id });
+                        var isSel = v.Id == Model.VersionId ? "selected" : "";
+                        <option value="@url" selected="@isSel">V@v.VersionNo — @v.PublishedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</option>
+                    }
+                </select>
+                <div class="text-muted mt-2" style="font-size:12px;">
+                    Dica PoC: mova um código e prove que os filhos “vão junto” (a hierarquia permanece).
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <strong>Itens cadastrados</strong>
+                <span class="text-muted" style="font-size:12px;">Total: @Model.Nodes.Count</span>
+            </div>
+
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th style="width:140px;">Código</th>
+                                <th>Título</th>
+                                <th style="width:140px;">Sigilo</th>
+                                <th style="width:110px;">Ordem</th>
+                                <th style="width:320px;">Mover</th>
+                                <th style="width:120px;">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (Model.Nodes.Count == 0)
+                            {
+                                <tr>
+                                    <td colspan="6" class="p-4 text-muted">Nenhum item. Crie o primeiro no formulário ao lado.</td>
+                                </tr>
+                            }
+                            else
+                            {
+                                foreach (var n in Model.Nodes.OrderBy(x => x.SortOrder).ThenBy(x => x.Code))
+                                {
+                                    <tr>
+                                        <td style="font-family:monospace;">@n.Code</td>
+                                        <td>
+                                            <div class="fw-semibold">@n.Title</div>
+                                            <div class="text-muted" style="font-size:12px;">
+                                                Pai: @ParentLabel(n.ParentId)
+                                            </div>
+                                        </td>
+                                        <td><span class="badge bg-secondary">@n.SecurityLevel</span></td>
+                                        <td>@n.SortOrder</td>
+
+                                        <td>
+                                            <form method="post" asp-action="Move" asp-controller="Instruments" class="d-flex gap-2">
+                                                @Html.AntiForgeryToken()
+                                                <input type="hidden" name="Type" value="@type" />
+                                                <input type="hidden" name="VersionId" value="@Model.VersionId" />
+                                                <input type="hidden" name="NodeId" value="@n.Id" />
+
+                                                <select class="form-select form-select-sm" name="NewParentId" style="min-width:210px;">
+                                                    <option value="">(Raiz)</option>
+                                                    @foreach (var p in Model.Nodes.OrderBy(x => x.Code))
+                                                    {
+                                                        if (p.Id == n.Id) { continue; }
+                                                        var selected = (n.ParentId == p.Id) ? "selected" : "";
+                                                        <option value="@p.Id" selected="@selected">@p.Code - @p.Title</option>
+                                                    }
+                                                </select>
+
+                                                <input class="form-control form-control-sm" type="number" name="NewSortOrder" value="@n.SortOrder" style="width:90px;" />
+
+                                                <button class="btn btn-outline-primary btn-sm" type="submit">
+                                                    <i class="bi bi-arrow-left-right"></i>
+                                                </button>
+                                            </form>
+                                        </td>
+
+                                        <td>
+                                            <a class="btn btn-outline-secondary btn-sm"
+                                               href="@Url.Action("Nodes","Instruments", new { type, versionId = Model.VersionId, editId = n.Id })">
+                                                <i class="bi bi-pencil"></i>
+                                            </a>
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card-footer text-muted" style="font-size:12px;">
+                PoC: mover código = alterar ParentId/Order. “Conteúdo do código” acompanha porque filhos permanecem ligados ao nó.
+            </div>
+        </div>
+    </div>
+</div>

@@ -1,0 +1,106 @@
+﻿@model InovaGed.Application.ClassificationPlans.ClassificationEditVM
+
+<form id="cpEditForm" method="post" action="/ClassificationPlan/Save">
+    @Html.AntiForgeryToken()
+
+    <input type="hidden" name="Id" value="@(Model.Id?.ToString() ?? "")" />
+    <input type="hidden" name="ParentId" value="@(Model.ParentId?.ToString() ?? "")" />
+
+    <div class="row g-3">
+        <div class="col-md-4">
+            <label class="form-label">Código</label>
+            <input class="form-control" name="Code" value="@Model.Code" maxlength="50" required />
+        </div>
+
+        <div class="col-md-8">
+            <label class="form-label">Nome</label>
+            <input class="form-control" name="Name" value="@Model.Name" maxlength="255" required />
+        </div>
+
+        <div class="col-12">
+            <label class="form-label">Descrição</label>
+            <textarea class="form-control" name="Description" rows="2">@Model.Description</textarea>
+        </div>
+
+        <div class="col-md-4">
+            <label class="form-label">Evento inicial</label>
+            <select class="form-select" name="RetentionStartEvent">
+                @{
+                    string Sel(string v) => Model.RetentionStartEvent == v ? "selected" : "";
+                }
+                <option value="ABERTURA" Sel("ABERTURA")>ABERTURA</option>
+                <option value="INCLUSAO" Sel("INCLUSAO")>INCLUSAO</option>
+                <option value="ARQUIVAMENTO" Sel("ARQUIVAMENTO")>ARQUIVAMENTO</option>
+                <option value="ENCERRAMENTO" Sel("ENCERRAMENTO")>ENCERRAMENTO</option>
+            </select>
+        </div>
+
+        <div class="col-md-4">
+            <label class="form-label">Destino final</label>
+            <select class="form-select" name="FinalDestination">
+                @{
+                    string Sel2(string v) => Model.FinalDestination == v ? "selected" : "";
+                }
+                <option value="REAVALIAR" Sel2("REAVALIAR")>REAVALIAR</option>
+                <option value="ELIMINAR" Sel2("ELIMINAR")>ELIMINAR</option>
+                <option value="TRANSFERIR" Sel2("TRANSFERIR")>TRANSFERIR</option>
+                <option value="RECOLHER" Sel2("RECOLHER")>RECOLHER</option>
+            </select>
+        </div>
+
+        <div class="col-md-4">
+            <label class="form-label">Ativo?</label>
+            <select class="form-select" name="IsActive">
+                <option value="true" selected="@(Model.IsActive ? "selected" : null)">Sim</option>
+                <option value="false" selected="@(!Model.IsActive ? "selected" : null)">Não</option>
+            </select>
+        </div>
+
+        <div class="col-md-6">
+            <label class="form-label">Guarda Corrente</label>
+            <div class="input-group">
+                <input type="number" class="form-control" name="RetentionActiveDays" value="@Model.RetentionActiveDays" min="0" />
+                <span class="input-group-text">dias</span>
+                <input type="number" class="form-control" name="RetentionActiveMonths" value="@Model.RetentionActiveMonths" min="0" />
+                <span class="input-group-text">meses</span>
+                <input type="number" class="form-control" name="RetentionActiveYears" value="@Model.RetentionActiveYears" min="0" />
+                <span class="input-group-text">anos</span>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <label class="form-label">Guarda Intermediária</label>
+            <div class="input-group">
+                <input type="number" class="form-control" name="RetentionArchiveDays" value="@Model.RetentionArchiveDays" min="0" />
+                <span class="input-group-text">dias</span>
+                <input type="number" class="form-control" name="RetentionArchiveMonths" value="@Model.RetentionArchiveMonths" min="0" />
+                <span class="input-group-text">meses</span>
+                <input type="number" class="form-control" name="RetentionArchiveYears" value="@Model.RetentionArchiveYears" min="0" />
+                <span class="input-group-text">anos</span>
+            </div>
+        </div>
+
+        <div class="col-12">
+            <label class="form-label">Observações de retenção</label>
+            <textarea class="form-control" name="RetentionNotes" rows="2">@Model.RetentionNotes</textarea>
+        </div>
+
+        <div class="col-12">
+            <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" name="RequiresDigitalSignature" value="true" @(Model.RequiresDigitalSignature ? "checked" : "") />
+                <label class="form-check-label">Exige assinatura digital</label>
+            </div>
+            <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" name="IsConfidential" value="true" @(Model.IsConfidential ? "checked" : "") />
+                <label class="form-check-label">Sigiloso</label>
+            </div>
+        </div>
+    </div>
+
+    <hr class="my-3" />
+
+    <div class="d-flex justify-content-end gap-2">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="submit" class="btn btn-primary"><i class="bi bi-check2"></i> Salvar</button>
+    </div>
+</form>

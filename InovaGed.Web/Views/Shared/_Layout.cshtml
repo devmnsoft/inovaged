@@ -37,13 +37,36 @@
 
     // ✅ PACS: contador pendências (mesmo padrão do seu layout)
     int pacsBadge = 0;
+
+    // ✅ DESTINAÇÃO: contadores
+    int dispElimBadge = 0;
+    int dispTransBadge = 0;
+    int dispReviewBadge = 0;
+
     try
     {
         using var conn = await DbFactory.OpenAsync(Context.RequestAborted);
+
         pacsBadge = await conn.ExecuteScalarAsync<int>(
             "select count(*) from pacs.ocr_job where status='PENDING'");
+
+        // ✅ Ajuste esses status se seus enums forem diferentes
+        dispElimBadge = await conn.ExecuteScalarAsync<int>(
+            "select count(*) from ged.document where disposition_status='ELIMINATION_READY'");
+
+        dispTransBadge = await conn.ExecuteScalarAsync<int>(
+            "select count(*) from ged.document where disposition_status='TRANSFER_READY'");
+
+        dispReviewBadge = await conn.ExecuteScalarAsync<int>(
+            "select count(*) from ged.document where disposition_status='REVIEW_REQUIRED'");
     }
-    catch { pacsBadge = 0; }
+    catch
+    {
+        pacsBadge = 0;
+        dispElimBadge = dispTransBadge = dispReviewBadge = 0;
+    }
+
+    int dispTotalBadge = dispElimBadge + dispTransBadge + dispReviewBadge;
 }
 
 <!DOCTYPE html>
@@ -147,6 +170,33 @@
                         <i class="bi bi-shuffle"></i><span>Workflows</span>
                     </a>
 
+                    <!-- ✅ NOVO: TEMPORALIDADE / DESTINAÇÃO -->
+                    <div class="sidebar-section-title">Temporalidade</div>
+
+                    <a asp-controller="Disposition" asp-action="Index" class="@ActiveAny("Disposition")">
+                        <i class="bi bi-archive"></i><span>Painel de Destinação</span>
+                    </a>
+
+                    <a asp-controller="Disposition" asp-action="Queue" class="@Active("Disposition","Queue")">
+                        <i class="bi bi-inbox"></i>
+                        <span class="d-flex align-items-center gap-2">
+                            Fila de Destinação
+                            <span class="badge text-bg-danger @(dispTotalBadge > 0 ? "" : "d-none")">@dispTotalBadge</span>
+                        </span>
+                    </a>
+
+                    <a asp-controller="RetentionCase" asp-action="Index" class="@ActiveAny("RetentionCase","RetentionCases")">
+                        <i class="bi bi-journal-text"></i><span>Casos de Temporalidade</span>
+                    </a>
+
+                    <a asp-controller="RetentionTerm" asp-action="Index" class="@ActiveAny("RetentionTerm","RetentionTerms")">
+                        <i class="bi bi-file-earmark-text"></i><span>Termos de Destinação</span>
+                    </a>
+
+                    <a asp-controller="Disposition" asp-action="Terms" class="@Active("Disposition","Terms")">
+                        <i class="bi bi-card-list"></i><span>Relatório de Termos</span>
+                    </a>
+
                     <div class="sidebar-section-title">Administração</div>
 
                     <a asp-controller="Users" asp-action="Index" class="@Active("Users","Index")">
@@ -228,6 +278,33 @@
                             <i class="bi bi-shuffle"></i><span>Workflows</span>
                         </a>
 
+                        <!-- ✅ NOVO: TEMPORALIDADE / DESTINAÇÃO -->
+                        <div class="sidebar-section-title">Temporalidade</div>
+
+                        <a asp-controller="Disposition" asp-action="Index" class="@ActiveAny("Disposition")" data-bs-dismiss="offcanvas">
+                            <i class="bi bi-archive"></i><span>Painel de Destinação</span>
+                        </a>
+
+                        <a asp-controller="Disposition" asp-action="Queue" class="@Active("Disposition","Queue")" data-bs-dismiss="offcanvas">
+                            <i class="bi bi-inbox"></i>
+                            <span class="d-flex align-items-center gap-2">
+                                Fila de Destinação
+                                <span class="badge text-bg-danger @(dispTotalBadge > 0 ? "" : "d-none")">@dispTotalBadge</span>
+                            </span>
+                        </a>
+
+                        <a asp-controller="RetentionCase" asp-action="Index" class="@ActiveAny("RetentionCase","RetentionCases")" data-bs-dismiss="offcanvas">
+                            <i class="bi bi-journal-text"></i><span>Casos de Temporalidade</span>
+                        </a>
+
+                        <a asp-controller="RetentionTerm" asp-action="Index" class="@ActiveAny("RetentionTerm","RetentionTerms")" data-bs-dismiss="offcanvas">
+                            <i class="bi bi-file-earmark-text"></i><span>Termos de Destinação</span>
+                        </a>
+
+                        <a asp-controller="Disposition" asp-action="Terms" class="@Active("Disposition","Terms")" data-bs-dismiss="offcanvas">
+                            <i class="bi bi-card-list"></i><span>Relatório de Termos</span>
+                        </a>
+
                         <div class="sidebar-section-title">Administração</div>
 
                         <a asp-controller="Users" asp-action="Index" class="@Active("Users","Index")" data-bs-dismiss="offcanvas">
@@ -295,6 +372,16 @@
                                 </li>
                                 <li><hr class="dropdown-divider" /></li>
 
+                                <!-- ✅ opcional: atalho no dropdown -->
+                                <li>
+                                    <a class="dropdown-item" asp-controller="Disposition" asp-action="Index">
+                                        <i class="bi bi-archive me-2"></i>Destinação
+                                        <span class="badge text-bg-danger ms-2 @(dispTotalBadge>0?"":"d-none")">@dispTotalBadge</span>
+                                    </a>
+                                </li>
+
+                                <li><hr class="dropdown-divider" /></li>
+
                                 <li>
                                     <a class="dropdown-item" asp-controller="Users" asp-action="Index">
                                         <i class="bi bi-people me-2"></i>Usuários
@@ -343,7 +430,7 @@
         (function () {
             async function loadBadge() {
                 try {
-                    const res = await fetch('/ClassificationDashboard/Count', { headers: { 'X-Requested-With': 'XMLHttpRequest' }});
+                    const res = await fetch('/ClassificationDashboard/Count', { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
                     if (!res.ok) return;
                     const data = await res.json();
                     const total = (data && typeof data.total === 'number') ? data.total : 0;

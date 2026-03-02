@@ -1,0 +1,114 @@
+﻿@model InovaGed.Web.Controllers.TemporalidadeIndexVM
+
+@{
+    ViewData["Title"] = "Painel de Temporalidade";
+    string b = (Model.Bucket ?? "overdue").ToLowerInvariant();
+
+    string Active(string x) => b == x ? "active" : "";
+    string UrlB(string x) => Url.Action("Index", "Temporalidade", new { bucket = x })!;
+}
+
+<div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+    <div>
+        <h2 class="mb-1"><i class="bi bi-hourglass-split"></i> Painel de Temporalidade</h2>
+        <div class="text-muted">
+            Lista automática de vencidos e a vencer (PoC Itens 5–6). Use “Gerar fila agora” para recalcular.
+        </div>
+    </div>
+
+    <div class="d-flex gap-2">
+        <form method="post" asp-action="GenerateNow" asp-controller="Temporalidade">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="bucket" value="@Model.Bucket" />
+            <button class="btn btn-primary" type="submit">
+                <i class="bi bi-arrow-repeat"></i> Gerar fila agora
+            </button>
+        </form>
+    </div>
+</div>
+
+@if (TempData["Ok"] is string ok && !string.IsNullOrWhiteSpace(ok))
+{
+    <div class="alert alert-success">@ok</div>
+}
+@if (TempData["Err"] is string err && !string.IsNullOrWhiteSpace(err))
+{
+    <div class="alert alert-danger">@err</div>
+}
+
+<ul class="nav nav-tabs mb-3">
+    <li class="nav-item"><a class="nav-link @Active("overdue")" href="@UrlB("overdue")">Vencidos</a></li>
+    <li class="nav-item"><a class="nav-link @Active("due30")" href="@UrlB("due30")">A vencer (30d)</a></li>
+    <li class="nav-item"><a class="nav-link @Active("due60")" href="@UrlB("due60")">A vencer (60d)</a></li>
+    <li class="nav-item"><a class="nav-link @Active("due90")" href="@UrlB("due90")">A vencer (90d)</a></li>
+    <li class="nav-item"><a class="nav-link @Active("all")" href="@UrlB("all")">Todos</a></li>
+</ul>
+
+<form method="post" asp-action="CreateTerm" asp-controller="Temporalidade">
+    @Html.AntiForgeryToken()
+    <input type="hidden" name="bucket" value="@Model.Bucket" />
+
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <strong>Itens (@Model.Items.Count)</strong>
+
+            <button class="btn btn-outline-secondary btn-sm" type="submit" @(Model.Items.Count == 0 ? "disabled" : "")>
+                <i class="bi bi-file-earmark-text"></i> Marcar para Termo (IN_TERM)
+            </button>
+        </div>
+
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-striped table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th style="width:42px;">
+                                <input type="checkbox" onclick="toggleAll(this)" />
+                            </th>
+                            <th>Documento</th>
+                            <th style="width:160px;">Classe</th>
+                            <th style="width:190px;">Vencimento</th>
+                            <th style="width:120px;">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (Model.Items.Count == 0)
+                        {
+                            <tr>
+                                <td colspan="5" class="p-4 text-muted">Sem itens no filtro atual.</td>
+                            </tr>
+                        }
+                        else
+                        {
+                            foreach (var it in Model.Items)
+                            {
+                                <tr>
+                                    <td>
+                                        <input type="checkbox" name="selectedQueueIds" value="@it.Id" />
+                                    </td>
+                                    <td style="font-family:monospace;">
+                                        @it.DocumentId
+                                    </td>
+                                    <td>@(it.ClassCode ?? "-")</td>
+                                    <td>@it.DueAt</td>
+                                    <td><span class="badge bg-warning text-dark">@it.Status</span></td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card-footer text-muted" style="font-size:12px;">
+            PoC: selecione vencidos → marcar IN_TERM → (na próxima etapa) criar Case e gerar RetentionTerm.
+        </div>
+    </div>
+</form>
+
+<script>
+    function toggleAll(master) {
+        const boxes = document.querySelectorAll('input[name="selectedQueueIds"]');
+        boxes.forEach(b => b.checked = master.checked);
+    }
+</script>

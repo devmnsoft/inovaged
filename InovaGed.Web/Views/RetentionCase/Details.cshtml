@@ -1,0 +1,131 @@
+﻿@model (InovaGed.Application.RetentionCases.RetentionCaseRow Case, IReadOnlyList<InovaGed.Application.RetentionCases.RetentionCaseItemRow> Items)
+@{
+    ViewData["Title"] = $"Caso #{Model.Case.CaseNo}";
+}
+
+@if (TempData["Error"] is string err)
+{
+     <div class="alert alert-danger">@err</div>
+}
+@if (TempData["Success"] is string ok)
+{
+     <div class="alert alert-success">@ok</div>
+}
+
+@functions {
+    string Badge(string? s) => s switch
+    {
+        "OVERDUE" => "badge bg-danger",
+        "DUE_SOON" => "badge bg-warning text-dark",
+        "OK" => "badge bg-success",
+        _ => "badge bg-secondary"
+    };
+}
+
+<div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+        <h2 class="mb-0">Caso #@Model.Case.CaseNo</h2>
+        <div class="text-muted">@Model.Case.Title • Status: <strong>@Model.Case.Status</strong></div>
+    </div>
+    <div class="d-flex gap-2">
+        <a class="btn btn-outline-secondary" href="/RetentionCases"><i class="bi bi-list"></i> Voltar</a>
+        <a class="btn btn-outline-secondary" target="_blank" href="/RetentionCases/Print?caseId=@Model.Case.Id">
+            <i class="bi bi-printer"></i> Imprimir
+        </a>
+    </div>
+</div>
+
+<div class="card mb-3">
+    <div class="card-body d-flex flex-wrap gap-2">
+        <form method="post" action="/RetentionCases/Close" class="d-flex gap-2">
+            <input type="hidden" name="caseId" value="@Model.Case.Id" />
+            <button class="btn btn-success" name="status" value="APPROVED" type="submit"><i class="bi bi-check2"></i> Encerrar como APPROVED</button>
+            <button class="btn btn-outline-danger" name="status" value="REJECTED" type="submit"><i class="bi bi-x"></i> Encerrar como REJECTED</button>
+            <button class="btn btn-outline-secondary" name="status" value="CANCELED" type="submit"><i class="bi bi-slash-circle"></i> Cancelar</button>
+        </form>
+    </div>
+</div>
+<form method="post" action="/RetentionCases/Execute" class="d-inline">
+    <input type="hidden" name="caseId" value="@Model.Case.Id" />
+    <button class="btn btn-danger" type="submit"
+            @(Model.Case.Status != "APPROVED" ? "disabled" : "")>
+        <i class="bi bi-play-fill"></i> Executar Caso
+    </button>
+</form>
+
+<a class="btn btn-outline-secondary" href="/RetentionCases/ExportCaseCsv?caseId=@Model.Case.Id">
+    <i class="bi bi-download"></i> CSV
+</a>
+
+<div class="card">
+    <div class="card-body table-responsive">
+        <table class="table table-striped align-middle">
+            <thead>
+                <tr>
+                    <th>Documento</th>
+                    <th>Classificação</th>
+                    <th style="width:140px;">Venc.</th>
+                    <th style="width:140px;">Status</th>
+                    <th style="width:170px;">Destino sugerido</th>
+                    <th style="width:150px;">Decisão</th>
+                    <th style="width:260px;">Ação</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var i in Model.Items)
+                {
+                    <tr>
+                        <td>
+                            <div class="fw-semibold">@i.DocTitle</div>
+                            <div class="text-muted small">@i.DocCode</div>
+                        </td>
+                        <td>
+                            <div class="fw-semibold">@i.ClassificationCode</div>
+                            <div class="text-muted small">@i.ClassificationName</div>
+                        </td>
+                        <td>@(i.RetentionDueAt?.ToString("dd/MM/yyyy") ?? "—")</td>
+                        <td><span class="@Badge(i.RetentionStatus)">@i.RetentionStatus</span></td>
+                        <td><span class="badge bg-secondary">@i.SuggestedDestination</span></td>
+                        <td>
+                            <span class="badge @(i.Decision=="APPROVE" ? "bg-success" : i.Decision=="REJECT" ? "bg-danger" : "bg-warning text-dark")">
+                                @i.Decision
+                            </span>
+                        </td>
+                        <td class="text-end">
+                            <button class="btn btn-sm btn-outline-success" type="button" onclick="caseUi.decide(@i.Id,'APPROVE')">
+                                <i class="bi bi-check2"></i> Aprovar
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger" type="button" onclick="caseUi.decide(@i.Id,'REJECT')">
+                                <i class="bi bi-x"></i> Rejeitar
+                            </button>
+                            <a class="btn btn-sm btn-outline-secondary" href="/Ged/Details?id=@i.DocumentId">
+                                <i class="bi bi-box-arrow-up-right"></i> Abrir
+                            </a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        window.caseUi = {
+          async decide(itemId, decision){
+            const notes = prompt("Observação (opcional):") || "";
+            const res = await fetch("/RetentionCases/DecideItem", {
+              method: "POST",
+              headers: {"Content-Type":"application/json"},
+              body: JSON.stringify({ itemId, decision, notes })
+            });
+            const j = await res.json().catch(()=>null);
+            if(!res.ok || !j?.ok){
+              alert(j?.error || "Falha ao registrar decisão.");
+              return;
+            }
+            location.reload();
+          }
+        }
+    </script>
+}

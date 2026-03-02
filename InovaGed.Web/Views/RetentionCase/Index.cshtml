@@ -1,0 +1,81 @@
+﻿@model IReadOnlyList<InovaGed.Application.RetentionCases.RetentionCaseRow>
+@{
+    ViewData["Title"] = "Casos de Destinação";
+    string? status = ViewBag.Status as string;
+}
+
+@if (TempData["Error"] is string err)
+{
+     <div class="alert alert-danger">@err</div>
+}
+@if (TempData["Success"] is string ok)
+{
+     <div class="alert alert-success">@ok</div>
+}
+
+<div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+        <h2 class="mb-0">Casos de Destinação</h2>
+        <div class="text-muted">Crie casos a partir da Central de Temporalidade e registre decisões.</div>
+    </div>
+    <div class="d-flex gap-2">
+        <a class="btn btn-outline-secondary" href="/Retention/Queue"><i class="bi bi-inbox"></i> Central</a>
+    </div>
+</div>
+
+<form method="get" class="card mb-3">
+    <div class="card-body">
+        <div class="row g-2 align-items-end">
+            <div class="col-md-4">
+                <label class="form-label">Status</label>
+                <select class="form-select" name="status">
+                    <option value="" selected="@(string.IsNullOrEmpty(status) ? "selected" : null)">Todos</option>
+                    <option value="OPEN" selected="@(status=="OPEN" ? "selected" : null)">OPEN</option>
+                    <option value="APPROVED" selected="@(status=="APPROVED" ? "selected" : null)">APPROVED</option>
+                    <option value="REJECTED" selected="@(status=="REJECTED" ? "selected" : null)">REJECTED</option>
+                    <option value="EXECUTED" selected="@(status=="EXECUTED" ? "selected" : null)">EXECUTED</option>
+                    <option value="CANCELED" selected="@(status=="CANCELED" ? "selected" : null)">CANCELED</option>
+                </select>
+            </div>
+            <div class="col-md-2 d-grid">
+                <button class="btn btn-outline-primary" type="submit"><i class="bi bi-funnel"></i> Filtrar</button>
+            </div>
+        </div>
+    </div>
+</form>
+
+<div class="card">
+    <div class="card-body table-responsive">
+        <table class="table table-striped align-middle">
+            <thead>
+                <tr>
+                    <th style="width:120px;">Nº</th>
+                    <th>Título</th>
+                    <th style="width:140px;">Status</th>
+                    <th style="width:220px;">Criado</th>
+                    <th style="width:140px;"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var c in Model)
+                {
+                    <tr>
+                        <td><span class="badge bg-secondary">#@c.CaseNo</span></td>
+                        <td>@c.Title</td>
+                        <td><span class="badge bg-info text-dark">@c.Status</span></td>
+                        <td>@c.CreatedAt.ToString("dd/MM/yyyy HH:mm")</td>
+                        <td class="text-end">
+                            <a class="btn btn-sm btn-outline-secondary" href="/RetentionCases/Details?id=@c.Id">
+                                <i class="bi bi-box-arrow-up-right"></i> Abrir
+                            </a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        @if (!Model.Any())
+        {
+            <div class="text-muted">Nenhum caso.</div>
+        }
+    </div>
+</div>
