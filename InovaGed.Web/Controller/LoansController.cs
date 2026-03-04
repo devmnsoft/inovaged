@@ -54,6 +54,25 @@ public sealed class LoansController : Controller
         }
     }
 
+    [HttpGet("DocSearch")]
+    public async Task<IActionResult> DocSearch(string? q, CancellationToken ct)
+    {
+        try
+        {
+            var tenantId = _user.TenantId;
+            var rows = await _queries.SearchDocumentsAsync(tenantId, q ?? "", ct);
+
+            // camelCase pro JS da View
+            var payload = rows.Select(x => new { id = x.Id, code = x.Code, title = x.Title });
+            return Json(payload);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Loans.DocSearch failed");
+            return Json(Array.Empty<object>());
+        }
+    }
+
     [HttpGet("Overdue")]
     public async Task<IActionResult> Overdue(CancellationToken ct)
     {
@@ -94,9 +113,7 @@ public sealed class LoansController : Controller
 
     [HttpGet("New")]
     public IActionResult New()
-    {
-        return View(new LoanCreateVM { DueAt = DateTimeOffset.Now.AddDays(7) });
-    }
+        => View(new LoanCreateVM { DueAt = DateTimeOffset.Now.AddDays(7) });
 
     [HttpPost("New")]
     [ValidateAntiForgeryToken]
@@ -173,24 +190,18 @@ public sealed class LoansController : Controller
         }
     }
 
-    // Exemplo de auditoria de acesso negado (quando você tiver ACL no app):
     public override void OnActionExecuted(ActionExecutedContext context)
     {
         try
         {
-            // exemplo: log básico
             var path = context.HttpContext?.Request?.Path.Value ?? "";
             var user = context.HttpContext?.User?.Identity?.Name ?? "anon";
 
-            // se deu exception no action
             if (context.Exception != null)
-            {
                 _logger.LogError(context.Exception, "LoansController action failed. Path={Path} User={User}", path, user);
-            }
         }
         catch (Exception ex)
         {
-            // nunca derrubar pipeline por log
             _logger.LogError(ex, "LoansController.OnActionExecuted failed");
         }
         finally
@@ -198,24 +209,4 @@ public sealed class LoansController : Controller
             base.OnActionExecuted(context);
         }
     }
-
-    [HttpGet("DocSearch")]
-    public async Task<IActionResult> DocSearch(string? q, CancellationToken ct)
-    {
-        try
-        {
-            var tenantId = _user.TenantId;
-            var rows = await _queries.SearchDocumentsAsync(tenantId, q ?? "", ct);
-
-            // retorna em camelCase pra JS da view funcionar (id/code/title)
-            var payload = rows.Select(x => new { id = x.Id, code = x.Code, title = x.Title });
-            return Json(payload);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Loans.DocSearch failed");
-            return Json(Array.Empty<object>());
-        }
-    }
-
 }

@@ -209,15 +209,15 @@ order by h.event_time desc;
 
             const string sql = """
 select
-  d.id as Id,
-  d.code as Code,
-  d.title as Title
+  d.id   as "Id",
+  d.code as "Code",
+  d.title as "Title"
 from ged.document d
-where d.tenant_id=@TenantId
-  and d.reg_status='A'
+where d.tenant_id = @TenantId
+  and d.status <> 'DELETED'::ged.document_status_enum
   and (
-        coalesce(d.code,'')  ilike ('%'||@Q||'%')
-     or coalesce(d.title,'') ilike ('%'||@Q||'%')
+        d.code  ilike ('%'||@Q||'%')
+     or d.title ilike ('%'||@Q||'%')
   )
 order by d.title
 limit 20;

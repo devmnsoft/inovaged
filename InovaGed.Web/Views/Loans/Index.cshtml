@@ -6,6 +6,7 @@
     ViewData["Subtitle"] = "Solicitação e controle de empréstimos (físico e digital)";
     var q = (string?)ViewBag.Q ?? "";
     var status = (string?)ViewBag.Status ?? "";
+    var stats = ViewBag.Stats as LoanStatsDto;
 }
 
 <div class="d-flex align-items-center justify-content-between mb-3">
@@ -18,11 +19,25 @@
         <a class="btn btn-sm btn-outline-danger" href="/Loans/Overdue">
             <i class="bi bi-alarm me-1"></i>Vencidos
         </a>
-        <button class="btn btn-sm btn-primary" type="button" disabled>
+
+        <!-- ✅ AGORA CLICA -->
+        <a class="btn btn-sm btn-primary" href="/Loans/New">
             <i class="bi bi-plus-lg me-1"></i>Novo (PoC)
-        </button>
+        </a>
     </div>
 </div>
+
+@if (stats != null)
+{
+    <div class="row g-2 mb-3">
+        <div class="col-md-2"><div class="card card-body p-2"><div class="small text-muted">Total</div><div class="fw-bold fs-5">@stats.Total</div></div></div>
+        <div class="col-md-2"><div class="card card-body p-2"><div class="small text-muted">Em aberto</div><div class="fw-bold fs-5">@stats.Open</div></div></div>
+        <div class="col-md-2"><div class="card card-body p-2"><div class="small text-muted">Vencidos</div><div class="fw-bold fs-5 text-danger">@stats.Overdue</div></div></div>
+        <div class="col-md-2"><div class="card card-body p-2"><div class="small text-muted">Solicitados</div><div class="fw-bold fs-5">@stats.Requested</div></div></div>
+        <div class="col-md-2"><div class="card card-body p-2"><div class="small text-muted">Entregues</div><div class="fw-bold fs-5">@stats.Delivered</div></div></div>
+        <div class="col-md-2"><div class="card card-body p-2"><div class="small text-muted">Devolvidos</div><div class="fw-bold fs-5">@stats.Returned</div></div></div>
+    </div>
+}
 
 <form class="card mb-3" method="get" action="/Loans">
     <div class="card-body d-flex flex-wrap gap-2 align-items-end">
@@ -33,7 +48,13 @@
 
         <div>
             <label class="form-label small text-muted mb-1">Status</label>
-            <input class="form-control form-control-sm" name="status" value="@status" placeholder="Ex.: REQUESTED" />
+            <select class="form-select form-select-sm" name="status">
+                <option value="">(Todos)</option>
+                <option value="REQUESTED" selected="@(status=="REQUESTED")">REQUESTED</option>
+                <option value="APPROVED" selected="@(status=="APPROVED")">APPROVED</option>
+                <option value="DELIVERED" selected="@(status=="DELIVERED")">DELIVERED</option>
+                <option value="RETURNED" selected="@(status=="RETURNED")">RETURNED</option>
+            </select>
         </div>
 
         <div class="ms-auto d-flex gap-2">
