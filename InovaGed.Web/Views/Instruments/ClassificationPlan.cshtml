@@ -1,0 +1,142 @@
+﻿@model IReadOnlyList<InovaGed.Application.Ged.Instruments.ClassificationPlanRow>
+
+@{
+    ViewData["Title"] = "Plano de Classificação / TTD";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h3 class="m-0">@ViewData["Title"]</h3>
+    <div class="d-flex gap-2">
+        <a class="btn btn-outline-primary" asp-controller="Instruments" asp-action="ClassificationPlanVersions">Versões</a>
+        <a class="btn btn-primary" asp-controller="Instruments" asp-action="ExportCurrent">Exportar CSV (inteiro)</a>
+    </div>
+</div>
+
+@if (TempData["Ok"] is not null)
+{
+     <div class="alert alert-success">@TempData["Ok"]</div>
+}
+@if (TempData["Err"] is not null)
+{
+     <div class="alert alert-danger">@TempData["Err"]</div>
+}
+
+<div class="card mb-3">
+    <div class="card-header">Nova Classe</div>
+    <div class="card-body">
+        <form asp-controller="Instruments" asp-action="CreateClassificationPlan" method="post">
+            @Html.AntiForgeryToken()
+            <div class="row g-2">
+                <div class="col-md-2">
+                    <label class="form-label">Código</label>
+                    <input name="Code" class="form-control" required />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Nome</label>
+                    <input name="Name" class="form-control" required />
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Descrição</label>
+                    <input name="Description" class="form-control" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Retenção Ativa (dias/meses/anos)</label>
+                    <div class="d-flex gap-1">
+                        <input name="RetentionActiveDays" type="number" class="form-control" value="0" />
+                        <input name="RetentionActiveMonths" type="number" class="form-control" value="0" />
+                        <input name="RetentionActiveYears" type="number" class="form-control" value="0" />
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Retenção Arquivo (dias/meses/anos)</label>
+                    <div class="d-flex gap-1">
+                        <input name="RetentionArchiveDays" type="number" class="form-control" value="0" />
+                        <input name="RetentionArchiveMonths" type="number" class="form-control" value="0" />
+                        <input name="RetentionArchiveYears" type="number" class="form-control" value="0" />
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Destino Final</label>
+                    <select name="FinalDestination" class="form-select">
+                        <option value="ELIMINAR">ELIMINAR</option>
+                        <option value="REAVALIAR">REAVALIAR</option>
+                        <option value="TRANSFERIR">TRANSFERIR</option>
+                        <option value="RECOLHER">RECOLHER</option>
+                    </select>
+                </div>
+                <div class="col-md-3 d-flex align-items-end gap-3">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="RequiresDigitalSignature" value="true" />
+                        <label class="form-check-label">Exige assinatura</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="IsConfidential" value="true" />
+                        <label class="form-check-label">Sigiloso</label>
+                    </div>
+                    <button class="btn btn-success ms-auto" type="submit">Salvar</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">Classes cadastradas</div>
+    <div class="card-body table-responsive">
+        <table class="table table-sm table-hover align-middle">
+            <thead>
+                <tr>
+                    <th>Código</th>
+                    <th>Nome</th>
+                    <th>Destino</th>
+                    <th>Assinatura</th>
+                    <th>Sigilo</th>
+                    <th>Ações</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var r in Model)
+                {
+                    <tr>
+                        <td>@r.Code</td>
+                        <td>@r.Name</td>
+                        <td>@r.FinalDestination</td>
+                        <td>@(r.RequiresDigitalSignature ? "Sim" : "Não")</td>
+                        <td>@(r.IsConfidential ? "Sim" : "Não")</td>
+                        <td class="d-flex gap-2">
+                            <a class="btn btn-outline-primary btn-sm"
+                               asp-controller="Instruments" asp-action="ExportCurrent" asp-route-rootId="@r.Id">Exportar classe</a>
+
+                            <button class="btn btn-outline-secondary btn-sm" type="button"
+                                    onclick="document.getElementById('moveId').value='@r.Id';">
+                                Mover
+                            </button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        <hr />
+        <h6>Mover código/classe (Item 2)</h6>
+        <form asp-controller="Instruments" asp-action="MoveClassificationPlan" method="post" class="row g-2">
+            @Html.AntiForgeryToken()
+            <input id="moveId" name="Id" type="hidden" />
+            <div class="col-md-3">
+                <label class="form-label">Novo ParentId (opcional)</label>
+                <input name="NewParentId" class="form-control" />
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Novo Código (opcional)</label>
+                <input name="NewCode" class="form-control" />
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Motivo</label>
+                <input name="Reason" class="form-control" />
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <button class="btn btn-warning w-100" type="submit">Executar</button>
+            </div>
+        </form>
+    </div>
+</div>

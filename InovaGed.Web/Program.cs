@@ -9,6 +9,7 @@ using InovaGed.Application.Common.Storage;
 using InovaGed.Application.Documents;
 using InovaGed.Application.Ged;
 using InovaGed.Application.Ged.Batches;
+using InovaGed.Application.Ged.Instruments;
 using InovaGed.Application.Ged.Loans;
 using InovaGed.Application.Ged.Physical;
 using InovaGed.Application.Ged.Reports;
@@ -32,6 +33,7 @@ using InovaGed.Infrastructure.Common.Database;
 using InovaGed.Infrastructure.Documents;
 using InovaGed.Infrastructure.Ged;
 using InovaGed.Infrastructure.Ged.Batches;
+using InovaGed.Infrastructure.Ged.Instruments;
 using InovaGed.Infrastructure.Ged.Loans;
 using InovaGed.Infrastructure.Ged.Physical;
 using InovaGed.Infrastructure.Ged.Reports;
@@ -51,6 +53,7 @@ using InovaGed.Infrastructure.Users;
 using InovaGed.Infrastructure.Workflow;
 using InovaGed.Web.Auth;
 using InovaGed.Web.Common.Context;
+using InovaGed.Web.Middleware;
 using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authentication.Cookies;
 
@@ -244,6 +247,14 @@ builder.Services.AddScoped<IPhysicalQueries, PhysicalQueries>();
 builder.Services.AddScoped<IPhysicalCommands, PhysicalCommands>();
 
 builder.Services.AddScoped<IReportService, ReportService>();
+ 
+builder.Services.AddScoped<IAuditQueries, AuditQueries>();
+
+builder.Services.AddScoped<IClassificationPlanCommands, ClassificationPlanCommands>();
+builder.Services.AddScoped<IClassificationPlanQueries, ClassificationPlanQueries>();
+
+builder.Services.AddScoped<IPopProcedureCommands, PopProcedureCommands>();
+builder.Services.AddScoped<IPopProcedureQueries, PopProcedureQueries>();
 
 // =======================================================
 // Instruments (se você realmente usa DI por classe concreta, ok)
@@ -254,6 +265,12 @@ builder.Services.AddScoped<InstrumentRepository>();
 // AUDITORIA (a que o RetentionQueueJob usa)
 // =======================================================
 builder.Services.AddScoped<IAuditWriter, AuditWriter>();
+builder.Services.AddScoped<ILoanCommands, LoanCommands>();
+// + ILoanQueries se existir
+
+builder.Services.AddHostedService<LoanOverdueWorker>();
+
+
 
 // =======================================================
 // Authorization Policies
@@ -301,6 +318,9 @@ if (!app.Environment.IsDevelopment())
     app.UseExceptionHandler("/Home/Error");
     app.UseHsts();
 }
+app.UseMiddleware<AuditMiddleware>();
+app.UseMiddleware<AccessDeniedAuditMiddleware>();
+
 
 app.UseHttpsRedirection();
 app.UseStaticFiles();

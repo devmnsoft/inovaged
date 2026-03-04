@@ -1,0 +1,125 @@
+﻿@model IEnumerable<object>
+
+@{
+    ViewData["Title"] = "POPs";
+    ViewData["Subtitle"] = "Procedimentos Operacionais Padrão (POP) e versões publicadas.";
+
+    string S(object? o, string prop, string fallback = "")
+    {
+        if (o == null) return fallback;
+        var p = o.GetType().GetProperty(prop);
+        if (p == null) return fallback;
+        var v = p.GetValue(o);
+        return v?.ToString() ?? fallback;
+    }
+
+    Guid G(object? o, string prop)
+    {
+        var s = S(o, prop, "");
+        return Guid.TryParse(s, out var g) ? g : Guid.Empty;
+    }
+
+    bool B(object? o, string prop)
+    {
+        var s = S(o, prop, "");
+        return bool.TryParse(s, out var b) && b;
+    }
+}
+
+<div class="d-flex align-items-center justify-content-between mb-3">
+    <div>
+        <h3 class="mb-0">POPs</h3>
+        <div class="text-muted small">Cadastre procedimentos e acesse o histórico de versões.</div>
+    </div>
+
+    <form asp-controller="Instruments" asp-action="CreatePop" method="post" class="d-flex gap-2">
+        @Html.AntiForgeryToken()
+        <input name="Title" class="form-control form-control-sm" style="min-width:320px" placeholder="Título do POP (ex.: Atendimento ao paciente)" />
+        <button type="submit" class="btn btn-sm btn-primary">
+            <i class="bi bi-plus-circle me-1"></i>Novo POP
+        </button>
+    </form>
+</div>
+
+@if (TempData["Ok"] != null)
+{
+    <div class="alert alert-success py-2">@TempData["Ok"]</div>
+}
+@if (TempData["Err"] != null)
+{
+    <div class="alert alert-danger py-2">@TempData["Err"]</div>
+}
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width:40%">Título</th>
+                        <th style="width:30%">Descrição</th>
+                        <th style="width:10%">Ativo</th>
+                        <th class="text-end" style="width:20%">Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (Model == null || !Model.Any())
+                    {
+                        <tr>
+                            <td colspan="4" class="text-muted p-4">
+                                Nenhum POP cadastrado ainda.
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+                        foreach (var row in Model)
+                        {
+                            var id = G(row, "Id");
+                            var title = S(row, "Title", S(row, "Name", "(sem título)"));
+                            var desc = S(row, "Description", S(row, "Summary", ""));
+                            var active = B(row, "IsActive");
+
+                            <tr>
+                                <td class="fw-semibold">@title</td>
+                                <td class="text-muted">@desc</td>
+                                <td>
+                                    @if (active)
+                                    {
+                                        <span class="badge text-bg-success">Sim</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge text-bg-secondary">Não</span>
+                                    }
+                                </td>
+                                <td class="text-end">
+                                    <a class="btn btn-sm btn-outline-secondary"
+                                       asp-controller="Instruments"
+                                       asp-action="PopVersions"
+                                       asp-route-procedureId="@id">
+                                        <i class="bi bi-clock-history me-1"></i>Versões
+                                    </a>
+
+                                    <form asp-controller="Instruments"
+                                          asp-action="UpdatePop"
+                                          asp-route-id="@id"
+                                          method="post"
+                                          class="d-inline-block ms-1">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="Title" value="@title" />
+                                        <input type="hidden" name="Description" value="@desc" />
+                                        <input type="hidden" name="IsActive" value="true" />
+                                        <button type="submit" class="btn btn-sm btn-outline-primary" title="Salvar (PoC)">
+                                            <i class="bi bi-save"></i>
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

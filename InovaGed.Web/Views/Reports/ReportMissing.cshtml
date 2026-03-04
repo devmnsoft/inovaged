@@ -1,0 +1,10 @@
+﻿@model InovaGed.Web.Controllers.ReportsController
+@{
+    ViewData["Title"] = "Relatório indisponível";
+    ViewData["Subtitle"] = "Pendência técnica";
+}
+
+<div class="alert alert-warning">
+    <div class="fw-semibold mb-1">Tabela não encontrada no banco</div>
+    <div>Não consegui gerar o relatório porque a tabela <code>@Model</code> não existe neste ambiente.</div>
+</div>

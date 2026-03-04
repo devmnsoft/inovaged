@@ -14,7 +14,7 @@ namespace InovaGed.Application.Audit
             string? ipAddress,
             string? userAgent,
             object? data,
-            CancellationToken ct);
+            CancellationToken ct); 
     }
 
 }

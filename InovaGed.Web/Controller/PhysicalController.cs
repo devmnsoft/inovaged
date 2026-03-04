@@ -181,4 +181,25 @@ public sealed class PhysicalController : Controller
             return RedirectToAction(nameof(Boxes));
         }
     }
+
+    [HttpGet]
+    public async Task<IActionResult> BoxHistory(Guid boxId, CancellationToken ct)
+    {
+        if (boxId == Guid.Empty)
+        {
+            TempData["Error"] = "Selecione uma caixa.";
+            return RedirectToAction("Boxes");
+        }
+
+        // ⚠️ ajuste isso para seu jeito padrão de resolver TenantId
+        var tenantId = HttpContext.Items["TenantId"] is Guid t ? t : Guid.Empty;
+        if (tenantId == Guid.Empty) return Unauthorized();
+
+        var rows = await _queries.GetBoxHistoryAsync(tenantId, boxId, ct);
+
+        ViewData["Title"] = "Histórico da Caixa";
+        ViewData["Subtitle"] = $"Rastreio de documentos e fases (Caixa: {boxId})";
+
+        return View(rows);
+    }
 }

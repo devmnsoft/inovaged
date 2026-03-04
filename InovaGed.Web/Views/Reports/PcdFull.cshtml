@@ -1,0 +1,37 @@
+﻿@model List<InovaGed.Web.Controllers.ReportsController.TtdRow>
+@{
+    ViewData["Title"] = "Tabela de Temporalidade (TTD)";
+    ViewData["Subtitle"] = "Prazos e destinação final por classe (PoC)";
+}
+
+<div class="card shadow-sm">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-sm align-middle">
+                <thead>
+                    <tr>
+                        <th>Código</th>
+                        <th>Classe</th>
+                        <th>Ativo (meses)</th>
+                        <th>Arquivo (meses)</th>
+                        <th>Destinação</th>
+                        <th>Evento início</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in Model)
+                    {
+                        <tr>
+                            <td class="fw-semibold">@r.ClassCode</td>
+                            <td>@r.ClassName</td>
+                            <td>@(r.ActiveMonths?.ToString() ?? "-")</td>
+                            <td>@(r.ArchiveMonths?.ToString() ?? "-")</td>
+                            <td><span class="badge text-bg-secondary">@r.FinalDestination</span></td>
+                            <td class="text-muted small">@r.StartEvent</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

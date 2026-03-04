@@ -57,4 +57,5 @@ public sealed class BoxFormVM
     public string LabelCode { get; set; } = "";
     public string? Description { get; set; }
     public Guid? LocationId { get; set; }
+    public object Notes { get; set; }
 }

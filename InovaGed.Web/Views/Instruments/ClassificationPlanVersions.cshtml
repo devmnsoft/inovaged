@@ -1,0 +1,64 @@
+﻿@model IReadOnlyList<InovaGed.Application.Ged.Instruments.ClassificationPlanVersionRow>
+
+@{
+    ViewData["Title"] = "Versões do PCD/TTD";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h3 class="m-0">@ViewData["Title"]</h3>
+    <a class="btn btn-outline-secondary" asp-controller="Instruments" asp-action="ClassificationPlan">Voltar</a>
+</div>
+
+@if (TempData["Ok"] is not null)
+{
+     <div class="alert alert-success">@TempData["Ok"]</div>
+}
+@if (TempData["Err"] is not null)
+{
+     <div class="alert alert-danger">@TempData["Err"]</div>
+}
+
+<div class="card mb-3">
+    <div class="card-header">Publicar nova versão (Item 4)</div>
+    <div class="card-body">
+        <form asp-controller="Instruments" asp-action="PublishClassificationPlanVersion" method="post" class="row g-2">
+            @Html.AntiForgeryToken()
+            <div class="col-md-4">
+                <label class="form-label">Título</label>
+                <input name="Title" class="form-control" required />
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Notas</label>
+                <input name="Notes" class="form-control" />
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <button class="btn btn-success w-100" type="submit">Publicar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">Histórico de versões</div>
+    <div class="card-body table-responsive">
+        <table class="table table-sm table-hover align-middle">
+            <thead>
+                <tr><th>Versão</th><th>Título</th><th>Data</th><th>Ações</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var v in Model)
+                {
+                    <tr>
+                        <td>@v.VersionNo</td>
+                        <td>@v.Title</td>
+                        <td>@v.PublishedAt</td>
+                        <td>
+                            <a class="btn btn-primary btn-sm"
+                               asp-controller="Instruments" asp-action="ExportVersion" asp-route-versionId="@v.Id">Exportar CSV</a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>

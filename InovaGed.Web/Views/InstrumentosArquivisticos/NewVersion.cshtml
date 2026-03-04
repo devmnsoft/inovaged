@@ -1,0 +1,36 @@
+﻿@model InovaGed.Web.Controllers.InstrumentosArquivisticosController.PublishVersionVM
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+
+@{
+    ViewData["Title"] ??= "Publicar nova versão do PCD/TTD";
+}
+
+<h2 class="mb-2"><i class="bi bi-cloud-upload me-2"></i>@ViewData["Title"]</h2>
+<div class="text-muted mb-3">Cria um snapshot completo do Plano de Classificação + Temporalidade.</div>
+
+@if (TempData["Err"] is string err)
+{
+     <div class="alert alert-danger">@err</div>
+}
+
+<form asp-action="NewVersion" method="post" class="card shadow-sm">
+    @Html.AntiForgeryToken()
+    <div class="card-body">
+        <div class="mb-3">
+            <label class="form-label">Título</label>
+            <input class="form-control" asp-for="Title" placeholder="Ex.: PCD/TTD v1 - Publicado para PoC" />
+        </div>
+        <div class="mb-0">
+            <label class="form-label">Notas</label>
+            <textarea class="form-control" asp-for="Notes" rows="3" placeholder="Resumo do que mudou nesta versão..."></textarea>
+        </div>
+    </div>
+    <div class="card-footer d-flex gap-2">
+        <button class="btn btn-primary" type="submit">
+            <i class="bi bi-check2-circle me-1"></i> Publicar
+        </button>
+        <a class="btn btn-outline-secondary" asp-action="Versions">
+            <i class="bi bi-arrow-left me-1"></i> Voltar
+        </a>
+    </div>
+</form>

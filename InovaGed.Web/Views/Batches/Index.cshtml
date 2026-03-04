@@ -2,54 +2,100 @@
 @model IReadOnlyList<BatchRowDto>
 
 @{
-    ViewData["Title"] = "Lotes Físicos";
-    ViewData["Subtitle"] = "Controle de lotes e itens";
+    ViewData["Title"] = "Lotes";
+    var q = (ViewBag.Q as string) ?? "";
+    var status = (ViewBag.Status as string) ?? "";
 }
 
 <div class="d-flex align-items-center justify-content-between mb-3">
     <div>
-        <h4 class="mb-0">Lotes Físicos</h4>
-        <div class="text-muted small">Entrada, processamento e arquivamento</div>
+        <h3 class="mb-0">@ViewData["Title"]</h3>
+        <div class="text-muted small">Gerencie lotes, itens e status.</div>
     </div>
 
     <div class="d-flex gap-2">
-        <button class="btn btn-sm btn-primary" type="button" disabled>
-            <i class="bi bi-plus-lg me-1"></i>Novo (PoC)
-        </button>
+        <a class="btn btn-primary" asp-controller="Batches" asp-action="New">
+            <i class="bi bi-plus-circle me-1"></i> Novo lote
+        </a>
     </div>
 </div>
 
-<div class="card">
-    <div class="table-responsive">
-        <table class="table table-sm table-hover align-middle mb-0">
-            <thead class="table-light">
-                <tr>
-                    <th>Lote</th>
-                    <th>Status</th>
-                    <th>Criado em</th>
-                    <th>Notas</th>
-                    <th class="text-center">Itens</th>
-                </tr>
-            </thead>
-            <tbody>
-                @if (Model == null || Model.Count == 0)
-                {
-                    <tr><td colspan="5" class="text-muted p-3">Nenhum lote.</td></tr>
-                }
-                else
-                {
-                    foreach (var r in Model)
+<form method="get" class="card shadow-sm mb-3">
+    <div class="card-body">
+        <div class="row g-2 align-items-end">
+            <div class="col-md-6">
+                <label class="form-label">Busca</label>
+                <input class="form-control" name="q" value="@q" placeholder="Nº do lote ou observações..." />
+            </div>
+
+            <div class="col-md-3">
+                <label class="form-label">Status</label>
+                <input class="form-control" name="status" value="@status" placeholder="Ex.: OPEN, CLOSED..." />
+            </div>
+
+            <div class="col-md-3 d-flex gap-2">
+                <button class="btn btn-primary w-100" type="submit">
+                    <i class="bi bi-search me-1"></i> Filtrar
+                </button>
+                <a class="btn btn-outline-secondary w-100" asp-controller="Batches" asp-action="Index">
+                    Limpar
+                </a>
+            </div>
+        </div>
+    </div>
+</form>
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width:130px;">Nº Lote</th>
+                        <th style="width:140px;">Status</th>
+                        <th>Observações</th>
+                        <th style="width:190px;">Criado em</th>
+                        <th style="width:110px;" class="text-end">Itens</th>
+                        <th style="width:120px;" class="text-end">Ações</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                    @if (Model is null || Model.Count == 0)
                     {
                         <tr>
-                            <td class="fw-semibold">@r.BatchNo</td>
-                            <td><span class="badge bg-secondary">@r.Status</span></td>
-                            <td>@r.CreatedAt.ToString("dd/MM/yyyy HH:mm")</td>
-                            <td class="text-muted">@r.Notes</td>
-                            <td class="text-center"><span class="badge bg-dark">@r.ItemsCount</span></td>
+                            <td colspan="6" class="text-center text-muted py-4">
+                                Nenhum lote encontrado.
+                            </td>
                         </tr>
                     }
-                }
-            </tbody>
-        </table>
+                    else
+                    {
+                        foreach (var b in Model)
+                        {
+                            <tr>
+                                <td class="fw-semibold">#@b.BatchNo</td>
+                                <td>
+                                    <span class="badge text-bg-secondary">@b.Status</span>
+                                </td>
+                                <td class="text-truncate" style="max-width:560px;" title="@b.Notes">
+                                    @(!string.IsNullOrWhiteSpace(b.Notes) ? b.Notes : "—")
+                                </td>
+                                <td>@b.CreatedAt.ToString("dd/MM/yyyy HH:mm")</td>
+                                <td class="text-end">@b.ItemsCount</td>
+                                <td class="text-end">
+                                    <a class="btn btn-sm btn-outline-primary"
+                                       asp-controller="Batches"
+                                       asp-action="Details"
+                                       asp-route-id="@b.Id">
+                                        Ver
+                                    </a>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>

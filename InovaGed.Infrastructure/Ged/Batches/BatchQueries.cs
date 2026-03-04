@@ -28,14 +28,21 @@ public sealed class BatchQueries : IBatchQueries
 
             q = (q ?? "").Trim();
 
+            // ✅ sem b.items_count (não existe) -> calcula via subquery
             const string sql = @"
 select
-  b.id                as ""Id"",
-  b.batch_no          as ""BatchNo"",
-  b.status::text      as ""Status"",
+  b.id                 as ""Id"",
+  b.batch_no           as ""BatchNo"",
+  b.status::text       as ""Status"",
   coalesce(b.notes,'') as ""Notes"",
-  b.created_at        as ""CreatedAt"",
-  b.items_count       as ""ItemsCount""
+  b.created_at         as ""CreatedAt"",
+  (
+    select count(*)::int
+    from ged.batch_item bi
+    where bi.tenant_id=b.tenant_id
+      and bi.batch_id=b.id
+      and bi.reg_status='A'
+  ) as ""ItemsCount""
 from ged.batch b
 where b.tenant_id=@tenant_id
   and b.reg_status='A'
@@ -94,6 +101,7 @@ where b.tenant_id=@tenant_id
 
             if (header is null) return null;
 
+            // ✅ itens do lote + box (se quiser exibir evidência de guarda física)
             const string items = @"
 select
   bi.document_id as DocumentId,
@@ -112,20 +120,24 @@ order by d.title;
             var itemsList = (await conn.QueryAsync<BatchItemDto>(
                 new CommandDefinition(items, new { tenant_id = tenantId, batch_id = batchId }, cancellationToken: ct))).AsList();
 
+            // ✅ histórico por evento/fase (consistente com BatchCommands e com PoC item 18)
             const string hist = @"
 select
-  changed_at as ChangedAt,
-  from_status::text as FromStatus,
-  to_status::text as ToStatus,
+  event_time as ChangedAt,
+  event_type as ToStatus,
   notes as Notes
 from ged.batch_history
 where tenant_id=@tenant_id
   and batch_id=@batch_id
   and reg_status='A'
-order by changed_at desc;
+order by event_time desc;
 ";
             var histList = (await conn.QueryAsync<BatchHistoryDto>(
                 new CommandDefinition(hist, new { tenant_id = tenantId, batch_id = batchId }, cancellationToken: ct))).AsList();
+
+            // 🔧 compatibilidade: se seu BatchHistoryDto tiver FromStatus,
+            // ele vai ficar null (ok). Se quiser preencher FromStatus com base
+            // em "lag()", eu implemento depois.
 
             return (header, itemsList, histList);
         }

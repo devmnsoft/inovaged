@@ -1,0 +1,72 @@
+﻿@model dynamic
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+
+@{
+    ViewData["Title"] ??= "Localização Física";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h2 class="mb-1"><i class="bi bi-geo-alt me-2"></i>@ViewData["Title"]</h2>
+        <div class="text-muted">Informe a localização da caixa (PoC).</div>
+    </div>
+</div>
+
+@if (TempData["Ok"] is string ok)
+{
+    <div class="alert alert-success">@ok</div>
+}
+@if (TempData["Err"] is string err)
+{
+    <div class="alert alert-danger">@err</div>
+}
+
+<form method="post">
+    @Html.AntiForgeryToken()
+
+    <div class="card shadow-sm">
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">Unidade / Setor</label>
+                    <input name="UnitName" class="form-control" value="@(Model?.UnitName ?? "")" />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Sala</label>
+                    <input name="Room" class="form-control" value="@(Model?.Room ?? "")" />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Armário / Estante</label>
+                    <input name="Shelf" class="form-control" value="@(Model?.Shelf ?? "")" />
+                </div>
+
+                <div class="col-md-4">
+                    <label class="form-label">Corredor</label>
+                    <input name="Corridor" class="form-control" value="@(Model?.Corridor ?? "")" />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Prateleira</label>
+                    <input name="Rack" class="form-control" value="@(Model?.Rack ?? "")" />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Identificação Caixa</label>
+                    <input name="BoxCode" class="form-control" value="@(Model?.BoxCode ?? "")" />
+                </div>
+
+                <div class="col-12">
+                    <label class="form-label">Observações</label>
+                    <textarea name="Notes" class="form-control" rows="3">@(Model?.Notes ?? "")</textarea>
+                </div>
+            </div>
+        </div>
+
+        <div class="card-footer d-flex gap-2 justify-content-end">
+            <a class="btn btn-outline-secondary" href="javascript:history.back()">
+                <i class="bi bi-arrow-left me-1"></i> Voltar
+            </a>
+            <button type="submit" class="btn btn-primary">
+                <i class="bi bi-save me-1"></i> Salvar
+            </button>
+        </div>
+    </div>
+</form>

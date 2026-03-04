@@ -1,0 +1,201 @@
+﻿@using InovaGed.Application.Ged.Batches
+
+@{
+    var header = ViewBag.Header as BatchRowDto;
+    var items = ViewBag.Items as List<BatchItemDto> ?? new List<BatchItemDto>();
+    var history = ViewBag.History as List<BatchHistoryDto> ?? new List<BatchHistoryDto>();
+
+    ViewData["Title"] = header is null ? "Lote" : $"Lote #{header.BatchNo}";
+}
+
+@if (header is null)
+{
+    <div class="alert alert-danger">
+        Não foi possível carregar o lote.
+    </div>
+    <a class="btn btn-outline-secondary" asp-controller="Batches" asp-action="Index">Voltar</a>
+    return;
+}
+
+<div class="d-flex align-items-center justify-content-between mb-3">
+    <div>
+        <h3 class="mb-0">@ViewData["Title"]</h3>
+        <div class="text-muted small">Detalhes do lote, itens e histórico.</div>
+    </div>
+
+    <div class="d-flex gap-2">
+        <a class="btn btn-outline-secondary" asp-controller="Batches" asp-action="Index">Voltar</a>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-4">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <div class="mb-2">
+                    <div class="text-muted small">Status</div>
+                    <div class="fw-semibold">
+                        <span class="badge text-bg-secondary">@header.Status</span>
+                    </div>
+                </div>
+
+                <div class="mb-2">
+                    <div class="text-muted small">Criado em</div>
+                    <div class="fw-semibold">@header.CreatedAt.ToString("dd/MM/yyyy HH:mm")</div>
+                </div>
+
+                <div class="mb-2">
+                    <div class="text-muted small">Itens</div>
+                    <div class="fw-semibold">@header.ItemsCount</div>
+                </div>
+
+                <div class="mt-3">
+                    <div class="text-muted small">Observações</div>
+                    <div class="border rounded p-2 bg-light">
+                        @(!string.IsNullOrWhiteSpace(header.Notes) ? header.Notes : "—")
+                    </div>
+                </div>
+
+                <hr class="my-3" />
+
+                <form method="post" asp-action="ChangeStatus" asp-route-id="@header.Id">
+                    @Html.AntiForgeryToken()
+                    <div class="mb-2">
+                        <label class="form-label">Alterar status</label>
+                        <input class="form-control" name="status" placeholder="Ex.: OPEN, CLOSED..." />
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Observação (opcional)</label>
+                        <input class="form-control" name="notes" />
+                    </div>
+                    <button class="btn btn-outline-primary w-100" type="submit">
+                        <i class="bi bi-arrow-repeat me-1"></i> Atualizar
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card shadow-sm mt-3">
+            <div class="card-header bg-white d-flex align-items-center justify-content-between">
+                <strong>Histórico</strong>
+                <span class="text-muted small">@history.Count</span>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table mb-0 align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width:170px;">Quando</th>
+                                <th style="width:120px;">De</th>
+                                <th style="width:120px;">Para</th>
+                                <th>Obs.</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (history.Count == 0)
+                            {
+                                <tr><td colspan="4" class="text-center text-muted py-3">Sem histórico.</td></tr>
+                            }
+                            else
+                            {
+                                foreach (var h in history)
+                                {
+                                    <tr>
+                                        <td>@h.ChangedAt.ToString("dd/MM/yyyy HH:mm")</td>
+                                        <td><span class="badge text-bg-light border">@h.FromStatus</span></td>
+                                        <td><span class="badge text-bg-light border">@h.ToStatus</span></td>
+                                        <td class="text-truncate" style="max-width:240px;" title="@h.Notes">@h.Notes</td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <div class="col-lg-8">
+        <div class="card shadow-sm mb-3">
+            <div class="card-header bg-white d-flex align-items-center justify-content-between">
+                <strong>Itens do lote</strong>
+                <span class="text-muted small">@items.Count</span>
+            </div>
+
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0 align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width:170px;">Documento</th>
+                                <th>Título</th>
+                                <th style="width:200px;">Caixa</th>
+                                <th style="width:230px;" class="text-end">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (items.Count == 0)
+                            {
+                                <tr><td colspan="4" class="text-center text-muted py-4">Nenhum item no lote.</td></tr>
+                            }
+                            else
+                            {
+                                foreach (var it in items)
+                                {
+                                    <tr>
+                                        <td class="fw-semibold">@it.DocumentCode</td>
+                                        <td>@it.DocumentTitle</td>
+                                        <td class="text-muted">@it.BoxId</td>
+                                        <td class="text-end">
+                                            <form class="d-inline" method="post" asp-action="RemoveItem" asp-route-id="@header.Id">
+                                                @Html.AntiForgeryToken()
+                                                <input type="hidden" name="documentId" value="@it.DocumentId" />
+                                                <button class="btn btn-sm btn-outline-danger" type="submit">
+                                                    <i class="bi bi-trash"></i> Remover
+                                                </button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="card shadow-sm">
+            <div class="card-header bg-white">
+                <strong>Adicionar item</strong>
+            </div>
+            <div class="card-body">
+                <form method="post" asp-action="AddItem" asp-route-id="@header.Id">
+                    @Html.AntiForgeryToken()
+
+                    <div class="row g-2">
+                        <div class="col-md-6">
+                            <label class="form-label">DocumentId</label>
+                            <input class="form-control" name="documentId" placeholder="GUID do documento" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">BoxId (opcional)</label>
+                            <input class="form-control" name="boxId" placeholder="GUID da caixa" />
+                        </div>
+                    </div>
+
+                    <div class="mt-3">
+                        <button class="btn btn-primary" type="submit">
+                            <i class="bi bi-plus-circle me-1"></i> Adicionar
+                        </button>
+                    </div>
+
+                    <div class="form-text mt-2">
+                        Depois a gente troca esses GUIDs por selects/autocomplete (Documento/Caixa).
+                    </div>
+                </form>
+            </div>
+        </div>
+
+    </div>
+</div>

@@ -1,0 +1,45 @@
+﻿@model InovaGed.Web.Controllers.IcpController.IcpEvidenceVM
+@{
+    ViewData["Title"] = "ICP-Brasil (Evidência)";
+    ViewData["Subtitle"] = "Certificado do cliente + validação de cadeia";
+}
+
+@if (!Model.HasCertificate)
+{
+    <div class="alert alert-warning">
+        <div class="fw-semibold mb-1">Nenhum certificado foi apresentado</div>
+        <div>Para evidenciar autenticação ICP, habilite mTLS (Client Certificate) no ambiente.</div>
+    </div>
+}
+else
+{
+    <div class="alert @(Model.ChainOk ? "alert-success" : "alert-danger")">
+        <div class="fw-semibold mb-1">Validação da cadeia</div>
+        <div>@Model.ChainMessage</div>
+    </div>
+
+    <div class="card card-body">
+        <div class="row g-3">
+            <div class="col-md-6">
+                <div class="small text-muted">Subject</div>
+                <div class="fw-semibold">@Model.Subject</div>
+            </div>
+            <div class="col-md-6">
+                <div class="small text-muted">Issuer</div>
+                <div class="fw-semibold">@Model.Issuer</div>
+            </div>
+            <div class="col-md-4">
+                <div class="small text-muted">Validade</div>
+                <div class="fw-semibold">@Model.NotBefore?.ToString("dd/MM/yyyy") - @Model.NotAfter?.ToString("dd/MM/yyyy")</div>
+            </div>
+            <div class="col-md-4">
+                <div class="small text-muted">Thumbprint</div>
+                <div class="fw-semibold"><code>@Model.Thumbprint</code></div>
+            </div>
+            <div class="col-md-4">
+                <div class="small text-muted">CPF (detectado)</div>
+                <div class="fw-semibold">@((Model.CpfFromCert ?? "Não encontrado (PoC)"))</div>
+            </div>
+        </div>
+    </div>
+}

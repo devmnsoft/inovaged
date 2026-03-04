@@ -1,0 +1,62 @@
+﻿@model IReadOnlyList<InovaGed.Application.Ged.Physical.BoxHistoryRowDto>
+
+@{
+    ViewData["Title"] ??= "Histórico da Caixa";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h4 class="mb-1">@ViewData["Title"]</h4>
+        @if (ViewData["Subtitle"] is string st && !string.IsNullOrWhiteSpace(st))
+        {
+            <div class="text-muted">@st</div>
+        }
+    </div>
+    <a class="btn btn-outline-secondary" asp-action="Boxes">
+        <i class="bi bi-arrow-left"></i> Voltar
+    </a>
+</div>
+
+@if (Model is null || Model.Count == 0)
+{
+    <div class="alert alert-warning">
+        Nenhum registro encontrado para esta caixa (ou não há documentos vinculados via lote).
+    </div>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-sm align-middle">
+            <thead>
+                <tr>
+                    <th>Data/Hora</th>
+                    <th>Evento</th>
+                    <th>Lote</th>
+                    <th>Documento</th>
+                    <th>Obs.</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var r in Model)
+                {
+                    <tr>
+                        <td class="text-nowrap">@r.At.ToString("dd/MM/yyyy HH:mm")</td>
+                        <td class="text-nowrap">
+                            <span class="badge text-bg-secondary">@r.EventType</span>
+                        </td>
+                        <td class="text-nowrap">
+                            <a asp-controller="Batches" asp-action="Details" asp-route-id="@r.BatchId">
+                                @r.BatchNo
+                            </a>
+                        </td>
+                        <td>
+                            <div class="fw-semibold">@r.DocumentTitle</div>
+                            <div class="text-muted small">@r.DocumentCode (@r.DocumentId)</div>
+                        </td>
+                        <td class="text-muted">@r.Notes</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}

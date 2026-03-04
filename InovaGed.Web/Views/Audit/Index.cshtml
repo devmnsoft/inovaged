@@ -1,0 +1,113 @@
+﻿@using InovaGed.Application.Audit
+@model AuditIndexVM
+
+@{
+    var s = Model.Search;
+    ViewData["Title"] ??= "Auditoria";
+}
+
+<div class="d-flex align-items-center justify-content-between mb-3">
+    <div>
+        <h3 class="mb-0">@ViewData["Title"]</h3>
+        <div class="text-muted small">Total: <strong>@Model.Total</strong></div>
+    </div>
+
+    <a class="btn btn-outline-secondary" asp-controller="Audit" asp-action="AccessDenied">
+        <i class="bi bi-shield-x me-1"></i> Falhas de Acesso
+    </a>
+</div>
+
+<form method="get" class="card shadow-sm mb-3">
+    <div class="card-body">
+        <div class="row g-2 align-items-end">
+            <div class="col-md-2">
+                <label class="form-label">De</label>
+                <input class="form-control" type="date" name="From" value="@s.From?.ToString("yyyy-MM-dd")" />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Até</label>
+                <input class="form-control" type="date" name="To" value="@s.To?.ToString("yyyy-MM-dd")" />
+            </div>
+
+            <div class="col-md-3">
+                <label class="form-label">Tipo</label>
+                <select class="form-select" name="EventType">
+                    <option value="" selected="@(string.IsNullOrWhiteSpace(s.EventType))">Todos</option>
+                    <option value="INFO" selected="@(s.EventType=="INFO")">INFO</option>
+                    <option value="SECURITY" selected="@(s.EventType=="SECURITY")">SECURITY</option>
+                    <option value="ACCESS_DENIED" selected="@(s.EventType=="ACCESS_DENIED")">ACCESS_DENIED</option>
+                    <option value="ERROR" selected="@(s.EventType=="ERROR")">ERROR</option>
+                </select>
+            </div>
+
+            <div class="col-md-3">
+                <label class="form-label">Ação</label>
+                <input class="form-control" name="Action" value="@s.Action" placeholder="Ex.: CREATE, UPDATE, LOGIN..." />
+            </div>
+
+            <div class="col-md-2">
+                <label class="form-label">Página</label>
+                <input class="form-control" type="number" min="1" name="Page" value="@s.Page" />
+            </div>
+
+            <div class="col-12">
+                <label class="form-label">Busca</label>
+                <input class="form-control" name="Q" value="@s.Q" placeholder="Usuário, email, entidade, resumo, IP..." />
+            </div>
+
+            <div class="col-12 d-flex gap-2 mt-2">
+                <button class="btn btn-primary" type="submit">
+                    <i class="bi bi-search me-1"></i> Filtrar
+                </button>
+                <a class="btn btn-outline-secondary" asp-controller="Audit" asp-action="Index">Limpar</a>
+            </div>
+        </div>
+    </div>
+</form>
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width:170px;">Data/Hora</th>
+                        <th style="width:130px;">Tipo</th>
+                        <th style="width:160px;">Ação</th>
+                        <th style="width:220px;">Usuário</th>
+                        <th style="width:220px;">Entidade</th>
+                        <th>Resumo</th>
+                        <th style="width:140px;">IP</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (Model.Rows == null || Model.Rows.Count == 0)
+                    {
+                        <tr><td colspan="7" class="text-center text-muted py-4">Sem registros para o filtro atual.</td></tr>
+                    }
+                    else
+                    {
+                        foreach (var r in Model.Rows)
+                        {
+                            <tr>
+                                <td>@r.EventTime.ToString("dd/MM/yyyy HH:mm")</td>
+                                <td><span class="badge text-bg-light border">@r.EventType</span></td>
+                                <td class="fw-semibold">@r.Action</td>
+                                <td>
+                                    <div class="fw-semibold">@(!string.IsNullOrWhiteSpace(r.UserName) ? r.UserName : "—")</div>
+                                    <div class="text-muted small">@r.UserEmail</div>
+                                </td>
+                                <td>
+                                    <div class="fw-semibold">@r.EntityName</div>
+                                    <div class="text-muted small">@r.EntityId</div>
+                                </td>
+                                <td class="text-truncate" style="max-width:520px;" title="@r.Summary">@r.Summary</td>
+                                <td>@r.IpAddress</td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

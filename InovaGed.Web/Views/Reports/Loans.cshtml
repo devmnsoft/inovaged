@@ -1,0 +1,37 @@
+﻿@model List<InovaGed.Web.Controllers.ReportsController.LoanReportRow>
+@{
+    ViewData["Title"] = "Relatório de Empréstimos";
+    ViewData["Subtitle"] = "Por solicitante, período e documento";
+}
+
+<div class="card shadow-sm">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-sm align-middle">
+                <thead>
+                    <tr>
+                        <th>Protocolo</th>
+                        <th>Solicitante</th>
+                        <th>Documento</th>
+                        <th>Solicitado</th>
+                        <th>Vencimento</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in Model)
+                    {
+                        <tr>
+                            <td>@r.ProtocolNo</td>
+                            <td>@r.RequesterName</td>
+                            <td><div class="fw-semibold">@r.DocumentCode</div><div class="text-muted small">@r.DocumentTitle</div></td>
+                            <td>@r.RequestedAt.ToString("dd/MM/yyyy HH:mm")</td>
+                            <td>@r.DueAt.ToString("dd/MM/yyyy HH:mm")</td>
+                            <td><span class="badge text-bg-secondary">@r.Status</span></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

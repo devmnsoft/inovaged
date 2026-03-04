@@ -11,4 +11,10 @@ public interface ILoanCommands
 
     // Job/manual: marca evento OVERDUE e grava audit
     Task<Result<int>> RegisterOverdueEventsAsync(Guid tenantId, Guid? userId, CancellationToken ct);
+
+
+    Task<Result> MarkDeliveredAsync(Guid tenantId, Guid loanId, Guid userId, string? notes, CancellationToken ct);
+    Task<Result> MarkReturnedAsync(Guid tenantId, Guid loanId, Guid userId, string? notes, CancellationToken ct);
+    Task<int> RunOverdueAsync(Guid tenantId, CancellationToken ct);
+
 }

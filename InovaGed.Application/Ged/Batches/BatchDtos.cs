@@ -1,17 +1,24 @@
 ﻿namespace InovaGed.Application.Ged.Batches;
 
-public sealed record BatchRowDto(
-    Guid Id,
-    string BatchNo,
-    string Status,
-    string? Notes,
-    DateTimeOffset CreatedAt,
-    int ItemsCount);
+public sealed class BatchRowDto
+{
+    public Guid Id { get; set; }
+    public int BatchNo { get; set; }
+    public string Status { get; set; } = "";
+    public string? Notes { get; set; } // <- pode ser null no banco
+    public DateTime CreatedAt { get; set; }
+    public int ItemsCount { get; set; }
+
+    // ✅ obrigatório pro Dapper (forma mais simples)
+    public BatchRowDto() { }
+}
 
 public sealed class BatchCreateVM
 {
     public string BatchNo { get; set; } = "";
     public string? Notes { get; set; }
+
+    public string? Status { get; set; }
 
     // opcional: inserir já com documentos
     public List<Guid> DocumentIds { get; set; } = new();

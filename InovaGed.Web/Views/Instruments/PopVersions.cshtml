@@ -1,0 +1,90 @@
+﻿@model IEnumerable<object>
+
+@{
+    ViewData["Title"] = "Versões do POP";
+    ViewData["Subtitle"] = "Histórico de versões publicadas do procedimento.";
+
+    var procedureId = (Guid?)ViewBag.ProcedureId;
+
+    string S(object? o, string prop, string fallback = "")
+    {
+        if (o == null) return fallback;
+        var p = o.GetType().GetProperty(prop);
+        if (p == null) return fallback;
+        var v = p.GetValue(o);
+        return v?.ToString() ?? fallback;
+    }
+}
+
+<div class="d-flex align-items-center justify-content-between mb-3">
+    <div>
+        <h3 class="mb-0">Versões do POP</h3>
+        <div class="text-muted small">ProcedureId: <code>@procedureId</code></div>
+    </div>
+
+    <a class="btn btn-sm btn-outline-secondary" asp-controller="Instruments" asp-action="Pop">
+        <i class="bi bi-arrow-left me-1"></i>Voltar
+    </a>
+</div>
+
+@if (TempData["Ok"] != null)
+{
+    <div class="alert alert-success py-2">@TempData["Ok"]</div>
+}
+@if (TempData["Err"] != null)
+{
+    <div class="alert alert-danger py-2">@TempData["Err"]</div>
+}
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Versão</th>
+                        <th>Título</th>
+                        <th>Publicado em</th>
+                        <th>Publicado por</th>
+                        <th class="text-end">Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (Model == null || !Model.Any())
+                    {
+                        <tr>
+                            <td colspan="5" class="text-muted p-4">Nenhuma versão publicada.</td>
+                        </tr>
+                    }
+                    else
+                    {
+                        foreach (var row in Model)
+                        {
+                            var versionNo = S(row, "VersionNo", S(row, "Version", ""));
+                            var title = S(row, "Title", S(row, "Name", ""));
+                            var publishedAt = S(row, "PublishedAt", "");
+                            var publishedBy = S(row, "PublishedBy", "");
+
+                            <tr>
+                                <td class="fw-semibold">@versionNo</td>
+                                <td>@title</td>
+                                <td class="text-muted">@publishedAt</td>
+                                <td class="text-muted">@publishedBy</td>
+                                <td class="text-end">
+                                    <form asp-controller="Instruments" asp-action="PublishPopVersion" method="post" class="d-inline">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="ProcedureId" value="@procedureId" />
+                                        <input type="hidden" name="VersionId" value="@S(row,"Id","")" />
+                                        <button type="submit" class="btn btn-sm btn-outline-primary">
+                                            <i class="bi bi-megaphone me-1"></i>Publicar
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

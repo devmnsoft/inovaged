@@ -199,6 +199,7 @@ public sealed class TemporalidadeController : Controller
     }
 }
 
+
 public sealed class TemporalidadeIndexVM
 {
     public string Bucket { get; set; } = "overdue";

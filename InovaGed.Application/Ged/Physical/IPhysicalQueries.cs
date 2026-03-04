@@ -7,4 +7,6 @@ public interface IPhysicalQueries
 
     Task<IReadOnlyList<BoxRowDto>> ListBoxesAsync(Guid tenantId, string? q, CancellationToken ct);
     Task<BoxFormVM?> GetBoxAsync(Guid tenantId, Guid id, CancellationToken ct);
+
+    Task<IReadOnlyList<BoxHistoryRowDto>> GetBoxHistoryAsync(Guid tenantId, Guid boxId, CancellationToken ct);
 }
