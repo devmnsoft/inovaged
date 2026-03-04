@@ -1,71 +1,117 @@
-﻿@model dynamic
+﻿@model InovaGed.Web.Controllers.SignatureController.SignDocumentVM
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+
 @{
-    ViewData["Title"] = "Assinar Lote";
-    ViewData["Subtitle"] = "Assina todos os docs do lote (PoC 19) com CPF=CPF (PoC 8)";
-    var batch = Model.batch;
-    var docs = Model.docs as IEnumerable<dynamic> ?? Enumerable.Empty<dynamic>();
+    ViewData["Title"] = "Assinar Documento";
+    ViewData["Subtitle"] = $"Assinatura ICP-Brasil — {Model.Code}";
 }
 
-<div class="container py-3">
-    <div class="card mb-3">
-        <div class="card-body">
-            <div><strong>Lote:</strong> <span class="font-monospace">@batch.code</span></div>
-            <div><strong>Status:</strong> @batch.status</div>
-        </div>
-    </div>
+<div class="row justify-content-center">
+    <div class="col-lg-7">
 
-    <div class="card mb-3">
-        <div class="card-body">
-            <form asp-controller="Signature" asp-action="SignBatch" method="post" class="row g-3">
-                @Html.AntiForgeryToken()
-                <input type="hidden" name="batchId" value="@batch.id" />
+        @if (TempData["Err"] is string err)
+        {
+            <div class="alert alert-danger alert-dismissible fade show">
+                <i class="bi bi-exclamation-triangle me-1"></i> @err
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        }
 
-                <div class="col-md-4">
-                    <label class="form-label">CPF Usuário</label>
-                    <input name="userCpf" class="form-control" required />
-                </div>
+        <!-- Info do documento -->
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-white">
+                <strong><i class="bi bi-file-earmark-text me-1"></i> Documento</strong>
+            </div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-3">Código</dt>
+                    <dd class="col-sm-9 fw-semibold">@Model.Code</dd>
 
-                <div class="col-md-4">
-                    <label class="form-label">CPF Certificado</label>
-                    <input name="certCpf" class="form-control" required />
-                </div>
+                    <dt class="col-sm-3">Título</dt>
+                    <dd class="col-sm-9">@Model.Title</dd>
 
-                <div class="col-md-4">
-                    <label class="form-label">Status</label>
-                    <input name="status" class="form-control" value="UNKNOWN" />
-                </div>
-
-                <div class="col-12">
-                    <label class="form-label">Detalhes</label>
-                    <input name="details" class="form-control" />
-                </div>
-
-                <div class="col-12 text-end">
-                    <button class="btn btn-primary" type="submit">Assinar Lote (PoC)</button>
-                    <a class="btn btn-outline-secondary" asp-controller="Signature" asp-action="Index">Voltar</a>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <div class="card">
-        <div class="card-header"><strong>Documentos do Lote</strong></div>
-        <div class="card-body p-0">
-            <div class="table-responsive">
-                <table class="table table-sm mb-0">
-                    <thead><tr><th>Código</th><th>Título</th><th>Status</th></tr></thead>
-                    <tbody>
-                        @foreach (var d in docs)
-                        {
-                            <tr>
-                                <td class="font-monospace">@d.code</td>
-                                <td>@d.title</td>
-                                <td>@d.status</td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
+                    <dt class="col-sm-3">Status</dt>
+                    <dd class="col-sm-9">
+                        <span class="badge @(Model.DocStatus == "IN_SIGNATURE" ? "text-bg-warning" : "text-bg-secondary")">
+                            @Model.DocStatus
+                        </span>
+                    </dd>
+                </dl>
             </div>
         </div>
+
+        <!-- Assinatura atual (se existir) -->
+        @if (Model.SignatureStatus != null)
+        {
+            <div class="card shadow-sm mb-4 border-@(Model.SignatureStatus == "VALID" ? "success" : "danger")">
+                <div class="card-header bg-white">
+                    <strong><i class="bi bi-patch-check me-1"></i> Assinatura Atual</strong>
+                </div>
+                <div class="card-body">
+                    <dl class="row mb-0">
+                        <dt class="col-sm-3">Status</dt>
+                        <dd class="col-sm-9">
+                            <span class="badge @(Model.SignatureStatus == "VALID" ? "text-bg-success" : "text-bg-danger")">
+                                @Model.SignatureStatus
+                            </span>
+                        </dd>
+                        <dt class="col-sm-3">Assinado por</dt>
+                        <dd class="col-sm-9">@(Model.SignedByName ?? "—")</dd>
+                        <dt class="col-sm-3">CPF</dt>
+                        <dd class="col-sm-9">@(Model.Cpf ?? "—")</dd>
+                        <dt class="col-sm-3">Data</dt>
+                        <dd class="col-sm-9">@(Model.SigningTime?.ToString("dd/MM/yyyy HH:mm") ?? "—")</dd>
+                        @if (!string.IsNullOrWhiteSpace(Model.StatusDetails))
+                        {
+                            <dt class="col-sm-3">Detalhes</dt>
+                            <dd class="col-sm-9 text-muted small">@Model.StatusDetails</dd>
+                        }
+                    </dl>
+                </div>
+            </div>
+        }
+
+        <!-- Formulário de assinatura -->
+        <div class="card shadow-sm">
+            <div class="card-header bg-white">
+                <strong>
+                    <i class="bi bi-pen me-1"></i>
+                    @(Model.SignatureStatus == null ? "Registrar Assinatura" : "Reassinar Documento")
+                </strong>
+            </div>
+            <div class="card-body">
+                <form asp-action="SignDocument" asp-route-id="@Model.Id" method="post">
+                    @Html.AntiForgeryToken()
+
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">
+                            CPF do Certificado ICP-Brasil <span class="text-danger">*</span>
+                        </label>
+                        <input name="cpf" type="text" class="form-control"
+                               placeholder="000.000.000-00"
+                               required maxlength="18"
+                               pattern="\d{3}\.?\d{3}\.?\d{3}-?\d{2}" />
+                        <div class="form-text">
+                            Informe o CPF vinculado ao certificado digital utilizado para assinar.
+                        </div>
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="form-label">Observações (opcional)</label>
+                        <textarea name="notes" class="form-control" rows="2"
+                                  placeholder="Observações sobre esta assinatura..."></textarea>
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-success">
+                            <i class="bi bi-pen me-1"></i>
+                            @(Model.SignatureStatus == null ? "Assinar Documento" : "Reassinar")
+                        </button>
+                        <a asp-action="Index" class="btn btn-outline-secondary">Cancelar</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+
     </div>
 </div>

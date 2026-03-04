@@ -1,4 +1,9 @@
-﻿using Dapper;
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using Dapper;
 using InovaGed.Application.Audit;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Ged.Loans;
@@ -24,92 +29,167 @@ public sealed class LoanCommands : ILoanCommands
     {
         try
         {
-            if (tenantId == Guid.Empty) return Result<Guid>.Fail("TENANT", "Tenant inválido.");
-            if (vm is null) return Result<Guid>.Fail("VM", "Dados inválidos.");
-            if (string.IsNullOrWhiteSpace(vm.RequesterName)) return Result<Guid>.Fail("REQ", "Solicitante é obrigatório.");
-            if (vm.DocumentIds is null || vm.DocumentIds.Count == 0) return Result<Guid>.Fail("DOCS", "Selecione ao menos 1 documento.");
+            if (tenantId == Guid.Empty)
+                return Result<Guid>.Fail("TENANT", "Tenant inválido.");
 
-            await using var conn = await _db.OpenAsync(ct);
-            using var tx = conn.BeginTransaction();
+            if (userId is null || userId == Guid.Empty)
+                return Result<Guid>.Fail("USER", "Usuário logado não identificado para requester_id.");
 
-            // protocolo simples (pode trocar por sequence do banco depois)
-            var protocol = $"EMP-{DateTime.UtcNow:yyyyMMddHHmmss}-{Guid.NewGuid():N}".Substring(0, 30);
+            var docIds = (vm.DocumentIds ?? new List<Guid>())
+                .Where(x => x != Guid.Empty)
+                .Distinct()
+                .ToList();
 
-            const string insertLoan = @"
-insert into ged.loan_request
-(id, tenant_id, protocol_no, requester_id, requester_name, due_at, is_physical, status, requested_at, created_by, notes, reg_date, reg_status)
-values
-(gen_random_uuid(), @tenant_id, @protocol_no, @requester_id, @requester_name, @due_at, @is_physical,
- 'REQUESTED'::ged.loan_status, now(), @created_by, @notes, now(), 'A')
-returning id;
-";
-            var loanId = await conn.ExecuteScalarAsync<Guid>(
-                new CommandDefinition(insertLoan, new
-                {
-                    tenant_id = tenantId,
-                    protocol_no = protocol,
-                    requester_id = vm.RequesterId,
-                    requester_name = vm.RequesterName,
-                    due_at = vm.DueAt,
-                    is_physical = vm.IsPhysical,
-                    created_by = userId,
-                    notes = vm.Notes
-                }, transaction: tx, cancellationToken: ct));
+            if (docIds.Count == 0)
+                return Result<Guid>.Fail("DOC", "Informe pelo menos 1 documento para o empréstimo.");
 
-            const string insertItem = @"
-insert into ged.loan_request_item(tenant_id, loan_id, document_id, is_physical, reg_date, reg_status)
-values (@tenant_id, @loan_id, @document_id, @is_physical, now(), 'A')
-on conflict (tenant_id, loan_id, document_id)
-do update set reg_status='A';
-";
-            foreach (var docId in vm.DocumentIds.Distinct())
+            await using var con = await _db.OpenAsync(ct);
+            await using var tx = await con.BeginTransactionAsync(ct);
+
+            var nowUtc = DateTimeOffset.UtcNow;
+
+            DateTimeOffset dueUtc;
+            if (vm.DueAt.HasValue)
             {
-                await conn.ExecuteAsync(
-                    new CommandDefinition(insertItem, new
-                    {
-                        tenant_id = tenantId,
-                        loan_id = loanId,
-                        document_id = docId,
-                        is_physical = vm.IsPhysical
-                    }, transaction: tx, cancellationToken: ct));
+                var due = vm.DueAt.Value;
+
+                if (due.TimeOfDay == TimeSpan.Zero)
+                    due = new DateTimeOffset(due.Year, due.Month, due.Day, 23, 59, 59, due.Offset);
+
+                dueUtc = due.ToUniversalTime();
+            }
+            else
+            {
+                dueUtc = nowUtc.AddDays(7);
             }
 
-            const string hist = @"
-insert into ged.loan_history(tenant_id, loan_id, event_time, event_type, by_user_id, notes, reg_date, reg_status)
-values(@tenant_id, @loan_id, now(), 'REQUESTED', @by_user_id, @notes, now(), 'A');
-";
-            await conn.ExecuteAsync(
-                new CommandDefinition(hist, new
-                {
-                    tenant_id = tenantId,
-                    loan_id = loanId,
-                    by_user_id = userId,
-                    notes = vm.Notes
-                }, transaction: tx, cancellationToken: ct));
+            const string sqlHead = """
+insert into ged.loan_request
+(
+  id,
+  tenant_id,
+  protocol_no,
+  status,
+  requester_id,
+  requester_name,
+  document_id,
+  requested_at,
+  due_at,
+  reg_status
+)
+values
+(
+  gen_random_uuid(),
+  @TenantId,
+  (select coalesce(max(protocol_no),0)+1 from ged.loan_request where tenant_id=@TenantId),
+  'REQUESTED'::ged.loan_status,
+  @RequesterId,
+  @RequesterName,
+  @DocumentId,
+  @RequestedAt,
+  @DueAt,
+  'A'
+)
+returning id;
+""";
 
-            tx.Commit();
+            var loanId = await con.ExecuteScalarAsync<Guid>(
+                new CommandDefinition(
+                    sqlHead,
+                    new
+                    {
+                        TenantId = tenantId,
+                        RequesterId = userId.Value,
+                        RequesterName = (vm.RequesterName ?? "").Trim(),
+                        DocumentId = docIds[0],          // ✅ obrigatório no seu schema
+                        RequestedAt = nowUtc,
+                        DueAt = dueUtc
+                    },
+                    transaction: tx,
+                    cancellationToken: ct));
 
-            // auditoria não pode derrubar o fluxo
-            _ = await _audit.WriteAsync(
-                tenantId, userId,
-                action: "LOAN_EVENT",
-                entityName: "loan_request",
-                entityId: loanId,
-                summary: "Solicitação de empréstimo criada",
-                ipAddress: null,
-                userAgent: null,
-                data: new { protocol, docs = vm.DocumentIds.Count, dueAt = vm.DueAt, isPhysical = vm.IsPhysical },
-                ct: ct);
+            // Se você tiver a tabela de itens, mantém (multi-documentos):
+            const string sqlItem = """
+insert into ged.loan_request_item
+(
+  tenant_id,
+  loan_id,
+  document_id,
+  is_physical,
+  reg_status
+)
+values
+(
+  @TenantId,
+  @LoanId,
+  @DocumentId,
+  @IsPhysical,
+  'A'
+);
+""";
 
+            foreach (var docId in docIds)
+            {
+                await con.ExecuteAsync(
+                    new CommandDefinition(
+                        sqlItem,
+                        new
+                        {
+                            TenantId = tenantId,
+                            LoanId = loanId,
+                            DocumentId = docId,
+                            IsPhysical = vm.IsPhysical
+                        },
+                        transaction: tx,
+                        cancellationToken: ct));
+            }
+
+            const string sqlHist = """
+insert into ged.loan_history
+(
+  tenant_id,
+  loan_id,
+  event_time,
+  event_type,
+  by_user_id,
+  notes,
+  reg_status
+)
+values
+(
+  @TenantId,
+  @LoanId,
+  @EventTime,
+  'REQUESTED',
+  @ByUserId,
+  @Notes,
+  'A'
+);
+""";
+
+            await con.ExecuteAsync(
+                new CommandDefinition(
+                    sqlHist,
+                    new
+                    {
+                        TenantId = tenantId,
+                        LoanId = loanId,
+                        EventTime = nowUtc,
+                        ByUserId = userId.Value,
+                        Notes = (vm.Notes ?? "").Trim()
+                    },
+                    transaction: tx,
+                    cancellationToken: ct));
+
+            await tx.CommitAsync(ct);
             return Result<Guid>.Ok(loanId);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "LoanCommands.CreateAsync failed. Tenant={Tenant}", tenantId);
-            return Result<Guid>.Fail("LOAN", "Falha ao criar empréstimo.");
+            return Result<Guid>.Fail("LOAN", "Erro ao criar empréstimo.");
         }
     }
-
     public Task<Result> ApproveAsync(Guid tenantId, Guid loanId, Guid? userId, string? notes, CancellationToken ct)
         => TransitionAsync(tenantId, loanId, userId, notes, newStatus: "APPROVED", label: "Aprovar", setReturnedAt: false, ct);
 
@@ -119,20 +199,13 @@ values(@tenant_id, @loan_id, now(), 'REQUESTED', @by_user_id, @notes, now(), 'A'
     public Task<Result> ReturnAsync(Guid tenantId, Guid loanId, Guid? userId, string? notes, CancellationToken ct)
         => TransitionAsync(tenantId, loanId, userId, notes, newStatus: "RETURNED", label: "Devolver", setReturnedAt: true, ct);
 
-    // ==========================
-    // MÉTODOS "DUPLICADOS" DO ILoanCommands (compatibilidade)
-    // ==========================
-
+    // Compat
     public Task<Result> MarkDeliveredAsync(Guid tenantId, Guid loanId, Guid userId, string? notes, CancellationToken ct)
         => DeliverAsync(tenantId, loanId, userId, notes, ct);
 
     public Task<Result> MarkReturnedAsync(Guid tenantId, Guid loanId, Guid userId, string? notes, CancellationToken ct)
         => ReturnAsync(tenantId, loanId, userId, notes, ct);
 
-    /// <summary>
-    /// Executa rotina de vencidos. Tenta a função ged.loan_run_overdue(tenant) se existir.
-    /// Caso não exista, usa a lógica atual via vw_loan_overdue (RegisterOverdueEventsAsync).
-    /// </summary>
     public async Task<int> RunOverdueAsync(Guid tenantId, CancellationToken ct)
     {
         if (tenantId == Guid.Empty) return 0;
@@ -141,14 +214,13 @@ values(@tenant_id, @loan_id, now(), 'REQUESTED', @by_user_id, @notes, now(), 'A'
         {
             await using var conn = await _db.OpenAsync(ct);
 
-            // tenta função (se existir no seu banco)
-            const string tryFn = @"select ged.loan_run_overdue(@tenant_id);";
+            const string tryFn = "select ged.loan_run_overdue(@tenant_id);";
             var updated = await conn.ExecuteScalarAsync<int>(
                 new CommandDefinition(tryFn, new { tenant_id = tenantId }, cancellationToken: ct));
 
             _ = await _audit.WriteAsync(
                 tenantId, null,
-                action: "LOAN_EVENT",
+                action: "LOAN_OVERDUE_RUN",
                 entityName: "loan_request",
                 entityId: null,
                 summary: "Rotina OVERDUE executada via função ged.loan_run_overdue",
@@ -161,7 +233,6 @@ values(@tenant_id, @loan_id, now(), 'REQUESTED', @by_user_id, @notes, now(), 'A'
         }
         catch (Exception ex)
         {
-            // fallback para o método por view (não quebra a execução)
             _logger.LogWarning(ex, "RunOverdueAsync: função ged.loan_run_overdue não disponível. Usando fallback vw_loan_overdue. Tenant={Tenant}", tenantId);
 
             var res = await RegisterOverdueEventsAsync(tenantId, userId: null, ct);
@@ -169,28 +240,27 @@ values(@tenant_id, @loan_id, now(), 'REQUESTED', @by_user_id, @notes, now(), 'A'
         }
     }
 
-    // ==========================
-    // OVERDUE via VIEW (já existia)
-    // ==========================
-
     public async Task<Result<int>> RegisterOverdueEventsAsync(Guid tenantId, Guid? userId, CancellationToken ct)
     {
         try
         {
-            if (tenantId == Guid.Empty) return Result<int>.Fail("TENANT", "Tenant inválido.");
+            if (tenantId == Guid.Empty)
+                return Result<int>.Fail("TENANT", "Tenant inválido.");
 
             await using var conn = await _db.OpenAsync(ct);
 
-            const string sql = @"
+            var nowUtc = DateTimeOffset.UtcNow;
+
+            const string sql = """
 insert into ged.loan_history(tenant_id, loan_id, event_time, event_type, by_user_id, notes, reg_date, reg_status)
 select
   lr.tenant_id,
   lr.id,
-  now(),
+  @nowUtc,
   'OVERDUE',
   @user_id,
   'Empréstimo vencido (registro automático).',
-  now(),
+  @nowUtc,
   'A'
 from ged.vw_loan_overdue lr
 where lr.tenant_id=@tenant_id
@@ -198,33 +268,30 @@ where lr.tenant_id=@tenant_id
     select 1 from ged.loan_history h
     where h.tenant_id=lr.tenant_id and h.loan_id=lr.id and h.event_type='OVERDUE' and h.reg_status='A'
   );
-";
-            var count = await conn.ExecuteAsync(
-                new CommandDefinition(sql, new { tenant_id = tenantId, user_id = userId }, cancellationToken: ct));
+""";
+
+            var inserted = await conn.ExecuteAsync(
+                new CommandDefinition(sql, new { tenant_id = tenantId, user_id = userId, nowUtc }, cancellationToken: ct));
 
             _ = await _audit.WriteAsync(
                 tenantId, userId,
-                action: "LOAN_EVENT",
+                action: "LOAN_OVERDUE_REGISTER",
                 entityName: "loan_request",
                 entityId: null,
                 summary: "Registro automático de vencidos (OVERDUE)",
                 ipAddress: null,
                 userAgent: null,
-                data: new { created = count },
+                data: new { inserted },
                 ct: ct);
 
-            return Result<int>.Ok(count);
+            return Result<int>.Ok(inserted);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "LoanCommands.RegisterOverdueEventsAsync failed. Tenant={Tenant}", tenantId);
-            return Result<int>.Fail("LOAN", "Falha ao registrar eventos de vencimento.");
+            return Result<int>.Fail("LOAN_OVERDUE", "Falha ao registrar eventos de vencimento.");
         }
     }
-
-    // ==========================
-    // TRANSIÇÃO (corrigida p/ usar ct e não CancellationToken.None)
-    // ==========================
 
     private async Task<Result> TransitionAsync(
         Guid tenantId,
@@ -243,43 +310,42 @@ where lr.tenant_id=@tenant_id
             if (string.IsNullOrWhiteSpace(newStatus)) return Result.Fail("STATUS", "Status inválido.");
 
             await using var conn = await _db.OpenAsync(ct);
-            using var tx = conn.BeginTransaction();
+            await using var tx = await conn.BeginTransactionAsync(ct);
 
-            // (Opcional) garantir transição válida:
-            // - APPROVED só se REQUESTED
-            // - DELIVERED só se APPROVED
-            // - RETURNED só se DELIVERED ou OVERDUE
-            // Se quiser, ativamos isso depois sem quebrar PoC.
+            var nowUtc = DateTimeOffset.UtcNow;
 
-            const string upd = @"
+            const string upd = """
 update ged.loan_request
-set status = @status::ged.loan_status,
-    approved_at  = case when @status='APPROVED'  then now() else approved_at end,
-    delivered_at = case when @status='DELIVERED' then now() else delivered_at end,
-    returned_at  = case when @set_returned then now() else returned_at end
+set status = (@status)::ged.loan_status_enum,
+    approved_at  = case when @status='APPROVED'  then @nowUtc else approved_at end,
+    delivered_at = case when @status='DELIVERED' then @nowUtc else delivered_at end,
+    returned_at  = case when @set_returned then @nowUtc else returned_at end
 where tenant_id=@tenant_id
   and id=@loan_id
   and reg_status='A';
-";
+""";
+
             var rows = await conn.ExecuteAsync(
                 new CommandDefinition(upd, new
                 {
                     tenant_id = tenantId,
                     loan_id = loanId,
                     status = newStatus,
-                    set_returned = setReturnedAt
+                    set_returned = setReturnedAt,
+                    nowUtc
                 }, transaction: tx, cancellationToken: ct));
 
             if (rows == 0)
             {
-                tx.Rollback();
+                await tx.RollbackAsync(ct);
                 return Result.Fail("NOTFOUND", "Empréstimo não encontrado.");
             }
 
-            const string hist = @"
+            const string hist = """
 insert into ged.loan_history(tenant_id, loan_id, event_time, event_type, by_user_id, notes, reg_date, reg_status)
-values(@tenant_id, @loan_id, now(), @event_type, @by_user_id, @notes, now(), 'A');
-";
+values(@tenant_id, @loan_id, @nowUtc, @event_type, @by_user_id, @notes, @nowUtc, 'A');
+""";
+
             await conn.ExecuteAsync(
                 new CommandDefinition(hist, new
                 {
@@ -287,10 +353,11 @@ values(@tenant_id, @loan_id, now(), @event_type, @by_user_id, @notes, now(), 'A'
                     loan_id = loanId,
                     event_type = newStatus,
                     by_user_id = userId,
-                    notes
+                    notes = (notes ?? "").Trim(),
+                    nowUtc
                 }, transaction: tx, cancellationToken: ct));
 
-            tx.Commit();
+            await tx.CommitAsync(ct);
 
             _ = await _audit.WriteAsync(
                 tenantId, userId,
@@ -308,7 +375,7 @@ values(@tenant_id, @loan_id, now(), @event_type, @by_user_id, @notes, now(), 'A'
         catch (Exception ex)
         {
             _logger.LogError(ex, "LoanCommands.TransitionAsync failed. Tenant={Tenant} Loan={Loan}", tenantId, loanId);
-            return Result.Fail("LOAN", "Falha ao atualizar status do empréstimo.");
+            return Result.Fail("LOAN_TRANSITION", "Falha ao atualizar status do empréstimo.");
         }
     }
 }

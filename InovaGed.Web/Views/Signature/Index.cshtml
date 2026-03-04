@@ -1,132 +1,128 @@
-﻿@model InovaGed.Web.ViewModels.SignatureIndexVm
-
+﻿@model IEnumerable<InovaGed.Web.Controllers.SignatureController.PendingDocRow>
 @{
-    ViewData["Title"] = "Assinar (Documento / Lote)";
-    ViewData["Subtitle"] = "ICP – assinatura PoC (8,19,20,21)";
+    ViewData["Title"] = "Assinatura Digital";
+    ViewData["Subtitle"] = "Assine documentos individualmente ou em lote";
+    string q = ViewBag.Q ?? "";
 }
 
-<div class="container py-3">
-
-    <div class="alert alert-warning">
-        PoC: selecione um documento ou lote e realize assinatura registrando CPF e status.
+@if (TempData["Ok"] is string ok)
+{
+    <div class="alert alert-success alert-dismissible fade show">
+        <i class="bi bi-check-circle me-1"></i>@ok
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     </div>
-
-    <div class="row g-3">
-
-        <!-- DOCUMENTOS -->
-        <div class="col-lg-6">
-            <div class="card shadow-sm">
-                <div class="card-header">
-                    <strong>Documentos recentes</strong>
-                </div>
-
-                <div class="card-body p-0">
-
-                    <div class="table-responsive">
-                        <table class="table table-sm mb-0 align-middle">
-
-                            <thead>
-                                <tr>
-                                    <th>Código</th>
-                                    <th>Título</th>
-                                    <th></th>
-                                </tr>
-                            </thead>
-
-                            <tbody>
-                                @foreach (var d in Model.Docs)
-                                {
-                                    <tr>
-
-                                        <td class="font-monospace">
-                                            @d.Code
-                                        </td>
-
-                                        <td>
-                                            @d.Title
-                                        </td>
-
-                                        <td class="text-end">
-                                            <a class="btn btn-sm btn-primary"
-                                               asp-controller="Signature"
-                                               asp-action="SignDocument"
-                                               asp-route-docId="@d.Id">
-
-                                                Assinar
-                                            </a>
-                                        </td>
-
-                                    </tr>
-                                }
-                            </tbody>
-
-                        </table>
-                    </div>
-
-                </div>
-            </div>
-        </div>
-
-
-        <!-- LOTES -->
-        <div class="col-lg-6">
-
-            <div class="card shadow-sm">
-
-                <div class="card-header">
-                    <strong>Lotes recentes</strong>
-                </div>
-
-                <div class="card-body p-0">
-
-                    <div class="table-responsive">
-                        <table class="table table-sm mb-0 align-middle">
-
-                            <thead>
-                                <tr>
-                                    <th>Código</th>
-                                    <th>Status</th>
-                                    <th></th>
-                                </tr>
-                            </thead>
-
-                            <tbody>
-                                @foreach (var b in Model.Batches)
-                                {
-                                    <tr>
-
-                                        <td class="font-monospace">
-                                            @b.Code
-                                        </td>
-
-                                        <td>
-                                            @b.Status
-                                        </td>
-
-                                        <td class="text-end">
-
-                                            <a class="btn btn-sm btn-primary"
-                                               asp-controller="Signature"
-                                               asp-action="SignBatch"
-                                               asp-route-batchId="@b.Id">
-
-                                                Assinar Lote
-                                            </a>
-
-                                        </td>
-
-                                    </tr>
-                                }
-                            </tbody>
-
-                        </table>
-                    </div>
-
-                </div>
-            </div>
-
-        </div>
-
+}
+@if (TempData["Err"] is string err)
+{
+    <div class="alert alert-danger alert-dismissible fade show">
+        <i class="bi bi-exclamation-triangle me-1"></i>@err
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     </div>
+}
 
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <div>
+        <h3 class="m-0">@ViewData["Title"]</h3>
+        <div class="text-muted">@ViewData["Subtitle"]</div>
+    </div>
+    <a class="btn btn-outline-primary" asp-action="SignBatch">
+        <i class="bi bi-pen me-1"></i> Assinar em Lote
+    </a>
+</div>
+
+<div class="card shadow-sm mb-3">
+    <div class="card-body py-2">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col">
+                <input name="q" value="@q" class="form-control"
+                       placeholder="Buscar por código ou título..." />
+            </div>
+            <div class="col-auto">
+                <button class="btn btn-primary" type="submit">
+                    <i class="bi bi-search"></i>
+                </button>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(q))
+            {
+                <div class="col-auto">
+                    <a class="btn btn-outline-secondary" asp-action="Index">Limpar</a>
+                </div>
+            }
+        </form>
+    </div>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Código</th>
+                        <th>Título</th>
+                        <th>Status Doc.</th>
+                        <th>Assinatura</th>
+                        <th>Assinado por</th>
+                        <th>Data</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var doc in Model)
+                    {
+                        <tr>
+                            <td class="fw-semibold text-nowrap">@doc.Code</td>
+                            <td>@doc.Title</td>
+                            <td>
+                                @{
+                                    var (docBg, docLabel) = doc.DocStatus switch
+                                    {
+                                        "DRAFT" => ("text-bg-secondary", "Rascunho"),
+                                        "IN_REVIEW" => ("text-bg-warning", "Em Revisão"),
+                                        "IN_SIGNATURE" => ("text-bg-primary", "Ag. Assinatura"),
+                                        "PUBLISHED" => ("text-bg-success", "Publicado"),
+                                        "ARCHIVED" => ("text-bg-dark", "Arquivado"),
+                                        _ => ("text-bg-light", doc.DocStatus)
+                                    };
+                                }
+                                <span class="badge @docBg">@docLabel</span>
+                            </td>
+                            <td>
+                                @if (doc.SignatureStatus == null)
+                                {
+                                    <span class="badge text-bg-light text-muted">Não assinado</span>
+                                }
+                                else
+                                {
+                                    var sigBg = doc.SignatureStatus == "VALID" ? "text-bg-success"
+                                    : doc.SignatureStatus == "INVALID" ? "text-bg-danger"
+                                    : "text-bg-secondary";
+                                    <span class="badge @sigBg">@doc.SignatureStatus</span>
+                                }
+                            </td>
+                            <td class="text-muted small">@(doc.SignedByName ?? "-")</td>
+                            <td class="text-muted small text-nowrap">
+                                @(doc.SigningTime.HasValue ? doc.SigningTime.Value.ToString("dd/MM/yyyy HH:mm") : "-")
+                            </td>
+                            <td class="text-end">
+                                <a class="btn btn-sm btn-outline-primary"
+                                   asp-action="SignDocument" asp-route-id="@doc.Id">
+                                    <i class="bi bi-pen me-1"></i>
+                                    @(doc.SignatureStatus == null ? "Assinar" : "Reassinar")
+                                </a>
+                            </td>
+                        </tr>
+                    }
+                    @if (!Model.Any())
+                    {
+                        <tr>
+                            <td colspan="7" class="text-center text-muted py-4">
+                                <i class="bi bi-inbox me-1"></i> Nenhum documento encontrado.
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
 </div>

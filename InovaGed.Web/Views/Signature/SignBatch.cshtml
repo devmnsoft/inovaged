@@ -1,48 +1,162 @@
-﻿@model dynamic
+﻿@model IReadOnlyList<InovaGed.Web.Controllers.SignatureController.PendingDocRow>
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+
 @{
-    ViewData["Title"] = "Assinar Lote";
-    var batchId = (Guid)(ViewBag.BatchId ?? Guid.Empty);
+    ViewData["Title"] = "Assinar em Lote";
+    ViewData["Subtitle"] = "Assinatura ICP-Brasil de múltiplos documentos — PoC (19,20,21)";
 }
 
-<div class="container py-3">
-    <div class="d-flex align-items-center justify-content-between mb-3">
-        <div>
-            <h3 class="mb-0">Assinar Lote (PoC ICP)</h3>
-            <div class="text-muted small">BatchId: @batchId</div>
+@if (TempData["Err"] is string err)
+{
+    <div class="alert alert-danger alert-dismissible fade show">
+        <i class="bi bi-exclamation-triangle me-1"></i> @err
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+<form asp-action="SignBatch" method="post" id="frmBatch">
+    @Html.AntiForgeryToken()
+
+    <div class="row g-3 mb-4">
+        <div class="col-md-5">
+            <label class="form-label fw-semibold">
+                CPF do Certificado ICP-Brasil <span class="text-danger">*</span>
+            </label>
+            <input name="cpf" type="text" class="form-control"
+                   placeholder="000.000.000-00" required maxlength="18"
+                   pattern="\d{3}\.?\d{3}\.?\d{3}-?\d{2}" />
+            <div class="form-text">CPF do certificado digital utilizado para assinar o lote.</div>
         </div>
-        <a class="btn btn-outline-secondary" asp-controller="Batches" asp-action="Index">Voltar</a>
+        <div class="col-md-7">
+            <label class="form-label">Observações (opcional)</label>
+            <input name="notes" type="text" class="form-control"
+                   placeholder="Observação geral para todas as assinaturas deste lote..." />
+        </div>
     </div>
 
-    <div class="alert alert-warning">
-        PoC: assinar vários documentos do lote (Item 19) + validação CPF=CPF (Item 8).
-    </div>
-
-    <form asp-controller="Signature" asp-action="SignBatch" method="post" class="card">
-        <div class="card-body">
-            <input type="hidden" name="batchId" value="@batchId" />
-
-            <div class="row g-3">
-                <div class="col-md-4">
-                    <label class="form-label">CPF do Usuário</label>
-                    <input name="userCpf" class="form-control" required />
-                </div>
-                <div class="col-md-4">
-                    <label class="form-label">CPF do Certificado</label>
-                    <input name="certCpf" class="form-control" required />
-                </div>
-                <div class="col-md-4">
-                    <label class="form-label">Status</label>
-                    <select name="signatureStatus" class="form-select">
-                        <option value="VA">Válida</option>
-                        <option value="IN">Inválida</option>
-                        <option value="NV">Não verificável</option>
-                    </select>
-                </div>
-            </div>
-
-            <div class="mt-3 text-end">
-                <button class="btn btn-primary" type="submit">Assinar Lote (PoC)</button>
+    <div class="card shadow-sm mb-3">
+        <div class="card-header bg-white d-flex align-items-center justify-content-between">
+            <strong><i class="bi bi-list-check me-1"></i> Selecione os documentos</strong>
+            <div class="d-flex gap-2">
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="btnSelectAll">
+                    Selecionar todos
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="btnClearAll">
+                    Limpar
+                </button>
+                <span class="badge text-bg-primary align-self-center" id="selCount">0 selecionados</span>
             </div>
         </div>
-    </form>
-</div>
+
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width:42px;">
+                                <input type="checkbox" class="form-check-input" id="chkAll" />
+                            </th>
+                            <th style="min-width:130px;">Código</th>
+                            <th>Título</th>
+                            <th style="width:110px;">Status Doc.</th>
+                            <th style="width:110px;">Assinatura</th>
+                            <th style="width:160px;">Assinado em</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (!Model.Any())
+                        {
+                            <tr>
+                                <td colspan="6" class="text-center text-muted py-4">
+                                    Nenhum documento disponível para assinatura em lote.
+                                </td>
+                            </tr>
+                        }
+                        else
+                        {
+                            foreach (var d in Model)
+                            {
+                                <tr>
+                                    <td>
+                                        <input type="checkbox" name="documentIds" value="@d.Id"
+                                               class="form-check-input doc-chk" />
+                                    </td>
+                                    <td class="fw-semibold text-nowrap">@d.Code</td>
+                                    <td>@d.Title</td>
+                                    <td>
+                                        <span class="badge @(d.DocStatus == "IN_SIGNATURE" ? "text-bg-warning" : "text-bg-secondary")">
+                                            @d.DocStatus
+                                        </span>
+                                    </td>
+                                    <td>
+                                        @if (d.SignatureStatus == null)
+                                        {
+                                            <span class="badge text-bg-secondary">PENDENTE</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge @(d.SignatureStatus == "VALID" ? "text-bg-success" : d.SignatureStatus == "INVALID" ? "text-bg-danger" : "text-bg-secondary")">
+                                                @d.SignatureStatus
+                                            </span>
+                                        }
+                                    </td>
+                                    <td class="text-muted small text-nowrap">
+                                        @(d.SigningTime?.ToString("dd/MM/yyyy HH:mm") ?? "—")
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-success" id="btnSign" disabled>
+            <i class="bi bi-pen me-1"></i> Assinar Lote Selecionado
+        </button>
+        <a asp-action="Index" class="btn btn-outline-secondary">Cancelar</a>
+    </div>
+</form>
+
+@section Scripts {
+    <script>
+        const chkAll   = document.getElementById('chkAll');
+        const chks     = () => document.querySelectorAll('.doc-chk');
+        const btnSign  = document.getElementById('btnSign');
+        const selCount = document.getElementById('selCount');
+
+        function updateCount() {
+            const n = document.querySelectorAll('.doc-chk:checked').length;
+            selCount.textContent = n + ' selecionado' + (n !== 1 ? 's' : '');
+            btnSign.disabled = n === 0;
+            chkAll.indeterminate = n > 0 && n < chks().length;
+            chkAll.checked = n > 0 && n === chks().length;
+        }
+
+        chkAll.addEventListener('change', () => {
+            chks().forEach(c => c.checked = chkAll.checked);
+            updateCount();
+        });
+
+        document.addEventListener('change', e => {
+            if (e.target.classList.contains('doc-chk')) updateCount();
+        });
+
+        document.getElementById('btnSelectAll').addEventListener('click', () => {
+            chks().forEach(c => c.checked = true);
+            updateCount();
+        });
+
+        document.getElementById('btnClearAll').addEventListener('click', () => {
+            chks().forEach(c => c.checked = false);
+            updateCount();
+        });
+
+        document.getElementById('frmBatch').addEventListener('submit', e => {
+            const n = document.querySelectorAll('.doc-chk:checked').length;
+            if (n === 0) { e.preventDefault(); alert('Selecione ao menos um documento.'); }
+        });
+    </script>
+}

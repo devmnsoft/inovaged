@@ -1,208 +1,364 @@
-﻿using Dapper;
-using Microsoft.AspNetCore.Mvc;
+﻿using System.Security.Cryptography;
+using System.Text;
+using Dapper;
+using InovaGed.Application.Audit;
+using InovaGed.Application.Common.Context;
 using InovaGed.Application.Common.Database;
-using InovaGed.Web.ViewModels;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 
 namespace InovaGed.Web.Controllers;
 
-public class SignatureController : GedControllerBase
+[Authorize]
+[Route("[controller]")]
+public sealed class SignatureController : Controller
 {
-    public SignatureController(IDbConnectionFactory dbFactory) : base(dbFactory) { }
+    private readonly IDbConnectionFactory _db;
+    private readonly ICurrentContext _ctx;
+    private readonly IAuditWriter _audit;
+    private readonly ILogger<SignatureController> _logger;
 
-    // GET /Signature
-    [HttpGet]
-    public async Task<IActionResult> Index(CancellationToken ct)
+    public SignatureController(
+        IDbConnectionFactory db,
+        ICurrentContext ctx,
+        IAuditWriter audit,
+        ILogger<SignatureController> logger)
     {
-        using var db = await OpenAsync();
+        _db = db;
+        _ctx = ctx;
+        _audit = audit;
+        _logger = logger;
+    }
 
-        var docs = await db.QueryAsync<SignatureIndexVm.DocumentRow>(
-            """
-        select
-            d.id as "Id",
-            d.code as "Code",
-            d.title as "Title"
-        from ged.document d
-        where d.tenant_id=@tid
-        order by d.created_at desc nulls last
-        limit 20;
-        """,
-            new { tid = TenantId }
-        );
+    private Guid TenantId => _ctx.TenantId;
+    private Guid UserId => _ctx.UserId;
+    private string UserName => _ctx.UserDisplay ?? _ctx.UserEmail ?? "Usuário";
 
-        var batches = await db.QueryAsync<SignatureIndexVm.BatchRow>(
-            """
-        select
-            b.id as "Id",
-            ('LOTE-' || lpad(b.batch_no::text, 6, '0')) as "Code",
-            b.status::text as "Status"
-        from ged.batch b
-        where b.tenant_id=@tid
-          and b.reg_status='A'
-        order by b.created_at desc nulls last, b.batch_no desc
-        limit 20;
-        """,
-            new { tid = TenantId }
-        );
-
-        var vm = new SignatureIndexVm
+    // =========================================================
+    // GET /Signature  — lista documentos
+    // =========================================================
+    [HttpGet("")]
+    public async Task<IActionResult> Index(string? q, CancellationToken ct)
+    {
+        try
         {
-            Docs = docs.ToList(),
-            Batches = batches.ToList()
-        };
+            using var conn = await _db.OpenAsync(ct);
 
-        ViewData["Title"] = "Assinar (Documento / Lote)";
-        ViewData["Subtitle"] = "ICP – assinatura PoC (8,19,20,21)";
+            var rows = (await conn.QueryAsync<PendingDocRow>("""
+                SELECT
+                    d.id               AS Id,
+                    d.code             AS Code,
+                    d.title            AS Title,
+                    d.status::text     AS DocStatus,
+                    d.created_at       AS CreatedAt,
+                    s.status::text     AS SignatureStatus,
+                    s.signing_time     AS SigningTime,
+                    s.signed_by_name   AS SignedByName
+                FROM ged.document d
+                LEFT JOIN ged.document_signature s
+                    ON s.tenant_id = d.tenant_id
+                   AND s.document_id = d.id
+                   AND s.reg_status = 'A'
+                WHERE d.tenant_id = @tenantId
+                  AND d.status::text NOT IN ('ARCHIVED', 'DELETED')
+                  AND (
+                        @q::text IS NULL
+                        OR d.title ILIKE '%' || @q || '%'
+                        OR d.code  ILIKE '%' || @q || '%'
+                  )
+                ORDER BY d.created_at DESC
+                LIMIT 200;
+                """,
+                new { tenantId = TenantId, q = string.IsNullOrWhiteSpace(q) ? null : q }
+            )).ToList();
 
-        return View(vm);
+            ViewBag.Q = q;
+            return View(rows);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Signature.Index failed");
+            TempData["Err"] = "Erro ao carregar documentos.";
+            return View(new List<PendingDocRow>());
+        }
     }
 
-    // GET /Signature/SignDocument?docId=...
-    [HttpGet]
-    public async Task<IActionResult> SignDocument(Guid docId, CancellationToken ct)
+    // =========================================================
+    // GET /Signature/Document/{id}  — formulário de assinatura
+    // =========================================================
+    [HttpGet("Document/{id:guid}")]
+    public async Task<IActionResult> SignDocument(Guid id, CancellationToken ct)
     {
-        using var db = await OpenAsync();
+        try
+        {
+            using var conn = await _db.OpenAsync(ct);
 
-        var doc = await db.QueryFirstOrDefaultAsync(
-            """
-            select id, code, title, status
-            from ged.document
-            where tenant_id=@tid and id=@docId;
-            """,
-            new { tid = TenantId, docId }
-        );
+            var vm = await conn.QuerySingleOrDefaultAsync<SignDocumentVM>("""
+                SELECT
+                    d.id               AS Id,
+                    d.code             AS Code,
+                    d.title            AS Title,
+                    d.status::text     AS DocStatus,
+                    s.status::text     AS SignatureStatus,
+                    s.signing_time     AS SigningTime,
+                    s.signed_by_name   AS SignedByName,
+                    s.cpf              AS Cpf,
+                    s.status_details   AS StatusDetails
+                FROM ged.document d
+                LEFT JOIN ged.document_signature s
+                    ON s.tenant_id = d.tenant_id
+                   AND s.document_id = d.id
+                   AND s.reg_status = 'A'
+                WHERE d.tenant_id = @tenantId
+                  AND d.id = @id;
+                """,
+                new { tenantId = TenantId, id });
 
-        if (doc == null) return NotFound("Documento não encontrado.");
-
-        return View(doc);
+            if (vm is null) return NotFound();
+            return View(vm);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Signature.SignDocument GET failed. Doc={Id}", id);
+            TempData["Err"] = "Erro ao carregar documento.";
+            return RedirectToAction(nameof(Index));
+        }
     }
 
-    // POST /Signature/SignDocument
-    [HttpPost]
+    // =========================================================
+    // POST /Signature/Document/{id}  — grava assinatura
+    // =========================================================
+    [HttpPost("Document/{id:guid}")]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> SignDocument(Guid docId, string userCpf, string certCpf, string status = "UNKNOWN", string? details = null, CancellationToken ct = default)
+    public async Task<IActionResult> SignDocument(Guid id, string cpf, string? notes, CancellationToken ct)
     {
-        using var db = await OpenAsync();
+        if (string.IsNullOrWhiteSpace(cpf))
+        {
+            TempData["Err"] = "CPF do certificado é obrigatório.";
+            return RedirectToAction(nameof(SignDocument), new { id });
+        }
 
-        var u = NormalizeCpf(userCpf);
-        var c = NormalizeCpf(certCpf);
+        try
+        {
+            // Gera hash SHA-256 interno (PoC — sem certificado real)
+            var payload = $"doc:{id}|tenant:{TenantId}|user:{UserId}|cpf:{cpf.Trim()}|ts:{DateTime.UtcNow:O}";
+            var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload))).ToLowerInvariant();
 
-        if (string.IsNullOrWhiteSpace(u) || string.IsNullOrWhiteSpace(c))
-            return BadRequest("CPF inválido.");
+            var details = string.IsNullOrWhiteSpace(notes)
+                ? $"Assinatura interna (PoC) • hash:{hash[..16]}…"
+                : $"{notes.Trim()} • hash:{hash[..16]}…";
 
-        // Item 8: CPF usuário = CPF do certificado
-        if (!string.Equals(u, c, StringComparison.Ordinal))
-            return BadRequest("CPF do usuário diferente do CPF do certificado. Assinatura bloqueada (PoC item 8).");
+            using var conn = await _db.OpenAsync(ct);
+            using var tx = conn.BeginTransaction();
 
-        await db.ExecuteAsync(
-            new CommandDefinition(
-                """
-                insert into ged.document_signature
-                (id, tenant_id, document_id, signed_by, signed_by_name, cpf, signing_time, status, status_details, reg_date, reg_status)
-                values
-                (gen_random_uuid(), @tid, @docId, @uid, @uname, @cpf, now(), @status::ged.signature_status, @details, now(), 'A');
+            // Invalida assinaturas anteriores do mesmo documento (sem UNIQUE constraint, usamos reg_status)
+            await conn.ExecuteAsync("""
+                UPDATE ged.document_signature
+                SET reg_status = 'I'
+                WHERE tenant_id = @tenantId
+                  AND document_id = @docId
+                  AND reg_status = 'A';
+                """,
+                new { tenantId = TenantId, docId = id }, tx);
+
+            // Insere nova assinatura com colunas reais da tabela
+            await conn.ExecuteAsync("""
+                INSERT INTO ged.document_signature
+                    (id, tenant_id, document_id, signed_by, signed_by_name,
+                     cpf, cert_subject, cert_serial,
+                     signing_time, status, status_details, reg_date, reg_status)
+                VALUES
+                    (gen_random_uuid(), @tenantId, @docId, @userId, @signedByName,
+                     @cpf, @certSubject, @certSerial,
+                     now(), 'VALID'::ged.signature_status, @details, now(), 'A');
                 """,
                 new
                 {
-                    tid = TenantId,
-                    docId,
-                    uid = UserId,
-                    uname = UserNameSafe,
-                    cpf = u,
-                    status,
+                    tenantId = TenantId,
+                    docId = id,
+                    userId = UserId,
+                    signedByName = UserName,
+                    cpf = cpf.Trim(),
+                    certSubject = $"CN={UserName};CPF={cpf.Trim()}",
+                    certSerial = hash[..16].ToUpperInvariant(),
                     details
-                },
-                cancellationToken: ct
-            )
-        );
+                }, tx);
 
-        return RedirectToAction(nameof(SignDocument), new { docId });
-    }
+            tx.Commit();
 
-    // GET /Signature/SignBatch?batchId=...
-    [HttpGet]
-    public async Task<IActionResult> SignBatch(Guid batchId, CancellationToken ct)
-    {
-        using var db = await OpenAsync();
+            await _audit.WriteAsync(
+                TenantId, UserId, "UPDATE", "document_signature", id,
+                $"Documento assinado por {UserName} (CPF {cpf.Trim()})",
+                HttpContext.Connection.RemoteIpAddress?.ToString(),
+                Request.Headers.UserAgent.ToString(),
+                new { documentId = id, cpf = cpf.Trim(), hash = hash[..16] },
+                ct);
 
-        var batch = await db.QueryFirstOrDefaultAsync(
-            """
-            select id, code, status
-            from ged.batch
-            where tenant_id=@tid and id=@batchId;
-            """,
-            new { tid = TenantId, batchId }
-        );
-
-        if (batch == null) return NotFound("Lote não encontrado.");
-
-        var docs = await db.QueryAsync(
-            """
-            select d.id, d.code, d.title, d.status
-            from ged.batch_item bi
-            join ged.document d
-              on d.id = bi.document_id
-             and d.tenant_id = bi.tenant_id
-            where bi.tenant_id=@tid
-              and bi.batch_id=@batchId
-            order by bi.reg_date;
-            """,
-            new { tid = TenantId, batchId }
-        );
-
-        // (se quiser deixar 100% tipado, eu te passo o BatchVm também)
-        return View(new { batch, docs });
-    }
-
-    // POST /Signature/SignBatch
-    [HttpPost]
-    [ValidateAntiForgeryToken]
-    public async Task<IActionResult> SignBatch(Guid batchId, string userCpf, string certCpf, string status = "UNKNOWN", string? details = null, CancellationToken ct = default)
-    {
-        using var db = await OpenAsync();
-
-        var u = NormalizeCpf(userCpf);
-        var c = NormalizeCpf(certCpf);
-
-        if (!string.Equals(u, c, StringComparison.Ordinal))
-            return BadRequest("CPF do usuário diferente do CPF do certificado. Assinatura em lote bloqueada.");
-
-        var docIds = await db.QueryAsync<Guid>(
-            """
-            select document_id
-            from ged.batch_item
-            where tenant_id=@tid and batch_id=@batchId;
-            """,
-            new { tid = TenantId, batchId }
-        );
-
-        foreach (var docId in docIds)
+            TempData["Ok"] = "Documento assinado com sucesso.";
+            return RedirectToAction(nameof(Index));
+        }
+        catch (Exception ex)
         {
-            await db.ExecuteAsync(
-                new CommandDefinition(
-                    """
-                    insert into ged.document_signature
-                    (id, tenant_id, document_id, signed_by, signed_by_name, cpf, signing_time, status, status_details, reg_date, reg_status)
-                    values
-                    (gen_random_uuid(), @tid, @docId, @uid, @uname, @cpf, now(), @status::ged.signature_status, @details, now(), 'A');
+            _logger.LogError(ex, "Signature.SignDocument POST failed. Doc={Id}", id);
+            TempData["Err"] = "Erro ao registrar assinatura.";
+            return RedirectToAction(nameof(SignDocument), new { id });
+        }
+    }
+
+    // =========================================================
+    // GET /Signature/Batch  — seletor de lote
+    // =========================================================
+    [HttpGet("Batch")]
+    public async Task<IActionResult> SignBatch(CancellationToken ct)
+    {
+        try
+        {
+            using var conn = await _db.OpenAsync(ct);
+
+            var docs = (await conn.QueryAsync<PendingDocRow>("""
+                SELECT
+                    d.id               AS Id,
+                    d.code             AS Code,
+                    d.title            AS Title,
+                    d.status::text     AS DocStatus,
+                    d.created_at       AS CreatedAt,
+                    s.status::text     AS SignatureStatus,
+                    s.signing_time     AS SigningTime,
+                    s.signed_by_name   AS SignedByName
+                FROM ged.document d
+                LEFT JOIN ged.document_signature s
+                    ON s.tenant_id = d.tenant_id
+                   AND s.document_id = d.id
+                   AND s.reg_status = 'A'
+                WHERE d.tenant_id = @tenantId
+                  AND d.status::text NOT IN ('ARCHIVED', 'DELETED')
+                ORDER BY d.code
+                LIMIT 500;
+                """, new { tenantId = TenantId }
+            )).ToList();
+
+            return View(docs);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Signature.SignBatch GET failed");
+            TempData["Err"] = "Erro ao carregar documentos.";
+            return View(new List<PendingDocRow>());
+        }
+    }
+
+    // =========================================================
+    // POST /Signature/Batch  — assina lote
+    // =========================================================
+    [HttpPost("Batch")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SignBatch(
+        List<Guid> documentIds, string cpf, string? notes, CancellationToken ct)
+    {
+        if (documentIds is null || documentIds.Count == 0)
+        {
+            TempData["Err"] = "Selecione ao menos um documento.";
+            return RedirectToAction(nameof(SignBatch));
+        }
+
+        if (string.IsNullOrWhiteSpace(cpf))
+        {
+            TempData["Err"] = "CPF do certificado é obrigatório.";
+            return RedirectToAction(nameof(SignBatch));
+        }
+
+        var ids = documentIds.Distinct().ToArray();
+
+        try
+        {
+            using var conn = await _db.OpenAsync(ct);
+            using var tx = conn.BeginTransaction();
+
+            // Invalida assinaturas anteriores do lote
+            await conn.ExecuteAsync("""
+                UPDATE ged.document_signature
+                SET reg_status = 'I'
+                WHERE tenant_id = @tenantId
+                  AND document_id = ANY(@ids)
+                  AND reg_status = 'A';
+                """,
+                new { tenantId = TenantId, ids }, tx);
+
+            // Insere uma assinatura por documento do lote
+            foreach (var docId in ids)
+            {
+                var payload = $"doc:{docId}|tenant:{TenantId}|user:{UserId}|cpf:{cpf.Trim()}|ts:{DateTime.UtcNow:O}";
+                var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload))).ToLowerInvariant();
+
+                var details = string.IsNullOrWhiteSpace(notes)
+                    ? $"Assinatura em lote (PoC) • hash:{hash[..16]}…"
+                    : $"{notes.Trim()} • hash:{hash[..16]}…";
+
+                await conn.ExecuteAsync("""
+                    INSERT INTO ged.document_signature
+                        (id, tenant_id, document_id, signed_by, signed_by_name,
+                         cpf, cert_subject, cert_serial,
+                         signing_time, status, status_details, reg_date, reg_status)
+                    VALUES
+                        (gen_random_uuid(), @tenantId, @docId, @userId, @signedByName,
+                         @cpf, @certSubject, @certSerial,
+                         now(), 'VALID'::ged.signature_status, @details, now(), 'A');
                     """,
                     new
                     {
-                        tid = TenantId,
+                        tenantId = TenantId,
                         docId,
-                        uid = UserId,
-                        uname = UserNameSafe,
-                        cpf = u,
-                        status,
+                        userId = UserId,
+                        signedByName = UserName,
+                        cpf = cpf.Trim(),
+                        certSubject = $"CN={UserName};CPF={cpf.Trim()}",
+                        certSerial = hash[..16].ToUpperInvariant(),
                         details
-                    },
-                    cancellationToken: ct
-                )
-            );
-        }
+                    }, tx);
+            }
 
-        return RedirectToAction(nameof(SignBatch), new { batchId });
+            tx.Commit();
+
+            await _audit.WriteAsync(
+                TenantId, UserId, "UPDATE", "document_signature", null,
+                $"Lote de {ids.Length} documento(s) assinado por {UserName} (CPF {cpf.Trim()})",
+                HttpContext.Connection.RemoteIpAddress?.ToString(),
+                Request.Headers.UserAgent.ToString(),
+                new { count = ids.Length, cpf = cpf.Trim() },
+                ct);
+
+            TempData["Ok"] = $"{ids.Length} documento(s) assinado(s) com sucesso.";
+            return RedirectToAction(nameof(Index));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Signature.SignBatch POST failed");
+            TempData["Err"] = "Erro ao registrar assinaturas em lote.";
+            return RedirectToAction(nameof(SignBatch));
+        }
     }
 
-    private static string NormalizeCpf(string cpf)
-        => new string((cpf ?? "").Where(char.IsDigit).ToArray());
+    // =========================================================
+    // ViewModels
+    // =========================================================
+    public sealed record PendingDocRow(
+        Guid Id,
+        string Code,
+        string Title,
+        string DocStatus,
+        DateTime CreatedAt,
+        string? SignatureStatus,
+        DateTime? SigningTime,
+        string? SignedByName);
+
+    public sealed record SignDocumentVM(
+        Guid Id,
+        string Code,
+        string Title,
+        string DocStatus,
+        string? SignatureStatus,
+        DateTime? SigningTime,
+        string? SignedByName,
+        string? Cpf,
+        string? StatusDetails);
 }
