@@ -42,9 +42,7 @@ public sealed class PhysicalController : Controller
             return View(Array.Empty<PhysicalLocationRowDto>());
         }
     }
-
-    [HttpGet("Locations/New")]
-    public IActionResult NewLocation() => View("LocationForm", new PhysicalLocationFormVM());
+     
 
     [HttpGet("Locations/{id:guid}")]
     public async Task<IActionResult> EditLocation(Guid id, CancellationToken ct)
@@ -121,8 +119,7 @@ public sealed class PhysicalController : Controller
         }
     }
 
-    [HttpGet("Boxes/New")]
-    public IActionResult NewBox() => View("BoxForm", new BoxFormVM());
+    
 
     [HttpGet("Boxes/{id:guid}")]
     public async Task<IActionResult> EditBox(Guid id, CancellationToken ct)
@@ -182,24 +179,26 @@ public sealed class PhysicalController : Controller
         }
     }
 
-    [HttpGet]
+    [HttpGet("BoxHistory")]
     public async Task<IActionResult> BoxHistory(Guid boxId, CancellationToken ct)
     {
         if (boxId == Guid.Empty)
         {
-            TempData["Error"] = "Selecione uma caixa.";
-            return RedirectToAction("Boxes");
+            TempData["Err"] = "Selecione uma caixa.";
+            return RedirectToAction(nameof(Boxes));
         }
 
-        // ⚠️ ajuste isso para seu jeito padrão de resolver TenantId
-        var tenantId = HttpContext.Items["TenantId"] is Guid t ? t : Guid.Empty;
-        if (tenantId == Guid.Empty) return Unauthorized();
-
-        var rows = await _queries.GetBoxHistoryAsync(tenantId, boxId, ct);
+        var rows = await _queries.GetBoxHistoryAsync(_user.TenantId, boxId, ct);
 
         ViewData["Title"] = "Histórico da Caixa";
         ViewData["Subtitle"] = $"Rastreio de documentos e fases (Caixa: {boxId})";
 
         return View(rows);
     }
+
+    [HttpGet("/Physical/Boxes/New")]
+    public IActionResult NewBox() => View("BoxForm", new BoxFormVM());
+
+    [HttpGet("/Physical/Locations/New")]
+    public IActionResult NewLocation() => View("LocationForm", new PhysicalLocationFormVM());
 }
