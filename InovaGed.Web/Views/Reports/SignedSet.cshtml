@@ -1,0 +1,25 @@
+﻿@{
+    ViewData["Title"] = "Relatório de Conjunto Assinado";
+}
+<div class="card">
+    <div class="card-header">
+        <div class="fw-bold">Relatório de Conjunto Assinado</div>
+        <div class="text-muted small">Valida no momento da geração + numeração/paginação</div>
+    </div>
+    <div class="card-body">
+        <form method="post" action="/Reports/SignedSet/Run" class="row g-2">
+            @Html.AntiForgeryToken()
+            <div class="col-md-3">
+                <label class="form-label">De</label>
+                <input type="date" name="from" class="form-control form-control-sm" />
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Até</label>
+                <input type="date" name="to" class="form-control form-control-sm" />
+            </div>
+            <div class="col-md-6 d-flex align-items-end">
+                <button class="btn btn-primary btn-sm"><i class="bi bi-printer"></i> Gerar</button>
+            </div>
+        </form>
+    </div>
+</div>

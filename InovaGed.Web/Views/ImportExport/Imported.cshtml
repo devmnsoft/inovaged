@@ -1,0 +1,45 @@
+﻿@model IEnumerable<dynamic>
+@{
+    ViewData["Title"] = "Documentos Importados";
+}
+
+<div class="container py-3">
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <h3 class="mb-0">Documentos Importados</h3>
+        <a class="btn btn-outline-primary" asp-controller="ImportExport" asp-action="Import">Novo Import</a>
+    </div>
+
+    <div class="alert alert-info">
+        Lista de importações (PoC – requisito 22). Para exportação (requisito 23), use exportação do documento/lote.
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-striped align-middle">
+            <thead>
+                <tr>
+                    <th>Arquivo</th>
+                    <th>Título</th>
+                    <th>Protocolo</th>
+                    <th>Assinado</th>
+                    <th>Status</th>
+                    <th>Tamanho</th>
+                    <th>Data</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var x in Model ?? Enumerable.Empty<dynamic>())
+                {
+                    <tr>
+                        <td class="font-monospace">@((x.file_name ?? x.FileName) ?? "")</td>
+                        <td>@((x.title ?? x.Title) ?? "")</td>
+                        <td class="font-monospace">@((x.protocol ?? x.Protocol) ?? "")</td>
+                        <td>@(((bool)(x.is_signed ?? x.IsSigned ?? false)) ? "Sim" : "Não")</td>
+                        <td><span class="badge text-bg-secondary">@((x.signature_status ?? x.SignatureStatus) ?? "")</span></td>
+                        <td class="small text-muted">@((x.file_size ?? x.FileSize)?.ToString())</td>
+                        <td class="small text-muted">@((x.created_at ?? x.CreatedAt)?.ToString())</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>

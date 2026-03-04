@@ -31,8 +31,23 @@ public sealed record BatchItemDto(
     string? DocumentCode,
     string? DocumentTitle);
 
-public sealed record BatchHistoryDto(
-    DateTimeOffset ChangedAt,
-    string? FromStatus,
-    string ToStatus,
-    string? Notes);
+public sealed class BatchHistoryDto
+{
+    public DateTime ChangedAt { get; set; }
+    public string ToStatus { get; set; } = "";
+
+    public string FromStatus { get; set; } = "";
+    public string Notes { get; set; } = "";
+
+    // ✅ Dapper gosta de construtor vazio (mais seguro)
+    public BatchHistoryDto() { }
+
+    // ✅ E aqui está o construtor EXATO que o Dapper está pedindo
+    // (case-insensitive: changedat/tostatus/notes)
+    public BatchHistoryDto(DateTime changedat, string tostatus, string notes)
+    {
+        ChangedAt = changedat;
+        ToStatus = tostatus ?? "";
+        Notes = notes ?? "";
+    }
+}

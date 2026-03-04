@@ -1,0 +1,38 @@
+﻿@model InstrumentDiffResult
+@{
+    ViewData["Title"] = "Diff";
+    var type = (string)ViewData["Type"]!;
+}
+<div class="card">
+    <div class="card-header">
+        <div class="fw-bold">Diff de versões - @type</div>
+        <div class="text-muted small">Mostra ADDED / REMOVED / UPDATED</div>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-sm">
+                <thead>
+                    <tr>
+                        <th>Mudança</th>
+                        <th>Código</th>
+                        <th>Título</th>
+                        <th>Pai</th>
+                        <th>Ordem</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in Model.Rows)
+                    {
+                        <tr>
+                            <td class="fw-semibold">@r.Change</td>
+                            <td>@r.Code</td>
+                            <td>@r.Title</td>
+                            <td class="text-muted">@r.Parent_Code</td>
+                            <td>@r.Sort_Order</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

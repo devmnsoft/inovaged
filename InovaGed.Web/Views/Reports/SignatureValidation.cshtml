@@ -1,7 +1,9 @@
-﻿@model List<InovaGed.Web.Controllers.ReportsController.SignatureRow>
+﻿@using InovaGed.Web.Controllers
+@model List<SignatureValidationRow>
+
 @{
     ViewData["Title"] = "Validação de Assinaturas";
-    ViewData["Subtitle"] = "Assinaturas digitais (PoC) - status e rastreabilidade";
+    ViewData["Subtitle"] = "ICP-Brasil: status e dados básicos (PoC)";
 }
 
 <div class="card shadow-sm">
@@ -22,15 +24,14 @@
                     @foreach (var r in Model)
                     {
                         <tr>
-                            <td><div class="fw-semibold">@r.DocumentCode</div><div class="text-muted small">@r.DocumentTitle</div></td>
+                            <td>
+                                <div class="fw-semibold">@r.DocumentCode</div>
+                                <div class="text-muted small">@r.DocumentTitle</div>
+                            </td>
                             <td>@r.SignedByName</td>
                             <td>@r.Cpf</td>
-                            <td>@r.SigningTime.ToString("dd/MM/yyyy HH:mm")</td>
-                            <td>
-                                <span class="badge @(r.Status=="VALID" ? "text-bg-success" : r.Status=="INVALID" ? "text-bg-danger" : "text-bg-secondary")">
-                                    @r.Status
-                                </span>
-                            </td>
+                            <td>@(r.SigningTime?.ToString("dd/MM/yyyy HH:mm") ?? "-")</td>
+                            <td><span class="badge text-bg-secondary">@r.Status</span></td>
                             <td class="text-muted small">@r.Details</td>
                         </tr>
                     }

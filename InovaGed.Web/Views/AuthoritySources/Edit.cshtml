@@ -1,0 +1,58 @@
+﻿@model InovaGed.Web.Controllers.AuthoritySourceVm
+@{
+    ViewData["Title"] = (Model.Id == Guid.Empty) ? "Nova Fonte" : "Editar Fonte";
+    ViewData["Subtitle"] = "Cadastro de CA/OCSP/Políticas (PoC 12)";
+}
+
+<div class="card shadow-sm">
+    <div class="card-body">
+        <form asp-action="Save" method="post">
+            @Html.AntiForgeryToken()
+            <input type="hidden" asp-for="Id" />
+
+            <div class="row g-3">
+                <div class="col-md-5">
+                    <label class="form-label">Nome</label>
+                    <input class="form-control" asp-for="Name" />
+                </div>
+
+                <div class="col-md-3">
+                    <label class="form-label">Tipo (Kind)</label>
+                    <select class="form-select" asp-for="Kind">
+                        <option value="">Selecione</option>
+                        <option>CA_ROOT</option>
+                        <option>CA_INTERMEDIATE</option>
+                        <option>OCSP</option>
+                        <option>CRL</option>
+                        <option>POLICY</option>
+                    </select>
+                </div>
+
+                <div class="col-md-4">
+                    <label class="form-label">URL</label>
+                    <input class="form-control" asp-for="Url" />
+                </div>
+
+                <div class="col-12">
+                    <label class="form-label">Conteúdo (PEM/Policy) (opcional)</label>
+                    <textarea class="form-control" asp-for="ContentPem" rows="6"></textarea>
+                    <div class="form-text">Use para armazenar CA em PEM ou texto de policy quando aplicável.</div>
+                </div>
+
+                <div class="col-12">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" asp-for="IsActive" />
+                        <label class="form-check-label">Ativo</label>
+                    </div>
+                </div>
+
+                <div class="col-12 d-flex gap-2">
+                    <button class="btn btn-primary" type="submit">
+                        <i class="bi bi-check-lg me-1"></i> Salvar
+                    </button>
+                    <a class="btn btn-outline-secondary" asp-action="Index">Voltar</a>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>

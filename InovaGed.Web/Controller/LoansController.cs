@@ -37,6 +37,10 @@ public sealed class LoansController : Controller
         try
         {
             var tenantId = _user.TenantId;
+
+            var stats = await _queries.StatsAsync(tenantId, ct);
+            ViewBag.Stats = stats;
+
             var list = await _queries.ListAsync(tenantId, q, status, ct);
             ViewBag.Q = q;
             ViewBag.Status = status;
@@ -45,6 +49,7 @@ public sealed class LoansController : Controller
         catch (Exception ex)
         {
             _logger.LogError(ex, "Loans.Index failed");
+            ViewBag.Stats = new LoanStatsDto();
             return View(Array.Empty<LoanRowDto>());
         }
     }
@@ -194,5 +199,23 @@ public sealed class LoansController : Controller
         }
     }
 
-  
+    [HttpGet("DocSearch")]
+    public async Task<IActionResult> DocSearch(string? q, CancellationToken ct)
+    {
+        try
+        {
+            var tenantId = _user.TenantId;
+            var rows = await _queries.SearchDocumentsAsync(tenantId, q ?? "", ct);
+
+            // retorna em camelCase pra JS da view funcionar (id/code/title)
+            var payload = rows.Select(x => new { id = x.Id, code = x.Code, title = x.Title });
+            return Json(payload);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Loans.DocSearch failed");
+            return Json(Array.Empty<object>());
+        }
+    }
+
 }

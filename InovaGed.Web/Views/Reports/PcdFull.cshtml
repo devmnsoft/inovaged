@@ -1,4 +1,6 @@
-﻿@model List<InovaGed.Web.Controllers.ReportsController.TtdRow>
+﻿@using InovaGed.Web.Controllers
+@model List<TtdRow>
+
 @{
     ViewData["Title"] = "Tabela de Temporalidade (TTD)";
     ViewData["Subtitle"] = "Prazos e destinação final por classe (PoC)";
@@ -24,8 +26,8 @@
                         <tr>
                             <td class="fw-semibold">@r.ClassCode</td>
                             <td>@r.ClassName</td>
-                            <td>@(r.ActiveMonths?.ToString() ?? "-")</td>
-                            <td>@(r.ArchiveMonths?.ToString() ?? "-")</td>
+                            <td>@r.ActiveMonths</td>
+                            <td>@r.ArchiveMonths</td>
                             <td><span class="badge text-bg-secondary">@r.FinalDestination</span></td>
                             <td class="text-muted small">@r.StartEvent</td>
                         </tr>

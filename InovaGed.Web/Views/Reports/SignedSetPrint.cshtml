@@ -1,0 +1,81 @@
+﻿@using InovaGed.Web.Controllers
+@model SignedSetPrintVm
+@{
+    Layout = null;
+    var pageSize = 20; // 20 linhas por página (ajuste)
+    var totalPages = (int)Math.Ceiling(Model.Items.Count / (double)pageSize);
+}
+
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>Conjunto Assinado</title>
+    <style>
+        body {
+            font-family: Arial;
+            font-size: 12px;
+        }
+
+        .page {
+            page-break-after: always;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            border: 1px solid #ddd;
+            padding: 6px;
+        }
+
+        th {
+            background: #f5f5f5;
+        }
+
+        .footer {
+            margin-top: 8px;
+            text-align: right;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    @for (int p = 0; p < totalPages; p++)
+    {
+        var slice = Model.Items.Skip(p * pageSize).Take(pageSize).ToList();
+        <div class="page">
+            <div class="header">
+                <div><b>Relatório de Conjunto Assinado (ICP-Brasil)</b><br />Run: @Model.RunId</div>
+                <div>Página @(p + 1) de @totalPages</div>
+            </div>
+
+            <table>
+                <thead><tr><th>#</th><th>Documento</th><th>Status validação</th><th>Detalhes</th></tr></thead>
+                <tbody>
+                    @for (int i = 0; i < slice.Count; i++)
+                    {
+                        var seq = (p * pageSize) + i + 1; // numeração sequencial global (requisito) :contentReference[oaicite:18]{index=18}
+                        <tr>
+                            <td>@seq</td>
+                            <td>@slice[i].Title</td>
+                            <td>@slice[i].Status</td>
+                            <td class="text-muted">@slice[i].Details</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+
+            <div class="footer">Numeração sequencial global | Paginação automática</div>
+        </div>
+    }
+</body>
+</html>

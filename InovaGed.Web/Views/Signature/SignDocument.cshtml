@@ -1,0 +1,71 @@
+﻿@model dynamic
+@{
+    ViewData["Title"] = "Assinar Lote";
+    ViewData["Subtitle"] = "Assina todos os docs do lote (PoC 19) com CPF=CPF (PoC 8)";
+    var batch = Model.batch;
+    var docs = Model.docs as IEnumerable<dynamic> ?? Enumerable.Empty<dynamic>();
+}
+
+<div class="container py-3">
+    <div class="card mb-3">
+        <div class="card-body">
+            <div><strong>Lote:</strong> <span class="font-monospace">@batch.code</span></div>
+            <div><strong>Status:</strong> @batch.status</div>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <form asp-controller="Signature" asp-action="SignBatch" method="post" class="row g-3">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="batchId" value="@batch.id" />
+
+                <div class="col-md-4">
+                    <label class="form-label">CPF Usuário</label>
+                    <input name="userCpf" class="form-control" required />
+                </div>
+
+                <div class="col-md-4">
+                    <label class="form-label">CPF Certificado</label>
+                    <input name="certCpf" class="form-control" required />
+                </div>
+
+                <div class="col-md-4">
+                    <label class="form-label">Status</label>
+                    <input name="status" class="form-control" value="UNKNOWN" />
+                </div>
+
+                <div class="col-12">
+                    <label class="form-label">Detalhes</label>
+                    <input name="details" class="form-control" />
+                </div>
+
+                <div class="col-12 text-end">
+                    <button class="btn btn-primary" type="submit">Assinar Lote (PoC)</button>
+                    <a class="btn btn-outline-secondary" asp-controller="Signature" asp-action="Index">Voltar</a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header"><strong>Documentos do Lote</strong></div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-sm mb-0">
+                    <thead><tr><th>Código</th><th>Título</th><th>Status</th></tr></thead>
+                    <tbody>
+                        @foreach (var d in docs)
+                        {
+                            <tr>
+                                <td class="font-monospace">@d.code</td>
+                                <td>@d.title</td>
+                                <td>@d.status</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>

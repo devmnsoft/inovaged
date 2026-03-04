@@ -1,0 +1,95 @@
+﻿@model IEnumerable<dynamic>
+@{
+    ViewData["Title"] = "Fontes de Autoridade";
+    ViewData["Subtitle"] = "CA/OCSP/Políticas - integridade e trilha (PoC 12)";
+    bool ok = (ViewBag.IntegrityOk as bool?) ?? false;
+    string expected = ViewBag.ExpectedHash as string ?? "";
+    string computed = ViewBag.ComputedHash as string ?? "";
+}
+
+<div class="card shadow-sm">
+    <div class="card-body">
+
+        <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+            <a class="btn btn-sm btn-primary" asp-action="Create">
+                <i class="bi bi-plus-lg me-1"></i> Nova Fonte
+            </a>
+
+            <form asp-action="RecomputeIntegrity" method="post" class="m-0">
+                @Html.AntiForgeryToken()
+                <button class="btn btn-sm btn-outline-secondary" type="submit">
+                    <i class="bi bi-arrow-repeat me-1"></i> Recalcular Hash (PoC)
+                </button>
+            </form>
+
+            <div class="ms-auto">
+                @if (ok)
+                {
+                    <span class="badge text-bg-success"><i class="bi bi-shield-check me-1"></i>Integridade OK</span>
+                }
+                else
+                {
+                    <span class="badge text-bg-danger"><i class="bi bi-shield-exclamation me-1"></i>Integridade FALHOU</span>
+                }
+            </div>
+        </div>
+
+        <div class="small text-muted mb-3">
+            <div><b>Hash armazenado:</b> @expected</div>
+            <div><b>Hash calculado:</b> @computed</div>
+        </div>
+
+        <div class="table-responsive">
+            <table class="table table-sm align-middle">
+                <thead>
+                    <tr>
+                        <th>Nome</th>
+                        <th>Tipo</th>
+                        <th>URL</th>
+                        <th>Status</th>
+                        <th style="width:220px;"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var s in Model)
+                    {
+                        <tr>
+                            <td class="fw-semibold">@s.name</td>
+                            <td><span class="badge text-bg-light">@s.kind</span></td>
+                            <td class="text-muted small">@s.url</td>
+                            <td>
+                                @if (s.is_active)
+                                {
+                                    <span class="badge text-bg-success">Ativo</span>
+                                }
+                                else
+                                {
+                                    <span class="badge text-bg-secondary">Inativo</span>
+                                }
+                            </td>
+                            <td class="text-end">
+                                <a class="btn btn-sm btn-outline-primary" asp-action="Edit" asp-route-id="@s.id">
+                                    <i class="bi bi-pencil"></i>
+                                </a>
+
+                                <form asp-action="ToggleActive" method="post" class="d-inline">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="id" value="@s.id" />
+                                    <input type="hidden" name="enable" value="@(s.is_active ? "false" : "true")" />
+                                    <button class="btn btn-sm btn-outline-secondary" type="submit">
+                                        @(s.is_active ? "Desativar" : "Ativar")
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <div class="alert alert-info mt-3 mb-0">
+            <b>PoC (Item 12):</b> qualquer alteração em fontes (CA/OCSP/Policy) gera auditoria e altera o hash.
+            Se o hash calculado ≠ hash armazenado, o sistema registra <code>INTEGRITY_FAIL</code> em <code>ged.authority_source_audit</code>.
+        </div>
+    </div>
+</div>

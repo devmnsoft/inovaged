@@ -126,11 +126,11 @@
             </div>
             <div class="card-body">
                 <select class="form-select" onchange="location.href=this.value">
-                    @foreach (var v in Model.Versions.OrderByDescending(x => x.VersionNo))
+                    @foreach (var v in Model.Versions.OrderByDescending(x => x.Version_No))
                     {
                         var url = Url.Action("Nodes", "Instruments", new { type, versionId = v.Id });
                         var isSel = v.Id == Model.VersionId ? "selected" : "";
-                        <option value="@url" selected="@isSel">V@v.VersionNo — @v.PublishedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</option>
+                        <option value="@url" selected="@isSel">V@v.VersionNo — @v.Published_At</option>
                     }
                 </select>
                 <div class="text-muted mt-2" style="font-size:12px;">

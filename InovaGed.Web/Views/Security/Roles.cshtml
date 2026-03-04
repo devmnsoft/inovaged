@@ -1,0 +1,42 @@
+﻿@model IEnumerable<dynamic>
+@{
+    ViewData["Title"] = "Perfis e Permissões";
+    ViewData["Subtitle"] = "Níveis de autoridade, privilégios e sigilo (PoC 11)";
+}
+
+<div class="container py-3">
+    <div class="alert alert-info">
+        Selecione um perfil para gerenciar permissões. (PoC 11)
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-striped align-middle">
+            <thead>
+                <tr>
+                    <th>Nome</th>
+                    <th>Normalizado</th>
+                    <th>Criado</th>
+                    <th style="width:220px;"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var r in Model ?? Enumerable.Empty<dynamic>())
+                {
+                    <tr>
+                        <td><strong>@r.name</strong></td>
+                        <td class="text-muted">@r.normalized_name</td>
+                        <td class="small text-muted">@r.created_at</td>
+                        <td class="text-end">
+                            <a class="btn btn-sm btn-primary"
+                               asp-controller="Security"
+                               asp-action="RolePermissions"
+                               asp-route-roleId="@r.id">
+                                Permissões
+                            </a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>

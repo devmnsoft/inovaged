@@ -1,0 +1,44 @@
+﻿@model IEnumerable<dynamic>
+@{
+    ViewData["Title"] = "Importar / Exportar";
+    ViewData["Subtitle"] = "Importação e exportação de documentos (PoC 22,23)";
+}
+
+<div class="container py-3">
+    <div class="d-flex gap-2 mb-3">
+        <a class="btn btn-success" asp-controller="ImportExport" asp-action="Import">
+            <i class="bi bi-upload me-1"></i> Importar
+        </a>
+        <a class="btn btn-outline-primary" asp-controller="ImportExport" asp-action="ExportCenter">
+            <i class="bi bi-download me-1"></i> Exportar
+        </a>
+    </div>
+
+    <div class="alert alert-info">
+        PoC 22: importar arquivo criando documento e versão. PoC 23: exportar ZIP do documento.
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-striped align-middle">
+            <thead>
+                <tr>
+                    <th>Código</th>
+                    <th>Título</th>
+                    <th>Status</th>
+                    <th>Data</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var d in Model ?? Enumerable.Empty<dynamic>())
+                {
+                    <tr>
+                        <td class="font-monospace">@d.code</td>
+                        <td>@d.title</td>
+                        <td>@d.status</td>
+                        <td class="small text-muted">@d.created_at</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>

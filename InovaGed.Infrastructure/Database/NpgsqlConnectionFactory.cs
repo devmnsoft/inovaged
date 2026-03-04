@@ -15,9 +15,15 @@ public sealed class NpgsqlConnectionFactory : IDbConnectionFactory
             : connectionString;
     }
 
+    public IDbConnection CreateConnection()
+    {
+        return new NpgsqlConnection(_cs);
+    }
+
     public async Task<NpgsqlConnection> OpenAsync(CancellationToken ct)
     {
         var conn = new NpgsqlConnection(_cs);
+
         try
         {
             await conn.OpenAsync(ct);
@@ -28,12 +34,5 @@ public sealed class NpgsqlConnectionFactory : IDbConnectionFactory
             await conn.DisposeAsync();
             throw;
         }
-    }
-
-    public IDbConnection Open()
-    {
-        var conn = new NpgsqlConnection(_cs);
-        conn.Open();
-        return conn;
     }
 }

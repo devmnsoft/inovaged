@@ -1,0 +1,55 @@
+﻿@model IEnumerable<InstrumentVersionRow>
+@{
+    ViewData["Title"] = "Versionamento";
+    var type = (string)ViewData["Type"]!;
+}
+
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <div>
+            <div class="fw-bold">Versionamento - @type</div>
+            <div class="text-muted small">Publicar versão + histórico + diff</div>
+        </div>
+
+        <form method="post" action="/Instruments/Versions/@type/publish" class="d-flex gap-2">
+            @Html.AntiForgeryToken()
+            <input name="notes" class="form-control form-control-sm" placeholder="Notas da publicação (opcional)" />
+            <button class="btn btn-sm btn-primary">
+                <i class="bi bi-upload"></i> Publicar versão
+            </button>
+        </form>
+    </div>
+
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-sm align-middle">
+                <thead>
+                    <tr>
+                        <th>Versão</th>
+                        <th>Publicado</th>
+                        <th>Por</th>
+                        <th>Notas</th>
+                        <th>Diff</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var v in Model)
+                    {
+                        <tr>
+                            <td class="fw-semibold">V@v.Version_No</td>
+                            <td>@(v.Published_At?.ToString("dd/MM/yyyy HH:mm") ?? "-")</td>
+                            <td>@(v.Published_By_Name ?? "-")</td>
+                            <td class="text-muted">@v.Notes</td>
+                            <td>
+                                <a class="btn btn-sm btn-outline-secondary"
+                                   href="/Instruments/Versions/@type/diff?from=@v.Id&to=@(Model.First().Id)">
+                                    Comparar com a mais recente
+                                </a>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

@@ -84,11 +84,9 @@
                         {
                             <tr>
                                 <td><span class="badge bg-dark">V@v.VersionNo</span></td>
-                                <td>@v.PublishedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
-                                <td>@v.PublishedByName</td>
-                                <td class="text-muted" style="font-family:monospace; font-size:12px;">
-                                    @v.HashSha256
-                                </td>
+                                <td>@v.Published_At</td>
+                                <td>@v.Published_By_Name</td>
+                               
                                 <td>
                                     <div class="d-flex gap-2 flex-wrap">
                                         <a class="btn btn-outline-primary btn-sm"

@@ -1,0 +1,866 @@
+﻿@{
+    Layout = "_Layout";
+    var today = DateTime.Now.ToString("dd/MM/yyyy");
+}
+
+@section Styles {
+    <style>
+        /* =========================================
+                           MANUAL POC - UX/LEITURA/ILUSTRAÇÕES
+                           ========================================= */
+
+        :root {
+            --m-border: rgba(0,0,0,.07);
+            --m-muted: #6b7280;
+            --m-ink: #111827;
+            --m-soft: rgba(0,0,0,.02);
+            --m-blue: rgba(37,99,235,.12);
+            --m-green: rgba(34,197,94,.10);
+        }
+
+        .manual-wrap {
+            max-width: 1280px;
+            margin: 0 auto;
+        }
+
+        .manual-hero {
+            border: 1px solid var(--m-border);
+            background: linear-gradient(180deg, rgba(37,99,235,.10), rgba(34,197,94,.08));
+            border-radius: 1.25rem;
+        }
+
+        .manual-kpi {
+            border-radius: 1rem;
+            border: 1px solid var(--m-border);
+            background: #fff;
+        }
+
+        .manual-nav {
+            position: sticky;
+            top: 88px;
+            border: 1px solid var(--m-border);
+            border-radius: 1.25rem;
+            background: #fff;
+            padding: .75rem;
+        }
+
+            .manual-nav a {
+                text-decoration: none;
+            }
+
+            .manual-nav .item {
+                display: flex;
+                align-items: center;
+                gap: .55rem;
+                padding: .55rem .65rem;
+                border-radius: .85rem;
+                color: var(--m-ink);
+                border: 1px solid transparent;
+            }
+
+                .manual-nav .item:hover {
+                    background: rgba(37,99,235,.06);
+                    border-color: rgba(37,99,235,.08);
+                }
+
+                .manual-nav .item i {
+                    width: 18px;
+                    text-align: center;
+                }
+
+        .manual-search {
+            border-radius: 999px;
+        }
+
+        .section-card {
+            border-radius: 1.25rem;
+            border: 1px solid var(--m-border);
+            background: #fff;
+        }
+
+        .section-title {
+            display: flex;
+            align-items: center;
+            gap: .65rem;
+        }
+
+            .section-title .icon {
+                width: 44px;
+                height: 44px;
+                border-radius: 1rem;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background: linear-gradient(135deg, rgba(37,99,235,.18), rgba(34,197,94,.16));
+                border: 1px solid var(--m-border);
+            }
+
+        .muted {
+            color: var(--m-muted);
+        }
+
+        .pill {
+            border-radius: 999px;
+        }
+
+        .kbd {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+            background: rgba(0,0,0,.06);
+            border: 1px solid rgba(0,0,0,.10);
+            border-bottom-width: 2px;
+            padding: .12rem .35rem;
+            border-radius: .5rem;
+            font-size: .85rem;
+        }
+
+        .anchor {
+            scroll-margin-top: 92px;
+        }
+
+        .callout {
+            border: 1px solid var(--m-border);
+            border-radius: 1.1rem;
+            background: var(--m-soft);
+            padding: 1rem;
+        }
+
+            .callout .t {
+                font-weight: 800;
+            }
+
+            .callout .i {
+                width: 38px;
+                height: 38px;
+                border-radius: .95rem;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background: #111827;
+                color: #fff;
+            }
+
+            .callout.blue {
+                background: rgba(37,99,235,.06);
+            }
+
+            .callout.green {
+                background: rgba(34,197,94,.06);
+            }
+
+            .callout.yellow {
+                background: rgba(245,158,11,.08);
+            }
+
+            .callout.red {
+                background: rgba(239,68,68,.08);
+            }
+
+        /* Etapas (passo a passo) */
+        .step {
+            display: flex;
+            gap: .75rem;
+            align-items: flex-start;
+            padding: .85rem;
+            border-radius: 1rem;
+            border: 1px solid var(--m-border);
+            background: rgba(0,0,0,.01);
+        }
+
+            .step .n {
+                width: 34px;
+                height: 34px;
+                border-radius: .9rem;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background: #111827;
+                color: #fff;
+                font-weight: 900;
+                flex: 0 0 auto;
+            }
+
+        .diagram {
+            border-radius: 1.25rem;
+            border: 1px dashed rgba(0,0,0,.18);
+            background: rgba(0,0,0,.02);
+            padding: 1rem;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+            font-size: .9rem;
+            overflow-x: auto;
+            white-space: pre;
+        }
+
+        .mini-flow {
+            display: flex;
+            flex-wrap: wrap;
+            gap: .6rem;
+            padding: .75rem;
+            border-radius: 1.25rem;
+            border: 1px solid var(--m-border);
+            background: #fff;
+        }
+
+            .mini-flow .node {
+                display: flex;
+                align-items: center;
+                gap: .5rem;
+                padding: .55rem .65rem;
+                border-radius: 1rem;
+                border: 1px solid var(--m-border);
+                background: linear-gradient(180deg, rgba(37,99,235,.06), rgba(34,197,94,.04));
+            }
+
+            .mini-flow .arrow {
+                display: flex;
+                align-items: center;
+                color: rgba(0,0,0,.35);
+                padding: .2rem .15rem;
+            }
+
+        .demo-card {
+            border: 1px solid var(--m-border);
+            border-radius: 1.25rem;
+            background: #fff;
+            padding: 1rem;
+        }
+
+            .demo-card .h {
+                font-weight: 900;
+            }
+
+        .demo-badge {
+            font-size: .8rem;
+        }
+
+        .tagline {
+            font-size: .95rem;
+        }
+
+        .manual-nav .item.active {
+            background: rgba(37,99,235,.08);
+            border-color: rgba(37,99,235,.20);
+        }
+
+        .proof {
+            display: flex;
+            flex-wrap: wrap;
+            gap: .35rem;
+        }
+
+            .proof .p {
+                border: 1px solid var(--m-border);
+                border-radius: 999px;
+                padding: .15rem .55rem;
+                background: #fff;
+                font-size: .8rem;
+                color: #111827;
+            }
+
+        .checklist li {
+            margin-bottom: .45rem;
+        }
+
+            .checklist li b {
+                color: #111827;
+            }
+
+        @@media (max-width: 991px) {
+            .manual-nav {
+                position: static;
+                top: auto;
+            }
+        }
+    </style>
+}
+
+<div id="topo" class="manual-wrap">
+
+    <!-- HERO -->
+    <div class="manual-hero p-4 p-lg-5 mb-4">
+        <div class="d-flex flex-column flex-lg-row align-items-start align-items-lg-center justify-content-between gap-3">
+            <div>
+                <div class="d-inline-flex flex-wrap align-items-center gap-2 mb-2">
+                    <span class="badge text-bg-primary pill"><i class="bi bi-rocket-takeoff me-1"></i>PoC</span>
+                    <span class="badge text-bg-dark pill"><i class="bi bi-shield-lock me-1"></i>Rastreável</span>
+                    <span class="badge text-bg-success pill"><i class="bi bi-check2-circle me-1"></i>Operacional</span>
+                    <span class="badge text-bg-warning pill text-dark"><i class="bi bi-lightbulb me-1"></i>Guia de Apresentação</span>
+                </div>
+
+                <h1 class="h3 mb-1">Manual da PoC — InovaGED</h1>
+
+                <!-- AJUSTE: agora só "funcionalidade" -->
+                <div class="muted tagline">
+                    Guia rápido por funcionalidade (Requisitos 1–27). Atualizado em <b>@today</b>.
+                </div>
+            </div>
+
+            <div class="d-flex flex-wrap gap-2">
+                <a class="btn btn-outline-dark" href="#roteiro-demo">
+                    <i class="bi bi-play-circle me-1"></i> Roteiro de Demo (8 min)
+                </a>
+                <a class="btn btn-primary" href="#fluxo-geral">
+                    <i class="bi bi-diagram-3 me-1"></i> Fluxo Geral
+                </a>
+                <a class="btn btn-outline-primary" href="#checklist">
+                    <i class="bi bi-list-check me-1"></i> Checklist 1–27
+                </a>
+            </div>
+        </div>
+
+        <div class="row g-3 mt-3">
+            <div class="col-12 col-md-4">
+                <div class="manual-kpi p-3">
+                    <div class="d-flex align-items-center gap-2">
+                        <i class="bi bi-map fs-4"></i>
+                        <div>
+                            <div class="fw-semibold">Como usar este manual</div>
+                            <!-- AJUSTE -->
+                            <div class="small muted">Use a navegação e a busca. Cada bloco descreve somente a <b>funcionalidade</b> do módulo.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-12 col-md-4">
+                <div class="manual-kpi p-3">
+                    <div class="d-flex align-items-center gap-2">
+                        <i class="bi bi-lightning-charge fs-4"></i>
+                        <div>
+                            <div class="fw-semibold">Visão “vida real”</div>
+                            <!-- AJUSTE -->
+                            <div class="small muted">Os módulos trabalham integrados (documentos, lotes, guarda, temporalidade, assinatura e auditoria).</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-12 col-md-4">
+                <div class="manual-kpi p-3">
+                    <div class="d-flex align-items-center gap-2">
+                        <i class="bi bi-shield-check fs-4"></i>
+                        <div>
+                            <div class="fw-semibold">Pontos de confiança</div>
+                            <!-- AJUSTE -->
+                            <div class="small muted"><b>ICP</b> garante autenticidade; <b>Auditoria</b> garante rastreabilidade das ações.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- mini fluxo ilustrado -->
+        <div class="mini-flow mt-3">
+            <div class="node"><i class="bi bi-diagram-3"></i><b>Instrumentos</b> <span class="muted">(1–4)</span></div>
+            <div class="arrow"><i class="bi bi-arrow-right"></i></div>
+            <div class="node"><i class="bi bi-folder2-open"></i><b>Documentos/Lotes</b> <span class="muted">(16–18)</span></div>
+            <div class="arrow"><i class="bi bi-arrow-right"></i></div>
+            <div class="node"><i class="bi bi-inbox"></i><b>Guarda Física</b> <span class="muted">(17,24)</span></div>
+            <div class="arrow"><i class="bi bi-arrow-right"></i></div>
+            <div class="node"><i class="bi bi-hourglass-split"></i><b>Temporalidade</b> <span class="muted">(5–6)</span></div>
+            <div class="arrow"><i class="bi bi-arrow-right"></i></div>
+            <div class="node"><i class="bi bi-shield-lock"></i><b>Auditoria</b> <span class="muted">(25–27)</span></div>
+        </div>
+    </div>
+
+    <!-- GRID: NAV + CONTENT -->
+    <div class="row g-4">
+        <!-- NAV -->
+        <div class="col-12 col-lg-4">
+            <div class="manual-nav">
+                <div class="d-flex align-items-center justify-content-between mb-2">
+                    <div class="fw-semibold"><i class="bi bi-compass me-1"></i> Navegação</div>
+                    <a class="small text-decoration-none" href="#topo" title="Topo"><i class="bi bi-arrow-up"></i></a>
+                </div>
+
+                <input id="manualSearch" class="form-control manual-search mb-3" placeholder="Buscar no manual (ex.: temporalidade, ICP, empréstimo, lote)" />
+
+                <div class="d-grid gap-1" id="manualNav">
+                    <a class="item" href="#roteiro-demo"><i class="bi bi-play-circle"></i><span>Roteiro de Demo (8 min)</span></a>
+                    <a class="item" href="#fluxo-geral"><i class="bi bi-diagram-3"></i><span>Fluxo Geral (PoC)</span></a>
+                    <a class="item" href="#principal"><i class="bi bi-speedometer2"></i><span>Principal</span></a>
+                    <a class="item" href="#usuarios"><i class="bi bi-people"></i><span>Usuários e Autoridades (7–12)</span></a>
+                    <a class="item" href="#instrumentos"><i class="bi bi-diagram-3"></i><span>Instrumentos (1–4)</span></a>
+                    <a class="item" href="#documentos"><i class="bi bi-folder2-open"></i><span>Documentos e Lotes (16–18)</span></a>
+                    <a class="item" href="#importexport"><i class="bi bi-arrow-left-right"></i><span>Importar / Exportar (22–23)</span></a>
+                    <a class="item" href="#guarda"><i class="bi bi-inbox"></i><span>Guarda Física (17,24)</span></a>
+                    <a class="item" href="#icp-assinatura"><i class="bi bi-patch-check"></i><span>Assinatura ICP (19–21)</span></a>
+                    <a class="item" href="#temporalidade"><i class="bi bi-hourglass-split"></i><span>Temporalidade e Destinação (5–6)</span></a>
+                    <a class="item" href="#emprestimos"><i class="bi bi-journal-arrow-up"></i><span>Empréstimos (13–15)</span></a>
+                    <a class="item" href="#relatorios"><i class="bi bi-file-earmark-text"></i><span>Relatórios (3,15,26)</span></a>
+                    <a class="item" href="#auditoria"><i class="bi bi-shield-lock"></i><span>Auditoria (25–27)</span></a>
+                    <a class="item" href="#checklist"><i class="bi bi-list-check"></i><span>Checklist PoC 1–27</span></a>
+                </div>
+
+                <hr class="my-3" />
+                <div class="small muted">
+                    Dica: durante a apresentação, use <span class="kbd">Ctrl</span> + <span class="kbd">F</span>.
+                    Aqui no manual, use a busca acima (ela filtra as seções).
+                </div>
+            </div>
+        </div>
+
+        <!-- CONTENT -->
+        <div class="col-12 col-lg-8">
+
+            <!-- ROTEIRO DEMO -->
+            <div id="roteiro-demo" class="anchor section-card p-4 mb-4" data-tags="roteiro demo apresentação 8 minutos">
+                <div class="section-title mb-3">
+                    <div class="icon"><i class="bi bi-play-circle fs-5"></i></div>
+                    <div>
+                        <div class="h5 mb-0">Roteiro de Demonstração (≈ 8 minutos)</div>
+                        <!-- AJUSTE -->
+                        <div class="muted small">Funcionalidade: apresenta o fluxo completo do sistema em sequência curta e objetiva.</div>
+                    </div>
+                </div>
+
+                <div class="callout blue d-flex align-items-start gap-3">
+                    <div class="i"><i class="bi bi-bullseye"></i></div>
+                    <div>
+                        <div class="t">O que este roteiro faz</div>
+                        <div class="muted small">
+                            Conduz a apresentação pelos módulos essenciais: <b>Dashboard</b>, <b>Instrumentos</b>, <b>Documentos/Lotes</b>,
+                            <b>Guarda</b>, <b>Temporalidade</b>, <b>ICP</b> e <b>Auditoria</b>.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- AJUSTE: manter estrutura, mas só funcionalidade -->
+                <div class="mt-3 d-grid gap-2">
+                    <div class="step"><div class="n">1</div><div><div class="fw-semibold">Dashboard</div><div class="muted small">Mostra indicadores e atalhos de operação.</div></div></div>
+                    <div class="step"><div class="n">2</div><div><div class="fw-semibold">Instrumentos</div><div class="muted small">Gerencia PCD/TTD/POP, versões e publicações.</div></div></div>
+                    <div class="step"><div class="n">3</div><div><div class="fw-semibold">Documentos/Lotes</div><div class="muted small">Organiza documentos e controla etapas de tratamento por lote.</div></div></div>
+                    <div class="step"><div class="n">4</div><div><div class="fw-semibold">Guarda Física</div><div class="muted small">Endereça fisicamente (localizações/caixas) e mantém histórico de movimentações.</div></div></div>
+                    <div class="step"><div class="n">5</div><div><div class="fw-semibold">Temporalidade</div><div class="muted small">Calcula prazos e organiza filas/listas para destinação.</div></div></div>
+                    <div class="step"><div class="n">6</div><div><div class="fw-semibold">ICP + Validação</div><div class="muted small">Assina documentos/lotes e valida assinaturas com status.</div></div></div>
+                    <div class="step"><div class="n">7</div><div><div class="fw-semibold">Auditoria</div><div class="muted small">Registra ações e eventos relevantes (inclui falhas de acesso).</div></div></div>
+                </div>
+            </div>
+
+            <!-- FLUXO GERAL -->
+            <div id="fluxo-geral" class="anchor section-card p-4 mb-4" data-tags="fluxo geral fim a fim">
+                <div class="section-title mb-3">
+                    <div class="icon"><i class="bi bi-diagram-3 fs-5"></i></div>
+                    <div>
+                        <div class="h5 mb-0">Fluxo Geral da PoC (ilustração)</div>
+                        <!-- AJUSTE -->
+                        <div class="muted small">Funcionalidade: visão de ponta a ponta do ciclo documental com segurança e rastreabilidade.</div>
+                    </div>
+                </div>
+
+                <div class="diagram">
+                    [1–4] INSTRUMENTOS (PCD/TTD/POP) -> define regras
+                    |
+                    v
+                    [17–18] DOCUMENTOS (Explorer) -> organiza acervo + metadados
+                    |
+                    v
+                    [16–18] LOTES / ETAPAS -> controla tratamento e histórico de evolução
+                    |
+                    v
+                    [17,24] GUARDA FÍSICA -> endereçamento + caixas + histórico
+                    |
+                    v
+                    [5–6] TEMPORALIDADE / DESTINAÇÃO -> cálculo de prazos + filas/listas + termos
+                    |
+                    v
+                    [25–27] AUDITORIA / RELATÓRIOS -> registro e evidências
+
+                    [19–21,26] ICP (paralelo) -> autentica/assina/valida e gera evidências
+                </div>
+            </div>
+
+            <!-- PRINCIPAL -->
+            <div id="principal" class="anchor section-card p-4 mb-4" data-tags="dashboard principal kpi badges">
+                <div class="section-title mb-3">
+                    <div class="icon"><i class="bi bi-speedometer2 fs-5"></i></div>
+                    <div>
+                        <div class="h5 mb-0">Principal — Dashboard</div>
+                        <!-- AJUSTE -->
+                        <div class="muted small">Funcionalidade: painel de indicadores e atalhos para filas, pendências e operação.</div>
+                    </div>
+                </div>
+
+                <div class="callout green d-flex align-items-start gap-3">
+                    <div class="i"><i class="bi bi-graph-up"></i></div>
+                    <div>
+                        <div class="t">O que este módulo faz</div>
+                        <div class="muted small">Centraliza indicadores do sistema e atalhos para os pontos de trabalho (lotes, filas, pendências e relatórios).</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- USUÁRIOS E AUTORIDADES -->
+            <div id="usuarios" class="anchor section-card p-4 mb-4" data-tags="usuarios autoridade perfis permissoes icp cpf certificado login roles">
+                <div class="section-title mb-3">
+                    <div class="icon"><i class="bi bi-people fs-5"></i></div>
+                    <div>
+                        <div class="h5 mb-0">Usuários e Autoridades (PoC 7–12)</div>
+                        <!-- AJUSTE -->
+                        <div class="muted small">Funcionalidade: gestão de usuários, perfis e autenticação/assinatura com certificado ICP.</div>
+                    </div>
+                </div>
+
+                <div class="diagram">
+                    [Usuário + CPF] + [Perfil/Permissões] + [Certificado ICP]
+                    -> controla acesso (menu/rotas)
+                    -> permite assinar documentos/lotes
+                    -> valida assinatura e registra eventos
+                </div>
+
+                <div class="accordion mt-3" id="accUsers">
+
+                    <div class="accordion-item">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#u1">
+                                <i class="bi bi-person-plus me-2"></i>Usuários / Criar Usuário
+                            </button>
+                        </h2>
+                        <div id="u1" class="accordion-collapse collapse show" data-bs-parent="#accUsers">
+                            <div class="accordion-body">
+                                <!-- AJUSTE: só funcionalidade -->
+                                <div class="callout blue d-flex align-items-start gap-3">
+                                    <div class="i"><i class="bi bi-person-badge"></i></div>
+                                    <div>
+                                        <div class="t">Funcionalidade</div>
+                                        <div class="muted small">Cadastra usuários (com CPF), controla status ativo/inativo e associa perfis de acesso.</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- AJUSTE IMPORTANTE: ID duplicado "icp" estava causando conflito.
+                         Aqui renomeei o item de permissões para id="permissoes" e o bloco de assinatura ICP fora do accordion para id="icp-assinatura".
+                    -->
+                    <div class="accordion-item" id="permissoes">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#u2">
+                                <i class="bi bi-shield-check me-2"></i>Perfis e Permissões
+                            </button>
+                        </h2>
+                        <div id="u2" class="accordion-collapse collapse" data-bs-parent="#accUsers">
+                            <div class="accordion-body">
+                                <div class="callout green d-flex align-items-start gap-3">
+                                    <div class="i"><i class="bi bi-lock"></i></div>
+                                    <div>
+                                        <div class="t">Funcionalidade</div>
+                                        <div class="muted small">Define permissões por perfil (role), controlando acesso a telas e ações do sistema.</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="accordion-item" data-tags="icp cadeia revogacao ocsp lcr autenticacao">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#u3">
+                                <i class="bi bi-fingerprint me-2"></i>ICP — Autenticação, Cadeia e Revogação
+                            </button>
+                        </h2>
+                        <div id="u3" class="accordion-collapse collapse" data-bs-parent="#accUsers">
+                            <div class="accordion-body">
+                                <div class="callout yellow d-flex align-items-start gap-3">
+                                    <div class="i"><i class="bi bi-patch-check"></i></div>
+                                    <div>
+                                        <div class="t">Funcionalidade</div>
+                                        <div class="muted small">Autentica e valida certificados (CPF, validade e cadeia). Quando aplicável, consulta revogação (OCSP/LCR).</div>
+                                    </div>
+                                </div>
+
+                                <div class="callout red mt-3 d-flex align-items-start gap-3">
+                                    <div class="i"><i class="bi bi-shield-exclamation"></i></div>
+                                    <div>
+                                        <div class="t">Regra essencial</div>
+                                        <div class="muted small"><b>CPF do usuário</b> deve ser compatível com o <b>CPF do certificado</b> para permitir autenticar/assinar.</div>
+                                    </div>
+                                </div>
+
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- INSTRUMENTOS -->
+            <div id="instrumentos" class="anchor section-card p-4 mb-4" data-tags="pcd ttd pop instrumentos arquivisticos plano classificacao tabela temporalidade mover codigo versões publicar historico">
+                <div class="section-title mb-3">
+                    <div class="icon"><i class="bi bi-diagram-3 fs-5"></i></div>
+                    <div>
+                        <div class="h5 mb-0">Instrumentos Arquivísticos (PoC 1–4)</div>
+                        <!-- AJUSTE -->
+                        <div class="muted small">Funcionalidade: administrar PCD/TTD/POP, incluindo movimentação de códigos e versionamento/publicação.</div>
+                    </div>
+                </div>
+
+                <div class="callout blue d-flex align-items-start gap-3">
+                    <div class="i"><i class="bi bi-journal-text"></i></div>
+                    <div>
+                        <div class="t">Funcionalidade</div>
+                        <div class="muted small">
+                            Mantém as regras arquivísticas:
+                            <b>PCD</b> (classificação), <b>TTD</b> (prazos/destinação) e <b>POP</b> (procedimentos).
+                            Permite movimentar códigos e manter histórico de versões publicadas.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- DOCUMENTOS / LOTES -->
+            <div id="documentos" class="anchor section-card p-4 mb-4" data-tags="documentos explorer lotes tratamento fases etapas historico">
+                <div class="section-title mb-3">
+                    <div class="icon"><i class="bi bi-folder2-open fs-5"></i></div>
+                    <div>
+                        <div class="h5 mb-0">Documentos e Lotes (PoC 16–18)</div>
+                        <!-- AJUSTE -->
+                        <div class="muted small">Funcionalidade: organizar documentos, agrupar em lotes e controlar etapas de tratamento com histórico.</div>
+                    </div>
+                </div>
+
+                <div class="callout green d-flex align-items-start gap-3">
+                    <div class="i"><i class="bi bi-layers"></i></div>
+                    <div>
+                        <div class="t">Funcionalidade</div>
+                        <div class="muted small">Permite navegar documentos (metadados/classificação) e controlar lotes por etapa, registrando evolução operacional.</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- IMPORT / EXPORT -->
+            <div id="importexport" class="anchor section-card p-4 mb-4" data-tags="importação exportação verificador externo assinatura validacao evidencias">
+                <div class="section-title mb-3">
+                    <div class="icon"><i class="bi bi-arrow-left-right fs-5"></i></div>
+                    <div>
+                        <div class="h5 mb-0">Importar / Exportar (PoC 22–23)</div>
+                        <!-- AJUSTE -->
+                        <div class="muted small">Funcionalidade: entrada e saída de arquivos com foco em evidências e verificabilidade externa.</div>
+                    </div>
+                </div>
+
+                <div class="callout blue d-flex align-items-start gap-3">
+                    <div class="i"><i class="bi bi-box-arrow-in-down"></i></div>
+                    <div>
+                        <div class="t">Funcionalidade</div>
+                        <div class="muted small">
+                            Importa arquivos para o GED e exporta documentos/conjuntos.
+                            Quando há assinatura, pode registrar status e permitir verificação externa conforme política do sistema.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- GUARDA FÍSICA -->
+            <div id="guarda" class="anchor section-card p-4 mb-4" data-tags="guarda fisica caixas localizações etiquetas conteúdo histórico endereçamento">
+                <div class="section-title mb-3">
+                    <div class="icon"><i class="bi bi-inbox fs-5"></i></div>
+                    <div>
+                        <div class="h5 mb-0">Guarda Física (PoC 17,24)</div>
+                        <!-- AJUSTE -->
+                        <div class="muted small">Funcionalidade: endereçar acervo físico (localizações/caixas), listar conteúdo, histórico e etiquetas.</div>
+                    </div>
+                </div>
+
+                <div class="callout yellow d-flex align-items-start gap-3">
+                    <div class="i"><i class="bi bi-geo-alt"></i></div>
+                    <div>
+                        <div class="t">Funcionalidade</div>
+                        <div class="muted small">Controla a localização física dos documentos (hierarquia e caixas), com rastreio de movimentações e impressão de etiquetas.</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ICP ASSINATURA (AJUSTE: id único) -->
+            <div id="icp-assinatura" class="anchor section-card p-4 mb-4" data-tags="assinatura icp assinar documento lote validação status válida inválida indeterminada">
+                <div class="section-title mb-3">
+                    <div class="icon"><i class="bi bi-patch-check fs-5"></i></div>
+                    <div>
+                        <div class="h5 mb-0">Assinatura ICP (PoC 19–21)</div>
+                        <!-- AJUSTE -->
+                        <div class="muted small">Funcionalidade: assinar documentos/lotes e validar assinaturas, exibindo status do resultado.</div>
+                    </div>
+                </div>
+
+                <div class="callout green d-flex align-items-start gap-3">
+                    <div class="i"><i class="bi bi-pen"></i></div>
+                    <div>
+                        <div class="t">Funcionalidade</div>
+                        <div class="muted small">
+                            Assina com certificado ICP e valida assinaturas, retornando estados como:
+                            <b>Válida</b>, <b>Inválida</b> ou <b>Indeterminada</b> (quando não é possível provar revogação online no momento).
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TEMPORALIDADE -->
+            <div id="temporalidade" class="anchor section-card p-4 mb-4" data-tags="temporalidade retenção prazos vencidos lista destinação termos fila">
+                <div class="section-title mb-3">
+                    <div class="icon"><i class="bi bi-hourglass-split fs-5"></i></div>
+                    <div>
+                        <div class="h5 mb-0">Temporalidade e Destinação (PoC 5–6)</div>
+                        <!-- AJUSTE -->
+                        <div class="muted small">Funcionalidade: calcular prazos automaticamente e organizar filas/listas para destinação e termos.</div>
+                    </div>
+                </div>
+
+                <div class="callout blue d-flex align-items-start gap-3">
+                    <div class="i"><i class="bi bi-calendar2-check"></i></div>
+                    <div>
+                        <div class="t">Funcionalidade</div>
+                        <div class="muted small">
+                            Calcula vencimentos conforme TTD e separa documentos por situação (a vencer, vencido, pronto para destinação),
+                            além de apoiar a geração e consulta de termos.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- EMPRÉSTIMOS -->
+            <div id="emprestimos" class="anchor section-card p-4 mb-4" data-tags="emprestimos solicitacao protocolo devolucao vencidos rotina">
+                <div class="section-title mb-3">
+                    <div class="icon"><i class="bi bi-journal-arrow-up fs-5"></i></div>
+                    <div>
+                        <div class="h5 mb-0">Empréstimos (PoC 13–15)</div>
+                        <!-- AJUSTE -->
+                        <div class="muted small">Funcionalidade: controlar solicitações, retirada/devolução, vencidos e relatórios de empréstimo.</div>
+                    </div>
+                </div>
+
+                <div class="callout green d-flex align-items-start gap-3">
+                    <div class="i"><i class="bi bi-arrow-repeat"></i></div>
+                    <div>
+                        <div class="t">Funcionalidade</div>
+                        <div class="muted small">
+                            Registra solicitações com protocolo, controla prazos de devolução, lista vencidos e apoia rotinas de atualização e relatórios.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- RELATÓRIOS -->
+            <div id="relatorios" class="anchor section-card p-4 mb-4" data-tags="relatorios imprimir pcd plc ttd conjunto assinado paginação numeração">
+                <div class="section-title mb-3">
+                    <div class="icon"><i class="bi bi-file-earmark-text fs-5"></i></div>
+                    <div>
+                        <div class="h5 mb-0">Relatórios (PoC 3,15,26)</div>
+                        <!-- AJUSTE -->
+                        <div class="muted small">Funcionalidade: emitir evidências em PDF (instrumentos, empréstimos e assinaturas).</div>
+                    </div>
+                </div>
+
+                <div class="callout yellow d-flex align-items-start gap-3">
+                    <div class="i"><i class="bi bi-printer"></i></div>
+                    <div>
+                        <div class="t">Funcionalidade</div>
+                        <div class="muted small">
+                            Gera relatórios (ex.: impressão do PCD/TTD completo ou por classe, empréstimos e relatórios relacionados à assinatura),
+                            com paginação/numeração conforme configuração.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- AUDITORIA -->
+            <div id="auditoria" class="anchor section-card p-4 mb-4" data-tags="auditoria log trilha acesso negado security access denied evidencias">
+                <div class="section-title mb-3">
+                    <div class="icon"><i class="bi bi-shield-lock fs-5"></i></div>
+                    <div>
+                        <div class="h5 mb-0">Auditoria (PoC 25–27)</div>
+                        <!-- AJUSTE -->
+                        <div class="muted small">Funcionalidade: registrar eventos e ações do sistema, incluindo falhas de acesso, com filtros e detalhes.</div>
+                    </div>
+                </div>
+
+                <div class="callout red d-flex align-items-start gap-3">
+                    <div class="i"><i class="bi bi-journal-text"></i></div>
+                    <div>
+                        <div class="t">Funcionalidade</div>
+                        <div class="muted small">
+                            Mantém trilha de auditoria por usuário/ação/entidade, registrando sucesso/erro e eventos de segurança (ex.: acesso negado).
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- CHECKLIST -->
+            <div id="checklist" class="anchor section-card p-4 mb-4" data-tags="checklist requisitos 1 27">
+                <div class="section-title mb-3">
+                    <div class="icon"><i class="bi bi-list-check fs-5"></i></div>
+                    <div>
+                        <div class="h5 mb-0">Checklist PoC (1–27)</div>
+                        <!-- AJUSTE -->
+                        <div class="muted small">Funcionalidade: lista resumida dos requisitos cobertos pelos módulos acima.</div>
+                    </div>
+                </div>
+
+                <ul class="checklist">
+                    <li><b>1–4</b> Instrumentos: PCD/TTD/POP + mover código + versões/publicação + impressão</li>
+                    <li><b>5–6</b> Temporalidade: cálculo automático + listas/filas + termos</li>
+                    <li><b>7–12</b> Usuários/ICP: usuários com CPF + perfis/permissões + validações de certificado</li>
+                    <li><b>13–15</b> Empréstimos: solicitação/protocolo + vencidos + relatórios</li>
+                    <li><b>16–18</b> Documentos/Lotes: explorer + lotes/etapas + histórico</li>
+                    <li><b>19–21</b> Assinatura: assinar doc/lote + validação (válida/inválida/indeterminada)</li>
+                    <li><b>22–23</b> Import/Export: entrada/saída + verificabilidade externa quando aplicável</li>
+                    <li><b>24</b> Guarda física: localizações/caixas/conteúdo/histórico/etiquetas</li>
+                    <li><b>25–27</b> Auditoria: log + falhas de acesso + evidências</li>
+                </ul>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            const search = document.getElementById('manualSearch');
+            const sections = document.querySelectorAll('.section-card');
+            const nav = document.getElementById('manualNav');
+
+            function norm(s) { return (s || '').toLowerCase().trim(); }
+
+            function applyFilter(q) {
+                q = norm(q);
+
+                sections.forEach(sec => {
+                    const tags = norm(sec.getAttribute('data-tags'));
+                    const text = norm(sec.innerText);
+                    const hit = !q || tags.includes(q) || text.includes(q);
+                    sec.style.display = hit ? '' : 'none';
+                });
+
+                if (nav) {
+                    nav.querySelectorAll('a.item').forEach(a => {
+                        const href = a.getAttribute('href') || '';
+                        const id = href.startsWith('#') ? href.substring(1) : '';
+                        const target = id ? document.getElementById(id) : null;
+                        const ok = !q || (target && target.style.display !== 'none');
+                        a.style.opacity = ok ? '1' : '.35';
+                    });
+                }
+            }
+
+            if (search) search.addEventListener('input', () => applyFilter(search.value));
+
+            // destaque de item ativo no menu (conforme scroll)
+            const links = nav ? Array.from(nav.querySelectorAll('a.item')) : [];
+            const obs = ('IntersectionObserver' in window) ? new IntersectionObserver((entries) => {
+                entries.forEach(e => {
+                    if (!e.isIntersecting) return;
+                    const id = e.target.getAttribute('id');
+                    links.forEach(l => {
+                        const href = l.getAttribute('href') || '';
+                        l.classList.toggle('active', href === '#' + id);
+                    });
+                });
+            }, { rootMargin: '-20% 0px -70% 0px', threshold: 0.01 }) : null;
+
+            if (obs) {
+                // observa anchors internos (garante highlight mesmo sem pegar section-card)
+                ['roteiro-demo','fluxo-geral','principal','usuarios','instrumentos','documentos','importexport','guarda','icp-assinatura','temporalidade','emprestimos','relatorios','auditoria','checklist']
+                    .forEach(id => {
+                        const el = document.getElementById(id);
+                        if (el) obs.observe(el);
+                    });
+            }
+        })();
+    </script>
+}

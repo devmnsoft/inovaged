@@ -3,71 +3,294 @@
 
 @{
     ViewData["Title"] = "Novo Empréstimo";
+    ViewData["Subtitle"] = "Solicitação de empréstimo com protocolo automático (PoC 13)";
 }
 
-<h2>Novo Empréstimo</h2>
+<div class="d-flex align-items-center justify-content-between mb-3">
+    <div>
+        <h4 class="mb-0">Novo Empréstimo</h4>
+        <div class="text-muted small">PoC (Item 13) — solicitação + itens + protocolo</div>
+    </div>
+
+    <div class="d-flex gap-2">
+        <a class="btn btn-sm btn-light border" href="/Loans">
+            <i class="bi bi-arrow-left me-1"></i>Voltar
+        </a>
+    </div>
+</div>
 
 @if (TempData["Err"] is not null)
 {
     <div class="alert alert-danger">@TempData["Err"]</div>
 }
 
-<form method="post" class="card card-body">
+<form method="post" class="card shadow-sm">
     @Html.AntiForgeryToken()
 
-    <div class="row g-2">
-        <div class="col-md-6">
-            <label class="form-label">Solicitante (nome)</label>
-            <input class="form-control" name="RequesterName" value="@Model.RequesterName" />
-        </div>
-        <div class="col-md-3">
-            <label class="form-label">Vencimento</label>
-            <input type="date" class="form-control" name="DueAt"
-                   value="@(Model.DueAt?.ToString("yyyy-MM-dd"))" />
-        </div>
-        <div class="col-md-3">
-            <label class="form-label">Físico?</label>
-            <select class="form-select" name="IsPhysical">
-                <option value="true" selected="@(Model.IsPhysical)">Sim</option>
-                <option value="false" selected="@(!Model.IsPhysical)">Não</option>
-            </select>
-        </div>
-
-        <div class="col-12">
-            <label class="form-label">Documentos (GUIDs) — 1 por linha (PoC)</label>
-            <textarea class="form-control" rows="5" id="docIds"></textarea>
-            <div class="form-text">
-                Na próxima iteração a gente troca isso por um modal de busca de documentos.
+    <div class="card-body">
+        <div class="row g-3">
+            <!-- Cabeçalho -->
+            <div class="col-md-6">
+                <label class="form-label">Solicitante (nome)</label>
+                <input class="form-control" name="RequesterName" value="@Model.RequesterName" placeholder="Ex.: Enfermagem / Dr(a). Fulano" />
             </div>
-        </div>
 
-        <div class="col-12">
-            <label class="form-label">Observações</label>
-            <textarea class="form-control" name="Notes" rows="3">@Model.Notes</textarea>
-        </div>
+            <div class="col-md-3">
+                <label class="form-label">Vencimento</label>
+                <input type="date" class="form-control" name="DueAt" value="@(Model.DueAt?.ToString("yyyy-MM-dd"))" />
+                <div class="form-text">A devolução será cobrada automaticamente após o vencimento.</div>
+            </div>
 
-        <div class="col-12 d-flex gap-2">
-            <button class="btn btn-primary" type="submit" onclick="applyDocIds()">Salvar</button>
-            <a class="btn btn-outline-secondary" href="/Loans">Voltar</a>
+            <div class="col-md-3">
+                <label class="form-label">Tipo de empréstimo</label>
+                <select class="form-select" name="IsPhysical">
+                    <option value="true" selected="@(Model.IsPhysical)">Físico (retirada)</option>
+                    <option value="false" selected="@(!Model.IsPhysical)">Digital (visualização)</option>
+                </select>
+            </div>
+
+            <!-- Busca -->
+            <div class="col-12">
+                <label class="form-label">Adicionar documentos</label>
+
+                <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input class="form-control" id="docSearch" placeholder="Buscar por código ou título (ex.: PRONT, 2024, João, RX...)" />
+                    <button class="btn btn-outline-secondary" type="button" onclick="searchDocs()">
+                        Buscar
+                    </button>
+                </div>
+
+                <div class="form-text">
+                    PoC: busca no GED e adiciona itens ao empréstimo (Item 13). Se sua rota ainda não existir, implemente <code>/Loans/DocSearch</code>.
+                </div>
+
+                <!-- Resultados -->
+                <div id="docResultsWrap" class="mt-2 d-none">
+                    <div class="card border">
+                        <div class="card-header py-2 d-flex justify-content-between align-items-center">
+                            <strong class="small">Resultados</strong>
+                            <button type="button" class="btn btn-sm btn-light border" onclick="hideResults()">
+                                Fechar
+                            </button>
+                        </div>
+                        <div id="docResults" class="list-group list-group-flush"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Selecionados -->
+            <div class="col-12">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="fw-semibold">Itens selecionados</div>
+                        <div class="text-muted small">Esses documentos serão vinculados ao empréstimo.</div>
+                    </div>
+                    <span id="selCount" class="badge text-bg-dark">0</span>
+                </div>
+
+                <div class="card mt-2">
+                    <div id="selectedDocs" class="list-group list-group-flush">
+                        <div id="emptySel" class="list-group-item text-muted">
+                            Nenhum documento selecionado.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Hidden inputs -->
+                <div id="hidden"></div>
+            </div>
+
+            <!-- Observações -->
+            <div class="col-12">
+                <label class="form-label">Observações</label>
+                <textarea class="form-control" name="Notes" rows="3" placeholder="Ex.: Urgência, retirar na recepção, acesso somente visualização...">@Model.Notes</textarea>
+            </div>
         </div>
     </div>
 
-    <div id="hidden"></div>
+    <div class="card-footer bg-white d-flex gap-2">
+        <button class="btn btn-primary" type="submit" onclick="return validateBeforeSubmit();">
+            <i class="bi bi-check-lg me-1"></i>Salvar e gerar protocolo
+        </button>
+        <a class="btn btn-outline-secondary" href="/Loans">Cancelar</a>
+
+        <div class="ms-auto text-muted small d-none d-md-flex align-items-center">
+            <i class="bi bi-info-circle me-1"></i>
+            Após salvar, você verá o protocolo e poderá Aprovar / Entregar / Devolver.
+        </div>
+    </div>
 </form>
 
-<script>
-    function applyDocIds() {
-        const area = document.getElementById('docIds');
-        const hidden = document.getElementById('hidden');
-        hidden.innerHTML = '';
+@section Styles {
+    <style>
+        #docResults .list-group-item:hover {
+            cursor: pointer;
+        }
 
-        const ids = area.value.split(/\r?\n/).map(x => x.trim()).filter(x => x.length > 0);
-        ids.forEach((id, idx) => {
-            const input = document.createElement('input');
-            input.type = 'hidden';
-            input.name = 'DocumentIds[' + idx + ']';
-            input.value = id;
-            hidden.appendChild(input);
+        .doc-code {
+            font-weight: 700;
+        }
+
+        .doc-title {
+            font-size: .92rem;
+        }
+    </style>
+}
+
+@section Scripts {
+    <script>
+        const selected = new Map(); // id -> {id, code, title}
+
+        function setCount() {
+            const n = selected.size;
+            const el = document.getElementById('selCount');
+            if (el) el.textContent = n.toString();
+            const empty = document.getElementById('emptySel');
+            if (empty) empty.classList.toggle('d-none', n > 0);
+        }
+
+        function renderSelected() {
+            const list = document.getElementById('selectedDocs');
+            const hidden = document.getElementById('hidden');
+            list.querySelectorAll('.sel-row').forEach(x => x.remove());
+            hidden.innerHTML = '';
+
+            let idx = 0;
+            selected.forEach(v => {
+                // UI
+                const row = document.createElement('div');
+                row.className = 'list-group-item d-flex justify-content-between align-items-center sel-row';
+
+                const left = document.createElement('div');
+                left.innerHTML = `<div class="doc-code">${escapeHtml(v.code)}</div><div class="text-muted small doc-title">${escapeHtml(v.title)}</div>`;
+
+                const right = document.createElement('div');
+                right.className = 'd-flex gap-2 align-items-center';
+
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'btn btn-sm btn-outline-danger';
+                btn.innerHTML = `<i class="bi bi-x-lg"></i>`;
+                btn.title = 'Remover';
+                btn.onclick = () => removeDoc(v.id);
+
+                right.appendChild(btn);
+                row.appendChild(left);
+                row.appendChild(right);
+
+                list.appendChild(row);
+
+                // Hidden input para binding: DocumentIds[0], DocumentIds[1], ...
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = 'DocumentIds[' + idx + ']';
+                input.value = v.id;
+                hidden.appendChild(input);
+
+                idx++;
+            });
+
+            setCount();
+        }
+
+        function addDoc(id, code, title) {
+            if (!id) return;
+            if (selected.has(id)) return;
+
+            selected.set(id, { id, code: code || '(sem código)', title: title || '(sem título)' });
+            renderSelected();
+        }
+
+        function removeDoc(id) {
+            selected.delete(id);
+            renderSelected();
+        }
+
+        function hideResults() {
+            const wrap = document.getElementById('docResultsWrap');
+            if (wrap) wrap.classList.add('d-none');
+        }
+
+        async function searchDocs() {
+            const q = document.getElementById('docSearch').value.trim();
+            if (!q) return;
+
+            const res = await fetch('/Loans/DocSearch?q=' + encodeURIComponent(q), {
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            });
+
+            const wrap = document.getElementById('docResultsWrap');
+            const box = document.getElementById('docResults');
+
+            if (!wrap || !box) return;
+
+            wrap.classList.remove('d-none');
+            box.innerHTML = '';
+
+            if (!res.ok) {
+                box.innerHTML = `<div class="list-group-item text-danger">Erro ao buscar. (Implementar /Loans/DocSearch)</div>`;
+                return;
+            }
+
+            const data = await res.json();
+
+            if (!data || data.length === 0) {
+                box.innerHTML = `<div class="list-group-item text-muted">Nada encontrado.</div>`;
+                return;
+            }
+
+            data.forEach(d => {
+                const id = d.id || d.Id;
+                const code = d.code || d.Code || '';
+                const title = d.title || d.Title || '';
+
+                const item = document.createElement('button');
+                item.type = 'button';
+                item.className = 'list-group-item list-group-item-action';
+
+                item.innerHTML = `
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="doc-code">${escapeHtml(code)}</div>
+                            <div class="text-muted small doc-title">${escapeHtml(title)}</div>
+                        </div>
+                        <span class="badge text-bg-primary">Adicionar</span>
+                    </div>
+                `;
+
+                item.onclick = () => addDoc(id, code, title);
+
+                box.appendChild(item);
+            });
+        }
+
+        function validateBeforeSubmit() {
+            if (selected.size === 0) {
+                alert('Selecione pelo menos 1 documento para o empréstimo.');
+                return false;
+            }
+            return true;
+        }
+
+        function escapeHtml(s) {
+            return (s || '').replace(/[&<>"']/g, (m) => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+            }[m]));
+        }
+
+        // Enter no input de busca
+        document.addEventListener('DOMContentLoaded', () => {
+            setCount();
+            const el = document.getElementById('docSearch');
+            if (el) {
+                el.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        searchDocs();
+                    }
+                });
+            }
         });
-    }
-</script>
+    </script>
+}

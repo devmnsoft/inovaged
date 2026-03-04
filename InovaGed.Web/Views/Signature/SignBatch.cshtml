@@ -1,0 +1,48 @@
+﻿@model dynamic
+@{
+    ViewData["Title"] = "Assinar Lote";
+    var batchId = (Guid)(ViewBag.BatchId ?? Guid.Empty);
+}
+
+<div class="container py-3">
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <div>
+            <h3 class="mb-0">Assinar Lote (PoC ICP)</h3>
+            <div class="text-muted small">BatchId: @batchId</div>
+        </div>
+        <a class="btn btn-outline-secondary" asp-controller="Batches" asp-action="Index">Voltar</a>
+    </div>
+
+    <div class="alert alert-warning">
+        PoC: assinar vários documentos do lote (Item 19) + validação CPF=CPF (Item 8).
+    </div>
+
+    <form asp-controller="Signature" asp-action="SignBatch" method="post" class="card">
+        <div class="card-body">
+            <input type="hidden" name="batchId" value="@batchId" />
+
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">CPF do Usuário</label>
+                    <input name="userCpf" class="form-control" required />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">CPF do Certificado</label>
+                    <input name="certCpf" class="form-control" required />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Status</label>
+                    <select name="signatureStatus" class="form-select">
+                        <option value="VA">Válida</option>
+                        <option value="IN">Inválida</option>
+                        <option value="NV">Não verificável</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="mt-3 text-end">
+                <button class="btn btn-primary" type="submit">Assinar Lote (PoC)</button>
+            </div>
+        </div>
+    </form>
+</div>

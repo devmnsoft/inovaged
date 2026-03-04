@@ -1,4 +1,6 @@
-﻿using InovaGed.Application;
+﻿using System.Security.Claims;
+using System.Security.Cryptography.X509Certificates;
+using InovaGed.Application;
 using InovaGed.Application.Audit;
 using InovaGed.Application.Auditing;
 using InovaGed.Application.Auth;
@@ -55,6 +57,7 @@ using InovaGed.Web.Auth;
 using InovaGed.Web.Common.Context;
 using InovaGed.Web.Middleware;
 using InovaGed.Web.Security;
+using Microsoft.AspNetCore.Authentication.Certificate;
 using Microsoft.AspNetCore.Authentication.Cookies;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -73,13 +76,10 @@ builder.Services.AddHttpContextAccessor();
 // Current User (Tenant / User)
 // =======================================================
 builder.Services.AddScoped<ICurrentUser, CurrentUser>();
-
-// ✅ ICurrentContext (TenantId / UserId / UserDisplay)
 builder.Services.AddScoped<ICurrentContext, CurrentContext>();
 
 // =======================================================
 // Database (PostgreSQL)
-// appsettings.json -> ConnectionStrings:DefaultConnection
 // =======================================================
 builder.Services.AddSingleton<IDbConnectionFactory>(_ =>
 {
@@ -89,7 +89,7 @@ builder.Services.AddSingleton<IDbConnectionFactory>(_ =>
 });
 
 // =======================================================
-// Storage
+// Storage / Preview
 // =======================================================
 builder.Services.Configure<LocalStorageOptions>(builder.Configuration.GetSection("Storage:Local"));
 builder.Services.AddScoped<IFileStorage, LocalFileStorage>();
@@ -143,6 +143,8 @@ builder.Services.AddHostedService<InovaGed.Infrastructure.Setup.SystemSeedHosted
 // Classification Plan
 // =======================================================
 builder.Services.AddScoped<InovaGed.Application.ClassificationPlans.IClassificationPlanRepository, ClassificationPlanRepository>();
+builder.Services.AddScoped<IClassificationPlanCommands, ClassificationPlanCommands>();
+builder.Services.AddScoped<IClassificationPlanQueries, ClassificationPlanQueries>();
 
 // =======================================================
 // Search
@@ -151,7 +153,7 @@ builder.Services.AddScoped<IDocumentSearchQueries, DocumentSearchQueries>();
 builder.Services.AddScoped<IDocumentSearchTextQueries, DocumentSearchTextQueries>();
 
 // =======================================================
-// Auth
+// Auth Repository
 // =======================================================
 builder.Services.AddScoped<IAuthRepository, AuthRepository>();
 
@@ -188,7 +190,7 @@ builder.Services.AddScoped<IAuditLogWriter, AuditLogWriter>();
 builder.Services.AddScoped<IOcrStatusQueries, OcrStatusQueries>();
 
 // =======================================================
-// Retention (Dashboard + Queue + Job + Worker diário)
+// Retention (Dashboard + Queue + Worker diário)
 // =======================================================
 builder.Services.AddScoped<IRetentionJobRepository, RetentionJobRepository>();
 builder.Services.AddScoped<RetentionRecalcService>();
@@ -196,14 +198,8 @@ builder.Services.AddScoped<IRetentionRecalcService, RetentionRecalcService>();
 
 builder.Services.AddScoped<IRetentionQueueQueries, RetentionQueueQueries>();
 builder.Services.AddScoped<IRetentionAuditWriter, RetentionAuditWriter>();
-
-// ✅ REPOSITORY da fila (Geração da fila)
 builder.Services.AddScoped<IRetentionQueueRepository, RetentionQueueRepository>();
-
-// ✅ JOB (Controller Temporalidade depende da INTERFACE)
 builder.Services.AddScoped<IRetentionQueueJob, RetentionQueueJob>();
-
-// Worker diário (HostedService)
 builder.Services.AddHostedService<RetentionDailyWorker>();
 
 // =======================================================
@@ -223,20 +219,24 @@ builder.Services.AddScoped<ITermPdfGenerator, LibreOfficeTermPdfGenerator>();
 // Reports / Signatures
 // =======================================================
 builder.Services.AddScoped<IDispositionReportsQueries, DispositionReportsQueries>();
+builder.Services.AddScoped<IReportService, ReportService>();
 builder.Services.AddScoped<ISignatureProvider, InternalSignatureProvider>();
 
 // =======================================================
-// Users / Permissions
+// Users / Permissions / Audit
 // =======================================================
 builder.Services.AddScoped<IUserAdminRepository, UserAdminRepository>();
 builder.Services.AddScoped<IUserAdminQueries, UserAdminQueries>();
 
 builder.Services.AddScoped<IPermissionChecker, AllowAllPermissionChecker>();
 builder.Services.AddScoped<PermissionService>();
-builder.Services.AddScoped<InovaGed.Infrastructure.Retention.RetentionRecalculateService>();
 
-builder.Services.AddScoped<IAuditWriter, AuditWriter>();
+builder.Services.AddScoped<IAuditWriter, AuditWriter>();     // ✅ uma vez só
+builder.Services.AddScoped<IAuditQueries, AuditQueries>();
 
+// =======================================================
+// Loans / Batches / Physical / POP / Instruments
+// =======================================================
 builder.Services.AddScoped<ILoanQueries, LoanQueries>();
 builder.Services.AddScoped<ILoanCommands, LoanCommands>();
 
@@ -246,31 +246,27 @@ builder.Services.AddScoped<IBatchCommands, BatchCommands>();
 builder.Services.AddScoped<IPhysicalQueries, PhysicalQueries>();
 builder.Services.AddScoped<IPhysicalCommands, PhysicalCommands>();
 
-builder.Services.AddScoped<IReportService, ReportService>();
- 
-builder.Services.AddScoped<IAuditQueries, AuditQueries>();
-
-builder.Services.AddScoped<IClassificationPlanCommands, ClassificationPlanCommands>();
-builder.Services.AddScoped<IClassificationPlanQueries, ClassificationPlanQueries>();
-
 builder.Services.AddScoped<IPopProcedureCommands, PopProcedureCommands>();
 builder.Services.AddScoped<IPopProcedureQueries, PopProcedureQueries>();
 
-// =======================================================
-// Instruments (se você realmente usa DI por classe concreta, ok)
-// =======================================================
+builder.Services.AddScoped<RetentionRecalculateService>();        // <-- ESTA LINHA resolve o erro
+builder.Services.AddScoped<IRetentionQueueRepository, RetentionQueueRepository>();
+builder.Services.AddScoped<IRetentionCaseRepository, RetentionCaseRepository>();
+builder.Services.AddScoped<IRetentionQueueJob, RetentionQueueJob>();
 builder.Services.AddScoped<InstrumentRepository>();
 
+builder.Services.AddScoped<ICertificateValidationService, InovaGed.Web.Common.CertificateValidationStub>();
+
+builder.Services.AddScoped<ICertificateValidationService, CertificateValidationService>();
+
 // =======================================================
-// AUDITORIA (a que o RetentionQueueJob usa)
+// ✅ LoanOverdueWorker (corrigido: Options + feature-flag)
 // =======================================================
-builder.Services.AddScoped<IAuditWriter, AuditWriter>();
-builder.Services.AddScoped<ILoanCommands, LoanCommands>();
-// + ILoanQueries se existir
-
-builder.Services.AddHostedService<LoanOverdueWorker>();
-
-
+builder.Services.Configure<LoanOverdueWorkerOptions>(builder.Configuration.GetSection("Workers:LoanOverdue"));
+if (builder.Configuration.GetValue<bool>("Workers:LoanOverdue:Enabled"))
+{
+    builder.Services.AddHostedService<LoanOverdueWorker>();
+}
 
 // =======================================================
 // Authorization Policies
@@ -291,16 +287,58 @@ builder.Services.AddAuthorization(options =>
 });
 
 // =======================================================
-// Authentication
+// ✅ Authentication (CORRIGIDO: apenas uma cadeia de AddAuthentication)
 // =======================================================
 builder.Services
-    .AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
-    .AddCookie(opt =>
+    .AddAuthentication(options =>
+    {
+        options.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+        options.DefaultChallengeScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+    })
+    .AddCookie(CookieAuthenticationDefaults.AuthenticationScheme, opt =>
     {
         opt.LoginPath = "/Account/Login";
         opt.AccessDeniedPath = "/Account/AccessDenied";
         opt.SlidingExpiration = true;
         opt.ExpireTimeSpan = TimeSpan.FromHours(8);
+    })
+    .AddCertificate(CertificateAuthenticationDefaults.AuthenticationScheme, opt =>
+    {
+        opt.AllowedCertificateTypes = CertificateTypes.All;
+        opt.RevocationMode = X509RevocationMode.Online;
+
+        opt.Events = new CertificateAuthenticationEvents
+        {
+            OnCertificateValidated = async ctx =>
+            {
+                var cert = ctx.ClientCertificate!;
+                var tenantId = Guid.Parse("00000000-0000-0000-0000-000000000001");
+
+                var validator = ctx.HttpContext.RequestServices.GetRequiredService<ICertificateValidationService>();
+                var result = await validator.ValidateForLoginAsync(tenantId, cert, ctx.HttpContext.RequestAborted);
+
+                if (!result.Success)
+                {
+                    ctx.Fail(result.Error ?? "Certificado inválido.");
+                    return;
+                }
+
+                var claims = new List<Claim>
+                {
+                    new Claim(ClaimTypes.NameIdentifier, result.UserId!.Value.ToString()),
+                    new Claim(ClaimTypes.Name, result.UserName ?? "Usuário"),
+                    new Claim("cpf", result.Cpf ?? "")
+                };
+
+                ctx.Principal = new ClaimsPrincipal(new ClaimsIdentity(claims, ctx.Scheme.Name));
+                ctx.Success();
+            },
+            OnAuthenticationFailed = ctx =>
+            {
+                ctx.Fail("Falha na autenticação por certificado.");
+                return Task.CompletedTask;
+            }
+        };
     });
 
 // =======================================================
@@ -318,9 +356,9 @@ if (!app.Environment.IsDevelopment())
     app.UseExceptionHandler("/Home/Error");
     app.UseHsts();
 }
+
 app.UseMiddleware<AuditMiddleware>();
 app.UseMiddleware<AccessDeniedAuditMiddleware>();
-
 
 app.UseHttpsRedirection();
 app.UseStaticFiles();

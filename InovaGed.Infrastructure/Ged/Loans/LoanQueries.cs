@@ -127,7 +127,7 @@ limit 200;
         {
             await using var conn = await _db.OpenAsync(ct);
 
-            const string headSql = @"
+            const string headSql = """
 select
   lr.id,
   lr.protocol_no as ProtocolNo,
@@ -142,13 +142,14 @@ select
      where i.tenant_id = lr.tenant_id and i.loan_id = lr.id and i.reg_status='A') as ItemsCount
 from ged.loan_request lr
 where lr.tenant_id = @tenant_id and lr.id = @loan_id and lr.reg_status='A';
-";
+""";
+
             var header = await conn.QuerySingleOrDefaultAsync<LoanRowDto>(
                 new CommandDefinition(headSql, new { tenant_id = tenantId, loan_id = loanId }, cancellationToken: ct));
 
             if (header is null) return null;
 
-            const string itemsSql = @"
+            const string itemsSql = """
 select
   i.document_id as DocumentId,
   i.is_physical as IsPhysical,
@@ -160,25 +161,34 @@ join ged.document d on d.tenant_id=i.tenant_id and d.id=i.document_id
 left join ged.document_type dt on dt.tenant_id=d.tenant_id and dt.id=d.type_id
 where i.tenant_id=@tenant_id and i.loan_id=@loan_id and i.reg_status='A'
 order by d.title;
-";
-            var items = (await conn.QueryAsync<LoanItemDto>(
-                new CommandDefinition(itemsSql, new { tenant_id = tenantId, loan_id = loanId }, cancellationToken: ct))).AsList();
+""";
 
-            const string histSql = @"
+            var items = (await conn.QueryAsync<LoanItemDto>(
+                new CommandDefinition(itemsSql, new { tenant_id = tenantId, loan_id = loanId }, cancellationToken: ct)
+            )).AsList();
+
+            const string histSql = """
 select
-  h.event_time as EventTime,
-  h.event_type as EventType,
-  u.name as ByUserName,
-  h.notes as Notes
+  (h.event_time)::timestamp as "EventTime",
+  h.event_type             as "EventType",
+  coalesce(u.name, u.email, 'Usuário') as "ByUserName",
+  h.notes                  as "Notes"
 from ged.loan_history h
 left join ged.app_user u on u.tenant_id=h.tenant_id and u.id=h.by_user_id
 where h.tenant_id=@tenant_id and h.loan_id=@loan_id and h.reg_status='A'
 order by h.event_time desc;
-";
-            var history = (await conn.QueryAsync<LoanEventDto>(
-                new CommandDefinition(histSql, new { tenant_id = tenantId, loan_id = loanId }, cancellationToken: ct))).AsList();
+""";
 
-            return new LoanDetailsVM { Header = header, Items = items, History = history };
+            var history = (await conn.QueryAsync<LoanEventDto>(
+                new CommandDefinition(histSql, new { tenant_id = tenantId, loan_id = loanId }, cancellationToken: ct)
+            )).AsList();
+
+            return new LoanDetailsVM
+            {
+                Header = header,
+                Items = items,
+                History = history
+            };
         }
         catch (Exception ex)
         {
@@ -186,4 +196,73 @@ order by h.event_time desc;
             return null;
         }
     }
+
+    public async Task<IReadOnlyList<DocumentPickDto>> SearchDocumentsAsync(Guid tenantId, string q, CancellationToken ct)
+    {
+        try
+        {
+            await using var con = await _db.OpenAsync(ct);
+            q = (q ?? "").Trim();
+
+            if (q.Length == 0)
+                return Array.Empty<DocumentPickDto>();
+
+            const string sql = """
+select
+  d.id as Id,
+  d.code as Code,
+  d.title as Title
+from ged.document d
+where d.tenant_id=@TenantId
+  and d.reg_status='A'
+  and (
+        coalesce(d.code,'')  ilike ('%'||@Q||'%')
+     or coalesce(d.title,'') ilike ('%'||@Q||'%')
+  )
+order by d.title
+limit 20;
+""";
+
+            var rows = await con.QueryAsync<DocumentPickDto>(
+                new CommandDefinition(sql, new { TenantId = tenantId, Q = q }, cancellationToken: ct));
+
+            return rows.ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "LoanQueries.SearchDocumentsAsync failed. Tenant={Tenant} Q={Q}", tenantId, q);
+            return Array.Empty<DocumentPickDto>();
+        }
+    }
+
+    public async Task<LoanStatsDto> StatsAsync(Guid tenantId, CancellationToken ct)
+    {
+        try
+        {
+            await using var con = await _db.OpenAsync(ct);
+
+            const string sql = """
+select
+  count(*)::int as Total,
+  count(*) filter (where returned_at is null)::int as Open,
+  count(*) filter (where returned_at is null and due_at < now())::int as Overdue,
+  count(*) filter (where status::text='REQUESTED')::int as Requested,
+  count(*) filter (where status::text='APPROVED')::int as Approved,
+  count(*) filter (where status::text='DELIVERED')::int as Delivered,
+  count(*) filter (where status::text='RETURNED')::int as Returned
+from ged.loan_request
+where tenant_id=@TenantId and reg_status='A';
+""";
+
+            return await con.QuerySingleAsync<LoanStatsDto>(
+                new CommandDefinition(sql, new { TenantId = tenantId }, cancellationToken: ct));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "LoanQueries.StatsAsync failed. Tenant={Tenant}", tenantId);
+            // fallback pra não quebrar a Index
+            return new LoanStatsDto();
+        }
+    }
+     
 }

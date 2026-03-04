@@ -42,8 +42,18 @@ public sealed class LoanDetailsVM
     public List<LoanEventDto> History { get; set; } = new();
 }
 
-public sealed record LoanEventDto(
-    DateTimeOffset EventTime,
-    string EventType,
-    string? ByUserName,
-    string? Notes);
+public sealed class LoanEventDto
+{
+    public DateTime EventTime { get; }
+    public string EventType { get; }
+    public string ByUserName { get; }
+    public string? Notes { get; }
+
+    public LoanEventDto(DateTime eventTime, string eventType, string byUserName, string? notes)
+    {
+        EventTime = eventTime;
+        EventType = eventType;
+        ByUserName = byUserName;
+        Notes = notes;
+    }
+}

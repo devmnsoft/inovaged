@@ -1,0 +1,55 @@
+﻿@model IEnumerable<dynamic>
+@{
+    ViewData["Title"] = "Etiquetas (Caixas)";
+    ViewData["Subtitle"] = "Impressão de etiquetas (PoC 14)";
+}
+
+<div class="container py-3">
+    <div class="alert alert-info">
+        Clique em “Imprimir” para abrir a etiqueta em uma nova aba e imprimir. (PoC 14)
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-striped align-middle">
+            <thead>
+                <tr>
+                    <th>Nº</th>
+                    <th>Label</th>
+                    <th>Notas</th>
+                    <th>Data</th>
+                    <th style="width:360px;"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var b in Model ?? Enumerable.Empty<dynamic>())
+                {
+                    <tr>
+                        <td><strong>@b.box_no</strong></td>
+                        <td class="font-monospace">@b.label_code</td>
+                        <td>@b.notes</td>
+                        <td class="small text-muted">@b.reg_date</td>
+                        <td class="text-end">
+                            <a class="btn btn-sm btn-outline-primary"
+                               asp-controller="Labels" asp-action="BoxLabel"
+                               asp-route-boxId="@b.id" target="_blank">
+                                Imprimir
+                            </a>
+
+                            <a class="btn btn-sm btn-outline-secondary"
+                               asp-controller="Physical" asp-action="BoxContents"
+                               asp-route-boxId="@b.id">
+                                Conteúdo
+                            </a>
+
+                            <a class="btn btn-sm btn-outline-secondary"
+                               asp-controller="Physical" asp-action="BoxHistory"
+                               asp-route-boxId="@b.id">
+                                Histórico
+                            </a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>

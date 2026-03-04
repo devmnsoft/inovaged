@@ -1,0 +1,43 @@
+﻿@model IEnumerable<dynamic>
+@{
+    ViewData["Title"] = "Etiquetas (Documentos)";
+    ViewData["Subtitle"] = "Impressão de etiquetas (PoC 14)";
+}
+
+<div class="container py-3">
+    <div class="alert alert-info">
+        Clique em “Imprimir” para abrir a etiqueta do documento e imprimir. (PoC 14)
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-striped align-middle">
+            <thead>
+                <tr>
+                    <th>Código</th>
+                    <th>Título</th>
+                    <th>Status</th>
+                    <th>Data</th>
+                    <th style="width:220px;"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var d in Model ?? Enumerable.Empty<dynamic>())
+                {
+                    <tr>
+                        <td class="font-monospace">@d.code</td>
+                        <td>@d.title</td>
+                        <td>@d.status</td>
+                        <td class="small text-muted">@d.created_at</td>
+                        <td class="text-end">
+                            <a class="btn btn-sm btn-outline-primary"
+                               asp-controller="Labels" asp-action="DocumentLabel"
+                               asp-route-docId="@d.id" target="_blank">
+                                Imprimir
+                            </a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>

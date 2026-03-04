@@ -1,0 +1,132 @@
+﻿@model InovaGed.Web.ViewModels.SignatureIndexVm
+
+@{
+    ViewData["Title"] = "Assinar (Documento / Lote)";
+    ViewData["Subtitle"] = "ICP – assinatura PoC (8,19,20,21)";
+}
+
+<div class="container py-3">
+
+    <div class="alert alert-warning">
+        PoC: selecione um documento ou lote e realize assinatura registrando CPF e status.
+    </div>
+
+    <div class="row g-3">
+
+        <!-- DOCUMENTOS -->
+        <div class="col-lg-6">
+            <div class="card shadow-sm">
+                <div class="card-header">
+                    <strong>Documentos recentes</strong>
+                </div>
+
+                <div class="card-body p-0">
+
+                    <div class="table-responsive">
+                        <table class="table table-sm mb-0 align-middle">
+
+                            <thead>
+                                <tr>
+                                    <th>Código</th>
+                                    <th>Título</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+
+                            <tbody>
+                                @foreach (var d in Model.Docs)
+                                {
+                                    <tr>
+
+                                        <td class="font-monospace">
+                                            @d.Code
+                                        </td>
+
+                                        <td>
+                                            @d.Title
+                                        </td>
+
+                                        <td class="text-end">
+                                            <a class="btn btn-sm btn-primary"
+                                               asp-controller="Signature"
+                                               asp-action="SignDocument"
+                                               asp-route-docId="@d.Id">
+
+                                                Assinar
+                                            </a>
+                                        </td>
+
+                                    </tr>
+                                }
+                            </tbody>
+
+                        </table>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+
+
+        <!-- LOTES -->
+        <div class="col-lg-6">
+
+            <div class="card shadow-sm">
+
+                <div class="card-header">
+                    <strong>Lotes recentes</strong>
+                </div>
+
+                <div class="card-body p-0">
+
+                    <div class="table-responsive">
+                        <table class="table table-sm mb-0 align-middle">
+
+                            <thead>
+                                <tr>
+                                    <th>Código</th>
+                                    <th>Status</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+
+                            <tbody>
+                                @foreach (var b in Model.Batches)
+                                {
+                                    <tr>
+
+                                        <td class="font-monospace">
+                                            @b.Code
+                                        </td>
+
+                                        <td>
+                                            @b.Status
+                                        </td>
+
+                                        <td class="text-end">
+
+                                            <a class="btn btn-sm btn-primary"
+                                               asp-controller="Signature"
+                                               asp-action="SignBatch"
+                                               asp-route-batchId="@b.Id">
+
+                                                Assinar Lote
+                                            </a>
+
+                                        </td>
+
+                                    </tr>
+                                }
+                            </tbody>
+
+                        </table>
+                    </div>
+
+                </div>
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
