@@ -7,6 +7,7 @@ using InovaGed.Application.Auth;
 using InovaGed.Application.Classification;
 using InovaGed.Application.Common.Context;
 using InovaGed.Application.Common.Database;
+using InovaGed.Application.Common.Security;
 using InovaGed.Application.Common.Storage;
 using InovaGed.Application.Documents;
 using InovaGed.Application.Ged;
@@ -26,12 +27,14 @@ using InovaGed.Application.Search;
 using InovaGed.Application.Signatures;
 using InovaGed.Application.Users;
 using InovaGed.Application.Workflow;
+using InovaGed.Infrastructure;
 using InovaGed.Infrastructure.Audit;
 using InovaGed.Infrastructure.Auditing;
 using InovaGed.Infrastructure.Auth;
 using InovaGed.Infrastructure.Classification;
 using InovaGed.Infrastructure.ClassificationPlans;
 using InovaGed.Infrastructure.Common.Database;
+using InovaGed.Infrastructure.Common.Security;
 using InovaGed.Infrastructure.Documents;
 using InovaGed.Infrastructure.Ged;
 using InovaGed.Infrastructure.Ged.Batches;
@@ -59,6 +62,7 @@ using InovaGed.Web.Middleware;
 using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authentication.Certificate;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authorization;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -259,6 +263,17 @@ builder.Services.AddScoped<ICertificateValidationService, InovaGed.Web.Common.Ce
 
 builder.Services.AddScoped<ICertificateValidationService, CertificateValidationService>();
 
+builder.Services.AddScoped<ITenantAccessor, TenantAccessor>();
+
+// Tenant provider (scoped)
+builder.Services.AddScoped<ITenantProvider, HttpTenantProvider>();
+ 
+
+// Authorization middleware result handler (singleton)
+builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, AccessFailureAuditHandler>();
+
+
+builder.Services.AddScoped<IAccessFailureLogger, AccessFailureLogger>();
 // =======================================================
 // ✅ LoanOverdueWorker (corrigido: Options + feature-flag)
 // =======================================================
@@ -267,7 +282,7 @@ if (builder.Configuration.GetValue<bool>("Workers:LoanOverdue:Enabled"))
 {
     builder.Services.AddHostedService<LoanOverdueWorker>();
 }
-
+ 
 // =======================================================
 // Authorization Policies
 // =======================================================

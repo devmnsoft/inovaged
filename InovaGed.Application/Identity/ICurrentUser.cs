@@ -6,5 +6,5 @@ public interface ICurrentUser
     Guid TenantId { get; }
     Guid UserId { get; }
     string Email { get; }
-    IReadOnlyList<string> Roles { get; }
+    IReadOnlyList<string> Roles { get; } 
 }

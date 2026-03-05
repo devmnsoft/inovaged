@@ -1,0 +1,56 @@
+﻿@model List<InovaGed.Web.Controllers.SecurityAuditController.AccessFailureRow>
+
+<div class="card shadow-sm">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-sm align-middle">
+                <thead>
+                    <tr>
+                        <th>Data (UTC)</th>
+                        <th>Status</th>
+                        <th>Motivo</th>
+                        <th>Usuário</th>
+                        <th>IP</th>
+                        <th>Método</th>
+                        <th>Rota</th>
+                        <th>User-Agent</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (Model == null || Model.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="8" class="text-muted">Sem registros.</td>
+                        </tr>
+                    }
+                    else
+                    {
+                        foreach (var r in Model)
+                        {
+                            <tr>
+                                <td class="text-nowrap">@r.OccurredAtUtc.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                                <td class="text-nowrap">
+                                    <span class="badge text-bg-@(r.StatusCode == 403 ? "danger" : "warning")">@r.StatusCode</span>
+                                </td>
+                                <td class="text-nowrap">@r.Reason</td>
+                                <td>
+                                    <div class="fw-semibold">@r.UserName</div>
+                                    <div class="text-muted small">@r.UserId</div>
+                                </td>
+                                <td class="text-nowrap">@r.Ip</td>
+                                <td class="text-nowrap">@r.Method</td>
+                                <td>
+                                    <div class="fw-semibold">@r.Path</div>
+                                    <div class="text-muted small">Tenant: @r.TenantId</div>
+                                </td>
+                                <td class="small text-muted" style="max-width:360px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="@r.UserAgent">
+                                    @r.UserAgent
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

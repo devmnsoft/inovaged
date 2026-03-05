@@ -124,15 +124,15 @@ order by d.title;
             // ✅ histórico por evento/fase (consistente com BatchCommands e com PoC item 18)
             const string hist = @"
 select
-  event_time as ""ChangedAt"",
-  lag(event_type) over(order by event_time) as ""FromStatus"",
-  event_type as ""ToStatus"",
+  coalesce(changed_at, reg_date, event_time) as ""ChangedAt"",
+  from_status as ""FromStatus"",
+  to_status as ""ToStatus"",
   notes as ""Notes""
 from ged.batch_history
 where tenant_id=@tenant_id
   and batch_id=@batch_id
   and reg_status='A'
-order by event_time desc;
+order by coalesce(changed_at, reg_date, event_time) desc;
 ";
             var histList = (await conn.QueryAsync<BatchHistoryDto>(
                 new CommandDefinition(hist, new { tenant_id = tenantId, batch_id = batchId }, cancellationToken: ct))).AsList();
@@ -191,6 +191,50 @@ limit @take;
         {
             _logger.LogError(ex, "BatchQueries.SearchDocumentsAsync failed. Tenant={Tenant}", tenantId);
             return Array.Empty<DocumentPickDto>();
+        }
+    }
+
+    public async Task<IReadOnlyList<DocumentSearchDto>> SearchDocumentsAsync(
+    Guid tenantId,
+    string q,
+    int take,
+    CancellationToken ct)
+    {
+        try
+        {
+            await using var conn = await _db.OpenAsync(ct);
+
+            q = (q ?? "").Trim();
+            if (q.Length < 3) return Array.Empty<DocumentSearchDto>();
+
+            take = (take <= 0 || take > 50) ? 20 : take;
+
+            const string sql = @"
+select
+  d.id          as ""Id"",
+  d.code        as ""Code"",
+  d.title       as ""Title"",
+  d.status::text as ""Status"",
+  d.created_at  as ""CreatedAt""
+from ged.document d
+where d.tenant_id = @tenant_id
+  and (
+       d.code  ilike ('%' || @q || '%')
+    or d.title ilike ('%' || @q || '%')
+  )
+order by d.created_at desc
+limit @take;
+";
+
+            var list = await conn.QueryAsync<DocumentSearchDto>(
+                new CommandDefinition(sql, new { tenant_id = tenantId, q, take }, cancellationToken: ct));
+
+            return list.AsList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "BatchQueries.SearchDocumentsAsync failed. Tenant={Tenant}", tenantId);
+            return Array.Empty<DocumentSearchDto>();
         }
     }
 }
