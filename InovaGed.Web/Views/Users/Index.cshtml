@@ -60,7 +60,7 @@
                         <th style="min-width:220px;">Perfis</th>
                         <th>Status</th>
                         <th style="min-width:160px;">Criado em</th>
-                        <th style="width:240px;" class="text-end">Ações</th>
+                        <th style="width:360px;" class="text-end">Ações</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -78,7 +78,9 @@
                         {
                             <tr>
                                 <td class="fw-semibold">@u.Name</td>
+
                                 <td>@u.Email</td>
+
                                 <td>
                                     @if (u.Roles.Count == 0)
                                     {
@@ -94,6 +96,7 @@
                                         </div>
                                     }
                                 </td>
+
                                 <td>
                                     @if (u.IsActive)
                                     {
@@ -104,9 +107,24 @@
                                         <span class="badge text-bg-secondary">Inativo</span>
                                     }
                                 </td>
-                                <td class="text-muted small">@u.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+
+                                <td class="text-muted small">
+                                    @u.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+                                </td>
+
                                 <td class="text-end">
                                     <div class="d-inline-flex gap-2">
+
+                                        <!-- CERTIFICADOS ICP -->
+                                        <a class="btn btn-sm btn-outline-success"
+                                           asp-controller="UserCertificates"
+                                           asp-action="Index"
+                                           asp-route-userId="@u.Id"
+                                           title="Gerenciar certificados ICP-Brasil">
+                                            <i class="bi bi-patch-check me-1"></i> Certificados
+                                        </a>
+
+                                        <!-- ATIVAR / INATIVAR -->
                                         <form asp-controller="Users" asp-action="ToggleActive" method="post" class="m-0">
                                             @Html.AntiForgeryToken()
                                             <input type="hidden" name="id" value="@u.Id" />
@@ -118,6 +136,7 @@
                                             </button>
                                         </form>
 
+                                        <!-- RESET SENHA -->
                                         <form asp-controller="Users" asp-action="ResetPassword" method="post" class="m-0"
                                               onsubmit="return window.confirm('Resetar a senha deste usuário? Será gerada uma senha temporária e exibida na tela.');">
                                             @Html.AntiForgeryToken()
@@ -127,6 +146,7 @@
                                                 <i class="bi bi-key me-1"></i> Reset senha
                                             </button>
                                         </form>
+
                                     </div>
                                 </td>
                             </tr>
@@ -148,7 +168,9 @@
         </li>
 
         <li class="page-item disabled">
-            <span class="page-link">Página @currentPage de @totalPages (@total)</span>
+            <span class="page-link">
+                Página @currentPage de @totalPages (@total)
+            </span>
         </li>
 
         <li class="page-item @(currentPage >= totalPages ? "disabled" : "")">

@@ -1,0 +1,71 @@
+﻿@model IEnumerable<InovaGed.Application.Ged.Users.UserCertificateDto>
+
+@{
+    ViewData["Title"] = "Certificados do Usuário";
+}
+
+<div class="card">
+    <div class="card-body">
+
+        <a class="btn btn-primary mb-3"
+           asp-action="Create"
+           asp-route-userId="@ViewBag.UserId">
+
+            Novo Certificado
+        </a>
+
+        <table class="table table-sm table-striped">
+
+            <thead>
+                <tr>
+                    <th>CPF</th>
+                    <th>Thumbprint</th>
+                    <th>Validade</th>
+                    <th>Status</th>
+                    <th></th>
+                </tr>
+            </thead>
+
+            <tbody>
+
+                @foreach (var c in Model)
+                {
+                    <tr>
+
+                        <td>@c.Cpf</td>
+
+                        <td style="font-size:11px">
+                            @c.Thumbprint
+                        </td>
+
+                        <td>
+                            @c.NotBefore?.ToString("dd/MM/yyyy")
+                            -
+                            @c.NotAfter?.ToString("dd/MM/yyyy")
+                        </td>
+
+                        <td>
+                            @(c.IsActive ? "Ativo" : "Inativo")
+                        </td>
+
+                        <td>
+
+                            <a asp-action="Disable"
+                               asp-route-id="@c.Id"
+                               asp-route-userId="@c.UserId"
+                               class="btn btn-sm btn-danger">
+
+                                Desativar
+                            </a>
+
+                        </td>
+
+                    </tr>
+                }
+
+            </tbody>
+
+        </table>
+
+    </div>
+</div>

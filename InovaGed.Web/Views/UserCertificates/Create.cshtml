@@ -1,0 +1,70 @@
+﻿@model InovaGed.Application.Ged.Users.UserCertificateDto
+
+@{
+    ViewData["Title"] = "Novo Certificado";
+    var userId = (Guid)ViewBag.UserId;
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="mb-0"><i class="bi bi-patch-check me-2"></i>@ViewData["Title"]</h4>
+    <a class="btn btn-outline-secondary"
+       asp-controller="UserCertificates"
+       asp-action="Index"
+       asp-route-userId="@userId">
+        Voltar
+    </a>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <form asp-controller="UserCertificates" asp-action="Create" method="post">
+            @Html.AntiForgeryToken()
+
+            <input asp-for="UserId" type="hidden" value="@userId" />
+
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">CPF (somente números)</label>
+                    <input asp-for="Cpf" class="form-control" maxlength="11" placeholder="00000000000" />
+                </div>
+
+                <div class="col-md-8">
+                    <label class="form-label">Thumbprint</label>
+                    <input asp-for="Thumbprint" class="form-control" placeholder="Cole o thumbprint do certificado" />
+                    <div class="form-text">Obrigatório. Sem isso não é possível vincular o certificado.</div>
+                </div>
+
+                <div class="col-md-6">
+                    <label class="form-label">Subject DN</label>
+                    <input asp-for="SubjectDn" class="form-control" />
+                </div>
+
+                <div class="col-md-6">
+                    <label class="form-label">Issuer DN</label>
+                    <input asp-for="IssuerDn" class="form-control" />
+                </div>
+
+                <div class="col-md-6">
+                    <label class="form-label">Serial</label>
+                    <input asp-for="SerialNumber" class="form-control" />
+                </div>
+
+                <div class="col-md-3">
+                    <label class="form-label">Not Before</label>
+                    <input asp-for="NotBefore" class="form-control" type="datetime-local" />
+                </div>
+
+                <div class="col-md-3">
+                    <label class="form-label">Not After</label>
+                    <input asp-for="NotAfter" class="form-control" type="datetime-local" />
+                </div>
+            </div>
+
+            <hr class="my-3" />
+
+            <button class="btn btn-success" type="submit">
+                <i class="bi bi-check2-circle me-1"></i> Salvar certificado
+            </button>
+        </form>
+    </div>
+</div>
