@@ -34,6 +34,8 @@ public sealed class PhysicalLocationFormVM
     public string? Shelf { get; set; }
     public string? Pallet { get; set; }
     public string? Notes { get; set; }
+
+    public string? UnitName { get; set; }
 }
 
 public sealed class BoxRowDto

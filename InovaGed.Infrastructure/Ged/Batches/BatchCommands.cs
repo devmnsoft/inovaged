@@ -105,7 +105,7 @@ returning id;
 
                     await InsertBatchItemAsync(conn, tx, tenantId, batchId, docId, vm.BoxId, ct);
 
-                    // opcional: rastreio físico se boxId foi informado
+                    // rastreio físico se boxId foi informado
                     if (vm.BoxId.HasValue && vm.BoxId.Value != Guid.Empty)
                     {
                         await InsertBoxHistoryAsync(conn, tx, tenantId, vm.BoxId.Value, docId, "ADD", userId,
@@ -144,7 +144,6 @@ returning id;
             await using var conn = await _db.OpenAsync(ct);
             using var tx = conn.BeginTransaction();
 
-            // valida documento existe
             var exists = await DocumentExistsAsync(conn, tx, tenantId, documentId, ct);
             if (!exists)
             {
@@ -154,14 +153,12 @@ returning id;
 
             await InsertBatchItemAsync(conn, tx, tenantId, batchId, documentId, boxId, ct);
 
-            // grava histórico físico se boxId veio
             if (boxId.HasValue && boxId.Value != Guid.Empty)
             {
                 await InsertBoxHistoryAsync(conn, tx, tenantId, boxId.Value, documentId, "ADD", userId,
                     "Documento vinculado a caixa via lote.", ct);
             }
 
-            // registra histórico do lote (sem mudar status)
             var cur = await GetBatchStatusAsync(conn, tx, tenantId, batchId, ct);
             if (cur is not null)
             {
@@ -203,7 +200,6 @@ returning id;
             await using var conn = await _db.OpenAsync(ct);
             using var tx = conn.BeginTransaction();
 
-            // pega box atual
             const string getOld = @"
 select box_id
 from ged.batch_item
@@ -235,7 +231,6 @@ where tenant_id=@tenant_id and batch_id=@batch_id and document_id=@document_id a
                 return Result.Fail("NOTFOUND", "Item não encontrado no lote.");
             }
 
-            // trilha física: remove da antiga + add na nova
             if (oldBoxId.HasValue && oldBoxId.Value != Guid.Empty &&
                 (!newBoxId.HasValue || newBoxId.Value == Guid.Empty || newBoxId.Value != oldBoxId.Value))
             {
@@ -250,7 +245,6 @@ where tenant_id=@tenant_id and batch_id=@batch_id and document_id=@document_id a
                     "Documento adicionado à caixa (movimentação).", ct);
             }
 
-            // histórico do lote (sem mudar status)
             var cur = await GetBatchStatusAsync(conn, tx, tenantId, batchId, ct);
             if (cur is not null)
             {
@@ -292,7 +286,6 @@ where tenant_id=@tenant_id and batch_id=@batch_id and document_id=@document_id a
             await using var conn = await _db.OpenAsync(ct);
             using var tx = conn.BeginTransaction();
 
-            // pega box atual antes de remover
             const string getOld = @"
 select box_id
 from ged.batch_item
@@ -323,14 +316,12 @@ where tenant_id=@tenant_id and batch_id=@batch_id and document_id=@document_id a
                 return Result.Fail("NOTFOUND", "Item não encontrado no lote.");
             }
 
-            // trilha física: se estava em caixa, registra retirada
             if (oldBoxId.HasValue && oldBoxId.Value != Guid.Empty)
             {
                 await InsertBoxHistoryAsync(conn, tx, tenantId, oldBoxId.Value, documentId, "REMOVE", userId,
                     "Documento removido do lote (retirada da caixa vinculada).", ct);
             }
 
-            // histórico do lote (sem mudar status)
             var cur = await GetBatchStatusAsync(conn, tx, tenantId, batchId, ct);
             if (cur is not null)
             {
@@ -376,7 +367,6 @@ where tenant_id=@tenant_id and batch_id=@batch_id and document_id=@document_id a
             await using var conn = await _db.OpenAsync(ct);
             using var tx = conn.BeginTransaction();
 
-            // status atual (from)
             var fromStatus = await GetBatchStatusAsync(conn, tx, tenantId, batchId, ct);
             if (string.IsNullOrWhiteSpace(fromStatus))
             {
@@ -408,7 +398,6 @@ where tenant_id=@tenant_id and id=@batch_id and reg_status='A';
                 return Result.Fail("NOTFOUND", "Lote não encontrado.");
             }
 
-            // histórico DE->PARA
             await InsertBatchHistoryAsync(
                 conn, tx,
                 tenantId, batchId,
@@ -558,6 +547,7 @@ values
         }, transaction: tx, cancellationToken: ct));
     }
 
+    // ✅ FIX: insert do histórico físico agora é compatível com schemas diferentes
     private static async Task InsertBoxHistoryAsync(
         IDbConnection conn,
         IDbTransaction tx,
@@ -569,22 +559,103 @@ values
         string? notes,
         CancellationToken ct)
     {
-        // ⚠️ esta tabela pode NÃO ter by_user_id no seu banco.
-        // Se der erro, rode o information_schema e ajuste o insert.
-        const string hist = @"
+        // Descobre quais colunas existem (evita 42703)
+        var cols = await GetColumnsAsync(conn, tx, "ged", "box_content_history", ct);
+
+        string? timeCol =
+            PickFirst(cols, "event_time", "event_at", "occurred_at", "created_at", "changed_at", "dt_evento");
+
+        string? userCol =
+            PickFirst(cols, "by_user_id", "user_id", "created_by", "changed_by", "actor_user_id");
+
+        var hasNotes = cols.Contains("notes");
+        var hasRegDate = cols.Contains("reg_date");
+        var hasRegStatus = cols.Contains("reg_status");
+        var hasEventType = cols.Contains("event_type");
+
+        // Monta lista de colunas/valores dinamicamente
+        var colList = new List<string> { "tenant_id", "box_id", "document_id" };
+        var valList = new List<string> { "@tenant_id", "@box_id", "@document_id" };
+
+        if (!string.IsNullOrWhiteSpace(timeCol))
+        {
+            colList.Add(timeCol);
+            valList.Add("now()");
+        }
+
+        if (hasEventType)
+        {
+            colList.Add("event_type");
+            valList.Add("@event_type");
+        }
+
+        if (!string.IsNullOrWhiteSpace(userCol))
+        {
+            colList.Add(userCol);
+            valList.Add("@user_id");
+        }
+
+        if (hasNotes)
+        {
+            colList.Add("notes");
+            valList.Add("@notes");
+        }
+
+        if (hasRegDate)
+        {
+            colList.Add("reg_date");
+            valList.Add("now()");
+        }
+
+        if (hasRegStatus)
+        {
+            colList.Add("reg_status");
+            valList.Add("'A'");
+        }
+
+        var sql = $@"
 insert into ged.box_content_history
-(tenant_id, box_id, document_id, event_time, event_type, by_user_id, notes, reg_date, reg_status)
+({string.Join(", ", colList)})
 values
-(@tenant_id, @box_id, @document_id, now(), @event_type, @by_user_id, @notes, now(), 'A');
+({string.Join(", ", valList)});
 ";
-        await conn.ExecuteAsync(new CommandDefinition(hist, new
+
+        await conn.ExecuteAsync(new CommandDefinition(sql, new
         {
             tenant_id = tenantId,
             box_id = boxId,
             document_id = documentId,
             event_type = eventType,
-            by_user_id = userId,
+            user_id = userId,
             notes
         }, transaction: tx, cancellationToken: ct));
+    }
+
+    private static string? PickFirst(HashSet<string> cols, params string[] candidates)
+    {
+        foreach (var c in candidates)
+        {
+            if (cols.Contains(c)) return c;
+        }
+        return null;
+    }
+
+    private static async Task<HashSet<string>> GetColumnsAsync(
+        IDbConnection conn,
+        IDbTransaction tx,
+        string schema,
+        string table,
+        CancellationToken ct)
+    {
+        const string sql = @"
+select lower(column_name) as column_name
+from information_schema.columns
+where table_schema = @schema
+  and table_name   = @table;
+";
+        var list = await conn.QueryAsync<string>(new CommandDefinition(sql,
+            new { schema, table }, transaction: tx, cancellationToken: ct));
+
+        return new HashSet<string>(list ?? Array.Empty<string>(), StringComparer.OrdinalIgnoreCase);
     }
 }

@@ -11,7 +11,7 @@
 
 <div class="card shadow-sm">
     <div class="card-body">
-        <form method="post" asp-action="PcdByClass">
+        <form method="post" asp-controller="Reports" asp-action="PcdByClass">
             @Html.AntiForgeryToken()
             <div class="row g-2 align-items-end">
                 <div class="col-md-4">
@@ -19,7 +19,7 @@
                     <input name="code" class="form-control" placeholder="PCD-001" />
                 </div>
                 <div class="col-md-3">
-                    <button class="btn btn-primary">
+                    <button type="submit" class="btn btn-primary">
                         <i class="bi bi-search me-1"></i> Gerar
                     </button>
                 </div>

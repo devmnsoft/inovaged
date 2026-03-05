@@ -8,18 +8,42 @@
 
 <div class="d-flex align-items-center justify-content-between mb-3">
     <div>
-        <h4 class="mb-0">Empréstimos Vencidos</h4>
+        <h4 class="mb-0"><i class="bi bi-exclamation-triangle me-2"></i>Empréstimos Vencidos</h4>
         <div class="text-muted small">Apenas não devolvidos com vencimento menor que hoje</div>
     </div>
 
     <div class="d-flex gap-2">
-        <a class="btn btn-sm btn-light border" href="/Loans">
+        <a class="btn btn-sm btn-light border" asp-controller="Loans" asp-action="Index">
             <i class="bi bi-arrow-left me-1"></i>Voltar
         </a>
+
+        <a class="btn btn-sm btn-warning" asp-controller="Loans" asp-action="RunOverdue">
+            <i class="bi bi-clock-history me-1"></i>Executar rotina OVERDUE
+        </a>
+
+        <form asp-controller="Loans" asp-action="RegisterOverdue" method="post" class="d-inline">
+            @Html.AntiForgeryToken()
+            <button class="btn btn-sm btn-danger" type="submit">
+                <i class="bi bi-bell me-1"></i>Registrar eventos OVERDUE
+            </button>
+        </form>
     </div>
 </div>
 
-<div class="card">
+@if (TempData["Ok"] is string ok)
+{
+    <div class="alert alert-success py-2">
+        <i class="bi bi-check-circle me-2"></i>@ok
+    </div>
+}
+@if (TempData["Err"] is string err)
+{
+    <div class="alert alert-danger py-2">
+        <i class="bi bi-x-circle me-2"></i>@err
+    </div>
+}
+
+<div class="card shadow-sm">
     <div class="table-responsive">
         <table class="table table-sm table-hover align-middle mb-0">
             <thead class="table-light">
@@ -27,16 +51,21 @@
                     <th>Protocolo</th>
                     <th>Status</th>
                     <th>Solicitante</th>
-                    <th>Solicitado</th>
+                    <th>Solicitado em</th>
                     <th>Vencimento</th>
                     <th class="text-center">Itens</th>
-                    <th style="width:120px;"></th>
+                    <th class="text-end" style="width:120px;"></th>
                 </tr>
             </thead>
+
             <tbody>
                 @if (Model == null || Model.Count == 0)
                 {
-                    <tr><td colspan="7" class="text-muted p-3">Nenhum vencido.</td></tr>
+                    <tr>
+                        <td colspan="7" class="text-muted p-3">
+                            Nenhum vencido.
+                        </td>
+                    </tr>
                 }
                 else
                 {
@@ -44,13 +73,27 @@
                     {
                         <tr>
                             <td class="fw-semibold">@r.ProtocolNo</td>
-                            <td><span class="badge bg-danger">@r.Status</span></td>
+
+                            <td>
+                                <span class="badge bg-danger">@r.Status</span>
+                            </td>
+
                             <td>@r.RequesterName</td>
-                            <td>@r.RequestedAt.ToString("dd/MM/yyyy HH:mm")</td>
-                            <td class="text-danger fw-semibold">@r.DueAt.ToString("dd/MM/yyyy")</td>
-                            <td class="text-center"><span class="badge bg-dark">@r.ItemsCount</span></td>
+
+                            <td class="text-muted">
+                                @r.RequestedAt.ToString("dd/MM/yyyy HH:mm")
+                            </td>
+
+                            <td class="text-danger fw-semibold">
+                                @r.DueAt.ToString("dd/MM/yyyy")
+                            </td>
+
+                            <td class="text-center">
+                                <span class="badge bg-dark">@r.ItemsCount</span>
+                            </td>
+
                             <td class="text-end">
-                                <a class="btn btn-sm btn-outline-primary" href="/Loans/@r.Id">
+                                <a class="btn btn-sm btn-outline-primary" asp-controller="Loans" asp-action="Details" asp-route-id="@r.Id">
                                     <i class="bi bi-eye me-1"></i>Ver
                                 </a>
                             </td>

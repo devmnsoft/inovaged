@@ -1,8 +1,34 @@
 ﻿@model InovaGed.Web.Controllers.InstrumentosArquivisticosController.MoveCodeVM
+@using Microsoft.AspNetCore.Mvc.Rendering
+@using System.Linq
 @addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
 
 @{
     ViewData["Title"] ??= "Movimentar Código (PCD/TTD)";
+
+    var classes = Model?.Classes ?? new List<InovaGed.Web.Controllers.InstrumentosArquivisticosController.ClassificationPickRow>();
+
+    // ✅ Não use "ToString" em SelectList. Crie SelectListItem com Text montado.
+    var classItems = classes
+        .Select(c => new SelectListItem
+                {
+                    Value = c.Id.ToString(),
+                    Text = $"{c.Code} - {c.Name}"
+                })
+        .ToList();
+
+    // ✅ Desabilita escolher o próprio item como "pai"
+    var parentItems = classes
+        .Select(c => new SelectListItem
+                {
+                    Value = c.Id.ToString(),
+                    Text = $"{c.Code} - {c.Name}",
+                    Disabled = (Model?.ClassificationId != Guid.Empty && c.Id == Model!.ClassificationId)
+                })
+        .ToList();
+
+    string? moveSummary = TempData["MoveSummary"] as string;
+    string? moveDetails = TempData["MoveDetails"] as string;
 }
 
 <div class="d-flex align-items-start justify-content-between gap-3 mb-2">
@@ -20,14 +46,42 @@
 {
     <div class="alert alert-success d-flex align-items-start gap-2">
         <i class="bi bi-check-circle-fill mt-1"></i>
-        <div>@ok</div>
+        <div class="flex-grow-1">
+            <div class="fw-semibold">@ok</div>
+            @if (!string.IsNullOrWhiteSpace(moveSummary))
+            {
+                <div class="small text-muted mt-1">@moveSummary</div>
+            }
+        </div>
     </div>
 }
+
 @if (TempData["Err"] is string err)
 {
     <div class="alert alert-danger d-flex align-items-start gap-2">
         <i class="bi bi-exclamation-triangle-fill mt-1"></i>
-        <div>@err</div>
+        <div class="flex-grow-1">@err</div>
+    </div>
+}
+
+@if (!string.IsNullOrWhiteSpace(moveDetails))
+{
+    <div class="card border-success shadow-sm mb-3">
+        <div class="card-body">
+            <div class="d-flex align-items-start gap-2">
+                <i class="bi bi-clipboard-check text-success fs-5 mt-1"></i>
+                <div class="flex-grow-1">
+                    <div class="fw-semibold">Resultado da movimentação</div>
+                    <div class="text-muted small">
+                        Registro do que foi efetivamente aplicado no banco (antes/depois).
+                    </div>
+
+                    <div class="mt-2 p-3 bg-light border rounded-3">
+                        <pre class="mb-0 small" style="white-space:pre-wrap">@moveDetails</pre>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 }
 
@@ -38,9 +92,7 @@
         <div class="row g-3">
             <div class="col-lg-7">
                 <ul class="mb-0">
-                    <li>
-                        <strong>Classe a movimentar:</strong> selecione o código/classe que será reclassificado.
-                    </li>
+                    <li><strong>Classe a movimentar:</strong> selecione o código/classe que será reclassificado.</li>
                     <li>
                         <strong>Novo Pai (opcional):</strong> define em qual classe a selecionada ficará “dentro”.
                         Se deixar em branco, ela vai para a <strong>raiz</strong>.
@@ -54,9 +106,7 @@
                         <strong>Descendentes acompanham:</strong> ao alterar o código do nó, todos os filhos são atualizados automaticamente
                         (ex.: <code>01.02</code> → <code>03.01</code> faz <code>01.02.05</code> virar <code>03.01.05</code>).
                     </li>
-                    <li>
-                        <strong>Histórico:</strong> todas as alterações são registradas para rastreabilidade (auditoria + histórico).
-                    </li>
+                    <li><strong>Histórico:</strong> alterações registradas para auditoria e rastreabilidade.</li>
                 </ul>
             </div>
 
@@ -64,19 +114,11 @@
                 <div class="border rounded-3 p-3 bg-light">
                     <div class="fw-semibold mb-1"><i class="bi bi-shield-check me-2"></i>Regras de segurança</div>
                     <ul class="mb-0">
-                        <li>
-                            <strong>Não pode criar ciclo:</strong> não é permitido mover um código para dentro de um filho/descendente.
-                        </li>
-                        <li>
-                            <strong>Código único:</strong> não pode existir outro código igual ativo no mesmo tenant.
-                        </li>
-                        <li>
-                            <strong>Somente ativos:</strong> códigos inativos não podem ser movimentados.
-                        </li>
+                        <li><strong>Não pode criar ciclo:</strong> não é permitido mover para dentro de um descendente.</li>
+                        <li><strong>Código único:</strong> não pode existir outro código igual ativo no mesmo tenant.</li>
+                        <li><strong>Somente ativos:</strong> códigos inativos não podem ser movimentados.</li>
                     </ul>
                 </div>
-
-                 
             </div>
         </div>
     </div>
@@ -89,25 +131,21 @@
         <div class="row g-3">
             <div class="col-lg-6">
                 <label class="form-label">Classe a movimentar <span class="text-danger">*</span></label>
-                <select class="form-select" asp-for="ClassificationId">
+
+                <select class="form-select" asp-for="ClassificationId" asp-items="classItems">
                     <option value="">-- selecione --</option>
-                    @foreach (var c in Model.Classes)
-                    {
-                        <option value="@c.Id">@c.Code - @c.Name</option>
-                    }
                 </select>
+
                 <div class="form-text">Selecione o código/classe que será movido/reclassificado.</div>
             </div>
 
             <div class="col-lg-6">
                 <label class="form-label">Novo “Pai” (opcional)</label>
-                <select class="form-select" asp-for="NewParentId">
+
+                <select class="form-select" asp-for="NewParentId" asp-items="parentItems">
                     <option value="">(Sem pai / raiz)</option>
-                    @foreach (var c in Model.Classes)
-                    {
-                        <option value="@c.Id">@c.Code - @c.Name</option>
-                    }
                 </select>
+
                 <div class="form-text">
                     Se escolher um pai, a classe passará a “ficar dentro” dele.
                     Não é permitido escolher um descendente (evita ciclos).

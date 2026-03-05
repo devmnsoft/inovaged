@@ -31,9 +31,11 @@ public sealed class ReportsController : Controller
     // =========================================================
     // PLC/PCD — GET /Reports/PcdFull
     // =========================================================
+    [HttpGet]
     public async Task<IActionResult> PcdFull(CancellationToken ct)
     {
         using var conn = await _db.OpenAsync(ct);
+
         var rows = (await conn.QueryAsync<TtdRow>(
             SqlClassPlanBase + SqlClassPlanOrder,
             new { tenant = TenantId }
@@ -42,33 +44,60 @@ public sealed class ReportsController : Controller
         return View("PcdFull", rows);
     }
 
-    public IActionResult PcdByClass() => View("PcdByClass");
-
-    [HttpPost, ValidateAntiForgeryToken]
-    public async Task<IActionResult> PcdByClass(string code, CancellationToken ct)
+    // GET /Reports/PcdByClass
+    [HttpGet]
+    public async Task<IActionResult> PcdByClass(CancellationToken ct)
     {
-        code = (code ?? "").Trim();
+        using var conn = await _db.OpenAsync(ct);
 
-        if (string.IsNullOrWhiteSpace(code))
+        // exemplos para botões rápidos (se sua view usar @model List<string>)
+        var examples = (await conn.QueryAsync<string>(
+            """
+            SELECT DISTINCT code
+            FROM ged.classification_plan
+            WHERE tenant_id = @tenant
+            ORDER BY code
+            LIMIT 50
+            """,
+            new { tenant = TenantId }
+        )).ToList();
+
+        return View("PcdByClass", examples);
+    }
+
+    // POST /Reports/PcdByClass
+    // POST /Reports/PcdByClass
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> PcdByClass(string? classCode, string? code, CancellationToken ct)
+    {
+        // aceita tanto "classCode" quanto "code"
+        classCode = (classCode ?? code ?? "").Trim();
+
+        if (string.IsNullOrWhiteSpace(classCode))
         {
             TempData["err"] = "Informe um código (ex.: PCD-001).";
             return RedirectToAction(nameof(PcdByClass));
         }
 
-        using var conn = await _db.OpenAsync(ct);
+        await using var conn = await _db.OpenAsync(ct);
 
-        // NOTE: começa com quebra de linha para NÃO colar em @tenant
         var sql =
             SqlClassPlanBase +
             """
-            AND (code = @code OR code LIKE (@code || '.%'))
-            """ +
+        AND (code = @code OR code LIKE (@code || '.%'))
+        """ +
             SqlClassPlanOrder;
 
         var rows = (await conn.QueryAsync<TtdRow>(
             sql,
-            new { tenant = TenantId, code }
+            new { tenant = TenantId, code = classCode }
         )).ToList();
+
+        if (rows.Count == 0)
+        {
+            TempData["err"] = $"Nenhuma classe encontrada para: {classCode}";
+            return RedirectToAction(nameof(PcdByClass));
+        }
 
         return View("PcdFull", rows);
     }
@@ -76,9 +105,11 @@ public sealed class ReportsController : Controller
     // =========================================================
     // TTD — GET /Reports/TtdFull
     // =========================================================
+    [HttpGet]
     public async Task<IActionResult> TtdFull(CancellationToken ct)
     {
         using var conn = await _db.OpenAsync(ct);
+
         var rows = (await conn.QueryAsync<TtdRow>(
             SqlClassPlanBase + SqlClassPlanOrder,
             new { tenant = TenantId }
@@ -87,22 +118,41 @@ public sealed class ReportsController : Controller
         return View("TtdFull", rows);
     }
 
-    public IActionResult TtdByClass() => View("TtdByClass");
-
-    [HttpPost, ValidateAntiForgeryToken]
-    public async Task<IActionResult> TtdByClass(string code, CancellationToken ct)
+    // GET /Reports/TtdByClass
+    [HttpGet]
+    public async Task<IActionResult> TtdByClass(CancellationToken ct)
     {
-        code = (code ?? "").Trim();
+        using var conn = await _db.OpenAsync(ct);
 
-        if (string.IsNullOrWhiteSpace(code))
+        // exemplos para botões rápidos (conforme @model List<string>)
+        var examples = (await conn.QueryAsync<string>(
+            """
+            SELECT DISTINCT code
+            FROM ged.classification_plan
+            WHERE tenant_id = @tenant
+            ORDER BY code
+            LIMIT 50
+            """,
+            new { tenant = TenantId }
+        )).ToList();
+
+        return View("TtdByClass", examples);
+    }
+
+    // POST /Reports/TtdByClass
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> TtdByClass(string classCode, CancellationToken ct)
+    {
+        classCode = (classCode ?? "").Trim();
+
+        if (string.IsNullOrWhiteSpace(classCode))
         {
-            TempData["err"] = "Informe um código (ex.: PCD-001).";
+            TempData["err"] = "Informe um código (ex.: TTD-001).";
             return RedirectToAction(nameof(TtdByClass));
         }
 
         using var conn = await _db.OpenAsync(ct);
 
-        // NOTE: começa com quebra de linha para NÃO colar em @tenant
         var sql =
             SqlClassPlanBase +
             """
@@ -112,8 +162,11 @@ public sealed class ReportsController : Controller
 
         var rows = (await conn.QueryAsync<TtdRow>(
             sql,
-            new { tenant = TenantId, code }
+            new { tenant = TenantId, code = classCode }
         )).ToList();
+
+        if (rows.Count == 0)
+            TempData["err"] = $"Nenhuma classe encontrada para: {classCode}";
 
         return View("TtdFull", rows);
     }
@@ -121,6 +174,7 @@ public sealed class ReportsController : Controller
     // =========================================================
     // Empréstimos — GET /Reports/Loans
     // =========================================================
+    [HttpGet]
     public async Task<IActionResult> Loans(CancellationToken ct)
     {
         using var conn = await _db.OpenAsync(ct);
@@ -148,6 +202,7 @@ public sealed class ReportsController : Controller
     // Validação de Assinaturas — GET /Reports/SignatureValidation
     // Item 21 PoC
     // =========================================================
+    [HttpGet]
     public async Task<IActionResult> SignatureValidation(CancellationToken ct)
     {
         using var conn = await _db.OpenAsync(ct);
@@ -164,6 +219,7 @@ public sealed class ReportsController : Controller
     // ITEM 26 — Tela de seleção de documentos assinados
     // GET /Reports/SignedSetPrint
     // =========================================================
+    [HttpGet]
     public async Task<IActionResult> SignedSetPrint(CancellationToken ct)
     {
         using var conn = await _db.OpenAsync(ct);
@@ -227,6 +283,7 @@ public sealed class ReportsController : Controller
     // =========================================================
     // ITEM 26 — View de impressão
     // =========================================================
+    [HttpGet]
     public async Task<IActionResult> SignedSetPrintView(Guid runId, CancellationToken ct)
     {
         using var conn = await _db.OpenAsync(ct);

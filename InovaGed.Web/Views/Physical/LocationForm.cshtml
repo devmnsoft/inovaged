@@ -1,72 +1,102 @@
-﻿@model dynamic
+﻿@model InovaGed.Application.Ged.Physical.PhysicalLocationFormVM
 @addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
 
 @{
-    ViewData["Title"] ??= "Localização Física";
+    var isEdit = Model != null && Model.Id != Guid.Empty;
+    ViewData["Title"] ??= isEdit ? "Editar Localização Física" : "Nova Localização Física";
+    ViewData["Subtitle"] ??= "Cadastre o endereço físico onde caixas e documentos ficam armazenados.";
 }
 
-<div class="d-flex justify-content-between align-items-center mb-3">
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
     <div>
-        <h2 class="mb-1"><i class="bi bi-geo-alt me-2"></i>@ViewData["Title"]</h2>
-        <div class="text-muted">Informe a localização da caixa (PoC).</div>
+        <h4 class="mb-0">
+            <i class="bi bi-geo-alt me-2"></i>@ViewData["Title"]
+        </h4>
+        <div class="text-muted small">@ViewData["Subtitle"]</div>
+    </div>
+
+    <div class="d-flex gap-2">
+        <a class="btn btn-outline-secondary" href="/Physical/Locations">
+            <i class="bi bi-arrow-left me-1"></i>Voltar
+        </a>
     </div>
 </div>
 
-@if (TempData["Ok"] is string ok)
+@if (TempData["Ok"] is string ok && !string.IsNullOrWhiteSpace(ok))
 {
     <div class="alert alert-success">@ok</div>
 }
-@if (TempData["Err"] is string err)
+@if (TempData["Err"] is string err && !string.IsNullOrWhiteSpace(err))
 {
     <div class="alert alert-danger">@err</div>
 }
 
-<form method="post">
+<form asp-action="SaveLocation" method="post" class="card shadow-sm">
     @Html.AntiForgeryToken()
 
-    <div class="card shadow-sm">
-        <div class="card-body">
-            <div class="row g-3">
-                <div class="col-md-4">
-                    <label class="form-label">Unidade / Setor</label>
-                    <input name="UnitName" class="form-control" value="@(Model?.UnitName ?? "")" />
-                </div>
-                <div class="col-md-4">
-                    <label class="form-label">Sala</label>
-                    <input name="Room" class="form-control" value="@(Model?.Room ?? "")" />
-                </div>
-                <div class="col-md-4">
-                    <label class="form-label">Armário / Estante</label>
-                    <input name="Shelf" class="form-control" value="@(Model?.Shelf ?? "")" />
-                </div>
+    <div class="card-body">
+        <input type="hidden" asp-for="Id" />
 
-                <div class="col-md-4">
-                    <label class="form-label">Corredor</label>
-                    <input name="Corridor" class="form-control" value="@(Model?.Corridor ?? "")" />
-                </div>
-                <div class="col-md-4">
-                    <label class="form-label">Prateleira</label>
-                    <input name="Rack" class="form-control" value="@(Model?.Rack ?? "")" />
-                </div>
-                <div class="col-md-4">
-                    <label class="form-label">Identificação Caixa</label>
-                    <input name="BoxCode" class="form-control" value="@(Model?.BoxCode ?? "")" />
-                </div>
+        <div class="row g-3">
+            <div class="col-md-4">
+                <label class="form-label">Prédio</label>
+                <input asp-for="Building" class="form-control" placeholder="Ex.: Prédio A" />
+                <span asp-validation-for="Building" class="text-danger small"></span>
+            </div>
 
-                <div class="col-12">
-                    <label class="form-label">Observações</label>
-                    <textarea name="Notes" class="form-control" rows="3">@(Model?.Notes ?? "")</textarea>
-                </div>
+            <div class="col-md-4">
+                <label class="form-label">Sala</label>
+                <input asp-for="Room" class="form-control" placeholder="Ex.: Sala 02" />
+                <span asp-validation-for="Room" class="text-danger small"></span>
+            </div>
+
+            <div class="col-md-4">
+                <label class="form-label">Corredor</label>
+                <input asp-for="Aisle" class="form-control" placeholder="Ex.: Corredor 1" />
+                <span asp-validation-for="Aisle" class="text-danger small"></span>
+            </div>
+
+            <div class="col-md-4">
+                <label class="form-label">Estante</label>
+                <input asp-for="Rack" class="form-control" placeholder="Ex.: Estante 03" />
+                <span asp-validation-for="Rack" class="text-danger small"></span>
+            </div>
+
+            <div class="col-md-4">
+                <label class="form-label">Prateleira</label>
+                <input asp-for="Shelf" class="form-control" placeholder="Ex.: Prateleira B" />
+                <span asp-validation-for="Shelf" class="text-danger small"></span>
+            </div>
+
+            <div class="col-md-4">
+                <label class="form-label">Palete</label>
+                <input asp-for="Pallet" class="form-control" placeholder="Ex.: Palete 10" />
+                <span asp-validation-for="Pallet" class="text-danger small"></span>
+            </div>
+
+            <div class="col-12">
+                <label class="form-label">Observações</label>
+                <textarea asp-for="Notes" class="form-control" rows="3"
+                          placeholder="Informações adicionais..."></textarea>
+                <span asp-validation-for="Notes" class="text-danger small"></span>
             </div>
         </div>
 
-        <div class="card-footer d-flex gap-2 justify-content-end">
-            <a class="btn btn-outline-secondary" href="javascript:history.back()">
-                <i class="bi bi-arrow-left me-1"></i> Voltar
-            </a>
-            <button type="submit" class="btn btn-primary">
-                <i class="bi bi-save me-1"></i> Salvar
-            </button>
+        <div class="mt-3 text-muted small">
+            Dica: preencha o que fizer sentido. Campos vazios podem ser usados como “não aplicável”.
         </div>
     </div>
+
+    <div class="card-footer d-flex gap-2 justify-content-end">
+        <a class="btn btn-outline-secondary" href="/Physical/Locations">
+            <i class="bi bi-x-lg me-1"></i>Cancelar
+        </a>
+        <button type="submit" class="btn btn-primary">
+            <i class="bi bi-save me-1"></i>Salvar
+        </button>
+    </div>
 </form>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

@@ -135,26 +135,26 @@
 
                 <nav class="sidebar-menu">
 
-                    <!-- 0) PRINCIPAL -->
+                    <!-- PRINCIPAL -->
                     <div class="sidebar-section-title">Principal</div>
                     <a asp-controller="Home" asp-action="Index" class="@Active("Home","Index")">
                         <i class="bi bi-speedometer2"></i><span>Dashboard</span>
                         <span class="ms-auto text-muted small">PoC (—)</span>
                     </a>
 
-                    <!-- 9) AJUDA / POC -->
+                    <!-- AJUDA / POC -->
                     <div class="sidebar-section-title">Ajuda / PoC</div>
                     <a asp-controller="Manual" asp-action="Index" class="@(Active("Manual","Index") + " " + ActivePath("/manual"))">
                         <i class="bi bi-book"></i><span>Manual da PoC</span>
                         <span class="ms-auto text-muted small">PoC (1–27)</span>
                     </a>
 
-                    <!-- 1) USUÁRIOS E AUTORIDADES -->
+                    <!-- USUÁRIOS E AUTORIDADES -->
                     <div class="sidebar-section-title">Usuários e Autoridades</div>
 
                     <a asp-controller="Users" asp-action="Index" class="@Active("Users","Index")">
                         <i class="bi bi-people"></i><span>Usuários</span>
-                        <span class="ms-auto text-muted small">PoC (7,10,11)</span>
+                        <span class="ms-auto text-muted small">PoC (7,8,10,11)</span>
                     </a>
 
                     <a asp-controller="Users" asp-action="Create" class="@Active("Users","Create")">
@@ -162,11 +162,7 @@
                         <span class="ms-auto text-muted small">PoC (7,10,11)</span>
                     </a>
 
-                    <!-- ✅ CORRIGIDO: antes apontava pra Users/Index (duplicado) -->
-                    <a asp-controller="Users" asp-action="Certificates" class="@Active("Users","Certificates")">
-                        <i class="bi bi-patch-check"></i><span>Certificados ICP (por usuário)</span>
-                        <span class="ms-auto text-muted small">PoC (7,8)</span>
-                    </a>
+                 
 
                     <a asp-controller="Security" asp-action="Roles" class="@Active("Security","Roles","RolePermissions")">
                         <i class="bi bi-shield-check"></i><span>Perfis e Permissões</span>
@@ -178,7 +174,7 @@
                         <span class="ms-auto text-muted small">PoC (12)</span>
                     </a>
 
-                    <!-- 2) INSTRUMENTOS ARQUIVÍSTICOS -->
+                    <!-- INSTRUMENTOS ARQUIVÍSTICOS -->
                     <div class="sidebar-section-title">Instrumentos Arquivísticos</div>
 
                     <a asp-controller="Classification" asp-action="Index" class="@ActiveAny("Classification")">
@@ -210,7 +206,7 @@
                         <span class="ms-auto text-muted small">PoC (1,4)</span>
                     </a>
 
-                    <!-- 3) DOCUMENTOS -->
+                    <!-- DOCUMENTOS -->
                     <div class="sidebar-section-title">Documentos</div>
 
                     <a asp-controller="Ged" asp-action="Index" class="@ActiveAny("Ged")">
@@ -242,7 +238,7 @@
                         <span class="ms-auto text-muted small">PoC (22,23)</span>
                     </a>
 
-                    <!-- 3.2) Guarda Física -->
+                    <!-- GUARDA FÍSICA -->
                     <div class="sidebar-section-title">Guarda Física</div>
 
                     <a asp-controller="Physical" asp-action="Locations" class="@Active("Physical","Locations")">
@@ -275,21 +271,27 @@
                         <span class="ms-auto text-muted small">PoC (14)</span>
                     </a>
 
-                    <!-- 4) ASSINATURA DIGITAL ICP -->
+                    <!-- ASSINATURA ICP -->
                     <div class="sidebar-section-title">Assinatura ICP</div>
 
-                    <a asp-controller="Signature" asp-action="Index" class="@Active("Signature","Index","SignDocument","SignBatch")">
+                    <!-- Index do SignatureController é /Signature -->
+                    <a href="/Signature" class="@(Active("Signature","Index","SignDocument","SignBatch") + " " + ActivePath("/signature"))">
                         <i class="bi bi-pen"></i><span>Assinar (Documento / Lote)</span>
-                        <span class="ms-auto text-muted small">PoC (8,19,20,21)</span>
+                        <span class="ms-auto text-muted small">PoC (19,20,21)</span>
                     </a>
 
-                    <!-- ✅ ADIÇÃO: ITEM 9 (Validação) AGORA TAMBÉM NO DESKTOP -->
+                    <!-- Batch é /Signature/Batch -->
+                    <a href="/Signature/Batch" class="@(Active("Signature","SignBatch") + " " + ActivePath("/signature/batch"))">
+                        <i class="bi bi-stack"></i><span>Assinar em Lote (Selecionar)</span>
+                        <span class="ms-auto text-muted small">PoC (20,21)</span>
+                    </a>
+
                     <a asp-controller="Reports" asp-action="SignatureValidation" class="@Active("Reports","SignatureValidation")">
                         <i class="bi bi-patch-check"></i><span>Validação de Assinaturas</span>
                         <span class="ms-auto text-muted small">PoC (9,21,23)</span>
                     </a>
 
-                    <!-- 5) TEMPORALIDADE / DESTINAÇÃO -->
+                    <!-- TEMPORALIDADE / DESTINAÇÃO -->
                     <div class="sidebar-section-title">Temporalidade e Destinação</div>
 
                     <a asp-controller="Temporalidade" asp-action="Index" class="@ActiveAny("Temporalidade")">
@@ -331,7 +333,7 @@
                         <span class="ms-auto text-muted small">PoC (5,6)</span>
                     </a>
 
-                    <!-- 6) EMPRÉSTIMOS -->
+                    <!-- EMPRÉSTIMOS -->
                     <div class="sidebar-section-title">Empréstimos</div>
 
                     <a asp-controller="Loans" asp-action="Index" class="@ActiveAny("Loans")">
@@ -344,17 +346,12 @@
                         <span class="ms-auto text-muted small">PoC (14,15)</span>
                     </a>
 
-                    <form asp-controller="Loans" asp-action="RunOverdue" method="post" class="m-0 p-0">
-                        @Html.AntiForgeryToken()
-                        <button type="submit" class="btn btn-link sidebar-link text-start p-0 w-100" style="text-decoration:none;">
-                            <span class="d-flex align-items-center gap-2 px-3 py-2">
-                                <i class="bi bi-play-circle"></i><span>Rodar rotina de vencidos</span>
-                                <span class="ms-auto text-muted small">PoC (14)</span>
-                            </span>
-                        </button>
-                    </form>
+                    <a asp-controller="Loans" asp-action="RunOverdue" class="@Active("Loans","RunOverdue")">
+                        <i class="bi bi-play-circle"></i><span>Rodar rotina de vencidos</span>
+                        <span class="ms-auto text-muted small">PoC (14)</span>
+                    </a>
 
-                    <!-- 7) RELATÓRIOS -->
+                    <!-- RELATÓRIOS -->
                     <div class="sidebar-section-title">Relatórios</div>
 
                     <a asp-controller="Reports" asp-action="Loans" class="@Active("Reports","Loans")">
@@ -387,7 +384,7 @@
                         <span class="ms-auto text-muted small">PoC (26)</span>
                     </a>
 
-                    <!-- 8) AUDITORIA -->
+                    <!-- AUDITORIA -->
                     <div class="sidebar-section-title">Auditoria</div>
 
                     <a asp-controller="Audit" asp-action="Index" class="@ActiveAny("Audit")">
@@ -435,14 +432,12 @@
                 <div class="offcanvas-body p-2">
                     <nav class="sidebar-menu" style="padding:.25rem;">
 
-                        <!-- Principal -->
                         <div class="sidebar-section-title">Principal</div>
                         <a asp-controller="Home" asp-action="Index" class="@Active("Home","Index")" data-bs-dismiss="offcanvas">
                             <i class="bi bi-speedometer2"></i><span>Dashboard</span>
                             <span class="ms-auto text-muted small">PoC (—)</span>
                         </a>
 
-                        <!-- Ajuda / PoC -->
                         <div class="sidebar-section-title">Ajuda / PoC</div>
                         <a asp-controller="Manual" asp-action="Index"
                            class="@(Active("Manual","Index") + " " + ActivePath("/manual"))"
@@ -451,12 +446,10 @@
                             <span class="ms-auto text-muted small">PoC (1–27)</span>
                         </a>
 
-                        <!-- Usuários e Autoridades -->
                         <div class="sidebar-section-title">Usuários e Autoridades</div>
-
                         <a asp-controller="Users" asp-action="Index" class="@Active("Users","Index")" data-bs-dismiss="offcanvas">
                             <i class="bi bi-people"></i><span>Usuários</span>
-                            <span class="ms-auto text-muted small">PoC (7,10,11)</span>
+                            <span class="ms-auto text-muted small">PoC (7,8,10,11)</span>
                         </a>
 
                         <a asp-controller="Users" asp-action="Create" class="@Active("Users","Create")" data-bs-dismiss="offcanvas">
@@ -464,11 +457,7 @@
                             <span class="ms-auto text-muted small">PoC (7,10,11)</span>
                         </a>
 
-                        <!-- ✅ ALINHADO COM DESKTOP -->
-                        <a asp-controller="Users" asp-action="Certificates" class="@Active("Users","Certificates")" data-bs-dismiss="offcanvas">
-                            <i class="bi bi-patch-check"></i><span>Certificados ICP (por usuário)</span>
-                            <span class="ms-auto text-muted small">PoC (7,8)</span>
-                        </a>
+                        
 
                         <a asp-controller="Security" asp-action="Roles" class="@Active("Security","Roles","RolePermissions")" data-bs-dismiss="offcanvas">
                             <i class="bi bi-shield-check"></i><span>Perfis e Permissões</span>
@@ -480,9 +469,7 @@
                             <span class="ms-auto text-muted small">PoC (12)</span>
                         </a>
 
-                        <!-- Instrumentos -->
                         <div class="sidebar-section-title">Instrumentos Arquivísticos</div>
-
                         <a asp-controller="Classification" asp-action="Index" class="@ActiveAny("Classification")" data-bs-dismiss="offcanvas">
                             <i class="bi bi-diagram-3"></i><span>PCD / TTD / POP</span>
                             <span class="ms-auto text-muted small">PoC (1)</span>
@@ -518,9 +505,7 @@
                             <span class="ms-auto text-muted small">PoC (1,4)</span>
                         </a>
 
-                        <!-- Documentos -->
                         <div class="sidebar-section-title">Documentos</div>
-
                         <a asp-controller="Ged" asp-action="Index" class="@ActiveAny("Ged")" data-bs-dismiss="offcanvas">
                             <i class="bi bi-folder2-open"></i><span>Explorer</span>
                             <span class="ms-auto text-muted small">PoC (17,18,20)</span>
@@ -551,9 +536,7 @@
                             <span class="ms-auto text-muted small">PoC (22,23)</span>
                         </a>
 
-                        <!-- Guarda Física -->
                         <div class="sidebar-section-title">Guarda Física</div>
-
                         <a asp-controller="Physical" asp-action="Locations" class="@Active("Physical","Locations")" data-bs-dismiss="offcanvas">
                             <i class="bi bi-geo-alt"></i><span>Localizações</span>
                             <span class="ms-auto text-muted small">PoC (24)</span>
@@ -584,23 +567,30 @@
                             <span class="ms-auto text-muted small">PoC (14)</span>
                         </a>
 
-                        <!-- Assinatura ICP -->
                         <div class="sidebar-section-title">Assinatura ICP</div>
 
-                        <a asp-controller="Signature" asp-action="Index" class="@Active("Signature","Index","SignDocument","SignBatch")" data-bs-dismiss="offcanvas">
+                        <a href="/Signature"
+                           class="@(Active("Signature","Index","SignDocument","SignBatch") + " " + ActivePath("/signature"))"
+                           data-bs-dismiss="offcanvas">
                             <i class="bi bi-pen"></i><span>Assinar (Documento / Lote)</span>
-                            <span class="ms-auto text-muted small">PoC (8,19,20,21)</span>
+                            <span class="ms-auto text-muted small">PoC (19,20,21)</span>
                         </a>
 
-                        <!-- ✅ JÁ EXISTIA NO MOBILE, MANTIDO -->
-                        <a asp-controller="Reports" asp-action="SignatureValidation" class="@Active("Reports","SignatureValidation")" data-bs-dismiss="offcanvas">
+                        <a href="/Signature/Batch"
+                           class="@(Active("Signature","SignBatch") + " " + ActivePath("/signature/batch"))"
+                           data-bs-dismiss="offcanvas">
+                            <i class="bi bi-stack"></i><span>Assinar em Lote (Selecionar)</span>
+                            <span class="ms-auto text-muted small">PoC (20,21)</span>
+                        </a>
+
+                        <a asp-controller="Reports" asp-action="SignatureValidation"
+                           class="@Active("Reports","SignatureValidation")"
+                           data-bs-dismiss="offcanvas">
                             <i class="bi bi-patch-check"></i><span>Validação de Assinaturas</span>
                             <span class="ms-auto text-muted small">PoC (9,21,23)</span>
                         </a>
 
-                        <!-- Temporalidade -->
                         <div class="sidebar-section-title">Temporalidade e Destinação</div>
-
                         <a asp-controller="Temporalidade" asp-action="Index" class="@ActiveAny("Temporalidade")" data-bs-dismiss="offcanvas">
                             <i class="bi bi-hourglass-split"></i><span>Central de Temporalidade</span>
                             <span class="ms-auto text-muted small">PoC (5,6)</span>
@@ -640,9 +630,7 @@
                             <span class="ms-auto text-muted small">PoC (5,6)</span>
                         </a>
 
-                        <!-- Empréstimos -->
                         <div class="sidebar-section-title">Empréstimos</div>
-
                         <a asp-controller="Loans" asp-action="Index" class="@ActiveAny("Loans")" data-bs-dismiss="offcanvas">
                             <i class="bi bi-journal-arrow-up"></i><span>Solicitações</span>
                             <span class="ms-auto text-muted small">PoC (13,14)</span>
@@ -653,9 +641,12 @@
                             <span class="ms-auto text-muted small">PoC (14,15)</span>
                         </a>
 
-                        <!-- Relatórios -->
-                        <div class="sidebar-section-title">Relatórios</div>
+                        <a asp-controller="Loans" asp-action="RunOverdue" class="@Active("Loans","RunOverdue")" data-bs-dismiss="offcanvas">
+                            <i class="bi bi-play-circle"></i><span>Rodar rotina de vencidos</span>
+                            <span class="ms-auto text-muted small">PoC (14)</span>
+                        </a>
 
+                        <div class="sidebar-section-title">Relatórios</div>
                         <a asp-controller="Reports" asp-action="Loans" class="@Active("Reports","Loans")" data-bs-dismiss="offcanvas">
                             <i class="bi bi-file-earmark-text"></i><span>Relatório de Empréstimos</span>
                             <span class="ms-auto text-muted small">PoC (15)</span>
@@ -688,9 +679,7 @@
                             <span class="ms-auto text-muted small">PoC (26)</span>
                         </a>
 
-                        <!-- Auditoria -->
                         <div class="sidebar-section-title">Auditoria</div>
-
                         <a asp-controller="Audit" asp-action="Index" class="@ActiveAny("Audit")" data-bs-dismiss="offcanvas">
                             <i class="bi bi-shield-lock"></i><span>Log de Auditoria</span>
                             <span class="ms-auto text-muted small">PoC (25)</span>
@@ -703,7 +692,6 @@
                             <span class="ms-auto text-muted small">PoC (27)</span>
                         </a>
 
-                        <!-- Conta -->
                         <div class="sidebar-section-title">Conta</div>
                         <form asp-controller="Account" asp-action="Logout" method="post" class="m-0 p-0">
                             @Html.AntiForgeryToken()

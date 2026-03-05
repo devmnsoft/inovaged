@@ -1,24 +1,32 @@
 ﻿using System.Text;
+using InovaGed.Application.Common.Context;
 using InovaGed.Application.Reports;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace InovaGed.Web.Controllers;
 
+[Authorize]
 [Route("Disposition")]
 public sealed class DispositionController : Controller
 {
     private readonly IDispositionReportsQueries _q;
+    private readonly ICurrentContext _ctx;
     private readonly ILogger<DispositionController> _logger;
 
-    // ✅ Ajuste pro seu contexto real
-    private Guid TenantId => Guid.Parse("00000000-0000-0000-0000-000000000001");
+    private Guid TenantId => _ctx.TenantId;
 
-    public DispositionController(IDispositionReportsQueries q, ILogger<DispositionController> logger)
+    public DispositionController(
+        IDispositionReportsQueries q,
+        ICurrentContext ctx,
+        ILogger<DispositionController> logger)
     {
         _q = q;
+        _ctx = ctx;
         _logger = logger;
     }
 
+    // GET /Disposition
     [HttpGet("")]
     public async Task<IActionResult> Index(CancellationToken ct)
     {
@@ -26,20 +34,52 @@ public sealed class DispositionController : Controller
         return View(kpis);
     }
 
+    // GET /Disposition/Queue
     [HttpGet("Queue")]
-    public async Task<IActionResult> Queue(string? status, string? q, DateTimeOffset? from, DateTimeOffset? to, int page = 1, int pageSize = 50, CancellationToken ct = default)
+    public async Task<IActionResult> Queue(
+        string? status,
+        string? q,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        int page = 1,
+        int pageSize = 50,
+        CancellationToken ct = default)
     {
-        var filter = new DispositionFilter { Status = status, Q = q, From = from, To = to };
+        var filter = new DispositionFilter
+        {
+            Status = status,
+            Q = q,
+            From = from,
+            To = to
+        };
+
         var result = await _q.ListDispositionPagedAsync(TenantId, filter, page, pageSize, ct);
 
-        ViewBag.Status = status; ViewBag.Q = q; ViewBag.From = from; ViewBag.To = to;
+        ViewBag.Status = status;
+        ViewBag.Q = q;
+        ViewBag.From = from;
+        ViewBag.To = to;
+
         return View(result);
     }
 
+    // GET /Disposition/QueueCsv
     [HttpGet("QueueCsv")]
-    public async Task<IActionResult> QueueCsv(string? status, string? q, DateTimeOffset? from, DateTimeOffset? to, CancellationToken ct)
+    public async Task<IActionResult> QueueCsv(
+        string? status,
+        string? q,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        CancellationToken ct)
     {
-        var filter = new DispositionFilter { Status = status, Q = q, From = from, To = to };
+        var filter = new DispositionFilter
+        {
+            Status = status,
+            Q = q,
+            From = from,
+            To = to
+        };
+
         var rows = await _q.ListDispositionAsync(TenantId, filter, ct);
 
         var sb = new StringBuilder();
@@ -68,24 +108,31 @@ public sealed class DispositionController : Controller
               .AppendLine();
         }
 
-        return File(Encoding.UTF8.GetBytes(sb.ToString()), "text/csv; charset=utf-8", $"disposition_{DateTime.Now:yyyyMMdd_HHmm}.csv");
+        return File(
+            Encoding.UTF8.GetBytes(sb.ToString()),
+            "text/csv; charset=utf-8",
+            $"disposition_{DateTime.Now:yyyyMMdd_HHmm}.csv");
     }
+
+    // GET /Disposition/Terms
     [HttpGet("Terms")]
     public async Task<IActionResult> Terms(DateTimeOffset? from, DateTimeOffset? to, string? status, CancellationToken ct)
     {
-        // Normaliza "dia" (sem hora) e manda em UTC (offset 0) pro PostgreSQL
+        // Normaliza por dia (UTC 00:00 / < próximo dia)
         DateTimeOffset? fromUtc = null;
         if (from is not null)
-            fromUtc = new DateTimeOffset(from.Value.Date, TimeSpan.Zero); // 00:00 UTC do dia
+            fromUtc = new DateTimeOffset(from.Value.Date, TimeSpan.Zero);
 
         DateTimeOffset? toUtc = null;
         if (to is not null)
-            toUtc = new DateTimeOffset(to.Value.Date.AddDays(1), TimeSpan.Zero); // < próximo dia (UTC)
+            toUtc = new DateTimeOffset(to.Value.Date.AddDays(1), TimeSpan.Zero);
 
         var list = await _q.ListTermsAsync(TenantId, fromUtc, toUtc, status, ct);
 
-        // ViewBag pode manter os valores originais (pra UI)
-        ViewBag.From = from; ViewBag.To = to; ViewBag.Status = status;
+        ViewBag.From = from;
+        ViewBag.To = to;
+        ViewBag.Status = status;
+
         return View(list);
     }
 }

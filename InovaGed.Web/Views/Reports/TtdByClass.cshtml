@@ -6,16 +6,26 @@
 
 <div class="card shadow-sm">
     <div class="card-body">
+
+        @if (TempData["err"] is string err)
+        {
+            <div class="alert alert-warning mb-3">@err</div>
+        }
+        @if (TempData["ok"] is string ok)
+        {
+            <div class="alert alert-success mb-3">@ok</div>
+        }
+
         <form method="post" asp-action="TtdByClass" asp-controller="Reports" class="row g-2">
             @Html.AntiForgeryToken()
 
             <div class="col-md-6">
-                <label class="form-label">ClassCode</label>
-                <input class="form-control" name="classCode" placeholder="Ex.: PCD-001" />
+                <label class="form-label">Código da Classe</label>
+                <input class="form-control" name="classCode" placeholder="Ex.: TTD-001" />
             </div>
 
             <div class="col-md-6 d-flex align-items-end">
-                <button class="btn btn-primary">
+                <button class="btn btn-primary" type="submit">
                     <i class="bi bi-search me-1"></i> Gerar
                 </button>
             </div>
@@ -28,12 +38,19 @@
             <div class="d-flex flex-wrap gap-2">
                 @foreach (var c in Model)
                 {
-                    <form method="post" asp-action="TtdByClass" asp-controller="Reports">
+                    <form method="post" asp-action="TtdByClass" asp-controller="Reports" class="d-inline">
                         @Html.AntiForgeryToken()
                         <input type="hidden" name="classCode" value="@c" />
                         <button class="btn btn-sm btn-outline-secondary" type="submit">@c</button>
                     </form>
                 }
+            </div>
+        }
+        else
+        {
+            <hr />
+            <div class="text-muted small">
+                Nenhum exemplo encontrado em <code>ged.classification_plan</code> para este tenant.
             </div>
         }
     </div>

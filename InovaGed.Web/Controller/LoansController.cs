@@ -31,6 +31,9 @@ public sealed class LoansController : Controller
         _audit = audit;
     }
 
+    // =========================================================
+    // GET /Loans
+    // =========================================================
     [HttpGet("")]
     public async Task<IActionResult> Index(string? q, string? status, CancellationToken ct)
     {
@@ -44,16 +47,21 @@ public sealed class LoansController : Controller
             var list = await _queries.ListAsync(tenantId, q, status, ct);
             ViewBag.Q = q;
             ViewBag.Status = status;
+
             return View(list);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Loans.Index failed");
             ViewBag.Stats = new LoanStatsDto();
+            TempData["Err"] = "Erro ao carregar empréstimos.";
             return View(Array.Empty<LoanRowDto>());
         }
     }
 
+    // =========================================================
+    // GET /Loans/DocSearch?q=...
+    // =========================================================
     [HttpGet("DocSearch")]
     public async Task<IActionResult> DocSearch(string? q, CancellationToken ct)
     {
@@ -73,6 +81,9 @@ public sealed class LoansController : Controller
         }
     }
 
+    // =========================================================
+    // GET /Loans/Overdue
+    // =========================================================
     [HttpGet("Overdue")]
     public async Task<IActionResult> Overdue(CancellationToken ct)
     {
@@ -85,10 +96,39 @@ public sealed class LoansController : Controller
         catch (Exception ex)
         {
             _logger.LogError(ex, "Loans.Overdue failed");
+            TempData["Err"] = "Erro ao carregar vencidos.";
             return View(Array.Empty<LoanRowDto>());
         }
     }
 
+    // =========================================================
+    // GET /Loans/RunOverdue
+    // (rotina: tenta função ged.loan_run_overdue; fallback se não existir)
+    // =========================================================
+    [HttpGet("RunOverdue")]
+    public async Task<IActionResult> RunOverdue(CancellationToken ct)
+    {
+        try
+        {
+            var tenantId = _user.TenantId;
+
+            var updated = await _commands.RunOverdueAsync(tenantId, ct);
+
+            TempData["Ok"] = $"Rotina OVERDUE executada. Eventos gerados/atualizados: {updated}";
+            return RedirectToAction(nameof(Overdue));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Loans.RunOverdue failed");
+            TempData["Err"] = "Erro ao executar rotina de vencidos.";
+            return RedirectToAction(nameof(Overdue));
+        }
+    }
+
+    // =========================================================
+    // POST /Loans/Overdue/Register
+    // (registra eventos OVERDUE no histórico via vw_loan_overdue)
+    // =========================================================
     [HttpPost("Overdue/Register")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> RegisterOverdue(CancellationToken ct)
@@ -96,7 +136,9 @@ public sealed class LoansController : Controller
         try
         {
             var tenantId = _user.TenantId;
+
             var res = await _commands.RegisterOverdueEventsAsync(tenantId, _user.UserId, ct);
+
             TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess
                 ? $"Eventos OVERDUE registrados: {res.Value}"
                 : res.ErrorMessage;
@@ -111,10 +153,16 @@ public sealed class LoansController : Controller
         }
     }
 
+    // =========================================================
+    // GET /Loans/New
+    // =========================================================
     [HttpGet("New")]
     public IActionResult New()
         => View(new LoanCreateVM { DueAt = DateTimeOffset.Now.AddDays(7) });
 
+    // =========================================================
+    // POST /Loans/New
+    // =========================================================
     [HttpPost("New")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> New(LoanCreateVM vm, CancellationToken ct)
@@ -123,6 +171,7 @@ public sealed class LoansController : Controller
         {
             var tenantId = _user.TenantId;
             var res = await _commands.CreateAsync(tenantId, _user.UserId, vm, ct);
+
             if (!res.IsSuccess)
             {
                 TempData["Err"] = res.ErrorMessage;
@@ -140,6 +189,9 @@ public sealed class LoansController : Controller
         }
     }
 
+    // =========================================================
+    // GET /Loans/{id}
+    // =========================================================
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> Details(Guid id, CancellationToken ct)
     {
@@ -147,16 +199,21 @@ public sealed class LoansController : Controller
         {
             var tenantId = _user.TenantId;
             var vm = await _queries.GetAsync(tenantId, id, ct);
+
             if (vm is null) return NotFound();
             return View(vm);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Loans.Details failed");
-            return StatusCode(500);
+            TempData["Err"] = "Erro ao carregar detalhes do empréstimo.";
+            return RedirectToAction(nameof(Index));
         }
     }
 
+    // =========================================================
+    // Transições de status
+    // =========================================================
     [HttpPost("{id:guid}/Approve")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Approve(Guid id, string? notes, CancellationToken ct)
@@ -172,7 +229,10 @@ public sealed class LoansController : Controller
     public async Task<IActionResult> Return(Guid id, string? notes, CancellationToken ct)
         => await Transition(id, "Return", (t, l, u) => _commands.ReturnAsync(t, l, u, notes, ct));
 
-    private async Task<IActionResult> Transition(Guid id, string action, Func<Guid, Guid, Guid?, Task<InovaGed.Domain.Primitives.Result>> fn)
+    private async Task<IActionResult> Transition(
+        Guid id,
+        string action,
+        Func<Guid, Guid, Guid?, Task<InovaGed.Domain.Primitives.Result>> fn)
     {
         try
         {
