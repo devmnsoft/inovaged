@@ -339,6 +339,58 @@ public sealed class SignatureController : Controller
     }
 
     // =========================================================
+    // GET /Signature/Panel?documentId={id}  — partial para Details
+    // =========================================================
+    [HttpGet("Panel")]
+    public async Task<IActionResult> Panel(Guid documentId, CancellationToken ct)
+    {
+        try
+        {
+            using var conn = await _db.OpenAsync(ct);
+
+            var sig = await conn.QuerySingleOrDefaultAsync<SignatureDetailRow>("""
+            SELECT
+                s.status::text   AS Status,
+                s.signing_time   AS SigningTime,
+                s.signed_by_name AS SignedByName,
+                s.cpf            AS Cpf,
+                s.cert_subject   AS CertSubject,
+                s.status_details AS StatusDetails
+            FROM ged.document_signature s
+            WHERE s.tenant_id  = @tenantId
+              AND s.document_id = @documentId
+              AND s.reg_status  = 'A'
+            ORDER BY s.signing_time DESC NULLS LAST, s.reg_date DESC
+            LIMIT 1;
+            """,
+                new { tenantId = TenantId, documentId });
+
+            var vm = new SignaturePanelVM(documentId, sig);
+            return PartialView("_SignaturePanel", vm);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Signature.Panel failed. Doc={Id}", documentId);
+            return StatusCode(500, "Erro ao carregar painel de assinatura.");
+        }
+    }
+
+    // =========================================================
+    // ViewModels adicionais (adicione junto aos demais records)
+    // =========================================================
+    public sealed record SignatureDetailRow(
+        string Status,
+        DateTime? SigningTime,
+        string? SignedByName,
+        string? Cpf,
+        string? CertSubject,
+        string? StatusDetails);
+
+    public sealed record SignaturePanelVM(
+        Guid DocumentId,
+        SignatureDetailRow? Signature);
+
+    // =========================================================
     // ViewModels
     // =========================================================
     public sealed record PendingDocRow(

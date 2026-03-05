@@ -1,38 +1,36 @@
-﻿@using InovaGed.Web.Controllers
-@model List<LoanReportRow>
-
+﻿@model List<InovaGed.Web.Models.Reports.LoanReportRow>
 @{
     ViewData["Title"] = "Relatório de Empréstimos";
-    ViewData["Subtitle"] = "Por solicitante/período/tipo (PoC)";
+    ViewData["Subtitle"] = "Por solicitante, período e documento";
 }
 
 <div class="card shadow-sm">
-    <div class="card-body">
+    <div class="card-body p-0">
         <div class="table-responsive">
-            <table class="table table-sm align-middle">
-                <thead>
+            <table class="table table-sm align-middle mb-0">
+                <thead class="table-light">
                     <tr>
                         <th>Protocolo</th>
                         <th>Solicitante</th>
-                        <th>Solicitado em</th>
-                        <th>Vence em</th>
-                        <th>Status</th>
                         <th>Documento</th>
+                        <th>Solicitado</th>
+                        <th>Vencimento</th>
+                        <th>Status</th>
                     </tr>
                 </thead>
                 <tbody>
                     @foreach (var r in Model)
                     {
                         <tr>
-                            <td class="fw-semibold">@r.ProtocolNo</td>
+                            <td class="font-monospace">@r.ProtocolNo</td>
                             <td>@r.RequesterName</td>
-                            <td>@r.RequestedAt.ToString("dd/MM/yyyy HH:mm")</td>
-                            <td>@r.DueAt.ToString("dd/MM/yyyy")</td>
-                            <td><span class="badge text-bg-secondary">@r.Status</span></td>
                             <td>
                                 <div class="fw-semibold">@r.DocumentCode</div>
                                 <div class="text-muted small">@r.DocumentTitle</div>
                             </td>
+                            <td class="text-nowrap small">@r.RequestedAt.ToString("dd/MM/yyyy HH:mm")</td>
+                            <td class="text-nowrap small">@r.DueAt.ToString("dd/MM/yyyy HH:mm")</td>
+                            <td><span class="badge text-bg-secondary">@r.Status</span></td>
                         </tr>
                     }
                 </tbody>

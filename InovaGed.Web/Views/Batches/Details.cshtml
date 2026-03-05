@@ -24,11 +24,14 @@
     </div>
 
     <div class="d-flex gap-2">
-        <a class="btn btn-outline-secondary" asp-controller="Batches" asp-action="Index">Voltar</a>
+        <a class="btn btn-outline-secondary" asp-controller="Batches" asp-action="Index">
+            <i class="bi bi-arrow-left me-1"></i> Voltar
+        </a>
     </div>
 </div>
 
 <div class="row g-3">
+    <!-- COLUNA ESQUERDA -->
     <div class="col-lg-4">
         <div class="card shadow-sm">
             <div class="card-body">
@@ -60,14 +63,32 @@
 
                 <form method="post" asp-action="ChangeStatus" asp-route-id="@header.Id">
                     @Html.AntiForgeryToken()
+
                     <div class="mb-2">
                         <label class="form-label">Alterar status</label>
-                        <input class="form-control" name="status" placeholder="Ex.: OPEN, CLOSED..." />
+
+                        <!-- Sugestão: se você tiver ViewBag.AllowedStatus, vira select -->
+                        @if (ViewBag.AllowedStatus is string[] allowed && allowed.Length > 0)
+                        {
+                            <select class="form-select" name="status">
+                                <option value="">Selecione...</option>
+                                @foreach (var s in allowed)
+                                {
+                                    <option value="@s">@s</option>
+                                }
+                            </select>
+                        }
+                        else
+                        {
+                            <input class="form-control" name="status" placeholder="Ex.: RECEIVED, TRIAGE, DIGITIZATION..." />
+                        }
                     </div>
+
                     <div class="mb-2">
                         <label class="form-label">Observação (opcional)</label>
                         <input class="form-control" name="notes" />
                     </div>
+
                     <button class="btn btn-outline-primary w-100" type="submit">
                         <i class="bi bi-arrow-repeat me-1"></i> Atualizar
                     </button>
@@ -102,9 +123,19 @@
                                 {
                                     <tr>
                                         <td>@h.ChangedAt.ToString("dd/MM/yyyy HH:mm")</td>
-                                        <td><span class="badge text-bg-light border">@h.FromStatus</span></td>
-                                        <td><span class="badge text-bg-light border">@h.ToStatus</span></td>
-                                        <td class="text-truncate" style="max-width:240px;" title="@h.Notes">@h.Notes</td>
+                                        <td>
+                                            <span class="badge text-bg-light border">
+                                                @(string.IsNullOrWhiteSpace(h.FromStatus) ? "—" : h.FromStatus)
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <span class="badge text-bg-light border">
+                                                @(string.IsNullOrWhiteSpace(h.ToStatus) ? "—" : h.ToStatus)
+                                            </span>
+                                        </td>
+                                        <td class="text-truncate" style="max-width:240px;" title="@h.Notes">
+                                            @(!string.IsNullOrWhiteSpace(h.Notes) ? h.Notes : "—")
+                                        </td>
                                     </tr>
                                 }
                             }
@@ -113,10 +144,12 @@
                 </div>
             </div>
         </div>
-
     </div>
 
+    <!-- COLUNA DIREITA -->
     <div class="col-lg-8">
+
+        <!-- ITENS DO LOTE -->
         <div class="card shadow-sm mb-3">
             <div class="card-header bg-white d-flex align-items-center justify-content-between">
                 <strong>Itens do lote</strong>
@@ -131,7 +164,7 @@
                                 <th style="width:170px;">Documento</th>
                                 <th>Título</th>
                                 <th style="width:200px;">Caixa</th>
-                                <th style="width:230px;" class="text-end">Ações</th>
+                                <th style="width:260px;" class="text-end">Ações</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -146,8 +179,9 @@
                                     <tr>
                                         <td class="fw-semibold">@it.DocumentCode</td>
                                         <td>@it.DocumentTitle</td>
-                                        <td class="text-muted">@it.BoxId</td>
+                                        <td class="text-muted">@((it.BoxId is null || it.BoxId == Guid.Empty) ? "—" : it.BoxId.ToString())</td>
                                         <td class="text-end">
+                                            <!-- Remover -->
                                             <form class="d-inline" method="post" asp-action="RemoveItem" asp-route-id="@header.Id">
                                                 @Html.AntiForgeryToken()
                                                 <input type="hidden" name="documentId" value="@it.DocumentId" />
@@ -155,6 +189,13 @@
                                                     <i class="bi bi-trash"></i> Remover
                                                 </button>
                                             </form>
+
+                                            <!-- (Opcional) mover de caixa se você já tem o endpoint -->
+                                            <button type="button"
+                                                    class="btn btn-sm btn-outline-secondary ms-1"
+                                                    onclick="openMoveModal('@it.DocumentId','@it.DocumentCode')">
+                                                <i class="bi bi-box-arrow-in-right"></i> Mover Caixa
+                                            </button>
                                         </td>
                                     </tr>
                                 }
@@ -165,37 +206,174 @@
             </div>
         </div>
 
+        <!-- ADICIONAR DOCUMENTO (INTEGRADO COM ged.document) -->
         <div class="card shadow-sm">
             <div class="card-header bg-white">
-                <strong>Adicionar item</strong>
+                <strong>Adicionar documento ao lote</strong>
             </div>
             <div class="card-body">
-                <form method="post" asp-action="AddItem" asp-route-id="@header.Id">
+
+                <div class="row g-2">
+                    <div class="col-md-8">
+                        <label class="form-label">Buscar documento (código ou título)</label>
+                        <input id="docSearch" class="form-control" placeholder="Digite 3+ caracteres..." autocomplete="off" />
+                        <div id="docResults" class="list-group mt-2" style="max-height:260px; overflow:auto; display:none;"></div>
+                        <div class="form-text">Selecione um documento para adicionar ao lote.</div>
+                    </div>
+
+                    <div class="col-md-4">
+                        <label class="form-label">BoxId (opcional)</label>
+                        <input id="boxId" class="form-control" placeholder="GUID da caixa" />
+                        <div class="form-text">Depois trocamos por select de caixas.</div>
+                    </div>
+                </div>
+
+                <form id="addDocForm" method="post" asp-action="AddItem" asp-route-id="@header.Id" class="mt-3">
                     @Html.AntiForgeryToken()
+                    <input type="hidden" name="documentId" id="documentId" />
+                    <input type="hidden" name="boxId" id="boxIdHidden" />
 
-                    <div class="row g-2">
-                        <div class="col-md-6">
-                            <label class="form-label">DocumentId</label>
-                            <input class="form-control" name="documentId" placeholder="GUID do documento" />
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">BoxId (opcional)</label>
-                            <input class="form-control" name="boxId" placeholder="GUID da caixa" />
-                        </div>
-                    </div>
+                    <button class="btn btn-primary" type="submit" disabled id="btnAddDoc">
+                        <i class="bi bi-plus-circle me-1"></i> Adicionar ao lote
+                    </button>
 
-                    <div class="mt-3">
-                        <button class="btn btn-primary" type="submit">
-                            <i class="bi bi-plus-circle me-1"></i> Adicionar
-                        </button>
-                    </div>
-
-                    <div class="form-text mt-2">
-                        Depois a gente troca esses GUIDs por selects/autocomplete (Documento/Caixa).
-                    </div>
+                    <span class="text-muted small ms-2" id="pickedDoc"></span>
                 </form>
+
             </div>
         </div>
-
     </div>
 </div>
+
+<!-- MODAL (opcional) MOVER CAIXA -->
+<div class="modal fade" id="moveModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" asp-action="MoveItem" asp-route-id="@header.Id">
+                @Html.AntiForgeryToken()
+                <div class="modal-header">
+                    <h5 class="modal-title">Mover item de caixa</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" name="documentId" id="moveDocId" />
+
+                    <div class="mb-2">
+                        <div class="text-muted small">Documento</div>
+                        <div class="fw-semibold" id="moveDocLabel">—</div>
+                    </div>
+
+                    <div class="mb-2">
+                        <label class="form-label">Nova BoxId (vazio remove vínculo)</label>
+                        <input class="form-control" name="newBoxId" placeholder="GUID da nova caixa (opcional)" />
+                    </div>
+
+                    <div class="form-text">Essa ação registra histórico de movimentação (se habilitado no backend).</div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check2-circle me-1"></i> Confirmar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        (() => {
+          const input = document.getElementById('docSearch');
+          const results = document.getElementById('docResults');
+          const hiddenDocId = document.getElementById('documentId');
+          const hiddenBoxId = document.getElementById('boxIdHidden');
+          const boxId = document.getElementById('boxId');
+          const btn = document.getElementById('btnAddDoc');
+          const picked = document.getElementById('pickedDoc');
+
+          let timer = null;
+
+          function clearPick() {
+            hiddenDocId.value = '';
+            btn.disabled = true;
+            picked.textContent = '';
+          }
+
+          function escapeHtml(s){
+            return (s ?? '').toString().replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+          }
+
+          function formatDate(iso){
+            try { return new Date(iso).toLocaleString('pt-BR'); } catch { return ''; }
+          }
+
+          function render(list) {
+            results.innerHTML = '';
+            if (!list || list.length === 0) {
+              results.style.display = 'none';
+              return;
+            }
+            results.style.display = '';
+            for (const d of list) {
+              const a = document.createElement('button');
+              a.type = 'button';
+              a.className = 'list-group-item list-group-item-action';
+              a.innerHTML = `
+                <div class="fw-semibold">${escapeHtml(d.code || '(sem código)')}</div>
+                <div class="small text-muted">${escapeHtml(d.title || '')}</div>
+                <div class="small">${escapeHtml(d.status || '')} • ${formatDate(d.createdAt)}</div>
+              `;
+              a.addEventListener('click', () => {
+                hiddenDocId.value = d.id;
+                btn.disabled = false;
+                picked.textContent = `Selecionado: ${d.code || '(sem código)'} - ${d.title || ''}`;
+                results.style.display = 'none';
+              });
+              results.appendChild(a);
+            }
+          }
+
+          async function search(q) {
+            // precisa existir o endpoint:
+            // [HttpGet("DocumentsSearch")] no BatchesController
+            const url = `/Batches/DocumentsSearch?q=${encodeURIComponent(q)}&take=20`;
+            const r = await fetch(url, { headers: { 'Accept': 'application/json' }});
+            if (!r.ok) return [];
+            return await r.json();
+          }
+
+          input.addEventListener('input', () => {
+            const q = input.value.trim();
+            clearPick();
+            if (timer) clearTimeout(timer);
+
+            if (q.length < 3) { results.style.display='none'; return; }
+
+            timer = setTimeout(async () => {
+              const list = await search(q);
+              render(list);
+            }, 250);
+          });
+
+          boxId.addEventListener('input', () => {
+            hiddenBoxId.value = boxId.value.trim();
+          });
+
+          document.addEventListener('click', (e) => {
+            if (!results.contains(e.target) && e.target !== input) results.style.display='none';
+          });
+        })();
+
+        function openMoveModal(docId, docCode) {
+          const el = document.getElementById('moveModal');
+          if (!el) return;
+
+          document.getElementById('moveDocId').value = docId;
+          document.getElementById('moveDocLabel').textContent = docCode || docId;
+
+          const modal = bootstrap.Modal.getOrCreateInstance(el);
+          modal.show();
+        }
+    </script>
+}

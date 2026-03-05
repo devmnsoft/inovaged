@@ -1,16 +1,21 @@
-﻿@using InovaGed.Web.Controllers
-@model List<TtdRow>
-
+﻿@model List<InovaGed.Web.Models.Reports.TtdRow>
 @{
-    ViewData["Title"] = "Tabela de Temporalidade (TTD)";
-    ViewData["Subtitle"] = "Prazos e destinação final por classe (PoC)";
+    ViewData["Title"] = "PLC/PCD — Plano de Classificação de Documentos";
+    ViewData["Subtitle"] = "Impressão/relatório completo";
 }
 
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div class="text-muted small">Total: <b>@Model.Count</b> classes</div>
+    <button class="btn btn-sm btn-outline-secondary" onclick="window.print()">
+        <i class="bi bi-printer me-1"></i> Imprimir
+    </button>
+</div>
+
 <div class="card shadow-sm">
-    <div class="card-body">
+    <div class="card-body p-0">
         <div class="table-responsive">
-            <table class="table table-sm align-middle">
-                <thead>
+            <table class="table table-sm table-striped align-middle mb-0">
+                <thead class="table-light">
                     <tr>
                         <th>Código</th>
                         <th>Classe</th>
@@ -18,18 +23,20 @@
                         <th>Arquivo (meses)</th>
                         <th>Destinação</th>
                         <th>Evento início</th>
+                        <th>Observações</th>
                     </tr>
                 </thead>
                 <tbody>
                     @foreach (var r in Model)
                     {
                         <tr>
-                            <td class="fw-semibold">@r.ClassCode</td>
+                            <td class="fw-semibold font-monospace">@r.ClassCode</td>
                             <td>@r.ClassName</td>
-                            <td>@r.ActiveMonths</td>
-                            <td>@r.ArchiveMonths</td>
-                            <td><span class="badge text-bg-secondary">@r.FinalDestination</span></td>
-                            <td class="text-muted small">@r.StartEvent</td>
+                            <td>@(r.ActiveMonths?.ToString() ?? "—")</td>
+                            <td>@(r.ArchiveMonths?.ToString() ?? "—")</td>
+                            <td><span class="badge text-bg-secondary">@(r.FinalDestination ?? "—")</span></td>
+                            <td class="text-muted small">@(r.StartEvent ?? "—")</td>
+                            <td class="text-muted small">@r.Notes</td>
                         </tr>
                     }
                 </tbody>

@@ -1,6 +1,7 @@
 ﻿using Dapper;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Ged.Batches;
+using InovaGed.Application.Ged.Loans;
 using Microsoft.Extensions.Logging;
 
 namespace InovaGed.Infrastructure.Ged.Batches;
@@ -123,9 +124,10 @@ order by d.title;
             // ✅ histórico por evento/fase (consistente com BatchCommands e com PoC item 18)
             const string hist = @"
 select
-  event_time as ChangedAt,
-  event_type as ToStatus,
-  notes as Notes
+  event_time as ""ChangedAt"",
+  lag(event_type) over(order by event_time) as ""FromStatus"",
+  event_type as ""ToStatus"",
+  notes as ""Notes""
 from ged.batch_history
 where tenant_id=@tenant_id
   and batch_id=@batch_id
@@ -145,6 +147,50 @@ order by event_time desc;
         {
             _logger.LogError(ex, "BatchQueries.GetAsync failed. Tenant={Tenant} Batch={Batch}", tenantId, batchId);
             return null;
+        }
+    }
+
+
+    public async Task<IReadOnlyList<DocumentPickDto>> SearchDocumentsAsync(
+      Guid tenantId, string? q, int take, string? status, CancellationToken ct)
+    {
+        try
+        {
+            await using var conn = await _db.OpenAsync(ct);
+
+            q = (q ?? "").Trim();
+            take = Math.Clamp(take, 5, 50);
+            status = string.IsNullOrWhiteSpace(status) ? null : status.Trim().ToUpperInvariant();
+
+            const string sql = @"
+select
+  d.id as ""Id"",
+  d.code as ""Code"",
+  d.title as ""Title"",
+  d.status::text as ""Status"",
+  d.created_at as ""CreatedAt""
+from ged.document d
+where d.tenant_id=@tenant_id
+  and (
+     @q = ''
+     or d.code ilike ('%'||@q||'%')
+     or d.title ilike ('%'||@q||'%')
+     or coalesce(d.description,'') ilike ('%'||@q||'%')
+  )
+  and (@status is null or d.status::text = @status)
+order by d.created_at desc
+limit @take;
+";
+
+            var rows = await conn.QueryAsync<DocumentPickDto>(
+                new CommandDefinition(sql, new { tenant_id = tenantId, q, take, status }, cancellationToken: ct));
+
+            return rows.AsList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "BatchQueries.SearchDocumentsAsync failed. Tenant={Tenant}", tenantId);
+            return Array.Empty<DocumentPickDto>();
         }
     }
 }

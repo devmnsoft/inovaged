@@ -32,40 +32,49 @@ public sealed class BatchCommands : IBatchCommands
         {
             if (tenantId == Guid.Empty) return Result<Guid>.Fail("TENANT", "Tenant inválido.");
             if (vm is null) return Result<Guid>.Fail("VM", "Dados inválidos.");
-            if (string.IsNullOrWhiteSpace(vm.BatchNo)) return Result<Guid>.Fail("BATCHNO", "BatchNo é obrigatório.");
 
             await using var conn = await _db.OpenAsync(ct);
             using var tx = conn.BeginTransaction();
 
             const string sql = @"
+with next_no as (
+  select (coalesce(max(nullif(batch_no,'')::int),0)+1) as n
+  from ged.batch
+  where tenant_id=@tenant_id
+)
 insert into ged.batch
 (id, tenant_id, batch_no, status, created_at, created_by, notes, reg_date, reg_status)
-values
-(gen_random_uuid(), @tenant_id, @batch_no, 'RECEIVED'::ged.batch_status, now(), @created_by, @notes, now(), 'A')
+select
+(gen_random_uuid(), @tenant_id, next_no.n::text, 'RECEIVED'::ged.batch_status, now(), @created_by, @notes, now(), 'A')
+from next_no
 returning id;
 ";
-            var batchId = await conn.ExecuteScalarAsync<Guid>(new CommandDefinition(sql, new
-            {
-                tenant_id = tenantId,
-                batch_no = vm.BatchNo.Trim(),
-                created_by = userId,
-                notes = vm.Notes
-            }, transaction: tx, cancellationToken: ct));
 
-            // batch_history (Item 18: rastreio de fases)
+            var batchId = await conn.ExecuteScalarAsync<Guid>(
+                new CommandDefinition(sql, new { tenant_id = tenantId, created_by = userId, notes = vm.Notes }, transaction: tx, cancellationToken: ct));
+
             await InsertBatchHistoryAsync(conn, tx, tenantId, batchId, "RECEIVED", userId, "Lote criado", ct);
 
-            if (vm.DocumentIds.Count > 0)
+            // DocumentIds: agora é integrado e validado
+            if (vm.DocumentIds is not null && vm.DocumentIds.Count > 0)
             {
                 foreach (var docId in vm.DocumentIds.Distinct())
                 {
+                    if (docId == Guid.Empty) continue;
+
+                    var exists = await DocumentExistsAsync(conn, tx, tenantId, docId, ct);
+                    if (!exists)
+                    {
+                        tx.Rollback();
+                        return Result<Guid>.Fail("DOC", $"Documento inválido/não encontrado: {docId}");
+                    }
+
                     await InsertBatchItemAsync(conn, tx, tenantId, batchId, docId, vm.BoxId, ct);
 
                     if (vm.BoxId.HasValue)
                     {
-                        // Item 17/24: rastreio físico (doc entrou na caixa)
                         await InsertBoxHistoryAsync(conn, tx, tenantId, vm.BoxId.Value, docId, "ADD", userId,
-                            $"Documento adicionado ao lote {vm.BatchNo} com vínculo à caixa.", ct);
+                            "Documento adicionado ao lote com vínculo à caixa.", ct);
                     }
                 }
             }
@@ -73,7 +82,7 @@ returning id;
             tx.Commit();
 
             await _audit.WriteAsync(tenantId, userId, "BATCH_EVENT", "batch", batchId,
-                "Lote criado", null, null, new { vm.BatchNo, docs = vm.DocumentIds.Count, boxId = vm.BoxId }, ct);
+                "Lote criado", null, null, new { docs = vm.DocumentIds?.Count ?? 0, boxId = vm.BoxId }, ct);
 
             return Result<Guid>.Ok(batchId);
         }
@@ -83,7 +92,6 @@ returning id;
             return Result<Guid>.Fail("BATCH", "Falha ao criar lote.");
         }
     }
-
     public async Task<Result> AddItemAsync(Guid tenantId, Guid batchId, Guid documentId, Guid? boxId, Guid? userId, CancellationToken ct)
     {
         try
@@ -300,6 +308,23 @@ where tenant_id=@tenant_id and id=@batch_id and reg_status='A';
             _logger.LogError(ex, "BatchCommands.ChangeStatusAsync failed. Tenant={Tenant} Batch={Batch}", tenantId, batchId);
             return Result.Fail("BATCH", "Falha ao alterar status do lote.");
         }
+    }
+
+    private static async Task<bool> DocumentExistsAsync(
+    System.Data.IDbConnection conn,
+    System.Data.IDbTransaction tx,
+    Guid tenantId,
+    Guid documentId,
+    CancellationToken ct)
+    {
+        const string sql = @"
+select 1
+from ged.document d
+where d.tenant_id=@tenant_id and d.id=@document_id
+limit 1;";
+        var ok = await conn.ExecuteScalarAsync<int?>(
+            new CommandDefinition(sql, new { tenant_id = tenantId, document_id = documentId }, transaction: tx, cancellationToken: ct));
+        return ok.HasValue;
     }
 
     // ---------------- helpers ----------------

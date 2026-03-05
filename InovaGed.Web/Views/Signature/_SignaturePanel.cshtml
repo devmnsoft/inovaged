@@ -1,0 +1,73 @@
+@* Views/Signature/_SignaturePanel.cshtml *@
+@model InovaGed.Web.Controllers.SignatureController.SignaturePanelVM
+
+@{
+    var docId = Model.DocumentId;
+}
+
+@if (Model.Signature is null)
+{
+    <div class="d-flex align-items-center gap-2 mb-3">
+        <span class="badge text-bg-secondary fs-6 px-3 py-2">
+            <i class="bi bi-pen me-1"></i> Não assinado
+        </span>
+    </div>
+    <p class="text-muted small mb-3">Este documento ainda não possui assinatura digital registrada.</p>
+}
+else
+{
+    var s = Model.Signature;
+
+    var (badgeCss, badgeIcon, badgeLabel) = s.Status switch
+    {
+        "VALID"    => ("text-bg-success", "bi-patch-check-fill", "Válida"),
+        "INVALID"  => ("text-bg-danger",  "bi-x-octagon-fill",   "Inválida"),
+        "PENDING"  => ("text-bg-warning", "bi-hourglass-split",  "Pendente"),
+        _          => ("text-bg-secondary","bi-question-circle",  "Sem verificação")
+    };
+
+    <div class="d-flex align-items-center gap-2 mb-3">
+        <span class="badge @badgeCss fs-6 px-3 py-2">
+            <i class="bi @badgeIcon me-1"></i> @badgeLabel
+        </span>
+    </div>
+
+    <dl class="row row-cols-1 g-1 small mb-3">
+        <div class="col">
+            <dt class="text-muted fw-normal">Assinado por</dt>
+            <dd class="fw-semibold mb-0">@(s.SignedByName ?? "-")</dd>
+        </div>
+        <div class="col">
+            <dt class="text-muted fw-normal">CPF do certificado</dt>
+            <dd class="mb-0">@(s.Cpf ?? "-")</dd>
+        </div>
+        <div class="col">
+            <dt class="text-muted fw-normal">Data / hora</dt>
+            <dd class="mb-0">
+                @(s.SigningTime.HasValue ? s.SigningTime.Value.ToString("dd/MM/yyyy HH:mm:ss") : "-")
+            </dd>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(s.CertSubject))
+        {
+            <div class="col">
+                <dt class="text-muted fw-normal">Certificado</dt>
+                <dd class="mb-0 text-truncate" title="@s.CertSubject">@s.CertSubject</dd>
+            </div>
+        }
+        @if (!string.IsNullOrWhiteSpace(s.StatusDetails))
+        {
+            <div class="col">
+                <dt class="text-muted fw-normal">Detalhes</dt>
+                <dd class="mb-0 text-muted">@s.StatusDetails</dd>
+            </div>
+        }
+    </dl>
+}
+
+<div class="d-flex gap-2 flex-wrap">
+    <a class="btn btn-sm btn-outline-primary"
+       href="/Signature/Document/@docId">
+        <i class="bi bi-pen me-1"></i>
+        @(Model.Signature is null ? "Assinar documento" : "Reassinar documento")
+    </a>
+</div>

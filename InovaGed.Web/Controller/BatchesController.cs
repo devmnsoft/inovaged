@@ -228,4 +228,13 @@ public sealed class BatchesController : Controller
             _ => s.ToUpperInvariant()
         };
     }
+     
+    // /Batches/DocumentsSearch?q=texto&take=20&status=OPEN
+    [HttpGet("DocumentsSearch")]
+    public async Task<IActionResult> DocumentsSearch(string? q, int take = 20, string? status = null, CancellationToken ct = default)
+    {
+        var rows = await _queries.SearchDocumentsAsync(_user.TenantId, q, take, status, ct);
+        return Json(rows);
+    }
+
 }

@@ -1,9 +1,7 @@
-﻿@using InovaGed.Web.Controllers
-@model List<TtdRow>
-
+﻿@model List<InovaGed.Web.Models.Reports.TtdRow>
 @{
     ViewData["Title"] = "Tabela de Temporalidade (TTD)";
-    ViewData["Subtitle"] = "Impressão/relatório";
+    ViewData["Subtitle"] = "Prazos e destinação final por classe";
 }
 
 <div class="d-flex justify-content-between align-items-center mb-3">
@@ -13,24 +11,34 @@
     </button>
 </div>
 
-<table class="table table-sm table-striped align-middle">
-    <thead>
-        <tr>
-            <th style="width:160px">Classe</th>
-            <th style="width:160px">Corrente (dias)</th>
-            <th style="width:200px">Intermediária (dias)</th>
-            <th>Destinação</th>
-        </tr>
-    </thead>
-    <tbody>
-        @foreach (var r in Model)
-        {
-            <tr>
-                <td><code>@r.ClassCode</code></td>
-                <td>@r.CurrentDays</td>
-                <td>@r.IntermediateDays</td>
-                <td>@(r.FinalDestination ?? "-")</td>
-            </tr>
-        }
-    </tbody>
-</table>
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm table-striped align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Código</th>
+                        <th>Classe</th>
+                        <th>Corrente (meses)</th>
+                        <th>Intermediária (meses)</th>
+                        <th>Destinação</th>
+                        <th>Evento início</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in Model)
+                    {
+                        <tr>
+                            <td class="fw-semibold font-monospace">@r.ClassCode</td>
+                            <td>@r.ClassName</td>
+                            <td>@(r.ActiveMonths?.ToString() ?? "—")</td>
+                            <td>@(r.ArchiveMonths?.ToString() ?? "—")</td>
+                            <td><span class="badge text-bg-secondary">@(r.FinalDestination ?? "—")</span></td>
+                            <td class="text-muted small">@(r.StartEvent ?? "—")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

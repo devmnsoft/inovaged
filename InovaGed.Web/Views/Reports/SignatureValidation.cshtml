@@ -1,4 +1,5 @@
 ﻿@using InovaGed.Web.Controllers
+@using InovaGed.Web.Models.Reports
 @model List<SignatureValidationRow>
 
 @{
@@ -30,7 +31,7 @@
                             </td>
                             <td>@r.SignedByName</td>
                             <td>@r.Cpf</td>
-                            <td>@(r.SigningTime?.ToString("dd/MM/yyyy HH:mm") ?? "-")</td>
+                            <td>@(r.SigningTime.ToString("dd/MM/yyyy HH:mm") ?? "-")</td>
                             <td><span class="badge text-bg-secondary">@r.Status</span></td>
                             <td class="text-muted small">@r.Details</td>
                         </tr>
