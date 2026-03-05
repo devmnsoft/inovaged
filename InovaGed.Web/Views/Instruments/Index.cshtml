@@ -3,18 +3,24 @@
 
 @{
     ViewData["Title"] = "Instrumentos Arquivísticos";
-    string type = Model.Type;
+
+    string type = Model?.Type ?? "PCD";
     string Active(string t) => string.Equals(type, t, StringComparison.OrdinalIgnoreCase) ? "active" : "";
 }
 
 <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
     <div>
-        <h2 class="mb-1"><i class="bi bi-diagram-3"></i> Instrumentos Arquivísticos</h2>
+        <h2 class="mb-1">
+            <i class="bi bi-diagram-3 me-1"></i>
+            Instrumentos Arquivísticos
+        </h2>
         <div class="text-muted">PCD / TTD / POP com versionamento e impressão (PoC Itens 1–4).</div>
     </div>
+
     <div class="d-flex gap-2">
-        <a class="btn btn-outline-secondary" href="@Url.Action("Index","Instruments", new { type })">
-            <i class="bi bi-arrow-clockwise"></i> Atualizar
+        <a class="btn btn-outline-secondary"
+           href="@Url.Action("Index","Instruments", new { type })">
+            <i class="bi bi-arrow-clockwise me-1"></i> Atualizar
         </a>
     </div>
 </div>
@@ -30,13 +36,16 @@
 
 <ul class="nav nav-tabs mb-3">
     <li class="nav-item">
-        <a class="nav-link @Active("PCD")" href="@Url.Action("Index","Instruments", new { type="PCD" })">PCD</a>
+        <a class="nav-link @Active("PCD")"
+           href="@Url.Action("Index","Instruments", new { type = "PCD" })">PCD</a>
     </li>
     <li class="nav-item">
-        <a class="nav-link @Active("TTD")" href="@Url.Action("Index","Instruments", new { type="TTD" })">TTD</a>
+        <a class="nav-link @Active("TTD")"
+           href="@Url.Action("Index","Instruments", new { type = "TTD" })">TTD</a>
     </li>
     <li class="nav-item">
-        <a class="nav-link @Active("POP")" href="@Url.Action("Index","Instruments", new { type="POP" })">POP</a>
+        <a class="nav-link @Active("POP")"
+           href="@Url.Action("Index","Instruments", new { type = "POP" })">POP</a>
     </li>
 </ul>
 
@@ -46,13 +55,21 @@
             <strong>@type</strong> — Versões publicadas
         </div>
 
-        <form method="post" asp-action="Publish" asp-controller="Instruments" class="d-flex gap-2 align-items-center">
+        <!-- Publicar versão -->
+        <form method="post"
+              action="@Url.Action("Publish","Instruments")"
+              class="d-flex gap-2 align-items-center">
             @Html.AntiForgeryToken()
+
             <input type="hidden" name="type" value="@type" />
 
-            <input class="form-control form-control-sm" style="min-width:260px" name="notes" placeholder="Observação da versão (opcional)" />
+            <input class="form-control form-control-sm"
+                   style="min-width:260px"
+                   name="notes"
+                   placeholder="Observação da versão (opcional)" />
+
             <button class="btn btn-primary btn-sm" type="submit">
-                <i class="bi bi-upload"></i> Publicar nova versão
+                <i class="bi bi-upload me-1"></i> Publicar nova versão
             </button>
         </form>
     </div>
@@ -70,7 +87,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    @if (Model.Versions == null || Model.Versions.Count == 0)
+                    @if (Model?.Versions == null || Model.Versions.Count == 0)
                     {
                         <tr>
                             <td colspan="5" class="p-4 text-muted">
@@ -83,7 +100,9 @@
                         foreach (var v in Model.Versions)
                         {
                             <tr>
-                                <td><span class="badge bg-dark">V@v.VersionNo</span></td>
+                                <td>
+                                    <span class="badge bg-dark">V@v.VersionNo</span>
+                                </td>
                                 <td>@v.Published_At</td>
                                 <td>@v.Published_By_Name</td>
                                
@@ -91,13 +110,13 @@
                                     <div class="d-flex gap-2 flex-wrap">
                                         <a class="btn btn-outline-primary btn-sm"
                                            href="@Url.Action("Nodes","Instruments", new { type = type, versionId = v.Id })">
-                                            <i class="bi bi-pencil-square"></i> Editar árvore
+                                            <i class="bi bi-pencil-square me-1"></i> Editar árvore
                                         </a>
 
                                         <a class="btn btn-outline-secondary btn-sm"
                                            href="@Url.Action("Print","Instruments", new { type = type, versionId = v.Id })"
                                            target="_blank">
-                                            <i class="bi bi-printer"></i> Imprimir
+                                            <i class="bi bi-printer me-1"></i> Imprimir
                                         </a>
                                     </div>
                                 </td>

@@ -29,99 +29,95 @@ public sealed class InstrumentsController : Controller
         _popC = popC;
     }
 
-    // ---------- PCD/TTD ----------
-    [HttpGet("ClassificationPlan")]
-    public async Task<IActionResult> ClassificationPlan(CancellationToken ct)
-    {
-        var rows = await _pcdQ.ListAsync(_user.TenantId, ct);
-        return View(rows);
-    }
-
-    [HttpPost("ClassificationPlan/Create")]
-    [ValidateAntiForgeryToken]
-    public async Task<IActionResult> CreateClassificationPlan(ClassificationPlanCreateVM vm, CancellationToken ct)
-    {
-        var res = await _pcdC.CreateAsync(_user.TenantId, _user.UserId, vm, ct);
-        TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Classe criada." : res.ErrorMessage;
-        return RedirectToAction(nameof(ClassificationPlan));
-    }
-
-    [HttpPost("ClassificationPlan/Update/{id:guid}")]
-    [ValidateAntiForgeryToken]
-    public async Task<IActionResult> UpdateClassificationPlan(Guid id, ClassificationPlanUpdateVM vm, CancellationToken ct)
-    {
-        var res = await _pcdC.UpdateAsync(_user.TenantId, id, _user.UserId, vm, ct);
-        TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Classe atualizada." : res.ErrorMessage;
-        return RedirectToAction(nameof(ClassificationPlan));
-    }
-
-    [HttpPost("ClassificationPlan/Move")]
-    [ValidateAntiForgeryToken]
-    public async Task<IActionResult> MoveClassificationPlan(ClassificationPlanMoveVM vm, CancellationToken ct)
-    {
-        var res = await _pcdC.MoveAsync(_user.TenantId, _user.UserId, vm, ct);
-        TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Movimentação executada." : res.ErrorMessage;
-        return RedirectToAction(nameof(ClassificationPlan));
-    }
-
-    [HttpGet("ClassificationPlan/Versions")]
-    public async Task<IActionResult> ClassificationPlanVersions(CancellationToken ct)
-    {
-        var vers = await _pcdQ.ListVersionsAsync(_user.TenantId, ct);
-        return View(vers);
-    }
-
-    [HttpPost("ClassificationPlan/PublishVersion")]
-    [ValidateAntiForgeryToken]
-    public async Task<IActionResult> PublishClassificationPlanVersion(PublishClassificationPlanVersionVM vm, CancellationToken ct)
-    {
-        var res = await _pcdC.PublishVersionAsync(_user.TenantId, _user.UserId, vm, ct);
-        TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Versão publicada." : res.ErrorMessage;
-        return RedirectToAction(nameof(ClassificationPlanVersions));
-    }
-
-    [HttpGet("ClassificationPlan/ExportCurrent")]
-    public async Task<IActionResult> ExportCurrent([FromQuery] Guid? rootId, CancellationToken ct)
-    {
-        var csv = await _pcdQ.ExportCurrentCsvAsync(_user.TenantId, rootId, ct);
-        var fileName = rootId.HasValue ? "pcd_ttd_classe.csv" : "pcd_ttd_inteiro.csv";
-        return File(System.Text.Encoding.UTF8.GetBytes(csv), "text/csv; charset=utf-8", fileName);
-    }
-
-    [HttpGet("ClassificationPlan/ExportVersion/{versionId:guid}")]
-    public async Task<IActionResult> ExportVersion(Guid versionId, CancellationToken ct)
-    {
-        var csv = await _pcdQ.ExportVersionCsvAsync(_user.TenantId, versionId, ct);
-        return File(System.Text.Encoding.UTF8.GetBytes(csv), "text/csv; charset=utf-8", "pcd_ttd_versao.csv");
-    }
-
     // ---------- POP ----------
-    [HttpGet("Pop")]
+    [HttpGet("Pop", Name = "PopIndex")]
     public async Task<IActionResult> Pop(CancellationToken ct)
     {
         var rows = await _popQ.ListAsync(_user.TenantId, ct);
         return View(rows);
     }
 
-    [HttpPost("Pop/Create")]
+    [HttpPost("Pop/Create", Name = "PopCreate")]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> CreatePop(PopProcedureCreateVM vm, CancellationToken ct)
+    public async Task<IActionResult> CreatePop([FromForm] PopProcedureCreateVM vm, CancellationToken ct)
     {
+        if (vm == null)
+        {
+            TempData["Err"] = "Dados inválidos.";
+            return RedirectToRoute("PopIndex");
+        }
+
+        if (string.IsNullOrWhiteSpace(vm.Code))
+        {
+            TempData["Err"] = "Informe o código do POP.";
+            return RedirectToRoute("PopIndex");
+        }
+
+        if (string.IsNullOrWhiteSpace(vm.Title))
+        {
+            TempData["Err"] = "Informe o título do POP.";
+            return RedirectToRoute("PopIndex");
+        }
+
+        if (string.IsNullOrWhiteSpace(vm.ContentMd))
+        {
+            TempData["Err"] = "Informe o conteúdo do POP.";
+            return RedirectToRoute("PopIndex");
+        }
+
         var res = await _popC.CreateAsync(_user.TenantId, _user.UserId, vm, ct);
-        TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "POP criado." : res.ErrorMessage;
-        return RedirectToAction(nameof(Pop));
+
+        TempData[res.IsSuccess ? "Ok" : "Err"] =
+            res.IsSuccess ? "POP criado." : (res.ErrorMessage ?? "Falha ao criar POP.");
+
+        return RedirectToRoute("PopIndex");
     }
 
-    [HttpPost("Pop/Update/{id:guid}")]
+    [HttpPost("Pop/Update/{id:guid}", Name = "PopUpdate")]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> UpdatePop(Guid id, PopProcedureUpdateVM vm, CancellationToken ct)
+    public async Task<IActionResult> UpdatePop(Guid id, [FromForm] PopProcedureUpdateVM vm, CancellationToken ct)
     {
+        if (id == Guid.Empty)
+        {
+            TempData["Err"] = "Id inválido.";
+            return RedirectToRoute("PopIndex");
+        }
+
+        if (vm == null)
+        {
+            TempData["Err"] = "Dados inválidos.";
+            return RedirectToRoute("PopIndex");
+        }
+
+        if (string.IsNullOrWhiteSpace(vm.Code))
+        {
+            TempData["Err"] = "Informe o código do POP.";
+            return RedirectToRoute("PopIndex");
+        }
+
+        if (string.IsNullOrWhiteSpace(vm.Title))
+        {
+            TempData["Err"] = "Informe o título do POP.";
+            return RedirectToRoute("PopIndex");
+        }
+
+        if (string.IsNullOrWhiteSpace(vm.ContentMd))
+        {
+            TempData["Err"] = "Informe o conteúdo do POP.";
+            return RedirectToRoute("PopIndex");
+        }
+
         var res = await _popC.UpdateAsync(_user.TenantId, id, _user.UserId, vm, ct);
-        TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "POP atualizado." : res.ErrorMessage;
-        return RedirectToAction(nameof(Pop));
+
+        TempData[res.IsSuccess ? "Ok" : "Err"] =
+            res.IsSuccess ? "POP atualizado." : (res.ErrorMessage ?? "Falha ao atualizar POP.");
+
+        return RedirectToRoute("PopIndex");
     }
 
-    [HttpGet("Pop/Versions/{procedureId:guid}")]
+    
+
+    [HttpGet("Pop/Versions/{procedureId:guid}", Name = "PopVersions")]
     public async Task<IActionResult> PopVersions(Guid procedureId, CancellationToken ct)
     {
         var vers = await _popQ.ListVersionsAsync(_user.TenantId, procedureId, ct);
@@ -129,12 +125,15 @@ public sealed class InstrumentsController : Controller
         return View(vers);
     }
 
-    [HttpPost("Pop/PublishVersion")]
+    [HttpPost("Pop/PublishVersion", Name = "PopPublishVersion")]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> PublishPopVersion(PublishPopVersionVM vm, CancellationToken ct)
+    public async Task<IActionResult> PublishPopVersion([FromForm] PublishPopVersionVM vm, CancellationToken ct)
     {
         var res = await _popC.PublishVersionAsync(_user.TenantId, _user.UserId, vm, ct);
-        TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Versão do POP publicada." : res.ErrorMessage;
-        return RedirectToAction(nameof(PopVersions), new { procedureId = vm.ProcedureId });
+
+        TempData[res.IsSuccess ? "Ok" : "Err"] =
+            res.IsSuccess ? "Versão do POP publicada." : (res.ErrorMessage ?? "Falha ao publicar versão.");
+
+        return RedirectToRoute("PopVersions", new { procedureId = vm.ProcedureId });
     }
 }

@@ -60,6 +60,7 @@
                         <th style="min-width:220px;">Perfis</th>
                         <th>Status</th>
                         <th style="min-width:160px;">Criado em</th>
+                        <th style="min-width:220px;">Usuario</th>
                         <th style="width:360px;" class="text-end">Ações</th>
                     </tr>
                 </thead>
@@ -111,6 +112,11 @@
                                 <td class="text-muted small">
                                     @u.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
                                 </td>
+
+                                <td class="text-muted small">
+                                    Administrador
+                                </td>
+
 
                                 <td class="text-end">
                                     <div class="d-inline-flex gap-2">

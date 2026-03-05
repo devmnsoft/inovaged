@@ -26,28 +26,39 @@
     }
 }
 
-<div class="d-flex align-items-center justify-content-between mb-3">
+<div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
     <div>
         <h3 class="mb-0">POPs</h3>
         <div class="text-muted small">Cadastre procedimentos e acesse o histórico de versões.</div>
     </div>
 
-    <form asp-controller="Instruments" asp-action="CreatePop" method="post" class="d-flex gap-2">
+    <!-- ✅ FORM NOVO POP (rota certa) -->
+    <form method="post"
+          action="@Url.Action("CreatePop", "Instruments")"
+          class="d-flex gap-2 align-items-center">
         @Html.AntiForgeryToken()
-        <input name="Title" class="form-control form-control-sm" style="min-width:320px" placeholder="Título do POP (ex.: Atendimento ao paciente)" />
+
+        <input type="text"
+               name="Title"
+               class="form-control form-control-sm"
+               style="min-width:320px"
+               placeholder="Título do POP (ex.: Atendimento ao paciente)"
+               required />
+
         <button type="submit" class="btn btn-sm btn-primary">
-            <i class="bi bi-plus-circle me-1"></i>Novo POP
+            <i class="bi bi-plus-circle me-1"></i>
+            Novo POP
         </button>
     </form>
 </div>
 
-@if (TempData["Ok"] != null)
+@if (TempData["Ok"] is string ok && !string.IsNullOrWhiteSpace(ok))
 {
-    <div class="alert alert-success py-2">@TempData["Ok"]</div>
+    <div class="alert alert-success py-2">@ok</div>
 }
-@if (TempData["Err"] != null)
+@if (TempData["Err"] is string err && !string.IsNullOrWhiteSpace(err))
 {
-    <div class="alert alert-danger py-2">@TempData["Err"]</div>
+    <div class="alert alert-danger py-2">@err</div>
 }
 
 <div class="card shadow-sm">
@@ -94,26 +105,30 @@
                                     }
                                 </td>
                                 <td class="text-end">
+
+                                    <!-- ✅ LINK VERSÕES (rota certa) -->
                                     <a class="btn btn-sm btn-outline-secondary"
-                                       asp-controller="Instruments"
-                                       asp-action="PopVersions"
-                                       asp-route-procedureId="@id">
+                                       href="@Url.Action("PopVersions","Instruments", new { procedureId = id })">
                                         <i class="bi bi-clock-history me-1"></i>Versões
                                     </a>
 
-                                    <form asp-controller="Instruments"
-                                          asp-action="UpdatePop"
-                                          asp-route-id="@id"
-                                          method="post"
+                                    <!-- ✅ FORM UPDATE POP (rota certa) -->
+                                    <form method="post"
+                                          action="@Url.Action("UpdatePop","Instruments", new { id = id })"
                                           class="d-inline-block ms-1">
                                         @Html.AntiForgeryToken()
+
                                         <input type="hidden" name="Title" value="@title" />
                                         <input type="hidden" name="Description" value="@desc" />
                                         <input type="hidden" name="IsActive" value="true" />
-                                        <button type="submit" class="btn btn-sm btn-outline-primary" title="Salvar (PoC)">
+
+                                        <button type="submit"
+                                                class="btn btn-sm btn-outline-primary"
+                                                title="Salvar (PoC)">
                                             <i class="bi bi-save"></i>
                                         </button>
                                     </form>
+
                                 </td>
                             </tr>
                         }
