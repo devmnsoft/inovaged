@@ -162,7 +162,8 @@
                         <span class="ms-auto text-muted small">PoC (7,10,11)</span>
                     </a>
 
-                    <a asp-controller="Users" asp-action="Index" class="@Active("Users","Index")">
+                    <!-- ✅ CORRIGIDO: antes apontava pra Users/Index (duplicado) -->
+                    <a asp-controller="Users" asp-action="Certificates" class="@Active("Users","Certificates")">
                         <i class="bi bi-patch-check"></i><span>Certificados ICP (por usuário)</span>
                         <span class="ms-auto text-muted small">PoC (7,8)</span>
                     </a>
@@ -282,6 +283,7 @@
                         <span class="ms-auto text-muted small">PoC (8,19,20,21)</span>
                     </a>
 
+                    <!-- ✅ ADIÇÃO: ITEM 9 (Validação) AGORA TAMBÉM NO DESKTOP -->
                     <a asp-controller="Reports" asp-action="SignatureValidation" class="@Active("Reports","SignatureValidation")">
                         <i class="bi bi-patch-check"></i><span>Validação de Assinaturas</span>
                         <span class="ms-auto text-muted small">PoC (9,21,23)</span>
@@ -380,8 +382,7 @@
                         <span class="ms-auto text-muted small">PoC (3)</span>
                     </a>
 
-                    <a asp-controller="Reports" asp-action="SignedSetPrint"
-                       class="@Active("Reports","SignedSetPrint","SignedSetPrintView")">
+                    <a asp-controller="Reports" asp-action="SignedSetPrint" class="@Active("Reports","SignedSetPrint","SignedSetPrintView")">
                         <i class="bi bi-patch-check-fill"></i><span>Relatório Conjunto Assinado</span>
                         <span class="ms-auto text-muted small">PoC (26)</span>
                     </a>
@@ -394,9 +395,7 @@
                         <span class="ms-auto text-muted small">PoC (25)</span>
                     </a>
 
-                    <!-- Item 27 (rota do relatório) -->
-                    <a asp-controller="SecurityAudit" asp-action="AccessFailures"
-                       class="@Active("SecurityAudit","AccessFailures")">
+                    <a asp-controller="SecurityAudit" asp-action="AccessFailures" class="@Active("SecurityAudit","AccessFailures")">
                         <i class="bi bi-shield-x"></i><span>Falhas de Acesso</span>
                         <span class="ms-auto text-muted small">PoC (27)</span>
                     </a>
@@ -463,6 +462,12 @@
                         <a asp-controller="Users" asp-action="Create" class="@Active("Users","Create")" data-bs-dismiss="offcanvas">
                             <i class="bi bi-person-plus"></i><span>Criar Usuário</span>
                             <span class="ms-auto text-muted small">PoC (7,10,11)</span>
+                        </a>
+
+                        <!-- ✅ ALINHADO COM DESKTOP -->
+                        <a asp-controller="Users" asp-action="Certificates" class="@Active("Users","Certificates")" data-bs-dismiss="offcanvas">
+                            <i class="bi bi-patch-check"></i><span>Certificados ICP (por usuário)</span>
+                            <span class="ms-auto text-muted small">PoC (7,8)</span>
                         </a>
 
                         <a asp-controller="Security" asp-action="Roles" class="@Active("Security","Roles","RolePermissions")" data-bs-dismiss="offcanvas">
@@ -587,6 +592,7 @@
                             <span class="ms-auto text-muted small">PoC (8,19,20,21)</span>
                         </a>
 
+                        <!-- ✅ JÁ EXISTIA NO MOBILE, MANTIDO -->
                         <a asp-controller="Reports" asp-action="SignatureValidation" class="@Active("Reports","SignatureValidation")" data-bs-dismiss="offcanvas">
                             <i class="bi bi-patch-check"></i><span>Validação de Assinaturas</span>
                             <span class="ms-auto text-muted small">PoC (9,21,23)</span>
@@ -696,7 +702,6 @@
                             <i class="bi bi-shield-x"></i><span>Falhas de Acesso</span>
                             <span class="ms-auto text-muted small">PoC (27)</span>
                         </a>
-
 
                         <!-- Conta -->
                         <div class="sidebar-section-title">Conta</div>

@@ -20,9 +20,6 @@ public sealed class PhysicalCommands : IPhysicalCommands
         _logger = logger;
     }
 
-    // ==========================================================
-    // Locations (Item 24) - como estava
-    // ==========================================================
     public async Task<Result<Guid>> UpsertLocationAsync(Guid tenantId, Guid? userId, PhysicalLocationFormVM vm, CancellationToken ct)
     {
         try
@@ -36,10 +33,12 @@ public sealed class PhysicalCommands : IPhysicalCommands
             {
                 const string ins = @"
 insert into ged.physical_location
-(id, tenant_id, location_code, property_name, address_street, address_number, address_district, address_city, address_state, address_zip,
+(id, tenant_id, location_code, property_name,
+ address_street, address_number, address_district, address_city, address_state, address_zip,
  building, room, aisle, rack, shelf, pallet, reg_date, reg_status)
 values
-(gen_random_uuid(), @tenant_id, @location_code, @property_name, @address_street, @address_number, @address_district, @address_city, @address_state, @address_zip,
+(gen_random_uuid(), @tenant_id, @location_code, @property_name,
+ @address_street, @address_number, @address_district, @address_city, @address_state, @address_zip,
  @building, @room, @aisle, @rack, @shelf, @pallet, now(), 'A')
 returning id;
 ";
@@ -63,7 +62,7 @@ returning id;
                 }, cancellationToken: ct));
 
                 await _audit.WriteAsync(tenantId, userId, "CREATE", "physical_location", id,
-                    "Localização física criada", null, null, new { vm.LocationCode, vm.PropertyName }, ct);
+                    "Localização criada", null, null, new { vm.LocationCode, vm.Building }, ct);
 
                 return Result<Guid>.Ok(id);
             }
@@ -110,7 +109,7 @@ where tenant_id=@tenant_id and id=@id and reg_status='A';
                 if (rows == 0) return Result<Guid>.Fail("NOTFOUND", "Localização não encontrada.");
 
                 await _audit.WriteAsync(tenantId, userId, "UPDATE", "physical_location", vm.Id,
-                    "Localização física atualizada", null, null, new { vm.LocationCode, vm.PropertyName }, ct);
+                    "Localização atualizada", null, null, new { vm.LocationCode, vm.Building }, ct);
 
                 return Result<Guid>.Ok(vm.Id.Value);
             }
@@ -131,13 +130,12 @@ where tenant_id=@tenant_id and id=@id and reg_status='A';
 
             await using var conn = await _db.OpenAsync(ct);
 
-            // bloqueia se tiver caixa vinculada
             const string check = @"
-select count(*)::int
-from ged.box
+select count(*)::int from ged.box
 where tenant_id=@tenant_id and location_id=@id and reg_status='A';
 ";
-            var cnt = await conn.ExecuteScalarAsync<int>(new CommandDefinition(check, new { tenant_id = tenantId, id }, cancellationToken: ct));
+            var cnt = await conn.ExecuteScalarAsync<int>(new CommandDefinition(check,
+                new { tenant_id = tenantId, id }, cancellationToken: ct));
             if (cnt > 0) return Result.Fail("INUSE", "Não é possível excluir: há caixas vinculadas.");
 
             const string sql = @"
@@ -145,11 +143,12 @@ update ged.physical_location
 set reg_status='I'
 where tenant_id=@tenant_id and id=@id and reg_status='A';
 ";
-            var rows = await conn.ExecuteAsync(new CommandDefinition(sql, new { tenant_id = tenantId, id }, cancellationToken: ct));
+            var rows = await conn.ExecuteAsync(new CommandDefinition(sql,
+                new { tenant_id = tenantId, id }, cancellationToken: ct));
             if (rows == 0) return Result.Fail("NOTFOUND", "Localização não encontrada.");
 
             await _audit.WriteAsync(tenantId, userId, "DELETE", "physical_location", id,
-                "Localização física inativada", null, null, null, ct);
+                "Localização inativada", null, null, null, ct);
 
             return Result.Ok();
         }
@@ -160,59 +159,62 @@ where tenant_id=@tenant_id and id=@id and reg_status='A';
         }
     }
 
-    // ==========================================================
-    // Boxes (Item 17) - ✅ CORRIGIDO: box_no NOT NULL
-    // ==========================================================
     public async Task<Result<Guid>> UpsertBoxAsync(Guid tenantId, Guid? userId, BoxFormVM vm, CancellationToken ct)
     {
         try
         {
             if (tenantId == Guid.Empty) return Result<Guid>.Fail("TENANT", "Tenant inválido.");
             if (vm is null) return Result<Guid>.Fail("VM", "Dados inválidos.");
+            if (string.IsNullOrWhiteSpace(vm.LabelCode)) return Result<Guid>.Fail("LABEL", "Etiqueta é obrigatória.");
 
-            if (vm.BoxNo <= 0) return Result<Guid>.Fail("BOXNO", "Nº da Caixa é obrigatório.");
-            if (string.IsNullOrWhiteSpace(vm.LabelCode)) return Result<Guid>.Fail("LABEL", "LabelCode é obrigatório.");
-
+            // BoxNo é obrigatório para insert — se não veio, gera pelo sequence
             await using var conn = await _db.OpenAsync(ct);
-
-            // ✅ Pré-checagem de unicidade (tenant_id + box_no)
-            const string exists = @"
-select exists(
-  select 1
-  from ged.box
-  where tenant_id=@tenant_id
-    and box_no=@box_no
-    and reg_status='A'
-    and (@id is null or id <> @id)
-);";
-
-            var alreadyExists = await conn.ExecuteScalarAsync<bool>(new CommandDefinition(exists, new
-            {
-                tenant_id = tenantId,
-                box_no = vm.BoxNo,
-                id = vm.Id
-            }, cancellationToken: ct));
-
-            if (alreadyExists)
-                return Result<Guid>.Fail("DUPLICATE", "Já existe uma caixa ativa com este Nº.");
 
             if (vm.Id is null || vm.Id == Guid.Empty)
             {
-                const string ins = @"
+                // FIX: inclui box_no na inserção; se não informado usa a sequence do banco
+                string ins;
+                object param;
+
+                if (vm.BoxNo.HasValue && vm.BoxNo.Value > 0)
+                {
+                    ins = @"
 insert into ged.box
-(id, tenant_id, box_no, label_code, notes, location_id, reg_date, reg_status)
+(id, tenant_id, box_no, label_code, notes, location_id, reg_date, reg_status, created_at, updated_at)
 values
-(gen_random_uuid(), @tenant_id, @box_no, @label_code, @notes, @location_id, now(), 'A')
+(gen_random_uuid(), @tenant_id, @box_no, @label_code, @notes, @location_id, now(), 'A', now(), now())
 returning id;
 ";
-                var id = await conn.ExecuteScalarAsync<Guid>(new CommandDefinition(ins, new
+                    param = new
+                    {
+                        tenant_id = tenantId,
+                        box_no = vm.BoxNo.Value,
+                        label_code = vm.LabelCode.Trim(),
+                        notes = vm.Notes,
+                        location_id = vm.LocationId
+                    };
+                }
+                else
                 {
-                    tenant_id = tenantId,
-                    box_no = vm.BoxNo,
-                    label_code = vm.LabelCode.Trim(),
-                    notes = vm.Notes,
-                    location_id = vm.LocationId
-                }, cancellationToken: ct));
+                    // Usa a sequence do banco para gerar o box_no automaticamente
+                    ins = @"
+insert into ged.box
+(id, tenant_id, box_no, label_code, notes, location_id, reg_date, reg_status, created_at, updated_at)
+values
+(gen_random_uuid(), @tenant_id, nextval('ged.batch_no_seq')::int, @label_code, @notes, @location_id, now(), 'A', now(), now())
+returning id;
+";
+                    param = new
+                    {
+                        tenant_id = tenantId,
+                        label_code = vm.LabelCode.Trim(),
+                        notes = vm.Notes,
+                        location_id = vm.LocationId
+                    };
+                }
+
+                var id = await conn.ExecuteScalarAsync<Guid>(
+                    new CommandDefinition(ins, param, cancellationToken: ct));
 
                 await _audit.WriteAsync(tenantId, userId, "CREATE", "box", id,
                     "Caixa criada", null, null, new { vm.BoxNo, vm.LabelCode, vm.LocationId }, ct);
@@ -223,10 +225,11 @@ returning id;
             {
                 const string upd = @"
 update ged.box
-set box_no=@box_no,
-    label_code=@label_code,
-    notes=@notes,
-    location_id=@location_id
+set label_code   = @label_code,
+    notes        = @notes,
+    location_id  = @location_id,
+    box_no       = coalesce(@box_no, box_no),
+    updated_at   = now()
 where tenant_id=@tenant_id and id=@id and reg_status='A';
 ";
                 var rows = await conn.ExecuteAsync(new CommandDefinition(upd, new
@@ -247,11 +250,6 @@ where tenant_id=@tenant_id and id=@id and reg_status='A';
                 return Result<Guid>.Ok(vm.Id.Value);
             }
         }
-        catch (Npgsql.PostgresException ex) when (ex.SqlState == "23505")
-        {
-            _logger.LogError(ex, "PhysicalCommands.UpsertBoxAsync unique violation. Tenant={Tenant}", tenantId);
-            return Result<Guid>.Fail("DUPLICATE", "Já existe uma caixa com este Nº (BoxNo) para este tenant.");
-        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "PhysicalCommands.UpsertBoxAsync failed. Tenant={Tenant}", tenantId);
@@ -268,24 +266,24 @@ where tenant_id=@tenant_id and id=@id and reg_status='A';
 
             await using var conn = await _db.OpenAsync(ct);
 
-            // ✅ bloqueia se houver documentos vinculados à caixa via batch_item ativo
             const string check = @"
-select count(*)::int
-from ged.batch_item
+select count(*)::int from ged.batch_item
 where tenant_id=@tenant_id and box_id=@id and reg_status='A';
 ";
-            var cnt = await conn.ExecuteScalarAsync<int>(new CommandDefinition(check, new { tenant_id = tenantId, id }, cancellationToken: ct));
+            var cnt = await conn.ExecuteScalarAsync<int>(new CommandDefinition(check,
+                new { tenant_id = tenantId, id }, cancellationToken: ct));
             if (cnt > 0) return Result.Fail("INUSE", "Não é possível excluir: há documentos vinculados a esta caixa.");
 
             const string sql = @"
-update ged.box
-set reg_status='I'
+update ged.box set reg_status='I'
 where tenant_id=@tenant_id and id=@id and reg_status='A';
 ";
-            var rows = await conn.ExecuteAsync(new CommandDefinition(sql, new { tenant_id = tenantId, id }, cancellationToken: ct));
+            var rows = await conn.ExecuteAsync(new CommandDefinition(sql,
+                new { tenant_id = tenantId, id }, cancellationToken: ct));
             if (rows == 0) return Result.Fail("NOTFOUND", "Caixa não encontrada.");
 
-            await _audit.WriteAsync(tenantId, userId, "DELETE", "box", id, "Caixa inativada", null, null, null, ct);
+            await _audit.WriteAsync(tenantId, userId, "DELETE", "box", id,
+                "Caixa inativada", null, null, null, ct);
 
             return Result.Ok();
         }

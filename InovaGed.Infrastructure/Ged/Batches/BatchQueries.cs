@@ -29,7 +29,6 @@ public sealed class BatchQueries : IBatchQueries
 
             q = (q ?? "").Trim();
 
-            // ✅ sem b.items_count (não existe) -> calcula via subquery
             const string sql = @"
 select
   b.id                 as ""Id"",
@@ -102,17 +101,26 @@ where b.tenant_id=@tenant_id
 
             if (header is null) return null;
 
-            // ✅ itens do lote + box (se quiser exibir evidência de guarda física)
+            // Item 17: itens do lote com label legível da caixa
             const string items = @"
 select
-  bi.document_id as DocumentId,
-  bi.box_id as BoxId,
-  d.code as DocumentCode,
-  d.title as DocumentTitle
+  bi.document_id                                    as ""DocumentId"",
+  bi.box_id                                         as ""BoxId"",
+  coalesce(d.code,'')                               as ""DocumentCode"",
+  coalesce(d.title,'')                              as ""DocumentTitle"",
+  case
+    when bx.id is not null
+    then 'Caixa #' || bx.box_no::text || ' — ' || bx.label_code
+    else null
+  end                                               as ""BoxLabel""
 from ged.batch_item bi
 join ged.document d
   on d.tenant_id=bi.tenant_id
  and d.id=bi.document_id
+left join ged.box bx
+  on bx.tenant_id=bi.tenant_id
+ and bx.id=bi.box_id
+ and bx.reg_status='A'
 where bi.tenant_id=@tenant_id
   and bi.batch_id=@batch_id
   and bi.reg_status='A'
@@ -121,25 +129,24 @@ order by d.title;
             var itemsList = (await conn.QueryAsync<BatchItemDto>(
                 new CommandDefinition(items, new { tenant_id = tenantId, batch_id = batchId }, cancellationToken: ct))).AsList();
 
-            // ✅ histórico por evento/fase (consistente com BatchCommands e com PoC item 18)
+            // Item 18: histórico de fases com from_status via LAG
             const string hist = @"
 select
-  coalesce(changed_at, reg_date, event_time) as ""ChangedAt"",
-  from_status as ""FromStatus"",
-  to_status as ""ToStatus"",
-  notes as ""Notes""
+  event_time                                   as ""ChangedAt"",
+  coalesce(
+    lag(event_type) over (order by event_time),
+    ''
+  )                                            as ""FromStatus"",
+  event_type                                   as ""ToStatus"",
+  coalesce(notes,'')                           as ""Notes""
 from ged.batch_history
 where tenant_id=@tenant_id
   and batch_id=@batch_id
   and reg_status='A'
-order by coalesce(changed_at, reg_date, event_time) desc;
+order by event_time desc;
 ";
             var histList = (await conn.QueryAsync<BatchHistoryDto>(
                 new CommandDefinition(hist, new { tenant_id = tenantId, batch_id = batchId }, cancellationToken: ct))).AsList();
-
-            // 🔧 compatibilidade: se seu BatchHistoryDto tiver FromStatus,
-            // ele vai ficar null (ok). Se quiser preencher FromStatus com base
-            // em "lag()", eu implemento depois.
 
             return (header, itemsList, histList);
         }
@@ -150,91 +157,63 @@ order by coalesce(changed_at, reg_date, event_time) desc;
         }
     }
 
-
+    // Assinatura 1: sem folderId (compatibilidade com IBatchQueries)
     public async Task<IReadOnlyList<DocumentPickDto>> SearchDocumentsAsync(
-      Guid tenantId, string? q, int take, string? status, CancellationToken ct)
+        Guid tenantId,
+        string q,
+        int limit,
+        CancellationToken ct)
+    {
+        return await SearchDocumentsAsync(tenantId, q, limit, null, ct);
+    }
+
+    // Assinatura 2: com folderId opcional
+    public async Task<IReadOnlyList<DocumentPickDto>> SearchDocumentsAsync(
+        Guid tenantId,
+        string? q,
+        int limit,
+        string? folderId,
+        CancellationToken ct)
     {
         try
         {
             await using var conn = await _db.OpenAsync(ct);
-
             q = (q ?? "").Trim();
-            take = Math.Clamp(take, 5, 50);
-            status = string.IsNullOrWhiteSpace(status) ? null : status.Trim().ToUpperInvariant();
+
+            if (q.Length == 0 && folderId is null)
+                return Array.Empty<DocumentPickDto>();
+
+            Guid? folderGuid = Guid.TryParse(folderId, out var fg) ? fg : null;
 
             const string sql = @"
 select
-  d.id as ""Id"",
-  d.code as ""Code"",
-  d.title as ""Title"",
-  d.status::text as ""Status"",
-  d.created_at as ""CreatedAt""
+  d.id    as ""Id"",
+  coalesce(d.code,'')  as ""Code"",
+  coalesce(d.title,'') as ""Title""
 from ged.document d
 where d.tenant_id=@tenant_id
-  and (
-     @q = ''
-     or d.code ilike ('%'||@q||'%')
-     or d.title ilike ('%'||@q||'%')
-     or coalesce(d.description,'') ilike ('%'||@q||'%')
-  )
-  and (@status is null or d.status::text = @status)
-order by d.created_at desc
-limit @take;
+  and d.reg_status='A'
+  and (@q = '' or (
+        coalesce(d.code,'')  ilike ('%'||@q||'%')
+     or coalesce(d.title,'') ilike ('%'||@q||'%')
+  ))
+  and (@folder_id is null or d.folder_id=@folder_id)
+order by d.title
+limit @limit;
 ";
 
             var rows = await conn.QueryAsync<DocumentPickDto>(
-                new CommandDefinition(sql, new { tenant_id = tenantId, q, take, status }, cancellationToken: ct));
+                new CommandDefinition(sql,
+                    new { tenant_id = tenantId, q, limit, folder_id = folderGuid },
+                    cancellationToken: ct));
 
             return rows.AsList();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "BatchQueries.SearchDocumentsAsync failed. Tenant={Tenant}", tenantId);
+            _logger.LogError(ex, "BatchQueries.SearchDocumentsAsync failed. Tenant={Tenant} Q={Q}", tenantId, q);
             return Array.Empty<DocumentPickDto>();
         }
     }
-
-    public async Task<IReadOnlyList<DocumentSearchDto>> SearchDocumentsAsync(
-    Guid tenantId,
-    string q,
-    int take,
-    CancellationToken ct)
-    {
-        try
-        {
-            await using var conn = await _db.OpenAsync(ct);
-
-            q = (q ?? "").Trim();
-            if (q.Length < 3) return Array.Empty<DocumentSearchDto>();
-
-            take = (take <= 0 || take > 50) ? 20 : take;
-
-            const string sql = @"
-select
-  d.id          as ""Id"",
-  d.code        as ""Code"",
-  d.title       as ""Title"",
-  d.status::text as ""Status"",
-  d.created_at  as ""CreatedAt""
-from ged.document d
-where d.tenant_id = @tenant_id
-  and (
-       d.code  ilike ('%' || @q || '%')
-    or d.title ilike ('%' || @q || '%')
-  )
-order by d.created_at desc
-limit @take;
-";
-
-            var list = await conn.QueryAsync<DocumentSearchDto>(
-                new CommandDefinition(sql, new { tenant_id = tenantId, q, take }, cancellationToken: ct));
-
-            return list.AsList();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "BatchQueries.SearchDocumentsAsync failed. Tenant={Tenant}", tenantId);
-            return Array.Empty<DocumentSearchDto>();
-        }
-    }
 }
+

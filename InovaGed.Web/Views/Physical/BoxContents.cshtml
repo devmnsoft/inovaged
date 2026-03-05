@@ -1,157 +1,121 @@
-﻿@{
+@model IReadOnlyList<InovaGed.Application.Ged.Physical.BoxContentItemDto>
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+@{
     ViewData["Title"] ??= "Conteúdo da Caixa";
-    dynamic m = Model;
-    var box = m?.Box;          // ✅ MAIÚSCULO
-    var items = m?.Items;      // ✅ MAIÚSCULO
-    Guid? boxId = m?.BoxId;    // ✅ MAIÚSCULO
+    var boxes          = (ViewBag.Boxes as IReadOnlyList<InovaGed.Application.Ged.Physical.BoxRowDto>)
+                         ?? Array.Empty<InovaGed.Application.Ged.Physical.BoxRowDto>();
+    var selectedBoxId  = ViewBag.SelectedBoxId as Guid?;
+    var subtitle       = ViewData["Subtitle"] as string ?? "Selecione uma caixa para ver os documentos armazenados.";
+
+    var statusLabel = new Dictionary<string, (string Label, string Css)>
+    {
+        ["RECEIVED"]     = ("Recebido",       "secondary"),
+        ["TRIAGE"]       = ("Triagem",         "info"),
+        ["DIGITIZATION"] = ("Digitalização",   "primary"),
+        ["INDEXING"]     = ("Indexação",        "warning"),
+        ["ARCHIVED"]     = ("Arquivado",        "dark"),
+    };
 }
 
-<div class="d-flex align-items-center justify-content-between mb-3">
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
     <div>
-        <h3 class="mb-0">@ViewData["Title"]</h3>
-        @if (ViewData["Subtitle"] is string sub && !string.IsNullOrWhiteSpace(sub))
-        {
-            <div class="text-muted">@sub</div>
-        }
+        <h4 class="mb-0">@ViewData["Title"]</h4>
+        <div class="text-muted small">@subtitle</div>
     </div>
+    <a class="btn btn-outline-secondary btn-sm" asp-action="Boxes">
+        <i class="bi bi-arrow-left me-1"></i>Caixas
+    </a>
 </div>
 
-@if (TempData["Ok"] is string ok && !string.IsNullOrWhiteSpace(ok))
-{
-    <div class="alert alert-success">@ok</div>
-}
 @if (TempData["Err"] is string err && !string.IsNullOrWhiteSpace(err))
 {
     <div class="alert alert-danger">@err</div>
 }
 
-<div class="card shadow-sm mb-3">
-    <div class="card-body">
-        <form method="get" asp-controller="Physical" asp-action="BoxContents" class="row g-2 align-items-end">
-            <div class="col-12 col-md-6">
-                <label class="form-label">BoxId</label>
-                <input name="boxId" class="form-control" value="@(boxId?.ToString() ?? "")" placeholder="GUID da caixa" />
-            </div>
-            <div class="col-12 col-md-3">
-                <button class="btn btn-primary w-100" type="submit">
-                    <i class="bi bi-search me-1"></i> Carregar
-                </button>
-            </div>
-            <div class="col-12 col-md-3">
-                <a class="btn btn-outline-secondary w-100" asp-controller="Physical" asp-action="Boxes">
-                    <i class="bi bi-inbox me-1"></i> Ir para Caixas
-                </a>
-            </div>
-        </form>
+@*Seletor de caixa*@
+<div class="card mb-3">
+    <div class="card-body d-flex align-items-center gap-3">
+        <label class="form-label mb-0 text-nowrap fw-semibold">
+            <i class="bi bi-archive me-1"></i>Caixa:
+        </label>
+        <select class="form-select"
+                onchange="if(this.value) window.location='/Physical/BoxContents?boxId='+this.value; else window.location='/Physical/BoxContents';">
+            <option value="">-- selecione uma caixa --</option>
+            @foreach (var b in boxes)
+            {
+                var locPart = !string.IsNullOrWhiteSpace(b.LocationLabel) ? $" · {b.LocationLabel}" : "";
+                var isSelected = (b.Id == selectedBoxId);
+                if (isSelected)
+                {
+                    <option value="@b.Id" selected="selected">Caixa #@b.BoxNo — @b.LabelCode@locPart</option>
+                }
+                else
+                {
+                    <option value="@b.Id">Caixa #@b.BoxNo — @b.LabelCode@locPart</option>
+                }
+            }
+        </select>
+        @if (selectedBoxId.HasValue)
+        {
+            <a class="btn btn-outline-secondary btn-sm text-nowrap"
+               asp-action="BoxHistory" asp-route-boxId="@selectedBoxId">
+                <i class="bi bi-clock-history me-1"></i>Ver Histórico
+            </a>
+        }
     </div>
 </div>
 
-@if (box is null)
+@if (selectedBoxId == null || selectedBoxId == Guid.Empty)
 {
     <div class="alert alert-info">
-        Informe um <b>boxId</b> acima para visualizar os documentos vinculados.
+        <i class="bi bi-info-circle me-2"></i>Selecione uma caixa acima para visualizar os documentos armazenados.
+    </div>
+}
+else if (Model == null || Model.Count == 0)
+{
+    <div class="alert alert-warning">
+        <i class="bi bi-exclamation-triangle me-2"></i>Nenhum documento vinculado a esta caixa no momento.
     </div>
 }
 else
 {
-    <div class="card shadow-sm mb-3">
-        <div class="card-body">
-            <div class="row g-2">
-                <div class="col-12 col-md-4">
-                    <div class="text-muted small">Label</div>
-                    <div class="fw-semibold">@box.label_code</div>
-                </div>
-                <div class="col-12 col-md-8">
-                    <div class="text-muted small">Observações</div>
-                    <div>@(box.notes ?? "-")</div>
-                </div>
-            </div>
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <strong><i class="bi bi-files me-2"></i>Documentos na Caixa</strong>
+            <span class="badge text-bg-primary">@Model.Count documento(s)</span>
         </div>
-    </div>
-
-    <div class="card shadow-sm">
-        <div class="card-header d-flex align-items-center justify-content-between">
-            <div class="fw-semibold">
-                <i class="bi bi-list-ul me-1"></i> Documentos vinculados
-            </div>
-            <a class="btn btn-sm btn-outline-secondary"
-               asp-controller="Physical" asp-action="BoxHistory" asp-route-boxId="@box.id">
-                <i class="bi bi-clock-history me-1"></i> Ver histórico
-            </a>
-        </div>
-
         <div class="table-responsive">
-            <table class="table table-sm table-hover align-middle mb-0">
+            <table class="table table-hover align-middle mb-0">
                 <thead class="table-light">
                     <tr>
                         <th>Código</th>
                         <th>Título</th>
-                        <th>Status</th>
                         <th>Lote</th>
-                        <th>Vinculado em</th>
-                        <th class="text-end">Ações</th>
+                        <th>Fase do Lote</th>
+                        <th>Inserido em</th>
                     </tr>
                 </thead>
                 <tbody>
-                    @{
-                        var list = (items as IEnumerable<dynamic>) ?? Array.Empty<dynamic>();
-                        foreach (var it in list)
-                        {
-                            <tr>
-                                <td class="text-nowrap">@it.code</td>
-                                <td>@it.title</td>
-                                <td class="text-nowrap">@it.status</td>
-                                <td class="text-nowrap">@it.batch_no</td>
-                                <td class="text-nowrap">@it.linked_at</td>
-                                <td class="text-end text-nowrap">
-                                    <form asp-controller="Physical" asp-action="RemoveDocumentFromBox"
-                                          method="post" class="d-inline">
-                                        @Html.AntiForgeryToken()
-                                        <input type="hidden" name="boxId" value="@box.id" />
-                                        <input type="hidden" name="docId" value="@it.document_id" />
-                                        <button class="btn btn-sm btn-outline-danger" type="submit"
-                                                title="Remover da caixa">
-                                            <i class="bi bi-x-circle"></i>
-                                        </button>
-                                    </form>
-                                </td>
-                            </tr>
-                        }
-
-                        if (!list.Any())
-                        {
-                            <tr>
-                                <td colspan="6" class="text-center text-muted py-4">
-                                    Nenhum documento vinculado nesta caixa.
-                                </td>
-                            </tr>
-                        }
+                    @foreach (var item in Model)
+                    {
+                        var s = statusLabel.TryGetValue(item.BatchStatus, out var sv)
+                                    ? sv : (item.BatchStatus, "secondary");
+                        <tr>
+                            <td><code>@item.DocumentCode</code></td>
+                            <td>@item.DocumentTitle</td>
+                            <td>
+                                <a asp-controller="Batches" asp-action="Details" asp-route-id="@item.BatchId">
+                                    <i class="bi bi-collection me-1"></i>Lote #@item.BatchNo
+                                </a>
+                            </td>
+                            <td>
+                                <span class="badge text-bg-@s.Item2">@s.Item1</span>
+                            </td>
+                            <td class="text-muted text-nowrap">@item.AddedAt.ToString("dd/MM/yyyy HH:mm")</td>
+                        </tr>
                     }
                 </tbody>
             </table>
-        </div>
-    </div>
-
-    <div class="card shadow-sm mt-3">
-        <div class="card-header fw-semibold">
-            <i class="bi bi-plus-circle me-1"></i> Vincular documento à caixa (via batch_item)
-        </div>
-        <div class="card-body">
-            <form asp-controller="Physical" asp-action="AddDocumentToBox" method="post" class="row g-2">
-                @Html.AntiForgeryToken()
-                <input type="hidden" name="boxId" value="@box.id" />
-
-                <div class="col-12 col-md-8">
-                    <label class="form-label">docId (GUID do documento)</label>
-                    <input name="docId" class="form-control" placeholder="GUID do document" />
-                    <div class="form-text">A PoC vincula via <code>ged.batch_item.box_id</code> (documento precisa ter batch_item ativo).</div>
-                </div>
-                <div class="col-12 col-md-4 d-flex align-items-end">
-                    <button class="btn btn-success w-100" type="submit">
-                        <i class="bi bi-link-45deg me-1"></i> Vincular
-                    </button>
-                </div>
-            </form>
         </div>
     </div>
 }

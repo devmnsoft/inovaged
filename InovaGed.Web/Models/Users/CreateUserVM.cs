@@ -20,7 +20,7 @@ public sealed class CreateUserVM
 
     public bool IsActive { get; set; } = true;
 
-    // Multi-select
+    // Multi-select (binder OK)
     public List<Guid> SelectedRoleIds { get; set; } = new();
 
     // Para popular a tela

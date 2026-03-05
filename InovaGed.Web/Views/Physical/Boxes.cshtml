@@ -1,4 +1,4 @@
-﻿@model IReadOnlyList<InovaGed.Application.Ged.Physical.BoxRowDto>
+@model IReadOnlyList<InovaGed.Application.Ged.Physical.BoxRowDto>
 
 @{
     ViewData["Title"] = "Caixas";
@@ -10,7 +10,7 @@
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
     <div>
         <h4 class="mb-0">Caixas</h4>
-        <div class="text-muted small">Controle de caixas físicas e seus endereços (localização).</div>
+        <div class="text-muted small">Controle de caixas físicas e seus endereços (localização). Item 24 do edital.</div>
     </div>
 
     <div class="d-flex gap-2">
@@ -33,7 +33,7 @@
     <div class="card-body d-flex flex-wrap gap-2 align-items-center">
         <div class="flex-grow-1">
             <input name="q" value="@q" class="form-control"
-                   placeholder="Buscar por nº da caixa, etiqueta (label_code) ou observações..." />
+                   placeholder="Buscar por nº da caixa, etiqueta ou observações..." />
         </div>
         <button class="btn btn-outline-secondary" type="submit">
             <i class="bi bi-search me-1"></i>Pesquisar
@@ -56,9 +56,9 @@
                 <tr>
                     <th>Nº</th>
                     <th>Etiqueta</th>
-                    <th>Localização</th>
+                    <th>Localização Física</th>
                     <th>Observações</th>
-                    <th style="width: 170px;">Ações</th>
+                    <th style="width: 230px;">Ações</th>
                 </tr>
             </thead>
             <tbody>
@@ -75,20 +75,37 @@
                     foreach (var r in Model)
                     {
                         <tr>
-                            <td class="fw-semibold">@r.BoxNo</td>
+                            <td class="fw-semibold">#@r.BoxNo</td>
                             <td><code>@r.LabelCode</code></td>
-                            <td>@(string.IsNullOrWhiteSpace(r.LocationLabel) ? "-" : r.LocationLabel)</td>
-                            <td class="text-muted">@((string.IsNullOrWhiteSpace(r.Notes)) ? "-" : r.Notes)</td>
                             <td>
-                                <div class="d-flex gap-2">
+                                @if (string.IsNullOrWhiteSpace(r.LocationLabel))
+                                {
+                                    <span class="text-muted small"><i class="bi bi-geo-alt text-warning me-1"></i>Sem localização</span>
+                                }
+                                else
+                                {
+                                    <span class="d-flex align-items-center gap-1">
+                                        <i class="bi bi-geo-alt-fill text-success"></i>
+                                        @r.LocationLabel
+                                    </span>
+                                }
+                            </td>
+                            <td class="text-muted">@(string.IsNullOrWhiteSpace(r.Notes) ? "—" : r.Notes)</td>
+                            <td>
+                                <div class="d-flex gap-1 flex-wrap">
+                                 
+                                    <a class="btn btn-sm btn-outline-info"
+                                       href="/Physical/BoxHistory?boxId=@r.Id"
+                                       title="Histórico / Rastreio físico">
+                                        <i class="bi bi-list-columns-reverse"></i> Rastreio
+                                    </a>
                                     <a class="btn btn-sm btn-outline-primary"
                                        href="/Physical/Boxes/@r.Id"
                                        title="Editar">
                                         <i class="bi bi-pencil"></i>
                                     </a>
-
                                     <form method="post" action="/Physical/Boxes/@r.Id/Delete" class="m-0"
-                                          onsubmit="return confirm('Confirma excluir esta caixa?');">
+                                          onsubmit="return confirm('Confirma excluir a caixa #@r.BoxNo?');">
                                         @Html.AntiForgeryToken()
                                         <button class="btn btn-sm btn-outline-danger" type="submit" title="Excluir">
                                             <i class="bi bi-trash"></i>
