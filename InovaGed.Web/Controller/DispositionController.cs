@@ -70,11 +70,21 @@ public sealed class DispositionController : Controller
 
         return File(Encoding.UTF8.GetBytes(sb.ToString()), "text/csv; charset=utf-8", $"disposition_{DateTime.Now:yyyyMMdd_HHmm}.csv");
     }
-
     [HttpGet("Terms")]
     public async Task<IActionResult> Terms(DateTimeOffset? from, DateTimeOffset? to, string? status, CancellationToken ct)
     {
-        var list = await _q.ListTermsAsync(TenantId, from, to, status, ct);
+        // Normaliza "dia" (sem hora) e manda em UTC (offset 0) pro PostgreSQL
+        DateTimeOffset? fromUtc = null;
+        if (from is not null)
+            fromUtc = new DateTimeOffset(from.Value.Date, TimeSpan.Zero); // 00:00 UTC do dia
+
+        DateTimeOffset? toUtc = null;
+        if (to is not null)
+            toUtc = new DateTimeOffset(to.Value.Date.AddDays(1), TimeSpan.Zero); // < próximo dia (UTC)
+
+        var list = await _q.ListTermsAsync(TenantId, fromUtc, toUtc, status, ct);
+
+        // ViewBag pode manter os valores originais (pra UI)
         ViewBag.From = from; ViewBag.To = to; ViewBag.Status = status;
         return View(list);
     }
