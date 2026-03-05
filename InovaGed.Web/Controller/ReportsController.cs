@@ -34,7 +34,11 @@ public sealed class ReportsController : Controller
     public async Task<IActionResult> PcdFull(CancellationToken ct)
     {
         using var conn = await _db.OpenAsync(ct);
-        var rows = (await conn.QueryAsync<TtdRow>(SqlTtd, new { tenant = TenantId })).ToList();
+        var rows = (await conn.QueryAsync<TtdRow>(
+            SqlClassPlanBase + SqlClassPlanOrder,
+            new { tenant = TenantId }
+        )).ToList();
+
         return View("PcdFull", rows);
     }
 
@@ -44,15 +48,28 @@ public sealed class ReportsController : Controller
     public async Task<IActionResult> PcdByClass(string code, CancellationToken ct)
     {
         code = (code ?? "").Trim();
+
         if (string.IsNullOrWhiteSpace(code))
         {
             TempData["err"] = "Informe um código (ex.: PCD-001).";
             return RedirectToAction(nameof(PcdByClass));
         }
+
         using var conn = await _db.OpenAsync(ct);
+
+        // NOTE: começa com quebra de linha para NÃO colar em @tenant
+        var sql =
+            SqlClassPlanBase +
+            """
+            AND (code = @code OR code LIKE (@code || '.%'))
+            """ +
+            SqlClassPlanOrder;
+
         var rows = (await conn.QueryAsync<TtdRow>(
-            SqlTtd + " and (code = @code or code like (@code || '.%'))",
-            new { tenant = TenantId, code })).ToList();
+            sql,
+            new { tenant = TenantId, code }
+        )).ToList();
+
         return View("PcdFull", rows);
     }
 
@@ -62,7 +79,11 @@ public sealed class ReportsController : Controller
     public async Task<IActionResult> TtdFull(CancellationToken ct)
     {
         using var conn = await _db.OpenAsync(ct);
-        var rows = (await conn.QueryAsync<TtdRow>(SqlTtd, new { tenant = TenantId })).ToList();
+        var rows = (await conn.QueryAsync<TtdRow>(
+            SqlClassPlanBase + SqlClassPlanOrder,
+            new { tenant = TenantId }
+        )).ToList();
+
         return View("TtdFull", rows);
     }
 
@@ -72,15 +93,28 @@ public sealed class ReportsController : Controller
     public async Task<IActionResult> TtdByClass(string code, CancellationToken ct)
     {
         code = (code ?? "").Trim();
+
         if (string.IsNullOrWhiteSpace(code))
         {
             TempData["err"] = "Informe um código (ex.: PCD-001).";
             return RedirectToAction(nameof(TtdByClass));
         }
+
         using var conn = await _db.OpenAsync(ct);
+
+        // NOTE: começa com quebra de linha para NÃO colar em @tenant
+        var sql =
+            SqlClassPlanBase +
+            """
+            AND (code = @code OR code LIKE (@code || '.%'))
+            """ +
+            SqlClassPlanOrder;
+
         var rows = (await conn.QueryAsync<TtdRow>(
-            SqlTtd + " and (code = @code or code like (@code || '.%'))",
-            new { tenant = TenantId, code })).ToList();
+            sql,
+            new { tenant = TenantId, code }
+        )).ToList();
+
         return View("TtdFull", rows);
     }
 
@@ -90,20 +124,23 @@ public sealed class ReportsController : Controller
     public async Task<IActionResult> Loans(CancellationToken ct)
     {
         using var conn = await _db.OpenAsync(ct);
+
         var rows = (await conn.QueryAsync<LoanReportRow>(
             """
-            select protocol_no    as ProtocolNo,
-                   requester_name as RequesterName,
-                   requested_at   as RequestedAt,
-                   due_at         as DueAt,
-                   status         as Status,
-                   document_code  as DocumentCode,
-                   document_title as DocumentTitle
-            from ged.vw_loan_report
-            where tenant_id = @tenant
-            order by requested_at desc
-            """, new { tenant = TenantId }
+            SELECT protocol_no    AS ProtocolNo,
+                   requester_name AS RequesterName,
+                   requested_at   AS RequestedAt,
+                   due_at         AS DueAt,
+                   status         AS Status,
+                   document_code  AS DocumentCode,
+                   document_title AS DocumentTitle
+            FROM ged.vw_loan_report
+            WHERE tenant_id = @tenant
+            ORDER BY requested_at DESC
+            """,
+            new { tenant = TenantId }
         )).ToList();
+
         return View("Loans", rows);
     }
 
@@ -114,9 +151,12 @@ public sealed class ReportsController : Controller
     public async Task<IActionResult> SignatureValidation(CancellationToken ct)
     {
         using var conn = await _db.OpenAsync(ct);
+
         var rows = (await conn.QueryAsync<SignatureValidationRow>(
-            SqlSig, new { tenant = TenantId }
+            SqlSig,
+            new { tenant = TenantId }
         )).ToList();
+
         return View("SignatureValidation", rows);
     }
 
@@ -146,7 +186,8 @@ public sealed class ReportsController : Controller
             WHERE s.tenant_id  = @tenant
               AND s.reg_status = 'A'
             ORDER BY d.code, s.signing_time DESC NULLS LAST
-            """, new { tenant = TenantId }
+            """,
+            new { tenant = TenantId }
         )).ToList();
 
         return View("SignedSetPrint", new SignedSetSelectVM(docs));
@@ -154,13 +195,9 @@ public sealed class ReportsController : Controller
 
     // =========================================================
     // ITEM 26 — Geração do relatório (POST)
-    // POST /Reports/SignedSetPrint
-    // Cria o report_run + snapshot e redireciona para a impressão
     // =========================================================
     [HttpPost, ValidateAntiForgeryToken]
-    public async Task<IActionResult> SignedSetPrint(
-        [FromForm] List<Guid> documentIds,
-        CancellationToken ct)
+    public async Task<IActionResult> SignedSetPrint([FromForm] List<Guid> documentIds, CancellationToken ct)
     {
         if (documentIds == null || documentIds.Count == 0)
         {
@@ -184,37 +221,32 @@ public sealed class ReportsController : Controller
             return RedirectToAction(nameof(SignedSetPrint));
         }
 
-        // Redireciona para a view de impressão passando o runId
         return RedirectToAction(nameof(SignedSetPrintView), new { runId = result.Value });
     }
 
     // =========================================================
     // ITEM 26 — View de impressão
-    // GET /Reports/SignedSetPrintView/{runId}
-    // Layout = null, CSS @media print, paginação sequencial
     // =========================================================
     public async Task<IActionResult> SignedSetPrintView(Guid runId, CancellationToken ct)
     {
         using var conn = await _db.OpenAsync(ct);
 
-        // Valida que o run pertence ao tenant
         var run = await conn.QuerySingleOrDefaultAsync<(Guid Id, DateTime GeneratedAt)>(
             """
             SELECT id AS Id, generated_at AS GeneratedAt
             FROM ged.report_run
             WHERE id = @runId AND tenant_id = @tenant AND reg_status = 'A'
-            """, new { runId, tenant = TenantId }
+            """,
+            new { runId, tenant = TenantId }
         );
 
         if (run == default)
             return NotFound("Relatório não encontrado.");
 
-        // Busca os itens do snapshot com dados do documento e da assinatura
         var items = (await conn.QueryAsync<SignedSetPrintItem>(
             """
             SELECT
-                ROW_NUMBER() OVER (ORDER BY d.code, s.validated_at)
-                                    AS SeqNo,
+                ROW_NUMBER() OVER (ORDER BY d.code, s.validated_at) AS SeqNo,
                 d.id                AS DocumentId,
                 d.code              AS DocumentCode,
                 d.title             AS DocumentTitle,
@@ -234,7 +266,8 @@ public sealed class ReportsController : Controller
               AND s.tenant_id     = @tenant
               AND s.reg_status    = 'A'
             ORDER BY d.code, s.validated_at
-            """, new { runId, tenant = TenantId }
+            """,
+            new { runId, tenant = TenantId }
         )).ToList();
 
         var printVm = new SignedSetPrintVm(
@@ -248,38 +281,43 @@ public sealed class ReportsController : Controller
     // ---------------------------------------------------------
     // SQL helpers
     // ---------------------------------------------------------
-    private const string SqlTtd =
+    private const string SqlClassPlanBase =
         """
-        select id,
-               code                        as ClassCode,
-               name                        as ClassName,
-               0                           as CurrentDays,
-               0                           as IntermediateDays,
-               retention_active_months     as ActiveMonths,
-               retention_archive_months    as ArchiveMonths,
-               final_destination::text     as FinalDestination,
-               retention_start_event::text as StartEvent,
-               retention_notes             as Notes
-        from ged.classification_plan
-        where tenant_id = @tenant
-        order by code
+        SELECT id,
+               code                        AS ClassCode,
+               name                        AS ClassName,
+               0                           AS CurrentDays,
+               0                           AS IntermediateDays,
+               retention_active_months     AS ActiveMonths,
+               retention_archive_months    AS ArchiveMonths,
+               final_destination::text     AS FinalDestination,
+               retention_start_event::text AS StartEvent,
+               retention_notes             AS Notes
+        FROM ged.classification_plan
+        WHERE tenant_id = @tenant
+
+        """; // <-- mantém esta linha em branco no final (importante)
+
+    private const string SqlClassPlanOrder =
+        """
+        ORDER BY code
         """;
 
     private const string SqlSig =
         """
-        select d.code           as DocumentCode,
-               d.title          as DocumentTitle,
-               s.status::text   as Status,
-               s.signing_time   as SigningTime,
-               s.signed_by_name as SignedByName,
-               s.cpf            as Cpf,
-               s.status_details as Details
-        from ged.document_signature s
-        join ged.document d
-          on d.tenant_id = s.tenant_id
-         and d.id        = s.document_id
-        where s.tenant_id  = @tenant
-          and s.reg_status = 'A'
-        order by s.signing_time desc nulls last
+        SELECT d.code           AS DocumentCode,
+               d.title          AS DocumentTitle,
+               s.status::text   AS Status,
+               s.signing_time   AS SigningTime,
+               s.signed_by_name AS SignedByName,
+               s.cpf            AS Cpf,
+               s.status_details AS Details
+        FROM ged.document_signature s
+        JOIN ged.document d
+          ON d.tenant_id = s.tenant_id
+         AND d.id        = s.document_id
+        WHERE s.tenant_id  = @tenant
+          AND s.reg_status = 'A'
+        ORDER BY s.signing_time DESC NULLS LAST
         """;
 }

@@ -58,4 +58,8 @@ public sealed class BoxFormVM
     public string? Description { get; set; }
     public Guid? LocationId { get; set; }
     public object Notes { get; set; }
+
+    // ✅ número da caixa
+    public int BoxNo { get; set; }
+     
 }

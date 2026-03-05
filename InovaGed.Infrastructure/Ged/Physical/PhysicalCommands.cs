@@ -20,6 +20,9 @@ public sealed class PhysicalCommands : IPhysicalCommands
         _logger = logger;
     }
 
+    // ==========================================================
+    // Locations (Item 24) - como estava
+    // ==========================================================
     public async Task<Result<Guid>> UpsertLocationAsync(Guid tenantId, Guid? userId, PhysicalLocationFormVM vm, CancellationToken ct)
     {
         try
@@ -157,36 +160,62 @@ where tenant_id=@tenant_id and id=@id and reg_status='A';
         }
     }
 
+    // ==========================================================
+    // Boxes (Item 17) - ✅ CORRIGIDO: box_no NOT NULL
+    // ==========================================================
     public async Task<Result<Guid>> UpsertBoxAsync(Guid tenantId, Guid? userId, BoxFormVM vm, CancellationToken ct)
     {
         try
         {
             if (tenantId == Guid.Empty) return Result<Guid>.Fail("TENANT", "Tenant inválido.");
             if (vm is null) return Result<Guid>.Fail("VM", "Dados inválidos.");
+
+            if (vm.BoxNo <= 0) return Result<Guid>.Fail("BOXNO", "Nº da Caixa é obrigatório.");
             if (string.IsNullOrWhiteSpace(vm.LabelCode)) return Result<Guid>.Fail("LABEL", "LabelCode é obrigatório.");
 
             await using var conn = await _db.OpenAsync(ct);
 
+            // ✅ Pré-checagem de unicidade (tenant_id + box_no)
+            const string exists = @"
+select exists(
+  select 1
+  from ged.box
+  where tenant_id=@tenant_id
+    and box_no=@box_no
+    and reg_status='A'
+    and (@id is null or id <> @id)
+);";
+
+            var alreadyExists = await conn.ExecuteScalarAsync<bool>(new CommandDefinition(exists, new
+            {
+                tenant_id = tenantId,
+                box_no = vm.BoxNo,
+                id = vm.Id
+            }, cancellationToken: ct));
+
+            if (alreadyExists)
+                return Result<Guid>.Fail("DUPLICATE", "Já existe uma caixa ativa com este Nº.");
+
             if (vm.Id is null || vm.Id == Guid.Empty)
             {
-                // ✅ coluna correta: notes (não description)
                 const string ins = @"
 insert into ged.box
-(id, tenant_id, label_code, notes, location_id, reg_date, reg_status)
+(id, tenant_id, box_no, label_code, notes, location_id, reg_date, reg_status)
 values
-(gen_random_uuid(), @tenant_id, @label_code, @notes, @location_id, now(), 'A')
+(gen_random_uuid(), @tenant_id, @box_no, @label_code, @notes, @location_id, now(), 'A')
 returning id;
 ";
                 var id = await conn.ExecuteScalarAsync<Guid>(new CommandDefinition(ins, new
                 {
                     tenant_id = tenantId,
+                    box_no = vm.BoxNo,
                     label_code = vm.LabelCode.Trim(),
                     notes = vm.Notes,
                     location_id = vm.LocationId
                 }, cancellationToken: ct));
 
                 await _audit.WriteAsync(tenantId, userId, "CREATE", "box", id,
-                    "Caixa criada", null, null, new { vm.LabelCode, vm.LocationId }, ct);
+                    "Caixa criada", null, null, new { vm.BoxNo, vm.LabelCode, vm.LocationId }, ct);
 
                 return Result<Guid>.Ok(id);
             }
@@ -194,7 +223,8 @@ returning id;
             {
                 const string upd = @"
 update ged.box
-set label_code=@label_code,
+set box_no=@box_no,
+    label_code=@label_code,
     notes=@notes,
     location_id=@location_id
 where tenant_id=@tenant_id and id=@id and reg_status='A';
@@ -203,6 +233,7 @@ where tenant_id=@tenant_id and id=@id and reg_status='A';
                 {
                     tenant_id = tenantId,
                     id = vm.Id,
+                    box_no = vm.BoxNo,
                     label_code = vm.LabelCode.Trim(),
                     notes = vm.Notes,
                     location_id = vm.LocationId
@@ -211,10 +242,15 @@ where tenant_id=@tenant_id and id=@id and reg_status='A';
                 if (rows == 0) return Result<Guid>.Fail("NOTFOUND", "Caixa não encontrada.");
 
                 await _audit.WriteAsync(tenantId, userId, "UPDATE", "box", vm.Id,
-                    "Caixa atualizada", null, null, new { vm.LabelCode, vm.LocationId }, ct);
+                    "Caixa atualizada", null, null, new { vm.BoxNo, vm.LabelCode, vm.LocationId }, ct);
 
                 return Result<Guid>.Ok(vm.Id.Value);
             }
+        }
+        catch (Npgsql.PostgresException ex) when (ex.SqlState == "23505")
+        {
+            _logger.LogError(ex, "PhysicalCommands.UpsertBoxAsync unique violation. Tenant={Tenant}", tenantId);
+            return Result<Guid>.Fail("DUPLICATE", "Já existe uma caixa com este Nº (BoxNo) para este tenant.");
         }
         catch (Exception ex)
         {

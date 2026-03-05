@@ -5,11 +5,12 @@ using InovaGed.Application.Identity;
 using InovaGed.Web.ViewModels;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Npgsql;
 
 namespace InovaGed.Web.Controllers;
 
 [Authorize]
-[Route("[controller]")]
+[Route("Physical")]
 public sealed class PhysicalController : Controller
 {
     private readonly ILogger<PhysicalController> _logger;
@@ -17,7 +18,7 @@ public sealed class PhysicalController : Controller
     private readonly IPhysicalQueries _queries;
     private readonly IPhysicalCommands _commands;
     private readonly IDbConnectionFactory _dbFactory;
- 
+
     public PhysicalController(
         ILogger<PhysicalController> logger,
         ICurrentUser user,
@@ -35,10 +36,11 @@ public sealed class PhysicalController : Controller
     // =========================
     // ✅ Helper: abre conexão
     // =========================
-
+    private Task<NpgsqlConnection> OpenAsync(CancellationToken ct)
+        => _dbFactory.OpenAsync(ct);
 
     // ==========================================================
-    // ---------- Locations (NÃO MEXI - volta a funcionar) -------
+    // ---------- Locations (Item 24) ----------------------------
     // ==========================================================
     [HttpGet("Locations")]
     public async Task<IActionResult> Locations(string? q, CancellationToken ct)
@@ -52,9 +54,15 @@ public sealed class PhysicalController : Controller
         catch (Exception ex)
         {
             _logger.LogError(ex, "Physical.Locations failed");
+            TempData["Err"] = "Erro ao listar localizações.";
             return View(Array.Empty<PhysicalLocationRowDto>());
         }
     }
+
+    // GET /Physical/Locations/New  (e também /Physical/Locations/New absoluto)
+    [HttpGet("Locations/New")]
+    public IActionResult NewLocation()
+    => View("LocationForm", new PhysicalLocationFormVM());
 
     [HttpGet("Locations/{id:guid}")]
     public async Task<IActionResult> EditLocation(Guid id, CancellationToken ct)
@@ -114,9 +122,9 @@ public sealed class PhysicalController : Controller
         }
     }
 
-    // ==========================================
-    // ---------- Boxes (NÃO MEXI) --------------
-    // ==========================================
+    // ==========================================================
+    // ---------- Boxes (Item 17) --------------------------------
+    // ==========================================================
     [HttpGet("Boxes")]
     public async Task<IActionResult> Boxes(string? q, CancellationToken ct)
     {
@@ -129,29 +137,34 @@ public sealed class PhysicalController : Controller
         catch (Exception ex)
         {
             _logger.LogError(ex, "Physical.Boxes failed");
+            TempData["Err"] = "Erro ao listar caixas.";
             return View(Array.Empty<BoxRowDto>());
         }
+    }
+
+    [HttpGet("Boxes/New")]
+    public async Task<IActionResult> NewBox(CancellationToken ct)
+    {
+        var locations = await _queries.ListLocationsAsync(_user.TenantId, null, ct);
+        ViewBag.Locations = locations;
+        return View("BoxForm", new InovaGed.Application.Ged.Physical.BoxFormVM());
     }
 
     [HttpGet("Boxes/{id:guid}")]
     public async Task<IActionResult> EditBox(Guid id, CancellationToken ct)
     {
-        try
-        {
-            var vm = await _queries.GetBoxAsync(_user.TenantId, id, ct);
-            if (vm is null) return NotFound();
-            return View("BoxForm", vm);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Physical.EditBox failed");
-            return StatusCode(500);
-        }
+        var vm = await _queries.GetBoxAsync(_user.TenantId, id, ct);
+        if (vm is null) return NotFound();
+
+        var locations = await _queries.ListLocationsAsync(_user.TenantId, null, ct);
+        ViewBag.Locations = locations;
+
+        return View("BoxForm", vm);
     }
 
     [HttpPost("Boxes/Save")]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> SaveBox(BoxFormVM vm, CancellationToken ct)
+    public async Task<IActionResult> SaveBox(InovaGed.Application.Ged.Physical.BoxFormVM vm, CancellationToken ct)
     {
         try
         {
@@ -159,6 +172,7 @@ public sealed class PhysicalController : Controller
             if (!res.IsSuccess)
             {
                 TempData["Err"] = res.ErrorMessage;
+                ViewBag.Locations = await _queries.ListLocationsAsync(_user.TenantId, null, ct);
                 return View("BoxForm", vm);
             }
 
@@ -169,6 +183,7 @@ public sealed class PhysicalController : Controller
         {
             _logger.LogError(ex, "Physical.SaveBox failed");
             TempData["Err"] = "Erro ao salvar caixa.";
+            ViewBag.Locations = await _queries.ListLocationsAsync(_user.TenantId, null, ct);
             return View("BoxForm", vm);
         }
     }
@@ -192,8 +207,9 @@ public sealed class PhysicalController : Controller
     }
 
     // ==========================================================
-    // ✅ NOVO: Conteúdo da Caixa (PoC 17)
-    // Usa: ged.box + ged.batch_item.box_id + ged.document
+    // ✅ Conteúdo da Caixa (PoC 17)
+    // - Caixa: ged.physical_box (correto)
+    // - Vínculo documento: ged.batch_item.box_id -> ged.document
     // URL: GET /Physical/BoxContents?boxId=...
     // ==========================================================
     [HttpGet("BoxContents")]
@@ -201,12 +217,11 @@ public sealed class PhysicalController : Controller
     {
         try
         {
-            await using var db = await _dbFactory.OpenAsync(ct);
+            await using var db = await OpenAsync(ct);
 
             ViewData["Title"] = "Conteúdo da Caixa";
             ViewData["Subtitle"] = "Visualize documentos vinculados (PoC 17)";
 
-            // Tela de entrada (sem boxId)
             if (boxId is null || boxId == Guid.Empty)
             {
                 return View(new BoxContentsVm
@@ -217,54 +232,53 @@ public sealed class PhysicalController : Controller
                 });
             }
 
-            // Carrega a caixa (não quebra se não existir reg_status)
+            // ✅ Caixa correta: ged.physical_box (sem reg_status)
             var box = await db.QueryFirstOrDefaultAsync<BoxContentsVm.BoxHeader>(
                 """
-            select
-              id as "Id",
-              label_code as "LabelCode",
-              notes as "Notes",
-              location_id as "LocationId"
-            from ged.box
-            where tenant_id=@tid
-              and id=@boxId
-              and (reg_status is null or reg_status='A')
-            """,
+                select
+                  id as "Id",
+                  coalesce(box_number,'') as "LabelCode",
+                  notes as "Notes",
+                  pallet_id as "PalletId"
+                from ged.physical_box
+                where tenant_id=@tid
+                  and id=@boxId
+                """,
                 new { tid = _user.TenantId, boxId }
             );
 
             if (box is null)
                 return NotFound("Caixa não encontrada.");
 
-            // Itens: vínculo via batch_item.box_id
+            // Itens vinculados via batch_item.box_id
             var items = (await db.QueryAsync<BoxContentsVm.ItemRow>(
                 """
-            select
-              bi.id         as "BatchItemId",
-              bi.batch_id   as "BatchId",
-              coalesce(b.batch_no,'') as "BatchNo",
-              bi.document_id as "DocumentId",
-              coalesce(d.code,'') as "Code",
-              coalesce(d.title,'') as "Title",
-              coalesce(d.status::text,'') as "Status",
-              bi.created_at as "LinkedAt"
-            from ged.batch_item bi
-            join ged.batch b
-              on b.tenant_id=bi.tenant_id
-             and b.id=bi.batch_id
-             and (b.reg_status is null or b.reg_status='A')
-            join ged.document d
-              on d.tenant_id=bi.tenant_id
-             and d.id=bi.document_id
-            where bi.tenant_id=@tid
-              and (bi.reg_status is null or bi.reg_status='A')
-              and bi.box_id=@boxId
-            order by bi.created_at desc nulls last, b.batch_no, d.title
-            """,
+                select
+                  bi.id          as "BatchItemId",
+                  bi.batch_id    as "BatchId",
+                  coalesce(b.batch_no,'') as "BatchNo",
+                  bi.document_id as "DocumentId",
+                  coalesce(d.code,'') as "Code",
+                  coalesce(d.title,'') as "Title",
+                  coalesce(d.status::text,'') as "Status",
+                  bi.created_at  as "LinkedAt"
+                from ged.batch_item bi
+                join ged.batch b
+                  on b.tenant_id=bi.tenant_id
+                 and b.id=bi.batch_id
+                join ged.document d
+                  on d.tenant_id=bi.tenant_id
+                 and d.id=bi.document_id
+                where bi.tenant_id=@tid
+                  and bi.box_id=@boxId
+                  -- Se batch_item tiver reg_status, mantenha:
+                  and (bi.reg_status is null or bi.reg_status='A')
+                  -- Se NÃO tiver reg_status, apague a linha acima
+                order by bi.created_at desc nulls last, b.batch_no, d.title
+                """,
                 new { tid = _user.TenantId, boxId }
             )).ToList();
 
-            // Subtitle “bonito” com contagem
             ViewData["Subtitle"] = $"Caixa: {box.LabelCode} • Itens: {items.Count}";
 
             return View(new BoxContentsVm
@@ -283,9 +297,8 @@ public sealed class PhysicalController : Controller
     }
 
     // ==========================================================
-    // ✅ NOVO: Adicionar documento à caixa
+    // ✅ Adicionar documento à caixa
     // POST /Physical/BoxContents/Add
-    // Estratégia PoC: vincula atualizando ged.batch_item.box_id
     // ==========================================================
     [HttpPost("BoxContents/Add")]
     [ValidateAntiForgeryToken]
@@ -293,14 +306,17 @@ public sealed class PhysicalController : Controller
     {
         try
         {
-            await using var db = await _dbFactory.OpenAsync(ct);
+            await using var db = await OpenAsync(ct);
 
-            // garante que caixa existe
-            var okBox = await db.ExecuteScalarAsync<int>(@"
-select count(1)
-from ged.box
-where tenant_id=@tid and id=@boxId and reg_status='A';",
-                new { tid = _user.TenantId, boxId });
+            // ✅ valida caixa em ged.physical_box
+            var okBox = await db.ExecuteScalarAsync<int>(
+                """
+                select count(1)
+                from ged.physical_box
+                where tenant_id=@tid and id=@boxId
+                """,
+                new { tid = _user.TenantId, boxId }
+            );
 
             if (okBox <= 0)
             {
@@ -308,30 +324,31 @@ where tenant_id=@tid and id=@boxId and reg_status='A';",
                 return RedirectToAction(nameof(BoxContents), new { boxId });
             }
 
-            // tenta vincular em algum batch_item do documento (mais recente)
-            // (se não existir batch_item para o doc, não dá pra provar vínculo via esse modelo)
-            var affected = await db.ExecuteAsync(@"
-update ged.batch_item bi
-set box_id=@boxId
-where bi.tenant_id=@tid
-  and bi.document_id=@docId
-  and bi.reg_status='A'
-  and bi.id = (
-      select bi2.id
-      from ged.batch_item bi2
-      where bi2.tenant_id=@tid
-        and bi2.document_id=@docId
-        and bi2.reg_status='A'
-      order by bi2.created_at desc
-      limit 1
-  );",
-                new { tid = _user.TenantId, boxId, docId });
+            // vincula no batch_item mais recente do documento
+            var affected = await db.ExecuteAsync(
+                """
+                update ged.batch_item bi
+                set box_id=@boxId
+                where bi.tenant_id=@tid
+                  and bi.document_id=@docId
+                  and bi.id = (
+                      select bi2.id
+                      from ged.batch_item bi2
+                      where bi2.tenant_id=@tid
+                        and bi2.document_id=@docId
+                        and (bi2.reg_status is null or bi2.reg_status='A')
+                      order by bi2.created_at desc
+                      limit 1
+                  )
+                  and (bi.reg_status is null or bi.reg_status='A');
+                """,
+                new { tid = _user.TenantId, boxId, docId }
+            );
 
-            if (affected <= 0)
-                TempData["Err"] = "Não foi possível vincular: o documento não está em nenhum lote (batch_item) ativo.";
-
-            else
-                TempData["Ok"] = "Documento vinculado à caixa.";
+            TempData[affected > 0 ? "Ok" : "Err"] =
+                affected > 0
+                    ? "Documento vinculado à caixa."
+                    : "Não foi possível vincular: o documento não está em nenhum lote (batch_item) ativo.";
 
             return RedirectToAction(nameof(BoxContents), new { boxId });
         }
@@ -344,7 +361,7 @@ where bi.tenant_id=@tid
     }
 
     // ==========================================================
-    // ✅ NOVO: Remover documento da caixa
+    // ✅ Remover documento da caixa
     // POST /Physical/BoxContents/Remove
     // ==========================================================
     [HttpPost("BoxContents/Remove")]
@@ -353,16 +370,19 @@ where bi.tenant_id=@tid
     {
         try
         {
-            await using var db = await _dbFactory.OpenAsync(ct);
+            await using var db = await OpenAsync(ct);
 
-            var affected = await db.ExecuteAsync(@"
-update ged.batch_item
-set box_id = null
-where tenant_id=@tid
-  and reg_status='A'
-  and box_id=@boxId
-  and document_id=@docId;",
-                new { tid = _user.TenantId, boxId, docId });
+            var affected = await db.ExecuteAsync(
+                """
+                update ged.batch_item
+                set box_id = null
+                where tenant_id=@tid
+                  and box_id=@boxId
+                  and document_id=@docId
+                  and (reg_status is null or reg_status='A');
+                """,
+                new { tid = _user.TenantId, boxId, docId }
+            );
 
             TempData[affected > 0 ? "Ok" : "Err"] =
                 affected > 0 ? "Documento removido da caixa." : "Nenhum vínculo ativo encontrado para remover.";
@@ -378,7 +398,7 @@ where tenant_id=@tid
     }
 
     // ==========================================================
-    // ✅ NOVO: Mover documento entre caixas
+    // ✅ Mover documento entre caixas
     // POST /Physical/BoxContents/Move
     // ==========================================================
     [HttpPost("BoxContents/Move")]
@@ -387,35 +407,41 @@ where tenant_id=@tid
     {
         try
         {
-            await using var db = await _dbFactory.OpenAsync(ct);
+            await using var db = await OpenAsync(ct);
 
-            // remove do vínculo atual (se existir)
-            await db.ExecuteAsync(@"
-update ged.batch_item
-set box_id = null
-where tenant_id=@tid
-  and reg_status='A'
-  and box_id=@fromBoxId
-  and document_id=@docId;",
-                new { tid = _user.TenantId, fromBoxId, docId });
+            // remove do vínculo atual
+            await db.ExecuteAsync(
+                """
+                update ged.batch_item
+                set box_id = null
+                where tenant_id=@tid
+                  and box_id=@fromBoxId
+                  and document_id=@docId
+                  and (reg_status is null or reg_status='A');
+                """,
+                new { tid = _user.TenantId, fromBoxId, docId }
+            );
 
-            // adiciona no destino (usa o batch_item mais recente do doc)
-            var affected = await db.ExecuteAsync(@"
-update ged.batch_item bi
-set box_id=@toBoxId
-where bi.tenant_id=@tid
-  and bi.document_id=@docId
-  and bi.reg_status='A'
-  and bi.id = (
-      select bi2.id
-      from ged.batch_item bi2
-      where bi2.tenant_id=@tid
-        and bi2.document_id=@docId
-        and bi2.reg_status='A'
-      order by bi2.created_at desc
-      limit 1
-  );",
-                new { tid = _user.TenantId, toBoxId, docId });
+            // adiciona no destino (batch_item mais recente do doc)
+            var affected = await db.ExecuteAsync(
+                """
+                update ged.batch_item bi
+                set box_id=@toBoxId
+                where bi.tenant_id=@tid
+                  and bi.document_id=@docId
+                  and bi.id = (
+                      select bi2.id
+                      from ged.batch_item bi2
+                      where bi2.tenant_id=@tid
+                        and bi2.document_id=@docId
+                        and (bi2.reg_status is null or bi2.reg_status='A')
+                      order by bi2.created_at desc
+                      limit 1
+                  )
+                  and (bi.reg_status is null or bi.reg_status='A');
+                """,
+                new { tid = _user.TenantId, toBoxId, docId }
+            );
 
             TempData[affected > 0 ? "Ok" : "Err"] =
                 affected > 0 ? "Documento movido para a caixa destino." : "Não foi possível mover (documento sem batch_item ativo).";
@@ -431,8 +457,7 @@ where bi.tenant_id=@tid
     }
 
     // ==========================================================
-    // ---------- BoxHistory (mantém como você já tinha) ---------
-    // URL: GET /Physical/BoxHistory?boxId=...
+    // ---------- BoxHistory (mantém com queries) ----------------
     // ==========================================================
     [HttpGet("BoxHistory")]
     public async Task<IActionResult> BoxHistory(Guid boxId, CancellationToken ct)
@@ -450,11 +475,4 @@ where bi.tenant_id=@tid
 
         return View(rows);
     }
-
-    // Rotas auxiliares (como estava)
-    [HttpGet("/Physical/Boxes/New")]
-    public IActionResult NewBox() => View("BoxForm", new BoxFormVM());
-
-    [HttpGet("/Physical/Locations/New")]
-    public IActionResult NewLocation() => View("LocationForm", new PhysicalLocationFormVM());
 }

@@ -1,36 +1,87 @@
-﻿@{
-    ViewData["Title"] = "Cadastro de Caixa";
+﻿@model InovaGed.Application.Ged.Physical.BoxFormVM
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+
+@{
+    ViewData["Title"] = (Model?.Id == null || Model.Id == Guid.Empty) ? "Nova Caixa" : "Editar Caixa";
+    var locations = (ViewBag.Locations as IReadOnlyList<InovaGed.Application.Ged.Physical.PhysicalLocationRowDto>)
+                    ?? Array.Empty<InovaGed.Application.Ged.Physical.PhysicalLocationRowDto>();
 }
 
-<h3 class="mb-3">@ViewData["Title"]</h3>
+<h4 class="mb-2">@ViewData["Title"]</h4>
+<div class="text-muted mb-3">Cadastro e vínculo da caixa a uma localização física.</div>
 
-<form method="post" class="card card-body">
-    <div class="row g-3">
+@if (TempData["Err"] is string err && !string.IsNullOrWhiteSpace(err))
+{
+    <div class="alert alert-danger">@err</div>
+}
+@if (TempData["Ok"] is string ok && !string.IsNullOrWhiteSpace(ok))
+{
+    <div class="alert alert-success">@ok</div>
+}
 
-        <div class="col-md-3">
-            <label class="form-label">Nº da Caixa</label>
-            <input name="BoxNo" class="form-control" type="number" />
+<div asp-validation-summary="All" class="alert alert-danger" role="alert" style="display:none"></div>
+
+<form method="post" asp-controller="Physical" asp-action="SaveBox" class="card shadow-sm">
+    @Html.AntiForgeryToken()
+
+    <div class="card-body">
+        <input type="hidden" asp-for="Id" />
+
+        <div class="row g-3">
+            <div class="col-md-4">
+                <label class="form-label">Nº da Caixa</label>
+                <input class="form-control" asp-for="BoxNo" type="number" min="1" step="1" required />
+                <span class="text-danger small" asp-validation-for="BoxNo"></span>
+            </div>
+
+            <div class="col-md-4">
+                <label class="form-label">Etiqueta</label>
+                <input class="form-control" asp-for="LabelCode" required />
+                <span class="text-danger small" asp-validation-for="LabelCode"></span>
+            </div>
+
+            <div class="col-md-4">
+                <label class="form-label">Localização</label>
+                <select class="form-select" asp-for="LocationId">
+                    <option value="">-- selecione --</option>
+                    @foreach (var loc in locations)
+                    {
+                        var label = string.Join(" / ",
+                        new[] { loc.Building, loc.Room, loc.Aisle, loc.Rack, loc.Shelf, loc.Pallet }
+                        .Where(x => !string.IsNullOrWhiteSpace(x)));
+
+                        <option value="@loc.Id">@label</option>
+                    }
+                </select>
+                <span class="text-danger small" asp-validation-for="LocationId"></span>
+            </div>
+
+            <div class="col-12">
+                <label class="form-label">Observações</label>
+                <textarea class="form-control" rows="3" asp-for="Notes"></textarea>
+                <span class="text-danger small" asp-validation-for="Notes"></span>
+            </div>
         </div>
-
-        <div class="col-md-6">
-            <label class="form-label">Código/Identificação (Etiqueta)</label>
-            <input name="LabelCode" class="form-control" />
-        </div>
-
-        <div class="col-md-3">
-            <label class="form-label">Localização (LocationId)</label>
-            <input name="LocationId" class="form-control" />
-        </div>
-
-        <div class="col-12">
-            <label class="form-label">Observações</label>
-            <textarea name="Notes" class="form-control" rows="3"></textarea>
-        </div>
-
     </div>
 
-    <div class="mt-3 d-flex gap-2">
-        <button class="btn btn-primary" type="submit">Salvar</button>
-        <a class="btn btn-outline-secondary" href="/Physical/Index">Voltar</a>
+    <div class="card-footer d-flex gap-2 justify-content-end">
+        <a class="btn btn-outline-secondary" asp-controller="Physical" asp-action="Boxes">
+            <i class="bi bi-arrow-left me-1"></i>Voltar
+        </a>
+        <button class="btn btn-primary" type="submit">
+            <i class="bi bi-check2-circle me-1"></i>Salvar
+        </button>
     </div>
 </form>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+    <script>
+        // mostra o validation-summary se tiver mensagens
+        (function() {
+            const sum = document.querySelector('[asp-validation-summary]');
+            if (!sum) return;
+            if (sum.innerText && sum.innerText.trim().length > 0) sum.style.display = 'block';
+        })();
+    </script>
+}
