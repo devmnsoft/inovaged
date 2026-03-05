@@ -9,21 +9,25 @@ public sealed class RetentionCaseRow
     public DateTime CreatedAt { get; set; }
 }
 
-public sealed record RetentionCaseItemRow(
-    long Id,
-    Guid CaseId,
-    Guid DocumentId,
-    string? DocCode,
-    string? DocTitle,
-    string? ClassificationCode,
-    string? ClassificationName,
-    DateTimeOffset? RetentionDueAt,
-    string? RetentionStatus,
-    string? SuggestedDestination,
-    string Decision,
-    string? DecisionNotes,
-    DateTimeOffset? DecidedAt
-);
+public sealed class RetentionCaseItemRow
+{
+    public long Id { get; init; }
+    public Guid CaseId { get; init; }
+    public Guid DocumentId { get; init; }
+    public string DocCode { get; init; } = "";
+    public string DocTitle { get; init; } = "";
+    public string ClassificationCode { get; init; } = "";
+    public string ClassificationName { get; init; } = "";
+    public DateTime RetentionDueAt { get; init; }           // ou DateTimeOffset, mas seja consistente com o SQL
+    public string RetentionStatus { get; init; } = "";
+    public string SuggestedDestination { get; init; } = "";
+    public string Decision { get; init; } = "";
+    public string? DecisionNotes { get; init; }
+    public DateTime? DecidedAt { get; init; }               // normalmente é nullable
+
+    // ✅ importante pro Dapper
+    public RetentionCaseItemRow() { }
+}
 
 public sealed class CreateRetentionCaseRequest
 {

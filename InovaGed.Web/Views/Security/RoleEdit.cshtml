@@ -1,0 +1,42 @@
+﻿@model InovaGed.Web.Controllers.RoleEditVm
+@{
+    ViewData["Title"] = "Editar Perfil";
+    ViewData["Subtitle"] = "Editar nível de autoridade (PoC 11)";
+}
+
+<div class="container py-3">
+    <h3 class="mb-0">@ViewData["Title"]</h3>
+    <div class="text-muted mb-3">@ViewData["Subtitle"]</div>
+
+    <div class="card shadow-sm">
+        <div class="card-body">
+            <form method="post">
+                @Html.AntiForgeryToken()
+                <input type="hidden" asp-for="Id" />
+
+                <div class="mb-3">
+                    <label class="form-label">Nome</label>
+                    <input asp-for="Name" class="form-control" />
+                    <span class="text-danger small" asp-validation-for="Name"></span>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Normalizado</label>
+                    <input asp-for="NormalizedName" class="form-control" />
+                </div>
+
+                <div class="d-flex gap-2">
+                    <button class="btn btn-primary" type="submit">Salvar</button>
+                    <a class="btn btn-outline-secondary" asp-action="Roles">Voltar</a>
+                </div>
+
+                @if (!ViewData.ModelState.IsValid)
+                {
+                    <div class="alert alert-danger mt-3">
+                        Verifique os campos e tente novamente.
+                    </div>
+                }
+            </form>
+        </div>
+    </div>
+</div>

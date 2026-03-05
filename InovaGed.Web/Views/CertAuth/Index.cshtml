@@ -1,0 +1,85 @@
+﻿@{
+    Layout = "_Layout";
+    ViewData["Title"] = ViewData["Title"] ?? "Entrar com Certificado (PoC)";
+}
+
+<div class="container-xxl py-3">
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <div>
+            <h3 class="mb-0">@ViewData["Title"]</h3>
+            <div class="text-muted small">@ViewData["Subtitle"]</div>
+        </div>
+    </div>
+
+    @if (TempData["err"] is string err && !string.IsNullOrWhiteSpace(err))
+    {
+        <div class="alert alert-danger">@err</div>
+    }
+    @if (TempData["ok"] is string ok && !string.IsNullOrWhiteSpace(ok))
+    {
+        <div class="alert alert-success">@ok</div>
+    }
+
+    <div class="card shadow-sm">
+        <div class="card-body">
+            <form method="post" action="/auth/cert" onsubmit="return certAuthSend(event)">
+                @Html.AntiForgeryToken()
+
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label">CPF do Usuário (PoC)</label>
+                        <input class="form-control" name="UserCpf" id="cpf" placeholder="946.937.732-04" />
+                        <div class="form-text">Use o CPF cadastrado no usuário (PoC: password_plain).</div>
+                    </div>
+
+                    <div class="col-md-5">
+                        <label class="form-label">Certificado (.cer / .pfx)</label>
+                        <input class="form-control" type="file" id="certFile" />
+                        <div class="form-text">Se for .pfx, informe a senha.</div>
+                    </div>
+
+                    <div class="col-md-3">
+                        <label class="form-label">Senha do PFX</label>
+                        <input class="form-control" name="PfxPassword" id="pfxpass" type="password" />
+                    </div>
+                </div>
+
+                <input type="hidden" name="CertificateBase64" id="certB64" />
+
+                <div class="mt-3 d-flex gap-2">
+                    <button class="btn btn-primary" type="submit">
+                        <i class="bi bi-shield-check me-1"></i> Entrar com Certificado
+                    </button>
+
+                    @if (User?.Identity?.IsAuthenticated ?? false)
+                    {
+                        <form method="post" action="/auth/cert/logout">
+                            @Html.AntiForgeryToken()
+                            <button class="btn btn-outline-secondary" type="submit">
+                                <i class="bi bi-box-arrow-right me-1"></i> Sair
+                            </button>
+                        </form>
+                    }
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    async function certAuthSend(e) {
+        const f = document.getElementById("certFile").files[0];
+        if (!f) { alert("Selecione um certificado (.cer ou .pfx)."); return false; }
+
+        const buf = await f.arrayBuffer();
+        const bytes = new Uint8Array(buf);
+
+        let binary = "";
+        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+
+        const b64 = btoa(binary);
+        document.getElementById("certB64").value = b64;
+
+        return true;
+    }
+</script>

@@ -2,123 +2,504 @@
 @{
     ViewData["Title"] = "Entrar";
     Layout = "_LayoutAuth";
+
+    // cert feedback (TempData)
+    var openCert = TempData["open_cert"] is bool b && b;
+    var certErr = TempData["cert_err"] as string;
+    var certOk = TempData["cert_ok"] as string;
 }
 
-<div class="card shadow-lg border-0 auth-card">
-    <div class="auth-topbar"></div>
+@section Styles {
+    <style>
+        /* =========================================================
+               LOGIN – mais intuitivo + feedback de ação + certificado funciona
+               - botão com loading
+               - collapse do certificado abre e mostra retorno
+               - JS corrigido: intercepta submit, gera base64 e só então envia
+               ========================================================= */
 
-    <div class="card-body p-4 p-md-5">
+        :root {
+            --bg0: #0B1020;
+            --bg1: #090F1A;
+            --card: rgba(255,255,255,.10);
+            --card2: rgba(255,255,255,.06);
+            --stroke: rgba(255,255,255,.14);
+            --stroke2: rgba(255,255,255,.10);
+            --text: #ffffff;
+            --muted: rgba(255,255,255,.72);
+            --muted2: rgba(255,255,255,.56);
+            --shadow: 0 28px 85px rgba(0,0,0,.45);
+            --focus: 0 0 0 6px rgba(37,99,235,.16);
+            --grad: linear-gradient(135deg,#2563eb 0%, #22c55e 100%);
+            --warn: rgba(255,193,7,.14);
+        }
 
-        <!-- BRAND -->
-        <div class="text-center mb-4">
-            <div class="d-inline-flex align-items-center justify-content-center mb-3"
-                 style="width:68px;height:68px;border-radius:1.25rem;
-                        background:linear-gradient(135deg,#2563eb,#22c55e);
-                        color:#fff;font-weight:900;font-size:1.35rem;">
-                IG
-            </div>
+        .auth-shell {
+            min-height: 100vh;
+            display: grid;
+            place-items: center;
+            padding: 28px 14px;
+            position: relative;
+            overflow: hidden;
+        }
 
-            <h4 class="mb-1 fw-bold">Bem-vindo ao InovaGED</h4>
-            <div class="text-muted small">
-                Entre com seu tenant e usuário para acessar o sistema.
-            </div>
-        </div>
+            .auth-shell::before {
+                content: "";
+                position: absolute;
+                inset: -2px;
+                background: radial-gradient(1200px 680px at 18% 10%, rgba(37,99,235,.40), transparent 60%), radial-gradient(900px 520px at 82% 18%, rgba(34,197,94,.25), transparent 58%), radial-gradient(920px 620px at 55% 110%, rgba(59,130,246,.18), transparent 60%), linear-gradient(180deg, var(--bg0) 0%, var(--bg1) 70%, #070B14 100%);
+                z-index: 0;
+                filter: saturate(1.05);
+            }
 
-        <form asp-action="Login" method="post" novalidate>
-            @Html.AntiForgeryToken()
-            <input type="hidden" asp-for="ReturnUrl" />
+            .auth-shell::after {
+                content: "";
+                position: absolute;
+                inset: 0;
+                background-image: radial-gradient(rgba(255,255,255,.06) 1px, transparent 1px);
+                background-size: 18px 18px;
+                opacity: .32;
+                z-index: 0;
+                pointer-events: none;
+            }
 
-            <!-- Tenant -->
-            <div class="mb-3">
-                <label asp-for="TenantSlug" class="form-label small fw-semibold"></label>
-                <div class="input-group">
-                    <span class="input-group-text bg-white">
-                        <i class="bi bi-buildings"></i>
-                    </span>
-                    <input asp-for="TenantSlug" class="form-control" placeholder="ex: prefeitura-x" autocomplete="organization" />
+        .auth-wrap {
+            width: min(540px, 100%);
+            position: relative;
+            z-index: 2;
+        }
+
+        .auth-card {
+            border: 1px solid var(--stroke);
+            border-radius: 1.6rem;
+            overflow: hidden;
+            background: linear-gradient(180deg, var(--card), var(--card2));
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(10px);
+        }
+
+        .auth-topbar {
+            height: 6px;
+            background: linear-gradient(90deg,#2563eb,#22c55e,#06b6d4,#2563eb);
+            background-size: 200% 100%;
+            animation: igbar 6s linear infinite;
+        }
+
+        @@keyframes igbar {
+            0% {
+                background-position: 0 0
+            }
+
+            100% {
+                background-position: 200% 0
+            }
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            margin-bottom: 14px;
+        }
+
+        .brand-badge {
+            width: 54px;
+            height: 54px;
+            border-radius: 1.1rem;
+            background: var(--grad);
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 900;
+            letter-spacing: .3px;
+            box-shadow: 0 18px 32px rgba(37,99,235,.20);
+            user-select: none;
+        }
+
+        .brand-title {
+            color: var(--text);
+            font-weight: 900;
+            margin: 0;
+            line-height: 1.05;
+        }
+
+        .brand-sub {
+            color: var(--muted);
+            font-size: .92rem;
+            margin: 0;
+        }
+
+        .form-label {
+            color: rgba(255,255,255,.84);
+        }
+
+        .input-group-text {
+            background: rgba(255,255,255,.10) !important;
+            border-color: rgba(255,255,255,.16) !important;
+            color: rgba(255,255,255,.86);
+        }
+
+        .form-control {
+            background: rgba(255,255,255,.08);
+            border-color: rgba(255,255,255,.16);
+            color: rgba(255,255,255,.92);
+        }
+
+            .form-control::placeholder {
+                color: rgba(255,255,255,.45);
+            }
+
+            .form-control:focus {
+                background: rgba(255,255,255,.10);
+                border-color: rgba(37,99,235,.55);
+                box-shadow: var(--focus);
+                color: rgba(255,255,255,.96);
+            }
+
+        .field-note {
+            font-size: .8rem;
+            color: rgba(255,255,255,.52);
+            margin-top: 6px;
+        }
+
+        .btn-primary {
+            background: var(--grad);
+            border: 0;
+            box-shadow: 0 18px 36px rgba(34,197,94,.14);
+        }
+
+            .btn-primary:hover {
+                filter: brightness(1.03);
+            }
+
+            .btn-primary:focus {
+                box-shadow: 0 0 0 6px rgba(34,197,94,.14);
+            }
+
+        .btn-outline-secondary {
+            border-color: rgba(255,255,255,.18);
+            color: rgba(255,255,255,.82);
+            background: transparent;
+        }
+
+            .btn-outline-secondary:hover {
+                background: rgba(255,255,255,.10);
+                border-color: rgba(255,255,255,.22);
+                color: #fff;
+            }
+
+        .helper-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            margin-top: 10px;
+            font-size: .92rem;
+            color: var(--muted2);
+        }
+
+            .helper-row a {
+                color: rgba(255,255,255,.82);
+                text-decoration: none;
+            }
+
+                .helper-row a:hover {
+                    color: #fff;
+                    text-decoration: underline;
+                }
+
+        .section-divider {
+            display: flex;
+            align-items: center;
+            gap: .75rem;
+            color: rgba(255,255,255,.55);
+            font-size: .82rem;
+            margin: 16px 0 10px;
+        }
+
+            .section-divider::before,
+            .section-divider::after {
+                content: "";
+                height: 1px;
+                flex: 1;
+                background: rgba(255,255,255,.14);
+            }
+
+        /* Cert */
+        .cert-box {
+            border: 1px solid var(--stroke2);
+            border-radius: 1.25rem;
+            background: rgba(255,255,255,.06);
+            overflow: hidden;
+        }
+
+        .cert-toggle {
+            width: 100%;
+            text-align: left;
+            background: transparent;
+            border: 0;
+            padding: 12px 14px;
+            color: rgba(255,255,255,.92);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }
+
+            .cert-toggle:hover {
+                background: rgba(255,255,255,.06);
+            }
+
+        .cert-meta {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+            .cert-meta .title {
+                font-weight: 800;
+                font-size: .95rem;
+                color: var(--text);
+            }
+
+            .cert-meta .sub {
+                font-size: .82rem;
+                color: var(--muted2);
+                margin-top: 1px;
+            }
+
+        .cert-pill {
+            font-size: .75rem;
+            padding: .28rem .6rem;
+            border-radius: 999px;
+            background: rgba(255,255,255,.10);
+            border: 1px solid rgba(255,255,255,.14);
+            color: rgba(255,255,255,.82);
+            white-space: nowrap;
+        }
+
+        .cert-body {
+            padding: 12px 14px 14px 14px;
+            border-top: 1px solid rgba(255,255,255,.10);
+        }
+
+        .btn-outline-light {
+            border-color: rgba(255,255,255,.22);
+            color: rgba(255,255,255,.92);
+            background: rgba(255,255,255,.06);
+        }
+
+            .btn-outline-light:hover {
+                background: rgba(255,255,255,.10);
+                border-color: rgba(255,255,255,.28);
+                color: #fff;
+            }
+
+        /* UX: botão com loading */
+        .btn-wait {
+            display: none;
+        }
+
+        .is-loading .btn-text {
+            display: none;
+        }
+
+        .is-loading .btn-wait {
+            display: inline-flex;
+            align-items: center;
+        }
+
+        @@media (max-width: 420px) {
+            .auth-card {
+                border-radius: 1.25rem;
+            }
+
+            .brand-badge {
+                width: 50px;
+                height: 50px;
+                border-radius: 1.05rem;
+            }
+        }
+    </style>
+}
+
+<div class="auth-shell">
+    <div class="auth-wrap">
+        <div class="card auth-card">
+            <div class="auth-topbar"></div>
+
+            <div class="card-body p-4 p-md-5">
+
+                <div class="brand">
+                    <div class="brand-badge">IG</div>
+                    <div>
+                        <h4 class="brand-title">InovaGED</h4>
+                        <p class="brand-sub">Acesse sua conta para continuar.</p>
+                    </div>
                 </div>
-                <span asp-validation-for="TenantSlug" class="text-danger small"></span>
-            </div>
 
-            <!-- Email -->
-            <div class="mb-3">
-                <label asp-for="Email" class="form-label small fw-semibold"></label>
-                <div class="input-group">
-                    <span class="input-group-text bg-white">
-                        <i class="bi bi-person-circle"></i>
-                    </span>
-                    <input asp-for="Email" class="form-control" placeholder="email@dominio.com" autocomplete="username" />
-                </div>
-                <span asp-validation-for="Email" class="text-danger small"></span>
-            </div>
+                <!-- ================== LOGIN PADRÃO ================== -->
+                <form id="loginForm" asp-action="Login" method="post" novalidate>
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" asp-for="ReturnUrl" />
 
-            <!-- Password -->
-            <div class="mb-3">
-                <label asp-for="Password" class="form-label small fw-semibold"></label>
-                <div class="input-group">
-                    <span class="input-group-text bg-white">
-                        <i class="bi bi-lock"></i>
-                    </span>
+                    <div class="mb-3">
+                        <label asp-for="TenantSlug" class="form-label small fw-semibold"></label>
+                        <div class="input-group">
+                            <span class="input-group-text"><i class="bi bi-buildings"></i></span>
+                            <input asp-for="TenantSlug" class="form-control" placeholder="Tenant (ex: prefeitura-x)" autocomplete="organization" />
+                        </div>
+                        <span asp-validation-for="TenantSlug" class="text-danger small"></span>
+                    </div>
 
-                    <input asp-for="Password"
-                           type="password"
-                           class="form-control"
-                           id="passwordInput"
-                           placeholder="••••••••"
-                           autocomplete="current-password" />
+                    <div class="mb-3">
+                        <label asp-for="Email" class="form-label small fw-semibold"></label>
+                        <div class="input-group">
+                            <span class="input-group-text"><i class="bi bi-person-circle"></i></span>
+                            <input asp-for="Email" class="form-control" placeholder="E-mail" autocomplete="username" />
+                        </div>
+                        <span asp-validation-for="Email" class="text-danger small"></span>
+                    </div>
 
-                    <button type="button"
-                            class="btn btn-outline-secondary"
-                            title="Mostrar/ocultar senha"
-                            tabindex="-1"
-                            onclick="togglePassword()">
-                        <i class="bi bi-eye" id="passwordIcon"></i>
+                    <div class="mb-2">
+                        <label asp-for="Password" class="form-label small fw-semibold"></label>
+                        <div class="input-group">
+                            <span class="input-group-text"><i class="bi bi-lock"></i></span>
+                            <input asp-for="Password"
+                                   type="password"
+                                   class="form-control"
+                                   id="passwordInput"
+                                   placeholder="Senha"
+                                   autocomplete="current-password" />
+                            <button type="button"
+                                    class="btn btn-outline-secondary"
+                                    title="Mostrar/ocultar senha"
+                                    tabindex="-1"
+                                    onclick="togglePassword()">
+                                <i class="bi bi-eye" id="passwordIcon"></i>
+                            </button>
+                        </div>
+                        <span asp-validation-for="Password" class="text-danger small"></span>
+                    </div>
+
+                    @if (!ViewData.ModelState.IsValid)
+                    {
+                        <div class="alert alert-danger py-2 small mt-3 mb-0">
+                            <div class="d-flex align-items-start gap-2">
+                                <i class="bi bi-exclamation-triangle mt-1"></i>
+                                <div>@Html.ValidationSummary(excludePropertyErrors: true)</div>
+                            </div>
+                        </div>
+                    }
+
+                    <button id="loginBtn" type="submit" class="btn btn-primary w-100 py-2 fw-semibold mt-3">
+                        <span class="btn-text"><i class="bi bi-box-arrow-in-right me-1"></i> Entrar</span>
+                        <span class="btn-wait"><span class="spinner-border spinner-border-sm me-2"></span>Entrando...</span>
                     </button>
-                </div>
-                <span asp-validation-for="Password" class="text-danger small"></span>
-            </div>
 
-            <!-- ERROS (mais elegante) -->
-            @if (!ViewData.ModelState.IsValid)
-            {
-                <div class="alert alert-danger py-2 small mb-3">
-                    <div class="d-flex align-items-start gap-2">
-                        <i class="bi bi-exclamation-triangle mt-1"></i>
-                        <div>
-                            @Html.ValidationSummary(excludePropertyErrors: true)
+                    <div class="helper-row">
+                        <a href="@Url.Action("Create", "Users")">
+                            <i class="bi bi-person-plus me-1"></i> Criar usuário
+                        </a>
+
+                        <span class="d-inline-flex align-items-center gap-2">
+                            <i class="bi bi-shield-lock"></i>
+                            <span>Conexão segura</span>
+                        </span>
+                    </div>
+                </form>
+
+                <div class="section-divider">Acesso alternativo</div>
+
+                <!-- ================== CERTIFICADO ================== -->
+                <div class="cert-box">
+                    <button type="button"
+                            class="cert-toggle"
+                            data-bs-toggle="collapse"
+                            data-bs-target="#certCollapse"
+                            aria-expanded="@(openCert ? "true" : "false")"
+                            aria-controls="certCollapse">
+                        <div class="cert-meta">
+                            <i class="bi bi-fingerprint"></i>
+                            <div>
+                                <div class="title">Entrar com certificado digital</div>
+                                <div class="sub">ICP-Brasil (PoC) • valida cadeia e CPF</div>
+                            </div>
+                        </div>
+                        <span class="cert-pill" id="certPill">@(openCert ? "Aberto" : "Abrir")</span>
+                    </button>
+
+                    <div class="collapse @(openCert ? "show" : "")" id="certCollapse">
+                        <div class="cert-body">
+
+                            @if (!string.IsNullOrWhiteSpace(certErr))
+                            {
+                                <div class="alert alert-danger py-2 small mb-3">
+                                    <div class="d-flex align-items-start gap-2">
+                                        <i class="bi bi-exclamation-triangle mt-1"></i>
+                                        <div>@certErr</div>
+                                    </div>
+                                </div>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(certOk))
+                            {
+                                <div class="alert alert-success py-2 small mb-3">
+                                    <div class="d-flex align-items-start gap-2">
+                                        <i class="bi bi-check-circle mt-1"></i>
+                                        <div>@certOk</div>
+                                    </div>
+                                </div>
+                            }
+
+                            <form id="certLoginForm" method="post" action="/auth/cert">
+                                @Html.AntiForgeryToken()
+
+                                <!-- mantém o returnUrl do login padrão -->
+                                <input type="hidden" name="ReturnUrl" value="@Model?.ReturnUrl" />
+
+                                <div class="row g-2">
+                                    <div class="col-md-5">
+                                        <label class="form-label small fw-semibold">CPF</label>
+                                        <div class="input-group">
+                                            <span class="input-group-text"><i class="bi bi-credit-card-2-front"></i></span>
+                                            <input class="form-control" name="UserCpf" id="cpfCert" placeholder="000.000.000-00" inputmode="numeric" />
+                                        </div>
+                                        <div class="field-note">Informe o CPF do usuário e selecione o certificado.</div>
+                                    </div>
+
+                                    <div class="col-md-4">
+                                        <label class="form-label small fw-semibold">Certificado (.cer / .pfx)</label>
+                                        <input class="form-control" type="file" id="certFile" />
+                                        <div class="field-note">Se for .pfx, informe a senha.</div>
+                                    </div>
+
+                                    <div class="col-md-3">
+                                        <label class="form-label small fw-semibold">Senha do PFX</label>
+                                        <input class="form-control" name="PfxPassword" id="pfxpass" type="password" placeholder="(opcional)" />
+                                        <div class="field-note">Somente para .pfx.</div>
+                                    </div>
+                                </div>
+
+                                <input type="hidden" name="CertificateBase64" id="certB64" />
+
+                                <button id="certSubmitBtn" type="submit" class="btn btn-outline-light w-100 mt-3 py-2 fw-semibold">
+                                    <span class="btn-text"><i class="bi bi-shield-check me-1"></i> Validar e entrar</span>
+                                    <span class="btn-wait"><span class="spinner-border spinner-border-sm me-2"></span>Validando...</span>
+                                </button>
+
+                                <div id="certClientMsg" class="mt-2 small text-white-50 d-none"></div>
+                            </form>
+
                         </div>
                     </div>
                 </div>
-            }
 
-            <!-- SUBMIT -->
-            <button type="submit" class="btn btn-primary w-100 py-2 fw-semibold">
-                <i class="bi bi-box-arrow-in-right me-1"></i>
-                Entrar
-            </button>
-
-            <!-- ÚNICO LINK REAL (EXISTE) -->
-            <div class="text-center mt-3 small">
-                <a class="text-decoration-none" href="@Url.Action("Create", "Users")">
-                    <i class="bi bi-person-plus me-1"></i>
-                    Criar usuário
-                </a>
-            </div>
-        </form>
-
-        <!-- Extra: Dica de UX -->
-        <div class="mt-4 p-3 rounded bg-light border small text-muted">
-            <div class="fw-semibold text-dark mb-1">
-                <i class="bi bi-lightbulb me-1"></i> Dica rápida
-            </div>
-            <div>
-                O <strong>Tenant</strong> é o identificador do órgão/empresa (ex: <code>prefeitura-x</code>).
-                O <strong>usuário</strong> é o seu e-mail cadastrado.
-            </div>
-        </div>
-    </div>
-</div>
-
+            </div><!-- /card-body -->
+        </div><!-- /card -->
+    </div><!-- /wrap -->
+</div><!-- /shell -->
 @section Scripts {
     <partial name="_ValidationScriptsPartial" />
 
@@ -138,5 +519,87 @@
                 icon.classList.add('bi-eye');
             }
         }
+
+        function bytesToBase64(bytes) {
+            // Evita travar em arquivos maiores (faz chunk)
+            let binary = "";
+            const chunkSize = 0x8000;
+            for (let i = 0; i < bytes.length; i += chunkSize) {
+                const chunk = bytes.subarray(i, i + chunkSize);
+                binary += String.fromCharCode.apply(null, chunk);
+            }
+            return btoa(binary);
+        }
+
+        function setBtnLoading(btn, loading) {
+            if (!btn) return;
+            if (loading) {
+                btn.classList.add("is-loading");
+                btn.setAttribute("disabled", "disabled");
+            } else {
+                btn.classList.remove("is-loading");
+                btn.removeAttribute("disabled");
+            }
+        }
+
+        document.addEventListener("DOMContentLoaded", () => {
+            // Loading do login normal
+            const loginForm = document.getElementById("loginForm");
+            const loginBtn = document.getElementById("loginBtn");
+            loginForm?.addEventListener("submit", () => setBtnLoading(loginBtn, true));
+
+            // Cert collapse pill texto
+            const certCollapse = document.getElementById("certCollapse");
+            const certPill = document.getElementById("certPill");
+            if (certCollapse && certPill) {
+                certCollapse.addEventListener('shown.bs.collapse', () => certPill.textContent = "Aberto");
+                certCollapse.addEventListener('hidden.bs.collapse', () => certPill.textContent = "Abrir");
+            }
+
+            // Cert submit corrigido (NÃO usa onsubmit async)
+            const form = document.getElementById("certLoginForm");
+            const fileInput = document.getElementById("certFile");
+            const b64Input = document.getElementById("certB64");
+            const btn = document.getElementById("certSubmitBtn");
+            const msg = document.getElementById("certClientMsg");
+
+            if (!form) return;
+
+            form.addEventListener("submit", async (e) => {
+                e.preventDefault();
+
+                if (msg) { msg.classList.add("d-none"); msg.textContent = ""; }
+
+                const f = fileInput?.files?.[0];
+                if (!f) {
+                    if (msg) {
+                        msg.textContent = "Selecione um certificado (.cer ou .pfx) antes de validar.";
+                        msg.classList.remove("d-none");
+                    } else {
+                        alert("Selecione um certificado (.cer ou .pfx).");
+                    }
+                    return;
+                }
+
+                try {
+                    setBtnLoading(btn, true);
+
+                    const buf = await f.arrayBuffer();
+                    const bytes = new Uint8Array(buf);
+                    b64Input.value = bytesToBase64(bytes);
+
+                    form.submit(); // agora sim, envia com CertificateBase64 preenchido
+                } catch (err) {
+                    console.error(err);
+                    if (msg) {
+                        msg.textContent = "Falha ao ler o certificado. Tente novamente.";
+                        msg.classList.remove("d-none");
+                    } else {
+                        alert("Falha ao ler o certificado.");
+                    }
+                    setBtnLoading(btn, false);
+                }
+            });
+        });
     </script>
 }

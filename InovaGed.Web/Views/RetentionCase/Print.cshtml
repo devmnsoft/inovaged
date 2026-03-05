@@ -47,7 +47,7 @@
                 <tr>
                     <td>@i.DocCode<br /><small class="text-muted">@i.DocTitle</small></td>
                     <td>@i.ClassificationCode<br /><small class="text-muted">@i.ClassificationName</small></td>
-                    <td>@(i.RetentionDueAt?.ToString("dd/MM/yyyy") ?? "—")</td>
+                    <td>@(i.RetentionDueAt.ToString("dd/MM/yyyy") ?? "—")</td>
                     <td>@i.RetentionStatus</td>
                     <td>@i.SuggestedDestination</td>
                     <td>@i.Decision</td>

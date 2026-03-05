@@ -136,7 +136,7 @@ public sealed class RetentionCaseController : Controller
               .Append(Esc(i.DocTitle)).Append(',')
               .Append(Esc(i.ClassificationCode)).Append(',')
               .Append(Esc(i.ClassificationName)).Append(',')
-              .Append(Esc(i.RetentionDueAt?.ToString("yyyy-MM-dd"))).Append(',')
+              .Append(Esc(i.RetentionDueAt.ToString("yyyy-MM-dd"))).Append(',')
               .Append(Esc(i.RetentionStatus)).Append(',')
               .Append(Esc(i.SuggestedDestination)).Append(',')
               .Append(Esc(i.Decision)).Append(',')

@@ -24,6 +24,7 @@ using InovaGed.Application.Retention;
 using InovaGed.Application.RetentionCases;
 using InovaGed.Application.RetentionTerms;
 using InovaGed.Application.Search;
+using InovaGed.Application.Security.Users;
 using InovaGed.Application.Signatures;
 using InovaGed.Application.Users;
 using InovaGed.Application.Workflow;
@@ -52,6 +53,7 @@ using InovaGed.Infrastructure.RetentionCases;
 using InovaGed.Infrastructure.RetentionTerms;
 using InovaGed.Infrastructure.Search;
 using InovaGed.Infrastructure.Security;
+using InovaGed.Infrastructure.Security.Users;
 using InovaGed.Infrastructure.Signatures;
 using InovaGed.Infrastructure.Storage;
 using InovaGed.Infrastructure.Users;
@@ -267,7 +269,7 @@ builder.Services.AddScoped<ITenantAccessor, TenantAccessor>();
 
 // Tenant provider (scoped)
 builder.Services.AddScoped<ITenantProvider, HttpTenantProvider>();
- 
+builder.Services.AddScoped<IAppUserRepository, AppUserRepository>();
 
 // Authorization middleware result handler (singleton)
 builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, AccessFailureAuditHandler>();

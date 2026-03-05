@@ -83,7 +83,7 @@
                             <div class="fw-semibold">@i.ClassificationCode</div>
                             <div class="text-muted small">@i.ClassificationName</div>
                         </td>
-                        <td>@(i.RetentionDueAt?.ToString("dd/MM/yyyy") ?? "—")</td>
+                        <td>@(i.RetentionDueAt.ToString("dd/MM/yyyy") ?? "—")</td>
                         <td><span class="@Badge(i.RetentionStatus)">@i.RetentionStatus</span></td>
                         <td><span class="badge bg-secondary">@i.SuggestedDestination</span></td>
                         <td>
