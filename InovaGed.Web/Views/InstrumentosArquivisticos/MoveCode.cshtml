@@ -5,24 +5,90 @@
     ViewData["Title"] ??= "Movimentar Código (PCD/TTD)";
 }
 
-<h2 class="mb-2"><i class="bi bi-arrow-left-right me-2"></i>@ViewData["Title"]</h2>
-<div class="text-muted mb-3">Move uma classe e atualiza automaticamente os códigos dos descendentes (tudo acompanha) + histórico.</div>
+<div class="d-flex align-items-start justify-content-between gap-3 mb-2">
+    <div>
+        <h2 class="mb-1">
+            <i class="bi bi-arrow-left-right me-2"></i>@ViewData["Title"]
+        </h2>
+        <div class="text-muted">
+            Reclassifique uma classe/código do PCD/TTD mudando o “pai” e/ou o código. A subárvore acompanha automaticamente.
+        </div>
+    </div>
+</div>
 
 @if (TempData["Ok"] is string ok)
 {
-    <div class="alert alert-success">@ok</div>
+    <div class="alert alert-success d-flex align-items-start gap-2">
+        <i class="bi bi-check-circle-fill mt-1"></i>
+        <div>@ok</div>
+    </div>
 }
 @if (TempData["Err"] is string err)
 {
-    <div class="alert alert-danger">@err</div>
+    <div class="alert alert-danger d-flex align-items-start gap-2">
+        <i class="bi bi-exclamation-triangle-fill mt-1"></i>
+        <div>@err</div>
+    </div>
 }
+
+<div class="card shadow-sm mb-3">
+    <div class="card-body">
+        <h5 class="mb-2"><i class="bi bi-info-circle me-2"></i>Como funciona</h5>
+
+        <div class="row g-3">
+            <div class="col-lg-7">
+                <ul class="mb-0">
+                    <li>
+                        <strong>Classe a movimentar:</strong> selecione o código/classe que será reclassificado.
+                    </li>
+                    <li>
+                        <strong>Novo Pai (opcional):</strong> define em qual classe a selecionada ficará “dentro”.
+                        Se deixar em branco, ela vai para a <strong>raiz</strong>.
+                    </li>
+                    <li>
+                        <strong>Novo Código (opcional):</strong> se preenchido, o código da classe é alterado.
+                        <br />
+                        <span class="text-muted">Se deixar vazio, o sistema mantém o código atual e só movimenta o pai.</span>
+                    </li>
+                    <li>
+                        <strong>Descendentes acompanham:</strong> ao alterar o código do nó, todos os filhos são atualizados automaticamente
+                        (ex.: <code>01.02</code> → <code>03.01</code> faz <code>01.02.05</code> virar <code>03.01.05</code>).
+                    </li>
+                    <li>
+                        <strong>Histórico:</strong> todas as alterações são registradas para rastreabilidade (auditoria + histórico).
+                    </li>
+                </ul>
+            </div>
+
+            <div class="col-lg-5">
+                <div class="border rounded-3 p-3 bg-light">
+                    <div class="fw-semibold mb-1"><i class="bi bi-shield-check me-2"></i>Regras de segurança</div>
+                    <ul class="mb-0">
+                        <li>
+                            <strong>Não pode criar ciclo:</strong> não é permitido mover um código para dentro de um filho/descendente.
+                        </li>
+                        <li>
+                            <strong>Código único:</strong> não pode existir outro código igual ativo no mesmo tenant.
+                        </li>
+                        <li>
+                            <strong>Somente ativos:</strong> códigos inativos não podem ser movimentados.
+                        </li>
+                    </ul>
+                </div>
+
+                 
+            </div>
+        </div>
+    </div>
+</div>
 
 <form asp-action="MoveCode" method="post" class="card shadow-sm">
     @Html.AntiForgeryToken()
+
     <div class="card-body">
         <div class="row g-3">
             <div class="col-lg-6">
-                <label class="form-label">Classe a movimentar</label>
+                <label class="form-label">Classe a movimentar <span class="text-danger">*</span></label>
                 <select class="form-select" asp-for="ClassificationId">
                     <option value="">-- selecione --</option>
                     @foreach (var c in Model.Classes)
@@ -30,6 +96,7 @@
                         <option value="@c.Id">@c.Code - @c.Name</option>
                     }
                 </select>
+                <div class="form-text">Selecione o código/classe que será movido/reclassificado.</div>
             </div>
 
             <div class="col-lg-6">
@@ -41,22 +108,26 @@
                         <option value="@c.Id">@c.Code - @c.Name</option>
                     }
                 </select>
-                <div class="form-text">Se escolher um pai, o código deve ser coerente com a hierarquia (ex.: 02.01.03).</div>
+                <div class="form-text">
+                    Se escolher um pai, a classe passará a “ficar dentro” dele.
+                    Não é permitido escolher um descendente (evita ciclos).
+                </div>
             </div>
 
             <div class="col-lg-4">
-                <label class="form-label">Novo código</label>
+                <label class="form-label">Novo código (opcional)</label>
                 <input class="form-control" asp-for="NewCode" placeholder="Ex.: 02.01.03" />
+                <div class="form-text">Se vazio, o sistema mantém o código atual.</div>
             </div>
 
             <div class="col-lg-8">
                 <label class="form-label">Motivo (vai para histórico)</label>
-                <input class="form-control" asp-for="Reason" placeholder="Ex.: Reclassificação conforme atualização do PCD" />
+                <input class="form-control" asp-for="Reason" placeholder="Ex.: Reclassificação conforme atualização do PCD/TTD" />
             </div>
         </div>
     </div>
 
-    <div class="card-footer d-flex gap-2">
+    <div class="card-footer d-flex flex-wrap gap-2">
         <button class="btn btn-primary" type="submit">
             <i class="bi bi-check2-circle me-1"></i> Confirmar movimentação
         </button>

@@ -1,0 +1,109 @@
+﻿@model List<InovaGed.Web.Controllers.ImportExportController.ExportDocRow>
+
+@{
+    ViewData["Title"] = "Central de Exportação";
+    ViewData["Subtitle"] = "Exportar documentos / versões (PoC 23)";
+}
+
+<div class="container py-3">
+
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <div>
+            <h3 class="mb-0">@ViewData["Title"]</h3>
+            <div class="text-muted small">@ViewData["Subtitle"]</div>
+        </div>
+
+        <a class="btn btn-outline-secondary" asp-controller="ImportExport" asp-action="Index">
+            <i class="bi bi-arrow-left"></i> Voltar
+        </a>
+    </div>
+
+    <div class="card shadow-sm">
+        <div class="card-body">
+
+            <div class="alert alert-info small mb-3">
+                Esta tela lista os últimos documentos (até 100) e permite exportar a versão atual.
+                (A exportação efetiva usa o download do GED por versionId.)
+            </div>
+
+            @if (Model == null || Model.Count == 0)
+            {
+                <div class="text-muted">Nenhum documento encontrado para exportação.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-sm table-striped align-middle">
+                        <thead>
+                            <tr>
+                                <th style="min-width:120px;">Código</th>
+                                <th>Título</th>
+                                <th style="min-width:220px;">Arquivo</th>
+                                <th style="width:110px;" class="text-end">Tamanho</th>
+                                <th style="width:160px;">Assinatura</th>
+                                <th style="width:140px;" class="text-end">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var d in Model)
+                            {
+                                <tr>
+                                    <td class="fw-semibold">@d.Code</td>
+                                    <td>
+                                        <div class="fw-semibold">@d.Title</div>
+                                        <div class="text-muted small">@d.Id</div>
+                                    </td>
+                                    <td>
+                                        <div class="fw-semibold">@d.FileName</div>
+                                        <div class="text-muted small">@d.ContentType</div>
+                                    </td>
+                                    <td class="text-end">
+                                        <span class="text-muted">@FormatBytes(d.SizeBytes)</span>
+                                    </td>
+                                    <td>
+                                        @{
+                                            var sig = (d.SigStatus ?? "").Trim();
+                                            var badge = sig switch
+                                            {
+                                                "VALID" => "bg-success",
+                                                "INVALID" => "bg-danger",
+                                                "NOT_VERIFIABLE" => "bg-warning text-dark",
+                                                "UNKNOWN" => "bg-secondary",
+                                                _ => "bg-light text-dark"
+                                            };
+                                            var label = string.IsNullOrWhiteSpace(sig) ? "—" : sig;
+                                        }
+                                        <span class="badge @badge">@label</span>
+                                    </td>
+                                    <td class="text-end">
+                                        <a class="btn btn-sm btn-primary"
+                                           asp-controller="ImportExport"
+                                           asp-action="Export"
+                                           asp-route-versionId="@d.Id"
+                                           title="Exportar (baixar versão)">
+                                            <i class="bi bi-download"></i> Exportar
+                                        </a>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+
+        </div>
+    </div>
+</div>
+
+@functions {
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        double kb = bytes / 1024d;
+        if (kb < 1024) return $"{kb:0.#} KB";
+        double mb = kb / 1024d;
+        if (mb < 1024) return $"{mb:0.#} MB";
+        double gb = mb / 1024d;
+        return $"{gb:0.#} GB";
+    }
+}

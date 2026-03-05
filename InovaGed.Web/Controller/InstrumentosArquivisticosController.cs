@@ -3,6 +3,7 @@ using InovaGed.Application.Common.Context;
 using InovaGed.Application.Common.Database;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Npgsql;
 
 namespace InovaGed.Web.Controllers;
 
@@ -40,21 +41,21 @@ public sealed class InstrumentosArquivisticosController : Controller
     public async Task<IActionResult> MoveCode(CancellationToken ct)
     {
         var tenantId = TenantIdOrThrow();
+        await using var conn = await _db.OpenAsync(ct);
 
-        using var conn = await _db.OpenAsync(ct);
-
-        // Lista simples para dropdown (PoC). Pode virar tree depois.
+        // lista para dropdown (somente ativos)
         var classes = (await conn.QueryAsync<ClassificationPickRow>(@"
             SELECT id AS Id, code AS Code, name AS Name
               FROM ged.classification_plan
              WHERE tenant_id = @tenantId
+               AND is_active = true
              ORDER BY code;", new { tenantId }))
             .ToList();
 
         var vm = new MoveCodeVM { Classes = classes };
+
         ViewData["Title"] = "Movimentar Código (PCD/TTD)";
         ViewData["Subtitle"] = "Reclassificar/mover classe mantendo todo o conteúdo (inclui filhos).";
-
         return View(vm);
     }
 
@@ -65,15 +66,19 @@ public sealed class InstrumentosArquivisticosController : Controller
         var tenantId = TenantIdOrThrow();
         var actor = ActorIdOrEmpty();
 
-        if (vm.ClassificationId == Guid.Empty || string.IsNullOrWhiteSpace(vm.NewCode))
+        // Validação mínima
+        if (vm.ClassificationId == Guid.Empty)
         {
-            TempData["Err"] = "Selecione a classe e informe o novo código.";
-            return RedirectToAction(nameof(MoveCode));
+            TempData["Err"] = "Selecione a classe a movimentar.";
+            return await ReloadWithClasses(vm, ct);
         }
+
+        // NewCode é opcional (se vazio, a função mantém o antigo)
+        var newCode = string.IsNullOrWhiteSpace(vm.NewCode) ? null : vm.NewCode.Trim();
 
         try
         {
-            using var conn = await _db.OpenAsync(ct);
+            await using var conn = await _db.OpenAsync(ct);
 
             // chama função do banco (transacional e segura)
             await conn.ExecuteAsync(@"
@@ -89,21 +94,52 @@ public sealed class InstrumentosArquivisticosController : Controller
                 {
                     tenantId,
                     classificationId = vm.ClassificationId,
-                    newParentId = vm.NewParentId, // pode ser null
-                    newCode = vm.NewCode.Trim(),
+                    newParentId = vm.NewParentId, // null = raiz
+                    newCode,                      // null/"" => mantém
                     actor = actor == Guid.Empty ? (Guid?)null : actor,
                     reason = string.IsNullOrWhiteSpace(vm.Reason) ? null : vm.Reason.Trim()
                 });
 
-            TempData["Ok"] = "Código movimentado com sucesso (classe e descendentes atualizados).";
+            TempData["Ok"] = "Movimentação executada. A classe foi reclassificada e, se aplicável, os descendentes tiveram os códigos atualizados automaticamente.";
+            return RedirectToAction(nameof(MoveCode));
+        }
+        catch (PostgresException ex) when (ex.SqlState == "P0001")
+        {
+            // mensagens de validação vindas do RAISE EXCEPTION na função
+            _logger.LogWarning(ex, "MoveCode validation failed Tenant={Tenant}", tenantId);
+            TempData["Err"] = ex.MessageText;
+            return await ReloadWithClasses(vm, ct);
+        }
+        catch (PostgresException ex)
+        {
+            _logger.LogError(ex, "MoveCode postgres failed Tenant={Tenant}", tenantId);
+            TempData["Err"] = $"Erro no banco: {ex.MessageText}";
+            return await ReloadWithClasses(vm, ct);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "MoveCode failed Tenant={Tenant}", tenantId);
-            TempData["Err"] = ex.Message;
+            TempData["Err"] = "Falha ao movimentar o código. Verifique os dados e tente novamente.";
+            return await ReloadWithClasses(vm, ct);
         }
+    }
 
-        return RedirectToAction(nameof(MoveCode));
+    private async Task<IActionResult> ReloadWithClasses(MoveCodeVM vm, CancellationToken ct)
+    {
+        var tenantId = TenantIdOrThrow();
+        await using var conn = await _db.OpenAsync(ct);
+
+        vm.Classes = (await conn.QueryAsync<ClassificationPickRow>(@"
+            SELECT id AS Id, code AS Code, name AS Name
+              FROM ged.classification_plan
+             WHERE tenant_id = @tenantId
+               AND is_active = true
+             ORDER BY code;", new { tenantId }))
+            .ToList();
+
+        ViewData["Title"] = "Movimentar Código (PCD/TTD)";
+        ViewData["Subtitle"] = "Reclassificar/mover classe mantendo todo o conteúdo (inclui filhos).";
+        return View(vm);
     }
 
     // ---------------------------
@@ -113,7 +149,7 @@ public sealed class InstrumentosArquivisticosController : Controller
     public async Task<IActionResult> Versions(CancellationToken ct)
     {
         var tenantId = TenantIdOrThrow();
-        using var conn = await _db.OpenAsync(ct);
+        await using var conn = await _db.OpenAsync(ct);
 
         var list = (await conn.QueryAsync<PlanVersionRow>(@"
             SELECT id AS Id, version_no AS VersionNo, title AS Title, notes AS Notes,
@@ -150,9 +186,9 @@ public sealed class InstrumentosArquivisticosController : Controller
 
         try
         {
-            using var conn = await _db.OpenAsync(ct);
+            await using var conn = await _db.OpenAsync(ct);
 
-            // pega próximo version_no
+            // próximo version_no
             var nextNo = await conn.ExecuteScalarAsync<int>(@"
                 SELECT COALESCE(MAX(version_no),0) + 1
                   FROM ged.classification_plan_version
@@ -202,7 +238,8 @@ public sealed class InstrumentosArquivisticosController : Controller
                 LEFT JOIN ged.classification_plan parent
                   ON parent.tenant_id = cp.tenant_id
                  AND parent.id = cp.parent_id
-                WHERE cp.tenant_id = @tenantId;",
+                WHERE cp.tenant_id = @tenantId
+                ORDER BY cp.code;",
                 new { tenantId, versionId });
 
             TempData["Ok"] = $"Versão publicada: #{nextNo}.";
@@ -220,7 +257,7 @@ public sealed class InstrumentosArquivisticosController : Controller
     public async Task<IActionResult> VersionDetails(Guid id, CancellationToken ct)
     {
         var tenantId = TenantIdOrThrow();
-        using var conn = await _db.OpenAsync(ct);
+        await using var conn = await _db.OpenAsync(ct);
 
         var header = await conn.QuerySingleOrDefaultAsync<PlanVersionRow>(@"
             SELECT id AS Id, version_no AS VersionNo, title AS Title, notes AS Notes,
@@ -232,7 +269,7 @@ public sealed class InstrumentosArquivisticosController : Controller
 
         var items = (await conn.QueryAsync<PlanVersionItemRow>(@"
             SELECT code AS Code, name AS Name, parent_code AS ParentCode,
-                   retention_start_event AS RetentionStartEvent,
+                   retention_start_event::text AS RetentionStartEvent,
                    retention_active_days AS ActiveDays,
                    retention_active_months AS ActiveMonths,
                    retention_active_years AS ActiveYears,
@@ -268,7 +305,7 @@ public sealed class InstrumentosArquivisticosController : Controller
     {
         public Guid ClassificationId { get; set; }
         public Guid? NewParentId { get; set; }
-        public string NewCode { get; set; } = "";
+        public string? NewCode { get; set; }     // agora opcional
         public string? Reason { get; set; }
         public List<ClassificationPickRow> Classes { get; set; } = new();
     }
