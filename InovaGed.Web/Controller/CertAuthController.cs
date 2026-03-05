@@ -15,14 +15,20 @@ public sealed class CertAuthController : Controller
     private readonly ILogger<CertAuthController> _logger;
     private readonly IAppUserRepository _users;
     private readonly IWebHostEnvironment _env;
+    private readonly IConfiguration _cfg;
 
     private static readonly Guid TenantPoC = Guid.Parse("00000000-0000-0000-0000-000000000001");
 
-    public CertAuthController(ILogger<CertAuthController> logger, IAppUserRepository users, IWebHostEnvironment env)
+    public CertAuthController(
+        ILogger<CertAuthController> logger,
+        IAppUserRepository users,
+        IWebHostEnvironment env,
+        IConfiguration cfg)
     {
         _logger = logger;
         _users = users;
         _env = env;
+        _cfg = cfg;
     }
 
     // ✅ você pode manter o GET /auth/cert, mas o fluxo principal será via /Account/Login
@@ -41,20 +47,18 @@ public sealed class CertAuthController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Login(CertLoginRequest req, CancellationToken ct)
     {
-        var returnUrl = req.ReturnUrl; // se você adicionar isso no model (recomendado)
-
         var cpfUser = CpfFromCertificate.NormalizeCpf(req.UserCpf);
+
         if (string.IsNullOrWhiteSpace(cpfUser) || cpfUser.Length != 11)
-            return BackToLoginWithCertError("CPF inválido. Informe 11 dígitos.", returnUrl);
+            return BackToLoginWithCertError("CPF inválido. Informe 11 dígitos.", req.ReturnUrl);
 
         if (string.IsNullOrWhiteSpace(req.CertificateBase64))
-            return BackToLoginWithCertError("Selecione um certificado (.cer ou .pfx).", returnUrl);
+            return BackToLoginWithCertError("Selecione um certificado (.cer ou .pfx).", req.ReturnUrl);
 
         X509Certificate2 cert;
         try
         {
             var raw = Convert.FromBase64String(req.CertificateBase64);
-
             cert = string.IsNullOrWhiteSpace(req.PfxPassword)
                 ? new X509Certificate2(raw)
                 : new X509Certificate2(raw, req.PfxPassword,
@@ -63,27 +67,27 @@ public sealed class CertAuthController : Controller
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "CertAuth: erro carregando certificado.");
-            return BackToLoginWithCertError("Certificado inválido (arquivo/senha/formato).", returnUrl);
+            return BackToLoginWithCertError("Certificado inválido (arquivo/senha/formato).", req.ReturnUrl);
         }
 
-        // ✅ validações Item 10
-        var allowTestSelfSigned = _env.IsDevelopment();
+        // ✅ Flag de PoC (não depende do ambiente)
+        var allowTestSelfSigned =
+            _cfg.GetValue<bool>("Auth:AllowTestCertificates") || _env.IsDevelopment();
+
+        _logger.LogWarning("CertAuth: env={Env} allowTest={AllowTest} subject={Subject}",
+            _env.EnvironmentName, allowTestSelfSigned, cert.Subject);
+
         var v = CertificateValidator.Validate(cert, allowTestSelfSigned);
 
         if (!v.Ok)
-            return BackToLoginWithCertError(v.Error ?? "Falha na validação do certificado.", returnUrl);
+            return BackToLoginWithCertError(v.Error ?? "Falha na validação do certificado.", req.ReturnUrl);
 
-        var cpfCert = v.ExtractedCpf!;
-        if (!string.Equals(cpfUser, cpfCert, StringComparison.Ordinal))
-            return BackToLoginWithCertError("CPF informado não corresponde ao CPF do certificado.", returnUrl);
+        if (!string.Equals(cpfUser, v.ExtractedCpf, StringComparison.Ordinal))
+            return BackToLoginWithCertError("CPF informado não corresponde ao CPF do certificado.", req.ReturnUrl);
 
-        // PoC: CPF em password_plain
         var user = await _users.GetByCpfAsync(TenantPoC, cpfUser, ct);
-        if (user is null)
-            return BackToLoginWithCertError("Usuário não encontrado para o CPF informado.", returnUrl);
-
-        if (!user.IsActive)
-            return BackToLoginWithCertError("Usuário inativo.", returnUrl);
+        if (user is null) return BackToLoginWithCertError("Usuário não encontrado para o CPF informado.", req.ReturnUrl);
+        if (!user.IsActive) return BackToLoginWithCertError("Usuário inativo.", req.ReturnUrl);
 
         var claims = new List<Claim>
         {
@@ -96,10 +100,9 @@ public sealed class CertAuthController : Controller
             new("cert_thumbprint", v.Thumbprint ?? "")
         };
 
-        var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
-        var principal = new ClaimsPrincipal(identity);
-
-        await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal);
+        await HttpContext.SignInAsync(
+            CookieAuthenticationDefaults.AuthenticationScheme,
+            new ClaimsPrincipal(new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme)));
 
         TempData["cert_ok"] = "Autenticação por certificado realizada com sucesso.";
         return RedirectToAction("Index", "Home");

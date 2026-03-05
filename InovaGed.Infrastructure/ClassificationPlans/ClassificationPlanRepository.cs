@@ -1,6 +1,9 @@
 ﻿using Dapper;
+using InovaGed.Application.Audit;
 using InovaGed.Application.ClassificationPlans;
 using InovaGed.Application.Common.Database;
+using InovaGed.Application.Ged.Instruments;
+using InovaGed.Domain.Primitives;
 using Microsoft.Extensions.Logging;
 
 namespace InovaGed.Infrastructure.ClassificationPlans;
@@ -9,10 +12,15 @@ public sealed class ClassificationPlanRepository : IClassificationPlanRepository
 {
     private readonly IDbConnectionFactory _db;
     private readonly ILogger<ClassificationPlanRepository> _logger;
+    private readonly IAuditWriter _audit;
 
-    public ClassificationPlanRepository(IDbConnectionFactory db, ILogger<ClassificationPlanRepository> logger)
+    public ClassificationPlanRepository(
+      IDbConnectionFactory db,
+      IAuditWriter audit,
+      ILogger<ClassificationPlanRepository> logger)
     {
         _db = db;
+        _audit = audit;
         _logger = logger;
     }
 
@@ -171,29 +179,169 @@ on conflict (id) do update set
         }
     }
 
-    public async Task MoveAsync(Guid tenantId, Guid userId, Guid id, Guid? newParentId, CancellationToken ct)
+    public async Task<Result> MoveAsync(Guid tenantId, Guid userId, Guid id, Guid? newParentId, CancellationToken ct)
     {
-        if (newParentId == id) throw new ArgumentException("Parent não pode ser ele mesmo.");
-
-        const string sql = @"
-update ged.classification_plan
-set parent_id = @newParentId,
-    updated_at = now(),
-    updated_by = @userId
-where tenant_id = @tenantId and id = @id;";
-
         try
         {
+            if (tenantId == Guid.Empty) return Result.Fail("TENANT", "Tenant inválido.");
+            if (userId == Guid.Empty) return Result.Fail("USER", "Usuário inválido.");
+            if (id == Guid.Empty) return Result.Fail("ID", "Id inválido.");
+            if (newParentId.HasValue && newParentId.Value == id)
+                return Result.Fail("CYCLE", "Movimentação inválida: destino não pode ser o próprio código.");
+
             await using var conn = await _db.OpenAsync(ct);
-            await conn.ExecuteAsync(new CommandDefinition(sql, new { tenantId, userId, id, newParentId }, cancellationToken: ct));
+            using var tx = conn.BeginTransaction();
+
+            // Nó origem
+            const string getNode = @"
+select id, code, parent_id as ParentId, is_active as IsActive
+from ged.classification_plan
+where tenant_id=@tenant_id and id=@id;
+";
+            var node = await conn.QuerySingleOrDefaultAsync<(Guid Id, string Code, Guid? ParentId, bool IsActive)>(
+                new CommandDefinition(getNode, new { tenant_id = tenantId, id }, transaction: tx, cancellationToken: ct));
+
+            if (node.Id == Guid.Empty || string.IsNullOrWhiteSpace(node.Code))
+            {
+                tx.Rollback();
+                return Result.Fail("NOTFOUND", "Classe não encontrada.");
+            }
+
+            if (!node.IsActive)
+            {
+                tx.Rollback();
+                return Result.Fail("INACTIVE", "Classe está inativa e não pode ser movimentada.");
+            }
+
+            // Valida pai destino
+            if (newParentId.HasValue)
+            {
+                const string parentOk = @"
+select is_active
+from ged.classification_plan
+where tenant_id=@tenant_id and id=@pid;
+";
+                var parentIsActive = await conn.ExecuteScalarAsync<bool?>(
+                    new CommandDefinition(parentOk, new { tenant_id = tenantId, pid = newParentId.Value }, transaction: tx, cancellationToken: ct));
+
+                if (parentIsActive is null)
+                {
+                    tx.Rollback();
+                    return Result.Fail("PARENT_NOTFOUND", "Classe destino não encontrada.");
+                }
+                if (parentIsActive != true)
+                {
+                    tx.Rollback();
+                    return Result.Fail("PARENT_INACTIVE", "Classe destino está inativa.");
+                }
+
+                // Anti-ciclo
+                const string isDescendant = @"
+with recursive tree as (
+  select id
+  from ged.classification_plan
+  where tenant_id=@tenant_id and parent_id=@root_id
+  union all
+  select c.id
+  from ged.classification_plan c
+  join tree t on c.parent_id = t.id
+  where c.tenant_id=@tenant_id
+)
+select 1
+from tree
+where id=@new_parent_id
+limit 1;
+";
+                var cycle = await conn.ExecuteScalarAsync<int?>(
+                    new CommandDefinition(isDescendant, new
+                    {
+                        tenant_id = tenantId,
+                        root_id = id,
+                        new_parent_id = newParentId.Value
+                    }, transaction: tx, cancellationToken: ct));
+
+                if (cycle.HasValue)
+                {
+                    tx.Rollback();
+                    return Result.Fail("CYCLE", "Movimentação inválida: destino é descendente do código movimentado (ciclo).");
+                }
+            }
+
+            // Atualiza parent
+            const string upd = @"
+update ged.classification_plan
+set parent_id=@parent_id,
+    updated_at=now(),
+    updated_by=@by
+where tenant_id=@tenant_id and id=@id and is_active=true;
+";
+            var rows = await conn.ExecuteAsync(new CommandDefinition(upd, new
+            {
+                tenant_id = tenantId,
+                id,
+                parent_id = newParentId,
+                by = userId
+            }, transaction: tx, cancellationToken: ct));
+
+            if (rows == 0)
+            {
+                tx.Rollback();
+                return Result.Fail("NOTFOUND", "Classe não encontrada (ou inativa).");
+            }
+
+            // History snapshot (subárvore inteira)
+            const string histAll = @"
+with recursive tree as (
+  select id
+  from ged.classification_plan
+  where tenant_id=@tenant_id and id=@root_id
+  union all
+  select c.id
+  from ged.classification_plan c
+  join tree t on c.parent_id=t.id
+  where c.tenant_id=@tenant_id
+)
+insert into ged.classification_plan_history
+(tenant_id, classification_id, changed_at, changed_by, change_reason,
+ code, name, parent_id, retention_start_event,
+ retention_active_days, retention_active_months, retention_active_years,
+ retention_archive_days, retention_archive_months, retention_archive_years,
+ final_destination, requires_digital_signature, is_confidential, is_active, retention_notes)
+select
+  cp.tenant_id, cp.id, now(), @by, 'MOVE_PARENT',
+  cp.code, cp.name, cp.parent_id, cp.retention_start_event,
+  cp.retention_active_days, cp.retention_active_months, cp.retention_active_years,
+  cp.retention_archive_days, cp.retention_archive_months, cp.retention_archive_years,
+  cp.final_destination, cp.requires_digital_signature, cp.is_confidential, cp.is_active, cp.retention_notes
+from ged.classification_plan cp
+join tree t on t.id=cp.id
+where cp.tenant_id=@tenant_id;
+";
+            await conn.ExecuteAsync(new CommandDefinition(histAll, new
+            {
+                tenant_id = tenantId,
+                root_id = id,
+                by = userId
+            }, transaction: tx, cancellationToken: ct));
+
+            tx.Commit();
+
+            _ = await _audit.WriteAsync(
+                tenantId, userId,
+                "UPDATE", "classification_plan", id,
+                "Movimentação de classe/código (Item 2 - PCD/TTD)",
+                null, null,
+                new { newParentId },
+                ct);
+
+            return Result.Ok();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "MoveAsync failed. Tenant={TenantId} Id={Id} Parent={Parent}", tenantId, id, newParentId);
-            throw;
+            _logger.LogError(ex, "ClassificationPlanRepository.MoveAsync failed. Tenant={Tenant} Id={Id}", tenantId, id);
+            return Result.Fail("PCD", "Falha ao mover classe/código.");
         }
     }
-
     public async Task<IReadOnlyList<ClassificationVersionRow>> ListVersionsAsync(Guid tenantId, CancellationToken ct)
     {
         const string sql = @"
