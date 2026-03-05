@@ -1,82 +1,173 @@
-﻿@using InovaGed.Web.Controllers
 @using InovaGed.Web.Models.Reports
-@model SignedSetPrintVm
+@model SignedSetSelectVM
 @{
-    Layout = null;
-    var pageSize = 20; // 20 linhas por página (ajuste)
-    var totalPages = (int)Math.Ceiling(Model.Items.Count / (double)pageSize);
+    ViewData["Title"] = "Relatório de Conjunto Assinado";
+    ViewData["Subtitle"] = "Selecione os documentos e gere o relatório — PoC (Item 26)";
 }
 
-<!doctype html>
-<html>
-<head>
-    <meta charset="utf-8" />
-    <title>Conjunto Assinado</title>
-    <style>
-        body {
-            font-family: Arial;
-            font-size: 12px;
-        }
+@if (TempData["Err"] is string err)
+{
+    <div class="alert alert-danger alert-dismissible fade show">
+        <i class="bi bi-exclamation-triangle me-1"></i>@err
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
 
-        .page {
-            page-break-after: always;
-        }
+<div class="card shadow-sm">
+    <div class="card-header d-flex align-items-center gap-3 flex-wrap">
+        <strong><i class="bi bi-printer me-1"></i>Documentos com Assinatura Digital</strong>
+        <span class="badge text-bg-secondary ms-auto" id="selCount">0 selecionados</span>
+    </div>
 
-        .header {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 8px;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-
-        th, td {
-            border: 1px solid #ddd;
-            padding: 6px;
-        }
-
-        th {
-            background: #f5f5f5;
-        }
-
-        .footer {
-            margin-top: 8px;
-            text-align: right;
-            color: #666;
-        }
-    </style>
-</head>
-<body>
-    @for (int p = 0; p < totalPages; p++)
-    {
-        var slice = Model.Items.Skip(p * pageSize).Take(pageSize).ToList();
-        <div class="page">
-            <div class="header">
-                <div><b>Relatório de Conjunto Assinado (ICP-Brasil)</b><br />Run: @Model.RunId</div>
-                <div>Página @(p + 1) de @totalPages</div>
+    <div class="card-body p-0">
+        @if (!Model.SignedDocuments.Any())
+        {
+            <div class="p-5 text-center text-muted">
+                <i class="bi bi-patch-check fs-2 d-block mb-2"></i>
+                Nenhum documento com assinatura digital registrada.
             </div>
+        }
+        else
+        {
+            <form asp-action="SignedSetPrint" asp-controller="Reports" method="post" id="printForm">
+                @Html.AntiForgeryToken()
 
-            <table>
-                <thead><tr><th>#</th><th>Documento</th><th>Status validação</th><th>Detalhes</th></tr></thead>
-                <tbody>
-                    @for (int i = 0; i < slice.Count; i++)
-                    {
-                        var seq = (p * pageSize) + i + 1; // numeração sequencial global (requisito) :contentReference[oaicite:18]{index=18}
-                        <tr>
-                            <td>@seq</td>
-                            <td>@slice[i].DocumentTitle</td>
-                            <td>@slice[i].Status</td>
-                            <td class="text-muted">@slice[i].Details</td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
+                <div class="p-3 border-bottom bg-light d-flex gap-2 align-items-center flex-wrap">
+                    <div class="form-check mb-0">
+                        <input type="checkbox" class="form-check-input" id="selAll" />
+                        <label class="form-check-label" for="selAll">Selecionar todos</label>
+                    </div>
+                    <div class="ms-auto d-flex gap-2">
+                        <input type="search" id="docSearch" class="form-control form-control-sm"
+                               style="width:220px" placeholder="Buscar documento…" />
+                        <select id="sigFilter" class="form-select form-select-sm" style="width:160px">
+                            <option value="">Todos os status</option>
+                            <option value="VALID">Válidos</option>
+                            <option value="INVALID">Inválidos</option>
+                            <option value="UNKNOWN">Sem verificação</option>
+                        </select>
+                    </div>
+                </div>
 
-            <div class="footer">Numeração sequencial global | Paginação automática</div>
-        </div>
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0" id="docTable">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width:38px"></th>
+                                <th>Documento</th>
+                                <th>Assinante</th>
+                                <th>CPF</th>
+                                <th>Data</th>
+                                <th>Status ICP-Brasil</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var r in Model.SignedDocuments)
+                            {
+                                var (css, icon, label) = r.SigStatus switch
+                                {
+                                    "VALID"   => ("text-bg-success",   "bi-patch-check-fill",  "Válida"),
+                                    "INVALID" => ("text-bg-danger",    "bi-x-octagon-fill",    "Inválida"),
+                                    _         => ("text-bg-secondary", "bi-question-circle-fill", "Sem verificação")
+                                };
+                                <tr data-status="@r.SigStatus"
+                                    data-search="@($"{r.DocumentCode} {r.DocumentTitle} {r.SignerName} {r.Cpf}".ToLower())">
+                                    <td class="text-center">
+                                        <input type="checkbox" name="documentIds" value="@r.DocumentId"
+                                               class="form-check-input doc-check" />
+                                    </td>
+                                    <td>
+                                        <div class="fw-semibold">@r.DocumentCode</div>
+                                        <div class="text-muted small">@r.DocumentTitle</div>
+                                    </td>
+                                    <td class="small">@(r.SignerName ?? "—")</td>
+                                    <td class="font-monospace small">@(r.Cpf ?? "—")</td>
+                                    <td class="text-nowrap small">
+                                        @(r.SigningTime?.ToString("dd/MM/yyyy HH:mm") ?? "—")
+                                    </td>
+                                    <td>
+                                        <span class="badge @css d-inline-flex align-items-center gap-1">
+                                            <i class="bi @icon"></i>@label
+                                        </span>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+
+                <div id="noResults" class="p-4 text-muted text-center d-none">
+                    <i class="bi bi-search fs-4 d-block mb-1"></i>Nenhum resultado para os filtros.
+                </div>
+
+                <div class="p-3 border-top d-flex justify-content-between align-items-center">
+                    <div class="text-muted small">
+                        <span id="selCount2">0</span> de @Model.SignedDocuments.Count selecionados
+                    </div>
+                    <button type="submit" class="btn btn-primary" id="btnGerar" disabled>
+                        <i class="bi bi-printer me-1"></i>
+                        Gerar Relatório e Validar Assinaturas
+                    </button>
+                </div>
+            </form>
+        }
+    </div>
+</div>
+
+@section Scripts {
+<script>
+(function () {
+    const checks  = () => [...document.querySelectorAll('.doc-check')];
+    const selAll  = document.getElementById('selAll');
+    const search  = document.getElementById('docSearch');
+    const filter  = document.getElementById('sigFilter');
+    const table   = document.getElementById('docTable');
+    const noRes   = document.getElementById('noResults');
+    const btnGen  = document.getElementById('btnGerar');
+    const cnt1    = document.getElementById('selCount');
+    const cnt2    = document.getElementById('selCount2');
+
+    function updateCount() {
+        const n = checks().filter(c => c.checked).length;
+        const label = `${n} selecionado${n !== 1 ? 's' : ''}`;
+        cnt1.textContent = label;
+        cnt2.textContent = n;
+        btnGen.disabled  = n === 0;
+        selAll.indeterminate = n > 0 && n < checks().length;
+        selAll.checked = n > 0 && n === checks().filter(c => !c.closest('tr').classList.contains('d-none')).length;
     }
-</body>
-</html>
+
+    function applyFilters() {
+        const q  = (search?.value ?? '').toLowerCase().trim();
+        const st = (filter?.value ?? '').toUpperCase();
+        let visible = 0;
+        table?.querySelectorAll('tbody tr').forEach(row => {
+            const rs = row.dataset.status ?? '';
+            const rq = row.dataset.search ?? '';
+            const stOk = !st || rs === st;
+            const qOk  = !q  || rq.includes(q);
+            const show = stOk && qOk;
+            row.classList.toggle('d-none', !show);
+            if (show) visible++;
+        });
+        noRes?.classList.toggle('d-none', visible > 0);
+        updateCount();
+    }
+
+    selAll?.addEventListener('change', () => {
+        table?.querySelectorAll('tbody tr:not(.d-none) .doc-check')
+             .forEach(c => c.checked = selAll.checked);
+        updateCount();
+    });
+
+    document.addEventListener('change', e => {
+        if (e.target.classList.contains('doc-check')) updateCount();
+    });
+
+    search?.addEventListener('input', applyFilters);
+    filter?.addEventListener('change', applyFilters);
+
+    updateCount();
+})();
+</script>
+}

@@ -1,0 +1,230 @@
+@using InovaGed.Web.Models.Reports
+@model SignedSetPrintVm
+@{
+    Layout = null;
+    const int pageSize = 25;
+    var pages = Model.Items
+        .Select((item, idx) => new { item, pageNo = idx / pageSize + 1 })
+        .GroupBy(x => x.pageNo)
+        .ToList();
+    int totalPages = pages.Count == 0 ? 1 : pages.Count;
+}
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="utf-8" />
+    <title>Relatório de Conjunto Assinado — @Model.RunId.ToString("N")[..8].ToUpper()</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; font-size: 11pt; }
+         
+
+        .report-header {
+            border-bottom: 2px solid #1a56db;
+            padding-bottom: .75rem;
+            margin-bottom: 1rem;
+        }
+        .icp-seal {
+            display: inline-flex;
+            align-items: center;
+            gap: .4rem;
+            background: #ebf5fb;
+            border: 1.5px solid #1a56db;
+            border-radius: .5rem;
+            padding: .3rem .75rem;
+            font-size: .82rem;
+            font-weight: 600;
+            color: #1a56db;
+        }
+        .sig-table th { background: #f1f5f9; font-size: .82rem; }
+        .sig-table td { font-size: .82rem; vertical-align: middle; }
+        .seq-cell { font-weight: 700; font-size: .95rem; color: #1a56db; min-width: 36px; }
+
+        .badge-valid   { background:#dcfce7; color:#166534; border:1px solid #86efac; }
+        .badge-invalid { background:#fee2e2; color:#991b1b; border:1px solid #fca5a5; }
+        .badge-unknown { background:#f3f4f6; color:#374151; border:1px solid #d1d5db; }
+
+        .page-footer {
+            font-size: .75rem;
+            color: #6b7280;
+            text-align: center;
+            margin-top: .5rem;
+            border-top: 1px solid #e5e7eb;
+            padding-top: .4rem;
+        }
+        .page-separator {
+            border: none;
+            border-top: 2px dashed #d1d5db;
+            margin: 1.5rem 0;
+        }
+
+        /* Impressão */
+        @@media print {
+            .no-print { display: none !important; }
+            .page-break { page-break-after: always; }
+            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .badge { border: 1px solid #999; }
+            .page-separator { display: none; }
+        }
+    </style>
+</head>
+<body class="p-4">
+     
+<script>
+(function() {
+    var style = document.createElement('style');
+    style.textContent =
+        '\u0040page { margin: 18mm 15mm; }';
+    document.head.appendChild(style);
+})();
+</script>
+
+<!-- BARRA DE AÇÕES (só tela) -->
+<div class="no-print d-flex justify-content-between align-items-center mb-3 p-2 bg-light border rounded">
+    <div class="d-flex align-items-center gap-2">
+        <a href="/Reports/SignedSetPrint" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i>Voltar
+        </a>
+        <span class="text-muted small">
+            Gerado em @Model.GeneratedAt.ToString("dd/MM/yyyy HH:mm:ss") UTC
+        </span>
+    </div>
+    <button class="btn btn-primary" onclick="window.print()">
+        <i class="bi bi-printer me-1"></i> Imprimir
+    </button>
+</div>
+
+@foreach (var page in pages)
+{
+    bool isLastPage = page.Key == totalPages;
+    var pageItems = page.Select(x => x.item).ToList();
+
+    <!-- CABEÇALHO (repetido em cada página) -->
+    <div class="report-header">
+        <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+            <div>
+                <h5 class="mb-0 fw-bold">InovaGED — Relatório de Conjunto Assinado</h5>
+                <div class="text-muted small mt-1">
+                    Gerado em: <strong>@Model.GeneratedAt.ToString("dd/MM/yyyy HH:mm:ss")</strong> UTC &nbsp;|&nbsp;
+                    ID: <code>@Model.RunId.ToString("N")[..16].ToUpper()</code> &nbsp;|&nbsp;
+                    Total: <strong>@Model.Items.Count</strong> documentos
+                </div>
+            </div>
+            <div class="text-end">
+                <span class="icp-seal">
+                    <i class="bi bi-shield-fill-check"></i>
+                    Validado conforme ICP-Brasil
+                </span>
+                <div class="text-muted small mt-1">
+                    Página @@page.Key de @totalPages
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- SUMÁRIO (só na primeira página) -->
+    @if (page.Key == 1)
+    {
+        int valid   = Model.Items.Count(i => i.SigStatus == "VALID");
+        int invalid = Model.Items.Count(i => i.SigStatus == "INVALID");
+        int unknown = Model.Items.Count(i => i.SigStatus != "VALID" && i.SigStatus != "INVALID");
+        <div class="d-flex gap-3 mb-3 flex-wrap">
+            <div class="border rounded px-3 py-2 text-center" style="min-width:100px">
+                <div class="fs-4 fw-bold text-success">@valid</div>
+                <div class="small text-muted"><i class="bi bi-patch-check-fill text-success me-1"></i>Válidas</div>
+            </div>
+            <div class="border rounded px-3 py-2 text-center" style="min-width:100px">
+                <div class="fs-4 fw-bold text-danger">@invalid</div>
+                <div class="small text-muted"><i class="bi bi-x-octagon-fill text-danger me-1"></i>Inválidas</div>
+            </div>
+            <div class="border rounded px-3 py-2 text-center" style="min-width:130px">
+                <div class="fs-4 fw-bold text-secondary">@unknown</div>
+                <div class="small text-muted"><i class="bi bi-question-circle-fill text-secondary me-1"></i>Sem verificação</div>
+            </div>
+        </div>
+    }
+
+    <!-- TABELA DA PÁGINA -->
+    <table class="table table-bordered sig-table w-100">
+        <thead>
+            <tr>
+                <th style="width:42px">Nº</th>
+                <th>Documento</th>
+                <th>Assinante</th>
+                <th>CPF</th>
+                <th>Data Assinatura</th>
+                <th>Status ICP-Brasil</th>
+                <th>Validado em</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var item in pageItems)
+            {
+                string badgeCss, badgeIcon, badgeLabel;
+                switch (item.SigStatus)
+                {
+                    case "VALID":
+                        badgeCss = "badge-valid"; badgeIcon = "bi-patch-check-fill"; badgeLabel = "Válida"; break;
+                    case "INVALID":
+                        badgeCss = "badge-invalid"; badgeIcon = "bi-x-octagon-fill"; badgeLabel = "Inválida"; break;
+                    default:
+                        badgeCss = "badge-unknown"; badgeIcon = "bi-question-circle-fill"; badgeLabel = "Sem verificação"; break;
+                }
+                <tr>
+                    <td class="seq-cell text-center">@item.SeqNo</td>
+                    <td>
+                        <span class="fw-semibold">@item.DocumentCode</span><br />
+                        <small class="text-muted">@item.DocumentTitle</small>
+                    </td>
+                    <td class="small">@(item.SignerName ?? "—")</td>
+                    <td class="font-monospace small">@(item.Cpf ?? "—")</td>
+                    <td class="text-nowrap small">
+                        @(item.SigningTime?.ToString("dd/MM/yyyy HH:mm") ?? "—")
+                    </td>
+                    <td>
+                        <span class="badge @badgeCss d-inline-flex align-items-center gap-1">
+                            <i class="bi @badgeIcon"></i>@badgeLabel
+                        </span>
+                        @if (!string.IsNullOrWhiteSpace(item.SigDetails))
+                        {
+                            <br /><small class="text-muted" style="font-size:.72rem">@item.SigDetails</small>
+                        }
+                    </td>
+                    <td class="text-nowrap small">@item.ValidatedAt.ToString("dd/MM/yyyy HH:mm")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <!-- Rodapé da página -->
+    <div class="page-footer">
+        InovaGED · Relatório de Conjunto Assinado Digitalmente ·
+        Página @@page.Key de @totalPages ·
+        ID @Model.RunId.ToString("N")[..16].ToUpper()
+    </div>
+
+    @if (!isLastPage)
+    {
+        <hr class="page-separator no-print" />
+        <div class="page-break"></div>
+    }
+}
+
+<!-- DECLARAÇÃO DE AUTENTICIDADE -->
+<div class="mt-4 p-3 border rounded bg-light" style="font-size:.8rem;">
+    <p class="mb-1">
+        <strong>Declaração de autenticidade:</strong>
+        As assinaturas listadas neste relatório foram validadas no momento da geração
+        (ID <code>@Model.RunId</code>) conforme os registros da tabela
+        <code>ged.report_run_signature</code>. O status <em>"Válida"</em> indica conformidade
+        com a ICP-Brasil no instante da validação. Para fins legais, consulte o certificado
+        original e o carimbo de tempo associado.
+    </p>
+    <p class="mb-0 text-muted">
+        Sistema InovaGED · Gerado em @Model.GeneratedAt.ToString("dd/MM/yyyy HH:mm:ss") UTC
+    </p>
+</div>
+
+</body>
+</html>

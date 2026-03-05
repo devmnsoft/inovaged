@@ -277,9 +277,10 @@
                         <span class="ms-auto text-muted small">PoC (8,19,20,21)</span>
                     </a>
 
+                    <!-- badge corrigido: 26 tem link próprio na seção Relatórios abaixo -->
                     <a asp-controller="Reports" asp-action="SignatureValidation" class="@Active("Reports","SignatureValidation")">
                         <i class="bi bi-patch-check"></i><span>Validação de Assinaturas</span>
-                        <span class="ms-auto text-muted small">PoC (9,21,23,26)</span>
+                        <span class="ms-auto text-muted small">PoC (9,21,23)</span>
                     </a>
 
                     <!-- 5) TEMPORALIDADE / DESTINAÇÃO -->
@@ -373,6 +374,13 @@
                     <a asp-controller="Reports" asp-action="TtdByClass" class="@Active("Reports","TtdByClass")">
                         <i class="bi bi-funnel"></i><span>Imprimir TTD (por Classe)</span>
                         <span class="ms-auto text-muted small">PoC (3)</span>
+                    </a>
+
+                    <!-- ✅ NOVO — Item 26: relatório de conjunto assinado digitalmente -->
+                    <a asp-controller="Reports" asp-action="SignedSetPrint"
+                       class="@Active("Reports","SignedSetPrint","SignedSetPrintView")">
+                        <i class="bi bi-patch-check-fill"></i><span>Relatório Conjunto Assinado</span>
+                        <span class="ms-auto text-muted small">PoC (26)</span>
                     </a>
 
                     <!-- 8) AUDITORIA -->
@@ -544,9 +552,10 @@
                             <span class="ms-auto text-muted small">PoC (8,19,20,21)</span>
                         </a>
 
+                        <!-- badge corrigido: 26 tem link próprio na seção Relatórios abaixo -->
                         <a asp-controller="Reports" asp-action="SignatureValidation" class="@Active("Reports","SignatureValidation")" data-bs-dismiss="offcanvas">
                             <i class="bi bi-patch-check"></i><span>Validação de Assinaturas</span>
-                            <span class="ms-auto text-muted small">PoC (9,21,23,26)</span>
+                            <span class="ms-auto text-muted small">PoC (9,21,23)</span>
                         </a>
 
                         <!-- Temporalidade -->
@@ -573,6 +582,45 @@
                         <a asp-controller="Loans" asp-action="Overdue" class="@Active("Loans","Overdue")" data-bs-dismiss="offcanvas">
                             <i class="bi bi-alarm"></i><span>Vencidos</span>
                             <span class="ms-auto text-muted small">PoC (14,15)</span>
+                        </a>
+
+                        <!-- Relatórios (mobile) -->
+                        <div class="sidebar-section-title">Relatórios</div>
+
+                        <a asp-controller="Reports" asp-action="Loans" class="@Active("Reports","Loans")" data-bs-dismiss="offcanvas">
+                            <i class="bi bi-file-earmark-text"></i><span>Relatório de Empréstimos</span>
+                            <span class="ms-auto text-muted small">PoC (15)</span>
+                        </a>
+
+                        <a asp-controller="Reports" asp-action="PcdFull" class="@Active("Reports","PcdFull")" data-bs-dismiss="offcanvas">
+                            <i class="bi bi-printer"></i><span>Imprimir PLC/PCD (Completo)</span>
+                            <span class="ms-auto text-muted small">PoC (3)</span>
+                        </a>
+
+                        <a asp-controller="Reports" asp-action="TtdFull" class="@Active("Reports","TtdFull")" data-bs-dismiss="offcanvas">
+                            <i class="bi bi-hourglass"></i><span>Imprimir TTD (Completo)</span>
+                            <span class="ms-auto text-muted small">PoC (3)</span>
+                        </a>
+
+                        <!-- ✅ NOVO (mobile) — Item 26 -->
+                        <a asp-controller="Reports" asp-action="SignedSetPrint"
+                           class="@Active("Reports","SignedSetPrint","SignedSetPrintView")"
+                           data-bs-dismiss="offcanvas">
+                            <i class="bi bi-patch-check-fill"></i><span>Relatório Conjunto Assinado</span>
+                            <span class="ms-auto text-muted small">PoC (26)</span>
+                        </a>
+
+                        <!-- Auditoria (mobile) -->
+                        <div class="sidebar-section-title">Auditoria</div>
+
+                        <a asp-controller="Audit" asp-action="Index" class="@ActiveAny("Audit")" data-bs-dismiss="offcanvas">
+                            <i class="bi bi-shield-lock"></i><span>Log de Auditoria</span>
+                            <span class="ms-auto text-muted small">PoC (25)</span>
+                        </a>
+
+                        <a asp-controller="Audit" asp-action="AccessDenied" class="@Active("Audit","AccessDenied")" data-bs-dismiss="offcanvas">
+                            <i class="bi bi-shield-x"></i><span>Falhas de Acesso</span>
+                            <span class="ms-auto text-muted small">PoC (27)</span>
                         </a>
 
                     </nav>

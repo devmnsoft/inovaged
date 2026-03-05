@@ -45,8 +45,50 @@ public sealed record SignatureValidationRow(
     string Cpf,
     string? Details);
 
-// Usado por SignedSetPrint.cshtml — Item 26
+// Alias de compatibilidade
+public sealed record SignatureRow(
+    string DocumentCode,
+    string DocumentTitle,
+    string Status,
+    DateTime SigningTime,
+    string SignedByName,
+    string Cpf,
+    string? Details);
+
+// Usado pela tela de seleção do item 26
+public sealed record SignedSetSelectVM(
+    List<SignedDocRow> SignedDocuments);
+
+public sealed class SignedDocRow
+{
+    public Guid DocumentId { get; init; }
+    public string DocumentCode { get; init; } = "";
+    public string DocumentTitle { get; init; } = "";
+    public string? SignerName { get; init; }
+    public string? Cpf { get; init; }
+    public DateTime? SigningTime { get; init; }
+    public string SigStatus { get; init; } = "";
+    public string? SigDetails { get; init; }
+}
+
+// Usado pela view de impressão — Item 26
 public sealed record SignedSetPrintVm(
     Guid RunId,
     DateTime GeneratedAt,
-    List<SignatureValidationRow> Items);
+    List<SignedSetPrintItem> Items);
+
+// Classe (não record posicional) para Dapper mapear por propriedade sem depender
+// da ordem/tipo exato do construtor. SeqNo é long porque ROW_NUMBER() retorna bigint.
+public sealed class SignedSetPrintItem
+{
+    public long SeqNo { get; init; }
+    public Guid DocumentId { get; init; }
+    public string DocumentCode { get; init; } = "";
+    public string DocumentTitle { get; init; } = "";
+    public string? SignerName { get; init; }
+    public string? Cpf { get; init; }
+    public DateTime? SigningTime { get; init; }
+    public string SigStatus { get; init; } = "";
+    public string? SigDetails { get; init; }
+    public DateTime ValidatedAt { get; init; }
+}
