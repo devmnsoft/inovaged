@@ -19,6 +19,7 @@ using InovaGed.Application.Ged.Reports;
 using InovaGed.Application.Identity;
 using InovaGed.Application.Ocr;
 using InovaGed.Application.Pacs;
+using InovaGed.Application.Parameters;
 using InovaGed.Application.Reports;
 using InovaGed.Application.Retention;
 using InovaGed.Application.RetentionCases;
@@ -46,6 +47,7 @@ using InovaGed.Infrastructure.Ged.Reports;
 using InovaGed.Infrastructure.Instruments;
 using InovaGed.Infrastructure.Ocr;
 using InovaGed.Infrastructure.Pacs;
+using InovaGed.Infrastructure.Parameters;
 using InovaGed.Infrastructure.Preview;
 using InovaGed.Infrastructure.Reports;
 using InovaGed.Infrastructure.Retention;
@@ -236,7 +238,7 @@ builder.Services.AddScoped<IUserAdminQueries, UserAdminQueries>();
 
 builder.Services.AddScoped<IPermissionChecker, AllowAllPermissionChecker>();
 builder.Services.AddScoped<PermissionService>();
-
+builder.Services.AddScoped<IParameterRepository, ParameterRepository>();
 builder.Services.AddScoped<IAuditWriter, AuditWriter>();     // ✅ uma vez só
 builder.Services.AddScoped<IAuditQueries, AuditQueries>();
 

@@ -1,0 +1,113 @@
+@model InovaGed.Application.Parameters.ParameterItemEditVM
+@using Microsoft.AspNetCore.Mvc.Rendering
+@{
+    ViewData["Title"] = Model.Id.HasValue ? "Editar Parâmetro" : "Novo Parâmetro";
+    var categories = ViewBag.Categories as List<SelectListItem> ?? new();
+    var parents = ViewBag.Parents as List<SelectListItem> ?? new();
+    dynamic? selectedCategory = ViewBag.SelectedCategory;
+}
+
+<div class="container-fluid py-3">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <h1 class="h3 mb-1">@ViewData["Title"]</h1>
+            <div class="text-muted">Cadastro básico parametrizável do sistema.</div>
+        </div>
+        <a class="btn btn-outline-secondary" asp-action="Index"><i class="bi bi-arrow-left"></i> Voltar</a>
+    </div>
+
+    <div class="card shadow-sm border-0">
+        <div class="card-body">
+            <form asp-action="Save" method="post">
+                @Html.AntiForgeryToken()
+                <input type="hidden" asp-for="Id" />
+
+                <div asp-validation-summary="ModelOnly" class="alert alert-danger"></div>
+
+                <div class="row g-3">
+                    <div class="col-md-5">
+                        <label asp-for="CategoryId" class="form-label">Categoria</label>
+                        <select asp-for="CategoryId" asp-items="categories" class="form-select"></select>
+                        <div class="form-text">Ao alterar a categoria, salve e reabra para carregar hierarquia correta.</div>
+                    </div>
+
+                    <div class="col-md-3">
+                        <label asp-for="Code" class="form-label">Código</label>
+                        <input asp-for="Code" class="form-control text-uppercase" maxlength="80" required />
+                    </div>
+
+                    <div class="col-md-4">
+                        <label asp-for="Name" class="form-label">Nome</label>
+                        <input asp-for="Name" class="form-control" maxlength="200" required />
+                    </div>
+
+                    @if (parents.Any())
+                    {
+                        <div class="col-md-6">
+                            <label asp-for="ParentId" class="form-label">Item Pai</label>
+                            <select asp-for="ParentId" class="form-select">
+                                <option value="">Sem item pai</option>
+                                @foreach (var p in parents)
+                                {
+                                    <option value="@p.Value" selected="@p.Selected">@p.Text</option>
+                                }
+                            </select>
+                        </div>
+                    }
+
+                    <div class="col-md-3">
+                        <label asp-for="Abbreviation" class="form-label">Sigla</label>
+                        <input asp-for="Abbreviation" class="form-control" maxlength="30" />
+                    </div>
+
+                    <div class="col-md-3">
+                        <label asp-for="ExternalCode" class="form-label">Código Externo</label>
+                        <input asp-for="ExternalCode" class="form-control" maxlength="120" />
+                    </div>
+
+                    <div class="col-md-2">
+                        <label asp-for="DisplayOrder" class="form-label">Ordem</label>
+                        <input asp-for="DisplayOrder" type="number" class="form-control" />
+                    </div>
+
+                    <div class="col-md-3">
+                        <label asp-for="Icon" class="form-label">Ícone Bootstrap</label>
+                        <input asp-for="Icon" class="form-control" placeholder="bi-file-earmark" />
+                    </div>
+
+                    <div class="col-md-3">
+                        <label asp-for="Color" class="form-label">Cor</label>
+                        <input asp-for="Color" class="form-control" placeholder="#0d6efd ou primary" />
+                    </div>
+
+                    <div class="col-12">
+                        <label asp-for="Description" class="form-label">Descrição</label>
+                        <textarea asp-for="Description" class="form-control" rows="3"></textarea>
+                    </div>
+
+                    <div class="col-12">
+                        <label asp-for="MetadataJson" class="form-label">Metadados JSON</label>
+                        <textarea asp-for="MetadataJson" class="form-control font-monospace" rows="5" placeholder='{"prazoPadraoDias":30,"observacao":"..."}'></textarea>
+                        <div class="form-text">Campo opcional para configurações específicas sem alterar o banco.</div>
+                    </div>
+
+                    <div class="col-md-3 form-check ms-2">
+                        <input asp-for="IsDefault" class="form-check-input" />
+                        <label asp-for="IsDefault" class="form-check-label">Valor padrão da categoria</label>
+                    </div>
+
+                    <div class="col-md-3 form-check ms-2">
+                        <input asp-for="IsActive" class="form-check-input" />
+                        <label asp-for="IsActive" class="form-check-label">Ativo</label>
+                    </div>
+                </div>
+
+                <hr />
+                <div class="d-flex justify-content-end gap-2">
+                    <a class="btn btn-outline-secondary" asp-action="Index">Cancelar</a>
+                    <button class="btn btn-primary" type="submit"><i class="bi bi-check-lg"></i> Salvar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>

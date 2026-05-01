@@ -1,0 +1,141 @@
+@model InovaGed.Application.Parameters.ParameterIndexVM
+@{
+    ViewData["Title"] = "Parâmetros do Sistema";
+    ViewData["Subtitle"] = "Cadastros básicos e tabelas auxiliares do GED";
+}
+
+<div class="container-fluid py-3">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <div>
+            <h1 class="h3 mb-1">Parâmetros do Sistema</h1>
+            <div class="text-muted">Lotações, assuntos, tipos documentais, cargos, funções, fases, situações, sigilo e demais cadastros auxiliares.</div>
+        </div>
+        <a class="btn btn-primary" asp-controller="Parameters" asp-action="Create" asp-route-categoryCode="@Model.CategoryCode">
+            <i class="bi bi-plus-lg"></i> Novo parâmetro
+        </a>
+    </div>
+
+    @if (TempData["Success"] is not null)
+    {
+        <div class="alert alert-success"><i class="bi bi-check-circle"></i> @TempData["Success"]</div>
+    }
+    @if (TempData["Error"] is not null)
+    {
+        <div class="alert alert-danger"><i class="bi bi-exclamation-triangle"></i> @TempData["Error"]</div>
+    }
+
+    <div class="row g-3">
+        <div class="col-12 col-xl-3">
+            <div class="card shadow-sm border-0">
+                <div class="card-header bg-white fw-semibold">Categorias</div>
+                <div class="list-group list-group-flush">
+                    @foreach (var c in Model.Categories)
+                    {
+                        var active = c.Code == Model.CategoryCode ? "active" : "";
+                        <a class="list-group-item list-group-item-action d-flex justify-content-between align-items-center @active"
+                           asp-controller="Parameters" asp-action="Index" asp-route-categoryCode="@c.Code">
+                            <span><i class="bi @(string.IsNullOrWhiteSpace(c.Icon) ? "bi-sliders" : c.Icon)"></i> @c.Name</span>
+                            <span class="badge rounded-pill @(active == "active" ? "text-bg-light" : "text-bg-secondary")">@c.TotalItems</span>
+                        </a>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-xl-9">
+            <div class="card shadow-sm border-0">
+                <div class="card-header bg-white">
+                    <form method="get" class="row g-2 align-items-end">
+                        <input type="hidden" name="categoryCode" value="@Model.CategoryCode" />
+                        <div class="col-md-8">
+                            <label class="form-label small text-muted">Pesquisar em @Model.SelectedCategoryName</label>
+                            <input class="form-control" name="search" value="@Model.Search" placeholder="Código, nome ou descrição" />
+                        </div>
+                        <div class="col-md-4 d-flex gap-2">
+                            <button class="btn btn-outline-primary flex-fill" type="submit"><i class="bi bi-search"></i> Buscar</button>
+                            <a class="btn btn-outline-secondary" asp-action="Index" asp-route-categoryCode="@Model.CategoryCode">Limpar</a>
+                        </div>
+                    </form>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width:110px">Código</th>
+                                <th>Nome</th>
+                                <th>Categoria</th>
+                                <th>Pai</th>
+                                <th class="text-center">Padrão</th>
+                                <th class="text-center">Status</th>
+                                <th class="text-end" style="width:220px">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (!Model.Items.Any())
+                            {
+                                <tr>
+                                    <td colspan="7" class="text-center text-muted py-5">
+                                        <i class="bi bi-inbox fs-3 d-block mb-2"></i>
+                                        Nenhum parâmetro encontrado.
+                                    </td>
+                                </tr>
+                            }
+                            else
+                            {
+                                @foreach (var item in Model.Items)
+                                {
+                                    <tr>
+                                        <td><span class="badge text-bg-light border">@item.Code</span></td>
+                                        <td>
+                                            <div class="fw-semibold">@item.Name</div>
+                                            @if (!string.IsNullOrWhiteSpace(item.Description))
+                                            {
+                                                <div class="small text-muted">@item.Description</div>
+                                            }
+                                        </td>
+                                        <td>@item.CategoryName</td>
+                                        <td class="text-muted">@(item.ParentName ?? "-")</td>
+                                        <td class="text-center">
+                                            @if (item.IsDefault)
+                                            {
+                                                <span class="badge text-bg-primary">Sim</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted">Não</span>
+                                            }
+                                        </td>
+                                        <td class="text-center">
+                                            <span class="badge @(item.IsActive ? "text-bg-success" : "text-bg-secondary")">@(item.IsActive ? "Ativo" : "Inativo")</span>
+                                        </td>
+                                        <td class="text-end">
+                                            <a class="btn btn-sm btn-outline-primary" asp-action="Edit" asp-route-id="@item.Id">
+                                                <i class="bi bi-pencil"></i> Editar
+                                            </a>
+                                            <form asp-action="SetActive" asp-route-id="@item.Id" method="post" class="d-inline">
+                                                @Html.AntiForgeryToken()
+                                                <input type="hidden" name="categoryCode" value="@Model.CategoryCode" />
+                                                <input type="hidden" name="active" value="@(!item.IsActive)" />
+                                                <button class="btn btn-sm btn-outline-secondary" type="submit">@(item.IsActive ? "Inativar" : "Ativar")</button>
+                                            </form>
+                                            @if (!item.IsSystem)
+                                            {
+                                                <form asp-action="Delete" asp-route-id="@item.Id" method="post" class="d-inline" onsubmit="return confirm('Excluir logicamente este parâmetro?');">
+                                                    @Html.AntiForgeryToken()
+                                                    <input type="hidden" name="categoryCode" value="@Model.CategoryCode" />
+                                                    <input type="hidden" name="reason" value="Exclusão pela tela de parâmetros" />
+                                                    <button class="btn btn-sm btn-outline-danger" type="submit"><i class="bi bi-trash"></i></button>
+                                                </form>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
