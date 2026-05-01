@@ -38,6 +38,18 @@ public sealed class ParameterItemRow
     public DateTimeOffset? UpdatedAt { get; set; }
 }
 
+public sealed class ParameterSelectOption
+{
+    public string CategoryCode { get; set; } = string.Empty;
+    public string Value { get; set; } = string.Empty;
+    public string Text { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public string? Abbreviation { get; set; }
+    public string? ExternalCode { get; set; }
+    public bool IsDefault { get; set; }
+    public int DisplayOrder { get; set; }
+}
+
 public sealed class ParameterIndexVM
 {
     public IReadOnlyList<ParameterCategoryRow> Categories { get; set; } = Array.Empty<ParameterCategoryRow>();
@@ -70,6 +82,7 @@ public interface IParameterRepository
 {
     Task<IReadOnlyList<ParameterCategoryRow>> ListCategoriesAsync(Guid tenantId, CancellationToken ct);
     Task<IReadOnlyList<ParameterItemRow>> ListItemsAsync(Guid tenantId, string? categoryCode, string? search, CancellationToken ct);
+    Task<IReadOnlyList<ParameterSelectOption>> ListOptionsAsync(Guid tenantId, IEnumerable<string> categoryCodes, CancellationToken ct);
     Task<ParameterItemEditVM?> GetItemAsync(Guid tenantId, Guid id, CancellationToken ct);
     Task<IReadOnlyList<ParameterItemRow>> ListParentOptionsAsync(Guid tenantId, Guid categoryId, Guid? ignoreId, CancellationToken ct);
     Task<Guid> UpsertItemAsync(Guid tenantId, Guid userId, ParameterItemEditVM vm, CancellationToken ct);

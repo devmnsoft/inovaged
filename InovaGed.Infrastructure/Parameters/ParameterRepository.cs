@@ -87,6 +87,46 @@ order by c.display_order, i.display_order, i.name;";
         return rows.ToList();
     }
 
+
+    public async Task<IReadOnlyList<ParameterSelectOption>> ListOptionsAsync(Guid tenantId, IEnumerable<string> categoryCodes, CancellationToken ct)
+    {
+        var codes = categoryCodes
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim().ToUpperInvariant())
+            .Distinct()
+            .ToArray();
+
+        if (codes.Length == 0)
+            return Array.Empty<ParameterSelectOption>();
+
+        const string sql = @"
+select
+    c.code as CategoryCode,
+    case
+        when c.code in ('NIVEL_SIGILO','SITUACAO_FUNCIONAL','EVENTO_TEMPORALIDADE','DESTINACAO_FINAL') then i.code
+        else i.name
+    end as Value,
+    i.name as Text,
+    i.description as Description,
+    i.abbreviation as Abbreviation,
+    i.external_code as ExternalCode,
+    i.is_default as IsDefault,
+    i.display_order as DisplayOrder
+from ged.parameter_item i
+join ged.parameter_category c on c.id=i.category_id and c.tenant_id=i.tenant_id
+where i.tenant_id=@tenantId
+  and i.reg_status='A'
+  and i.is_active=true
+  and c.reg_status='A'
+  and c.is_active=true
+  and c.code = any(@codes)
+order by c.display_order, i.display_order, i.name;";
+
+        await using var conn = await _db.OpenAsync(ct);
+        var rows = await conn.QueryAsync<ParameterSelectOption>(new CommandDefinition(sql, new { tenantId, codes }, cancellationToken: ct));
+        return rows.ToList();
+    }
+
     public async Task<ParameterItemEditVM?> GetItemAsync(Guid tenantId, Guid id, CancellationToken ct)
     {
         const string sql = @"

@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 
 namespace InovaGed.Web.Models.Users;
 
@@ -122,25 +122,19 @@ public sealed class EditUserVM
     public string SecurityLevel { get; set; } = "PUBLIC";
 
     public List<Guid> SelectedRoleIds { get; set; } = new();
-
     public List<RoleItem> AvailableRoles { get; set; } = new();
 
-    public List<SelectItem> SituacoesFuncionais { get; set; } = new()
-    {
-        new("ATIVO", "Ativo"),
-        new("INATIVO", "Inativo"),
-        new("AFASTADO", "Afastado"),
-        new("LICENCA", "Licença"),
-        new("EXONERADO", "Exonerado"),
-        new("DESLIGADO", "Desligado")
-    };
-
-    public List<SelectItem> SecurityLevels { get; set; } = new()
-    {
-        new("PUBLIC", "Público"),
-        new("RESTRICTED", "Restrito"),
-        new("CONFIDENTIAL", "Confidencial")
-    };
+    // Listas alimentadas por Parâmetros do Sistema.
+    public List<SelectItem> Cargos { get; set; } = new();
+    public List<SelectItem> Funcoes { get; set; } = new();
+    public List<SelectItem> Setores { get; set; } = new();
+    public List<SelectItem> Lotacoes { get; set; } = new();
+    public List<SelectItem> Unidades { get; set; } = new();
+    public List<SelectItem> TiposVinculo { get; set; } = new();
+    public List<SelectItem> ConselhosProfissionais { get; set; } = new();
+    public List<SelectItem> Especialidades { get; set; } = new();
+    public List<SelectItem> SituacoesFuncionais { get; set; } = new();
+    public List<SelectItem> SecurityLevels { get; set; } = new();
 
     public sealed class RoleItem
     {
@@ -150,13 +144,14 @@ public sealed class EditUserVM
 
     public sealed class SelectItem
     {
+        public SelectItem() { }
         public SelectItem(string value, string text)
         {
             Value = value;
             Text = text;
         }
 
-        public string Value { get; set; }
-        public string Text { get; set; }
+        public string Value { get; set; } = "";
+        public string Text { get; set; } = "";
     }
 }
