@@ -32,15 +32,15 @@ public sealed class AccountController : Controller
             return View(vm);
 
         var tenantCode = (vm.TenantSlug ?? string.Empty).Trim().ToLowerInvariant();
-        var email = (vm.Email ?? string.Empty).Trim().ToLowerInvariant();
+        var loginOrCpf = (vm.Email ?? string.Empty).Trim();
 
-        if (string.IsNullOrWhiteSpace(tenantCode) || string.IsNullOrWhiteSpace(email))
+        if (string.IsNullOrWhiteSpace(tenantCode) || string.IsNullOrWhiteSpace(loginOrCpf))
         {
-            ModelState.AddModelError("", "Credenciais inválidas.");
+            ModelState.AddModelError("", "Informe o e-mail ou CPF e a senha.");
             return View(vm);
         }
 
-        var user = await _repo.FindUserAsync(tenantCode, email, ct);
+        var user = await _repo.FindUserAsync(tenantCode, loginOrCpf, ct);
 
         if (user is null)
         {
@@ -119,17 +119,17 @@ public sealed class AccountController : Controller
         var roles = await _repo.GetRolesAsync(user.TenantId, user.UserId, ct);
 
         var claims = new List<Claim>
-        {
-            new(ClaimTypes.NameIdentifier, user.UserId.ToString()),
-            new(ClaimTypes.Name, user.Name),
-            new(ClaimTypes.Email, user.Email),
-            new("tenant_id", user.TenantId.ToString()),
-            new("tenant_code", tenantCode),
-            new("security_level", user.SecurityLevel ?? "PUBLIC"),
-            new("mfa_enabled", user.MfaEnabled.ToString()),
-            new("certificate_required", user.CertificateRequired.ToString()),
-            new("can_sign_with_icp", user.CanSignWithIcp.ToString())
-        };
+    {
+        new(ClaimTypes.NameIdentifier, user.UserId.ToString()),
+        new(ClaimTypes.Name, user.Name),
+        new(ClaimTypes.Email, user.Email),
+        new("tenant_id", user.TenantId.ToString()),
+        new("tenant_code", tenantCode),
+        new("security_level", user.SecurityLevel ?? "PUBLIC"),
+        new("mfa_enabled", user.MfaEnabled.ToString()),
+        new("certificate_required", user.CertificateRequired.ToString()),
+        new("can_sign_with_icp", user.CanSignWithIcp.ToString())
+    };
 
         if (user.ServidorId.HasValue)
         {
@@ -165,7 +165,6 @@ public sealed class AccountController : Controller
 
         return RedirectToAction("Index", "Home");
     }
-
     [HttpGet]
     public IActionResult ChangePassword()
     {

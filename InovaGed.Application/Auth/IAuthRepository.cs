@@ -4,7 +4,7 @@ public interface IAuthRepository
 {
     Task<AuthUserRow?> FindUserAsync(
         string tenantSlug,
-        string email,
+        string loginOrCpf,
         CancellationToken ct);
 
     Task<IReadOnlyList<string>> GetRolesAsync(
@@ -29,7 +29,7 @@ public interface IAuthRepository
         string? ip,
         string? userAgent,
         string? correlationId,
-        CancellationToken ct);
+        CancellationToken ct); 
 
     Task RegisterLoginFailureAsync(
         Guid tenantId,

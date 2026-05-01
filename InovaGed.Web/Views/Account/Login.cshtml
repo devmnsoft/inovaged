@@ -5,7 +5,7 @@
 
     /*
     Certificado digital ficará oculto por enquanto.
-                Mantive as variáveis para uso futuro, caso o bloco seja reativado.
+            Mantive as variáveis para uso futuro, caso o bloco seja reativado.
             */
     var openCert = TempData["open_cert"] is bool b && b;
     var certErr = TempData["cert_err"] as string;
@@ -138,8 +138,8 @@
         }
 
         /* =======================
-                   PAINEL GED ESQUERDO
-                   ======================= */
+                           PAINEL GED ESQUERDO
+                           ======================= */
 
         .login-info {
             position: relative;
@@ -494,8 +494,8 @@
         }
 
         /* =======================
-                   CARD DE LOGIN
-                   ======================= */
+                           CARD DE LOGIN
+                           ======================= */
 
         .login-panel {
             min-width: 0;
@@ -921,7 +921,7 @@
                         </div>
 
                         <h3>Bem-vindo de volta</h3>
-                        <p>Informe seus dados para acessar o ambiente GED.</p>
+                        <p>Informe seu e-mail ou CPF e senha para acessar o ambiente GED.</p>
                     </div>
 
                     <form id="loginForm" asp-action="Login" method="post" novalidate>
@@ -937,7 +937,8 @@
                         <input type="hidden" asp-for="TenantSlug" value="default" />
 
                         <div class="mb-3">
-                            <label asp-for="Email" class="form-label"></label>
+                            <label asp-for="Email" class="form-label">E-mail ou CPF</label>
+
                             <div class="input-group">
                                 <span class="input-group-text">
                                     <i class="bi bi-person-circle"></i>
@@ -945,19 +946,22 @@
 
                                 <input asp-for="Email"
                                        class="form-control"
-                                       placeholder="E-mail de acesso"
-                                       autocomplete="username" />
+                                       placeholder="Digite seu e-mail ou CPF"
+                                       autocomplete="username"
+                                       inputmode="text" />
                             </div>
+
                             <span asp-validation-for="Email" class="text-danger small"></span>
 
                             <div class="field-helper">
                                 <i class="bi bi-info-circle"></i>
-                                Utilize o e-mail cadastrado para acesso ao GED.
+                                Utilize seu e-mail de acesso ou o CPF cadastrado no servidor.
                             </div>
                         </div>
 
                         <div class="mb-2">
                             <label asp-for="Password" class="form-label"></label>
+
                             <div class="input-group">
                                 <span class="input-group-text">
                                     <i class="bi bi-lock"></i>
@@ -978,6 +982,7 @@
                                     <i class="bi bi-eye" id="passwordIcon"></i>
                                 </button>
                             </div>
+
                             <span asp-validation-for="Password" class="text-danger small"></span>
 
                             <div class="field-helper">

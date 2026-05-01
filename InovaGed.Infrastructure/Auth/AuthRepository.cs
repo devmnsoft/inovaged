@@ -14,9 +14,9 @@ public sealed class AuthRepository : IAuthRepository
     }
 
     public async Task<AuthUserRow?> FindUserAsync(
-        string tenantSlug,
-        string email,
-        CancellationToken ct)
+      string tenantSlug,
+      string loginOrCpf,
+      CancellationToken ct)
     {
         const string sql = @"
 SELECT
@@ -24,7 +24,7 @@ SELECT
     u.id                         AS ""UserId"",
     u.servidor_id                AS ""ServidorId"",
     u.email                      AS ""Email"",
-    u.name                       AS ""Name"",
+    COALESCE(s.nome_completo, u.name) AS ""Name"",
     u.password_hash              AS ""PasswordHash"",
     u.is_active                  AS ""IsActive"",
     u.is_locked                  AS ""IsLocked"",
@@ -36,14 +36,28 @@ SELECT
     u.can_sign_with_icp          AS ""CanSignWithIcp"",
     u.security_level             AS ""SecurityLevel""
 FROM ged.tenant t
-JOIN ged.app_user u ON u.tenant_id = t.id
+JOIN ged.app_user u 
+     ON u.tenant_id = t.id
 LEFT JOIN ged.servidor s
        ON s.id = u.servidor_id
       AND s.tenant_id = u.tenant_id
-WHERE lower(t.code) = lower(@tenantSlug)
-  AND lower(u.email) = lower(@email)
+      AND s.reg_status = 'A'
+WHERE lower(t.code) = lower(@TenantSlug)
   AND t.is_active = true
   AND u.deleted_at_utc IS NULL
+  AND (
+        lower(u.email) = lower(@LoginOrCpf)
+     OR lower(u.user_name) = lower(@LoginOrCpf)
+     OR regexp_replace(COALESCE(s.cpf, ''), '\D', '', 'g') = regexp_replace(@LoginOrCpf, '\D', '', 'g')
+     OR regexp_replace(COALESCE(u.user_name, ''), '\D', '', 'g') = regexp_replace(@LoginOrCpf, '\D', '', 'g')
+  )
+ORDER BY
+    CASE 
+        WHEN lower(u.email) = lower(@LoginOrCpf) THEN 1
+        WHEN lower(u.user_name) = lower(@LoginOrCpf) THEN 2
+        WHEN regexp_replace(COALESCE(s.cpf, ''), '\D', '', 'g') = regexp_replace(@LoginOrCpf, '\D', '', 'g') THEN 3
+        ELSE 4
+    END
 LIMIT 1;
 ";
 
@@ -52,7 +66,11 @@ LIMIT 1;
         return await conn.QueryFirstOrDefaultAsync<AuthUserRow>(
             new CommandDefinition(
                 sql,
-                new { tenantSlug, email },
+                new
+                {
+                    TenantSlug = tenantSlug,
+                    LoginOrCpf = loginOrCpf
+                },
                 cancellationToken: ct));
     }
 
