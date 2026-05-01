@@ -1,0 +1,73 @@
+﻿@model IEnumerable<dynamic>
+
+@{
+    var rows = Model?.ToList() ?? new List<dynamic>();
+}
+
+@if (rows.Count == 0)
+{
+    <div class="alert alert-light border mb-0 small text-muted">
+        <i class="bi bi-clock-history me-1"></i>
+        Nenhum histórico de ciclo de vida registrado para este documento.
+    </div>
+}
+else
+{
+    <div class="list-group small">
+        @foreach (var item in rows)
+        {
+            string fromStage = "-";
+            string toStage = "-";
+            string reason = "";
+            string comments = "";
+            string performedBy = "-";
+            DateTimeOffset? performedAt = null;
+
+            try { fromStage = Convert.ToString(item.FromStageName) ?? "-"; } catch { }
+            try { toStage = Convert.ToString(item.ToStageName) ?? "-"; } catch { }
+            try { reason = Convert.ToString(item.Reason) ?? ""; } catch { }
+            try { comments = Convert.ToString(item.Comments) ?? ""; } catch { }
+            try { performedBy = Convert.ToString(item.PerformedBy) ?? "-"; } catch { }
+
+            try
+            {
+                if (item.PerformedAt is DateTimeOffset dto)
+                    performedAt = dto;
+                else if (item.PerformedAt is DateTime dt)
+                    performedAt = new DateTimeOffset(dt);
+            }
+            catch { }
+
+            <div class="list-group-item">
+                <div class="fw-semibold">
+                    @fromStage → @toStage
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(reason))
+                {
+                    <div class="text-muted mt-1">
+                        <strong>Motivo:</strong> @reason
+                    </div>
+                }
+
+                @if (!string.IsNullOrWhiteSpace(comments))
+                {
+                    <div class="text-muted mt-1">
+                        <strong>Comentários:</strong> @comments
+                    </div>
+                }
+
+                <div class="text-muted mt-1">
+                    <i class="bi bi-person me-1"></i> @performedBy
+                    @if (performedAt.HasValue)
+                    {
+                        <span class="ms-2">
+                            <i class="bi bi-calendar-event me-1"></i>
+                            @performedAt.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+                        </span>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+}

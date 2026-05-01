@@ -64,16 +64,20 @@ ORDER BY d.created_at DESC;";
 SELECT
     d.id                 AS ""Id"",
     d.tenant_id          AS ""TenantId"",
-    d.folder_id          AS ""FolderId"",
+    ''                   AS ""Code"",
     d.title              AS ""Title"",
+    d.description        AS ""Description"",
+    d.folder_id          AS ""FolderId"",
     d.type_id            AS ""TypeId"",
-    d.visibility         AS ""Visibility"",
+    NULL::uuid           AS ""ClassificationId"",
+    d.status             AS ""Status"",
+    d.visibility::text   AS ""Visibility"",
+    d.current_version_id AS ""CurrentVersionId"",
     d.created_at         AS ""CreatedAt"",
     d.created_by         AS ""CreatedBy"",
     d.updated_at         AS ""UpdatedAt"",
     d.updated_by         AS ""UpdatedBy"",
-    d.status             AS ""Status"",
-    d.current_version_id AS ""CurrentVersionId""
+    0                    AS ""CurrentVersion""
 FROM ged.document d
 WHERE d.tenant_id = @tenantId
   AND d.id = @documentId;";
@@ -81,7 +85,14 @@ WHERE d.tenant_id = @tenantId
         await using var conn = await _db.OpenAsync(ct);
 
         return await conn.QueryFirstOrDefaultAsync<DocumentDetailsDto>(
-            new CommandDefinition(sql, new { tenantId, documentId }, cancellationToken: ct));
+            new CommandDefinition(
+                sql,
+                new
+                {
+                    tenantId,
+                    documentId
+                },
+                cancellationToken: ct));
     }
 
     public async Task<IReadOnlyList<DocumentVersionDto>> ListVersionsAsync(Guid tenantId, Guid documentId, CancellationToken ct)
