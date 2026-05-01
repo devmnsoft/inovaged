@@ -31,44 +31,32 @@ public sealed class ClassificationController : Controller
         _auditQueries = auditQueries;
     }
 
-    // ✅ /Classification
-    // ✅ /Classification?documentId=GUID -> redireciona pro GED/Details com openClassify=true
     [HttpGet("")]
     public IActionResult Index(Guid? documentId = null)
     {
-        try
-        {
-            if (!_currentUser.IsAuthenticated)
-                return RedirectToAction("Login", "Account");
+        if (!_currentUser.IsAuthenticated)
+            return RedirectToAction("Login", "Account");
 
-            if (documentId.HasValue && documentId.Value != Guid.Empty)
+        if (documentId.HasValue && documentId.Value != Guid.Empty)
+        {
+            return RedirectToAction("Details", "Ged", new
             {
-                return RedirectToAction("Details", "Ged", new
-                {
-                    id = documentId.Value,
-                    openClassify = true
-                });
-            }
+                id = documentId.Value,
+                openClassify = true
+            });
+        }
 
-            return RedirectToAction("Index", "Ged");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Erro em Classification/Index. documentId={DocumentId}", documentId);
-            TempData["Error"] = "Erro ao abrir classificação.";
-            return RedirectToAction("Index", "Ged");
-        }
+        return RedirectToAction("Index", "Ged");
     }
 
-    // GET /Classification/Panel?documentId=GUID
     [HttpGet("Panel")]
     public async Task<IActionResult> Panel(Guid documentId, CancellationToken ct)
     {
         try
         {
             if (!_currentUser.IsAuthenticated) return Unauthorized();
-            var tenantId = _currentUser.TenantId;
 
+            var tenantId = _currentUser.TenantId;
             var cls = await _queries.GetAsync(tenantId, documentId, ct);
 
             ViewData["DocumentId"] = documentId;
@@ -81,13 +69,13 @@ public sealed class ClassificationController : Controller
         }
     }
 
-    // GET /Classification/EditModal?documentId=GUID
     [HttpGet("EditModal")]
     public async Task<IActionResult> EditModal(Guid documentId, CancellationToken ct)
     {
         try
         {
             if (!_currentUser.IsAuthenticated) return Unauthorized();
+
             var tenantId = _currentUser.TenantId;
 
             var cls = await _queries.GetAsync(tenantId, documentId, ct);
@@ -97,14 +85,18 @@ public sealed class ClassificationController : Controller
             {
                 DocumentId = documentId,
                 DocumentTypeId = cls?.DocumentTypeId,
-                TagsCsv = (cls?.Tags is { Count: > 0 }) ? string.Join(", ", cls.Tags) : "",
-                MetadataLines = (cls?.Metadata is { Count: > 0 })
+                TagsCsv = cls?.Tags is { Count: > 0 } ? string.Join(", ", cls.Tags) : "",
+                MetadataLines = cls?.Metadata is { Count: > 0 }
                     ? string.Join(Environment.NewLine, cls.Metadata.Select(kv => $"{kv.Key}={kv.Value}"))
                     : ""
             };
 
             vm.AvailableTypes = (types ?? Array.Empty<DocumentTypeRowDto>())
-                .Select(t => new EditClassificationVM.DocumentTypeItem { Id = t.Id, Name = t.Name })
+                .Select(t => new EditClassificationVM.DocumentTypeItem
+                {
+                    Id = t.Id,
+                    Name = t.Name
+                })
                 .ToList();
 
             return PartialView("_EditClassificationModal", vm);
@@ -116,7 +108,6 @@ public sealed class ClassificationController : Controller
         }
     }
 
-    // POST /Classification/SaveManual
     [HttpPost("SaveManual")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> SaveManual(
@@ -124,6 +115,7 @@ public sealed class ClassificationController : Controller
         [FromForm] Guid? documentTypeId,
         [FromForm] string? tagsCsv,
         [FromForm] string? metadataJson,
+        [FromForm] string? metadataLines,
         CancellationToken ct)
     {
         try
@@ -134,7 +126,9 @@ public sealed class ClassificationController : Controller
             var userId = _currentUser.UserId;
 
             var tags = ParseTags(tagsCsv);
-            var metadata = ParseMetadata(metadataJson);
+            var metadata = !string.IsNullOrWhiteSpace(metadataLines)
+                ? ParseMetadataLines(metadataLines)
+                : ParseMetadataJson(metadataJson);
 
             await _commands.SaveManualAsync(
                 tenantId: tenantId,
@@ -159,7 +153,6 @@ public sealed class ClassificationController : Controller
         }
     }
 
-    // POST /Classification/ApplySuggestion
     [HttpPost("ApplySuggestion")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> ApplySuggestion(
@@ -194,39 +187,14 @@ public sealed class ClassificationController : Controller
         }
     }
 
-    // =========================
-    // Helpers
-    // =========================
-    private static IReadOnlyList<string> ParseTags(string? tagsCsv)
-    {
-        if (string.IsNullOrWhiteSpace(tagsCsv))
-            return Array.Empty<string>();
-
-        return tagsCsv
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Where(t => t.Length > 0)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-    }
-
-    private static IReadOnlyDictionary<string, string> ParseMetadata(string? metadataJson)
-    {
-        if (string.IsNullOrWhiteSpace(metadataJson))
-            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-
-        var dict = JsonSerializer.Deserialize<Dictionary<string, string>>(metadataJson);
-        return dict ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-    }
-
-
     [HttpGet("Audit")]
-    public async Task<IActionResult> Audit(Guid documentId, int take = 20, CancellationToken ct = default)
+    public async Task<IActionResult> Audit(Guid documentId, int take = 30, CancellationToken ct = default)
     {
         try
         {
             if (!_currentUser.IsAuthenticated) return Unauthorized();
-            var tenantId = _currentUser.TenantId;
 
+            var tenantId = _currentUser.TenantId;
             var rows = await _auditQueries.ListByDocumentAsync(tenantId, documentId, take, ct);
 
             ViewData["DocumentId"] = documentId;
@@ -237,5 +205,51 @@ public sealed class ClassificationController : Controller
             _logger.LogError(ex, "Erro em Classification/Audit. DocumentId={DocumentId}", documentId);
             return StatusCode(500, "Erro ao carregar histórico de classificação.");
         }
+    }
+
+    private static IReadOnlyList<string> ParseTags(string? tagsCsv)
+    {
+        if (string.IsNullOrWhiteSpace(tagsCsv))
+            return Array.Empty<string>();
+
+        return tagsCsv
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(t => !string.IsNullOrWhiteSpace(t))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static IReadOnlyDictionary<string, string> ParseMetadataJson(string? metadataJson)
+    {
+        if (string.IsNullOrWhiteSpace(metadataJson))
+            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        var dict = JsonSerializer.Deserialize<Dictionary<string, string>>(metadataJson);
+        return dict ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static IReadOnlyDictionary<string, string> ParseMetadataLines(string? lines)
+    {
+        var dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        if (string.IsNullOrWhiteSpace(lines))
+            return dict;
+
+        foreach (var raw in lines.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var line = raw.Trim();
+            if (string.IsNullOrWhiteSpace(line)) continue;
+
+            var idx = line.IndexOf('=');
+            if (idx <= 0) continue;
+
+            var key = line[..idx].Trim();
+            var value = line[(idx + 1)..].Trim();
+
+            if (!string.IsNullOrWhiteSpace(key))
+                dict[key] = value;
+        }
+
+        return dict;
     }
 }

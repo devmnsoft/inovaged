@@ -129,6 +129,7 @@ public sealed class OcrWorker : BackgroundService
                     {
                         var classifier = scope.ServiceProvider.GetRequiredService<IDocumentClassifier>();
                         var classRepo = scope.ServiceProvider.GetRequiredService<IDocumentClassificationRepository>();
+                        var classCommands = scope.ServiceProvider.GetRequiredService<IDocumentClassificationCommands>();
 
                         var classified = await classifier.ClassifyAsync(
                             tenantId: job.TenantId,
@@ -145,7 +146,7 @@ public sealed class OcrWorker : BackgroundService
                             confidence: classified.Confidence,
                             method: classified.Method,
                             summary: classified.Summary,
-                            classifiedBy: actorId, // ✅ registra ator
+                            classifiedBy: actorId,
                             ct: stoppingToken);
 
                         await classRepo.UpsertTagsAsync(
@@ -153,7 +154,7 @@ public sealed class OcrWorker : BackgroundService
                             documentId: v.DocumentId,
                             tags: classified.Tags,
                             method: classified.Method,
-                            assignedBy: actorId, // ✅ registra ator
+                            assignedBy: actorId,
                             ct: stoppingToken);
 
                         await classRepo.UpsertMetadataAsync(
@@ -163,11 +164,37 @@ public sealed class OcrWorker : BackgroundService
                             method: classified.Method,
                             ct: stoppingToken);
 
-                        _logger.LogInformation("Classificação automática aplicada. Doc={DocId}, Ver={VerId}", v.DocumentId, add.Value);
+                        if (classified.DocumentTypeId.HasValue && classified.DocumentTypeId.Value != Guid.Empty)
+                        {
+                            await classCommands.SaveSuggestionOnlyAsync(
+                                tenantId: job.TenantId,
+                                documentId: v.DocumentId,
+                                suggestedTypeId: classified.DocumentTypeId.Value,
+                                suggestedConfidence: classified.Confidence,
+                                suggestedSummary: classified.Summary,
+                                ct: stoppingToken);
+                        }
+                        else
+                        {
+                            _logger.LogWarning(
+                                "OCR executado, mas nenhuma sugestão de tipo documental foi gerada. Doc={DocId}, Version={VersionId}",
+                                v.DocumentId,
+                                add.Value);
+                        }
+
+                        _logger.LogInformation(
+                            "Classificação OCR/sugestão registrada. Doc={DocId}, Ver={VerId}, Type={TypeId}, Confidence={Confidence}",
+                            v.DocumentId,
+                            add.Value,
+                            classified.DocumentTypeId,
+                            classified.Confidence);
                     }
                     catch (Exception exClassify)
                     {
-                        _logger.LogWarning(exClassify, "Falha na classificação automática (não bloqueia OCR). Doc={DocId}", v.DocumentId);
+                        _logger.LogWarning(
+                            exClassify,
+                            "Falha na classificação automática OCR. O OCR foi concluído, mas a sugestão não foi gravada. Doc={DocId}",
+                            v.DocumentId);
                     }
 
                     await jobs.MarkCompletedAsync(job.Id, stoppingToken);

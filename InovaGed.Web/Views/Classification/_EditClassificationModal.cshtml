@@ -1,88 +1,155 @@
 ﻿@model InovaGed.Web.Models.Classification.EditClassificationVM
 
-<div class="modal fade" id="modalEditClassification" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-centered">
-        <div class="modal-content">
-            <form id="formEditClassification" method="post">
-                @Html.AntiForgeryToken()
-                <input type="hidden" name="DocumentId" value="@Model.DocumentId" />
+<form id="formEditClassification" method="post" action="@Url.Action("SaveManual", "Classification")">
+    @Html.AntiForgeryToken()
 
-                <div class="modal-header">
-                    <h5 class="modal-title">
-                        <i class="bi bi-tags me-1"></i> Classificar documento
-                    </h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+    <input type="hidden" name="documentId" value="@Model.DocumentId" />
+
+    <div class="modal-header">
+        <h5 class="modal-title">
+            <i class="bi bi-tags me-1"></i> Classificar documento
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+    </div>
+
+    <div class="modal-body">
+        <div class="mb-3">
+            <label class="form-label">Tipo documental</label>
+
+            @if (Model.AvailableTypes == null || Model.AvailableTypes.Count == 0)
+            {
+                <div class="alert alert-warning mb-0">
+                    Não foi possível carregar a lista de tipos documentais.
+                    <div class="small text-muted mt-1">
+                        Cadastre os tipos documentais antes de classificar o documento.
+                    </div>
                 </div>
+            }
+            else
+            {
+                <select class="form-select" name="documentTypeId">
+                    <option value="">(Sem classificação)</option>
 
-                <div class="modal-body">
-
-                    <div class="mb-3">
-                        <label class="form-label">Tipo documental</label>
-
-                        @if (Model.AvailableTypes == null || Model.AvailableTypes.Count == 0)
+                    @foreach (var t in Model.AvailableTypes)
+                    {
+                        if (Model.DocumentTypeId == t.Id)
                         {
-                            <div class="alert alert-warning mb-0">
-                                Não foi possível carregar a lista de tipos documentais.
-                                <div class="small text-muted mt-1">
-                                    Verifique se o controller está preenchendo <code>AvailableTypes</code>.
-                                </div>
-                            </div>
+                            <option value="@t.Id" selected>@t.Name</option>
                         }
                         else
                         {
-                            <select class="form-select" name="DocumentTypeId">
-                                <option value="">(Sem classificação)</option>
-                                @foreach (var t in Model.AvailableTypes)
-                                {
-                                    if (Model.DocumentTypeId == t.Id)
-                                    {
-                                        <option value="@t.Id" selected>@t.Name</option>
-                                    }
-                                    else
-                                    {
-                                        <option value="@t.Id">@t.Name</option>
-                                    }
-                                }
-
-                            </select>
-
-                            <div class="form-text">
-                                Defina o tipo do documento para habilitar regras, workflow e relatórios.
-                            </div>
+                            <option value="@t.Id">@t.Name</option>
                         }
-                    </div>
+                    }
+                </select>
 
-                    <div class="mb-3">
-                        <label class="form-label">Tags</label>
-                        <input class="form-control" name="TagsCsv" value="@Model.TagsCsv" placeholder="Ex: contrato, financeiro, 2025" />
-                        <div class="form-text">Separe por vírgula.</div>
-                    </div>
-
-                    <div class="mb-0">
-                        <label class="form-label">Metadados</label>
-                        <textarea class="form-control" rows="5" name="MetadataLines"
-                                  placeholder="chave=valor (uma linha por item)">@Model.MetadataLines</textarea>
-                        <div class="form-text">Ex: numero=12345</div>
-                    </div>
-
+                <div class="form-text">
+                    Defina o tipo documental para habilitar regras, workflow, relatórios e temporalidade.
                 </div>
-
-                <div class="modal-footer">
-                    <button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">
-                        Cancelar
-                    </button>
-
-                    <button class="btn btn-primary" type="submit">
-                        <span class="btn-text">
-                            <i class="bi bi-check2 me-1"></i> Salvar
-                        </span>
-                        <span class="btn-loading d-none">
-                            <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
-                            Salvando...
-                        </span>
-                    </button>
-                </div>
-            </form>
+            }
         </div>
+
+        <div class="mb-3">
+            <label class="form-label">Tags</label>
+            <input class="form-control"
+                   name="tagsCsv"
+                   value="@Model.TagsCsv"
+                   placeholder="Ex: prontuário, contrato, financeiro, 2026" />
+            <div class="form-text">Separe as tags por vírgula.</div>
+        </div>
+
+        <div class="mb-0">
+            <label class="form-label">Metadados</label>
+            <textarea class="form-control"
+                      rows="5"
+                      name="metadataLines"
+                      placeholder="chave=valor, uma linha por item">@Model.MetadataLines</textarea>
+            <div class="form-text">
+                Exemplo: numero=12345
+            </div>
+        </div>
+
+        <div id="classificationSaveError" class="alert alert-danger d-none mt-3 mb-0"></div>
     </div>
-</div>
+
+    <div class="modal-footer">
+        <button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">
+            Cancelar
+        </button>
+
+        <button class="btn btn-primary" type="submit">
+            <span class="btn-text">
+                <i class="bi bi-check2 me-1"></i> Salvar
+            </span>
+            <span class="btn-loading d-none">
+                <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                Salvando...
+            </span>
+        </button>
+    </div>
+</form>
+
+<script>
+    (function () {
+        const form = document.getElementById('formEditClassification');
+        if (!form) return;
+
+        form.addEventListener('submit', async function (e) {
+            e.preventDefault();
+
+            const btn = form.querySelector('button[type="submit"]');
+            const err = document.getElementById('classificationSaveError');
+
+            if (err) {
+                err.classList.add('d-none');
+                err.innerText = '';
+            }
+
+            if (btn && window.setBtnLoading) {
+                window.setBtnLoading(btn, true);
+            }
+
+            try {
+                const resp = await fetch(form.action, {
+                    method: 'POST',
+                    body: new FormData(form),
+                    credentials: 'include',
+                    cache: 'no-store'
+                });
+
+                if (!resp.ok) {
+                    const txt = await resp.text().catch(() => 'Erro ao salvar classificação.');
+                    if (err) {
+                        err.innerText = txt || 'Erro ao salvar classificação.';
+                        err.classList.remove('d-none');
+                    }
+                    return;
+                }
+
+                const modalEl = document.getElementById('modalClassify');
+                if (modalEl && window.bootstrap) {
+                    const modal = bootstrap.Modal.getInstance(modalEl);
+                    modal && modal.hide();
+                }
+
+                if (window.refreshClassificationPanel) {
+                    await window.refreshClassificationPanel();
+                }
+
+                const audit = document.getElementById('classificationAudit')
+                    || document.getElementById('classification-audit-container');
+
+                if (audit) {
+                    audit.innerHTML = '';
+                    audit.setAttribute('data-loaded', '0');
+                    audit.classList.add('d-none');
+                }
+            }
+            finally {
+                if (btn && window.setBtnLoading) {
+                    window.setBtnLoading(btn, false);
+                }
+            }
+        });
+    })();
+</script>
