@@ -284,25 +284,67 @@ if (builder.Configuration.GetValue<bool>("Workers:LoanOverdue:Enabled"))
 {
     builder.Services.AddHostedService<LoanOverdueWorker>();
 }
- 
+
 // =======================================================
 // Authorization Policies
 // =======================================================
 builder.Services.AddAuthorization(options =>
 {
+    // =======================================================
+    // POLICIES DO MENU / PERFIS DO INOVAGED
+    // =======================================================
+
+    options.AddPolicy(AppPolicies.Dashboard,
+        p => p.RequireRole(
+            AppRoles.Admin,
+            AppRoles.Arquivista,
+            AppRoles.Operador));
+
+    options.AddPolicy(AppPolicies.Documentos,
+        p => p.RequireRole(
+            AppRoles.Admin,
+            AppRoles.Arquivista));
+
+    options.AddPolicy(AppPolicies.Emprestimos,
+        p => p.RequireRole(
+            AppRoles.Admin,
+            AppRoles.Arquivista,
+            AppRoles.Gestor));
+
+    options.AddPolicy(AppPolicies.Relatorios,
+        p => p.RequireRole(
+            AppRoles.Admin,
+            AppRoles.Arquivista,
+            AppRoles.Gestor,
+            AppRoles.Auditor,
+            AppRoles.Operador));
+
+    options.AddPolicy(AppPolicies.Auditoria,
+        p => p.RequireRole(
+            AppRoles.Admin,
+            AppRoles.Gestor,
+            AppRoles.Auditor));
+
+    options.AddPolicy(AppPolicies.Administracao,
+        p => p.RequireRole(AppRoles.Admin));
+
+    // =======================================================
+    // POLICIES QUE JÁ EXISTEM NO PROJETO
+    // manter para não quebrar Temporalidade/Retention
+    // =======================================================
+
     options.AddPolicy(Policies.CanViewRetention,
-        p => p.RequireRole(Roles.Admin, Roles.Archivist, Roles.Auditor));
+        p => p.RequireRole(AppRoles.Admin, AppRoles.Arquivista, AppRoles.Auditor));
 
     options.AddPolicy(Policies.CanManageRetention,
-        p => p.RequireRole(Roles.Admin, Roles.Archivist));
+        p => p.RequireRole(AppRoles.Admin, AppRoles.Arquivista));
 
     options.AddPolicy(Policies.CanSignRetention,
-        p => p.RequireRole(Roles.Admin, Roles.Archivist));
+        p => p.RequireRole(AppRoles.Admin, AppRoles.Arquivista));
 
     options.AddPolicy(Policies.CanExecuteFinal,
-        p => p.RequireRole(Roles.Admin));
+        p => p.RequireRole(AppRoles.Admin));
 });
-
 // =======================================================
 // ✅ Authentication (CORRIGIDO: apenas uma cadeia de AddAuthentication)
 // =======================================================

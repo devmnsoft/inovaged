@@ -1,6 +1,7 @@
 ﻿using System.Security.Claims;
 using InovaGed.Application.Auth;
 using InovaGed.Web.Models.Auth;
+using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Identity;
@@ -116,27 +117,41 @@ public sealed class AccountController : Controller
             correlationId,
             ct);
 
-        var roles = await _repo.GetRolesAsync(user.TenantId, user.UserId, ct);
+        var rolesFromDatabase = await _repo.GetRolesAsync(user.TenantId, user.UserId, ct);
+
+        var normalizedRoles = rolesFromDatabase
+            .Where(r => !string.IsNullOrWhiteSpace(r))
+            .Select(AppRoles.Normalize)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (normalizedRoles.Count == 0)
+        {
+            normalizedRoles.Add(AppRoles.Operador);
+        }
 
         var claims = new List<Claim>
-    {
-        new(ClaimTypes.NameIdentifier, user.UserId.ToString()),
-        new(ClaimTypes.Name, user.Name),
-        new(ClaimTypes.Email, user.Email),
-        new("tenant_id", user.TenantId.ToString()),
-        new("tenant_code", tenantCode),
-        new("security_level", user.SecurityLevel ?? "PUBLIC"),
-        new("mfa_enabled", user.MfaEnabled.ToString()),
-        new("certificate_required", user.CertificateRequired.ToString()),
-        new("can_sign_with_icp", user.CanSignWithIcp.ToString())
-    };
+        {
+            new(ClaimTypes.NameIdentifier, user.UserId.ToString()),
+            new(ClaimTypes.Name, user.Name ?? "Usuário"),
+            new(ClaimTypes.Email, user.Email ?? string.Empty),
+            new("tenant_id", user.TenantId.ToString()),
+            new("tenant_code", tenantCode),
+            new("security_level", user.SecurityLevel ?? "PUBLIC"),
+            new("mfa_enabled", user.MfaEnabled.ToString()),
+            new("certificate_required", user.CertificateRequired.ToString()),
+            new("can_sign_with_icp", user.CanSignWithIcp.ToString())
+        };
 
         if (user.ServidorId.HasValue)
         {
             claims.Add(new Claim("servidor_id", user.ServidorId.Value.ToString()));
         }
 
-        claims.AddRange(roles.Select(r => new Claim(ClaimTypes.Role, r)));
+        foreach (var role in normalizedRoles)
+        {
+            claims.Add(new Claim(ClaimTypes.Role, role));
+        }
 
         var identity = new ClaimsIdentity(
             claims,
@@ -165,6 +180,7 @@ public sealed class AccountController : Controller
 
         return RedirectToAction("Index", "Home");
     }
+
     [HttpGet]
     public IActionResult ChangePassword()
     {

@@ -2,6 +2,7 @@
 @using Microsoft.AspNetCore.Mvc.TagHelpers
 @addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
 @using InovaGed.Application.Common.Database
+@using InovaGed.Web.Security
 @inject IDbConnectionFactory DbFactory
 
 @{
@@ -15,32 +16,83 @@
     string Active(string controller, params string[] actions)
     {
         var c = controller.ToLowerInvariant();
-        if (ctrl != c) return "";
-        if (actions == null || actions.Length == 0) return "active";
-        return actions.Any(a => string.Equals(act, a.ToLowerInvariant(), StringComparison.OrdinalIgnoreCase)) ? "active" : "";
+
+        if (ctrl != c)
+            return "";
+
+        if (actions == null || actions.Length == 0)
+            return "active";
+
+        return actions.Any(a => string.Equals(act, a.ToLowerInvariant(), StringComparison.OrdinalIgnoreCase))
+            ? "active"
+            : "";
     }
 
     string ActiveAny(params string[] controllers)
-        => controllers.Any(c => string.Equals(ctrl, c.ToLowerInvariant(), StringComparison.OrdinalIgnoreCase)) ? "active" : "";
+        => controllers.Any(c => string.Equals(ctrl, c.ToLowerInvariant(), StringComparison.OrdinalIgnoreCase))
+            ? "active"
+            : "";
 
     string ActivePath(string startsWith)
     {
         var path = Context.Request.Path.Value?.ToLowerInvariant() ?? "";
         var sw = (startsWith ?? "").ToLowerInvariant();
+
         return path.StartsWith(sw) ? "active" : "";
     }
 
     string UserInitials()
     {
         var name = User?.Identity?.Name;
-        if (string.IsNullOrWhiteSpace(name)) return "IG";
-        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).ToArray();
-        if (parts.Length == 0) return "IG";
+
+        if (string.IsNullOrWhiteSpace(name))
+            return "IG";
+
+        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Take(2)
+            .ToArray();
+
+        if (parts.Length == 0)
+            return "IG";
+
         var chars = parts.Select(p => char.ToUpperInvariant(p[0])).ToArray();
+
         return new string(chars);
     }
 
     var userName = User?.Identity?.Name ?? "Usuário";
+
+    bool IsAdmin() =>
+        User.IsInRole(AppRoles.Admin);
+
+    bool CanDashboard() =>
+        User.IsInRole(AppRoles.Admin) ||
+        User.IsInRole(AppRoles.Arquivista) ||
+        User.IsInRole(AppRoles.Operador);
+
+    bool CanDocumentos() =>
+        User.IsInRole(AppRoles.Admin) ||
+        User.IsInRole(AppRoles.Arquivista);
+
+    bool CanEmprestimos() =>
+        User.IsInRole(AppRoles.Admin) ||
+        User.IsInRole(AppRoles.Arquivista) ||
+        User.IsInRole(AppRoles.Gestor);
+
+    bool CanRelatorios() =>
+        User.IsInRole(AppRoles.Admin) ||
+        User.IsInRole(AppRoles.Arquivista) ||
+        User.IsInRole(AppRoles.Gestor) ||
+        User.IsInRole(AppRoles.Auditor) ||
+        User.IsInRole(AppRoles.Operador);
+
+    bool CanAuditoria() =>
+        User.IsInRole(AppRoles.Admin) ||
+        User.IsInRole(AppRoles.Gestor) ||
+        User.IsInRole(AppRoles.Auditor);
+
+    bool CanAdminModules() =>
+        User.IsInRole(AppRoles.Admin);
 
     int pacsBadge = 0;
     int dispElimBadge = 0;
@@ -66,7 +118,9 @@
     catch
     {
         pacsBadge = 0;
-        dispElimBadge = dispTransBadge = dispReviewBadge = 0;
+        dispElimBadge = 0;
+        dispTransBadge = 0;
+        dispReviewBadge = 0;
     }
 
     int dispTotalBadge = dispElimBadge + dispTransBadge + dispReviewBadge;
@@ -123,7 +177,7 @@
     {
         <div class="wrapper">
 
-            <!-- ===== SIDEBAR (DESKTOP) ===== -->
+            <!-- SIDEBAR DESKTOP -->
             <aside class="sidebar d-none d-lg-flex" aria-label="Menu lateral">
                 <div class="sidebar-brand">
                     <span class="logo">IG</span>
@@ -135,269 +189,321 @@
 
                 <nav class="sidebar-menu">
 
-                    <!-- PRINCIPAL -->
-                    <div class="sidebar-section-title">Principal</div>
-                    <a asp-controller="Home" asp-action="Index" class="@Active("Home","Index")">
-                        <i class="bi bi-speedometer2"></i><span>Dashboard</span>
-                        <span class="ms-auto text-muted small">PoC (—)</span>
+                    @* =========================================================
+                   1. DASHBOARD
+                   ========================================================= *@
+                    @if (CanDashboard())
+                    {
+                        <div class="sidebar-section-title">Visão Geral</div>
+
+                        <a asp-controller="Home" asp-action="Index" class="@Active("Home", "Index")">
+                            <i class="bi bi-speedometer2"></i>
+                            <span>Dashboard</span>
+                        </a>
+                    }
+
+                    @* =========================================================
+                   2. DOCUMENTOS
+                   ========================================================= *@
+                    @if (CanDocumentos())
+                    {
+                        <div class="sidebar-section-title">Documentos</div>
+
+                        <a asp-controller="Ged" asp-action="Index" class="@ActiveAny("Ged")">
+                            <i class="bi bi-folder2-open"></i>
+                            <span>Explorer de Documentos</span>
+                        </a>
+
+                        <a asp-controller="Ged" asp-action="Folders" class="@Active("Ged", "Folders")">
+                            <i class="bi bi-folder"></i>
+                            <span>Pastas e Dossiês</span>
+                        </a>
+
+                        <a asp-controller="Batches" asp-action="Index" class="@ActiveAny("Batches")">
+                            <i class="bi bi-box-seam"></i>
+                            <span>Lotes de Tratamento</span>
+                        </a>
+
+                        <a asp-controller="ImportExport" asp-action="Index" class="@Active("ImportExport", "Index", "Import", "ExportCenter", "Export")">
+                            <i class="bi bi-arrow-left-right"></i>
+                            <span>Importação e Exportação</span>
+                        </a>
+
+                        <a href="https://yndustech.com.br/GedDocs" target="_blank" rel="noopener noreferrer" class="@ActiveAny("Pacs")">
+                            <i class="bi bi-heart-pulse"></i>
+                            <span class="d-flex align-items-center gap-2">
+                                Sistema de Imagem
+                                <span id="pacsBadge" class="badge text-bg-danger @(pacsBadge > 0 ? "" : "d-none")">@pacsBadge</span>
+                            </span>
+                        </a>
+                    }
+
+                    @* =========================================================
+                   3. GUARDA FÍSICA
+                   ========================================================= *@
+                    @if (CanDocumentos())
+                    {
+                        <div class="sidebar-section-title">Guarda Física</div>
+
+                        <a asp-controller="Physical" asp-action="Locations" class="@Active("Physical", "Locations")">
+                            <i class="bi bi-geo-alt"></i>
+                            <span>Localizações</span>
+                        </a>
+
+                        <a asp-controller="Physical" asp-action="Boxes" class="@Active("Physical", "Boxes")">
+                            <i class="bi bi-inbox"></i>
+                            <span>Caixas</span>
+                        </a>
+
+                        <a asp-controller="Physical" asp-action="BoxContents" class="@Active("Physical", "BoxContents")">
+                            <i class="bi bi-box2"></i>
+                            <span>Conteúdo da Caixa</span>
+                        </a>
+
+                        <a asp-controller="Physical" asp-action="BoxHistory" class="@Active("Physical", "BoxHistory")">
+                            <i class="bi bi-list-columns-reverse"></i>
+                            <span>Histórico da Caixa</span>
+                        </a>
+
+                        <a asp-controller="Labels" asp-action="Boxes" class="@Active("Labels", "Boxes", "BoxLabel")">
+                            <i class="bi bi-upc-scan"></i>
+                            <span>Etiquetas de Caixas</span>
+                        </a>
+
+                        <a asp-controller="Labels" asp-action="Documents" class="@Active("Labels", "Documents", "DocumentLabel")">
+                            <i class="bi bi-upc"></i>
+                            <span>Etiquetas de Documentos</span>
+                        </a>
+                    }
+
+                    @* =========================================================
+                   4. EMPRÉSTIMOS
+                   ========================================================= *@
+                    @if (CanEmprestimos())
+                    {
+                        <div class="sidebar-section-title">Empréstimos</div>
+
+                        <a asp-controller="Loans" asp-action="Index" class="@ActiveAny("Loans")">
+                            <i class="bi bi-journal-arrow-up"></i>
+                            <span>Solicitações</span>
+                        </a>
+
+                        <a asp-controller="Loans" asp-action="Overdue" class="@Active("Loans", "Overdue")">
+                            <i class="bi bi-alarm"></i>
+                            <span>Empréstimos Vencidos</span>
+                        </a>
+
+                        <a asp-controller="Loans" asp-action="RunOverdue" class="@Active("Loans", "RunOverdue")">
+                            <i class="bi bi-play-circle"></i>
+                            <span>Processar Cobranças</span>
+                        </a>
+                    }
+
+                    @* =========================================================
+                   5. INSTRUMENTOS ARQUIVÍSTICOS
+                   ========================================================= *@
+                    @if (CanAdminModules())
+                    {
+                        <div class="sidebar-section-title">Instrumentos Arquivísticos</div>
+
+                        <a asp-controller="Classification" asp-action="Index" class="@ActiveAny("Classification")">
+                            <i class="bi bi-diagram-3"></i>
+                            <span>PCD / TTD / POP</span>
+                        </a>
+
+                        <a asp-controller="ClassificationDashboard" asp-action="Index" class="@ActiveAny("ClassificationDashboard")">
+                            <i class="bi bi-inboxes"></i>
+                            <span class="d-flex align-items-center gap-2">
+                                Pendências de Classificação
+                                <span id="clsBadge" class="badge text-bg-danger d-none">0</span>
+                            </span>
+                        </a>
+
+                        <a asp-controller="InstrumentosArquivisticos" asp-action="MoveCode" class="@Active("InstrumentosArquivisticos", "MoveCode")">
+                            <i class="bi bi-arrow-left-right"></i>
+                            <span>Movimentar Código</span>
+                        </a>
+
+                        <a asp-controller="InstrumentosArquivisticos" asp-action="Versions" class="@Active("InstrumentosArquivisticos", "Versions")">
+                            <i class="bi bi-clock-history"></i>
+                            <span>Versionamento</span>
+                        </a>
+                    }
+
+                    @* =========================================================
+                   6. TEMPORALIDADE E DESTINAÇÃO
+                   ========================================================= *@
+                    @if (CanAdminModules())
+                    {
+                        <div class="sidebar-section-title">Temporalidade e Destinação</div>
+
+                        <a asp-controller="Temporalidade" asp-action="Index" class="@ActiveAny("Temporalidade")">
+                            <i class="bi bi-hourglass-split"></i>
+                            <span>Central de Temporalidade</span>
+                        </a>
+
+                        <a asp-controller="Retention" asp-action="Queue" class="@Active("Retention", "Queue")">
+                            <i class="bi bi-list-check"></i>
+                            <span>Fila Operacional</span>
+                        </a>
+
+                        <a asp-controller="Disposition" asp-action="Index" class="@ActiveAny("Disposition")">
+                            <i class="bi bi-archive"></i>
+                            <span>Painel de Destinação</span>
+                        </a>
+
+                        <a asp-controller="Disposition" asp-action="Queue" class="@Active("Disposition", "Queue")">
+                            <i class="bi bi-inbox"></i>
+                            <span class="d-flex align-items-center gap-2">
+                                Fila de Destinação
+                                <span class="badge text-bg-danger @(dispTotalBadge > 0 ? "" : "d-none")">@dispTotalBadge</span>
+                            </span>
+                        </a>
+
+                        <a href="/RetentionCases" class="@ActivePath("/retentioncases")">
+                            <i class="bi bi-journal-text"></i>
+                            <span>Casos de Temporalidade</span>
+                        </a>
+
+                        <a href="/RetentionTerms" class="@ActivePath("/retentionterms")">
+                            <i class="bi bi-file-earmark-text"></i>
+                            <span>Termos de Destinação</span>
+                        </a>
+
+                        <a asp-controller="Disposition" asp-action="Terms" class="@Active("Disposition", "Terms")">
+                            <i class="bi bi-card-list"></i>
+                            <span>Relatório de Termos</span>
+                        </a>
+                    }
+
+                    @* =========================================================
+                   7. ASSINATURA DIGITAL
+                   ========================================================= *@
+                    @if (CanAdminModules())
+                    {
+                        <div class="sidebar-section-title">Assinatura Digital</div>
+
+                        <a href="/Signature" class="@(Active("Signature", "Index", "SignDocument", "SignBatch") + " " + ActivePath("/signature"))">
+                            <i class="bi bi-pen"></i>
+                            <span>Assinar Documento</span>
+                        </a>
+
+                        <a href="/Signature/Batch" class="@(Active("Signature", "SignBatch") + " " + ActivePath("/signature/batch"))">
+                            <i class="bi bi-stack"></i>
+                            <span>Assinar em Lote</span>
+                        </a>
+                    }
+
+                    @* =========================================================
+                   8. RELATÓRIOS
+                   ========================================================= *@
+                    @if (CanRelatorios())
+                    {
+                        <div class="sidebar-section-title">Relatórios</div>
+
+                        <a asp-controller="Reports" asp-action="Loans" class="@Active("Reports", "Loans")">
+                            <i class="bi bi-file-earmark-text"></i>
+                            <span>Empréstimos</span>
+                        </a>
+
+                        <a asp-controller="Reports" asp-action="PcdFull" class="@Active("Reports", "PcdFull")">
+                            <i class="bi bi-printer"></i>
+                            <span>PCD Completo</span>
+                        </a>
+
+                        <a asp-controller="Reports" asp-action="PcdByClass" class="@Active("Reports", "PcdByClass")">
+                            <i class="bi bi-funnel"></i>
+                            <span>PCD por Classe</span>
+                        </a>
+
+                        <a asp-controller="Reports" asp-action="TtdFull" class="@Active("Reports", "TtdFull")">
+                            <i class="bi bi-hourglass"></i>
+                            <span>TTD Completa</span>
+                        </a>
+
+                        <a asp-controller="Reports" asp-action="TtdByClass" class="@Active("Reports", "TtdByClass")">
+                            <i class="bi bi-funnel"></i>
+                            <span>TTD por Classe</span>
+                        </a>
+
+                        <a asp-controller="Reports" asp-action="SignatureValidation" class="@Active("Reports", "SignatureValidation")">
+                            <i class="bi bi-patch-check"></i>
+                            <span>Validação de Assinaturas</span>
+                        </a>
+
+                        <a asp-controller="Reports" asp-action="SignedSetPrint" class="@Active("Reports", "SignedSetPrint", "SignedSetPrintView")">
+                            <i class="bi bi-patch-check-fill"></i>
+                            <span>Conjunto Assinado</span>
+                        </a>
+                    }
+
+                    @* =========================================================
+                   9. AUDITORIA
+                   ========================================================= *@
+                    @if (CanAuditoria())
+                    {
+                        <div class="sidebar-section-title">Auditoria</div>
+
+                        <a asp-controller="Audit" asp-action="Index" class="@ActiveAny("Audit")">
+                            <i class="bi bi-shield-lock"></i>
+                            <span>Log de Auditoria</span>
+                        </a>
+
+                        <a asp-controller="SecurityAudit" asp-action="AccessFailures" class="@Active("SecurityAudit", "AccessFailures")">
+                            <i class="bi bi-shield-x"></i>
+                            <span>Falhas de Acesso</span>
+                        </a>
+                    }
+
+                    @* =========================================================
+                   10. ADMINISTRAÇÃO
+                   ========================================================= *@
+                    @if (IsAdmin())
+                    {
+                        <div class="sidebar-section-title">Administração</div>
+
+                        <a asp-controller="Users" asp-action="Index" class="@Active("Users", "Index")">
+                            <i class="bi bi-people"></i>
+                            <span>Usuários</span>
+                        </a>
+
+                        <a asp-controller="Users" asp-action="Create" class="@Active("Users", "Create")">
+                            <i class="bi bi-person-plus"></i>
+                            <span>Criar Usuário</span>
+                        </a>
+
+                        <a asp-controller="Security" asp-action="Roles" class="@Active("Security", "Roles", "RolePermissions")">
+                            <i class="bi bi-shield-check"></i>
+                            <span>Perfis e Permissões</span>
+                        </a>
+
+                        <a asp-controller="AuthoritySources" asp-action="Index" class="@Active("AuthoritySources", "Index", "Create", "Edit")">
+                            <i class="bi bi-patch-exclamation"></i>
+                            <span>Fontes de Autoridade</span>
+                        </a>
+                    }
+
+                    @* =========================================================
+                   11. AJUDA
+                   ========================================================= *@
+                    <div class="sidebar-section-title">Ajuda</div>
+
+                    <a asp-controller="Manual" asp-action="Index" class="@(Active("Manual", "Index") + " " + ActivePath("/manual"))">
+                        <i class="bi bi-book"></i>
+                        <span>Manual do Sistema</span>
                     </a>
 
-                    <!-- AJUDA / POC -->
-                    <div class="sidebar-section-title">Ajuda / PoC</div>
-                    <a asp-controller="Manual" asp-action="Index" class="@(Active("Manual","Index") + " " + ActivePath("/manual"))">
-                        <i class="bi bi-book"></i><span>Manual da PoC</span>
-                        <span class="ms-auto text-muted small">PoC (1–27)</span>
-                    </a>
-
-                    <!-- USUÁRIOS E AUTORIDADES -->
-                    <div class="sidebar-section-title">Usuários e Autoridades</div>
-
-                    <a asp-controller="Users" asp-action="Index" class="@Active("Users","Index")">
-                        <i class="bi bi-people"></i><span>Usuários</span>
-                        <span class="ms-auto text-muted small">PoC (7,8,10,11)</span>
-                    </a>
-
-                    <a asp-controller="Users" asp-action="Create" class="@Active("Users","Create")">
-                        <i class="bi bi-person-plus"></i><span>Criar Usuário</span>
-                        <span class="ms-auto text-muted small">PoC (7,10,11)</span>
-                    </a>
-
-                    <a asp-controller="Security" asp-action="Roles" class="@Active("Security","Roles","RolePermissions")">
-                        <i class="bi bi-shield-check"></i><span>Perfis e Permissões</span>
-                        <span class="ms-auto text-muted small">PoC (11)</span>
-                    </a>
-
-                    <a asp-controller="AuthoritySources" asp-action="Index" class="@Active("AuthoritySources","Index","Create","Edit")">
-                        <i class="bi bi-patch-exclamation"></i><span>Fontes de Autoridade (CA/OCSP)</span>
-                        <span class="ms-auto text-muted small">PoC (12)</span>
-                    </a>
-
-                    <!-- INSTRUMENTOS ARQUIVÍSTICOS -->
-                    <div class="sidebar-section-title">Instrumentos Arquivísticos</div>
-
-                    <a asp-controller="Classification" asp-action="Index" class="@ActiveAny("Classification")">
-                        <i class="bi bi-diagram-3"></i><span>PCD / TTD / POP</span>
-                        <span class="ms-auto text-muted small">PoC (1)</span>
-                    </a>
-
-                    <a asp-controller="ClassificationDashboard" asp-action="Index" class="@ActiveAny("ClassificationDashboard")">
-                        <i class="bi bi-inboxes"></i>
-                        <span class="d-flex align-items-center gap-2">
-                            Pendências
-                            <span id="clsBadge" class="badge text-bg-danger d-none">0</span>
-                        </span>
-                        <span class="ms-auto text-muted small">PoC (1)</span>
-                    </a>
-
-                    <a asp-controller="InstrumentosArquivisticos" asp-action="MoveCode" class="@Active("InstrumentosArquivisticos","MoveCode")">
-                        <i class="bi bi-arrow-left-right"></i><span>Movimentar Código (PCD/TTD)</span>
-                        <span class="ms-auto text-muted small">PoC (2)</span>
-                    </a>
-
-                    <a asp-controller="InstrumentosArquivisticos" asp-action="Versions" class="@Active("InstrumentosArquivisticos","Versions")">
-                        <i class="bi bi-clock-history"></i><span>Versões (PCD/TTD/POP)</span>
-                        <span class="ms-auto text-muted small">PoC (4)</span>
-                    </a>
-
-                  
-
-                    <!-- DOCUMENTOS -->
-                    <div class="sidebar-section-title">Documentos</div>
-
-                    <a asp-controller="Ged" asp-action="Index" class="@ActiveAny("Ged")">
-                        <i class="bi bi-folder2-open"></i><span>Explorer</span>
-                        <span class="ms-auto text-muted small">PoC (17,18,20)</span>
-                    </a>
-
-                    <a asp-controller="Ged" asp-action="Folders" class="@Active("Ged","Folders")">
-                        <i class="bi bi-folder"></i><span>Pastas / Dossiês</span>
-                        <span class="ms-auto text-muted small">PoC (17)</span>
-                    </a>
-
-                    <a href="https://yndustech.com.br/GedDocs" target="_blank" rel="noopener noreferrer" class="@ActiveAny("Pacs")">
-                        <i class="bi bi-heart-pulse"></i>
-                        <span class="d-flex align-items-center gap-2">
-                            Sistema de Imagem
-                            <span id="pacsBadge" class="badge text-bg-danger @(pacsBadge > 0 ? "" : "d-none")">@pacsBadge</span>
-                        </span>
-                        <span class="ms-auto text-muted small">PoC (22)</span>
-                    </a>
-
-                    <a asp-controller="Batches" asp-action="Index" class="@ActiveAny("Batches")">
-                        <i class="bi bi-box-seam"></i><span>Lotes (Tratamento)</span>
-                        <span class="ms-auto text-muted small">PoC (16,18)</span>
-                    </a>
-
-                    <a asp-controller="ImportExport" asp-action="Index" class="@Active("ImportExport","Index","Import","ExportCenter","Export")">
-                        <i class="bi bi-arrow-left-right"></i><span>Importar / Exportar</span>
-                        <span class="ms-auto text-muted small">PoC (22,23)</span>
-                    </a>
-
-                    <!-- GUARDA FÍSICA -->
-                    <div class="sidebar-section-title">Guarda Física</div>
-
-                    <a asp-controller="Physical" asp-action="Locations" class="@Active("Physical","Locations")">
-                        <i class="bi bi-geo-alt"></i><span>Localizações</span>
-                        <span class="ms-auto text-muted small">PoC (24)</span>
-                    </a>
-
-                    <a asp-controller="Physical" asp-action="Boxes" class="@Active("Physical","Boxes")">
-                        <i class="bi bi-inbox"></i><span>Caixas</span>
-                        <span class="ms-auto text-muted small">PoC (17,24)</span>
-                    </a>
-
-                    <a asp-controller="Physical" asp-action="BoxContents" class="@Active("Physical","BoxContents")">
-                        <i class="bi bi-box2"></i><span>Conteúdo da Caixa</span>
-                        <span class="ms-auto text-muted small">PoC (17)</span>
-                    </a>
-
-                    <a asp-controller="Physical" asp-action="BoxHistory" class="@Active("Physical","BoxHistory")">
-                        <i class="bi bi-list-columns-reverse"></i><span>Histórico da Caixa</span>
-                        <span class="ms-auto text-muted small">PoC (17,18,24)</span>
-                    </a>
-
-                    <a asp-controller="Labels" asp-action="Boxes" class="@Active("Labels","Boxes","BoxLabel")">
-                        <i class="bi bi-upc-scan"></i><span>Etiquetas (Caixas)</span>
-                        <span class="ms-auto text-muted small">PoC (14)</span>
-                    </a>
-
-                    <a asp-controller="Labels" asp-action="Documents" class="@Active("Labels","Documents","DocumentLabel")">
-                        <i class="bi bi-upc"></i><span>Etiquetas (Documentos)</span>
-                        <span class="ms-auto text-muted small">PoC (14)</span>
-                    </a>
-
-                    <!-- ASSINATURA ICP -->
-                    <div class="sidebar-section-title">Assinatura ICP</div>
-
-                    <a href="/Signature" class="@(Active("Signature","Index","SignDocument","SignBatch") + " " + ActivePath("/signature"))">
-                        <i class="bi bi-pen"></i><span>Assinar (Documento / Lote)</span>
-                        <span class="ms-auto text-muted small">PoC (19,20,21)</span>
-                    </a>
-
-                    <a href="/Signature/Batch" class="@(Active("Signature","SignBatch") + " " + ActivePath("/signature/batch"))">
-                        <i class="bi bi-stack"></i><span>Assinar em Lote (Selecionar)</span>
-                        <span class="ms-auto text-muted small">PoC (20,21)</span>
-                    </a>
-
-                    <a asp-controller="Reports" asp-action="SignatureValidation" class="@Active("Reports","SignatureValidation")">
-                        <i class="bi bi-patch-check"></i><span>Validação de Assinaturas</span>
-                        <span class="ms-auto text-muted small">PoC (9,21,23)</span>
-                    </a>
-
-                    <!-- TEMPORALIDADE / DESTINAÇÃO -->
-                    <div class="sidebar-section-title">Temporalidade e Destinação</div>
-
-                    <a asp-controller="Temporalidade" asp-action="Index" class="@ActiveAny("Temporalidade")">
-                        <i class="bi bi-hourglass-split"></i><span>Central de Temporalidade</span>
-                        <span class="ms-auto text-muted small">PoC (5,6)</span>
-                    </a>
-
-                    <a asp-controller="Retention" asp-action="Queue" class="@Active("Retention","Queue")">
-                        <i class="bi bi-list-check"></i><span>Fila (Operacional)</span>
-                        <span class="ms-auto text-muted small">PoC (5,6)</span>
-                    </a>
-
-                    <a asp-controller="Disposition" asp-action="Index" class="@ActiveAny("Disposition")">
-                        <i class="bi bi-archive"></i><span>Painel de Destinação</span>
-                        <span class="ms-auto text-muted small">PoC (5,6)</span>
-                    </a>
-
-                    <a asp-controller="Disposition" asp-action="Queue" class="@Active("Disposition","Queue")">
-                        <i class="bi bi-inbox"></i>
-                        <span class="d-flex align-items-center gap-2">
-                            Fila de Destinação
-                            <span class="badge text-bg-danger @(dispTotalBadge > 0 ? "" : "d-none")">@dispTotalBadge</span>
-                        </span>
-                        <span class="ms-auto text-muted small">PoC (5,6)</span>
-                    </a>
-
-                    <a href="/RetentionCases" class="@ActivePath("/retentioncases")">
-                        <i class="bi bi-journal-text"></i><span>Casos de Temporalidade</span>
-                        <span class="ms-auto text-muted small">PoC (5,6)</span>
-                    </a>
-
-                    <a href="/RetentionTerms" class="@ActivePath("/retentionterms")">
-                        <i class="bi bi-file-earmark-text"></i><span>Termos de Destinação</span>
-                        <span class="ms-auto text-muted small">PoC (5,6)</span>
-                    </a>
-
-                    <a asp-controller="Disposition" asp-action="Terms" class="@Active("Disposition","Terms")">
-                        <i class="bi bi-card-list"></i><span>Relatório de Termos</span>
-                        <span class="ms-auto text-muted small">PoC (5,6)</span>
-                    </a>
-
-                    <!-- EMPRÉSTIMOS -->
-                    <div class="sidebar-section-title">Empréstimos</div>
-
-                    <a asp-controller="Loans" asp-action="Index" class="@ActiveAny("Loans")">
-                        <i class="bi bi-journal-arrow-up"></i><span>Solicitações</span>
-                        <span class="ms-auto text-muted small">PoC (13,14)</span>
-                    </a>
-
-                    <a asp-controller="Loans" asp-action="Overdue" class="@Active("Loans","Overdue")">
-                        <i class="bi bi-alarm"></i><span>Vencidos</span>
-                        <span class="ms-auto text-muted small">PoC (14,15)</span>
-                    </a>
-
-                    <a asp-controller="Loans" asp-action="RunOverdue" class="@Active("Loans","RunOverdue")">
-                        <i class="bi bi-play-circle"></i><span>Rodar rotina de vencidos</span>
-                        <span class="ms-auto text-muted small">PoC (14)</span>
-                    </a>
-
-                    <!-- RELATÓRIOS -->
-                    <div class="sidebar-section-title">Relatórios</div>
-
-                    <a asp-controller="Reports" asp-action="Loans" class="@Active("Reports","Loans")">
-                        <i class="bi bi-file-earmark-text"></i><span>Relatório de Empréstimos</span>
-                        <span class="ms-auto text-muted small">PoC (15)</span>
-                    </a>
-
-                    <a asp-controller="Reports" asp-action="PcdFull" class="@Active("Reports","PcdFull")">
-                        <i class="bi bi-printer"></i><span>Imprimir PLC/PCD (Completo)</span>
-                        <span class="ms-auto text-muted small">PoC (3)</span>
-                    </a>
-
-                    <a asp-controller="Reports" asp-action="PcdByClass" class="@Active("Reports","PcdByClass")">
-                        <i class="bi bi-funnel"></i><span>Imprimir PLC/PCD (por Classe)</span>
-                        <span class="ms-auto text-muted small">PoC (3)</span>
-                    </a>
-
-                    <a asp-controller="Reports" asp-action="TtdFull" class="@Active("Reports","TtdFull")">
-                        <i class="bi bi-hourglass"></i><span>Imprimir TTD (Completo)</span>
-                        <span class="ms-auto text-muted small">PoC (3)</span>
-                    </a>
-
-                    <a asp-controller="Reports" asp-action="TtdByClass" class="@Active("Reports","TtdByClass")">
-                        <i class="bi bi-funnel"></i><span>Imprimir TTD (por Classe)</span>
-                        <span class="ms-auto text-muted small">PoC (3)</span>
-                    </a>
-
-                    <a asp-controller="Reports" asp-action="SignedSetPrint" class="@Active("Reports","SignedSetPrint","SignedSetPrintView")">
-                        <i class="bi bi-patch-check-fill"></i><span>Relatório Conjunto Assinado</span>
-                        <span class="ms-auto text-muted small">PoC (26)</span>
-                    </a>
-
-                    <!-- AUDITORIA -->
-                    <div class="sidebar-section-title">Auditoria</div>
-
-                    <a asp-controller="Audit" asp-action="Index" class="@ActiveAny("Audit")">
-                        <i class="bi bi-shield-lock"></i><span>Log de Auditoria</span>
-                        <span class="ms-auto text-muted small">PoC (25)</span>
-                    </a>
-
-                    <a asp-controller="SecurityAudit" asp-action="AccessFailures" class="@Active("SecurityAudit","AccessFailures")">
-                        <i class="bi bi-shield-x"></i><span>Falhas de Acesso</span>
-                        <span class="ms-auto text-muted small">PoC (27)</span>
-                    </a>
-
-                    <!-- CONTA -->
+                    @* =========================================================
+                   12. CONTA
+                   ========================================================= *@
                     <div class="sidebar-section-title">Conta</div>
+
                     <form asp-controller="Account" asp-action="Logout" method="post" class="m-0 p-0">
                         @Html.AntiForgeryToken()
                         <button type="submit" class="btn btn-link sidebar-link text-start p-0 w-100" style="text-decoration:none;">
                             <span class="d-flex align-items-center gap-2 px-3 py-2">
-                                <i class="bi bi-box-arrow-right"></i><span>Sair</span>
-                                <span class="ms-auto text-muted small">PoC (—)</span>
+                                <i class="bi bi-box-arrow-right"></i>
+                                <span>Sair</span>
                             </span>
                         </button>
                     </form>
@@ -408,7 +514,7 @@
                 </div>
             </aside>
 
-            <!-- ===== OFFCANVAS (MOBILE/TABLET) ===== -->
+            <!-- SIDEBAR MOBILE -->
             <div class="offcanvas offcanvas-start" tabindex="-1" id="ocSidebar" aria-labelledby="ocSidebarLabel">
                 <div class="offcanvas-header border-bottom">
                     <div class="d-flex align-items-center gap-2">
@@ -419,19 +525,282 @@
                             <div class="text-muted small">Gestão Eletrônica de Documentos</div>
                         </div>
                     </div>
+
                     <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Fechar"></button>
                 </div>
 
                 <div class="offcanvas-body p-2">
                     <nav class="sidebar-menu" style="padding:.25rem;">
-                        <!-- (mantido exatamente como você enviou) -->
-                        <!-- ... seu menu mobile inteiro aqui ... -->
-                        <!-- Para não duplicar 100% no chat, você pode manter o seu trecho atual sem alteração -->
+
+                        @if (CanDashboard())
+                        {
+                            <div class="sidebar-section-title">Visão Geral</div>
+
+                            <a asp-controller="Home" asp-action="Index" class="@Active("Home", "Index")">
+                                <i class="bi bi-speedometer2"></i>
+                                <span>Dashboard</span>
+                            </a>
+                        }
+
+                        @if (CanDocumentos())
+                        {
+                            <div class="sidebar-section-title">Documentos</div>
+
+                            <a asp-controller="Ged" asp-action="Index" class="@ActiveAny("Ged")">
+                                <i class="bi bi-folder2-open"></i>
+                                <span>Explorer</span>
+                            </a>
+
+                            <a asp-controller="Ged" asp-action="Folders" class="@Active("Ged", "Folders")">
+                                <i class="bi bi-folder"></i>
+                                <span>Pastas e Dossiês</span>
+                            </a>
+
+                            <a asp-controller="Batches" asp-action="Index" class="@ActiveAny("Batches")">
+                                <i class="bi bi-box-seam"></i>
+                                <span>Lotes</span>
+                            </a>
+
+                            <a asp-controller="ImportExport" asp-action="Index" class="@Active("ImportExport", "Index", "Import", "ExportCenter", "Export")">
+                                <i class="bi bi-arrow-left-right"></i>
+                                <span>Importação e Exportação</span>
+                            </a>
+
+                            <a href="https://yndustech.com.br/GedDocs" target="_blank" rel="noopener noreferrer" class="@ActiveAny("Pacs")">
+                                <i class="bi bi-heart-pulse"></i>
+                                <span>Sistema de Imagem</span>
+                            </a>
+
+                            <div class="sidebar-section-title">Guarda Física</div>
+
+                            <a asp-controller="Physical" asp-action="Locations" class="@Active("Physical", "Locations")">
+                                <i class="bi bi-geo-alt"></i>
+                                <span>Localizações</span>
+                            </a>
+
+                            <a asp-controller="Physical" asp-action="Boxes" class="@Active("Physical", "Boxes")">
+                                <i class="bi bi-inbox"></i>
+                                <span>Caixas</span>
+                            </a>
+
+                            <a asp-controller="Physical" asp-action="BoxContents" class="@Active("Physical", "BoxContents")">
+                                <i class="bi bi-box2"></i>
+                                <span>Conteúdo da Caixa</span>
+                            </a>
+
+                            <a asp-controller="Physical" asp-action="BoxHistory" class="@Active("Physical", "BoxHistory")">
+                                <i class="bi bi-list-columns-reverse"></i>
+                                <span>Histórico da Caixa</span>
+                            </a>
+
+                            <a asp-controller="Labels" asp-action="Boxes" class="@Active("Labels", "Boxes", "BoxLabel")">
+                                <i class="bi bi-upc-scan"></i>
+                                <span>Etiquetas de Caixas</span>
+                            </a>
+
+                            <a asp-controller="Labels" asp-action="Documents" class="@Active("Labels", "Documents", "DocumentLabel")">
+                                <i class="bi bi-upc"></i>
+                                <span>Etiquetas de Documentos</span>
+                            </a>
+                        }
+
+                        @if (CanEmprestimos())
+                        {
+                            <div class="sidebar-section-title">Empréstimos</div>
+
+                            <a asp-controller="Loans" asp-action="Index" class="@ActiveAny("Loans")">
+                                <i class="bi bi-journal-arrow-up"></i>
+                                <span>Solicitações</span>
+                            </a>
+
+                            <a asp-controller="Loans" asp-action="Overdue" class="@Active("Loans", "Overdue")">
+                                <i class="bi bi-alarm"></i>
+                                <span>Vencidos</span>
+                            </a>
+
+                            <a asp-controller="Loans" asp-action="RunOverdue" class="@Active("Loans", "RunOverdue")">
+                                <i class="bi bi-play-circle"></i>
+                                <span>Processar Cobranças</span>
+                            </a>
+                        }
+
+                        @if (CanAdminModules())
+                        {
+                            <div class="sidebar-section-title">Instrumentos Arquivísticos</div>
+
+                            <a asp-controller="Classification" asp-action="Index" class="@ActiveAny("Classification")">
+                                <i class="bi bi-diagram-3"></i>
+                                <span>PCD / TTD / POP</span>
+                            </a>
+
+                            <a asp-controller="ClassificationDashboard" asp-action="Index" class="@ActiveAny("ClassificationDashboard")">
+                                <i class="bi bi-inboxes"></i>
+                                <span>Pendências</span>
+                            </a>
+
+                            <a asp-controller="InstrumentosArquivisticos" asp-action="MoveCode" class="@Active("InstrumentosArquivisticos", "MoveCode")">
+                                <i class="bi bi-arrow-left-right"></i>
+                                <span>Movimentar Código</span>
+                            </a>
+
+                            <a asp-controller="InstrumentosArquivisticos" asp-action="Versions" class="@Active("InstrumentosArquivisticos", "Versions")">
+                                <i class="bi bi-clock-history"></i>
+                                <span>Versionamento</span>
+                            </a>
+
+                            <div class="sidebar-section-title">Temporalidade e Destinação</div>
+
+                            <a asp-controller="Temporalidade" asp-action="Index" class="@ActiveAny("Temporalidade")">
+                                <i class="bi bi-hourglass-split"></i>
+                                <span>Central de Temporalidade</span>
+                            </a>
+
+                            <a asp-controller="Retention" asp-action="Queue" class="@Active("Retention", "Queue")">
+                                <i class="bi bi-list-check"></i>
+                                <span>Fila Operacional</span>
+                            </a>
+
+                            <a asp-controller="Disposition" asp-action="Index" class="@ActiveAny("Disposition")">
+                                <i class="bi bi-archive"></i>
+                                <span>Painel de Destinação</span>
+                            </a>
+
+                            <a asp-controller="Disposition" asp-action="Queue" class="@Active("Disposition", "Queue")">
+                                <i class="bi bi-inbox"></i>
+                                <span>Fila de Destinação</span>
+                            </a>
+
+                            <a href="/RetentionCases" class="@ActivePath("/retentioncases")">
+                                <i class="bi bi-journal-text"></i>
+                                <span>Casos de Temporalidade</span>
+                            </a>
+
+                            <a href="/RetentionTerms" class="@ActivePath("/retentionterms")">
+                                <i class="bi bi-file-earmark-text"></i>
+                                <span>Termos de Destinação</span>
+                            </a>
+
+                            <a asp-controller="Disposition" asp-action="Terms" class="@Active("Disposition", "Terms")">
+                                <i class="bi bi-card-list"></i>
+                                <span>Relatório de Termos</span>
+                            </a>
+
+                            <div class="sidebar-section-title">Assinatura Digital</div>
+
+                            <a href="/Signature" class="@(Active("Signature", "Index", "SignDocument", "SignBatch") + " " + ActivePath("/signature"))">
+                                <i class="bi bi-pen"></i>
+                                <span>Assinar Documento</span>
+                            </a>
+
+                            <a href="/Signature/Batch" class="@(Active("Signature", "SignBatch") + " " + ActivePath("/signature/batch"))">
+                                <i class="bi bi-stack"></i>
+                                <span>Assinar em Lote</span>
+                            </a>
+                        }
+
+                        @if (CanRelatorios())
+                        {
+                            <div class="sidebar-section-title">Relatórios</div>
+
+                            <a asp-controller="Reports" asp-action="Loans" class="@Active("Reports", "Loans")">
+                                <i class="bi bi-file-earmark-text"></i>
+                                <span>Empréstimos</span>
+                            </a>
+
+                            <a asp-controller="Reports" asp-action="PcdFull" class="@Active("Reports", "PcdFull")">
+                                <i class="bi bi-printer"></i>
+                                <span>PCD Completo</span>
+                            </a>
+
+                            <a asp-controller="Reports" asp-action="PcdByClass" class="@Active("Reports", "PcdByClass")">
+                                <i class="bi bi-funnel"></i>
+                                <span>PCD por Classe</span>
+                            </a>
+
+                            <a asp-controller="Reports" asp-action="TtdFull" class="@Active("Reports", "TtdFull")">
+                                <i class="bi bi-hourglass"></i>
+                                <span>TTD Completa</span>
+                            </a>
+
+                            <a asp-controller="Reports" asp-action="TtdByClass" class="@Active("Reports", "TtdByClass")">
+                                <i class="bi bi-funnel"></i>
+                                <span>TTD por Classe</span>
+                            </a>
+
+                            <a asp-controller="Reports" asp-action="SignatureValidation" class="@Active("Reports", "SignatureValidation")">
+                                <i class="bi bi-patch-check"></i>
+                                <span>Validação de Assinaturas</span>
+                            </a>
+
+                            <a asp-controller="Reports" asp-action="SignedSetPrint" class="@Active("Reports", "SignedSetPrint", "SignedSetPrintView")">
+                                <i class="bi bi-patch-check-fill"></i>
+                                <span>Conjunto Assinado</span>
+                            </a>
+                        }
+
+                        @if (CanAuditoria())
+                        {
+                            <div class="sidebar-section-title">Auditoria</div>
+
+                            <a asp-controller="Audit" asp-action="Index" class="@ActiveAny("Audit")">
+                                <i class="bi bi-shield-lock"></i>
+                                <span>Log de Auditoria</span>
+                            </a>
+
+                            <a asp-controller="SecurityAudit" asp-action="AccessFailures" class="@Active("SecurityAudit", "AccessFailures")">
+                                <i class="bi bi-shield-x"></i>
+                                <span>Falhas de Acesso</span>
+                            </a>
+                        }
+
+                        @if (IsAdmin())
+                        {
+                            <div class="sidebar-section-title">Administração</div>
+
+                            <a asp-controller="Users" asp-action="Index" class="@Active("Users", "Index")">
+                                <i class="bi bi-people"></i>
+                                <span>Usuários</span>
+                            </a>
+
+                            <a asp-controller="Users" asp-action="Create" class="@Active("Users", "Create")">
+                                <i class="bi bi-person-plus"></i>
+                                <span>Criar Usuário</span>
+                            </a>
+
+                            <a asp-controller="Security" asp-action="Roles" class="@Active("Security", "Roles", "RolePermissions")">
+                                <i class="bi bi-shield-check"></i>
+                                <span>Perfis e Permissões</span>
+                            </a>
+
+                            <a asp-controller="AuthoritySources" asp-action="Index" class="@Active("AuthoritySources", "Index", "Create", "Edit")">
+                                <i class="bi bi-patch-exclamation"></i>
+                                <span>Fontes de Autoridade</span>
+                            </a>
+                        }
+
+                        <div class="sidebar-section-title">Ajuda</div>
+
+                        <a asp-controller="Manual" asp-action="Index" class="@(Active("Manual", "Index") + " " + ActivePath("/manual"))">
+                            <i class="bi bi-book"></i>
+                            <span>Manual do Sistema</span>
+                        </a>
+
+                        <div class="sidebar-section-title">Conta</div>
+
+                        <form asp-controller="Account" asp-action="Logout" method="post" class="m-0 p-0">
+                            @Html.AntiForgeryToken()
+                            <button type="submit" class="btn btn-link sidebar-link text-start p-0 w-100" style="text-decoration:none;">
+                                <span class="d-flex align-items-center gap-2 px-3 py-2">
+                                    <i class="bi bi-box-arrow-right"></i>
+                                    <span>Sair</span>
+                                </span>
+                            </button>
+                        </form>
                     </nav>
                 </div>
             </div>
 
-            <!-- ===== MAIN ===== -->
+            <!-- CONTEÚDO PRINCIPAL -->
             <div class="main">
                 <header class="topbar">
                     <div class="d-flex align-items-center gap-2">
@@ -446,6 +815,7 @@
 
                         <div class="topbar-left">
                             <div class="page-title">@ViewData["Title"]</div>
+
                             @if (!string.IsNullOrWhiteSpace(subtitle))
                             {
                                 <div class="page-subtitle">@subtitle</div>
@@ -454,13 +824,17 @@
                     </div>
 
                     <div class="topbar-actions">
-                        <a class="btn btn-sm btn-primary d-none d-sm-inline-flex" asp-controller="Ged" asp-action="Create">
-                            <i class="bi bi-file-earmark-plus me-1"></i> Novo
-                        </a>
+                        @if (CanDocumentos())
+                        {
+                            <a class="btn btn-sm btn-primary d-none d-sm-inline-flex" asp-controller="Ged" asp-action="Create">
+                                <i class="bi bi-file-earmark-plus me-1"></i> Novo Documento
+                            </a>
+                        }
 
                         <div class="dropdown">
                             <button class="btn btn-sm btn-light border d-inline-flex align-items-center gap-2"
-                                    data-bs-toggle="dropdown" aria-expanded="false">
+                                    data-bs-toggle="dropdown"
+                                    aria-expanded="false">
                                 <span class="topbar-user-avatar">@UserInitials()</span>
                                 <span class="d-none d-md-inline">@userName</span>
                                 <i class="bi bi-chevron-down small"></i>
@@ -471,6 +845,7 @@
                                     <div class="small text-muted">Logado como</div>
                                     <div class="fw-semibold">@userName</div>
                                 </li>
+
                                 <li><hr class="dropdown-divider" /></li>
 
                                 <li>
@@ -483,7 +858,6 @@
                                 </li>
                             </ul>
                         </div>
-
                     </div>
                 </header>
 
@@ -500,23 +874,27 @@
         </main>
     }
 
-    <!-- Bootstrap 5 (não depende de jQuery) -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 
-    <!-- ✅ CORREÇÃO: jQuery precisa existir ANTES do jquery.validate -->
     <script src="~/lib/jquery/dist/jquery.min.js" asp-append-version="true"></script>
     <script src="~/lib/jquery-validation/dist/jquery.validate.min.js" asp-append-version="true"></script>
     <script src="~/lib/jquery-validation-unobtrusive/jquery.validate.unobtrusive.min.js" asp-append-version="true"></script>
 
-    <!-- Scripts específicos de cada tela -->
     @RenderSection("Scripts", required: false)
 
     <script>
         (function () {
             async function loadBadge() {
                 try {
-                    const res = await fetch('/ClassificationDashboard/Count', { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
-                    if (!res.ok) return;
+                    const res = await fetch('/ClassificationDashboard/Count', {
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    });
+
+                    if (!res.ok)
+                        return;
+
                     const data = await res.json();
                     const total = (data && typeof data.total === 'number') ? data.total : 0;
 
@@ -527,12 +905,15 @@
                         el.textContent = total;
                         el.classList.toggle('d-none', total <= 0);
                     }
+
                     if (elm) {
                         elm.textContent = total;
                         elm.classList.toggle('d-none', total <= 0);
                     }
-                } catch { }
+                } catch {
+                }
             }
+
             if (document.readyState === 'loading') {
                 document.addEventListener('DOMContentLoaded', loadBadge);
             } else {
