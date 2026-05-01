@@ -19,7 +19,10 @@ public sealed class DocumentClassificationAuditQueries : IDocumentClassification
     }
 
     public async Task<IReadOnlyList<ClassificationAuditRowDto>> ListByDocumentAsync(
-        Guid tenantId, Guid documentId, int take, CancellationToken ct)
+        Guid tenantId,
+        Guid documentId,
+        int take,
+        CancellationToken ct)
     {
         const string sql = @"
 SELECT
@@ -38,25 +41,33 @@ WHERE tenant_id = @TenantId
   AND document_id = @DocumentId
   AND reg_status = 'A'
 ORDER BY created_at DESC
-LIMIT @Take;
-";
+LIMIT @Take;";
+
         try
         {
-            var con = await _db.OpenAsync(ct);
+            await using var con = await _db.OpenAsync(ct);
 
             var rows = await con.QueryAsync<ClassificationAuditRowDto>(
                 new CommandDefinition(
                     sql,
-                    new { TenantId = tenantId, DocumentId = documentId, Take = take < 1 ? 20 : take },
+                    new
+                    {
+                        TenantId = tenantId,
+                        DocumentId = documentId,
+                        Take = take < 1 ? 20 : take
+                    },
                     cancellationToken: ct));
 
             return rows.ToList();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex,
+            _logger.LogError(
+                ex,
                 "Erro ao listar auditoria de classificação | Tenant={TenantId} Doc={DocumentId}",
-                tenantId, documentId);
+                tenantId,
+                documentId);
+
             throw;
         }
     }

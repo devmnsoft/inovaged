@@ -53,6 +53,18 @@
         _ => "Não executado"
     };
 
+    bool IsOcrRunning(string? status)
+    {
+        var s = (status ?? "").ToUpperInvariant();
+        return s == "PENDING" || s == "PROCESSING";
+    }
+
+    bool IsOcrCompleted(string? status)
+    {
+        var s = (status ?? "").ToUpperInvariant();
+        return s == "COMPLETED";
+    }
+
     var selectedId = Model.SelectedVersionId
         ?? Model.CurrentVersionId
         ?? Model.Versions.OrderByDescending(v => v.VersionNumber).FirstOrDefault()?.Id;
@@ -66,6 +78,9 @@
 }
 
 <div class="container-fluid">
+
+    <div id="pageAlertHost"></div>
+
     <div class="d-flex justify-content-between align-items-start mb-3">
         <div>
             <h3 class="mb-1">
@@ -172,8 +187,8 @@
                                         <th style="width:80px;">Ver.</th>
                                         <th>Arquivo</th>
                                         <th style="width:120px;">Tamanho</th>
-                                        <th style="width:190px;">OCR</th>
-                                        <th style="width:300px;" class="text-end">Ações</th>
+                                        <th style="width:210px;">OCR</th>
+                                        <th style="width:310px;" class="text-end">Ações</th>
                                     </tr>
                                 </thead>
 
@@ -182,6 +197,8 @@
                                     {
                                         var isSelected = selectedId.HasValue && v.Id == selectedId.Value;
                                         var hasOcrStatus = !string.IsNullOrWhiteSpace(v.OcrStatus);
+                                        var ocrRunning = IsOcrRunning(v.OcrStatus);
+                                        var ocrCompleted = IsOcrCompleted(v.OcrStatus);
 
                                         <tr class="@(isSelected ? "table-active" : "")">
                                             <td>
@@ -198,52 +215,78 @@
                                             <td>@ToSize(v.SizeBytes)</td>
 
                                             <td>
-                                                @if (hasOcrStatus)
-                                                {
-                                                    <span class="badge @OcrBadgeClass(v.OcrStatus)">
-                                                        @OcrLabel(v.OcrStatus)
-                                                    </span>
+                                                <div class="ocr-status-cell"
+                                                     data-version-id="@v.Id"
+                                                     data-current-status="@(v.OcrStatus ?? "NONE")">
 
-                                                    @if (v.OcrJobId.HasValue)
+                                                    @if (hasOcrStatus)
                                                     {
-                                                        <div class="text-muted small mt-1">
-                                                            Job #@v.OcrJobId
+                                                        <span class="badge @OcrBadgeClass(v.OcrStatus) js-ocr-badge">
+                                                            @OcrLabel(v.OcrStatus)
+                                                        </span>
+
+                                                        @if (ocrRunning)
+                                                        {
+                                                            <span class="spinner-border spinner-border-sm ms-1 js-ocr-spinner"
+                                                                  role="status"
+                                                                  aria-hidden="true"></span>
+                                                        }
+
+                                                        @if (ocrCompleted)
+                                                        {
+                                                            <span class="text-success small ms-1 js-ocr-done-icon">
+                                                                <i class="bi bi-check-circle"></i>
+                                                            </span>
+                                                        }
+
+                                                        @if (v.OcrJobId.HasValue)
+                                                        {
+                                                            <div class="text-muted small mt-1 js-ocr-job">
+                                                                Job #@v.OcrJobId
+                                                            </div>
+                                                        }
+
+                                                        @if (v.OcrRequestedAt.HasValue)
+                                                        {
+                                                            <div class="text-muted small js-ocr-requested">
+                                                                Solicitado: @v.OcrRequestedAt.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+                                                            </div>
+                                                        }
+
+                                                        @if (v.OcrStartedAt.HasValue)
+                                                        {
+                                                            <div class="text-muted small js-ocr-started">
+                                                                Início: @v.OcrStartedAt.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+                                                            </div>
+                                                        }
+
+                                                        @if (v.OcrFinishedAt.HasValue)
+                                                        {
+                                                            <div class="text-muted small js-ocr-finished">
+                                                                Fim: @v.OcrFinishedAt.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+                                                            </div>
+                                                        }
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="badge bg-light text-dark js-ocr-badge">
+                                                            Não executado
+                                                        </span>
+                                                    }
+
+                                                    @if (!string.IsNullOrWhiteSpace(v.OcrErrorMessage))
+                                                    {
+                                                        <div class="text-danger small mt-1 js-ocr-error">
+                                                            <i class="bi bi-exclamation-triangle me-1"></i>
+                                                            @v.OcrErrorMessage
                                                         </div>
                                                     }
 
-                                                    @if (v.OcrRequestedAt.HasValue)
+                                                    @if (ocrRunning)
                                                     {
-                                                        <div class="text-muted small">
-                                                            Solicitado: @v.OcrRequestedAt.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
-                                                        </div>
+                                                        <span data-ocr-autopoll="1" data-version-id="@v.Id"></span>
                                                     }
-
-                                                    @if (v.OcrStartedAt.HasValue)
-                                                    {
-                                                        <div class="text-muted small">
-                                                            Início: @v.OcrStartedAt.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
-                                                        </div>
-                                                    }
-
-                                                    @if (v.OcrFinishedAt.HasValue)
-                                                    {
-                                                        <div class="text-muted small">
-                                                            Fim: @v.OcrFinishedAt.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
-                                                        </div>
-                                                    }
-                                                }
-                                                else
-                                                {
-                                                    <span class="badge bg-light text-dark">Não executado</span>
-                                                }
-
-                                                @if (!string.IsNullOrWhiteSpace(v.OcrErrorMessage))
-                                                {
-                                                    <div class="text-danger small mt-1">
-                                                        <i class="bi bi-exclamation-triangle me-1"></i>
-                                                        @v.OcrErrorMessage
-                                                    </div>
-                                                }
+                                                </div>
                                             </td>
 
                                             <td class="text-end">
@@ -271,12 +314,14 @@
                                                           action="@Url.Action("RunOcr", "Ged")"
                                                           class="d-inline js-ocr-form">
                                                         @Html.AntiForgeryToken()
+
                                                         <input type="hidden" name="versionId" value="@v.Id" />
                                                         <input type="hidden" name="force" value="false" />
 
                                                         <button type="submit"
                                                                 class="btn btn-sm btn-outline-primary"
-                                                                title="Solicitar OCR">
+                                                                title="Solicitar OCR"
+                                                        @(ocrRunning ? "disabled" : "")>
                                                             <span class="btn-text">
                                                                 <i class="bi bi-text-paragraph"></i>
                                                             </span>
@@ -288,8 +333,9 @@
 
                                                     <form method="post"
                                                           action="@Url.Action("ReprocessOcr", "Ged")"
-                                                          class="d-inline js-ocr-form">
+                                                          class="d-inline js-ocr-form js-ocr-force-form">
                                                         @Html.AntiForgeryToken()
+
                                                         <input type="hidden" name="versionId" value="@v.Id" />
 
                                                         <button type="submit"
@@ -308,6 +354,7 @@
                                                           action="@Url.Action("RegeneratePreview", "Ged")"
                                                           class="d-inline js-simple-post-form">
                                                         @Html.AntiForgeryToken()
+
                                                         <input type="hidden" name="versionId" value="@v.Id" />
 
                                                         <button type="submit"
@@ -331,7 +378,7 @@
 
                         <div class="alert alert-info small mb-0">
                             <i class="bi bi-info-circle me-1"></i>
-                            O status do OCR é atualizado quando a página é recarregada. Após solicitar OCR, aguarde alguns segundos e atualize a tela.
+                            Quando o OCR for solicitado, a tela acompanhará o processamento automaticamente e avisará ao concluir.
                         </div>
                     }
                 </div>
@@ -583,7 +630,9 @@
                 <div class="card-body">
                     <div class="mb-2">
                         <div class="text-muted small">Descrição</div>
-                        <div>@(string.IsNullOrWhiteSpace(Model.Description) ? "-" : Model.Description)</div>
+                        <div id="documentDescription">
+                            @(string.IsNullOrWhiteSpace(Model.Description) ? "-" : Model.Description)
+                        </div>
                     </div>
 
                     <div class="mb-2">
@@ -677,6 +726,142 @@
             }
         };
 
+        window.showGedToast = function (message, type) {
+            type = type || 'success';
+
+            let host = document.getElementById('gedToastHost');
+
+            if (!host) {
+                host = document.createElement('div');
+                host.id = 'gedToastHost';
+                host.style.position = 'fixed';
+                host.style.top = '1rem';
+                host.style.right = '1rem';
+                host.style.zIndex = '1080';
+                host.style.maxWidth = '420px';
+                document.body.appendChild(host);
+            }
+
+            const cls = type === 'danger' ? 'alert-danger'
+                : type === 'warning' ? 'alert-warning'
+                : type === 'info' ? 'alert-info'
+                : 'alert-success';
+
+            const icon = type === 'danger' ? 'bi-exclamation-triangle'
+                : type === 'warning' ? 'bi-exclamation-circle'
+                : type === 'info' ? 'bi-info-circle'
+                : 'bi-check-circle';
+
+            const el = document.createElement('div');
+            el.className = `alert ${cls} shadow-sm mb-2`;
+            el.innerHTML = `
+                <div class="d-flex align-items-center gap-2">
+                    <i class="bi ${icon}"></i>
+                    <div>${message}</div>
+                </div>`;
+
+            host.appendChild(el);
+
+            setTimeout(() => {
+                el.remove();
+            }, 6000);
+        };
+
+        window.showPageAlert = function (message, type) {
+            type = type || 'success';
+
+            const host = document.getElementById('pageAlertHost');
+            if (!host) return;
+
+            const cls = type === 'danger' ? 'alert-danger'
+                : type === 'warning' ? 'alert-warning'
+                : type === 'info' ? 'alert-info'
+                : 'alert-success';
+
+            host.innerHTML = `
+                <div class="alert ${cls} alert-dismissible fade show" role="alert">
+                    ${message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Fechar"></button>
+                </div>`;
+        };
+
+        async function loadClassifyPanel() {
+            const loading = document.getElementById('classifyPanelLoading');
+            const panel = document.getElementById('classifyPanel');
+
+            if (!panel) return;
+
+            loading && loading.classList.remove('d-none');
+
+            try {
+                const url = '@Url.Action("Panel", "Classification")' + '?documentId=@Model.Id';
+
+                const resp = await fetch(url, {
+                    credentials: 'include',
+                    cache: 'no-store'
+                });
+
+                if (!resp.ok) {
+                    const txt = await resp.text().catch(() => '');
+                    panel.innerHTML = `<div class="text-danger small">Erro ao carregar painel de classificação. ${txt}</div>`;
+                    return;
+                }
+
+                panel.innerHTML = await resp.text();
+            }
+            finally {
+                loading && loading.classList.add('d-none');
+            }
+        }
+
+        async function openClassifyModal() {
+            const content = document.getElementById('classifyModalContent');
+            const modalEl = document.getElementById('modalClassify');
+
+            if (!content || !modalEl) return;
+
+            content.innerHTML =
+                `<div class="p-4 text-muted">
+                    <span class="spinner-border spinner-border-sm me-1"></span>
+                    Carregando…
+                 </div>`;
+
+            const modal = new bootstrap.Modal(modalEl);
+            modal.show();
+
+            const url = '@Url.Action("EditModal", "Classification")' + '?documentId=@Model.Id';
+
+            const resp = await fetch(url, {
+                credentials: 'include',
+                cache: 'no-store'
+            });
+
+            if (!resp.ok) {
+                const txt = await resp.text().catch(() => '');
+                content.innerHTML = `<div class="p-4 text-danger">Erro ao abrir modal. ${txt}</div>`;
+                return;
+            }
+
+            content.innerHTML = await resp.text();
+        }
+
+        function resetClassificationAudit() {
+            const audit =
+                document.getElementById('classificationAudit') ||
+                document.getElementById('classification-audit-container') ||
+                document.getElementById('classAuditContainer');
+
+            if (audit) {
+                audit.innerHTML = '';
+                audit.setAttribute('data-loaded', '0');
+                audit.classList.add('d-none');
+            }
+        }
+
+        window.refreshClassificationPanel = async function () {
+            await loadClassifyPanel();
+        };
+
         window.toggleClassificationAudit = async function (documentId, btn) {
             const el =
                 document.getElementById('classificationAudit') ||
@@ -716,7 +901,7 @@
                             `<div class="alert alert-warning mb-0">
                                 <div class="fw-semibold">
                                     <i class="bi bi-exclamation-triangle me-1"></i>
-                                    Não foi possível carregar o histórico de classificação.
+                                    Não foi possível carregar o histórico.
                                 </div>
                                 <div class="small text-muted mt-1">HTTP ${resp.status} ${resp.statusText}</div>
                                 ${txt ? `<div class="small text-muted mt-1">${txt}</div>` : ``}
@@ -743,7 +928,7 @@
             const suggestedSummary = btn.getAttribute('data-suggested-summary') || '';
 
             if (!suggestedTypeId) {
-                alert('Nenhuma sugestão disponível para aplicar.');
+                showGedToast('Nenhuma sugestão disponível para aplicar.', 'warning');
                 return;
             }
 
@@ -765,25 +950,99 @@
                     method: 'POST',
                     body: fd,
                     credentials: 'include',
-                    cache: 'no-store'
+                    cache: 'no-store',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Accept': 'application/json'
+                    }
                 });
 
                 if (!resp.ok) {
                     const txt = await resp.text().catch(() => 'Erro ao aplicar sugestão.');
-                    alert(txt || 'Erro ao aplicar sugestão.');
+                    showGedToast(txt || 'Erro ao aplicar sugestão.', 'danger');
                     return;
                 }
 
-                if (window.refreshClassificationPanel) {
-                    await window.refreshClassificationPanel();
-                }
+                showGedToast('Sugestão aplicada com sucesso.', 'success');
+                showPageAlert('Sugestão aplicada com sucesso.', 'success');
 
+                await refreshClassificationPanel();
                 resetClassificationAudit();
+
+                setTimeout(() => {
+                    location.reload();
+                }, 900);
             }
             finally {
                 setBtnLoading(btn, false);
             }
         };
+
+        document.addEventListener('submit', async function (e) {
+            const form = e.target;
+
+            if (!form || form.id !== 'formEditClassification') {
+                return;
+            }
+
+            e.preventDefault();
+
+            const btn = form.querySelector('button[type="submit"]');
+            const err = document.getElementById('classificationSaveError');
+
+            if (err) {
+                err.classList.add('d-none');
+                err.innerText = '';
+            }
+
+            setBtnLoading(btn, true);
+
+            try {
+                const resp = await fetch(form.action, {
+                    method: 'POST',
+                    body: new FormData(form),
+                    credentials: 'include',
+                    cache: 'no-store',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Accept': 'application/json'
+                    }
+                });
+
+                if (!resp.ok) {
+                    const txt = await resp.text().catch(() => 'Erro ao salvar classificação.');
+
+                    if (err) {
+                        err.innerText = txt || 'Erro ao salvar classificação.';
+                        err.classList.remove('d-none');
+                    }
+
+                    showGedToast(txt || 'Erro ao salvar classificação.', 'danger');
+                    showPageAlert(txt || 'Erro ao salvar classificação.', 'danger');
+                    return;
+                }
+
+                const modalEl = document.getElementById('modalClassify');
+
+                if (modalEl && window.bootstrap) {
+                    const modal = bootstrap.Modal.getInstance(modalEl);
+                    modal && modal.hide();
+                }
+
+                showGedToast('Classificação salva com sucesso.', 'success');
+                showPageAlert('Classificação salva com sucesso.', 'success');
+
+                await refreshClassificationPanel();
+                resetClassificationAudit();
+
+                setTimeout(() => {
+                    location.reload();
+                }, 900);
+            }
+            finally {
+                setBtnLoading(btn, false);
+            }
+        });
 
         window.openLifeModal = function (documentId, toStatusInt, title, reasonRequired) {
             const modalEl = document.getElementById('modalLife');
@@ -868,83 +1127,6 @@
             }
         };
 
-        async function loadClassifyPanel() {
-            const loading = document.getElementById('classifyPanelLoading');
-            const panel = document.getElementById('classifyPanel');
-
-            if (!panel) return;
-
-            loading && loading.classList.remove('d-none');
-
-            try {
-                const url = '@Url.Action("Panel", "Classification")' + '?documentId=@Model.Id';
-
-                const resp = await fetch(url, {
-                    credentials: 'include',
-                    cache: 'no-store'
-                });
-
-                if (!resp.ok) {
-                    const txt = await resp.text().catch(() => '');
-                    panel.innerHTML = `<div class="text-danger small">Erro ao carregar painel de classificação. ${txt}</div>`;
-                    return;
-                }
-
-                panel.innerHTML = await resp.text();
-            }
-            finally {
-                loading && loading.classList.add('d-none');
-            }
-        }
-
-        async function openClassifyModal() {
-            const content = document.getElementById('classifyModalContent');
-            const modalEl = document.getElementById('modalClassify');
-
-            if (!content || !modalEl) return;
-
-            content.innerHTML =
-                `<div class="p-4 text-muted">
-                    <span class="spinner-border spinner-border-sm me-1"></span>
-                    Carregando…
-                 </div>`;
-
-            const modal = new bootstrap.Modal(modalEl);
-            modal.show();
-
-            const url = '@Url.Action("EditModal", "Classification")' + '?documentId=@Model.Id';
-
-            const resp = await fetch(url, {
-                credentials: 'include',
-                cache: 'no-store'
-            });
-
-            if (!resp.ok) {
-                const txt = await resp.text().catch(() => '');
-                content.innerHTML = `<div class="p-4 text-danger">Erro ao abrir modal. ${txt}</div>`;
-                return;
-            }
-
-            content.innerHTML = await resp.text();
-        }
-
-        function resetClassificationAudit() {
-            const audit =
-                document.getElementById('classificationAudit') ||
-                document.getElementById('classification-audit-container') ||
-                document.getElementById('classAuditContainer');
-
-            if (audit) {
-                audit.innerHTML = '';
-                audit.setAttribute('data-loaded', '0');
-                audit.classList.add('d-none');
-            }
-        }
-
-        window.refreshClassificationPanel = async function () {
-            await loadClassifyPanel();
-        };
-
         function configureTransitionReason() {
             const sel = document.getElementById('transitionId');
             const txt = document.getElementById('transitionReason');
@@ -969,12 +1151,20 @@
             apply();
         }
 
-        function configureAjaxForms() {
+        function configureOcrForms() {
             document.querySelectorAll('.js-ocr-form').forEach(form => {
                 form.addEventListener('submit', async function (e) {
                     e.preventDefault();
 
                     const btn = form.querySelector('button[type="submit"]');
+                    const versionId = form.querySelector('input[name="versionId"]')?.value;
+                    const isForce = form.classList.contains('js-ocr-force-form');
+
+                    if (isForce) {
+                        const ok = confirm('Deseja realmente reprocessar o OCR? Isso pode gerar uma nova versão OCR.');
+                        if (!ok) return;
+                    }
+
                     setBtnLoading(btn, true);
 
                     try {
@@ -982,6 +1172,7 @@
                             method: 'POST',
                             body: new FormData(form),
                             credentials: 'include',
+                            cache: 'no-store',
                             headers: {
                                 'X-Requested-With': 'XMLHttpRequest',
                                 'Accept': 'application/json'
@@ -990,11 +1181,20 @@
 
                         if (!resp.ok) {
                             const txt = await resp.text().catch(() => '');
-                            alert(txt || 'Erro ao solicitar OCR.');
+                            showGedToast(txt || 'Erro ao solicitar OCR.', 'danger');
+                            showPageAlert(txt || 'Erro ao solicitar OCR.', 'danger');
                             return;
                         }
 
-                        location.reload();
+                        const data = await resp.json().catch(() => null);
+
+                        showGedToast(data?.message || 'OCR solicitado com sucesso.', 'success');
+                        showPageAlert(data?.message || 'OCR solicitado com sucesso.', 'success');
+
+                        if (versionId) {
+                            updateOcrCell(versionId, 'PENDING', data?.jobId || null, null);
+                            startOcrPolling(versionId);
+                        }
                     }
                     finally {
                         setBtnLoading(btn, false);
@@ -1010,10 +1210,111 @@
             });
         }
 
+        function updateOcrCell(versionId, status, jobId, errorMessage) {
+            const cell = document.querySelector(`.ocr-status-cell[data-version-id="${versionId}"]`);
+            if (!cell) return;
+
+            const st = (status || 'NONE').toUpperCase();
+
+            const badgeClass = st === 'PENDING' ? 'bg-secondary'
+                : st === 'PROCESSING' ? 'bg-warning text-dark'
+                : st === 'COMPLETED' ? 'bg-success'
+                : st === 'ERROR' ? 'bg-danger'
+                : 'bg-light text-dark';
+
+            const label = st === 'PENDING' ? 'Pendente'
+                : st === 'PROCESSING' ? 'Executando'
+                : st === 'COMPLETED' ? 'Concluído'
+                : st === 'ERROR' ? 'Erro'
+                : 'Não executado';
+
+            const spinner = (st === 'PENDING' || st === 'PROCESSING')
+                ? `<span class="spinner-border spinner-border-sm ms-1 js-ocr-spinner" role="status" aria-hidden="true"></span>`
+                : '';
+
+            const done = st === 'COMPLETED'
+                ? `<span class="text-success small ms-1 js-ocr-done-icon"><i class="bi bi-check-circle"></i></span>`
+                : '';
+
+            const error = errorMessage
+                ? `<div class="text-danger small mt-1 js-ocr-error"><i class="bi bi-exclamation-triangle me-1"></i>${errorMessage}</div>`
+                : '';
+
+            const job = jobId
+                ? `<div class="text-muted small mt-1 js-ocr-job">Job #${jobId}</div>`
+                : '';
+
+            cell.innerHTML = `
+                <span class="badge ${badgeClass} js-ocr-badge">${label}</span>
+                ${spinner}
+                ${done}
+                ${job}
+                ${error}
+            `;
+        }
+
+        function startOcrPolling(versionId) {
+            let attempts = 0;
+            const maxAttempts = 120;
+
+            const timer = setInterval(async function () {
+                attempts++;
+
+                if (attempts > maxAttempts) {
+                    clearInterval(timer);
+                    showGedToast('OCR ainda está em processamento. Atualize a página depois.', 'info');
+                    showPageAlert('OCR ainda está em processamento. Atualize a página depois.', 'info');
+                    return;
+                }
+
+                try {
+                    const url = '@Url.Action("OcrStatus", "Ged")'
+                        + '?versionId=' + encodeURIComponent(versionId);
+
+                    const resp = await fetch(url, {
+                        credentials: 'include',
+                        cache: 'no-store'
+                    });
+
+                    if (!resp.ok) return;
+
+                    const data = await resp.json();
+
+                    if (!data || !data.hasJob) return;
+
+                    updateOcrCell(versionId, data.status, data.jobId, data.errorMessage);
+
+                    if (data.completed) {
+                        clearInterval(timer);
+
+                        showGedToast('OCR concluído com sucesso.', 'success');
+                        showPageAlert('OCR concluído com sucesso. A página será atualizada.', 'success');
+
+                        setTimeout(() => {
+                            location.reload();
+                        }, 1200);
+                    }
+
+                    if (data.error) {
+                        clearInterval(timer);
+
+                        showGedToast(data.errorMessage || 'OCR finalizado com erro.', 'danger');
+                        showPageAlert(data.errorMessage || 'OCR finalizado com erro.', 'danger');
+
+                        setTimeout(() => {
+                            location.reload();
+                        }, 1600);
+                    }
+                } catch {
+                    // polling silencioso
+                }
+            }, 3000);
+        }
+
         document.addEventListener('DOMContentLoaded', function () {
             loadClassifyPanel();
             configureTransitionReason();
-            configureAjaxForms();
+            configureOcrForms();
 
             const btn = document.getElementById('btnOpenClassify');
             if (btn) {
@@ -1035,6 +1336,13 @@
             if (shouldOpen) {
                 setTimeout(() => openClassifyModal(), 150);
             }
+
+            document.querySelectorAll('[data-ocr-autopoll="1"]').forEach(el => {
+                const versionId = el.getAttribute('data-version-id');
+                if (versionId) {
+                    startOcrPolling(versionId);
+                }
+            });
         });
     </script>
 }

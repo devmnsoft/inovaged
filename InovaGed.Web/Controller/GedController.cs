@@ -916,6 +916,25 @@ public sealed class GedController : Controller
             var v = await _docs.GetVersionForDownloadAsync(tenantId, versionId, ct);
             if (v is null) return NotFound();
 
+            var alreadyCompleted = await _ocrJobs.HasCompletedAsync(tenantId, versionId, ct);
+
+            if (alreadyCompleted && !force)
+            {
+                if (IsAjaxRequest())
+                {
+                    return Json(new
+                    {
+                        success = true,
+                        alreadyCompleted = true,
+                        message = "OCR já foi executado para esta versão.",
+                        versionId
+                    });
+                }
+
+                TempData["Success"] = "OCR já foi executado para esta versão.";
+                return RedirectToAction(nameof(Details), new { id = v.DocumentId, versionId });
+            }
+
             var jobId = await _ocrJobs.EnqueueAsync(
                 tenantId: tenantId,
                 documentVersionId: versionId,
@@ -923,29 +942,170 @@ public sealed class GedController : Controller
                 invalidateDigitalSignatures: force,
                 ct: ct);
 
-            _logger.LogInformation("OCR enfileirado. Tenant={TenantId} VersionId={VersionId} JobId={JobId} Force={Force}",
-                tenantId, versionId, jobId, force);
+            _logger.LogInformation(
+                "OCR enfileirado. Tenant={TenantId} VersionId={VersionId} JobId={JobId} Force={Force}",
+                tenantId,
+                versionId,
+                jobId,
+                force);
 
-            // ✅ Se veio via fetch (AJAX), devolve JSON para a view atualizar badge/spinner sem reload
+            await InsertOcrRequestAuditAsync(
+                tenantId,
+                v.DocumentId,
+                _currentUser.UserId,
+                jobId,
+                versionId,
+                force,
+                ct);
+
             if (IsAjaxRequest())
-                return Ok(new { jobId });
+            {
+                return Json(new
+                {
+                    success = true,
+                    jobId,
+                    versionId,
+                    documentId = v.DocumentId,
+                    message = alreadyCompleted
+                        ? "OCR já estava concluído."
+                        : "OCR solicitado com sucesso. O processamento foi enfileirado."
+                });
+            }
 
-            TempData["ok"] = force
-                ? $"OCR enfileirado (FORÇAR). Job #{jobId}."
-                : $"OCR enfileirado. Job #{jobId}.";
-
-            return RedirectToAction(nameof(Details), new { id = v.DocumentId });
+            TempData["Success"] = "OCR solicitado com sucesso. O processamento foi enfileirado.";
+            return RedirectToAction(nameof(Details), new { id = v.DocumentId, versionId });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Erro ao enfileirar OCR. VersionId={VersionId} Force={Force}", versionId, force);
+            _logger.LogError(ex, "Erro ao solicitar OCR. VersionId={VersionId}", versionId);
 
             if (IsAjaxRequest())
-                return StatusCode(500, new { error = "Erro ao enfileirar OCR." });
+            {
+                return StatusCode(500, new
+                {
+                    success = false,
+                    message = "Erro ao solicitar OCR."
+                });
+            }
 
-            TempData["Error"] = "Erro ao enfileirar OCR.";
+            TempData["Error"] = "Erro ao solicitar OCR.";
             return RedirectToAction(nameof(Index));
         }
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ReprocessOcr(Guid versionId, CancellationToken ct = default)
+    {
+        return await RunOcr(versionId, force: true, ct);
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> OcrStatus(Guid versionId, CancellationToken ct)
+    {
+        try
+        {
+            if (!_currentUser.IsAuthenticated) return Unauthorized();
+
+            var tenantId = _currentUser.TenantId;
+
+            var status = await _ocrJobs.GetLatestByVersionIdAsync(tenantId, versionId, ct);
+
+            if (status is null)
+            {
+                return Json(new
+                {
+                    success = true,
+                    hasJob = false,
+                    status = "NONE",
+                    label = "Não executado",
+                    completed = false,
+                    error = false
+                });
+            }
+
+            var st = status.Status.ToString().ToUpperInvariant();
+
+            return Json(new
+            {
+                success = true,
+                hasJob = true,
+                versionId,
+                jobId = status.JobId,
+                status = st,
+                label = st switch
+                {
+                    "PENDING" => "Pendente",
+                    "PROCESSING" => "Executando",
+                    "COMPLETED" => "Concluído",
+                    "ERROR" => "Erro",
+                    _ => st
+                },
+                requestedAt = status.RequestedAt,
+                startedAt = status.StartedAt,
+                finishedAt = status.FinishedAt,
+                errorMessage = status.ErrorMessage,
+                completed = st == "COMPLETED",
+                error = st == "ERROR"
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro ao consultar status OCR. VersionId={VersionId}", versionId);
+
+            return StatusCode(500, new
+            {
+                success = false,
+                message = "Erro ao consultar status OCR."
+            });
+        }
+    }
+
+    private async Task InsertOcrRequestAuditAsync(
+        Guid tenantId,
+        Guid documentId,
+        Guid? userId,
+        long jobId,
+        Guid versionId,
+        bool force,
+        CancellationToken ct)
+    {
+        const string sql = @"
+INSERT INTO ged.document_classification_audit
+(
+  id, tenant_id, document_id, user_id,
+  action, method,
+  before_json, after_json,
+  source, created_at, reg_status
+)
+VALUES
+(
+  gen_random_uuid(), @tenantId, @documentId, @userId,
+  'OCR_REQUESTED', 'OCR',
+  '{}'::jsonb,
+  jsonb_build_object(
+      'jobId', @jobId,
+      'versionId', @versionId,
+      'force', @force
+  ),
+  'WEB', now(), 'A'
+);";
+
+        await using var conn = await _db.OpenAsync(ct);
+
+        await conn.ExecuteAsync(
+            new CommandDefinition(
+                sql,
+                new
+                {
+                    tenantId,
+                    documentId,
+                    userId,
+                    jobId,
+                    versionId,
+                    force
+                },
+                cancellationToken: ct));
     }
 
     [HttpGet]
@@ -1013,75 +1173,7 @@ public sealed class GedController : Controller
         }
     }
 
-    // =========================
-    // OCR STATUS (✅ IMPLEMENTADO)
-    // =========================
-    [HttpGet]
-    public async Task<IActionResult> OcrStatus(Guid versionId, CancellationToken ct)
-    {
-        try
-        {
-            if (!_currentUser.IsAuthenticated)
-                return Unauthorized();
-
-            var tenantId = _currentUser.TenantId;
-
-            // Busca o job mais recente daquela version
-            const string sql = @"
-SELECT
-  oj.status::text                 AS ""Status"",
-  oj.error_message                AS ""ErrorMessage"",
-  dv.document_id                  AS ""DocumentId"",
-  oj.output_version_id            AS ""OcrVersionId"",
-  oj.id                           AS ""JobId"",
-  oj.requested_at                 AS ""RequestedAt"",
-  oj.started_at                   AS ""StartedAt"",
-  oj.finished_at                  AS ""FinishedAt""
-FROM ged.ocr_job oj
-JOIN ged.document_version dv
-  ON dv.id = oj.document_version_id
-WHERE oj.tenant_id = @tenantId
-  AND oj.document_version_id = @versionId
-ORDER BY oj.requested_at DESC, oj.id DESC
-LIMIT 1;";
-
-            await using var conn = await _db.OpenAsync(ct);
-            var row = await conn.QueryFirstOrDefaultAsync(sql, new { tenantId, versionId });
-
-            if (row is null)
-            {
-                // Sem job: a view entende como "NONE"
-                return Ok(new
-                {
-                    status = "NONE",
-                    errorMessage = (string?)null,
-                    documentId = Guid.Empty,
-                    ocrVersionId = (Guid?)null
-                });
-            }
-
-            return Ok(new
-            {
-                status = (string?)row.Status ?? "NONE",
-                errorMessage = (string?)row.ErrorMessage,
-                documentId = (Guid)row.DocumentId,
-                ocrVersionId = (Guid?)row.OcrVersionId,
-                jobId = (long?)row.JobId,
-                requestedAt = (DateTime?)row.RequestedAt,
-                startedAt = (DateTime?)row.StartedAt,
-                finishedAt = (DateTime?)row.FinishedAt
-            });
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            return new StatusCodeResult(499);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Erro ao consultar status OCR. VersionId={VersionId}", versionId);
-            return StatusCode(500);
-        }
-    }
+    
 
     // =========================
     // REGENERATE PREVIEW
@@ -1191,50 +1283,7 @@ LIMIT 1;";
         return RedirectToAction(nameof(Index), new { folderId });
     }
 
-    [HttpPost]
-    [ValidateAntiForgeryToken]
-    public async Task<IActionResult> ReprocessOcr(Guid versionId, CancellationToken ct = default)
-    {
-        try
-        {
-            if (!_currentUser.IsAuthenticated) return Unauthorized();
-
-            var tenantId = _currentUser.TenantId;
-
-            var v = await _docs.GetVersionForDownloadAsync(tenantId, versionId, ct);
-            if (v is null) return NotFound();
-
-            // força reprocesso (invalidateDigitalSignatures=true)
-            var jobId = await _ocrJobs.EnqueueAsync(
-                tenantId: tenantId,
-                documentVersionId: versionId,
-                requestedBy: _currentUser.UserId,
-                invalidateDigitalSignatures: true,
-                ct: ct);
-
-            _logger.LogInformation("OCR reprocessado. Tenant={TenantId} VersionId={VersionId} JobId={JobId}",
-                tenantId, versionId, jobId);
-
-            // AJAX friendly
-            if (Request.Headers.TryGetValue("Accept", out var a) && a.ToString().Contains("application/json", StringComparison.OrdinalIgnoreCase))
-                return Ok(new { success = true, jobId });
-
-            TempData["ok"] = $"OCR reenfileirado. Job #{jobId}.";
-            return RedirectToAction(nameof(Details), new { id = v.DocumentId });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Erro ao reenfileirar OCR. VersionId={VersionId}", versionId);
-
-            if (Request.Headers.TryGetValue("Accept", out var a) && a.ToString().Contains("application/json", StringComparison.OrdinalIgnoreCase))
-                return StatusCode(500, new { error = "Erro ao reenfileirar OCR." });
-
-            TempData["erro"] = "Erro ao reenfileirar OCR.";
-            return RedirectToAction(nameof(Index));
-        }
-    }
-
-
+  
     // =========================
     // Content-Disposition seguro
     // =========================
