@@ -1,4 +1,8 @@
-﻿<!DOCTYPE html>
+﻿@{
+    Layout = null;
+}
+
+<!DOCTYPE html>
 <html lang="pt-br">
 <head>
     <meta charset="utf-8" />
@@ -6,85 +10,43 @@
 
     <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <!-- Bootstrap + Icons -->
-    <link href="~/lib/bootstrap/dist/css/bootstrap.min.css" rel="stylesheet" />
-    <link href="~/lib/bootstrap-icons/font/bootstrap-icons.css" rel="stylesheet" />
+    <link href="~/lib/bootstrap/dist/css/bootstrap.min.css" rel="stylesheet" asp-append-version="true" />
 
-    <!-- Seu CSS global -->
-    <link href="~/css/site.css" rel="stylesheet" />
+    <link rel="stylesheet"
+          href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
+
+    <link href="~/css/inovaged.css" rel="stylesheet" asp-append-version="true" />
 
     <style>
-        /* Fundo mais moderno (sem depender de imagem) */
-        .auth-bg {
-            min-height: 100vh;
-            background: radial-gradient(1200px 600px at 10% 10%, rgba(37,99,235,.20), transparent 60%), radial-gradient(1200px 600px at 90% 20%, rgba(34,197,94,.18), transparent 55%), linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
-        }
-
-        .auth-shell {
-            max-width: 420px;
+        html,
+        body {
             width: 100%;
+            min-height: 100%;
+            margin: 0;
+            overflow-x: hidden;
         }
 
-        .auth-card {
-            border-radius: 1rem;
-            overflow: hidden;
+        body {
+            background: #07111f;
         }
 
-        .auth-topbar {
-            height: 8px;
-            background: linear-gradient(90deg, #2563eb, #22c55e);
-        }
-
-        .auth-footer {
-            color: rgba(0,0,0,.55);
-        }
-
-        .auth-muted {
-            color: rgba(0,0,0,.60);
+        .auth-page-root {
+            width: 100%;
+            min-height: 100vh;
         }
     </style>
 
-    @RenderSection("Styles", required: false)
+    @await RenderSectionAsync("Styles", required: false)
 </head>
+
 <body>
-    <div class="auth-bg d-flex flex-column">
-        <!-- HEADER MINIMAL -->
-        <div class="container py-3">
-            <div class="d-flex align-items-center justify-content-between">
-                <div class="d-flex align-items-center gap-2">
-                    <div class="d-inline-flex align-items-center justify-content-center"
-                         style="width:36px;height:36px;border-radius:.9rem;
-                                background:linear-gradient(135deg,#2563eb,#22c55e);
-                                color:#fff;font-weight:800;">
-                        IG
-                    </div>
-                    <div class="lh-sm">
-                        <div class="fw-bold">InovaGED</div>
-                        <div class="small auth-muted">Autenticação</div>
-                    </div>
-                </div>
+    <main class="auth-page-root">
+        @RenderBody()
+    </main>
 
-                <div class="small auth-muted">
-                    <i class="bi bi-shield-lock me-1"></i> Ambiente seguro
-                </div>
-            </div>
-        </div>
+    <script src="~/lib/jquery/dist/jquery.min.js" asp-append-version="true"></script>
+    <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js" asp-append-version="true"></script>
 
-        <!-- BODY -->
-        <main class="container flex-grow-1 d-flex align-items-center justify-content-center py-4">
-            <div class="auth-shell">
-                @RenderBody()
-            </div>
-        </main>
-
-        <!-- FOOTER -->
-        <footer class="container pb-4 text-center small auth-footer">
-            © @DateTime.Now.Year InovaGED · Gestão Eletrônica de Documentos
-        </footer>
-    </div>
-
-    <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
-
-    @RenderSection("Scripts", required: false)
+    @await RenderSectionAsync("Scripts", required: false)
 </body>
 </html>

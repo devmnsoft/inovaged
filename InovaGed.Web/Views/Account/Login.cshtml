@@ -3,7 +3,10 @@
     ViewData["Title"] = "Entrar";
     Layout = "_LayoutAuth";
 
-    // cert feedback (TempData)
+    /*
+    Certificado digital ficará oculto por enquanto.
+                Mantive as variáveis para uso futuro, caso o bloco seja reativado.
+            */
     var openCert = TempData["open_cert"] is bool b && b;
     var certErr = TempData["cert_err"] as string;
     var certOk = TempData["cert_ok"] as string;
@@ -11,293 +14,686 @@
 
 @section Styles {
     <style>
-        /* =========================================================
-               LOGIN – mais intuitivo + feedback de ação + certificado funciona
-               - botão com loading
-               - collapse do certificado abre e mostra retorno
-               - JS corrigido: intercepta submit, gera base64 e só então envia
-               ========================================================= */
-
         :root {
-            --bg0: #0B1020;
-            --bg1: #090F1A;
-            --card: rgba(255,255,255,.10);
-            --card2: rgba(255,255,255,.06);
-            --stroke: rgba(255,255,255,.14);
-            --stroke2: rgba(255,255,255,.10);
-            --text: #ffffff;
-            --muted: rgba(255,255,255,.72);
-            --muted2: rgba(255,255,255,.56);
-            --shadow: 0 28px 85px rgba(0,0,0,.45);
-            --focus: 0 0 0 6px rgba(37,99,235,.16);
-            --grad: linear-gradient(135deg,#2563eb 0%, #22c55e 100%);
-            --warn: rgba(255,193,7,.14);
+            --ig-navy-950: #020617;
+            --ig-navy-900: #07111f;
+            --ig-navy-850: #0b172a;
+            --ig-navy-800: #10213b;
+            --ig-blue: #2563eb;
+            --ig-blue-2: #1d4ed8;
+            --ig-cyan: #0ea5e9;
+            --ig-green: #22c55e;
+            --ig-emerald: #10b981;
+            --ig-slate-950: #0f172a;
+            --ig-slate-800: #1e293b;
+            --ig-slate-700: #334155;
+            --ig-slate-600: #475569;
+            --ig-slate-500: #64748b;
+            --ig-slate-400: #94a3b8;
+            --ig-slate-300: #cbd5e1;
+            --ig-slate-200: #e2e8f0;
+            --ig-slate-100: #f1f5f9;
+            --ig-slate-50: #f8fafc;
+            --ig-white: #ffffff;
+            --ig-shadow-strong: 0 34px 100px rgba(2, 6, 23, .48);
+            --ig-shadow-card: 0 24px 70px rgba(15, 23, 42, .16);
+            --ig-radius-shell: 36px;
+            --ig-radius-card: 30px;
         }
 
-        .auth-shell {
+        html,
+        body {
+            min-height: 100%;
+            overflow-x: hidden;
+        }
+
+        .login-page {
+            width: 100%;
             min-height: 100vh;
-            display: grid;
-            place-items: center;
-            padding: 28px 14px;
             position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 34px;
             overflow: hidden;
+            background: radial-gradient(880px 540px at 10% 8%, rgba(37, 99, 235, .42), transparent 62%), radial-gradient(860px 520px at 95% 10%, rgba(14, 165, 233, .30), transparent 60%), radial-gradient(760px 520px at 52% 112%, rgba(34, 197, 94, .20), transparent 62%), linear-gradient(135deg, var(--ig-navy-950) 0%, var(--ig-navy-900) 42%, var(--ig-navy-850) 100%);
         }
 
-            .auth-shell::before {
-                content: "";
-                position: absolute;
-                inset: -2px;
-                background: radial-gradient(1200px 680px at 18% 10%, rgba(37,99,235,.40), transparent 60%), radial-gradient(900px 520px at 82% 18%, rgba(34,197,94,.25), transparent 58%), radial-gradient(920px 620px at 55% 110%, rgba(59,130,246,.18), transparent 60%), linear-gradient(180deg, var(--bg0) 0%, var(--bg1) 70%, #070B14 100%);
-                z-index: 0;
-                filter: saturate(1.05);
-            }
-
-            .auth-shell::after {
+            .login-page::before {
                 content: "";
                 position: absolute;
                 inset: 0;
-                background-image: radial-gradient(rgba(255,255,255,.06) 1px, transparent 1px);
-                background-size: 18px 18px;
-                opacity: .32;
-                z-index: 0;
+                background-image: linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px);
+                background-size: 44px 44px;
+                opacity: .82;
+                pointer-events: none;
+                mask-image: linear-gradient(to bottom, rgba(0,0,0,.94), rgba(0,0,0,.35));
+            }
+
+            .login-page::after {
+                content: "";
+                position: absolute;
+                inset: 0;
+                background: linear-gradient(115deg, rgba(255,255,255,.08), transparent 26%), linear-gradient(295deg, rgba(255,255,255,.06), transparent 30%);
                 pointer-events: none;
             }
 
-        .auth-wrap {
-            width: min(540px, 100%);
+        .login-orb {
+            position: absolute;
+            width: 380px;
+            height: 380px;
+            border-radius: 999px;
+            filter: blur(20px);
+            opacity: .30;
+            animation: floatOrb 9s ease-in-out infinite;
+            pointer-events: none;
+        }
+
+            .login-orb.one {
+                background: var(--ig-blue);
+                top: -145px;
+                left: -110px;
+            }
+
+            .login-orb.two {
+                background: var(--ig-green);
+                right: -160px;
+                bottom: -170px;
+                animation-delay: -4s;
+            }
+
+            .login-orb.three {
+                width: 280px;
+                height: 280px;
+                background: var(--ig-cyan);
+                left: 44%;
+                top: -120px;
+                opacity: .14;
+                animation-delay: -2s;
+            }
+
+        @@keyframes floatOrb {
+            0%, 100% {
+                transform: translateY(0) scale(1);
+            }
+
+            50% {
+                transform: translateY(24px) scale(1.045);
+            }
+        }
+
+        .login-shell {
+            width: min(1240px, calc(100vw - 68px));
+            min-height: 730px;
             position: relative;
             z-index: 2;
-        }
-
-        .auth-card {
-            border: 1px solid var(--stroke);
-            border-radius: 1.6rem;
+            display: grid;
+            grid-template-columns: minmax(0, 1.05fr) minmax(470px, .95fr);
             overflow: hidden;
-            background: linear-gradient(180deg, var(--card), var(--card2));
-            box-shadow: var(--shadow);
-            backdrop-filter: blur(10px);
+            border-radius: var(--ig-radius-shell);
+            background: rgba(255, 255, 255, .08);
+            border: 1px solid rgba(255, 255, 255, .18);
+            box-shadow: var(--ig-shadow-strong);
+            backdrop-filter: blur(20px);
         }
 
-        .auth-topbar {
-            height: 6px;
-            background: linear-gradient(90deg,#2563eb,#22c55e,#06b6d4,#2563eb);
-            background-size: 200% 100%;
-            animation: igbar 6s linear infinite;
-        }
+        /* =======================
+                   PAINEL GED ESQUERDO
+                   ======================= */
 
-        @@keyframes igbar {
-            0% {
-                background-position: 0 0
-            }
-
-            100% {
-                background-position: 200% 0
-            }
-        }
-
-        .brand {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 12px;
-            margin-bottom: 14px;
-        }
-
-        .brand-badge {
-            width: 54px;
-            height: 54px;
-            border-radius: 1.1rem;
-            background: var(--grad);
+        .login-info {
+            position: relative;
+            min-width: 0;
+            padding: 54px;
             color: #fff;
             display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            overflow: hidden;
+            background: radial-gradient(580px 420px at 18% 20%, rgba(255,255,255,.13), transparent 62%), linear-gradient(135deg, rgba(37,99,235,.68), rgba(14,165,233,.16) 54%, rgba(34,197,94,.08)), rgba(255,255,255,.035);
+        }
+
+            .login-info::before {
+                content: "";
+                position: absolute;
+                width: 620px;
+                height: 620px;
+                right: -315px;
+                top: 35px;
+                border-radius: 999px;
+                border: 96px solid rgba(255,255,255,.075);
+                pointer-events: none;
+            }
+
+            .login-info::after {
+                content: "";
+                position: absolute;
+                left: 52px;
+                right: 52px;
+                bottom: 118px;
+                height: 1px;
+                background: linear-gradient(90deg, transparent, rgba(255,255,255,.22), transparent);
+                pointer-events: none;
+            }
+
+        .login-brand {
+            position: relative;
+            z-index: 3;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .login-logo {
+            width: 62px;
+            height: 62px;
+            border-radius: 20px;
+            display: grid;
+            place-items: center;
+            font-weight: 950;
+            letter-spacing: .5px;
+            color: #fff;
+            background: linear-gradient(135deg, rgba(255,255,255,.18), transparent), linear-gradient(135deg, var(--ig-blue), var(--ig-green));
+            box-shadow: 0 20px 50px rgba(37,99,235,.34), inset 0 1px 0 rgba(255,255,255,.24);
+            flex: 0 0 auto;
+        }
+
+        .login-brand h1 {
+            margin: 0;
+            font-weight: 950;
+            line-height: 1;
+            letter-spacing: -.6px;
+            font-size: 1.62rem;
+        }
+
+        .login-brand p {
+            margin: 5px 0 0;
+            color: rgba(255,255,255,.76);
+            font-size: .92rem;
+        }
+
+        .login-hero {
+            position: relative;
+            z-index: 3;
+            max-width: 620px;
+        }
+
+        .login-hero-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 9px;
+            padding: 9px 13px;
+            border-radius: 999px;
+            background: rgba(255,255,255,.12);
+            border: 1px solid rgba(255,255,255,.18);
+            color: rgba(255,255,255,.90);
+            font-size: .84rem;
+            margin-bottom: 20px;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,.10);
+        }
+
+            .login-hero-pill i {
+                color: rgba(255,255,255,.98);
+            }
+
+        .login-hero h2 {
+            font-size: clamp(2.35rem, 3.3vw, 3.75rem);
+            line-height: 1.01;
+            font-weight: 950;
+            letter-spacing: -2px;
+            margin: 0;
+        }
+
+        .login-hero-highlight {
+            display: block;
+            background: linear-gradient(90deg, #fff, rgba(255,255,255,.74));
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+        }
+
+        .ged-workspace {
+            position: relative;
+            z-index: 3;
+            width: min(560px, 100%);
+            margin-top: 34px;
+        }
+
+        .ged-doc-board {
+            position: relative;
+            min-height: 350px;
+            border-radius: 34px;
+            overflow: hidden;
+            border: 1px solid rgba(255,255,255,.20);
+            background: radial-gradient(circle at 30% 12%, rgba(255,255,255,.20), transparent 28%), linear-gradient(135deg, rgba(255,255,255,.15), rgba(255,255,255,.055));
+            box-shadow: inset 0 1px 0 rgba(255,255,255,.16), 0 30px 85px rgba(2,6,23,.20);
+        }
+
+            .ged-doc-board::before {
+                content: "";
+                position: absolute;
+                inset: 22px;
+                border: 1px dashed rgba(255,255,255,.20);
+                border-radius: 28px;
+            }
+
+            .ged-doc-board::after {
+                content: "";
+                position: absolute;
+                inset: 0;
+                background-image: linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px);
+                background-size: 26px 26px;
+                opacity: .5;
+            }
+
+        .ged-folder-hero {
+            position: absolute;
+            z-index: 4;
+            left: 50%;
+            top: 48%;
+            width: 132px;
+            height: 132px;
+            transform: translate(-50%, -50%);
+            border-radius: 38px;
+            display: grid;
+            place-items: center;
+            background: linear-gradient(135deg, rgba(255,255,255,.20), transparent), linear-gradient(135deg, var(--ig-blue), var(--ig-green));
+            color: #fff;
+            box-shadow: 0 26px 68px rgba(37,99,235,.34), 0 0 0 14px rgba(255,255,255,.075), inset 0 1px 0 rgba(255,255,255,.24);
+        }
+
+            .ged-folder-hero i {
+                font-size: 4.35rem;
+            }
+
+        .ged-ring {
+            position: absolute;
+            z-index: 3;
+            left: 50%;
+            top: 48%;
+            width: 250px;
+            height: 250px;
+            transform: translate(-50%, -50%);
+            border-radius: 999px;
+            border: 1px solid rgba(255,255,255,.18);
+            box-shadow: 0 0 0 36px rgba(255,255,255,.035);
+        }
+
+        .ged-line-x,
+        .ged-line-y {
+            position: absolute;
+            z-index: 2;
+            left: 50%;
+            top: 48%;
+            transform: translate(-50%, -50%);
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,.30), transparent);
+        }
+
+        .ged-line-x {
+            width: 78%;
+            height: 1px;
+        }
+
+        .ged-line-y {
+            width: 1px;
+            height: 72%;
+            background: linear-gradient(180deg, transparent, rgba(255,255,255,.25), transparent);
+        }
+
+        .ged-mini-card {
+            position: absolute;
+            z-index: 6;
+            min-width: 132px;
+            padding: 12px 14px;
+            border-radius: 18px;
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            color: rgba(255,255,255,.95);
+            background: rgba(255,255,255,.145);
+            border: 1px solid rgba(255,255,255,.22);
+            backdrop-filter: blur(12px);
+            box-shadow: 0 18px 38px rgba(2,6,23,.18), inset 0 1px 0 rgba(255,255,255,.11);
+        }
+
+            .ged-mini-card i {
+                font-size: 1.25rem;
+            }
+
+            .ged-mini-card span {
+                font-size: .82rem;
+                font-weight: 850;
+                white-space: nowrap;
+            }
+
+        .ged-card-doc {
+            left: 28px;
+            top: 36px;
+            animation: softFloatA 5.5s ease-in-out infinite;
+        }
+
+        .ged-card-index {
+            right: 28px;
+            top: 50px;
+            animation: softFloatB 6.5s ease-in-out infinite;
+        }
+
+        .ged-card-archive {
+            left: 36px;
+            bottom: 54px;
+            animation: softFloatB 6.2s ease-in-out infinite;
+        }
+
+        .ged-card-audit {
+            right: 36px;
+            bottom: 46px;
+            animation: softFloatA 5.8s ease-in-out infinite;
+        }
+
+        .ged-card-flow {
+            left: 50%;
+            bottom: 18px;
+            transform: translateX(-50%);
+            animation: softFloatShield 6.5s ease-in-out infinite;
+        }
+
+        .ged-document-stack {
+            position: absolute;
+            z-index: 3;
+            left: 42px;
+            top: 118px;
+            width: 86px;
+            height: 112px;
+            opacity: .82;
+        }
+
+        .ged-paper {
+            position: absolute;
+            width: 70px;
+            height: 92px;
+            border-radius: 12px;
+            background: rgba(255,255,255,.18);
+            border: 1px solid rgba(255,255,255,.20);
+            box-shadow: 0 18px 32px rgba(2,6,23,.10);
+        }
+
+            .ged-paper.one {
+                left: 0;
+                top: 16px;
+                transform: rotate(-10deg);
+            }
+
+            .ged-paper.two {
+                left: 14px;
+                top: 6px;
+                transform: rotate(-2deg);
+            }
+
+            .ged-paper.three {
+                left: 28px;
+                top: 0;
+                transform: rotate(8deg);
+            }
+
+            .ged-paper::before,
+            .ged-paper::after {
+                content: "";
+                position: absolute;
+                left: 13px;
+                right: 13px;
+                height: 5px;
+                border-radius: 999px;
+                background: rgba(255,255,255,.28);
+            }
+
+            .ged-paper::before {
+                top: 24px;
+            }
+
+            .ged-paper::after {
+                top: 40px;
+                right: 24px;
+            }
+
+        @@keyframes softFloatA {
+            0%, 100% {
+                transform: translateY(0);
+            }
+
+            50% {
+                transform: translateY(-8px);
+            }
+        }
+
+        @@keyframes softFloatB {
+            0%, 100% {
+                transform: translateY(0);
+            }
+
+            50% {
+                transform: translateY(8px);
+            }
+        }
+
+        @@keyframes softFloatShield {
+            0%, 100% {
+                transform: translateX(-50%) translateY(0);
+            }
+
+            50% {
+                transform: translateX(-50%) translateY(8px);
+            }
+        }
+
+        .login-info-footer {
+            position: relative;
+            z-index: 3;
+            color: rgba(255,255,255,.64);
+            font-size: .82rem;
+            line-height: 1.48;
+        }
+
+        /* =======================
+                   CARD DE LOGIN
+                   ======================= */
+
+        .login-panel {
+            min-width: 0;
+            background: radial-gradient(540px 320px at 80% 0%, rgba(37,99,235,.08), transparent 60%), rgba(248,250,252,.985);
+            padding: 54px;
+            display: flex;
             align-items: center;
             justify-content: center;
-            font-weight: 900;
-            letter-spacing: .3px;
-            box-shadow: 0 18px 32px rgba(37,99,235,.20);
-            user-select: none;
         }
 
-        .brand-title {
-            color: var(--text);
-            font-weight: 900;
-            margin: 0;
-            line-height: 1.05;
+        .login-card {
+            width: 100%;
+            max-width: 520px;
+            background: linear-gradient(180deg, rgba(255,255,255,1), rgba(255,255,255,.985));
+            border: 1px solid rgba(15,23,42,.08);
+            border-radius: var(--ig-radius-card);
+            box-shadow: var(--ig-shadow-card);
+            overflow: hidden;
         }
 
-        .brand-sub {
-            color: var(--muted);
-            font-size: .92rem;
+        .login-card-topbar {
+            height: 7px;
+            background: linear-gradient(90deg, var(--ig-blue), var(--ig-cyan), var(--ig-green), var(--ig-blue));
+            background-size: 220% 100%;
+            animation: topbarMove 7s linear infinite;
+        }
+
+        @@keyframes topbarMove {
+            to {
+                background-position: 220% 0;
+            }
+        }
+
+        .login-card-body {
+            padding: 44px;
+        }
+
+        .login-card-title {
+            margin-bottom: 24px;
+        }
+
+        .login-title-icon {
+            width: 52px;
+            height: 52px;
+            border-radius: 18px;
+            display: grid;
+            place-items: center;
+            margin-bottom: 16px;
+            color: #fff;
+            background: linear-gradient(135deg, var(--ig-blue), var(--ig-cyan));
+            box-shadow: 0 16px 34px rgba(37,99,235,.22);
+        }
+
+            .login-title-icon i {
+                font-size: 1.55rem;
+            }
+
+        .login-card-title h3 {
             margin: 0;
+            color: var(--ig-slate-950);
+            font-weight: 950;
+            letter-spacing: -.6px;
+            font-size: 1.72rem;
+        }
+
+        .login-card-title p {
+            margin: 8px 0 0;
+            color: var(--ig-slate-500);
+            font-size: .96rem;
         }
 
         .form-label {
-            color: rgba(255,255,255,.84);
+            color: var(--ig-slate-700);
+            font-size: .82rem;
+            font-weight: 850;
+            margin-bottom: 8px;
+        }
+
+        .input-group {
+            border-radius: 17px;
+            box-shadow: 0 1px 0 rgba(15,23,42,.02);
         }
 
         .input-group-text {
-            background: rgba(255,255,255,.10) !important;
-            border-color: rgba(255,255,255,.16) !important;
-            color: rgba(255,255,255,.86);
+            width: 52px;
+            justify-content: center;
+            background: var(--ig-slate-50) !important;
+            border: 1px solid var(--ig-slate-200) !important;
+            border-right: 0 !important;
+            color: var(--ig-slate-500);
+            border-radius: 17px 0 0 17px !important;
         }
 
         .form-control {
-            background: rgba(255,255,255,.08);
-            border-color: rgba(255,255,255,.16);
-            color: rgba(255,255,255,.92);
+            min-height: 52px;
+            border: 1px solid var(--ig-slate-200);
+            color: var(--ig-slate-950);
+            font-weight: 520;
         }
 
-            .form-control::placeholder {
-                color: rgba(255,255,255,.45);
+        .input-group .form-control {
+            border-left: 0;
+        }
+
+        .form-control::placeholder {
+            color: var(--ig-slate-400);
+            font-weight: 400;
+        }
+
+        .form-control:focus {
+            border-color: rgba(37,99,235,.56);
+            box-shadow: 0 0 0 5px rgba(37,99,235,.12);
+        }
+
+        .password-toggle {
+            min-width: 52px;
+            border: 1px solid var(--ig-slate-200);
+            border-left: 0;
+            background: #fff;
+            color: var(--ig-slate-500);
+            border-radius: 0 17px 17px 0 !important;
+        }
+
+            .password-toggle:hover {
+                background: var(--ig-slate-50);
+                color: var(--ig-slate-950);
             }
 
-            .form-control:focus {
-                background: rgba(255,255,255,.10);
-                border-color: rgba(37,99,235,.55);
-                box-shadow: var(--focus);
-                color: rgba(255,255,255,.96);
-            }
-
-        .field-note {
-            font-size: .8rem;
-            color: rgba(255,255,255,.52);
+        .field-helper {
+            display: flex;
+            align-items: center;
+            gap: 6px;
             margin-top: 6px;
+            font-size: .76rem;
+            color: var(--ig-slate-500);
         }
 
-        .btn-primary {
-            background: var(--grad);
+            .field-helper i {
+                font-size: .85rem;
+                color: var(--ig-blue);
+            }
+
+        .btn-login {
+            min-height: 54px;
             border: 0;
-            box-shadow: 0 18px 36px rgba(34,197,94,.14);
+            border-radius: 17px;
+            background: linear-gradient(135deg, rgba(255,255,255,.14), transparent), linear-gradient(135deg, var(--ig-blue), var(--ig-cyan));
+            color: #fff;
+            font-weight: 900;
+            letter-spacing: -.1px;
+            box-shadow: 0 18px 42px rgba(37,99,235,.25);
+            transition: transform .16s ease, filter .16s ease, box-shadow .16s ease;
         }
 
-            .btn-primary:hover {
-                filter: brightness(1.03);
-            }
-
-            .btn-primary:focus {
-                box-shadow: 0 0 0 6px rgba(34,197,94,.14);
-            }
-
-        .btn-outline-secondary {
-            border-color: rgba(255,255,255,.18);
-            color: rgba(255,255,255,.82);
-            background: transparent;
-        }
-
-            .btn-outline-secondary:hover {
-                background: rgba(255,255,255,.10);
-                border-color: rgba(255,255,255,.22);
+            .btn-login:hover {
                 color: #fff;
+                filter: brightness(1.035);
+                transform: translateY(-1px);
+                box-shadow: 0 22px 46px rgba(37,99,235,.30);
             }
 
-        .helper-row {
+            .btn-login:active {
+                transform: translateY(0);
+            }
+
+        .login-actions {
             display: flex;
             justify-content: space-between;
+            gap: 12px;
             align-items: center;
-            gap: 10px;
-            margin-top: 10px;
-            font-size: .92rem;
-            color: var(--muted2);
+            margin-top: 16px;
+            font-size: .9rem;
         }
 
-            .helper-row a {
-                color: rgba(255,255,255,.82);
+            .login-actions a {
+                color: var(--ig-blue);
                 text-decoration: none;
+                font-weight: 800;
             }
 
-                .helper-row a:hover {
-                    color: #fff;
+                .login-actions a:hover {
                     text-decoration: underline;
                 }
 
-        .section-divider {
-            display: flex;
+        .secure-note {
+            color: var(--ig-slate-500);
+            display: inline-flex;
             align-items: center;
-            gap: .75rem;
-            color: rgba(255,255,255,.55);
-            font-size: .82rem;
-            margin: 16px 0 10px;
-        }
-
-            .section-divider::before,
-            .section-divider::after {
-                content: "";
-                height: 1px;
-                flex: 1;
-                background: rgba(255,255,255,.14);
-            }
-
-        /* Cert */
-        .cert-box {
-            border: 1px solid var(--stroke2);
-            border-radius: 1.25rem;
-            background: rgba(255,255,255,.06);
-            overflow: hidden;
-        }
-
-        .cert-toggle {
-            width: 100%;
-            text-align: left;
-            background: transparent;
-            border: 0;
-            padding: 12px 14px;
-            color: rgba(255,255,255,.92);
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 10px;
-        }
-
-            .cert-toggle:hover {
-                background: rgba(255,255,255,.06);
-            }
-
-        .cert-meta {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-            .cert-meta .title {
-                font-weight: 800;
-                font-size: .95rem;
-                color: var(--text);
-            }
-
-            .cert-meta .sub {
-                font-size: .82rem;
-                color: var(--muted2);
-                margin-top: 1px;
-            }
-
-        .cert-pill {
-            font-size: .75rem;
-            padding: .28rem .6rem;
-            border-radius: 999px;
-            background: rgba(255,255,255,.10);
-            border: 1px solid rgba(255,255,255,.14);
-            color: rgba(255,255,255,.82);
+            gap: 7px;
+            font-weight: 700;
             white-space: nowrap;
         }
 
-        .cert-body {
-            padding: 12px 14px 14px 14px;
-            border-top: 1px solid rgba(255,255,255,.10);
+        .auth-alert {
+            border-radius: 16px;
+            border: 0;
         }
 
-        .btn-outline-light {
-            border-color: rgba(255,255,255,.22);
-            color: rgba(255,255,255,.92);
-            background: rgba(255,255,255,.06);
-        }
-
-            .btn-outline-light:hover {
-                background: rgba(255,255,255,.10);
-                border-color: rgba(255,255,255,.28);
-                color: #fff;
-            }
-
-        /* UX: botão com loading */
         .btn-wait {
             display: none;
         }
@@ -311,195 +707,340 @@
             align-items: center;
         }
 
-        @@media (max-width: 420px) {
-            .auth-card {
-                border-radius: 1.25rem;
+        .footer-mini {
+            margin-top: 22px;
+            padding-top: 18px;
+            border-top: 1px solid var(--ig-slate-200);
+            text-align: center;
+            color: var(--ig-slate-400);
+            font-size: .78rem;
+            line-height: 1.48;
+        }
+
+        @@media (max-width: 1180px) {
+            .login-page {
+                padding: 26px;
             }
 
-            .brand-badge {
-                width: 50px;
-                height: 50px;
-                border-radius: 1.05rem;
+            .login-shell {
+                width: min(1080px, calc(100vw - 52px));
+                min-height: 700px;
+                grid-template-columns: minmax(0, 1fr) minmax(430px, .95fr);
+            }
+
+            .login-info {
+                padding: 42px;
+            }
+
+            .login-hero h2 {
+                font-size: clamp(2.05rem, 3vw, 2.95rem);
+            }
+
+            .ged-doc-board {
+                min-height: 320px;
+            }
+
+            .login-panel {
+                padding: 36px;
+            }
+
+            .login-card-body {
+                padding: 36px;
+            }
+        }
+
+        @@media (max-width: 920px) {
+            .login-page {
+                align-items: flex-start;
+                padding: 24px;
+                overflow-y: auto;
+            }
+
+            .login-shell {
+                width: min(780px, 100%);
+                min-height: auto;
+                grid-template-columns: 1fr;
+            }
+
+            .login-info {
+                padding: 34px;
+            }
+
+            .login-hero {
+                margin-top: 34px;
+            }
+
+                .login-hero h2 {
+                    font-size: clamp(2rem, 7vw, 3rem);
+                }
+
+            .login-panel {
+                padding: 34px;
+            }
+
+            .login-card {
+                max-width: 100%;
+            }
+        }
+
+        @@media (max-width: 640px) {
+            .login-page {
+                padding: 16px;
+                display: block;
+            }
+
+                .login-orb,
+                .login-page::before,
+                .login-page::after {
+                    display: none;
+                }
+
+            .login-shell {
+                width: 100%;
+                display: block;
+                border-radius: 0;
+                background: transparent;
+                border: 0;
+                box-shadow: none;
+            }
+
+            .login-info {
+                display: none;
+            }
+
+            .login-panel {
+                padding: 0;
+                background: transparent;
+            }
+
+            .login-card {
+                max-width: none;
+                border-radius: 24px;
+            }
+
+            .login-card-body {
+                padding: 30px 22px;
+            }
+
+            .login-card-title h3 {
+                font-size: 1.48rem;
+            }
+
+            .login-actions {
+                flex-direction: column;
+                align-items: flex-start;
             }
         }
     </style>
 }
 
-<div class="auth-shell">
-    <div class="auth-wrap">
-        <div class="card auth-card">
-            <div class="auth-topbar"></div>
+<div class="login-page">
+    <div class="login-orb one"></div>
+    <div class="login-orb two"></div>
+    <div class="login-orb three"></div>
 
-            <div class="card-body p-4 p-md-5">
+    <div class="login-shell">
+        <aside class="login-info">
+            <div class="login-brand">
+                <div class="login-logo">IG</div>
+                <div>
+                    <h1>InovaGED</h1>
+                    <p>Gestão Eletrônica de Documentos</p>
+                </div>
+            </div>
 
-                <div class="brand">
-                    <div class="brand-badge">IG</div>
-                    <div>
-                        <h4 class="brand-title">InovaGED</h4>
-                        <p class="brand-sub">Acesse sua conta para continuar.</p>
-                    </div>
+            <div class="login-hero">
+                <div class="login-hero-pill">
+                    <i class="bi bi-folder-check"></i>
+                    Plataforma GED para gestão segura de documentos
                 </div>
 
-                <!-- ================== LOGIN PADRÃO ================== -->
-                <form id="loginForm" asp-action="Login" method="post" novalidate>
-                    @Html.AntiForgeryToken()
-                    <input type="hidden" asp-for="ReturnUrl" />
+                <h2>
+                    Gestão documental
+                    <span class="login-hero-highlight">segura, inteligente e centralizada.</span>
+                </h2>
 
-                    <div class="mb-3">
-                        <label asp-for="TenantSlug" class="form-label small fw-semibold"></label>
-                        <div class="input-group">
-                            <span class="input-group-text"><i class="bi bi-buildings"></i></span>
-                            <input asp-for="TenantSlug" class="form-control" placeholder="Tenant (ex: prefeitura-x)" autocomplete="organization" />
+                <div class="ged-workspace">
+                    <div class="ged-doc-board">
+                        <div class="ged-ring"></div>
+                        <div class="ged-line-x"></div>
+                        <div class="ged-line-y"></div>
+
+                        <div class="ged-document-stack">
+                            <div class="ged-paper one"></div>
+                            <div class="ged-paper two"></div>
+                            <div class="ged-paper three"></div>
                         </div>
-                        <span asp-validation-for="TenantSlug" class="text-danger small"></span>
+
+                        <div class="ged-folder-hero">
+                            <i class="bi bi-folder-check"></i>
+                        </div>
+
+                        <div class="ged-mini-card ged-card-doc">
+                            <i class="bi bi-file-earmark-text"></i>
+                            <span>Documentos</span>
+                        </div>
+
+                        <div class="ged-mini-card ged-card-index">
+                            <i class="bi bi-tags"></i>
+                            <span>Indexação</span>
+                        </div>
+
+                        <div class="ged-mini-card ged-card-archive">
+                            <i class="bi bi-archive"></i>
+                            <span>Arquivo</span>
+                        </div>
+
+                        <div class="ged-mini-card ged-card-audit">
+                            <i class="bi bi-clock-history"></i>
+                            <span>Histórico</span>
+                        </div>
+
+                        <div class="ged-mini-card ged-card-flow">
+                            <i class="bi bi-diagram-3"></i>
+                            <span>Fluxo GED</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="login-info-footer">
+                © @DateTime.Now.Year InovaGED • Solução de Gestão Eletrônica de Documentos<br />
+                LocDesk Locação de Equip. e Sol. em Info Ltda
+            </div>
+        </aside>
+
+        <main class="login-panel">
+            <div class="login-card">
+                <div class="login-card-topbar"></div>
+
+                <div class="login-card-body">
+                    <div class="login-card-title">
+                        <div class="login-title-icon">
+                            <i class="bi bi-person-lock"></i>
+                        </div>
+
+                        <h3>Bem-vindo de volta</h3>
+                        <p>Informe seus dados para acessar o ambiente GED.</p>
                     </div>
 
-                    <div class="mb-3">
-                        <label asp-for="Email" class="form-label small fw-semibold"></label>
-                        <div class="input-group">
-                            <span class="input-group-text"><i class="bi bi-person-circle"></i></span>
-                            <input asp-for="Email" class="form-control" placeholder="E-mail" autocomplete="username" />
-                        </div>
-                        <span asp-validation-for="Email" class="text-danger small"></span>
-                    </div>
+                    <form id="loginForm" asp-action="Login" method="post" novalidate>
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" asp-for="ReturnUrl" />
 
-                    <div class="mb-2">
-                        <label asp-for="Password" class="form-label small fw-semibold"></label>
-                        <div class="input-group">
-                            <span class="input-group-text"><i class="bi bi-lock"></i></span>
-                            <input asp-for="Password"
-                                   type="password"
-                                   class="form-control"
-                                   id="passwordInput"
-                                   placeholder="Senha"
-                                   autocomplete="current-password" />
-                            <button type="button"
-                                    class="btn btn-outline-secondary"
-                                    title="Mostrar/ocultar senha"
-                                    tabindex="-1"
-                                    onclick="togglePassword()">
-                                <i class="bi bi-eye" id="passwordIcon"></i>
-                            </button>
-                        </div>
-                        <span asp-validation-for="Password" class="text-danger small"></span>
-                    </div>
+                        @*
+                            Tenant oculto por enquanto.
+                            IMPORTANTE:
+                            Troque "default" pelo valor real da coluna ged.tenant.code.
+                            Exemplos possíveis: "inovaged", "ophir", "locdesk", "demo".
+                        *@
+                        <input type="hidden" asp-for="TenantSlug" value="default" />
 
-                    @if (!ViewData.ModelState.IsValid)
-                    {
-                        <div class="alert alert-danger py-2 small mt-3 mb-0">
-                            <div class="d-flex align-items-start gap-2">
-                                <i class="bi bi-exclamation-triangle mt-1"></i>
-                                <div>@Html.ValidationSummary(excludePropertyErrors: true)</div>
+                        <div class="mb-3">
+                            <label asp-for="Email" class="form-label"></label>
+                            <div class="input-group">
+                                <span class="input-group-text">
+                                    <i class="bi bi-person-circle"></i>
+                                </span>
+
+                                <input asp-for="Email"
+                                       class="form-control"
+                                       placeholder="E-mail de acesso"
+                                       autocomplete="username" />
+                            </div>
+                            <span asp-validation-for="Email" class="text-danger small"></span>
+
+                            <div class="field-helper">
+                                <i class="bi bi-info-circle"></i>
+                                Utilize o e-mail cadastrado para acesso ao GED.
                             </div>
                         </div>
-                    }
 
-                    <button id="loginBtn" type="submit" class="btn btn-primary w-100 py-2 fw-semibold mt-3">
-                        <span class="btn-text"><i class="bi bi-box-arrow-in-right me-1"></i> Entrar</span>
-                        <span class="btn-wait"><span class="spinner-border spinner-border-sm me-2"></span>Entrando...</span>
-                    </button>
+                        <div class="mb-2">
+                            <label asp-for="Password" class="form-label"></label>
+                            <div class="input-group">
+                                <span class="input-group-text">
+                                    <i class="bi bi-lock"></i>
+                                </span>
 
-                    <div class="helper-row">
-                        <a href="@Url.Action("Create", "Users")">
-                            <i class="bi bi-person-plus me-1"></i> Criar usuário
-                        </a>
+                                <input asp-for="Password"
+                                       type="password"
+                                       class="form-control"
+                                       id="passwordInput"
+                                       placeholder="Senha"
+                                       autocomplete="current-password" />
 
-                        <span class="d-inline-flex align-items-center gap-2">
-                            <i class="bi bi-shield-lock"></i>
-                            <span>Conexão segura</span>
-                        </span>
-                    </div>
-                </form>
-
-                <div class="section-divider">Acesso alternativo</div>
-
-                <!-- ================== CERTIFICADO ================== -->
-                <div class="cert-box">
-                    <button type="button"
-                            class="cert-toggle"
-                            data-bs-toggle="collapse"
-                            data-bs-target="#certCollapse"
-                            aria-expanded="@(openCert ? "true" : "false")"
-                            aria-controls="certCollapse">
-                        <div class="cert-meta">
-                            <i class="bi bi-fingerprint"></i>
-                            <div>
-                                <div class="title">Entrar com certificado digital</div>
-                                <div class="sub">ICP-Brasil (PoC) • valida cadeia e CPF</div>
-                            </div>
-                        </div>
-                        <span class="cert-pill" id="certPill">@(openCert ? "Aberto" : "Abrir")</span>
-                    </button>
-
-                    <div class="collapse @(openCert ? "show" : "")" id="certCollapse">
-                        <div class="cert-body">
-
-                            @if (!string.IsNullOrWhiteSpace(certErr))
-                            {
-                                <div class="alert alert-danger py-2 small mb-3">
-                                    <div class="d-flex align-items-start gap-2">
-                                        <i class="bi bi-exclamation-triangle mt-1"></i>
-                                        <div>@certErr</div>
-                                    </div>
-                                </div>
-                            }
-                            @if (!string.IsNullOrWhiteSpace(certOk))
-                            {
-                                <div class="alert alert-success py-2 small mb-3">
-                                    <div class="d-flex align-items-start gap-2">
-                                        <i class="bi bi-check-circle mt-1"></i>
-                                        <div>@certOk</div>
-                                    </div>
-                                </div>
-                            }
-
-                            <form id="certLoginForm" method="post" action="/auth/cert">
-                                @Html.AntiForgeryToken()
-
-                                <!-- mantém o returnUrl do login padrão -->
-                                <input type="hidden" name="ReturnUrl" value="@Model?.ReturnUrl" />
-
-                                <div class="row g-2">
-                                    <div class="col-md-5">
-                                        <label class="form-label small fw-semibold">CPF</label>
-                                        <div class="input-group">
-                                            <span class="input-group-text"><i class="bi bi-credit-card-2-front"></i></span>
-                                            <input class="form-control" name="UserCpf" id="cpfCert" placeholder="000.000.000-00" inputmode="numeric" />
-                                        </div>
-                                        <div class="field-note">Informe o CPF do usuário e selecione o certificado.</div>
-                                    </div>
-
-                                    <div class="col-md-4">
-                                        <label class="form-label small fw-semibold">Certificado (.cer / .pfx)</label>
-                                        <input class="form-control" type="file" id="certFile" />
-                                        <div class="field-note">Se for .pfx, informe a senha.</div>
-                                    </div>
-
-                                    <div class="col-md-3">
-                                        <label class="form-label small fw-semibold">Senha do PFX</label>
-                                        <input class="form-control" name="PfxPassword" id="pfxpass" type="password" placeholder="(opcional)" />
-                                        <div class="field-note">Somente para .pfx.</div>
-                                    </div>
-                                </div>
-
-                                <input type="hidden" name="CertificateBase64" id="certB64" />
-
-                                <button id="certSubmitBtn" type="submit" class="btn btn-outline-light w-100 mt-3 py-2 fw-semibold">
-                                    <span class="btn-text"><i class="bi bi-shield-check me-1"></i> Validar e entrar</span>
-                                    <span class="btn-wait"><span class="spinner-border spinner-border-sm me-2"></span>Validando...</span>
+                                <button type="button"
+                                        class="btn password-toggle"
+                                        title="Mostrar/ocultar senha"
+                                        tabindex="-1"
+                                        onclick="togglePassword()">
+                                    <i class="bi bi-eye" id="passwordIcon"></i>
                                 </button>
+                            </div>
+                            <span asp-validation-for="Password" class="text-danger small"></span>
 
-                                <div id="certClientMsg" class="mt-2 small text-white-50 d-none"></div>
-                            </form>
-
+                            <div class="field-helper">
+                                <i class="bi bi-key"></i>
+                                Sua senha é protegida e validada de forma segura.
+                            </div>
                         </div>
+
+                        @if (!ViewData.ModelState.IsValid)
+                        {
+                            <div class="alert alert-danger auth-alert py-2 small mt-3 mb-0">
+                                <div class="d-flex align-items-start gap-2">
+                                    <i class="bi bi-exclamation-triangle mt-1"></i>
+                                    <div>@Html.ValidationSummary(excludePropertyErrors: true)</div>
+                                </div>
+                            </div>
+                        }
+
+                        <button id="loginBtn" type="submit" class="btn btn-login w-100 mt-3">
+                            <span class="btn-text">
+                                <i class="bi bi-box-arrow-in-right me-1"></i>
+                                Entrar no sistema
+                            </span>
+
+                            <span class="btn-wait">
+                                <span class="spinner-border spinner-border-sm me-2"></span>
+                                Entrando...
+                            </span>
+                        </button>
+
+                        <div class="login-actions">
+                            <a href="@Url.Action("ForgotPassword", "Account")">
+                                Esqueci minha senha
+                            </a>
+
+                            <span class="secure-note">
+                                <i class="bi bi-shield-lock"></i>
+                                Ambiente seguro
+                            </span>
+                        </div>
+                    </form>
+
+                    @*
+                        Acesso alternativo por certificado digital oculto por enquanto.
+                        Para reativar futuramente, remova o comentário deste bloco.
+
+                    <div class="section-divider">Acesso alternativo</div>
+
+                    <div class="cert-box">
+                        ...
+                    </div>
+                    *@
+
+                    <div class="footer-mini">
+                        InovaGED • Gestão Eletrônica de Documentos<br />
+                        LocDesk Locação de Equip. e Sol. em Info Ltda
                     </div>
                 </div>
+            </div>
+        </main>
+    </div>
+</div>
 
-            </div><!-- /card-body -->
-        </div><!-- /card -->
-    </div><!-- /wrap -->
-</div><!-- /shell -->
 @section Scripts {
     <partial name="_ValidationScriptsPartial" />
 
@@ -507,6 +1048,7 @@
         function togglePassword() {
             const input = document.getElementById('passwordInput');
             const icon = document.getElementById('passwordIcon');
+
             if (!input || !icon) return;
 
             if (input.type === 'password') {
@@ -520,19 +1062,9 @@
             }
         }
 
-        function bytesToBase64(bytes) {
-            // Evita travar em arquivos maiores (faz chunk)
-            let binary = "";
-            const chunkSize = 0x8000;
-            for (let i = 0; i < bytes.length; i += chunkSize) {
-                const chunk = bytes.subarray(i, i + chunkSize);
-                binary += String.fromCharCode.apply(null, chunk);
-            }
-            return btoa(binary);
-        }
-
         function setBtnLoading(btn, loading) {
             if (!btn) return;
+
             if (loading) {
                 btn.classList.add("is-loading");
                 btn.setAttribute("disabled", "disabled");
@@ -543,62 +1075,11 @@
         }
 
         document.addEventListener("DOMContentLoaded", () => {
-            // Loading do login normal
             const loginForm = document.getElementById("loginForm");
             const loginBtn = document.getElementById("loginBtn");
-            loginForm?.addEventListener("submit", () => setBtnLoading(loginBtn, true));
 
-            // Cert collapse pill texto
-            const certCollapse = document.getElementById("certCollapse");
-            const certPill = document.getElementById("certPill");
-            if (certCollapse && certPill) {
-                certCollapse.addEventListener('shown.bs.collapse', () => certPill.textContent = "Aberto");
-                certCollapse.addEventListener('hidden.bs.collapse', () => certPill.textContent = "Abrir");
-            }
-
-            // Cert submit corrigido (NÃO usa onsubmit async)
-            const form = document.getElementById("certLoginForm");
-            const fileInput = document.getElementById("certFile");
-            const b64Input = document.getElementById("certB64");
-            const btn = document.getElementById("certSubmitBtn");
-            const msg = document.getElementById("certClientMsg");
-
-            if (!form) return;
-
-            form.addEventListener("submit", async (e) => {
-                e.preventDefault();
-
-                if (msg) { msg.classList.add("d-none"); msg.textContent = ""; }
-
-                const f = fileInput?.files?.[0];
-                if (!f) {
-                    if (msg) {
-                        msg.textContent = "Selecione um certificado (.cer ou .pfx) antes de validar.";
-                        msg.classList.remove("d-none");
-                    } else {
-                        alert("Selecione um certificado (.cer ou .pfx).");
-                    }
-                    return;
-                }
-
-                try {
-                    setBtnLoading(btn, true);
-
-                    const buf = await f.arrayBuffer();
-                    const bytes = new Uint8Array(buf);
-                    b64Input.value = bytesToBase64(bytes);
-
-                    form.submit(); // agora sim, envia com CertificateBase64 preenchido
-                } catch (err) {
-                    console.error(err);
-                    if (msg) {
-                        msg.textContent = "Falha ao ler o certificado. Tente novamente.";
-                        msg.classList.remove("d-none");
-                    } else {
-                        alert("Falha ao ler o certificado.");
-                    }
-                    setBtnLoading(btn, false);
-                }
+            loginForm?.addEventListener("submit", () => {
+                setBtnLoading(loginBtn, true);
             });
         });
     </script>

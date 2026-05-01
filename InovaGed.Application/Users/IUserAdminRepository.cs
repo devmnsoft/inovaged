@@ -1,19 +1,27 @@
-﻿namespace InovaGed.Application.Users;
+﻿using InovaGed.Infrastructure.Users;
+
+namespace InovaGed.Application.Users;
 
 public interface IUserAdminRepository
 {
     Task<IReadOnlyList<RoleRowDto>> ListRolesAsync(Guid tenantId, CancellationToken ct);
 
-    Task<Guid> CreateUserAsync(
+    Task<ServidorUsuarioCreatedDto> CreateServidorUsuarioAsync(
         Guid tenantId,
-        string name,
-        string email,
-        string passwordHash,
-        bool isActive,
-        IReadOnlyList<Guid> roleIds,
+        CreateServidorUsuarioCommand command,
         CancellationToken ct);
 
-    Task SetActiveAsync(Guid tenantId, Guid userId, bool isActive, CancellationToken ct);
+    Task SetActiveAsync(Guid tenantId, Guid userId, bool isActive, Guid? changedBy, CancellationToken ct);
 
-    Task ResetPasswordAsync(Guid tenantId, Guid userId, string newPasswordHash, CancellationToken ct);
+    Task ResetPasswordAsync(
+        Guid tenantId,
+        Guid userId,
+        string newPasswordHash,
+        bool mustChangePassword,
+        Guid? changedBy,
+        CancellationToken ct);
+
+    Task<bool> EmailExistsAsync(Guid tenantId, string email, Guid? ignoreUserId, CancellationToken ct);
+
+    Task<bool> CpfExistsAsync(Guid tenantId, string cpf, Guid? ignoreServidorId, CancellationToken ct);
 }

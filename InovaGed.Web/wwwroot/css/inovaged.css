@@ -21,7 +21,11 @@ body {
     background: radial-gradient(circle at top, #e0f2fe 0, #eff6ff 40%, #f9fafb 100%);
 }
 
-/* ===== AUTH (LOGIN) ===== */
+/* ===== AUTH (LOGIN LEGADO) ===== */
+/*
+   Estas classes ficam apenas para telas antigas.
+   O novo Login.cshtml usa classes .login-* e controla o próprio layout.
+*/
 
 .auth-wrapper {
     min-height: 100vh;
@@ -33,7 +37,7 @@ body {
 
 .auth-card {
     width: 100%;
-    max-width: 380px;
+    max-width: none;
     background: #ffffff;
     border-radius: 1.25rem;
     padding: 1.75rem 1.75rem 1.5rem;
@@ -73,7 +77,6 @@ body {
 .auth-footer {
     text-align: center;
 }
-
 /* ===== LAYOUT APP (AUTENTICADO) ===== */
 
 .wrapper {
