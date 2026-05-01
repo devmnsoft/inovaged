@@ -74,6 +74,7 @@
                     <th class="text-end">Ações</th>
                 </tr>
             </thead>
+
             <tbody>
                 @if (!Model.Items.Any())
                 {
@@ -91,10 +92,12 @@
                             <td>
                                 <div class="fw-semibold">@item.Name</div>
                                 <div class="small text-muted">@item.Email</div>
+
                                 @if (!string.IsNullOrWhiteSpace(item.Cargo) || !string.IsNullOrWhiteSpace(item.Funcao))
                                 {
                                     <div class="small">
                                         @item.Cargo
+
                                         @if (!string.IsNullOrWhiteSpace(item.Funcao))
                                         {
                                             <span> / @item.Funcao</span>
@@ -133,9 +136,11 @@
                                     case "CONFIDENTIAL":
                                         <span class="badge text-bg-danger">Confidencial</span>
                                         break;
+
                                     case "RESTRICTED":
                                         <span class="badge text-bg-warning">Restrito</span>
                                         break;
+
                                     default:
                                         <span class="badge text-bg-success">Público</span>
                                         break;
@@ -146,10 +151,12 @@
                                     {
                                         <span class="badge text-bg-info me-1">MFA</span>
                                     }
+
                                     @if (item.CertificateRequired)
                                     {
                                         <span class="badge text-bg-primary me-1">Certificado</span>
                                     }
+
                                     @if (item.CanSignWithIcp)
                                     {
                                         <span class="badge text-bg-dark me-1">ICP</span>
@@ -187,23 +194,24 @@
 
                             <td class="text-end">
                                 <div class="btn-group">
-                                    <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
+                                    <button type="button"
+                                            class="btn btn-sm btn-outline-secondary dropdown-toggle"
+                                            data-bs-toggle="dropdown"
+                                            aria-expanded="false">
                                         Ações
                                     </button>
 
                                     <ul class="dropdown-menu dropdown-menu-end">
-                                        <li>
-                                            <form method="post" asp-action="SetActive" asp-controller="Users">
-                                                @Html.AntiForgeryToken()
-                                                <input type="hidden" name="id" value="@item.Id" />
-                                                <input type="hidden" name="active" value="@(!item.IsActive)" />
-                                                <button class="dropdown-item" type="submit">
-                                                    @(item.IsActive ? "Inativar usuário" : "Ativar usuário")
-                                                </button>
-                                            </form>
-                                        </li>
 
-                                        <li><hr class="dropdown-divider" /></li>
+                                        <li>
+                                            <a class="dropdown-item"
+                                               asp-action="Edit"
+                                               asp-controller="Users"
+                                               asp-route-id="@item.Id">
+                                                <i class="bi bi-pencil-square me-1"></i>
+                                                Editar cadastro
+                                            </a>
+                                        </li>
 
                                         <li>
                                             <button type="button"
@@ -212,8 +220,37 @@
                                                     data-bs-target="#resetPasswordModal"
                                                     data-user-id="@item.Id"
                                                     data-user-name="@item.Name">
+                                                <i class="bi bi-key me-1"></i>
                                                 Redefinir senha
                                             </button>
+                                        </li>
+
+                                        <li><hr class="dropdown-divider" /></li>
+
+                                        <li>
+                                            <form method="post" asp-action="SetActive" asp-controller="Users">
+                                                @Html.AntiForgeryToken()
+
+                                                <input type="hidden" name="id" value="@item.Id" />
+                                                <input type="hidden" name="active" value="@(!item.IsActive)" />
+
+                                                <button class="dropdown-item" type="submit">
+                                                    @if (item.IsActive)
+                                                    {
+                                                        <span>
+                                                            <i class="bi bi-person-x me-1"></i>
+                                                            Inativar usuário
+                                                        </span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span>
+                                                            <i class="bi bi-person-check me-1"></i>
+                                                            Ativar usuário
+                                                        </span>
+                                                    }
+                                                </button>
+                                            </form>
                                         </li>
                                     </ul>
                                 </div>
@@ -242,7 +279,11 @@
             @Html.AntiForgeryToken()
 
             <div class="modal-header">
-                <h5 class="modal-title">Redefinir senha</h5>
+                <h5 class="modal-title">
+                    <i class="bi bi-key me-1"></i>
+                    Redefinir senha
+                </h5>
+
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
             </div>
 
@@ -260,16 +301,29 @@
 
                 <div class="mb-3">
                     <label class="form-label">Nova senha</label>
-                    <input name="newPassword" type="password" class="form-control" minlength="8" required />
+                    <input name="newPassword"
+                           type="password"
+                           class="form-control"
+                           minlength="8"
+                           required />
                 </div>
 
                 <div class="mb-3">
                     <label class="form-label">Confirmar nova senha</label>
-                    <input name="confirmPassword" type="password" class="form-control" minlength="8" required />
+                    <input name="confirmPassword"
+                           type="password"
+                           class="form-control"
+                           minlength="8"
+                           required />
                 </div>
 
                 <div class="form-check">
-                    <input name="mustChangePassword" value="true" class="form-check-input" type="checkbox" checked />
+                    <input name="mustChangePassword"
+                           value="true"
+                           class="form-check-input"
+                           type="checkbox"
+                           checked />
+
                     <label class="form-check-label">
                         Obrigar troca de senha no próximo acesso
                     </label>
@@ -277,11 +331,14 @@
             </div>
 
             <div class="modal-footer">
-                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
+                <button type="button"
+                        class="btn btn-outline-secondary"
+                        data-bs-dismiss="modal">
                     Cancelar
                 </button>
 
                 <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-check2-circle me-1"></i>
                     Redefinir senha
                 </button>
             </div>
@@ -296,6 +353,11 @@
         if (resetModal) {
             resetModal.addEventListener('show.bs.modal', event => {
                 const button = event.relatedTarget;
+
+                if (!button) {
+                    return;
+                }
+
                 const userId = button.getAttribute('data-user-id');
                 const userName = button.getAttribute('data-user-name');
 

@@ -1,0 +1,342 @@
+﻿@model InovaGed.Web.Models.Users.EditUserVM
+
+@{
+    ViewData["Title"] = "Editar Servidor / Usuário";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h4 class="mb-0">
+            <i class="bi bi-pencil-square me-2"></i>@ViewData["Title"]
+        </h4>
+        <div class="text-muted small">
+            Atualização do cadastro institucional, acesso, perfis, sigilo e ICP-Brasil.
+        </div>
+    </div>
+
+    <a class="btn btn-outline-secondary" href="@Url.Action("Index", "Users")">
+        <i class="bi bi-arrow-left me-1"></i> Voltar
+    </a>
+</div>
+
+@if (TempData["Success"] is string ok && !string.IsNullOrWhiteSpace(ok))
+{
+    <div class="alert alert-success">@ok</div>
+}
+
+@if (TempData["Error"] is string erro && !string.IsNullOrWhiteSpace(erro))
+{
+    <div class="alert alert-danger">@erro</div>
+}
+
+<div class="card shadow-sm">
+    <div class="card-header bg-white">
+        <ul class="nav nav-tabs card-header-tabs" id="userTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="dados-tab" data-bs-toggle="tab" data-bs-target="#dados" type="button" role="tab">
+                    <i class="bi bi-person-vcard me-1"></i> Dados pessoais
+                </button>
+            </li>
+
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="funcionais-tab" data-bs-toggle="tab" data-bs-target="#funcionais" type="button" role="tab">
+                    <i class="bi bi-building me-1"></i> Dados funcionais
+                </button>
+            </li>
+
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="acesso-tab" data-bs-toggle="tab" data-bs-target="#acesso" type="button" role="tab">
+                    <i class="bi bi-key me-1"></i> Acesso
+                </button>
+            </li>
+
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="perfis-tab" data-bs-toggle="tab" data-bs-target="#perfis" type="button" role="tab">
+                    <i class="bi bi-shield-lock me-1"></i> Perfis e sigilo
+                </button>
+            </li>
+
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="icp-tab" data-bs-toggle="tab" data-bs-target="#icp" type="button" role="tab">
+                    <i class="bi bi-patch-check me-1"></i> ICP-Brasil
+                </button>
+            </li>
+        </ul>
+    </div>
+
+    <div class="card-body">
+        <form asp-action="Edit" asp-controller="Users" asp-route-id="@Model.UserId" method="post" autocomplete="off">
+            @Html.AntiForgeryToken()
+
+            <input asp-for="UserId" type="hidden" />
+            <input asp-for="ServidorId" type="hidden" />
+
+            <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+
+            <div class="tab-content" id="userTabsContent">
+                <div class="tab-pane fade show active" id="dados" role="tabpanel" aria-labelledby="dados-tab">
+                    <div class="row g-3">
+                        <div class="col-md-8">
+                            <label asp-for="NomeCompleto" class="form-label"></label>
+                            <input asp-for="NomeCompleto" class="form-control" />
+                            <span asp-validation-for="NomeCompleto" class="text-danger"></span>
+                        </div>
+
+                        <div class="col-md-4">
+                            <label asp-for="Cpf" class="form-label"></label>
+                            <input asp-for="Cpf" class="form-control" placeholder="000.000.000-00" />
+                            <span asp-validation-for="Cpf" class="text-danger"></span>
+                        </div>
+
+                        <div class="col-md-4">
+                            <label asp-for="Rg" class="form-label"></label>
+                            <input asp-for="Rg" class="form-control" />
+                            <span asp-validation-for="Rg" class="text-danger"></span>
+                        </div>
+
+                        <div class="col-md-4">
+                            <label asp-for="DataNascimento" class="form-label"></label>
+                            <input asp-for="DataNascimento" type="date" class="form-control" />
+                            <span asp-validation-for="DataNascimento" class="text-danger"></span>
+                        </div>
+
+                        <div class="col-md-4">
+                            <label asp-for="Celular" class="form-label"></label>
+                            <input asp-for="Celular" class="form-control" />
+                            <span asp-validation-for="Celular" class="text-danger"></span>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label asp-for="EmailInstitucional" class="form-label"></label>
+                            <input asp-for="EmailInstitucional" class="form-control" />
+                            <span asp-validation-for="EmailInstitucional" class="text-danger"></span>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label asp-for="EmailAlternativo" class="form-label"></label>
+                            <input asp-for="EmailAlternativo" class="form-control" />
+                            <span asp-validation-for="EmailAlternativo" class="text-danger"></span>
+                        </div>
+
+                        <div class="col-md-4">
+                            <label asp-for="Telefone" class="form-label"></label>
+                            <input asp-for="Telefone" class="form-control" />
+                            <span asp-validation-for="Telefone" class="text-danger"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tab-pane fade" id="funcionais" role="tabpanel" aria-labelledby="funcionais-tab">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label asp-for="Matricula" class="form-label"></label>
+                            <input asp-for="Matricula" class="form-control" />
+                            <span asp-validation-for="Matricula" class="text-danger"></span>
+                        </div>
+
+                        <div class="col-md-4">
+                            <label asp-for="Cargo" class="form-label"></label>
+                            <input asp-for="Cargo" class="form-control" />
+                            <span asp-validation-for="Cargo" class="text-danger"></span>
+                        </div>
+
+                        <div class="col-md-4">
+                            <label asp-for="Funcao" class="form-label"></label>
+                            <input asp-for="Funcao" class="form-control" />
+                            <span asp-validation-for="Funcao" class="text-danger"></span>
+                        </div>
+
+                        <div class="col-md-4">
+                            <label asp-for="Setor" class="form-label"></label>
+                            <input asp-for="Setor" class="form-control" />
+                            <span asp-validation-for="Setor" class="text-danger"></span>
+                        </div>
+
+                        <div class="col-md-4">
+                            <label asp-for="Lotacao" class="form-label"></label>
+                            <input asp-for="Lotacao" class="form-control" />
+                            <span asp-validation-for="Lotacao" class="text-danger"></span>
+                        </div>
+
+                        <div class="col-md-4">
+                            <label asp-for="Unidade" class="form-label"></label>
+                            <input asp-for="Unidade" class="form-control" />
+                            <span asp-validation-for="Unidade" class="text-danger"></span>
+                        </div>
+
+                        <div class="col-md-4">
+                            <label asp-for="TipoVinculo" class="form-label"></label>
+                            <input asp-for="TipoVinculo" class="form-control" />
+                            <span asp-validation-for="TipoVinculo" class="text-danger"></span>
+                        </div>
+
+                        <div class="col-md-4">
+                            <label asp-for="DataAdmissao" class="form-label"></label>
+                            <input asp-for="DataAdmissao" type="date" class="form-control" />
+                            <span asp-validation-for="DataAdmissao" class="text-danger"></span>
+                        </div>
+
+                        <div class="col-md-4">
+                            <label asp-for="SituacaoFuncional" class="form-label"></label>
+                            <select asp-for="SituacaoFuncional" class="form-select">
+                                @foreach (var s in Model.SituacoesFuncionais)
+                                {
+                                    <option value="@s.Value">@s.Text</option>
+                                }
+                            </select>
+                            <span asp-validation-for="SituacaoFuncional" class="text-danger"></span>
+                        </div>
+
+                        <div class="col-md-3">
+                            <label asp-for="ConselhoProfissional" class="form-label"></label>
+                            <input asp-for="ConselhoProfissional" class="form-control" />
+                            <span asp-validation-for="ConselhoProfissional" class="text-danger"></span>
+                        </div>
+
+                        <div class="col-md-3">
+                            <label asp-for="NumeroConselho" class="form-label"></label>
+                            <input asp-for="NumeroConselho" class="form-control" />
+                            <span asp-validation-for="NumeroConselho" class="text-danger"></span>
+                        </div>
+
+                        <div class="col-md-2">
+                            <label asp-for="UfConselho" class="form-label"></label>
+                            <input asp-for="UfConselho" class="form-control" maxlength="2" />
+                            <span asp-validation-for="UfConselho" class="text-danger"></span>
+                        </div>
+
+                        <div class="col-md-4">
+                            <label asp-for="Especialidade" class="form-label"></label>
+                            <input asp-for="Especialidade" class="form-control" />
+                            <span asp-validation-for="Especialidade" class="text-danger"></span>
+                        </div>
+
+                        <div class="col-12">
+                            <label asp-for="Observacao" class="form-label"></label>
+                            <textarea asp-for="Observacao" rows="3" class="form-control"></textarea>
+                            <span asp-validation-for="Observacao" class="text-danger"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tab-pane fade" id="acesso" role="tabpanel" aria-labelledby="acesso-tab">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label asp-for="EmailLogin" class="form-label"></label>
+                            <input asp-for="EmailLogin" class="form-control" />
+                            <span asp-validation-for="EmailLogin" class="text-danger"></span>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label asp-for="UserName" class="form-label"></label>
+                            <input asp-for="UserName" class="form-control" />
+                            <span asp-validation-for="UserName" class="text-danger"></span>
+                        </div>
+
+                        <div class="col-md-4">
+                            <div class="form-check mt-4">
+                                <input class="form-check-input" asp-for="IsActive" />
+                                <label class="form-check-label" asp-for="IsActive"></label>
+                            </div>
+                        </div>
+
+                        <div class="col-md-4">
+                            <div class="form-check mt-4">
+                                <input class="form-check-input" asp-for="MustChangePassword" />
+                                <label class="form-check-label" asp-for="MustChangePassword"></label>
+                            </div>
+                        </div>
+
+                        <div class="col-md-4">
+                            <div class="form-check mt-4">
+                                <input class="form-check-input" asp-for="MfaEnabled" />
+                                <label class="form-check-label" asp-for="MfaEnabled"></label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tab-pane fade" id="perfis" role="tabpanel" aria-labelledby="perfis-tab">
+                    <div class="row g-3">
+                        <div class="col-md-7">
+                            <label class="form-label">Perfis / Autoridades</label>
+                            <select asp-for="SelectedRoleIds" class="form-select" multiple size="10">
+                                @foreach (var r in Model.AvailableRoles)
+                                {
+                                    <option value="@r.Id">@r.Name</option>
+                                }
+                            </select>
+                            <div class="form-text">
+                                Segure CTRL para selecionar múltiplos perfis.
+                            </div>
+                            <span asp-validation-for="SelectedRoleIds" class="text-danger"></span>
+                        </div>
+
+                        <div class="col-md-5">
+                            <label asp-for="SecurityLevel" class="form-label"></label>
+                            <select asp-for="SecurityLevel" class="form-select">
+                                @foreach (var s in Model.SecurityLevels)
+                                {
+                                    <option value="@s.Value">@s.Text</option>
+                                }
+                            </select>
+                            <span asp-validation-for="SecurityLevel" class="text-danger"></span>
+
+                            <div class="alert alert-info mt-3">
+                                <strong>Regra de sigilo:</strong><br />
+                                O nível informado define o limite máximo de documentos/classes que o usuário poderá acessar,
+                                respeitando também seus perfis e permissões.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tab-pane fade" id="icp" role="tabpanel" aria-labelledby="icp-tab">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" asp-for="CertificateRequired" />
+                                <label class="form-check-label" asp-for="CertificateRequired"></label>
+                            </div>
+                        </div>
+
+                        <div class="col-md-4">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" asp-for="CanSignWithIcp" />
+                                <label class="form-check-label" asp-for="CanSignWithIcp"></label>
+                            </div>
+                        </div>
+
+                        <div class="col-md-4">
+                            <div class="alert alert-warning mb-0">
+                                O CPF do cadastro será usado para validação CPF x certificado digital ICP-Brasil.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <hr class="my-4" />
+
+            <div class="d-flex justify-content-between align-items-center">
+                <div class="text-muted small">
+                    Todas as alterações serão registradas em auditoria.
+                </div>
+
+                <div class="d-flex gap-2">
+                    <a class="btn btn-outline-secondary" href="@Url.Action("Index", "Users")">
+                        Cancelar
+                    </a>
+
+                    <button class="btn btn-primary" type="submit">
+                        <i class="bi bi-check2-circle me-1"></i> Salvar alterações
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

@@ -3,6 +3,7 @@ using InovaGed.Application.Users;
 using InovaGed.Infrastructure.Security;
 using InovaGed.Web.Models.Users;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Npgsql;
 
@@ -279,7 +280,8 @@ public sealed class UsersController : Controller
             return RedirectToAction(nameof(Index));
         }
 
-        var hash = Pbkdf2PasswordHasher.Hash(newPassword);
+        var hasher = new PasswordHasher<object>();
+        var hash = hasher.HashPassword(null!, newPassword);
 
         await _repo.ResetPasswordAsync(
             _currentUser.TenantId,
@@ -292,6 +294,248 @@ public sealed class UsersController : Controller
         TempData["Success"] = "Senha redefinida com sucesso.";
 
         return RedirectToAction(nameof(Index));
+    }
+
+    [HttpGet("Edit/{id:guid}")]
+    public async Task<IActionResult> Edit(Guid id, CancellationToken ct)
+    {
+        if (!_currentUser.IsAuthenticated)
+            return Unauthorized();
+
+        var dto = await _repo.GetForEditAsync(_currentUser.TenantId, id, ct);
+
+        if (dto is null)
+        {
+            TempData["Error"] = "Usuário não encontrado.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var vm = new EditUserVM
+        {
+            UserId = dto.UserId,
+            ServidorId = dto.ServidorId,
+            NomeCompleto = dto.NomeCompleto,
+            Cpf = dto.Cpf,
+            Rg = dto.Rg,
+            DataNascimento = dto.DataNascimento,
+            EmailInstitucional = dto.EmailInstitucional,
+            EmailAlternativo = dto.EmailAlternativo,
+            Telefone = dto.Telefone,
+            Celular = dto.Celular,
+            Matricula = dto.Matricula,
+            Cargo = dto.Cargo,
+            Funcao = dto.Funcao,
+            Setor = dto.Setor,
+            Lotacao = dto.Lotacao,
+            Unidade = dto.Unidade,
+            TipoVinculo = dto.TipoVinculo,
+            ConselhoProfissional = dto.ConselhoProfissional,
+            NumeroConselho = dto.NumeroConselho,
+            UfConselho = dto.UfConselho,
+            Especialidade = dto.Especialidade,
+            DataAdmissao = dto.DataAdmissao,
+            SituacaoFuncional = dto.SituacaoFuncional,
+            Observacao = dto.Observacao,
+            EmailLogin = dto.EmailLogin,
+            UserName = dto.UserName,
+            IsActive = dto.IsActive,
+            MustChangePassword = dto.MustChangePassword,
+            MfaEnabled = dto.MfaEnabled,
+            CertificateRequired = dto.CertificateRequired,
+            CanSignWithIcp = dto.CanSignWithIcp,
+            SecurityLevel = dto.SecurityLevel,
+            SelectedRoleIds = dto.RoleIds
+        };
+
+        await ReloadRolesAsync(vm, ct);
+
+        ViewData["Title"] = "Editar Servidor / Usuário";
+        ViewData["Subtitle"] = "Atualização de cadastro, acesso, perfis, sigilo e ICP-Brasil";
+
+        return View(vm);
+    }
+
+    [HttpPost("Edit/{id:guid}")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Edit(Guid id, [FromForm] EditUserVM vm, CancellationToken ct)
+    {
+        if (!_currentUser.IsAuthenticated)
+            return Unauthorized();
+
+        if (id != vm.UserId)
+        {
+            TempData["Error"] = "Identificador do usuário inválido.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        NormalizeEditVm(vm);
+        ValidateEditVm(vm);
+
+        if (!ModelState.IsValid)
+        {
+            await ReloadRolesAsync(vm, ct);
+            return View(vm);
+        }
+
+        var tenantId = _currentUser.TenantId;
+
+        try
+        {
+            if (await _repo.CpfExistsAsync(tenantId, vm.Cpf, vm.ServidorId, ct))
+            {
+                ModelState.AddModelError(nameof(vm.Cpf), "Já existe outro servidor ativo cadastrado com este CPF.");
+                await ReloadRolesAsync(vm, ct);
+                return View(vm);
+            }
+
+            if (await _repo.EmailExistsAsync(tenantId, vm.EmailLogin, vm.UserId, ct))
+            {
+                ModelState.AddModelError(nameof(vm.EmailLogin), "Já existe outro usuário com este e-mail de login.");
+                await ReloadRolesAsync(vm, ct);
+                return View(vm);
+            }
+
+            var command = new UpdateServidorUsuarioCommand
+            {
+                UserId = vm.UserId,
+                ServidorId = vm.ServidorId,
+
+                NomeCompleto = vm.NomeCompleto,
+                Cpf = vm.Cpf,
+                Rg = vm.Rg,
+                DataNascimento = vm.DataNascimento,
+
+                EmailInstitucional = vm.EmailInstitucional,
+                EmailAlternativo = vm.EmailAlternativo,
+                Telefone = vm.Telefone,
+                Celular = vm.Celular,
+
+                Matricula = vm.Matricula,
+                Cargo = vm.Cargo,
+                Funcao = vm.Funcao,
+                Setor = vm.Setor,
+                Lotacao = vm.Lotacao,
+                Unidade = vm.Unidade,
+                TipoVinculo = vm.TipoVinculo,
+
+                ConselhoProfissional = vm.ConselhoProfissional,
+                NumeroConselho = vm.NumeroConselho,
+                UfConselho = vm.UfConselho,
+                Especialidade = vm.Especialidade,
+
+                DataAdmissao = vm.DataAdmissao,
+                SituacaoFuncional = vm.SituacaoFuncional,
+                Observacao = vm.Observacao,
+
+                EmailLogin = vm.EmailLogin,
+                UserName = vm.UserName,
+
+                IsActive = vm.IsActive,
+                MustChangePassword = vm.MustChangePassword,
+                MfaEnabled = vm.MfaEnabled,
+                CertificateRequired = vm.CertificateRequired,
+                CanSignWithIcp = vm.CanSignWithIcp,
+                SecurityLevel = vm.SecurityLevel,
+
+                RoleIds = vm.SelectedRoleIds
+                    .Where(x => x != Guid.Empty)
+                    .Distinct()
+                    .ToList(),
+
+                UpdatedBy = _currentUser.UserId,
+                IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString(),
+                UserAgent = Request.Headers.UserAgent.ToString(),
+                CorrelationId = HttpContext.TraceIdentifier
+            };
+
+            await _repo.UpdateServidorUsuarioAsync(tenantId, command, ct);
+
+            TempData["Success"] = "Cadastro do servidor/usuário atualizado com sucesso.";
+
+            return RedirectToAction(nameof(Index));
+        }
+        catch (PostgresException pex) when (pex.SqlState == "23505")
+        {
+            _logger.LogWarning(pex, "Duplicidade ao editar usuário | Tenant={TenantId} UserId={UserId}", tenantId, vm.UserId);
+
+            ModelState.AddModelError("", "Já existe cadastro com o mesmo CPF, matrícula ou e-mail.");
+            await ReloadRolesAsync(vm, ct);
+            return View(vm);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro ao editar usuário | UserId={UserId}", vm.UserId);
+
+            TempData["Error"] = "Erro ao editar usuário. Verifique os logs.";
+            await ReloadRolesAsync(vm, ct);
+            return View(vm);
+        }
+    }
+
+    private async Task ReloadRolesAsync(EditUserVM vm, CancellationToken ct)
+    {
+        var roles = await _repo.ListRolesAsync(_currentUser.TenantId, ct);
+
+        vm.AvailableRoles = roles
+            .Select(r => new EditUserVM.RoleItem
+            {
+                Id = r.Id,
+                Name = r.Name
+            })
+            .ToList();
+    }
+
+    private void ValidateEditVm(EditUserVM vm)
+    {
+        if (vm.UserId == Guid.Empty)
+            ModelState.AddModelError(nameof(vm.UserId), "Usuário inválido.");
+
+        if (vm.ServidorId == Guid.Empty)
+            ModelState.AddModelError(nameof(vm.ServidorId), "Servidor inválido.");
+
+        if (string.IsNullOrWhiteSpace(vm.Cpf) || OnlyDigits(vm.Cpf).Length != 11)
+            ModelState.AddModelError(nameof(vm.Cpf), "CPF inválido. Informe 11 dígitos.");
+
+        if (string.IsNullOrWhiteSpace(vm.EmailLogin))
+            ModelState.AddModelError(nameof(vm.EmailLogin), "Informe o e-mail de login.");
+
+        if (vm.SelectedRoleIds is null || vm.SelectedRoleIds.Count == 0)
+            ModelState.AddModelError(nameof(vm.SelectedRoleIds), "Selecione ao menos um perfil de acesso.");
+    }
+
+    private static void NormalizeEditVm(EditUserVM vm)
+    {
+        vm.NomeCompleto = Trim(vm.NomeCompleto);
+        vm.Cpf = FormatCpf(vm.Cpf);
+        vm.Rg = TrimOrNull(vm.Rg);
+        vm.EmailInstitucional = TrimLowerOrNull(vm.EmailInstitucional);
+        vm.EmailAlternativo = TrimLowerOrNull(vm.EmailAlternativo);
+        vm.EmailLogin = TrimLowerOrNull(vm.EmailLogin) ?? "";
+        vm.UserName = TrimOrNull(vm.UserName);
+        vm.Telefone = TrimOrNull(vm.Telefone);
+        vm.Celular = TrimOrNull(vm.Celular);
+        vm.Matricula = TrimOrNull(vm.Matricula);
+        vm.Cargo = TrimOrNull(vm.Cargo);
+        vm.Funcao = TrimOrNull(vm.Funcao);
+        vm.Setor = TrimOrNull(vm.Setor);
+        vm.Lotacao = TrimOrNull(vm.Lotacao);
+        vm.Unidade = TrimOrNull(vm.Unidade);
+        vm.TipoVinculo = TrimOrNull(vm.TipoVinculo);
+        vm.ConselhoProfissional = TrimOrNull(vm.ConselhoProfissional);
+        vm.NumeroConselho = TrimOrNull(vm.NumeroConselho);
+        vm.UfConselho = TrimOrNull(vm.UfConselho)?.ToUpperInvariant();
+        vm.Especialidade = TrimOrNull(vm.Especialidade);
+
+        vm.SituacaoFuncional = string.IsNullOrWhiteSpace(vm.SituacaoFuncional)
+            ? "ATIVO"
+            : vm.SituacaoFuncional.Trim().ToUpperInvariant();
+
+        vm.SecurityLevel = string.IsNullOrWhiteSpace(vm.SecurityLevel)
+            ? "PUBLIC"
+            : vm.SecurityLevel.Trim().ToUpperInvariant();
+
+        if (string.IsNullOrWhiteSpace(vm.UserName))
+            vm.UserName = vm.EmailLogin;
     }
 
     private async Task<CreateUserVM> BuildCreateVmAsync(CreateUserVM vm, CancellationToken ct)

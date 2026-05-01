@@ -610,4 +610,282 @@ SELECT EXISTS (
             _ => "PUBLIC"
         };
     }
+
+    public async Task<UserEditDto?> GetForEditAsync(
+    Guid tenantId,
+    Guid userId,
+    CancellationToken ct)
+    {
+        const string sql = @"
+SELECT
+    u.id                         AS ""UserId"",
+    s.id                         AS ""ServidorId"",
+    s.nome_completo              AS ""NomeCompleto"",
+    s.cpf                        AS ""Cpf"",
+    s.rg                         AS ""Rg"",
+    s.data_nascimento            AS ""DataNascimento"",
+    s.email_institucional        AS ""EmailInstitucional"",
+    s.email_alternativo          AS ""EmailAlternativo"",
+    s.telefone                   AS ""Telefone"",
+    s.celular                    AS ""Celular"",
+    s.matricula                  AS ""Matricula"",
+    s.cargo                      AS ""Cargo"",
+    s.funcao                     AS ""Funcao"",
+    s.setor                      AS ""Setor"",
+    s.lotacao                    AS ""Lotacao"",
+    s.unidade                    AS ""Unidade"",
+    s.tipo_vinculo               AS ""TipoVinculo"",
+    s.conselho_profissional      AS ""ConselhoProfissional"",
+    s.numero_conselho            AS ""NumeroConselho"",
+    s.uf_conselho                AS ""UfConselho"",
+    s.especialidade              AS ""Especialidade"",
+    s.data_admissao              AS ""DataAdmissao"",
+    s.situacao_funcional         AS ""SituacaoFuncional"",
+    s.observacao                 AS ""Observacao"",
+    u.email                      AS ""EmailLogin"",
+    u.user_name                  AS ""UserName"",
+    u.is_active                  AS ""IsActive"",
+    u.must_change_password       AS ""MustChangePassword"",
+    u.mfa_enabled                AS ""MfaEnabled"",
+    u.certificate_required       AS ""CertificateRequired"",
+    u.can_sign_with_icp          AS ""CanSignWithIcp"",
+    u.security_level             AS ""SecurityLevel""
+FROM ged.app_user u
+JOIN ged.servidor s
+     ON s.id = u.servidor_id
+    AND s.tenant_id = u.tenant_id
+WHERE u.tenant_id = @TenantId
+  AND u.id = @UserId
+  AND u.deleted_at_utc IS NULL
+  AND s.reg_status = 'A'
+LIMIT 1;
+";
+
+        const string rolesSql = @"
+SELECT role_id
+FROM ged.user_role
+WHERE user_id = @UserId;
+";
+
+        await using var con = await _db.OpenAsync(ct);
+
+        var dto = await con.QueryFirstOrDefaultAsync<UserEditDto>(
+            new CommandDefinition(
+                sql,
+                new { TenantId = tenantId, UserId = userId },
+                cancellationToken: ct));
+
+        if (dto is null)
+            return null;
+
+        var roles = await con.QueryAsync<Guid>(
+            new CommandDefinition(
+                rolesSql,
+                new { UserId = userId },
+                cancellationToken: ct));
+
+        dto.RoleIds = roles.ToList();
+
+        return dto;
+    }
+
+    public async Task UpdateServidorUsuarioAsync(
+    Guid tenantId,
+    UpdateServidorUsuarioCommand command,
+    CancellationToken ct)
+    {
+        const string updateServidorSql = @"
+UPDATE ged.servidor
+SET
+    nome_completo = @NomeCompleto,
+    cpf = @Cpf,
+    rg = @Rg,
+    data_nascimento = @DataNascimento,
+    email_institucional = @EmailInstitucional,
+    email_alternativo = @EmailAlternativo,
+    telefone = @Telefone,
+    celular = @Celular,
+    matricula = @Matricula,
+    cargo = @Cargo,
+    funcao = @Funcao,
+    setor = @Setor,
+    lotacao = @Lotacao,
+    unidade = @Unidade,
+    tipo_vinculo = @TipoVinculo,
+    conselho_profissional = @ConselhoProfissional,
+    numero_conselho = @NumeroConselho,
+    uf_conselho = @UfConselho,
+    especialidade = @Especialidade,
+    data_admissao = @DataAdmissao,
+    situacao_funcional = @SituacaoFuncional,
+    observacao = @Observacao,
+    updated_by = @UpdatedBy,
+    updated_at = now()
+WHERE tenant_id = @TenantId
+  AND id = @ServidorId
+  AND reg_status = 'A';
+";
+
+        const string updateUserSql = @"
+UPDATE ged.app_user
+SET
+    name = @NomeCompleto,
+    email = @EmailLogin,
+    normalized_email = upper(@EmailLogin),
+    user_name = @UserName,
+    normalized_user_name = upper(@UserName),
+    phone_number = @PhoneNumber,
+    is_active = @IsActive,
+    must_change_password = @MustChangePassword,
+    mfa_enabled = @MfaEnabled,
+    certificate_required = @CertificateRequired,
+    can_sign_with_icp = @CanSignWithIcp,
+    security_level = @SecurityLevel::ged.security_level,
+    updated_at_utc = now()
+WHERE tenant_id = @TenantId
+  AND id = @UserId
+  AND servidor_id = @ServidorId
+  AND deleted_at_utc IS NULL;
+";
+
+        const string deleteRolesSql = @"
+DELETE FROM ged.user_role
+WHERE user_id = @UserId;
+";
+
+        const string insertRoleSql = @"
+INSERT INTO ged.user_role (user_id, role_id)
+VALUES (@UserId, @RoleId)
+ON CONFLICT DO NOTHING;
+";
+
+        const string auditSql = @"
+SELECT ged.audit_user_security_event(
+    @TenantId,
+    @UserId,
+    @ServidorId,
+    'USER_UPDATE',
+    'Cadastro de servidor/usuário atualizado.',
+    @UpdatedBy,
+    @IpAddress,
+    @UserAgent,
+    @CorrelationId,
+    @Data::jsonb
+);
+";
+
+        await using var con = await _db.OpenAsync(ct);
+        await using var tx = await con.BeginTransactionAsync(ct);
+
+        var emailLogin = TrimLowerOrNull(command.EmailLogin) ?? "";
+        var userName = TrimOrNull(command.UserName) ?? emailLogin;
+
+        await con.ExecuteAsync(
+            new CommandDefinition(
+                updateServidorSql,
+                new
+                {
+                    TenantId = tenantId,
+                    command.ServidorId,
+                    NomeCompleto = command.NomeCompleto.Trim(),
+                    Cpf = NormalizeCpf(command.Cpf),
+                    Rg = TrimOrNull(command.Rg),
+                    command.DataNascimento,
+                    EmailInstitucional = TrimLowerOrNull(command.EmailInstitucional),
+                    EmailAlternativo = TrimLowerOrNull(command.EmailAlternativo),
+                    Telefone = TrimOrNull(command.Telefone),
+                    Celular = TrimOrNull(command.Celular),
+                    Matricula = TrimOrNull(command.Matricula),
+                    Cargo = TrimOrNull(command.Cargo),
+                    Funcao = TrimOrNull(command.Funcao),
+                    Setor = TrimOrNull(command.Setor),
+                    Lotacao = TrimOrNull(command.Lotacao),
+                    Unidade = TrimOrNull(command.Unidade),
+                    TipoVinculo = TrimOrNull(command.TipoVinculo),
+                    ConselhoProfissional = TrimOrNull(command.ConselhoProfissional),
+                    NumeroConselho = TrimOrNull(command.NumeroConselho),
+                    UfConselho = TrimUpperOrNull(command.UfConselho),
+                    Especialidade = TrimOrNull(command.Especialidade),
+                    command.DataAdmissao,
+                    SituacaoFuncional = string.IsNullOrWhiteSpace(command.SituacaoFuncional)
+                        ? "ATIVO"
+                        : command.SituacaoFuncional.Trim().ToUpperInvariant(),
+                    Observacao = TrimOrNull(command.Observacao),
+                    command.UpdatedBy
+                },
+                transaction: tx,
+                cancellationToken: ct));
+
+        await con.ExecuteAsync(
+            new CommandDefinition(
+                updateUserSql,
+                new
+                {
+                    TenantId = tenantId,
+                    command.UserId,
+                    command.ServidorId,
+                    NomeCompleto = command.NomeCompleto.Trim(),
+                    EmailLogin = emailLogin,
+                    UserName = userName,
+                    PhoneNumber = TrimOrNull(command.Celular) ?? TrimOrNull(command.Telefone),
+                    command.IsActive,
+                    command.MustChangePassword,
+                    command.MfaEnabled,
+                    command.CertificateRequired,
+                    command.CanSignWithIcp,
+                    SecurityLevel = NormalizeSecurityLevel(command.SecurityLevel)
+                },
+                transaction: tx,
+                cancellationToken: ct));
+
+        await con.ExecuteAsync(
+            new CommandDefinition(
+                deleteRolesSql,
+                new { command.UserId },
+                transaction: tx,
+                cancellationToken: ct));
+
+        foreach (var roleId in command.RoleIds.Where(x => x != Guid.Empty).Distinct())
+        {
+            await con.ExecuteAsync(
+                new CommandDefinition(
+                    insertRoleSql,
+                    new
+                    {
+                        command.UserId,
+                        RoleId = roleId
+                    },
+                    transaction: tx,
+                    cancellationToken: ct));
+        }
+
+        await con.ExecuteAsync(
+            new CommandDefinition(
+                auditSql,
+                new
+                {
+                    TenantId = tenantId,
+                    command.UserId,
+                    command.ServidorId,
+                    command.UpdatedBy,
+                    command.IpAddress,
+                    command.UserAgent,
+                    command.CorrelationId,
+                    Data = System.Text.Json.JsonSerializer.Serialize(new
+                    {
+                        command.NomeCompleto,
+                        Cpf = NormalizeCpf(command.Cpf),
+                        command.Matricula,
+                        command.Setor,
+                        command.Cargo,
+                        command.Funcao,
+                        command.SecurityLevel,
+                        Roles = command.RoleIds
+                    })
+                },
+                transaction: tx,
+                cancellationToken: ct));
+
+        await tx.CommitAsync(ct);
+    }
 }

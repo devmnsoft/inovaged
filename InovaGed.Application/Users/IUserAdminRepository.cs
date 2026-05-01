@@ -11,6 +11,16 @@ public interface IUserAdminRepository
         CreateServidorUsuarioCommand command,
         CancellationToken ct);
 
+    Task<UserEditDto?> GetForEditAsync(
+        Guid tenantId,
+        Guid userId,
+        CancellationToken ct);
+
+    Task UpdateServidorUsuarioAsync(
+        Guid tenantId,
+        UpdateServidorUsuarioCommand command,
+        CancellationToken ct);
+
     Task SetActiveAsync(Guid tenantId, Guid userId, bool isActive, Guid? changedBy, CancellationToken ct);
 
     Task ResetPasswordAsync(
