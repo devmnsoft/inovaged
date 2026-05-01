@@ -3,7 +3,7 @@
 public sealed class UpdateServidorUsuarioCommand
 {
     public Guid UserId { get; set; }
-    public Guid ServidorId { get; set; }
+    public Guid? ServidorId { get; set; }
 
     public string NomeCompleto { get; set; } = "";
     public string Cpf { get; set; } = "";

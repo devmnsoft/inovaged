@@ -314,14 +314,17 @@ public sealed class UsersController : Controller
         {
             UserId = dto.UserId,
             ServidorId = dto.ServidorId,
+
             NomeCompleto = dto.NomeCompleto,
             Cpf = dto.Cpf,
             Rg = dto.Rg,
             DataNascimento = dto.DataNascimento,
+
             EmailInstitucional = dto.EmailInstitucional,
             EmailAlternativo = dto.EmailAlternativo,
             Telefone = dto.Telefone,
             Celular = dto.Celular,
+
             Matricula = dto.Matricula,
             Cargo = dto.Cargo,
             Funcao = dto.Funcao,
@@ -329,21 +332,26 @@ public sealed class UsersController : Controller
             Lotacao = dto.Lotacao,
             Unidade = dto.Unidade,
             TipoVinculo = dto.TipoVinculo,
+
             ConselhoProfissional = dto.ConselhoProfissional,
             NumeroConselho = dto.NumeroConselho,
             UfConselho = dto.UfConselho,
             Especialidade = dto.Especialidade,
+
             DataAdmissao = dto.DataAdmissao,
             SituacaoFuncional = dto.SituacaoFuncional,
             Observacao = dto.Observacao,
+
             EmailLogin = dto.EmailLogin,
             UserName = dto.UserName,
+
             IsActive = dto.IsActive,
             MustChangePassword = dto.MustChangePassword,
             MfaEnabled = dto.MfaEnabled,
             CertificateRequired = dto.CertificateRequired,
             CanSignWithIcp = dto.CanSignWithIcp,
             SecurityLevel = dto.SecurityLevel,
+
             SelectedRoleIds = dto.RoleIds
         };
 
@@ -489,9 +497,6 @@ public sealed class UsersController : Controller
     {
         if (vm.UserId == Guid.Empty)
             ModelState.AddModelError(nameof(vm.UserId), "Usuário inválido.");
-
-        if (vm.ServidorId == Guid.Empty)
-            ModelState.AddModelError(nameof(vm.ServidorId), "Servidor inválido.");
 
         if (string.IsNullOrWhiteSpace(vm.Cpf) || OnlyDigits(vm.Cpf).Length != 11)
             ModelState.AddModelError(nameof(vm.Cpf), "CPF inválido. Informe 11 dígitos.");

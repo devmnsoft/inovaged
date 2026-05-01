@@ -5,7 +5,7 @@ namespace InovaGed.Web.Models.Users;
 public sealed class EditUserVM
 {
     public Guid UserId { get; set; }
-    public Guid ServidorId { get; set; }
+    public Guid? ServidorId { get; set; }
 
     [Required(ErrorMessage = "Informe o nome completo.")]
     [StringLength(200, MinimumLength = 3)]

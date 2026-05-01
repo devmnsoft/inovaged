@@ -612,22 +612,25 @@ SELECT EXISTS (
     }
 
     public async Task<UserEditDto?> GetForEditAsync(
-    Guid tenantId,
-    Guid userId,
-    CancellationToken ct)
+     Guid tenantId,
+     Guid userId,
+     CancellationToken ct)
     {
         const string sql = @"
 SELECT
     u.id                         AS ""UserId"",
     s.id                         AS ""ServidorId"",
-    s.nome_completo              AS ""NomeCompleto"",
-    s.cpf                        AS ""Cpf"",
-    s.rg                         AS ""Rg"",
-    s.data_nascimento            AS ""DataNascimento"",
-    s.email_institucional        AS ""EmailInstitucional"",
-    s.email_alternativo          AS ""EmailAlternativo"",
-    s.telefone                   AS ""Telefone"",
-    s.celular                    AS ""Celular"",
+
+    COALESCE(s.nome_completo, u.name, '') AS ""NomeCompleto"",
+    COALESCE(s.cpf, '')                   AS ""Cpf"",
+    s.rg                                  AS ""Rg"",
+    s.data_nascimento                     AS ""DataNascimento"",
+
+    COALESCE(s.email_institucional, u.email) AS ""EmailInstitucional"",
+    s.email_alternativo                      AS ""EmailAlternativo"",
+    s.telefone                               AS ""Telefone"",
+    COALESCE(s.celular, u.phone_number)      AS ""Celular"",
+
     s.matricula                  AS ""Matricula"",
     s.cargo                      AS ""Cargo"",
     s.funcao                     AS ""Funcao"",
@@ -635,15 +638,19 @@ SELECT
     s.lotacao                    AS ""Lotacao"",
     s.unidade                    AS ""Unidade"",
     s.tipo_vinculo               AS ""TipoVinculo"",
+
     s.conselho_profissional      AS ""ConselhoProfissional"",
     s.numero_conselho            AS ""NumeroConselho"",
     s.uf_conselho                AS ""UfConselho"",
     s.especialidade              AS ""Especialidade"",
+
     s.data_admissao              AS ""DataAdmissao"",
-    s.situacao_funcional         AS ""SituacaoFuncional"",
+    COALESCE(s.situacao_funcional, 'ATIVO') AS ""SituacaoFuncional"",
     s.observacao                 AS ""Observacao"",
+
     u.email                      AS ""EmailLogin"",
     u.user_name                  AS ""UserName"",
+
     u.is_active                  AS ""IsActive"",
     u.must_change_password       AS ""MustChangePassword"",
     u.mfa_enabled                AS ""MfaEnabled"",
@@ -651,13 +658,13 @@ SELECT
     u.can_sign_with_icp          AS ""CanSignWithIcp"",
     u.security_level             AS ""SecurityLevel""
 FROM ged.app_user u
-JOIN ged.servidor s
-     ON s.id = u.servidor_id
-    AND s.tenant_id = u.tenant_id
+LEFT JOIN ged.servidor s
+       ON s.id = u.servidor_id
+      AND s.tenant_id = u.tenant_id
+      AND s.reg_status = 'A'
 WHERE u.tenant_id = @TenantId
   AND u.id = @UserId
   AND u.deleted_at_utc IS NULL
-  AND s.reg_status = 'A'
 LIMIT 1;
 ";
 
@@ -672,7 +679,11 @@ WHERE user_id = @UserId;
         var dto = await con.QueryFirstOrDefaultAsync<UserEditDto>(
             new CommandDefinition(
                 sql,
-                new { TenantId = tenantId, UserId = userId },
+                new
+                {
+                    TenantId = tenantId,
+                    UserId = userId
+                },
                 cancellationToken: ct));
 
         if (dto is null)
@@ -694,6 +705,67 @@ WHERE user_id = @UserId;
     UpdateServidorUsuarioCommand command,
     CancellationToken ct)
     {
+        const string insertServidorSql = @"
+INSERT INTO ged.servidor (
+    id,
+    tenant_id,
+    nome_completo,
+    cpf,
+    rg,
+    data_nascimento,
+    email_institucional,
+    email_alternativo,
+    telefone,
+    celular,
+    matricula,
+    cargo,
+    funcao,
+    setor,
+    lotacao,
+    unidade,
+    tipo_vinculo,
+    conselho_profissional,
+    numero_conselho,
+    uf_conselho,
+    especialidade,
+    data_admissao,
+    situacao_funcional,
+    observacao,
+    created_by,
+    created_at,
+    reg_status
+)
+VALUES (
+    @ServidorId,
+    @TenantId,
+    @NomeCompleto,
+    @Cpf,
+    @Rg,
+    @DataNascimento,
+    @EmailInstitucional,
+    @EmailAlternativo,
+    @Telefone,
+    @Celular,
+    @Matricula,
+    @Cargo,
+    @Funcao,
+    @Setor,
+    @Lotacao,
+    @Unidade,
+    @TipoVinculo,
+    @ConselhoProfissional,
+    @NumeroConselho,
+    @UfConselho,
+    @Especialidade,
+    @DataAdmissao,
+    @SituacaoFuncional,
+    @Observacao,
+    @UpdatedBy,
+    now(),
+    'A'
+);
+";
+
         const string updateServidorSql = @"
 UPDATE ged.servidor
 SET
@@ -729,6 +801,7 @@ WHERE tenant_id = @TenantId
         const string updateUserSql = @"
 UPDATE ged.app_user
 SET
+    servidor_id = @ServidorId,
     name = @NomeCompleto,
     email = @EmailLogin,
     normalized_email = upper(@EmailLogin),
@@ -744,7 +817,6 @@ SET
     updated_at_utc = now()
 WHERE tenant_id = @TenantId
   AND id = @UserId
-  AND servidor_id = @ServidorId
   AND deleted_at_utc IS NULL;
 ";
 
@@ -764,8 +836,8 @@ SELECT ged.audit_user_security_event(
     @TenantId,
     @UserId,
     @ServidorId,
-    'USER_UPDATE',
-    'Cadastro de servidor/usuário atualizado.',
+    @EventType,
+    @EventDescription,
     @UpdatedBy,
     @IpAddress,
     @UserAgent,
@@ -777,44 +849,80 @@ SELECT ged.audit_user_security_event(
         await using var con = await _db.OpenAsync(ct);
         await using var tx = await con.BeginTransactionAsync(ct);
 
+        var servidorId = command.ServidorId.HasValue && command.ServidorId.Value != Guid.Empty
+            ? command.ServidorId.Value
+            : Guid.NewGuid();
+
         var emailLogin = TrimLowerOrNull(command.EmailLogin) ?? "";
         var userName = TrimOrNull(command.UserName) ?? emailLogin;
 
-        await con.ExecuteAsync(
-            new CommandDefinition(
-                updateServidorSql,
-                new
-                {
-                    TenantId = tenantId,
-                    command.ServidorId,
-                    NomeCompleto = command.NomeCompleto.Trim(),
-                    Cpf = NormalizeCpf(command.Cpf),
-                    Rg = TrimOrNull(command.Rg),
-                    command.DataNascimento,
-                    EmailInstitucional = TrimLowerOrNull(command.EmailInstitucional),
-                    EmailAlternativo = TrimLowerOrNull(command.EmailAlternativo),
-                    Telefone = TrimOrNull(command.Telefone),
-                    Celular = TrimOrNull(command.Celular),
-                    Matricula = TrimOrNull(command.Matricula),
-                    Cargo = TrimOrNull(command.Cargo),
-                    Funcao = TrimOrNull(command.Funcao),
-                    Setor = TrimOrNull(command.Setor),
-                    Lotacao = TrimOrNull(command.Lotacao),
-                    Unidade = TrimOrNull(command.Unidade),
-                    TipoVinculo = TrimOrNull(command.TipoVinculo),
-                    ConselhoProfissional = TrimOrNull(command.ConselhoProfissional),
-                    NumeroConselho = TrimOrNull(command.NumeroConselho),
-                    UfConselho = TrimUpperOrNull(command.UfConselho),
-                    Especialidade = TrimOrNull(command.Especialidade),
-                    command.DataAdmissao,
-                    SituacaoFuncional = string.IsNullOrWhiteSpace(command.SituacaoFuncional)
-                        ? "ATIVO"
-                        : command.SituacaoFuncional.Trim().ToUpperInvariant(),
-                    Observacao = TrimOrNull(command.Observacao),
-                    command.UpdatedBy
-                },
-                transaction: tx,
-                cancellationToken: ct));
+        var servidorParams = new
+        {
+            TenantId = tenantId,
+            ServidorId = servidorId,
+
+            NomeCompleto = command.NomeCompleto.Trim(),
+            Cpf = NormalizeCpf(command.Cpf),
+            Rg = TrimOrNull(command.Rg),
+            command.DataNascimento,
+
+            EmailInstitucional = TrimLowerOrNull(command.EmailInstitucional),
+            EmailAlternativo = TrimLowerOrNull(command.EmailAlternativo),
+            Telefone = TrimOrNull(command.Telefone),
+            Celular = TrimOrNull(command.Celular),
+
+            Matricula = TrimOrNull(command.Matricula),
+            Cargo = TrimOrNull(command.Cargo),
+            Funcao = TrimOrNull(command.Funcao),
+            Setor = TrimOrNull(command.Setor),
+            Lotacao = TrimOrNull(command.Lotacao),
+            Unidade = TrimOrNull(command.Unidade),
+            TipoVinculo = TrimOrNull(command.TipoVinculo),
+
+            ConselhoProfissional = TrimOrNull(command.ConselhoProfissional),
+            NumeroConselho = TrimOrNull(command.NumeroConselho),
+            UfConselho = TrimUpperOrNull(command.UfConselho),
+            Especialidade = TrimOrNull(command.Especialidade),
+
+            command.DataAdmissao,
+            SituacaoFuncional = string.IsNullOrWhiteSpace(command.SituacaoFuncional)
+                ? "ATIVO"
+                : command.SituacaoFuncional.Trim().ToUpperInvariant(),
+
+            Observacao = TrimOrNull(command.Observacao),
+            command.UpdatedBy
+        };
+
+        var isServidorNovo = !command.ServidorId.HasValue || command.ServidorId.Value == Guid.Empty;
+
+        if (isServidorNovo)
+        {
+            await con.ExecuteAsync(
+                new CommandDefinition(
+                    insertServidorSql,
+                    servidorParams,
+                    transaction: tx,
+                    cancellationToken: ct));
+        }
+        else
+        {
+            var linhasAtualizadas = await con.ExecuteAsync(
+                new CommandDefinition(
+                    updateServidorSql,
+                    servidorParams,
+                    transaction: tx,
+                    cancellationToken: ct));
+
+            if (linhasAtualizadas == 0)
+            {
+                await con.ExecuteAsync(
+                    new CommandDefinition(
+                        insertServidorSql,
+                        servidorParams,
+                        transaction: tx,
+                        cancellationToken: ct));
+            }
+        }
 
         await con.ExecuteAsync(
             new CommandDefinition(
@@ -823,7 +931,7 @@ SELECT ged.audit_user_security_event(
                 {
                     TenantId = tenantId,
                     command.UserId,
-                    command.ServidorId,
+                    ServidorId = servidorId,
                     NomeCompleto = command.NomeCompleto.Trim(),
                     EmailLogin = emailLogin,
                     UserName = userName,
@@ -866,7 +974,11 @@ SELECT ged.audit_user_security_event(
                 {
                     TenantId = tenantId,
                     command.UserId,
-                    command.ServidorId,
+                    ServidorId = servidorId,
+                    EventType = isServidorNovo ? "USER_UPDATE_WITH_SERVER_CREATE" : "USER_UPDATE",
+                    EventDescription = isServidorNovo
+                        ? "Cadastro de usuário antigo atualizado e servidor vinculado criado."
+                        : "Cadastro de servidor/usuário atualizado.",
                     command.UpdatedBy,
                     command.IpAddress,
                     command.UserAgent,
@@ -880,7 +992,8 @@ SELECT ged.audit_user_security_event(
                         command.Cargo,
                         command.Funcao,
                         command.SecurityLevel,
-                        Roles = command.RoleIds
+                        Roles = command.RoleIds,
+                        ServidorCriado = isServidorNovo
                     })
                 },
                 transaction: tx,
