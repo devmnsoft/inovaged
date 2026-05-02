@@ -7,6 +7,7 @@ using InovaGed.Application.Auth;
 using InovaGed.Application.Classification;
 using InovaGed.Application.Common.Context;
 using InovaGed.Application.Common.Database;
+using InovaGed.Application.Common.Preview;
 using InovaGed.Application.Common.Security;
 using InovaGed.Application.Common.Storage;
 using InovaGed.Application.Documents;
@@ -102,8 +103,12 @@ builder.Services.AddSingleton<IDbConnectionFactory>(_ =>
 builder.Services.Configure<LocalStorageOptions>(builder.Configuration.GetSection("Storage:Local"));
 builder.Services.AddScoped<IFileStorage, LocalFileStorage>();
 
-builder.Services.Configure<InovaGed.Infrastructure.Preview.LibreOfficeOptions>(builder.Configuration.GetSection("LibreOffice"));
-builder.Services.Configure<LibreOfficeOptions>(builder.Configuration.GetSection("Preview"));
+// =======================================================
+// Preview / LibreOffice
+// =======================================================
+builder.Services.Configure<LibreOfficeOptions>(
+    builder.Configuration.GetSection("Preview"));
+
 builder.Services.AddScoped<IPreviewGenerator, LibreOfficePreviewGenerator>();
 
 builder.Services.Configure<StorageLocalOptions>(builder.Configuration.GetSection("Storage:Local"));

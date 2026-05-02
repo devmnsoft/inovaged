@@ -573,38 +573,38 @@ WHERE tenant_id = @tenantId
     }
 
     private static async Task UpsertOcrMetadataAsync(
-        System.Data.IDbConnection conn,
-        Guid tenantId,
-        Guid documentId,
-        string key,
-        string value,
-        decimal confidence,
-        CancellationToken ct)
+      System.Data.IDbConnection conn,
+      Guid tenantId,
+      Guid documentId,
+      string key,
+      string value,
+      decimal confidence,
+      CancellationToken ct)
     {
-        const string deleteSql = @"
-DELETE FROM ged.document_metadata
-WHERE tenant_id = @tenantId
-  AND document_id = @documentId
-  AND lower(key) = lower(@key)
-  AND method = 'OCR';";
+        if (tenantId == Guid.Empty)
+            throw new ArgumentException("TenantId inválido.", nameof(tenantId));
 
-        await conn.ExecuteAsync(
-            new CommandDefinition(
-                deleteSql,
-                new
-                {
-                    tenantId,
-                    documentId,
-                    key
-                },
-                cancellationToken: ct));
+        if (documentId == Guid.Empty)
+            throw new ArgumentException("DocumentId inválido.", nameof(documentId));
 
-        const string insertSql = @"
+        if (string.IsNullOrWhiteSpace(key))
+            return;
+
+        key = key.Trim();
+        value ??= "";
+
+        /*
+         IMPORTANTE:
+         A tabela ged.document_metadata no seu banco possui chave primária/única.
+         O erro 23505 indica que já existe registro para esta combinação de documento + chave.
+         Por isso este método precisa fazer UPSERT real.
+        */
+
+        const string sql = @"
 INSERT INTO ged.document_metadata
 (
-    id,
-    tenant_id,
     document_id,
+    tenant_id,
     key,
     value,
     confidence,
@@ -613,19 +613,25 @@ INSERT INTO ged.document_metadata
 )
 VALUES
 (
-    gen_random_uuid(),
-    @tenantId,
     @documentId,
+    @tenantId,
     @key,
     @value,
     @confidence,
     'OCR',
     now()
-);";
+)
+ON CONFLICT ON CONSTRAINT document_metadata_pkey
+DO UPDATE SET
+    tenant_id = EXCLUDED.tenant_id,
+    value = EXCLUDED.value,
+    confidence = EXCLUDED.confidence,
+    method = 'OCR',
+    extracted_at = now();";
 
         await conn.ExecuteAsync(
             new CommandDefinition(
-                insertSql,
+                sql,
                 new
                 {
                     tenantId,
@@ -636,7 +642,6 @@ VALUES
                 },
                 cancellationToken: ct));
     }
-
     private static string BuildDescription(string? text)
     {
         var clean = NormalizeText(text);
@@ -666,36 +671,54 @@ VALUES
     }
 
     private static async Task InsertDocumentAuditAsync(
-        IDbConnectionFactory db,
-        Guid tenantId,
-        Guid documentId,
-        Guid? userId,
-        string action,
-        string method,
-        object? before,
-        object? after,
-        string source,
-        CancellationToken ct)
+     IDbConnectionFactory db,
+     Guid tenantId,
+     Guid documentId,
+     Guid? userId,
+     string action,
+     string method,
+     object? before,
+     object? after,
+     string source,
+     CancellationToken ct)
     {
         await using var conn = await db.OpenAsync(ct);
 
         var beforeJson = NormalizeJson(before);
         var afterJson = NormalizeJson(after);
 
+        var safeAction = Limit(action, 40);
+        var safeMethod = Limit(method, 40);
+        var safeSource = Limit(source, 40);
+
         const string sql = @"
 INSERT INTO ged.document_classification_audit
 (
-  id, tenant_id, document_id, user_id,
-  action, method,
-  before_json, after_json,
-  source, created_at, reg_status
+  id,
+  tenant_id,
+  document_id,
+  user_id,
+  action,
+  method,
+  before_json,
+  after_json,
+  source,
+  created_at,
+  reg_status
 )
 VALUES
 (
-  gen_random_uuid(), @tenantId, @documentId, @userId,
-  @action, @method,
-  @beforeJson::jsonb, @afterJson::jsonb,
-  @source, now(), 'A'
+  gen_random_uuid(),
+  @tenantId,
+  @documentId,
+  @userId,
+  @action,
+  @method,
+  @beforeJson::jsonb,
+  @afterJson::jsonb,
+  @source,
+  now(),
+  'A'
 );";
 
         await conn.ExecuteAsync(
@@ -706,11 +729,11 @@ VALUES
                     tenantId,
                     documentId,
                     userId,
-                    action,
-                    method,
+                    action = safeAction,
+                    method = safeMethod,
                     beforeJson,
                     afterJson,
-                    source
+                    source = safeSource
                 },
                 cancellationToken: ct));
     }
@@ -759,5 +782,18 @@ VALUES
             return true;
 
         return fileName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string Limit(string? value, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return "";
+
+        value = value.Trim();
+
+        if (value.Length <= maxLength)
+            return value;
+
+        return value[..maxLength];
     }
 }

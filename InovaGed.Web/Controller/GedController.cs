@@ -909,12 +909,15 @@ public sealed class GedController : Controller
     {
         try
         {
-            if (!_currentUser.IsAuthenticated) return Unauthorized();
+            if (!_currentUser.IsAuthenticated)
+                return Unauthorized();
 
             var tenantId = _currentUser.TenantId;
+            var userId = _currentUser.UserId;
 
             var v = await _docs.GetVersionForDownloadAsync(tenantId, versionId, ct);
-            if (v is null) return NotFound();
+            if (v is null)
+                return NotFound();
 
             var alreadyCompleted = await _ocrJobs.HasCompletedAsync(tenantId, versionId, ct);
 
@@ -936,26 +939,10 @@ public sealed class GedController : Controller
             }
 
             var jobId = await _ocrJobs.EnqueueAsync(
-                tenantId: tenantId,
-                documentVersionId: versionId,
-                requestedBy: _currentUser.UserId,
+                tenantId,
+                versionId,
+                userId,
                 invalidateDigitalSignatures: force,
-                ct: ct);
-
-            _logger.LogInformation(
-                "OCR enfileirado. Tenant={TenantId} VersionId={VersionId} JobId={JobId} Force={Force}",
-                tenantId,
-                versionId,
-                jobId,
-                force);
-
-            await InsertOcrRequestAuditAsync(
-                tenantId,
-                v.DocumentId,
-                _currentUser.UserId,
-                jobId,
-                versionId,
-                force,
                 ct);
 
             if (IsAjaxRequest())
@@ -963,17 +950,19 @@ public sealed class GedController : Controller
                 return Json(new
                 {
                     success = true,
-                    jobId,
+                    message = "OCR solicitado. O processamento será executado em segundo plano.",
                     versionId,
-                    documentId = v.DocumentId,
-                    message = alreadyCompleted
-                        ? "OCR já estava concluído."
-                        : "OCR solicitado com sucesso. O processamento foi enfileirado."
+                    jobId
                 });
             }
 
-            TempData["Success"] = "OCR solicitado com sucesso. O processamento foi enfileirado.";
-            return RedirectToAction(nameof(Details), new { id = v.DocumentId, versionId });
+            TempData["Success"] = "OCR solicitado. Acompanhe o status na lista de versões.";
+
+            return RedirectToAction(nameof(Details), new
+            {
+                id = v.DocumentId,
+                versionId
+            });
         }
         catch (Exception ex)
         {

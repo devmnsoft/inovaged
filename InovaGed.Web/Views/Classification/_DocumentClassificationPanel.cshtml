@@ -1,153 +1,243 @@
-﻿@model InovaGed.Application.Classification.DocumentClassificationViewDto
+﻿@model InovaGed.Application.Classification.DocumentClassificationViewDto?
 
 @{
-    var docId =
-        (Model?.DocumentId is Guid mid && mid != Guid.Empty)
-            ? mid
-            : (ViewData["DocumentId"] is Guid g ? g : Guid.Empty);
+    var documentId = (Guid)(ViewData["DocumentId"] ?? Guid.Empty);
 
-    var docIdStr = docId == Guid.Empty ? "" : docId.ToString();
-    var canOpen = !string.IsNullOrWhiteSpace(docIdStr);
+    bool hasCurrent = Model?.DocumentTypeId != null && Model.DocumentTypeId != Guid.Empty;
+    bool hasSuggestion = Model?.SuggestedTypeId != null && Model.SuggestedTypeId != Guid.Empty;
+
+    string ConfidenceText(decimal? value)
+    {
+        if (!value.HasValue) return "-";
+        return $"{value.Value:P0}";
+    }
 }
 
-<div class="card">
-    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-        <div class="d-flex align-items-center gap-2">
-            <i class="bi bi-tags"></i>
-            <strong>Classificação</strong>
+<div class="classification-panel" data-document-id="@documentId">
+
+    @if (Model is null)
+    {
+        <div class="alert alert-warning mb-3">
+            <i class="bi bi-exclamation-triangle me-1"></i>
+            Este documento ainda não possui classificação registrada.
         </div>
 
-        <div class="d-flex gap-2 align-items-center">
-            <button type="button"
-                    class="btn btn-sm btn-outline-primary"
-            @(canOpen ? "" : "disabled")
-                    onclick="openClassificationModal('@docIdStr', this)">
-                <span class="btn-text">
-                    <i class="bi bi-pencil-square me-1"></i> Editar
-                </span>
-                <span class="btn-loading d-none">
-                    <span class="spinner-border spinner-border-sm me-1" role="status"></span>
-                    Abrindo...
-                </span>
-            </button>
+        <div class="text-muted small">
+            Execute o OCR ou clique em <strong>Editar classificação</strong> para classificar manualmente.
         </div>
-    </div>
+    }
+    else
+    {
+        <div class="row g-3">
+            <div class="col-md-6">
+                <div class="border rounded p-3 h-100">
+                    <div class="text-muted small mb-1">Classificação atual</div>
 
-    <div class="card-body">
-        @* ===== Classificação atual ===== *@
-        @if (Model == null || Model.DocumentTypeId == null)
-        {
-            <div class="mb-2">
-                <div class="fw-semibold">Sem classificação</div>
-                <div class="text-muted small">Ainda não há classificação para este documento.</div>
-            </div>
-        }
-        else
-        {
-            <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
-                <div>
-                    <div class="fw-semibold">@Model.DocumentTypeName</div>
-                    <div class="text-muted small">
-                        Método:
-                        <span class="badge bg-light text-dark">@Model.Method</span>
-
-                        @if (Model.Confidence.HasValue)
-                        {
-                            <span class="ms-2">
-                                Confiança:
-                                <span class="badge bg-light text-dark">@($"{Model.Confidence:P0}")</span>
-                            </span>
-                        }
-                    </div>
-
-                    @if (!string.IsNullOrWhiteSpace(Model.Summary))
+                    @if (hasCurrent)
                     {
-                        <div class="text-muted small mt-1">@Model.Summary</div>
+                        <div class="fw-semibold">
+                            <i class="bi bi-check-circle text-success me-1"></i>
+                            @(string.IsNullOrWhiteSpace(Model.DocumentTypeName) ? "Tipo documental não informado" : Model.DocumentTypeName)
+                        </div>
+
+                        <div class="small text-muted mt-1">
+                            Método: @(string.IsNullOrWhiteSpace(Model.Method) ? "-" : Model.Method)
+                        </div>
+
+                        <div class="small text-muted">
+                            Confiança: @ConfidenceText(Model.Confidence)
+                        </div>
+
+                        @if (!string.IsNullOrWhiteSpace(Model.Summary))
+                        {
+                            <div class="small mt-2">
+                                @Model.Summary
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <div class="text-muted">
+                            Nenhuma classificação aplicada.
+                        </div>
                     }
                 </div>
             </div>
-        }
 
-        <hr class="my-3" />
+            <div class="col-md-6">
+                <div class="border rounded p-3 h-100">
+                    <div class="text-muted small mb-1">Sugestão OCR / Texto</div>
 
-        @* ===== Sugestão OCR / Texto ===== *@
-        <div class="text-muted small mb-1">
-            <i class="bi bi-magic me-1"></i> Sugestão (OCR / Texto)
+                    @if (hasSuggestion)
+                    {
+                        <div class="fw-semibold">
+                            <i class="bi bi-magic text-primary me-1"></i>
+                            @(string.IsNullOrWhiteSpace(Model.SuggestedTypeName) ? "Tipo sugerido não informado" : Model.SuggestedTypeName)
+                        </div>
+
+                        <div class="small text-muted mt-1">
+                            Confiança: @ConfidenceText(Model.SuggestedConfidence)
+                        </div>
+
+                        @if (Model.SuggestedAt.HasValue)
+                        {
+                            <div class="small text-muted">
+                                Sugerido em: @Model.SuggestedAt.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+                            </div>
+                        }
+
+                        @if (!string.IsNullOrWhiteSpace(Model.SuggestedSummary))
+                        {
+                            <div class="small mt-2">
+                                @Model.SuggestedSummary
+                            </div>
+                        }
+
+                        <form method="post"
+                              action="@Url.Action("ApplySuggestion", "Classification")"
+                              class="mt-3 js-apply-suggestion-form">
+                            @Html.AntiForgeryToken()
+
+                            <input type="hidden" name="documentId" value="@documentId" />
+                            <input type="hidden" name="suggestedTypeId" value="@Model.SuggestedTypeId" />
+                            <input type="hidden" name="suggestedConfidence" value="@Model.SuggestedConfidence" />
+                            <input type="hidden" name="suggestedSummary" value="@Model.SuggestedSummary" />
+
+                            <button type="submit" class="btn btn-sm btn-primary">
+                                <span class="btn-text">
+                                    <i class="bi bi-check2-circle me-1"></i>
+                                    Aplicar sugestão
+                                </span>
+                                <span class="btn-loading d-none">
+                                    <span class="spinner-border spinner-border-sm me-1"></span>
+                                    Aplicando...
+                                </span>
+                            </button>
+                        </form>
+                    }
+                    else
+                    {
+                        <div class="text-muted">
+                            Nenhuma sugestão gerada ainda.
+                        </div>
+
+                        <div class="small text-muted mt-2">
+                            Para gerar sugestão, execute o OCR em uma versão do documento.
+                            Se o OCR já foi concluído e mesmo assim não apareceu sugestão,
+                            verifique se existem tipos documentais cadastrados, principalmente
+                            <code>DOCUMENTO_GERAL</code>.
+                        </div>
+                    }
+                </div>
+            </div>
         </div>
 
-        @if (Model?.SuggestedTypeId == null)
+        @if (Model.Tags is { Count: > 0 })
         {
-            <div class="text-muted small">Nenhuma sugestão gerada ainda.</div>
-        }
-        else
-        {
-            <div class="fw-semibold">@Model.SuggestedTypeName</div>
-            <div class="text-muted small">
-                @if (Model.SuggestedConfidence.HasValue)
+            <hr />
+
+            <div class="mb-2">
+                <div class="text-muted small mb-1">Tags</div>
+
+                @foreach (var tag in Model.Tags)
                 {
-                    <span>
-                        Confiança:
-                        <span class="badge bg-light text-dark">@($"{Model.SuggestedConfidence:P0}")</span>
+                    <span class="badge bg-light text-dark border me-1">
+                        <i class="bi bi-tag me-1"></i>@tag
                     </span>
                 }
-                @if (Model.SuggestedAt.HasValue)
-                {
-                    <span class="ms-2">Em: @Model.SuggestedAt.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</span>
-                }
-            </div>
-
-            @if (!string.IsNullOrWhiteSpace(Model.SuggestedSummary))
-            {
-                <div class="text-muted small mt-1">@Model.SuggestedSummary</div>
-            }
-
-            <div class="mt-2">
-                <button type="button"
-                        class="btn btn-sm btn-outline-primary"
-                        onclick="applyClassificationSuggestion('@docIdStr', this)"
-                        data-suggested-type-id="@Model.SuggestedTypeId"
-                        data-suggested-confidence="@(Model.SuggestedConfidence?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "")"
-                        data-suggested-summary="@Model.SuggestedSummary">
-                    <span class="btn-text">Aplicar sugestão</span>
-                    <span class="btn-loading d-none">
-                        <span class="spinner-border spinner-border-sm me-1" role="status"></span>
-                        Aplicando...
-                    </span>
-                </button>
             </div>
         }
 
-        @if (Model?.Tags is { Count: > 0 })
+        @if (Model.Metadata is { Count: > 0 })
         {
-            <hr class="my-3" />
-            <div class="text-muted small mb-1">Tags</div>
-            <div class="d-flex flex-wrap gap-1">
-                @foreach (var t in Model.Tags)
-                {
-                    <span class="badge bg-light text-dark">@t</span>
-                }
+            <hr />
+
+            <div class="mb-2">
+                <div class="text-muted small mb-1">Metadados extraídos</div>
+
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th style="width:220px;">Campo</th>
+                                <th>Valor</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var item in Model.Metadata)
+                            {
+                                <tr>
+                                    <td class="fw-semibold">@item.Key</td>
+                                    <td>@item.Value</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
             </div>
         }
-
-        <hr class="my-3" />
-
-        @* ===== HISTÓRICO ===== *@
-        <div class="d-flex justify-content-between align-items-center">
-            <div class="text-muted small">
-                <i class="bi bi-clock-history me-1"></i> Histórico
-            </div>
-
-            <button type="button"
-                    class="btn btn-sm btn-outline-secondary"
-                    onclick="toggleClassificationAudit('@docIdStr', this)">
-                <span class="btn-text">Ver</span>
-                <span class="btn-loading d-none">
-                    <span class="spinner-border spinner-border-sm me-1" role="status"></span>
-                    Carregando...
-                </span>
-            </button>
-        </div>
-
-        <div id="classificationAudit" class="mt-2 d-none" data-loaded="0"></div>
-    </div>
+    }
 </div>
+
+<script>
+    (function () {
+        document.querySelectorAll('.js-apply-suggestion-form').forEach(form => {
+            if (form.dataset.wired === '1') return;
+            form.dataset.wired = '1';
+
+            form.addEventListener('submit', async function (ev) {
+                ev.preventDefault();
+
+                const btn = form.querySelector('button[type="submit"]');
+                if (window.setBtnLoading) window.setBtnLoading(btn, true);
+
+                try {
+                    const resp = await fetch(form.action, {
+                        method: 'POST',
+                        body: new FormData(form),
+                        credentials: 'include',
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    });
+
+                    if (!resp.ok) {
+                        const txt = await resp.text().catch(() => '');
+
+                        if (window.showGedToast) {
+                            window.showGedToast(txt || 'Erro ao aplicar sugestão.', 'danger');
+                        } else {
+                            alert(txt || 'Erro ao aplicar sugestão.');
+                        }
+
+                        return;
+                    }
+
+                    if (window.showGedToast) {
+                        window.showGedToast('Sugestão aplicada com sucesso.', 'success');
+                    }
+
+                    if (window.refreshClassificationPanel) {
+                        await window.refreshClassificationPanel();
+                    }
+
+                    if (window.resetClassificationAudit) {
+                        window.resetClassificationAudit();
+                    }
+                }
+                catch (e) {
+                    console.error(e);
+
+                    if (window.showGedToast) {
+                        window.showGedToast('Erro inesperado ao aplicar sugestão.', 'danger');
+                    } else {
+                        alert('Erro inesperado ao aplicar sugestão.');
+                    }
+                }
+                finally {
+                    if (window.setBtnLoading) window.setBtnLoading(btn, false);
+                }
+            });
+        });
+    })();
+</script>
