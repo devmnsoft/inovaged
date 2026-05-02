@@ -462,13 +462,13 @@ public sealed class OcrWorker : BackgroundService
     }
 
     private static async Task SaveOcrDescriptionAndMetadataAsync(
-        IDbConnectionFactory db,
-        Guid tenantId,
-        Guid documentId,
-        Guid actorId,
-        string? extractedText,
-        string originAction,
-        CancellationToken ct)
+      IDbConnectionFactory db,
+      Guid tenantId,
+      Guid documentId,
+      Guid actorId,
+      string? extractedText,
+      string originAction,
+      CancellationToken ct)
     {
         var description = BuildDescription(extractedText);
         var normalizedText = NormalizeText(extractedText);
@@ -556,8 +556,8 @@ WHERE tenant_id = @tenantId
             documentId,
             actorId,
             updatedRows > 0
-                ? "DOCUMENT_DESCRIPTION_UPDATED_FROM_OCR"
-                : "DOCUMENT_DESCRIPTION_METADATA_SAVED_FROM_OCR",
+                ? "OCR_DESC_UPDATED"
+                : "OCR_METADATA_SAVED",
             "OCR",
             beforeJson,
             new
@@ -573,13 +573,13 @@ WHERE tenant_id = @tenantId
     }
 
     private static async Task UpsertOcrMetadataAsync(
-      System.Data.IDbConnection conn,
-      Guid tenantId,
-      Guid documentId,
-      string key,
-      string value,
-      decimal confidence,
-      CancellationToken ct)
+       System.Data.IDbConnection conn,
+       Guid tenantId,
+       Guid documentId,
+       string key,
+       string value,
+       decimal confidence,
+       CancellationToken ct)
     {
         if (tenantId == Guid.Empty)
             throw new ArgumentException("TenantId inválido.", nameof(tenantId));
@@ -595,11 +595,10 @@ WHERE tenant_id = @tenantId
 
         /*
          IMPORTANTE:
-         A tabela ged.document_metadata no seu banco possui chave primária/única.
-         O erro 23505 indica que já existe registro para esta combinação de documento + chave.
-         Por isso este método precisa fazer UPSERT real.
+         A tabela ged.document_metadata do banco atual NÃO deve receber coluna id.
+         Além disso, ela possui chave primária/única document_metadata_pkey.
+         Por isso usamos ON CONFLICT ON CONSTRAINT document_metadata_pkey.
         */
-
         const string sql = @"
 INSERT INTO ged.document_metadata
 (
@@ -687,10 +686,6 @@ DO UPDATE SET
         var beforeJson = NormalizeJson(before);
         var afterJson = NormalizeJson(after);
 
-        var safeAction = Limit(action, 40);
-        var safeMethod = Limit(method, 40);
-        var safeSource = Limit(source, 40);
-
         const string sql = @"
 INSERT INTO ged.document_classification_audit
 (
@@ -729,14 +724,16 @@ VALUES
                     tenantId,
                     documentId,
                     userId,
-                    action = safeAction,
-                    method = safeMethod,
+                    action = Limit(action, 40),
+                    method = Limit(method, 40),
                     beforeJson,
                     afterJson,
-                    source = safeSource
+                    source = Limit(source, 40)
                 },
                 cancellationToken: ct));
     }
+
+
 
     private static string NormalizeJson(object? value)
     {

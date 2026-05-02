@@ -1,99 +1,291 @@
 ﻿@model InovaGed.Application.Classification.DocumentClassificationViewDto?
 
 @{
-    var hasModel = Model != null;
-    var documentId = hasModel ? Model!.DocumentId : Guid.Empty;
+    var documentId = (Guid)(ViewData["DocumentId"] ?? Model?.DocumentId ?? Guid.Empty);
+
+    var hasModel = Model is not null;
+
+    var hasCurrentClassification =
+        hasModel &&
+        Model!.DocumentTypeId.HasValue &&
+        Model.DocumentTypeId.Value != Guid.Empty;
+
+    var hasSuggestion =
+        hasModel &&
+        Model!.SuggestedTypeId.HasValue &&
+        Model.SuggestedTypeId.Value != Guid.Empty;
+
+    string ConfidenceText(decimal? value)
+    {
+        if (!value.HasValue)
+            return "-";
+
+        return $"{value.Value:P0}";
+    }
+
+    string MethodLabel(string? method)
+    {
+        method = (method ?? "").Trim().ToUpperInvariant();
+
+        return method switch
+        {
+            "OCR" => "OCR",
+            "RULES" => "Regras",
+            "MANUAL" => "Manual",
+            "SUGGESTION" => "Sugestão aplicada",
+            _ => string.IsNullOrWhiteSpace(method) ? "-" : method
+        };
+    }
+
+    string MethodBadgeClass(string? method)
+    {
+        method = (method ?? "").Trim().ToUpperInvariant();
+
+        return method switch
+        {
+            "OCR" => "bg-primary",
+            "RULES" => "bg-info text-dark",
+            "MANUAL" => "bg-success",
+            "SUGGESTION" => "bg-warning text-dark",
+            _ => "bg-secondary"
+        };
+    }
 }
 
-<div class="card">
-    <div class="card-header d-flex justify-content-between align-items-center">
-        <div>
-            <strong>Classificação</strong>
+<div class="classification-panel" data-document-id="@documentId">
 
-            @if (hasModel)
-            {
-                <span class="badge bg-secondary ms-2">@Model!.Method</span>
+    <div class="row g-3">
 
-                @if (Model!.Confidence.HasValue)
+        <div class="col-lg-6">
+            <div class="border rounded p-3 h-100 bg-white">
+
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <div>
+                        <div class="text-muted small">Classificação atual</div>
+
+                        @if (hasCurrentClassification)
+                        {
+                            <div class="fw-semibold fs-6 mt-1">
+                                <i class="bi bi-check-circle text-success me-1"></i>
+                                @(string.IsNullOrWhiteSpace(Model!.DocumentTypeName)
+                                    ? "Tipo documental não informado"
+                                    : Model.DocumentTypeName)
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="fw-semibold text-muted mt-1">
+                                <i class="bi bi-exclamation-circle me-1"></i>
+                                Documento ainda não classificado
+                            </div>
+                        }
+                    </div>
+
+                    @if (hasModel)
+                    {
+                        <span class="badge @MethodBadgeClass(Model!.Method)">
+                            @MethodLabel(Model.Method)
+                        </span>
+                    }
+                </div>
+
+                @if (hasCurrentClassification)
                 {
-                    <span class="badge bg-info ms-1">Conf: @(Model.Confidence.Value.ToString("0.00"))</span>
+                    <div class="small text-muted">
+                        Confiança: @ConfidenceText(Model!.Confidence)
+                    </div>
+
+                    @if (Model.ClassifiedAt != default)
+                    {
+                        <div class="small text-muted">
+                            Classificado em: @Model.ClassifiedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrWhiteSpace(Model.Summary))
+                    {
+                        <div class="mt-3">
+                            <div class="text-muted small">Resumo da classificação</div>
+                            <div class="small">
+                                @Model.Summary
+                            </div>
+                        </div>
+                    }
                 }
-            }
+                else
+                {
+                    <div class="alert alert-warning small mt-3 mb-0">
+                        <i class="bi bi-info-circle me-1"></i>
+                        Execute o OCR para gerar uma sugestão ou clique em
+                        <strong>Editar classificação</strong> para classificar manualmente.
+                    </div>
+                }
+
+                <div class="d-flex flex-wrap gap-2 mt-3">
+                    <button type="button"
+                            class="btn btn-sm btn-outline-primary"
+                            data-action="open-classification-modal"
+                            data-document-id="@documentId">
+                        <i class="bi bi-pencil-square me-1"></i>
+                        Editar classificação
+                    </button>
+
+                    <button type="button"
+                            class="btn btn-sm btn-outline-secondary"
+                            data-action="toggle-classification-audit"
+                            data-document-id="@documentId">
+                        <span class="btn-text">
+                            <i class="bi bi-clock-history me-1"></i>
+                            Ver histórico
+                        </span>
+                        <span class="btn-loading d-none">
+                            <span class="spinner-border spinner-border-sm me-1"></span>
+                            Carregando...
+                        </span>
+                    </button>
+                </div>
+            </div>
         </div>
 
-        <div class="d-flex gap-2">
-            @if (hasModel)
-            {
-                <form method="post"
-                      action="@Url.Action("Reclassify", "Classification", new { documentId = documentId })"
-                      class="m-0">
-                    @Html.AntiForgeryToken()
-                    <button type="submit" class="btn btn-sm btn-outline-primary">
-                        Reclassificar
-                    </button>
-                </form>
+        <div class="col-lg-6">
+            <div class="border rounded p-3 h-100 bg-light">
 
-                <button type="button"
-                        class="btn btn-sm btn-outline-secondary"
-                        data-bs-toggle="modal"
-                        data-bs-target="#editClassificationModal"
-                        onclick="loadClassificationEdit('@documentId')">
-                    Editar
-                </button>
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <div>
+                        <div class="text-muted small">Sugestão OCR / Texto</div>
+
+                        @if (hasSuggestion)
+                        {
+                            <div class="fw-semibold fs-6 mt-1">
+                                <i class="bi bi-magic text-primary me-1"></i>
+                                @(string.IsNullOrWhiteSpace(Model!.SuggestedTypeName)
+                                    ? "Tipo sugerido não informado"
+                                    : Model.SuggestedTypeName)
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="fw-semibold text-muted mt-1">
+                                <i class="bi bi-magic me-1"></i>
+                                Nenhuma sugestão gerada ainda
+                            </div>
+                        }
+                    </div>
+
+                    @if (hasSuggestion)
+                    {
+                        <span class="badge bg-primary">
+                            Sugestão
+                        </span>
+                    }
+                </div>
+
+                @if (hasSuggestion)
+                {
+                    <div class="small text-muted">
+                        Confiança: @ConfidenceText(Model!.SuggestedConfidence)
+                    </div>
+
+                    @if (Model.SuggestedAt.HasValue)
+                    {
+                        <div class="small text-muted">
+                            Sugerido em: @Model.SuggestedAt.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrWhiteSpace(Model.SuggestedSummary))
+                    {
+                        <div class="mt-3">
+                            <div class="text-muted small">Motivo da sugestão</div>
+                            <div class="small">
+                                @Model.SuggestedSummary
+                            </div>
+                        </div>
+                    }
+
+                    <form method="post"
+                          action="@Url.Action("ApplySuggestion", "Classification")"
+                          class="mt-3 js-apply-suggestion-form"
+                          data-ajax="true">
+                        @Html.AntiForgeryToken()
+
+                        <input type="hidden" name="documentId" value="@documentId" />
+                        <input type="hidden" name="suggestedTypeId" value="@Model.SuggestedTypeId" />
+                        <input type="hidden" name="suggestedConfidence" value="@Model.SuggestedConfidence" />
+                        <input type="hidden" name="suggestedSummary" value="@Model.SuggestedSummary" />
+
+                        <button type="submit" class="btn btn-sm btn-primary">
+                            <span class="btn-text">
+                                <i class="bi bi-check2-circle me-1"></i>
+                                Aplicar sugestão e recalcular temporalidade
+                            </span>
+                            <span class="btn-loading d-none">
+                                <span class="spinner-border spinner-border-sm me-1"></span>
+                                Aplicando...
+                            </span>
+                        </button>
+                    </form>
+                }
+                else
+                {
+                    <div class="small text-muted mt-3">
+                        Para gerar sugestão, execute o OCR em uma versão do documento.
+                        Se o OCR já foi concluído e a sugestão não apareceu, verifique:
+                    </div>
+
+                    <ul class="small text-muted mt-2 mb-0">
+                        <li>se o job OCR está como <code>COMPLETED</code>;</li>
+                        <li>se existem tipos documentais cadastrados;</li>
+                        <li>se existe o tipo <code>DOCUMENTO_GERAL</code>;</li>
+                        <li>se o painel foi recarregado após a conclusão do OCR.</li>
+                    </ul>
+                }
+            </div>
+        </div>
+    </div>
+
+    <div class="card mt-3">
+        <div class="card-header">
+            <strong>
+                <i class="bi bi-tags me-1"></i>
+                Tags
+            </strong>
+        </div>
+
+        <div class="card-body">
+            @if (hasModel && Model!.Tags is { Count: > 0 })
+            {
+                foreach (var tag in Model.Tags)
+                {
+                    <span class="badge bg-dark me-1 mb-1">
+                        <i class="bi bi-tag me-1"></i>
+                        @tag
+                    </span>
+                }
             }
             else
             {
-                <span class="text-muted small">Sem classificação</span>
+                <span class="text-muted small">Sem tags registradas.</span>
             }
         </div>
     </div>
 
-    <div class="card-body">
-        @if (!hasModel)
-        {
-            <div class="text-muted">Ainda não há classificação para este documento.</div>
-        }
-        else
-        {
-            <div class="mb-2">
-                <div class="text-muted small">Tipo documental</div>
-                <div>
-                    @if (!string.IsNullOrWhiteSpace(Model!.DocumentTypeName))
-                    {
-                        <span class="badge bg-success">@Model.DocumentTypeName</span>
-                    }
-                    else
-                    {
-                        <span class="text-muted">Não identificado</span>
-                    }
-                </div>
-            </div>
+    <div class="card mt-3">
+        <div class="card-header">
+            <strong>
+                <i class="bi bi-list-check me-1"></i>
+                Metadados
+            </strong>
+        </div>
 
-            <div class="mb-3">
-                <div class="text-muted small">Tags</div>
-                <div>
-                    @if (Model!.Tags?.Count > 0)
-                    {
-                        foreach (var t in Model.Tags)
-                        {
-                            <span class="badge bg-dark me-1">@t</span>
-                        }
-                    }
-                    else
-                    {
-                        <span class="text-muted">Sem tags</span>
-                    }
-                </div>
-            </div>
-
-            <div class="mb-2">
-                <div class="text-muted small">Metadados</div>
-                @if (Model!.Metadata?.Count > 0)
-                {
-                    <table class="table table-sm">
+        <div class="card-body">
+            @if (hasModel && Model!.Metadata is { Count: > 0 })
+            {
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered align-middle mb-0">
                         <thead>
                             <tr>
-                                <th>Chave</th>
+                                <th style="width: 240px;">Chave</th>
                                 <th>Valor</th>
                             </tr>
                         </thead>
@@ -101,46 +293,28 @@
                             @foreach (var kv in Model.Metadata)
                             {
                                 <tr>
-                                    <td><code>@kv.Key</code></td>
-                                    <td>@kv.Value</td>
+                                    <td>
+                                        <code>@kv.Key</code>
+                                    </td>
+                                    <td>
+                                        @kv.Value
+                                    </td>
                                 </tr>
                             }
                         </tbody>
                     </table>
-                }
-                else
-                {
-                    <div class="text-muted">Nenhum metadado identificado.</div>
-                }
-            </div>
-
-            @if (!string.IsNullOrWhiteSpace(Model!.Summary))
-            {
-                <div class="mt-3">
-                    <div class="text-muted small">Resumo</div>
-                    <div>@Model.Summary</div>
                 </div>
             }
-        }
-    </div>
-</div>
-
-<!-- Modal (PASSO 12) -->
-<div class="modal fade" id="editClassificationModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-scrollable">
-        <div class="modal-content" id="editClassificationModalContent">
-            <div class="modal-body text-muted">
-                Carregando…
-            </div>
+            else
+            {
+                <span class="text-muted small">Nenhum metadado identificado.</span>
+            }
         </div>
     </div>
-</div>
 
-<script>
-    async function loadClassificationEdit(documentId) {
-        const url = '@Url.Action("EditModal", "Classification")' + '?documentId=' + encodeURIComponent(documentId);
-        const resp = await fetch(url, { method: 'GET', credentials: 'include', cache: 'no-store' });
-        const html = await resp.text();
-        document.getElementById('editClassificationModalContent').innerHTML = html;
-    }
-</script>
+    <div id="classificationAudit"
+         class="d-none mt-3"
+         data-loaded="0"
+         data-role="classification-audit">
+    </div>
+</div>

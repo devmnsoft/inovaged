@@ -545,51 +545,81 @@ VALUES (@Id, @TenantId, @Name, NULL, now(), 'A');";
     }
 
     private async Task SaveMetadataAsync(
-        IDbConnection con,
-        IDbTransaction tx,
-        Guid tenantId,
-        Guid documentId,
-        IReadOnlyDictionary<string, string> metadata,
-        string method,
-        CancellationToken ct)
+       IDbConnection con,
+       IDbTransaction tx,
+       Guid tenantId,
+       Guid documentId,
+       IReadOnlyDictionary<string, string> metadata,
+       string method,
+       CancellationToken ct)
     {
-        const string deleteSql = @"
-DELETE FROM ged.document_metadata
-WHERE tenant_id = @TenantId
-  AND document_id = @DocumentId
-  AND COALESCE(method, '') = @Method;";
+        if (tenantId == Guid.Empty)
+            throw new ArgumentException("TenantId inválido.", nameof(tenantId));
 
-        await con.ExecuteAsync(
-            new CommandDefinition(
-                deleteSql,
-                new { TenantId = tenantId, DocumentId = documentId, Method = method },
-                transaction: tx,
-                cancellationToken: ct));
+        if (documentId == Guid.Empty)
+            throw new ArgumentException("DocumentId inválido.", nameof(documentId));
+
+        method = string.IsNullOrWhiteSpace(method)
+            ? "MANUAL"
+            : method.Trim();
+
+        /*
+         IMPORTANTE:
+         A tabela ged.document_metadata possui uma PK/unique chamada document_metadata_pkey.
+         O erro 23505 acontece quando já existe metadado para a mesma chave do documento.
+         Por isso usamos UPSERT real, sem DELETE prévio.
+        */
 
         if (metadata is not { Count: > 0 })
             return;
 
-        const string insertSql = @"
+        const string upsertSql = @"
 INSERT INTO ged.document_metadata
-(document_id, tenant_id, key, value, confidence, method, extracted_at)
+(
+    document_id,
+    tenant_id,
+    key,
+    value,
+    confidence,
+    method,
+    extracted_at
+)
 VALUES
-(@DocumentId, @TenantId, @Key, @Value, NULL, @Method, now());";
+(
+    @DocumentId,
+    @TenantId,
+    @Key,
+    @Value,
+    NULL,
+    @Method,
+    now()
+)
+ON CONFLICT ON CONSTRAINT document_metadata_pkey
+DO UPDATE SET
+    tenant_id = EXCLUDED.tenant_id,
+    value = EXCLUDED.value,
+    confidence = EXCLUDED.confidence,
+    method = EXCLUDED.method,
+    extracted_at = now();";
 
         foreach (var kv in metadata)
         {
             var key = (kv.Key ?? "").Trim();
+
             if (string.IsNullOrWhiteSpace(key))
                 continue;
 
+            var value = kv.Value ?? "";
+
             await con.ExecuteAsync(
                 new CommandDefinition(
-                    insertSql,
+                    upsertSql,
                     new
                     {
                         TenantId = tenantId,
                         DocumentId = documentId,
                         Key = key,
-                        Value = kv.Value ?? "",
+                        Value = value,
                         Method = method
                     },
                     transaction: tx,
