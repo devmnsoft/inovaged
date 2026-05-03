@@ -1,0 +1,116 @@
+﻿@model IReadOnlyList<InovaGed.Application.Ged.Physical.PhysicalMapRowDto>
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+
+@{
+    ViewData["Title"] ??= "Mapa de Guarda Física";
+    var q = (ViewBag.Q as string) ?? "";
+}
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <div>
+        <h4 class="mb-0">@ViewData["Title"]</h4>
+        <div class="text-muted small">@ViewData["Subtitle"]</div>
+    </div>
+
+    <a class="btn btn-outline-secondary btn-sm" asp-controller="Physical" asp-action="Boxes">
+        <i class="bi bi-arrow-left me-1"></i>Caixas
+    </a>
+</div>
+
+<form method="get" class="card mb-3">
+    <div class="card-body d-flex flex-wrap gap-2">
+        <div class="flex-grow-1">
+            <input name="q"
+                   value="@q"
+                   class="form-control"
+                   placeholder="Buscar por documento, lote, caixa, etiqueta ou localização..." />
+        </div>
+
+        <button class="btn btn-primary" type="submit">
+            <i class="bi bi-search me-1"></i>Pesquisar
+        </button>
+
+        <a class="btn btn-outline-secondary" asp-action="PhysicalMap">Limpar</a>
+    </div>
+</form>
+
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <strong>Resultado do Mapa de Guarda Física</strong>
+        <span class="badge text-bg-primary">@Model.Count registro(s)</span>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Documento</th>
+                    <th>Lote</th>
+                    <th>Caixa</th>
+                    <th>Localização Física</th>
+                    <th>Vinculado em</th>
+                </tr>
+            </thead>
+
+            <tbody>
+                @if (Model.Count == 0)
+                {
+                    <tr>
+                        <td colspan="5" class="text-center text-muted py-4">
+                            Nenhum registro encontrado.
+                        </td>
+                    </tr>
+                }
+                else
+                {
+                    foreach (var r in Model)
+                    {
+                        <tr>
+                            <td>
+                                <div class="fw-semibold">@r.DocumentTitle</div>
+                                <div class="text-muted small">
+                                    <code>@r.DocumentCode</code>
+                                </div>
+                            </td>
+
+                            <td>
+                                <a asp-controller="Batches" asp-action="Details" asp-route-id="@r.BatchId">
+                                    Lote #@r.BatchNo
+                                </a>
+                                <div class="text-muted small">@r.BatchStatus</div>
+                            </td>
+
+                            <td>
+                                @if (r.BoxId.HasValue)
+                                {
+                                    <a asp-controller="Physical" asp-action="BoxContents" asp-route-boxId="@r.BoxId">
+                                        Caixa #@r.BoxNo — @r.LabelCode
+                                    </a>
+                                }
+                                else
+                                {
+                                    <span class="badge text-bg-warning">Sem caixa</span>
+                                }
+                            </td>
+
+                            <td>
+                                @if (!string.IsNullOrWhiteSpace(r.FullLocation))
+                                {
+                                    <span>@r.FullLocation</span>
+                                }
+                                else
+                                {
+                                    <span class="badge text-bg-warning">Sem localização</span>
+                                }
+                            </td>
+
+                            <td class="text-muted text-nowrap">
+                                @(r.LinkedAt.HasValue ? r.LinkedAt.Value.ToString("dd/MM/yyyy HH:mm") : "—")
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+</div>

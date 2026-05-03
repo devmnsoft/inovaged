@@ -180,34 +180,60 @@
 
     <div class="sidebar-section-title">Guarda Física</div>
 
-    <a asp-controller="Physical" asp-action="Locations" class="@Active("Physical", "Locations", "NewLocation", "EditLocation", "SaveLocation")">
+    <a asp-controller="Physical"
+       asp-action="Locations"
+       class="@Active("Physical", "Locations", "NewLocation", "EditLocation", "SaveLocation")">
         <i class="bi bi-geo-alt"></i>
         <span>Localizações</span>
     </a>
 
-    <a asp-controller="Physical" asp-action="Boxes" class="@Active("Physical", "Boxes", "NewBox", "EditBox", "SaveBox")">
+    <a asp-controller="Physical"
+       asp-action="Boxes"
+       class="@Active("Physical", "Boxes", "NewBox", "EditBox", "SaveBox")">
         <i class="bi bi-inbox"></i>
         <span>Caixas</span>
     </a>
 
-    <a asp-controller="Physical" asp-action="BoxContents" class="@Active("Physical", "BoxContents", "AddDocumentToBox", "RemoveDocumentFromBox", "MoveDocumentToBox")">
+    <a asp-controller="Physical"
+       asp-action="BoxContents"
+       class="@Active("Physical", "BoxContents", "AddDocumentToBox", "RemoveDocumentFromBox", "MoveDocumentToBox")">
         <i class="bi bi-box2"></i>
         <span>Conteúdo da Caixa</span>
     </a>
 
-    <a asp-controller="Physical" asp-action="BoxHistory" class="@Active("Physical", "BoxHistory")">
+    <a asp-controller="Physical"
+       asp-action="BoxHistory"
+       class="@Active("Physical", "BoxHistory")">
         <i class="bi bi-list-columns-reverse"></i>
         <span>Histórico da Caixa</span>
     </a>
 
-    <a asp-controller="Labels" asp-action="Boxes" class="@Active("Labels", "Boxes", "BoxLabel")">
+    <a asp-controller="Physical"
+       asp-action="PhysicalMap"
+       class="@Active("Physical", "PhysicalMap")">
+        <i class="bi bi-map"></i>
+        <span>Mapa de Guarda Física</span>
+    </a>
+
+    <a asp-controller="Labels"
+       asp-action="Boxes"
+       class="@Active("Labels", "Boxes", "BoxLabel")">
         <i class="bi bi-upc-scan"></i>
         <span>Etiquetas de Caixas</span>
     </a>
 
-    <a asp-controller="Labels" asp-action="Documents" class="@Active("Labels", "Documents", "DocumentLabel")">
+    <a asp-controller="Labels"
+       asp-action="Documents"
+       class="@Active("Labels", "Documents", "DocumentLabel")">
         <i class="bi bi-upc"></i>
         <span>Etiquetas de Documentos</span>
+    </a>
+
+    <a asp-controller="Labels"
+       asp-action="History"
+       class="@Active("Labels", "History")">
+        <i class="bi bi-clock-history"></i>
+        <span>Histórico de Etiquetas</span>
     </a>
 }
 

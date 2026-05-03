@@ -141,12 +141,12 @@ where d.tenant_id=@tid
     }
 
     private async Task RegisterLabelPrintAsync(
-        System.Data.IDbConnection db,
-        string labelType,
-        Guid? boxId,
-        Guid? documentId)
+      System.Data.IDbConnection db,
+      string labelType,
+      Guid? boxId,
+      Guid? documentId)
     {
-        await db.ExecuteAsync("""
+        await db.ExecuteAsync(@"
 insert into ged.label_print
 (
     id,
@@ -155,7 +155,10 @@ insert into ged.label_print
     document_id,
     label_type,
     printed_by,
-    printed_at
+    printed_at,
+    ip_address,
+    user_agent,
+    data
 )
 values
 (
@@ -165,15 +168,65 @@ values
     @document_id,
     @label_type,
     @printed_by,
-    now()
-);
-""", new
+    now(),
+    @ip_address,
+    @user_agent,
+    jsonb_build_object('source', 'LabelsController')
+);", new
         {
             tenant_id = TenantId,
             box_id = boxId,
             document_id = documentId,
             label_type = labelType,
-            printed_by = UserId
+            printed_by = UserId,
+            ip_address = HttpContext.Connection.RemoteIpAddress?.ToString(),
+            user_agent = Request.Headers.UserAgent.ToString()
         });
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> History(string? q)
+    {
+        using var db = await OpenAsync();
+
+        q = (q ?? "").Trim();
+        ViewBag.Q = q;
+
+        var rows = await db.QueryAsync(@"
+select
+    lp.id,
+    lp.label_type,
+    lp.printed_at,
+    u.name as printed_by_name,
+    b.box_no,
+    b.label_code,
+    d.code as document_code,
+    d.title as document_title,
+    lp.ip_address,
+    lp.user_agent
+from ged.label_print lp
+left join ged.app_user u
+  on u.tenant_id=lp.tenant_id
+ and u.id=lp.printed_by
+left join ged.box b
+  on b.tenant_id=lp.tenant_id
+ and b.id=lp.box_id
+left join ged.document d
+  on d.tenant_id=lp.tenant_id
+ and d.id=lp.document_id
+where lp.tenant_id=@tid
+  and (
+    @q = ''
+    or coalesce(lp.label_type,'') ilike ('%'||@q||'%')
+    or coalesce(b.label_code,'') ilike ('%'||@q||'%')
+    or coalesce(b.box_no::text,'') ilike ('%'||@q||'%')
+    or coalesce(d.code,'') ilike ('%'||@q||'%')
+    or coalesce(d.title,'') ilike ('%'||@q||'%')
+    or coalesce(u.name,'') ilike ('%'||@q||'%')
+  )
+order by lp.printed_at desc
+limit 500;", new { tid = TenantId, q });
+
+        return View(rows);
     }
 }

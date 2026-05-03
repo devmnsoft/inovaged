@@ -350,4 +350,100 @@ order by h.changed_at desc, h.id desc;
             return Array.Empty<BoxHistoryRowDto>();
         }
     }
+
+    public async Task<IReadOnlyList<BoxLocationHistoryRowDto>> GetBoxLocationHistoryAsync(Guid tenantId, Guid boxId, CancellationToken ct)
+    {
+        try
+        {
+            await using var conn = await _db.OpenAsync(ct);
+
+            const string sql = @"
+select
+    h.changed_at as ""ChangedAt"",
+    b.box_no as ""BoxNo"",
+    b.label_code as ""LabelCode"",
+    concat_ws(' / ', oldl.location_code, oldl.building, oldl.room, oldl.aisle, oldl.rack, oldl.shelf, oldl.pallet) as ""OldLocation"",
+    concat_ws(' / ', newl.location_code, newl.building, newl.room, newl.aisle, newl.rack, newl.shelf, newl.pallet) as ""NewLocation"",
+    h.notes as ""Notes""
+from ged.box_location_history h
+join ged.box b
+  on b.tenant_id=h.tenant_id
+ and b.id=h.box_id
+left join ged.physical_location oldl
+  on oldl.tenant_id=h.tenant_id
+ and oldl.id=h.old_location_id
+left join ged.physical_location newl
+  on newl.tenant_id=h.tenant_id
+ and newl.id=h.new_location_id
+where h.tenant_id=@tenant_id
+  and h.box_id=@box_id
+  and h.reg_status='A'
+order by h.changed_at desc, h.id desc;";
+
+            var rows = await conn.QueryAsync<BoxLocationHistoryRowDto>(
+                new CommandDefinition(sql, new { tenant_id = tenantId, box_id = boxId }, cancellationToken: ct));
+
+            return rows.AsList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "PhysicalQueries.GetBoxLocationHistoryAsync failed. Tenant={Tenant} Box={Box}", tenantId, boxId);
+            return Array.Empty<BoxLocationHistoryRowDto>();
+        }
+    }
+
+    public async Task<IReadOnlyList<PhysicalMapRowDto>> GetPhysicalMapAsync(Guid tenantId, string? q, CancellationToken ct)
+    {
+        try
+        {
+            await using var conn = await _db.OpenAsync(ct);
+            q = (q ?? "").Trim();
+
+            const string sql = @"
+select
+    document_id     as ""DocumentId"",
+    coalesce(document_code,'') as ""DocumentCode"",
+    coalesce(document_title,'') as ""DocumentTitle"",
+    batch_id        as ""BatchId"",
+    coalesce(batch_no,'') as ""BatchNo"",
+    coalesce(batch_status,'') as ""BatchStatus"",
+    box_id          as ""BoxId"",
+    box_no          as ""BoxNo"",
+    label_code      as ""LabelCode"",
+    location_id     as ""LocationId"",
+    location_code   as ""LocationCode"",
+    property_name   as ""PropertyName"",
+    building        as ""Building"",
+    room            as ""Room"",
+    aisle           as ""Aisle"",
+    rack            as ""Rack"",
+    shelf           as ""Shelf"",
+    pallet          as ""Pallet"",
+    full_location   as ""FullLocation"",
+    linked_at       as ""LinkedAt""
+from ged.vw_physical_map
+where tenant_id=@tenant_id
+  and (
+    @q = ''
+    or coalesce(document_code,'') ilike ('%'||@q||'%')
+    or coalesce(document_title,'') ilike ('%'||@q||'%')
+    or coalesce(batch_no,'') ilike ('%'||@q||'%')
+    or coalesce(label_code,'') ilike ('%'||@q||'%')
+    or coalesce(location_code,'') ilike ('%'||@q||'%')
+    or coalesce(full_location,'') ilike ('%'||@q||'%')
+  )
+order by coalesce(full_location,''), box_no, document_title
+limit 1000;";
+
+            var rows = await conn.QueryAsync<PhysicalMapRowDto>(
+                new CommandDefinition(sql, new { tenant_id = tenantId, q }, cancellationToken: ct));
+
+            return rows.AsList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "PhysicalQueries.GetPhysicalMapAsync failed. Tenant={Tenant}", tenantId);
+            return Array.Empty<PhysicalMapRowDto>();
+        }
+    }
 }

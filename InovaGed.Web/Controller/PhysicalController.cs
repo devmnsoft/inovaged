@@ -194,12 +194,14 @@ public sealed class PhysicalController : Controller
 
         if (boxId is null || boxId == Guid.Empty)
         {
+            ViewBag.LocationHistory = Array.Empty<BoxLocationHistoryRowDto>();
             ViewData["Title"] = "Histórico da Caixa";
             ViewData["Subtitle"] = "Selecione uma caixa para ver o histórico físico.";
             return View(Array.Empty<BoxHistoryRowDto>());
         }
 
         var rows = await _queries.GetBoxHistoryAsync(tenantId, boxId.Value, ct);
+        ViewBag.LocationHistory = await _queries.GetBoxLocationHistoryAsync(tenantId, boxId.Value, ct);
 
         var selectedBox = boxes.FirstOrDefault(b => b.Id == boxId);
         var boxLabel = selectedBox is not null
@@ -209,6 +211,17 @@ public sealed class PhysicalController : Controller
         ViewData["Title"] = "Histórico da Caixa";
         ViewData["Subtitle"] = $"Rastreabilidade física — {boxLabel}";
 
+        return View(rows);
+    }
+
+    [HttpGet("PhysicalMap")]
+    public async Task<IActionResult> PhysicalMap(string? q, CancellationToken ct)
+    {
+        ViewBag.Q = q;
+        ViewData["Title"] = "Mapa de Guarda Física";
+        ViewData["Subtitle"] = "Localização física dos documentos por caixa, lote e endereço de armazenamento.";
+
+        var rows = await _queries.GetPhysicalMapAsync(_user.TenantId, q, ct);
         return View(rows);
     }
 }
