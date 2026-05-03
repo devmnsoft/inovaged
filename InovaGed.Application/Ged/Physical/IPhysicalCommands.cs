@@ -9,4 +9,8 @@ public interface IPhysicalCommands
 
     Task<Result<Guid>> UpsertBoxAsync(Guid tenantId, Guid? userId, BoxFormVM vm, CancellationToken ct);
     Task<Result> DeleteBoxAsync(Guid tenantId, Guid id, Guid? userId, CancellationToken ct);
+
+    Task<Result> AddDocumentToBoxAsync(Guid tenantId, Guid? userId, BoxContentMaintenanceVM vm, CancellationToken ct);
+    Task<Result> RemoveDocumentFromBoxAsync(Guid tenantId, Guid? userId, BoxContentMaintenanceVM vm, CancellationToken ct);
+    Task<Result> MoveDocumentToBoxAsync(Guid tenantId, Guid? userId, BoxContentMaintenanceVM vm, CancellationToken ct);
 }

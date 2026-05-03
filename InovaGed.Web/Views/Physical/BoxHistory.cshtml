@@ -1,9 +1,10 @@
 @using InovaGed.Application.Ged.Physical
 @model IReadOnlyList<BoxHistoryRowDto>
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
 
 @{
     ViewData["Title"] ??= "Histórico da Caixa";
-    var boxes = ViewBag.Boxes as IReadOnlyList<BoxRowDto> ?? new List<BoxRowDto>();
+    var boxes = ViewBag.Boxes as IReadOnlyList<BoxRowDto> ?? Array.Empty<BoxRowDto>();
     var selectedBoxId = ViewBag.SelectedBoxId as Guid?;
 }
 
@@ -15,8 +16,9 @@
             <div class="text-muted small">@st</div>
         }
     </div>
+
     <a class="btn btn-outline-secondary" asp-action="Boxes">
-        <i class="bi bi-arrow-left me-1"></i> Voltar para Caixas
+        <i class="bi bi-arrow-left me-1"></i>Voltar para Caixas
     </a>
 </div>
 
@@ -24,26 +26,35 @@
 {
     <div class="alert alert-danger">@err</div>
 }
- 
+
 <div class="card mb-3">
     <div class="card-body">
         <form method="get" class="d-flex flex-wrap gap-3 align-items-end">
             <div class="flex-grow-1">
                 <label class="form-label fw-semibold">
-                    <i class="bi bi-inbox me-1"></i> Selecionar Caixa
+                    <i class="bi bi-inbox me-1"></i>Selecionar Caixa
                 </label>
+
                 <select name="boxId" class="form-select" onchange="this.form.submit()">
                     <option value="">— Selecione uma caixa —</option>
+
                     @foreach (var b in boxes)
                     {
                         var loc = string.IsNullOrWhiteSpace(b.LocationLabel) ? "" : $" · {b.LocationLabel}";
-
-                        <option value="@b.Id" selected="@(b.Id == selectedBoxId)">
-                            Caixa #@b.BoxNo — @b.LabelCode@loc
-                        </option>
+                        if (b.Id == selectedBoxId)
+                        {
+                            <option value="@b.Id" selected="selected">Caixa #@b.BoxNo — @b.LabelCode@loc</option>
+                        }
+                        else
+                        {
+                            <option value="@b.Id">Caixa #@b.BoxNo — @b.LabelCode@loc</option>
+                        }
                     }
                 </select>
-                <div class="form-text">O endereço físico (localização) é exibido ao lado de cada caixa. Item 24 do edital.</div>
+
+                <div class="form-text">
+                    Histórico real gerado a partir de movimentações em ged.batch_item e ged.box_content_history.
+                </div>
             </div>
         </form>
     </div>
@@ -53,55 +64,56 @@
 {
     <div class="alert alert-info">
         <i class="bi bi-info-circle me-2"></i>
-        Selecione uma caixa acima para visualizar o histórico de documentos e fases do tratamento documental.
+        Selecione uma caixa para visualizar a rastreabilidade física.
     </div>
 }
 else if (Model is null || Model.Count == 0)
 {
     <div class="alert alert-warning">
         <i class="bi bi-exclamation-triangle me-2"></i>
-        Nenhum registro encontrado para esta caixa. Adicione documentos a um lote vinculando-os a esta caixa.
+        Nenhum registro físico encontrado para esta caixa.
     </div>
 }
 else
 {
     <div class="card">
         <div class="card-header d-flex justify-content-between align-items-center">
-            <strong><i class="bi bi-list-columns-reverse me-1"></i> Rastreio de Documentos e Fases</strong>
+            <strong><i class="bi bi-list-columns-reverse me-1"></i>Rastreabilidade física</strong>
             <span class="text-muted small">@Model.Count registro(s)</span>
         </div>
+
         <div class="table-responsive">
             <table class="table table-sm align-middle mb-0">
                 <thead class="table-light">
                     <tr>
                         <th style="width:150px;">Data/Hora</th>
-                        <th style="width:130px;">Evento / Fase</th>
+                        <th style="width:130px;">Evento</th>
                         <th style="width:120px;">Lote</th>
                         <th>Documento</th>
+                        <th>Movimentação</th>
                         <th>Observações</th>
                     </tr>
                 </thead>
+
                 <tbody>
                     @foreach (var r in Model)
                     {
                         var (badgeClass, label) = r.EventType switch
                         {
-                            "ADD" or "ADD_ITEM"      => ("text-bg-success", "Entrada"),
-                            "REMOVE" or "REMOVE_ITEM" => ("text-bg-danger",  "Saída"),
-                            "MOVE" or "MOVE_ITEM_BOX" => ("text-bg-warning", "Movimentação"),
-                            "RECEIVED"               => ("text-bg-secondary","Recebido"),
-                            "TRIAGE"                 => ("text-bg-info",     "Triagem"),
-                            "DIGITIZATION"           => ("text-bg-primary",  "Digitalização"),
-                            "INDEXING"               => ("text-bg-warning",  "Indexação"),
-                            "ARCHIVED"               => ("text-bg-dark",     "Arquivado"),
-                            "CREATE"                 => ("text-bg-light border","Criação"),
-                            _                        => ("text-bg-light border", r.EventType)
+                            "ADD" => ("text-bg-success", "Entrada"),
+                            "REMOVE" => ("text-bg-danger", "Saída"),
+                            "MOVE" => ("text-bg-warning", "Movimentação"),
+                            "UPDATE" => ("text-bg-secondary", "Atualização"),
+                            _ => ("text-bg-light border", r.EventType)
                         };
+
                         <tr>
                             <td class="text-nowrap small">@r.At.ToString("dd/MM/yyyy HH:mm")</td>
-                            <td class="text-nowrap">
+
+                            <td>
                                 <span class="badge @badgeClass">@label</span>
                             </td>
+
                             <td class="text-nowrap">
                                 @if (r.BatchId != Guid.Empty)
                                 {
@@ -115,10 +127,34 @@ else
                                     <span class="text-muted">—</span>
                                 }
                             </td>
+
                             <td>
-                                <div class="fw-semibold">@(string.IsNullOrWhiteSpace(r.DocumentTitle) ? "(sem título)" : r.DocumentTitle)</div>
+                                <div class="fw-semibold">
+                                    @(string.IsNullOrWhiteSpace(r.DocumentTitle) ? "(sem título)" : r.DocumentTitle)
+                                </div>
                                 <div class="text-muted small">@r.DocumentCode</div>
                             </td>
+
+                            <td class="small">
+                                @if (r.EventType == "MOVE")
+                                {
+                                    <div><strong>De:</strong> @(r.OldBoxLabel ?? "Sem caixa")</div>
+                                    <div><strong>Para:</strong> @(r.NewBoxLabel ?? "Sem caixa")</div>
+                                }
+                                else if (r.EventType == "ADD")
+                                {
+                                    <div><strong>Entrada:</strong> @(r.NewBoxLabel ?? "Caixa selecionada")</div>
+                                }
+                                else if (r.EventType == "REMOVE")
+                                {
+                                    <div><strong>Saída:</strong> @(r.OldBoxLabel ?? "Caixa selecionada")</div>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">—</span>
+                                }
+                            </td>
+
                             <td class="text-muted small">@(r.Notes ?? "—")</td>
                         </tr>
                     }

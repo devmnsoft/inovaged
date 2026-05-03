@@ -26,103 +26,59 @@ public sealed class PhysicalController : Controller
         _commands = commands;
     }
 
-    // ─────────────── Locations ────────────────────────────────────────────────
-
     [HttpGet("Locations")]
     public async Task<IActionResult> Locations(string? q, CancellationToken ct)
     {
-        try
-        {
-            var list = await _queries.ListLocationsAsync(_user.TenantId, q, ct);
-            ViewBag.Q = q;
-            return View(list);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Physical.Locations failed");
-            return View(Array.Empty<PhysicalLocationRowDto>());
-        }
+        var list = await _queries.ListLocationsAsync(_user.TenantId, q, ct);
+        ViewBag.Q = q;
+        return View(list);
     }
 
     [HttpGet("Locations/New")]
-    public IActionResult NewLocation() => View("LocationForm", new PhysicalLocationFormVM());
+    public IActionResult NewLocation()
+        => View("LocationForm", new PhysicalLocationFormVM());
 
     [HttpGet("Locations/{id:guid}")]
     public async Task<IActionResult> EditLocation(Guid id, CancellationToken ct)
     {
-        try
-        {
-            var vm = await _queries.GetLocationAsync(_user.TenantId, id, ct);
-            if (vm is null) return NotFound();
-            return View("LocationForm", vm);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Physical.EditLocation failed");
-            return StatusCode(500);
-        }
+        var vm = await _queries.GetLocationAsync(_user.TenantId, id, ct);
+        if (vm is null) return NotFound();
+        return View("LocationForm", vm);
     }
 
     [HttpPost("Locations/Save")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> SaveLocation(PhysicalLocationFormVM vm, CancellationToken ct)
     {
-        try
+        var res = await _commands.UpsertLocationAsync(_user.TenantId, _user.UserId, vm, ct);
+
+        if (!res.IsSuccess)
         {
-            var res = await _commands.UpsertLocationAsync(_user.TenantId, _user.UserId, vm, ct);
-            if (!res.IsSuccess)
-            {
-                TempData["Err"] = res.ErrorMessage;
-                return View("LocationForm", vm);
-            }
-            TempData["Ok"] = "Localização salva.";
-            return RedirectToAction(nameof(Locations));
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Physical.SaveLocation failed");
-            TempData["Err"] = "Erro ao salvar localização.";
+            TempData["Err"] = res.ErrorMessage;
             return View("LocationForm", vm);
         }
+
+        TempData["Ok"] = "Localização salva com sucesso.";
+        return RedirectToAction(nameof(Locations));
     }
 
     [HttpPost("Locations/{id:guid}/Delete")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> DeleteLocation(Guid id, CancellationToken ct)
     {
-        try
-        {
-            var res = await _commands.DeleteLocationAsync(_user.TenantId, id, _user.UserId, ct);
-            TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Localização removida." : res.ErrorMessage;
-            return RedirectToAction(nameof(Locations));
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Physical.DeleteLocation failed");
-            TempData["Err"] = "Erro ao excluir localização.";
-            return RedirectToAction(nameof(Locations));
-        }
+        var res = await _commands.DeleteLocationAsync(_user.TenantId, id, _user.UserId, ct);
+        TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Localização removida." : res.ErrorMessage;
+        return RedirectToAction(nameof(Locations));
     }
-
-    // ─────────────── Boxes ────────────────────────────────────────────────────
 
     [HttpGet("Boxes")]
     public async Task<IActionResult> Boxes(string? q, CancellationToken ct)
     {
-        try
-        {
-            var list = await _queries.ListBoxesAsync(_user.TenantId, q, ct);
-            ViewBag.Q = q;
-            return View(list);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Physical.Boxes failed");
-            return View(Array.Empty<BoxRowDto>());
-        }
+        var list = await _queries.ListBoxesAsync(_user.TenantId, q, ct);
+        ViewBag.Q = q;
+        return View(list);
     }
 
-    // FIX: NewBox agora popula ViewBag.Locations para o select da view
     [HttpGet("Boxes/New")]
     public async Task<IActionResult> NewBox(CancellationToken ct)
     {
@@ -130,113 +86,108 @@ public sealed class PhysicalController : Controller
         return View("BoxForm", new BoxFormVM());
     }
 
-    // FIX: EditBox agora popula ViewBag.Locations
     [HttpGet("Boxes/{id:guid}")]
     public async Task<IActionResult> EditBox(Guid id, CancellationToken ct)
     {
-        try
-        {
-            var vm = await _queries.GetBoxAsync(_user.TenantId, id, ct);
-            if (vm is null) return NotFound();
-            ViewBag.Locations = await _queries.ListLocationsAsync(_user.TenantId, null, ct);
-            return View("BoxForm", vm);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Physical.EditBox failed");
-            return StatusCode(500);
-        }
+        var vm = await _queries.GetBoxAsync(_user.TenantId, id, ct);
+        if (vm is null) return NotFound();
+
+        ViewBag.Locations = await _queries.ListLocationsAsync(_user.TenantId, null, ct);
+        return View("BoxForm", vm);
     }
 
     [HttpPost("Boxes/Save")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> SaveBox(BoxFormVM vm, CancellationToken ct)
     {
-        try
+        var res = await _commands.UpsertBoxAsync(_user.TenantId, _user.UserId, vm, ct);
+
+        if (!res.IsSuccess)
         {
-            var res = await _commands.UpsertBoxAsync(_user.TenantId, _user.UserId, vm, ct);
-            if (!res.IsSuccess)
-            {
-                TempData["Err"] = res.ErrorMessage;
-                ViewBag.Locations = await _queries.ListLocationsAsync(_user.TenantId, null, ct);
-                return View("BoxForm", vm);
-            }
-            TempData["Ok"] = "Caixa salva.";
-            return RedirectToAction(nameof(Boxes));
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Physical.SaveBox failed");
-            TempData["Err"] = "Erro ao salvar caixa.";
+            TempData["Err"] = res.ErrorMessage;
             ViewBag.Locations = await _queries.ListLocationsAsync(_user.TenantId, null, ct);
             return View("BoxForm", vm);
         }
+
+        TempData["Ok"] = "Caixa salva com sucesso.";
+        return RedirectToAction(nameof(Boxes));
     }
 
     [HttpPost("Boxes/{id:guid}/Delete")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> DeleteBox(Guid id, CancellationToken ct)
     {
-        try
-        {
-            var res = await _commands.DeleteBoxAsync(_user.TenantId, id, _user.UserId, ct);
-            TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Caixa removida." : res.ErrorMessage;
-            return RedirectToAction(nameof(Boxes));
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Physical.DeleteBox failed");
-            TempData["Err"] = "Erro ao excluir caixa.";
-            return RedirectToAction(nameof(Boxes));
-        }
+        var res = await _commands.DeleteBoxAsync(_user.TenantId, id, _user.UserId, ct);
+        TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Caixa removida." : res.ErrorMessage;
+        return RedirectToAction(nameof(Boxes));
     }
 
-    // ─────────────── BoxContents (Item 17) ────────────────────────────────────
-    // FIX: action criada — antes retornava 404
-
     [HttpGet("BoxContents")]
-    public async Task<IActionResult> BoxContents(Guid? boxId, CancellationToken ct)
+    public async Task<IActionResult> BoxContents(Guid? boxId, string? q, CancellationToken ct)
     {
         var tenantId = _user.TenantId;
+
         var boxes = await _queries.ListBoxesAsync(tenantId, null, ct);
         ViewBag.Boxes = boxes;
         ViewBag.SelectedBoxId = boxId;
+        ViewBag.Q = q;
 
         if (boxId is null || boxId == Guid.Empty)
         {
+            ViewBag.AvailableDocuments = Array.Empty<AvailableDocumentForBoxDto>();
             ViewData["Title"] = "Conteúdo da Caixa";
             ViewData["Subtitle"] = "Selecione uma caixa para ver os documentos armazenados.";
             return View(Array.Empty<BoxContentItemDto>());
         }
 
-        try
-        {
-            var contents = await _queries.GetBoxContentsAsync(tenantId, boxId.Value, ct);
-            var selectedBox = boxes.FirstOrDefault(b => b.Id == boxId);
-            var boxLabel = selectedBox is not null
-                ? $"Caixa #{selectedBox.BoxNo} — {selectedBox.LabelCode}"
-                : boxId.ToString();
+        var contents = await _queries.GetBoxContentsAsync(tenantId, boxId.Value, ct);
+        var available = await _queries.ListDocumentsAvailableForBoxAsync(tenantId, boxId.Value, q, ct);
 
-            ViewData["Title"] = "Conteúdo da Caixa";
-            ViewData["Subtitle"] = $"{boxLabel} · {contents.Count} documento(s)";
+        ViewBag.AvailableDocuments = available;
 
-            return View(contents);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Physical.BoxContents failed. Box={BoxId}", boxId);
-            TempData["Err"] = "Erro ao carregar conteúdo da caixa.";
-            return View(Array.Empty<BoxContentItemDto>());
-        }
+        var selectedBox = boxes.FirstOrDefault(b => b.Id == boxId);
+        var boxLabel = selectedBox is not null
+            ? $"Caixa #{selectedBox.BoxNo} — {selectedBox.LabelCode}"
+            : boxId.ToString();
+
+        ViewData["Title"] = "Conteúdo da Caixa";
+        ViewData["Subtitle"] = $"{boxLabel} · {contents.Count} documento(s)";
+
+        return View(contents);
     }
 
-    // ─────────────── BoxHistory (Item 18/24) ──────────────────────────────────
-    // FIX: usa _user.TenantId em vez de HttpContext.Items["TenantId"]
+    [HttpPost("BoxContents/Add")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> AddDocumentToBox(BoxContentMaintenanceVM vm, CancellationToken ct)
+    {
+        var res = await _commands.AddDocumentToBoxAsync(_user.TenantId, _user.UserId, vm, ct);
+        TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Documento incluído na caixa." : res.ErrorMessage;
+        return RedirectToAction(nameof(BoxContents), new { boxId = vm.BoxId });
+    }
+
+    [HttpPost("BoxContents/Remove")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> RemoveDocumentFromBox(BoxContentMaintenanceVM vm, CancellationToken ct)
+    {
+        var res = await _commands.RemoveDocumentFromBoxAsync(_user.TenantId, _user.UserId, vm, ct);
+        TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Documento removido da caixa." : res.ErrorMessage;
+        return RedirectToAction(nameof(BoxContents), new { boxId = vm.BoxId });
+    }
+
+    [HttpPost("BoxContents/Move")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> MoveDocumentToBox(BoxContentMaintenanceVM vm, CancellationToken ct)
+    {
+        var res = await _commands.MoveDocumentToBoxAsync(_user.TenantId, _user.UserId, vm, ct);
+        TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Documento movimentado para a caixa." : res.ErrorMessage;
+        return RedirectToAction(nameof(BoxContents), new { boxId = vm.BoxId });
+    }
 
     [HttpGet("BoxHistory")]
     public async Task<IActionResult> BoxHistory(Guid? boxId, CancellationToken ct)
     {
         var tenantId = _user.TenantId;
+
         var boxes = await _queries.ListBoxesAsync(tenantId, null, ct);
         ViewBag.Boxes = boxes;
         ViewBag.SelectedBoxId = boxId;
@@ -244,28 +195,20 @@ public sealed class PhysicalController : Controller
         if (boxId is null || boxId == Guid.Empty)
         {
             ViewData["Title"] = "Histórico da Caixa";
-            ViewData["Subtitle"] = "Selecione uma caixa para ver o histórico de documentos e fases.";
+            ViewData["Subtitle"] = "Selecione uma caixa para ver o histórico físico.";
             return View(Array.Empty<BoxHistoryRowDto>());
         }
 
-        try
-        {
-            var rows = await _queries.GetBoxHistoryAsync(tenantId, boxId.Value, ct);
-            var selectedBox = boxes.FirstOrDefault(b => b.Id == boxId);
-            var boxLabel = selectedBox is not null
-                ? $"Caixa #{selectedBox.BoxNo} — {selectedBox.LabelCode}"
-                : boxId.ToString();
+        var rows = await _queries.GetBoxHistoryAsync(tenantId, boxId.Value, ct);
 
-            ViewData["Title"] = "Histórico da Caixa";
-            ViewData["Subtitle"] = $"Rastreio físico — {boxLabel}";
+        var selectedBox = boxes.FirstOrDefault(b => b.Id == boxId);
+        var boxLabel = selectedBox is not null
+            ? $"Caixa #{selectedBox.BoxNo} — {selectedBox.LabelCode}"
+            : boxId.ToString();
 
-            return View(rows);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Physical.BoxHistory failed. Box={BoxId}", boxId);
-            TempData["Err"] = "Erro ao carregar histórico.";
-            return View(Array.Empty<BoxHistoryRowDto>());
-        }
+        ViewData["Title"] = "Histórico da Caixa";
+        ViewData["Subtitle"] = $"Rastreabilidade física — {boxLabel}";
+
+        return View(rows);
     }
 }

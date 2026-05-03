@@ -23,23 +23,24 @@ public sealed class PhysicalQueries : IPhysicalQueries
             await using var conn = await _db.OpenAsync(ct);
             q = (q ?? "").Trim();
 
-            const string sql = @"
+            const string sql = """
 select
-  id                   as ""Id"",
-  location_code        as ""LocationCode"",
-  property_name        as ""PropertyName"",
-  address_street       as ""AddressStreet"",
-  address_number       as ""AddressNumber"",
-  address_district     as ""AddressDistrict"",
-  address_city         as ""AddressCity"",
-  address_state        as ""AddressState"",
-  address_zip          as ""AddressZip"",
-  building             as ""Building"",
-  room                 as ""Room"",
-  aisle                as ""Aisle"",
-  rack                 as ""Rack"",
-  shelf                as ""Shelf"",
-  pallet               as ""Pallet""
+  id                   as "Id",
+  location_code        as "LocationCode",
+  property_name        as "PropertyName",
+  address_street       as "AddressStreet",
+  address_number       as "AddressNumber",
+  address_district     as "AddressDistrict",
+  address_city         as "AddressCity",
+  address_state        as "AddressState",
+  address_zip          as "AddressZip",
+  building             as "Building",
+  room                 as "Room",
+  aisle                as "Aisle",
+  rack                 as "Rack",
+  shelf                as "Shelf",
+  pallet               as "Pallet",
+  notes                as "Notes"
 from ged.physical_location
 where tenant_id=@tenant_id
   and reg_status='A'
@@ -49,11 +50,18 @@ where tenant_id=@tenant_id
     or coalesce(property_name,'') ilike ('%'||@q||'%')
     or coalesce(address_street,'') ilike ('%'||@q||'%')
     or coalesce(building,'') ilike ('%'||@q||'%')
+    or coalesce(room,'') ilike ('%'||@q||'%')
+    or coalesce(aisle,'') ilike ('%'||@q||'%')
+    or coalesce(rack,'') ilike ('%'||@q||'%')
+    or coalesce(shelf,'') ilike ('%'||@q||'%')
+    or coalesce(pallet,'') ilike ('%'||@q||'%')
   )
 order by coalesce(property_name,''), coalesce(location_code,''), id;
-";
+""";
+
             var list = await conn.QueryAsync<PhysicalLocationRowDto>(
                 new CommandDefinition(sql, new { tenant_id = tenantId, q }, cancellationToken: ct));
+
             return list.AsList();
         }
         catch (Exception ex)
@@ -68,32 +76,37 @@ order by coalesce(property_name,''), coalesce(location_code,''), id;
         try
         {
             await using var conn = await _db.OpenAsync(ct);
-            const string sql = @"
+
+            const string sql = """
 select
-  id               as ""Id"",
-  location_code    as ""LocationCode"",
-  property_name    as ""PropertyName"",
-  address_street   as ""AddressStreet"",
-  address_number   as ""AddressNumber"",
-  address_district as ""AddressDistrict"",
-  address_city     as ""AddressCity"",
-  address_state    as ""AddressState"",
-  address_zip      as ""AddressZip"",
-  building         as ""Building"",
-  room             as ""Room"",
-  aisle            as ""Aisle"",
-  rack             as ""Rack"",
-  shelf            as ""Shelf"",
-  pallet           as ""Pallet""
+  id               as "Id",
+  location_code    as "LocationCode",
+  property_name    as "PropertyName",
+  address_street   as "AddressStreet",
+  address_number   as "AddressNumber",
+  address_district as "AddressDistrict",
+  address_city     as "AddressCity",
+  address_state    as "AddressState",
+  address_zip      as "AddressZip",
+  building         as "Building",
+  room             as "Room",
+  aisle            as "Aisle",
+  rack             as "Rack",
+  shelf            as "Shelf",
+  pallet           as "Pallet",
+  notes            as "Notes"
 from ged.physical_location
-where tenant_id=@tenant_id and id=@id and reg_status='A';
-";
+where tenant_id=@tenant_id
+  and id=@id
+  and reg_status='A';
+""";
+
             return await conn.QuerySingleOrDefaultAsync<PhysicalLocationFormVM>(
                 new CommandDefinition(sql, new { tenant_id = tenantId, id }, cancellationToken: ct));
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "PhysicalQueries.GetLocationAsync failed. Tenant={Tenant}", tenantId);
+            _logger.LogError(ex, "PhysicalQueries.GetLocationAsync failed. Tenant={Tenant} Id={Id}", tenantId, id);
             return null;
         }
     }
@@ -105,19 +118,21 @@ where tenant_id=@tenant_id and id=@id and reg_status='A';
             await using var conn = await _db.OpenAsync(ct);
             q = (q ?? "").Trim();
 
-            const string sql = @"
+            const string sql = """
 select
-  b.id            as ""Id"",
-  b.box_no        as ""BoxNo"",
-  b.label_code    as ""LabelCode"",
-  b.notes         as ""Notes"",
-  b.location_id   as ""LocationId"",
-  pl.location_code as ""LocationCode"",
-  pl.building     as ""LocationBuilding"",
-  pl.room         as ""LocationRoom""
+  b.id              as "Id",
+  b.box_no          as "BoxNo",
+  b.label_code      as "LabelCode",
+  b.notes           as "Notes",
+  b.location_id     as "LocationId",
+  pl.location_code  as "LocationCode",
+  pl.building       as "LocationBuilding",
+  pl.room           as "LocationRoom"
 from ged.box b
 left join ged.physical_location pl
-  on pl.tenant_id=b.tenant_id and pl.id=b.location_id and pl.reg_status='A'
+  on pl.tenant_id=b.tenant_id
+ and pl.id=b.location_id
+ and pl.reg_status='A'
 where b.tenant_id=@tenant_id
   and b.reg_status='A'
   and (
@@ -126,11 +141,15 @@ where b.tenant_id=@tenant_id
     or coalesce(b.label_code,'') ilike ('%'||@q||'%')
     or coalesce(b.notes,'') ilike ('%'||@q||'%')
     or coalesce(pl.location_code,'') ilike ('%'||@q||'%')
+    or coalesce(pl.building,'') ilike ('%'||@q||'%')
+    or coalesce(pl.room,'') ilike ('%'||@q||'%')
   )
 order by b.box_no;
-";
+""";
+
             var list = await conn.QueryAsync<BoxRowDto>(
                 new CommandDefinition(sql, new { tenant_id = tenantId, q }, cancellationToken: ct));
+
             return list.AsList();
         }
         catch (Exception ex)
@@ -140,59 +159,67 @@ order by b.box_no;
         }
     }
 
-    // FIX: inclui box_no na query para popular BoxFormVM corretamente
     public async Task<BoxFormVM?> GetBoxAsync(Guid tenantId, Guid id, CancellationToken ct)
     {
         try
         {
             await using var conn = await _db.OpenAsync(ct);
-            const string sql = @"
+
+            const string sql = """
 select
-  id           as ""Id"",
-  box_no       as ""BoxNo"",
-  label_code   as ""LabelCode"",
-  notes        as ""Notes"",
-  location_id  as ""LocationId""
+  id           as "Id",
+  box_no       as "BoxNo",
+  label_code   as "LabelCode",
+  notes        as "Notes",
+  location_id  as "LocationId"
 from ged.box
-where tenant_id=@tenant_id and id=@id and reg_status='A';
-";
+where tenant_id=@tenant_id
+  and id=@id
+  and reg_status='A';
+""";
+
             return await conn.QuerySingleOrDefaultAsync<BoxFormVM>(
                 new CommandDefinition(sql, new { tenant_id = tenantId, id }, cancellationToken: ct));
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "PhysicalQueries.GetBoxAsync failed. Tenant={Tenant}", tenantId);
+            _logger.LogError(ex, "PhysicalQueries.GetBoxAsync failed. Tenant={Tenant} Id={Id}", tenantId, id);
             return null;
         }
     }
 
-    // BoxContents: documentos atualmente na caixa via batch_item ativo
     public async Task<IReadOnlyList<BoxContentItemDto>> GetBoxContentsAsync(Guid tenantId, Guid boxId, CancellationToken ct)
     {
         try
         {
             await using var conn = await _db.OpenAsync(ct);
-            const string sql = @"
+
+            const string sql = """
 select
-  bi.document_id          as ""DocumentId"",
-  coalesce(d.code,'')     as ""DocumentCode"",
-  coalesce(d.title,'')    as ""DocumentTitle"",
-  b.batch_no::text        as ""BatchNo"",
-  b.id                    as ""BatchId"",
-  b.status::text          as ""BatchStatus"",
-  bi.reg_date             as ""AddedAt""
+  bi.document_id          as "DocumentId",
+  coalesce(d.code,'')     as "DocumentCode",
+  coalesce(d.title,'')    as "DocumentTitle",
+  b.batch_no::text        as "BatchNo",
+  b.id                    as "BatchId",
+  b.status::text          as "BatchStatus",
+  bi.reg_date             as "AddedAt"
 from ged.batch_item bi
 join ged.document d
-  on d.tenant_id=bi.tenant_id and d.id=bi.document_id
+  on d.tenant_id=bi.tenant_id
+ and d.id=bi.document_id
 join ged.batch b
-  on b.tenant_id=bi.tenant_id and b.id=bi.batch_id and b.reg_status='A'
+  on b.tenant_id=bi.tenant_id
+ and b.id=bi.batch_id
+ and b.reg_status='A'
 where bi.tenant_id=@tenant_id
   and bi.box_id=@box_id
   and bi.reg_status='A'
 order by d.title;
-";
+""";
+
             var rows = await conn.QueryAsync<BoxContentItemDto>(
                 new CommandDefinition(sql, new { tenant_id = tenantId, box_id = boxId }, cancellationToken: ct));
+
             return rows.AsList();
         }
         catch (Exception ex)
@@ -202,35 +229,119 @@ order by d.title;
         }
     }
 
+    public async Task<IReadOnlyList<AvailableDocumentForBoxDto>> ListDocumentsAvailableForBoxAsync(
+        Guid tenantId,
+        Guid boxId,
+        string? q,
+        CancellationToken ct)
+    {
+        try
+        {
+            await using var conn = await _db.OpenAsync(ct);
+            q = (q ?? "").Trim();
+
+            const string sql = """
+select
+  d.id                 as "DocumentId",
+  coalesce(d.code,'')  as "DocumentCode",
+  coalesce(d.title,'') as "DocumentTitle",
+  b.id                 as "BatchId",
+  b.batch_no::text     as "BatchNo",
+  b.status::text       as "BatchStatus",
+  bi.box_id            as "CurrentBoxId",
+  case
+    when bx.id is null then null
+    else ('Caixa #' || bx.box_no::text || ' — ' || bx.label_code)
+  end                  as "CurrentBoxLabel"
+from ged.batch_item bi
+join ged.document d
+  on d.tenant_id=bi.tenant_id
+ and d.id=bi.document_id
+join ged.batch b
+  on b.tenant_id=bi.tenant_id
+ and b.id=bi.batch_id
+ and b.reg_status='A'
+left join ged.box bx
+  on bx.tenant_id=bi.tenant_id
+ and bx.id=bi.box_id
+ and bx.reg_status='A'
+where bi.tenant_id=@tenant_id
+  and bi.reg_status='A'
+  and (
+    @q = ''
+    or coalesce(d.code,'') ilike ('%'||@q||'%')
+    or coalesce(d.title,'') ilike ('%'||@q||'%')
+    or b.batch_no::text ilike ('%'||@q||'%')
+  )
+order by d.title, b.batch_no
+limit 200;
+""";
+
+            var rows = await conn.QueryAsync<AvailableDocumentForBoxDto>(
+                new CommandDefinition(sql, new { tenant_id = tenantId, box_id = boxId, q }, cancellationToken: ct));
+
+            return rows.AsList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "PhysicalQueries.ListDocumentsAvailableForBoxAsync failed. Tenant={Tenant} Box={Box}", tenantId, boxId);
+            return Array.Empty<AvailableDocumentForBoxDto>();
+        }
+    }
+
     public async Task<IReadOnlyList<BoxHistoryRowDto>> GetBoxHistoryAsync(Guid tenantId, Guid boxId, CancellationToken ct)
     {
         try
         {
             await using var conn = await _db.OpenAsync(ct);
-            const string sql = @"
+
+            const string sql = """
 select
-  coalesce(h.event_time, b.created_at)   as ""At"",
-  coalesce(h.event_type, b.status::text) as ""EventType"",
-  b.batch_no::text                       as ""BatchNo"",
-  b.id                                   as ""BatchId"",
-  bi.document_id                         as ""DocumentId"",
-  coalesce(d.code,'')                    as ""DocumentCode"",
-  coalesce(d.title,'')                   as ""DocumentTitle"",
-  h.notes                                as ""Notes""
-from ged.batch_item bi
-join ged.batch b
-  on b.tenant_id=bi.tenant_id and b.id=bi.batch_id and b.reg_status='A'
-join ged.document d
-  on d.tenant_id=bi.tenant_id and d.id=bi.document_id
-left join ged.batch_history h
-  on h.tenant_id=b.tenant_id and h.batch_id=b.id and h.reg_status='A'
-where bi.tenant_id=@tenant_id
-  and bi.box_id=@box_id
-  and bi.reg_status='A'
-order by coalesce(h.event_time, b.created_at) desc, b.batch_no, d.title;
-";
+  h.changed_at                        as "At",
+  h.action                            as "EventType",
+  coalesce(b.batch_no::text,'')        as "BatchNo",
+  coalesce(b.id, '00000000-0000-0000-0000-000000000000'::uuid) as "BatchId",
+  h.document_id                       as "DocumentId",
+  coalesce(d.code,'')                 as "DocumentCode",
+  coalesce(d.title,'')                as "DocumentTitle",
+  h.box_id                            as "BoxId",
+  h.old_box_id                        as "OldBoxId",
+  h.new_box_id                        as "NewBoxId",
+  case
+    when oldb.id is null then null
+    else ('Caixa #' || oldb.box_no::text || ' — ' || oldb.label_code)
+  end                                 as "OldBoxLabel",
+  case
+    when newb.id is null then null
+    else ('Caixa #' || newb.box_no::text || ' — ' || newb.label_code)
+  end                                 as "NewBoxLabel",
+  h.notes                             as "Notes"
+from ged.box_content_history h
+left join ged.batch b
+  on b.tenant_id=h.tenant_id
+ and b.id=h.batch_id
+left join ged.document d
+  on d.tenant_id=h.tenant_id
+ and d.id=h.document_id
+left join ged.box oldb
+  on oldb.tenant_id=h.tenant_id
+ and oldb.id=h.old_box_id
+left join ged.box newb
+  on newb.tenant_id=h.tenant_id
+ and newb.id=h.new_box_id
+where h.tenant_id=@tenant_id
+  and h.reg_status='A'
+  and (
+      h.box_id=@box_id
+      or h.old_box_id=@box_id
+      or h.new_box_id=@box_id
+  )
+order by h.changed_at desc, h.id desc;
+""";
+
             var rows = await conn.QueryAsync<BoxHistoryRowDto>(
                 new CommandDefinition(sql, new { tenant_id = tenantId, box_id = boxId }, cancellationToken: ct));
+
             return rows.AsList();
         }
         catch (Exception ex)

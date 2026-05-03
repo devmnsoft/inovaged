@@ -1,8 +1,20 @@
 ﻿@model dynamic
 @{
     Layout = null;
+
     var boxId = (Guid)Model.id;
     var url = $"{Context.Request.Scheme}://{Context.Request.Host}/Physical/BoxContents?boxId={boxId}";
+
+    string location = string.Join(" / ", new[]
+    {
+        (string?)Model.location_code,
+        (string?)Model.building,
+        (string?)Model.room,
+        (string?)Model.aisle,
+        (string?)Model.rack,
+        (string?)Model.shelf,
+        (string?)Model.pallet
+    }.Where(x => !string.IsNullOrWhiteSpace(x)));
 }
 
 <!doctype html>
@@ -10,42 +22,97 @@
 <head>
     <meta charset="utf-8" />
     <title>Etiqueta Caixa</title>
+
     <style>
         body {
-            font-family: Arial;
+            font-family: Arial, sans-serif;
             margin: 18px;
         }
 
-        .card {
-            border: 1px solid #000;
+        .label-card {
+            border: 2px solid #000;
             padding: 16px;
-            width: 520px;
+            width: 540px;
+            min-height: 260px;
         }
 
-        .big {
-            font-size: 28px;
-            font-weight: bold;
+        .title {
+            font-size: 30px;
+            font-weight: 800;
+            margin-bottom: 8px;
         }
 
-        .small {
-            font-size: 12px;
+        .line {
+            margin-bottom: 6px;
+            font-size: 15px;
         }
 
         .mono {
             font-family: Consolas, monospace;
         }
+
+        .code-box {
+            border: 1px dashed #111;
+            padding: 8px;
+            margin-top: 10px;
+            font-size: 13px;
+            word-break: break-all;
+        }
+
+        .footer {
+            margin-top: 12px;
+            font-size: 11px;
+            color: #333;
+        }
+
+        @@media print {
+            body {
+                margin: 0;
+            }
+
+            .label-card {
+                page-break-inside: avoid;
+            }
+        }
     </style>
 </head>
+
 <body>
-    <div class="card">
-        <div class="big">CAIXA: @Model.box_no</div>
-        <div><strong>Label:</strong> <span class="mono">@Model.label_code</span></div>
-        <div><strong>Notas:</strong> @Model.notes</div>
-        <hr />
-        <div class="small">Link: <span class="mono">@url</span></div>
-        <div class="small">Código (texto): <span class="mono">BOX-@Model.label_code</span></div>
+    <div class="label-card">
+        <div class="title">CAIXA #@Model.box_no</div>
+
+        <div class="line">
+            <strong>Etiqueta:</strong>
+            <span class="mono">@Model.label_code</span>
+        </div>
+
+        <div class="line">
+            <strong>Localização:</strong>
+            @(string.IsNullOrWhiteSpace(location) ? "Sem localização vinculada" : location)
+        </div>
+
+        <div class="line">
+            <strong>Observações:</strong>
+            @(Model.notes ?? "—")
+        </div>
+
+        <div class="code-box">
+            <strong>Link de rastreio:</strong><br />
+            <span class="mono">@url</span>
+        </div>
+
+        <div class="code-box">
+            <strong>Código textual:</strong>
+            <span class="mono">BOX-@Model.label_code</span>
+        </div>
+
+        <div class="footer">
+            Impressão registrada no sistema em ged.label_print.
+        </div>
     </div>
 
-    <script>window.print();</script>
+    <script>
+        window.print();
+    </script>
 </body>
 </html>

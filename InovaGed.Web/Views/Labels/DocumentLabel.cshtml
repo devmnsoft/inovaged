@@ -1,8 +1,12 @@
 ﻿@model dynamic
 @{
     Layout = null;
+
     var docId = (Guid)Model.id;
     var url = $"{Context.Request.Scheme}://{Context.Request.Host}/Ged/Index";
+    var boxInfo = Model.box_no == null
+        ? "Sem caixa vinculada"
+        : $"Caixa #{Model.box_no} — {Model.box_label_code}";
 }
 
 <!doctype html>
@@ -10,24 +14,97 @@
 <head>
     <meta charset="utf-8" />
     <title>Etiqueta Documento</title>
+
     <style>
-        body { font-family: Arial; margin: 18px; }
-        .card { border:1px solid #000; padding:16px; width:520px; }
-        .big { font-size:22px; font-weight:bold; }
-        .small { font-size:12px; }
-        .mono { font-family: Consolas, monospace; }
+        body {
+            font-family: Arial, sans-serif;
+            margin: 18px;
+        }
+
+        .label-card {
+            border: 2px solid #000;
+            padding: 16px;
+            width: 540px;
+            min-height: 240px;
+        }
+
+        .title {
+            font-size: 24px;
+            font-weight: 800;
+            margin-bottom: 8px;
+        }
+
+        .line {
+            margin-bottom: 6px;
+            font-size: 15px;
+        }
+
+        .mono {
+            font-family: Consolas, monospace;
+        }
+
+        .code-box {
+            border: 1px dashed #111;
+            padding: 8px;
+            margin-top: 10px;
+            font-size: 13px;
+            word-break: break-all;
+        }
+
+        .footer {
+            margin-top: 12px;
+            font-size: 11px;
+            color: #333;
+        }
+
+        @@media print {
+            body {
+                margin: 0;
+            }
+
+            .label-card {
+                page-break-inside: avoid;
+            }
+        }
     </style>
 </head>
-<body>
-<div class="card">
-    <div class="big">DOC: @Model.code</div>
-    <div><strong>Título:</strong> @Model.title</div>
-    <div><strong>Status:</strong> @Model.status</div>
-    <hr/>
-    <div class="small">Sistema: <span class="mono">@url</span></div>
-    <div class="small">Código (texto): <span class="mono">DOC-@Model.code</span></div>
-</div>
 
-<script>window.print();</script>
+<body>
+    <div class="label-card">
+        <div class="title">DOCUMENTO @Model.code</div>
+
+        <div class="line">
+            <strong>Título:</strong>
+            @Model.title
+        </div>
+
+        <div class="line">
+            <strong>Status:</strong>
+            @Model.status
+        </div>
+
+        <div class="line">
+            <strong>Caixa:</strong>
+            @boxInfo
+        </div>
+
+        <div class="code-box">
+            <strong>Sistema:</strong><br />
+            <span class="mono">@url</span>
+        </div>
+
+        <div class="code-box">
+            <strong>Código textual:</strong>
+            <span class="mono">DOC-@Model.code</span>
+        </div>
+
+        <div class="footer">
+            Impressão registrada no sistema em ged.label_print.
+        </div>
+    </div>
+
+    <script>
+        window.print();
+    </script>
 </body>
 </html>
