@@ -1,136 +1,109 @@
-@model InovaGed.Web.Models.Protocolo.ProtocoloIndexVM
+﻿@model InovaGed.Web.Models.Protocolo.ProtocoloIndexVM
 @{
     ViewData["Title"] = "Processos Solicitados";
-    string Badge(string status) => status switch
-    {
-        "RASCUNHO" => "bg-secondary",
-        "ABERTO" => "bg-primary",
-        "EM_TRAMITACAO" => "bg-info text-dark",
-        "DEFERIDO" => "bg-success",
-        "INDEFERIDO" => "bg-danger",
-        "ARQUIVADO" => "bg-dark",
-        _ => "bg-secondary"
-    };
+    ViewData["Subtitle"] = "Caixa do setor atual do usuário";
 }
 
-<style>
-    .protocolo-panel-title {
-        background: #dff0d8;
-        border: 1px solid #c8e5bc;
-        color: #1f7a33;
-        padding: 18px 20px;
-        border-radius: .35rem .35rem 0 0;
-        font-size: 1.35rem;
-        font-weight: 600;
-    }
-    .protocolo-grid th {
-        background: #f8f8f8;
-        font-weight: 700;
-        white-space: nowrap;
-    }
-    .protocolo-grid td, .protocolo-grid th {
-        border-color: #eee !important;
-        vertical-align: top;
-    }
-    .protocolo-search input { max-width: 520px; }
-</style>
-
-<div class="container-fluid py-3">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <div></div>
-        <div class="d-flex gap-2">
-            <a asp-controller="ProtocoloCadastros" asp-action="Index" asp-route-tipo="setores" class="btn btn-outline-secondary">
-                <i class="bi bi-gear"></i> Cadastros
-            </a>
-            <a asp-action="Novo" class="btn btn-success">
-                <i class="bi bi-plus-circle"></i> Novo Protocolo
-            </a>
-        </div>
+<div class="card border-0 shadow-sm">
+    <div class="card-header" style="background:#dff2d8;">
+        <h4 class="mb-0 text-success">Processos Solicitados</h4>
     </div>
 
-    @if (TempData["ok"] is not null)
-    {
-        <div class="alert alert-success">@TempData["ok"]</div>
-    }
-    @if (TempData["erro"] is not null)
-    {
-        <div class="alert alert-danger">@TempData["erro"]</div>
-    }
+    <div class="card-body">
+        @if (TempData["ok"] is not null)
+        {
+            <div class="alert alert-success">@TempData["ok"]</div>
+        }
 
-    <div class="card border-0 shadow-sm">
-        <div class="protocolo-panel-title">Processos Solicitados</div>
-        <div class="card-body">
-            <form method="get" class="protocolo-search mb-4">
-                <div class="row g-2 align-items-end">
-                    <div class="col-lg-4 col-md-6">
-                        <input name="q" value="@Model.Q" class="form-control" placeholder="Digite o número do processo..." />
-                    </div>
-                    <div class="col-lg-2 col-md-3">
-                        <select name="status" class="form-select">
-                            <option value="">Todos os status</option>
-                            @foreach (var s in new[] { "RASCUNHO", "ABERTO", "EM_TRAMITACAO", "DEFERIDO", "INDEFERIDO", "ARQUIVADO", "CANCELADO" })
-                            {
-                                <option value="@s" selected="@(Model.Status == s)">@s</option>
-                            }
-                        </select>
-                    </div>
-                    <div class="col-lg-3 col-md-3">
-                        <select name="setorId" class="form-select">
-                            <option value="">Todos os setores</option>
-                            @foreach (var setor in Model.Setores)
-                            {
-                                <option value="@setor.Id" selected="@(Model.SetorId == setor.Id)">@setor.Nome</option>
-                            }
-                        </select>
-                    </div>
-                    <div class="col-lg-3 col-md-12 d-flex gap-2">
-                        <button class="btn btn-success px-4" type="submit">Buscar</button>
-                        <a asp-action="Index" class="btn btn-light border px-4">Mostrar Todos</a>
-                    </div>
-                </div>
-            </form>
+        @if (TempData["erro"] is not null)
+        {
+            <div class="alert alert-danger">@TempData["erro"]</div>
+        }
 
-            <div class="table-responsive">
-                <table class="table protocolo-grid align-middle mb-0">
-                    <thead>
-                        <tr>
-                            <th><i class="bi bi-file-earmark-text text-primary"></i> Processo</th>
-                            <th><i class="bi bi-calendar3 text-primary"></i> Emissão</th>
-                            <th><i class="bi bi-building text-primary"></i> Lotação</th>
-                            <th><i class="bi bi-pin-angle-fill text-danger"></i> Tipo da Solicitação</th>
-                            <th><i class="bi bi-person-fill text-primary"></i> Interessado</th>
-                            <th><i class="bi bi-pencil-square text-warning"></i> Assunto</th>
-                            <th><i class="bi bi-info-circle text-primary"></i> Status</th>
-                            <th class="text-center"><i class="bi bi-search text-primary"></i> Verificar</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                    @foreach (var item in Model.Protocolos)
+        <form method="get" class="row g-2 mb-4">
+            <div class="col-md-5">
+                <input type="text"
+                       name="q"
+                       value="@Model.Q"
+                       class="form-control"
+                       placeholder="Digite o número do processo, interessado ou assunto..." />
+            </div>
+
+            <div class="col-md-3">
+                <select name="status" class="form-select">
+                    <option value="">Todos os status</option>
+                    <option value="RASCUNHO" selected="@(Model.Status == "RASCUNHO")">Rascunho</option>
+                    <option value="ABERTO" selected="@(Model.Status == "ABERTO")">Aberto</option>
+                    <option value="EM_TRAMITACAO" selected="@(Model.Status == "EM_TRAMITACAO")">Em tramitação</option>
+                    <option value="DEFERIDO" selected="@(Model.Status == "DEFERIDO")">Deferido</option>
+                    <option value="INDEFERIDO" selected="@(Model.Status == "INDEFERIDO")">Indeferido</option>
+                    <option value="FINALIZADO" selected="@(Model.Status == "FINALIZADO")">Finalizado</option>
+                    <option value="ARQUIVADO" selected="@(Model.Status == "ARQUIVADO")">Arquivado</option>
+                </select>
+            </div>
+
+            <div class="col-md-4 d-flex gap-2">
+                <button class="btn btn-success" type="submit">
+                    <i class="bi bi-search"></i> Buscar
+                </button>
+
+                <a asp-action="Index" class="btn btn-light border">
+                    Mostrar Todos
+                </a>
+
+                <a asp-action="Novo" class="btn btn-primary ms-auto">
+                    <i class="bi bi-plus-lg"></i> Novo Protocolo
+                </a>
+            </div>
+        </form>
+
+        <div class="table-responsive">
+            <table class="table table-bordered table-hover align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th><i class="bi bi-file-earmark-text"></i> Processo</th>
+                        <th><i class="bi bi-calendar3"></i> Emissão</th>
+                        <th><i class="bi bi-building"></i> Lotação</th>
+                        <th><i class="bi bi-pin-angle-fill"></i> Tipo da Solicitação</th>
+                        <th><i class="bi bi-person-fill"></i> Interessado</th>
+                        <th><i class="bi bi-pencil-square"></i> Assunto</th>
+                        <th>Status</th>
+                        <th class="text-center"><i class="bi bi-search"></i> Verificar</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @if (Model.Protocolos.Count == 0)
+                {
+                    <tr>
+                        <td colspan="8" class="text-center text-muted py-4">
+                            Nenhum protocolo encontrado para o setor atual do usuário.
+                        </td>
+                    </tr>
+                }
+                else
+                {
+                    foreach (var item in Model.Protocolos)
                     {
                         <tr>
-                            <td class="fw-semibold text-nowrap">@item.Numero</td>
-                            <td class="text-nowrap">@(item.DataAbertura?.ToString("dd/MM/yyyy") ?? item.CreatedAt.ToString("dd/MM/yyyy"))</td>
-                            <td>@item.SetorAtual</td>
-                            <td>@item.TipoProtocolo</td>
+                            <td class="fw-semibold">@item.Numero</td>
+                            <td>@item.Emissao.ToString("dd/MM/yyyy")</td>
+                            <td>@item.Lotacao</td>
+                            <td>@item.TipoSolicitacao</td>
                             <td>@item.Interessado</td>
                             <td>@item.Assunto</td>
-                            <td><span class="badge @Badge(item.Status)">@item.Status</span></td>
-                            <td class="text-center text-nowrap">
-                                <a asp-action="Details" asp-route-id="@item.Id" class="btn btn-sm btn-link text-decoration-none">
+                            <td>
+                                <span class="badge text-bg-secondary">@item.Status</span>
+                            </td>
+                            <td class="text-center">
+                                <a asp-action="Details" asp-route-id="@item.Id" class="btn btn-sm btn-outline-primary">
                                     <i class="bi bi-search"></i> Ver
                                 </a>
                             </td>
                         </tr>
                     }
-                    @if (!Model.Protocolos.Any())
-                    {
-                        <tr>
-                            <td colspan="8" class="text-center text-muted py-4">Nenhum protocolo encontrado.</td>
-                        </tr>
-                    }
-                    </tbody>
-                </table>
-            </div>
+                }
+                </tbody>
+            </table>
         </div>
     </div>
 </div>

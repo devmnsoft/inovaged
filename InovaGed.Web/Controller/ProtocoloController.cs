@@ -1,382 +1,515 @@
-using System.Data;
+﻿using System.Data;
 using System.Security.Cryptography;
-using System.Text.Json;
 using Dapper;
 using InovaGed.Application.Common.Database;
 using InovaGed.Web.Models.Protocolo;
+using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Rendering;
 
 namespace InovaGed.Web.Controllers;
 
 [Authorize]
 public sealed class ProtocoloController : GedControllerBase
 {
-    private static readonly string[] StatusFinais = { "DEFERIDO", "INDEFERIDO", "ARQUIVADO", "CANCELADO" };
+    private readonly ILogger<ProtocoloController> _logger;
 
-    public ProtocoloController(IDbConnectionFactory dbFactory) : base(dbFactory)
+    public ProtocoloController(IDbConnectionFactory dbFactory, ILogger<ProtocoloController> logger) : base(dbFactory)
     {
+        _logger = logger;
     }
 
+    // ==========================================================
+    // GRID
+    // Regra: o usuário só vê no grid protocolos cujo setor_atual_id
+    // esteja vinculado a ele em ged.protocolo_usuario_setor.
+    // Admin/Gestor/Auditor visualizam todos.
+    // ==========================================================
     [HttpGet]
-    public async Task<IActionResult> Index(string? q, string? status, Guid? setorId)
+    public async Task<IActionResult> Index(string? q, string? status)
     {
         using var db = await OpenAsync();
-        var setorIds = await GetCurrentUserSetorIdsAsync(db);
+
+        var admin = IsAdminLike();
+        var setorIds = await GetUserSetorIdsAsync(db);
+
+        if (!admin && setorIds.Length == 0)
+        {
+            TempData["erro"] = "Seu usuário não está vinculado a nenhum setor do Protocolo. Cadastre o vínculo em ged.protocolo_usuario_setor.";
+            return View(new ProtocoloIndexVM
+            {
+                Q = q,
+                Status = status,
+                Protocolos = Array.Empty<ProtocoloGridItemVM>()
+            });
+        }
 
         var sql = @"
 select
     p.id,
-    p.numero as Numero,
-    coalesce(tp.nome, '-') as TipoProtocolo,
-    p.assunto as Assunto,
-    p.interessado as Interessado,
-    p.status as Status,
-    coalesce(pr.nome, '-') as Prioridade,
-    sa.nome as SetorAtual,
-    so.nome as SetorOrigem,
-    p.created_at as CreatedAt,
-    p.data_abertura as DataAbertura
+    p.numero,
+    coalesce(p.data_abertura, p.created_at) as Emissao,
+    coalesce(sa.nome, '') as Lotacao,
+    coalesce(t.nome, p.especie, '') as TipoSolicitacao,
+    coalesce(p.interessado, '') as Interessado,
+    coalesce(a.nome, p.assunto, '') as Assunto,
+    p.status
 from ged.protocolo p
-join ged.protocolo_setor so on so.id = p.setor_origem_id
 left join ged.protocolo_setor sa on sa.id = p.setor_atual_id
-left join ged.protocolo_tipo tp on tp.id = p.tipo_id
-left join ged.protocolo_prioridade pr on pr.id = p.prioridade_id
+left join ged.protocolo_tipo t on t.id = p.tipo_id
+left join ged.protocolo_assunto a on a.id = p.assunto_id
 where p.tenant_id = @tenantId
   and p.reg_status = 'A'
-  and (@status is null or @status = '' or p.status = @status)
-  and (@q is null or @q = '' or p.assunto ilike '%' || @q || '%' or p.numero ilike '%' || @q || '%' or p.interessado ilike '%' || @q || '%')
-  and (@setorId is null or p.setor_atual_id = @setorId)
   and (
-        p.criado_por = @userId
-        or exists (
-            select 1
-            from ged.protocolo_setor_participante sp
-            where sp.tenant_id = p.tenant_id
-              and sp.protocolo_id = p.id
-              and sp.pode_visualizar = true
-              and sp.setor_id = any(@setorIds)
-        )
+        @admin = true
+        or p.setor_atual_id = any(@setorIds)
       )
-order by p.created_at desc
-limit 500;";
+  and (
+        @q is null
+        or p.numero ilike '%' || @q || '%'
+        or p.assunto ilike '%' || @q || '%'
+        or p.interessado ilike '%' || @q || '%'
+      )
+  and (
+        @status is null
+        or p.status = @status
+      )
+order by coalesce(p.data_abertura, p.created_at) desc, p.numero desc;";
 
-        var vm = new ProtocoloIndexVM
+        var rows = await db.QueryAsync<ProtocoloGridItemVM>(sql, new
+        {
+            tenantId = TenantId,
+            admin,
+            setorIds,
+            q = string.IsNullOrWhiteSpace(q) ? null : q.Trim(),
+            status = string.IsNullOrWhiteSpace(status) ? null : status.Trim()
+        });
+
+        return View(new ProtocoloIndexVM
         {
             Q = q,
             Status = status,
-            SetorId = setorId,
-            Setores = await ListSetoresAsync(db),
-            Protocolos = (await db.QueryAsync<ProtocoloListItemVM>(sql, new
-            {
-                tenantId = TenantId,
-                userId = UserId,
-                setorIds = setorIds.ToArray(),
-                q,
-                status,
-                setorId
-            })).ToList()
-        };
-
-        return View(vm);
+            Protocolos = rows.ToList()
+        });
     }
 
+    // ==========================================================
+    // NOVO
+    // Permite vários anexos desde a criação.
+    // ==========================================================
     [HttpGet]
     public async Task<IActionResult> Novo()
     {
         using var db = await OpenAsync();
         var vm = new ProtocoloFormVM();
-        await FillFormListsAsync(db, vm);
-        var setorPadrao = vm.Setores.FirstOrDefault();
-        if (setorPadrao is not null)
+        await PopulateFormListsAsync(db, vm);
+
+        var userSetores = await GetUserSetorIdsAsync(db);
+        if (userSetores.Length > 0)
         {
-            vm.SetorOrigemId = setorPadrao.Id;
-            vm.SetorDestinoInicialId = setorPadrao.Id;
+            vm.SetorOrigemId = userSetores[0];
+            vm.SetorDestinoId = userSetores[0];
         }
-        vm.TipoId = vm.Tipos.FirstOrDefault()?.Id;
-        vm.CanalEntradaId = vm.CanaisEntrada.FirstOrDefault()?.Id;
-        vm.PrioridadeId = vm.Prioridades.FirstOrDefault(x => x.Codigo == "NORMAL")?.Id ?? vm.Prioridades.FirstOrDefault()?.Id;
+
         return View(vm);
     }
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Novo(ProtocoloFormVM vm, List<IFormFile>? arquivos, Guid? tipoDocumentoId, string? descricaoAnexo)
+    [RequestSizeLimit(1024L * 1024L * 200L)]
+    public async Task<IActionResult> Novo(ProtocoloFormVM vm)
     {
         using var db = await OpenAsync();
-        await FillFormListsAsync(db, vm);
+        await PopulateFormListsAsync(db, vm);
 
-        if (!ModelState.IsValid) return View(vm);
+        if (string.IsNullOrWhiteSpace(vm.Assunto))
+            ModelState.AddModelError(nameof(vm.Assunto), "Informe o assunto do protocolo.");
 
-        var id = Guid.NewGuid();
-        var now = DateTime.Now;
-        var numero = await db.ExecuteScalarAsync<string>("select ged.fn_protocolo_gerar_numero(@tenantId);", new { tenantId = TenantId });
-        var setorDestino = vm.SetorDestinoInicialId.HasValue && vm.SetorDestinoInicialId.Value != Guid.Empty
-            ? vm.SetorDestinoInicialId.Value
-            : vm.SetorOrigemId;
+        if (vm.SetorOrigemId == Guid.Empty)
+            ModelState.AddModelError(nameof(vm.SetorOrigemId), "Informe o setor de origem.");
 
-        var enviarParaOutroSetor = !vm.SalvarComoRascunho && setorDestino != vm.SetorOrigemId;
-        var status = vm.SalvarComoRascunho
-            ? "RASCUNHO"
-            : enviarParaOutroSetor ? "EM_TRAMITACAO" : "ABERTO";
-        var setorAtual = vm.SalvarComoRascunho ? vm.SetorOrigemId : setorDestino;
+        if (vm.SetorDestinoId == Guid.Empty)
+            ModelState.AddModelError(nameof(vm.SetorDestinoId), "Informe o setor para tramitação inicial.");
+
+        if (!ModelState.IsValid)
+            return View(vm);
+
+        var userSetores = await GetUserSetorIdsAsync(db);
+        if (!IsAdminLike() && !userSetores.Contains(vm.SetorOrigemId))
+        {
+            TempData["erro"] = "Você não pode abrir protocolo em nome de um setor ao qual não está vinculado.";
+            return View(vm);
+        }
 
         using var tx = db.BeginTransaction();
+
         try
         {
-            await db.ExecuteAsync(@"
+            var now = DateTime.Now;
+            var numero = await db.ExecuteScalarAsync<string>(
+                "select ged.next_protocolo_numero(@tenantId);",
+                new { tenantId = TenantId },
+                tx);
+
+            var status = vm.SalvarComoRascunho
+                ? "RASCUNHO"
+                : (vm.SetorDestinoId == vm.SetorOrigemId ? "ABERTO" : "EM_TRAMITACAO");
+
+            var dataAbertura = vm.SalvarComoRascunho ? (DateTime?)null : now;
+
+            var protocoloId = await db.ExecuteScalarAsync<Guid>(@"
 insert into ged.protocolo
-(id, tenant_id, numero, ano, tipo_id, assunto_id, canal_entrada_id, prioridade_id,
- assunto, interessado, cpf_cnpj, email, telefone, descricao, status,
- setor_origem_id, setor_atual_id, criado_por, criado_por_nome, data_abertura, created_at, reg_status)
+(
+    tenant_id, numero, ano, tipo_id, assunto_id, prioridade_id, canal_entrada_id,
+    assunto, especie, procedencia, interessado, cpf_cnpj, email, telefone,
+    descricao, informacoes_complementares, status,
+    setor_origem_id, setor_atual_id, criado_por, criado_por_nome,
+    data_abertura, created_at, reg_status
+)
 values
-(@id, @tenantId, @numero, extract(year from now())::integer, @tipoId, @assuntoId, @canalEntradaId, @prioridadeId,
- @assunto, @interessado, @cpfCnpj, @email, @telefone, @descricao, @status,
- @setorOrigemId, @setorAtualId, @userId, @userName, @dataAbertura, @now, 'A');
+(
+    @tenantId, @numero, extract(year from now()), @tipoId, @assuntoId, @prioridadeId, @canalEntradaId,
+    @assunto, @especie, @procedencia, @interessado, @cpfCnpj, @email, @telefone,
+    @descricao, @informacoesComplementares, @status,
+    @setorOrigemId, @setorDestinoId, @userId, @userName,
+    @dataAbertura, @now, 'A'
+)
+returning id;",
+                new
+                {
+                    tenantId = TenantId,
+                    numero,
+                    tipoId = vm.TipoId,
+                    assuntoId = vm.AssuntoId,
+                    prioridadeId = vm.PrioridadeId,
+                    canalEntradaId = vm.CanalEntradaId,
+                    assunto = vm.Assunto.Trim(),
+                    especie = vm.Especie,
+                    procedencia = vm.Procedencia,
+                    interessado = vm.Interessado,
+                    cpfCnpj = vm.CpfCnpj,
+                    email = vm.Email,
+                    telefone = vm.Telefone,
+                    descricao = vm.Descricao,
+                    informacoesComplementares = vm.InformacoesComplementares,
+                    status,
+                    setorOrigemId = vm.SetorOrigemId,
+                    setorDestinoId = vm.SetorDestinoId,
+                    userId = UserId,
+                    userName = UserNameSafe,
+                    dataAbertura,
+                    now
+                },
+                tx);
 
-insert into ged.protocolo_setor_participante
-(tenant_id, protocolo_id, setor_id, pode_visualizar, pode_editar, participou_em)
-values
-(@tenantId, @id, @setorOrigemId, true, @origemEdita, @now)
-on conflict (tenant_id, protocolo_id, setor_id)
-do update set pode_visualizar = true, pode_editar = excluded.pode_editar, participou_em = excluded.participou_em;
+            await UpsertParticipanteAsync(db, tx, protocoloId, vm.SetorOrigemId, true, vm.SetorOrigemId == vm.SetorDestinoId);
+            await UpsertParticipanteAsync(db, tx, protocoloId, vm.SetorDestinoId, true, true);
 
-insert into ged.protocolo_setor_participante
-(tenant_id, protocolo_id, setor_id, pode_visualizar, pode_editar, participou_em)
-values
-(@tenantId, @id, @setorAtualId, true, true, @now)
-on conflict (tenant_id, protocolo_id, setor_id)
-do update set pode_visualizar = true, pode_editar = true, participou_em = excluded.participou_em;
-
-insert into ged.protocolo_usuario_setor
-(tenant_id, usuario_id, setor_id, principal, ativo, created_by)
-select @tenantId, @userId, @setorOrigemId, true, true, @userId
-where @userId is not null
-on conflict (tenant_id, usuario_id, setor_id)
-do update set ativo = true, reg_status = 'A';", new
-            {
-                id,
-                tenantId = TenantId,
-                numero,
-                tipoId = vm.TipoId,
-                assuntoId = vm.AssuntoId,
-                canalEntradaId = vm.CanalEntradaId,
-                prioridadeId = vm.PrioridadeId,
-                assunto = vm.Assunto,
-                interessado = vm.Interessado,
-                cpfCnpj = vm.CpfCnpj,
-                email = vm.Email,
-                telefone = vm.Telefone,
-                descricao = vm.Descricao,
+            await InsertTramitacaoAsync(db, tx,
+                protocoloId,
+                vm.SetorOrigemId,
+                vm.SetorDestinoId,
+                "CRIACAO",
+                null,
                 status,
-                setorOrigemId = vm.SetorOrigemId,
-                setorAtualId = setorAtual,
-                origemEdita = vm.SetorOrigemId == setorAtual,
-                userId = UserId,
-                userName = UserNameSafe,
-                dataAbertura = vm.SalvarComoRascunho ? (DateTime?)null : now,
-                now
-            }, tx);
+                "Protocolo criado.",
+                vm.ObservacaoInicial,
+                null);
 
-            await InsertTramitacaoAsync(db, tx, id, vm.SetorOrigemId, vm.SetorOrigemId, "CRIACAO", null, status, null,
-                vm.SalvarComoRascunho ? $"Protocolo {numero} criado como rascunho." : $"Protocolo {numero} aberto.");
-
-            if (enviarParaOutroSetor)
+            if (!string.IsNullOrWhiteSpace(vm.ObservacaoInicial))
             {
-                await InsertTramitacaoAsync(db, tx, id, vm.SetorOrigemId, setorDestino, "TRAMITACAO_INICIAL", "ABERTO", "EM_TRAMITACAO",
-                    "Encaminhamento inicial definido na abertura do protocolo.", null);
+                await InsertObservacaoAsync(db, tx, protocoloId, vm.SetorOrigemId, "PUBLICA", vm.ObservacaoInicial);
             }
 
-            if (arquivos is not null)
-            {
-                foreach (var arquivo in arquivos.Where(a => a is not null && a.Length > 0))
-                    await SaveDocumentoAsync(db, tx, id, arquivo, tipoDocumentoId, descricaoAnexo, setorAtual);
-            }
+            await SaveUploadedFilesAsync(db, tx, protocoloId, vm.SetorOrigemId, Request.Form.Files, null, "Anexo incluído na criação do protocolo.");
 
-            await InsertAuditoriaAsync(db, tx, id, "protocolo", id, "CRIAR", null, new
-            {
-                Numero = numero,
-                vm.Assunto,
-                vm.Interessado,
-                Status = status,
-                SetorOrigemId = vm.SetorOrigemId,
-                SetorAtualId = setorAtual
-            }, setorAtual);
+            await InsertAuditoriaAsync(db, tx, protocoloId, "protocolo", protocoloId, "CRIACAO", null,
+                new { numero, status, vm.SetorOrigemId, vm.SetorDestinoId });
 
             tx.Commit();
+
             TempData["ok"] = $"Protocolo {numero} criado com sucesso.";
-            return RedirectToAction(nameof(Details), new { id });
+            return RedirectToAction(nameof(Details), new { id = protocoloId });
         }
         catch (Exception ex)
         {
             tx.Rollback();
-            TempData["erro"] = "Erro ao criar protocolo: " + ex.Message;
+            _logger.LogError(ex, "Erro ao criar protocolo.");
+            TempData["erro"] = "Erro ao criar protocolo.";
             return View(vm);
         }
     }
 
+    // ==========================================================
+    // DETALHES
+    // Permite visualizar se o usuário é setor atual, participante
+    // histórico ou Admin/Gestor/Auditor.
+    // O GRID continua mostrando apenas setor atual.
+    // ==========================================================
     [HttpGet]
     public async Task<IActionResult> Details(Guid id)
     {
         using var db = await OpenAsync();
-        var setorIds = await GetCurrentUserSetorIdsAsync(db);
 
-        if (!await CanViewAsync(db, id, setorIds))
+        if (!await PodeVisualizarAsync(db, id))
         {
-            TempData["erro"] = "Você não possui permissão para visualizar este protocolo.";
+            TempData["erro"] = "Você não tem permissão para visualizar este protocolo.";
             return RedirectToAction(nameof(Index));
         }
 
-        var protocolo = await db.QuerySingleOrDefaultAsync<ProtocoloDetailsVM>(@"
+        var header = await db.QueryFirstOrDefaultAsync<ProtocoloDetailsVM>(@"
 select
     p.id,
-    p.numero as Numero,
-    coalesce(tp.nome, '-') as TipoProtocolo,
-    coalesce(ce.nome, '-') as CanalEntrada,
-    coalesce(pr.nome, '-') as Prioridade,
-    p.assunto as Assunto,
-    p.interessado as Interessado,
+    p.numero,
+    coalesce(p.data_abertura, p.created_at) as Emissao,
+    p.status,
+    coalesce(t.nome, p.especie, '') as TipoSolicitacao,
+    coalesce(pr.nome, '') as Prioridade,
+    coalesce(ce.nome, '') as CanalEntrada,
+    coalesce(a.nome, p.assunto, '') as Assunto,
+    p.especie,
+    p.procedencia,
+    p.interessado,
     p.cpf_cnpj as CpfCnpj,
-    p.email as Email,
-    p.telefone as Telefone,
-    p.descricao as Descricao,
-    p.status as Status,
-    p.setor_atual_id as SetorAtualId,
-    sa.nome as SetorAtual,
-    p.setor_origem_id as SetorOrigemId,
+    p.email,
+    p.telefone,
+    p.descricao,
+    p.informacoes_complementares as InformacoesComplementares,
+    p.justificativa_encerramento as JustificativaEncerramento,
     so.nome as SetorOrigem,
-    p.created_at as CreatedAt,
-    p.data_abertura as DataAbertura,
-    p.data_encerramento as DataEncerramento
+    sa.nome as SetorAtual,
+    p.setor_atual_id as SetorAtualId
 from ged.protocolo p
-join ged.protocolo_setor so on so.id = p.setor_origem_id
-left join ged.protocolo_setor sa on sa.id = p.setor_atual_id
-left join ged.protocolo_tipo tp on tp.id = p.tipo_id
-left join ged.protocolo_canal_entrada ce on ce.id = p.canal_entrada_id
+left join ged.protocolo_tipo t on t.id = p.tipo_id
+left join ged.protocolo_assunto a on a.id = p.assunto_id
 left join ged.protocolo_prioridade pr on pr.id = p.prioridade_id
-where p.tenant_id = @tenantId and p.id = @id and p.reg_status = 'A';", new { tenantId = TenantId, id });
+left join ged.protocolo_canal_entrada ce on ce.id = p.canal_entrada_id
+left join ged.protocolo_setor so on so.id = p.setor_origem_id
+left join ged.protocolo_setor sa on sa.id = p.setor_atual_id
+where p.tenant_id = @tenantId and p.id = @id and p.reg_status = 'A';",
+            new { tenantId = TenantId, id });
 
-        if (protocolo is null) return NotFound();
+        if (header is null)
+        {
+            TempData["erro"] = "Protocolo não encontrado.";
+            return RedirectToAction(nameof(Index));
+        }
 
-        var canAct = await CanActAsync(db, id, setorIds);
-        var closed = StatusFinais.Contains(protocolo.Status);
+        var podeAtuar = await PodeAtuarNoSetorAtualAsync(db, id);
 
-        protocolo.PodeVisualizar = true;
-        protocolo.PodeEditar = canAct && !closed;
-        protocolo.PodeAnexar = canAct && !closed;
-        protocolo.PodeTramitar = canAct && (protocolo.Status == "ABERTO" || protocolo.Status == "EM_TRAMITACAO");
-        protocolo.PodeDeferir = protocolo.PodeTramitar;
-        protocolo.PodeIndeferir = protocolo.PodeTramitar;
-        protocolo.PodeArquivar = canAct && protocolo.Status != "ARQUIVADO" && protocolo.Status != "CANCELADO";
-        protocolo.SetoresDestino = (await ListSetoresAsync(db)).Where(x => x.Id != protocolo.SetorAtualId).ToList();
-        protocolo.TiposDocumento = await ListTiposDocumentoAsync(db);
+        header.PodeAtuar = podeAtuar;
+        header.PodeAnexar = podeAtuar && IsStatusOperacional(header.Status);
+        header.PodeTramitar = podeAtuar && IsStatusOperacional(header.Status);
+        header.PodeFinalizar = podeAtuar && IsStatusOperacional(header.Status);
+        header.PodeArquivar = podeAtuar && header.Status != "ARQUIVADO" && header.Status != "CANCELADO";
 
-        protocolo.Documentos = (await db.QueryAsync<ProtocoloDocumentoVM>(@"
-select d.id as Id, d.nome_arquivo as NomeArquivo, d.content_type as ContentType, d.tamanho_bytes as TamanhoBytes,
-       coalesce(td.nome, '-') as TipoDocumento, d.descricao as Descricao,
-       d.anexado_por_nome as AnexadoPorNome, s.nome as Setor, d.created_at as CreatedAt
+        var userSetores = await GetUserSetorIdsAsync(db);
+
+        var documentos = (await db.QueryAsync<ProtocoloDocumentoVM>(@"
+select
+    d.id,
+    d.nome_arquivo as NomeArquivo,
+    d.content_type as ContentType,
+    d.tamanho_bytes as TamanhoBytes,
+    coalesce(td.nome, d.tipo_documento, '') as TipoDocumento,
+    d.descricao,
+    coalesce(s.nome, '') as Setor,
+    d.setor_id as SetorId,
+    coalesce(d.anexado_por_nome, '') as AnexadoPor,
+    d.created_at as CreatedAt
 from ged.protocolo_documento d
-left join ged.protocolo_tipo_documento td on td.id = d.tipo_documento_id
 left join ged.protocolo_setor s on s.id = d.setor_id
-where d.tenant_id = @tenantId and d.protocolo_id = @id and d.reg_status = 'A'
-order by d.created_at desc;", new { tenantId = TenantId, id })).ToList();
+left join ged.protocolo_tipo_documento td on td.id = d.tipo_documento_id
+where d.tenant_id = @tenantId
+  and d.protocolo_id = @id
+  and d.reg_status = 'A'
+order by d.created_at desc;",
+            new { tenantId = TenantId, id })).ToList();
 
-        protocolo.Tramitacoes = (await db.QueryAsync<ProtocoloTramitacaoVM>(@"
-select t.id as Id, t.acao as Acao, t.status_anterior as StatusAnterior, t.status_novo as StatusNovo,
-       so.nome as SetorOrigem, sd.nome as SetorDestino,
-       t.usuario_nome as UsuarioNome, t.despacho as Despacho, t.observacao as Observacao, t.data_tramitacao as DataTramitacao
+        foreach (var d in documentos)
+        {
+            d.PodeExcluir = IsAdminLike() || (d.SetorId.HasValue && userSetores.Contains(d.SetorId.Value) && IsStatusOperacional(header.Status));
+        }
+
+        header.Documentos = documentos;
+
+        header.Tramitacoes = (await db.QueryAsync<ProtocoloTramitacaoVM>(@"
+select
+    t.id,
+    t.acao,
+    t.status_anterior as StatusAnterior,
+    t.status_novo as StatusNovo,
+    so.nome as SetorOrigem,
+    sd.nome as SetorDestino,
+    t.usuario_nome as UsuarioNome,
+    t.despacho,
+    t.observacao,
+    t.justificativa,
+    t.data_tramitacao as DataTramitacao
 from ged.protocolo_tramitacao t
 left join ged.protocolo_setor so on so.id = t.setor_origem_id
 left join ged.protocolo_setor sd on sd.id = t.setor_destino_id
 where t.tenant_id = @tenantId and t.protocolo_id = @id
-order by t.data_tramitacao asc;", new { tenantId = TenantId, id })).ToList();
+order by t.data_tramitacao desc;",
+            new { tenantId = TenantId, id })).ToList();
 
-        protocolo.Observacoes = (await db.QueryAsync<ProtocoloObservacaoVM>(@"
-select o.id as Id, o.tipo as Tipo, o.observacao as Observacao, s.nome as Setor, o.usuario_nome as UsuarioNome, o.created_at as CreatedAt
+        header.Observacoes = (await db.QueryAsync<ProtocoloObservacaoVM>(@"
+select
+    o.id,
+    o.tipo,
+    o.observacao,
+    coalesce(s.nome, '') as Setor,
+    coalesce(o.usuario_nome, '') as UsuarioNome,
+    o.created_at as CreatedAt
 from ged.protocolo_observacao o
 left join ged.protocolo_setor s on s.id = o.setor_id
 where o.tenant_id = @tenantId
   and o.protocolo_id = @id
   and o.reg_status = 'A'
-  and (o.tipo <> 'INTERNA_SETOR' or o.setor_id = any(@setorIds))
-order by o.created_at desc;", new { tenantId = TenantId, id, setorIds = setorIds.ToArray() })).ToList();
+  and (
+        o.tipo <> 'INTERNA_SETOR'
+        or @admin = true
+        or o.setor_id = any(@setorIds)
+      )
+order by o.created_at desc;",
+            new { tenantId = TenantId, id, admin = IsAdminLike(), setorIds = userSetores })).ToList();
 
-        return View(protocolo);
+        header.SetoresDestino = await LoadSelectAsync(db,
+            @"select id, nome from ged.protocolo_setor
+              where tenant_id=@tenantId and reg_status='A' and ativo=true
+                and id <> @setorAtualId
+              order by nome;",
+            new { tenantId = TenantId, setorAtualId = header.SetorAtualId });
+
+        header.TiposDocumento = await LoadSelectAsync(db,
+            @"select id, nome from ged.protocolo_tipo_documento
+              where tenant_id=@tenantId and reg_status='A' and ativo=true
+              order by nome;",
+            new { tenantId = TenantId });
+
+        return View(header);
     }
 
+    // ==========================================================
+    // ANEXAR VÁRIOS DOCUMENTOS
+    // Regra: setor atual pode anexar.
+    // O dono do anexo é o setor atual no momento do upload.
+    // ==========================================================
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Protocolar(Guid id)
+    [RequestSizeLimit(1024L * 1024L * 200L)]
+    public async Task<IActionResult> AnexarDocumentos(Guid protocoloId, Guid? tipoDocumentoId, string? descricao)
     {
         using var db = await OpenAsync();
-        var setorIds = await GetCurrentUserSetorIdsAsync(db);
-        if (!await CanActAsync(db, id, setorIds)) return Forbid();
 
-        var p = await GetProtocoloMinAsync(db, id);
-        if (p is null) return NotFound();
-        if (p.Status != "RASCUNHO")
+        var setorAtualId = await GetSetorAtualIdAsync(db, protocoloId);
+        if (setorAtualId is null || !await PodeAtuarNoSetorAtualAsync(db, protocoloId))
         {
-            TempData["erro"] = "Somente protocolos em rascunho podem ser protocolados.";
-            return RedirectToAction(nameof(Details), new { id });
+            TempData["erro"] = "Somente o setor atual do protocolo pode anexar documentos.";
+            return RedirectToAction(nameof(Details), new { id = protocoloId });
         }
 
         using var tx = db.BeginTransaction();
+
+        try
+        {
+            var total = await SaveUploadedFilesAsync(db, tx, protocoloId, setorAtualId.Value, Request.Form.Files, tipoDocumentoId, descricao);
+
+            if (total > 0)
+            {
+                await InsertTramitacaoAsync(db, tx, protocoloId, setorAtualId, setorAtualId, "ANEXO", null, null,
+                    $"{total} documento(s) anexado(s).", descricao, null);
+
+                await InsertAuditoriaAsync(db, tx, protocoloId, "protocolo_documento", protocoloId, "ANEXAR_DOCUMENTOS",
+                    null, new { total, setorAtualId, tipoDocumentoId, descricao });
+            }
+
+            tx.Commit();
+            TempData["ok"] = total > 0 ? $"{total} documento(s) anexado(s)." : "Nenhum arquivo foi selecionado.";
+        }
+        catch (Exception ex)
+        {
+            tx.Rollback();
+            _logger.LogError(ex, "Erro ao anexar documentos ao protocolo {ProtocoloId}", protocoloId);
+            TempData["erro"] = "Erro ao anexar documentos.";
+        }
+
+        return RedirectToAction(nameof(Details), new { id = protocoloId });
+    }
+
+    // ==========================================================
+    // EXCLUIR ANEXO
+    // Regra: somente o setor que anexou pode excluir.
+    // ==========================================================
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ExcluirDocumento(Guid id, Guid protocoloId, string? motivo)
+    {
+        using var db = await OpenAsync();
+
+        var doc = await db.QueryFirstOrDefaultAsync<DocumentoOwnerRow>(@"
+select id as Id, protocolo_id as ProtocoloId, setor_id as SetorId, nome_arquivo as NomeArquivo
+from ged.protocolo_documento
+where tenant_id=@tenantId and id=@id and protocolo_id=@protocoloId and reg_status='A';",
+            new { tenantId = TenantId, id, protocoloId });
+
+        if (doc is null)
+        {
+            TempData["erro"] = "Documento não encontrado.";
+            return RedirectToAction(nameof(Details), new { id = protocoloId });
+        }
+
+        var userSetores = await GetUserSetorIdsAsync(db);
+        if (!IsAdminLike() && (!doc.SetorId.HasValue || !userSetores.Contains(doc.SetorId.Value)))
+        {
+            TempData["erro"] = "Somente o setor que anexou este arquivo pode excluí-lo.";
+            return RedirectToAction(nameof(Details), new { id = protocoloId });
+        }
+
+        if (!await PodeVisualizarAsync(db, protocoloId))
+        {
+            TempData["erro"] = "Você não tem permissão para este protocolo.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        using var tx = db.BeginTransaction();
+
         try
         {
             await db.ExecuteAsync(@"
-update ged.protocolo
-set status = 'ABERTO', data_abertura = now(), updated_at = now()
-where tenant_id = @tenantId and id = @id;", new { tenantId = TenantId, id }, tx);
+update ged.protocolo_documento
+set reg_status='E',
+    deleted_at=now(),
+    deleted_by=@userId,
+    deleted_by_nome=@userName,
+    delete_motivo=@motivo
+where tenant_id=@tenantId and id=@id;",
+                new
+                {
+                    tenantId = TenantId,
+                    id,
+                    userId = UserId,
+                    userName = UserNameSafe,
+                    motivo
+                },
+                tx);
 
-            await InsertTramitacaoAsync(db, tx, id, p.SetorAtualId, p.SetorAtualId, "PROTOCOLAR", "RASCUNHO", "ABERTO", "Protocolo formalizado.", null);
-            await InsertAuditoriaAsync(db, tx, id, "protocolo", id, "PROTOCOLAR", new { p.Status }, new { Status = "ABERTO" }, p.SetorAtualId);
+            await InsertTramitacaoAsync(db, tx, protocoloId, doc.SetorId, doc.SetorId, "EXCLUSAO_ANEXO", null, null,
+                $"Documento removido: {doc.NomeArquivo}.", motivo, null);
+
+            await InsertAuditoriaAsync(db, tx, protocoloId, "protocolo_documento", id, "EXCLUIR_DOCUMENTO",
+                new { doc.NomeArquivo, doc.SetorId }, new { motivo });
+
             tx.Commit();
-            TempData["ok"] = "Protocolo formalizado com sucesso.";
+
+            TempData["ok"] = "Documento removido do protocolo.";
         }
         catch (Exception ex)
         {
             tx.Rollback();
-            TempData["erro"] = "Erro ao formalizar protocolo: " + ex.Message;
-        }
-
-        return RedirectToAction(nameof(Details), new { id });
-    }
-
-    [HttpPost]
-    [ValidateAntiForgeryToken]
-    public async Task<IActionResult> AnexarDocumento(Guid protocoloId, List<IFormFile>? arquivos, Guid? tipoDocumentoId, string? descricao)
-    {
-        if (arquivos is null || arquivos.All(a => a is null || a.Length == 0))
-        {
-            TempData["erro"] = "Selecione pelo menos um arquivo válido.";
-            return RedirectToAction(nameof(Details), new { id = protocoloId });
-        }
-
-        using var db = await OpenAsync();
-        var setorIds = await GetCurrentUserSetorIdsAsync(db);
-        if (!await CanActAsync(db, protocoloId, setorIds)) return Forbid();
-
-        var p = await GetProtocoloMinAsync(db, protocoloId);
-        if (p is null) return NotFound();
-        if (StatusFinais.Contains(p.Status))
-        {
-            TempData["erro"] = "Não é possível anexar documentos em protocolo encerrado.";
-            return RedirectToAction(nameof(Details), new { id = protocoloId });
-        }
-
-        using var tx = db.BeginTransaction();
-        try
-        {
-            foreach (var arquivo in arquivos.Where(a => a is not null && a.Length > 0))
-                await SaveDocumentoAsync(db, tx, protocoloId, arquivo, tipoDocumentoId, descricao, p.SetorAtualId);
-
-            tx.Commit();
-            TempData["ok"] = "Documento(s) anexado(s) com sucesso.";
-        }
-        catch (Exception ex)
-        {
-            tx.Rollback();
-            TempData["erro"] = "Erro ao anexar documento: " + ex.Message;
+            _logger.LogError(ex, "Erro ao excluir documento {DocumentoId}", id);
+            TempData["erro"] = "Erro ao excluir documento.";
         }
 
         return RedirectToAction(nameof(Details), new { id = protocoloId });
@@ -386,416 +519,646 @@ where tenant_id = @tenantId and id = @id;", new { tenantId = TenantId, id }, tx)
     public async Task<IActionResult> VisualizarDocumento(Guid id)
     {
         using var db = await OpenAsync();
-        var doc = await db.QuerySingleOrDefaultAsync<DocumentoBlob>(@"
-select d.id as Id, d.protocolo_id as ProtocoloId, d.nome_arquivo as NomeArquivo, d.content_type as ContentType, d.arquivo_bytes as ArquivoBytes
+
+        var doc = await db.QueryFirstOrDefaultAsync<DocumentoDownloadRow>(@"
+select
+    d.id,
+    d.protocolo_id as ProtocoloId,
+    d.nome_arquivo as NomeArquivo,
+    d.content_type as ContentType,
+    d.arquivo_bytes as ArquivoBytes
 from ged.protocolo_documento d
-where d.tenant_id = @tenantId and d.id = @id and d.reg_status = 'A';", new { tenantId = TenantId, id });
+where d.tenant_id=@tenantId and d.id=@id and d.reg_status='A';",
+            new { tenantId = TenantId, id });
 
-        if (doc is null || doc.ArquivoBytes is null) return NotFound();
+        if (doc is null || doc.ArquivoBytes is null || doc.ArquivoBytes.Length == 0)
+            return NotFound();
 
-        var setorIds = await GetCurrentUserSetorIdsAsync(db);
-        if (!await CanViewAsync(db, doc.ProtocoloId, setorIds)) return Forbid();
+        if (!await PodeVisualizarAsync(db, doc.ProtocoloId))
+            return Forbid();
 
-        var p = await GetProtocoloMinAsync(db, doc.ProtocoloId);
-        if (p is not null)
-        {
-            using var tx = db.BeginTransaction();
-            await InsertAuditoriaAsync(db, tx, doc.ProtocoloId, "protocolo_documento", id, "VISUALIZAR_DOCUMENTO", null, new { doc.NomeArquivo }, p.SetorAtualId);
-            tx.Commit();
-        }
+        await db.ExecuteAsync(@"
+insert into ged.protocolo_auditoria
+(tenant_id, protocolo_id, entidade, entidade_id, acao, usuario_id, usuario_nome, ip, user_agent)
+values
+(@tenantId, @protocoloId, 'protocolo_documento', @documentoId, 'VISUALIZAR_DOCUMENTO', @userId, @userName, @ip, @ua);",
+            new
+            {
+                tenantId = TenantId,
+                protocoloId = doc.ProtocoloId,
+                documentoId = id,
+                userId = UserId,
+                userName = UserNameSafe,
+                ip = HttpContext.Connection.RemoteIpAddress?.ToString(),
+                ua = Request.Headers.UserAgent.ToString()
+            });
 
         var contentType = string.IsNullOrWhiteSpace(doc.ContentType) ? "application/octet-stream" : doc.ContentType;
-        return File(doc.ArquivoBytes, contentType);
+        return File(doc.ArquivoBytes, contentType, doc.NomeArquivo, enableRangeProcessing: true);
     }
 
-    [HttpPost]
-    [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Tramitar(Guid protocoloId, Guid setorDestinoId, string despacho)
-    {
-        using var db = await OpenAsync();
-        var setorIds = await GetCurrentUserSetorIdsAsync(db);
-        if (!await CanActAsync(db, protocoloId, setorIds)) return Forbid();
-
-        var p = await GetProtocoloMinAsync(db, protocoloId);
-        if (p is null) return NotFound();
-        if (p.Status is not ("ABERTO" or "EM_TRAMITACAO"))
-        {
-            TempData["erro"] = "Este protocolo não pode ser tramitado no status atual.";
-            return RedirectToAction(nameof(Details), new { id = protocoloId });
-        }
-
-        if (setorDestinoId == Guid.Empty || setorDestinoId == p.SetorAtualId)
-        {
-            TempData["erro"] = "Selecione um setor de destino diferente do setor atual.";
-            return RedirectToAction(nameof(Details), new { id = protocoloId });
-        }
-
-        using var tx = db.BeginTransaction();
-        try
-        {
-            await db.ExecuteAsync(@"
-update ged.protocolo_setor_participante
-set pode_editar = false
-where tenant_id = @tenantId and protocolo_id = @protocoloId;
-
-insert into ged.protocolo_setor_participante
-(tenant_id, protocolo_id, setor_id, pode_visualizar, pode_editar, participou_em)
-values
-(@tenantId, @protocoloId, @setorDestinoId, true, true, now())
-on conflict (tenant_id, protocolo_id, setor_id)
-do update set pode_visualizar = true, pode_editar = true, participou_em = now();
-
-update ged.protocolo
-set setor_atual_id = @setorDestinoId, status = 'EM_TRAMITACAO', updated_at = now()
-where tenant_id = @tenantId and id = @protocoloId;", new { tenantId = TenantId, protocoloId, setorDestinoId }, tx);
-
-            await InsertTramitacaoAsync(db, tx, protocoloId, p.SetorAtualId, setorDestinoId, "TRAMITAR", p.Status, "EM_TRAMITACAO", despacho, null);
-            await InsertAuditoriaAsync(db, tx, protocoloId, "protocolo", protocoloId, "TRAMITAR",
-                new { p.Status, p.SetorAtualId }, new { Status = "EM_TRAMITACAO", SetorAtualId = setorDestinoId, despacho }, p.SetorAtualId);
-
-            tx.Commit();
-            TempData["ok"] = "Protocolo tramitado com sucesso.";
-        }
-        catch (Exception ex)
-        {
-            tx.Rollback();
-            TempData["erro"] = "Erro ao tramitar protocolo: " + ex.Message;
-        }
-
-        return RedirectToAction(nameof(Details), new { id = protocoloId });
-    }
-
-    [HttpPost]
-    [ValidateAntiForgeryToken]
-    public Task<IActionResult> Deferir(Guid protocoloId, string despacho)
-        => DecidirAsync(protocoloId, "DEFERIR", "DEFERIDO", despacho, "Protocolo deferido com sucesso.");
-
-    [HttpPost]
-    [ValidateAntiForgeryToken]
-    public Task<IActionResult> Indeferir(Guid protocoloId, string motivo)
-        => DecidirAsync(protocoloId, "INDEFERIR", "INDEFERIDO", motivo, "Protocolo indeferido com sucesso.");
-
-    [HttpPost]
-    [ValidateAntiForgeryToken]
-    public Task<IActionResult> Arquivar(Guid protocoloId, string motivo)
-        => DecidirAsync(protocoloId, "ARQUIVAR", "ARQUIVADO", motivo, "Protocolo arquivado com sucesso.");
-
+    // ==========================================================
+    // OBSERVAÇÃO
+    // Regra: somente setor atual pode observar/adicionar andamento.
+    // ==========================================================
     [HttpPost]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> AdicionarObservacao(Guid protocoloId, string tipo, string observacao)
     {
+        using var db = await OpenAsync();
+
+        var setorAtualId = await GetSetorAtualIdAsync(db, protocoloId);
+        if (setorAtualId is null || !await PodeAtuarNoSetorAtualAsync(db, protocoloId))
+        {
+            TempData["erro"] = "Somente o setor atual do protocolo pode adicionar observação.";
+            return RedirectToAction(nameof(Details), new { id = protocoloId });
+        }
+
         if (string.IsNullOrWhiteSpace(observacao))
         {
             TempData["erro"] = "Informe a observação.";
             return RedirectToAction(nameof(Details), new { id = protocoloId });
         }
 
-        tipo = string.IsNullOrWhiteSpace(tipo) ? "PUBLICA" : tipo.ToUpperInvariant();
-        if (tipo is not ("PUBLICA" or "INTERNA_SETOR" or "DESPACHO")) tipo = "PUBLICA";
-
-        using var db = await OpenAsync();
-        var setorIds = await GetCurrentUserSetorIdsAsync(db);
-        if (!await CanActAsync(db, protocoloId, setorIds)) return Forbid();
-
-        var p = await GetProtocoloMinAsync(db, protocoloId);
-        if (p is null) return NotFound();
-        var obsId = Guid.NewGuid();
+        tipo = string.IsNullOrWhiteSpace(tipo) ? "PUBLICA" : tipo.Trim().ToUpperInvariant();
 
         using var tx = db.BeginTransaction();
+
         try
         {
-            await db.ExecuteAsync(@"
-insert into ged.protocolo_observacao
-(id, tenant_id, protocolo_id, setor_id, usuario_id, usuario_nome, tipo, observacao, created_at, reg_status)
-values
-(@obsId, @tenantId, @protocoloId, @setorId, @userId, @userName, @tipo, @observacao, now(), 'A');", new
-            {
-                obsId,
-                tenantId = TenantId,
-                protocoloId,
-                setorId = p.SetorAtualId,
-                userId = UserId,
-                userName = UserNameSafe,
-                tipo,
-                observacao
-            }, tx);
+            await InsertObservacaoAsync(db, tx, protocoloId, setorAtualId.Value, tipo, observacao);
 
-            await InsertTramitacaoAsync(db, tx, protocoloId, p.SetorAtualId, p.SetorAtualId, "OBSERVACAO", p.Status, p.Status, null,
-                tipo == "INTERNA_SETOR" ? "Observação interna do setor adicionada." : "Observação adicionada.");
-            await InsertAuditoriaAsync(db, tx, protocoloId, "protocolo_observacao", obsId, "ADICIONAR_OBSERVACAO", null,
-                new { tipo, observacao }, p.SetorAtualId);
+            await InsertTramitacaoAsync(db, tx, protocoloId, setorAtualId, setorAtualId, "OBSERVACAO", null, null,
+                "Observação adicionada.", observacao, null);
+
+            await InsertAuditoriaAsync(db, tx, protocoloId, "protocolo_observacao", protocoloId, "ADICIONAR_OBSERVACAO",
+                null, new { tipo, observacao, setorAtualId });
 
             tx.Commit();
+
             TempData["ok"] = "Observação adicionada.";
         }
         catch (Exception ex)
         {
             tx.Rollback();
-            TempData["erro"] = "Erro ao adicionar observação: " + ex.Message;
+            _logger.LogError(ex, "Erro ao adicionar observação.");
+            TempData["erro"] = "Erro ao adicionar observação.";
         }
 
         return RedirectToAction(nameof(Details), new { id = protocoloId });
     }
 
-    private async Task<IActionResult> DecidirAsync(Guid protocoloId, string acao, string statusNovo, string? despacho, string mensagemOk)
+    // ==========================================================
+    // TRAMITAR
+    // Regra: setor atual tramita para o setor destino.
+    // Após tramitar, o processo deixa de aparecer no grid do setor antigo.
+    // O setor antigo vira participante apenas histórico.
+    // Permite anexar vários documentos durante a tramitação.
+    // ==========================================================
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    [RequestSizeLimit(1024L * 1024L * 200L)]
+    public async Task<IActionResult> Tramitar(Guid protocoloId, Guid setorDestinoId, string despacho, string? observacao, Guid? tipoDocumentoId)
     {
         using var db = await OpenAsync();
-        var setorIds = await GetCurrentUserSetorIdsAsync(db);
-        if (!await CanActAsync(db, protocoloId, setorIds)) return Forbid();
 
-        var p = await GetProtocoloMinAsync(db, protocoloId);
-        if (p is null) return NotFound();
-        if (p.Status == "ARQUIVADO" || p.Status == "CANCELADO")
+        if (setorDestinoId == Guid.Empty)
         {
-            TempData["erro"] = "Este protocolo já está encerrado.";
+            TempData["erro"] = "Informe o setor de destino.";
+            return RedirectToAction(nameof(Details), new { id = protocoloId });
+        }
+
+        var protocolo = await db.QueryFirstOrDefaultAsync<ProtocoloStatusRow>(@"
+select id, status, setor_atual_id as SetorAtualId
+from ged.protocolo
+where tenant_id=@tenantId and id=@protocoloId and reg_status='A';",
+            new { tenantId = TenantId, protocoloId });
+
+        if (protocolo is null)
+        {
+            TempData["erro"] = "Protocolo não encontrado.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        if (!IsStatusOperacional(protocolo.Status))
+        {
+            TempData["erro"] = "Este protocolo não pode mais ser tramitado.";
+            return RedirectToAction(nameof(Details), new { id = protocoloId });
+        }
+
+        if (!await PodeAtuarNoSetorAtualAsync(db, protocoloId))
+        {
+            TempData["erro"] = "Somente o setor atual do protocolo pode tramitar.";
+            return RedirectToAction(nameof(Details), new { id = protocoloId });
+        }
+
+        if (protocolo.SetorAtualId == setorDestinoId)
+        {
+            TempData["erro"] = "O setor destino deve ser diferente do setor atual.";
             return RedirectToAction(nameof(Details), new { id = protocoloId });
         }
 
         using var tx = db.BeginTransaction();
+
         try
         {
-            var encerramento = statusNovo is "DEFERIDO" or "INDEFERIDO" or "ARQUIVADO";
+            // Arquivos anexados no momento da tramitação pertencem ao setor que está tramitando.
+            if (protocolo.SetorAtualId.HasValue)
+            {
+                await SaveUploadedFilesAsync(db, tx, protocoloId, protocolo.SetorAtualId.Value, Request.Form.Files, tipoDocumentoId,
+                    "Anexo incluído durante a tramitação.");
+            }
+
             await db.ExecuteAsync(@"
 update ged.protocolo
-set status = @statusNovo,
-    motivo_encerramento = @despacho,
-    data_encerramento = case when @encerramento then coalesce(data_encerramento, now()) else data_encerramento end,
-    updated_at = now()
-where tenant_id = @tenantId and id = @protocoloId;", new
-            {
-                tenantId = TenantId,
+set setor_atual_id=@setorDestinoId,
+    status='EM_TRAMITACAO',
+    updated_at=now(),
+    updated_by=@userId
+where tenant_id=@tenantId and id=@protocoloId;",
+                new
+                {
+                    tenantId = TenantId,
+                    protocoloId,
+                    setorDestinoId,
+                    userId = UserId
+                },
+                tx);
+
+            if (protocolo.SetorAtualId.HasValue)
+                await UpsertParticipanteAsync(db, tx, protocoloId, protocolo.SetorAtualId.Value, true, false);
+
+            await UpsertParticipanteAsync(db, tx, protocoloId, setorDestinoId, true, true);
+
+            await InsertTramitacaoAsync(db, tx,
                 protocoloId,
-                statusNovo,
+                protocolo.SetorAtualId,
+                setorDestinoId,
+                "TRAMITACAO",
+                protocolo.Status,
+                "EM_TRAMITACAO",
                 despacho,
-                encerramento
-            }, tx);
+                observacao,
+                null);
 
-            await db.ExecuteAsync(@"
-update ged.protocolo_setor_participante
-set pode_editar = false
-where tenant_id = @tenantId and protocolo_id = @protocoloId and @bloquearEdicao = true;", new
-            {
-                tenantId = TenantId,
-                protocoloId,
-                bloquearEdicao = StatusFinais.Contains(statusNovo)
-            }, tx);
+            if (!string.IsNullOrWhiteSpace(observacao) && protocolo.SetorAtualId.HasValue)
+                await InsertObservacaoAsync(db, tx, protocoloId, protocolo.SetorAtualId.Value, "PUBLICA", observacao);
 
-            await InsertTramitacaoAsync(db, tx, protocoloId, p.SetorAtualId, p.SetorAtualId, acao, p.Status, statusNovo, despacho, null);
-            await InsertAuditoriaAsync(db, tx, protocoloId, "protocolo", protocoloId, acao,
-                new { p.Status }, new { Status = statusNovo, despacho }, p.SetorAtualId);
+            await InsertAuditoriaAsync(db, tx, protocoloId, "protocolo", protocoloId, "TRAMITAR",
+                new { protocolo.Status, protocolo.SetorAtualId },
+                new { Status = "EM_TRAMITACAO", SetorAtualId = setorDestinoId, despacho, observacao });
 
             tx.Commit();
-            TempData["ok"] = mensagemOk;
+
+            TempData["ok"] = "Protocolo tramitado com sucesso. Ele não aparecerá mais na caixa do setor anterior.";
         }
         catch (Exception ex)
         {
             tx.Rollback();
-            TempData["erro"] = "Erro ao executar ação no protocolo: " + ex.Message;
+            _logger.LogError(ex, "Erro ao tramitar protocolo.");
+            TempData["erro"] = "Erro ao tramitar protocolo.";
+        }
+
+        return RedirectToAction(nameof(Index));
+    }
+
+    // ==========================================================
+    // FINALIZAR
+    // Regra: exige justificativa.
+    // ==========================================================
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Finalizar(Guid protocoloId, string justificativa)
+    {
+        return await EncerrarAsync(protocoloId, "FINALIZADO", "FINALIZACAO", justificativa);
+    }
+
+    // ==========================================================
+    // ARQUIVAR
+    // Regra: exige justificativa.
+    // ==========================================================
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Arquivar(Guid protocoloId, string justificativa)
+    {
+        return await EncerrarAsync(protocoloId, "ARQUIVADO", "ARQUIVAMENTO", justificativa);
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Deferir(Guid protocoloId, string justificativa)
+    {
+        return await EncerrarAsync(protocoloId, "DEFERIDO", "DEFERIMENTO", justificativa);
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Indeferir(Guid protocoloId, string justificativa)
+    {
+        return await EncerrarAsync(protocoloId, "INDEFERIDO", "INDEFERIMENTO", justificativa);
+    }
+
+    private async Task<IActionResult> EncerrarAsync(Guid protocoloId, string statusNovo, string acao, string justificativa)
+    {
+        using var db = await OpenAsync();
+
+        if (string.IsNullOrWhiteSpace(justificativa))
+        {
+            TempData["erro"] = "Informe a justificativa.";
+            return RedirectToAction(nameof(Details), new { id = protocoloId });
+        }
+
+        var protocolo = await db.QueryFirstOrDefaultAsync<ProtocoloStatusRow>(@"
+select id, status, setor_atual_id as SetorAtualId
+from ged.protocolo
+where tenant_id=@tenantId and id=@protocoloId and reg_status='A';",
+            new { tenantId = TenantId, protocoloId });
+
+        if (protocolo is null)
+        {
+            TempData["erro"] = "Protocolo não encontrado.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        if (!await PodeAtuarNoSetorAtualAsync(db, protocoloId))
+        {
+            TempData["erro"] = "Somente o setor atual pode finalizar ou arquivar este protocolo.";
+            return RedirectToAction(nameof(Details), new { id = protocoloId });
+        }
+
+        using var tx = db.BeginTransaction();
+
+        try
+        {
+            await db.ExecuteAsync(@"
+update ged.protocolo
+set status=@statusNovo,
+    data_encerramento=now(),
+    justificativa_encerramento=@justificativa,
+    updated_at=now(),
+    updated_by=@userId
+where tenant_id=@tenantId and id=@protocoloId;",
+                new
+                {
+                    tenantId = TenantId,
+                    protocoloId,
+                    statusNovo,
+                    justificativa,
+                    userId = UserId
+                },
+                tx);
+
+            await InsertTramitacaoAsync(db, tx,
+                protocoloId,
+                protocolo.SetorAtualId,
+                protocolo.SetorAtualId,
+                acao,
+                protocolo.Status,
+                statusNovo,
+                null,
+                null,
+                justificativa);
+
+            await InsertAuditoriaAsync(db, tx, protocoloId, "protocolo", protocoloId, acao,
+                new { protocolo.Status },
+                new { Status = statusNovo, justificativa });
+
+            tx.Commit();
+
+            TempData["ok"] = $"Protocolo {statusNovo.ToLowerInvariant()} com sucesso.";
+        }
+        catch (Exception ex)
+        {
+            tx.Rollback();
+            _logger.LogError(ex, "Erro ao encerrar protocolo.");
+            TempData["erro"] = "Erro ao encerrar protocolo.";
         }
 
         return RedirectToAction(nameof(Details), new { id = protocoloId });
     }
 
-    private async Task FillFormListsAsync(IDbConnection db, ProtocoloFormVM vm)
+    // ==========================================================
+    // Helpers
+    // ==========================================================
+
+    private bool IsAdminLike()
     {
-        vm.Setores = await ListSetoresAsync(db);
-        vm.Tipos = await ListOptionsAsync(db, "ged.protocolo_tipo");
-        vm.Assuntos = await ListOptionsAsync(db, "ged.protocolo_assunto");
-        vm.CanaisEntrada = await ListOptionsAsync(db, "ged.protocolo_canal_entrada");
-        vm.Prioridades = await ListOptionsAsync(db, "ged.protocolo_prioridade");
-        vm.TiposDocumento = await ListTiposDocumentoAsync(db);
+        return User.IsInRole(AppRoles.Admin)
+               || User.IsInRole(AppRoles.Gestor)
+               || User.IsInRole(AppRoles.Auditor);
     }
 
-    private async Task<List<ProtocoloOptionVM>> ListOptionsAsync(IDbConnection db, string table)
+    private static bool IsStatusOperacional(string? status)
     {
-        var sql = $@"select id as Id, nome as Nome, codigo as Codigo from {table} where tenant_id = @tenantId and ativo = true and reg_status = 'A' order by nome;";
-        return (await db.QueryAsync<ProtocoloOptionVM>(sql, new { tenantId = TenantId })).ToList();
+        status = (status ?? "").Trim().ToUpperInvariant();
+        return status is "RASCUNHO" or "ABERTO" or "EM_TRAMITACAO";
     }
 
-    private async Task<List<ProtocoloTipoDocumentoOptionVM>> ListTiposDocumentoAsync(IDbConnection db)
+    private async Task<Guid[]> GetUserSetorIdsAsync(IDbConnection db)
     {
-        return (await db.QueryAsync<ProtocoloTipoDocumentoOptionVM>(@"
-select id as Id, nome as Nome, obrigatorio as Obrigatorio
-from ged.protocolo_tipo_documento
-where tenant_id = @tenantId and ativo = true and reg_status = 'A'
-order by obrigatorio desc, nome;", new { tenantId = TenantId })).ToList();
-    }
+        if (!UserId.HasValue)
+            return Array.Empty<Guid>();
 
-    private async Task<List<ProtocoloSetorOptionVM>> ListSetoresAsync(IDbConnection db)
-    {
-        var setores = await db.QueryAsync<ProtocoloSetorOptionVM>(@"
-select id as Id, nome as Nome, sigla as Sigla
-from ged.protocolo_setor
-where tenant_id = @tenantId and ativo = true and reg_status = 'A'
-order by nome;", new { tenantId = TenantId });
-        return setores.ToList();
-    }
-
-    private async Task<Guid[]> GetCurrentUserSetorIdsAsync(IDbConnection db)
-    {
-        if (!UserId.HasValue) return Array.Empty<Guid>();
-        var setores = await db.QueryAsync<Guid>(@"
+        var ids = await db.QueryAsync<Guid>(@"
 select setor_id
 from ged.protocolo_usuario_setor
-where tenant_id = @tenantId and usuario_id = @userId and ativo = true and reg_status = 'A';", new { tenantId = TenantId, userId = UserId.Value });
-        return setores.ToArray();
+where tenant_id=@tenantId
+  and usuario_id=@userId
+  and ativo=true
+  and reg_status='A';",
+            new { tenantId = TenantId, userId = UserId.Value });
+
+        return ids.Distinct().ToArray();
     }
 
-    private async Task<bool> CanViewAsync(IDbConnection db, Guid protocoloId, Guid[] setorIds)
+    private async Task<Guid?> GetSetorAtualIdAsync(IDbConnection db, Guid protocoloId)
     {
-        return await db.ExecuteScalarAsync<bool>(@"
+        return await db.ExecuteScalarAsync<Guid?>(@"
+select setor_atual_id
+from ged.protocolo
+where tenant_id=@tenantId and id=@protocoloId and reg_status='A';",
+            new { tenantId = TenantId, protocoloId });
+    }
+
+    private async Task<bool> PodeAtuarNoSetorAtualAsync(IDbConnection db, Guid protocoloId)
+    {
+        if (IsAdminLike())
+            return true;
+
+        var setorAtualId = await GetSetorAtualIdAsync(db, protocoloId);
+        if (!setorAtualId.HasValue)
+            return false;
+
+        var userSetores = await GetUserSetorIdsAsync(db);
+        return userSetores.Contains(setorAtualId.Value);
+    }
+
+    private async Task<bool> PodeVisualizarAsync(IDbConnection db, Guid protocoloId)
+    {
+        if (IsAdminLike())
+            return true;
+
+        var userSetores = await GetUserSetorIdsAsync(db);
+        if (userSetores.Length == 0)
+            return false;
+
+        var exists = await db.ExecuteScalarAsync<bool>(@"
 select exists (
     select 1
     from ged.protocolo p
-    where p.tenant_id = @tenantId
-      and p.id = @protocoloId
-      and p.reg_status = 'A'
+    where p.tenant_id=@tenantId
+      and p.id=@protocoloId
+      and p.reg_status='A'
       and (
-            p.criado_por = @userId
+            p.setor_atual_id = any(@setorIds)
             or exists (
                 select 1
                 from ged.protocolo_setor_participante sp
-                where sp.tenant_id = p.tenant_id
-                  and sp.protocolo_id = p.id
-                  and sp.pode_visualizar = true
+                where sp.tenant_id=p.tenant_id
+                  and sp.protocolo_id=p.id
                   and sp.setor_id = any(@setorIds)
+                  and sp.pode_visualizar=true
             )
       )
-);", new { tenantId = TenantId, protocoloId, userId = UserId, setorIds });
+);",
+            new { tenantId = TenantId, protocoloId, setorIds = userSetores });
+
+        return exists;
     }
 
-    private async Task<bool> CanActAsync(IDbConnection db, Guid protocoloId, Guid[] setorIds)
+    private async Task PopulateFormListsAsync(IDbConnection db, ProtocoloFormVM vm)
     {
-        return await db.ExecuteScalarAsync<bool>(@"
-select exists (
-    select 1
-    from ged.protocolo p
-    where p.tenant_id = @tenantId
-      and p.id = @protocoloId
-      and p.reg_status = 'A'
-      and exists (
-            select 1
-            from ged.protocolo_setor_participante sp
-            where sp.tenant_id = p.tenant_id
-              and sp.protocolo_id = p.id
-              and sp.pode_editar = true
-              and sp.setor_id = any(@setorIds)
-      )
-);", new { tenantId = TenantId, protocoloId, setorIds });
+        vm.Tipos = await LoadSelectAsync(db, @"select id, nome from ged.protocolo_tipo where tenant_id=@tenantId and reg_status='A' and ativo=true order by nome;", new { tenantId = TenantId });
+        vm.Assuntos = await LoadSelectAsync(db, @"select id, nome from ged.protocolo_assunto where tenant_id=@tenantId and reg_status='A' and ativo=true order by nome;", new { tenantId = TenantId });
+        vm.Prioridades = await LoadSelectAsync(db, @"select id, nome from ged.protocolo_prioridade where tenant_id=@tenantId and reg_status='A' and ativo=true order by ordem, nome;", new { tenantId = TenantId });
+        vm.CanaisEntrada = await LoadSelectAsync(db, @"select id, nome from ged.protocolo_canal_entrada where tenant_id=@tenantId and reg_status='A' and ativo=true order by nome;", new { tenantId = TenantId });
+        vm.Setores = await LoadSelectAsync(db, @"select id, nome from ged.protocolo_setor where tenant_id=@tenantId and reg_status='A' and ativo=true order by nome;", new { tenantId = TenantId });
+        vm.TiposDocumento = await LoadSelectAsync(db, @"select id, nome from ged.protocolo_tipo_documento where tenant_id=@tenantId and reg_status='A' and ativo=true order by nome;", new { tenantId = TenantId });
     }
 
-    private async Task<ProtocoloMin?> GetProtocoloMinAsync(IDbConnection db, Guid id)
+    private static async Task<List<SelectListItem>> LoadSelectAsync(IDbConnection db, string sql, object param)
     {
-        return await db.QuerySingleOrDefaultAsync<ProtocoloMin>(@"
-select id as Id, numero as Numero, status as Status, setor_atual_id as SetorAtualId, setor_origem_id as SetorOrigemId
-from ged.protocolo
-where tenant_id = @tenantId and id = @id and reg_status = 'A';", new { tenantId = TenantId, id });
+        var rows = await db.QueryAsync<ProtocoloLookupRow>(sql, param);
+        return rows.Select(x => new SelectListItem { Value = x.Id.ToString(), Text = x.Nome }).ToList();
     }
 
-    private async Task SaveDocumentoAsync(IDbConnection db, IDbTransaction tx, Guid protocoloId, IFormFile arquivo, Guid? tipoDocumentoId, string? descricao, Guid? setorId)
+    private async Task UpsertParticipanteAsync(IDbConnection db, IDbTransaction tx, Guid protocoloId, Guid setorId, bool podeVisualizar, bool podeEditar)
     {
-        using var ms = new MemoryStream();
-        await arquivo.CopyToAsync(ms);
-        var bytes = ms.ToArray();
-        var hash = Convert.ToHexString(SHA256.HashData(bytes));
-        var docId = Guid.NewGuid();
-
         await db.ExecuteAsync(@"
-insert into ged.protocolo_documento
-(id, tenant_id, protocolo_id, tipo_documento_id, nome_arquivo, content_type, tamanho_bytes, arquivo_bytes, hash_arquivo,
- descricao, anexado_por, anexado_por_nome, setor_id, created_at, reg_status)
+insert into ged.protocolo_setor_participante
+(tenant_id, protocolo_id, setor_id, pode_visualizar, pode_editar, participou_em)
 values
-(@docId, @tenantId, @protocoloId, @tipoDocumentoId, @nomeArquivo, @contentType, @tamanhoBytes, @arquivoBytes, @hashArquivo,
- @descricao, @userId, @userName, @setorId, now(), 'A');", new
-        {
-            docId,
-            tenantId = TenantId,
-            protocoloId,
-            tipoDocumentoId,
-            nomeArquivo = Path.GetFileName(arquivo.FileName),
-            contentType = arquivo.ContentType,
-            tamanhoBytes = arquivo.Length,
-            arquivoBytes = bytes,
-            hashArquivo = hash,
-            descricao,
-            userId = UserId,
-            userName = UserNameSafe,
-            setorId
-        }, tx);
-
-        await InsertTramitacaoAsync(db, tx, protocoloId, setorId, setorId, "ANEXO_DOCUMENTO", null, null, null,
-            $"Documento anexado: {arquivo.FileName}");
-        await InsertAuditoriaAsync(db, tx, protocoloId, "protocolo_documento", docId, "ANEXAR_DOCUMENTO", null,
-            new { arquivo.FileName, arquivo.Length, Hash = hash }, setorId);
+(@tenantId, @protocoloId, @setorId, @podeVisualizar, @podeEditar, now())
+on conflict (tenant_id, protocolo_id, setor_id)
+do update set
+    pode_visualizar = excluded.pode_visualizar,
+    pode_editar = excluded.pode_editar,
+    participou_em = now();",
+            new
+            {
+                tenantId = TenantId,
+                protocoloId,
+                setorId,
+                podeVisualizar,
+                podeEditar
+            },
+            tx);
     }
 
-    private async Task InsertTramitacaoAsync(IDbConnection db, IDbTransaction tx, Guid protocoloId, Guid? setorOrigemId, Guid? setorDestinoId,
-        string acao, string? statusAnterior, string? statusNovo, string? despacho, string? observacao)
+    private async Task InsertTramitacaoAsync(
+        IDbConnection db,
+        IDbTransaction tx,
+        Guid protocoloId,
+        Guid? setorOrigemId,
+        Guid? setorDestinoId,
+        string acao,
+        string? statusAnterior,
+        string? statusNovo,
+        string? despacho,
+        string? observacao,
+        string? justificativa)
     {
         await db.ExecuteAsync(@"
 insert into ged.protocolo_tramitacao
-(tenant_id, protocolo_id, setor_origem_id, setor_destino_id, usuario_id, usuario_nome, acao, status_anterior, status_novo,
- despacho, observacao, ip, user_agent)
+(
+    tenant_id, protocolo_id, setor_origem_id, setor_destino_id,
+    usuario_id, usuario_nome, acao, status_anterior, status_novo,
+    despacho, observacao, justificativa, ip, user_agent
+)
 values
-(@tenantId, @protocoloId, @setorOrigemId, @setorDestinoId, @userId, @userName, @acao, @statusAnterior, @statusNovo,
- @despacho, @observacao, @ip, @userAgent);", new
-        {
-            tenantId = TenantId,
-            protocoloId,
-            setorOrigemId,
-            setorDestinoId,
-            userId = UserId,
-            userName = UserNameSafe,
-            acao,
-            statusAnterior,
-            statusNovo,
-            despacho,
-            observacao,
-            ip = HttpContext.Connection.RemoteIpAddress?.ToString(),
-            userAgent = Request.Headers.UserAgent.ToString()
-        }, tx);
+(
+    @tenantId, @protocoloId, @setorOrigemId, @setorDestinoId,
+    @userId, @userName, @acao, @statusAnterior, @statusNovo,
+    @despacho, @observacao, @justificativa, @ip, @ua
+);",
+            new
+            {
+                tenantId = TenantId,
+                protocoloId,
+                setorOrigemId,
+                setorDestinoId,
+                userId = UserId,
+                userName = UserNameSafe,
+                acao,
+                statusAnterior,
+                statusNovo,
+                despacho,
+                observacao,
+                justificativa,
+                ip = HttpContext.Connection.RemoteIpAddress?.ToString(),
+                ua = Request.Headers.UserAgent.ToString()
+            },
+            tx);
     }
 
-    private async Task InsertAuditoriaAsync(IDbConnection db, IDbTransaction tx, Guid protocoloId, string entidade, Guid entidadeId,
-        string acao, object? anterior, object? novo, Guid? setorId)
+    private async Task InsertObservacaoAsync(
+        IDbConnection db,
+        IDbTransaction tx,
+        Guid protocoloId,
+        Guid setorId,
+        string tipo,
+        string observacao)
+    {
+        await db.ExecuteAsync(@"
+insert into ged.protocolo_observacao
+(tenant_id, protocolo_id, setor_id, usuario_id, usuario_nome, tipo, observacao)
+values
+(@tenantId, @protocoloId, @setorId, @userId, @userName, @tipo, @observacao);",
+            new
+            {
+                tenantId = TenantId,
+                protocoloId,
+                setorId,
+                userId = UserId,
+                userName = UserNameSafe,
+                tipo,
+                observacao
+            },
+            tx);
+    }
+
+    private async Task InsertAuditoriaAsync(
+        IDbConnection db,
+        IDbTransaction tx,
+        Guid protocoloId,
+        string entidade,
+        Guid entidadeId,
+        string acao,
+        object? anterior,
+        object? novo)
     {
         await db.ExecuteAsync(@"
 insert into ged.protocolo_auditoria
-(tenant_id, protocolo_id, entidade, entidade_id, acao, valor_anterior, valor_novo, usuario_id, usuario_nome, setor_id, ip, user_agent)
+(
+    tenant_id, protocolo_id, entidade, entidade_id, acao,
+    valor_anterior, valor_novo,
+    usuario_id, usuario_nome, ip, user_agent
+)
 values
-(@tenantId, @protocoloId, @entidade, @entidadeId, @acao, cast(@valorAnterior as jsonb), cast(@valorNovo as jsonb),
- @userId, @userName, @setorId, @ip, @userAgent);", new
-        {
-            tenantId = TenantId,
-            protocoloId,
-            entidade,
-            entidadeId,
-            acao,
-            valorAnterior = anterior is null ? null : JsonSerializer.Serialize(anterior),
-            valorNovo = novo is null ? null : JsonSerializer.Serialize(novo),
-            userId = UserId,
-            userName = UserNameSafe,
-            setorId,
-            ip = HttpContext.Connection.RemoteIpAddress?.ToString(),
-            userAgent = Request.Headers.UserAgent.ToString()
-        }, tx);
+(
+    @tenantId, @protocoloId, @entidade, @entidadeId, @acao,
+    cast(@anterior as jsonb), cast(@novo as jsonb),
+    @userId, @userName, @ip, @ua
+);",
+            new
+            {
+                tenantId = TenantId,
+                protocoloId,
+                entidade,
+                entidadeId,
+                acao,
+                anterior = anterior is null ? null : System.Text.Json.JsonSerializer.Serialize(anterior),
+                novo = novo is null ? null : System.Text.Json.JsonSerializer.Serialize(novo),
+                userId = UserId,
+                userName = UserNameSafe,
+                ip = HttpContext.Connection.RemoteIpAddress?.ToString(),
+                ua = Request.Headers.UserAgent.ToString()
+            },
+            tx);
     }
 
-    private sealed class ProtocoloMin
+    private async Task<int> SaveUploadedFilesAsync(
+        IDbConnection db,
+        IDbTransaction tx,
+        Guid protocoloId,
+        Guid setorDonoId,
+        IFormFileCollection files,
+        Guid? tipoDocumentoId,
+        string? descricao)
     {
-        public Guid Id { get; set; }
-        public string? Numero { get; set; }
-        public string Status { get; set; } = string.Empty;
-        public Guid? SetorAtualId { get; set; }
-        public Guid SetorOrigemId { get; set; }
+        if (files is null || files.Count == 0)
+            return 0;
+
+        var total = 0;
+
+        foreach (var file in files)
+        {
+            if (file is null || file.Length <= 0)
+                continue;
+
+            await using var ms = new MemoryStream();
+            await file.CopyToAsync(ms);
+            var bytes = ms.ToArray();
+
+            var hash = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+
+            await db.ExecuteAsync(@"
+insert into ged.protocolo_documento
+(
+    tenant_id, protocolo_id, nome_arquivo, content_type, tamanho_bytes,
+    arquivo_bytes, hash_arquivo, tipo_documento_id, descricao,
+    anexado_por, anexado_por_nome, setor_id, created_at, reg_status
+)
+values
+(
+    @tenantId, @protocoloId, @nomeArquivo, @contentType, @tamanhoBytes,
+    @arquivoBytes, @hashArquivo, @tipoDocumentoId, @descricao,
+    @userId, @userName, @setorId, now(), 'A'
+);",
+                new
+                {
+                    tenantId = TenantId,
+                    protocoloId,
+                    nomeArquivo = Path.GetFileName(file.FileName),
+                    contentType = file.ContentType,
+                    tamanhoBytes = file.Length,
+                    arquivoBytes = bytes,
+                    hashArquivo = hash,
+                    tipoDocumentoId,
+                    descricao,
+                    userId = UserId,
+                    userName = UserNameSafe,
+                    setorId = setorDonoId
+                },
+                tx);
+
+            total++;
+        }
+
+        return total;
     }
 
-    private sealed class DocumentoBlob
+    private sealed class DocumentoDownloadRow
     {
         public Guid Id { get; set; }
         public Guid ProtocoloId { get; set; }
-        public string NomeArquivo { get; set; } = string.Empty;
+        public string NomeArquivo { get; set; } = "";
         public string? ContentType { get; set; }
         public byte[]? ArquivoBytes { get; set; }
+    }
+
+    private sealed class DocumentoOwnerRow
+    {
+        public Guid Id { get; set; }
+        public Guid ProtocoloId { get; set; }
+        public Guid? SetorId { get; set; }
+        public string NomeArquivo { get; set; } = "";
+    }
+
+    private sealed class ProtocoloStatusRow
+    {
+        public Guid Id { get; set; }
+        public string Status { get; set; } = "";
+        public Guid? SetorAtualId { get; set; }
     }
 }

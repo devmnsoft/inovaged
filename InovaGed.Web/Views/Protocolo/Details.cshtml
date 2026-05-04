@@ -1,236 +1,260 @@
-@model InovaGed.Web.Models.Protocolo.ProtocoloDetailsVM
+﻿@model InovaGed.Web.Models.Protocolo.ProtocoloDetailsVM
 @{
-    ViewData["Title"] = "Protocolo " + Model.Numero;
-    string StatusBadge(string status) => status switch
-    {
-        "RASCUNHO" => "bg-secondary",
-        "ABERTO" => "bg-primary",
-        "EM_TRAMITACAO" => "bg-info text-dark",
-        "DEFERIDO" => "bg-success",
-        "INDEFERIDO" => "bg-danger",
-        "ARQUIVADO" => "bg-dark",
-        _ => "bg-secondary"
-    };
+    ViewData["Title"] = "Detalhes do Protocolo";
+    ViewData["Subtitle"] = Model.Numero;
 }
 
-<style>
-    .protocolo-panel-title {
-        background: #dff0d8;
-        border: 1px solid #c8e5bc;
-        color: #1f7a33;
-        padding: 16px 20px;
-        border-radius: .35rem .35rem 0 0;
-        font-size: 1.2rem;
-        font-weight: 600;
-    }
-    .protocolo-section h5 { font-size: 1.05rem; margin-bottom: .4rem; }
-    .protocolo-section small { color: #212529; }
-    .protocolo-timeline { margin: 0; padding-left: 1.25rem; }
-    .protocolo-timeline li { margin-bottom: 1rem; }
-    .doc-preview-frame { width: 100%; height: 520px; border: 1px solid #ddd; background: #fff; }
-</style>
+@if (TempData["ok"] is not null)
+{
+    <div class="alert alert-success">@TempData["ok"]</div>
+}
 
-<div class="container-fluid py-3">
-    <div class="d-flex justify-content-between align-items-start mb-3">
+@if (TempData["erro"] is not null)
+{
+    <div class="alert alert-danger">@TempData["erro"]</div>
+}
+
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-header text-center bg-white">
+        <h5 class="mb-2">
+            <i class="bi bi-file-earmark-text text-primary"></i>
+            Pedido Solicitado: @Model.Numero
+        </h5>
+
         <div>
-            <h2 class="mb-0"><i class="bi bi-file-earmark-text text-primary"></i> Pedido Solicitado: @Model.Numero</h2>
-            <div class="mt-2">
-                <i class="bi bi-tag-fill"></i> Espécie: @Model.TipoProtocolo
-                <span class="mx-2">|</span>
-                <i class="bi bi-info-circle-fill"></i> Status: <span class="badge @StatusBadge(Model.Status)">@Model.Status</span>
-            </div>
-        </div>
-        <div class="d-flex gap-2">
-            <a asp-action="Index" class="btn btn-outline-secondary">Voltar</a>
-            @if (Model.Status == "RASCUNHO" && Model.PodeEditar)
-            {
-                <form asp-action="Protocolar" method="post">
-                    @Html.AntiForgeryToken()
-                    <input type="hidden" name="id" value="@Model.Id" />
-                    <button class="btn btn-success">Protocolar</button>
-                </form>
-            }
+            <i class="bi bi-tag-fill"></i> Espécie: @Model.TipoSolicitacao
+            <span class="mx-2">|</span>
+            <i class="bi bi-info-circle-fill"></i> Status:
+            <span class="badge text-bg-secondary">@Model.Status</span>
         </div>
     </div>
 
-    @if (TempData["ok"] is not null)
-    {
-        <div class="alert alert-success">@TempData["ok"]</div>
-    }
-    @if (TempData["erro"] is not null)
-    {
-        <div class="alert alert-danger">@TempData["erro"]</div>
-    }
+    <div class="card-body">
+        <div class="row g-4">
+            <div class="col-md-6">
+                <h5><i class="bi bi-person-fill"></i> - Solicitante</h5>
+                <p>@(Model.Interessado ?? "Não informado")</p>
 
-    <div class="card border-0 shadow-sm mb-3">
-        <div class="card-body">
-            <div class="row g-4 protocolo-section">
-                <div class="col-md-6">
-                    <h5><i class="bi bi-person-fill"></i> - Solicitante</h5>
-                    <small>@(Model.Interessado ?? "-")</small>
-                </div>
-                <div class="col-md-6">
-                    <h5><i class="bi bi-tag-fill"></i> - Espécie</h5>
-                    <small>@Model.TipoProtocolo</small>
-                </div>
+                <h5><i class="bi bi-geo-alt-fill"></i> - Procedência</h5>
+                <p>@(Model.CanalEntrada ?? Model.Procedencia ?? "Não informada")</p>
 
-                <div class="col-md-6">
-                    <h5><i class="bi bi-geo-alt-fill"></i> - Procedência</h5>
-                    <small>@Model.CanalEntrada</small>
-                </div>
-                <div class="col-md-6">
-                    <h5><i class="bi bi-person-check-fill"></i> - Interessado</h5>
-                    <small>@(Model.Interessado ?? "-")</small>
-                </div>
+                <h5><i class="bi bi-chat-left-text-fill"></i> - Assunto</h5>
+                <p>@Model.Assunto</p>
 
-                <div class="col-md-6">
-                    <h5><i class="bi bi-chat-square-fill"></i> - Assunto</h5>
-                    <small>@Model.Assunto</small>
-                </div>
-                <div class="col-md-6">
-                    <h5><i class="bi bi-paperclip"></i> - Anexos</h5>
-                    <small>@(Model.Documentos.Any() ? string.Join(", ", Model.Documentos.Select(x => x.NomeArquivo)) : "Nenhum anexo informado.")</small>
-                </div>
+                <h5><i class="bi bi-info-circle-fill"></i> - Informações Complementares</h5>
+                <p>@(Model.InformacoesComplementares ?? "Sem informações complementares.")</p>
 
-                <div class="col-md-6">
-                    <h5><i class="bi bi-info-circle-fill"></i> - Informações Complementares</h5>
-                    <small>@(Model.Descricao ?? "-")</small>
-                </div>
-                <div class="col-md-6">
-                    <h5><i class="bi bi-flag-fill"></i> - Origem do Pedido</h5>
-                    <small>@Model.SetorOrigem</small>
-                </div>
-
-                <div class="col-md-6">
-                    <h5><i class="bi bi-building-fill"></i> - Setor Atual do Processo</h5>
-                    <small>@Model.SetorAtual</small>
-                </div>
-                <div class="col-md-6">
-                    <h5><i class="bi bi-clock-history"></i> - Histórico de Movimentações</h5>
-                    <ul class="protocolo-timeline small">
-                        @foreach (var t in Model.Tramitacoes)
-                        {
-                            <li>
-                                <div>
-                                    <strong>@t.Acao</strong>
-                                    @if (!string.IsNullOrWhiteSpace(t.SetorOrigem) || !string.IsNullOrWhiteSpace(t.SetorDestino))
-                                    {
-                                        <span> - @t.SetorOrigem → @t.SetorDestino</span>
-                                    }
-                                </div>
-                                @if (!string.IsNullOrWhiteSpace(t.Despacho))
-                                {
-                                    <div>@t.Despacho</div>
-                                }
-                                @if (!string.IsNullOrWhiteSpace(t.Observacao))
-                                {
-                                    <div>@t.Observacao</div>
-                                }
-                                <div><strong>Data do Registro:</strong> @t.DataTramitacao.ToString("dd/MM/yyyy HH:mm")</div>
-                                <div><strong>Nome:</strong> @t.UsuarioNome</div>
-                            </li>
-                        }
-                    </ul>
-                </div>
+                <h5><i class="bi bi-building-fill"></i> - Setor Atual do Processo</h5>
+                <p class="fw-semibold text-primary">@Model.SetorAtual</p>
             </div>
-        </div>
-    </div>
 
-    @if (Model.PodeTramitar || Model.PodeDeferir || Model.PodeIndeferir || Model.PodeArquivar || Model.PodeEditar)
-    {
-        <div class="card border-0 shadow-sm mb-3">
-            <div class="protocolo-panel-title">Análise, Parecer e Tramitação</div>
-            <div class="card-body">
-                @if (Model.PodeEditar)
+            <div class="col-md-6">
+                <h5><i class="bi bi-tag-fill"></i> - Espécie</h5>
+                <p>@Model.TipoSolicitacao</p>
+
+                <h5><i class="bi bi-person-check-fill"></i> - Interessado</h5>
+                <p>@(Model.Interessado ?? "Não informado")</p>
+
+                <h5><i class="bi bi-paperclip"></i> - Anexos</h5>
+                <p>@Model.Documentos.Count documento(s) anexado(s)</p>
+
+                <h5><i class="bi bi-flag-fill"></i> - Origem do Pedido</h5>
+                <p>@Model.SetorOrigem</p>
+
+                @if (!string.IsNullOrWhiteSpace(Model.JustificativaEncerramento))
                 {
-                    <form asp-action="AdicionarObservacao" method="post" class="mb-4">
+                    <h5><i class="bi bi-check-circle-fill"></i> - Justificativa de Encerramento</h5>
+                    <p>@Model.JustificativaEncerramento</p>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (Model.PodeAtuar)
+{
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-header" style="background:#dff2d8;">
+            <strong><i class="bi bi-pencil-square"></i> Ações do Setor Atual</strong>
+        </div>
+
+        <div class="card-body">
+            <div class="row g-3">
+                @if (Model.PodeAnexar)
+                {
+                    <div class="col-12">
+                        <form asp-action="AnexarDocumentos" method="post" enctype="multipart/form-data" class="border rounded p-3">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="protocoloId" value="@Model.Id" />
+
+                            <h6><i class="bi bi-paperclip"></i> Adicionar novos anexos</h6>
+
+                            <div class="row g-2">
+                                <div class="col-md-4">
+                                    <select name="tipoDocumentoId" asp-items="Model.TiposDocumento" class="form-select">
+                                        <option value="">Tipo de documento</option>
+                                    </select>
+                                </div>
+
+                                <div class="col-md-5">
+                                    <input type="file" name="arquivos" class="form-control" multiple />
+                                </div>
+
+                                <div class="col-md-3">
+                                    <button class="btn btn-success w-100" type="submit">
+                                        <i class="bi bi-upload"></i> Anexar
+                                    </button>
+                                </div>
+
+                                <div class="col-12">
+                                    <input type="text" name="descricao" class="form-control" placeholder="Descrição dos anexos" />
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                }
+
+                <div class="col-12">
+                    <form asp-action="AdicionarObservacao" method="post" class="border rounded p-3">
                         @Html.AntiForgeryToken()
                         <input type="hidden" name="protocoloId" value="@Model.Id" />
-                        <label class="form-label fw-semibold">Adicionar Observação:</label>
-                        <select name="tipo" class="form-select mb-2" style="max-width:280px;">
-                            <option value="PUBLICA">Observação pública</option>
-                            <option value="DESPACHO">Despacho / parecer</option>
-                            <option value="INTERNA_SETOR">Interna do setor</option>
-                        </select>
-                        <textarea name="observacao" class="form-control mb-2" rows="6" required></textarea>
-                        <button class="btn btn-success">Salvar observação</button>
+
+                        <h6><i class="bi bi-chat-left-text"></i> Adicionar Observação</h6>
+
+                        <div class="row g-2">
+                            <div class="col-md-3">
+                                <select name="tipo" class="form-select">
+                                    <option value="PUBLICA">Pública</option>
+                                    <option value="DESPACHO">Despacho</option>
+                                    <option value="INTERNA_SETOR">Interna do setor</option>
+                                </select>
+                            </div>
+
+                            <div class="col-md-7">
+                                <textarea name="observacao" class="form-control" rows="2" placeholder="Digite a observação"></textarea>
+                            </div>
+
+                            <div class="col-md-2">
+                                <button class="btn btn-success w-100" type="submit">
+                                    Salvar
+                                </button>
+                            </div>
+                        </div>
                     </form>
-                }
+                </div>
 
                 @if (Model.PodeTramitar)
                 {
-                    <form asp-action="Tramitar" method="post" class="row g-2 align-items-end mb-3">
-                        @Html.AntiForgeryToken()
-                        <input type="hidden" name="protocoloId" value="@Model.Id" />
-                        <div class="col-md-4">
-                            <label class="form-label fw-semibold">Setor de destino</label>
-                            <select name="setorDestinoId" class="form-select" required>
-                                <option value="">- Selecione -</option>
-                                @foreach (var setor in Model.SetoresDestino)
-                                {
-                                    <option value="@setor.Id">@setor.Nome</option>
-                                }
-                            </select>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label fw-semibold">Despacho de tramitação</label>
-                            <input name="despacho" class="form-control" placeholder="Informe o despacho para o próximo setor" required />
-                        </div>
-                        <div class="col-md-2">
-                            <button class="btn btn-primary w-100">Tramitar</button>
-                        </div>
-                    </form>
+                    <div class="col-12">
+                        <form asp-action="Tramitar" method="post" enctype="multipart/form-data" class="border rounded p-3">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="protocoloId" value="@Model.Id" />
+
+                            <h6><i class="bi bi-arrow-left-right"></i> Tramitar Processo</h6>
+
+                            <div class="row g-2">
+                                <div class="col-md-4">
+                                    <label class="form-label">Setor destino</label>
+                                    <select name="setorDestinoId" asp-items="Model.SetoresDestino" class="form-select">
+                                        <option value="">- Selecione -</option>
+                                    </select>
+                                </div>
+
+                                <div class="col-md-4">
+                                    <label class="form-label">Anexos da tramitação</label>
+                                    <input type="file" name="arquivos" class="form-control" multiple />
+                                </div>
+
+                                <div class="col-md-4">
+                                    <label class="form-label">Tipo de documento</label>
+                                    <select name="tipoDocumentoId" asp-items="Model.TiposDocumento" class="form-select">
+                                        <option value="">Tipo de documento</option>
+                                    </select>
+                                </div>
+
+                                <div class="col-md-6">
+                                    <label class="form-label">Despacho</label>
+                                    <textarea name="despacho" class="form-control" rows="2"></textarea>
+                                </div>
+
+                                <div class="col-md-6">
+                                    <label class="form-label">Observação</label>
+                                    <textarea name="observacao" class="form-control" rows="2"></textarea>
+                                </div>
+
+                                <div class="col-12">
+                                    <button class="btn btn-primary" type="submit">
+                                        <i class="bi bi-send"></i> Encaminhar / Tramitar
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
                 }
 
-                <div class="d-flex flex-wrap gap-2">
-                    @if (Model.PodeDeferir)
-                    {
-                        <form asp-action="Deferir" method="post" class="d-flex gap-2">
+                @if (Model.PodeFinalizar || Model.PodeArquivar)
+                {
+                    <div class="col-md-6">
+                        <form asp-action="Finalizar" method="post" class="border rounded p-3">
                             @Html.AntiForgeryToken()
                             <input type="hidden" name="protocoloId" value="@Model.Id" />
-                            <input name="despacho" class="form-control" placeholder="Parecer de deferimento" required />
-                            <button class="btn btn-success text-nowrap">Salvar Parecer / Deferir</button>
+
+                            <h6><i class="bi bi-check2-circle"></i> Finalizar Processo</h6>
+                            <textarea name="justificativa" class="form-control mb-2" rows="3" placeholder="Justificativa obrigatória"></textarea>
+
+                            <button class="btn btn-success" type="submit">
+                                Finalizar
+                            </button>
                         </form>
-                    }
-                    @if (Model.PodeIndeferir)
-                    {
-                        <form asp-action="Indeferir" method="post" class="d-flex gap-2">
+                    </div>
+
+                    <div class="col-md-6">
+                        <form asp-action="Arquivar" method="post" class="border rounded p-3">
                             @Html.AntiForgeryToken()
                             <input type="hidden" name="protocoloId" value="@Model.Id" />
-                            <input name="motivo" class="form-control" placeholder="Motivo do indeferimento" required />
-                            <button class="btn btn-danger text-nowrap">Indeferir</button>
+
+                            <h6><i class="bi bi-archive"></i> Arquivar Processo</h6>
+                            <textarea name="justificativa" class="form-control mb-2" rows="3" placeholder="Justificativa obrigatória"></textarea>
+
+                            <button class="btn btn-warning" type="submit">
+                                Arquivar processo
+                            </button>
                         </form>
-                    }
-                    @if (Model.PodeArquivar)
-                    {
-                        <form asp-action="Arquivar" method="post" class="d-flex gap-2">
-                            @Html.AntiForgeryToken()
-                            <input type="hidden" name="protocoloId" value="@Model.Id" />
-                            <input name="motivo" class="form-control" placeholder="Motivo do arquivamento" required />
-                            <button class="btn btn-warning text-nowrap">Arquivar processo</button>
-                        </form>
-                    }
-                </div>
+                    </div>
+                }
             </div>
         </div>
-    }
+    </div>
+}
 
-    <div class="card border-0 shadow-sm mb-3">
-        <div class="protocolo-panel-title">Documentos anexados</div>
-        <div class="card-body">
-            <div class="table-responsive mb-3">
-                <table class="table table-bordered align-middle">
-                    <thead class="table-light">
-                        <tr>
-                            <th>Documento</th>
-                            <th>Tipo</th>
-                            <th>Setor</th>
-                            <th>Data</th>
-                            <th class="text-center">Verificar</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                    @foreach (var doc in Model.Documentos)
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-header" style="background:#dff2d8;">
+        <h5 class="mb-0 text-success">Documentos anexados</h5>
+    </div>
+
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-bordered align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Documento</th>
+                        <th>Tipo</th>
+                        <th>Setor que anexou</th>
+                        <th>Data</th>
+                        <th class="text-center">Verificar</th>
+                        <th class="text-center">Excluir</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @if (Model.Documentos.Count == 0)
+                {
+                    <tr>
+                        <td colspan="6" class="text-muted text-center">Nenhum documento anexado.</td>
+                    </tr>
+                }
+                else
+                {
+                    foreach (var doc in Model.Documentos)
                     {
                         <tr>
                             <td>@doc.NomeArquivo</td>
@@ -238,103 +262,150 @@
                             <td>@doc.Setor</td>
                             <td>@doc.CreatedAt.ToString("dd/MM/yyyy HH:mm")</td>
                             <td class="text-center">
-                                <a asp-action="VisualizarDocumento" asp-route-id="@doc.Id" target="_blank" class="btn btn-sm btn-link">
+                                <a asp-action="VisualizarDocumento"
+                                   asp-route-id="@doc.Id"
+                                   class="btn btn-sm btn-outline-primary"
+                                   target="_blank">
                                     <i class="bi bi-search"></i>
                                 </a>
                             </td>
+                            <td class="text-center">
+                                @if (doc.PodeExcluir)
+                                {
+                                    <form asp-action="ExcluirDocumento" method="post" class="d-inline">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="id" value="@doc.Id" />
+                                        <input type="hidden" name="protocoloId" value="@Model.Id" />
+                                        <input type="hidden" name="motivo" value="Exclusão solicitada pelo setor dono do anexo." />
+
+                                        <button class="btn btn-sm btn-outline-danger"
+                                                type="submit"
+                                                onclick="return confirm('Confirma a exclusão deste anexo? Somente o setor que anexou pode executar esta ação.');">
+                                            <i class="bi bi-x-circle-fill"></i>
+                                        </button>
+                                    </form>
+                                }
+                                else
+                                {
+                                    <span class="text-muted" title="Somente o setor que anexou pode excluir.">
+                                        <i class="bi bi-lock"></i>
+                                    </span>
+                                }
+                            </td>
                         </tr>
                     }
-                    @if (!Model.Documentos.Any())
-                    {
-                        <tr><td colspan="5" class="text-center text-muted">Nenhum documento anexado.</td></tr>
-                    }
-                    </tbody>
-                </table>
-            </div>
-
-            @if (Model.Documentos.Any())
-            {
-                <div class="card mb-3">
-                    <div class="protocolo-panel-title"><i class="bi bi-file-earmark-richtext"></i> Visualização dos Documentos</div>
-                    <div class="card-body">
-                        <div class="list-group mb-2">
-                            @foreach (var doc in Model.Documentos)
-                            {
-                                <a asp-action="VisualizarDocumento" asp-route-id="@doc.Id" target="_blank" class="list-group-item list-group-item-action">
-                                    -> @doc.NomeArquivo
-                                </a>
-                            }
-                        </div>
-                    </div>
-                </div>
-            }
-
-            @if (Model.PodeAnexar)
-            {
-                <form asp-action="AnexarDocumento" method="post" enctype="multipart/form-data" class="border-top pt-3">
-                    @Html.AntiForgeryToken()
-                    <input type="hidden" name="protocoloId" value="@Model.Id" />
-                    <h6><i class="bi bi-chat-square-fill"></i> Adicionar Novos anexos</h6>
-                    <div class="row g-2">
-                        <div class="col-md-4">
-                            <label class="form-label">Anexar arquivos ao requerimento</label>
-                            <input type="file" name="arquivos" multiple class="form-control" required />
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label">Tipo do documento</label>
-                            <select name="tipoDocumentoId" class="form-select">
-                                <option value="">- Selecione -</option>
-                                @foreach (var tipo in Model.TiposDocumento)
-                                {
-                                    <option value="@tipo.Id">@tipo.Nome</option>
-                                }
-                            </select>
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label">Descrição</label>
-                            <input name="descricao" class="form-control" />
-                        </div>
-                        <div class="col-md-1 d-flex align-items-end">
-                            <button class="btn btn-success w-100">+</button>
-                        </div>
-                    </div>
-                </form>
-            }
+                }
+                </tbody>
+            </table>
         </div>
     </div>
+</div>
 
-    <div class="card border-0 shadow-sm">
-        <div class="protocolo-panel-title">Observações Adicionadas</div>
-        <div class="card-body">
-            <div class="table-responsive">
-                <table class="table table-bordered align-middle">
-                    <thead class="table-light">
-                        <tr>
-                            <th>Observações</th>
-                            <th>Tipo</th>
-                            <th>Data do Registro</th>
-                            <th>Nome da pessoa</th>
-                            <th>Setor</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                    @foreach (var obs in Model.Observacoes)
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-header" style="background:#dff2d8;">
+        <h5 class="mb-0 text-success">
+            <i class="bi bi-chat-left-text"></i> Observações Adicionadas
+        </h5>
+    </div>
+
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-bordered">
+                <thead class="table-light">
+                    <tr>
+                        <th>Observação</th>
+                        <th>Tipo</th>
+                        <th>Setor</th>
+                        <th>Data do Registro</th>
+                        <th>Nome da pessoa</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @if (Model.Observacoes.Count == 0)
+                {
+                    <tr>
+                        <td colspan="5" class="text-center text-muted">Nenhuma observação adicionada.</td>
+                    </tr>
+                }
+                else
+                {
+                    foreach (var obs in Model.Observacoes)
                     {
                         <tr>
                             <td>@obs.Observacao</td>
                             <td>@obs.Tipo</td>
-                            <td>@obs.CreatedAt.ToString("dd/MM/yyyy")</td>
-                            <td>@obs.UsuarioNome</td>
                             <td>@obs.Setor</td>
+                            <td>@obs.CreatedAt.ToString("dd/MM/yyyy HH:mm")</td>
+                            <td>@obs.UsuarioNome</td>
                         </tr>
                     }
-                    @if (!Model.Observacoes.Any())
-                    {
-                        <tr><td colspan="5" class="text-center text-muted">Nenhuma observação adicionada.</td></tr>
-                    }
-                    </tbody>
-                </table>
-            </div>
+                }
+                </tbody>
+            </table>
         </div>
     </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-header" style="background:#dff2d8;">
+        <h5 class="mb-0 text-success">
+            <i class="bi bi-clock-history"></i> Histórico de Movimentações
+        </h5>
+    </div>
+
+    <div class="card-body">
+        @if (Model.Tramitacoes.Count == 0)
+        {
+            <div class="text-muted">Nenhuma movimentação registrada.</div>
+        }
+        else
+        {
+            <ul class="list-group list-group-flush">
+                @foreach (var t in Model.Tramitacoes)
+                {
+                    <li class="list-group-item">
+                        <div class="fw-semibold">
+                            @t.DataTramitacao.ToString("dd/MM/yyyy HH:mm:ss")
+                            -
+                            @t.Acao
+                        </div>
+
+                        <div class="small">
+                            <strong>De:</strong> @(t.SetorOrigem ?? "-")
+                            <strong class="ms-2">Para:</strong> @(t.SetorDestino ?? "-")
+                            <strong class="ms-2">Usuário:</strong> @(t.UsuarioNome ?? "-")
+                        </div>
+
+                        @if (!string.IsNullOrWhiteSpace(t.Despacho))
+                        {
+                            <div class="mt-1"><strong>Despacho:</strong> @t.Despacho</div>
+                        }
+
+                        @if (!string.IsNullOrWhiteSpace(t.Observacao))
+                        {
+                            <div class="mt-1"><strong>Observação:</strong> @t.Observacao</div>
+                        }
+
+                        @if (!string.IsNullOrWhiteSpace(t.Justificativa))
+                        {
+                            <div class="mt-1"><strong>Justificativa:</strong> @t.Justificativa</div>
+                        }
+
+                        @if (!string.IsNullOrWhiteSpace(t.StatusAnterior) || !string.IsNullOrWhiteSpace(t.StatusNovo))
+                        {
+                            <div class="small text-muted mt-1">
+                                Status: @(t.StatusAnterior ?? "-") → @(t.StatusNovo ?? "-")
+                            </div>
+                        }
+                    </li>
+                }
+            </ul>
+        }
+    </div>
+</div>
+
+<div class="mt-3">
+    <a asp-action="Index" class="btn btn-light border">
+        <i class="bi bi-arrow-left"></i> Voltar para o grid
+    </a>
 </div>

@@ -1,174 +1,143 @@
-@model InovaGed.Web.Models.Protocolo.ProtocoloFormVM
+﻿@model InovaGed.Web.Models.Protocolo.ProtocoloFormVM
 @{
     ViewData["Title"] = "Novo Protocolo";
+    ViewData["Subtitle"] = "Abertura com número automático, tramitação inicial e múltiplos anexos";
 }
 
-<style>
-    .protocolo-panel-title {
-        background: #dff0d8;
-        border: 1px solid #c8e5bc;
-        color: #1f7a33;
-        padding: 16px 20px;
-        border-radius: .35rem .35rem 0 0;
-        font-size: 1.25rem;
-        font-weight: 600;
-    }
-</style>
-
-<div class="container-fluid py-3">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <div>
-            <h2 class="mb-0">Novo Protocolo</h2>
-            <small class="text-muted">O número será gerado automaticamente no padrão PROC0000001/ANO.</small>
-        </div>
-        <a asp-action="Index" class="btn btn-outline-secondary">Voltar</a>
+<div class="card border-0 shadow-sm">
+    <div class="card-header" style="background:#dff2d8;">
+        <h4 class="mb-0 text-success">
+            <i class="bi bi-file-earmark-plus"></i> Novo Protocolo
+        </h4>
     </div>
 
-    @if (TempData["erro"] is not null)
-    {
-        <div class="alert alert-danger">@TempData["erro"]</div>
-    }
+    <div class="card-body">
+        @if (TempData["erro"] is not null)
+        {
+            <div class="alert alert-danger">@TempData["erro"]</div>
+        }
 
-    <form asp-action="Novo" method="post" enctype="multipart/form-data" class="card border-0 shadow-sm">
-        @Html.AntiForgeryToken()
-        <div class="protocolo-panel-title">Dados do Protocolo</div>
-        <div class="card-body">
-            <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+        <form asp-action="Novo" method="post" enctype="multipart/form-data">
+            @Html.AntiForgeryToken()
+
+            <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
 
             <div class="row g-3">
-                <div class="col-md-3">
-                    <label asp-for="TipoId" class="form-label"></label>
-                    <select asp-for="TipoId" class="form-select">
-                        <option value="">- Selecione -</option>
-                        @foreach (var item in Model.Tipos)
-                        {
-                            <option value="@item.Id">@item.Nome</option>
-                        }
-                    </select>
-                </div>
-                <div class="col-md-3">
-                    <label asp-for="AssuntoId" class="form-label"></label>
-                    <select asp-for="AssuntoId" class="form-select">
-                        <option value="">- Selecione -</option>
-                        @foreach (var item in Model.Assuntos)
-                        {
-                            <option value="@item.Id">@item.Nome</option>
-                        }
-                    </select>
-                </div>
-                <div class="col-md-3">
-                    <label asp-for="CanalEntradaId" class="form-label"></label>
-                    <select asp-for="CanalEntradaId" class="form-select">
-                        <option value="">- Selecione -</option>
-                        @foreach (var item in Model.CanaisEntrada)
-                        {
-                            <option value="@item.Id">@item.Nome</option>
-                        }
-                    </select>
-                </div>
-                <div class="col-md-3">
-                    <label asp-for="PrioridadeId" class="form-label"></label>
-                    <select asp-for="PrioridadeId" class="form-select">
-                        <option value="">- Selecione -</option>
-                        @foreach (var item in Model.Prioridades)
-                        {
-                            <option value="@item.Id">@item.Nome</option>
-                        }
-                    </select>
-                </div>
-
-                <div class="col-md-8">
-                    <label asp-for="Assunto" class="form-label"></label>
-                    <input asp-for="Assunto" class="form-control" placeholder="Ex.: SOLICITA PAGAMENTO NO VALOR DE R$..." />
-                    <span asp-validation-for="Assunto" class="text-danger"></span>
-                </div>
                 <div class="col-md-4">
-                    <label asp-for="Interessado" class="form-label"></label>
-                    <input asp-for="Interessado" class="form-control" placeholder="Nome do interessado" />
+                    <label class="form-label">Tipo da Solicitação / Espécie</label>
+                    <select asp-for="TipoId" asp-items="Model.Tipos" class="form-select">
+                        <option value="">- Selecione -</option>
+                    </select>
                 </div>
 
-                <div class="col-md-3">
-                    <label asp-for="CpfCnpj" class="form-label"></label>
-                    <input asp-for="CpfCnpj" class="form-control" />
+                <div class="col-md-4">
+                    <label class="form-label">Assunto cadastrado</label>
+                    <select asp-for="AssuntoId" asp-items="Model.Assuntos" class="form-select">
+                        <option value="">- Selecione -</option>
+                    </select>
                 </div>
-                <div class="col-md-3">
-                    <label asp-for="Email" class="form-label"></label>
-                    <input asp-for="Email" class="form-control" />
+
+                <div class="col-md-4">
+                    <label class="form-label">Prioridade</label>
+                    <select asp-for="PrioridadeId" asp-items="Model.Prioridades" class="form-select">
+                        <option value="">- Selecione -</option>
+                    </select>
                 </div>
-                <div class="col-md-2">
-                    <label asp-for="Telefone" class="form-label"></label>
-                    <input asp-for="Telefone" class="form-control" />
+
+                <div class="col-md-4">
+                    <label class="form-label">Canal de Entrada / Procedência</label>
+                    <select asp-for="CanalEntradaId" asp-items="Model.CanaisEntrada" class="form-select">
+                        <option value="">- Selecione -</option>
+                    </select>
                 </div>
-                <div class="col-md-2">
-                    <label asp-for="SetorOrigemId" class="form-label"></label>
-                    <select asp-for="SetorOrigemId" class="form-select">
-                        @foreach (var setor in Model.Setores)
-                        {
-                            <option value="@setor.Id">@setor.Nome</option>
-                        }
+
+                <div class="col-md-4">
+                    <label class="form-label">Setor de Origem</label>
+                    <select asp-for="SetorOrigemId" asp-items="Model.Setores" class="form-select">
+                        <option value="">- Selecione -</option>
                     </select>
                     <span asp-validation-for="SetorOrigemId" class="text-danger"></span>
                 </div>
-                <div class="col-md-2">
-                    <label asp-for="SetorDestinoInicialId" class="form-label"></label>
-                    <select asp-for="SetorDestinoInicialId" class="form-select">
-                        <option value="">Mesmo setor</option>
-                        @foreach (var setor in Model.Setores)
-                        {
-                            <option value="@setor.Id">@setor.Nome</option>
-                        }
+
+                <div class="col-md-4">
+                    <label class="form-label">Setor para tramitação inicial</label>
+                    <select asp-for="SetorDestinoId" asp-items="Model.Setores" class="form-select">
+                        <option value="">- Selecione -</option>
                     </select>
+                    <span asp-validation-for="SetorDestinoId" class="text-danger"></span>
                 </div>
 
-                <div class="col-md-12">
-                    <label asp-for="Descricao" class="form-label"></label>
-                    <textarea asp-for="Descricao" rows="5" class="form-control"></textarea>
+                <div class="col-md-8">
+                    <label class="form-label">Assunto do Processo</label>
+                    <input asp-for="Assunto" class="form-control" maxlength="300" />
+                    <span asp-validation-for="Assunto" class="text-danger"></span>
                 </div>
 
-                <div class="col-md-12">
-                    <div class="border rounded p-3 bg-light">
-                        <h6 class="mb-3"><i class="bi bi-paperclip"></i> Anexos iniciais</h6>
-                        <div class="row g-2">
-                            <div class="col-md-4">
-                                <label class="form-label">Arquivos</label>
-                                <input type="file" name="arquivos" multiple class="form-control" />
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label">Tipo do documento</label>
-                                <select name="tipoDocumentoId" class="form-select">
-                                    <option value="">- Selecione -</option>
-                                    @foreach (var item in Model.TiposDocumento)
-                                    {
-                                        <option value="@item.Id">@item.Nome</option>
-                                    }
-                                </select>
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label">Descrição do anexo</label>
-                                <input name="descricaoAnexo" class="form-control" placeholder="Ex.: Requerimento, nota fiscal, certidões..." />
-                            </div>
-                        </div>
-                    </div>
+                <div class="col-md-4">
+                    <label class="form-label">Interessado</label>
+                    <input asp-for="Interessado" class="form-control" maxlength="250" />
                 </div>
 
-                <div class="col-md-12">
+                <div class="col-md-3">
+                    <label class="form-label">CPF/CNPJ</label>
+                    <input asp-for="CpfCnpj" class="form-control" maxlength="30" />
+                </div>
+
+                <div class="col-md-3">
+                    <label class="form-label">Telefone</label>
+                    <input asp-for="Telefone" class="form-control" maxlength="50" />
+                </div>
+
+                <div class="col-md-6">
+                    <label class="form-label">E-mail</label>
+                    <input asp-for="Email" class="form-control" maxlength="200" />
+                </div>
+
+                <div class="col-12">
+                    <label class="form-label">Descrição / Requerimento</label>
+                    <textarea asp-for="Descricao" class="form-control" rows="4"></textarea>
+                </div>
+
+                <div class="col-12">
+                    <label class="form-label">Informações Complementares</label>
+                    <textarea asp-for="InformacoesComplementares" class="form-control" rows="3"></textarea>
+                </div>
+
+                <div class="col-12">
+                    <label class="form-label">Observação inicial</label>
+                    <textarea asp-for="ObservacaoInicial" class="form-control" rows="3"></textarea>
+                </div>
+
+                <div class="col-12">
+                    <label class="form-label">
+                        <i class="bi bi-paperclip"></i> Anexos iniciais
+                    </label>
+                    <input type="file" name="arquivos" class="form-control" multiple />
+                    <div class="form-text">Você pode selecionar vários arquivos na criação do protocolo.</div>
+                </div>
+
+                <div class="col-12">
                     <div class="form-check">
                         <input asp-for="SalvarComoRascunho" class="form-check-input" />
-                        <label asp-for="SalvarComoRascunho" class="form-check-label">Salvar como rascunho, sem tramitar agora</label>
+                        <label asp-for="SalvarComoRascunho" class="form-check-label">
+                            Salvar como rascunho
+                        </label>
+                    </div>
+                    <div class="form-text">
+                        Se não marcar rascunho, o sistema gera o número automático e já deixa o processo na caixa do setor destino.
                     </div>
                 </div>
             </div>
 
             <div class="mt-4 d-flex gap-2">
-                <button type="submit" class="btn btn-success">
-                    <i class="bi bi-check-circle"></i> Gerar Protocolo
+                <button class="btn btn-success" type="submit">
+                    <i class="bi bi-save"></i> Salvar Protocolo
                 </button>
-                <a asp-action="Index" class="btn btn-outline-secondary">Cancelar</a>
-            </div>
-        </div>
-    </form>
-</div>
 
-@section Scripts {
-    <partial name="_ValidationScriptsPartial" />
-}
+                <a asp-action="Index" class="btn btn-light border">
+                    Voltar
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
