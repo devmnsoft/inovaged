@@ -1,0 +1,139 @@
+@model InovaGed.Web.Models.Protocolo.ProtocoloCadastroIndexVM
+
+@{
+    ViewData["Title"] = "Cadastros de Protocolo";
+    ViewData["Subtitle"] = Model.Titulo;
+}
+
+<div class="container-fluid">
+    @if (TempData["ok"] is not null)
+    {
+        <div class="alert alert-success">@TempData["ok"]</div>
+    }
+
+    @if (TempData["erro"] is not null)
+    {
+        <div class="alert alert-danger">@TempData["erro"]</div>
+    }
+
+    <div class="card shadow-sm border-0 mb-3">
+        <div class="card-body">
+            <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center">
+                <div>
+                    <h5 class="mb-1">@Model.Titulo</h5>
+                    <div class="text-muted small">Cadastros básicos utilizados na abertura, tramitação e encerramento de protocolos.</div>
+                </div>
+
+                <a class="btn btn-primary"
+                   asp-controller="ProtocoloCadastros"
+                   asp-action="Novo"
+                   asp-route-tipo="@Model.Tipo">
+                    <i class="bi bi-plus-circle me-1"></i>
+                    Novo cadastro
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="card shadow-sm border-0 mb-3">
+        <div class="card-body">
+            <div class="d-flex flex-wrap gap-2">
+                <a class="btn btn-sm @(Model.Tipo == "setores" ? "btn-primary" : "btn-outline-primary")" asp-action="Index" asp-route-tipo="setores">Setores</a>
+                <a class="btn btn-sm @(Model.Tipo == "tipos" ? "btn-primary" : "btn-outline-primary")" asp-action="Index" asp-route-tipo="tipos">Tipos</a>
+                <a class="btn btn-sm @(Model.Tipo == "assuntos" ? "btn-primary" : "btn-outline-primary")" asp-action="Index" asp-route-tipo="assuntos">Assuntos</a>
+                <a class="btn btn-sm @(Model.Tipo == "prioridades" ? "btn-primary" : "btn-outline-primary")" asp-action="Index" asp-route-tipo="prioridades">Prioridades</a>
+                <a class="btn btn-sm @(Model.Tipo == "tipos-documento" ? "btn-primary" : "btn-outline-primary")" asp-action="Index" asp-route-tipo="tipos-documento">Tipos de Documento</a>
+                <a class="btn btn-sm @(Model.Tipo == "canais-entrada" ? "btn-primary" : "btn-outline-primary")" asp-action="Index" asp-route-tipo="canais-entrada">Canais</a>
+                <a class="btn btn-sm @(Model.Tipo == "motivos-arquivamento" ? "btn-primary" : "btn-outline-primary")" asp-action="Index" asp-route-tipo="motivos-arquivamento">Motivos de Arquivamento</a>
+            </div>
+
+            <form method="get" class="row g-2 mt-3">
+                <input type="hidden" name="tipo" value="@Model.Tipo" />
+                <div class="col-md-10">
+                    <input class="form-control" name="q" value="@Model.Q" placeholder="Pesquisar por nome, código, sigla ou descrição..." />
+                </div>
+                <div class="col-md-2 d-grid">
+                    <button class="btn btn-outline-secondary" type="submit">
+                        <i class="bi bi-search me-1"></i>
+                        Pesquisar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card shadow-sm border-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Nome</th>
+                        <th>Código/Sigla</th>
+                        <th>Prazo</th>
+                        <th>Ativo</th>
+                        <th>Descrição</th>
+                        <th style="width:160px;">Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @if (!Model.Itens.Any())
+                {
+                    <tr>
+                        <td colspan="6" class="text-center text-muted py-4">
+                            Nenhum cadastro encontrado.
+                        </td>
+                    </tr>
+                }
+                else
+                {
+                    foreach (var item in Model.Itens)
+                    {
+                        <tr>
+                            <td>
+                                <div class="fw-semibold">@item.Nome</div>
+                                @if (item.Ordem.HasValue)
+                                {
+                                    <span class="badge text-bg-light">Ordem: @item.Ordem</span>
+                                }
+                                @if (item.Obrigatorio == true)
+                                {
+                                    <span class="badge text-bg-warning">Obrigatório</span>
+                                }
+                            </td>
+                            <td>@(item.Codigo ?? item.Sigla ?? "-")</td>
+                            <td>@(item.PrazoDias.HasValue ? $"{item.PrazoDias} dias" : "-")</td>
+                            <td>
+                                <span class="badge @(item.Ativo ? "text-bg-success" : "text-bg-secondary")">
+                                    @(item.Ativo ? "Ativo" : "Inativo")
+                                </span>
+                            </td>
+                            <td class="text-muted small">@item.Descricao</td>
+                            <td>
+                                <div class="d-flex gap-1">
+                                    <a class="btn btn-sm btn-outline-primary"
+                                       asp-action="Editar"
+                                       asp-route-id="@item.Id"
+                                       asp-route-tipo="@Model.Tipo">
+                                        <i class="bi bi-pencil"></i>
+                                    </a>
+
+                                    <form asp-action="Excluir"
+                                          asp-route-id="@item.Id"
+                                          asp-route-tipo="@Model.Tipo"
+                                          method="post"
+                                          onsubmit="return confirm('Deseja desativar este cadastro?');">
+                                        @Html.AntiForgeryToken()
+                                        <button class="btn btn-sm btn-outline-danger" type="submit">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

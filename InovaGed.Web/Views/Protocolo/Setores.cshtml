@@ -1,0 +1,52 @@
+@model InovaGed.Web.Models.Protocolo.ProtocoloSetoresIndexVM
+@{
+    ViewData["Title"] = "Setores do Protocolo";
+}
+
+<div class="container-fluid py-3">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <h2 class="mb-0">Setores</h2>
+            <small class="text-muted">Cadastro de setores usados na tramitação de protocolos.</small>
+        </div>
+        <div class="d-flex gap-2">
+            <a asp-action="Index" class="btn btn-outline-secondary">Protocolos</a>
+            <a asp-action="NovoSetor" class="btn btn-primary">Novo Setor</a>
+        </div>
+    </div>
+
+    @if (TempData["ok"] is not null)
+    {
+        <div class="alert alert-success">@TempData["ok"]</div>
+    }
+
+    <div class="card">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Nome</th>
+                        <th>Sigla</th>
+                        <th>Descrição</th>
+                        <th>Ativo</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var item in Model.Setores)
+                {
+                    <tr>
+                        <td>@item.Nome</td>
+                        <td>@item.Sigla</td>
+                        <td>@item.Descricao</td>
+                        <td>@(item.Ativo ? "Sim" : "Não")</td>
+                        <td class="text-end">
+                            <a asp-action="EditarSetor" asp-route-id="@item.Id" class="btn btn-sm btn-outline-primary">Editar</a>
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

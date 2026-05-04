@@ -235,6 +235,30 @@
         <i class="bi bi-clock-history"></i>
         <span>Histórico de Etiquetas</span>
     </a>
+
+    <div class="sidebar-section-title">Protocolo</div>
+
+    <a asp-controller="Protocolo"
+       asp-action="Index"
+       class="@ActiveAny("Protocolo")">
+        <i class="bi bi-journal-text"></i>
+        <span>Processos Solicitados</span>
+    </a>
+
+    <a asp-controller="Protocolo"
+       asp-action="Novo"
+       class="@Active("Protocolo", "Novo")">
+        <i class="bi bi-file-earmark-plus"></i>
+        <span>Novo Protocolo</span>
+    </a>
+
+    <a asp-controller="ProtocoloCadastros"
+       asp-action="Index"
+       asp-route-tipo="setores"
+       class="@ActiveAny("ProtocoloCadastros")">
+        <i class="bi bi-sliders"></i>
+        <span>Cadastros do Protocolo</span>
+    </a>
 }
 
 @if (CanEmprestimos())
