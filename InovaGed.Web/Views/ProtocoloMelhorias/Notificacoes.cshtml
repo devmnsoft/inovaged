@@ -1,0 +1,44 @@
+@model List<InovaGed.Web.Models.Protocolo.ProtocoloNotificacaoVM>
+
+@{
+    ViewData["Title"] = "Notificações de Protocolo";
+    ViewData["Subtitle"] = "Eventos e movimentações recebidas por setor/usuário.";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="mb-0">Notificações</h4>
+    <a href="/Protocolo" class="btn btn-outline-primary">Protocolos</a>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="list-group list-group-flush">
+        @foreach (var n in Model)
+        {
+            <div class="list-group-item @(n.Lida ? "" : "bg-light")">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <strong>@n.Titulo</strong>
+                        <div class="text-muted small">@n.Numero | @n.Tipo | @n.CreatedAt.ToString("dd/MM/yyyy HH:mm")</div>
+                    </div>
+                    <div>
+                        <a href="/Protocolo/Details/@n.ProtocoloId" class="btn btn-sm btn-outline-primary">Abrir</a>
+                        @if (!n.Lida)
+                        {
+                            <form method="post" action="/Protocolo/MarcarNotificacaoLida" class="d-inline">
+                                @Html.AntiForgeryToken()
+                                <input type="hidden" name="id" value="@n.Id" />
+                                <button class="btn btn-sm btn-outline-secondary">Marcar lida</button>
+                            </form>
+                        }
+                    </div>
+                </div>
+                <div class="mt-2">@n.Mensagem</div>
+            </div>
+        }
+
+        @if (!Model.Any())
+        {
+            <div class="list-group-item text-center text-muted py-4">Nenhuma notificação encontrada.</div>
+        }
+    </div>
+</div>

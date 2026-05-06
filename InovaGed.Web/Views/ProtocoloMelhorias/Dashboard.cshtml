@@ -1,0 +1,92 @@
+@model InovaGed.Web.Models.Protocolo.ProtocoloDashboardVM
+
+@{
+    ViewData["Title"] = "Dashboard de Protocolo";
+    ViewData["Subtitle"] = "Indicadores operacionais e gerenciais dos protocolos.";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="mb-0">Dashboard de Protocolo</h4>
+    <a href="/Protocolo" class="btn btn-outline-primary">Ver Protocolos</a>
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="text-muted small">Na minha entrada</div><div class="h3">@Model.TotalEntrada</div></div></div></div>
+    <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="text-muted small">Em tramitação</div><div class="h3">@Model.TotalEmTramitacao</div></div></div></div>
+    <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="text-muted small">Vencidos</div><div class="h3 text-danger">@Model.TotalVencidos</div></div></div></div>
+    <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="text-muted small">Tempo médio</div><div class="h3">@Model.TempoMedioHoras.ToString("N1") h</div></div></div></div>
+</div>
+
+<div class="row g-3">
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-white fw-semibold">Protocolos por Status</div>
+            <div class="card-body">
+                @foreach (var x in Model.PorStatus)
+                {
+                    <div class="d-flex justify-content-between border-bottom py-2">
+                        <span>@x.Status</span>
+                        <strong>@x.Total</strong>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-white fw-semibold">Protocolos por Setor</div>
+            <div class="card-body">
+                @foreach (var x in Model.PorSetor)
+                {
+                    <div class="d-flex justify-content-between border-bottom py-2">
+                        <span>@x.Setor</span>
+                        <strong>@x.Total</strong>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm mt-3">
+    <div class="card-header bg-white fw-semibold">Últimos Protocolos</div>
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Número</th>
+                    <th>Assunto</th>
+                    <th>Setor</th>
+                    <th>Status</th>
+                    <th>Prazo</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+            @foreach (var item in Model.Ultimos)
+            {
+                <tr>
+                    <td><strong>@item.Numero</strong></td>
+                    <td>@item.Assunto</td>
+                    <td>@item.SetorAtualNome</td>
+                    <td><span class="badge text-bg-secondary">@item.Status</span></td>
+                    <td>
+                        @if (item.Vencido)
+                        {
+                            <span class="badge text-bg-danger">Vencido</span>
+                        }
+                        else
+                        {
+                            <span>@item.DataPrazo?.ToString("dd/MM/yyyy")</span>
+                        }
+                    </td>
+                    <td class="text-end">
+                        <a href="/Protocolo/Details/@item.Id" class="btn btn-sm btn-outline-primary">Ver</a>
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+</div>

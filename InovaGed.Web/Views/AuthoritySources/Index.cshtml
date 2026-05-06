@@ -1,7 +1,7 @@
 ﻿@model IEnumerable<dynamic>
 @{
     ViewData["Title"] = "Fontes de Autoridade";
-    ViewData["Subtitle"] = "CA/OCSP/Políticas - integridade e trilha (PoC 12)";
+    ViewData["Subtitle"] = "CA/OCSP/Políticas - integridade e trilha ()";
     bool ok = (ViewBag.IntegrityOk as bool?) ?? false;
     string expected = ViewBag.ExpectedHash as string ?? "";
     string computed = ViewBag.ComputedHash as string ?? "";

@@ -1,0 +1,58 @@
+@*
+Coloque este bloco dentro da aba de ações do Details.cshtml do protocolo
+ou em qualquer lugar da tela de detalhes.
+
+Ele usa as actions do ProtocoloMelhoriasController.
+*@
+
+<div class="card border-0 shadow-sm mt-3">
+    <div class="card-header bg-white fw-semibold">
+        Ações Complementares do Protocolo
+    </div>
+    <div class="card-body">
+        <div class="d-flex flex-wrap gap-2 mb-3">
+            <a href="/Protocolo/Comprovante/@Model.Id" target="_blank" class="btn btn-outline-primary">
+                <i class="bi bi-printer me-1"></i>
+                Comprovante
+            </a>
+
+            <a href="/Protocolo/Capa/@Model.Id" target="_blank" class="btn btn-outline-secondary">
+                <i class="bi bi-file-earmark-text me-1"></i>
+                Capa
+            </a>
+
+            <form method="post" action="/Protocolo/Receber" class="d-inline">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="protocoloId" value="@Model.Id" />
+                <button class="btn btn-success">
+                    <i class="bi bi-check2-circle me-1"></i>
+                    Receber
+                </button>
+            </form>
+        </div>
+
+        <form method="post" action="/Protocolo/SolicitarComplementacao" class="mb-3">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="protocoloId" value="@Model.Id" />
+            <label class="form-label">Solicitar Complementação</label>
+            <textarea name="justificativa" class="form-control mb-2" rows="2" placeholder="Informe o que precisa ser complementado"></textarea>
+            <button class="btn btn-warning">Solicitar Complementação</button>
+        </form>
+
+        <form method="post" action="/Protocolo/Cancelar" class="mb-3">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="protocoloId" value="@Model.Id" />
+            <label class="form-label">Cancelar Protocolo</label>
+            <textarea name="justificativa" class="form-control mb-2" rows="2" placeholder="Justificativa obrigatória"></textarea>
+            <button class="btn btn-danger">Cancelar</button>
+        </form>
+
+        <form method="post" action="/Protocolo/Reabrir">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="protocoloId" value="@Model.Id" />
+            <label class="form-label">Reabrir Protocolo</label>
+            <textarea name="justificativa" class="form-control mb-2" rows="2" placeholder="Justificativa obrigatória"></textarea>
+            <button class="btn btn-dark">Reabrir</button>
+        </form>
+    </div>
+</div>

@@ -15,7 +15,7 @@ public sealed class SecurityAuditController : Controller
         _db = db;
     }
 
-    // GET /SecurityAudit/AccessFailures  (PoC 27)
+    // GET /SecurityAudit/AccessFailures  ()
     public async Task<IActionResult> AccessFailures(CancellationToken ct)
     {
         ViewData["Title"] = "Falhas de Acesso";

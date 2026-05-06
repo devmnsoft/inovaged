@@ -1,0 +1,111 @@
+@model InovaGed.Web.Models.Protocolo.ProtocoloRelatorioFiltroVM
+
+@{
+    ViewData["Title"] = "Relatórios de Protocolo";
+    ViewData["Subtitle"] = "Consulta gerencial e operacional dos protocolos.";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="mb-0">Relatórios de Protocolo</h4>
+    <a href="/Protocolo/Dashboard" class="btn btn-outline-primary">Dashboard</a>
+</div>
+
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-body">
+        <form method="get" class="row g-2">
+            <div class="col-md-3">
+                <label class="form-label">Pesquisar</label>
+                <input name="Q" value="@Model.Q" class="form-control" placeholder="Número, assunto, interessado" />
+            </div>
+
+            <div class="col-md-2">
+                <label class="form-label">Status</label>
+                <select name="Status" class="form-select">
+                    <option value="">Todos</option>
+                    <option value="ABERTO" selected="@(Model.Status == "ABERTO")">Aberto</option>
+                    <option value="EM_TRAMITACAO" selected="@(Model.Status == "EM_TRAMITACAO")">Em Tramitação</option>
+                    <option value="RECEBIDO" selected="@(Model.Status == "RECEBIDO")">Recebido</option>
+                    <option value="AGUARDANDO_COMPLEMENTACAO" selected="@(Model.Status == "AGUARDANDO_COMPLEMENTACAO")">Aguard. Complementação</option>
+                    <option value="FINALIZADO" selected="@(Model.Status == "FINALIZADO")">Finalizado</option>
+                    <option value="ARQUIVADO" selected="@(Model.Status == "ARQUIVADO")">Arquivado</option>
+                    <option value="CANCELADO" selected="@(Model.Status == "CANCELADO")">Cancelado</option>
+                </select>
+            </div>
+
+            <div class="col-md-2">
+                <label class="form-label">Setor</label>
+                <select name="SetorId" asp-items="Model.Setores" class="form-select">
+                    <option value="">Todos</option>
+                </select>
+            </div>
+
+            <div class="col-md-2">
+                <label class="form-label">De</label>
+                <input name="De" type="date" value="@Model.De?.ToString("yyyy-MM-dd")" class="form-control" />
+            </div>
+
+            <div class="col-md-2">
+                <label class="form-label">Até</label>
+                <input name="Ate" type="date" value="@Model.Ate?.ToString("yyyy-MM-dd")" class="form-control" />
+            </div>
+
+            <div class="col-md-1 d-flex align-items-end">
+                <button class="btn btn-primary w-100">Filtrar</button>
+            </div>
+
+            <div class="col-md-12">
+                <div class="form-check">
+                    <input name="SomenteVencidos" value="true" class="form-check-input" type="checkbox" @(Model.SomenteVencidos ? "checked" : "") />
+                    <label class="form-check-label">Somente vencidos</label>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Número</th>
+                    <th>Assunto</th>
+                    <th>Interessado</th>
+                    <th>Status</th>
+                    <th>Setor Atual</th>
+                    <th>Abertura</th>
+                    <th>Prazo</th>
+                    <th>Anexos</th>
+                    <th>Mov.</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+            @foreach (var item in Model.Itens)
+            {
+                <tr>
+                    <td><strong>@item.Numero</strong></td>
+                    <td>@item.Assunto</td>
+                    <td>@item.Interessado</td>
+                    <td><span class="badge text-bg-secondary">@item.Status</span></td>
+                    <td>@item.SetorAtualNome</td>
+                    <td>@item.CreatedAt.ToString("dd/MM/yyyy")</td>
+                    <td>
+                        @if (item.Vencido)
+                        {
+                            <span class="badge text-bg-danger">Vencido</span>
+                        }
+                        else
+                        {
+                            @item.DataPrazo?.ToString("dd/MM/yyyy")
+                        }
+                    </td>
+                    <td>@item.TotalAnexos</td>
+                    <td>@item.TotalMovimentacoes</td>
+                    <td class="text-end"><a href="/Protocolo/Details/@item.Id" class="btn btn-sm btn-outline-primary">Ver</a></td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+</div>
