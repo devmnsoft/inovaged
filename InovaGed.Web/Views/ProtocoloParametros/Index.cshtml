@@ -1,0 +1,26 @@
+@model InovaGed.Web.Models.Protocolo.ProtocoloParametrosIndexVM
+@{ ViewData["Title"] = "Parâmetros do Protocolo"; }
+<h4>Parâmetros do Protocolo</h4>
+@if (TempData["ok"] != null) { <div class="alert alert-success">@TempData["ok"]</div> }
+<form method="post" action="/Protocolo/Parametros/Salvar">
+@Html.AntiForgeryToken()
+<div class="card border-0 shadow-sm"><div class="table-responsive">
+<table class="table table-hover align-middle mb-0">
+<thead class="table-light"><tr><th>Grupo</th><th>Chave</th><th>Valor</th><th>Descrição</th><th>Ativo</th></tr></thead>
+<tbody>
+@for (var i = 0; i < Model.Itens.Count; i++)
+{
+<tr>
+<td>@Model.Itens[i].Grupo
+<input type="hidden" name="itens[@i].Id" value="@Model.Itens[i].Id" />
+<input type="hidden" name="itens[@i].Chave" value="@Model.Itens[i].Chave" />
+<input type="hidden" name="itens[@i].Tipo" value="@Model.Itens[i].Tipo" />
+<input type="hidden" name="itens[@i].Grupo" value="@Model.Itens[i].Grupo" /></td>
+<td><strong>@Model.Itens[i].Chave</strong><div class="small text-muted">@Model.Itens[i].Tipo</div></td>
+<td><input name="itens[@i].Valor" value="@Model.Itens[i].Valor" class="form-control" /></td>
+<td><input name="itens[@i].Descricao" value="@Model.Itens[i].Descricao" class="form-control" /></td>
+<td><input type="checkbox" name="itens[@i].Ativo" value="true" @(Model.Itens[i].Ativo ? "checked" : "") /><input type="hidden" name="itens[@i].Ativo" value="false" /></td>
+</tr>
+}
+</tbody></table></div><div class="card-footer text-end bg-white"><button class="btn btn-primary">Salvar</button></div></div>
+</form>

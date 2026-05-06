@@ -1,0 +1,25 @@
+@model InovaGed.Web.Models.Protocolo.ProtocoloEditarVM
+@{ ViewData["Title"] = "Editar Protocolo"; }
+<h4>Editar @Model.Numero</h4>
+<form method="post" action="/Protocolo/Editar">
+@Html.AntiForgeryToken()
+<input type="hidden" asp-for="Id" /><input type="hidden" asp-for="Numero" /><input type="hidden" asp-for="Status" />
+<div class="card border-0 shadow-sm mb-3"><div class="card-body row g-3">
+<div class="col-md-3"><label asp-for="Especie" class="form-label">Espécie</label><input asp-for="Especie" class="form-control" /></div>
+<div class="col-md-3"><label asp-for="TipoSolicitacao" class="form-label">Tipo</label><input asp-for="TipoSolicitacao" class="form-control" /></div>
+<div class="col-md-3"><label asp-for="Procedencia" class="form-label">Procedência</label><input asp-for="Procedencia" class="form-control" /></div>
+<div class="col-md-3"><label asp-for="OrigemPedido" class="form-label">Origem</label><input asp-for="OrigemPedido" class="form-control" /></div>
+<div class="col-md-12"><label asp-for="Assunto" class="form-label">Assunto</label><input asp-for="Assunto" class="form-control" /></div>
+<div class="col-md-12"><label asp-for="Descricao" class="form-label">Descrição</label><textarea asp-for="Descricao" rows="4" class="form-control"></textarea></div>
+<div class="col-md-12"><label asp-for="InformacoesComplementares" class="form-label">Informações Complementares</label><textarea asp-for="InformacoesComplementares" rows="3" class="form-control"></textarea></div>
+<div class="col-md-4"><label asp-for="Interessado" class="form-label">Interessado</label><input asp-for="Interessado" class="form-control" /></div>
+<div class="col-md-2"><label asp-for="CpfCnpj" class="form-label">CPF/CNPJ</label><input asp-for="CpfCnpj" class="form-control" /></div>
+<div class="col-md-3"><label asp-for="Email" class="form-label">E-mail</label><input asp-for="Email" class="form-control" /></div>
+<div class="col-md-3"><label asp-for="Telefone" class="form-label">Telefone</label><input asp-for="Telefone" class="form-control" /></div>
+<div class="col-md-4"><label asp-for="SolicitanteNome" class="form-label">Solicitante</label><input asp-for="SolicitanteNome" class="form-control" /></div>
+<div class="col-md-4"><label asp-for="SolicitanteMatricula" class="form-label">Matrícula</label><input asp-for="SolicitanteMatricula" class="form-control" /></div>
+<div class="col-md-4"><label asp-for="SolicitanteCargo" class="form-label">Cargo</label><input asp-for="SolicitanteCargo" class="form-control" /></div>
+<div class="col-md-3"><label asp-for="DataPrazo" class="form-label">Prazo</label><input asp-for="DataPrazo" type="date" class="form-control" /></div>
+<div class="col-md-12"><label asp-for="JustificativaEdicao" class="form-label">Justificativa da alteração</label><textarea asp-for="JustificativaEdicao" rows="3" class="form-control"></textarea></div>
+</div><div class="card-footer bg-white text-end"><a href="/Protocolo/Details/@Model.Id" class="btn btn-outline-secondary">Voltar</a><button class="btn btn-primary">Salvar</button></div></div>
+</form>

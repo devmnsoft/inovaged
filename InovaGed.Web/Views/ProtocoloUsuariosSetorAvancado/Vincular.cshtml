@@ -1,0 +1,19 @@
+@model InovaGed.Web.Models.Protocolo.ProtocoloUsuarioSetorPermissaoVM
+@{ ViewData["Title"] = "Vincular Usuário ao Setor"; }
+<h4>Vincular Usuário ao Setor</h4>
+<form method="post" action="/Protocolo/UsuariosSetorAvancado/Vincular" class="card border-0 shadow-sm">
+@Html.AntiForgeryToken()
+<input type="hidden" asp-for="UsuarioId" /><input type="hidden" asp-for="UsuarioNome" />
+<div class="card-body row g-3">
+<div class="col-md-6"><label class="form-label">Usuário</label><input value="@Model.UsuarioNome" class="form-control" disabled /><div class="small text-muted"><code>@Model.UsuarioId</code></div></div>
+<div class="col-md-6"><label asp-for="SetorId" class="form-label">Setor</label><select asp-for="SetorId" asp-items="Model.Setores" class="form-select"><option value="">Selecione...</option></select></div>
+<div class="col-md-12 row g-2">
+<div class="col-md-3"><label><input asp-for="PodeVisualizar" /> Visualizar</label></div>
+<div class="col-md-3"><label><input asp-for="PodeReceber" /> Receber</label></div>
+<div class="col-md-3"><label><input asp-for="PodeTramitar" /> Tramitar</label></div>
+<div class="col-md-3"><label><input asp-for="PodeAnexar" /> Anexar</label></div>
+<div class="col-md-3"><label><input asp-for="PodeExcluirAnexo" /> Excluir anexo próprio</label></div>
+<div class="col-md-3"><label><input asp-for="PodeDecidir" /> Decidir</label></div>
+<div class="col-md-3"><label><input asp-for="PodeArquivar" /> Arquivar</label></div>
+<div class="col-md-3"><label><input asp-for="Ativo" /> Ativo</label></div>
+</div></div><div class="card-footer bg-white text-end"><button class="btn btn-primary">Salvar</button></div></form>

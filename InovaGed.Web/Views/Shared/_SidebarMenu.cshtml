@@ -238,17 +238,28 @@
 
 	<div class="sidebar-section-title">Protocolo</div>
 
-	<a href="/Protocolo/Dashboard" class="@ActivePathStarts("/protocolo/dashboard")">
+	<a href="/Protocolo/Dashboard"
+	   class="@ActivePathStarts("/protocolo/dashboard")">
 		<i class="bi bi-bar-chart"></i>
 		<span>Dashboard Protocolo</span>
 	</a>
 
-	
-	<a asp-controller="Protocolo"
-	   asp-action="Index"
-	   class="@ActiveAny("Protocolo")">
-		<i class="bi bi-journal-text"></i>
-		<span>Processos Solicitados</span>
+	<a href="/Protocolo?visao=entrada"
+	   class="@(path == "/protocolo" || path.StartsWith("/protocolo?visao=entrada") ? "active" : "")">
+		<i class="bi bi-inbox"></i>
+		<span>Caixa de Entrada</span>
+	</a>
+
+	<a href="/Protocolo?visao=enviados"
+	   class="@ActivePathStarts("/protocolo?visao=enviados")">
+		<i class="bi bi-send"></i>
+		<span>Protocolos Enviados</span>
+	</a>
+
+	<a href="/Protocolo?visao=historico"
+	   class="@ActivePathStarts("/protocolo?visao=historico")">
+		<i class="bi bi-clock-history"></i>
+		<span>Histórico de Protocolos</span>
 	</a>
 
 	<a asp-controller="Protocolo"
@@ -266,17 +277,29 @@
 		<span>Cadastros do Protocolo</span>
 	</a>
 
-	<a href="/Protocolo/Relatorios" class="@ActivePathStarts("/protocolo/relatorios")">
+	<a href="/Protocolo/Relatorios"
+	   class="@ActivePathStarts("/protocolo/relatorios")">
 		<i class="bi bi-file-earmark-bar-graph"></i>
 		<span>Relatórios Protocolo</span>
 	</a>
 
-	<a href="/Protocolo/Notificacoes" class="@ActivePathStarts("/protocolo/notificacoes")">
+	<a href="/Protocolo/Notificacoes"
+	   class="@ActivePathStarts("/protocolo/notificacoes")">
 		<i class="bi bi-bell"></i>
 		<span>Notificações Protocolo</span>
 	</a>
 
+	<a href="/Protocolo/Parametros"
+	   class="@ActivePathStarts("/protocolo/parametros")">
+		<i class="bi bi-sliders2"></i>
+		<span>Parâmetros Protocolo</span>
+	</a>
 
+	<a href="/Protocolo/UsuariosSetorAvancado/BuscarUsuarios"
+	   class="@ActivePathStarts("/protocolo/usuariossetoravancado")">
+		<i class="bi bi-person-gear"></i>
+		<span>Usuários x Setor Avançado</span>
+	</a>
 }
 
 @if (CanEmprestimos())

@@ -9,8 +9,8 @@ public sealed class ManualController : Controller
     [HttpGet("/Manual")]
     public IActionResult Index()
     {
-        ViewData["Title"] = "Manual da PoC";
-        ViewData["Subtitle"] = "Roteiro guiado: o que é, como operar e o que demonstrar (itens 1–27)";
+        ViewData["Title"] = "Manual Operacional — InovaGED";
+        ViewData["Subtitle"] = "Guia interativo de uso do GED, Protocolo, OCR, Classificação, Assinatura, Guarda, Temporalidade e Auditoria";
         return View();
     }
 }

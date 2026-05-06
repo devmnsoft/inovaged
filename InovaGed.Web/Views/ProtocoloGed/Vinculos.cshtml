@@ -1,0 +1,16 @@
+@model InovaGed.Web.Models.Protocolo.ProtocoloGedVincularVM
+@{ ViewData["Title"] = "Vínculos GED"; }
+<h4>Vínculos GED - @Model.ProtocoloNumero</h4>
+@if (TempData["ok"] != null) { <div class="alert alert-success">@TempData["ok"]</div> }
+<form method="post" action="/Protocolo/Ged/Vincular" class="card border-0 shadow-sm mb-3">
+@Html.AntiForgeryToken()
+<input type="hidden" asp-for="ProtocoloId" />
+<div class="card-body row g-3">
+<div class="col-md-4"><label class="form-label">Anexo do Protocolo</label><select asp-for="ProtocoloDocumentoId" asp-items="Model.Anexos" class="form-select"><option value="">Sem anexo específico</option></select></div>
+<div class="col-md-4"><label asp-for="GedDocumentId" class="form-label">ID Documento GED</label><input asp-for="GedDocumentId" class="form-control" /></div>
+<div class="col-md-4"><label asp-for="TipoVinculo" class="form-label">Tipo</label><select asp-for="TipoVinculo" class="form-select"><option value="VINCULO">Vínculo</option><option value="ANEXO_CONVERTIDO">Anexo Convertido</option><option value="DOCUMENTO_ORIGEM">Documento Origem</option><option value="DOCUMENTO_RESULTANTE">Documento Resultante</option></select></div>
+<div class="col-md-12"><label asp-for="Observacao" class="form-label">Observação</label><textarea asp-for="Observacao" class="form-control"></textarea></div>
+</div><div class="card-footer bg-white text-end"><button class="btn btn-primary">Vincular</button></div></form>
+<div class="card border-0 shadow-sm"><table class="table mb-0"><thead><tr><th>Anexo</th><th>GED</th><th>Tipo</th><th>Obs.</th><th></th></tr></thead><tbody>
+@foreach (var v in Model.Vinculos) { <tr><td>@v.ProtocoloAnexoNome</td><td><code>@v.GedDocumentId</code></td><td>@v.TipoVinculo</td><td>@v.Observacao</td><td><form method="post" action="/Protocolo/Ged/RemoverVinculo">@Html.AntiForgeryToken()<input type="hidden" name="id" value="@v.Id" /><input type="hidden" name="protocoloId" value="@Model.ProtocoloId" /><button class="btn btn-sm btn-outline-danger">Remover</button></form></td></tr> }
+</tbody></table></div>
