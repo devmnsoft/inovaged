@@ -1,0 +1,1062 @@
+﻿@{
+    ViewData["Title"] = "Consulta Documental Hospitalar";
+}
+
+<style>
+    .hospital-search-page {
+        min-height: calc(100vh - 90px);
+        background: radial-gradient(circle at top left, rgba(37, 99, 235, .12), transparent 32%), linear-gradient(180deg, #f8fbff 0%, #eef4fb 100%);
+        padding: 28px;
+    }
+
+    .search-hero {
+        max-width: 1280px;
+        margin: 0 auto 22px;
+        background: rgba(255, 255, 255, .96);
+        border-radius: 28px;
+        padding: 30px;
+        box-shadow: 0 22px 55px rgba(15, 23, 42, .09);
+        border: 1px solid #e5edf7;
+        position: relative;
+        overflow: hidden;
+    }
+
+        .search-hero::after {
+            content: "";
+            position: absolute;
+            width: 270px;
+            height: 270px;
+            right: -85px;
+            top: -115px;
+            background: rgba(37, 99, 235, .10);
+            border-radius: 999px;
+        }
+
+    .hero-content {
+        position: relative;
+        z-index: 2;
+    }
+
+    .hero-kicker {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        background: #eff6ff;
+        color: #1d4ed8;
+        border: 1px solid #dbeafe;
+        padding: 7px 12px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 900;
+        margin-bottom: 14px;
+    }
+
+    .hero-title {
+        font-size: 2rem;
+        font-weight: 900;
+        color: #0f172a;
+        margin-bottom: 8px;
+        letter-spacing: -.03em;
+    }
+
+    .hero-subtitle {
+        color: #64748b;
+        margin-bottom: 24px;
+        max-width: 880px;
+        line-height: 1.55;
+    }
+
+    .search-box {
+        display: grid;
+        grid-template-columns: 1fr 210px 155px;
+        gap: 12px;
+        align-items: center;
+    }
+
+    .input-wrap {
+        position: relative;
+    }
+
+    .input-icon {
+        position: absolute;
+        left: 17px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #64748b;
+        z-index: 2;
+    }
+
+    .search-input,
+    .type-select {
+        width: 100%;
+        border: 1px solid #dbe4ef;
+        border-radius: 18px;
+        padding: 16px 17px;
+        font-size: 15px;
+        outline: none;
+        background: #fff;
+        transition: .2s;
+    }
+
+    .search-input {
+        padding-left: 46px;
+    }
+
+        .search-input:focus,
+        .type-select:focus {
+            border-color: #2563eb;
+            box-shadow: 0 0 0 4px rgba(37, 99, 235, .12);
+        }
+
+    .btn-search {
+        border: 0;
+        border-radius: 18px;
+        padding: 16px 18px;
+        background: linear-gradient(135deg, #2563eb, #1d4ed8);
+        color: #fff;
+        font-weight: 900;
+        cursor: pointer;
+        transition: .2s;
+        box-shadow: 0 12px 30px rgba(37, 99, 235, .25);
+    }
+
+        .btn-search:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 16px 35px rgba(37, 99, 235, .30);
+        }
+
+    .quick-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 16px;
+    }
+
+    .quick-chip {
+        border: 1px solid #dbeafe;
+        background: #fff;
+        color: #1e40af;
+        padding: 8px 11px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 800;
+        cursor: pointer;
+        transition: .2s;
+    }
+
+        .quick-chip:hover {
+            background: #eff6ff;
+            transform: translateY(-1px);
+        }
+
+    .suggestions {
+        position: absolute;
+        z-index: 80;
+        left: 0;
+        right: 0;
+        top: calc(100% + 8px);
+        background: #fff;
+        border: 1px solid #dbe4ef;
+        border-radius: 20px;
+        box-shadow: 0 24px 60px rgba(15, 23, 42, .16);
+        overflow: hidden;
+        display: none;
+    }
+
+    .suggestion-item {
+        padding: 14px 16px;
+        cursor: pointer;
+        border-bottom: 1px solid #eef2f7;
+    }
+
+        .suggestion-item:hover {
+            background: #f8fafc;
+        }
+
+    .suggestion-title {
+        font-weight: 900;
+        color: #1e293b;
+    }
+
+    .suggestion-desc {
+        font-size: 12px;
+        color: #64748b;
+        margin-top: 4px;
+    }
+
+    .status-line {
+        margin-top: 14px;
+        font-size: 12px;
+        color: #64748b;
+    }
+
+    .results-layout {
+        max-width: 1280px;
+        margin: 0 auto;
+        display: grid;
+        grid-template-columns: 460px minmax(0, 1fr);
+        gap: 18px;
+    }
+
+    .results-panel,
+    .preview-panel {
+        background: rgba(255, 255, 255, .96);
+        border-radius: 28px;
+        border: 1px solid #e5edf7;
+        box-shadow: 0 20px 50px rgba(15, 23, 42, .08);
+        overflow: hidden;
+        min-height: 680px;
+    }
+
+    .panel-header {
+        padding: 18px 20px;
+        border-bottom: 1px solid #edf2f7;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: #fbfdff;
+    }
+
+    .panel-title {
+        font-weight: 900;
+        color: #0f172a;
+    }
+
+    .count-badge {
+        background: #eff6ff;
+        color: #1d4ed8;
+        padding: 5px 11px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 900;
+    }
+
+    .results-list {
+        padding: 14px;
+        max-height: 710px;
+        overflow: auto;
+    }
+
+    .empty-state {
+        padding: 34px 22px;
+        text-align: center;
+        color: #64748b;
+        line-height: 1.55;
+    }
+
+        .empty-state strong {
+            color: #0f172a;
+        }
+
+    .assistant-box {
+        border: 1px solid #e5edf7;
+        border-radius: 22px;
+        padding: 18px;
+        background: linear-gradient(180deg, #ffffff, #f8fbff);
+        text-align: left;
+    }
+
+    .assistant-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 16px;
+        background: #eff6ff;
+        color: #1d4ed8;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 24px;
+        margin-bottom: 14px;
+    }
+
+    .assistant-title {
+        font-weight: 900;
+        color: #0f172a;
+        margin-bottom: 8px;
+    }
+
+    .assistant-text {
+        color: #64748b;
+        font-size: 13px;
+        line-height: 1.55;
+        margin-bottom: 14px;
+    }
+
+    .assistant-list {
+        margin: 0;
+        padding-left: 18px;
+        color: #475569;
+        font-size: 13px;
+        line-height: 1.7;
+    }
+
+    .result-card {
+        border: 1px solid #e5edf7;
+        border-radius: 20px;
+        padding: 15px;
+        margin-bottom: 12px;
+        cursor: pointer;
+        transition: .2s;
+        background: #fff;
+    }
+
+        .result-card:hover,
+        .result-card.active {
+            border-color: #2563eb;
+            box-shadow: 0 12px 34px rgba(37, 99, 235, .13);
+            transform: translateY(-1px);
+        }
+
+        .result-card.disabled {
+            opacity: .6;
+            cursor: not-allowed;
+        }
+
+    .selected-card {
+        border-color: #2563eb;
+        box-shadow: 0 12px 34px rgba(37, 99, 235, .13);
+    }
+
+    .selected-label {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        color: #1d4ed8;
+        font-size: 12px;
+        font-weight: 900;
+        margin-bottom: 8px;
+    }
+
+    .doc-title {
+        font-weight: 900;
+        color: #0f172a;
+        margin-bottom: 5px;
+        word-break: break-word;
+    }
+
+    .doc-file {
+        color: #64748b;
+        font-size: 12px;
+        word-break: break-word;
+    }
+
+    .doc-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin: 10px 0;
+    }
+
+    .meta-pill {
+        background: #f1f5f9;
+        color: #475569;
+        padding: 5px 8px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 800;
+    }
+
+    .ocr-pill {
+        background: #dcfce7;
+        color: #166534;
+    }
+
+    .view-pill {
+        background: #dbeafe;
+        color: #1d4ed8;
+    }
+
+    .snippet {
+        font-size: 13px;
+        color: #475569;
+        line-height: 1.45;
+    }
+
+        .snippet mark {
+            background: #fef3c7;
+            color: #92400e;
+            border-radius: 4px;
+            padding: 0 2px;
+        }
+
+    .result-summary {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        margin-bottom: 14px;
+    }
+
+    .summary-card {
+        background: #f8fafc;
+        border: 1px solid #e5edf7;
+        border-radius: 16px;
+        padding: 11px;
+    }
+
+    .summary-number {
+        font-size: 18px;
+        font-weight: 900;
+        color: #0f172a;
+    }
+
+    .summary-label {
+        font-size: 11px;
+        color: #64748b;
+        font-weight: 800;
+    }
+
+    .preview-toolbar {
+        padding: 15px 18px;
+        border-bottom: 1px solid #edf2f7;
+        display: none;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        background: #fbfdff;
+    }
+
+    .toolbar-title {
+        font-weight: 900;
+        color: #0f172a;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .toolbar-actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+    }
+
+    .btn-open {
+        text-decoration: none;
+        background: #0f172a;
+        color: #fff;
+        padding: 9px 13px;
+        border-radius: 13px;
+        font-size: 13px;
+        font-weight: 900;
+        white-space: nowrap;
+    }
+
+        .btn-open:hover {
+            color: #fff;
+            background: #1e293b;
+        }
+
+    .preview-empty {
+        height: 100%;
+        min-height: 680px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        padding: 36px;
+        text-align: center;
+        color: #64748b;
+    }
+
+    .empty-icon {
+        width: 74px;
+        height: 74px;
+        border-radius: 24px;
+        background: #eff6ff;
+        color: #1d4ed8;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 34px;
+        margin-bottom: 18px;
+    }
+
+    .preview-frame {
+        width: 100%;
+        height: 640px;
+        border: 0;
+        background: #f8fafc;
+    }
+
+    .ocr-box {
+        border-top: 1px solid #edf2f7;
+        display: none;
+    }
+
+    .ocr-header {
+        padding: 12px 18px;
+        font-weight: 900;
+        color: #0f172a;
+        background: #f8fafc;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .ocr-text {
+        padding: 16px 18px;
+        max-height: 280px;
+        overflow: auto;
+        white-space: pre-wrap;
+        color: #334155;
+        font-size: 13px;
+        line-height: 1.55;
+    }
+
+    .error-box {
+        background: #fef2f2;
+        color: #991b1b;
+        border: 1px solid #fecaca;
+        padding: 14px;
+        border-radius: 16px;
+        font-size: 13px;
+        line-height: 1.45;
+    }
+
+    @@media (max-width: 1050px) {
+        .search-box {
+            grid-template-columns: 1fr;
+        }
+
+        .results-layout {
+            grid-template-columns: 1fr;
+        }
+
+        .preview-frame {
+            height: 540px;
+        }
+    }
+</style>
+
+<div class="hospital-search-page">
+    <section class="search-hero">
+        <div class="hero-content">
+            <div class="hero-kicker">
+                <i class="bi bi-shield-lock"></i>
+                Consulta segura somente leitura
+            </div>
+
+            <div class="hero-title">Consulta Documental Hospitalar</div>
+
+            <div class="hero-subtitle">
+                Localize prontuários, documentos digitalizados, PDFs, imagens e documentos Word.
+                A consulta considera código, título, nome do arquivo, metadados e texto OCR quando disponível.
+            </div>
+
+            <div class="search-box">
+                <div class="input-wrap">
+                    <i class="bi bi-search input-icon"></i>
+
+                    <input id="searchInput"
+                           class="search-input"
+                           autocomplete="off"
+                           placeholder="Ex.: prontuário 5236, 5236, paciente, laudo, relatório..." />
+
+                    <div id="suggestions" class="suggestions"></div>
+                </div>
+
+                <select id="typeFilter" class="type-select">
+                    <option value="">Todos os tipos</option>
+                    <option value="pdf">PDF</option>
+                    <option value="word">Documento Word</option>
+                    <option value="image">Imagem digitalizada</option>
+                </select>
+
+                <button id="btnSearch" type="button" class="btn-search">
+                    Pesquisar
+                </button>
+            </div>
+
+            <div class="quick-actions">
+                <button type="button" class="quick-chip" data-search="prontuário">Prontuário</button>
+                <button type="button" class="quick-chip" data-search="laudo">Laudo</button>
+                <button type="button" class="quick-chip" data-search="exame">Exame</button>
+                <button type="button" class="quick-chip" data-search="termo">Termo</button>
+                <button type="button" class="quick-chip" data-search="pdf">PDF</button>
+                <button type="button" class="quick-chip" data-search="5236">Exemplo: 5236</button>
+            </div>
+
+            <div id="statusLine" class="status-line">
+                Digite uma informação e pressione Enter ou clique em Pesquisar.
+            </div>
+        </div>
+    </section>
+
+    <section class="results-layout">
+        <aside class="results-panel">
+            <div class="panel-header">
+                <div class="panel-title">Assistente de Busca</div>
+                <div id="resultCount" class="count-badge">0</div>
+            </div>
+
+            <div id="resultsList" class="results-list">
+                <div class="assistant-box">
+                    <div class="assistant-icon">
+                        <i class="bi bi-search-heart"></i>
+                    </div>
+
+                    <div class="assistant-title">Como localizar documentos?</div>
+
+                    <div class="assistant-text">
+                        Use este painel para localizar documentos do prontuário, laudos, exames e arquivos digitalizados.
+                    </div>
+
+                    <ul class="assistant-list">
+                        <li>Pesquise pelo número do prontuário.</li>
+                        <li>Pesquise pelo nome ou código do documento.</li>
+                        <li>Pesquise por termos do OCR.</li>
+                        <li>Clique em uma sugestão para abrir diretamente.</li>
+                    </ul>
+                </div>
+            </div>
+        </aside>
+
+        <main class="preview-panel">
+            <div id="previewToolbar" class="preview-toolbar">
+                <div id="previewTitle" class="toolbar-title"></div>
+
+                <div class="toolbar-actions">
+                    <a id="openViewerLink" class="btn-open" href="#" target="_blank">
+                        Abrir visualização
+                    </a>
+                </div>
+            </div>
+
+            <div id="previewEmpty" class="preview-empty">
+                <div class="empty-icon">
+                    <i class="bi bi-file-earmark-medical"></i>
+                </div>
+
+                <h3>Visualização segura do documento</h3>
+                <p>Selecione uma sugestão ou um resultado da busca para visualizar o documento digitalizado e o OCR.</p>
+            </div>
+
+            <iframe id="previewFrame" class="preview-frame" style="display:none;"></iframe>
+
+            <div id="ocrBox" class="ocr-box">
+                <div class="ocr-header">
+                    <span>Texto OCR gerado</span>
+                    <span id="ocrStatus" class="meta-pill">Aguardando</span>
+                </div>
+
+                <div id="ocrText" class="ocr-text"></div>
+            </div>
+        </main>
+    </section>
+</div>
+
+<script>
+    const EMPTY_GUID = '00000000-0000-0000-0000-000000000000';
+
+    const input = document.getElementById('searchInput');
+    const typeFilter = document.getElementById('typeFilter');
+    const btnSearch = document.getElementById('btnSearch');
+    const suggestions = document.getElementById('suggestions');
+    const resultsList = document.getElementById('resultsList');
+    const resultCount = document.getElementById('resultCount');
+    const statusLine = document.getElementById('statusLine');
+
+    const previewToolbar = document.getElementById('previewToolbar');
+    const previewTitle = document.getElementById('previewTitle');
+    const openViewerLink = document.getElementById('openViewerLink');
+    const previewEmpty = document.getElementById('previewEmpty');
+    const previewFrame = document.getElementById('previewFrame');
+    const ocrBox = document.getElementById('ocrBox');
+    const ocrText = document.getElementById('ocrText');
+    const ocrStatus = document.getElementById('ocrStatus');
+
+    let suggestionTimer = null;
+    let lastController = null;
+
+    btnSearch.addEventListener('click', function (e) {
+        e.preventDefault();
+        runSearch();
+    });
+
+    input.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            suggestions.style.display = 'none';
+            runSearch();
+        }
+    });
+
+    input.addEventListener('input', function () {
+        clearTimeout(suggestionTimer);
+
+        const q = input.value.trim();
+
+        if (q.length < 2) {
+            suggestions.style.display = 'none';
+            suggestions.innerHTML = '';
+            return;
+        }
+
+        suggestionTimer = setTimeout(loadSuggestions, 230);
+    });
+
+    document.querySelectorAll('.quick-chip').forEach(chip => {
+        chip.addEventListener('click', function () {
+            input.value = this.dataset.search || '';
+            suggestions.style.display = 'none';
+            runSearch();
+        });
+    });
+
+    document.addEventListener('click', function (e) {
+        if (!suggestions.contains(e.target) && e.target !== input) {
+            suggestions.style.display = 'none';
+        }
+    });
+
+    async function loadSuggestions() {
+        const q = input.value.trim();
+
+        if (q.length < 2)
+            return;
+
+        try {
+            const url = `/HospitalDocuments/Suggestions?q=${encodeURIComponent(q)}`;
+            const response = await fetch(url);
+
+            if (!response.ok) {
+                suggestions.style.display = 'none';
+                suggestions.innerHTML = '';
+                return;
+            }
+
+            const data = await response.json();
+
+            if (!data || data.length === 0) {
+                suggestions.style.display = 'none';
+                suggestions.innerHTML = '';
+                return;
+            }
+
+            suggestions.innerHTML = data.map(item => `
+                <div class="suggestion-item"
+                     data-label="${escapeAttr(item.label)}"
+                     data-description="${escapeAttr(item.description || '')}"
+                     data-version-id="${escapeAttr(item.versionId)}">
+                    <div class="suggestion-title">${escapeHtml(item.label)}</div>
+                    <div class="suggestion-desc">${escapeHtml(item.description)}</div>
+                </div>
+            `).join('');
+
+            suggestions.querySelectorAll('.suggestion-item').forEach(el => {
+                el.addEventListener('click', function () {
+                    const versionId = this.dataset.versionId;
+                    const title = this.dataset.label;
+                    const description = this.dataset.description;
+
+                    input.value = title;
+                    suggestions.style.display = 'none';
+
+                    abrirDocumentoPorVersao(versionId, title, description, true);
+                });
+            });
+
+            suggestions.style.display = 'block';
+
+        } catch (error) {
+            console.error('Erro ao carregar sugestões:', error);
+            suggestions.style.display = 'none';
+            suggestions.innerHTML = '';
+        }
+    }
+
+    async function runSearch() {
+        const q = input.value.trim();
+        const type = typeFilter.value;
+
+        if (q.length < 2) {
+            setResultEmpty('Digite pelo menos 2 caracteres para pesquisar.');
+            return;
+        }
+
+        if (lastController) {
+            lastController.abort();
+        }
+
+        lastController = new AbortController();
+
+        resultsList.innerHTML = `<div class="empty-state">Pesquisando documentos...</div>`;
+        resultCount.innerText = '0';
+        statusLine.innerText = 'Consultando documentos, metadados e OCR...';
+
+        try {
+            const url = `/HospitalDocuments/Search?q=${encodeURIComponent(q)}&type=${encodeURIComponent(type)}`;
+            const response = await fetch(url, { signal: lastController.signal });
+
+            const raw = await response.text();
+
+            if (!response.ok) {
+                console.error('Erro na busca:', raw);
+
+                resultsList.innerHTML = `
+                    <div class="empty-state">
+                        <div class="error-box">
+                            Ocorreu um erro ao pesquisar os documentos.<br>
+                            ${escapeHtml(raw)}
+                        </div>
+                    </div>`;
+
+                statusLine.innerText = 'Erro ao executar a busca.';
+                return;
+            }
+
+            let data;
+
+            try {
+                data = JSON.parse(raw);
+            } catch {
+                console.error('Resposta inválida:', raw);
+                setResultEmpty('A busca retornou uma resposta inválida do servidor.');
+                return;
+            }
+
+            resultCount.innerText = data.total ?? 0;
+
+            if (!data.items || data.items.length === 0) {
+                setResultEmpty('Nenhum documento encontrado para a pesquisa informada.');
+                statusLine.innerText = 'Nenhum documento localizado.';
+                return;
+            }
+
+            renderResults(data.items);
+
+            statusLine.innerText = `${data.items.length} documento(s) localizado(s). Clique em um item para visualizar.`;
+
+            if (data.items.length === 1) {
+                const item = data.items[0];
+                abrirDocumentoPorVersao(item.versionId, item.title, item.fileName || item.type || '', false);
+            }
+
+        } catch (error) {
+            if (error.name === 'AbortError')
+                return;
+
+            console.error('Falha inesperada na busca:', error);
+            setResultEmpty('Falha inesperada ao executar a busca.');
+            statusLine.innerText = 'Falha inesperada ao executar a busca.';
+        }
+    }
+
+    function renderResults(items) {
+        const total = items.length;
+        const withOcr = items.filter(x => x.hasOcr).length;
+        const pdfCount = items.filter(x => String(x.type || '').toLowerCase().includes('pdf')).length;
+        const imageCount = items.filter(x => String(x.type || '').toLowerCase().includes('imagem')).length;
+
+        resultCount.innerText = total;
+
+        const summary = `
+            <div class="result-summary">
+                <div class="summary-card">
+                    <div class="summary-number">${total}</div>
+                    <div class="summary-label">Documentos</div>
+                </div>
+                <div class="summary-card">
+                    <div class="summary-number">${withOcr}</div>
+                    <div class="summary-label">Com OCR</div>
+                </div>
+                <div class="summary-card">
+                    <div class="summary-number">${pdfCount}</div>
+                    <div class="summary-label">PDFs</div>
+                </div>
+                <div class="summary-card">
+                    <div class="summary-number">${imageCount}</div>
+                    <div class="summary-label">Imagens</div>
+                </div>
+            </div>
+        `;
+
+        const cards = items.map(item => {
+            const versionId = item.versionId || EMPTY_GUID;
+            const disabled = !isValidVersion(versionId);
+
+            return `
+                <article class="result-card ${disabled ? 'disabled' : ''}"
+                         data-version-id="${escapeAttr(versionId)}"
+                         data-preview-url="${escapeAttr(item.previewUrl || '')}"
+                         data-ocr-url="${escapeAttr(item.ocrUrl || '')}"
+                         data-title="${escapeAttr(item.title || 'Documento encontrado')}"
+                         data-description="${escapeAttr(item.fileName || '')}">
+
+                    <div class="doc-title">${escapeHtml(item.title || 'Documento encontrado')}</div>
+                    <div class="doc-file">${escapeHtml(item.fileName || '')}</div>
+
+                    <div class="doc-meta">
+                        <span class="meta-pill">${escapeHtml(item.code || 'Sem código')}</span>
+                        <span class="meta-pill">${escapeHtml(item.type || 'Documento')}</span>
+                        <span class="meta-pill">${escapeHtml(item.size || 'Não informado')}</span>
+                        <span class="meta-pill">${escapeHtml(item.createdAt || '')}</span>
+                        ${item.hasOcr ? `<span class="meta-pill ocr-pill">OCR disponível</span>` : `<span class="meta-pill">Sem OCR</span>`}
+                    </div>
+
+                    <div class="snippet">${item.snippet || 'Documento encontrado pelos metadados informados.'}</div>
+                </article>
+            `;
+        }).join('');
+
+        resultsList.innerHTML = summary + cards;
+
+        resultsList.querySelectorAll('.result-card').forEach(card => {
+            card.addEventListener('click', function () {
+                const versionId = this.dataset.versionId;
+
+                if (!isValidVersion(versionId)) {
+                    statusLine.innerText = 'Este documento não possui versão válida para visualização.';
+                    return;
+                }
+
+                resultsList.querySelectorAll('.result-card').forEach(x => x.classList.remove('active'));
+                this.classList.add('active');
+
+                abrirDocumentoPorVersao(
+                    versionId,
+                    this.dataset.title,
+                    this.dataset.description,
+                    false
+                );
+            });
+        });
+    }
+
+    async function abrirDocumentoPorVersao(versionId, title, description, fromSuggestion) {
+        if (!isValidVersion(versionId)) {
+            statusLine.innerText = 'Documento sem versão válida para visualização.';
+            return;
+        }
+
+        const previewUrl = `/HospitalDocuments/Preview?versionId=${encodeURIComponent(versionId)}`;
+        const ocrUrl = `/HospitalDocuments/OcrText?versionId=${encodeURIComponent(versionId)}`;
+
+        if (fromSuggestion) {
+            renderSelectedDocument(versionId, title, description, previewUrl, ocrUrl);
+        } else {
+            const currentCards = resultsList.querySelectorAll('.result-card');
+
+            if (currentCards.length === 0) {
+                renderSelectedDocument(versionId, title, description, previewUrl, ocrUrl);
+            }
+        }
+
+        resultCount.innerText = Math.max(parseInt(resultCount.innerText || '0'), 1).toString();
+        statusLine.innerText = 'Documento localizado e aberto para visualização.';
+
+        openPreview(previewUrl, ocrUrl, title || 'Documento encontrado');
+    }
+
+    function renderSelectedDocument(versionId, title, description, previewUrl, ocrUrl) {
+        resultCount.innerText = '1';
+
+        resultsList.innerHTML = `
+            <article class="result-card active selected-card"
+                     data-version-id="${escapeAttr(versionId)}"
+                     data-preview-url="${escapeAttr(previewUrl)}"
+                     data-ocr-url="${escapeAttr(ocrUrl)}"
+                     data-title="${escapeAttr(title || 'Documento selecionado')}">
+
+                <div class="selected-label">
+                    <i class="bi bi-check-circle-fill"></i>
+                    Documento selecionado
+                </div>
+
+                <div class="doc-title">${escapeHtml(title || 'Documento selecionado')}</div>
+
+                <div class="doc-file">${escapeHtml(description || '')}</div>
+
+                <div class="doc-meta">
+                    <span class="meta-pill view-pill">Visualização aberta</span>
+                    <span class="meta-pill">Somente leitura</span>
+                    <span class="meta-pill ocr-pill">OCR consultado</span>
+                </div>
+
+                <div class="snippet">
+                    Este documento foi localizado pela sugestão automática e já está aberto no painel de visualização.
+                </div>
+            </article>
+
+            <div class="assistant-box" style="margin-top:12px;">
+                <div class="assistant-title">Próximas ações</div>
+                <div class="assistant-text">
+                    Você pode abrir a visualização em nova aba, consultar o OCR abaixo do documento ou realizar uma nova pesquisa.
+                </div>
+            </div>
+        `;
+    }
+
+    async function openPreview(previewUrl, ocrUrl, title) {
+        previewEmpty.style.display = 'none';
+        previewFrame.style.display = 'block';
+        previewFrame.src = previewUrl;
+
+        previewToolbar.style.display = 'flex';
+        previewTitle.innerText = title || 'Documento encontrado';
+        openViewerLink.href = previewUrl;
+
+        ocrBox.style.display = 'block';
+        ocrStatus.innerText = 'Carregando';
+        ocrText.innerText = 'Carregando OCR...';
+
+        try {
+            const response = await fetch(ocrUrl);
+
+            if (!response.ok) {
+                ocrStatus.innerText = 'Indisponível';
+                ocrText.innerText = 'Não foi possível carregar o OCR deste documento.';
+                return;
+            }
+
+            const data = await response.json();
+
+            if (data.hasOcr) {
+                ocrStatus.innerText = 'Disponível';
+                ocrText.innerText = data.text;
+            } else {
+                ocrStatus.innerText = 'Sem OCR';
+                ocrText.innerText = 'Nenhum texto OCR foi gerado para esta versão do documento.';
+            }
+        } catch (error) {
+            console.error('Erro ao carregar OCR:', error);
+            ocrStatus.innerText = 'Erro';
+            ocrText.innerText = 'Erro ao carregar OCR.';
+        }
+    }
+
+    function setResultEmpty(message) {
+        resultsList.innerHTML = `
+            <div class="empty-state">
+                <strong>${escapeHtml(message)}</strong><br />
+                Tente pesquisar por número do prontuário, nome do documento, código, tipo documental ou conteúdo OCR.
+            </div>
+        `;
+
+        resultCount.innerText = '0';
+    }
+
+    function isValidVersion(value) {
+        if (!value)
+            return false;
+
+        const v = String(value).toLowerCase();
+
+        return v !== EMPTY_GUID
+            && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(v);
+    }
+
+    function escapeHtml(value) {
+        if (value === null || value === undefined) return '';
+
+        return String(value)
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#039;');
+    }
+
+    function escapeAttr(value) {
+        return escapeHtml(value);
+    }
+</script>

@@ -1,0 +1,189 @@
+﻿@model InovaGed.Web.Controllers.HospitalDocumentViewerVM
+
+@{
+    ViewData["Title"] = "Visualização do Documento";
+}
+
+<style>
+    .viewer-page {
+        min-height: calc(100vh - 80px);
+        background: #eef4fb;
+        padding: 20px;
+    }
+
+    .viewer-shell {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 380px;
+        gap: 18px;
+        max-width: 1500px;
+        margin: 0 auto;
+    }
+
+    .viewer-main,
+    .viewer-side {
+        background: #fff;
+        border-radius: 22px;
+        border: 1px solid #e5edf7;
+        box-shadow: 0 18px 45px rgba(15, 23, 42, .08);
+        overflow: hidden;
+    }
+
+    .viewer-header {
+        padding: 16px 20px;
+        border-bottom: 1px solid #edf2f7;
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        align-items: center;
+    }
+
+    .viewer-title {
+        font-weight: 800;
+        color: #0f172a;
+    }
+
+    .viewer-subtitle {
+        color: #64748b;
+        font-size: 13px;
+        margin-top: 4px;
+    }
+
+    .doc-frame {
+        width: 100%;
+        height: calc(100vh - 190px);
+        min-height: 650px;
+        border: 0;
+        background: #f8fafc;
+    }
+
+    .side-section {
+        padding: 18px;
+        border-bottom: 1px solid #edf2f7;
+    }
+
+    .side-title {
+        font-weight: 800;
+        color: #0f172a;
+        margin-bottom: 12px;
+    }
+
+    .meta-list {
+        display: grid;
+        gap: 9px;
+        font-size: 13px;
+    }
+
+    .meta-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        border-bottom: 1px dashed #e2e8f0;
+        padding-bottom: 8px;
+    }
+
+    .meta-label {
+        color: #64748b;
+    }
+
+    .meta-value {
+        color: #0f172a;
+        font-weight: 700;
+        text-align: right;
+    }
+
+    .ocr-text {
+        white-space: pre-wrap;
+        font-size: 13px;
+        color: #334155;
+        line-height: 1.55;
+        max-height: calc(100vh - 410px);
+        overflow: auto;
+        background: #f8fafc;
+        border-radius: 16px;
+        padding: 14px;
+    }
+
+    .btn-back {
+        display: inline-block;
+        text-decoration: none;
+        background: #0f172a;
+        color: #fff;
+        padding: 10px 14px;
+        border-radius: 13px;
+        font-size: 13px;
+        font-weight: 800;
+    }
+
+    @@media (max-width: 1100px) {
+        .viewer-shell {
+            grid-template-columns: 1fr;
+        }
+
+        .doc-frame {
+            height: 620px;
+        }
+    }
+</style>
+
+<div class="viewer-page">
+    <div class="viewer-shell">
+        <main class="viewer-main">
+            <div class="viewer-header">
+                <div>
+                    <div class="viewer-title">@Model.Title</div>
+                    <div class="viewer-subtitle">@Model.Code · @Model.TypeName · @Model.FileName</div>
+                </div>
+
+                <a href="/HospitalDocuments" class="btn-back">Voltar para busca</a>
+            </div>
+
+            <iframe class="doc-frame" src="@Model.PreviewUrl"></iframe>
+        </main>
+
+        <aside class="viewer-side">
+            <section class="side-section">
+                <div class="side-title">Dados do documento</div>
+
+                <div class="meta-list">
+                    <div class="meta-row">
+                        <span class="meta-label">Código / Prontuário</span>
+                        <span class="meta-value">@Model.Code</span>
+                    </div>
+
+                    <div class="meta-row">
+                        <span class="meta-label">Tipo</span>
+                        <span class="meta-value">@Model.TypeName</span>
+                    </div>
+
+                    <div class="meta-row">
+                        <span class="meta-label">Arquivo</span>
+                        <span class="meta-value">@Model.FileName</span>
+                    </div>
+
+                    <div class="meta-row">
+                        <span class="meta-label">Tamanho</span>
+                        <span class="meta-value">@Model.SizeFormatted</span>
+                    </div>
+
+                    <div class="meta-row">
+                        <span class="meta-label">Cadastro</span>
+                        <span class="meta-value">@Model.CreatedAt.ToString("dd/MM/yyyy HH:mm")</span>
+                    </div>
+                </div>
+            </section>
+
+            <section class="side-section">
+                <div class="side-title">OCR gerado</div>
+
+                @if (!string.IsNullOrWhiteSpace(Model.OcrText))
+                {
+                    <div class="ocr-text">@Model.OcrText</div>
+                }
+                else
+                {
+                    <div class="ocr-text">Nenhum texto OCR foi gerado para este documento.</div>
+                }
+            </section>
+        </aside>
+    </div>
+</div>

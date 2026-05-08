@@ -155,6 +155,14 @@
 		<span>Explorer de Documentos</span>
 	</a>
 
+
+	<a asp-controller="HospitalDocuments"
+	   asp-action="Index"
+	   class="@Active("HospitalDocuments", "Index", "Viewer")">
+		<i class="bi bi-search-heart"></i>
+		<span>Buscar Prontuários e Documentos</span>
+	</a>
+
 	<a asp-controller="Ged" asp-action="Folders" class="@Active("Ged", "Folders")">
 		<i class="bi bi-folder"></i>
 		<span>Pastas e Dossiês</span>
