@@ -4,6 +4,7 @@ using InovaGed.Web.Models.Auth;
 using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 
@@ -55,15 +56,7 @@ public sealed class AccountController : Controller
 
         if (!user.IsActive)
         {
-            await _repo.RegisterLoginFailureAsync(
-                user.TenantId,
-                user.UserId,
-                "Usuário inativo.",
-                ip,
-                userAgent,
-                correlationId,
-                ct);
-
+            await _repo.RegisterLoginFailureAsync(user.TenantId, user.UserId, "Usuário inativo.", ip, userAgent, correlationId, ct);
             ModelState.AddModelError("", "Credenciais inválidas.");
             return View(vm);
         }
@@ -76,46 +69,21 @@ public sealed class AccountController : Controller
 
         if (string.IsNullOrWhiteSpace(user.PasswordHash))
         {
-            await _repo.RegisterLoginFailureAsync(
-                user.TenantId,
-                user.UserId,
-                "Usuário sem hash de senha.",
-                ip,
-                userAgent,
-                correlationId,
-                ct);
-
+            await _repo.RegisterLoginFailureAsync(user.TenantId, user.UserId, "Usuário sem hash de senha.", ip, userAgent, correlationId, ct);
             ModelState.AddModelError("", "Credenciais inválidas.");
             return View(vm);
         }
 
-        var verify = _hasher.VerifyHashedPassword(
-            user: null!,
-            hashedPassword: user.PasswordHash,
-            providedPassword: vm.Password ?? string.Empty);
+        var verify = _hasher.VerifyHashedPassword(null!, user.PasswordHash, vm.Password ?? string.Empty);
 
         if (verify == PasswordVerificationResult.Failed)
         {
-            await _repo.RegisterLoginFailureAsync(
-                user.TenantId,
-                user.UserId,
-                "Senha inválida.",
-                ip,
-                userAgent,
-                correlationId,
-                ct);
-
+            await _repo.RegisterLoginFailureAsync(user.TenantId, user.UserId, "Senha inválida.", ip, userAgent, correlationId, ct);
             ModelState.AddModelError("", "Credenciais inválidas.");
             return View(vm);
         }
 
-        await _repo.RegisterLoginSuccessAsync(
-            user.TenantId,
-            user.UserId,
-            ip,
-            userAgent,
-            correlationId,
-            ct);
+        await _repo.RegisterLoginSuccessAsync(user.TenantId, user.UserId, ip, userAgent, correlationId, ct);
 
         var rolesFromDatabase = await _repo.GetRolesAsync(user.TenantId, user.UserId, ct);
 
@@ -126,9 +94,7 @@ public sealed class AccountController : Controller
             .ToList();
 
         if (normalizedRoles.Count == 0)
-        {
             normalizedRoles.Add(AppRoles.Operador);
-        }
 
         var claims = new List<Claim>
         {
@@ -144,19 +110,12 @@ public sealed class AccountController : Controller
         };
 
         if (user.ServidorId.HasValue)
-        {
             claims.Add(new Claim("servidor_id", user.ServidorId.Value.ToString()));
-        }
 
         foreach (var role in normalizedRoles)
-        {
             claims.Add(new Claim(ClaimTypes.Role, role));
-        }
 
-        var identity = new ClaimsIdentity(
-            claims,
-            CookieAuthenticationDefaults.AuthenticationScheme);
-
+        var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
         var principal = new ClaimsPrincipal(identity);
 
         await HttpContext.SignInAsync(
@@ -169,30 +128,68 @@ public sealed class AccountController : Controller
             });
 
         if (user.MustChangePassword)
-        {
-            return RedirectToAction("ChangePassword", "Account");
-        }
+            return RedirectToAction(nameof(ChangePassword), "Account");
 
         if (!string.IsNullOrWhiteSpace(vm.ReturnUrl) && Url.IsLocalUrl(vm.ReturnUrl))
-        {
             return Redirect(vm.ReturnUrl);
-        }
 
         return RedirectToAction("Index", "Home");
     }
 
+    [Authorize]
     [HttpGet]
     public IActionResult ChangePassword()
     {
+        ViewData["Title"] = "Troca obrigatória de senha";
         return View();
     }
 
+    [Authorize]
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public IActionResult ChangePassword(string currentPassword, string newPassword, string confirmPassword)
+    public async Task<IActionResult> ChangePassword(string currentPassword, string newPassword, string confirmPassword, CancellationToken ct)
     {
-        TempData["Error"] = "A troca de senha será implementada no próximo passo do módulo de recuperação de senha.";
-        return View();
+        ViewData["Title"] = "Troca obrigatória de senha";
+
+        var tenantIdClaim = User.FindFirst("tenant_id")?.Value;
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+        if (!Guid.TryParse(tenantIdClaim, out var tenantId) || !Guid.TryParse(userIdClaim, out var userId))
+        {
+            await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+            return RedirectToAction(nameof(Login));
+        }
+
+        if (string.IsNullOrWhiteSpace(currentPassword))
+            ModelState.AddModelError(nameof(currentPassword), "Informe a senha atual.");
+
+        if (string.IsNullOrWhiteSpace(newPassword) || newPassword.Length < 8)
+            ModelState.AddModelError(nameof(newPassword), "A nova senha deve possuir pelo menos 8 caracteres.");
+
+        if (newPassword != confirmPassword)
+            ModelState.AddModelError(nameof(confirmPassword), "A confirmação da nova senha não confere.");
+
+        if (currentPassword == newPassword)
+            ModelState.AddModelError(nameof(newPassword), "A nova senha deve ser diferente da senha atual.");
+
+        if (!ModelState.IsValid)
+            return View();
+
+        var currentHash = await _repo.GetPasswordHashAsync(tenantId, userId, ct);
+
+        if (string.IsNullOrWhiteSpace(currentHash) ||
+            _hasher.VerifyHashedPassword(null!, currentHash, currentPassword) == PasswordVerificationResult.Failed)
+        {
+            ModelState.AddModelError(nameof(currentPassword), "Senha atual inválida.");
+            return View();
+        }
+
+        var newHash = _hasher.HashPassword(null!, newPassword);
+
+        await _repo.ResetPasswordByUserIdAsync(tenantId, userId, newHash, ct);
+
+        TempData["Success"] = "Senha alterada com sucesso.";
+        return RedirectToAction("Index", "Home");
     }
 
     [HttpGet]
@@ -208,9 +205,7 @@ public sealed class AccountController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> ForgotPasswordBuscar(ForgotPasswordVM vm, CancellationToken ct)
     {
-        vm.TenantSlug = string.IsNullOrWhiteSpace(vm.TenantSlug)
-            ? "default"
-            : vm.TenantSlug.Trim().ToLowerInvariant();
+        vm.TenantSlug = string.IsNullOrWhiteSpace(vm.TenantSlug) ? "default" : vm.TenantSlug.Trim().ToLowerInvariant();
 
         if (string.IsNullOrWhiteSpace(vm.Cpf))
         {
@@ -218,10 +213,7 @@ public sealed class AccountController : Controller
             return View("ForgotPassword", vm);
         }
 
-        var usuario = await _repo.FindUserForPasswordRecoveryByCpfAsync(
-            vm.TenantSlug,
-            vm.Cpf,
-            ct);
+        var usuario = await _repo.FindUserForPasswordRecoveryByCpfAsync(vm.TenantSlug, vm.Cpf, ct);
 
         if (usuario is null)
         {
@@ -250,9 +242,7 @@ public sealed class AccountController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> ForgotPasswordRedefinir(ForgotPasswordVM vm, CancellationToken ct)
     {
-        vm.TenantSlug = string.IsNullOrWhiteSpace(vm.TenantSlug)
-            ? "default"
-            : vm.TenantSlug.Trim().ToLowerInvariant();
+        vm.TenantSlug = string.IsNullOrWhiteSpace(vm.TenantSlug) ? "default" : vm.TenantSlug.Trim().ToLowerInvariant();
 
         if (string.IsNullOrWhiteSpace(vm.Cpf))
         {
@@ -260,10 +250,7 @@ public sealed class AccountController : Controller
             return View("ForgotPassword", vm);
         }
 
-        var usuario = await _repo.FindUserForPasswordRecoveryByCpfAsync(
-            vm.TenantSlug,
-            vm.Cpf,
-            ct);
+        var usuario = await _repo.FindUserForPasswordRecoveryByCpfAsync(vm.TenantSlug, vm.Cpf, ct);
 
         if (usuario is null)
         {
@@ -295,14 +282,9 @@ public sealed class AccountController : Controller
             return View("ForgotPassword", vm);
         }
 
-        var hasher = new PasswordHasher<object>();
-        var newHash = hasher.HashPassword(null!, vm.NovaSenha);
+        var newHash = _hasher.HashPassword(null!, vm.NovaSenha);
 
-        await _repo.ResetPasswordByUserIdAsync(
-            usuario.TenantId,
-            usuario.UserId,
-            newHash,
-            ct);
+        await _repo.ResetPasswordByUserIdAsync(usuario.TenantId, usuario.UserId, newHash, ct);
 
         TempData["Success"] = "Senha redefinida com sucesso. Acesse o sistema com a nova senha.";
 
