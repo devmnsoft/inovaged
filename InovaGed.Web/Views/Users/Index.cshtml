@@ -2,6 +2,11 @@
 
 @{
     ViewData["Title"] = "Usuários e Servidores";
+    var totalPages = Math.Max(1, Model.TotalPages);
+    var currentPage = Math.Min(Math.Max(1, Model.Page), totalPages);
+    var pageSize = Model.PageSize <= 0 ? 10 : Model.PageSize;
+    var startPage = Math.Max(1, currentPage - 2);
+    var endPage = Math.Min(totalPages, currentPage + 2);
 }
 
 <div class="d-flex justify-content-between align-items-center mb-3">
@@ -32,7 +37,7 @@
 <div class="card shadow-sm mb-3">
     <div class="card-body">
         <form method="get" asp-action="Index" asp-controller="Users" class="row g-2">
-            <div class="col-md-6">
+            <div class="col-md-5">
                 <input name="q"
                        value="@Model.Q"
                        class="form-control"
@@ -47,7 +52,17 @@
                 </select>
             </div>
 
-            <div class="col-md-3 d-flex gap-2">
+            <div class="col-md-2">
+                <select name="pageSize" class="form-select">
+                    <option value="10" selected="@(pageSize == 10)">10 por página</option>
+                    <option value="25" selected="@(pageSize == 25)">25 por página</option>
+                    <option value="50" selected="@(pageSize == 50)">50 por página</option>
+                    <option value="100" selected="@(pageSize == 100)">100 por página</option>
+                </select>
+            </div>
+
+            <div class="col-md-2 d-flex gap-2">
+                <input type="hidden" name="page" value="1" />
                 <button class="btn btn-outline-primary" type="submit">
                     <i class="bi bi-search me-1"></i> Pesquisar
                 </button>
@@ -202,7 +217,6 @@
                                     </button>
 
                                     <ul class="dropdown-menu dropdown-menu-end">
-
                                         <li>
                                             <a class="dropdown-item"
                                                asp-action="Edit"
@@ -262,13 +276,81 @@
         </table>
     </div>
 
-    <div class="card-footer d-flex justify-content-between align-items-center">
-        <div class="text-muted small">
-            Total: @Model.Total registro(s)
-        </div>
+    <div class="card-footer">
+        <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-2">
+            <div class="text-muted small">
+                Total: @Model.Total registro(s) · Página @currentPage de @totalPages
+            </div>
 
-        <div class="small">
-            Página @Model.Page de @Model.TotalPages
+            @if (totalPages > 1)
+            {
+                <nav aria-label="Paginação de usuários">
+                    <ul class="pagination pagination-sm mb-0">
+                        <li class="page-item @(currentPage <= 1 ? "disabled" : "")">
+                            <a class="page-link"
+                               asp-action="Index"
+                               asp-controller="Users"
+                               asp-route-q="@Model.Q"
+                               asp-route-active="@Model.Active"
+                               asp-route-page="1"
+                               asp-route-pageSize="@pageSize">Primeira</a>
+                        </li>
+
+                        <li class="page-item @(currentPage <= 1 ? "disabled" : "")">
+                            <a class="page-link"
+                               asp-action="Index"
+                               asp-controller="Users"
+                               asp-route-q="@Model.Q"
+                               asp-route-active="@Model.Active"
+                               asp-route-page="@(currentPage - 1)"
+                               asp-route-pageSize="@pageSize">Anterior</a>
+                        </li>
+
+                        @if (startPage > 1)
+                        {
+                            <li class="page-item disabled"><span class="page-link">...</span></li>
+                        }
+
+                        @for (var p = startPage; p <= endPage; p++)
+                        {
+                            <li class="page-item @(p == currentPage ? "active" : "")">
+                                <a class="page-link"
+                                   asp-action="Index"
+                                   asp-controller="Users"
+                                   asp-route-q="@Model.Q"
+                                   asp-route-active="@Model.Active"
+                                   asp-route-page="@p"
+                                   asp-route-pageSize="@pageSize">@p</a>
+                            </li>
+                        }
+
+                        @if (endPage < totalPages)
+                        {
+                            <li class="page-item disabled"><span class="page-link">...</span></li>
+                        }
+
+                        <li class="page-item @(currentPage >= totalPages ? "disabled" : "")">
+                            <a class="page-link"
+                               asp-action="Index"
+                               asp-controller="Users"
+                               asp-route-q="@Model.Q"
+                               asp-route-active="@Model.Active"
+                               asp-route-page="@(currentPage + 1)"
+                               asp-route-pageSize="@pageSize">Próxima</a>
+                        </li>
+
+                        <li class="page-item @(currentPage >= totalPages ? "disabled" : "")">
+                            <a class="page-link"
+                               asp-action="Index"
+                               asp-controller="Users"
+                               asp-route-q="@Model.Q"
+                               asp-route-active="@Model.Active"
+                               asp-route-page="@totalPages"
+                               asp-route-pageSize="@pageSize">Última</a>
+                        </li>
+                    </ul>
+                </nav>
+            }
         </div>
     </div>
 </div>
@@ -301,28 +383,16 @@
 
                 <div class="mb-3">
                     <label class="form-label">Nova senha</label>
-                    <input name="newPassword"
-                           type="password"
-                           class="form-control"
-                           minlength="8"
-                           required />
+                    <input name="newPassword" type="password" class="form-control" minlength="8" required />
                 </div>
 
                 <div class="mb-3">
                     <label class="form-label">Confirmar nova senha</label>
-                    <input name="confirmPassword"
-                           type="password"
-                           class="form-control"
-                           minlength="8"
-                           required />
+                    <input name="confirmPassword" type="password" class="form-control" minlength="8" required />
                 </div>
 
                 <div class="form-check">
-                    <input name="mustChangePassword"
-                           value="true"
-                           class="form-check-input"
-                           type="checkbox"
-                           checked />
+                    <input name="mustChangePassword" value="true" class="form-check-input" type="checkbox" checked />
 
                     <label class="form-check-label">
                         Obrigar troca de senha no próximo acesso
@@ -331,9 +401,7 @@
             </div>
 
             <div class="modal-footer">
-                <button type="button"
-                        class="btn btn-outline-secondary"
-                        data-bs-dismiss="modal">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
                     Cancelar
                 </button>
 
