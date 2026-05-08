@@ -2,100 +2,428 @@
 @model IReadOnlyList<BatchRowDto>
 
 @{
-    ViewData["Title"] = "Lotes";
+    ViewData["Title"] = "Lotes de Tratamento Documental";
+
     var q = (ViewBag.Q as string) ?? "";
     var status = (ViewBag.Status as string) ?? "";
+
+    var total = Model?.Count ?? 0;
+    var totalItens = Model?.Sum(x => x.ItemsCount) ?? 0;
+
+    var recebidos = Model?.Count(x => x.Status == "RECEIVED") ?? 0;
+    var triagem = Model?.Count(x => x.Status == "TRIAGE") ?? 0;
+    var digitalizacao = Model?.Count(x => x.Status == "DIGITIZATION") ?? 0;
+    var indexacao = Model?.Count(x => x.Status == "INDEXING") ?? 0;
+    var arquivados = Model?.Count(x => x.Status == "ARCHIVED") ?? 0;
+
+    string StatusLabel(string value) => value switch
+    {
+        "RECEIVED" => "Recebido",
+        "TRIAGE" => "Triagem",
+        "DIGITIZATION" => "Digitalização",
+        "INDEXING" => "Indexação",
+        "ARCHIVED" => "Arquivado",
+        _ => string.IsNullOrWhiteSpace(value) ? "Não informado" : value
+    };
+
+    string StatusBadge(string value) => value switch
+    {
+        "RECEIVED" => "text-bg-secondary",
+        "TRIAGE" => "text-bg-info",
+        "DIGITIZATION" => "text-bg-primary",
+        "INDEXING" => "text-bg-warning text-dark",
+        "ARCHIVED" => "text-bg-success",
+        _ => "text-bg-light text-dark"
+    };
+
+    string StatusIcon(string value) => value switch
+    {
+        "RECEIVED" => "bi-inbox",
+        "TRIAGE" => "bi-diagram-3",
+        "DIGITIZATION" => "bi-scanner",
+        "INDEXING" => "bi-tags",
+        "ARCHIVED" => "bi-archive",
+        _ => "bi-question-circle"
+    };
 }
 
-<div class="d-flex align-items-center justify-content-between mb-3">
+@if (TempData["Err"] is string err && !string.IsNullOrWhiteSpace(err))
+{
+    <div class="alert alert-danger alert-dismissible fade show d-flex align-items-center gap-2">
+        <i class="bi bi-exclamation-triangle-fill"></i>
+        <div>@err</div>
+        <button type="button" class="btn-close ms-auto" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+@if (TempData["Ok"] is string ok && !string.IsNullOrWhiteSpace(ok))
+{
+    <div class="alert alert-success alert-dismissible fade show d-flex align-items-center gap-2">
+        <i class="bi bi-check-circle-fill"></i>
+        <div>@ok</div>
+        <button type="button" class="btn-close ms-auto" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+<div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-4">
     <div>
-        <h3 class="mb-0">@ViewData["Title"]</h3>
-        <div class="text-muted small">Gerencie lotes, itens e status.</div>
+        <h3 class="mb-1">
+            <i class="bi bi-box-seam me-2"></i>
+            @ViewData["Title"]
+        </h3>
+        <div class="text-muted">
+            Controle os lotes recebidos, acompanhe a etapa do tratamento documental e acesse os itens vinculados.
+        </div>
     </div>
 
-    <div class="d-flex gap-2">
+    <div class="d-flex flex-wrap gap-2">
+        <a class="btn btn-outline-secondary" asp-controller="ImportExport" asp-action="Index">
+            <i class="bi bi-cloud-upload me-1"></i>
+            Importação
+        </a>
+
+        <a class="btn btn-outline-secondary" asp-controller="ImportExport" asp-action="ExportCenter">
+            <i class="bi bi-cloud-download me-1"></i>
+            Exportação
+        </a>
+
         <a class="btn btn-primary" asp-controller="Batches" asp-action="New">
-            <i class="bi bi-plus-circle me-1"></i> Novo lote
+            <i class="bi bi-plus-circle me-1"></i>
+            Novo lote
         </a>
     </div>
 </div>
 
-<form method="get" class="card shadow-sm mb-3">
+<div class="alert alert-primary border-0 shadow-sm mb-4">
+    <div class="d-flex gap-3">
+        <div class="fs-3">
+            <i class="bi bi-info-circle"></i>
+        </div>
+        <div>
+            <strong>Fluxo do tratamento documental</strong>
+            <div class="small mt-1">
+                Um lote representa um conjunto de documentos recebidos para controle, triagem, digitalização,
+                indexação e arquivamento. Cada movimentação deve gerar histórico, auditoria e rastreabilidade.
+            </div>
+
+            <div class="d-flex flex-wrap gap-2 mt-2">
+                <span class="badge text-bg-secondary">
+                    <i class="bi bi-inbox me-1"></i> Recebido
+                </span>
+                <span class="badge text-bg-info">
+                    <i class="bi bi-diagram-3 me-1"></i> Triagem
+                </span>
+                <span class="badge text-bg-primary">
+                    <i class="bi bi-scanner me-1"></i> Digitalização
+                </span>
+                <span class="badge text-bg-warning text-dark">
+                    <i class="bi bi-tags me-1"></i> Indexação
+                </span>
+                <span class="badge text-bg-success">
+                    <i class="bi bi-archive me-1"></i> Arquivado
+                </span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-6 col-xl-2">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <div class="text-muted small">Total de lotes</div>
+                <div class="fs-4 fw-bold">@total</div>
+                <div class="small text-muted">
+                    <i class="bi bi-box-seam me-1"></i>
+                    cadastrados
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6 col-xl-2">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <div class="text-muted small">Documentos vinculados</div>
+                <div class="fs-4 fw-bold">@totalItens</div>
+                <div class="small text-muted">
+                    <i class="bi bi-files me-1"></i>
+                    itens nos lotes
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6 col-xl-2">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <div class="text-muted small">Recebidos</div>
+                <div class="fs-4 fw-bold">@recebidos</div>
+                <span class="badge text-bg-secondary">
+                    <i class="bi bi-inbox me-1"></i>
+                    RECEIVED
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6 col-xl-2">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <div class="text-muted small">Em triagem</div>
+                <div class="fs-4 fw-bold">@triagem</div>
+                <span class="badge text-bg-info">
+                    <i class="bi bi-diagram-3 me-1"></i>
+                    TRIAGE
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6 col-xl-2">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <div class="text-muted small">Digitalização / Indexação</div>
+                <div class="fs-4 fw-bold">@(digitalizacao + indexacao)</div>
+                <span class="badge text-bg-primary">
+                    <i class="bi bi-scanner me-1"></i>
+                    em tratamento
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6 col-xl-2">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <div class="text-muted small">Arquivados</div>
+                <div class="fs-4 fw-bold">@arquivados</div>
+                <span class="badge text-bg-success">
+                    <i class="bi bi-archive me-1"></i>
+                    concluídos
+                </span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<form method="get" class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white py-3">
+        <strong>
+            <i class="bi bi-funnel me-1"></i>
+            Filtros de pesquisa
+        </strong>
+    </div>
+
     <div class="card-body">
-        <div class="row g-2 align-items-end">
+        <div class="row g-3 align-items-end">
             <div class="col-md-6">
-                <label class="form-label">Busca</label>
-                <input class="form-control" name="q" value="@q" placeholder="Nº do lote ou observações..." />
+                <label class="form-label fw-semibold">Busca</label>
+                <div class="input-group">
+                    <span class="input-group-text">
+                        <i class="bi bi-search"></i>
+                    </span>
+                    <input class="form-control"
+                           name="q"
+                           value="@q"
+                           placeholder="Nº do lote, observações ou palavra-chave..." />
+                </div>
+                <div class="form-text">
+                    Pesquise pelo número do lote ou por termos das observações.
+                </div>
             </div>
 
             <div class="col-md-3">
-                <label class="form-label">Status</label>
-                <input class="form-control" name="status" value="@status" placeholder="Ex.: OPEN, CLOSED..." />
+                <label class="form-label fw-semibold">Etapa do lote</label>
+                <select class="form-select" name="status">
+                    <option value="">Todas as etapas</option>
+
+                    @if (status == "RECEIVED")
+                    {
+                        <option value="RECEIVED" selected>Recebido</option>
+                    }
+                    else
+                    {
+                        <option value="RECEIVED">Recebido</option>
+                    }
+
+                    @if (status == "TRIAGE")
+                    {
+                        <option value="TRIAGE" selected>Triagem</option>
+                    }
+                    else
+                    {
+                        <option value="TRIAGE">Triagem</option>
+                    }
+
+                    @if (status == "DIGITIZATION")
+                    {
+                        <option value="DIGITIZATION" selected>Digitalização</option>
+                    }
+                    else
+                    {
+                        <option value="DIGITIZATION">Digitalização</option>
+                    }
+
+                    @if (status == "INDEXING")
+                    {
+                        <option value="INDEXING" selected>Indexação</option>
+                    }
+                    else
+                    {
+                        <option value="INDEXING">Indexação</option>
+                    }
+
+                    @if (status == "ARCHIVED")
+                    {
+                        <option value="ARCHIVED" selected>Arquivado</option>
+                    }
+                    else
+                    {
+                        <option value="ARCHIVED">Arquivado</option>
+                    }
+                </select>
+
+                <div class="form-text">
+                    Filtre pela fase atual do tratamento.
+                </div>
             </div>
 
-            <div class="col-md-3 d-flex gap-2">
-                <button class="btn btn-primary w-100" type="submit">
-                    <i class="bi bi-search me-1"></i> Filtrar
-                </button>
-                <a class="btn btn-outline-secondary w-100" asp-controller="Batches" asp-action="Index">
-                    Limpar
-                </a>
+            <div class="col-md-3">
+                <div class="d-grid d-md-flex gap-2">
+                    <button class="btn btn-primary flex-fill" type="submit">
+                        <i class="bi bi-search me-1"></i>
+                        Filtrar
+                    </button>
+
+                    <a class="btn btn-outline-secondary flex-fill" asp-controller="Batches" asp-action="Index">
+                        <i class="bi bi-x-circle me-1"></i>
+                        Limpar
+                    </a>
+                </div>
             </div>
         </div>
     </div>
 </form>
 
-<div class="card shadow-sm">
-    <div class="card-body p-0">
-        <div class="table-responsive">
-            <table class="table table-hover mb-0 align-middle">
-                <thead class="table-light">
-                    <tr>
-                        <th style="width:130px;">Nº Lote</th>
-                        <th style="width:140px;">Status</th>
-                        <th>Observações</th>
-                        <th style="width:190px;">Criado em</th>
-                        <th style="width:110px;" class="text-end">Itens</th>
-                        <th style="width:120px;" class="text-end">Ações</th>
-                    </tr>
-                </thead>
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-white py-3 d-flex flex-wrap align-items-center justify-content-between gap-2">
+        <div>
+            <strong>
+                <i class="bi bi-list-check me-1"></i>
+                Lotes encontrados
+            </strong>
+            <div class="small text-muted">
+                @total registro(s) localizado(s) conforme os filtros informados.
+            </div>
+        </div>
 
-                <tbody>
-                    @if (Model is null || Model.Count == 0)
-                    {
+        <a class="btn btn-sm btn-outline-primary" asp-controller="Batches" asp-action="New">
+            <i class="bi bi-plus-circle me-1"></i>
+            Novo lote
+        </a>
+    </div>
+
+    <div class="card-body p-0">
+        @if (Model is null || Model.Count == 0)
+        {
+            <div class="text-center text-muted py-5">
+                <i class="bi bi-inbox fs-1 d-block mb-3"></i>
+                <h5 class="mb-1">Nenhum lote encontrado</h5>
+                <div class="mb-3">
+                    Ajuste os filtros ou crie um novo lote de tratamento documental.
+                </div>
+
+                <a class="btn btn-primary" asp-controller="Batches" asp-action="New">
+                    <i class="bi bi-plus-circle me-1"></i>
+                    Criar primeiro lote
+                </a>
+            </div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
                         <tr>
-                            <td colspan="6" class="text-center text-muted py-4">
-                                Nenhum lote encontrado.
-                            </td>
+                            <th style="width: 130px;">Nº lote</th>
+                            <th style="width: 180px;">Etapa atual</th>
+                            <th>Observações</th>
+                            <th style="width: 190px;">Criado em</th>
+                            <th style="width: 120px;" class="text-end">Itens</th>
+                            <th style="width: 150px;" class="text-end">Ações</th>
                         </tr>
-                    }
-                    else
-                    {
-                        foreach (var b in Model)
+                    </thead>
+
+                    <tbody>
+                        @foreach (var b in Model)
                         {
                             <tr>
-                                <td class="fw-semibold">#@b.BatchNo</td>
                                 <td>
-                                    <span class="badge text-bg-secondary">@b.Status</span>
+                                    <div class="fw-bold">#@b.BatchNo</div>
+                                    <div class="small text-muted">Lote</div>
                                 </td>
-                                <td class="text-truncate" style="max-width:560px;" title="@b.Notes">
-                                    @(!string.IsNullOrWhiteSpace(b.Notes) ? b.Notes : "—")
+
+                                <td>
+                                    <span class="badge @StatusBadge(b.Status)">
+                                        <i class="bi @StatusIcon(b.Status) me-1"></i>
+                                        @StatusLabel(b.Status)
+                                    </span>
+                                    <div class="small text-muted mt-1 font-monospace">
+                                        @b.Status
+                                    </div>
                                 </td>
-                                <td>@b.CreatedAt.ToString("dd/MM/yyyy HH:mm")</td>
-                                <td class="text-end">@b.ItemsCount</td>
+
+                                <td>
+                                    @if (!string.IsNullOrWhiteSpace(b.Notes))
+                                    {
+                                        <div class="text-truncate" style="max-width: 620px;" title="@b.Notes">
+                                            @b.Notes
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">Sem observações registradas.</span>
+                                    }
+                                </td>
+
+                                <td>
+                                    <div>@b.CreatedAt.ToString("dd/MM/yyyy")</div>
+                                    <div class="small text-muted">@b.CreatedAt.ToString("HH:mm")</div>
+                                </td>
+
                                 <td class="text-end">
-                                    <a class="btn btn-sm btn-outline-primary"
-                                       asp-controller="Batches"
-                                       asp-action="Details"
-                                       asp-route-id="@b.Id">
-                                        Ver
-                                    </a>
+                                    <span class="badge text-bg-light text-dark border">
+                                        <i class="bi bi-files me-1"></i>
+                                        @b.ItemsCount
+                                    </span>
+                                </td>
+
+                                <td class="text-end">
+                                    <div class="btn-group">
+                                        <a class="btn btn-sm btn-outline-primary"
+                                           asp-controller="Batches"
+                                           asp-action="Details"
+                                           asp-route-id="@b.Id"
+                                           title="Ver detalhes do lote">
+                                            <i class="bi bi-eye me-1"></i>
+                                            Ver
+                                        </a>
+
+                                        <a class="btn btn-sm btn-outline-secondary"
+                                           asp-controller="Batches"
+                                           asp-action="Details"
+                                           asp-route-id="@b.Id"
+                                           title="Histórico e auditoria">
+                                            <i class="bi bi-clock-history"></i>
+                                        </a>
+                                    </div>
                                 </td>
                             </tr>
                         }
-                    }
-                </tbody>
-            </table>
-        </div>
+                    </tbody>
+                </table>
+            </div>
+        }
     </div>
 </div>

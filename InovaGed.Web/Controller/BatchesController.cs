@@ -31,7 +31,6 @@ public sealed class BatchesController : Controller
         _commands = commands;
     }
 
-    // /Batches
     [HttpGet("")]
     public async Task<IActionResult> Index(string? q, string? status, CancellationToken ct)
     {
@@ -48,22 +47,19 @@ public sealed class BatchesController : Controller
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Batches.Index failed");
-            TempData["Err"] = "Erro ao carregar lotes.";
+            _logger.LogError(ex, "Erro ao carregar lotes.");
+            TempData["Err"] = "Não foi possível carregar os lotes. Tente novamente.";
             return View(Array.Empty<BatchRowDto>());
         }
     }
 
-    // ✅ Compatibilidade: /Batches/Details (sem id) não pode ser action "coringa"
-    // /Batches/Details
     [HttpGet("Details")]
     public IActionResult DetailsRedirect()
     {
-        TempData["Err"] = "Selecione um lote para visualizar o detalhe.";
+        TempData["Err"] = "Selecione um lote para visualizar os detalhes.";
         return RedirectToAction(nameof(Index));
     }
 
-    // /Batches/New
     [HttpGet("New")]
     public IActionResult New()
     {
@@ -71,62 +67,82 @@ public sealed class BatchesController : Controller
         return View(new BatchCreateVM());
     }
 
-    // /Batches/New
     [HttpPost("New")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> New(BatchCreateVM vm, CancellationToken ct)
     {
         try
         {
-            var res = await _commands.CreateAsync(_user.TenantId, _user.UserId, vm, ct);
-            if (!res.IsSuccess)
+            vm.DocumentIds = vm.DocumentIds?
+                .Where(x => x != Guid.Empty)
+                .Distinct()
+                .ToList() ?? new List<Guid>();
+
+            if (vm.BoxId.HasValue && vm.BoxId.Value == Guid.Empty)
+                vm.BoxId = null;
+
+            if (string.IsNullOrWhiteSpace(vm.Notes) && vm.DocumentIds.Count == 0)
             {
-                TempData["Err"] = res.ErrorMessage;
+                TempData["Err"] = "Informe uma observação ou selecione pelo menos um documento para criar o lote.";
                 ViewBag.AllowedStatus = AllowedStatus.OrderBy(x => x).ToArray();
                 return View(vm);
             }
 
-            TempData["Ok"] = "Lote criado.";
-            return RedirectToAction(nameof(Details), new { id = res.Value });
+            var result = await _commands.CreateAsync(_user.TenantId, _user.UserId, vm, ct);
+
+            if (!result.IsSuccess)
+            {
+                TempData["Err"] = string.IsNullOrWhiteSpace(result.ErrorMessage)
+                    ? "Não foi possível criar o lote."
+                    : result.ErrorMessage;
+
+                ViewBag.AllowedStatus = AllowedStatus.OrderBy(x => x).ToArray();
+                return View(vm);
+            }
+
+            TempData["Ok"] = vm.DocumentIds.Count > 0
+                ? $"Lote criado com sucesso com {vm.DocumentIds.Count} documento(s)."
+                : "Lote criado com sucesso.";
+
+            return RedirectToAction(nameof(Details), new { id = result.Value });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Batches.New failed");
-            TempData["Err"] = "Erro ao criar lote.";
+            _logger.LogError(ex, "Erro ao criar lote.");
+            TempData["Err"] = "Erro inesperado ao criar o lote. A ocorrência foi registrada no log.";
             ViewBag.AllowedStatus = AllowedStatus.OrderBy(x => x).ToArray();
             return View(vm);
         }
     }
 
-    // /Batches/{id}
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> Details(Guid id, CancellationToken ct)
     {
         try
         {
             var data = await _queries.GetAsync(_user.TenantId, id, ct);
-            if (data is null) return NotFound();
 
-            // se sua View usa ViewBag:
+            if (data is null)
+            {
+                TempData["Err"] = "Lote não encontrado ou sem permissão de acesso.";
+                return RedirectToAction(nameof(Index));
+            }
+
             ViewBag.Header = data.Value.Header;
             ViewBag.Items = data.Value.Items;
             ViewBag.History = data.Value.History;
             ViewBag.AllowedStatus = AllowedStatus.OrderBy(x => x).ToArray();
 
-            // Se sua View é fortemente tipada, troque para:
-            // return View(new BatchDetailsVM { Header = ..., Items=..., History=... });
-
             return View();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Batches.Details failed");
-            TempData["Err"] = "Erro ao carregar detalhes do lote.";
-            return StatusCode(500);
+            _logger.LogError(ex, "Erro ao carregar detalhe do lote {BatchId}", id);
+            TempData["Err"] = "Erro ao carregar os detalhes do lote.";
+            return RedirectToAction(nameof(Index));
         }
     }
 
-    // /Batches/{id}/Status
     [HttpPost("{id:guid}/Status")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> ChangeStatus(Guid id, string status, string? notes, CancellationToken ct)
@@ -137,76 +153,135 @@ public sealed class BatchesController : Controller
 
             if (string.IsNullOrWhiteSpace(normalized) || !AllowedStatus.Contains(normalized))
             {
-                TempData["Err"] = "Status inválido. Use: RECEIVED, TRIAGE, DIGITIZATION, INDEXING, ARCHIVED.";
+                TempData["Err"] = "Etapa inválida. Selecione uma etapa válida do tratamento documental.";
                 return RedirectToAction(nameof(Details), new { id });
             }
 
-            var res = await _commands.ChangeStatusAsync(_user.TenantId, id, normalized, _user.UserId, notes, ct);
-            TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Status atualizado." : res.ErrorMessage;
+            var result = await _commands.ChangeStatusAsync(_user.TenantId, id, normalized, _user.UserId, notes, ct);
+
+            TempData[result.IsSuccess ? "Ok" : "Err"] = result.IsSuccess
+                ? $"Etapa do lote atualizada para {StatusLabel(normalized)} com sucesso."
+                : result.ErrorMessage ?? "Não foi possível atualizar a etapa do lote.";
+
             return RedirectToAction(nameof(Details), new { id });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Batches.ChangeStatus failed. Batch={Batch}", id);
-            TempData["Err"] = "Erro ao alterar status.";
+            _logger.LogError(ex, "Erro ao alterar status do lote {BatchId}", id);
+            TempData["Err"] = "Erro ao alterar a etapa do lote. A ocorrência foi registrada.";
             return RedirectToAction(nameof(Details), new { id });
         }
     }
 
-    // /Batches/{id}/Items/Add
     [HttpPost("{id:guid}/Items/Add")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> AddItem(Guid id, Guid documentId, Guid? boxId, CancellationToken ct)
     {
         try
         {
-            var res = await _commands.AddItemAsync(_user.TenantId, id, documentId, boxId, _user.UserId, ct);
-            TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Item adicionado." : res.ErrorMessage;
+            if (documentId == Guid.Empty)
+            {
+                TempData["Err"] = "Documento inválido.";
+                return RedirectToAction(nameof(Details), new { id });
+            }
+
+            if (boxId.HasValue && boxId.Value == Guid.Empty)
+                boxId = null;
+
+            var result = await _commands.AddItemAsync(_user.TenantId, id, documentId, boxId, _user.UserId, ct);
+
+            TempData[result.IsSuccess ? "Ok" : "Err"] = result.IsSuccess
+                ? "Documento adicionado ao lote com sucesso."
+                : result.ErrorMessage ?? "Não foi possível adicionar o documento ao lote.";
+
             return RedirectToAction(nameof(Details), new { id });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Batches.AddItem failed");
-            TempData["Err"] = "Erro ao adicionar item.";
+            _logger.LogError(ex, "Erro ao adicionar item ao lote {BatchId}", id);
+            TempData["Err"] = "Erro ao adicionar documento ao lote.";
             return RedirectToAction(nameof(Details), new { id });
         }
     }
 
-    // /Batches/{id}/Items/Move
     [HttpPost("{id:guid}/Items/Move")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> MoveItem(Guid id, Guid documentId, Guid? newBoxId, CancellationToken ct)
     {
         try
         {
-            var res = await _commands.MoveItemBoxAsync(_user.TenantId, id, documentId, newBoxId, _user.UserId, ct);
-            TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Item movido." : res.ErrorMessage;
+            if (documentId == Guid.Empty)
+            {
+                TempData["Err"] = "Documento inválido.";
+                return RedirectToAction(nameof(Details), new { id });
+            }
+
+            if (newBoxId.HasValue && newBoxId.Value == Guid.Empty)
+                newBoxId = null;
+
+            var result = await _commands.MoveItemBoxAsync(_user.TenantId, id, documentId, newBoxId, _user.UserId, ct);
+
+            TempData[result.IsSuccess ? "Ok" : "Err"] = result.IsSuccess
+                ? "Documento movimentado entre caixas com sucesso."
+                : result.ErrorMessage ?? "Não foi possível movimentar o documento.";
+
             return RedirectToAction(nameof(Details), new { id });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Batches.MoveItem failed");
-            TempData["Err"] = "Erro ao mover item.";
+            _logger.LogError(ex, "Erro ao mover item do lote {BatchId}", id);
+            TempData["Err"] = "Erro ao movimentar documento.";
             return RedirectToAction(nameof(Details), new { id });
         }
     }
 
-    // /Batches/{id}/Items/Remove
     [HttpPost("{id:guid}/Items/Remove")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> RemoveItem(Guid id, Guid documentId, CancellationToken ct)
     {
         try
         {
-            var res = await _commands.RemoveItemAsync(_user.TenantId, id, documentId, _user.UserId, ct);
-            TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Item removido." : res.ErrorMessage;
+            if (documentId == Guid.Empty)
+            {
+                TempData["Err"] = "Documento inválido.";
+                return RedirectToAction(nameof(Details), new { id });
+            }
+
+            var result = await _commands.RemoveItemAsync(_user.TenantId, id, documentId, _user.UserId, ct);
+
+            TempData[result.IsSuccess ? "Ok" : "Err"] = result.IsSuccess
+                ? "Documento removido do lote com sucesso."
+                : result.ErrorMessage ?? "Não foi possível remover o documento do lote.";
+
             return RedirectToAction(nameof(Details), new { id });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Batches.RemoveItem failed");
-            TempData["Err"] = "Erro ao remover item.";
+            _logger.LogError(ex, "Erro ao remover item do lote {BatchId}", id);
+            TempData["Err"] = "Erro ao remover documento do lote.";
             return RedirectToAction(nameof(Details), new { id });
+        }
+    }
+
+    [HttpGet("DocumentsSearch")]
+    public async Task<IActionResult> DocumentsSearch(string? q, int take = 20, string? status = null, CancellationToken ct = default)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(q) || q.Trim().Length < 3)
+                return Json(Array.Empty<object>());
+
+            take = Math.Clamp(take, 5, 50);
+
+            var rows = await _queries.SearchDocumentsAsync(_user.TenantId, q.Trim(), take, status, ct);
+
+            return Json(rows);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro na busca de documentos para lote. Q={Q}", q);
+            Response.StatusCode = StatusCodes.Status500InternalServerError;
+            return Json(new { error = "Erro ao buscar documentos." });
         }
     }
 
@@ -228,15 +303,17 @@ public sealed class BatchesController : Controller
             _ => s.ToUpperInvariant()
         };
     }
-     
-    // /Batches/DocumentsSearch?q=texto&take=20&status=OPEN
-    [HttpGet("DocumentsSearch")]
-    public async Task<IActionResult> DocumentsSearch(string? q, int take = 20, string? status = null, CancellationToken ct = default)
+
+    private static string StatusLabel(string status)
     {
-        var rows = await _queries.SearchDocumentsAsync(_user.TenantId, q, take, status, ct);
-        return Json(rows);
+        return status switch
+        {
+            "RECEIVED" => "Recebido",
+            "TRIAGE" => "Triagem",
+            "DIGITIZATION" => "Digitalização",
+            "INDEXING" => "Indexação",
+            "ARCHIVED" => "Arquivado",
+            _ => status
+        };
     }
-
-
-
 }

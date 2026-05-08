@@ -2,106 +2,215 @@
 @model BatchCreateVM
 
 @{
-    ViewData["Title"] = "Novo lote";
-    var allowed = ViewBag.AllowedStatus as string[] ?? Array.Empty<string>();
+    ViewData["Title"] = "Novo lote de tratamento documental";
 }
 
 @if (TempData["Err"] is string err && !string.IsNullOrWhiteSpace(err))
 {
-    <div class="alert alert-danger d-flex align-items-center gap-2">
-        <i class="bi bi-exclamation-triangle"></i>
+    <div class="alert alert-danger alert-dismissible fade show d-flex align-items-center gap-2">
+        <i class="bi bi-exclamation-triangle-fill"></i>
         <div>@err</div>
-    </div>
-}
-@if (TempData["Ok"] is string ok && !string.IsNullOrWhiteSpace(ok))
-{
-    <div class="alert alert-success d-flex align-items-center gap-2">
-        <i class="bi bi-check2-circle"></i>
-        <div>@ok</div>
+        <button type="button" class="btn-close ms-auto" data-bs-dismiss="alert"></button>
     </div>
 }
 
-<div class="d-flex align-items-center justify-content-between mb-3">
+@if (TempData["Ok"] is string ok && !string.IsNullOrWhiteSpace(ok))
+{
+    <div class="alert alert-success alert-dismissible fade show d-flex align-items-center gap-2">
+        <i class="bi bi-check-circle-fill"></i>
+        <div>@ok</div>
+        <button type="button" class="btn-close ms-auto" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+<div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-4">
     <div>
-        <h3 class="mb-0">@ViewData["Title"]</h3>
-        <div class="text-muted small">
-            Crie um lote e adicione documentos por busca. (Item 16 – Criação de lotes)
+        <h3 class="mb-1">
+            <i class="bi bi-box-seam me-2"></i>
+            Novo lote de tratamento documental
+        </h3>
+        <div class="text-muted">
+            Use esta tela para registrar a chegada de documentos, selecionar itens, vincular caixa física e iniciar o fluxo de tratamento.
         </div>
     </div>
 
     <a class="btn btn-outline-secondary" href="/Batches">
-        <i class="bi bi-arrow-left me-1"></i> Voltar
+        <i class="bi bi-arrow-left me-1"></i>
+        Voltar para lotes
     </a>
 </div>
 
-<div class="row g-3">
-    <!-- COLUNA ESQUERDA: METADADOS DO LOTE -->
-    <div class="col-lg-5">
-        <div class="card shadow-sm">
-            <div class="card-header bg-white">
-                <strong>Dados do lote</strong>
+<div class="alert alert-primary border-0 shadow-sm">
+    <div class="d-flex gap-3">
+        <div class="fs-3">
+            <i class="bi bi-info-circle"></i>
+        </div>
+        <div>
+            <strong>Como funciona o lote?</strong>
+            <div class="small mt-1">
+                O lote representa um conjunto de documentos recebidos para tratamento arquivístico.
+                Após criado, ele passa pelas etapas:
+                <span class="badge text-bg-secondary">Recebido</span>
+                <span class="badge text-bg-info">Triagem</span>
+                <span class="badge text-bg-primary">Digitalização</span>
+                <span class="badge text-bg-warning text-dark">Indexação</span>
+                <span class="badge text-bg-success">Arquivado</span>.
+                Todas as ações ficam registradas em histórico e auditoria.
             </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-5">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-white py-3">
+                <strong>
+                    <i class="bi bi-pencil-square me-1"></i>
+                    Identificação do lote
+                </strong>
+            </div>
+
             <div class="card-body">
-
                 <div class="mb-3">
-                    <label class="form-label">Observações</label>
-                    <textarea class="form-control" rows="4" name="Notes" form="frmCreate">@Model?.Notes</textarea>
-                    <div class="form-text">Ex.: “Prontuários recebidos do SAME – Março/2026”.</div>
-                </div>
-
-                <div class="mb-3">
-                    <label class="form-label">Caixa (opcional)</label>
-                    <input class="form-control" name="BoxId" id="boxId" placeholder="GUID da caixa (opcional)" form="frmCreate" />
+                    <label class="form-label fw-semibold">
+                        Observações do recebimento
+                    </label>
+                    <textarea class="form-control"
+                              rows="5"
+                              name="Notes"
+                              form="frmCreate"
+                              maxlength="1000"
+                              placeholder="Ex.: Prontuários recebidos do SAME, caixa provisória, setor de origem, período, responsável pela entrega...">@Model?.Notes</textarea>
                     <div class="form-text">
-                        Se você informar a caixa, o sistema registra o vínculo físico no histórico (Item 17/24).
+                        Informe dados que ajudem a rastrear a origem, o setor, o período ou a condição dos documentos.
                     </div>
                 </div>
 
-                <div class="d-grid gap-2">
-                    <button id="btnSubmit" type="submit" class="btn btn-primary" form="frmCreate">
-                        <i class="bi bi-check2-circle me-1"></i> Criar lote
-                    </button>
-                    <div class="text-muted small">
-                        Ao criar, o lote inicia em <span class="badge text-bg-secondary">RECEIVED</span> e registra histórico automaticamente.
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">
+                        Caixa física vinculada ao lote
+                        <span class="text-muted">(opcional)</span>
+                    </label>
+                    <input class="form-control"
+                           name="BoxId"
+                           id="boxId"
+                           placeholder="Informe o GUID da caixa, se já existir"
+                           form="frmCreate"
+                           value="@Model?.BoxId" />
+                    <div class="form-text">
+                        Ao informar uma caixa, o sistema registra o vínculo físico e gera histórico de movimentação.
                     </div>
                 </div>
 
+                <div class="border rounded p-3 bg-light">
+                    <div class="fw-semibold mb-2">
+                        <i class="bi bi-shield-check me-1"></i>
+                        Auditoria automática
+                    </div>
+                    <ul class="small text-muted mb-0 ps-3">
+                        <li>Criação do lote.</li>
+                        <li>Documentos adicionados ao lote.</li>
+                        <li>Vínculo com caixa física.</li>
+                        <li>Usuário, data, hora e evento executado.</li>
+                    </ul>
+                </div>
             </div>
         </div>
 
-        <div class="card shadow-sm mt-3">
-            <div class="card-header bg-white d-flex align-items-center justify-content-between">
-                <strong>Resumo</strong>
-                <span class="text-muted small" id="resumeCount">0 documentos</span>
+        <div class="card shadow-sm border-0 mt-4">
+            <div class="card-header bg-white py-3 d-flex align-items-center justify-content-between">
+                <strong>
+                    <i class="bi bi-clipboard-data me-1"></i>
+                    Resumo antes de salvar
+                </strong>
+                <span class="badge text-bg-secondary" id="resumeCount">0 documentos</span>
             </div>
+
             <div class="card-body">
-                <div class="small text-muted mb-2">Você está prestes a criar um lote com:</div>
-                <ul class="mb-0">
-                    <li><span id="resumeDocs">0</span> documento(s) selecionado(s)</li>
-                    <li>Caixa: <span class="text-muted" id="resumeBox">—</span></li>
-                </ul>
+                <div class="row g-2 small">
+                    <div class="col-6 text-muted">Etapa inicial</div>
+                    <div class="col-6 text-end">
+                        <span class="badge text-bg-secondary">Recebido</span>
+                    </div>
+
+                    <div class="col-6 text-muted">Documentos selecionados</div>
+                    <div class="col-6 text-end fw-semibold">
+                        <span id="resumeDocs">0</span>
+                    </div>
+
+                    <div class="col-6 text-muted">Caixa física</div>
+                    <div class="col-6 text-end">
+                        <span id="resumeBox">—</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card-footer bg-white">
+                <button id="btnSubmit"
+                        type="submit"
+                        class="btn btn-primary w-100"
+                        form="frmCreate">
+                    <i class="bi bi-check2-circle me-1"></i>
+                    Criar lote e registrar auditoria
+                </button>
+
+                <div class="small text-muted mt-2 text-center">
+                    Após salvar, você será direcionado para os detalhes do lote.
+                </div>
             </div>
         </div>
     </div>
 
-    <!-- COLUNA DIREITA: SELEÇÃO DE DOCUMENTOS -->
     <div class="col-lg-7">
-        <div class="card shadow-sm mb-3">
-            <div class="card-header bg-white">
-                <strong>Adicionar documentos</strong>
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-header bg-white py-3">
+                <strong>
+                    <i class="bi bi-search me-1"></i>
+                    Buscar documentos para o lote
+                </strong>
             </div>
+
             <div class="card-body">
-                <label class="form-label">Buscar (código ou título)</label>
-                <input id="docSearch" class="form-control" placeholder="Digite 3+ caracteres..." autocomplete="off" />
-                <div id="docResults" class="list-group mt-2" style="max-height:280px; overflow:auto; display:none;"></div>
-                <div class="form-text">Clique em um resultado para adicionar à lista.</div>
+                <label class="form-label fw-semibold">Documento</label>
+                <div class="input-group">
+                    <span class="input-group-text">
+                        <i class="bi bi-search"></i>
+                    </span>
+                    <input id="docSearch"
+                           class="form-control"
+                           placeholder="Digite ao menos 3 caracteres do código ou título..."
+                           autocomplete="off" />
+                </div>
+
+                <div class="form-text">
+                    Clique em um resultado para adicionar o documento à lista do lote.
+                </div>
+
+                <div id="docLoading" class="small text-muted mt-2 d-none">
+                    <span class="spinner-border spinner-border-sm me-1"></span>
+                    Buscando documentos...
+                </div>
+
+                <div id="docResults"
+                     class="list-group mt-2"
+                     style="max-height: 320px; overflow: auto; display: none;">
+                </div>
+
+                <div id="docEmpty"
+                     class="alert alert-warning small mt-2 d-none mb-0">
+                    Nenhum documento encontrado para a busca informada.
+                </div>
             </div>
         </div>
 
-        <div class="card shadow-sm">
-            <div class="card-header bg-white d-flex align-items-center justify-content-between">
-                <strong>Documentos selecionados</strong>
-                <span class="text-muted small" id="pickedCount">0</span>
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-white py-3 d-flex align-items-center justify-content-between">
+                <strong>
+                    <i class="bi bi-files me-1"></i>
+                    Documentos selecionados
+                </strong>
+                <span class="badge text-bg-primary" id="pickedCount">0</span>
             </div>
 
             <div class="card-body p-0">
@@ -109,14 +218,15 @@
                     <table class="table table-hover align-middle mb-0">
                         <thead class="table-light">
                             <tr>
-                                <th style="width:180px;">Código</th>
+                                <th style="width: 190px;">Código</th>
                                 <th>Título</th>
-                                <th style="width:90px;" class="text-end">Ação</th>
+                                <th style="width: 110px;" class="text-end">Ação</th>
                             </tr>
                         </thead>
                         <tbody id="pickedBody">
                             <tr id="pickedEmpty">
-                                <td colspan="3" class="text-center text-muted py-4">
+                                <td colspan="3" class="text-center text-muted py-5">
+                                    <i class="bi bi-inbox fs-3 d-block mb-2"></i>
                                     Nenhum documento selecionado.
                                 </td>
                             </tr>
@@ -125,19 +235,23 @@
                 </div>
             </div>
 
-            <div class="card-footer bg-white d-flex align-items-center justify-content-between">
-                <div class="text-muted small">
-                    Dica: você pode criar o lote só com observações, mas o ideal é já selecionar documentos.
+            <div class="card-footer bg-white d-flex flex-wrap align-items-center justify-content-between gap-2">
+                <div class="small text-muted">
+                    Documentos duplicados são ignorados automaticamente.
                 </div>
-                <button type="button" class="btn btn-sm btn-outline-secondary" id="btnClear" disabled>
-                    <i class="bi bi-eraser me-1"></i> Limpar seleção
+
+                <button type="button"
+                        class="btn btn-sm btn-outline-secondary"
+                        id="btnClear"
+                        disabled>
+                    <i class="bi bi-eraser me-1"></i>
+                    Limpar seleção
                 </button>
             </div>
         </div>
     </div>
 </div>
 
-<!-- FORM REAL DE POST (com DocumentIds dinâmico) -->
 <form id="frmCreate" method="post" asp-action="New">
     @Html.AntiForgeryToken()
     <div id="docHidden"></div>
@@ -146,142 +260,223 @@
 @section Scripts {
     <script>
         (() => {
-          const input = document.getElementById('docSearch');
-          const results = document.getElementById('docResults');
+            const input = document.getElementById('docSearch');
+            const results = document.getElementById('docResults');
+            const loading = document.getElementById('docLoading');
+            const empty = document.getElementById('docEmpty');
 
-          const pickedBody = document.getElementById('pickedBody');
-          const pickedEmpty = document.getElementById('pickedEmpty');
-          const hidden = document.getElementById('docHidden');
+            const pickedBody = document.getElementById('pickedBody');
+            const pickedEmpty = document.getElementById('pickedEmpty');
+            const hidden = document.getElementById('docHidden');
 
-          const pickedCount = document.getElementById('pickedCount');
-          const resumeCount = document.getElementById('resumeCount');
-          const resumeDocs = document.getElementById('resumeDocs');
-          const resumeBox = document.getElementById('resumeBox');
-          const boxId = document.getElementById('boxId');
+            const pickedCount = document.getElementById('pickedCount');
+            const resumeCount = document.getElementById('resumeCount');
+            const resumeDocs = document.getElementById('resumeDocs');
+            const resumeBox = document.getElementById('resumeBox');
+            const boxId = document.getElementById('boxId');
 
-          const btnClear = document.getElementById('btnClear');
+            const btnClear = document.getElementById('btnClear');
+            const frmCreate = document.getElementById('frmCreate');
+            const btnSubmit = document.getElementById('btnSubmit');
 
-          // map: docId -> { id, code, title }
-          const picked = new Map();
-          let timer = null;
+            const picked = new Map();
+            let timer = null;
 
-          function esc(s){
-            return (s ?? '').toString().replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
-          }
-
-          function syncHidden() {
-            hidden.innerHTML = '';
-            for (const id of picked.keys()) {
-              const i = document.createElement('input');
-              i.type = 'hidden';
-              i.name = 'DocumentIds';
-              i.value = id;
-              hidden.appendChild(i);
+            function esc(s) {
+                return (s ?? '').toString().replace(/[&<>"']/g, m => ({
+                    '&': '&amp;',
+                    '<': '&lt;',
+                    '>': '&gt;',
+                    '"': '&quot;',
+                    "'": '&#39;'
+                }[m]));
             }
-          }
 
-          function updateUI() {
-            const n = picked.size;
-            pickedCount.textContent = n;
-            resumeDocs.textContent = n;
-            resumeCount.textContent = `${n} documento(s)`;
-            btnClear.disabled = n === 0;
-            pickedEmpty.style.display = n === 0 ? '' : 'none';
+            function setLoading(isLoading) {
+                loading?.classList.toggle('d-none', !isLoading);
+            }
 
-            resumeBox.textContent = (boxId.value || '').trim() ? boxId.value.trim() : '—';
-          }
+            function hideResults() {
+                results.style.display = 'none';
+                empty?.classList.add('d-none');
+            }
 
-          function addPicked(d) {
-            if (!d || !d.id) return;
-            if (picked.has(d.id)) return;
+            function syncHidden() {
+                hidden.innerHTML = '';
 
-            picked.set(d.id, { id: d.id, code: d.code || '(sem código)', title: d.title || '' });
+                for (const id of picked.keys()) {
+                    const input = document.createElement('input');
+                    input.type = 'hidden';
+                    input.name = 'DocumentIds';
+                    input.value = id;
+                    hidden.appendChild(input);
+                }
+            }
 
-            const tr = document.createElement('tr');
-            tr.dataset.docId = d.id;
-            tr.innerHTML = `
-              <td class="fw-semibold">${esc(d.code || '(sem código)')}</td>
-              <td>${esc(d.title || '')}</td>
-              <td class="text-end">
-                <button type="button" class="btn btn-sm btn-outline-danger">
-                  <i class="bi bi-x-lg"></i>
-                </button>
-              </td>
-            `;
-            tr.querySelector('button').addEventListener('click', () => {
-              picked.delete(d.id);
-              tr.remove();
-              syncHidden();
-              updateUI();
-            });
+            function updateUI() {
+                const n = picked.size;
 
-            pickedBody.appendChild(tr);
-            syncHidden();
-            updateUI();
-          }
+                pickedCount.textContent = n;
+                resumeDocs.textContent = n;
+                resumeCount.textContent = `${n} documento(s)`;
+                btnClear.disabled = n === 0;
+                pickedEmpty.style.display = n === 0 ? '' : 'none';
 
-          function clearPickList() {
-            picked.clear();
-            // remove todas as linhas, mantendo a placeholder
-            [...pickedBody.querySelectorAll('tr')].forEach(r => {
-              if (r.id !== 'pickedEmpty') r.remove();
-            });
-            syncHidden();
-            updateUI();
-          }
+                const box = (boxId.value || '').trim();
+                resumeBox.textContent = box ? box : '—';
+            }
 
-          btnClear.addEventListener('click', clearPickList);
+            function addPicked(doc) {
+                if (!doc || !doc.id) return;
 
-          boxId.addEventListener('input', updateUI);
+                if (picked.has(doc.id)) {
+                    hideResults();
+                    input.value = '';
+                    return;
+                }
 
-          async function search(q) {
-            const url = `/Batches/DocumentsSearch?q=${encodeURIComponent(q)}&take=20`;
-            const r = await fetch(url, { headers: { 'Accept': 'application/json' }});
-            if (!r.ok) return [];
-            return await r.json();
-          }
+                picked.set(doc.id, {
+                    id: doc.id,
+                    code: doc.code || '(sem código)',
+                    title: doc.title || ''
+                });
 
-          function render(list) {
-            results.innerHTML = '';
-            if (!list || list.length === 0) { results.style.display='none'; return; }
-            results.style.display = '';
+                const tr = document.createElement('tr');
+                tr.dataset.docId = doc.id;
 
-            for (const d of list) {
-              const btn = document.createElement('button');
-              btn.type = 'button';
-              btn.className = 'list-group-item list-group-item-action';
-              btn.innerHTML = `
-                <div class="fw-semibold">${esc(d.code || '(sem código)')}</div>
-                <div class="small text-muted">${esc(d.title || '')}</div>
-                <div class="small">${esc(d.status || '')}</div>
-              `;
-              btn.addEventListener('click', () => {
-                addPicked(d);
-                results.style.display='none';
+                tr.innerHTML = `
+                    <td>
+                        <div class="fw-semibold font-monospace">${esc(doc.code || '(sem código)')}</div>
+                    </td>
+                    <td>
+                        <div>${esc(doc.title || '')}</div>
+                        <div class="small text-muted">ID: ${esc(doc.id)}</div>
+                    </td>
+                    <td class="text-end">
+                        <button type="button" class="btn btn-sm btn-outline-danger" title="Remover documento">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </td>
+                `;
+
+                tr.querySelector('button').addEventListener('click', () => {
+                    picked.delete(doc.id);
+                    tr.remove();
+                    syncHidden();
+                    updateUI();
+                });
+
+                pickedBody.appendChild(tr);
+                syncHidden();
+                updateUI();
+
+                hideResults();
                 input.value = '';
                 input.focus();
-              });
-              results.appendChild(btn);
             }
-          }
 
-          input.addEventListener('input', () => {
-            const q = input.value.trim();
-            if (timer) clearTimeout(timer);
-            if (q.length < 3) { results.style.display='none'; return; }
+            function clearPickList() {
+                picked.clear();
 
-            timer = setTimeout(async () => {
-              const list = await search(q);
-              render(list);
-            }, 250);
-          });
+                [...pickedBody.querySelectorAll('tr')].forEach(row => {
+                    if (row.id !== 'pickedEmpty') row.remove();
+                });
 
-          document.addEventListener('click', (e) => {
-            if (!results.contains(e.target) && e.target !== input) results.style.display='none';
-          });
+                syncHidden();
+                updateUI();
+            }
 
-          // inicial
-          updateUI();
+            async function search(q) {
+                const url = `/Batches/DocumentsSearch?q=${encodeURIComponent(q)}&take=20`;
+
+                const response = await fetch(url, {
+                    headers: { 'Accept': 'application/json' }
+                });
+
+                if (!response.ok) {
+                    throw new Error('Falha na busca.');
+                }
+
+                return await response.json();
+            }
+
+            function render(list) {
+                results.innerHTML = '';
+
+                if (!list || list.length === 0) {
+                    results.style.display = 'none';
+                    empty?.classList.remove('d-none');
+                    return;
+                }
+
+                empty?.classList.add('d-none');
+                results.style.display = '';
+
+                for (const doc of list) {
+                    const button = document.createElement('button');
+                    button.type = 'button';
+                    button.className = 'list-group-item list-group-item-action';
+
+                    button.innerHTML = `
+                        <div class="d-flex justify-content-between gap-2">
+                            <div>
+                                <div class="fw-semibold font-monospace">${esc(doc.code || '(sem código)')}</div>
+                                <div class="small text-muted">${esc(doc.title || '')}</div>
+                            </div>
+                            <span class="badge text-bg-light align-self-start">Adicionar</span>
+                        </div>
+                    `;
+
+                    button.addEventListener('click', () => addPicked(doc));
+
+                    results.appendChild(button);
+                }
+            }
+
+            btnClear.addEventListener('click', clearPickList);
+
+            boxId.addEventListener('input', updateUI);
+
+            input.addEventListener('input', () => {
+                const q = input.value.trim();
+
+                if (timer) clearTimeout(timer);
+
+                if (q.length < 3) {
+                    hideResults();
+                    return;
+                }
+
+                timer = setTimeout(async () => {
+                    try {
+                        setLoading(true);
+                        const list = await search(q);
+                        render(list);
+                    } catch {
+                        results.style.display = 'none';
+                        empty.textContent = 'Erro ao buscar documentos. Tente novamente.';
+                        empty.classList.remove('d-none');
+                    } finally {
+                        setLoading(false);
+                    }
+                }, 300);
+            });
+
+            frmCreate.addEventListener('submit', () => {
+                btnSubmit.disabled = true;
+                btnSubmit.innerHTML = `
+                    <span class="spinner-border spinner-border-sm me-1"></span>
+                    Criando lote...
+                `;
+            });
+
+            document.addEventListener('click', e => {
+                if (!results.contains(e.target) && e.target !== input) {
+                    results.style.display = 'none';
+                }
+            });
+
+            updateUI();
         })();
     </script>
 }

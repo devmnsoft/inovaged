@@ -9,34 +9,40 @@ public sealed class BatchRowDto
     public DateTime CreatedAt { get; set; }
     public int ItemsCount { get; set; }
 
+    public string StatusLabel => Status switch
+    {
+        "RECEIVED" => "Recebido",
+        "TRIAGE" => "Triagem",
+        "DIGITIZATION" => "Digitalização",
+        "INDEXING" => "Indexação",
+        "ARCHIVED" => "Arquivado",
+        _ => Status
+    };
+
     public BatchRowDto() { }
 }
 
 public sealed class BatchCreateVM
 {
-    public string BatchNo { get; set; } = "";
     public string? Notes { get; set; }
-    public string? Status { get; set; }
 
     public List<Guid> DocumentIds { get; set; } = new();
+
     public Guid? BoxId { get; set; }
+
+    public bool HasDocuments => DocumentIds is { Count: > 0 };
 }
 
-// Item 17: BoxLabel adicionado para exibir "Caixa #N — LABEL" em vez do GUID bruto
 public sealed class BatchItemDto
 {
     public Guid DocumentId { get; set; }
     public Guid? BoxId { get; set; }
     public string? DocumentCode { get; set; }
     public string? DocumentTitle { get; set; }
-
-    // Label legível da caixa (ex.: "Caixa #4 — CX-0004")
-    // Null quando o item não está vinculado a nenhuma caixa
     public string? BoxLabel { get; set; }
 
     public BatchItemDto() { }
 
-    // Compatibilidade com código existente que usa construtor posicional
     public BatchItemDto(Guid documentId, Guid? boxId, string? documentCode, string? documentTitle)
     {
         DocumentId = documentId;
@@ -52,6 +58,19 @@ public sealed class BatchHistoryDto
     public string FromStatus { get; set; } = "";
     public string ToStatus { get; set; } = "";
     public string Notes { get; set; } = "";
+    public string? EventType { get; set; }
+
+    public string EventLabel => EventType switch
+    {
+        "CREATE" => "Criação do lote",
+        "ADD_ITEM" => "Documento adicionado",
+        "REMOVE_ITEM" => "Documento removido",
+        "MOVE_ITEM_BOX" => "Movimentação de caixa",
+        "STATUS_CHANGE" => "Mudança de etapa",
+        "IMPORT" => "Importação",
+        "EXPORT" => "Exportação",
+        _ => EventType ?? ToStatus
+    };
 
     public BatchHistoryDto() { }
 

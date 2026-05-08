@@ -130,21 +130,19 @@ order by d.title;
                 new CommandDefinition(items, new { tenant_id = tenantId, batch_id = batchId }, cancellationToken: ct))).AsList();
 
             // Item 18: histórico de fases com from_status via LAG
-            const string hist = @"
+            const string hist = """
 select
-  event_time                                   as ""ChangedAt"",
-  coalesce(
-    lag(event_type) over (order by event_time),
-    ''
-  )                                            as ""FromStatus"",
-  event_type                                   as ""ToStatus"",
-  coalesce(notes,'')                           as ""Notes""
+  coalesce(event_time, changed_at, reg_date) as "ChangedAt",
+  coalesce(from_status::text, '')            as "FromStatus",
+  coalesce(to_status::text, event_type, '')  as "ToStatus",
+  coalesce(notes, '')                        as "Notes",
+  coalesce(event_type, '')                   as "EventType"
 from ged.batch_history
-where tenant_id=@tenant_id
-  and batch_id=@batch_id
-  and reg_status='A'
-order by event_time desc;
-";
+where tenant_id = @tenant_id
+  and batch_id = @batch_id
+  and reg_status = 'A'
+order by coalesce(event_time, changed_at, reg_date) desc;
+""";
             var histList = (await conn.QueryAsync<BatchHistoryDto>(
                 new CommandDefinition(hist, new { tenant_id = tenantId, batch_id = batchId }, cancellationToken: ct))).AsList();
 
