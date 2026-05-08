@@ -29,12 +29,21 @@ public interface IAuthRepository
         string? ip,
         string? userAgent,
         string? correlationId,
-        CancellationToken ct); 
+        CancellationToken ct);
 
     Task RegisterLoginFailureAsync(
         Guid tenantId,
         Guid userId,
         string reason,
+        string? ip,
+        string? userAgent,
+        string? correlationId,
+        CancellationToken ct);
+
+    Task ChangeOwnPasswordAsync(
+        Guid tenantId,
+        Guid userId,
+        string newPasswordHash,
         string? ip,
         string? userAgent,
         string? correlationId,
