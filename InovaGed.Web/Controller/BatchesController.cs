@@ -285,6 +285,65 @@ public sealed class BatchesController : Controller
         }
     }
 
+    
+    [HttpPost("{id:guid}/Update")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Update(Guid id, string? notes, CancellationToken ct)
+    {
+        try
+        {
+            var result = await _commands.UpdateAsync(
+                _user.TenantId,
+                id,
+                notes,
+                _user.UserId,
+                ct);
+
+            TempData[result.IsSuccess ? "Ok" : "Err"] = result.IsSuccess
+                ? "Dados do lote atualizados com sucesso."
+                : result.ErrorMessage ?? "Não foi possível atualizar o lote.";
+
+            return RedirectToAction(nameof(Details), new { id });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro ao atualizar lote {BatchId}", id);
+
+            TempData["Err"] = "Erro ao atualizar o lote. A ocorrência foi registrada.";
+
+            return RedirectToAction(nameof(Details), new { id });
+        }
+    }
+
+    [HttpPost("{id:guid}/Delete")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Delete(Guid id, string? reason, CancellationToken ct)
+    {
+        try
+        {
+            var result = await _commands.DeleteAsync(
+                _user.TenantId,
+                id,
+                _user.UserId,
+                reason,
+                ct);
+
+            TempData[result.IsSuccess ? "Ok" : "Err"] = result.IsSuccess
+                ? "Lote excluído com sucesso."
+                : result.ErrorMessage ?? "Não foi possível excluir o lote.";
+
+            return RedirectToAction(nameof(Index));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro ao excluir lote {BatchId}", id);
+
+            TempData["Err"] = "Erro ao excluir lote. A ocorrência foi registrada.";
+
+            return RedirectToAction(nameof(Details), new { id });
+        }
+    }
+
     private static string? NormalizeStatus(string? status)
     {
         if (string.IsNullOrWhiteSpace(status)) return null;

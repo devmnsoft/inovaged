@@ -914,4 +914,331 @@ public sealed class BatchCommands : IBatchCommands
 
         return new HashSet<string>(list ?? Array.Empty<string>(), StringComparer.OrdinalIgnoreCase);
     }
+
+    public async Task<Result> UpdateAsync(
+      Guid tenantId,
+      Guid batchId,
+      string? notes,
+      Guid? userId,
+      CancellationToken ct)
+    {
+        try
+        {
+            if (tenantId == Guid.Empty)
+                return Result.Fail("TENANT", "Tenant inválido.");
+
+            if (batchId == Guid.Empty)
+                return Result.Fail("BATCH", "Lote inválido.");
+
+            await using var conn = await _db.OpenAsync(ct);
+            using var tx = conn.BeginTransaction();
+
+            const string getSql = """
+        select status::text
+        from ged.batch
+        where tenant_id = @tenant_id
+          and id = @batch_id
+          and reg_status = 'A';
+        """;
+
+            var currentStatus = await conn.ExecuteScalarAsync<string?>(
+                new CommandDefinition(
+                    getSql,
+                    new
+                    {
+                        tenant_id = tenantId,
+                        batch_id = batchId
+                    },
+                    transaction: tx,
+                    cancellationToken: ct));
+
+            if (string.IsNullOrWhiteSpace(currentStatus))
+            {
+                tx.Rollback();
+                return Result.Fail("NOTFOUND", "Lote não encontrado.");
+            }
+
+            /*
+             * ATENÇÃO:
+             * Sua tabela ged.batch não possui updated_at nem updated_by.
+             * Por isso o update abaixo altera apenas notes.
+             */
+            const string updateSql = """
+        update ged.batch
+        set notes = @notes
+        where tenant_id = @tenant_id
+          and id = @batch_id
+          and reg_status = 'A';
+        """;
+
+            var rows = await conn.ExecuteAsync(
+                new CommandDefinition(
+                    updateSql,
+                    new
+                    {
+                        tenant_id = tenantId,
+                        batch_id = batchId,
+                        notes
+                    },
+                    transaction: tx,
+                    cancellationToken: ct));
+
+            if (rows == 0)
+            {
+                tx.Rollback();
+                return Result.Fail("NOTFOUND", "Lote não encontrado para atualização.");
+            }
+
+            const string historySql = """
+        insert into ged.batch_history
+        (
+            tenant_id,
+            batch_id,
+            from_status,
+            to_status,
+            changed_at,
+            changed_by,
+            notes,
+            data,
+            reg_date,
+            reg_status,
+            event_time,
+            event_type
+        )
+        values
+        (
+            @tenant_id,
+            @batch_id,
+            @current_status::ged.batch_status,
+            @current_status::ged.batch_status,
+            now(),
+            @changed_by,
+            @history_notes,
+            @data::jsonb,
+            now(),
+            'A',
+            now(),
+            'UPDATE'
+        );
+        """;
+
+            await conn.ExecuteAsync(
+                new CommandDefinition(
+                    historySql,
+                    new
+                    {
+                        tenant_id = tenantId,
+                        batch_id = batchId,
+                        current_status = currentStatus,
+                        changed_by = userId,
+                        history_notes = "Dados básicos do lote atualizados.",
+                        data = System.Text.Json.JsonSerializer.Serialize(new
+                        {
+                            action = "UPDATE",
+                            notes
+                        })
+                    },
+                    transaction: tx,
+                    cancellationToken: ct));
+
+            tx.Commit();
+
+            await _audit.WriteAsync(
+                tenantId,
+                userId,
+                "BATCH_EVENT",
+                "batch",
+                batchId,
+                "Dados básicos do lote atualizados",
+                null,
+                null,
+                new
+                {
+                    notes
+                },
+                ct);
+
+            return Result.Ok();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro ao atualizar lote. Tenant={Tenant} Batch={Batch}", tenantId, batchId);
+            return Result.Fail("BATCH", "Falha ao atualizar dados do lote.");
+        }
+    }
+
+    public async Task<Result> DeleteAsync(
+    Guid tenantId,
+    Guid batchId,
+    Guid? userId,
+    string? reason,
+    CancellationToken ct)
+    {
+        try
+        {
+            if (tenantId == Guid.Empty)
+                return Result.Fail("TENANT", "Tenant inválido.");
+
+            if (batchId == Guid.Empty)
+                return Result.Fail("BATCH", "Lote inválido.");
+
+            await using var conn = await _db.OpenAsync(ct);
+            using var tx = conn.BeginTransaction();
+
+            const string getSql = """
+        select status::text
+        from ged.batch
+        where tenant_id = @tenant_id
+          and id = @batch_id
+          and reg_status = 'A';
+        """;
+
+            var currentStatus = await conn.ExecuteScalarAsync<string?>(
+                new CommandDefinition(
+                    getSql,
+                    new
+                    {
+                        tenant_id = tenantId,
+                        batch_id = batchId
+                    },
+                    transaction: tx,
+                    cancellationToken: ct));
+
+            if (string.IsNullOrWhiteSpace(currentStatus))
+            {
+                tx.Rollback();
+                return Result.Fail("NOTFOUND", "Lote não encontrado ou já excluído.");
+            }
+
+            if (currentStatus == "ARCHIVED")
+            {
+                tx.Rollback();
+                return Result.Fail("ARCHIVED", "Lotes arquivados não podem ser excluídos. Reabra ou registre uma ocorrência administrativa.");
+            }
+
+            const string deleteItemsSql = """
+        update ged.batch_item
+        set reg_status = 'I'
+        where tenant_id = @tenant_id
+          and batch_id = @batch_id
+          and reg_status = 'A';
+        """;
+
+            await conn.ExecuteAsync(
+                new CommandDefinition(
+                    deleteItemsSql,
+                    new
+                    {
+                        tenant_id = tenantId,
+                        batch_id = batchId
+                    },
+                    transaction: tx,
+                    cancellationToken: ct));
+
+            const string deleteBatchSql = """
+        update ged.batch
+        set reg_status = 'I'
+        where tenant_id = @tenant_id
+          and id = @batch_id
+          and reg_status = 'A';
+        """;
+
+            var rows = await conn.ExecuteAsync(
+                new CommandDefinition(
+                    deleteBatchSql,
+                    new
+                    {
+                        tenant_id = tenantId,
+                        batch_id = batchId
+                    },
+                    transaction: tx,
+                    cancellationToken: ct));
+
+            if (rows == 0)
+            {
+                tx.Rollback();
+                return Result.Fail("NOTFOUND", "Não foi possível excluir o lote.");
+            }
+
+            const string historySql = """
+        insert into ged.batch_history
+        (
+            tenant_id,
+            batch_id,
+            from_status,
+            to_status,
+            changed_at,
+            changed_by,
+            notes,
+            data,
+            reg_date,
+            reg_status,
+            event_time,
+            event_type
+        )
+        values
+        (
+            @tenant_id,
+            @batch_id,
+            @current_status::ged.batch_status,
+            @current_status::ged.batch_status,
+            now(),
+            @changed_by,
+            @notes,
+            @data::jsonb,
+            now(),
+            'A',
+            now(),
+            'DELETE'
+        );
+        """;
+
+            await conn.ExecuteAsync(
+                new CommandDefinition(
+                    historySql,
+                    new
+                    {
+                        tenant_id = tenantId,
+                        batch_id = batchId,
+                        current_status = currentStatus,
+                        changed_by = userId,
+                        notes = string.IsNullOrWhiteSpace(reason)
+                            ? "Lote excluído logicamente."
+                            : $"Lote excluído logicamente. Motivo: {reason}",
+                        data = System.Text.Json.JsonSerializer.Serialize(new
+                        {
+                            action = "DELETE",
+                            reason,
+                            previousStatus = currentStatus
+                        })
+                    },
+                    transaction: tx,
+                    cancellationToken: ct));
+
+            tx.Commit();
+
+            await _audit.WriteAsync(
+                tenantId,
+                userId,
+                "BATCH_EVENT",
+                "batch",
+                batchId,
+                "Lote excluído logicamente",
+                null,
+                null,
+                new
+                {
+                    reason,
+                    previousStatus = currentStatus
+                },
+                ct);
+
+            return Result.Ok();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro ao excluir lote. Tenant={Tenant} Batch={Batch}", tenantId, batchId);
+            return Result.Fail("BATCH", "Falha ao excluir lote.");
+        }
+    }
 }

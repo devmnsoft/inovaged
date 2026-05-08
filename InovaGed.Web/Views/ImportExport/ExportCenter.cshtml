@@ -2,108 +2,254 @@
 
 @{
     ViewData["Title"] = "Central de Exportação";
-    ViewData["Subtitle"] = "Exportar documentos / versões ()";
+
+    var total = Model?.Count ?? 0;
+    var signed = Model?.Count(x => !string.IsNullOrWhiteSpace(x.SigStatus)) ?? 0;
+
+    string FormatBytes(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+
+        double kb = bytes / 1024d;
+        if (kb < 1024) return $"{kb:0.#} KB";
+
+        double mb = kb / 1024d;
+        if (mb < 1024) return $"{mb:0.#} MB";
+
+        double gb = mb / 1024d;
+        return $"{gb:0.#} GB";
+    }
+
+    string SigBadge(string? sig) => sig switch
+    {
+        "VALID" => "text-bg-success",
+        "INVALID" => "text-bg-danger",
+        "NOT_VERIFIABLE" => "text-bg-warning text-dark",
+        "UNKNOWN" => "text-bg-secondary",
+        null or "" => "text-bg-light text-dark border",
+        _ => "text-bg-light text-dark border"
+    };
+
+    string SigLabel(string? sig) => sig switch
+    {
+        "VALID" => "Válida",
+        "INVALID" => "Inválida",
+        "NOT_VERIFIABLE" => "Não verificável",
+        "UNKNOWN" => "Detectada",
+        null or "" => "Sem assinatura",
+        _ => sig
+    };
 }
 
-<div class="container py-3">
+@if (TempData["Ok"] is string ok && !string.IsNullOrWhiteSpace(ok))
+{
+    <div class="alert alert-success alert-dismissible fade show d-flex align-items-center gap-2">
+        <i class="bi bi-check-circle-fill"></i>
+        <div>@ok</div>
+        <button type="button" class="btn-close ms-auto" data-bs-dismiss="alert"></button>
+    </div>
+}
 
-    <div class="d-flex align-items-center justify-content-between mb-3">
-        <div>
-            <h3 class="mb-0">@ViewData["Title"]</h3>
-            <div class="text-muted small">@ViewData["Subtitle"]</div>
+@if (TempData["Err"] is string err && !string.IsNullOrWhiteSpace(err))
+{
+    <div class="alert alert-danger alert-dismissible fade show d-flex align-items-center gap-2">
+        <i class="bi bi-exclamation-triangle-fill"></i>
+        <div>@err</div>
+        <button type="button" class="btn-close ms-auto" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+<div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-4">
+    <div>
+        <h3 class="mb-1">
+            <i class="bi bi-cloud-download me-2"></i>
+            @ViewData["Title"]
+        </h3>
+        <div class="text-muted">
+            Exporte documentos ativos do GED com registro de auditoria e rastreabilidade.
         </div>
-
-        <a class="btn btn-outline-secondary" asp-controller="ImportExport" asp-action="Index">
-            <i class="bi bi-arrow-left"></i> Voltar
-        </a>
     </div>
 
-    <div class="card shadow-sm">
-        <div class="card-body">
+    <div class="d-flex flex-wrap gap-2">
+        <a class="btn btn-outline-secondary" asp-controller="ImportExport" asp-action="Index">
+            <i class="bi bi-arrow-left me-1"></i>
+            Voltar para Importação
+        </a>
 
-            <div class="alert alert-info small mb-3">
-                Esta tela lista os últimos documentos (até 100) e permite exportar a versão atual.
-                (A exportação efetiva usa o download do GED por versionId.)
+        <a class="btn btn-outline-primary" asp-controller="Batches" asp-action="Index">
+            <i class="bi bi-box-seam me-1"></i>
+            Lotes
+        </a>
+    </div>
+</div>
+
+<div class="alert alert-primary border-0 shadow-sm mb-4">
+    <div class="d-flex gap-3">
+        <div class="fs-3">
+            <i class="bi bi-info-circle"></i>
+        </div>
+        <div>
+            <strong>Para que serve esta central?</strong>
+            <div class="small mt-1">
+                Esta tela permite exportar a versão atual dos documentos ativos do GED.
+                Documentos excluídos logicamente, inativos ou sem versão atual não são exibidos.
+                Cada exportação gera log operacional para auditoria.
             </div>
 
-            @if (Model == null || Model.Count == 0)
-            {
-                <div class="text-muted">Nenhum documento encontrado para exportação.</div>
-            }
-            else
-            {
-                <div class="table-responsive">
-                    <table class="table table-sm table-striped align-middle">
-                        <thead>
-                            <tr>
-                                <th style="min-width:120px;">Código</th>
-                                <th>Título</th>
-                                <th style="min-width:220px;">Arquivo</th>
-                                <th style="width:110px;" class="text-end">Tamanho</th>
-                                <th style="width:160px;">Assinatura</th>
-                                <th style="width:140px;" class="text-end">Ações</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var d in Model)
-                            {
-                                <tr>
-                                    <td class="fw-semibold">@d.Code</td>
-                                    <td>
-                                        <div class="fw-semibold">@d.Title</div>
-                                        <div class="text-muted small">@d.Id</div>
-                                    </td>
-                                    <td>
-                                        <div class="fw-semibold">@d.FileName</div>
-                                        <div class="text-muted small">@d.ContentType</div>
-                                    </td>
-                                    <td class="text-end">
-                                        <span class="text-muted">@FormatBytes(d.SizeBytes)</span>
-                                    </td>
-                                    <td>
-                                        @{
-                                            var sig = (d.SigStatus ?? "").Trim();
-                                            var badge = sig switch
-                                            {
-                                                "VALID" => "bg-success",
-                                                "INVALID" => "bg-danger",
-                                                "NOT_VERIFIABLE" => "bg-warning text-dark",
-                                                "UNKNOWN" => "bg-secondary",
-                                                _ => "bg-light text-dark"
-                                            };
-                                            var label = string.IsNullOrWhiteSpace(sig) ? "—" : sig;
-                                        }
-                                        <span class="badge @badge">@label</span>
-                                    </td>
-                                    <td class="text-end">
-                                        <a class="btn btn-sm btn-primary"
-                                           asp-controller="ImportExport"
-                                           asp-action="Export"
-                                           asp-route-versionId="@d.Id"
-                                           title="Exportar (baixar versão)">
-                                            <i class="bi bi-download"></i> Exportar
-                                        </a>
-                                    </td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
-            }
-
+            <div class="d-flex flex-wrap gap-2 mt-2">
+                <span class="badge text-bg-success">
+                    <i class="bi bi-check-circle me-1"></i>
+                    Apenas documentos ativos
+                </span>
+                <span class="badge text-bg-primary">
+                    <i class="bi bi-clock-history me-1"></i>
+                    Log de exportação
+                </span>
+                <span class="badge text-bg-secondary">
+                    <i class="bi bi-file-earmark-arrow-down me-1"></i>
+                    Download da versão atual
+                </span>
+            </div>
         </div>
     </div>
 </div>
 
-@functions {
-    private static string FormatBytes(long bytes)
-    {
-        if (bytes < 1024) return $"{bytes} B";
-        double kb = bytes / 1024d;
-        if (kb < 1024) return $"{kb:0.#} KB";
-        double mb = kb / 1024d;
-        if (mb < 1024) return $"{mb:0.#} MB";
-        double gb = mb / 1024d;
-        return $"{gb:0.#} GB";
-    }
-}
+<div class="row g-3 mb-4">
+    <div class="col-md-6 col-xl-4">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <div class="text-muted small">Documentos disponíveis</div>
+                <div class="fs-4 fw-bold">@total</div>
+                <div class="small text-muted">ativos e com versão atual</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6 col-xl-4">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <div class="text-muted small">Com assinatura detectada</div>
+                <div class="fs-4 fw-bold">@signed</div>
+                <div class="small text-muted">conforme registros de assinatura</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-12 col-xl-4">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <div class="text-muted small">Auditoria</div>
+                <div class="fs-4 fw-bold">
+                    <i class="bi bi-shield-check"></i>
+                </div>
+                <div class="small text-muted">cada exportação é registrada</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-white py-3 d-flex flex-wrap align-items-center justify-content-between gap-2">
+        <div>
+            <strong>
+                <i class="bi bi-list-check me-1"></i>
+                Documentos disponíveis para exportação
+            </strong>
+            <div class="small text-muted">
+                Lista limitada aos 100 documentos ativos mais recentes.
+            </div>
+        </div>
+
+        <a class="btn btn-sm btn-outline-secondary" asp-controller="ImportExport" asp-action="Index">
+            <i class="bi bi-cloud-upload me-1"></i>
+            Importar novo documento
+        </a>
+    </div>
+
+    <div class="card-body p-0">
+        @if (Model == null || Model.Count == 0)
+        {
+            <div class="text-center text-muted py-5">
+                <i class="bi bi-inbox fs-1 d-block mb-3"></i>
+                <h5 class="mb-1">Nenhum documento disponível</h5>
+                <div>
+                    Não há documentos ativos com versão atual para exportação.
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width: 150px;">Código</th>
+                            <th>Documento</th>
+                            <th style="min-width: 220px;">Arquivo</th>
+                            <th style="width: 130px;" class="text-end">Tamanho</th>
+                            <th style="width: 160px;">Assinatura</th>
+                            <th style="width: 150px;" class="text-end">Ações</th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        @foreach (var d in Model)
+                        {
+                            <tr>
+                                <td>
+                                    <div class="fw-semibold font-monospace">
+                                        @(string.IsNullOrWhiteSpace(d.Code) ? "—" : d.Code)
+                                    </div>
+                                    <div class="small text-muted">
+                                        @d.CreatedAt.ToString("dd/MM/yyyy")
+                                    </div>
+                                </td>
+
+                                <td>
+                                    <div class="fw-semibold">
+                                        @(string.IsNullOrWhiteSpace(d.Title) ? "Sem título" : d.Title)
+                                    </div>
+                                    <div class="small text-muted">
+                                        Documento: @d.DocumentId
+                                    </div>
+                                </td>
+
+                                <td>
+                                    <div class="fw-semibold text-truncate" style="max-width: 260px;" title="@d.FileName">
+                                        @d.FileName
+                                    </div>
+                                    <div class="small text-muted">
+                                        @(string.IsNullOrWhiteSpace(d.ContentType) ? "Tipo não informado" : d.ContentType)
+                                    </div>
+                                </td>
+
+                                <td class="text-end">
+                                    <span class="text-muted">
+                                        @FormatBytes(d.SizeBytes)
+                                    </span>
+                                </td>
+
+                                <td>
+                                    <span class="badge @SigBadge(d.SigStatus)">
+                                        @SigLabel(d.SigStatus)
+                                    </span>
+                                </td>
+
+                                <td class="text-end">
+                                    <a class="btn btn-sm btn-primary"
+                                       asp-controller="ImportExport"
+                                       asp-action="Export"
+                                       asp-route-versionId="@d.Id"
+                                       title="Exportar documento">
+                                        <i class="bi bi-download me-1"></i>
+                                        Exportar
+                                    </a>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>

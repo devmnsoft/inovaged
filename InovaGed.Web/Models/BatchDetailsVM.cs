@@ -1,6 +1,6 @@
 ﻿using InovaGed.Application.Ged.Batches;
 
-namespace InovaGed.Web.Controllers
+namespace InovaGed.Web.Models
 {
     internal class BatchDetailsVM
     {

@@ -1,45 +1,346 @@
 ﻿@model IEnumerable<dynamic>
+
 @{
     ViewData["Title"] = "Documentos Importados";
+
+    var rows = Model ?? Enumerable.Empty<dynamic>();
+    var total = rows.Count();
+
+    var assinados = rows.Count(x =>
+    {
+        var value = GetValue(x, "is_signed", "IsSigned");
+        return ToBool(value);
+    });
+
+    string SignatureBadge(object? value)
+    {
+        var status = value?.ToString()?.Trim().ToUpperInvariant() ?? "";
+
+        return status switch
+        {
+            "VALID" => "text-bg-success",
+            "INVALID" => "text-bg-danger",
+            "UNKNOWN" => "text-bg-warning text-dark",
+            "NOT_VERIFIABLE" => "text-bg-warning text-dark",
+            "NOT_SIGNED" => "text-bg-secondary",
+            "" => "text-bg-light text-dark border",
+            _ => "text-bg-light text-dark border"
+        };
+    }
+
+    string SignatureLabel(object? value)
+    {
+        var status = value?.ToString()?.Trim().ToUpperInvariant() ?? "";
+
+        return status switch
+        {
+            "VALID" => "Válida",
+            "INVALID" => "Inválida",
+            "UNKNOWN" => "Detectada",
+            "NOT_VERIFIABLE" => "Não verificável",
+            "NOT_SIGNED" => "Não assinada",
+            "" => "Não informado",
+            _ => value?.ToString() ?? "Não informado"
+        };
+    }
+
+    string FormatFileSize(object? value)
+    {
+        if (value is null)
+            return "—";
+
+        if (!long.TryParse(value.ToString(), out var bytes))
+            return value.ToString() ?? "—";
+
+        if (bytes < 1024) return $"{bytes} B";
+
+        double kb = bytes / 1024d;
+        if (kb < 1024) return $"{kb:0.#} KB";
+
+        double mb = kb / 1024d;
+        if (mb < 1024) return $"{mb:0.#} MB";
+
+        double gb = mb / 1024d;
+        return $"{gb:0.#} GB";
+    }
 }
 
-<div class="container py-3">
-    <div class="d-flex align-items-center justify-content-between mb-3">
-        <h3 class="mb-0">Documentos Importados</h3>
-        <a class="btn btn-outline-primary" asp-controller="ImportExport" asp-action="Import">Novo Import</a>
+@if (TempData["Ok"] is string ok && !string.IsNullOrWhiteSpace(ok))
+{
+    <div class="alert alert-success alert-dismissible fade show d-flex align-items-center gap-2">
+        <i class="bi bi-check-circle-fill"></i>
+        <div>@ok</div>
+        <button type="button" class="btn-close ms-auto" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+@if (TempData["Err"] is string err && !string.IsNullOrWhiteSpace(err))
+{
+    <div class="alert alert-danger alert-dismissible fade show d-flex align-items-center gap-2">
+        <i class="bi bi-exclamation-triangle-fill"></i>
+        <div>@err</div>
+        <button type="button" class="btn-close ms-auto" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+<div class="container-fluid py-3">
+
+    <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-4">
+        <div>
+            <h3 class="mb-1">
+                <i class="bi bi-cloud-upload me-2"></i>
+                @ViewData["Title"]
+            </h3>
+            <div class="text-muted">
+                Acompanhe os arquivos importados, assinatura detectada, protocolo, tamanho e data de entrada no GED.
+            </div>
+        </div>
+
+        <div class="d-flex flex-wrap gap-2">
+            <a class="btn btn-primary" asp-controller="ImportExport" asp-action="Index">
+                <i class="bi bi-plus-circle me-1"></i>
+                Nova importação
+            </a>
+
+            <a class="btn btn-outline-primary" asp-controller="ImportExport" asp-action="ExportCenter">
+                <i class="bi bi-download me-1"></i>
+                Exportar
+            </a>
+        </div>
     </div>
 
-    <div class="alert alert-info">
-        Lista de importações (PoC – requisito 22). Para exportação (requisito 23), use exportação do documento/lote.
+    <div class="alert alert-primary border-0 shadow-sm mb-4">
+        <div class="d-flex gap-3">
+            <div class="fs-3">
+                <i class="bi bi-info-circle"></i>
+            </div>
+            <div>
+                <strong>Sobre esta listagem</strong>
+                <div class="small mt-1">
+                    Esta página apresenta os documentos importados para o GED. Ela deve exibir somente registros ativos,
+                    válidos e rastreáveis. Documentos excluídos logicamente ou inativos devem ser filtrados no controller
+                    ou na consulta SQL que alimenta esta view.
+                </div>
+
+                <div class="d-flex flex-wrap gap-2 mt-2">
+                    <span class="badge text-bg-success">
+                        <i class="bi bi-check-circle me-1"></i>
+                        Importados
+                    </span>
+                    <span class="badge text-bg-warning text-dark">
+                        <i class="bi bi-patch-check me-1"></i>
+                        Assinatura digital
+                    </span>
+                    <span class="badge text-bg-primary">
+                        <i class="bi bi-clock-history me-1"></i>
+                        Histórico
+                    </span>
+                    <span class="badge text-bg-secondary">
+                        <i class="bi bi-shield-check me-1"></i>
+                        Auditoria
+                    </span>
+                </div>
+            </div>
+        </div>
     </div>
 
-    <div class="table-responsive">
-        <table class="table table-striped align-middle">
-            <thead>
-                <tr>
-                    <th>Arquivo</th>
-                    <th>Título</th>
-                    <th>Protocolo</th>
-                    <th>Assinado</th>
-                    <th>Status</th>
-                    <th>Tamanho</th>
-                    <th>Data</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var x in Model ?? Enumerable.Empty<dynamic>())
-                {
-                    <tr>
-                        <td class="font-monospace">@((x.file_name ?? x.FileName) ?? "")</td>
-                        <td>@((x.title ?? x.Title) ?? "")</td>
-                        <td class="font-monospace">@((x.protocol ?? x.Protocol) ?? "")</td>
-                        <td>@(((bool)(x.is_signed ?? x.IsSigned ?? false)) ? "Sim" : "Não")</td>
-                        <td><span class="badge text-bg-secondary">@((x.signature_status ?? x.SignatureStatus) ?? "")</span></td>
-                        <td class="small text-muted">@((x.file_size ?? x.FileSize)?.ToString())</td>
-                        <td class="small text-muted">@((x.created_at ?? x.CreatedAt)?.ToString())</td>
-                    </tr>
-                }
-            </tbody>
-        </table>
+    <div class="row g-3 mb-4">
+        <div class="col-md-4">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="text-muted small">Total importado</div>
+                    <div class="fs-4 fw-bold">@total</div>
+                    <div class="small text-muted">registros ativos na listagem</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="text-muted small">Assinados</div>
+                    <div class="fs-4 fw-bold">@assinados</div>
+                    <div class="small text-muted">com assinatura detectada</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="text-muted small">Controle</div>
+                    <div class="fs-4 fw-bold">
+                        <i class="bi bi-shield-check"></i>
+                    </div>
+                    <div class="small text-muted">com rastreabilidade e log</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white py-3 d-flex flex-wrap align-items-center justify-content-between gap-2">
+            <div>
+                <strong>
+                    <i class="bi bi-list-check me-1"></i>
+                    Arquivos importados
+                </strong>
+                <div class="small text-muted">
+                    Lista operacional para conferência de documentos importados.
+                </div>
+            </div>
+
+            <a class="btn btn-sm btn-outline-primary" asp-controller="ImportExport" asp-action="Index">
+                <i class="bi bi-cloud-upload me-1"></i>
+                Importar novo
+            </a>
+        </div>
+
+        <div class="card-body p-0">
+            @if (!rows.Any())
+            {
+                <div class="text-center text-muted py-5">
+                    <i class="bi bi-inbox fs-1 d-block mb-3"></i>
+                    <h5 class="mb-1">Nenhum documento importado</h5>
+                    <div>Realize uma nova importação para alimentar esta listagem.</div>
+                </div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Arquivo</th>
+                                <th>Documento</th>
+                                <th style="width: 170px;">Protocolo</th>
+                                <th style="width: 120px;">Assinado</th>
+                                <th style="width: 150px;">Validação</th>
+                                <th style="width: 120px;" class="text-end">Tamanho</th>
+                                <th style="width: 170px;">Data</th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+                            @foreach (var x in rows)
+                            {
+                                var fileName = GetValue(x, "file_name", "FileName");
+                                var title = GetValue(x, "title", "Title");
+                                var protocol = GetValue(x, "protocol", "Protocol");
+                                var isSigned = GetValue(x, "is_signed", "IsSigned");
+                                var signatureStatus = GetValue(x, "signature_status", "SignatureStatus");
+                                var fileSize = GetValue(x, "file_size", "FileSize");
+                                var createdAt = GetValue(x, "created_at", "CreatedAt");
+
+                                <tr>
+                                    <td>
+                                        <div class="fw-semibold font-monospace text-truncate" style="max-width: 260px;" title="@fileName">
+                                            @(IsEmpty(fileName) ? "Arquivo não informado" : fileName)
+                                        </div>
+                                    </td>
+
+                                    <td>
+                                        <div class="fw-semibold">
+                                            @(IsEmpty(title) ? "Sem título informado" : title)
+                                        </div>
+                                        <div class="small text-muted">
+                                            Documento importado no GED
+                                        </div>
+                                    </td>
+
+                                    <td>
+                                        <span class="font-monospace">
+                                            @(IsEmpty(protocol) ? "—" : protocol)
+                                        </span>
+                                    </td>
+
+                                    <td>
+                                        @if (ToBool(isSigned))
+                                        {
+                                            <span class="badge text-bg-success">
+                                                <i class="bi bi-check-circle me-1"></i>
+                                                Sim
+                                            </span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge text-bg-secondary">
+                                                <i class="bi bi-dash-circle me-1"></i>
+                                                Não
+                                            </span>
+                                        }
+                                    </td>
+
+                                    <td>
+                                        <span class="badge @SignatureBadge(signatureStatus)">
+                                            @SignatureLabel(signatureStatus)
+                                        </span>
+                                    </td>
+
+                                    <td class="text-end">
+                                        <span class="small text-muted">
+                                            @FormatFileSize(fileSize)
+                                        </span>
+                                    </td>
+
+                                    <td>
+                                        <span class="small text-muted">
+                                            @(IsEmpty(createdAt) ? "Data não informada" : createdAt)
+                                        </span>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
     </div>
 </div>
+
+@functions {
+    private static object? GetValue(object? obj, params string[] names)
+    {
+        if (obj is null)
+            return null;
+
+        if (obj is IDictionary<string, object> dict)
+        {
+            foreach (var name in names)
+            {
+                if (dict.TryGetValue(name, out var value))
+                    return value;
+            }
+        }
+
+        var type = obj.GetType();
+
+        foreach (var name in names)
+        {
+            var prop = type.GetProperty(name);
+
+            if (prop is not null)
+                return prop.GetValue(obj);
+        }
+
+        return null;
+    }
+
+    private static bool IsEmpty(object? value)
+    {
+        return value is null || string.IsNullOrWhiteSpace(value.ToString());
+    }
+
+    private static bool ToBool(object? value)
+    {
+        if (value is null)
+            return false;
+
+        if (value is bool b)
+            return b;
+
+        var text = value.ToString()?.Trim().ToLowerInvariant();
+
+        return text is "true" or "1" or "sim" or "yes" or "s";
+    }
+}

@@ -5,275 +5,703 @@
     var items = ViewBag.Items as List<BatchItemDto> ?? new List<BatchItemDto>();
     var history = ViewBag.History as List<BatchHistoryDto> ?? new List<BatchHistoryDto>();
 
-    ViewData["Title"] = header is null ? "Lote" : $"Lote #{header.BatchNo}";
+    ViewData["Title"] = header is null ? "Detalhes do lote" : $"Lote #{header.BatchNo}";
+
+    string StatusLabel(string value) => value switch
+    {
+        "RECEIVED" => "Recebido",
+        "TRIAGE" => "Triagem",
+        "DIGITIZATION" => "Digitalização",
+        "INDEXING" => "Indexação",
+        "ARCHIVED" => "Arquivado",
+        _ => string.IsNullOrWhiteSpace(value) ? "Não informado" : value
+    };
+
+    string StatusDescription(string value) => value switch
+    {
+        "RECEIVED" => "O lote foi recebido e aguarda conferência inicial.",
+        "TRIAGE" => "O lote está em triagem, conferência e separação documental.",
+        "DIGITIZATION" => "O lote está em digitalização ou preparação para captura.",
+        "INDEXING" => "O lote está em classificação, indexação e complementação de metadados.",
+        "ARCHIVED" => "O lote foi tratado e arquivado.",
+        _ => "Etapa não identificada."
+    };
+
+    string StatusBadge(string value) => value switch
+    {
+        "RECEIVED" => "text-bg-secondary",
+        "TRIAGE" => "text-bg-info",
+        "DIGITIZATION" => "text-bg-primary",
+        "INDEXING" => "text-bg-warning text-dark",
+        "ARCHIVED" => "text-bg-success",
+        _ => "text-bg-light text-dark border"
+    };
+
+    string StatusIcon(string value) => value switch
+    {
+        "RECEIVED" => "bi-inbox",
+        "TRIAGE" => "bi-diagram-3",
+        "DIGITIZATION" => "bi-scanner",
+        "INDEXING" => "bi-tags",
+        "ARCHIVED" => "bi-archive",
+        _ => "bi-question-circle"
+    };
+
+    var canDelete = header is not null && header.Status != "ARCHIVED";
 }
 
 @if (header is null)
 {
     <div class="alert alert-danger">
+        <i class="bi bi-exclamation-triangle me-1"></i>
         Não foi possível carregar o lote.
     </div>
-    <a class="btn btn-outline-secondary" asp-controller="Batches" asp-action="Index">Voltar</a>
+
+    <a class="btn btn-outline-secondary" asp-controller="Batches" asp-action="Index">
+        <i class="bi bi-arrow-left me-1"></i>
+        Voltar para lotes
+    </a>
+
     return;
 }
 
-<div class="d-flex align-items-center justify-content-between mb-3">
+@if (TempData["Err"] is string err && !string.IsNullOrWhiteSpace(err))
+{
+    <div class="alert alert-danger alert-dismissible fade show d-flex align-items-center gap-2">
+        <i class="bi bi-exclamation-triangle-fill"></i>
+        <div>@err</div>
+        <button type="button" class="btn-close ms-auto" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+@if (TempData["Ok"] is string ok && !string.IsNullOrWhiteSpace(ok))
+{
+    <div class="alert alert-success alert-dismissible fade show d-flex align-items-center gap-2">
+        <i class="bi bi-check-circle-fill"></i>
+        <div>@ok</div>
+        <button type="button" class="btn-close ms-auto" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+<div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-4">
     <div>
-        <h3 class="mb-0">@ViewData["Title"]</h3>
-        <div class="text-muted small">Detalhes do lote, itens e histórico.</div>
+        <h3 class="mb-1">
+            <i class="bi bi-box-seam me-2"></i>
+            @ViewData["Title"]
+        </h3>
+        <div class="text-muted">
+            Consulte, atualize e acompanhe os documentos vinculados a este lote de tratamento documental.
+        </div>
     </div>
 
-    <div class="d-flex gap-2">
+    <div class="d-flex flex-wrap gap-2">
         <a class="btn btn-outline-secondary" asp-controller="Batches" asp-action="Index">
-            <i class="bi bi-arrow-left me-1"></i> Voltar
+            <i class="bi bi-arrow-left me-1"></i>
+            Voltar
         </a>
+
+        <a class="btn btn-primary" asp-controller="Batches" asp-action="New">
+            <i class="bi bi-plus-circle me-1"></i>
+            Novo lote
+        </a>
+
+        @if (canDelete)
+        {
+            <button type="button"
+                    class="btn btn-outline-danger"
+                    data-bs-toggle="modal"
+                    data-bs-target="#deleteBatchModal">
+                <i class="bi bi-trash me-1"></i>
+                Excluir lote
+            </button>
+        }
+        else
+        {
+            <button type="button"
+                    class="btn btn-outline-danger"
+                    disabled
+                    title="Lotes arquivados não podem ser excluídos.">
+                <i class="bi bi-trash me-1"></i>
+                Excluir lote
+            </button>
+        }
     </div>
 </div>
 
-<div class="row g-3">
-    <!-- COLUNA ESQUERDA -->
-    <div class="col-lg-4">
-        <div class="card shadow-sm">
+@if (!canDelete)
+{
+    <div class="alert alert-warning border-0 shadow-sm">
+        <i class="bi bi-lock me-1"></i>
+        Este lote está arquivado. Por segurança e rastreabilidade documental, lotes arquivados não podem ser excluídos diretamente.
+    </div>
+}
+
+<div class="alert alert-primary border-0 shadow-sm mb-4">
+    <div class="d-flex gap-3">
+        <div class="fs-3">
+            <i class="bi bi-info-circle"></i>
+        </div>
+
+        <div>
+            <strong>Para que serve esta tela?</strong>
+
+            <div class="small mt-1">
+                Esta tela permite acompanhar o ciclo completo de um lote documental.
+                Aqui você pode editar observações, alterar a etapa do tratamento, adicionar documentos,
+                remover documentos do lote, mover documentos entre caixas e consultar o histórico de auditoria.
+            </div>
+
+            <div class="small mt-2">
+                A exclusão do lote, quando permitida, é sempre lógica. Isso significa que o lote deixa de aparecer nas consultas,
+                mas o registro histórico e a auditoria permanecem preservados para rastreabilidade.
+            </div>
+
+            <div class="d-flex flex-wrap gap-2 mt-3">
+                <span class="badge @StatusBadge(header.Status)">
+                    <i class="bi @StatusIcon(header.Status) me-1"></i>
+                    Etapa atual: @StatusLabel(header.Status)
+                </span>
+
+                <span class="badge text-bg-light text-dark border">
+                    <i class="bi bi-files me-1"></i>
+                    @items.Count documento(s)
+                </span>
+
+                <span class="badge text-bg-light text-dark border">
+                    <i class="bi bi-clock-history me-1"></i>
+                    @history.Count evento(s) no histórico
+                </span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-xl-4">
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-white py-3">
+                <strong>
+                    <i class="bi bi-clipboard-data me-1"></i>
+                    Resumo do lote
+                </strong>
+            </div>
+
             <div class="card-body">
-                <div class="mb-2">
-                    <div class="text-muted small">Status</div>
-                    <div class="fw-semibold">
-                        <span class="badge text-bg-secondary">@header.Status</span>
+                <div class="mb-3">
+                    <div class="text-muted small">Número do lote</div>
+                    <div class="fs-5 fw-bold">#@header.BatchNo</div>
+                </div>
+
+                <div class="mb-3">
+                    <div class="text-muted small">Etapa atual</div>
+                    <span class="badge @StatusBadge(header.Status)">
+                        <i class="bi @StatusIcon(header.Status) me-1"></i>
+                        @StatusLabel(header.Status)
+                    </span>
+                    <div class="small text-muted mt-1">
+                        @StatusDescription(header.Status)
                     </div>
                 </div>
 
-                <div class="mb-2">
+                <div class="mb-3">
                     <div class="text-muted small">Criado em</div>
                     <div class="fw-semibold">@header.CreatedAt.ToString("dd/MM/yyyy HH:mm")</div>
                 </div>
 
-                <div class="mb-2">
-                    <div class="text-muted small">Itens</div>
-                    <div class="fw-semibold">@header.ItemsCount</div>
+                <div class="mb-3">
+                    <div class="text-muted small">Documentos vinculados</div>
+                    <div class="fw-semibold">@items.Count documento(s)</div>
                 </div>
 
-                <div class="mt-3">
-                    <div class="text-muted small">Observações</div>
-                    <div class="border rounded p-2 bg-light">
-                        @(!string.IsNullOrWhiteSpace(header.Notes) ? header.Notes : "—")
+                <div>
+                    <div class="text-muted small">Observações atuais</div>
+                    <div class="border rounded p-3 bg-light">
+                        @(!string.IsNullOrWhiteSpace(header.Notes) ? header.Notes : "Sem observações registradas.")
                     </div>
                 </div>
+            </div>
+        </div>
 
-                <hr class="my-3" />
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-white py-3">
+                <strong>
+                    <i class="bi bi-pencil-square me-1"></i>
+                    Editar informações do lote
+                </strong>
+            </div>
 
-                <form method="post" asp-action="ChangeStatus" asp-route-id="@header.Id">
+            <div class="card-body">
+                <form method="post"
+                      asp-controller="Batches"
+                      asp-action="Update"
+                      asp-route-id="@header.Id">
+
                     @Html.AntiForgeryToken()
 
-                    <div class="mb-2">
-                        <label class="form-label">Alterar status</label>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Observações do lote</label>
+                        <textarea class="form-control"
+                                  name="notes"
+                                  rows="5"
+                                  maxlength="1000"
+                                  placeholder="Informe origem, setor, período, responsável, observações de tratamento ou conferência...">@header.Notes</textarea>
 
-                        <!-- Sugestão: se você tiver ViewBag.AllowedStatus, vira select -->
+                        <div class="form-text">
+                            Use este campo para registrar informações úteis para rastreabilidade do lote.
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="bi bi-save me-1"></i>
+                        Salvar alterações
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white py-3">
+                <strong>
+                    <i class="bi bi-arrow-repeat me-1"></i>
+                    Alterar etapa do tratamento
+                </strong>
+            </div>
+
+            <div class="card-body">
+                <form method="post"
+                      asp-controller="Batches"
+                      asp-action="ChangeStatus"
+                      asp-route-id="@header.Id">
+
+                    @Html.AntiForgeryToken()
+
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Nova etapa</label>
+
                         @if (ViewBag.AllowedStatus is string[] allowed && allowed.Length > 0)
                         {
-                            <select class="form-select" name="status">
-                                <option value="">Selecione...</option>
+                            <select class="form-select" name="status" required>
+                                <option value="">Selecione a nova etapa...</option>
+
                                 @foreach (var s in allowed)
                                 {
-                                    <option value="@s">@s</option>
+                                    if (s == header.Status)
+                                    {
+                                        <option value="@s" selected>@StatusLabel(s) — atual</option>
+                                    }
+                                    else
+                                    {
+                                        <option value="@s">@StatusLabel(s)</option>
+                                    }
                                 }
                             </select>
                         }
                         else
                         {
-                            <input class="form-control" name="status" placeholder="Ex.: RECEIVED, TRIAGE, DIGITIZATION..." />
+                            <input class="form-control"
+                                   name="status"
+                                   placeholder="Ex.: RECEIVED, TRIAGE, DIGITIZATION, INDEXING, ARCHIVED" />
                         }
+
+                        <div class="form-text">
+                            A alteração de etapa registra histórico e auditoria automaticamente.
+                        </div>
                     </div>
 
-                    <div class="mb-2">
-                        <label class="form-label">Observação (opcional)</label>
-                        <input class="form-control" name="notes" />
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Justificativa ou observação</label>
+                        <input class="form-control"
+                               name="notes"
+                               placeholder="Ex.: Triagem concluída, enviado para digitalização..." />
                     </div>
 
                     <button class="btn btn-outline-primary w-100" type="submit">
-                        <i class="bi bi-arrow-repeat me-1"></i> Atualizar
+                        <i class="bi bi-check2-circle me-1"></i>
+                        Atualizar etapa
                     </button>
                 </form>
-            </div>
-        </div>
-
-        <div class="card shadow-sm mt-3">
-            <div class="card-header bg-white d-flex align-items-center justify-content-between">
-                <strong>Histórico</strong>
-                <span class="text-muted small">@history.Count</span>
-            </div>
-            <div class="card-body p-0">
-                <div class="table-responsive">
-                    <table class="table mb-0 align-middle">
-                        <thead class="table-light">
-                            <tr>
-                                <th style="width:170px;">Quando</th>
-                                <th style="width:120px;">De</th>
-                                <th style="width:120px;">Para</th>
-                                <th>Obs.</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @if (history.Count == 0)
-                            {
-                                <tr><td colspan="4" class="text-center text-muted py-3">Sem histórico.</td></tr>
-                            }
-                            else
-                            {
-                                foreach (var h in history)
-                                {
-                                    <tr>
-                                        <td>@h.ChangedAt.ToString("dd/MM/yyyy HH:mm")</td>
-                                        <td>
-                                            <span class="badge text-bg-light border">
-                                                @(string.IsNullOrWhiteSpace(h.FromStatus) ? "—" : h.FromStatus)
-                                            </span>
-                                        </td>
-                                        <td>
-                                            <span class="badge text-bg-light border">
-                                                @(string.IsNullOrWhiteSpace(h.ToStatus) ? "—" : h.ToStatus)
-                                            </span>
-                                        </td>
-                                        <td class="text-truncate" style="max-width:240px;" title="@h.Notes">
-                                            @(!string.IsNullOrWhiteSpace(h.Notes) ? h.Notes : "—")
-                                        </td>
-                                    </tr>
-                                }
-                            }
-                        </tbody>
-                    </table>
-                </div>
             </div>
         </div>
     </div>
 
-    <!-- COLUNA DIREITA -->
-    <div class="col-lg-8">
+    <div class="col-xl-8">
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-white py-3 d-flex flex-wrap align-items-center justify-content-between gap-2">
+                <div>
+                    <strong>
+                        <i class="bi bi-files me-1"></i>
+                        Documentos do lote
+                    </strong>
+                    <div class="small text-muted">
+                        Documentos vinculados a este lote de tratamento documental.
+                    </div>
+                </div>
 
-        <!-- ITENS DO LOTE -->
-        <div class="card shadow-sm mb-3">
-            <div class="card-header bg-white d-flex align-items-center justify-content-between">
-                <strong>Itens do lote</strong>
-                <span class="text-muted small">@items.Count</span>
+                <span class="badge text-bg-secondary">@items.Count item(ns)</span>
             </div>
 
             <div class="card-body p-0">
-                <div class="table-responsive">
-                    <table class="table table-hover mb-0 align-middle">
-                        <thead class="table-light">
-                            <tr>
-                                <th style="width:170px;">Documento</th>
-                                <th>Título</th>
-                                <th style="width:200px;">Caixa</th>
-                                <th style="width:260px;" class="text-end">Ações</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @if (items.Count == 0)
-                            {
-                                <tr><td colspan="4" class="text-center text-muted py-4">Nenhum item no lote.</td></tr>
-                            }
-                            else
-                            {
-                                foreach (var it in items)
+                @if (items.Count == 0)
+                {
+                    <div class="text-center text-muted py-5">
+                        <i class="bi bi-inbox fs-1 d-block mb-3"></i>
+                        <h5 class="mb-1">Nenhum documento vinculado</h5>
+                        <div>Use o painel abaixo para buscar e adicionar documentos ao lote.</div>
+                    </div>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width: 180px;">Código</th>
+                                    <th>Documento</th>
+                                    <th style="width: 240px;">Caixa física</th>
+                                    <th style="width: 230px;" class="text-end">Ações</th>
+                                </tr>
+                            </thead>
+
+                            <tbody>
+                                @foreach (var it in items)
                                 {
                                     <tr>
-                                        <td class="fw-semibold">@it.DocumentCode</td>
-                                        <td>@it.DocumentTitle</td>
-                                        <td class="text-muted">@((it.BoxId is null || it.BoxId == Guid.Empty) ? "—" : it.BoxId.ToString())</td>
-                                        <td class="text-end">
-                                            <!-- Remover -->
-                                            <form class="d-inline" method="post" asp-action="RemoveItem" asp-route-id="@header.Id">
-                                                @Html.AntiForgeryToken()
-                                                <input type="hidden" name="documentId" value="@it.DocumentId" />
-                                                <button class="btn btn-sm btn-outline-danger" type="submit">
-                                                    <i class="bi bi-trash"></i> Remover
-                                                </button>
-                                            </form>
+                                        <td>
+                                            <div class="fw-semibold font-monospace">
+                                                @(string.IsNullOrWhiteSpace(it.DocumentCode) ? "—" : it.DocumentCode)
+                                            </div>
+                                        </td>
 
-                                            <!-- (Opcional) mover de caixa se você já tem o endpoint -->
-                                            <button type="button"
-                                                    class="btn btn-sm btn-outline-secondary ms-1"
-                                                    onclick="openMoveModal('@it.DocumentId','@it.DocumentCode')">
-                                                <i class="bi bi-box-arrow-in-right"></i> Mover Caixa
-                                            </button>
+                                        <td>
+                                            <div class="fw-semibold">
+                                                @(string.IsNullOrWhiteSpace(it.DocumentTitle) ? "Documento sem título" : it.DocumentTitle)
+                                            </div>
+                                            <div class="small text-muted">
+                                                ID: @it.DocumentId
+                                            </div>
+                                        </td>
+
+                                        <td>
+                                            @if (!string.IsNullOrWhiteSpace(it.BoxLabel))
+                                            {
+                                                <span class="badge text-bg-light text-dark border">
+                                                    <i class="bi bi-box me-1"></i>
+                                                    @it.BoxLabel
+                                                </span>
+                                            }
+                                            else if (it.BoxId.HasValue && it.BoxId.Value != Guid.Empty)
+                                            {
+                                                <span class="badge text-bg-light text-dark border">
+                                                    <i class="bi bi-box me-1"></i>
+                                                    @it.BoxId
+                                                </span>
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted">Sem caixa vinculada</span>
+                                            }
+                                        </td>
+
+                                        <td class="text-end">
+                                            <div class="btn-group">
+                                                <button type="button"
+                                                        class="btn btn-sm btn-outline-secondary"
+                                                        onclick="openMoveModal('@it.DocumentId','@it.DocumentCode')"
+                                                        title="Mover documento para outra caixa">
+                                                    <i class="bi bi-box-arrow-in-right"></i>
+                                                </button>
+
+                                                <form class="d-inline"
+                                                      method="post"
+                                                      asp-controller="Batches"
+                                                      asp-action="RemoveItem"
+                                                      asp-route-id="@header.Id"
+                                                      onsubmit="return confirm('Deseja remover este documento do lote? A ação será registrada em auditoria.');">
+                                                    @Html.AntiForgeryToken()
+                                                    <input type="hidden" name="documentId" value="@it.DocumentId" />
+
+                                                    <button class="btn btn-sm btn-outline-danger" type="submit" title="Remover documento do lote">
+                                                        <i class="bi bi-trash"></i>
+                                                    </button>
+                                                </form>
+                                            </div>
                                         </td>
                                     </tr>
                                 }
-                            }
-                        </tbody>
-                    </table>
-                </div>
+                            </tbody>
+                        </table>
+                    </div>
+                }
             </div>
         </div>
 
-        <!-- ADICIONAR DOCUMENTO (INTEGRADO COM ged.document) -->
-        <div class="card shadow-sm">
-            <div class="card-header bg-white">
-                <strong>Adicionar documento ao lote</strong>
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-white py-3">
+                <strong>
+                    <i class="bi bi-plus-circle me-1"></i>
+                    Adicionar documento ao lote
+                </strong>
+                <div class="small text-muted">
+                    Busque um documento já cadastrado no GED e vincule ao lote atual.
+                </div>
             </div>
-            <div class="card-body">
 
-                <div class="row g-2">
+            <div class="card-body">
+                <div class="alert alert-light border small">
+                    <i class="bi bi-info-circle me-1"></i>
+                    Digite pelo menos 3 caracteres para localizar documentos por código ou título.
+                    Após selecionar o documento, clique em <strong>Adicionar ao lote</strong>.
+                </div>
+
+                <div class="row g-3">
                     <div class="col-md-8">
-                        <label class="form-label">Buscar documento (código ou título)</label>
-                        <input id="docSearch" class="form-control" placeholder="Digite 3+ caracteres..." autocomplete="off" />
-                        <div id="docResults" class="list-group mt-2" style="max-height:260px; overflow:auto; display:none;"></div>
-                        <div class="form-text">Selecione um documento para adicionar ao lote.</div>
+                        <label class="form-label fw-semibold">Buscar documento</label>
+                        <input id="docSearch"
+                               class="form-control"
+                               placeholder="Digite código, título ou palavra-chave..."
+                               autocomplete="off" />
+
+                        <div id="docLoading" class="small text-muted mt-2 d-none">
+                            <span class="spinner-border spinner-border-sm me-1"></span>
+                            Buscando documentos...
+                        </div>
+
+                        <div id="docResults"
+                             class="list-group mt-2"
+                             style="max-height: 260px; overflow: auto; display: none;">
+                        </div>
+
+                        <div id="docEmpty" class="alert alert-warning small mt-2 d-none mb-0">
+                            Nenhum documento encontrado.
+                        </div>
                     </div>
 
                     <div class="col-md-4">
-                        <label class="form-label">BoxId (opcional)</label>
-                        <input id="boxId" class="form-control" placeholder="GUID da caixa" />
-                        <div class="form-text">Depois trocamos por select de caixas.</div>
+                        <label class="form-label fw-semibold">Caixa física</label>
+                        <input id="boxId"
+                               class="form-control"
+                               placeholder="GUID da caixa, se houver" />
+                        <div class="form-text">
+                            Opcional. Use quando o documento estiver vinculado a uma caixa física.
+                        </div>
                     </div>
                 </div>
 
-                <form id="addDocForm" method="post" asp-action="AddItem" asp-route-id="@header.Id" class="mt-3">
+                <form id="addDocForm"
+                      method="post"
+                      asp-controller="Batches"
+                      asp-action="AddItem"
+                      asp-route-id="@header.Id"
+                      class="mt-3">
+
                     @Html.AntiForgeryToken()
+
                     <input type="hidden" name="documentId" id="documentId" />
                     <input type="hidden" name="boxId" id="boxIdHidden" />
 
+                    <div class="border rounded p-3 bg-light mb-3">
+                        <div class="text-muted small">Documento selecionado</div>
+                        <div class="fw-semibold" id="pickedDoc">Nenhum documento selecionado.</div>
+                    </div>
+
                     <button class="btn btn-primary" type="submit" disabled id="btnAddDoc">
-                        <i class="bi bi-plus-circle me-1"></i> Adicionar ao lote
+                        <i class="bi bi-plus-circle me-1"></i>
+                        Adicionar ao lote
                     </button>
-
-                    <span class="text-muted small ms-2" id="pickedDoc"></span>
                 </form>
+            </div>
+        </div>
 
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white py-3 d-flex align-items-center justify-content-between">
+                <div>
+                    <strong>
+                        <i class="bi bi-clock-history me-1"></i>
+                        Histórico e auditoria do lote
+                    </strong>
+                    <div class="small text-muted">
+                        Registro das principais ações executadas neste lote.
+                    </div>
+                </div>
+
+                <span class="badge text-bg-secondary">@history.Count evento(s)</span>
+            </div>
+
+            <div class="card-body p-0">
+                @if (history.Count == 0)
+                {
+                    <div class="text-center text-muted py-5">
+                        <i class="bi bi-clock-history fs-1 d-block mb-3"></i>
+                        <h5 class="mb-1">Sem histórico registrado</h5>
+                        <div>As alterações do lote serão exibidas aqui.</div>
+                    </div>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width: 170px;">Data/hora</th>
+                                    <th style="width: 150px;">De</th>
+                                    <th style="width: 150px;">Para</th>
+                                    <th>Descrição</th>
+                                </tr>
+                            </thead>
+
+                            <tbody>
+                                @foreach (var h in history)
+                                {
+                                    <tr>
+                                        <td>
+                                            <div>@h.ChangedAt.ToString("dd/MM/yyyy")</div>
+                                            <div class="small text-muted">@h.ChangedAt.ToString("HH:mm")</div>
+                                        </td>
+
+                                        <td>
+                                            <span class="badge text-bg-light text-dark border">
+                                                @(string.IsNullOrWhiteSpace(h.FromStatus) ? "—" : StatusLabel(h.FromStatus))
+                                            </span>
+                                        </td>
+
+                                        <td>
+                                            <span class="badge text-bg-light text-dark border">
+                                                @(string.IsNullOrWhiteSpace(h.ToStatus) ? "—" : StatusLabel(h.ToStatus))
+                                            </span>
+                                        </td>
+
+                                        <td>
+                                            <div class="text-truncate" style="max-width: 520px;" title="@h.Notes">
+                                                @(!string.IsNullOrWhiteSpace(h.Notes) ? h.Notes : "Evento registrado sem observação.")
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
             </div>
         </div>
     </div>
 </div>
 
-<!-- MODAL (opcional) MOVER CAIXA -->
 <div class="modal fade" id="moveModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form method="post" asp-action="MoveItem" asp-route-id="@header.Id">
+            <form method="post"
+                  asp-controller="Batches"
+                  asp-action="MoveItem"
+                  asp-route-id="@header.Id">
+
                 @Html.AntiForgeryToken()
+
                 <div class="modal-header">
-                    <h5 class="modal-title">Mover item de caixa</h5>
+                    <h5 class="modal-title">
+                        <i class="bi bi-box-arrow-in-right me-1"></i>
+                        Mover documento para caixa
+                    </h5>
+
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
                 </div>
+
                 <div class="modal-body">
                     <input type="hidden" name="documentId" id="moveDocId" />
 
-                    <div class="mb-2">
-                        <div class="text-muted small">Documento</div>
+                    <div class="mb-3">
+                        <div class="text-muted small">Documento selecionado</div>
                         <div class="fw-semibold" id="moveDocLabel">—</div>
                     </div>
 
-                    <div class="mb-2">
-                        <label class="form-label">Nova BoxId (vazio remove vínculo)</label>
-                        <input class="form-control" name="newBoxId" placeholder="GUID da nova caixa (opcional)" />
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Nova caixa física</label>
+                        <input class="form-control"
+                               name="newBoxId"
+                               placeholder="Informe o GUID da nova caixa. Deixe vazio para remover vínculo." />
+                        <div class="form-text">
+                            A movimentação registra histórico físico e auditoria do lote.
+                        </div>
                     </div>
 
-                    <div class="form-text">Essa ação registra histórico de movimentação (se habilitado no backend).</div>
+                    <div class="alert alert-warning small mb-0">
+                        <i class="bi bi-exclamation-triangle me-1"></i>
+                        Confirme a caixa antes de salvar. Esta ação será registrada no histórico.
+                    </div>
                 </div>
+
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">
+                        Cancelar
+                    </button>
+
                     <button type="submit" class="btn btn-primary">
-                        <i class="bi bi-check2-circle me-1"></i> Confirmar
+                        <i class="bi bi-check2-circle me-1"></i>
+                        Confirmar movimentação
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="deleteBatchModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post"
+                  asp-controller="Batches"
+                  asp-action="Delete"
+                  asp-route-id="@header.Id">
+
+                @Html.AntiForgeryToken()
+
+                <div class="modal-header">
+                    <h5 class="modal-title text-danger">
+                        <i class="bi bi-trash me-1"></i>
+                        Excluir lote
+                    </h5>
+
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                </div>
+
+                <div class="modal-body">
+                    <div class="alert alert-warning">
+                        <strong>Atenção:</strong> esta ação não apaga fisicamente o lote do banco.
+                        O lote será marcado como inativo e deixará de aparecer nas consultas principais.
+                        A auditoria e o histórico serão preservados.
+                    </div>
+
+                    <div class="mb-3">
+                        <div class="text-muted small">Lote selecionado</div>
+                        <div class="fw-semibold">#@header.BatchNo — @StatusLabel(header.Status)</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Motivo da exclusão</label>
+                        <textarea class="form-control"
+                                  name="reason"
+                                  rows="4"
+                                  maxlength="500"
+                                  required
+                                  placeholder="Informe o motivo da exclusão lógica do lote..."></textarea>
+
+                        <div class="form-text">
+                            O motivo será registrado no histórico e na auditoria do sistema.
+                        </div>
+                    </div>
+
+                    <div class="small text-muted">
+                        Documentos vinculados ao lote não serão apagados do GED. Apenas o vínculo ativo com este lote será inativado.
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">
+                        Cancelar
+                    </button>
+
+                    <button type="submit" class="btn btn-danger">
+                        <i class="bi bi-trash me-1"></i>
+                        Confirmar exclusão lógica
                     </button>
                 </div>
             </form>
@@ -284,96 +712,147 @@
 @section Scripts {
     <script>
         (() => {
-          const input = document.getElementById('docSearch');
-          const results = document.getElementById('docResults');
-          const hiddenDocId = document.getElementById('documentId');
-          const hiddenBoxId = document.getElementById('boxIdHidden');
-          const boxId = document.getElementById('boxId');
-          const btn = document.getElementById('btnAddDoc');
-          const picked = document.getElementById('pickedDoc');
+            const input = document.getElementById('docSearch');
+            const results = document.getElementById('docResults');
+            const loading = document.getElementById('docLoading');
+            const empty = document.getElementById('docEmpty');
 
-          let timer = null;
+            const hiddenDocId = document.getElementById('documentId');
+            const hiddenBoxId = document.getElementById('boxIdHidden');
+            const boxId = document.getElementById('boxId');
+            const btn = document.getElementById('btnAddDoc');
+            const picked = document.getElementById('pickedDoc');
 
-          function clearPick() {
-            hiddenDocId.value = '';
-            btn.disabled = true;
-            picked.textContent = '';
-          }
+            let timer = null;
 
-          function escapeHtml(s){
-            return (s ?? '').toString().replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
-          }
-
-          function formatDate(iso){
-            try { return new Date(iso).toLocaleString('pt-BR'); } catch { return ''; }
-          }
-
-          function render(list) {
-            results.innerHTML = '';
-            if (!list || list.length === 0) {
-              results.style.display = 'none';
-              return;
+            function clearPick() {
+                hiddenDocId.value = '';
+                btn.disabled = true;
+                picked.textContent = 'Nenhum documento selecionado.';
             }
-            results.style.display = '';
-            for (const d of list) {
-              const a = document.createElement('button');
-              a.type = 'button';
-              a.className = 'list-group-item list-group-item-action';
-              a.innerHTML = `
-                <div class="fw-semibold">${escapeHtml(d.code || '(sem código)')}</div>
-                <div class="small text-muted">${escapeHtml(d.title || '')}</div>
-                <div class="small">${escapeHtml(d.status || '')} • ${formatDate(d.createdAt)}</div>
-              `;
-              a.addEventListener('click', () => {
-                hiddenDocId.value = d.id;
-                btn.disabled = false;
-                picked.textContent = `Selecionado: ${d.code || '(sem código)'} - ${d.title || ''}`;
+
+            function escapeHtml(s) {
+                return (s ?? '').toString().replace(/[&<>"']/g, m => ({
+                    '&': '&amp;',
+                    '<': '&lt;',
+                    '>': '&gt;',
+                    '"': '&quot;',
+                    "'": '&#39;'
+                }[m]));
+            }
+
+            function setLoading(value) {
+                loading?.classList.toggle('d-none', !value);
+            }
+
+            function hideResults() {
                 results.style.display = 'none';
-              });
-              results.appendChild(a);
+                empty?.classList.add('d-none');
             }
-          }
 
-          async function search(q) {
-            // precisa existir o endpoint:
-            // [HttpGet("DocumentsSearch")] no BatchesController
-            const url = `/Batches/DocumentsSearch?q=${encodeURIComponent(q)}&take=20`;
-            const r = await fetch(url, { headers: { 'Accept': 'application/json' }});
-            if (!r.ok) return [];
-            return await r.json();
-          }
+            function render(list) {
+                results.innerHTML = '';
 
-          input.addEventListener('input', () => {
-            const q = input.value.trim();
-            clearPick();
-            if (timer) clearTimeout(timer);
+                if (!list || list.length === 0) {
+                    results.style.display = 'none';
+                    empty?.classList.remove('d-none');
+                    return;
+                }
 
-            if (q.length < 3) { results.style.display='none'; return; }
+                empty?.classList.add('d-none');
+                results.style.display = '';
 
-            timer = setTimeout(async () => {
-              const list = await search(q);
-              render(list);
-            }, 250);
-          });
+                for (const d of list) {
+                    const item = document.createElement('button');
+                    item.type = 'button';
+                    item.className = 'list-group-item list-group-item-action';
 
-          boxId.addEventListener('input', () => {
-            hiddenBoxId.value = boxId.value.trim();
-          });
+                    item.innerHTML = `
+                        <div class="d-flex justify-content-between gap-2">
+                            <div>
+                                <div class="fw-semibold">${escapeHtml(d.code || '(sem código)')}</div>
+                                <div class="small text-muted">${escapeHtml(d.title || '')}</div>
+                            </div>
+                            <span class="badge text-bg-light align-self-start">Selecionar</span>
+                        </div>
+                    `;
 
-          document.addEventListener('click', (e) => {
-            if (!results.contains(e.target) && e.target !== input) results.style.display='none';
-          });
+                    item.addEventListener('click', () => {
+                        hiddenDocId.value = d.id;
+                        btn.disabled = false;
+                        picked.textContent = `${d.code || '(sem código)'} - ${d.title || ''}`;
+                        hideResults();
+                    });
+
+                    results.appendChild(item);
+                }
+            }
+
+            async function search(q) {
+                const url = `/Batches/DocumentsSearch?q=${encodeURIComponent(q)}&take=20`;
+
+                const response = await fetch(url, {
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                });
+
+                if (!response.ok)
+                    throw new Error('Erro ao buscar documentos.');
+
+                return await response.json();
+            }
+
+            input?.addEventListener('input', () => {
+                const q = input.value.trim();
+
+                clearPick();
+
+                if (timer)
+                    clearTimeout(timer);
+
+                if (q.length < 3) {
+                    hideResults();
+                    return;
+                }
+
+                timer = setTimeout(async () => {
+                    try {
+                        setLoading(true);
+                        const list = await search(q);
+                        render(list);
+                    } catch {
+                        results.style.display = 'none';
+                        empty.textContent = 'Erro ao buscar documentos. Tente novamente.';
+                        empty.classList.remove('d-none');
+                    } finally {
+                        setLoading(false);
+                    }
+                }, 300);
+            });
+
+            boxId?.addEventListener('input', () => {
+                hiddenBoxId.value = boxId.value.trim();
+            });
+
+            document.addEventListener('click', e => {
+                if (!results.contains(e.target) && e.target !== input) {
+                    results.style.display = 'none';
+                }
+            });
         })();
 
         function openMoveModal(docId, docCode) {
-          const el = document.getElementById('moveModal');
-          if (!el) return;
+            const modalElement = document.getElementById('moveModal');
 
-          document.getElementById('moveDocId').value = docId;
-          document.getElementById('moveDocLabel').textContent = docCode || docId;
+            if (!modalElement)
+                return;
 
-          const modal = bootstrap.Modal.getOrCreateInstance(el);
-          modal.show();
+            document.getElementById('moveDocId').value = docId;
+            document.getElementById('moveDocLabel').textContent = docCode || docId;
+
+            const modal = bootstrap.Modal.getOrCreateInstance(modalElement);
+            modal.show();
         }
     </script>
 }

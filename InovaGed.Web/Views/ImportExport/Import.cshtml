@@ -1,44 +1,288 @@
 ﻿@model IEnumerable<dynamic>
+
 @{
-    ViewData["Title"] = "Importar / Exportar";
-    ViewData["Subtitle"] = "Importação e exportação de documentos (,23)";
+    ViewData["Title"] = "Central de Importação e Exportação";
+    ViewData["Subtitle"] = "Importação, exportação e acompanhamento de documentos do GED";
+
+    var rows = Model ?? Enumerable.Empty<dynamic>();
+    var total = rows.Count();
+
+    string StatusBadge(object? value)
+    {
+        var status = value?.ToString()?.Trim().ToUpperInvariant() ?? "";
+
+        return status switch
+        {
+            "ACTIVE" or "ATIVO" or "A" => "text-bg-success",
+            "SUCCESS" or "IMPORTADO" => "text-bg-success",
+            "PENDING" or "PENDENTE" => "text-bg-warning text-dark",
+            "ERROR" or "FAILED" or "ERRO" => "text-bg-danger",
+            "DELETED" or "EXCLUIDO" or "EXCLUÍDO" or "I" => "text-bg-secondary",
+            _ => "text-bg-light text-dark border"
+        };
+    }
+
+    string StatusLabel(object? value)
+    {
+        var status = value?.ToString()?.Trim() ?? "";
+
+        return status.ToUpperInvariant() switch
+        {
+            "A" => "Ativo",
+            "I" => "Inativo",
+            "SUCCESS" => "Importado",
+            "FAILED" => "Falhou",
+            "ERROR" => "Erro",
+            "PENDING" => "Pendente",
+            "DELETED" => "Excluído",
+            "" => "Não informado",
+            _ => status
+        };
+    }
 }
 
-<div class="container py-3">
-    <div class="d-flex gap-2 mb-3">
-        <a class="btn btn-success" asp-controller="ImportExport" asp-action="Import">
-            <i class="bi bi-upload me-1"></i> Importar
-        </a>
-        <a class="btn btn-outline-primary" asp-controller="ImportExport" asp-action="ExportCenter">
-            <i class="bi bi-download me-1"></i> Exportar
-        </a>
+@if (TempData["Ok"] is string ok && !string.IsNullOrWhiteSpace(ok))
+{
+    <div class="alert alert-success alert-dismissible fade show d-flex align-items-center gap-2">
+        <i class="bi bi-check-circle-fill"></i>
+        <div>@ok</div>
+        <button type="button" class="btn-close ms-auto" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+@if (TempData["Err"] is string err && !string.IsNullOrWhiteSpace(err))
+{
+    <div class="alert alert-danger alert-dismissible fade show d-flex align-items-center gap-2">
+        <i class="bi bi-exclamation-triangle-fill"></i>
+        <div>@err</div>
+        <button type="button" class="btn-close ms-auto" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+<div class="container-fluid py-3">
+
+    <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-4">
+        <div>
+            <h3 class="mb-1">
+                <i class="bi bi-arrow-left-right me-2"></i>
+                @ViewData["Title"]
+            </h3>
+            <div class="text-muted">
+                @ViewData["Subtitle"]
+            </div>
+        </div>
+
+        <div class="d-flex flex-wrap gap-2">
+            <a class="btn btn-success" asp-controller="ImportExport" asp-action="Index">
+                <i class="bi bi-upload me-1"></i>
+                Importar documento
+            </a>
+
+            <a class="btn btn-outline-primary" asp-controller="ImportExport" asp-action="ExportCenter">
+                <i class="bi bi-download me-1"></i>
+                Exportar documentos
+            </a>
+
+            <a class="btn btn-outline-secondary" asp-controller="Batches" asp-action="Index">
+                <i class="bi bi-box-seam me-1"></i>
+                Lotes
+            </a>
+        </div>
     </div>
 
-    <div class="alert alert-info">
-        : importar arquivo criando documento e versão. : exportar ZIP do documento.
+    <div class="alert alert-primary border-0 shadow-sm mb-4">
+        <div class="d-flex gap-3">
+            <div class="fs-3">
+                <i class="bi bi-info-circle"></i>
+            </div>
+            <div>
+                <strong>Para que serve esta central?</strong>
+                <div class="small mt-1">
+                    Esta área centraliza as operações de importação e exportação de documentos do GED.
+                    A importação cria o documento e sua versão inicial. A exportação permite baixar documentos ativos,
+                    mantendo rastreabilidade, histórico e auditoria das operações realizadas.
+                </div>
+
+                <div class="d-flex flex-wrap gap-2 mt-2">
+                    <span class="badge text-bg-success">
+                        <i class="bi bi-cloud-upload me-1"></i>
+                        Importação
+                    </span>
+                    <span class="badge text-bg-primary">
+                        <i class="bi bi-cloud-download me-1"></i>
+                        Exportação
+                    </span>
+                    <span class="badge text-bg-warning text-dark">
+                        <i class="bi bi-patch-check me-1"></i>
+                        Assinatura digital
+                    </span>
+                    <span class="badge text-bg-secondary">
+                        <i class="bi bi-clock-history me-1"></i>
+                        Auditoria
+                    </span>
+                </div>
+            </div>
+        </div>
     </div>
 
-    <div class="table-responsive">
-        <table class="table table-striped align-middle">
-            <thead>
-                <tr>
-                    <th>Código</th>
-                    <th>Título</th>
-                    <th>Status</th>
-                    <th>Data</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var d in Model ?? Enumerable.Empty<dynamic>())
-                {
-                    <tr>
-                        <td class="font-monospace">@d.code</td>
-                        <td>@d.title</td>
-                        <td>@d.status</td>
-                        <td class="small text-muted">@d.created_at</td>
-                    </tr>
-                }
-            </tbody>
-        </table>
+    <div class="row g-3 mb-4">
+        <div class="col-md-4">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="text-muted small">Documentos listados</div>
+                    <div class="fs-4 fw-bold">@total</div>
+                    <div class="small text-muted">
+                        conforme os filtros do sistema
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="text-muted small">Operação recomendada</div>
+                    <div class="fs-5 fw-bold">
+                        <i class="bi bi-upload me-1"></i>
+                        Importar
+                    </div>
+                    <div class="small text-muted">
+                        para cadastrar novos arquivos no GED
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="text-muted small">Auditoria</div>
+                    <div class="fs-5 fw-bold">
+                        <i class="bi bi-shield-check me-1"></i>
+                        Ativa
+                    </div>
+                    <div class="small text-muted">
+                        ações devem ser registradas em log
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white py-3 d-flex flex-wrap align-items-center justify-content-between gap-2">
+            <div>
+                <strong>
+                    <i class="bi bi-list-check me-1"></i>
+                    Documentos recentes
+                </strong>
+                <div class="small text-muted">
+                    Visualização resumida dos documentos disponíveis para acompanhamento.
+                </div>
+            </div>
+
+            <a class="btn btn-sm btn-outline-primary" asp-controller="ImportExport" asp-action="ExportCenter">
+                <i class="bi bi-download me-1"></i>
+                Ir para exportação
+            </a>
+        </div>
+
+        <div class="card-body p-0">
+            @if (!rows.Any())
+            {
+                <div class="text-center text-muted py-5">
+                    <i class="bi bi-inbox fs-1 d-block mb-3"></i>
+                    <h5 class="mb-1">Nenhum documento encontrado</h5>
+                    <div>Importe documentos ou ajuste os filtros para visualizar registros.</div>
+                </div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width: 160px;">Código</th>
+                                <th>Documento</th>
+                                <th style="width: 150px;">Status</th>
+                                <th style="width: 190px;">Data</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var d in rows)
+                            {
+                                var code = GetValue(d, "code", "Code");
+                                var title = GetValue(d, "title", "Title");
+                                var rowStatus = GetValue(d, "status", "Status", "reg_status", "RegStatus");
+                                var date = GetValue(d, "created_at", "CreatedAt", "reg_date", "RegDate");
+
+                                <tr>
+                                    <td>
+                                        <div class="fw-semibold font-monospace">
+                                            @(IsEmpty(code) ? "—" : code)
+                                        </div>
+                                    </td>
+
+                                    <td>
+                                        <div class="fw-semibold">
+                                            @(IsEmpty(title) ? "Sem título informado" : title)
+                                        </div>
+                                        <div class="small text-muted">
+                                            Documento GED
+                                        </div>
+                                    </td>
+
+                                    <td>
+                                        <span class="badge @StatusBadge(rowStatus)">
+                                            @StatusLabel(rowStatus)
+                                        </span>
+                                    </td>
+
+                                    <td>
+                                        <div class="small text-muted">
+                                            @(IsEmpty(date) ? "Data não informada" : date)
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
     </div>
 </div>
+
+@functions {
+    private static object? GetValue(object? obj, params string[] names)
+    {
+        if (obj is null)
+            return null;
+
+        if (obj is IDictionary<string, object> dict)
+        {
+            foreach (var name in names)
+            {
+                if (dict.TryGetValue(name, out var value))
+                    return value;
+            }
+        }
+
+        var type = obj.GetType();
+
+        foreach (var name in names)
+        {
+            var prop = type.GetProperty(name);
+
+            if (prop is not null)
+                return prop.GetValue(obj);
+        }
+
+        return null;
+    }
+
+    private static bool IsEmpty(object? value)
+    {
+        return value is null || string.IsNullOrWhiteSpace(value.ToString());
+    }
+}

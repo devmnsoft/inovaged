@@ -42,7 +42,6 @@ public sealed class ImportExportController : Controller
 
     // =========================================================
     // GET /ImportExport
-    // Central de Importação
     // =========================================================
     [HttpGet("")]
     public async Task<IActionResult> Index(CancellationToken ct)
@@ -65,11 +64,17 @@ public sealed class ImportExportController : Controller
                     d.code           AS DocumentCode,
                     d.title          AS DocumentTitle
                 FROM ged.import_log il
-                LEFT JOIN ged.document d 
+                LEFT JOIN ged.document d
                        ON d.tenant_id = il.tenant_id
                       AND d.id = il.document_id
+                      AND d.reg_status = 'A'
+                      AND d.status <> 'DELETED'::ged.document_status_enum
                 WHERE il.tenant_id = @tenant
                   AND il.reg_status = 'A'
+                  AND (
+                        il.document_id IS NULL
+                        OR d.id IS NOT NULL
+                  )
                 ORDER BY il.imported_at DESC
                 LIMIT 50
                 """,
@@ -103,7 +108,6 @@ public sealed class ImportExportController : Controller
 
     // =========================================================
     // POST /ImportExport/Import
-    // Importação de documento com detecção de assinatura digital
     // =========================================================
     [HttpPost("Import")]
     [ValidateAntiForgeryToken]
@@ -289,8 +293,103 @@ public sealed class ImportExportController : Controller
     }
 
     // =========================================================
+    // POST /ImportExport/HideLog
+    // Oculta/remover logicamente um registro do histórico de importação
+    // =========================================================
+    [HttpPost("HideLog")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> HideLog([FromForm] Guid id, CancellationToken ct)
+    {
+        if (id == Guid.Empty)
+        {
+            TempData["Err"] = "Registro inválido para exclusão.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        try
+        {
+            using var conn = await _db.OpenAsync(ct);
+
+            var row = await conn.QuerySingleOrDefaultAsync<ImportLogDeleteRow>(
+                """
+                SELECT
+                    id          AS Id,
+                    file_name   AS FileName,
+                    document_id AS DocumentId
+                FROM ged.import_log
+                WHERE tenant_id = @tenant
+                  AND id = @id
+                  AND reg_status = 'A'
+                """,
+                new { tenant = TenantId, id }
+            );
+
+            if (row is null)
+            {
+                TempData["Err"] = "Registro não encontrado ou já excluído.";
+                return RedirectToAction(nameof(Index));
+            }
+
+            var affected = await conn.ExecuteAsync(
+                """
+                UPDATE ged.import_log
+                SET reg_status = 'I'
+                WHERE tenant_id = @tenant
+                  AND id = @id
+                  AND reg_status = 'A'
+                """,
+                new { tenant = TenantId, id }
+            );
+
+            if (affected == 0)
+            {
+                TempData["Err"] = "Não foi possível excluir o registro.";
+                return RedirectToAction(nameof(Index));
+            }
+
+            await WriteOperationalLogAsync(
+                "IMPORT_LOG_DELETE",
+                "import_log",
+                id,
+                "Registro de importação excluído logicamente.",
+                "INFO",
+                new
+                {
+                    importLogId = id,
+                    row.FileName,
+                    row.DocumentId
+                },
+                ct);
+
+            TempData["Ok"] = "Registro excluído com sucesso.";
+
+            return RedirectToAction(nameof(Index));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro ao excluir registro de importação. Id={Id}", id);
+
+            await WriteOperationalLogAsync(
+                "IMPORT_LOG_DELETE_ERROR",
+                "import_log",
+                id,
+                "Erro ao excluir registro de importação.",
+                "ERROR",
+                new
+                {
+                    importLogId = id,
+                    error = ex.Message
+                },
+                ct);
+
+            TempData["Err"] = "Erro ao excluir o registro. A ocorrência foi registrada no log.";
+
+            return RedirectToAction(nameof(Index));
+        }
+    }
+
+    // =========================================================
     // GET /ImportExport/ExportCenter
-    // Central de Exportação
     // =========================================================
     [HttpGet("ExportCenter")]
     public async Task<IActionResult> ExportCenter(CancellationToken ct)
@@ -303,12 +402,14 @@ public sealed class ImportExportController : Controller
                 """
                 SELECT
                     dv.id                  AS Id,
+                    d.id                   AS DocumentId,
                     d.code                 AS Code,
                     d.title                AS Title,
                     dv.file_name           AS FileName,
                     dv.content_type        AS ContentType,
                     dv.file_size_bytes     AS SizeBytes,
-                    s.status::text         AS SigStatus
+                    s.status::text         AS SigStatus,
+                    d.created_at           AS CreatedAt
                 FROM ged.document d
                 JOIN ged.document_version dv
                   ON dv.tenant_id = d.tenant_id
@@ -317,7 +418,9 @@ public sealed class ImportExportController : Controller
                   ON s.tenant_id = d.tenant_id
                  AND s.document_id = d.id
                 WHERE d.tenant_id = @tenant
+                  AND d.reg_status = 'A'
                   AND d.status <> 'DELETED'::ged.document_status_enum
+                  AND d.current_version_id IS NOT NULL
                 ORDER BY d.created_at DESC
                 LIMIT 100
                 """,
@@ -338,7 +441,6 @@ public sealed class ImportExportController : Controller
 
     // =========================================================
     // GET /ImportExport/Export?versionId=...
-    // Exportação / Download
     // =========================================================
     [HttpGet("Export")]
     public async Task<IActionResult> Export([FromQuery] Guid versionId, CancellationToken ct)
@@ -356,19 +458,27 @@ public sealed class ImportExportController : Controller
             var version = await conn.QuerySingleOrDefaultAsync<VersionDownloadRow>(
                 """
                 SELECT 
-                    storage_path AS StoragePath,
-                    file_name    AS FileName,
-                    content_type AS ContentType
-                FROM ged.document_version
-                WHERE tenant_id = @tenant
-                  AND id = @id
+                    dv.storage_path AS StoragePath,
+                    dv.file_name    AS FileName,
+                    dv.content_type AS ContentType,
+                    d.id            AS DocumentId,
+                    d.code          AS DocumentCode,
+                    d.title         AS DocumentTitle
+                FROM ged.document_version dv
+                JOIN ged.document d
+                  ON d.tenant_id = dv.tenant_id
+                 AND d.current_version_id = dv.id
+                WHERE dv.tenant_id = @tenant
+                  AND dv.id = @id
+                  AND d.reg_status = 'A'
+                  AND d.status <> 'DELETED'::ged.document_status_enum
                 """,
                 new { tenant = TenantId, id = versionId }
             );
 
             if (version is null)
             {
-                TempData["Err"] = "Documento não encontrado para exportação.";
+                TempData["Err"] = "Documento não encontrado, inativo ou excluído.";
                 return RedirectToAction(nameof(ExportCenter));
             }
 
@@ -381,9 +491,11 @@ public sealed class ImportExportController : Controller
                 new
                 {
                     versionId,
+                    version.DocumentId,
+                    version.DocumentCode,
+                    version.DocumentTitle,
                     version.FileName,
-                    version.ContentType,
-                    version.StoragePath
+                    version.ContentType
                 },
                 ct);
 
@@ -415,7 +527,7 @@ public sealed class ImportExportController : Controller
     }
 
     // =========================================================
-    // Helpers privados
+    // Helpers
     // =========================================================
 
     private static (bool detected, string status, string? details) DetectPdfSignature(byte[] pdfBytes)
@@ -535,10 +647,7 @@ public sealed class ImportExportController : Controller
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(
-                ex,
-                "Não foi possível registrar assinatura da importação. DocumentId={DocumentId}",
-                documentId);
+            _logger.LogWarning(ex, "Não foi possível registrar assinatura da importação. DocumentId={DocumentId}", documentId);
         }
     }
 
@@ -710,15 +819,25 @@ public sealed class ImportExportController : Controller
 
     public sealed record ExportDocRow(
         Guid Id,
+        Guid DocumentId,
         string Code,
         string Title,
         string FileName,
         string? ContentType,
         long SizeBytes,
-        string? SigStatus);
+        string? SigStatus,
+        DateTime CreatedAt);
 
     public sealed record VersionDownloadRow(
         string StoragePath,
         string FileName,
-        string ContentType);
+        string ContentType,
+        Guid DocumentId,
+        string DocumentCode,
+        string DocumentTitle);
+
+    private sealed record ImportLogDeleteRow(
+        Guid Id,
+        string FileName,
+        Guid? DocumentId);
 }

@@ -26,6 +26,16 @@
         _ => string.IsNullOrWhiteSpace(value) ? "Não informado" : value
     };
 
+    string StatusDescription(string value) => value switch
+    {
+        "RECEIVED" => "Documentos recebidos e aguardando conferência inicial.",
+        "TRIAGE" => "Documentos em análise, separação e conferência.",
+        "DIGITIZATION" => "Documentos em processo de digitalização ou preparação para captura.",
+        "INDEXING" => "Documentos em classificação, indexação e complementação de metadados.",
+        "ARCHIVED" => "Documentos concluídos e arquivados no fluxo documental.",
+        _ => "Etapa não identificada."
+    };
+
     string StatusBadge(string value) => value switch
     {
         "RECEIVED" => "text-bg-secondary",
@@ -72,19 +82,20 @@
             @ViewData["Title"]
         </h3>
         <div class="text-muted">
-            Controle os lotes recebidos, acompanhe a etapa do tratamento documental e acesse os itens vinculados.
+            Acompanhe os lotes de documentos recebidos, visualize a fase atual do tratamento documental
+            e acesse os itens vinculados a cada lote.
         </div>
     </div>
 
     <div class="d-flex flex-wrap gap-2">
         <a class="btn btn-outline-secondary" asp-controller="ImportExport" asp-action="Index">
             <i class="bi bi-cloud-upload me-1"></i>
-            Importação
+            Importar documentos
         </a>
 
         <a class="btn btn-outline-secondary" asp-controller="ImportExport" asp-action="ExportCenter">
             <i class="bi bi-cloud-download me-1"></i>
-            Exportação
+            Exportar documentos
         </a>
 
         <a class="btn btn-primary" asp-controller="Batches" asp-action="New">
@@ -94,34 +105,76 @@
     </div>
 </div>
 
-<div class="alert alert-primary border-0 shadow-sm mb-4">
-    <div class="d-flex gap-3">
-        <div class="fs-3">
-            <i class="bi bi-info-circle"></i>
+<div class="row g-3 mb-4">
+    <div class="col-lg-8">
+        <div class="alert alert-primary border-0 shadow-sm h-100 mb-0">
+            <div class="d-flex gap-3">
+                <div class="fs-3">
+                    <i class="bi bi-info-circle"></i>
+                </div>
+
+                <div>
+                    <strong>Para que serve esta tela?</strong>
+
+                    <div class="small mt-1">
+                        Esta tela serve para controlar os <strong>lotes de tratamento documental</strong>.
+                        Um lote representa um conjunto de documentos físicos ou digitais que foram recebidos
+                        para conferência, triagem, digitalização, indexação e arquivamento.
+                    </div>
+
+                    <div class="small mt-2">
+                        Aqui o usuário consegue verificar quantos lotes existem, em qual etapa cada lote está,
+                        quantos documentos foram vinculados, quando o lote foi criado e acessar os detalhes
+                        para consultar histórico, itens, movimentações e auditoria.
+                    </div>
+
+                    <div class="d-flex flex-wrap gap-2 mt-3">
+                        <span class="badge text-bg-secondary">
+                            <i class="bi bi-inbox me-1"></i> Recebido
+                        </span>
+                        <span class="badge text-bg-info">
+                            <i class="bi bi-diagram-3 me-1"></i> Triagem
+                        </span>
+                        <span class="badge text-bg-primary">
+                            <i class="bi bi-scanner me-1"></i> Digitalização
+                        </span>
+                        <span class="badge text-bg-warning text-dark">
+                            <i class="bi bi-tags me-1"></i> Indexação
+                        </span>
+                        <span class="badge text-bg-success">
+                            <i class="bi bi-archive me-1"></i> Arquivado
+                        </span>
+                    </div>
+                </div>
+            </div>
         </div>
-        <div>
-            <strong>Fluxo do tratamento documental</strong>
-            <div class="small mt-1">
-                Um lote representa um conjunto de documentos recebidos para controle, triagem, digitalização,
-                indexação e arquivamento. Cada movimentação deve gerar histórico, auditoria e rastreabilidade.
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-white py-3">
+                <strong>
+                    <i class="bi bi-lightbulb me-1"></i>
+                    Como usar
+                </strong>
             </div>
 
-            <div class="d-flex flex-wrap gap-2 mt-2">
-                <span class="badge text-bg-secondary">
-                    <i class="bi bi-inbox me-1"></i> Recebido
-                </span>
-                <span class="badge text-bg-info">
-                    <i class="bi bi-diagram-3 me-1"></i> Triagem
-                </span>
-                <span class="badge text-bg-primary">
-                    <i class="bi bi-scanner me-1"></i> Digitalização
-                </span>
-                <span class="badge text-bg-warning text-dark">
-                    <i class="bi bi-tags me-1"></i> Indexação
-                </span>
-                <span class="badge text-bg-success">
-                    <i class="bi bi-archive me-1"></i> Arquivado
-                </span>
+            <div class="card-body small text-muted">
+                <div class="mb-2">
+                    <strong class="text-dark">1.</strong> Clique em <strong>Novo lote</strong> para registrar um recebimento.
+                </div>
+
+                <div class="mb-2">
+                    <strong class="text-dark">2.</strong> Use os filtros para localizar lotes por número, observação ou etapa.
+                </div>
+
+                <div class="mb-2">
+                    <strong class="text-dark">3.</strong> Clique em <strong>Ver</strong> para acessar documentos, histórico e auditoria.
+                </div>
+
+                <div>
+                    <strong class="text-dark">4.</strong> Use Importação/Exportação quando precisar inserir ou baixar documentos do GED.
+                </div>
             </div>
         </div>
     </div>
@@ -135,7 +188,7 @@
                 <div class="fs-4 fw-bold">@total</div>
                 <div class="small text-muted">
                     <i class="bi bi-box-seam me-1"></i>
-                    cadastrados
+                    lotes cadastrados
                 </div>
             </div>
         </div>
@@ -148,7 +201,7 @@
                 <div class="fs-4 fw-bold">@totalItens</div>
                 <div class="small text-muted">
                     <i class="bi bi-files me-1"></i>
-                    itens nos lotes
+                    itens em lotes
                 </div>
             </div>
         </div>
@@ -161,7 +214,7 @@
                 <div class="fs-4 fw-bold">@recebidos</div>
                 <span class="badge text-bg-secondary">
                     <i class="bi bi-inbox me-1"></i>
-                    RECEIVED
+                    aguardando triagem
                 </span>
             </div>
         </div>
@@ -174,7 +227,7 @@
                 <div class="fs-4 fw-bold">@triagem</div>
                 <span class="badge text-bg-info">
                     <i class="bi bi-diagram-3 me-1"></i>
-                    TRIAGE
+                    conferência
                 </span>
             </div>
         </div>
@@ -183,11 +236,11 @@
     <div class="col-md-6 col-xl-2">
         <div class="card border-0 shadow-sm h-100">
             <div class="card-body">
-                <div class="text-muted small">Digitalização / Indexação</div>
+                <div class="text-muted small">Em tratamento</div>
                 <div class="fs-4 fw-bold">@(digitalizacao + indexacao)</div>
                 <span class="badge text-bg-primary">
                     <i class="bi bi-scanner me-1"></i>
-                    em tratamento
+                    digitalização/indexação
                 </span>
             </div>
         </div>
@@ -208,11 +261,23 @@
 </div>
 
 <form method="get" class="card border-0 shadow-sm mb-4">
-    <div class="card-header bg-white py-3">
-        <strong>
-            <i class="bi bi-funnel me-1"></i>
-            Filtros de pesquisa
-        </strong>
+    <div class="card-header bg-white py-3 d-flex flex-wrap align-items-center justify-content-between gap-2">
+        <div>
+            <strong>
+                <i class="bi bi-funnel me-1"></i>
+                Filtros de pesquisa
+            </strong>
+            <div class="small text-muted">
+                Use os filtros abaixo para localizar rapidamente um lote específico.
+            </div>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(q) || !string.IsNullOrWhiteSpace(status))
+        {
+            <span class="badge text-bg-primary">
+                Filtro aplicado
+            </span>
+        }
     </div>
 
     <div class="card-body">
@@ -226,10 +291,10 @@
                     <input class="form-control"
                            name="q"
                            value="@q"
-                           placeholder="Nº do lote, observações ou palavra-chave..." />
+                           placeholder="Digite o número do lote ou parte da observação..." />
                 </div>
                 <div class="form-text">
-                    Pesquise pelo número do lote ou por termos das observações.
+                    Exemplo: número do lote, setor de origem, período, observação ou palavra-chave.
                 </div>
             </div>
 
@@ -285,7 +350,7 @@
                 </select>
 
                 <div class="form-text">
-                    Filtre pela fase atual do tratamento.
+                    Filtre pela fase atual do tratamento documental.
                 </div>
             </div>
 
@@ -314,7 +379,7 @@
                 Lotes encontrados
             </strong>
             <div class="small text-muted">
-                @total registro(s) localizado(s) conforme os filtros informados.
+                @total registro(s) localizado(s). Clique em <strong>Ver</strong> para consultar os detalhes do lote.
             </div>
         </div>
 
@@ -331,13 +396,20 @@
                 <i class="bi bi-inbox fs-1 d-block mb-3"></i>
                 <h5 class="mb-1">Nenhum lote encontrado</h5>
                 <div class="mb-3">
-                    Ajuste os filtros ou crie um novo lote de tratamento documental.
+                    Não há lotes cadastrados ou nenhum registro corresponde aos filtros informados.
                 </div>
 
-                <a class="btn btn-primary" asp-controller="Batches" asp-action="New">
-                    <i class="bi bi-plus-circle me-1"></i>
-                    Criar primeiro lote
-                </a>
+                <div class="d-flex flex-wrap justify-content-center gap-2">
+                    <a class="btn btn-primary" asp-controller="Batches" asp-action="New">
+                        <i class="bi bi-plus-circle me-1"></i>
+                        Criar novo lote
+                    </a>
+
+                    <a class="btn btn-outline-secondary" asp-controller="Batches" asp-action="Index">
+                        <i class="bi bi-x-circle me-1"></i>
+                        Limpar filtros
+                    </a>
+                </div>
             </div>
         }
         else
@@ -347,11 +419,11 @@
                     <thead class="table-light">
                         <tr>
                             <th style="width: 130px;">Nº lote</th>
-                            <th style="width: 180px;">Etapa atual</th>
-                            <th>Observações</th>
+                            <th style="width: 200px;">Etapa atual</th>
+                            <th>Observações / identificação</th>
                             <th style="width: 190px;">Criado em</th>
                             <th style="width: 120px;" class="text-end">Itens</th>
-                            <th style="width: 150px;" class="text-end">Ações</th>
+                            <th style="width: 160px;" class="text-end">Ações</th>
                         </tr>
                     </thead>
 
@@ -361,7 +433,7 @@
                             <tr>
                                 <td>
                                     <div class="fw-bold">#@b.BatchNo</div>
-                                    <div class="small text-muted">Lote</div>
+                                    <div class="small text-muted">Número do lote</div>
                                 </td>
 
                                 <td>
@@ -369,8 +441,9 @@
                                         <i class="bi @StatusIcon(b.Status) me-1"></i>
                                         @StatusLabel(b.Status)
                                     </span>
-                                    <div class="small text-muted mt-1 font-monospace">
-                                        @b.Status
+
+                                    <div class="small text-muted mt-1">
+                                        @StatusDescription(b.Status)
                                     </div>
                                 </td>
 
@@ -380,10 +453,16 @@
                                         <div class="text-truncate" style="max-width: 620px;" title="@b.Notes">
                                             @b.Notes
                                         </div>
+                                        <div class="small text-muted">
+                                            Observação registrada no recebimento ou movimentação do lote.
+                                        </div>
                                     }
                                     else
                                     {
                                         <span class="text-muted">Sem observações registradas.</span>
+                                        <div class="small text-muted">
+                                            Recomenda-se informar origem, período ou setor ao criar novos lotes.
+                                        </div>
                                     }
                                 </td>
 
@@ -397,6 +476,7 @@
                                         <i class="bi bi-files me-1"></i>
                                         @b.ItemsCount
                                     </span>
+                                    <div class="small text-muted">documento(s)</div>
                                 </td>
 
                                 <td class="text-end">
@@ -405,7 +485,7 @@
                                            asp-controller="Batches"
                                            asp-action="Details"
                                            asp-route-id="@b.Id"
-                                           title="Ver detalhes do lote">
+                                           title="Abrir o lote para ver documentos, etapa, histórico e auditoria">
                                             <i class="bi bi-eye me-1"></i>
                                             Ver
                                         </a>
@@ -414,7 +494,7 @@
                                            asp-controller="Batches"
                                            asp-action="Details"
                                            asp-route-id="@b.Id"
-                                           title="Histórico e auditoria">
+                                           title="Consultar histórico e auditoria do lote">
                                             <i class="bi bi-clock-history"></i>
                                         </a>
                                     </div>
@@ -425,5 +505,13 @@
                 </table>
             </div>
         }
+    </div>
+
+    <div class="card-footer bg-white">
+        <div class="small text-muted">
+            <i class="bi bi-shield-check me-1"></i>
+            Todas as alterações relevantes do lote devem gerar histórico e registro de auditoria:
+            criação, inclusão de documentos, mudança de etapa, movimentação física e arquivamento.
+        </div>
     </div>
 </div>
