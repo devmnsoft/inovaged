@@ -40,15 +40,6 @@ public interface IAuthRepository
         string? correlationId,
         CancellationToken ct);
 
-    Task ChangeOwnPasswordAsync(
-        Guid tenantId,
-        Guid userId,
-        string newPasswordHash,
-        string? ip,
-        string? userAgent,
-        string? correlationId,
-        CancellationToken ct);
-
     Task<PasswordRecoveryUserDto?> FindUserForPasswordRecoveryByCpfAsync(
         string tenantSlug,
         string cpf,
