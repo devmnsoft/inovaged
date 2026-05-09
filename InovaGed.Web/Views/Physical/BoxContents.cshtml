@@ -12,26 +12,34 @@
                              ?? Array.Empty<AvailableDocumentForBoxDto>();
 
     var subtitle = ViewData["Subtitle"] as string ?? "Selecione uma caixa para ver os documentos armazenados.";
+    var selectedBox = selectedBoxId.HasValue ? boxes.FirstOrDefault(x => x.Id == selectedBoxId.Value) : null;
 }
 
-<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
     <div>
-        <h4 class="mb-0">@ViewData["Title"]</h4>
-        <div class="text-muted small">@subtitle</div>
+        <div class="text-uppercase text-muted small fw-semibold">Guarda Física</div>
+        <h3 class="mb-1">@ViewData["Title"]</h3>
+        <div class="text-muted">@subtitle</div>
     </div>
 
-    <div class="d-flex gap-2">
-        <a class="btn btn-outline-secondary btn-sm" asp-controller="Physical" asp-action="Boxes">
+    <div class="d-flex flex-wrap gap-2">
+        <a class="btn btn-outline-secondary" asp-controller="Physical" asp-action="Boxes">
             <i class="bi bi-arrow-left me-1"></i>Caixas
         </a>
-
         @if (selectedBoxId.HasValue && selectedBoxId.Value != Guid.Empty)
         {
-            <a class="btn btn-outline-info btn-sm"
+            <a class="btn btn-outline-info"
                asp-controller="Physical"
                asp-action="BoxHistory"
                asp-route-boxId="@selectedBoxId">
                 <i class="bi bi-clock-history me-1"></i>Histórico
+            </a>
+            <a class="btn btn-outline-dark"
+               asp-controller="Labels"
+               asp-action="BoxLabel"
+               asp-route-boxId="@selectedBoxId"
+               target="_blank">
+                <i class="bi bi-qr-code me-1"></i>Etiqueta
             </a>
         }
     </div>
@@ -39,29 +47,35 @@
 
 @if (TempData["Ok"] is string ok && !string.IsNullOrWhiteSpace(ok))
 {
-    <div class="alert alert-success">@ok</div>
+    <div class="alert alert-success d-flex align-items-center gap-2 shadow-sm">
+        <i class="bi bi-check-circle-fill fs-5"></i>
+        <div>@ok</div>
+    </div>
 }
 
 @if (TempData["Err"] is string err && !string.IsNullOrWhiteSpace(err))
 {
-    <div class="alert alert-danger">@err</div>
+    <div class="alert alert-danger d-flex align-items-center gap-2 shadow-sm">
+        <i class="bi bi-exclamation-triangle-fill fs-5"></i>
+        <div>@err</div>
+    </div>
 }
 
-<div class="card mb-3">
+<div class="card border-0 shadow-sm mb-3">
     <div class="card-body">
         <label class="form-label fw-semibold">
-            <i class="bi bi-archive me-1"></i>Caixa
+            <i class="bi bi-archive me-1"></i>Selecione a caixa de trabalho
         </label>
 
-        <select class="form-select"
+        <select class="form-select form-select-lg"
                 onchange="if(this.value) window.location='/Physical/BoxContents?boxId=' + this.value; else window.location='/Physical/BoxContents';">
             <option value="">-- selecione uma caixa --</option>
 
             @foreach (var b in boxes)
             {
                 var locPart = !string.IsNullOrWhiteSpace(b.LocationLabel)
-                ? " · " + b.LocationLabel
-                : "";
+                    ? " · " + b.LocationLabel
+                    : " · sem localização";
 
                 if (selectedBoxId.HasValue && b.Id == selectedBoxId.Value)
                 {
@@ -82,34 +96,72 @@
 
 @if (!selectedBoxId.HasValue || selectedBoxId.Value == Guid.Empty)
 {
-    <div class="alert alert-info">
-        <i class="bi bi-info-circle me-2"></i>
-        Selecione uma caixa para visualizar, incluir, remover ou movimentar documentos.
+    <div class="alert alert-info d-flex align-items-start gap-2">
+        <i class="bi bi-info-circle-fill fs-5"></i>
+        <div>
+            <strong>Comece selecionando uma caixa.</strong>
+            Depois disso, o sistema exibirá os documentos armazenados, documentos disponíveis para vínculo e ações de movimentação.
+        </div>
     </div>
 }
 else
 {
+    <div class="row g-3 mb-3">
+        <div class="col-12 col-md-4">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="text-muted small">Caixa selecionada</div>
+                    <div class="h4 mb-1">#@selectedBox?.BoxNo</div>
+                    <code>@selectedBox?.LabelCode</code>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-md-4">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="text-muted small">Documentos na caixa</div>
+                    <div class="display-6 fw-semibold">@Model.Count</div>
+                    <div class="small text-muted">itens vinculados</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-md-4">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="text-muted small">Localização</div>
+                    @if (!string.IsNullOrWhiteSpace(selectedBox?.LocationLabel))
+                    {
+                        <div class="fw-semibold"><i class="bi bi-geo-alt-fill text-success me-1"></i>@selectedBox.LocationLabel</div>
+                    }
+                    else
+                    {
+                        <span class="badge text-bg-warning">Caixa sem localização</span>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="row g-3">
         <div class="col-12 col-xl-7">
-            <div class="card h-100">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <strong>
-                        <i class="bi bi-files me-2"></i>Documentos atualmente na caixa
-                    </strong>
-
-                    <span class="badge text-bg-primary">@Model.Count documento(s)</span>
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-header bg-white d-flex justify-content-between align-items-center py-3">
+                    <div>
+                        <strong><i class="bi bi-files me-2"></i>Documentos atualmente na caixa</strong>
+                        <div class="small text-muted">Remova documentos apenas quando houver movimentação física correspondente.</div>
+                    </div>
+                    <span class="badge text-bg-primary rounded-pill">@Model.Count documento(s)</span>
                 </div>
 
                 <div class="table-responsive">
                     <table class="table table-hover align-middle mb-0">
                         <thead class="table-light">
                             <tr>
-                                <th>Código</th>
-                                <th>Título</th>
+                                <th>Documento</th>
                                 <th>Lote</th>
                                 <th>Fase</th>
                                 <th>Inserido em</th>
-                                <th style="width:120px;"></th>
+                                <th class="text-end" style="width:140px;"></th>
                             </tr>
                         </thead>
 
@@ -117,8 +169,10 @@ else
                             @if (Model.Count == 0)
                             {
                                 <tr>
-                                    <td colspan="6" class="text-center text-muted py-4">
-                                        Nenhum documento vinculado a esta caixa.
+                                    <td colspan="5" class="text-center py-5">
+                                        <i class="bi bi-inbox display-5 text-muted d-block mb-2"></i>
+                                        <div class="fw-semibold">Caixa vazia</div>
+                                        <div class="text-muted small">Use a busca ao lado para vincular ou mover documentos para esta caixa.</div>
                                     </td>
                                 </tr>
                             }
@@ -142,47 +196,32 @@ else
                                         "TRIAGE" => "info",
                                         "DIGITIZATION" => "primary",
                                         "INDEXING" => "warning",
-                                        "ARCHIVED" => "dark",
+                                        "ARCHIVED" => "success",
                                         _ => "secondary"
                                     };
 
                                     <tr>
                                         <td>
-                                            <code>@item.DocumentCode</code>
+                                            <div class="fw-semibold">@item.DocumentTitle</div>
+                                            <div class="small text-muted"><code>@item.DocumentCode</code></div>
                                         </td>
-
                                         <td>
-                                            @item.DocumentTitle
-                                        </td>
-
-                                        <td>
-                                            <a asp-controller="Batches"
-                                               asp-action="Details"
-                                               asp-route-id="@item.BatchId">
+                                            <a asp-controller="Batches" asp-action="Details" asp-route-id="@item.BatchId">
                                                 Lote #@item.BatchNo
                                             </a>
                                         </td>
-
-                                        <td>
-                                            <span class="badge text-bg-@statusCss">@statusText</span>
-                                        </td>
-
-                                        <td class="text-muted text-nowrap">
-                                            @item.AddedAt.ToString("dd/MM/yyyy HH:mm")
-                                        </td>
-
+                                        <td><span class="badge text-bg-@statusCss">@statusText</span></td>
+                                        <td class="text-muted text-nowrap">@item.AddedAt.ToString("dd/MM/yyyy HH:mm")</td>
                                         <td class="text-end">
                                             <form method="post"
                                                   asp-controller="Physical"
                                                   asp-action="RemoveDocumentFromBox"
-                                                  onsubmit="return confirm('Remover este documento da caixa?');">
+                                                  onsubmit="return confirm('Remover este documento da caixa? Confirme apenas se a retirada física já ocorreu.');">
                                                 @Html.AntiForgeryToken()
-
                                                 <input type="hidden" name="BoxId" value="@selectedBoxId.Value" />
                                                 <input type="hidden" name="DocumentId" value="@item.DocumentId" />
                                                 <input type="hidden" name="BatchId" value="@item.BatchId" />
                                                 <input type="hidden" name="Notes" value="Remoção manual pelo módulo Conteúdo da Caixa" />
-
                                                 <button class="btn btn-sm btn-outline-danger" type="submit">
                                                     <i class="bi bi-box-arrow-up"></i> Remover
                                                 </button>
@@ -198,29 +237,19 @@ else
         </div>
 
         <div class="col-12 col-xl-5">
-            <div class="card h-100">
-                <div class="card-header">
-                    <strong>
-                        <i class="bi bi-plus-circle me-2"></i>Incluir / mover documento para esta caixa
-                    </strong>
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-header bg-white py-3">
+                    <strong><i class="bi bi-plus-circle me-2"></i>Incluir ou mover documento</strong>
+                    <div class="small text-muted">Pesquise por código, título ou lote para vincular o documento à caixa selecionada.</div>
                 </div>
 
                 <div class="card-body">
-                    <form method="get"
-                          asp-controller="Physical"
-                          asp-action="BoxContents"
-                          class="mb-3">
+                    <form method="get" asp-controller="Physical" asp-action="BoxContents" class="mb-3">
                         <input type="hidden" name="boxId" value="@selectedBoxId.Value" />
-
-                        <label class="form-label">Buscar documento ou lote</label>
-
-                        <div class="input-group">
-                            <input name="q"
-                                   value="@q"
-                                   class="form-control"
-                                   placeholder="Código, título ou lote..." />
-
-                            <button class="btn btn-outline-secondary" type="submit">
+                        <label class="form-label fw-semibold">Buscar documento ou lote</label>
+                        <div class="input-group input-group-lg">
+                            <input name="q" value="@q" class="form-control" placeholder="Código, título ou lote..." />
+                            <button class="btn btn-primary" type="submit">
                                 <i class="bi bi-search"></i>
                             </button>
                         </div>
@@ -229,7 +258,8 @@ else
                     @if (availableDocuments.Count == 0)
                     {
                         <div class="alert alert-warning mb-0">
-                            Nenhum documento encontrado para vincular.
+                            <i class="bi bi-exclamation-circle me-1"></i>
+                            Nenhum documento encontrado para vincular. Refine a busca ou confira se há documentos cadastrados em lotes.
                         </div>
                     }
                     else
@@ -237,48 +267,39 @@ else
                         <div class="list-group">
                             @foreach (var d in availableDocuments.Take(20))
                             {
-                                var alreadyInThisBox = d.CurrentBoxId.HasValue &&
-                                d.CurrentBoxId.Value == selectedBoxId.Value;
+                                var alreadyInThisBox = d.CurrentBoxId.HasValue && d.CurrentBoxId.Value == selectedBoxId.Value;
 
                                 <div class="list-group-item">
                                     <div class="d-flex justify-content-between gap-2">
                                         <div>
                                             <div class="fw-semibold">@d.DocumentTitle</div>
-
                                             <div class="small text-muted">
-                                                <code>@d.DocumentCode</code>
-                                                · Lote #@d.BatchNo
-                                                · @d.BatchStatus
+                                                <code>@d.DocumentCode</code> · Lote #@d.BatchNo · @d.BatchStatus
                                             </div>
 
                                             @if (!string.IsNullOrWhiteSpace(d.CurrentBoxLabel))
                                             {
                                                 <div class="small text-muted">
-                                                    Atual: @d.CurrentBoxLabel
+                                                    Localização atual: @d.CurrentBoxLabel
                                                 </div>
                                             }
                                         </div>
 
                                         @if (alreadyInThisBox)
                                         {
-                                            <span class="badge text-bg-success align-self-start">
-                                                Nesta caixa
-                                            </span>
+                                            <span class="badge text-bg-success align-self-start">Nesta caixa</span>
                                         }
                                         else
                                         {
-                                            <form method="post"
-                                                  asp-controller="Physical"
-                                                  asp-action="MoveDocumentToBox">
+                                            <form method="post" asp-controller="Physical" asp-action="MoveDocumentToBox"
+                                                  onsubmit="return confirm('Confirma vincular/mover este documento para a caixa selecionada?');">
                                                 @Html.AntiForgeryToken()
-
                                                 <input type="hidden" name="BoxId" value="@selectedBoxId.Value" />
                                                 <input type="hidden" name="DocumentId" value="@d.DocumentId" />
                                                 <input type="hidden" name="BatchId" value="@d.BatchId" />
                                                 <input type="hidden" name="Notes" value="Inclusão/movimentação manual pelo módulo Conteúdo da Caixa" />
-
                                                 <button class="btn btn-sm btn-primary" type="submit">
-                                                    Vincular
+                                                    <i class="bi bi-arrow-right-circle"></i> Vincular
                                                 </button>
                                             </form>
                                         }

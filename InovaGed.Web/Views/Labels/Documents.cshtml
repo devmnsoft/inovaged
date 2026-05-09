@@ -1,41 +1,93 @@
-﻿@model IEnumerable<dynamic>
+@model IEnumerable<dynamic>
 @{
-    ViewData["Title"] = "Etiquetas (Documentos)";
-    ViewData["Subtitle"] = "Impressão de etiquetas ()";
+    ViewData["Title"] = "Etiquetas de Documento";
+    ViewData["Subtitle"] = "Impressão e rastreabilidade das etiquetas individuais de documentos físicos.";
+
+    var rows = (Model ?? Enumerable.Empty<dynamic>()).ToList();
+    var total = rows.Count;
 }
 
-<div class="container py-3">
-    <div class="alert alert-info">
-        Clique em “Imprimir” para abrir a etiqueta do documento e imprimir. ()
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
+    <div>
+        <div class="text-uppercase text-muted small fw-semibold">Guarda Física</div>
+        <h3 class="mb-1">Etiquetas de Documento</h3>
+        <div class="text-muted">Imprima etiquetas para identificação individual e localização posterior no acervo físico.</div>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+        <a class="btn btn-outline-secondary" asp-controller="Labels" asp-action="History">
+            <i class="bi bi-clock-history me-1"></i>Histórico
+        </a>
+        <a class="btn btn-outline-secondary" asp-controller="Physical" asp-action="PhysicalMap">
+            <i class="bi bi-map me-1"></i>Mapa
+        </a>
+    </div>
+</div>
+
+<div class="alert alert-info d-flex align-items-start gap-2">
+    <i class="bi bi-info-circle-fill fs-5"></i>
+    <div>
+        Clique em <strong>Imprimir</strong> para abrir a etiqueta do documento. A emissão deve ser registrada no histórico de etiquetas.
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center py-3">
+        <strong>Documentos disponíveis para etiqueta</strong>
+        <span class="badge text-bg-primary rounded-pill">@total documento(s)</span>
     </div>
 
     <div class="table-responsive">
-        <table class="table table-striped align-middle">
-            <thead>
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
                 <tr>
-                    <th>Código</th>
-                    <th>Título</th>
+                    <th>Documento</th>
                     <th>Status</th>
-                    <th>Data</th>
-                    <th style="width:220px;"></th>
+                    <th>Caixa</th>
+                    <th>Cadastro</th>
+                    <th class="text-end" style="width:180px;">Ações</th>
                 </tr>
             </thead>
             <tbody>
-                @foreach (var d in Model ?? Enumerable.Empty<dynamic>())
+                @if (total == 0)
                 {
                     <tr>
-                        <td class="font-monospace">@d.code</td>
-                        <td>@d.title</td>
-                        <td>@d.status</td>
-                        <td class="small text-muted">@d.created_at</td>
-                        <td class="text-end">
-                            <a class="btn btn-sm btn-outline-primary"
-                               asp-controller="Labels" asp-action="DocumentLabel"
-                               asp-route-docId="@d.id" target="_blank">
-                                Imprimir
-                            </a>
+                        <td colspan="5" class="text-center py-5">
+                            <i class="bi bi-file-earmark-text display-5 text-muted d-block mb-2"></i>
+                            <div class="fw-semibold">Nenhum documento encontrado</div>
+                            <div class="text-muted small">Após cadastrar documentos, será possível imprimir etiquetas individuais.</div>
                         </td>
                     </tr>
+                }
+                else
+                {
+                    foreach (var d in rows)
+                    {
+                        <tr>
+                            <td>
+                                <div class="fw-semibold">@d.title</div>
+                                <code>@d.code</code>
+                            </td>
+                            <td><span class="badge text-bg-light border">@d.status</span></td>
+                            <td>
+                                @if (d.box_no == null)
+                                {
+                                    <span class="badge text-bg-warning">Sem caixa</span>
+                                }
+                                else
+                                {
+                                    <span>Caixa #@d.box_no — <code>@d.box_label_code</code></span>
+                                }
+                            </td>
+                            <td class="small text-muted">@d.created_at</td>
+                            <td class="text-end">
+                                <a class="btn btn-sm btn-primary"
+                                   asp-controller="Labels" asp-action="DocumentLabel"
+                                   asp-route-docId="@d.id" target="_blank">
+                                    <i class="bi bi-printer"></i> Imprimir
+                                </a>
+                            </td>
+                        </tr>
+                    }
                 }
             </tbody>
         </table>

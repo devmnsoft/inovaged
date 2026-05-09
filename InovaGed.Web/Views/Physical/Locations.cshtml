@@ -1,19 +1,26 @@
-﻿@model IReadOnlyList<InovaGed.Application.Ged.Physical.PhysicalLocationRowDto>
+@model IReadOnlyList<InovaGed.Application.Ged.Physical.PhysicalLocationRowDto>
 
 @{
     ViewData["Title"] = "Localizações Físicas";
-    ViewData["Subtitle"] = "Cadastro estruturado de locais (prédio/sala/corredor/estante/prateleira/palete).";
+    ViewData["Subtitle"] = "Endereçamento técnico do acervo físico: prédio, sala, corredor, estante, prateleira e palete.";
 
     var q = (ViewBag.Q as string) ?? "";
+    var total = Model?.Count ?? 0;
+    var semSala = Model?.Count(x => string.IsNullOrWhiteSpace(x.Room)) ?? 0;
+    var semObservacao = Model?.Count(x => string.IsNullOrWhiteSpace(x.Notes)) ?? 0;
 }
 
-<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
     <div>
-        <h4 class="mb-0">Localizações Físicas</h4>
-        <div class="text-muted small">Gerencie o endereço físico onde caixas e documentos ficam armazenados.</div>
+        <div class="text-uppercase text-muted small fw-semibold">Guarda Física</div>
+        <h3 class="mb-1">Localizações Físicas</h3>
+        <div class="text-muted">Cadastre o endereço físico completo para rastrear caixas e documentos sem depender de controles paralelos.</div>
     </div>
 
-    <div class="d-flex gap-2">
+    <div class="d-flex flex-wrap gap-2">
+        <a class="btn btn-outline-secondary" href="/Physical/PhysicalMap">
+            <i class="bi bi-map me-1"></i>Mapa de Guarda
+        </a>
         <a class="btn btn-primary" href="/Physical/Locations/New">
             <i class="bi bi-plus-lg me-1"></i>Nova Localização
         </a>
@@ -22,54 +29,98 @@
 
 @if (TempData["Ok"] is string ok && !string.IsNullOrWhiteSpace(ok))
 {
-    <div class="alert alert-success">@ok</div>
+    <div class="alert alert-success d-flex align-items-center gap-2 shadow-sm">
+        <i class="bi bi-check-circle-fill fs-5"></i>
+        <div>@ok</div>
+    </div>
 }
 @if (TempData["Err"] is string err && !string.IsNullOrWhiteSpace(err))
 {
-    <div class="alert alert-danger">@err</div>
+    <div class="alert alert-danger d-flex align-items-center gap-2 shadow-sm">
+        <i class="bi bi-exclamation-triangle-fill fs-5"></i>
+        <div>@err</div>
+    </div>
 }
 
-<form method="get" class="card mb-3">
-    <div class="card-body d-flex flex-wrap gap-2 align-items-center">
-        <div class="flex-grow-1">
-            <input name="q" value="@q" class="form-control"
-                   placeholder="Buscar por prédio, sala, corredor, estante, prateleira, palete ou observação..." />
+<div class="row g-3 mb-4">
+    <div class="col-12 col-md-4">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <div class="text-muted small">Total cadastrado</div>
+                <div class="display-6 fw-semibold">@total</div>
+                <div class="small text-muted">endereços físicos ativos</div>
+            </div>
         </div>
-        <button class="btn btn-outline-secondary" type="submit">
-            <i class="bi bi-search me-1"></i>Pesquisar
-        </button>
-        <a class="btn btn-outline-secondary" href="/Physical/Locations">
-            <i class="bi bi-x-lg me-1"></i>Limpar
-        </a>
+    </div>
+    <div class="col-12 col-md-4">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <div class="text-muted small">Pontos sem sala informada</div>
+                <div class="display-6 fw-semibold">@semSala</div>
+                <div class="small text-muted">revise para melhorar o mapa físico</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-12 col-md-4">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <div class="text-muted small">Sem observação operacional</div>
+                <div class="display-6 fw-semibold">@semObservacao</div>
+                <div class="small text-muted">opcional, mas útil para auditoria e coleta</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<form method="get" class="card border-0 shadow-sm mb-3">
+    <div class="card-body">
+        <div class="row g-2 align-items-end">
+            <div class="col-12 col-lg">
+                <label class="form-label fw-semibold">Pesquisar localização</label>
+                <input name="q" value="@q" class="form-control form-control-lg"
+                       placeholder="Ex.: Arquivo Central, Sala 01, Estante A, Prateleira 03, Palete 02..." />
+                <div class="form-text">Use qualquer parte do endereço físico para localizar rapidamente.</div>
+            </div>
+            <div class="col-12 col-lg-auto d-flex gap-2">
+                <button class="btn btn-primary btn-lg" type="submit">
+                    <i class="bi bi-search me-1"></i>Pesquisar
+                </button>
+                <a class="btn btn-outline-secondary btn-lg" href="/Physical/Locations">
+                    <i class="bi bi-x-lg me-1"></i>Limpar
+                </a>
+            </div>
+        </div>
     </div>
 </form>
 
-<div class="card">
-    <div class="card-header d-flex justify-content-between align-items-center">
-        <strong>Resultados</strong>
-        <span class="text-muted small">Total: @Model.Count</span>
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-white d-flex flex-wrap justify-content-between align-items-center gap-2 py-3">
+        <div>
+            <strong>Endereços cadastrados</strong>
+            <div class="small text-muted">Cada alteração deve gerar rastreabilidade e apoiar a localização exata das caixas.</div>
+        </div>
+        <span class="badge text-bg-primary rounded-pill">@total resultado(s)</span>
     </div>
 
     <div class="table-responsive">
         <table class="table table-hover align-middle mb-0">
             <thead class="table-light">
                 <tr>
-                    <th>Prédio</th>
-                    <th>Sala</th>
-                    <th>Corredor</th>
-                    <th>Estante</th>
-                    <th>Prateleira</th>
-                    <th>Palete</th>
+                    <th>Endereço físico</th>
+                    <th>Detalhamento</th>
                     <th>Observações</th>
-                    <th style="width: 170px;">Ações</th>
+                    <th class="text-end" style="width: 220px;">Ações</th>
                 </tr>
             </thead>
             <tbody>
-                @if (Model.Count == 0)
+                @if (total == 0)
                 {
                     <tr>
-                        <td colspan="8" class="text-center text-muted py-4">
-                            Nenhuma localização encontrada.
+                        <td colspan="4" class="text-center py-5">
+                            <i class="bi bi-geo-alt display-5 text-muted d-block mb-2"></i>
+                            <div class="fw-semibold">Nenhuma localização encontrada</div>
+                            <div class="text-muted small mb-3">Cadastre o primeiro endereço físico para iniciar o controle de guarda.</div>
+                            <a class="btn btn-primary" href="/Physical/Locations/New">Cadastrar localização</a>
                         </td>
                     </tr>
                 }
@@ -78,25 +129,28 @@
                     foreach (var r in Model)
                     {
                         <tr>
-                            <td class="fw-semibold">@r.Building</td>
-                            <td>@(r.Room ?? "-")</td>
-                            <td>@(r.Aisle ?? "-")</td>
-                            <td>@(r.Rack ?? "-")</td>
-                            <td>@(r.Shelf ?? "-")</td>
-                            <td>@(r.Pallet ?? "-")</td>
-                            <td class="text-muted">@((string.IsNullOrWhiteSpace(r.Notes)) ? "-" : r.Notes)</td>
                             <td>
-                                <div class="d-flex gap-2">
-                                    <a class="btn btn-sm btn-outline-primary"
-                                       href="/Physical/Locations/@r.Id"
-                                       title="Editar">
-                                        <i class="bi bi-pencil"></i>
+                                <div class="fw-semibold"><i class="bi bi-building me-1 text-primary"></i>@r.Building</div>
+                                <div class="small text-muted">Sala @(r.Room ?? "—")</div>
+                            </td>
+                            <td>
+                                <div class="d-flex flex-wrap gap-1">
+                                    <span class="badge text-bg-light border">Corredor @(r.Aisle ?? "—")</span>
+                                    <span class="badge text-bg-light border">Estante @(r.Rack ?? "—")</span>
+                                    <span class="badge text-bg-light border">Prateleira @(r.Shelf ?? "—")</span>
+                                    <span class="badge text-bg-light border">Palete @(r.Pallet ?? "—")</span>
+                                </div>
+                            </td>
+                            <td class="text-muted">@((string.IsNullOrWhiteSpace(r.Notes)) ? "Sem observações" : r.Notes)</td>
+                            <td class="text-end">
+                                <div class="btn-group" role="group" aria-label="Ações da localização">
+                                    <a class="btn btn-sm btn-outline-primary" href="/Physical/Locations/@r.Id" title="Editar localização">
+                                        <i class="bi bi-pencil"></i> Editar
                                     </a>
-
                                     <form method="post" action="/Physical/Locations/@r.Id/Delete" class="m-0"
-                                          onsubmit="return confirm('Confirma excluir esta localização?');">
+                                          onsubmit="return confirm('Confirma excluir esta localização? Esta ação deve ser usada apenas quando não houver caixas vinculadas.');">
                                         @Html.AntiForgeryToken()
-                                        <button class="btn btn-sm btn-outline-danger" type="submit" title="Excluir">
+                                        <button class="btn btn-sm btn-outline-danger" type="submit" title="Excluir localização">
                                             <i class="bi bi-trash"></i>
                                         </button>
                                     </form>

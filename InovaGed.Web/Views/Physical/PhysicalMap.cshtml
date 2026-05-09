@@ -1,43 +1,107 @@
-﻿@model IReadOnlyList<InovaGed.Application.Ged.Physical.PhysicalMapRowDto>
+@model IReadOnlyList<InovaGed.Application.Ged.Physical.PhysicalMapRowDto>
 @addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
 
 @{
     ViewData["Title"] ??= "Mapa de Guarda Física";
     var q = (ViewBag.Q as string) ?? "";
+
+    var total = Model?.Count ?? 0;
+    var semCaixa = Model?.Count(x => !x.BoxId.HasValue) ?? 0;
+    var semLocalizacao = Model?.Count(x => string.IsNullOrWhiteSpace(x.FullLocation)) ?? 0;
+    var localizados = total - semLocalizacao;
 }
 
-<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
     <div>
-        <h4 class="mb-0">@ViewData["Title"]</h4>
-        <div class="text-muted small">@ViewData["Subtitle"]</div>
+        <div class="text-uppercase text-muted small fw-semibold">Guarda Física</div>
+        <h3 class="mb-1">@ViewData["Title"]</h3>
+        <div class="text-muted">@ViewData["Subtitle"]</div>
     </div>
 
-    <a class="btn btn-outline-secondary btn-sm" asp-controller="Physical" asp-action="Boxes">
-        <i class="bi bi-arrow-left me-1"></i>Caixas
-    </a>
+    <div class="d-flex flex-wrap gap-2">
+        <a class="btn btn-outline-secondary" asp-controller="Physical" asp-action="Boxes">
+            <i class="bi bi-archive me-1"></i>Caixas
+        </a>
+        <a class="btn btn-outline-secondary" asp-controller="Physical" asp-action="Locations">
+            <i class="bi bi-geo-alt me-1"></i>Localizações
+        </a>
+    </div>
 </div>
 
-<form method="get" class="card mb-3">
-    <div class="card-body d-flex flex-wrap gap-2">
-        <div class="flex-grow-1">
-            <input name="q"
-                   value="@q"
-                   class="form-control"
-                   placeholder="Buscar por documento, lote, caixa, etiqueta ou localização..." />
+<div class="row g-3 mb-4">
+    <div class="col-12 col-md-3">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <div class="text-muted small">Registros no mapa</div>
+                <div class="display-6 fw-semibold">@total</div>
+            </div>
         </div>
+    </div>
+    <div class="col-12 col-md-3">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <div class="text-muted small">Localizados</div>
+                <div class="display-6 fw-semibold text-success">@localizados</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-12 col-md-3">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <div class="text-muted small">Sem caixa</div>
+                <div class="display-6 fw-semibold text-warning">@semCaixa</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-12 col-md-3">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <div class="text-muted small">Sem localização</div>
+                <div class="display-6 fw-semibold text-danger">@semLocalizacao</div>
+            </div>
+        </div>
+    </div>
+</div>
 
-        <button class="btn btn-primary" type="submit">
-            <i class="bi bi-search me-1"></i>Pesquisar
-        </button>
+<form method="get" class="card border-0 shadow-sm mb-3">
+    <div class="card-body">
+        <div class="row g-2 align-items-end">
+            <div class="col-12 col-lg">
+                <label class="form-label fw-semibold">Pesquisar no mapa de guarda</label>
+                <input name="q" value="@q" class="form-control form-control-lg"
+                       placeholder="Documento, prontuário, lote, caixa, etiqueta ou localização..." />
+                <div class="form-text">Ideal para localizar rapidamente onde o documento físico está guardado.</div>
+            </div>
 
-        <a class="btn btn-outline-secondary" asp-action="PhysicalMap">Limpar</a>
+            <div class="col-12 col-lg-auto d-flex gap-2">
+                <button class="btn btn-primary btn-lg" type="submit">
+                    <i class="bi bi-search me-1"></i>Pesquisar
+                </button>
+                <a class="btn btn-outline-secondary btn-lg" asp-action="PhysicalMap">
+                    <i class="bi bi-x-lg me-1"></i>Limpar
+                </a>
+            </div>
+        </div>
     </div>
 </form>
 
-<div class="card">
-    <div class="card-header d-flex justify-content-between align-items-center">
-        <strong>Resultado do Mapa de Guarda Física</strong>
-        <span class="badge text-bg-primary">@Model.Count registro(s)</span>
+@if (semCaixa > 0 || semLocalizacao > 0)
+{
+    <div class="alert alert-warning d-flex align-items-start gap-2">
+        <i class="bi bi-exclamation-triangle-fill fs-5"></i>
+        <div>
+            <strong>Pontos de atenção:</strong> documentos sem caixa ou sem localização prejudicam a rastreabilidade física, empréstimos, auditoria e localização operacional.
+        </div>
+    </div>
+}
+
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-white d-flex flex-wrap justify-content-between align-items-center gap-2 py-3">
+        <div>
+            <strong>Resultado do Mapa de Guarda Física</strong>
+            <div class="small text-muted">Visão consolidada de documento, lote, caixa e endereço físico.</div>
+        </div>
+        <span class="badge text-bg-primary rounded-pill">@total registro(s)</span>
     </div>
 
     <div class="table-responsive">
@@ -53,11 +117,13 @@
             </thead>
 
             <tbody>
-                @if (Model.Count == 0)
+                @if (total == 0)
                 {
                     <tr>
-                        <td colspan="5" class="text-center text-muted py-4">
-                            Nenhum registro encontrado.
+                        <td colspan="5" class="text-center py-5">
+                            <i class="bi bi-map display-5 text-muted d-block mb-2"></i>
+                            <div class="fw-semibold">Nenhum registro encontrado</div>
+                            <div class="text-muted small">Ajuste a busca ou vincule documentos às caixas para formar o mapa físico.</div>
                         </td>
                     </tr>
                 }
@@ -68,9 +134,7 @@
                         <tr>
                             <td>
                                 <div class="fw-semibold">@r.DocumentTitle</div>
-                                <div class="text-muted small">
-                                    <code>@r.DocumentCode</code>
-                                </div>
+                                <div class="text-muted small"><code>@r.DocumentCode</code></div>
                             </td>
 
                             <td>
@@ -96,11 +160,11 @@
                             <td>
                                 @if (!string.IsNullOrWhiteSpace(r.FullLocation))
                                 {
-                                    <span>@r.FullLocation</span>
+                                    <span><i class="bi bi-geo-alt-fill text-success me-1"></i>@r.FullLocation</span>
                                 }
                                 else
                                 {
-                                    <span class="badge text-bg-warning">Sem localização</span>
+                                    <span class="badge text-bg-danger">Sem localização</span>
                                 }
                             </td>
 
