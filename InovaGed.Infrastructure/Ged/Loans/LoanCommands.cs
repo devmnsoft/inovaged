@@ -35,6 +35,10 @@ public sealed class LoanCommands : ILoanCommands
             if (userId is null || userId == Guid.Empty)
                 return Result<Guid>.Fail("USER", "Usuário logado não identificado para requester_id.");
 
+            var requesterProfile = (vm.RequesterProfile ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(requesterProfile))
+                return Result<Guid>.Fail("PROFILE", "Perfil do solicitante é obrigatório.");
+
             var docIds = (vm.DocumentIds ?? new List<Guid>())
                 .Where(x => x != Guid.Empty)
                 .Distinct()
@@ -176,10 +180,38 @@ values
                         LoanId = loanId,
                         EventTime = nowUtc,
                         ByUserId = userId.Value,
-                        Notes = (vm.Notes ?? "").Trim()
+                        Notes = $"[STATUS=REQUESTED] {(vm.Notes ?? '').Trim()}".Trim()
                     },
                     transaction: tx,
                     cancellationToken: ct));
+
+            
+            const string sqlAllowedFile = """
+insert into ged.loan_request_allowed_file
+(
+  tenant_id,
+  loan_id,
+  file_id,
+  reg_status
+)
+values
+(
+  @TenantId,
+  @LoanId,
+  @FileId,
+  'A'
+);
+""";
+
+            foreach (var fileId in (vm.AllowedFileIds ?? new List<Guid>()).Where(x => x != Guid.Empty).Distinct())
+            {
+                await con.ExecuteAsync(new CommandDefinition(sqlAllowedFile, new
+                {
+                    TenantId = tenantId,
+                    LoanId = loanId,
+                    FileId = fileId
+                }, transaction: tx, cancellationToken: ct));
+            }
 
             await tx.CommitAsync(ct);
             return Result<Guid>.Ok(loanId);
@@ -312,6 +344,21 @@ where lr.tenant_id=@tenant_id
             await using var conn = await _db.OpenAsync(ct);
             await using var tx = await conn.BeginTransactionAsync(ct);
 
+            if (newStatus == "APPROVED")
+            {
+                const string sqlAuth = """
+select exists (
+  select 1
+  from ged.loan_approval_profile p
+  join aspnetuserroles ur on ur.roleid = p.role_id
+  where p.tenant_id=@TenantId and ur.userid=@UserId and p.reg_status='A'
+);
+""";
+                var canApprove = await conn.ExecuteScalarAsync<bool>(new CommandDefinition(sqlAuth, new { TenantId = tenantId, UserId = userId }, transaction: tx, cancellationToken: ct));
+                if (!canApprove)
+                    return Result.Fail("AUTH", "Usuário não possui perfil de aprovação para empréstimos.");
+            }
+
             var nowUtc = DateTimeOffset.UtcNow;
 
             const string upd = """
@@ -353,7 +400,7 @@ values(@tenant_id, @loan_id, @nowUtc, @event_type, @by_user_id, @notes, @nowUtc,
                     loan_id = loanId,
                     event_type = newStatus,
                     by_user_id = userId,
-                    notes = (notes ?? "").Trim(),
+                    notes = $"[STATUS={newStatus}] {(notes ?? "").Trim()}".Trim(),
                     nowUtc
                 }, transaction: tx, cancellationToken: ct));
 
