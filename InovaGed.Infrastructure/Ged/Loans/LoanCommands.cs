@@ -35,10 +35,6 @@ public sealed class LoanCommands : ILoanCommands
             if (userId is null || userId == Guid.Empty)
                 return Result<Guid>.Fail("USER", "Usuário logado não identificado para requester_id.");
 
-            var requesterProfile = (vm.RequesterProfile ?? string.Empty).Trim();
-            if (string.IsNullOrWhiteSpace(requesterProfile))
-                return Result<Guid>.Fail("PROFILE", "Perfil do solicitante é obrigatório.");
-
             var docIds = (vm.DocumentIds ?? new List<Guid>())
                 .Where(x => x != Guid.Empty)
                 .Distinct()
@@ -186,33 +182,6 @@ values
                     cancellationToken: ct));
 
             
-            const string sqlAllowedFile = """
-insert into ged.loan_request_allowed_file
-(
-  tenant_id,
-  loan_id,
-  file_id,
-  reg_status
-)
-values
-(
-  @TenantId,
-  @LoanId,
-  @FileId,
-  'A'
-);
-""";
-
-            foreach (var fileId in (vm.AllowedFileIds ?? new List<Guid>()).Where(x => x != Guid.Empty).Distinct())
-            {
-                await con.ExecuteAsync(new CommandDefinition(sqlAllowedFile, new
-                {
-                    TenantId = tenantId,
-                    LoanId = loanId,
-                    FileId = fileId
-                }, transaction: tx, cancellationToken: ct));
-            }
-
             await tx.CommitAsync(ct);
             return Result<Guid>.Ok(loanId);
         }

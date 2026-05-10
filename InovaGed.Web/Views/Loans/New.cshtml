@@ -35,11 +35,6 @@
                 <input class="form-control" name="RequesterName" value="@Model.RequesterName" placeholder="Ex.: Enfermagem / Dr(a). Fulano" />
             </div>
             <div class="col-md-3">
-                <label class="form-label">Perfil do solicitante</label>
-                <input class="form-control" name="RequesterProfile" value="@Model.RequesterProfile" placeholder="Ex.: ENFERMAGEM" />
-            </div>
-
-            <div class="col-md-3">
                 <label class="form-label">Vencimento</label>
                 <input type="date" class="form-control" name="DueAt" value="@(Model.DueAt?.ToString("yyyy-MM-dd"))" />
                 <div class="form-text">A devolução será cobrada automaticamente após o vencimento.</div>
