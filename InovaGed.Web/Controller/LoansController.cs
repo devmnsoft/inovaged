@@ -1,4 +1,6 @@
 ﻿using InovaGed.Application.Audit;
+using Dapper;
+using InovaGed.Application.Common.Database;
 using InovaGed.Application.Ged.Loans;
 using InovaGed.Application.Identity;
 using Microsoft.AspNetCore.Authorization;
@@ -16,19 +18,22 @@ public sealed class LoansController : Controller
     private readonly ILoanQueries _queries;
     private readonly ILoanCommands _commands;
     private readonly IAuditWriter _audit;
+    private readonly IDbConnectionFactory _db;
 
     public LoansController(
         ILogger<LoansController> logger,
         ICurrentUser user,
         ILoanQueries queries,
         ILoanCommands commands,
-        IAuditWriter audit)
+        IAuditWriter audit,
+        IDbConnectionFactory db)
     {
         _logger = logger;
         _user = user;
         _queries = queries;
         _commands = commands;
         _audit = audit;
+        _db = db;
     }
 
     // =========================================================
@@ -209,6 +214,14 @@ public sealed class LoansController : Controller
             TempData["Err"] = "Erro ao carregar detalhes do empréstimo.";
             return RedirectToAction(nameof(Index));
         }
+    }
+
+    [HttpGet("Profiles")]
+    public async Task<IActionResult> Profiles(CancellationToken ct)
+    {
+        await using var conn = await _db.OpenAsync(ct);
+        var rows = await conn.QueryAsync("select p.id, p.profile_name, coalesce(r.name,'') as role_name from ged.loan_approval_profile p left join aspnetroles r on r.id=p.role_id where p.tenant_id=@TenantId and p.reg_status='A' order by p.profile_name", new { TenantId = _user.TenantId });
+        return View(rows);
     }
 
     // =========================================================

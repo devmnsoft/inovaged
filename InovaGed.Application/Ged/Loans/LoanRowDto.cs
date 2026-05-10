@@ -27,11 +27,14 @@ public sealed class LoanCreateVM
 {
     public string RequesterName { get; set; } = "";
     public Guid? RequesterId { get; set; }
+    public string? RequesterProfile { get; set; }
     public DateTimeOffset? DueAt { get; set; }
     public bool IsPhysical { get; set; } = true;
+    public bool AllowDigitalFileAccess { get; set; }
 
     // seleção de documentos (mínimo 1)
     public List<Guid> DocumentIds { get; set; } = new();
+    public List<Guid> AllowedFileIds { get; set; } = new();
     public string? Notes { get; set; }
 }
 
