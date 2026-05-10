@@ -43,7 +43,8 @@ WHERE d.tenant_id = @tenantId
         OR
         (@folderId IS NOT NULL AND d.folder_id = @folderId)
       )
-  AND d.status <> 'ARCHIVED'::ged.document_status_enum
+  AND d.status = 'ACTIVE'::ged.document_status_enum
+  AND d.deleted_at_utc IS NULL
   AND (@q IS NULL OR @q = '' OR
        d.title ILIKE ('%'||@q||'%') OR
        cv.file_name ILIKE ('%'||@q||'%') OR
@@ -80,7 +81,9 @@ SELECT
     0                    AS ""CurrentVersion""
 FROM ged.document d
 WHERE d.tenant_id = @tenantId
-  AND d.id = @documentId;";
+  AND d.id = @documentId
+  AND d.status = 'ACTIVE'::ged.document_status_enum
+  AND d.deleted_at_utc IS NULL;";
 
         await using var conn = await _db.OpenAsync(ct);
 
@@ -130,6 +133,8 @@ LEFT JOIN LATERAL (
 ) oj ON true
 WHERE v.tenant_id = @tenantId
   AND v.document_id = @documentId
+  AND d.status = 'ACTIVE'::ged.document_status_enum
+  AND d.deleted_at_utc IS NULL
 ORDER BY v.created_at DESC;";
 
         await using var conn = await _db.OpenAsync(ct);
@@ -150,8 +155,13 @@ SELECT
     v.content_type AS ""ContentType"",
     v.storage_path AS ""StoragePath""
 FROM ged.document_version v
+JOIN ged.document d
+  ON d.tenant_id = v.tenant_id
+ AND d.id = v.document_id
 WHERE v.tenant_id = @tenantId
-  AND v.id = @versionId;";
+  AND v.id = @versionId
+  AND d.status = 'ACTIVE'::ged.document_status_enum
+  AND d.deleted_at_utc IS NULL;";
 
         await using var conn = await _db.OpenAsync(ct);
 
