@@ -180,7 +180,7 @@ values
                         LoanId = loanId,
                         EventTime = nowUtc,
                         ByUserId = userId.Value,
-                        Notes = $"[STATUS=REQUESTED] {(vm.Notes ?? '').Trim()}".Trim()
+                        Notes = $"[STATUS=REQUESTED] {(vm.Notes ?? string.Empty).Trim()}".Trim()
                     },
                     transaction: tx,
                     cancellationToken: ct));
