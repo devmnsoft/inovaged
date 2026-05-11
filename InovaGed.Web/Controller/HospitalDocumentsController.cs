@@ -156,6 +156,8 @@ public sealed class HospitalDocumentsController : Controller
             ) latest_v ON true
 
             WHERE d.tenant_id = @tenantId
+          AND d.reg_status = 'A'::bpchar
+          AND d.status <> 'ARCHIVED'::ged.document_status_enum
 
               AND (
                     d.code ILIKE @likeQuery
