@@ -95,7 +95,7 @@ public sealed class CertAuthController : Controller
             new(ClaimTypes.Name, user.Name),
             new(ClaimTypes.Email, user.Email),
             new("tenant_id", user.TenantId.ToString()),
-            new("auth_method", "icp_cert_poc"),
+            new("auth_method", "icp_cert"),
             new("cpf", cpfUser),
             new("cert_thumbprint", v.Thumbprint ?? "")
         };

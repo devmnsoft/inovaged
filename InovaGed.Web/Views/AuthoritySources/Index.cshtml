@@ -18,7 +18,7 @@
             <form asp-action="RecomputeIntegrity" method="post" class="m-0">
                 @Html.AntiForgeryToken()
                 <button class="btn btn-sm btn-outline-secondary" type="submit">
-                    <i class="bi bi-arrow-repeat me-1"></i> Recalcular Hash (PoC)
+                    <i class="bi bi-arrow-repeat me-1"></i> Recalcular Hash (Operacional)
                 </button>
             </form>
 
@@ -88,7 +88,7 @@
         </div>
 
         <div class="alert alert-info mt-3 mb-0">
-            <b>PoC (Item 12):</b> qualquer alteração em fontes (CA/OCSP/Policy) gera auditoria e altera o hash.
+            <b>Operacional (Item 12):</b> qualquer alteração em fontes (CA/OCSP/Policy) gera auditoria e altera o hash.
             Se o hash calculado ≠ hash armazenado, o sistema registra <code>INTEGRITY_FAIL</code> em <code>ged.authority_source_audit</code>.
         </div>
     </div>
