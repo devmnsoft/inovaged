@@ -920,6 +920,29 @@ public sealed class GedController : Controller
                 return NotFound();
 
             var alreadyCompleted = await _ocrJobs.HasCompletedAsync(tenantId, versionId, ct);
+            var latestStatus = await _ocrJobs.GetLatestByVersionIdAsync(tenantId, versionId, ct);
+
+            var alreadyRunning = latestStatus is not null &&
+                                 (string.Equals(latestStatus.Status.ToString(), "PENDING", StringComparison.OrdinalIgnoreCase) ||
+                                  string.Equals(latestStatus.Status.ToString(), "PROCESSING", StringComparison.OrdinalIgnoreCase));
+
+            if (alreadyRunning)
+            {
+                if (IsAjaxRequest())
+                {
+                    return Json(new
+                    {
+                        success = true,
+                        alreadyRunning = true,
+                        message = "OCR já está em processamento para esta versão.",
+                        versionId,
+                        jobId = latestStatus!.JobId
+                    });
+                }
+
+                TempData["Success"] = "OCR já está em processamento para esta versão.";
+                return RedirectToAction(nameof(Details), new { id = v.DocumentId, versionId });
+            }
 
             if (alreadyCompleted && !force)
             {
