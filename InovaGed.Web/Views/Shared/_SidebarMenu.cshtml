@@ -163,10 +163,24 @@
 		<span>Buscar Prontuários e Documentos</span>
 	</a>
 
-	<a asp-controller="Ged" asp-action="Folders" class="@Active("Ged", "Folders")">
-		<i class="bi bi-folder"></i>
-		<span>Pastas e Dossiês</span>
-	</a>
+		<a asp-controller="Ged" asp-action="Folders" class="@Active("Ged", "Folders")">
+			<i class="bi bi-folder"></i>
+			<span>Pastas e Dossiês</span>
+		</a>
+
+		<a asp-controller="Ged"
+		   asp-action="Processing"
+		   class="@Active("Ged", "Processing")">
+			<i class="bi bi-diagram-3"></i>
+			<span>Fila de Processamento OCR</span>
+		</a>
+
+		<a asp-controller="Ged"
+		   asp-action="Kpi"
+		   class="@Active("Ged", "Kpi")">
+			<i class="bi bi-bar-chart-line"></i>
+			<span>KPI do GED</span>
+		</a>
 
 	<a asp-controller="Batches" asp-action="Index" class="@ActiveAny("Batches")">
 		<i class="bi bi-box-seam"></i>
