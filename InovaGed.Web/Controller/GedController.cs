@@ -177,6 +177,42 @@ public sealed class GedController : Controller
     }
 
     [HttpGet]
+    public async Task<IActionResult> Kpi(CancellationToken ct)
+    {
+        if (!_currentUser.IsAuthenticated)
+            return RedirectToAction("Login", "Account");
+
+        var tenantId = _currentUser.TenantId;
+
+        const string sql = @"
+SELECT
+  (SELECT count(*)::int FROM ged.document d WHERE d.tenant_id = @tenantId AND d.reg_status = 'A') AS TotalDocuments,
+  (SELECT count(*)::int FROM ged.document d WHERE d.tenant_id = @tenantId AND d.reg_status = 'A' AND d.created_at >= date_trunc('month', now())) AS DocumentsThisMonth,
+  (SELECT count(*)::int FROM ged.ocr_job j WHERE j.tenant_id = @tenantId AND j.status = 'PROCESSING'::ged.ocr_status_enum) AS OcrProcessing,
+  (SELECT count(*)::int FROM ged.ocr_job j WHERE j.tenant_id = @tenantId AND j.status = 'PENDING'::ged.ocr_status_enum) AS OcrPending,
+  (SELECT count(*)::int FROM ged.ocr_job j WHERE j.tenant_id = @tenantId AND j.status = 'COMPLETED'::ged.ocr_status_enum AND j.finished_at >= now() - interval '24 hours') AS OcrCompleted24h,
+  (SELECT count(*)::int FROM ged.ocr_job j WHERE j.tenant_id = @tenantId AND j.status = 'ERROR'::ged.ocr_status_enum AND j.finished_at >= now() - interval '24 hours') AS OcrErrors24h,
+  (SELECT count(*)::int FROM ged.document d WHERE d.tenant_id = @tenantId AND d.reg_status = 'A' AND (d.description IS NULL OR btrim(d.description) = '' OR btrim(d.description) = '-')) AS DocumentsWithoutDescription;";
+
+        await using var conn = await _db.OpenAsync(ct);
+        var row = await conn.QuerySingleAsync(
+            new CommandDefinition(sql, new { tenantId }, cancellationToken: ct));
+
+        var vm = new GedKpiVm
+        {
+            TotalDocuments = (int)row.totaldocuments,
+            DocumentsThisMonth = (int)row.documentsthismonth,
+            OcrProcessing = (int)row.ocrprocessing,
+            OcrPending = (int)row.ocrpending,
+            OcrCompleted24h = (int)row.ocrcompleted24h,
+            OcrErrors24h = (int)row.ocrerrors24h,
+            DocumentsWithoutDescription = (int)row.documentswithoutdescription
+        };
+
+        return View(vm);
+    }
+
+    [HttpGet]
     public async Task<IActionResult> ProcessingStatus(CancellationToken ct)
     {
         if (!_currentUser.IsAuthenticated)
@@ -403,6 +439,17 @@ LIMIT 20;";
         public int QueuePosition { get; set; }
         public int PendingCount { get; set; }
         public int ProcessingCount { get; set; }
+    }
+
+    public sealed class GedKpiVm
+    {
+        public int TotalDocuments { get; set; }
+        public int DocumentsThisMonth { get; set; }
+        public int OcrProcessing { get; set; }
+        public int OcrPending { get; set; }
+        public int OcrCompleted24h { get; set; }
+        public int OcrErrors24h { get; set; }
+        public int DocumentsWithoutDescription { get; set; }
     }
 
     // =========================
