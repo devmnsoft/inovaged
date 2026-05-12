@@ -127,6 +127,7 @@ public sealed class GedController : Controller
 
             // ✅ KPI: documentos não classificados (filtra por pasta quando houver)
             ViewBag.UnclassifiedCount = await _clsQ.CountUnclassifiedAsync(tenantId, effectiveFolderId, ct);
+            ViewBag.RunningOcrCount = await CountRunningOcrJobsAsync(tenantId, ct);
 
             var vm = new GedExplorerVM
             {
@@ -161,6 +162,81 @@ public sealed class GedController : Controller
             TempData["erro"] = "Erro ao carregar Explorer.";
             return View(new GedExplorerVM());
         }
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Processing(CancellationToken ct)
+    {
+        if (!_currentUser.IsAuthenticated)
+            return RedirectToAction("Login", "Account");
+
+        var tenantId = _currentUser.TenantId;
+        var rows = await ListRunningOcrJobsAsync(tenantId, ct);
+        return View(rows);
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> ProcessingStatus(CancellationToken ct)
+    {
+        if (!_currentUser.IsAuthenticated)
+            return Unauthorized();
+
+        var tenantId = _currentUser.TenantId;
+        var rows = await ListRunningOcrJobsAsync(tenantId, ct);
+        return Json(new { success = true, count = rows.Count, items = rows });
+    }
+
+    private async Task<int> CountRunningOcrJobsAsync(Guid tenantId, CancellationToken ct)
+    {
+        const string sql = @"
+SELECT count(1)
+FROM ged.ocr_job j
+WHERE j.tenant_id = @tenantId
+  AND j.status IN ('PENDING'::ged.ocr_status_enum, 'PROCESSING'::ged.ocr_status_enum);";
+
+        await using var conn = await _db.OpenAsync(ct);
+        return await conn.ExecuteScalarAsync<int>(
+            new CommandDefinition(sql, new { tenantId }, cancellationToken: ct));
+    }
+
+    private async Task<List<ProcessingRowVm>> ListRunningOcrJobsAsync(Guid tenantId, CancellationToken ct)
+    {
+        const string sql = @"
+SELECT
+  j.id AS JobId,
+  j.document_version_id AS VersionId,
+  d.id AS DocumentId,
+  d.title AS DocumentTitle,
+  j.status::text AS Status,
+  j.requested_at AS RequestedAt,
+  j.started_at AS StartedAt
+FROM ged.ocr_job j
+JOIN ged.document_version dv
+  ON dv.tenant_id = j.tenant_id
+ AND dv.id = j.document_version_id
+JOIN ged.document d
+  ON d.tenant_id = dv.tenant_id
+ AND d.id = dv.document_id
+WHERE j.tenant_id = @tenantId
+  AND j.status IN ('PENDING'::ged.ocr_status_enum, 'PROCESSING'::ged.ocr_status_enum)
+ORDER BY j.requested_at DESC
+LIMIT 200;";
+
+        await using var conn = await _db.OpenAsync(ct);
+        var rows = await conn.QueryAsync<ProcessingRowVm>(
+            new CommandDefinition(sql, new { tenantId }, cancellationToken: ct));
+        return rows.ToList();
+    }
+
+    public sealed class ProcessingRowVm
+    {
+        public long JobId { get; set; }
+        public Guid VersionId { get; set; }
+        public Guid DocumentId { get; set; }
+        public string DocumentTitle { get; set; } = "";
+        public string Status { get; set; } = "";
+        public DateTime RequestedAt { get; set; }
+        public DateTime? StartedAt { get; set; }
     }
 
     // =========================
