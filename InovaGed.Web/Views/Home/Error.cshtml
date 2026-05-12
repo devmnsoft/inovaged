@@ -1,0 +1,38 @@
+@{
+    ViewData["Title"] = "Ops! Algo deu errado";
+    var reqId = (string?)ViewBag.RequestId;
+    var path = (string?)ViewBag.ErrorPath;
+}
+
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-12 col-lg-8">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body p-4 p-md-5 text-center">
+                    <div class="display-6 mb-2">😕</div>
+                    <h2 class="mb-2">Não foi possível concluir sua solicitação</h2>
+                    <p class="text-muted mb-4">
+                        O sistema encontrou um erro inesperado. Tente novamente em alguns instantes.
+                    </p>
+
+                    <div class="d-flex flex-wrap gap-2 justify-content-center">
+                        <a class="btn btn-primary" href="javascript:location.reload()">
+                            <i class="bi bi-arrow-clockwise me-1"></i>Tentar novamente
+                        </a>
+                        <a class="btn btn-outline-secondary" asp-controller="Ged" asp-action="Index">
+                            <i class="bi bi-house me-1"></i>Voltar ao GED
+                        </a>
+                    </div>
+
+                    <div class="mt-4 small text-muted">
+                        <div><strong>ID do erro:</strong> @reqId</div>
+                        @if (!string.IsNullOrWhiteSpace(path))
+                        {
+                            <div><strong>Rota:</strong> @path</div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

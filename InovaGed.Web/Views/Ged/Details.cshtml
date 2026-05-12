@@ -711,6 +711,8 @@
     <script src="~/js/ged-ocr-status.js" asp-append-version="true"></script>
     <script src="~/js/classification-panel.js" asp-append-version="true"></script>
     <script>
+        window.__GED_OCR_CUSTOM_HANDLER__ = true;
+
         window.setBtnLoading = function (btn, loading) {
             if (!btn) return;
 
@@ -1154,6 +1156,7 @@
         }
 
         function configureOcrForms() {
+            const pendingOcrRequests = new Set();
             document.querySelectorAll('.js-ocr-form').forEach(form => {
                 form.addEventListener('submit', async function (e) {
                     e.preventDefault();
@@ -1161,12 +1164,18 @@
                     const btn = form.querySelector('button[type="submit"]');
                     const versionId = form.querySelector('input[name="versionId"]')?.value;
                     const isForce = form.classList.contains('js-ocr-force-form');
+                    const requestKey = `${form.action}::${versionId || ''}::${isForce ? 'force' : 'normal'}`;
+
+                    if (pendingOcrRequests.has(requestKey)) {
+                        return;
+                    }
 
                     if (isForce) {
                         const ok = confirm('Deseja realmente reprocessar o OCR? Isso pode gerar uma nova versão OCR.');
                         if (!ok) return;
                     }
 
+                    pendingOcrRequests.add(requestKey);
                     setBtnLoading(btn, true);
 
                     try {
@@ -1185,6 +1194,8 @@
                             const txt = await resp.text().catch(() => '');
                             showGedToast(txt || 'Erro ao solicitar OCR.', 'danger');
                             showPageAlert(txt || 'Erro ao solicitar OCR.', 'danger');
+                            pendingOcrRequests.delete(requestKey);
+                            setBtnLoading(btn, false);
                             return;
                         }
 
@@ -1198,8 +1209,11 @@
                             startOcrPolling(versionId);
                         }
                     }
-                    finally {
+                    catch {
+                        pendingOcrRequests.delete(requestKey);
                         setBtnLoading(btn, false);
+                        showGedToast('Erro ao solicitar OCR.', 'danger');
+                        showPageAlert('Erro ao solicitar OCR.', 'danger');
                     }
                 });
             });
