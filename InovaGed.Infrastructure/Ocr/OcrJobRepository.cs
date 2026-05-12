@@ -12,6 +12,7 @@ public sealed class OcrJobRepository : IOcrJobRepository
     private readonly ILogger<OcrJobRepository> _logger;
 
     private static readonly TimeSpan LeaseDuration = TimeSpan.FromMinutes(10);
+    private const int MaxConcurrentProcessingJobs = 1;
 
     public OcrJobRepository(IDbConnectionFactory db, ILogger<OcrJobRepository> logger)
     {
@@ -138,15 +139,31 @@ RETURNING id;";
     public async Task<OcrJobDto?> DequeueAndMarkProcessingAsync(CancellationToken ct)
     {
         const string sql = @"
-WITH cte AS (
+WITH lock_gate AS (
+  SELECT pg_try_advisory_xact_lock(91827364) AS ok
+),
+capacity AS (
+  SELECT count(*)::int AS running
+  FROM ged.ocr_job
+  WHERE status = 'PROCESSING'::ged.ocr_status_enum
+    AND lease_expires_at IS NOT NULL
+    AND lease_expires_at >= now()
+),
+cte AS (
   SELECT id
   FROM ged.ocr_job
+  CROSS JOIN lock_gate
+  CROSS JOIN capacity
   WHERE
+    lock_gate.ok = true
+    AND capacity.running < @maxConcurrent
+    AND (
     status = 'PENDING'::ged.ocr_status_enum
     OR (
         status = 'PROCESSING'::ged.ocr_status_enum
         AND lease_expires_at IS NOT NULL
         AND lease_expires_at < now()
+    )
     )
   ORDER BY requested_at
   FOR UPDATE SKIP LOCKED
@@ -172,7 +189,11 @@ RETURNING
         var job = await conn.QuerySingleOrDefaultAsync<OcrJobDto>(
             new CommandDefinition(
                 sql,
-                new { leaseSeconds = (int)LeaseDuration.TotalSeconds },
+                new
+                {
+                    leaseSeconds = (int)LeaseDuration.TotalSeconds,
+                    maxConcurrent = MaxConcurrentProcessingJobs
+                },
                 transaction: tx,
                 cancellationToken: ct));
 

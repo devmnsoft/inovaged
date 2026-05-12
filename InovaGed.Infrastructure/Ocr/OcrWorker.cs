@@ -551,7 +551,7 @@ WHERE tenant_id = @tenantId
             ct);
 
         await InsertDocumentAuditAsync(
-            db,
+            conn,
             tenantId,
             documentId,
             actorId,
@@ -682,7 +682,31 @@ DO UPDATE SET
      CancellationToken ct)
     {
         await using var conn = await db.OpenAsync(ct);
+        await InsertDocumentAuditAsync(
+            conn,
+            tenantId,
+            documentId,
+            userId,
+            action,
+            method,
+            before,
+            after,
+            source,
+            ct);
+    }
 
+    private static async Task InsertDocumentAuditAsync(
+     System.Data.IDbConnection conn,
+     Guid tenantId,
+     Guid documentId,
+     Guid? userId,
+     string action,
+     string method,
+     object? before,
+     object? after,
+     string source,
+     CancellationToken ct)
+    {
         var beforeJson = NormalizeJson(before);
         var afterJson = NormalizeJson(after);
 

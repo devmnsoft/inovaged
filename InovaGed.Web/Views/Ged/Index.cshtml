@@ -19,9 +19,28 @@
             CancellationToken.None
         );
     }
+
+    var runningOcrCount = (ViewBag.RunningOcrCount as int?) ?? 0;
 }
 
 <div class="row">
+    <div id="pageAlertHost" class="mb-2">
+        @if (TempData["Success"] is string okMsg && !string.IsNullOrWhiteSpace(okMsg))
+        {
+            <div class="alert alert-success alert-dismissible fade show" role="alert">
+                <i class="bi bi-check-circle me-1"></i>@okMsg
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Fechar"></button>
+            </div>
+        }
+        @if (TempData["Error"] is string errMsg && !string.IsNullOrWhiteSpace(errMsg))
+        {
+            <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                <i class="bi bi-exclamation-triangle me-1"></i>@errMsg
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Fechar"></button>
+            </div>
+        }
+    </div>
+
     <!-- COLUNA PASTAS -->
     <div class="col-12 col-xl-3">
         <div class="card">
@@ -233,6 +252,24 @@
                         <i class="bi bi-exclamation-triangle me-1"></i>
                         Não classificados: @unclassifiedCount
                     </span>
+
+                    @if (runningOcrCount > 0)
+                    {
+                        <a class="badge bg-warning text-dark text-decoration-none"
+                           asp-action="Processing"
+                           asp-controller="Ged"
+                           title="Existem OCRs em execução. Clique para acompanhar">
+                            <i class="bi bi-cpu me-1"></i>
+                            OCR em execução: @runningOcrCount
+                        </a>
+                    }
+
+                    <button type="button"
+                            class="btn btn-sm btn-outline-dark"
+                            data-bs-toggle="modal"
+                            data-bs-target="#modalFilaOcr">
+                        <i class="bi bi-list-task me-1"></i> Ver fila OCR
+                    </button>
                 </div>
 
                 <div class="d-flex align-items-center gap-2 flex-wrap">
@@ -322,7 +359,7 @@
                                                 </a>
                                             }
 
-                                            <form method="post" asp-controller="Ged" asp-action="DeleteDocument" class="d-inline">
+                                            <form method="post" asp-controller="Ged" asp-action="DeleteDocument" class="d-inline js-feedback-form">
                                                 @Html.AntiForgeryToken()
                                                 <input type="hidden" name="id" value="@d.Id" />
                                                 <input type="hidden" name="folderId" value="@Model.CurrentFolderId" />
@@ -343,11 +380,64 @@
     </div>
 </div>
 
+<div class="modal fade" id="modalFilaOcr" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-diagram-3 me-1"></i>Fila de Processamento OCR</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-2 mb-3">
+                    <div class="col-4">
+                        <div class="card"><div class="card-body py-2">
+                            <div class="small text-muted">Processando</div>
+                            <div class="h5 mb-0" id="queueProcessingCount">0</div>
+                        </div></div>
+                    </div>
+                    <div class="col-4">
+                        <div class="card"><div class="card-body py-2">
+                            <div class="small text-muted">Pendentes</div>
+                            <div class="h5 mb-0" id="queuePendingCount">0</div>
+                        </div></div>
+                    </div>
+                    <div class="col-4">
+                        <div class="card"><div class="card-body py-2">
+                            <div class="small text-muted">Total na fila</div>
+                            <div class="h5 mb-0" id="queueTotalCount">0</div>
+                        </div></div>
+                    </div>
+                </div>
+                <div class="progress mb-3" style="height:8px;">
+                    <div id="queueLoadBar" class="progress-bar progress-bar-striped progress-bar-animated" style="width:0%"></div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Posição</th>
+                                <th>Job</th>
+                                <th>Documento</th>
+                                <th>Status</th>
+                                <th>Solicitado</th>
+                                <th>Iniciado</th>
+                            </tr>
+                        </thead>
+                        <tbody id="queueTableBody">
+                            <tr><td colspan="6" class="text-muted">Carregando fila...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- MODAL RENOMEAR PASTA (EXPLORER) -->
 <div class="modal fade" id="modalRenomearPastaExplorer" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form asp-controller="Ged" asp-action="RenomearPastaExplorer" method="post">
+            <form asp-controller="Ged" asp-action="RenomearPastaExplorer" method="post" class="js-feedback-form">
                 @Html.AntiForgeryToken()
                 <input type="hidden" name="id" id="exp-rename-id" />
                 <input type="hidden" name="folderId" value="@Model.CurrentFolderId" />
@@ -377,7 +467,7 @@
 <div class="modal fade" id="modalExcluirPastaExplorer" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form asp-controller="Ged" asp-action="ExcluirPastaExplorer" method="post">
+            <form asp-controller="Ged" asp-action="ExcluirPastaExplorer" method="post" class="js-feedback-form">
                 @Html.AntiForgeryToken()
                 <input type="hidden" name="id" id="exp-del-id" />
                 <input type="hidden" name="folderId" value="@Model.CurrentFolderId" />
@@ -413,7 +503,8 @@
             <form method="post"
                   enctype="multipart/form-data"
                   asp-action="Upload"
-                  asp-controller="Ged">
+                  asp-controller="Ged"
+                  class="js-feedback-form">
                 @Html.AntiForgeryToken()
 
                 <div class="modal-body">
@@ -435,7 +526,8 @@
                     <button class="btn btn-primary"
                             type="submit"
                     @(Model.CurrentFolderId == null ? "disabled" : "")>
-                        Enviar
+                        <span class="btn-text">Enviar</span>
+                        <span class="btn-loading d-none"><span class="spinner-border spinner-border-sm me-1"></span>Enviando...</span>
                     </button>
                 </div>
             </form>
@@ -598,5 +690,51 @@
             document.getElementById('exp-del-nome').textContent = nome;
         });
 
+        function setBtnLoading(btn, loading) {
+            if (!btn) return;
+            const text = btn.querySelector('.btn-text');
+            const loadingEl = btn.querySelector('.btn-loading');
+            if (loading) {
+                btn.setAttribute('disabled', 'disabled');
+                if (text) text.classList.add('d-none');
+                if (loadingEl) loadingEl.classList.remove('d-none');
+            } else {
+                btn.removeAttribute('disabled');
+                if (text) text.classList.remove('d-none');
+                if (loadingEl) loadingEl.classList.add('d-none');
+            }
+        }
+
+        function showToast(message, type) {
+            if (!message) return;
+            const hostId = 'gedToastHost';
+            let host = document.getElementById(hostId);
+            if (!host) {
+                host = document.createElement('div');
+                host.id = hostId;
+                host.style.position = 'fixed';
+                host.style.top = '1rem';
+                host.style.right = '1rem';
+                host.style.zIndex = '1080';
+                host.style.maxWidth = '420px';
+                document.body.appendChild(host);
+            }
+            const cls = type === 'danger' ? 'alert-danger' : 'alert-info';
+            const el = document.createElement('div');
+            el.className = `alert ${cls} shadow-sm mb-2`;
+            el.innerText = message;
+            host.appendChild(el);
+            setTimeout(() => el.remove(), 5000);
+        }
+
+        document.querySelectorAll('.js-feedback-form').forEach(form => {
+            form.addEventListener('submit', function () {
+                const btn = form.querySelector('button[type=\"submit\"]');
+                setBtnLoading(btn, true);
+                showToast('Processando sua solicitação...', 'info');
+            });
+        });
+
     })();
 </script>
+<script src="~/js/ged-queue-visualizer.js" asp-append-version="true"></script>

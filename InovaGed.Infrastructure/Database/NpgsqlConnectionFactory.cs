@@ -7,6 +7,12 @@ namespace InovaGed.Infrastructure.Common.Database;
 public sealed class NpgsqlConnectionFactory : IDbConnectionFactory
 {
     private readonly string _cs;
+    private static readonly TimeSpan[] OpenRetryBackoff =
+    {
+        TimeSpan.FromMilliseconds(250),
+        TimeSpan.FromMilliseconds(700),
+        TimeSpan.FromMilliseconds(1500)
+    };
 
     public NpgsqlConnectionFactory(string connectionString)
     {
@@ -22,17 +28,27 @@ public sealed class NpgsqlConnectionFactory : IDbConnectionFactory
 
     public async Task<NpgsqlConnection> OpenAsync(CancellationToken ct)
     {
-        var conn = new NpgsqlConnection(_cs);
+        for (var attempt = 0; ; attempt++)
+        {
+            var conn = new NpgsqlConnection(_cs);
 
-        try
-        {
-            await conn.OpenAsync(ct);
-            return conn;
-        }
-        catch
-        {
-            await conn.DisposeAsync();
-            throw;
+            try
+            {
+                await conn.OpenAsync(ct);
+                return conn;
+            }
+            catch (PostgresException ex) when (
+                (ex.SqlState == "53300" || ex.SqlState == "57P03") &&
+                attempt < OpenRetryBackoff.Length)
+            {
+                await conn.DisposeAsync();
+                await Task.Delay(OpenRetryBackoff[attempt], ct);
+            }
+            catch
+            {
+                await conn.DisposeAsync();
+                throw;
+            }
         }
     }
 }

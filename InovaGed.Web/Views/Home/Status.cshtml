@@ -1,0 +1,35 @@
+@{
+    var statusCode = (int?)ViewBag.StatusCode ?? 500;
+    ViewData["Title"] = $"Erro {statusCode}";
+
+    var title = statusCode switch
+    {
+        404 => "Página não encontrada",
+        403 => "Acesso não permitido",
+        401 => "Autenticação necessária",
+        _ => "Não foi possível concluir a solicitação"
+    };
+
+    var message = statusCode switch
+    {
+        404 => "A página que você tentou acessar não existe ou foi movida.",
+        403 => "Você não possui permissão para acessar este conteúdo.",
+        401 => "Faça login para continuar.",
+        _ => "Ocorreu uma falha temporária. Tente novamente em instantes."
+    };
+}
+
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-12 col-lg-7">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body p-4 text-center">
+                    <div class="display-6 mb-2">@statusCode</div>
+                    <h3 class="mb-2">@title</h3>
+                    <p class="text-muted mb-4">@message</p>
+                    <a class="btn btn-primary" asp-controller="Ged" asp-action="Index">Ir para GED</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

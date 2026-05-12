@@ -1,6 +1,7 @@
 ﻿(function () {
     const POLL_INTERVAL_MS = 3000;
     const MAX_ATTEMPTS = 120;
+    const pollTimers = new Map();
 
     function badgeClass(status) {
         switch ((status || '').toUpperCase()) {
@@ -97,6 +98,7 @@
     }
 
     async function pollVersion(versionId, attempt) {
+        if (!versionId) return;
         attempt = attempt || 1;
 
         if (attempt > MAX_ATTEMPTS) return;
@@ -123,10 +125,12 @@
             console.warn(e);
         }
 
-        setTimeout(() => pollVersion(versionId, attempt + 1), POLL_INTERVAL_MS);
+        const timer = setTimeout(() => pollVersion(versionId, attempt + 1), POLL_INTERVAL_MS);
+        pollTimers.set(versionId, timer);
     }
 
     function wireOcrForms() {
+        if (window.__GED_OCR_CUSTOM_HANDLER__) return;
         document.querySelectorAll('form.js-ocr-form').forEach(form => {
             if (form.dataset.wired === '1') return;
             form.dataset.wired = '1';
@@ -194,14 +198,14 @@
     function startAutoPoll() {
         document.querySelectorAll('[data-ocr-autopoll="1"]').forEach(el => {
             const versionId = el.dataset.versionId;
-            if (versionId) pollVersion(versionId);
+            if (versionId && !pollTimers.has(versionId)) pollVersion(versionId);
         });
 
         document.querySelectorAll('.ocr-status-cell').forEach(cell => {
             const status = (cell.dataset.currentStatus || '').toUpperCase();
             const versionId = cell.dataset.versionId;
 
-            if (versionId && (status === 'PENDING' || status === 'PROCESSING')) {
+            if (versionId && (status === 'PENDING' || status === 'PROCESSING') && !pollTimers.has(versionId)) {
                 pollVersion(versionId);
             }
         });
