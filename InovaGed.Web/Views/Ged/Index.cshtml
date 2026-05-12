@@ -24,6 +24,23 @@
 }
 
 <div class="row">
+    <div id="pageAlertHost" class="mb-2">
+        @if (TempData["Success"] is string okMsg && !string.IsNullOrWhiteSpace(okMsg))
+        {
+            <div class="alert alert-success alert-dismissible fade show" role="alert">
+                <i class="bi bi-check-circle me-1"></i>@okMsg
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Fechar"></button>
+            </div>
+        }
+        @if (TempData["Error"] is string errMsg && !string.IsNullOrWhiteSpace(errMsg))
+        {
+            <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                <i class="bi bi-exclamation-triangle me-1"></i>@errMsg
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Fechar"></button>
+            </div>
+        }
+    </div>
+
     <!-- COLUNA PASTAS -->
     <div class="col-12 col-xl-3">
         <div class="card">
@@ -335,7 +352,7 @@
                                                 </a>
                                             }
 
-                                            <form method="post" asp-controller="Ged" asp-action="DeleteDocument" class="d-inline">
+                                            <form method="post" asp-controller="Ged" asp-action="DeleteDocument" class="d-inline js-feedback-form">
                                                 @Html.AntiForgeryToken()
                                                 <input type="hidden" name="id" value="@d.Id" />
                                                 <input type="hidden" name="folderId" value="@Model.CurrentFolderId" />
@@ -360,7 +377,7 @@
 <div class="modal fade" id="modalRenomearPastaExplorer" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form asp-controller="Ged" asp-action="RenomearPastaExplorer" method="post">
+            <form asp-controller="Ged" asp-action="RenomearPastaExplorer" method="post" class="js-feedback-form">
                 @Html.AntiForgeryToken()
                 <input type="hidden" name="id" id="exp-rename-id" />
                 <input type="hidden" name="folderId" value="@Model.CurrentFolderId" />
@@ -390,7 +407,7 @@
 <div class="modal fade" id="modalExcluirPastaExplorer" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form asp-controller="Ged" asp-action="ExcluirPastaExplorer" method="post">
+            <form asp-controller="Ged" asp-action="ExcluirPastaExplorer" method="post" class="js-feedback-form">
                 @Html.AntiForgeryToken()
                 <input type="hidden" name="id" id="exp-del-id" />
                 <input type="hidden" name="folderId" value="@Model.CurrentFolderId" />
@@ -426,7 +443,8 @@
             <form method="post"
                   enctype="multipart/form-data"
                   asp-action="Upload"
-                  asp-controller="Ged">
+                  asp-controller="Ged"
+                  class="js-feedback-form">
                 @Html.AntiForgeryToken()
 
                 <div class="modal-body">
@@ -448,7 +466,8 @@
                     <button class="btn btn-primary"
                             type="submit"
                     @(Model.CurrentFolderId == null ? "disabled" : "")>
-                        Enviar
+                        <span class="btn-text">Enviar</span>
+                        <span class="btn-loading d-none"><span class="spinner-border spinner-border-sm me-1"></span>Enviando...</span>
                     </button>
                 </div>
             </form>
@@ -609,6 +628,51 @@
 
             document.getElementById('exp-del-id').value = id;
             document.getElementById('exp-del-nome').textContent = nome;
+        });
+
+        function setBtnLoading(btn, loading) {
+            if (!btn) return;
+            const text = btn.querySelector('.btn-text');
+            const loadingEl = btn.querySelector('.btn-loading');
+            if (loading) {
+                btn.setAttribute('disabled', 'disabled');
+                if (text) text.classList.add('d-none');
+                if (loadingEl) loadingEl.classList.remove('d-none');
+            } else {
+                btn.removeAttribute('disabled');
+                if (text) text.classList.remove('d-none');
+                if (loadingEl) loadingEl.classList.add('d-none');
+            }
+        }
+
+        function showToast(message, type) {
+            if (!message) return;
+            const hostId = 'gedToastHost';
+            let host = document.getElementById(hostId);
+            if (!host) {
+                host = document.createElement('div');
+                host.id = hostId;
+                host.style.position = 'fixed';
+                host.style.top = '1rem';
+                host.style.right = '1rem';
+                host.style.zIndex = '1080';
+                host.style.maxWidth = '420px';
+                document.body.appendChild(host);
+            }
+            const cls = type === 'danger' ? 'alert-danger' : 'alert-info';
+            const el = document.createElement('div');
+            el.className = `alert ${cls} shadow-sm mb-2`;
+            el.innerText = message;
+            host.appendChild(el);
+            setTimeout(() => el.remove(), 5000);
+        }
+
+        document.querySelectorAll('.js-feedback-form').forEach(form => {
+            form.addEventListener('submit', function () {
+                const btn = form.querySelector('button[type=\"submit\"]');
+                setBtnLoading(btn, true);
+                showToast('Processando sua solicitação...', 'info');
+            });
         });
 
     })();
