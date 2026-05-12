@@ -51,7 +51,54 @@
         }
     }
 
+    function renderErrors(items) {
+        const tbody = document.getElementById('errorsTbody');
+        if (!tbody) return;
+
+        if (!items || !items.length) {
+            tbody.innerHTML = '<tr><td colspan="4" class="text-muted">Sem erros recentes.</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = items.map(x => `
+            <tr>
+                <td>#${x.jobId}</td>
+                <td>${x.documentTitle || ''}</td>
+                <td class="text-danger">${x.errorMessage || '-'}</td>
+                <td>${fmtDate(x.finishedAt)}</td>
+            </tr>
+        `).join('');
+    }
+
+    function applyMetrics(metrics) {
+        if (!metrics) return;
+        const p = document.getElementById('metricPending');
+        const r = document.getElementById('metricProcessing');
+        const e = document.getElementById('metricErrors24h');
+        const q = document.getElementById('metricAvgQueue');
+        if (p) p.textContent = `${metrics.pendingCount ?? 0}`;
+        if (r) r.textContent = `${metrics.processingCount ?? 0}`;
+        if (e) e.textContent = `${metrics.errors24h ?? 0}`;
+        if (q) q.textContent = `${Number(metrics.avgQueueSeconds ?? 0).toFixed(1)}`;
+    }
+
+    async function pollMetrics() {
+        try {
+            const resp = await fetch('/Ged/ProcessingMetrics', { credentials: 'include', cache: 'no-store' });
+            if (!resp.ok) return;
+            const data = await resp.json();
+            if (!data || data.success !== true) return;
+            applyMetrics(data.metrics);
+            renderErrors(data.recentErrors || []);
+        } catch {
+            // silencioso
+        }
+    }
+
     document.addEventListener('DOMContentLoaded', function () {
+        poll();
+        pollMetrics();
         setInterval(poll, intervalMs);
+        setInterval(pollMetrics, intervalMs);
     });
 })();

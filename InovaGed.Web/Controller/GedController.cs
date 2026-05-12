@@ -172,6 +172,7 @@ public sealed class GedController : Controller
 
         var tenantId = _currentUser.TenantId;
         var rows = await ListRunningOcrJobsAsync(tenantId, ct);
+        ViewBag.ProcessingMetrics = await GetProcessingMetricsAsync(tenantId, ct);
         return View(rows);
     }
 
@@ -184,6 +185,19 @@ public sealed class GedController : Controller
         var tenantId = _currentUser.TenantId;
         var rows = await ListRunningOcrJobsAsync(tenantId, ct);
         return Json(new { success = true, count = rows.Count, items = rows });
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> ProcessingMetrics(CancellationToken ct)
+    {
+        if (!_currentUser.IsAuthenticated)
+            return Unauthorized();
+
+        var tenantId = _currentUser.TenantId;
+        var metrics = await GetProcessingMetricsAsync(tenantId, ct);
+        var recentErrors = await ListRecentOcrErrorsAsync(tenantId, ct);
+
+        return Json(new { success = true, metrics, recentErrors });
     }
 
     private async Task<int> CountRunningOcrJobsAsync(Guid tenantId, CancellationToken ct)
@@ -228,6 +242,60 @@ LIMIT 200;";
         return rows.ToList();
     }
 
+    private async Task<ProcessingMetricsVm> GetProcessingMetricsAsync(Guid tenantId, CancellationToken ct)
+    {
+        const string sql = @"
+SELECT
+  count(*) FILTER (WHERE j.status = 'PENDING'::ged.ocr_status_enum)    AS PendingCount,
+  count(*) FILTER (WHERE j.status = 'PROCESSING'::ged.ocr_status_enum) AS ProcessingCount,
+  count(*) FILTER (WHERE j.status = 'ERROR'::ged.ocr_status_enum
+                   AND j.requested_at >= now() - interval '24 hours')   AS Errors24h,
+  coalesce(avg(extract(epoch from (j.started_at - j.requested_at)))
+      FILTER (WHERE j.started_at IS NOT NULL
+              AND j.requested_at >= now() - interval '24 hours'), 0)     AS AvgQueueSeconds
+FROM ged.ocr_job j
+WHERE j.tenant_id = @tenantId;";
+
+        await using var conn = await _db.OpenAsync(ct);
+        var row = await conn.QuerySingleAsync(
+            new CommandDefinition(sql, new { tenantId }, cancellationToken: ct));
+
+        return new ProcessingMetricsVm
+        {
+            PendingCount = (int)row.pendingcount,
+            ProcessingCount = (int)row.processingcount,
+            Errors24h = (int)row.errors24h,
+            AvgQueueSeconds = Convert.ToDecimal(row.avgqueueseconds)
+        };
+    }
+
+    private async Task<List<ProcessingErrorVm>> ListRecentOcrErrorsAsync(Guid tenantId, CancellationToken ct)
+    {
+        const string sql = @"
+SELECT
+  j.id AS JobId,
+  d.id AS DocumentId,
+  d.title AS DocumentTitle,
+  j.error_message AS ErrorMessage,
+  j.finished_at AS FinishedAt
+FROM ged.ocr_job j
+JOIN ged.document_version dv
+  ON dv.tenant_id = j.tenant_id
+ AND dv.id = j.document_version_id
+JOIN ged.document d
+  ON d.tenant_id = dv.tenant_id
+ AND d.id = dv.document_id
+WHERE j.tenant_id = @tenantId
+  AND j.status = 'ERROR'::ged.ocr_status_enum
+ORDER BY j.finished_at DESC NULLS LAST
+LIMIT 20;";
+
+        await using var conn = await _db.OpenAsync(ct);
+        var rows = await conn.QueryAsync<ProcessingErrorVm>(
+            new CommandDefinition(sql, new { tenantId }, cancellationToken: ct));
+        return rows.ToList();
+    }
+
     public sealed class ProcessingRowVm
     {
         public long JobId { get; set; }
@@ -237,6 +305,23 @@ LIMIT 200;";
         public string Status { get; set; } = "";
         public DateTime RequestedAt { get; set; }
         public DateTime? StartedAt { get; set; }
+    }
+
+    public sealed class ProcessingMetricsVm
+    {
+        public int PendingCount { get; set; }
+        public int ProcessingCount { get; set; }
+        public int Errors24h { get; set; }
+        public decimal AvgQueueSeconds { get; set; }
+    }
+
+    public sealed class ProcessingErrorVm
+    {
+        public long JobId { get; set; }
+        public Guid DocumentId { get; set; }
+        public string DocumentTitle { get; set; } = "";
+        public string? ErrorMessage { get; set; }
+        public DateTime? FinishedAt { get; set; }
     }
 
     // =========================
