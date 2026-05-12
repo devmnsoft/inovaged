@@ -7,6 +7,8 @@
         min-height: calc(100vh - 90px);
         background: radial-gradient(circle at top left, rgba(37, 99, 235, .12), transparent 32%), linear-gradient(180deg, #f8fbff 0%, #eef4fb 100%);
         padding: 28px;
+        position: relative;
+        z-index: 200;
     }
 
     .search-hero {
@@ -151,7 +153,7 @@
 
     .suggestions {
         position: absolute;
-        z-index: 80;
+        z-index: 9999;
         left: 0;
         right: 0;
         top: calc(100% + 8px);
@@ -183,6 +185,27 @@
         color: #64748b;
         margin-top: 4px;
     }
+
+    .suggestion-meta {
+        margin-top: 6px;
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+    }
+
+    .meta-ocr-pill {
+        border-radius: 999px;
+        padding: 2px 8px;
+        font-size: 11px;
+        font-weight: 700;
+        border: 1px solid #dbeafe;
+        background: #eff6ff;
+        color: #1d4ed8;
+    }
+    .meta-ocr-pill.none { border-color: #e2e8f0; background: #f8fafc; color: #475569; }
+    .meta-ocr-pill.pending { border-color: #cbd5e1; background: #f1f5f9; color: #334155; }
+    .meta-ocr-pill.processing { border-color: #fde68a; background: #fffbeb; color: #92400e; }
+    .meta-ocr-pill.error { border-color: #fecaca; background: #fef2f2; color: #991b1b; }
 
     .status-line {
         margin-top: 14px;
@@ -739,6 +762,9 @@
                      data-version-id="${escapeAttr(item.versionId)}">
                     <div class="suggestion-title">${escapeHtml(item.label)}</div>
                     <div class="suggestion-desc">${escapeHtml(item.description)}</div>
+                    <div class="suggestion-meta">
+                        <span class="meta-ocr-pill ${ocrStatusClass(item.ocrStatus)}">${ocrStatusLabel(item.ocrStatus, item.hasOcr)}</span>
+                    </div>
                 </div>
             `).join('');
 
@@ -1058,5 +1084,23 @@
 
     function escapeAttr(value) {
         return escapeHtml(value);
+    }
+
+    function ocrStatusClass(status) {
+        const st = (status || '').toUpperCase();
+        if (st === 'PROCESSING') return 'processing';
+        if (st === 'PENDING') return 'pending';
+        if (st === 'ERROR') return 'error';
+        if (st === 'NONE' || !st) return 'none';
+        return '';
+    }
+
+    function ocrStatusLabel(status, hasOcr) {
+        const st = (status || '').toUpperCase();
+        if (hasOcr) return 'OCR disponível';
+        if (st === 'PROCESSING') return 'OCR em processamento';
+        if (st === 'PENDING') return 'OCR na fila';
+        if (st === 'ERROR') return 'OCR com erro';
+        return 'Sem OCR';
     }
 </script>
