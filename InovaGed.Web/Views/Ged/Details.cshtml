@@ -711,6 +711,8 @@
     <script src="~/js/ged-ocr-status.js" asp-append-version="true"></script>
     <script src="~/js/classification-panel.js" asp-append-version="true"></script>
     <script>
+        window.__GED_OCR_CUSTOM_HANDLER__ = true;
+
         window.setBtnLoading = function (btn, loading) {
             if (!btn) return;
 
