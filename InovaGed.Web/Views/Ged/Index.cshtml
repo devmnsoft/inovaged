@@ -263,6 +263,13 @@
                             OCR em execução: @runningOcrCount
                         </a>
                     }
+
+                    <button type="button"
+                            class="btn btn-sm btn-outline-dark"
+                            data-bs-toggle="modal"
+                            data-bs-target="#modalFilaOcr">
+                        <i class="bi bi-list-task me-1"></i> Ver fila OCR
+                    </button>
                 </div>
 
                 <div class="d-flex align-items-center gap-2 flex-wrap">
@@ -291,6 +298,11 @@
                     @(Model.CurrentFolderId == null ? "disabled" : "")>
                         <i class="bi bi-upload"></i> Upload
                     </button>
+                    <a class="btn btn-outline-dark"
+                       asp-controller="Ged"
+                       asp-action="Kpi">
+                        <i class="bi bi-bar-chart-line me-1"></i>KPI GED
+                    </a>
                 </div>
             </div>
 
@@ -368,6 +380,59 @@
                         </table>
                     </div>
                 }
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalFilaOcr" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-diagram-3 me-1"></i>Fila de Processamento OCR</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-2 mb-3">
+                    <div class="col-4">
+                        <div class="card"><div class="card-body py-2">
+                            <div class="small text-muted">Processando</div>
+                            <div class="h5 mb-0" id="queueProcessingCount">0</div>
+                        </div></div>
+                    </div>
+                    <div class="col-4">
+                        <div class="card"><div class="card-body py-2">
+                            <div class="small text-muted">Pendentes</div>
+                            <div class="h5 mb-0" id="queuePendingCount">0</div>
+                        </div></div>
+                    </div>
+                    <div class="col-4">
+                        <div class="card"><div class="card-body py-2">
+                            <div class="small text-muted">Total na fila</div>
+                            <div class="h5 mb-0" id="queueTotalCount">0</div>
+                        </div></div>
+                    </div>
+                </div>
+                <div class="progress mb-3" style="height:8px;">
+                    <div id="queueLoadBar" class="progress-bar progress-bar-striped progress-bar-animated" style="width:0%"></div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Posição</th>
+                                <th>Job</th>
+                                <th>Documento</th>
+                                <th>Status</th>
+                                <th>Solicitado</th>
+                                <th>Iniciado</th>
+                            </tr>
+                        </thead>
+                        <tbody id="queueTableBody">
+                            <tr><td colspan="6" class="text-muted">Carregando fila...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>
@@ -677,3 +742,4 @@
 
     })();
 </script>
+<script src="~/js/ged-queue-visualizer.js" asp-append-version="true"></script>

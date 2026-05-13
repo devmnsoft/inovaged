@@ -1,0 +1,23 @@
+@model InovaGed.Web.Controllers.GedController.GedKpiVm
+@{
+    ViewData["Title"] = "KPI GED";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="mb-0"><i class="bi bi-bar-chart-line me-2"></i>KPI Geral do GED</h4>
+    <a asp-controller="Ged" asp-action="Index" class="btn btn-outline-secondary btn-sm">Voltar</a>
+</div>
+
+<div class="row g-3">
+    <div class="col-6 col-lg-3"><div class="card"><div class="card-body"><div class="text-muted small">Documentos totais</div><div class="h3">@Model.TotalDocuments</div></div></div></div>
+    <div class="col-6 col-lg-3"><div class="card"><div class="card-body"><div class="text-muted small">Criados no mês</div><div class="h3">@Model.DocumentsThisMonth</div></div></div></div>
+    <div class="col-6 col-lg-3"><div class="card"><div class="card-body"><div class="text-muted small">OCR processando</div><div class="h3 text-warning">@Model.OcrProcessing</div></div></div></div>
+    <div class="col-6 col-lg-3"><div class="card"><div class="card-body"><div class="text-muted small">OCR pendente</div><div class="h3 text-secondary">@Model.OcrPending</div></div></div></div>
+    <div class="col-6 col-lg-3"><div class="card"><div class="card-body"><div class="text-muted small">OCR concluído (24h)</div><div class="h3 text-success">@Model.OcrCompleted24h</div></div></div></div>
+    <div class="col-6 col-lg-3"><div class="card"><div class="card-body"><div class="text-muted small">OCR erro (24h)</div><div class="h3 text-danger">@Model.OcrErrors24h</div></div></div></div>
+    <div class="col-12 col-lg-6"><div class="card"><div class="card-body"><div class="text-muted small">Documentos sem descrição</div><div class="h3">@Model.DocumentsWithoutDescription</div><div class="small text-muted">Ajuda a priorizar revisão de qualidade documental.</div></div></div></div>
+</div>
+
+<div class="alert alert-info mt-3">
+    Este painel concentra indicadores comuns em GEDs de mercado: volume, fila OCR, qualidade de metadados e saúde operacional.
+</div>

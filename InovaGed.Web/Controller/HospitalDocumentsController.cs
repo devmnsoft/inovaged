@@ -307,7 +307,9 @@ public sealed class HospitalDocumentsController : Controller
                 NULLIF(v.content_type, ''),
                 NULLIF(latest_v.content_type, ''),
                 ''
-            ) AS "ContentType"
+            ) AS "ContentType",
+            CASE WHEN NULLIF(COALESCE(s.ocr_text, ''), '') IS NOT NULL THEN TRUE ELSE FALSE END AS "HasOcr",
+            COALESCE(oj.status::text, 'NONE') AS "OcrJobStatus"
 
         FROM ged.document d
 
@@ -327,6 +329,19 @@ public sealed class HospitalDocumentsController : Controller
             ORDER BY vx.version_number DESC, vx.created_at DESC
             LIMIT 1
         ) latest_v ON true
+
+        LEFT JOIN LATERAL (
+            SELECT j.status
+            FROM ged.ocr_job j
+            WHERE j.tenant_id = d.tenant_id
+              AND j.document_version_id = COALESCE(
+                    NULLIF(s.version_id, '00000000-0000-0000-0000-000000000000'::uuid),
+                    NULLIF(d.current_version_id, '00000000-0000-0000-0000-000000000000'::uuid),
+                    latest_v.id
+                  )
+            ORDER BY j.requested_at DESC
+            LIMIT 1
+        ) oj ON true
 
         WHERE d.tenant_id = @tenantId
           AND (
@@ -360,7 +375,9 @@ public sealed class HospitalDocumentsController : Controller
                     documentId = x.DocumentId,
                     versionId = x.VersionId,
                     label = $"{x.Code} - {x.Title}",
-                    description = $"{GetFriendlyType(x.ContentType, x.FileName)} · {x.FileName}"
+                    description = $"{GetFriendlyType(x.ContentType, x.FileName)} · {x.FileName}",
+                    hasOcr = x.HasOcr,
+                    ocrStatus = x.OcrJobStatus
                 });
 
             return Json(result);
@@ -857,6 +874,8 @@ public sealed class HospitalDocumentsController : Controller
         public string Title { get; set; } = "";
         public string FileName { get; set; } = "";
         public string ContentType { get; set; } = "";
+        public bool HasOcr { get; set; }
+        public string OcrJobStatus { get; set; } = "";
     }
 
     private sealed class HospitalDocumentVersionRow
