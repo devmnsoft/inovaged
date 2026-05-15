@@ -155,7 +155,7 @@
                     }
                     else
                     {
-                        <iframe src="@Url.Action("PreviewInline", "Ged", new { versionId = selected.Id })"
+                        <iframe data-preview-frame="1" src="@Url.Action("PreviewInline", "Ged", new { versionId = selected.Id })"
                                 style="width:100%; height:75vh; border:0;">
                         </iframe>
                     }
@@ -216,13 +216,13 @@
 
                                             <td>
                                                 <div class="ocr-status-cell"
-                                                     data-version-id="@v.Id"
+                                                     data-version-id="@v.Id" data-ocr-version="@v.Id"
                                                      data-current-status="@(v.OcrStatus ?? "NONE")">
 
                                                     @if (hasOcrStatus)
                                                     {
                                                         <span class="badge @OcrBadgeClass(v.OcrStatus) js-ocr-badge">
-                                                            @OcrLabel(v.OcrStatus)
+                                                            <span data-ocr-badge="@v.Id">@OcrLabel(v.OcrStatus)</span>
                                                         </span>
 
                                                         @if (ocrRunning)
@@ -284,7 +284,7 @@
 
                                                     @if (ocrRunning)
                                                     {
-                                                        <span data-ocr-autopoll="1" data-version-id="@v.Id"></span>
+                                                        <span data-ocr-autopoll="1" data-version-id="@v.Id" data-ocr-version="@v.Id"></span>
                                                     }
                                                 </div>
                                             </td>
@@ -708,6 +708,8 @@
 </div>
 
 @section Scripts {
+    <div data-ocr-realtime="1"></div>
+    <script src="~/js/ged-realtime-react.js" asp-append-version="true" defer></script>
     <script src="~/js/ged-ocr-status.js" asp-append-version="true"></script>
     <script src="~/js/classification-panel.js" asp-append-version="true"></script>
     <script>

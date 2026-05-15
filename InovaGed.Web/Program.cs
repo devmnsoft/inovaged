@@ -64,6 +64,8 @@ using InovaGed.Infrastructure.Workflow;
 using InovaGed.Web.Auth;
 using InovaGed.Web.Common.Context;
 using InovaGed.Web.Middleware;
+using InovaGed.Web.Hubs;
+using InovaGed.Web.ocr;
 using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authentication.Certificate;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -80,6 +82,7 @@ mvc.AddRazorRuntimeCompilation();
 #endif
 
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddSignalR();
 
 // =======================================================
 // Current User (Tenant / User)
@@ -201,6 +204,7 @@ builder.Services.AddScoped<ICurrentUserAccessor, CurrentUserAccessorAdapter>();
 builder.Services.AddScoped<IDocumentWriteRepository, DocumentWriteRepository>();
 builder.Services.AddScoped<IAuditLogWriter, AuditLogWriter>();
 builder.Services.AddScoped<IOcrStatusQueries, OcrStatusQueries>();
+builder.Services.AddScoped<IOcrSignalRNotifier, OcrSignalRNotifier>();
 
 // =======================================================
 // Retention (Dashboard + Queue + Worker diário)
@@ -435,6 +439,8 @@ app.UseRouting();
 
 app.UseAuthentication();
 app.UseAuthorization();
+
+app.MapHub<OcrStatusHub>(OcrStatusHub.Route);
 
 app.MapControllerRoute(
     name: "default",
