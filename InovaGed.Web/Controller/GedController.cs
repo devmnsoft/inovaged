@@ -14,6 +14,7 @@ using InovaGed.Application.Workflow;
 using InovaGed.Domain.Ged;
 using InovaGed.Domain.Primitives;
 using InovaGed.Web.Models.Ged;
+using InovaGed.Web.ocr;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Net.Http.Headers;
@@ -29,6 +30,7 @@ public sealed class GedController : Controller
     private readonly IDbConnectionFactory _db;
 
     private readonly IDocumentCommands _documentCommands;
+    private readonly IOcrSignalRNotifier _ocrNotifier;
 
     private readonly IFolderQueries _folders;
     private readonly IFolderCommands _folderCommands;
@@ -70,7 +72,8 @@ public sealed class GedController : Controller
         IDocumentWorkflowQueries docWfQ,
         IDocumentWorkflowCommands docWfC,
         IDocumentClassificationQueries clsQ,
-        IDocumentCommands documentCommands)
+        IDocumentCommands documentCommands,
+        IOcrSignalRNotifier ocrNotifier)
     {
         _logger = logger;
         _currentUser = currentUser;
@@ -97,6 +100,7 @@ public sealed class GedController : Controller
         _clsQ = clsQ;
 
         _documentCommands = documentCommands;
+        _ocrNotifier = ocrNotifier;
     }
 
     private bool IsAjaxRequest()
@@ -1256,6 +1260,8 @@ LIMIT 20;";
                 userId,
                 invalidateDigitalSignatures: force,
                 ct);
+
+            await _ocrNotifier.PublishOcrStatusAsync(tenantId, versionId, "PENDING", jobId, "OCR enfileirado", ct);
 
             if (IsAjaxRequest())
             {
