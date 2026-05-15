@@ -114,6 +114,11 @@ builder.Services.Configure<LibreOfficeOptions>(
 
 builder.Services.AddScoped<IPreviewGenerator, LibreOfficePreviewGenerator>();
 
+builder.Services.AddSingleton<PreviewQueue>();
+builder.Services.AddSingleton<IPreviewJobQueue>(sp => sp.GetRequiredService<PreviewQueue>());
+builder.Services.AddScoped<IPreviewSignalRNotifier, PreviewSignalRNotifier>();
+builder.Services.AddHostedService<PreviewWorker>();
+
 builder.Services.Configure<StorageLocalOptions>(builder.Configuration.GetSection("Storage:Local"));
 
 // =======================================================

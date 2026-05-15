@@ -42,6 +42,7 @@ public sealed class GedController : Controller
     private readonly DocumentAppService _documentApp;
     private readonly IFileStorage _storage;
     private readonly IPreviewGenerator _preview;
+    private readonly IPreviewJobQueue _previewQueue;
 
     private readonly IDocumentSearchQueries _search;
 
@@ -67,6 +68,7 @@ public sealed class GedController : Controller
         DocumentAppService documentApp,
         IFileStorage storage,
         IPreviewGenerator preview,
+        IPreviewJobQueue previewQueue,
         IWorkflowQueries workflowQ,
         IWorkflowCommands workflowC,
         IDocumentWorkflowQueries docWfQ,
@@ -91,6 +93,7 @@ public sealed class GedController : Controller
         _documentApp = documentApp;
         _storage = storage;
         _preview = preview;
+        _previewQueue = previewQueue;
 
         _workflowQ = workflowQ;
         _workflowC = workflowC;
@@ -1116,6 +1119,8 @@ LIMIT 20;";
 
                 return File(pdf, "application/pdf", enableRangeProcessing: true);
             }
+
+            await _previewQueue.EnqueueAsync(tenantId, v.DocumentId, versionId, v.StoragePath, v.FileName, ct);
 
             var previewPath = await _preview.GetOrCreatePreviewPdfAsync(
                 tenantId,
