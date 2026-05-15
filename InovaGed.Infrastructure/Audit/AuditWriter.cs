@@ -34,6 +34,7 @@ public sealed class AuditWriter : IAuditWriter
         {
             if (tenantId == Guid.Empty) return Result.Fail("TENANT", "Tenant inválido.");
             if (string.IsNullOrWhiteSpace(action)) return Result.Fail("ACTION", "Action inválida.");
+            action = MapAction(action);
             if (string.IsNullOrWhiteSpace(entityName)) return Result.Fail("ENTITY", "EntityName inválido.");
 
             using var conn = await _db.OpenAsync(ct);
