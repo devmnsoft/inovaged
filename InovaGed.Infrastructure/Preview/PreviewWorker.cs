@@ -1,4 +1,5 @@
 using InovaGed.Application;
+using InovaGed.Application.Common.Notifications;
 using InovaGed.Application.Preview;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -14,7 +15,7 @@ public sealed class PreviewWorker : BackgroundService
         {
             using var scope = _scopeFactory.CreateScope();
             var preview = scope.ServiceProvider.GetRequiredService<IPreviewGenerator>();
-            var notifier = scope.ServiceProvider.GetRequiredService<IPreviewSignalRNotifier>();
+            var notifier = scope.ServiceProvider.GetRequiredService<IPreviewNotificationService>();
             try { await notifier.PublishAsync(job.TenantId, job.VersionId, "PROCESSING", null, "Gerando preview", stoppingToken); var path = await preview.GetOrCreatePreviewPdfAsync(job.TenantId, job.DocumentId, job.VersionId, job.StoragePath, job.FileName, stoppingToken); await notifier.PublishAsync(job.TenantId, job.VersionId, "COMPLETED", $"/storage/{path}", null, stoppingToken);} catch (Exception ex){_logger.LogError(ex,"Falha preview async Version={VersionId}",job.VersionId); await notifier.PublishAsync(job.TenantId, job.VersionId, "ERROR", null, ex.Message, stoppingToken);} }
     }
 }

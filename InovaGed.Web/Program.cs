@@ -8,6 +8,7 @@ using InovaGed.Application.Classification;
 using InovaGed.Application.Common.Context;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Common.Preview;
+using InovaGed.Application.Common.Notifications;
 using InovaGed.Application.Common.Security;
 using InovaGed.Application.Common.Storage;
 using InovaGed.Application.Documents;
@@ -50,6 +51,7 @@ using InovaGed.Infrastructure.Ocr;
 using InovaGed.Infrastructure.Pacs;
 using InovaGed.Infrastructure.Parameters;
 using InovaGed.Infrastructure.Preview;
+using InovaGed.Web.Notifications;
 using InovaGed.Infrastructure.Reports;
 using InovaGed.Infrastructure.Retention;
 using InovaGed.Infrastructure.RetentionCases;
@@ -116,7 +118,7 @@ builder.Services.AddScoped<IPreviewGenerator, LibreOfficePreviewGenerator>();
 
 builder.Services.AddSingleton<PreviewQueue>();
 builder.Services.AddSingleton<IPreviewJobQueue>(sp => sp.GetRequiredService<PreviewQueue>());
-builder.Services.AddScoped<IPreviewSignalRNotifier, PreviewSignalRNotifier>();
+builder.Services.AddScoped<IPreviewNotificationService, SignalRPreviewNotificationService>();
 builder.Services.AddHostedService<PreviewWorker>();
 
 builder.Services.Configure<StorageLocalOptions>(builder.Configuration.GetSection("Storage:Local"));
