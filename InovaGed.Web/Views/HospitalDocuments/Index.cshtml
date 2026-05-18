@@ -703,6 +703,7 @@
 
     let suggestionTimer = null;
     let lastController = null;
+    const defaultSearchButtonLabel = btnSearch.innerText;
 
     btnSearch.addEventListener('click', function (e) {
         e.preventDefault();
@@ -771,27 +772,34 @@
 
             suggestions.innerHTML = data.map(item => `
                 <div class="suggestion-item"
-                     data-label="${escapeAttr(item.label)}"
-                     data-description="${escapeAttr(item.description || '')}"
-                     data-version-id="${escapeAttr(item.versionId)}">
-                    <div class="suggestion-title">${escapeHtml(item.label)}</div>
-                    <div class="suggestion-desc">${escapeHtml(item.description)}</div>
+                     data-item='${escapeAttr(JSON.stringify(item))}'>
+                    <div class="suggestion-title">${escapeHtml(item.title || item.label)}</div>
+                    <div class="suggestion-desc">${escapeHtml(item.code || '')} · ${escapeHtml(item.type || '')} · ${escapeHtml(item.fileName || '')}</div>
                     <div class="suggestion-meta">
+                        <span class="meta-pill">${escapeHtml(item.matchSourceLabel || '')}</span>
+                        <span class="meta-pill">${escapeHtml(item.createdAt || '')}</span>
                         <span class="meta-ocr-pill ${ocrStatusClass(item.ocrStatus)}">${ocrStatusLabel(item.ocrStatus, item.hasOcr)}</span>
                     </div>
+                    <div class="suggestion-desc">${item.snippet || ''}</div>
                 </div>
             `).join('');
 
             suggestions.querySelectorAll('.suggestion-item').forEach(el => {
                 el.addEventListener('click', function () {
-                    const versionId = this.dataset.versionId;
-                    const title = this.dataset.label;
-                    const description = this.dataset.description;
+                    const item = JSON.parse(this.dataset.item || '{}');
+                    const versionId = item.versionId;
+                    const title = item.title || item.label;
+                    const viewerUrl = item.viewerUrl || `/HospitalDocuments/Viewer?versionId=${encodeURIComponent(versionId)}`;
+                    const previewUrl = item.previewUrl || `/HospitalDocuments/Preview?versionId=${encodeURIComponent(versionId)}`;
+                    const ocrUrl = item.ocrUrl || `/HospitalDocuments/OcrText?versionId=${encodeURIComponent(versionId)}`;
 
-                    input.value = title;
+                    input.value = `${item.code || ''} ${title}`.trim();
                     suggestions.style.display = 'none';
 
-                    abrirDocumentoPorVersao(versionId, title, description, true);
+                    renderSelectedDocument(item);
+                    resultCount.innerText = '1';
+                    openPreview(viewerUrl, previewUrl, ocrUrl, title);
+                    statusLine.innerText = 'Documento selecionado pela sugestão automática.';
                 });
             });
 
@@ -819,6 +827,8 @@
 
         lastController = new AbortController();
 
+        btnSearch.disabled = true;
+        btnSearch.innerText = 'Pesquisando...';
         resultsList.innerHTML = `<div class="empty-state">Pesquisando documentos...</div>`;
         resultCount.innerText = '0';
         statusLine.innerText = 'Consultando documentos, metadados e OCR...';
@@ -864,20 +874,25 @@
 
             renderResults(data.items);
 
-            statusLine.innerText = `${data.items.length} documento(s) localizado(s). Clique em um item para visualizar.`;
+            statusLine.innerText = `${data.total ?? data.items.length} documento(s) localizado(s). Clique em um item para visualizar.`;
 
             if (data.items.length === 1) {
                 const item = data.items[0];
-                abrirDocumentoPorVersao(item.versionId, item.title, item.fileName || item.type || '', false);
+                abrirDocumentoPorVersao(item, false);
             }
 
         } catch (error) {
-            if (error.name === 'AbortError')
+            if (error.name === 'AbortError') {
+                statusLine.innerText = 'Busca anterior cancelada para executar uma nova.';
                 return;
+            }
 
             console.error('Falha inesperada na busca:', error);
             setResultEmpty('Falha inesperada ao executar a busca.');
             statusLine.innerText = 'Falha inesperada ao executar a busca.';
+        } finally {
+            btnSearch.disabled = false;
+            btnSearch.innerText = defaultSearchButtonLabel;
         }
     }
 
@@ -916,11 +931,7 @@
 
             return `
                 <article class="result-card ${disabled ? 'disabled' : ''}"
-                         data-version-id="${escapeAttr(versionId)}"
-                         data-preview-url="${escapeAttr(item.previewUrl || '')}"
-                         data-ocr-url="${escapeAttr(item.ocrUrl || '')}"
-                         data-title="${escapeAttr(item.title || 'Documento encontrado')}"
-                         data-description="${escapeAttr(item.fileName || '')}">
+                         data-item='${escapeAttr(JSON.stringify(item))}'>
 
                     <div class="doc-title">${escapeHtml(item.title || 'Documento encontrado')}</div>
                     <div class="doc-file">${escapeHtml(item.fileName || '')}</div>
@@ -942,7 +953,8 @@
 
         resultsList.querySelectorAll('.result-card').forEach(card => {
             card.addEventListener('click', function () {
-                const versionId = this.dataset.versionId;
+                const item = JSON.parse(this.dataset.item || '{}');
+                const versionId = item.versionId;
 
                 if (!isValidVersion(versionId)) {
                     statusLine.innerText = 'Este documento não possui versão válida para visualização.';
@@ -952,69 +964,67 @@
                 resultsList.querySelectorAll('.result-card').forEach(x => x.classList.remove('active'));
                 this.classList.add('active');
 
-                abrirDocumentoPorVersao(
-                    versionId,
-                    this.dataset.title,
-                    this.dataset.description,
-                    false
-                );
+                abrirDocumentoPorVersao(item, false);
             });
         });
     }
 
-    async function abrirDocumentoPorVersao(versionId, title, description, fromSuggestion) {
+    async function abrirDocumentoPorVersao(item, fromSuggestion) {
+        const versionId = item.versionId;
         if (!isValidVersion(versionId)) {
             statusLine.innerText = 'Documento sem versão válida para visualização.';
             return;
         }
 
-        const previewUrl = `/HospitalDocuments/Preview?versionId=${encodeURIComponent(versionId)}`;
-        const ocrUrl = `/HospitalDocuments/OcrText?versionId=${encodeURIComponent(versionId)}`;
+        const title = item.title || 'Documento encontrado';
+        const viewerUrl = item.viewerUrl || `/HospitalDocuments/Viewer?versionId=${encodeURIComponent(versionId)}`;
+        const previewUrl = item.previewUrl || `/HospitalDocuments/Preview?versionId=${encodeURIComponent(versionId)}`;
+        const ocrUrl = item.ocrUrl || `/HospitalDocuments/OcrText?versionId=${encodeURIComponent(versionId)}`;
 
         if (fromSuggestion) {
-            renderSelectedDocument(versionId, title, description, previewUrl, ocrUrl);
+            renderSelectedDocument(item);
         } else {
             const currentCards = resultsList.querySelectorAll('.result-card');
 
             if (currentCards.length === 0) {
-                renderSelectedDocument(versionId, title, description, previewUrl, ocrUrl);
+                renderSelectedDocument(item);
             }
         }
 
         resultCount.innerText = Math.max(parseInt(resultCount.innerText || '0'), 1).toString();
         statusLine.innerText = 'Documento localizado e aberto para visualização.';
 
-        openPreview(previewUrl, ocrUrl, title || 'Documento encontrado');
+        openPreview(viewerUrl, previewUrl, ocrUrl, title);
     }
 
-    function renderSelectedDocument(versionId, title, description, previewUrl, ocrUrl) {
+    function renderSelectedDocument(item) {
+        const versionId = item.versionId;
         resultCount.innerText = '1';
 
         resultsList.innerHTML = `
             <article class="result-card active selected-card"
                      data-version-id="${escapeAttr(versionId)}"
-                     data-preview-url="${escapeAttr(previewUrl)}"
-                     data-ocr-url="${escapeAttr(ocrUrl)}"
-                     data-title="${escapeAttr(title || 'Documento selecionado')}">
+                     data-preview-url="${escapeAttr(item.previewUrl || '')}"
+                     data-ocr-url="${escapeAttr(item.ocrUrl || '')}"
+                     data-title="${escapeAttr(item.title || 'Documento selecionado')}">
 
                 <div class="selected-label">
                     <i class="bi bi-check-circle-fill"></i>
                     Documento selecionado
                 </div>
 
-                <div class="doc-title">${escapeHtml(title || 'Documento selecionado')}</div>
+                <div class="doc-title">${escapeHtml(item.title || 'Documento selecionado')}</div>
 
-                <div class="doc-file">${escapeHtml(description || '')}</div>
+                <div class="doc-file">${escapeHtml(item.code || '')} · ${escapeHtml(item.fileName || '')}</div>
 
                 <div class="doc-meta">
-                    <span class="meta-pill view-pill">Visualização aberta</span>
-                    <span class="meta-pill">Somente leitura</span>
-                    <span class="meta-pill ocr-pill">OCR consultado</span>
+                    <span class="meta-pill">${escapeHtml(item.type || 'Documento')}</span>
+                    <span class="meta-pill">${escapeHtml(item.folderPath || item.folderName || 'Sem pasta')}</span>
+                    <span class="meta-pill">${escapeHtml(item.matchSourceLabel || 'Relevância')}</span>
+                    <span class="meta-pill ${item.hasOcr ? 'ocr-pill':''}">${ocrStatusLabel(item.ocrStatus, item.hasOcr)}</span>
                 </div>
 
-                <div class="snippet">
-                    Este documento foi localizado pela sugestão automática e já está aberto no painel de visualização.
-                </div>
+                <div class="snippet">${item.snippet || 'Documento selecionado e aberto no painel.'}</div>
             </article>
 
             <div class="assistant-box" style="margin-top:12px;">
@@ -1026,14 +1036,14 @@
         `;
     }
 
-    async function openPreview(previewUrl, ocrUrl, title) {
+    async function openPreview(viewerUrl, previewUrl, ocrUrl, title) {
         previewEmpty.style.display = 'none';
         previewFrame.style.display = 'block';
         previewFrame.src = previewUrl;
 
         previewToolbar.style.display = 'flex';
         previewTitle.innerText = title || 'Documento encontrado';
-        openViewerLink.href = previewUrl;
+        openViewerLink.href = viewerUrl;
 
         ocrBox.style.display = 'block';
         ocrStatus.innerText = 'Carregando';
