@@ -1132,14 +1132,27 @@
         if (st === 'ERROR') return 'OCR com erro';
         return 'Sem OCR';
     }
+
+    if (btnCopyOcr) {
+        btnCopyOcr.addEventListener('click', async function () {
+            const text = (ocrText && ocrText.innerText) ? ocrText.innerText : '';
+            if (!text) return;
+
+            try {
+                await navigator.clipboard.writeText(text);
+                statusLine.innerText = 'Texto OCR copiado para a área de transferência.';
+            } catch (error) {
+                console.error('Erro ao copiar OCR:', error);
+                statusLine.innerText = 'Não foi possível copiar o texto OCR.';
+            }
+        });
+    }
+
+    if (btnToggleOcr && ocrText) {
+        btnToggleOcr.addEventListener('click', function () {
+            const expanded = ocrText.style.maxHeight === 'none';
+            ocrText.style.maxHeight = expanded ? '280px' : 'none';
+            btnToggleOcr.innerText = expanded ? 'Expandir OCR' : 'Recolher OCR';
+        });
+    }
 </script>
-    btnCopyOcr.addEventListener('click', async function () {
-        const text = ocrText.innerText || '';
-        if (!text) return;
-        await navigator.clipboard.writeText(text);
-    });
-    btnToggleOcr.addEventListener('click', function () {
-        const expanded = ocrText.style.maxHeight === 'none';
-        ocrText.style.maxHeight = expanded ? '280px' : 'none';
-        btnToggleOcr.innerText = expanded ? 'Expandir OCR' : 'Recolher OCR';
-    });
