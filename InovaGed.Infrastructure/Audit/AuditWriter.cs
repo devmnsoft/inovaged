@@ -73,4 +73,46 @@ values
             return Result.Fail("AUDIT", "Falha ao registrar auditoria.");
         }
     }
+
+    private static string MapAction(string? action)
+    {
+        if (string.IsNullOrWhiteSpace(action))
+            return "VIEW";
+
+        var normalized = action.Trim().ToUpperInvariant();
+
+        return normalized switch
+        {
+            "HTTP" => "HTTP",
+            "GET" => "HTTP",
+            "POST" => "HTTP",
+            "PUT" => "HTTP",
+            "PATCH" => "HTTP",
+            "DELETE" => "HTTP",
+
+            "CREATE" => "CREATE",
+            "INSERT" => "CREATE",
+            "ADD" => "CREATE",
+
+            "UPDATE" => "UPDATE",
+            "EDIT" => "UPDATE",
+            "ALTER" => "UPDATE",
+
+            "DELETE_LOGICAL" => "DELETE",
+            "REMOVE" => "DELETE",
+
+            "VIEW" => "VIEW",
+            "READ" => "VIEW",
+            "DETAIL" => "VIEW",
+
+            "DOWNLOAD" => "DOWNLOAD",
+            "UPLOAD" => "UPLOAD",
+            "LOGIN" => "LOGIN",
+            "LOGOUT" => "LOGOUT",
+            "EXPORT" => "EXPORT",
+            "IMPORT" => "IMPORT",
+
+            _ => "VIEW"
+        };
+    }
 }

@@ -9,6 +9,7 @@ using InovaGed.Application.Documents;
 using InovaGed.Application.Ged;
 using InovaGed.Application.Identity;
 using InovaGed.Application.Ocr;
+using InovaGed.Application.Preview;
 using InovaGed.Application.Search;
 using InovaGed.Application.Workflow;
 using InovaGed.Domain.Ged;
