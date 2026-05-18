@@ -34,7 +34,7 @@ public sealed class HospitalDocumentsController : Controller
 
         var tenantId = _currentUser.TenantId; var query = q.Trim(); var likeQuery = $"%{query}%"; var normalizedType = NormalizeType(type); page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 5, 50);
 
-        const string sql = """
+const string sql = """
 WITH tokens AS (
   SELECT regexp_replace(lower(t), '[^[:alnum:]À-ÿ_]+', '', 'g') AS tok FROM regexp_split_to_table(trim(@q), '\s+') AS t
 ), query_ts AS (
@@ -61,16 +61,22 @@ LEFT JOIN LATERAL (SELECT j.status FROM ged.ocr_job j WHERE j.tenant_id=d.tenant
 WHERE d.tenant_id=@tenantId AND d.reg_status='A'::bpchar AND d.status<>'ARCHIVED'::ged.document_status_enum
 AND (d.code ILIKE @likeQuery OR d.title ILIKE @likeQuery OR COALESCE(d.description,'') ILIKE @likeQuery OR COALESCE(s.file_name,'') ILIKE @likeQuery OR COALESCE(s.ocr_text,'') ILIKE @likeQuery OR (s.search_vector IS NOT NULL AND (SELECT tsq FROM query_ts) IS NOT NULL AND s.search_vector @@ (SELECT tsq FROM query_ts)))
 AND (@docType IS NULL OR (@docType='pdf' AND (lower(COALESCE(v.content_type,latest_v.content_type,'')) LIKE '%pdf%' OR lower(COALESCE(s.file_name,v.file_name,latest_v.file_name,'')) LIKE '%.pdf')) OR (@docType='word' AND (lower(COALESCE(v.content_type,latest_v.content_type,'')) LIKE '%word%' OR lower(COALESCE(s.file_name,v.file_name,latest_v.file_name,'')) LIKE '%.doc%' )) OR (@docType='image' AND (lower(COALESCE(v.content_type,latest_v.content_type,'')) LIKE 'image/%' OR lower(COALESCE(s.file_name,v.file_name,latest_v.file_name,'')) SIMILAR TO '%.(jpg|jpeg|png|tif|tiff|webp|gif)')))
+), filtered AS (
+SELECT * FROM base WHERE "VersionId" IS NOT NULL AND "VersionId" <> '00000000-0000-0000-0000-000000000000'::uuid
 )
-SELECT * FROM base WHERE "VersionId" IS NOT NULL AND "VersionId" <> '00000000-0000-0000-0000-000000000000'::uuid ORDER BY "MatchScore" DESC, "Rank" DESC, "CreatedAt" DESC OFFSET @offset LIMIT @pageSize;
-SELECT count(1) FROM base WHERE "VersionId" IS NOT NULL AND "VersionId" <> '00000000-0000-0000-0000-000000000000'::uuid;
+SELECT filtered.*, count(*) OVER()::int AS "TotalRows"
+FROM filtered
+ORDER BY "MatchScore" DESC, "Rank" DESC, "CreatedAt" DESC
+LIMIT @pageSize OFFSET @offset;
 """;
         try {
             await using var conn = await _db.OpenAsync(ct);
-            using var multi = await conn.QueryMultipleAsync(new CommandDefinition(sql, new { tenantId, q = query, likeQuery, qExact = query, docType = normalizedType, offset = (page - 1) * pageSize, pageSize }, cancellationToken: ct));
-            var rows = (await multi.ReadAsync<HospitalDocumentSearchRow>()).ToList(); var total = await multi.ReadFirstAsync<int>();
+            var offset = (page - 1) * pageSize;
+            var rows = (await conn.QueryAsync<HospitalDocumentSearchRow>(new CommandDefinition(sql, new { tenantId, q = query, likeQuery, qExact = query, docType = normalizedType, offset, pageSize }, cancellationToken: ct))).ToList();
+            var total = rows.FirstOrDefault()?.TotalRows ?? 0;
             var items = rows.Where(x => x.VersionId != EmptyGuid).Select(MapResult).ToList();
-            return Json(new { success = true, total, page, pageSize, hasMore = page * pageSize < total, items });
+            var hasMore = offset + rows.Count < total;
+            return Json(new { success = true, total, page, pageSize, hasMore, items });
         } catch (Exception ex) { _logger.LogError(ex, "Erro na busca hospitalar."); return StatusCode(500, new { success = false, message = "Erro ao pesquisar documentos hospitalares." }); }
     }
 
@@ -120,7 +126,7 @@ ORDER BY "MatchScore" DESC, "Rank" DESC, "CreatedAt" DESC LIMIT 10;
     private static string GetFriendlyType(string? contentType, string fileName) => IsPdf(contentType, fileName) ? "PDF" : IsImage(contentType, fileName) ? "Imagem" : (Path.GetExtension(fileName).ToLowerInvariant() is ".doc" or ".docx" ? "Documento Word" : "Documento");
     private static string FormatBytes(long bytes) { if (bytes <= 0) return "Não informado"; string[] sizes = ["B", "KB", "MB", "GB"]; double len = bytes; var o = 0; while (len >= 1024 && o < sizes.Length - 1) { o++; len /= 1024; } return $"{len:0.##} {sizes[o]}"; }
 
-    private sealed class HospitalDocumentSearchRow { public Guid DocumentId { get; set; } public Guid VersionId { get; set; } public string Code { get; set; } = ""; public string Title { get; set; } = ""; public string FileName { get; set; } = ""; public string ContentType { get; set; } = ""; public long SizeBytes { get; set; } public DateTime CreatedAt { get; set; } public string Snippet { get; set; } = ""; public string OcrText { get; set; } = ""; public double Rank { get; set; } public string MatchSource { get; set; } = ""; public int MatchScore { get; set; } public string OcrStatus { get; set; } = ""; public string FolderName { get; set; } = ""; public string? FolderPath { get; set; } }
+    private sealed class HospitalDocumentSearchRow { public Guid DocumentId { get; set; } public Guid VersionId { get; set; } public string Code { get; set; } = ""; public string Title { get; set; } = ""; public string FileName { get; set; } = ""; public string ContentType { get; set; } = ""; public long SizeBytes { get; set; } public DateTime CreatedAt { get; set; } public string Snippet { get; set; } = ""; public string OcrText { get; set; } = ""; public double Rank { get; set; } public int TotalRows { get; set; } public string MatchSource { get; set; } = ""; public int MatchScore { get; set; } public string OcrStatus { get; set; } = ""; public string FolderName { get; set; } = ""; public string? FolderPath { get; set; } }
     private sealed class HospitalDocumentSuggestionRow { public Guid DocumentId { get; set; } public Guid VersionId { get; set; } public string Code { get; set; } = ""; public string Title { get; set; } = ""; public string FileName { get; set; } = ""; public string ContentType { get; set; } = ""; public long SizeBytes { get; set; } public DateTime CreatedAt { get; set; } public string FolderName { get; set; } = ""; public string? FolderPath { get; set; } public bool HasOcr { get; set; } public string OcrStatus { get; set; } = ""; public string MatchSource { get; set; } = ""; public string Snippet { get; set; } = ""; public double Rank { get; set; } public int MatchScore { get; set; } }
     private sealed class HospitalDocumentResultDto { public Guid DocumentId { get; set; } public Guid VersionId { get; set; } public string Code { get; set; } = ""; public string Title { get; set; } = ""; public string FileName { get; set; } = ""; public string ContentType { get; set; } = ""; public string Type { get; set; } = ""; public string FolderName { get; set; } = ""; public string? FolderPath { get; set; } public DateTime CreatedAt { get; set; } public string CreatedAtFormatted { get; set; } = ""; public long SizeBytes { get; set; } public string SizeFormatted { get; set; } = ""; public bool HasOcr { get; set; } public string OcrStatus { get; set; } = ""; public string MatchSource { get; set; } = ""; public int MatchScore { get; set; } public string Snippet { get; set; } = ""; public bool PreviewAvailable { get; set; } public string PreviewUrl { get; set; } = ""; public string OcrUrl { get; set; } = ""; }
     private sealed class HospitalDocumentSuggestionDto { public Guid DocumentId { get; set; } public Guid VersionId { get; set; } public string Code { get; set; } = ""; public string Title { get; set; } = ""; public string FileName { get; set; } = ""; public string ContentType { get; set; } = ""; public string Type { get; set; } = ""; public string FolderName { get; set; } = ""; public string? FolderPath { get; set; } public string CreatedAt { get; set; } = ""; public string Size { get; set; } = ""; public bool HasOcr { get; set; } public string OcrStatus { get; set; } = ""; public string MatchSource { get; set; } = ""; public string Snippet { get; set; } = ""; public string Label { get; set; } = ""; public string Description { get; set; } = ""; }
