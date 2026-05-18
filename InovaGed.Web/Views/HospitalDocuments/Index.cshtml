@@ -674,7 +674,10 @@
                     <span>Texto OCR gerado</span>
                     <span id="ocrStatus" class="meta-pill">Aguardando</span>
                 </div>
-
+                <div class="toolbar-actions" style="padding:8px 18px;">
+                    <button id="btnCopyOcr" type="button" class="quick-chip">Copiar OCR</button>
+                    <button id="btnToggleOcr" type="button" class="quick-chip">Expandir OCR</button>
+                </div>
                 <div id="ocrText" class="ocr-text"></div>
             </div>
         </main>
@@ -700,6 +703,8 @@
     const ocrBox = document.getElementById('ocrBox');
     const ocrText = document.getElementById('ocrText');
     const ocrStatus = document.getElementById('ocrStatus');
+    const btnCopyOcr = document.getElementById('btnCopyOcr');
+    const btnToggleOcr = document.getElementById('btnToggleOcr');
 
     let suggestionTimer = null;
     let lastController = null;
@@ -789,16 +794,16 @@
                     const item = JSON.parse(this.dataset.item || '{}');
                     const versionId = item.versionId;
                     const title = item.title || item.label;
-                    const viewerUrl = item.viewerUrl || `/HospitalDocuments/Viewer?versionId=${encodeURIComponent(versionId)}`;
                     const previewUrl = item.previewUrl || `/HospitalDocuments/Preview?versionId=${encodeURIComponent(versionId)}`;
+                    const viewerUrl = item.viewerUrl || `/HospitalDocuments/Viewer?versionId=${encodeURIComponent(versionId)}`;
                     const ocrUrl = item.ocrUrl || `/HospitalDocuments/OcrText?versionId=${encodeURIComponent(versionId)}`;
 
-                    input.value = `${item.code || ''} ${title}`.trim();
+                    input.value = (item.code || item.title || '').trim();
                     suggestions.style.display = 'none';
 
                     renderSelectedDocument(item);
                     resultCount.innerText = '1';
-                    openPreview(viewerUrl, previewUrl, ocrUrl, title);
+                    openPreview(previewUrl, ocrUrl, viewerUrl, title);
                     statusLine.innerText = 'Documento selecionado pela sugestão automática.';
                 });
             });
@@ -939,9 +944,9 @@
                     <div class="doc-meta">
                         <span class="meta-pill">${escapeHtml(item.code || 'Sem código')}</span>
                         <span class="meta-pill">${escapeHtml(item.type || 'Documento')}</span>
-                        <span class="meta-pill">${escapeHtml(item.size || 'Não informado')}</span>
-                        <span class="meta-pill">${escapeHtml(item.createdAt || '')}</span>
-                        ${item.hasOcr ? `<span class="meta-pill ocr-pill">OCR disponível</span>` : `<span class="meta-pill">Sem OCR</span>`}
+                        <span class="meta-pill">${escapeHtml(item.sizeFormatted || item.size || 'Não informado')}</span>
+                        <span class="meta-pill">${escapeHtml(item.createdAtFormatted || item.createdAt || '')}</span>
+                        <span class="meta-pill ${item.hasOcr ? 'ocr-pill':''}">${ocrStatusLabel(item.ocrStatus, item.hasOcr)}</span>
                     </div>
 
                     <div class="snippet">${item.snippet || 'Documento encontrado pelos metadados informados.'}</div>
@@ -994,7 +999,7 @@
         resultCount.innerText = Math.max(parseInt(resultCount.innerText || '0'), 1).toString();
         statusLine.innerText = 'Documento localizado e aberto para visualização.';
 
-        openPreview(viewerUrl, previewUrl, ocrUrl, title);
+        openPreview(previewUrl, ocrUrl, viewerUrl, title);
     }
 
     function renderSelectedDocument(item) {
@@ -1036,7 +1041,7 @@
         `;
     }
 
-    async function openPreview(viewerUrl, previewUrl, ocrUrl, title) {
+    async function openPreview(previewUrl, ocrUrl, viewerUrl, title) {
         previewEmpty.style.display = 'none';
         previewFrame.style.display = 'block';
         previewFrame.src = previewUrl;
@@ -1060,8 +1065,8 @@
 
             const data = await response.json();
 
-            if (data.hasOcr) {
-                ocrStatus.innerText = 'Disponível';
+            if (data.success && data.hasOcr && data.text) {
+                ocrStatus.innerText = 'OCR disponível';
                 ocrText.innerText = data.text;
             } else {
                 ocrStatus.innerText = 'Sem OCR';
@@ -1070,7 +1075,7 @@
         } catch (error) {
             console.error('Erro ao carregar OCR:', error);
             ocrStatus.innerText = 'Erro';
-            ocrText.innerText = 'Erro ao carregar OCR.';
+            ocrText.innerText = 'Não foi possível carregar o OCR deste documento.';
         }
     }
 
@@ -1128,3 +1133,13 @@
         return 'Sem OCR';
     }
 </script>
+    btnCopyOcr.addEventListener('click', async function () {
+        const text = ocrText.innerText || '';
+        if (!text) return;
+        await navigator.clipboard.writeText(text);
+    });
+    btnToggleOcr.addEventListener('click', function () {
+        const expanded = ocrText.style.maxHeight === 'none';
+        ocrText.style.maxHeight = expanded ? '280px' : 'none';
+        btnToggleOcr.innerText = expanded ? 'Expandir OCR' : 'Recolher OCR';
+    });
