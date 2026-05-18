@@ -44,6 +44,7 @@ public sealed class GedController : Controller
     private readonly IFileStorage _storage;
     private readonly IPreviewGenerator _preview;
     private readonly IPreviewJobQueue _previewQueue;
+    private readonly IPreviewStatusRepository _previewStatus;
 
     private readonly IDocumentSearchQueries _search;
 
@@ -70,6 +71,7 @@ public sealed class GedController : Controller
         IFileStorage storage,
         IPreviewGenerator preview,
         IPreviewJobQueue previewQueue,
+        IPreviewStatusRepository previewStatus,
         IWorkflowQueries workflowQ,
         IWorkflowCommands workflowC,
         IDocumentWorkflowQueries docWfQ,
@@ -95,6 +97,7 @@ public sealed class GedController : Controller
         _storage = storage;
         _preview = preview;
         _previewQueue = previewQueue;
+        _previewStatus = previewStatus;
 
         _workflowQ = workflowQ;
         _workflowC = workflowC;
@@ -1121,16 +1124,7 @@ LIMIT 20;";
                 return File(pdf, "application/pdf", enableRangeProcessing: true);
             }
 
-            await _previewQueue.EnqueueAsync(tenantId, v.DocumentId, versionId, v.StoragePath, v.FileName, ct);
-
-            var previewPath = await _preview.GetOrCreatePreviewPdfAsync(
-                tenantId,
-                v.DocumentId,
-                versionId,
-                v.StoragePath,
-                v.FileName,
-                ct);
-
+            var previewPath = Path.Combine("tenants", tenantId.ToString(), "documents", v.DocumentId.ToString(), "versions", versionId.ToString(), "previews", "preview.pdf");
             if (await _storage.ExistsAsync(previewPath, ct))
             {
                 var preview = await _storage.OpenReadAsync(previewPath, ct);
@@ -1140,6 +1134,9 @@ LIMIT 20;";
 
                 return File(preview, "application/pdf", enableRangeProcessing: true);
             }
+
+            await _previewStatus.UpsertAsync(tenantId, versionId, PreviewProcessingStatus.Pending, null, null, DateTimeOffset.UtcNow, null, ct);
+            await _previewQueue.EnqueueAsync(tenantId, v.DocumentId, versionId, v.StoragePath, v.FileName, ct);
 
             var retryUrl = Url.Action("PreviewVersion", "Ged", new { versionId })!;
             var html = $@"
@@ -1164,7 +1161,21 @@ LIMIT 20;";
     <p class='muted'>Isso pode levar alguns segundos. A página vai tentar novamente automaticamente.</p>
     <p class='muted'>Se demorar muito, clique em <a href='{retryUrl}'>tentar novamente</a>.</p>
   </div>
-  <script>setTimeout(() => location.href = '{retryUrl}', 2500);</script>
+  <script>
+    const statusUrl = '@Url.Action("PreviewStatus", "Ged", new { versionId })';
+    let wait = 1200;
+    async function tick() {
+      const res = await fetch(statusUrl, { headers: { 'Accept':'application/json' }});
+      if (res.ok) {
+        const data = await res.json();
+        if (data.status === 'READY' && data.previewUrl) { location.href = data.previewUrl; return; }
+        if (data.status === 'ERROR') { return; }
+      }
+      setTimeout(tick, wait);
+      wait = Math.min(wait * 1.7, 10000);
+    }
+    setTimeout(tick, wait);
+  </script>
 </body>
 </html>";
             return Content(html, "text/html; charset=utf-8");
@@ -1197,6 +1208,28 @@ LIMIT 20;";
 </html>";
             return Content(htmlErr, "text/html; charset=utf-8");
         }
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> PreviewStatus(Guid versionId, CancellationToken ct)
+    {
+        if (!_currentUser.IsAuthenticated) return Unauthorized();
+        var tenantId = _currentUser.TenantId;
+        var status = await _previewStatus.GetAsync(tenantId, versionId, ct);
+        if (status is null)
+            return Json(new { status = "PENDING" });
+
+        var previewUrl = status.Status == PreviewProcessingStatus.Ready && !string.IsNullOrWhiteSpace(status.PreviewPath)
+            ? $"/storage/{status.PreviewPath}"
+            : null;
+        return Json(new
+        {
+            status = status.Status.ToString().ToUpperInvariant(),
+            previewUrl,
+            errorMessage = status.ErrorMessage,
+            requestedAt = status.RequestedAt,
+            finishedAt = status.FinishedAt
+        });
     }
 
     // =========================

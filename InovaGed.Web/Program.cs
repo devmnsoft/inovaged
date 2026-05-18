@@ -116,6 +116,7 @@ builder.Services.Configure<LibreOfficeOptions>(
     builder.Configuration.GetSection("Preview"));
 
 builder.Services.AddScoped<IPreviewGenerator, LibreOfficePreviewGenerator>();
+builder.Services.AddScoped<IPreviewStatusRepository, PreviewStatusRepository>();
 
 builder.Services.AddSingleton<PreviewQueue>();
 builder.Services.AddSingleton<IPreviewJobQueue>(sp => sp.GetRequiredService<PreviewQueue>());

@@ -139,6 +139,7 @@
                             <span class="text-muted small">
                                 Versão @selected.VersionNumber · @ToSize(selected.SizeBytes)
                             </span>
+                            <span class="badge bg-secondary" id="previewStatusBadge" data-preview-status-badge="1">Preview: verificando…</span>
 
                             <a class="btn btn-sm btn-outline-secondary"
                                href="@Url.Action("Download", "Ged", new { id = selected.Id })">
@@ -649,6 +650,33 @@
         </div>
     </div>
 </div>
+
+@if (selected is not null)
+{
+    <script>
+        (function(){
+            const statusUrl = '@Url.Action("PreviewStatus", "Ged", new { versionId = selected.Id })';
+            const badge = document.getElementById('previewStatusBadge');
+            let wait = 1200;
+            let done = false;
+            async function check(){
+                try{
+                    const r = await fetch(statusUrl, { headers: { 'Accept':'application/json' } });
+                    if (!r.ok) return;
+                    const d = await r.json();
+                    if (badge) badge.textContent = `Preview: ${d.status || 'PENDING'}`;
+                    if (d.status === 'READY' || d.status === 'ERROR') done = true;
+                } finally {
+                    if (!done) {
+                        setTimeout(check, wait);
+                        wait = Math.min(wait * 1.7, 10000);
+                    }
+                }
+            }
+            check();
+        })();
+    </script>
+}
 
 <div class="modal fade" id="modalLife" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-centered">

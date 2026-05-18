@@ -16,6 +16,21 @@ public sealed class PreviewWorker : BackgroundService
             using var scope = _scopeFactory.CreateScope();
             var preview = scope.ServiceProvider.GetRequiredService<IPreviewGenerator>();
             var notifier = scope.ServiceProvider.GetRequiredService<IPreviewNotificationService>();
-            try { await notifier.PublishAsync(job.TenantId, job.VersionId, "PROCESSING", null, "Gerando preview", stoppingToken); var path = await preview.GetOrCreatePreviewPdfAsync(job.TenantId, job.DocumentId, job.VersionId, job.StoragePath, job.FileName, stoppingToken); await notifier.PublishAsync(job.TenantId, job.VersionId, "COMPLETED", $"/storage/{path}", null, stoppingToken);} catch (Exception ex){_logger.LogError(ex,"Falha preview async Version={VersionId}",job.VersionId); await notifier.PublishAsync(job.TenantId, job.VersionId, "ERROR", null, ex.Message, stoppingToken);} }
+            var statusRepo = scope.ServiceProvider.GetRequiredService<IPreviewStatusRepository>();
+            try
+            {
+                await statusRepo.UpsertAsync(job.TenantId, job.VersionId, PreviewProcessingStatus.Processing, null, null, null, null, stoppingToken);
+                await notifier.PublishAsync(job.TenantId, job.VersionId, "PROCESSING", null, "Gerando preview", stoppingToken);
+                var path = await preview.GetOrCreatePreviewPdfAsync(job.TenantId, job.DocumentId, job.VersionId, job.StoragePath, job.FileName, stoppingToken);
+                await statusRepo.UpsertAsync(job.TenantId, job.VersionId, PreviewProcessingStatus.Ready, path, null, null, DateTimeOffset.UtcNow, stoppingToken);
+                await notifier.PublishAsync(job.TenantId, job.VersionId, "READY", $"/storage/{path}", null, stoppingToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Falha preview async Version={VersionId}", job.VersionId);
+                await statusRepo.UpsertAsync(job.TenantId, job.VersionId, PreviewProcessingStatus.Error, null, ex.Message, null, DateTimeOffset.UtcNow, stoppingToken);
+                await notifier.PublishAsync(job.TenantId, job.VersionId, "ERROR", null, ex.Message, stoppingToken);
+            }
+        }
     }
 }
