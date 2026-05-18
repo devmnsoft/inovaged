@@ -36,11 +36,7 @@ public sealed class HospitalDocumentsController : Controller
         var tenantId = _currentUser.TenantId; var query = q.Trim(); var likeQuery = $"%{query}%"; var normalizedType = NormalizeType(type); page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 5, 50);
 
 const string sql = """
-WITH tokens AS (
-  SELECT regexp_replace(lower(t), '[^[:alnum:]À-ÿ_]+', '', 'g') AS tok FROM regexp_split_to_table(trim(@q), '\s+') AS t
-), query_ts AS (
-  SELECT CASE WHEN count(*)=0 THEN NULL ELSE to_tsquery('portuguese', string_agg(tok || ':*', ' & ')) END AS tsq FROM tokens WHERE tok <> ''
-), base AS (
+WITH base AS (
 SELECT d.id AS "DocumentId",
 COALESCE(NULLIF(s.version_id,'00000000-0000-0000-0000-000000000000'::uuid),NULLIF(d.current_version_id,'00000000-0000-0000-0000-000000000000'::uuid),latest_v.id) AS "VersionId",
 COALESCE(NULLIF(d.code,''),d.id::text) AS "Code", COALESCE(NULLIF(d.title,''),'Documento sem título') AS "Title",
@@ -49,10 +45,10 @@ COALESCE(NULLIF(v.content_type,''),NULLIF(latest_v.content_type,''),'') AS "Cont
 COALESCE(v.file_size_bytes, latest_v.file_size_bytes,0) AS "SizeBytes", d.created_at AS "CreatedAt", COALESCE(s.ocr_text,'') AS "OcrText",
 f.name AS "FolderName", NULL::text AS "FolderPath", COALESCE(oj.status::text,'NONE') AS "OcrStatus",
 CASE WHEN d.code ILIKE @qExact THEN 'CODE' WHEN d.title ILIKE @likeQuery THEN 'TITLE' WHEN COALESCE(s.file_name,'') ILIKE @likeQuery THEN 'FILE_NAME' WHEN COALESCE(d.description,'') ILIKE @likeQuery THEN 'DESCRIPTION' WHEN COALESCE(s.ocr_text,'') ILIKE @likeQuery THEN 'OCR' ELSE 'SEARCH_VECTOR' END AS "MatchSource",
-CASE WHEN s.search_vector IS NOT NULL AND (SELECT tsq FROM query_ts) IS NOT NULL AND s.search_vector @@ (SELECT tsq FROM query_ts) THEN ts_headline('portuguese',COALESCE(s.ocr_text,d.description,d.title,s.file_name,''),(SELECT tsq FROM query_ts),'StartSel=<mark>, StopSel=</mark>, MaxFragments=2, FragmentDelimiter= … , MaxWords=16, MinWords=6') ELSE COALESCE(NULLIF(d.description,''),NULLIF(s.file_name,''),NULLIF(d.title,''),'Documento encontrado pelos metadados.') END AS "Snippet",
+CASE WHEN s.search_vector IS NOT NULL AND s.search_vector @@ websearch_to_tsquery('portuguese', @q) THEN ts_headline('portuguese',COALESCE(s.ocr_text,d.description,d.title,s.file_name,''),websearch_to_tsquery('portuguese', @q),'StartSel=<mark>, StopSel=</mark>, MaxFragments=2, FragmentDelimiter= … , MaxWords=16, MinWords=6') ELSE COALESCE(NULLIF(d.description,''),NULLIF(s.file_name,''),NULLIF(d.title,''),'Documento encontrado pelos metadados.') END AS "Snippet",
 CASE WHEN d.code ILIKE @qExact THEN 100 WHEN d.title ILIKE @likeQuery THEN 85 WHEN COALESCE(s.file_name,'') ILIKE @likeQuery THEN 70 WHEN COALESCE(d.description,'') ILIKE @likeQuery THEN 62 WHEN COALESCE(s.ocr_text,'') ILIKE @likeQuery THEN 74 ELSE 50 END +
-CASE WHEN s.search_vector IS NOT NULL AND (SELECT tsq FROM query_ts) IS NOT NULL AND s.search_vector @@ (SELECT tsq FROM query_ts) THEN (ts_rank(s.search_vector,(SELECT tsq FROM query_ts))*100)::int ELSE 0 END AS "MatchScore",
-CASE WHEN s.search_vector IS NOT NULL AND (SELECT tsq FROM query_ts) IS NOT NULL AND s.search_vector @@ (SELECT tsq FROM query_ts) THEN ts_rank(s.search_vector,(SELECT tsq FROM query_ts)) ELSE 0 END AS "Rank"
+CASE WHEN s.search_vector IS NOT NULL AND s.search_vector @@ websearch_to_tsquery('portuguese', @q) THEN (ts_rank(s.search_vector,websearch_to_tsquery('portuguese', @q))*100)::int ELSE 0 END AS "MatchScore",
+CASE WHEN s.search_vector IS NOT NULL AND s.search_vector @@ websearch_to_tsquery('portuguese', @q) THEN ts_rank(s.search_vector,websearch_to_tsquery('portuguese', @q)) ELSE 0 END AS "Rank"
 FROM ged.document d
 LEFT JOIN ged.document_search s ON s.tenant_id=d.tenant_id AND s.document_id=d.id
 LEFT JOIN ged.document_version v ON v.tenant_id=d.tenant_id AND v.id=s.version_id
@@ -60,7 +56,7 @@ LEFT JOIN ged.folder f ON f.tenant_id=d.tenant_id AND f.id=d.folder_id
 LEFT JOIN LATERAL (SELECT vx.* FROM ged.document_version vx WHERE vx.tenant_id=d.tenant_id AND vx.document_id=d.id ORDER BY vx.version_number DESC, vx.created_at DESC LIMIT 1) latest_v ON true
 LEFT JOIN LATERAL (SELECT j.status FROM ged.ocr_job j WHERE j.tenant_id=d.tenant_id AND j.document_version_id=COALESCE(NULLIF(s.version_id,'00000000-0000-0000-0000-000000000000'::uuid),NULLIF(d.current_version_id,'00000000-0000-0000-0000-000000000000'::uuid),latest_v.id) ORDER BY j.requested_at DESC LIMIT 1) oj ON true
 WHERE d.tenant_id=@tenantId AND d.reg_status='A'::bpchar AND d.status<>'ARCHIVED'::ged.document_status_enum
-AND (d.code ILIKE @likeQuery OR d.title ILIKE @likeQuery OR COALESCE(d.description,'') ILIKE @likeQuery OR COALESCE(s.file_name,'') ILIKE @likeQuery OR COALESCE(s.ocr_text,'') ILIKE @likeQuery OR (s.search_vector IS NOT NULL AND (SELECT tsq FROM query_ts) IS NOT NULL AND s.search_vector @@ (SELECT tsq FROM query_ts)))
+AND (d.code ILIKE @likeQuery OR d.title ILIKE @likeQuery OR COALESCE(d.description,'') ILIKE @likeQuery OR COALESCE(s.file_name,'') ILIKE @likeQuery OR COALESCE(s.ocr_text,'') ILIKE @likeQuery OR (s.search_vector IS NOT NULL AND s.search_vector @@ websearch_to_tsquery('portuguese', @q)))
 AND (@docType IS NULL OR (@docType='pdf' AND (lower(COALESCE(v.content_type,latest_v.content_type,'')) LIKE '%pdf%' OR lower(COALESCE(s.file_name,v.file_name,latest_v.file_name,'')) LIKE '%.pdf')) OR (@docType='word' AND (lower(COALESCE(v.content_type,latest_v.content_type,'')) LIKE '%word%' OR lower(COALESCE(s.file_name,v.file_name,latest_v.file_name,'')) LIKE '%.doc%' )) OR (@docType='image' AND (lower(COALESCE(v.content_type,latest_v.content_type,'')) LIKE 'image/%' OR lower(COALESCE(s.file_name,v.file_name,latest_v.file_name,'')) SIMILAR TO '%.(jpg|jpeg|png|tif|tiff|webp|gif)')))
 ), filtered AS (
 SELECT * FROM base WHERE "VersionId" IS NOT NULL AND "VersionId" <> '00000000-0000-0000-0000-000000000000'::uuid
@@ -126,8 +122,47 @@ ORDER BY "MatchScore" DESC, "Rank" DESC, "CreatedAt" DESC LIMIT 10;
         if (row is null) return RedirectToAction(nameof(Index));
         return View(new HospitalDocumentViewerVM { DocumentId = row.DocumentId, VersionId = row.VersionId, Code = row.Code, Title = row.Title, FileName = row.FileName, ContentType = row.ContentType, TypeName = GetFriendlyType(row.ContentType, row.FileName), SizeBytes = row.SizeBytes, SizeFormatted = FormatBytes(row.SizeBytes), CreatedAt = row.CreatedAt, OcrText = row.OcrText, PreviewUrl = Url.Action(nameof(Preview), new { versionId }) ?? "", OcrUrl = Url.Action(nameof(OcrText), new { versionId }) ?? "" });
     }
-    [HttpGet] public async Task<IActionResult> Preview(Guid versionId, CancellationToken ct) { return RedirectToAction(nameof(Viewer), new { versionId }); }
+    [HttpGet]
+    public async Task<IActionResult> Preview(Guid versionId, CancellationToken ct)
+    {
+        if (!_currentUser.IsAuthenticated) return Unauthorized();
+        if (versionId == Guid.Empty) return NotFound();
+
+        await using var conn = await _db.OpenAsync(ct);
+        var row = await conn.QuerySingleOrDefaultAsync<ViewerRow>(new CommandDefinition("""SELECT dv.document_id AS "DocumentId", dv.id AS "VersionId", COALESCE(NULLIF(dv.file_name,''),'arquivo') AS "FileName", COALESCE(NULLIF(dv.content_type,''),'') AS "ContentType", COALESCE(dv.storage_path,'') AS "StoragePath" FROM ged.document_version dv JOIN ged.document d ON d.tenant_id=dv.tenant_id AND d.id=dv.document_id WHERE dv.tenant_id=@tenantId AND dv.id=@versionId AND d.reg_status='A'::bpchar LIMIT 1""", new { tenantId = _currentUser.TenantId, versionId }, cancellationToken: ct));
+        if (row is null || string.IsNullOrWhiteSpace(row.StoragePath)) return NotFound();
+        if (!await _storage.ExistsAsync(row.StoragePath, ct)) return NotFound();
+
+        if (IsImage(row.ContentType, row.FileName))
+        {
+            var image = await _storage.OpenReadAsync(row.StoragePath, ct);
+            Response.Headers[HeaderNames.ContentDisposition] = $"inline; filename=\"{row.FileName}\"";
+            return File(image, string.IsNullOrWhiteSpace(row.ContentType) ? "image/*" : row.ContentType, enableRangeProcessing: true);
+        }
+
+        if (IsPdf(row.ContentType, row.FileName))
+        {
+            var pdf = await _storage.OpenReadAsync(row.StoragePath, ct);
+            Response.Headers[HeaderNames.ContentDisposition] = $"inline; filename=\"{row.FileName}\"";
+            return File(pdf, "application/pdf", enableRangeProcessing: true);
+        }
+
+        try
+        {
+            var previewPath = await _preview.GetOrCreatePreviewPdfAsync(_currentUser.TenantId, row.DocumentId, row.VersionId, row.StoragePath, row.FileName, ct);
+            if (!await _storage.ExistsAsync(previewPath, ct)) return PreviewProcessingContent();
+            var preview = await _storage.OpenReadAsync(previewPath, ct);
+            Response.Headers[HeaderNames.ContentDisposition] = $"inline; filename=\"{Path.GetFileNameWithoutExtension(row.FileName)}.pdf\"";
+            return File(preview, "application/pdf", enableRangeProcessing: true);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Preview ainda indisponível para versão {VersionId}.", versionId);
+            return PreviewProcessingContent();
+        }
+    }
     [HttpGet] public async Task<IActionResult> OcrText(Guid versionId, CancellationToken ct) { if (!_currentUser.IsAuthenticated || versionId == Guid.Empty) return Json(new { success = false, hasOcr = false, text = "" }); await using var conn = await _db.OpenAsync(ct); var row = await conn.QuerySingleOrDefaultAsync<OcrRow>(new CommandDefinition("""SELECT COALESCE(s.ocr_text,'') AS "Text", COALESCE(oj.status::text,'NONE') AS "Status" FROM ged.document_version dv LEFT JOIN ged.document_search s ON s.tenant_id=dv.tenant_id AND s.document_id=dv.document_id AND s.version_id=dv.id LEFT JOIN LATERAL (SELECT j.status FROM ged.ocr_job j WHERE j.tenant_id=dv.tenant_id AND j.document_version_id=dv.id ORDER BY j.requested_at DESC LIMIT 1) oj ON true WHERE dv.tenant_id=@tenantId AND dv.id=@versionId LIMIT 1""", new { tenantId = _currentUser.TenantId, versionId }, cancellationToken: ct)); return Json(new { success = true, hasOcr = !string.IsNullOrWhiteSpace(row?.Text), status = row?.Status ?? "NONE", text = row?.Text ?? "" }); }
+    private ContentResult PreviewProcessingContent() => Content("""<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;font-family:system-ui;background:#f8fafc;color:#334155}.box{max-width:760px;margin:10vh auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:20px}</style></head><body><div class="box"><h3>Gerando visualização</h3><p>Este documento ainda está sendo preparado para preview. Atualize em alguns segundos.</p></div></body></html>""", "text/html", Encoding.UTF8);
 
     private static string? NormalizeType(string? type) => string.IsNullOrWhiteSpace(type) ? null : type.Trim().ToLowerInvariant() switch { "pdf" => "pdf", "word" => "word", "doc" => "word", "docx" => "word", "imagem" => "image", "image" => "image", "img" => "image", _ => null };
     private static bool IsPdf(string? contentType, string fileName) => (!string.IsNullOrWhiteSpace(contentType) && contentType.Contains("pdf", StringComparison.OrdinalIgnoreCase)) || fileName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase);
