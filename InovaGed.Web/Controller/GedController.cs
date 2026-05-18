@@ -1137,14 +1137,26 @@ LIMIT 20;";
 
             await _previewStatus.UpsertAsync(tenantId, versionId, PreviewProcessingStatus.Pending, null, null, DateTimeOffset.UtcNow, null, ct);
             await _previewQueue.EnqueueAsync(tenantId, v.DocumentId, versionId, v.StoragePath, v.FileName, ct);
+            return PreviewProcessingHtml(versionId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro em PreviewVersion. Tenant={TenantId}, VersionId={VersionId}", tenantId, versionId);
+            return PreviewErrorHtml(versionId);
+        }
+    }
 
-            var retryUrl = Url.Action("PreviewVersion", "Ged", new { versionId })!;
-            var html = $@"
+    private ContentResult PreviewProcessingHtml(Guid versionId)
+    {
+        var retryUrl = Url.Action("PreviewVersion", "Ged", new { versionId }) ?? $"/Ged/PreviewVersion?versionId={versionId}";
+        var statusUrl = Url.Action("PreviewStatus", "Ged", new { versionId }) ?? $"/Ged/PreviewStatus?versionId={versionId}";
+
+        var html = $@"
 <!doctype html>
 <html>
 <head>
-  <meta charset='utf-8' />
-  <meta name='viewport' content='width=device-width, initial-scale=1' />
+  <meta charset=""utf-8"" />
+  <meta name=""viewport"" content=""width=device-width, initial-scale=1"" />
   <title>Gerando visualização…</title>
   <style>
     body{{font-family:system-ui;margin:0;background:#f6f7fb;color:#222}}
@@ -1156,41 +1168,42 @@ LIMIT 20;";
   </style>
 </head>
 <body>
-  <div class='box'>
-    <div><span class='spinner'></span><strong>Gerando / atualizando visualização…</strong></div>
-    <p class='muted'>Isso pode levar alguns segundos. A página vai tentar novamente automaticamente.</p>
-    <p class='muted'>Se demorar muito, clique em <a href='{retryUrl}'>tentar novamente</a>.</p>
+  <div class=""box"">
+    <div><span class=""spinner""></span><strong>Gerando / atualizando visualização…</strong></div>
+    <p class=""muted"">Isso pode levar alguns segundos. A página vai tentar novamente automaticamente.</p>
+    <p class=""muted"">Se demorar muito, clique em <a href=""{retryUrl}"">tentar novamente</a>.</p>
   </div>
   <script>
-    const statusUrl = '@Url.Action("PreviewStatus", "Ged", new { versionId })';
+    const statusUrl = ""{statusUrl}"";
     let wait = 1200;
-    async function tick() {
-      const res = await fetch(statusUrl, { headers: { 'Accept':'application/json' }});
-      if (res.ok) {
+    async function tick() {{
+      const res = await fetch(statusUrl, {{ headers: {{ Accept: ""application/json"" }} }});
+      if (res.ok) {{
         const data = await res.json();
-        if (data.status === 'READY' && data.previewUrl) { location.href = data.previewUrl; return; }
-        if (data.status === 'ERROR') { return; }
-      }
+        if (data.status === ""READY"" && data.previewUrl) {{ location.href = data.previewUrl; return; }}
+        if (data.status === ""ERROR"") {{ return; }}
+      }}
       setTimeout(tick, wait);
       wait = Math.min(wait * 1.7, 10000);
-    }
+    }}
     setTimeout(tick, wait);
   </script>
 </body>
 </html>";
-            return Content(html, "text/html; charset=utf-8");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Erro em PreviewVersion. Tenant={TenantId}, VersionId={VersionId}", tenantId, versionId);
 
-            var retryUrl = Url.Action("PreviewVersion", "Ged", new { versionId })!;
-            var htmlErr = $@"
+        return Content(html, "text/html; charset=utf-8");
+    }
+
+    private ContentResult PreviewErrorHtml(Guid versionId)
+    {
+        var retryUrl = Url.Action("PreviewVersion", "Ged", new { versionId }) ?? $"/Ged/PreviewVersion?versionId={versionId}";
+
+        var html = $@"
 <!doctype html>
 <html>
 <head>
-  <meta charset='utf-8' />
-  <meta name='viewport' content='width=device-width, initial-scale=1' />
+  <meta charset=""utf-8"" />
+  <meta name=""viewport"" content=""width=device-width, initial-scale=1"" />
   <title>Falha na visualização</title>
   <style>
     body{{font-family:system-ui;margin:0;background:#f6f7fb;color:#222}}
@@ -1199,15 +1212,15 @@ LIMIT 20;";
   </style>
 </head>
 <body>
-  <div class='box'>
+  <div class=""box"">
     <h3>Falha ao gerar a visualização</h3>
-    <p class='muted'>O servidor registrou um erro ao converter o arquivo para PDF. Verifique o log para detalhes.</p>
-    <p class='muted'>Tente novamente: <a href='{retryUrl}'>recarregar</a></p>
+    <p class=""muted"">O servidor registrou um erro ao converter o arquivo para PDF. Verifique o log para detalhes.</p>
+    <p class=""muted"">Tente novamente: <a href=""{retryUrl}"">recarregar</a></p>
   </div>
 </body>
 </html>";
-            return Content(htmlErr, "text/html; charset=utf-8");
-        }
+
+        return Content(html, "text/html; charset=utf-8");
     }
 
     [HttpGet]
