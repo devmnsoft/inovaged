@@ -1,0 +1,35 @@
+@model InovaGed.Application.Audit.AuditDashboardVM
+@{
+    ViewData["Title"] = "Dashboard de Auditoria";
+}
+<div class="container-fluid py-3">
+    <h2 class="mb-3">Dashboard de Auditoria em tempo real</h2>
+    <div class="row g-3 mb-4" role="list" aria-label="KPIs de auditoria">
+        <div class="col-6 col-lg-3"><div class="card"><div class="card-body"><small>Eventos (24h)</small><h3>@Model.TotalEventsLast24h</h3></div></div></div>
+        <div class="col-6 col-lg-3"><div class="card"><div class="card-body"><small>Acessos negados (24h)</small><h3 class="text-danger">@Model.AccessDeniedLast24h</h3></div></div></div>
+        <div class="col-6 col-lg-3"><div class="card"><div class="card-body"><small>Documentos alterados</small><h3>@Model.ChangedDocumentsLast24h</h3></div></div></div>
+        <div class="col-6 col-lg-3"><div class="card"><div class="card-body"><small>Eventos de autenticação</small><h3>@Model.AuthenticationEventsLast24h</h3></div></div></div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">Alertas automáticos de atividade suspeita</div>
+        <div class="table-responsive">
+            <table class="table table-sm table-striped mb-0" aria-label="Lista de alertas">
+                <thead><tr><th>Data</th><th>Usuário</th><th>Ação</th><th>Entidade</th><th>Resumo</th><th>IP</th></tr></thead>
+                <tbody>
+                @foreach (var a in Model.Alerts)
+                {
+                    <tr>
+                        <td>@a.EventTime.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                        <td>@(a.UserName ?? a.UserId?.ToString() ?? "N/D")</td>
+                        <td><span class="badge text-bg-warning">@a.Action</span></td>
+                        <td>@a.EntityName</td>
+                        <td>@a.Summary</td>
+                        <td>@a.IpAddress</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
