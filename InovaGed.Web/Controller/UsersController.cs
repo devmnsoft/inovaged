@@ -3,6 +3,7 @@ using InovaGed.Application.Parameters;
 using InovaGed.Application.Users;
 using InovaGed.Infrastructure.Security;
 using InovaGed.Web.Models.Users;
+using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -25,19 +26,38 @@ public sealed class UsersController : Controller
     private readonly IUserAdminRepository _repo;
     private readonly IUserAdminQueries _queries;
     private readonly IParameterRepository _parameters;
+    private readonly UserService _userService;
 
     public UsersController(
         ILogger<UsersController> logger,
         ICurrentUser currentUser,
         IUserAdminRepository repo,
         IUserAdminQueries queries,
-        IParameterRepository parameters)
+        IParameterRepository parameters,
+        UserService userService)
     {
         _logger = logger;
         _currentUser = currentUser;
         _repo = repo;
         _queries = queries;
         _parameters = parameters;
+        _userService = userService;
+    }
+
+    [HttpPost("/api/users/{id:guid}/unlock")]
+    [Authorize(Roles = AppRoles.Admin + ",ADMINISTRATOR")]
+    public async Task<IActionResult> Unlock(Guid id, CancellationToken ct)
+    {
+        var unlocked = await _userService.UnlockUserAsync(
+            id,
+            HttpContext.Connection.RemoteIpAddress?.ToString(),
+            Request.Headers.UserAgent.ToString(),
+            ct);
+
+        if (!unlocked)
+            return NotFound();
+
+        return Ok(new { message = "Usuário desbloqueado com sucesso" });
     }
 
     [HttpGet("")]

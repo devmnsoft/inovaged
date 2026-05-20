@@ -253,6 +253,7 @@ builder.Services.AddScoped<ISignatureProvider, InternalSignatureProvider>();
 // =======================================================
 builder.Services.AddScoped<IUserAdminRepository, UserAdminRepository>();
 builder.Services.AddScoped<IUserAdminQueries, UserAdminQueries>();
+builder.Services.AddScoped<UserService>();
 
 builder.Services.AddScoped<IPermissionChecker, AllowAllPermissionChecker>();
 builder.Services.AddScoped<PermissionService>();
