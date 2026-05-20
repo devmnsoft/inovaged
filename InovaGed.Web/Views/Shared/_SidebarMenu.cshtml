@@ -56,12 +56,20 @@
 	bool IsAdministradorOphir() =>
 		User.IsInRole(AppRoles.AdministradorOphir);
 
+	bool IsOnlyArquivistaOphir() =>
+		IsArquivistaOphir() && !IsAdministradorOphir() && !IsAdmin();
+
+	bool IsOnlyAdministradorOphir() =>
+		IsAdministradorOphir() && !IsAdmin();
+
 	bool CanDashboard() =>
+		!IsOnlyArquivistaOphir() && (
 		User.IsInRole(AppRoles.Admin) ||
 		User.IsInRole(AppRoles.Arquivista) ||
 		User.IsInRole(AppRoles.Operador) ||
 		User.IsInRole(AppRoles.Gestor) ||
-		User.IsInRole(AppRoles.Auditor);
+		User.IsInRole(AppRoles.Auditor) ||
+		IsAdministradorOphir());
 
 	bool CanDocumentos() =>
 		IsArquivistaOphir() ||
@@ -71,34 +79,34 @@
 		User.IsInRole(AppRoles.Operador);
 
 	bool CanEmprestimos() =>
-		IsAdministradorOphir() ||
+		!IsOnlyArquivistaOphir() && (IsAdministradorOphir() ||
 		User.IsInRole(AppRoles.Admin) ||
 		User.IsInRole(AppRoles.Arquivista) ||
 		User.IsInRole(AppRoles.Gestor) ||
-		User.IsInRole(AppRoles.Operador);
+		User.IsInRole(AppRoles.Operador));
 
 	bool CanCreateHospitalDocuments() =>
 		IsAdministradorOphir() || User.IsInRole(AppRoles.Admin);
 
 	bool CanRelatorios() =>
-		User.IsInRole(AppRoles.Admin) ||
+		!IsOnlyAdministradorOphir() && !IsOnlyArquivistaOphir() && (User.IsInRole(AppRoles.Admin) ||
 		User.IsInRole(AppRoles.Arquivista) ||
 		User.IsInRole(AppRoles.Gestor) ||
 		User.IsInRole(AppRoles.Auditor) ||
-		User.IsInRole(AppRoles.Operador);
+		User.IsInRole(AppRoles.Operador));
 
 	bool CanAuditoria() =>
-		User.IsInRole(AppRoles.Admin) ||
+		!IsOnlyAdministradorOphir() && !IsOnlyArquivistaOphir() && (User.IsInRole(AppRoles.Admin) ||
 		User.IsInRole(AppRoles.Gestor) ||
-		User.IsInRole(AppRoles.Auditor);
+		User.IsInRole(AppRoles.Auditor));
 
 	bool CanArquivistico() =>
-		User.IsInRole(AppRoles.Admin) ||
-		User.IsInRole(AppRoles.Arquivista);
+		!IsOnlyAdministradorOphir() && !IsOnlyArquivistaOphir() && (User.IsInRole(AppRoles.Admin) ||
+		User.IsInRole(AppRoles.Arquivista));
 
 	bool CanAssinaturaDigital() =>
-		User.IsInRole(AppRoles.Admin) ||
-		User.IsInRole(AppRoles.Arquivista);
+		!IsOnlyAdministradorOphir() && !IsOnlyArquivistaOphir() && (User.IsInRole(AppRoles.Admin) ||
+		User.IsInRole(AppRoles.Arquivista));
 
 	int pacsBadge = 0;
 	int dispElimBadge = 0;
@@ -161,7 +169,7 @@
 @if (CanDocumentos())
 {
 	<div class="sidebar-section-title">Documentos</div>
-	@if (IsArquivistaOphir())
+	@if (IsOnlyArquivistaOphir())
 	{
 		<a asp-controller="HospitalDocuments"
 		   asp-action="Index"
@@ -353,6 +361,7 @@
 		<i class="bi bi-person-gear"></i>
 		<span>Usuários x Setor Avançado</span>
 	</a>
+	}
 }
 
 @if (CanEmprestimos())
