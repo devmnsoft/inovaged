@@ -153,7 +153,7 @@ public sealed class AccountController : Controller
         // - administradoophir e arquivistaophir devem ir sempre para /HospitalDocuments.
         // - ADMIN mantém acesso completo e segue fluxo padrão do sistema.
         // - Demais usuários continuam no fluxo padrão (ReturnUrl local ou Home).
-        var redirectResult = ResolvePostLoginRedirect(vm.ReturnUrl, user.Username, normalizedRoles);
+        var redirectResult = ResolvePostLoginRedirect(vm.ReturnUrl, user.UserName, normalizedRoles);
 
         await _audit.WriteAsync(
             tenantId: user.TenantId,
@@ -166,7 +166,7 @@ public sealed class AccountController : Controller
             userAgent: userAgent,
             data: new
             {
-                username = user.Username,
+                username = user.UserName,
                 roles = normalizedRoles,
                 returnUrl = vm.ReturnUrl,
                 redirect = redirectResult.TargetDescription,
