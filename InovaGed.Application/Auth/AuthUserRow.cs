@@ -7,6 +7,7 @@ public sealed class AuthUserRow
     public Guid? ServidorId { get; set; }
 
     public string Email { get; set; } = "";
+    public string UserName { get; set; } = ""; // Login técnico (u.user_name), usado em regras de redirecionamento/auditoria
     public string Name { get; set; } = "";
     public string PasswordHash { get; set; } = "";
 

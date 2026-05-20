@@ -24,6 +24,7 @@ SELECT
     u.id                         AS ""UserId"",
     u.servidor_id                AS ""ServidorId"",
     u.email                      AS ""Email"",
+    u.user_name                  AS ""UserName"",
     COALESCE(s.nome_completo, u.name) AS ""Name"",
     u.password_hash              AS ""PasswordHash"",
     u.is_active                  AS ""IsActive"",
