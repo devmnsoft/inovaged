@@ -2,6 +2,7 @@
 using InovaGed.Application.Auth;
 using InovaGed.Web.Models.Auth;
 using InovaGed.Web.Security;
+using InovaGed.Application.Common.Security;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
@@ -13,7 +14,7 @@ namespace InovaGed.Web.Controllers;
 public sealed class AccountController : Controller
 {
     private readonly IAuthRepository _repo;
-    private static readonly PasswordHasher<object> _hasher = new();
+    private static readonly PasswordHasher<ApplicationUser> _hasher = new();
 
     public AccountController(IAuthRepository repo)
     {
@@ -74,7 +75,22 @@ public sealed class AccountController : Controller
             return View(vm);
         }
 
-        var verify = _hasher.VerifyHashedPassword(null!, user.PasswordHash, vm.Password ?? string.Empty);
+        var verify = PasswordVerificationResult.Failed;
+        try
+        {
+            verify = _hasher.VerifyHashedPassword(new ApplicationUser
+            {
+                Id = user.UserId,
+                TenantId = user.TenantId,
+                Email = user.Email
+            }, user.PasswordHash, vm.Password ?? string.Empty);
+        }
+        catch (FormatException)
+        {
+            await _repo.RegisterLoginFailureAsync(user.TenantId, user.UserId, "Hash de senha inválido no banco.", ip, userAgent, correlationId, ct);
+            ModelState.AddModelError("", "Credenciais inválidas.");
+            return View(vm);
+        }
 
         if (verify == PasswordVerificationResult.Failed)
         {
@@ -178,13 +194,13 @@ public sealed class AccountController : Controller
         var currentHash = await _repo.GetPasswordHashAsync(tenantId, userId, ct);
 
         if (string.IsNullOrWhiteSpace(currentHash) ||
-            _hasher.VerifyHashedPassword(null!, currentHash, currentPassword) == PasswordVerificationResult.Failed)
+            _hasher.VerifyHashedPassword(new ApplicationUser { Id = userId, TenantId = tenantId }, currentHash, currentPassword) == PasswordVerificationResult.Failed)
         {
             ModelState.AddModelError(nameof(currentPassword), "Senha atual inválida.");
             return View();
         }
 
-        var newHash = _hasher.HashPassword(null!, newPassword);
+        var newHash = _hasher.HashPassword(new ApplicationUser { Id = userId, TenantId = tenantId }, newPassword);
 
         await _repo.ResetPasswordByUserIdAsync(tenantId, userId, newHash, ct);
 

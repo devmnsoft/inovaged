@@ -6,13 +6,14 @@ using InovaGed.Application.Common.Preview;
 using InovaGed.Application.Common.Storage;
 using InovaGed.Application.Identity;
 using InovaGed.Web.Models.HospitalDocuments;
+using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Net.Http.Headers;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize(Roles = "ArquivistaOphir,AdministradorOphir")]
+[Authorize(Roles = AppRoles.ArquivistaOphir + "," + AppRoles.AdministradorOphir)]
 public sealed class HospitalDocumentsController : Controller
 {
     private static readonly Guid EmptyGuid = Guid.Empty;
