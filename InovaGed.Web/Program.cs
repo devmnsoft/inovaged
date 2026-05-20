@@ -73,6 +73,7 @@ using Microsoft.AspNetCore.Authentication.Certificate;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using InovaGed.Application.Preview;
+using InovaGed.Application.Security;
 
 var builder = WebApplication.CreateBuilder(args);
 
