@@ -1,7 +1,7 @@
-using InovaGed.Application.Common.Security;
 using InovaGed.Application.Identity;
 using InovaGed.Application.Parameters;
 using InovaGed.Application.Users;
+using InovaGed.Infrastructure.Security;
 using InovaGed.Web.Models.Users;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
@@ -14,9 +14,6 @@ namespace InovaGed.Web.Controllers;
 [Route("Users")]
 public sealed class UsersController : Controller
 {
-    private const string RoleArquivistaOphir = "ArquivistaOphir";
-    private const string RoleAdministradorOphir = "AdministradorOphir";
-
     private static readonly string[] UserParameterCategories =
     {
         "CARGO", "FUNCAO", "SETOR", "LOTACAO", "UNIDADE", "TIPO_VINCULO",
@@ -48,12 +45,10 @@ public sealed class UsersController : Controller
     public async Task<IActionResult> Index(string? q, bool? active, int page = 1, int pageSize = 10, CancellationToken ct = default)
     {
         if (!_currentUser.IsAuthenticated) return Unauthorized();
-        if (!CanManageUsers()) return RedirectToAction("AccessDenied", "Account");
 
         var tenantId = _currentUser.TenantId;
-        await EnsureOphirSeedBaselineAsync(tenantId, ct);
-
         var res = await _queries.ListUsersAsync(tenantId, q, active, page, pageSize, ct);
+
         var vm = new UserListVM
         {
             Q = q,
@@ -64,20 +59,31 @@ public sealed class UsersController : Controller
             Items = res.Items.Select(x => new UserListVM.Row
             {
                 Id = x.Id,
+                ServidorId = x.ServidorId,
                 Name = x.Name,
+                Cpf = x.Cpf,
+                Matricula = x.Matricula,
+                Cargo = x.Cargo,
+                Funcao = x.Funcao,
+                Setor = x.Setor,
+                Lotacao = x.Lotacao,
+                Unidade = x.Unidade,
                 Email = x.Email,
                 IsActive = x.IsActive,
+                IsLocked = x.IsLocked,
+                MustChangePassword = x.MustChangePassword,
+                MfaEnabled = x.MfaEnabled,
+                CertificateRequired = x.CertificateRequired,
+                CanSignWithIcp = x.CanSignWithIcp,
+                SecurityLevel = x.SecurityLevel,
+                LastLoginAt = x.LastLoginAt,
                 CreatedAt = x.CreatedAt,
-                Roles = (x.RolesCsv ?? string.Empty)
-                    .Split(',', StringSplitOptions.RemoveEmptyEntries)
-                    .Select(s => s.Trim())
-                    .Where(s => !string.IsNullOrWhiteSpace(s))
-                    .ToList()
+                Roles = (x.RolesCsv ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries).Select(s => s.Trim()).Where(s => !string.IsNullOrWhiteSpace(s)).ToList()
             }).ToList()
         };
 
-        SetDynamicMenu();
         ViewData["Title"] = "Usuários e Servidores";
+        ViewData["Subtitle"] = "Gerencie servidores, usuários, perfis, sigilo e credenciais";
         return View(vm);
     }
 
@@ -85,10 +91,10 @@ public sealed class UsersController : Controller
     public async Task<IActionResult> Create(CancellationToken ct)
     {
         if (!_currentUser.IsAuthenticated) return Unauthorized();
-        if (!CanManageUsers()) return RedirectToAction("AccessDenied", "Account");
 
         var vm = await BuildCreateVmAsync(new CreateUserVM(), ct);
-        SetDynamicMenu();
+        ViewData["Title"] = "Novo Servidor / Usuário";
+        ViewData["Subtitle"] = "Cadastro institucional completo e criação de acesso ao sistema";
         return View(vm);
     }
 
@@ -97,7 +103,6 @@ public sealed class UsersController : Controller
     public async Task<IActionResult> Create([FromForm] CreateUserVM vm, CancellationToken ct)
     {
         if (!_currentUser.IsAuthenticated) return Unauthorized();
-        if (!CanManageUsers()) return RedirectToAction("AccessDenied", "Account");
 
         var tenantId = _currentUser.TenantId;
         NormalizeCreateVm(vm);
@@ -106,33 +111,33 @@ public sealed class UsersController : Controller
         if (!ModelState.IsValid)
         {
             await ReloadCreateLookupsAsync(vm, ct);
-            SetDynamicMenu();
             return View(vm);
         }
 
         try
         {
             if (await _repo.CpfExistsAsync(tenantId, vm.Cpf, vm.ServidorId, ct))
+            {
                 ModelState.AddModelError(nameof(vm.Cpf), "Já existe servidor ativo cadastrado com este CPF.");
+                await ReloadCreateLookupsAsync(vm, ct);
+                return View(vm);
+            }
 
             if (vm.CriarUsuarioAcesso && await _repo.EmailExistsAsync(tenantId, vm.EmailLogin, null, ct))
-                ModelState.AddModelError(nameof(vm.EmailLogin), "Já existe usuário com este e-mail de login.");
-
-            if (!ModelState.IsValid)
             {
+                ModelState.AddModelError(nameof(vm.EmailLogin), "Já existe usuário com este e-mail de login.");
                 await ReloadCreateLookupsAsync(vm, ct);
-                SetDynamicMenu();
                 return View(vm);
             }
 
             var passwordHash = string.Empty;
             if (vm.CriarUsuarioAcesso)
             {
-                var hasher = new PasswordHasher<ApplicationUser>();
-                passwordHash = hasher.HashPassword(new ApplicationUser { Id = Guid.NewGuid(), TenantId = tenantId, Email = vm.EmailLogin }, vm.Password);
+                var hasher = new PasswordHasher<object>();
+                passwordHash = hasher.HashPassword(null!, vm.Password);
             }
 
-            await _repo.CreateServidorUsuarioAsync(tenantId, new CreateServidorUsuarioCommand
+            var command = new CreateServidorUsuarioCommand
             {
                 ServidorId = vm.ServidorId,
                 NomeCompleto = vm.NomeCompleto,
@@ -172,17 +177,24 @@ public sealed class UsersController : Controller
                 IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString(),
                 UserAgent = Request.Headers.UserAgent.ToString(),
                 CorrelationId = HttpContext.TraceIdentifier
-            }, ct);
+            };
 
-            TempData["Success"] = "Servidor/usuário criado com sucesso.";
+            var result = await _repo.CreateServidorUsuarioAsync(tenantId, command, ct);
+            TempData["Success"] = result.UserId.HasValue ? "Servidor cadastrado e usuário de acesso criado com sucesso." : "Servidor cadastrado com sucesso.";
             return RedirectToAction(nameof(Index));
         }
         catch (PostgresException pex) when (pex.SqlState == "23505")
         {
-            _logger.LogWarning(pex, "Duplicidade ao criar usuário");
-            ModelState.AddModelError(string.Empty, "Já existe cadastro com o mesmo CPF, matrícula ou e-mail.");
+            _logger.LogWarning(pex, "Duplicidade ao criar servidor/usuário | Tenant={TenantId}", tenantId);
+            ModelState.AddModelError("", "Já existe cadastro com o mesmo CPF, matrícula ou e-mail.");
             await ReloadCreateLookupsAsync(vm, ct);
-            SetDynamicMenu();
+            return View(vm);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro ao criar servidor/usuário.");
+            TempData["Error"] = "Erro ao criar servidor/usuário. Verifique os logs.";
+            await ReloadCreateLookupsAsync(vm, ct);
             return View(vm);
         }
     }
@@ -191,26 +203,54 @@ public sealed class UsersController : Controller
     public async Task<IActionResult> Edit(Guid id, CancellationToken ct)
     {
         if (!_currentUser.IsAuthenticated) return Unauthorized();
-        if (!CanManageUsers()) return RedirectToAction("AccessDenied", "Account");
 
         var dto = await _repo.GetForEditAsync(_currentUser.TenantId, id, ct);
-        if (dto is null) return RedirectToAction("AccessDenied", "Account");
+        if (dto is null)
+        {
+            TempData["Error"] = "Usuário não encontrado.";
+            return RedirectToAction(nameof(Index));
+        }
 
         var vm = new EditUserVM
         {
-            UserId = dto.UserId, ServidorId = dto.ServidorId, NomeCompleto = dto.NomeCompleto, Cpf = dto.Cpf, Rg = dto.Rg,
-            DataNascimento = dto.DataNascimento, EmailInstitucional = dto.EmailInstitucional, EmailAlternativo = dto.EmailAlternativo,
-            Telefone = dto.Telefone, Celular = dto.Celular, Matricula = dto.Matricula, Cargo = dto.Cargo, Funcao = dto.Funcao,
-            Setor = dto.Setor, Lotacao = dto.Lotacao, Unidade = dto.Unidade, TipoVinculo = dto.TipoVinculo,
-            ConselhoProfissional = dto.ConselhoProfissional, NumeroConselho = dto.NumeroConselho, UfConselho = dto.UfConselho,
-            Especialidade = dto.Especialidade, DataAdmissao = dto.DataAdmissao, SituacaoFuncional = dto.SituacaoFuncional,
-            Observacao = dto.Observacao, EmailLogin = dto.EmailLogin, UserName = dto.UserName, IsActive = dto.IsActive,
-            MustChangePassword = dto.MustChangePassword, MfaEnabled = dto.MfaEnabled, CertificateRequired = dto.CertificateRequired,
-            CanSignWithIcp = dto.CanSignWithIcp, SecurityLevel = dto.SecurityLevel, SelectedRoleIds = dto.RoleIds
+            UserId = dto.UserId,
+            ServidorId = dto.ServidorId,
+            NomeCompleto = dto.NomeCompleto,
+            Cpf = dto.Cpf,
+            Rg = dto.Rg,
+            DataNascimento = dto.DataNascimento,
+            EmailInstitucional = dto.EmailInstitucional,
+            EmailAlternativo = dto.EmailAlternativo,
+            Telefone = dto.Telefone,
+            Celular = dto.Celular,
+            Matricula = dto.Matricula,
+            Cargo = dto.Cargo,
+            Funcao = dto.Funcao,
+            Setor = dto.Setor,
+            Lotacao = dto.Lotacao,
+            Unidade = dto.Unidade,
+            TipoVinculo = dto.TipoVinculo,
+            ConselhoProfissional = dto.ConselhoProfissional,
+            NumeroConselho = dto.NumeroConselho,
+            UfConselho = dto.UfConselho,
+            Especialidade = dto.Especialidade,
+            DataAdmissao = dto.DataAdmissao,
+            SituacaoFuncional = dto.SituacaoFuncional,
+            Observacao = dto.Observacao,
+            EmailLogin = dto.EmailLogin,
+            UserName = dto.UserName,
+            IsActive = dto.IsActive,
+            MustChangePassword = dto.MustChangePassword,
+            MfaEnabled = dto.MfaEnabled,
+            CertificateRequired = dto.CertificateRequired,
+            CanSignWithIcp = dto.CanSignWithIcp,
+            SecurityLevel = dto.SecurityLevel,
+            SelectedRoleIds = dto.RoleIds
         };
 
         await ReloadEditLookupsAsync(vm, ct);
-        SetDynamicMenu();
+        ViewData["Title"] = "Editar Servidor / Usuário";
+        ViewData["Subtitle"] = "Atualização de cadastro, acesso, perfis, sigilo e ICP-Brasil";
         return View(vm);
     }
 
@@ -219,8 +259,12 @@ public sealed class UsersController : Controller
     public async Task<IActionResult> Edit(Guid id, [FromForm] EditUserVM vm, CancellationToken ct)
     {
         if (!_currentUser.IsAuthenticated) return Unauthorized();
-        if (!CanManageUsers()) return RedirectToAction("AccessDenied", "Account");
-        if (id != vm.UserId) return RedirectToAction("AccessDenied", "Account");
+
+        if (id != vm.UserId)
+        {
+            TempData["Error"] = "Identificador do usuário inválido.";
+            return RedirectToAction(nameof(Index));
+        }
 
         NormalizeEditVm(vm);
         ValidateEditVm(vm);
@@ -228,44 +272,86 @@ public sealed class UsersController : Controller
         if (!ModelState.IsValid)
         {
             await ReloadEditLookupsAsync(vm, ct);
-            SetDynamicMenu();
             return View(vm);
         }
 
         var tenantId = _currentUser.TenantId;
-        if (await _repo.CpfExistsAsync(tenantId, vm.Cpf, vm.ServidorId, ct))
-            ModelState.AddModelError(nameof(vm.Cpf), "Já existe outro servidor ativo cadastrado com este CPF.");
 
-        if (await _repo.EmailExistsAsync(tenantId, vm.EmailLogin, vm.UserId, ct))
-            ModelState.AddModelError(nameof(vm.EmailLogin), "Já existe outro usuário com este e-mail de login.");
-
-        if (!ModelState.IsValid)
+        try
         {
+            if (await _repo.CpfExistsAsync(tenantId, vm.Cpf, vm.ServidorId, ct))
+            {
+                ModelState.AddModelError(nameof(vm.Cpf), "Já existe outro servidor ativo cadastrado com este CPF.");
+                await ReloadEditLookupsAsync(vm, ct);
+                return View(vm);
+            }
+
+            if (await _repo.EmailExistsAsync(tenantId, vm.EmailLogin, vm.UserId, ct))
+            {
+                ModelState.AddModelError(nameof(vm.EmailLogin), "Já existe outro usuário com este e-mail de login.");
+                await ReloadEditLookupsAsync(vm, ct);
+                return View(vm);
+            }
+
+            var command = new UpdateServidorUsuarioCommand
+            {
+                UserId = vm.UserId,
+                ServidorId = vm.ServidorId,
+                NomeCompleto = vm.NomeCompleto,
+                Cpf = vm.Cpf,
+                Rg = vm.Rg,
+                DataNascimento = vm.DataNascimento,
+                EmailInstitucional = vm.EmailInstitucional,
+                EmailAlternativo = vm.EmailAlternativo,
+                Telefone = vm.Telefone,
+                Celular = vm.Celular,
+                Matricula = vm.Matricula,
+                Cargo = vm.Cargo,
+                Funcao = vm.Funcao,
+                Setor = vm.Setor,
+                Lotacao = vm.Lotacao,
+                Unidade = vm.Unidade,
+                TipoVinculo = vm.TipoVinculo,
+                ConselhoProfissional = vm.ConselhoProfissional,
+                NumeroConselho = vm.NumeroConselho,
+                UfConselho = vm.UfConselho,
+                Especialidade = vm.Especialidade,
+                DataAdmissao = vm.DataAdmissao,
+                SituacaoFuncional = vm.SituacaoFuncional,
+                Observacao = vm.Observacao,
+                EmailLogin = vm.EmailLogin,
+                UserName = vm.UserName,
+                IsActive = vm.IsActive,
+                MustChangePassword = vm.MustChangePassword,
+                MfaEnabled = vm.MfaEnabled,
+                CertificateRequired = vm.CertificateRequired,
+                CanSignWithIcp = vm.CanSignWithIcp,
+                SecurityLevel = vm.SecurityLevel,
+                RoleIds = vm.SelectedRoleIds.Where(x => x != Guid.Empty).Distinct().ToList(),
+                UpdatedBy = _currentUser.UserId,
+                IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString(),
+                UserAgent = Request.Headers.UserAgent.ToString(),
+                CorrelationId = HttpContext.TraceIdentifier
+            };
+
+            await _repo.UpdateServidorUsuarioAsync(tenantId, command, ct);
+            TempData["Success"] = "Cadastro do servidor/usuário atualizado com sucesso.";
+            return RedirectToAction(nameof(Index));
+        }
+        catch (PostgresException pex) when (pex.SqlState == "23505")
+        {
+            _logger.LogWarning(pex, "Duplicidade ao editar usuário | Tenant={TenantId} UserId={UserId}", tenantId, vm.UserId);
+            ModelState.AddModelError("", "Já existe cadastro com o mesmo CPF, matrícula ou e-mail.");
             await ReloadEditLookupsAsync(vm, ct);
-            SetDynamicMenu();
             return View(vm);
         }
-
-        await _repo.UpdateServidorUsuarioAsync(tenantId, new UpdateServidorUsuarioCommand
+        catch (Exception ex)
         {
-            UserId = vm.UserId, ServidorId = vm.ServidorId, NomeCompleto = vm.NomeCompleto, Cpf = vm.Cpf, Rg = vm.Rg,
-            DataNascimento = vm.DataNascimento, EmailInstitucional = vm.EmailInstitucional, EmailAlternativo = vm.EmailAlternativo,
-            Telefone = vm.Telefone, Celular = vm.Celular, Matricula = vm.Matricula, Cargo = vm.Cargo, Funcao = vm.Funcao,
-            Setor = vm.Setor, Lotacao = vm.Lotacao, Unidade = vm.Unidade, TipoVinculo = vm.TipoVinculo,
-            ConselhoProfissional = vm.ConselhoProfissional, NumeroConselho = vm.NumeroConselho, UfConselho = vm.UfConselho,
-            Especialidade = vm.Especialidade, DataAdmissao = vm.DataAdmissao, SituacaoFuncional = vm.SituacaoFuncional,
-            Observacao = vm.Observacao, EmailLogin = vm.EmailLogin, UserName = vm.UserName, IsActive = vm.IsActive,
-            MustChangePassword = vm.MustChangePassword, MfaEnabled = vm.MfaEnabled, CertificateRequired = vm.CertificateRequired,
-            CanSignWithIcp = vm.CanSignWithIcp, SecurityLevel = vm.SecurityLevel,
-            RoleIds = vm.SelectedRoleIds.Where(x => x != Guid.Empty).Distinct().ToList(),
-            UpdatedBy = _currentUser.UserId,
-            IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString(),
-            UserAgent = Request.Headers.UserAgent.ToString(),
-            CorrelationId = HttpContext.TraceIdentifier
-        }, ct);
-
-        TempData["Success"] = "Cadastro atualizado com sucesso.";
-        return RedirectToAction(nameof(Index));
+            _logger.LogError(ex, "Erro ao editar usuário | UserId={UserId}", vm.UserId);
+            TempData["Error"] = "Erro ao editar usuário. Verifique os logs.";
+            await ReloadEditLookupsAsync(vm, ct);
+            return View(vm);
+        }
     }
 
     [HttpPost("SetActive")]
@@ -273,8 +359,9 @@ public sealed class UsersController : Controller
     public async Task<IActionResult> SetActive(Guid id, bool active, CancellationToken ct)
     {
         if (!_currentUser.IsAuthenticated) return Unauthorized();
-        if (!CanManageUsers()) return RedirectToAction("AccessDenied", "Account");
+
         await _repo.SetActiveAsync(_currentUser.TenantId, id, active, _currentUser.UserId, ct);
+        TempData["Success"] = active ? "Usuário ativado com sucesso." : "Usuário inativado com sucesso.";
         return RedirectToAction(nameof(Index));
     }
 
@@ -283,15 +370,22 @@ public sealed class UsersController : Controller
     public async Task<IActionResult> ResetPassword(Guid id, string newPassword, string confirmPassword, bool mustChangePassword = true, CancellationToken ct = default)
     {
         if (!_currentUser.IsAuthenticated) return Unauthorized();
-        if (!CanManageUsers()) return RedirectToAction("AccessDenied", "Account");
-        if (string.IsNullOrWhiteSpace(newPassword) || newPassword.Length < 8 || newPassword != confirmPassword)
+
+        if (string.IsNullOrWhiteSpace(newPassword) || newPassword.Length < 8)
         {
-            TempData["Error"] = "Senha inválida ou confirmação divergente.";
+            TempData["Error"] = "A nova senha deve possuir pelo menos 8 caracteres.";
             return RedirectToAction(nameof(Index));
         }
 
-        var hasher = new PasswordHasher<ApplicationUser>();
-        var hash = hasher.HashPassword(new ApplicationUser { Id = id, TenantId = _currentUser.TenantId }, newPassword);
+        if (newPassword != confirmPassword)
+        {
+            TempData["Error"] = "A confirmação da senha não confere.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var hasher = new PasswordHasher<object>();
+        var hash = hasher.HashPassword(null!, newPassword);
+
         await _repo.ResetPasswordAsync(_currentUser.TenantId, id, hash, mustChangePassword, _currentUser.UserId, ct);
         TempData["Success"] = "Senha redefinida com sucesso.";
         return RedirectToAction(nameof(Index));
@@ -312,6 +406,7 @@ public sealed class UsersController : Controller
     {
         var roles = await _repo.ListRolesAsync(_currentUser.TenantId, ct);
         vm.AvailableRoles = roles.Select(r => new CreateUserVM.RoleItem { Id = r.Id, Name = r.Name }).ToList();
+
         var options = await _parameters.ListOptionsAsync(_currentUser.TenantId, UserParameterCategories, ct);
         FillCreateOptions(vm, options);
     }
@@ -320,62 +415,82 @@ public sealed class UsersController : Controller
     {
         var roles = await _repo.ListRolesAsync(_currentUser.TenantId, ct);
         vm.AvailableRoles = roles.Select(r => new EditUserVM.RoleItem { Id = r.Id, Name = r.Name }).ToList();
+
         var options = await _parameters.ListOptionsAsync(_currentUser.TenantId, UserParameterCategories, ct);
         FillEditOptions(vm, options);
     }
 
     private static void FillCreateOptions(CreateUserVM vm, IReadOnlyList<ParameterSelectOption> options)
     {
-        vm.Cargos = MapCreate(options, "CARGO", vm.Cargo);
-        vm.Funcoes = MapCreate(options, "FUNCAO", vm.Funcao);
-        vm.Setores = MapCreate(options, "SETOR", vm.Setor);
-        vm.Lotacoes = MapCreate(options, "LOTACAO", vm.Lotacao);
-        vm.Unidades = MapCreate(options, "UNIDADE", vm.Unidade);
-        vm.TiposVinculo = MapCreate(options, "TIPO_VINCULO", vm.TipoVinculo);
-        vm.ConselhosProfissionais = MapCreate(options, "CONSELHO_PROFISSIONAL", vm.ConselhoProfissional);
-        vm.Especialidades = MapCreate(options, "ESPECIALIDADE", vm.Especialidade);
-        vm.SituacoesFuncionais = MapCreate(options, "SITUACAO_FUNCIONAL", vm.SituacaoFuncional);
-        vm.SecurityLevels = MapCreate(options, "NIVEL_SIGILO", vm.SecurityLevel);
+        List<CreateUserVM.SelectItem> Map(string code, string? current = null)
+        {
+            var list = options.Where(x => x.CategoryCode == code).Select(x => new CreateUserVM.SelectItem(x.Value, x.Text)).ToList();
+            EnsureSelected(list, current);
+            return list;
+        }
+
+        vm.Cargos = Map("CARGO", vm.Cargo);
+        vm.Funcoes = Map("FUNCAO", vm.Funcao);
+        vm.Setores = Map("SETOR", vm.Setor);
+        vm.Lotacoes = Map("LOTACAO", vm.Lotacao);
+        vm.Unidades = Map("UNIDADE", vm.Unidade);
+        vm.TiposVinculo = Map("TIPO_VINCULO", vm.TipoVinculo);
+        vm.ConselhosProfissionais = Map("CONSELHO_PROFISSIONAL", vm.ConselhoProfissional);
+        vm.Especialidades = Map("ESPECIALIDADE", vm.Especialidade);
+        vm.SituacoesFuncionais = Map("SITUACAO_FUNCIONAL", vm.SituacaoFuncional);
+        vm.SecurityLevels = Map("NIVEL_SIGILO", vm.SecurityLevel);
     }
 
     private static void FillEditOptions(EditUserVM vm, IReadOnlyList<ParameterSelectOption> options)
     {
-        vm.Cargos = MapEdit(options, "CARGO", vm.Cargo);
-        vm.Funcoes = MapEdit(options, "FUNCAO", vm.Funcao);
-        vm.Setores = MapEdit(options, "SETOR", vm.Setor);
-        vm.Lotacoes = MapEdit(options, "LOTACAO", vm.Lotacao);
-        vm.Unidades = MapEdit(options, "UNIDADE", vm.Unidade);
-        vm.TiposVinculo = MapEdit(options, "TIPO_VINCULO", vm.TipoVinculo);
-        vm.ConselhosProfissionais = MapEdit(options, "CONSELHO_PROFISSIONAL", vm.ConselhoProfissional);
-        vm.Especialidades = MapEdit(options, "ESPECIALIDADE", vm.Especialidade);
-        vm.SituacoesFuncionais = MapEdit(options, "SITUACAO_FUNCIONAL", vm.SituacaoFuncional);
-        vm.SecurityLevels = MapEdit(options, "NIVEL_SIGILO", vm.SecurityLevel);
+        List<EditUserVM.SelectItem> Map(string code, string? current = null)
+        {
+            var list = options.Where(x => x.CategoryCode == code).Select(x => new EditUserVM.SelectItem(x.Value, x.Text)).ToList();
+            EnsureSelected(list, current);
+            return list;
+        }
+
+        vm.Cargos = Map("CARGO", vm.Cargo);
+        vm.Funcoes = Map("FUNCAO", vm.Funcao);
+        vm.Setores = Map("SETOR", vm.Setor);
+        vm.Lotacoes = Map("LOTACAO", vm.Lotacao);
+        vm.Unidades = Map("UNIDADE", vm.Unidade);
+        vm.TiposVinculo = Map("TIPO_VINCULO", vm.TipoVinculo);
+        vm.ConselhosProfissionais = Map("CONSELHO_PROFISSIONAL", vm.ConselhoProfissional);
+        vm.Especialidades = Map("ESPECIALIDADE", vm.Especialidade);
+        vm.SituacoesFuncionais = Map("SITUACAO_FUNCIONAL", vm.SituacaoFuncional);
+        vm.SecurityLevels = Map("NIVEL_SIGILO", vm.SecurityLevel);
     }
 
-    private static List<CreateUserVM.SelectItem> MapCreate(IReadOnlyList<ParameterSelectOption> options, string code, string? current)
+    private static void EnsureSelected<T>(List<T> list, string? current) where T : class
     {
-        var list = options.Where(x => x.CategoryCode == code).Select(x => new CreateUserVM.SelectItem(x.Value, x.Text)).ToList();
-        EnsureSelected(list, current);
-        return list;
-    }
+        if (string.IsNullOrWhiteSpace(current)) return;
 
-    private static List<EditUserVM.SelectItem> MapEdit(IReadOnlyList<ParameterSelectOption> options, string code, string? current)
-    {
-        var list = options.Where(x => x.CategoryCode == code).Select(x => new EditUserVM.SelectItem(x.Value, x.Text)).ToList();
-        EnsureSelected(list, current);
-        return list;
+        var valueProp = typeof(T).GetProperty("Value");
+        var textProp = typeof(T).GetProperty("Text");
+        if (valueProp is null || textProp is null) return;
+
+        var exists = list.Any(x => string.Equals(valueProp.GetValue(x)?.ToString(), current, StringComparison.OrdinalIgnoreCase));
+        if (exists) return;
+
+        var item = Activator.CreateInstance<T>();
+        valueProp.SetValue(item, current);
+        textProp.SetValue(item, current + " (valor atual)");
+        list.Insert(0, item);
     }
 
     private void ValidateCreateVm(CreateUserVM vm)
     {
         if (string.IsNullOrWhiteSpace(vm.Cpf) || OnlyDigits(vm.Cpf).Length != 11)
             ModelState.AddModelError(nameof(vm.Cpf), "CPF inválido. Informe 11 dígitos.");
+
         if (vm.CriarUsuarioAcesso)
         {
             if (string.IsNullOrWhiteSpace(vm.EmailLogin)) ModelState.AddModelError(nameof(vm.EmailLogin), "Informe o e-mail de login.");
-            if (string.IsNullOrWhiteSpace(vm.Password) || vm.Password.Length < 8) ModelState.AddModelError(nameof(vm.Password), "A senha deve possuir pelo menos 8 caracteres.");
+            if (string.IsNullOrWhiteSpace(vm.Password)) ModelState.AddModelError(nameof(vm.Password), "Informe a senha inicial.");
+            if (vm.Password?.Length < 8) ModelState.AddModelError(nameof(vm.Password), "A senha deve possuir pelo menos 8 caracteres.");
             if (vm.Password != vm.ConfirmPassword) ModelState.AddModelError(nameof(vm.ConfirmPassword), "A confirmação não confere com a senha.");
-            if (vm.SelectedRoleIds.Count == 0) ModelState.AddModelError(nameof(vm.SelectedRoleIds), "Selecione ao menos um perfil de acesso.");
+            if (vm.SelectedRoleIds is null || vm.SelectedRoleIds.Count == 0) ModelState.AddModelError(nameof(vm.SelectedRoleIds), "Selecione ao menos um perfil de acesso.");
         }
     }
 
@@ -384,68 +499,73 @@ public sealed class UsersController : Controller
         if (vm.UserId == Guid.Empty) ModelState.AddModelError(nameof(vm.UserId), "Usuário inválido.");
         if (string.IsNullOrWhiteSpace(vm.Cpf) || OnlyDigits(vm.Cpf).Length != 11) ModelState.AddModelError(nameof(vm.Cpf), "CPF inválido. Informe 11 dígitos.");
         if (string.IsNullOrWhiteSpace(vm.EmailLogin)) ModelState.AddModelError(nameof(vm.EmailLogin), "Informe o e-mail de login.");
-        if (vm.SelectedRoleIds.Count == 0) ModelState.AddModelError(nameof(vm.SelectedRoleIds), "Selecione ao menos um perfil de acesso.");
+        if (vm.SelectedRoleIds is null || vm.SelectedRoleIds.Count == 0) ModelState.AddModelError(nameof(vm.SelectedRoleIds), "Selecione ao menos um perfil de acesso.");
     }
 
     private static void NormalizeCreateVm(CreateUserVM vm)
     {
         vm.NomeCompleto = Trim(vm.NomeCompleto);
         vm.Cpf = FormatCpf(vm.Cpf);
+        vm.Rg = TrimOrNull(vm.Rg);
         vm.EmailInstitucional = TrimLowerOrNull(vm.EmailInstitucional);
         vm.EmailAlternativo = TrimLowerOrNull(vm.EmailAlternativo);
-        vm.EmailLogin = TrimLowerOrNull(vm.EmailLogin) ?? vm.EmailInstitucional ?? vm.EmailAlternativo ?? string.Empty;
-        vm.UserName = TrimOrNull(vm.UserName) ?? vm.EmailLogin;
+        vm.EmailLogin = TrimLowerOrNull(vm.EmailLogin) ?? "";
+        vm.UserName = TrimOrNull(vm.UserName);
+        vm.Telefone = TrimOrNull(vm.Telefone);
+        vm.Celular = TrimOrNull(vm.Celular);
+        vm.Matricula = TrimOrNull(vm.Matricula);
+        vm.Cargo = TrimOrNull(vm.Cargo);
+        vm.Funcao = TrimOrNull(vm.Funcao);
+        vm.Setor = TrimOrNull(vm.Setor);
+        vm.Lotacao = TrimOrNull(vm.Lotacao);
+        vm.Unidade = TrimOrNull(vm.Unidade);
+        vm.TipoVinculo = TrimOrNull(vm.TipoVinculo);
+        vm.ConselhoProfissional = TrimOrNull(vm.ConselhoProfissional);
+        vm.NumeroConselho = TrimOrNull(vm.NumeroConselho);
+        vm.UfConselho = TrimOrNull(vm.UfConselho)?.ToUpperInvariant();
+        vm.Especialidade = TrimOrNull(vm.Especialidade);
+        vm.SituacaoFuncional = string.IsNullOrWhiteSpace(vm.SituacaoFuncional) ? "ATIVO" : vm.SituacaoFuncional.Trim().ToUpperInvariant();
+        vm.SecurityLevel = string.IsNullOrWhiteSpace(vm.SecurityLevel) ? "PUBLIC" : vm.SecurityLevel.Trim().ToUpperInvariant();
+        if (string.IsNullOrWhiteSpace(vm.EmailLogin)) vm.EmailLogin = vm.EmailInstitucional ?? vm.EmailAlternativo ?? "";
+        if (string.IsNullOrWhiteSpace(vm.UserName)) vm.UserName = vm.EmailLogin;
     }
 
     private static void NormalizeEditVm(EditUserVM vm)
     {
         vm.NomeCompleto = Trim(vm.NomeCompleto);
         vm.Cpf = FormatCpf(vm.Cpf);
+        vm.Rg = TrimOrNull(vm.Rg);
         vm.EmailInstitucional = TrimLowerOrNull(vm.EmailInstitucional);
         vm.EmailAlternativo = TrimLowerOrNull(vm.EmailAlternativo);
-        vm.EmailLogin = TrimLowerOrNull(vm.EmailLogin) ?? string.Empty;
-        vm.UserName = TrimOrNull(vm.UserName) ?? vm.EmailLogin;
+        vm.EmailLogin = TrimLowerOrNull(vm.EmailLogin) ?? "";
+        vm.UserName = TrimOrNull(vm.UserName);
+        vm.Telefone = TrimOrNull(vm.Telefone);
+        vm.Celular = TrimOrNull(vm.Celular);
+        vm.Matricula = TrimOrNull(vm.Matricula);
+        vm.Cargo = TrimOrNull(vm.Cargo);
+        vm.Funcao = TrimOrNull(vm.Funcao);
+        vm.Setor = TrimOrNull(vm.Setor);
+        vm.Lotacao = TrimOrNull(vm.Lotacao);
+        vm.Unidade = TrimOrNull(vm.Unidade);
+        vm.TipoVinculo = TrimOrNull(vm.TipoVinculo);
+        vm.ConselhoProfissional = TrimOrNull(vm.ConselhoProfissional);
+        vm.NumeroConselho = TrimOrNull(vm.NumeroConselho);
+        vm.UfConselho = TrimOrNull(vm.UfConselho)?.ToUpperInvariant();
+        vm.Especialidade = TrimOrNull(vm.Especialidade);
+        vm.SituacaoFuncional = string.IsNullOrWhiteSpace(vm.SituacaoFuncional) ? "ATIVO" : vm.SituacaoFuncional.Trim().ToUpperInvariant();
+        vm.SecurityLevel = string.IsNullOrWhiteSpace(vm.SecurityLevel) ? "PUBLIC" : vm.SecurityLevel.Trim().ToUpperInvariant();
+        if (string.IsNullOrWhiteSpace(vm.UserName)) vm.UserName = vm.EmailLogin;
     }
 
-    private static void EnsureSelected<T>(List<T> list, string? current) where T : class, new()
-    {
-        if (string.IsNullOrWhiteSpace(current)) return;
-        var valueProp = typeof(T).GetProperty("Value");
-        var textProp = typeof(T).GetProperty("Text");
-        if (valueProp is null || textProp is null) return;
-        if (list.Any(x => string.Equals(valueProp.GetValue(x)?.ToString(), current, StringComparison.OrdinalIgnoreCase))) return;
-        var item = new T();
-        valueProp.SetValue(item, current);
-        textProp.SetValue(item, current + " (valor atual)");
-        list.Insert(0, item);
-    }
-
-    private bool CanManageUsers() => User.IsInRole("Admin") || User.IsInRole(RoleAdministradorOphir);
-
-    private void SetDynamicMenu()
-    {
-        // Menu dinâmico para renderização na View/Layout.
-        ViewData["CanAccessHospitalDocuments"] = User.IsInRole(RoleArquivistaOphir) || User.IsInRole(RoleAdministradorOphir);
-        ViewData["CanAccessLoans"] = User.IsInRole(RoleAdministradorOphir);
-    }
-
-    private async Task EnsureOphirSeedBaselineAsync(Guid tenantId, CancellationToken ct)
-    {
-        // Seed de baseline: valida existência das roles obrigatórias e sinaliza se faltarem.
-        var roles = await _repo.ListRolesAsync(tenantId, ct);
-        var names = roles.Select(r => r.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        if (!names.Contains(RoleArquivistaOphir) || !names.Contains(RoleAdministradorOphir))
-            _logger.LogWarning("Roles Ophir ausentes. Execute o seed inicial para criar roles/usuários de exemplo.");
-    }
-
-    private static string Trim(string? value) => (value ?? string.Empty).Trim();
+    private static string Trim(string? value) => (value ?? "").Trim();
     private static string? TrimOrNull(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     private static string? TrimLowerOrNull(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim().ToLowerInvariant();
-    private static string OnlyDigits(string? value) => new((value ?? string.Empty).Where(char.IsDigit).ToArray());
+    private static string OnlyDigits(string? value) => new string((value ?? "").Where(char.IsDigit).ToArray());
 
     private static string FormatCpf(string? value)
     {
         var digits = OnlyDigits(value);
-        return digits.Length == 11 ? Convert.ToUInt64(digits).ToString(@"000\.000\.000\-00") : Trim(value);
+        if (digits.Length != 11) return value?.Trim() ?? "";
+        return Convert.ToUInt64(digits).ToString(@"000\.000\.000\-00");
     }
 }
