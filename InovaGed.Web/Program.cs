@@ -260,6 +260,11 @@ builder.Services.AddScoped<PermissionService>();
 builder.Services.AddScoped<IParameterRepository, ParameterRepository>();
 builder.Services.AddScoped<IAuditWriter, AuditWriter>();     // ✅ uma vez só
 builder.Services.AddScoped<IAuditQueries, AuditQueries>();
+builder.Services.AddScoped<IAuditSecurityService, AuditSecurityService>();
+builder.Services.AddScoped<IAbacAuthorizationService, AbacAuthorizationService>();
+builder.Services.AddScoped<ISensitiveDocumentCryptoService, SensitiveDocumentCryptoService>();
+builder.Services.AddScoped<IGedIntelligenceService, GedIntelligenceService>();
+
 
 // =======================================================
 // Loans / Batches / Physical / POP / Instruments
