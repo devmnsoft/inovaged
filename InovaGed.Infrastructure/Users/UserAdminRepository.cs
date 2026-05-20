@@ -571,6 +571,29 @@ SELECT EXISTS (
                 cancellationToken: ct));
     }
 
+    public async Task<bool> UnlockUserAsync(Guid tenantId, Guid userId, CancellationToken ct)
+    {
+        const string sql = @"
+UPDATE ged.app_user
+SET is_locked = FALSE,
+    access_failed_count = 0,
+    locked_until = NULL,
+    updated_at = now()
+WHERE tenant_id = @TenantId
+  AND id = @UserId
+  AND deleted_at_utc IS NULL;
+";
+
+        await using var con = await _db.OpenAsync(ct);
+        var affected = await con.ExecuteAsync(
+            new CommandDefinition(
+                sql,
+                new { TenantId = tenantId, UserId = userId },
+                cancellationToken: ct));
+
+        return affected > 0;
+    }
+
     private static string NormalizeCpf(string cpf)
     {
         var digits = new string((cpf ?? "").Where(char.IsDigit).ToArray());
