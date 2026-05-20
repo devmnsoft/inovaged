@@ -7,14 +7,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Remove="Models\Users\UserListVM.cs" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Content Include="Models\Users\UserListVM.cs" />
-  </ItemGroup>
-
-  <ItemGroup>
     <!-- Só deixa o RuntimeCompilation, que realmente é um pacote separado -->
     <PackageReference Include="BCrypt.Net-Core" Version="1.6.0" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.Certificate" Version="8.0.0" />
