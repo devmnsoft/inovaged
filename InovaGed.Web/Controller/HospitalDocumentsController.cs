@@ -12,7 +12,7 @@ using Microsoft.Net.Http.Headers;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize]
+[Authorize(Roles = "ArquivistaOphir,AdministradorOphir")]
 public sealed class HospitalDocumentsController : Controller
 {
     private static readonly Guid EmptyGuid = Guid.Empty;

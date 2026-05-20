@@ -50,6 +50,12 @@
 	bool IsAdmin() =>
 		User.IsInRole(AppRoles.Admin);
 
+	bool IsArquivistaOphir() =>
+		User.IsInRole(AppRoles.ArquivistaOphir);
+
+	bool IsAdministradorOphir() =>
+		User.IsInRole(AppRoles.AdministradorOphir);
+
 	bool CanDashboard() =>
 		User.IsInRole(AppRoles.Admin) ||
 		User.IsInRole(AppRoles.Arquivista) ||
@@ -58,15 +64,21 @@
 		User.IsInRole(AppRoles.Auditor);
 
 	bool CanDocumentos() =>
+		IsArquivistaOphir() ||
+		IsAdministradorOphir() ||
 		User.IsInRole(AppRoles.Admin) ||
 		User.IsInRole(AppRoles.Arquivista) ||
 		User.IsInRole(AppRoles.Operador);
 
 	bool CanEmprestimos() =>
+		IsAdministradorOphir() ||
 		User.IsInRole(AppRoles.Admin) ||
 		User.IsInRole(AppRoles.Arquivista) ||
 		User.IsInRole(AppRoles.Gestor) ||
 		User.IsInRole(AppRoles.Operador);
+
+	bool CanCreateHospitalDocuments() =>
+		IsAdministradorOphir() || User.IsInRole(AppRoles.Admin);
 
 	bool CanRelatorios() =>
 		User.IsInRole(AppRoles.Admin) ||
@@ -149,6 +161,17 @@
 @if (CanDocumentos())
 {
 	<div class="sidebar-section-title">Documentos</div>
+	@if (IsArquivistaOphir())
+	{
+		<a asp-controller="HospitalDocuments"
+		   asp-action="Index"
+		   class="@Active("HospitalDocuments", "Index", "Viewer")">
+			<i class="bi bi-search-heart"></i>
+			<span>Buscar Prontuários e Documentos</span>
+		</a>
+	}
+	else
+	{
 
 	<a asp-controller="Ged" asp-action="Index" class="@Active("Ged", "Index", "Details", "Create", "Edit", "Preview")">
 		<i class="bi bi-folder2-open"></i>
@@ -162,6 +185,14 @@
 		<i class="bi bi-search-heart"></i>
 		<span>Buscar Prontuários e Documentos</span>
 	</a>
+
+	@if (CanCreateHospitalDocuments())
+	{
+		<a asp-controller="Ged" asp-action="Create" class="@Active("Ged", "Create")">
+			<i class="bi bi-plus-circle"></i>
+			<span>Criar Documento</span>
+		</a>
+	}
 
 		<a asp-controller="Ged" asp-action="Folders" class="@Active("Ged", "Folders")">
 			<i class="bi bi-folder"></i>

@@ -2,6 +2,9 @@
 
 public static class AppRoles
 {
+    public const string ArquivistaOphir = "ARQUIVISTAOPHIR";
+    public const string AdministradorOphir = "ADMINISTRADOROPHIR";
+
     public const string Admin = "ADMIN";
     public const string Arquivista = "ARQUIVISTA";
     public const string Auditor = "AUDITOR";
@@ -16,8 +19,10 @@ public static class AppRoles
         {
             "ADMIN" => Admin,
             "ADMINISTRADOR" => Admin,
+            "ADMINISTRADOROPHIR" => AdministradorOphir,
 
             "ARQUIVISTA" => Arquivista,
+            "ARQUIVISTAOPHIR" => ArquivistaOphir,
 
             "AUDITOR" => Auditor,
 
