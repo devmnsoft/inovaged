@@ -3,6 +3,6 @@
 public interface IUserAdminQueries
 {
     Task<PagedResult<UserRowDto>> ListUsersAsync(
-        Guid tenantId, string? q, bool? active,
+        Guid tenantId, string? q, bool? active, bool? locked,
         int page, int pageSize, CancellationToken ct);
 }
