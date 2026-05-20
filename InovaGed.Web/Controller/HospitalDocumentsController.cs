@@ -5,6 +5,7 @@ using InovaGed.Application.Common.Database;
 using InovaGed.Application.Common.Preview;
 using InovaGed.Application.Common.Storage;
 using InovaGed.Application.Identity;
+using InovaGed.Application.Audit;
 using InovaGed.Web.Models.HospitalDocuments;
 using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authorization;
@@ -13,7 +14,7 @@ using Microsoft.Net.Http.Headers;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize(Roles = AppRoles.ArquivistaOphir + "," + AppRoles.AdministradorOphir)]
+[Authorize(Roles = AppRoles.Admin + "," + AppRoles.ArquivistaOphir + "," + AppRoles.AdministradorOphir)]
 public sealed class HospitalDocumentsController : Controller
 {
     private static readonly Guid EmptyGuid = Guid.Empty;
@@ -21,12 +22,18 @@ public sealed class HospitalDocumentsController : Controller
     private readonly ICurrentUser _currentUser;
     private readonly IFileStorage _storage;
     private readonly IPreviewGenerator _preview;
+    private readonly IAuditWriter _audit;
     private readonly ILogger<HospitalDocumentsController> _logger;
 
-    public HospitalDocumentsController(IDbConnectionFactory db, ICurrentUser currentUser, IFileStorage storage, IPreviewGenerator preview, ILogger<HospitalDocumentsController> logger)
-    { _db = db; _currentUser = currentUser; _storage = storage; _preview = preview; _logger = logger; }
+    public HospitalDocumentsController(IDbConnectionFactory db, ICurrentUser currentUser, IFileStorage storage, IPreviewGenerator preview, IAuditWriter audit, ILogger<HospitalDocumentsController> logger)
+    { _db = db; _currentUser = currentUser; _storage = storage; _preview = preview; _audit = audit; _logger = logger; }
 
-    [HttpGet] public IActionResult Index() => View();
+    [HttpGet]
+    public async Task<IActionResult> Index(CancellationToken ct)
+    {
+        await RegisterHospitalAccessAuditAsync("index", ct);
+        return View();
+    }
 
     [HttpGet]
     public async Task<IActionResult> Search(string? q, string? type, int page = 1, int pageSize = 20, CancellationToken ct = default)
@@ -118,6 +125,7 @@ ORDER BY "MatchScore" DESC, "Rank" DESC, "CreatedAt" DESC LIMIT 10;
     public async Task<IActionResult> Viewer(Guid versionId, CancellationToken ct)
     {
         if (!_currentUser.IsAuthenticated || versionId == Guid.Empty) return RedirectToAction(nameof(Index));
+        await RegisterHospitalAccessAuditAsync("viewer", ct, new { versionId });
         await using var conn = await _db.OpenAsync(ct);
         var row = await conn.QuerySingleOrDefaultAsync<ViewerRow>(new CommandDefinition("""SELECT d.id AS "DocumentId", dv.id AS "VersionId", COALESCE(NULLIF(d.code,''),d.id::text) AS "Code", COALESCE(NULLIF(d.title,''),'Documento sem título') AS "Title", COALESCE(NULLIF(dv.file_name,''),'arquivo') AS "FileName", COALESCE(NULLIF(dv.content_type,''),'') AS "ContentType", COALESCE(dv.file_size_bytes,0) AS "SizeBytes", d.created_at AS "CreatedAt", COALESCE(dv.storage_path,'') AS "StoragePath", COALESCE(s.ocr_text,'') AS "OcrText" FROM ged.document_version dv JOIN ged.document d ON d.tenant_id=dv.tenant_id AND d.id=dv.document_id LEFT JOIN ged.document_search s ON s.tenant_id=dv.tenant_id AND s.document_id=dv.document_id AND s.version_id=dv.id WHERE dv.tenant_id=@tenantId AND dv.id=@versionId AND d.reg_status='A'::bpchar LIMIT 1""", new { tenantId = _currentUser.TenantId, versionId }, cancellationToken: ct));
         if (row is null) return RedirectToAction(nameof(Index));
@@ -128,6 +136,7 @@ ORDER BY "MatchScore" DESC, "Rank" DESC, "CreatedAt" DESC LIMIT 10;
     {
         if (!_currentUser.IsAuthenticated) return Unauthorized();
         if (versionId == Guid.Empty) return NotFound();
+        await RegisterHospitalAccessAuditAsync("preview", ct, new { versionId });
 
         await using var conn = await _db.OpenAsync(ct);
         var row = await conn.QuerySingleOrDefaultAsync<ViewerRow>(new CommandDefinition("""SELECT dv.document_id AS "DocumentId", dv.id AS "VersionId", COALESCE(NULLIF(dv.file_name,''),'arquivo') AS "FileName", COALESCE(NULLIF(dv.content_type,''),'') AS "ContentType", COALESCE(dv.storage_path,'') AS "StoragePath" FROM ged.document_version dv JOIN ged.document d ON d.tenant_id=dv.tenant_id AND d.id=dv.document_id WHERE dv.tenant_id=@tenantId AND dv.id=@versionId AND d.reg_status='A'::bpchar LIMIT 1""", new { tenantId = _currentUser.TenantId, versionId }, cancellationToken: ct));
@@ -162,7 +171,13 @@ ORDER BY "MatchScore" DESC, "Rank" DESC, "CreatedAt" DESC LIMIT 10;
             return PreviewProcessingContent();
         }
     }
-    [HttpGet] public async Task<IActionResult> OcrText(Guid versionId, CancellationToken ct) { if (!_currentUser.IsAuthenticated || versionId == Guid.Empty) return Json(new { success = false, hasOcr = false, text = "" }); await using var conn = await _db.OpenAsync(ct); var row = await conn.QuerySingleOrDefaultAsync<OcrRow>(new CommandDefinition("""SELECT COALESCE(s.ocr_text,'') AS "Text", COALESCE(oj.status::text,'NONE') AS "Status" FROM ged.document_version dv LEFT JOIN ged.document_search s ON s.tenant_id=dv.tenant_id AND s.document_id=dv.document_id AND s.version_id=dv.id LEFT JOIN LATERAL (SELECT j.status FROM ged.ocr_job j WHERE j.tenant_id=dv.tenant_id AND j.document_version_id=dv.id ORDER BY j.requested_at DESC LIMIT 1) oj ON true WHERE dv.tenant_id=@tenantId AND dv.id=@versionId LIMIT 1""", new { tenantId = _currentUser.TenantId, versionId }, cancellationToken: ct)); return Json(new { success = true, hasOcr = !string.IsNullOrWhiteSpace(row?.Text), status = row?.Status ?? "NONE", text = row?.Text ?? "" }); }
+    [HttpGet] public async Task<IActionResult> OcrText(Guid versionId, CancellationToken ct) { if (!_currentUser.IsAuthenticated || versionId == Guid.Empty) return Json(new { success = false, hasOcr = false, text = "" }); await RegisterHospitalAccessAuditAsync("ocr_text", ct, new { versionId }); await using var conn = await _db.OpenAsync(ct); var row = await conn.QuerySingleOrDefaultAsync<OcrRow>(new CommandDefinition("""SELECT COALESCE(s.ocr_text,'') AS "Text", COALESCE(oj.status::text,'NONE') AS "Status" FROM ged.document_version dv LEFT JOIN ged.document_search s ON s.tenant_id=dv.tenant_id AND s.document_id=dv.document_id AND s.version_id=dv.id LEFT JOIN LATERAL (SELECT j.status FROM ged.ocr_job j WHERE j.tenant_id=dv.tenant_id AND j.document_version_id=dv.id ORDER BY j.requested_at DESC LIMIT 1) oj ON true WHERE dv.tenant_id=@tenantId AND dv.id=@versionId LIMIT 1""", new { tenantId = _currentUser.TenantId, versionId }, cancellationToken: ct)); return Json(new { success = true, hasOcr = !string.IsNullOrWhiteSpace(row?.Text), status = row?.Status ?? "NONE", text = row?.Text ?? "" }); }
+    
+    private async Task RegisterHospitalAccessAuditAsync(string action, CancellationToken ct, object? data = null)
+    {
+        if (!_currentUser.IsAuthenticated || _currentUser.UserId == Guid.Empty || _currentUser.TenantId == Guid.Empty) return;
+        await _audit.WriteAsync(_currentUser.TenantId, _currentUser.UserId, "HTTP", "hospital_documents_access", null, $"HospitalDocuments:{action}", HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers.UserAgent.ToString(), data, ct);
+    }
     private ContentResult PreviewProcessingContent() => Content("""<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;font-family:system-ui;background:#f8fafc;color:#334155}.box{max-width:760px;margin:10vh auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:20px}</style></head><body><div class="box"><h3>Gerando visualização</h3><p>Este documento ainda está sendo preparado para preview. Atualize em alguns segundos.</p></div></body></html>""", "text/html", Encoding.UTF8);
 
     private static string? NormalizeType(string? type) => string.IsNullOrWhiteSpace(type) ? null : type.Trim().ToLowerInvariant() switch { "pdf" => "pdf", "word" => "word", "doc" => "word", "docx" => "word", "imagem" => "image", "image" => "image", "img" => "image", _ => null };
