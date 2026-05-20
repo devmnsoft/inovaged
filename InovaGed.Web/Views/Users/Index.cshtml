@@ -483,7 +483,7 @@
 
         document.getElementById('confirmUnlockBtn')?.addEventListener('click', async () => {
             if (!unlockUserId) return;
-            const response = await fetch(`/api/users/${unlockUserId}/unlock`, { method: 'POST' });
+            const response = await fetch(`/Users/Unlock/${unlockUserId}`, { method: 'POST' });
             if (!response.ok) {
                 showToast('Erro ao desbloquear usuário.', false);
                 return;
