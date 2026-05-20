@@ -51,6 +51,13 @@
                     <option value="false" selected="@(Model.Active == false)">Inativos</option>
                 </select>
             </div>
+            <div class="col-md-2">
+                <select name="locked" class="form-select" aria-label="Filtrar por bloqueio">
+                    <option value="" selected="@(Model.Locked is null)">Todos status</option>
+                    <option value="false" selected="@(Model.Locked == false)">Não bloqueados</option>
+                    <option value="true" selected="@(Model.Locked == true)">Bloqueados</option>
+                </select>
+            </div>
 
             <div class="col-md-2">
                 <select name="pageSize" class="form-select">
@@ -238,6 +245,19 @@
                                                 Redefinir senha
                                             </button>
                                         </li>
+                                        @if (item.IsLocked)
+                                        {
+                                            <li>
+                                                <button type="button"
+                                                        class="dropdown-item text-danger js-open-unlock"
+                                                        data-user-id="@item.Id"
+                                                        data-user-name="@item.Name"
+                                                        aria-label="Desbloquear usuário @item.Name">
+                                                    <i class="bi bi-unlock me-1"></i>
+                                                    Desbloquear
+                                                </button>
+                                            </li>
+                                        }
 
                                         <li><hr class="dropdown-divider" /></li>
 
@@ -414,9 +434,62 @@
     </div>
 </div>
 
+<div class="modal fade" id="unlockUserModal" tabindex="-1" aria-labelledby="unlockUserModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="unlockUserModalLabel">Confirmar desbloqueio</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+            </div>
+            <div class="modal-body">
+                Deseja desbloquear o usuário <strong id="unlockUserName"></strong>?
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-danger" id="confirmUnlockBtn">Desbloquear</button>
+            </div>
+        </div>
+    </div>
+</div>
+<div id="unlockToast" class="position-fixed bottom-0 end-0 p-3" style="z-index:1080"></div>
+
 @section Scripts {
     <script>
         const resetModal = document.getElementById('resetPasswordModal');
+        let unlockUserId = null;
+        const unlockModalEl = document.getElementById('unlockUserModal');
+        const unlockModal = unlockModalEl ? new bootstrap.Modal(unlockModalEl) : null;
+        const unlockUserName = document.getElementById('unlockUserName');
+        const showToast = (message, ok) => {
+            const host = document.getElementById('unlockToast');
+            if (!host) return;
+            host.innerHTML = `<div class="toast align-items-center text-bg-${ok ? 'success' : 'danger'} border-0" role="alert" aria-live="assertive"><div class="d-flex"><div class="toast-body">${message}</div><button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div></div>`;
+            const toastEl = host.querySelector('.toast');
+            if (toastEl) new bootstrap.Toast(toastEl).show();
+        };
+
+        document.querySelectorAll('.js-open-unlock').forEach(btn => {
+            btn.addEventListener('click', () => {
+                unlockUserId = btn.getAttribute('data-user-id');
+                if (unlockUserName) unlockUserName.textContent = btn.getAttribute('data-user-name') ?? '';
+                unlockModal?.show();
+            });
+        });
+
+        document.getElementById('confirmUnlockBtn')?.addEventListener('click', async () => {
+            if (!unlockUserId) return;
+            const response = await fetch(`/api/users/${unlockUserId}/unlock`, { method: 'POST' });
+            if (!response.ok) {
+                showToast('Erro ao desbloquear usuário.', false);
+                return;
+            }
+
+            showToast('Usuário desbloqueado com sucesso.', true);
+            const btn = document.querySelector(`.js-open-unlock[data-user-id="${unlockUserId}"]`);
+            btn?.closest('li')?.remove();
+            unlockModal?.hide();
+            window.setTimeout(() => window.location.reload(), 700);
+        });
 
         if (resetModal) {
             resetModal.addEventListener('show.bs.modal', event => {

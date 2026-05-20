@@ -62,17 +62,19 @@ public sealed class UsersController : Controller
 
     [HttpGet("")]
     [HttpGet("Index")]
-    public async Task<IActionResult> Index(string? q, bool? active, int page = 1, int pageSize = 10, CancellationToken ct = default)
+    [Authorize(Roles = AppRoles.Admin + ",ADMINISTRATOR")]
+    public async Task<IActionResult> Index(string? q, bool? active, bool? locked, int page = 1, int pageSize = 10, CancellationToken ct = default)
     {
         if (!_currentUser.IsAuthenticated) return Unauthorized();
 
         var tenantId = _currentUser.TenantId;
-        var res = await _queries.ListUsersAsync(tenantId, q, active, page, pageSize, ct);
+        var res = await _queries.ListUsersAsync(tenantId, q, active, locked, page, pageSize, ct);
 
         var vm = new UserListVM
         {
             Q = q,
             Active = active,
+            Locked = locked,
             Page = page <= 0 ? 1 : page,
             PageSize = pageSize,
             Total = res.Total,

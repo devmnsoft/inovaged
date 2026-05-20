@@ -22,6 +22,7 @@ public sealed class UserAdminQueries : IUserAdminQueries
         Guid tenantId,
         string? q,
         bool? active,
+        bool? locked,
         int page,
         int pageSize,
         CancellationToken ct)
@@ -37,6 +38,7 @@ SELECT count(*)::int
 FROM ged.vw_user_admin_list u
 WHERE u.tenant_id = @TenantId
   AND (@Active IS NULL OR u.is_active = @Active)
+  AND (@Locked IS NULL OR u.is_locked = @Locked)
   AND (
        @Q IS NULL
     OR u.nome_completo ILIKE '%' || @Q || '%'
@@ -74,6 +76,7 @@ SELECT
 FROM ged.vw_user_admin_list u
 WHERE u.tenant_id = @TenantId
   AND (@Active IS NULL OR u.is_active = @Active)
+  AND (@Locked IS NULL OR u.is_locked = @Locked)
   AND (
        @Q IS NULL
     OR u.nome_completo ILIKE '%' || @Q || '%'
@@ -94,7 +97,7 @@ OFFSET @Offset LIMIT @PageSize;
             var total = await con.ExecuteScalarAsync<int>(
                 new CommandDefinition(
                     countSql,
-                    new { TenantId = tenantId, Q = qNorm, Active = active },
+                    new { TenantId = tenantId, Q = qNorm, Active = active, Locked = locked },
                     cancellationToken: ct));
 
             var items = (await con.QueryAsync<UserRowDto>(
@@ -105,6 +108,7 @@ OFFSET @Offset LIMIT @PageSize;
                         TenantId = tenantId,
                         Q = qNorm,
                         Active = active,
+                        Locked = locked,
                         Offset = offset,
                         PageSize = pageSize
                     },
