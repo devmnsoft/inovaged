@@ -25,15 +25,12 @@ public sealed class SystemSeedHostedService : IHostedService
         -- 0) uuid helper
         CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
-        -- 1) garante ROLE ADMIN (chave lógica = tenant_id + normalized_name)
+        -- 1) garante roles padrão + roles Ophir
         INSERT INTO ged.app_role (id, tenant_id, name, normalized_name, created_at)
-        VALUES (
-          gen_random_uuid(),
-          '00000000-0000-0000-0000-000000000001',
-          'ADMIN',
-          'ADMIN',
-          now()
-        )
+        VALUES
+        (gen_random_uuid(), '00000000-0000-0000-0000-000000000001', 'ADMIN', 'ADMIN', now()),
+        (gen_random_uuid(), '00000000-0000-0000-0000-000000000001', 'ArquivistaOphir', 'ARQUIVISTAOPHIR', now()),
+        (gen_random_uuid(), '00000000-0000-0000-0000-000000000001', 'AdministradorOphir', 'ADMINISTRADOROPHIR', now())
         ON CONFLICT (tenant_id, normalized_name) DO UPDATE
         SET name = EXCLUDED.name;
 
@@ -54,6 +51,40 @@ public sealed class SystemSeedHostedService : IHostedService
           email = EXCLUDED.email,
           is_active = EXCLUDED.is_active;
 
+        -- 2.1) usuário exemplo para ArquivistaOphir
+        INSERT INTO ged.app_user (id, tenant_id, name, email, password_hash, is_active, created_at)
+        VALUES (
+          'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbb002',
+          '00000000-0000-0000-0000-000000000001',
+          'Arquivista Ophir',
+          'arquivista.ophir@local',
+          'DEV-SEED-NOT-A-REAL-HASH',
+          true,
+          now()
+        )
+        ON CONFLICT (id) DO UPDATE
+        SET
+          name = EXCLUDED.name,
+          email = EXCLUDED.email,
+          is_active = EXCLUDED.is_active;
+
+        -- 2.2) usuário exemplo para AdministradorOphir
+        INSERT INTO ged.app_user (id, tenant_id, name, email, password_hash, is_active, created_at)
+        VALUES (
+          'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbb003',
+          '00000000-0000-0000-0000-000000000001',
+          'Administrador Ophir',
+          'administrador.ophir@local',
+          'DEV-SEED-NOT-A-REAL-HASH',
+          true,
+          now()
+        )
+        ON CONFLICT (id) DO UPDATE
+        SET
+          name = EXCLUDED.name,
+          email = EXCLUDED.email,
+          is_active = EXCLUDED.is_active;
+
         -- 3) vincula user -> role ADMIN (pega o role_id real)
         INSERT INTO ged.user_role (user_id, role_id)
         SELECT
@@ -62,6 +93,26 @@ public sealed class SystemSeedHostedService : IHostedService
         FROM ged.app_role r
         WHERE r.tenant_id = '00000000-0000-0000-0000-000000000001'
           AND r.normalized_name = 'ADMIN'
+        ON CONFLICT DO NOTHING;
+
+        -- 4) vincula user -> role ArquivistaOphir
+        INSERT INTO ged.user_role (user_id, role_id)
+        SELECT
+          'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbb002'::uuid,
+          r.id
+        FROM ged.app_role r
+        WHERE r.tenant_id = '00000000-0000-0000-0000-000000000001'
+          AND r.normalized_name = 'ARQUIVISTAOPHIR'
+        ON CONFLICT DO NOTHING;
+
+        -- 5) vincula user -> role AdministradorOphir
+        INSERT INTO ged.user_role (user_id, role_id)
+        SELECT
+          'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbb003'::uuid,
+          r.id
+        FROM ged.app_role r
+        WHERE r.tenant_id = '00000000-0000-0000-0000-000000000001'
+          AND r.normalized_name = 'ADMINISTRADOROPHIR'
         ON CONFLICT DO NOTHING;
         """;
 

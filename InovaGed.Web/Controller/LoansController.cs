@@ -9,7 +9,7 @@ using Microsoft.AspNetCore.Mvc.Filters;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize]
+[Authorize(Roles = "AdministradorOphir")]
 [Route("[controller]")]
 public sealed class LoansController : Controller
 {
