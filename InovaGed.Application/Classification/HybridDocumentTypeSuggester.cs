@@ -9,6 +9,40 @@ public sealed class HybridDocumentTypeSuggester
         _text = text;
     }
 
+    /// <summary>
+    /// Sugere tipo(s) documental(is) de forma assíncrona para manter o contrato async/await
+    /// dos serviços de aplicação/infra. Atualmente a heurística é síncrona (texto), mas este
+    /// método já prepara a evolução para regras híbridas adicionais sem quebrar chamadas.
+    /// </summary>
+    public Task<IReadOnlyList<DocumentTypeSuggestionDto>> SuggestAsync(
+        string? ocrText,
+        string? fileName,
+        string? folderName,
+        string? title,
+        IReadOnlyList<(Guid id, string name)> types,
+        CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+
+        var suggestion = SuggestHybrid(ocrText, fileName, folderName, title, types);
+
+        // Resolve nome do tipo para retorno da API.
+        var typeName = suggestion.SuggestedTypeId is Guid suggestedTypeId
+            ? types.FirstOrDefault(t => t.id == suggestedTypeId).name
+            : null;
+
+        IReadOnlyList<DocumentTypeSuggestionDto> result =
+        [
+            new DocumentTypeSuggestionDto(
+                TypeId: suggestion.SuggestedTypeId,
+                TypeName: string.IsNullOrWhiteSpace(typeName) ? null : typeName,
+                Confidence: suggestion.Confidence,
+                Summary: suggestion.Summary)
+        ];
+
+        return Task.FromResult(result);
+    }
+
     public SimpleTextDocumentTypeSuggester.Suggestion SuggestHybrid(
         string? ocrText,
         string? fileName,

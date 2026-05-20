@@ -17,7 +17,24 @@ public sealed class AuditSecurityService : IAuditSecurityService
 
     public async Task RegisterCriticalActionAsync(Guid tenantId, Guid? userId, string action, string entityName, string entityId, string summary, string? ipAddress, CancellationToken ct)
     {
-        await _auditWriter.WriteAsync(tenantId, userId, action, entityName, entityId, summary, null, null, ipAddress, ct);
+        // Corrige conversão de string -> Guid? para manter compatibilidade com IAuditWriter.
+        Guid? parsedEntityId = null;
+        if (!string.IsNullOrWhiteSpace(entityId) && Guid.TryParse(entityId, out var value))
+        {
+            parsedEntityId = value;
+        }
+
+        await _auditWriter.WriteAsync(
+            tenantId: tenantId,
+            userId: userId,
+            action: action,
+            entityName: entityName,
+            entityId: parsedEntityId,
+            summary: summary,
+            ipAddress: ipAddress,
+            userAgent: null,
+            data: new { RawEntityId = entityId },
+            ct: ct);
     }
 
     public async Task<AuditDashboardVM> GetDashboardAsync(Guid tenantId, CancellationToken ct)

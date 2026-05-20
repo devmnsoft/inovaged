@@ -30,7 +30,23 @@ limit 100", new { tenantId }, cancellationToken: ct));
 
     public async Task<IReadOnlyList<DocumentTypeSuggestionDto>> SuggestTagsAsync(Guid tenantId, string text, CancellationToken ct)
     {
-        var suggestions = await _suggester.SuggestAsync(tenantId, text, ct);
-        return suggestions.Select(s => new DocumentTypeSuggestionDto(s.TypeId, s.TypeName, s.Confidence, s.Summary)).ToList();
+        await using var conn = await _db.OpenAsync(ct);
+
+        var documentTypes = (await conn.QueryAsync<(Guid id, string name)>(new CommandDefinition(@"
+select id, name
+from ged.document_types
+where tenant_id = @tenantId
+  and reg_status = 'A'
+order by name", new { tenantId }, cancellationToken: ct))).AsList();
+
+        var suggestions = await _suggester.SuggestAsync(
+            ocrText: text,
+            fileName: null,
+            folderName: null,
+            title: null,
+            types: documentTypes,
+            ct: ct);
+
+        return suggestions;
     }
 }
