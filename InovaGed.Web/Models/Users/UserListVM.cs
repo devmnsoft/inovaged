@@ -20,6 +20,11 @@ namespace InovaGed.Web.Models.Users
             public Guid Id { get; set; }
             public Guid? ServidorId { get; set; }
             public string Name { get; set; } = "";
+            public string Username
+            {
+                get => Name;
+                set => Name = value;
+            }
             public string Email { get; set; } = "";
             public string? Cpf { get; set; }
             public string? Matricula { get; set; }
@@ -30,6 +35,11 @@ namespace InovaGed.Web.Models.Users
             public string? Unidade { get; set; }
             public bool IsActive { get; set; }
             public bool IsLocked { get; set; }
+            public bool Locked
+            {
+                get => IsLocked;
+                set => IsLocked = value;
+            }
             public bool MustChangePassword { get; set; }
             public bool MfaEnabled { get; set; }
             public bool CertificateRequired { get; set; }
@@ -38,6 +48,7 @@ namespace InovaGed.Web.Models.Users
             public DateTimeOffset? LastLoginAt { get; set; }
             public DateTimeOffset CreatedAt { get; set; }
             public List<string> Roles { get; set; } = new();
+            public string Role => Roles.FirstOrDefault() ?? string.Empty;
         }
     }
 }

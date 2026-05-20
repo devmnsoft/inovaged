@@ -1,0 +1,2 @@
+ALTER TYPE ged.audit_action_enum ADD VALUE IF NOT EXISTS 'UNLOCK_USER';
+ALTER TYPE ged.audit_action_enum ADD VALUE IF NOT EXISTS 'VIEW';

@@ -25,18 +25,6 @@ public sealed class UserService
     {
         if (!_currentUser.IsAuthenticated || !_currentUser.Roles.Any(r => string.Equals(r, AdministratorRole, StringComparison.OrdinalIgnoreCase)))
         {
-            await _auditWriter.WriteAsync(
-                tenantId: _currentUser.TenantId,
-                userId: _currentUser.IsAuthenticated ? _currentUser.UserId : null,
-                action: "ACCESS_DENIED",
-                entityName: "APP_USER",
-                entityId: userId,
-                summary: $"Tentativa não autorizada de desbloqueio | target={userId}",
-                ipAddress: ipAddress,
-                userAgent: userAgent,
-                data: new { actionType = "UNLOCK_USER", targetUserId = userId, authorized = false, timestamp = DateTimeOffset.UtcNow },
-                ct: ct);
-
             throw new UnauthorizedAccessException("Somente ADMINISTRATOR pode desbloquear usuários.");
         }
 
@@ -47,7 +35,7 @@ public sealed class UserService
         await _auditWriter.WriteAsync(
             tenantId: _currentUser.TenantId,
             userId: _currentUser.UserId,
-            action: "UPDATE",
+            action: "UNLOCK_USER",
             entityName: "APP_USER",
             entityId: userId,
             summary: $"ADMIN_UNLOCK_USER | actor={_currentUser.UserId} | target={userId}",

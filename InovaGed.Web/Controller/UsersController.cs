@@ -44,20 +44,27 @@ public sealed class UsersController : Controller
         _userService = userService;
     }
 
-    [HttpPost("/api/users/{id:guid}/unlock")]
+    [HttpPost("Unlock/{id:guid}")]
     [Authorize(Roles = AppRoles.Admin + ",ADMINISTRATOR")]
     public async Task<IActionResult> Unlock(Guid id, CancellationToken ct)
     {
-        var unlocked = await _userService.UnlockUserAsync(
-            id,
-            HttpContext.Connection.RemoteIpAddress?.ToString(),
-            Request.Headers.UserAgent.ToString(),
-            ct);
+        try
+        {
+            var unlocked = await _userService.UnlockUserAsync(
+                id,
+                HttpContext.Connection.RemoteIpAddress?.ToString(),
+                Request.Headers.UserAgent.ToString(),
+                ct);
 
-        if (!unlocked)
-            return NotFound();
+            if (!unlocked)
+                return NotFound(new { message = "Usuário não encontrado." });
 
-        return Ok(new { message = "Usuário desbloqueado com sucesso" });
+            return Ok(new { message = "Usuário desbloqueado com sucesso" });
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
     }
 
     [HttpGet("")]
