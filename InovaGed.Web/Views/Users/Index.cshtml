@@ -313,7 +313,8 @@
                                asp-route-q="@Model.Q"
                                asp-route-active="@Model.Active"
                                asp-route-page="1"
-                               asp-route-pageSize="@pageSize">Primeira</a>
+                               asp-route-pageSize="@pageSize"
+                               asp-route-locked="@Model.Locked">Primeira</a>
                         </li>
 
                         <li class="page-item @(currentPage <= 1 ? "disabled" : "")">
@@ -323,7 +324,8 @@
                                asp-route-q="@Model.Q"
                                asp-route-active="@Model.Active"
                                asp-route-page="@(currentPage - 1)"
-                               asp-route-pageSize="@pageSize">Anterior</a>
+                               asp-route-pageSize="@pageSize"
+                               asp-route-locked="@Model.Locked">Anterior</a>
                         </li>
 
                         @if (startPage > 1)
@@ -340,7 +342,8 @@
                                    asp-route-q="@Model.Q"
                                    asp-route-active="@Model.Active"
                                    asp-route-page="@p"
-                                   asp-route-pageSize="@pageSize">@p</a>
+                                   asp-route-pageSize="@pageSize"
+                                   asp-route-locked="@Model.Locked">@p</a>
                             </li>
                         }
 
@@ -356,7 +359,8 @@
                                asp-route-q="@Model.Q"
                                asp-route-active="@Model.Active"
                                asp-route-page="@(currentPage + 1)"
-                               asp-route-pageSize="@pageSize">Próxima</a>
+                               asp-route-pageSize="@pageSize"
+                               asp-route-locked="@Model.Locked">Próxima</a>
                         </li>
 
                         <li class="page-item @(currentPage >= totalPages ? "disabled" : "")">
@@ -366,7 +370,8 @@
                                asp-route-q="@Model.Q"
                                asp-route-active="@Model.Active"
                                asp-route-page="@totalPages"
-                               asp-route-pageSize="@pageSize">Última</a>
+                               asp-route-pageSize="@pageSize"
+                               asp-route-locked="@Model.Locked">Última</a>
                         </li>
                     </ul>
                 </nav>
@@ -486,9 +491,14 @@
 
             showToast('Usuário desbloqueado com sucesso.', true);
             const btn = document.querySelector(`.js-open-unlock[data-user-id="${unlockUserId}"]`);
+            const row = btn?.closest('tr');
             btn?.closest('li')?.remove();
+
+            const statusCell = row?.querySelector('td:nth-child(6)');
+            const lockedBadge = statusCell?.querySelector('.badge.text-bg-danger');
+            lockedBadge?.remove();
+
             unlockModal?.hide();
-            window.setTimeout(() => window.location.reload(), 700);
         });
 
         if (resetModal) {
