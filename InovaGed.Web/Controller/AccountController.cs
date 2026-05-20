@@ -2,6 +2,7 @@
 using InovaGed.Application.Auth;
 using InovaGed.Web.Models.Auth;
 using InovaGed.Web.Security;
+using InovaGed.Application.Audit;
 using InovaGed.Application.Common.Security;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -14,11 +15,13 @@ namespace InovaGed.Web.Controllers;
 public sealed class AccountController : Controller
 {
     private readonly IAuthRepository _repo;
+    private readonly IAuditWriter _audit;
     private static readonly PasswordHasher<ApplicationUser> _hasher = new();
 
-    public AccountController(IAuthRepository repo)
+    public AccountController(IAuthRepository repo, IAuditWriter audit)
     {
         _repo = repo;
+        _audit = audit;
     }
 
     [HttpGet]
@@ -146,10 +149,61 @@ public sealed class AccountController : Controller
         if (user.MustChangePassword)
             return RedirectToAction(nameof(ChangePassword), "Account");
 
-        if (!string.IsNullOrWhiteSpace(vm.ReturnUrl) && Url.IsLocalUrl(vm.ReturnUrl))
-            return Redirect(vm.ReturnUrl);
+        // Regra especial de redirecionamento:
+        // - administradoophir e arquivistaophir devem ir sempre para /HospitalDocuments.
+        // - ADMIN mantém acesso completo e segue fluxo padrão do sistema.
+        // - Demais usuários continuam no fluxo padrão (ReturnUrl local ou Home).
+        var redirectResult = ResolvePostLoginRedirect(vm.ReturnUrl, user.Username, normalizedRoles);
 
-        return RedirectToAction("Index", "Home");
+        await _audit.WriteAsync(
+            tenantId: user.TenantId,
+            userId: user.UserId,
+            action: "HTTP",
+            entityName: "login_redirect",
+            entityId: null,
+            summary: $"Login OK: redirect={redirectResult.TargetDescription}",
+            ipAddress: ip,
+            userAgent: userAgent,
+            data: new
+            {
+                username = user.Username,
+                roles = normalizedRoles,
+                returnUrl = vm.ReturnUrl,
+                redirect = redirectResult.TargetDescription,
+                redirectReason = redirectResult.Reason
+            },
+            ct: ct);
+
+        return redirectResult.Result;
+    }
+
+    private (IActionResult Result, string TargetDescription, string Reason) ResolvePostLoginRedirect(string? returnUrl, string? username, IReadOnlyCollection<string> normalizedRoles)
+    {
+        var normalizedUsername = (username ?? string.Empty).Trim().ToUpperInvariant();
+
+        // Regra 1: usuários hospitalares dedicados vão direto para HospitalDocuments
+        // sem receber permissões administrativas completas.
+        if (normalizedUsername is "ADMINISTRADOOPHIR" or "ARQUIVISTAOPHIR")
+        {
+            return (RedirectToAction("Index", "HospitalDocuments"), "/HospitalDocuments", "special_hospital_user");
+        }
+
+        // Regra 2: usuário com role ADMIN mantém fluxo completo do sistema.
+        // (não força HospitalDocuments; respeita ReturnUrl local e Home padrão)
+        var isAdmin = normalizedRoles.Any(r => string.Equals(r, AppRoles.Admin, StringComparison.OrdinalIgnoreCase));
+
+        if (isAdmin && !string.IsNullOrWhiteSpace(returnUrl) && Url.IsLocalUrl(returnUrl))
+        {
+            return (Redirect(returnUrl), returnUrl, "admin_return_url");
+        }
+
+        // Regra 3: fluxo padrão para os demais perfis.
+        if (!string.IsNullOrWhiteSpace(returnUrl) && Url.IsLocalUrl(returnUrl))
+        {
+            return (Redirect(returnUrl), returnUrl, "default_return_url");
+        }
+
+        return (RedirectToAction("Index", "Home"), "/", isAdmin ? "admin_default" : "default_home");
     }
 
     [Authorize]
