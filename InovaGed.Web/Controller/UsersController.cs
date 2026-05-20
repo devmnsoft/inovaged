@@ -77,43 +77,21 @@ public sealed class UsersController : Controller
         var tenantId = _currentUser.TenantId;
         var res = await _queries.ListUsersAsync(tenantId, q, active, locked, page, pageSize, ct);
 
-        var vm = new UserListVM
+        var users = res.Items.Select(x => new UserListVM
         {
-            Q = q,
-            Active = active,
-            Locked = locked,
-            Page = page <= 0 ? 1 : page,
-            PageSize = pageSize,
-            Total = res.Total,
-            Items = res.Items.Select(x => new UserListVM.Row
-            {
-                Id = x.Id,
-                ServidorId = x.ServidorId,
-                Name = x.Name,
-                Cpf = x.Cpf,
-                Matricula = x.Matricula,
-                Cargo = x.Cargo,
-                Funcao = x.Funcao,
-                Setor = x.Setor,
-                Lotacao = x.Lotacao,
-                Unidade = x.Unidade,
-                Email = x.Email,
-                IsActive = x.IsActive,
-                IsLocked = x.IsLocked,
-                MustChangePassword = x.MustChangePassword,
-                MfaEnabled = x.MfaEnabled,
-                CertificateRequired = x.CertificateRequired,
-                CanSignWithIcp = x.CanSignWithIcp,
-                SecurityLevel = x.SecurityLevel,
-                LastLoginAt = x.LastLoginAt,
-                CreatedAt = x.CreatedAt,
-                Roles = (x.RolesCsv ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries).Select(s => s.Trim()).Where(s => !string.IsNullOrWhiteSpace(s)).ToList()
-            }).ToList()
-        };
+            Id = x.Id,
+            Username = x.Name,
+            Email = x.Email,
+            Role = (x.RolesCsv ?? string.Empty)
+                .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                .Select(r => r.Trim())
+                .FirstOrDefault(r => !string.IsNullOrWhiteSpace(r)) ?? string.Empty,
+            Locked = x.IsLocked
+        }).ToList();
 
         ViewData["Title"] = "Usuários e Servidores";
         ViewData["Subtitle"] = "Gerencie servidores, usuários, perfis, sigilo e credenciais";
-        return View(vm);
+        return View(users);
     }
 
     [HttpGet("Create")]

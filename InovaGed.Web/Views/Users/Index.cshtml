@@ -1,520 +1,103 @@
-﻿@model InovaGed.Web.Models.Users.UserListVM
+@model IEnumerable<InovaGed.Web.Models.Users.UserListVM>
 
 @{
-    ViewData["Title"] = "Usuários e Servidores";
-    var totalPages = Math.Max(1, Model.TotalPages);
-    var currentPage = Math.Min(Math.Max(1, Model.Page), totalPages);
-    var pageSize = Model.PageSize <= 0 ? 10 : Model.PageSize;
-    var startPage = Math.Max(1, currentPage - 2);
-    var endPage = Math.Min(totalPages, currentPage + 2);
+    ViewData["Title"] = "Usuários";
 }
+
+@Html.AntiForgeryToken()
 
 <div class="d-flex justify-content-between align-items-center mb-3">
-    <div>
-        <h4 class="mb-0">
-            <i class="bi bi-people me-2"></i>@ViewData["Title"]
-        </h4>
-        <div class="text-muted small">
-            Controle de servidores, usuários, perfis, sigilo, ICP-Brasil e status de acesso.
-        </div>
-    </div>
-
-    <a class="btn btn-primary" href="@Url.Action("Create", "Users")">
-        <i class="bi bi-person-plus me-1"></i> Novo Cadastro
-    </a>
+    <h4 class="mb-0"><i class="bi bi-people me-2"></i>@ViewData["Title"]</h4>
 </div>
 
-@if (TempData["Success"] is string ok && !string.IsNullOrWhiteSpace(ok))
-{
-    <div class="alert alert-success">@ok</div>
-}
-
-@if (TempData["Error"] is string erro && !string.IsNullOrWhiteSpace(erro))
-{
-    <div class="alert alert-danger">@erro</div>
-}
-
-<div class="card shadow-sm mb-3">
-    <div class="card-body">
-        <form method="get" asp-action="Index" asp-controller="Users" class="row g-2">
-            <div class="col-md-5">
-                <input name="q"
-                       value="@Model.Q"
-                       class="form-control"
-                       placeholder="Pesquisar por nome, CPF, matrícula, e-mail, setor ou cargo" />
-            </div>
-
-            <div class="col-md-3">
-                <select name="active" class="form-select">
-                    <option value="">Todos</option>
-                    <option value="true" selected="@(Model.Active == true)">Ativos</option>
-                    <option value="false" selected="@(Model.Active == false)">Inativos</option>
-                </select>
-            </div>
-            <div class="col-md-2">
-                <select name="locked" class="form-select" aria-label="Filtrar por bloqueio">
-                    <option value="" selected="@(Model.Locked is null)">Todos status</option>
-                    <option value="false" selected="@(Model.Locked == false)">Não bloqueados</option>
-                    <option value="true" selected="@(Model.Locked == true)">Bloqueados</option>
-                </select>
-            </div>
-
-            <div class="col-md-2">
-                <select name="pageSize" class="form-select">
-                    <option value="10" selected="@(pageSize == 10)">10 por página</option>
-                    <option value="25" selected="@(pageSize == 25)">25 por página</option>
-                    <option value="50" selected="@(pageSize == 50)">50 por página</option>
-                    <option value="100" selected="@(pageSize == 100)">100 por página</option>
-                </select>
-            </div>
-
-            <div class="col-md-2 d-flex gap-2">
-                <input type="hidden" name="page" value="1" />
-                <button class="btn btn-outline-primary" type="submit">
-                    <i class="bi bi-search me-1"></i> Pesquisar
-                </button>
-
-                <a class="btn btn-outline-secondary" href="@Url.Action("Index", "Users")">
-                    Limpar
-                </a>
-            </div>
-        </form>
-    </div>
-</div>
-
-<div class="card shadow-sm">
-    <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0">
-            <thead class="table-light">
-                <tr>
-                    <th>Servidor / Usuário</th>
-                    <th>CPF / Matrícula</th>
-                    <th>Lotação</th>
-                    <th>Perfis</th>
-                    <th>Segurança</th>
-                    <th>Status</th>
-                    <th class="text-end">Ações</th>
-                </tr>
-            </thead>
-
-            <tbody>
-                @if (!Model.Items.Any())
-                {
-                    <tr>
-                        <td colspan="7" class="text-center text-muted py-4">
-                            Nenhum usuário encontrado.
-                        </td>
-                    </tr>
-                }
-                else
-                {
-                    foreach (var item in Model.Items)
-                    {
-                        <tr>
-                            <td>
-                                <div class="fw-semibold">@item.Name</div>
-                                <div class="small text-muted">@item.Email</div>
-
-                                @if (!string.IsNullOrWhiteSpace(item.Cargo) || !string.IsNullOrWhiteSpace(item.Funcao))
-                                {
-                                    <div class="small">
-                                        @item.Cargo
-
-                                        @if (!string.IsNullOrWhiteSpace(item.Funcao))
-                                        {
-                                            <span> / @item.Funcao</span>
-                                        }
-                                    </div>
-                                }
-                            </td>
-
-                            <td>
-                                <div>@item.Cpf</div>
-                                <div class="small text-muted">@item.Matricula</div>
-                            </td>
-
-                            <td>
-                                <div>@item.Setor</div>
-                                <div class="small text-muted">@item.Lotacao</div>
-                            </td>
-
-                            <td>
-                                @if (item.Roles.Any())
-                                {
-                                    foreach (var role in item.Roles)
-                                    {
-                                        <span class="badge text-bg-secondary me-1">@role</span>
-                                    }
-                                }
-                                else
-                                {
-                                    <span class="text-muted small">Sem perfil</span>
-                                }
-                            </td>
-
-                            <td>
-                                @switch (item.SecurityLevel)
-                                {
-                                    case "CONFIDENTIAL":
-                                        <span class="badge text-bg-danger">Confidencial</span>
-                                        break;
-
-                                    case "RESTRICTED":
-                                        <span class="badge text-bg-warning">Restrito</span>
-                                        break;
-
-                                    default:
-                                        <span class="badge text-bg-success">Público</span>
-                                        break;
-                                }
-
-                                <div class="small mt-1">
-                                    @if (item.MfaEnabled)
-                                    {
-                                        <span class="badge text-bg-info me-1">MFA</span>
-                                    }
-
-                                    @if (item.CertificateRequired)
-                                    {
-                                        <span class="badge text-bg-primary me-1">Certificado</span>
-                                    }
-
-                                    @if (item.CanSignWithIcp)
-                                    {
-                                        <span class="badge text-bg-dark me-1">ICP</span>
-                                    }
-                                </div>
-                            </td>
-
-                            <td>
-                                @if (item.IsActive)
-                                {
-                                    <span class="badge text-bg-success">Ativo</span>
-                                }
-                                else
-                                {
-                                    <span class="badge text-bg-secondary">Inativo</span>
-                                }
-
-                                @if (item.IsLocked)
-                                {
-                                    <span class="badge text-bg-danger">Bloqueado</span>
-                                }
-
-                                @if (item.MustChangePassword)
-                                {
-                                    <div class="small text-warning">Troca de senha pendente</div>
-                                }
-
-                                @if (item.LastLoginAt.HasValue)
-                                {
-                                    <div class="small text-muted">
-                                        Último login: @item.LastLoginAt.Value.ToString("dd/MM/yyyy HH:mm")
-                                    </div>
-                                }
-                            </td>
-
-                            <td class="text-end">
-                                <div class="btn-group">
-                                    <button type="button"
-                                            class="btn btn-sm btn-outline-secondary dropdown-toggle"
-                                            data-bs-toggle="dropdown"
-                                            aria-expanded="false">
-                                        Ações
-                                    </button>
-
-                                    <ul class="dropdown-menu dropdown-menu-end">
-                                        <li>
-                                            <a class="dropdown-item"
-                                               asp-action="Edit"
-                                               asp-controller="Users"
-                                               asp-route-id="@item.Id">
-                                                <i class="bi bi-pencil-square me-1"></i>
-                                                Editar cadastro
-                                            </a>
-                                        </li>
-
-                                        <li>
-                                            <button type="button"
-                                                    class="dropdown-item"
-                                                    data-bs-toggle="modal"
-                                                    data-bs-target="#resetPasswordModal"
-                                                    data-user-id="@item.Id"
-                                                    data-user-name="@item.Name">
-                                                <i class="bi bi-key me-1"></i>
-                                                Redefinir senha
-                                            </button>
-                                        </li>
-                                        @if (item.IsLocked)
-                                        {
-                                            <li>
-                                                <button type="button"
-                                                        class="dropdown-item text-danger js-open-unlock"
-                                                        data-user-id="@item.Id"
-                                                        data-user-name="@item.Name"
-                                                        aria-label="Desbloquear usuário @item.Name">
-                                                    <i class="bi bi-unlock me-1"></i>
-                                                    Desbloquear
-                                                </button>
-                                            </li>
-                                        }
-
-                                        <li><hr class="dropdown-divider" /></li>
-
-                                        <li>
-                                            <form method="post" asp-action="SetActive" asp-controller="Users">
-                                                @Html.AntiForgeryToken()
-
-                                                <input type="hidden" name="id" value="@item.Id" />
-                                                <input type="hidden" name="active" value="@(!item.IsActive)" />
-
-                                                <button class="dropdown-item" type="submit">
-                                                    @if (item.IsActive)
-                                                    {
-                                                        <span>
-                                                            <i class="bi bi-person-x me-1"></i>
-                                                            Inativar usuário
-                                                        </span>
-                                                    }
-                                                    else
-                                                    {
-                                                        <span>
-                                                            <i class="bi bi-person-check me-1"></i>
-                                                            Ativar usuário
-                                                        </span>
-                                                    }
-                                                </button>
-                                            </form>
-                                        </li>
-                                    </ul>
-                                </div>
-                            </td>
-                        </tr>
-                    }
-                }
-            </tbody>
-        </table>
-    </div>
-
-    <div class="card-footer">
-        <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-2">
-            <div class="text-muted small">
-                Total: @Model.Total registro(s) · Página @currentPage de @totalPages
-            </div>
-
-            @if (totalPages > 1)
+<table class="table table-striped align-middle">
+    <thead>
+        <tr>
+            <th>Usuário</th>
+            <th>E-mail</th>
+            <th>Perfil</th>
+            <th>Status</th>
+            <th class="text-end">Ações</th>
+        </tr>
+    </thead>
+    <tbody>
+        @if (!Model.Any())
+        {
+            <tr><td colspan="5" class="text-center text-muted">Nenhum usuário encontrado.</td></tr>
+        }
+        else
+        {
+            foreach (var user in Model)
             {
-                <nav aria-label="Paginação de usuários">
-                    <ul class="pagination pagination-sm mb-0">
-                        <li class="page-item @(currentPage <= 1 ? "disabled" : "")">
-                            <a class="page-link"
-                               asp-action="Index"
-                               asp-controller="Users"
-                               asp-route-q="@Model.Q"
-                               asp-route-active="@Model.Active"
-                               asp-route-page="1"
-                               asp-route-pageSize="@pageSize"
-                               asp-route-locked="@Model.Locked">Primeira</a>
-                        </li>
-
-                        <li class="page-item @(currentPage <= 1 ? "disabled" : "")">
-                            <a class="page-link"
-                               asp-action="Index"
-                               asp-controller="Users"
-                               asp-route-q="@Model.Q"
-                               asp-route-active="@Model.Active"
-                               asp-route-page="@(currentPage - 1)"
-                               asp-route-pageSize="@pageSize"
-                               asp-route-locked="@Model.Locked">Anterior</a>
-                        </li>
-
-                        @if (startPage > 1)
+                <tr>
+                    <td>@user.Username</td>
+                    <td>@user.Email</td>
+                    <td>@user.Role</td>
+                    <td>
+                        @if (user.Locked)
                         {
-                            <li class="page-item disabled"><span class="page-link">...</span></li>
+                            <span class="badge text-bg-danger">Bloqueado</span>
                         }
-
-                        @for (var p = startPage; p <= endPage; p++)
+                        else
                         {
-                            <li class="page-item @(p == currentPage ? "active" : "")">
-                                <a class="page-link"
-                                   asp-action="Index"
-                                   asp-controller="Users"
-                                   asp-route-q="@Model.Q"
-                                   asp-route-active="@Model.Active"
-                                   asp-route-page="@p"
-                                   asp-route-pageSize="@pageSize"
-                                   asp-route-locked="@Model.Locked">@p</a>
-                            </li>
+                            <span class="badge text-bg-success">Ativo</span>
                         }
-
-                        @if (endPage < totalPages)
+                    </td>
+                    <td class="text-end">
+                        @if (user.Locked)
                         {
-                            <li class="page-item disabled"><span class="page-link">...</span></li>
+                            <button type="button"
+                                    class="btn btn-sm btn-outline-danger js-unlock-user"
+                                    data-user-id="@user.Id"
+                                    data-user-name="@user.Username">
+                                <i class="bi bi-unlock me-1"></i>Desbloquear
+                            </button>
                         }
-
-                        <li class="page-item @(currentPage >= totalPages ? "disabled" : "")">
-                            <a class="page-link"
-                               asp-action="Index"
-                               asp-controller="Users"
-                               asp-route-q="@Model.Q"
-                               asp-route-active="@Model.Active"
-                               asp-route-page="@(currentPage + 1)"
-                               asp-route-pageSize="@pageSize"
-                               asp-route-locked="@Model.Locked">Próxima</a>
-                        </li>
-
-                        <li class="page-item @(currentPage >= totalPages ? "disabled" : "")">
-                            <a class="page-link"
-                               asp-action="Index"
-                               asp-controller="Users"
-                               asp-route-q="@Model.Q"
-                               asp-route-active="@Model.Active"
-                               asp-route-page="@totalPages"
-                               asp-route-pageSize="@pageSize"
-                               asp-route-locked="@Model.Locked">Última</a>
-                        </li>
-                    </ul>
-                </nav>
+                    </td>
+                </tr>
             }
-        </div>
-    </div>
-</div>
+        }
+    </tbody>
+</table>
 
-<div class="modal fade" id="resetPasswordModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog">
-        <form method="post" asp-action="ResetPassword" asp-controller="Users" class="modal-content">
-            @Html.AntiForgeryToken()
-
-            <div class="modal-header">
-                <h5 class="modal-title">
-                    <i class="bi bi-key me-1"></i>
-                    Redefinir senha
-                </h5>
-
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
-            </div>
-
-            <div class="modal-body">
-                <input type="hidden" name="id" id="resetUserId" />
-
-                <div class="alert alert-warning">
-                    A senha será redefinida administrativamente e o evento será registrado em auditoria.
-                </div>
-
-                <div class="mb-3">
-                    <label class="form-label">Usuário</label>
-                    <input id="resetUserName" class="form-control" disabled />
-                </div>
-
-                <div class="mb-3">
-                    <label class="form-label">Nova senha</label>
-                    <input name="newPassword" type="password" class="form-control" minlength="8" required />
-                </div>
-
-                <div class="mb-3">
-                    <label class="form-label">Confirmar nova senha</label>
-                    <input name="confirmPassword" type="password" class="form-control" minlength="8" required />
-                </div>
-
-                <div class="form-check">
-                    <input name="mustChangePassword" value="true" class="form-check-input" type="checkbox" checked />
-
-                    <label class="form-check-label">
-                        Obrigar troca de senha no próximo acesso
-                    </label>
-                </div>
-            </div>
-
-            <div class="modal-footer">
-                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
-                    Cancelar
-                </button>
-
-                <button type="submit" class="btn btn-primary">
-                    <i class="bi bi-check2-circle me-1"></i>
-                    Redefinir senha
-                </button>
-            </div>
-        </form>
-    </div>
-</div>
-
-<div class="modal fade" id="unlockUserModal" tabindex="-1" aria-labelledby="unlockUserModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="unlockUserModalLabel">Confirmar desbloqueio</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
-            </div>
-            <div class="modal-body">
-                Deseja desbloquear o usuário <strong id="unlockUserName"></strong>?
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
-                <button type="button" class="btn btn-danger" id="confirmUnlockBtn">Desbloquear</button>
-            </div>
-        </div>
-    </div>
-</div>
 <div id="unlockToast" class="position-fixed bottom-0 end-0 p-3" style="z-index:1080"></div>
 
 @section Scripts {
     <script>
-        const resetModal = document.getElementById('resetPasswordModal');
-        let unlockUserId = null;
-        const unlockModalEl = document.getElementById('unlockUserModal');
-        const unlockModal = unlockModalEl ? new bootstrap.Modal(unlockModalEl) : null;
-        const unlockUserName = document.getElementById('unlockUserName');
+        const antiForgeryToken = document.querySelector('input[name="__RequestVerificationToken"]')?.value;
         const showToast = (message, ok) => {
             const host = document.getElementById('unlockToast');
             if (!host) return;
-            host.innerHTML = `<div class="toast align-items-center text-bg-${ok ? 'success' : 'danger'} border-0" role="alert" aria-live="assertive"><div class="d-flex"><div class="toast-body">${message}</div><button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div></div>`;
+            host.innerHTML = `<div class="toast align-items-center text-bg-${ok ? 'success' : 'danger'} border-0" role="alert"><div class="d-flex"><div class="toast-body">${message}</div><button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div></div>`;
             const toastEl = host.querySelector('.toast');
             if (toastEl) new bootstrap.Toast(toastEl).show();
         };
 
-        document.querySelectorAll('.js-open-unlock').forEach(btn => {
-            btn.addEventListener('click', () => {
-                unlockUserId = btn.getAttribute('data-user-id');
-                if (unlockUserName) unlockUserName.textContent = btn.getAttribute('data-user-name') ?? '';
-                unlockModal?.show();
-            });
-        });
+        document.querySelectorAll('.js-unlock-user').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const userId = btn.getAttribute('data-user-id');
+                const userName = btn.getAttribute('data-user-name') ?? 'usuário';
+                if (!userId) return;
 
-        document.getElementById('confirmUnlockBtn')?.addEventListener('click', async () => {
-            if (!unlockUserId) return;
-            const response = await fetch(`/Users/Unlock/${unlockUserId}`, { method: 'POST' });
-            if (!response.ok) {
-                showToast('Erro ao desbloquear usuário.', false);
-                return;
-            }
+                const response = await fetch(`/Users/Unlock/${userId}`, {
+                    method: 'POST',
+                    headers: {
+                        'RequestVerificationToken': antiForgeryToken ?? ''
+                    }
+                });
 
-            showToast('Usuário desbloqueado com sucesso.', true);
-            const btn = document.querySelector(`.js-open-unlock[data-user-id="${unlockUserId}"]`);
-            const row = btn?.closest('tr');
-            btn?.closest('li')?.remove();
-
-            const statusCell = row?.querySelector('td:nth-child(6)');
-            const lockedBadge = statusCell?.querySelector('.badge.text-bg-danger');
-            lockedBadge?.remove();
-
-            unlockModal?.hide();
-        });
-
-        if (resetModal) {
-            resetModal.addEventListener('show.bs.modal', event => {
-                const button = event.relatedTarget;
-
-                if (!button) {
+                if (!response.ok) {
+                    showToast(`Erro ao desbloquear ${userName}.`, false);
                     return;
                 }
 
-                const userId = button.getAttribute('data-user-id');
-                const userName = button.getAttribute('data-user-name');
+                showToast(`Usuário ${userName} desbloqueado com sucesso.`, true);
 
-                document.getElementById('resetUserId').value = userId;
-                document.getElementById('resetUserName').value = userName;
+                const row = btn.closest('tr');
+                const statusCell = row?.querySelector('td:nth-child(4)');
+                if (statusCell) statusCell.innerHTML = '<span class="badge text-bg-success">Ativo</span>';
+                btn.remove();
             });
-        }
+        });
     </script>
 }
