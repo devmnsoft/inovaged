@@ -77,21 +77,44 @@ public sealed class UsersController : Controller
         var tenantId = _currentUser.TenantId;
         var res = await _queries.ListUsersAsync(tenantId, q, active, locked, page, pageSize, ct);
 
-        var users = res.Items.Select(x => new UserListVM
+        var vm = new UserListVM
         {
-            Id = x.Id,
-            Username = x.Name,
-            Email = x.Email,
-            Role = (x.RolesCsv ?? string.Empty)
-                .Split(',', StringSplitOptions.RemoveEmptyEntries)
-                .Select(r => r.Trim())
-                .FirstOrDefault(r => !string.IsNullOrWhiteSpace(r)) ?? string.Empty,
-            Locked = x.IsLocked
-        }).ToList();
+            Q = q,
+            Active = active,
+            Locked = locked,
+            Page = page,
+            PageSize = pageSize,
+            Total = res.Total,
+            Items = res.Items.Select(x => new UserListVM.Row
+            {
+                Id = x.Id,
+                Name = x.Name,
+                Email = x.Email,
+                Cpf = x.Cpf,
+                Matricula = x.Matricula,
+                Cargo = x.Cargo,
+                Funcao = x.Funcao,
+                Setor = x.Setor,
+                Lotacao = x.Lotacao,
+                Roles = (x.RolesCsv ?? string.Empty)
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(r => r.Trim())
+                    .Where(r => !string.IsNullOrWhiteSpace(r))
+                    .ToList(),
+                SecurityLevel = x.SecurityLevel,
+                IsActive = x.IsActive,
+                IsLocked = x.IsLocked,
+                MustChangePassword = x.MustChangePassword,
+                MfaEnabled = x.MfaEnabled,
+                CertificateRequired = x.CertificateRequired,
+                CanSignWithIcp = x.CanSignWithIcp,
+                LastLoginAt = x.LastLoginAt
+            }).ToList()
+        };
 
         ViewData["Title"] = "Usuários e Servidores";
         ViewData["Subtitle"] = "Gerencie servidores, usuários, perfis, sigilo e credenciais";
-        return View(users);
+        return View(vm);
     }
 
     [HttpGet("Create")]
