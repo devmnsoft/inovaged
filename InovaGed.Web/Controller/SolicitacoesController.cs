@@ -70,7 +70,12 @@ public sealed class SolicitacoesController : Controller
     {
         try
         {
-            var userId = _user.UserId != Guid.Empty ? _user.UserId : Guid.NewGuid(); // fallback seguro
+            if (_user.UserId == Guid.Empty)
+            {
+                TempData["Err"] = "Usuário inválido para criar solicitação.";
+                return RedirectToAction(nameof(Index));
+            }
+            var userId = _user.UserId;
             var usuarioNome = User.Identity?.Name;
 
             var res = await _service.CriarAsync(_user.TenantId, userId, usuarioNome, GetSetorId(), vm, ct);
@@ -95,7 +100,12 @@ public sealed class SolicitacoesController : Controller
     {
         try
         {
-            var adminId = _user.UserId != Guid.Empty ? _user.UserId : Guid.NewGuid(); // fallback seguro
+            if (_user.UserId == Guid.Empty)
+            {
+                TempData["Err"] = "Administrador inválido.";
+                return RedirectToAction(nameof(Index));
+            }
+            var adminId = _user.UserId;
             var adminNome = User.Identity?.Name;
 
             var res = await _service.AtualizarStatusAsync(_user.TenantId, id, adminId, adminNome, vm, ct);
@@ -121,7 +131,12 @@ public sealed class SolicitacoesController : Controller
     {
         try
         {
-            var adminId = _user.UserId != Guid.Empty ? _user.UserId : Guid.NewGuid();
+            if (_user.UserId == Guid.Empty)
+            {
+                TempData["Err"] = "Administrador inválido.";
+                return RedirectToAction(nameof(Index));
+            }
+            var adminId = _user.UserId;
             var adminNome = User.Identity?.Name;
             var limite = DateTime.UtcNow.AddDays(-Math.Max(1, dias));
             var res = await _service.ExcluirAntigasAsync(_user.TenantId, adminId, adminNome, limite, ct);

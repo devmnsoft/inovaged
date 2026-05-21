@@ -16,12 +16,14 @@ public sealed class AccountController : Controller
 {
     private readonly IAuthRepository _repo;
     private readonly IAuditWriter _audit;
+    private readonly ILogger<AccountController> _logger;
     private static readonly PasswordHasher<ApplicationUser> _hasher = new();
 
-    public AccountController(IAuthRepository repo, IAuditWriter audit)
+    public AccountController(IAuthRepository repo, IAuditWriter audit, ILogger<AccountController> logger)
     {
         _repo = repo;
         _audit = audit;
+        _logger = logger;
     }
 
     [HttpGet]
@@ -34,8 +36,10 @@ public sealed class AccountController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Login(LoginVM vm, CancellationToken ct)
     {
-        if (!ModelState.IsValid)
-            return View(vm);
+        try
+        {
+            if (!ModelState.IsValid)
+                return View(vm);
 
         var tenantCode = (vm.TenantSlug ?? string.Empty).Trim().ToLowerInvariant();
         var loginOrCpf = (vm.Email ?? string.Empty).Trim();
@@ -46,13 +50,17 @@ public sealed class AccountController : Controller
             return View(vm);
         }
 
-        var user = await _repo.FindUserAsync(tenantCode, loginOrCpf, ct);
+            var user = await _repo.FindUserAsync(tenantCode, loginOrCpf, ct);
 
-        if (user is null)
-        {
-            ModelState.AddModelError("", "Credenciais inválidas.");
-            return View(vm);
-        }
+            if (user is null)
+            {
+                await _audit.WriteAsync(
+                    Guid.Empty, null, "LOGIN_FAILURE", "auth", null, "Credenciais inválidas: usuário não encontrado.",
+                    HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers.UserAgent.ToString(),
+                    new { tenantCode, login = loginOrCpf }, ct);
+                ModelState.AddModelError("", "Credenciais inválidas.");
+                return View(vm);
+            }
 
         var ip = HttpContext.Connection.RemoteIpAddress?.ToString();
         var userAgent = Request.Headers.UserAgent.ToString();
@@ -174,7 +182,14 @@ public sealed class AccountController : Controller
             },
             ct: ct);
 
-        return redirectResult.Result;
+            return redirectResult.Result;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro de autenticação no tenant {TenantCode}.", vm.TenantSlug);
+            ModelState.AddModelError("", "Erro ao processar login.");
+            return View(vm);
+        }
     }
 
     private (IActionResult Result, string TargetDescription, string Reason) ResolvePostLoginRedirect(string? returnUrl, string? username, IReadOnlyCollection<string> normalizedRoles)
