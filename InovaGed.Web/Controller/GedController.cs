@@ -16,6 +16,7 @@ using InovaGed.Domain.Ged;
 using InovaGed.Domain.Primitives;
 using InovaGed.Web.Models.Ged;
 using InovaGed.Web.ocr;
+using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Net.Http.Headers;
@@ -1624,7 +1625,8 @@ VALUES
         try
         {
             _logger.LogInformation("Chamando _documentCommands.DeleteAsync...");
-            result = await _documentCommands.DeleteAsync(tenantId, id, userId, ct);
+            var forceStopOcr = User.IsInRole(AppRoles.Admin);
+            result = await _documentCommands.DeleteAsync(tenantId, id, userId, forceStopOcr, ct);
             _logger.LogInformation("Retorno DeleteAsync | Success={Success} Error={Error}", result.Success, result.Error?.Message);
         }
         catch (Exception ex)

@@ -112,6 +112,30 @@ public sealed class SolicitacoesController : Controller
         }
     }
 
+
+
+    [Authorize(Roles = AppRoles.Admin)]
+    [HttpPost("ExcluirAntigas")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ExcluirAntigas(int dias = 90, CancellationToken ct = default)
+    {
+        try
+        {
+            var adminId = _user.UserId != Guid.Empty ? _user.UserId : Guid.NewGuid();
+            var adminNome = User.Identity?.Name;
+            var limite = DateTime.UtcNow.AddDays(-Math.Max(1, dias));
+            var res = await _service.ExcluirAntigasAsync(_user.TenantId, adminId, adminNome, limite, ct);
+            TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Solicitações antigas removidas." : res.ErrorMessage;
+            return RedirectToAction(nameof(Index));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro ao excluir solicitações antigas. Tenant {TenantId}", _user.TenantId);
+            TempData["Err"] = "Erro ao excluir solicitações antigas.";
+            return RedirectToAction(nameof(Index));
+        }
+    }
+
     private Guid? GetSetorId()
     {
         try
