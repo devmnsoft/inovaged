@@ -24,23 +24,64 @@ public sealed class HybridDocumentTypeSuggester
     {
         ct.ThrowIfCancellationRequested();
 
-        var suggestion = SuggestHybrid(ocrText, fileName, folderName, title, types);
+        var result = SuggestTopAsync(ocrText, fileName, folderName, title, types);
 
-        // Resolve nome do tipo para retorno da API.
-        var typeName = suggestion.SuggestedTypeId is Guid suggestedTypeId
+        return Task.FromResult<IReadOnlyList<DocumentTypeSuggestionDto>>(result);
+    }
+
+    public IReadOnlyList<DocumentTypeSuggestionDto> SuggestTopAsync(
+        string? ocrText,
+        string? fileName,
+        string? folderName,
+        string? title,
+        IReadOnlyList<(Guid id, string name)> types)
+    {
+        if (types.Count == 0)
+            return Array.Empty<DocumentTypeSuggestionDto>();
+
+        var tokens = string.Join(' ', new[] { ocrText, fileName, folderName, title }
+            .Where(x => !string.IsNullOrWhiteSpace(x))).ToLowerInvariant();
+
+        var ranked = types
+            .Select(t =>
+            {
+                var name = t.name.ToLowerInvariant();
+                var score = 0m;
+
+                foreach (var chunk in name.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                {
+                    if (tokens.Contains(chunk, StringComparison.OrdinalIgnoreCase))
+                        score += 0.18m;
+                }
+
+                if (!string.IsNullOrWhiteSpace(fileName) && fileName.Contains(name, StringComparison.OrdinalIgnoreCase))
+                    score += 0.20m;
+
+                if (!string.IsNullOrWhiteSpace(title) && title.Contains(name, StringComparison.OrdinalIgnoreCase))
+                    score += 0.20m;
+
+                if (!string.IsNullOrWhiteSpace(folderName) && folderName.Contains(name, StringComparison.OrdinalIgnoreCase))
+                    score += 0.12m;
+
+                return new DocumentTypeSuggestionDto(t.id, t.name, Math.Min(score, 0.95m), $"Sugestão híbrida baseada em OCR/nome/título/pasta para '{t.name}'.");
+            })
+            .Where(x => (x.Confidence ?? 0m) > 0m)
+            .OrderByDescending(x => x.Confidence)
+            .Take(3)
+            .ToList();
+
+        if (ranked.Count > 0)
+            return ranked;
+
+        var fallback = SuggestHybrid(ocrText, fileName, folderName, title, types);
+        var typeName = fallback.SuggestedTypeId is Guid suggestedTypeId
             ? types.FirstOrDefault(t => t.id == suggestedTypeId).name
             : null;
 
-        IReadOnlyList<DocumentTypeSuggestionDto> result =
-        [
-            new DocumentTypeSuggestionDto(
-                TypeId: suggestion.SuggestedTypeId,
-                TypeName: string.IsNullOrWhiteSpace(typeName) ? null : typeName,
-                Confidence: suggestion.Confidence,
-                Summary: suggestion.Summary)
-        ];
-
-        return Task.FromResult(result);
+        return new[]
+        {
+            new DocumentTypeSuggestionDto(fallback.SuggestedTypeId, typeName, fallback.Confidence, fallback.Summary)
+        };
     }
 
     public SimpleTextDocumentTypeSuggester.Suggestion SuggestHybrid(
