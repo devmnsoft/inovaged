@@ -3,7 +3,7 @@
 @model IReadOnlyList<SolicitacaoRowDto>
 @{
     ViewData["Title"] = "Solicitações";
-    var isAdmin = User.IsInRole(AppRoles.Admin) || User.IsInRole(AppRoles.AdministradorOphir);
+    var isAdmin = User.IsInRole(AppRoles.Admin);
     var pendentes = (int?)ViewBag.PendentesCount ?? 0;
 }
 <div class="d-flex justify-content-between align-items-center mb-3">
@@ -16,7 +16,11 @@
 <form method="post" action="/Solicitacoes/Criar" class="card card-body mb-3">
     @Html.AntiForgeryToken()
     <div class="row g-2">
-        <div class="col-md-4"><input class="form-control" name="ArquivoId" placeholder="ArquivoId (autocomplete integrado no módulo de empréstimos)" /></div>
+        <div class="col-md-4 position-relative">
+            <input id="arquivoBusca" class="form-control" placeholder="Buscar arquivo digitalizado..." autocomplete="off" />
+            <input id="arquivoId" type="hidden" name="ArquivoId" />
+            <div id="arquivoSugestoes" class="list-group position-absolute w-100 shadow-sm" style="z-index:10;"></div>
+        </div>
         <div class="col-md-6"><textarea class="form-control" name="Descricao" rows="2" placeholder="Descrição detalhada"></textarea></div>
         <div class="col-md-2 d-grid"><button class="btn btn-primary">Solicitar</button></div>
     </div>
@@ -36,3 +40,47 @@ else
 </td></tr>
 }
 </tbody></table>
+
+<script>
+(() => {
+    const input = document.getElementById('arquivoBusca');
+    const hidden = document.getElementById('arquivoId');
+    const box = document.getElementById('arquivoSugestoes');
+    if (!input || !hidden || !box) return;
+    let timer = null;
+    input.addEventListener('input', () => {
+        hidden.value = '';
+        clearTimeout(timer);
+        const q = input.value.trim();
+        if (q.length < 2) { box.innerHTML = ''; return; }
+        timer = setTimeout(async () => {
+            try {
+                const res = await fetch('/Loans/DocSearch?q=' + encodeURIComponent(q));
+                const data = await res.json();
+                box.innerHTML = (data || []).slice(0, 8).map(item =>
+                    `<button type="button" class="list-group-item list-group-item-action" data-id="${item.id}" data-label="${item.code} - ${item.title}">${item.code} - ${item.title}</button>`
+                ).join('');
+            } catch {
+                box.innerHTML = '';
+            }
+        }, 250);
+    });
+    box.addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-id]');
+        if (!btn) return;
+        hidden.value = btn.getAttribute('data-id') || '';
+        input.value = btn.getAttribute('data-label') || '';
+        box.innerHTML = '';
+    });
+    document.addEventListener('click', (e) => { if (!box.contains(e.target) && e.target !== input) box.innerHTML = ''; });
+    const pendentes = @pendentes;
+    if (@(isAdmin ? "true" : "false") && pendentes > 0 && window.bootstrap) {
+        const host = document.createElement('div');
+        host.className = 'toast-container position-fixed top-0 end-0 p-3';
+        host.innerHTML = `<div class="toast text-bg-warning border-0" role="alert"><div class="d-flex"><div class="toast-body"><i class="bi bi-bell-fill me-1"></i>${pendentes} nova(s) solicitação(ões) pendente(s).</div><button type="button" class="btn-close me-2 m-auto" data-bs-dismiss="toast"></button></div></div>`;
+        document.body.appendChild(host);
+        const toastEl = host.querySelector('.toast');
+        if (toastEl) new bootstrap.Toast(toastEl, { delay: 5000 }).show();
+    }
+})();
+</script>
