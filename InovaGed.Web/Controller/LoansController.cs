@@ -3,13 +3,15 @@ using Dapper;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Ged.Loans;
 using InovaGed.Application.Identity;
+using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize(Roles = "AdministradorOphir")]
+// ADMIN sempre com acesso total; perfis Ophir mantêm acesso ao módulo hospitalar/empréstimos.
+[Authorize(Roles = AppRoles.Admin + "," + AppRoles.AdministradorOphir + "," + AppRoles.ArquivistaOphir)]
 [Route("[controller]")]
 public sealed class LoansController : Controller
 {
@@ -219,9 +221,18 @@ public sealed class LoansController : Controller
     [HttpGet("Profiles")]
     public async Task<IActionResult> Profiles(CancellationToken ct)
     {
-        await using var conn = await _db.OpenAsync(ct);
-        var rows = await conn.QueryAsync("select p.id, p.profile_name, coalesce(r.name,'') as role_name from ged.loan_approval_profile p left join aspnetroles r on r.id=p.role_id where p.tenant_id=@TenantId and p.reg_status='A' order by p.profile_name", new { TenantId = _user.TenantId });
-        return View(rows);
+        try
+        {
+            await using var conn = await _db.OpenAsync(ct);
+            var rows = await conn.QueryAsync("select p.id, p.profile_name, coalesce(r.name,'') as role_name from ged.loan_approval_profile p left join aspnetroles r on r.id=p.role_id where p.tenant_id=@TenantId and p.reg_status='A' order by p.profile_name", new { TenantId = _user.TenantId });
+            return View(rows);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Loans.Profiles failed. TenantId={TenantId} UserId={UserId}", _user.TenantId, _user.UserId);
+            TempData["Err"] = "Erro ao carregar perfis de aprovação.";
+            return View(Array.Empty<object>());
+        }
     }
 
     // =========================================================

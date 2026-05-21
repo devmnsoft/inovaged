@@ -26,7 +26,8 @@ public sealed class SolicitacoesController : Controller
     {
         try
         {
-            var isAdmin = User.IsInRole(AppRoles.Admin) || User.IsInRole(AppRoles.AdministradorOphir);
+            // ADMIN possui visão global das solicitações.
+            var isAdmin = User.IsInRole(AppRoles.Admin);
             var setorId = GetSetorId();
             var userId = _user.UserId != Guid.Empty ? _user.UserId : (Guid?)null;
 
@@ -48,7 +49,8 @@ public sealed class SolicitacoesController : Controller
     {
         try
         {
-            var isAdmin = User.IsInRole(AppRoles.Admin) || User.IsInRole(AppRoles.AdministradorOphir);
+            // ADMIN possui visão global do histórico.
+            var isAdmin = User.IsInRole(AppRoles.Admin);
             var userId = _user.UserId != Guid.Empty ? _user.UserId : (Guid?)null;
             var rows = await _service.HistoricoAsync(_user.TenantId, userId, GetSetorId(), isAdmin, ct);
 
@@ -85,7 +87,8 @@ public sealed class SolicitacoesController : Controller
         }
     }
 
-    [Authorize(Roles = "ADMIN,ADMINISTRADOROPHIR")]
+    // Feedback administrativo exclusivo para ADMIN global.
+    [Authorize(Roles = AppRoles.Admin)]
     [HttpPost("{id:guid}/Status")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> AtualizarStatus(Guid id, SolicitacaoUpdateStatusVM vm, CancellationToken ct)
