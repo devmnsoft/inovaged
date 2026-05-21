@@ -1644,6 +1644,38 @@ VALUES
         return RedirectToAction(nameof(Index), new { folderId });
     }
 
+    [Authorize(Roles = AppRoles.Admin)]
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> StopOcrQueue(Guid? documentId, CancellationToken ct)
+    {
+        try
+        {
+            var tenantId = _currentUser.TenantId;
+            await using var conn = await _db.OpenAsync(ct);
+            var sql = @"
+update ged.ocr_job
+set status = 'ERROR'::ged.ocr_status_enum,
+    finished_at = now(),
+    lease_expires_at = null,
+    error_message = 'Fila interrompida por ADMIN'
+where tenant_id = @tenantId
+  and status in ('PENDING'::ged.ocr_status_enum, 'PROCESSING'::ged.ocr_status_enum)
+  and (@documentId is null or document_version_id in (
+      select id from ged.document_version where tenant_id=@tenantId and document_id=@documentId
+  ));";
+            var affected = await conn.ExecuteAsync(new CommandDefinition(sql, new { tenantId, documentId }, cancellationToken: ct));
+            TempData["ok"] = affected > 0 ? $"OCR interrompido para {affected} job(s)." : "Nenhum job OCR ativo encontrado.";
+            return RedirectToAction(nameof(Processing));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro ao parar fila OCR. Tenant={TenantId} DocumentId={DocumentId}", _currentUser.TenantId, documentId);
+            TempData["erro"] = "Erro ao parar fila OCR.";
+            return RedirectToAction(nameof(Processing));
+        }
+    }
+
   
     // =========================
     // Content-Disposition seguro
