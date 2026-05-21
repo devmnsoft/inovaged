@@ -152,10 +152,14 @@ public sealed class OcrWorker : BackgroundService
 
                 try
                 {
-                    var result = await ocr.OcrizePdfAsync(
-                        pdfStoragePath: pdfPath,
-                        invalidateDigitalSignatures: job.InvalidateDigitalSignatures,
-                        ct: stoppingToken);
+                    LogOcrInput(job, sourceVersion, pdfPath);
+                    var result = await ExecuteWithRetryAsync(
+                        async retryCt => await ocr.OcrizePdfAsync(
+                            pdfStoragePath: pdfPath,
+                            invalidateDigitalSignatures: job.InvalidateDigitalSignatures,
+                            ct: retryCt),
+                        job,
+                        stoppingToken);
 
                     if (result?.OcrPdfBytes is null || result.OcrPdfBytes.Length == 0)
                     {
@@ -374,6 +378,37 @@ public sealed class OcrWorker : BackgroundService
         _logger.LogInformation("OCR Worker finalizado.");
     }
 
+
+    private async Task<T> ExecuteWithRetryAsync<T>(Func<CancellationToken, Task<T>> action, OcrJobDto job, CancellationToken ct)
+    {
+        var maxAttempts = 4;
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                return await action(ct);
+            }
+            catch (Exception ex) when (attempt < maxAttempts)
+            {
+                var delayMs = (int)Math.Min(10000, 500 * Math.Pow(2, attempt - 1));
+                _logger.LogWarning(ex,
+                    "Falha OCR temporária. Tenant={TenantId} VersionId={VersionId} JobId={JobId} Tentativa={Attempt}/{MaxAttempts} BackoffMs={BackoffMs}",
+                    job.TenantId, job.DocumentVersionId, job.Id, attempt, maxAttempts, delayMs);
+                await Task.Delay(delayMs, ct);
+            }
+        }
+
+        throw new InvalidOperationException("Falha de OCR após múltiplas tentativas.");
+    }
+
+    private void LogOcrInput(OcrJobDto job, InovaGed.Domain.Ged.GedDTO.DocumentVersionDownloadDto sourceVersion, string pdfPath)
+    {
+        var ext = Path.GetExtension(sourceVersion.FileName)?.ToLowerInvariant();
+        var kind = ext is ".pdf" ? "PDF" : "IMAGE_OR_OTHER";
+        _logger.LogInformation(
+            "OCR entrada. Tenant={TenantId} JobId={JobId} VersionId={VersionId} DocumentId={DocumentId} FileName={FileName} SizeBytes={SizeBytes} Type={Type} Storage={StoragePath} PdfPath={PdfPath}",
+            job.TenantId, job.Id, sourceVersion.VersionId, sourceVersion.DocumentId, sourceVersion.FileName, sourceVersion.SizeBytes, kind, sourceVersion.StoragePath, pdfPath);
+    }
     private static async Task RunClassificationAsync(
         IServiceScope scope,
         OcrJobDto job,
