@@ -1,4 +1,5 @@
-﻿namespace InovaGed.Domain.Primitives
+﻿
+namespace InovaGed.Domain.Primitives
 {
     public record Error(string Code, string Message);
 
@@ -27,6 +28,8 @@
         {
             return new Result(false, new Error(code, message));
         }
+
+       
     }
 
     public class Result<T> : Result
