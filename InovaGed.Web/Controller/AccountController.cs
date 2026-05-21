@@ -58,6 +58,7 @@ public sealed class AccountController : Controller
                     Guid.Empty, null, "LOGIN_FAILURE", "auth", null, "Credenciais inválidas: usuário não encontrado.",
                     HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers.UserAgent.ToString(),
                     new { tenantCode, login = loginOrCpf }, ct);
+                _logger.LogWarning("Falha de login: usuário não encontrado. Tenant={TenantCode} Login={Login}", tenantCode, loginOrCpf);
                 ModelState.AddModelError("", "Credenciais inválidas.");
                 return View(vm);
             }
@@ -69,6 +70,7 @@ public sealed class AccountController : Controller
         if (!user.IsActive)
         {
             await _repo.RegisterLoginFailureAsync(user.TenantId, user.UserId, "Usuário inativo.", ip, userAgent, correlationId, ct);
+            _logger.LogWarning("Falha de login: usuário inativo. Tenant={TenantId} UserId={UserId}", user.TenantId, user.UserId);
             ModelState.AddModelError("", "Credenciais inválidas.");
             return View(vm);
         }
@@ -162,6 +164,9 @@ public sealed class AccountController : Controller
         // - ADMIN mantém acesso completo e segue fluxo padrão do sistema.
         // - Demais usuários continuam no fluxo padrão (ReturnUrl local ou Home).
         var redirectResult = ResolvePostLoginRedirect(vm.ReturnUrl, user.UserName, normalizedRoles);
+
+        _logger.LogInformation("Login concluído. Tenant={TenantId} UserId={UserId} Login={Login} Redirect={Redirect} Roles={Roles}",
+            user.TenantId, user.UserId, loginOrCpf, redirectResult.TargetDescription, string.Join(",", normalizedRoles));
 
         await _audit.WriteAsync(
             tenantId: user.TenantId,
