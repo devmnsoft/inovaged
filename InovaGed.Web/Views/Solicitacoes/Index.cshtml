@@ -1,0 +1,38 @@
+@using InovaGed.Application.Ged.Loans
+@using InovaGed.Web.Security
+@model IReadOnlyList<SolicitacaoRowDto>
+@{
+    ViewData["Title"] = "Solicitações";
+    var isAdmin = User.IsInRole(AppRoles.Admin) || User.IsInRole(AppRoles.AdministradorOphir);
+    var pendentes = (int?)ViewBag.PendentesCount ?? 0;
+}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h4>Solicitações @(isAdmin ? "(visão administrativa)" : "")</h4>
+    @if (isAdmin)
+    {
+        <span class="badge text-bg-danger"><i class="bi bi-bell-fill"></i> @pendentes pendentes</span>
+    }
+</div>
+<form method="post" action="/Solicitacoes/Criar" class="card card-body mb-3">
+    @Html.AntiForgeryToken()
+    <div class="row g-2">
+        <div class="col-md-4"><input class="form-control" name="ArquivoId" placeholder="ArquivoId (autocomplete integrado no módulo de empréstimos)" /></div>
+        <div class="col-md-6"><textarea class="form-control" name="Descricao" rows="2" placeholder="Descrição detalhada"></textarea></div>
+        <div class="col-md-2 d-grid"><button class="btn btn-primary">Solicitar</button></div>
+    </div>
+</form>
+<table class="table table-striped table-sm align-middle"><thead><tr><th>Data</th><th>Solicitante</th><th>Setor</th><th>Arquivo</th><th>Descrição</th><th>Status</th><th>Feedback</th></tr></thead><tbody>
+@foreach(var item in Model)
+{
+<tr><td>@item.DataSolicitacao.ToString("dd/MM/yyyy HH:mm")</td><td>@item.UsuarioNome</td><td>@item.SetorNome</td><td>@item.ArquivoCodigo - @item.ArquivoTitulo</td><td>@item.Descricao</td><td><span class="badge text-bg-secondary">@item.StatusLabel</span></td><td>
+@if (isAdmin)
+{
+<form method="post" action="/Solicitacoes/@item.Id/Status" class="d-flex gap-1">@Html.AntiForgeryToken()<input class="form-control form-control-sm" name="Comentario" placeholder="Comentário" /><button class="btn btn-success btn-sm" name="Status" value="DEFERIDO">Deferir</button><button class="btn btn-danger btn-sm" name="Status" value="INDEFERIDO">Indeferir</button><button class="btn btn-warning btn-sm" name="Status" value="AGUARDAR">Aguardar</button></form>
+}
+else
+{
+<small class="text-muted">@item.AdminNome</small>
+}
+</td></tr>
+}
+</tbody></table>

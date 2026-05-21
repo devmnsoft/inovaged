@@ -1,0 +1,8 @@
+@using InovaGed.Application.Ged.Loans
+@model IReadOnlyList<HistoricoSolicitacaoDto>
+@{ ViewData["Title"] = "Histórico de Pedidos"; }
+<h4>Histórico de pedidos</h4>
+<table class="table table-sm table-bordered"><thead><tr><th>Data</th><th>Solicitação</th><th>Usuário</th><th>Ação</th><th>Comentário</th></tr></thead><tbody>
+@foreach (var h in Model)
+{<tr><td>@h.Data.ToString("dd/MM/yyyy HH:mm")</td><td>@h.SolicitacaoId</td><td>@h.UsuarioNome</td><td>@h.Acao</td><td>@h.Comentario</td></tr>}
+</tbody></table>
