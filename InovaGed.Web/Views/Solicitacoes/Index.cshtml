@@ -12,6 +12,15 @@
     {
         <span class="badge text-bg-danger"><i class="bi bi-bell-fill"></i> @pendentes pendentes</span>
     }
+    @if (isAdmin)
+    {
+        <form method="post" action="/Solicitacoes/ExcluirAntigas" class="d-flex gap-2">
+            @Html.AntiForgeryToken()
+            <input type="number" min="1" max="3650" class="form-control form-control-sm" name="dias" value="90" style="width:110px" />
+            <button class="btn btn-outline-danger btn-sm">Excluir antigas</button>
+        </form>
+    }
+
 </div>
 <form method="post" action="/Solicitacoes/Criar" class="card card-body mb-3">
     @Html.AntiForgeryToken()
@@ -82,5 +91,6 @@ else
         const toastEl = host.querySelector('.toast');
         if (toastEl) new bootstrap.Toast(toastEl, { delay: 5000 }).show();
     }
+    setInterval(() => { window.location.reload(); }, 45000);
 })();
 </script>

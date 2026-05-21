@@ -158,6 +158,40 @@ public sealed class SolicitacaoService : ISolicitacaoService
         }
     }
 
+
+    public async Task<Result> ExcluirAntigasAsync(Guid tenantId, Guid adminId, string? adminNome, DateTime dataLimiteUtc, CancellationToken ct)
+    {
+        try
+        {
+            await using var con = await _db.OpenAsync(ct);
+            var ids = (await con.QueryAsync<Guid>(new CommandDefinition(
+                @"SELECT id FROM ged.solicitacoes WHERE tenant_id=@TenantId AND reg_status='A' AND data_solicitacao < @DataLimiteUtc",
+                new { TenantId = tenantId, DataLimiteUtc = dataLimiteUtc }, cancellationToken: ct))).ToList();
+
+            if (ids.Count == 0)
+                return Result.Ok();
+
+            foreach (var id in ids)
+            {
+                await InserirHistoricoAsync(con, tenantId, id, adminId, adminNome, HistoricoSolicitacaoAcao.AGUARDAR, "Solicitação antiga removida por ADMIN", DateTime.UtcNow, ct);
+            }
+
+            await con.ExecuteAsync(new CommandDefinition(
+                @"UPDATE ged.solicitacoes SET reg_status='E', data_atualizacao=@Now, admin_id=@AdminId WHERE tenant_id=@TenantId AND reg_status='A' AND data_solicitacao < @DataLimiteUtc",
+                new { TenantId = tenantId, DataLimiteUtc = dataLimiteUtc, Now = DateTime.UtcNow, AdminId = adminId }, cancellationToken: ct));
+
+            await _audit.WriteAsync(tenantId, adminId, "DELETE", "solicitacoes", null, "Exclusão de solicitações antigas", null, null,
+                new { dataLimiteUtc, total = ids.Count }, ct);
+
+            return Result.Ok();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro ao excluir solicitações antigas. TenantId {TenantId}", tenantId);
+            return Result.Fail("EXCEPTION", ex.Message);
+        }
+    }
+
     private static Task InserirHistoricoAsync(System.Data.IDbConnection con, Guid tenantId, Guid solicitacaoId, Guid usuarioId, string? usuarioNome, HistoricoSolicitacaoAcao acao, string? comentario, DateTime data, CancellationToken ct)
     {
         return con.ExecuteAsync(new CommandDefinition(

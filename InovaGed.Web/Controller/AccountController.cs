@@ -183,7 +183,9 @@ public sealed class AccountController : Controller
 
         // Regra 1: usuários hospitalares dedicados vão direto para HospitalDocuments
         // sem receber permissões administrativas completas.
-        if (normalizedUsername is "ADMINISTRADOOPHIR" or "ARQUIVISTAOPHIR")
+        var isHospitalRole = normalizedRoles.Any(r => string.Equals(r, AppRoles.ArquivistaOphir, StringComparison.OrdinalIgnoreCase) || string.Equals(r, AppRoles.AdministradorOphir, StringComparison.OrdinalIgnoreCase));
+
+        if (normalizedUsername is "ADMINISTRADOROPHIR" or "ARQUIVISTAOPHIR" || isHospitalRole)
         {
             return (RedirectToAction("Index", "HospitalDocuments"), "/HospitalDocuments", "special_hospital_user");
         }

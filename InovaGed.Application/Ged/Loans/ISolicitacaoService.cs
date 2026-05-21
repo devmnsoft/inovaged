@@ -9,4 +9,5 @@ public interface ISolicitacaoService
     Task<IReadOnlyList<HistoricoSolicitacaoDto>> HistoricoAsync(Guid tenantId, Guid? usuarioId, Guid? setorId, bool isAdmin, CancellationToken ct);
     Task<int> PendentesCountAsync(Guid tenantId, CancellationToken ct);
     Task<Result> AtualizarStatusAsync(Guid tenantId, Guid solicitacaoId, Guid adminId, string? adminNome, SolicitacaoUpdateStatusVM vm, CancellationToken ct);
+    Task<Result> ExcluirAntigasAsync(Guid tenantId, Guid adminId, string? adminNome, DateTime dataLimiteUtc, CancellationToken ct);
 }
