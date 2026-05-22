@@ -5,6 +5,7 @@ using InovaGed.Application.Classification;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Documents;
 using InovaGed.Application.Ocr;
+using InovaGed.Domain.Ged;
 using InovaGed.Infrastructure.Preview;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -401,7 +402,7 @@ public sealed class OcrWorker : BackgroundService
         throw new InvalidOperationException("Falha de OCR após múltiplas tentativas.");
     }
 
-    private void LogOcrInput(OcrJobDto job, InovaGed.Domain.Ged.GedDTO.DocumentVersionDownloadDto sourceVersion, string pdfPath)
+    private void LogOcrInput(OcrJobDto job, DocumentVersionDownloadDto sourceVersion, string pdfPath)
     {
         var ext = Path.GetExtension(sourceVersion.FileName)?.ToLowerInvariant();
         var kind = ext is ".pdf" ? "PDF" : "IMAGE_OR_OTHER";
@@ -496,7 +497,7 @@ public sealed class OcrWorker : BackgroundService
         }
     }
 
-    private static async Task SaveOcrDescriptionAndMetadataAsync(
+    private async Task SaveOcrDescriptionAndMetadataAsync(
       IDbConnectionFactory db,
       Guid tenantId,
       Guid documentId,
@@ -505,10 +506,12 @@ public sealed class OcrWorker : BackgroundService
       string originAction,
       CancellationToken ct)
     {
-        var description = BuildDescription(extractedText);
-        var normalizedText = NormalizeText(extractedText);
+        try
+        {
+            var description = BuildDescription(extractedText);
+            var normalizedText = NormalizeText(extractedText);
 
-        await using var conn = await db.OpenAsync(ct);
+            await using var conn = await db.OpenAsync(ct);
 
         const string beforeSql = @"
 SELECT jsonb_build_object(
@@ -519,15 +522,15 @@ FROM ged.document
 WHERE tenant_id = @tenantId
   AND id = @documentId;";
 
-        var beforeJson = await conn.ExecuteScalarAsync<string?>(
-            new CommandDefinition(
-                beforeSql,
-                new
-                {
-                    tenantId,
-                    documentId
-                },
-                cancellationToken: ct)) ?? "{}";
+            var beforeJson = await conn.ExecuteScalarAsync<string?>(
+                new CommandDefinition(
+                    beforeSql,
+                    new
+                    {
+                        tenantId,
+                        documentId
+                    },
+                    cancellationToken: ct)) ?? "{}";
 
         const string updateDocumentSql = @"
 UPDATE ged.document
@@ -542,19 +545,19 @@ WHERE tenant_id = @tenantId
         OR btrim(description) = '-'
       );";
 
-        var updatedRows = await conn.ExecuteAsync(
-            new CommandDefinition(
-                updateDocumentSql,
-                new
-                {
-                    tenantId,
-                    documentId,
-                    actorId,
-                    description
-                },
-                cancellationToken: ct));
+            var updatedRows = await conn.ExecuteAsync(
+                new CommandDefinition(
+                    updateDocumentSql,
+                    new
+                    {
+                        tenantId,
+                        documentId,
+                        actorId,
+                        description
+                    },
+                    cancellationToken: ct));
 
-        await UpsertOcrMetadataAsync(
+            await UpsertOcrMetadataAsync(
             conn,
             tenantId,
             documentId,
@@ -563,7 +566,7 @@ WHERE tenant_id = @tenantId
             0.90m,
             ct);
 
-        await UpsertOcrMetadataAsync(
+            await UpsertOcrMetadataAsync(
             conn,
             tenantId,
             documentId,
@@ -572,7 +575,7 @@ WHERE tenant_id = @tenantId
             0.90m,
             ct);
 
-        await UpsertOcrMetadataAsync(
+            await UpsertOcrMetadataAsync(
             conn,
             tenantId,
             documentId,
@@ -585,7 +588,7 @@ WHERE tenant_id = @tenantId
             0.80m,
             ct);
 
-        await InsertDocumentAuditAsync(
+            await InsertDocumentAuditAsync(
             conn,
             tenantId,
             documentId,
@@ -605,6 +608,18 @@ WHERE tenant_id = @tenantId
             },
             "OCR_WORKER",
             ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Erro ao salvar descrição/metadados OCR. TenantId={TenantId}, DocumentId={DocumentId}, ActorId={ActorId}, OriginAction={OriginAction}",
+                tenantId,
+                documentId,
+                actorId,
+                originAction);
+            throw;
+        }
     }
 
     private static async Task UpsertOcrMetadataAsync(
