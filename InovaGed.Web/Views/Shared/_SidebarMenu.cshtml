@@ -47,14 +47,22 @@
 		return current == exact ? "active" : "";
 	}
 
+	bool HasRole(string role) =>
+		User.Claims
+			.Where(c => c.Type == System.Security.Claims.ClaimTypes.Role || c.Type == "role")
+			.Any(c => string.Equals(NormalizeRole(c.Value), NormalizeRole(role), StringComparison.OrdinalIgnoreCase));
+
+	string NormalizeRole(string? value) =>
+		(value ?? "").Trim().Replace(" ", "").Replace("_", "").Replace("-", "").ToUpperInvariant();
+
 	bool IsAdmin() =>
-		User.IsInRole(AppRoles.Admin);
+		HasRole(AppRoles.Admin);
 
 	bool IsArquivistaOphir() =>
-		User.IsInRole(AppRoles.ArquivistaOphir);
+		HasRole(AppRoles.ArquivistaOphir);
 
 	bool IsAdministradorOphir() =>
-		User.IsInRole(AppRoles.AdministradorOphir);
+		HasRole(AppRoles.AdministradorOphir);
 
 	bool IsOnlyArquivistaOphir() =>
 		IsArquivistaOphir() && !IsAdministradorOphir() && !IsAdmin();
@@ -63,7 +71,7 @@
 		IsAdministradorOphir() && !IsAdmin();
 
 	bool CanDashboard() =>
-		!IsOnlyArquivistaOphir() && (
+		!IsOnlyArquivistaOphir() && !IsOnlyAdministradorOphir() && (
 		User.IsInRole(AppRoles.Admin) ||
 		User.IsInRole(AppRoles.Arquivista) ||
 		User.IsInRole(AppRoles.Operador) ||
@@ -79,7 +87,7 @@
 		User.IsInRole(AppRoles.Operador);
 
 	bool CanEmprestimos() =>
-		!IsOnlyArquivistaOphir() && (IsAdministradorOphir() ||
+		(IsAdministradorOphir() ||
 		User.IsInRole(AppRoles.Admin) ||
 		User.IsInRole(AppRoles.Arquivista) ||
 		User.IsInRole(AppRoles.Gestor) ||

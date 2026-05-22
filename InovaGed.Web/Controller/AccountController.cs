@@ -200,33 +200,48 @@ public sealed class AccountController : Controller
     private (IActionResult Result, string TargetDescription, string Reason) ResolvePostLoginRedirect(string? returnUrl, string? username, IReadOnlyCollection<string> normalizedRoles)
     {
         var normalizedUsername = (username ?? string.Empty).Trim().ToUpperInvariant();
+        var normalizedReturnUrl = (returnUrl ?? string.Empty).Trim();
 
-        // Regra 1: usuários hospitalares dedicados vão direto para HospitalDocuments
-        // sem receber permissões administrativas completas.
-        var isHospitalRole = normalizedRoles.Any(r => string.Equals(r, AppRoles.ArquivistaOphir, StringComparison.OrdinalIgnoreCase) || string.Equals(r, AppRoles.AdministradorOphir, StringComparison.OrdinalIgnoreCase));
+        var isAdmin = normalizedRoles.Any(r => IsRole(r, AppRoles.Admin));
+        var isAdministradorOphir = normalizedRoles.Any(r => IsRole(r, AppRoles.AdministradorOphir)) || IsRole(normalizedUsername, AppRoles.AdministradorOphir);
+        var isArquivistaOphir = normalizedRoles.Any(r => IsRole(r, AppRoles.ArquivistaOphir)) || IsRole(normalizedUsername, AppRoles.ArquivistaOphir);
 
-        if (normalizedUsername is "ADMINISTRADOROPHIR" or "ARQUIVISTAOPHIR" || isHospitalRole)
+        if (isAdmin && !string.IsNullOrWhiteSpace(normalizedReturnUrl) && Url.IsLocalUrl(normalizedReturnUrl))
         {
-            return (RedirectToAction("Index", "HospitalDocuments"), "/HospitalDocuments", "special_hospital_user");
+            return (Redirect(normalizedReturnUrl), normalizedReturnUrl, "admin_return_url");
         }
 
-        // Regra 2: usuário com role ADMIN mantém fluxo completo do sistema.
-        // (não força HospitalDocuments; respeita ReturnUrl local e Home padrão)
-        var isAdmin = normalizedRoles.Any(r => string.Equals(r, AppRoles.Admin, StringComparison.OrdinalIgnoreCase));
-
-        if (isAdmin && !string.IsNullOrWhiteSpace(returnUrl) && Url.IsLocalUrl(returnUrl))
+        if (isAdministradorOphir || isArquivistaOphir)
         {
-            return (Redirect(returnUrl), returnUrl, "admin_return_url");
+            if (IsAllowedHospitalReturnUrl(normalizedReturnUrl))
+            {
+                return (Redirect(normalizedReturnUrl), normalizedReturnUrl, "hospital_allowed_return_url");
+            }
+            return (RedirectToAction("Index", "HospitalDocuments"), "/HospitalDocuments", "hospital_default_redirect");
         }
 
-        // Regra 3: fluxo padrão para os demais perfis.
-        if (!string.IsNullOrWhiteSpace(returnUrl) && Url.IsLocalUrl(returnUrl))
+        if (!string.IsNullOrWhiteSpace(normalizedReturnUrl) && Url.IsLocalUrl(normalizedReturnUrl))
         {
-            return (Redirect(returnUrl), returnUrl, "default_return_url");
+            return (Redirect(normalizedReturnUrl), normalizedReturnUrl, "default_return_url");
         }
 
         return (RedirectToAction("Index", "Home"), "/", isAdmin ? "admin_default" : "default_home");
     }
+
+    private static bool IsAllowedHospitalReturnUrl(string? returnUrl)
+    {
+        if (string.IsNullOrWhiteSpace(returnUrl)) return false;
+        var path = returnUrl.Split('?', '#')[0];
+        return path.StartsWith("/HospitalDocuments", StringComparison.OrdinalIgnoreCase)
+               || path.StartsWith("/Loans", StringComparison.OrdinalIgnoreCase)
+               || path.StartsWith("/Solicitacoes", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsRole(string? value, string role)
+        => string.Equals(NormalizeRole(value), NormalizeRole(role), StringComparison.OrdinalIgnoreCase);
+
+    private static string NormalizeRole(string? value)
+        => (value ?? string.Empty).Trim().Replace(" ", "").Replace("_", "").Replace("-", "").ToUpperInvariant();
 
     [Authorize]
     [HttpGet]

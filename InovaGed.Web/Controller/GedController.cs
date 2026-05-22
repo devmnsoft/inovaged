@@ -19,6 +19,7 @@ using InovaGed.Web.ocr;
 using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.Net.Http.Headers;
 
 namespace InovaGed.Web.Controllers;
@@ -115,6 +116,18 @@ public sealed class GedController : Controller
         => string.Equals(Request.Headers["X-Requested-With"], "XMLHttpRequest", StringComparison.OrdinalIgnoreCase)
            || (Request.Headers.TryGetValue("Accept", out var a) && a.ToString().Contains("application/json", StringComparison.OrdinalIgnoreCase));
 
+    public override void OnActionExecuting(ActionExecutingContext context)
+    {
+        base.OnActionExecuting(context);
+        var isAdmin = User.IsInRole(AppRoles.Admin);
+        var isOphir = User.IsInRole(AppRoles.AdministradorOphir) || User.IsInRole(AppRoles.ArquivistaOphir);
+        if (!isAdmin && isOphir)
+        {
+            _logger.LogWarning("Acesso bloqueado ao GED para perfil Ophir. Path={Path} User={User}", HttpContext.Request.Path.Value, User.Identity?.Name ?? "anonymous");
+            context.Result = Forbid();
+        }
+    }
+
     // =========================
     // EXPLORER
     // =========================
@@ -176,6 +189,7 @@ public sealed class GedController : Controller
         }
     }
 
+    [Authorize(Policy = AppPolicies.AdminOnly)]
     [HttpGet]
     public async Task<IActionResult> Processing(CancellationToken ct)
     {
@@ -224,6 +238,7 @@ SELECT
         return View(vm);
     }
 
+    [Authorize(Policy = AppPolicies.AdminOnly)]
     [HttpGet]
     public async Task<IActionResult> ProcessingStatus(CancellationToken ct)
     {
@@ -235,6 +250,7 @@ SELECT
         return Json(new { success = true, count = rows.Count, items = rows });
     }
 
+    [Authorize(Policy = AppPolicies.AdminOnly)]
     [HttpGet]
     public async Task<IActionResult> ProcessingMetrics(CancellationToken ct)
     {
