@@ -380,4 +380,46 @@ SELECT EXISTS (
                 new { tenantId, documentVersionId },
                 cancellationToken: ct));
     }
+
+    public async Task<int> CancelByVersionAsync(Guid tenantId, Guid versionId, Guid? cancelledBy, string reason, CancellationToken ct)
+    {
+        const string sql = @"
+UPDATE ged.ocr_job
+SET status = 'CANCELLED'::ged.ocr_status_enum,
+    finished_at = now(),
+    lease_expires_at = null,
+    error_message = @reason,
+    cancel_requested = true,
+    cancel_requested_at = COALESCE(cancel_requested_at, now()),
+    cancelled_by = COALESCE(@cancelledBy, cancelled_by),
+    cancel_reason = COALESCE(@reason, cancel_reason)
+WHERE tenant_id = @tenantId
+  AND document_version_id = @versionId
+  AND status IN ('PENDING'::ged.ocr_status_enum, 'PROCESSING'::ged.ocr_status_enum, 'ERROR'::ged.ocr_status_enum, 'COMPLETED'::ged.ocr_status_enum);";
+
+        await using var conn = await _db.OpenAsync(ct);
+        return await conn.ExecuteAsync(new CommandDefinition(sql, new { tenantId, versionId, cancelledBy, reason }, cancellationToken: ct));
+    }
+
+    public async Task<int> CancelQueueAsync(Guid tenantId, Guid? documentId, Guid? cancelledBy, string reason, CancellationToken ct)
+    {
+        const string sql = @"
+UPDATE ged.ocr_job j
+SET status = 'CANCELLED'::ged.ocr_status_enum,
+    finished_at = now(),
+    lease_expires_at = null,
+    error_message = @reason,
+    cancel_requested = true,
+    cancel_requested_at = COALESCE(cancel_requested_at, now()),
+    cancelled_by = COALESCE(@cancelledBy, cancelled_by),
+    cancel_reason = COALESCE(@reason, cancel_reason)
+WHERE j.tenant_id = @tenantId
+  AND j.status IN ('PENDING'::ged.ocr_status_enum, 'PROCESSING'::ged.ocr_status_enum)
+  AND (@documentId IS NULL OR j.document_version_id IN (
+      SELECT dv.id FROM ged.document_version dv WHERE dv.tenant_id = @tenantId AND dv.document_id = @documentId
+  ));";
+
+        await using var conn = await _db.OpenAsync(ct);
+        return await conn.ExecuteAsync(new CommandDefinition(sql, new { tenantId, documentId, cancelledBy, reason }, cancellationToken: ct));
+    }
 }

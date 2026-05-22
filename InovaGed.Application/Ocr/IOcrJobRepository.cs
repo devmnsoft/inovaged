@@ -24,6 +24,10 @@ public interface IOcrJobRepository
     Task<OcrJobStatusDto?> GetLatestByVersionIdAsync(Guid tenantId, Guid documentVersionId, CancellationToken ct);
 
     Task<bool> HasCompletedAsync(Guid tenantId, Guid documentVersionId, CancellationToken ct);
+
+    Task<int> CancelByVersionAsync(Guid tenantId, Guid versionId, Guid? cancelledBy, string reason, CancellationToken ct);
+
+    Task<int> CancelQueueAsync(Guid tenantId, Guid? documentId, Guid? cancelledBy, string reason, CancellationToken ct);
 }
 
 public sealed record OcrJobLease(
