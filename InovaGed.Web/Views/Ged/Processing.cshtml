@@ -1,23 +1,36 @@
 @using InovaGed.Web.Security
 @model IReadOnlyList<InovaGed.Web.Controllers.GedController.ProcessingRowVm>
+
 @{
     ViewData["Title"] = "Processamentos em execução";
+
     var metrics = ViewBag.ProcessingMetrics as InovaGed.Web.Controllers.GedController.ProcessingMetricsVm
         ?? new InovaGed.Web.Controllers.GedController.ProcessingMetricsVm();
+
     var isAdmin = User.IsInRole(AppRoles.Admin);
 }
 
 <div class="d-flex justify-content-between align-items-center mb-3">
     <h4 class="mb-0"><i class="bi bi-cpu me-2"></i>Processamentos em execução</h4>
+
     <div class="d-flex gap-2 align-items-center">
         <span id="processingCount" class="badge bg-warning text-dark">@Model.Count em execução</span>
+
         @if (isAdmin)
         {
-            <form asp-action="StopOcrQueue" asp-controller="Ged" method="post" class="d-inline" onsubmit="return confirm('Parar toda a fila OCR ativa?');">
+            <form asp-action="StopOcrQueue"
+                  asp-controller="Ged"
+                  method="post"
+                  class="d-inline"
+                  onsubmit="return confirm('Parar toda a fila OCR ativa?');">
                 @Html.AntiForgeryToken()
-                <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-stop-circle"></i> Parar fila OCR</button>
+
+                <button type="submit" class="btn btn-sm btn-outline-danger">
+                    <i class="bi bi-stop-circle"></i> Parar fila OCR
+                </button>
             </form>
         }
+
         <a asp-action="Index" asp-controller="Ged" class="btn btn-sm btn-outline-secondary">
             <i class="bi bi-arrow-left"></i> Voltar
         </a>
@@ -30,28 +43,39 @@
 
 <div class="row g-2 mb-3">
     <div class="col-6 col-md-3">
-        <div class="card"><div class="card-body py-2">
-            <div class="text-muted small">Pendentes</div>
-            <div class="h5 mb-0" id="metricPending">@metrics.PendingCount</div>
-        </div></div>
+        <div class="card">
+            <div class="card-body py-2">
+                <div class="text-muted small">Pendentes</div>
+                <div class="h5 mb-0" id="metricPending">@metrics.PendingCount</div>
+            </div>
+        </div>
     </div>
+
     <div class="col-6 col-md-3">
-        <div class="card"><div class="card-body py-2">
-            <div class="text-muted small">Processando</div>
-            <div class="h5 mb-0" id="metricProcessing">@metrics.ProcessingCount</div>
-        </div></div>
+        <div class="card">
+            <div class="card-body py-2">
+                <div class="text-muted small">Processando</div>
+                <div class="h5 mb-0" id="metricProcessing">@metrics.ProcessingCount</div>
+            </div>
+        </div>
     </div>
+
     <div class="col-6 col-md-3">
-        <div class="card"><div class="card-body py-2">
-            <div class="text-muted small">Erros (24h)</div>
-            <div class="h5 mb-0 text-danger" id="metricErrors24h">@metrics.Errors24h</div>
-        </div></div>
+        <div class="card">
+            <div class="card-body py-2">
+                <div class="text-muted small">Erros (24h)</div>
+                <div class="h5 mb-0 text-danger" id="metricErrors24h">@metrics.Errors24h</div>
+            </div>
+        </div>
     </div>
+
     <div class="col-6 col-md-3">
-        <div class="card"><div class="card-body py-2">
-            <div class="text-muted small">Fila média (s)</div>
-            <div class="h5 mb-0" id="metricAvgQueue">@Math.Round(metrics.AvgQueueSeconds, 1)</div>
-        </div></div>
+        <div class="card">
+            <div class="card-body py-2">
+                <div class="text-muted small">Fila média (s)</div>
+                <div class="h5 mb-0" id="metricAvgQueue">@Math.Round(metrics.AvgQueueSeconds, 1)</div>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -67,10 +91,13 @@
                 <th>Ações</th>
             </tr>
         </thead>
+
         <tbody id="processingTbody">
             @if (!Model.Any())
             {
-                <tr><td colspan="6" class="text-muted">Nenhum processamento em execução.</td></tr>
+                <tr>
+                    <td colspan="6" class="text-muted">Nenhum processamento em execução.</td>
+                </tr>
             }
             else
             {
@@ -80,7 +107,9 @@
                         <td>#@item.JobId</td>
                         <td>@item.DocumentTitle</td>
                         <td>
-                            <span class="badge @(item.Status == "PROCESSING" ? "bg-warning text-dark" : "bg-secondary")">@item.Status</span>
+                            <span class="badge @(item.Status == "PROCESSING" ? "bg-warning text-dark" : "bg-secondary")">
+                                @item.Status
+                            </span>
                         </td>
                         <td>@item.RequestedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</td>
                         <td>@(item.StartedAt?.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss") ?? "-")</td>
@@ -89,14 +118,25 @@
                                asp-action="Details"
                                asp-controller="Ged"
                                asp-route-id="@item.DocumentId"
-                               asp-route-versionId="@item.VersionId">Abrir</a>
+                               asp-route-versionId="@item.VersionId">
+                                Abrir
+                            </a>
+
                             @if (isAdmin)
                             {
-                                <form asp-action="CancelOcrJob" asp-controller="Ged" method="post" class="d-inline" onsubmit="return confirm('Cancelar este job OCR?');">
+                                <form asp-action="CancelOcrJob"
+                                      asp-controller="Ged"
+                                      method="post"
+                                      class="d-inline"
+                                      onsubmit="return confirm('Cancelar este job OCR?');">
                                     @Html.AntiForgeryToken()
+
                                     <input type="hidden" name="jobId" value="@item.JobId" />
                                     <input type="hidden" name="versionId" value="@item.VersionId" />
-                                    <button type="submit" class="btn btn-sm btn-outline-danger">Cancelar</button>
+
+                                    <button type="submit" class="btn btn-sm btn-outline-danger">
+                                        Cancelar
+                                    </button>
                                 </form>
                             }
                         </td>
@@ -108,7 +148,10 @@
 </div>
 
 <div class="card mt-3">
-    <div class="card-header"><strong>Erros recentes de OCR</strong></div>
+    <div class="card-header">
+        <strong>Erros recentes de OCR</strong>
+    </div>
+
     <div class="card-body p-0">
         <div class="table-responsive">
             <table class="table table-sm mb-0" id="errorsTable">
@@ -120,8 +163,11 @@
                         <th>Finalizado em</th>
                     </tr>
                 </thead>
+
                 <tbody id="errorsTbody">
-                    <tr><td colspan="4" class="text-muted">Carregando erros recentes...</td></tr>
+                    <tr>
+                        <td colspan="4" class="text-muted">Carregando erros recentes...</td>
+                    </tr>
                 </tbody>
             </table>
         </div>
