@@ -14,7 +14,7 @@ using Microsoft.Net.Http.Headers;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize(Roles = AppRoles.Admin + "," + AppRoles.ArquivistaOphir + "," + AppRoles.AdministradorOphir)]
+[Authorize(Policy = AppPolicies.HospitalDocumentsOrLoansAccess)]
 public sealed class HospitalDocumentsController : Controller
 {
     private static readonly Guid EmptyGuid = Guid.Empty;

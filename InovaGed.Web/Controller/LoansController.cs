@@ -11,7 +11,7 @@ using Microsoft.AspNetCore.Mvc.Filters;
 namespace InovaGed.Web.Controllers;
 
 // ADMIN sempre com acesso total; perfis Ophir mantêm acesso ao módulo hospitalar/empréstimos.
-[Authorize(Roles = AppRoles.Admin + "," + AppRoles.AdministradorOphir + "," + AppRoles.ArquivistaOphir)]
+[Authorize(Policy = AppPolicies.HospitalDocumentsOrLoansAccess)]
 [Route("[controller]")]
 public sealed class LoansController : Controller
 {
@@ -36,6 +36,12 @@ public sealed class LoansController : Controller
         _commands = commands;
         _audit = audit;
         _db = db;
+    }
+
+    public override void OnActionExecuting(ActionExecutingContext context)
+    {
+        base.OnActionExecuting(context);
+        _logger.LogInformation("Acesso ao módulo Loans. Path={Path} User={User}", HttpContext.Request.Path.Value, User.Identity?.Name ?? "anonymous");
     }
 
     // =========================================================

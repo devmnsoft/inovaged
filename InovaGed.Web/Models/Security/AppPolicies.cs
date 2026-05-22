@@ -8,4 +8,6 @@ public static class AppPolicies
     public const string Relatorios = "Relatorios";
     public const string Auditoria = "Auditoria";
     public const string Administracao = "Administracao";
+    public const string HospitalDocumentsOrLoansAccess = "HospitalDocumentsOrLoansAccess";
+    public const string AdminOnly = "AdminOnly";
 }

@@ -355,6 +355,18 @@ builder.Services.AddAuthorization(options =>
 
     options.AddPolicy(AppPolicies.Administracao,
         p => p.RequireRole(AppRoles.Admin));
+    
+    options.AddPolicy(AppPolicies.AdminOnly,
+        p => p.RequireRole(AppRoles.Admin));
+
+    options.AddPolicy(AppPolicies.HospitalDocumentsOrLoansAccess,
+        p => p.RequireRole(
+            AppRoles.Admin,
+            AppRoles.AdministradorOphir,
+            AppRoles.ArquivistaOphir,
+            AppRoles.Arquivista,
+            AppRoles.Gestor,
+            AppRoles.Operador));
 
     // =======================================================
     // POLICIES QUE JÁ EXISTEM NO PROJETO

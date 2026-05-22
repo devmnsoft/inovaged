@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize]
+[Authorize(Policy = AppPolicies.HospitalDocumentsOrLoansAccess)]
 [Route("[controller]")]
 public sealed class SolicitacoesController : Controller
 {
@@ -93,7 +93,7 @@ public sealed class SolicitacoesController : Controller
     }
 
     // Feedback administrativo exclusivo para ADMIN global.
-    [Authorize(Roles = AppRoles.Admin)]
+    [Authorize(Roles = AppRoles.Admin + "," + AppRoles.AdministradorOphir)]
     [HttpPost("{id:guid}/Status")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> AtualizarStatus(Guid id, SolicitacaoUpdateStatusVM vm, CancellationToken ct)
