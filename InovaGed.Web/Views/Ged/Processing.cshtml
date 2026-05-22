@@ -9,6 +9,13 @@
     <h4 class="mb-0"><i class="bi bi-cpu me-2"></i>Processamentos em execução</h4>
     <div class="d-flex gap-2 align-items-center">
         <span id="processingCount" class="badge bg-warning text-dark">@Model.Count em execução</span>
+        @if (User.IsInRole(InovaGed.Web.Models.Security.AppRoles.Admin))
+        {
+            <form asp-action="StopOcrQueue" asp-controller="Ged" method="post" class="d-inline" onsubmit="return confirm('Parar toda a fila OCR ativa?');">
+                @Html.AntiForgeryToken()
+                <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-stop-circle"></i> Parar fila OCR</button>
+            </form>
+        }
         <a asp-action="Index" asp-controller="Ged" class="btn btn-sm btn-outline-secondary">
             <i class="bi bi-arrow-left"></i> Voltar
         </a>
@@ -81,6 +88,15 @@
                                asp-controller="Ged"
                                asp-route-id="@item.DocumentId"
                                asp-route-versionId="@item.VersionId">Abrir</a>
+                            @if (User.IsInRole(InovaGed.Web.Models.Security.AppRoles.Admin))
+                            {
+                                <form asp-action="CancelOcrJob" asp-controller="Ged" method="post" class="d-inline" onsubmit="return confirm('Cancelar este job OCR?');">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="jobId" value="@item.JobId" />
+                                    <input type="hidden" name="versionId" value="@item.VersionId" />
+                                    <button type="submit" class="btn btn-sm btn-outline-danger">Cancelar</button>
+                                </form>
+                            }
                         </td>
                     </tr>
                 }

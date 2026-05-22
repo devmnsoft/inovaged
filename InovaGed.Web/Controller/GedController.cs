@@ -1228,22 +1228,36 @@ LIMIT 20;";
     public async Task<IActionResult> PreviewStatus(Guid versionId, CancellationToken ct)
     {
         if (!_currentUser.IsAuthenticated) return Unauthorized();
-        var tenantId = _currentUser.TenantId;
-        var status = await _previewStatus.GetAsync(tenantId, versionId, ct);
-        if (status is null)
-            return Json(new { status = "PENDING" });
+        if (versionId == Guid.Empty) return BadRequest(new { message = "VersionId inválido." });
 
-        var previewUrl = status.Status == PreviewProcessingStatus.Ready && !string.IsNullOrWhiteSpace(status.PreviewPath)
-            ? $"/storage/{status.PreviewPath}"
-            : null;
-        return Json(new
+        try
         {
-            status = status.Status.ToString().ToUpperInvariant(),
-            previewUrl,
-            errorMessage = status.ErrorMessage,
-            requestedAt = status.RequestedAt,
-            finishedAt = status.FinishedAt
-        });
+            var tenantId = _currentUser.TenantId;
+            var status = await _previewStatus.GetAsync(tenantId, versionId, ct);
+            if (status is null)
+                return Json(new { versionId, status = "NOT_READY", previewPath = (string?)null, errorMessage = (string?)null, attempts = 0 });
+
+            var previewUrl = status.Status == PreviewProcessingStatus.Ready && !string.IsNullOrWhiteSpace(status.PreviewPath)
+                ? $"/storage/{status.PreviewPath}"
+                : null;
+            return Json(new
+            {
+                versionId,
+                status = status.Status.ToString().ToUpperInvariant(),
+                previewPath = status.PreviewPath,
+                previewUrl,
+                errorMessage = status.ErrorMessage,
+                attempts = 0,
+                lastUpdatedAt = status.FinishedAt ?? status.RequestedAt,
+                requestedAt = status.RequestedAt,
+                finishedAt = status.FinishedAt
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro inesperado em PreviewStatus. Tenant={TenantId} Version={VersionId}", _currentUser.TenantId, versionId);
+            return StatusCode(500, new { message = "Status de preview/OCR indisponível no momento." });
+        }
     }
 
     // =========================
@@ -1652,19 +1666,7 @@ VALUES
         try
         {
             var tenantId = _currentUser.TenantId;
-            await using var conn = await _db.OpenAsync(ct);
-            var sql = @"
-update ged.ocr_job
-set status = 'ERROR'::ged.ocr_status_enum,
-    finished_at = now(),
-    lease_expires_at = null,
-    error_message = 'Fila interrompida por ADMIN'
-where tenant_id = @tenantId
-  and status in ('PENDING'::ged.ocr_status_enum, 'PROCESSING'::ged.ocr_status_enum)
-  and (@documentId is null or document_version_id in (
-      select id from ged.document_version where tenant_id=@tenantId and document_id=@documentId
-  ));";
-            var affected = await conn.ExecuteAsync(new CommandDefinition(sql, new { tenantId, documentId }, cancellationToken: ct));
+            var affected = await _ocrJobs.CancelQueueAsync(tenantId, documentId, _currentUser.UserId, "Fila interrompida por ADMIN", ct);
             TempData["ok"] = affected > 0 ? $"OCR interrompido para {affected} job(s)." : "Nenhum job OCR ativo encontrado.";
             return RedirectToAction(nameof(Processing));
         }
@@ -1674,6 +1676,17 @@ where tenant_id = @tenantId
             TempData["erro"] = "Erro ao parar fila OCR.";
             return RedirectToAction(nameof(Processing));
         }
+    }
+
+    [Authorize(Roles = AppRoles.Admin)]
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> CancelOcrJob(long jobId, Guid versionId, CancellationToken ct)
+    {
+        if (jobId <= 0 || versionId == Guid.Empty) return BadRequest();
+        var affected = await _ocrJobs.CancelByVersionAsync(_currentUser.TenantId, versionId, _currentUser.UserId, $"Cancelado por ADMIN (job {jobId})", ct);
+        TempData[affected > 0 ? "ok" : "erro"] = affected > 0 ? "Job OCR cancelado." : "Nenhum job elegível para cancelamento.";
+        return RedirectToAction(nameof(Processing));
     }
 
   

@@ -382,7 +382,8 @@ public sealed class OcrWorker : BackgroundService
 
     private async Task<T> ExecuteWithRetryAsync<T>(Func<CancellationToken, Task<T>> action, OcrJobDto job, CancellationToken ct)
     {
-        var maxAttempts = 4;
+        var maxAttempts = 3;
+        var delays = new[] { TimeSpan.FromSeconds(30), TimeSpan.FromMinutes(2), TimeSpan.FromMinutes(5) };
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
             try
@@ -391,11 +392,11 @@ public sealed class OcrWorker : BackgroundService
             }
             catch (Exception ex) when (attempt < maxAttempts)
             {
-                var delayMs = (int)Math.Min(10000, 500 * Math.Pow(2, attempt - 1));
+                var delay = delays[Math.Min(attempt - 1, delays.Length - 1)];
                 _logger.LogWarning(ex,
-                    "Falha OCR temporária. Tenant={TenantId} VersionId={VersionId} JobId={JobId} Tentativa={Attempt}/{MaxAttempts} BackoffMs={BackoffMs}",
-                    job.TenantId, job.DocumentVersionId, job.Id, attempt, maxAttempts, delayMs);
-                await Task.Delay(delayMs, ct);
+                    "Falha OCR temporária. Tenant={TenantId} VersionId={VersionId} JobId={JobId} Tentativa={Attempt}/{MaxAttempts} Backoff={Backoff}",
+                    job.TenantId, job.DocumentVersionId, job.Id, attempt, maxAttempts, delay);
+                await Task.Delay(delay, ct);
             }
         }
 

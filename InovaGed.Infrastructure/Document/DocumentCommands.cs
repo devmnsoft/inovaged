@@ -47,19 +47,31 @@ public sealed class DocumentCommands : IDocumentCommands
             {
                 await conn.ExecuteAsync(new CommandDefinition(@"
 update ged.ocr_job
-set status = 'ERROR'::ged.ocr_status_enum,
+set status = 'CANCELLED'::ged.ocr_status_enum,
     finished_at = now(),
     lease_expires_at = null,
-    error_message = 'Cancelado por exclusão forçada por ADMIN'
+    error_message = 'Cancelado por exclusão forçada por ADMIN',
+    cancel_requested = true,
+    cancel_requested_at = now(),
+    cancelled_by = @userId,
+    cancel_reason = 'Exclusão forçada por ADMIN'
 where tenant_id = @tenantId
   and document_version_id in (
       select id from ged.document_version where tenant_id = @tenantId and document_id = @documentId
   )
   and status in ('PENDING'::ged.ocr_status_enum, 'PROCESSING'::ged.ocr_status_enum);",
-                    new { tenantId, documentId },
+                    new { tenantId, documentId, userId },
                     transaction: tx,
                     cancellationToken: ct));
             }
+
+            await conn.ExecuteAsync(new CommandDefinition(@"
+delete from ged.preview_status
+where tenant_id = @tenantId
+  and document_version_id in (
+      select id from ged.document_version where tenant_id = @tenantId and document_id = @documentId
+  );",
+                new { tenantId, documentId }, tx, cancellationToken: ct));
 
             // 1) coleta paths
             var paths = (await conn.QueryAsync<string>(
