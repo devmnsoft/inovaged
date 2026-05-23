@@ -1699,10 +1699,19 @@ VALUES
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> CancelOcrJob(long jobId, Guid versionId, CancellationToken ct)
     {
-        if (jobId <= 0 || versionId == Guid.Empty) return BadRequest();
-        var affected = await _ocrJobs.CancelByVersionAsync(_currentUser.TenantId, versionId, _currentUser.UserId, $"Cancelado por ADMIN (job {jobId})", ct);
-        TempData[affected > 0 ? "ok" : "erro"] = affected > 0 ? "Job OCR cancelado." : "Nenhum job elegível para cancelamento.";
-        return RedirectToAction(nameof(Processing));
+        try
+        {
+            if (jobId <= 0 || versionId == Guid.Empty) return BadRequest();
+            var affected = await _ocrJobs.CancelByVersionAsync(_currentUser.TenantId, versionId, _currentUser.UserId, $"Cancelado por ADMIN (job {jobId})", ct);
+            TempData[affected > 0 ? "ok" : "erro"] = affected > 0 ? "Job OCR cancelado." : "Nenhum job elegível para cancelamento.";
+            return RedirectToAction(nameof(Processing));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro ao cancelar job OCR. Tenant={TenantId} JobId={JobId} VersionId={VersionId}", _currentUser.TenantId, jobId, versionId);
+            TempData["erro"] = "Erro ao cancelar job OCR.";
+            return RedirectToAction(nameof(Processing));
+        }
     }
 
   

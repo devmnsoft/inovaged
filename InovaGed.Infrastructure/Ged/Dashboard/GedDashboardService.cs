@@ -4,7 +4,6 @@ using InovaGed.Application.Ged.Dashboard;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using System.Data;
-using System.Text;
 
 namespace InovaGed.Infrastructure.Ged.Dashboard;
 
@@ -25,15 +24,13 @@ public sealed class GedDashboardService : IGedDashboardService
         var vm = new GedDashboardVm();
         using var conn = await _db.OpenAsync(ct);
 
-        var hasSetores = await TableExistsAsync(conn, "ged", "setores", ct);
         var hasConfidentialColumn = await ResolveConfidentialColumnAsync(conn, ct);
-        var hasSolicitacoesArquivoId = await ColumnExistsAsync(conn, "ged", "solicitacoes", "arquivo_id", ct);
 
         await TryLoad(ct, vm, tenantId, userId, conn, async () =>
         {
             var confidentialSql = hasConfidentialColumn is null
                 ? "0"
-                : $"(select count(*)::int from ged.document d where d.tenant_id=@tenantId and d.reg_status='A' and coalesce(d.{hasConfidentialColumn}, false)=true)";
+                : $"(select count(*)::int from ged.document d where d.tenant_id=@tenantId and d.reg_status='A' and upper(coalesce(d.{hasConfidentialColumn}::text,''))='CONFIDENTIAL')";
 
             var row = await conn.QuerySingleAsync(new CommandDefinition($@"
 select
@@ -43,8 +40,8 @@ select
   (select count(*)::int from ged.ocr_job j where j.tenant_id=@tenantId and j.status='PROCESSING'::ged.ocr_status_enum) as OcrProcessing,
   (select count(*)::int from ged.ocr_job j where j.tenant_id=@tenantId and j.status='ERROR'::ged.ocr_status_enum) as OcrFailed,
   (select count(*)::int from ged.ocr_job j where j.tenant_id=@tenantId and j.status='COMPLETED'::ged.ocr_status_enum and j.finished_at>=now()-interval '24 hours') as OcrCompleted24h,
-  (select count(*)::int from ged.solicitacoes s where s.tenant_id=@tenantId and s.reg_status='A' and upper(s.status::text)='PENDENTE') as PendingLoanRequests,
-  (select count(*)::int from ged.loan_request l where l.tenant_id=@tenantId and l.reg_status='A' and l.returned_at is null and l.due_at < now()) as OverdueLoans,
+  (select count(*)::int from ged.loan_request lr where lr.tenant_id=@tenantId and lr.reg_status='A' and upper(lr.status::text)='REQUESTED') as PendingLoanRequests,
+  (select count(*)::int from ged.vw_loan_overdue l where l.tenant_id=@tenantId and l.reg_status='A') as OverdueLoans,
   (select count(*)::int from ged.document_folder_move_history h where h.tenant_id=@tenantId and h.moved_at>=now()-interval '24 hours') as FolderMoves24h,
   (select count(*)::int from ged.retention_queue q where q.tenant_id=@tenantId and q.reg_status='A' and q.due_at < now()) as RetentionExpired,
   (select count(*)::int from ged.retention_queue q where q.tenant_id=@tenantId and q.reg_status='A' and q.due_at >= now() and q.due_at < now()+interval '30 days') as RetentionDue30Days,
@@ -71,7 +68,7 @@ select
         {
             var confidentialCountExpr = hasConfidentialColumn is null
                 ? "0"
-                : $"(select count(*)::int from ged.document d where d.tenant_id=@tenantId and d.reg_status='A' and coalesce(d.{hasConfidentialColumn}, false)=true)";
+                : $"(select count(*)::int from ged.document d where d.tenant_id=@tenantId and d.reg_status='A' and upper(coalesce(d.{hasConfidentialColumn}::text,''))='CONFIDENTIAL')";
 
             if (hasConfidentialColumn is null)
             {
@@ -94,39 +91,24 @@ select x.label as Label, x.value as Value from (
 
         await TryLoad(ct, vm, tenantId, userId, conn, async () =>
         {
-            var sql = new StringBuilder(@"select s.data_solicitacao as Date, coalesce(u.name, s.usuario_nome,'-') as Requester,");
-            sql.Append(hasSetores
-                ? " coalesce(setor.name,'-') as Sector,"
-                : " null::text as Sector,");
-
-            sql.Append(@" coalesce(d.title,'-') as Document, coalesce(s.descricao,'-') as Description, coalesce(s.status::text,'-') as Status
-from ged.solicitacoes s
-left join ged.users u on u.tenant_id=s.tenant_id and u.id=s.usuario_id");
-
-            if (hasSetores)
-            {
-                sql.Append(" left join ged.setores setor on setor.tenant_id=s.tenant_id and setor.id=s.setor_id");
-            }
-            else
-            {
-                _logger.LogWarning("GED dashboard: tabela ged.setores não encontrada. Tenant={Tenant}", tenantId);
-            }
-
-            if (hasSolicitacoesArquivoId)
-            {
-                sql.Append(" left join ged.document d on d.tenant_id=s.tenant_id and d.id=s.arquivo_id");
-            }
-            else
-            {
-                sql.Append(" left join ged.document d on 1=0");
-                _logger.LogWarning("GED dashboard: coluna ged.solicitacoes.arquivo_id não encontrada. Tenant={Tenant}", tenantId);
-            }
-
-            sql.Append(@"
-where s.tenant_id=@tenantId and s.reg_status='A' and upper(s.status::text)='PENDENTE'
-order by s.data_solicitacao desc limit 10");
-
-            vm.RecentLoanRequests = (await conn.QueryAsync<RecentLoanRequestVm>(new CommandDefinition(sql.ToString(), new { tenantId }, cancellationToken: ct))).ToList();
+            vm.RecentLoanRequests = (await conn.QueryAsync<RecentLoanRequestVm>(new CommandDefinition(@"
+select
+  lr.requested_at as Date,
+  coalesce(lr.requester_name,'-') as Requester,
+  null::text as Sector,
+  coalesce(vr.document_title,'-') as Document,
+  coalesce(lr.notes,'-') as Description,
+  coalesce(lr.status::text,'-') as Status
+from ged.loan_request lr
+left join ged.vw_loan_report vr
+  on vr.tenant_id=lr.tenant_id
+ and vr.protocol_no=lr.protocol_no
+ and vr.document_id=lr.document_id
+where lr.tenant_id=@tenantId
+  and lr.reg_status='A'
+  and upper(lr.status::text)='REQUESTED'
+order by lr.requested_at desc
+limit 10", new { tenantId }, cancellationToken: ct))).ToList();
         });
 
         await TryLoad(ct, vm, tenantId, userId, conn, async () => vm.RecentAuditEvents = (await conn.QueryAsync<RecentAuditEventVm>(new CommandDefinition(@"select a.event_time as Date, coalesce(u.name,'-') as User, coalesce(a.entity_name,'-') as Resource, coalesce(a.summary,'-') as Reason, coalesce(a.ip_address::text,'-') as Ip from ged.audit_log a left join ged.users u on u.tenant_id=a.tenant_id and u.id=a.user_id where a.tenant_id=@tenantId and a.event_time>=now()-interval '24 hours' and coalesce(a.is_success,false)=false order by a.event_time desc limit 10", new { tenantId }, cancellationToken: ct))).ToList());
@@ -137,7 +119,7 @@ order by s.data_solicitacao desc limit 10");
 
     private async Task<string?> ResolveConfidentialColumnAsync(IDbConnection conn, CancellationToken ct)
     {
-        var candidates = new[] { "is_confidential", "security_level", "confidentiality_level", "secrecy_level", "sigilo", "confidential", "access_level", "classification_level" };
+        var candidates = new[] { "visibility", "security_level", "secrecy_level", "document_visibility", "confidentiality_level" };
         foreach (var candidate in candidates)
         {
             if (await ColumnExistsAsync(conn, "ged", "document", candidate, ct))
@@ -170,5 +152,5 @@ select case when exists (
     }
 
     private async Task TryLoad(CancellationToken ct, GedDashboardVm vm, Guid tenantId, Guid userId, IDbConnection conn, Func<Task> load)
-    { try { await load(); } catch (Exception ex) { vm.HasPartialFailures = true; _logger.LogWarning(ex, "Ged dashboard partial failure. Tenant={Tenant} User={User}", tenantId, userId); } }
+    { try { await load(); } catch (Exception ex) { vm.HasPartialFailures = true; vm.WarningMessages.Add("Alguns indicadores não puderam ser carregados."); _logger.LogWarning(ex, "Ged dashboard partial failure. Tenant={Tenant} User={User}", tenantId, userId); } }
 }

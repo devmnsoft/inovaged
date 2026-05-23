@@ -15,6 +15,7 @@ public sealed class GedDashboardVm
     public int RetentionDue30Days { get; set; }
     public int AccessDenied24h { get; set; }
     public bool HasPartialFailures { get; set; }
+    public List<string> WarningMessages { get; set; } = new();
 
     public List<DashboardMetricSlice> OcrByStatus { get; set; } = new();
     public List<DashboardMetricSlice> DocumentBySituation { get; set; } = new();
