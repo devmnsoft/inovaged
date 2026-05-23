@@ -1,11 +1,13 @@
 using System.Text;
+using InovaGed.Application.Common.Database;
+using InovaGed.Application.Documents;
+using InovaGed.Application.Ged.Documents;
+using InovaGed.Application.Identity;
+using InovaGed.Infrastructure.Audit;
+using InovaGed.Infrastructure.Database;
+using InovaGed.Infrastructure.Ged.Documents;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
-using WebGed.Application.Common;
-using WebGed.Application.Documents;
-using WebGed.Infrastructure.Auditing;
-using WebGed.Infrastructure.Database;
-using WebGed.Infrastructure.Documents;
 using WebGed.WebApi.Security;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -20,9 +22,9 @@ builder.Services.AddScoped<ICurrentUser, CurrentUser>();
 builder.Services.AddSingleton<IDbConnectionFactory>(_ =>
     new NpgsqlConnectionFactory(builder.Configuration.GetConnectionString("Default")!));
 
-builder.Services.AddScoped<IDocumentRepository, DocumentRepository>();
-builder.Services.AddScoped<IAuditLogRepository, AuditLogRepository>();
 builder.Services.AddScoped<DocumentAppService>();
+builder.Services.AddScoped<IAuditWriter, AuditWriter>();
+builder.Services.AddScoped<IDocumentMoveService, DocumentMoveService>();
 
 var jwtKey = builder.Configuration["Jwt:Key"]!;
 var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
@@ -46,13 +48,10 @@ builder.Services
 builder.Services.AddAuthorization();
 
 var app = builder.Build();
-
 app.UseSwagger();
 app.UseSwaggerUI();
-
 app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
-
 app.Run();
