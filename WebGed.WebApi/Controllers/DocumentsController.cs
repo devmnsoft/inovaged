@@ -12,11 +12,13 @@ public sealed class DocumentsController : ControllerBase
 {
     private readonly DocumentAppService _svc;
     private readonly IDocumentMoveService _moveService;
+    private readonly ILogger<DocumentsController> _logger;
 
-    public DocumentsController(DocumentAppService svc, IDocumentMoveService moveService)
+    public DocumentsController(DocumentAppService svc, IDocumentMoveService moveService, ILogger<DocumentsController> logger)
     {
         _svc = svc;
         _moveService = moveService;
+        _logger = logger;
     }
 
     [HttpPost("upload")]
@@ -34,9 +36,22 @@ public sealed class DocumentsController : ControllerBase
     [HttpPost("move")]
     public async Task<IActionResult> Move([FromBody] DocumentMoveRequestVM request, CancellationToken ct)
     {
-        var result = await _moveService.MoveAsync(CurrentTenantId(), CurrentUserId(), User.Identity?.Name, request.DocumentId, request.DestinationFolderId, request.Reason, request.Source ?? "SINGLE", ct);
-        if (!result.Success) return BadRequest(new { success = false, message = result.Error?.Message ?? result.ErrorMessage });
-        return Ok(new { success = true, message = result.Value!.Message, oldFolderId = result.Value.OldFolderId, newFolderId = result.Value.NewFolderId });
+        try
+        {
+            var result = await _moveService.MoveAsync(CurrentTenantId(), CurrentUserId(), User.Identity?.Name, request.DocumentId, request.DestinationFolderId, request.Reason, request.Source ?? "SINGLE", ct);
+            if (!result.Success)
+            {
+                if (string.Equals(result.Error?.Code, "ACCESS_DENIED", StringComparison.OrdinalIgnoreCase))
+                    return StatusCode(403, new { success = false, message = result.Error?.Message ?? "Acesso negado." });
+                return BadRequest(new { success = false, message = result.Error?.Message ?? result.ErrorMessage });
+            }
+            return Ok(new { success = true, message = result.Value!.Message, documentId = result.Value.DocumentId, oldFolderId = result.Value.OldFolderId, newFolderId = result.Value.NewFolderId });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro ao mover documento Tenant={TenantId} User={UserId} Document={DocumentId} Destination={DestinationFolderId}", CurrentTenantId(), CurrentUserId(), request.DocumentId, request.DestinationFolderId);
+            return StatusCode(500, new { success = false, message = "Erro interno ao mover documento." });
+        }
     }
 
     [HttpPost("move-bulk")]
