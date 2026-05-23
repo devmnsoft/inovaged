@@ -28,10 +28,18 @@ public sealed class GedDashboardController : Controller
             return RedirectToAction("AccessDenied", "Account");
         }
 
-        await _auditWriter.WriteAsync(_currentUser.TenantId, _currentUser.UserId, "VIEW", "GED_DASHBOARD", null, "VIEW_GED_DASHBOARD", HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers.UserAgent.ToString(), new { action = "VIEW_GED_DASHBOARD" }, ct);
-        _logger.LogInformation("GED Dashboard opened. Tenant={Tenant} User={User}", _currentUser.TenantId, _currentUser.UserId);
+        try
+        {
+            await _auditWriter.WriteAsync(_currentUser.TenantId, _currentUser.UserId, "VIEW", "GED_DASHBOARD", null, "VIEW_GED_DASHBOARD", HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers.UserAgent.ToString(), new { action = "VIEW_GED_DASHBOARD" }, ct);
+            _logger.LogInformation("GED Dashboard opened. Tenant={Tenant} User={User}", _currentUser.TenantId, _currentUser.UserId);
 
-        var vm = await _service.GetAsync(_currentUser.TenantId, _currentUser.UserId, refresh, ct);
-        return View(vm);
+            var vm = await _service.GetAsync(_currentUser.TenantId, _currentUser.UserId, refresh, ct);
+            return View(vm ?? new GedDashboardVm { HasPartialFailures = true });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Falha inesperada ao carregar o GED Dashboard. Tenant={Tenant} User={User}", _currentUser.TenantId, _currentUser.UserId);
+            return View(new GedDashboardVm { HasPartialFailures = true });
+        }
     }
 }
