@@ -1,0 +1,15 @@
+@model InovaGed.Application.Ged.Dashboard.GedDashboardVm
+@using InovaGed.Web.Security
+@{ ViewData["Title"] = "Painel Gerencial do GED"; }
+<div class="container-fluid py-3">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div><h2 class="mb-1">Painel Gerencial do GED</h2><p class="text-muted mb-0">Visão consolidada de documentos, OCR, solicitações e auditoria</p></div>
+        <a class="btn btn-outline-primary" asp-controller="GedDashboard" asp-action="Index" asp-route-refresh="true"><i class="bi bi-arrow-clockwise"></i> Atualizar agora</a>
+    </div>
+    @if (Model.HasPartialFailures){<div class="alert alert-warning py-2">Alguns indicadores não puderam ser carregados. Verifique os logs técnicos.</div>}
+    <div class="row g-3">
+@foreach (var c in new[] {
+new {T="Total de documentos ativos",V=Model.TotalDocuments,I="bi-files",L="/Ged"},new {T="Documentos sem classificação",V=Model.UnclassifiedDocuments,I="bi-tags",L="/Ged"},new {T="OCR pendente",V=Model.OcrPending,I="bi-hourglass-split",L="/Ged/Processing"},new {T="OCR processando",V=Model.OcrProcessing,I="bi-cpu",L="/Ged/Processing"},new {T="OCR com erro",V=Model.OcrFailed,I="bi-exclamation-triangle",L="/Ged/Processing"},new {T="OCR concluído (24h)",V=Model.OcrCompleted24h,I="bi-check2-circle",L="/Ged/Processing"},new {T="Solicitações pendentes",V=Model.PendingLoanRequests,I="bi-journal-arrow-up",L="/Solicitacoes"},new {T="Empréstimos vencidos",V=Model.OverdueLoans,I="bi-calendar2-x",L="/Loans/Overdue"},new {T="Movimentações (24h)",V=Model.FolderMoves24h,I="bi-arrow-left-right",L="/Ged/Folders"},new {T="Temporalidade vencida",V=Model.RetentionExpired,I="bi-clock-history",L="/Retention"},new {T="Vence em 30 dias",V=Model.RetentionDue30Days,I="bi-calendar-event",L="/Retention"},new {T="Acessos negados (24h)",V=Model.AccessDenied24h,I="bi-shield-x",L="/SecurityAudit/AccessFailures"}}){
+<div class="col-12 col-sm-6 col-xl-3"><a class="text-decoration-none" href="@c.L"><div class="card h-100 shadow-sm"><div class="card-body"><div class="d-flex justify-content-between"><small class="text-muted">@c.T</small><i class="bi @c.I"></i></div><div class="display-6 fw-bold">@c.V</div></div></div></a></div>}
+    </div>
+</div>

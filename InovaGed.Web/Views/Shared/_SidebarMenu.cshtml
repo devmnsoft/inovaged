@@ -172,6 +172,14 @@
 		<i class="bi bi-speedometer2"></i>
 		<span>Dashboard</span>
 	</a>
+
+	@if (User.IsInRole(AppRoles.Admin))
+	{
+		<a asp-controller="GedDashboard" asp-action="Index" class="@Active("GedDashboard", "Index")">
+			<i class="bi bi-bar-chart"></i>
+			<span>Painel GED</span>
+		</a>
+	}
 }
 
 @if (CanDocumentos())

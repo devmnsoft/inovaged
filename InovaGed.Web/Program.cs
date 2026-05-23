@@ -14,6 +14,7 @@ using InovaGed.Application.Common.Storage;
 using InovaGed.Application.Documents;
 using InovaGed.Application.Ged;
 using InovaGed.Application.Ged.Batches;
+using InovaGed.Application.Ged.Dashboard;
 using InovaGed.Application.Ged.Instruments;
 using InovaGed.Application.Ged.Loans;
 using InovaGed.Application.Ged.Physical;
@@ -42,6 +43,7 @@ using InovaGed.Infrastructure.Common.Security;
 using InovaGed.Infrastructure.Documents;
 using InovaGed.Infrastructure.Ged;
 using InovaGed.Infrastructure.Ged.Batches;
+using InovaGed.Infrastructure.Ged.Dashboard;
 using InovaGed.Infrastructure.Ged.Instruments;
 using InovaGed.Infrastructure.Ged.Loans;
 using InovaGed.Infrastructure.Ged.Physical;
@@ -87,12 +89,14 @@ mvc.AddRazorRuntimeCompilation();
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddSignalR();
+builder.Services.AddMemoryCache();
 
 // =======================================================
 // Current User (Tenant / User)
 // =======================================================
 builder.Services.AddScoped<ICurrentUser, CurrentUser>();
 builder.Services.AddScoped<ICurrentContext, CurrentContext>();
+builder.Services.AddScoped<IGedDashboardService, GedDashboardService>();
 
 // =======================================================
 // Database (PostgreSQL)
