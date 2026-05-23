@@ -27,6 +27,7 @@ public sealed class GedDashboardService : IGedDashboardService
 
         var hasSetores = await TableExistsAsync(conn, "ged", "setores", ct);
         var hasConfidentialColumn = await ResolveConfidentialColumnAsync(conn, ct);
+        var hasSolicitacoesArquivoId = await ColumnExistsAsync(conn, "ged", "solicitacoes", "arquivo_id", ct);
 
         await TryLoad(ct, vm, tenantId, userId, conn, async () =>
         {
@@ -111,15 +112,24 @@ left join ged.users u on u.tenant_id=s.tenant_id and u.id=s.usuario_id");
                 _logger.LogWarning("GED dashboard: tabela ged.setores não encontrada. Tenant={Tenant}", tenantId);
             }
 
+            if (hasSolicitacoesArquivoId)
+            {
+                sql.Append(" left join ged.document d on d.tenant_id=s.tenant_id and d.id=s.arquivo_id");
+            }
+            else
+            {
+                sql.Append(" left join ged.document d on 1=0");
+                _logger.LogWarning("GED dashboard: coluna ged.solicitacoes.arquivo_id não encontrada. Tenant={Tenant}", tenantId);
+            }
+
             sql.Append(@"
-left join ged.document d on d.tenant_id=s.tenant_id and d.id=s.documento_id
 where s.tenant_id=@tenantId and s.reg_status='A' and upper(s.status::text)='PENDENTE'
 order by s.data_solicitacao desc limit 10");
 
             vm.RecentLoanRequests = (await conn.QueryAsync<RecentLoanRequestVm>(new CommandDefinition(sql.ToString(), new { tenantId }, cancellationToken: ct))).ToList();
         });
 
-        await TryLoad(ct, vm, tenantId, userId, conn, async () => vm.RecentAuditEvents = (await conn.QueryAsync<RecentAuditEventVm>(new CommandDefinition(@"select a.event_time as Date, coalesce(u.name,'-') as User, coalesce(a.entity_name,'-') as Resource, coalesce(a.summary,'-') as Reason, coalesce(a.ip_address,'-') as Ip from ged.audit_log a left join ged.users u on u.tenant_id=a.tenant_id and u.id=a.user_id where a.tenant_id=@tenantId and a.event_time>=now()-interval '24 hours' and coalesce(a.is_success,false)=false order by a.event_time desc limit 10", new { tenantId }, cancellationToken: ct))).ToList());
+        await TryLoad(ct, vm, tenantId, userId, conn, async () => vm.RecentAuditEvents = (await conn.QueryAsync<RecentAuditEventVm>(new CommandDefinition(@"select a.event_time as Date, coalesce(u.name,'-') as User, coalesce(a.entity_name,'-') as Resource, coalesce(a.summary,'-') as Reason, coalesce(a.ip_address::text,'-') as Ip from ged.audit_log a left join ged.users u on u.tenant_id=a.tenant_id and u.id=a.user_id where a.tenant_id=@tenantId and a.event_time>=now()-interval '24 hours' and coalesce(a.is_success,false)=false order by a.event_time desc limit 10", new { tenantId }, cancellationToken: ct))).ToList());
 
         _cache.Set(key, vm, TimeSpan.FromSeconds(30));
         return vm;
