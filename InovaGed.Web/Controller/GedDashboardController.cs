@@ -24,7 +24,7 @@ public sealed class GedDashboardController : Controller
     {
         if (!User.IsInRole(AppRoles.Admin))
         {
-            await _auditWriter.WriteAsync(_currentUser.TenantId, _currentUser.UserId, "VIEW", "GED_DASHBOARD", null, "Acesso negado ao Painel GED", HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers.UserAgent.ToString(), new { denied = true }, ct);
+            await _auditWriter.WriteAsync(_currentUser.TenantId, _currentUser.UserId, "ACCESS_DENIED", "GED_DASHBOARD", null, "Acesso negado ao Painel GED", HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers.UserAgent.ToString(), new { denied = true }, ct);
             return RedirectToAction("AccessDenied", "Account");
         }
 
