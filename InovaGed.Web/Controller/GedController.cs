@@ -1306,7 +1306,7 @@ LIMIT 20;";
         {
             if (!_currentUser.IsAuthenticated) return Unauthorized();
             var result = await _documentMoveService.MoveAsync(_currentUser.TenantId, _currentUser.UserId, User.Identity?.Name, request.DocumentId, request.DestinationFolderId, request.Reason, request.Source ?? "SINGLE", ct);
-            if (!result.Success && string.Equals(result.ErrorCode, "ACCESS_DENIED", StringComparison.OrdinalIgnoreCase))
+            if (!result.IsSuccess && string.Equals(result.Error?.Code, "ACCESS_DENIED", StringComparison.OrdinalIgnoreCase))
                 return StatusCode(403, result);
             return Ok(result);
         }
@@ -1325,7 +1325,7 @@ LIMIT 20;";
         {
             if (!_currentUser.IsAuthenticated) return Unauthorized();
             var result = await _documentMoveService.MoveBulkAsync(_currentUser.TenantId, _currentUser.UserId, User.Identity?.Name, request.DocumentIds, request.DestinationFolderId, request.Reason, request.Source ?? "BULK", ct);
-            if (!result.Success && string.Equals(result.ErrorCode, "ACCESS_DENIED", StringComparison.OrdinalIgnoreCase))
+            if (!result.IsSuccess && string.Equals(result.Error?.Code, "ACCESS_DENIED", StringComparison.OrdinalIgnoreCase))
                 return StatusCode(403, result);
             return Ok(result);
         }
