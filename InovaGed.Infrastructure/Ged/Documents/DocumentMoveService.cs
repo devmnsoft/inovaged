@@ -167,12 +167,10 @@ where h.tenant_id=@tenantId and h.document_id=@documentId and h.reg_status='A' o
     {
         const string sql = """
 select r.normalized_name
-from ged.user_role ur
-join ged.app_role r on r.id = ur.role_id
-where r.tenant_id = @tenantId
+from ged.user_roles ur
+join ged.app_role r on r.id = ur.role_id and r.tenant_id = ur.tenant_id
+where ur.tenant_id = @tenantId
   and ur.user_id = @userId
-  and ur.reg_status = 'A'
-  and r.reg_status = 'A'
 """;
 
         return (await conn.QueryAsync<string>(new CommandDefinition(sql, new { tenantId, userId }, cancellationToken: ct))).ToHashSet(StringComparer.OrdinalIgnoreCase);

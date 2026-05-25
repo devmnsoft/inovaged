@@ -30,9 +30,9 @@ namespace InovaGed.Infrastructure.Security
 
                 var sql = """
             SELECT 1
-            FROM ged.user_role ur
+            FROM ged.user_roles ur
             JOIN ged.role_permission rp ON rp.tenant_id = ur.tenant_id AND rp.role_id = ur.role_id AND rp.reg_status='A'
-            WHERE ur.tenant_id=@TenantId AND ur.user_id=@UserId AND ur.reg_status='A'
+            WHERE ur.tenant_id=@TenantId AND ur.user_id=@UserId
               AND rp.permission_code=@Perm
             LIMIT 1;
             """;
