@@ -42,6 +42,10 @@
             host.insertAdjacentHTML('beforeend', `<div class="alert alert-${level} alert-dismissible fade show" role="alert"><i class="bi bi-${icon} me-1"></i>${message}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Fechar"></button></div>`);
         }
 
+        function showMoveMessage(message, success) {
+            showToast(message, success);
+        }
+
         function resetModalState() {
             destinationFolderId.value = '';
             destinationFolderName.value = '';
@@ -90,14 +94,18 @@
 
             try {
                 const response = await fetch(`/Ged/Folders/Search?term=${encodeURIComponent(term)}`);
-                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                if (!response.ok) {
+                    showMoveMessage('Erro ao buscar pastas.', false);
+                    return;
+                }
                 const data = await response.json();
-                folderSearchResults.innerHTML = (data || []).map(folder =>
+                const items = Array.isArray(data) ? data : (data?.items ?? []);
+                folderSearchResults.innerHTML = (items || []).map(folder =>
                     `<button type="button" class="list-group-item list-group-item-action js-folder-result" data-folder-id="${folder.id}" data-folder-name="${folder.name}">${folder.fullPath || folder.name}</button>`
                 ).join('');
             } catch (err) {
                 console.error('[MoveDocuments] Erro ao buscar pastas', err);
-                showToast('Falha ao buscar pastas.', false);
+                showMoveMessage('Falha de comunicação ao buscar pastas.', false);
             }
         }
 
@@ -174,14 +182,22 @@
             const confirmBtn = e.target.closest('#btnConfirmMove');
             if (confirmBtn) {
                 e.preventDefault();
-                confirmMove();
+                confirmMove().catch(err => {
+                    console.error('[MoveDocuments] Erro inesperado no confirmar movimentação', err);
+                    showMoveMessage('Falha ao confirmar movimentação.', false);
+                });
                 return;
             }
         });
 
         folderSearchInput?.addEventListener('input', function () {
             clearTimeout(searchTimeout);
-            searchTimeout = setTimeout(searchFolders, 250);
+            searchTimeout = setTimeout(() => {
+                searchFolders().catch(err => {
+                    console.error('[MoveDocuments] Erro inesperado na busca de pastas', err);
+                    showMoveMessage('Erro ao processar busca de pastas.', false);
+                });
+            }, 250);
         });
 
         updateBulkUi();

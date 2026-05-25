@@ -1281,7 +1281,7 @@ LIMIT 20;";
     }
 
     [HttpGet("/Ged/Folders/Search")]
-    public async Task<IActionResult> SearchFolders(string? term, CancellationToken ct)
+    public async Task<IActionResult> SearchFolders([FromQuery] string? term, CancellationToken ct)
     {
         try
         {
@@ -1289,12 +1289,12 @@ LIMIT 20;";
             var tenantId = _currentUser.TenantId;
             var userId = _currentUser.UserId;
             var rows = await _documentMoveService.SearchFoldersAsync(tenantId, userId, term, ct);
-            return Ok(rows);
+            return Ok(new { success = true, items = rows });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Erro em SearchFolders. Tenant={TenantId} User={UserId}", _currentUser.TenantId, _currentUser.UserId);
-            return Ok(Array.Empty<FolderOptionDto>());
+            return StatusCode(500, new { success = false, message = "Não foi possível buscar pastas no momento.", items = Array.Empty<object>() });
         }
     }
 
