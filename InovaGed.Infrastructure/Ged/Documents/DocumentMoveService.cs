@@ -58,32 +58,35 @@ public sealed class DocumentMoveService : IDocumentMoveService
         try
         {
             await using var conn = await _db.OpenAsync(ct);
-            var roles = await GetUserRolesAsync(conn, tenantId, userId, ct);
-            var isAdmin = roles.Contains("ADMIN");
-            var canSearch = isAdmin || await _permissionService.HasAsync(tenantId, userId, "GED_DOCUMENT_MOVE", ct);
-            if (!canSearch) return Array.Empty<FolderOptionDto>();
-
             var normalizedTerm = string.IsNullOrWhiteSpace(term) ? null : term.Trim();
-            if (normalizedTerm is not null && normalizedTerm.Length < 2) return Array.Empty<FolderOptionDto>();
 
             const string sql = """
 with recursive folder_tree as (
     select f.id, f.parent_id, f.name, f.tenant_id, f.name::text as full_path
     from ged.folder f
-    where f.tenant_id = @tenantId and f.parent_id is null and f.reg_status = 'A' and f.is_active = true
+    where f.tenant_id = @tenantId
+      and f.parent_id is null
+      and f.is_active = true
+      and f.reg_status = 'A'
     union all
     select c.id, c.parent_id, c.name, c.tenant_id, (ft.full_path || ' > ' || c.name)::text as full_path
     from ged.folder c
     join folder_tree ft on ft.id = c.parent_id and ft.tenant_id = c.tenant_id
-    where c.tenant_id = @tenantId and c.reg_status = 'A' and c.is_active = true
+    where c.tenant_id = @tenantId
+      and c.is_active = true
+      and c.reg_status = 'A'
 )
 select id as Id, name as Name, full_path as FullPath, parent_id as ParentId
 from folder_tree
-where @term is null or name ilike ('%' || @term || '%') or full_path ilike ('%' || @term || '%')
+where @term is null
+   or name ilike ('%' || @term || '%')
+   or full_path ilike ('%' || @term || '%')
 order by full_path
-limit 20;
+limit 30;
 """;
-            return (await conn.QueryAsync<FolderOptionDto>(new CommandDefinition(sql, new { tenantId, term = normalizedTerm }, cancellationToken: ct))).AsList();
+
+            return (await conn.QueryAsync<FolderOptionDto>(
+                new CommandDefinition(sql, new { tenantId, term = normalizedTerm }, cancellationToken: ct))).AsList();
         }
         catch (Exception ex)
         {
