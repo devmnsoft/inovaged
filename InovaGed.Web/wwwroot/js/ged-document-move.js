@@ -31,6 +31,36 @@
             console.log('[MoveDocuments] folderSearchInput encontrado');
         }
 
+
+        function normalizeText(value) {
+            return String(value || '')
+                .toLowerCase()
+                .normalize('NFD')
+                .replace(/[̀-ͯ]/g, '');
+        }
+
+        function searchFoldersFromDom(term) {
+            const normalizedTerm = normalizeText(term);
+            const nodes = document.querySelectorAll('[data-folder-id][data-folder-name]');
+            const items = [];
+            const seen = new Set();
+
+            nodes.forEach(node => {
+                const id = node.getAttribute('data-folder-id');
+                const name = node.getAttribute('data-folder-name') || '';
+                const fullPath = node.getAttribute('data-folder-path') || name;
+                if (!id || seen.has(id)) return;
+
+                const searchable = normalizeText(`${name} ${fullPath}`);
+                if (!normalizedTerm || searchable.includes(normalizedTerm)) {
+                    seen.add(id);
+                    items.push({ id, name, fullPath, parentId: node.getAttribute('data-folder-parent-id') || null });
+                }
+            });
+
+            return items.slice(0, 30);
+        }
+
         function escapeHtml(v) { return String(v ?? '').replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m])); }
         function clearFolderResults() { if (host) host.innerHTML = ''; if (empty) empty.classList.add('d-none'); }
         function showFolderLoading(show) { if (loading) loading.classList.toggle('d-none', !show); }
@@ -40,20 +70,39 @@
         async function searchFolders(term) {
             try {
                 showFolderLoading(true);
-                if (empty) { empty.classList.add('d-none'); empty.textContent = 'Nenhuma pasta encontrada.'; }
-                const url = `/Ged/Folders/Search?term=${encodeURIComponent(term)}`;
-                console.log('[MoveDocuments] buscando pastas:', url);
-                const response = await fetch(url, { method: 'GET', headers: { 'Accept': 'application/json' } });
-                console.log('[MoveDocuments] status SearchFolders:', response.status);
-                if (!response.ok) { const txt = await response.text(); console.error('[MoveDocuments] erro SearchFolders:', txt); showFolderError('Erro ao buscar pastas.'); return; }
-                const data = await response.json();
-                console.log('[MoveDocuments] resposta SearchFolders:', data);
-                const items = Array.isArray(data) ? data : (data.items || data.data || []);
+                clearFolderResults();
+                if (empty) {
+                    empty.classList.add('d-none');
+                    empty.textContent = 'Nenhuma pasta encontrada.';
+                }
+
+                const response = await fetch(`/Ged/Folders/Search?term=${encodeURIComponent(term)}`, {
+                    method: 'GET',
+                    headers: { 'Accept': 'application/json' }
+                });
+
+                let items = [];
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log('[MoveDocuments] resposta SearchFolders:', data);
+                    items = Array.isArray(data) ? data : (data.items || data.data || data.folders || []);
+                } else {
+                    console.warn('[MoveDocuments] SearchFolders status:', response.status);
+                }
+
+                if (!items || items.length === 0) {
+                    console.warn('[MoveDocuments] Backend não retornou pastas. Tentando fallback DOM.');
+                    items = searchFoldersFromDom(term);
+                }
+
                 renderFolderResults(items);
             } catch (err) {
-                console.error('[MoveDocuments] Erro ao buscar pastas', err);
-                showFolderError('Falha de comunicação ao buscar pastas.');
-            } finally { showFolderLoading(false); }
+                console.error('[MoveDocuments] Erro ao buscar pastas no backend', err);
+                const fallbackItems = searchFoldersFromDom(term);
+                renderFolderResults(fallbackItems);
+            } finally {
+                showFolderLoading(false);
+            }
         }
 
         function renderFolderResults(items) {
@@ -91,7 +140,8 @@
             console.log('[MoveDocuments] pasta selecionada:', folderId, fullPath);
             destinationFolderId.value = folderId;
             destinationFolderName.value = button.dataset.folderFullPath || button.dataset.folderName || '';
-            clearFolderResults();
+            host?.querySelectorAll('.js-folder-result.active').forEach(el => el.classList.remove('active'));
+            button.classList.add('active');
             updateConfirmButton();
         }
 
@@ -122,7 +172,7 @@
             const term = e.target.value.trim();
             console.log('[MoveDocuments] termo digitado:', term);
             clearTimeout(folderSearchTimer);
-            if (term.length < 2) { clearFolderResults(); return; }
+            if (!term.length) { clearFolderResults(); return; }
             folderSearchTimer = setTimeout(function () { searchFolders(term).catch(err => console.error('[MoveDocuments] Erro ao buscar pastas', err)); }, 300);
         });
 

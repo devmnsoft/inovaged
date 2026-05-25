@@ -1293,8 +1293,18 @@ LIMIT 20;";
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Erro em SearchFolders. Tenant={TenantId} User={UserId}", _currentUser.TenantId, _currentUser.UserId);
-            return StatusCode(500, new { success = false, message = "Não foi possível buscar pastas no momento.", items = Array.Empty<object>() });
+            _logger.LogError(ex,
+                "Erro ao buscar pastas para movimentação. Tenant={TenantId} User={UserId} Term={Term}",
+                _currentUser.TenantId,
+                _currentUser.UserId,
+                term);
+
+            return Ok(new
+            {
+                success = false,
+                message = "Não foi possível buscar pastas no banco. Usando fallback visual quando disponível.",
+                items = Array.Empty<object>()
+            });
         }
     }
 

@@ -67,6 +67,22 @@
                     .OrderBy(x => x.Name)
                     .ToList();
 
+                    string BuildFolderPath(Guid folderId)
+                    {
+                        var chain = new List<string>();
+                        var current = Model.Folders.FirstOrDefault(x => x.Id == folderId);
+                        while (current is not null)
+                        {
+                            chain.Add(current.Name);
+                            current = current.ParentId.HasValue
+                                ? Model.Folders.FirstOrDefault(x => x.Id == current.ParentId.Value)
+                                : null;
+                        }
+
+                        chain.Reverse();
+                        return chain.Count == 0 ? string.Empty : string.Join(" > ", chain);
+                    }
+
                     void RenderTree(Guid parentId)
                     {
                         if (!byParent.TryGetValue(parentId, out var children) || children.Count == 0)
@@ -82,7 +98,11 @@
                                 <li class="ged-tree-node"
                                     data-id="@n.Id"
                                     data-parent="@(n.ParentId?.ToString() ?? "")"
-                                    data-has-children="@(hasChildren ? "1" : "0")">
+                                    data-has-children="@(hasChildren ? "1" : "0")"
+                                    data-folder-id="@n.Id"
+                                    data-folder-parent-id="@(n.ParentId?.ToString() ?? "")"
+                                    data-folder-name="@n.Name"
+                                    data-folder-path="@BuildFolderPath(n.Id)">
 
                                     <div class="ged-tree-row @(isActive ? "active" : "")">
                                         @if (hasChildren)
@@ -157,7 +177,10 @@
                     <ul class="list-unstyled mb-0">
                         <li class="mb-1">
                             <a class="d-flex align-items-center gap-2 text-decoration-none @(Model.CurrentFolderId == null ? "fw-bold" : "")"
-                               href="@raizHref">
+                               href="@raizHref"
+                               data-folder-id="root"
+                               data-folder-name="Raiz"
+                               data-folder-path="Raiz">
                                 <i class="bi bi-house"></i> Raiz
                             </a>
                         </li>
@@ -174,7 +197,11 @@
                                 <li class="ged-tree-node"
                                     data-id="@n.Id"
                                     data-parent=""
-                                    data-has-children="@(hasChildren ? "1" : "0")">
+                                    data-has-children="@(hasChildren ? "1" : "0")"
+                                    data-folder-id="@n.Id"
+                                    data-folder-parent-id=""
+                                    data-folder-name="@n.Name"
+                                    data-folder-path="@BuildFolderPath(n.Id)">
 
                                     <div class="ged-tree-row @(isActive ? "active" : "")">
                                         @if (hasChildren)
