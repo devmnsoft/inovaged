@@ -63,6 +63,9 @@ public sealed class DocumentMoveService : IDocumentMoveService
             var canSearch = isAdmin || await _permissionService.HasAsync(tenantId, userId, "GED_DOCUMENT_MOVE", ct);
             if (!canSearch) return Array.Empty<FolderOptionDto>();
 
+            var normalizedTerm = string.IsNullOrWhiteSpace(term) ? null : term.Trim();
+            if (normalizedTerm is not null && normalizedTerm.Length < 2) return Array.Empty<FolderOptionDto>();
+
             const string sql = """
 with recursive folder_tree as (
     select f.id, f.parent_id, f.name, f.tenant_id, f.name::text as full_path
@@ -78,9 +81,9 @@ select id as Id, name as Name, full_path as FullPath, parent_id as ParentId
 from folder_tree
 where @term is null or name ilike ('%' || @term || '%') or full_path ilike ('%' || @term || '%')
 order by full_path
-limit 30;
+limit 20;
 """;
-            return (await conn.QueryAsync<FolderOptionDto>(new CommandDefinition(sql, new { tenantId, term = string.IsNullOrWhiteSpace(term) ? null : term.Trim() }, cancellationToken: ct))).AsList();
+            return (await conn.QueryAsync<FolderOptionDto>(new CommandDefinition(sql, new { tenantId, term = normalizedTerm }, cancellationToken: ct))).AsList();
         }
         catch (Exception ex)
         {
