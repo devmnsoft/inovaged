@@ -303,6 +303,9 @@
                        asp-action="Kpi">
                         <i class="bi bi-bar-chart-line me-1"></i>KPI GED
                     </a>
+                    <button id="btnMoveSelected" type="button" class="btn btn-outline-primary" disabled>
+                        Mover selecionados (0)
+                    </button>
                 </div>
             </div>
 
@@ -316,9 +319,10 @@
                 else
                 {
                     <div class="table-responsive">
-                        <table class="table table-hover mb-0 align-middle">
+                        <table class="table table-hover mb-0 align-middle" data-ged-document-list>
                             <thead class="table-light">
                                 <tr>
+                                    <th style="width:40px;"><input type="checkbox" id="selectAllDocuments" /></th>
                                     <th>Título</th>
                                     <th style="width:220px;">Tipo</th>
                                     <th style="width:260px;">Arquivo</th>
@@ -330,7 +334,8 @@
                                 {
                                     var isUnclassified = string.IsNullOrWhiteSpace(d.TypeName) || d.TypeName == "-";
 
-                                    <tr>
+                                    <tr draggable="true" data-document-id="@d.Id">
+                                        <td><input type="checkbox" class="js-doc-select" value="@d.Id" /></td>
                                         <td class="fw-semibold">@d.Title</td>
                                         <td>
                                             @if (isUnclassified)
@@ -352,6 +357,9 @@
                                                asp-route-id="@d.Id">
                                                 <i class="bi bi-eye"></i> Abrir
                                             </a>
+                                            <button type="button" class="btn btn-sm btn-outline-secondary js-move-one" data-document-id="@d.Id">
+                                                <i class="bi bi-folder-symlink"></i> Mover
+                                            </button>
 
                                             @if (isUnclassified)
                                             {
@@ -381,6 +389,24 @@
                     </div>
                 }
             </div>
+        </div>
+    </div>
+</div>
+@Html.AntiForgeryToken()
+<div class="modal fade" id="moveDocumentsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title">Mover documento(s) para outra pasta</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <div id="moveSelectionSummary" class="small text-muted mb-2"></div>
+                <input id="destinationFolderId" type="hidden" />
+                <label class="form-label">Pasta destino</label>
+                <input id="destinationFolderSearch" class="form-control" placeholder="Digite para buscar pasta..." />
+                <div id="folderSuggestions" class="list-group mt-1"></div>
+                <label class="form-label mt-2">Justificativa (opcional)</label>
+                <textarea id="moveReason" class="form-control" rows="2"></textarea>
+            </div>
+            <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button><button id="btnConfirmMove" type="button" class="btn btn-primary">Confirmar movimentação</button></div>
         </div>
     </div>
 </div>
@@ -742,4 +768,5 @@
 
     })();
 </script>
+<script src="~/js/ged-document-move.js" asp-append-version="true"></script>
 <script src="~/js/ged-queue-visualizer.js" asp-append-version="true"></script>
