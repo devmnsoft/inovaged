@@ -29,7 +29,7 @@ public sealed class DocumentMoveService : IDocumentMoveService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Erro em MoveAsync Tenant={TenantId} User={UserId} Document={DocumentId} Destination={DestinationFolderId}", tenantId, userId, documentId, destinationFolderId);
-            return Result<DocumentMoveResultDto>.Fail("MOVE", "Erro interno ao mover documento.");
+            return Result<DocumentMoveResultDto>.Fail("MOVE", "Não foi possível concluir a movimentação do documento no momento.");
         }
     }
 
@@ -120,29 +120,64 @@ where h.tenant_id=@tenantId and h.document_id=@documentId and h.reg_status='A' o
 
     private async Task<DocumentMoveResultDto> MoveOneAsync(Guid tenantId, Guid userId, string? userName, Guid documentId, Guid destinationFolderId, string? reason, string source, Guid? batchId, CancellationToken ct)
     {
+        await using var conn = await _db.OpenAsync(ct);
+        await using var tx = await conn.BeginTransactionAsync(ct);
+
         try
         {
-            await using var conn = await _db.OpenAsync(ct);
-            var doc = await conn.QueryFirstOrDefaultAsync<(Guid Id, Guid? FolderId, string RegStatus, bool IsConfidential, bool IsDeleted)>(new CommandDefinition("select id, folder_id as FolderId, reg_status as RegStatus, is_confidential as IsConfidential, coalesce(is_deleted,false) as IsDeleted from ged.document where tenant_id=@tenantId and id=@documentId", new { tenantId, documentId }, cancellationToken: ct));
-            if (doc.Id == Guid.Empty) return Fail(documentId, "Documento não encontrado.");
-            if (!string.Equals(doc.RegStatus, "A", StringComparison.OrdinalIgnoreCase)) return Fail(documentId, "Documento inativo.");
-            if (doc.IsDeleted) return Fail(documentId, "Documento excluído.");
-            if (doc.FolderId == destinationFolderId) return Fail(documentId, "Documento já está na pasta destino.");
+            const string documentSql = """
+select
+    d.id AS "Id",
+    d.folder_id AS "FolderId",
+    d.reg_status AS "RegStatus",
+    d.is_confidential AS "IsConfidential",
+    coalesce(d.is_deleted, false) AS "IsDeleted"
+from ged.document d
+where d.tenant_id = @tenantId
+  and d.id = @documentId;
+""";
+
+            var doc = await conn.QueryFirstOrDefaultAsync<DocumentMoveSnapshot>(
+                new CommandDefinition(documentSql, new { tenantId, documentId }, transaction: tx, cancellationToken: ct));
+
+            if (doc is null || doc.Id == Guid.Empty)
+                return await RollbackAndReturnAsync(Fail(documentId, "Documento não encontrado."), tx, ct);
+
+            if (!string.Equals(doc.RegStatus, "A", StringComparison.OrdinalIgnoreCase))
+                return await RollbackAndReturnAsync(Fail(documentId, "Documento inativo."), tx, ct);
+
+            if (doc.IsDeleted)
+                return await RollbackAndReturnAsync(Fail(documentId, "Documento excluído."), tx, ct);
+
+            if (doc.FolderId == destinationFolderId)
+                return await RollbackAndReturnAsync(Fail(documentId, "Documento já está na pasta destino."), tx, ct);
+
             if (!await CanMoveAsync(conn, tenantId, userId, doc.IsConfidential, ct))
             {
                 await _audit.WriteAsync(tenantId, userId, "ACCESS_DENIED_MOVE_DOCUMENT", "DOCUMENT", documentId, "Tentativa não autorizada de mover documento", null, null, new { destinationFolderId, source, reason }, ct);
-                return Denied(documentId, "Usuário sem permissão para mover este documento.");
+                return await RollbackAndReturnAsync(Denied(documentId, "Usuário sem permissão para mover este documento."), tx, ct);
             }
-            var destinationExists = await conn.QueryFirstOrDefaultAsync<Guid?>(new CommandDefinition("select id from ged.folder where tenant_id=@tenantId and id=@destinationFolderId and reg_status='A' and is_active=true", new { tenantId, destinationFolderId }, cancellationToken: ct));
-            if (!destinationExists.HasValue) return Fail(documentId, "Pasta destino inválida.");
-            await conn.ExecuteAsync(new CommandDefinition("update ged.document set folder_id=@destinationFolderId, updated_at=now(), updated_by=@userId where tenant_id=@tenantId and id=@documentId", new { tenantId, documentId, destinationFolderId, userId }, cancellationToken: ct));
-            await conn.ExecuteAsync(new CommandDefinition("insert into ged.document_folder_move_history (id, tenant_id, document_id, old_folder_id, new_folder_id, moved_by, moved_by_name, reason, batch_id, source, reg_status) values (@id,@tenantId,@documentId,@oldFolderId,@newFolderId,@movedBy,@movedByName,@reason,@batchId,@source,'A')", new { id = Guid.NewGuid(), tenantId, documentId, oldFolderId = doc.FolderId, newFolderId = destinationFolderId, movedBy = userId, movedByName = userName, reason, batchId, source }, cancellationToken: ct));
+
+            var destinationExists = await conn.QueryFirstOrDefaultAsync<Guid?>(new CommandDefinition("select id from ged.folder where tenant_id=@tenantId and id=@destinationFolderId and reg_status='A' and is_active=true", new { tenantId, destinationFolderId }, transaction: tx, cancellationToken: ct));
+            if (!destinationExists.HasValue)
+                return await RollbackAndReturnAsync(Fail(documentId, "Pasta destino inválida."), tx, ct);
+
+            await conn.ExecuteAsync(new CommandDefinition("update ged.document set folder_id=@destinationFolderId, updated_at=now(), updated_by=@userId where tenant_id=@tenantId and id=@documentId and reg_status='A'", new { tenantId, documentId, destinationFolderId, userId }, transaction: tx, cancellationToken: ct));
+            await conn.ExecuteAsync(new CommandDefinition("insert into ged.document_folder_move_history (id, tenant_id, document_id, old_folder_id, new_folder_id, moved_by, moved_by_name, reason, batch_id, source, reg_status) values (@id,@tenantId,@documentId,@oldFolderId,@newFolderId,@movedBy,@movedByName,@reason,@batchId,@source,'A')", new { id = Guid.NewGuid(), tenantId, documentId, oldFolderId = doc.FolderId, newFolderId = destinationFolderId, movedBy = userId, movedByName = userName, reason, batchId, source }, transaction: tx, cancellationToken: ct));
+
+            await tx.CommitAsync(ct);
+
             await _audit.WriteAsync(tenantId, userId, "MOVE_DOCUMENT_FOLDER", "DOCUMENT", documentId, "Documento movido de pasta", null, null, new { oldFolderId = doc.FolderId, newFolderId = destinationFolderId, reason, source }, ct);
             return new DocumentMoveResultDto { DocumentId = documentId, Success = true, Message = "Documento movido com sucesso.", OldFolderId = doc.FolderId, NewFolderId = destinationFolderId };
         }
         catch (Exception ex)
-        { _logger.LogError(ex, "Erro em MoveOneAsync Tenant={TenantId} User={UserId} Document={DocumentId} Destination={Destination}", tenantId, userId, documentId, destinationFolderId); return Fail(documentId, "Erro interno ao mover documento."); }
+        {
+            await tx.RollbackAsync(ct);
+            _logger.LogError(ex, "Erro em MoveOneAsync Tenant={TenantId} User={UserId} Document={DocumentId} DestinationFolderId={DestinationFolderId}", tenantId, userId, documentId, destinationFolderId);
+            return Fail(documentId, "Não foi possível concluir a movimentação do documento. Tente novamente.");
+        }
     }
+
     private async Task<bool> CanMoveAsync(System.Data.Common.DbConnection conn, Guid tenantId, Guid userId, bool isConfidential, CancellationToken ct)
     {
         var roles = await GetUserRolesAsync(conn, tenantId, userId, ct);
@@ -165,6 +200,21 @@ where ur.tenant_id = @tenantId
         return (await conn.QueryAsync<string>(new CommandDefinition(sql, new { tenantId, userId }, cancellationToken: ct))).ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
+    private static async Task<DocumentMoveResultDto> RollbackAndReturnAsync(DocumentMoveResultDto result, System.Data.Common.DbTransaction tx, CancellationToken ct)
+    {
+        await tx.RollbackAsync(ct);
+        return result;
+    }
+
     private static DocumentMoveResultDto Fail(Guid id, string msg) => new() { DocumentId = id, Success = false, Message = msg, ErrorCode = "VALIDATION" };
     private static DocumentMoveResultDto Denied(Guid id, string msg) => new() { DocumentId = id, Success = false, Message = msg, ErrorCode = "ACCESS_DENIED" };
+
+    private sealed class DocumentMoveSnapshot
+    {
+        public Guid Id { get; set; }
+        public Guid? FolderId { get; set; }
+        public string RegStatus { get; set; } = string.Empty;
+        public bool IsConfidential { get; set; }
+        public bool IsDeleted { get; set; }
+    }
 }
