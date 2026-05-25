@@ -58,19 +58,31 @@ public sealed class DocumentMoveService : IDocumentMoveService
         try
         {
             await using var conn = await _db.OpenAsync(ct);
-            if (!await CanMoveAsync(conn, tenantId, userId, false, ct))
+            if (!await CanSearchFoldersAsync(conn, tenantId, userId, ct))
                 return Array.Empty<FolderOptionDto>();
+
             const string sql = """
-select id as Id, name as Name, name as FullPath, parent_id as ParentId
-from ged.folder where tenant_id=@tenantId and reg_status='A' and is_active=true
-  and (@term is null or name ilike '%' || @term || '%')
-order by name limit 20;
+select
+    f.id as Id,
+    f.name as Name,
+    f.name as FullPath,
+    f.parent_id as ParentId
+from ged.folder f
+where f.tenant_id = @tenantId
+  and f.reg_status = 'A'
+  and f.is_active = true
+  and (
+        @term is null
+        or f.name ilike '%' || @term || '%'
+      )
+order by f.name
+limit 20;
 """;
             return (await conn.QueryAsync<FolderOptionDto>(new CommandDefinition(sql, new { tenantId, term = string.IsNullOrWhiteSpace(term) ? null : term.Trim() }, cancellationToken: ct))).AsList();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Erro ao buscar pastas Tenant={TenantId} User={UserId}", tenantId, userId);
+            _logger.LogWarning(ex, "Falha ao buscar pastas para movimentação. Tenant={TenantId} User={UserId}", tenantId, userId);
             return Array.Empty<FolderOptionDto>();
         }
     }
@@ -123,13 +135,47 @@ where h.tenant_id=@tenantId and h.document_id=@documentId and h.reg_status='A' o
         catch (Exception ex)
         { _logger.LogError(ex, "Erro em MoveOneAsync Tenant={TenantId} User={UserId} Document={DocumentId} Destination={Destination}", tenantId, userId, documentId, destinationFolderId); return Fail(documentId, "Erro interno ao mover documento."); }
     }
+    private async Task<bool> CanSearchFoldersAsync(System.Data.Common.DbConnection conn, Guid tenantId, Guid userId, CancellationToken ct)
+    {
+        try
+        {
+            var roles = await GetUserRolesAsync(conn, tenantId, userId, ct);
+            if (roles.Contains("ADMIN")) return true;
+            if (roles.Contains("ADMINISTRADOROPHIR")) return false;
+            if (roles.Contains("ARQUIVISTAOPHIR"))
+                return await _permissionService.HasAsync(tenantId, userId, "GED_DOCUMENT_MOVE", ct);
+
+            return await _permissionService.HasAsync(tenantId, userId, "GED_DOCUMENT_MOVE", ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Falha na validação de permissão para busca de pastas. Tenant={TenantId} User={UserId}", tenantId, userId);
+            return false;
+        }
+    }
+
     private async Task<bool> CanMoveAsync(System.Data.Common.DbConnection conn, Guid tenantId, Guid userId, bool isConfidential, CancellationToken ct)
     {
-        var roles = (await conn.QueryAsync<string>(new CommandDefinition(@"select r.normalized_name from ged.user_role ur join ged.app_role r on r.tenant_id=ur.tenant_id and r.id=ur.role_id where ur.tenant_id=@tenantId and ur.user_id=@userId and ur.reg_status='A' and r.reg_status='A'", new { tenantId, userId }, cancellationToken: ct))).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var roles = await GetUserRolesAsync(conn, tenantId, userId, ct);
         if (roles.Contains("ADMIN")) return true;
         if (roles.Contains("ADMINISTRADOROPHIR") || roles.Contains("ARQUIVISTAOPHIR"))
             return !isConfidential || await _permissionService.HasAsync(tenantId, userId, "GED_DOCUMENT_MOVE_CONFIDENTIAL", ct);
         return await _permissionService.HasAsync(tenantId, userId, "GED_DOCUMENT_MOVE", ct) && (!isConfidential || await _permissionService.HasAsync(tenantId, userId, "GED_DOCUMENT_MOVE_CONFIDENTIAL", ct));
+    }
+
+    private static async Task<HashSet<string>> GetUserRolesAsync(System.Data.Common.DbConnection conn, Guid tenantId, Guid userId, CancellationToken ct)
+    {
+        const string sql = """
+select r.normalized_name
+from ged.user_role ur
+join ged.app_role r on r.id = ur.role_id
+where r.tenant_id = @tenantId
+  and ur.user_id = @userId
+  and ur.reg_status = 'A'
+  and r.reg_status = 'A'
+""";
+
+        return (await conn.QueryAsync<string>(new CommandDefinition(sql, new { tenantId, userId }, cancellationToken: ct))).ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
     private static DocumentMoveResultDto Fail(Guid id, string msg) => new() { DocumentId = id, Success = false, Message = msg, ErrorCode = "VALIDATION" };
