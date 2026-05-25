@@ -304,7 +304,7 @@
                         <i class="bi bi-bar-chart-line me-1"></i>KPI GED
                     </a>
                     <button id="btnMoveSelected" type="button" class="btn btn-outline-primary" disabled>
-                        Mover selecionados (0)
+                        Mover selecionados <span id="moveSelectedCount">(0)</span>
                     </button>
                 </div>
             </div>
@@ -335,7 +335,7 @@
                                     var isUnclassified = string.IsNullOrWhiteSpace(d.TypeName) || d.TypeName == "-";
 
                                     <tr draggable="true" data-document-id="@d.Id">
-                                        <td><input type="checkbox" class="js-doc-select" value="@d.Id" /></td>
+                                        <td><input type="checkbox" class="js-doc-select" value="@d.Id" data-document-title="@d.Title" /></td>
                                         <td class="fw-semibold">@d.Title</td>
                                         <td>
                                             @if (isUnclassified)
@@ -357,7 +357,7 @@
                                                asp-route-id="@d.Id">
                                                 <i class="bi bi-eye"></i> Abrir
                                             </a>
-                                            <button type="button" class="btn btn-sm btn-outline-secondary js-move-one" data-document-id="@d.Id">
+                                            <button type="button" class="btn btn-sm btn-outline-secondary js-move-one" data-document-id="@d.Id" data-document-title="@d.Title">
                                                 <i class="bi bi-folder-symlink"></i> Mover
                                             </button>
 
@@ -398,11 +398,12 @@
         <div class="modal-content">
             <div class="modal-header"><h5 class="modal-title">Mover documento(s) para outra pasta</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
             <div class="modal-body">
-                <div id="moveSelectionSummary" class="small text-muted mb-2"></div>
+                <div id="selectedDocumentsSummary" class="small text-muted mb-2"></div>
                 <input id="destinationFolderId" type="hidden" />
                 <label class="form-label">Pasta destino</label>
-                <input id="destinationFolderSearch" class="form-control" placeholder="Digite para buscar pasta..." />
-                <div id="folderSuggestions" class="list-group mt-1"></div>
+                <input id="folderSearchInput" class="form-control" placeholder="Digite para buscar pasta..." />
+                <input id="destinationFolderName" class="form-control mt-2" readonly placeholder="Pasta selecionada" />
+                <div id="folderSearchResults" class="list-group mt-1"></div>
                 <label class="form-label mt-2">Justificativa (opcional)</label>
                 <textarea id="moveReason" class="form-control" rows="2"></textarea>
             </div>
