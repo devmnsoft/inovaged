@@ -15,6 +15,7 @@ using InovaGed.Application.Documents;
 using InovaGed.Application.Ged;
 using InovaGed.Application.Ged.Batches;
 using InovaGed.Application.Ged.Dashboard;
+using InovaGed.Application.Ged.Documents;
 using InovaGed.Application.Ged.Instruments;
 using InovaGed.Application.Ged.Loans;
 using InovaGed.Application.Ged.Physical;
@@ -44,6 +45,7 @@ using InovaGed.Infrastructure.Documents;
 using InovaGed.Infrastructure.Ged;
 using InovaGed.Infrastructure.Ged.Batches;
 using InovaGed.Infrastructure.Ged.Dashboard;
+using InovaGed.Infrastructure.Ged.Documents;
 using InovaGed.Infrastructure.Ged.Instruments;
 using InovaGed.Infrastructure.Ged.Loans;
 using InovaGed.Infrastructure.Ged.Physical;
@@ -181,6 +183,7 @@ builder.Services.AddScoped<IClassificationPlanQueries, ClassificationPlanQueries
 // =======================================================
 builder.Services.AddScoped<IDocumentSearchQueries, DocumentSearchQueries>();
 builder.Services.AddScoped<IDocumentSearchTextQueries, DocumentSearchTextQueries>();
+builder.Services.AddScoped<IDocumentMoveService, DocumentMoveService>();
 
 // =======================================================
 // Auth Repository
@@ -262,6 +265,7 @@ builder.Services.AddScoped<UserService>();
 
 builder.Services.AddScoped<IPermissionChecker, AllowAllPermissionChecker>();
 builder.Services.AddScoped<PermissionService>();
+builder.Services.AddScoped<IPermissionService>(sp => sp.GetRequiredService<PermissionService>());
 builder.Services.AddScoped<IParameterRepository, ParameterRepository>();
 builder.Services.AddScoped<IAuditWriter, AuditWriter>();     // ✅ uma vez só
 builder.Services.AddScoped<IAuditQueries, AuditQueries>();

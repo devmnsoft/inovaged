@@ -21,20 +21,36 @@ public sealed class DocumentMoveService : IDocumentMoveService
 
     public async Task<Result<DocumentMoveResultDto>> MoveAsync(Guid tenantId, Guid userId, string? userName, Guid documentId, Guid destinationFolderId, string? reason, string source, CancellationToken ct)
     {
-        var item = await MoveOneAsync(tenantId, userId, userName, documentId, destinationFolderId, reason, source, null, ct);
-        return item.Success ? Result<DocumentMoveResultDto>.Ok(item) : Result<DocumentMoveResultDto>.Fail(item.ErrorCode ?? "MOVE", item.Message ?? "Falha ao mover documento.");
+        try
+        {
+            var item = await MoveOneAsync(tenantId, userId, userName, documentId, destinationFolderId, reason, source, null, ct);
+            return item.Success ? Result<DocumentMoveResultDto>.Ok(item) : Result<DocumentMoveResultDto>.Fail(item.ErrorCode ?? "MOVE", item.Message ?? "Falha ao mover documento.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro em MoveAsync Tenant={TenantId} User={UserId} Document={DocumentId} Destination={DestinationFolderId}", tenantId, userId, documentId, destinationFolderId);
+            return Result<DocumentMoveResultDto>.Fail("MOVE", "Erro interno ao mover documento.");
+        }
     }
 
     public async Task<Result<DocumentBulkMoveResultDto>> MoveBulkAsync(Guid tenantId, Guid userId, string? userName, IReadOnlyList<Guid> documentIds, Guid destinationFolderId, string? reason, string source, CancellationToken ct)
     {
-        if (documentIds.Count == 0) return Result<DocumentBulkMoveResultDto>.Fail("VALIDATION", "Nenhum documento selecionado.");
-        if (documentIds.Count > BulkLimit) return Result<DocumentBulkMoveResultDto>.Fail("LIMIT", $"Limite máximo de {BulkLimit} documentos por operação.");
-        var batchId = Guid.NewGuid();
-        var items = new List<DocumentMoveResultDto>(documentIds.Count);
-        foreach (var id in documentIds.Distinct()) items.Add(await MoveOneAsync(tenantId, userId, userName, id, destinationFolderId, reason, source, batchId, ct));
-        var ok = items.Count(i => i.Success);
-        await _audit.WriteAsync(tenantId, userId, "MOVE_DOCUMENT_FOLDER_BULK", "DOCUMENT", batchId, "Documentos movidos em lote", null, null, new { batchId, total = items.Count, successCount = ok, failCount = items.Count - ok, destinationFolderId, reason, source = "BULK" }, ct);
-        return Result<DocumentBulkMoveResultDto>.Ok(new DocumentBulkMoveResultDto { BatchId = batchId, Total = items.Count, SuccessCount = ok, FailCount = items.Count - ok, Items = items });
+        try
+        {
+            if (documentIds.Count == 0) return Result<DocumentBulkMoveResultDto>.Fail("VALIDATION", "Nenhum documento selecionado.");
+            if (documentIds.Count > BulkLimit) return Result<DocumentBulkMoveResultDto>.Fail("LIMIT", $"Limite máximo de {BulkLimit} documentos por operação.");
+            var batchId = Guid.NewGuid();
+            var items = new List<DocumentMoveResultDto>(documentIds.Count);
+            foreach (var id in documentIds.Distinct()) items.Add(await MoveOneAsync(tenantId, userId, userName, id, destinationFolderId, reason, source, batchId, ct));
+            var ok = items.Count(i => i.Success);
+            await _audit.WriteAsync(tenantId, userId, "MOVE_DOCUMENT_FOLDER_BULK", "DOCUMENT", batchId, "Documentos movidos em lote", null, null, new { batchId, total = items.Count, successCount = ok, failCount = items.Count - ok, destinationFolderId, reason, source = "BULK" }, ct);
+            return Result<DocumentBulkMoveResultDto>.Ok(new DocumentBulkMoveResultDto { BatchId = batchId, Total = items.Count, SuccessCount = ok, FailCount = items.Count - ok, Items = items });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro em MoveBulkAsync Tenant={TenantId} User={UserId} Destination={DestinationFolderId} BatchSize={BatchSize}", tenantId, userId, destinationFolderId, documentIds.Count);
+            return Result<DocumentBulkMoveResultDto>.Fail("MOVE_BULK", "Erro interno ao mover documentos.");
+        }
     }
 
     public async Task<IReadOnlyList<FolderOptionDto>> SearchFoldersAsync(Guid tenantId, Guid userId, string? term, CancellationToken ct)
@@ -61,8 +77,10 @@ order by name limit 20;
 
     public async Task<IReadOnlyList<DocumentMoveHistoryDto>> GetMoveHistoryAsync(Guid tenantId, Guid documentId, CancellationToken ct)
     {
-        await using var conn = await _db.OpenAsync(ct);
-        const string sql = """
+        try
+        {
+            await using var conn = await _db.OpenAsync(ct);
+            const string sql = """
 select h.id,h.document_id as DocumentId,h.old_folder_id as OldFolderId,h.new_folder_id as NewFolderId,
 fo.name as OldFolderName, fn.name as NewFolderName, h.moved_by as MovedBy,h.moved_by_name as MovedByName,
 h.moved_at as MovedAt,h.reason,h.source
@@ -71,7 +89,13 @@ left join ged.folder fo on fo.tenant_id=h.tenant_id and fo.id=h.old_folder_id
 left join ged.folder fn on fn.tenant_id=h.tenant_id and fn.id=h.new_folder_id
 where h.tenant_id=@tenantId and h.document_id=@documentId and h.reg_status='A' order by h.moved_at desc;
 """;
-        return (await conn.QueryAsync<DocumentMoveHistoryDto>(new CommandDefinition(sql, new { tenantId, documentId }, cancellationToken: ct))).AsList();
+            return (await conn.QueryAsync<DocumentMoveHistoryDto>(new CommandDefinition(sql, new { tenantId, documentId }, cancellationToken: ct))).AsList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro em GetMoveHistoryAsync Tenant={TenantId} Document={DocumentId}", tenantId, documentId);
+            return Array.Empty<DocumentMoveHistoryDto>();
+        }
     }
 
     private async Task<DocumentMoveResultDto> MoveOneAsync(Guid tenantId, Guid userId, string? userName, Guid documentId, Guid destinationFolderId, string? reason, string source, Guid? batchId, CancellationToken ct)
