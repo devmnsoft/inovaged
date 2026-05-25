@@ -120,6 +120,7 @@
 	int dispElimBadge = 0;
 	int dispTransBadge = 0;
 	int dispReviewBadge = 0;
+	int loanPendingBadge = 0;
 
 	try
 	{
@@ -159,6 +160,7 @@
 		dispElimBadge = 0;
 		dispTransBadge = 0;
 		dispReviewBadge = 0;
+		loanPendingBadge = 0;
 	}
 
 	var dispTotalBadge = dispElimBadge + dispTransBadge + dispReviewBadge;
@@ -386,7 +388,7 @@
 
 	<a asp-controller="Loans" asp-action="Index" class="@Active("Loans", "Index", "Details", "Create", "Approve", "Deliver", "Return")">
 		<i class="bi bi-journal-arrow-up"></i>
-		<span>Solicitações</span>
+		<span class="d-flex align-items-center gap-2">Solicitações <span class="badge text-bg-danger @(loanPendingBadge > 0 ? "" : "d-none")">@loanPendingBadge</span></span>
 	</a>
 
 	<a asp-controller="Loans" asp-action="Overdue" class="@Active("Loans", "Overdue")">
@@ -570,10 +572,20 @@
 
 <div class="sidebar-section-title">Ajuda</div>
 
-<a asp-controller="Manual" asp-action="Index" class="@Active("Manual", "Index")">
-	<i class="bi bi-book"></i>
-	<span>Manual do Sistema</span>
-</a>
+@{
+	var isAdmin = User.IsInRole(AppRoles.Admin);
+	var isAdministradorOphir = User.IsInRole(AppRoles.AdministradorOphir);
+	var isArquivistaOphir = User.IsInRole(AppRoles.ArquivistaOphir);
+	var canSeeManual = isAdmin || (!isAdministradorOphir && !isArquivistaOphir);
+}
+
+@if (canSeeManual)
+{
+	<a asp-controller="Manual" asp-action="Index" class="@Active("Manual", "Index")">
+		<i class="bi bi-book"></i>
+		<span>Manual do Sistema</span>
+	</a>
+}
 
 <div class="sidebar-section-title">Conta</div>
 
