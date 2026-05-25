@@ -401,13 +401,15 @@
                 <div id="selectedDocumentsSummary" class="small text-muted mb-2"></div>
                 <input id="destinationFolderId" type="hidden" />
                 <label class="form-label">Pasta destino</label>
-                <input id="folderSearchInput" class="form-control" placeholder="Digite para buscar pasta..." />
-                <input id="destinationFolderName" class="form-control mt-2" readonly placeholder="Pasta selecionada" />
-                <div id="folderSearchResults" class="list-group mt-1"></div>
+                <input type="text" id="folderSearchInput" class="form-control" placeholder="Digite para buscar pasta..." />
+                <input type="text" id="destinationFolderName" class="form-control mt-2" placeholder="Pasta selecionada" readonly />
+                <div id="folderSearchResults" class="list-group mt-2" style="max-height: 240px; overflow-y: auto;"></div>
+                <div id="folderSearchEmpty" class="text-muted small mt-2 d-none">Nenhuma pasta encontrada.</div>
+                <div id="folderSearchLoading" class="text-muted small mt-2 d-none">Buscando pastas...</div>
                 <label class="form-label mt-2">Justificativa (opcional)</label>
                 <textarea id="moveReason" class="form-control" rows="2"></textarea>
             </div>
-            <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button><button id="btnConfirmMove" type="button" class="btn btn-primary">Confirmar movimentação</button></div>
+            <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button><button id="btnConfirmMove" type="button" class="btn btn-primary" disabled>Confirmar movimentação</button></div>
         </div>
     </div>
 </div>

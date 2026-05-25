@@ -166,6 +166,22 @@ public sealed class LoansController : Controller
         }
     }
 
+
+    [HttpGet("PendingCount")]
+    public async Task<IActionResult> PendingCount(CancellationToken ct)
+    {
+        try
+        {
+            var tenantId = _user.TenantId;
+            var stats = await _queries.StatsAsync(tenantId, ct);
+            return Ok(new { success = true, count = stats.Requested });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Loans.PendingCount failed. TenantId={TenantId} UserId={UserId}", _user.TenantId, _user.UserId);
+            return StatusCode(500, new { success = false, count = 0 });
+        }
+    }
     // =========================================================
     // GET /Loans/New
     // =========================================================

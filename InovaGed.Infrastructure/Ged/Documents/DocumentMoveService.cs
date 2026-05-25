@@ -58,31 +58,33 @@ public sealed class DocumentMoveService : IDocumentMoveService
         try
         {
             await using var conn = await _db.OpenAsync(ct);
-            if (!await CanSearchFoldersAsync(conn, tenantId, userId, ct))
-                return Array.Empty<FolderOptionDto>();
+            var roles = await GetUserRolesAsync(conn, tenantId, userId, ct);
+            var isAdmin = roles.Contains("ADMIN");
+            var canSearch = isAdmin || await _permissionService.HasAsync(tenantId, userId, "GED_DOCUMENT_MOVE", ct);
+            if (!canSearch) return Array.Empty<FolderOptionDto>();
 
             const string sql = """
-select
-    f.id as Id,
-    f.name as Name,
-    f.name as FullPath,
-    f.parent_id as ParentId
-from ged.folder f
-where f.tenant_id = @tenantId
-  and f.reg_status = 'A'
-  and f.is_active = true
-  and (
-        @term is null
-        or f.name ilike '%' || @term || '%'
-      )
-order by f.name
-limit 20;
+with recursive folder_tree as (
+    select f.id, f.parent_id, f.name, f.tenant_id, f.name::text as full_path
+    from ged.folder f
+    where f.tenant_id = @tenantId and f.parent_id is null and f.reg_status = 'A' and f.is_active = true
+    union all
+    select c.id, c.parent_id, c.name, c.tenant_id, (ft.full_path || ' > ' || c.name)::text as full_path
+    from ged.folder c
+    join folder_tree ft on ft.id = c.parent_id and ft.tenant_id = c.tenant_id
+    where c.tenant_id = @tenantId and c.reg_status = 'A' and c.is_active = true
+)
+select id as Id, name as Name, full_path as FullPath, parent_id as ParentId
+from folder_tree
+where @term is null or name ilike ('%' || @term || '%') or full_path ilike ('%' || @term || '%')
+order by full_path
+limit 30;
 """;
             return (await conn.QueryAsync<FolderOptionDto>(new CommandDefinition(sql, new { tenantId, term = string.IsNullOrWhiteSpace(term) ? null : term.Trim() }, cancellationToken: ct))).AsList();
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Falha ao buscar pastas para movimentação. Tenant={TenantId} User={UserId}", tenantId, userId);
+            _logger.LogError(ex, "Falha ao buscar pastas para movimentação. Tenant={TenantId} User={UserId}", tenantId, userId);
             return Array.Empty<FolderOptionDto>();
         }
     }
@@ -135,25 +137,6 @@ where h.tenant_id=@tenantId and h.document_id=@documentId and h.reg_status='A' o
         catch (Exception ex)
         { _logger.LogError(ex, "Erro em MoveOneAsync Tenant={TenantId} User={UserId} Document={DocumentId} Destination={Destination}", tenantId, userId, documentId, destinationFolderId); return Fail(documentId, "Erro interno ao mover documento."); }
     }
-    private async Task<bool> CanSearchFoldersAsync(System.Data.Common.DbConnection conn, Guid tenantId, Guid userId, CancellationToken ct)
-    {
-        try
-        {
-            var roles = await GetUserRolesAsync(conn, tenantId, userId, ct);
-            if (roles.Contains("ADMIN")) return true;
-            if (roles.Contains("ADMINISTRADOROPHIR")) return false;
-            if (roles.Contains("ARQUIVISTAOPHIR"))
-                return await _permissionService.HasAsync(tenantId, userId, "GED_DOCUMENT_MOVE", ct);
-
-            return await _permissionService.HasAsync(tenantId, userId, "GED_DOCUMENT_MOVE", ct);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Falha na validação de permissão para busca de pastas. Tenant={TenantId} User={UserId}", tenantId, userId);
-            return false;
-        }
-    }
-
     private async Task<bool> CanMoveAsync(System.Data.Common.DbConnection conn, Guid tenantId, Guid userId, bool isConfidential, CancellationToken ct)
     {
         var roles = await GetUserRolesAsync(conn, tenantId, userId, ct);
