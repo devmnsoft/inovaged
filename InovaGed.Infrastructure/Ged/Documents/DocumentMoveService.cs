@@ -37,16 +37,26 @@ public sealed class DocumentMoveService : IDocumentMoveService
         return Result<DocumentBulkMoveResultDto>.Ok(new DocumentBulkMoveResultDto { BatchId = batchId, Total = items.Count, SuccessCount = ok, FailCount = items.Count - ok, Items = items });
     }
 
-    public async Task<IReadOnlyList<FolderOptionDto>> SearchFoldersAsync(Guid tenantId, string? term, CancellationToken ct)
+    public async Task<IReadOnlyList<FolderOptionDto>> SearchFoldersAsync(Guid tenantId, Guid userId, string? term, CancellationToken ct)
     {
-        await using var conn = await _db.OpenAsync(ct);
-        const string sql = """
+        try
+        {
+            await using var conn = await _db.OpenAsync(ct);
+            if (!await CanMoveAsync(conn, tenantId, userId, false, ct))
+                return Array.Empty<FolderOptionDto>();
+            const string sql = """
 select id as Id, name as Name, name as FullPath, parent_id as ParentId
 from ged.folder where tenant_id=@tenantId and reg_status='A' and is_active=true
   and (@term is null or name ilike '%' || @term || '%')
-order by name limit 50;
+order by name limit 20;
 """;
-        return (await conn.QueryAsync<FolderOptionDto>(new CommandDefinition(sql, new { tenantId, term = string.IsNullOrWhiteSpace(term) ? null : term.Trim() }, cancellationToken: ct))).AsList();
+            return (await conn.QueryAsync<FolderOptionDto>(new CommandDefinition(sql, new { tenantId, term = string.IsNullOrWhiteSpace(term) ? null : term.Trim() }, cancellationToken: ct))).AsList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro ao buscar pastas Tenant={TenantId} User={UserId}", tenantId, userId);
+            return Array.Empty<FolderOptionDto>();
+        }
     }
 
     public async Task<IReadOnlyList<DocumentMoveHistoryDto>> GetMoveHistoryAsync(Guid tenantId, Guid documentId, CancellationToken ct)

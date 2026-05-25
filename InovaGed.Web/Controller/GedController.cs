@@ -6,6 +6,7 @@ using InovaGed.Application.Classification;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Common.Storage;
 using InovaGed.Application.Documents;
+using InovaGed.Application.Ged.Documents;
 using InovaGed.Application.Ged;
 using InovaGed.Application.Identity;
 using InovaGed.Application.Ocr;
@@ -49,6 +50,7 @@ public sealed class GedController : Controller
     private readonly IPreviewStatusRepository _previewStatus;
 
     private readonly IDocumentSearchQueries _search;
+    private readonly IDocumentMoveService _documentMoveService;
 
     // ✅ classificação
     private readonly IDocumentClassificationQueries _clsQ;
@@ -66,6 +68,7 @@ public sealed class GedController : Controller
         IFolderQueries folders,
         IOcrStatusQueries ocrStatus,
         IDocumentSearchQueries search,
+        IDocumentMoveService documentMoveService,
         IOcrJobRepository ocrJobs,
         IFolderCommands folderCommands,
         IDocumentQueries docs,
@@ -93,6 +96,7 @@ public sealed class GedController : Controller
         _ocrStatus = ocrStatus;
 
         _search = search;
+        _documentMoveService = documentMoveService;
 
         _docs = docs;
         _documentApp = documentApp;
@@ -1272,7 +1276,79 @@ LIMIT 20;";
         catch (Exception ex)
         {
             _logger.LogError(ex, "Erro inesperado em PreviewStatus. Tenant={TenantId} Version={VersionId}", _currentUser.TenantId, versionId);
-            return StatusCode(500, new { message = "Status de preview/OCR indisponível no momento." });
+            return Ok(new { versionId, status = "ERROR", errorMessage = "Não foi possível consultar o status do OCR no momento." });
+        }
+    }
+
+    [HttpGet("/Ged/Folders/Search")]
+    public async Task<IActionResult> SearchFolders(string? term, CancellationToken ct)
+    {
+        try
+        {
+            if (!_currentUser.IsAuthenticated) return Unauthorized();
+            var tenantId = _currentUser.TenantId;
+            var userId = _currentUser.UserId;
+            var rows = await _documentMoveService.SearchFoldersAsync(tenantId, userId, term, ct);
+            return Ok(rows);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro em SearchFolders. Tenant={TenantId} User={UserId}", _currentUser.TenantId, _currentUser.UserId);
+            return Ok(Array.Empty<FolderOptionDto>());
+        }
+    }
+
+    [HttpPost("/Ged/Documents/Move")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Move([FromBody] DocumentMoveRequestVM request, CancellationToken ct)
+    {
+        try
+        {
+            if (!_currentUser.IsAuthenticated) return Unauthorized();
+            var result = await _documentMoveService.MoveAsync(_currentUser.TenantId, _currentUser.UserId, User.Identity?.Name, request.DocumentId, request.DestinationFolderId, request.Reason, request.Source ?? "SINGLE", ct);
+            if (!result.Success && string.Equals(result.ErrorCode, "ACCESS_DENIED", StringComparison.OrdinalIgnoreCase))
+                return StatusCode(403, result);
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro em Move. Tenant={TenantId} User={UserId} Document={DocumentId} Destination={DestinationFolderId}", _currentUser.TenantId, _currentUser.UserId, request.DocumentId, request.DestinationFolderId);
+            return Ok(Result<DocumentMoveResultDto>.Fail("MOVE_ERROR", "Não foi possível mover o documento no momento."));
+        }
+    }
+
+    [HttpPost("/Ged/Documents/MoveBulk")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> MoveBulk([FromBody] DocumentBulkMoveRequestVM request, CancellationToken ct)
+    {
+        try
+        {
+            if (!_currentUser.IsAuthenticated) return Unauthorized();
+            var result = await _documentMoveService.MoveBulkAsync(_currentUser.TenantId, _currentUser.UserId, User.Identity?.Name, request.DocumentIds, request.DestinationFolderId, request.Reason, request.Source ?? "BULK", ct);
+            if (!result.Success && string.Equals(result.ErrorCode, "ACCESS_DENIED", StringComparison.OrdinalIgnoreCase))
+                return StatusCode(403, result);
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro em MoveBulk. Tenant={TenantId} User={UserId} Destination={DestinationFolderId}", _currentUser.TenantId, _currentUser.UserId, request.DestinationFolderId);
+            return Ok(Result<DocumentBulkMoveResultDto>.Fail("MOVE_BULK_ERROR", "Não foi possível mover os documentos no momento."));
+        }
+    }
+
+    [HttpGet("/Ged/Documents/{id:guid}/MoveHistory")]
+    public async Task<IActionResult> MoveHistory(Guid id, CancellationToken ct)
+    {
+        try
+        {
+            if (!_currentUser.IsAuthenticated) return Unauthorized();
+            var rows = await _documentMoveService.GetMoveHistoryAsync(_currentUser.TenantId, id, ct);
+            return Ok(rows);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro em MoveHistory. Tenant={TenantId} User={UserId} Document={DocumentId}", _currentUser.TenantId, _currentUser.UserId, id);
+            return Ok(Array.Empty<DocumentMoveHistoryDto>());
         }
     }
 

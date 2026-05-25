@@ -33,17 +33,19 @@ SELECT EXISTS (
 );
 """, cancellationToken: ct));
 
-            var sql = hasPreviewPath
-                ? """
+            var hasErrorMessage = await conn.ExecuteScalarAsync<bool>(new CommandDefinition("""
+SELECT EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'ged'
+      AND table_name = 'preview_status'
+      AND column_name = 'error_message'
+);
+""", cancellationToken: ct));
+
+            var sql = $"""
                   SELECT tenant_id AS TenantId, document_version_id AS VersionId, status AS Status,
-                         preview_path AS PreviewPath, error_message AS ErrorMessage,
-                         requested_at AS RequestedAt, finished_at AS FinishedAt
-                  FROM ged.preview_status
-                  WHERE tenant_id = @tenantId AND document_version_id = @versionId
-                  """
-                : """
-                  SELECT tenant_id AS TenantId, document_version_id AS VersionId, status AS Status,
-                         NULL::text AS PreviewPath, error_message AS ErrorMessage,
+                         {(hasPreviewPath ? "preview_path" : "NULL::text")} AS PreviewPath, {(hasErrorMessage ? "error_message" : "NULL::text")} AS ErrorMessage,
                          requested_at AS RequestedAt, finished_at AS FinishedAt
                   FROM ged.preview_status
                   WHERE tenant_id = @tenantId AND document_version_id = @versionId
@@ -71,7 +73,18 @@ SELECT EXISTS (
                 TenantId = tenantId,
                 VersionId = versionId,
                 Status = PreviewProcessingStatus.Error,
-                ErrorMessage = "Status de preview/OCR indisponível no momento."
+                ErrorMessage = "Status do OCR/preview indisponível no momento."
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Falha ao consultar preview status. Tenant={TenantId} Version={VersionId}", tenantId, versionId);
+            return new PreviewStatusDto
+            {
+                TenantId = tenantId,
+                VersionId = versionId,
+                Status = PreviewProcessingStatus.Error,
+                ErrorMessage = "Status do OCR/preview indisponível no momento."
             };
         }
     }
