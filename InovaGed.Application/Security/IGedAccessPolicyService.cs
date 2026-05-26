@@ -16,7 +16,9 @@ public interface IGedAccessPolicyService
     Task<bool> CanAccessHospitalDocumentsAsync(Guid tenantId, Guid userId, ClaimsPrincipal principal, CancellationToken ct);
     Task<bool> CanAccessLoansAsync(Guid tenantId, Guid userId, ClaimsPrincipal principal, CancellationToken ct);
     Task<bool> CanAccessGlobalDashboardAsync(Guid tenantId, Guid userId, ClaimsPrincipal principal, CancellationToken ct);
+    Task<bool> CanAccessManualAsync(Guid tenantId, Guid userId, ClaimsPrincipal principal, CancellationToken ct);
     Task<bool> CanManageOcrAsync(Guid tenantId, Guid userId, ClaimsPrincipal principal, CancellationToken ct);
+    Task<bool> CanManageUsersAsync(Guid tenantId, Guid userId, ClaimsPrincipal principal, CancellationToken ct);
     Task<bool> CanMoveDocumentAsync(Guid tenantId, Guid userId, Guid documentId, ClaimsPrincipal principal, CancellationToken ct);
 }
 
