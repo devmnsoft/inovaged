@@ -9,6 +9,9 @@ namespace InovaGed.Infrastructure.Ged.Dashboard;
 
 public sealed class GedDashboardService : IGedDashboardService
 {
+    private static readonly string[] SecurityDateColumnCandidates = ["created_at", "occurred_at", "event_time", "reg_date"];
+    private static readonly string[] AuditDateColumnCandidates = ["created_at", "event_time", "reg_date", "occurred_at"];
+
     private readonly IDbConnectionFactory _db;
     private readonly IMemoryCache _cache;
     private readonly ILogger<GedDashboardService> _logger;
@@ -38,12 +41,12 @@ where tenant_id=@tenantId", new { tenantId }, cancellationToken: ct));
             vm.ActiveDocuments = row.active_documents;
             vm.DeletedDocuments = row.deleted_documents;
             vm.UnclassifiedDocuments = row.unclassified_documents;
-            vm.DocumentBySituation = new()
-            {
+            vm.DocumentBySituation =
+            [
                 new() { Label = "Ativos", Value = vm.ActiveDocuments },
                 new() { Label = "Excluídos", Value = vm.DeletedDocuments },
                 new() { Label = "Sem classificação", Value = vm.UnclassifiedDocuments }
-            };
+            ];
         });
 
         await TryLoad(vm, tenantId, userId, "ocr", "ged.ocr_job", async () =>
@@ -69,35 +72,7 @@ from ged.ocr_job where tenant_id=@tenantId", new { tenantId }, cancellationToken
             vm.OcrAverageSeconds = row24h.avg_sec;
         });
 
-        await TryLoad(vm, tenantId, userId, "loans", "ged.loan_request", async () =>
-        {
-            var loan = (await conn.QueryAsync<DashboardMetricSlice>(new CommandDefinition(@"
-select upper(status::text) as Label, count(*)::int as Value
-from ged.loan_request
-where tenant_id=@tenantId and reg_status='A'
-group by status", new { tenantId }, cancellationToken: ct))).ToList();
-            vm.LoanByStatus = loan;
-            vm.LoanRequested = loan.FirstOrDefault(x => x.Label == "REQUESTED")?.Value ?? 0;
-            vm.LoanApproved = loan.FirstOrDefault(x => x.Label == "APPROVED")?.Value ?? 0;
-            vm.LoanDelivered = loan.FirstOrDefault(x => x.Label == "DELIVERED")?.Value ?? 0;
-            vm.LoanReturned = loan.FirstOrDefault(x => x.Label == "RETURNED")?.Value ?? 0;
-            vm.LoanCancelled = loan.FirstOrDefault(x => x.Label == "CANCELLED")?.Value ?? 0;
-
-            vm.RecentLoanRequests = (await conn.QueryAsync<RecentLoanRequestDto>(new CommandDefinition(@"
-select requested_at as RequestedAt, coalesce(requester_name,'-') as Requester, coalesce(document_title,'-') as Document, coalesce(status::text,'-') as Status
-from ged.vw_loan_report
-where tenant_id=@tenantId
-order by requested_at desc
-limit 10", new { tenantId }, cancellationToken: ct))).ToList();
-
-            vm.OverdueLoans = (await conn.QueryAsync<OverdueLoanDto>(new CommandDefinition(@"
-select coalesce(protocol_no::text,'-') as ProtocolNo, coalesce(requester_name,'-') as Borrower, coalesce(document_title,'-') as Document, due_at as DueDate
-from ged.vw_loan_overdue
-where tenant_id=@tenantId and reg_status='A'
-order by due_at asc
-limit 10", new { tenantId }, cancellationToken: ct))).ToList();
-            vm.LoanOverdue = vm.OverdueLoans.Count;
-        });
+        await LoadLoansAsync(conn, vm, tenantId, userId, ct);
 
         if (await TableExistsAsync(conn, "ged", "document_folder_move_history", ct))
         {
@@ -126,36 +101,136 @@ where h.tenant_id=@tenantId order by h.moved_at desc limit 10", new { tenantId }
         await LoadRetentionAsync(conn, vm, tenantId, userId, ct);
 
         vm.ConfidentialDocuments = 0;
-        vm.LockedUsers = vm.LockedUsers;
 
         _cache.Set(key, vm, TimeSpan.FromSeconds(30));
         return vm;
     }
 
+    private async Task LoadLoansAsync(IDbConnection conn, GedDashboardVm vm, Guid tenantId, Guid userId, CancellationToken ct)
+    {
+        if (!await TableExistsAsync(conn, "ged", "loan_request", ct))
+        {
+            MarkUnavailable(vm, "Indicador de empréstimos parcialmente indisponível.");
+            _logger.LogWarning("Dashboard partial failure. Tenant={TenantId} User={UserId} Indicator=loans Table=ged.loan_request Reason=table-not-found", tenantId, userId);
+            return;
+        }
+
+        await TryLoad(vm, tenantId, userId, "loans", "ged.loan_request", async () =>
+        {
+            var loan = (await conn.QueryAsync<DashboardMetricSlice>(new CommandDefinition(@"
+select upper(status::text) as Label, count(*)::int as Value
+from ged.loan_request
+where tenant_id=@tenantId and reg_status='A'
+group by status", new { tenantId }, cancellationToken: ct))).ToList();
+            vm.LoanByStatus = loan;
+            vm.LoanRequested = loan.FirstOrDefault(x => x.Label == "REQUESTED")?.Value ?? 0;
+            vm.LoanApproved = loan.FirstOrDefault(x => x.Label == "APPROVED")?.Value ?? 0;
+            vm.LoanDelivered = loan.FirstOrDefault(x => x.Label == "DELIVERED")?.Value ?? 0;
+            vm.LoanReturned = loan.FirstOrDefault(x => x.Label == "RETURNED")?.Value ?? 0;
+            vm.LoanCancelled = loan.FirstOrDefault(x => x.Label == "CANCELLED")?.Value ?? 0;
+        });
+
+        if (await TableExistsAsync(conn, "ged", "vw_loan_report", ct))
+        {
+            await TryLoad(vm, tenantId, userId, "loans-recent", "ged.vw_loan_report", async () =>
+            {
+                vm.RecentLoanRequests = (await conn.QueryAsync<RecentLoanRequestDto>(new CommandDefinition(@"
+select v.requested_at as RequestedAt,
+       coalesce(v.requester_name,'-') as Requester,
+       coalesce(v.document_title,'Documento sem título') as Document,
+       coalesce(v.status::text,'-') as Status
+from ged.vw_loan_report v
+where v.tenant_id=@tenantId
+order by v.requested_at desc
+limit 10", new { tenantId }, cancellationToken: ct))).ToList();
+            });
+        }
+        else
+        {
+            MarkUnavailable(vm, "Indicador de empréstimos parcialmente indisponível.");
+            _logger.LogWarning("Dashboard partial failure. Tenant={TenantId} User={UserId} Indicator=loans-recent Table=ged.vw_loan_report Reason=view-not-found", tenantId, userId);
+            vm.RecentLoanRequests = [];
+        }
+
+        if (await TableExistsAsync(conn, "ged", "vw_loan_overdue", ct))
+        {
+            await TryLoad(vm, tenantId, userId, "loans-overdue", "ged.vw_loan_overdue", async () =>
+            {
+                vm.OverdueLoans = (await conn.QueryAsync<OverdueLoanDto>(new CommandDefinition(@"
+select coalesce(protocol_no::text,'-') as ProtocolNo, coalesce(requester_name,'-') as Borrower, coalesce(document_title,'-') as Document, due_at as DueDate
+from ged.vw_loan_overdue
+where tenant_id=@tenantId and reg_status='A'
+order by due_at asc
+limit 10", new { tenantId }, cancellationToken: ct))).ToList();
+                vm.LoanOverdue = vm.OverdueLoans.Count;
+            });
+        }
+        else
+        {
+            vm.OverdueLoans = [];
+            vm.LoanOverdue = 0;
+        }
+    }
+
     private async Task LoadSecurityAsync(IDbConnection conn, GedDashboardVm vm, Guid tenantId, Guid userId, CancellationToken ct)
     {
-        if (!await TableExistsAsync(conn, "ged", "security_access_failure_log", ct) && !await TableExistsAsync(conn, "ged", "access_failure", ct))
-        { MarkUnavailable(vm, "Indicadores de acesso negado indisponíveis nesta instalação."); return; }
+        var securityDateColumn = await ResolveFirstExistingColumnAsync(conn, "ged", "security_access_failure_log", SecurityDateColumnCandidates, ct);
+        var accessDateColumn = await ResolveFirstExistingColumnAsync(conn, "ged", "access_failure", SecurityDateColumnCandidates, ct);
 
-        var source = await TableExistsAsync(conn, "ged", "security_access_failure_log", ct) ? "ged.security_access_failure_log" : "ged.access_failure";
-        await TryLoad(vm, tenantId, userId, "security", source, async () =>
+        string? source = null;
+        string? dateColumn = null;
+        if (securityDateColumn is not null)
         {
-            vm.AccessDenied24h = await conn.QuerySingleAsync<int>(new CommandDefinition($"select count(*)::int from {source} where tenant_id=@tenantId and created_at>=now()-interval '24 hour'", new { tenantId }, cancellationToken: ct));
-            vm.RecentAccessDenied = (await conn.QueryAsync<RecentAccessDeniedDto>(new CommandDefinition($"select created_at as EventTime, coalesce(user_name,'-') as UserName, coalesce(path,'-') as Path, coalesce(ip_address::text,'-') as IpAddress from {source} where tenant_id=@tenantId order by created_at desc limit 10", new { tenantId }, cancellationToken: ct))).ToList();
-        });
+            source = "ged.security_access_failure_log";
+            dateColumn = securityDateColumn;
+        }
+        else if (accessDateColumn is not null)
+        {
+            source = "ged.access_failure";
+            dateColumn = accessDateColumn;
+        }
+
+        if (source is null || dateColumn is null)
+        {
+            vm.AccessDenied24h = 0;
+            vm.RecentAccessDenied = [];
+            MarkUnavailable(vm, "Indicador de segurança parcialmente indisponível.");
+            _logger.LogWarning("Dashboard partial failure. Tenant={TenantId} User={UserId} Indicator=security Reason=date-column-not-found", tenantId, userId);
+        }
+        else
+        {
+            await TryLoad(vm, tenantId, userId, "security", source, async () =>
+            {
+                vm.AccessDenied24h = await conn.QuerySingleAsync<int>(new CommandDefinition($"select count(*)::int from {source} where tenant_id=@tenantId and {dateColumn}>=now()-interval '24 hour'", new { tenantId }, cancellationToken: ct));
+                vm.RecentAccessDenied = (await conn.QueryAsync<RecentAccessDeniedDto>(new CommandDefinition($"select {dateColumn} as EventTime, coalesce(user_name,'-') as UserName, coalesce(path,'-') as Path, coalesce(ip_address::text,'-') as IpAddress from {source} where tenant_id=@tenantId order by {dateColumn} desc limit 10", new { tenantId }, cancellationToken: ct))).ToList();
+            });
+        }
 
         await TryLoad(vm, tenantId, userId, "locked-users", "ged.app_user", async () =>
         {
-            vm.LockedUsers = await conn.QuerySingleAsync<int>(new CommandDefinition("select count(*)::int from ged.app_user where tenant_id=@tenantId and reg_status='A' and is_locked=true", new { tenantId }, cancellationToken: ct));
+            var hasDeletedAt = await ColumnExistsAsync(conn, "ged", "app_user", "deleted_at_utc", ct);
+            var sql = hasDeletedAt
+                ? "select count(*)::int from ged.app_user u where u.tenant_id=@tenantId and coalesce(u.is_locked,false)=true and u.deleted_at_utc is null"
+                : "select count(*)::int from ged.app_user u where u.tenant_id=@tenantId and coalesce(u.is_locked,false)=true";
+            vm.LockedUsers = await conn.QuerySingleAsync<int>(new CommandDefinition(sql, new { tenantId }, cancellationToken: ct));
         });
+
+        var auditDateColumn = await ResolveFirstExistingColumnAsync(conn, "ged", "audit_log", AuditDateColumnCandidates, ct);
+        if (auditDateColumn is null)
+        {
+            vm.RecentAuditEvents = [];
+            MarkUnavailable(vm, "Indicador de auditoria parcialmente indisponível.");
+            _logger.LogWarning("Dashboard partial failure. Tenant={TenantId} User={UserId} Indicator=audit Reason=date-column-not-found", tenantId, userId);
+            return;
+        }
 
         await TryLoad(vm, tenantId, userId, "audit", "ged.audit_log", async () =>
         {
-            vm.RecentAuditEvents = (await conn.QueryAsync<RecentAuditEventDto>(new CommandDefinition(@"
-select a.event_time as EventTime, coalesce(a.action,'-') as Action, coalesce(a.entity_name,'-') as EntityName, coalesce(a.summary,'-') as Summary, coalesce(u.name,'-') as UserName
+            vm.RecentAuditEvents = (await conn.QueryAsync<RecentAuditEventDto>(new CommandDefinition($@"
+select a.{auditDateColumn} as EventTime, coalesce(a.action::text,'-') as Action, coalesce(a.entity_name,'-') as EntityName, coalesce(a.summary,'-') as Summary, coalesce(u.name,'-') as UserName
 from ged.audit_log a left join ged.app_user u on u.tenant_id=a.tenant_id and u.id=a.user_id
 where a.tenant_id=@tenantId
-order by a.event_time desc
+order by a.{auditDateColumn} desc
 limit 20", new { tenantId }, cancellationToken: ct))).ToList();
         });
     }
@@ -187,19 +262,39 @@ from ged.retention_queue where tenant_id=@tenantId", new { tenantId }, cancellat
         {
             vm.PartialFailure = true;
             vm.WarningMessages.Add($"Falha ao carregar indicador: {indicator}.");
-            _logger.LogWarning(ex, "Dashboard partial failure. Tenant={TenantId} User={UserId} Indicator={Indicator} Table={Table}", tenantId, userId, indicator, table);
+            _logger.LogError(ex, "Dashboard unexpected failure. Tenant={TenantId} User={UserId} Indicator={Indicator} Table={Table}", tenantId, userId, indicator, table);
         }
     }
 
     private static async Task<bool> TableExistsAsync(IDbConnection conn, string schema, string table, CancellationToken ct)
-    {
-        var exists = await conn.QuerySingleAsync<int>(new CommandDefinition("select case when exists (select 1 from information_schema.tables where table_schema=@schema and table_name=@table) then 1 else 0 end", new { schema, table }, cancellationToken: ct));
-        return exists == 1;
-    }
+        => await conn.QuerySingleAsync<bool>(new CommandDefinition(@"
+select exists (
+    select 1
+    from information_schema.tables
+    where table_schema = @Schema
+      and table_name = @Table
+)", new { Schema = schema, Table = table }, cancellationToken: ct));
 
     private static async Task<bool> ColumnExistsAsync(IDbConnection conn, string schema, string table, string column, CancellationToken ct)
+        => await conn.QuerySingleAsync<bool>(new CommandDefinition(@"
+select exists (
+    select 1
+    from information_schema.columns
+    where table_schema = @Schema
+      and table_name = @Table
+      and column_name = @Column
+)", new { Schema = schema, Table = table, Column = column }, cancellationToken: ct));
+
+    private static async Task<string?> ResolveFirstExistingColumnAsync(IDbConnection conn, string schema, string table, IReadOnlyList<string> candidates, CancellationToken ct)
     {
-        var exists = await conn.QuerySingleAsync<int>(new CommandDefinition("select case when exists (select 1 from information_schema.columns where table_schema=@schema and table_name=@table and column_name=@column) then 1 else 0 end", new { schema, table, column }, cancellationToken: ct));
-        return exists == 1;
+        foreach (var candidate in candidates)
+        {
+            if (await ColumnExistsAsync(conn, schema, table, candidate, ct))
+            {
+                return candidate;
+            }
+        }
+
+        return null;
     }
 }

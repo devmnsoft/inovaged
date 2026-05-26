@@ -1,5 +1,10 @@
 @model InovaGed.Application.Ged.Dashboard.GedDashboardVm
-@{ ViewData["Title"] = "Painel Operacional do GED"; var vm = Model ?? new InovaGed.Application.Ged.Dashboard.GedDashboardVm { PartialFailure = true }; }
+@{
+  ViewData["Title"] = "Painel Operacional do GED";
+  var vm = Model ?? new InovaGed.Application.Ged.Dashboard.GedDashboardVm { PartialFailure = true };
+  var recentLoans = vm.RecentLoanRequests ?? new List<InovaGed.Application.Ged.Dashboard.RecentLoanRequestDto>();
+  var recentAudit = vm.RecentAuditEvents ?? new List<InovaGed.Application.Ged.Dashboard.RecentAuditEventDto>();
+}
 <div class="container-fluid py-3">
   <div class="d-flex justify-content-between align-items-center mb-3">
     <div>
@@ -31,5 +36,65 @@
     }) {
       <div class="col-12 col-sm-6 col-xl-3"><a class="text-decoration-none" href="@c.L"><div class="card h-100 shadow-sm"><div class="card-body"><div class="d-flex justify-content-between"><small class="text-muted">@c.T</small><i class="bi @c.I @c.C"></i></div><div class="display-6 fw-bold">@c.V</div></div></div></a></div>
     }
+  </div>
+
+  <div class="row g-3">
+    <div class="col-12 col-xl-6">
+      <div class="card h-100 shadow-sm">
+        <div class="card-header"><strong>Solicitações de empréstimo recentes</strong></div>
+        <div class="table-responsive">
+          <table class="table table-sm mb-0">
+            <thead><tr><th>Data</th><th>Solicitante</th><th>Documento</th><th>Status</th></tr></thead>
+            <tbody>
+            @if (recentLoans.Count == 0)
+            {
+              <tr><td colspan="4" class="text-muted">Sem registros recentes.</td></tr>
+            }
+            else
+            {
+              foreach (var item in recentLoans)
+              {
+                <tr>
+                  <td>@(item.RequestedAt?.ToString("dd/MM/yyyy HH:mm") ?? "-")</td>
+                  <td>@(item.Requester ?? "-")</td>
+                  <td>@(item.Document ?? "-")</td>
+                  <td>@(item.Status ?? "-")</td>
+                </tr>
+              }
+            }
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-xl-6">
+      <div class="card h-100 shadow-sm">
+        <div class="card-header"><strong>Eventos de auditoria recentes</strong></div>
+        <div class="table-responsive">
+          <table class="table table-sm mb-0">
+            <thead><tr><th>Data</th><th>Ação</th><th>Entidade</th><th>Usuário</th></tr></thead>
+            <tbody>
+            @if (recentAudit.Count == 0)
+            {
+              <tr><td colspan="4" class="text-muted">Sem registros recentes.</td></tr>
+            }
+            else
+            {
+              foreach (var item in recentAudit)
+              {
+                <tr>
+                  <td>@(item.EventTime?.ToString("dd/MM/yyyy HH:mm") ?? "-")</td>
+                  <td>@(item.Action ?? "-")</td>
+                  <td>@(item.EntityName ?? "-")</td>
+                  <td>@(item.UserName ?? "-")</td>
+                </tr>
+              }
+            }
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   </div>
 </div>

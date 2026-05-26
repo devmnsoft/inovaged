@@ -28,6 +28,13 @@ public sealed class LoanOverdueWorker : BackgroundService
                 var current = scope.ServiceProvider.GetRequiredService<ICurrentUser>();
                 var commands = scope.ServiceProvider.GetRequiredService<ILoanCommands>();
 
+                if (current.TenantId == Guid.Empty)
+                {
+                    _logger.LogWarning("LoanOverdueWorker ignorado: tenant não configurado.");
+                    await Task.Delay(TimeSpan.FromHours(24), stoppingToken);
+                    continue;
+                }
+
                 var res = await commands.RegisterOverdueEventsAsync(current.TenantId, current.UserId, stoppingToken);
                 if (res.IsSuccess)
                     _logger.LogInformation("Overdue registrados. Tenant={Tenant} Count={Count}", current.TenantId, res.Value);
