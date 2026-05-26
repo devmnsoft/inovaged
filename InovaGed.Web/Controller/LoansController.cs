@@ -195,7 +195,7 @@ public sealed class LoansController : Controller
         try
         {
             var tenantId = _user.TenantId;
-            var res = await _service.CreateAsync(tenantId, _user.UserId ?? Guid.Empty, vm, ct);
+            var res = await _service.CreateAsync(tenantId, _user.UserId, vm, ct);
 
             if (!res.IsSuccess)
             {
@@ -260,7 +260,7 @@ public sealed class LoansController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Approve(Guid id, string? notes, CancellationToken ct)
     {
-        var res = await _service.ApproveAsync(_user.TenantId, id, _user.UserId ?? Guid.Empty, notes, ct);
+        var res = await _service.ApproveAsync(_user.TenantId, id, _user.UserId, notes, ct);
         TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Solicitação aprovada com sucesso." : res.ErrorMessage;
         return RedirectToAction(nameof(Details), new { id });
     }
@@ -269,7 +269,7 @@ public sealed class LoansController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Deliver(Guid id, string? notes, CancellationToken ct)
     {
-        var res = await _service.DeliverAsync(_user.TenantId, id, _user.UserId ?? Guid.Empty, notes, ct);
+        var res = await _service.DeliverAsync(_user.TenantId, id, _user.UserId, notes, ct);
         TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Solicitação entregue com sucesso." : res.ErrorMessage;
         return RedirectToAction(nameof(Details), new { id });
     }
@@ -278,7 +278,7 @@ public sealed class LoansController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Return(Guid id, string? notes, CancellationToken ct)
     {
-        var res = await _service.ReturnAsync(_user.TenantId, id, _user.UserId ?? Guid.Empty, notes, ct);
+        var res = await _service.ReturnAsync(_user.TenantId, id, _user.UserId, notes, ct);
         TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Solicitação devolvida com sucesso." : res.ErrorMessage;
         return RedirectToAction(nameof(Details), new { id });
     }
@@ -287,7 +287,7 @@ public sealed class LoansController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Cancel(Guid id, string? notes, CancellationToken ct)
     {
-        var res = await _service.CancelAsync(_user.TenantId, id, _user.UserId ?? Guid.Empty, notes, ct);
+        var res = await _service.CancelAsync(_user.TenantId, id, _user.UserId, notes, ct);
         TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Solicitação cancelada com sucesso." : res.ErrorMessage;
         return RedirectToAction(nameof(Details), new { id });
     }
