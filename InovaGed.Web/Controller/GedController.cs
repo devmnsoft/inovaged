@@ -1339,7 +1339,7 @@ LIMIT 20;";
             var result = await _documentMoveService.MoveBulkAsync(_currentUser.TenantId, _currentUser.UserId, User.Identity?.Name, request.DocumentIds, request.DestinationFolderId, request.Reason, request.Source ?? "BULK", isAdmin, ct);
             if (!result.IsSuccess)
                 return BadRequest(new { success = false, message = result.Error?.Message ?? "Não foi possível mover o documento." });
-            return Ok(new { success = true, message = "Documento movido com sucesso.", data = result.Value });
+            return Ok(new { success = true, message = "Movimentação em lote concluída.", data = result.Value });
         }
         catch (Exception ex)
         {

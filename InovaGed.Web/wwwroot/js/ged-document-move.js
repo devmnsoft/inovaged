@@ -84,6 +84,10 @@
         }
 
         async function searchFolders(term) {
+            if (!term || term.trim().length < 2) {
+                renderFolderResults(searchFoldersFromDom(term));
+                return;
+            }
             try {
                 showFolderLoading(true);
                 clearFolderResults();
@@ -155,7 +159,16 @@
                 if (mode === 'bulk') {
                     const successCount = payloadResp?.data?.successCount ?? selectedIds.length;
                     const failCount = payloadResp?.data?.failCount ?? 0;
-                    window.showAppToast?.(`${successCount} documento(s) movido(s) com sucesso. ${failCount} falha(s).`, failCount > 0 ? 'warning' : 'success', 'Movimentação em lote');
+                    if (successCount > 0 && failCount === 0) {
+                        window.showAppToast?.(`${successCount} documento(s) movido(s) com sucesso.`, 'success', 'Movimentação em lote');
+                    } else if (successCount > 0 && failCount > 0) {
+                        showMoveModalMessage(`${successCount} documento(s) movido(s) e ${failCount} falha(s).`, 'warning');
+                        window.showAppToast?.(`${successCount} documento(s) movido(s) e ${failCount} falha(s).`, 'warning', 'Movimentação parcial');
+                    } else {
+                        showMoveModalMessage('Nenhum documento foi movido.', 'danger');
+                        window.showAppToast?.('Nenhum documento foi movido.', 'error', 'Movimentação em lote');
+                        return;
+                    }
                 } else {
                     window.showAppToast?.(message || 'Documento movido com sucesso.', 'success', 'Movimentação concluída');
                 }
@@ -171,6 +184,7 @@
             if (e.target?.id !== 'folderSearchInput') return;
             const term = e.target.value.trim(); clearTimeout(folderSearchTimer);
             if (!term.length) { clearFolderResults(); return; }
+            if (term.length < 2) { renderFolderResults(searchFoldersFromDom(term)); return; }
             folderSearchTimer = setTimeout(() => searchFolders(term), 300);
         });
         document.addEventListener('click', function (e) {
