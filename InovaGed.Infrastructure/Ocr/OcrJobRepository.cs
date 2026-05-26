@@ -268,13 +268,38 @@ WHERE id = @jobId;";
                 cancellationToken: ct));
     }
 
-    public async Task<OcrJobLease?> LeaseNextAsync(TimeSpan leaseTime, CancellationToken ct)
+    
+    public async Task MarkRetryAsync(long jobId, int attempts, DateTimeOffset nextAttemptAt, string errorMessage, CancellationToken ct)
+    {
+        const string sql = @"
+UPDATE ged.ocr_job
+SET status = 'PENDING'::ged.ocr_status_enum,
+    attempts = @attempts,
+    last_attempt_at = now(),
+    next_attempt_at = @nextAttemptAt,
+    lease_expires_at = null,
+    error_message = @error
+WHERE id = @jobId;";
+
+        await using var conn = await _db.OpenAsync(ct);
+        await conn.ExecuteAsync(new CommandDefinition(sql, new { jobId, attempts, nextAttemptAt, error = errorMessage }, cancellationToken: ct));
+    }
+
+    public async Task<bool> IsCancelRequestedAsync(long jobId, CancellationToken ct)
+    {
+        const string sql = @"SELECT coalesce(cancel_requested,false) OR status='CANCELLED'::ged.ocr_status_enum FROM ged.ocr_job WHERE id=@jobId;";
+        await using var conn = await _db.OpenAsync(ct);
+        return await conn.ExecuteScalarAsync<bool>(new CommandDefinition(sql, new { jobId }, cancellationToken: ct));
+    }
+
+public async Task<OcrJobLease?> LeaseNextAsync(TimeSpan leaseTime, CancellationToken ct)
     {
         const string sql = @"
 WITH cte AS (
   SELECT id
   FROM ged.ocr_job
   WHERE status = 'PENDING'::ged.ocr_status_enum
+    AND (next_attempt_at IS NULL OR next_attempt_at <= now())
     AND (lease_expires_at IS NULL OR lease_expires_at < now())
   ORDER BY requested_at
   LIMIT 1

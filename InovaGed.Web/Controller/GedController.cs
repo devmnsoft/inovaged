@@ -1255,13 +1255,14 @@ LIMIT 20;";
             var tenantId = _currentUser.TenantId;
             var status = await _previewStatus.GetAsync(tenantId, versionId, ct);
             if (status is null)
-                return Json(new { versionId, status = "NOT_READY", previewPath = (string?)null, errorMessage = (string?)null, attempts = 0 });
+                return Ok(new { success = true, versionId, status = "NOT_READY", previewPath = (string?)null, errorMessage = (string?)null, attempts = 0, lastUpdatedAt = (DateTimeOffset?)null });
 
             var previewUrl = status.Status == PreviewProcessingStatus.Ready && !string.IsNullOrWhiteSpace(status.PreviewPath)
                 ? $"/storage/{status.PreviewPath}"
                 : null;
-            return Json(new
+            return Ok(new
             {
+                success = true,
                 versionId,
                 status = status.Status.ToString().ToUpperInvariant(),
                 previewPath = status.PreviewPath,
@@ -1276,7 +1277,7 @@ LIMIT 20;";
         catch (Exception ex)
         {
             _logger.LogError(ex, "Erro inesperado em PreviewStatus. Tenant={TenantId} Version={VersionId}", _currentUser.TenantId, versionId);
-            return Ok(new { versionId, status = "ERROR", errorMessage = "Não foi possível consultar o status do OCR no momento." });
+            return Ok(new { success = false, versionId, status = "ERROR", errorMessage = "Não foi possível consultar o status do OCR no momento." });
         }
     }
 
