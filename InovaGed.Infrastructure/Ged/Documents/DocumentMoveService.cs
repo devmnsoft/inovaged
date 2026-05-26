@@ -1,7 +1,7 @@
 using Dapper;
+using InovaGed.Application.Audit;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Ged.Documents;
-using InovaGed.Application.Audit;
 using InovaGed.Application.Security;
 using InovaGed.Domain.Primitives;
 using Microsoft.Extensions.Logging;
@@ -10,6 +10,7 @@ namespace InovaGed.Infrastructure.Ged.Documents;
 
 public sealed class DocumentMoveService : IDocumentMoveService
 {
+    private static readonly Guid VirtualRootFolderId = Guid.Parse("f0000000-0000-0000-0000-000000000001");
     private const int BulkLimit = 200;
     private readonly IDbConnectionFactory _db;
     private readonly IAuditWriter _audit;
@@ -130,8 +131,7 @@ select
     d.id AS "Id",
     d.folder_id AS "FolderId",
     d.reg_status AS "RegStatus",
-    d.is_confidential AS "IsConfidential",
-    coalesce(d.is_deleted, false) AS "IsDeleted"
+    false AS "IsConfidential"
 from ged.document d
 where d.tenant_id = @tenantId
   and d.id = @documentId;
@@ -144,13 +144,12 @@ where d.tenant_id = @tenantId
                 return await RollbackAndReturnAsync(Fail(documentId, "Documento não encontrado."), tx, ct);
 
             if (!string.Equals(doc.RegStatus, "A", StringComparison.OrdinalIgnoreCase))
-                return await RollbackAndReturnAsync(Fail(documentId, "Documento inativo."), tx, ct);
+                return await RollbackAndReturnAsync(Fail(documentId, "Documento inativo ou excluído."), tx, ct);
 
-            if (doc.IsDeleted)
-                return await RollbackAndReturnAsync(Fail(documentId, "Documento excluído."), tx, ct);
+            var targetFolderId = destinationFolderId == VirtualRootFolderId ? (Guid?)null : destinationFolderId;
 
-            if (doc.FolderId == destinationFolderId)
-                return await RollbackAndReturnAsync(Fail(documentId, "Documento já está na pasta destino."), tx, ct);
+            if (doc.FolderId == targetFolderId)
+                return await RollbackAndReturnAsync(Fail(documentId, "O documento já está nesta pasta."), tx, ct);
 
             if (!await CanMoveAsync(conn, tenantId, userId, doc.IsConfidential, ct))
             {
@@ -158,17 +157,20 @@ where d.tenant_id = @tenantId
                 return await RollbackAndReturnAsync(Denied(documentId, "Usuário sem permissão para mover este documento."), tx, ct);
             }
 
-            var destinationExists = await conn.QueryFirstOrDefaultAsync<Guid?>(new CommandDefinition("select id from ged.folder where tenant_id=@tenantId and id=@destinationFolderId and reg_status='A' and is_active=true", new { tenantId, destinationFolderId }, transaction: tx, cancellationToken: ct));
-            if (!destinationExists.HasValue)
-                return await RollbackAndReturnAsync(Fail(documentId, "Pasta destino inválida."), tx, ct);
+            if (targetFolderId.HasValue)
+            {
+                var destinationExists = await conn.QueryFirstOrDefaultAsync<Guid?>(new CommandDefinition("select id from ged.folder where tenant_id=@tenantId and id=@destinationFolderId and reg_status='A' and is_active=true", new { tenantId, destinationFolderId = targetFolderId.Value }, transaction: tx, cancellationToken: ct));
+                if (!destinationExists.HasValue)
+                    return await RollbackAndReturnAsync(Fail(documentId, "Pasta destino inválida."), tx, ct);
+            }
 
-            await conn.ExecuteAsync(new CommandDefinition("update ged.document set folder_id=@destinationFolderId, updated_at=now(), updated_by=@userId where tenant_id=@tenantId and id=@documentId and reg_status='A'", new { tenantId, documentId, destinationFolderId, userId }, transaction: tx, cancellationToken: ct));
-            await conn.ExecuteAsync(new CommandDefinition("insert into ged.document_folder_move_history (id, tenant_id, document_id, old_folder_id, new_folder_id, moved_by, moved_by_name, reason, batch_id, source, reg_status) values (@id,@tenantId,@documentId,@oldFolderId,@newFolderId,@movedBy,@movedByName,@reason,@batchId,@source,'A')", new { id = Guid.NewGuid(), tenantId, documentId, oldFolderId = doc.FolderId, newFolderId = destinationFolderId, movedBy = userId, movedByName = userName, reason, batchId, source }, transaction: tx, cancellationToken: ct));
+            await conn.ExecuteAsync(new CommandDefinition("update ged.document set folder_id=@destinationFolderId, updated_at=now(), updated_by=@userId where tenant_id=@tenantId and id=@documentId and reg_status='A'", new { tenantId, documentId, destinationFolderId = targetFolderId, userId }, transaction: tx, cancellationToken: ct));
+            await conn.ExecuteAsync(new CommandDefinition("insert into ged.document_folder_move_history (id, tenant_id, document_id, old_folder_id, new_folder_id, moved_by, moved_by_name, reason, batch_id, source, reg_status) values (@id,@tenantId,@documentId,@oldFolderId,@newFolderId,@movedBy,@movedByName,@reason,@batchId,@source,'A')", new { id = Guid.NewGuid(), tenantId, documentId, oldFolderId = doc.FolderId, newFolderId = targetFolderId, movedBy = userId, movedByName = userName, reason, batchId, source }, transaction: tx, cancellationToken: ct));
 
             await tx.CommitAsync(ct);
 
-            await _audit.WriteAsync(tenantId, userId, "MOVE_DOCUMENT_FOLDER", "DOCUMENT", documentId, "Documento movido de pasta", null, null, new { oldFolderId = doc.FolderId, newFolderId = destinationFolderId, reason, source }, ct);
-            return new DocumentMoveResultDto { DocumentId = documentId, Success = true, Message = "Documento movido com sucesso.", OldFolderId = doc.FolderId, NewFolderId = destinationFolderId };
+            await _audit.WriteAsync(tenantId, userId, "MOVE_DOCUMENT_FOLDER", "DOCUMENT", documentId, "Documento movido de pasta", null, null, new { oldFolderId = doc.FolderId, newFolderId = targetFolderId, reason, source }, ct);
+            return new DocumentMoveResultDto { DocumentId = documentId, Success = true, Message = "Documento movido com sucesso.", OldFolderId = doc.FolderId, NewFolderId = targetFolderId };
         }
         catch (Exception ex)
         {
@@ -215,6 +217,5 @@ where ur.tenant_id = @tenantId
         public Guid? FolderId { get; set; }
         public string RegStatus { get; set; } = string.Empty;
         public bool IsConfidential { get; set; }
-        public bool IsDeleted { get; set; }
     }
 }

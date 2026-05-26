@@ -1316,14 +1316,14 @@ LIMIT 20;";
         {
             if (!_currentUser.IsAuthenticated) return Unauthorized();
             var result = await _documentMoveService.MoveAsync(_currentUser.TenantId, _currentUser.UserId, User.Identity?.Name, request.DocumentId, request.DestinationFolderId, request.Reason, request.Source ?? "SINGLE", ct);
-            if (!result.IsSuccess && string.Equals(result.Error?.Code, "ACCESS_DENIED", StringComparison.OrdinalIgnoreCase))
-                return StatusCode(403, result);
-            return Ok(result);
+            if (!result.IsSuccess)
+                return BadRequest(new { success = false, message = result.Error?.Message ?? "Não foi possível mover o documento." });
+            return Ok(new { success = true, message = "Documento movido com sucesso.", data = result.Value });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Erro em Move. Tenant={TenantId} User={UserId} Document={DocumentId} Destination={DestinationFolderId}", _currentUser.TenantId, _currentUser.UserId, request.DocumentId, request.DestinationFolderId);
-            return Ok(Result<DocumentMoveResultDto>.Fail("MOVE_ERROR", "Não foi possível mover o documento no momento."));
+            return BadRequest(new { success = false, message = "Não foi possível mover o documento no momento." });
         }
     }
 
@@ -1335,14 +1335,14 @@ LIMIT 20;";
         {
             if (!_currentUser.IsAuthenticated) return Unauthorized();
             var result = await _documentMoveService.MoveBulkAsync(_currentUser.TenantId, _currentUser.UserId, User.Identity?.Name, request.DocumentIds, request.DestinationFolderId, request.Reason, request.Source ?? "BULK", ct);
-            if (!result.IsSuccess && string.Equals(result.Error?.Code, "ACCESS_DENIED", StringComparison.OrdinalIgnoreCase))
-                return StatusCode(403, result);
-            return Ok(result);
+            if (!result.IsSuccess)
+                return BadRequest(new { success = false, message = result.Error?.Message ?? "Não foi possível mover o documento." });
+            return Ok(new { success = true, message = "Documento movido com sucesso.", data = result.Value });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Erro em MoveBulk. Tenant={TenantId} User={UserId} Destination={DestinationFolderId}", _currentUser.TenantId, _currentUser.UserId, request.DestinationFolderId);
-            return Ok(Result<DocumentBulkMoveResultDto>.Fail("MOVE_BULK_ERROR", "Não foi possível mover os documentos no momento."));
+            return BadRequest(new { success = false, message = "Não foi possível mover os documentos no momento." });
         }
     }
 
