@@ -28,18 +28,19 @@ public sealed class LoanOverdueWorker : BackgroundService
                 var current = scope.ServiceProvider.GetRequiredService<ICurrentUser>();
                 var commands = scope.ServiceProvider.GetRequiredService<ILoanCommands>();
 
-                if (current.TenantId == Guid.Empty)
+                var tenantId = current.TenantId;
+                if (tenantId == Guid.Empty)
                 {
-                    _logger.LogWarning("LoanOverdueWorker ignorado: tenant não configurado.");
+                    _logger.LogWarning("LoanOverdueWorker ignorado: tenant não configurado (Guid.Empty).");
                     await Task.Delay(TimeSpan.FromHours(24), stoppingToken);
                     continue;
                 }
 
-                var res = await commands.RegisterOverdueEventsAsync(current.TenantId, current.UserId, stoppingToken);
+                var res = await commands.RegisterOverdueEventsAsync(tenantId, current.UserId, stoppingToken);
                 if (res.IsSuccess)
-                    _logger.LogInformation("Overdue registrados. Tenant={Tenant} Count={Count}", current.TenantId, res.Value);
+                    _logger.LogInformation("Overdue registrados. Tenant={Tenant} Count={Count}", tenantId, res.Value);
                 else
-                    _logger.LogWarning("Overdue falhou. Tenant={Tenant} Err={Err}", current.TenantId, res.ErrorMessage);
+                    _logger.LogWarning("Overdue falhou. Tenant={Tenant} Err={Err}", tenantId, res.ErrorMessage);
             }
             catch (Exception ex)
             {

@@ -52,7 +52,7 @@ select
     count(*)::int as total_events,
     count(*) filter (where action::text = 'ACCESS_DENIED')::int as access_denied,
     count(*) filter (where entity_name ilike 'document%' and action::text in ('UPDATE','DELETE','UPLOAD'))::int as changed_documents,
-    count(*) filter (where action::text in ('LOGIN','LOGOUT','MFA_CHALLENGE','MFA_SUCCESS','MFA_FAILED'))::int as auth_events
+    count(*) filter (where action::text in ('LOGIN','LOGOUT'))::int as auth_events
 from base;";
 
         var row = await conn.QuerySingleAsync(sql, new { tenantId });
@@ -72,8 +72,7 @@ where a.tenant_id = @tenantId
   and a.event_time >= (now() at time zone 'utc') - interval '24 hour'
   and (
       a.action::text = 'ACCESS_DENIED'
-      or (a.entity_name ilike '%sigiloso%' and a.action::text in ('READ','DOWNLOAD'))
-      or a.action::text = 'MFA_FAILED'
+      or (a.entity_name ilike '%sigiloso%' and a.action::text in ('VIEW','FILE_DOWNLOAD','FILE_PREVIEW'))
   )
 order by a.event_time desc
 limit 20;", new { tenantId }, cancellationToken: ct))).AsList();
