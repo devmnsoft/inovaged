@@ -19,6 +19,10 @@ public interface IOcrJobRepository
 
     Task MarkErrorAsync(long jobId, string errorMessage, CancellationToken ct);
 
+    Task MarkRetryAsync(long jobId, int attempts, DateTimeOffset nextAttemptAt, string errorMessage, CancellationToken ct);
+
+    Task<bool> IsCancelRequestedAsync(long jobId, CancellationToken ct);
+
     Task RenewLeaseAsync(long id, CancellationToken stoppingToken);
 
     Task<OcrJobStatusDto?> GetLatestByVersionIdAsync(Guid tenantId, Guid documentVersionId, CancellationToken ct);

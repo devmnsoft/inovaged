@@ -44,13 +44,13 @@ public sealed class OcrWorkerHostedService : BackgroundService
                 var lease = await _jobs.LeaseNextAsync(TimeSpan.FromMinutes(5), stoppingToken);
                 if (lease is null)
                 {
-                    await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken);
+                    await Task.Delay(TimeSpan.FromSeconds(Math.Max(1,_opt.WorkerDelaySeconds)), stoppingToken);
                     continue;
                 }
 
                 await ProcessJobAsync(lease, stoppingToken);
             }
-            catch (OperationCanceledException) { }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { _logger.LogInformation("OCR Worker finalizado por cancelamento da aplicação."); }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Erro geral no loop do OCR Worker.");
@@ -61,7 +61,8 @@ public sealed class OcrWorkerHostedService : BackgroundService
 
     private async Task ProcessJobAsync(OcrJobLease lease, CancellationToken ct)
     {
-        _logger.LogInformation("OCR job lease: #{JobId} Version={Version}", lease.JobId, lease.DocumentVersionId);
+        var sw = Stopwatch.StartNew();
+        _logger.LogInformation("OCR job lease: #{JobId} Tenant={TenantId} Version={Version}", lease.JobId, lease.TenantId, lease.DocumentVersionId);
 
         // pasta temp por job
         var outDir = Path.Combine(Path.GetTempPath(), "inovaged-ocr", lease.JobId.ToString());
@@ -112,10 +113,33 @@ public sealed class OcrWorkerHostedService : BackgroundService
 
             _logger.LogInformation("OCR job concluído: #{JobId}", lease.JobId);
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            _logger.LogInformation("OCR job cancelado por shutdown. JobId={JobId} ElapsedMs={ElapsedMs}", lease.JobId, sw.ElapsedMilliseconds);
+        }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "OCR job erro: #{JobId}", lease.JobId);
-            await _jobs.MarkErrorAsync(lease.JobId, ex.Message, ct);
+            var attempts = 1;
+            var maxAttempts = Math.Max(1, _opt.MaxAttempts);
+            var retrySeconds = _opt.RetryBackoffSeconds?.Length > 0 ? _opt.RetryBackoffSeconds : new[] { 30, 120, 300 };
+            var retryIndex = Math.Min(attempts - 1, retrySeconds.Length - 1);
+            var shouldRetry = attempts < maxAttempts;
+
+            _logger.LogWarning(ex, "OCR falhou. JobId={JobId} Tenant={TenantId} Version={VersionId} Attempts={Attempts}/{MaxAttempts} Retry={Retry} ElapsedMs={ElapsedMs}", lease.JobId, lease.TenantId, lease.DocumentVersionId, attempts, maxAttempts, shouldRetry, sw.ElapsedMilliseconds);
+
+            if (await _jobs.IsCancelRequestedAsync(lease.JobId, ct))
+            {
+                await _jobs.MarkErrorAsync(lease.JobId, "Processamento cancelado pelo administrador.", ct);
+                return;
+            }
+
+            if (shouldRetry)
+            {
+                await _jobs.MarkRetryAsync(lease.JobId, attempts, DateTimeOffset.UtcNow.AddSeconds(retrySeconds[retryIndex]), ex.Message[..Math.Min(300, ex.Message.Length)], ct);
+                return;
+            }
+
+            await _jobs.MarkErrorAsync(lease.JobId, ex.Message[..Math.Min(300, ex.Message.Length)], ct);
         }
         finally
         {
@@ -160,4 +184,9 @@ public sealed class OcrOptions
 {
     public bool Enabled { get; set; } = true;
     public string? OcrMyPdfPath { get; set; }
+    public int MaxAttempts { get; set; } = 3;
+    public int WorkerDelaySeconds { get; set; } = 5;
+    public int[] RetryBackoffSeconds { get; set; } = new[] { 30, 120, 300 };
+    public int MaxParallelJobs { get; set; } = 1;
+    public int PreviewStatusPollingSeconds { get; set; } = 5;
 }
