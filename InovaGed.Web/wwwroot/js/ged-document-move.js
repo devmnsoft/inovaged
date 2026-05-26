@@ -20,6 +20,20 @@
         let selectedIds = [];
         let mode = 'bulk';
 
+        const errorBox = document.getElementById('moveDocumentsError');
+
+        function showMoveError(message) {
+            const msg = message || 'Falha ao mover documento(s).';
+            if (errorBox) {
+                errorBox.textContent = msg;
+                errorBox.classList.remove('d-none');
+            }
+            if (window.toastr && typeof window.toastr.error === 'function') window.toastr.error(msg);
+            else alert(msg);
+        }
+
+        function clearMoveError() { if (errorBox) { errorBox.textContent = ''; errorBox.classList.add('d-none'); } }
+
         const getSelected = () => Array.from(document.querySelectorAll('.js-doc-select:checked')).map(x => x.value);
         const host = document.getElementById('folderSearchResults');
         const empty = document.getElementById('folderSearchEmpty');
@@ -130,6 +144,7 @@
             destinationFolderName.value = '';
             folderSearchInput.value = '';
             reasonInput.value = '';
+            clearMoveError();
             clearFolderResults();
             updateConfirmButton();
         }
@@ -160,12 +175,14 @@
             try {
                 const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { 'RequestVerificationToken': token } : {}) }, body: JSON.stringify(payload) });
                 const data = await response.json();
-                const result = data?.value || data;
-                if (!response.ok || result?.success === false || result?.isSuccess === false) throw new Error(result?.message || result?.error?.message || 'Falha ao mover documento(s).');
+                const result = data?.data || data?.value || data;
+                if (!response.ok || data?.success === false || result?.success === false || result?.isSuccess === false) throw new Error(data?.message || result?.message || result?.error?.message || 'Falha ao mover documento(s).');
+                clearMoveError();
+                if (window.toastr && typeof window.toastr.success === "function") window.toastr.success(data?.message || "Movimentação concluída com sucesso.");
                 moveModal.hide();
                 selectedIds.forEach(id => document.querySelector(`tr[data-document-id="${id}"]`)?.remove());
                 updateBulkUi();
-            } catch (err) { console.error('[MoveDocuments] Erro na requisição', err); }
+            } catch (err) { console.error('[MoveDocuments] Erro na requisição', err); showMoveError(err?.message || 'Falha ao mover documento(s).'); }
         }
         document.addEventListener('input', function (e) {
             if (!e.target || e.target.id !== 'folderSearchInput') return;
