@@ -130,11 +130,15 @@ where h.tenant_id=@tenantId and h.document_id=@documentId and h.reg_status='A' o
 select
     d.id AS "Id",
     d.folder_id AS "FolderId",
+    d.title AS "Title",
+    d.status::text AS "Status",
     d.reg_status AS "RegStatus",
     false AS "IsConfidential"
 from ged.document d
 where d.tenant_id = @tenantId
-  and d.id = @documentId;
+  and d.id = @documentId
+  and coalesce(d.reg_status, 'A') = 'A'
+  and upper(d.status::text) <> 'DELETED';
 """;
 
             var doc = await conn.QueryFirstOrDefaultAsync<DocumentMoveSnapshot>(
@@ -142,9 +146,6 @@ where d.tenant_id = @tenantId
 
             if (doc is null || doc.Id == Guid.Empty)
                 return await RollbackAndReturnAsync(Fail(documentId, "Documento não encontrado."), tx, ct);
-
-            if (!string.Equals(doc.RegStatus, "A", StringComparison.OrdinalIgnoreCase))
-                return await RollbackAndReturnAsync(Fail(documentId, "Documento inativo ou excluído."), tx, ct);
 
             var targetFolderId = destinationFolderId == VirtualRootFolderId ? (Guid?)null : destinationFolderId;
 
@@ -159,12 +160,12 @@ where d.tenant_id = @tenantId
 
             if (targetFolderId.HasValue)
             {
-                var destinationExists = await conn.QueryFirstOrDefaultAsync<Guid?>(new CommandDefinition("select id from ged.folder where tenant_id=@tenantId and id=@destinationFolderId and reg_status='A' and is_active=true", new { tenantId, destinationFolderId = targetFolderId.Value }, transaction: tx, cancellationToken: ct));
-                if (!destinationExists.HasValue)
+                var destination = await conn.QueryFirstOrDefaultAsync<DestinationFolderSnapshot>(new CommandDefinition("select id as \"Id\", name as \"Name\" from ged.folder where tenant_id=@tenantId and id=@destinationFolderId and reg_status='A' and is_active=true", new { tenantId, destinationFolderId = targetFolderId.Value }, transaction: tx, cancellationToken: ct));
+                if (destination is null)
                     return await RollbackAndReturnAsync(Fail(documentId, "Pasta destino inválida."), tx, ct);
             }
 
-            await conn.ExecuteAsync(new CommandDefinition("update ged.document set folder_id=@destinationFolderId, updated_at=now(), updated_by=@userId where tenant_id=@tenantId and id=@documentId and reg_status='A'", new { tenantId, documentId, destinationFolderId = targetFolderId, userId }, transaction: tx, cancellationToken: ct));
+            await conn.ExecuteAsync(new CommandDefinition("update ged.document set folder_id=@destinationFolderId, updated_at=now(), updated_by=@userId where tenant_id=@tenantId and id=@documentId and coalesce(reg_status,'A')='A' and upper(status::text) <> 'DELETED'", new { tenantId, documentId, destinationFolderId = targetFolderId, userId }, transaction: tx, cancellationToken: ct));
             await conn.ExecuteAsync(new CommandDefinition("insert into ged.document_folder_move_history (id, tenant_id, document_id, old_folder_id, new_folder_id, moved_by, moved_by_name, reason, batch_id, source, reg_status) values (@id,@tenantId,@documentId,@oldFolderId,@newFolderId,@movedBy,@movedByName,@reason,@batchId,@source,'A')", new { id = Guid.NewGuid(), tenantId, documentId, oldFolderId = doc.FolderId, newFolderId = targetFolderId, movedBy = userId, movedByName = userName, reason, batchId, source }, transaction: tx, cancellationToken: ct));
 
             await tx.CommitAsync(ct);
@@ -215,7 +216,15 @@ where ur.tenant_id = @tenantId
     {
         public Guid Id { get; set; }
         public Guid? FolderId { get; set; }
+        public string Title { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
         public string RegStatus { get; set; } = string.Empty;
         public bool IsConfidential { get; set; }
+    }
+
+    private sealed class DestinationFolderSnapshot
+    {
+        public Guid Id { get; set; }
+        public string Name { get; set; } = string.Empty;
     }
 }
