@@ -4,6 +4,7 @@ using InovaGed.Web.Models.Auth;
 using InovaGed.Web.Security;
 using InovaGed.Application.Audit;
 using InovaGed.Application.Common.Security;
+using InovaGed.Application.Security;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
@@ -17,13 +18,15 @@ public sealed class AccountController : Controller
     private readonly IAuthRepository _repo;
     private readonly IAuditWriter _audit;
     private readonly ILogger<AccountController> _logger;
+    private readonly IGedAccessPolicyService _accessPolicy;
     private static readonly PasswordHasher<ApplicationUser> _hasher = new();
 
-    public AccountController(IAuthRepository repo, IAuditWriter audit, ILogger<AccountController> logger)
+    public AccountController(IAuthRepository repo, IAuditWriter audit, ILogger<AccountController> logger, IGedAccessPolicyService accessPolicy)
     {
         _repo = repo;
         _audit = audit;
         _logger = logger;
+        _accessPolicy = accessPolicy;
     }
 
     [HttpGet]
@@ -163,7 +166,7 @@ public sealed class AccountController : Controller
         // - administradoophir e arquivistaophir devem ir sempre para /HospitalDocuments.
         // - ADMIN mantém acesso completo e segue fluxo padrão do sistema.
         // - Demais usuários continuam no fluxo padrão (ReturnUrl local ou Home).
-        var redirectResult = ResolvePostLoginRedirect(vm.ReturnUrl, user.UserName, normalizedRoles);
+        var redirectResult = ResolvePostLoginRedirect(vm.ReturnUrl, user.UserName, normalizedRoles, principal);
 
         _logger.LogInformation("Login concluído. Tenant={TenantId} UserId={UserId} Login={Login} Redirect={Redirect} Roles={Roles}",
             user.TenantId, user.UserId, loginOrCpf, redirectResult.TargetDescription, string.Join(",", normalizedRoles));
@@ -197,14 +200,14 @@ public sealed class AccountController : Controller
         }
     }
 
-    private (IActionResult Result, string TargetDescription, string Reason) ResolvePostLoginRedirect(string? returnUrl, string? username, IReadOnlyCollection<string> normalizedRoles)
+    private (IActionResult Result, string TargetDescription, string Reason) ResolvePostLoginRedirect(string? returnUrl, string? username, IReadOnlyCollection<string> normalizedRoles, ClaimsPrincipal principal)
     {
         var normalizedUsername = (username ?? string.Empty).Trim().ToUpperInvariant();
         var normalizedReturnUrl = (returnUrl ?? string.Empty).Trim();
 
-        var isAdmin = normalizedRoles.Any(r => IsRole(r, AppRoles.Admin));
-        var isAdministradorOphir = normalizedRoles.Any(r => IsRole(r, AppRoles.AdministradorOphir)) || IsRole(normalizedUsername, AppRoles.AdministradorOphir);
-        var isArquivistaOphir = normalizedRoles.Any(r => IsRole(r, AppRoles.ArquivistaOphir)) || IsRole(normalizedUsername, AppRoles.ArquivistaOphir);
+        var isAdmin = _accessPolicy.IsAdmin(principal) || normalizedRoles.Any(r => IsRole(r, AppRoles.Admin));
+        var isAdministradorOphir = _accessPolicy.IsAdministradorOphir(principal) || normalizedRoles.Any(r => IsRole(r, AppRoles.AdministradorOphir)) || IsRole(normalizedUsername, AppRoles.AdministradorOphir);
+        var isArquivistaOphir = _accessPolicy.IsArquivistaOphir(principal) || normalizedRoles.Any(r => IsRole(r, AppRoles.ArquivistaOphir)) || IsRole(normalizedUsername, AppRoles.ArquivistaOphir);
 
         if (isAdmin && !string.IsNullOrWhiteSpace(normalizedReturnUrl) && Url.IsLocalUrl(normalizedReturnUrl))
         {
