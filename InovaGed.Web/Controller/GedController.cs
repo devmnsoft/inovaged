@@ -1324,7 +1324,7 @@ LIMIT 20;";
         catch (Exception ex)
         {
             _logger.LogError(ex, "Erro em Move. Tenant={TenantId} User={UserId} Document={DocumentId} Destination={DestinationFolderId}", _currentUser.TenantId, _currentUser.UserId, request.DocumentId, request.DestinationFolderId);
-            return BadRequest(new { success = false, message = "Não foi possível mover o documento no momento." });
+            return StatusCode(500, new { success = false, message = "Erro interno ao mover documento." });
         }
     }
 
@@ -1344,7 +1344,7 @@ LIMIT 20;";
         catch (Exception ex)
         {
             _logger.LogError(ex, "Erro em MoveBulk. Tenant={TenantId} User={UserId} Destination={DestinationFolderId}", _currentUser.TenantId, _currentUser.UserId, request.DestinationFolderId);
-            return BadRequest(new { success = false, message = "Não foi possível mover os documentos no momento." });
+            return StatusCode(500, new { success = false, message = "Erro interno ao mover documento." });
         }
     }
 

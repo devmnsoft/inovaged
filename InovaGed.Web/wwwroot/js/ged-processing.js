@@ -95,6 +95,21 @@
         }
     }
 
+
+
+    document.addEventListener('submit', async function (e) {
+        const form = e.target.closest('.js-app-confirm-form');
+        if (!form || form.dataset.confirmed === '1') return;
+        e.preventDefault();
+        const confirmed = await (window.showAppConfirm?.(form.dataset.confirmMessage || 'Deseja continuar?', form.dataset.confirmTitle || 'Confirmar ação') ?? Promise.resolve(false));
+        if (!confirmed) {
+            window.showAppToast?.('Ação cancelada pelo usuário.', 'info', 'Operação cancelada');
+            return;
+        }
+        form.dataset.confirmed = '1';
+        form.submit();
+    });
+
     document.addEventListener('DOMContentLoaded', function () {
         poll();
         pollMetrics();

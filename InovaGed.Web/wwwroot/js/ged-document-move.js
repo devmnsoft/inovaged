@@ -1,12 +1,48 @@
 (function () {
     let folderSearchTimer = null;
 
+    function showMoveModalMessage(message, type) {
+        const box = document.getElementById('moveDocumentsMessage');
+        if (!box) {
+            window.showAppToast?.(message, type === 'danger' ? 'error' : type);
+            return;
+        }
+
+        const alertClass = type === 'success' ? 'alert-success'
+            : type === 'warning' ? 'alert-warning'
+                : type === 'info' ? 'alert-info'
+                    : 'alert-danger';
+
+        box.className = `alert ${alertClass} py-2 mt-2`;
+        box.textContent = message;
+        box.classList.remove('d-none');
+    }
+
+    function clearMoveModalMessage() {
+        const box = document.getElementById('moveDocumentsMessage');
+        if (!box) return;
+        box.className = 'd-none mt-2';
+        box.textContent = '';
+    }
+
+    function setMoveLoading(isLoading) {
+        const btn = document.getElementById('btnConfirmMove');
+        if (!btn) return;
+        if (isLoading) {
+            btn.disabled = true;
+            btn.dataset.originalText = btn.innerHTML;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Movendo...';
+        } else {
+            btn.disabled = false;
+            btn.innerHTML = btn.dataset.originalText || 'Confirmar movimentação';
+        }
+    }
+
     document.addEventListener('DOMContentLoaded', function () {
-        console.log('[MoveDocuments] script carregado');
         const modalEl = document.getElementById('moveDocumentsModal');
         if (!modalEl || typeof window.bootstrap === 'undefined' || !window.bootstrap.Modal) return;
-
         const moveModal = new window.bootstrap.Modal(modalEl);
+
         const bulkBtn = document.getElementById('btnMoveSelected');
         const moveSelectedCount = document.getElementById('moveSelectedCount');
         const summaryEl = document.getElementById('selectedDocumentsSummary');
@@ -20,202 +56,133 @@
         let selectedIds = [];
         let mode = 'bulk';
 
-        const errorBox = document.getElementById('moveDocumentsError');
-
-        function showMoveError(message) {
-            const msg = message || 'Falha ao mover documento(s).';
-            if (errorBox) {
-                errorBox.textContent = msg;
-                errorBox.classList.remove('d-none');
-            }
-            if (window.toastr && typeof window.toastr.error === 'function') window.toastr.error(msg);
-            else alert(msg);
-        }
-
-        function clearMoveError() { if (errorBox) { errorBox.textContent = ''; errorBox.classList.add('d-none'); } }
-
         const getSelected = () => Array.from(document.querySelectorAll('.js-doc-select:checked')).map(x => x.value);
         const host = document.getElementById('folderSearchResults');
         const empty = document.getElementById('folderSearchEmpty');
         const loading = document.getElementById('folderSearchLoading');
 
-        if (!folderSearchInput) {
-            console.warn('[MoveDocuments] folderSearchInput não encontrado nesta página.');
-        } else {
-            console.log('[MoveDocuments] folderSearchInput encontrado');
-        }
-
-
-        function normalizeText(value) {
-            return String(value || '')
-                .toLowerCase()
-                .normalize('NFD')
-                .replace(/[̀-ͯ]/g, '');
-        }
+        function normalizeText(value) { return String(value || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, ''); }
+        function escapeHtml(v) { return window.escapeHtml ? window.escapeHtml(v) : String(v ?? ''); }
+        function clearFolderResults() { if (host) host.innerHTML = ''; if (empty) empty.classList.add('d-none'); }
+        function showFolderLoading(show) { if (loading) loading.classList.toggle('d-none', !show); }
+        function updateConfirmButton() { if (confirmBtn) confirmBtn.disabled = !(destinationFolderId?.value); }
 
         function searchFoldersFromDom(term) {
             const normalizedTerm = normalizeText(term);
             const nodes = document.querySelectorAll('[data-folder-id][data-folder-name]');
-            const items = [];
-            const seen = new Set();
-
+            const items = []; const seen = new Set();
             nodes.forEach(node => {
                 const id = node.getAttribute('data-folder-id');
                 const name = node.getAttribute('data-folder-name') || '';
                 const fullPath = node.getAttribute('data-folder-path') || name;
                 if (!id || seen.has(id)) return;
-
-                const searchable = normalizeText(`${name} ${fullPath}`);
-                if (!normalizedTerm || searchable.includes(normalizedTerm)) {
-                    seen.add(id);
-                    items.push({ id, name, fullPath, parentId: node.getAttribute('data-folder-parent-id') || null });
+                if (!normalizedTerm || normalizeText(`${name} ${fullPath}`).includes(normalizedTerm)) {
+                    seen.add(id); items.push({ id, name, fullPath });
                 }
             });
-
             return items.slice(0, 30);
         }
-
-        function escapeHtml(v) { return String(v ?? '').replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m])); }
-        function clearFolderResults() { if (host) host.innerHTML = ''; if (empty) empty.classList.add('d-none'); }
-        function showFolderLoading(show) { if (loading) loading.classList.toggle('d-none', !show); }
-        function showFolderError(msg) { clearFolderResults(); if (empty) { empty.textContent = msg; empty.classList.remove('d-none'); } }
-        function updateConfirmButton() { if (confirmBtn) confirmBtn.disabled = !(destinationFolderId?.value); }
 
         async function searchFolders(term) {
             try {
                 showFolderLoading(true);
                 clearFolderResults();
-                if (empty) {
-                    empty.classList.add('d-none');
-                    empty.textContent = 'Nenhuma pasta encontrada.';
-                }
-
-                const response = await fetch(`/Ged/Folders/Search?term=${encodeURIComponent(term)}`, {
-                    method: 'GET',
-                    headers: { 'Accept': 'application/json' }
-                });
-
-                let items = [];
-                if (response.ok) {
-                    const data = await response.json();
-                    console.log('[MoveDocuments] resposta SearchFolders:', data);
-                    items = Array.isArray(data) ? data : (data.items || data.data || data.folders || []);
-                } else {
-                    console.warn('[MoveDocuments] SearchFolders status:', response.status);
-                }
-
-                if (!items || items.length === 0) {
-                    console.warn('[MoveDocuments] Backend não retornou pastas. Tentando fallback DOM.');
-                    items = searchFoldersFromDom(term);
-                }
-
+                const response = await fetch(`/Ged/Folders/Search?term=${encodeURIComponent(term)}`, { method: 'GET', headers: { Accept: 'application/json' } });
+                const data = await response.json().catch(() => null);
+                let items = response.ok ? (Array.isArray(data) ? data : (data?.items || data?.data || data?.folders || [])) : [];
+                if (!items.length) items = searchFoldersFromDom(term);
                 renderFolderResults(items);
-            } catch (err) {
-                console.error('[MoveDocuments] Erro ao buscar pastas no backend', err);
-                const fallbackItems = searchFoldersFromDom(term);
-                renderFolderResults(fallbackItems);
-            } finally {
-                showFolderLoading(false);
-            }
+            } catch {
+                renderFolderResults(searchFoldersFromDom(term));
+            } finally { showFolderLoading(false); }
         }
 
         function renderFolderResults(items) {
             clearFolderResults();
-            if (!host) { console.warn('[MoveDocuments] folderSearchResults não encontrado.'); return; }
-            console.log('[MoveDocuments] total de pastas:', items ? items.length : 0);
-            if (!items || items.length === 0) { if (empty) empty.classList.remove('d-none'); return; }
+            if (!host) return;
+            if (!items || !items.length) { if (empty) empty.classList.remove('d-none'); return; }
             items.forEach(folder => {
                 const id = folder.id || folder.Id;
                 const name = folder.name || folder.Name || 'Pasta sem nome';
                 const fullPath = folder.fullPath || folder.FullPath || name;
                 const btn = document.createElement('button');
-                btn.type = 'button';
-                btn.className = 'list-group-item list-group-item-action js-folder-result';
-                btn.dataset.folderId = id;
-                btn.dataset.folderName = name;
-                btn.dataset.folderFullPath = fullPath;
+                btn.type = 'button'; btn.className = 'list-group-item list-group-item-action js-folder-result';
+                btn.dataset.folderId = id; btn.dataset.folderName = name; btn.dataset.folderFullPath = fullPath;
                 btn.innerHTML = `<div class="fw-semibold">${escapeHtml(name)}</div><div class="small text-muted">${escapeHtml(fullPath)}</div>`;
                 host.appendChild(btn);
             });
         }
 
         function resetModalState() {
-            destinationFolderId.value = '';
-            destinationFolderName.value = '';
-            folderSearchInput.value = '';
-            reasonInput.value = '';
-            clearMoveError();
-            clearFolderResults();
-            updateConfirmButton();
+            destinationFolderId.value = ''; destinationFolderName.value = ''; folderSearchInput.value = ''; reasonInput.value = '';
+            clearMoveModalMessage(); clearFolderResults(); updateConfirmButton();
         }
-
         function selectFolder(button) {
-            const folderId = button.dataset.folderId || '';
-            const fullPath = button.dataset.folderFullPath || button.dataset.folderName || '';
-            console.log('[MoveDocuments] pasta selecionada:', folderId, fullPath);
-            destinationFolderId.value = folderId;
+            destinationFolderId.value = button.dataset.folderId || '';
             destinationFolderName.value = button.dataset.folderFullPath || button.dataset.folderName || '';
             host?.querySelectorAll('.js-folder-result.active').forEach(el => el.classList.remove('active'));
-            button.classList.add('active');
-            updateConfirmButton();
+            button.classList.add('active'); clearMoveModalMessage(); updateConfirmButton();
         }
-
         function updateBulkUi() {
-            const selected = getSelected();
-            if (bulkBtn) bulkBtn.disabled = selected.length === 0;
+            const selected = getSelected(); if (bulkBtn) bulkBtn.disabled = selected.length === 0;
             if (moveSelectedCount) moveSelectedCount.textContent = `(${selected.length})`;
         }
 
         async function confirmMove() {
-            if (!destinationFolderId.value || !selectedIds.length) return;
+            if (!selectedIds.length) return;
+            if (!destinationFolderId.value) {
+                showMoveModalMessage('Selecione uma pasta de destino.', 'warning');
+                window.showAppToast?.('Selecione uma pasta de destino.', 'warning', 'Validação');
+                return;
+            }
+            const confirmed = await window.showAppConfirm?.('Deseja mover este documento para a pasta selecionada?', 'Confirmar movimentação');
+            if (!confirmed) return;
             const endpoint = mode === 'single' ? '/Ged/Documents/Move' : '/Ged/Documents/MoveBulk';
             const payload = mode === 'single'
                 ? { documentId: selectedIds[0], destinationFolderId: destinationFolderId.value, reason: reasonInput.value?.trim() || null, source: 'SINGLE' }
                 : { documentIds: selectedIds, destinationFolderId: destinationFolderId.value, reason: reasonInput.value?.trim() || null, source: 'BULK' };
-            const originalText = confirmBtn?.textContent;
-            if (confirmBtn) {
-                confirmBtn.disabled = true;
-                confirmBtn.textContent = 'Movendo...';
-            }
+            setMoveLoading(true);
             try {
-                const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { 'RequestVerificationToken': token } : {}) }, body: JSON.stringify(payload) });
-                let data = null;
-                try { data = await response.json(); } catch { data = null; }
-                const result = data?.data || data?.value || data;
-                const ok = response.ok && data?.success !== false && result?.success !== false && result?.isSuccess !== false;
-                if (!ok) throw new Error(data?.message || result?.message || result?.error?.message || 'Falha ao mover documento(s).');
-
-                clearMoveError();
-                if (window.toastr && typeof window.toastr.success === "function") window.toastr.success(data?.message || "Movimentação concluída com sucesso.");
+                const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { RequestVerificationToken: token } : {}) }, body: JSON.stringify(payload) });
+                const payloadResp = await response.json().catch(() => null);
+                const message = payloadResp?.message || 'Não foi possível concluir a operação.';
+                if (!response.ok || payloadResp?.success === false) {
+                    showMoveModalMessage(message, 'danger');
+                    window.showAppToast?.(message, 'error', 'Erro na movimentação');
+                    return;
+                }
+                clearMoveModalMessage();
+                if (mode === 'bulk') {
+                    const successCount = payloadResp?.data?.successCount ?? selectedIds.length;
+                    const failCount = payloadResp?.data?.failCount ?? 0;
+                    window.showAppToast?.(`${successCount} documento(s) movido(s) com sucesso. ${failCount} falha(s).`, failCount > 0 ? 'warning' : 'success', 'Movimentação em lote');
+                } else {
+                    window.showAppToast?.(message || 'Documento movido com sucesso.', 'success', 'Movimentação concluída');
+                }
                 moveModal.hide();
                 window.setTimeout(() => window.location.reload(), 800);
-            } catch (err) {
-                console.error('[MoveDocuments] Erro na requisição', err);
-                showMoveError(err?.message || 'Falha ao mover documento(s).');
-            } finally {
-                if (confirmBtn) {
-                    confirmBtn.disabled = !(destinationFolderId?.value);
-                    confirmBtn.textContent = originalText || 'Confirmar movimentação';
-                }
-                updateBulkUi();
-            }
+            } catch {
+                showMoveModalMessage('Falha de comunicação com o servidor. Tente novamente.', 'danger');
+                window.showAppToast?.('Falha de comunicação com o servidor.', 'error', 'Erro de comunicação');
+            } finally { setMoveLoading(false); updateConfirmButton(); updateBulkUi(); }
         }
+
         document.addEventListener('input', function (e) {
-            if (!e.target || e.target.id !== 'folderSearchInput') return;
-            const term = e.target.value.trim();
-            console.log('[MoveDocuments] termo digitado:', term);
-            clearTimeout(folderSearchTimer);
+            if (e.target?.id !== 'folderSearchInput') return;
+            const term = e.target.value.trim(); clearTimeout(folderSearchTimer);
             if (!term.length) { clearFolderResults(); return; }
-            folderSearchTimer = setTimeout(function () { searchFolders(term).catch(err => console.error('[MoveDocuments] Erro ao buscar pastas', err)); }, 300);
+            folderSearchTimer = setTimeout(() => searchFolders(term), 300);
         });
-
         document.addEventListener('click', function (e) {
-            const one = e.target.closest('.js-move-one'); if (one) { e.preventDefault(); mode = 'single'; selectedIds = [one.dataset.documentId]; summaryEl.textContent = `1 documento selecionado: ${one.dataset.documentTitle || ''}`.trim(); resetModalState(); moveModal.show(); return; }
-            const bulk = e.target.closest('#btnMoveSelected'); if (bulk) { e.preventDefault(); selectedIds = getSelected(); if (!selectedIds.length) return; mode = 'bulk'; summaryEl.textContent = `${selectedIds.length} documento(s) selecionado(s)`; resetModalState(); moveModal.show(); return; }
-            const folderBtn = e.target.closest('.js-folder-result'); if (folderBtn) { e.preventDefault(); selectFolder(folderBtn); return; }
-            const confirm = e.target.closest('#btnConfirmMove'); if (confirm) { e.preventDefault(); confirmMove().catch(err => console.error('[MoveDocuments] Erro inesperado no confirmar movimentação', err)); }
+            const one = e.target.closest('.js-move-one');
+            if (one) { e.preventDefault(); mode = 'single'; selectedIds = [one.dataset.documentId]; summaryEl.textContent = `1 documento selecionado: ${one.dataset.documentTitle || ''}`.trim(); resetModalState(); moveModal.show(); return; }
+            const bulk = e.target.closest('#btnMoveSelected');
+            if (bulk) { e.preventDefault(); selectedIds = getSelected(); if (!selectedIds.length) return; mode = 'bulk'; summaryEl.textContent = `${selectedIds.length} documento(s) selecionado(s)`; resetModalState(); moveModal.show(); return; }
+            const folderBtn = e.target.closest('.js-folder-result');
+            if (folderBtn) { e.preventDefault(); selectFolder(folderBtn); return; }
+            const confirm = e.target.closest('#btnConfirmMove');
+            if (confirm) { e.preventDefault(); confirmMove(); }
         });
-
         document.addEventListener('change', function (e) {
             if (e.target.closest('.js-doc-select') || e.target.closest('#selectAllDocuments')) {
                 const selectAll = document.getElementById('selectAllDocuments');
@@ -224,7 +191,6 @@
             }
         });
 
-        updateBulkUi();
-        updateConfirmButton();
+        updateBulkUi(); updateConfirmButton();
     });
 })();
