@@ -1,22 +1,29 @@
+using System.Data;
 using System.Security.Claims;
 using Dapper;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Security;
+using Microsoft.Extensions.Logging;
 
 namespace InovaGed.Infrastructure.Security;
 
 public sealed class GedAccessPolicyService : IGedAccessPolicyService
 {
     private readonly IDbConnectionFactory _dbFactory;
+    private readonly ILogger<GedAccessPolicyService> _logger;
 
-    public GedAccessPolicyService(IDbConnectionFactory dbFactory)
+    public GedAccessPolicyService(IDbConnectionFactory dbFactory, ILogger<GedAccessPolicyService> logger)
     {
         _dbFactory = dbFactory;
+        _logger = logger;
     }
 
     public bool IsAdmin(ClaimsPrincipal principal) => HasRole(principal, "ADMIN");
     public bool IsAdministradorOphir(ClaimsPrincipal principal) => HasRole(principal, "ADMINISTRADOROPHIR");
     public bool IsArquivistaOphir(ClaimsPrincipal principal) => HasRole(principal, "ARQUIVISTAOPHIR");
+
+    public Task<bool> CanAccessHospitalDocumentsAsync(Guid tenantId, Guid userId, ClaimsPrincipal principal, CancellationToken ct)
+        => Task.FromResult(true);
 
     public async Task<bool> IsAdminAsync(Guid tenantId, Guid userId, ClaimsPrincipal? principal, CancellationToken ct)
         => (principal is not null && IsAdmin(principal)) || await HasRoleInDatabaseAsync(tenantId, userId, "ADMIN", ct);
@@ -30,16 +37,22 @@ public sealed class GedAccessPolicyService : IGedAccessPolicyService
     public async Task<bool> CanAccessGedAsync(Guid tenantId, Guid userId, ClaimsPrincipal principal, CancellationToken ct)
         => await IsAdminAsync(tenantId, userId, principal, ct) || (!await IsAdministradorOphirAsync(tenantId, userId, principal, ct) && !await IsArquivistaOphirAsync(tenantId, userId, principal, ct));
 
-    public Task<bool> CanAccessHospitalDocumentsAsync(Guid tenantId, Guid userId, ClaimsPrincipal principal, CancellationToken ct)
-        => Task.FromResult(true);
-
     public async Task<bool> CanAccessLoansAsync(Guid tenantId, Guid userId, ClaimsPrincipal principal, CancellationToken ct)
-        => await IsAdminAsync(tenantId, userId, principal, ct) || await IsAdministradorOphirAsync(tenantId, userId, principal, ct) || await IsArquivistaOphirAsync(tenantId, userId, principal, ct);
+        => await IsAdminAsync(tenantId, userId, principal, ct)
+           || await IsAdministradorOphirAsync(tenantId, userId, principal, ct)
+           || await IsArquivistaOphirAsync(tenantId, userId, principal, ct);
 
     public Task<bool> CanAccessGlobalDashboardAsync(Guid tenantId, Guid userId, ClaimsPrincipal principal, CancellationToken ct)
         => IsAdminAsync(tenantId, userId, principal, ct);
 
+    public async Task<bool> CanAccessManualAsync(Guid tenantId, Guid userId, ClaimsPrincipal principal, CancellationToken ct)
+        => await IsAdminAsync(tenantId, userId, principal, ct)
+           || (!await IsAdministradorOphirAsync(tenantId, userId, principal, ct) && !await IsArquivistaOphirAsync(tenantId, userId, principal, ct));
+
     public Task<bool> CanManageOcrAsync(Guid tenantId, Guid userId, ClaimsPrincipal principal, CancellationToken ct)
+        => IsAdminAsync(tenantId, userId, principal, ct);
+
+    public Task<bool> CanManageUsersAsync(Guid tenantId, Guid userId, ClaimsPrincipal principal, CancellationToken ct)
         => IsAdminAsync(tenantId, userId, principal, ct);
 
     public Task<bool> CanMoveDocumentAsync(Guid tenantId, Guid userId, Guid documentId, ClaimsPrincipal principal, CancellationToken ct)
@@ -55,27 +68,58 @@ public sealed class GedAccessPolicyService : IGedAccessPolicyService
 
     private async Task<bool> HasRoleInDatabaseAsync(Guid tenantId, Guid userId, string role, CancellationToken ct)
     {
-        const string sql = @"
-select distinct role_name
-from (
-    select ar.name as role_name
-      from ged.app_user_role aur
-      join ged.app_role ar on ar.id = aur.role_id and ar.tenant_id = @tenantId
-     where aur.user_id = @userId
-    union all
-    select r.name as role_name
-      from ged.user_roles ur
-      join ged.role r on r.id = ur.role_id
-     where ur.user_id = @userId and ur.tenant_id = @tenantId
-) q";
+        try
+        {
+            await using var conn = await _dbFactory.OpenAsync(ct);
+            var roleNormalized = NormalizeRole(role);
+            var found = await QueryRoleExistsAsync(conn, tenantId, userId, roleNormalized, ct);
+            return found;
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogDebug("Consulta de role cancelada. Tenant={TenantId} User={UserId}", tenantId, userId);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Falha ao consultar roles no banco. Tenant={TenantId} User={UserId}", tenantId, userId);
+            return false;
+        }
+    }
 
-        await using var conn = await _dbFactory.OpenAsync(ct);
-        var roles = await conn.QueryAsync<string>(new CommandDefinition(sql, new { tenantId, userId }, cancellationToken: ct));
-        var target = NormalizeRole(role);
-        return roles.Any(r => NormalizeRole(r) == target);
+    private static async Task<bool> QueryRoleExistsAsync(IDbConnection conn, Guid tenantId, Guid userId, string normalizedRole, CancellationToken ct)
+    {
+        const string sql = @"
+select exists (
+    select 1
+    from (
+        select upper(replace(replace(replace(coalesce(ar.normalized_name, ar.name), ' ', ''), '_', ''), '-', '')) as role_name
+          from ged.app_user_role aur
+          join ged.app_role ar on ar.id = aur.role_id
+         where aur.user_id = @UserId
+           and ar.tenant_id = @TenantId
+        union all
+        select upper(replace(replace(replace(coalesce(r.code, r.name), ' ', ''), '_', ''), '-', '')) as role_name
+          from ged.user_roles ur
+          join ged.role r on r.id = ur.role_id
+         where ur.user_id = @UserId
+           and ur.tenant_id = @TenantId
+           and r.tenant_id = @TenantId
+    ) x
+    where x.role_name = @Role
+);";
+
+        return await conn.ExecuteScalarAsync<bool>(new CommandDefinition(sql,
+            new { UserId = userId, TenantId = tenantId, Role = normalizedRole }, cancellationToken: ct));
     }
 
     private static string NormalizeRole(string? value)
-        => (value ?? string.Empty).Trim().Replace(" ", "", StringComparison.Ordinal).Replace("_", "", StringComparison.Ordinal).Replace("-", "", StringComparison.Ordinal).ToUpperInvariant();
+    {
+        return (value ?? "")
+            .Trim()
+            .Replace(" ", "")
+            .Replace("_", "")
+            .Replace("-", "")
+            .ToUpperInvariant();
+    }
 }
-
