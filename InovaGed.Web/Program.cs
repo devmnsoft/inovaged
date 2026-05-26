@@ -281,6 +281,7 @@ builder.Services.AddScoped<IGedIntelligenceService, GedIntelligenceService>();
 // =======================================================
 builder.Services.AddScoped<ILoanQueries, LoanQueries>();
 builder.Services.AddScoped<ILoanCommands, LoanCommands>();
+builder.Services.AddScoped<ILoanRequestService, LoanRequestService>();
 builder.Services.AddScoped<ISolicitacaoService, SolicitacaoService>();
 
 builder.Services.AddScoped<IBatchQueries, BatchQueries>();

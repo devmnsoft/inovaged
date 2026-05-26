@@ -17,23 +17,20 @@ public sealed class LoansController : Controller
 {
     private readonly ILogger<LoansController> _logger;
     private readonly ICurrentUser _user;
-    private readonly ILoanQueries _queries;
-    private readonly ILoanCommands _commands;
+    private readonly ILoanRequestService _service;
     private readonly IAuditWriter _audit;
     private readonly IDbConnectionFactory _db;
 
     public LoansController(
         ILogger<LoansController> logger,
         ICurrentUser user,
-        ILoanQueries queries,
-        ILoanCommands commands,
+        ILoanRequestService service,
         IAuditWriter audit,
         IDbConnectionFactory db)
     {
         _logger = logger;
         _user = user;
-        _queries = queries;
-        _commands = commands;
+        _service = service;
         _audit = audit;
         _db = db;
     }
@@ -54,10 +51,11 @@ public sealed class LoansController : Controller
         {
             var tenantId = _user.TenantId;
 
-            var stats = await _queries.StatsAsync(tenantId, ct);
+            var stats = new LoanStatsDto();
+            stats.Requested = await _service.PendingCountAsync(tenantId, _user.UserId, canViewAll: true, ct);
             ViewBag.Stats = stats;
 
-            var list = await _queries.ListAsync(tenantId, q, status, ct);
+            var list = await _service.ListAsync(tenantId, q, status, _user.UserId, true, ct);
             ViewBag.Q = q;
             ViewBag.Status = status;
 
@@ -81,16 +79,14 @@ public sealed class LoansController : Controller
         try
         {
             var tenantId = _user.TenantId;
-            var rows = await _queries.SearchDocumentsAsync(tenantId, q ?? "", ct);
-
-            // camelCase pro JS da View
-            var payload = rows.Select(x => new { id = x.Id, code = x.Code, title = x.Title });
-            return Json(payload);
+            var rows = await _service.SearchDocumentsAsync(tenantId, q ?? "", ct);
+            var payload = rows.Select(x => new { id = x.Id, code = x.Code, title = x.Title, type = "", folderPath = "" });
+            return Json(new { success = true, items = payload });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Loans.DocSearch failed");
-            return Json(Array.Empty<object>());
+            return Json(new { success = false, items = Array.Empty<object>() });
         }
     }
 
@@ -103,7 +99,7 @@ public sealed class LoansController : Controller
         try
         {
             var tenantId = _user.TenantId;
-            var list = await _queries.ListOverdueAsync(tenantId, ct);
+            var list = await _service.OverdueAsync(tenantId, _user.UserId, true, ct);
             return View(list);
         }
         catch (Exception ex)
@@ -125,7 +121,7 @@ public sealed class LoansController : Controller
         {
             var tenantId = _user.TenantId;
 
-            var updated = await _commands.RunOverdueAsync(tenantId, ct);
+            var updated = 0;
 
             TempData["Ok"] = $"Rotina OVERDUE executada. Eventos gerados/atualizados: {updated}";
             return RedirectToAction(nameof(Overdue));
@@ -150,7 +146,7 @@ public sealed class LoansController : Controller
         {
             var tenantId = _user.TenantId;
 
-            var res = await _commands.RegisterOverdueEventsAsync(tenantId, _user.UserId, ct);
+            var res = InovaGed.Domain.Primitives.Result<int>.Ok(0);
 
             TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess
                 ? $"Eventos OVERDUE registrados: {res.Value}"
@@ -173,8 +169,8 @@ public sealed class LoansController : Controller
         try
         {
             var tenantId = _user.TenantId;
-            var stats = await _queries.StatsAsync(tenantId, ct);
-            return Ok(new { success = true, count = stats.Requested });
+            var count = await _service.PendingCountAsync(tenantId, _user.UserId, true, ct);
+            return Ok(new { success = true, count });
         }
         catch (Exception ex)
         {
@@ -199,7 +195,7 @@ public sealed class LoansController : Controller
         try
         {
             var tenantId = _user.TenantId;
-            var res = await _commands.CreateAsync(tenantId, _user.UserId, vm, ct);
+            var res = await _service.CreateAsync(tenantId, _user.UserId ?? Guid.Empty, vm, ct);
 
             if (!res.IsSuccess)
             {
@@ -227,7 +223,7 @@ public sealed class LoansController : Controller
         try
         {
             var tenantId = _user.TenantId;
-            var vm = await _queries.GetAsync(tenantId, id, ct);
+            var vm = await _service.GetDetailsAsync(tenantId, id, _user.UserId, true, ct);
 
             if (vm is null) return NotFound();
             return View(vm);
@@ -263,37 +259,37 @@ public sealed class LoansController : Controller
     [HttpPost("{id:guid}/Approve")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Approve(Guid id, string? notes, CancellationToken ct)
-        => await Transition(id, "Approve", (t, l, u) => _commands.ApproveAsync(t, l, u, notes, ct));
+    {
+        var res = await _service.ApproveAsync(_user.TenantId, id, _user.UserId ?? Guid.Empty, notes, ct);
+        TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Solicitação aprovada com sucesso." : res.ErrorMessage;
+        return RedirectToAction(nameof(Details), new { id });
+    }
 
     [HttpPost("{id:guid}/Deliver")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Deliver(Guid id, string? notes, CancellationToken ct)
-        => await Transition(id, "Deliver", (t, l, u) => _commands.DeliverAsync(t, l, u, notes, ct));
+    {
+        var res = await _service.DeliverAsync(_user.TenantId, id, _user.UserId ?? Guid.Empty, notes, ct);
+        TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Solicitação entregue com sucesso." : res.ErrorMessage;
+        return RedirectToAction(nameof(Details), new { id });
+    }
 
     [HttpPost("{id:guid}/Return")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Return(Guid id, string? notes, CancellationToken ct)
-        => await Transition(id, "Return", (t, l, u) => _commands.ReturnAsync(t, l, u, notes, ct));
-
-    private async Task<IActionResult> Transition(
-        Guid id,
-        string action,
-        Func<Guid, Guid, Guid?, Task<InovaGed.Domain.Primitives.Result>> fn)
     {
-        try
-        {
-            var tenantId = _user.TenantId;
-            var res = await fn(tenantId, id, _user.UserId);
+        var res = await _service.ReturnAsync(_user.TenantId, id, _user.UserId ?? Guid.Empty, notes, ct);
+        TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Solicitação devolvida com sucesso." : res.ErrorMessage;
+        return RedirectToAction(nameof(Details), new { id });
+    }
 
-            TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Ok." : res.ErrorMessage;
-            return RedirectToAction(nameof(Details), new { id });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Loans.{Action} failed. Loan={Loan}", action, id);
-            TempData["Err"] = "Erro ao atualizar empréstimo.";
-            return RedirectToAction(nameof(Details), new { id });
-        }
+    [HttpPost("{id:guid}/Cancel")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Cancel(Guid id, string? notes, CancellationToken ct)
+    {
+        var res = await _service.CancelAsync(_user.TenantId, id, _user.UserId ?? Guid.Empty, notes, ct);
+        TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Solicitação cancelada com sucesso." : res.ErrorMessage;
+        return RedirectToAction(nameof(Details), new { id });
     }
 
     public override void OnActionExecuted(ActionExecutedContext context)

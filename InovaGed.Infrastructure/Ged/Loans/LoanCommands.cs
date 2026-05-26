@@ -200,6 +200,9 @@ values
     public Task<Result> ReturnAsync(Guid tenantId, Guid loanId, Guid? userId, string? notes, CancellationToken ct)
         => TransitionAsync(tenantId, loanId, userId, notes, newStatus: "RETURNED", label: "Devolver", setReturnedAt: true, ct);
 
+    public Task<Result> CancelAsync(Guid tenantId, Guid loanId, Guid? userId, string? notes, CancellationToken ct)
+        => TransitionAsync(tenantId, loanId, userId, notes, newStatus: "CANCELLED", label: "Cancelar", setReturnedAt: false, ct);
+
     // Compat
     public Task<Result> MarkDeliveredAsync(Guid tenantId, Guid loanId, Guid userId, string? notes, CancellationToken ct)
         => DeliverAsync(tenantId, loanId, userId, notes, ct);
@@ -332,7 +335,7 @@ select exists (
 
             const string upd = """
 update ged.loan_request
-set status = (@status)::ged.loan_status_enum,
+set status = (@status)::ged.loan_status,
     approved_at  = case when @status='APPROVED'  then @nowUtc else approved_at end,
     delivered_at = case when @status='DELIVERED' then @nowUtc else delivered_at end,
     returned_at  = case when @set_returned then @nowUtc else returned_at end
