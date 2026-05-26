@@ -172,18 +172,33 @@
             const payload = mode === 'single'
                 ? { documentId: selectedIds[0], destinationFolderId: destinationFolderId.value, reason: reasonInput.value?.trim() || null, source: 'SINGLE' }
                 : { documentIds: selectedIds, destinationFolderId: destinationFolderId.value, reason: reasonInput.value?.trim() || null, source: 'BULK' };
+            const originalText = confirmBtn?.textContent;
+            if (confirmBtn) {
+                confirmBtn.disabled = true;
+                confirmBtn.textContent = 'Movendo...';
+            }
             try {
                 const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { 'RequestVerificationToken': token } : {}) }, body: JSON.stringify(payload) });
                 let data = null;
                 try { data = await response.json(); } catch { data = null; }
                 const result = data?.data || data?.value || data;
-                if (!response.ok || data?.success === false || result?.success === false || result?.isSuccess === false) throw new Error(data?.message || result?.message || result?.error?.message || 'Falha ao mover documento(s).');
+                const ok = response.ok && data?.success !== false && result?.success !== false && result?.isSuccess !== false;
+                if (!ok) throw new Error(data?.message || result?.message || result?.error?.message || 'Falha ao mover documento(s).');
+
                 clearMoveError();
                 if (window.toastr && typeof window.toastr.success === "function") window.toastr.success(data?.message || "Movimentação concluída com sucesso.");
                 moveModal.hide();
-                selectedIds.forEach(id => document.querySelector(`tr[data-document-id="${id}"]`)?.remove());
+                window.setTimeout(() => window.location.reload(), 800);
+            } catch (err) {
+                console.error('[MoveDocuments] Erro na requisição', err);
+                showMoveError(err?.message || 'Falha ao mover documento(s).');
+            } finally {
+                if (confirmBtn) {
+                    confirmBtn.disabled = !(destinationFolderId?.value);
+                    confirmBtn.textContent = originalText || 'Confirmar movimentação';
+                }
                 updateBulkUi();
-            } catch (err) { console.error('[MoveDocuments] Erro na requisição', err); showMoveError(err?.message || 'Falha ao mover documento(s).'); }
+            }
         }
         document.addEventListener('input', function (e) {
             if (!e.target || e.target.id !== 'folderSearchInput') return;

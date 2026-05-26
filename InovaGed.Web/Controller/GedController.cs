@@ -1315,7 +1315,8 @@ LIMIT 20;";
         try
         {
             if (!_currentUser.IsAuthenticated) return Unauthorized();
-            var result = await _documentMoveService.MoveAsync(_currentUser.TenantId, _currentUser.UserId, User.Identity?.Name, request.DocumentId, request.DestinationFolderId, request.Reason, request.Source ?? "SINGLE", ct);
+            var isAdmin = User.IsInRole(AppRoles.Admin);
+            var result = await _documentMoveService.MoveAsync(_currentUser.TenantId, _currentUser.UserId, User.Identity?.Name, request.DocumentId, request.DestinationFolderId, request.Reason, request.Source ?? "SINGLE", isAdmin, ct);
             if (!result.IsSuccess)
                 return BadRequest(new { success = false, message = result.Error?.Message ?? "Não foi possível mover o documento." });
             return Ok(new { success = true, message = "Documento movido com sucesso.", data = result.Value });
@@ -1334,7 +1335,8 @@ LIMIT 20;";
         try
         {
             if (!_currentUser.IsAuthenticated) return Unauthorized();
-            var result = await _documentMoveService.MoveBulkAsync(_currentUser.TenantId, _currentUser.UserId, User.Identity?.Name, request.DocumentIds, request.DestinationFolderId, request.Reason, request.Source ?? "BULK", ct);
+            var isAdmin = User.IsInRole(AppRoles.Admin);
+            var result = await _documentMoveService.MoveBulkAsync(_currentUser.TenantId, _currentUser.UserId, User.Identity?.Name, request.DocumentIds, request.DestinationFolderId, request.Reason, request.Source ?? "BULK", isAdmin, ct);
             if (!result.IsSuccess)
                 return BadRequest(new { success = false, message = result.Error?.Message ?? "Não foi possível mover o documento." });
             return Ok(new { success = true, message = "Documento movido com sucesso.", data = result.Value });

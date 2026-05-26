@@ -20,11 +20,11 @@ public sealed class DocumentMoveService : IDocumentMoveService
     public DocumentMoveService(IDbConnectionFactory db, IAuditWriter audit, ILogger<DocumentMoveService> logger, IPermissionService permissionService)
     { _db = db; _audit = audit; _logger = logger; _permissionService = permissionService; }
 
-    public async Task<Result<DocumentMoveResultDto>> MoveAsync(Guid tenantId, Guid userId, string? userName, Guid documentId, Guid destinationFolderId, string? reason, string source, CancellationToken ct)
+    public async Task<Result<DocumentMoveResultDto>> MoveAsync(Guid tenantId, Guid userId, string? userName, Guid documentId, Guid destinationFolderId, string? reason, string source, bool isAdmin, CancellationToken ct)
     {
         try
         {
-            var item = await MoveOneAsync(tenantId, userId, userName, documentId, destinationFolderId, reason, source, null, ct);
+            var item = await MoveOneAsync(tenantId, userId, userName, documentId, destinationFolderId, reason, source, isAdmin, null, ct);
             return item.Success ? Result<DocumentMoveResultDto>.Ok(item) : Result<DocumentMoveResultDto>.Fail(item.ErrorCode ?? "MOVE", item.Message ?? "Falha ao mover documento.");
         }
         catch (Exception ex)
@@ -34,7 +34,7 @@ public sealed class DocumentMoveService : IDocumentMoveService
         }
     }
 
-    public async Task<Result<DocumentBulkMoveResultDto>> MoveBulkAsync(Guid tenantId, Guid userId, string? userName, IReadOnlyList<Guid> documentIds, Guid destinationFolderId, string? reason, string source, CancellationToken ct)
+    public async Task<Result<DocumentBulkMoveResultDto>> MoveBulkAsync(Guid tenantId, Guid userId, string? userName, IReadOnlyList<Guid> documentIds, Guid destinationFolderId, string? reason, string source, bool isAdmin, CancellationToken ct)
     {
         try
         {
@@ -42,7 +42,7 @@ public sealed class DocumentMoveService : IDocumentMoveService
             if (documentIds.Count > BulkLimit) return Result<DocumentBulkMoveResultDto>.Fail("LIMIT", $"Limite máximo de {BulkLimit} documentos por operação.");
             var batchId = Guid.NewGuid();
             var items = new List<DocumentMoveResultDto>(documentIds.Count);
-            foreach (var id in documentIds.Distinct()) items.Add(await MoveOneAsync(tenantId, userId, userName, id, destinationFolderId, reason, source, batchId, ct));
+            foreach (var id in documentIds.Distinct()) items.Add(await MoveOneAsync(tenantId, userId, userName, id, destinationFolderId, reason, source, isAdmin, batchId, ct));
             var ok = items.Count(i => i.Success);
             await _audit.WriteAsync(tenantId, userId, "MOVE_DOCUMENT_FOLDER_BULK", "DOCUMENT", batchId, "Documentos movidos em lote", null, null, new { batchId, total = items.Count, successCount = ok, failCount = items.Count - ok, destinationFolderId, reason, source = "BULK" }, ct);
             return Result<DocumentBulkMoveResultDto>.Ok(new DocumentBulkMoveResultDto { BatchId = batchId, Total = items.Count, SuccessCount = ok, FailCount = items.Count - ok, Items = items });
@@ -119,7 +119,7 @@ where h.tenant_id=@tenantId and h.document_id=@documentId and h.reg_status='A' o
         }
     }
 
-    private async Task<DocumentMoveResultDto> MoveOneAsync(Guid tenantId, Guid userId, string? userName, Guid documentId, Guid destinationFolderId, string? reason, string source, Guid? batchId, CancellationToken ct)
+    private async Task<DocumentMoveResultDto> MoveOneAsync(Guid tenantId, Guid userId, string? userName, Guid documentId, Guid destinationFolderId, string? reason, string source, bool isAdmin, Guid? batchId, CancellationToken ct)
     {
         await using var conn = await _db.OpenAsync(ct);
         await using var tx = await conn.BeginTransactionAsync(ct);
@@ -138,7 +138,8 @@ from ged.document d
 where d.tenant_id = @tenantId
   and d.id = @documentId
   and coalesce(d.reg_status, 'A') = 'A'
-  and upper(d.status::text) <> 'DELETED';
+  and upper(d.status::text) <> 'DELETED'
+for update;
 """;
 
             var doc = await conn.QueryFirstOrDefaultAsync<DocumentMoveSnapshot>(
@@ -152,7 +153,7 @@ where d.tenant_id = @tenantId
             if (doc.FolderId == targetFolderId)
                 return await RollbackAndReturnAsync(Fail(documentId, "O documento já está nesta pasta."), tx, ct);
 
-            if (!await CanMoveAsync(conn, tenantId, userId, doc.IsConfidential, ct))
+            if (!isAdmin && !await CanMoveAsync(conn, tenantId, userId, doc.IsConfidential, ct))
             {
                 await _audit.WriteAsync(tenantId, userId, "ACCESS_DENIED_MOVE_DOCUMENT", "DOCUMENT", documentId, "Tentativa não autorizada de mover documento", null, null, new { destinationFolderId, source, reason }, ct);
                 return await RollbackAndReturnAsync(Denied(documentId, "Usuário sem permissão para mover este documento."), tx, ct);
@@ -165,11 +166,18 @@ where d.tenant_id = @tenantId
                     return await RollbackAndReturnAsync(Fail(documentId, "Pasta destino inválida."), tx, ct);
             }
 
-            await conn.ExecuteAsync(new CommandDefinition("update ged.document set folder_id=@destinationFolderId, updated_at=now(), updated_by=@userId where tenant_id=@tenantId and id=@documentId and coalesce(reg_status,'A')='A' and upper(status::text) <> 'DELETED'", new { tenantId, documentId, destinationFolderId = targetFolderId, userId }, transaction: tx, cancellationToken: ct));
+            var rowsAffected = await conn.ExecuteAsync(new CommandDefinition("update ged.document set folder_id=@destinationFolderId, updated_at=now(), updated_by=@userId where tenant_id=@tenantId and id=@documentId and coalesce(reg_status,'A')='A' and upper(status::text) <> 'DELETED'", new { tenantId, documentId, destinationFolderId = targetFolderId, userId }, transaction: tx, cancellationToken: ct));
+            if (rowsAffected != 1)
+                return await RollbackAndReturnAsync(Fail(documentId, "Não foi possível atualizar a pasta do documento."), tx, ct);
             await conn.ExecuteAsync(new CommandDefinition("insert into ged.document_folder_move_history (id, tenant_id, document_id, old_folder_id, new_folder_id, moved_by, moved_by_name, reason, batch_id, source, reg_status) values (@id,@tenantId,@documentId,@oldFolderId,@newFolderId,@movedBy,@movedByName,@reason,@batchId,@source,'A')", new { id = Guid.NewGuid(), tenantId, documentId, oldFolderId = doc.FolderId, newFolderId = targetFolderId, movedBy = userId, movedByName = userName, reason, batchId, source }, transaction: tx, cancellationToken: ct));
+
+            var persisted = await conn.ExecuteScalarAsync<int>(new CommandDefinition("select count(1) from ged.document where tenant_id=@tenantId and id=@documentId and ((@destinationFolderId is null and folder_id is null) or folder_id=@destinationFolderId)", new { tenantId, documentId, destinationFolderId = targetFolderId }, transaction: tx, cancellationToken: ct));
+            if (persisted != 1)
+                return await RollbackAndReturnAsync(Fail(documentId, "Não foi possível confirmar a pasta destino do documento."), tx, ct);
 
             await tx.CommitAsync(ct);
 
+            _logger.LogInformation("Documento movido confirmado. Tenant={TenantId} User={UserId} Document={DocumentId} OldFolder={OldFolderId} NewFolder={DestinationFolderId} RowsAffected={RowsAffected}", tenantId, userId, documentId, doc.FolderId, targetFolderId, rowsAffected);
             await _audit.WriteAsync(tenantId, userId, "MOVE_DOCUMENT_FOLDER", "DOCUMENT", documentId, "Documento movido de pasta", null, null, new { oldFolderId = doc.FolderId, newFolderId = targetFolderId, reason, source }, ct);
             return new DocumentMoveResultDto { DocumentId = documentId, Success = true, Message = "Documento movido com sucesso.", OldFolderId = doc.FolderId, NewFolderId = targetFolderId };
         }
