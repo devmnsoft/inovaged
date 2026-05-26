@@ -21,8 +21,9 @@
             <form asp-action="StopOcrQueue"
                   asp-controller="Ged"
                   method="post"
-                  class="d-inline"
-                  onsubmit="return confirm('Parar toda a fila OCR ativa?');">
+                  class="d-inline js-app-confirm-form"
+                  data-confirm-title="Parar fila OCR"
+                  data-confirm-message="Parar toda a fila OCR ativa?">
                 @Html.AntiForgeryToken()
 
                 <button type="submit" class="btn btn-sm btn-outline-danger">
@@ -127,8 +128,9 @@
                                 <form asp-action="CancelOcrJob"
                                       asp-controller="Ged"
                                       method="post"
-                                      class="d-inline"
-                                      onsubmit="return confirm('Cancelar este job OCR?');">
+                                      class="d-inline js-app-confirm-form"
+                                      data-confirm-title="Cancelar job OCR"
+                                      data-confirm-message="Cancelar este job OCR?">
                                     @Html.AntiForgeryToken()
 
                                     <input type="hidden" name="jobId" value="@item.JobId" />
