@@ -1,15 +1,35 @@
 @model InovaGed.Application.Ged.Dashboard.GedDashboardVm
-@using InovaGed.Web.Security
-@{ ViewData["Title"] = "Painel Gerencial do GED"; var vm = Model ?? new InovaGed.Application.Ged.Dashboard.GedDashboardVm { HasPartialFailures = true }; }
+@{ ViewData["Title"] = "Painel Operacional do GED"; var vm = Model ?? new InovaGed.Application.Ged.Dashboard.GedDashboardVm { PartialFailure = true }; }
 <div class="container-fluid py-3">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <div><h2 class="mb-1">Painel Gerencial do GED</h2><p class="text-muted mb-0">Visão consolidada de documentos, OCR, solicitações e auditoria</p></div>
-        <a class="btn btn-outline-primary" asp-controller="GedDashboard" asp-action="Index" asp-route-refresh="true"><i class="bi bi-arrow-clockwise"></i> Atualizar agora</a>
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h2 class="mb-1">Painel Operacional do GED</h2>
+      <p class="text-muted mb-0">Visão consolidada de documentos, OCR, solicitações e auditoria</p>
     </div>
-    @if (vm.HasPartialFailures){<div class="alert alert-warning py-2">Alguns indicadores não puderam ser carregados. Verifique os logs técnicos.</div>}
-    <div class="row g-3">
-@foreach (var c in new[] {
-new {T="Total de documentos ativos",V=vm.TotalDocuments,I="bi-files",L="/Ged"},new {T="Documentos sem classificação",V=vm.UnclassifiedDocuments,I="bi-tags",L="/Ged"},new {T="OCR pendente",V=vm.OcrPending,I="bi-hourglass-split",L="/Ged/Processing"},new {T="OCR processando",V=vm.OcrProcessing,I="bi-cpu",L="/Ged/Processing"},new {T="OCR com erro",V=vm.OcrFailed,I="bi-exclamation-triangle",L="/Ged/Processing"},new {T="OCR concluído (24h)",V=vm.OcrCompleted24h,I="bi-check2-circle",L="/Ged/Processing"},new {T="Solicitações pendentes",V=vm.PendingLoanRequests,I="bi-journal-arrow-up",L="/Solicitacoes"},new {T="Empréstimos vencidos",V=vm.OverdueLoans,I="bi-calendar2-x",L="/Loans/Overdue"},new {T="Movimentações (24h)",V=vm.FolderMoves24h,I="bi-arrow-left-right",L="/Ged/Folders"},new {T="Temporalidade vencida",V=vm.RetentionExpired,I="bi-clock-history",L="/Retention"},new {T="Vence em 30 dias",V=vm.RetentionDue30Days,I="bi-calendar-event",L="/Retention"},new {T="Acessos negados (24h)",V=vm.AccessDenied24h,I="bi-shield-x",L="/SecurityAudit/AccessFailures"}}){
-<div class="col-12 col-sm-6 col-xl-3"><a class="text-decoration-none" href="@c.L"><div class="card h-100 shadow-sm"><div class="card-body"><div class="d-flex justify-content-between"><small class="text-muted">@c.T</small><i class="bi @c.I"></i></div><div class="display-6 fw-bold">@c.V</div></div></div></a></div>}
-    </div>
+    <a class="btn btn-outline-primary" asp-controller="GedDashboard" asp-action="Index"><i class="bi bi-arrow-clockwise"></i> Atualizar agora</a>
+  </div>
+
+  @if (vm.PartialFailure)
+  {
+    <div class="alert alert-warning py-2">Alguns indicadores não puderam ser carregados. Verifique os logs técnicos.</div>
+  }
+
+  <div class="row g-3 mb-4">
+    @foreach (var c in new[] {
+      new {T="Total de documentos ativos",V=vm.ActiveDocuments,I="bi-files",C="text-primary",L="/Ged"},
+      new {T="Documentos sem classificação",V=vm.UnclassifiedDocuments,I="bi-tags",C="text-warning",L="/Ged"},
+      new {T="Documentos confidenciais",V=vm.ConfidentialDocuments,I="bi-shield-lock",C="text-danger",L="/Ged"},
+      new {T="OCR pendente",V=vm.OcrPending,I="bi-hourglass-split",C="text-secondary",L="/Ged/Processing"},
+      new {T="OCR processando",V=vm.OcrProcessing,I="bi-cpu",C="text-info",L="/Ged/Processing"},
+      new {T="OCR com erro",V=vm.OcrError,I="bi-exclamation-triangle",C="text-danger",L="/Ged/Processing"},
+      new {T="Solicitações pendentes",V=vm.LoanRequested,I="bi-journal-arrow-up",C="text-warning",L="/Loans"},
+      new {T="Empréstimos vencidos",V=vm.LoanOverdue,I="bi-calendar2-x",C="text-danger",L="/Loans/Overdue"},
+      new {T="Movimentações hoje",V=vm.FolderMovesToday,I="bi-arrow-left-right",C="text-info",L="/Ged/Folders"},
+      new {T="Acessos negados 24h",V=vm.AccessDenied24h,I="bi-shield-x",C="text-danger",L="/Audit/AccessDenied"},
+      new {T="Usuários bloqueados",V=vm.LockedUsers,I="bi-person-lock",C="text-danger",L="/Users"},
+      new {T="Temporalidade vencida",V=vm.RetentionExpired,I="bi-clock-history",C="text-warning",L="/Retention"}
+    }) {
+      <div class="col-12 col-sm-6 col-xl-3"><a class="text-decoration-none" href="@c.L"><div class="card h-100 shadow-sm"><div class="card-body"><div class="d-flex justify-content-between"><small class="text-muted">@c.T</small><i class="bi @c.I @c.C"></i></div><div class="display-6 fw-bold">@c.V</div></div></div></a></div>
+    }
+  </div>
 </div>
