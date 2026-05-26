@@ -174,7 +174,8 @@
                 : { documentIds: selectedIds, destinationFolderId: destinationFolderId.value, reason: reasonInput.value?.trim() || null, source: 'BULK' };
             try {
                 const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { 'RequestVerificationToken': token } : {}) }, body: JSON.stringify(payload) });
-                const data = await response.json();
+                let data = null;
+                try { data = await response.json(); } catch { data = null; }
                 const result = data?.data || data?.value || data;
                 if (!response.ok || data?.success === false || result?.success === false || result?.isSuccess === false) throw new Error(data?.message || result?.message || result?.error?.message || 'Falha ao mover documento(s).');
                 clearMoveError();
