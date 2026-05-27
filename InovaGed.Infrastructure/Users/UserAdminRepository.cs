@@ -820,8 +820,8 @@ SELECT ged.audit_user_security_event(
         await using var con = await _db.OpenAsync(ct);
         await using var tx = await con.BeginTransactionAsync(ct);
 
-        var servidorId = command.ServidorId.HasValue && command.ServidorId.Value != Guid.Empty
-            ? command.ServidorId.Value
+        var servidorId = command.ServidorId != Guid.Empty
+            ? command.ServidorId
             : Guid.NewGuid();
 
         var emailLogin = TrimLowerOrNull(command.EmailLogin) ?? "";
@@ -864,7 +864,7 @@ SELECT ged.audit_user_security_event(
             command.UpdatedBy
         };
 
-        var isServidorNovo = !command.ServidorId.HasValue || command.ServidorId.Value == Guid.Empty;
+        var isServidorNovo = command.ServidorId == Guid.Empty;
 
         if (isServidorNovo)
         {
