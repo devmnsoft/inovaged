@@ -542,10 +542,17 @@ SELECT EXISTS (
 
     public async Task<bool> CpfExistsAsync(
         Guid tenantId,
-        string cpf,
+        string? cpf,
         Guid? ignoreServidorId,
         CancellationToken ct)
     {
+        if (string.IsNullOrWhiteSpace(cpf))
+            return false;
+
+        var digits = new string(cpf.Where(char.IsDigit).ToArray());
+        if (string.IsNullOrWhiteSpace(digits))
+            return false;
+
         const string sql = @"
 SELECT EXISTS (
     SELECT 1
@@ -565,7 +572,7 @@ SELECT EXISTS (
                 new
                 {
                     TenantId = tenantId,
-                    Cpf = cpf,
+                    Cpf = digits,
                     IgnoreServidorId = ignoreServidorId
                 },
                 cancellationToken: ct));
