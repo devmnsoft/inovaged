@@ -277,24 +277,46 @@ public sealed class UsersController : AppControllerBase
     }
 
     [HttpGet("Edit/{servidorId:guid}")]
+    [Authorize(Roles = AppRoles.Admin + ",ADMINISTRATOR")]
     public async Task<IActionResult> Edit(Guid servidorId, CancellationToken ct)
     {
         if (!_currentUser.IsAuthenticated) return Unauthorized();
 
-        _logger.LogInformation("Abrindo edição de servidor. Tenant={TenantId} Admin={AdminUserId} ServidorId={ServidorId} CorrelationId={CorrelationId}",
+        var isAdmin =
+            User.IsInRole(AppRoles.Admin) ||
+            User.IsInRole("ADMIN") ||
+            User.IsInRole("ADMINISTRATOR");
+        var roles = string.Join(",", User.Claims.Where(c => c.Type.Contains("role", StringComparison.OrdinalIgnoreCase)).Select(c => c.Value));
+
+        _logger.LogInformation(
+            "Diagnóstico edição usuário. Tenant={TenantId} RouteServidorId={ServidorId} CurrentUser={CurrentUserId} Roles={Roles} IsAdmin={IsAdmin} CorrelationId={CorrelationId}",
             _currentUser.TenantId,
-            _currentUser.UserId,
             servidorId,
+            _currentUser.UserId,
+            roles,
+            isAdmin,
             HttpContext.TraceIdentifier);
 
-        var dto = await _repo.GetForEditByServidorIdAsync(_currentUser.TenantId, servidorId, ct);
+        var diagnostic = await _repo.GetEditDiagnosticAsync(_currentUser.TenantId, servidorId, ct);
+        _logger.LogInformation(
+            "Diagnóstico SQL edição. Tenant={TenantId} RouteServidorId={ServidorId} ServidorExiste={ServidorExiste} UsuarioExiste={UsuarioExiste}",
+            _currentUser.TenantId,
+            servidorId,
+            diagnostic.ServidorExiste,
+            diagnostic.UsuarioExiste);
+
+        var dto = await _repo.GetForEditByServidorIdAsync(_currentUser.TenantId, servidorId, isAdmin, ct);
         if (dto is null)
         {
-            _logger.LogWarning("Servidor não encontrado para edição. Tenant={TenantId} ServidorId={ServidorId} CorrelationId={CorrelationId}",
+            _logger.LogWarning("Servidor não encontrado para edição. Tenant={TenantId} AdminUser={AdminUserId} IsAdmin={IsAdmin} ServidorId={ServidorId} CorrelationId={CorrelationId}",
                 _currentUser.TenantId,
+                _currentUser.UserId,
+                isAdmin,
                 servidorId,
                 HttpContext.TraceIdentifier);
-            TempData["Error"] = "Servidor não encontrado ou você não possui permissão para editá-lo.";
+            TempData["Error"] = isAdmin
+                ? "Servidor não encontrado. Verifique se o cadastro ainda existe."
+                : "Você não possui permissão para editar este cadastro.";
             return RedirectToAction(nameof(Index));
         }
 
