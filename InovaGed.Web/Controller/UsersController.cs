@@ -13,7 +13,7 @@ namespace InovaGed.Web.Controllers;
 
 [Authorize]
 [Route("Users")]
-public sealed class UsersController : Controller
+public sealed class UsersController : AppControllerBase
 {
     private static readonly string[] UserParameterCategories =
     {
@@ -48,6 +48,10 @@ public sealed class UsersController : Controller
     [Authorize(Roles = AppRoles.Admin + ",ADMINISTRATOR")]
     public async Task<IActionResult> Unlock(Guid id, CancellationToken ct)
     {
+        var tenantId = _currentUser.TenantId;
+        var userId = _currentUser.UserId;
+        var correlationId = HttpContext.TraceIdentifier;
+
         try
         {
             var unlocked = await _userService.UnlockUserAsync(
@@ -57,13 +61,54 @@ public sealed class UsersController : Controller
                 ct);
 
             if (!unlocked)
-                return NotFound(new { message = "Usuário não encontrado." });
+                return JsonError("Usuário não encontrado.", "Validação", "UserNotFound", false, 404);
 
-            return Ok(new { message = "Usuário desbloqueado com sucesso" });
+            _logger.LogInformation(
+                "Usuário desbloqueado. TenantId={TenantId} UserId={UserId} TargetUserId={TargetUserId} Path={Path} Method={Method} CorrelationId={CorrelationId}",
+                tenantId,
+                userId,
+                id,
+                Request.Path,
+                Request.Method,
+                correlationId);
+
+            return JsonSuccess("Usuário desbloqueado com sucesso.", new { userId = id });
         }
-        catch (UnauthorizedAccessException)
+        catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)
         {
-            return Forbid();
+            _logger.LogWarning(
+                "Request cancelado pelo cliente em desbloqueio de usuário. TenantId={TenantId} UserId={UserId} TargetUserId={TargetUserId} Path={Path} CorrelationId={CorrelationId}",
+                tenantId,
+                userId,
+                id,
+                Request.Path,
+                correlationId);
+
+            return JsonError("Operação cancelada pelo cliente.", "Cancelamento", null, true, 499);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            _logger.LogWarning(ex,
+                "Acesso negado ao desbloquear usuário. TenantId={TenantId} UserId={UserId} TargetUserId={TargetUserId} Path={Path} CorrelationId={CorrelationId}",
+                tenantId,
+                userId,
+                id,
+                Request.Path,
+                correlationId);
+            return JsonError("Você não possui permissão para executar esta ação.", "Autorização", "AccessDenied", false, 403);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Erro ao desbloquear usuário. TenantId={TenantId} UserId={UserId} TargetUserId={TargetUserId} Path={Path} Method={Method} CorrelationId={CorrelationId}",
+                tenantId,
+                userId,
+                id,
+                Request.Path,
+                Request.Method,
+                correlationId);
+
+            return JsonError("Erro interno ao processar a solicitação. Informe o código de rastreio ao suporte.", "Servidor", "UnlockUserError", true, 500);
         }
     }
 
