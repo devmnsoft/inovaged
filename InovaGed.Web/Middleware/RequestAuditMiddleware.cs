@@ -22,13 +22,20 @@ public sealed class RequestAuditMiddleware
             await _next(ctx);
             sw.Stop();
             if (ctx.Response.StatusCode >= 400 || path.StartsWith("/Account") || path.StartsWith("/Ged") || path.StartsWith("/Loans") || path.StartsWith("/Users") || path.StartsWith("/GedDashboard") || path.StartsWith("/GedReports"))
+            {
+                var isAccessDenied = ctx.Response.StatusCode is StatusCodes.Status401Unauthorized or StatusCodes.Status403Forbidden;
+                var action = isAccessDenied ? "ACCESS_DENIED" : "HTTP";
+                var eventType = isAccessDenied
+                    ? "ACCESS_DENIED"
+                    : ctx.Response.StatusCode >= 500 ? "ERROR" : "INFO";
+
                 await audit.LogAsync(new AppAuditLogEntry
                 {
                     TenantId = currentUser.TenantId,
                     UserId = currentUser.UserId,
                     UserName = ctx.User.Identity?.Name,
-                    EventType = ctx.Response.StatusCode >= 400 ? "ERROR" : "AUDIT",
-                    Action = "HTTP",
+                    EventType = eventType,
+                    Action = action,
                     Source = "RequestAuditMiddleware",
                     EntityName = "HTTP_REQUEST",
                     EntityId = null,
@@ -47,6 +54,7 @@ public sealed class RequestAuditMiddleware
                         correlationId
                     }
                 }, ctx.RequestAborted);
+            }
         }
         catch (Exception ex)
         {
