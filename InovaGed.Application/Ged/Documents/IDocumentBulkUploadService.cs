@@ -12,6 +12,9 @@ public sealed class DocumentBulkUploadMetadata
     public bool RunOcr { get; set; }
     public bool GeneratePreview { get; set; }
     public Guid? BatchId { get; set; }
+    public string? DuplicateStrategy { get; set; }
+    public Guid? ExistingDocumentId { get; set; }
+    public string? UploadName { get; set; }
 }
 
 public sealed class DocumentBulkUploadResultDto
