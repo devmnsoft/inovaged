@@ -135,15 +135,15 @@ public sealed class GedController : Controller
         {
             _logger.LogInformation("Bulk upload iniciado. Tenant={TenantId} User={UserId} Folder={FolderId} File={FileName} Size={FileSize} RunOcr={RunOcr} GeneratePreview={GeneratePreview} CorrelationId={CorrelationId}",
                 _currentUser.TenantId, _currentUser.UserId, folderId, file?.FileName, file?.Length, runOcr, generatePreview, correlationId);
-            if (!_currentUser.IsAuthenticated) return Unauthorized(new { success = false, status = "error", message = "Usuário não autenticado.", errorStep = "Autenticação", errorLog = "Usuário sem sessão autenticada.", canRetry = false, correlationId });
+            if (!_currentUser.IsAuthenticated) return Unauthorized(JsonError("Sua sessão expirou. Faça login novamente.", "Autenticação", "Usuário sem sessão autenticada.", false, correlationId));
             if (folderId.HasValue && IsVirtualFolderId(folderId.Value))
             {
-                return BadRequest(new { success = false, status = "error", message = "Selecione uma pasta válida antes de enviar documentos.", errorStep = "Validação de pasta", errorLog = $"FolderId virtual não permitido para upload: {folderId}", canRetry = false, correlationId });
+                return BadRequest(JsonError("Selecione uma pasta válida antes de enviar documentos.", "Validação de pasta", $"FolderId virtual não permitido para upload: {folderId}", false, correlationId));
             }
             var allowed = await _accessPolicy.CanUploadDocumentToFolderAsync(_currentUser.TenantId, _currentUser.UserId, folderId, User, ct);
             if (!allowed)
             {
-                return StatusCode(403, new { success = false, status = "error", message = "Você não possui permissão para adicionar documentos nesta pasta.", errorStep = "Autorização", errorLog = "Permissão negada para upload na pasta selecionada.", canRetry = false, correlationId });
+                return StatusCode(403, JsonError("Você não possui permissão para adicionar documentos nesta pasta.", "Autorização", "Permissão negada para upload na pasta selecionada.", false, correlationId));
             }
             _logger.LogInformation("Bulk upload validações concluídas. ElapsedMs={ElapsedMs} CorrelationId={CorrelationId}", sw.ElapsedMilliseconds, correlationId);
 
@@ -159,23 +159,14 @@ public sealed class GedController : Controller
                     || message.Contains("extensão", StringComparison.OrdinalIgnoreCase)
                     || message.Contains("extension", StringComparison.OrdinalIgnoreCase);
 
-                return BadRequest(new
-                {
-                    success = false,
-                    status = "error",
-                    message,
-                    errorStep = isExtensionError ? "Validação de extensão" : "Persistência",
-                    errorLog = string.IsNullOrWhiteSpace(code) ? "Falha ao processar upload no backend." : code,
-                    canRetry = !isExtensionError,
-                    correlationId
-                });
+                return BadRequest(JsonError(message, isExtensionError ? "Validação de extensão" : "Persistência", string.IsNullOrWhiteSpace(code) ? "Falha ao processar upload no backend." : code, !isExtensionError, correlationId));
             }
-            return Ok(new { success = true, status = "success", message = "Arquivo enviado com sucesso.", data = new { documentId = result.Value.DocumentId, versionId = (Guid?)null, fileName = result.Value.FileName, ocrQueued = runOcr, previewQueued = generatePreview }, correlationId });
+            return Ok(JsonSuccess("Arquivo enviado com sucesso.", new { documentId = result.Value.DocumentId, versionId = (Guid?)null, fileName = result.Value.FileName, ocrQueued = runOcr, previewQueued = generatePreview }, correlationId));
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Erro no BulkUploadSingle. Tenant={TenantId} User={UserId} Folder={FolderId} Batch={BatchId} CorrelationId={CorrelationId}", _currentUser.TenantId, _currentUser.UserId, folderId, batchId, correlationId);
-            return StatusCode(500, new { success = false, status = "error", message = "Erro interno ao enviar arquivo.", errorStep = "Servidor", errorLog = ex.Message, canRetry = true, correlationId });
+            return StatusCode(500, JsonError("Erro interno ao enviar arquivo.", "Servidor", ex.Message, true, correlationId));
         }
         finally
         {
@@ -208,20 +199,21 @@ public sealed class GedController : Controller
     {
         try
         {
-            if (!_currentUser.IsAuthenticated) return Unauthorized(new { success = false, message = "Usuário não autenticado." });
-            if (request?.FolderId is null || request.FolderId == Guid.Empty) return BadRequest(new { success = false, message = "Pasta inválida." });
+            var correlationId = HttpContext.TraceIdentifier;
+            if (!_currentUser.IsAuthenticated) return Unauthorized(JsonError("Sua sessão expirou. Faça login novamente.", "Autenticação", "Usuário não autenticado.", false, correlationId));
+            if (request?.FolderId is null || request.FolderId == Guid.Empty) return BadRequest(JsonError("Pasta inválida.", "Validação", "FolderId vazio ou ausente.", false, correlationId));
             var fileNames = (request.FileNames ?? Array.Empty<string>()).Where(x => !string.IsNullOrWhiteSpace(x)).Select(Path.GetFileNameWithoutExtension).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-            if (fileNames.Length == 0) return Ok(new { success = true, duplicates = Array.Empty<object>() });
+            if (fileNames.Length == 0) return Ok(JsonSuccess("Nenhum arquivo para validação de duplicidade.", new { duplicates = Array.Empty<object>() }, correlationId));
 
             const string sql = @"select id as ExistingDocumentId, title as FileName from ged.document where tenant_id=@tenantId and folder_id=@folderId and title = any(@titles) and reg_status='A';";
             using var con = _db.CreateConnection();
             var rows = await con.QueryAsync(sql, new { tenantId = _currentUser.TenantId, folderId = request.FolderId.Value, titles = fileNames });
-            return Ok(new { success = true, duplicates = rows });
+            return Ok(JsonSuccess("Duplicidades verificadas com sucesso.", new { duplicates = rows }, correlationId));
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Erro ao verificar duplicidade de nomes.");
-            return StatusCode(500, new { success = false, message = "Não foi possível verificar duplicidades. Tente novamente." });
+            return StatusCode(500, JsonError("Não foi possível verificar duplicidades. Tente novamente.", "Servidor", ex.Message, true, HttpContext.TraceIdentifier));
         }
     }
 
@@ -866,6 +858,11 @@ LIMIT 20;";
     {
         try
         {
+            if (IsAjaxRequest())
+            {
+                return BadRequest(JsonError("Endpoint legado (/Ged/Upload). Use /Ged/Documents/CheckDuplicateNames e /Ged/Documents/BulkUploadSingle.", "Fluxo legado", "Upload legado bloqueado para chamadas AJAX.", false, HttpContext.TraceIdentifier));
+            }
+
             if (!_currentUser.IsAuthenticated)
             {
                 TempData["Error"] = "Usuário não autenticado.";
@@ -914,6 +911,12 @@ LIMIT 20;";
             return RedirectToAction(nameof(Index), new { folderId });
         }
     }
+
+    private object JsonSuccess(string message, object? data = null, string? correlationId = null)
+        => new { success = true, message, data = data ?? new { }, correlationId = correlationId ?? HttpContext.TraceIdentifier };
+
+    private object JsonError(string message, string errorStep, string errorLog, bool canRetry, string? correlationId = null)
+        => new { success = false, message, errorStep, errorLog, canRetry, correlationId = correlationId ?? HttpContext.TraceIdentifier };
 
     // =========================
     // DOWNLOAD (por versionId)
