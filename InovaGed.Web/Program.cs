@@ -186,6 +186,8 @@ builder.Services.AddScoped<IDocumentSearchTextQueries, DocumentSearchTextQueries
 builder.Services.AddScoped<IDocumentMoveService, DocumentMoveService>();
 builder.Services.AddScoped<IDocumentBulkUploadService, DocumentBulkUploadService>();
 builder.Services.AddScoped<IGedAccessPolicyService, GedAccessPolicyService>();
+builder.Services.AddScoped<IGedSearchService, GedSearchService>();
+builder.Services.AddScoped<IGedClassificationSuggestionService, GedClassificationSuggestionService>();
 
 // =======================================================
 // Auth Repository
