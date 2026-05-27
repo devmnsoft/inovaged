@@ -42,7 +42,7 @@ public sealed class SystemLogDetailsDto
     public Guid? UserId { get; set; }
     public string? UserName { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
-    public string EventType { get; set; } = "AUDIT";
+    public string EventType { get; set; } = "INFO";
     public string Action { get; set; } = "VIEW";
     public string Source { get; set; } = "APP";
     public string? EntityName { get; set; }

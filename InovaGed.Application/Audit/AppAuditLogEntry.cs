@@ -5,7 +5,7 @@ public sealed class AppAuditLogEntry
     public Guid? TenantId { get; set; }
     public Guid? UserId { get; set; }
     public string? UserName { get; set; }
-    public string EventType { get; set; } = "AUDIT";
+    public string? EventType { get; set; } = "INFO";
     public string Action { get; set; } = "VIEW";
     public string Source { get; set; } = "APP";
     public string? EntityName { get; set; }

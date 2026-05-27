@@ -9,6 +9,13 @@ namespace InovaGed.Infrastructure.Audit;
 
 public sealed class AppAuditLogService : IAppAuditLogService
 {
+    private static readonly HashSet<string> AllowedEventTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "INFO",
+        "SECURITY",
+        "ACCESS_DENIED",
+        "ERROR"
+    };
     private static readonly HashSet<string> AllowedActions =
     [
         "CREATE",
@@ -51,9 +58,9 @@ public sealed class AppAuditLogService : IAppAuditLogService
     public Task LogSecurityAsync(Guid? tenantId, Guid? userId, string action, string message, object? data = null, CancellationToken ct = default)
         => LogAsync(new AppAuditLogEntry { TenantId = tenantId, UserId = userId, Source = "SECURITY", EventType = "SECURITY", Action = NormalizeAuditAction(action), Summary = message, Data = data }, ct);
     public Task LogBusinessAsync(Guid? tenantId, Guid? userId, string action, string entityName, Guid? entityId, string message, object? data = null, string? entityKey = null, CancellationToken ct = default)
-        => LogAsync(new AppAuditLogEntry { TenantId = tenantId, UserId = userId, Source = "BUSINESS", EventType = "BUSINESS", Action = NormalizeAuditAction(action), EntityName = entityName, EntityId = NormalizeEntityId(entityId), EntityKey = entityKey, Summary = message, Data = data }, ct);
+        => LogAsync(new AppAuditLogEntry { TenantId = tenantId, UserId = userId, Source = "BUSINESS", EventType = "INFO", Action = NormalizeAuditAction(action), EntityName = entityName, EntityId = NormalizeEntityId(entityId), EntityKey = entityKey, Summary = message, Data = data }, ct);
     public Task LogHttpAsync(Guid? tenantId, Guid? userId, string method, string path, int? statusCode, long elapsedMs, object? data = null, CancellationToken ct = default)
-        => LogAsync(new AppAuditLogEntry { TenantId = tenantId, UserId = userId, Source = "HTTP", EventType = "AUDIT", Action = "HTTP", Path = path, HttpMethod = method, HttpStatus = statusCode, ElapsedMs = elapsedMs, Summary = $"{method} {path} => {statusCode}", Data = data }, ct);
+        => LogAsync(new AppAuditLogEntry { TenantId = tenantId, UserId = userId, Source = "HTTP", EventType = "INFO", Action = "HTTP", Path = path, HttpMethod = method, HttpStatus = statusCode, ElapsedMs = elapsedMs, Summary = $"{method} {path} => {statusCode}", Data = data }, ct);
 
     public async Task LogAsync(AppAuditLogEntry e, CancellationToken ct = default)
     {
@@ -80,9 +87,11 @@ public sealed class AppAuditLogService : IAppAuditLogService
         }
         catch (Exception ex)
         {
+            var normalizedAction = NormalizeAuditAction(e.Action);
+            var normalizedEventType = NormalizeEventType(e.EventType, normalizedAction);
             _logger.LogError(ex,
-                "Falha ao registrar audit log. Tenant={TenantId} Action={Action} Source={Source}",
-                e.TenantId, e.Action, e.Source);
+                "Falha ao registrar audit log. Tenant={TenantId} Action={Action} EventType={EventType} Source={Source}",
+                e.TenantId, normalizedAction, normalizedEventType, e.Source);
         }
     }
 
@@ -99,9 +108,10 @@ values
 
     private static object BuildParams(AppAuditLogEntry e) => new
     {
+        Action = NormalizeAuditAction(e.Action),
+        EventType = NormalizeEventType(e.EventType, e.Action),
         e.TenantId,
         e.UserId,
-        Action = NormalizeAuditAction(e.Action),
         e.EntityName,
         EntityId = NormalizeEntityId(e.EntityId),
         e.Summary,
@@ -109,7 +119,6 @@ values
         e.UserAgent,
         Data = BuildDataJson(e),
         CreatedAt = e.CreatedAt,
-        e.EventType,
         e.Source,
         e.Details,
         e.ExceptionType,
@@ -157,11 +166,32 @@ where table_schema='ged' and table_name='audit_log' and column_name in ('created
     private static string GetFullInsertSql(string dateColumn) => $@"insert into ged.audit_log
 (tenant_id,user_id,action,entity_name,entity_id,summary,ip_address,user_agent,data,{dateColumn},event_type,source,details,exception_type,exception_message,stack_trace,path,http_method,http_status,elapsed_ms,correlation_id)
 values
-(@TenantId,@UserId,@Action::ged.audit_action_enum,@EntityName,@EntityId,@Summary,@IpAddress,@UserAgent,@Data::jsonb,@CreatedAt,@EventType,@Source,@Details,@ExceptionType,@ExceptionMessage,@StackTrace,@Path,@HttpMethod,@HttpStatus,@ElapsedMs,@CorrelationId);";
+(@TenantId,@UserId,@Action::ged.audit_action_enum,@EntityName,@EntityId,@Summary,@IpAddress,@UserAgent,@Data::jsonb,@CreatedAt,@EventType::ged.audit_event_type,@Source,@Details,@ExceptionType,@ExceptionMessage,@StackTrace,@Path,@HttpMethod,@HttpStatus,@ElapsedMs,@CorrelationId);";
 
     private static string NormalizeAuditAction(string? action)
     {
         var value = (action ?? string.Empty).Trim().ToUpperInvariant();
         return AllowedActions.Contains(value) ? value : "HTTP";
+    }
+
+    private static string NormalizeEventType(string? eventType, string? action = null)
+    {
+        var value = (eventType ?? string.Empty).Trim().ToUpperInvariant();
+
+        if (AllowedEventTypes.Contains(value))
+            return value;
+
+        var normalizedAction = NormalizeAuditAction(action);
+
+        if (normalizedAction == "ACCESS_DENIED" || normalizedAction == "ACCESS_DENIED_MOVE_DOCUMENT")
+            return "ACCESS_DENIED";
+
+        if (normalizedAction is "LOGIN" or "LOGOUT" or "UNLOCK_USER" or "PERMISSION_CHANGE")
+            return "SECURITY";
+
+        if (value is "WARN" or "WARNING")
+            return "INFO";
+
+        return "INFO";
     }
 }

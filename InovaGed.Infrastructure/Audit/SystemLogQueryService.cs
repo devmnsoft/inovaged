@@ -7,6 +7,14 @@ namespace InovaGed.Infrastructure.Audit;
 
 public sealed class SystemLogQueryService : ISystemLogQueryService
 {
+    private static readonly HashSet<string> AllowedEventTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "INFO",
+        "SECURITY",
+        "ACCESS_DENIED",
+        "ERROR"
+    };
+
     private readonly IDbConnectionFactory _db;
     public SystemLogQueryService(IDbConnectionFactory db) => _db = db;
 
@@ -19,12 +27,13 @@ public sealed class SystemLogQueryService : ISystemLogQueryService
         var dateColumn = await ResolveDateColumnAsync(c, ct);
         var sourceExpr = await ColumnExistsAsync(c, "source", ct) ? "coalesce(source, '-')" : "'-'::text";
 
-        var w = " where tenant_id=@tenantId and (@eventType is null or event_type=@eventType) and (@action is null or action::text=@action) and (@path is null or path ilike @pathLike) and (@httpStatus is null or http_status=@httpStatus) and (@corr is null or correlation_id=@corr) and (@search is null or summary ilike @searchLike) ";
-        var p = new { tenantId = f.TenantId, eventType = f.EventType, action = f.Action, path = f.Path, pathLike = $"%{f.Path}%", httpStatus = f.HttpStatus, corr = f.CorrelationId, search = f.Search, searchLike = $"%{f.Search}%", lim = f.PageSize, off = (f.Page - 1) * f.PageSize };
+        var eventType = NormalizeEventTypeFilter(f.EventType);
+        var w = " where tenant_id=@tenantId and (@eventType is null or event_type=@eventType::ged.audit_event_type) and (@action is null or action::text=@action) and (@path is null or path ilike @pathLike) and (@httpStatus is null or http_status=@httpStatus) and (@corr is null or correlation_id=@corr) and (@search is null or summary ilike @searchLike) ";
+        var p = new { tenantId = f.TenantId, eventType, action = f.Action, path = f.Path, pathLike = $"%{f.Path}%", httpStatus = f.HttpStatus, corr = f.CorrelationId, search = f.Search, searchLike = $"%{f.Search}%", lim = f.PageSize, off = (f.Page - 1) * f.PageSize };
 
         var sql = $@"select id::text as Id,
 {dateColumn} as CreatedAt,
-coalesce(event_type,'INFO') as EventType,
+coalesce(event_type::text,'-') as EventType,
 coalesce(action::text,'-') as Action,
 user_name as UserName,
 path,
@@ -54,7 +63,7 @@ tenant_id as TenantId,
 user_id as UserId,
 user_name as UserName,
 {dateColumn} as CreatedAt,
-coalesce(event_type, 'INFO') as EventType,
+coalesce(event_type::text, '-') as EventType,
 coalesce(action::text, '-') as Action,
 {sourceExpr} as Source,
 entity_name as EntityName,
@@ -106,5 +115,14 @@ where table_schema='ged' and table_name='audit_log' and column_name=@columnName
 );";
 
         return await conn.ExecuteScalarAsync<bool>(new CommandDefinition(sql, new { columnName }, cancellationToken: ct));
+    }
+
+    private static string? NormalizeEventTypeFilter(string? eventType)
+    {
+        var value = eventType?.Trim();
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        return AllowedEventTypes.Contains(value) ? value.ToUpperInvariant() : null;
     }
 }
