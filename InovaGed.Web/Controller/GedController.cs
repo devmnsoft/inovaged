@@ -182,7 +182,12 @@ public sealed class GedController : Controller
             sw.Stop();
             if (sw.ElapsedMilliseconds > 30_000)
             {
-                _logger.LogWarning("Upload demorou mais que o esperado. Tenant={TenantId} User={UserId} Folder={FolderId} File={FileName} Size={FileSize} ContentType={ContentType} DuplicateStrategy={DuplicateStrategy} RunOcr={RunOcr} GeneratePreview={GeneratePreview} ElapsedMs={ElapsedMs} CorrelationId={CorrelationId}",
+                _logger.LogError("Upload crítico: duração acima de 30s. Tenant={TenantId} User={UserId} Folder={FolderId} File={FileName} Size={FileSize} ContentType={ContentType} DuplicateStrategy={DuplicateStrategy} RunOcr={RunOcr} GeneratePreview={GeneratePreview} ElapsedMs={ElapsedMs} CorrelationId={CorrelationId}",
+                    _currentUser.TenantId, _currentUser.UserId, folderId, file?.FileName, file?.Length, file?.ContentType, duplicateStrategy, runOcr, generatePreview, sw.ElapsedMilliseconds, correlationId);
+            }
+            else if (sw.ElapsedMilliseconds > 10_000)
+            {
+                _logger.LogWarning("Upload lento: duração acima de 10s. Tenant={TenantId} User={UserId} Folder={FolderId} File={FileName} Size={FileSize} ContentType={ContentType} DuplicateStrategy={DuplicateStrategy} RunOcr={RunOcr} GeneratePreview={GeneratePreview} ElapsedMs={ElapsedMs} CorrelationId={CorrelationId}",
                     _currentUser.TenantId, _currentUser.UserId, folderId, file?.FileName, file?.Length, file?.ContentType, duplicateStrategy, runOcr, generatePreview, sw.ElapsedMilliseconds, correlationId);
             }
         }
