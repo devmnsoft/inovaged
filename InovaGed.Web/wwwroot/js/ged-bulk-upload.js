@@ -26,11 +26,19 @@
         });
 
         document.addEventListener('click', handleActionClick);
+        const form = document.getElementById('bulkUploadForm');
+        if (form) {
+            form.addEventListener('submit', e => {
+                e.preventDefault();
+                e.stopPropagation();
+                return false;
+            });
+        }
     }
 
     function handleActionClick(e) {
         const uploadBtn = e.target.closest('#btnBulkUploadSubmit');
-        if (uploadBtn) { e.preventDefault(); uploadFiles(); return; }
+        if (uploadBtn) { e.preventDefault(); e.stopPropagation(); uploadFiles(); return; }
 
         const removeBtn = e.target.closest('.js-remove-upload-file');
         if (removeBtn) { e.preventDefault(); removeUploadFile(removeBtn.getAttribute('data-file-id')); return; }
@@ -303,8 +311,8 @@
             }
         } catch (err) {
             console.error('[BulkUpload] erro geral no upload', err);
-            showBulkUploadMessage('Falha inesperada ao enviar os documentos.', 'danger');
-            showAppToast('Falha inesperada ao enviar os documentos.', 'error', 'Erro');
+            showBulkUploadMessage('Falha ao enviar os documentos. Verifique os detalhes dos arquivos com erro ou tente novamente.', 'danger');
+            showAppToast('Falha ao enviar documentos. Veja os detalhes no modal.', 'error', 'Erro no upload');
         } finally {
             state.uploading = false;
             setBulkUploadLoading(false);
@@ -330,7 +338,10 @@
             renderFileList();
 
             const xhr = new XMLHttpRequest();
-            xhr.open('POST', '/Ged/Documents/BulkUploadSingle', true);
+            const endpoint = '/Ged/Documents/BulkUploadSingle';
+            console.log('[BulkUpload] endpoint usado:', endpoint);
+            xhr.timeout = 120000;
+            xhr.open('POST', endpoint, true);
             const token = document.querySelector('input[name="__RequestVerificationToken"]')?.value;
             if (token) xhr.setRequestHeader('RequestVerificationToken', token);
 
@@ -341,8 +352,21 @@
                 }
             };
             xhr.onload = () => {
+                const responseText = xhr.responseText || '';
+                const maybeHtml = responseText.trimStart().startsWith('<!DOCTYPE html') || responseText.includes('/Account/Login');
+                if (xhr.status === 401 || xhr.status === 403 || maybeHtml) {
+                    fileItem.status = 'error';
+                    fileItem.errorMessage = 'Sua sessão expirou. Faça login novamente para continuar o envio.';
+                    fileItem.errorStep = 'Autenticação';
+                    fileItem.errorLog = `Resposta inesperada do servidor. Status=${xhr.status}`;
+                    fileItem.canRetry = false;
+                    renderFileList();
+                    resolve('error');
+                    return;
+                }
+
                 let payload = null;
-                try { payload = JSON.parse(xhr.responseText || '{}'); } catch { payload = null; }
+                try { payload = JSON.parse(responseText || '{}'); } catch { payload = null; }
 
                 if (xhr.status >= 200 && xhr.status < 300 && payload?.success === true) {
                     fileItem.status = payload.status || 'success';
@@ -362,9 +386,22 @@
                 fileItem.status = 'error';
                 fileItem.message = payload?.message || 'Não foi possível enviar o arquivo.';
                 fileItem.errorMessage = payload?.message || 'Não foi possível enviar o arquivo.';
-                fileItem.errorLog = payload?.errorLog || payload?.detail || xhr.responseText || null;
-                fileItem.errorStep = payload?.errorStep || 'Backend';
+                fileItem.errorLog = payload?.errorLog || payload?.detail || responseText || null;
+                fileItem.errorStep = payload?.errorStep || (payload ? 'Servidor' : 'Resposta inválida');
                 fileItem.canRetry = payload?.canRetry !== false;
+                renderFileList();
+                resolve('error');
+            };
+            xhr.ontimeout = () => {
+                fileItem.status = 'error';
+                fileItem.message = 'Tempo limite excedido ao enviar o arquivo.';
+                fileItem.errorMessage = 'Tempo limite excedido ao enviar o arquivo.';
+                fileItem.errorStep = 'Timeout';
+                fileItem.errorLog = 'O upload excedeu o tempo limite configurado no navegador.';
+                fileItem.canRetry = true;
+                if ((fileItem.size || 0) > 15 * 1024 * 1024) {
+                    showBulkUploadMessage('Este arquivo demorou mais que o esperado. O envio pode continuar, mas o processamento OCR será feito em segundo plano.', 'warning');
+                }
                 renderFileList();
                 resolve('error');
             };
@@ -425,6 +462,7 @@
         const btnSubmit = document.getElementById('btnBulkUploadSubmit');
         const btnRetry = document.getElementById('btnBulkRetryFailed');
         const btnClearSuccess = document.getElementById('btnClearSuccessfulUploads');
+        const btnRefresh = document.getElementById('btnBulkRefreshFolder');
 
         const waitingOrDuplicate = state.files.some(x => x.status === 'waiting' || x.status === 'duplicate');
         const hasError = state.files.some(x => x.status === 'error');
@@ -433,6 +471,7 @@
         if (btnSubmit) btnSubmit.classList.toggle('d-none', !state.uploading && !waitingOrDuplicate);
         if (btnRetry) btnRetry.classList.toggle('d-none', !hasError || state.uploading);
         if (btnClearSuccess) btnClearSuccess.classList.toggle('d-none', !hasSuccess || state.uploading);
+        if (btnRefresh) btnRefresh.classList.toggle('d-none', !hasSuccess || state.uploading);
     }
 
     function setBulkUploadLoading(isLoading) {

@@ -21,6 +21,7 @@ using InovaGed.Web.ocr;
 using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Diagnostics;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.Net.Http.Headers;
 
@@ -128,13 +129,15 @@ public sealed class GedController : Controller
     [RequestSizeLimit(52428800)]
     public async Task<IActionResult> BulkUploadSingle(IFormFile file, Guid? folderId, Guid? documentTypeId, Guid? classificationId, string? notes, string? visibility, bool runOcr, bool generatePreview, Guid? batchId, string? duplicateStrategy, Guid? existingDocumentId, string? uploadName, CancellationToken ct)
     {
+        var sw = Stopwatch.StartNew();
+        var correlationId = HttpContext.TraceIdentifier;
         try
         {
-            if (!_currentUser.IsAuthenticated) return Unauthorized(new { success = false, message = "Usuário não autenticado." });
+            if (!_currentUser.IsAuthenticated) return Unauthorized(new { success = false, status = "error", message = "Usuário não autenticado.", errorStep = "Autenticação", errorLog = "Usuário sem sessão autenticada.", canRetry = false, correlationId });
             var allowed = await _accessPolicy.CanUploadDocumentToFolderAsync(_currentUser.TenantId, _currentUser.UserId, folderId, User, ct);
             if (!allowed)
             {
-                return StatusCode(403, new { success = false, message = "Você não possui permissão para adicionar documentos nesta pasta." });
+                return StatusCode(403, new { success = false, status = "error", message = "Você não possui permissão para adicionar documentos nesta pasta.", errorStep = "Autorização", errorLog = "Permissão negada para upload na pasta selecionada.", canRetry = false, correlationId });
             }
 
             var metadata = new DocumentBulkUploadMetadata { DocumentTypeId = documentTypeId, ClassificationId = classificationId, Notes = notes, Visibility = visibility, RunOcr = runOcr, GeneratePreview = generatePreview, BatchId = batchId, DuplicateStrategy = duplicateStrategy, ExistingDocumentId = existingDocumentId, UploadName = uploadName };
@@ -155,15 +158,25 @@ public sealed class GedController : Controller
                     message,
                     errorStep = isExtensionError ? "Validação de extensão" : "Persistência",
                     errorLog = string.IsNullOrWhiteSpace(code) ? "Falha ao processar upload no backend." : code,
-                    canRetry = !isExtensionError
+                    canRetry = !isExtensionError,
+                    correlationId
                 });
             }
-            return Ok(new { success = true, status = "success", message = "Arquivo enviado com sucesso.", data = new { documentId = result.Value.DocumentId, versionId = (Guid?)null, fileName = result.Value.FileName } });
+            return Ok(new { success = true, status = "success", message = "Arquivo enviado com sucesso.", data = new { documentId = result.Value.DocumentId, versionId = (Guid?)null, fileName = result.Value.FileName }, correlationId });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Erro no BulkUploadSingle. Tenant={TenantId} User={UserId} Folder={FolderId} Batch={BatchId}", _currentUser.TenantId, _currentUser.UserId, folderId, batchId);
-            return StatusCode(500, new { success = false, status = "error", message = "Erro interno ao enviar arquivo.", errorStep = "Backend", errorLog = "Falha inesperada no endpoint de upload.", canRetry = true });
+            _logger.LogError(ex, "Erro no BulkUploadSingle. Tenant={TenantId} User={UserId} Folder={FolderId} Batch={BatchId} CorrelationId={CorrelationId}", _currentUser.TenantId, _currentUser.UserId, folderId, batchId, correlationId);
+            return StatusCode(500, new { success = false, status = "error", message = "Erro interno ao enviar arquivo.", errorStep = "Servidor", errorLog = ex.Message, canRetry = true, correlationId });
+        }
+        finally
+        {
+            sw.Stop();
+            if (sw.ElapsedMilliseconds > 30_000)
+            {
+                _logger.LogWarning("Upload demorou mais que o esperado. Tenant={TenantId} User={UserId} Folder={FolderId} File={FileName} Size={FileSize} ContentType={ContentType} DuplicateStrategy={DuplicateStrategy} RunOcr={RunOcr} GeneratePreview={GeneratePreview} ElapsedMs={ElapsedMs} CorrelationId={CorrelationId}",
+                    _currentUser.TenantId, _currentUser.UserId, folderId, file?.FileName, file?.Length, file?.ContentType, duplicateStrategy, runOcr, generatePreview, sw.ElapsedMilliseconds, correlationId);
+            }
         }
     }
 

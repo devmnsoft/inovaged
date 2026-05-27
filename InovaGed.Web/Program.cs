@@ -82,6 +82,7 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using InovaGed.Application.Preview;
 using InovaGed.Application.Security;
+using Microsoft.AspNetCore.Http.Features;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -96,6 +97,11 @@ mvc.AddRazorRuntimeCompilation();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddSignalR();
 builder.Services.AddMemoryCache();
+var documentUploadMaxFileSizeMb = Math.Max(1, builder.Configuration.GetValue<int?>("DocumentUpload:MaxFileSizeMb") ?? 50);
+builder.Services.Configure<FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = documentUploadMaxFileSizeMb * 1024L * 1024L;
+});
 
 // =======================================================
 // Current User (Tenant / User)
