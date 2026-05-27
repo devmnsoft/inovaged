@@ -3,13 +3,42 @@ using Dapper;
 using InovaGed.Application.Audit;
 using InovaGed.Application.Common.Database;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 
 namespace InovaGed.Infrastructure.Audit;
 
 public sealed class AppAuditLogService : IAppAuditLogService
 {
+    private static readonly HashSet<string> AllowedActions =
+    [
+        "CREATE",
+        "UPDATE",
+        "DELETE",
+        "VERSION_CREATE",
+        "FILE_DOWNLOAD",
+        "FILE_PREVIEW",
+        "PERMISSION_CHANGE",
+        "LOGIN",
+        "LOGOUT",
+        "UPLOAD",
+        "ADD_VERSION",
+        "ACCESS_DENIED",
+        "REPORT_PRINT",
+        "LOAN_EVENT",
+        "BATCH_EVENT",
+        "RETENTION_QUEUE_GENERATE",
+        "HTTP",
+        "UNLOCK_USER",
+        "VIEW",
+        "MOVE_DOCUMENT_FOLDER",
+        "MOVE_DOCUMENT_FOLDER_BULK",
+        "ACCESS_DENIED_MOVE_DOCUMENT",
+        "VIEW_GED_DASHBOARD"
+    ];
+
     private readonly IDbConnectionFactory _db;
     private readonly ILogger<AppAuditLogService> _logger;
+    private int _schemaWarningLogged;
 
     public AppAuditLogService(IDbConnectionFactory db, ILogger<AppAuditLogService> logger)
     {
@@ -20,9 +49,9 @@ public sealed class AppAuditLogService : IAppAuditLogService
     public Task LogErrorAsync(Guid? tenantId, Guid? userId, string source, string message, Exception? exception, object? data = null, CancellationToken ct = default)
         => LogAsync(new AppAuditLogEntry { TenantId = tenantId, UserId = userId, Source = source, EventType = "ERROR", Action = "HTTP", Summary = message, ExceptionType = exception?.GetType().Name, ExceptionMessage = exception?.Message, StackTrace = exception?.StackTrace, Data = data }, ct);
     public Task LogSecurityAsync(Guid? tenantId, Guid? userId, string action, string message, object? data = null, CancellationToken ct = default)
-        => LogAsync(new AppAuditLogEntry { TenantId = tenantId, UserId = userId, Source = "SECURITY", EventType = "SECURITY", Action = NormalizeAction(action), Summary = message, Data = data }, ct);
+        => LogAsync(new AppAuditLogEntry { TenantId = tenantId, UserId = userId, Source = "SECURITY", EventType = "SECURITY", Action = NormalizeAuditAction(action), Summary = message, Data = data }, ct);
     public Task LogBusinessAsync(Guid? tenantId, Guid? userId, string action, string entityName, string? entityId, string message, object? data = null, CancellationToken ct = default)
-        => LogAsync(new AppAuditLogEntry { TenantId = tenantId, UserId = userId, Source = "BUSINESS", EventType = "BUSINESS", Action = NormalizeAction(action), EntityName = entityName, EntityId = entityId, Summary = message, Data = data }, ct);
+        => LogAsync(new AppAuditLogEntry { TenantId = tenantId, UserId = userId, Source = "BUSINESS", EventType = "BUSINESS", Action = NormalizeAuditAction(action), EntityName = entityName, EntityId = entityId, Summary = message, Data = data }, ct);
     public Task LogHttpAsync(Guid? tenantId, Guid? userId, string method, string path, int? statusCode, long elapsedMs, object? data = null, CancellationToken ct = default)
         => LogAsync(new AppAuditLogEntry { TenantId = tenantId, UserId = userId, Source = "HTTP", EventType = "AUDIT", Action = "HTTP", Path = path, HttpMethod = method, HttpStatus = statusCode, ElapsedMs = elapsedMs, Summary = $"{method} {path} => {statusCode}", Data = data }, ct);
 
@@ -31,26 +60,90 @@ public sealed class AppAuditLogService : IAppAuditLogService
         try
         {
             if (e.TenantId is null || e.TenantId == Guid.Empty) return;
+
             using var conn = await _db.OpenAsync(ct);
-            const string sql = @"insert into ged.audit_log
-(tenant_id,user_id,action,entity_name,entity_id,summary,ip_address,user_agent,data,event_time,event_type,source,details,exception_type,exception_message,stack_trace,path,http_method,http_status,elapsed_ms,correlation_id)
-values
-(@TenantId,@UserId,@Action::ged.audit_action_enum,@EntityName,@EntityId,@Summary,@IpAddress,@UserAgent,@Data::jsonb,@CreatedAt,@EventType,@Source,@Details,@ExceptionType,@ExceptionMessage,@StackTrace,@Path,@HttpMethod,@HttpStatus,@ElapsedMs,@CorrelationId);";
-            await conn.ExecuteAsync(new CommandDefinition(sql, new
+            try
             {
-                e.TenantId,e.UserId,Action = NormalizeAction(e.Action),e.EntityName,e.EntityId,e.Summary,e.IpAddress,e.UserAgent,
-                Data = e.Data is null ? null : JsonSerializer.Serialize(e.Data), CreatedAt = e.CreatedAt, e.EventType,e.Source,e.Details,e.ExceptionType,e.ExceptionMessage,e.StackTrace,e.Path,e.HttpMethod,e.HttpStatus,e.ElapsedMs,e.CorrelationId
-            }, cancellationToken: ct));
+                await conn.ExecuteAsync(new CommandDefinition(GetFullInsertSql(await ResolveDateColumnAsync(conn, ct)), BuildParams(e), cancellationToken: ct));
+            }
+            catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UndefinedColumn)
+            {
+                if (Interlocked.Exchange(ref _schemaWarningLogged, 1) == 0)
+                {
+                    _logger.LogWarning(ex,
+                        "Audit log schema incompleto. Tentando insert mínimo. Tenant={TenantId} Action={Action}",
+                        e.TenantId, e.Action);
+                }
+
+                await TryInsertMinimalAsync(conn, e, ct);
+            }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Falha ao registrar audit log");
+            _logger.LogError(ex,
+                "Falha ao registrar audit log. Tenant={TenantId} Action={Action} Source={Source}",
+                e.TenantId, e.Action, e.Source);
         }
     }
 
-    private static string NormalizeAction(string? action)
+    private async Task TryInsertMinimalAsync(System.Data.IDbConnection conn, AppAuditLogEntry e, CancellationToken ct)
     {
-        var a = action?.Trim().ToUpperInvariant();
-        return a is "CREATE" or "UPDATE" or "DELETE" or "VERSION_CREATE" or "FILE_DOWNLOAD" or "FILE_PREVIEW" or "PERMISSION_CHANGE" or "LOGIN" or "LOGOUT" or "UPLOAD" or "ADD_VERSION" or "ACCESS_DENIED" or "REPORT_PRINT" or "LOAN_EVENT" or "BATCH_EVENT" or "RETENTION_QUEUE_GENERATE" or "HTTP" or "UNLOCK_USER" or "VIEW" or "MOVE_DOCUMENT_FOLDER" or "MOVE_DOCUMENT_FOLDER_BULK" or "ACCESS_DENIED_MOVE_DOCUMENT" or "VIEW_GED_DASHBOARD" ? a : "VIEW";
+        var dateColumn = await ResolveDateColumnAsync(conn, ct);
+        var sql = $@"insert into ged.audit_log
+(tenant_id,user_id,action,entity_name,entity_id,summary,{dateColumn})
+values
+(@TenantId,@UserId,@Action::ged.audit_action_enum,@EntityName,@EntityId,@Summary,@CreatedAt);";
+
+        await conn.ExecuteAsync(new CommandDefinition(sql, BuildParams(e), cancellationToken: ct));
+    }
+
+    private static object BuildParams(AppAuditLogEntry e) => new
+    {
+        e.TenantId,
+        e.UserId,
+        Action = NormalizeAuditAction(e.Action),
+        e.EntityName,
+        e.EntityId,
+        e.Summary,
+        e.IpAddress,
+        e.UserAgent,
+        Data = e.Data is null ? null : JsonSerializer.Serialize(e.Data),
+        CreatedAt = e.CreatedAt,
+        e.EventType,
+        e.Source,
+        e.Details,
+        e.ExceptionType,
+        e.ExceptionMessage,
+        e.StackTrace,
+        e.Path,
+        e.HttpMethod,
+        e.HttpStatus,
+        e.ElapsedMs,
+        e.CorrelationId
+    };
+
+    private static async Task<string> ResolveDateColumnAsync(System.Data.IDbConnection conn, CancellationToken ct)
+    {
+        const string sql = @"select column_name
+from information_schema.columns
+where table_schema='ged' and table_name='audit_log' and column_name in ('created_at','reg_date','event_time','occurred_at')";
+
+        var cols = (await conn.QueryAsync<string>(new CommandDefinition(sql, cancellationToken: ct))).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (cols.Contains("created_at")) return "created_at";
+        if (cols.Contains("reg_date")) return "reg_date";
+        if (cols.Contains("event_time")) return "event_time";
+        if (cols.Contains("occurred_at")) return "occurred_at";
+        return "event_time";
+    }
+
+    private static string GetFullInsertSql(string dateColumn) => $@"insert into ged.audit_log
+(tenant_id,user_id,action,entity_name,entity_id,summary,ip_address,user_agent,data,{dateColumn},event_type,source,details,exception_type,exception_message,stack_trace,path,http_method,http_status,elapsed_ms,correlation_id)
+values
+(@TenantId,@UserId,@Action::ged.audit_action_enum,@EntityName,@EntityId,@Summary,@IpAddress,@UserAgent,@Data::jsonb,@CreatedAt,@EventType,@Source,@Details,@ExceptionType,@ExceptionMessage,@StackTrace,@Path,@HttpMethod,@HttpStatus,@ElapsedMs,@CorrelationId);";
+
+    private static string NormalizeAuditAction(string? action)
+    {
+        var value = (action ?? string.Empty).Trim().ToUpperInvariant();
+        return AllowedActions.Contains(value) ? value : "HTTP";
     }
 }
