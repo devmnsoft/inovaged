@@ -642,32 +642,6 @@ WHERE tenant_id = @TenantId
     }
 
 
-    public async Task<(bool ServidorExiste, bool UsuarioExiste)> GetEditDiagnosticAsync(
-        Guid tenantId,
-        Guid servidorId,
-        CancellationToken ct)
-    {
-        const string sql = @"
-SELECT
-    EXISTS(
-        SELECT 1
-        FROM ged.servidor s
-        WHERE s.tenant_id = @TenantId
-          AND s.id = @ServidorId
-          AND s.reg_status = 'A') AS ""ServidorExiste"",
-    EXISTS(
-        SELECT 1
-        FROM ged.app_user u
-        WHERE u.tenant_id = @TenantId
-          AND u.servidor_id = @ServidorId
-          AND u.deleted_at_utc IS NULL) AS ""UsuarioExiste"";
-";
-
-        await using var con = await _db.OpenAsync(ct);
-        return await con.QuerySingleAsync<(bool ServidorExiste, bool UsuarioExiste)>(
-            new CommandDefinition(sql, new { TenantId = tenantId, ServidorId = servidorId }, cancellationToken: ct));
-    }
-
     public async Task<UserEditDto?> GetForEditByServidorIdAsync(
      Guid tenantId,
      Guid servidorId,
@@ -707,6 +681,91 @@ WHERE s.tenant_id=@TenantId AND s.id=@ServidorId AND s.reg_status='A' LIMIT 1;";
             _logger.LogInformation("Perfis carregados para edição. TenantId={TenantId} ServidorId={ServidorId} UserId={UserId} RolesCount={RolesCount}", tenantId, dto.ServidorId, dto.UserId, dto.RoleIds.Count);
         }
         return dto;
+    }
+
+    public async Task<UserEditDto?> GetForEditByUserIdAsync(
+        Guid tenantId,
+        Guid userId,
+        CancellationToken ct)
+    {
+        const string sql = @"
+SELECT
+    u.id                         AS ""UserId"",
+    s.id                         AS ""ServidorId"",
+    COALESCE(s.nome_completo, u.name, '') AS ""NomeCompleto"",
+    COALESCE(s.cpf, '')                   AS ""Cpf"",
+    s.rg                                  AS ""Rg"",
+    s.data_nascimento                     AS ""DataNascimento"",
+    COALESCE(s.email_institucional, u.email) AS ""EmailInstitucional"",
+    s.email_alternativo                      AS ""EmailAlternativo"",
+    s.telefone                               AS ""Telefone"",
+    COALESCE(s.celular, u.phone_number)      AS ""Celular"",
+    s.matricula AS ""Matricula"", s.cargo AS ""Cargo"", s.funcao AS ""Funcao"", s.setor AS ""Setor"", s.lotacao AS ""Lotacao"", s.unidade AS ""Unidade"", s.tipo_vinculo AS ""TipoVinculo"",
+    s.conselho_profissional AS ""ConselhoProfissional"", s.numero_conselho AS ""NumeroConselho"", s.uf_conselho AS ""UfConselho"", s.especialidade AS ""Especialidade"",
+    s.data_admissao AS ""DataAdmissao"", COALESCE(s.situacao_funcional, 'ATIVO') AS ""SituacaoFuncional"", s.observacao AS ""Observacao"",
+    COALESCE(u.email,'') AS ""EmailLogin"", u.user_name AS ""UserName"",
+    COALESCE(u.is_active, false) AS ""IsActive"", COALESCE(u.must_change_password, true) AS ""MustChangePassword"", COALESCE(u.mfa_enabled, false) AS ""MfaEnabled"", COALESCE(u.certificate_required, false) AS ""CertificateRequired"", COALESCE(u.can_sign_with_icp, false) AS ""CanSignWithIcp"", COALESCE(u.security_level::text, 'PUBLIC') AS ""SecurityLevel""
+FROM ged.app_user u
+LEFT JOIN ged.servidor s ON s.id=u.servidor_id AND s.tenant_id=u.tenant_id AND s.reg_status='A'
+WHERE u.tenant_id=@TenantId
+  AND u.id=@UserId
+  AND u.deleted_at_utc IS NULL
+LIMIT 1;";
+        const string rolesSql = @"SELECT role_id FROM ged.user_role WHERE user_id = @UserId;";
+
+        await using var con = await _db.OpenAsync(ct);
+        var dto = await con.QueryFirstOrDefaultAsync<UserEditDto>(
+            new CommandDefinition(sql, new { TenantId = tenantId, UserId = userId }, cancellationToken: ct));
+        if (dto is null)
+            return null;
+
+        var roles = await con.QueryAsync<Guid>(new CommandDefinition(rolesSql, new { UserId = userId }, cancellationToken: ct));
+        dto.RoleIds = roles.ToList();
+        return dto;
+    }
+
+    public async Task<string> DiagnoseUserEditIdAsync(Guid tenantId, Guid id, CancellationToken ct)
+    {
+        const string sql = @"
+SELECT json_build_object(
+    'existsAsServidor', EXISTS(
+        SELECT 1 FROM ged.servidor s
+        WHERE s.id = @Id AND s.tenant_id = @TenantId
+    ),
+    'existsAsServidorActive', EXISTS(
+        SELECT 1 FROM ged.servidor s
+        WHERE s.id = @Id AND s.tenant_id = @TenantId AND s.reg_status = 'A'
+    ),
+    'existsAsUser', EXISTS(
+        SELECT 1 FROM ged.app_user u
+        WHERE u.id = @Id AND u.tenant_id = @TenantId
+    ),
+    'existsAsUserActive', EXISTS(
+        SELECT 1 FROM ged.app_user u
+        WHERE u.id = @Id AND u.tenant_id = @TenantId AND u.deleted_at_utc IS NULL
+    ),
+    'hasAppUserByServidorId', EXISTS(
+        SELECT 1 FROM ged.app_user u
+        WHERE u.servidor_id = @Id AND u.tenant_id = @TenantId AND u.deleted_at_utc IS NULL
+    ),
+    'linkedServidorFromUserId', (
+        SELECT s.id::text
+        FROM ged.app_user u
+        LEFT JOIN ged.servidor s ON s.id = u.servidor_id AND s.tenant_id = u.tenant_id
+        WHERE u.id = @Id AND u.tenant_id = @TenantId
+        LIMIT 1
+    ),
+    'hasRolesByUserId', EXISTS(
+        SELECT 1
+        FROM ged.user_role ur
+        JOIN ged.app_user u ON u.id = ur.user_id
+        WHERE u.id = @Id AND u.tenant_id = @TenantId
+    )
+)::text;
+";
+        await using var con = await _db.OpenAsync(ct);
+        return await con.ExecuteScalarAsync<string>(
+            new CommandDefinition(sql, new { TenantId = tenantId, Id = id }, cancellationToken: ct)) ?? "{}";
     }
 
 public async Task UpdateServidorUsuarioAsync(
