@@ -231,7 +231,10 @@
                                             <a class="dropdown-item"
                                                asp-action="Edit"
                                                asp-controller="Users"
-                                               asp-route-id="@item.ServidorId">
+                                               asp-route-id="@item.ServidorId"
+                                               data-servidor-id="@item.ServidorId"
+                                               data-user-id="@item.UserId"
+                                               data-row-id="@item.Id">
                                                 <i class="bi bi-pencil-square me-1"></i>
                                                 Editar cadastro
                                             </a>
@@ -250,6 +253,14 @@
                                                 Redefinir senha
                                             </button>
                                         </li>
+                                        }
+                                        else
+                                        {
+                                            <li>
+                                                <span class="dropdown-item-text text-muted">
+                                                    <span class="badge text-bg-secondary">Sem acesso</span>
+                                                </span>
+                                            </li>
                                         }
 
                                         @if (item.UserId.HasValue && item.IsLocked && (User.IsInRole("ADMINISTRATOR") || User.IsInRole("ADMIN")))

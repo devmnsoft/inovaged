@@ -276,46 +276,47 @@ public sealed class UsersController : AppControllerBase
         }
     }
 
-    [HttpGet("Edit/{servidorId:guid}")]
+    [HttpGet("Edit/{id:guid}")]
     [Authorize(Roles = AppRoles.Admin + ",ADMINISTRATOR")]
-    public async Task<IActionResult> Edit(Guid servidorId, CancellationToken ct)
+    public async Task<IActionResult> Edit(Guid id, CancellationToken ct)
     {
         if (!_currentUser.IsAuthenticated) return Unauthorized();
+        var tenantId = _currentUser.TenantId;
 
         var isAdmin =
             User.IsInRole(AppRoles.Admin) ||
             User.IsInRole("ADMIN") ||
             User.IsInRole("ADMINISTRATOR");
-        var roles = string.Join(",", User.Claims.Where(c => c.Type.Contains("role", StringComparison.OrdinalIgnoreCase)).Select(c => c.Value));
 
         _logger.LogInformation(
-            "Diagnóstico edição usuário. Tenant={TenantId} RouteServidorId={ServidorId} CurrentUser={CurrentUserId} Roles={Roles} IsAdmin={IsAdmin} CorrelationId={CorrelationId}",
-            _currentUser.TenantId,
-            servidorId,
+            "Edit user requested. Tenant={TenantId} CurrentUser={CurrentUserId} IsAdmin={IsAdmin} RouteId={RouteId} CorrelationId={CorrelationId}",
+            tenantId,
             _currentUser.UserId,
-            roles,
             isAdmin,
+            id,
             HttpContext.TraceIdentifier);
 
-        var diagnostic = await _repo.GetEditDiagnosticAsync(_currentUser.TenantId, servidorId, ct);
-        _logger.LogInformation(
-            "Diagnóstico SQL edição. Tenant={TenantId} RouteServidorId={ServidorId} ServidorExiste={ServidorExiste} UsuarioExiste={UsuarioExiste}",
-            _currentUser.TenantId,
-            servidorId,
-            diagnostic.ServidorExiste,
-            diagnostic.UsuarioExiste);
+        var dto = await _repo.GetForEditByServidorIdAsync(tenantId, id, isAdmin, ct);
+        if (dto is null && isAdmin)
+        {
+            _logger.LogWarning(
+                "Edit by ServidorId failed for ADMIN. Trying fallback by UserId. Tenant={TenantId} RouteId={RouteId}",
+                tenantId,
+                id);
+            dto = await _repo.GetForEditByUserIdAsync(tenantId, id, ct);
+        }
 
-        var dto = await _repo.GetForEditByServidorIdAsync(_currentUser.TenantId, servidorId, isAdmin, ct);
         if (dto is null)
         {
-            _logger.LogWarning("Servidor não encontrado para edição. Tenant={TenantId} AdminUser={AdminUserId} IsAdmin={IsAdmin} ServidorId={ServidorId} CorrelationId={CorrelationId}",
-                _currentUser.TenantId,
-                _currentUser.UserId,
+            var diag = await _repo.DiagnoseUserEditIdAsync(tenantId, id, ct);
+            _logger.LogWarning("Servidor/usuário não encontrado para edição. Tenant={TenantId} RouteId={RouteId} IsAdmin={IsAdmin} Diagnosis={Diagnosis} CorrelationId={CorrelationId}",
+                tenantId,
+                id,
                 isAdmin,
-                servidorId,
+                diag,
                 HttpContext.TraceIdentifier);
             TempData["Error"] = isAdmin
-                ? "Servidor não encontrado. Verifique se o cadastro ainda existe."
+                ? "Cadastro não encontrado para edição. O ID enviado pela listagem pode estar incorreto."
                 : "Você não possui permissão para editar este cadastro.";
             return RedirectToAction(nameof(Index));
         }
