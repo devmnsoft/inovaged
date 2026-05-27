@@ -53,8 +53,9 @@ WHERE u.tenant_id = @TenantId
         const string listSql = @"
 SELECT
     u.servidor_id          AS ""Id"",
-        u.user_id              AS ""UserId"",
-        u.nome_completo        AS ""Name"",
+    u.servidor_id          AS ""ServidorId"",
+    u.user_id              AS ""UserId"",
+    u.nome_completo        AS ""Name"",
     u.cpf                  AS ""Cpf"",
     u.matricula            AS ""Matricula"",
     u.cargo                AS ""Cargo"",

@@ -132,9 +132,9 @@ public sealed class UsersController : AppControllerBase
             Total = res.Total,
             Items = res.Items.Select(x => new UserListVM.Row
             {
-                Id = x.ServidorId ?? x.Id,
-                ServidorId = x.ServidorId ?? x.Id,
-                UserId = x.UserId ?? x.Id,
+                Id = x.ServidorId,
+                ServidorId = x.ServidorId,
+                UserId = x.UserId,
                 Name = x.Name,
                 Email = x.Email,
                 Cpf = x.Cpf,
@@ -281,10 +281,20 @@ public sealed class UsersController : AppControllerBase
     {
         if (!_currentUser.IsAuthenticated) return Unauthorized();
 
-        var dto = await _repo.GetForEditAsync(_currentUser.TenantId, servidorId, ct);
+        _logger.LogInformation("Abrindo edição de servidor. Tenant={TenantId} Admin={AdminUserId} ServidorId={ServidorId} CorrelationId={CorrelationId}",
+            _currentUser.TenantId,
+            _currentUser.UserId,
+            servidorId,
+            HttpContext.TraceIdentifier);
+
+        var dto = await _repo.GetForEditByServidorIdAsync(_currentUser.TenantId, servidorId, ct);
         if (dto is null)
         {
-            TempData["Error"] = "Servidor/usuário não encontrado.";
+            _logger.LogWarning("Servidor não encontrado para edição. Tenant={TenantId} ServidorId={ServidorId} CorrelationId={CorrelationId}",
+                _currentUser.TenantId,
+                servidorId,
+                HttpContext.TraceIdentifier);
+            TempData["Error"] = "Servidor não encontrado ou você não possui permissão para editá-lo.";
             return RedirectToAction(nameof(Index));
         }
 
