@@ -1,0 +1,18 @@
+@model dynamic
+@{
+    ViewData["Title"] = "System Health";
+}
+<div class="container py-3">
+    <h2>System Health</h2>
+    <div class="card mt-3"><div class="card-body">
+        <div><strong>Environment:</strong> @Model.Environment</div>
+        <div><strong>Version:</strong> @Model.Version</div>
+        <div><strong>Uptime:</strong> @Model.Uptime</div>
+        <div><strong>DB status:</strong> @(Model.DatabaseOk ? "OK" : "ERROR") (@Model.DatabaseElapsedMs ms)</div>
+        <div><strong>OCR Pending:</strong> @Model.OcrPending</div>
+        <div><strong>OCR Processing:</strong> @Model.OcrProcessing</div>
+        <div><strong>OCR Errors:</strong> @Model.OcrErrors</div>
+        <div><strong>Disk free (GB):</strong> @(Model.DiskFreeGb ?? "N/A")</div>
+        <div><strong>CorrelationId:</strong> @Model.CorrelationId</div>
+    </div></div>
+</div>

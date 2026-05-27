@@ -4,6 +4,7 @@ using InovaGed.Application.Identity;
 using InovaGed.Web.Models.Classification;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace InovaGed.Web.Controllers;
 
@@ -12,11 +13,13 @@ public sealed class ClassificationDashboardController : Controller
 {
     private readonly IClassificationDashboardQueries _dash;
     private readonly ICurrentUser _currentUser;
+    private readonly IMemoryCache _cache;
 
-    public ClassificationDashboardController(IClassificationDashboardQueries dash, ICurrentUser currentUser)
+    public ClassificationDashboardController(IClassificationDashboardQueries dash, ICurrentUser currentUser, IMemoryCache cache)
     {
         _dash = dash;
         _currentUser = currentUser;
+        _cache = cache;
     }
 
     [HttpGet("/ClassificationDashboard")]
@@ -56,8 +59,13 @@ public sealed class ClassificationDashboardController : Controller
         if (!_currentUser.IsAuthenticated) return Unauthorized();
 
         var tenantId = _currentUser.TenantId;
-        var total = await _dash.CountAsync(tenantId, folderId, ct);
+        var cacheKey = $"classification:count:{tenantId}:{folderId}";
+        var total = await _cache.GetOrCreateAsync(cacheKey, async entry =>
+        {
+            entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(30);
+            return await _dash.CountAsync(tenantId, folderId, ct);
+        });
 
-        return Json(new { total });
+        return Json(new { total, cached = true });
     }
 }
