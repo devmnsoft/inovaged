@@ -1761,41 +1761,34 @@ VALUES
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> DeleteDocument(Guid id, Guid? folderId, CancellationToken ct)
     {
-        _logger.LogInformation("=== DELETE DOCUMENT START ===");
-        _logger.LogInformation("Request DeleteDocument | DocId={DocId} FolderId={FolderId}", id, folderId);
-
-        if (!_currentUser.IsAuthenticated)
-        {
-            _logger.LogWarning("DeleteDocument: usuário NÃO autenticado");
-            return Unauthorized();
-        }
-
-        var tenantId = _currentUser.TenantId;
-        var userId = _currentUser.UserId;
-
-        _logger.LogInformation("DeleteDocument Context | Tenant={TenantId} User={UserId}", tenantId, userId);
-
-        Result result;
         try
         {
-            _logger.LogInformation("Chamando _documentCommands.DeleteAsync...");
-            var forceStopOcr = User.IsInRole(AppRoles.Admin);
-            result = await _documentCommands.DeleteAsync(tenantId, id, userId, forceStopOcr, ct);
-            _logger.LogInformation("Retorno DeleteAsync | Success={Success} Error={Error}", result.Success, result.Error?.Message);
+            if (!_currentUser.IsAuthenticated)
+            {
+                return Unauthorized(new { success = false, message = "Usuário não autenticado." });
+            }
+
+            var tenantId = _currentUser.TenantId;
+            var userId = _currentUser.UserId;
+            var isAdmin = await _accessPolicy.IsAdminAsync(tenantId, userId, User, ct);
+
+            var result = await _documentCommands.DeleteAsync(tenantId, id, userId, isAdmin, ct);
+            if (!result.Success)
+            {
+                return BadRequest(new { success = false, message = result.Error?.Message ?? "Não foi possível excluir o documento." });
+            }
+
+            var message = isAdmin
+                ? "Documento excluído com sucesso. Processamentos de OCR relacionados foram cancelados."
+                : "Documento excluído com sucesso.";
+
+            return Ok(new { success = true, message });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "EXCEPTION em DeleteDocument controller. DocId={DocId}", id);
-            TempData["erro"] = "Erro inesperado ao excluir documento.";
-            return RedirectToAction(nameof(Index), new { folderId });
+            _logger.LogError(ex, "Erro em DeleteDocument. Tenant={TenantId} User={UserId} DocId={DocId} FolderId={FolderId}", _currentUser.TenantId, _currentUser.UserId, id, folderId);
+            return StatusCode(500, new { success = false, message = "Não foi possível excluir o documento." });
         }
-
-        TempData[result.Success ? "ok" : "erro"] =
-            result.Success ? "Documento excluído com sucesso." : (result.Error?.Message ?? "Falha ao excluir.");
-
-        _logger.LogInformation("=== DELETE DOCUMENT END ===");
-
-        return RedirectToAction(nameof(Index), new { folderId });
     }
 
     [Authorize(Roles = AppRoles.Admin)]

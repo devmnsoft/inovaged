@@ -403,8 +403,7 @@
                                                 @Html.AntiForgeryToken()
                                                 <input type="hidden" name="id" value="@d.Id" />
                                                 <input type="hidden" name="folderId" value="@Model.CurrentFolderId" />
-                                                <button type="submit" class="btn btn-sm btn-outline-danger"
-                                                        onclick="return confirm('Deseja excluir este documento?');">
+                                                <button type="button" class="btn btn-sm btn-outline-danger js-delete-document" data-document-id="@d.Id" data-folder-id="@Model.CurrentFolderId" data-document-title="@d.Title">
                                                     <i class="bi bi-trash"></i> Excluir
                                                 </button>
                                             </form>
@@ -616,6 +615,26 @@
   </div>
 </div>
 
+
+<div class="modal fade" id="deleteDocumentModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title text-danger">Confirmar exclusão</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+      </div>
+      <div class="modal-body">
+        <p id="deleteDocumentMessage" class="mb-2">Deseja realmente excluir este documento? Se houver OCR em andamento, ele será cancelado.</p>
+        <div id="deleteDocumentInline" class="d-none alert"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-danger" id="btnConfirmDeleteDocument">Excluir documento</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <style>
     .ged-tree {
         list-style: none;
@@ -821,3 +840,33 @@
 <script src="~/js/ged-document-move.js" asp-append-version="true"></script>
 <script src="~/js/ged-queue-visualizer.js" asp-append-version="true"></script>
 <script src="~/js/ged-bulk-upload.js" asp-append-version="true"></script>
+
+<script>
+(function(){
+  const state={documentId:null,folderId:null,title:''};
+  const modalEl=document.getElementById('deleteDocumentModal');
+  if(!modalEl) return;
+  const modal=bootstrap.Modal.getOrCreateInstance(modalEl);
+  const inline=document.getElementById('deleteDocumentInline');
+  document.querySelectorAll('.js-delete-document').forEach(btn=>btn.addEventListener('click',()=>{
+    state.documentId=btn.dataset.documentId; state.folderId=btn.dataset.folderId; state.title=btn.dataset.documentTitle||'';
+    document.getElementById('deleteDocumentMessage').textContent=`Deseja realmente excluir este documento${state.title?` (${state.title})`:''}? Se houver OCR em andamento, ele será cancelado.`;
+    inline.className='d-none alert'; inline.textContent='';
+    modal.show();
+  }));
+
+  document.getElementById('btnConfirmDeleteDocument')?.addEventListener('click', async ()=>{
+    const btn=document.getElementById('btnConfirmDeleteDocument');
+    btn.disabled=true; const old=btn.innerHTML; btn.innerHTML='<span class="spinner-border spinner-border-sm me-1"></span>Excluindo...';
+    try{
+      const fd=new FormData(); fd.append('id',state.documentId||''); if(state.folderId) fd.append('folderId',state.folderId);
+      const token=document.querySelector('input[name="__RequestVerificationToken"]')?.value;
+      const res=await fetch('/Ged/DeleteDocument',{method:'POST',body:fd,headers: token?{'RequestVerificationToken':token}:{}});
+      const payload=await res.json().catch(()=>({success:false,message:'Não foi possível excluir o documento.'}));
+      if(res.ok&&payload.success){ window.showAppToast?.(payload.message||'Documento excluído com sucesso.','success','Exclusão'); modal.hide(); window.location.reload(); return; }
+      inline.className='alert alert-danger'; inline.textContent=payload.message||'Não foi possível excluir o documento.'; window.showAppToast?.(inline.textContent,'error','Erro');
+    }catch{ inline.className='alert alert-danger'; inline.textContent='Não foi possível excluir o documento.'; window.showAppToast?.(inline.textContent,'error','Erro'); }
+    finally{ btn.disabled=false; btn.innerHTML=old; }
+  });
+})();
+</script>
