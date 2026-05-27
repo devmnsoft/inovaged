@@ -204,7 +204,7 @@ public sealed class UsersController : Controller
                 CertificateRequired = vm.CertificateRequired,
                 CanSignWithIcp = vm.CanSignWithIcp,
                 SecurityLevel = vm.SecurityLevel,
-                RoleIds = (vm.UserId.HasValue || vm.CriarUsuarioAcesso) ? vm.SelectedRoleIds.Where(x => x != Guid.Empty).Distinct().ToList() : new List<Guid>(),
+                RoleIds = vm.CriarUsuarioAcesso ? vm.SelectedRoleIds.Where(x => x != Guid.Empty).Distinct().ToList() : new List<Guid>(),
                 CreatedBy = _currentUser.UserId,
                 IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString(),
                 UserAgent = Request.Headers.UserAgent.ToString(),
@@ -570,7 +570,7 @@ public sealed class UsersController : Controller
         vm.SituacaoFuncional = string.IsNullOrWhiteSpace(vm.SituacaoFuncional) ? "ATIVO" : vm.SituacaoFuncional.Trim().ToUpperInvariant();
         vm.SecurityLevel = string.IsNullOrWhiteSpace(vm.SecurityLevel) ? "PUBLIC" : vm.SecurityLevel.Trim().ToUpperInvariant();
         if (string.IsNullOrWhiteSpace(vm.EmailLogin)) vm.EmailLogin = vm.EmailInstitucional ?? vm.EmailAlternativo ?? "";
-        if ((vm.UserId.HasValue || vm.CriarUsuarioAcesso) && string.IsNullOrWhiteSpace(vm.UserName)) vm.UserName = vm.EmailLogin;
+        if (vm.CriarUsuarioAcesso && string.IsNullOrWhiteSpace(vm.UserName)) vm.UserName = vm.EmailLogin;
     }
 
     private static void NormalizeEditVm(EditUserVM vm)
