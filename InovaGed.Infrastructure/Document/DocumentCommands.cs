@@ -89,25 +89,38 @@ where v.tenant_id = @tenantId
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
-            // 2) apaga versões
+                        // 2) inativa versões e documento (exclusão lógica)
             await conn.ExecuteAsync(new CommandDefinition(@"
-delete from ged.document_version
+update ged.document_version
+set reg_status = 'I',
+    updated_at = now(),
+    updated_by = @userId,
+    deleted_at_utc = now(),
+    deleted_by = @userId
 where tenant_id = @tenantId
-  and document_id = @documentId;",
-                new { tenantId, documentId },
+  and document_id = @documentId
+  and coalesce(reg_status,'A') = 'A';",
+                new { tenantId, documentId, userId },
                 tx,
                 cancellationToken: ct));
 
-            // 3) apaga documento
+            // 3) inativa documento
             var rows = await conn.ExecuteAsync(new CommandDefinition(@"
-delete from ged.document
+update ged.document
+set reg_status = 'I',
+    status = 'DELETED'::ged.document_status_enum,
+    updated_at = now(),
+    updated_by = @userId,
+    deleted_at_utc = now(),
+    deleted_by = @userId
 where tenant_id = @tenantId
-  and id = @documentId;",
-                new { tenantId, documentId },
+  and id = @documentId
+  and coalesce(reg_status,'A') = 'A';",
+                new { tenantId, documentId, userId },
                 tx,
                 cancellationToken: ct));
 
-            if (rows == 0)
+if (rows == 0)
             {
                 await tx.RollbackAsync(ct);
                 return Result.Fail("DOC_NOT_FOUND", "Documento não encontrado.");
@@ -115,10 +128,8 @@ where tenant_id = @tenantId
 
             await tx.CommitAsync(ct);
 
-            // 4) remove arquivos do storage (fora da transação)
-            foreach (var path in paths)
-                await _storage.DeleteIfExistsAsync(path, ct);
-
+            // 4) mantem arquivo físico para aderir à exclusão lógica
+            _logger.LogInformation("Documento inativado logicamente. Tenant={TenantId} DocumentId={DocumentId} Versions={VersionCount}", tenantId, documentId, paths.Count);
             return Result.Ok();
         }
         catch (Exception ex)
