@@ -1,6 +1,7 @@
 using Dapper;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Ged.Classification;
+using Microsoft.Extensions.Logging;
 
 namespace InovaGed.Infrastructure.Ged.Classification;
 

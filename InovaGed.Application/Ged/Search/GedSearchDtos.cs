@@ -23,6 +23,16 @@ public sealed class GedSearchFilter
     public int PageSize { get; set; } = 20;
 }
 
+public sealed class GedSearchResultDto
+{
+    public IReadOnlyList<GedSearchResultItemDto> Items { get; set; } = Array.Empty<GedSearchResultItemDto>();
+    public int Total { get; set; }
+    public int Page { get; set; } = 1;
+    public int PageSize { get; set; } = 20;
+    public int TotalPages { get; set; }
+    public string? ErrorMessage { get; set; }
+}
+
 public sealed class GedSearchResultItemDto
 {
     public Guid DocumentId { get; set; }
@@ -52,11 +62,10 @@ public sealed class GedSearchResultItemDto
     public bool CanMove { get; set; }
 }
 
-public sealed class GedSearchResultDto
+public sealed class GedSearchSuggestionDto
 {
-    public IReadOnlyList<GedSearchResultItemDto> Items { get; set; } = Array.Empty<GedSearchResultItemDto>();
-    public int Total { get; set; }
-    public int Page { get; set; }
-    public int PageSize { get; set; }
-    public int TotalPages { get; set; }
+    public string Type { get; set; } = string.Empty;
+    public string Id { get; set; } = string.Empty;
+    public string Title { get; set; } = string.Empty;
+    public string? Subtitle { get; set; }
 }
