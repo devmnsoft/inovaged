@@ -11,9 +11,9 @@ public interface IUserAdminRepository
         CreateServidorUsuarioCommand command,
         CancellationToken ct);
 
-    Task<UserEditDto?> GetForEditAsync(
+    Task<UserEditDto?> GetForEditByServidorIdAsync(
         Guid tenantId,
-        Guid userId,
+        Guid servidorId,
         CancellationToken ct);
 
     Task UpdateServidorUsuarioAsync(

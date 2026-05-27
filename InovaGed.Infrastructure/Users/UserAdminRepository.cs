@@ -641,7 +641,7 @@ WHERE tenant_id = @TenantId
         };
     }
 
-    public async Task<UserEditDto?> GetForEditAsync(
+    public async Task<UserEditDto?> GetForEditByServidorIdAsync(
      Guid tenantId,
      Guid servidorId,
      CancellationToken ct)
@@ -668,12 +668,15 @@ LEFT JOIN ged.app_user u ON u.servidor_id=s.id AND u.tenant_id=s.tenant_id AND u
 WHERE s.tenant_id=@TenantId AND s.id=@ServidorId AND s.reg_status='A' LIMIT 1;";
         const string rolesSql = @"SELECT role_id FROM ged.user_role WHERE user_id = @UserId;";
         await using var con = await _db.OpenAsync(ct);
+        _logger.LogInformation("Consultando cadastro para edição por ServidorId. TenantId={TenantId} ServidorId={ServidorId}", tenantId, servidorId);
         var dto = await con.QueryFirstOrDefaultAsync<UserEditDto>(new CommandDefinition(sql, new { TenantId = tenantId, ServidorId = servidorId }, cancellationToken: ct));
         if (dto is null) return null;
+        _logger.LogInformation("Cadastro para edição encontrado. TenantId={TenantId} ServidorId={ServidorId} UserId={UserId}", tenantId, dto.ServidorId, dto.UserId);
         if (dto.UserId.HasValue)
         {
             var roles = await con.QueryAsync<Guid>(new CommandDefinition(rolesSql, new { UserId = dto.UserId.Value }, cancellationToken: ct));
             dto.RoleIds = roles.ToList();
+            _logger.LogInformation("Perfis carregados para edição. TenantId={TenantId} ServidorId={ServidorId} UserId={UserId} RolesCount={RolesCount}", tenantId, dto.ServidorId, dto.UserId, dto.RoleIds.Count);
         }
         return dto;
     }
@@ -797,6 +800,44 @@ WHERE tenant_id = @TenantId
   AND id = @UserId
   AND deleted_at_utc IS NULL;
 ";
+        const string insertUserSql = @"
+INSERT INTO ged.app_user (
+    id,
+    tenant_id,
+    servidor_id,
+    name,
+    email,
+    normalized_email,
+    user_name,
+    normalized_user_name,
+    phone_number,
+    is_active,
+    must_change_password,
+    mfa_enabled,
+    certificate_required,
+    can_sign_with_icp,
+    security_level,
+    created_at
+)
+VALUES (
+    @UserId,
+    @TenantId,
+    @ServidorId,
+    @NomeCompleto,
+    @EmailLogin,
+    upper(@EmailLogin),
+    @UserName,
+    upper(@UserName),
+    @PhoneNumber,
+    @IsActive,
+    @MustChangePassword,
+    @MfaEnabled,
+    @CertificateRequired,
+    @CanSignWithIcp,
+    @SecurityLevel::ged.security_level,
+    now()
+);
+";
 
         const string deleteRolesSql = @"
 DELETE FROM ged.user_role
@@ -904,81 +945,143 @@ SELECT ged.audit_user_security_event(
 
         if (command.UserId.HasValue || command.CriarUsuarioAcesso)
         {
-        if (!command.UserId.HasValue && command.CriarUsuarioAcesso) command.UserId = Guid.NewGuid();
-        await con.ExecuteAsync(
-            new CommandDefinition(
-                updateUserSql,
-                new
-                {
-                    TenantId = tenantId,
-                    UserId = command.UserId!.Value,
-                    ServidorId = servidorId,
-                    NomeCompleto = command.NomeCompleto.Trim(),
-                    EmailLogin = emailLogin,
-                    UserName = userName,
-                    PhoneNumber = TrimOrNull(command.Celular) ?? TrimOrNull(command.Telefone),
-                    command.IsActive,
-                    command.MustChangePassword,
-                    command.MfaEnabled,
-                    command.CertificateRequired,
-                    command.CanSignWithIcp,
-                    SecurityLevel = NormalizeSecurityLevel(command.SecurityLevel)
-                },
-                transaction: tx,
-                cancellationToken: ct));
+            var hasAccess = command.UserId.HasValue && command.UserId.Value != Guid.Empty;
+            if (!hasAccess && command.CriarUsuarioAcesso)
+            {
+                command.UserId = Guid.NewGuid();
+                hasAccess = true;
+                await con.ExecuteAsync(
+                    new CommandDefinition(
+                        insertUserSql,
+                        new
+                        {
+                            TenantId = tenantId,
+                            UserId = command.UserId!.Value,
+                            ServidorId = servidorId,
+                            NomeCompleto = command.NomeCompleto.Trim(),
+                            EmailLogin = emailLogin,
+                            UserName = userName,
+                            PhoneNumber = TrimOrNull(command.Celular) ?? TrimOrNull(command.Telefone),
+                            command.IsActive,
+                            command.MustChangePassword,
+                            command.MfaEnabled,
+                            command.CertificateRequired,
+                            command.CanSignWithIcp,
+                            SecurityLevel = NormalizeSecurityLevel(command.SecurityLevel)
+                        },
+                        transaction: tx,
+                        cancellationToken: ct));
+            }
+            else if (hasAccess)
+            {
+                await con.ExecuteAsync(
+                    new CommandDefinition(
+                        updateUserSql,
+                        new
+                        {
+                            TenantId = tenantId,
+                            UserId = command.UserId!.Value,
+                            ServidorId = servidorId,
+                            NomeCompleto = command.NomeCompleto.Trim(),
+                            EmailLogin = emailLogin,
+                            UserName = userName,
+                            PhoneNumber = TrimOrNull(command.Celular) ?? TrimOrNull(command.Telefone),
+                            command.IsActive,
+                            command.MustChangePassword,
+                            command.MfaEnabled,
+                            command.CertificateRequired,
+                            command.CanSignWithIcp,
+                            SecurityLevel = NormalizeSecurityLevel(command.SecurityLevel)
+                        },
+                        transaction: tx,
+                        cancellationToken: ct));
+            }
 
-        await con.ExecuteAsync(
-            new CommandDefinition(
-                deleteRolesSql,
-                new { UserId = command.UserId!.Value },
-                transaction: tx,
-                cancellationToken: ct));
-
-        foreach (var roleId in command.RoleIds.Where(x => x != Guid.Empty).Distinct())
-        {
             await con.ExecuteAsync(
                 new CommandDefinition(
-                    insertRoleSql,
+                    deleteRolesSql,
+                    new { UserId = command.UserId!.Value },
+                    transaction: tx,
+                    cancellationToken: ct));
+
+            foreach (var roleId in command.RoleIds.Where(x => x != Guid.Empty).Distinct())
+            {
+                await con.ExecuteAsync(
+                    new CommandDefinition(
+                        insertRoleSql,
+                        new
+                        {
+                            UserId = command.UserId!.Value,
+                            RoleId = roleId
+                        },
+                        transaction: tx,
+                        cancellationToken: ct));
+            }
+
+            await con.ExecuteAsync(
+                new CommandDefinition(
+                    auditSql,
                     new
                     {
-                        UserId = command.UserId!.Value,
-                        RoleId = roleId
+                        TenantId = tenantId,
+                        UserId = command.UserId,
+                        ServidorId = servidorId,
+                        EventType = isServidorNovo ? "USER_UPDATE_WITH_SERVER_CREATE" : "USER_UPDATE",
+                        EventDescription = isServidorNovo
+                            ? "Cadastro de usuário antigo atualizado e servidor vinculado criado."
+                            : "Cadastro de servidor/usuário atualizado.",
+                        command.UpdatedBy,
+                        command.IpAddress,
+                        command.UserAgent,
+                        command.CorrelationId,
+                        Data = System.Text.Json.JsonSerializer.Serialize(new
+                        {
+                            EntityId = servidorId,
+                            command.UserId,
+                            command.NomeCompleto,
+                            Cpf = NormalizeCpf(command.Cpf),
+                            command.Matricula,
+                            command.Setor,
+                            command.Cargo,
+                            command.Funcao,
+                            command.SecurityLevel,
+                            Roles = command.RoleIds,
+                            ServidorCriado = isServidorNovo
+                        })
                     },
                     transaction: tx,
                     cancellationToken: ct));
         }
-
-        await con.ExecuteAsync(
-            new CommandDefinition(
-                auditSql,
-                new
-                {
-                    TenantId = tenantId,
-                    UserId = command.UserId!.Value,
-                    ServidorId = servidorId,
-                    EventType = isServidorNovo ? "USER_UPDATE_WITH_SERVER_CREATE" : "USER_UPDATE",
-                    EventDescription = isServidorNovo
-                        ? "Cadastro de usuário antigo atualizado e servidor vinculado criado."
-                        : "Cadastro de servidor/usuário atualizado.",
-                    command.UpdatedBy,
-                    command.IpAddress,
-                    command.UserAgent,
-                    command.CorrelationId,
-                    Data = System.Text.Json.JsonSerializer.Serialize(new
+        else
+        {
+            await con.ExecuteAsync(
+                new CommandDefinition(
+                    auditSql,
+                    new
                     {
-                        command.NomeCompleto,
-                        Cpf = NormalizeCpf(command.Cpf),
-                        command.Matricula,
-                        command.Setor,
-                        command.Cargo,
-                        command.Funcao,
-                        command.SecurityLevel,
-                        Roles = command.RoleIds,
-                        ServidorCriado = isServidorNovo
-                    })
-                },
-                transaction: tx,
-                cancellationToken: ct));
+                        TenantId = tenantId,
+                        UserId = (Guid?)null,
+                        ServidorId = servidorId,
+                        EventType = "SERVER_UPDATE",
+                        EventDescription = "Cadastro institucional do servidor atualizado sem usuário de acesso.",
+                        command.UpdatedBy,
+                        command.IpAddress,
+                        command.UserAgent,
+                        command.CorrelationId,
+                        Data = System.Text.Json.JsonSerializer.Serialize(new
+                        {
+                            EntityId = servidorId,
+                            command.UserId,
+                            command.NomeCompleto,
+                            Cpf = NormalizeCpf(command.Cpf),
+                            command.Matricula,
+                            command.Setor,
+                            command.Cargo,
+                            command.Funcao
+                        })
+                    },
+                    transaction: tx,
+                    cancellationToken: ct));
         }
 
         await tx.CommitAsync(ct);

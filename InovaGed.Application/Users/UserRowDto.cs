@@ -3,7 +3,7 @@
 public sealed class UserRowDto
 {
     public Guid Id { get; set; }
-    public Guid? ServidorId { get; set; }
+    public Guid ServidorId { get; set; }
     public Guid? UserId { get; set; }
 
     public string Name { get; set; } = "";

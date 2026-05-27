@@ -14,8 +14,7 @@ public sealed class EditUserVM
     [Display(Name = "Nome completo")]
     public string NomeCompleto { get; set; } = "";
 
-    [Required(ErrorMessage = "Informe o CPF.")]
-    [StringLength(14)]
+        [StringLength(14)]
     [Display(Name = "CPF")]
     public string Cpf { get; set; } = "";
 
