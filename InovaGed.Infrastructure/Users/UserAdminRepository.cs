@@ -667,11 +667,14 @@ SELECT
     COALESCE(u.is_active, false) AS ""IsActive"", COALESCE(u.must_change_password, true) AS ""MustChangePassword"", COALESCE(u.mfa_enabled, false) AS ""MfaEnabled"", COALESCE(u.certificate_required, false) AS ""CertificateRequired"", COALESCE(u.can_sign_with_icp, false) AS ""CanSignWithIcp"", COALESCE(u.security_level::text, 'PUBLIC') AS ""SecurityLevel""
 FROM ged.servidor s
 LEFT JOIN ged.app_user u ON u.servidor_id=s.id AND u.tenant_id=s.tenant_id AND u.deleted_at_utc IS NULL
-WHERE s.tenant_id=@TenantId AND s.id=@ServidorId AND s.reg_status='A' LIMIT 1;";
+WHERE s.tenant_id=@TenantId
+  AND s.id=@ServidorId
+  AND (@IsAdmin = TRUE OR COALESCE(s.reg_status, 'A') = 'A')
+LIMIT 1;";
         const string rolesSql = @"SELECT role_id FROM ged.user_role WHERE user_id = @UserId;";
         await using var con = await _db.OpenAsync(ct);
         _logger.LogInformation("Consultando cadastro para edição por ServidorId. TenantId={TenantId} ServidorId={ServidorId} IsAdmin={IsAdmin}", tenantId, servidorId, isAdmin);
-        var dto = await con.QueryFirstOrDefaultAsync<UserEditDto>(new CommandDefinition(sql, new { TenantId = tenantId, ServidorId = servidorId }, cancellationToken: ct));
+        var dto = await con.QueryFirstOrDefaultAsync<UserEditDto>(new CommandDefinition(sql, new { TenantId = tenantId, ServidorId = servidorId, IsAdmin = isAdmin }, cancellationToken: ct));
         if (dto is null) return null;
         _logger.LogInformation("Cadastro para edição encontrado. TenantId={TenantId} ServidorId={ServidorId} UserId={UserId}", tenantId, dto.ServidorId, dto.UserId);
         if (dto.UserId.HasValue)
@@ -724,17 +727,72 @@ LIMIT 1;";
         return dto;
     }
 
+    public async Task<UserEditDto?> GetForEditFromAdminListAsync(
+        Guid tenantId,
+        Guid id,
+        CancellationToken ct)
+    {
+        const string sql = @"
+SELECT
+    u.servidor_id AS ""ServidorId"",
+    u.user_id AS ""UserId"",
+    COALESCE(u.nome_completo, '') AS ""NomeCompleto"",
+    COALESCE(u.cpf, '') AS ""Cpf"",
+    u.matricula AS ""Matricula"",
+    u.cargo AS ""Cargo"",
+    u.funcao AS ""Funcao"",
+    u.setor AS ""Setor"",
+    u.lotacao AS ""Lotacao"",
+    u.unidade AS ""Unidade"",
+    COALESCE(u.email, '') AS ""EmailLogin"",
+    COALESCE(u.is_active, false) AS ""IsActive"",
+    COALESCE(u.is_locked, false) AS ""IsLocked"",
+    COALESCE(u.must_change_password, true) AS ""MustChangePassword"",
+    COALESCE(u.mfa_enabled, false) AS ""MfaEnabled"",
+    COALESCE(u.certificate_required, false) AS ""CertificateRequired"",
+    COALESCE(u.can_sign_with_icp, false) AS ""CanSignWithIcp"",
+    COALESCE(u.security_level, 'PUBLIC') AS ""SecurityLevel""
+FROM ged.vw_user_admin_list u
+WHERE u.tenant_id = @TenantId
+  AND (u.servidor_id = @Id OR u.user_id = @Id)
+LIMIT 1;";
+        const string rolesSql = @"SELECT role_id FROM ged.user_role WHERE user_id = @UserId;";
+
+        await using var con = await _db.OpenAsync(ct);
+        var dto = await con.QueryFirstOrDefaultAsync<UserEditDto>(
+            new CommandDefinition(sql, new { TenantId = tenantId, Id = id }, cancellationToken: ct));
+        if (dto is null)
+            return null;
+
+        dto.UserName = dto.EmailLogin;
+        if (dto.UserId.HasValue)
+        {
+            var roles = await con.QueryAsync<Guid>(new CommandDefinition(rolesSql, new { UserId = dto.UserId.Value }, cancellationToken: ct));
+            dto.RoleIds = roles.ToList();
+        }
+
+        return dto;
+    }
+
     public async Task<string> DiagnoseUserEditIdAsync(Guid tenantId, Guid id, CancellationToken ct)
     {
         const string sql = @"
 SELECT json_build_object(
-    'existsAsServidor', EXISTS(
+    'existsInAdminListByServidorId', EXISTS(
+        SELECT 1 FROM ged.vw_user_admin_list v
+        WHERE v.tenant_id = @TenantId AND v.servidor_id = @Id
+    ),
+    'existsInAdminListByUserId', EXISTS(
+        SELECT 1 FROM ged.vw_user_admin_list v
+        WHERE v.tenant_id = @TenantId AND v.user_id = @Id
+    ),
+    'existsAsServidorAnyStatus', EXISTS(
         SELECT 1 FROM ged.servidor s
         WHERE s.id = @Id AND s.tenant_id = @TenantId
     ),
     'existsAsServidorActive', EXISTS(
         SELECT 1 FROM ged.servidor s
-        WHERE s.id = @Id AND s.tenant_id = @TenantId AND s.reg_status = 'A'
+        WHERE s.id = @Id AND s.tenant_id = @TenantId AND COALESCE(s.reg_status, 'A') = 'A'
     ),
     'existsAsUser', EXISTS(
         SELECT 1 FROM ged.app_user u
