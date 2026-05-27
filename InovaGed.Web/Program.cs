@@ -270,6 +270,8 @@ builder.Services.AddScoped<PermissionService>();
 builder.Services.AddScoped<IPermissionService>(sp => sp.GetRequiredService<PermissionService>());
 builder.Services.AddScoped<IParameterRepository, ParameterRepository>();
 builder.Services.AddScoped<IAuditWriter, AuditWriter>();     // ✅ uma vez só
+builder.Services.AddScoped<IAppAuditLogService, AppAuditLogService>();
+builder.Services.AddScoped<ISystemLogQueryService, SystemLogQueryService>();
 builder.Services.AddScoped<IAuditQueries, AuditQueries>();
 builder.Services.AddScoped<IAuditSecurityService, AuditSecurityService>();
 builder.Services.AddScoped<IAbacAuthorizationService, AbacAuthorizationService>();
@@ -469,9 +471,6 @@ if (!app.Environment.IsDevelopment())
 
 app.UseStatusCodePagesWithReExecute("/Home/Status/{0}");
 
-app.UseMiddleware<AuditMiddleware>();
-app.UseMiddleware<AccessDeniedAuditMiddleware>();
-
 app.UseHttpsRedirection();
 app.UseStaticFiles();
 
@@ -479,6 +478,9 @@ app.UseRouting();
 
 app.UseAuthentication();
 app.UseAuthorization();
+
+app.UseMiddleware<RequestAuditMiddleware>();
+app.UseMiddleware<AccessDeniedAuditMiddleware>();
 
 app.MapHub<OcrStatusHub>(OcrStatusHub.Route);
 
