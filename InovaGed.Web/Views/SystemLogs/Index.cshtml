@@ -1,0 +1,14 @@
+@using InovaGed.Application.Audit
+@model PagedResult<SystemLogListItemDto>
+@{ var f = (SystemLogFilter)ViewBag.Filter; }
+<h2>Logs do Sistema</h2>
+<form method="get" class="row g-2 mb-3">
+  <input type="hidden" name="TenantId" value="@f.TenantId"/>
+  <div class="col"><input name="Search" value="@f.Search" class="form-control" placeholder="Busca"/></div>
+  <div class="col"><select name="EventType" class="form-select"><option value="">Todos</option><option>ERROR</option><option>SECURITY</option><option>AUDIT</option><option>BUSINESS</option><option>SYSTEM</option></select></div>
+  <div class="col"><button class="btn btn-primary">Filtrar</button> <a href="/SystemLogs?TenantId=@f.TenantId" class="btn btn-outline-secondary">Limpar</a></div>
+</form>
+<table class="table table-striped table-sm"><thead><tr><th>Data</th><th>Tipo</th><th>Ação</th><th>Usuário</th><th>Rota</th><th>Resumo</th></tr></thead><tbody>
+@foreach (var i in Model.Items){<tr><td>@i.CreatedAt.LocalDateTime</td><td><span class="badge bg-secondary">@i.EventType</span></td><td>@i.Action</td><td>@i.UserName</td><td>@i.Path</td><td>@i.Summary</td></tr>}
+</tbody></table>
+<a class="btn btn-outline-success" href="/SystemLogs/ExportCsv?TenantId=@f.TenantId&EventType=@f.EventType&Search=@f.Search">Exportar CSV</a>
