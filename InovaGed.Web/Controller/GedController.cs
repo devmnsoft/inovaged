@@ -126,7 +126,7 @@ public sealed class GedController : Controller
     [HttpPost("/Ged/Documents/BulkUploadSingle")]
     [ValidateAntiForgeryToken]
     [RequestSizeLimit(52428800)]
-    public async Task<IActionResult> BulkUploadSingle(IFormFile file, Guid? folderId, Guid? documentTypeId, Guid? classificationId, string? notes, string? visibility, bool runOcr, bool generatePreview, Guid? batchId, CancellationToken ct)
+    public async Task<IActionResult> BulkUploadSingle(IFormFile file, Guid? folderId, Guid? documentTypeId, Guid? classificationId, string? notes, string? visibility, bool runOcr, bool generatePreview, Guid? batchId, string? duplicateStrategy, Guid? existingDocumentId, string? uploadName, CancellationToken ct)
     {
         try
         {
@@ -137,16 +137,45 @@ public sealed class GedController : Controller
                 return StatusCode(403, new { success = false, message = "Você não possui permissão para adicionar documentos nesta pasta." });
             }
 
-            var metadata = new DocumentBulkUploadMetadata { DocumentTypeId = documentTypeId, ClassificationId = classificationId, Notes = notes, Visibility = visibility, RunOcr = runOcr, GeneratePreview = generatePreview, BatchId = batchId };
+            var metadata = new DocumentBulkUploadMetadata { DocumentTypeId = documentTypeId, ClassificationId = classificationId, Notes = notes, Visibility = visibility, RunOcr = runOcr, GeneratePreview = generatePreview, BatchId = batchId, DuplicateStrategy = duplicateStrategy, ExistingDocumentId = existingDocumentId, UploadName = uploadName };
             var isAdmin = await _accessPolicy.IsAdminAsync(_currentUser.TenantId, _currentUser.UserId, User, ct);
             var result = await _documentBulkUploadService.UploadSingleAsync(_currentUser.TenantId, _currentUser.UserId, User.Identity?.Name, file, folderId, metadata, isAdmin, ct);
-            if (!result.Success) return BadRequest(new { success = false, message = result.Error?.Message ?? "Não foi possível enviar o arquivo." });
-            return Ok(new { success = true, message = "Arquivo enviado com sucesso.", data = result.Value });
+            if (!result.Success) return BadRequest(new { success = false, status = "error", message = result.Error?.Message ?? "Não foi possível enviar o arquivo.", errorLog = result.Error?.Code });
+            return Ok(new { success = true, status = "success", message = "Arquivo enviado com sucesso.", data = new { documentId = result.Value.DocumentId, versionId = (Guid?)null, fileName = result.Value.FileName } });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Erro no BulkUploadSingle. Tenant={TenantId} User={UserId} Folder={FolderId} Batch={BatchId}", _currentUser.TenantId, _currentUser.UserId, folderId, batchId);
             return StatusCode(500, new { success = false, message = "Erro interno ao enviar arquivo." });
+        }
+    }
+
+    public sealed class CheckDuplicateNamesRequest
+    {
+        public Guid? FolderId { get; set; }
+        public IReadOnlyList<string>? FileNames { get; set; }
+    }
+
+    [HttpPost("/Ged/Documents/CheckDuplicateNames")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> CheckDuplicateNames([FromBody] CheckDuplicateNamesRequest request, CancellationToken ct)
+    {
+        try
+        {
+            if (!_currentUser.IsAuthenticated) return Unauthorized(new { success = false, message = "Usuário não autenticado." });
+            if (request?.FolderId is null || request.FolderId == Guid.Empty) return BadRequest(new { success = false, message = "Pasta inválida." });
+            var fileNames = (request.FileNames ?? Array.Empty<string>()).Where(x => !string.IsNullOrWhiteSpace(x)).Select(Path.GetFileNameWithoutExtension).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+            if (fileNames.Length == 0) return Ok(new { success = true, duplicates = Array.Empty<object>() });
+
+            const string sql = @"select id as ExistingDocumentId, title as FileName from ged.document where tenant_id=@tenantId and folder_id=@folderId and title = any(@titles) and reg_status='A';";
+            await using var con = _db.CreateConnection();
+            var rows = await con.QueryAsync(sql, new { tenantId = _currentUser.TenantId, folderId = request.FolderId.Value, titles = fileNames });
+            return Ok(new { success = true, duplicates = rows });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro ao verificar duplicidade de nomes.");
+            return StatusCode(500, new { success = false, message = "Não foi possível verificar duplicidades. Tente novamente." });
         }
     }
 
