@@ -37,7 +37,7 @@
                 <div class="tab-pane fade show active" id="dados">
                     <div class="row g-3">
                         <div class="col-md-8"><label asp-for="NomeCompleto" class="form-label"></label><input asp-for="NomeCompleto" class="form-control" /><span asp-validation-for="NomeCompleto" class="text-danger"></span></div>
-                        <div class="col-md-4"><label asp-for="Cpf" class="form-label"></label><input asp-for="Cpf" class="form-control" placeholder="000.000.000-00" /><span asp-validation-for="Cpf" class="text-danger"></span></div>
+                        <div class="col-md-4"><label asp-for="Cpf" class="form-label"></label><input asp-for="Cpf" class="form-control" placeholder="000.000.000-00" /><div class="form-text">Na edição, o CPF pode ficar em branco para cadastros antigos/incompletos.</div><span asp-validation-for="Cpf" class="text-danger"></span></div>
                         <div class="col-md-4"><label asp-for="Rg" class="form-label"></label><input asp-for="Rg" class="form-control" /><span asp-validation-for="Rg" class="text-danger"></span></div>
                         <div class="col-md-4"><label asp-for="DataNascimento" class="form-label"></label><input asp-for="DataNascimento" type="date" class="form-control" /><span asp-validation-for="DataNascimento" class="text-danger"></span></div>
                         <div class="col-md-4"><label asp-for="Celular" class="form-label"></label><input asp-for="Celular" class="form-control" placeholder="(91) 99999-9999" /><span asp-validation-for="Celular" class="text-danger"></span></div>

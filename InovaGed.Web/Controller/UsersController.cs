@@ -347,6 +347,8 @@ public sealed class UsersController : AppControllerBase
 
         NormalizeEditVm(vm);
         ValidateEditVm(vm);
+        var cpfDigits = OnlyDigits(vm.Cpf);
+        var cpfInformado = !string.IsNullOrWhiteSpace(cpfDigits);
 
         if (!ModelState.IsValid)
         {
@@ -355,10 +357,18 @@ public sealed class UsersController : AppControllerBase
         }
 
         var tenantId = _currentUser.TenantId;
+        _logger.LogInformation(
+            "Edição de usuário/servidor iniciada. Tenant={TenantId} Admin={AdminUserId} Servidor={ServidorId} User={UserId} CpfInformado={CpfInformado} CorrelationId={CorrelationId}",
+            tenantId,
+            _currentUser.UserId,
+            vm.ServidorId,
+            vm.UserId,
+            cpfInformado,
+            HttpContext.TraceIdentifier);
 
         try
         {
-            if (await _repo.CpfExistsAsync(tenantId, vm.Cpf, vm.ServidorId, ct))
+            if (cpfInformado && await _repo.CpfExistsAsync(tenantId, vm.Cpf, vm.ServidorId, ct))
             {
                 ModelState.AddModelError(nameof(vm.Cpf), "Já existe outro servidor ativo cadastrado com este CPF.");
                 await ReloadEditLookupsAsync(vm, ct);
@@ -580,7 +590,8 @@ public sealed class UsersController : AppControllerBase
     private void ValidateEditVm(EditUserVM vm)
     {
         if (vm.ServidorId == Guid.Empty) ModelState.AddModelError(nameof(vm.ServidorId), "Servidor inválido.");
-        if (string.IsNullOrWhiteSpace(vm.Cpf) || OnlyDigits(vm.Cpf).Length != 11) ModelState.AddModelError(nameof(vm.Cpf), "CPF inválido. Informe 11 dígitos.");
+        var cpfDigits = OnlyDigits(vm.Cpf);
+        if (!string.IsNullOrWhiteSpace(cpfDigits) && cpfDigits.Length != 11) ModelState.AddModelError(nameof(vm.Cpf), "CPF inválido. Informe 11 dígitos ou deixe em branco.");
         var hasAccess = vm.UserId.HasValue && vm.UserId.Value != Guid.Empty;
         var shouldValidateAccess = hasAccess || vm.CriarUsuarioAcesso;
         if (shouldValidateAccess)
@@ -621,7 +632,10 @@ public sealed class UsersController : AppControllerBase
     private static void NormalizeEditVm(EditUserVM vm)
     {
         vm.NomeCompleto = Trim(vm.NomeCompleto);
-        vm.Cpf = FormatCpf(vm.Cpf);
+        var cpfDigits = OnlyDigits(vm.Cpf);
+        vm.Cpf = string.IsNullOrWhiteSpace(cpfDigits)
+            ? string.Empty
+            : FormatCpf(cpfDigits);
         vm.Rg = TrimOrNull(vm.Rg);
         vm.EmailInstitucional = TrimLowerOrNull(vm.EmailInstitucional);
         vm.EmailAlternativo = TrimLowerOrNull(vm.EmailAlternativo);

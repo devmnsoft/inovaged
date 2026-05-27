@@ -33,7 +33,7 @@ public interface IUserAdminRepository
 
     Task<bool> EmailExistsAsync(Guid tenantId, string email, Guid? ignoreUserId, CancellationToken ct);
 
-    Task<bool> CpfExistsAsync(Guid tenantId, string cpf, Guid? ignoreServidorId, CancellationToken ct);
+    Task<bool> CpfExistsAsync(Guid tenantId, string? cpf, Guid? ignoreServidorId, CancellationToken ct);
 
     Task<bool> UnlockUserAsync(Guid tenantId, Guid userId, CancellationToken ct);
 }
