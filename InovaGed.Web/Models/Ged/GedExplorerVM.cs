@@ -6,6 +6,7 @@ namespace InovaGed.Web.Models.Ged;
 public sealed class GedExplorerVM
 {
     public Guid? CurrentFolderId { get; set; }
+    public bool CanBulkUpload { get; set; }
 
     public Guid? FolderId { get; set; }
     public string? Query { get; set; }

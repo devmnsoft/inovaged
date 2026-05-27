@@ -12,6 +12,7 @@ using InovaGed.Application.Identity;
 using InovaGed.Application.Ocr;
 using InovaGed.Application.Preview;
 using InovaGed.Application.Search;
+using InovaGed.Application.Security;
 using InovaGed.Application.Workflow;
 using InovaGed.Domain.Ged;
 using InovaGed.Domain.Primitives;
@@ -51,6 +52,8 @@ public sealed class GedController : Controller
 
     private readonly IDocumentSearchQueries _search;
     private readonly IDocumentMoveService _documentMoveService;
+    private readonly IDocumentBulkUploadService _documentBulkUploadService;
+    private readonly IGedAccessPolicyService _accessPolicy;
 
     // ✅ classificação
     private readonly IDocumentClassificationQueries _clsQ;
@@ -69,6 +72,8 @@ public sealed class GedController : Controller
         IOcrStatusQueries ocrStatus,
         IDocumentSearchQueries search,
         IDocumentMoveService documentMoveService,
+        IDocumentBulkUploadService documentBulkUploadService,
+        IGedAccessPolicyService accessPolicy,
         IOcrJobRepository ocrJobs,
         IFolderCommands folderCommands,
         IDocumentQueries docs,
@@ -97,6 +102,8 @@ public sealed class GedController : Controller
 
         _search = search;
         _documentMoveService = documentMoveService;
+        _documentBulkUploadService = documentBulkUploadService;
+        _accessPolicy = accessPolicy;
 
         _docs = docs;
         _documentApp = documentApp;
@@ -114,6 +121,33 @@ public sealed class GedController : Controller
 
         _documentCommands = documentCommands;
         _ocrNotifier = ocrNotifier;
+    }
+
+    [HttpPost("/Ged/Documents/BulkUploadSingle")]
+    [ValidateAntiForgeryToken]
+    [RequestSizeLimit(52428800)]
+    public async Task<IActionResult> BulkUploadSingle(IFormFile file, Guid? folderId, Guid? documentTypeId, Guid? classificationId, string? notes, string? visibility, bool runOcr, bool generatePreview, Guid? batchId, CancellationToken ct)
+    {
+        try
+        {
+            if (!_currentUser.IsAuthenticated) return Unauthorized(new { success = false, message = "Usuário não autenticado." });
+            var allowed = await _accessPolicy.CanUploadDocumentToFolderAsync(_currentUser.TenantId, _currentUser.UserId, folderId, User, ct);
+            if (!allowed)
+            {
+                return StatusCode(403, new { success = false, message = "Você não possui permissão para adicionar documentos nesta pasta." });
+            }
+
+            var metadata = new DocumentBulkUploadMetadata { DocumentTypeId = documentTypeId, ClassificationId = classificationId, Notes = notes, Visibility = visibility, RunOcr = runOcr, GeneratePreview = generatePreview, BatchId = batchId };
+            var isAdmin = await _accessPolicy.IsAdminAsync(_currentUser.TenantId, _currentUser.UserId, User, ct);
+            var result = await _documentBulkUploadService.UploadSingleAsync(_currentUser.TenantId, _currentUser.UserId, User.Identity?.Name, file, folderId, metadata, isAdmin, ct);
+            if (!result.Success) return BadRequest(new { success = false, message = result.Error?.Message ?? "Não foi possível enviar o arquivo." });
+            return Ok(new { success = true, message = "Arquivo enviado com sucesso.", data = result.Value });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro no BulkUploadSingle. Tenant={TenantId} User={UserId} Folder={FolderId} Batch={BatchId}", _currentUser.TenantId, _currentUser.UserId, folderId, batchId);
+            return StatusCode(500, new { success = false, message = "Erro interno ao enviar arquivo." });
+        }
     }
 
     private bool IsAjaxRequest()
@@ -160,6 +194,7 @@ public sealed class GedController : Controller
 
             var vm = new GedExplorerVM
             {
+                CanBulkUpload = await _accessPolicy.CanUploadDocumentToFolderAsync(tenantId, _currentUser.UserId, effectiveFolderId, User, ct),
                 CurrentFolderId = effectiveFolderId,
                 FolderId = effectiveFolderId,
                 Query = q,

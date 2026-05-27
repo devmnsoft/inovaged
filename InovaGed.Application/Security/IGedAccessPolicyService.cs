@@ -20,5 +20,5 @@ public interface IGedAccessPolicyService
     Task<bool> CanManageOcrAsync(Guid tenantId, Guid userId, ClaimsPrincipal principal, CancellationToken ct);
     Task<bool> CanManageUsersAsync(Guid tenantId, Guid userId, ClaimsPrincipal principal, CancellationToken ct);
     Task<bool> CanMoveDocumentAsync(Guid tenantId, Guid userId, Guid documentId, ClaimsPrincipal principal, CancellationToken ct);
+    Task<bool> CanUploadDocumentToFolderAsync(Guid tenantId, Guid userId, Guid? folderId, ClaimsPrincipal principal, CancellationToken ct);
 }
-

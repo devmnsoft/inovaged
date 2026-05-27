@@ -319,12 +319,12 @@
 
 
 
-                    <button class="btn btn-primary"
-                            data-bs-toggle="modal"
-                            data-bs-target="#modalUpload"
-                    @(Model.CurrentFolderId == null ? "disabled" : "")>
-                        <i class="bi bi-upload"></i> Upload
-                    </button>
+                    @if (Model.CanBulkUpload)
+                    {
+                        <button type="button" id="btnOpenBulkUpload" class="btn btn-primary" data-bs-toggle="tooltip" title="Envie um ou mais arquivos para a pasta atual." @(Model.CurrentFolderId == null ? "disabled" : "")>
+                            <i class="bi bi-cloud-arrow-up me-1"></i> Adicionar documentos
+                        </button>
+                    }
                     <a class="btn btn-outline-dark"
                        asp-controller="Ged"
                        asp-action="Kpi">
@@ -597,6 +597,25 @@
     </div>
 </div>
 
+<div class="modal fade" id="bulkUploadModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header"><div><h5 class="modal-title">Adicionar documentos em lote</h5><small class="text-muted">Envie vários arquivos diretamente para a pasta selecionada.</small></div><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <input type="hidden" id="bulkFolderId" value="@Model.CurrentFolderId" />
+        <div id="bulkUploadMessage" class="d-none alert"></div>
+        <div id="bulkDropzone" class="border border-2 border-secondary-subtle rounded p-4 text-center mb-3" style="border-style:dashed !important; cursor:pointer;">
+            <i class="bi bi-cloud-arrow-up fs-1 d-block mb-2"></i><strong>Arraste arquivos aqui ou clique para selecionar</strong>
+            <input id="bulkFileInput" type="file" multiple class="d-none" />
+        </div>
+        <div class="d-flex justify-content-between align-items-center mb-2"><strong>Arquivos selecionados</strong><button class="btn btn-sm btn-outline-secondary" id="btnBulkClear">Limpar lista</button></div>
+        <div class="table-responsive"><table class="table table-sm"><thead><tr><th>Arquivo</th><th>Tamanho</th><th>Status</th><th>Progresso</th><th></th></tr></thead><tbody id="bulkFileList"></tbody></table></div>
+      </div>
+      <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button><button type="button" class="btn btn-primary" id="btnBulkSend">Enviar arquivos</button></div>
+    </div>
+  </div>
+</div>
+
 <style>
     .ged-tree {
         list-style: none;
@@ -801,3 +820,4 @@
 </script>
 <script src="~/js/ged-document-move.js" asp-append-version="true"></script>
 <script src="~/js/ged-queue-visualizer.js" asp-append-version="true"></script>
+<script src="~/js/ged-bulk-upload.js" asp-append-version="true"></script>
