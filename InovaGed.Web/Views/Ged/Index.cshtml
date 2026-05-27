@@ -610,11 +610,29 @@
         <div id="bulkDuplicateDecision" class="alert alert-warning d-none"><strong>Arquivos com o mesmo nome já existem.</strong><div class="small mb-2">Escolha como deseja continuar.</div><ul id="bulkDuplicateList" class="mb-2"></ul><div class="btn-group btn-group-sm"><button type="button" class="btn btn-outline-danger" id="btnDupOverwrite">Sobrescrever todos</button><button type="button" class="btn btn-outline-primary" id="btnDupRename">Renomear todos</button><button type="button" class="btn btn-outline-secondary" id="btnDupSkip">Ignorar duplicados</button><button type="button" class="btn btn-outline-dark" id="btnDupCancel">Cancelar envio</button></div></div><div class="d-flex justify-content-between align-items-center mb-2"><strong>Arquivos selecionados</strong><button class="btn btn-sm btn-outline-secondary" id="btnBulkClear">Limpar lista</button></div><div id="bulkSummary" class="small text-muted mb-2"></div>
         <div class="table-responsive"><table class="table table-sm"><thead><tr><th>Arquivo</th><th>Tamanho</th><th>Status</th><th>Progresso</th><th></th></tr></thead><tbody id="bulkFileList"></tbody></table></div>
       </div>
-      <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button><button type="button" class="btn btn-outline-warning d-none" id="btnBulkRetryFailed">Tentar novamente falhos</button><button type="button" class="btn btn-primary" id="btnBulkUploadSubmit">Enviar documentos</button></div>
+      <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button><button type="button" id="btnClearSuccessfulUploads" class="btn btn-outline-secondary d-none">Limpar enviados</button><button type="button" id="btnRetryFailedUploads" class="btn btn-outline-warning d-none">Tentar novamente falhos</button><button type="button" id="btnCloseUploadAndRefresh" class="btn btn-primary d-none">Atualizar pasta</button><button type="button" class="btn btn-primary" id="btnBulkUploadSubmit">Enviar documentos</button></div>
     </div>
   </div>
 </div>
 
+<div class="modal fade" id="uploadErrorDetailsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Detalhes do erro no envio</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-2"><strong>Arquivo:</strong> <span id="uploadErrorFileName">-</span></div>
+                <div class="mb-2"><strong>Motivo:</strong><div id="uploadErrorMessage" class="text-danger">-</div></div>
+                <div class="mb-2"><strong>Etapa:</strong> <span id="uploadErrorStep">-</span></div>
+                <div class="mb-2"><strong>Detalhe técnico:</strong><pre id="uploadErrorLog" class="bg-light border rounded p-2 small" style="max-height: 260px; overflow:auto; white-space: pre-wrap;">-</pre></div>
+                <div class="mb-2"><strong>CorrelationId:</strong> <span id="uploadErrorCorrelationId">-</span></div>
+            </div>
+            <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Fechar</button></div>
+        </div>
+    </div>
+</div>
 
 <div class="modal fade" id="deleteDocumentModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog">
