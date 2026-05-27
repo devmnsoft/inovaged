@@ -24,7 +24,7 @@ public sealed class SystemLogQueryService : ISystemLogQueryService
     public async Task<SystemLogDetailsDto?> GetDetailsAsync(string id, Guid tenantId, CancellationToken ct)
     {
         using var c = await _db.OpenAsync(ct);
-        return await c.QueryFirstOrDefaultAsync<SystemLogDetailsDto>("select id::text as Id, tenant_id as TenantId,user_id as UserId,user_name as UserName,event_type as EventType,action::text as Action,source,entity_name as EntityName,entity_id as EntityId,summary,details,exception_type as ExceptionType,exception_message as ExceptionMessage,stack_trace as StackTrace,path,http_method as HttpMethod,http_status as HttpStatus,ip_address as IpAddress,user_agent as UserAgent,elapsed_ms as ElapsedMs,correlation_id as CorrelationId,data,event_time as CreatedAt from ged.audit_log where tenant_id=@tenantId and id::text=@id", new { tenantId, id });
+        return await c.QueryFirstOrDefaultAsync<SystemLogDetailsDto>("select id::text as Id, tenant_id as TenantId, user_id as UserId, user_name as UserName, event_time as CreatedAt, coalesce(event_type, 'INFO') as EventType, coalesce(action::text, '-') as Action, coalesce(source, '-') as Source, entity_name as EntityName, entity_id as EntityId, coalesce(summary, '-') as Summary, details, exception_type as ExceptionType, exception_message as ExceptionMessage, stack_trace as StackTrace, path, http_method as HttpMethod, http_status as HttpStatus, ip_address as IpAddress, user_agent as UserAgent, elapsed_ms as ElapsedMs, correlation_id as CorrelationId, data::text as DataJson from ged.audit_log where tenant_id=@tenantId and id::text=@id", new { tenantId, id });
     }
 
     public async Task<byte[]> ExportCsvAsync(SystemLogFilter filter, CancellationToken ct)
