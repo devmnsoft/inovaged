@@ -9,7 +9,8 @@ public sealed class AppAuditLogEntry
     public string Action { get; set; } = "VIEW";
     public string Source { get; set; } = "APP";
     public string? EntityName { get; set; }
-    public string? EntityId { get; set; }
+    public Guid? EntityId { get; set; }
+    public string? EntityKey { get; set; }
     public string Summary { get; set; } = string.Empty;
     public string? Details { get; set; }
     public string? ExceptionType { get; set; }
