@@ -50,8 +50,8 @@ public sealed class AppAuditLogService : IAppAuditLogService
         => LogAsync(new AppAuditLogEntry { TenantId = tenantId, UserId = userId, Source = source, EventType = "ERROR", Action = "HTTP", Summary = message, ExceptionType = exception?.GetType().Name, ExceptionMessage = exception?.Message, StackTrace = exception?.StackTrace, Data = data }, ct);
     public Task LogSecurityAsync(Guid? tenantId, Guid? userId, string action, string message, object? data = null, CancellationToken ct = default)
         => LogAsync(new AppAuditLogEntry { TenantId = tenantId, UserId = userId, Source = "SECURITY", EventType = "SECURITY", Action = NormalizeAuditAction(action), Summary = message, Data = data }, ct);
-    public Task LogBusinessAsync(Guid? tenantId, Guid? userId, string action, string entityName, string? entityId, string message, object? data = null, CancellationToken ct = default)
-        => LogAsync(new AppAuditLogEntry { TenantId = tenantId, UserId = userId, Source = "BUSINESS", EventType = "BUSINESS", Action = NormalizeAuditAction(action), EntityName = entityName, EntityId = entityId, Summary = message, Data = data }, ct);
+    public Task LogBusinessAsync(Guid? tenantId, Guid? userId, string action, string entityName, Guid? entityId, string message, object? data = null, string? entityKey = null, CancellationToken ct = default)
+        => LogAsync(new AppAuditLogEntry { TenantId = tenantId, UserId = userId, Source = "BUSINESS", EventType = "BUSINESS", Action = NormalizeAuditAction(action), EntityName = entityName, EntityId = NormalizeEntityId(entityId), EntityKey = entityKey, Summary = message, Data = data }, ct);
     public Task LogHttpAsync(Guid? tenantId, Guid? userId, string method, string path, int? statusCode, long elapsedMs, object? data = null, CancellationToken ct = default)
         => LogAsync(new AppAuditLogEntry { TenantId = tenantId, UserId = userId, Source = "HTTP", EventType = "AUDIT", Action = "HTTP", Path = path, HttpMethod = method, HttpStatus = statusCode, ElapsedMs = elapsedMs, Summary = $"{method} {path} => {statusCode}", Data = data }, ct);
 
@@ -103,11 +103,11 @@ values
         e.UserId,
         Action = NormalizeAuditAction(e.Action),
         e.EntityName,
-        e.EntityId,
+        EntityId = NormalizeEntityId(e.EntityId),
         e.Summary,
         e.IpAddress,
         e.UserAgent,
-        Data = e.Data is null ? null : JsonSerializer.Serialize(e.Data),
+        Data = BuildDataJson(e),
         CreatedAt = e.CreatedAt,
         e.EventType,
         e.Source,
@@ -121,6 +121,24 @@ values
         e.ElapsedMs,
         e.CorrelationId
     };
+
+    private static Guid? NormalizeEntityId(Guid? entityId)
+        => entityId is { } value && value != Guid.Empty ? value : null;
+
+    private static string? BuildDataJson(AppAuditLogEntry e)
+    {
+        if (string.IsNullOrWhiteSpace(e.EntityKey))
+        {
+            return e.Data is null ? null : JsonSerializer.Serialize(e.Data);
+        }
+
+        if (e.Data is null)
+        {
+            return JsonSerializer.Serialize(new Dictionary<string, object?> { ["entityKey"] = e.EntityKey });
+        }
+
+        return JsonSerializer.Serialize(new Dictionary<string, object?> { ["entityKey"] = e.EntityKey, ["payload"] = e.Data });
+    }
 
     private static async Task<string> ResolveDateColumnAsync(System.Data.IDbConnection conn, CancellationToken ct)
     {
