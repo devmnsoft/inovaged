@@ -87,7 +87,9 @@ public sealed class UsersController : Controller
             Total = res.Total,
             Items = res.Items.Select(x => new UserListVM.Row
             {
-                Id = x.Id,
+                Id = x.ServidorId ?? x.Id,
+                ServidorId = x.ServidorId ?? x.Id,
+                UserId = x.UserId ?? x.Id,
                 Name = x.Name,
                 Email = x.Email,
                 Cpf = x.Cpf,
@@ -202,7 +204,7 @@ public sealed class UsersController : Controller
                 CertificateRequired = vm.CertificateRequired,
                 CanSignWithIcp = vm.CanSignWithIcp,
                 SecurityLevel = vm.SecurityLevel,
-                RoleIds = vm.SelectedRoleIds.Where(x => x != Guid.Empty).Distinct().ToList(),
+                RoleIds = (vm.UserId.HasValue || vm.CriarUsuarioAcesso) ? vm.SelectedRoleIds.Where(x => x != Guid.Empty).Distinct().ToList() : new List<Guid>(),
                 CreatedBy = _currentUser.UserId,
                 IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString(),
                 UserAgent = Request.Headers.UserAgent.ToString(),
@@ -229,15 +231,15 @@ public sealed class UsersController : Controller
         }
     }
 
-    [HttpGet("Edit/{id:guid}")]
-    public async Task<IActionResult> Edit(Guid id, CancellationToken ct)
+    [HttpGet("Edit/{servidorId:guid}")]
+    public async Task<IActionResult> Edit(Guid servidorId, CancellationToken ct)
     {
         if (!_currentUser.IsAuthenticated) return Unauthorized();
 
-        var dto = await _repo.GetForEditAsync(_currentUser.TenantId, id, ct);
+        var dto = await _repo.GetForEditAsync(_currentUser.TenantId, servidorId, ct);
         if (dto is null)
         {
-            TempData["Error"] = "Usuário não encontrado.";
+            TempData["Error"] = "Servidor/usuário não encontrado.";
             return RedirectToAction(nameof(Index));
         }
 
@@ -245,6 +247,8 @@ public sealed class UsersController : Controller
         {
             UserId = dto.UserId,
             ServidorId = dto.ServidorId,
+            PossuiUsuarioAcesso = dto.UserId.HasValue,
+            CriarUsuarioAcesso = false,
             NomeCompleto = dto.NomeCompleto,
             Cpf = dto.Cpf,
             Rg = dto.Rg,
@@ -284,15 +288,15 @@ public sealed class UsersController : Controller
         return View(vm);
     }
 
-    [HttpPost("Edit/{id:guid}")]
+    [HttpPost("Edit/{servidorId:guid}")]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Edit(Guid id, [FromForm] EditUserVM vm, CancellationToken ct)
+    public async Task<IActionResult> Edit(Guid servidorId, [FromForm] EditUserVM vm, CancellationToken ct)
     {
         if (!_currentUser.IsAuthenticated) return Unauthorized();
 
-        if (id != vm.UserId)
+        if (servidorId != vm.ServidorId)
         {
-            TempData["Error"] = "Identificador do usuário inválido.";
+            TempData["Error"] = "Identificador do servidor inválido.";
             return RedirectToAction(nameof(Index));
         }
 
@@ -316,7 +320,7 @@ public sealed class UsersController : Controller
                 return View(vm);
             }
 
-            if (await _repo.EmailExistsAsync(tenantId, vm.EmailLogin, vm.UserId, ct))
+            if ((vm.UserId.HasValue || vm.CriarUsuarioAcesso) && await _repo.EmailExistsAsync(tenantId, vm.EmailLogin, vm.UserId, ct))
             {
                 ModelState.AddModelError(nameof(vm.EmailLogin), "Já existe outro usuário com este e-mail de login.");
                 await ReloadEditLookupsAsync(vm, ct);
@@ -327,6 +331,7 @@ public sealed class UsersController : Controller
             {
                 UserId = vm.UserId,
                 ServidorId = vm.ServidorId,
+                CriarUsuarioAcesso = vm.CriarUsuarioAcesso,
                 NomeCompleto = vm.NomeCompleto,
                 Cpf = vm.Cpf,
                 Rg = vm.Rg,
@@ -357,7 +362,7 @@ public sealed class UsersController : Controller
                 CertificateRequired = vm.CertificateRequired,
                 CanSignWithIcp = vm.CanSignWithIcp,
                 SecurityLevel = vm.SecurityLevel,
-                RoleIds = vm.SelectedRoleIds.Where(x => x != Guid.Empty).Distinct().ToList(),
+                RoleIds = (vm.UserId.HasValue || vm.CriarUsuarioAcesso) ? vm.SelectedRoleIds.Where(x => x != Guid.Empty).Distinct().ToList() : new List<Guid>(),
                 UpdatedBy = _currentUser.UserId,
                 IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString(),
                 UserAgent = Request.Headers.UserAgent.ToString(),
@@ -386,18 +391,19 @@ public sealed class UsersController : Controller
 
     [HttpPost("SetActive")]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> SetActive(Guid id, bool active, CancellationToken ct)
+    public async Task<IActionResult> SetActive(Guid? id, bool active, CancellationToken ct)
     {
         if (!_currentUser.IsAuthenticated) return Unauthorized();
 
-        await _repo.SetActiveAsync(_currentUser.TenantId, id, active, _currentUser.UserId, ct);
+        if (!id.HasValue || id == Guid.Empty){ TempData["Error"] = "Este servidor ainda não possui usuário de acesso."; return RedirectToAction(nameof(Index)); }
+        await _repo.SetActiveAsync(_currentUser.TenantId, id.Value, active, _currentUser.UserId, ct);
         TempData["Success"] = active ? "Usuário ativado com sucesso." : "Usuário inativado com sucesso.";
         return RedirectToAction(nameof(Index));
     }
 
     [HttpPost("ResetPassword")]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> ResetPassword(Guid id, string newPassword, string confirmPassword, bool mustChangePassword = true, CancellationToken ct = default)
+    public async Task<IActionResult> ResetPassword(Guid? id, string newPassword, string confirmPassword, bool mustChangePassword = true, CancellationToken ct = default)
     {
         if (!_currentUser.IsAuthenticated) return Unauthorized();
 
@@ -413,10 +419,12 @@ public sealed class UsersController : Controller
             return RedirectToAction(nameof(Index));
         }
 
+        if (!id.HasValue || id == Guid.Empty){ TempData["Error"] = "Este servidor ainda não possui usuário de acesso."; return RedirectToAction(nameof(Index)); }
+
         var hasher = new PasswordHasher<object>();
         var hash = hasher.HashPassword(null!, newPassword);
 
-        await _repo.ResetPasswordAsync(_currentUser.TenantId, id, hash, mustChangePassword, _currentUser.UserId, ct);
+        await _repo.ResetPasswordAsync(_currentUser.TenantId, id.Value, hash, mustChangePassword, _currentUser.UserId, ct);
         TempData["Success"] = "Senha redefinida com sucesso.";
         return RedirectToAction(nameof(Index));
     }
@@ -526,10 +534,15 @@ public sealed class UsersController : Controller
 
     private void ValidateEditVm(EditUserVM vm)
     {
-        if (vm.UserId == Guid.Empty) ModelState.AddModelError(nameof(vm.UserId), "Usuário inválido.");
+        if (vm.ServidorId == Guid.Empty) ModelState.AddModelError(nameof(vm.ServidorId), "Servidor inválido.");
         if (string.IsNullOrWhiteSpace(vm.Cpf) || OnlyDigits(vm.Cpf).Length != 11) ModelState.AddModelError(nameof(vm.Cpf), "CPF inválido. Informe 11 dígitos.");
-        if (string.IsNullOrWhiteSpace(vm.EmailLogin)) ModelState.AddModelError(nameof(vm.EmailLogin), "Informe o e-mail de login.");
-        if (vm.SelectedRoleIds is null || vm.SelectedRoleIds.Count == 0) ModelState.AddModelError(nameof(vm.SelectedRoleIds), "Selecione ao menos um perfil de acesso.");
+        var hasAccess = vm.UserId.HasValue && vm.UserId.Value != Guid.Empty;
+        var shouldValidateAccess = hasAccess || vm.CriarUsuarioAcesso;
+        if (shouldValidateAccess)
+        {
+            if (string.IsNullOrWhiteSpace(vm.EmailLogin)) ModelState.AddModelError(nameof(vm.EmailLogin), "Informe o e-mail de login.");
+            if (vm.SelectedRoleIds is null || vm.SelectedRoleIds.Count == 0) ModelState.AddModelError(nameof(vm.SelectedRoleIds), "Selecione ao menos um perfil de acesso.");
+        }
     }
 
     private static void NormalizeCreateVm(CreateUserVM vm)
@@ -557,7 +570,7 @@ public sealed class UsersController : Controller
         vm.SituacaoFuncional = string.IsNullOrWhiteSpace(vm.SituacaoFuncional) ? "ATIVO" : vm.SituacaoFuncional.Trim().ToUpperInvariant();
         vm.SecurityLevel = string.IsNullOrWhiteSpace(vm.SecurityLevel) ? "PUBLIC" : vm.SecurityLevel.Trim().ToUpperInvariant();
         if (string.IsNullOrWhiteSpace(vm.EmailLogin)) vm.EmailLogin = vm.EmailInstitucional ?? vm.EmailAlternativo ?? "";
-        if (string.IsNullOrWhiteSpace(vm.UserName)) vm.UserName = vm.EmailLogin;
+        if ((vm.UserId.HasValue || vm.CriarUsuarioAcesso) && string.IsNullOrWhiteSpace(vm.UserName)) vm.UserName = vm.EmailLogin;
     }
 
     private static void NormalizeEditVm(EditUserVM vm)
@@ -584,7 +597,7 @@ public sealed class UsersController : Controller
         vm.Especialidade = TrimOrNull(vm.Especialidade);
         vm.SituacaoFuncional = string.IsNullOrWhiteSpace(vm.SituacaoFuncional) ? "ATIVO" : vm.SituacaoFuncional.Trim().ToUpperInvariant();
         vm.SecurityLevel = string.IsNullOrWhiteSpace(vm.SecurityLevel) ? "PUBLIC" : vm.SecurityLevel.Trim().ToUpperInvariant();
-        if (string.IsNullOrWhiteSpace(vm.UserName)) vm.UserName = vm.EmailLogin;
+        if ((vm.UserId.HasValue || vm.CriarUsuarioAcesso) && string.IsNullOrWhiteSpace(vm.UserName)) vm.UserName = vm.EmailLogin;
     }
 
     private static string Trim(string? value) => (value ?? "").Trim();

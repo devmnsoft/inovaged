@@ -2,8 +2,8 @@
 
 public sealed class UserEditDto
 {
-    public Guid UserId { get; set; }
-    public Guid? ServidorId { get; set; }
+    public Guid? UserId { get; set; }
+    public Guid ServidorId { get; set; }
 
     public string NomeCompleto { get; set; } = "";
     public string Cpf { get; set; } = "";

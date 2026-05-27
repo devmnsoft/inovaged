@@ -636,94 +636,42 @@ WHERE tenant_id = @TenantId
 
     public async Task<UserEditDto?> GetForEditAsync(
      Guid tenantId,
-     Guid userId,
+     Guid servidorId,
      CancellationToken ct)
     {
         const string sql = @"
 SELECT
     u.id                         AS ""UserId"",
     s.id                         AS ""ServidorId"",
-
     COALESCE(s.nome_completo, u.name, '') AS ""NomeCompleto"",
     COALESCE(s.cpf, '')                   AS ""Cpf"",
     s.rg                                  AS ""Rg"",
     s.data_nascimento                     AS ""DataNascimento"",
-
     COALESCE(s.email_institucional, u.email) AS ""EmailInstitucional"",
     s.email_alternativo                      AS ""EmailAlternativo"",
     s.telefone                               AS ""Telefone"",
     COALESCE(s.celular, u.phone_number)      AS ""Celular"",
-
-    s.matricula                  AS ""Matricula"",
-    s.cargo                      AS ""Cargo"",
-    s.funcao                     AS ""Funcao"",
-    s.setor                      AS ""Setor"",
-    s.lotacao                    AS ""Lotacao"",
-    s.unidade                    AS ""Unidade"",
-    s.tipo_vinculo               AS ""TipoVinculo"",
-
-    s.conselho_profissional      AS ""ConselhoProfissional"",
-    s.numero_conselho            AS ""NumeroConselho"",
-    s.uf_conselho                AS ""UfConselho"",
-    s.especialidade              AS ""Especialidade"",
-
-    s.data_admissao              AS ""DataAdmissao"",
-    COALESCE(s.situacao_funcional, 'ATIVO') AS ""SituacaoFuncional"",
-    s.observacao                 AS ""Observacao"",
-
-    u.email                      AS ""EmailLogin"",
-    u.user_name                  AS ""UserName"",
-
-    u.is_active                  AS ""IsActive"",
-    u.must_change_password       AS ""MustChangePassword"",
-    u.mfa_enabled                AS ""MfaEnabled"",
-    u.certificate_required       AS ""CertificateRequired"",
-    u.can_sign_with_icp          AS ""CanSignWithIcp"",
-    u.security_level             AS ""SecurityLevel""
-FROM ged.app_user u
-LEFT JOIN ged.servidor s
-       ON s.id = u.servidor_id
-      AND s.tenant_id = u.tenant_id
-      AND s.reg_status = 'A'
-WHERE u.tenant_id = @TenantId
-  AND u.id = @UserId
-  AND u.deleted_at_utc IS NULL
-LIMIT 1;
-";
-
-        const string rolesSql = @"
-SELECT role_id
-FROM ged.user_role
-WHERE user_id = @UserId;
-";
-
+    s.matricula AS ""Matricula"", s.cargo AS ""Cargo"", s.funcao AS ""Funcao"", s.setor AS ""Setor"", s.lotacao AS ""Lotacao"", s.unidade AS ""Unidade"", s.tipo_vinculo AS ""TipoVinculo"",
+    s.conselho_profissional AS ""ConselhoProfissional"", s.numero_conselho AS ""NumeroConselho"", s.uf_conselho AS ""UfConselho"", s.especialidade AS ""Especialidade"",
+    s.data_admissao AS ""DataAdmissao"", COALESCE(s.situacao_funcional, 'ATIVO') AS ""SituacaoFuncional"", s.observacao AS ""Observacao"",
+    COALESCE(u.email,'') AS ""EmailLogin"", u.user_name AS ""UserName"",
+    COALESCE(u.is_active, false) AS ""IsActive"", COALESCE(u.must_change_password, true) AS ""MustChangePassword"", COALESCE(u.mfa_enabled, false) AS ""MfaEnabled"", COALESCE(u.certificate_required, false) AS ""CertificateRequired"", COALESCE(u.can_sign_with_icp, false) AS ""CanSignWithIcp"", COALESCE(u.security_level::text, 'PUBLIC') AS ""SecurityLevel""
+FROM ged.servidor s
+LEFT JOIN ged.app_user u ON u.servidor_id=s.id AND u.tenant_id=s.tenant_id AND u.deleted_at_utc IS NULL
+WHERE s.tenant_id=@TenantId AND s.id=@ServidorId AND s.reg_status='A' LIMIT 1;";
+        const string rolesSql = @"SELECT role_id FROM ged.user_role WHERE user_id = @UserId;";
         await using var con = await _db.OpenAsync(ct);
-
-        var dto = await con.QueryFirstOrDefaultAsync<UserEditDto>(
-            new CommandDefinition(
-                sql,
-                new
-                {
-                    TenantId = tenantId,
-                    UserId = userId
-                },
-                cancellationToken: ct));
-
-        if (dto is null)
-            return null;
-
-        var roles = await con.QueryAsync<Guid>(
-            new CommandDefinition(
-                rolesSql,
-                new { UserId = userId },
-                cancellationToken: ct));
-
-        dto.RoleIds = roles.ToList();
-
+        var dto = await con.QueryFirstOrDefaultAsync<UserEditDto>(new CommandDefinition(sql, new { TenantId = tenantId, ServidorId = servidorId }, cancellationToken: ct));
+        if (dto is null) return null;
+        if (dto.UserId.HasValue)
+        {
+            var roles = await con.QueryAsync<Guid>(new CommandDefinition(rolesSql, new { UserId = dto.UserId.Value }, cancellationToken: ct));
+            dto.RoleIds = roles.ToList();
+        }
         return dto;
     }
 
-    public async Task UpdateServidorUsuarioAsync(
+public async Task UpdateServidorUsuarioAsync(
     Guid tenantId,
     UpdateServidorUsuarioCommand command,
     CancellationToken ct)
@@ -947,13 +895,16 @@ SELECT ged.audit_user_security_event(
             }
         }
 
+        if (command.UserId.HasValue || command.CriarUsuarioAcesso)
+        {
+        if (!command.UserId.HasValue && command.CriarUsuarioAcesso) command.UserId = Guid.NewGuid();
         await con.ExecuteAsync(
             new CommandDefinition(
                 updateUserSql,
                 new
                 {
                     TenantId = tenantId,
-                    command.UserId,
+                    UserId = command.UserId!.Value,
                     ServidorId = servidorId,
                     NomeCompleto = command.NomeCompleto.Trim(),
                     EmailLogin = emailLogin,
@@ -972,7 +923,7 @@ SELECT ged.audit_user_security_event(
         await con.ExecuteAsync(
             new CommandDefinition(
                 deleteRolesSql,
-                new { command.UserId },
+                new { UserId = command.UserId!.Value },
                 transaction: tx,
                 cancellationToken: ct));
 
@@ -983,7 +934,7 @@ SELECT ged.audit_user_security_event(
                     insertRoleSql,
                     new
                     {
-                        command.UserId,
+                        UserId = command.UserId!.Value,
                         RoleId = roleId
                     },
                     transaction: tx,
@@ -996,7 +947,7 @@ SELECT ged.audit_user_security_event(
                 new
                 {
                     TenantId = tenantId,
-                    command.UserId,
+                    UserId = command.UserId!.Value,
                     ServidorId = servidorId,
                     EventType = isServidorNovo ? "USER_UPDATE_WITH_SERVER_CREATE" : "USER_UPDATE",
                     EventDescription = isServidorNovo
