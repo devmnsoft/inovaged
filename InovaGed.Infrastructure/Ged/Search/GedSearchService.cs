@@ -1,6 +1,7 @@
 using Dapper;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Ged.Search;
+using Microsoft.Extensions.Logging;
 
 namespace InovaGed.Infrastructure.Ged.Search;
 
@@ -63,5 +64,20 @@ and (@TermLike is null or lower(coalesce(d.title,'')) ilike lower(@TermLike) or 
         }
         catch (Exception ex)
         { _logger.LogError(ex, "Erro no GedSearchService. Tenant={TenantId} User={UserId}", filter.TenantId, filter.UserId); throw; }
+    }
+
+    public Task<IReadOnlyList<GedSearchSuggestionDto>> SuggestAsync(Guid tenantId, Guid userId, string? term, CancellationToken ct)
+    {
+        try
+        {
+            IReadOnlyList<GedSearchSuggestionDto> items = Array.Empty<GedSearchSuggestionDto>();
+            return Task.FromResult(items);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro ao gerar sugestões de busca GED. Tenant={TenantId} User={UserId} Term={Term}", tenantId, userId, term);
+            IReadOnlyList<GedSearchSuggestionDto> items = Array.Empty<GedSearchSuggestionDto>();
+            return Task.FromResult(items);
+        }
     }
 }
