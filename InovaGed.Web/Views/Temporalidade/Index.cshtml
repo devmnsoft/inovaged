@@ -250,7 +250,7 @@
     function validateSelection() {
         const total = Array.from(document.querySelectorAll('.js-item')).filter(x => x.checked).length;
         if (total <= 0) {
-            alert('Selecione ao menos 1 item da fila.');
+            showAppToast?.('warning', 'Selecione ao menos 1 item da fila.') ?? console.warn('Selecione ao menos 1 item da fila.');
             return false;
         }
         return true;

@@ -239,7 +239,7 @@
     async function exportCsv() {
         const ids = selectedIds();
         if (ids.length === 0) {
-            alert('Selecione ao menos 1 documento.');
+            showAppToast?.('warning', 'Selecione ao menos 1 documento.') ?? console.warn('Selecione ao menos 1 documento.');
             return;
         }
 
@@ -256,7 +256,7 @@
                     const j = await res.json();
                     if (j && j.error) msg = j.error;
                 } catch { }
-                alert(msg);
+                showAppToast?.('danger', msg) ?? console.error(msg);
                 return;
             }
 
@@ -281,7 +281,7 @@
 
             window.URL.revokeObjectURL(url);
         } catch (e) {
-            alert('Erro inesperado ao exportar. Ver console/logs.');
+            showAppToast?.('danger', 'Erro inesperado ao exportar. Ver console/logs.') ?? console.error('Erro inesperado ao exportar.');
             console.error(e);
         }
     }
