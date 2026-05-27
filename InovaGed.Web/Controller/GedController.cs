@@ -140,13 +140,38 @@ public sealed class GedController : Controller
             var metadata = new DocumentBulkUploadMetadata { DocumentTypeId = documentTypeId, ClassificationId = classificationId, Notes = notes, Visibility = visibility, RunOcr = runOcr, GeneratePreview = generatePreview, BatchId = batchId, DuplicateStrategy = duplicateStrategy, ExistingDocumentId = existingDocumentId, UploadName = uploadName };
             var isAdmin = await _accessPolicy.IsAdminAsync(_currentUser.TenantId, _currentUser.UserId, User, ct);
             var result = await _documentBulkUploadService.UploadSingleAsync(_currentUser.TenantId, _currentUser.UserId, User.Identity?.Name, file, folderId, metadata, isAdmin, ct);
-            if (!result.Success) return BadRequest(new { success = false, status = "error", message = result.Error?.Message ?? "Não foi possível enviar o arquivo.", errorLog = result.Error?.Code });
+            if (!result.Success)
+            {
+                var errorMessage = result.Error?.Message ?? "Não foi possível enviar o arquivo.";
+                var extBlocked = errorMessage.Contains("Extensão não permitida", StringComparison.OrdinalIgnoreCase);
+                return BadRequest(new
+                {
+                    success = false,
+                    status = "error",
+                    message = errorMessage,
+                    errorStep = extBlocked ? "Validação de extensão" : "Validação de upload",
+                    errorLog = extBlocked
+                        ? "A extensão informada não está presente na lista de extensões permitidas."
+                        : (result.Error?.Code ?? "Falha ao validar metadados do upload."),
+                    canRetry = !extBlocked,
+                    correlationId = HttpContext.TraceIdentifier
+                });
+            }
             return Ok(new { success = true, status = "success", message = "Arquivo enviado com sucesso.", data = new { documentId = result.Value.DocumentId, versionId = (Guid?)null, fileName = result.Value.FileName } });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Erro no BulkUploadSingle. Tenant={TenantId} User={UserId} Folder={FolderId} Batch={BatchId}", _currentUser.TenantId, _currentUser.UserId, folderId, batchId);
-            return StatusCode(500, new { success = false, message = "Erro interno ao enviar arquivo." });
+            return StatusCode(500, new
+            {
+                success = false,
+                status = "error",
+                message = "Erro interno ao enviar arquivo.",
+                errorStep = "Persistência",
+                errorLog = ex.Message,
+                canRetry = true,
+                correlationId = HttpContext.TraceIdentifier
+            });
         }
     }
 
