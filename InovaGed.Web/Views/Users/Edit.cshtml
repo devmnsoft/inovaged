@@ -26,9 +26,10 @@
         </ul>
     </div>
     <div class="card-body">
-        <form asp-action="Edit" asp-controller="Users" asp-route-id="@Model.UserId" method="post" autocomplete="off">
+        <form asp-action="Edit" asp-controller="Users" asp-route-id="@Model.ServidorId" method="post" autocomplete="off">
             <input asp-for="UserId" type="hidden" />
             <input asp-for="ServidorId" type="hidden" />
+            <input asp-for="PossuiUsuarioAcesso" type="hidden" />
             @Html.AntiForgeryToken()
             <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
 
@@ -67,6 +68,11 @@
                 </div>
 
                 <div class="tab-pane fade" id="acesso">
+                    @if (!Model.PossuiUsuarioAcesso)
+                    {
+                        <div class="alert alert-warning">Este servidor ainda não possui usuário de acesso.</div>
+                        <div class="form-check mb-3"><input class="form-check-input" asp-for="CriarUsuarioAcesso" /><label class="form-check-label" asp-for="CriarUsuarioAcesso">Criar acesso para este servidor</label></div>
+                    }
                     <div class="row g-3">
                         <div class="col-md-6"><label asp-for="EmailLogin" class="form-label"></label><input asp-for="EmailLogin" class="form-control" /><span asp-validation-for="EmailLogin" class="text-danger"></span></div>
                         <div class="col-md-6"><label asp-for="UserName" class="form-label"></label><input asp-for="UserName" class="form-control" /><span asp-validation-for="UserName" class="text-danger"></span></div>

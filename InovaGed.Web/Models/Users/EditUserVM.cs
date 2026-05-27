@@ -4,8 +4,10 @@ namespace InovaGed.Web.Models.Users;
 
 public sealed class EditUserVM
 {
-    public Guid UserId { get; set; }
-    public Guid? ServidorId { get; set; }
+    public Guid? UserId { get; set; }
+    public Guid ServidorId { get; set; }
+    public bool PossuiUsuarioAcesso { get; set; }
+    public bool CriarUsuarioAcesso { get; set; }
 
     [Required(ErrorMessage = "Informe o nome completo.")]
     [StringLength(200, MinimumLength = 3)]
@@ -93,7 +95,6 @@ public sealed class EditUserVM
     [Display(Name = "Observações")]
     public string? Observacao { get; set; }
 
-    [Required(ErrorMessage = "Informe o e-mail de login.")]
     [EmailAddress]
     [StringLength(255)]
     [Display(Name = "E-mail de login")]

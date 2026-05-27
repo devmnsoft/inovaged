@@ -17,6 +17,8 @@ public sealed class UserListVM
     public sealed class Row
     {
         public Guid Id { get; set; }
+        public Guid ServidorId { get; set; }
+        public Guid? UserId { get; set; }
         public string Name { get; set; } = string.Empty;
         public string Email { get; set; } = string.Empty;
         public string? Cpf { get; set; }
