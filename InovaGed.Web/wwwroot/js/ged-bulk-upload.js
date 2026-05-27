@@ -26,19 +26,19 @@
         });
 
         document.addEventListener('click', handleActionClick);
-        const form = document.getElementById('bulkUploadForm');
-        if (form) {
-            form.addEventListener('submit', e => {
-                e.preventDefault();
-                e.stopPropagation();
-                return false;
-            });
-        }
+        document.addEventListener('submit', function (e) {
+            const form = e.target.closest('#bulkUploadForm');
+            if (!form) return;
+            e.preventDefault();
+            e.stopPropagation();
+            console.log('[BulkUpload] submit bloqueado para evitar /Ged/Upload');
+            return false;
+        }, true);
     }
 
     function handleActionClick(e) {
         const uploadBtn = e.target.closest('#btnBulkUploadSubmit');
-        if (uploadBtn) { e.preventDefault(); e.stopPropagation(); uploadFiles(); return; }
+        if (uploadBtn) { e.preventDefault(); e.stopPropagation(); console.log('[BulkUpload] Enviar documentos clicado'); uploadFiles(); return; }
 
         const removeBtn = e.target.closest('.js-remove-upload-file');
         if (removeBtn) { e.preventDefault(); removeUploadFile(removeBtn.getAttribute('data-file-id')); return; }
@@ -212,6 +212,10 @@
         document.getElementById('uploadErrorMessage').textContent = item.errorMessage || item.message || 'Erro não informado.';
         document.getElementById('uploadErrorStep').textContent = item.errorStep || 'Envio/validação';
         document.getElementById('uploadErrorLog').textContent = item.errorLog || 'Nenhum detalhe técnico adicional foi retornado pelo servidor.';
+        const correlationEl = document.getElementById('uploadErrorCorrelationId');
+        if (correlationEl) correlationEl.textContent = item.correlationId || '-';
+        const httpStatusEl = document.getElementById('uploadErrorHttpStatus');
+        if (httpStatusEl) httpStatusEl.textContent = item.httpStatus ? `HTTP ${item.httpStatus}` : '-';
 
         const modalEl = document.getElementById('uploadErrorDetailsModal');
         if (!modalEl || typeof bootstrap === 'undefined') {
@@ -353,20 +357,7 @@
             };
             xhr.onload = () => {
                 const responseText = xhr.responseText || '';
-                const maybeHtml = responseText.trimStart().startsWith('<!DOCTYPE html') || responseText.includes('/Account/Login');
-                if (xhr.status === 401 || xhr.status === 403 || maybeHtml) {
-                    fileItem.status = 'error';
-                    fileItem.errorMessage = 'Sua sessão expirou. Faça login novamente para continuar o envio.';
-                    fileItem.errorStep = 'Autenticação';
-                    fileItem.errorLog = `Resposta inesperada do servidor. Status=${xhr.status}`;
-                    fileItem.canRetry = false;
-                    renderFileList();
-                    resolve('error');
-                    return;
-                }
-
-                let payload = null;
-                try { payload = JSON.parse(responseText || '{}'); } catch { payload = null; }
+                const payload = parseUploadResponse(xhr);
 
                 if (xhr.status >= 200 && xhr.status < 300 && payload?.success === true) {
                     fileItem.status = payload.status || 'success';
@@ -387,7 +378,9 @@
                 fileItem.message = payload?.message || 'Não foi possível enviar o arquivo.';
                 fileItem.errorMessage = payload?.message || 'Não foi possível enviar o arquivo.';
                 fileItem.errorLog = payload?.errorLog || payload?.detail || responseText || null;
-                fileItem.errorStep = payload?.errorStep || (payload ? 'Servidor' : 'Resposta inválida');
+                fileItem.errorStep = payload?.errorStep || 'Servidor';
+                fileItem.httpStatus = xhr.status;
+                fileItem.correlationId = payload?.correlationId || null;
                 fileItem.canRetry = payload?.canRetry !== false;
                 renderFileList();
                 resolve('error');
@@ -487,6 +480,16 @@
     function showBulkUploadMessage(m, t) { const el = document.getElementById('bulkUploadMessage'); if (!el) return; el.className = `alert alert-${t}`; el.textContent = m; el.classList.remove('d-none'); }
     function clearBulkUploadMessage() { const el = document.getElementById('bulkUploadMessage'); if (!el) return; el.className = 'd-none alert'; el.textContent = ''; }
     function showAppToast(message, type, title) { window.showAppToast?.(message, type, title); }
+    function parseUploadResponse(xhr) {
+        const contentType = xhr.getResponseHeader('content-type') || '';
+        const text = xhr.responseText || '';
+        if (xhr.status === 401 || xhr.status === 403) return { success: false, status: 'error', message: 'Sua sessão expirou. Faça login novamente.', errorStep: 'Autenticação', errorLog: `HTTP ${xhr.status}`, canRetry: false };
+        if (xhr.status === 503) return { success: false, status: 'error', message: 'Servidor temporariamente indisponível durante o upload.', errorStep: 'IIS/Servidor', errorLog: text.substring(0, 1000), canRetry: true };
+        if (text.includes('/Account/Login') || text.includes('<html') || text.includes('<!DOCTYPE html') || (!contentType.includes('application/json') && text.trimStart().startsWith('<'))) {
+            return { success: false, status: 'error', message: 'A sessão expirou ou o servidor retornou uma página HTML em vez de JSON.', errorStep: 'Resposta inválida', errorLog: text.substring(0, 1000), canRetry: false };
+        }
+        try { return JSON.parse(text || '{}'); } catch { return { success: false, status: 'error', message: 'Resposta inválida do servidor.', errorStep: 'Parse JSON', errorLog: text.substring(0, 1000), canRetry: true }; }
+    }
 
     const formatFileSize = b => b < 1024 ? `${b} B` : b < 1048576 ? `${(b / 1024).toFixed(1)} KB` : `${(b / 1048576).toFixed(1)} MB`;
     const escapeHtml = v => (v || '').replace(/[&<>'"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c]));

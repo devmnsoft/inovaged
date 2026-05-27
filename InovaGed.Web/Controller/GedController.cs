@@ -133,16 +133,24 @@ public sealed class GedController : Controller
         var correlationId = HttpContext.TraceIdentifier;
         try
         {
+            _logger.LogInformation("Bulk upload iniciado. Tenant={TenantId} User={UserId} Folder={FolderId} File={FileName} Size={FileSize} RunOcr={RunOcr} GeneratePreview={GeneratePreview} CorrelationId={CorrelationId}",
+                _currentUser.TenantId, _currentUser.UserId, folderId, file?.FileName, file?.Length, runOcr, generatePreview, correlationId);
             if (!_currentUser.IsAuthenticated) return Unauthorized(new { success = false, status = "error", message = "Usuário não autenticado.", errorStep = "Autenticação", errorLog = "Usuário sem sessão autenticada.", canRetry = false, correlationId });
+            if (folderId.HasValue && IsVirtualFolderId(folderId.Value))
+            {
+                return BadRequest(new { success = false, status = "error", message = "Selecione uma pasta válida antes de enviar documentos.", errorStep = "Validação de pasta", errorLog = $"FolderId virtual não permitido para upload: {folderId}", canRetry = false, correlationId });
+            }
             var allowed = await _accessPolicy.CanUploadDocumentToFolderAsync(_currentUser.TenantId, _currentUser.UserId, folderId, User, ct);
             if (!allowed)
             {
                 return StatusCode(403, new { success = false, status = "error", message = "Você não possui permissão para adicionar documentos nesta pasta.", errorStep = "Autorização", errorLog = "Permissão negada para upload na pasta selecionada.", canRetry = false, correlationId });
             }
+            _logger.LogInformation("Bulk upload validações concluídas. ElapsedMs={ElapsedMs} CorrelationId={CorrelationId}", sw.ElapsedMilliseconds, correlationId);
 
             var metadata = new DocumentBulkUploadMetadata { DocumentTypeId = documentTypeId, ClassificationId = classificationId, Notes = notes, Visibility = visibility, RunOcr = runOcr, GeneratePreview = generatePreview, BatchId = batchId, DuplicateStrategy = duplicateStrategy, ExistingDocumentId = existingDocumentId, UploadName = uploadName };
             var isAdmin = await _accessPolicy.IsAdminAsync(_currentUser.TenantId, _currentUser.UserId, User, ct);
             var result = await _documentBulkUploadService.UploadSingleAsync(_currentUser.TenantId, _currentUser.UserId, User.Identity?.Name, file, folderId, metadata, isAdmin, ct);
+            _logger.LogInformation("Bulk upload persistência concluída. Success={Success} ElapsedMs={ElapsedMs} CorrelationId={CorrelationId}", result.Success, sw.ElapsedMilliseconds, correlationId);
             if (!result.Success)
             {
                 var code = result.Error?.Code ?? string.Empty;
@@ -162,7 +170,7 @@ public sealed class GedController : Controller
                     correlationId
                 });
             }
-            return Ok(new { success = true, status = "success", message = "Arquivo enviado com sucesso.", data = new { documentId = result.Value.DocumentId, versionId = (Guid?)null, fileName = result.Value.FileName }, correlationId });
+            return Ok(new { success = true, status = "success", message = "Arquivo enviado com sucesso.", data = new { documentId = result.Value.DocumentId, versionId = (Guid?)null, fileName = result.Value.FileName, ocrQueued = runOcr, previewQueued = generatePreview }, correlationId });
         }
         catch (Exception ex)
         {
@@ -179,6 +187,9 @@ public sealed class GedController : Controller
             }
         }
     }
+
+    private static bool IsVirtualFolderId(Guid folderId)
+        => folderId.ToString("D").StartsWith("f0000000-0000-0000-0000-0000000000", StringComparison.OrdinalIgnoreCase);
 
     public sealed class CheckDuplicateNamesRequest
     {
