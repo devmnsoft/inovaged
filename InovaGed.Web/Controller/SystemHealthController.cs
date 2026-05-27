@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Data;
 using Dapper;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Identity;
@@ -35,8 +36,11 @@ public sealed class SystemHealthController : Controller
 
         try
         {
-            await using var con = _db.CreateConnection();
-            await con.OpenAsync(ct);
+            using var con = _db.CreateConnection();
+            if (con.State != ConnectionState.Open)
+            {
+                con.Open();
+            }
             await con.ExecuteScalarAsync<int>(new CommandDefinition("select 1", cancellationToken: ct));
             dbSw.Stop();
             dbOk = true;

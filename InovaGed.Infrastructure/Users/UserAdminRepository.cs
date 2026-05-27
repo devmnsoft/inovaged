@@ -972,6 +972,7 @@ SELECT ged.audit_user_security_event(
                 },
                 transaction: tx,
                 cancellationToken: ct));
+        }
 
         await tx.CommitAsync(ct);
     }
