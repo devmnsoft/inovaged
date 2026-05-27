@@ -168,7 +168,7 @@ public sealed class GedController : Controller
             if (fileNames.Length == 0) return Ok(new { success = true, duplicates = Array.Empty<object>() });
 
             const string sql = @"select id as ExistingDocumentId, title as FileName from ged.document where tenant_id=@tenantId and folder_id=@folderId and title = any(@titles) and reg_status='A';";
-            await using var con = _db.CreateConnection();
+            using var con = _db.CreateConnection();
             var rows = await con.QueryAsync(sql, new { tenantId = _currentUser.TenantId, folderId = request.FolderId.Value, titles = fileNames });
             return Ok(new { success = true, duplicates = rows });
         }
@@ -288,7 +288,7 @@ SELECT
   (SELECT count(*)::int FROM ged.ocr_job j WHERE j.tenant_id = @tenantId AND j.status = 'ERROR'::ged.ocr_status_enum AND j.finished_at >= now() - interval '24 hours') AS OcrErrors24h,
   (SELECT count(*)::int FROM ged.document d WHERE d.tenant_id = @tenantId AND d.reg_status = 'A' AND (d.description IS NULL OR btrim(d.description) = '' OR btrim(d.description) = '-')) AS DocumentsWithoutDescription;";
 
-        await using var conn = await _db.OpenAsync(ct);
+        using var conn = await _db.OpenAsync(ct);
         var row = await conn.QuerySingleAsync(
             new CommandDefinition(sql, new { tenantId }, cancellationToken: ct));
 
@@ -382,7 +382,7 @@ CROSS JOIN totals t
 ORDER BY b.requested_at
 LIMIT 50;";
 
-        await using var conn = await _db.OpenAsync(ct);
+        using var conn = await _db.OpenAsync(ct);
         var rows = (await conn.QueryAsync<QueueSnapshotRowVm>(
             new CommandDefinition(sql, new { tenantId }, cancellationToken: ct))).ToList();
 
@@ -407,7 +407,7 @@ FROM ged.ocr_job j
 WHERE j.tenant_id = @tenantId
   AND j.status IN ('PENDING'::ged.ocr_status_enum, 'PROCESSING'::ged.ocr_status_enum);";
 
-        await using var conn = await _db.OpenAsync(ct);
+        using var conn = await _db.OpenAsync(ct);
         return await conn.ExecuteScalarAsync<int>(
             new CommandDefinition(sql, new { tenantId }, cancellationToken: ct));
     }
@@ -435,7 +435,7 @@ WHERE j.tenant_id = @tenantId
 ORDER BY j.requested_at DESC
 LIMIT 200;";
 
-        await using var conn = await _db.OpenAsync(ct);
+        using var conn = await _db.OpenAsync(ct);
         var rows = await conn.QueryAsync<ProcessingRowVm>(
             new CommandDefinition(sql, new { tenantId }, cancellationToken: ct));
         return rows.ToList();
@@ -455,7 +455,7 @@ SELECT
 FROM ged.ocr_job j
 WHERE j.tenant_id = @tenantId;";
 
-        await using var conn = await _db.OpenAsync(ct);
+        using var conn = await _db.OpenAsync(ct);
         var row = await conn.QuerySingleAsync(
             new CommandDefinition(sql, new { tenantId }, cancellationToken: ct));
 
@@ -489,7 +489,7 @@ WHERE j.tenant_id = @tenantId
 ORDER BY j.finished_at DESC NULLS LAST
 LIMIT 20;";
 
-        await using var conn = await _db.OpenAsync(ct);
+        using var conn = await _db.OpenAsync(ct);
         var rows = await conn.QueryAsync<ProcessingErrorVm>(
             new CommandDefinition(sql, new { tenantId }, cancellationToken: ct));
         return rows.ToList();
@@ -1634,7 +1634,7 @@ VALUES
   'WEB', now(), 'A'
 );";
 
-        await using var conn = await _db.OpenAsync(ct);
+        using var conn = await _db.OpenAsync(ct);
 
         await conn.ExecuteAsync(
             new CommandDefinition(
