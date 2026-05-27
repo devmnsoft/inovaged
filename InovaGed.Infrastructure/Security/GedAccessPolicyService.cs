@@ -58,6 +58,14 @@ public sealed class GedAccessPolicyService : IGedAccessPolicyService
     public Task<bool> CanMoveDocumentAsync(Guid tenantId, Guid userId, Guid documentId, ClaimsPrincipal principal, CancellationToken ct)
         => IsAdminAsync(tenantId, userId, principal, ct);
 
+    public async Task<bool> CanUploadDocumentToFolderAsync(Guid tenantId, Guid userId, Guid? folderId, ClaimsPrincipal principal, CancellationToken ct)
+    {
+        if (await IsAdminAsync(tenantId, userId, principal, ct)) return true;
+        if (await IsAdministradorOphirAsync(tenantId, userId, principal, ct)) return false;
+        if (await IsArquivistaOphirAsync(tenantId, userId, principal, ct)) return false;
+        return await CanAccessGedAsync(tenantId, userId, principal, ct);
+    }
+
     private static bool HasRole(ClaimsPrincipal principal, string role)
     {
         var target = NormalizeRole(role);

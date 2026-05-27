@@ -184,6 +184,7 @@ builder.Services.AddScoped<IClassificationPlanQueries, ClassificationPlanQueries
 builder.Services.AddScoped<IDocumentSearchQueries, DocumentSearchQueries>();
 builder.Services.AddScoped<IDocumentSearchTextQueries, DocumentSearchTextQueries>();
 builder.Services.AddScoped<IDocumentMoveService, DocumentMoveService>();
+builder.Services.AddScoped<IDocumentBulkUploadService, DocumentBulkUploadService>();
 builder.Services.AddScoped<IGedAccessPolicyService, GedAccessPolicyService>();
 
 // =======================================================
