@@ -14,6 +14,12 @@ public interface IUserAdminRepository
     Task<UserEditDto?> GetForEditByServidorIdAsync(
         Guid tenantId,
         Guid servidorId,
+        bool isAdmin,
+        CancellationToken ct);
+
+    Task<(bool ServidorExiste, bool UsuarioExiste)> GetEditDiagnosticAsync(
+        Guid tenantId,
+        Guid servidorId,
         CancellationToken ct);
 
     Task UpdateServidorUsuarioAsync(

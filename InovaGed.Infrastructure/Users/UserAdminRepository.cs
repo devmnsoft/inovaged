@@ -641,9 +641,37 @@ WHERE tenant_id = @TenantId
         };
     }
 
+
+    public async Task<(bool ServidorExiste, bool UsuarioExiste)> GetEditDiagnosticAsync(
+        Guid tenantId,
+        Guid servidorId,
+        CancellationToken ct)
+    {
+        const string sql = @"
+SELECT
+    EXISTS(
+        SELECT 1
+        FROM ged.servidor s
+        WHERE s.tenant_id = @TenantId
+          AND s.id = @ServidorId
+          AND s.reg_status = 'A') AS ""ServidorExiste"",
+    EXISTS(
+        SELECT 1
+        FROM ged.app_user u
+        WHERE u.tenant_id = @TenantId
+          AND u.servidor_id = @ServidorId
+          AND u.deleted_at_utc IS NULL) AS ""UsuarioExiste"";
+";
+
+        await using var con = await _db.OpenAsync(ct);
+        return await con.QuerySingleAsync<(bool ServidorExiste, bool UsuarioExiste)>(
+            new CommandDefinition(sql, new { TenantId = tenantId, ServidorId = servidorId }, cancellationToken: ct));
+    }
+
     public async Task<UserEditDto?> GetForEditByServidorIdAsync(
      Guid tenantId,
      Guid servidorId,
+     bool isAdmin,
      CancellationToken ct)
     {
         const string sql = @"
@@ -668,7 +696,7 @@ LEFT JOIN ged.app_user u ON u.servidor_id=s.id AND u.tenant_id=s.tenant_id AND u
 WHERE s.tenant_id=@TenantId AND s.id=@ServidorId AND s.reg_status='A' LIMIT 1;";
         const string rolesSql = @"SELECT role_id FROM ged.user_role WHERE user_id = @UserId;";
         await using var con = await _db.OpenAsync(ct);
-        _logger.LogInformation("Consultando cadastro para edição por ServidorId. TenantId={TenantId} ServidorId={ServidorId}", tenantId, servidorId);
+        _logger.LogInformation("Consultando cadastro para edição por ServidorId. TenantId={TenantId} ServidorId={ServidorId} IsAdmin={IsAdmin}", tenantId, servidorId, isAdmin);
         var dto = await con.QueryFirstOrDefaultAsync<UserEditDto>(new CommandDefinition(sql, new { TenantId = tenantId, ServidorId = servidorId }, cancellationToken: ct));
         if (dto is null) return null;
         _logger.LogInformation("Cadastro para edição encontrado. TenantId={TenantId} ServidorId={ServidorId} UserId={UserId}", tenantId, dto.ServidorId, dto.UserId);
