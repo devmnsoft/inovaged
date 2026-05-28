@@ -1,0 +1,32 @@
+@{
+    ViewData["Title"] = "Prontidão da Demonstração";
+}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h2>Prontidão da Demonstração</h2>
+        <p class="text-muted">Validação rápida dos módulos antes da apresentação executiva.</p>
+    </div>
+    <div class="d-flex gap-2">
+        <button id="runChecks" class="btn btn-primary">Executar verificação</button>
+        <button id="refreshChecks" class="btn btn-outline-secondary">Atualizar</button>
+        <a class="btn btn-outline-dark" href="/ExecutiveDemo">Abrir modo apresentação</a>
+        <a class="btn btn-outline-info" href="/HospitalIntelligence">Abrir Inteligência Hospitalar</a>
+    </div>
+</div>
+<div class="row g-2 mb-3" id="summaryCards"></div>
+<div class="card"><div class="card-body"><div class="table-responsive"><table class="table table-sm align-middle"><thead><tr><th>Módulo</th><th>Check</th><th>Status</th><th>Mensagem</th><th>Tempo</th><th>Ação sugerida</th><th>Abrir</th></tr></thead><tbody id="checksBody"></tbody></table></div></div></div>
+<div class="card mt-3"><div class="card-header">Recomendações</div><div class="card-body"><ul id="recList" class="mb-0"></ul></div></div>
+@section Scripts {
+<script>
+async function loadChecks(){const res=await fetch('/DemoReadiness/RunChecks'); const json=await res.json(); if(!json.success) return; const d=json.data;
+const totalMs=(d.checks||[]).reduce((a,b)=>a+(b.elapsedMs||0),0);
+document.getElementById('summaryCards').innerHTML=`<div class='col'><div class='card'><div class='card-body'><b>Status geral</b><div>${d.overallStatus}</div></div></div></div><div class='col'><div class='card'><div class='card-body'><b>Checks OK</b><div>${d.okCount}</div></div></div></div><div class='col'><div class='card'><div class='card-body'><b>Alertas</b><div>${d.warningCount}</div></div></div></div><div class='col'><div class='card'><div class='card-body'><b>Erros</b><div>${d.errorCount}</div></div></div></div><div class='col'><div class='card'><div class='card-body'><b>Tempo total</b><div>${totalMs} ms</div></div></div></div>`;
+const badge=s=>`<span class='badge bg-${s==='OK'?'success':s==='WARNING'?'warning text-dark':s==='ERROR'?'danger':'secondary'}'>${s}</span>`;
+document.getElementById('checksBody').innerHTML=(d.checks||[]).map(c=>`<tr><td>${c.module}</td><td>${c.title}</td><td>${badge(c.status)}</td><td>${c.message}${c.technicalDetail?`<div class='small text-muted'>${c.technicalDetail}</div>`:''}</td><td>${c.elapsedMs} ms</td><td>${c.actionUrl?`Abrir módulo para validação manual.`:'-'}</td><td>${c.actionUrl?`<a class='btn btn-sm btn-outline-primary' href='${c.actionUrl}'>Abrir</a>`:'-'}</td></tr>`).join('');
+document.getElementById('recList').innerHTML=(d.recommendations||[]).map(r=>`<li><b>[${r.priority}] ${r.title}</b>: ${r.description} <i>${r.suggestedAction}</i></li>`).join('');
+}
+document.getElementById('runChecks').addEventListener('click',loadChecks);
+document.getElementById('refreshChecks').addEventListener('click',loadChecks);
+loadChecks();
+</script>
+}
