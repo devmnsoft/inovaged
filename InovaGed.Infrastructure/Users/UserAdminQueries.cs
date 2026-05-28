@@ -52,9 +52,18 @@ WHERE u.tenant_id = @TenantId
 
         const string listSql = @"
 SELECT
-    u.servidor_id          AS ""Id"",
+    COALESCE(NULLIF(u.servidor_id, '00000000-0000-0000-0000-000000000000'::uuid), u.user_id) AS ""Id"",
     u.servidor_id          AS ""ServidorId"",
     u.user_id              AS ""UserId"",
+    CASE
+        WHEN u.servidor_id IS NOT NULL
+         AND u.servidor_id <> '00000000-0000-0000-0000-000000000000'::uuid
+            THEN 'SERVIDOR'
+        WHEN u.user_id IS NOT NULL
+         AND u.user_id <> '00000000-0000-0000-0000-000000000000'::uuid
+            THEN 'USER'
+        ELSE 'INVALID'
+    END                    AS ""EditIdSource"",
     u.nome_completo        AS ""Name"",
     u.cpf                  AS ""Cpf"",
     u.matricula            AS ""Matricula"",

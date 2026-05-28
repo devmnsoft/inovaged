@@ -17,8 +17,15 @@ public sealed class UserListVM
     public sealed class Row
     {
         public Guid Id { get; set; }
-        public Guid ServidorId { get; set; }
+        public Guid? ServidorId { get; set; }
         public Guid? UserId { get; set; }
+        public string EditIdSource { get; set; } = "";
+        public Guid? EffectiveEditId =>
+            ServidorId.HasValue && ServidorId.Value != Guid.Empty
+                ? ServidorId
+                : UserId.HasValue && UserId.Value != Guid.Empty
+                    ? UserId
+                    : null;
         public string Name { get; set; } = string.Empty;
         public string Email { get; set; } = string.Empty;
         public string? Cpf { get; set; }
