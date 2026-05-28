@@ -79,6 +79,7 @@ using InovaGed.Web.Middleware;
 using InovaGed.Web.Hubs;
 using InovaGed.Web.ocr;
 using InovaGed.Web.Security;
+using InovaGed.Web.Controllers;
 using Microsoft.AspNetCore.Authentication.Certificate;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
@@ -112,6 +113,7 @@ builder.Services.AddScoped<ICurrentUser, CurrentUser>();
 builder.Services.AddScoped<ICurrentContext, CurrentContext>();
 builder.Services.AddScoped<IGedDashboardService, GedDashboardService>();
 builder.Services.AddScoped<IHospitalIntelligenceService, HospitalIntelligenceService>();
+builder.Services.AddScoped<IDemoReadinessService, DemoReadinessService>();
 
 // =======================================================
 // Database (PostgreSQL)
