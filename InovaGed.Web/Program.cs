@@ -1,3 +1,5 @@
+using InovaGed.Application.HospitalIntelligence;
+using InovaGed.Infrastructure.HospitalIntelligence;
 ﻿using System.Security.Claims;
 using System.Security.Cryptography.X509Certificates;
 using InovaGed.Application;
@@ -109,6 +111,7 @@ builder.Services.Configure<FormOptions>(options =>
 builder.Services.AddScoped<ICurrentUser, CurrentUser>();
 builder.Services.AddScoped<ICurrentContext, CurrentContext>();
 builder.Services.AddScoped<IGedDashboardService, GedDashboardService>();
+builder.Services.AddScoped<IHospitalIntelligenceService, HospitalIntelligenceService>();
 
 // =======================================================
 // Database (PostgreSQL)
