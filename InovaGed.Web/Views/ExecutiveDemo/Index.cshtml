@@ -1,0 +1,67 @@
+@model InovaGed.Web.Models.ExecutiveDemo.ExecutiveDemoViewModel
+@{
+    ViewData["Title"] = "Executive Demo";
+}
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
+    <div>
+        <h2 class="mb-1">Modo de Demonstração Executiva</h2>
+        <p class="text-muted mb-0">Apresentação guiada para diretoria hospitalar.</p>
+    </div>
+    <button class="btn btn-dark" onclick="document.documentElement.requestFullscreen?.()">
+        <i class="bi bi-arrows-fullscreen me-1"></i>Modo apresentação
+    </button>
+</div>
+
+<div class="row g-3 mb-4">
+@foreach (var p in Model.ExecutivePhrases ?? [])
+{
+    <div class="col-12 col-md-6"><div class="card border-0 shadow-sm h-100"><div class="card-body"><i class="bi bi-quote text-primary me-2"></i>@p</div></div></div>
+}
+</div>
+
+<h4 class="mb-3">Visão geral do GED</h4>
+<div class="row g-3 mb-4">
+@{
+    var cards = new[] {
+        ("Total de documentos", Model.Overview?.TotalDocuments ?? 0, "bi-files"),
+        ("Documentos com OCR", Model.Overview?.DocumentsWithOcr ?? 0, "bi-file-earmark-check"),
+        ("Documentos pendentes de OCR", Model.Overview?.DocumentsPendingOcr ?? 0, "bi-hourglass-split"),
+        ("Documentos sem classificação", Model.Overview?.UnclassifiedDocuments ?? 0, "bi-tags"),
+        ("Documentos movimentados", Model.Overview?.MovedDocuments ?? 0, "bi-arrow-left-right"),
+        ("Solicitações de documentos", Model.Overview?.DocumentRequests ?? 0, "bi-journal-arrow-up"),
+        ("Usuários ativos", Model.Overview?.ActiveUsers ?? 0, "bi-people")
+    };
+}
+@foreach (var c in cards)
+{
+    <div class="col-6 col-lg-3">
+        <div class="card border-0 shadow-sm h-100"><div class="card-body text-center"><i class="bi @c.Item3 fs-3 text-primary"></i><div class="text-muted small mt-2">@c.Item1</div><div class="display-6 fw-bold">@c.Item2</div></div></div>
+    </div>
+}
+</div>
+
+<h4 class="mb-3">Valor para a diretoria</h4>
+<div class="row g-3 mb-4">
+@foreach (var card in Model.ValueCards ?? [])
+{
+    <div class="col-12 col-md-6 col-xl-4"><div class="card border-0 shadow-sm h-100"><div class="card-body"><i class="bi @card.Icon fs-4 text-primary"></i><h6 class="mt-2">@card.Title</h6><p class="text-muted mb-0">@card.Description</p></div></div></div>
+}
+</div>
+
+<h4 class="mb-3">Roteiro de apresentação</h4>
+<div class="row g-3 mb-4">
+@foreach (var s in Model.ScriptSteps ?? [])
+{
+    <div class="col-12 col-lg-6"><div class="card border-0 shadow-sm h-100"><div class="card-body"><div class="badge text-bg-primary mb-2">@s.Number</div><h5>@s.Title</h5><p class="mb-1"><strong>Explicação executiva:</strong> @s.ExecutiveExplanation</p><p class="text-muted"><strong>Benefício prático:</strong> @s.PracticalBenefit</p><a class="btn btn-outline-primary" href="@s.ModuleUrl">Abrir módulo</a></div></div></div>
+}
+</div>
+
+<h4 class="mb-3">Alertas de prontidão</h4>
+<div class="row g-3">
+@foreach (var a in Model.ReadinessAlerts ?? [])
+{
+    var cls = a.Severity == "warning" ? "text-bg-warning" : "text-bg-info";
+    <div class="col-12 col-md-6"><div class="card border-0 shadow-sm h-100"><div class="card-body"><span class="badge @cls mb-2">@a.Severity.ToUpperInvariant()</span><h6>@a.Title</h6><p class="mb-0 text-muted">@a.Message</p></div></div></div>
+}
+</div>
