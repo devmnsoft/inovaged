@@ -228,16 +228,27 @@
 
                                     <ul class="dropdown-menu dropdown-menu-end">
                                         <li>
-                                            <a class="dropdown-item"
-                                               asp-action="Edit"
-                                               asp-controller="Users"
-                                               asp-route-id="@item.ServidorId"
-                                               data-servidor-id="@item.ServidorId"
-                                               data-user-id="@item.UserId"
-                                               data-row-id="@item.Id">
-                                                <i class="bi bi-pencil-square me-1"></i>
-                                                Editar cadastro
-                                            </a>
+                                            @if (item.Id != Guid.Empty)
+                                            {
+                                                <a class="dropdown-item"
+                                                   asp-action="Edit"
+                                                   asp-controller="Users"
+                                                   asp-route-id="@item.Id"
+                                                   data-edit-id="@item.Id"
+                                                   data-edit-id-source="@item.EditIdSource"
+                                                   data-servidor-id="@item.ServidorId"
+                                                   data-user-id="@item.UserId">
+                                                    <i class="bi bi-pencil-square me-1"></i>
+                                                    Editar cadastro
+                                                </a>
+                                            }
+                                            else
+                                            {
+                                                <span class="dropdown-item text-danger disabled">
+                                                    <i class="bi bi-exclamation-triangle me-1"></i>
+                                                    Sem ID para edição
+                                                </span>
+                                            }
                                         </li>
 
                                         @if (item.UserId.HasValue)

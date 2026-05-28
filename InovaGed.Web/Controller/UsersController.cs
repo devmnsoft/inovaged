@@ -130,32 +130,54 @@ public sealed class UsersController : AppControllerBase
             Page = page,
             PageSize = pageSize,
             Total = res.Total,
-            Items = res.Items.Select(x => new UserListVM.Row
+            Items = res.Items.Select(x =>
             {
-                Id = x.ServidorId,
-                ServidorId = x.ServidorId,
-                UserId = x.UserId,
-                Name = x.Name,
-                Email = x.Email,
-                Cpf = x.Cpf,
-                Matricula = x.Matricula,
-                Cargo = x.Cargo,
-                Funcao = x.Funcao,
-                Setor = x.Setor,
-                Lotacao = x.Lotacao,
-                Roles = (x.RolesCsv ?? string.Empty)
-                    .Split(',', StringSplitOptions.RemoveEmptyEntries)
-                    .Select(r => r.Trim())
-                    .Where(r => !string.IsNullOrWhiteSpace(r))
-                    .ToList(),
-                SecurityLevel = x.SecurityLevel,
-                IsActive = x.IsActive,
-                IsLocked = x.IsLocked,
-                MustChangePassword = x.MustChangePassword,
-                MfaEnabled = x.MfaEnabled,
-                CertificateRequired = x.CertificateRequired,
-                CanSignWithIcp = x.CanSignWithIcp,
-                LastLoginAt = x.LastLoginAt
+                var effectiveId =
+                    x.ServidorId.HasValue && x.ServidorId.Value != Guid.Empty
+                        ? x.ServidorId.Value
+                        : x.UserId.HasValue && x.UserId.Value != Guid.Empty
+                            ? x.UserId.Value
+                            : Guid.Empty;
+
+                if (effectiveId == Guid.Empty)
+                {
+                    _logger.LogWarning(
+                        "Linha de usuário sem identificador válido para edição. Tenant={TenantId} Name={Name} Email={Email} ServidorId={ServidorId} UserId={UserId}",
+                        tenantId,
+                        x.Name,
+                        x.Email,
+                        x.ServidorId,
+                        x.UserId);
+                }
+
+                return new UserListVM.Row
+                {
+                    Id = effectiveId,
+                    ServidorId = x.ServidorId,
+                    UserId = x.UserId,
+                    EditIdSource = x.EditIdSource,
+                    Name = x.Name,
+                    Email = x.Email,
+                    Cpf = x.Cpf,
+                    Matricula = x.Matricula,
+                    Cargo = x.Cargo,
+                    Funcao = x.Funcao,
+                    Setor = x.Setor,
+                    Lotacao = x.Lotacao,
+                    Roles = (x.RolesCsv ?? string.Empty)
+                        .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                        .Select(r => r.Trim())
+                        .Where(r => !string.IsNullOrWhiteSpace(r))
+                        .ToList(),
+                    SecurityLevel = x.SecurityLevel,
+                    IsActive = x.IsActive,
+                    IsLocked = x.IsLocked,
+                    MustChangePassword = x.MustChangePassword,
+                    MfaEnabled = x.MfaEnabled,
+                    CertificateRequired = x.CertificateRequired,
+                    CanSignWithIcp = x.CanSignWithIcp,
+                    LastLoginAt = x.LastLoginAt
+                };
             }).ToList()
         };
 
@@ -282,6 +304,18 @@ public sealed class UsersController : AppControllerBase
     {
         if (!_currentUser.IsAuthenticated) return Unauthorized();
         var tenantId = _currentUser.TenantId;
+
+        if (id == Guid.Empty)
+        {
+            _logger.LogWarning(
+                "Tentativa de edição com Guid.Empty. Tenant={TenantId} User={UserId} CorrelationId={CorrelationId}",
+                _currentUser.TenantId,
+                _currentUser.UserId,
+                HttpContext.TraceIdentifier);
+
+            TempData["Error"] = "Cadastro sem identificador válido para edição. Verifique a consistência da listagem.";
+            return RedirectToAction(nameof(Index));
+        }
 
         var isAdmin =
             User.IsInRole(AppRoles.Admin) ||
