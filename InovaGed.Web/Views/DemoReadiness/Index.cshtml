@@ -1,19 +1,61 @@
-@model InovaGed.Web.Models.DemoReadiness.DemoReadinessVm
-@{ ViewData["Title"] = "Central Executiva GED"; }
-<div class="container-fluid py-3 @(Model.PresentationMode ? "presentation-mode" : "")">
-    <div class="card border-0 shadow-lg mb-4 bg-dark text-white"><div class="card-body p-4">
-        <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
-            <div><h1 class="h3 mb-1">Central Executiva GED</h1><p class="mb-2 text-white-50">Visão estratégica da gestão documental, OCR, segurança, auditoria e inteligência hospitalar.</p>
-                <span class="badge bg-warning text-dark">@Model.OverallStatus</span><p class="mt-2 mb-0">@Model.ExecutiveMessage</p></div>
-            <div class="d-flex gap-2 flex-wrap">
-                <a class="btn btn-light" href="/DemoReadiness?presentation=true">Iniciar apresentação</a><a class="btn btn-outline-light" href="/Ged">Abrir GED</a><a class="btn btn-outline-light" href="/HospitalIntelligence">Abrir Inteligência Hospitalar</a><a class="btn btn-outline-light" href="/GedDashboard">Abrir Dashboard</a><a class="btn btn-outline-light" href="/Audit">Abrir Logs</a><a class="btn btn-outline-info" href="/DemoReadiness">Executar nova verificação</a>
-            </div></div></div></div>
-    <div class="row g-3 mb-3"><div class="col-lg-4"><div class="card h-100"><div class="card-body"><h6>Placar de prontidão</h6><div class="progress mb-2" style="height:16px;"><div class="progress-bar" style="width:@Model.ReadinessScore%">@Model.ReadinessScore%</div></div><small class="text-muted">Score executivo de 0 a 100.</small></div></div></div>
-    @foreach (var i in Model.ExecutiveValueIndicators){<div class="col-lg-4"><div class="card h-100 border-@i.Color"><div class="card-body"><div class="d-flex justify-content-between"><h6>@i.Title</h6><i class="bi @i.Icon"></i></div><div class="fs-4 fw-bold">@i.Value</div><div class="text-muted small">@i.Subtitle</div><p class="small mt-2 mb-0">@i.Explanation</p></div></div></div>}</div>
-    <div class="row g-3 mb-3"><div class="col-lg-6"><div class="card h-100"><div class="card-header">Índice de Maturidade Documental</div><div class="card-body">@foreach(var m in Model.DigitalMaturity){<div class="mb-2"><div class="d-flex justify-content-between"><span>@m.Label</span><span>@m.Percentage%</span></div><div class="progress"><div class="progress-bar bg-info" style="width:@m.Percentage%"></div></div><small class="text-muted">@m.Recommendation</small></div>}</div></div></div>
-    <div class="col-lg-6"><div class="card h-100"><div class="card-header">Inteligência OCR e sinais documentais</div><div class="card-body"><table class="table table-sm"><thead><tr><th>Termo</th><th>Categoria</th><th>Qtd</th><th>Risco</th></tr></thead><tbody>@foreach(var s in Model.OcrSignals){<tr><td>@s.Term</td><td>@s.Category</td><td>@s.Count</td><td><span class="badge bg-secondary">@s.RiskLevel</span></td></tr>}</tbody></table><div class="alert alert-warning small mb-0">Indicadores estatísticos baseados em OCR. Não representam diagnóstico médico nem substituem validação profissional.</div></div></div></div></div>
-    <div class="row g-3 mb-3"><div class="col-lg-6"><div class="card h-100"><div class="card-header">Impacto financeiro/administrativo estimado</div><div class="card-body">@foreach(var f in Model.FinancialImpacts){<div class="mb-2"><div class="fw-semibold">@f.Title: @f.Value</div><small class="text-muted">@f.Explanation · Confiança @f.ConfidenceLevel</small></div>}<div class="alert alert-info small mb-0">Estimativas gerenciais para apoio à decisão. Valores devem ser validados em estudo operacional.</div></div></div></div>
-    <div class="col-lg-6"><div class="card h-100"><div class="card-header">Riscos e alertas executivos</div><div class="card-body">@foreach(var a in Model.Alerts){<div class="border rounded p-2 mb-2"><div class="d-flex justify-content-between"><strong>@a.Title</strong><span class="badge bg-warning text-dark">@a.Severity</span></div><div class="small text-muted">Impacto: @a.Impact</div><div class="small">@a.Recommendation</div><a class="btn btn-sm btn-outline-primary mt-2" href="@a.ModuleUrl">Abrir módulo</a></div>}</div></div></div></div>
-    <div class="row g-3"><div class="col-lg-6"><div class="card h-100"><div class="card-header">Roteiro recomendado para a reunião</div><div class="card-body">@foreach(var s in Model.Script.OrderBy(x=>x.Order)){<div class="mb-2"><span class="badge bg-dark">@s.Order</span> <strong>@s.Title</strong> <span class="text-muted">(@s.EstimatedMinutes min)</span><div class="small">@s.SuggestedSpeech</div><a href="@s.ModuleUrl" class="small">Abrir módulo</a></div>}</div></div></div>
-    <div class="col-lg-6"><div class="card h-100"><div class="card-header">Mapa de módulos & recomendações</div><div class="card-body">@foreach(var m in Model.ModuleMap){<div class="mb-2 p-2 border rounded"><div class="d-flex justify-content-between"><strong>@m.ModuleName</strong><span class="badge bg-info">@m.Status</span></div><div class="small">@m.Benefit · tempo sugerido: @m.SuggestedDemoTime</div><div class="small text-muted">@m.Recommendation</div></div>}<hr/>@foreach(var r in Model.Recommendations){<div class="small"><span class="badge bg-secondary">@r.Priority</span> @r.SuggestedAction</div>}<div class="alert alert-secondary small mt-3 mb-0"><strong>LGPD e uso responsável</strong><br/>Esta central utiliza metadados e sinais estatísticos extraídos dos documentos para apoio à gestão. Não exibe conteúdo sensível integral, não substitui análise clínica e deve ser usada conforme as políticas internas de segurança da informação.</div></div></div></div></div>
-</div>
+@model InovaGed.Application.DemoReadiness.DemoReadinessReportDto
+@{
+    ViewData["Title"] = "Central Executiva GED";
+    var checks = Model?.Checks ?? new List<InovaGed.Application.DemoReadiness.DemoReadinessCheckDto>();
+    var recommendations = Model?.Recommendations ?? new List<InovaGed.Application.DemoReadiness.DemoReadinessRecommendationDto>();
+    var indicators = Model?.ExecutiveIndicators ?? new List<InovaGed.Application.DemoReadiness.ExecutiveValueIndicatorDto>();
+    var maturity = Model?.DigitalMaturity ?? new List<InovaGed.Application.DemoReadiness.DigitalMaturityItemDto>();
+    var modules = Model?.ModuleMap ?? new List<InovaGed.Application.DemoReadiness.DemoModuleStatusDto>();
+    var scriptSteps = Model?.ScriptSteps ?? new List<InovaGed.Application.DemoReadiness.DemoScriptStepDto>();
+}
+
+<h1>Central Executiva GED</h1>
+<p>Status geral: <strong>@(Model?.OverallStatus ?? "N/A")</strong> | Score: <strong>@(Model?.ReadinessScore ?? 0)%</strong></p>
+
+<h2>Checks</h2>
+<ul>
+@foreach (var c in checks)
+{
+    <li><strong>@c.Title</strong> (@c.Status) - @c.Message</li>
+}
+</ul>
+
+<h2>Recomendações</h2>
+<ul>
+@foreach (var r in recommendations)
+{
+    <li><strong>@r.Priority</strong> - @r.Title: @r.SuggestedAction</li>
+}
+</ul>
+
+<h2>Indicadores Executivos</h2>
+<ul>
+@foreach (var i in indicators)
+{
+    <li><strong>@i.Title</strong>: @i.Value (@i.Subtitle)</li>
+}
+</ul>
+
+<h2>Maturidade Digital</h2>
+<ul>
+@foreach (var m in maturity)
+{
+    <li>@m.Label - @m.Percentage% - @m.Recommendation</li>
+}
+</ul>
+
+<h2>Mapa de Módulos</h2>
+<ul>
+@foreach (var m in modules)
+{
+    <li>@m.ModuleName - @m.Status - @m.Recommendation</li>
+}
+</ul>
+
+<h2>Roteiro</h2>
+<ol>
+@foreach (var s in scriptSteps.OrderBy(x => x.Order))
+{
+    <li>@s.Title (@s.EstimatedMinutes min) - @s.SuggestedSpeech</li>
+}
+</ol>

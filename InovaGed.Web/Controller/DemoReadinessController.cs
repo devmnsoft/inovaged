@@ -1,41 +1,68 @@
-using System.Diagnostics;
-using InovaGed.Application.Audit;
 using InovaGed.Application.DemoReadiness;
 using InovaGed.Application.Identity;
-using InovaGed.Web.Models.Security;
+using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize(Roles = "ADMIN,ADMINISTRATOR")]
+[Authorize(Roles = AppRoles.Admin + ",ADMINISTRATOR")]
 [Route("DemoReadiness")]
-public sealed class DemoReadinessController(ICurrentUser currentUser, IDemoReadinessService service, IAuditWriter auditWriter, ILogger<DemoReadinessController> logger) : Controller
+public sealed class DemoReadinessController : Controller
 {
+    private readonly IDemoReadinessService _service;
+    private readonly ICurrentUser _currentUser;
+    private readonly ILogger<DemoReadinessController> _logger;
+
+    public DemoReadinessController(
+        IDemoReadinessService service,
+        ICurrentUser currentUser,
+        ILogger<DemoReadinessController> logger)
+    {
+        _service = service;
+        _currentUser = currentUser;
+        _logger = logger;
+    }
+
     [HttpGet("")]
     public async Task<IActionResult> Index(CancellationToken ct)
     {
-        if (User.IsInRole(AppRoles.AdministradorOphir) || User.IsInRole(AppRoles.ArquivistaOphir)) return Forbid();
-        await auditWriter.WriteAsync(currentUser.TenantId, currentUser.UserId, "VIEW", "DEMO_READINESS", null, "Visualização da prontidão da demonstração", HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers.UserAgent.ToString(), new { source = "DemoReadiness" }, ct);
-        return View();
+        try
+        {
+            var report = await _service.RunAsync(_currentUser.TenantId, _currentUser.UserId, ct);
+            return View(report);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro ao carregar DemoReadiness.");
+            return View(DemoReadinessReportDto.Empty("Não foi possível carregar a Central Executiva GED."));
+        }
     }
 
     [HttpGet("RunChecks")]
     public async Task<IActionResult> RunChecks(CancellationToken ct)
     {
-        var cid = Activity.Current?.Id ?? HttpContext.TraceIdentifier;
-        var sw = Stopwatch.StartNew();
         try
         {
-            var data = await service.RunAsync(currentUser.TenantId, currentUser.UserId, ct);
-            sw.Stop();
-            logger.LogInformation("DemoReadiness checks finished. tenantId={TenantId} userId={UserId} elapsedMs={ElapsedMs} total={Total} warnings={Warnings} errors={Errors} correlationId={CorrelationId}", currentUser.TenantId, currentUser.UserId, sw.ElapsedMilliseconds, data.TotalChecks, data.WarningCount, data.ErrorCount, cid);
-            return Json(new { success = true, data, correlationId = cid });
+            var report = await _service.RunAsync(_currentUser.TenantId, _currentUser.UserId, ct);
+            return Ok(new
+            {
+                success = true,
+                data = report,
+                correlationId = HttpContext.TraceIdentifier
+            });
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Erro inesperado no DemoReadiness. correlationId={CorrelationId}", cid);
-            return StatusCode(500, new { success = false, message = "Erro inesperado ao executar verificação.", correlationId = cid });
+            _logger.LogError(ex, "Erro ao executar checks DemoReadiness.");
+            return StatusCode(500, new
+            {
+                success = false,
+                message = "Não foi possível executar a verificação.",
+                errorStep = "Servidor",
+                errorLog = ex.Message,
+                correlationId = HttpContext.TraceIdentifier
+            });
         }
     }
 }
