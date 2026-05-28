@@ -22,6 +22,11 @@ public interface IUserAdminRepository
         Guid userId,
         CancellationToken ct);
 
+    Task<UserEditDto?> GetForEditFromAdminListAsync(
+        Guid tenantId,
+        Guid id,
+        CancellationToken ct);
+
     Task<string> DiagnoseUserEditIdAsync(
         Guid tenantId,
         Guid id,

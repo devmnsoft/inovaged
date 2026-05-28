@@ -305,6 +305,14 @@ public sealed class UsersController : AppControllerBase
                 id);
             dto = await _repo.GetForEditByUserIdAsync(tenantId, id, ct);
         }
+        if (dto is null && isAdmin)
+        {
+            _logger.LogWarning(
+                "Edit by UserId failed for ADMIN. Trying fallback by vw_user_admin_list. Tenant={TenantId} RouteId={RouteId}",
+                tenantId,
+                id);
+            dto = await _repo.GetForEditFromAdminListAsync(tenantId, id, ct);
+        }
 
         if (dto is null)
         {
@@ -316,7 +324,7 @@ public sealed class UsersController : AppControllerBase
                 diag,
                 HttpContext.TraceIdentifier);
             TempData["Error"] = isAdmin
-                ? "Cadastro não encontrado para edição. O ID enviado pela listagem pode estar incorreto."
+                ? "Cadastro não encontrado para edição. Verifique o diagnóstico técnico nos logs."
                 : "Você não possui permissão para editar este cadastro.";
             return RedirectToAction(nameof(Index));
         }
@@ -364,6 +372,23 @@ public sealed class UsersController : AppControllerBase
         ViewData["Title"] = "Editar Servidor / Usuário";
         ViewData["Subtitle"] = "Atualização de cadastro, acesso, perfis, sigilo e ICP-Brasil";
         return View(vm);
+    }
+
+    [HttpGet("DiagnoseEdit/{id:guid}")]
+    [Authorize(Roles = AppRoles.Admin + ",ADMINISTRATOR")]
+    public async Task<IActionResult> DiagnoseEdit(Guid id, CancellationToken ct)
+    {
+        if (!_currentUser.IsAuthenticated) return Unauthorized();
+
+        var isAdmin =
+            User.IsInRole(AppRoles.Admin) ||
+            User.IsInRole("ADMIN") ||
+            User.IsInRole("ADMINISTRATOR");
+        if (!isAdmin) return Forbid();
+
+        var tenantId = _currentUser.TenantId;
+        var diagnosisJson = await _repo.DiagnoseUserEditIdAsync(tenantId, id, ct);
+        return Content(diagnosisJson, "application/json");
     }
 
     [HttpPost("Edit/{servidorId:guid}")]
