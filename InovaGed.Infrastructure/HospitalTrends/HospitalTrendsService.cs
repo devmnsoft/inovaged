@@ -1,14 +1,12 @@
-using System.Data;
-using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.RegularExpressions;
-using Dapper;
-using InovaGed.Application.Common.Database;
+using InovaGed.Application.HospitalAnalytics;
 using InovaGed.Application.HospitalTrends;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using Npgsql;
+using AppDocumentSnippetDto = InovaGed.Application.HospitalTrends.DocumentSnippetDto;
+using AnalyticsDocumentSnippetDto = InovaGed.Application.HospitalAnalytics.DocumentSnippetDto;
 
 namespace InovaGed.Infrastructure.HospitalTrends;
 
@@ -16,32 +14,16 @@ public sealed class HospitalTrendsService : IHospitalTrendsService
 {
     private const int DefaultTopDocuments = 1000;
     private const int MaxTopDocuments = 5000;
-    private const int SnippetLength = 200;
     private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(5);
-    private static readonly Regex CpfRegex = new(@"\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b", RegexOptions.Compiled);
-    private static readonly Regex EmailRegex = new(@"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", RegexOptions.Compiled | RegexOptions.IgnoreCase);
-    private static readonly Regex LongNumberRegex = new(@"\b\d{6,}\b", RegexOptions.Compiled);
-
-    private static readonly IReadOnlyDictionary<string, string[]> TermCategories = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
-    {
-        ["ONCOLOGIA"] = ["câncer", "neoplasia", "tumor", "carcinoma", "linfoma", "leucemia", "metástase", "oncologia", "quimioterapia", "radioterapia", "biópsia"],
-        ["URGÊNCIA / GRAVIDADE"] = ["sepse", "UTI", "intubação", "choque", "hemorragia", "trauma", "óbito", "parada cardiorrespiratória", "emergência", "urgência"],
-        ["CARDIOVASCULAR"] = ["infarto", "IAM", "AVC", "hipertensão", "insuficiência cardíaca", "arritmia", "dor torácica"],
-        ["CRÔNICAS"] = ["diabetes", "doença renal crônica", "hemodiálise", "DPOC", "hipertensão"],
-        ["FINANCEIRO / AUDITORIA"] = ["glosa", "nota fiscal", "faturamento", "contrato", "pagamento", "empenho", "conta hospitalar", "convênio", "SUS", "autorização", "auditoria", "cobrança", "OPME", "medicamento", "material"],
-        ["JURÍDICO / COMPLIANCE"] = ["processo", "judicial", "ofício", "parecer", "notificação", "sindicância", "mandado", "determinação", "denúncia"],
-        ["OPERACIONAL"] = ["internação", "alta", "transferência", "regulação", "laudo", "prescrição", "exame", "tomografia", "ultrassom", "ressonância", "cirurgia"]
-    };
-
     private static readonly string[] CriticalTerms = ["óbito", "sepse", "UTI"];
 
-    private readonly IDbConnectionFactory _db;
+    private readonly IHospitalOcrAnalyticsService _analytics;
     private readonly IMemoryCache _cache;
     private readonly ILogger<HospitalTrendsService> _logger;
 
-    public HospitalTrendsService(IDbConnectionFactory db, IMemoryCache cache, ILogger<HospitalTrendsService> logger)
+    public HospitalTrendsService(IHospitalOcrAnalyticsService analytics, IMemoryCache cache, ILogger<HospitalTrendsService> logger)
     {
-        _db = db;
+        _analytics = analytics;
         _cache = cache;
         _logger = logger;
     }
@@ -55,57 +37,57 @@ public sealed class HospitalTrendsService : IHospitalTrendsService
 
         try
         {
-            await using var conn = await _db.OpenAsync(ct);
-            var schema = await LoadSchemaAsync(conn, ct);
-            var currentCounters = await LoadCountersAsync(conn, f, f.From!.Value, f.To!.Value, schema, ct);
-            var previousCounters = await LoadCountersAsync(conn, f, f.CompareFrom!.Value, f.CompareTo!.Value, schema, ct);
-            var currentRows = await LoadDocumentRowsAsync(conn, f, f.From.Value, f.To.Value, schema, ct);
-            var previousRows = await LoadDocumentRowsAsync(conn, f, f.CompareFrom.Value, f.CompareTo.Value, schema, ct);
-            var currentOcr = await LoadOcrRowsAsync(conn, f, f.From.Value, f.To.Value, schema, ct);
-            var previousOcr = await LoadOcrRowsAsync(conn, f, f.CompareFrom.Value, f.CompareTo.Value, schema, ct);
+            var current = await _analytics.BuildSnapshotAsync(ToAnalyticsFilter(f, f.From!.Value, f.To!.Value), ct);
+            var previous = await _analytics.BuildSnapshotAsync(ToAnalyticsFilter(f, f.CompareFrom!.Value, f.CompareTo!.Value), ct);
+            var dictionary = FilterDictionary(f.Category);
+            var currentTerms = await _analytics.AnalyzeTermsAsync(current, dictionary, ct);
+            var previousTerms = await _analytics.AnalyzeTermsAsync(previous, dictionary, ct);
 
-            var termTrends = BuildTermTrends(currentOcr, previousOcr, f).ToList();
-            var sectorTrends = BuildSectorTrends(currentRows, previousRows, f.Top).ToList();
-            var operational = BuildOperationalTrends(currentCounters, previousCounters).ToList();
-            var alerts = BuildAlerts(termTrends, sectorTrends, operational, currentCounters).ToList();
-            var warnings = BuildWarnings(schema, currentOcr.Count, previousOcr.Count, f.Top).ToList();
+            var termTrends = BuildTermTrends(currentTerms, previousTerms).ToList();
+            var sectorTrends = BuildSectorTrends(current, previous, f.Top).ToList();
+            var operational = BuildOperationalTrends(current, previous).ToList();
+            var alerts = BuildAlerts(termTrends, sectorTrends, operational, current).ToList();
+            var warnings = current.Warnings.Concat(previous.Warnings)
+                .Append("Indicadores baseados em OCR documental. Utilizar para apoio gerencial e estatístico, não como diagnóstico clínico.")
+                .Distinct()
+                .ToList();
 
             var dashboard = new HospitalTrendsDashboardDto
             {
                 GeneratedAt = DateTimeOffset.UtcNow,
                 PeriodLabel = BuildPeriodLabel(f.From.Value, f.To.Value),
                 ComparePeriodLabel = BuildPeriodLabel(f.CompareFrom.Value, f.CompareTo.Value),
-                TotalDocumentsCurrent = currentCounters.TotalDocuments,
-                TotalDocumentsPrevious = previousCounters.TotalDocuments,
-                VariationPercent = Variation(currentCounters.TotalDocuments, previousCounters.TotalDocuments),
+                TotalDocumentsCurrent = current.TotalDocuments,
+                TotalDocumentsPrevious = previous.TotalDocuments,
+                VariationPercent = Variation(current.TotalDocuments, previous.TotalDocuments),
                 TermTrends = termTrends,
                 Alerts = alerts,
                 SectorTrends = sectorTrends,
                 OperationalTrends = operational,
-                TopFolders = BuildRanking(currentRows.Select(x => x.Folder), currentRows.Count),
-                TopDocumentTypes = BuildRanking(currentRows.Select(x => x.DocumentType), currentRows.Count),
+                TopFolders = BuildRanking(current.Rows.Select(x => x.Folder), current.Rows.Count),
+                TopDocumentTypes = BuildRanking(current.Rows.Select(x => x.DocumentType), current.Rows.Count),
+                TotalAlerts = alerts.Count,
+                CriticalAlerts = alerts.Count(a => a.Severity is "Alto" or "Crítico"),
+                WarningAlerts = alerts.Count(a => a.Severity is "Médio" or "Médio/Alto"),
                 Warnings = warnings
             };
-            dashboard.TotalAlerts = alerts.Count;
-            dashboard.CriticalAlerts = alerts.Count(a => a.Severity is "Alto" or "Crítico");
-            dashboard.WarningAlerts = alerts.Count(a => a.Severity is "Médio" or "Médio/Alto");
 
             _cache.Set(cacheKey, dashboard, CacheTtl);
             return dashboard;
         }
         catch (PostgresException ex) when (ex.SqlState == "42P08")
         {
-            _logger.LogError(ex, "Erro de tipagem de parâmetro SQL em HospitalTrends. Tenant={TenantId}", f.TenantId);
+            _logger.LogError(ex, "Erro de tipagem de parâmetro SQL em HospitalTrends via HospitalOcrAnalytics. Tenant={TenantId}", f.TenantId);
             return EmptyDashboard("Indicadores indisponíveis por erro de consulta. Verifique os logs técnicos.");
         }
         catch (PostgresException ex)
         {
-            _logger.LogError(ex, "Erro PostgreSQL ao gerar Central de Alertas e Tendências Hospitalares. Tenant={TenantId}", f.TenantId);
+            _logger.LogError(ex, "Erro PostgreSQL ao gerar Central de Alertas e Tendências Hospitalares via HospitalOcrAnalytics. Tenant={TenantId}", f.TenantId);
             return EmptyDashboard("Não foi possível consultar a base documental real no momento.");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Erro inesperado ao gerar Central de Alertas e Tendências Hospitalares. Tenant={TenantId}", f.TenantId);
+            _logger.LogError(ex, "Erro inesperado ao gerar Central de Alertas e Tendências Hospitalares via HospitalOcrAnalytics. Tenant={TenantId}", f.TenantId);
             return EmptyDashboard("Indicadores indisponíveis no momento. Informe o código de rastreio ao suporte.");
         }
     }
@@ -122,202 +104,94 @@ public sealed class HospitalTrendsService : IHospitalTrendsService
     public async Task<IReadOnlyList<OperationalTrendDto>> GetOperationalTrendsAsync(HospitalTrendsFilter filter, CancellationToken ct)
         => (await GetDashboardAsync(filter, ct)).OperationalTrends;
 
-    private async Task<SchemaSnapshot> LoadSchemaAsync(IDbConnection conn, CancellationToken ct)
+    private static IEnumerable<TrendKpiDto> BuildTermTrends(IReadOnlyList<TermMatchDto> currentTerms, IReadOnlyList<TermMatchDto> previousTerms)
     {
-        const string sql = @"
-select
- exists(select 1 from information_schema.tables where table_schema='ged' and table_name='document_search') as ""HasDocumentSearch"",
- exists(select 1 from information_schema.tables where table_schema='ged' and table_name='ocr_job') as ""HasOcrJob"";";
-        return await conn.QuerySingleAsync<SchemaSnapshot>(new CommandDefinition(sql, cancellationToken: ct));
-    }
-
-    private async Task<CounterSnapshot> LoadCountersAsync(IDbConnection conn, HospitalTrendsFilter f, DateTime from, DateTime to, SchemaSnapshot schema, CancellationToken ct)
-    {
-        _logger.LogInformation(
-            "Carregando counters HospitalTrends. Tenant={TenantId} From={From} To={To} FolderId={FolderId}",
-            f.TenantId,
-            from,
-            to,
-            f.FolderId);
-
-        var ocrJobJoin = schema.HasOcrJob ? "left join ged.ocr_job oj on oj.tenant_id=d.tenant_id and oj.document_version_id=d.current_version_id" : string.Empty;
-        var ocrStatusExpr = schema.HasOcrJob ? "upper(coalesce(oj.status::text, ''))" : "''";
-        var hasOcrExpr = schema.HasDocumentSearch ? "exists(select 1 from ged.document_search ds where ds.tenant_id=d.tenant_id and ds.document_id=d.id and coalesce(ds.ocr_text,'') <> '')" : "false";
-        var sql = $@"
-with filtered as (
- select d.id,
-        coalesce(d.classification_id, d.classification_version_id) classification_id,
-        {hasOcrExpr} has_ocr,
-        {ocrStatusExpr} ocr_status
- from ged.document d
- left join ged.folder fol on fol.id=d.folder_id and fol.tenant_id=d.tenant_id
- left join ged.document_type dt on dt.id=d.type_id and dt.tenant_id=d.tenant_id
- {ocrJobJoin}
- where d.tenant_id=@TenantId::uuid and coalesce(d.reg_status,'A')='A'
-   and d.created_at >= @From::timestamp and d.created_at < @ToExclusive::timestamp
-   and (@FolderId::uuid is null or d.folder_id=@FolderId::uuid)
-   and (@Sector::text is null or fol.name ilike '%' || @Sector::text || '%')
-   and (@DocumentType::text is null or dt.name ilike '%' || @DocumentType::text || '%')
-)
-select count(distinct id)::int as ""TotalDocuments"",
-       count(distinct id) filter (where has_ocr)::int as ""DocumentsWithOcr"",
-       count(distinct id) filter (where not has_ocr or ocr_status in ('PENDING','QUEUED'))::int as ""PendingOcr"",
-       count(distinct id) filter (where ocr_status in ('ERROR','FAILED'))::int as ""OcrErrors"",
-       count(distinct id) filter (where classification_id is null)::int as ""Unclassified""
-from filtered;";
-        return await conn.QuerySingleAsync<CounterSnapshot>(new CommandDefinition(sql, BuildSqlParams(f, from, to), cancellationToken: ct));
-    }
-
-    private async Task<List<DocumentRow>> LoadDocumentRowsAsync(IDbConnection conn, HospitalTrendsFilter f, DateTime from, DateTime to, SchemaSnapshot schema, CancellationToken ct)
-    {
-        _logger.LogInformation(
-            "Carregando documentos HospitalTrends. Tenant={TenantId} From={From} To={To} FolderId={FolderId}",
-            f.TenantId,
-            from,
-            to,
-            f.FolderId);
-
-        var ocrJobJoin = schema.HasOcrJob ? "left join ged.ocr_job oj on oj.tenant_id=d.tenant_id and oj.document_version_id=d.current_version_id" : string.Empty;
-        var ocrStatusExpr = schema.HasOcrJob ? "upper(coalesce(oj.status::text, ''))" : "''";
-        var hasOcrExpr = schema.HasDocumentSearch ? "exists(select 1 from ged.document_search ds where ds.tenant_id=d.tenant_id and ds.document_id=d.id and coalesce(ds.ocr_text,'') <> '')" : "false";
-        var sql = $@"
-select distinct on (d.id) d.id as ""DocumentId"",
-       coalesce(fol.name, 'Sem pasta') as ""Folder"",
-       coalesce(dt.name, 'Sem tipo') as ""DocumentType"",
-       coalesce(fol.name, 'Não informado') as ""Sector"",
-       d.created_at as ""CreatedAt"",
-       coalesce(d.classification_id, d.classification_version_id) is not null as ""IsClassified"",
-       {hasOcrExpr} as ""HasOcr"",
-       {ocrStatusExpr} as ""OcrStatus""
-from ged.document d
-left join ged.folder fol on fol.id=d.folder_id and fol.tenant_id=d.tenant_id
-left join ged.document_type dt on dt.id=d.type_id and dt.tenant_id=d.tenant_id
-{ocrJobJoin}
-where d.tenant_id=@TenantId::uuid and coalesce(d.reg_status,'A')='A'
-  and d.created_at >= @From::timestamp and d.created_at < @ToExclusive::timestamp
-  and (@FolderId::uuid is null or d.folder_id=@FolderId::uuid)
-  and (@Sector::text is null or fol.name ilike '%' || @Sector::text || '%')
-  and (@DocumentType::text is null or dt.name ilike '%' || @DocumentType::text || '%')
-order by d.id, d.created_at desc
-limit @Top::int;";
-        var rows = await conn.QueryAsync<DocumentRow>(new CommandDefinition(sql, BuildSqlParams(f, from, to), cancellationToken: ct));
-        return rows.ToList();
-    }
-
-    private async Task<List<OcrRow>> LoadOcrRowsAsync(IDbConnection conn, HospitalTrendsFilter f, DateTime from, DateTime to, SchemaSnapshot schema, CancellationToken ct)
-    {
-        if (!schema.HasDocumentSearch)
-            return [];
-
-        _logger.LogInformation(
-            "Carregando OCR HospitalTrends. Tenant={TenantId} From={From} To={To} FolderId={FolderId}",
-            f.TenantId,
-            from,
-            to,
-            f.FolderId);
-
-        var sql = @"
-select distinct on (d.id) d.id as ""DocumentId"", ds.version_id as ""VersionId"",
-       coalesce(d.title, ds.title, 'Sem título') as ""Title"",
-       coalesce(fol.name, 'Sem pasta') as ""Folder"",
-       coalesce(dt.name, 'Sem tipo') as ""DocumentType"",
-       coalesce(fol.name, 'Não informado') as ""Sector"",
-       d.created_at as ""CreatedAt"",
-       substring(ds.ocr_text from 1 for 12000) as ""Text""
-from ged.document d
-join ged.document_search ds on ds.tenant_id=d.tenant_id and ds.document_id=d.id and coalesce(ds.ocr_text,'') <> ''
-left join ged.folder fol on fol.id=d.folder_id and fol.tenant_id=d.tenant_id
-left join ged.document_type dt on dt.id=d.type_id and dt.tenant_id=d.tenant_id
-where d.tenant_id=@TenantId::uuid and coalesce(d.reg_status,'A')='A'
-  and d.created_at >= @From::timestamp and d.created_at < @ToExclusive::timestamp
-  and (@FolderId::uuid is null or d.folder_id=@FolderId::uuid)
-  and (@Sector::text is null or fol.name ilike '%' || @Sector::text || '%')
-  and (@DocumentType::text is null or dt.name ilike '%' || @DocumentType::text || '%')
-order by d.id, d.created_at desc
-limit @Top::int;";
-        var rows = (await conn.QueryAsync<OcrRow>(new CommandDefinition(sql, BuildSqlParams(f, from, to), cancellationToken: ct))).ToList();
-        foreach (var row in rows)
+        var previousByTerm = previousTerms.ToDictionary(x => Key(x.Term, x.Category), StringComparer.OrdinalIgnoreCase);
+        foreach (var current in currentTerms)
         {
-            row.Text = MaskSensitive(row.Text ?? string.Empty);
-            row.Title = MaskSensitive(row.Title ?? string.Empty);
-        }
-        return rows;
-    }
-
-    private static IReadOnlyList<TrendKpiDto> BuildTermTrends(IReadOnlyList<OcrRow> currentRows, IReadOnlyList<OcrRow> previousRows, HospitalTrendsFilter filter)
-    {
-        var categories = TermCategories
-            .Where(c => string.IsNullOrWhiteSpace(filter.Category) || c.Key.Equals(filter.Category, StringComparison.OrdinalIgnoreCase))
-            .ToList();
-        var trends = new List<TrendKpiDto>();
-
-        foreach (var (category, terms) in categories)
-        {
-            foreach (var term in terms.Distinct(StringComparer.OrdinalIgnoreCase))
+            previousByTerm.TryGetValue(Key(current.Term, current.Category), out var previous);
+            var previousCount = previous?.DocumentCount ?? 0;
+            var variation = Variation(current.DocumentCount, previousCount);
+            var direction = Direction(current.DocumentCount, previousCount, variation);
+            yield return new TrendKpiDto
             {
-                var normalizedTerm = Normalize(term);
-                var currentMatches = currentRows.Where(r => CountOccurrences(Normalize(r.Text), normalizedTerm) > 0).ToList();
-                var previousCount = previousRows.Count(r => CountOccurrences(Normalize(r.Text), normalizedTerm) > 0);
-                if (currentMatches.Count == 0 && previousCount == 0)
-                    continue;
-
-                var variation = Variation(currentMatches.Count, previousCount);
-                var direction = Direction(currentMatches.Count, previousCount, variation);
-                var risk = RiskLevel(term, category, currentMatches.Count, variation, direction);
-                trends.Add(new TrendKpiDto
-                {
-                    Term = term,
-                    Category = category,
-                    CurrentCount = currentMatches.Count,
-                    PreviousCount = previousCount,
-                    VariationPercent = variation,
-                    TrendDirection = direction,
-                    RiskLevel = risk,
-                    Interpretation = BuildTermInterpretation(term, currentMatches.Count, previousCount, variation, direction),
-                    Examples = currentMatches.Take(3).Select(r => ToSnippet(r, term)).ToList()
-                });
-            }
+                Term = current.Term,
+                Category = current.Category,
+                CurrentCount = current.DocumentCount,
+                PreviousCount = previousCount,
+                VariationPercent = variation,
+                TrendDirection = direction,
+                RiskLevel = RiskLevel(current.Term, current.Category, current.DocumentCount, variation, direction),
+                Interpretation = BuildTermInterpretation(current.Term, current.DocumentCount, previousCount, variation, direction),
+                Examples = current.Examples.Select(MapSnippet).ToList()
+            };
         }
-
-        return trends
-            .OrderByDescending(t => t.RiskLevel is "Alto" or "Crítico")
-            .ThenByDescending(t => t.VariationPercent)
-            .ThenByDescending(t => t.CurrentCount)
-            .Take(filter.Top <= 0 ? DefaultTopDocuments : Math.Min(filter.Top, MaxTopDocuments))
-            .ToList();
     }
 
-    private static IReadOnlyList<SectorTrendDto> BuildSectorTrends(IReadOnlyList<DocumentRow> currentRows, IReadOnlyList<DocumentRow> previousRows, int top)
+    private static IEnumerable<SectorTrendDto> BuildSectorTrends(HospitalOcrAnalyticsSnapshotDto current, HospitalOcrAnalyticsSnapshotDto previous, int top)
     {
-        var sectors = currentRows.Select(r => r.Sector).Concat(previousRows.Select(r => r.Sector)).Where(s => !string.IsNullOrWhiteSpace(s)).Distinct(StringComparer.OrdinalIgnoreCase);
-        return sectors.Select(sector =>
+        var currentGroups = current.Rows.GroupBy(r => SafeLabel(string.IsNullOrWhiteSpace(r.Sector) ? r.Folder : r.Sector, "Não informado")).ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+        var previousGroups = previous.Rows.GroupBy(r => SafeLabel(string.IsNullOrWhiteSpace(r.Sector) ? r.Folder : r.Sector, "Não informado")).ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
+        foreach (var (sector, rows) in currentGroups.OrderByDescending(x => x.Value.Count).Take(top <= 0 ? 20 : Math.Min(top, 100)))
         {
-            var current = currentRows.Where(r => r.Sector.Equals(sector, StringComparison.OrdinalIgnoreCase)).ToList();
-            var previous = previousRows.Count(r => r.Sector.Equals(sector, StringComparison.OrdinalIgnoreCase));
-            var variation = Variation(current.Count, previous);
-            return new SectorTrendDto
+            previousGroups.TryGetValue(sector, out var previousCount);
+            var variation = Variation(rows.Count, previousCount);
+            var pendingOcr = rows.Count(r => !string.Equals(r.OcrStatus, "COMPLETED", StringComparison.OrdinalIgnoreCase) && !string.Equals(r.OcrStatus, "DONE", StringComparison.OrdinalIgnoreCase) && !string.Equals(r.OcrStatus, "SUCCESS", StringComparison.OrdinalIgnoreCase));
+            var unclassified = rows.Count(r => !r.IsClassified);
+            yield return new SectorTrendDto
             {
                 Sector = sector,
-                CurrentDocuments = current.Count,
-                PreviousDocuments = previous,
+                CurrentDocuments = rows.Count,
+                PreviousDocuments = previousCount,
                 VariationPercent = variation,
-                PendingOcr = current.Count(r => !r.HasOcr || r.OcrStatus is "PENDING" or "QUEUED"),
-                Unclassified = current.Count(r => !r.IsClassified),
-                Interpretation = BuildSectorInterpretation(sector, current.Count, previous, variation, current.Count(r => !r.HasOcr || r.OcrStatus is "PENDING" or "QUEUED"), current.Count(r => !r.IsClassified))
+                PendingOcr = pendingOcr,
+                Unclassified = unclassified,
+                Interpretation = BuildSectorInterpretation(sector, rows.Count, previousCount, variation, pendingOcr, unclassified)
             };
-        }).OrderByDescending(s => s.PendingOcr + s.Unclassified).ThenByDescending(s => s.VariationPercent).Take(top <= 0 ? 20 : Math.Min(top, 100)).ToList();
+        }
     }
 
-    private static IReadOnlyList<OperationalTrendDto> BuildOperationalTrends(CounterSnapshot current, CounterSnapshot previous)
+    private static IEnumerable<OperationalTrendDto> BuildOperationalTrends(HospitalOcrAnalyticsSnapshotDto current, HospitalOcrAnalyticsSnapshotDto previous)
     {
-        return
-        [
-            BuildOperational("OCR pendente", current.PendingOcr, previous.PendingOcr, "Reprocessar fila OCR e verificar qualidade dos PDFs/imagens."),
-            BuildOperational("OCR ERROR", current.OcrErrors, previous.OcrErrors, "Priorizar reprocessamento dos erros e tratar causas de captura ou conversão."),
-            BuildOperational("Documentos sem classificação", current.Unclassified, previous.Unclassified, "Acionar responsáveis pela classificação arquivística e metadados obrigatórios."),
-            BuildOperational("Documentos com OCR pesquisável", current.DocumentsWithOcr, previous.DocumentsWithOcr, "Manter cobertura OCR para apoiar auditoria e BI documental.")
-        ];
+        yield return BuildOperational("Volume documental", current.TotalDocuments, previous.TotalDocuments, "Avaliar capacidade operacional conforme variação de volume documental.");
+        yield return BuildOperational("Documentos com OCR", current.DocumentsWithOcr, previous.DocumentsWithOcr, "Manter monitoramento de cobertura OCR e priorizar filas pendentes.");
+        yield return BuildOperational("Pendências de OCR", current.DocumentsWithoutOcr, previous.DocumentsWithoutOcr, "Reprocessar pendências e acompanhar erros recorrentes.");
+        yield return BuildOperational("Erros de OCR", current.OcrErrors, previous.OcrErrors, "Auditar documentos com falha OCR e qualidade de imagem.");
+        yield return BuildOperational("Documentos sem classificação", current.UnclassifiedDocuments, previous.UnclassifiedDocuments, "Acionar responsáveis pela classificação arquivística e metadados obrigatórios.");
     }
+
+    private static IEnumerable<HospitalAlertDto> BuildAlerts(IReadOnlyList<TrendKpiDto> terms, IReadOnlyList<SectorTrendDto> sectors, IReadOnlyList<OperationalTrendDto> operational, HospitalOcrAnalyticsSnapshotDto current)
+    {
+        foreach (var term in terms.Where(t => t.RiskLevel is "Alto" or "Médio/Alto").Take(10))
+        {
+            yield return Alert($"TERM:{term.Category}:{term.Term}", $"Tendência relevante: {term.Term}", term.Category, term.RiskLevel, term.Interpretation, "Validar amostra documental e avaliar plano de ação com a área responsável.", term.CurrentCount, term.Examples);
+        }
+
+        if (current.OcrErrors > 0)
+            yield return Alert("OCR:ERRORS", "Erros de OCR no período", "OPERACIONAL", "Alto", $"Há {current.OcrErrors:N0} documentos com erro de OCR no período atual.", "Reprocessar erros e avaliar qualidade dos arquivos de origem.", current.OcrErrors, []);
+
+        if (current.TotalDocuments > 0 && Percent(current.UnclassifiedDocuments, current.TotalDocuments) > 30)
+            yield return Alert("OP:UNCLASSIFIED", "Classificação arquivística atrasada", "OPERACIONAL", "Médio/Alto", $"{Percent(current.UnclassifiedDocuments, current.TotalDocuments):N1}% dos documentos do período estão sem classificação.", "Priorizar classificação para reduzir risco de retenção, busca e governança documental.", current.UnclassifiedDocuments, []);
+
+        var totalPending = sectors.Sum(s => s.PendingOcr + s.Unclassified);
+        foreach (var sector in sectors.Where(s => totalPending > 0 && (s.PendingOcr + s.Unclassified) * 100m / totalPending > 40).Take(3))
+            yield return Alert($"SECTOR:{sector.Sector}", $"Pendências concentradas em {sector.Sector}", "SETOR", "Médio", $"O setor/pasta concentra {((sector.PendingOcr + sector.Unclassified) * 100m / totalPending):N1}% das pendências analisadas.", "Revisar fila, classificação e rotina de saneamento documental do setor/pasta.", sector.PendingOcr + sector.Unclassified, []);
+
+        foreach (var op in operational.Where(o => o.Status == "Atenção").Take(3))
+            yield return Alert($"OP:{op.Indicator}", op.Indicator, "OPERACIONAL", "Médio", $"Indicador em atenção: {op.CurrentValue:N0} no período atual ({op.VariationPercent:N1}%).", op.Recommendation, op.CurrentValue, []);
+    }
+
+    private static HospitalAlertDto Alert(string key, string title, string category, string severity, string description, string recommendation, int count, List<AppDocumentSnippetDto> examples) => new()
+    {
+        Id = StableGuid(key),
+        Title = title,
+        Category = category,
+        Severity = severity,
+        Description = description,
+        Recommendation = recommendation,
+        RelatedDocumentCount = count,
+        Examples = examples
+    };
 
     private static OperationalTrendDto BuildOperational(string indicator, int current, int previous, string recommendation)
     {
@@ -328,91 +202,27 @@ limit @Top::int;";
             CurrentValue = current,
             PreviousValue = previous,
             VariationPercent = variation,
-            Status = current > previous && indicator is not "Documentos com OCR pesquisável" ? "Piorando" : current < previous && indicator is not "Documentos com OCR pesquisável" ? "Melhorando" : "Estável",
-            Recommendation = recommendation
+            Recommendation = recommendation,
+            Status = Math.Abs(variation) > 30 && current > previous ? "Atenção" : "Informativo"
         };
     }
 
-    private static IReadOnlyList<HospitalAlertDto> BuildAlerts(IReadOnlyList<TrendKpiDto> terms, IReadOnlyList<SectorTrendDto> sectors, IReadOnlyList<OperationalTrendDto> operational, CounterSnapshot counters)
+    private static IReadOnlyList<TermDictionaryItemDto> FilterDictionary(string? category)
+        => string.IsNullOrWhiteSpace(category)
+            ? HospitalTermDictionary.All
+            : HospitalTermDictionary.All.Where(x => x.Category.Equals(category, StringComparison.OrdinalIgnoreCase)).ToList();
+
+    private static HospitalOcrAnalyticsFilter ToAnalyticsFilter(HospitalTrendsFilter f, DateTime from, DateTime to) => new()
     {
-        var alerts = new List<HospitalAlertDto>();
-        foreach (var term in terms.Where(t => t.CurrentCount >= 5 && (t.VariationPercent > 50 || t.TrendDirection == "Novo")).Take(10))
-        {
-            var severity = term.TrendDirection == "Novo" ? "Médio/Alto" : "Alto";
-            if ((term.Term.Equals("glosa", StringComparison.OrdinalIgnoreCase) || term.Term.Equals("faturamento", StringComparison.OrdinalIgnoreCase)) && term.VariationPercent > 0)
-                severity = "Alto";
-            if (CriticalTerms.Any(x => x.Equals(term.Term, StringComparison.OrdinalIgnoreCase)) && term.VariationPercent > 30)
-                severity = "Alto";
-
-            alerts.Add(new HospitalAlertDto
-            {
-                Id = StableGuid($"TERM:{term.Category}:{term.Term}"),
-                Title = term.TrendDirection == "Novo" ? $"Termo novo relevante: {term.Term}" : $"Crescimento relevante de menções a {term.Term}",
-                Category = term.Category,
-                Severity = severity,
-                Description = term.Interpretation,
-                Recommendation = term.Category.Contains("FINANCEIRO", StringComparison.OrdinalIgnoreCase)
-                    ? "Submeter amostra à auditoria administrativa/financeira e verificar impacto em glosas, faturamento e contratos."
-                    : "Encaminhar leitura executiva para a área responsável e validar a tendência com os fluxos assistenciais/documentais.",
-                RelatedDocumentCount = term.CurrentCount,
-                ActionUrl = term.Examples.FirstOrDefault() is { } ex ? $"/Ged/Details?id={ex.DocumentId}" : null,
-                Examples = term.Examples
-            });
-        }
-
-        foreach (var op in operational)
-        {
-            if (op.Indicator == "OCR pendente" && op.CurrentValue > op.PreviousValue)
-                alerts.Add(Alert("OP:OCR_PENDING", "Aumento de documentos sem OCR", "OPERACIONAL", "Médio", $"A fila ou pendência OCR cresceu {op.VariationPercent:N1}% no período.", op.Recommendation, op.CurrentValue));
-            if (op.Indicator == "OCR ERROR" && op.CurrentValue > op.PreviousValue)
-                alerts.Add(Alert("OP:OCR_ERROR", "Aumento de OCR ERROR", "OPERACIONAL", "Alto", $"Erros de OCR cresceram {op.VariationPercent:N1}% no período.", op.Recommendation, op.CurrentValue));
-        }
-
-        if (counters.TotalDocuments > 0 && Percent(counters.Unclassified, counters.TotalDocuments) > 30)
-            alerts.Add(Alert("OP:UNCLASSIFIED", "Classificação arquivística atrasada", "OPERACIONAL", "Médio/Alto", $"{Percent(counters.Unclassified, counters.TotalDocuments):N1}% dos documentos do período estão sem classificação.", "Priorizar classificação para reduzir risco de retenção, busca e governança documental.", counters.Unclassified));
-
-        var totalPending = sectors.Sum(s => s.PendingOcr + s.Unclassified);
-        foreach (var sector in sectors.Where(s => totalPending > 0 && (s.PendingOcr + s.Unclassified) * 100m / totalPending > 40).Take(3))
-        {
-            alerts.Add(Alert($"SECTOR:{sector.Sector}", $"Pendências concentradas em {sector.Sector}", "SETOR", "Médio", $"O setor/pasta concentra {((sector.PendingOcr + sector.Unclassified) * 100m / totalPending):N1}% das pendências analisadas.", "Revisar fila, classificação e rotina de saneamento documental do setor/pasta.", sector.PendingOcr + sector.Unclassified));
-        }
-
-        return alerts.OrderByDescending(a => a.Severity is "Alto" or "Crítico").ThenByDescending(a => a.RelatedDocumentCount).ToList();
-    }
-
-    private static HospitalAlertDto Alert(string key, string title, string category, string severity, string description, string recommendation, int count) => new()
-    {
-        Id = StableGuid(key),
-        Title = title,
-        Category = category,
-        Severity = severity,
-        Description = description,
-        Recommendation = recommendation,
-        RelatedDocumentCount = count
+        TenantId = f.TenantId,
+        From = from.Date,
+        To = to.Date.AddDays(1),
+        FolderId = f.FolderId,
+        Sector = f.Sector,
+        DocumentType = f.DocumentType,
+        Top = f.Top,
+        RefreshCache = f.RefreshCache
     };
-
-    private static IEnumerable<string> BuildWarnings(SchemaSnapshot schema, int currentOcr, int previousOcr, int top)
-    {
-        if (!schema.HasDocumentSearch)
-            yield return "Índice textual de OCR indisponível. Tendências por termos dependem de OCR indexado.";
-        if (currentOcr >= top || previousOcr >= top)
-            yield return $"Análise textual limitada aos {top:N0} documentos OCR mais recentes por período para preservar desempenho.";
-        yield return "Indicadores baseados em OCR documental. Utilizar para apoio gerencial e estatístico, não como diagnóstico clínico.";
-    }
-
-    private static DynamicParameters BuildSqlParams(HospitalTrendsFilter f, DateTime from, DateTime to)
-    {
-        var p = new DynamicParameters();
-        p.Add("TenantId", f.TenantId, DbType.Guid);
-        p.Add("From", from.Date, DbType.DateTime);
-        p.Add("ToExclusive", to.Date.AddDays(1), DbType.DateTime);
-        p.Add("FolderId", f.FolderId, DbType.Guid);
-        p.Add("Sector", NullIfWhiteSpace(f.Sector), DbType.String);
-        p.Add("DocumentType", NullIfWhiteSpace(f.DocumentType), DbType.String);
-        p.Add("Category", NullIfWhiteSpace(f.Category), DbType.String);
-        p.Add("Top", NormalizeTop(f.Top), DbType.Int32);
-        return p;
-    }
 
     private static HospitalTrendsFilter NormalizeFilter(HospitalTrendsFilter filter)
     {
@@ -424,10 +234,10 @@ limit @Top::int;";
         var compareTo = filter.CompareTo?.Date ?? from.AddDays(-1);
         var compareFrom = filter.CompareFrom?.Date ?? compareTo.AddDays(-(length - 1));
         if (compareFrom > compareTo) (compareFrom, compareTo) = (compareTo, compareFrom);
-        var top = NormalizeTop(filter.Top);
-        return new HospitalTrendsFilter { TenantId = filter.TenantId, From = from, To = to, CompareFrom = compareFrom, CompareTo = compareTo, FolderId = filter.FolderId, Sector = NullIfWhiteSpace(filter.Sector), DocumentType = NullIfWhiteSpace(filter.DocumentType), Category = NullIfWhiteSpace(filter.Category), Top = top, RefreshCache = filter.RefreshCache };
+        return new HospitalTrendsFilter { TenantId = filter.TenantId, From = from, To = to, CompareFrom = compareFrom, CompareTo = compareTo, FolderId = filter.FolderId, Sector = NullIfWhiteSpace(filter.Sector), DocumentType = NullIfWhiteSpace(filter.DocumentType), Category = NullIfWhiteSpace(filter.Category), Top = NormalizeTop(filter.Top), RefreshCache = filter.RefreshCache };
     }
 
+    private static AppDocumentSnippetDto MapSnippet(AnalyticsDocumentSnippetDto x) => new() { DocumentId = x.DocumentId, VersionId = x.VersionId, Title = x.Title, Folder = x.Folder, Snippet = x.Snippet, CreatedAt = x.CreatedAt };
     private static string BuildCacheKey(HospitalTrendsFilter f, string part) => $"HospitalTrends:{part}:{f.TenantId}:{f.From:yyyyMMdd}:{f.To:yyyyMMdd}:{f.CompareFrom:yyyyMMdd}:{f.CompareTo:yyyyMMdd}:{f.FolderId}:{f.Sector}:{f.DocumentType}:{f.Category}:{f.Top}";
     private static string BuildPeriodLabel(DateTime from, DateTime to) => $"{from:dd/MM/yyyy} a {to:dd/MM/yyyy}";
     private static string? NullIfWhiteSpace(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
@@ -435,7 +245,12 @@ limit @Top::int;";
     private static decimal Percent(int part, int total) => total <= 0 ? 0 : Math.Round(part * 100m / total, 2);
     private static decimal Variation(int current, int previous) => previous == 0 ? (current > 0 ? 100 : 0) : Math.Round((current - previous) * 100m / previous, 2);
     private static string Direction(int current, int previous, decimal variation) => previous == 0 && current > 0 ? "Novo" : variation > 5 ? "Crescimento" : variation < -5 ? "Queda" : "Estável";
-
+    private static string Key(string term, string category) => $"{category}:{term}";
+    private static string SafeLabel(string? value, string fallback) => string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+    private static string TrendVerb(string direction) => direction switch { "Crescimento" => "cresceram", "Queda" => "caíram", _ => "permaneceram estáveis em" };
+    private static string BuildTermInterpretation(string term, int current, int previous, decimal variation, string direction) => direction == "Novo" ? $"Menções a '{term}' surgiram no período atual em {current:N0} documentos analisados." : $"Menções a '{term}' {TrendVerb(direction)} {Math.Abs(variation):N1}% nos documentos analisados em relação ao período anterior ({current:N0} contra {previous:N0}).";
+    private static string BuildSectorInterpretation(string sector, int current, int previous, decimal variation, int pendingOcr, int unclassified) => $"O setor/pasta {sector} registrou {current:N0} documentos OCR no período ({TrendVerb(Direction(current, previous, variation))} {Math.Abs(variation):N1}%), com {pendingOcr:N0} pendências OCR e {unclassified:N0} sem classificação.";
+    private static List<RankingKpiDto> BuildRanking(IEnumerable<string?> values, int total) => values.Select(v => SafeLabel(v, "Não informado")).GroupBy(v => v).OrderByDescending(g => g.Count()).Take(10).Select(g => new RankingKpiDto { Label = g.Key, Value = g.Count(), Percentage = Percent(g.Count(), total) }).ToList();
     private static string RiskLevel(string term, string category, int current, decimal variation, string direction)
     {
         if (CriticalTerms.Any(x => x.Equals(term, StringComparison.OrdinalIgnoreCase)) && variation > 30) return "Alto";
@@ -445,95 +260,6 @@ limit @Top::int;";
         if (category.Contains("JURÍDICO", StringComparison.OrdinalIgnoreCase) && current >= 3) return "Médio";
         return current >= 3 ? "Médio" : "Baixo";
     }
-
-    private static string BuildTermInterpretation(string term, int current, int previous, decimal variation, string direction)
-        => direction == "Novo"
-            ? $"Menções a '{term}' surgiram no período atual em {current:N0} documentos analisados."
-            : $"Menções a '{term}' {TrendVerb(direction)} {Math.Abs(variation):N1}% nos documentos analisados em relação ao período anterior ({current:N0} contra {previous:N0}).";
-
-    private static string TrendVerb(string direction) => direction switch { "Crescimento" => "cresceram", "Queda" => "caíram", _ => "permaneceram estáveis em" };
-
-    private static string BuildSectorInterpretation(string sector, int current, int previous, decimal variation, int pendingOcr, int unclassified)
-        => $"O setor/pasta {sector} registrou {current:N0} documentos no período ({TrendVerb(Direction(current, previous, variation))} {Math.Abs(variation):N1}%), com {pendingOcr:N0} pendências OCR e {unclassified:N0} sem classificação.";
-
-    private static List<RankingKpiDto> BuildRanking(IEnumerable<string?> values, int total)
-        => values.Select(v => string.IsNullOrWhiteSpace(v) ? "Não informado" : v.Trim()).GroupBy(v => v).OrderByDescending(g => g.Count()).Take(10).Select(g => new RankingKpiDto { Label = g.Key, Value = g.Count(), Percentage = Percent(g.Count(), total) }).ToList();
-
-    private static int CountOccurrences(string text, string normalizedTerm) => string.IsNullOrWhiteSpace(normalizedTerm) ? 0 : Regex.Matches(text, $@"(?<!\p{{L}}){Regex.Escape(normalizedTerm)}(?!\p{{L}})", RegexOptions.IgnoreCase).Count;
-    private static string Normalize(string text) => string.Concat((text ?? string.Empty).Normalize(NormalizationForm.FormD).Where(c => CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark)).Normalize(NormalizationForm.FormC).ToLowerInvariant();
-    private static string MaskSensitive(string text) => LongNumberRegex.Replace(EmailRegex.Replace(CpfRegex.Replace(text ?? string.Empty, "***.***.***-**"), "***@***"), "******");
-
-    private static DocumentSnippetDto ToSnippet(OcrRow row, string term) => new()
-    {
-        DocumentId = row.DocumentId,
-        VersionId = row.VersionId == Guid.Empty ? null : row.VersionId,
-        Title = MaskSensitive(row.Title),
-        Folder = row.Folder,
-        CreatedAt = row.CreatedAt,
-        Snippet = ExtractSnippet(row.Text, term)
-    };
-
-    private static string ExtractSnippet(string text, string term)
-    {
-        if (string.IsNullOrWhiteSpace(text)) return "Trecho OCR indisponível no recorte.";
-        var idx = CultureInfo.CurrentCulture.CompareInfo.IndexOf(text, term, CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace);
-        if (idx < 0) idx = 0;
-        var start = Math.Max(0, idx - 80);
-        var len = Math.Min(SnippetLength, text.Length - start);
-        var snippet = text.Substring(start, len).ReplaceLineEndings(" ");
-        return MaskSensitive((start > 0 ? "..." : string.Empty) + snippet + (start + len < text.Length ? "..." : string.Empty));
-    }
-
-    private static Guid StableGuid(string value)
-    {
-        var bytes = MD5.HashData(Encoding.UTF8.GetBytes(value));
-        return new Guid(bytes);
-    }
-
-    private static HospitalTrendsDashboardDto EmptyDashboard(string warning) => new()
-    {
-        GeneratedAt = DateTimeOffset.UtcNow,
-        PeriodLabel = string.Empty,
-        ComparePeriodLabel = string.Empty,
-        Warnings = [warning]
-    };
-
-    private sealed class SchemaSnapshot
-    {
-        public bool HasDocumentSearch { get; set; }
-        public bool HasOcrJob { get; set; }
-    }
-
-    private sealed class CounterSnapshot
-    {
-        public int TotalDocuments { get; set; }
-        public int DocumentsWithOcr { get; set; }
-        public int PendingOcr { get; set; }
-        public int OcrErrors { get; set; }
-        public int Unclassified { get; set; }
-    }
-
-    private sealed class DocumentRow
-    {
-        public Guid DocumentId { get; set; }
-        public string Folder { get; set; } = string.Empty;
-        public string DocumentType { get; set; } = string.Empty;
-        public string Sector { get; set; } = string.Empty;
-        public DateTime? CreatedAt { get; set; }
-        public bool IsClassified { get; set; }
-        public bool HasOcr { get; set; }
-        public string OcrStatus { get; set; } = string.Empty;
-    }
-
-    private sealed class OcrRow
-    {
-        public Guid DocumentId { get; set; }
-        public Guid VersionId { get; set; }
-        public string Title { get; set; } = string.Empty;
-        public string Folder { get; set; } = string.Empty;
-        public string DocumentType { get; set; } = string.Empty;
-        public string Sector { get; set; } = string.Empty;
-        public DateTime? CreatedAt { get; set; }
-        public string Text { get; set; } = string.Empty;
-    }
+    private static Guid StableGuid(string value) => new(MD5.HashData(Encoding.UTF8.GetBytes(value)));
+    private static HospitalTrendsDashboardDto EmptyDashboard(string warning) => new() { GeneratedAt = DateTimeOffset.UtcNow, Warnings = [warning] };
 }

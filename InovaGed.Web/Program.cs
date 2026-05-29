@@ -1,5 +1,7 @@
+using InovaGed.Application.HospitalAnalytics;
 using InovaGed.Application.HospitalIntelligence;
 using InovaGed.Application.HospitalTrends;
+using InovaGed.Infrastructure.HospitalAnalytics;
 using InovaGed.Infrastructure.HospitalIntelligence;
 using InovaGed.Infrastructure.HospitalTrends;
 using System.Security.Claims;
@@ -114,6 +116,7 @@ builder.Services.Configure<FormOptions>(options =>
 builder.Services.AddScoped<ICurrentUser, CurrentUser>();
 builder.Services.AddScoped<ICurrentContext, CurrentContext>();
 builder.Services.AddScoped<IGedDashboardService, GedDashboardService>();
+builder.Services.AddScoped<IHospitalOcrAnalyticsService, HospitalOcrAnalyticsService>();
 builder.Services.AddScoped<IHospitalIntelligenceService, HospitalIntelligenceService>();
 builder.Services.AddScoped<IHospitalTrendsService, HospitalTrendsService>();
 
