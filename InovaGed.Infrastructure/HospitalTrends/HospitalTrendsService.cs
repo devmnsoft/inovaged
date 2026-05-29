@@ -93,6 +93,11 @@ public sealed class HospitalTrendsService : IHospitalTrendsService
             _cache.Set(cacheKey, dashboard, CacheTtl);
             return dashboard;
         }
+        catch (PostgresException ex) when (ex.SqlState == "42P08")
+        {
+            _logger.LogError(ex, "Erro de tipagem de parâmetro SQL em HospitalTrends. Tenant={TenantId}", f.TenantId);
+            return EmptyDashboard("Indicadores indisponíveis por erro de consulta. Verifique os logs técnicos.");
+        }
         catch (PostgresException ex)
         {
             _logger.LogError(ex, "Erro PostgreSQL ao gerar Central de Alertas e Tendências Hospitalares. Tenant={TenantId}", f.TenantId);
@@ -128,6 +133,13 @@ select
 
     private async Task<CounterSnapshot> LoadCountersAsync(IDbConnection conn, HospitalTrendsFilter f, DateTime from, DateTime to, SchemaSnapshot schema, CancellationToken ct)
     {
+        _logger.LogInformation(
+            "Carregando counters HospitalTrends. Tenant={TenantId} From={From} To={To} FolderId={FolderId}",
+            f.TenantId,
+            from,
+            to,
+            f.FolderId);
+
         var ocrJobJoin = schema.HasOcrJob ? "left join ged.ocr_job oj on oj.tenant_id=d.tenant_id and oj.document_version_id=d.current_version_id" : string.Empty;
         var ocrStatusExpr = schema.HasOcrJob ? "upper(coalesce(oj.status::text, ''))" : "''";
         var hasOcrExpr = schema.HasDocumentSearch ? "exists(select 1 from ged.document_search ds where ds.tenant_id=d.tenant_id and ds.document_id=d.id and coalesce(ds.ocr_text,'') <> '')" : "false";
@@ -141,11 +153,11 @@ with filtered as (
  left join ged.folder fol on fol.id=d.folder_id and fol.tenant_id=d.tenant_id
  left join ged.document_type dt on dt.id=d.type_id and dt.tenant_id=d.tenant_id
  {ocrJobJoin}
- where d.tenant_id=@TenantId and coalesce(d.reg_status,'A')='A'
-   and d.created_at >= @From and d.created_at < @ToExclusive
-   and (@FolderId is null or d.folder_id=@FolderId)
-   and (@Sector is null or fol.name ilike '%' || @Sector || '%')
-   and (@DocumentType is null or dt.name ilike '%' || @DocumentType || '%')
+ where d.tenant_id=@TenantId::uuid and coalesce(d.reg_status,'A')='A'
+   and d.created_at >= @From::timestamp and d.created_at < @ToExclusive::timestamp
+   and (@FolderId::uuid is null or d.folder_id=@FolderId::uuid)
+   and (@Sector::text is null or fol.name ilike '%' || @Sector::text || '%')
+   and (@DocumentType::text is null or dt.name ilike '%' || @DocumentType::text || '%')
 )
 select count(distinct id)::int as ""TotalDocuments"",
        count(distinct id) filter (where has_ocr)::int as ""DocumentsWithOcr"",
@@ -158,6 +170,13 @@ from filtered;";
 
     private async Task<List<DocumentRow>> LoadDocumentRowsAsync(IDbConnection conn, HospitalTrendsFilter f, DateTime from, DateTime to, SchemaSnapshot schema, CancellationToken ct)
     {
+        _logger.LogInformation(
+            "Carregando documentos HospitalTrends. Tenant={TenantId} From={From} To={To} FolderId={FolderId}",
+            f.TenantId,
+            from,
+            to,
+            f.FolderId);
+
         var ocrJobJoin = schema.HasOcrJob ? "left join ged.ocr_job oj on oj.tenant_id=d.tenant_id and oj.document_version_id=d.current_version_id" : string.Empty;
         var ocrStatusExpr = schema.HasOcrJob ? "upper(coalesce(oj.status::text, ''))" : "''";
         var hasOcrExpr = schema.HasDocumentSearch ? "exists(select 1 from ged.document_search ds where ds.tenant_id=d.tenant_id and ds.document_id=d.id and coalesce(ds.ocr_text,'') <> '')" : "false";
@@ -174,13 +193,13 @@ from ged.document d
 left join ged.folder fol on fol.id=d.folder_id and fol.tenant_id=d.tenant_id
 left join ged.document_type dt on dt.id=d.type_id and dt.tenant_id=d.tenant_id
 {ocrJobJoin}
-where d.tenant_id=@TenantId and coalesce(d.reg_status,'A')='A'
-  and d.created_at >= @From and d.created_at < @ToExclusive
-  and (@FolderId is null or d.folder_id=@FolderId)
-  and (@Sector is null or fol.name ilike '%' || @Sector || '%')
-  and (@DocumentType is null or dt.name ilike '%' || @DocumentType || '%')
+where d.tenant_id=@TenantId::uuid and coalesce(d.reg_status,'A')='A'
+  and d.created_at >= @From::timestamp and d.created_at < @ToExclusive::timestamp
+  and (@FolderId::uuid is null or d.folder_id=@FolderId::uuid)
+  and (@Sector::text is null or fol.name ilike '%' || @Sector::text || '%')
+  and (@DocumentType::text is null or dt.name ilike '%' || @DocumentType::text || '%')
 order by d.id, d.created_at desc
-limit @Top;";
+limit @Top::int;";
         var rows = await conn.QueryAsync<DocumentRow>(new CommandDefinition(sql, BuildSqlParams(f, from, to), cancellationToken: ct));
         return rows.ToList();
     }
@@ -189,6 +208,13 @@ limit @Top;";
     {
         if (!schema.HasDocumentSearch)
             return [];
+
+        _logger.LogInformation(
+            "Carregando OCR HospitalTrends. Tenant={TenantId} From={From} To={To} FolderId={FolderId}",
+            f.TenantId,
+            from,
+            to,
+            f.FolderId);
 
         var sql = @"
 select distinct on (d.id) d.id as ""DocumentId"", ds.version_id as ""VersionId"",
@@ -202,13 +228,13 @@ from ged.document d
 join ged.document_search ds on ds.tenant_id=d.tenant_id and ds.document_id=d.id and coalesce(ds.ocr_text,'') <> ''
 left join ged.folder fol on fol.id=d.folder_id and fol.tenant_id=d.tenant_id
 left join ged.document_type dt on dt.id=d.type_id and dt.tenant_id=d.tenant_id
-where d.tenant_id=@TenantId and coalesce(d.reg_status,'A')='A'
-  and d.created_at >= @From and d.created_at < @ToExclusive
-  and (@FolderId is null or d.folder_id=@FolderId)
-  and (@Sector is null or fol.name ilike '%' || @Sector || '%')
-  and (@DocumentType is null or dt.name ilike '%' || @DocumentType || '%')
+where d.tenant_id=@TenantId::uuid and coalesce(d.reg_status,'A')='A'
+  and d.created_at >= @From::timestamp and d.created_at < @ToExclusive::timestamp
+  and (@FolderId::uuid is null or d.folder_id=@FolderId::uuid)
+  and (@Sector::text is null or fol.name ilike '%' || @Sector::text || '%')
+  and (@DocumentType::text is null or dt.name ilike '%' || @DocumentType::text || '%')
 order by d.id, d.created_at desc
-limit @Top;";
+limit @Top::int;";
         var rows = (await conn.QueryAsync<OcrRow>(new CommandDefinition(sql, BuildSqlParams(f, from, to), cancellationToken: ct))).ToList();
         foreach (var row in rows)
         {
@@ -377,13 +403,14 @@ limit @Top;";
     private static DynamicParameters BuildSqlParams(HospitalTrendsFilter f, DateTime from, DateTime to)
     {
         var p = new DynamicParameters();
-        p.Add("TenantId", f.TenantId);
-        p.Add("From", from.Date);
-        p.Add("ToExclusive", to.Date.AddDays(1));
-        p.Add("FolderId", f.FolderId);
-        p.Add("Sector", NullIfWhite(f.Sector));
-        p.Add("DocumentType", NullIfWhite(f.DocumentType));
-        p.Add("Top", f.Top);
+        p.Add("TenantId", f.TenantId, DbType.Guid);
+        p.Add("From", from.Date, DbType.DateTime);
+        p.Add("ToExclusive", to.Date.AddDays(1), DbType.DateTime);
+        p.Add("FolderId", f.FolderId, DbType.Guid);
+        p.Add("Sector", NullIfWhiteSpace(f.Sector), DbType.String);
+        p.Add("DocumentType", NullIfWhiteSpace(f.DocumentType), DbType.String);
+        p.Add("Category", NullIfWhiteSpace(f.Category), DbType.String);
+        p.Add("Top", NormalizeTop(f.Top), DbType.Int32);
         return p;
     }
 
@@ -397,13 +424,14 @@ limit @Top;";
         var compareTo = filter.CompareTo?.Date ?? from.AddDays(-1);
         var compareFrom = filter.CompareFrom?.Date ?? compareTo.AddDays(-(length - 1));
         if (compareFrom > compareTo) (compareFrom, compareTo) = (compareTo, compareFrom);
-        var top = filter.Top <= 0 ? DefaultTopDocuments : Math.Min(filter.Top, MaxTopDocuments);
-        return new HospitalTrendsFilter { TenantId = filter.TenantId, From = from, To = to, CompareFrom = compareFrom, CompareTo = compareTo, FolderId = filter.FolderId, Sector = filter.Sector, DocumentType = filter.DocumentType, Category = filter.Category, Top = top, RefreshCache = filter.RefreshCache };
+        var top = NormalizeTop(filter.Top);
+        return new HospitalTrendsFilter { TenantId = filter.TenantId, From = from, To = to, CompareFrom = compareFrom, CompareTo = compareTo, FolderId = filter.FolderId, Sector = NullIfWhiteSpace(filter.Sector), DocumentType = NullIfWhiteSpace(filter.DocumentType), Category = NullIfWhiteSpace(filter.Category), Top = top, RefreshCache = filter.RefreshCache };
     }
 
     private static string BuildCacheKey(HospitalTrendsFilter f, string part) => $"HospitalTrends:{part}:{f.TenantId}:{f.From:yyyyMMdd}:{f.To:yyyyMMdd}:{f.CompareFrom:yyyyMMdd}:{f.CompareTo:yyyyMMdd}:{f.FolderId}:{f.Sector}:{f.DocumentType}:{f.Category}:{f.Top}";
     private static string BuildPeriodLabel(DateTime from, DateTime to) => $"{from:dd/MM/yyyy} a {to:dd/MM/yyyy}";
-    private static string? NullIfWhite(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    private static string? NullIfWhiteSpace(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    private static int NormalizeTop(int top) => top <= 0 ? DefaultTopDocuments : Math.Min(top, MaxTopDocuments);
     private static decimal Percent(int part, int total) => total <= 0 ? 0 : Math.Round(part * 100m / total, 2);
     private static decimal Variation(int current, int previous) => previous == 0 ? (current > 0 ? 100 : 0) : Math.Round((current - previous) * 100m / previous, 2);
     private static string Direction(int current, int previous, decimal variation) => previous == 0 && current > 0 ? "Novo" : variation > 5 ? "Crescimento" : variation < -5 ? "Queda" : "Estável";
