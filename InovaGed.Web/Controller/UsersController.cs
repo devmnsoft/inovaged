@@ -136,12 +136,7 @@ public sealed class UsersController : AppControllerBase
             Total = res.Total,
             Items = res.Items.Select(x =>
             {
-                var effectiveId =
-                    x.ServidorId.HasValue && x.ServidorId.Value != Guid.Empty
-                        ? x.ServidorId.Value
-                        : x.UserId.HasValue && x.UserId.Value != Guid.Empty
-                            ? x.UserId.Value
-                            : Guid.Empty;
+                var effectiveId = x.EffectiveEditId.GetValueOrDefault();
 
                 if (effectiveId == Guid.Empty)
                 {
@@ -159,7 +154,9 @@ public sealed class UsersController : AppControllerBase
                     Id = effectiveId,
                     ServidorId = x.ServidorId,
                     UserId = x.UserId,
-                    EditIdSource = x.EditIdSource,
+                    EditIdSource = x.EffectiveEditIdSource,
+                    ServidorExists = x.ServidorExists,
+                    UserExists = x.UserExists,
                     Name = x.Name,
                     Email = x.Email,
                     Cpf = x.Cpf,
@@ -335,21 +332,89 @@ public sealed class UsersController : AppControllerBase
             HttpContext.TraceIdentifier);
 
         var dto = await _repo.GetForEditByServidorIdAsync(tenantId, id, isAdmin, ct);
+
+        _logger.LogInformation(
+            "Resultado busca por ServidorId. Tenant={TenantId} RouteId={RouteId} Found={Found}",
+            tenantId,
+            id,
+            dto != null);
+
         if (dto is null && isAdmin)
         {
-            _logger.LogWarning(
-                "Edit by ServidorId failed for ADMIN. Trying fallback by UserId. Tenant={TenantId} RouteId={RouteId}",
-                tenantId,
-                id);
             dto = await _repo.GetForEditByUserIdAsync(tenantId, id, ct);
+
+            _logger.LogInformation(
+                "Resultado fallback por UserId. Tenant={TenantId} RouteId={RouteId} Found={Found} ServidorId={ServidorId} UserId={UserId}",
+                tenantId,
+                id,
+                dto != null,
+                dto?.ServidorId,
+                dto?.UserId);
         }
+
+        if (isAdmin && dto?.UserId == id)
+        {
+            var repairedServidorId = await _repo.EnsureServidorForUserAsync(tenantId, id, _currentUser.UserId, ct);
+            _logger.LogInformation(
+                "Resultado reparo de vínculo app_user->servidor. Tenant={TenantId} RouteId={RouteId} RepairedServidorId={RepairedServidorId}",
+                tenantId,
+                id,
+                repairedServidorId);
+
+            if (repairedServidorId.HasValue)
+            {
+                dto = await _repo.GetForEditByServidorIdAsync(tenantId, repairedServidorId.Value, isAdmin, ct)
+                    ?? await _repo.GetForEditByUserIdAsync(tenantId, id, ct);
+            }
+        }
+
         if (dto is null && isAdmin)
         {
-            _logger.LogWarning(
-                "Edit by UserId failed for ADMIN. Trying fallback by vw_user_admin_list. Tenant={TenantId} RouteId={RouteId}",
+            var repairedServidorId = await _repo.EnsureServidorForUserAsync(tenantId, id, _currentUser.UserId, ct);
+            _logger.LogInformation(
+                "Resultado tentativa de reparo por UserId inexistente/incompleto. Tenant={TenantId} RouteId={RouteId} RepairedServidorId={RepairedServidorId}",
                 tenantId,
-                id);
-            dto = await _repo.GetForEditFromAdminListAsync(tenantId, id, ct);
+                id,
+                repairedServidorId);
+
+            if (repairedServidorId.HasValue)
+            {
+                dto = await _repo.GetForEditByServidorIdAsync(tenantId, repairedServidorId.Value, isAdmin, ct);
+                _logger.LogInformation(
+                    "Resultado busca por ServidorId após reparo por UserId. Tenant={TenantId} RouteId={RouteId} ServidorId={ServidorId} Found={Found}",
+                    tenantId,
+                    id,
+                    repairedServidorId,
+                    dto != null);
+            }
+        }
+
+        if (dto is null && isAdmin)
+        {
+            var repairedServidorId = await _repo.RepairServidorFromAdminListAsync(tenantId, id, _currentUser.UserId, ct);
+            _logger.LogInformation(
+                "Resultado reparo por vw_user_admin_list. Tenant={TenantId} RouteId={RouteId} RepairedServidorId={RepairedServidorId}",
+                tenantId,
+                id,
+                repairedServidorId);
+
+            if (repairedServidorId.HasValue)
+            {
+                dto = await _repo.GetForEditByServidorIdAsync(tenantId, repairedServidorId.Value, isAdmin, ct);
+            }
+        }
+
+        if (dto is null && isAdmin)
+        {
+            dto = await _repo.GetForEditFromAdminListAsync(tenantId, id, _currentUser.UserId, ct);
+
+            _logger.LogInformation(
+                "Resultado fallback por vw_user_admin_list. Tenant={TenantId} RouteId={RouteId} Found={Found} ServidorId={ServidorId} UserId={UserId}",
+                tenantId,
+                id,
+                dto != null,
+                dto?.ServidorId,
+                dto?.UserId);
         }
 
         if (dto is null)

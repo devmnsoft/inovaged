@@ -51,19 +51,72 @@ WHERE u.tenant_id = @TenantId
 ";
 
         const string listSql = @"
+WITH base AS (
+    SELECT
+        u.*,
+        EXISTS(
+            SELECT 1
+            FROM ged.servidor s
+            WHERE s.id = u.servidor_id
+              AND s.tenant_id = u.tenant_id
+              AND COALESCE(s.reg_status, 'A') = 'A'
+        ) AS servidor_exists,
+        EXISTS(
+            SELECT 1
+            FROM ged.app_user au
+            WHERE au.id = u.user_id
+              AND au.tenant_id = u.tenant_id
+              AND au.deleted_at_utc IS NULL
+        ) AS user_exists
+    FROM ged.vw_user_admin_list u
+    WHERE u.tenant_id = @TenantId
+      AND (@Active IS NULL OR u.is_active = @Active)
+      AND (@Locked IS NULL OR u.is_locked = @Locked)
+      AND (
+           @Q IS NULL
+        OR u.nome_completo ILIKE '%' || @Q || '%'
+        OR u.email ILIKE '%' || @Q || '%'
+        OR u.cpf ILIKE '%' || @Q || '%'
+        OR u.matricula ILIKE '%' || @Q || '%'
+        OR u.setor ILIKE '%' || @Q || '%'
+        OR u.cargo ILIKE '%' || @Q || '%'
+      )
+), effective AS (
+    SELECT
+        base.*,
+        CASE
+            WHEN servidor_id IS NOT NULL
+             AND servidor_id <> '00000000-0000-0000-0000-000000000000'::uuid
+             AND servidor_exists = TRUE
+                THEN servidor_id
+            WHEN user_id IS NOT NULL
+             AND user_id <> '00000000-0000-0000-0000-000000000000'::uuid
+             AND user_exists = TRUE
+                THEN user_id
+            ELSE NULL
+        END AS effective_edit_id,
+        CASE
+            WHEN servidor_id IS NOT NULL
+             AND servidor_id <> '00000000-0000-0000-0000-000000000000'::uuid
+             AND servidor_exists = TRUE
+                THEN 'SERVIDOR'
+            WHEN user_id IS NOT NULL
+             AND user_id <> '00000000-0000-0000-0000-000000000000'::uuid
+             AND user_exists = TRUE
+                THEN 'USER'
+            ELSE 'INVALID'
+        END AS effective_edit_id_source
+    FROM base
+)
 SELECT
-    COALESCE(NULLIF(u.servidor_id, '00000000-0000-0000-0000-000000000000'::uuid), u.user_id) AS ""Id"",
+    COALESCE(u.effective_edit_id, '00000000-0000-0000-0000-000000000000'::uuid) AS ""Id"",
     u.servidor_id          AS ""ServidorId"",
     u.user_id              AS ""UserId"",
-    CASE
-        WHEN u.servidor_id IS NOT NULL
-         AND u.servidor_id <> '00000000-0000-0000-0000-000000000000'::uuid
-            THEN 'SERVIDOR'
-        WHEN u.user_id IS NOT NULL
-         AND u.user_id <> '00000000-0000-0000-0000-000000000000'::uuid
-            THEN 'USER'
-        ELSE 'INVALID'
-    END                    AS ""EditIdSource"",
+    u.effective_edit_id_source AS ""EditIdSource"",
+    u.effective_edit_id    AS ""EffectiveEditId"",
+    u.effective_edit_id_source AS ""EffectiveEditIdSource"",
+    u.servidor_exists      AS ""ServidorExists"",
+    u.user_exists          AS ""UserExists"",
     u.nome_completo        AS ""Name"",
     u.cpf                  AS ""Cpf"",
     u.matricula            AS ""Matricula"",
@@ -83,19 +136,7 @@ SELECT
     u.last_login_at        AS ""LastLoginAt"",
     u.created_at           AS ""CreatedAt"",
     u.roles_csv            AS ""RolesCsv""
-FROM ged.vw_user_admin_list u
-WHERE u.tenant_id = @TenantId
-  AND (@Active IS NULL OR u.is_active = @Active)
-  AND (@Locked IS NULL OR u.is_locked = @Locked)
-  AND (
-       @Q IS NULL
-    OR u.nome_completo ILIKE '%' || @Q || '%'
-    OR u.email ILIKE '%' || @Q || '%'
-    OR u.cpf ILIKE '%' || @Q || '%'
-    OR u.matricula ILIKE '%' || @Q || '%'
-    OR u.setor ILIKE '%' || @Q || '%'
-    OR u.cargo ILIKE '%' || @Q || '%'
-  )
+FROM effective u
 ORDER BY lower(u.nome_completo)
 OFFSET @Offset LIMIT @PageSize;
 ";

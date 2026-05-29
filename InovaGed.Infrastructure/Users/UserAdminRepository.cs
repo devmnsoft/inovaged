@@ -651,7 +651,7 @@ WHERE tenant_id = @TenantId
         const string sql = @"
 SELECT
     u.id                         AS ""UserId"",
-    s.id                         AS ""ServidorId"",
+    COALESCE(s.id, u.servidor_id, '00000000-0000-0000-0000-000000000000'::uuid) AS ""ServidorId"",
     COALESCE(s.nome_completo, u.name, '') AS ""NomeCompleto"",
     COALESCE(s.cpf, '')                   AS ""Cpf"",
     s.rg                                  AS ""Rg"",
@@ -694,7 +694,7 @@ LIMIT 1;";
         const string sql = @"
 SELECT
     u.id                         AS ""UserId"",
-    s.id                         AS ""ServidorId"",
+    COALESCE(s.id, u.servidor_id, '00000000-0000-0000-0000-000000000000'::uuid) AS ""ServidorId"",
     COALESCE(s.nome_completo, u.name, '') AS ""NomeCompleto"",
     COALESCE(s.cpf, '')                   AS ""Cpf"",
     s.rg                                  AS ""Rg"",
@@ -730,6 +730,7 @@ LIMIT 1;";
     public async Task<UserEditDto?> GetForEditFromAdminListAsync(
         Guid tenantId,
         Guid id,
+        Guid? adminId,
         CancellationToken ct)
     {
         const string sql = @"
@@ -759,6 +760,17 @@ LIMIT 1;";
         const string rolesSql = @"SELECT role_id FROM ged.user_role WHERE user_id = @UserId;";
 
         await using var con = await _db.OpenAsync(ct);
+        if (adminId.HasValue)
+        {
+            var repairedServidorId = await RepairServidorFromAdminListAsync(tenantId, id, adminId.Value, ct);
+            _logger.LogInformation(
+                "Reparo automático por vw_user_admin_list antes do fallback de edição. TenantId={TenantId} RouteId={RouteId} AdminId={AdminId} RepairedServidorId={RepairedServidorId}",
+                tenantId,
+                id,
+                adminId,
+                repairedServidorId);
+        }
+
         var dto = await con.QueryFirstOrDefaultAsync<UserEditDto>(
             new CommandDefinition(sql, new { TenantId = tenantId, Id = id }, cancellationToken: ct));
         if (dto is null)
@@ -774,62 +786,364 @@ LIMIT 1;";
         return dto;
     }
 
+    public async Task<Guid?> EnsureServidorForUserAsync(
+        Guid tenantId,
+        Guid userId,
+        Guid adminId,
+        CancellationToken ct)
+    {
+        const string selectUserSql = @"
+SELECT
+    u.id AS ""UserId"",
+    u.servidor_id AS ""ServidorId"",
+    u.name AS ""Name"",
+    u.email AS ""Email"",
+    u.phone_number AS ""PhoneNumber""
+FROM ged.app_user u
+WHERE u.tenant_id = @TenantId
+  AND u.id = @UserId
+  AND u.deleted_at_utc IS NULL
+LIMIT 1;";
+
+        const string servidorExistsSql = @"
+SELECT EXISTS(
+    SELECT 1
+    FROM ged.servidor s
+    WHERE s.tenant_id = @TenantId
+      AND s.id = @ServidorId
+);";
+
+        const string updateUserServidorSql = @"
+UPDATE ged.app_user
+SET servidor_id = @ServidorId,
+    updated_at_utc = now()
+WHERE tenant_id = @TenantId
+  AND id = @UserId
+  AND deleted_at_utc IS NULL;";
+
+        const string insertServidorSql = @"
+INSERT INTO ged.servidor (
+    id,
+    tenant_id,
+    nome_completo,
+    cpf,
+    email_institucional,
+    celular,
+    situacao_funcional,
+    created_by,
+    created_at,
+    reg_status
+)
+VALUES (
+    @ServidorId,
+    @TenantId,
+    @NomeCompleto,
+    @Cpf,
+    @EmailInstitucional,
+    @Celular,
+    'ATIVO',
+    @AdminId,
+    now(),
+    'A'
+)
+ON CONFLICT (id) DO NOTHING;";
+
+        await using var con = await _db.OpenAsync(ct);
+        await using var tx = await con.BeginTransactionAsync(ct);
+
+        var user = await con.QueryFirstOrDefaultAsync<RepairUserRow>(
+            new CommandDefinition(selectUserSql, new { TenantId = tenantId, UserId = userId }, tx, cancellationToken: ct));
+
+        if (user is null)
+        {
+            await tx.RollbackAsync(ct);
+            return null;
+        }
+
+        var servidorId = user.ServidorId.GetValueOrDefault();
+        if (servidorId == Guid.Empty)
+        {
+            servidorId = Guid.NewGuid();
+            await con.ExecuteAsync(new CommandDefinition(
+                updateUserServidorSql,
+                new { TenantId = tenantId, UserId = userId, ServidorId = servidorId },
+                tx,
+                cancellationToken: ct));
+        }
+
+        var servidorExists = await con.ExecuteScalarAsync<bool>(
+            new CommandDefinition(servidorExistsSql, new { TenantId = tenantId, ServidorId = servidorId }, tx, cancellationToken: ct));
+
+        if (!servidorExists)
+        {
+            await con.ExecuteAsync(new CommandDefinition(
+                insertServidorSql,
+                new
+                {
+                    TenantId = tenantId,
+                    ServidorId = servidorId,
+                    NomeCompleto = FirstNonBlank(user.Name, user.Email, "Usuário sem nome"),
+                    Cpf = TechnicalCpf(servidorId),
+                    EmailInstitucional = user.Email,
+                    Celular = user.PhoneNumber,
+                    AdminId = adminId
+                },
+                tx,
+                cancellationToken: ct));
+
+            _logger.LogWarning(
+                "Servidor reparado/criado para app_user sem vínculo consistente. TenantId={TenantId} UserId={UserId} ServidorId={ServidorId} AdminId={AdminId}",
+                tenantId,
+                userId,
+                servidorId,
+                adminId);
+        }
+
+        await tx.CommitAsync(ct);
+        return servidorId;
+    }
+
+    public async Task<Guid?> RepairServidorFromAdminListAsync(
+        Guid tenantId,
+        Guid id,
+        Guid adminId,
+        CancellationToken ct)
+    {
+        const string selectAdminListSql = @"
+SELECT
+    v.servidor_id AS ""ServidorId"",
+    v.user_id AS ""UserId"",
+    v.nome_completo AS ""NomeCompleto"",
+    v.email AS ""Email"",
+    v.cpf AS ""Cpf"",
+    v.matricula AS ""Matricula"",
+    v.cargo AS ""Cargo"",
+    v.funcao AS ""Funcao"",
+    v.setor AS ""Setor"",
+    v.lotacao AS ""Lotacao"",
+    v.unidade AS ""Unidade""
+FROM ged.vw_user_admin_list v
+WHERE v.tenant_id = @TenantId
+  AND (v.servidor_id = @Id OR v.user_id = @Id)
+LIMIT 1;";
+
+        const string servidorExistsSql = @"
+SELECT EXISTS(
+    SELECT 1
+    FROM ged.servidor s
+    WHERE s.tenant_id = @TenantId
+      AND s.id = @ServidorId
+);";
+
+        const string insertServidorSql = @"
+INSERT INTO ged.servidor (
+    id,
+    tenant_id,
+    nome_completo,
+    cpf,
+    email_institucional,
+    matricula,
+    cargo,
+    funcao,
+    setor,
+    lotacao,
+    unidade,
+    situacao_funcional,
+    created_by,
+    created_at,
+    reg_status
+)
+VALUES (
+    @ServidorId,
+    @TenantId,
+    @NomeCompleto,
+    @Cpf,
+    @EmailInstitucional,
+    @Matricula,
+    @Cargo,
+    @Funcao,
+    @Setor,
+    @Lotacao,
+    @Unidade,
+    'ATIVO',
+    @AdminId,
+    now(),
+    'A'
+)
+ON CONFLICT (id) DO NOTHING;";
+
+        await using var con = await _db.OpenAsync(ct);
+        await using var tx = await con.BeginTransactionAsync(ct);
+
+        var row = await con.QueryFirstOrDefaultAsync<AdminListRepairRow>(
+            new CommandDefinition(selectAdminListSql, new { TenantId = tenantId, Id = id }, tx, cancellationToken: ct));
+
+        if (row is null)
+        {
+            await tx.RollbackAsync(ct);
+            return null;
+        }
+
+        var servidorId = row.ServidorId.GetValueOrDefault();
+        if (servidorId == Guid.Empty && row.UserId.HasValue && row.UserId.Value != Guid.Empty)
+        {
+            await tx.RollbackAsync(ct);
+            return await EnsureServidorForUserAsync(tenantId, row.UserId.Value, adminId, ct);
+        }
+
+        if (servidorId == Guid.Empty)
+        {
+            await tx.RollbackAsync(ct);
+            return null;
+        }
+
+        var servidorExists = await con.ExecuteScalarAsync<bool>(
+            new CommandDefinition(servidorExistsSql, new { TenantId = tenantId, ServidorId = servidorId }, tx, cancellationToken: ct));
+
+        if (!servidorExists)
+        {
+            await con.ExecuteAsync(new CommandDefinition(
+                insertServidorSql,
+                new
+                {
+                    TenantId = tenantId,
+                    ServidorId = servidorId,
+                    NomeCompleto = FirstNonBlank(row.NomeCompleto, row.Email, "Usuário sem nome"),
+                    Cpf = string.IsNullOrWhiteSpace(row.Cpf) ? TechnicalCpf(servidorId) : row.Cpf,
+                    EmailInstitucional = row.Email,
+                    row.Matricula,
+                    row.Cargo,
+                    row.Funcao,
+                    row.Setor,
+                    row.Lotacao,
+                    row.Unidade,
+                    AdminId = adminId
+                },
+                tx,
+                cancellationToken: ct));
+
+            _logger.LogWarning(
+                "Servidor inexistente listado pela vw_user_admin_list foi reparado. TenantId={TenantId} RouteId={RouteId} ServidorId={ServidorId} UserId={UserId} AdminId={AdminId}",
+                tenantId,
+                id,
+                servidorId,
+                row.UserId,
+                adminId);
+        }
+
+        if (row.UserId.HasValue && row.UserId.Value != Guid.Empty)
+        {
+            await con.ExecuteAsync(new CommandDefinition(
+                @"UPDATE ged.app_user
+SET servidor_id = @ServidorId,
+    updated_at_utc = now()
+WHERE tenant_id = @TenantId
+  AND id = @UserId
+  AND deleted_at_utc IS NULL
+  AND (servidor_id IS NULL OR servidor_id <> @ServidorId);",
+                new { TenantId = tenantId, UserId = row.UserId.Value, ServidorId = servidorId },
+                tx,
+                cancellationToken: ct));
+        }
+
+        await tx.CommitAsync(ct);
+        return servidorId;
+    }
+
     public async Task<string> DiagnoseUserEditIdAsync(Guid tenantId, Guid id, CancellationToken ct)
     {
         const string sql = @"
+WITH diagnosis AS (
+    SELECT
+        EXISTS(
+            SELECT 1 FROM ged.servidor s
+            WHERE s.id = @Id AND s.tenant_id = @TenantId
+        ) AS exists_as_servidor,
+        EXISTS(
+            SELECT 1 FROM ged.servidor s
+            WHERE s.id = @Id AND s.tenant_id = @TenantId AND COALESCE(s.reg_status, 'A') = 'A'
+        ) AS exists_as_servidor_active,
+        EXISTS(
+            SELECT 1 FROM ged.app_user u
+            WHERE u.id = @Id AND u.tenant_id = @TenantId
+        ) AS exists_as_user,
+        EXISTS(
+            SELECT 1 FROM ged.app_user u
+            WHERE u.id = @Id AND u.tenant_id = @TenantId AND u.deleted_at_utc IS NULL
+        ) AS exists_as_user_active,
+        EXISTS(
+            SELECT 1 FROM ged.vw_user_admin_list v
+            WHERE v.tenant_id = @TenantId AND v.servidor_id = @Id
+        ) AS exists_in_admin_list_by_servidor_id,
+        EXISTS(
+            SELECT 1 FROM ged.vw_user_admin_list v
+            WHERE v.tenant_id = @TenantId AND v.user_id = @Id
+        ) AS exists_in_admin_list_by_user_id,
+        (
+            SELECT json_build_object(
+                'tenantId', v.tenant_id,
+                'servidorId', v.servidor_id,
+                'userId', v.user_id,
+                'nomeCompleto', v.nome_completo,
+                'email', v.email,
+                'cpf', v.cpf,
+                'matricula', v.matricula,
+                'servidorExists', EXISTS(
+                    SELECT 1 FROM ged.servidor s
+                    WHERE s.id = v.servidor_id AND s.tenant_id = v.tenant_id
+                ),
+                'userExists', EXISTS(
+                    SELECT 1 FROM ged.app_user au
+                    WHERE au.id = v.user_id AND au.tenant_id = v.tenant_id
+                )
+            )
+            FROM ged.vw_user_admin_list v
+            WHERE v.tenant_id = @TenantId
+              AND (v.servidor_id = @Id OR v.user_id = @Id)
+            LIMIT 1
+        ) AS admin_list_row,
+        (
+            SELECT u.servidor_id
+            FROM ged.app_user u
+            WHERE u.id = @Id AND u.tenant_id = @TenantId
+            LIMIT 1
+        ) AS linked_servidor_from_user_id
+)
 SELECT json_build_object(
-    'existsInAdminListByServidorId', EXISTS(
-        SELECT 1 FROM ged.vw_user_admin_list v
-        WHERE v.tenant_id = @TenantId AND v.servidor_id = @Id
-    ),
-    'existsInAdminListByUserId', EXISTS(
-        SELECT 1 FROM ged.vw_user_admin_list v
-        WHERE v.tenant_id = @TenantId AND v.user_id = @Id
-    ),
-    'existsAsServidor', EXISTS(
-        SELECT 1 FROM ged.servidor s
-        WHERE s.id = @Id AND s.tenant_id = @TenantId
-    ),
-    'existsAsServidorActive', EXISTS(
-        SELECT 1 FROM ged.servidor s
-        WHERE s.id = @Id AND s.tenant_id = @TenantId AND COALESCE(s.reg_status, 'A') = 'A'
-    ),
-    'existsAsUser', EXISTS(
-        SELECT 1 FROM ged.app_user u
-        WHERE u.id = @Id AND u.tenant_id = @TenantId
-    ),
-    'existsAsUserActive', EXISTS(
-        SELECT 1 FROM ged.app_user u
-        WHERE u.id = @Id AND u.tenant_id = @TenantId AND u.deleted_at_utc IS NULL
-    ),
-    'hasAppUserByServidorId', EXISTS(
-        SELECT 1 FROM ged.app_user u
-        WHERE u.servidor_id = @Id AND u.tenant_id = @TenantId AND u.deleted_at_utc IS NULL
-    ),
-    'linkedServidorFromUserId', (
-        SELECT s.id::text
-        FROM ged.app_user u
-        LEFT JOIN ged.servidor s ON s.id = u.servidor_id AND s.tenant_id = u.tenant_id
-        WHERE u.id = @Id AND u.tenant_id = @TenantId
-        LIMIT 1
-    ),
-    'hasRolesByUserId', EXISTS(
-        SELECT 1
-        FROM ged.user_role ur
-        JOIN ged.app_user u ON u.id = ur.user_id
-        WHERE u.id = @Id AND u.tenant_id = @TenantId
-    )
-)::text;
+    'routeId', @Id,
+    'tenantId', @TenantId,
+    'existsAsServidor', exists_as_servidor,
+    'existsAsServidorActive', exists_as_servidor_active,
+    'existsAsUser', exists_as_user,
+    'existsAsUserActive', exists_as_user_active,
+    'existsInAdminListByServidorId', exists_in_admin_list_by_servidor_id,
+    'existsInAdminListByUserId', exists_in_admin_list_by_user_id,
+    'adminListRow', admin_list_row,
+    'linkedServidorFromUserId', linked_servidor_from_user_id,
+    'recommendation', CASE
+        WHEN exists_as_user = TRUE AND exists_as_servidor = FALSE THEN
+            'O ID enviado é UserId. A edição deve abrir pelo fallback UserId ou a listagem deve usar ServidorId real.'
+        WHEN exists_in_admin_list_by_servidor_id = TRUE AND exists_as_servidor = FALSE THEN
+            'A view lista um servidor_id inexistente em ged.servidor. Corrigir a view ou reparar dados.'
+        WHEN exists_in_admin_list_by_user_id = TRUE THEN
+            'A view lista esse ID como UserId. Usar fallback por UserId.'
+        WHEN exists_as_servidor = FALSE AND exists_as_user = FALSE AND exists_in_admin_list_by_servidor_id = FALSE AND exists_in_admin_list_by_user_id = FALSE THEN
+            'ID não existe na base para este tenant.'
+        ELSE
+            'ID localizado. Verificar flags de ativo e vínculo servidor/usuário para definir a melhor rota de edição.'
+    END
+)::text
+FROM diagnosis;
 ";
         await using var con = await _db.OpenAsync(ct);
         return await con.ExecuteScalarAsync<string>(
             new CommandDefinition(sql, new { TenantId = tenantId, Id = id }, cancellationToken: ct)) ?? "{}";
     }
 
-public async Task UpdateServidorUsuarioAsync(
-    Guid tenantId,
-    UpdateServidorUsuarioCommand command,
-    CancellationToken ct)
+    public async Task UpdateServidorUsuarioAsync(
+        Guid tenantId,
+        UpdateServidorUsuarioCommand command,
+        CancellationToken ct)
     {
         const string insertServidorSql = @"
 INSERT INTO ged.servidor (
@@ -1230,5 +1544,45 @@ SELECT ged.audit_user_security_event(
         }
 
         await tx.CommitAsync(ct);
+    }
+
+    private static string FirstNonBlank(params string?[] values)
+    {
+        foreach (var value in values)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+                return value.Trim();
+        }
+
+        return string.Empty;
+    }
+
+    private static string TechnicalCpf(Guid servidorId)
+    {
+        return "SEMCPF" + servidorId.ToString("N")[..8];
+    }
+
+    private sealed class RepairUserRow
+    {
+        public Guid UserId { get; set; }
+        public Guid? ServidorId { get; set; }
+        public string? Name { get; set; }
+        public string? Email { get; set; }
+        public string? PhoneNumber { get; set; }
+    }
+
+    private sealed class AdminListRepairRow
+    {
+        public Guid? ServidorId { get; set; }
+        public Guid? UserId { get; set; }
+        public string? NomeCompleto { get; set; }
+        public string? Email { get; set; }
+        public string? Cpf { get; set; }
+        public string? Matricula { get; set; }
+        public string? Cargo { get; set; }
+        public string? Funcao { get; set; }
+        public string? Setor { get; set; }
+        public string? Lotacao { get; set; }
+        public string? Unidade { get; set; }
     }
 }
