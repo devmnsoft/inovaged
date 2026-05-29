@@ -58,6 +58,11 @@ public sealed class HospitalIntelligenceService : IHospitalIntelligenceService
             _cache.Set(key, dto, CacheTtl);
             return dto;
         }
+        catch (PostgresException ex) when (ex.SqlState == "42P08")
+        {
+            _logger.LogError(ex, "Erro de tipagem de parâmetro SQL em HospitalIntelligence. Tenant={TenantId}", f.TenantId);
+            return EmptyDashboard("Indicadores indisponíveis por erro de consulta. Verifique os logs técnicos.");
+        }
         catch (PostgresException ex)
         {
             _logger.LogError(ex, "Erro PostgreSQL ao gerar Inteligência Hospitalar. Tenant={TenantId}", f.TenantId);
@@ -96,6 +101,11 @@ public sealed class HospitalIntelligenceService : IHospitalIntelligenceService
             var rows = await LoadBaseOcrRowsAsync(conn, f, schema, ct);
             return build(counters, rows, f.Top);
         }
+        catch (PostgresException ex) when (ex.SqlState == "42P08")
+        {
+            _logger.LogError(ex, "Erro de tipagem de parâmetro SQL ao carregar parte da Inteligência Hospitalar. Tenant={TenantId}", f.TenantId);
+            return [];
+        }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Falha ao carregar parte da Inteligência Hospitalar. Tenant={TenantId}", f.TenantId);
@@ -116,12 +126,19 @@ select
 
     private async Task<CounterSnapshot> LoadCountersAsync(IDbConnection conn, HospitalIntelligenceFilter f, SchemaSnapshot schema, CancellationToken ct)
     {
+        _logger.LogInformation(
+            "Carregando counters HospitalIntelligence. Tenant={TenantId} From={From} To={To} FolderId={FolderId}",
+            f.TenantId,
+            f.From,
+            f.To,
+            f.FolderId);
+
         var parameters = BuildSqlParams(f);
         var ocrJobJoin = schema.HasOcrJob ? "left join ged.ocr_job oj on oj.tenant_id = d.tenant_id and oj.document_version_id = d.current_version_id" : "";
         var previewJoin = schema.HasPreviewStatus ? "left join ged.preview_status ps on ps.tenant_id = d.tenant_id and ps.document_version_id = d.current_version_id" : "";
         var ocrStatusExpr = schema.HasOcrJob ? "upper(coalesce(oj.status::text, ''))" : "''";
         var hasOcrExpr = schema.HasDocumentSearch ? "exists(select 1 from ged.document_search ds where ds.tenant_id=d.tenant_id and ds.document_id=d.id and coalesce(ds.ocr_text,'') <> '')" : "false";
-        var searchExpr = schema.HasDocumentSearch ? "or exists(select 1 from ged.document_search dsf where dsf.tenant_id=d.tenant_id and dsf.document_id=d.id and dsf.ocr_text ilike '%' || @Search || '%')" : "";
+        var searchExpr = schema.HasDocumentSearch ? "or exists(select 1 from ged.document_search dsf where dsf.tenant_id=d.tenant_id and dsf.document_id=d.id and dsf.ocr_text ilike '%' || @Search::text || '%')" : "";
         var previewExpr = schema.HasPreviewStatus ? "ps.preview_path is not null" : "false";
         var sql = $@"
 with filtered as (
@@ -135,12 +152,12 @@ with filtered as (
  left join ged.document_type dt on dt.id=d.type_id and dt.tenant_id=d.tenant_id
  {ocrJobJoin}
  {previewJoin}
- where d.tenant_id=@TenantId and coalesce(d.reg_status,'A')='A'
-   and d.created_at >= @From and d.created_at < @ToExclusive
-   and (@FolderId is null or d.folder_id=@FolderId)
-   and (@Sector is null or fol.name ilike '%' || @Sector || '%')
-   and (@DocumentType is null or dt.name ilike '%' || @DocumentType || '%')
-   and (@Search is null or d.title ilike '%' || @Search || '%' {searchExpr})
+ where d.tenant_id=@TenantId::uuid and coalesce(d.reg_status,'A')='A'
+   and d.created_at >= @From::timestamp and d.created_at < @ToExclusive::timestamp
+   and (@FolderId::uuid is null or d.folder_id=@FolderId::uuid)
+   and (@Sector::text is null or fol.name ilike '%' || @Sector::text || '%')
+   and (@DocumentType::text is null or dt.name ilike '%' || @DocumentType::text || '%')
+   and (@Search::text is null or d.title ilike '%' || @Search::text || '%' {searchExpr})
 )
 select count(distinct id)::int TotalDocuments,
        count(distinct id) filter (where has_ocr)::int DocumentsWithOcr,
@@ -163,6 +180,13 @@ from filtered;";
         if (!schema.HasDocumentSearch)
             return [];
 
+        _logger.LogInformation(
+            "Carregando linhas OCR HospitalIntelligence. Tenant={TenantId} From={From} To={To} FolderId={FolderId}",
+            f.TenantId,
+            f.From,
+            f.To,
+            f.FolderId);
+
         var sql = @"
 select d.id as ""DocumentId"", ds.version_id as ""VersionId"", coalesce(d.title, ds.title, 'Sem título') as ""Title"",
        coalesce(fol.name, 'Sem pasta') as ""Folder"", coalesce(dt.name, 'Sem tipo') as ""DocumentType"",
@@ -172,14 +196,14 @@ from ged.document d
 join ged.document_search ds on ds.tenant_id=d.tenant_id and ds.document_id=d.id and coalesce(ds.ocr_text,'') <> ''
 left join ged.folder fol on fol.id=d.folder_id and fol.tenant_id=d.tenant_id
 left join ged.document_type dt on dt.id=d.type_id and dt.tenant_id=d.tenant_id
-where d.tenant_id=@TenantId and coalesce(d.reg_status,'A')='A'
-  and d.created_at >= @From and d.created_at < @ToExclusive
-  and (@FolderId is null or d.folder_id=@FolderId)
-  and (@Sector is null or fol.name ilike '%' || @Sector || '%')
-  and (@DocumentType is null or dt.name ilike '%' || @DocumentType || '%')
-  and (@Search is null or ds.ocr_text ilike '%' || @Search || '%' or d.title ilike '%' || @Search || '%')
+where d.tenant_id=@TenantId::uuid and coalesce(d.reg_status,'A')='A'
+  and d.created_at >= @From::timestamp and d.created_at < @ToExclusive::timestamp
+  and (@FolderId::uuid is null or d.folder_id=@FolderId::uuid)
+  and (@Sector::text is null or fol.name ilike '%' || @Sector::text || '%')
+  and (@DocumentType::text is null or dt.name ilike '%' || @DocumentType::text || '%')
+  and (@Search::text is null or ds.ocr_text ilike '%' || @Search::text || '%' or d.title ilike '%' || @Search::text || '%')
 order by d.created_at desc
-limit @Top;";
+limit @Top::int;";
         var rows = await conn.QueryAsync<OcrRow>(new CommandDefinition(sql, BuildSqlParams(f), cancellationToken: ct));
         var list = rows.ToList();
         foreach (var row in list) row.Text = MaskSensitive(row.Text ?? string.Empty);
@@ -371,7 +395,14 @@ limit @Top;";
     private static DynamicParameters BuildSqlParams(HospitalIntelligenceFilter f)
     {
         var p = new DynamicParameters();
-        p.Add("TenantId", f.TenantId); p.Add("From", f.From!.Value); p.Add("ToExclusive", f.To!.Value.Date.AddDays(1)); p.Add("FolderId", f.FolderId); p.Add("Sector", NullIfWhite(f.Sector)); p.Add("DocumentType", NullIfWhite(f.DocumentType)); p.Add("Search", NullIfWhite(f.Search)); p.Add("Top", f.Top);
+        p.Add("TenantId", f.TenantId, DbType.Guid);
+        p.Add("From", f.From!.Value, DbType.DateTime);
+        p.Add("ToExclusive", f.To!.Value.Date.AddDays(1), DbType.DateTime);
+        p.Add("FolderId", f.FolderId, DbType.Guid);
+        p.Add("Sector", NullIfWhiteSpace(f.Sector), DbType.String);
+        p.Add("DocumentType", NullIfWhiteSpace(f.DocumentType), DbType.String);
+        p.Add("Search", NullIfWhiteSpace(f.Search), DbType.String);
+        p.Add("Top", NormalizeTop(f.Top), DbType.Int32);
         return p;
     }
 
@@ -381,11 +412,12 @@ limit @Top;";
         var from = filter.From?.Date ?? today.AddDays(-90);
         var to = filter.To?.Date ?? today;
         if (from > to) (from, to) = (to, from);
-        return new HospitalIntelligenceFilter { TenantId = filter.TenantId, From = from, To = to, FolderId = filter.FolderId, Sector = filter.Sector, DocumentType = filter.DocumentType, Search = filter.Search, Top = filter.Top <= 0 ? DefaultTopDocuments : Math.Min(filter.Top, MaxTopDocuments), RefreshCache = filter.RefreshCache };
+        return new HospitalIntelligenceFilter { TenantId = filter.TenantId, From = from, To = to, FolderId = filter.FolderId, Sector = NullIfWhiteSpace(filter.Sector), DocumentType = NullIfWhiteSpace(filter.DocumentType), Search = NullIfWhiteSpace(filter.Search), Top = NormalizeTop(filter.Top), RefreshCache = filter.RefreshCache };
     }
 
     private static string BuildCacheKey(HospitalIntelligenceFilter f, string part) => $"HospitalIntelligence:{part}:{f.TenantId}:{f.From:yyyyMMdd}:{f.To:yyyyMMdd}:{f.FolderId}:{f.Sector}:{f.DocumentType}:{f.Search}:{f.Top}";
-    private static string? NullIfWhite(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    private static string? NullIfWhiteSpace(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    private static int NormalizeTop(int top) => top <= 0 ? DefaultTopDocuments : Math.Min(top, MaxTopDocuments);
     private static decimal Percent(int part, int total) => total <= 0 ? 0 : Math.Round(part * 100m / total, 2);
     private static string RiskLevel(string category, int docs, int occurrences) => category.Contains("URGÊNCIA", StringComparison.OrdinalIgnoreCase) || docs >= 20 || occurrences >= 50 ? "Alto" : docs >= 5 ? "Médio" : "Baixo";
     private static int CountOccurrences(string text, string term) => string.IsNullOrWhiteSpace(term) ? 0 : Regex.Matches(text, $@"(?<!\p{{L}}){Regex.Escape(term)}(?!\p{{L}})", RegexOptions.IgnoreCase).Count;
