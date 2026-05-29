@@ -6,6 +6,10 @@ public sealed class UserRowDto
     public Guid? ServidorId { get; set; }
     public Guid? UserId { get; set; }
     public string EditIdSource { get; set; } = "";
+    public Guid? EffectiveEditId { get; set; }
+    public string EffectiveEditIdSource { get; set; } = "";
+    public bool ServidorExists { get; set; }
+    public bool UserExists { get; set; }
 
     public string Name { get; set; } = "";
     public string? Cpf { get; set; }

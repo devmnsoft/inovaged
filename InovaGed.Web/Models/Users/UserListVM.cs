@@ -20,12 +20,8 @@ public sealed class UserListVM
         public Guid? ServidorId { get; set; }
         public Guid? UserId { get; set; }
         public string EditIdSource { get; set; } = "";
-        public Guid? EffectiveEditId =>
-            ServidorId.HasValue && ServidorId.Value != Guid.Empty
-                ? ServidorId
-                : UserId.HasValue && UserId.Value != Guid.Empty
-                    ? UserId
-                    : null;
+        public bool ServidorExists { get; set; }
+        public bool UserExists { get; set; }
         public string Name { get; set; } = string.Empty;
         public string Email { get; set; } = string.Empty;
         public string? Cpf { get; set; }
