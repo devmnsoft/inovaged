@@ -1,0 +1,217 @@
+@model InovaGed.Application.HospitalTrends.HospitalTrendsDashboardDto
+@using InovaGed.Web.Models.HospitalTrends
+@{
+    ViewData["Title"] = "Alertas e Tendências Hospitalares";
+    var filter = ViewBag.Filter as HospitalTrendsFilterVM ?? new HospitalTrendsFilterVM();
+    string pct(decimal value) => value.ToString("N1") + "%";
+    var ocrPending = Model.OperationalTrends.FirstOrDefault(x => x.Indicator == "OCR pendente")?.CurrentValue ?? 0;
+    var unclassified = Model.OperationalTrends.FirstOrDefault(x => x.Indicator == "Documentos sem classificação")?.CurrentValue ?? 0;
+    var growingTerms = Model.TermTrends.Count(x => x.TrendDirection is "Crescimento" or "Novo");
+}
+
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
+    <div>
+        <h1 class="h3 mb-1"><i class="bi bi-graph-up-arrow text-primary me-2"></i>Alertas e Tendências Hospitalares</h1>
+        <p class="text-muted mb-0">Análise automática de tendências extraídas dos textos OCR e metadados documentais.</p>
+    </div>
+    <div class="d-flex gap-2 no-print">
+        <a class="btn btn-outline-success" asp-controller="HospitalTrends" asp-action="ExportCsv" asp-route-from="@filter.From?.ToString("yyyy-MM-dd")" asp-route-to="@filter.To?.ToString("yyyy-MM-dd")" asp-route-compareFrom="@filter.CompareFrom?.ToString("yyyy-MM-dd")" asp-route-compareTo="@filter.CompareTo?.ToString("yyyy-MM-dd")" asp-route-folderId="@filter.FolderId" asp-route-sector="@filter.Sector" asp-route-documentType="@filter.DocumentType" asp-route-category="@filter.Category" asp-route-top="@filter.Top">
+            <i class="bi bi-filetype-csv me-1"></i> Exportar CSV
+        </a>
+    </div>
+</div>
+
+<div class="alert alert-warning d-flex gap-2" role="alert">
+    <i class="bi bi-exclamation-triangle"></i>
+    <div>Indicadores baseados em OCR documental. Utilizar para apoio gerencial e estatístico, não como diagnóstico clínico.</div>
+</div>
+
+@if (Model.Warnings.Any())
+{
+    <div class="alert alert-info">
+        <strong>Avisos da análise:</strong>
+        <ul class="mb-0">
+            @foreach (var warning in Model.Warnings.Distinct())
+            {
+                <li>@warning</li>
+            }
+        </ul>
+    </div>
+}
+
+<form method="get" class="card shadow-sm mb-4 no-print">
+    <div class="card-header bg-white fw-semibold"><i class="bi bi-funnel me-1"></i>Filtros comparativos</div>
+    <div class="card-body row g-3">
+        <div class="col-md-2">
+            <label class="form-label">Período atual - início</label>
+            <input class="form-control" type="date" name="From" value="@filter.From?.ToString("yyyy-MM-dd")" />
+        </div>
+        <div class="col-md-2">
+            <label class="form-label">Período atual - fim</label>
+            <input class="form-control" type="date" name="To" value="@filter.To?.ToString("yyyy-MM-dd")" />
+        </div>
+        <div class="col-md-2">
+            <label class="form-label">Comparativo - início</label>
+            <input class="form-control" type="date" name="CompareFrom" value="@filter.CompareFrom?.ToString("yyyy-MM-dd")" />
+        </div>
+        <div class="col-md-2">
+            <label class="form-label">Comparativo - fim</label>
+            <input class="form-control" type="date" name="CompareTo" value="@filter.CompareTo?.ToString("yyyy-MM-dd")" />
+        </div>
+        <div class="col-md-2">
+            <label class="form-label">Setor/Pasta</label>
+            <input class="form-control" name="Sector" value="@filter.Sector" maxlength="120" />
+        </div>
+        <div class="col-md-2">
+            <label class="form-label">Pasta (Id)</label>
+            <input class="form-control" name="FolderId" value="@filter.FolderId" />
+        </div>
+        <div class="col-md-3">
+            <label class="form-label">Categoria</label>
+            <select class="form-select" name="Category">
+                <option value="">Todas</option>
+                @foreach (var category in new[] { "ONCOLOGIA", "URGÊNCIA / GRAVIDADE", "CARDIOVASCULAR", "CRÔNICAS", "FINANCEIRO / AUDITORIA", "JURÍDICO / COMPLIANCE", "OPERACIONAL" })
+                {
+                    <option value="@category" selected="@(filter.Category == category ? "selected" : null)">@category</option>
+                }
+            </select>
+        </div>
+        <div class="col-md-3">
+            <label class="form-label">Tipo documental</label>
+            <input class="form-control" name="DocumentType" value="@filter.DocumentType" maxlength="120" />
+        </div>
+        <div class="col-md-2">
+            <label class="form-label">Top N</label>
+            <input class="form-control" type="number" min="1" max="5000" name="Top" value="@filter.Top" />
+        </div>
+        <div class="col-md-2 d-flex align-items-end">
+            <div class="form-check">
+                @if (filter.RefreshCache)
+                {
+                    <input class="form-check-input" type="checkbox" name="RefreshCache" value="true" checked />
+                }
+                else
+                {
+                    <input class="form-check-input" type="checkbox" name="RefreshCache" value="true" />
+                }
+                <label class="form-check-label">Atualizar cache</label>
+            </div>
+        </div>
+        <div class="col-md-2 d-flex align-items-end gap-2">
+            <button class="btn btn-primary" type="submit"><i class="bi bi-search me-1"></i>Aplicar</button>
+            <a class="btn btn-outline-secondary" asp-controller="HospitalTrends" asp-action="Index">Limpar</a>
+        </div>
+    </div>
+</form>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-2"><div class="card h-100 border-primary"><div class="card-body"><div class="text-muted small">Documentos no período atual</div><div class="h3 mb-0">@Model.TotalDocumentsCurrent.ToString("N0")</div><div class="small text-muted">@Model.PeriodLabel</div></div></div></div>
+    <div class="col-md-2"><div class="card h-100"><div class="card-body"><div class="text-muted small">Variação documental</div><div class="h3 mb-0 @(Model.VariationPercent > 0 ? "text-danger" : "text-success")">@pct(Model.VariationPercent)</div><div class="small text-muted">vs. @Model.ComparePeriodLabel</div></div></div></div>
+    <div class="col-md-2"><div class="card h-100 border-danger"><div class="card-body"><div class="text-muted small">Alertas críticos</div><div class="h3 mb-0 text-danger">@Model.CriticalAlerts.ToString("N0")</div><div class="small text-muted">@Model.TotalAlerts.ToString("N0") alertas totais</div></div></div></div>
+    <div class="col-md-2"><div class="card h-100"><div class="card-body"><div class="text-muted small">Termos em crescimento</div><div class="h3 mb-0">@growingTerms.ToString("N0")</div><div class="small text-muted">OCR comparativo</div></div></div></div>
+    <div class="col-md-2"><div class="card h-100"><div class="card-body"><div class="text-muted small">OCR pendente</div><div class="h3 mb-0">@ocrPending.ToString("N0")</div><div class="small text-muted">fila e sem texto</div></div></div></div>
+    <div class="col-md-2"><div class="card h-100"><div class="card-body"><div class="text-muted small">Sem classificação</div><div class="h3 mb-0">@unclassified.ToString("N0")</div><div class="small text-muted">governança documental</div></div></div></div>
+</div>
+
+<div class="row g-4">
+    <div class="col-12">
+        <div class="card shadow-sm">
+            <div class="card-header bg-white fw-semibold"><i class="bi bi-exclamation-diamond text-danger me-1"></i>Alertas prioritários</div>
+            <div class="card-body">
+                @if (!Model.Alerts.Any())
+                {
+                    <p class="text-muted mb-0">Nenhum alerta automático encontrado para o recorte selecionado.</p>
+                }
+                <div class="row g-3">
+                    @foreach (var alert in Model.Alerts.Take(12))
+                    {
+                        var badge = alert.Severity is "Alto" or "Crítico" ? "danger" : alert.Severity.Contains("Médio") ? "warning text-dark" : "secondary";
+                        <div class="col-md-6 col-xl-4">
+                            <div class="card h-100 border-@badge.Split(' ')[0]">
+                                <div class="card-body">
+                                    <div class="d-flex justify-content-between gap-2"><h2 class="h6">@alert.Title</h2><span class="badge bg-@badge">@alert.Severity</span></div>
+                                    <p class="small text-muted">@alert.Description</p>
+                                    <p class="small mb-2"><strong>Recomendação:</strong> @alert.Recommendation</p>
+                                    <div class="small text-muted">Docs relacionados: @alert.RelatedDocumentCount.ToString("N0")</div>
+                                    @if (!string.IsNullOrWhiteSpace(alert.ActionUrl))
+                                    {
+                                        <a class="btn btn-sm btn-outline-primary mt-2" href="@alert.ActionUrl">Abrir documento</a>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-7">
+        <div class="card shadow-sm h-100">
+            <div class="card-header bg-white fw-semibold">Tendências por termos OCR</div>
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead><tr><th>Termo</th><th>Categoria</th><th class="text-end">Atual</th><th class="text-end">Anterior</th><th class="text-end">Variação</th><th>Interpretação</th><th>Ação</th></tr></thead>
+                    <tbody>
+                    @foreach (var item in Model.TermTrends.Take(50))
+                    {
+                        <tr>
+                            <td>@item.Term <span class="badge bg-light text-dark">@item.RiskLevel</span></td>
+                            <td>@item.Category</td>
+                            <td class="text-end">@item.CurrentCount.ToString("N0")</td>
+                            <td class="text-end">@item.PreviousCount.ToString("N0")</td>
+                            <td class="text-end">@item.TrendDirection @pct(item.VariationPercent)</td>
+                            <td class="small">@item.Interpretation</td>
+                            <td>@if (item.Examples.FirstOrDefault() is { } ex) { <a class="btn btn-link btn-sm" href="/Ged/Details?id=@ex.DocumentId">abrir</a> }</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-5">
+        <div class="card shadow-sm h-100">
+            <div class="card-header bg-white fw-semibold">Tendências por setor/pasta</div>
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead><tr><th>Setor</th><th class="text-end">Docs</th><th class="text-end">Variação</th><th class="text-end">OCR pend.</th><th class="text-end">Sem class.</th><th>Interpretação</th></tr></thead>
+                    <tbody>
+                    @foreach (var item in Model.SectorTrends.Take(30))
+                    {
+                        <tr><td>@item.Sector</td><td class="text-end">@item.CurrentDocuments.ToString("N0")</td><td class="text-end">@pct(item.VariationPercent)</td><td class="text-end">@item.PendingOcr.ToString("N0")</td><td class="text-end">@item.Unclassified.ToString("N0")</td><td class="small">@item.Interpretation</td></tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6">
+        <div class="card shadow-sm h-100"><div class="card-header bg-white fw-semibold">Gargalos operacionais</div><div class="card-body row g-3">
+            @foreach (var item in Model.OperationalTrends)
+            {
+                <div class="col-md-6"><div class="border rounded p-3 h-100"><div class="small text-muted">@item.Indicator</div><div class="h4">@item.CurrentValue.ToString("N0")</div><div class="small">Anterior: @item.PreviousValue.ToString("N0") | @pct(item.VariationPercent)</div><span class="badge bg-light text-dark">@item.Status</span><p class="small mt-2 mb-0">@item.Recommendation</p></div></div>
+            }
+        </div></div>
+    </div>
+
+    <div class="col-lg-6">
+        <div class="card shadow-sm h-100"><div class="card-header bg-white fw-semibold">Recomendações executivas</div><div class="card-body">
+            <ul class="mb-0">
+                @foreach (var rec in Model.Alerts.Select(a => a.Recommendation).Concat(Model.OperationalTrends.Select(o => o.Recommendation)).Distinct().Take(10))
+                {
+                    <li>@rec</li>
+                }
+            </ul>
+        </div></div>
+    </div>
+
+    <div class="col-lg-6"><div class="card shadow-sm h-100"><div class="card-header bg-white fw-semibold">Top pastas</div><div class="table-responsive"><table class="table table-sm mb-0"><tbody>@foreach (var item in Model.TopFolders){<tr><td>@item.Label</td><td class="text-end">@item.Value.ToString("N0")</td><td class="text-end">@pct(item.Percentage)</td></tr>}</tbody></table></div></div></div>
+    <div class="col-lg-6"><div class="card shadow-sm h-100"><div class="card-header bg-white fw-semibold">Top tipos documentais</div><div class="table-responsive"><table class="table table-sm mb-0"><tbody>@foreach (var item in Model.TopDocumentTypes){<tr><td>@item.Label</td><td class="text-end">@item.Value.ToString("N0")</td><td class="text-end">@pct(item.Percentage)</td></tr>}</tbody></table></div></div></div>
+</div>
+
+<style>
+@@media print { .no-print, .sidebar, nav { display: none !important; } .card { break-inside: avoid; } }
+</style>
