@@ -24,7 +24,7 @@ public sealed class HttpTenantProvider : ITenantProvider
             if (ctx.Request.Headers.TryGetValue("X-Tenant", out var v))
                 return v.ToString();
 
-            // fallback: tenant default da PoC
+            // fallback: tenant default da operacional
             return "00000000-0000-0000-0000-000000000001";
         }
     }

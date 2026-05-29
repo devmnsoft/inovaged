@@ -13,10 +13,10 @@ public sealed class RetentionDailyWorker : BackgroundService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<RetentionDailyWorker> _logger;
 
-    // ✅ PoC: tenant padrão
+    // ✅ operacional: tenant padrão
     private static readonly Guid DefaultTenantId = Guid.Parse("00000000-0000-0000-0000-000000000001");
 
-    // ✅ PoC: janela "vence em breve"
+    // ✅ operacional: janela "vence em breve"
     private const int DueSoonDays = 30;
 
     public RetentionDailyWorker(IServiceScopeFactory scopeFactory, ILogger<RetentionDailyWorker> logger)

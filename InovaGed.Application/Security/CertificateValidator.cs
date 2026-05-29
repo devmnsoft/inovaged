@@ -16,7 +16,7 @@ public static class CertificateValidator
 
         using var chain = new X509Chain();
 
-        // ✅ Em PoC/teste, NÃO checar revogação online (autoassinado não tem OCSP/CRL)
+        // ✅ Em operacional/teste, NÃO checar revogação online (autoassinado não tem OCSP/CRL)
         if (allowTestSelfSigned)
         {
             chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
@@ -39,7 +39,7 @@ public static class CertificateValidator
 
             if (allowTestSelfSigned)
             {
-                // ✅ Em DEV/PoC aceita os status comuns de certificado de teste
+                // ✅ Em DEV/operacional aceita os status comuns de certificado de teste
                 var onlyAllowed = chain.ChainStatus.All(s =>
                     s.Status == X509ChainStatusFlags.UntrustedRoot ||
                     s.Status == X509ChainStatusFlags.PartialChain ||
@@ -47,7 +47,7 @@ public static class CertificateValidator
                     s.Status == X509ChainStatusFlags.OfflineRevocation);
 
                 if (!onlyAllowed)
-                    return new() { Ok = false, Error = $"Falha na cadeia (PoC): {reasons}" };
+                    return new() { Ok = false, Error = $"Falha na cadeia (operacional): {reasons}" };
 
                 // se só veio coisa “esperada” em teste, segue
             }

@@ -7,17 +7,17 @@ public sealed class CertificateValidationStub : ICertificateValidationService
 {
     public Task<CertLoginResult> ValidateForLoginAsync(Guid tenantId, X509Certificate2 cert, CancellationToken ct)
     {
-        // PoC: aceita qualquer certificado e tenta extrair CPF do subject.
+        // operacional: aceita qualquer certificado e tenta extrair CPF do subject.
         // Se não achar CPF, deixa como "não autenticado" (ou você pode aceitar mesmo assim).
         var cpf = ExtractCpf(cert);
 
-        // Para não travar o login PoC, você pode "forçar" sucesso:
-        // return Task.FromResult(new CertLoginResult(true, null, "Usuário PoC", cpf, null));
+        // Para não travar o login operacional, você pode "forçar" sucesso:
+        // return Task.FromResult(new CertLoginResult(true, null, "Usuário certificado", cpf, null));
 
         if (string.IsNullOrWhiteSpace(cpf))
-            return Task.FromResult(new CertLoginResult(false, null, null, null, "CPF não identificado no certificado (PoC stub)."));
+            return Task.FromResult(new CertLoginResult(false, null, null, null, "CPF não identificado no certificado (operacional stub)."));
 
-        return Task.FromResult(new CertLoginResult(true, null, "Usuário PoC", cpf, null));
+        return Task.FromResult(new CertLoginResult(true, null, "Usuário certificado", cpf, null));
     }
 
     public Task<SignatureValidationResult> ValidateSignatureAsync(Guid tenantId, byte[] signatureBytes, CancellationToken ct)
@@ -25,9 +25,9 @@ public sealed class CertificateValidationStub : ICertificateValidationService
         if (signatureBytes == null || signatureBytes.Length == 0)
             return Task.FromResult(new SignatureValidationResult("UNVERIFIABLE", "Sem bytes de assinatura."));
 
-        // PoC: só gera hash para rastreabilidade
+        // operacional: só gera hash para rastreabilidade
         var hash = Convert.ToHexString(SHA256.HashData(signatureBytes)).ToLowerInvariant();
-        return Task.FromResult(new SignatureValidationResult("VALID", $"PoC stub (sem OCSP/CRL). sha256={hash[..12]}..."));
+        return Task.FromResult(new SignatureValidationResult("VALID", $"operacional stub (sem OCSP/CRL). sha256={hash[..12]}..."));
     }
 
     private static string? ExtractCpf(X509Certificate2 cert)

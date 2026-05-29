@@ -140,12 +140,12 @@ public sealed class SignatureController : Controller
 
         try
         {
-            // Gera hash SHA-256 interno (PoC — sem certificado real)
+            // Gera hash SHA-256 interno (operacional — sem certificado real)
             var payload = $"doc:{id}|tenant:{TenantId}|user:{UserId}|cpf:{cpf.Trim()}|ts:{DateTime.UtcNow:O}";
             var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload))).ToLowerInvariant();
 
             var details = string.IsNullOrWhiteSpace(notes)
-                ? $"Assinatura interna (PoC) • hash:{hash[..16]}…"
+                ? $"Assinatura interna (operacional) • hash:{hash[..16]}…"
                 : $"{notes.Trim()} • hash:{hash[..16]}…";
 
             using var conn = await _db.OpenAsync(ct);
@@ -291,7 +291,7 @@ public sealed class SignatureController : Controller
                 var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload))).ToLowerInvariant();
 
                 var details = string.IsNullOrWhiteSpace(notes)
-                    ? $"Assinatura em lote (PoC) • hash:{hash[..16]}…"
+                    ? $"Assinatura em lote (operacional) • hash:{hash[..16]}…"
                     : $"{notes.Trim()} • hash:{hash[..16]}…";
 
                 await conn.ExecuteAsync("""

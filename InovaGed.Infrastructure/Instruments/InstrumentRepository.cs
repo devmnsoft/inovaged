@@ -58,7 +58,7 @@ namespace InovaGed.Infrastructure.Instruments
                 WHERE tenant_id=@TenantId AND instrument_type=@Type::ged.instrument_type AND reg_status='A';
             """, new { TenantId = tenantId, Type = type }, cancellationToken: ct));
 
-                // hash: na PoC basta hash da "fotografia" da versão (nodes)
+                // hash: na operacional basta hash da "fotografia" da versão (nodes)
                 var seed = $"{tenantId}|{type}|{next}|{DateTimeOffset.UtcNow:O}";
                 var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(seed))).ToLowerInvariant();
 
@@ -216,7 +216,7 @@ namespace InovaGed.Infrastructure.Instruments
         {
             var nodes = await ListNodesAsync(tenantId, type, versionId, ct);
 
-            // impressão simples e formal (PoC). Depois você pode estilizar melhor.
+            // impressão simples e formal (operacional). Depois você pode estilizar melhor.
             var sb = new StringBuilder();
             sb.Append("""
         <html><head><meta charset="utf-8"/>

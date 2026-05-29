@@ -171,7 +171,7 @@ order by code;
 
     private static string ToCsv(IEnumerable<dynamic> rows)
     {
-        // simples e suficiente para PoC
+        // simples e suficiente para operacional
         var list = rows.ToList();
         if (list.Count == 0) return "";
 

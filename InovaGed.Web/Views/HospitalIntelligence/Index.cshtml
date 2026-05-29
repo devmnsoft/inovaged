@@ -1,10 +1,99 @@
 @model InovaGed.Application.HospitalIntelligence.HospitalIntelligenceDashboardDto
-@{ ViewData["Title"] = "Inteligência Hospitalar"; }
-<div class="d-flex justify-content-between align-items-center mb-3"><div><h2>Inteligência Hospitalar <span class="badge bg-dark">Somente ADMIN</span></h2><p class="text-muted">Indicadores estratégicos gerados a partir dos documentos digitalizados e OCR.</p></div><a class="btn btn-outline-primary" href="/HospitalIntelligence/ExportCsv">Exportar resumo CSV</a></div>
-<div class="alert alert-warning">Indicadores gerados a partir de leitura documental/OCR, com finalidade administrativa, estatística e gerencial. Não substitui análise clínica.</div>
-<div class="alert alert-info">Painel estatístico baseado em documentos. Verifique o documento original antes de qualquer decisão assistencial ou financeira.</div>
-<div class="row g-3">@foreach(var c in Model.Cards){<div class="col-md-3"><div class="card border-@c.Color"><div class="card-body"><div class="small text-muted">@c.Title</div><div class="display-6">@c.Value</div></div></div></div>}</div>
-<h4 class="mt-4">Top 10 termos clínicos</h4><table class="table table-sm"><thead><tr><th>Termo</th><th>Categoria</th><th>Contagem</th><th>Risco</th></tr></thead><tbody>@foreach(var t in Model.ClinicalTerms.Take(10)){<tr><td>@t.Term</td><td>@t.Category</td><td>@t.Count</td><td><span class="badge bg-secondary">@t.RiskLevel</span></td></tr>}</tbody></table>
-<h4>Sinais Financeiros e Administrativos</h4><table class="table table-sm"><thead><tr><th>Indicador</th><th>Contagem</th><th>Descrição</th></tr></thead><tbody>@foreach(var t in Model.FinancialSignals.Take(10)){<tr><td>@t.Indicator</td><td>@t.Count</td><td>@t.Description</td></tr>}</tbody></table>
-<h4>Gargalos Operacionais</h4><table class="table table-sm"><thead><tr><th>Indicador</th><th>Contagem</th><th>Recomendação</th></tr></thead><tbody>@foreach(var o in Model.OperationalSignals){<tr><td>@o.Indicator</td><td>@o.Count</td><td>@o.Recommendation</td></tr>}</tbody></table>
-<h4>Alertas Executivos</h4><table class="table table-sm"><thead><tr><th>Título</th><th>Tipo</th><th>Risco</th></tr></thead><tbody>@foreach(var a in Model.Alerts.Take(10)){<tr><td>@a.Title</td><td>@a.AlertType</td><td>@a.RiskLevel</td></tr>}</tbody></table>
+@using InovaGed.Web.Models.HospitalIntelligence
+@{
+    ViewData["Title"] = "Inteligência Hospitalar por OCR";
+    var filter = ViewBag.Filter as HospitalIntelligenceFilterVM ?? new HospitalIntelligenceFilterVM();
+    string pct(decimal value) => value.ToString("N2") + "%";
+}
+
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
+    <div>
+        <h2 class="mb-1"><i class="bi bi-hospital me-2"></i>Inteligência Hospitalar por OCR</h2>
+        <p class="text-muted mb-0">Indicadores reais extraídos automaticamente dos documentos digitalizados.</p>
+    </div>
+    <div class="d-flex gap-2 no-print">
+        <a class="btn btn-outline-success" asp-controller="HospitalIntelligence" asp-action="ExportCsv" asp-route-from="@filter.From?.ToString("yyyy-MM-dd")" asp-route-to="@filter.To?.ToString("yyyy-MM-dd")" asp-route-folderId="@filter.FolderId" asp-route-sector="@filter.Sector" asp-route-documentType="@filter.DocumentType" asp-route-search="@filter.Search" asp-route-top="@filter.Top"><i class="bi bi-filetype-csv me-1"></i> Exportar CSV</a>
+        <button type="button" class="btn btn-outline-secondary" onclick="window.print()"><i class="bi bi-printer me-1"></i> Imprimir relatório</button>
+    </div>
+</div>
+
+<div class="alert alert-warning border-warning-subtle">
+    <strong>Aviso LGPD e uso gerencial:</strong>
+    Os indicadores são extraídos automaticamente dos textos OCR dos documentos digitalizados. Devem ser utilizados para apoio gerencial, estatístico e operacional, não substituindo análise clínica, auditoria médica ou validação assistencial.
+</div>
+
+@if (TempData["Error"] is string error && !string.IsNullOrWhiteSpace(error))
+{
+    <div class="alert alert-danger">@error</div>
+}
+@if (Model.Warnings.Any())
+{
+    <div class="alert alert-info">
+        <strong>Avisos do processamento:</strong>
+        <ul class="mb-0">
+            @foreach (var warning in Model.Warnings)
+            {
+                <li>@warning</li>
+            }
+        </ul>
+    </div>
+}
+
+<form method="get" class="card shadow-sm mb-4 no-print">
+    <div class="card-header bg-white fw-semibold"><i class="bi bi-funnel me-1"></i>Filtros</div>
+    <div class="card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-2"><label class="form-label">Período inicial</label><input class="form-control" type="date" name="From" value="@filter.From?.ToString("yyyy-MM-dd")" /></div>
+            <div class="col-md-2"><label class="form-label">Período final</label><input class="form-control" type="date" name="To" value="@filter.To?.ToString("yyyy-MM-dd")" /></div>
+            <div class="col-md-2"><label class="form-label">Pasta (ID)</label><input class="form-control" name="FolderId" value="@filter.FolderId" placeholder="UUID da pasta" /></div>
+            <div class="col-md-2"><label class="form-label">Setor</label><input class="form-control" name="Sector" value="@filter.Sector" /></div>
+            <div class="col-md-2"><label class="form-label">Tipo documental</label><input class="form-control" name="DocumentType" value="@filter.DocumentType" /></div>
+            <div class="col-md-2"><label class="form-label">Termo livre</label><input class="form-control" name="Search" value="@filter.Search" /></div>
+            <div class="col-md-2"><label class="form-label">Limite OCR</label><input class="form-control" type="number" min="1" max="5000" name="Top" value="@filter.Top" /></div>
+            <div class="col-md-10 d-flex gap-2">
+                <button class="btn btn-primary" type="submit"><i class="bi bi-check2-circle me-1"></i> Aplicar</button>
+                <a class="btn btn-outline-secondary" asp-controller="HospitalIntelligence" asp-action="Index"><i class="bi bi-x-circle me-1"></i> Limpar</a>
+                <button class="btn btn-outline-primary" name="RefreshCache" value="true" type="submit"><i class="bi bi-arrow-clockwise me-1"></i> Atualizar dados</button>
+            </div>
+        </div>
+    </div>
+</form>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-3"><div class="card h-100 border-primary"><div class="card-body"><div class="text-muted small">Total de documentos</div><div class="display-6">@Model.TotalDocuments.ToString("N0")</div><div class="small text-muted">Recorte selecionado</div></div></div></div>
+    <div class="col-md-3"><div class="card h-100 border-success"><div class="card-body"><div class="text-muted small">Cobertura OCR</div><div class="display-6">@pct(Model.OcrCoveragePercent)</div><div class="small text-muted">@Model.DocumentsWithOcr.ToString("N0") com OCR</div></div></div></div>
+    <div class="col-md-3"><div class="card h-100 border-info"><div class="card-body"><div class="text-muted small">Classificação</div><div class="display-6">@pct(Model.ClassificationCoveragePercent)</div><div class="small text-muted">@Model.UnclassifiedDocuments.ToString("N0") pendentes</div></div></div></div>
+    <div class="col-md-3"><div class="card h-100 border-danger"><div class="card-body"><div class="text-muted small">Alertas críticos</div><div class="display-6">@Model.CriticalAlerts.ToString("N0")</div><div class="small text-muted">Risco administrativo/documental</div></div></div></div>
+    <div class="col-md-3"><div class="card h-100"><div class="card-body"><div class="text-muted small">Sinais clínicos documentais</div><div class="display-6">@Model.DocumentsWithClinicalSignals.ToString("N0")</div><div class="small text-muted">Sem finalidade diagnóstica</div></div></div></div>
+    <div class="col-md-3"><div class="card h-100"><div class="card-body"><div class="text-muted small">Sinais financeiros</div><div class="display-6">@Model.DocumentsWithFinancialSignals.ToString("N0")</div><div class="small text-muted">Sujeitos à validação</div></div></div></div>
+    <div class="col-md-3"><div class="card h-100"><div class="card-body"><div class="text-muted small">Qualidade da base</div><div class="display-6">@pct(Model.DataQualityScore)</div><div class="progress"><div class="progress-bar" style="width:@Model.DataQualityScore.ToString(System.Globalization.CultureInfo.InvariantCulture)%"></div></div></div></div></div>
+    <div class="col-md-3"><div class="card h-100"><div class="card-body"><div class="text-muted small">Horas potenciais economizadas</div><div class="display-6">@((Model.DocumentsWithOcr * 3m / 60m).ToString("N1"))</div><div class="small text-muted">Estimativa operacional por busca textual</div></div></div></div>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-6">
+        <div class="card h-100 shadow-sm"><div class="card-header bg-white fw-semibold">Status OCR</div><div class="card-body p-0"><table class="table table-sm mb-0"><thead><tr><th>Status</th><th class="text-end">Qtd.</th><th class="text-end">%</th><th>Descrição</th></tr></thead><tbody>@foreach (var kpi in Model.OcrKpis){<tr><td>@kpi.Status</td><td class="text-end">@kpi.Count.ToString("N0")</td><td class="text-end">@pct(kpi.Percentage)</td><td>@kpi.Description</td></tr>}</tbody></table></div></div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card h-100 shadow-sm"><div class="card-header bg-white fw-semibold">Documentos por mês</div><div class="card-body p-0"><table class="table table-sm mb-0"><thead><tr><th>Mês</th><th class="text-end">Documentos</th></tr></thead><tbody>@foreach (var item in Model.DocumentsByMonth){<tr><td>@item.Label</td><td class="text-end">@item.Value.ToString("N0")</td></tr>}</tbody></table></div></div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card h-100 shadow-sm"><div class="card-header bg-white fw-semibold">Top termos clínicos documentais</div><div class="card-body p-0"><table class="table table-sm mb-0"><thead><tr><th>Termo</th><th>Categoria</th><th class="text-end">Docs</th><th>Exemplo</th></tr></thead><tbody>@foreach (var item in Model.ClinicalTerms.Take(15)){<tr><td>@item.Term <span class="badge bg-secondary">@item.RiskLevel</span></td><td>@item.Category</td><td class="text-end">@item.DocumentCount.ToString("N0")</td><td class="small text-muted">@item.Examples.FirstOrDefault()?.Snippet @if (item.Examples.FirstOrDefault() is { } ex) { <a class="btn btn-link btn-sm" href="/Ged/Details?id=@ex.DocumentId">abrir documento</a> <a class="btn btn-link btn-sm" href="/Ged?folder=@Uri.EscapeDataString(ex.Folder ?? string.Empty)">abrir pasta</a> }</td></tr>}</tbody></table></div></div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card h-100 shadow-sm"><div class="card-header bg-white fw-semibold">Top sinais financeiros e administrativos</div><div class="card-body p-0"><table class="table table-sm mb-0"><thead><tr><th>Indicador</th><th class="text-end">Docs</th><th>Descrição</th></tr></thead><tbody>@foreach (var item in Model.FinancialKpis.Take(15)){<tr><td>@item.Indicator <span class="badge bg-secondary">@item.RiskLevel</span></td><td class="text-end">@item.DocumentCount.ToString("N0")</td><td class="small">@item.Description @if (item.Examples.FirstOrDefault() is { } ex) { <a class="btn btn-link btn-sm" href="/Ged/Details?id=@ex.DocumentId">abrir documento</a> <a class="btn btn-link btn-sm" href="/Ged?folder=@Uri.EscapeDataString(ex.Folder ?? string.Empty)">abrir pasta</a> }</td></tr>}</tbody></table></div></div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card h-100 shadow-sm"><div class="card-header bg-white fw-semibold">Gargalos por pasta/setor</div><div class="card-body p-0"><table class="table table-sm mb-0"><thead><tr><th>Indicador</th><th>Valor</th><th>Recomendação</th></tr></thead><tbody>@foreach (var item in Model.OperationalKpis){<tr><td>@item.Indicator <span class="badge bg-light text-dark">@item.Status</span></td><td>@item.Value</td><td>@item.Recommendation</td></tr>}</tbody></table></div></div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card h-100 shadow-sm"><div class="card-header bg-white fw-semibold">Alertas executivos</div><div class="card-body p-0"><table class="table table-sm mb-0"><thead><tr><th>Alerta</th><th>Severidade</th><th>Recomendação</th></tr></thead><tbody>@foreach (var item in Model.Alerts){<tr><td>@item.Title<div class="small text-muted">@item.Description</div></td><td>@item.Severity</td><td>@item.Recommendation</td></tr>}</tbody></table></div></div>
+    </div>
+    <div class="col-lg-4"><div class="card h-100 shadow-sm"><div class="card-header bg-white fw-semibold">Documentos por pasta</div><div class="card-body p-0"><table class="table table-sm mb-0"><tbody>@foreach (var item in Model.DocumentsByFolder){<tr><td>@item.Label</td><td class="text-end">@item.Value.ToString("N0")</td><td class="text-end">@pct(item.Percentage)</td></tr>}</tbody></table></div></div></div>
+    <div class="col-lg-4"><div class="card h-100 shadow-sm"><div class="card-header bg-white fw-semibold">Documentos por setor</div><div class="card-body p-0"><table class="table table-sm mb-0"><tbody>@foreach (var item in Model.DocumentsBySector){<tr><td>@item.Label</td><td class="text-end">@item.Value.ToString("N0")</td><td class="text-end">@pct(item.Percentage)</td></tr>}</tbody></table></div></div></div>
+    <div class="col-lg-4"><div class="card h-100 shadow-sm"><div class="card-header bg-white fw-semibold">Tipos documentais recorrentes</div><div class="card-body p-0"><table class="table table-sm mb-0"><tbody>@foreach (var item in Model.DocumentsByType){<tr><td>@item.Label</td><td class="text-end">@item.Value.ToString("N0")</td><td class="text-end">@pct(item.Percentage)</td></tr>}</tbody></table></div></div></div>
+</div>
+
+<style>
+@@media print { .no-print, .sidebar, nav { display: none !important; } .card { break-inside: avoid; } }
+</style>

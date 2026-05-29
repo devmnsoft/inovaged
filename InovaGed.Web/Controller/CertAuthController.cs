@@ -17,7 +17,7 @@ public sealed class CertAuthController : Controller
     private readonly IWebHostEnvironment _env;
     private readonly IConfiguration _cfg;
 
-    private static readonly Guid TenantPoC = Guid.Parse("00000000-0000-0000-0000-000000000001");
+    private static readonly Guid TenantDefault = Guid.Parse("00000000-0000-0000-0000-000000000001");
 
     public CertAuthController(
         ILogger<CertAuthController> logger,
@@ -70,7 +70,7 @@ public sealed class CertAuthController : Controller
             return BackToLoginWithCertError("Certificado inválido (arquivo/senha/formato).", req.ReturnUrl);
         }
 
-        // ✅ Flag de PoC (não depende do ambiente)
+        // ✅ Flag de operacional (não depende do ambiente)
         var allowTestSelfSigned =
             _cfg.GetValue<bool>("Auth:AllowTestCertificates") || _env.IsDevelopment();
 
@@ -85,7 +85,7 @@ public sealed class CertAuthController : Controller
         if (!string.Equals(cpfUser, v.ExtractedCpf, StringComparison.Ordinal))
             return BackToLoginWithCertError("CPF informado não corresponde ao CPF do certificado.", req.ReturnUrl);
 
-        var user = await _users.GetByCpfAsync(TenantPoC, cpfUser, ct);
+        var user = await _users.GetByCpfAsync(TenantDefault, cpfUser, ct);
         if (user is null) return BackToLoginWithCertError("Usuário não encontrado para o CPF informado.", req.ReturnUrl);
         if (!user.IsActive) return BackToLoginWithCertError("Usuário inativo.", req.ReturnUrl);
 

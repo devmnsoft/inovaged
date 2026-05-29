@@ -58,7 +58,7 @@ values
 
         // Snapshot por tipo:
         // - PCD/TTD normalmente estão em class_node / retention_rule / classification_plan*
-        // Para PoC: copie as classes (class_node) + regras (retention_rule) para tabelas de snapshot já existentes
+        // Para operacional: copie as classes (class_node) + regras (retention_rule) para tabelas de snapshot já existentes
         // Se no teu banco existir "classification_plan_version_item", você pode usar esse snapshot para PCD/TTD.
         if (instrumentType is "PCD" or "TTD")
         {

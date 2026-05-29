@@ -1,3 +1,4 @@
+using InovaGed.Application.Audit;
 using InovaGed.Application.Identity;
 using InovaGed.Application.Parameters;
 using InovaGed.Application.Users;
@@ -27,6 +28,7 @@ public sealed class UsersController : AppControllerBase
     private readonly IUserAdminQueries _queries;
     private readonly IParameterRepository _parameters;
     private readonly UserService _userService;
+    private readonly IAuditWriter _auditWriter;
 
     public UsersController(
         ILogger<UsersController> logger,
@@ -34,7 +36,8 @@ public sealed class UsersController : AppControllerBase
         IUserAdminRepository repo,
         IUserAdminQueries queries,
         IParameterRepository parameters,
-        UserService userService)
+        UserService userService,
+        IAuditWriter auditWriter)
     {
         _logger = logger;
         _currentUser = currentUser;
@@ -42,6 +45,7 @@ public sealed class UsersController : AppControllerBase
         _queries = queries;
         _parameters = parameters;
         _userService = userService;
+        _auditWriter = auditWriter;
     }
 
     [HttpPost("Unlock/{id:guid}")]
@@ -431,9 +435,11 @@ public sealed class UsersController : AppControllerBase
     {
         if (!_currentUser.IsAuthenticated) return Unauthorized();
 
-        if (servidorId != vm.ServidorId)
+        var routeMatchesServidor = vm.ServidorId != Guid.Empty && servidorId == vm.ServidorId;
+        var routeMatchesUserWithoutServidor = vm.ServidorId == Guid.Empty && vm.UserId.HasValue && vm.UserId.Value != Guid.Empty && servidorId == vm.UserId.Value;
+        if (!routeMatchesServidor && !routeMatchesUserWithoutServidor)
         {
-            TempData["Error"] = "Identificador do servidor inválido.";
+            TempData["Error"] = "Identificador do cadastro inválido.";
             return RedirectToAction(nameof(Index));
         }
 
@@ -517,6 +523,7 @@ public sealed class UsersController : AppControllerBase
             };
 
             await _repo.UpdateServidorUsuarioAsync(tenantId, command, ct);
+            await _auditWriter.WriteAsync(tenantId, _currentUser.UserId, "UPDATE", "USER_ADMIN", vm.ServidorId != Guid.Empty ? vm.ServidorId : vm.UserId, "Cadastro de usuário/servidor atualizado.", HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers.UserAgent.ToString(), new { vm.ServidorId, vm.UserId, CpfInformado = cpfInformado, CorrelationId = HttpContext.TraceIdentifier }, ct);
             TempData["Success"] = "Cadastro do servidor/usuário atualizado com sucesso.";
             return RedirectToAction(nameof(Index));
         }
@@ -681,7 +688,7 @@ public sealed class UsersController : AppControllerBase
 
     private void ValidateEditVm(EditUserVM vm)
     {
-        if (vm.ServidorId == Guid.Empty) ModelState.AddModelError(nameof(vm.ServidorId), "Servidor inválido.");
+        if (vm.ServidorId == Guid.Empty && (!vm.UserId.HasValue || vm.UserId.Value == Guid.Empty)) ModelState.AddModelError(nameof(vm.ServidorId), "Cadastro sem identificador válido para edição.");
         var cpfDigits = OnlyDigits(vm.Cpf);
         if (!string.IsNullOrWhiteSpace(cpfDigits) && cpfDigits.Length != 11) ModelState.AddModelError(nameof(vm.Cpf), "CPF inválido. Informe 11 dígitos ou deixe em branco.");
         var hasAccess = vm.UserId.HasValue && vm.UserId.Value != Guid.Empty;

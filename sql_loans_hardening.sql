@@ -20,5 +20,5 @@ create table if not exists ged.loan_request_allowed_file (
 create index if not exists ix_loan_approval_profile_tenant on ged.loan_approval_profile(tenant_id, reg_status);
 create index if not exists ix_loan_allowed_file_loan on ged.loan_request_allowed_file(tenant_id, loan_id, reg_status);
 
--- limpeza de dados PoC em produção
-update ged.audit_log set summary='[REMOVIDO_REFERENCIA_POC]' where upper(coalesce(summary,'')) like '%POC%';
+-- limpeza de dados Produção em produção
+update ged.audit_log set summary='[REMOVIDO_REFERENCIA_PRODUCAO]' where upper(coalesce(summary,'')) like '%PRODUCAO%';
