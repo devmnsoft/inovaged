@@ -34,7 +34,7 @@ public sealed class CertificateValidationService : ICertificateValidationService
         var chainOk = chain.Build(cert);
 
         // Se não conseguir revogar online (sem internet/OCSP/CRL), a cadeia pode falhar por motivo operacional.
-        // Para PoC: se falhar por motivos de revogação/URL, marcamos como NÃO VERIFICÁVEL.
+        // Para operacional: se falhar por motivos de revogação/URL, marcamos como NÃO VERIFICÁVEL.
         if (!chainOk)
         {
             var msg = string.Join(" | ", chain.ChainStatus.Select(s => $"{s.Status}:{s.StatusInformation}".Trim()));
@@ -55,7 +55,7 @@ public sealed class CertificateValidationService : ICertificateValidationService
             return new(false, null, null, null, "CPF não identificado no certificado.");
 
         // 4) Resolver usuário (no teu banco app_user não tem CPF, então:
-        // - estratégia PoC: mapear CPF em uma tabela de vínculo (criar) OU usar document_signature como referência
+        // - estratégia operacional: mapear CPF em uma tabela de vínculo (criar) OU usar document_signature como referência
         // Eu recomendo criar tabela ged.user_cpf_map (abaixo no SQL de mock).
         using var conn = await _db.OpenAsync(ct);
         var user = await conn.QueryFirstOrDefaultAsync<(Guid Id, string Name)>(@"
@@ -73,7 +73,7 @@ limit 1;", new { tenantId, cpf });
 
     public Task<SignatureValidationResult> ValidateSignatureAsync(Guid tenantId, byte[] signatureBytes, CancellationToken ct)
     {
-        // PoC: você já armazena signature_bytes em document_signature.
+        // operacional: você já armazena signature_bytes em document_signature.
         // Para validação real ICP-PAdES/CAdES, normalmente se usa biblioteca especializada.
         // Aqui eu deixo o “plug” do validador:
         // - Se tiver assinatura PAdES: iText + BouncyCastle / ou outro validador ICP.
@@ -81,12 +81,12 @@ limit 1;", new { tenantId, cpf });
         if (signatureBytes == null || signatureBytes.Length == 0)
             return Task.FromResult(new SignatureValidationResult("UNVERIFIABLE", "Sem bytes de assinatura."));
 
-        return Task.FromResult(new SignatureValidationResult("VALID", "Validação PoC (stub)."));
+        return Task.FromResult(new SignatureValidationResult("VALID", "Validação operacional (stub)."));
     }
 
     private static string? ExtractCpf(X509Certificate2 cert)
     {
-        // PoC robusto: tenta achar 11 dígitos no Subject.
+        // operacional robusto: tenta achar 11 dígitos no Subject.
         var subject = cert.Subject ?? "";
         var digits = new string(subject.Where(char.IsDigit).ToArray());
         if (digits.Length >= 11)

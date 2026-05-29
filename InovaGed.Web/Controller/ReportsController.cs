@@ -200,7 +200,7 @@ public sealed class ReportsController : Controller
 
     // =========================================================
     // Validação de Assinaturas — GET /Reports/SignatureValidation
-    // Item 21 PoC
+    // Item 21 operacional
     // =========================================================
     [HttpGet]
     public async Task<IActionResult> SignatureValidation(CancellationToken ct)

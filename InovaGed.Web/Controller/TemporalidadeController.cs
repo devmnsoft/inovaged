@@ -40,7 +40,7 @@ public sealed class TemporalidadeController : Controller
         return tid;
     }
 
-    private Guid UserIdOrEmpty() => _ctx.UserId; // pode ser Guid.Empty mesmo (PoC)
+    private Guid UserIdOrEmpty() => _ctx.UserId; // pode ser Guid.Empty mesmo (operacional)
 
     // ✅ Normaliza bucket e garante default
     private static string NormalizeBucket(string? bucket)

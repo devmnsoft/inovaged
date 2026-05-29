@@ -26,7 +26,7 @@
         </ul>
     </div>
     <div class="card-body">
-        <form asp-action="Edit" asp-controller="Users" asp-route-id="@Model.ServidorId" method="post" autocomplete="off">
+        <form asp-action="Edit" asp-controller="Users" asp-route-servidorId="@(Model.ServidorId != Guid.Empty ? Model.ServidorId : (Model.UserId ?? Guid.Empty))" method="post" autocomplete="off">
             <input asp-for="UserId" type="hidden" />
             <input asp-for="ServidorId" type="hidden" />
             <input asp-for="PossuiUsuarioAcesso" type="hidden" />

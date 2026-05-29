@@ -20,7 +20,7 @@ public sealed class AuditMiddleware
         {
             await _next(ctx);
 
-            // Auditoria "HTTP" (evidência PoC e trilha completa)
+            // Auditoria "HTTP" (evidência operacional e trilha completa)
             await audit.WriteAsync(
                 tenantId: tenantId,
                 userId: userId,

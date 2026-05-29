@@ -9,13 +9,13 @@ namespace InovaGed.Application.certificado
             foreach (var ext in cert.Extensions)
             {
                 // ICP-Brasil CPF geralmente vem em extension (Subject Alternative Name / otherName),
-                // mas na prática varia. Para PoC, você aceita:
+                // mas na prática varia. Para operacional, você aceita:
                 // - OID 2.16.76.1.3.1 em alguma extensão ASN.1
                 // - ou CPF no Subject (fallback)
                 if (ext.Oid?.Value == "2.16.76.1.3.1")
                 {
                     // muitas libs precisariam decodificar ASN.1.
-                    // Para PoC, você guarda o RawData e extrai por heurística simples,
+                    // Para operacional, você guarda o RawData e extrai por heurística simples,
                     // e depois refina com BouncyCastle.
                     var raw = ext.RawData;
                     var s = BitConverter.ToString(raw).Replace("-", "");

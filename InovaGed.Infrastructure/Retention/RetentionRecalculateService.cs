@@ -24,7 +24,7 @@ public sealed class RetentionRecalculateService
 
         try
         {
-            // 1) Atualiza base/due/status/disposition conforme VIEW + regras PoC
+            // 1) Atualiza base/due/status/disposition conforme VIEW + regras operacional
             var updateDocsSql = @"
 UPDATE ged.document d
 SET
@@ -76,7 +76,7 @@ WHERE d.tenant_id = @tenantId
                 return new Result(updated, 0, 0, null);
             }
 
-            // 3) Cria 1 caso OPEN (PoC) e itens para esses docs
+            // 3) Cria 1 caso OPEN (operacional) e itens para esses docs
             // Ajuste campos/colunas conforme seu schema real do retention_case
             var createCaseSql = @"
 INSERT INTO ged.retention_case (tenant_id, case_no, status, created_at, created_by)

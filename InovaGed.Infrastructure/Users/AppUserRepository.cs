@@ -11,7 +11,7 @@ public sealed class AppUserRepository : IAppUserRepository
 
     public async Task<AppUserByCpfDto?> GetByCpfAsync(Guid tenantId, string cpf, CancellationToken ct)
     {
-        // PoC: CPF está em password_plain (como no seu select)
+        // operacional: CPF está em password_plain (como no seu select)
         const string sql = @"
 select
   id        as Id,

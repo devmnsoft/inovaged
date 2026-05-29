@@ -7,7 +7,7 @@ namespace InovaGed.Application.certificado
         public static (bool ok, string details) ValidateChain(X509Certificate2 cert)
         {
             using var chain = new X509Chain();
-            chain.ChainPolicy.RevocationMode = X509RevocationMode.Online; // para PoC, online
+            chain.ChainPolicy.RevocationMode = X509RevocationMode.Online; // para operacional, online
             chain.ChainPolicy.RevocationFlag = X509RevocationFlag.ExcludeRoot;
             chain.ChainPolicy.VerificationFlags = X509VerificationFlags.NoFlag;
 

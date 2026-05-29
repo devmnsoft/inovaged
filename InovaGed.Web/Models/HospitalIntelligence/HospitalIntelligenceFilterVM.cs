@@ -1,4 +1,5 @@
 namespace InovaGed.Web.Models.HospitalIntelligence;
+
 public sealed class HospitalIntelligenceFilterVM
 {
     public DateTime? From { get; set; }
@@ -7,6 +8,6 @@ public sealed class HospitalIntelligenceFilterVM
     public string? Sector { get; set; }
     public string? DocumentType { get; set; }
     public string? Search { get; set; }
-    public int Top { get; set; } = 10;
-    public bool Refresh { get; set; }
+    public int Top { get; set; } = 1000;
+    public bool RefreshCache { get; set; }
 }

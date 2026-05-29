@@ -786,7 +786,7 @@ SELECT json_build_object(
         SELECT 1 FROM ged.vw_user_admin_list v
         WHERE v.tenant_id = @TenantId AND v.user_id = @Id
     ),
-    'existsAsServidorAnyStatus', EXISTS(
+    'existsAsServidor', EXISTS(
         SELECT 1 FROM ged.servidor s
         WHERE s.id = @Id AND s.tenant_id = @TenantId
     ),

@@ -148,7 +148,7 @@ where tenant_id=@tid and id=@id and reg_status='A';",
         return RedirectToAction(nameof(Index));
     }
 
-    // POST /AuthoritySources/RecomputeIntegrity (para demonstrar PoC)
+    // POST /AuthoritySources/RecomputeIntegrity (para executar operacional)
     [HttpPost]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> RecomputeIntegrity()
