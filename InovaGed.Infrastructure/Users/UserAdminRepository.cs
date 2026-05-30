@@ -792,37 +792,33 @@ LIMIT 1;";
         Guid adminId,
         CancellationToken ct)
     {
-        const string selectUserSql = @"
+        const string userSql = @"
 SELECT
-    u.id AS ""UserId"",
-    u.servidor_id AS ""ServidorId"",
-    u.name AS ""Name"",
-    u.email AS ""Email"",
-    u.phone_number AS ""PhoneNumber""
-FROM ged.app_user u
-WHERE u.tenant_id = @TenantId
-  AND u.id = @UserId
-  AND u.deleted_at_utc IS NULL
-LIMIT 1;";
-
-        const string servidorExistsSql = @"
-SELECT EXISTS(
-    SELECT 1
-    FROM ged.servidor s
-    WHERE s.tenant_id = @TenantId
-      AND s.id = @ServidorId
-);";
-
-        const string updateUserServidorSql = @"
-UPDATE ged.app_user
-SET servidor_id = @ServidorId,
-    updated_at_utc = now()
+    id AS ""Id"",
+    tenant_id AS ""TenantId"",
+    servidor_id AS ""ServidorId"",
+    name AS ""Name"",
+    email AS ""Email"",
+    user_name AS ""UserName"",
+    phone_number AS ""PhoneNumber"",
+    is_active AS ""IsActive""
+FROM ged.app_user
 WHERE tenant_id = @TenantId
   AND id = @UserId
-  AND deleted_at_utc IS NULL;";
+  AND deleted_at_utc IS NULL
+LIMIT 1;";
+
+        const string existsServidorSql = @"
+SELECT EXISTS(
+    SELECT 1
+    FROM ged.servidor
+    WHERE tenant_id = @TenantId
+      AND id = @ServidorId
+);";
 
         const string insertServidorSql = @"
-INSERT INTO ged.servidor (
+INSERT INTO ged.servidor
+(
     id,
     tenant_id,
     nome_completo,
@@ -834,7 +830,8 @@ INSERT INTO ged.servidor (
     created_at,
     reg_status
 )
-VALUES (
+VALUES
+(
     @ServidorId,
     @TenantId,
     @NomeCompleto,
@@ -842,65 +839,125 @@ VALUES (
     @EmailInstitucional,
     @Celular,
     'ATIVO',
-    @AdminId,
+    @CreatedBy,
     now(),
     'A'
-)
-ON CONFLICT (id) DO NOTHING;";
+);";
+
+        const string updateUserSql = @"
+UPDATE ged.app_user
+SET servidor_id = @ServidorId,
+    updated_at_utc = now()
+WHERE tenant_id = @TenantId
+  AND id = @UserId
+  AND deleted_at_utc IS NULL;";
 
         await using var con = await _db.OpenAsync(ct);
         await using var tx = await con.BeginTransactionAsync(ct);
 
-        var user = await con.QueryFirstOrDefaultAsync<RepairUserRow>(
-            new CommandDefinition(selectUserSql, new { TenantId = tenantId, UserId = userId }, tx, cancellationToken: ct));
+        _logger.LogInformation(
+            "Reparando vínculo servidor para usuário. Tenant={TenantId} UserId={UserId} AdminId={AdminId}",
+            tenantId,
+            userId,
+            adminId);
 
-        if (user is null)
+        try
         {
-            await tx.RollbackAsync(ct);
-            return null;
-        }
+            var user = await con.QueryFirstOrDefaultAsync<AppUserRepairRow>(
+                new CommandDefinition(
+                    userSql,
+                    new { TenantId = tenantId, UserId = userId },
+                    transaction: tx,
+                    cancellationToken: ct));
 
-        var servidorId = user.ServidorId.GetValueOrDefault();
-        if (servidorId == Guid.Empty)
-        {
-            servidorId = Guid.NewGuid();
-            await con.ExecuteAsync(new CommandDefinition(
-                updateUserServidorSql,
-                new { TenantId = tenantId, UserId = userId, ServidorId = servidorId },
-                tx,
-                cancellationToken: ct));
-        }
+            if (user is null)
+            {
+                await tx.RollbackAsync(ct);
+                return null;
+            }
 
-        var servidorExists = await con.ExecuteScalarAsync<bool>(
-            new CommandDefinition(servidorExistsSql, new { TenantId = tenantId, ServidorId = servidorId }, tx, cancellationToken: ct));
+            var servidorId = user.ServidorId.HasValue && user.ServidorId.Value != Guid.Empty
+                ? user.ServidorId.Value
+                : Guid.NewGuid();
 
-        if (!servidorExists)
-        {
-            await con.ExecuteAsync(new CommandDefinition(
-                insertServidorSql,
-                new
-                {
-                    TenantId = tenantId,
-                    ServidorId = servidorId,
-                    NomeCompleto = FirstNonBlank(user.Name, user.Email, "Usuário sem nome"),
-                    Cpf = TechnicalCpf(servidorId),
-                    EmailInstitucional = user.Email,
-                    Celular = user.PhoneNumber,
-                    AdminId = adminId
-                },
-                tx,
-                cancellationToken: ct));
+            if (servidorId == Guid.Empty)
+                servidorId = Guid.NewGuid();
 
-            _logger.LogWarning(
-                "Servidor reparado/criado para app_user sem vínculo consistente. TenantId={TenantId} UserId={UserId} ServidorId={ServidorId} AdminId={AdminId}",
+            var servidorExists = await con.ExecuteScalarAsync<bool>(
+                new CommandDefinition(
+                    existsServidorSql,
+                    new { TenantId = tenantId, ServidorId = servidorId },
+                    transaction: tx,
+                    cancellationToken: ct));
+
+            _logger.LogInformation(
+                "Servidor definido para reparo. Tenant={TenantId} UserId={UserId} ServidorId={ServidorId} Exists={Exists}",
                 tenantId,
                 userId,
                 servidorId,
-                adminId);
-        }
+                servidorExists);
 
-        await tx.CommitAsync(ct);
-        return servidorId;
+            if (!servidorExists)
+            {
+                await con.ExecuteAsync(
+                    new CommandDefinition(
+                        insertServidorSql,
+                        new
+                        {
+                            TenantId = tenantId,
+                            ServidorId = servidorId,
+                            NomeCompleto = FirstNonBlank(user.Name, user.Email, user.UserName, "Servidor sem nome"),
+                            Cpf = TechnicalCpf(servidorId),
+                            EmailInstitucional = user.Email,
+                            Celular = user.PhoneNumber,
+                            CreatedBy = adminId
+                        },
+                        transaction: tx,
+                        cancellationToken: ct));
+
+                _logger.LogInformation(
+                    "Servidor criado para reparar usuário sem vínculo. Tenant={TenantId} UserId={UserId} ServidorId={ServidorId}",
+                    tenantId,
+                    userId,
+                    servidorId);
+            }
+
+            await con.ExecuteAsync(
+                new CommandDefinition(
+                    updateUserSql,
+                    new
+                    {
+                        TenantId = tenantId,
+                        UserId = userId,
+                        ServidorId = servidorId
+                    },
+                    transaction: tx,
+                    cancellationToken: ct));
+
+            await tx.CommitAsync(ct);
+            return servidorId;
+        }
+        catch (PostgresException ex) when (ex.SqlState == "23503")
+        {
+            _logger.LogError(ex,
+                "Violação FK ao reparar servidor/user. Tenant={TenantId} UserId={UserId}",
+                tenantId,
+                userId);
+
+            await tx.RollbackAsync(CancellationToken.None);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Erro ao reparar vínculo servidor/user. Tenant={TenantId} UserId={UserId} AdminId={AdminId}",
+                tenantId,
+                userId,
+                adminId);
+
+            await tx.RollbackAsync(CancellationToken.None);
+            throw;
+        }
     }
 
     public async Task<Guid?> RepairServidorFromAdminListAsync(
@@ -1562,13 +1619,16 @@ SELECT ged.audit_user_security_event(
         return "SEMCPF" + servidorId.ToString("N")[..8];
     }
 
-    private sealed class RepairUserRow
+    private sealed class AppUserRepairRow
     {
-        public Guid UserId { get; set; }
+        public Guid Id { get; set; }
+        public Guid TenantId { get; set; }
         public Guid? ServidorId { get; set; }
         public string? Name { get; set; }
         public string? Email { get; set; }
+        public string? UserName { get; set; }
         public string? PhoneNumber { get; set; }
+        public bool IsActive { get; set; }
     }
 
     private sealed class AdminListRepairRow

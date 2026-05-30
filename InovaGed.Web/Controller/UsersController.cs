@@ -350,21 +350,20 @@ public sealed class UsersController : AppControllerBase
                 dto != null,
                 dto?.ServidorId,
                 dto?.UserId);
-        }
 
-        if (isAdmin && dto?.UserId == id)
-        {
-            var repairedServidorId = await _repo.EnsureServidorForUserAsync(tenantId, id, _currentUser.UserId, ct);
-            _logger.LogInformation(
-                "Resultado reparo de vínculo app_user->servidor. Tenant={TenantId} RouteId={RouteId} RepairedServidorId={RepairedServidorId}",
-                tenantId,
-                id,
-                repairedServidorId);
-
-            if (repairedServidorId.HasValue)
+            if (dto?.UserId == id)
             {
-                dto = await _repo.GetForEditByServidorIdAsync(tenantId, repairedServidorId.Value, isAdmin, ct)
-                    ?? await _repo.GetForEditByUserIdAsync(tenantId, id, ct);
+                var repairedServidorId = await _repo.EnsureServidorForUserAsync(tenantId, id, _currentUser.UserId, ct);
+                _logger.LogInformation(
+                    "Resultado reparo de vínculo app_user->servidor após fallback por UserId. Tenant={TenantId} RouteId={RouteId} RepairedServidorId={RepairedServidorId}",
+                    tenantId,
+                    id,
+                    repairedServidorId);
+
+                if (repairedServidorId.HasValue)
+                {
+                    dto = await _repo.GetForEditByServidorIdAsync(tenantId, repairedServidorId.Value, isAdmin, ct);
+                }
             }
         }
 
