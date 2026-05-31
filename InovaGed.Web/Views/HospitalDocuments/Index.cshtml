@@ -707,6 +707,8 @@
     const btnToggleOcr = document.getElementById('btnToggleOcr');
 
     let suggestionTimer = null;
+    let suggestionController = null;
+    const suggestionCache = new Map();
     let lastController = null;
     const defaultSearchButtonLabel = btnSearch.innerText;
 
@@ -728,13 +730,16 @@
 
         const q = input.value.trim();
 
-        if (q.length < 2) {
+        if (q.length < 3) {
+            if (suggestionController) suggestionController.abort();
             suggestions.style.display = 'none';
             suggestions.innerHTML = '';
             return;
         }
 
-        suggestionTimer = setTimeout(loadSuggestions, 230);
+        suggestions.innerHTML = '<div class="suggestion-item text-muted">Buscando sugestões...</div>';
+        suggestions.style.display = 'block';
+        suggestionTimer = setTimeout(loadSuggestions, 500);
     });
 
     document.querySelectorAll('.quick-chip').forEach(chip => {
@@ -754,12 +759,22 @@
     async function loadSuggestions() {
         const q = input.value.trim();
 
-        if (q.length < 2)
+        if (q.length < 3)
             return;
+
+        const cacheKey = q.toLowerCase();
+        const cached = suggestionCache.get(cacheKey);
+        if (cached && (Date.now() - cached.createdAt) < 60000) {
+            renderSuggestions(cached.items);
+            return;
+        }
+
+        if (suggestionController) suggestionController.abort();
+        suggestionController = new AbortController();
 
         try {
             const url = `/HospitalDocuments/Suggestions?q=${encodeURIComponent(q)}`;
-            const response = await fetch(url);
+            const response = await fetch(url, { signal: suggestionController.signal, headers: { 'Accept': 'application/json' } });
 
             if (!response.ok) {
                 suggestions.style.display = 'none';
@@ -768,53 +783,59 @@
             }
 
             const data = await response.json();
-
-            if (!data || data.length === 0) {
-                suggestions.style.display = 'none';
-                suggestions.innerHTML = '';
-                return;
-            }
-
-            suggestions.innerHTML = data.map(item => `
-                <div class="suggestion-item"
-                     data-item='${escapeAttr(JSON.stringify(item))}'>
-                    <div class="suggestion-title">${escapeHtml(item.title || item.label)}</div>
-                    <div class="suggestion-desc">${escapeHtml(item.code || '')} · ${escapeHtml(item.type || '')} · ${escapeHtml(item.fileName || '')}</div>
-                    <div class="suggestion-meta">
-                        <span class="meta-pill">${escapeHtml(item.matchSourceLabel || '')}</span>
-                        <span class="meta-pill">${escapeHtml(item.createdAt || '')}</span>
-                        <span class="meta-ocr-pill ${ocrStatusClass(item.ocrStatus)}">${ocrStatusLabel(item.ocrStatus, item.hasOcr)}</span>
-                    </div>
-                    <div class="suggestion-desc">${item.snippet || ''}</div>
-                </div>
-            `).join('');
-
-            suggestions.querySelectorAll('.suggestion-item').forEach(el => {
-                el.addEventListener('click', function () {
-                    const item = JSON.parse(this.dataset.item || '{}');
-                    const versionId = item.versionId;
-                    const title = item.title || item.label;
-                    const previewUrl = item.previewUrl || `/HospitalDocuments/Preview?versionId=${encodeURIComponent(versionId)}`;
-                    const viewerUrl = item.viewerUrl || `/HospitalDocuments/Viewer?versionId=${encodeURIComponent(versionId)}`;
-                    const ocrUrl = item.ocrUrl || `/HospitalDocuments/OcrText?versionId=${encodeURIComponent(versionId)}`;
-
-                    input.value = (item.code || item.title || '').trim();
-                    suggestions.style.display = 'none';
-
-                    renderSelectedDocument(item);
-                    resultCount.innerText = '1';
-                    openPreview(previewUrl, ocrUrl, viewerUrl, title);
-                    statusLine.innerText = 'Documento selecionado pela sugestão automática.';
-                });
-            });
-
-            suggestions.style.display = 'block';
+            const items = Array.isArray(data) ? data : (data.items || []);
+            suggestionCache.set(cacheKey, { createdAt: Date.now(), items });
+            renderSuggestions(items);
 
         } catch (error) {
+            if (error.name === 'AbortError') return;
             console.error('Erro ao carregar sugestões:', error);
             suggestions.style.display = 'none';
             suggestions.innerHTML = '';
         }
+    }
+
+    function renderSuggestions(items) {
+        if (!items || items.length === 0) {
+            suggestions.style.display = 'none';
+            suggestions.innerHTML = '';
+            return;
+        }
+
+        suggestions.innerHTML = items.map(item => `
+            <div class="suggestion-item"
+                 data-item='${escapeAttr(JSON.stringify(item))}'>
+                <div class="suggestion-title">${escapeHtml(item.title || item.label)}</div>
+                <div class="suggestion-desc">${escapeHtml(item.code || '')} · ${escapeHtml(item.type || '')} · ${escapeHtml(item.fileName || '')}</div>
+                <div class="suggestion-meta">
+                    <span class="meta-pill">${escapeHtml(item.matchSourceLabel || '')}</span>
+                    <span class="meta-pill">${escapeHtml(item.createdAt || '')}</span>
+                    <span class="meta-ocr-pill ${ocrStatusClass(item.ocrStatus)}">${ocrStatusLabel(item.ocrStatus, item.hasOcr)}</span>
+                </div>
+                <div class="suggestion-desc">${item.snippet || ''}</div>
+            </div>
+        `).join('');
+
+        suggestions.querySelectorAll('.suggestion-item').forEach(el => {
+            el.addEventListener('click', function () {
+                const item = JSON.parse(this.dataset.item || '{}');
+                const versionId = item.versionId;
+                const title = item.title || item.label;
+                const previewUrl = item.previewUrl || `/HospitalDocuments/Preview?versionId=${encodeURIComponent(versionId)}`;
+                const viewerUrl = item.viewerUrl || `/HospitalDocuments/Viewer?versionId=${encodeURIComponent(versionId)}`;
+                const ocrUrl = item.ocrUrl || `/HospitalDocuments/OcrText?versionId=${encodeURIComponent(versionId)}`;
+
+                input.value = (item.code || item.title || '').trim();
+                suggestions.style.display = 'none';
+
+                renderSelectedDocument(item);
+                resultCount.innerText = '1';
+                openPreview(previewUrl, ocrUrl, viewerUrl, title);
+                statusLine.innerText = 'Documento selecionado pela sugestão automática.';
+            });
+        });
+
+        suggestions.style.display = 'block';
     }
 
     async function runSearch() {
@@ -1044,7 +1065,9 @@
     async function openPreview(previewUrl, ocrUrl, viewerUrl, title) {
         previewEmpty.style.display = 'none';
         previewFrame.style.display = 'block';
-        previewFrame.src = previewUrl;
+        if (previewFrame.src !== new URL(previewUrl, window.location.origin).href) {
+            previewFrame.src = previewUrl;
+        }
 
         previewToolbar.style.display = 'flex';
         previewTitle.innerText = title || 'Documento encontrado';

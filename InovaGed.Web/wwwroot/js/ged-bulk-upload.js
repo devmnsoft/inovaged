@@ -1,7 +1,7 @@
 (function () {
     const DuplicateStrategy = { overwrite: 'overwrite', rename: 'rename', skip: 'skip', cancel: 'cancel' };
     const ValidationStep = 'Validação de extensão';
-    const state = { files: [], uploading: false, batchId: null, duplicateStrategy: null };
+    const state = { files: [], uploading: false, isCheckingDuplicates: false, duplicateCheckKey: null, duplicateCheckPromise: null, batchId: null, duplicateStrategy: null };
 
     function initBulkUpload() {
         const dz = document.getElementById('bulkDropzone');
@@ -240,15 +240,32 @@
         return true;
     }
 
-    async function checkDuplicatesBeforeUpload() { /* unchanged behavior */
+    async function checkDuplicatesBeforeUpload() {
         const folderId = getCurrentFolderId();
         const names = state.files.filter(f => !['success', 'ignored', 'error'].includes(f.status)).map(f => f.uploadName);
         if (!names.length) return [];
+        const checkKey = `${folderId}|${names.join('|')}`;
+        if (state.isCheckingDuplicates && state.duplicateCheckKey === checkKey && state.duplicateCheckPromise) {
+            return state.duplicateCheckPromise;
+        }
+
+        console.log('[BulkUpload] checking duplicates once');
+        state.isCheckingDuplicates = true;
+        state.duplicateCheckKey = checkKey;
         const token = document.querySelector('input[name="__RequestVerificationToken"]')?.value;
-        const r = await fetch('/Ged/Documents/CheckDuplicateNames', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { RequestVerificationToken: token } : {}) }, body: JSON.stringify({ folderId, fileNames: names }) });
-        const j = await r.json().catch(() => ({ success: false, message: 'Erro ao verificar duplicidades' }));
-        if (!r.ok || !j.success) throw new Error(j.message || 'Não foi possível verificar duplicidades.');
-        return j.duplicates || [];
+        state.duplicateCheckPromise = (async () => {
+            const r = await fetch('/Ged/Documents/CheckDuplicateNames', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { RequestVerificationToken: token } : {}) }, body: JSON.stringify({ folderId, fileNames: names }) });
+            const j = await r.json().catch(() => ({ success: false, message: 'Erro ao verificar duplicidades' }));
+            if (!r.ok || !j.success) throw new Error(j.message || 'Não foi possível verificar duplicidades.');
+            return j.duplicates || [];
+        })();
+
+        try {
+            return await state.duplicateCheckPromise;
+        } finally {
+            state.isCheckingDuplicates = false;
+            state.duplicateCheckPromise = null;
+        }
     }
 
     function showDuplicateDecision(dups) {
@@ -275,7 +292,7 @@
     async function uploadFiles(skipDuplicateCheck) {
         try {
             clearBulkUploadMessage();
-            if (state.uploading || !validateBeforeUpload()) return;
+            if (state.uploading || state.isCheckingDuplicates || !validateBeforeUpload()) return;
             setBulkUploadLoading(true);
             state.uploading = true;
 
@@ -286,6 +303,8 @@
                         const hit = dups.find(d => d.fileName.toLowerCase() === f.uploadName.toLowerCase());
                         if (hit) { f.status = 'duplicate'; f.existingDocumentId = hit.existingDocumentId || null; }
                     });
+                    state.uploading = false;
+                    setBulkUploadLoading(false);
                     renderFileList(); updateUploadSummary(); showDuplicateDecision(dups); return;
                 }
             }

@@ -14,7 +14,7 @@
     {
         Task<IReadOnlyList<DocumentSearchRowDto>> SearchAsync(
             Guid tenantId,
-            string q,
+            string? q,
             Guid? folderId,
             int limit,
             CancellationToken ct);

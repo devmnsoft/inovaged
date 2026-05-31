@@ -655,25 +655,49 @@
 {
     <script>
         (function(){
+            const versionId = '@selected.Id';
             const statusUrl = '@Url.Action("PreviewStatus", "Ged", new { versionId = selected.Id })';
             const badge = document.getElementById('previewStatusBadge');
-            let wait = 1200;
-            let done = false;
+            window.gedStatusPollers = window.gedStatusPollers || {};
+            if (window.gedStatusPollers[versionId]) return;
+            const finalStatuses = new Set(['READY','COMPLETED','ERROR','CANCELLED']);
+            const poller = { timer: null, abort: null, stopped: false, previewLoaded: false };
+            window.gedStatusPollers[versionId] = poller;
             async function check(){
+                if (poller.stopped || document.visibilityState !== 'visible') {
+                    schedule(5000);
+                    return;
+                }
                 try{
-                    const r = await fetch(statusUrl, { headers: { 'Accept':'application/json' } });
-                    if (!r.ok) return;
+                    poller.abort = new AbortController();
+                    const r = await fetch(statusUrl, { headers: { 'Accept':'application/json' }, signal: poller.abort.signal });
+                    if (!r.ok) return schedule(5000);
                     const d = await r.json();
-                    if (badge) badge.textContent = `Preview: ${d.status || 'PENDING'}`;
-                    if (d.status === 'READY' || d.status === 'ERROR') done = true;
-                } finally {
-                    if (!done) {
-                        setTimeout(check, wait);
-                        wait = Math.min(wait * 1.7, 10000);
+                    const status = d.status || 'PENDING';
+                    if (badge) badge.textContent = `Preview: ${status}`;
+                    if (finalStatuses.has(status)) {
+                        stop();
+                        return;
                     }
+                    schedule(status === 'PENDING' || status === 'NOT_READY' ? 5000 : 3000);
+                } catch (e) {
+                    if (e.name !== 'AbortError') schedule(5000);
                 }
             }
-            check();
+            function schedule(delay){
+                if (poller.stopped) return;
+                clearTimeout(poller.timer);
+                poller.timer = setTimeout(check, delay);
+            }
+            function stop(){
+                poller.stopped = true;
+                clearTimeout(poller.timer);
+                if (poller.abort) poller.abort.abort();
+                delete window.gedStatusPollers[versionId];
+            }
+            document.addEventListener('visibilitychange', function(){ if (document.visibilityState === 'visible' && !poller.stopped) check(); });
+            window.addEventListener('beforeunload', stop, { once: true });
+            schedule(3000);
         })();
     </script>
 }
@@ -1300,14 +1324,31 @@
         }
 
         function startOcrPolling(versionId) {
-            let attempts = 0;
-            const maxAttempts = 120;
+            window.gedStatusPollers = window.gedStatusPollers || {};
+            const key = `ocr:${versionId}`;
+            if (window.gedStatusPollers[key]) return;
 
-            const timer = setInterval(async function () {
-                attempts++;
+            const finalStatuses = new Set(['COMPLETED', 'ERROR', 'CANCELLED']);
+            const poller = { timer: null, abort: null, attempts: 0, stopped: false };
+            window.gedStatusPollers[key] = poller;
 
-                if (attempts > maxAttempts) {
-                    clearInterval(timer);
+            function stop() {
+                poller.stopped = true;
+                clearTimeout(poller.timer);
+                if (poller.abort) poller.abort.abort();
+                delete window.gedStatusPollers[key];
+            }
+
+            async function tick() {
+                if (poller.stopped) return;
+                if (document.visibilityState !== 'visible') {
+                    poller.timer = setTimeout(tick, 5000);
+                    return;
+                }
+
+                poller.attempts++;
+                if (poller.attempts > 120) {
+                    stop();
                     showGedToast('OCR ainda está em processamento. Atualize a página depois.', 'info');
                     showPageAlert('OCR ainda está em processamento. Atualize a página depois.', 'info');
                     return;
@@ -1317,44 +1358,51 @@
                     const url = '@Url.Action("OcrStatus", "Ged")'
                         + '?versionId=' + encodeURIComponent(versionId);
 
+                    poller.abort = new AbortController();
                     const resp = await fetch(url, {
                         credentials: 'include',
-                        cache: 'no-store'
+                        cache: 'no-store',
+                        signal: poller.abort.signal
                     });
 
-                    if (!resp.ok) return;
+                    if (!resp.ok) {
+                        poller.timer = setTimeout(tick, 5000);
+                        return;
+                    }
 
                     const data = await resp.json();
 
-                    if (!data || !data.hasJob) return;
+                    if (!data || !data.hasJob) {
+                        poller.timer = setTimeout(tick, 5000);
+                        return;
+                    }
 
                     updateOcrCell(versionId, data.status, data.jobId, data.errorMessage);
+                    const status = String(data.status || '').toUpperCase();
 
-                    if (data.completed) {
-                        clearInterval(timer);
-
-                        showGedToast('OCR concluído com sucesso.', 'success');
-                        showPageAlert('OCR concluído com sucesso. A página será atualizada.', 'success');
-
-                        setTimeout(() => {
-                            location.reload();
-                        }, 1200);
+                    if (finalStatuses.has(status) || data.completed || data.error) {
+                        stop();
+                        if (data.completed) {
+                            showGedToast('OCR concluído com sucesso.', 'success');
+                            showPageAlert('OCR concluído com sucesso. A página será atualizada.', 'success');
+                            setTimeout(() => { location.reload(); }, 1200);
+                        } else if (data.error) {
+                            showGedToast(data.errorMessage || 'OCR finalizado com erro.', 'danger');
+                            showPageAlert(data.errorMessage || 'OCR finalizado com erro.', 'danger');
+                            setTimeout(() => { location.reload(); }, 1600);
+                        }
+                        return;
                     }
 
-                    if (data.error) {
-                        clearInterval(timer);
-
-                        showGedToast(data.errorMessage || 'OCR finalizado com erro.', 'danger');
-                        showPageAlert(data.errorMessage || 'OCR finalizado com erro.', 'danger');
-
-                        setTimeout(() => {
-                            location.reload();
-                        }, 1600);
-                    }
-                } catch {
-                    // polling silencioso
+                    poller.timer = setTimeout(tick, status === 'PENDING' ? 5000 : 3000);
+                } catch (e) {
+                    if (e.name !== 'AbortError') poller.timer = setTimeout(tick, 5000);
                 }
-            }, 3000);
+            }
+
+            document.addEventListener('visibilitychange', function(){ if (document.visibilityState === 'visible' && !poller.stopped) tick(); });
+            window.addEventListener('beforeunload', stop, { once: true });
+            poller.timer = setTimeout(tick, 3000);
         }
 
         document.addEventListener('DOMContentLoaded', function () {

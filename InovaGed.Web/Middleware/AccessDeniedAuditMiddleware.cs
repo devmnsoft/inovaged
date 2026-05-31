@@ -13,7 +13,8 @@ public sealed class AccessDeniedAuditMiddleware
     {
         await _next(ctx);
 
-        if (ctx.Response.StatusCode == StatusCodes.Status403Forbidden)
+        var userAgent = ctx.Request.Headers.UserAgent.ToString();
+        if (ctx.Response.StatusCode == StatusCodes.Status403Forbidden && !IsKnownBot(userAgent))
         {
             await audit.WriteAsync(
                 tenantId: currentUser.TenantId,
@@ -23,7 +24,7 @@ public sealed class AccessDeniedAuditMiddleware
                 entityId: null,
                 summary: $"403 em {ctx.Request.Method} {ctx.Request.Path}",
                 ipAddress: ctx.Connection.RemoteIpAddress?.ToString(),
-                userAgent: ctx.Request.Headers.UserAgent.ToString(),
+                userAgent: userAgent,
                 data: new
                 {
                     method = ctx.Request.Method,
@@ -31,5 +32,15 @@ public sealed class AccessDeniedAuditMiddleware
                 },
                 ct: ctx.RequestAborted);
         }
+    }
+
+    private static bool IsKnownBot(string userAgent)
+    {
+        if (string.IsNullOrWhiteSpace(userAgent)) return false;
+        return userAgent.Contains("GPTBot", StringComparison.OrdinalIgnoreCase)
+            || userAgent.Contains("OAI-SearchBot", StringComparison.OrdinalIgnoreCase)
+            || userAgent.Contains("Bingbot", StringComparison.OrdinalIgnoreCase)
+            || userAgent.Contains("Google-Read-Aloud", StringComparison.OrdinalIgnoreCase)
+            || userAgent.Contains("Googlebot", StringComparison.OrdinalIgnoreCase);
     }
 }

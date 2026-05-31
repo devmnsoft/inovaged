@@ -205,9 +205,10 @@ public sealed class GedController : Controller
             var fileNames = (request.FileNames ?? Array.Empty<string>()).Where(x => !string.IsNullOrWhiteSpace(x)).Select(Path.GetFileNameWithoutExtension).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
             if (fileNames.Length == 0) return Ok(JsonSuccess("Nenhum arquivo para validação de duplicidade.", new { duplicates = Array.Empty<object>() }, correlationId));
 
-            const string sql = @"select id as ExistingDocumentId, title as FileName from ged.document where tenant_id=@tenantId and folder_id=@folderId and title = any(@titles) and reg_status='A';";
+            const string sql = @"select id as ExistingDocumentId, title as FileName from ged.document where tenant_id=@tenantId::uuid and folder_id=@folderId::uuid and title = any(@titles) and reg_status='A';";
             using var con = _db.CreateConnection();
             var rows = await con.QueryAsync(sql, new { tenantId = _currentUser.TenantId, folderId = request.FolderId.Value, titles = fileNames });
+            _logger.LogInformation("Duplicidades verificadas. Tenant={TenantId} User={UserId} FolderId={FolderId} FileCount={FileCount} CorrelationId={CorrelationId}", _currentUser.TenantId, _currentUser.UserId, request.FolderId.Value, fileNames.Length, correlationId);
             return Ok(JsonSuccess("Duplicidades verificadas com sucesso.", new { duplicates = rows }, correlationId));
         }
         catch (Exception ex)
@@ -1229,6 +1230,9 @@ LIMIT 20;";
         if (!_currentUser.IsAuthenticated) return Unauthorized();
 
         var tenantId = _currentUser.TenantId;
+        var userId = _currentUser.UserId;
+        var range = Request.Headers.Range.ToString();
+        var sw = Stopwatch.StartNew();
 
         try
         {
@@ -1238,11 +1242,15 @@ LIMIT 20;";
             if (!await _storage.ExistsAsync(v.StoragePath, ct))
                 return NotFound("Arquivo não encontrado no storage.");
 
+            Response.Headers[HeaderNames.CacheControl] = "private, max-age=120";
+            Response.Headers[HeaderNames.LastModified] = DateTimeOffset.UtcNow.ToString("R");
+
             if (IsImage(v.ContentType, v.FileName))
             {
                 var img = await _storage.OpenReadAsync(v.StoragePath, ct);
                 SetInlineContentDisposition(v.FileName);
 
+                _logger.LogInformation("GED preview streaming. Tenant={TenantId} User={UserId} VersionId={VersionId} FileSize={FileSize} ContentType={ContentType} Range={Range} ElapsedMs={ElapsedMs} Aborted={Aborted}", tenantId, userId, versionId, v.SizeBytes, v.ContentType, range, sw.ElapsedMilliseconds, false);
                 return File(
                     img,
                     string.IsNullOrWhiteSpace(v.ContentType) ? "image/*" : v.ContentType,
@@ -1255,10 +1263,11 @@ LIMIT 20;";
                 var pdf = await _storage.OpenReadAsync(v.StoragePath, ct);
                 SetInlineContentDisposition(v.FileName);
 
+                _logger.LogInformation("GED preview streaming. Tenant={TenantId} User={UserId} VersionId={VersionId} FileSize={FileSize} ContentType={ContentType} Range={Range} ElapsedMs={ElapsedMs} Aborted={Aborted}", tenantId, userId, versionId, v.SizeBytes, "application/pdf", range, sw.ElapsedMilliseconds, false);
                 return File(pdf, "application/pdf", enableRangeProcessing: true);
             }
 
-            var previewPath = Path.Combine("tenants", tenantId.ToString(), "documents", v.DocumentId.ToString(), "versions", versionId.ToString(), "previews", "preview.pdf");
+            var previewPath = BuildPreviewPath(tenantId, v.DocumentId, versionId, v.FileName);
             if (await _storage.ExistsAsync(previewPath, ct))
             {
                 var preview = await _storage.OpenReadAsync(previewPath, ct);
@@ -1266,6 +1275,7 @@ LIMIT 20;";
                 var previewName = $"{Path.GetFileNameWithoutExtension(v.FileName)}.pdf";
                 SetInlineContentDisposition(previewName);
 
+                _logger.LogInformation("GED preview PDF streaming. Tenant={TenantId} User={UserId} VersionId={VersionId} FileSize={FileSize} ContentType={ContentType} Range={Range} ElapsedMs={ElapsedMs} Aborted={Aborted}", tenantId, userId, versionId, v.SizeBytes, "application/pdf", range, sw.ElapsedMilliseconds, false);
                 return File(preview, "application/pdf", enableRangeProcessing: true);
             }
 
@@ -1273,9 +1283,14 @@ LIMIT 20;";
             await _previewQueue.EnqueueAsync(tenantId, v.DocumentId, versionId, v.StoragePath, v.FileName, ct);
             return PreviewProcessingHtml(versionId);
         }
+        catch (OperationCanceledException ex) when (ct.IsCancellationRequested || HttpContext.RequestAborted.IsCancellationRequested)
+        {
+            _logger.LogInformation(ex, "GED preview abortado pelo cliente. Tenant={TenantId} User={UserId} VersionId={VersionId} Range={Range} ElapsedMs={ElapsedMs} Aborted={Aborted}", tenantId, userId, versionId, range, sw.ElapsedMilliseconds, true);
+            return new EmptyResult();
+        }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Erro em PreviewVersion. Tenant={TenantId}, VersionId={VersionId}", tenantId, versionId);
+            _logger.LogError(ex, "Erro em PreviewVersion. Tenant={TenantId} User={UserId} VersionId={VersionId} Range={Range} ElapsedMs={ElapsedMs}", tenantId, userId, versionId, range, sw.ElapsedMilliseconds);
             return PreviewErrorHtml(versionId);
         }
     }
@@ -1309,7 +1324,7 @@ LIMIT 20;";
   </div>
   <script>
     const statusUrl = ""{statusUrl}"";
-    let wait = 1200;
+    let wait = 3000;
     async function tick() {{
       const res = await fetch(statusUrl, {{ headers: {{ Accept: ""application/json"" }} }});
       if (res.ok) {{
@@ -1386,6 +1401,11 @@ LIMIT 20;";
                 requestedAt = status.RequestedAt,
                 finishedAt = status.FinishedAt
             });
+        }
+        catch (OperationCanceledException ex) when (ct.IsCancellationRequested || HttpContext.RequestAborted.IsCancellationRequested)
+        {
+            _logger.LogInformation(ex, "Consulta PreviewStatus abortada pelo cliente. Tenant={TenantId} Version={VersionId}", _currentUser.TenantId, versionId);
+            return new EmptyResult();
         }
         catch (Exception ex)
         {
@@ -1631,6 +1651,7 @@ LIMIT 20;";
                     "PROCESSING" => "Executando",
                     "COMPLETED" => "Concluído",
                     "ERROR" => "Erro",
+                    "CANCELLED" => "Cancelado",
                     _ => st
                 },
                 requestedAt = status.RequestedAt,
@@ -1640,6 +1661,11 @@ LIMIT 20;";
                 completed = st == "COMPLETED",
                 error = st == "ERROR"
             });
+        }
+        catch (OperationCanceledException ex) when (ct.IsCancellationRequested || HttpContext.RequestAborted.IsCancellationRequested)
+        {
+            _logger.LogInformation(ex, "Consulta OcrStatus abortada pelo cliente. Tenant={TenantId} VersionId={VersionId}", _currentUser.TenantId, versionId);
+            return new EmptyResult();
         }
         catch (Exception ex)
         {
@@ -1738,30 +1764,51 @@ VALUES
     [HttpGet]
     public async Task<IActionResult> Search(string? q, Guid? folderId, int limit = 25, CancellationToken ct = default)
     {
+        var sw = Stopwatch.StartNew();
+        var correlationId = HttpContext.TraceIdentifier;
+        var tenantId = _currentUser.TenantId;
+        var userId = _currentUser.UserId;
+
         try
         {
             if (!_currentUser.IsAuthenticated)
                 return RedirectToAction("Login", "Account");
 
-            var tenantId = _currentUser.TenantId;
+            if (folderId.HasValue && IsVirtualFolderId(folderId.Value))
+                folderId = null;
 
             var rows = await _search.SearchAsync(
                 tenantId: tenantId,
-                q: q ?? "",
+                q: q,
                 folderId: folderId,
                 limit: limit,
                 ct: ct);
+
+            sw.Stop();
+            _logger.LogInformation("GED Search executado. Tenant={TenantId} User={UserId} FolderId={FolderId} Query={Query} ResultCount={ResultCount} ElapsedMs={ElapsedMs} CorrelationId={CorrelationId}",
+                tenantId, userId, folderId, q, rows.Count, sw.ElapsedMilliseconds, correlationId);
 
             ViewBag.Query = q ?? "";
             ViewBag.FolderId = folderId;
 
             return View("Search", rows);
         }
+        catch (OperationCanceledException ex) when (ct.IsCancellationRequested || HttpContext.RequestAborted.IsCancellationRequested)
+        {
+            sw.Stop();
+            _logger.LogInformation(ex, "GED Search cancelado pelo cliente. Tenant={TenantId} User={UserId} FolderId={FolderId} Query={Query} ElapsedMs={ElapsedMs} CorrelationId={CorrelationId}",
+                tenantId, userId, folderId, q, sw.ElapsedMilliseconds, correlationId);
+            return new EmptyResult();
+        }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Erro em Search. FolderId={FolderId} q={q}", folderId, q);
-            TempData["erro"] = "Erro ao pesquisar.";
-            return RedirectToAction(nameof(Index), new { folderId });
+            sw.Stop();
+            _logger.LogError(ex, "Erro em GED Search. Tenant={TenantId} User={UserId} FolderId={FolderId} Query={Query} ElapsedMs={ElapsedMs} CorrelationId={CorrelationId}",
+                tenantId, userId, folderId, q, sw.ElapsedMilliseconds, correlationId);
+            ViewBag.Query = q ?? "";
+            ViewBag.FolderId = folderId;
+            ViewBag.SearchError = "Não foi possível executar a busca. Tente novamente ou refine os filtros.";
+            return View("Search", Array.Empty<DocumentSearchRowDto>());
         }
     }
 
@@ -1785,19 +1832,13 @@ VALUES
             if (IsImage(v.ContentType, v.FileName) || IsPdf(v.ContentType, v.FileName))
                 return RedirectToAction(nameof(Details), new { id = v.DocumentId });
 
-            var previewRelPath = Path.Combine(
-                tenantId.ToString("N"),
-                "previews",
-                v.DocumentId.ToString("N"),
-                versionId.ToString("N"),
-                "preview.pdf"
-            ).Replace('\\', '/');
+            var previewRelPath = BuildPreviewPath(tenantId, v.DocumentId, versionId, v.FileName);
 
             await _storage.DeleteIfExistsAsync(previewRelPath, ct);
+            await _previewStatus.UpsertAsync(tenantId, versionId, PreviewProcessingStatus.Pending, null, null, DateTimeOffset.UtcNow, null, ct);
+            await _previewQueue.EnqueueAsync(tenantId, v.DocumentId, versionId, v.StoragePath, v.FileName, ct);
 
-            _ = await _preview.GetOrCreatePreviewPdfAsync(tenantId, v.DocumentId, versionId, v.StoragePath, v.FileName, ct);
-
-            TempData["ok"] = "Preview regerado com sucesso.";
+            TempData["ok"] = "Preview enfileirado para regeração.";
             return RedirectToAction(nameof(Details), new { id = v.DocumentId });
         }
         catch (Exception ex)
@@ -1930,6 +1971,12 @@ VALUES
         Response.Headers[HeaderNames.ContentDisposition] = cd.ToString();
     }
 
+    private static string BuildPreviewPath(Guid tenantId, Guid documentId, Guid versionId, string originalFileName)
+    {
+        var previewName = $"{Path.GetFileNameWithoutExtension(SanitizeFileName(originalFileName))}.pdf";
+        return Path.Combine(tenantId.ToString("N"), "previews", documentId.ToString("N"), versionId.ToString("N"), previewName).Replace('\\', '/');
+    }
+
     private static string SanitizeFileName(string fileName)
     {
         fileName = (fileName ?? "").Trim()
@@ -1937,10 +1984,13 @@ VALUES
             .Replace("\n", "")
             .Replace("\"", "'");
 
+        foreach (var c in Path.GetInvalidFileNameChars())
+            fileName = fileName.Replace(c, '_');
+
         if (fileName.Length > 180)
             fileName = fileName[..180];
 
-        return fileName;
+        return string.IsNullOrWhiteSpace(fileName) ? "documento" : fileName;
     }
 
     private static string ToAsciiFileName(string fileName)
