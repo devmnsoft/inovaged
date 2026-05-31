@@ -127,14 +127,14 @@ public sealed class GedController : Controller
     [HttpPost("/Ged/Documents/BulkUploadSingle")]
     [ValidateAntiForgeryToken]
     [RequestSizeLimit(52428800)]
-    public async Task<IActionResult> BulkUploadSingle(IFormFile file, Guid? folderId, Guid? documentTypeId, Guid? classificationId, string? notes, string? visibility, bool runOcr, bool generatePreview, Guid? batchId, string? duplicateStrategy, Guid? existingDocumentId, string? uploadName, CancellationToken ct)
+    public async Task<IActionResult> BulkUploadSingle(IFormFile file, Guid? folderId, Guid? documentTypeId, Guid? classificationId, string? notes, string? visibility, bool runOcr, bool generatePreview, Guid? batchId, string? duplicateStrategy, Guid? existingDocumentId, string? uploadName, int? fileIndex, int? totalFiles, CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
         var correlationId = HttpContext.TraceIdentifier;
         try
         {
-            _logger.LogInformation("Bulk upload iniciado. Tenant={TenantId} User={UserId} Folder={FolderId} File={FileName} Size={FileSize} RunOcr={RunOcr} GeneratePreview={GeneratePreview} CorrelationId={CorrelationId}",
-                _currentUser.TenantId, _currentUser.UserId, folderId, file?.FileName, file?.Length, runOcr, generatePreview, correlationId);
+            _logger.LogInformation("Bulk upload iniciado. Tenant={TenantId} User={UserId} Folder={FolderId} Batch={BatchId} FileIndex={FileIndex} TotalFiles={TotalFiles} File={FileName} Size={FileSize} RunOcr={RunOcr} GeneratePreview={GeneratePreview} ConnectionId={ConnectionId} CorrelationId={CorrelationId}",
+                _currentUser.TenantId, _currentUser.UserId, folderId, batchId, fileIndex, totalFiles, file?.FileName, file?.Length, runOcr, generatePreview, HttpContext.Connection.Id, correlationId);
             if (!_currentUser.IsAuthenticated) return Unauthorized(JsonError("Sua sessão expirou. Faça login novamente.", "Autenticação", "Usuário sem sessão autenticada.", false, correlationId));
             if (folderId.HasValue && IsVirtualFolderId(folderId.Value))
             {
@@ -150,7 +150,7 @@ public sealed class GedController : Controller
             var metadata = new DocumentBulkUploadMetadata { DocumentTypeId = documentTypeId, ClassificationId = classificationId, Notes = notes, Visibility = visibility, RunOcr = runOcr, GeneratePreview = generatePreview, BatchId = batchId, DuplicateStrategy = duplicateStrategy, ExistingDocumentId = existingDocumentId, UploadName = uploadName };
             var isAdmin = await _accessPolicy.IsAdminAsync(_currentUser.TenantId, _currentUser.UserId, User, ct);
             var result = await _documentBulkUploadService.UploadSingleAsync(_currentUser.TenantId, _currentUser.UserId, User.Identity?.Name, file, folderId, metadata, isAdmin, ct);
-            _logger.LogInformation("Bulk upload persistência concluída. Success={Success} ElapsedMs={ElapsedMs} CorrelationId={CorrelationId}", result.Success, sw.ElapsedMilliseconds, correlationId);
+            _logger.LogInformation("Bulk upload persistência concluída. Tenant={TenantId} User={UserId} Folder={FolderId} Batch={BatchId} FileIndex={FileIndex} TotalFiles={TotalFiles} File={FileName} Success={Success} ElapsedMs={ElapsedMs} ConnectionId={ConnectionId} CorrelationId={CorrelationId}", _currentUser.TenantId, _currentUser.UserId, folderId, batchId, fileIndex, totalFiles, file?.FileName, result.Success, sw.ElapsedMilliseconds, HttpContext.Connection.Id, correlationId);
             if (!result.Success)
             {
                 var code = result.Error?.Code ?? string.Empty;
@@ -161,7 +161,7 @@ public sealed class GedController : Controller
 
                 return BadRequest(JsonError(message, isExtensionError ? "Validação de extensão" : "Persistência", string.IsNullOrWhiteSpace(code) ? "Falha ao processar upload no backend." : code, !isExtensionError, correlationId));
             }
-            return Ok(JsonSuccess("Arquivo enviado com sucesso.", new { documentId = result.Value.DocumentId, versionId = (Guid?)null, fileName = result.Value.FileName, ocrQueued = runOcr, previewQueued = generatePreview }, correlationId));
+            return Ok(new { success = true, status = "success", message = "Arquivo enviado com sucesso.", data = new { documentId = result.Value.DocumentId, versionId = (Guid?)null, fileName = result.Value.FileName, batchId, ocrQueued = runOcr, previewQueued = generatePreview }, correlationId });
         }
         catch (Exception ex)
         {
@@ -173,13 +173,13 @@ public sealed class GedController : Controller
             sw.Stop();
             if (sw.ElapsedMilliseconds > 30_000)
             {
-                _logger.LogError("Upload crítico: duração acima de 30s. Tenant={TenantId} User={UserId} Folder={FolderId} File={FileName} Size={FileSize} ContentType={ContentType} DuplicateStrategy={DuplicateStrategy} RunOcr={RunOcr} GeneratePreview={GeneratePreview} ElapsedMs={ElapsedMs} CorrelationId={CorrelationId}",
-                    _currentUser.TenantId, _currentUser.UserId, folderId, file?.FileName, file?.Length, file?.ContentType, duplicateStrategy, runOcr, generatePreview, sw.ElapsedMilliseconds, correlationId);
+                _logger.LogError("Upload crítico: duração acima de 30s. Tenant={TenantId} User={UserId} Folder={FolderId} Batch={BatchId} FileIndex={FileIndex} TotalFiles={TotalFiles} File={FileName} Size={FileSize} ContentType={ContentType} DuplicateStrategy={DuplicateStrategy} RunOcr={RunOcr} GeneratePreview={GeneratePreview} ElapsedMs={ElapsedMs} ConnectionId={ConnectionId} CorrelationId={CorrelationId}",
+                    _currentUser.TenantId, _currentUser.UserId, folderId, batchId, fileIndex, totalFiles, file?.FileName, file?.Length, file?.ContentType, duplicateStrategy, runOcr, generatePreview, sw.ElapsedMilliseconds, HttpContext.Connection.Id, correlationId);
             }
             else if (sw.ElapsedMilliseconds > 10_000)
             {
-                _logger.LogWarning("Upload lento: duração acima de 10s. Tenant={TenantId} User={UserId} Folder={FolderId} File={FileName} Size={FileSize} ContentType={ContentType} DuplicateStrategy={DuplicateStrategy} RunOcr={RunOcr} GeneratePreview={GeneratePreview} ElapsedMs={ElapsedMs} CorrelationId={CorrelationId}",
-                    _currentUser.TenantId, _currentUser.UserId, folderId, file?.FileName, file?.Length, file?.ContentType, duplicateStrategy, runOcr, generatePreview, sw.ElapsedMilliseconds, correlationId);
+                _logger.LogWarning("Upload lento: duração acima de 10s. Tenant={TenantId} User={UserId} Folder={FolderId} Batch={BatchId} FileIndex={FileIndex} TotalFiles={TotalFiles} File={FileName} Size={FileSize} ContentType={ContentType} DuplicateStrategy={DuplicateStrategy} RunOcr={RunOcr} GeneratePreview={GeneratePreview} ElapsedMs={ElapsedMs} ConnectionId={ConnectionId} CorrelationId={CorrelationId}",
+                    _currentUser.TenantId, _currentUser.UserId, folderId, batchId, fileIndex, totalFiles, file?.FileName, file?.Length, file?.ContentType, duplicateStrategy, runOcr, generatePreview, sw.ElapsedMilliseconds, HttpContext.Connection.Id, correlationId);
             }
         }
     }

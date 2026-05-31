@@ -205,7 +205,16 @@ public sealed class DocumentAppService
                 _logger.LogWarning(auditEx, "Falha ao gravar audit_log (não bloqueia upload).");
             }
 
-            await tx.CommitAsync(ct);
+            try
+            {
+                await tx.CommitAsync(ct);
+            }
+            catch
+            {
+                await tx.RollbackAsync(CancellationToken.None);
+                throw;
+            }
+
             return Result<Guid>.Ok(documentId);
         }
         catch (Exception ex)
