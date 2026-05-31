@@ -1,62 +1,66 @@
-﻿@model IReadOnlyList<InovaGed.Application.Search.DocumentSearchRowDto>
+@model IReadOnlyList<InovaGed.Application.Search.DocumentSearchRowDto>
 
 @{
     ViewData["Title"] = "Pesquisa de Documentos";
     var q = (string)(ViewBag.Query ?? "");
     var folderId = ViewBag.FolderId as Guid?;
+    var scope = (string)(ViewBag.Scope ?? "folder");
 }
 
 <div class="container-fluid mt-3">
-
     @if (!string.IsNullOrWhiteSpace(ViewBag.SearchError as string))
     {
-        <div class="alert alert-warning" role="alert">
-            @ViewBag.SearchError
-        </div>
+        <div class="alert alert-warning" role="alert">@ViewBag.SearchError</div>
     }
 
-    <!-- Cabeçalho -->
     <div class="d-flex justify-content-between align-items-center mb-3">
-        <h4 class="mb-0">
-            <i class="bi bi-search"></i>
-            Pesquisa de Documentos
-        </h4>
-
-        <a asp-action="Index"
-           asp-controller="Ged"
-           asp-route-folderId="@folderId"
-           class="btn btn-outline-secondary btn-sm">
-            <i class="bi bi-arrow-left"></i>
-            Voltar
-        </a>
+        <h4 class="mb-0"><i class="bi bi-search"></i> Pesquisa de Documentos</h4>
+        <a asp-action="Index" asp-controller="Ged" asp-route-folderId="@folderId" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Voltar</a>
     </div>
 
-    <!-- Formulário de busca -->
-    <form method="get" class="row g-2 mb-4">
-        <input type="hidden" name="folderId" value="@folderId" />
-
-        <div class="col-md-9">
-            <input type="text"
-                   name="q"
-                   value="@q"
-                   class="form-control"
-                   placeholder="Digite palavras, código, nome do arquivo, conteúdo OCR..." />
+    <section class="card border-0 shadow-sm mb-4">
+        <div class="card-body">
+            <div class="ged-smart-box">
+                <input type="hidden" id="currentFolderId" value="@folderId" />
+                <div class="input-group input-group-lg">
+                    <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+                    <input id="smartSearchInput" class="form-control" value="@q" placeholder="Busque por documento, prontuário, paciente, pasta, tipo, termo do OCR ou número..." />
+                    <button id="btnSmartSearchClear" type="button" class="btn btn-outline-secondary"><i class="bi bi-x-lg"></i></button>
+                    <button id="btnSmartFilters" type="button" class="btn btn-outline-secondary"><i class="bi bi-sliders"></i></button>
+                    <button id="btnSmartSearch" type="button" class="btn btn-primary">Buscar</button>
+                </div>
+                <div id="smartSearchSuggestions" class="ged-smart-suggestions"></div>
+                <div id="smartSearchFilters" class="border rounded-3 p-3 mt-3 bg-light">
+                    <div class="row g-2 align-items-end">
+                        <div class="col-md-3">
+                            <label class="form-label small fw-bold">Escopo</label>
+                            <div class="d-flex gap-3">
+                                <label><input class="form-check-input" type="radio" name="searchScope" value="folder" @(scope == "global" ? "" : "checked") /> Pasta atual</label>
+                                <label><input class="form-check-input" type="radio" name="searchScope" value="global" @(scope == "global" ? "checked" : "") /> Todo GED</label>
+                            </div>
+                        </div>
+                        <div class="col-md-2"><label class="form-label small fw-bold">Tipo documental</label><input class="form-control" disabled placeholder="Todos" /></div>
+                        <div class="col-md-2"><label class="form-label small fw-bold">Status OCR</label><input class="form-control" disabled placeholder="Todos" /></div>
+                        <div class="col-md-2"><label class="form-label small fw-bold">Data inicial</label><input type="date" class="form-control" disabled /></div>
+                        <div class="col-md-2"><label class="form-label small fw-bold">Data final</label><input type="date" class="form-control" disabled /></div>
+                        <div class="col-md-1"><label class="form-label small fw-bold">OCR</label><div><input class="form-check-input" type="checkbox" disabled /></div></div>
+                    </div>
+                    <div id="smartSearchChips" class="d-flex flex-wrap gap-1 mt-3"></div>
+                </div>
+            </div>
         </div>
-        <div class="col-md-3">
-            <button type="submit" class="btn btn-primary w-100">
-                <i class="bi bi-search"></i>
-                Buscar
-            </button>
-        </div>
-    </form>
+    </section>
 
-
-    <!-- Resultados -->
     @if (Model == null || Model.Count == 0)
     {
-        <div class="alert alert-light text-muted">
+        <div class="alert alert-light border text-muted">
             <i class="bi bi-info-circle"></i>
-            Nenhum documento encontrado.
+            Nenhum documento encontrado. Tente buscar por parte do nome, número, pasta, tipo ou termo do OCR.
+            <ul class="mb-0 mt-2">
+                <li>Pesquise em todo GED.</li>
+                <li>Remova o filtro de pasta.</li>
+                <li>Tente sem acento ou com termo relacionado.</li>
+            </ul>
         </div>
     }
     else
@@ -64,36 +68,39 @@
         <div class="list-group">
             @foreach (var r in Model)
             {
-                <a asp-action="Details"
-                   asp-controller="Ged"
-                   asp-route-id="@r.DocumentId"
-                   class="list-group-item list-group-item-action">
-
+                var snippet = r.Snippet ?? string.Empty;
+                <a asp-action="Details" asp-controller="Ged" asp-route-id="@r.DocumentId" class="list-group-item list-group-item-action">
                     <div class="d-flex justify-content-between align-items-start gap-3">
-                        <div>
-                            <div class="fw-bold">
-                                @(string.IsNullOrWhiteSpace(r.Title) ? "(Sem título)" : r.Title)
+                        <div class="flex-grow-1">
+                            <div class="fw-bold">@(string.IsNullOrWhiteSpace(r.Title) ? "(Sem título)" : r.Title)</div>
+                            <div class="text-muted small">Código: <strong>@(r.Code ?? "-")</strong> · Arquivo: @(r.FileName ?? "-")</div>
+                            <div class="mt-2 d-flex gap-1 flex-wrap">
+                                @if (snippet.Contains("OCR", StringComparison.OrdinalIgnoreCase)) { <span class="badge text-bg-info">Encontrado no OCR</span> }
+                                <span class="badge text-bg-light">Encontrado no nome/metadados</span>
                             </div>
-
-                            <div class="text-muted small">
-                                Código: <strong>@(r.Code ?? "-")</strong>
-                                · Arquivo: @(r.FileName ?? "-")
-                            </div>
-
-                            @if (!string.IsNullOrWhiteSpace(r.Snippet))
+                            @if (!string.IsNullOrWhiteSpace(snippet))
                             {
-                                <div class="mt-2 text-secondary">
-                                    @Html.Raw(r.Snippet)
-                                </div>
+                                <div class="mt-2 text-secondary">@Html.Raw(snippet)</div>
                             }
                         </div>
-
-                        <span class="badge bg-secondary">
-                            rank @r.Rank.ToString("0.000")
-                        </span>
+                        <span class="badge bg-secondary">score @r.Rank.ToString("0")</span>
                     </div>
                 </a>
             }
         </div>
     }
 </div>
+
+<script src="~/js/ged-smart-search.js" asp-append-version="true"></script>
+<script>
+window.GedSmartSearch?.init({
+    module: 'GED',
+    inputSelector: '#smartSearchInput',
+    suggestionsSelector: '#smartSearchSuggestions',
+    searchButtonSelector: '#btnSmartSearch',
+    endpoint: '/Ged/Search/Suggestions',
+    searchUrl: '/Ged/Search',
+    folderIdProvider: () => document.querySelector('#currentFolderId')?.value,
+    scopeProvider: () => document.querySelector('[name="searchScope"]:checked')?.value || 'folder'
+});
+</script>

@@ -7,6 +7,8 @@ using InovaGed.Application.Common.Database;
 using InovaGed.Application.Common.Storage;
 using InovaGed.Application.Documents;
 using InovaGed.Application.Ged.Documents;
+using InovaGed.Application.Ged.Search;
+using InovaGed.Application.Audit;
 using InovaGed.Application.Ged;
 using InovaGed.Application.Identity;
 using InovaGed.Application.Ocr;
@@ -55,6 +57,8 @@ public sealed class GedController : Controller
     private readonly IDocumentMoveService _documentMoveService;
     private readonly IDocumentBulkUploadService _documentBulkUploadService;
     private readonly IGedAccessPolicyService _accessPolicy;
+    private readonly IGedSmartSearchService _smartSearch;
+    private readonly IAuditWriter _auditWriter;
 
     // ✅ classificação
     private readonly IDocumentClassificationQueries _clsQ;
@@ -75,6 +79,8 @@ public sealed class GedController : Controller
         IDocumentMoveService documentMoveService,
         IDocumentBulkUploadService documentBulkUploadService,
         IGedAccessPolicyService accessPolicy,
+        IGedSmartSearchService smartSearch,
+        IAuditWriter auditWriter,
         IOcrJobRepository ocrJobs,
         IFolderCommands folderCommands,
         IDocumentQueries docs,
@@ -105,6 +111,8 @@ public sealed class GedController : Controller
         _documentMoveService = documentMoveService;
         _documentBulkUploadService = documentBulkUploadService;
         _accessPolicy = accessPolicy;
+        _smartSearch = smartSearch;
+        _auditWriter = auditWriter;
 
         _docs = docs;
         _documentApp = documentApp;
@@ -1762,7 +1770,7 @@ VALUES
     // SEARCH (FULL-TEXT)
     // =========================
     [HttpGet]
-    public async Task<IActionResult> Search(string? q, Guid? folderId, int limit = 25, CancellationToken ct = default)
+    public async Task<IActionResult> Search(string? q, Guid? folderId, string? scope = "folder", int limit = 25, CancellationToken ct = default)
     {
         var sw = Stopwatch.StartNew();
         var correlationId = HttpContext.TraceIdentifier;
@@ -1774,22 +1782,42 @@ VALUES
             if (!_currentUser.IsAuthenticated)
                 return RedirectToAction("Login", "Account");
 
+            if (!await _accessPolicy.CanAccessGedAsync(tenantId, userId, User, ct))
+                return Forbid();
+
             if (folderId.HasValue && IsVirtualFolderId(folderId.Value))
                 folderId = null;
 
-            var rows = await _search.SearchAsync(
-                tenantId: tenantId,
-                q: q,
-                folderId: folderId,
-                limit: limit,
-                ct: ct);
+            var isGlobal = string.Equals(scope, "global", StringComparison.OrdinalIgnoreCase);
+            var result = await _smartSearch.SearchAsync(new SmartSearchRequest
+            {
+                TenantId = tenantId,
+                UserId = userId,
+                Query = q ?? string.Empty,
+                FolderId = folderId,
+                Scope = isGlobal ? "global" : "folder",
+                Module = "GED",
+                Limit = limit,
+                IsAdmin = User.IsInRole("ADMIN") || _currentUser.Roles.Any(r => string.Equals(r, "ADMIN", StringComparison.OrdinalIgnoreCase))
+            }, ct);
+
+            var rows = result.Items.Select(x => new DocumentSearchRowDto(
+                x.DocumentId,
+                x.VersionId ?? Guid.Empty,
+                x.DocumentId.ToString(),
+                x.Title,
+                x.OriginalFileName ?? string.Empty,
+                x.OcrSnippet ?? "Documento encontrado pelos filtros informados.",
+                (float)x.Score)).ToList();
 
             sw.Stop();
-            _logger.LogInformation("GED Search executado. Tenant={TenantId} User={UserId} FolderId={FolderId} Query={Query} ResultCount={ResultCount} ElapsedMs={ElapsedMs} CorrelationId={CorrelationId}",
-                tenantId, userId, folderId, q, rows.Count, sw.ElapsedMilliseconds, correlationId);
+            _logger.LogInformation("GED Search executado. Tenant={TenantId} User={UserId} FolderId={FolderId} Scope={Scope} Query={Query} ResultCount={ResultCount} ElapsedMs={ElapsedMs} Module={Module} CorrelationId={CorrelationId}",
+                tenantId, userId, folderId, isGlobal ? "global" : "folder", q, rows.Count, sw.ElapsedMilliseconds, "GED", correlationId);
+            await _auditWriter.WriteAsync(tenantId, userId, "VIEW", "GED_SEARCH", null, "Busca GED executada", HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers.UserAgent.ToString(), new { query = q, folderId, scope = isGlobal ? "global" : "folder", resultCount = rows.Count, elapsedMs = sw.ElapsedMilliseconds, module = "GED", correlationId }, ct);
 
             ViewBag.Query = q ?? "";
             ViewBag.FolderId = folderId;
+            ViewBag.Scope = isGlobal ? "global" : "folder";
 
             return View("Search", rows);
         }

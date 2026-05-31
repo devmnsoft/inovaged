@@ -126,7 +126,7 @@ LEFT JOIN LATERAL (SELECT j.status FROM ged.ocr_job j WHERE j.tenant_id=d.tenant
 WHERE d.tenant_id=@TenantId::uuid AND d.reg_status='A'::bpchar AND d.status<>'ARCHIVED'::ged.document_status_enum
 AND (d.code ILIKE @Q::text OR d.title ILIKE @Q::text OR COALESCE(d.description,'') ILIKE @Q::text OR COALESCE(s.file_name,'') ILIKE @Q::text OR substring(COALESCE(s.ocr_text,'') from 1 for 4000) ILIKE @Q::text)
 AND COALESCE(NULLIF(s.version_id,'00000000-0000-0000-0000-000000000000'::uuid),NULLIF(d.current_version_id,'00000000-0000-0000-0000-000000000000'::uuid),latest_v.id) IS NOT NULL
-ORDER BY "MatchScore" DESC, "CreatedAt" DESC LIMIT 8;
+ORDER BY "MatchScore" DESC, "CreatedAt" DESC LIMIT 16;
 """;
         try
         {
@@ -145,7 +145,51 @@ ORDER BY "MatchScore" DESC, "CreatedAt" DESC LIMIT 8;
     }
 
     private HospitalDocumentResultDto MapResult(HospitalDocumentSearchRow x) => new() { DocumentId = x.DocumentId, VersionId = x.VersionId, Code = x.Code, Title = x.Title, FileName = x.FileName, ContentType = x.ContentType, Type = GetFriendlyType(x.ContentType, x.FileName), FolderName = x.FolderName, FolderPath = x.FolderPath, CreatedAt = x.CreatedAt, CreatedAtFormatted = x.CreatedAt.ToString("dd/MM/yyyy HH:mm"), SizeBytes = x.SizeBytes, SizeFormatted = FormatBytes(x.SizeBytes), HasOcr = !string.IsNullOrWhiteSpace(x.OcrText), OcrStatus = x.OcrStatus, MatchSource = x.MatchSource, MatchSourceLabel = GetMatchSourceLabel(x.MatchSource), MatchScore = x.MatchScore, Snippet = string.IsNullOrWhiteSpace(x.Snippet) ? "Documento encontrado pelos metadados informados." : x.Snippet, PreviewAvailable = IsPdf(x.ContentType, x.FileName) || IsImage(x.ContentType, x.FileName), PreviewUrl = Url.Action(nameof(Preview), "HospitalDocuments", new { versionId = x.VersionId }) ?? "", ViewerUrl = Url.Action(nameof(Viewer), "HospitalDocuments", new { versionId = x.VersionId }) ?? "", OcrUrl = Url.Action(nameof(OcrText), "HospitalDocuments", new { versionId = x.VersionId }) ?? "" };
-    private HospitalDocumentSuggestionDto MapSuggestion(HospitalDocumentSuggestionRow x) => new() { DocumentId = x.DocumentId, VersionId = x.VersionId, Code = x.Code, Title = x.Title, FileName = x.FileName, ContentType = x.ContentType, Type = GetFriendlyType(x.ContentType, x.FileName), FolderName = x.FolderName, FolderPath = x.FolderPath, CreatedAt = x.CreatedAt.ToString("dd/MM/yyyy HH:mm"), Size = FormatBytes(x.SizeBytes), HasOcr = x.HasOcr, OcrStatus = x.OcrStatus, MatchSource = x.MatchSource, MatchSourceLabel = GetMatchSourceLabel(x.MatchSource), Snippet = x.Snippet, Label = $"{x.Code} - {x.Title}", Description = $"{GetFriendlyType(x.ContentType, x.FileName)} · {x.FileName}", PreviewUrl = Url.Action(nameof(Preview), "HospitalDocuments", new { versionId = x.VersionId }) ?? "", ViewerUrl = Url.Action(nameof(Viewer), "HospitalDocuments", new { versionId = x.VersionId }) ?? "", OcrUrl = Url.Action(nameof(OcrText), "HospitalDocuments", new { versionId = x.VersionId }) ?? "" };
+    private HospitalDocumentSuggestionDto MapSuggestion(HospitalDocumentSuggestionRow x)
+    {
+        var source = (x.MatchSource ?? string.Empty).ToUpperInvariant();
+        var group = source switch
+        {
+            "OCR" => "OCR / Conteúdo",
+            "CODE" => "Prontuários / números",
+            "FILE_NAME" or "TITLE" => "Documentos",
+            "DESCRIPTION" => "Metadados",
+            _ => "Documentos"
+        };
+        var friendlyType = GetFriendlyType(x.ContentType, x.FileName);
+        var safeSnippet = string.IsNullOrWhiteSpace(x.Snippet) ? string.Empty : (x.Snippet.Length > 180 ? x.Snippet[..180] + "…" : x.Snippet);
+        return new()
+        {
+            Group = group,
+            SuggestionType = source == "OCR" ? "ocr" : "document",
+            Icon = source == "OCR" ? "bi-body-text" : (friendlyType == "PDF" ? "bi-file-earmark-pdf" : "bi-file-earmark-text"),
+            Score = x.MatchScore,
+            Url = Url.Action(nameof(Viewer), "HospitalDocuments", new { versionId = x.VersionId }) ?? "",
+            Subtitle = $"Pasta: {x.FolderPath ?? x.FolderName} · {friendlyType}",
+            DocumentId = x.DocumentId,
+            VersionId = x.VersionId,
+            Code = x.Code,
+            Title = x.Title,
+            FileName = x.FileName,
+            ContentType = x.ContentType,
+            Type = source == "OCR" ? "ocr" : "document",
+            FriendlyType = friendlyType,
+            FolderName = x.FolderName,
+            FolderPath = x.FolderPath,
+            CreatedAt = x.CreatedAt.ToString("dd/MM/yyyy HH:mm"),
+            Size = FormatBytes(x.SizeBytes),
+            HasOcr = x.HasOcr,
+            OcrStatus = x.OcrStatus,
+            MatchSource = x.MatchSource,
+            MatchSourceLabel = GetMatchSourceLabel(x.MatchSource),
+            Snippet = safeSnippet,
+            Label = $"{x.Code} - {x.Title}",
+            Description = $"{friendlyType} · {x.FileName}",
+            PreviewUrl = Url.Action(nameof(Preview), "HospitalDocuments", new { versionId = x.VersionId }) ?? "",
+            ViewerUrl = Url.Action(nameof(Viewer), "HospitalDocuments", new { versionId = x.VersionId }) ?? "",
+            OcrUrl = Url.Action(nameof(OcrText), "HospitalDocuments", new { versionId = x.VersionId }) ?? ""
+        };
+    }
 
     [HttpGet]
     public async Task<IActionResult> Viewer(Guid versionId, CancellationToken ct)
@@ -248,8 +292,8 @@ ORDER BY "MatchScore" DESC, "CreatedAt" DESC LIMIT 8;
 
     private sealed class HospitalDocumentSearchRow { public Guid DocumentId { get; set; } public Guid VersionId { get; set; } public string Code { get; set; } = ""; public string Title { get; set; } = ""; public string FileName { get; set; } = ""; public string ContentType { get; set; } = ""; public long SizeBytes { get; set; } public DateTime CreatedAt { get; set; } public string Snippet { get; set; } = ""; public string OcrText { get; set; } = ""; public double Rank { get; set; } public int TotalRows { get; set; } public string MatchSource { get; set; } = ""; public int MatchScore { get; set; } public string OcrStatus { get; set; } = ""; public string FolderName { get; set; } = ""; public string? FolderPath { get; set; } }
     private sealed class HospitalDocumentSuggestionRow { public Guid DocumentId { get; set; } public Guid VersionId { get; set; } public string Code { get; set; } = ""; public string Title { get; set; } = ""; public string FileName { get; set; } = ""; public string ContentType { get; set; } = ""; public long SizeBytes { get; set; } public DateTime CreatedAt { get; set; } public string FolderName { get; set; } = ""; public string? FolderPath { get; set; } public bool HasOcr { get; set; } public string OcrStatus { get; set; } = ""; public string MatchSource { get; set; } = ""; public string Snippet { get; set; } = ""; public double Rank { get; set; } public int MatchScore { get; set; } }
-    private sealed class HospitalDocumentResultDto { public Guid DocumentId { get; set; } public Guid VersionId { get; set; } public string Code { get; set; } = ""; public string Title { get; set; } = ""; public string FileName { get; set; } = ""; public string ContentType { get; set; } = ""; public string Type { get; set; } = ""; public string FolderName { get; set; } = ""; public string? FolderPath { get; set; } public DateTime CreatedAt { get; set; } public string CreatedAtFormatted { get; set; } = ""; public long SizeBytes { get; set; } public string SizeFormatted { get; set; } = ""; public bool HasOcr { get; set; } public string OcrStatus { get; set; } = ""; public string MatchSource { get; set; } = ""; public string MatchSourceLabel { get; set; } = ""; public int MatchScore { get; set; } public string Snippet { get; set; } = ""; public bool PreviewAvailable { get; set; } public string PreviewUrl { get; set; } = ""; public string ViewerUrl { get; set; } = ""; public string OcrUrl { get; set; } = ""; }
-    private sealed class HospitalDocumentSuggestionDto { public Guid DocumentId { get; set; } public Guid VersionId { get; set; } public string Code { get; set; } = ""; public string Title { get; set; } = ""; public string FileName { get; set; } = ""; public string ContentType { get; set; } = ""; public string Type { get; set; } = ""; public string FolderName { get; set; } = ""; public string? FolderPath { get; set; } public string CreatedAt { get; set; } = ""; public string Size { get; set; } = ""; public bool HasOcr { get; set; } public string OcrStatus { get; set; } = ""; public string MatchSource { get; set; } = ""; public string MatchSourceLabel { get; set; } = ""; public string Snippet { get; set; } = ""; public string Label { get; set; } = ""; public string Description { get; set; } = ""; public string PreviewUrl { get; set; } = ""; public string ViewerUrl { get; set; } = ""; public string OcrUrl { get; set; } = ""; }
+    private sealed class HospitalDocumentResultDto { public Guid DocumentId { get; set; } public Guid VersionId { get; set; } public string Code { get; set; } = ""; public string Title { get; set; } = ""; public string FileName { get; set; } = ""; public string ContentType { get; set; } = ""; public string Type { get; set; } = ""; public string FriendlyType { get; set; } = ""; public string FolderName { get; set; } = ""; public string? FolderPath { get; set; } public DateTime CreatedAt { get; set; } public string CreatedAtFormatted { get; set; } = ""; public long SizeBytes { get; set; } public string SizeFormatted { get; set; } = ""; public bool HasOcr { get; set; } public string OcrStatus { get; set; } = ""; public string MatchSource { get; set; } = ""; public string MatchSourceLabel { get; set; } = ""; public int MatchScore { get; set; } public string Snippet { get; set; } = ""; public bool PreviewAvailable { get; set; } public string PreviewUrl { get; set; } = ""; public string ViewerUrl { get; set; } = ""; public string OcrUrl { get; set; } = ""; }
+    private sealed class HospitalDocumentSuggestionDto { public string Group { get; set; } = "Documentos"; public string SuggestionType { get; set; } = "document"; public string Subtitle { get; set; } = ""; public string Icon { get; set; } = "bi-file-earmark-text"; public string Url { get; set; } = ""; public int Score { get; set; } public Guid DocumentId { get; set; } public Guid VersionId { get; set; } public string Code { get; set; } = ""; public string Title { get; set; } = ""; public string FileName { get; set; } = ""; public string ContentType { get; set; } = ""; public string Type { get; set; } = ""; public string FriendlyType { get; set; } = ""; public string FolderName { get; set; } = ""; public string? FolderPath { get; set; } public string CreatedAt { get; set; } = ""; public string Size { get; set; } = ""; public bool HasOcr { get; set; } public string OcrStatus { get; set; } = ""; public string MatchSource { get; set; } = ""; public string MatchSourceLabel { get; set; } = ""; public string Snippet { get; set; } = ""; public string Label { get; set; } = ""; public string Description { get; set; } = ""; public string PreviewUrl { get; set; } = ""; public string ViewerUrl { get; set; } = ""; public string OcrUrl { get; set; } = ""; }
     private sealed class ViewerRow { public Guid DocumentId { get; set; } public Guid VersionId { get; set; } public string Code { get; set; } = ""; public string Title { get; set; } = ""; public string FileName { get; set; } = ""; public string ContentType { get; set; } = ""; public long SizeBytes { get; set; } public DateTime CreatedAt { get; set; } public string StoragePath { get; set; } = ""; public string OcrText { get; set; } = ""; }
     private sealed class OcrRow { public string Text { get; set; } = ""; public string Status { get; set; } = "NONE"; }
 }

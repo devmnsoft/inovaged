@@ -207,6 +207,7 @@ builder.Services.AddScoped<IDocumentMoveService, DocumentMoveService>();
 builder.Services.AddScoped<IDocumentBulkUploadService, DocumentBulkUploadService>();
 builder.Services.AddScoped<IGedAccessPolicyService, GedAccessPolicyService>();
 builder.Services.AddScoped<IGedSearchService, GedSearchService>();
+builder.Services.AddScoped<IGedSmartSearchService, GedSmartSearchService>();
 builder.Services.AddScoped<IGedClassificationSuggestionService, GedClassificationSuggestionService>();
 
 // =======================================================
