@@ -1,31 +1,49 @@
 (function () {
     const DuplicateStrategy = { overwrite: 'overwrite', rename: 'rename', skip: 'skip', cancel: 'cancel' };
     const ValidationStep = 'Validação de extensão';
-    const state = { files: [], uploading: false, isCheckingDuplicates: false, duplicateCheckKey: null, duplicateCheckPromise: null, batchId: null, duplicateStrategy: null };
+    const state = { files: [], uploading: false, isCheckingDuplicates: false, duplicateCheckKey: null, duplicateCheckPromise: null, duplicateCheckResult: null, batchId: null, duplicateStrategy: null, uploadAbortController: null };
 
     function initBulkUpload() {
         const dz = document.getElementById('bulkDropzone');
-        const fi = document.getElementById('bulkFileInput');
+        const fi = getFileInput();
         if (!dz || !fi) return;
+        bindBulkUploadEvents();
+        recoverBulkUploadUiState();
+    }
 
-        document.getElementById('btnOpenBulkUpload')?.addEventListener('click', openBulkUploadModal);
-        dz.addEventListener('click', () => fi.click());
-        fi.addEventListener('change', e => { addFiles(e.target.files); e.target.value = ''; });
+    function bindBulkUploadEvents() {
+        if (window.__bulkUploadEventsBound === true) {
+            return;
+        }
 
-        dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
-        dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
-        dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('drag-over'); addFiles(e.dataTransfer.files); });
-
-        ['btnDupOverwrite', 'btnDupRename', 'btnDupSkip', 'btnDupCancel'].forEach(id => {
-            document.getElementById(id)?.addEventListener('click', () => applyDuplicateStrategy({
-                btnDupOverwrite: 'overwrite',
-                btnDupRename: 'rename',
-                btnDupSkip: 'skip',
-                btnDupCancel: 'cancel'
-            }[id]));
-        });
+        window.__bulkUploadEventsBound = true;
+        console.log('[BulkUpload] events bound once');
 
         document.addEventListener('click', handleActionClick);
+        document.addEventListener('change', function (e) {
+            const input = e.target.closest('#bulkFileInput, #bulkUploadFileInput');
+            if (!input) return;
+            addFiles(input.files);
+            input.value = '';
+        });
+        document.addEventListener('dragover', function (e) {
+            const dz = e.target.closest('#bulkDropzone');
+            if (!dz) return;
+            e.preventDefault();
+            dz.classList.add('drag-over');
+        });
+        document.addEventListener('dragleave', function (e) {
+            const dz = e.target.closest('#bulkDropzone');
+            if (!dz) return;
+            dz.classList.remove('drag-over');
+        });
+        document.addEventListener('drop', function (e) {
+            const dz = e.target.closest('#bulkDropzone');
+            if (!dz) return;
+            e.preventDefault();
+            dz.classList.remove('drag-over');
+            addFiles(e.dataTransfer.files);
+        });
         document.addEventListener('submit', function (e) {
             const form = e.target.closest('#bulkUploadForm');
             if (!form) return;
@@ -34,11 +52,36 @@
             console.log('[BulkUpload] submit bloqueado para evitar /Ged/Upload');
             return false;
         }, true);
+
+        const modal = document.getElementById('bulkUploadModal');
+        if (modal) {
+            modal.addEventListener('show.bs.modal', function () {
+                recoverBulkUploadUiState();
+                const hasOnlyFinished = state.files.length > 0 && state.files.every(x => x.status === 'success' || x.status === 'ignored');
+                if (hasOnlyFinished) resetBulkUploadState();
+                console.log('[BulkUpload] modal aberto', { selectedFiles: state.files.length, isUploading: state.uploading, isCheckingDuplicates: state.isCheckingDuplicates });
+            });
+            modal.addEventListener('hidden.bs.modal', function () {
+                if (!state.uploading) {
+                    const hasNoPending = state.files.every(x => x.status === 'success' || x.status === 'ignored');
+                    if (hasNoPending) resetBulkUploadState();
+                }
+            });
+        }
     }
 
     function handleActionClick(e) {
+        const openBtn = e.target.closest('#btnOpenBulkUpload');
+        if (openBtn) { e.preventDefault(); openBulkUploadModal(); return; }
+
+        const dropzone = e.target.closest('#bulkDropzone');
+        if (dropzone) { e.preventDefault(); getFileInput()?.click(); return; }
+
         const uploadBtn = e.target.closest('#btnBulkUploadSubmit');
         if (uploadBtn) { e.preventDefault(); e.stopPropagation(); console.log('[BulkUpload] Enviar documentos clicado'); uploadFiles(); return; }
+
+        const newBatchBtn = e.target.closest('#btnStartNewBulkBatch');
+        if (newBatchBtn) { e.preventDefault(); e.stopPropagation(); resetBulkUploadState(); console.log('[BulkUpload] Novo lote iniciado'); showAppToast('Novo lote iniciado. Selecione os próximos arquivos.', 'info', 'Novo lote'); return; }
 
         const removeBtn = e.target.closest('.js-remove-upload-file');
         if (removeBtn) { e.preventDefault(); removeUploadFile(removeBtn.getAttribute('data-file-id')); return; }
@@ -57,6 +100,22 @@
 
         const detailsBtn = e.target.closest('.js-show-upload-error');
         if (detailsBtn) { e.preventDefault(); showUploadErrorDetails(detailsBtn.getAttribute('data-file-id')); return; }
+
+        const duplicateBtn = e.target.closest('#btnDupOverwrite, #btnDupRename, #btnDupSkip, #btnDupCancel');
+        if (duplicateBtn) {
+            e.preventDefault();
+            applyDuplicateStrategy({
+                btnDupOverwrite: DuplicateStrategy.overwrite,
+                btnDupRename: DuplicateStrategy.rename,
+                btnDupSkip: DuplicateStrategy.skip,
+                btnDupCancel: DuplicateStrategy.cancel
+            }[duplicateBtn.id]);
+            return;
+        }
+    }
+
+    function getFileInput() {
+        return document.getElementById('bulkFileInput') || document.getElementById('bulkUploadFileInput');
     }
 
     function getCurrentFolderId() {
@@ -97,30 +156,51 @@
         };
     }
 
-    function resetBulkUploadState() {
-        state.files = [];
+    function resetBulkUploadState(options = {}) {
+        const keepFailed = options.keepFailed === true;
+        state.files = keepFailed ? state.files.filter(x => x.status === 'error') : [];
         state.batchId = null;
         state.duplicateStrategy = null;
-        const fi = document.getElementById('bulkFileInput');
+        state.uploading = false;
+        state.isCheckingDuplicates = false;
+        state.duplicateCheckKey = null;
+        state.duplicateCheckPromise = null;
+        state.duplicateCheckResult = null;
+        if (state.uploadAbortController) state.uploadAbortController = null;
+        const fi = getFileInput();
         if (fi) fi.value = '';
-        renderFileList();
-        updateUploadSummary();
         hideDuplicateDecision();
         clearBulkUploadMessage();
+        renderFileList();
+        updateUploadSummary();
+        updateFooterActions();
+        setBulkUploadLoading(false);
+        showRefreshAfterUploadButton(false);
     }
 
     function clearSelectedFiles() {
         state.files = [];
+        state.duplicateCheckKey = null;
+        state.duplicateCheckPromise = null;
+        state.duplicateCheckResult = null;
         renderFileList();
         updateUploadSummary();
         showAppToast('Lista de arquivos limpa.', 'info', 'Upload em lote');
     }
 
     function addFiles(files) {
-        for (const f of Array.from(files || [])) {
+        const incoming = Array.from(files || []);
+        if (!incoming.length) return;
+        if (state.files.length > 0 && state.files.every(x => x.status === 'success' || x.status === 'ignored')) {
+            resetBulkUploadState();
+        }
+        for (const f of incoming) {
             if (state.files.some(x => x.originalName === f.name && x.size === f.size)) continue;
             state.files.push(createFileItem(f));
         }
+        state.duplicateCheckKey = null;
+        state.duplicateCheckPromise = null;
+        state.duplicateCheckResult = null;
         renderFileList();
         updateUploadSummary();
     }
@@ -182,6 +262,8 @@
             return;
         }
         state.files = state.files.filter(x => x.id !== fileId);
+        state.duplicateCheckKey = null;
+        state.duplicateCheckResult = null;
         renderFileList();
         updateUploadSummary();
         showAppToast('Arquivo removido da lista.', 'info', 'Lista atualizada');
@@ -196,6 +278,8 @@
     function clearSuccessfulFiles() {
         const before = state.files.length;
         state.files = state.files.filter(x => x.status !== 'success');
+        state.duplicateCheckKey = null;
+        state.duplicateCheckResult = null;
         const removed = before - state.files.length;
         renderFileList();
         updateUploadSummary();
@@ -242,14 +326,20 @@
 
     async function checkDuplicatesBeforeUpload() {
         const folderId = getCurrentFolderId();
-        const names = state.files.filter(f => !['success', 'ignored', 'error'].includes(f.status)).map(f => f.uploadName);
+        const candidates = state.files.filter(f => !['success', 'ignored', 'error'].includes(f.status));
+        const names = candidates.map(f => f.uploadName);
         if (!names.length) return [];
-        const checkKey = `${folderId}|${names.join('|')}`;
+        const batchSignature = candidates.map(f => `${f.originalName}:${f.size}`).join('|');
+        const checkKey = `${folderId}|${batchSignature}`;
+        if (state.duplicateCheckKey === checkKey && Array.isArray(state.duplicateCheckResult)) {
+            console.log('[BulkUpload] check duplicates signature reaproveitada', checkKey);
+            return state.duplicateCheckResult;
+        }
         if (state.isCheckingDuplicates && state.duplicateCheckKey === checkKey && state.duplicateCheckPromise) {
             return state.duplicateCheckPromise;
         }
 
-        console.log('[BulkUpload] checking duplicates once');
+        console.log('[BulkUpload] check duplicates signature', checkKey);
         state.isCheckingDuplicates = true;
         state.duplicateCheckKey = checkKey;
         const token = document.querySelector('input[name="__RequestVerificationToken"]')?.value;
@@ -257,11 +347,12 @@
             const r = await fetch('/Ged/Documents/CheckDuplicateNames', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { RequestVerificationToken: token } : {}) }, body: JSON.stringify({ folderId, fileNames: names }) });
             const j = await r.json().catch(() => ({ success: false, message: 'Erro ao verificar duplicidades' }));
             if (!r.ok || !j.success) throw new Error(j.message || 'Não foi possível verificar duplicidades.');
-            return j.duplicates || [];
+            return j.data?.duplicates || j.duplicates || [];
         })();
 
         try {
-            return await state.duplicateCheckPromise;
+            state.duplicateCheckResult = await state.duplicateCheckPromise;
+            return state.duplicateCheckResult;
         } finally {
             state.isCheckingDuplicates = false;
             state.duplicateCheckPromise = null;
@@ -290,17 +381,32 @@
     }
 
     async function uploadFiles(skipDuplicateCheck) {
+        if (state.uploading) {
+            showAppToast('Já existe um envio em andamento.', 'warning', 'Aguarde');
+            return;
+        }
+        if (state.isCheckingDuplicates) {
+            showAppToast('A verificação de duplicidade ainda está em andamento.', 'warning', 'Aguarde');
+            return;
+        }
+        if (!validateBeforeUpload()) return;
+
         try {
             clearBulkUploadMessage();
-            if (state.uploading || state.isCheckingDuplicates || !validateBeforeUpload()) return;
-            setBulkUploadLoading(true);
+            hideDuplicateDecision();
             state.uploading = true;
+            state.batchId = state.batchId || createBatchId();
+            state.uploadAbortController = typeof AbortController !== 'undefined' ? new AbortController() : null;
+            setBulkUploadLoading(true);
+            console.log('[BulkUpload] selectedFiles count before upload', state.files.length);
+            console.log('[BulkUpload] isUploading', state.uploading);
+            console.log('[BulkUpload] upload started', { batchId: state.batchId });
 
             if (!skipDuplicateCheck) {
                 const dups = await checkDuplicatesBeforeUpload();
                 if (dups.length) {
                     state.files.forEach(f => {
-                        const hit = dups.find(d => d.fileName.toLowerCase() === f.uploadName.toLowerCase());
+                        const hit = dups.find(d => (d.fileName || '').toLowerCase() === (f.uploadName || '').toLowerCase());
                         if (hit) { f.status = 'duplicate'; f.existingDocumentId = hit.existingDocumentId || null; }
                     });
                     state.uploading = false;
@@ -309,15 +415,19 @@
                 }
             }
 
+            const uploadableFiles = state.files.filter(x => !['success', 'ignored'].includes(x.status));
             let success = 0, error = 0;
-            for (const fileItem of state.files.filter(x => !['success', 'ignored'].includes(x.status))) {
+            for (let i = 0; i < uploadableFiles.length; i++) {
+                const fileItem = uploadableFiles[i];
                 if (fileItem.status === 'error' && fileItem.canRetry === false) { error++; continue; }
                 if (fileItem.status === 'duplicate' && !fileItem.duplicateStrategy && !state.duplicateStrategy) continue;
-                const r = await uploadSingleFile(fileItem);
+                const r = await uploadSingleFile(fileItem, i + 1, uploadableFiles.length);
                 if (r === 'success' || r === 'ignored') success++; else error++;
                 updateUploadSummary();
+                renderFileList();
             }
 
+            console.log('[BulkUpload] upload finished', { batchId: state.batchId, success, error });
             if (success > 0 && error === 0) {
                 showAppToast(`${success} documento(s) enviado(s) com sucesso.`, 'success', 'Upload concluído');
                 setTimeout(() => { closeBulkUploadModal(); resetBulkUploadState(); window.location.reload(); }, 900);
@@ -326,6 +436,7 @@
             if (success > 0 && error > 0) {
                 showBulkUploadMessage(`${success} enviado(s), ${error} falharam. Verifique os arquivos com erro.`, 'warning');
                 showAppToast('Alguns documentos não foram enviados.', 'warning', 'Upload parcial');
+                showRefreshAfterUploadButton(true);
                 return;
             }
             if (success === 0 && error > 0) {
@@ -338,18 +449,21 @@
             showAppToast('Falha ao enviar documentos. Veja os detalhes no modal.', 'error', 'Erro no upload');
         } finally {
             state.uploading = false;
+            state.uploadAbortController = null;
             setBulkUploadLoading(false);
             renderFileList();
             updateUploadSummary();
         }
     }
 
-    function uploadSingleFile(fileItem) {
+    function uploadSingleFile(fileItem, fileIndex, totalFiles) {
         return new Promise(resolve => {
             const fd = new FormData();
             fd.append('file', fileItem.file);
             fd.append('folderId', getCurrentFolderId() || '');
             fd.append('batchId', state.batchId || '');
+            fd.append('fileIndex', String(fileIndex || 0));
+            fd.append('totalFiles', String(totalFiles || state.files.length || 0));
             fd.append('runOcr', 'false');
             fd.append('generatePreview', 'false');
             fd.append('notes', '');
@@ -475,15 +589,37 @@
         const btnRetry = document.getElementById('btnBulkRetryFailed');
         const btnClearSuccess = document.getElementById('btnClearSuccessfulUploads');
         const btnRefresh = document.getElementById('btnBulkRefreshFolder');
+        const btnNewBatch = document.getElementById('btnStartNewBulkBatch');
 
-        const waitingOrDuplicate = state.files.some(x => x.status === 'waiting' || x.status === 'duplicate');
+        const waitingOrDuplicate = state.files.some(x => x.status === 'waiting' || x.status === 'duplicate' || (x.status === 'error' && x.canRetry !== false));
         const hasError = state.files.some(x => x.status === 'error');
-        const hasSuccess = state.files.some(x => x.status === 'success');
+        const hasSuccess = state.files.some(x => x.status === 'success' || x.status === 'ignored');
+        const hasAnyFinished = hasSuccess || hasError;
 
-        if (btnSubmit) btnSubmit.classList.toggle('d-none', !state.uploading && !waitingOrDuplicate);
+        if (btnSubmit) {
+            btnSubmit.classList.toggle('d-none', !state.uploading && !waitingOrDuplicate);
+            btnSubmit.disabled = state.uploading || !waitingOrDuplicate;
+        }
         if (btnRetry) btnRetry.classList.toggle('d-none', !hasError || state.uploading);
         if (btnClearSuccess) btnClearSuccess.classList.toggle('d-none', !hasSuccess || state.uploading);
         if (btnRefresh) btnRefresh.classList.toggle('d-none', !hasSuccess || state.uploading);
+        if (btnNewBatch) btnNewBatch.classList.toggle('d-none', !hasAnyFinished || state.uploading);
+    }
+
+    function showRefreshAfterUploadButton(show) {
+        document.getElementById('btnBulkRefreshFolder')?.classList.toggle('d-none', !show);
+    }
+
+    function recoverBulkUploadUiState() {
+        if (!state.uploading) {
+            setBulkUploadLoading(false);
+        }
+
+        const btn = document.getElementById('btnBulkUploadSubmit');
+        if (btn && !state.uploading) {
+            btn.disabled = state.files.length === 0;
+        }
+        updateFooterActions();
     }
 
     function setBulkUploadLoading(isLoading) {
@@ -508,6 +644,15 @@
             return { success: false, status: 'error', message: 'A sessão expirou ou o servidor retornou uma página HTML em vez de JSON.', errorStep: 'Resposta inválida', errorLog: text.substring(0, 1000), canRetry: false };
         }
         try { return JSON.parse(text || '{}'); } catch { return { success: false, status: 'error', message: 'Resposta inválida do servidor.', errorStep: 'Parse JSON', errorLog: text.substring(0, 1000), canRetry: true }; }
+    }
+
+    function createBatchId() {
+        if (window.crypto?.randomUUID) return window.crypto.randomUUID();
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+            const r = Math.random() * 16 | 0;
+            const v = c === 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
+        });
     }
 
     const formatFileSize = b => b < 1024 ? `${b} B` : b < 1048576 ? `${(b / 1024).toFixed(1)} KB` : `${(b / 1048576).toFixed(1)} MB`;
