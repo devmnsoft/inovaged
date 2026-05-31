@@ -1,3 +1,4 @@
+using System.Data;
 using Dapper;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Ged.Search;
@@ -21,19 +22,19 @@ public sealed class GedSearchService : IGedSearchService
             filter.PageSize = Math.Clamp(filter.PageSize <= 0 ? 20 : filter.PageSize, 1, 100);
             var offset = (filter.Page - 1) * filter.PageSize;
             var termLike = string.IsNullOrWhiteSpace(filter.Term) ? null : $"%{filter.Term.Trim()}%";
-            const string baseWhere = @"where d.tenant_id=@TenantId and coalesce(d.reg_status,'A')='A' and upper(coalesce(d.status::text,''))<>'DELETED'
-and (@FolderId is null or d.folder_id=@FolderId)
-and (@DocumentTypeId is null or d.document_type_id=@DocumentTypeId)
-and (@DocumentStatus is null or upper(coalesce(d.status::text,''))=upper(@DocumentStatus))
+            const string baseWhere = @"where d.tenant_id=@TenantId::uuid and coalesce(d.reg_status,'A')='A' and upper(coalesce(d.status::text,''))<>'DELETED'
+and (@FolderId::uuid is null or d.folder_id=@FolderId::uuid)
+and (@DocumentTypeId::uuid is null or d.document_type_id=@DocumentTypeId::uuid)
+and (@DocumentStatus::text is null or upper(coalesce(d.status::text,''))=upper(@DocumentStatus::text))
 and (@From is null or d.created_at>=@From)
 and (@To is null or d.created_at<=@To)
-and (@UploadedBy is null or d.created_by=@UploadedBy)
+and (@UploadedBy::uuid is null or d.created_by=@UploadedBy::uuid)
 and (@OnlyWithOcr = false or coalesce(ds.ocr_text,'')<>'')
 and (@OnlyOcrError = false or upper(coalesce(ds.ocr_status::text,''))='ERROR')
-and (@Visibility is null or coalesce(d.visibility,'')=@Visibility)
+and (@Visibility::text is null or coalesce(d.visibility,'')=@Visibility::text)
 and (@OnlyUnclassified = false or dc.classification_id is null)
 and (@OnlyWithSuggestion = false or exists (select 1 from ged.document_classification_suggestion sug where sug.tenant_id=d.tenant_id and sug.document_id=d.id and sug.reg_status='A' and upper(sug.status)='PENDING'))
-and (@TermLike is null or lower(coalesce(d.title,'')) ilike lower(@TermLike) or lower(coalesce(d.original_file_name,'')) ilike lower(@TermLike) or lower(coalesce(ds.ocr_text,'')) ilike lower(@TermLike))";
+and (@TermLike::text is null or lower(coalesce(d.title,'')) ilike lower(@TermLike::text) or lower(coalesce(d.original_file_name,'')) ilike lower(@TermLike::text) or lower(coalesce(ds.ocr_text,'')) ilike lower(@TermLike::text))";
 
             var orderBy = "d.created_at desc";
             if (string.Equals(filter.Sort, "name", StringComparison.OrdinalIgnoreCase)) orderBy = "d.title asc";
@@ -54,10 +55,26 @@ and (@TermLike is null or lower(coalesce(d.title,'')) ilike lower(@TermLike) or 
  left join ged.classification_plan cp on cp.tenant_id=d.tenant_id and cp.id=dc.classification_id
  left join ged.app_user u on u.tenant_id=d.tenant_id and u.id=d.created_by
  {baseWhere}
- order by {orderBy} limit @PageSize offset @Offset";
+ order by {orderBy} limit @PageSize::int offset @Offset::int";
 
             await using var conn = await _db.OpenAsync(ct);
-            var p = new { filter.TenantId, filter.FolderId, filter.DocumentTypeId, filter.DocumentStatus, filter.From, filter.To, filter.UploadedBy, filter.OnlyWithOcr, filter.OnlyOcrError, filter.Visibility, filter.OnlyUnclassified, filter.OnlyWithSuggestion, TermLike = termLike, filter.PageSize, Offset = offset };
+            var p = new DynamicParameters();
+            p.Add("TenantId", filter.TenantId, DbType.Guid);
+            p.Add("UserId", filter.UserId, DbType.Guid);
+            p.Add("FolderId", filter.FolderId, DbType.Guid);
+            p.Add("DocumentTypeId", filter.DocumentTypeId, DbType.Guid);
+            p.Add("DocumentStatus", filter.DocumentStatus, DbType.String);
+            p.Add("From", filter.From);
+            p.Add("To", filter.To);
+            p.Add("UploadedBy", filter.UploadedBy, DbType.Guid);
+            p.Add("OnlyWithOcr", filter.OnlyWithOcr, DbType.Boolean);
+            p.Add("OnlyOcrError", filter.OnlyOcrError, DbType.Boolean);
+            p.Add("Visibility", filter.Visibility, DbType.String);
+            p.Add("OnlyUnclassified", filter.OnlyUnclassified, DbType.Boolean);
+            p.Add("OnlyWithSuggestion", filter.OnlyWithSuggestion, DbType.Boolean);
+            p.Add("TermLike", termLike, DbType.String);
+            p.Add("PageSize", filter.PageSize, DbType.Int32);
+            p.Add("Offset", offset, DbType.Int32);
             var total = await conn.ExecuteScalarAsync<int>(new CommandDefinition(countSql, p, cancellationToken: ct));
             var items = (await conn.QueryAsync<GedSearchResultItemDto>(new CommandDefinition(dataSql, p, cancellationToken: ct))).AsList();
             return new GedSearchResultDto { Items = items, Total = total, Page = filter.Page, PageSize = filter.PageSize, TotalPages = (int)Math.Ceiling(total / (double)filter.PageSize) };
