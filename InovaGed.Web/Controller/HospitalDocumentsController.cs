@@ -11,6 +11,8 @@ using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Net.Http.Headers;
+using Microsoft.Extensions.Caching.Memory;
+using System.Diagnostics;
 
 namespace InovaGed.Web.Controllers;
 
@@ -24,9 +26,10 @@ public sealed class HospitalDocumentsController : Controller
     private readonly IPreviewGenerator _preview;
     private readonly IAuditWriter _audit;
     private readonly ILogger<HospitalDocumentsController> _logger;
+    private readonly IMemoryCache _cache;
 
-    public HospitalDocumentsController(IDbConnectionFactory db, ICurrentUser currentUser, IFileStorage storage, IPreviewGenerator preview, IAuditWriter audit, ILogger<HospitalDocumentsController> logger)
-    { _db = db; _currentUser = currentUser; _storage = storage; _preview = preview; _audit = audit; _logger = logger; }
+    public HospitalDocumentsController(IDbConnectionFactory db, ICurrentUser currentUser, IFileStorage storage, IPreviewGenerator preview, IAuditWriter audit, ILogger<HospitalDocumentsController> logger, IMemoryCache cache)
+    { _db = db; _currentUser = currentUser; _storage = storage; _preview = preview; _audit = audit; _logger = logger; _cache = cache; }
 
     [HttpGet]
     public async Task<IActionResult> Index(CancellationToken ct)
@@ -88,34 +91,57 @@ LIMIT @pageSize OFFSET @offset;
     [HttpGet]
     public async Task<IActionResult> Suggestions(string? q, CancellationToken ct)
     {
-        if (!_currentUser.IsAuthenticated) return Unauthorized();
-        if (string.IsNullOrWhiteSpace(q) || q.Trim().Length < 2) return Json(Array.Empty<object>());
-        var tenantId = _currentUser.TenantId; var query = q.Trim(); var like = $"%{query}%";
+        if (!_currentUser.IsAuthenticated) return Unauthorized(new { success = false, items = Array.Empty<object>() });
+        var sw = Stopwatch.StartNew();
+        var tenantId = _currentUser.TenantId;
+        var userId = _currentUser.UserId;
+        var query = string.IsNullOrWhiteSpace(q) ? string.Empty : q.Trim();
+        if (query.Length < 3) return Json(new { success = true, items = Array.Empty<object>() });
+
+        var cacheKey = $"HospitalDocuments:Suggestions:{tenantId}:{query.ToLowerInvariant()}";
+        if (_cache.TryGetValue<IReadOnlyList<HospitalDocumentSuggestionDto>>(cacheKey, out var cachedItems))
+        {
+            _logger.LogInformation("Hospital suggestions cache hit. Tenant={TenantId} User={UserId} Query={Query} ResultCount={ResultCount} ElapsedMs={ElapsedMs} CacheHit={CacheHit}", tenantId, userId, query, cachedItems.Count, sw.ElapsedMilliseconds, true);
+            return Json(new { success = true, items = cachedItems });
+        }
+
+        var like = $"%{query}%";
         const string sql = """
 SELECT d.id AS "DocumentId", COALESCE(NULLIF(s.version_id,'00000000-0000-0000-0000-000000000000'::uuid),NULLIF(d.current_version_id,'00000000-0000-0000-0000-000000000000'::uuid),latest_v.id) AS "VersionId",
 COALESCE(NULLIF(d.code,''),d.id::text) AS "Code", COALESCE(NULLIF(d.title,''),'Documento sem título') AS "Title", COALESCE(NULLIF(s.file_name,''),NULLIF(v.file_name,''),NULLIF(latest_v.file_name,''),'arquivo') AS "FileName",
 COALESCE(NULLIF(v.content_type,''),NULLIF(latest_v.content_type,''),'') AS "ContentType", COALESCE(v.file_size_bytes,latest_v.file_size_bytes,0) AS "SizeBytes", d.created_at AS "CreatedAt", COALESCE(f.name,'Sem pasta') AS "FolderName", NULL::text AS "FolderPath",
 CASE WHEN NULLIF(COALESCE(s.ocr_text,''),'') IS NOT NULL THEN TRUE ELSE FALSE END AS "HasOcr", COALESCE(oj.status::text,'NONE') AS "OcrStatus",
-CASE WHEN d.code ILIKE @qExact THEN 'CODE' WHEN d.title ILIKE @q THEN 'TITLE' WHEN COALESCE(s.file_name,'') ILIKE @q THEN 'FILE_NAME' WHEN COALESCE(d.description,'') ILIKE @q THEN 'DESCRIPTION' ELSE 'OCR' END AS "MatchSource",
-CASE WHEN s.search_vector IS NOT NULL THEN ts_rank(s.search_vector, websearch_to_tsquery('portuguese', @rawq)) ELSE 0 END AS "Rank",
-CASE WHEN COALESCE(s.ocr_text,'') ILIKE @q THEN regexp_replace(substring(COALESCE(s.ocr_text,'') from '.{0,80}' || @rawq || '.{0,80}'), @rawq, '<mark>' || @rawq || '</mark>', 'ig')
-WHEN COALESCE(d.description,'') ILIKE @q THEN regexp_replace(substring(COALESCE(d.description,'') from '.{0,80}' || @rawq || '.{0,80}'), @rawq, '<mark>' || @rawq || '</mark>', 'ig')
-ELSE regexp_replace(COALESCE(d.title,s.file_name,''), @rawq, '<mark>' || @rawq || '</mark>', 'ig') END AS "Snippet",
-CASE WHEN d.code ILIKE @qExact THEN 100 WHEN d.title ILIKE @q THEN 86 WHEN COALESCE(s.file_name,'') ILIKE @q THEN 70 WHEN COALESCE(s.ocr_text,'') ILIKE @q THEN 74 WHEN COALESCE(d.description,'') ILIKE @q THEN 60 ELSE 40 END AS "MatchScore"
+CASE WHEN d.code ILIKE @QExact::text THEN 'CODE' WHEN d.title ILIKE @Q::text THEN 'TITLE' WHEN COALESCE(s.file_name,'') ILIKE @Q::text THEN 'FILE_NAME' WHEN COALESCE(d.description,'') ILIKE @Q::text THEN 'DESCRIPTION' ELSE 'OCR' END AS "MatchSource",
+0::double precision AS "Rank",
+CASE WHEN substring(COALESCE(s.ocr_text,'') from 1 for 4000) ILIKE @Q::text THEN substring(COALESCE(s.ocr_text,'') from 1 for 300)
+WHEN COALESCE(d.description,'') ILIKE @Q::text THEN substring(COALESCE(d.description,'') from 1 for 300)
+ELSE regexp_replace(COALESCE(d.title,s.file_name,''), @RawQ::text, '<mark>' || @RawQ::text || '</mark>', 'ig') END AS "Snippet",
+CASE WHEN d.code ILIKE @QExact::text THEN 100 WHEN d.title ILIKE @Q::text THEN 86 WHEN COALESCE(s.file_name,'') ILIKE @Q::text THEN 70 WHEN substring(COALESCE(s.ocr_text,'') from 1 for 4000) ILIKE @Q::text THEN 74 WHEN COALESCE(d.description,'') ILIKE @Q::text THEN 60 ELSE 40 END AS "MatchScore"
 FROM ged.document d
 LEFT JOIN ged.document_search s ON s.tenant_id=d.tenant_id AND s.document_id=d.id
 LEFT JOIN ged.document_version v ON v.tenant_id=d.tenant_id AND v.id=s.version_id
 LEFT JOIN ged.folder f ON f.tenant_id=d.tenant_id AND f.id=d.folder_id
 LEFT JOIN LATERAL (SELECT vx.* FROM ged.document_version vx WHERE vx.tenant_id=d.tenant_id AND vx.document_id=d.id ORDER BY vx.version_number DESC,vx.created_at DESC LIMIT 1) latest_v ON true
 LEFT JOIN LATERAL (SELECT j.status FROM ged.ocr_job j WHERE j.tenant_id=d.tenant_id AND j.document_version_id=COALESCE(NULLIF(s.version_id,'00000000-0000-0000-0000-000000000000'::uuid),NULLIF(d.current_version_id,'00000000-0000-0000-0000-000000000000'::uuid),latest_v.id) ORDER BY j.requested_at DESC LIMIT 1) oj ON true
-WHERE d.tenant_id=@tenantId AND d.reg_status='A'::bpchar AND d.status<>'ARCHIVED'::ged.document_status_enum
-AND (d.code ILIKE @q OR d.title ILIKE @q OR COALESCE(d.description,'') ILIKE @q OR COALESCE(s.file_name,'') ILIKE @q OR COALESCE(s.ocr_text,'') ILIKE @q)
+WHERE d.tenant_id=@TenantId::uuid AND d.reg_status='A'::bpchar AND d.status<>'ARCHIVED'::ged.document_status_enum
+AND (d.code ILIKE @Q::text OR d.title ILIKE @Q::text OR COALESCE(d.description,'') ILIKE @Q::text OR COALESCE(s.file_name,'') ILIKE @Q::text OR substring(COALESCE(s.ocr_text,'') from 1 for 4000) ILIKE @Q::text)
 AND COALESCE(NULLIF(s.version_id,'00000000-0000-0000-0000-000000000000'::uuid),NULLIF(d.current_version_id,'00000000-0000-0000-0000-000000000000'::uuid),latest_v.id) IS NOT NULL
-ORDER BY "MatchScore" DESC, "Rank" DESC, "CreatedAt" DESC LIMIT 10;
+ORDER BY "MatchScore" DESC, "CreatedAt" DESC LIMIT 8;
 """;
-        await using var conn = await _db.OpenAsync(ct);
-        var rows = await conn.QueryAsync<HospitalDocumentSuggestionRow>(new CommandDefinition(sql, new { tenantId, q = like, rawq = query, qExact = query }, cancellationToken: ct));
-        return Json(rows.Where(x => x.VersionId != EmptyGuid).Select(MapSuggestion));
+        try
+        {
+            await using var conn = await _db.OpenAsync(ct);
+            var rows = await conn.QueryAsync<HospitalDocumentSuggestionRow>(new CommandDefinition(sql, new { TenantId = tenantId, Q = like, RawQ = query, QExact = query }, cancellationToken: ct));
+            var items = rows.Where(x => x.VersionId != EmptyGuid).Select(MapSuggestion).ToList();
+            _cache.Set(cacheKey, items, TimeSpan.FromSeconds(45));
+            _logger.LogInformation("Hospital suggestions executado. Tenant={TenantId} User={UserId} Query={Query} ResultCount={ResultCount} ElapsedMs={ElapsedMs} CacheHit={CacheHit}", tenantId, userId, query, items.Count, sw.ElapsedMilliseconds, false);
+            return Json(new { success = true, items });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro em HospitalDocuments/Suggestions. Tenant={TenantId} User={UserId} Query={Query} ElapsedMs={ElapsedMs}", tenantId, userId, query, sw.ElapsedMilliseconds);
+            return Json(new { success = false, items = Array.Empty<object>(), message = "Não foi possível carregar sugestões." });
+        }
     }
 
     private HospitalDocumentResultDto MapResult(HospitalDocumentSearchRow x) => new() { DocumentId = x.DocumentId, VersionId = x.VersionId, Code = x.Code, Title = x.Title, FileName = x.FileName, ContentType = x.ContentType, Type = GetFriendlyType(x.ContentType, x.FileName), FolderName = x.FolderName, FolderPath = x.FolderPath, CreatedAt = x.CreatedAt, CreatedAtFormatted = x.CreatedAt.ToString("dd/MM/yyyy HH:mm"), SizeBytes = x.SizeBytes, SizeFormatted = FormatBytes(x.SizeBytes), HasOcr = !string.IsNullOrWhiteSpace(x.OcrText), OcrStatus = x.OcrStatus, MatchSource = x.MatchSource, MatchSourceLabel = GetMatchSourceLabel(x.MatchSource), MatchScore = x.MatchScore, Snippet = string.IsNullOrWhiteSpace(x.Snippet) ? "Documento encontrado pelos metadados informados." : x.Snippet, PreviewAvailable = IsPdf(x.ContentType, x.FileName) || IsImage(x.ContentType, x.FileName), PreviewUrl = Url.Action(nameof(Preview), "HospitalDocuments", new { versionId = x.VersionId }) ?? "", ViewerUrl = Url.Action(nameof(Viewer), "HospitalDocuments", new { versionId = x.VersionId }) ?? "", OcrUrl = Url.Action(nameof(OcrText), "HospitalDocuments", new { versionId = x.VersionId }) ?? "" };
@@ -134,40 +160,59 @@ ORDER BY "MatchScore" DESC, "Rank" DESC, "CreatedAt" DESC LIMIT 10;
     [HttpGet]
     public async Task<IActionResult> Preview(Guid versionId, CancellationToken ct)
     {
-        if (!_currentUser.IsAuthenticated) return Unauthorized();
-        if (versionId == Guid.Empty) return NotFound();
-        await RegisterHospitalAccessAuditAsync("preview", ct, new { versionId });
-
-        await using var conn = await _db.OpenAsync(ct);
-        var row = await conn.QuerySingleOrDefaultAsync<ViewerRow>(new CommandDefinition("""SELECT dv.document_id AS "DocumentId", dv.id AS "VersionId", COALESCE(NULLIF(dv.file_name,''),'arquivo') AS "FileName", COALESCE(NULLIF(dv.content_type,''),'') AS "ContentType", COALESCE(dv.storage_path,'') AS "StoragePath" FROM ged.document_version dv JOIN ged.document d ON d.tenant_id=dv.tenant_id AND d.id=dv.document_id WHERE dv.tenant_id=@tenantId AND dv.id=@versionId AND d.reg_status='A'::bpchar LIMIT 1""", new { tenantId = _currentUser.TenantId, versionId }, cancellationToken: ct));
-        if (row is null || string.IsNullOrWhiteSpace(row.StoragePath)) return NotFound();
-        if (!await _storage.ExistsAsync(row.StoragePath, ct)) return NotFound();
-
-        if (IsImage(row.ContentType, row.FileName))
-        {
-            var image = await _storage.OpenReadAsync(row.StoragePath, ct);
-            Response.Headers[HeaderNames.ContentDisposition] = $"inline; filename=\"{row.FileName}\"";
-            return File(image, string.IsNullOrWhiteSpace(row.ContentType) ? "image/*" : row.ContentType, enableRangeProcessing: true);
-        }
-
-        if (IsPdf(row.ContentType, row.FileName))
-        {
-            var pdf = await _storage.OpenReadAsync(row.StoragePath, ct);
-            Response.Headers[HeaderNames.ContentDisposition] = $"inline; filename=\"{row.FileName}\"";
-            return File(pdf, "application/pdf", enableRangeProcessing: true);
-        }
-
+        var sw = Stopwatch.StartNew();
+        var tenantId = _currentUser.TenantId;
+        var userId = _currentUser.UserId;
+        var range = Request.Headers.Range.ToString();
         try
         {
-            var previewPath = await _preview.GetOrCreatePreviewPdfAsync(_currentUser.TenantId, row.DocumentId, row.VersionId, row.StoragePath, row.FileName, ct);
-            if (!await _storage.ExistsAsync(previewPath, ct)) return PreviewProcessingContent();
+            if (!_currentUser.IsAuthenticated) return Unauthorized();
+            if (versionId == Guid.Empty) return NotFound();
+            await RegisterHospitalAccessAuditAsync("preview", ct, new { versionId });
+
+            await using var conn = await _db.OpenAsync(ct);
+            var row = await conn.QuerySingleOrDefaultAsync<ViewerRow>(new CommandDefinition("""SELECT dv.document_id AS "DocumentId", dv.id AS "VersionId", COALESCE(NULLIF(dv.file_name,''),'arquivo') AS "FileName", COALESCE(NULLIF(dv.content_type,''),'') AS "ContentType", COALESCE(dv.storage_path,'') AS "StoragePath", COALESCE(dv.file_size_bytes,0) AS "SizeBytes" FROM ged.document_version dv JOIN ged.document d ON d.tenant_id=dv.tenant_id AND d.id=dv.document_id WHERE dv.tenant_id=@tenantId AND dv.id=@versionId AND d.reg_status='A'::bpchar LIMIT 1""", new { tenantId, versionId }, cancellationToken: ct));
+            if (row is null || string.IsNullOrWhiteSpace(row.StoragePath)) return NotFound();
+            if (!await _storage.ExistsAsync(row.StoragePath, ct)) return NotFound();
+
+            Response.Headers[HeaderNames.CacheControl] = "private, max-age=120";
+            Response.Headers[HeaderNames.LastModified] = DateTimeOffset.UtcNow.ToString("R");
+
+            if (IsImage(row.ContentType, row.FileName))
+            {
+                var image = await _storage.OpenReadAsync(row.StoragePath, ct);
+                Response.Headers[HeaderNames.ContentDisposition] = $"inline; filename=\"{row.FileName}\"";
+                _logger.LogInformation("Hospital preview streaming. Tenant={TenantId} User={UserId} VersionId={VersionId} FileSize={FileSize} ContentType={ContentType} Range={Range} ElapsedMs={ElapsedMs} Aborted={Aborted}", tenantId, userId, versionId, row.SizeBytes, row.ContentType, range, sw.ElapsedMilliseconds, false);
+                return File(image, string.IsNullOrWhiteSpace(row.ContentType) ? "image/*" : row.ContentType, enableRangeProcessing: true);
+            }
+
+            if (IsPdf(row.ContentType, row.FileName))
+            {
+                var pdf = await _storage.OpenReadAsync(row.StoragePath, ct);
+                Response.Headers[HeaderNames.ContentDisposition] = $"inline; filename=\"{row.FileName}\"";
+                _logger.LogInformation("Hospital preview streaming. Tenant={TenantId} User={UserId} VersionId={VersionId} FileSize={FileSize} ContentType={ContentType} Range={Range} ElapsedMs={ElapsedMs} Aborted={Aborted}", tenantId, userId, versionId, row.SizeBytes, "application/pdf", range, sw.ElapsedMilliseconds, false);
+                return File(pdf, "application/pdf", enableRangeProcessing: true);
+            }
+
+            var previewPath = BuildPreviewPath(tenantId, row.DocumentId, row.VersionId, row.FileName);
+            if (!await _storage.ExistsAsync(previewPath, ct))
+            {
+                _logger.LogInformation("Hospital preview ainda não gerado; conversão não será feita no request. Tenant={TenantId} User={UserId} VersionId={VersionId} Range={Range} ElapsedMs={ElapsedMs}", tenantId, userId, versionId, range, sw.ElapsedMilliseconds);
+                return PreviewProcessingContent();
+            }
             var preview = await _storage.OpenReadAsync(previewPath, ct);
             Response.Headers[HeaderNames.ContentDisposition] = $"inline; filename=\"{Path.GetFileNameWithoutExtension(row.FileName)}.pdf\"";
+            _logger.LogInformation("Hospital preview PDF streaming. Tenant={TenantId} User={UserId} VersionId={VersionId} FileSize={FileSize} ContentType={ContentType} Range={Range} ElapsedMs={ElapsedMs} Aborted={Aborted}", tenantId, userId, versionId, row.SizeBytes, "application/pdf", range, sw.ElapsedMilliseconds, false);
             return File(preview, "application/pdf", enableRangeProcessing: true);
+        }
+        catch (OperationCanceledException ex) when (ct.IsCancellationRequested || HttpContext.RequestAborted.IsCancellationRequested)
+        {
+            _logger.LogInformation(ex, "Hospital preview abortado pelo cliente. Tenant={TenantId} User={UserId} VersionId={VersionId} Range={Range} ElapsedMs={ElapsedMs} Aborted={Aborted}", tenantId, userId, versionId, range, sw.ElapsedMilliseconds, true);
+            return new EmptyResult();
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Preview ainda indisponível para versão {VersionId}.", versionId);
+            _logger.LogWarning(ex, "Preview ainda indisponível para versão {VersionId}. Tenant={TenantId} User={UserId} Range={Range} ElapsedMs={ElapsedMs}", versionId, tenantId, userId, range, sw.ElapsedMilliseconds);
             return PreviewProcessingContent();
         }
     }
@@ -179,6 +224,20 @@ ORDER BY "MatchScore" DESC, "Rank" DESC, "CreatedAt" DESC LIMIT 10;
         await _audit.WriteAsync(_currentUser.TenantId, _currentUser.UserId, "HTTP", "hospital_documents_access", null, $"HospitalDocuments:{action}", HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers.UserAgent.ToString(), data, ct);
     }
     private ContentResult PreviewProcessingContent() => Content("""<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;font-family:system-ui;background:#f8fafc;color:#334155}.box{max-width:760px;margin:10vh auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:20px}</style></head><body><div class="box"><h3>Gerando visualização</h3><p>Este documento ainda está sendo preparado para preview. Atualize em alguns segundos.</p></div></body></html>""", "text/html", Encoding.UTF8);
+
+    private static string BuildPreviewPath(Guid tenantId, Guid documentId, Guid versionId, string originalFileName)
+    {
+        var previewName = $"{Path.GetFileNameWithoutExtension(SanitizePreviewFileName(originalFileName))}.pdf";
+        return Path.Combine(tenantId.ToString("N"), "previews", documentId.ToString("N"), versionId.ToString("N"), previewName).Replace('\\', '/');
+    }
+
+    private static string SanitizePreviewFileName(string fileName)
+    {
+        fileName = string.IsNullOrWhiteSpace(fileName) ? "documento" : fileName.Trim();
+        foreach (var c in Path.GetInvalidFileNameChars())
+            fileName = fileName.Replace(c, '_');
+        return string.IsNullOrWhiteSpace(fileName) ? "documento" : fileName;
+    }
 
     private static string? NormalizeType(string? type) => string.IsNullOrWhiteSpace(type) ? null : type.Trim().ToLowerInvariant() switch { "pdf" => "pdf", "word" => "word", "doc" => "word", "docx" => "word", "imagem" => "image", "image" => "image", "img" => "image", _ => null };
     private static bool IsPdf(string? contentType, string fileName) => (!string.IsNullOrWhiteSpace(contentType) && contentType.Contains("pdf", StringComparison.OrdinalIgnoreCase)) || fileName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase);

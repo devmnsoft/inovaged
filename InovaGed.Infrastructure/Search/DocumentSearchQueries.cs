@@ -18,64 +18,91 @@ public sealed class DocumentSearchQueries : IDocumentSearchQueries
 
     public async Task<IReadOnlyList<DocumentSearchRowDto>> SearchAsync(
         Guid tenantId,
-        string q,
+        string? q,
         Guid? folderId,
         int limit,
         CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(q))
-            return Array.Empty<DocumentSearchRowDto>();
-
         limit = Math.Clamp(limit, 1, 100);
+        var normalizedQuery = string.IsNullOrWhiteSpace(q) ? null : q.Trim();
 
         const string sql = @"
-WITH tokens AS (
+WITH filtered AS (
   SELECT
-    regexp_replace(lower(t), '[^[:alnum:]À-ÿ_]+', '', 'g') AS tok
-  FROM regexp_split_to_table(trim(@q), '\s+') AS t
-),
-query AS (
+    d.id,
+    d.code,
+    d.title,
+    d.description,
+    d.created_at,
+    COALESCE(NULLIF(s.version_id, '00000000-0000-0000-0000-000000000000'::uuid), NULLIF(d.current_version_id, '00000000-0000-0000-0000-000000000000'::uuid), latest_v.id) AS version_id,
+    COALESCE(NULLIF(s.file_name, ''), NULLIF(latest_v.file_name, ''), 'arquivo') AS file_name,
+    substring(COALESCE(s.ocr_text, '') from 1 for 4000) AS ocr_snippet,
+    s.search_vector
+  FROM ged.document d
+  LEFT JOIN ged.document_search s ON s.tenant_id = d.tenant_id AND s.document_id = d.id
+  LEFT JOIN LATERAL (
+    SELECT vx.id, vx.file_name
+    FROM ged.document_version vx
+    WHERE vx.tenant_id = d.tenant_id AND vx.document_id = d.id
+    ORDER BY vx.version_number DESC, vx.created_at DESC
+    LIMIT 1
+  ) latest_v ON true
+  WHERE d.tenant_id = @TenantId::uuid
+    AND d.reg_status = 'A'::bpchar
+    AND (@FolderId::uuid IS NULL OR d.folder_id = @FolderId::uuid)
+), ranked AS (
   SELECT
-    to_tsquery('portuguese', string_agg(tok || ':*', ' & ')) AS tsq
-  FROM tokens
-  WHERE tok <> ''
+    f.id AS ""DocumentId"",
+    f.version_id AS ""VersionId"",
+    COALESCE(NULLIF(f.code, ''), f.id::text) AS ""Code"",
+    COALESCE(NULLIF(f.title, ''), 'Documento sem título') AS ""Title"",
+    f.file_name AS ""FileName"",
+    CASE
+      WHEN @Q::text IS NULL THEN 'Documento encontrado.'
+      WHEN f.title ILIKE '%' || @Q::text || '%' THEN regexp_replace(f.title, @Q::text, '<mark>' || @Q::text || '</mark>', 'ig')
+      WHEN f.file_name ILIKE '%' || @Q::text || '%' THEN regexp_replace(f.file_name, @Q::text, '<mark>' || @Q::text || '</mark>', 'ig')
+      WHEN COALESCE(f.description, '') ILIKE '%' || @Q::text || '%' THEN substring(COALESCE(f.description, '') from 1 for 300)
+      WHEN f.ocr_snippet ILIKE '%' || @Q::text || '%' THEN substring(f.ocr_snippet from 1 for 300)
+      ELSE 'Documento encontrado pelos filtros informados.'
+    END AS ""Snippet"",
+    CASE
+      WHEN @Q::text IS NULL THEN 0::real
+      WHEN COALESCE(f.code, '') ILIKE @Q::text THEN 100::real
+      WHEN f.title ILIKE '%' || @Q::text || '%' THEN 80::real
+      WHEN f.file_name ILIKE '%' || @Q::text || '%' THEN 70::real
+      WHEN COALESCE(f.description, '') ILIKE '%' || @Q::text || '%' THEN 50::real
+      WHEN f.ocr_snippet ILIKE '%' || @Q::text || '%' THEN 40::real
+      ELSE 1::real
+    END AS ""Rank"",
+    f.created_at
+  FROM filtered f
+  WHERE f.version_id IS NOT NULL
+    AND (
+      @Q::text IS NULL
+      OR COALESCE(f.code, '') ILIKE @Q::text
+      OR f.title ILIKE '%' || @Q::text || '%'
+      OR f.file_name ILIKE '%' || @Q::text || '%'
+      OR COALESCE(f.description, '') ILIKE '%' || @Q::text || '%'
+      OR f.ocr_snippet ILIKE '%' || @Q::text || '%'
+    )
 )
-SELECT
-  d.id AS ""DocumentId"",
-  s.version_id AS ""VersionId"",
-  d.code AS ""Code"",
-  d.title AS ""Title"",
-  s.file_name AS ""FileName"",
-  ts_headline(
-    'portuguese',
-    COALESCE(s.ocr_text, d.description, ''),
-    (SELECT tsq FROM query),
-    'StartSel=<mark>, StopSel=</mark>, MaxFragments=2, FragmentDelimiter= … , MaxWords=20, MinWords=8'
-  ) AS ""Snippet"",
-  ts_rank(s.search_vector, (SELECT tsq FROM query)) AS ""Rank""
-FROM ged.document_search s
-JOIN ged.document d
-  ON d.tenant_id = s.tenant_id
- AND d.id = s.document_id
-WHERE s.tenant_id = @tenantId
-  AND (SELECT tsq FROM query) IS NOT NULL
-  AND s.search_vector @@ (SELECT tsq FROM query)
-  AND (@folderId IS NULL OR d.folder_id = @folderId)
-ORDER BY ""Rank"" DESC, d.created_at DESC
-LIMIT @limit;
+SELECT ""DocumentId"", ""VersionId"", ""Code"", ""Title"", ""FileName"", ""Snippet"", ""Rank""
+FROM ranked
+ORDER BY ""Rank"" DESC, created_at DESC
+LIMIT @Limit;
 ";
 
         try
         {
-            var conn = await _db.OpenAsync(ct);
+            await using var conn = await _db.OpenAsync(ct);
             var rows = await conn.QueryAsync<DocumentSearchRowDto>(
-                new CommandDefinition(sql, new { tenantId, q, folderId, limit }, cancellationToken: ct));
+                new CommandDefinition(sql, new { TenantId = tenantId, Q = normalizedQuery, FolderId = folderId, Limit = limit }, cancellationToken: ct));
 
             return rows.AsList();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Erro na busca full-text. Tenant={TenantId}, q={q}", tenantId, q);
+            _logger.LogError(ex, "Erro na busca GED. Tenant={TenantId} FolderId={FolderId} q={Query}", tenantId, folderId, normalizedQuery);
             throw;
         }
     }
