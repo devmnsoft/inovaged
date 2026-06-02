@@ -17,14 +17,16 @@ public sealed class UploadBatchController : Controller
     private readonly IUploadBatchService _batches;
     private readonly IGedAccessPolicyService _accessPolicy;
     private readonly IFolderQueries _folders;
+    private readonly IUploadFolderResolver _uploadFolderResolver;
     private readonly ILogger<UploadBatchController> _logger;
 
-    public UploadBatchController(ICurrentUser currentUser, IUploadBatchService batches, IGedAccessPolicyService accessPolicy, IFolderQueries folders, ILogger<UploadBatchController> logger)
+    public UploadBatchController(ICurrentUser currentUser, IUploadBatchService batches, IGedAccessPolicyService accessPolicy, IFolderQueries folders, IUploadFolderResolver uploadFolderResolver, ILogger<UploadBatchController> logger)
     {
         _currentUser = currentUser;
         _batches = batches;
         _accessPolicy = accessPolicy;
         _folders = folders;
+        _uploadFolderResolver = uploadFolderResolver;
         _logger = logger;
     }
 
@@ -47,14 +49,18 @@ public sealed class UploadBatchController : Controller
         var correlationId = HttpContext.TraceIdentifier;
         if (!_currentUser.IsAuthenticated) return Unauthorized(Error("Sua sessão expirou. Faça login novamente.", "Autenticação", false, correlationId));
         if (request is null) return BadRequest(Error("Requisição inválida para iniciar o lote.", "Validação", false, correlationId));
-        var folderValidation = await ValidateRealUploadFolderAsync(request.FolderId, correlationId, ct);
-        if (folderValidation is not null) return folderValidation;
-        var allowed = await _accessPolicy.CanUploadDocumentToFolderAsync(_currentUser.TenantId, _currentUser.UserId, request.FolderId, User, ct);
-        if (!allowed) return StatusCode(403, Error("Você não possui permissão para adicionar documentos nesta pasta.", "Autorização", false, correlationId));
+        var isAdmin = await _accessPolicy.IsAdminAsync(_currentUser.TenantId, _currentUser.UserId, User, ct);
+        var folderResolution = await ResolveUploadFolderAsync(request.FolderId, isAdmin, correlationId, ct);
+        if (!folderResolution.Success) return BadRequest(FolderResolutionError(folderResolution, correlationId));
+        if (!isAdmin)
+        {
+            var allowed = await _accessPolicy.CanUploadDocumentToFolderAsync(_currentUser.TenantId, _currentUser.UserId, folderResolution.ResolvedFolderId, User, ct);
+            if (!allowed) return StatusCode(403, Error("Você não possui permissão para adicionar documentos nesta pasta.", "Autorização", false, correlationId));
+        }
 
         var result = await _batches.StartAsync(_currentUser.TenantId, _currentUser.UserId, new StartUploadBatchRequestDto
         {
-            FolderId = request.FolderId,
+            FolderId = folderResolution.ResolvedFolderId,
             TotalFiles = request.TotalFiles,
             Options = request.Options,
             SourceIp = HttpContext.Connection.RemoteIpAddress?.ToString(),
@@ -62,7 +68,7 @@ public sealed class UploadBatchController : Controller
             CorrelationId = correlationId
         }, ct);
         if (!result.Success) return BadRequest(Error(result.Error?.Message ?? "Não foi possível iniciar o lote.", result.Error?.Code ?? "Validação", true, correlationId));
-        return Ok(new { success = true, batchId = result.Value, message = "Lote iniciado.", correlationId });
+        return Ok(new { success = true, batchId = result.Value, message = "Lote iniciado.", requestedFolderId = folderResolution.RequestedFolderId, resolvedFolderId = folderResolution.ResolvedFolderId, wasVirtual = folderResolution.WasVirtual, createdRealFolder = folderResolution.CreatedRealFolder, correlationId });
     }
 
     [HttpPost("File")]
@@ -74,19 +80,21 @@ public sealed class UploadBatchController : Controller
         try
         {
             if (!_currentUser.IsAuthenticated) return Unauthorized(Error("Sua sessão expirou. Faça login novamente.", "Autenticação", false, correlationId));
-            var folderValidation = await ValidateRealUploadFolderAsync(folderId, correlationId, ct);
-            if (folderValidation is not null) return folderValidation;
-            var allowed = await _accessPolicy.CanUploadDocumentToFolderAsync(_currentUser.TenantId, _currentUser.UserId, folderId, User, ct);
-            if (!allowed) return StatusCode(403, Error("Você não possui permissão para adicionar documentos nesta pasta.", "Autorização", false, correlationId));
-
             var isAdmin = await _accessPolicy.IsAdminAsync(_currentUser.TenantId, _currentUser.UserId, User, ct);
+            var folderResolution = await ResolveUploadFolderAsync(folderId, isAdmin, correlationId, ct);
+            if (!folderResolution.Success) return BadRequest(FolderResolutionError(folderResolution, correlationId));
+            if (!isAdmin)
+            {
+                var allowed = await _accessPolicy.CanUploadDocumentToFolderAsync(_currentUser.TenantId, _currentUser.UserId, folderResolution.ResolvedFolderId, User, ct);
+                if (!allowed) return StatusCode(403, Error("Você não possui permissão para adicionar documentos nesta pasta.", "Autorização", false, correlationId));
+            }
             var result = await _batches.UploadFileAsync(_currentUser.TenantId, _currentUser.UserId, new UploadBatchFileRequestDto
             {
                 BatchId = batchId,
                 File = file,
                 FileIndex = fileIndex,
                 TotalFiles = totalFiles,
-                FolderId = folderId,
+                FolderId = folderResolution.ResolvedFolderId,
                 DuplicateStrategy = duplicateStrategy,
                 RunOcr = runOcr,
                 GeneratePreview = generatePreview,
@@ -115,6 +123,10 @@ public sealed class UploadBatchController : Controller
                 message = result.Value.Message,
                 ocrQueued = result.Value.OcrQueued,
                 previewQueued = result.Value.PreviewQueued,
+                requestedFolderId = folderResolution.RequestedFolderId,
+                resolvedFolderId = folderResolution.ResolvedFolderId,
+                wasVirtual = folderResolution.WasVirtual,
+                createdRealFolder = folderResolution.CreatedRealFolder,
                 correlationId = result.Value.CorrelationId
             });
         }
@@ -148,20 +160,16 @@ public sealed class UploadBatchController : Controller
         return result.Success ? Ok(new { success = true, data = result.Value, message = "Falhas liberadas para reenvio." }) : BadRequest(Error(result.Error?.Message ?? "Falha ao preparar retentativa.", result.Error?.Code ?? "Batch", true, HttpContext.TraceIdentifier));
     }
 
-    private async Task<IActionResult?> ValidateRealUploadFolderAsync(Guid? folderId, string correlationId, CancellationToken ct)
+    private async Task<UploadFolderResolutionResult> ResolveUploadFolderAsync(Guid? folderId, bool isAdmin, string correlationId, CancellationToken ct)
     {
-        if (FolderIdHelper.IsVirtualFolder(folderId))
-        {
-            return BadRequest(Error("Upload não permitido nesta pasta. Selecione uma pasta real.", "Pasta virtual", false, correlationId));
-        }
-
-        if (!await _folders.ExistsAsync(_currentUser.TenantId, folderId!.Value, ct))
-        {
-            return BadRequest(Error("A pasta selecionada não foi encontrada ou está inativa. Atualize a tela e selecione uma pasta real.", "Validação da pasta", false, correlationId));
-        }
-
-        return null;
+        var requestedFolderId = folderId ?? Guid.Empty;
+        var resolution = await _uploadFolderResolver.ResolveAsync(_currentUser.TenantId, _currentUser.UserId, requestedFolderId, isAdmin, ct);
+        _logger.LogInformation("Upload folder resolution Tenant={TenantId} User={UserId} RequestedFolderId={RequestedFolderId} ResolvedFolderId={ResolvedFolderId} WasVirtual={WasVirtual} CreatedRealFolder={CreatedRealFolder} Success={Success} CorrelationId={CorrelationId}", _currentUser.TenantId, _currentUser.UserId, resolution.RequestedFolderId, resolution.ResolvedFolderId, resolution.WasVirtual, resolution.CreatedRealFolder, resolution.Success, correlationId);
+        return resolution;
     }
+
+    private static object FolderResolutionError(UploadFolderResolutionResult resolution, string correlationId)
+        => new { success = false, message = resolution.Message, errorStep = "Resolução da pasta", canRetry = false, requestedFolderId = resolution.RequestedFolderId, resolvedFolderId = resolution.ResolvedFolderId, wasVirtual = resolution.WasVirtual, createdRealFolder = resolution.CreatedRealFolder, correlationId };
 
     private static object Error(string message, string errorStep, bool canRetry, string correlationId)
         => new { success = false, message, errorStep, canRetry, correlationId };
