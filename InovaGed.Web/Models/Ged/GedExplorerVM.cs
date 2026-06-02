@@ -7,6 +7,8 @@ public sealed class GedExplorerVM
 {
     public Guid? CurrentFolderId { get; set; }
     public bool CanBulkUpload { get; set; }
+    public bool CurrentFolderIsVirtual { get; set; }
+    public string CurrentFolderName { get; set; } = "";
 
     public Guid? FolderId { get; set; }
     public string? Query { get; set; }

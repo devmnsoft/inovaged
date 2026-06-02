@@ -10,6 +10,7 @@ using InovaGed.Application.Ged.Documents;
 using InovaGed.Application.Ged.Search;
 using InovaGed.Application.Audit;
 using InovaGed.Application.Ged;
+using InovaGed.Application.Ged.Folders;
 using InovaGed.Application.Identity;
 using InovaGed.Application.Ocr;
 using InovaGed.Application.Preview;
@@ -144,10 +145,8 @@ public sealed class GedController : Controller
             _logger.LogInformation("Bulk upload iniciado. Tenant={TenantId} User={UserId} Folder={FolderId} Batch={BatchId} FileIndex={FileIndex} TotalFiles={TotalFiles} File={FileName} Size={FileSize} RunOcr={RunOcr} GeneratePreview={GeneratePreview} ConnectionId={ConnectionId} CorrelationId={CorrelationId}",
                 _currentUser.TenantId, _currentUser.UserId, folderId, batchId, fileIndex, totalFiles, file?.FileName, file?.Length, runOcr, generatePreview, HttpContext.Connection.Id, correlationId);
             if (!_currentUser.IsAuthenticated) return Unauthorized(JsonError("Sua sessão expirou. Faça login novamente.", "Autenticação", "Usuário sem sessão autenticada.", false, correlationId));
-            if (folderId.HasValue && IsVirtualFolderId(folderId.Value))
-            {
-                return BadRequest(JsonError("Selecione uma pasta válida antes de enviar documentos.", "Validação de pasta", $"FolderId virtual não permitido para upload: {folderId}", false, correlationId));
-            }
+            var folderValidation = await ValidateRealUploadFolderAsync(folderId, "Upload não permitido nesta pasta. Selecione uma pasta real.", "Pasta virtual", correlationId, ct);
+            if (folderValidation is not null) return folderValidation;
             var allowed = await _accessPolicy.CanUploadDocumentToFolderAsync(_currentUser.TenantId, _currentUser.UserId, folderId, User, ct);
             if (!allowed)
             {
@@ -192,9 +191,6 @@ public sealed class GedController : Controller
         }
     }
 
-    private static bool IsVirtualFolderId(Guid folderId)
-        => folderId.ToString("D").StartsWith("f0000000-0000-0000-0000-0000000000", StringComparison.OrdinalIgnoreCase);
-
     public sealed class CheckDuplicateNamesRequest
     {
         public Guid? FolderId { get; set; }
@@ -209,7 +205,8 @@ public sealed class GedController : Controller
         {
             var correlationId = HttpContext.TraceIdentifier;
             if (!_currentUser.IsAuthenticated) return Unauthorized(JsonError("Sua sessão expirou. Faça login novamente.", "Autenticação", "Usuário não autenticado.", false, correlationId));
-            if (request?.FolderId is null || request.FolderId == Guid.Empty) return BadRequest(JsonError("Pasta inválida.", "Validação", "FolderId vazio ou ausente.", false, correlationId));
+            var folderValidation = await ValidateRealUploadFolderAsync(request?.FolderId, "Selecione uma pasta real antes de enviar documentos. A pasta selecionada é apenas agrupadora.", "Validação da pasta", correlationId, ct);
+            if (folderValidation is not null) return folderValidation;
             var fileNames = (request.FileNames ?? Array.Empty<string>()).Where(x => !string.IsNullOrWhiteSpace(x)).Select(Path.GetFileNameWithoutExtension).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
             if (fileNames.Length == 0) return Ok(JsonSuccess("Nenhum arquivo para validação de duplicidade.", new { duplicates = Array.Empty<object>() }, correlationId));
 
@@ -224,6 +221,21 @@ public sealed class GedController : Controller
             _logger.LogError(ex, "Erro ao verificar duplicidade de nomes.");
             return StatusCode(500, JsonError("Não foi possível verificar duplicidades. Tente novamente.", "Servidor", ex.Message, true, HttpContext.TraceIdentifier));
         }
+    }
+
+    private async Task<IActionResult?> ValidateRealUploadFolderAsync(Guid? folderId, string virtualMessage, string virtualStep, string correlationId, CancellationToken ct)
+    {
+        if (FolderIdHelper.IsVirtualFolder(folderId))
+        {
+            return BadRequest(JsonError(virtualMessage, virtualStep, $"FolderId virtual/ausente não permitido para upload: {folderId}", false, correlationId));
+        }
+
+        if (!await _folders.ExistsAsync(_currentUser.TenantId, folderId!.Value, ct))
+        {
+            return BadRequest(JsonError("A pasta selecionada não foi encontrada ou está inativa. Atualize a tela e selecione uma pasta real.", "Validação da pasta", $"FolderId inexistente ou inativo: {folderId}", false, correlationId));
+        }
+
+        return null;
     }
 
     private bool IsAjaxRequest()
@@ -257,10 +269,15 @@ public sealed class GedController : Controller
 
             var tree = await _folders.TreeAsync(tenantId, ct);
 
-            // se não veio folderId, tenta apontar para a "primeira" pasta da árvore
-            var effectiveFolderId = folderId ?? tree.FirstOrDefault()?.Id;
+            // se não veio folderId, tenta apontar para a "primeira" pasta real da árvore
+            var requestedFolderIsVirtual = FolderIdHelper.IsVirtualFolder(folderId);
+            var effectiveFolderId = requestedFolderIsVirtual && folderId.HasValue
+                ? folderId
+                : folderId ?? tree.FirstOrDefault(x => FolderIdHelper.IsRealFolder(x.Id))?.Id;
+            var canUseCurrentFolderForUpload = FolderIdHelper.IsRealFolder(effectiveFolderId)
+                && tree.Any(x => x.Id == effectiveFolderId.Value);
 
-            var docs = effectiveFolderId.HasValue
+            var docs = effectiveFolderId.HasValue && !FolderIdHelper.IsVirtualFolder(effectiveFolderId)
                 ? await _docs.ListAsync(tenantId, effectiveFolderId.Value, q, ct)
                 : Array.Empty<DocumentRowDto>();
 
@@ -270,8 +287,12 @@ public sealed class GedController : Controller
 
             var vm = new GedExplorerVM
             {
-                CanBulkUpload = await _accessPolicy.CanUploadDocumentToFolderAsync(tenantId, _currentUser.UserId, effectiveFolderId, User, ct),
+                CanBulkUpload = canUseCurrentFolderForUpload && await _accessPolicy.CanUploadDocumentToFolderAsync(tenantId, _currentUser.UserId, effectiveFolderId, User, ct),
                 CurrentFolderId = effectiveFolderId,
+                CurrentFolderIsVirtual = FolderIdHelper.IsVirtualFolder(effectiveFolderId),
+                CurrentFolderName = effectiveFolderId.HasValue
+                    ? tree.FirstOrDefault(x => x.Id == effectiveFolderId.Value)?.Name ?? (FolderIdHelper.IsVirtualFolder(effectiveFolderId) ? "Agrupadora/virtual" : "Pasta selecionada")
+                    : "Agrupadora/virtual",
                 FolderId = effectiveFolderId,
                 Query = q,
                 Folders = tree.Select(x => new GedExplorerVM.FolderNodeVM
@@ -1785,7 +1806,7 @@ VALUES
             if (!await _accessPolicy.CanAccessGedAsync(tenantId, userId, User, ct))
                 return Forbid();
 
-            if (folderId.HasValue && IsVirtualFolderId(folderId.Value))
+            if (FolderIdHelper.IsVirtualFolder(folderId))
                 folderId = null;
 
             var isGlobal = string.Equals(scope, "global", StringComparison.OrdinalIgnoreCase);

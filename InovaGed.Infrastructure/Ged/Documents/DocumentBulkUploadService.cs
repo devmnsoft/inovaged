@@ -1,6 +1,7 @@
 using InovaGed.Application.Audit;
 using InovaGed.Application.Documents;
 using InovaGed.Application.Ged.Documents;
+using InovaGed.Application.Ged.Folders;
 using InovaGed.Domain.Primitives;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
@@ -20,7 +21,7 @@ public sealed class DocumentBulkUploadService : IDocumentBulkUploadService
         try
         {
             var sw = Stopwatch.StartNew();
-            if (!folderId.HasValue || folderId == Guid.Empty) return Result<DocumentBulkUploadResultDto>.Fail("VALIDATION", "Selecione uma pasta destino.");
+            if (FolderIdHelper.IsVirtualFolder(folderId)) return Result<DocumentBulkUploadResultDto>.Fail("VIRTUAL_FOLDER", "Upload não permitido nesta pasta. Selecione uma pasta real.");
             if (file is null || file.Length <= 0) return Result<DocumentBulkUploadResultDto>.Fail("VALIDATION", "Arquivo inválido.");
             if (file.Length > _maxFileSizeBytes) return Result<DocumentBulkUploadResultDto>.Fail("LIMIT", $"O arquivo {file.FileName} excede o tamanho máximo permitido.");
             var ext = Path.GetExtension(file.FileName ?? string.Empty); if (!AllowedExtensions.Contains(ext)) return Result<DocumentBulkUploadResultDto>.Fail("VALIDATION", $"Extensão não permitida: {ext}");

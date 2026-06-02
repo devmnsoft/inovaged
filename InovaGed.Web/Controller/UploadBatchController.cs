@@ -1,4 +1,5 @@
 using InovaGed.Application.Ged;
+using InovaGed.Application.Ged.Folders;
 using InovaGed.Application.Ged.Documents;
 using InovaGed.Application.Identity;
 using InovaGed.Application.Security;
@@ -15,13 +16,15 @@ public sealed class UploadBatchController : Controller
     private readonly ICurrentUser _currentUser;
     private readonly IUploadBatchService _batches;
     private readonly IGedAccessPolicyService _accessPolicy;
+    private readonly IFolderQueries _folders;
     private readonly ILogger<UploadBatchController> _logger;
 
-    public UploadBatchController(ICurrentUser currentUser, IUploadBatchService batches, IGedAccessPolicyService accessPolicy, ILogger<UploadBatchController> logger)
+    public UploadBatchController(ICurrentUser currentUser, IUploadBatchService batches, IGedAccessPolicyService accessPolicy, IFolderQueries folders, ILogger<UploadBatchController> logger)
     {
         _currentUser = currentUser;
         _batches = batches;
         _accessPolicy = accessPolicy;
+        _folders = folders;
         _logger = logger;
     }
 
@@ -43,7 +46,9 @@ public sealed class UploadBatchController : Controller
     {
         var correlationId = HttpContext.TraceIdentifier;
         if (!_currentUser.IsAuthenticated) return Unauthorized(Error("Sua sessão expirou. Faça login novamente.", "Autenticação", false, correlationId));
-        if (request.FolderId.HasValue && IsVirtualFolderId(request.FolderId.Value)) return BadRequest(Error("Selecione uma pasta válida antes de enviar documentos.", "Validação de pasta", false, correlationId));
+        if (request is null) return BadRequest(Error("Requisição inválida para iniciar o lote.", "Validação", false, correlationId));
+        var folderValidation = await ValidateRealUploadFolderAsync(request.FolderId, correlationId, ct);
+        if (folderValidation is not null) return folderValidation;
         var allowed = await _accessPolicy.CanUploadDocumentToFolderAsync(_currentUser.TenantId, _currentUser.UserId, request.FolderId, User, ct);
         if (!allowed) return StatusCode(403, Error("Você não possui permissão para adicionar documentos nesta pasta.", "Autorização", false, correlationId));
 
@@ -69,7 +74,8 @@ public sealed class UploadBatchController : Controller
         try
         {
             if (!_currentUser.IsAuthenticated) return Unauthorized(Error("Sua sessão expirou. Faça login novamente.", "Autenticação", false, correlationId));
-            if (folderId.HasValue && IsVirtualFolderId(folderId.Value)) return BadRequest(Error("Selecione uma pasta válida antes de enviar documentos.", "Validação de pasta", false, correlationId));
+            var folderValidation = await ValidateRealUploadFolderAsync(folderId, correlationId, ct);
+            if (folderValidation is not null) return folderValidation;
             var allowed = await _accessPolicy.CanUploadDocumentToFolderAsync(_currentUser.TenantId, _currentUser.UserId, folderId, User, ct);
             if (!allowed) return StatusCode(403, Error("Você não possui permissão para adicionar documentos nesta pasta.", "Autorização", false, correlationId));
 
@@ -142,8 +148,20 @@ public sealed class UploadBatchController : Controller
         return result.Success ? Ok(new { success = true, data = result.Value, message = "Falhas liberadas para reenvio." }) : BadRequest(Error(result.Error?.Message ?? "Falha ao preparar retentativa.", result.Error?.Code ?? "Batch", true, HttpContext.TraceIdentifier));
     }
 
-    private static bool IsVirtualFolderId(Guid folderId)
-        => folderId.ToString("D").StartsWith("f0000000-0000-0000-0000-0000000000", StringComparison.OrdinalIgnoreCase);
+    private async Task<IActionResult?> ValidateRealUploadFolderAsync(Guid? folderId, string correlationId, CancellationToken ct)
+    {
+        if (FolderIdHelper.IsVirtualFolder(folderId))
+        {
+            return BadRequest(Error("Upload não permitido nesta pasta. Selecione uma pasta real.", "Pasta virtual", false, correlationId));
+        }
+
+        if (!await _folders.ExistsAsync(_currentUser.TenantId, folderId!.Value, ct))
+        {
+            return BadRequest(Error("A pasta selecionada não foi encontrada ou está inativa. Atualize a tela e selecione uma pasta real.", "Validação da pasta", false, correlationId));
+        }
+
+        return null;
+    }
 
     private static object Error(string message, string errorStep, bool canRetry, string correlationId)
         => new { success = false, message, errorStep, canRetry, correlationId };

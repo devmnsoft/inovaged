@@ -1,6 +1,7 @@
 ﻿@model InovaGed.Web.Models.Ged.GedExplorerVM
 @using InovaGed.Application.Identity
 @using InovaGed.Application.Classification
+@using InovaGed.Application.Ged.Folders
 @using System.Threading
 
 @inject ICurrentUser CurrentUser
@@ -21,10 +22,20 @@
     }
 
     var runningOcrCount = (ViewBag.RunningOcrCount as int?) ?? 0;
+    var uploadFolderIsVirtual = FolderIdHelper.IsVirtualFolder(Model.CurrentFolderId);
+    var uploadFolderLabel = uploadFolderIsVirtual
+        ? "agrupadora/virtual"
+        : (!string.IsNullOrWhiteSpace(Model.CurrentFolderName) ? Model.CurrentFolderName : "pasta real selecionada");
 }
 
 <div class="row">
     <div id="pageAlertHost" class="mb-2">
+        @if (Model.CurrentFolderIsVirtual)
+        {
+            <div class="alert alert-warning" role="alert">
+                <i class="bi bi-info-circle me-1"></i>Esta pasta organiza documentos por categoria. Para enviar documentos, escolha uma subpasta real.
+            </div>
+        }
         @if (TempData["Success"] is string okMsg && !string.IsNullOrWhiteSpace(okMsg))
         {
             <div class="alert alert-success alert-dismissible fade show" role="alert">
@@ -94,6 +105,7 @@
                                 var hasChildren = byParent.ContainsKey(n.Id);
                                 var isActive = Model.CurrentFolderId == n.Id;
                                 var href = Url.Action("Index", "Ged", new { folderId = n.Id }) ?? "#";
+                                var isVirtual = FolderIdHelper.IsVirtualFolder(n.Id);
 
                                 <li class="ged-tree-node"
                                     data-id="@n.Id"
@@ -102,7 +114,8 @@
                                     data-folder-id="@n.Id"
                                     data-folder-parent-id="@(n.ParentId?.ToString() ?? "")"
                                     data-folder-name="@n.Name"
-                                    data-folder-path="@BuildFolderPath(n.Id)">
+                                    data-folder-path="@BuildFolderPath(n.Id)"
+                                    data-folder-virtual="@(isVirtual ? "true" : "false")">
 
                                     <div class="ged-tree-row @(isActive ? "active" : "")">
                                         @if (hasChildren)
@@ -119,6 +132,10 @@
                                         <i class="bi bi-folder2 ged-tree-folder"></i>
 
                                         <a class="ged-tree-link flex-grow-1" href="@href">@n.Name</a>
+                                        @if (isVirtual)
+                                        {
+                                            <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle">Agrupador</span>
+                                        }
 
                                         <!-- ✅ AÇÕES DA PASTA -->
                                         <div class="dropdown">
@@ -172,7 +189,8 @@
                 }
                 else
                 {
-                    var raizHref = Url.Action("Index", "Ged") ?? "#";
+                    var virtualRootId = Guid.Parse("f0000000-0000-0000-0000-000000000001");
+                    var raizHref = Url.Action("Index", "Ged", new { folderId = virtualRootId }) ?? "#";
 
                     <ul class="list-unstyled mb-0">
                         <li class="mb-1">
@@ -180,8 +198,9 @@
                                href="@raizHref"
                                data-folder-id="f0000000-0000-0000-0000-000000000001"
                                data-folder-name="Raiz"
-                               data-folder-path="Raiz">
-                                <i class="bi bi-house"></i> Raiz
+                               data-folder-path="Raiz"
+                               data-folder-virtual="true">
+                                <i class="bi bi-house"></i> Raiz <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle ms-1">Agrupador</span>
                             </a>
                         </li>
                     </ul>
@@ -193,6 +212,7 @@
                                 var hasChildren = byParent.ContainsKey(n.Id);
                                 var isActive = Model.CurrentFolderId == n.Id;
                                 var href = Url.Action("Index", "Ged", new { folderId = n.Id }) ?? "#";
+                                var isVirtual = FolderIdHelper.IsVirtualFolder(n.Id);
 
                                 <li class="ged-tree-node"
                                     data-id="@n.Id"
@@ -201,7 +221,8 @@
                                     data-folder-id="@n.Id"
                                     data-folder-parent-id=""
                                     data-folder-name="@n.Name"
-                                    data-folder-path="@BuildFolderPath(n.Id)">
+                                    data-folder-path="@BuildFolderPath(n.Id)"
+                                    data-folder-virtual="@(isVirtual ? "true" : "false")">
 
                                     <div class="ged-tree-row @(isActive ? "active" : "")">
                                         @if (hasChildren)
@@ -217,6 +238,10 @@
 
                                         <i class="bi bi-folder2 ged-tree-folder"></i>
                                         <a class="ged-tree-link flex-grow-1" href="@href">@n.Name</a>
+                                        @if (isVirtual)
+                                        {
+                                            <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle">Agrupador</span>
+                                        }
 
                                         <!-- ✅ AÇÕES DA PASTA -->
                                         <div class="dropdown">
@@ -327,9 +352,9 @@
 
 
 
-                    @if (Model.CanBulkUpload)
+                    @if (Model.CanBulkUpload || uploadFolderIsVirtual)
                     {
-                        <button type="button" id="btnOpenBulkUpload" class="btn btn-primary" data-bs-toggle="tooltip" title="Envie um ou mais arquivos para a pasta atual." @(Model.CurrentFolderId == null ? "disabled" : "")>
+                        <button type="button" id="btnOpenBulkUpload" class="btn btn-primary" data-bs-toggle="tooltip" title="@(uploadFolderIsVirtual ? "Selecione uma pasta real para enviar documentos." : "Envie um ou mais arquivos para a pasta atual.")" @(Model.CanBulkUpload ? "" : "disabled")>
                             <i class="bi bi-cloud-arrow-up me-1"></i> Adicionar documentos
                         </button>
                     }
@@ -604,12 +629,15 @@
     </div>
 </div>
 
-<div class="modal fade" id="bulkUploadModal" tabindex="-1" aria-hidden="true" data-folder-id="@Model.CurrentFolderId">
+<div class="modal fade" id="bulkUploadModal" tabindex="-1" aria-hidden="true" data-folder-id="@Model.CurrentFolderId" data-folder-virtual="@(uploadFolderIsVirtual ? "true" : "false")" data-folder-name="@uploadFolderLabel">
   <div class="modal-dialog modal-xl modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header"><div><h5 class="modal-title">Adicionar documentos em lote</h5><small class="text-muted">Envie vários arquivos diretamente para a pasta selecionada.</small></div><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
       <div class="modal-body">
         <input type="hidden" id="bulkFolderId" value="@Model.CurrentFolderId" />
+        <div id="bulkUploadFolderNotice" class="alert @(uploadFolderIsVirtual ? "alert-warning" : "alert-info") py-2">
+            <strong>Pasta selecionada:</strong> @(uploadFolderIsVirtual ? "agrupadora/virtual — selecione uma pasta real para enviar documentos." : uploadFolderLabel)
+        </div>
         <div id="bulkUploadMessage" class="d-none alert"></div>
         <div id="bulkDropzone" class="border border-2 border-secondary-subtle rounded p-4 text-center mb-3" style="border-style:dashed !important; cursor:pointer;">
             <i class="bi bi-cloud-arrow-up fs-1 d-block mb-2"></i><strong>Arraste arquivos aqui ou clique para selecionar</strong>
@@ -618,7 +646,7 @@
         <div id="bulkDuplicateDecision" class="alert alert-warning d-none"><strong>Arquivos com o mesmo nome já existem.</strong><div class="small mb-2">Escolha como deseja continuar.</div><ul id="bulkDuplicateList" class="mb-2"></ul><div class="btn-group btn-group-sm"><button type="button" class="btn btn-outline-danger" id="btnDupOverwrite">Sobrescrever todos</button><button type="button" class="btn btn-outline-primary" id="btnDupRename">Renomear todos</button><button type="button" class="btn btn-outline-secondary" id="btnDupSkip">Ignorar duplicados</button><button type="button" class="btn btn-outline-dark" id="btnDupCancel">Cancelar envio</button></div></div><div class="d-flex justify-content-between align-items-center mb-2"><strong>Arquivos selecionados</strong><button class="btn btn-sm btn-outline-secondary" id="btnBulkClear">Limpar lista</button></div><div id="bulkSummary" class="small text-muted mb-2"></div>
         <div class="table-responsive"><table class="table table-sm"><thead><tr><th>Arquivo</th><th>Tamanho</th><th>Status</th><th>Progresso</th><th></th></tr></thead><tbody id="bulkFileList"></tbody></table></div>
       </div>
-      <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button><button type="button" class="btn btn-outline-info d-none" id="btnBulkRefreshFolder" onclick="window.location.reload();">Atualizar pasta</button><button type="button" class="btn btn-outline-primary d-none" id="btnStartNewBulkBatch">Novo lote</button><button type="button" class="btn btn-outline-warning d-none" id="btnBulkRetryFailed">Tentar novamente falhos</button><button type="button" class="btn btn-outline-secondary d-none" id="btnClearSuccessfulUploads">Limpar enviados</button><button type="button" class="btn btn-primary" id="btnBulkUploadSubmit">Enviar documentos</button></div>
+      <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button><button type="button" class="btn btn-outline-info d-none" id="btnBulkRefreshFolder" onclick="window.location.reload();">Atualizar pasta</button><button type="button" class="btn btn-outline-primary d-none" id="btnStartNewBulkBatch">Novo lote</button><button type="button" class="btn btn-outline-warning d-none" id="btnBulkRetryFailed">Tentar novamente falhos</button><button type="button" class="btn btn-outline-secondary d-none" id="btnClearSuccessfulUploads">Limpar enviados</button><button type="button" class="btn btn-primary" id="btnBulkUploadSubmit" @(uploadFolderIsVirtual ? "disabled" : "")>Enviar documentos</button></div>
     </div>
   </div>
 </div>

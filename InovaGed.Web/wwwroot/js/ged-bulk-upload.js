@@ -57,6 +57,7 @@
         if (modal) {
             modal.addEventListener('show.bs.modal', function () {
                 recoverBulkUploadUiState();
+                updateUploadFolderUi();
                 const hasOnlyFinished = state.files.length > 0 && state.files.every(x => x.status === 'success' || x.status === 'ignored');
                 if (hasOnlyFinished) resetBulkUploadState();
                 console.log('[BulkUpload] modal aberto', { selectedFiles: state.files.length, isUploading: state.uploading, isCheckingDuplicates: state.isCheckingDuplicates });
@@ -130,7 +131,68 @@
         return new URL(window.location.href).searchParams.get('folderId');
     }
 
-    const openBulkUploadModal = () => bootstrap.Modal.getOrCreateInstance('#bulkUploadModal').show();
+    function isVirtualFolderId(folderId) {
+        return !folderId ||
+            folderId === '00000000-0000-0000-0000-000000000000' ||
+            folderId.toLowerCase().startsWith('f0000000-0000-0000-0000-');
+    }
+
+    function getCurrentFolderLabel() {
+        const modal = document.getElementById('bulkUploadModal');
+        const fromModal = modal?.getAttribute('data-folder-name');
+        if (fromModal) return fromModal;
+        const selected = document.querySelector('.js-folder-node.active, .ged-tree-row.active, [data-folder-selected="true"]');
+        const folderEl = selected?.closest('[data-folder-id]') || selected;
+        return folderEl?.getAttribute('data-folder-path') || folderEl?.getAttribute('data-folder-name') || 'pasta selecionada';
+    }
+
+    function updateUploadFolderUi() {
+        const folderId = getCurrentFolderId();
+        const virtualFolder = isVirtualFolderId(folderId);
+        const notice = document.getElementById('bulkUploadFolderNotice');
+        const dropzone = document.getElementById('bulkDropzone');
+        const fileInput = getFileInput();
+
+        if (notice) {
+            notice.className = `alert ${virtualFolder ? 'alert-warning' : 'alert-info'} py-2`;
+            notice.innerHTML = virtualFolder
+                ? '<strong>Pasta selecionada:</strong> agrupadora/virtual — selecione uma pasta real para enviar documentos.'
+                : `<strong>Pasta selecionada:</strong> ${escapeHtml(getCurrentFolderLabel())}`;
+        }
+
+        if (dropzone) {
+            dropzone.classList.toggle('opacity-50', virtualFolder);
+            dropzone.setAttribute('aria-disabled', virtualFolder ? 'true' : 'false');
+            dropzone.title = virtualFolder ? 'Esta pasta organiza documentos por categoria. Para enviar documentos, escolha uma subpasta real.' : '';
+        }
+
+        if (fileInput) fileInput.disabled = virtualFolder;
+        updateFooterActions();
+    }
+
+    function validateUploadFolder() {
+        const folderId = getCurrentFolderId();
+
+        if (isVirtualFolderId(folderId)) {
+            showAppToast(
+                'Selecione uma pasta real antes de enviar documentos. Esta pasta é apenas agrupadora.',
+                'warning',
+                'Pasta inválida para upload'
+            );
+
+            showBulkUploadMessage(
+                'Esta pasta não permite upload direto. Selecione uma subpasta real.',
+                'warning'
+            );
+
+            updateUploadFolderUi();
+            return false;
+        }
+
+        return true;
+    }
+
+    const openBulkUploadModal = () => { updateUploadFolderUi(); bootstrap.Modal.getOrCreateInstance('#bulkUploadModal').show(); };
     const closeBulkUploadModal = () => bootstrap.Modal.getOrCreateInstance('#bulkUploadModal').hide();
 
     function createFileItem(file) {
@@ -317,6 +379,9 @@
 
     function validateBeforeUpload() {
         const folderId = getCurrentFolderId();
+        if (!validateUploadFolder()) {
+            return false;
+        }
         if (!folderId) {
             showBulkUploadMessage('Selecione uma pasta antes de enviar os documentos.', 'danger');
             showAppToast('Selecione uma pasta antes de enviar.', 'warning', 'Pasta obrigatória');
@@ -332,6 +397,7 @@
 
     async function checkDuplicatesBeforeUpload() {
         const folderId = getCurrentFolderId();
+        if (!validateUploadFolder()) return [];
         const candidates = state.files.filter(f => !['success', 'ignored', 'error'].includes(f.status));
         const names = candidates.map(f => f.uploadName);
         if (!names.length) return [];
@@ -396,6 +462,7 @@
             return;
         }
         if (!validateBeforeUpload()) return;
+        if (!validateUploadFolder()) return;
 
         try {
             clearBulkUploadMessage();
@@ -463,6 +530,7 @@
     }
 
     async function startUploadBatch() {
+        if (!validateUploadFolder()) throw new Error('Selecione uma pasta real antes de enviar documentos.');
         state.isStarting = true;
         const token = document.querySelector('input[name="__RequestVerificationToken"]')?.value;
         const payload = { folderId: getCurrentFolderId(), totalFiles: state.files.length, options: { runOcr: false, generatePreview: false, duplicateStrategy: state.duplicateStrategy || null } };
@@ -529,6 +597,7 @@
 
     function uploadSingleFile(fileItem, fileIndex, totalFiles) {
         return new Promise(resolve => {
+            if (!validateUploadFolder()) { resolve('error'); return; }
             const fd = new FormData();
             fd.append('file', fileItem.file);
             fd.append('folderId', getCurrentFolderId() || '');
@@ -664,6 +733,7 @@
         const btnRefresh = document.getElementById('btnBulkRefreshFolder');
         const btnNewBatch = document.getElementById('btnStartNewBulkBatch');
 
+        const virtualFolder = isVirtualFolderId(getCurrentFolderId());
         const waitingOrDuplicate = state.files.some(x => x.status === 'waiting' || x.status === 'duplicate' || (x.status === 'error' && x.canRetry !== false));
         const hasError = state.files.some(x => x.status === 'error');
         const hasSuccess = state.files.some(x => x.status === 'success' || x.status === 'ignored');
@@ -671,7 +741,8 @@
 
         if (btnSubmit) {
             btnSubmit.classList.toggle('d-none', !state.uploading && !waitingOrDuplicate);
-            btnSubmit.disabled = state.uploading || !waitingOrDuplicate;
+            btnSubmit.disabled = virtualFolder || state.uploading || !waitingOrDuplicate;
+            btnSubmit.title = virtualFolder ? 'Selecione uma pasta real antes de enviar documentos.' : '';
         }
         if (btnRetry) btnRetry.classList.toggle('d-none', !hasError || state.uploading);
         if (btnClearSuccess) btnClearSuccess.classList.toggle('d-none', !hasSuccess || state.uploading);
@@ -690,15 +761,16 @@
 
         const btn = document.getElementById('btnBulkUploadSubmit');
         if (btn && !state.uploading) {
-            btn.disabled = state.files.length === 0;
+            btn.disabled = isVirtualFolderId(getCurrentFolderId()) || state.files.length === 0;
         }
+        updateUploadFolderUi();
         updateFooterActions();
     }
 
     function setBulkUploadLoading(isLoading) {
         const btn = document.getElementById('btnBulkUploadSubmit');
         if (btn) {
-            btn.disabled = isLoading;
+            btn.disabled = isLoading || isVirtualFolderId(getCurrentFolderId());
             btn.innerHTML = isLoading ? '<span class="spinner-border spinner-border-sm me-1"></span>Enviando...' : 'Enviar documentos';
         }
         document.getElementById('btnBulkClear')?.toggleAttribute('disabled', isLoading);
