@@ -4,6 +4,7 @@ using Dapper;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Ged;
 using InovaGed.Domain.Primitives;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 
 namespace InovaGed.Infrastructure.Ged;
@@ -14,11 +15,13 @@ public sealed class FolderCommands : IFolderCommands
         new(@"^[a-z_][a-z0-9_]*$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private readonly IDbConnectionFactory _db;
+    private readonly IMemoryCache _cache;
     private readonly ILogger<FolderCommands> _logger;
 
-    public FolderCommands(IDbConnectionFactory db, ILogger<FolderCommands> logger)
+    public FolderCommands(IDbConnectionFactory db, IMemoryCache cache, ILogger<FolderCommands> logger)
     {
         _db = db;
+        _cache = cache;
         _logger = logger;
     }
 
@@ -56,6 +59,8 @@ VALUES
                 createdBy
             }, cancellationToken: ct));
 
+            InvalidateFolderTreeCache(tenantId);
+
             return Result<Guid>.Ok(id);
         }
         catch (Exception ex)
@@ -91,9 +96,13 @@ WHERE tenant_id = @tenantId AND id = @folderId;";
                 newName = newName.Trim()
             }, cancellationToken: ct));
 
-            return rows > 0
-                ? Result.Ok()
-                : Result.Fail("NOT_FOUND", "Pasta não encontrada.");
+            if (rows > 0)
+            {
+                InvalidateFolderTreeCache(tenantId);
+                return Result.Ok();
+            }
+
+            return Result.Fail("NOT_FOUND", "Pasta não encontrada.");
         }
         catch (Exception ex)
         {
@@ -144,6 +153,7 @@ WHERE tenant_id=@tenantId AND id=@folderId;",
                 sql, new { tenantId, folderId }, tx, cancellationToken: ct));
 
             tx.Commit();
+            InvalidateFolderTreeCache(tenantId);
         }
         catch
         {
@@ -188,6 +198,7 @@ SELECT id FROM t;";
             if (folderIds.Count == 0)
             {
                 tx.Commit();
+                InvalidateFolderTreeCache(tenantId);
                 return Result.Ok();
             }
 
@@ -262,6 +273,7 @@ WHERE tenant_id = @tenantId
             _logger.LogInformation("Pastas inativadas: {Count}", folders);
 
             tx.Commit();
+            InvalidateFolderTreeCache(tenantId);
             _logger.LogInformation(">>> DeleteRecursiveAsync SUCCESS");
             return Result.Ok();
         }
@@ -425,4 +437,11 @@ LIMIT 1;", new { t = tableName, c = col }, tx, cancellationToken: ct));
         // char/varchar/text/status: marcamos como D
         return $"{Q(col)} = 'D'";
     }
+
+    private void InvalidateFolderTreeCache(Guid tenantId)
+    {
+        _cache.Remove(FolderQueries.TreeCacheKey(tenantId));
+        _logger.LogDebug("Cache da árvore de pastas invalidado. Tenant={TenantId}", tenantId);
+    }
+
 }
