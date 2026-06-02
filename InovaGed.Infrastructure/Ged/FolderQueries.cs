@@ -43,7 +43,9 @@ WITH RECURSIVE t AS (
         f.id,
         f.parent_id AS ""ParentId"",
         f.name      AS ""Name"",
-        0           AS ""Level""
+        0           AS ""Level"",
+        f.id        AS ""UploadFolderId"",
+        TRUE        AS ""CanReceiveDocuments""
     FROM ged.folder f
     WHERE f.tenant_id = @tenantId
       AND f.parent_id IS NULL
@@ -56,7 +58,9 @@ WITH RECURSIVE t AS (
         c.id,
         c.parent_id AS ""ParentId"",
         c.name      AS ""Name"",
-        t.""Level"" + 1 AS ""Level""
+        t.""Level"" + 1 AS ""Level"",
+        c.id        AS ""UploadFolderId"",
+        TRUE        AS ""CanReceiveDocuments""
     FROM ged.folder c
     JOIN t ON t.id = c.parent_id
     WHERE c.tenant_id = @tenantId

@@ -76,7 +76,7 @@
     }
 
     function handleActionClick(e) {
-        const openBtn = e.target.closest('#btnOpenBulkUpload');
+        const openBtn = e.target.closest('#btnOpenBulkUpload, #btnOpenBulkUploadEmpty');
         if (openBtn) { e.preventDefault(); openBulkUploadModal(); return; }
 
         const dropzone = e.target.closest('#bulkDropzone');
@@ -138,7 +138,7 @@
         const active = getActiveFolderElement();
         const queryFolderId = new URL(window.location.href).searchParams.get('folderId');
         const candidates = [
-            { source: 'active-tree-node', value: active?.getAttribute('data-folder-id') },
+            { source: 'active-tree-node', value: active?.getAttribute('data-upload-folder-id') || active?.getAttribute('data-folder-id') },
             { source: 'query-string', value: queryFolderId },
             { source: 'hidden-currentFolderId', value: document.getElementById('currentFolderId')?.value },
             { source: 'hidden-bulkUploadFolderId', value: document.getElementById('bulkUploadFolderId')?.value },
@@ -160,7 +160,7 @@
     }
 
     function syncSelectedFolder(folderEl) {
-        const folderId = normalizeFolderId(folderEl?.getAttribute('data-folder-id'));
+        const folderId = normalizeFolderId(folderEl?.getAttribute('data-upload-folder-id') || folderEl?.getAttribute('data-folder-id'));
         if (!folderId) return;
         const folderName = folderEl.getAttribute('data-folder-path') || folderEl.getAttribute('data-folder-name') || folderEl.textContent?.trim() || 'pasta selecionada';
         const current = document.getElementById('currentFolderId');
@@ -223,6 +223,34 @@
     }
 
     const openBulkUploadModal = () => { updateUploadFolderUi(); bootstrap.Modal.getOrCreateInstance('#bulkUploadModal').show(); };
+
+    function setUploadDestination(folderId, folderName) {
+        const normalized = normalizeFolderId(folderId);
+        if (!normalized) return false;
+        const modal = document.getElementById('bulkUploadModal');
+        const current = document.getElementById('currentFolderId');
+        const bulk = document.getElementById('bulkFolderId') || document.getElementById('bulkUploadFolderId');
+        const legacyBulk = document.getElementById('bulkUploadFolderId');
+        if (current) current.value = normalized;
+        if (bulk) bulk.value = normalized;
+        if (legacyBulk) legacyBulk.value = normalized;
+        if (modal) {
+            modal.dataset.folderId = normalized;
+            modal.dataset.folderName = folderName || 'pasta selecionada';
+        }
+        updateUploadFolderUi();
+        return true;
+    }
+
+    function startUploadToFolder(folderId, files, folderName) {
+        if (!setUploadDestination(folderId, folderName)) {
+            showAppToast('Pasta de destino inválida.', 'warning', 'Destino inválido');
+            return;
+        }
+        addFiles(files);
+        openBulkUploadModal();
+    }
+
     const closeBulkUploadModal = () => bootstrap.Modal.getOrCreateInstance('#bulkUploadModal').hide();
     function allowLegacyUploadFallback() { return document.getElementById('bulkUploadModal')?.dataset?.allowLegacyUploadFallback === 'true'; }
     function isSchemaMissingError(payload) { return payload?.errorStep === 'Schema' || payload?.code === 'UPLOAD_BATCH_SCHEMA_MISSING'; }
@@ -899,5 +927,6 @@
     const statusLabel = s => ({ waiting: 'Aguardando', validating: 'Validando', duplicate: 'Duplicado', uploading: 'Enviando', success: 'Enviado', ignored: 'Ignorado', error: 'Erro' }[s] || s);
     const statusColor = s => ({ success: 'success', error: 'danger', uploading: 'primary', duplicate: 'warning', ignored: 'secondary', waiting: 'light', validating: 'info' }[s] || 'light');
 
+    window.GedBulkUpload = { startUploadToFolder, setUploadDestination, openBulkUploadModal };
     document.addEventListener('DOMContentLoaded', initBulkUpload);
 })();

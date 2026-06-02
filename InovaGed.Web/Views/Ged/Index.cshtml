@@ -64,7 +64,7 @@
                 </a>
             </div>
 
-            <div class="card-body p-2" style="max-height:70vh; overflow:auto;">
+            <div class="card-body p-2 ged-folder-scroll" style="max-height:70vh; overflow:auto;">
                 @{
                     var byParent = Model.Folders
                     .Where(x => x.ParentId != null)
@@ -113,6 +113,8 @@
                                     data-parent="@(n.ParentId?.ToString() ?? "")"
                                     data-has-children="@(hasChildren ? "1" : "0")"
                                     data-folder-id="@n.Id"
+                                    data-upload-folder-id="@n.UploadFolderId"
+                                    data-can-receive-documents="@(n.CanReceiveDocuments ? "true" : "false")"
                                     data-folder-parent-id="@(n.ParentId?.ToString() ?? "")"
                                     data-folder-name="@n.Name"
                                     data-folder-path="@BuildFolderPath(n.Id)"
@@ -132,11 +134,7 @@
 
                                         <i class="bi bi-folder2 ged-tree-folder"></i>
 
-                                        <a class="ged-tree-link flex-grow-1" href="@href">@n.Name</a>
-                                        @if (isVirtual)
-                                        {
-                                            <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle">Agrupador</span>
-                                        }
+                                        <a class="js-folder-node ged-tree-link flex-grow-1" href="@href">@n.Name</a>
 
                                         <!-- ✅ AÇÕES DA PASTA -->
                                         <div class="dropdown">
@@ -195,13 +193,15 @@
 
                     <ul class="list-unstyled mb-0">
                         <li class="mb-1">
-                            <a class="d-flex align-items-center gap-2 text-decoration-none @(Model.CurrentFolderId == null ? "fw-bold" : "")"
+                            <a class="js-folder-node ged-tree-root d-flex align-items-center gap-2 text-decoration-none @(Model.CurrentFolderId == virtualRootId ? "active" : "")"
                                href="@raizHref"
                                data-folder-id="f0000000-0000-0000-0000-000000000001"
+                               data-upload-folder-id="f0000000-0000-0000-0000-000000000001"
+                               data-can-receive-documents="false"
                                data-folder-name="Raiz"
                                data-folder-path="Raiz"
                                data-folder-virtual="true">
-                                <i class="bi bi-house"></i> Raiz <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle ms-1">Agrupador</span>
+                                <i class="bi bi-house"></i> Raiz
                             </a>
                         </li>
                     </ul>
@@ -220,6 +220,8 @@
                                     data-parent=""
                                     data-has-children="@(hasChildren ? "1" : "0")"
                                     data-folder-id="@n.Id"
+                                    data-upload-folder-id="@n.UploadFolderId"
+                                    data-can-receive-documents="@(n.CanReceiveDocuments ? "true" : "false")"
                                     data-folder-parent-id=""
                                     data-folder-name="@n.Name"
                                     data-folder-path="@BuildFolderPath(n.Id)"
@@ -238,11 +240,7 @@
                                         }
 
                                         <i class="bi bi-folder2 ged-tree-folder"></i>
-                                        <a class="ged-tree-link flex-grow-1" href="@href">@n.Name</a>
-                                        @if (isVirtual)
-                                        {
-                                            <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle">Agrupador</span>
-                                        }
+                                        <a class="js-folder-node ged-tree-link flex-grow-1" href="@href">@n.Name</a>
 
                                         <!-- ✅ AÇÕES DA PASTA -->
                                         <div class="dropdown">
@@ -370,85 +368,7 @@
                 </div>
             </div>
 
-            <div class="card-body p-0">
-                @if (!Model.Documents.Any())
-                {
-                    <div class="p-3 text-muted">
-                        Nenhum documento nesta pasta.
-                    </div>
-                }
-                else
-                {
-                    <div class="table-responsive">
-                        <table class="table table-hover mb-0 align-middle" data-ged-document-list>
-                            <thead class="table-light">
-                                <tr>
-                                    <th style="width:40px;"><input type="checkbox" id="selectAllDocuments" /></th>
-                                    <th>Título</th>
-                                    <th style="width:220px;">Tipo</th>
-                                    <th style="width:260px;">Arquivo</th>
-                                    <th style="width:240px;">Ações</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach (var d in Model.Documents)
-                                {
-                                    var isUnclassified = string.IsNullOrWhiteSpace(d.TypeName) || d.TypeName == "-";
-
-                                    <tr draggable="true" data-document-id="@d.Id">
-                                        <td><input type="checkbox" class="js-doc-select" value="@d.Id" data-document-title="@d.Title" /></td>
-                                        <td class="fw-semibold">@d.Title</td>
-                                        <td>
-                                            @if (isUnclassified)
-                                            {
-                                                <span class="badge bg-secondary">Sem classificação</span>
-                                            }
-                                            else
-                                            {
-                                                <span class="badge bg-light text-dark">
-                                                    <i class="bi bi-tags me-1"></i>@d.TypeName
-                                                </span>
-                                            }
-                                        </td>
-                                        <td class="text-muted small">@d.FileName</td>
-                                        <td class="d-flex gap-2 flex-wrap">
-                                            <a class="btn btn-sm btn-outline-primary"
-                                               asp-action="Details"
-                                               asp-controller="Ged"
-                                               asp-route-id="@d.Id">
-                                                <i class="bi bi-eye"></i> Abrir
-                                            </a>
-                                            <button type="button" class="btn btn-sm btn-outline-secondary js-move-one" data-document-id="@d.Id" data-document-title="@d.Title">
-                                                <i class="bi bi-folder-symlink"></i> Mover
-                                            </button>
-
-                                            @if (isUnclassified)
-                                            {
-                                                <a class="btn btn-sm btn-outline-success"
-                                                   asp-action="Details"
-                                                   asp-controller="Ged"
-                                                   asp-route-id="@d.Id"
-                                                   asp-route-openClassify="true">
-                                                    <i class="bi bi-pencil-square"></i> Classificar
-                                                </a>
-                                            }
-
-                                            <form method="post" asp-controller="Ged" asp-action="DeleteDocument" class="d-inline js-feedback-form">
-                                                @Html.AntiForgeryToken()
-                                                <input type="hidden" name="id" value="@d.Id" />
-                                                <input type="hidden" name="folderId" value="@Model.CurrentFolderId" />
-                                                <button type="button" class="btn btn-sm btn-outline-danger js-delete-document" data-document-id="@d.Id" data-folder-id="@Model.CurrentFolderId" data-document-title="@d.Title">
-                                                    <i class="bi bi-trash"></i> Excluir
-                                                </button>
-                                            </form>
-                                        </td>
-                                    </tr>
-                                }
-                            </tbody>
-                        </table>
-                    </div>
-                }
-            </div>
+            @await Html.PartialAsync("_DocumentsList", Model)
         </div>
     </div>
 </div>
@@ -726,18 +646,51 @@
         display: flex;
         align-items: center;
         gap: .4rem;
-        padding: .25rem .35rem;
-        border-radius: .35rem;
+        padding: .42rem .5rem;
+        border-radius: .65rem;
         user-select: none;
+        transition: background .16s ease, color .16s ease, box-shadow .16s ease;
     }
 
-        .ged-tree-row:hover {
-            background: rgba(0,0,0,.04);
+        .ged-tree-row:hover,
+        .ged-tree-root:hover {
+            background: rgba(13,110,253,.06);
         }
 
-        .ged-tree-row.active {
-            background: rgba(13,110,253,.12);
+        .ged-tree-row.active,
+        .ged-tree-root.active {
+            background: linear-gradient(135deg, rgba(13,110,253,.14), rgba(13,202,240,.10));
+            color: #0d6efd;
+            box-shadow: inset 3px 0 0 #0d6efd;
         }
+
+    .ged-tree-root {
+        padding: .5rem .6rem;
+        border-radius: .75rem;
+        color: inherit;
+        transition: background .16s ease, color .16s ease;
+    }
+
+    .ged-drop-target > .ged-tree-row,
+    .ged-drop-target.ged-tree-root,
+    .js-folder-node.ged-drop-target {
+        outline: 2px dashed #0d6efd;
+        outline-offset: 2px;
+        background: rgba(13,110,253,.08);
+    }
+
+    .ged-folder-scroll {
+        scrollbar-width: thin;
+        scrollbar-color: rgba(13,110,253,.35) transparent;
+    }
+
+    .ged-documents-table tbody tr {
+        cursor: grab;
+    }
+
+    .ged-empty-state {
+        background: linear-gradient(180deg, #fff, #f8fbff);
+    }
 
     .ged-tree-link {
         text-decoration: none;
@@ -781,7 +734,7 @@
 
 <script>
     (function () {
-        const KEY = "ged_tree_open_ids";
+        const KEY = "ged.folderTree.expanded";
 
         function loadOpenSet() {
             try { return new Set(JSON.parse(localStorage.getItem(KEY) || "[]")); }
@@ -916,6 +869,7 @@
 <script src="~/js/ged-document-move.js" asp-append-version="true"></script>
 <script src="~/js/ged-queue-visualizer.js" asp-append-version="true"></script>
 <script src="~/js/ged-bulk-upload.js" asp-append-version="true"></script>
+<script src="~/js/ged-folder-navigation.js" asp-append-version="true"></script>
 
 <script>
 (function(){
@@ -924,12 +878,14 @@
   if(!modalEl) return;
   const modal=bootstrap.Modal.getOrCreateInstance(modalEl);
   const inline=document.getElementById('deleteDocumentInline');
-  document.querySelectorAll('.js-delete-document').forEach(btn=>btn.addEventListener('click',()=>{
+  document.addEventListener('click',(e)=>{
+    const btn=e.target.closest('.js-delete-document');
+    if(!btn) return;
     state.documentId=btn.dataset.documentId; state.folderId=btn.dataset.folderId; state.title=btn.dataset.documentTitle||'';
     document.getElementById('deleteDocumentMessage').textContent=`Deseja realmente excluir este documento${state.title?` (${state.title})`:''}? Se houver OCR em andamento, ele será cancelado.`;
     inline.className='d-none alert'; inline.textContent='';
     modal.show();
-  }));
+  });
 
   document.getElementById('btnConfirmDeleteDocument')?.addEventListener('click', async ()=>{
     const btn=document.getElementById('btnConfirmDeleteDocument');
@@ -939,7 +895,7 @@
       const token=document.querySelector('input[name="__RequestVerificationToken"]')?.value;
       const res=await fetch('/Ged/DeleteDocument',{method:'POST',body:fd,headers: token?{'RequestVerificationToken':token}:{}});
       const payload=await res.json().catch(()=>({success:false,message:'Não foi possível excluir o documento.'}));
-      if(res.ok&&payload.success){ window.showAppToast?.(payload.message||'Documento excluído com sucesso.','success','Exclusão'); modal.hide(); window.location.reload(); return; }
+      if(res.ok&&payload.success){ window.showAppToast?.(payload.message||'Documento excluído com sucesso.','success','Exclusão'); modal.hide(); window.GedFolderNavigation?.refreshCurrentFolder?.(); return; }
       inline.className='alert alert-danger'; inline.textContent=payload.message||'Não foi possível excluir o documento.'; window.showAppToast?.(inline.textContent,'error','Erro');
     }catch{ inline.className='alert alert-danger'; inline.textContent='Não foi possível excluir o documento.'; window.showAppToast?.(inline.textContent,'error','Erro'); }
     finally{ btn.disabled=false; btn.innerHTML=old; }

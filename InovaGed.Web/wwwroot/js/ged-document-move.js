@@ -173,12 +173,30 @@
                     window.showAppToast?.(message || 'Documento movido com sucesso.', 'success', 'Movimentação concluída');
                 }
                 moveModal.hide();
-                window.setTimeout(() => window.location.reload(), 800);
+                window.setTimeout(() => {
+                    if (window.GedFolderNavigation?.refreshCurrentFolder) window.GedFolderNavigation.refreshCurrentFolder();
+                    else window.location.reload();
+                }, 500);
             } catch {
                 showMoveModalMessage('Falha de comunicação com o servidor. Tente novamente.', 'danger');
                 window.showAppToast?.('Falha de comunicação com o servidor.', 'error', 'Erro de comunicação');
             } finally { setMoveLoading(false); updateConfirmButton(); updateBulkUi(); }
         }
+
+        async function moveDocumentsToFolder(targetFolderId, targetFolderName) {
+            selectedIds = getSelected();
+            if (!selectedIds.length) {
+                window.showAppToast?.('Selecione ao menos um documento para mover.', 'warning', 'Movimentação');
+                return;
+            }
+            destinationFolderId.value = targetFolderId || '';
+            destinationFolderName.value = targetFolderName || targetFolderId || '';
+            mode = selectedIds.length === 1 ? 'single' : 'bulk';
+            await confirmMove();
+        }
+
+        window.moveSelectedDocumentsToFolder = moveDocumentsToFolder;
+
 
         document.addEventListener('input', function (e) {
             if (e.target?.id !== 'folderSearchInput') return;
