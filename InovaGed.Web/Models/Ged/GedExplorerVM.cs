@@ -20,9 +20,11 @@ public sealed class GedExplorerVM
     {
         public Guid Id { get; set; }
         public Guid? ParentId { get; set; }
-        public string Name { get; set; } = "";
+        public string? Name { get; set; } = "";
+        public string? Path { get; set; }
         public int Level { get; set; } // pra indent no MVP
         public Guid UploadFolderId { get; set; }
+        public bool IsVirtual { get; set; }
         public bool CanReceiveDocuments { get; set; } = true;
     }
 

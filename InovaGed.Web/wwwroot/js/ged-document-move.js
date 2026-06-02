@@ -75,9 +75,10 @@
                 const id = node.getAttribute('data-folder-id');
                 const name = node.getAttribute('data-folder-name') || '';
                 const fullPath = node.getAttribute('data-folder-path') || name;
+                const uploadFolderId = node.getAttribute('data-upload-folder-id') || id;
                 if (!id || seen.has(id)) return;
                 if (!normalizedTerm || normalizeText(`${name} ${fullPath}`).includes(normalizedTerm)) {
-                    seen.add(id); items.push({ id, name, fullPath });
+                    seen.add(id); items.push({ id, uploadFolderId, name, fullPath });
                 }
             });
             return items.slice(0, 30);
@@ -109,20 +110,21 @@
                 const id = folder.id || folder.Id;
                 const name = folder.name || folder.Name || 'Pasta sem nome';
                 const fullPath = folder.fullPath || folder.FullPath || name;
+                const uploadFolderId = folder.uploadFolderId || folder.UploadFolderId || id;
                 const btn = document.createElement('button');
                 btn.type = 'button'; btn.className = 'list-group-item list-group-item-action js-folder-result';
-                btn.dataset.folderId = id; btn.dataset.folderName = name; btn.dataset.folderFullPath = fullPath;
+                btn.dataset.folderId = id; btn.dataset.uploadFolderId = uploadFolderId; btn.dataset.folderName = name; btn.dataset.folderFullPath = fullPath;
                 btn.innerHTML = `<div class="fw-semibold">${escapeHtml(name)}</div><div class="small text-muted">${escapeHtml(fullPath)}</div>`;
                 host.appendChild(btn);
             });
         }
 
         function resetModalState() {
-            destinationFolderId.value = ''; destinationFolderName.value = ''; folderSearchInput.value = ''; reasonInput.value = '';
+            destinationFolderId.value = ''; destinationFolderId.dataset.requestedFolderId = ''; destinationFolderName.value = ''; folderSearchInput.value = ''; reasonInput.value = '';
             clearMoveModalMessage(); clearFolderResults(); updateConfirmButton();
         }
         function selectFolder(button) {
-            destinationFolderId.value = button.dataset.folderId || '';
+            destinationFolderId.value = button.dataset.uploadFolderId || button.dataset.folderId || ''; destinationFolderId.dataset.requestedFolderId = button.dataset.folderId || destinationFolderId.value;
             destinationFolderName.value = button.dataset.folderFullPath || button.dataset.folderName || '';
             host?.querySelectorAll('.js-folder-result.active').forEach(el => el.classList.remove('active'));
             button.classList.add('active'); clearMoveModalMessage(); updateConfirmButton();
@@ -143,8 +145,8 @@
             if (!confirmed) return;
             const endpoint = mode === 'single' ? '/Ged/Documents/Move' : '/Ged/Documents/MoveBulk';
             const payload = mode === 'single'
-                ? { documentId: selectedIds[0], destinationFolderId: destinationFolderId.value, reason: reasonInput.value?.trim() || null, source: 'SINGLE' }
-                : { documentIds: selectedIds, destinationFolderId: destinationFolderId.value, reason: reasonInput.value?.trim() || null, source: 'BULK' };
+                ? { documentId: selectedIds[0], destinationFolderId: destinationFolderId.value, requestedFolderId: destinationFolderId.dataset.requestedFolderId || destinationFolderId.value, reason: reasonInput.value?.trim() || null, source: 'SINGLE' }
+                : { documentIds: selectedIds, destinationFolderId: destinationFolderId.value, requestedFolderId: destinationFolderId.dataset.requestedFolderId || destinationFolderId.value, reason: reasonInput.value?.trim() || null, source: 'BULK' };
             setMoveLoading(true);
             try {
                 const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { RequestVerificationToken: token } : {}) }, body: JSON.stringify(payload) });
@@ -183,13 +185,14 @@
             } finally { setMoveLoading(false); updateConfirmButton(); updateBulkUi(); }
         }
 
-        async function moveDocumentsToFolder(targetFolderId, targetFolderName) {
+        async function moveDocumentsToFolder(targetFolderId, targetFolderName, requestedFolderId) {
             selectedIds = getSelected();
             if (!selectedIds.length) {
                 window.showAppToast?.('Selecione ao menos um documento para mover.', 'warning', 'Movimentação');
                 return;
             }
             destinationFolderId.value = targetFolderId || '';
+            destinationFolderId.dataset.requestedFolderId = requestedFolderId || targetFolderId || '';
             destinationFolderName.value = targetFolderName || targetFolderId || '';
             mode = selectedIds.length === 1 ? 'single' : 'bulk';
             await confirmMove();

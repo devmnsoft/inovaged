@@ -33,6 +33,8 @@ public sealed class UploadBatchController : Controller
     public sealed class StartRequest
     {
         public Guid? FolderId { get; set; }
+        public Guid? UploadFolderId { get; set; }
+        public Guid? RequestedFolderId { get; set; }
         public int TotalFiles { get; set; }
         public UploadBatchOptionsDto? Options { get; set; }
     }
@@ -52,7 +54,7 @@ public sealed class UploadBatchController : Controller
             if (!_currentUser.IsAuthenticated) return Unauthorized(Error("Sua sessão expirou. Faça login novamente.", "Autenticação", false, correlationId));
             if (request is null) return BadRequest(Error("Requisição inválida para iniciar o lote.", "Validação", false, correlationId));
             var isAdmin = await _accessPolicy.IsAdminAsync(_currentUser.TenantId, _currentUser.UserId, User, ct);
-            var folderResolution = await ResolveUploadFolderAsync(request.FolderId, isAdmin, correlationId, ct);
+            var folderResolution = await ResolveUploadFolderAsync(request.UploadFolderId ?? request.FolderId, request.RequestedFolderId, isAdmin, correlationId, ct);
             if (!folderResolution.Success) return BadRequest(FolderResolutionError(folderResolution, correlationId));
             if (!isAdmin)
             {
@@ -95,14 +97,14 @@ public sealed class UploadBatchController : Controller
     [HttpPost("File")]
     [ValidateAntiForgeryToken]
     [RequestSizeLimit(1073741824)]
-    public async Task<IActionResult> File(IFormFile file, Guid batchId, int fileIndex, int totalFiles, Guid? folderId, string? duplicateStrategy, bool runOcr, bool generatePreview, Guid? documentTypeId, Guid? classificationId, string? notes, string? visibility, Guid? existingDocumentId, string? uploadName, CancellationToken ct)
+    public async Task<IActionResult> File(IFormFile file, Guid batchId, int fileIndex, int totalFiles, Guid? folderId, Guid? uploadFolderId, Guid? requestedFolderId, string? duplicateStrategy, bool runOcr, bool generatePreview, Guid? documentTypeId, Guid? classificationId, string? notes, string? visibility, Guid? existingDocumentId, string? uploadName, CancellationToken ct)
     {
         var correlationId = HttpContext.TraceIdentifier;
         try
         {
             if (!_currentUser.IsAuthenticated) return Unauthorized(Error("Sua sessão expirou. Faça login novamente.", "Autenticação", false, correlationId));
             var isAdmin = await _accessPolicy.IsAdminAsync(_currentUser.TenantId, _currentUser.UserId, User, ct);
-            var folderResolution = await ResolveUploadFolderAsync(folderId, isAdmin, correlationId, ct);
+            var folderResolution = await ResolveUploadFolderAsync(uploadFolderId ?? folderId, requestedFolderId, isAdmin, correlationId, ct);
             if (!folderResolution.Success) return BadRequest(FolderResolutionError(folderResolution, correlationId));
             if (!isAdmin)
             {
@@ -182,11 +184,13 @@ public sealed class UploadBatchController : Controller
         return result.Success ? Ok(new { success = true, data = result.Value, message = "Falhas liberadas para reenvio." }) : BadRequest(Error(result.Error?.Message ?? "Falha ao preparar retentativa.", result.Error?.Code ?? "Batch", true, HttpContext.TraceIdentifier));
     }
 
-    private async Task<UploadFolderResolutionResult> ResolveUploadFolderAsync(Guid? folderId, bool isAdmin, string correlationId, CancellationToken ct)
+    private async Task<UploadFolderResolutionResult> ResolveUploadFolderAsync(Guid? folderId, Guid? requestedFolderId, bool isAdmin, string correlationId, CancellationToken ct)
     {
-        var requestedFolderId = folderId ?? Guid.Empty;
-        var resolution = await _uploadFolderResolver.ResolveAsync(_currentUser.TenantId, _currentUser.UserId, requestedFolderId, isAdmin, ct);
-        _logger.LogInformation("Upload/drop destino resolvido. Tenant={TenantId} User={UserId} RequestedFolderId={RequestedFolderId} UploadFolderId={UploadFolderId} FolderName={FolderName} CanReceiveDocuments={CanReceiveDocuments} WasDragDrop={WasDragDrop} Source={Source} Success={Success} WasVirtual={WasVirtual} CreatedRealFolder={CreatedRealFolder} CorrelationId={CorrelationId}", _currentUser.TenantId, _currentUser.UserId, resolution.RequestedFolderId, resolution.ResolvedFolderId, resolution.FolderName, resolution.Success, true, "local-file", resolution.Success, resolution.WasVirtual, resolution.CreatedRealFolder, correlationId);
+        var receivedFolderId = folderId ?? Guid.Empty;
+        var requestedId = requestedFolderId ?? receivedFolderId;
+        var resolution = await _uploadFolderResolver.ResolveAsync(_currentUser.TenantId, _currentUser.UserId, receivedFolderId, isAdmin, ct);
+        resolution.RequestedFolderId = requestedId;
+        _logger.LogInformation("Upload/drop destino resolvido. Tenant={TenantId} User={UserId} RequestedFolderId={RequestedFolderId} ReceivedFolderId={ReceivedFolderId} ResolvedFolderId={ResolvedFolderId} WasVirtual={WasVirtual} CreatedRealFolder={CreatedRealFolder} Success={Success} CanReceiveDocuments={CanReceiveDocuments} FolderName={FolderName} CorrelationId={CorrelationId}", _currentUser.TenantId, _currentUser.UserId, resolution.RequestedFolderId, receivedFolderId, resolution.ResolvedFolderId, resolution.WasVirtual, resolution.CreatedRealFolder, resolution.Success, resolution.CanReceiveDocuments, resolution.FolderName, correlationId);
         return resolution;
     }
 

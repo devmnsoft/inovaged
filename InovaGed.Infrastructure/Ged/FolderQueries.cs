@@ -43,10 +43,16 @@ WITH RECURSIVE t AS (
         f.id,
         f.parent_id AS ""ParentId"",
         f.name      AS ""Name"",
+        f.name      AS ""Path"",
         0           AS ""Level"",
-        f.id        AS ""UploadFolderId"",
+        (f.id::text LIKE 'f0000000-0000-0000-0000-%') AS ""IsVirtual"",
+        COALESCE(NULLIF(m.real_folder_id, '00000000-0000-0000-0000-000000000000'::uuid), f.id) AS ""UploadFolderId"",
         TRUE        AS ""CanReceiveDocuments""
     FROM ged.folder f
+    LEFT JOIN ged.folder_virtual_map m
+           ON m.tenant_id = f.tenant_id
+          AND m.virtual_folder_id = f.id
+          AND m.reg_status = 'A'
     WHERE f.tenant_id = @tenantId
       AND f.parent_id IS NULL
       AND f.is_active = TRUE
@@ -58,11 +64,17 @@ WITH RECURSIVE t AS (
         c.id,
         c.parent_id AS ""ParentId"",
         c.name      AS ""Name"",
+        CONCAT(t.""Path"", ' > ', c.name) AS ""Path"",
         t.""Level"" + 1 AS ""Level"",
-        c.id        AS ""UploadFolderId"",
+        (c.id::text LIKE 'f0000000-0000-0000-0000-%') AS ""IsVirtual"",
+        COALESCE(NULLIF(m.real_folder_id, '00000000-0000-0000-0000-000000000000'::uuid), c.id) AS ""UploadFolderId"",
         TRUE        AS ""CanReceiveDocuments""
     FROM ged.folder c
     JOIN t ON t.id = c.parent_id
+    LEFT JOIN ged.folder_virtual_map m
+           ON m.tenant_id = c.tenant_id
+          AND m.virtual_folder_id = c.id
+          AND m.reg_status = 'A'
     WHERE c.tenant_id = @tenantId
       AND c.is_active = TRUE
       AND c.reg_status = 'A'
@@ -71,6 +83,7 @@ SELECT * FROM t
 ORDER BY ""Level"", ""Name"";";
 
             using var conn = await _db.OpenAsync(ct);
+            await EnsureVirtualMapTableAsync(conn, ct);
 
             var rows = (await conn.QueryAsync<FolderNodeDto>(
                 new CommandDefinition(sql, new { tenantId }, cancellationToken: ct))).AsList();
@@ -110,4 +123,26 @@ select exists(
         using var conn = await _db.OpenAsync(ct);
         return await conn.ExecuteScalarAsync<bool>(new CommandDefinition(sql, new { tenantId, folderId }, cancellationToken: ct));
     }
+    private static async Task EnsureVirtualMapTableAsync(System.Data.IDbConnection conn, CancellationToken ct)
+    {
+        await conn.ExecuteAsync(new CommandDefinition("""
+CREATE TABLE IF NOT EXISTS ged.folder_virtual_map
+(
+    id uuid PRIMARY KEY,
+    tenant_id uuid NOT NULL,
+    virtual_folder_id uuid NOT NULL,
+    real_folder_id uuid NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    created_by uuid NULL,
+    reg_status char(1) NOT NULL DEFAULT 'A'
+);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_folder_virtual_map_active
+ON ged.folder_virtual_map(tenant_id, virtual_folder_id)
+WHERE reg_status='A';
+CREATE INDEX IF NOT EXISTS ix_folder_virtual_map_real
+ON ged.folder_virtual_map(tenant_id, real_folder_id)
+WHERE reg_status='A';
+""", cancellationToken: ct));
+    }
+
 }

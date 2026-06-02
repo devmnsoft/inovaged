@@ -17,6 +17,7 @@ public sealed class UploadFolderResolutionResult
     public Guid ResolvedFolderId { get; set; }
     public bool WasVirtual { get; set; }
     public bool CreatedRealFolder { get; set; }
+    public bool CanReceiveDocuments { get; set; }
     public string? FolderName { get; set; }
     public string? FolderPath { get; set; }
     public string? Message { get; set; }

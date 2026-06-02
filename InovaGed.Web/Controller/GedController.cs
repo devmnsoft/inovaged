@@ -139,17 +139,18 @@ public sealed class GedController : Controller
     [HttpPost("/Ged/Documents/BulkUploadSingle")]
     [ValidateAntiForgeryToken]
     [RequestSizeLimit(52428800)]
-    public async Task<IActionResult> BulkUploadSingle(IFormFile file, Guid? folderId, Guid? documentTypeId, Guid? classificationId, string? notes, string? visibility, bool runOcr, bool generatePreview, Guid? batchId, string? duplicateStrategy, Guid? existingDocumentId, string? uploadName, int? fileIndex, int? totalFiles, CancellationToken ct)
+    public async Task<IActionResult> BulkUploadSingle(IFormFile file, Guid? folderId, Guid? uploadFolderId, Guid? requestedFolderId, Guid? documentTypeId, Guid? classificationId, string? notes, string? visibility, bool runOcr, bool generatePreview, Guid? batchId, string? duplicateStrategy, Guid? existingDocumentId, string? uploadName, int? fileIndex, int? totalFiles, CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
         var correlationId = HttpContext.TraceIdentifier;
         try
         {
             _logger.LogInformation("Bulk upload iniciado. Tenant={TenantId} User={UserId} Folder={FolderId} Batch={BatchId} FileIndex={FileIndex} TotalFiles={TotalFiles} File={FileName} Size={FileSize} RunOcr={RunOcr} GeneratePreview={GeneratePreview} ConnectionId={ConnectionId} CorrelationId={CorrelationId}",
-                _currentUser.TenantId, _currentUser.UserId, folderId, batchId, fileIndex, totalFiles, file?.FileName, file?.Length, runOcr, generatePreview, HttpContext.Connection.Id, correlationId);
+                _currentUser.TenantId, _currentUser.UserId, uploadFolderId ?? folderId, batchId, fileIndex, totalFiles, file?.FileName, file?.Length, runOcr, generatePreview, HttpContext.Connection.Id, correlationId);
             if (!_currentUser.IsAuthenticated) return Unauthorized(JsonError("Sua sessão expirou. Faça login novamente.", "Autenticação", "Usuário sem sessão autenticada.", false, correlationId));
             var isAdmin = await _accessPolicy.IsAdminAsync(_currentUser.TenantId, _currentUser.UserId, User, ct);
-            var folderResolution = await ResolveUploadFolderAsync(folderId, isAdmin, correlationId, ct);
+            var receivedFolderId = uploadFolderId ?? folderId;
+            var folderResolution = await ResolveUploadFolderAsync(receivedFolderId, requestedFolderId, isAdmin, correlationId, ct);
             if (!folderResolution.Success) return BadRequest(FolderResolutionJsonError(folderResolution, correlationId));
             if (!isAdmin)
             {
@@ -243,6 +244,8 @@ public sealed class GedController : Controller
     public sealed class CheckDuplicateNamesRequest
     {
         public Guid? FolderId { get; set; }
+        public Guid? UploadFolderId { get; set; }
+        public Guid? RequestedFolderId { get; set; }
         public IReadOnlyList<string>? FileNames { get; set; }
     }
 
@@ -255,7 +258,7 @@ public sealed class GedController : Controller
             var correlationId = HttpContext.TraceIdentifier;
             if (!_currentUser.IsAuthenticated) return Unauthorized(JsonError("Sua sessão expirou. Faça login novamente.", "Autenticação", "Usuário não autenticado.", false, correlationId));
             var isAdmin = await _accessPolicy.IsAdminAsync(_currentUser.TenantId, _currentUser.UserId, User, ct);
-            var folderResolution = await ResolveUploadFolderAsync(request?.FolderId, isAdmin, correlationId, ct);
+            var folderResolution = await ResolveUploadFolderAsync(request?.UploadFolderId ?? request?.FolderId, request?.RequestedFolderId, isAdmin, correlationId, ct);
             if (!folderResolution.Success) return BadRequest(FolderResolutionJsonError(folderResolution, correlationId));
             if (!isAdmin)
             {
@@ -278,11 +281,13 @@ public sealed class GedController : Controller
         }
     }
 
-    private async Task<UploadFolderResolutionResult> ResolveUploadFolderAsync(Guid? folderId, bool isAdmin, string correlationId, CancellationToken ct)
+    private async Task<UploadFolderResolutionResult> ResolveUploadFolderAsync(Guid? folderId, Guid? requestedFolderId, bool isAdmin, string correlationId, CancellationToken ct)
     {
-        var requestedFolderId = folderId ?? Guid.Empty;
-        var resolution = await _uploadFolderResolver.ResolveAsync(_currentUser.TenantId, _currentUser.UserId, requestedFolderId, isAdmin, ct);
-        _logger.LogInformation("Upload/drop destino resolvido. Tenant={TenantId} User={UserId} RequestedFolderId={RequestedFolderId} UploadFolderId={UploadFolderId} FolderName={FolderName} CanReceiveDocuments={CanReceiveDocuments} WasDragDrop={WasDragDrop} Source={Source} Success={Success} WasVirtual={WasVirtual} CreatedRealFolder={CreatedRealFolder} CorrelationId={CorrelationId}", _currentUser.TenantId, _currentUser.UserId, resolution.RequestedFolderId, resolution.ResolvedFolderId, resolution.FolderName, resolution.Success, true, "local-file", resolution.Success, resolution.WasVirtual, resolution.CreatedRealFolder, correlationId);
+        var receivedFolderId = folderId ?? Guid.Empty;
+        var requestedId = requestedFolderId ?? receivedFolderId;
+        var resolution = await _uploadFolderResolver.ResolveAsync(_currentUser.TenantId, _currentUser.UserId, receivedFolderId, isAdmin, ct);
+        resolution.RequestedFolderId = requestedId;
+        _logger.LogInformation("Upload/drop destino resolvido. Tenant={TenantId} User={UserId} RequestedFolderId={RequestedFolderId} ReceivedFolderId={ReceivedFolderId} ResolvedFolderId={ResolvedFolderId} WasVirtual={WasVirtual} CreatedRealFolder={CreatedRealFolder} Success={Success} CanReceiveDocuments={CanReceiveDocuments} FolderName={FolderName} CorrelationId={CorrelationId}", _currentUser.TenantId, _currentUser.UserId, resolution.RequestedFolderId, receivedFolderId, resolution.ResolvedFolderId, resolution.WasVirtual, resolution.CreatedRealFolder, resolution.Success, resolution.CanReceiveDocuments, resolution.FolderName, correlationId);
         return resolution;
     }
 
@@ -350,10 +355,12 @@ public sealed class GedController : Controller
                 {
                     Id = x.Id,
                     ParentId = x.ParentId,
-                    Name = x.Name,
+                    Name = x.Name ?? string.Empty,
+                    Path = x.Path,
                     Level = x.Level,
                     UploadFolderId = x.UploadFolderId == Guid.Empty ? x.Id : x.UploadFolderId,
-                    CanReceiveDocuments = x.CanReceiveDocuments
+                    IsVirtual = x.IsVirtual,
+                    CanReceiveDocuments = x.CanReceiveDocuments && (x.UploadFolderId != Guid.Empty || x.Id != Guid.Empty)
                 }).ToList(),
                 Documents = docs.Select(d => new GedExplorerVM.DocumentRowVM
                 {
@@ -1103,10 +1110,12 @@ LIMIT 20;";
                 {
                     Id = x.Id,
                     ParentId = x.ParentId,
-                    Name = x.Name,
+                    Name = x.Name ?? string.Empty,
+                    Path = x.Path,
                     Level = x.Level,
                     UploadFolderId = x.UploadFolderId == Guid.Empty ? x.Id : x.UploadFolderId,
-                    CanReceiveDocuments = x.CanReceiveDocuments
+                    IsVirtual = x.IsVirtual,
+                    CanReceiveDocuments = x.CanReceiveDocuments && (x.UploadFolderId != Guid.Empty || x.Id != Guid.Empty)
                 }).ToList()
             };
 
@@ -1534,7 +1543,7 @@ LIMIT 20;";
         {
             if (!_currentUser.IsAuthenticated) return Unauthorized();
             var isAdmin = User.IsInRole(AppRoles.Admin);
-            _logger.LogInformation("Upload/drop destino resolvido. Tenant={TenantId} User={UserId} RequestedFolderId={RequestedFolderId} UploadFolderId={UploadFolderId} Source={Source} DocumentIds={DocumentIds} FileCount={FileCount}", _currentUser.TenantId, _currentUser.UserId, request.DestinationFolderId, request.DestinationFolderId, request.Source ?? "SINGLE", request.DocumentId, 0);
+            _logger.LogInformation("Upload/drop destino resolvido. Tenant={TenantId} User={UserId} RequestedFolderId={RequestedFolderId} UploadFolderId={UploadFolderId} Source={Source} DocumentIds={DocumentIds} FileCount={FileCount}", _currentUser.TenantId, _currentUser.UserId, request.RequestedFolderId ?? request.DestinationFolderId, request.DestinationFolderId, request.Source ?? "SINGLE", request.DocumentId, 0);
             var result = await _documentMoveService.MoveAsync(_currentUser.TenantId, _currentUser.UserId, User.Identity?.Name, request.DocumentId, request.DestinationFolderId, request.Reason, request.Source ?? "SINGLE", isAdmin, ct);
             if (!result.IsSuccess)
                 return BadRequest(new { success = false, message = result.Error?.Message ?? "Não foi possível mover o documento." });
@@ -1555,7 +1564,7 @@ LIMIT 20;";
         {
             if (!_currentUser.IsAuthenticated) return Unauthorized();
             var isAdmin = User.IsInRole(AppRoles.Admin);
-            _logger.LogInformation("Upload/drop destino resolvido. Tenant={TenantId} User={UserId} RequestedFolderId={RequestedFolderId} UploadFolderId={UploadFolderId} Source={Source} DocumentIds={DocumentIds} FileCount={FileCount}", _currentUser.TenantId, _currentUser.UserId, request.DestinationFolderId, request.DestinationFolderId, request.Source ?? "BULK", string.Join(",", request.DocumentIds), 0);
+            _logger.LogInformation("Upload/drop destino resolvido. Tenant={TenantId} User={UserId} RequestedFolderId={RequestedFolderId} UploadFolderId={UploadFolderId} Source={Source} DocumentIds={DocumentIds} FileCount={FileCount}", _currentUser.TenantId, _currentUser.UserId, request.RequestedFolderId ?? request.DestinationFolderId, request.DestinationFolderId, request.Source ?? "BULK", string.Join(",", request.DocumentIds), 0);
             var result = await _documentMoveService.MoveBulkAsync(_currentUser.TenantId, _currentUser.UserId, User.Identity?.Name, request.DocumentIds, request.DestinationFolderId, request.Reason, request.Source ?? "BULK", isAdmin, ct);
             if (!result.IsSuccess)
                 return BadRequest(new { success = false, message = result.Error?.Message ?? "Não foi possível mover o documento." });
