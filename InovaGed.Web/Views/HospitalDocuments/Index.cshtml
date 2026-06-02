@@ -57,24 +57,68 @@
     </section>
 
     <section class="hospital-results-shell" aria-label="Central de resultados hospitalares">
-        <main class="hospital-results-panel">
-            <div class="hospital-panel-header">
-                <div>
-                    <h2>Resultados da busca</h2>
-                    <p id="resultsMeta">Nenhuma busca executada ainda.</p>
-                </div>
-                <div class="hospital-panel-actions">
-                    <button id="btnToggleView" type="button" class="btn btn-sm btn-outline-secondary"><i class="bi bi-grid-3x3-gap" aria-hidden="true"></i> Lista/Card</button>
-                    <button id="btnExportCsv" type="button" class="btn btn-sm btn-outline-secondary"><i class="bi bi-filetype-csv" aria-hidden="true"></i> CSV</button>
-                    <button id="btnClearAll" type="button" class="btn btn-sm btn-outline-danger"><i class="bi bi-x-circle" aria-hidden="true"></i> Limpar</button>
-                </div>
-            </div>
+        <div class="hospital-results-layout">
+            <section class="hospital-results-column" aria-label="Resultados encontrados">
+                <main class="hospital-results-panel">
+                    <div class="hospital-panel-header">
+                        <div>
+                            <h2>Resultados da busca</h2>
+                            <p id="resultsMeta">Nenhuma busca executada ainda.</p>
+                        </div>
+                        <div class="hospital-panel-actions">
+                            <button id="btnToggleView" type="button" class="btn btn-sm btn-outline-secondary"><i class="bi bi-grid-3x3-gap" aria-hidden="true"></i> Lista/Card</button>
+                            <button id="btnExportCsv" type="button" class="btn btn-sm btn-outline-secondary"><i class="bi bi-filetype-csv" aria-hidden="true"></i> CSV</button>
+                            <button id="btnClearAll" type="button" class="btn btn-sm btn-outline-danger"><i class="bi bi-x-circle" aria-hidden="true"></i> Limpar</button>
+                        </div>
+                    </div>
 
-            <div id="resultsList" class="hospital-results-list hospital-results-list-mode" aria-live="polite"></div>
-            <div class="hospital-load-more-wrap"><button id="btnLoadMore" type="button" class="hospital-btn-secondary d-none">Carregar mais resultados</button></div>
-        </main>
+                    <div id="searchSummary" class="hospital-search-summary-inline" aria-live="polite"></div>
+                    <div id="resultsList" class="hospital-results-list hospital-results-list-mode" aria-live="polite"></div>
+                    <div class="hospital-load-more-wrap"><button id="btnLoadMore" type="button" class="hospital-btn-secondary d-none">Carregar mais resultados</button></div>
+                </main>
+            </section>
 
-        <aside id="searchSummary" class="hospital-summary-card" aria-live="polite"></aside>
+            <aside id="hospitalPreviewPanel" class="hospital-preview-panel" aria-label="Preview lateral do documento">
+                <div class="hospital-preview-header">
+                    <div class="hospital-preview-heading">
+                        <span id="previewTypeBadge" class="hospital-badge">Documento</span>
+                        <h3 id="previewTitle">Selecione um documento</h3>
+                        <p id="previewSubtitle">Clique em um resultado da busca para abrir o preview ao lado.</p>
+                    </div>
+                    <button id="btnClosePreviewPanel" class="btn btn-sm btn-outline-secondary" type="button" aria-label="Limpar preview"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
+                </div>
+
+                <div class="hospital-preview-toolbar">
+                    <a id="btnOpenNewTab" class="btn btn-sm btn-primary disabled" target="_blank" rel="noopener" aria-disabled="true"><i class="bi bi-box-arrow-up-right" aria-hidden="true"></i> Abrir em nova aba</a>
+                    <button id="btnCopyReference" type="button" class="btn btn-sm btn-outline-secondary"><i class="bi bi-clipboard" aria-hidden="true"></i> Copiar referência</button>
+                </div>
+
+                <ul class="nav nav-pills hospital-preview-tabs" role="tablist" aria-label="Áreas do painel do documento">
+                    <li class="nav-item" role="presentation"><button class="nav-link active" type="button" data-panel-tab="preview" role="tab">Preview</button></li>
+                    <li class="nav-item" role="presentation"><button class="nav-link" type="button" data-panel-tab="ocr" role="tab">OCR</button></li>
+                    <li class="nav-item" role="presentation"><button class="nav-link" type="button" data-panel-tab="meta" role="tab">Dados</button></li>
+                </ul>
+
+                <div class="hospital-preview-body">
+                    <div id="previewContent" class="hospital-preview-tab-content active" data-panel-content="preview">
+                        <div id="previewEmptyState" class="hospital-preview-empty">
+                            <i class="bi bi-file-earmark-text" aria-hidden="true"></i>
+                            <strong>Selecione um documento para visualizar.</strong>
+                            <span>Clique em um resultado da busca para abrir o preview ao lado.</span>
+                        </div>
+                        <div id="previewLoading" class="hospital-preview-loading d-none"><span class="spinner-border spinner-border-sm"></span> Carregando preview...</div>
+                        <iframe id="hospitalPreviewFrame" class="hospital-preview-frame d-none" title="Preview do documento"></iframe>
+                    </div>
+                    <div id="ocrContent" class="hospital-preview-tab-content" data-panel-content="ocr">
+                        <div id="ocrPanelStatus" class="hospital-ocr-status">Selecione um documento para consultar o OCR.</div>
+                        <pre id="ocrPanelText" class="hospital-ocr-text"></pre>
+                    </div>
+                    <div id="metaContent" class="hospital-preview-tab-content" data-panel-content="meta">
+                        <div id="metaPanelContent" class="hospital-meta-list hospital-preview-empty">Nenhum documento selecionado.</div>
+                    </div>
+                </div>
+            </aside>
+        </div>
     </section>
 
     <div class="offcanvas offcanvas-end" tabindex="-1" id="advancedFiltersCanvas" aria-labelledby="advancedFiltersTitle">
@@ -99,20 +143,6 @@
         </div>
     </div>
 
-    <div class="offcanvas offcanvas-end hospital-ocr-offcanvas" tabindex="-1" id="ocrOffcanvas" aria-labelledby="ocrOffcanvasTitle">
-        <div class="offcanvas-header"><h5 id="ocrOffcanvasTitle" class="offcanvas-title">Texto OCR</h5><button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Fechar"></button></div>
-        <div class="offcanvas-body"><div id="ocrOffcanvasStatus" class="hospital-ocr-status">Aguardando seleção.</div><pre id="ocrOffcanvasText" class="hospital-ocr-text"></pre></div>
-    </div>
-
-    <div class="modal fade hospital-preview-modal" id="previewModal" tabindex="-1" aria-labelledby="previewModalTitle" aria-hidden="true">
-        <div class="modal-dialog modal-fullscreen-lg-down modal-xl modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header"><h5 id="previewModalTitle" class="modal-title">Preview do documento</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button></div>
-                <div class="modal-body"><div id="previewLoading" class="hospital-preview-loading"><span class="spinner-border spinner-border-sm"></span> Carregando preview...</div><iframe id="previewFrame" class="hospital-preview-frame" title="Preview seguro do documento"></iframe></div>
-                <div class="modal-footer"><button id="btnCopyReference" type="button" class="btn btn-outline-secondary">Copiar referência</button><a id="btnOpenNewTab" class="btn btn-primary" target="_blank" rel="noopener">Abrir em nova aba</a></div>
-            </div>
-        </div>
-    </div>
 </div>
 
 @section Scripts {
