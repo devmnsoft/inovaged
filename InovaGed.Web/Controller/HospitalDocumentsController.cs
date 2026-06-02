@@ -1,4 +1,5 @@
 ﻿using System.Text;
+using System.Data;
 using Dapper;
 using InovaGed.Application;
 using InovaGed.Application.Common.Database;
@@ -55,7 +56,6 @@ public sealed class HospitalDocumentsController : Controller
         var normalizedOcrStatus = NormalizeOcrStatus(ocrStatus);
         var normalizedSort = NormalizeSort(sort);
         var normalizedFolder = string.IsNullOrWhiteSpace(folder) ? null : $"%{folder.Trim()}%";
-        if (recentOnly && dateFrom is null) dateFrom = DateTime.UtcNow.AddDays(-7);
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 5, 50);
 
@@ -84,8 +84,9 @@ AND (d.code ILIKE @likeQuery OR d.title ILIKE @likeQuery OR COALESCE(d.descripti
 AND (@docType IS NULL OR (@docType='pdf' AND (lower(COALESCE(v.content_type,latest_v.content_type,'')) LIKE '%pdf%' OR lower(COALESCE(s.file_name,v.file_name,latest_v.file_name,'')) LIKE '%.pdf')) OR (@docType='word' AND (lower(COALESCE(v.content_type,latest_v.content_type,'')) LIKE '%word%' OR lower(COALESCE(s.file_name,v.file_name,latest_v.file_name,'')) LIKE '%.doc%' )) OR (@docType='image' AND (lower(COALESCE(v.content_type,latest_v.content_type,'')) LIKE 'image/%' OR lower(COALESCE(s.file_name,v.file_name,latest_v.file_name,'')) SIMILAR TO '%.(jpg|jpeg|png|tif|tiff|webp|gif)')))
 AND (@ocrFilter IS NULL OR (@ocrFilter='with' AND NULLIF(COALESCE(s.ocr_text,''),'') IS NOT NULL) OR (@ocrFilter='without' AND NULLIF(COALESCE(s.ocr_text,''),'') IS NULL) OR upper(COALESCE(oj.status::text,'NONE'))=@ocrFilter)
 AND (@ocrRequired = FALSE OR NULLIF(COALESCE(s.ocr_text,''),'') IS NOT NULL)
-AND (@dateFrom IS NULL OR d.created_at >= @dateFrom)
-AND (@dateTo IS NULL OR d.created_at < (@dateTo + interval '1 day'))
+AND (CAST(@dateFrom AS timestamptz) IS NULL OR d.created_at >= CAST(@dateFrom AS timestamptz))
+AND (CAST(@dateTo AS timestamptz) IS NULL OR d.created_at < (CAST(@dateTo AS timestamptz) + interval '1 day'))
+AND (CAST(@recentOnly AS boolean) = FALSE OR d.created_at >= now() - interval '7 days')
 AND (@folder IS NULL OR f.name ILIKE @folder)
 AND (@previewOnly = FALSE OR lower(COALESCE(v.content_type,latest_v.content_type,'')) LIKE '%pdf%' OR lower(COALESCE(v.content_type,latest_v.content_type,'')) LIKE 'image/%' OR lower(COALESCE(s.file_name,v.file_name,latest_v.file_name,'')) SIMILAR TO '%.(pdf|jpg|jpeg|png|tif|tiff|webp|gif)')
 ), filtered AS (
@@ -105,7 +106,23 @@ LIMIT @pageSize OFFSET @offset;
         try {
             await using var conn = await _db.OpenAsync(ct);
             var offset = (page - 1) * pageSize;
-            var rows = (await conn.QueryAsync<HospitalDocumentSearchRow>(new CommandDefinition(sql, new { tenantId, q = query, likeQuery, qExact = query, docType = normalizedType, ocrFilter = normalizedOcrStatus, ocrRequired, dateFrom, dateTo, folder = normalizedFolder, previewOnly, sort = normalizedSort, offset, pageSize }, cancellationToken: ct))).ToList();
+            var parameters = new DynamicParameters();
+            parameters.Add("tenantId", tenantId, DbType.Guid);
+            parameters.Add("q", query, DbType.String);
+            parameters.Add("likeQuery", likeQuery, DbType.String);
+            parameters.Add("qExact", query, DbType.String);
+            parameters.Add("docType", normalizedType, DbType.String);
+            parameters.Add("ocrFilter", normalizedOcrStatus, DbType.String);
+            parameters.Add("ocrRequired", ocrRequired, DbType.Boolean);
+            parameters.Add("dateFrom", dateFrom?.Date, DbType.DateTime);
+            parameters.Add("dateTo", dateTo?.Date, DbType.DateTime);
+            parameters.Add("recentOnly", recentOnly, DbType.Boolean);
+            parameters.Add("folder", normalizedFolder, DbType.String);
+            parameters.Add("previewOnly", previewOnly, DbType.Boolean);
+            parameters.Add("sort", normalizedSort, DbType.String);
+            parameters.Add("offset", offset, DbType.Int32);
+            parameters.Add("pageSize", pageSize, DbType.Int32);
+            var rows = (await conn.QueryAsync<HospitalDocumentSearchRow>(new CommandDefinition(sql, parameters, cancellationToken: ct))).ToList();
             var first = rows.FirstOrDefault();
             var total = first?.TotalRows ?? 0;
             var items = rows.Where(x => x.VersionId != EmptyGuid).Select(MapResult).ToList();
@@ -115,7 +132,7 @@ LIMIT @pageSize OFFSET @offset;
             _logger.LogInformation("Hospital document search executed. TenantId={TenantId} UserId={UserId} Query={Query} Type={Type} OcrStatus={OcrStatus} Filters={Filters} TotalResults={TotalResults} ElapsedMs={ElapsedMs} CorrelationId={CorrelationId}", tenantId, userId, query, normalizedType, normalizedOcrStatus, new { dateFrom, dateTo, folder, ocrRequired, recentOnly, previewOnly, sort = normalizedSort }, total, elapsedMs, correlationId);
             await _audit.WriteAsync(tenantId, userId, "VIEW", "HOSPITAL_DOCUMENT_SEARCH", null, "Busca hospitalar executada", HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers.UserAgent.ToString(), new { EventType = "INFO", tenantId, userId, query, type = normalizedType, filters = new { ocrStatus = normalizedOcrStatus, dateFrom, dateTo, folder, ocrRequired, recentOnly, previewOnly, sort = normalizedSort }, totalResults = total, elapsedMs, correlationId }, ct);
             return Json(result);
-        } catch (Exception ex) { var errorCorrelationId = HttpContext.TraceIdentifier; _logger.LogError(ex, "Erro na busca hospitalar. CorrelationId={CorrelationId}", errorCorrelationId); return StatusCode(500, new { success = false, message = "Não foi possível carregar os resultados agora.", correlationId = errorCorrelationId }); }
+        } catch (Exception ex) { var errorCorrelationId = HttpContext.TraceIdentifier; _logger.LogError(ex, "Erro na busca hospitalar. CorrelationId={CorrelationId}", errorCorrelationId); return StatusCode(500, new { success = false, message = "Não foi possível executar a busca agora.", correlationId = errorCorrelationId }); }
     }
 
 
