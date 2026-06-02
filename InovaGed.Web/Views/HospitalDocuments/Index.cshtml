@@ -1,5 +1,5 @@
 @{
-    ViewData["Title"] = "Busca Inteligente Hospitalar";
+    ViewData["Title"] = "Busca de Documentos Hospitalares";
 }
 
 @section Styles {
@@ -11,8 +11,8 @@
         <div class="hospital-hero-grid">
             <div class="hospital-hero-main">
                 <span class="hospital-secure-badge"><i class="bi bi-shield-lock" aria-hidden="true"></i> Consulta segura somente leitura</span>
-                <h1 id="hospitalSearchTitle">Busca Inteligente Hospitalar</h1>
-                <p class="hospital-hero-subtitle">Localize documentos por prontuário, paciente, APAC, exame, laudo, tipo documental ou conteúdo extraído por OCR.</p>
+                <h1 id="hospitalSearchTitle">Busca de Documentos Hospitalares</h1>
+                <p class="hospital-hero-subtitle">Localize documentos por nome, prontuário, termo do OCR, paciente, exame ou conteúdo textual.</p>
 
                 <form id="hospitalSearchForm" class="hospital-search-form" autocomplete="off">
                     <div class="hospital-search-input-wrap">
@@ -53,14 +53,6 @@
 
                 <div id="activeFilters" class="hospital-active-filters" aria-live="polite"></div>
             </div>
-
-            <aside class="hospital-kpi-card" aria-label="Indicadores da busca hospitalar">
-                <div class="hospital-kpi-icon"><i class="bi bi-hospital" aria-hidden="true"></i></div>
-                <div class="hospital-kpi-row"><span>Documentos pesquisáveis</span><strong id="kpiTotal">—</strong></div>
-                <div class="hospital-kpi-row"><span>Documentos com OCR</span><strong id="kpiWithOcr">—</strong></div>
-                <div class="hospital-kpi-row"><span>Tipos disponíveis</span><strong id="kpiTypes">—</strong></div>
-                <div class="hospital-kpi-row"><span>Última busca</span><strong id="kpiLastSearch">Nenhuma</strong></div>
-            </aside>
         </div>
     </section>
 

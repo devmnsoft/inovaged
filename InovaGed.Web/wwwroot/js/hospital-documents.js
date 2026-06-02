@@ -7,7 +7,6 @@
     form: $('hospitalSearchForm'), input: $('searchInput'), clear: $('btnClearSearch'), type: $('typeFilter'), btnSearch: $('btnSearch'), suggestions: $('suggestions'),
     results: $('resultsList'), meta: $('resultsMeta'), summary: $('searchSummary'), activeFilters: $('activeFilters'), loadMore: $('btnLoadMore'), toggleView: $('btnToggleView'), exportCsv: $('btnExportCsv'), clearAll: $('btnClearAll'),
     advancedType: $('advancedType'), advancedOcrStatus: $('advancedOcrStatus'), dateFrom: $('dateFrom'), dateTo: $('dateTo'), folder: $('folderFilter'), ocrRequired: $('ocrRequired'), recentOnly: $('recentOnly'), previewOnly: $('previewOnly'), sort: $('sortFilter'), advancedSummary: $('advancedFilterSummary'), applyAdvanced: $('btnApplyAdvanced'), resetAdvanced: $('btnResetAdvanced'),
-    kpiTotal: $('kpiTotal'), kpiWithOcr: $('kpiWithOcr'), kpiTypes: $('kpiTypes'), kpiLastSearch: $('kpiLastSearch'),
     ocrTitle: $('ocrOffcanvasTitle'), ocrStatus: $('ocrOffcanvasStatus'), ocrText: $('ocrOffcanvasText'), previewTitle: $('previewModalTitle'), previewFrame: $('previewFrame'), previewLoading: $('previewLoading'), openNewTab: $('btnOpenNewTab'), copyReference: $('btnCopyReference')
   };
 
@@ -23,7 +22,6 @@
   function init() {
     renderAssistant();
     renderSummary(null);
-    loadSummary();
     bindEvents();
   }
 
@@ -42,18 +40,6 @@
     els.clearAll.addEventListener('click', clearAll);
     els.previewFrame.addEventListener('load', () => { els.previewLoading.style.display = 'none'; els.previewFrame.style.display = 'block'; });
     els.copyReference.addEventListener('click', async () => { if (currentPreviewReference) await navigator.clipboard?.writeText(currentPreviewReference); });
-  }
-
-  async function loadSummary() {
-    try {
-      const r = await fetch('/HospitalDocuments/Summary', { headers: { Accept: 'application/json' } });
-      if (!r.ok) return;
-      const data = await r.json();
-      if (!data.success) return;
-      els.kpiTotal.textContent = number(data.totalDocuments);
-      els.kpiWithOcr.textContent = number(data.totalWithOcr);
-      els.kpiTypes.textContent = number(data.totalTypes);
-    } catch { /* indicador é opcional */ }
   }
 
   function handleInputKeys(e) {
@@ -134,9 +120,9 @@
       if (!r.ok || !data?.success) throw Object.assign(new Error(data?.message || 'Erro de busca'), { data });
       state.lastResult = data; state.lastQuery = q; state.page = data.page || state.page;
       state.items = reset ? (data.items || []) : [...state.items, ...(data.items || [])];
-      rememberSearch(q); renderResults(data, reset); renderSummary(data); updateKpiLast(q); updateFilterSummary();
+      rememberSearch(q); renderResults(data, reset); renderSummary(data); updateFilterSummary();
     } catch (err) {
-      if (err.name !== 'AbortError') renderError(err.data?.message || 'Não foi possível carregar os resultados agora.', err.data?.correlationId);
+      if (err.name !== 'AbortError') renderError(err.data?.message || 'Não foi possível executar a busca agora.', err.data?.correlationId);
     } finally { setLoading(false); }
   }
 
@@ -189,7 +175,7 @@
   function assistantCard(icon,title,text){return `<div class="hospital-assistant-card"><i class="bi ${icon}"></i><strong>${title}</strong><p>${text}</p></div>`;}
 
   function renderEmpty(title) { els.meta.textContent = 'Nenhum documento encontrado.'; els.loadMore.classList.add('d-none'); els.results.innerHTML = `<div class="hospital-empty-state"><h3>${escapeHtml(title)}</h3><p>Você pode tentar:</p><ul><li>remover filtros;</li><li>buscar por parte do nome;</li><li>pesquisar por número;</li><li>tentar termo sem acento;</li><li>buscar por tipo documental;</li><li>usar uma palavra do OCR.</li></ul><button class="hospital-btn-secondary" type="button" data-empty="filters">Limpar filtros</button> <button class="hospital-btn-secondary" type="button" data-empty="all">Pesquisar em todo o acervo</button> <button class="hospital-btn-primary" type="button" data-empty="home">Voltar ao início</button></div>`; els.results.querySelector('[data-empty="filters"]')?.addEventListener('click', resetAdvancedFilters); els.results.querySelector('[data-empty="all"]')?.addEventListener('click', () => { resetAdvancedFilters(); runSearch({ reset: true }); }); els.results.querySelector('[data-empty="home"]')?.addEventListener('click', clearAll); renderSummary(null); }
-  function renderError(message, correlationId) { els.meta.textContent = 'Erro ao executar a busca.'; els.results.innerHTML = `<div class="hospital-error-state"><h3>Não foi possível carregar os resultados agora.</h3><p>${escapeHtml(message)}</p>${correlationId ? `<p class="text-muted">CorrelationId: ${escapeHtml(correlationId)}</p>` : ''}<button id="btnTryAgain" class="hospital-btn-primary" type="button">Tentar novamente</button></div>`; $('btnTryAgain')?.addEventListener('click', () => runSearch({ reset: true })); }
+  function renderError(message, correlationId) { els.meta.textContent = 'Erro ao executar a busca.'; els.results.innerHTML = `<div class="hospital-error-state"><h3>Não foi possível executar a busca agora.</h3><p>${escapeHtml(message)}</p>${correlationId ? `<p class="text-muted">CorrelationId: ${escapeHtml(correlationId)}</p>` : ''}<button id="btnTryAgain" class="hospital-btn-primary" type="button">Tentar novamente</button></div>`; $('btnTryAgain')?.addEventListener('click', () => runSearch({ reset: true })); }
 
   function renderSummary(data) {
     if (!data) { els.summary.innerHTML = `<h3>Assistente de busca</h3><p class="text-muted">Informe prontuário, APAC, paciente, exame, laudo, tipo documental ou termo de OCR para iniciar uma consulta segura.</p>`; return; }
@@ -233,7 +219,6 @@
   function recentSuggestions(q){ return state.recentSearches.filter(x=>x.toLowerCase().includes(q.toLowerCase())).map(x=>({group:'Pesquisas recentes',suggestionType:'recent',query:x,label:x,subtitle:'Executar novamente',icon:'bi-clock-history'})); }
   function abortSuggestions(){ if(suggestionController) suggestionController.abort(); }
   function hideSuggestions(){ els.suggestions.style.display='none'; els.suggestions.innerHTML=''; state.activeIndex=-1; }
-  function updateKpiLast(q){ els.kpiLastSearch.textContent=q; }
   function iconFor(item){ const t=String(item.friendlyType||item.type||item.contentType||'').toLowerCase(); if(t.includes('pdf'))return 'bi-file-earmark-pdf'; if(t.includes('imagem')||t.includes('image'))return 'bi-file-earmark-image'; if(t.includes('word'))return 'bi-file-earmark-word'; return 'bi-file-earmark-medical'; }
   function groupBy(arr, fn){ return arr.reduce((a,x)=>((a[fn(x)] ||= []).push(x),a),{}); }
   function number(v){ return new Intl.NumberFormat('pt-BR').format(v||0); }
