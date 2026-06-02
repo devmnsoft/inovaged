@@ -1,11 +1,12 @@
-﻿using InovaGed.Application.Ged.Batches;
+using InovaGed.Application.Ged.Batches;
 using InovaGed.Application.Identity;
+using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize]
+[Authorize(Roles = AppRoles.Admin)]
 [Route("[controller]")]
 public sealed class BatchesController : Controller
 {

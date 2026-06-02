@@ -1,4 +1,4 @@
-﻿using System.Security.Claims;
+using System.Security.Claims;
 using InovaGed.Application.Auth;
 using InovaGed.Web.Models.Auth;
 using InovaGed.Web.Security;
@@ -208,13 +208,14 @@ public sealed class AccountController : Controller
         var isAdmin = _accessPolicy.IsAdmin(principal) || normalizedRoles.Any(r => IsRole(r, AppRoles.Admin));
         var isAdministradorOphir = _accessPolicy.IsAdministradorOphir(principal) || normalizedRoles.Any(r => IsRole(r, AppRoles.AdministradorOphir)) || IsRole(normalizedUsername, AppRoles.AdministradorOphir);
         var isArquivistaOphir = _accessPolicy.IsArquivistaOphir(principal) || normalizedRoles.Any(r => IsRole(r, AppRoles.ArquivistaOphir)) || IsRole(normalizedUsername, AppRoles.ArquivistaOphir);
+        var isHospitalUser = AppMenuPolicy.IsHospitalUser(principal) || normalizedRoles.Any(r => IsRole(r, AppRoles.Hospital)) || IsRole(normalizedUsername, AppRoles.Hospital);
 
         if (isAdmin && !string.IsNullOrWhiteSpace(normalizedReturnUrl) && Url.IsLocalUrl(normalizedReturnUrl))
         {
             return (Redirect(normalizedReturnUrl), normalizedReturnUrl, "admin_return_url");
         }
 
-        if (isAdministradorOphir || isArquivistaOphir)
+        if (!isAdmin && (isAdministradorOphir || isArquivistaOphir || isHospitalUser))
         {
             if (IsAllowedHospitalReturnUrl(normalizedReturnUrl))
             {

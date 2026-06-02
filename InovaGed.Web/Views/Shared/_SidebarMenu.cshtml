@@ -1,4 +1,4 @@
-﻿@using Dapper
+@using Dapper
 @using Microsoft.AspNetCore.Mvc.TagHelpers
 @addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
 @using InovaGed.Application.Common.Database
@@ -47,74 +47,18 @@
 		return current == exact ? "active" : "";
 	}
 
-	bool HasRole(string role) =>
-		User.Claims
-			.Where(c => c.Type == System.Security.Claims.ClaimTypes.Role || c.Type == "role")
-			.Any(c => string.Equals(NormalizeRole(c.Value), NormalizeRole(role), StringComparison.OrdinalIgnoreCase));
-
-	string NormalizeRole(string? value) =>
-		(value ?? "").Trim().Replace(" ", "").Replace("_", "").Replace("-", "").ToUpperInvariant();
-
-	bool IsAdmin() =>
-		HasRole(AppRoles.Admin);
-
-	bool IsArquivistaOphir() =>
-		HasRole(AppRoles.ArquivistaOphir);
-
-	bool IsAdministradorOphir() =>
-		HasRole(AppRoles.AdministradorOphir);
-
-	bool IsOnlyArquivistaOphir() =>
-		IsArquivistaOphir() && !IsAdministradorOphir() && !IsAdmin();
-
-	bool IsOnlyAdministradorOphir() =>
-		IsAdministradorOphir() && !IsAdmin();
-
-	bool CanDashboard() =>
-		!IsOnlyArquivistaOphir() && !IsOnlyAdministradorOphir() && (
-		User.IsInRole(AppRoles.Admin) ||
-		User.IsInRole(AppRoles.Arquivista) ||
-		User.IsInRole(AppRoles.Operador) ||
-		User.IsInRole(AppRoles.Gestor) ||
-		User.IsInRole(AppRoles.Auditor) ||
-		IsAdministradorOphir());
-
-	bool CanDocumentos() =>
-		IsArquivistaOphir() ||
-		IsAdministradorOphir() ||
-		User.IsInRole(AppRoles.Admin) ||
-		User.IsInRole(AppRoles.Arquivista) ||
-		User.IsInRole(AppRoles.Operador);
-
-	bool CanEmprestimos() =>
-		(IsAdministradorOphir() ||
-		User.IsInRole(AppRoles.Admin) ||
-		User.IsInRole(AppRoles.Arquivista) ||
-		User.IsInRole(AppRoles.Gestor) ||
-		User.IsInRole(AppRoles.Operador));
-
-	bool CanCreateHospitalDocuments() =>
-		IsAdministradorOphir() || User.IsInRole(AppRoles.Admin);
-
-	bool CanRelatorios() =>
-		!IsOnlyAdministradorOphir() && !IsOnlyArquivistaOphir() && (User.IsInRole(AppRoles.Admin) ||
-		User.IsInRole(AppRoles.Arquivista) ||
-		User.IsInRole(AppRoles.Gestor) ||
-		User.IsInRole(AppRoles.Auditor) ||
-		User.IsInRole(AppRoles.Operador));
-
-	bool CanAuditoria() =>
-		!IsOnlyAdministradorOphir() && !IsOnlyArquivistaOphir() && (User.IsInRole(AppRoles.Admin) ||
-		User.IsInRole(AppRoles.Gestor) ||
-		User.IsInRole(AppRoles.Auditor));
-
-	bool CanArquivistico() =>
-		!IsOnlyAdministradorOphir() && !IsOnlyArquivistaOphir() && (User.IsInRole(AppRoles.Admin) ||
-		User.IsInRole(AppRoles.Arquivista));
-
-	bool CanAssinaturaDigital() =>
-		!IsOnlyAdministradorOphir() && !IsOnlyArquivistaOphir() && (User.IsInRole(AppRoles.Admin) ||
-		User.IsInRole(AppRoles.Arquivista));
+	bool IsAdmin() => AppMenuPolicy.IsAdmin(User);
+	bool IsArquivistaOphir() => AppMenuPolicy.IsArquivistaOphir(User);
+	bool IsAdministradorOphir() => AppMenuPolicy.IsAdministradorOphir(User);
+	bool IsHospitalRestricted() => AppMenuPolicy.IsHospitalRestricted(User);
+	bool CanDashboard() => AppMenuPolicy.CanSeeDashboard(User);
+	bool CanDocumentos() => AppMenuPolicy.CanSeeHospitalDocuments(User);
+	bool CanEmprestimos() => AppMenuPolicy.CanSeeLoans(User);
+	bool CanCreateHospitalDocuments() => AppMenuPolicy.CanCreateHospitalDocuments(User);
+	bool CanRelatorios() => AppMenuPolicy.CanSeeReports(User);
+	bool CanAuditoria() => AppMenuPolicy.CanSeeAudit(User);
+	bool CanArquivistico() => AppMenuPolicy.CanSeeArchivisticInstruments(User);
+	bool CanAssinaturaDigital() => AppMenuPolicy.CanSeeDigitalSignature(User);
 
 	int pacsBadge = 0;
 	int dispElimBadge = 0;
@@ -198,7 +142,7 @@
 @if (CanDocumentos())
 {
 	<div class="sidebar-section-title">Documentos</div>
-	@if (IsOnlyArquivistaOphir())
+	@if (IsHospitalRestricted())
 	{
 		<a asp-controller="HospitalDocuments"
 		   asp-action="Index"
@@ -243,6 +187,8 @@
 			<span>Fila de Processamento OCR</span>
 		</a>
 
+	@if (IsAdmin())
+	{
 		<a asp-controller="Ged"
 		   asp-action="Kpi"
 		   class="@Active("Ged", "Kpi")">
@@ -250,15 +196,16 @@
 			<span>KPI do GED</span>
 		</a>
 
-	<a asp-controller="Batches" asp-action="Index" class="@ActiveAny("Batches")">
-		<i class="bi bi-box-seam"></i>
-		<span>Lotes de Tratamento</span>
-	</a>
+		<a asp-controller="Batches" asp-action="Index" class="@ActiveAny("Batches")">
+			<i class="bi bi-box-seam"></i>
+			<span>Lotes de Tratamento</span>
+		</a>
 
-	<a asp-controller="ImportExport" asp-action="Index" class="@Active("ImportExport", "Index", "Import", "ExportCenter", "Export")">
-		<i class="bi bi-arrow-left-right"></i>
-		<span>Importação e Exportação</span>
-	</a>
+		<a asp-controller="ImportExport" asp-action="Index" class="@Active("ImportExport", "Index", "Import", "ExportCenter", "Export")">
+			<i class="bi bi-arrow-left-right"></i>
+			<span>Importação e Exportação</span>
+		</a>
+	}
 
 	<a href="https://yndustech.com.br/GedDocs" target="_blank" rel="noopener noreferrer">
 		<i class="bi bi-heart-pulse"></i>
@@ -268,63 +215,66 @@
 		</span>
 	</a>
 
-	<div class="sidebar-section-title">Guarda Física</div>
+	@if (IsAdmin())
+	{
+		<div class="sidebar-section-title">Guarda Física</div>
 
-	<a asp-controller="Physical"
-	   asp-action="Locations"
-	   class="@Active("Physical", "Locations", "NewLocation", "EditLocation", "SaveLocation")">
-		<i class="bi bi-geo-alt"></i>
-		<span>Localizações</span>
-	</a>
+		<a asp-controller="Physical"
+		   asp-action="Locations"
+		   class="@Active("Physical", "Locations", "NewLocation", "EditLocation", "SaveLocation")">
+			<i class="bi bi-geo-alt"></i>
+			<span>Localizações</span>
+		</a>
 
-	<a asp-controller="Physical"
-	   asp-action="Boxes"
-	   class="@Active("Physical", "Boxes", "NewBox", "EditBox", "SaveBox")">
-		<i class="bi bi-inbox"></i>
-		<span>Caixas</span>
-	</a>
+		<a asp-controller="Physical"
+		   asp-action="Boxes"
+		   class="@Active("Physical", "Boxes", "NewBox", "EditBox", "SaveBox")">
+			<i class="bi bi-inbox"></i>
+			<span>Caixas</span>
+		</a>
 
-	<a asp-controller="Physical"
-	   asp-action="BoxContents"
-	   class="@Active("Physical", "BoxContents", "AddDocumentToBox", "RemoveDocumentFromBox", "MoveDocumentToBox")">
-		<i class="bi bi-box2"></i>
-		<span>Conteúdo da Caixa</span>
-	</a>
+		<a asp-controller="Physical"
+		   asp-action="BoxContents"
+		   class="@Active("Physical", "BoxContents", "AddDocumentToBox", "RemoveDocumentFromBox", "MoveDocumentToBox")">
+			<i class="bi bi-box2"></i>
+			<span>Conteúdo da Caixa</span>
+		</a>
 
-	<a asp-controller="Physical"
-	   asp-action="BoxHistory"
-	   class="@Active("Physical", "BoxHistory")">
-		<i class="bi bi-list-columns-reverse"></i>
-		<span>Histórico da Caixa</span>
-	</a>
+		<a asp-controller="Physical"
+		   asp-action="BoxHistory"
+		   class="@Active("Physical", "BoxHistory")">
+			<i class="bi bi-list-columns-reverse"></i>
+			<span>Histórico da Caixa</span>
+		</a>
 
-	<a asp-controller="Physical"
-	   asp-action="PhysicalMap"
-	   class="@Active("Physical", "PhysicalMap")">
-		<i class="bi bi-map"></i>
-		<span>Mapa de Guarda Física</span>
-	</a>
+		<a asp-controller="Physical"
+		   asp-action="PhysicalMap"
+		   class="@Active("Physical", "PhysicalMap")">
+			<i class="bi bi-map"></i>
+			<span>Mapa de Guarda Física</span>
+		</a>
 
-	<a asp-controller="Labels"
-	   asp-action="Boxes"
-	   class="@Active("Labels", "Boxes", "BoxLabel")">
-		<i class="bi bi-upc-scan"></i>
-		<span>Etiquetas de Caixas</span>
-	</a>
+		<a asp-controller="Labels"
+		   asp-action="Boxes"
+		   class="@Active("Labels", "Boxes", "BoxLabel")">
+			<i class="bi bi-upc-scan"></i>
+			<span>Etiquetas de Caixas</span>
+		</a>
 
-	<a asp-controller="Labels"
-	   asp-action="Documents"
-	   class="@Active("Labels", "Documents", "DocumentLabel")">
-		<i class="bi bi-upc"></i>
-		<span>Etiquetas de Documentos</span>
-	</a>
+		<a asp-controller="Labels"
+		   asp-action="Documents"
+		   class="@Active("Labels", "Documents", "DocumentLabel")">
+			<i class="bi bi-upc"></i>
+			<span>Etiquetas de Documentos</span>
+		</a>
 
-	<a asp-controller="Labels"
-	   asp-action="History"
-	   class="@Active("Labels", "History")">
-		<i class="bi bi-clock-history"></i>
-		<span>Histórico de Etiquetas</span>
-	</a>
+		<a asp-controller="Labels"
+		   asp-action="History"
+		   class="@Active("Labels", "History")">
+			<i class="bi bi-clock-history"></i>
+			<span>Histórico de Etiquetas</span>
+		</a>
+	}
 
 	<div class="sidebar-section-title">Protocolo</div>
 
@@ -402,15 +352,18 @@
 		<span class="d-flex align-items-center gap-2">Solicitações <span class="badge text-bg-danger @(loanPendingBadge > 0 ? "" : "d-none")">@loanPendingBadge</span></span>
 	</a>
 
-	<a asp-controller="Loans" asp-action="Overdue" class="@Active("Loans", "Overdue")">
-		<i class="bi bi-alarm"></i>
-		<span>Empréstimos Vencidos</span>
-	</a>
+	@if (!IsHospitalRestricted())
+	{
+		<a asp-controller="Loans" asp-action="Overdue" class="@Active("Loans", "Overdue")">
+			<i class="bi bi-alarm"></i>
+			<span>Empréstimos Vencidos</span>
+		</a>
 
-	<a asp-controller="Loans" asp-action="RunOverdue" class="@Active("Loans", "RunOverdue")">
-		<i class="bi bi-play-circle"></i>
-		<span>Processar Cobranças</span>
-	</a>
+		<a asp-controller="Loans" asp-action="RunOverdue" class="@Active("Loans", "RunOverdue")">
+			<i class="bi bi-play-circle"></i>
+			<span>Processar Cobranças</span>
+		</a>
+	}
 }
 
 @if (CanArquivistico())
@@ -589,10 +542,7 @@
 <div class="sidebar-section-title">Ajuda</div>
 
 @{
-	var isAdmin = User.IsInRole(AppRoles.Admin);
-	var isAdministradorOphir = User.IsInRole(AppRoles.AdministradorOphir);
-	var isArquivistaOphir = User.IsInRole(AppRoles.ArquivistaOphir);
-	var canSeeManual = isAdmin || (!isAdministradorOphir && !isArquivistaOphir);
+	var canSeeManual = AppMenuPolicy.CanSeeManual(User);
 }
 
 @if (canSeeManual)

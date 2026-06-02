@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -9,6 +9,7 @@ using Dapper;
 using InovaGed.Application.Common.Context;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Documents;
+using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -16,7 +17,7 @@ using Microsoft.Extensions.Logging;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize]
+[Authorize(Roles = AppRoles.Admin)]
 [Route("ImportExport")]
 public sealed class ImportExportController : Controller
 {

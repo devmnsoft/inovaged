@@ -3,12 +3,13 @@ using InovaGed.Application.Audit;
 using InovaGed.Application.HospitalTrends;
 using InovaGed.Application.Identity;
 using InovaGed.Web.Models.HospitalTrends;
+using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize(Roles = "ADMIN,ADMINISTRATOR")]
+[Authorize(Roles = AppRoles.Admin)]
 [Route("HospitalTrends")]
 public sealed class HospitalTrendsController : Controller
 {

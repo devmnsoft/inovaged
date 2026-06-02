@@ -12,7 +12,7 @@ using Npgsql;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize]
+[Authorize(Roles = AppRoles.Admin)]
 [Route("Users")]
 public sealed class UsersController : AppControllerBase
 {

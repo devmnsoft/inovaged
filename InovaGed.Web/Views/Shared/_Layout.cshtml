@@ -86,10 +86,10 @@
 
     @if (isAuthenticated)
     {
-        <div class="wrapper">
+        <div class="wrapper app-shell">
 
             <!-- SIDEBAR DESKTOP -->
-            <aside class="sidebar d-none d-lg-flex" aria-label="Menu lateral">
+            <aside class="sidebar app-sidebar d-none d-lg-flex" aria-label="Menu lateral">
                 <div class="sidebar-brand">
                     <span class="logo">IG</span>
 
@@ -134,8 +134,8 @@
             </div>
 
             <!-- CONTEÚDO PRINCIPAL -->
-            <div class="main">
-                <header class="topbar">
+            <div class="main app-main">
+                <header class="topbar app-topbar">
                     <div class="d-flex align-items-center gap-2">
                         <button class="btn btn-sm btn-outline-secondary d-inline-flex d-lg-none"
                                 type="button"
@@ -199,7 +199,7 @@
                     </div>
                 </header>
 
-                <main class="content">
+                <main class="content app-content">
                     @RenderBody()
                 </main>
             </div>
