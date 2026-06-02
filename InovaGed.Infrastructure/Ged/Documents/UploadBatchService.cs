@@ -50,7 +50,7 @@ public sealed class UploadBatchService : IUploadBatchService
 
     public async Task<Result<Guid>> StartAsync(Guid tenantId, Guid userId, StartUploadBatchRequestDto request, CancellationToken ct)
     {
-        if (FolderIdHelper.IsVirtualFolder(request.FolderId)) return Result<Guid>.Fail("VIRTUAL_FOLDER", "Upload não permitido nesta pasta. Selecione uma pasta real.");
+        if (!request.FolderId.HasValue || request.FolderId.Value == Guid.Empty) return Result<Guid>.Fail("VALIDATION", "Selecione uma pasta para enviar documentos.");
         if (request.TotalFiles <= 0) return Result<Guid>.Fail("VALIDATION", "Informe ao menos um arquivo para iniciar o lote.");
         if (request.TotalFiles > Math.Max(1, _options.MaxBatchFiles)) return Result<Guid>.Fail("LIMIT", $"O lote excede o limite de {_options.MaxBatchFiles} arquivos.");
 
@@ -69,7 +69,7 @@ VALUES (@id, @tenantId, @folderId, @userId, 'OPEN', @totalFiles, @sourceIp, @use
     public async Task<Result<UploadBatchFileResultDto>> UploadFileAsync(Guid tenantId, Guid userId, UploadBatchFileRequestDto request, CancellationToken ct)
     {
         var correlationId = string.IsNullOrWhiteSpace(request.CorrelationId) ? Guid.NewGuid().ToString("N") : request.CorrelationId;
-        if (FolderIdHelper.IsVirtualFolder(request.FolderId)) return Result<UploadBatchFileResultDto>.Fail("VIRTUAL_FOLDER", "Upload não permitido nesta pasta. Selecione uma pasta real.");
+        if (!request.FolderId.HasValue || request.FolderId.Value == Guid.Empty) return Result<UploadBatchFileResultDto>.Fail("VALIDATION", "Selecione uma pasta para enviar documentos.");
         if (request.BatchId == Guid.Empty) return Result<UploadBatchFileResultDto>.Fail("VALIDATION", "Lote inválido.");
         if (request.File is null || request.File.Length <= 0) return Result<UploadBatchFileResultDto>.Fail("VALIDATION", "Arquivo inválido.");
         if (request.File.Length > Math.Max(1, _options.MaxFileSizeMb) * 1024L * 1024L) return Result<UploadBatchFileResultDto>.Fail("LIMIT", $"O arquivo excede o limite de {_options.MaxFileSizeMb} MB.");

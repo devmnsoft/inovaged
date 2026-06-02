@@ -58,6 +58,7 @@ public sealed class GedController : Controller
     private readonly IDocumentMoveService _documentMoveService;
     private readonly IDocumentBulkUploadService _documentBulkUploadService;
     private readonly IGedAccessPolicyService _accessPolicy;
+    private readonly IUploadFolderResolver _uploadFolderResolver;
     private readonly IGedSmartSearchService _smartSearch;
     private readonly IAuditWriter _auditWriter;
 
@@ -80,6 +81,7 @@ public sealed class GedController : Controller
         IDocumentMoveService documentMoveService,
         IDocumentBulkUploadService documentBulkUploadService,
         IGedAccessPolicyService accessPolicy,
+        IUploadFolderResolver uploadFolderResolver,
         IGedSmartSearchService smartSearch,
         IAuditWriter auditWriter,
         IOcrJobRepository ocrJobs,
@@ -112,6 +114,7 @@ public sealed class GedController : Controller
         _documentMoveService = documentMoveService;
         _documentBulkUploadService = documentBulkUploadService;
         _accessPolicy = accessPolicy;
+        _uploadFolderResolver = uploadFolderResolver;
         _smartSearch = smartSearch;
         _auditWriter = auditWriter;
 
@@ -145,18 +148,21 @@ public sealed class GedController : Controller
             _logger.LogInformation("Bulk upload iniciado. Tenant={TenantId} User={UserId} Folder={FolderId} Batch={BatchId} FileIndex={FileIndex} TotalFiles={TotalFiles} File={FileName} Size={FileSize} RunOcr={RunOcr} GeneratePreview={GeneratePreview} ConnectionId={ConnectionId} CorrelationId={CorrelationId}",
                 _currentUser.TenantId, _currentUser.UserId, folderId, batchId, fileIndex, totalFiles, file?.FileName, file?.Length, runOcr, generatePreview, HttpContext.Connection.Id, correlationId);
             if (!_currentUser.IsAuthenticated) return Unauthorized(JsonError("Sua sessão expirou. Faça login novamente.", "Autenticação", "Usuário sem sessão autenticada.", false, correlationId));
-            var folderValidation = await ValidateRealUploadFolderAsync(folderId, "Upload não permitido nesta pasta. Selecione uma pasta real.", "Pasta virtual", correlationId, ct);
-            if (folderValidation is not null) return folderValidation;
-            var allowed = await _accessPolicy.CanUploadDocumentToFolderAsync(_currentUser.TenantId, _currentUser.UserId, folderId, User, ct);
-            if (!allowed)
+            var isAdmin = await _accessPolicy.IsAdminAsync(_currentUser.TenantId, _currentUser.UserId, User, ct);
+            var folderResolution = await ResolveUploadFolderAsync(folderId, isAdmin, correlationId, ct);
+            if (!folderResolution.Success) return BadRequest(FolderResolutionJsonError(folderResolution, correlationId));
+            if (!isAdmin)
             {
-                return StatusCode(403, JsonError("Você não possui permissão para adicionar documentos nesta pasta.", "Autorização", "Permissão negada para upload na pasta selecionada.", false, correlationId));
+                var allowed = await _accessPolicy.CanUploadDocumentToFolderAsync(_currentUser.TenantId, _currentUser.UserId, folderResolution.ResolvedFolderId, User, ct);
+                if (!allowed)
+                {
+                    return StatusCode(403, JsonError("Você não possui permissão para adicionar documentos nesta pasta.", "Autorização", "Permissão negada para upload na pasta selecionada.", false, correlationId));
+                }
             }
-            _logger.LogInformation("Bulk upload validações concluídas. ElapsedMs={ElapsedMs} CorrelationId={CorrelationId}", sw.ElapsedMilliseconds, correlationId);
+            _logger.LogInformation("Bulk upload validações concluídas. RequestedFolderId={RequestedFolderId} ResolvedFolderId={ResolvedFolderId} WasVirtual={WasVirtual} CreatedRealFolder={CreatedRealFolder} ElapsedMs={ElapsedMs} CorrelationId={CorrelationId}", folderResolution.RequestedFolderId, folderResolution.ResolvedFolderId, folderResolution.WasVirtual, folderResolution.CreatedRealFolder, sw.ElapsedMilliseconds, correlationId);
 
             var metadata = new DocumentBulkUploadMetadata { DocumentTypeId = documentTypeId, ClassificationId = classificationId, Notes = notes, Visibility = visibility, RunOcr = runOcr, GeneratePreview = generatePreview, BatchId = batchId, DuplicateStrategy = duplicateStrategy, ExistingDocumentId = existingDocumentId, UploadName = uploadName };
-            var isAdmin = await _accessPolicy.IsAdminAsync(_currentUser.TenantId, _currentUser.UserId, User, ct);
-            var result = await _documentBulkUploadService.UploadSingleAsync(_currentUser.TenantId, _currentUser.UserId, User.Identity?.Name, file, folderId, metadata, isAdmin, ct);
+            var result = await _documentBulkUploadService.UploadSingleAsync(_currentUser.TenantId, _currentUser.UserId, User.Identity?.Name, file, folderResolution.ResolvedFolderId, metadata, isAdmin, ct);
             _logger.LogInformation("Bulk upload persistência concluída. Tenant={TenantId} User={UserId} Folder={FolderId} Batch={BatchId} FileIndex={FileIndex} TotalFiles={TotalFiles} File={FileName} Success={Success} ElapsedMs={ElapsedMs} ConnectionId={ConnectionId} CorrelationId={CorrelationId}", _currentUser.TenantId, _currentUser.UserId, folderId, batchId, fileIndex, totalFiles, file?.FileName, result.Success, sw.ElapsedMilliseconds, HttpContext.Connection.Id, correlationId);
             if (!result.Success)
             {
@@ -168,7 +174,7 @@ public sealed class GedController : Controller
 
                 return BadRequest(JsonError(message, isExtensionError ? "Validação de extensão" : "Persistência", string.IsNullOrWhiteSpace(code) ? "Falha ao processar upload no backend." : code, !isExtensionError, correlationId));
             }
-            return Ok(new { success = true, status = "success", message = "Arquivo enviado com sucesso.", data = new { documentId = result.Value.DocumentId, versionId = (Guid?)null, fileName = result.Value.FileName, batchId, ocrQueued = runOcr, previewQueued = generatePreview }, correlationId });
+            return Ok(new { success = true, status = "success", message = "Arquivo enviado com sucesso.", data = new { documentId = result.Value.DocumentId, versionId = (Guid?)null, fileName = result.Value.FileName, batchId, ocrQueued = runOcr, previewQueued = generatePreview, requestedFolderId = folderResolution.RequestedFolderId, resolvedFolderId = folderResolution.ResolvedFolderId, wasVirtual = folderResolution.WasVirtual, createdRealFolder = folderResolution.CreatedRealFolder }, correlationId });
         }
         catch (Exception ex)
         {
@@ -205,15 +211,21 @@ public sealed class GedController : Controller
         {
             var correlationId = HttpContext.TraceIdentifier;
             if (!_currentUser.IsAuthenticated) return Unauthorized(JsonError("Sua sessão expirou. Faça login novamente.", "Autenticação", "Usuário não autenticado.", false, correlationId));
-            var folderValidation = await ValidateRealUploadFolderAsync(request?.FolderId, "Selecione uma pasta real antes de enviar documentos. A pasta selecionada é apenas agrupadora.", "Validação da pasta", correlationId, ct);
-            if (folderValidation is not null) return folderValidation;
-            var fileNames = (request.FileNames ?? Array.Empty<string>()).Where(x => !string.IsNullOrWhiteSpace(x)).Select(Path.GetFileNameWithoutExtension).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+            var isAdmin = await _accessPolicy.IsAdminAsync(_currentUser.TenantId, _currentUser.UserId, User, ct);
+            var folderResolution = await ResolveUploadFolderAsync(request?.FolderId, isAdmin, correlationId, ct);
+            if (!folderResolution.Success) return BadRequest(FolderResolutionJsonError(folderResolution, correlationId));
+            if (!isAdmin)
+            {
+                var allowed = await _accessPolicy.CanUploadDocumentToFolderAsync(_currentUser.TenantId, _currentUser.UserId, folderResolution.ResolvedFolderId, User, ct);
+                if (!allowed) return StatusCode(403, JsonError("Você não possui permissão para adicionar documentos nesta pasta.", "Autorização", "Permissão negada para upload na pasta.", false, correlationId));
+            }
+            var fileNames = (request?.FileNames ?? Array.Empty<string>()).Where(x => !string.IsNullOrWhiteSpace(x)).Select(Path.GetFileNameWithoutExtension).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
             if (fileNames.Length == 0) return Ok(JsonSuccess("Nenhum arquivo para validação de duplicidade.", new { duplicates = Array.Empty<object>() }, correlationId));
 
             const string sql = @"select id as ExistingDocumentId, title as FileName from ged.document where tenant_id=@tenantId::uuid and folder_id=@folderId::uuid and title = any(@titles) and reg_status='A';";
             using var con = _db.CreateConnection();
-            var rows = await con.QueryAsync(sql, new { tenantId = _currentUser.TenantId, folderId = request.FolderId.Value, titles = fileNames });
-            _logger.LogInformation("Duplicidades verificadas. Tenant={TenantId} User={UserId} FolderId={FolderId} FileCount={FileCount} CorrelationId={CorrelationId}", _currentUser.TenantId, _currentUser.UserId, request.FolderId.Value, fileNames.Length, correlationId);
+            var rows = await con.QueryAsync(sql, new { tenantId = _currentUser.TenantId, folderId = folderResolution.ResolvedFolderId, titles = fileNames });
+            _logger.LogInformation("Duplicidades verificadas. Tenant={TenantId} User={UserId} RequestedFolderId={RequestedFolderId} ResolvedFolderId={ResolvedFolderId} WasVirtual={WasVirtual} CreatedRealFolder={CreatedRealFolder} FileCount={FileCount} CorrelationId={CorrelationId}", _currentUser.TenantId, _currentUser.UserId, folderResolution.RequestedFolderId, folderResolution.ResolvedFolderId, folderResolution.WasVirtual, folderResolution.CreatedRealFolder, fileNames.Length, correlationId);
             return Ok(JsonSuccess("Duplicidades verificadas com sucesso.", new { duplicates = rows }, correlationId));
         }
         catch (Exception ex)
@@ -223,20 +235,16 @@ public sealed class GedController : Controller
         }
     }
 
-    private async Task<IActionResult?> ValidateRealUploadFolderAsync(Guid? folderId, string virtualMessage, string virtualStep, string correlationId, CancellationToken ct)
+    private async Task<UploadFolderResolutionResult> ResolveUploadFolderAsync(Guid? folderId, bool isAdmin, string correlationId, CancellationToken ct)
     {
-        if (FolderIdHelper.IsVirtualFolder(folderId))
-        {
-            return BadRequest(JsonError(virtualMessage, virtualStep, $"FolderId virtual/ausente não permitido para upload: {folderId}", false, correlationId));
-        }
-
-        if (!await _folders.ExistsAsync(_currentUser.TenantId, folderId!.Value, ct))
-        {
-            return BadRequest(JsonError("A pasta selecionada não foi encontrada ou está inativa. Atualize a tela e selecione uma pasta real.", "Validação da pasta", $"FolderId inexistente ou inativo: {folderId}", false, correlationId));
-        }
-
-        return null;
+        var requestedFolderId = folderId ?? Guid.Empty;
+        var resolution = await _uploadFolderResolver.ResolveAsync(_currentUser.TenantId, _currentUser.UserId, requestedFolderId, isAdmin, ct);
+        _logger.LogInformation("Upload folder resolution Tenant={TenantId} User={UserId} RequestedFolderId={RequestedFolderId} ResolvedFolderId={ResolvedFolderId} WasVirtual={WasVirtual} CreatedRealFolder={CreatedRealFolder} Success={Success} CorrelationId={CorrelationId}", _currentUser.TenantId, _currentUser.UserId, resolution.RequestedFolderId, resolution.ResolvedFolderId, resolution.WasVirtual, resolution.CreatedRealFolder, resolution.Success, correlationId);
+        return resolution;
     }
+
+    private static object FolderResolutionJsonError(UploadFolderResolutionResult resolution, string correlationId)
+        => new { success = false, message = resolution.Message, errorStep = "Resolução da pasta", errorLog = resolution.Message, canRetry = false, requestedFolderId = resolution.RequestedFolderId, resolvedFolderId = resolution.ResolvedFolderId, wasVirtual = resolution.WasVirtual, createdRealFolder = resolution.CreatedRealFolder, correlationId };
 
     private bool IsAjaxRequest()
         => string.Equals(Request.Headers["X-Requested-With"], "XMLHttpRequest", StringComparison.OrdinalIgnoreCase)

@@ -20,6 +20,10 @@
         console.log('[BulkUpload] events bound once');
 
         document.addEventListener('click', handleActionClick);
+        document.addEventListener('click', function (e) {
+            const folderEl = e.target.closest('[data-folder-id]');
+            if (folderEl) syncSelectedFolder(folderEl);
+        }, true);
         document.addEventListener('change', function (e) {
             const input = e.target.closest('#bulkFileInput, #bulkUploadFileInput');
             if (!input) return;
@@ -119,72 +123,98 @@
         return document.getElementById('bulkFileInput') || document.getElementById('bulkUploadFileInput');
     }
 
+    function normalizeFolderId(value) {
+        const text = (value || '').trim();
+        return text && text !== 'null' && text !== 'undefined' ? text : null;
+    }
+
+    function getActiveFolderElement() {
+        const active = document.querySelector('.js-folder-node.active, .ged-tree-row.active, [data-folder-selected="true"]');
+        return active?.closest('[data-folder-id]') || active || null;
+    }
+
     function getCurrentFolderId() {
         const modal = document.getElementById('bulkUploadModal');
-        const fromModal = modal?.getAttribute('data-folder-id');
-        if (fromModal) return fromModal;
-        const hidden = document.getElementById('bulkFolderId');
-        if (hidden?.value) return hidden.value;
-        const selected = document.querySelector('.js-folder-node.active, .ged-tree-row.active, [data-folder-selected="true"]');
-        const id = selected?.closest('[data-folder-id]')?.getAttribute('data-folder-id') || selected?.getAttribute('data-folder-id');
-        if (id) return id;
-        return new URL(window.location.href).searchParams.get('folderId');
+        const active = getActiveFolderElement();
+        const queryFolderId = new URL(window.location.href).searchParams.get('folderId');
+        const candidates = [
+            { source: 'active-tree-node', value: active?.getAttribute('data-folder-id') },
+            { source: 'query-string', value: queryFolderId },
+            { source: 'hidden-currentFolderId', value: document.getElementById('currentFolderId')?.value },
+            { source: 'hidden-bulkUploadFolderId', value: document.getElementById('bulkUploadFolderId')?.value },
+            { source: 'hidden-bulkFolderId', value: document.getElementById('bulkFolderId')?.value },
+            { source: 'modal-data-folder-id', value: modal?.getAttribute('data-folder-id') }
+        ];
+        const selected = candidates.map(x => ({ ...x, value: normalizeFolderId(x.value) })).find(x => x.value)?.value || null;
+        console.log('[BulkUpload] folder candidates', candidates);
+        console.log('[BulkUpload] selected folderId', selected);
+        return selected;
+    }
+
+    function isMissingFolderId(folderId) {
+        return !normalizeFolderId(folderId) || folderId === '00000000-0000-0000-0000-000000000000';
     }
 
     function isVirtualFolderId(folderId) {
-        return !folderId ||
-            folderId === '00000000-0000-0000-0000-000000000000' ||
-            folderId.toLowerCase().startsWith('f0000000-0000-0000-0000-');
+        return normalizeFolderId(folderId)?.toLowerCase().startsWith('f0000000-0000-0000-0000-') === true;
+    }
+
+    function syncSelectedFolder(folderEl) {
+        const folderId = normalizeFolderId(folderEl?.getAttribute('data-folder-id'));
+        if (!folderId) return;
+        const folderName = folderEl.getAttribute('data-folder-path') || folderEl.getAttribute('data-folder-name') || folderEl.textContent?.trim() || 'pasta selecionada';
+        const current = document.getElementById('currentFolderId');
+        const bulk = document.getElementById('bulkFolderId') || document.getElementById('bulkUploadFolderId');
+        const legacyBulk = document.getElementById('bulkUploadFolderId');
+        const modal = document.getElementById('bulkUploadModal');
+        if (current) current.value = folderId;
+        if (bulk) bulk.value = folderId;
+        if (legacyBulk) legacyBulk.value = folderId;
+        if (modal) {
+            modal.dataset.folderId = folderId;
+            modal.dataset.folderName = folderName;
+        }
+        updateUploadFolderUi();
     }
 
     function getCurrentFolderLabel() {
         const modal = document.getElementById('bulkUploadModal');
         const fromModal = modal?.getAttribute('data-folder-name');
         if (fromModal) return fromModal;
-        const selected = document.querySelector('.js-folder-node.active, .ged-tree-row.active, [data-folder-selected="true"]');
+        const selected = getActiveFolderElement();
         const folderEl = selected?.closest('[data-folder-id]') || selected;
         return folderEl?.getAttribute('data-folder-path') || folderEl?.getAttribute('data-folder-name') || 'pasta selecionada';
     }
 
     function updateUploadFolderUi() {
         const folderId = getCurrentFolderId();
-        const virtualFolder = isVirtualFolderId(folderId);
+        const hasFolder = !isMissingFolderId(folderId);
         const notice = document.getElementById('bulkUploadFolderNotice');
         const dropzone = document.getElementById('bulkDropzone');
         const fileInput = getFileInput();
 
         if (notice) {
-            notice.className = `alert ${virtualFolder ? 'alert-warning' : 'alert-info'} py-2`;
-            notice.innerHTML = virtualFolder
-                ? '<strong>Pasta selecionada:</strong> agrupadora/virtual — selecione uma pasta real para enviar documentos.'
-                : `<strong>Pasta selecionada:</strong> ${escapeHtml(getCurrentFolderLabel())}`;
+            notice.className = `alert ${hasFolder ? 'alert-info' : 'alert-warning'} py-2`;
+            notice.innerHTML = hasFolder
+                ? `<strong>Destino selecionado:</strong> ${escapeHtml(getCurrentFolderLabel())}. O sistema validará o destino ao iniciar o upload.`
+                : '<strong>Destino:</strong> selecione uma pasta antes de enviar documentos.';
         }
 
         if (dropzone) {
-            dropzone.classList.toggle('opacity-50', virtualFolder);
-            dropzone.setAttribute('aria-disabled', virtualFolder ? 'true' : 'false');
-            dropzone.title = virtualFolder ? 'Esta pasta organiza documentos por categoria. Para enviar documentos, escolha uma subpasta real.' : '';
+            dropzone.classList.toggle('opacity-50', !hasFolder);
+            dropzone.setAttribute('aria-disabled', hasFolder ? 'false' : 'true');
+            dropzone.title = hasFolder ? '' : 'Selecione uma pasta antes de enviar documentos.';
         }
 
-        if (fileInput) fileInput.disabled = virtualFolder;
+        if (fileInput) fileInput.disabled = !hasFolder;
         updateFooterActions();
     }
 
     function validateUploadFolder() {
         const folderId = getCurrentFolderId();
 
-        if (isVirtualFolderId(folderId)) {
-            showAppToast(
-                'Selecione uma pasta real antes de enviar documentos. Esta pasta é apenas agrupadora.',
-                'warning',
-                'Pasta inválida para upload'
-            );
-
-            showBulkUploadMessage(
-                'Esta pasta não permite upload direto. Selecione uma subpasta real.',
-                'warning'
-            );
-
+        if (isMissingFolderId(folderId)) {
+            showBulkUploadMessage('Selecione uma pasta antes de enviar documentos.', 'warning');
             updateUploadFolderUi();
             return false;
         }
@@ -234,6 +264,7 @@
         state.duplicateCheckKey = null;
         state.duplicateCheckPromise = null;
         state.duplicateCheckResult = null;
+        state.lastDuplicateSignature = null;
         if (state.uploadAbortController) state.uploadAbortController = null;
         const fi = getFileInput();
         if (fi) fi.value = '';
@@ -251,6 +282,9 @@
         state.duplicateCheckKey = null;
         state.duplicateCheckPromise = null;
         state.duplicateCheckResult = null;
+        state.lastDuplicateSignature = null;
+        const fi = getFileInput();
+        if (fi) fi.value = '';
         renderFileList();
         updateUploadSummary();
         showAppToast('Lista de arquivos limpa.', 'info', 'Upload em lote');
@@ -269,6 +303,9 @@
         state.duplicateCheckKey = null;
         state.duplicateCheckPromise = null;
         state.duplicateCheckResult = null;
+        state.lastDuplicateSignature = null;
+        const fi = getFileInput();
+        if (fi) fi.value = '';
         renderFileList();
         updateUploadSummary();
     }
@@ -332,6 +369,9 @@
         state.files = state.files.filter(x => x.id !== fileId);
         state.duplicateCheckKey = null;
         state.duplicateCheckResult = null;
+        state.lastDuplicateSignature = null;
+        const fi = getFileInput();
+        if (fi) fi.value = '';
         renderFileList();
         updateUploadSummary();
         showAppToast('Arquivo removido da lista.', 'info', 'Lista atualizada');
@@ -530,7 +570,7 @@
     }
 
     async function startUploadBatch() {
-        if (!validateUploadFolder()) throw new Error('Selecione uma pasta real antes de enviar documentos.');
+        if (!validateUploadFolder()) throw new Error('Selecione uma pasta antes de enviar documentos.');
         state.isStarting = true;
         const token = document.querySelector('input[name="__RequestVerificationToken"]')?.value;
         const payload = { folderId: getCurrentFolderId(), totalFiles: state.files.length, options: { runOcr: false, generatePreview: false, duplicateStrategy: state.duplicateStrategy || null } };
@@ -595,7 +635,7 @@
         return false;
     }
 
-    function uploadSingleFile(fileItem, fileIndex, totalFiles) {
+    function uploadSingleFile(fileItem, fileIndex, totalFiles, attempt = 0) {
         return new Promise(resolve => {
             if (!validateUploadFolder()) { resolve('error'); return; }
             const fd = new FormData();
@@ -628,9 +668,23 @@
                     renderFileList();
                 }
             };
-            xhr.onload = () => {
+            xhr.onload = async () => {
                 const responseText = xhr.responseText || '';
                 const payload = parseUploadResponse(xhr);
+
+                if (xhr.status === 429 && attempt < 3) {
+                    const delays = [2000, 5000, 10000];
+                    const delay = delays[attempt] || 10000;
+                    fileItem.status = 'waiting';
+                    fileItem.progress = 0;
+                    fileItem.message = `Muitos uploads simultâneos. Nova tentativa em ${Math.round(delay / 1000)}s...`;
+                    fileItem.canRetry = true;
+                    renderFileList();
+                    await sleep(delay);
+                    const retryResult = await uploadSingleFile(fileItem, fileIndex, totalFiles, attempt + 1);
+                    resolve(retryResult);
+                    return;
+                }
 
                 if (xhr.status >= 200 && xhr.status < 300 && payload?.success === true) {
                     fileItem.status = (payload.status === 'SKIPPED' ? 'ignored' : 'success');
@@ -733,7 +787,7 @@
         const btnRefresh = document.getElementById('btnBulkRefreshFolder');
         const btnNewBatch = document.getElementById('btnStartNewBulkBatch');
 
-        const virtualFolder = isVirtualFolderId(getCurrentFolderId());
+        const hasFolder = !isMissingFolderId(getCurrentFolderId());
         const waitingOrDuplicate = state.files.some(x => x.status === 'waiting' || x.status === 'duplicate' || (x.status === 'error' && x.canRetry !== false));
         const hasError = state.files.some(x => x.status === 'error');
         const hasSuccess = state.files.some(x => x.status === 'success' || x.status === 'ignored');
@@ -741,8 +795,8 @@
 
         if (btnSubmit) {
             btnSubmit.classList.toggle('d-none', !state.uploading && !waitingOrDuplicate);
-            btnSubmit.disabled = virtualFolder || state.uploading || !waitingOrDuplicate;
-            btnSubmit.title = virtualFolder ? 'Selecione uma pasta real antes de enviar documentos.' : '';
+            btnSubmit.disabled = !hasFolder || state.uploading || !waitingOrDuplicate;
+            btnSubmit.title = hasFolder ? '' : 'Selecione uma pasta antes de enviar documentos.';
         }
         if (btnRetry) btnRetry.classList.toggle('d-none', !hasError || state.uploading);
         if (btnClearSuccess) btnClearSuccess.classList.toggle('d-none', !hasSuccess || state.uploading);
@@ -761,7 +815,7 @@
 
         const btn = document.getElementById('btnBulkUploadSubmit');
         if (btn && !state.uploading) {
-            btn.disabled = isVirtualFolderId(getCurrentFolderId()) || state.files.length === 0;
+            btn.disabled = isMissingFolderId(getCurrentFolderId()) || state.files.length === 0;
         }
         updateUploadFolderUi();
         updateFooterActions();
@@ -770,7 +824,7 @@
     function setBulkUploadLoading(isLoading) {
         const btn = document.getElementById('btnBulkUploadSubmit');
         if (btn) {
-            btn.disabled = isLoading || isVirtualFolderId(getCurrentFolderId());
+            btn.disabled = isLoading || isMissingFolderId(getCurrentFolderId());
             btn.innerHTML = isLoading ? '<span class="spinner-border spinner-border-sm me-1"></span>Enviando...' : 'Enviar documentos';
         }
         document.getElementById('btnBulkClear')?.toggleAttribute('disabled', isLoading);
@@ -784,11 +838,16 @@
         const contentType = xhr.getResponseHeader('content-type') || '';
         const text = xhr.responseText || '';
         if (xhr.status === 401 || xhr.status === 403) return { success: false, status: 'error', message: 'Sua sessão expirou. Faça login novamente.', errorStep: 'Autenticação', errorLog: `HTTP ${xhr.status}`, canRetry: false };
+        if (xhr.status === 429) return { success: false, status: 'error', message: 'Há muitos uploads simultâneos. O sistema vai tentar novamente em alguns segundos.', errorStep: 'Concorrência', errorLog: text.substring(0, 1000), canRetry: true };
         if (xhr.status === 503) return { success: false, status: 'error', message: 'Servidor temporariamente indisponível durante o upload.', errorStep: 'IIS/Servidor', errorLog: text.substring(0, 1000), canRetry: true };
         if (text.includes('/Account/Login') || text.includes('<html') || text.includes('<!DOCTYPE html') || (!contentType.includes('application/json') && text.trimStart().startsWith('<'))) {
             return { success: false, status: 'error', message: 'A sessão expirou ou o servidor retornou uma página HTML em vez de JSON.', errorStep: 'Resposta inválida', errorLog: text.substring(0, 1000), canRetry: false };
         }
         try { return JSON.parse(text || '{}'); } catch { return { success: false, status: 'error', message: 'Resposta inválida do servidor.', errorStep: 'Parse JSON', errorLog: text.substring(0, 1000), canRetry: true }; }
+    }
+
+    function sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
     }
 
     function createBatchId() {
