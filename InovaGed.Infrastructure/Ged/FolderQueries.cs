@@ -9,7 +9,7 @@ namespace InovaGed.Infrastructure.Ged;
 
 public sealed class FolderQueries : IFolderQueries
 {
-    public static string TreeCacheKey(Guid tenantId) => $"GedFolderTree:{tenantId}:TENANT";
+    public static string TreeCacheKey(Guid tenantId) => $"GedFolderTree:{tenantId}:TENANT:v2";
 
     private static readonly TimeSpan FolderTreeCacheTtl = TimeSpan.FromSeconds(60);
 
@@ -40,44 +40,44 @@ public sealed class FolderQueries : IFolderQueries
             const string sql = @"
 WITH RECURSIVE t AS (
     SELECT 
-        f.id,
-        f.parent_id AS ""ParentId"",
-        f.name      AS ""Name"",
-        f.name      AS ""Path"",
-        0           AS ""Level"",
-        (f.id::text LIKE 'f0000000-0000-0000-0000-%') AS ""IsVirtual"",
-        COALESCE(NULLIF(m.real_folder_id, '00000000-0000-0000-0000-000000000000'::uuid), f.id) AS ""UploadFolderId"",
-        TRUE        AS ""CanReceiveDocuments""
+        f.id::uuid AS id,
+        f.parent_id::uuid AS ""ParentId"",
+        f.name::text AS ""Name"",
+        f.name::text AS ""Path"",
+        0::int AS ""Level"",
+        (f.id::text LIKE 'f0000000-0000-0000-0000-%')::boolean AS ""IsVirtual"",
+        COALESCE(NULLIF(m.real_folder_id, '00000000-0000-0000-0000-000000000000'::uuid), f.id)::uuid AS ""UploadFolderId"",
+        TRUE::boolean AS ""CanReceiveDocuments""
     FROM ged.folder f
     LEFT JOIN ged.folder_virtual_map m
            ON m.tenant_id = f.tenant_id
           AND m.virtual_folder_id = f.id
-          AND m.reg_status = 'A'
-    WHERE f.tenant_id = @tenantId
+          AND COALESCE(m.reg_status, 'A') = 'A'
+    WHERE f.tenant_id = @tenantId::uuid
       AND f.parent_id IS NULL
       AND f.is_active = TRUE
-      AND f.reg_status = 'A'
+      AND COALESCE(f.reg_status, 'A') = 'A'
 
     UNION ALL
 
     SELECT
-        c.id,
-        c.parent_id AS ""ParentId"",
-        c.name      AS ""Name"",
-        CONCAT(t.""Path"", ' > ', c.name) AS ""Path"",
-        t.""Level"" + 1 AS ""Level"",
-        (c.id::text LIKE 'f0000000-0000-0000-0000-%') AS ""IsVirtual"",
-        COALESCE(NULLIF(m.real_folder_id, '00000000-0000-0000-0000-000000000000'::uuid), c.id) AS ""UploadFolderId"",
-        TRUE        AS ""CanReceiveDocuments""
+        c.id::uuid AS id,
+        c.parent_id::uuid AS ""ParentId"",
+        c.name::text AS ""Name"",
+        (t.""Path"" || ' > ' || c.name)::text AS ""Path"",
+        (t.""Level"" + 1)::int AS ""Level"",
+        (c.id::text LIKE 'f0000000-0000-0000-0000-%')::boolean AS ""IsVirtual"",
+        COALESCE(NULLIF(m.real_folder_id, '00000000-0000-0000-0000-000000000000'::uuid), c.id)::uuid AS ""UploadFolderId"",
+        TRUE::boolean AS ""CanReceiveDocuments""
     FROM ged.folder c
     JOIN t ON t.id = c.parent_id
     LEFT JOIN ged.folder_virtual_map m
            ON m.tenant_id = c.tenant_id
           AND m.virtual_folder_id = c.id
-          AND m.reg_status = 'A'
-    WHERE c.tenant_id = @tenantId
+          AND COALESCE(m.reg_status, 'A') = 'A'
+    WHERE c.tenant_id = @tenantId::uuid
       AND c.is_active = TRUE
-      AND c.reg_status = 'A'
+      AND COALESCE(c.reg_status, 'A') = 'A'
 )
 SELECT * FROM t
 ORDER BY ""Level"", ""Name"";";
@@ -87,6 +87,23 @@ ORDER BY ""Level"", ""Name"";";
 
             var rows = (await conn.QueryAsync<FolderNodeDto>(
                 new CommandDefinition(sql, new { tenantId }, cancellationToken: ct))).AsList();
+
+            var emptyUploadFolderCount = rows.Count(x => x.UploadFolderId == Guid.Empty);
+
+            _logger.LogInformation(
+                "Árvore de pastas carregada. Tenant={TenantId} Total={Total} Virtuais={VirtualCount} UploadFolderIdVazio={EmptyUploadFolderCount}",
+                tenantId,
+                rows.Count,
+                rows.Count(x => x.IsVirtual),
+                emptyUploadFolderCount);
+
+            if (emptyUploadFolderCount > 0)
+            {
+                _logger.LogWarning(
+                    "Árvore de pastas possui UploadFolderId vazio. Tenant={TenantId} TotalVazio={EmptyUploadFolderCount}",
+                    tenantId,
+                    emptyUploadFolderCount);
+            }
 
             _cache.Set(cacheKey, rows, new MemoryCacheEntryOptions
             {
