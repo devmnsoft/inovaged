@@ -1,11 +1,12 @@
-﻿using InovaGed.Application.Ged.Physical;
+using InovaGed.Application.Ged.Physical;
 using InovaGed.Application.Identity;
+using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize]
+[Authorize(Roles = AppRoles.Admin)]
 [Route("[controller]")]
 public sealed class PhysicalController : Controller
 {

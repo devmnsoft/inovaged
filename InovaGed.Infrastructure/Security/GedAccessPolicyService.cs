@@ -22,8 +22,14 @@ public sealed class GedAccessPolicyService : IGedAccessPolicyService
     public bool IsAdministradorOphir(ClaimsPrincipal principal) => HasRole(principal, "ADMINISTRADOROPHIR");
     public bool IsArquivistaOphir(ClaimsPrincipal principal) => HasRole(principal, "ARQUIVISTAOPHIR");
 
-    public Task<bool> CanAccessHospitalDocumentsAsync(Guid tenantId, Guid userId, ClaimsPrincipal principal, CancellationToken ct)
-        => Task.FromResult(true);
+    public async Task<bool> CanAccessHospitalDocumentsAsync(Guid tenantId, Guid userId, ClaimsPrincipal principal, CancellationToken ct)
+        => await IsAdminAsync(tenantId, userId, principal, ct)
+           || await IsAdministradorOphirAsync(tenantId, userId, principal, ct)
+           || await IsArquivistaOphirAsync(tenantId, userId, principal, ct)
+           || HasRole(principal, "HOSPITAL")
+           || HasRole(principal, "ARQUIVISTA")
+           || HasRole(principal, "GESTOR")
+           || HasRole(principal, "OPERADOR");
 
     public async Task<bool> IsAdminAsync(Guid tenantId, Guid userId, ClaimsPrincipal? principal, CancellationToken ct)
         => (principal is not null && IsAdmin(principal)) || await HasRoleInDatabaseAsync(tenantId, userId, "ADMIN", ct);

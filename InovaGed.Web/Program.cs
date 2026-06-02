@@ -411,6 +411,7 @@ builder.Services.AddAuthorization(options =>
             AppRoles.Admin,
             AppRoles.AdministradorOphir,
             AppRoles.ArquivistaOphir,
+            AppRoles.Hospital,
             AppRoles.Arquivista,
             AppRoles.Gestor,
             AppRoles.Operador));

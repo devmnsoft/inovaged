@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize]
+[Authorize(Roles = AppRoles.Admin)]
 [Route("[controller]")]
 public sealed class GedDashboardController : Controller
 {

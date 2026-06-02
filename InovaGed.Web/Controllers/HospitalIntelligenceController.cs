@@ -4,12 +4,13 @@ using InovaGed.Application.Audit;
 using InovaGed.Application.HospitalIntelligence;
 using InovaGed.Application.Identity;
 using InovaGed.Web.Models.HospitalIntelligence;
+using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize(Roles = "ADMIN,ADMINISTRATOR")]
+[Authorize(Roles = AppRoles.Admin)]
 [Route("HospitalIntelligence")]
 public sealed class HospitalIntelligenceController : Controller
 {
