@@ -9,6 +9,7 @@ using InovaGed.Application.Preview;
 using InovaGed.Domain.Primitives;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Npgsql;
 
 namespace InovaGed.Infrastructure.Ged.Documents;
 
@@ -55,15 +56,24 @@ public sealed class UploadBatchService : IUploadBatchService
         if (request.TotalFiles > Math.Max(1, _options.MaxBatchFiles)) return Result<Guid>.Fail("LIMIT", $"O lote excede o limite de {_options.MaxBatchFiles} arquivos.");
 
         var id = Guid.NewGuid();
+        var requestedFolderId = request.RequestedFolderId ?? request.FolderId;
         const string sql = """
-INSERT INTO ged.upload_batch (id, tenant_id, folder_id, created_by, status, total_files, source_ip, user_agent, correlation_id)
-VALUES (@id, @tenantId, @folderId, @userId, 'OPEN', @totalFiles, @sourceIp, @userAgent, @correlationId);
+INSERT INTO ged.upload_batch (id, tenant_id, folder_id, requested_folder_id, created_by, status, total_files, source_ip, user_agent, correlation_id)
+VALUES (@id, @tenantId, @folderId, @requestedFolderId, @userId, 'OPEN', @totalFiles, @sourceIp, @userAgent, @correlationId);
 """;
-        await using var conn = await _db.OpenAsync(ct);
-        await conn.ExecuteAsync(new CommandDefinition(sql, new { id, tenantId, folderId = request.FolderId, userId, totalFiles = request.TotalFiles, request.SourceIp, request.UserAgent, request.CorrelationId }, cancellationToken: ct));
-        _logger.LogInformation("StartBatch Tenant={TenantId} User={UserId} Batch={BatchId} Folder={FolderId} Total={TotalFiles} CorrelationId={CorrelationId}", tenantId, userId, id, request.FolderId, request.TotalFiles, request.CorrelationId);
-        await _audit.WriteAsync(tenantId, userId, "BATCH_EVENT", "UPLOAD_BATCH", id, "Lote de upload iniciado", null, null, new { request.FolderId, request.TotalFiles, request.Options, request.CorrelationId }, ct);
-        return Result<Guid>.Ok(id);
+        try
+        {
+            await using var conn = await _db.OpenAsync(ct);
+            await conn.ExecuteAsync(new CommandDefinition(sql, new { id, tenantId, folderId = request.FolderId, requestedFolderId, userId, totalFiles = request.TotalFiles, request.SourceIp, request.UserAgent, request.CorrelationId }, cancellationToken: ct));
+            _logger.LogInformation("StartBatch Tenant={TenantId} User={UserId} Batch={BatchId} RequestedFolder={RequestedFolderId} Folder={FolderId} Total={TotalFiles} CorrelationId={CorrelationId}", tenantId, userId, id, requestedFolderId, request.FolderId, request.TotalFiles, request.CorrelationId);
+            await _audit.WriteAsync(tenantId, userId, "BATCH_EVENT", "UPLOAD_BATCH", id, "Lote de upload iniciado", null, null, new { RequestedFolderId = requestedFolderId, request.FolderId, request.TotalFiles, request.Options, request.CorrelationId }, ct);
+            return Result<Guid>.Ok(id);
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UndefinedTable)
+        {
+            _logger.LogError(ex, "Tabelas de upload em lote não existem. Execute a migration 2026_06_01_upload_batch.sql. Tenant={TenantId} User={UserId}", tenantId, userId);
+            return Result<Guid>.Fail("UPLOAD_BATCH_SCHEMA_MISSING", "Upload em lote indisponível. Estrutura de banco pendente.");
+        }
     }
 
     public async Task<Result<UploadBatchFileResultDto>> UploadFileAsync(Guid tenantId, Guid userId, UploadBatchFileRequestDto request, CancellationToken ct)
@@ -142,6 +152,11 @@ VALUES (@id, @tenantId, @folderId, @userId, 'OPEN', @totalFiles, @sourceIp, @use
             _logger.LogWarning("Client aborted Tenant={TenantId} User={UserId} Batch={BatchId} Item={ItemId} File={FileName} CorrelationId={CorrelationId}", tenantId, userId, request.BatchId, itemId, request.File?.FileName, correlationId);
             throw;
         }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UndefinedTable)
+        {
+            _logger.LogError(ex, "Tabelas de upload em lote não existem durante envio de arquivo. Execute a migration 2026_06_01_upload_batch.sql. Tenant={TenantId} User={UserId} Batch={BatchId}", tenantId, userId, request.BatchId);
+            return Result<UploadBatchFileResultDto>.Fail("UPLOAD_BATCH_SCHEMA_MISSING", "Upload em lote indisponível. Estrutura de banco pendente.");
+        }
         catch (Exception ex)
         {
             await MarkItemErrorAsync(tenantId, itemId, "Erro interno ao enviar arquivo.", "Servidor", true, sw.ElapsedMilliseconds, CancellationToken.None);
@@ -152,15 +167,33 @@ VALUES (@id, @tenantId, @folderId, @userId, 'OPEN', @totalFiles, @sourceIp, @use
 
     public async Task<Result<UploadBatchStatusDto>> FinishAsync(Guid tenantId, Guid userId, Guid batchId, CancellationToken ct)
     {
-        await RefreshBatchCountersAsync(tenantId, batchId, finished: true, ct);
-        var status = await LoadStatusAsync(tenantId, batchId, includeAllItems: true, ct);
-        _logger.LogInformation("Batch finished Tenant={TenantId} User={UserId} Batch={BatchId} Status={Status} Success={Success} Failed={Failed} Skipped={Skipped}", tenantId, userId, batchId, status.Status, status.Success, status.Failed, status.Skipped);
-        await _audit.WriteAsync(tenantId, userId, "BATCH_EVENT", "UPLOAD_BATCH", batchId, "Lote de upload finalizado", null, null, status, ct);
-        return Result<UploadBatchStatusDto>.Ok(status);
+        try
+        {
+            await RefreshBatchCountersAsync(tenantId, batchId, finished: true, ct);
+            var status = await LoadStatusAsync(tenantId, batchId, includeAllItems: true, ct);
+            _logger.LogInformation("Batch finished Tenant={TenantId} User={UserId} Batch={BatchId} Status={Status} Success={Success} Failed={Failed} Skipped={Skipped}", tenantId, userId, batchId, status.Status, status.Success, status.Failed, status.Skipped);
+            await _audit.WriteAsync(tenantId, userId, "BATCH_EVENT", "UPLOAD_BATCH", batchId, "Lote de upload finalizado", null, null, status, ct);
+            return Result<UploadBatchStatusDto>.Ok(status);
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UndefinedTable)
+        {
+            _logger.LogError(ex, "Tabelas de upload em lote não existem ao finalizar lote. Execute a migration 2026_06_01_upload_batch.sql. Tenant={TenantId} User={UserId} Batch={BatchId}", tenantId, userId, batchId);
+            return Result<UploadBatchStatusDto>.Fail("UPLOAD_BATCH_SCHEMA_MISSING", "Upload em lote indisponível. Estrutura de banco pendente.");
+        }
     }
 
     public async Task<Result<UploadBatchStatusDto>> GetStatusAsync(Guid tenantId, Guid userId, Guid batchId, CancellationToken ct)
-        => Result<UploadBatchStatusDto>.Ok(await LoadStatusAsync(tenantId, batchId, includeAllItems: true, ct));
+    {
+        try
+        {
+            return Result<UploadBatchStatusDto>.Ok(await LoadStatusAsync(tenantId, batchId, includeAllItems: true, ct));
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UndefinedTable)
+        {
+            _logger.LogError(ex, "Tabelas de upload em lote não existem ao consultar lote. Execute a migration 2026_06_01_upload_batch.sql. Tenant={TenantId} User={UserId} Batch={BatchId}", tenantId, userId, batchId);
+            return Result<UploadBatchStatusDto>.Fail("UPLOAD_BATCH_SCHEMA_MISSING", "Upload em lote indisponível. Estrutura de banco pendente.");
+        }
+    }
 
     public async Task<Result<UploadBatchStatusDto>> RetryFailedAsync(Guid tenantId, Guid userId, Guid batchId, CancellationToken ct)
     {
@@ -169,9 +202,17 @@ UPDATE ged.upload_batch_item
 SET status='PENDING', error_message=NULL, error_step=NULL, attempt=attempt+1, started_at=NULL, finished_at=NULL, elapsed_ms=NULL
 WHERE tenant_id=@tenantId AND batch_id=@batchId AND status='ERROR' AND can_retry=true AND reg_status='A';
 """;
-        await using var conn = await _db.OpenAsync(ct);
-        await conn.ExecuteAsync(new CommandDefinition(sql, new { tenantId, batchId }, cancellationToken: ct));
-        return Result<UploadBatchStatusDto>.Ok(await LoadStatusAsync(tenantId, batchId, includeAllItems: true, ct));
+        try
+        {
+            await using var conn = await _db.OpenAsync(ct);
+            await conn.ExecuteAsync(new CommandDefinition(sql, new { tenantId, batchId }, cancellationToken: ct));
+            return Result<UploadBatchStatusDto>.Ok(await LoadStatusAsync(tenantId, batchId, includeAllItems: true, ct));
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UndefinedTable)
+        {
+            _logger.LogError(ex, "Tabelas de upload em lote não existem ao preparar retentativa. Execute a migration 2026_06_01_upload_batch.sql. Tenant={TenantId} User={UserId} Batch={BatchId}", tenantId, userId, batchId);
+            return Result<UploadBatchStatusDto>.Fail("UPLOAD_BATCH_SCHEMA_MISSING", "Upload em lote indisponível. Estrutura de banco pendente.");
+        }
     }
 
     public async Task<int> MarkStaleReceivingItemsAsErrorAsync(TimeSpan staleAfter, CancellationToken ct)
@@ -181,13 +222,23 @@ UPDATE ged.upload_batch_item
 SET status='ERROR', error_message='Upload interrompido antes da conclusão.', error_step='StaleReceiving', can_retry=true, finished_at=now(), elapsed_ms=extract(epoch from (now()-started_at))*1000
 WHERE status='RECEIVING' AND started_at < now() - (@staleAfterSeconds || ' seconds')::interval AND reg_status='A';
 """;
-        await using var conn = await _db.OpenAsync(ct);
-        return await conn.ExecuteAsync(new CommandDefinition(sql, new { staleAfterSeconds = (int)staleAfter.TotalSeconds }, cancellationToken: ct));
+        try
+        {
+            await using var conn = await _db.OpenAsync(ct);
+            return await conn.ExecuteAsync(new CommandDefinition(sql, new { staleAfterSeconds = (int)staleAfter.TotalSeconds }, cancellationToken: ct));
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UndefinedTable)
+        {
+            _logger.LogWarning(ex, "Tabelas de upload em lote não existem ao limpar itens antigos. Execute a migration 2026_06_01_upload_batch.sql.");
+            return 0;
+        }
     }
 
     public async Task<UploadMonitorDto> GetMonitorAsync(Guid tenantId, CancellationToken ct)
     {
-        await using var conn = await _db.OpenAsync(ct);
+        try
+        {
+            await using var conn = await _db.OpenAsync(ct);
         var batches = (await conn.QueryAsync<UploadMonitorBatchDto>(new CommandDefinition("""
 SELECT b.id, b.folder_id AS FolderId, b.created_by AS CreatedBy, b.created_at AS CreatedAt, b.finished_at AS FinishedAt,
        b.status, b.total_files AS TotalFiles, b.success_files AS SuccessFiles, b.failed_files AS FailedFiles,
@@ -207,24 +258,30 @@ WHERE tenant_id=@tenantId AND status='RECEIVING' AND started_at < now() - interv
 ORDER BY started_at
 LIMIT 100;
 """, new { tenantId }, cancellationToken: ct))).AsList();
-        var pendingOcr = await conn.ExecuteScalarAsync<int>(new CommandDefinition("SELECT count(*) FROM ged.ocr_job WHERE tenant_id=@tenantId AND status='PENDING'::ged.ocr_status_enum;", new { tenantId }, cancellationToken: ct));
-        return new UploadMonitorDto { Batches = batches, StaleReceivingItems = stale, PendingOcrCount = pendingOcr };
+            var pendingOcr = await conn.ExecuteScalarAsync<int>(new CommandDefinition("SELECT count(*) FROM ged.ocr_job WHERE tenant_id=@tenantId AND status='PENDING'::ged.ocr_status_enum;", new { tenantId }, cancellationToken: ct));
+            return new UploadMonitorDto { Batches = batches, StaleReceivingItems = stale, PendingOcrCount = pendingOcr };
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UndefinedTable)
+        {
+            _logger.LogWarning(ex, "Tabelas de upload em lote não existem ao carregar monitor. Execute a migration 2026_06_01_upload_batch.sql. Tenant={TenantId}", tenantId);
+            return new UploadMonitorDto();
+        }
     }
 
     private async Task InsertItemAsync(Guid tenantId, UploadBatchFileRequestDto request, Guid itemId, string correlationId, CancellationToken ct)
     {
         const string sql = """
-INSERT INTO ged.upload_batch_item (id, tenant_id, batch_id, folder_id, original_file_name, content_type, size_bytes, status, started_at, attempt, correlation_id)
-VALUES (@itemId, @tenantId, @batchId, @folderId, @fileName, @contentType, @sizeBytes, 'RECEIVING', now(), 1, @correlationId);
+INSERT INTO ged.upload_batch_item (id, tenant_id, batch_id, folder_id, requested_folder_id, original_file_name, content_type, size_bytes, status, started_at, attempt, correlation_id)
+VALUES (@itemId, @tenantId, @batchId, @folderId, @requestedFolderId, @fileName, @contentType, @sizeBytes, 'RECEIVING', now(), 1, @correlationId);
 """;
         await using var conn = await _db.OpenAsync(ct);
-        await conn.ExecuteAsync(new CommandDefinition(sql, new { itemId, tenantId, batchId = request.BatchId, request.FolderId, fileName = Path.GetFileName(request.UploadName ?? request.File.FileName), contentType = request.File.ContentType, sizeBytes = request.File.Length, correlationId }, cancellationToken: ct));
+        await conn.ExecuteAsync(new CommandDefinition(sql, new { itemId, tenantId, batchId = request.BatchId, request.FolderId, requestedFolderId = request.RequestedFolderId ?? request.FolderId, fileName = Path.GetFileName(request.UploadName ?? request.File.FileName), contentType = request.File.ContentType, sizeBytes = request.File.Length, correlationId }, cancellationToken: ct));
     }
 
     private async Task EnsureBatchProcessingAsync(Guid tenantId, Guid batchId, CancellationToken ct)
     {
         await using var conn = await _db.OpenAsync(ct);
-        await conn.ExecuteAsync(new CommandDefinition("UPDATE ged.upload_batch SET status='PROCESSING' WHERE tenant_id=@tenantId AND id=@batchId AND status='OPEN';", new { tenantId, batchId }, cancellationToken: ct));
+        await conn.ExecuteAsync(new CommandDefinition("UPDATE ged.upload_batch SET status='PROCESSING', started_at=COALESCE(started_at, now()) WHERE tenant_id=@tenantId AND id=@batchId AND status='OPEN';", new { tenantId, batchId }, cancellationToken: ct));
     }
 
     private async Task<VersionInfo?> GetCurrentVersionAsync(Guid tenantId, Guid documentId, CancellationToken ct)

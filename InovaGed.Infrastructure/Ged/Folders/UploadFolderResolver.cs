@@ -30,21 +30,27 @@ FROM ged.folder
 WHERE tenant_id=@tenantId AND id=@folderId AND is_active=true AND coalesce(reg_status,'A')='A';
 """, new { tenantId, folderId }, cancellationToken: ct));
 
-        if (realFolder is not null)
+        var isVirtual = FolderIdHelper.IsVirtualFolder(folderId);
+        if (realFolder is not null && !isVirtual)
         {
             return new UploadFolderResolutionResult
             {
                 Success = true,
                 RequestedFolderId = folderId,
                 ResolvedFolderId = realFolder.Id,
-                WasVirtual = FolderIdHelper.IsVirtualFolder(folderId),
+                WasVirtual = false,
                 FolderName = realFolder.Name,
                 FolderPath = realFolder.Name,
                 Message = "Pasta resolvida para upload."
             };
         }
 
-        if (!FolderIdHelper.IsVirtualFolder(folderId))
+        if (realFolder is not null && isVirtual)
+        {
+            _logger.LogWarning("ID de pasta virtual existe em ged.folder, mas não será usado como destino persistível. Tenant={TenantId} User={UserId} FolderId={FolderId}", tenantId, userId, folderId);
+        }
+
+        if (!isVirtual)
         {
             return UploadFolderResolutionResult.Fail(folderId, "A pasta selecionada não foi encontrada. Atualize a tela e selecione novamente.");
         }
@@ -63,7 +69,7 @@ WHERE m.tenant_id=@tenantId
 LIMIT 1;
 """, new { tenantId, folderId }, cancellationToken: ct));
 
-        if (mapped is not null)
+        if (mapped is not null && mapped.Id != folderId)
         {
             return new UploadFolderResolutionResult
             {
@@ -78,20 +84,39 @@ LIMIT 1;
             };
         }
 
-        var created = await CreateMappedFolderAsync(conn, tenantId, userId, folderId, ct);
-        _logger.LogInformation("Pasta virtual resolvida com criação automática. Tenant={TenantId} User={UserId} RequestedFolderId={RequestedFolderId} ResolvedFolderId={ResolvedFolderId} IsAdmin={IsAdmin}", tenantId, userId, folderId, created.Id, isAdmin);
-
-        return new UploadFolderResolutionResult
+        if (mapped is not null && mapped.Id == folderId)
         {
-            Success = true,
-            RequestedFolderId = folderId,
-            ResolvedFolderId = created.Id,
-            WasVirtual = true,
-            CreatedRealFolder = true,
-            FolderName = created.Name,
-            FolderPath = created.Name,
-            Message = "Destino ajustado automaticamente pelo sistema."
-        };
+            _logger.LogWarning("Mapeamento de pasta virtual aponta para o próprio ID virtual e será ignorado. Tenant={TenantId} User={UserId} FolderId={FolderId}", tenantId, userId, folderId);
+        }
+
+        try
+        {
+            var created = await CreateMappedFolderAsync(conn, tenantId, userId, folderId, realFolder?.Name, ct);
+            if (created.Id == folderId)
+            {
+                _logger.LogError("Resolver de pasta virtual tentou usar o ID virtual como pasta real. Tenant={TenantId} User={UserId} FolderId={FolderId}", tenantId, userId, folderId);
+                return UploadFolderResolutionResult.Fail(folderId, "Não foi possível resolver a pasta selecionada para upload.");
+            }
+
+            _logger.LogInformation("Pasta virtual resolvida com criação automática. Tenant={TenantId} User={UserId} RequestedFolderId={RequestedFolderId} ResolvedFolderId={ResolvedFolderId} IsAdmin={IsAdmin}", tenantId, userId, folderId, created.Id, isAdmin);
+
+            return new UploadFolderResolutionResult
+            {
+                Success = true,
+                RequestedFolderId = folderId,
+                ResolvedFolderId = created.Id,
+                WasVirtual = true,
+                CreatedRealFolder = true,
+                FolderName = created.Name,
+                FolderPath = created.Name,
+                Message = "Destino ajustado automaticamente pelo sistema."
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Não foi possível criar ou mapear pasta real para pasta virtual. Tenant={TenantId} User={UserId} FolderId={FolderId}", tenantId, userId, folderId);
+            return UploadFolderResolutionResult.Fail(folderId, "Não foi possível resolver a pasta selecionada para upload.");
+        }
     }
 
     private static async Task EnsureVirtualMapTableAsync(System.Data.IDbConnection conn, CancellationToken ct)
@@ -110,17 +135,20 @@ CREATE TABLE IF NOT EXISTS ged.folder_virtual_map
 CREATE UNIQUE INDEX IF NOT EXISTS ux_folder_virtual_map_active
 ON ged.folder_virtual_map(tenant_id, virtual_folder_id)
 WHERE reg_status='A';
+CREATE INDEX IF NOT EXISTS ix_folder_virtual_map_real
+ON ged.folder_virtual_map(tenant_id, real_folder_id)
+WHERE reg_status='A';
 """, cancellationToken: ct));
     }
 
-    private static async Task<FolderRow> CreateMappedFolderAsync(System.Data.IDbConnection conn, Guid tenantId, Guid userId, Guid virtualFolderId, CancellationToken ct)
+    private static async Task<FolderRow> CreateMappedFolderAsync(System.Data.IDbConnection conn, Guid tenantId, Guid userId, Guid virtualFolderId, string? virtualFolderName, CancellationToken ct)
     {
         var realFolderId = Guid.NewGuid();
         var mapId = Guid.NewGuid();
-        var suffix = virtualFolderId.ToString("D")[^4..];
-        var name = virtualFolderId == Guid.Parse("f0000000-0000-0000-0000-000000000001")
-            ? "Raiz"
-            : $"Pasta virtual {suffix}";
+        var suffix = virtualFolderId.ToString("N")[^6..];
+        var name = !string.IsNullOrWhiteSpace(virtualFolderName)
+            ? $"Uploads - {virtualFolderName}"
+            : $"Uploads - {suffix}";
 
         using var tx = conn.BeginTransaction();
         try

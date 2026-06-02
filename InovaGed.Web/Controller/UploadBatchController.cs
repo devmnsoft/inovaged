@@ -47,28 +47,49 @@ public sealed class UploadBatchController : Controller
     public async Task<IActionResult> Start([FromBody] StartRequest request, CancellationToken ct)
     {
         var correlationId = HttpContext.TraceIdentifier;
-        if (!_currentUser.IsAuthenticated) return Unauthorized(Error("Sua sessão expirou. Faça login novamente.", "Autenticação", false, correlationId));
-        if (request is null) return BadRequest(Error("Requisição inválida para iniciar o lote.", "Validação", false, correlationId));
-        var isAdmin = await _accessPolicy.IsAdminAsync(_currentUser.TenantId, _currentUser.UserId, User, ct);
-        var folderResolution = await ResolveUploadFolderAsync(request.FolderId, isAdmin, correlationId, ct);
-        if (!folderResolution.Success) return BadRequest(FolderResolutionError(folderResolution, correlationId));
-        if (!isAdmin)
+        try
         {
-            var allowed = await _accessPolicy.CanUploadDocumentToFolderAsync(_currentUser.TenantId, _currentUser.UserId, folderResolution.ResolvedFolderId, User, ct);
-            if (!allowed) return StatusCode(403, Error("Você não possui permissão para adicionar documentos nesta pasta.", "Autorização", false, correlationId));
-        }
+            if (!_currentUser.IsAuthenticated) return Unauthorized(Error("Sua sessão expirou. Faça login novamente.", "Autenticação", false, correlationId));
+            if (request is null) return BadRequest(Error("Requisição inválida para iniciar o lote.", "Validação", false, correlationId));
+            var isAdmin = await _accessPolicy.IsAdminAsync(_currentUser.TenantId, _currentUser.UserId, User, ct);
+            var folderResolution = await ResolveUploadFolderAsync(request.FolderId, isAdmin, correlationId, ct);
+            if (!folderResolution.Success) return BadRequest(FolderResolutionError(folderResolution, correlationId));
+            if (!isAdmin)
+            {
+                var allowed = await _accessPolicy.CanUploadDocumentToFolderAsync(_currentUser.TenantId, _currentUser.UserId, folderResolution.ResolvedFolderId, User, ct);
+                if (!allowed) return StatusCode(403, Error("Você não possui permissão para adicionar documentos nesta pasta.", "Autorização", false, correlationId));
+            }
 
-        var result = await _batches.StartAsync(_currentUser.TenantId, _currentUser.UserId, new StartUploadBatchRequestDto
+            var result = await _batches.StartAsync(_currentUser.TenantId, _currentUser.UserId, new StartUploadBatchRequestDto
+            {
+                FolderId = folderResolution.ResolvedFolderId,
+                RequestedFolderId = folderResolution.RequestedFolderId,
+                TotalFiles = request.TotalFiles,
+                Options = request.Options,
+                SourceIp = HttpContext.Connection.RemoteIpAddress?.ToString(),
+                UserAgent = Request.Headers.UserAgent.ToString(),
+                CorrelationId = correlationId
+            }, ct);
+
+            if (!result.Success)
+            {
+                var code = result.Error?.Code ?? "Validação";
+                var isSchemaMissing = string.Equals(code, "UPLOAD_BATCH_SCHEMA_MISSING", StringComparison.OrdinalIgnoreCase);
+                return StatusCode(isSchemaMissing ? 500 : 400, Error(
+                    isSchemaMissing ? "Upload em lote indisponível. Estrutura de banco pendente." : result.Error?.Message ?? "Não foi possível iniciar o lote.",
+                    isSchemaMissing ? "Schema" : "UploadBatchStart",
+                    false,
+                    correlationId,
+                    code));
+            }
+
+            return Ok(new { success = true, batchId = result.Value, message = "Lote iniciado.", requestedFolderId = folderResolution.RequestedFolderId, resolvedFolderId = folderResolution.ResolvedFolderId, wasVirtual = folderResolution.WasVirtual, createdRealFolder = folderResolution.CreatedRealFolder, correlationId });
+        }
+        catch (Exception ex)
         {
-            FolderId = folderResolution.ResolvedFolderId,
-            TotalFiles = request.TotalFiles,
-            Options = request.Options,
-            SourceIp = HttpContext.Connection.RemoteIpAddress?.ToString(),
-            UserAgent = Request.Headers.UserAgent.ToString(),
-            CorrelationId = correlationId
-        }, ct);
-        if (!result.Success) return BadRequest(Error(result.Error?.Message ?? "Não foi possível iniciar o lote.", result.Error?.Code ?? "Validação", true, correlationId));
-        return Ok(new { success = true, batchId = result.Value, message = "Lote iniciado.", requestedFolderId = folderResolution.RequestedFolderId, resolvedFolderId = folderResolution.ResolvedFolderId, wasVirtual = folderResolution.WasVirtual, createdRealFolder = folderResolution.CreatedRealFolder, correlationId });
+            _logger.LogError(ex, "Erro ao iniciar lote de upload. Tenant={TenantId} User={UserId} CorrelationId={CorrelationId}", _currentUser.TenantId, _currentUser.UserId, correlationId);
+            return StatusCode(500, Error("Não foi possível iniciar o lote de upload.", "Servidor", true, correlationId));
+        }
     }
 
     [HttpPost("File")]
@@ -95,6 +116,7 @@ public sealed class UploadBatchController : Controller
                 FileIndex = fileIndex,
                 TotalFiles = totalFiles,
                 FolderId = folderResolution.ResolvedFolderId,
+                RequestedFolderId = folderResolution.RequestedFolderId,
                 DuplicateStrategy = duplicateStrategy,
                 RunOcr = runOcr,
                 GeneratePreview = generatePreview,
@@ -171,6 +193,6 @@ public sealed class UploadBatchController : Controller
     private static object FolderResolutionError(UploadFolderResolutionResult resolution, string correlationId)
         => new { success = false, message = resolution.Message, errorStep = "Resolução da pasta", canRetry = false, requestedFolderId = resolution.RequestedFolderId, resolvedFolderId = resolution.ResolvedFolderId, wasVirtual = resolution.WasVirtual, createdRealFolder = resolution.CreatedRealFolder, correlationId };
 
-    private static object Error(string message, string errorStep, bool canRetry, string correlationId)
-        => new { success = false, message, errorStep, canRetry, correlationId };
+    private static object Error(string message, string errorStep, bool canRetry, string correlationId, string? code = null)
+        => new { success = false, message, errorStep, canRetry, correlationId, code };
 }

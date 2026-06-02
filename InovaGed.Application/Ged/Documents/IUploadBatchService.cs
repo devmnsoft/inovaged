@@ -13,6 +13,7 @@ public sealed class UploadBatchOptionsDto
 public sealed class StartUploadBatchRequestDto
 {
     public Guid? FolderId { get; set; }
+    public Guid? RequestedFolderId { get; set; }
     public int TotalFiles { get; set; }
     public UploadBatchOptionsDto? Options { get; set; }
     public string? SourceIp { get; set; }
@@ -27,6 +28,7 @@ public sealed class UploadBatchFileRequestDto
     public int FileIndex { get; set; }
     public int TotalFiles { get; set; }
     public Guid? FolderId { get; set; }
+    public Guid? RequestedFolderId { get; set; }
     public string? DuplicateStrategy { get; set; }
     public bool RunOcr { get; set; }
     public bool GeneratePreview { get; set; }
