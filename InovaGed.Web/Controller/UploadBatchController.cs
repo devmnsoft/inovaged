@@ -1,6 +1,7 @@
 using InovaGed.Application.Ged;
 using InovaGed.Application.Ged.Documents;
 using InovaGed.Application.Identity;
+using InovaGed.Application.Security;
 using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
