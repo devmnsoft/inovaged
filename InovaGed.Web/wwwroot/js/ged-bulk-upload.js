@@ -1,7 +1,7 @@
 (function () {
     const DuplicateStrategy = { overwrite: 'overwrite', rename: 'rename', skip: 'skip', cancel: 'cancel' };
     const ValidationStep = 'Validação de extensão';
-    const state = { files: [], uploading: false, isCheckingDuplicates: false, duplicateCheckKey: null, duplicateCheckPromise: null, duplicateCheckResult: null, batchId: null, duplicateStrategy: null, uploadAbortController: null };
+    const state = { files: [], uploading: false, isStarting: false, isFinishing: false, activeUploads: 0, maxConcurrency: 2, completed: 0, failed: 0, skipped: 0, isCheckingDuplicates: false, duplicateCheckKey: null, duplicateCheckPromise: null, duplicateCheckResult: null, lastDuplicateSignature: null, batchId: null, duplicateStrategy: null, uploadAbortController: null };
 
     function initBulkUpload() {
         const dz = document.getElementById('bulkDropzone');
@@ -162,6 +162,12 @@
         state.batchId = null;
         state.duplicateStrategy = null;
         state.uploading = false;
+        state.isStarting = false;
+        state.isFinishing = false;
+        state.activeUploads = 0;
+        state.completed = 0;
+        state.failed = 0;
+        state.skipped = 0;
         state.isCheckingDuplicates = false;
         state.duplicateCheckKey = null;
         state.duplicateCheckPromise = null;
@@ -381,7 +387,7 @@
     }
 
     async function uploadFiles(skipDuplicateCheck) {
-        if (state.uploading) {
+        if (state.uploading || state.isStarting || state.isFinishing) {
             showAppToast('Já existe um envio em andamento.', 'warning', 'Aguarde');
             return;
         }
@@ -395,12 +401,12 @@
             clearBulkUploadMessage();
             hideDuplicateDecision();
             state.uploading = true;
-            state.batchId = state.batchId || createBatchId();
+            state.completed = 0;
+            state.failed = 0;
+            state.skipped = 0;
             state.uploadAbortController = typeof AbortController !== 'undefined' ? new AbortController() : null;
             setBulkUploadLoading(true);
-            console.log('[BulkUpload] selectedFiles count before upload', state.files.length);
-            console.log('[BulkUpload] isUploading', state.uploading);
-            console.log('[BulkUpload] upload started', { batchId: state.batchId });
+            console.log('[BulkUpload] upload moderno iniciado', { maxConcurrency: state.maxConcurrency });
 
             if (!skipDuplicateCheck) {
                 const dups = await checkDuplicatesBeforeUpload();
@@ -415,26 +421,23 @@
                 }
             }
 
-            const uploadableFiles = state.files.filter(x => !['success', 'ignored'].includes(x.status));
-            let success = 0, error = 0;
-            for (let i = 0; i < uploadableFiles.length; i++) {
-                const fileItem = uploadableFiles[i];
-                if (fileItem.status === 'error' && fileItem.canRetry === false) { error++; continue; }
-                if (fileItem.status === 'duplicate' && !fileItem.duplicateStrategy && !state.duplicateStrategy) continue;
-                const r = await uploadSingleFile(fileItem, i + 1, uploadableFiles.length);
-                if (r === 'success' || r === 'ignored') success++; else error++;
-                updateUploadSummary();
-                renderFileList();
+            if (!state.batchId) {
+                state.batchId = await startUploadBatch();
             }
 
-            console.log('[BulkUpload] upload finished', { batchId: state.batchId, success, error });
+            await uploadQueue();
+            const finished = await finishUploadBatch();
+            const success = finished?.success ?? state.files.filter(x => x.status === 'success').length;
+            const error = finished?.failed ?? state.files.filter(x => x.status === 'error').length;
+            console.log('[BulkUpload] upload finished', { batchId: state.batchId, success, error, finished });
+
             if (success > 0 && error === 0) {
                 showAppToast(`${success} documento(s) enviado(s) com sucesso.`, 'success', 'Upload concluído');
                 setTimeout(() => { closeBulkUploadModal(); resetBulkUploadState(); window.location.reload(); }, 900);
                 return;
             }
             if (success > 0 && error > 0) {
-                showBulkUploadMessage(`${success} enviado(s), ${error} falharam. Verifique os arquivos com erro.`, 'warning');
+                showBulkUploadMessage(`${success} enviado(s), ${error} falharam. Use Reenviar falhos para continuar sem duplicar concluídos.`, 'warning');
                 showAppToast('Alguns documentos não foram enviados.', 'warning', 'Upload parcial');
                 showRefreshAfterUploadButton(true);
                 return;
@@ -445,15 +448,83 @@
             }
         } catch (err) {
             console.error('[BulkUpload] erro geral no upload', err);
-            showBulkUploadMessage('Falha ao enviar os documentos. Verifique os detalhes dos arquivos com erro ou tente novamente.', 'danger');
+            showBulkUploadMessage(err.message || 'Falha ao enviar os documentos. Verifique os detalhes dos arquivos com erro ou tente novamente.', 'danger');
             showAppToast('Falha ao enviar documentos. Veja os detalhes no modal.', 'error', 'Erro no upload');
         } finally {
             state.uploading = false;
+            state.isStarting = false;
+            state.isFinishing = false;
+            state.activeUploads = 0;
             state.uploadAbortController = null;
             setBulkUploadLoading(false);
             renderFileList();
             updateUploadSummary();
         }
+    }
+
+    async function startUploadBatch() {
+        state.isStarting = true;
+        const token = document.querySelector('input[name="__RequestVerificationToken"]')?.value;
+        const payload = { folderId: getCurrentFolderId(), totalFiles: state.files.length, options: { runOcr: false, generatePreview: false, duplicateStrategy: state.duplicateStrategy || null } };
+        const r = await fetch('/Ged/UploadBatch/Start', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { RequestVerificationToken: token } : {}) }, body: JSON.stringify(payload) });
+        const j = await r.json().catch(() => ({ success: false, message: 'Resposta inválida ao iniciar lote.' }));
+        state.isStarting = false;
+        if (!r.ok || !j.success || !j.batchId) throw new Error(j.message || 'Não foi possível iniciar o lote.');
+        console.log('[BulkUpload] batch iniciado', j.batchId);
+        return j.batchId;
+    }
+
+    function uploadQueue() {
+        return new Promise(resolve => {
+            const pump = () => {
+                const pending = state.files.filter(x => (x.status === 'waiting' || x.status === 'duplicate') && !(x.status === 'duplicate' && !x.duplicateStrategy && !state.duplicateStrategy));
+                if (!pending.length && state.activeUploads === 0) { resolve(); return; }
+                while (state.activeUploads < state.maxConcurrency) {
+                    const next = state.files.find(x => (x.status === 'waiting' || x.status === 'duplicate') && !(x.status === 'duplicate' && !x.duplicateStrategy && !state.duplicateStrategy));
+                    if (!next) break;
+                    state.activeUploads++;
+                    const uploadable = state.files.filter(x => !['success', 'ignored'].includes(x.status));
+                    uploadSingleFile(next, uploadable.indexOf(next) + 1, uploadable.length)
+                        .then(result => {
+                            if (result === 'success') state.completed++;
+                            else if (result === 'ignored') state.skipped++;
+                            else state.failed++;
+                        })
+                        .finally(() => { state.activeUploads = Math.max(0, state.activeUploads - 1); updateUploadSummary(); renderFileList(); pump(); });
+                }
+            };
+            pump();
+        });
+    }
+
+    async function finishUploadBatch() {
+        if (!state.batchId) return null;
+        state.isFinishing = true;
+        const token = document.querySelector('input[name="__RequestVerificationToken"]')?.value;
+        const r = await fetch('/Ged/UploadBatch/Finish', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { RequestVerificationToken: token } : {}) }, body: JSON.stringify({ batchId: state.batchId }) });
+        const j = await r.json().catch(() => ({ success: false }));
+        state.isFinishing = false;
+        if (!r.ok || !j.success) return null;
+        return j.status;
+    }
+
+    async function confirmBatchStatus(fileItem) {
+        if (!state.batchId) return false;
+        try {
+            const r = await fetch(`/Ged/UploadBatch/Status/${state.batchId}`);
+            const j = await r.json();
+            const items = j.data?.items || j.data?.Items || [];
+            const hit = items.find(x => (x.originalFileName || x.OriginalFileName || '').toLowerCase() === (fileItem.uploadName || fileItem.originalName || '').toLowerCase());
+            if (hit && ((hit.status || hit.Status) === 'COMPLETED')) {
+                fileItem.status = 'success';
+                fileItem.progress = 100;
+                fileItem.message = 'Confirmado no banco após falha de comunicação.';
+                fileItem.serverDocumentId = hit.documentId || hit.DocumentId || null;
+                fileItem.serverVersionId = hit.versionId || hit.VersionId || null;
+                return true;
+            }
+        } catch (err) { console.warn('[BulkUpload] falha ao confirmar status do lote', err); }
+        return false;
     }
 
     function uploadSingleFile(fileItem, fileIndex, totalFiles) {
@@ -475,9 +546,9 @@
             renderFileList();
 
             const xhr = new XMLHttpRequest();
-            const endpoint = '/Ged/Documents/BulkUploadSingle';
+            const endpoint = '/Ged/UploadBatch/File';
             console.log('[BulkUpload] endpoint usado:', endpoint);
-            xhr.timeout = 120000;
+            xhr.timeout = 300000;
             xhr.open('POST', endpoint, true);
             const token = document.querySelector('input[name="__RequestVerificationToken"]')?.value;
             if (token) xhr.setRequestHeader('RequestVerificationToken', token);
@@ -493,9 +564,9 @@
                 const payload = parseUploadResponse(xhr);
 
                 if (xhr.status >= 200 && xhr.status < 300 && payload?.success === true) {
-                    fileItem.status = payload.status || 'success';
-                    fileItem.serverDocumentId = payload.data?.documentId || null;
-                    fileItem.serverVersionId = payload.data?.versionId || null;
+                    fileItem.status = (payload.status === 'SKIPPED' ? 'ignored' : 'success');
+                    fileItem.serverDocumentId = payload.documentId || payload.data?.documentId || null;
+                    fileItem.serverVersionId = payload.versionId || payload.data?.versionId || null;
                     fileItem.message = payload.message || 'Enviado com sucesso.';
                     fileItem.errorMessage = null;
                     fileItem.errorLog = null;
@@ -518,7 +589,7 @@
                 renderFileList();
                 resolve('error');
             };
-            xhr.ontimeout = () => {
+            xhr.ontimeout = async () => {
                 fileItem.status = 'error';
                 fileItem.message = 'Tempo limite excedido ao enviar o arquivo.';
                 fileItem.errorMessage = 'Tempo limite excedido ao enviar o arquivo.';
@@ -528,16 +599,18 @@
                 if ((fileItem.size || 0) > 15 * 1024 * 1024) {
                     showBulkUploadMessage('Este arquivo demorou mais que o esperado. O envio pode continuar, mas o processamento OCR será feito em segundo plano.', 'warning');
                 }
+                if (await confirmBatchStatus(fileItem)) { renderFileList(); resolve('success'); return; }
                 renderFileList();
                 resolve('error');
             };
-            xhr.onerror = () => {
+            xhr.onerror = async () => {
                 fileItem.status = 'error';
                 fileItem.message = 'Falha de comunicação com o servidor.';
                 fileItem.errorMessage = 'Falha de comunicação com o servidor.';
                 fileItem.errorLog = 'XMLHttpRequest network error';
                 fileItem.errorStep = 'Rede';
                 fileItem.canRetry = true;
+                if (await confirmBatchStatus(fileItem)) { renderFileList(); resolve('success'); return; }
                 renderFileList();
                 resolve('error');
             };

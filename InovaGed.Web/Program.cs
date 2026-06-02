@@ -104,7 +104,12 @@ mvc.AddRazorRuntimeCompilation();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddSignalR();
 builder.Services.AddMemoryCache();
-var documentUploadMaxFileSizeMb = Math.Max(1, builder.Configuration.GetValue<int?>("DocumentUpload:MaxFileSizeMb") ?? 50);
+builder.Services.Configure<DocumentUploadOptions>(builder.Configuration.GetSection("DocumentUpload"));
+var documentUploadMaxFileSizeMb = Math.Max(1, builder.Configuration.GetValue<int?>("DocumentUpload:MaxFileSizeMb") ?? 100);
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.Limits.MaxRequestBodySize = documentUploadMaxFileSizeMb * 1024L * 1024L;
+});
 builder.Services.Configure<FormOptions>(options =>
 {
     options.MultipartBodyLengthLimit = documentUploadMaxFileSizeMb * 1024L * 1024L;
@@ -205,6 +210,9 @@ builder.Services.AddScoped<IDocumentSearchQueries, DocumentSearchQueries>();
 builder.Services.AddScoped<IDocumentSearchTextQueries, DocumentSearchTextQueries>();
 builder.Services.AddScoped<IDocumentMoveService, DocumentMoveService>();
 builder.Services.AddScoped<IDocumentBulkUploadService, DocumentBulkUploadService>();
+builder.Services.AddSingleton<IUploadConcurrencyLimiter, UploadConcurrencyLimiter>();
+builder.Services.AddScoped<IUploadBatchService, UploadBatchService>();
+builder.Services.AddHostedService<StaleUploadBatchItemWorker>();
 builder.Services.AddScoped<IGedAccessPolicyService, GedAccessPolicyService>();
 builder.Services.AddScoped<IGedSearchService, GedSearchService>();
 builder.Services.AddScoped<IGedSmartSearchService, GedSmartSearchService>();

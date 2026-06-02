@@ -210,6 +210,8 @@ public sealed class UsersController : AppControllerBase
 
         if (!ModelState.IsValid)
         {
+            LogCreateValidationFailure(tenantId);
+            TempData["Error"] = "Verifique os campos destacados e o resumo de validação antes de salvar.";
             await ReloadCreateLookupsAsync(vm, ct);
             return View(vm);
         }
@@ -218,14 +220,18 @@ public sealed class UsersController : AppControllerBase
         {
             if (await _repo.CpfExistsAsync(tenantId, vm.Cpf, vm.ServidorId, ct))
             {
-                ModelState.AddModelError(nameof(vm.Cpf), "Já existe servidor ativo cadastrado com este CPF.");
+                ModelState.AddModelError(nameof(vm.Cpf), "Já existe servidor ativo cadastrado com este CPF. Informe outro CPF ou abra o cadastro existente para edição.");
+                LogCreateValidationFailure(tenantId);
+                TempData["Error"] = "CPF já cadastrado. O cadastro não foi salvo.";
                 await ReloadCreateLookupsAsync(vm, ct);
                 return View(vm);
             }
 
             if (vm.CriarUsuarioAcesso && await _repo.EmailExistsAsync(tenantId, vm.EmailLogin, null, ct))
             {
-                ModelState.AddModelError(nameof(vm.EmailLogin), "Já existe usuário com este e-mail de login.");
+                ModelState.AddModelError(nameof(vm.EmailLogin), "Já existe usuário com este e-mail de login. Use outro e-mail ou edite o usuário existente.");
+                LogCreateValidationFailure(tenantId);
+                TempData["Error"] = "E-mail de login já cadastrado. O cadastro não foi salvo.";
                 await ReloadCreateLookupsAsync(vm, ct);
                 return View(vm);
             }
@@ -285,8 +291,9 @@ public sealed class UsersController : AppControllerBase
         }
         catch (PostgresException pex) when (pex.SqlState == "23505")
         {
-            _logger.LogWarning(pex, "Duplicidade ao criar servidor/usuário | Tenant={TenantId}", tenantId);
-            ModelState.AddModelError("", "Já existe cadastro com o mesmo CPF, matrícula ou e-mail.");
+            _logger.LogWarning(pex, "Duplicidade ao criar servidor/usuário | Tenant={TenantId} CorrelationId={CorrelationId}", tenantId, HttpContext.TraceIdentifier);
+            ModelState.AddModelError("", "Já existe cadastro com o mesmo CPF, matrícula ou e-mail. Revise os campos destacados.");
+            TempData["Error"] = "Cadastro duplicado. O servidor/usuário não foi criado.";
             await ReloadCreateLookupsAsync(vm, ct);
             return View(vm);
         }
@@ -299,6 +306,22 @@ public sealed class UsersController : AppControllerBase
         }
     }
 
+
+    private void LogCreateValidationFailure(Guid tenantId)
+    {
+        var fields = ModelState
+            .Where(x => x.Value?.Errors.Count > 0)
+            .Select(x => string.IsNullOrWhiteSpace(x.Key) ? "Model" : x.Key)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        _logger.LogWarning(
+            "CreateUser validation failed | Tenant={TenantId} User={UserId} Fields=[{Fields}] CorrelationId={CorrelationId}",
+            tenantId,
+            _currentUser.UserId,
+            string.Join(',', fields),
+            HttpContext.TraceIdentifier);
+    }
     [HttpGet("Edit/{id:guid}")]
     [Authorize(Roles = AppRoles.Admin + ",ADMINISTRATOR")]
     public async Task<IActionResult> Edit(Guid id, CancellationToken ct)

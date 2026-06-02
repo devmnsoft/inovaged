@@ -35,6 +35,11 @@ public sealed class DocumentBulkUploadService : IDocumentBulkUploadService
             await _audit.WriteAsync(tenantId, userId, "UPLOAD", "DOCUMENT", result.Value, "Upload em lote concluído", null, null, new { folderId, fileName = safeName, fileSize = file.Length, file.ContentType, metadata.RunOcr, metadata.GeneratePreview, metadata.BatchId }, ct);
             return Result<DocumentBulkUploadResultDto>.Ok(new DocumentBulkUploadResultDto { DocumentId = result.Value, FileName = safeName });
         }
+        catch (OperationCanceledException)
+        {
+            _logger.LogWarning("UploadSingleAsync cancelado. Tenant={TenantId} User={UserId} Folder={FolderId} Batch={BatchId} File={FileName}", tenantId, userId, folderId, metadata.BatchId, file?.FileName);
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Erro em UploadSingleAsync. Tenant={TenantId} User={UserId} Folder={FolderId} Batch={BatchId} File={FileName}", tenantId, userId, folderId, metadata.BatchId, file?.FileName);
