@@ -186,7 +186,7 @@ public sealed class UploadBatchController : Controller
     {
         var requestedFolderId = folderId ?? Guid.Empty;
         var resolution = await _uploadFolderResolver.ResolveAsync(_currentUser.TenantId, _currentUser.UserId, requestedFolderId, isAdmin, ct);
-        _logger.LogInformation("Upload folder resolution Tenant={TenantId} User={UserId} RequestedFolderId={RequestedFolderId} ResolvedFolderId={ResolvedFolderId} WasVirtual={WasVirtual} CreatedRealFolder={CreatedRealFolder} Success={Success} CorrelationId={CorrelationId}", _currentUser.TenantId, _currentUser.UserId, resolution.RequestedFolderId, resolution.ResolvedFolderId, resolution.WasVirtual, resolution.CreatedRealFolder, resolution.Success, correlationId);
+        _logger.LogInformation("Upload/drop destino resolvido. Tenant={TenantId} User={UserId} RequestedFolderId={RequestedFolderId} UploadFolderId={UploadFolderId} FolderName={FolderName} CanReceiveDocuments={CanReceiveDocuments} WasDragDrop={WasDragDrop} Source={Source} Success={Success} WasVirtual={WasVirtual} CreatedRealFolder={CreatedRealFolder} CorrelationId={CorrelationId}", _currentUser.TenantId, _currentUser.UserId, resolution.RequestedFolderId, resolution.ResolvedFolderId, resolution.FolderName, resolution.Success, true, "local-file", resolution.Success, resolution.WasVirtual, resolution.CreatedRealFolder, correlationId);
         return resolution;
     }
 

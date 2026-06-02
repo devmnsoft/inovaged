@@ -1,5 +1,5 @@
 ﻿@{
-    ViewData["Title"] = "Consulta Documental Hospitalar";
+    ViewData["Title"] = "Busca de Documentos Hospitalares";
 }
 
 <style>
@@ -166,6 +166,16 @@
         overflow: auto;
         max-height: 360px;
         display: none;
+    }
+
+    .suggestion-group {
+        padding: 9px 16px 6px;
+        font-size: 11px;
+        font-weight: 900;
+        color: #1d4ed8;
+        background: #eff6ff;
+        text-transform: uppercase;
+        letter-spacing: .04em;
     }
 
     .suggestion-item {
@@ -572,11 +582,11 @@
                 Consulta segura somente leitura
             </div>
 
-            <div class="hero-title">Consulta Documental Hospitalar</div>
+            <div class="hero-title">Busca de Documentos Hospitalares</div>
 
             <div class="hero-subtitle">
-                Localize prontuários, documentos digitalizados, PDFs, imagens e documentos Word.
-                A consulta considera código, título, nome do arquivo, metadados e texto OCR quando disponível.
+                Localize documentos por nome, prontuário, termo do OCR, paciente, exame ou conteúdo textual.
+                Use filtros rápidos para encontrar PDFs, imagens, laudos, APAC, oncologia e documentos recentes.
             </div>
 
             <div class="search-box">
@@ -586,7 +596,7 @@
                     <input id="searchInput"
                            class="search-input"
                            autocomplete="off"
-                           placeholder="Ex.: prontuário 5236, 5236, paciente, laudo, relatório..." />
+                           placeholder="Busque por nome, prontuário, APAC, carcinoma, exame, laudo ou trecho do OCR..." />
 
                     <div id="suggestions" class="suggestions"></div>
                 </div>
@@ -604,11 +614,16 @@
             </div>
 
             <div class="quick-actions">
-                <button type="button" class="quick-chip" data-search="prontuário">Prontuário</button>
-                <button type="button" class="quick-chip" data-search="laudo">Laudo</button>
-                <button type="button" class="quick-chip" data-search="exame">Exame</button>
-                <button type="button" class="quick-chip" data-search="termo">Termo</button>
-                <button type="button" class="quick-chip" data-search="pdf">PDF</button>
+                <button type="button" class="quick-chip" data-search="pdf" data-type="pdf">PDF</button>
+                <button type="button" class="quick-chip" data-search="imagem" data-type="image">Imagens</button>
+                <button type="button" class="quick-chip" data-search="com ocr">Com OCR</button>
+                <button type="button" class="quick-chip" data-search="sem ocr">Sem OCR</button>
+                <button type="button" class="quick-chip" data-search="últimos 7 dias">Últimos 7 dias</button>
+                <button type="button" class="quick-chip" data-search="prontuário">Prontuários</button>
+                <button type="button" class="quick-chip" data-search="exame">Exames</button>
+                <button type="button" class="quick-chip" data-search="laudo">Laudos</button>
+                <button type="button" class="quick-chip" data-search="APAC">APAC</button>
+                <button type="button" class="quick-chip" data-search="oncologia">Oncologia</button>
             </div>
 
             <div id="statusLine" class="status-line">
@@ -633,7 +648,7 @@
                     <div class="assistant-title">Como localizar documentos?</div>
 
                     <div class="assistant-text">
-                        Use este painel para localizar documentos do prontuário, laudos, exames e arquivos digitalizados.
+                        Dicas de busca: localize por número de prontuário, termo clínico, parte do nome do paciente ou tipo de documento.
                     </div>
 
                     <ul class="assistant-list">
@@ -738,12 +753,13 @@
 
         suggestions.innerHTML = '<div class="suggestion-item text-muted">Buscando sugestões...</div>';
         suggestions.style.display = 'block';
-        suggestionTimer = setTimeout(loadSuggestions, 500);
+        suggestionTimer = setTimeout(loadSuggestions, 400);
     });
 
     document.querySelectorAll('.quick-chip').forEach(chip => {
         chip.addEventListener('click', function () {
             input.value = this.dataset.search || '';
+            if (this.dataset.type) typeFilter.value = this.dataset.type;
             suggestions.style.display = 'none';
             runSearch();
         });
@@ -801,18 +817,27 @@
             return;
         }
 
-        suggestions.innerHTML = items.map(item => `
-            <div class="suggestion-item"
-                 data-item='${escapeAttr(JSON.stringify(item))}'>
-                <div class="suggestion-title">${escapeHtml(item.title || item.label)}</div>
-                <div class="suggestion-desc">${escapeHtml(item.code || '')} · ${escapeHtml(item.type || '')} · ${escapeHtml(item.fileName || '')}</div>
-                <div class="suggestion-meta">
-                    <span class="meta-pill">${escapeHtml(item.matchSourceLabel || '')}</span>
-                    <span class="meta-pill">${escapeHtml(item.createdAt || '')}</span>
-                    <span class="meta-ocr-pill ${ocrStatusClass(item.ocrStatus)}">${ocrStatusLabel(item.ocrStatus, item.hasOcr)}</span>
+        const groups = items.reduce((acc, item) => {
+            const key = item.matchSourceLabel || item.category || 'Documentos';
+            (acc[key] ||= []).push(item);
+            return acc;
+        }, {});
+
+        suggestions.innerHTML = Object.entries(groups).map(([group, groupItems]) => `
+            <div class="suggestion-group">${escapeHtml(group)}</div>
+            ${groupItems.map(item => `
+                <div class="suggestion-item"
+                     data-item='${escapeAttr(JSON.stringify(item))}'>
+                    <div class="suggestion-title">${escapeHtml(item.title || item.label)}</div>
+                    <div class="suggestion-desc">${escapeHtml(item.code || '')} · ${escapeHtml(item.type || '')} · ${escapeHtml(item.fileName || '')}</div>
+                    <div class="suggestion-meta">
+                        <span class="meta-pill">${escapeHtml(item.matchSourceLabel || '')}</span>
+                        <span class="meta-pill">${escapeHtml(item.createdAt || '')}</span>
+                        <span class="meta-ocr-pill ${ocrStatusClass(item.ocrStatus)}">${ocrStatusLabel(item.ocrStatus, item.hasOcr)}</span>
+                    </div>
+                    <div class="suggestion-desc">${item.snippet || ''}</div>
                 </div>
-                <div class="suggestion-desc">${item.snippet || ''}</div>
-            </div>
+            `).join('')}
         `).join('');
 
         suggestions.querySelectorAll('.suggestion-item').forEach(el => {
@@ -854,7 +879,7 @@
 
         btnSearch.disabled = true;
         btnSearch.innerText = 'Pesquisando...';
-        resultsList.innerHTML = `<div class="empty-state">Pesquisando documentos...</div>`;
+        resultsList.innerHTML = `<div class="empty-state"><span class="spinner-border spinner-border-sm me-2"></span>Pesquisando documentos...</div>`;
         resultCount.innerText = '0';
         statusLine.innerText = 'Consultando documentos, metadados e OCR...';
 
@@ -892,7 +917,7 @@
             resultCount.innerText = data.total ?? 0;
 
             if (!data.items || data.items.length === 0) {
-                setResultEmpty('Nenhum documento encontrado para a pesquisa informada.');
+                setResultEmpty('Nenhum documento encontrado. Tente outro termo, remova filtros ou busque em todo o acervo.');
                 statusLine.innerText = 'Nenhum documento localizado.';
                 return;
             }
@@ -970,6 +995,11 @@
                     </div>
 
                     <div class="snippet">${item.snippet || 'Documento encontrado pelos metadados informados.'}</div>
+                    <div class="doc-actions mt-2 d-flex gap-2 flex-wrap">
+                        <button type="button" class="quick-chip">Preview</button>
+                        <a class="quick-chip text-decoration-none" href="${escapeAttr(item.viewerUrl || '#')}" target="_blank">Ver documento</a>
+                        <a class="quick-chip text-decoration-none" href="${escapeAttr(item.ocrUrl || '#')}" target="_blank">Ver OCR</a>
+                    </div>
                 </article>
             `;
         }).join('');

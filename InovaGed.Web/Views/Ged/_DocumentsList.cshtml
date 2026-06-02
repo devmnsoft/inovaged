@@ -1,0 +1,81 @@
+@model InovaGed.Web.Models.Ged.GedExplorerVM
+
+<div class="card-body p-0" id="gedDocumentsContainer" data-folder-id="@Model.CurrentFolderId" data-folder-name="@Model.CurrentFolderName" data-document-count="@Model.Documents.Count">
+    @if (!Model.Documents.Any())
+    {
+        <div class="ged-empty-state text-center p-5 text-muted">
+            <div class="display-5 mb-3 text-primary"><i class="bi bi-folder2-open"></i></div>
+            <h5 class="text-dark mb-2">Nenhum documento nesta pasta.</h5>
+            <p class="mb-3">Arraste arquivos para esta pasta ou use o upload em lote para começar.</p>
+            <button type="button" id="btnOpenBulkUploadEmpty" class="btn btn-primary">
+                <i class="bi bi-cloud-arrow-up me-1"></i> Enviar documentos
+            </button>
+        </div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle ged-documents-table" data-ged-document-list>
+                <thead class="table-light">
+                    <tr>
+                        <th style="width:40px;"><input type="checkbox" id="selectAllDocuments" /></th>
+                        <th>Título</th>
+                        <th style="width:220px;">Tipo</th>
+                        <th style="width:260px;">Arquivo</th>
+                        <th style="width:120px;">OCR</th>
+                        <th style="width:240px;">Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var d in Model.Documents)
+                    {
+                        var isUnclassified = string.IsNullOrWhiteSpace(d.TypeName) || d.TypeName == "-";
+
+                        <tr draggable="true" data-document-id="@d.Id">
+                            <td><input type="checkbox" class="js-doc-select" value="@d.Id" data-document-title="@d.Title" /></td>
+                            <td class="fw-semibold">@d.Title</td>
+                            <td>
+                                @if (isUnclassified)
+                                {
+                                    <span class="badge bg-secondary">Sem classificação</span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-light text-dark border">
+                                        <i class="bi bi-tags me-1"></i>@d.TypeName
+                                    </span>
+                                }
+                            </td>
+                            <td class="text-muted small">@d.FileName</td>
+                            <td><span class="badge bg-info-subtle text-info-emphasis border border-info-subtle">Disponível</span></td>
+                            <td class="d-flex gap-2 flex-wrap">
+                                <a class="btn btn-sm btn-outline-primary" asp-action="Details" asp-controller="Ged" asp-route-id="@d.Id">
+                                    <i class="bi bi-eye"></i> Abrir
+                                </a>
+                                <button type="button" class="btn btn-sm btn-outline-secondary js-move-one" data-document-id="@d.Id" data-document-title="@d.Title">
+                                    <i class="bi bi-folder-symlink"></i> Mover
+                                </button>
+
+                                @if (isUnclassified)
+                                {
+                                    <a class="btn btn-sm btn-outline-success" asp-action="Details" asp-controller="Ged" asp-route-id="@d.Id" asp-route-openClassify="true">
+                                        <i class="bi bi-pencil-square"></i> Classificar
+                                    </a>
+                                }
+
+                                <form method="post" asp-controller="Ged" asp-action="DeleteDocument" class="d-inline js-feedback-form">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="id" value="@d.Id" />
+                                    <input type="hidden" name="folderId" value="@Model.CurrentFolderId" />
+                                    <button type="button" class="btn btn-sm btn-outline-danger js-delete-document" data-document-id="@d.Id" data-folder-id="@Model.CurrentFolderId" data-document-title="@d.Title">
+                                        <i class="bi bi-trash"></i> Excluir
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>

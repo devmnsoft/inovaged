@@ -197,6 +197,49 @@ public sealed class GedController : Controller
         }
     }
 
+
+    [HttpGet("/Ged/DocumentsList")]
+    public async Task<IActionResult> DocumentsList(Guid? folderId, string? q, CancellationToken ct)
+    {
+        if (!_currentUser.IsAuthenticated) return Unauthorized();
+
+        var tenantId = _currentUser.TenantId;
+        var tree = await _folders.TreeAsync(tenantId, ct);
+        var effectiveFolderId = folderId ?? tree.FirstOrDefault(x => FolderIdHelper.IsRealFolder(x.Id))?.Id;
+        if (!effectiveFolderId.HasValue || FolderIdHelper.IsVirtualFolder(effectiveFolderId))
+        {
+            return PartialView("_DocumentsList", new GedExplorerVM
+            {
+                CurrentFolderId = effectiveFolderId,
+                CurrentFolderIsVirtual = FolderIdHelper.IsVirtualFolder(effectiveFolderId),
+                CurrentFolderName = "Pasta selecionada",
+                Query = q
+            });
+        }
+
+        var docs = await _docs.ListAsync(tenantId, effectiveFolderId.Value, q, ct);
+        var folder = tree.FirstOrDefault(x => x.Id == effectiveFolderId.Value);
+        return PartialView("_DocumentsList", new GedExplorerVM
+        {
+            CurrentFolderId = effectiveFolderId,
+            CurrentFolderIsVirtual = false,
+            CurrentFolderName = folder?.Name ?? "Pasta selecionada",
+            FolderId = effectiveFolderId,
+            Query = q,
+            Documents = docs.Select(d => new GedExplorerVM.DocumentRowVM
+            {
+                Id = d.Id,
+                Title = d.Title,
+                TypeName = d.TypeName,
+                FileName = d.FileName,
+                SizeBytes = d.SizeBytes,
+                CreatedAt = d.CreatedAt,
+                CreatedBy = d.CreatedBy,
+                IsConfidential = d.IsConfidential
+            }).ToList()
+        });
+    }
+
     public sealed class CheckDuplicateNamesRequest
     {
         public Guid? FolderId { get; set; }
@@ -239,7 +282,7 @@ public sealed class GedController : Controller
     {
         var requestedFolderId = folderId ?? Guid.Empty;
         var resolution = await _uploadFolderResolver.ResolveAsync(_currentUser.TenantId, _currentUser.UserId, requestedFolderId, isAdmin, ct);
-        _logger.LogInformation("Upload folder resolution Tenant={TenantId} User={UserId} RequestedFolderId={RequestedFolderId} ResolvedFolderId={ResolvedFolderId} WasVirtual={WasVirtual} CreatedRealFolder={CreatedRealFolder} Success={Success} CorrelationId={CorrelationId}", _currentUser.TenantId, _currentUser.UserId, resolution.RequestedFolderId, resolution.ResolvedFolderId, resolution.WasVirtual, resolution.CreatedRealFolder, resolution.Success, correlationId);
+        _logger.LogInformation("Upload/drop destino resolvido. Tenant={TenantId} User={UserId} RequestedFolderId={RequestedFolderId} UploadFolderId={UploadFolderId} FolderName={FolderName} CanReceiveDocuments={CanReceiveDocuments} WasDragDrop={WasDragDrop} Source={Source} Success={Success} WasVirtual={WasVirtual} CreatedRealFolder={CreatedRealFolder} CorrelationId={CorrelationId}", _currentUser.TenantId, _currentUser.UserId, resolution.RequestedFolderId, resolution.ResolvedFolderId, resolution.FolderName, resolution.Success, true, "local-file", resolution.Success, resolution.WasVirtual, resolution.CreatedRealFolder, correlationId);
         return resolution;
     }
 
@@ -299,8 +342,8 @@ public sealed class GedController : Controller
                 CurrentFolderId = effectiveFolderId,
                 CurrentFolderIsVirtual = FolderIdHelper.IsVirtualFolder(effectiveFolderId),
                 CurrentFolderName = effectiveFolderId.HasValue
-                    ? tree.FirstOrDefault(x => x.Id == effectiveFolderId.Value)?.Name ?? (FolderIdHelper.IsVirtualFolder(effectiveFolderId) ? "Agrupadora/virtual" : "Pasta selecionada")
-                    : "Agrupadora/virtual",
+                    ? tree.FirstOrDefault(x => x.Id == effectiveFolderId.Value)?.Name ?? (FolderIdHelper.IsVirtualFolder(effectiveFolderId) ? "Pasta selecionada" : "Pasta selecionada")
+                    : "Pasta selecionada",
                 FolderId = effectiveFolderId,
                 Query = q,
                 Folders = tree.Select(x => new GedExplorerVM.FolderNodeVM
@@ -308,7 +351,9 @@ public sealed class GedController : Controller
                     Id = x.Id,
                     ParentId = x.ParentId,
                     Name = x.Name,
-                    Level = x.Level
+                    Level = x.Level,
+                    UploadFolderId = x.UploadFolderId == Guid.Empty ? x.Id : x.UploadFolderId,
+                    CanReceiveDocuments = x.CanReceiveDocuments
                 }).ToList(),
                 Documents = docs.Select(d => new GedExplorerVM.DocumentRowVM
                 {
@@ -1059,7 +1104,9 @@ LIMIT 20;";
                     Id = x.Id,
                     ParentId = x.ParentId,
                     Name = x.Name,
-                    Level = x.Level
+                    Level = x.Level,
+                    UploadFolderId = x.UploadFolderId == Guid.Empty ? x.Id : x.UploadFolderId,
+                    CanReceiveDocuments = x.CanReceiveDocuments
                 }).ToList()
             };
 
@@ -1487,6 +1534,7 @@ LIMIT 20;";
         {
             if (!_currentUser.IsAuthenticated) return Unauthorized();
             var isAdmin = User.IsInRole(AppRoles.Admin);
+            _logger.LogInformation("Upload/drop destino resolvido. Tenant={TenantId} User={UserId} RequestedFolderId={RequestedFolderId} UploadFolderId={UploadFolderId} Source={Source} DocumentIds={DocumentIds} FileCount={FileCount}", _currentUser.TenantId, _currentUser.UserId, request.DestinationFolderId, request.DestinationFolderId, request.Source ?? "SINGLE", request.DocumentId, 0);
             var result = await _documentMoveService.MoveAsync(_currentUser.TenantId, _currentUser.UserId, User.Identity?.Name, request.DocumentId, request.DestinationFolderId, request.Reason, request.Source ?? "SINGLE", isAdmin, ct);
             if (!result.IsSuccess)
                 return BadRequest(new { success = false, message = result.Error?.Message ?? "Não foi possível mover o documento." });
@@ -1507,6 +1555,7 @@ LIMIT 20;";
         {
             if (!_currentUser.IsAuthenticated) return Unauthorized();
             var isAdmin = User.IsInRole(AppRoles.Admin);
+            _logger.LogInformation("Upload/drop destino resolvido. Tenant={TenantId} User={UserId} RequestedFolderId={RequestedFolderId} UploadFolderId={UploadFolderId} Source={Source} DocumentIds={DocumentIds} FileCount={FileCount}", _currentUser.TenantId, _currentUser.UserId, request.DestinationFolderId, request.DestinationFolderId, request.Source ?? "BULK", string.Join(",", request.DocumentIds), 0);
             var result = await _documentMoveService.MoveBulkAsync(_currentUser.TenantId, _currentUser.UserId, User.Identity?.Name, request.DocumentIds, request.DestinationFolderId, request.Reason, request.Source ?? "BULK", isAdmin, ct);
             if (!result.IsSuccess)
                 return BadRequest(new { success = false, message = result.Error?.Message ?? "Não foi possível mover o documento." });
