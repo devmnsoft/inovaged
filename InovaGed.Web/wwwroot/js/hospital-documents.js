@@ -1,4 +1,7 @@
 (() => {
+  if (window.__hospitalDocumentsBound) return;
+  window.__hospitalDocumentsBound = true;
+
   const root = document.querySelector('[data-hospital-documents-page]');
   if (!root) return;
 
@@ -7,10 +10,23 @@
     form: $('hospitalSearchForm'), input: $('searchInput'), clear: $('btnClearSearch'), type: $('typeFilter'), btnSearch: $('btnSearch'), suggestions: $('suggestions'),
     results: $('resultsList'), meta: $('resultsMeta'), summary: $('searchSummary'), activeFilters: $('activeFilters'), loadMore: $('btnLoadMore'), toggleView: $('btnToggleView'), exportCsv: $('btnExportCsv'), clearAll: $('btnClearAll'),
     advancedType: $('advancedType'), advancedOcrStatus: $('advancedOcrStatus'), dateFrom: $('dateFrom'), dateTo: $('dateTo'), folder: $('folderFilter'), ocrRequired: $('ocrRequired'), recentOnly: $('recentOnly'), previewOnly: $('previewOnly'), sort: $('sortFilter'), advancedSummary: $('advancedFilterSummary'), applyAdvanced: $('btnApplyAdvanced'), resetAdvanced: $('btnResetAdvanced'),
-    ocrTitle: $('ocrOffcanvasTitle'), ocrStatus: $('ocrOffcanvasStatus'), ocrText: $('ocrOffcanvasText'), previewTitle: $('previewModalTitle'), previewFrame: $('previewFrame'), previewLoading: $('previewLoading'), openNewTab: $('btnOpenNewTab'), copyReference: $('btnCopyReference')
+    previewPanel: $('hospitalPreviewPanel'), previewTypeBadge: $('previewTypeBadge'), previewTitle: $('previewTitle'), previewSubtitle: $('previewSubtitle'), previewFrame: $('hospitalPreviewFrame'), previewLoading: $('previewLoading'), previewEmpty: $('previewEmptyState'), openNewTab: $('btnOpenNewTab'), copyReference: $('btnCopyReference'), closePreview: $('btnClosePreviewPanel'),
+    ocrStatus: $('ocrPanelStatus'), ocrText: $('ocrPanelText'), metaContent: $('metaPanelContent')
   };
 
-  const state = { page: 1, pageSize: 20, items: [], lastResult: null, lastQuery: '', cardMode: false, activeIndex: -1, suggestions: [], recentSearches: JSON.parse(localStorage.getItem('hospitalDocumentsRecentSearches') || '[]') };
+  const state = {
+    page: 1,
+    pageSize: 20,
+    items: [],
+    lastResult: null,
+    lastQuery: '',
+    cardMode: false,
+    activeIndex: -1,
+    suggestions: [],
+    selectedItem: null,
+    ocrLoadedFor: null,
+    recentSearches: JSON.parse(localStorage.getItem('hospitalDocumentsRecentSearches') || '[]')
+  };
   const suggestionCache = new Map();
   let suggestionTimer = 0;
   let suggestionController = null;
@@ -22,6 +38,7 @@
   function init() {
     renderAssistant();
     renderSummary(null);
+    resetPreviewPanel();
     bindEvents();
   }
 
@@ -30,7 +47,7 @@
     els.clear.addEventListener('click', clearSearchInput);
     els.input.addEventListener('keydown', handleInputKeys);
     els.input.addEventListener('input', handleAutocomplete);
-    document.addEventListener('click', (e) => { if (!els.suggestions.contains(e.target) && e.target !== els.input) hideSuggestions(); });
+    document.addEventListener('click', handleDocumentClick);
     document.querySelectorAll('.hospital-filter-chip').forEach(chip => chip.addEventListener('click', () => applyQuickChip(chip)));
     els.applyAdvanced.addEventListener('click', () => { syncAdvancedToMain(); updateFilterSummary(); runSearch({ reset: true }); });
     els.resetAdvanced.addEventListener('click', resetAdvancedFilters);
@@ -38,8 +55,27 @@
     els.toggleView.addEventListener('click', () => { state.cardMode = !state.cardMode; els.results.classList.toggle('hospital-results-card-mode', state.cardMode); els.results.classList.toggle('hospital-results-list-mode', !state.cardMode); });
     els.exportCsv.addEventListener('click', exportCsv);
     els.clearAll.addEventListener('click', clearAll);
-    els.previewFrame.addEventListener('load', () => { els.previewLoading.style.display = 'none'; els.previewFrame.style.display = 'block'; });
-    els.copyReference.addEventListener('click', async () => { if (currentPreviewReference) await navigator.clipboard?.writeText(currentPreviewReference); });
+    els.previewFrame.addEventListener('load', () => { els.previewLoading.classList.add('d-none'); els.previewFrame.classList.remove('d-none'); });
+    els.copyReference.addEventListener('click', copyReference);
+    els.closePreview.addEventListener('click', resetPreviewPanel);
+    root.querySelectorAll('[data-panel-tab]').forEach(tab => tab.addEventListener('click', () => activatePanelTab(tab.dataset.panelTab)));
+  }
+
+  function handleDocumentClick(e) {
+    if (!els.suggestions.contains(e.target) && e.target !== els.input) hideSuggestions();
+
+    const tab = e.target.closest('[data-panel-tab]');
+    if (tab) return;
+
+    const card = e.target.closest('.hospital-result-card[data-document-id]');
+    if (!card) return;
+    const action = e.target.closest('[data-action]')?.dataset.action;
+    if (action === 'details') return;
+
+    e.preventDefault();
+    const item = JSON.parse(card.dataset.item || '{}');
+    setActiveResultCard(card);
+    openPreviewPanel(item, action === 'ocr' ? 'ocr' : 'preview');
   }
 
   function handleInputKeys(e) {
@@ -120,7 +156,8 @@
       if (!r.ok || !data?.success) throw Object.assign(new Error(data?.message || 'Erro de busca'), { data });
       state.lastResult = data; state.lastQuery = q; state.page = data.page || state.page;
       state.items = reset ? (data.items || []) : [...state.items, ...(data.items || [])];
-      rememberSearch(q); renderResults(data, reset); renderSummary(data); updateFilterSummary();
+      rememberSearch(q); renderResults(data); renderSummary(data); updateFilterSummary();
+      if (state.selectedItem && !state.items.some(x => String(x.versionId) === String(state.selectedItem.versionId))) resetPreviewPanel();
     } catch (err) {
       if (err.name !== 'AbortError') renderError(err.data?.message || 'Não foi possível executar a busca agora.', err.data?.correlationId);
     } finally { setLoading(false); }
@@ -139,26 +176,30 @@
     return p.toString();
   }
 
-  function renderResults(data, reset) {
+  function renderResults(data) {
     if (!state.items.length) return renderEmpty('Nenhum documento encontrado.');
     const total = data.totalResults ?? data.total ?? state.items.length;
     els.meta.textContent = `${number(total)} documentos encontrados · Exibindo ${number(state.items.length)} de ${number(total)}${data.elapsedMs ? ` · Busca executada em ${data.elapsedMs}ms` : ''}`;
     els.results.innerHTML = state.items.map(renderResultCard).join('');
-    els.results.querySelectorAll('[data-action="preview"]').forEach(b => b.addEventListener('click', (e) => { e.stopPropagation(); openPreview(JSON.parse(b.closest('.hospital-result-card').dataset.item)); }));
-    els.results.querySelectorAll('[data-action="ocr"]').forEach(b => b.addEventListener('click', (e) => { e.stopPropagation(); openOcr(JSON.parse(b.closest('.hospital-result-card').dataset.item)); }));
+    if (state.selectedItem) {
+      const active = els.results.querySelector(`[data-version-id="${cssEscape(String(state.selectedItem.versionId))}"]`);
+      active?.classList.add('active');
+    }
     els.loadMore.classList.toggle('d-none', !data.hasMore);
     if (data.hasMore) state.page = (data.page || state.page) + 1;
   }
 
   function renderResultCard(item) {
     const itemJson = escapeAttr(JSON.stringify(item));
-    return `<article class="hospital-result-card" data-item="${itemJson}">
+    const versionId = escapeAttr(item.versionId || '');
+    const documentId = escapeAttr(item.documentId || '');
+    return `<article class="hospital-result-card" data-item="${itemJson}" data-document-id="${documentId}" data-version-id="${versionId}" data-title="${escapeAttr(item.title || '')}" data-type="${escapeAttr(item.friendlyType || item.type || 'Documento')}" data-folder="${escapeAttr(item.folderPath || item.folderName || '')}" tabindex="0">
       <div class="hospital-file-icon"><i class="bi ${iconFor(item)}"></i></div>
-      <div><div class="hospital-result-title">${escapeHtml(item.title || 'Documento sem título')}</div>
+      <div class="hospital-result-main"><div class="hospital-result-title">${escapeHtml(item.title || 'Documento sem título')}</div>
       <div class="hospital-result-file">${escapeHtml(item.fileName || '')}</div><div class="hospital-result-path"><i class="bi bi-folder2-open"></i> ${escapeHtml(item.folderPath || item.folderName || 'Sem pasta informada')}</div>
       <div class="hospital-badges"><span class="hospital-badge">${escapeHtml(item.code || 'Sem código')}</span><span class="hospital-badge">${escapeHtml(item.friendlyType || item.type || 'Documento')}</span><span class="hospital-badge ${item.hasOcr ? 'ocr' : ''}">${ocrStatusLabel(item.ocrStatus, item.hasOcr)}</span><span class="hospital-badge match">${escapeHtml(item.matchSourceLabel || 'Relevância')}</span><span class="hospital-badge">${escapeHtml(item.createdAtFormatted || item.createdAt || '')}</span></div>
       <div class="hospital-snippet">${sanitizeSnippet(item.snippet || 'Documento encontrado pelos metadados informados.')}</div></div>
-      <div class="hospital-result-actions"><button class="btn btn-sm btn-primary" data-action="preview" type="button"><i class="bi bi-eye"></i> Preview</button><button class="btn btn-sm btn-outline-primary" data-action="ocr" type="button"><i class="bi bi-body-text"></i> Ver OCR</button><a class="btn btn-sm btn-outline-secondary" href="${escapeAttr(item.viewerUrl || '#')}" target="_blank" rel="noopener"><i class="bi bi-box-arrow-up-right"></i> Detalhes</a></div>
+      <div class="hospital-result-actions"><button class="btn btn-sm btn-primary" data-action="preview" type="button"><i class="bi bi-eye"></i> Preview</button><button class="btn btn-sm btn-outline-primary" data-action="ocr" type="button"><i class="bi bi-body-text"></i> OCR</button><a class="btn btn-sm btn-outline-secondary" data-action="details" href="${escapeAttr(item.viewerUrl || '#')}" target="_blank" rel="noopener"><i class="bi bi-box-arrow-up-right"></i> Dados</a></div>
     </article>`;
   }
 
@@ -174,27 +215,108 @@
   }
   function assistantCard(icon,title,text){return `<div class="hospital-assistant-card"><i class="bi ${icon}"></i><strong>${title}</strong><p>${text}</p></div>`;}
 
-  function renderEmpty(title) { els.meta.textContent = 'Nenhum documento encontrado.'; els.loadMore.classList.add('d-none'); els.results.innerHTML = `<div class="hospital-empty-state"><h3>${escapeHtml(title)}</h3><p>Você pode tentar:</p><ul><li>remover filtros;</li><li>buscar por parte do nome;</li><li>pesquisar por número;</li><li>tentar termo sem acento;</li><li>buscar por tipo documental;</li><li>usar uma palavra do OCR.</li></ul><button class="hospital-btn-secondary" type="button" data-empty="filters">Limpar filtros</button> <button class="hospital-btn-secondary" type="button" data-empty="all">Pesquisar em todo o acervo</button> <button class="hospital-btn-primary" type="button" data-empty="home">Voltar ao início</button></div>`; els.results.querySelector('[data-empty="filters"]')?.addEventListener('click', resetAdvancedFilters); els.results.querySelector('[data-empty="all"]')?.addEventListener('click', () => { resetAdvancedFilters(); runSearch({ reset: true }); }); els.results.querySelector('[data-empty="home"]')?.addEventListener('click', clearAll); renderSummary(null); }
+  function renderEmpty(title) { els.meta.textContent = 'Nenhum documento encontrado.'; els.loadMore.classList.add('d-none'); els.results.innerHTML = `<div class="hospital-empty-state"><h3>${escapeHtml(title)}</h3><p>Você pode tentar:</p><ul><li>remover filtros;</li><li>buscar por parte do nome;</li><li>pesquisar por número;</li><li>tentar termo sem acento;</li><li>buscar por tipo documental;</li><li>usar uma palavra do OCR.</li></ul><button class="hospital-btn-secondary" type="button" data-empty="filters">Limpar filtros</button> <button class="hospital-btn-secondary" type="button" data-empty="all">Pesquisar em todo o acervo</button> <button class="hospital-btn-primary" type="button" data-empty="home">Voltar ao início</button></div>`; els.results.querySelector('[data-empty="filters"]')?.addEventListener('click', resetAdvancedFilters); els.results.querySelector('[data-empty="all"]')?.addEventListener('click', () => { resetAdvancedFilters(); runSearch({ reset: true }); }); els.results.querySelector('[data-empty="home"]')?.addEventListener('click', clearAll); renderSummary({ totalResults: 0, totalWithOcr: 0, totalWithoutOcr: 0, totalByType: {}, query: els.input.value.trim() }); }
   function renderError(message, correlationId) { els.meta.textContent = 'Erro ao executar a busca.'; els.results.innerHTML = `<div class="hospital-error-state"><h3>Não foi possível executar a busca agora.</h3><p>${escapeHtml(message)}</p>${correlationId ? `<p class="text-muted">CorrelationId: ${escapeHtml(correlationId)}</p>` : ''}<button id="btnTryAgain" class="hospital-btn-primary" type="button">Tentar novamente</button></div>`; $('btnTryAgain')?.addEventListener('click', () => runSearch({ reset: true })); }
 
   function renderSummary(data) {
-    if (!data) { els.summary.innerHTML = `<h3>Assistente de busca</h3><p class="text-muted">Informe prontuário, APAC, paciente, exame, laudo, tipo documental ou termo de OCR para iniciar uma consulta segura.</p>`; return; }
-    const byType = Object.entries(data.totalByType || {}).map(([k,v]) => `<div class="hospital-summary-metric"><span>${escapeHtml(k)}</span><strong>${number(v)}</strong></div>`).join('');
-    els.summary.innerHTML = `<h3>Resumo da busca</h3><p>Você pesquisou por <strong>${escapeHtml(data.query || state.lastQuery)}</strong>. Foram encontrados <strong>${number(data.totalResults)}</strong> documentos, <strong>${number(data.totalWithOcr)}</strong> com OCR concluído e <strong>${number(data.totalWithoutOcr)}</strong> sem OCR.</p><div class="hospital-summary-metric"><span>Total encontrado</span><strong>${number(data.totalResults)}</strong></div><div class="hospital-summary-metric"><span>Exibidos</span><strong>${number(state.items.length)}</strong></div><div class="hospital-summary-metric"><span>Com OCR</span><strong>${number(data.totalWithOcr)}</strong></div><div class="hospital-summary-metric"><span>Sem OCR</span><strong>${number(data.totalWithoutOcr)}</strong></div>${byType}<p class="mt-3 text-muted">Sugestão: combine termo clínico com tipo documental ou status OCR para reduzir ruído.</p>`;
+    if (!data) { els.summary.innerHTML = `<div><strong>Pronto para pesquisar</strong><span>Informe prontuário, APAC, paciente, exame, laudo, tipo documental ou termo do OCR.</span></div><button id="btnSummaryClear" type="button" class="btn btn-sm btn-outline-secondary">Limpar busca</button>`; $('btnSummaryClear')?.addEventListener('click', clearAll); return; }
+    const typeText = Object.entries(data.totalByType || {}).map(([k,v]) => `${escapeHtml(k)}: ${number(v)}`).join(' • ');
+    els.summary.innerHTML = `<div><strong>${number(data.totalResults)} documentos encontrados</strong><span>Exibindo ${number(state.items.length)} • ${number(data.totalWithOcr)} com OCR • ${number(data.totalWithoutOcr)} sem OCR${typeText ? ` • ${typeText}` : ''}</span></div><button id="btnSummaryClear" type="button" class="btn btn-sm btn-outline-secondary">Limpar busca</button>`;
+    $('btnSummaryClear')?.addEventListener('click', clearAll);
   }
 
-  function openPreview(item) {
-    currentPreviewReference = `${item.code || ''} ${item.title || ''} ${item.fileName || ''}`.trim();
+  function setActiveResultCard(card) {
+    els.results.querySelectorAll('.hospital-result-card.active').forEach(x => x.classList.remove('active'));
+    card.classList.add('active');
+  }
+
+  function openPreviewPanel(item, tab = 'preview') {
+    state.selectedItem = item;
+    state.ocrLoadedFor = null;
+    currentPreviewReference = `${item.title || 'Documento'} | ${item.code || item.documentId || ''} | versão ${item.versionId || ''}`.trim();
+    els.previewPanel.classList.add('has-document');
     els.previewTitle.textContent = item.title || 'Preview do documento';
-    els.openNewTab.href = item.viewerUrl || item.previewUrl || '#';
-    els.previewLoading.style.display = 'flex'; els.previewFrame.style.display = 'none'; els.previewFrame.src = item.previewUrl || `/HospitalDocuments/Preview?versionId=${encodeURIComponent(item.versionId)}`;
-    bootstrap.Modal.getOrCreateInstance($('previewModal')).show();
+    els.previewSubtitle.textContent = `${item.folderPath || item.folderName || 'Sem pasta informada'} · ${item.fileName || 'Arquivo'} · ${item.code || 'Sem código'}`;
+    els.previewTypeBadge.textContent = item.friendlyType || item.type || 'Documento';
+    const previewUrl = item.previewUrl || `/HospitalDocuments/Preview?versionId=${encodeURIComponent(item.versionId)}`;
+    els.openNewTab.href = previewUrl;
+    els.openNewTab.classList.remove('disabled');
+    els.openNewTab.removeAttribute('aria-disabled');
+    renderMeta(item);
+    showPreviewLoading();
+    els.previewFrame.src = previewUrl;
+    activatePanelTab(tab);
   }
 
-  async function openOcr(item) {
-    els.ocrTitle.textContent = `OCR · ${item.title || 'Documento'}`; els.ocrStatus.textContent = 'Carregando OCR sob demanda...'; els.ocrText.textContent = '';
-    bootstrap.Offcanvas.getOrCreateInstance($('ocrOffcanvas')).show();
-    try { const r = await fetch(item.ocrUrl || `/HospitalDocuments/OcrText?versionId=${encodeURIComponent(item.versionId)}`); const data = await r.json(); if (data.success && data.hasOcr && data.text) { els.ocrStatus.textContent = 'OCR disponível. Conteúdo carregado somente após ação do usuário.'; els.ocrText.innerHTML = highlight(escapeHtml(data.text), els.input.value.trim(), true); } else { els.ocrStatus.textContent = ocrStatusLabel(data.status, false); els.ocrText.textContent = 'Nenhum texto OCR foi gerado para esta versão do documento.'; } } catch { els.ocrStatus.textContent = 'Não foi possível carregar o OCR.'; }
+  function showPreviewLoading() {
+    els.previewEmpty.classList.add('d-none');
+    els.previewFrame.classList.add('d-none');
+    els.previewLoading.classList.remove('d-none');
+  }
+
+  function activatePanelTab(tabName) {
+    root.querySelectorAll('[data-panel-tab]').forEach(tab => tab.classList.toggle('active', tab.dataset.panelTab === tabName));
+    root.querySelectorAll('[data-panel-content]').forEach(content => content.classList.toggle('active', content.dataset.panelContent === tabName));
+    if (tabName === 'ocr' && state.selectedItem) loadOcrForSelected();
+  }
+
+  async function loadOcrForSelected() {
+    const item = state.selectedItem;
+    if (!item || state.ocrLoadedFor === item.versionId) return;
+    state.ocrLoadedFor = item.versionId;
+    els.ocrStatus.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Carregando OCR sob demanda...';
+    els.ocrText.textContent = '';
+    try {
+      const r = await fetch(item.ocrUrl || `/HospitalDocuments/OcrText?versionId=${encodeURIComponent(item.versionId)}`, { headers: { Accept: 'application/json' } });
+      const data = await r.json();
+      if (data.success && data.hasOcr && data.text) {
+        els.ocrStatus.textContent = 'OCR disponível. Conteúdo carregado somente após ação do usuário.';
+        els.ocrText.innerHTML = highlight(escapeHtml(data.text), els.input.value.trim(), true);
+      } else {
+        els.ocrStatus.textContent = ocrStatusLabel(data.status, false);
+        els.ocrText.textContent = 'Nenhum texto OCR foi gerado para esta versão do documento.';
+      }
+    } catch {
+      state.ocrLoadedFor = null;
+      els.ocrStatus.textContent = 'Não foi possível carregar o OCR.';
+    }
+  }
+
+  function renderMeta(item) {
+    els.metaContent.classList.remove('hospital-preview-empty');
+    els.metaContent.innerHTML = [
+      ['Código', item.code || 'Sem código'], ['Documento', item.documentId], ['Versão', item.versionId], ['Arquivo', item.fileName], ['Tipo', item.friendlyType || item.type || item.contentType],
+      ['Pasta', item.folderPath || item.folderName], ['Tamanho', item.sizeFormatted || item.size], ['Criado em', item.createdAtFormatted || item.createdAt], ['OCR', ocrStatusLabel(item.ocrStatus, item.hasOcr)]
+    ].filter(([,v]) => v).map(([k,v]) => `<div class="hospital-meta-row"><span>${escapeHtml(k)}</span><strong>${escapeHtml(v)}</strong></div>`).join('');
+  }
+
+  function resetPreviewPanel() {
+    state.selectedItem = null;
+    state.ocrLoadedFor = null;
+    currentPreviewReference = '';
+    els.results?.querySelectorAll('.hospital-result-card.active').forEach(x => x.classList.remove('active'));
+    els.previewPanel.classList.remove('has-document');
+    els.previewTitle.textContent = 'Selecione um documento';
+    els.previewSubtitle.textContent = 'Clique em um resultado da busca para abrir o preview ao lado.';
+    els.previewTypeBadge.textContent = 'Documento';
+    els.openNewTab.removeAttribute('href');
+    els.openNewTab.classList.add('disabled');
+    els.openNewTab.setAttribute('aria-disabled', 'true');
+    els.previewFrame.removeAttribute('src');
+    els.previewFrame.classList.add('d-none');
+    els.previewLoading.classList.add('d-none');
+    els.previewEmpty.classList.remove('d-none');
+    els.ocrStatus.textContent = 'Selecione um documento para consultar o OCR.';
+    els.ocrText.textContent = '';
+    els.metaContent.classList.add('hospital-preview-empty');
+    els.metaContent.textContent = 'Nenhum documento selecionado.';
+    activatePanelTab('preview');
+  }
+
+  async function copyReference() {
+    if (!currentPreviewReference) return;
+    const url = els.openNewTab.href || '';
+    await navigator.clipboard?.writeText(`${currentPreviewReference}${url ? `\n${url}` : ''}`);
   }
 
   function applyQuickChip(chip) {
@@ -209,9 +331,9 @@
   function resetAdvancedFilters(){ [els.advancedType,els.advancedOcrStatus,els.dateFrom,els.dateTo,els.folder].forEach(x=>x.value=''); [els.ocrRequired,els.recentOnly,els.previewOnly].forEach(x=>x.checked=false); els.sort.value='relevance'; els.type.value=''; document.querySelectorAll('.hospital-filter-chip.active').forEach(x=>x.classList.remove('active')); updateFilterSummary(); }
   function updateFilterSummary(){ const filters=[]; if(els.type.value)filters.push(labelType(els.type.value)); if(els.advancedOcrStatus.value)filters.push(ocrFilterLabel(els.advancedOcrStatus.value)); if(els.dateFrom.value)filters.push(`Desde ${els.dateFrom.value}`); if(els.dateTo.value)filters.push(`Até ${els.dateTo.value}`); if(els.folder.value)filters.push(`Pasta ${els.folder.value}`); if(els.ocrRequired.checked)filters.push('Termo OCR obrigatório'); if(els.recentOnly.checked)filters.push('Últimos 7 dias'); if(els.previewOnly.checked)filters.push('Com preview'); els.activeFilters.innerHTML = filters.length ? `Filtros ativos: ${filters.map(f=>`<span class="hospital-active-filter">${escapeHtml(f)} ×</span>`).join('')}` : ''; els.advancedSummary.textContent = filters.length ? filters.join(' · ') : 'Nenhum filtro avançado aplicado.'; }
   function clearSearchInput(){ els.input.value=''; hideSuggestions(); els.input.focus(); }
-  function clearAll(){ clearSearchInput(); resetAdvancedFilters(); state.items=[]; state.lastResult=null; state.page=1; els.meta.textContent='Nenhuma busca executada ainda.'; els.loadMore.classList.add('d-none'); renderAssistant(); renderSummary(null); }
+  function clearAll(){ clearSearchInput(); resetAdvancedFilters(); state.items=[]; state.lastResult=null; state.page=1; els.meta.textContent='Nenhuma busca executada ainda.'; els.loadMore.classList.add('d-none'); renderAssistant(); renderSummary(null); resetPreviewPanel(); }
 
-  function setLoading(isLoading){ els.btnSearch.disabled=isLoading; els.btnSearch.querySelector('.btn-label').textContent = isLoading ? 'Pesquisando...' : 'Pesquisar'; if(isLoading && state.page === 1) els.results.innerHTML='<div class="hospital-empty-state"><span class="spinner-border spinner-border-sm me-2"></span>Consultando documentos, metadados e OCR...</div>'; }
+  function setLoading(isLoading){ els.btnSearch.disabled=isLoading; els.btnSearch.querySelector('.btn-label').textContent = isLoading ? 'Pesquisando...' : 'Pesquisar'; if(isLoading && state.page === 1) els.results.innerHTML='<div class="hospital-results-skeleton"><div></div><div></div><div></div></div>'; }
   function exportCsv(){ if(!state.items.length) return; const rows=[['Código','Título','Arquivo','Tipo','Pasta','OCR','Data'],...state.items.map(i=>[i.code,i.title,i.fileName,i.friendlyType||i.type,i.folderPath||i.folderName,ocrStatusLabel(i.ocrStatus,i.hasOcr),i.createdAtFormatted||i.createdAt])]; const csv=rows.map(r=>r.map(v=>`"${String(v||'').replaceAll('"','""')}"`).join(';')).join('\n'); const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'})); a.download='resultado-busca-hospitalar.csv'; a.click(); URL.revokeObjectURL(a.href); }
   function rememberSearch(q){ const arr=[q,...state.recentSearches.filter(x=>x!==q)].slice(0,6); state.recentSearches=arr; localStorage.setItem('hospitalDocumentsRecentSearches',JSON.stringify(arr)); }
   function clinicalSuggestions(q){ const terms=['APAC','carcinoma','oncologia','quimioterapia','tomografia','laudo','exame','prontuário']; return terms.filter(x=>x.toLowerCase().includes(q.toLowerCase())).map(x=>({group:'Termos clínicos',suggestionType:'term',label:x,subtitle:'Pesquisar termo clínico',icon:'bi-heart-pulse'})); }
@@ -231,4 +353,5 @@
   function escapeRegExp(s){ return String(s).replace(/[.*+?^${}()|[\]\\]/g,'\\$&'); }
   function escapeHtml(v){ return String(v ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;'); }
   function escapeAttr(v){ return escapeHtml(v); }
+  function cssEscape(value){ return window.CSS?.escape ? CSS.escape(value) : value.replace(/[^a-zA-Z0-9_-]/g, '\\$&'); }
 })();
