@@ -220,13 +220,13 @@ public sealed class GedController : Controller
                 if (!allowed) return StatusCode(403, JsonError("Você não possui permissão para adicionar documentos nesta pasta.", "Autorização", "Permissão negada para upload na pasta.", false, correlationId));
             }
             var fileNames = (request?.FileNames ?? Array.Empty<string>()).Where(x => !string.IsNullOrWhiteSpace(x)).Select(Path.GetFileNameWithoutExtension).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-            if (fileNames.Length == 0) return Ok(JsonSuccess("Nenhum arquivo para validação de duplicidade.", new { duplicates = Array.Empty<object>() }, correlationId));
+            if (fileNames.Length == 0) return Ok(JsonSuccess("Nenhum arquivo para validação de duplicidade.", new { duplicates = Array.Empty<object>(), requestedFolderId = folderResolution.RequestedFolderId, resolvedFolderId = folderResolution.ResolvedFolderId, wasVirtual = folderResolution.WasVirtual, createdRealFolder = folderResolution.CreatedRealFolder }, correlationId));
 
             const string sql = @"select id as ExistingDocumentId, title as FileName from ged.document where tenant_id=@tenantId::uuid and folder_id=@folderId::uuid and title = any(@titles) and reg_status='A';";
             using var con = _db.CreateConnection();
             var rows = await con.QueryAsync(sql, new { tenantId = _currentUser.TenantId, folderId = folderResolution.ResolvedFolderId, titles = fileNames });
             _logger.LogInformation("Duplicidades verificadas. Tenant={TenantId} User={UserId} RequestedFolderId={RequestedFolderId} ResolvedFolderId={ResolvedFolderId} WasVirtual={WasVirtual} CreatedRealFolder={CreatedRealFolder} FileCount={FileCount} CorrelationId={CorrelationId}", _currentUser.TenantId, _currentUser.UserId, folderResolution.RequestedFolderId, folderResolution.ResolvedFolderId, folderResolution.WasVirtual, folderResolution.CreatedRealFolder, fileNames.Length, correlationId);
-            return Ok(JsonSuccess("Duplicidades verificadas com sucesso.", new { duplicates = rows }, correlationId));
+            return Ok(JsonSuccess("Duplicidades verificadas com sucesso.", new { duplicates = rows, requestedFolderId = folderResolution.RequestedFolderId, resolvedFolderId = folderResolution.ResolvedFolderId, wasVirtual = folderResolution.WasVirtual, createdRealFolder = folderResolution.CreatedRealFolder }, correlationId));
         }
         catch (Exception ex)
         {

@@ -3,9 +3,11 @@
 @using InovaGed.Application.Classification
 @using InovaGed.Application.Ged.Folders
 @using System.Threading
+@using Microsoft.Extensions.Options
 
 @inject ICurrentUser CurrentUser
 @inject IDocumentClassificationQueries ClassificationQueries
+@inject IOptions<InovaGed.Application.Ged.Documents.DocumentUploadOptions> DocumentUploadOptions
 
 @{
     ViewData["Title"] = "GED - Documentos";
@@ -24,6 +26,7 @@
     var runningOcrCount = (ViewBag.RunningOcrCount as int?) ?? 0;
     var uploadFolderIsVirtual = FolderIdHelper.IsVirtualFolder(Model.CurrentFolderId);
     var uploadFolderLabel = !string.IsNullOrWhiteSpace(Model.CurrentFolderName) ? Model.CurrentFolderName : "pasta selecionada";
+    var allowLegacyUploadFallback = DocumentUploadOptions.Value.AllowLegacyUploadFallback;
 }
 
 <div class="row">
@@ -627,7 +630,7 @@
     </div>
 </div>
 
-<div class="modal fade" id="bulkUploadModal" tabindex="-1" aria-hidden="true" data-folder-id="@Model.CurrentFolderId" data-folder-virtual="@(uploadFolderIsVirtual ? "true" : "false")" data-folder-name="@uploadFolderLabel">
+<div class="modal fade" id="bulkUploadModal" tabindex="-1" aria-hidden="true" data-folder-id="@Model.CurrentFolderId" data-folder-virtual="@(uploadFolderIsVirtual ? "true" : "false")" data-folder-name="@uploadFolderLabel" data-allow-legacy-upload-fallback="@(allowLegacyUploadFallback ? "true" : "false")">
   <div class="modal-dialog modal-xl modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header"><div><h5 class="modal-title">Adicionar documentos em lote</h5><small class="text-muted">Envie vários arquivos diretamente para a pasta selecionada.</small></div><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>

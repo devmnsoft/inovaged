@@ -1,7 +1,7 @@
 (function () {
     const DuplicateStrategy = { overwrite: 'overwrite', rename: 'rename', skip: 'skip', cancel: 'cancel' };
     const ValidationStep = 'Validação de extensão';
-    const state = { files: [], uploading: false, isStarting: false, isFinishing: false, activeUploads: 0, maxConcurrency: 2, completed: 0, failed: 0, skipped: 0, isCheckingDuplicates: false, duplicateCheckKey: null, duplicateCheckPromise: null, duplicateCheckResult: null, lastDuplicateSignature: null, batchId: null, duplicateStrategy: null, uploadAbortController: null };
+    const state = { files: [], uploading: false, isStarting: false, isFinishing: false, activeUploads: 0, maxConcurrency: 2, completed: 0, failed: 0, skipped: 0, isCheckingDuplicates: false, duplicateCheckKey: null, duplicateCheckPromise: null, duplicateCheckResult: null, lastDuplicateSignature: null, batchId: null, useLegacyUploadFallback: false, duplicateStrategy: null, uploadAbortController: null };
 
     function initBulkUpload() {
         const dz = document.getElementById('bulkDropzone');
@@ -224,6 +224,8 @@
 
     const openBulkUploadModal = () => { updateUploadFolderUi(); bootstrap.Modal.getOrCreateInstance('#bulkUploadModal').show(); };
     const closeBulkUploadModal = () => bootstrap.Modal.getOrCreateInstance('#bulkUploadModal').hide();
+    function allowLegacyUploadFallback() { return document.getElementById('bulkUploadModal')?.dataset?.allowLegacyUploadFallback === 'true'; }
+    function isSchemaMissingError(payload) { return payload?.errorStep === 'Schema' || payload?.code === 'UPLOAD_BATCH_SCHEMA_MISSING'; }
 
     function createFileItem(file) {
         const extension = (file.name.split('.').pop() || '').toLowerCase();
@@ -252,6 +254,7 @@
         const keepFailed = options.keepFailed === true;
         state.files = keepFailed ? state.files.filter(x => x.status === 'error') : [];
         state.batchId = null;
+        state.useLegacyUploadFallback = false;
         state.duplicateStrategy = null;
         state.uploading = false;
         state.isStarting = false;
@@ -459,7 +462,16 @@
             const r = await fetch('/Ged/Documents/CheckDuplicateNames', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { RequestVerificationToken: token } : {}) }, body: JSON.stringify({ folderId, fileNames: names }) });
             const j = await r.json().catch(() => ({ success: false, message: 'Erro ao verificar duplicidades' }));
             if (!r.ok || !j.success) throw new Error(j.message || 'Não foi possível verificar duplicidades.');
-            return j.data?.duplicates || j.duplicates || [];
+            const data = j.data || j;
+            if (data.resolvedFolderId) {
+                console.log('[BulkUpload] destino resolvido para duplicidade', {
+                    requestedFolderId: data.requestedFolderId,
+                    resolvedFolderId: data.resolvedFolderId,
+                    wasVirtual: data.wasVirtual,
+                    createdRealFolder: data.createdRealFolder
+                });
+            }
+            return data.duplicates || [];
         })();
 
         try {
@@ -528,8 +540,23 @@
                 }
             }
 
-            if (!state.batchId) {
-                state.batchId = await startUploadBatch();
+            if (!state.batchId && !state.useLegacyUploadFallback) {
+                try {
+                    state.batchId = await startUploadBatch();
+                } catch (err) {
+                    if (err.isSchemaMissing) {
+                        showBulkUploadMessage(err.message, 'danger');
+                        showAppToast('Upload em lote pendente de atualização do banco.', 'error', 'Upload indisponível');
+                        if (!allowLegacyUploadFallback()) {
+                            throw err;
+                        }
+                        state.useLegacyUploadFallback = true;
+                        state.batchId = null;
+                        showBulkUploadMessage(`${err.message} Fallback legado habilitado temporariamente; os arquivos serão enviados um a um.`, 'warning');
+                    } else {
+                        throw err;
+                    }
+                }
             }
 
             await uploadQueue();
@@ -577,7 +604,15 @@
         const r = await fetch('/Ged/UploadBatch/Start', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { RequestVerificationToken: token } : {}) }, body: JSON.stringify(payload) });
         const j = await r.json().catch(() => ({ success: false, message: 'Resposta inválida ao iniciar lote.' }));
         state.isStarting = false;
-        if (!r.ok || !j.success || !j.batchId) throw new Error(j.message || 'Não foi possível iniciar o lote.');
+        if (!r.ok || !j.success || !j.batchId) {
+            if (isSchemaMissingError(j)) {
+                const err = new Error('Upload em lote ainda não está configurado no banco de dados. Execute a atualização do sistema.');
+                err.isSchemaMissing = true;
+                err.payload = j;
+                throw err;
+            }
+            throw new Error(j.message || 'Não foi possível iniciar o lote.');
+        }
         console.log('[BulkUpload] batch iniciado', j.batchId);
         return j.batchId;
     }
@@ -641,7 +676,7 @@
             const fd = new FormData();
             fd.append('file', fileItem.file);
             fd.append('folderId', getCurrentFolderId() || '');
-            fd.append('batchId', state.batchId || '');
+            if (state.batchId) fd.append('batchId', state.batchId);
             fd.append('fileIndex', String(fileIndex || 0));
             fd.append('totalFiles', String(totalFiles || state.files.length || 0));
             fd.append('runOcr', 'false');
@@ -655,7 +690,7 @@
             renderFileList();
 
             const xhr = new XMLHttpRequest();
-            const endpoint = '/Ged/UploadBatch/File';
+            const endpoint = state.useLegacyUploadFallback ? '/Ged/Documents/BulkUploadSingle' : '/Ged/UploadBatch/File';
             console.log('[BulkUpload] endpoint usado:', endpoint);
             xhr.timeout = 300000;
             xhr.open('POST', endpoint, true);
@@ -776,7 +811,7 @@
         const c = { total: state.files.length, success: 0, error: 0, ignored: 0, duplicate: 0, waiting: 0 };
         state.files.forEach(f => { if (f.status in c) c[f.status]++; });
         const el = document.getElementById('bulkSummary');
-        if (el) el.textContent = `Total: ${c.total} | Aguardando: ${c.waiting} | Enviados: ${c.success} | Falhas: ${c.error} | Ignorados: ${c.ignored} | Duplicados: ${c.duplicate}`;
+        if (el) el.textContent = `Total: ${c.total} | Aguardando: ${c.waiting} | Enviados: ${c.success} | Falhas: ${c.error} | Ignorados: ${c.ignored} | Duplicados: ${c.duplicate}${state.useLegacyUploadFallback ? ' | Fallback legado ativo' : ''}`;
         updateFooterActions();
     }
 
