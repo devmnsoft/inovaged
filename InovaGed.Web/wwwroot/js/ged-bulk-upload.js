@@ -129,26 +129,55 @@
     }
 
     function getActiveFolderElement() {
-        const active = document.querySelector('.js-folder-node.active, .ged-tree-row.active, [data-folder-selected="true"]');
+        const active = document.querySelector('.js-folder-node.active[data-folder-id], .js-folder-node.selected[data-folder-id], [data-folder-selected="true"][data-folder-id], .ged-tree-row.active');
         return active?.closest('[data-folder-id]') || active || null;
     }
 
-    function getCurrentFolderId() {
+    function getSelectedUploadFolder() {
+        const active = document.querySelector('.js-folder-node.active[data-folder-id], .js-folder-node.selected[data-folder-id], [data-folder-selected="true"][data-folder-id], .ged-tree-row.active');
+        const activeNode = active?.closest('[data-folder-id]') || active || null;
+        if (activeNode) {
+            const folderId = normalizeFolderId(activeNode.dataset.folderId);
+            const uploadFolderId = normalizeFolderId(activeNode.dataset.uploadFolderId) || folderId;
+            const folderName = activeNode.dataset.folderName || activeNode.dataset.folderPath || activeNode.textContent?.trim() || 'pasta selecionada';
+            const canReceive = (activeNode.dataset.canReceiveDocuments || 'true') === 'true';
+            return { source: 'active-folder-node', folderId, uploadFolderId, folderName, canReceive };
+        }
+
         const modal = document.getElementById('bulkUploadModal');
-        const active = getActiveFolderElement();
-        const queryFolderId = new URL(window.location.href).searchParams.get('folderId');
-        const candidates = [
-            { source: 'active-tree-node', value: active?.getAttribute('data-upload-folder-id') || active?.getAttribute('data-folder-id') },
-            { source: 'query-string', value: queryFolderId },
-            { source: 'hidden-currentFolderId', value: document.getElementById('currentFolderId')?.value },
-            { source: 'hidden-bulkUploadFolderId', value: document.getElementById('bulkUploadFolderId')?.value },
-            { source: 'hidden-bulkFolderId', value: document.getElementById('bulkFolderId')?.value },
-            { source: 'modal-data-folder-id', value: modal?.getAttribute('data-folder-id') }
-        ];
-        const selected = candidates.map(x => ({ ...x, value: normalizeFolderId(x.value) })).find(x => x.value)?.value || null;
-        console.log('[BulkUpload] folder candidates', candidates);
-        console.log('[BulkUpload] selected folderId', selected);
-        return selected;
+        if (modal?.dataset.uploadFolderId) {
+            return {
+                source: 'modal',
+                folderId: normalizeFolderId(modal.dataset.folderId),
+                uploadFolderId: normalizeFolderId(modal.dataset.uploadFolderId),
+                folderName: modal.dataset.folderName || 'pasta selecionada',
+                canReceive: modal.dataset.canReceiveDocuments !== 'false'
+            };
+        }
+
+        const hiddenUpload = document.getElementById('bulkUploadFolderId') || document.getElementById('bulkFolderId');
+        if (hiddenUpload?.value) {
+            return {
+                source: 'hidden',
+                folderId: normalizeFolderId(document.getElementById('bulkUploadRequestedFolderId')?.value) || normalizeFolderId(hiddenUpload.value),
+                uploadFolderId: normalizeFolderId(hiddenUpload.value),
+                folderName: '',
+                canReceive: true
+            };
+        }
+
+        const url = new URL(window.location.href);
+        const urlFolderId = normalizeFolderId(url.searchParams.get('folderId'));
+        return { source: 'url', folderId: urlFolderId, uploadFolderId: urlFolderId, folderName: '', canReceive: !!urlFolderId };
+    }
+
+    function getCurrentFolderId() {
+        return getSelectedUploadFolder()?.uploadFolderId || null;
+    }
+
+    function getRequestedFolderId() {
+        const selected = getSelectedUploadFolder();
+        return selected?.folderId || selected?.uploadFolderId || null;
     }
 
     function isMissingFolderId(folderId) {
@@ -159,36 +188,56 @@
         return normalizeFolderId(folderId)?.toLowerCase().startsWith('f0000000-0000-0000-0000-') === true;
     }
 
-    function syncSelectedFolder(folderEl) {
-        const folderId = normalizeFolderId(folderEl?.getAttribute('data-upload-folder-id') || folderEl?.getAttribute('data-folder-id'));
-        if (!folderId) return;
-        const folderName = folderEl.getAttribute('data-folder-path') || folderEl.getAttribute('data-folder-name') || folderEl.textContent?.trim() || 'pasta selecionada';
-        const current = document.getElementById('currentFolderId');
-        const bulk = document.getElementById('bulkFolderId') || document.getElementById('bulkUploadFolderId');
-        const legacyBulk = document.getElementById('bulkUploadFolderId');
+    function setSelectedFolderFromNode(node) {
+        const source = node?.closest('[data-folder-id]') || node;
+        const folderId = normalizeFolderId(source?.dataset?.folderId);
+        if (!folderId) return false;
+        const uploadFolderId = normalizeFolderId(source.dataset.uploadFolderId) || folderId;
+        const folderName = source.dataset.folderName || source.dataset.folderPath || source.textContent?.trim() || 'pasta selecionada';
+        const canReceive = source.dataset.canReceiveDocuments !== 'false';
+
+        document.querySelectorAll('.js-folder-node.active, .ged-tree-row.active, .ged-tree-root.active').forEach(x => x.classList.remove('active'));
+        source.classList.add('active');
+        source.querySelector?.('.ged-tree-row')?.classList.add('active');
+        source.closest?.('.ged-tree-node')?.querySelector(':scope > .ged-tree-row')?.classList.add('active');
+
+        const currentFolder = document.getElementById('currentFolderId');
+        if (currentFolder) currentFolder.value = folderId;
+
+        const bulkFolder = document.getElementById('bulkUploadFolderId');
+        if (bulkFolder) bulkFolder.value = uploadFolderId;
+        const bulk = document.getElementById('bulkFolderId');
+        if (bulk) bulk.value = uploadFolderId;
+
+        const requestedFolder = document.getElementById('bulkUploadRequestedFolderId');
+        if (requestedFolder) requestedFolder.value = folderId;
+
         const modal = document.getElementById('bulkUploadModal');
-        if (current) current.value = folderId;
-        if (bulk) bulk.value = folderId;
-        if (legacyBulk) legacyBulk.value = folderId;
         if (modal) {
             modal.dataset.folderId = folderId;
+            modal.dataset.uploadFolderId = uploadFolderId;
             modal.dataset.folderName = folderName;
+            modal.dataset.canReceiveDocuments = canReceive ? 'true' : 'false';
         }
+
+        console.log('[FolderTree] selected', { folderId, uploadFolderId, canReceive, folderName });
         updateUploadFolderUi();
+        return true;
+    }
+
+    function syncSelectedFolder(folderEl) {
+        setSelectedFolderFromNode(folderEl);
     }
 
     function getCurrentFolderLabel() {
-        const modal = document.getElementById('bulkUploadModal');
-        const fromModal = modal?.getAttribute('data-folder-name');
-        if (fromModal) return fromModal;
-        const selected = getActiveFolderElement();
-        const folderEl = selected?.closest('[data-folder-id]') || selected;
-        return folderEl?.getAttribute('data-folder-path') || folderEl?.getAttribute('data-folder-name') || 'pasta selecionada';
+        const selected = getSelectedUploadFolder();
+        return selected?.folderName || 'pasta selecionada';
     }
 
     function updateUploadFolderUi() {
-        const folderId = getCurrentFolderId();
-        const hasFolder = !isMissingFolderId(folderId);
+        const selected = getSelectedUploadFolder();
+        const folderId = selected?.uploadFolderId;
+        const hasFolder = !isMissingFolderId(folderId) && selected?.canReceive !== false;
         const notice = document.getElementById('bulkUploadFolderNotice');
         const dropzone = document.getElementById('bulkDropzone');
         const fileInput = getFileInput();
@@ -197,13 +246,13 @@
             notice.className = `alert ${hasFolder ? 'alert-info' : 'alert-warning'} py-2`;
             notice.innerHTML = hasFolder
                 ? `<strong>Destino selecionado:</strong> ${escapeHtml(getCurrentFolderLabel())}. O sistema validará o destino ao iniciar o upload.`
-                : '<strong>Destino:</strong> selecione uma pasta antes de enviar documentos.';
+                : '<strong>Destino:</strong> esta pasta não possui destino de upload válido. Clique novamente na pasta e tente enviar.';
         }
 
         if (dropzone) {
             dropzone.classList.toggle('opacity-50', !hasFolder);
             dropzone.setAttribute('aria-disabled', hasFolder ? 'false' : 'true');
-            dropzone.title = hasFolder ? '' : 'Selecione uma pasta antes de enviar documentos.';
+            dropzone.title = hasFolder ? '' : 'Selecione uma pasta válida antes de enviar documentos.';
         }
 
         if (fileInput) fileInput.disabled = !hasFolder;
@@ -211,10 +260,11 @@
     }
 
     function validateUploadFolder() {
-        const folderId = getCurrentFolderId();
+        const selected = getSelectedUploadFolder();
+        console.log('[BulkUpload] selected upload folder', selected);
 
-        if (isMissingFolderId(folderId)) {
-            showBulkUploadMessage('Selecione uma pasta antes de enviar documentos.', 'warning');
+        if (!selected?.uploadFolderId || isMissingFolderId(selected.uploadFolderId) || selected.canReceive === false) {
+            showBulkUploadMessage('Não foi possível identificar a pasta de destino. Clique novamente na pasta e tente enviar.', 'warning');
             updateUploadFolderUi();
             return false;
         }
@@ -222,28 +272,38 @@
         return true;
     }
 
-    const openBulkUploadModal = () => { updateUploadFolderUi(); bootstrap.Modal.getOrCreateInstance('#bulkUploadModal').show(); };
+    const openBulkUploadModal = () => {
+        updateUploadFolderUi();
+        const selected = getSelectedUploadFolder();
+        console.log('[BulkUpload] modal folder', { folderId: selected?.folderId, uploadFolderId: selected?.uploadFolderId });
+        bootstrap.Modal.getOrCreateInstance('#bulkUploadModal').show();
+    };
 
-    function setUploadDestination(folderId, folderName) {
-        const normalized = normalizeFolderId(folderId);
-        if (!normalized) return false;
+    function setUploadDestination(uploadFolderId, folderName, requestedFolderId, canReceiveDocuments = true) {
+        const uploadId = normalizeFolderId(uploadFolderId);
+        const visualId = normalizeFolderId(requestedFolderId) || uploadId;
+        if (!uploadId || isMissingFolderId(uploadId)) return false;
         const modal = document.getElementById('bulkUploadModal');
         const current = document.getElementById('currentFolderId');
-        const bulk = document.getElementById('bulkFolderId') || document.getElementById('bulkUploadFolderId');
+        const bulk = document.getElementById('bulkFolderId');
         const legacyBulk = document.getElementById('bulkUploadFolderId');
-        if (current) current.value = normalized;
-        if (bulk) bulk.value = normalized;
-        if (legacyBulk) legacyBulk.value = normalized;
+        const requested = document.getElementById('bulkUploadRequestedFolderId');
+        if (current) current.value = visualId;
+        if (bulk) bulk.value = uploadId;
+        if (legacyBulk) legacyBulk.value = uploadId;
+        if (requested) requested.value = visualId;
         if (modal) {
-            modal.dataset.folderId = normalized;
+            modal.dataset.folderId = visualId;
+            modal.dataset.uploadFolderId = uploadId;
             modal.dataset.folderName = folderName || 'pasta selecionada';
+            modal.dataset.canReceiveDocuments = canReceiveDocuments === false ? 'false' : 'true';
         }
         updateUploadFolderUi();
         return true;
     }
 
-    function startUploadToFolder(folderId, files, folderName) {
-        if (!setUploadDestination(folderId, folderName)) {
+    function startUploadToFolder(uploadFolderId, files, folderName, requestedFolderId, canReceiveDocuments = true) {
+        if (!setUploadDestination(uploadFolderId, folderName, requestedFolderId, canReceiveDocuments)) {
             showAppToast('Pasta de destino inválida.', 'warning', 'Destino inválido');
             return;
         }
@@ -467,7 +527,9 @@
     }
 
     async function checkDuplicatesBeforeUpload() {
-        const folderId = getCurrentFolderId();
+        const selected = getSelectedUploadFolder();
+        const folderId = selected?.uploadFolderId;
+        const requestedFolderId = selected?.folderId || folderId;
         if (!validateUploadFolder()) return [];
         const candidates = state.files.filter(f => !['success', 'ignored', 'error'].includes(f.status));
         const names = candidates.map(f => f.uploadName);
@@ -487,7 +549,7 @@
         state.duplicateCheckKey = checkKey;
         const token = document.querySelector('input[name="__RequestVerificationToken"]')?.value;
         state.duplicateCheckPromise = (async () => {
-            const r = await fetch('/Ged/Documents/CheckDuplicateNames', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { RequestVerificationToken: token } : {}) }, body: JSON.stringify({ folderId, fileNames: names }) });
+            const r = await fetch('/Ged/Documents/CheckDuplicateNames', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { RequestVerificationToken: token } : {}) }, body: JSON.stringify({ requestedFolderId, folderId, uploadFolderId: folderId, fileNames: names }) });
             const j = await r.json().catch(() => ({ success: false, message: 'Erro ao verificar duplicidades' }));
             if (!r.ok || !j.success) throw new Error(j.message || 'Não foi possível verificar duplicidades.');
             const data = j.data || j;
@@ -628,7 +690,9 @@
         if (!validateUploadFolder()) throw new Error('Selecione uma pasta antes de enviar documentos.');
         state.isStarting = true;
         const token = document.querySelector('input[name="__RequestVerificationToken"]')?.value;
-        const payload = { folderId: getCurrentFolderId(), totalFiles: state.files.length, options: { runOcr: false, generatePreview: false, duplicateStrategy: state.duplicateStrategy || null } };
+        const selected = getSelectedUploadFolder();
+        const payload = { requestedFolderId: selected?.folderId, folderId: selected?.uploadFolderId, uploadFolderId: selected?.uploadFolderId, totalFiles: state.files.length, options: { runOcr: false, generatePreview: false, duplicateStrategy: state.duplicateStrategy || null } };
+        console.log('[BulkUpload] sending folder', { requestedFolderId: payload.requestedFolderId, uploadFolderId: payload.uploadFolderId });
         const r = await fetch('/Ged/UploadBatch/Start', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { RequestVerificationToken: token } : {}) }, body: JSON.stringify(payload) });
         const j = await r.json().catch(() => ({ success: false, message: 'Resposta inválida ao iniciar lote.' }));
         state.isStarting = false;
@@ -703,7 +767,11 @@
             if (!validateUploadFolder()) { resolve('error'); return; }
             const fd = new FormData();
             fd.append('file', fileItem.file);
-            fd.append('folderId', getCurrentFolderId() || '');
+            const selected = getSelectedUploadFolder();
+            fd.append('requestedFolderId', selected?.folderId || selected?.uploadFolderId || '');
+            fd.append('folderId', selected?.uploadFolderId || '');
+            fd.append('uploadFolderId', selected?.uploadFolderId || '');
+            console.log('[BulkUpload] sending folder', { requestedFolderId: selected?.folderId, uploadFolderId: selected?.uploadFolderId });
             if (state.batchId) fd.append('batchId', state.batchId);
             fd.append('fileIndex', String(fileIndex || 0));
             fd.append('totalFiles', String(totalFiles || state.files.length || 0));
@@ -927,6 +995,6 @@
     const statusLabel = s => ({ waiting: 'Aguardando', validating: 'Validando', duplicate: 'Duplicado', uploading: 'Enviando', success: 'Enviado', ignored: 'Ignorado', error: 'Erro' }[s] || s);
     const statusColor = s => ({ success: 'success', error: 'danger', uploading: 'primary', duplicate: 'warning', ignored: 'secondary', waiting: 'light', validating: 'info' }[s] || 'light');
 
-    window.GedBulkUpload = { startUploadToFolder, setUploadDestination, openBulkUploadModal };
+    window.GedBulkUpload = { startUploadToFolder, setUploadDestination, openBulkUploadModal, getSelectedUploadFolder, setSelectedFolderFromNode };
     document.addEventListener('DOMContentLoaded', initBulkUpload);
 })();

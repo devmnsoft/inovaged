@@ -26,6 +26,9 @@
     var runningOcrCount = (ViewBag.RunningOcrCount as int?) ?? 0;
     var uploadFolderIsVirtual = FolderIdHelper.IsVirtualFolder(Model.CurrentFolderId);
     var uploadFolderLabel = !string.IsNullOrWhiteSpace(Model.CurrentFolderName) ? Model.CurrentFolderName : "pasta selecionada";
+    var currentFolderNode = Model.CurrentFolderId.HasValue ? Model.Folders.FirstOrDefault(x => x.Id == Model.CurrentFolderId.Value) : null;
+    var currentUploadFolderId = currentFolderNode?.UploadFolderId == Guid.Empty ? Model.CurrentFolderId : (currentFolderNode?.UploadFolderId ?? Model.CurrentFolderId);
+    var currentCanReceiveDocuments = currentFolderNode?.CanReceiveDocuments ?? Model.CurrentFolderId.HasValue;
     var allowLegacyUploadFallback = DocumentUploadOptions.Value.AllowLegacyUploadFallback;
 }
 
@@ -113,12 +116,13 @@
                                     data-parent="@(n.ParentId?.ToString() ?? "")"
                                     data-has-children="@(hasChildren ? "1" : "0")"
                                     data-folder-id="@n.Id"
-                                    data-upload-folder-id="@n.UploadFolderId"
+                                    data-upload-folder-id="@(n.UploadFolderId == Guid.Empty ? n.Id : n.UploadFolderId)"
                                     data-can-receive-documents="@(n.CanReceiveDocuments ? "true" : "false")"
                                     data-folder-parent-id="@(n.ParentId?.ToString() ?? "")"
                                     data-folder-name="@n.Name"
-                                    data-folder-path="@BuildFolderPath(n.Id)"
-                                    data-folder-virtual="@(isVirtual ? "true" : "false")">
+                                    data-folder-path="@(n.Path ?? BuildFolderPath(n.Id))"
+                                    data-is-virtual="@(n.IsVirtual.ToString().ToLowerInvariant())"
+                                    data-folder-virtual="@(n.IsVirtual ? "true" : "false")">
 
                                     <div class="ged-tree-row @(isActive ? "active" : "")">
                                         @if (hasChildren)
@@ -134,7 +138,13 @@
 
                                         <i class="bi bi-folder2 ged-tree-folder"></i>
 
-                                        <a class="js-folder-node ged-tree-link flex-grow-1" href="@href">@n.Name</a>
+                                        <a class="js-folder-node ged-tree-link flex-grow-1" href="@href"
+                                           data-folder-id="@n.Id"
+                                           data-upload-folder-id="@(n.UploadFolderId == Guid.Empty ? n.Id : n.UploadFolderId)"
+                                           data-folder-name="@n.Name"
+                                           data-folder-path="@(n.Path ?? BuildFolderPath(n.Id))"
+                                           data-is-virtual="@(n.IsVirtual.ToString().ToLowerInvariant())"
+                                           data-can-receive-documents="@(n.CanReceiveDocuments.ToString().ToLowerInvariant())">@n.Name</a>
 
                                         <!-- ✅ AÇÕES DA PASTA -->
                                         <div class="dropdown">
@@ -189,6 +199,9 @@
                 else
                 {
                     var virtualRootId = Guid.Parse("f0000000-0000-0000-0000-000000000001");
+                    var virtualRootNode = Model.Folders.FirstOrDefault(x => x.Id == virtualRootId);
+                    var virtualRootUploadId = virtualRootNode?.UploadFolderId == Guid.Empty ? virtualRootId : (virtualRootNode?.UploadFolderId ?? virtualRootId);
+                    var virtualRootCanReceive = virtualRootNode?.CanReceiveDocuments ?? true;
                     var raizHref = Url.Action("Index", "Ged", new { folderId = virtualRootId }) ?? "#";
 
                     <ul class="list-unstyled mb-0">
@@ -196,10 +209,11 @@
                             <a class="js-folder-node ged-tree-root d-flex align-items-center gap-2 text-decoration-none @(Model.CurrentFolderId == virtualRootId ? "active" : "")"
                                href="@raizHref"
                                data-folder-id="f0000000-0000-0000-0000-000000000001"
-                               data-upload-folder-id="f0000000-0000-0000-0000-000000000001"
-                               data-can-receive-documents="false"
+                               data-upload-folder-id="@virtualRootUploadId"
                                data-folder-name="Raiz"
                                data-folder-path="Raiz"
+                               data-is-virtual="true"
+                               data-can-receive-documents="@(virtualRootCanReceive.ToString().ToLowerInvariant())"
                                data-folder-virtual="true">
                                 <i class="bi bi-house"></i> Raiz
                             </a>
@@ -220,12 +234,13 @@
                                     data-parent=""
                                     data-has-children="@(hasChildren ? "1" : "0")"
                                     data-folder-id="@n.Id"
-                                    data-upload-folder-id="@n.UploadFolderId"
+                                    data-upload-folder-id="@(n.UploadFolderId == Guid.Empty ? n.Id : n.UploadFolderId)"
                                     data-can-receive-documents="@(n.CanReceiveDocuments ? "true" : "false")"
                                     data-folder-parent-id=""
                                     data-folder-name="@n.Name"
-                                    data-folder-path="@BuildFolderPath(n.Id)"
-                                    data-folder-virtual="@(isVirtual ? "true" : "false")">
+                                    data-folder-path="@(n.Path ?? BuildFolderPath(n.Id))"
+                                    data-is-virtual="@(n.IsVirtual.ToString().ToLowerInvariant())"
+                                    data-folder-virtual="@(n.IsVirtual ? "true" : "false")">
 
                                     <div class="ged-tree-row @(isActive ? "active" : "")">
                                         @if (hasChildren)
@@ -240,7 +255,13 @@
                                         }
 
                                         <i class="bi bi-folder2 ged-tree-folder"></i>
-                                        <a class="js-folder-node ged-tree-link flex-grow-1" href="@href">@n.Name</a>
+                                        <a class="js-folder-node ged-tree-link flex-grow-1" href="@href"
+                                           data-folder-id="@n.Id"
+                                           data-upload-folder-id="@(n.UploadFolderId == Guid.Empty ? n.Id : n.UploadFolderId)"
+                                           data-folder-name="@n.Name"
+                                           data-folder-path="@(n.Path ?? BuildFolderPath(n.Id))"
+                                           data-is-virtual="@(n.IsVirtual.ToString().ToLowerInvariant())"
+                                           data-can-receive-documents="@(n.CanReceiveDocuments.ToString().ToLowerInvariant())">@n.Name</a>
 
                                         <!-- ✅ AÇÕES DA PASTA -->
                                         <div class="dropdown">
@@ -550,12 +571,14 @@
     </div>
 </div>
 
-<div class="modal fade" id="bulkUploadModal" tabindex="-1" aria-hidden="true" data-folder-id="@Model.CurrentFolderId" data-folder-virtual="@(uploadFolderIsVirtual ? "true" : "false")" data-folder-name="@uploadFolderLabel" data-allow-legacy-upload-fallback="@(allowLegacyUploadFallback ? "true" : "false")">
+<div class="modal fade" id="bulkUploadModal" tabindex="-1" aria-hidden="true" data-folder-id="@Model.CurrentFolderId" data-upload-folder-id="@currentUploadFolderId" data-can-receive-documents="@(currentCanReceiveDocuments ? "true" : "false")" data-folder-virtual="@(uploadFolderIsVirtual ? "true" : "false")" data-is-virtual="@(uploadFolderIsVirtual ? "true" : "false")" data-folder-name="@uploadFolderLabel" data-allow-legacy-upload-fallback="@(allowLegacyUploadFallback ? "true" : "false")">
   <div class="modal-dialog modal-xl modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header"><div><h5 class="modal-title">Adicionar documentos em lote</h5><small class="text-muted">Envie vários arquivos diretamente para a pasta selecionada.</small></div><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
       <div class="modal-body">
-        <input type="hidden" id="bulkFolderId" value="@Model.CurrentFolderId" />
+        <input type="hidden" id="bulkFolderId" value="@currentUploadFolderId" />
+        <input type="hidden" id="bulkUploadFolderId" value="@currentUploadFolderId" />
+        <input type="hidden" id="bulkUploadRequestedFolderId" value="@Model.CurrentFolderId" />
         <div id="bulkUploadFolderNotice" class="alert @(uploadFolderIsVirtual ? "alert-warning" : "alert-info") py-2">
             <strong>Destino selecionado:</strong> @uploadFolderLabel. O sistema validará o destino ao iniciar o upload.
         </div>

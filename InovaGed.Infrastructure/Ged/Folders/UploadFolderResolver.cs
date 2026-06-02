@@ -31,23 +31,21 @@ WHERE tenant_id=@tenantId AND id=@folderId AND is_active=true AND coalesce(reg_s
 """, new { tenantId, folderId }, cancellationToken: ct));
 
         var isVirtual = FolderIdHelper.IsVirtualFolder(folderId);
-        if (realFolder is not null && !isVirtual)
+        if (realFolder is not null)
         {
+            _logger.LogInformation("Pasta de upload existe em ged.folder e será usada como destino persistível. Tenant={TenantId} User={UserId} FolderId={FolderId} WasVirtual={WasVirtual} FolderName={FolderName}", tenantId, userId, folderId, isVirtual, realFolder.Name);
             return new UploadFolderResolutionResult
             {
                 Success = true,
                 RequestedFolderId = folderId,
                 ResolvedFolderId = realFolder.Id,
-                WasVirtual = false,
+                WasVirtual = isVirtual,
+                CreatedRealFolder = false,
+                CanReceiveDocuments = true,
                 FolderName = realFolder.Name,
                 FolderPath = realFolder.Name,
                 Message = "Pasta resolvida para upload."
             };
-        }
-
-        if (realFolder is not null && isVirtual)
-        {
-            _logger.LogWarning("ID de pasta virtual existe em ged.folder, mas não será usado como destino persistível. Tenant={TenantId} User={UserId} FolderId={FolderId}", tenantId, userId, folderId);
         }
 
         if (!isVirtual)
@@ -78,6 +76,7 @@ LIMIT 1;
                 ResolvedFolderId = mapped.Id,
                 WasVirtual = true,
                 CreatedRealFolder = false,
+                CanReceiveDocuments = true,
                 FolderName = mapped.Name,
                 FolderPath = mapped.Name,
                 Message = "Destino virtual resolvido automaticamente."
@@ -89,8 +88,8 @@ LIMIT 1;
             _logger.LogWarning("Mapeamento de pasta virtual aponta para o próprio ID virtual e será ignorado. Tenant={TenantId} User={UserId} FolderId={FolderId}", tenantId, userId, folderId);
         }
 
-        _logger.LogWarning("Pasta virtual/visual sem mapeamento real não será criada automaticamente. Tenant={TenantId} User={UserId} FolderId={FolderId} IsAdmin={IsAdmin}", tenantId, userId, folderId, isAdmin);
-        return UploadFolderResolutionResult.Fail(folderId, "A pasta selecionada não foi encontrada na base. Atualize a página.");
+        _logger.LogWarning("Pasta virtual/visual sem mapeamento real válido e sem registro em ged.folder. Tenant={TenantId} User={UserId} FolderId={FolderId} IsAdmin={IsAdmin}", tenantId, userId, folderId, isAdmin);
+        return UploadFolderResolutionResult.Fail(folderId, "A pasta selecionada não possui destino de upload válido. Atualize a página e selecione novamente.");
     }
 
     private static async Task EnsureVirtualMapTableAsync(System.Data.IDbConnection conn, CancellationToken ct)
