@@ -10,8 +10,9 @@
     form: $('hospitalSearchForm'), input: $('searchInput'), clear: $('btnClearSearch'), type: $('typeFilter'), btnSearch: $('btnSearch'), suggestions: $('suggestions'),
     results: $('resultsList'), meta: $('resultsMeta'), summary: $('searchSummary'), activeFilters: $('activeFilters'), loadMore: $('btnLoadMore'), toggleView: $('btnToggleView'), exportCsv: $('btnExportCsv'), clearAll: $('btnClearAll'),
     advancedType: $('advancedType'), advancedOcrStatus: $('advancedOcrStatus'), dateFrom: $('dateFrom'), dateTo: $('dateTo'), folder: $('folderFilter'), ocrRequired: $('ocrRequired'), recentOnly: $('recentOnly'), previewOnly: $('previewOnly'), sort: $('sortFilter'), advancedSummary: $('advancedFilterSummary'), applyAdvanced: $('btnApplyAdvanced'), resetAdvanced: $('btnResetAdvanced'),
-    previewPanel: $('hospitalPreviewPanel'), previewTypeBadge: $('previewTypeBadge'), previewTitle: $('previewTitle'), previewSubtitle: $('previewSubtitle'), previewFrame: $('hospitalPreviewFrame'), previewLoading: $('previewLoading'), previewEmpty: $('previewEmptyState'), openNewTab: $('btnOpenNewTab'), copyReference: $('btnCopyReference'), closePreview: $('btnClosePreviewPanel'),
-    ocrStatus: $('ocrPanelStatus'), ocrText: $('ocrPanelText'), metaContent: $('metaPanelContent')
+    previewPanel: $('hospitalPreviewPanel'), previewTypeBadge: $('previewTypeBadge'), previewTitle: $('previewTitle'), previewSubtitle: $('previewSubtitle'), previewFrame: $('hospitalPreviewFrame'), previewLoading: $('previewLoading'), previewEmpty: $('previewEmptyState'), expandPreview: $('btnExpandPreview'), openNewTab: $('btnOpenNewTab'), copyReference: $('btnCopyReference'), closePreview: $('btnClosePreviewPanel'),
+    ocrStatus: $('ocrPanelStatus'), ocrText: $('ocrPanelText'), metaContent: $('metaPanelContent'), autocompletePortal: $('hospitalAutocompletePortal'),
+    expandedModal: $('hospitalPreviewExpandedModal'), expandedTitle: $('expandedPreviewTitle'), expandedSubtitle: $('expandedPreviewSubtitle'), expandedType: $('expandedPreviewType'), expandedFrame: $('expandedPreviewFrame'), expandedOpenNewTab: $('btnExpandedOpenNewTab'), expandedCopyReference: $('btnExpandedCopyReference')
   };
 
   const state = {
@@ -32,6 +33,14 @@
   let suggestionController = null;
   let searchController = null;
   let currentPreviewReference = '';
+  let currentPreviewDocument = {
+    documentId: null,
+    versionId: null,
+    title: '',
+    subtitle: '',
+    type: '',
+    previewUrl: ''
+  };
 
   init();
 
@@ -39,6 +48,7 @@
     renderAssistant();
     renderSummary(null);
     resetPreviewPanel();
+    prepareAutocompletePortal();
     bindEvents();
   }
 
@@ -56,8 +66,15 @@
     els.exportCsv.addEventListener('click', exportCsv);
     els.clearAll.addEventListener('click', clearAll);
     els.previewFrame.addEventListener('load', () => { els.previewLoading.classList.add('d-none'); els.previewFrame.classList.remove('d-none'); });
+    els.expandPreview?.addEventListener('click', (e) => { e.preventDefault(); expandCurrentPreview(); });
     els.copyReference.addEventListener('click', copyReference);
+    els.expandedOpenNewTab?.addEventListener('click', openExpandedPreviewInNewTab);
+    els.expandedCopyReference?.addEventListener('click', copyReference);
+    els.expandedModal?.addEventListener('shown.bs.modal', () => document.querySelector('.modal-backdrop')?.classList.add('hospital-preview-expanded-backdrop'));
+    els.expandedModal?.addEventListener('hidden.bs.modal', () => { if (els.expandedFrame) els.expandedFrame.src = 'about:blank'; });
     els.closePreview.addEventListener('click', resetPreviewPanel);
+    window.addEventListener('resize', positionAutocompletePortal);
+    window.addEventListener('scroll', positionAutocompletePortal, true);
     root.querySelectorAll('[data-panel-tab]').forEach(tab => tab.addEventListener('click', () => activatePanelTab(tab.dataset.panelTab)));
   }
 
@@ -92,7 +109,7 @@
     window.clearTimeout(suggestionTimer);
     const q = els.input.value.trim();
     if (q.length < 3) { hideSuggestions(); abortSuggestions(); return; }
-    els.suggestions.style.display = 'block';
+    showSuggestionsContainer();
     els.suggestions.innerHTML = '<div class="hospital-suggestion-item"><div></div><div class="hospital-suggestion-desc">Buscando sugestões...</div></div>';
     suggestionTimer = window.setTimeout(loadSuggestions, 400);
   }
@@ -131,7 +148,7 @@
           <div class="hospital-suggestion-text">${limitSnippet(item.snippet || '', 180)}</div></div>
         </div>`).join('')}`).join('');
     els.suggestions.querySelectorAll('.hospital-suggestion-item').forEach(el => el.addEventListener('click', () => selectSuggestion(JSON.parse(el.dataset.item || '{}'))));
-    els.suggestions.style.display = 'block';
+    showSuggestionsContainer();
   }
 
   function selectSuggestion(item) {
@@ -233,12 +250,21 @@
   function openPreviewPanel(item, tab = 'preview') {
     state.selectedItem = item;
     state.ocrLoadedFor = null;
+    const subtitle = `${item.folderPath || item.folderName || 'Sem pasta informada'} · ${item.fileName || 'Arquivo'} · ${item.code || 'Sem código'}`;
+    const previewUrl = item.previewUrl || `/HospitalDocuments/Preview?versionId=${encodeURIComponent(item.versionId)}`;
     currentPreviewReference = `${item.title || 'Documento'} | ${item.code || item.documentId || ''} | versão ${item.versionId || ''}`.trim();
+    currentPreviewDocument = {
+      documentId: item.documentId || null,
+      versionId: item.versionId || null,
+      title: item.title || 'Documento',
+      subtitle,
+      type: item.friendlyType || item.type || 'Documento',
+      previewUrl
+    };
     els.previewPanel.classList.add('has-document');
     els.previewTitle.textContent = item.title || 'Preview do documento';
-    els.previewSubtitle.textContent = `${item.folderPath || item.folderName || 'Sem pasta informada'} · ${item.fileName || 'Arquivo'} · ${item.code || 'Sem código'}`;
+    els.previewSubtitle.textContent = subtitle;
     els.previewTypeBadge.textContent = item.friendlyType || item.type || 'Documento';
-    const previewUrl = item.previewUrl || `/HospitalDocuments/Preview?versionId=${encodeURIComponent(item.versionId)}`;
     els.openNewTab.href = previewUrl;
     els.openNewTab.classList.remove('disabled');
     els.openNewTab.removeAttribute('aria-disabled');
@@ -294,6 +320,7 @@
     state.selectedItem = null;
     state.ocrLoadedFor = null;
     currentPreviewReference = '';
+    currentPreviewDocument = { documentId: null, versionId: null, title: '', subtitle: '', type: '', previewUrl: '' };
     els.results?.querySelectorAll('.hospital-result-card.active').forEach(x => x.classList.remove('active'));
     els.previewPanel.classList.remove('has-document');
     els.previewTitle.textContent = 'Selecione um documento';
@@ -340,7 +367,71 @@
   function typeSuggestions(q){ const types=[['PDF','pdf'],['Imagens','image'],['Laudos','laudo'],['Exames','exame'],['APAC','APAC']]; return types.filter(([label])=>label.toLowerCase().includes(q.toLowerCase())).map(([label,value])=>({group:'Tipos documentais',suggestionType:'term',label,subtitle:'Aplicar como termo/tipo documental',icon:'bi-tags',query:value})); }
   function recentSuggestions(q){ return state.recentSearches.filter(x=>x.toLowerCase().includes(q.toLowerCase())).map(x=>({group:'Pesquisas recentes',suggestionType:'recent',query:x,label:x,subtitle:'Executar novamente',icon:'bi-clock-history'})); }
   function abortSuggestions(){ if(suggestionController) suggestionController.abort(); }
-  function hideSuggestions(){ els.suggestions.style.display='none'; els.suggestions.innerHTML=''; state.activeIndex=-1; }
+  function hideSuggestions(){ els.suggestions.style.display='none'; els.suggestions.innerHTML=''; state.activeIndex=-1; document.body.classList.remove('hospital-autocomplete-open'); }
+
+  function prepareAutocompletePortal() {
+    if (!els.autocompletePortal || !els.suggestions) return;
+    els.autocompletePortal.appendChild(els.suggestions);
+    positionAutocompletePortal();
+  }
+
+  function showSuggestionsContainer() {
+    positionAutocompletePortal();
+    document.body.classList.add('hospital-autocomplete-open');
+    els.suggestions.style.display = 'block';
+  }
+
+  function positionAutocompletePortal() {
+    if (!els.autocompletePortal || !els.input) return;
+    const inputWrap = els.input.closest('.hospital-search-box-wrapper, .hospital-search-input-wrap') || els.input;
+    const rect = inputWrap.getBoundingClientRect();
+    els.autocompletePortal.style.position = 'fixed';
+    els.autocompletePortal.style.left = `${rect.left}px`;
+    els.autocompletePortal.style.top = `${rect.bottom + 8}px`;
+    els.autocompletePortal.style.width = `${rect.width}px`;
+    els.autocompletePortal.style.zIndex = '3000';
+  }
+
+  function expandCurrentPreview() {
+    if (!currentPreviewDocument?.versionId) {
+      window.showAppToast?.('Selecione um documento para ampliar o preview.', 'warning', 'Preview');
+      return;
+    }
+
+    openExpandedPreview(currentPreviewDocument);
+  }
+
+  function openExpandedPreview(doc) {
+    if (!els.expandedModal || !els.expandedFrame) return;
+    if (typeof bootstrap === 'undefined' || !bootstrap.Modal) {
+      window.open(doc.previewUrl || `/HospitalDocuments/Preview?versionId=${encodeURIComponent(doc.versionId)}`, '_blank', 'noopener');
+      return;
+    }
+
+    els.expandedTitle.textContent = doc.title || 'Documento';
+    els.expandedSubtitle.textContent = doc.subtitle || '';
+    els.expandedType.textContent = doc.type || 'Documento';
+    els.expandedFrame.src = doc.previewUrl || `/HospitalDocuments/Preview?versionId=${encodeURIComponent(doc.versionId)}`;
+
+    const modal = bootstrap.Modal.getOrCreateInstance(els.expandedModal, {
+      backdrop: true,
+      keyboard: true,
+      focus: true
+    });
+
+    modal.show();
+  }
+
+  function openExpandedPreviewInNewTab() {
+    const url = currentPreviewDocument?.previewUrl || (currentPreviewDocument?.versionId ? `/HospitalDocuments/Preview?versionId=${encodeURIComponent(currentPreviewDocument.versionId)}` : '');
+    if (!url) {
+      window.showAppToast?.('Selecione um documento para abrir em nova aba.', 'warning', 'Preview');
+      return;
+    }
+
+    window.open(url, '_blank', 'noopener');
+  }
+
   function iconFor(item){ const t=String(item.friendlyType||item.type||item.contentType||'').toLowerCase(); if(t.includes('pdf'))return 'bi-file-earmark-pdf'; if(t.includes('imagem')||t.includes('image'))return 'bi-file-earmark-image'; if(t.includes('word'))return 'bi-file-earmark-word'; return 'bi-file-earmark-medical'; }
   function groupBy(arr, fn){ return arr.reduce((a,x)=>((a[fn(x)] ||= []).push(x),a),{}); }
   function number(v){ return new Intl.NumberFormat('pt-BR').format(v||0); }

@@ -15,12 +15,12 @@
                 <p class="hospital-hero-subtitle">Localize documentos por nome, prontuário, termo do OCR, paciente, exame ou conteúdo textual.</p>
 
                 <form id="hospitalSearchForm" class="hospital-search-form" autocomplete="off">
-                    <div class="hospital-search-input-wrap">
+                    <div class="hospital-search-input-wrap hospital-search-box-wrapper">
                         <label class="visually-hidden" for="searchInput">Termo de busca hospitalar</label>
                         <i class="bi bi-search hospital-search-icon" aria-hidden="true"></i>
                         <input id="searchInput" class="hospital-search-input" type="search" autocomplete="off" placeholder="Busque por nome, prontuário, APAC, carcinoma, exame, laudo ou trecho do OCR..." aria-describedby="searchHelp" aria-controls="suggestions" />
                         <button id="btnClearSearch" class="hospital-input-clear" type="button" aria-label="Limpar busca"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
-                        <div id="suggestions" class="hospital-suggestions" role="listbox" aria-label="Sugestões de busca"></div>
+                        <div id="suggestions" class="hospital-suggestions hospital-suggestions-dropdown" role="listbox" aria-label="Sugestões de busca"></div>
                     </div>
 
                     <label class="visually-hidden" for="typeFilter">Tipo documental</label>
@@ -89,6 +89,7 @@
                 </div>
 
                 <div class="hospital-preview-toolbar">
+                    <button id="btnExpandPreview" type="button" class="btn btn-sm btn-outline-primary"><i class="bi bi-arrows-fullscreen" aria-hidden="true"></i> Expandir</button>
                     <a id="btnOpenNewTab" class="btn btn-sm btn-primary disabled" target="_blank" rel="noopener" aria-disabled="true"><i class="bi bi-box-arrow-up-right" aria-hidden="true"></i> Abrir em nova aba</a>
                     <button id="btnCopyReference" type="button" class="btn btn-sm btn-outline-secondary"><i class="bi bi-clipboard" aria-hidden="true"></i> Copiar referência</button>
                 </div>
@@ -140,6 +141,44 @@
             </div>
             <div id="advancedFilterSummary" class="hospital-filter-summary mt-3">Nenhum filtro avançado aplicado.</div>
             <div class="d-grid gap-2 mt-4"><button id="btnApplyAdvanced" type="button" class="hospital-btn-primary" data-bs-dismiss="offcanvas">Aplicar filtros</button><button id="btnResetAdvanced" type="button" class="hospital-btn-secondary">Limpar filtros</button></div>
+        </div>
+    </div>
+
+
+    <div id="hospitalAutocompletePortal" aria-live="polite"></div>
+
+    <div class="modal fade hospital-preview-expanded-modal"
+         id="hospitalPreviewExpandedModal"
+         tabindex="-1"
+         aria-hidden="true">
+        <div class="modal-dialog modal-fullscreen-xl-down modal-xl modal-dialog-centered">
+            <div class="modal-content hospital-preview-expanded-content">
+                <div class="modal-header">
+                    <div class="hospital-expanded-preview-heading">
+                        <span id="expandedPreviewType" class="badge bg-primary-subtle text-primary">Documento</span>
+                        <h5 id="expandedPreviewTitle" class="modal-title">Preview ampliado</h5>
+                        <small id="expandedPreviewSubtitle" class="text-muted"></small>
+                    </div>
+
+                    <div class="d-flex gap-2 align-items-center hospital-expanded-preview-actions">
+                        <button type="button" id="btnExpandedOpenNewTab" class="btn btn-outline-primary btn-sm">
+                            <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i>
+                            Nova aba
+                        </button>
+                        <button type="button" id="btnExpandedCopyReference" class="btn btn-outline-secondary btn-sm">
+                            <i class="bi bi-clipboard" aria-hidden="true"></i>
+                            Copiar referência
+                        </button>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                    </div>
+                </div>
+
+                <div class="modal-body">
+                    <iframe id="expandedPreviewFrame"
+                            class="hospital-expanded-preview-frame"
+                            title="Preview ampliado do documento"></iframe>
+                </div>
+            </div>
         </div>
     </div>
 
