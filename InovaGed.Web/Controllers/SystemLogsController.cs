@@ -9,15 +9,38 @@ namespace InovaGed.Web.Controllers;
 public sealed class SystemLogsController : Controller
 {
     private readonly ISystemLogQueryService _query;
-    public SystemLogsController(ISystemLogQueryService query) => _query = query;
+    private readonly ILogger<SystemLogsController> _logger;
+
+    public SystemLogsController(ISystemLogQueryService query, ILogger<SystemLogsController> logger)
+    {
+        _query = query;
+        _logger = logger;
+    }
 
     [HttpGet("/SystemLogs")]
     public async Task<IActionResult> Index([FromQuery] SystemLogFilter filter, CancellationToken ct)
     {
         if (filter.TenantId == Guid.Empty && Guid.TryParse(User.FindFirst("tenant_id")?.Value, out var t)) filter.TenantId = t;
-        var data = await _query.SearchAsync(filter, ct);
-        ViewBag.Filter = filter;
-        return View(data);
+
+        try
+        {
+            var data = await _query.SearchAsync(filter, ct);
+            ViewBag.Filter = filter;
+            return View(data);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro ao carregar logs do sistema.");
+            TempData["Error"] = "Não foi possível carregar os logs do sistema.";
+            ViewBag.Filter = filter;
+            return View(new PagedResult<SystemLogListItemDto>
+            {
+                Items = Array.Empty<SystemLogListItemDto>(),
+                Page = Math.Max(1, filter.Page),
+                PageSize = Math.Clamp(filter.PageSize, 1, 200),
+                Total = 0
+            });
+        }
     }
 
     [HttpGet("/SystemLogs/Details/{id}")]

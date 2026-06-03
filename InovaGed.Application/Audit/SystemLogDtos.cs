@@ -9,6 +9,7 @@ public sealed class SystemLogFilter
     public string? Action { get; set; }
     public Guid? UserId { get; set; }
     public string? UserText { get; set; }
+    public string? Source { get; set; }
     public string? EntityName { get; set; }
     public string? EntityId { get; set; }
     public string? Path { get; set; }
@@ -25,12 +26,16 @@ public sealed class SystemLogListItemDto
     public DateTimeOffset CreatedAt { get; set; }
     public string EventType { get; set; } = "-";
     public string Action { get; set; } = "-";
+    public Guid? TenantId { get; set; }
+    public string? UserId { get; set; }
     public string? UserName { get; set; }
+    public string? HttpMethod { get; set; }
     public string? Path { get; set; }
     public int? HttpStatus { get; set; }
     public string? EntityName { get; set; }
     public string? EntityId { get; set; }
     public string Summary { get; set; } = string.Empty;
+    public string? Details { get; set; }
     public string Source { get; set; } = "-";
     public string? CorrelationId { get; set; }
 }
@@ -39,7 +44,7 @@ public sealed class SystemLogDetailsDto
 {
     public string Id { get; set; } = string.Empty;
     public Guid? TenantId { get; set; }
-    public Guid? UserId { get; set; }
+    public string? UserId { get; set; }
     public string? UserName { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public string EventType { get; set; } = "INFO";

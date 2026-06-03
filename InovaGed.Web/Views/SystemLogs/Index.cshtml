@@ -2,13 +2,90 @@
 @model PagedResult<SystemLogListItemDto>
 @{ var f = (SystemLogFilter)ViewBag.Filter; }
 <h2>Logs do Sistema</h2>
+
+@if (TempData["Error"] is string errorMessage)
+{
+  <div class="alert alert-danger" role="alert">@errorMessage</div>
+}
+
 <form method="get" class="row g-2 mb-3">
-  <input type="hidden" name="TenantId" value="@f.TenantId"/>
-  <div class="col"><input name="Search" value="@f.Search" class="form-control" placeholder="Busca"/></div>
-  <div class="col"><select name="EventType" class="form-select"><option value="">Todos</option><option>ERROR</option><option>SECURITY</option><option>AUDIT</option><option>BUSINESS</option><option>SYSTEM</option></select></div>
-  <div class="col"><button class="btn btn-primary">Filtrar</button> <a href="/SystemLogs?TenantId=@f.TenantId" class="btn btn-outline-secondary">Limpar</a></div>
+  <input type="hidden" name="TenantId" value="@f.TenantId" />
+  <div class="col-md-2"><input name="Action" value="@f.Action" class="form-control" placeholder="Ação" /></div>
+  <div class="col-md-2">
+    <select name="EventType" class="form-select">
+      <option value="">Todos os tipos</option>
+      @foreach (var eventType in new[] { "INFO", "SECURITY", "ACCESS_DENIED", "ERROR", "AUDIT", "BUSINESS", "SYSTEM" })
+      {
+        <option value="@eventType" selected="@(string.Equals(f.EventType, eventType, StringComparison.OrdinalIgnoreCase))">@eventType</option>
+      }
+    </select>
+  </div>
+  <div class="col-md-2"><input name="Source" value="@f.Source" class="form-control" placeholder="Source" /></div>
+  <div class="col-md-2"><input name="UserText" value="@f.UserText" class="form-control" placeholder="Usuário/e-mail/id" /></div>
+  <div class="col-md-2"><input name="Path" value="@f.Path" class="form-control" placeholder="Path" /></div>
+  <div class="col-md-2"><input name="CorrelationId" value="@f.CorrelationId" class="form-control" placeholder="CorrelationId" /></div>
+  <div class="col-md-2"><input name="Search" value="@f.Search" class="form-control" placeholder="Mensagem/detalhes" /></div>
+  <div class="col-md-2"><input name="HttpStatus" value="@f.HttpStatus" class="form-control" placeholder="Status" type="number" /></div>
+  <div class="col-md-2"><input name="PageSize" value="@f.PageSize" class="form-control" placeholder="Itens por página" type="number" min="1" max="200" /></div>
+  <div class="col-md-4">
+    <button class="btn btn-primary">Filtrar</button>
+    <a href="/SystemLogs?TenantId=@f.TenantId" class="btn btn-outline-secondary">Limpar</a>
+  </div>
 </form>
-<table class="table table-striped table-sm"><thead><tr><th>Data</th><th>Tipo</th><th>Ação</th><th>Usuário</th><th>Rota</th><th>Resumo</th></tr></thead><tbody>
-@foreach (var i in Model.Items){<tr><td>@i.CreatedAt.LocalDateTime</td><td><span class="badge bg-secondary">@i.EventType</span></td><td>@i.Action</td><td>@i.UserName</td><td>@i.Path</td><td>@i.Summary</td></tr>}
-</tbody></table>
-<a class="btn btn-outline-success" href="/SystemLogs/ExportCsv?TenantId=@f.TenantId&EventType=@f.EventType&Search=@f.Search">Exportar CSV</a>
+
+<table class="table table-striped table-sm">
+  <thead>
+    <tr>
+      <th>Data</th>
+      <th>Tipo</th>
+      <th>Ação</th>
+      <th>Source</th>
+      <th>User Id</th>
+      <th>Usuário</th>
+      <th>Método</th>
+      <th>Path</th>
+      <th>Status</th>
+      <th>Mensagem</th>
+      <th>Detalhes</th>
+      <th>CorrelationId</th>
+      <th>TenantId</th>
+    </tr>
+  </thead>
+  <tbody>
+    @foreach (var i in Model.Items)
+    {
+      <tr>
+        <td>@i.CreatedAt.LocalDateTime</td>
+        <td><span class="badge bg-secondary">@i.EventType</span></td>
+        <td>@i.Action</td>
+        <td>@i.Source</td>
+        <td class="text-nowrap"><small>@i.UserId</small></td>
+        <td>@i.UserName</td>
+        <td>@i.HttpMethod</td>
+        <td>@i.Path</td>
+        <td>@i.HttpStatus</td>
+        <td>@i.Summary</td>
+        <td>@i.Details</td>
+        <td><small>@i.CorrelationId</small></td>
+        <td><small>@i.TenantId</small></td>
+      </tr>
+    }
+  </tbody>
+</table>
+
+@{
+  var previousPage = Math.Max(1, f.Page - 1);
+  var nextPage = f.Page + 1;
+  var hasPrevious = f.Page > 1;
+  var hasNext = (long)f.Page * f.PageSize < Model.Total;
+  var baseQuery = $"TenantId={f.TenantId}&EventType={Uri.EscapeDataString(f.EventType ?? string.Empty)}&Action={Uri.EscapeDataString(f.Action ?? string.Empty)}&Source={Uri.EscapeDataString(f.Source ?? string.Empty)}&UserText={Uri.EscapeDataString(f.UserText ?? string.Empty)}&Path={Uri.EscapeDataString(f.Path ?? string.Empty)}&CorrelationId={Uri.EscapeDataString(f.CorrelationId ?? string.Empty)}&Search={Uri.EscapeDataString(f.Search ?? string.Empty)}&HttpStatus={f.HttpStatus}&PageSize={f.PageSize}";
+}
+<div class="d-flex justify-content-between align-items-center">
+  <div>Total: @Model.Total</div>
+  <div>
+    <a class="btn btn-outline-secondary @(hasPrevious ? string.Empty : "disabled")" href="/SystemLogs?@baseQuery&Page=@previousPage">Anterior</a>
+    <span class="mx-2">Página @f.Page</span>
+    <a class="btn btn-outline-secondary @(hasNext ? string.Empty : "disabled")" href="/SystemLogs?@baseQuery&Page=@nextPage">Próxima</a>
+    <a class="btn btn-outline-success" href="/SystemLogs/ExportCsv?@baseQuery">Exportar CSV</a>
+  </div>
+</div>
