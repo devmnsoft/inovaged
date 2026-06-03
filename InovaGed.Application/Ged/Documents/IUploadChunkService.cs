@@ -20,8 +20,6 @@ public sealed class StartUploadChunkRequestDto
     public Guid? ExistingDocumentId { get; set; }
     public string? UploadName { get; set; }
     public DocumentBulkUploadMetadata Metadata { get; set; } = new();
-    public string? UserName { get; set; }
-    public bool IsAdmin { get; set; }
     public string? CorrelationId { get; set; }
 }
 
@@ -66,7 +64,7 @@ public sealed class UploadChunkStatusDto
 
 public interface IUploadChunkService
 {
-    Task<Result<UploadChunkSessionDto>> StartAsync(Guid tenantId, Guid userId, StartUploadChunkRequestDto request, CancellationToken ct);
+    Task<Result<UploadChunkSessionDto>> StartAsync(Guid tenantId, Guid userId, bool isAdmin, string? userName, StartUploadChunkRequestDto request, CancellationToken ct);
     Task<Result<UploadChunkStatusDto>> SavePartAsync(Guid tenantId, Guid userId, UploadChunkPartRequestDto request, CancellationToken ct);
     Task<Result<UploadBatchFileResultDto>> CompleteAsync(Guid tenantId, Guid userId, Guid uploadId, CancellationToken ct);
     Task<Result<UploadChunkStatusDto>> GetStatusAsync(Guid tenantId, Guid userId, Guid uploadId, CancellationToken ct);

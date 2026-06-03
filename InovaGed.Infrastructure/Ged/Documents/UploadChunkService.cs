@@ -38,7 +38,7 @@ public sealed class UploadChunkService : IUploadChunkService
         _root = Path.Combine(AppContext.BaseDirectory, "App_Data", "GedChunkUploads");
     }
 
-    public async Task<Result<UploadChunkSessionDto>> StartAsync(Guid tenantId, Guid userId, StartUploadChunkRequestDto request, CancellationToken ct)
+    public async Task<Result<UploadChunkSessionDto>> StartAsync(Guid tenantId, Guid userId, bool isAdmin, string? userName, StartUploadChunkRequestDto request, CancellationToken ct)
     {
         if (!request.FolderId.HasValue || request.FolderId.Value == Guid.Empty) return Result<UploadChunkSessionDto>.Fail("VALIDATION", "Selecione uma pasta para enviar documentos.");
         if (request.TotalSizeBytes <= 0) return Result<UploadChunkSessionDto>.Fail("VALIDATION", "Tamanho de arquivo inválido.");
@@ -63,8 +63,8 @@ public sealed class UploadChunkService : IUploadChunkService
             request.GeneratePreview,
             request.ExistingDocumentId,
             request.UploadName,
-            request.UserName,
-            request.IsAdmin,
+            UserName = userName,
+            IsAdmin = isAdmin,
             request.Metadata.DocumentTypeId,
             request.Metadata.ClassificationId,
             request.Metadata.Notes,
