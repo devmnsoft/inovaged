@@ -234,6 +234,7 @@ builder.Services.AddScoped<IAuthRepository, AuthRepository>();
 // GED – Queries
 // =======================================================
 builder.Services.AddScoped<IFolderQueries, FolderQueries>();
+builder.Services.AddScoped<IFolderNavigationResolver, FolderNavigationResolver>();
 builder.Services.AddScoped<IDocumentQueries, DocumentQueries>();
 builder.Services.AddScoped<IDocumentWorkflowQueries, DocumentWorkflowQueries>();
 builder.Services.AddScoped<IWorkflowQueries, WorkflowQueries>();

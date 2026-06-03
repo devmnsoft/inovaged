@@ -1,7 +1,7 @@
 (function () {
     const DuplicateStrategy = { overwrite: 'overwrite', rename: 'rename', skip: 'skip', cancel: 'cancel' };
     const ValidationStep = 'Validação de extensão';
-    const state = { files: [], uploading: false, isStarting: false, isFinishing: false, activeUploads: 0, maxConcurrency: 2, completed: 0, failed: 0, skipped: 0, isCheckingDuplicates: false, duplicateCheckKey: null, duplicateCheckPromise: null, duplicateCheckResult: null, lastDuplicateSignature: null, batchId: null, requestedFolderId: null, resolvedFolderId: null, folderName: null, createdDocuments: [], useLegacyUploadFallback: false, duplicateStrategy: null, uploadAbortController: null, chunkOptions: { enabled: true, thresholdBytes: 50 * 1024 * 1024, chunkSizeBytes: 10 * 1024 * 1024, timeoutMs: 1800 * 1000 } };
+    const state = { files: [], uploading: false, isStarting: false, isFinishing: false, activeUploads: 0, maxConcurrency: 2, completed: 0, failed: 0, skipped: 0, isCheckingDuplicates: false, duplicateCheckKey: null, duplicateCheckPromise: null, duplicateCheckResult: null, lastDuplicateSignature: null, batchId: null, requestedFolderId: null, resolvedFolderId: null, listingFolderId: null, folderName: null, createdDocuments: [], useLegacyUploadFallback: false, duplicateStrategy: null, uploadAbortController: null, chunkOptions: { enabled: true, thresholdBytes: 50 * 1024 * 1024, chunkSizeBytes: 10 * 1024 * 1024, timeoutMs: 1800 * 1000 } };
 
     function getBootstrapOrNull() {
         if (!window.bootstrap) {
@@ -151,7 +151,8 @@
             return {
                 source: 'GedFolderSelection',
                 folderId: normalizeFolderId(centralized.folderId) || normalizeFolderId(centralized.uploadFolderId),
-                uploadFolderId: normalizeFolderId(centralized.uploadFolderId) || normalizeFolderId(centralized.folderId),
+                uploadFolderId: normalizeFolderId(centralized.uploadFolderId) || normalizeFolderId(centralized.listingFolderId) || normalizeFolderId(centralized.folderId),
+                listingFolderId: normalizeFolderId(centralized.listingFolderId) || normalizeFolderId(centralized.uploadFolderId) || normalizeFolderId(centralized.folderId),
                 folderName: centralized.folderName || 'pasta selecionada',
                 canReceive: centralized.canReceive !== false
             };
@@ -162,9 +163,10 @@
         if (activeNode) {
             const folderId = normalizeFolderId(activeNode.dataset.folderId);
             const uploadFolderId = normalizeFolderId(activeNode.dataset.uploadFolderId) || folderId;
+            const listingFolderId = normalizeFolderId(activeNode.dataset.listingFolderId) || uploadFolderId || folderId;
             const folderName = activeNode.dataset.folderName || activeNode.dataset.folderPath || activeNode.textContent?.trim() || 'pasta selecionada';
             const canReceive = (activeNode.dataset.canReceiveDocuments || 'true') === 'true';
-            return { source: 'active-folder-node', folderId, uploadFolderId, folderName, canReceive };
+            return { source: 'active-folder-node', folderId, uploadFolderId, listingFolderId, folderName, canReceive };
         }
 
         const modal = document.getElementById('bulkUploadModal');
@@ -173,6 +175,7 @@
                 source: 'modal',
                 folderId: normalizeFolderId(modal.dataset.folderId),
                 uploadFolderId: normalizeFolderId(modal.dataset.uploadFolderId),
+                listingFolderId: normalizeFolderId(modal.dataset.listingFolderId) || normalizeFolderId(modal.dataset.uploadFolderId),
                 folderName: modal.dataset.folderName || 'pasta selecionada',
                 canReceive: modal.dataset.canReceiveDocuments !== 'false'
             };
@@ -184,6 +187,7 @@
                 source: 'hidden',
                 folderId: normalizeFolderId(document.getElementById('bulkUploadRequestedFolderId')?.value) || normalizeFolderId(hiddenUpload.value),
                 uploadFolderId: normalizeFolderId(hiddenUpload.value),
+                listingFolderId: normalizeFolderId(document.getElementById('bulkListingFolderId')?.value) || normalizeFolderId(hiddenUpload.value),
                 folderName: '',
                 canReceive: true
             };
@@ -191,7 +195,7 @@
 
         const url = new URL(window.location.href);
         const urlFolderId = normalizeFolderId(url.searchParams.get('folderId'));
-        return { source: 'url', folderId: urlFolderId, uploadFolderId: urlFolderId, folderName: '', canReceive: !!urlFolderId };
+        return { source: 'url', folderId: normalizeFolderId(url.searchParams.get('visualFolderId')) || urlFolderId, uploadFolderId: urlFolderId, listingFolderId: urlFolderId, folderName: '', canReceive: !!urlFolderId };
     }
 
     function getCurrentFolderId() {
@@ -216,6 +220,7 @@
         const folderId = normalizeFolderId(source?.dataset?.folderId);
         if (!folderId) return false;
         const uploadFolderId = normalizeFolderId(source.dataset.uploadFolderId) || folderId;
+        const listingFolderId = normalizeFolderId(source.dataset.listingFolderId) || uploadFolderId || folderId;
         const folderName = source.dataset.folderName || source.dataset.folderPath || source.textContent?.trim() || 'pasta selecionada';
         const canReceive = source.dataset.canReceiveDocuments !== 'false';
 
@@ -231,6 +236,8 @@
         if (bulkFolder) bulkFolder.value = uploadFolderId;
         const bulk = document.getElementById('bulkFolderId');
         if (bulk) bulk.value = uploadFolderId;
+        const listing = document.getElementById('bulkListingFolderId');
+        if (listing) listing.value = listingFolderId;
 
         const requestedFolder = document.getElementById('bulkUploadRequestedFolderId');
         if (requestedFolder) requestedFolder.value = folderId;
@@ -239,6 +246,7 @@
         if (modal) {
             modal.dataset.folderId = folderId;
             modal.dataset.uploadFolderId = uploadFolderId;
+            modal.dataset.listingFolderId = listingFolderId;
             modal.dataset.folderName = folderName;
             modal.dataset.canReceiveDocuments = canReceive ? 'true' : 'false';
         }
@@ -304,22 +312,26 @@
         bs.Modal.getOrCreateInstance('#bulkUploadModal').show();
     };
 
-    function setUploadDestination(uploadFolderId, folderName, requestedFolderId, canReceiveDocuments = true) {
+    function setUploadDestination(uploadFolderId, folderName, requestedFolderId, canReceiveDocuments = true, listingFolderId = null) {
         const uploadId = normalizeFolderId(uploadFolderId);
         const visualId = normalizeFolderId(requestedFolderId) || uploadId;
+        const listingId = normalizeFolderId(listingFolderId) || uploadId;
         if (!uploadId || isMissingFolderId(uploadId)) return false;
         const modal = document.getElementById('bulkUploadModal');
         const current = document.getElementById('currentFolderId');
         const bulk = document.getElementById('bulkFolderId');
         const legacyBulk = document.getElementById('bulkUploadFolderId');
         const requested = document.getElementById('bulkUploadRequestedFolderId');
+        const listing = document.getElementById('bulkListingFolderId');
         if (current) current.value = visualId;
         if (bulk) bulk.value = uploadId;
         if (legacyBulk) legacyBulk.value = uploadId;
         if (requested) requested.value = visualId;
+        if (listing) listing.value = listingId;
         if (modal) {
             modal.dataset.folderId = visualId;
             modal.dataset.uploadFolderId = uploadId;
+            modal.dataset.listingFolderId = listingId;
             modal.dataset.folderName = folderName || 'pasta selecionada';
             modal.dataset.canReceiveDocuments = canReceiveDocuments === false ? 'false' : 'true';
         }
@@ -384,6 +396,7 @@
         state.batchId = null;
         state.requestedFolderId = null;
         state.resolvedFolderId = null;
+        state.listingFolderId = null;
         state.folderName = null;
         state.createdDocuments = [];
         state.useLegacyUploadFallback = false;
@@ -1165,7 +1178,7 @@
     function captureUploadDestination(payload) {
         const data = payload?.data || payload || {};
         if (data.requestedFolderId) state.requestedFolderId = data.requestedFolderId;
-        if (data.resolvedFolderId || data.folderId) state.resolvedFolderId = data.resolvedFolderId || data.folderId;
+        if (data.resolvedFolderId || data.folderId) { state.resolvedFolderId = data.resolvedFolderId || data.folderId; state.listingFolderId = state.resolvedFolderId; }
         if (data.folderName) state.folderName = data.folderName;
     }
 
@@ -1181,7 +1194,7 @@
 
     function getUploadNavigationTarget(result) {
         return {
-            folderId: result?.resolvedFolderId || state.resolvedFolderId || state.folderId || getSelectedUploadFolder()?.uploadFolderId,
+            folderId: result?.resolvedFolderId || state.resolvedFolderId || state.listingFolderId || state.folderId || getSelectedUploadFolder()?.listingFolderId || getSelectedUploadFolder()?.uploadFolderId,
             folderName: result?.folderName || state.folderName || getSelectedUploadFolder()?.folderName,
             createdDocuments: result?.createdDocuments || state.createdDocuments || []
         };
@@ -1202,10 +1215,12 @@
         updateCurrentFolderState(folderId, folderName);
         const url = new URL(window.location.href);
         url.searchParams.set('folderId', folderId);
+        const visualFolderId = state.requestedFolderId || getSelectedUploadFolder()?.folderId;
+        if (visualFolderId) url.searchParams.set('visualFolderId', visualFolderId);
         url.searchParams.set('_ts', Date.now().toString());
         history.pushState({}, '', url.toString());
         if (window.GedFolderNavigation?.loadFolderDocuments) {
-            await window.GedFolderNavigation.loadFolderDocuments(folderId, { forceRefresh: true, highlightDocumentIds: createdDocuments.map(x => x.documentId).filter(Boolean), folderName });
+            await window.GedFolderNavigation.loadFolderDocuments(folderId, { forceRefresh: true, visualFolderId: state.requestedFolderId || getSelectedUploadFolder()?.folderId || folderId, listingFolderId: folderId, highlightDocumentIds: createdDocuments.map(x => x.documentId).filter(Boolean), folderName });
         } else {
             window.location.href = url.toString();
         }
@@ -1213,34 +1228,37 @@
 
     function updateCurrentFolderState(folderId, folderName) {
         const currentFolderId = document.getElementById('currentFolderId');
-        if (currentFolderId) currentFolderId.value = folderId;
+        if (currentFolderId) currentFolderId.value = state.requestedFolderId || getSelectedUploadFolder()?.folderId || folderId;
         const bulkFolderId = document.getElementById('bulkUploadFolderId');
         if (bulkFolderId) bulkFolderId.value = folderId;
         const bulk = document.getElementById('bulkFolderId');
         if (bulk) bulk.value = folderId;
         const requested = document.getElementById('bulkUploadRequestedFolderId');
-        if (requested) requested.value = folderId;
+        const visualId = state.requestedFolderId || getSelectedUploadFolder()?.folderId || folderId;
+        if (requested) requested.value = visualId;
+        const listing = document.getElementById('bulkListingFolderId');
+        if (listing) listing.value = folderId;
         const title = document.querySelector('[data-current-folder-title]');
         if (title && folderName) title.textContent = folderName;
         const breadcrumb = document.querySelector('[data-current-folder-breadcrumb]');
         if (breadcrumb && folderName) breadcrumb.textContent = folderName;
         document.querySelectorAll('.js-folder-node.active, .ged-tree-row.active, .ged-tree-root.active').forEach(x => x.classList.remove('active'));
         const escaped = window.CSS?.escape ? CSS.escape(folderId) : folderId;
-        const node = document.querySelector(`.js-folder-node[data-upload-folder-id="${escaped}"]`) || document.querySelector(`.js-folder-node[data-folder-id="${escaped}"]`) || document.querySelector(`[data-upload-folder-id="${escaped}"]`) || document.querySelector(`[data-folder-id="${escaped}"]`);
+        const node = document.querySelector(`.js-folder-node[data-listing-folder-id="${escaped}"]`) || document.querySelector(`.js-folder-node[data-upload-folder-id="${escaped}"]`) || document.querySelector(`.js-folder-node[data-folder-id="${escaped}"]`) || document.querySelector(`[data-listing-folder-id="${escaped}"]`) || document.querySelector(`[data-upload-folder-id="${escaped}"]`) || document.querySelector(`[data-folder-id="${escaped}"]`);
         if (node) {
             node.classList.add('active');
             node.querySelector?.('.ged-tree-row')?.classList.add('active');
             node.scrollIntoView({ block: 'nearest' });
         }
-        window.GedBulkUpload?.setUploadDestination?.(folderId, folderName, folderId, true);
+        window.GedBulkUpload?.setUploadDestination?.(folderId, folderName, state.requestedFolderId || getSelectedUploadFolder()?.folderId || folderId, true, folderId);
     }
 
     async function refreshCurrentFolderDocuments() {
         const selected = getSelectedUploadFolder();
-        const folderId = selected?.folderId || getCurrentFolderIdFromUrl();
+        const folderId = selected?.listingFolderId || selected?.uploadFolderId || getCurrentFolderIdFromUrl();
         try {
             if (folderId && window.GedFolderNavigation?.loadFolderDocuments) {
-                await window.GedFolderNavigation.loadFolderDocuments(folderId, { forceRefresh: true });
+                await window.GedFolderNavigation.loadFolderDocuments(folderId, { forceRefresh: true, visualFolderId: selected?.folderId || folderId, listingFolderId: folderId });
                 return;
             }
         } catch (err) {
@@ -1249,6 +1267,8 @@
 
         const url = new URL(window.location.href);
         if (folderId) url.searchParams.set('folderId', folderId);
+        const visualFolderId = state.requestedFolderId || getSelectedUploadFolder()?.folderId;
+        if (visualFolderId) url.searchParams.set('visualFolderId', visualFolderId);
         url.searchParams.set('_ts', Date.now().toString());
         window.location.href = url.toString();
     }

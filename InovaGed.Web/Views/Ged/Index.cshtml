@@ -18,16 +18,17 @@
     {
         unclassifiedCount = await ClassificationQueries.CountUnclassifiedAsync(
             CurrentUser.TenantId,
-            Model.CurrentFolderId,
+            Model.CurrentListingFolderId ?? Model.CurrentFolderId,
             CancellationToken.None
         );
     }
 
     var runningOcrCount = (ViewBag.RunningOcrCount as int?) ?? 0;
-    var uploadFolderIsVirtual = FolderIdHelper.IsVirtualFolder(Model.CurrentFolderId);
+    var uploadFolderIsVirtual = Model.CurrentFolderIsVirtual || FolderIdHelper.IsVirtualFolder(Model.CurrentFolderId);
     var uploadFolderLabel = !string.IsNullOrWhiteSpace(Model.CurrentFolderName) ? Model.CurrentFolderName : "pasta selecionada";
-    var currentFolderNode = Model.CurrentFolderId.HasValue ? Model.Folders.FirstOrDefault(x => x.Id == Model.CurrentFolderId.Value) : null;
-    var currentUploadFolderId = currentFolderNode?.UploadFolderId == Guid.Empty ? Model.CurrentFolderId : (currentFolderNode?.UploadFolderId ?? Model.CurrentFolderId);
+    var currentFolderNode = Model.CurrentFolderId.HasValue ? Model.Folders.FirstOrDefault(x => x.Id == Model.CurrentFolderId.Value || x.ListingFolderId == Model.CurrentFolderId.Value || x.UploadFolderId == Model.CurrentFolderId.Value) : null;
+    var currentListingFolderId = Model.CurrentListingFolderId ?? currentFolderNode?.ListingFolderId ?? Model.CurrentFolderId;
+    var currentUploadFolderId = Model.CurrentUploadFolderId ?? (currentFolderNode?.UploadFolderId == Guid.Empty ? Model.CurrentFolderId : (currentFolderNode?.UploadFolderId ?? currentListingFolderId));
     var currentCanReceiveDocuments = currentFolderNode?.CanReceiveDocuments ?? Model.CurrentFolderId.HasValue;
     var allowLegacyUploadFallback = DocumentUploadOptions.Value.AllowLegacyUploadFallback;
     var uploadOptions = DocumentUploadOptions.Value;
@@ -128,6 +129,7 @@
                                     data-has-children="@(hasChildren ? "1" : "0")"
                                     data-folder-id="@n.Id"
                                     data-upload-folder-id="@(n.UploadFolderId == Guid.Empty ? n.Id : n.UploadFolderId)"
+                                    data-listing-folder-id="@(n.ListingFolderId == Guid.Empty ? (n.UploadFolderId == Guid.Empty ? n.Id : n.UploadFolderId) : n.ListingFolderId)"
                                     data-can-receive-documents="@(n.CanReceiveDocuments ? "true" : "false")"
                                     data-folder-parent-id="@(n.ParentId?.ToString() ?? "")"
                                     data-folder-name="@n.Name"
@@ -152,6 +154,7 @@
                                         <a class="js-folder-node ged-tree-link flex-grow-1" href="@href"
                                            data-folder-id="@n.Id"
                                            data-upload-folder-id="@(n.UploadFolderId == Guid.Empty ? n.Id : n.UploadFolderId)"
+                                    data-listing-folder-id="@(n.ListingFolderId == Guid.Empty ? (n.UploadFolderId == Guid.Empty ? n.Id : n.UploadFolderId) : n.ListingFolderId)"
                                            data-folder-name="@n.Name"
                                            data-folder-path="@(n.Path ?? BuildFolderPath(n.Id))"
                                            data-is-virtual="@(n.IsVirtual.ToString().ToLowerInvariant())"
@@ -183,7 +186,8 @@
                                                     </button>
                                                 </li>
                                                 <li>
-                                                    <button class="dropdown-item" type="button" data-upload-folder-id="@(n.UploadFolderId == Guid.Empty ? n.Id : n.UploadFolderId)" data-folder-id="@n.Id" onclick="window.GedBulkUpload?.startUploadToFolder?.(this.dataset.uploadFolderId, [], '@n.Name', this.dataset.folderId, true)">
+                                                    <button class="dropdown-item" type="button" data-upload-folder-id="@(n.UploadFolderId == Guid.Empty ? n.Id : n.UploadFolderId)"
+                                    data-listing-folder-id="@(n.ListingFolderId == Guid.Empty ? (n.UploadFolderId == Guid.Empty ? n.Id : n.UploadFolderId) : n.ListingFolderId)" data-folder-id="@n.Id" onclick="window.GedBulkUpload?.startUploadToFolder?.(this.dataset.uploadFolderId, [], '@n.Name', this.dataset.folderId, true)">
                                                         <i class="bi bi-cloud-arrow-up me-1"></i> Enviar documentos
                                                     </button>
                                                 </li>
@@ -236,6 +240,7 @@
                                href="@raizHref"
                                data-folder-id="f0000000-0000-0000-0000-000000000001"
                                data-upload-folder-id="@virtualRootUploadId"
+                               data-listing-folder-id="@virtualRootUploadId"
                                data-folder-name="Raiz"
                                data-folder-path="Raiz"
                                data-is-virtual="true"
@@ -261,6 +266,7 @@
                                     data-has-children="@(hasChildren ? "1" : "0")"
                                     data-folder-id="@n.Id"
                                     data-upload-folder-id="@(n.UploadFolderId == Guid.Empty ? n.Id : n.UploadFolderId)"
+                                    data-listing-folder-id="@(n.ListingFolderId == Guid.Empty ? (n.UploadFolderId == Guid.Empty ? n.Id : n.UploadFolderId) : n.ListingFolderId)"
                                     data-can-receive-documents="@(n.CanReceiveDocuments ? "true" : "false")"
                                     data-folder-parent-id=""
                                     data-folder-name="@n.Name"
@@ -284,6 +290,7 @@
                                         <a class="js-folder-node ged-tree-link flex-grow-1" href="@href"
                                            data-folder-id="@n.Id"
                                            data-upload-folder-id="@(n.UploadFolderId == Guid.Empty ? n.Id : n.UploadFolderId)"
+                                    data-listing-folder-id="@(n.ListingFolderId == Guid.Empty ? (n.UploadFolderId == Guid.Empty ? n.Id : n.UploadFolderId) : n.ListingFolderId)"
                                            data-folder-name="@n.Name"
                                            data-folder-path="@(n.Path ?? BuildFolderPath(n.Id))"
                                            data-is-virtual="@(n.IsVirtual.ToString().ToLowerInvariant())"
@@ -315,7 +322,8 @@
                                                     </button>
                                                 </li>
                                                 <li>
-                                                    <button class="dropdown-item" type="button" data-upload-folder-id="@(n.UploadFolderId == Guid.Empty ? n.Id : n.UploadFolderId)" data-folder-id="@n.Id" onclick="window.GedBulkUpload?.startUploadToFolder?.(this.dataset.uploadFolderId, [], '@n.Name', this.dataset.folderId, true)">
+                                                    <button class="dropdown-item" type="button" data-upload-folder-id="@(n.UploadFolderId == Guid.Empty ? n.Id : n.UploadFolderId)"
+                                    data-listing-folder-id="@(n.ListingFolderId == Guid.Empty ? (n.UploadFolderId == Guid.Empty ? n.Id : n.UploadFolderId) : n.ListingFolderId)" data-folder-id="@n.Id" onclick="window.GedBulkUpload?.startUploadToFolder?.(this.dataset.uploadFolderId, [], '@n.Name', this.dataset.folderId, true)">
                                                         <i class="bi bi-cloud-arrow-up me-1"></i> Enviar documentos
                                                     </button>
                                                 </li>
@@ -620,13 +628,14 @@
     </div>
 </div>
 
-<div class="modal fade" id="bulkUploadModal" tabindex="-1" aria-hidden="true" data-folder-id="@Model.CurrentFolderId" data-upload-folder-id="@currentUploadFolderId" data-can-receive-documents="@(currentCanReceiveDocuments ? "true" : "false")" data-folder-virtual="@(uploadFolderIsVirtual ? "true" : "false")" data-is-virtual="@(uploadFolderIsVirtual ? "true" : "false")" data-folder-name="@uploadFolderLabel" data-allow-legacy-upload-fallback="@(allowLegacyUploadFallback ? "true" : "false")" data-use-chunked-upload="@(uploadOptions.UseChunkedUpload ? "true" : "false")" data-chunk-size-mb="@uploadOptions.ChunkSizeMb" data-chunked-threshold-mb="@uploadOptions.ChunkedThresholdMb" data-upload-timeout-seconds="@uploadOptions.UploadTimeoutSeconds">
+<div class="modal fade" id="bulkUploadModal" tabindex="-1" aria-hidden="true" data-folder-id="@Model.CurrentFolderId" data-upload-folder-id="@currentUploadFolderId" data-listing-folder-id="@currentListingFolderId" data-can-receive-documents="@(currentCanReceiveDocuments ? "true" : "false")" data-folder-virtual="@(uploadFolderIsVirtual ? "true" : "false")" data-is-virtual="@(uploadFolderIsVirtual ? "true" : "false")" data-folder-name="@uploadFolderLabel" data-allow-legacy-upload-fallback="@(allowLegacyUploadFallback ? "true" : "false")" data-use-chunked-upload="@(uploadOptions.UseChunkedUpload ? "true" : "false")" data-chunk-size-mb="@uploadOptions.ChunkSizeMb" data-chunked-threshold-mb="@uploadOptions.ChunkedThresholdMb" data-upload-timeout-seconds="@uploadOptions.UploadTimeoutSeconds">
   <div class="modal-dialog modal-xl modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header"><div><h5 class="modal-title">Adicionar documentos em lote</h5><small class="text-muted">Envie vários arquivos diretamente para a pasta selecionada.</small></div><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
       <div class="modal-body">
         <input type="hidden" id="bulkFolderId" value="@currentUploadFolderId" />
         <input type="hidden" id="bulkUploadFolderId" value="@currentUploadFolderId" />
+        <input type="hidden" id="bulkListingFolderId" value="@currentListingFolderId" />
         <input type="hidden" id="bulkUploadRequestedFolderId" value="@Model.CurrentFolderId" />
         <div id="bulkUploadFolderNotice" class="alert @(uploadFolderIsVirtual ? "alert-warning" : "alert-info") py-2">
             <strong>Destino selecionado:</strong> @uploadFolderLabel. O sistema validará o destino ao iniciar o upload.

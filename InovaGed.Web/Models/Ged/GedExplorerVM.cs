@@ -8,6 +8,8 @@ public sealed class GedExplorerVM
     public Guid? CurrentFolderId { get; set; }
     public bool CanBulkUpload { get; set; }
     public bool CurrentFolderIsVirtual { get; set; }
+    public Guid? CurrentListingFolderId { get; set; }
+    public Guid? CurrentUploadFolderId { get; set; }
     public string CurrentFolderName { get; set; } = "";
 
     public Guid? FolderId { get; set; }
@@ -24,6 +26,7 @@ public sealed class GedExplorerVM
         public string? Path { get; set; }
         public int Level { get; set; } // pra indent no MVP
         public Guid UploadFolderId { get; set; }
+        public Guid ListingFolderId { get; set; }
         public bool IsVirtual { get; set; }
         public bool CanReceiveDocuments { get; set; } = true;
     }

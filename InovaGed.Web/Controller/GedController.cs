@@ -59,6 +59,7 @@ public sealed class GedController : Controller
     private readonly IDocumentBulkUploadService _documentBulkUploadService;
     private readonly IGedAccessPolicyService _accessPolicy;
     private readonly IUploadFolderResolver _uploadFolderResolver;
+    private readonly IFolderNavigationResolver _folderNavigationResolver;
     private readonly IGedSmartSearchService _smartSearch;
     private readonly IAuditWriter _auditWriter;
 
@@ -82,6 +83,7 @@ public sealed class GedController : Controller
         IDocumentBulkUploadService documentBulkUploadService,
         IGedAccessPolicyService accessPolicy,
         IUploadFolderResolver uploadFolderResolver,
+        IFolderNavigationResolver folderNavigationResolver,
         IGedSmartSearchService smartSearch,
         IAuditWriter auditWriter,
         IOcrJobRepository ocrJobs,
@@ -115,6 +117,7 @@ public sealed class GedController : Controller
         _documentBulkUploadService = documentBulkUploadService;
         _accessPolicy = accessPolicy;
         _uploadFolderResolver = uploadFolderResolver;
+        _folderNavigationResolver = folderNavigationResolver;
         _smartSearch = smartSearch;
         _auditWriter = auditWriter;
 
@@ -212,29 +215,25 @@ public sealed class GedController : Controller
         if (!_currentUser.IsAuthenticated) return Unauthorized();
 
         var tenantId = _currentUser.TenantId;
-        var tree = await _folders.TreeAsync(tenantId, ct);
-        var effectiveFolderId = folderId ?? tree.FirstOrDefault(x => FolderIdHelper.IsRealFolder(x.Id))?.Id;
-        if (!effectiveFolderId.HasValue || FolderIdHelper.IsVirtualFolder(effectiveFolderId))
+        var isAdmin = await _accessPolicy.IsAdminAsync(tenantId, _currentUser.UserId, User, ct);
+        var resolved = await _folderNavigationResolver.ResolveForListingAsync(tenantId, _currentUser.UserId, folderId, isAdmin, ct);
+        if (!resolved.Success)
         {
-            return PartialView("_DocumentsList", new GedExplorerVM
-            {
-                CurrentFolderId = effectiveFolderId,
-                CurrentFolderIsVirtual = FolderIdHelper.IsVirtualFolder(effectiveFolderId),
-                CurrentFolderName = "Pasta selecionada",
-                Query = q
-            });
+            _logger.LogWarning("DocumentsList sem pasta resolvida. Tenant={TenantId} User={UserId} RequestedFolderId={RequestedFolderId}", tenantId, _currentUser.UserId, folderId);
+            return PartialView("_DocumentsList", new GedExplorerVM { CurrentFolderId = folderId, CurrentFolderName = "Pasta selecionada", Query = q });
         }
 
-        var listingFolderId = effectiveFolderId.Value;
+        var listingFolderId = resolved.ListingFolderId;
         var docs = await _docs.ListAsync(tenantId, listingFolderId, q, ct);
-        var folder = tree.FirstOrDefault(x => x.Id == listingFolderId);
         _logger.LogInformation("DocumentsList carregado. Tenant={TenantId} User={UserId} RequestedFolderId={RequestedFolderId} ListingFolderId={ListingFolderId} Count={Count}", tenantId, _currentUser.UserId, folderId, listingFolderId, docs.Count);
         return PartialView("_DocumentsList", new GedExplorerVM
         {
-            CurrentFolderId = effectiveFolderId,
-            CurrentFolderIsVirtual = false,
-            CurrentFolderName = folder?.Name ?? "Pasta selecionada",
-            FolderId = effectiveFolderId,
+            CurrentFolderId = resolved.VisualFolderId,
+            CurrentListingFolderId = listingFolderId,
+            CurrentUploadFolderId = resolved.UploadFolderId,
+            CurrentFolderIsVirtual = resolved.WasVirtual,
+            CurrentFolderName = resolved.FolderName,
+            FolderId = listingFolderId,
             Query = q,
             Documents = docs.Select(d => new GedExplorerVM.DocumentRowVM
             {
@@ -347,30 +346,35 @@ public sealed class GedController : Controller
             var tenantId = _currentUser.TenantId;
 
             var tree = await _folders.TreeAsync(tenantId, ct);
+            var isAdmin = await _accessPolicy.IsAdminAsync(tenantId, _currentUser.UserId, User, ct);
+            var resolved = await _folderNavigationResolver.ResolveForListingAsync(tenantId, _currentUser.UserId, folderId, isAdmin, ct);
 
-            // se não veio folderId, tenta apontar para a "primeira" pasta real da árvore
-            var requestedFolderIsVirtual = FolderIdHelper.IsVirtualFolder(folderId);
-            var effectiveFolderId = requestedFolderIsVirtual && folderId.HasValue
-                ? folderId
-                : folderId ?? tree.FirstOrDefault(x => FolderIdHelper.IsRealFolder(x.Id))?.Id;
-            var canUseCurrentFolderForUpload = FolderIdHelper.IsRealFolder(effectiveFolderId)
-                && tree.Any(x => x.Id == effectiveFolderId.Value);
+            var effectiveFolderId = resolved.Success ? resolved.VisualFolderId : folderId;
+            var listingFolderId = resolved.Success ? resolved.ListingFolderId : (Guid?)null;
+            var uploadFolderId = resolved.Success ? resolved.UploadFolderId : (Guid?)null;
+            var canUseCurrentFolderForUpload = uploadFolderId.HasValue && uploadFolderId.Value != Guid.Empty;
 
-            var docs = effectiveFolderId.HasValue && !FolderIdHelper.IsVirtualFolder(effectiveFolderId)
-                ? await _docs.ListAsync(tenantId, effectiveFolderId.Value, q, ct)
+            var docs = listingFolderId.HasValue
+                ? await _docs.ListAsync(tenantId, listingFolderId.Value, q, ct)
                 : Array.Empty<DocumentRowDto>();
 
-            // ✅ KPI: documentos não classificados (filtra por pasta quando houver)
-            ViewBag.UnclassifiedCount = await _clsQ.CountUnclassifiedAsync(tenantId, effectiveFolderId, ct);
+            _logger.LogInformation(
+                "GED Index resolvido. Tenant={TenantId} User={UserId} RequestedFolderId={RequestedFolderId} VisualFolderId={VisualFolderId} ListingFolderId={ListingFolderId} FolderName={FolderName}",
+                tenantId, _currentUser.UserId, folderId, effectiveFolderId, listingFolderId, resolved.FolderName);
+
+            // ✅ KPI: documentos não classificados (filtra pela pasta real de listagem quando houver)
+            ViewBag.UnclassifiedCount = await _clsQ.CountUnclassifiedAsync(tenantId, listingFolderId, ct);
             ViewBag.RunningOcrCount = await CountRunningOcrJobsAsync(tenantId, ct);
 
             var vm = new GedExplorerVM
             {
-                CanBulkUpload = canUseCurrentFolderForUpload && await _accessPolicy.CanUploadDocumentToFolderAsync(tenantId, _currentUser.UserId, effectiveFolderId, User, ct),
+                CanBulkUpload = canUseCurrentFolderForUpload && uploadFolderId.HasValue && await _accessPolicy.CanUploadDocumentToFolderAsync(tenantId, _currentUser.UserId, uploadFolderId, User, ct),
                 CurrentFolderId = effectiveFolderId,
-                CurrentFolderIsVirtual = FolderIdHelper.IsVirtualFolder(effectiveFolderId),
-                CurrentFolderName = ResolveCurrentFolderName(tree, effectiveFolderId, folderId),
-                FolderId = effectiveFolderId,
+                CurrentListingFolderId = listingFolderId,
+                CurrentUploadFolderId = uploadFolderId,
+                CurrentFolderIsVirtual = resolved.WasVirtual,
+                CurrentFolderName = resolved.Success ? resolved.FolderName : ResolveCurrentFolderName(tree, effectiveFolderId, folderId),
+                FolderId = listingFolderId,
                 Query = q,
                 Folders = tree.Select(x => new GedExplorerVM.FolderNodeVM
                 {
@@ -380,6 +384,7 @@ public sealed class GedController : Controller
                     Path = x.Path,
                     Level = x.Level,
                     UploadFolderId = x.UploadFolderId == Guid.Empty ? x.Id : x.UploadFolderId,
+                    ListingFolderId = x.ListingFolderId == Guid.Empty ? (x.UploadFolderId == Guid.Empty ? x.Id : x.UploadFolderId) : x.ListingFolderId,
                     IsVirtual = x.IsVirtual,
                     CanReceiveDocuments = x.CanReceiveDocuments && (x.UploadFolderId != Guid.Empty || x.Id != Guid.Empty)
                 }).ToList(),
@@ -1136,6 +1141,7 @@ LIMIT 20;";
                     Path = x.Path,
                     Level = x.Level,
                     UploadFolderId = x.UploadFolderId == Guid.Empty ? x.Id : x.UploadFolderId,
+                    ListingFolderId = x.ListingFolderId == Guid.Empty ? (x.UploadFolderId == Guid.Empty ? x.Id : x.UploadFolderId) : x.ListingFolderId,
                     IsVirtual = x.IsVirtual,
                     CanReceiveDocuments = x.CanReceiveDocuments && (x.UploadFolderId != Guid.Empty || x.Id != Guid.Empty)
                 }).ToList()

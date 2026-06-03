@@ -47,6 +47,7 @@ WITH RECURSIVE t AS (
         0::int AS ""Level"",
         (f.id::text LIKE 'f0000000-0000-0000-0000-%')::boolean AS ""IsVirtual"",
         COALESCE(NULLIF(m.real_folder_id, '00000000-0000-0000-0000-000000000000'::uuid), f.id)::uuid AS ""UploadFolderId"",
+        COALESCE(NULLIF(m.real_folder_id, '00000000-0000-0000-0000-000000000000'::uuid), f.id)::uuid AS ""ListingFolderId"",
         TRUE::boolean AS ""CanReceiveDocuments""
     FROM ged.folder f
     LEFT JOIN ged.folder_virtual_map m
@@ -68,6 +69,7 @@ WITH RECURSIVE t AS (
         (t.""Level"" + 1)::int AS ""Level"",
         (c.id::text LIKE 'f0000000-0000-0000-0000-%')::boolean AS ""IsVirtual"",
         COALESCE(NULLIF(m.real_folder_id, '00000000-0000-0000-0000-000000000000'::uuid), c.id)::uuid AS ""UploadFolderId"",
+        COALESCE(NULLIF(m.real_folder_id, '00000000-0000-0000-0000-000000000000'::uuid), c.id)::uuid AS ""ListingFolderId"",
         TRUE::boolean AS ""CanReceiveDocuments""
     FROM ged.folder c
     JOIN t ON t.id = c.parent_id
@@ -87,6 +89,12 @@ ORDER BY ""Level"", ""Name"";";
 
             var rows = (await conn.QueryAsync<FolderNodeDto>(
                 new CommandDefinition(sql, new { tenantId }, cancellationToken: ct))).AsList();
+
+            foreach (var row in rows)
+            {
+                if (row.UploadFolderId == Guid.Empty) row.UploadFolderId = row.Id;
+                if (row.ListingFolderId == Guid.Empty) row.ListingFolderId = row.UploadFolderId == Guid.Empty ? row.Id : row.UploadFolderId;
+            }
 
             var emptyUploadFolderCount = rows.Count(x => x.UploadFolderId == Guid.Empty);
 
