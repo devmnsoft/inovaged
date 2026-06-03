@@ -1,15 +1,16 @@
 @model InovaGed.Web.Models.Ged.GedExplorerVM
 
-<div class="card-body p-0" id="gedDocumentsContainer" data-folder-id="@Model.CurrentFolderId" data-folder-name="@Model.CurrentFolderName" data-document-count="@Model.Documents.Count">
+<div class="ged-documents-list" id="gedDocumentsContainer" data-folder-id="@Model.CurrentFolderId" data-folder-name="@Model.CurrentFolderName" data-document-count="@Model.Documents.Count">
     @if (!Model.Documents.Any())
     {
         <div class="ged-empty-state text-center p-5 text-muted">
-            <div class="display-5 mb-3 text-primary"><i class="bi bi-folder2-open"></i></div>
+            <div class="ged-empty-icon mb-3"><i class="bi bi-folder2-open"></i></div>
             <h5 class="text-dark mb-2">Nenhum documento nesta pasta.</h5>
-            <p class="mb-3">Arraste arquivos para esta pasta ou use o upload em lote para começar.</p>
+            <p class="mb-3">Arraste arquivos para cá ou clique em Adicionar documentos.</p>
             <button type="button" id="btnOpenBulkUploadEmpty" class="btn btn-primary">
-                <i class="bi bi-cloud-arrow-up me-1"></i> Enviar documentos
+                <i class="bi bi-cloud-arrow-up me-1"></i> Adicionar documentos
             </button>
+            <div class="small text-muted mt-3"><i class="bi bi-lightbulb me-1"></i>Você também pode mover documentos de outra pasta para este destino.</div>
         </div>
     }
     else
@@ -19,58 +20,60 @@
                 <thead class="table-light">
                     <tr>
                         <th style="width:40px;"><input type="checkbox" id="selectAllDocuments" /></th>
-                        <th>Título</th>
-                        <th style="width:220px;">Tipo</th>
+                        <th>Documento</th>
+                        <th style="width:220px;">Tipo/Classificação</th>
                         <th style="width:260px;">Arquivo</th>
                         <th style="width:120px;">OCR</th>
-                        <th style="width:240px;">Ações</th>
+                        <th style="width:150px;">Atualizado em</th>
+                        <th style="width:70px;" class="text-end">Ações</th>
                     </tr>
                 </thead>
                 <tbody>
                     @foreach (var d in Model.Documents)
                     {
                         var isUnclassified = string.IsNullOrWhiteSpace(d.TypeName) || d.TypeName == "-";
-
                         <tr draggable="true" data-document-id="@d.Id">
                             <td><input type="checkbox" class="js-doc-select" value="@d.Id" data-document-title="@d.Title" /></td>
-                            <td class="fw-semibold">@d.Title</td>
+                            <td>
+                                <div class="ged-doc-title">@d.Title</div>
+                                <div class="ged-doc-subtitle">@(!string.IsNullOrWhiteSpace(Model.CurrentFolderName) ? Model.CurrentFolderName : "Raiz")</div>
+                            </td>
                             <td>
                                 @if (isUnclassified)
                                 {
-                                    <span class="badge bg-secondary">Sem classificação</span>
+                                    <span class="badge ged-badge ged-badge-muted">Sem classificação</span>
                                 }
                                 else
                                 {
-                                    <span class="badge bg-light text-dark border">
-                                        <i class="bi bi-tags me-1"></i>@d.TypeName
-                                    </span>
+                                    <span class="badge ged-badge ged-badge-ok"><i class="bi bi-tags me-1"></i>@d.TypeName</span>
                                 }
                             </td>
-                            <td class="text-muted small">@d.FileName</td>
-                            <td><span class="badge bg-info-subtle text-info-emphasis border border-info-subtle">Disponível</span></td>
-                            <td class="d-flex gap-2 flex-wrap">
-                                <a class="btn btn-sm btn-outline-primary" asp-action="Details" asp-controller="Ged" asp-route-id="@d.Id">
-                                    <i class="bi bi-eye"></i> Abrir
-                                </a>
-                                <button type="button" class="btn btn-sm btn-outline-secondary js-move-one" data-document-id="@d.Id" data-document-title="@d.Title">
-                                    <i class="bi bi-folder-symlink"></i> Mover
-                                </button>
-
-                                @if (isUnclassified)
-                                {
-                                    <a class="btn btn-sm btn-outline-success" asp-action="Details" asp-controller="Ged" asp-route-id="@d.Id" asp-route-openClassify="true">
-                                        <i class="bi bi-pencil-square"></i> Classificar
-                                    </a>
-                                }
-
-                                <form method="post" asp-controller="Ged" asp-action="DeleteDocument" class="d-inline js-feedback-form">
-                                    @Html.AntiForgeryToken()
-                                    <input type="hidden" name="id" value="@d.Id" />
-                                    <input type="hidden" name="folderId" value="@Model.CurrentFolderId" />
-                                    <button type="button" class="btn btn-sm btn-outline-danger js-delete-document" data-document-id="@d.Id" data-folder-id="@Model.CurrentFolderId" data-document-title="@d.Title">
-                                        <i class="bi bi-trash"></i> Excluir
+                            <td class="text-muted small text-truncate" style="max-width:260px;" title="@d.FileName">@d.FileName</td>
+                            <td><span class="badge ged-badge ged-badge-info">Disponível</span></td>
+                            <td class="text-muted small">@d.CreatedAt.ToString("dd/MM/yyyy HH:mm")</td>
+                            <td class="text-end">
+                                <div class="dropdown">
+                                    <button class="btn btn-light btn-sm border" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Ações">
+                                        <i class="bi bi-three-dots"></i>
                                     </button>
-                                </form>
+                                    <ul class="dropdown-menu dropdown-menu-end">
+                                        <li><a class="dropdown-item" asp-action="Details" asp-controller="Ged" asp-route-id="@d.Id"><i class="bi bi-eye me-2"></i>Abrir</a></li>
+                                        <li><a class="dropdown-item" asp-action="Details" asp-controller="Ged" asp-route-id="@d.Id"><i class="bi bi-file-earmark-richtext me-2"></i>Preview</a></li>
+                                        <li><a class="dropdown-item" asp-action="Details" asp-controller="Ged" asp-route-id="@d.Id"><i class="bi bi-body-text me-2"></i>Ver OCR</a></li>
+                                        <li><button type="button" class="dropdown-item js-move-one" data-document-id="@d.Id" data-document-title="@d.Title"><i class="bi bi-folder-symlink me-2"></i>Mover</button></li>
+                                        <li><a class="dropdown-item" asp-action="Details" asp-controller="Ged" asp-route-id="@d.Id" asp-route-openClassify="true"><i class="bi bi-tags me-2"></i>Classificar</a></li>
+                                        <li><a class="dropdown-item" asp-action="Details" asp-controller="Ged" asp-route-id="@d.Id"><i class="bi bi-download me-2"></i>Baixar</a></li>
+                                        <li><hr class="dropdown-divider" /></li>
+                                        <li>
+                                            <form method="post" asp-controller="Ged" asp-action="DeleteDocument" class="d-inline js-feedback-form">
+                                                @Html.AntiForgeryToken()
+                                                <input type="hidden" name="id" value="@d.Id" />
+                                                <input type="hidden" name="folderId" value="@Model.CurrentFolderId" />
+                                                <button type="button" class="dropdown-item text-danger js-delete-document" data-document-id="@d.Id" data-folder-id="@Model.CurrentFolderId" data-document-title="@d.Title"><i class="bi bi-trash me-2"></i>Excluir</button>
+                                            </form>
+                                        </li>
+                                    </ul>
+                                </div>
                             </td>
                         </tr>
                     }
