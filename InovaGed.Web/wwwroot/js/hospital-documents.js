@@ -1,9 +1,12 @@
 (() => {
-  if (window.__hospitalDocumentsBound) return;
-  window.__hospitalDocumentsBound = true;
-
   const root = document.querySelector('[data-hospital-documents-page]');
   if (!root) return;
+
+  if (window.__hospitalDocumentsBound === true) {
+    console.debug('[HospitalDocuments] eventos já vinculados');
+    return;
+  }
+  window.__hospitalDocumentsBound = true;
 
   const $ = (id) => document.getElementById(id);
   const els = {
@@ -33,6 +36,8 @@
   let suggestionController = null;
   let searchController = null;
   let currentPreviewReference = '';
+  let currentPreviewUrl = null;
+  let previewLoadToken = 0;
   let currentPreviewDocument = {
     documentId: null,
     versionId: null,
@@ -53,25 +58,56 @@
     bindEvents();
   }
 
+  function isExternalMessageChannelError(reason) {
+    const message = String(reason?.message || reason || '');
+    return message.includes('A listener indicated an asynchronous response') ||
+      message.includes('message channel closed before a response was received');
+  }
+
+  function handleUnhandledRejection(event) {
+    if (isExternalMessageChannelError(event.reason)) {
+      console.debug('[HospitalDocuments] erro externo ignorado:', String(event.reason?.message || event.reason || ''));
+      event.preventDefault();
+      return;
+    }
+
+    console.warn('[HospitalDocuments] Promise rejeitada não tratada:', event.reason);
+  }
+
+  function runSearchSafe(options, context = 'busca') {
+    runSearch(options).catch(err => {
+      if (err?.name === 'AbortError') return;
+      console.warn(`[HospitalDocuments] falha em ${context}`, err);
+      renderError('Não foi possível executar a operação agora.', err?.data?.correlationId);
+    });
+  }
+
+  function openPreviewPanelSafe(doc, tab = 'preview', context = 'preview lateral') {
+    openPreviewPanel(doc, tab).catch(err => {
+      console.warn(`[HospitalDocuments] falha ao abrir ${context}`, err);
+      showPreviewError('Não foi possível carregar o preview do documento.');
+    });
+  }
+
   function bindEvents() {
-    els.form.addEventListener('submit', (e) => { e.preventDefault(); runSearch({ reset: true }); });
+    window.addEventListener('unhandledrejection', handleUnhandledRejection);
+    els.form.addEventListener('submit', (e) => { e.preventDefault(); runSearchSafe({ reset: true }, 'busca'); });
     els.clear.addEventListener('click', clearSearchInput);
     els.input.addEventListener('keydown', handleInputKeys);
     els.input.addEventListener('input', handleAutocomplete);
     document.addEventListener('click', handleDocumentClick);
     document.querySelectorAll('.hospital-filter-chip').forEach(chip => chip.addEventListener('click', () => applyQuickChip(chip)));
-    els.applyAdvanced.addEventListener('click', () => { syncAdvancedToMain(); updateFilterSummary(); runSearch({ reset: true }); });
+    els.applyAdvanced.addEventListener('click', () => { syncAdvancedToMain(); updateFilterSummary(); runSearchSafe({ reset: true }, 'filtros avançados'); });
     els.resetAdvanced.addEventListener('click', resetAdvancedFilters);
-    els.loadMore.addEventListener('click', () => runSearch({ reset: false }));
+    els.loadMore.addEventListener('click', () => runSearchSafe({ reset: false }, 'carregar mais resultados'));
     els.toggleView.addEventListener('click', () => { state.cardMode = !state.cardMode; els.results.classList.toggle('hospital-results-card-mode', state.cardMode); els.results.classList.toggle('hospital-results-list-mode', !state.cardMode); });
     els.exportCsv.addEventListener('click', exportCsv);
     els.clearAll.addEventListener('click', clearAll);
-    els.previewFrame.addEventListener('load', () => { els.previewLoading.classList.add('d-none'); els.previewFrame.classList.remove('d-none'); });
-    els.copyReference.addEventListener('click', copyReference);
+    els.copyReference.addEventListener('click', () => copyReference().catch(err => console.warn('[HospitalDocuments] falha ao copiar referência', err)));
     els.expandedOpenNewTab?.addEventListener('click', openExpandedPreviewInNewTab);
-    els.expandedCopyReference?.addEventListener('click', copyReference);
+    els.expandedCopyReference?.addEventListener('click', () => copyReference().catch(err => console.warn('[HospitalDocuments] falha ao copiar referência expandida', err)));
     els.expandedModal?.addEventListener('shown.bs.modal', () => document.querySelector('.modal-backdrop')?.classList.add('hospital-preview-expanded-backdrop'));
-    els.expandedModal?.addEventListener('hidden.bs.modal', () => { if (els.expandedFrame) els.expandedFrame.src = 'about:blank'; cleanupModalState(); });
+    els.expandedModal?.addEventListener('hidden.bs.modal', () => { if (els.expandedFrame) els.expandedFrame.src = 'about:blank'; cleanupModalState({ preserveExpanded: false }); });
     els.closePreview.addEventListener('click', resetPreviewPanel);
     window.addEventListener('resize', positionAutocompletePortal);
     window.addEventListener('scroll', positionAutocompletePortal, true);
@@ -104,7 +140,20 @@
       const card = previewButton.closest('.hospital-result-card[data-document-id]');
       if (card) setActiveResultCard(card);
 
-      openPreviewPanel(doc);
+      openPreviewPanelSafe(doc, 'preview', 'preview lateral');
+      return;
+    }
+
+    const actionButton = e.target.closest('[data-result-action], [data-action]');
+    if (actionButton) {
+      const action = actionButton.dataset.resultAction || actionButton.dataset.action;
+      if (action === 'ocr') {
+        e.preventDefault();
+        e.stopPropagation();
+        const card = actionButton.closest('.hospital-result-card[data-document-id]');
+        if (card) setActiveResultCard(card);
+        openPreviewPanelSafe(readDocumentData(actionButton), 'ocr', 'OCR');
+      }
       return;
     }
 
@@ -113,14 +162,12 @@
 
     const card = e.target.closest('.hospital-result-card[data-document-id]');
     if (!card) return;
-    const action = e.target.closest('[data-action]')?.dataset.action;
-    if (action === 'details') return;
 
     e.preventDefault();
     e.stopPropagation();
     const item = readDocumentData(card);
     setActiveResultCard(card);
-    openPreviewPanel(item, action === 'ocr' ? 'ocr' : 'preview');
+    openPreviewPanelSafe(item, 'preview', 'card');
   }
 
 
@@ -135,19 +182,26 @@
     };
   }
 
-  function cleanupModalState() {
-    console.log('[HospitalDocuments] cleanup modal state');
-    document.body.classList.remove('modal-open');
-    document.body.style.removeProperty('overflow');
-    document.body.style.removeProperty('padding-right');
+  function cleanupModalState(options = {}) {
+    const preserveExpanded = options.preserveExpanded === true;
+    console.log('[HospitalDocuments] cleanup modal state', { preserveExpanded });
 
-    document.querySelectorAll('.modal-backdrop').forEach(x => x.remove());
+    if (!preserveExpanded) {
+      document.querySelectorAll('.modal-backdrop').forEach(x => x.remove());
+      document.body.classList.remove('modal-open');
+      document.body.style.removeProperty('overflow');
+      document.body.style.removeProperty('padding-right');
+    }
 
     document.querySelectorAll('.modal.show').forEach(modalEl => {
-      try {
-        const instance = bootstrap.Modal.getInstance(modalEl);
-        if (instance) instance.hide();
-      } catch { }
+      if (preserveExpanded && modalEl.id === 'hospitalPreviewExpandedModal') return;
+
+      const instance = typeof bootstrap !== 'undefined' && bootstrap.Modal
+        ? bootstrap.Modal.getInstance(modalEl)
+        : null;
+      if (instance) {
+        try { instance.hide(); } catch (err) { console.debug('[HospitalDocuments] falha ao ocultar modal residual', err); }
+      }
 
       modalEl.classList.remove('show');
       modalEl.style.display = 'none';
@@ -159,7 +213,7 @@
 
   function handleInputKeys(e) {
     const items = Array.from(els.suggestions.querySelectorAll('.hospital-suggestion-item'));
-    if (e.key === 'Enter') { e.preventDefault(); if (state.activeIndex >= 0 && items[state.activeIndex]) items[state.activeIndex].click(); else runSearch({ reset: true }); }
+    if (e.key === 'Enter') { e.preventDefault(); if (state.activeIndex >= 0 && items[state.activeIndex]) items[state.activeIndex].click(); else runSearchSafe({ reset: true }, 'tecla Enter'); }
     if (e.key === 'Escape') { hideSuggestions(); if (!els.input.value) clearAll(); }
     if (e.key === 'ArrowDown' && items.length) { e.preventDefault(); state.activeIndex = Math.min(items.length - 1, state.activeIndex + 1); setActiveSuggestion(items); }
     if (e.key === 'ArrowUp' && items.length) { e.preventDefault(); state.activeIndex = Math.max(0, state.activeIndex - 1); setActiveSuggestion(items); }
@@ -173,7 +227,14 @@
     if (q.length < 3) { hideSuggestions(); abortSuggestions(); return; }
     showSuggestionsContainer();
     els.suggestions.innerHTML = '<div class="hospital-suggestion-item"><div></div><div class="hospital-suggestion-desc">Buscando sugestões...</div></div>';
-    suggestionTimer = window.setTimeout(loadSuggestions, 400);
+    suggestionTimer = window.setTimeout(() => {
+      loadSuggestions().catch(err => {
+        if (err?.name !== 'AbortError') {
+          console.warn('[HospitalDocuments] falha ao carregar autocomplete', err);
+          hideSuggestions();
+        }
+      });
+    }, 400);
   }
 
   async function loadSuggestions() {
@@ -215,10 +276,10 @@
 
   function selectSuggestion(item) {
     hideSuggestions();
-    if (item.suggestionType === 'recent') { els.input.value = item.query; return runSearch({ reset: true }); }
-    if (item.suggestionType === 'term') { els.input.value = item.query || item.label; return runSearch({ reset: true }); }
+    if (item.suggestionType === 'recent') { els.input.value = item.query; runSearchSafe({ reset: true }, 'sugestão recente'); return; }
+    if (item.suggestionType === 'term') { els.input.value = item.query || item.label; runSearchSafe({ reset: true }, 'sugestão de termo'); return; }
     els.input.value = item.code || item.title || item.label || els.input.value;
-    runSearch({ reset: true });
+    runSearchSafe({ reset: true }, 'autocomplete');
   }
 
   async function runSearch({ reset }) {
@@ -278,7 +339,7 @@
       <div class="hospital-result-file">${escapeHtml(item.fileName || '')}</div><div class="hospital-result-path"><i class="bi bi-folder2-open"></i> ${escapeHtml(item.folderPath || item.folderName || 'Sem pasta informada')}</div>
       <div class="hospital-badges"><span class="hospital-badge">${escapeHtml(item.code || 'Sem código')}</span><span class="hospital-badge">${escapeHtml(item.friendlyType || item.type || 'Documento')}</span><span class="hospital-badge ${item.hasOcr ? 'ocr' : ''}">${ocrStatusLabel(item.ocrStatus, item.hasOcr)}</span><span class="hospital-badge match">${escapeHtml(item.matchSourceLabel || 'Relevância')}</span><span class="hospital-badge">${escapeHtml(item.createdAtFormatted || item.createdAt || '')}</span></div>
       <div class="hospital-snippet">${sanitizeSnippet(item.snippet || 'Documento encontrado pelos metadados informados.')}</div></div>
-      <div class="hospital-result-actions"><button class="btn btn-sm btn-primary js-open-preview-panel" data-action="preview" data-document-id="${documentId}" data-version-id="${versionId}" data-title="${escapeAttr(item.title || '')}" type="button"><i class="bi bi-eye"></i> Preview</button><button class="btn btn-sm btn-outline-primary" data-action="ocr" type="button"><i class="bi bi-body-text"></i> OCR</button><a class="btn btn-sm btn-outline-secondary" data-action="details" href="${escapeAttr(item.viewerUrl || '#')}" target="_blank" rel="noopener"><i class="bi bi-box-arrow-up-right"></i> Dados</a></div>
+      <div class="hospital-result-actions"><button class="btn btn-sm btn-primary js-open-preview-panel" data-result-action="preview" data-document-id="${documentId}" data-version-id="${versionId}" data-title="${escapeAttr(item.title || '')}" type="button"><i class="bi bi-eye"></i> Preview</button><button class="btn btn-sm btn-outline-primary" data-result-action="ocr" type="button"><i class="bi bi-body-text"></i> OCR</button><a class="btn btn-sm btn-outline-secondary" data-result-action="new-tab" href="${escapeAttr(item.viewerUrl || '#')}" target="_blank" rel="noopener"><i class="bi bi-box-arrow-up-right"></i> Dados</a></div>
     </article>`;
   }
 
@@ -290,12 +351,12 @@
       ${assistantCard('bi-funnel','Use filtros rápidos','Combine tipo de arquivo, OCR e período para refinar.')}
       <div class="hospital-assistant-card" style="grid-column:1/-1"><strong>Exemplos de busca</strong><div class="hospital-example-row">${['APAC','carcinoma','tomografia','prontuário','laudo','exame'].map(x => `<button type="button" class="hospital-filter-chip" data-example="${x}">${x}</button>`).join('')}</div></div>
     </div>`;
-    els.results.querySelectorAll('[data-example]').forEach(b => b.addEventListener('click', () => { els.input.value = b.dataset.example; runSearch({ reset: true }); }));
+    els.results.querySelectorAll('[data-example]').forEach(b => b.addEventListener('click', () => { els.input.value = b.dataset.example; runSearchSafe({ reset: true }, 'exemplo de busca'); }));
   }
   function assistantCard(icon,title,text){return `<div class="hospital-assistant-card"><i class="bi ${icon}"></i><strong>${title}</strong><p>${text}</p></div>`;}
 
-  function renderEmpty(title) { els.meta.textContent = 'Nenhum documento encontrado.'; els.loadMore.classList.add('d-none'); els.results.innerHTML = `<div class="hospital-empty-state"><h3>${escapeHtml(title)}</h3><p>Você pode tentar:</p><ul><li>remover filtros;</li><li>buscar por parte do nome;</li><li>pesquisar por número;</li><li>tentar termo sem acento;</li><li>buscar por tipo documental;</li><li>usar uma palavra do OCR.</li></ul><button class="hospital-btn-secondary" type="button" data-empty="filters">Limpar filtros</button> <button class="hospital-btn-secondary" type="button" data-empty="all">Pesquisar em todo o acervo</button> <button class="hospital-btn-primary" type="button" data-empty="home">Voltar ao início</button></div>`; els.results.querySelector('[data-empty="filters"]')?.addEventListener('click', resetAdvancedFilters); els.results.querySelector('[data-empty="all"]')?.addEventListener('click', () => { resetAdvancedFilters(); runSearch({ reset: true }); }); els.results.querySelector('[data-empty="home"]')?.addEventListener('click', clearAll); renderSummary({ totalResults: 0, totalWithOcr: 0, totalWithoutOcr: 0, totalByType: {}, query: els.input.value.trim() }); }
-  function renderError(message, correlationId) { els.meta.textContent = 'Erro ao executar a busca.'; els.results.innerHTML = `<div class="hospital-error-state"><h3>Não foi possível executar a busca agora.</h3><p>${escapeHtml(message)}</p>${correlationId ? `<p class="text-muted">CorrelationId: ${escapeHtml(correlationId)}</p>` : ''}<button id="btnTryAgain" class="hospital-btn-primary" type="button">Tentar novamente</button></div>`; $('btnTryAgain')?.addEventListener('click', () => runSearch({ reset: true })); }
+  function renderEmpty(title) { els.meta.textContent = 'Nenhum documento encontrado.'; els.loadMore.classList.add('d-none'); els.results.innerHTML = `<div class="hospital-empty-state"><h3>${escapeHtml(title)}</h3><p>Você pode tentar:</p><ul><li>remover filtros;</li><li>buscar por parte do nome;</li><li>pesquisar por número;</li><li>tentar termo sem acento;</li><li>buscar por tipo documental;</li><li>usar uma palavra do OCR.</li></ul><button class="hospital-btn-secondary" type="button" data-empty="filters">Limpar filtros</button> <button class="hospital-btn-secondary" type="button" data-empty="all">Pesquisar em todo o acervo</button> <button class="hospital-btn-primary" type="button" data-empty="home">Voltar ao início</button></div>`; els.results.querySelector('[data-empty="filters"]')?.addEventListener('click', resetAdvancedFilters); els.results.querySelector('[data-empty="all"]')?.addEventListener('click', () => { resetAdvancedFilters(); runSearchSafe({ reset: true }, 'estado vazio'); }); els.results.querySelector('[data-empty="home"]')?.addEventListener('click', clearAll); renderSummary({ totalResults: 0, totalWithOcr: 0, totalWithoutOcr: 0, totalByType: {}, query: els.input.value.trim() }); }
+  function renderError(message, correlationId) { els.meta.textContent = 'Erro ao executar a busca.'; els.results.innerHTML = `<div class="hospital-error-state"><h3>Não foi possível executar a busca agora.</h3><p>${escapeHtml(message)}</p>${correlationId ? `<p class="text-muted">CorrelationId: ${escapeHtml(correlationId)}</p>` : ''}<button id="btnTryAgain" class="hospital-btn-primary" type="button">Tentar novamente</button></div>`; $('btnTryAgain')?.addEventListener('click', () => runSearchSafe({ reset: true }, 'tentar novamente')); }
 
   function renderSummary(data) {
     if (!data) { els.summary.innerHTML = `<div><strong>Pronto para pesquisar</strong><span>Informe prontuário, APAC, paciente, exame, laudo, tipo documental ou termo do OCR.</span></div><button id="btnSummaryClear" type="button" class="btn btn-sm btn-outline-secondary">Limpar busca</button>`; $('btnSummaryClear')?.addEventListener('click', clearAll); return; }
@@ -309,34 +370,54 @@
     card.classList.add('active');
   }
 
-  function openPreviewPanel(item, tab = 'preview') {
-    console.log('[HospitalDocuments] open preview panel', item);
-    cleanupModalState();
-    state.selectedItem = item;
-    state.ocrLoadedFor = null;
-    const subtitle = `${item.folderPath || item.folderName || 'Sem pasta informada'} · ${item.fileName || 'Arquivo'} · ${item.code || 'Sem código'}`;
-    const previewUrl = item.previewUrl || `/HospitalDocuments/Preview?versionId=${encodeURIComponent(item.versionId)}`;
-    currentPreviewReference = `${item.title || 'Documento'} | ${item.code || item.documentId || ''} | versão ${item.versionId || ''}`.trim();
-    currentPreviewDocument = {
-      documentId: item.documentId || null,
-      versionId: item.versionId || null,
-      title: item.title || 'Documento',
-      subtitle,
-      type: item.friendlyType || item.type || 'Documento',
-      previewUrl
-    };
-    els.previewPanel.classList.add('has-document');
-    els.previewTitle.textContent = item.title || 'Preview do documento';
-    els.previewSubtitle.textContent = subtitle;
-    els.previewTypeBadge.textContent = item.friendlyType || item.type || 'Documento';
-    els.openNewTab.href = previewUrl;
-    els.openNewTab.classList.remove('disabled');
-    els.openNewTab.removeAttribute('aria-disabled');
-    renderMeta(item);
-    showPreviewLoading();
-    els.previewFrame.src = previewUrl;
-    els.previewPanel?.classList.add('is-open');
-    activatePanelTab(tab);
+  async function openPreviewPanel(item, tab = 'preview') {
+    try {
+      console.log('[HospitalDocuments] open preview panel', item);
+      if (!item || !item.versionId) {
+        showPreviewError('Documento sem versão disponível para preview.');
+        return false;
+      }
+
+      cleanupModalState({ preserveExpanded: false });
+      state.selectedItem = item;
+      state.ocrLoadedFor = null;
+
+      const subtitle = `${item.folderPath || item.folderName || 'Sem pasta informada'} · ${item.fileName || 'Arquivo'} · ${item.code || 'Sem código'}`;
+      const previewUrl = `/HospitalDocuments/Preview?versionId=${encodeURIComponent(item.versionId)}`;
+      currentPreviewReference = `${item.title || 'Documento'} | ${item.code || item.documentId || ''} | versão ${item.versionId || ''}`.trim();
+      currentPreviewDocument = {
+        documentId: item.documentId || null,
+        versionId: item.versionId || null,
+        title: item.title || 'Documento',
+        subtitle,
+        type: item.friendlyType || item.type || 'Documento',
+        previewUrl
+      };
+
+      updatePreviewHeader(currentPreviewDocument);
+      renderMeta(item);
+      openPreviewShell();
+      activatePanelTab(tab);
+      return await loadPreviewFrame(previewUrl);
+    } catch (err) {
+      console.warn('[HospitalDocuments] erro em openPreviewPanel', err);
+      showPreviewError('Não foi possível carregar o preview.');
+      return false;
+    }
+  }
+
+  function updatePreviewHeader(doc) {
+    els.previewTitle.textContent = doc.title || 'Preview do documento';
+    els.previewSubtitle.textContent = doc.subtitle || '';
+    els.previewTypeBadge.textContent = doc.type || 'Documento';
+    els.openNewTab.href = doc.previewUrl || '';
+    els.openNewTab.classList.toggle('disabled', !doc.previewUrl);
+    if (doc.previewUrl) els.openNewTab.removeAttribute('aria-disabled');
+    else els.openNewTab.setAttribute('aria-disabled', 'true');
+  }
+
+  function openPreviewShell() {
+    els.previewPanel.classList.add('has-document', 'is-open');
   }
 
   function showPreviewLoading() {
@@ -345,10 +426,94 @@
     els.previewLoading.classList.remove('d-none');
   }
 
+  function hidePreviewLoading() {
+    els.previewLoading.classList.add('d-none');
+    els.previewFrame.classList.remove('d-none');
+  }
+
+  function showPreviewError(message) {
+    els.previewLoading.classList.add('d-none');
+    els.previewFrame.classList.add('d-none');
+    els.previewEmpty.classList.remove('d-none');
+    els.previewEmpty.innerHTML = `<i class="bi bi-exclamation-triangle" aria-hidden="true"></i><strong>${escapeHtml(message || 'Falha ao carregar o preview.')}</strong><span>Tente abrir em nova aba ou selecione outro documento.</span>`;
+  }
+
+  function isLoginFrame(frame) {
+    try {
+      const doc = frame.contentDocument;
+      if (!doc || !doc.documentElement) return false;
+      const text = `${doc.title || ''} ${doc.body?.innerText || ''}`.toLowerCase();
+      return text.includes('login') || text.includes('entrar') || text.includes('sessão expirada') || text.includes('session expired');
+    } catch {
+      return false;
+    }
+  }
+
+  function loadPreviewFrame(url) {
+    return new Promise((resolve) => {
+      const frame = document.getElementById('hospitalPreviewFrame');
+      if (!frame) {
+        console.warn('[HospitalDocuments] iframe de preview não encontrado');
+        resolve(false);
+        return;
+      }
+
+      if (currentPreviewUrl === url && frame.src && frame.src.includes(url)) {
+        console.log('[HospitalDocuments] preview já carregado, ignorando reload', url);
+        hidePreviewLoading();
+        resolve(true);
+        return;
+      }
+
+      const token = ++previewLoadToken;
+      currentPreviewUrl = url;
+      showPreviewLoading();
+
+      frame.onload = function () {
+        if (token !== previewLoadToken) return;
+        if (isLoginFrame(frame)) {
+          showPreviewError('Sua sessão pode ter expirado. Abra o documento em nova aba e faça login novamente.');
+          resolve(false);
+          return;
+        }
+        hidePreviewLoading();
+        resolve(true);
+      };
+
+      frame.onerror = function () {
+        if (token !== previewLoadToken) return;
+        hidePreviewLoading();
+        showPreviewError('Falha ao carregar o preview.');
+        resolve(false);
+      };
+
+      try {
+        frame.src = url;
+      } catch (err) {
+        console.warn('[HospitalDocuments] erro ao definir src do iframe', err);
+        hidePreviewLoading();
+        showPreviewError('Falha ao carregar o preview.');
+        resolve(false);
+      }
+
+      window.setTimeout(() => {
+        if (token !== previewLoadToken) return;
+        hidePreviewLoading();
+        resolve(true);
+      }, 15000);
+    });
+  }
+
   function activatePanelTab(tabName) {
     root.querySelectorAll('[data-panel-tab]').forEach(tab => tab.classList.toggle('active', tab.dataset.panelTab === tabName));
     root.querySelectorAll('[data-panel-content]').forEach(content => content.classList.toggle('active', content.dataset.panelContent === tabName));
-    if (tabName === 'ocr' && state.selectedItem) loadOcrForSelected();
+    if (tabName === 'ocr' && state.selectedItem) {
+      loadOcrForSelected().catch(err => {
+        console.warn('[HospitalDocuments] falha ao carregar OCR', err);
+        state.ocrLoadedFor = null;
+        els.ocrStatus.textContent = 'Não foi possível carregar o OCR.';
+      });
+    }
   }
 
   async function loadOcrForSelected() {
@@ -386,6 +551,8 @@
     state.selectedItem = null;
     state.ocrLoadedFor = null;
     currentPreviewReference = '';
+    currentPreviewUrl = null;
+    previewLoadToken += 1;
     currentPreviewDocument = { documentId: null, versionId: null, title: '', subtitle: '', type: '', previewUrl: '' };
     els.results?.querySelectorAll('.hospital-result-card.active').forEach(x => x.classList.remove('active'));
     els.previewPanel.classList.remove('has-document', 'is-open');
@@ -395,9 +562,12 @@
     els.openNewTab.removeAttribute('href');
     els.openNewTab.classList.add('disabled');
     els.openNewTab.setAttribute('aria-disabled', 'true');
+    els.previewFrame.onload = null;
+    els.previewFrame.onerror = null;
     els.previewFrame.removeAttribute('src');
     els.previewFrame.classList.add('d-none');
     els.previewLoading.classList.add('d-none');
+    els.previewEmpty.innerHTML = '<i class="bi bi-file-earmark-text" aria-hidden="true"></i><strong>Selecione um documento para visualizar.</strong><span>Clique em um resultado da busca para abrir o preview ao lado.</span>';
     els.previewEmpty.classList.remove('d-none');
     els.ocrStatus.textContent = 'Selecione um documento para consultar o OCR.';
     els.ocrText.textContent = '';
@@ -418,7 +588,7 @@
     if (chip.dataset.ocr) { els.advancedOcrStatus.value = chip.classList.contains('active') ? chip.dataset.ocr : ''; }
     if (chip.dataset.recent) { els.recentOnly.checked = chip.classList.contains('active'); }
     if (chip.dataset.term) { els.input.value = chip.dataset.term; }
-    updateFilterSummary(); runSearch({ reset: true });
+    updateFilterSummary(); runSearchSafe({ reset: true }, 'filtro rápido');
   }
   function syncAdvancedToMain(){ els.type.value = els.advancedType.value; }
   function resetAdvancedFilters(){ [els.advancedType,els.advancedOcrStatus,els.dateFrom,els.dateTo,els.folder].forEach(x=>x.value=''); [els.ocrRequired,els.recentOnly,els.previewOnly].forEach(x=>x.checked=false); els.sort.value='relevance'; els.type.value=''; document.querySelectorAll('.hospital-filter-chip.active').forEach(x=>x.classList.remove('active')); updateFilterSummary(); }
