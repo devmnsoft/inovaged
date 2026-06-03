@@ -49,6 +49,7 @@
     renderSummary(null);
     resetPreviewPanel();
     prepareAutocompletePortal();
+    cleanupModalState();
     bindEvents();
   }
 
@@ -66,12 +67,11 @@
     els.exportCsv.addEventListener('click', exportCsv);
     els.clearAll.addEventListener('click', clearAll);
     els.previewFrame.addEventListener('load', () => { els.previewLoading.classList.add('d-none'); els.previewFrame.classList.remove('d-none'); });
-    els.expandPreview?.addEventListener('click', (e) => { e.preventDefault(); expandCurrentPreview(); });
     els.copyReference.addEventListener('click', copyReference);
     els.expandedOpenNewTab?.addEventListener('click', openExpandedPreviewInNewTab);
     els.expandedCopyReference?.addEventListener('click', copyReference);
     els.expandedModal?.addEventListener('shown.bs.modal', () => document.querySelector('.modal-backdrop')?.classList.add('hospital-preview-expanded-backdrop'));
-    els.expandedModal?.addEventListener('hidden.bs.modal', () => { if (els.expandedFrame) els.expandedFrame.src = 'about:blank'; });
+    els.expandedModal?.addEventListener('hidden.bs.modal', () => { if (els.expandedFrame) els.expandedFrame.src = 'about:blank'; cleanupModalState(); });
     els.closePreview.addEventListener('click', resetPreviewPanel);
     window.addEventListener('resize', positionAutocompletePortal);
     window.addEventListener('scroll', positionAutocompletePortal, true);
@@ -80,6 +80,33 @@
 
   function handleDocumentClick(e) {
     if (!els.suggestions.contains(e.target) && e.target !== els.input) hideSuggestions();
+
+    const expandButton = e.target.closest('#btnExpandPreview, .js-expand-preview');
+    if (expandButton) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (!currentPreviewDocument?.versionId) {
+        window.showAppToast?.('Selecione um documento para ampliar.', 'warning', 'Preview');
+        return;
+      }
+
+      openExpandedPreview(currentPreviewDocument);
+      return;
+    }
+
+    const previewButton = e.target.closest('.js-open-preview-panel');
+    if (previewButton) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const doc = readDocumentData(previewButton);
+      const card = previewButton.closest('.hospital-result-card[data-document-id]');
+      if (card) setActiveResultCard(card);
+
+      openPreviewPanel(doc);
+      return;
+    }
 
     const tab = e.target.closest('[data-panel-tab]');
     if (tab) return;
@@ -90,9 +117,44 @@
     if (action === 'details') return;
 
     e.preventDefault();
-    const item = JSON.parse(card.dataset.item || '{}');
+    e.stopPropagation();
+    const item = readDocumentData(card);
     setActiveResultCard(card);
     openPreviewPanel(item, action === 'ocr' ? 'ocr' : 'preview');
+  }
+
+
+  function readDocumentData(source) {
+    const card = source.closest?.('.hospital-result-card[data-document-id]') || source;
+    const item = JSON.parse(card?.dataset?.item || '{}');
+    return {
+      ...item,
+      documentId: source.dataset?.documentId || item.documentId || card?.dataset?.documentId || null,
+      versionId: source.dataset?.versionId || item.versionId || card?.dataset?.versionId || null,
+      title: source.dataset?.title || item.title || card?.dataset?.title || 'Documento'
+    };
+  }
+
+  function cleanupModalState() {
+    console.log('[HospitalDocuments] cleanup modal state');
+    document.body.classList.remove('modal-open');
+    document.body.style.removeProperty('overflow');
+    document.body.style.removeProperty('padding-right');
+
+    document.querySelectorAll('.modal-backdrop').forEach(x => x.remove());
+
+    document.querySelectorAll('.modal.show').forEach(modalEl => {
+      try {
+        const instance = bootstrap.Modal.getInstance(modalEl);
+        if (instance) instance.hide();
+      } catch { }
+
+      modalEl.classList.remove('show');
+      modalEl.style.display = 'none';
+      modalEl.setAttribute('aria-hidden', 'true');
+      modalEl.removeAttribute('aria-modal');
+      modalEl.removeAttribute('role');
+    });
   }
 
   function handleInputKeys(e) {
@@ -216,7 +278,7 @@
       <div class="hospital-result-file">${escapeHtml(item.fileName || '')}</div><div class="hospital-result-path"><i class="bi bi-folder2-open"></i> ${escapeHtml(item.folderPath || item.folderName || 'Sem pasta informada')}</div>
       <div class="hospital-badges"><span class="hospital-badge">${escapeHtml(item.code || 'Sem código')}</span><span class="hospital-badge">${escapeHtml(item.friendlyType || item.type || 'Documento')}</span><span class="hospital-badge ${item.hasOcr ? 'ocr' : ''}">${ocrStatusLabel(item.ocrStatus, item.hasOcr)}</span><span class="hospital-badge match">${escapeHtml(item.matchSourceLabel || 'Relevância')}</span><span class="hospital-badge">${escapeHtml(item.createdAtFormatted || item.createdAt || '')}</span></div>
       <div class="hospital-snippet">${sanitizeSnippet(item.snippet || 'Documento encontrado pelos metadados informados.')}</div></div>
-      <div class="hospital-result-actions"><button class="btn btn-sm btn-primary" data-action="preview" type="button"><i class="bi bi-eye"></i> Preview</button><button class="btn btn-sm btn-outline-primary" data-action="ocr" type="button"><i class="bi bi-body-text"></i> OCR</button><a class="btn btn-sm btn-outline-secondary" data-action="details" href="${escapeAttr(item.viewerUrl || '#')}" target="_blank" rel="noopener"><i class="bi bi-box-arrow-up-right"></i> Dados</a></div>
+      <div class="hospital-result-actions"><button class="btn btn-sm btn-primary js-open-preview-panel" data-action="preview" data-document-id="${documentId}" data-version-id="${versionId}" data-title="${escapeAttr(item.title || '')}" type="button"><i class="bi bi-eye"></i> Preview</button><button class="btn btn-sm btn-outline-primary" data-action="ocr" type="button"><i class="bi bi-body-text"></i> OCR</button><a class="btn btn-sm btn-outline-secondary" data-action="details" href="${escapeAttr(item.viewerUrl || '#')}" target="_blank" rel="noopener"><i class="bi bi-box-arrow-up-right"></i> Dados</a></div>
     </article>`;
   }
 
@@ -248,6 +310,8 @@
   }
 
   function openPreviewPanel(item, tab = 'preview') {
+    console.log('[HospitalDocuments] open preview panel', item);
+    cleanupModalState();
     state.selectedItem = item;
     state.ocrLoadedFor = null;
     const subtitle = `${item.folderPath || item.folderName || 'Sem pasta informada'} · ${item.fileName || 'Arquivo'} · ${item.code || 'Sem código'}`;
@@ -271,6 +335,7 @@
     renderMeta(item);
     showPreviewLoading();
     els.previewFrame.src = previewUrl;
+    els.previewPanel?.classList.add('is-open');
     activatePanelTab(tab);
   }
 
@@ -317,12 +382,13 @@
   }
 
   function resetPreviewPanel() {
+    cleanupModalState();
     state.selectedItem = null;
     state.ocrLoadedFor = null;
     currentPreviewReference = '';
     currentPreviewDocument = { documentId: null, versionId: null, title: '', subtitle: '', type: '', previewUrl: '' };
     els.results?.querySelectorAll('.hospital-result-card.active').forEach(x => x.classList.remove('active'));
-    els.previewPanel.classList.remove('has-document');
+    els.previewPanel.classList.remove('has-document', 'is-open');
     els.previewTitle.textContent = 'Selecione um documento';
     els.previewSubtitle.textContent = 'Clique em um resultado da busca para abrir o preview ao lado.';
     els.previewTypeBadge.textContent = 'Documento';
@@ -392,16 +458,8 @@
     els.autocompletePortal.style.zIndex = '3000';
   }
 
-  function expandCurrentPreview() {
-    if (!currentPreviewDocument?.versionId) {
-      window.showAppToast?.('Selecione um documento para ampliar o preview.', 'warning', 'Preview');
-      return;
-    }
-
-    openExpandedPreview(currentPreviewDocument);
-  }
-
   function openExpandedPreview(doc) {
+    console.log('[HospitalDocuments] open expanded preview');
     if (!els.expandedModal || !els.expandedFrame) return;
     if (typeof bootstrap === 'undefined' || !bootstrap.Modal) {
       window.open(doc.previewUrl || `/HospitalDocuments/Preview?versionId=${encodeURIComponent(doc.versionId)}`, '_blank', 'noopener');
