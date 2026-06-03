@@ -741,7 +741,7 @@
     .ged-document-row { display:grid; grid-template-columns:32px minmax(0,1fr) auto; gap:1rem; align-items:center; padding:.78rem 1rem; border-bottom:1px solid #e5e7eb; transition:background .15s ease, box-shadow .15s ease; }
     .ged-document-row:hover { background:#f8fafc; }
     .document-row-new { animation:newDocumentPulse 2s ease; background:#ecfdf5 !important; }
-    @keyframes newDocumentPulse { 0% { box-shadow:0 0 0 0 rgba(16,185,129,.5); } 100% { box-shadow:0 0 0 12px rgba(16,185,129,0); } }
+    keyframes newDocumentPulse { 0% { box-shadow:0 0 0 0 rgba(16,185,129,.5); } 100% { box-shadow:0 0 0 12px rgba(16,185,129,0); } }
     .ged-document-check { display:flex; align-items:center; justify-content:center; }
     .ged-document-main { min-width:0; }
     .ged-document-title { display:block; font-weight:700; color:#0f172a; line-height:1.2; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-decoration:none; }
@@ -767,8 +767,8 @@
     .ged-empty-state { background:linear-gradient(180deg,#fff,#f8fbff); border-radius:0 0 18px 18px; }
     .ged-empty-icon { width:74px; height:74px; border-radius:24px; display:grid; place-items:center; margin-inline:auto; color:#0d6efd; background:#eaf2ff; font-size:2.35rem; }
     .bulk-large-file-hint { color:#0369a1; }
-    @media (max-width: 575.98px) { .ged-document-row { grid-template-columns:28px minmax(0,1fr); gap:.65rem; } .ged-document-actions { grid-column:2; justify-content:flex-start; } .ged-documents-view-toolbar { align-items:flex-start !important; flex-direction:column; } }
-    @media (max-width: 1199.98px) { .ged-page { grid-template-columns:1fr; } .ged-folder-panel { position:static; } .ged-kpi-strip { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+    media (max-width: 575.98px) { .ged-document-row { grid-template-columns:28px minmax(0,1fr); gap:.65rem; } .ged-document-actions { grid-column:2; justify-content:flex-start; } .ged-documents-view-toolbar { align-items:flex-start !important; flex-direction:column; } }
+    media (max-width: 1199.98px) { .ged-page { grid-template-columns:1fr; } .ged-folder-panel { position:static; } .ged-kpi-strip { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 </style>
 
 @section Scripts {
