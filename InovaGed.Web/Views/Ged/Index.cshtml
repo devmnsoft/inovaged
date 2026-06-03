@@ -30,9 +30,13 @@
     var currentUploadFolderId = currentFolderNode?.UploadFolderId == Guid.Empty ? Model.CurrentFolderId : (currentFolderNode?.UploadFolderId ?? Model.CurrentFolderId);
     var currentCanReceiveDocuments = currentFolderNode?.CanReceiveDocuments ?? Model.CurrentFolderId.HasValue;
     var allowLegacyUploadFallback = DocumentUploadOptions.Value.AllowLegacyUploadFallback;
+    var uploadOptions = DocumentUploadOptions.Value;
+    var ocrAvailableCount = Model.Documents.Count;
+    var pendingOcrCount = runningOcrCount;
+    var breadcrumbText = currentFolderNode?.Path ?? (!string.IsNullOrWhiteSpace(Model.CurrentFolderName) ? Model.CurrentFolderName : "Raiz");
 }
 
-<div class="row">
+<div class="ged-page">
     <div id="pageAlertHost" class="mb-2">
         @if (Model.CurrentFolderIsVirtual)
         {
@@ -57,17 +61,24 @@
     </div>
 
     <!-- COLUNA PASTAS -->
-    <div class="col-12 col-xl-3">
-        <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <span>Pastas</span>
-                <a class="btn btn-sm btn-outline-primary"
-                   asp-action="Folders" asp-controller="Ged">
-                    <i class="bi bi-gear"></i> Gerenciar
-                </a>
+    <aside class="ged-folder-panel">
+        <div class="ged-folder-panel-header">
+            <div>
+                <div class="fw-semibold">Pastas</div>
+                <div class="small text-muted">Explorer documental</div>
             </div>
-
-            <div class="card-body p-2 ged-folder-scroll" style="max-height:70vh; overflow:auto;">
+            <div class="d-flex gap-1">
+                <button type="button" class="btn btn-sm btn-light" id="btnReloadFolderTree" title="Recarregar"><i class="bi bi-arrow-clockwise"></i></button>
+                <a class="btn btn-sm btn-outline-primary" asp-action="Folders" asp-controller="Ged" title="Gerenciar pastas"><i class="bi bi-gear"></i></a>
+            </div>
+        </div>
+        <div class="ged-folder-search p-2 border-bottom">
+            <div class="input-group input-group-sm">
+                <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+                <input id="gedFolderSearch" class="form-control" placeholder="Buscar pasta" autocomplete="off" />
+            </div>
+        </div>
+        <div class="ged-folder-tree ged-folder-scroll">
                 @{
                     var byParent = Model.Folders
                     .Where(x => x.ParentId != null)
@@ -164,6 +175,21 @@
                                                             data-id="@n.Id"
                                                             data-nome="@n.Name">
                                                         <i class="bi bi-pencil me-1"></i> Renomear
+                                                    </button>
+                                                </li>
+                                                <li>
+                                                    <button class="dropdown-item" type="button" data-bs-toggle="modal" data-bs-target="#modalNovaPasta" data-parent-id="@n.Id">
+                                                        <i class="bi bi-folder-plus me-1"></i> Nova subpasta
+                                                    </button>
+                                                </li>
+                                                <li>
+                                                    <button class="dropdown-item" type="button" data-upload-folder-id="@(n.UploadFolderId == Guid.Empty ? n.Id : n.UploadFolderId)" data-folder-id="@n.Id" onclick="window.GedBulkUpload?.startUploadToFolder?.(this.dataset.uploadFolderId, [], '@n.Name', this.dataset.folderId, true)">
+                                                        <i class="bi bi-cloud-arrow-up me-1"></i> Enviar documentos
+                                                    </button>
+                                                </li>
+                                                <li>
+                                                    <button class="dropdown-item js-copy-folder-path" type="button" data-folder-path="@(n.Path ?? BuildFolderPath(n.Id))">
+                                                        <i class="bi bi-clipboard me-1"></i> Copiar caminho
                                                     </button>
                                                 </li>
                                                 <li><hr class="dropdown-divider" /></li>
@@ -283,6 +309,21 @@
                                                         <i class="bi bi-pencil me-1"></i> Renomear
                                                     </button>
                                                 </li>
+                                                <li>
+                                                    <button class="dropdown-item" type="button" data-bs-toggle="modal" data-bs-target="#modalNovaPasta" data-parent-id="@n.Id">
+                                                        <i class="bi bi-folder-plus me-1"></i> Nova subpasta
+                                                    </button>
+                                                </li>
+                                                <li>
+                                                    <button class="dropdown-item" type="button" data-upload-folder-id="@(n.UploadFolderId == Guid.Empty ? n.Id : n.UploadFolderId)" data-folder-id="@n.Id" onclick="window.GedBulkUpload?.startUploadToFolder?.(this.dataset.uploadFolderId, [], '@n.Name', this.dataset.folderId, true)">
+                                                        <i class="bi bi-cloud-arrow-up me-1"></i> Enviar documentos
+                                                    </button>
+                                                </li>
+                                                <li>
+                                                    <button class="dropdown-item js-copy-folder-path" type="button" data-folder-path="@(n.Path ?? BuildFolderPath(n.Id))">
+                                                        <i class="bi bi-clipboard me-1"></i> Copiar caminho
+                                                    </button>
+                                                </li>
                                                 <li><hr class="dropdown-divider" /></li>
                                                 <li>
                                                     <button class="dropdown-item text-danger"
@@ -308,90 +349,74 @@
                         </ul>
                     </div>
                 }
-            </div>
         </div>
-    </div>
+    </aside>
 
     <!-- COLUNA DOCUMENTOS -->
-    <div class="col-12 col-xl-9">
-        <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-                <div class="d-flex align-items-center gap-2">
-                    <i class="bi bi-files"></i>
-                    <strong>Documentos</strong>
-
-                    <span class="badge bg-light text-dark ms-2" title="Documentos sem classificação na pasta atual">
-                        <i class="bi bi-exclamation-triangle me-1"></i>
-                        Não classificados: @unclassifiedCount
-                    </span>
-
-                    @if (runningOcrCount > 0)
-                    {
-                        <a class="badge bg-warning text-dark text-decoration-none"
-                           asp-action="Processing"
-                           asp-controller="Ged"
-                           title="Existem OCRs em execução. Clique para acompanhar">
-                            <i class="bi bi-cpu me-1"></i>
-                            OCR em execução: @runningOcrCount
-                        </a>
-                    }
-
-                    <button type="button"
-                            class="btn btn-sm btn-outline-dark"
-                            data-bs-toggle="modal"
-                            data-bs-target="#modalFilaOcr">
-                        <i class="bi bi-list-task me-1"></i> Ver fila OCR
-                    </button>
-                </div>
-
-                <div class="d-flex align-items-center gap-2 flex-wrap">
-                    <div class="ged-smart-box" style="min-width: min(620px, 100%);">
-                        <input type="hidden" id="currentFolderId" value="@Model.CurrentFolderId" />
-                        <div class="input-group">
-                            <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
-                            <input id="smartSearchInput"
-                                   class="form-control"
-                                   name="q"
-                                   value="@Model.Query"
-                                   placeholder="Busque por documento, prontuário, paciente, pasta, tipo, termo do OCR ou número..." />
-                            <button id="btnSmartSearchClear" class="btn btn-outline-secondary" type="button" title="Limpar busca"><i class="bi bi-x-lg"></i></button>
-                            <button id="btnSmartFilters" class="btn btn-outline-secondary" type="button" title="Filtros avançados"><i class="bi bi-sliders"></i></button>
-                            <button id="btnSmartSearch" class="btn btn-outline-secondary" type="button"><i class="bi bi-search"></i></button>
-                        </div>
-                        <div id="smartSearchSuggestions" class="ged-smart-suggestions"></div>
-                        <div id="smartSearchFilters" class="border rounded-3 p-2 mt-2 bg-light d-none">
-                            <div class="d-flex gap-3 flex-wrap small">
-                                <label class="form-check-label"><input class="form-check-input" type="radio" name="searchScope" value="folder" checked /> Pasta atual</label>
-                                <label class="form-check-label"><input class="form-check-input" type="radio" name="searchScope" value="global" /> Todo GED</label>
-                                <label class="form-check-label"><input class="form-check-input" type="checkbox" disabled /> Apenas com OCR</label>
-                                <label class="form-check-label"><input class="form-check-input" type="checkbox" disabled /> Sem classificação</label>
-                            </div>
-                            <div id="smartSearchChips" class="d-flex flex-wrap gap-1 mt-2"></div>
-                        </div>
+    <section class="ged-main-panel">
+        <div class="ged-folder-header">
+            <div class="d-flex justify-content-between gap-3 flex-wrap align-items-start">
+                <div class="d-flex gap-3 align-items-start">
+                    <div class="ged-folder-header-icon"><i class="bi bi-folder2-open"></i></div>
+                    <div>
+                        <h1 class="h4 mb-1">@(!string.IsNullOrWhiteSpace(Model.CurrentFolderName) ? Model.CurrentFolderName : "Raiz")</h1>
+                        <div class="ged-breadcrumb"><i class="bi bi-diagram-3 me-1"></i>@breadcrumbText</div>
                     </div>
-
-
-
+                </div>
+                <div class="d-flex gap-2 flex-wrap">
                     @if (Model.CanBulkUpload || Model.CurrentFolderId != null)
                     {
-                        <button type="button" id="btnOpenBulkUpload" class="btn btn-primary" data-bs-toggle="tooltip" title="Envie um ou mais arquivos para a pasta selecionada.">
-                            <i class="bi bi-cloud-arrow-up me-1"></i> Adicionar documentos
-                        </button>
+                        <button type="button" id="btnOpenBulkUpload" class="btn btn-primary"><i class="bi bi-cloud-arrow-up me-1"></i> Adicionar documentos</button>
                     }
-                    <a class="btn btn-outline-dark"
-                       asp-controller="Ged"
-                       asp-action="Kpi">
-                        <i class="bi bi-bar-chart-line me-1"></i>KPI GED
-                    </a>
-                    <button id="btnMoveSelected" type="button" class="btn btn-outline-primary" disabled>
-                        Mover selecionados <span id="moveSelectedCount">(0)</span>
-                    </button>
+                    <a class="btn btn-outline-secondary" href="@Url.Action("Index", "Ged", new { folderId = Model.CurrentFolderId, q = Model.Query })"><i class="bi bi-arrow-clockwise me-1"></i> Atualizar</a>
+                    <div class="dropdown">
+                        <button class="btn btn-light border" type="button" data-bs-toggle="dropdown"><i class="bi bi-three-dots"></i></button>
+                        <ul class="dropdown-menu dropdown-menu-end">
+                            <li><a class="dropdown-item" asp-controller="Ged" asp-action="Kpi"><i class="bi bi-bar-chart-line me-2"></i>KPI GED</a></li>
+                            <li><button class="dropdown-item" type="button" data-bs-toggle="modal" data-bs-target="#modalFilaOcr"><i class="bi bi-list-task me-2"></i>Ver fila OCR</button></li>
+                        </ul>
+                    </div>
                 </div>
             </div>
+            <div class="ged-kpi-strip">
+                <div class="ged-kpi-card"><span>@Model.Documents.Count</span><small>documentos</small></div>
+                <div class="ged-kpi-card"><span id="selectedDocumentsKpi">0</span><small>selecionados</small></div>
+                <div class="ged-kpi-card"><span>@unclassifiedCount</span><small>não classificados</small></div>
+                <div class="ged-kpi-card"><span>@ocrAvailableCount</span><small>com OCR</small></div>
+                <div class="ged-kpi-card"><span>@pendingOcrCount</span><small>pendentes</small></div>
+            </div>
+        </div>
+
+        <div class="ged-toolbar">
+            <div class="ged-toolbar-search">
+                <input type="hidden" id="currentFolderId" value="@Model.CurrentFolderId" />
+                <div class="input-group">
+                    <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+                    <input id="smartSearchInput" class="form-control" name="q" value="@Model.Query" placeholder="Busque por documento, prontuário, paciente, pasta, tipo, termo do OCR ou número..." />
+                    <button id="btnSmartSearchClear" class="btn btn-outline-secondary" type="button" title="Limpar busca"><i class="bi bi-x-lg"></i></button>
+                    <button id="btnSmartFilters" class="btn btn-outline-secondary" type="button" title="Filtros avançados"><i class="bi bi-sliders"></i> Filtros</button>
+                    <button id="btnSmartSearch" class="btn btn-primary" type="button"><i class="bi bi-search"></i> Pesquisar</button>
+                </div>
+                <div id="smartSearchSuggestions" class="ged-smart-suggestions"></div>
+                <div id="smartSearchFilters" class="border rounded-3 p-2 mt-2 bg-light d-none">
+                    <div class="d-flex gap-3 flex-wrap small">
+                        <label class="form-check-label"><input class="form-check-input" type="radio" name="searchScope" value="folder" checked /> Pasta atual</label>
+                        <label class="form-check-label"><input class="form-check-input" type="radio" name="searchScope" value="global" /> Todo GED</label>
+                        <label class="form-check-label"><input class="form-check-input" type="checkbox" disabled /> Apenas com OCR</label>
+                        <label class="form-check-label"><input class="form-check-input" type="checkbox" disabled /> Sem classificação</label>
+                    </div>
+                    <div id="smartSearchChips" class="d-flex flex-wrap gap-1 mt-2"></div>
+                </div>
+            </div>
+            <div class="ged-toolbar-actions">
+                <a class="btn btn-sm btn-outline-dark" asp-controller="Ged" asp-action="Kpi"><i class="bi bi-bar-chart-line me-1"></i>KPI GED</a>
+                <button type="button" class="btn btn-sm btn-outline-dark" data-bs-toggle="modal" data-bs-target="#modalFilaOcr"><i class="bi bi-list-task me-1"></i> Fila OCR</button>
+                <button id="btnMoveSelected" type="button" class="btn btn-sm btn-outline-primary" disabled><i class="bi bi-folder-symlink me-1"></i>Mover <span id="moveSelectedCount">(0)</span></button>
+            </div>
+        </div>
 
             @await Html.PartialAsync("_DocumentsList", Model)
-        </div>
-    </div>
+    </section>
 </div>
 @Html.AntiForgeryToken()
 <div class="modal fade" id="moveDocumentsModal" tabindex="-1" aria-hidden="true">
@@ -465,6 +490,30 @@
                     </table>
                 </div>
             </div>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL NOVA SUBPASTA (EXPLORER) -->
+<div class="modal fade" id="modalNovaPasta" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form asp-controller="Ged" asp-action="CreateFolder" method="post" class="js-feedback-form">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="ParentId" id="new-folder-parent-id" />
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-folder-plus me-1"></i> Nova subpasta</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                </div>
+                <div class="modal-body">
+                    <label class="form-label">Nome da pasta</label>
+                    <input name="Name" class="form-control" maxlength="200" required />
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">Cancelar</button>
+                    <button class="btn btn-primary" type="submit"><i class="bi bi-check2 me-1"></i> Criar</button>
+                </div>
+            </form>
         </div>
     </div>
 </div>
@@ -571,7 +620,7 @@
     </div>
 </div>
 
-<div class="modal fade" id="bulkUploadModal" tabindex="-1" aria-hidden="true" data-folder-id="@Model.CurrentFolderId" data-upload-folder-id="@currentUploadFolderId" data-can-receive-documents="@(currentCanReceiveDocuments ? "true" : "false")" data-folder-virtual="@(uploadFolderIsVirtual ? "true" : "false")" data-is-virtual="@(uploadFolderIsVirtual ? "true" : "false")" data-folder-name="@uploadFolderLabel" data-allow-legacy-upload-fallback="@(allowLegacyUploadFallback ? "true" : "false")">
+<div class="modal fade" id="bulkUploadModal" tabindex="-1" aria-hidden="true" data-folder-id="@Model.CurrentFolderId" data-upload-folder-id="@currentUploadFolderId" data-can-receive-documents="@(currentCanReceiveDocuments ? "true" : "false")" data-folder-virtual="@(uploadFolderIsVirtual ? "true" : "false")" data-is-virtual="@(uploadFolderIsVirtual ? "true" : "false")" data-folder-name="@uploadFolderLabel" data-allow-legacy-upload-fallback="@(allowLegacyUploadFallback ? "true" : "false")" data-use-chunked-upload="@(uploadOptions.UseChunkedUpload ? "true" : "false")" data-chunk-size-mb="@uploadOptions.ChunkSizeMb" data-chunked-threshold-mb="@uploadOptions.ChunkedThresholdMb" data-upload-timeout-seconds="@uploadOptions.UploadTimeoutSeconds">
   <div class="modal-dialog modal-xl modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header"><div><h5 class="modal-title">Adicionar documentos em lote</h5><small class="text-muted">Envie vários arquivos diretamente para a pasta selecionada.</small></div><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
@@ -655,109 +704,82 @@
 </div>
 
 <style>
-    .ged-tree {
-        list-style: none;
-        padding-left: .75rem;
-        margin: 0;
-    }
-
-    .ged-tree-node {
-        margin: 0;
-    }
-
-    .ged-tree-row {
-        display: flex;
-        align-items: center;
-        gap: .4rem;
-        padding: .42rem .5rem;
-        border-radius: .65rem;
-        user-select: none;
-        transition: background .16s ease, color .16s ease, box-shadow .16s ease;
-    }
-
-        .ged-tree-row:hover,
-        .ged-tree-root:hover {
-            background: rgba(13,110,253,.06);
-        }
-
-        .ged-tree-row.active,
-        .ged-tree-root.active {
-            background: linear-gradient(135deg, rgba(13,110,253,.14), rgba(13,202,240,.10));
-            color: #0d6efd;
-            box-shadow: inset 3px 0 0 #0d6efd;
-        }
-
-    .ged-tree-root {
-        padding: .5rem .6rem;
-        border-radius: .75rem;
-        color: inherit;
-        transition: background .16s ease, color .16s ease;
-    }
-
-    .ged-drop-target > .ged-tree-row,
-    .ged-drop-target.ged-tree-root,
-    .js-folder-node.ged-drop-target {
-        outline: 2px dashed #0d6efd;
-        outline-offset: 2px;
-        background: rgba(13,110,253,.08);
-    }
-
-    .ged-folder-scroll {
-        scrollbar-width: thin;
-        scrollbar-color: rgba(13,110,253,.35) transparent;
-    }
-
-    .ged-documents-table tbody tr {
-        cursor: grab;
-    }
-
-    .ged-empty-state {
-        background: linear-gradient(180deg, #fff, #f8fbff);
-    }
-
-    .ged-tree-link {
-        text-decoration: none;
-        color: inherit;
-    }
-
-        .ged-tree-link:hover {
-            text-decoration: underline;
-        }
-
-    .ged-tree-toggle {
-        border: 0;
-        background: transparent;
-        padding: 0;
-        width: 18px;
-        height: 18px;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-    }
-
-        .ged-tree-toggle i {
-            transition: transform .12s ease;
-        }
-
-    .ged-tree-node.open > .ged-tree-row .ged-tree-toggle i {
-        transform: rotate(90deg);
-    }
-
-    .ged-tree-spacer {
-        width: 18px;
-        height: 18px;
-        display: inline-block;
-    }
-
-    .ged-tree-folder {
-        opacity: .9;
-    }
+    .ged-page { display:grid; grid-template-columns:minmax(280px, 340px) minmax(0,1fr); gap:1rem; align-items:start; }
+    #pageAlertHost { grid-column:1 / -1; }
+    .ged-folder-panel, .ged-main-panel { background:#fff; border-radius:18px; border:1px solid rgba(15,23,42,.08); box-shadow:0 14px 35px rgba(15,23,42,.06); overflow:hidden; }
+    .ged-folder-panel { position:sticky; top:.75rem; }
+    .ged-folder-panel-header { display:flex; justify-content:space-between; align-items:center; gap:.75rem; padding:1rem; border-bottom:1px solid rgba(15,23,42,.08); background:linear-gradient(180deg,#fff,#f8fafc); }
+    .ged-folder-tree { max-height:calc(100vh - 220px); overflow:auto; padding:.75rem; }
+    .ged-tree { list-style:none; padding-left:.65rem; margin:0; }
+    .ged-tree-node { margin:1px 0; }
+    .ged-tree-row, .ged-tree-root { display:flex; align-items:center; gap:.55rem; min-height:36px; padding:.45rem .55rem; border-radius:10px; color:#1f2937; text-decoration:none; user-select:none; transition:background .16s ease,color .16s ease,box-shadow .16s ease; }
+    .ged-tree-row:hover, .ged-tree-root:hover { background:#f1f5f9; }
+    .ged-tree-row.active, .ged-tree-root.active { background:#eaf2ff; color:#0d6efd; border-left:3px solid #0d6efd; font-weight:600; }
+    .ged-tree-row .dropdown { opacity:.25; transition:opacity .16s ease; }
+    .ged-tree-row:hover .dropdown, .ged-tree-row.active .dropdown { opacity:1; }
+    .ged-tree-row .dropdown-menu { min-width:220px; border-radius:12px; box-shadow:0 16px 36px rgba(15,23,42,.14); }
+    .ged-tree-link { text-decoration:none; color:inherit; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .ged-tree-toggle { border:0; background:transparent; padding:0; width:18px; height:18px; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; color:#64748b; }
+    .ged-tree-toggle i { transition:transform .12s ease; }
+    .ged-tree-node.open > .ged-tree-row .ged-tree-toggle i { transform:rotate(90deg); }
+    .ged-tree-spacer { width:18px; height:18px; display:inline-block; }
+    .ged-tree-folder { width:18px; text-align:center; color:#f59e0b; }
+    .ged-drop-target > .ged-tree-row, .ged-drop-target.ged-tree-root, .js-folder-node.ged-drop-target { outline:2px dashed #0d6efd; outline-offset:2px; background:rgba(13,110,253,.08); }
+    .ged-folder-scroll { scrollbar-width:thin; scrollbar-color:rgba(13,110,253,.35) transparent; }
+    .ged-folder-header { padding:1.15rem; background:linear-gradient(135deg,#f8fbff,#fff); border-bottom:1px solid rgba(15,23,42,.08); }
+    .ged-folder-header-icon { width:48px; height:48px; border-radius:14px; display:grid; place-items:center; background:#eaf2ff; color:#0d6efd; font-size:1.5rem; }
+    .ged-breadcrumb { color:#64748b; font-size:.9rem; }
+    .ged-kpi-strip { display:grid; grid-template-columns:repeat(5,minmax(110px,1fr)); gap:.6rem; margin-top:1rem; }
+    .ged-kpi-card { border:1px solid rgba(15,23,42,.08); border-radius:14px; padding:.65rem .75rem; background:#fff; }
+    .ged-kpi-card span { display:block; font-weight:700; font-size:1.05rem; color:#0f172a; line-height:1; }
+    .ged-kpi-card small { color:#64748b; text-transform:uppercase; letter-spacing:.02em; font-size:.68rem; }
+    .ged-toolbar { padding:.85rem 1rem; border-bottom:1px solid rgba(15,23,42,.08); background:#fff; }
+    .ged-toolbar-search { position:relative; }
+    .ged-toolbar-actions { display:flex; flex-wrap:wrap; gap:.5rem; margin-top:.65rem; }
+    .ged-documents-list { background:#fff; }
+    .ged-documents-table { font-size:.92rem; }
+    .ged-documents-table th { font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; color:#64748b; padding:.6rem .75rem; }
+    .ged-documents-table td { padding:.55rem .75rem; vertical-align:middle; }
+    .ged-documents-table tbody tr { cursor:grab; }
+    .ged-doc-title { font-weight:700; color:#0f172a; line-height:1.2; }
+    .ged-doc-subtitle { font-size:.78rem; color:#64748b; margin-top:.15rem; }
+    .ged-badge { border-radius:999px; font-weight:600; padding:.28rem .48rem; font-size:.72rem; }
+    .ged-badge-info { background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd; }
+    .ged-badge-ok { background:#dcfce7; color:#166534; border:1px solid #bbf7d0; }
+    .ged-badge-muted { background:#f1f5f9; color:#475569; border:1px solid #e2e8f0; }
+    .ged-empty-state { background:linear-gradient(180deg,#fff,#f8fbff); border-radius:0 0 18px 18px; }
+    .ged-empty-icon { width:74px; height:74px; border-radius:24px; display:grid; place-items:center; margin-inline:auto; color:#0d6efd; background:#eaf2ff; font-size:2.35rem; }
+    .bulk-large-file-hint { color:#0369a1; }
+    @media (max-width: 1199.98px) { .ged-page { grid-template-columns:1fr; } .ged-folder-panel { position:static; } .ged-kpi-strip { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 </style>
 
 <script>
     (function () {
         const KEY = "ged.folderTree.expanded";
+        const SCROLL_KEY = "ged.folderTree.scrollTop";
+        const treeScroll = document.querySelector(".ged-folder-tree");
+        if (treeScroll) {
+            const savedScroll = Number(sessionStorage.getItem(SCROLL_KEY) || "0");
+            if (savedScroll > 0) treeScroll.scrollTop = savedScroll;
+            treeScroll.addEventListener("scroll", () => sessionStorage.setItem(SCROLL_KEY, String(treeScroll.scrollTop)));
+        }
+        document.addEventListener("click", (e) => {
+            if (e.target.closest(".js-folder-node") && treeScroll) sessionStorage.setItem(SCROLL_KEY, String(treeScroll.scrollTop));
+        }, true);
+        document.getElementById("btnReloadFolderTree")?.addEventListener("click", () => window.location.reload());
+        document.getElementById("gedFolderSearch")?.addEventListener("input", (e) => {
+            const q = (e.target.value || "").trim().toLowerCase();
+            document.querySelectorAll(".ged-tree-node").forEach(li => {
+                const name = (li.dataset.folderName || li.textContent || "").toLowerCase();
+                li.classList.toggle("d-none", q.length > 0 && !name.includes(q));
+            });
+        });
+        document.addEventListener("click", async (e) => {
+            const btn = e.target.closest(".js-copy-folder-path");
+            if (!btn) return;
+            await navigator.clipboard?.writeText(btn.dataset.folderPath || "").catch(() => null);
+            showToast("Caminho da pasta copiado.", "info");
+        });
 
         function loadOpenSet() {
             try { return new Set(JSON.parse(localStorage.getItem(KEY) || "[]")); }
@@ -821,6 +843,14 @@
         }
 
         // Modais Pasta Explorer
+        const newFolderModal = document.getElementById('modalNovaPasta');
+        newFolderModal?.addEventListener('show.bs.modal', function (event) {
+            const btn = event.relatedTarget;
+            const parent = btn?.getAttribute('data-parent-id') || '';
+            const input = document.getElementById('new-folder-parent-id');
+            if (input) input.value = parent;
+        });
+
         const renameModal = document.getElementById('modalRenomearPastaExplorer');
         renameModal?.addEventListener('show.bs.modal', function (event) {
             const btn = event.relatedTarget;
@@ -886,6 +916,16 @@
                 showToast('Processando sua solicitação...', 'info');
             });
         });
+
+        function updateSelectedKpi() {
+            const count = document.querySelectorAll('.js-doc-select:checked').length;
+            const el = document.getElementById('selectedDocumentsKpi');
+            if (el) el.textContent = String(count);
+        }
+        document.addEventListener('change', (e) => {
+            if (e.target.matches('.js-doc-select, #selectAllDocuments')) setTimeout(updateSelectedKpi, 0);
+        });
+        updateSelectedKpi();
 
     })();
 </script>

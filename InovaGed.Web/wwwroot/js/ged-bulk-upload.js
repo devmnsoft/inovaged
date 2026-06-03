@@ -1,13 +1,14 @@
 (function () {
     const DuplicateStrategy = { overwrite: 'overwrite', rename: 'rename', skip: 'skip', cancel: 'cancel' };
     const ValidationStep = 'Validação de extensão';
-    const state = { files: [], uploading: false, isStarting: false, isFinishing: false, activeUploads: 0, maxConcurrency: 2, completed: 0, failed: 0, skipped: 0, isCheckingDuplicates: false, duplicateCheckKey: null, duplicateCheckPromise: null, duplicateCheckResult: null, lastDuplicateSignature: null, batchId: null, useLegacyUploadFallback: false, duplicateStrategy: null, uploadAbortController: null };
+    const state = { files: [], uploading: false, isStarting: false, isFinishing: false, activeUploads: 0, maxConcurrency: 2, completed: 0, failed: 0, skipped: 0, isCheckingDuplicates: false, duplicateCheckKey: null, duplicateCheckPromise: null, duplicateCheckResult: null, lastDuplicateSignature: null, batchId: null, useLegacyUploadFallback: false, duplicateStrategy: null, uploadAbortController: null, chunkOptions: { enabled: true, thresholdBytes: 50 * 1024 * 1024, chunkSizeBytes: 10 * 1024 * 1024, timeoutMs: 1800 * 1000 } };
 
     function initBulkUpload() {
         const dz = document.getElementById('bulkDropzone');
         const fi = getFileInput();
         if (!dz || !fi) return;
         bindBulkUploadEvents();
+        loadChunkOptions();
         recoverBulkUploadUiState();
     }
 
@@ -105,6 +106,13 @@
 
         const detailsBtn = e.target.closest('.js-show-upload-error');
         if (detailsBtn) { e.preventDefault(); showUploadErrorDetails(detailsBtn.getAttribute('data-file-id')); return; }
+
+        const pauseBtn = e.target.closest('.js-pause-upload-file');
+        if (pauseBtn) { e.preventDefault(); pauseUploadFile(pauseBtn.getAttribute('data-file-id')); return; }
+        const resumeBtn = e.target.closest('.js-resume-upload-file');
+        if (resumeBtn) { e.preventDefault(); resumeUploadFile(resumeBtn.getAttribute('data-file-id')); return; }
+        const cancelBtn = e.target.closest('.js-cancel-upload-file');
+        if (cancelBtn) { e.preventDefault(); cancelUploadFile(cancelBtn.getAttribute('data-file-id')); return; }
 
         const duplicateBtn = e.target.closest('#btnDupOverwrite, #btnDupRename, #btnDupSkip, #btnDupCancel');
         if (duplicateBtn) {
@@ -313,6 +321,16 @@
 
     const closeBulkUploadModal = () => bootstrap.Modal.getOrCreateInstance('#bulkUploadModal').hide();
     function allowLegacyUploadFallback() { return document.getElementById('bulkUploadModal')?.dataset?.allowLegacyUploadFallback === 'true'; }
+    function loadChunkOptions() {
+        const modal = document.getElementById('bulkUploadModal');
+        const ds = modal?.dataset || {};
+        const mb = 1024 * 1024;
+        state.chunkOptions.enabled = ds.useChunkedUpload !== 'false';
+        state.chunkOptions.thresholdBytes = Math.max(1, Number(ds.chunkedThresholdMb || 50)) * mb;
+        state.chunkOptions.chunkSizeBytes = Math.max(1, Number(ds.chunkSizeMb || 10)) * mb;
+        state.chunkOptions.timeoutMs = Math.max(60, Number(ds.uploadTimeoutSeconds || 1800)) * 1000;
+    }
+    function shouldUseChunkedUpload(fileItem) { return state.chunkOptions.enabled && (fileItem.size || 0) > state.chunkOptions.thresholdBytes && !state.useLegacyUploadFallback; }
     function isSchemaMissingError(payload) { return payload?.errorStep === 'Schema' || payload?.code === 'UPLOAD_BATCH_SCHEMA_MISSING'; }
 
     function createFileItem(file) {
@@ -334,7 +352,12 @@
             serverDocumentId: null,
             serverVersionId: null,
             duplicateStrategy: null,
-            existingDocumentId: null
+            existingDocumentId: null,
+            uploadId: null,
+            paused: false,
+            speedText: null,
+            etaText: null,
+            uploadedBytes: 0
         };
     }
 
@@ -403,7 +426,10 @@
 
     function renderActions(fileItem) {
         if (fileItem.status === 'uploading') {
-            return `<button type="button" class="btn btn-outline-primary btn-sm" disabled>Enviando...</button>`;
+            return `<div class="btn-group btn-group-sm"><button type="button" class="btn btn-outline-warning js-pause-upload-file" data-file-id="${fileItem.id}">Pausar</button><button type="button" class="btn btn-outline-danger js-cancel-upload-file" data-file-id="${fileItem.id}">Cancelar</button></div>`;
+        }
+        if (fileItem.status === 'paused') {
+            return `<button type="button" class="btn btn-outline-primary btn-sm js-resume-upload-file" data-file-id="${fileItem.id}">Retomar</button>`;
         }
         if (fileItem.status === 'success') {
             const openDoc = fileItem.serverDocumentId
@@ -430,7 +456,7 @@
                 <td>${formatFileSize(x.size)}</td>
                 <td>
                     <span class='badge bg-${statusColor(x.status)}'>${statusLabel(x.status)}</span>
-                    <div class='small text-muted'>${escapeHtml(x.errorMessage || x.message || '')}</div>
+                    <div class='small text-muted'>${escapeHtml(x.errorMessage || x.message || '')}</div><div class='small bulk-large-file-hint'>${shouldUseChunkedUpload(x) ? 'Arquivo grande: envio em partes com retomada.' : ''}</div><div class='small text-muted'>${escapeHtml([x.speedText, x.etaText].filter(Boolean).join(' · '))}</div>
                 </td>
                 <td>
                     <div class='progress'>
@@ -719,7 +745,7 @@
                     if (!next) break;
                     state.activeUploads++;
                     const uploadable = state.files.filter(x => !['success', 'ignored'].includes(x.status));
-                    uploadSingleFile(next, uploadable.indexOf(next) + 1, uploadable.length)
+                    (shouldUseChunkedUpload(next) ? uploadLargeFile(next, uploadable.indexOf(next) + 1, uploadable.length) : uploadSingleFile(next, uploadable.indexOf(next) + 1, uploadable.length))
                         .then(result => {
                             if (result === 'success') state.completed++;
                             else if (result === 'ignored') state.skipped++;
@@ -788,7 +814,7 @@
             const xhr = new XMLHttpRequest();
             const endpoint = state.useLegacyUploadFallback ? '/Ged/Documents/BulkUploadSingle' : '/Ged/UploadBatch/File';
             console.log('[BulkUpload] endpoint usado:', endpoint);
-            xhr.timeout = 300000;
+            xhr.timeout = state.chunkOptions.timeoutMs;
             xhr.open('POST', endpoint, true);
             const token = document.querySelector('input[name="__RequestVerificationToken"]')?.value;
             if (token) xhr.setRequestHeader('RequestVerificationToken', token);
@@ -870,6 +896,160 @@
             };
             xhr.send(fd);
         });
+    }
+
+
+    function pauseUploadFile(fileId) {
+        const item = state.files.find(x => x.id === fileId);
+        if (!item) return;
+        item.paused = true;
+        item.status = 'paused';
+        item.message = 'Upload pausado. Você pode retomar.';
+        renderFileList();
+    }
+
+    function resumeUploadFile(fileId) {
+        const item = state.files.find(x => x.id === fileId);
+        if (!item) return;
+        item.paused = false;
+        item.status = 'waiting';
+        item.message = 'Retomando upload em partes...';
+        renderFileList();
+        if (!state.uploading) uploadFiles(true);
+    }
+
+    async function cancelUploadFile(fileId) {
+        const item = state.files.find(x => x.id === fileId);
+        if (!item) return;
+        item.paused = true;
+        if (item.uploadId) {
+            const token = document.querySelector('input[name="__RequestVerificationToken"]')?.value;
+            await fetch(`/Ged/UploadChunk/Cancel/${item.uploadId}`, { method: 'POST', headers: token ? { RequestVerificationToken: token } : {} }).catch(() => null);
+        }
+        item.status = 'error';
+        item.message = 'Upload cancelado.';
+        item.errorMessage = 'Upload cancelado pelo usuário.';
+        item.canRetry = true;
+        renderFileList();
+    }
+
+    async function uploadLargeFile(fileItem, fileIndex, totalFiles) {
+        try {
+            if (!validateUploadFolder()) return 'error';
+            const selected = getSelectedUploadFolder();
+            fileItem.status = 'uploading';
+            fileItem.message = 'Arquivo grande detectado. Enviando em partes para maior estabilidade.';
+            fileItem.errorMessage = null;
+            fileItem.errorLog = null;
+            fileItem.paused = false;
+            renderFileList();
+            const session = fileItem.uploadId ? await getChunkStatus(fileItem.uploadId) : await startChunkSession(fileItem, fileIndex, totalFiles, selected);
+            fileItem.uploadId = session.uploadId || session.UploadId || fileItem.uploadId;
+            let status = fileItem.uploadId ? await getChunkStatus(fileItem.uploadId) : session;
+            let missing = status.missingChunks || status.MissingChunks || [];
+            const chunkSize = session.chunkSizeBytes || session.ChunkSizeBytes || state.chunkOptions.chunkSizeBytes;
+            const startedAt = Date.now();
+            let sentAtStart = ((status.receivedChunks || status.ReceivedChunks || []).length * chunkSize);
+            for (const chunkIndex of missing) {
+                if (fileItem.paused) {
+                    fileItem.status = 'paused';
+                    fileItem.message = 'Upload interrompido. Você pode retomar.';
+                    renderFileList();
+                    return 'error';
+                }
+                const start = chunkIndex * chunkSize;
+                const end = Math.min(fileItem.file.size, start + chunkSize);
+                const blob = fileItem.file.slice(start, end);
+                await sendChunk(fileItem.uploadId, chunkIndex, blob);
+                fileItem.uploadedBytes = end;
+                const elapsed = Math.max(1, (Date.now() - startedAt) / 1000);
+                const uploadedNow = Math.max(0, end - sentAtStart);
+                const bytesPerSec = uploadedNow / elapsed;
+                fileItem.speedText = bytesPerSec > 0 ? `${formatFileSize(bytesPerSec)}/s` : null;
+                const remaining = Math.max(0, fileItem.file.size - end);
+                fileItem.etaText = bytesPerSec > 0 ? `ETA ${formatEta(remaining / bytesPerSec)}` : null;
+                fileItem.progress = Math.min(99, Math.round((end / fileItem.file.size) * 100));
+                fileItem.message = `Enviando parte ${chunkIndex + 1}/${Math.ceil(fileItem.file.size / chunkSize)}...`;
+                renderFileList();
+            }
+            const completed = await completeChunkSession(fileItem.uploadId);
+            fileItem.status = completed.status === 'SKIPPED' ? 'ignored' : 'success';
+            fileItem.progress = 100;
+            fileItem.message = completed.message || 'Arquivo grande enviado com sucesso.';
+            fileItem.serverDocumentId = completed.documentId || null;
+            fileItem.serverVersionId = completed.versionId || null;
+            renderFileList();
+            return fileItem.status === 'ignored' ? 'ignored' : 'success';
+        } catch (err) {
+            fileItem.status = 'error';
+            fileItem.message = 'Upload interrompido. Você pode retomar.';
+            fileItem.errorMessage = err.message || 'Falha no upload em partes.';
+            fileItem.errorStep = 'Upload em partes';
+            fileItem.errorLog = err.stack || String(err);
+            fileItem.canRetry = true;
+            renderFileList();
+            return 'error';
+        }
+    }
+
+    async function startChunkSession(fileItem, fileIndex, totalFiles, selected) {
+        const token = document.querySelector('input[name="__RequestVerificationToken"]')?.value;
+        const payload = {
+            batchId: state.batchId,
+            requestedFolderId: selected?.folderId || selected?.uploadFolderId || null,
+            folderId: selected?.uploadFolderId || null,
+            originalFileName: fileItem.originalName,
+            contentType: fileItem.file.type || 'application/octet-stream',
+            totalSizeBytes: fileItem.file.size,
+            chunkSizeBytes: state.chunkOptions.chunkSizeBytes,
+            totalChunks: Math.ceil(fileItem.file.size / state.chunkOptions.chunkSizeBytes),
+            fileIndex,
+            totalFiles,
+            duplicateStrategy: fileItem.duplicateStrategy || state.duplicateStrategy,
+            existingDocumentId: fileItem.existingDocumentId,
+            uploadName: fileItem.uploadName,
+            runOcr: false,
+            generatePreview: false,
+            metadata: {}
+        };
+        const r = await fetch('/Ged/UploadChunk/Start', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { RequestVerificationToken: token } : {}) }, body: JSON.stringify(payload) });
+        const j = await r.json().catch(() => ({ success: false, message: 'Resposta inválida ao iniciar upload em partes.' }));
+        if (!r.ok || !j.success) throw new Error(j.message || 'Não foi possível iniciar upload em partes.');
+        return j.session || j;
+    }
+
+    async function sendChunk(uploadId, chunkIndex, blob) {
+        const token = document.querySelector('input[name="__RequestVerificationToken"]')?.value;
+        const fd = new FormData();
+        fd.append('uploadId', uploadId);
+        fd.append('chunkIndex', String(chunkIndex));
+        fd.append('chunk', blob, `chunk-${chunkIndex}`);
+        const r = await fetch('/Ged/UploadChunk/Part', { method: 'POST', headers: token ? { RequestVerificationToken: token } : {}, body: fd });
+        const j = await r.json().catch(() => ({ success: false, message: 'Resposta inválida ao enviar parte.' }));
+        if (!r.ok || !j.success) throw new Error(j.message || `Falha ao enviar parte ${chunkIndex + 1}.`);
+        return j.status;
+    }
+
+    async function completeChunkSession(uploadId) {
+        const token = document.querySelector('input[name="__RequestVerificationToken"]')?.value;
+        const r = await fetch('/Ged/UploadChunk/Complete', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { RequestVerificationToken: token } : {}) }, body: JSON.stringify({ uploadId }) });
+        const j = await r.json().catch(() => ({ success: false, message: 'Resposta inválida ao concluir upload.' }));
+        if (!r.ok || !j.success) throw new Error(j.message || 'Não foi possível concluir upload em partes.');
+        return j;
+    }
+
+    async function getChunkStatus(uploadId) {
+        const r = await fetch(`/Ged/UploadChunk/Status/${uploadId}`);
+        const j = await r.json().catch(() => ({ success: false }));
+        if (!r.ok || !j.success) throw new Error(j.message || 'Não foi possível consultar upload em partes.');
+        return j.status;
+    }
+
+    function formatEta(seconds) {
+        if (!isFinite(seconds)) return '';
+        seconds = Math.max(0, Math.round(seconds));
+        const m = Math.floor(seconds / 60), s = seconds % 60;
+        return m > 0 ? `${m}m ${s}s` : `${s}s`;
     }
 
     function retryFailedFiles() {
@@ -992,8 +1172,8 @@
 
     const formatFileSize = b => b < 1024 ? `${b} B` : b < 1048576 ? `${(b / 1024).toFixed(1)} KB` : `${(b / 1048576).toFixed(1)} MB`;
     const escapeHtml = v => (v || '').replace(/[&<>'"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c]));
-    const statusLabel = s => ({ waiting: 'Aguardando', validating: 'Validando', duplicate: 'Duplicado', uploading: 'Enviando', success: 'Enviado', ignored: 'Ignorado', error: 'Erro' }[s] || s);
-    const statusColor = s => ({ success: 'success', error: 'danger', uploading: 'primary', duplicate: 'warning', ignored: 'secondary', waiting: 'light', validating: 'info' }[s] || 'light');
+    const statusLabel = s => ({ waiting: 'Aguardando', validating: 'Validando', duplicate: 'Duplicado', uploading: 'Enviando', paused: 'Pausado', success: 'Enviado', ignored: 'Ignorado', error: 'Erro' }[s] || s);
+    const statusColor = s => ({ success: 'success', error: 'danger', uploading: 'primary', paused: 'warning', duplicate: 'warning', ignored: 'secondary', waiting: 'light', validating: 'info' }[s] || 'light');
 
     window.GedBulkUpload = { startUploadToFolder, setUploadDestination, openBulkUploadModal, getSelectedUploadFolder, setSelectedFolderFromNode };
     document.addEventListener('DOMContentLoaded', initBulkUpload);

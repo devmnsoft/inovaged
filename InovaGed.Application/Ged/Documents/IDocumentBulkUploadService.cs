@@ -33,6 +33,7 @@ public sealed class BulkUploadBatchResultDto
 
 public interface IDocumentBulkUploadService
 {
+    Task<Result<DocumentBulkUploadResultDto>> UploadStreamAsync(Guid tenantId, Guid userId, string? userName, Stream content, string fileName, string contentType, long sizeBytes, Guid? folderId, DocumentBulkUploadMetadata metadata, bool isAdmin, CancellationToken ct);
     Task<Result<DocumentBulkUploadResultDto>> UploadSingleAsync(Guid tenantId, Guid userId, string? userName, IFormFile file, Guid? folderId, DocumentBulkUploadMetadata metadata, bool isAdmin, CancellationToken ct);
     Task<Result<BulkUploadBatchResultDto>> FinishBatchAsync(Guid tenantId, Guid userId, Guid batchId, CancellationToken ct);
 }

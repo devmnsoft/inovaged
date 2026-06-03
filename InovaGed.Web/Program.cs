@@ -107,14 +107,17 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddSignalR();
 builder.Services.AddMemoryCache();
 builder.Services.Configure<DocumentUploadOptions>(builder.Configuration.GetSection("DocumentUpload"));
-var documentUploadMaxFileSizeMb = Math.Max(1, builder.Configuration.GetValue<int?>("DocumentUpload:MaxFileSizeMb") ?? 100);
 builder.WebHost.ConfigureKestrel(options =>
 {
-    options.Limits.MaxRequestBodySize = documentUploadMaxFileSizeMb * 1024L * 1024L;
+    options.Limits.MaxRequestBodySize = null;
+    options.Limits.KeepAliveTimeout = TimeSpan.FromMinutes(30);
+    options.Limits.RequestHeadersTimeout = TimeSpan.FromMinutes(5);
 });
 builder.Services.Configure<FormOptions>(options =>
 {
-    options.MultipartBodyLengthLimit = documentUploadMaxFileSizeMb * 1024L * 1024L;
+    options.MultipartBodyLengthLimit = long.MaxValue;
+    options.ValueLengthLimit = int.MaxValue;
+    options.MultipartHeadersLengthLimit = int.MaxValue;
 });
 
 // =======================================================
@@ -215,6 +218,7 @@ builder.Services.AddScoped<IDocumentBulkUploadService, DocumentBulkUploadService
 builder.Services.AddScoped<IUploadFolderResolver, UploadFolderResolver>();
 builder.Services.AddSingleton<IUploadConcurrencyLimiter, UploadConcurrencyLimiter>();
 builder.Services.AddScoped<IUploadBatchService, UploadBatchService>();
+builder.Services.AddScoped<IUploadChunkService, UploadChunkService>();
 builder.Services.AddHostedService<StaleUploadBatchItemWorker>();
 builder.Services.AddScoped<IGedAccessPolicyService, GedAccessPolicyService>();
 builder.Services.AddScoped<IGedSearchService, GedSearchService>();

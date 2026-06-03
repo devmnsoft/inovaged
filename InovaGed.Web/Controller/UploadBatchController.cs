@@ -5,6 +5,7 @@ using InovaGed.Application.Identity;
 using InovaGed.Application.Security;
 using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
 
 namespace InovaGed.Web.Controllers;
@@ -96,7 +97,8 @@ public sealed class UploadBatchController : Controller
 
     [HttpPost("File")]
     [ValidateAntiForgeryToken]
-    [RequestSizeLimit(1073741824)]
+    [DisableRequestSizeLimit]
+    [RequestFormLimits(MultipartBodyLengthLimit = long.MaxValue, ValueLengthLimit = int.MaxValue, MultipartHeadersLengthLimit = int.MaxValue)]
     public async Task<IActionResult> File(IFormFile file, Guid batchId, int fileIndex, int totalFiles, Guid? folderId, Guid? uploadFolderId, Guid? requestedFolderId, string? duplicateStrategy, bool runOcr, bool generatePreview, Guid? documentTypeId, Guid? classificationId, string? notes, string? visibility, Guid? existingDocumentId, string? uploadName, CancellationToken ct)
     {
         var correlationId = HttpContext.TraceIdentifier;
