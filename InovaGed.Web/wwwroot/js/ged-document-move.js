@@ -56,7 +56,7 @@
         let selectedIds = [];
         let mode = 'bulk';
 
-        const getSelected = () => Array.from(document.querySelectorAll('.js-doc-select:checked')).map(x => x.value);
+        const getSelected = () => Array.from(new Set(Array.from(document.querySelectorAll('.js-doc-select:checked')).map(x => x.value).filter(Boolean)));
         const host = document.getElementById('folderSearchResults');
         const empty = document.getElementById('folderSearchEmpty');
         const loading = document.getElementById('folderSearchLoading');

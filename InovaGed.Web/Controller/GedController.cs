@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Text;
 using Dapper;
 using InovaGed.Application;
@@ -175,7 +175,14 @@ public sealed class GedController : Controller
 
                 return BadRequest(JsonError(message, isExtensionError ? "Validação de extensão" : "Persistência", string.IsNullOrWhiteSpace(code) ? "Falha ao processar upload no backend." : code, !isExtensionError, correlationId));
             }
-            return Ok(new { success = true, status = "success", message = "Arquivo enviado com sucesso.", data = new { documentId = result.Value.DocumentId, versionId = (Guid?)null, fileName = result.Value.FileName, batchId, ocrQueued = runOcr, previewQueued = generatePreview, requestedFolderId = folderResolution.RequestedFolderId, resolvedFolderId = folderResolution.ResolvedFolderId, wasVirtual = folderResolution.WasVirtual, createdRealFolder = folderResolution.CreatedRealFolder }, correlationId });
+            var uploadedDocument = await _docs.GetAsync(_currentUser.TenantId, result.Value.DocumentId, ct);
+            var versionId = uploadedDocument?.CurrentVersionId;
+            if (result.Value.DocumentId == Guid.Empty || !versionId.HasValue || versionId.Value == Guid.Empty)
+            {
+                _logger.LogError("Upload retornou documento/versão inválidos. Tenant={TenantId} DocumentId={DocumentId} VersionId={VersionId} CorrelationId={CorrelationId}", _currentUser.TenantId, result.Value.DocumentId, versionId, correlationId);
+                return StatusCode(500, JsonError("Arquivo salvo, mas a versão atual não foi localizada. Atualize a pasta e tente abrir novamente.", "Persistência", "DocumentId/VersionId inválidos após upload.", true, correlationId));
+            }
+            return Ok(new { success = true, status = "success", message = "Arquivo enviado com sucesso.", documentId = result.Value.DocumentId, versionId, data = new { documentId = result.Value.DocumentId, versionId, fileName = result.Value.FileName, batchId, ocrQueued = runOcr, previewQueued = generatePreview, requestedFolderId = folderResolution.RequestedFolderId, resolvedFolderId = folderResolution.ResolvedFolderId, wasVirtual = folderResolution.WasVirtual, createdRealFolder = folderResolution.CreatedRealFolder }, correlationId });
         }
         catch (Exception ex)
         {
@@ -233,6 +240,7 @@ public sealed class GedController : Controller
                 Title = d.Title,
                 TypeName = d.TypeName,
                 FileName = d.FileName,
+                CurrentVersionId = d.CurrentVersionId,
                 SizeBytes = d.SizeBytes,
                 CreatedAt = d.CreatedAt,
                 CreatedBy = d.CreatedBy,
@@ -368,6 +376,7 @@ public sealed class GedController : Controller
                     Title = d.Title,
                     TypeName = d.TypeName,
                     FileName = d.FileName,
+                    CurrentVersionId = d.CurrentVersionId,
                     SizeBytes = d.SizeBytes,
                     CreatedAt = d.CreatedAt,
                     CreatedBy = d.CreatedBy,

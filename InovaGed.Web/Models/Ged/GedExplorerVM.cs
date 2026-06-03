@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace InovaGed.Web.Models.Ged;
@@ -34,6 +34,7 @@ public sealed class GedExplorerVM
         public string Title { get; set; } = "";
         public string? TypeName { get; set; }
         public string? FileName { get; set; }
+        public Guid? CurrentVersionId { get; set; }
         public long SizeBytes { get; set; }
         public DateTime CreatedAt { get; set; }
         public Guid CreatedBy { get; set; }   // ou Guid?

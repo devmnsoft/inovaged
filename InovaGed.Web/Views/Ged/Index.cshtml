@@ -1,4 +1,4 @@
-﻿@model InovaGed.Web.Models.Ged.GedExplorerVM
+@model InovaGed.Web.Models.Ged.GedExplorerVM
 @using InovaGed.Application.Identity
 @using InovaGed.Application.Classification
 @using InovaGed.Application.Ged.Folders
@@ -737,7 +737,22 @@
     .ged-toolbar-search { position:relative; }
     .ged-toolbar-actions { display:flex; flex-wrap:wrap; gap:.5rem; margin-top:.65rem; }
     .ged-documents-list { background:#fff; }
-    .ged-documents-table { font-size:.92rem; }
+    .ged-documents-view-toolbar { position:sticky; top:0; z-index:5; }
+    .ged-document-row { display:grid; grid-template-columns:32px minmax(0,1fr) auto; gap:1rem; align-items:center; padding:.78rem 1rem; border-bottom:1px solid #e5e7eb; transition:background .15s ease, box-shadow .15s ease; }
+    .ged-document-row:hover { background:#f8fafc; }
+    .ged-document-check { display:flex; align-items:center; justify-content:center; }
+    .ged-document-main { min-width:0; }
+    .ged-document-title { display:block; font-weight:700; color:#0f172a; line-height:1.2; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-decoration:none; }
+    .ged-document-title:hover { color:#0d6efd; text-decoration:underline; }
+    .ged-document-file { margin-top:.18rem; color:#64748b; font-size:.82rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .ged-document-meta { display:flex; flex-wrap:wrap; align-items:center; gap:.35rem .5rem; margin-top:.35rem; }
+    .ged-document-actions { display:flex; justify-content:flex-end; }
+    .document-actions-btn { min-width:34px; border-radius:10px; }
+    .ged-table-scroll-wrap { position:relative; }
+    .ged-table-top-scroll, .ged-table-scroll { overflow-x:auto; scrollbar-width:thin; }
+    .ged-table-top-scroll { height:14px; border-bottom:1px solid #e5e7eb; background:#f8fafc; }
+    .ged-table-top-scroll > div { height:1px; }
+    .ged-documents-table { font-size:.92rem; min-width:980px; }
     .ged-documents-table th { font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; color:#64748b; padding:.6rem .75rem; }
     .ged-documents-table td { padding:.55rem .75rem; vertical-align:middle; }
     .ged-documents-table tbody tr { cursor:grab; }
@@ -750,8 +765,16 @@
     .ged-empty-state { background:linear-gradient(180deg,#fff,#f8fbff); border-radius:0 0 18px 18px; }
     .ged-empty-icon { width:74px; height:74px; border-radius:24px; display:grid; place-items:center; margin-inline:auto; color:#0d6efd; background:#eaf2ff; font-size:2.35rem; }
     .bulk-large-file-hint { color:#0369a1; }
+    @media (max-width: 575.98px) { .ged-document-row { grid-template-columns:28px minmax(0,1fr); gap:.65rem; } .ged-document-actions { grid-column:2; justify-content:flex-start; } .ged-documents-view-toolbar { align-items:flex-start !important; flex-direction:column; } }
     @media (max-width: 1199.98px) { .ged-page { grid-template-columns:1fr; } .ged-folder-panel { position:static; } .ged-kpi-strip { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 </style>
+
+@section Scripts {
+    <script src="~/js/ged-folder-navigation.js" asp-append-version="true"></script>
+    <script src="~/js/ged-bulk-upload.js" asp-append-version="true"></script>
+    <script src="~/js/ged-document-move.js" asp-append-version="true"></script>
+    <script src="~/js/ged-queue-visualizer.js" asp-append-version="true"></script>
+    <script src="~/js/ged-smart-search.js" asp-append-version="true"></script>
 
 <script>
     (function () {
@@ -918,28 +941,69 @@
         });
 
         function updateSelectedKpi() {
-            const count = document.querySelectorAll('.js-doc-select:checked').length;
+            const count = new Set(Array.from(document.querySelectorAll('.js-doc-select:checked')).map(x => x.value).filter(Boolean)).size;
             const el = document.getElementById('selectedDocumentsKpi');
             if (el) el.textContent = String(count);
         }
+
+        window.GedDocumentsView = window.GedDocumentsView || {
+            key: 'ged.documents.viewMode',
+            init: function () {
+                const container = document.getElementById('gedDocumentsContainer');
+                if (!container) return;
+                const apply = (mode) => {
+                    const normalized = mode === 'table' ? 'table' : 'list';
+                    container.querySelector('[data-documents-view="list"]')?.classList.toggle('d-none', normalized !== 'list');
+                    container.querySelector('[data-documents-view="table"]')?.classList.toggle('d-none', normalized !== 'table');
+                    container.querySelectorAll('.js-doc-view-mode').forEach(btn => {
+                        btn.classList.toggle('active', btn.dataset.viewMode === normalized);
+                        btn.classList.toggle('btn-primary', btn.dataset.viewMode === normalized);
+                        btn.classList.toggle('btn-outline-primary', btn.dataset.viewMode !== normalized);
+                    });
+                    localStorage.setItem(this.key, normalized);
+                    this.syncTableScroll();
+                };
+                container.querySelectorAll('.js-doc-view-mode').forEach(btn => {
+                    btn.addEventListener('click', () => apply(btn.dataset.viewMode));
+                });
+                apply(localStorage.getItem(this.key) || 'list');
+            },
+            syncTableScroll: function () {
+                document.querySelectorAll('.ged-table-scroll-wrap').forEach(wrap => {
+                    const top = wrap.querySelector('.ged-table-top-scroll');
+                    const body = wrap.querySelector('.ged-table-scroll');
+                    const table = body?.querySelector('table');
+                    const spacer = top?.firstElementChild;
+                    if (!top || !body || !table || !spacer || wrap.dataset.scrollSynced === 'true') return;
+                    const resize = () => { spacer.style.width = `${table.scrollWidth}px`; };
+                    resize();
+                    top.addEventListener('scroll', () => { body.scrollLeft = top.scrollLeft; });
+                    body.addEventListener('scroll', () => { top.scrollLeft = body.scrollLeft; });
+                    window.addEventListener('resize', resize);
+                    wrap.dataset.scrollSynced = 'true';
+                });
+            }
+        };
         document.addEventListener('change', (e) => {
             if (e.target.matches('.js-doc-select, #selectAllDocuments')) setTimeout(updateSelectedKpi, 0);
         });
         updateSelectedKpi();
+        window.GedDocumentsView.init();
 
     })();
 </script>
-<script src="~/js/ged-document-move.js" asp-append-version="true"></script>
-<script src="~/js/ged-queue-visualizer.js" asp-append-version="true"></script>
-<script src="~/js/ged-bulk-upload.js" asp-append-version="true"></script>
-<script src="~/js/ged-folder-navigation.js" asp-append-version="true"></script>
 
 <script>
+document.addEventListener('DOMContentLoaded', function () {
 (function(){
+  if (!window.bootstrap) {
+    console.error('[GED] Bootstrap JS não carregado. Verifique _Layout.cshtml.');
+    return;
+  }
   const state={documentId:null,folderId:null,title:''};
   const modalEl=document.getElementById('deleteDocumentModal');
   if(!modalEl) return;
-  const modal=bootstrap.Modal.getOrCreateInstance(modalEl);
+  const modal=window.bootstrap.Modal.getOrCreateInstance(modalEl);
   const inline=document.getElementById('deleteDocumentInline');
   document.addEventListener('click',(e)=>{
     const btn=e.target.closest('.js-delete-document');
@@ -964,9 +1028,9 @@
     finally{ btn.disabled=false; btn.innerHTML=old; }
   });
 })();
+});
 </script>
 
-<script src="~/js/ged-smart-search.js" asp-append-version="true"></script>
 <script>
 window.GedSmartSearch?.init({
     module: 'GED',
@@ -979,3 +1043,5 @@ window.GedSmartSearch?.init({
     scopeProvider: () => document.querySelector('[name="searchScope"]:checked')?.value || 'folder'
 });
 </script>
+
+}

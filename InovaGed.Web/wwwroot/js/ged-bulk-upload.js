@@ -3,6 +3,14 @@
     const ValidationStep = 'Validação de extensão';
     const state = { files: [], uploading: false, isStarting: false, isFinishing: false, activeUploads: 0, maxConcurrency: 2, completed: 0, failed: 0, skipped: 0, isCheckingDuplicates: false, duplicateCheckKey: null, duplicateCheckPromise: null, duplicateCheckResult: null, lastDuplicateSignature: null, batchId: null, useLegacyUploadFallback: false, duplicateStrategy: null, uploadAbortController: null, chunkOptions: { enabled: true, thresholdBytes: 50 * 1024 * 1024, chunkSizeBytes: 10 * 1024 * 1024, timeoutMs: 1800 * 1000 } };
 
+    function getBootstrapOrNull() {
+        if (!window.bootstrap) {
+            console.error('[GED] Bootstrap indisponível. Ações com dropdown/modal foram desativadas.');
+            return null;
+        }
+        return window.bootstrap;
+    }
+
     function initBulkUpload() {
         const dz = document.getElementById('bulkDropzone');
         const fi = getFileInput();
@@ -21,10 +29,6 @@
         console.log('[BulkUpload] events bound once');
 
         document.addEventListener('click', handleActionClick);
-        document.addEventListener('click', function (e) {
-            const folderEl = e.target.closest('[data-folder-id]');
-            if (folderEl) syncSelectedFolder(folderEl);
-        }, true);
         document.addEventListener('change', function (e) {
             const input = e.target.closest('#bulkFileInput, #bulkUploadFileInput');
             if (!input) return;
@@ -142,6 +146,17 @@
     }
 
     function getSelectedUploadFolder() {
+        const centralized = window.GedFolderSelection?.getSelected?.();
+        if (centralized?.folderId || centralized?.uploadFolderId) {
+            return {
+                source: 'GedFolderSelection',
+                folderId: normalizeFolderId(centralized.folderId) || normalizeFolderId(centralized.uploadFolderId),
+                uploadFolderId: normalizeFolderId(centralized.uploadFolderId) || normalizeFolderId(centralized.folderId),
+                folderName: centralized.folderName || 'pasta selecionada',
+                canReceive: centralized.canReceive !== false
+            };
+        }
+
         const active = document.querySelector('.js-folder-node.active[data-folder-id], .js-folder-node.selected[data-folder-id], [data-folder-selected="true"][data-folder-id], .ged-tree-row.active');
         const activeNode = active?.closest('[data-folder-id]') || active || null;
         if (activeNode) {
@@ -228,7 +243,7 @@
             modal.dataset.canReceiveDocuments = canReceive ? 'true' : 'false';
         }
 
-        console.log('[FolderTree] selected', { folderId, uploadFolderId, canReceive, folderName });
+        window.GedFolderSelection?.setSelectedFromNode?.(source);
         updateUploadFolderUi();
         return true;
     }
@@ -284,7 +299,9 @@
         updateUploadFolderUi();
         const selected = getSelectedUploadFolder();
         console.log('[BulkUpload] modal folder', { folderId: selected?.folderId, uploadFolderId: selected?.uploadFolderId });
-        bootstrap.Modal.getOrCreateInstance('#bulkUploadModal').show();
+        const bs = getBootstrapOrNull();
+        if (!bs?.Modal) return;
+        bs.Modal.getOrCreateInstance('#bulkUploadModal').show();
     };
 
     function setUploadDestination(uploadFolderId, folderName, requestedFolderId, canReceiveDocuments = true) {
@@ -319,7 +336,7 @@
         openBulkUploadModal();
     }
 
-    const closeBulkUploadModal = () => bootstrap.Modal.getOrCreateInstance('#bulkUploadModal').hide();
+    const closeBulkUploadModal = () => { const bs = getBootstrapOrNull(); if (bs?.Modal) bs.Modal.getOrCreateInstance('#bulkUploadModal').hide(); };
     function allowLegacyUploadFallback() { return document.getElementById('bulkUploadModal')?.dataset?.allowLegacyUploadFallback === 'true'; }
     function loadChunkOptions() {
         const modal = document.getElementById('bulkUploadModal');
@@ -527,11 +544,12 @@
         if (httpStatusEl) httpStatusEl.textContent = item.httpStatus ? `HTTP ${item.httpStatus}` : '-';
 
         const modalEl = document.getElementById('uploadErrorDetailsModal');
-        if (!modalEl || typeof bootstrap === 'undefined') {
+        const bs = getBootstrapOrNull();
+        if (!modalEl || !bs?.Modal) {
             showBulkUploadMessage(item.errorMessage || 'Erro ao enviar arquivo.', 'danger');
             return;
         }
-        bootstrap.Modal.getOrCreateInstance(modalEl).show();
+        bs.Modal.getOrCreateInstance(modalEl).show();
     }
 
     function validateBeforeUpload() {
@@ -683,13 +701,14 @@
 
             if (success > 0 && error === 0) {
                 showAppToast(`${success} documento(s) enviado(s) com sucesso.`, 'success', 'Upload concluído');
-                setTimeout(() => { closeBulkUploadModal(); resetBulkUploadState(); window.location.reload(); }, 900);
+                setTimeout(async () => { closeBulkUploadModal(); resetBulkUploadState(); await refreshCurrentFolderDocuments(); }, 900);
                 return;
             }
             if (success > 0 && error > 0) {
                 showBulkUploadMessage(`${success} enviado(s), ${error} falharam. Use Reenviar falhos para continuar sem duplicar concluídos.`, 'warning');
                 showAppToast('Alguns documentos não foram enviados.', 'warning', 'Upload parcial');
                 showRefreshAfterUploadButton(true);
+                await refreshCurrentFolderDocuments();
                 return;
             }
             if (success === 0 && error > 0) {
@@ -1119,6 +1138,28 @@
         document.getElementById('btnBulkRefreshFolder')?.classList.toggle('d-none', !show);
     }
 
+    function getCurrentFolderIdFromUrl() {
+        return normalizeFolderId(new URL(window.location.href).searchParams.get('folderId'));
+    }
+
+    async function refreshCurrentFolderDocuments() {
+        const selected = getSelectedUploadFolder();
+        const folderId = selected?.folderId || getCurrentFolderIdFromUrl();
+        try {
+            if (folderId && window.GedFolderNavigation?.loadFolderDocuments) {
+                await window.GedFolderNavigation.loadFolderDocuments(folderId, { forceRefresh: true });
+                return;
+            }
+        } catch (err) {
+            console.warn('[BulkUpload] falha ao atualizar lista por AJAX; recarregando página', err);
+        }
+
+        const url = new URL(window.location.href);
+        if (folderId) url.searchParams.set('folderId', folderId);
+        url.searchParams.set('_ts', Date.now().toString());
+        window.location.href = url.toString();
+    }
+
     function recoverBulkUploadUiState() {
         if (!state.uploading) {
             setBulkUploadLoading(false);
@@ -1175,6 +1216,6 @@
     const statusLabel = s => ({ waiting: 'Aguardando', validating: 'Validando', duplicate: 'Duplicado', uploading: 'Enviando', paused: 'Pausado', success: 'Enviado', ignored: 'Ignorado', error: 'Erro' }[s] || s);
     const statusColor = s => ({ success: 'success', error: 'danger', uploading: 'primary', paused: 'warning', duplicate: 'warning', ignored: 'secondary', waiting: 'light', validating: 'info' }[s] || 'light');
 
-    window.GedBulkUpload = { startUploadToFolder, setUploadDestination, openBulkUploadModal, getSelectedUploadFolder, setSelectedFolderFromNode };
+    window.GedBulkUpload = { startUploadToFolder, setUploadDestination, openBulkUploadModal, getSelectedUploadFolder, setSelectedFolderFromNode, refreshCurrentFolderDocuments };
     document.addEventListener('DOMContentLoaded', initBulkUpload);
 })();

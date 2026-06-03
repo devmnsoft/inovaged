@@ -15,70 +15,98 @@
     }
     else
     {
-        <div class="table-responsive">
-            <table class="table table-hover mb-0 align-middle ged-documents-table" data-ged-document-list>
-                <thead class="table-light">
-                    <tr>
-                        <th style="width:40px;"><input type="checkbox" id="selectAllDocuments" /></th>
-                        <th>Documento</th>
-                        <th style="width:220px;">Tipo/Classificação</th>
-                        <th style="width:260px;">Arquivo</th>
-                        <th style="width:120px;">OCR</th>
-                        <th style="width:150px;">Atualizado em</th>
-                        <th style="width:70px;" class="text-end">Ações</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var d in Model.Documents)
-                    {
-                        var isUnclassified = string.IsNullOrWhiteSpace(d.TypeName) || d.TypeName == "-";
-                        <tr draggable="true" data-document-id="@d.Id">
-                            <td><input type="checkbox" class="js-doc-select" value="@d.Id" data-document-title="@d.Title" /></td>
-                            <td>
-                                <div class="ged-doc-title">@d.Title</div>
-                                <div class="ged-doc-subtitle">@(!string.IsNullOrWhiteSpace(Model.CurrentFolderName) ? Model.CurrentFolderName : "Raiz")</div>
-                            </td>
-                            <td>
-                                @if (isUnclassified)
-                                {
-                                    <span class="badge ged-badge ged-badge-muted">Sem classificação</span>
-                                }
-                                else
-                                {
-                                    <span class="badge ged-badge ged-badge-ok"><i class="bi bi-tags me-1"></i>@d.TypeName</span>
-                                }
-                            </td>
-                            <td class="text-muted small text-truncate" style="max-width:260px;" title="@d.FileName">@d.FileName</td>
-                            <td><span class="badge ged-badge ged-badge-info">Disponível</span></td>
-                            <td class="text-muted small">@d.CreatedAt.ToString("dd/MM/yyyy HH:mm")</td>
-                            <td class="text-end">
-                                <div class="dropdown">
-                                    <button class="btn btn-light btn-sm border" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Ações">
-                                        <i class="bi bi-three-dots"></i>
-                                    </button>
-                                    <ul class="dropdown-menu dropdown-menu-end">
-                                        <li><a class="dropdown-item" asp-action="Details" asp-controller="Ged" asp-route-id="@d.Id"><i class="bi bi-eye me-2"></i>Abrir</a></li>
-                                        <li><a class="dropdown-item" asp-action="Details" asp-controller="Ged" asp-route-id="@d.Id"><i class="bi bi-file-earmark-richtext me-2"></i>Preview</a></li>
-                                        <li><a class="dropdown-item" asp-action="Details" asp-controller="Ged" asp-route-id="@d.Id"><i class="bi bi-body-text me-2"></i>Ver OCR</a></li>
-                                        <li><button type="button" class="dropdown-item js-move-one" data-document-id="@d.Id" data-document-title="@d.Title"><i class="bi bi-folder-symlink me-2"></i>Mover</button></li>
-                                        <li><a class="dropdown-item" asp-action="Details" asp-controller="Ged" asp-route-id="@d.Id" asp-route-openClassify="true"><i class="bi bi-tags me-2"></i>Classificar</a></li>
-                                        <li><a class="dropdown-item" asp-action="Details" asp-controller="Ged" asp-route-id="@d.Id"><i class="bi bi-download me-2"></i>Baixar</a></li>
-                                        <li><hr class="dropdown-divider" /></li>
-                                        <li>
-                                            <form method="post" asp-controller="Ged" asp-action="DeleteDocument" class="d-inline js-feedback-form">
-                                                @Html.AntiForgeryToken()
-                                                <input type="hidden" name="id" value="@d.Id" />
-                                                <input type="hidden" name="folderId" value="@Model.CurrentFolderId" />
-                                                <button type="button" class="dropdown-item text-danger js-delete-document" data-document-id="@d.Id" data-folder-id="@Model.CurrentFolderId" data-document-title="@d.Title"><i class="bi bi-trash me-2"></i>Excluir</button>
-                                            </form>
-                                        </li>
-                                    </ul>
-                                </div>
-                            </td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
+        <div class="ged-documents-view-toolbar px-3 py-2 border-bottom bg-white d-flex justify-content-between align-items-center gap-2">
+            <div class="form-check mb-0">
+                <input type="checkbox" class="form-check-input" id="selectAllDocuments" />
+                <label class="form-check-label small text-muted" for="selectAllDocuments">Selecionar todos</label>
+            </div>
+            <div class="btn-group btn-group-sm" role="group" aria-label="Modo de visualização dos documentos">
+                <button type="button" class="btn btn-outline-primary js-doc-view-mode" data-view-mode="list"><i class="bi bi-view-list me-1"></i>Lista</button>
+                <button type="button" class="btn btn-outline-primary js-doc-view-mode" data-view-mode="table"><i class="bi bi-table me-1"></i>Tabela</button>
+            </div>
+        </div>
+
+        <div class="ged-documents-card-list" data-documents-view="list">
+            @foreach (var d in Model.Documents)
+            {
+                var isUnclassified = string.IsNullOrWhiteSpace(d.TypeName) || d.TypeName == "-";
+                var versionId = d.CurrentVersionId?.ToString() ?? string.Empty;
+                <article class="ged-document-row" draggable="true" data-document-id="@d.Id">
+                    <div class="ged-document-check">
+                        <input type="checkbox" class="form-check-input js-doc-select" value="@d.Id" data-document-title="@d.Title" />
+                    </div>
+                    <div class="ged-document-main">
+                        <a class="ged-document-title" asp-action="Details" asp-controller="Ged" asp-route-id="@d.Id" title="@d.Title">@d.Title</a>
+                        <div class="ged-document-file" title="@d.FileName"><i class="bi bi-paperclip me-1"></i>@(!string.IsNullOrWhiteSpace(d.FileName) ? d.FileName : "Arquivo sem nome")</div>
+                        <div class="ged-document-meta">
+                            @if (isUnclassified)
+                            {
+                                <span class="badge ged-badge ged-badge-muted">Sem classificação</span>
+                            }
+                            else
+                            {
+                                <span class="badge ged-badge ged-badge-ok"><i class="bi bi-tags me-1"></i>@d.TypeName</span>
+                            }
+                            <span class="badge ged-badge ged-badge-info">OCR disponível</span>
+                            <span class="text-muted small"><i class="bi bi-clock me-1"></i>@d.CreatedAt.ToString("dd/MM/yyyy HH:mm")</span>
+                        </div>
+                    </div>
+                    <div class="ged-document-actions">
+                        @await Html.PartialAsync("_DocumentActionsDropdown", (d.Id, d.Title, versionId, Model.CurrentFolderId))
+                    </div>
+                </article>
+            }
+        </div>
+
+        <div class="ged-documents-table-mode d-none" data-documents-view="table">
+            <div class="ged-table-scroll-wrap">
+                <div class="ged-table-top-scroll" aria-hidden="true"><div></div></div>
+                <div class="ged-table-scroll">
+                    <table class="table table-hover mb-0 align-middle ged-documents-table" data-ged-document-list>
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width:40px;"></th>
+                                <th>Documento</th>
+                                <th style="width:220px;">Tipo/Classificação</th>
+                                <th style="width:260px;">Arquivo</th>
+                                <th style="width:120px;">OCR</th>
+                                <th style="width:150px;">Atualizado em</th>
+                                <th style="width:70px;" class="text-end">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var d in Model.Documents)
+                            {
+                                var isUnclassified = string.IsNullOrWhiteSpace(d.TypeName) || d.TypeName == "-";
+                                var versionId = d.CurrentVersionId?.ToString() ?? string.Empty;
+                                <tr draggable="true" data-document-id="@d.Id">
+                                    <td><input type="checkbox" class="js-doc-select" value="@d.Id" data-document-title="@d.Title" /></td>
+                                    <td>
+                                        <div class="ged-doc-title">@d.Title</div>
+                                        <div class="ged-doc-subtitle">@(!string.IsNullOrWhiteSpace(Model.CurrentFolderName) ? Model.CurrentFolderName : "Raiz")</div>
+                                    </td>
+                                    <td>
+                                        @if (isUnclassified)
+                                        {
+                                            <span class="badge ged-badge ged-badge-muted">Sem classificação</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge ged-badge ged-badge-ok"><i class="bi bi-tags me-1"></i>@d.TypeName</span>
+                                        }
+                                    </td>
+                                    <td class="text-muted small text-truncate" style="max-width:260px;" title="@d.FileName">@d.FileName</td>
+                                    <td><span class="badge ged-badge ged-badge-info">Disponível</span></td>
+                                    <td class="text-muted small">@d.CreatedAt.ToString("dd/MM/yyyy HH:mm")</td>
+                                    <td class="text-end">
+                                        @await Html.PartialAsync("_DocumentActionsDropdown", (d.Id, d.Title, versionId, Model.CurrentFolderId))
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     }
 </div>
