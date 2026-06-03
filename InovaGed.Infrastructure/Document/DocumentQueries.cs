@@ -1,4 +1,4 @@
-﻿using Dapper;
+using Dapper;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Documents;
 using InovaGed.Domain.Documents;
@@ -26,6 +26,7 @@ SELECT
     d.title                        AS ""Title"",
     COALESCE(dt.name,'-')          AS ""TypeName"",
     cv.file_name                   AS ""FileName"",
+    d.current_version_id           AS ""CurrentVersionId"",
     COALESCE(cv.file_size_bytes,0) AS ""SizeBytes"",
     d.created_at                   AS ""CreatedAt"",
     d.created_by                   AS ""CreatedBy"",

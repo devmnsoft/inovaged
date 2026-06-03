@@ -1,4 +1,4 @@
-﻿namespace InovaGed.Domain.Ged
+namespace InovaGed.Domain.Ged
 {
     public sealed class CreateFolderCommand
     {
@@ -14,6 +14,7 @@
         public string Title { get; init; } = "";
         public string? TypeName { get; init; }
         public string? FileName { get; init; }
+        public Guid? CurrentVersionId { get; init; }
         public long SizeBytes { get; init; }
         public DateTime CreatedAt { get; init; }
         public Guid CreatedBy { get; set; }   // ou Guid?

@@ -1,0 +1,28 @@
+@model (Guid Id, string Title, string VersionId, Guid? FolderId)
+
+<div class="dropdown">
+    <button class="btn btn-light btn-sm document-actions-btn border" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Ações">
+        <i class="bi bi-three-dots"></i>
+    </button>
+    <ul class="dropdown-menu dropdown-menu-end">
+        <li><a class="dropdown-item" asp-action="Details" asp-controller="Ged" asp-route-id="@Model.Id"><i class="bi bi-eye me-2"></i>Abrir</a></li>
+        <li>
+            <button class="dropdown-item js-preview-document" type="button" data-document-id="@Model.Id" data-version-id="@Model.VersionId" onclick="window.location.href='@Url.Action("Details", "Ged", new { id = Model.Id })'">
+                <i class="bi bi-file-earmark-richtext me-2"></i>Preview
+            </button>
+        </li>
+        <li><a class="dropdown-item" asp-action="Details" asp-controller="Ged" asp-route-id="@Model.Id"><i class="bi bi-body-text me-2"></i>Ver OCR</a></li>
+        <li><button type="button" class="dropdown-item js-move-one js-move-document" data-document-id="@Model.Id" data-document-title="@Model.Title"><i class="bi bi-folder-symlink me-2"></i>Mover</button></li>
+        <li><a class="dropdown-item js-classify-document" asp-action="Details" asp-controller="Ged" asp-route-id="@Model.Id" asp-route-openClassify="true" data-document-id="@Model.Id"><i class="bi bi-tags me-2"></i>Classificar</a></li>
+        <li><a class="dropdown-item" asp-action="Details" asp-controller="Ged" asp-route-id="@Model.Id"><i class="bi bi-download me-2"></i>Baixar</a></li>
+        <li><hr class="dropdown-divider" /></li>
+        <li>
+            <form method="post" asp-controller="Ged" asp-action="DeleteDocument" class="d-inline js-feedback-form">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="id" value="@Model.Id" />
+                <input type="hidden" name="folderId" value="@Model.FolderId" />
+                <button type="button" class="dropdown-item text-danger js-delete-document" data-document-id="@Model.Id" data-folder-id="@Model.FolderId" data-document-title="@Model.Title"><i class="bi bi-trash me-2"></i>Excluir</button>
+            </form>
+        </li>
+    </ul>
+</div>
