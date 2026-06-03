@@ -1,7 +1,7 @@
 (function () {
     const DuplicateStrategy = { overwrite: 'overwrite', rename: 'rename', skip: 'skip', cancel: 'cancel' };
     const ValidationStep = 'Validação de extensão';
-    const state = { files: [], uploading: false, isStarting: false, isFinishing: false, activeUploads: 0, maxConcurrency: 2, completed: 0, failed: 0, skipped: 0, isCheckingDuplicates: false, duplicateCheckKey: null, duplicateCheckPromise: null, duplicateCheckResult: null, lastDuplicateSignature: null, batchId: null, useLegacyUploadFallback: false, duplicateStrategy: null, uploadAbortController: null, chunkOptions: { enabled: true, thresholdBytes: 50 * 1024 * 1024, chunkSizeBytes: 10 * 1024 * 1024, timeoutMs: 1800 * 1000 } };
+    const state = { files: [], uploading: false, isStarting: false, isFinishing: false, activeUploads: 0, maxConcurrency: 2, completed: 0, failed: 0, skipped: 0, isCheckingDuplicates: false, duplicateCheckKey: null, duplicateCheckPromise: null, duplicateCheckResult: null, lastDuplicateSignature: null, batchId: null, requestedFolderId: null, resolvedFolderId: null, folderName: null, createdDocuments: [], useLegacyUploadFallback: false, duplicateStrategy: null, uploadAbortController: null, chunkOptions: { enabled: true, thresholdBytes: 50 * 1024 * 1024, chunkSizeBytes: 10 * 1024 * 1024, timeoutMs: 1800 * 1000 } };
 
     function getBootstrapOrNull() {
         if (!window.bootstrap) {
@@ -382,6 +382,10 @@
         const keepFailed = options.keepFailed === true;
         state.files = keepFailed ? state.files.filter(x => x.status === 'error') : [];
         state.batchId = null;
+        state.requestedFolderId = null;
+        state.resolvedFolderId = null;
+        state.folderName = null;
+        state.createdDocuments = [];
         state.useLegacyUploadFallback = false;
         state.duplicateStrategy = null;
         state.uploading = false;
@@ -697,18 +701,21 @@
             const finished = await finishUploadBatch();
             const success = finished?.success ?? state.files.filter(x => x.status === 'success').length;
             const error = finished?.failed ?? state.files.filter(x => x.status === 'error').length;
+            if (finished?.resolvedFolderId) state.resolvedFolderId = finished.resolvedFolderId;
+            if (finished?.folderName) state.folderName = finished.folderName;
+            if (Array.isArray(finished?.createdDocuments) && finished.createdDocuments.length) state.createdDocuments = finished.createdDocuments;
             console.log('[BulkUpload] upload finished', { batchId: state.batchId, success, error, finished });
 
             if (success > 0 && error === 0) {
                 showAppToast(`${success} documento(s) enviado(s) com sucesso.`, 'success', 'Upload concluído');
-                setTimeout(async () => { closeBulkUploadModal(); resetBulkUploadState(); await refreshCurrentFolderDocuments(); }, 900);
+                setTimeout(async () => { const navigation = getUploadNavigationTarget(finished); closeBulkUploadModal(); resetBulkUploadState(); await navigateToUploadedFolder(navigation.folderId, navigation.folderName, navigation.createdDocuments); }, 900);
                 return;
             }
             if (success > 0 && error > 0) {
                 showBulkUploadMessage(`${success} enviado(s), ${error} falharam. Use Reenviar falhos para continuar sem duplicar concluídos.`, 'warning');
                 showAppToast('Alguns documentos não foram enviados.', 'warning', 'Upload parcial');
                 showRefreshAfterUploadButton(true);
-                await refreshCurrentFolderDocuments();
+                await onBatchFinished(finished);
                 return;
             }
             if (success === 0 && error > 0) {
@@ -750,7 +757,11 @@
             }
             throw new Error(j.message || 'Não foi possível iniciar o lote.');
         }
-        console.log('[BulkUpload] batch iniciado', j.batchId);
+        state.batchId = j.batchId;
+        state.requestedFolderId = j.requestedFolderId || payload.requestedFolderId;
+        state.resolvedFolderId = j.resolvedFolderId || j.folderId || payload.uploadFolderId;
+        state.folderName = j.folderName || selected?.folderName || null;
+        console.log('[BulkUpload] batch iniciado', { batchId: j.batchId, requestedFolderId: state.requestedFolderId, resolvedFolderId: state.resolvedFolderId, folderName: state.folderName });
         return j.batchId;
     }
 
@@ -785,7 +796,12 @@
         const j = await r.json().catch(() => ({ success: false }));
         state.isFinishing = false;
         if (!r.ok || !j.success) return null;
-        return j.status;
+        const status = j.status || {};
+        status.requestedFolderId = j.requestedFolderId || status.requestedFolderId;
+        status.resolvedFolderId = j.resolvedFolderId || j.folderId || status.resolvedFolderId;
+        status.folderName = j.folderName || status.folderName;
+        status.createdDocuments = j.createdDocuments || status.createdDocuments || [];
+        return status;
     }
 
     async function confirmBatchStatus(fileItem) {
@@ -866,6 +882,8 @@
                     fileItem.status = (payload.status === 'SKIPPED' ? 'ignored' : 'success');
                     fileItem.serverDocumentId = payload.documentId || payload.data?.documentId || null;
                     fileItem.serverVersionId = payload.versionId || payload.data?.versionId || null;
+                    captureUploadDestination(payload);
+                    captureCreatedDocument(payload, fileItem);
                     fileItem.message = payload.message || 'Enviado com sucesso.';
                     fileItem.errorMessage = null;
                     fileItem.errorLog = null;
@@ -997,6 +1015,8 @@
             fileItem.message = completed.message || 'Arquivo grande enviado com sucesso.';
             fileItem.serverDocumentId = completed.documentId || null;
             fileItem.serverVersionId = completed.versionId || null;
+            captureUploadDestination(completed);
+            captureCreatedDocument(completed, fileItem);
             renderFileList();
             return fileItem.status === 'ignored' ? 'ignored' : 'success';
         } catch (err) {
@@ -1142,6 +1162,79 @@
         return normalizeFolderId(new URL(window.location.href).searchParams.get('folderId'));
     }
 
+    function captureUploadDestination(payload) {
+        const data = payload?.data || payload || {};
+        if (data.requestedFolderId) state.requestedFolderId = data.requestedFolderId;
+        if (data.resolvedFolderId || data.folderId) state.resolvedFolderId = data.resolvedFolderId || data.folderId;
+        if (data.folderName) state.folderName = data.folderName;
+    }
+
+    function captureCreatedDocument(payload, fileItem) {
+        const data = payload?.data || payload || {};
+        const documentId = payload?.documentId || data.documentId;
+        if (!documentId) return;
+        const versionId = payload?.versionId || data.versionId || fileItem?.serverVersionId || null;
+        if (!state.createdDocuments.some(x => String(x.documentId).toLowerCase() === String(documentId).toLowerCase())) {
+            state.createdDocuments.push({ documentId, versionId, title: data.title || fileItem?.uploadName?.replace(/\.[^.]+$/, ''), fileName: data.fileName || fileItem?.uploadName || fileItem?.originalName });
+        }
+    }
+
+    function getUploadNavigationTarget(result) {
+        return {
+            folderId: result?.resolvedFolderId || state.resolvedFolderId || state.folderId || getSelectedUploadFolder()?.uploadFolderId,
+            folderName: result?.folderName || state.folderName || getSelectedUploadFolder()?.folderName,
+            createdDocuments: result?.createdDocuments || state.createdDocuments || []
+        };
+    }
+
+    async function onBatchFinished(result) {
+        const target = getUploadNavigationTarget(result);
+        await navigateToUploadedFolder(target.folderId, target.folderName, target.createdDocuments);
+    }
+
+    async function navigateToUploadedFolder(folderId, folderName, createdDocuments = []) {
+        if (!folderId || folderId === '00000000-0000-0000-0000-000000000000') {
+            console.warn('[BulkUpload] pasta de destino inválida após upload', { folderId, folderName });
+            window.location.reload();
+            return;
+        }
+        console.log('[BulkUpload] navegando para pasta do upload', { folderId, folderName, createdDocuments });
+        updateCurrentFolderState(folderId, folderName);
+        const url = new URL(window.location.href);
+        url.searchParams.set('folderId', folderId);
+        url.searchParams.set('_ts', Date.now().toString());
+        history.pushState({}, '', url.toString());
+        if (window.GedFolderNavigation?.loadFolderDocuments) {
+            await window.GedFolderNavigation.loadFolderDocuments(folderId, { forceRefresh: true, highlightDocumentIds: createdDocuments.map(x => x.documentId).filter(Boolean), folderName });
+        } else {
+            window.location.href = url.toString();
+        }
+    }
+
+    function updateCurrentFolderState(folderId, folderName) {
+        const currentFolderId = document.getElementById('currentFolderId');
+        if (currentFolderId) currentFolderId.value = folderId;
+        const bulkFolderId = document.getElementById('bulkUploadFolderId');
+        if (bulkFolderId) bulkFolderId.value = folderId;
+        const bulk = document.getElementById('bulkFolderId');
+        if (bulk) bulk.value = folderId;
+        const requested = document.getElementById('bulkUploadRequestedFolderId');
+        if (requested) requested.value = folderId;
+        const title = document.querySelector('[data-current-folder-title]');
+        if (title && folderName) title.textContent = folderName;
+        const breadcrumb = document.querySelector('[data-current-folder-breadcrumb]');
+        if (breadcrumb && folderName) breadcrumb.textContent = folderName;
+        document.querySelectorAll('.js-folder-node.active, .ged-tree-row.active, .ged-tree-root.active').forEach(x => x.classList.remove('active'));
+        const escaped = window.CSS?.escape ? CSS.escape(folderId) : folderId;
+        const node = document.querySelector(`.js-folder-node[data-upload-folder-id="${escaped}"]`) || document.querySelector(`.js-folder-node[data-folder-id="${escaped}"]`) || document.querySelector(`[data-upload-folder-id="${escaped}"]`) || document.querySelector(`[data-folder-id="${escaped}"]`);
+        if (node) {
+            node.classList.add('active');
+            node.querySelector?.('.ged-tree-row')?.classList.add('active');
+            node.scrollIntoView({ block: 'nearest' });
+        }
+        window.GedBulkUpload?.setUploadDestination?.(folderId, folderName, folderId, true);
+    }
+
     async function refreshCurrentFolderDocuments() {
         const selected = getSelectedUploadFolder();
         const folderId = selected?.folderId || getCurrentFolderIdFromUrl();
@@ -1216,6 +1309,6 @@
     const statusLabel = s => ({ waiting: 'Aguardando', validating: 'Validando', duplicate: 'Duplicado', uploading: 'Enviando', paused: 'Pausado', success: 'Enviado', ignored: 'Ignorado', error: 'Erro' }[s] || s);
     const statusColor = s => ({ success: 'success', error: 'danger', uploading: 'primary', paused: 'warning', duplicate: 'warning', ignored: 'secondary', waiting: 'light', validating: 'info' }[s] || 'light');
 
-    window.GedBulkUpload = { startUploadToFolder, setUploadDestination, openBulkUploadModal, getSelectedUploadFolder, setSelectedFolderFromNode, refreshCurrentFolderDocuments };
+    window.GedBulkUpload = { startUploadToFolder, setUploadDestination, openBulkUploadModal, getSelectedUploadFolder, setSelectedFolderFromNode, refreshCurrentFolderDocuments, navigateToUploadedFolder, updateCurrentFolderState };
     document.addEventListener('DOMContentLoaded', initBulkUpload);
 })();

@@ -21,6 +21,8 @@ public sealed class DocumentBulkUploadResultDto
 {
     public Guid DocumentId { get; set; }
     public string FileName { get; set; } = string.Empty;
+    public Guid? FolderId { get; set; }
+    public string? Title { get; set; }
 }
 
 public sealed class BulkUploadBatchResultDto

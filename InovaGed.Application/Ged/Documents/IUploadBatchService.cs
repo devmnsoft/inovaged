@@ -45,6 +45,11 @@ public sealed class UploadBatchFileResultDto
     public Guid ItemId { get; set; }
     public Guid? DocumentId { get; set; }
     public Guid? VersionId { get; set; }
+    public Guid? RequestedFolderId { get; set; }
+    public Guid? ResolvedFolderId { get; set; }
+    public string? FolderName { get; set; }
+    public string? Title { get; set; }
+    public string? FileName { get; set; }
     public string Status { get; set; } = "COMPLETED";
     public bool OcrQueued { get; set; }
     public bool PreviewQueued { get; set; }
@@ -52,9 +57,21 @@ public sealed class UploadBatchFileResultDto
     public string? CorrelationId { get; set; }
 }
 
+public sealed class UploadBatchCreatedDocumentDto
+{
+    public Guid? DocumentId { get; set; }
+    public Guid? VersionId { get; set; }
+    public string? Title { get; set; }
+    public string? FileName { get; set; }
+}
+
 public sealed class UploadBatchStatusDto
 {
     public Guid BatchId { get; set; }
+    public Guid? RequestedFolderId { get; set; }
+    public Guid? ResolvedFolderId { get; set; }
+    public string? FolderName { get; set; }
+    public IReadOnlyList<UploadBatchCreatedDocumentDto> CreatedDocuments { get; set; } = Array.Empty<UploadBatchCreatedDocumentDto>();
     public string Status { get; set; } = "OPEN";
     public int Total { get; set; }
     public int Success { get; set; }
@@ -69,6 +86,7 @@ public sealed class UploadBatchItemStatusDto
 {
     public Guid Id { get; set; }
     public string OriginalFileName { get; set; } = string.Empty;
+    public string? StoredFileName { get; set; }
     public Guid? DocumentId { get; set; }
     public Guid? VersionId { get; set; }
     public string Status { get; set; } = string.Empty;

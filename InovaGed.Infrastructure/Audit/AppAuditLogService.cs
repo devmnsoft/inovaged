@@ -85,6 +85,14 @@ public sealed class AppAuditLogService : IAppAuditLogService
                 await TryInsertMinimalAsync(conn, e, ct);
             }
         }
+        catch (OperationCanceledException ex)
+        {
+            var normalizedAction = NormalizeAuditAction(e.Action);
+            var normalizedEventType = NormalizeEventType(e.EventType, normalizedAction);
+            _logger.LogDebug(ex,
+                "Audit log cancelado sem interromper fluxo. Tenant={TenantId} Action={Action} EventType={EventType} Source={Source}",
+                e.TenantId, normalizedAction, normalizedEventType, e.Source);
+        }
         catch (Exception ex)
         {
             var normalizedAction = NormalizeAuditAction(e.Action);

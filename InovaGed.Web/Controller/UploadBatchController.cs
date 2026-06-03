@@ -86,7 +86,7 @@ public sealed class UploadBatchController : Controller
                     code));
             }
 
-            return Ok(new { success = true, batchId = result.Value, message = "Lote iniciado.", requestedFolderId = folderResolution.RequestedFolderId, resolvedFolderId = folderResolution.ResolvedFolderId, wasVirtual = folderResolution.WasVirtual, createdRealFolder = folderResolution.CreatedRealFolder, correlationId });
+            return Ok(new { success = true, batchId = result.Value, message = "Lote iniciado.", requestedFolderId = folderResolution.RequestedFolderId, folderId = folderResolution.ResolvedFolderId, resolvedFolderId = folderResolution.ResolvedFolderId, folderName = folderResolution.FolderName, wasVirtual = folderResolution.WasVirtual, createdRealFolder = folderResolution.CreatedRealFolder, correlationId });
         }
         catch (Exception ex)
         {
@@ -150,7 +150,10 @@ public sealed class UploadBatchController : Controller
                 ocrQueued = result.Value.OcrQueued,
                 previewQueued = result.Value.PreviewQueued,
                 requestedFolderId = folderResolution.RequestedFolderId,
+                folderId = folderResolution.ResolvedFolderId,
                 resolvedFolderId = folderResolution.ResolvedFolderId,
+                folderName = folderResolution.FolderName,
+                createdDocuments = result.Value.DocumentId.HasValue ? new object[] { new { documentId = result.Value.DocumentId, versionId = result.Value.VersionId, title = result.Value.Title, fileName = result.Value.FileName } } : Array.Empty<object>(),
                 wasVirtual = folderResolution.WasVirtual,
                 createdRealFolder = folderResolution.CreatedRealFolder,
                 correlationId = result.Value.CorrelationId
@@ -168,7 +171,20 @@ public sealed class UploadBatchController : Controller
     public async Task<IActionResult> Finish([FromBody] FinishRequest request, CancellationToken ct)
     {
         var result = await _batches.FinishAsync(_currentUser.TenantId, _currentUser.UserId, request.BatchId, ct);
-        return result.Success ? Ok(new { success = true, status = result.Value, message = "Lote finalizado." }) : BadRequest(Error(result.Error?.Message ?? "Falha ao finalizar lote.", result.Error?.Code ?? "Batch", true, HttpContext.TraceIdentifier));
+        if (!result.Success) return BadRequest(Error(result.Error?.Message ?? "Falha ao finalizar lote.", result.Error?.Code ?? "Batch", true, HttpContext.TraceIdentifier));
+        var status = result.Value!;
+        return Ok(new
+        {
+            success = true,
+            status,
+            message = "Lote finalizado.",
+            requestedFolderId = status.RequestedFolderId,
+            folderId = status.ResolvedFolderId,
+            resolvedFolderId = status.ResolvedFolderId,
+            folderName = status.FolderName,
+            createdDocuments = status.CreatedDocuments,
+            correlationId = HttpContext.TraceIdentifier
+        });
     }
 
     [HttpGet("Status/{batchId:guid}")]
@@ -197,7 +213,7 @@ public sealed class UploadBatchController : Controller
     }
 
     private static object FolderResolutionError(UploadFolderResolutionResult resolution, string correlationId)
-        => new { success = false, message = resolution.Message, errorStep = "Resolução da pasta", canRetry = false, requestedFolderId = resolution.RequestedFolderId, resolvedFolderId = resolution.ResolvedFolderId, wasVirtual = resolution.WasVirtual, createdRealFolder = resolution.CreatedRealFolder, correlationId };
+        => new { success = false, message = resolution.Message, errorStep = "Resolução da pasta", canRetry = false, requestedFolderId = resolution.RequestedFolderId, folderId = resolution.ResolvedFolderId, resolvedFolderId = resolution.ResolvedFolderId, folderName = resolution.FolderName, wasVirtual = resolution.WasVirtual, createdRealFolder = resolution.CreatedRealFolder, correlationId };
 
     private static object Error(string message, string errorStep, bool canRetry, string correlationId, string? code = null)
         => new { success = false, message, errorStep, canRetry, correlationId, code };

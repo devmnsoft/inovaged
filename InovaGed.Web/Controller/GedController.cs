@@ -182,7 +182,7 @@ public sealed class GedController : Controller
                 _logger.LogError("Upload retornou documento/versão inválidos. Tenant={TenantId} DocumentId={DocumentId} VersionId={VersionId} CorrelationId={CorrelationId}", _currentUser.TenantId, result.Value.DocumentId, versionId, correlationId);
                 return StatusCode(500, JsonError("Arquivo salvo, mas a versão atual não foi localizada. Atualize a pasta e tente abrir novamente.", "Persistência", "DocumentId/VersionId inválidos após upload.", true, correlationId));
             }
-            return Ok(new { success = true, status = "success", message = "Arquivo enviado com sucesso.", documentId = result.Value.DocumentId, versionId, data = new { documentId = result.Value.DocumentId, versionId, fileName = result.Value.FileName, batchId, ocrQueued = runOcr, previewQueued = generatePreview, requestedFolderId = folderResolution.RequestedFolderId, resolvedFolderId = folderResolution.ResolvedFolderId, wasVirtual = folderResolution.WasVirtual, createdRealFolder = folderResolution.CreatedRealFolder }, correlationId });
+            return Ok(new { success = true, status = "success", message = "Arquivo enviado com sucesso.", documentId = result.Value.DocumentId, versionId, requestedFolderId = folderResolution.RequestedFolderId, folderId = folderResolution.ResolvedFolderId, resolvedFolderId = folderResolution.ResolvedFolderId, folderName = folderResolution.FolderName, createdDocuments = new[] { new { documentId = result.Value.DocumentId, versionId, title = result.Value.Title, fileName = result.Value.FileName } }, data = new { documentId = result.Value.DocumentId, versionId, title = result.Value.Title, fileName = result.Value.FileName, batchId, ocrQueued = runOcr, previewQueued = generatePreview, requestedFolderId = folderResolution.RequestedFolderId, folderId = folderResolution.ResolvedFolderId, resolvedFolderId = folderResolution.ResolvedFolderId, folderName = folderResolution.FolderName, wasVirtual = folderResolution.WasVirtual, createdRealFolder = folderResolution.CreatedRealFolder }, correlationId });
         }
         catch (Exception ex)
         {
@@ -225,8 +225,10 @@ public sealed class GedController : Controller
             });
         }
 
-        var docs = await _docs.ListAsync(tenantId, effectiveFolderId.Value, q, ct);
-        var folder = tree.FirstOrDefault(x => x.Id == effectiveFolderId.Value);
+        var listingFolderId = effectiveFolderId.Value;
+        var docs = await _docs.ListAsync(tenantId, listingFolderId, q, ct);
+        var folder = tree.FirstOrDefault(x => x.Id == listingFolderId);
+        _logger.LogInformation("DocumentsList carregado. Tenant={TenantId} User={UserId} RequestedFolderId={RequestedFolderId} ListingFolderId={ListingFolderId} Count={Count}", tenantId, _currentUser.UserId, folderId, listingFolderId, docs.Count);
         return PartialView("_DocumentsList", new GedExplorerVM
         {
             CurrentFolderId = effectiveFolderId,
@@ -247,6 +249,15 @@ public sealed class GedController : Controller
                 IsConfidential = d.IsConfidential
             }).ToList()
         });
+    }
+
+    private string ResolveCurrentFolderName(IReadOnlyList<FolderNodeDto> tree, Guid? effectiveFolderId, Guid? requestedFolderId)
+    {
+        if (!effectiveFolderId.HasValue) return "Pasta selecionada";
+        var folder = tree.FirstOrDefault(x => x.Id == effectiveFolderId.Value);
+        if (folder is not null) return folder.Name;
+        _logger.LogWarning("FolderId informado não foi encontrado na árvore GED; evitando fallback silencioso para Documentos gerais. RequestedFolderId={RequestedFolderId} EffectiveFolderId={EffectiveFolderId}", requestedFolderId, effectiveFolderId);
+        return "Pasta selecionada";
     }
 
     public sealed class CheckDuplicateNamesRequest
@@ -274,13 +285,17 @@ public sealed class GedController : Controller
                 if (!allowed) return StatusCode(403, JsonError("Você não possui permissão para adicionar documentos nesta pasta.", "Autorização", "Permissão negada para upload na pasta.", false, correlationId));
             }
             var fileNames = (request?.FileNames ?? Array.Empty<string>()).Where(x => !string.IsNullOrWhiteSpace(x)).Select(Path.GetFileNameWithoutExtension).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-            if (fileNames.Length == 0) return Ok(JsonSuccess("Nenhum arquivo para validação de duplicidade.", new { duplicates = Array.Empty<object>(), requestedFolderId = folderResolution.RequestedFolderId, resolvedFolderId = folderResolution.ResolvedFolderId, wasVirtual = folderResolution.WasVirtual, createdRealFolder = folderResolution.CreatedRealFolder }, correlationId));
+            if (fileNames.Length == 0)
+            {
+                var emptyDuplicates = Array.Empty<object>();
+                return Ok(new { success = true, message = "Nenhum arquivo para validação de duplicidade.", duplicates = emptyDuplicates, requestedFolderId = folderResolution.RequestedFolderId, folderId = folderResolution.ResolvedFolderId, resolvedFolderId = folderResolution.ResolvedFolderId, folderName = folderResolution.FolderName, wasVirtual = folderResolution.WasVirtual, createdRealFolder = folderResolution.CreatedRealFolder, data = new { duplicates = emptyDuplicates, requestedFolderId = folderResolution.RequestedFolderId, folderId = folderResolution.ResolvedFolderId, resolvedFolderId = folderResolution.ResolvedFolderId, folderName = folderResolution.FolderName, wasVirtual = folderResolution.WasVirtual, createdRealFolder = folderResolution.CreatedRealFolder }, correlationId });
+            }
 
             const string sql = @"select id as ExistingDocumentId, title as FileName from ged.document where tenant_id=@tenantId::uuid and folder_id=@folderId::uuid and title = any(@titles) and reg_status='A';";
             using var con = _db.CreateConnection();
             var rows = await con.QueryAsync(sql, new { tenantId = _currentUser.TenantId, folderId = folderResolution.ResolvedFolderId, titles = fileNames });
             _logger.LogInformation("Duplicidades verificadas. Tenant={TenantId} User={UserId} RequestedFolderId={RequestedFolderId} ResolvedFolderId={ResolvedFolderId} WasVirtual={WasVirtual} CreatedRealFolder={CreatedRealFolder} FileCount={FileCount} CorrelationId={CorrelationId}", _currentUser.TenantId, _currentUser.UserId, folderResolution.RequestedFolderId, folderResolution.ResolvedFolderId, folderResolution.WasVirtual, folderResolution.CreatedRealFolder, fileNames.Length, correlationId);
-            return Ok(JsonSuccess("Duplicidades verificadas com sucesso.", new { duplicates = rows, requestedFolderId = folderResolution.RequestedFolderId, resolvedFolderId = folderResolution.ResolvedFolderId, wasVirtual = folderResolution.WasVirtual, createdRealFolder = folderResolution.CreatedRealFolder }, correlationId));
+            return Ok(new { success = true, message = "Duplicidades verificadas com sucesso.", duplicates = rows, requestedFolderId = folderResolution.RequestedFolderId, folderId = folderResolution.ResolvedFolderId, resolvedFolderId = folderResolution.ResolvedFolderId, folderName = folderResolution.FolderName, wasVirtual = folderResolution.WasVirtual, createdRealFolder = folderResolution.CreatedRealFolder, data = new { duplicates = rows, requestedFolderId = folderResolution.RequestedFolderId, folderId = folderResolution.ResolvedFolderId, resolvedFolderId = folderResolution.ResolvedFolderId, folderName = folderResolution.FolderName, wasVirtual = folderResolution.WasVirtual, createdRealFolder = folderResolution.CreatedRealFolder }, correlationId });
         }
         catch (Exception ex)
         {
@@ -300,7 +315,7 @@ public sealed class GedController : Controller
     }
 
     private static object FolderResolutionJsonError(UploadFolderResolutionResult resolution, string correlationId)
-        => new { success = false, message = resolution.Message, errorStep = "Resolução da pasta", errorLog = resolution.Message, canRetry = false, requestedFolderId = resolution.RequestedFolderId, resolvedFolderId = resolution.ResolvedFolderId, wasVirtual = resolution.WasVirtual, createdRealFolder = resolution.CreatedRealFolder, correlationId };
+        => new { success = false, message = resolution.Message, errorStep = "Resolução da pasta", errorLog = resolution.Message, canRetry = false, requestedFolderId = resolution.RequestedFolderId, folderId = resolution.ResolvedFolderId, resolvedFolderId = resolution.ResolvedFolderId, folderName = resolution.FolderName, wasVirtual = resolution.WasVirtual, createdRealFolder = resolution.CreatedRealFolder, correlationId };
 
     private bool IsAjaxRequest()
         => string.Equals(Request.Headers["X-Requested-With"], "XMLHttpRequest", StringComparison.OrdinalIgnoreCase)
@@ -354,9 +369,7 @@ public sealed class GedController : Controller
                 CanBulkUpload = canUseCurrentFolderForUpload && await _accessPolicy.CanUploadDocumentToFolderAsync(tenantId, _currentUser.UserId, effectiveFolderId, User, ct),
                 CurrentFolderId = effectiveFolderId,
                 CurrentFolderIsVirtual = FolderIdHelper.IsVirtualFolder(effectiveFolderId),
-                CurrentFolderName = effectiveFolderId.HasValue
-                    ? tree.FirstOrDefault(x => x.Id == effectiveFolderId.Value)?.Name ?? (FolderIdHelper.IsVirtualFolder(effectiveFolderId) ? "Pasta selecionada" : "Pasta selecionada")
-                    : "Pasta selecionada",
+                CurrentFolderName = ResolveCurrentFolderName(tree, effectiveFolderId, folderId),
                 FolderId = effectiveFolderId,
                 Query = q,
                 Folders = tree.Select(x => new GedExplorerVM.FolderNodeVM
