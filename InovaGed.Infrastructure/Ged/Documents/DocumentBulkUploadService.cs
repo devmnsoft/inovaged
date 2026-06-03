@@ -6,6 +6,8 @@ using InovaGed.Domain.Primitives;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Caching.Memory;
+using InovaGed.Infrastructure.Ged;
 using System.Diagnostics;
 
 namespace InovaGed.Infrastructure.Ged.Documents;
@@ -14,8 +16,8 @@ public sealed class DocumentBulkUploadService : IDocumentBulkUploadService
 {
     private static readonly HashSet<string> AllowedExtensions = new(StringComparer.OrdinalIgnoreCase) { ".pdf", ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt" };
     private readonly long _maxFileSizeBytes;
-    private readonly DocumentAppService _documentApp; private readonly IAuditWriter _audit; private readonly ILogger<DocumentBulkUploadService> _logger;
-    public DocumentBulkUploadService(DocumentAppService documentApp, IAuditWriter audit, ILogger<DocumentBulkUploadService> logger, IConfiguration configuration){_documentApp=documentApp;_audit=audit;_logger=logger;var maxFileSizeMb=Math.Max(1, configuration.GetValue<int?>("DocumentUpload:MaxFileSizeMb") ?? 50); _maxFileSizeBytes=maxFileSizeMb*1024L*1024L;}
+    private readonly DocumentAppService _documentApp; private readonly IAuditWriter _audit; private readonly ILogger<DocumentBulkUploadService> _logger; private readonly IMemoryCache _cache;
+    public DocumentBulkUploadService(DocumentAppService documentApp, IAuditWriter audit, ILogger<DocumentBulkUploadService> logger, IConfiguration configuration, IMemoryCache cache){_documentApp=documentApp;_audit=audit;_logger=logger;_cache=cache;var maxFileSizeMb=Math.Max(1, configuration.GetValue<int?>("DocumentUpload:MaxFileSizeMb") ?? 50); _maxFileSizeBytes=maxFileSizeMb*1024L*1024L;}
     public async Task<Result<DocumentBulkUploadResultDto>> UploadStreamAsync(Guid tenantId, Guid userId, string? userName, Stream content, string fileName, string contentType, long sizeBytes, Guid? folderId, DocumentBulkUploadMetadata metadata, bool isAdmin, CancellationToken ct)
     {
         try
@@ -28,14 +30,16 @@ public sealed class DocumentBulkUploadService : IDocumentBulkUploadService
             var ext = Path.GetExtension(safeName ?? string.Empty);
             if (!AllowedExtensions.Contains(ext)) return Result<DocumentBulkUploadResultDto>.Fail("VALIDATION", $"Extensão não permitida: {ext}");
             if (content.CanSeek) content.Position = 0;
-            var cmd = new UploadDocumentCommand { FolderId = folderId.Value, TypeId = metadata.DocumentTypeId, ClassificationId = metadata.ClassificationId, Description = metadata.Notes, Visibility = string.IsNullOrWhiteSpace(metadata.Visibility) ? "INTERNAL" : metadata.Visibility.Trim().ToUpperInvariant(), Title = Path.GetFileNameWithoutExtension(safeName), FileName = safeName, ContentType = string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType, Content = content };
+            var title = Path.GetFileNameWithoutExtension(safeName);
+            var cmd = new UploadDocumentCommand { FolderId = folderId.Value, TypeId = metadata.DocumentTypeId, ClassificationId = metadata.ClassificationId, Description = metadata.Notes, Visibility = string.IsNullOrWhiteSpace(metadata.Visibility) ? "INTERNAL" : metadata.Visibility.Trim().ToUpperInvariant(), Title = title, FileName = safeName, ContentType = string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType, Content = content };
             var result = await _documentApp.UploadAsync(cmd, "BULK", userName ?? "BULK", ct);
             if (!result.Success) return Result<DocumentBulkUploadResultDto>.Fail(result.Error?.Code ?? "UPLOAD", result.Error?.Message ?? "Falha no upload.");
             sw.Stop();
             _logger.LogInformation("Upload stream finalizado. Tenant={TenantId} User={UserId} Folder={FolderId} Batch={BatchId} File={FileName} FileSize={FileSize} ContentType={ContentType} DocumentId={DocumentId} ElapsedMs={ElapsedMs}",
                 tenantId, userId, folderId, metadata.BatchId, safeName, sizeBytes, contentType, result.Value, sw.ElapsedMilliseconds);
             await _audit.WriteAsync(tenantId, userId, "UPLOAD", "DOCUMENT", result.Value, "Upload em lote concluído", null, null, new { folderId, fileName = safeName, fileSize = sizeBytes, contentType, metadata.RunOcr, metadata.GeneratePreview, metadata.BatchId }, ct);
-            return Result<DocumentBulkUploadResultDto>.Ok(new DocumentBulkUploadResultDto { DocumentId = result.Value, FileName = safeName });
+            InvalidateGedFolderCache(tenantId, folderId.Value);
+            return Result<DocumentBulkUploadResultDto>.Ok(new DocumentBulkUploadResultDto { DocumentId = result.Value, FileName = safeName, FolderId = folderId.Value, Title = title });
         }
         catch (OperationCanceledException)
         {
@@ -47,6 +51,14 @@ public sealed class DocumentBulkUploadService : IDocumentBulkUploadService
             _logger.LogError(ex, "Erro em UploadStreamAsync. Tenant={TenantId} User={UserId} Folder={FolderId} Batch={BatchId} File={FileName}", tenantId, userId, folderId, metadata.BatchId, fileName);
             return Result<DocumentBulkUploadResultDto>.Fail("ERR", "Erro interno ao enviar arquivo.");
         }
+    }
+
+    private void InvalidateGedFolderCache(Guid tenantId, Guid folderId)
+    {
+        _cache.Remove($"GedDocuments:{tenantId}:{folderId}");
+        _cache.Remove($"GedFolderSummary:{tenantId}:{folderId}");
+        _cache.Remove(FolderQueries.TreeCacheKey(tenantId));
+        _logger.LogDebug("Cache GED invalidado após upload. Tenant={TenantId} Folder={FolderId}", tenantId, folderId);
     }
 
     public async Task<Result<DocumentBulkUploadResultDto>> UploadSingleAsync(Guid tenantId, Guid userId, string? userName, IFormFile file, Guid? folderId, DocumentBulkUploadMetadata metadata, bool isAdmin, CancellationToken ct)

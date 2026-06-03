@@ -100,7 +100,7 @@ VALUES (@id, @tenantId, @folderId, @requestedFolderId, @userId, 'OPEN', @totalFi
             if (string.Equals(request.DuplicateStrategy, "skip", StringComparison.OrdinalIgnoreCase) && request.ExistingDocumentId.HasValue)
             {
                 await MarkItemSkippedAsync(tenantId, itemId, "Arquivo ignorado por regra de duplicidade.", sw.ElapsedMilliseconds, ct);
-                return Result<UploadBatchFileResultDto>.Ok(new UploadBatchFileResultDto { ItemId = itemId, Status = "SKIPPED", Message = "Arquivo ignorado por duplicidade.", CorrelationId = correlationId });
+                return Result<UploadBatchFileResultDto>.Ok(new UploadBatchFileResultDto { ItemId = itemId, Status = "SKIPPED", Message = "Arquivo ignorado por duplicidade.", RequestedFolderId = request.RequestedFolderId, ResolvedFolderId = request.FolderId, CorrelationId = correlationId });
             }
 
             var metadata = request.Metadata;
@@ -144,7 +144,7 @@ VALUES (@id, @tenantId, @folderId, @requestedFolderId, @userId, 'OPEN', @totalFi
             await UpdateItemStatusAsync(tenantId, itemId, "COMPLETED", sw.ElapsedMilliseconds, ct);
             await RefreshBatchCountersAsync(tenantId, request.BatchId, finished: false, ct);
             _logger.LogInformation("File completed Tenant={TenantId} User={UserId} Batch={BatchId} Item={ItemId} File={FileName} ElapsedMs={ElapsedMs} CorrelationId={CorrelationId}", tenantId, userId, request.BatchId, itemId, request.File.FileName, sw.ElapsedMilliseconds, correlationId);
-            return Result<UploadBatchFileResultDto>.Ok(new UploadBatchFileResultDto { ItemId = itemId, DocumentId = result.Value.DocumentId, VersionId = version?.VersionId, Status = "COMPLETED", Message = "Arquivo recebido com sucesso.", OcrQueued = ocrQueued, PreviewQueued = previewQueued, CorrelationId = correlationId });
+            return Result<UploadBatchFileResultDto>.Ok(new UploadBatchFileResultDto { ItemId = itemId, DocumentId = result.Value.DocumentId, VersionId = version?.VersionId, RequestedFolderId = request.RequestedFolderId, ResolvedFolderId = request.FolderId, Title = result.Value.Title, FileName = result.Value.FileName, Status = "COMPLETED", Message = "Arquivo recebido com sucesso.", OcrQueued = ocrQueued, PreviewQueued = previewQueued, CorrelationId = correlationId });
         }
         catch (OperationCanceledException)
         {
@@ -252,7 +252,7 @@ ORDER BY b.created_at DESC
 LIMIT 100;
 """, new { tenantId }, cancellationToken: ct))).AsList();
         var stale = (await conn.QueryAsync<UploadBatchItemStatusDto>(new CommandDefinition("""
-SELECT id, original_file_name AS OriginalFileName, document_id AS DocumentId, version_id AS VersionId, status, error_message AS ErrorMessage, error_step AS ErrorStep, can_retry AS CanRetry, size_bytes AS SizeBytes, correlation_id AS CorrelationId
+SELECT id, original_file_name AS OriginalFileName, stored_file_name AS StoredFileName, document_id AS DocumentId, version_id AS VersionId, status, error_message AS ErrorMessage, error_step AS ErrorStep, can_retry AS CanRetry, size_bytes AS SizeBytes, correlation_id AS CorrelationId
 FROM ged.upload_batch_item
 WHERE tenant_id=@tenantId AND status='RECEIVING' AND started_at < now() - interval '10 minutes' AND reg_status='A'
 ORDER BY started_at
@@ -352,19 +352,35 @@ WHERE b.tenant_id=@tenantId AND b.id=@batchId;
         await conn.ExecuteAsync(new CommandDefinition(sql, new { tenantId, batchId, finished }, cancellationToken: ct));
     }
 
-    private sealed class BatchStatusRow { public string Status { get; set; } = "OPEN"; public int TotalFiles { get; set; } public int SuccessFiles { get; set; } public int FailedFiles { get; set; } public int SkippedFiles { get; set; } }
+    private sealed class BatchStatusRow { public Guid? RequestedFolderId { get; set; } public Guid? ResolvedFolderId { get; set; } public string? FolderName { get; set; } public string Status { get; set; } = "OPEN"; public int TotalFiles { get; set; } public int SuccessFiles { get; set; } public int FailedFiles { get; set; } public int SkippedFiles { get; set; } }
 
     private async Task<UploadBatchStatusDto> LoadStatusAsync(Guid tenantId, Guid batchId, bool includeAllItems, CancellationToken ct)
     {
         await using var conn = await _db.OpenAsync(ct);
-        var batch = await conn.QuerySingleOrDefaultAsync<BatchStatusRow>(new CommandDefinition("SELECT status, total_files AS TotalFiles, success_files AS SuccessFiles, failed_files AS FailedFiles, skipped_files AS SkippedFiles FROM ged.upload_batch WHERE tenant_id=@tenantId AND id=@batchId AND reg_status='A';", new { tenantId, batchId }, cancellationToken: ct)) ?? new BatchStatusRow();
+        var batch = await conn.QuerySingleOrDefaultAsync<BatchStatusRow>(new CommandDefinition("""
+SELECT b.requested_folder_id AS RequestedFolderId, b.folder_id AS ResolvedFolderId, f.name AS FolderName,
+       b.status, b.total_files AS TotalFiles, b.success_files AS SuccessFiles, b.failed_files AS FailedFiles, b.skipped_files AS SkippedFiles
+FROM ged.upload_batch b
+LEFT JOIN ged.folder f ON f.tenant_id=b.tenant_id AND f.id=b.folder_id AND COALESCE(f.reg_status, 'A')='A'
+WHERE b.tenant_id=@tenantId AND b.id=@batchId AND b.reg_status='A';
+""", new { tenantId, batchId }, cancellationToken: ct)) ?? new BatchStatusRow();
         var items = (await conn.QueryAsync<UploadBatchItemStatusDto>(new CommandDefinition("""
-SELECT id, original_file_name AS OriginalFileName, document_id AS DocumentId, version_id AS VersionId, status, error_message AS ErrorMessage, error_step AS ErrorStep, can_retry AS CanRetry, size_bytes AS SizeBytes, correlation_id AS CorrelationId
+SELECT id, original_file_name AS OriginalFileName, stored_file_name AS StoredFileName, document_id AS DocumentId, version_id AS VersionId, status, error_message AS ErrorMessage, error_step AS ErrorStep, can_retry AS CanRetry, size_bytes AS SizeBytes, correlation_id AS CorrelationId
 FROM ged.upload_batch_item
 WHERE tenant_id=@tenantId AND batch_id=@batchId AND reg_status='A'
 ORDER BY created_at, original_file_name;
 """, new { tenantId, batchId }, cancellationToken: ct))).AsList();
         var pending = Math.Max(0, batch.TotalFiles - items.Count(x => x.Status is "COMPLETED" or "ERROR" or "SKIPPED"));
-        return new UploadBatchStatusDto { BatchId = batchId, Status = batch.Status ?? "OPEN", Total = batch.TotalFiles, Success = items.Count(x => x.Status == "COMPLETED"), Failed = items.Count(x => x.Status == "ERROR"), Skipped = items.Count(x => x.Status == "SKIPPED"), Pending = pending, Items = includeAllItems ? items : Array.Empty<UploadBatchItemStatusDto>(), Errors = items.Where(x => x.Status == "ERROR").ToList() };
+        var created = items
+            .Where(x => x.Status == "COMPLETED" && x.DocumentId.HasValue)
+            .Select(x => new UploadBatchCreatedDocumentDto
+            {
+                DocumentId = x.DocumentId,
+                VersionId = x.VersionId,
+                FileName = x.StoredFileName ?? x.OriginalFileName,
+                Title = Path.GetFileNameWithoutExtension(x.StoredFileName ?? x.OriginalFileName)
+            })
+            .ToList();
+        return new UploadBatchStatusDto { BatchId = batchId, RequestedFolderId = batch.RequestedFolderId, ResolvedFolderId = batch.ResolvedFolderId, FolderName = batch.FolderName, CreatedDocuments = created, Status = batch.Status ?? "OPEN", Total = batch.TotalFiles, Success = items.Count(x => x.Status == "COMPLETED"), Failed = items.Count(x => x.Status == "ERROR"), Skipped = items.Count(x => x.Status == "SKIPPED"), Pending = pending, Items = includeAllItems ? items : Array.Empty<UploadBatchItemStatusDto>(), Errors = items.Where(x => x.Status == "ERROR").ToList() };
     }
 }

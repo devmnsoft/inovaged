@@ -359,8 +359,8 @@
                 <div class="d-flex gap-3 align-items-start">
                     <div class="ged-folder-header-icon"><i class="bi bi-folder2-open"></i></div>
                     <div>
-                        <h1 class="h4 mb-1">@(!string.IsNullOrWhiteSpace(Model.CurrentFolderName) ? Model.CurrentFolderName : "Raiz")</h1>
-                        <div class="ged-breadcrumb"><i class="bi bi-diagram-3 me-1"></i>@breadcrumbText</div>
+                        <h1 class="h4 mb-1" data-current-folder-title>@(!string.IsNullOrWhiteSpace(Model.CurrentFolderName) ? Model.CurrentFolderName : "Raiz")</h1>
+                        <div class="ged-breadcrumb" data-current-folder-breadcrumb><i class="bi bi-diagram-3 me-1"></i>@breadcrumbText</div>
                     </div>
                 </div>
                 <div class="d-flex gap-2 flex-wrap">
@@ -740,6 +740,8 @@
     .ged-documents-view-toolbar { position:sticky; top:0; z-index:5; }
     .ged-document-row { display:grid; grid-template-columns:32px minmax(0,1fr) auto; gap:1rem; align-items:center; padding:.78rem 1rem; border-bottom:1px solid #e5e7eb; transition:background .15s ease, box-shadow .15s ease; }
     .ged-document-row:hover { background:#f8fafc; }
+    .document-row-new { animation:newDocumentPulse 2s ease; background:#ecfdf5 !important; }
+    @keyframes newDocumentPulse { 0% { box-shadow:0 0 0 0 rgba(16,185,129,.5); } 100% { box-shadow:0 0 0 12px rgba(16,185,129,0); } }
     .ged-document-check { display:flex; align-items:center; justify-content:center; }
     .ged-document-main { min-width:0; }
     .ged-document-title { display:block; font-weight:700; color:#0f172a; line-height:1.2; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-decoration:none; }

@@ -120,11 +120,44 @@
         const current = document.querySelector('#gedDocumentsContainer');
         if (current) current.outerHTML = html;
         window.GedDocumentsView?.init?.();
-        setSelectedFolderFromNode(link || document.querySelector(`[data-folder-id="${CSS.escape(folderId)}"]`));
-        const uploadId = getUploadFolderId(link) || folderId;
-        window.GedBulkUpload?.setUploadDestination(uploadId, getFolderName(link), folderId, (link?.closest('[data-can-receive-documents]')?.dataset?.canReceiveDocuments !== 'false'));
+        const activeLink = link || document.querySelector(`[data-folder-id="${CSS.escape(folderId)}"], [data-upload-folder-id="${CSS.escape(folderId)}"]`);
+        setSelectedFolderFromNode(activeLink);
+        const resolvedFolderName = options.folderName || getFolderName(activeLink) || document.querySelector('#gedDocumentsContainer')?.dataset?.folderName;
+        updateCurrentFolderHeader(folderId, resolvedFolderName);
+        const uploadId = getUploadFolderId(activeLink) || folderId;
+        window.GedBulkUpload?.setUploadDestination(uploadId, resolvedFolderName, folderId, (activeLink?.closest('[data-can-receive-documents]')?.dataset?.canReceiveDocuments !== 'false'));
         if (pushUrl) history.pushState({ folderId }, '', `/Ged?folderId=${encodeURIComponent(folderId)}`);
         restoreTreeState();
+        highlightUploadedDocuments(options.highlightDocumentIds || []);
+        updateDocumentCounters();
+    }
+
+    function updateCurrentFolderHeader(folderId, folderName) {
+        const currentFolder = document.getElementById('currentFolderId');
+        if (currentFolder) currentFolder.value = folderId;
+        const title = document.querySelector('[data-current-folder-title]');
+        if (title && folderName) title.textContent = folderName;
+        const breadcrumb = document.querySelector('[data-current-folder-breadcrumb]');
+        if (breadcrumb && folderName) breadcrumb.textContent = folderName;
+    }
+
+    function highlightUploadedDocuments(ids) {
+        (ids || []).forEach(id => {
+            if (!id) return;
+            const escaped = window.CSS?.escape ? CSS.escape(id) : id;
+            const row = document.querySelector(`[data-document-id="${escaped}"]`);
+            if (row) {
+                row.classList.add('document-row-new');
+                setTimeout(() => row.classList.remove('document-row-new'), 5000);
+            }
+        });
+    }
+
+    function updateDocumentCounters() {
+        const count = Number(document.querySelector('#gedDocumentsContainer')?.dataset?.documentCount || document.querySelectorAll('[data-document-id]').length || 0);
+        const firstKpi = document.querySelector('.ged-kpi-card:first-child span');
+        if (firstKpi && Number.isFinite(count)) firstKpi.textContent = String(count);
+        window.updateMoveSelectedButton?.();
     }
 
     function selectedDocumentIds() {
@@ -203,5 +236,5 @@
     });
     document.addEventListener('DOMContentLoaded', restoreTreeState);
 
-    window.GedFolderNavigation = { loadFolderDocuments, setSelectedFolderFromNode, refreshCurrentFolder: () => loadFolderDocuments(document.querySelector('#currentFolderId')?.value || new URL(location.href).searchParams.get('folderId'), document.querySelector('.js-folder-node.active')) };
+    window.GedFolderNavigation = { loadFolderDocuments, setSelectedFolderFromNode, highlightUploadedDocuments, refreshCurrentFolder: () => loadFolderDocuments(document.querySelector('#currentFolderId')?.value || new URL(location.href).searchParams.get('folderId'), document.querySelector('.js-folder-node.active')) };
 })();
