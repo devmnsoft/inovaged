@@ -8,6 +8,7 @@
         public string? Path { get; set; }
         public int Level { get; set; }
         public Guid UploadFolderId { get; set; }
+        public Guid ListingFolderId { get; set; }
         public bool IsVirtual { get; set; }
         public bool CanReceiveDocuments { get; set; }
     }

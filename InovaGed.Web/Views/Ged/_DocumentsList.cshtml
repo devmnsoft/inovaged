@@ -1,6 +1,6 @@
 @model InovaGed.Web.Models.Ged.GedExplorerVM
 
-<div class="ged-documents-list" id="gedDocumentsContainer" data-folder-id="@Model.CurrentFolderId" data-folder-name="@Model.CurrentFolderName" data-document-count="@Model.Documents.Count">
+<div class="ged-documents-list" id="gedDocumentsContainer" data-folder-id="@Model.CurrentFolderId" data-listing-folder-id="@Model.CurrentListingFolderId" data-upload-folder-id="@Model.CurrentUploadFolderId" data-folder-name="@Model.CurrentFolderName" data-document-count="@Model.Documents.Count">
     @if (!Model.Documents.Any())
     {
         <div class="ged-empty-state text-center p-5 text-muted">

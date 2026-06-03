@@ -31,6 +31,37 @@ WHERE tenant_id=@tenantId AND id=@folderId AND is_active=true AND coalesce(reg_s
 """, new { tenantId, folderId }, cancellationToken: ct));
 
         var isVirtual = FolderIdHelper.IsVirtualFolder(folderId);
+        if (isVirtual)
+        {
+            await EnsureVirtualMapTableAsync(conn, ct);
+            var preferredMapped = await conn.QuerySingleOrDefaultAsync<FolderRow>(new CommandDefinition("""
+SELECT f.id, f.name, f.parent_id AS ParentId
+FROM ged.folder_virtual_map m
+JOIN ged.folder f ON f.tenant_id=m.tenant_id AND f.id=m.real_folder_id
+WHERE m.tenant_id=@tenantId
+  AND m.virtual_folder_id=@folderId
+  AND m.reg_status='A'
+  AND f.is_active=true
+  AND coalesce(f.reg_status,'A')='A'
+LIMIT 1;
+""", new { tenantId, folderId }, cancellationToken: ct));
+            if (preferredMapped is not null && preferredMapped.Id != folderId)
+            {
+                return new UploadFolderResolutionResult
+                {
+                    Success = true,
+                    RequestedFolderId = folderId,
+                    ResolvedFolderId = preferredMapped.Id,
+                    WasVirtual = true,
+                    CreatedRealFolder = false,
+                    CanReceiveDocuments = true,
+                    FolderName = preferredMapped.Name,
+                    FolderPath = preferredMapped.Name,
+                    Message = "Destino virtual resolvido automaticamente."
+                };
+            }
+        }
+
         if (realFolder is not null)
         {
             _logger.LogInformation("Pasta de upload existe em ged.folder e será usada como destino persistível. Tenant={TenantId} User={UserId} FolderId={FolderId} WasVirtual={WasVirtual} FolderName={FolderName}", tenantId, userId, folderId, isVirtual, realFolder.Name);
