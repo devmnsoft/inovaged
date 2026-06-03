@@ -13,9 +13,8 @@
     form: $('hospitalSearchForm'), input: $('searchInput'), clear: $('btnClearSearch'), type: $('typeFilter'), btnSearch: $('btnSearch'), suggestions: $('suggestions'),
     results: $('resultsList'), meta: $('resultsMeta'), summary: $('searchSummary'), activeFilters: $('activeFilters'), loadMore: $('btnLoadMore'), toggleView: $('btnToggleView'), exportCsv: $('btnExportCsv'), clearAll: $('btnClearAll'),
     advancedType: $('advancedType'), advancedOcrStatus: $('advancedOcrStatus'), dateFrom: $('dateFrom'), dateTo: $('dateTo'), folder: $('folderFilter'), ocrRequired: $('ocrRequired'), recentOnly: $('recentOnly'), previewOnly: $('previewOnly'), sort: $('sortFilter'), advancedSummary: $('advancedFilterSummary'), applyAdvanced: $('btnApplyAdvanced'), resetAdvanced: $('btnResetAdvanced'),
-    previewPanel: $('hospitalPreviewPanel'), previewTypeBadge: $('previewTypeBadge'), previewTitle: $('previewTitle'), previewSubtitle: $('previewSubtitle'), previewFrame: $('hospitalPreviewFrame'), previewLoading: $('previewLoading'), previewEmpty: $('previewEmptyState'), expandPreview: $('btnExpandPreview'), openNewTab: $('btnOpenNewTab'), copyReference: $('btnCopyReference'), closePreview: $('btnClosePreviewPanel'),
-    ocrStatus: $('ocrPanelStatus'), ocrText: $('ocrPanelText'), metaContent: $('metaPanelContent'), autocompletePortal: $('hospitalAutocompletePortal'),
-    expandedModal: $('hospitalPreviewExpandedModal'), expandedTitle: $('expandedPreviewTitle'), expandedSubtitle: $('expandedPreviewSubtitle'), expandedType: $('expandedPreviewType'), expandedFrame: $('expandedPreviewFrame'), expandedOpenNewTab: $('btnExpandedOpenNewTab'), expandedCopyReference: $('btnExpandedCopyReference')
+    previewPanel: $('hospitalPreviewPanel'), previewTypeBadge: $('previewTypeBadge'), previewTitle: $('previewTitle'), previewSubtitle: $('previewSubtitle'), previewFrame: $('hospitalPreviewFrame'), previewLoading: $('previewLoading'), previewEmpty: $('previewEmptyState'), expandPreview: $('btnExpandPreview'), openNewTab: $('btnOpenNewTab'), copyReference: $('btnCopyReference'), closePreview: $('btnClosePreviewPanel'), fullscreenPreview: $('btnFullscreenPreview'),
+    ocrStatus: $('ocrPanelStatus'), ocrText: $('ocrPanelText'), metaContent: $('metaPanelContent'), autocompletePortal: $('hospitalAutocompletePortal')
   };
 
   const state = {
@@ -38,6 +37,7 @@
   let currentPreviewReference = '';
   let currentPreviewUrl = null;
   let previewLoadToken = 0;
+  let isPreviewExpanded = false;
   let currentPreviewDocument = {
     documentId: null,
     versionId: null,
@@ -104,11 +104,8 @@
     els.exportCsv.addEventListener('click', exportCsv);
     els.clearAll.addEventListener('click', clearAll);
     els.copyReference.addEventListener('click', () => copyReference().catch(err => console.warn('[HospitalDocuments] falha ao copiar referência', err)));
-    els.expandedOpenNewTab?.addEventListener('click', openExpandedPreviewInNewTab);
-    els.expandedCopyReference?.addEventListener('click', () => copyReference().catch(err => console.warn('[HospitalDocuments] falha ao copiar referência expandida', err)));
-    els.expandedModal?.addEventListener('shown.bs.modal', () => document.querySelector('.modal-backdrop')?.classList.add('hospital-preview-expanded-backdrop'));
-    els.expandedModal?.addEventListener('hidden.bs.modal', () => { if (els.expandedFrame) els.expandedFrame.src = 'about:blank'; cleanupModalState({ preserveExpanded: false }); });
-    els.closePreview.addEventListener('click', resetPreviewPanel);
+    els.fullscreenPreview?.addEventListener('click', (e) => { e.preventDefault(); openPreviewFullscreen(); });
+    els.closePreview.addEventListener('click', closePreviewPanel);
     window.addEventListener('resize', positionAutocompletePortal);
     window.addEventListener('scroll', positionAutocompletePortal, true);
     root.querySelectorAll('[data-panel-tab]').forEach(tab => tab.addEventListener('click', () => activatePanelTab(tab.dataset.panelTab)));
@@ -127,7 +124,7 @@
         return;
       }
 
-      openExpandedPreview(currentPreviewDocument);
+      togglePreviewExpanded();
       return;
     }
 
@@ -182,20 +179,16 @@
     };
   }
 
-  function cleanupModalState(options = {}) {
-    const preserveExpanded = options.preserveExpanded === true;
-    console.log('[HospitalDocuments] cleanup modal state', { preserveExpanded });
+  function cleanupModalState() {
+    console.log('[HospitalDocuments] cleanup modal state');
 
-    if (!preserveExpanded) {
-      document.querySelectorAll('.modal-backdrop').forEach(x => x.remove());
-      document.body.classList.remove('modal-open');
-      document.body.style.removeProperty('overflow');
-      document.body.style.removeProperty('padding-right');
-    }
+    document.body.classList.remove('modal-open');
+    document.body.style.removeProperty('overflow');
+    document.body.style.removeProperty('padding-right');
+
+    document.querySelectorAll('.modal-backdrop').forEach(x => x.remove());
 
     document.querySelectorAll('.modal.show').forEach(modalEl => {
-      if (preserveExpanded && modalEl.id === 'hospitalPreviewExpandedModal') return;
-
       const instance = typeof bootstrap !== 'undefined' && bootstrap.Modal
         ? bootstrap.Modal.getInstance(modalEl)
         : null;
@@ -209,6 +202,49 @@
       modalEl.removeAttribute('aria-modal');
       modalEl.removeAttribute('role');
     });
+  }
+
+  function setPreviewExpanded(expanded) {
+    isPreviewExpanded = expanded === true;
+    els.previewPanel?.classList.toggle('is-expanded', isPreviewExpanded);
+    root.classList.toggle('preview-expanded-mode', isPreviewExpanded);
+
+    if (els.expandPreview) {
+      els.expandPreview.innerHTML = isPreviewExpanded
+        ? '<i class="bi bi-arrows-angle-contract" aria-hidden="true"></i> Restaurar'
+        : '<i class="bi bi-arrows-fullscreen" aria-hidden="true"></i> Expandir';
+      els.expandPreview.setAttribute('aria-pressed', String(isPreviewExpanded));
+    }
+
+    cleanupModalState();
+  }
+
+  function togglePreviewExpanded() {
+    if (!els.previewPanel) return;
+    setPreviewExpanded(!isPreviewExpanded);
+  }
+
+  async function openPreviewFullscreen() {
+    const panel = els.previewPanel;
+    if (!panel) return;
+
+    if (!currentPreviewDocument?.versionId) {
+      window.showAppToast?.('Selecione um documento para abrir em tela cheia.', 'warning', 'Preview');
+      return;
+    }
+
+    cleanupModalState();
+
+    try {
+      if (panel.requestFullscreen) {
+        await panel.requestFullscreen();
+      } else {
+        window.showAppToast?.('Seu navegador não oferece tela cheia para este preview.', 'warning', 'Preview');
+      }
+    } catch (err) {
+      console.warn('[HospitalDocuments] falha ao abrir tela cheia', err);
+      window.showAppToast?.('Não foi possível abrir em tela cheia.', 'warning', 'Preview');
+    }
   }
 
   function handleInputKeys(e) {
@@ -378,7 +414,7 @@
         return false;
       }
 
-      cleanupModalState({ preserveExpanded: false });
+      cleanupModalState();
       state.selectedItem = item;
       state.ocrLoadedFor = null;
 
@@ -546,7 +582,7 @@
     ].filter(([,v]) => v).map(([k,v]) => `<div class="hospital-meta-row"><span>${escapeHtml(k)}</span><strong>${escapeHtml(v)}</strong></div>`).join('');
   }
 
-  function resetPreviewPanel() {
+  function closePreviewPanel() {
     cleanupModalState();
     state.selectedItem = null;
     state.ocrLoadedFor = null;
@@ -555,7 +591,8 @@
     previewLoadToken += 1;
     currentPreviewDocument = { documentId: null, versionId: null, title: '', subtitle: '', type: '', previewUrl: '' };
     els.results?.querySelectorAll('.hospital-result-card.active').forEach(x => x.classList.remove('active'));
-    els.previewPanel.classList.remove('has-document', 'is-open');
+    els.previewPanel.classList.remove('has-document', 'is-open', 'is-expanded');
+    setPreviewExpanded(false);
     els.previewTitle.textContent = 'Selecione um documento';
     els.previewSubtitle.textContent = 'Clique em um resultado da busca para abrir o preview ao lado.';
     els.previewTypeBadge.textContent = 'Documento';
@@ -575,6 +612,8 @@
     els.metaContent.textContent = 'Nenhum documento selecionado.';
     activatePanelTab('preview');
   }
+
+  function resetPreviewPanel() { closePreviewPanel(); }
 
   async function copyReference() {
     if (!currentPreviewReference) return;
@@ -626,38 +665,6 @@
     els.autocompletePortal.style.top = `${rect.bottom + 8}px`;
     els.autocompletePortal.style.width = `${rect.width}px`;
     els.autocompletePortal.style.zIndex = '3000';
-  }
-
-  function openExpandedPreview(doc) {
-    console.log('[HospitalDocuments] open expanded preview');
-    if (!els.expandedModal || !els.expandedFrame) return;
-    if (typeof bootstrap === 'undefined' || !bootstrap.Modal) {
-      window.open(doc.previewUrl || `/HospitalDocuments/Preview?versionId=${encodeURIComponent(doc.versionId)}`, '_blank', 'noopener');
-      return;
-    }
-
-    els.expandedTitle.textContent = doc.title || 'Documento';
-    els.expandedSubtitle.textContent = doc.subtitle || '';
-    els.expandedType.textContent = doc.type || 'Documento';
-    els.expandedFrame.src = doc.previewUrl || `/HospitalDocuments/Preview?versionId=${encodeURIComponent(doc.versionId)}`;
-
-    const modal = bootstrap.Modal.getOrCreateInstance(els.expandedModal, {
-      backdrop: true,
-      keyboard: true,
-      focus: true
-    });
-
-    modal.show();
-  }
-
-  function openExpandedPreviewInNewTab() {
-    const url = currentPreviewDocument?.previewUrl || (currentPreviewDocument?.versionId ? `/HospitalDocuments/Preview?versionId=${encodeURIComponent(currentPreviewDocument.versionId)}` : '');
-    if (!url) {
-      window.showAppToast?.('Selecione um documento para abrir em nova aba.', 'warning', 'Preview');
-      return;
-    }
-
-    window.open(url, '_blank', 'noopener');
   }
 
   function iconFor(item){ const t=String(item.friendlyType||item.type||item.contentType||'').toLowerCase(); if(t.includes('pdf'))return 'bi-file-earmark-pdf'; if(t.includes('imagem')||t.includes('image'))return 'bi-file-earmark-image'; if(t.includes('word'))return 'bi-file-earmark-word'; return 'bi-file-earmark-medical'; }

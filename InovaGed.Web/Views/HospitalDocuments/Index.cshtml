@@ -90,6 +90,7 @@
 
                 <div class="hospital-preview-toolbar">
                     <button id="btnExpandPreview" type="button" class="btn btn-sm btn-outline-primary js-expand-preview"><i class="bi bi-arrows-fullscreen" aria-hidden="true"></i> Expandir</button>
+                    <button id="btnFullscreenPreview" type="button" class="btn btn-sm btn-outline-secondary"><i class="bi bi-fullscreen" aria-hidden="true"></i> Tela cheia</button>
                     <a id="btnOpenNewTab" class="btn btn-sm btn-primary disabled" target="_blank" rel="noopener" aria-disabled="true"><i class="bi bi-box-arrow-up-right" aria-hidden="true"></i> Abrir em nova aba</a>
                     <button id="btnCopyReference" type="button" class="btn btn-sm btn-outline-secondary"><i class="bi bi-clipboard" aria-hidden="true"></i> Copiar referência</button>
                 </div>
@@ -147,40 +148,6 @@
 
     <div id="hospitalAutocompletePortal" aria-live="polite"></div>
 
-    <div class="modal fade hospital-preview-expanded-modal"
-         id="hospitalPreviewExpandedModal"
-         tabindex="-1"
-         aria-hidden="true">
-        <div class="modal-dialog modal-fullscreen-xl-down modal-xl modal-dialog-centered">
-            <div class="modal-content hospital-preview-expanded-content">
-                <div class="modal-header">
-                    <div class="hospital-expanded-preview-heading">
-                        <span id="expandedPreviewType" class="badge bg-primary-subtle text-primary">Documento</span>
-                        <h5 id="expandedPreviewTitle" class="modal-title">Preview ampliado</h5>
-                        <small id="expandedPreviewSubtitle" class="text-muted"></small>
-                    </div>
-
-                    <div class="d-flex gap-2 align-items-center hospital-expanded-preview-actions">
-                        <button type="button" id="btnExpandedOpenNewTab" class="btn btn-outline-primary btn-sm">
-                            <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i>
-                            Nova aba
-                        </button>
-                        <button type="button" id="btnExpandedCopyReference" class="btn btn-outline-secondary btn-sm">
-                            <i class="bi bi-clipboard" aria-hidden="true"></i>
-                            Copiar referência
-                        </button>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
-                    </div>
-                </div>
-
-                <div class="modal-body">
-                    <iframe id="expandedPreviewFrame"
-                            class="hospital-expanded-preview-frame"
-                            title="Preview ampliado do documento"></iframe>
-                </div>
-            </div>
-        </div>
-    </div>
 
 </div>
 
