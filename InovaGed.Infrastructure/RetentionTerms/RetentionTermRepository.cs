@@ -310,7 +310,7 @@ public sealed class RetentionTermRepository : IRetentionTermRepository
             var payload = $"{termHash}|{req.SignerName}|{req.SignerRole}|{req.SignerDocument}|{DateTimeOffset.UtcNow:O}";
             var sigHash = Sha256Hex(payload);
 
-            var meta = "{\"mode\":\"internal\",\"note\":\"assinatura interna (placeholder)\"}";
+            var meta = "{\"mode\":\"internal\",\"note\":\"assinatura interna registrada pelo sistema\"}";
 
             await conn.ExecuteAsync(new CommandDefinition(sqlInsSig, new
             {

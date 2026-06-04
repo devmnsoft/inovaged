@@ -67,7 +67,7 @@ public sealed class LibreOfficePreviewGenerator : IPreviewGenerator
         {
             throw new InvalidOperationException(
                 "LibreOffice não encontrado. Configure Preview:SofficePath ou Preview:LibreOfficePath no appsettings.json. " +
-                "Exemplo: C:\\Program Files\\LibreOffice\\program\\soffice.exe");
+                "Referência: C:\\Program Files\\LibreOffice\\program\\soffice.exe");
         }
 
         var tempRoot = Path.Combine(

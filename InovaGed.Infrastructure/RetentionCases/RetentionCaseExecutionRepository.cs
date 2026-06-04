@@ -20,7 +20,7 @@ public sealed class RetentionCaseExecutionRepository : IRetentionCaseExecutionRe
     {
         // ✅ Regras de bloqueio:
         // - HOLD no documento bloqueia
-        // - se classificação exigir assinatura e não tiver como checar aqui, bloqueia (exemplo conservador)
+        // - se classificação exigir assinatura e não tiver como checar aqui, bloqueia por critério conservador
         // - se classificação for sigilosa, bloqueia (pode virar "permitir com permissão" depois)
 
         const string sqlFetch = @"

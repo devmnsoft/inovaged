@@ -17,7 +17,7 @@ public sealed class HttpTenantProvider : ITenantProvider
         get
         {
             // ajuste conforme sua regra (header, claim, host, etc.)
-            // Exemplo: header X-Tenant
+            // Origem operacional: header X-Tenant
             var ctx = _http.HttpContext;
             if (ctx is null) return null;
 

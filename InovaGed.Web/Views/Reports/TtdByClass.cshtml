@@ -21,7 +21,7 @@
 
             <div class="col-md-6">
                 <label class="form-label">Código da Classe</label>
-                <input class="form-control" name="classCode" placeholder="Ex.: TTD-001" />
+                <input class="form-control" name="classCode" placeholder="Formato: TTD-001" />
             </div>
 
             <div class="col-md-6 d-flex align-items-end">
@@ -34,7 +34,7 @@
         @if (Model != null && Model.Count > 0)
         {
             <hr />
-            <div class="text-muted small mb-2">Exemplos cadastrados:</div>
+            <div class="text-muted small mb-2">Códigos cadastrados:</div>
             <div class="d-flex flex-wrap gap-2">
                 @foreach (var c in Model)
                 {
@@ -50,7 +50,7 @@
         {
             <hr />
             <div class="text-muted small">
-                Nenhum exemplo encontrado em <code>ged.classification_plan</code> para este tenant.
+                Nenhum código encontrado em <code>ged.classification_plan</code> para este tenant.
             </div>
         }
     </div>

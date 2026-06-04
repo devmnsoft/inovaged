@@ -4,8 +4,8 @@ namespace InovaGed.Infrastructure.Ged.Loans
     public sealed record AuditWriteEntry(
       Guid TenantId,
       Guid? UserId,
-      string Action,              // ex: CREATE/UPDATE/DELETE/ACCESS_DENIED/HTTP
-      string EntityName,          // ex: LOAN_REQUEST / BATCH / BOX / DOCUMENT
+      string Action,              // formato: CREATE/UPDATE/DELETE/ACCESS_DENIED/HTTP
+      string EntityName,          // formato: LOAN_REQUEST / BATCH / BOX / DOCUMENT
       Guid? EntityId,
       string? Summary,
       string? Ip,

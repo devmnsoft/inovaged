@@ -256,7 +256,7 @@ public class AuthoritySourceVm
 {
     public Guid Id { get; set; }
     public string? Name { get; set; }
-    public string? Kind { get; set; } // ex: "CA_ROOT", "CA_INTERMEDIATE", "OCSP", "CRL", "POLICY"
+    public string? Kind { get; set; } // formato: "CA_ROOT", "CA_INTERMEDIATE", "OCSP", "CRL", "POLICY"
     public string? Url { get; set; }
     public string? ContentPem { get; set; } // opcional (cert/policy em PEM)
     public bool IsActive { get; set; } = true;

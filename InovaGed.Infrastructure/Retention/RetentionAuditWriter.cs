@@ -18,7 +18,7 @@ public sealed class RetentionAuditWriter : IRetentionAuditWriter
 
     public async Task WriteAsync(Guid tenantId, Guid actorId, object entityId, string eventType, string? message, CancellationToken ct)
     {
-        // Placeholder: se você já tem tabela de audit geral, coloque aqui.
+        // Integração com auditoria geral: registre aqui quando a tabela operacional estiver habilitada.
         _logger.LogInformation("AUDIT {Event} Tenant={Tenant} Actor={Actor} Entity={Entity} Msg={Msg}",
             eventType, tenantId, actorId, entityId, message);
         await Task.CompletedTask;

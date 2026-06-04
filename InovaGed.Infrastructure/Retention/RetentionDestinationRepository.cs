@@ -193,8 +193,8 @@ where tenant_id=@tenantId and id=@batchId and status='OPEN';";
     public async Task ExecuteBatchAsync(Guid tenantId, Guid userId, Guid batchId, CancellationToken ct)
     {
         // Regra: NÃO executa itens com HOLD ativo.
-        // Execução aqui = marcar no documento o destino (ex.: status=ELIMINADO)
-        // ✅ Ajuste a coluna real do seu documento (ex.: doc_status, reg_status, is_deleted_logical etc.)
+        // Execução aqui = marcar no documento o destino (formato: status=ELIMINADO)
+        // ✅ Ajuste a coluna real do seu documento (formato: doc_status, reg_status, is_deleted_logical etc.)
 
         const string sqlBatch = @"
 select status, destination

@@ -4,8 +4,8 @@
     Layout = "_LayoutAuth";
 
     /*
-    Certificado digital ficar· oculto por enquanto.
-            Mantive as vari·veis para uso futuro, caso o bloco seja reativado.
+    Certificado digital ficar√° oculto por enquanto.
+            Mantive as vari√°veis para uso futuro, caso o bloco seja reativado.
             */
     var openCert = TempData["open_cert"] is bool b && b;
     var certErr = TempData["cert_err"] as string;
@@ -845,18 +845,18 @@
                 <div class="login-logo">IG</div>
                 <div>
                     <h1>InovaGED</h1>
-                    <p>Gest„o EletrÙnica de Documentos</p>
+                    <p>Gest√£o Eletr√¥nica de Documentos</p>
                 </div>
             </div>
 
             <div class="login-hero">
                 <div class="login-hero-pill">
                     <i class="bi bi-folder-check"></i>
-                    Plataforma GED para gest„o segura de documentos
+                    Plataforma GED para gest√£o segura de documentos
                 </div>
 
                 <h2>
-                    Gest„o documental
+                    Gest√£o documental
                     <span class="login-hero-highlight">segura, inteligente e centralizada.</span>
                 </h2>
 
@@ -883,7 +883,7 @@
 
                         <div class="ged-mini-card ged-card-index">
                             <i class="bi bi-tags"></i>
-                            <span>IndexaÁ„o</span>
+                            <span>Indexa√ß√£o</span>
                         </div>
 
                         <div class="ged-mini-card ged-card-archive">
@@ -893,7 +893,7 @@
 
                         <div class="ged-mini-card ged-card-audit">
                             <i class="bi bi-clock-history"></i>
-                            <span>HistÛrico</span>
+                            <span>Hist√≥rico</span>
                         </div>
 
                         <div class="ged-mini-card ged-card-flow">
@@ -905,8 +905,8 @@
             </div>
 
             <div class="login-info-footer">
-                © @DateTime.Now.Year InovaGED ï SoluÁ„o de Gest„o EletrÙnica de Documentos<br />
-                LocDesk LocaÁ„o de Equip. e Sol. em Info Ltda
+                ¬© @DateTime.Now.Year InovaGED ¬ï Solu√ß√£o de Gest√£o Eletr√¥nica de Documentos<br />
+                LocDesk Loca√ß√£o de Equip. e Sol. em Info Ltda
             </div>
         </aside>
 
@@ -932,7 +932,7 @@
                             Tenant oculto por enquanto.
                             IMPORTANTE:
                             Troque "default" pelo valor real da coluna ged.tenant.code.
-                            Exemplos possÌveis: "inovaged", "ophir", "locdesk", "demo".
+                            Valores operacionais possiveis: "inovaged", "ophir" ou o codigo real cadastrado em ged.tenant.code.
                         *@
                         <input type="hidden" asp-for="TenantSlug" value="default" />
 
@@ -987,7 +987,7 @@
 
                             <div class="field-helper">
                                 <i class="bi bi-key"></i>
-                                Sua senha È protegida e validada de forma segura.
+                                Sua senha √© protegida e validada de forma segura.
                             </div>
                         </div>
 
@@ -1027,7 +1027,7 @@
 
                     @*
                         Acesso alternativo por certificado digital oculto por enquanto.
-                        Para reativar futuramente, remova o coment·rio deste bloco.
+                        Para reativar futuramente, remova o coment√°rio deste bloco.
 
                     <div class="section-divider">Acesso alternativo</div>
 
@@ -1037,8 +1037,8 @@
                     *@
 
                     <div class="footer-mini">
-                        InovaGED ï Gest„o EletrÙnica de Documentos<br />
-                        LocDesk LocaÁ„o de Equip. e Sol. em Info Ltda
+                        InovaGED ¬ï Gest√£o Eletr√¥nica de Documentos<br />
+                        LocDesk Loca√ß√£o de Equip. e Sol. em Info Ltda
                     </div>
                 </div>
             </div>

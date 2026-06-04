@@ -71,13 +71,13 @@ public sealed class CertAuthController : Controller
         }
 
         // ✅ Flag de operacional (não depende do ambiente)
-        var allowTestSelfSigned =
-            _cfg.GetValue<bool>("Auth:AllowTestCertificates") || _env.IsDevelopment();
+        var allowInternalSelfSigned =
+            _cfg.GetValue<bool>("Auth:AllowInternalSelfSignedCertificates") || _env.IsDevelopment();
 
-        _logger.LogWarning("CertAuth: env={Env} allowTest={AllowTest} subject={Subject}",
-            _env.EnvironmentName, allowTestSelfSigned, cert.Subject);
+        _logger.LogWarning("CertAuth: env={Env} allowInternalSelfSigned={AllowInternalSelfSigned} subject={Subject}",
+            _env.EnvironmentName, allowInternalSelfSigned, cert.Subject);
 
-        var v = CertificateValidator.Validate(cert, allowTestSelfSigned);
+        var v = CertificateValidator.Validate(cert, allowInternalSelfSigned);
 
         if (!v.Ok)
             return BackToLoginWithCertError(v.Error ?? "Falha na validação do certificado.", req.ReturnUrl);

@@ -50,7 +50,7 @@ public sealed class ReportsController : Controller
     {
         using var conn = await _db.OpenAsync(ct);
 
-        // exemplos para botões rápidos (se sua view usar @model List<string>)
+        // opções para botões rápidos (se sua view usar @model List<string>)
         var examples = (await conn.QueryAsync<string>(
             """
             SELECT DISTINCT code
@@ -75,7 +75,7 @@ public sealed class ReportsController : Controller
 
         if (string.IsNullOrWhiteSpace(classCode))
         {
-            TempData["err"] = "Informe um código (ex.: PCD-001).";
+            TempData["err"] = "Informe um código (formato: PCD-001).";
             return RedirectToAction(nameof(PcdByClass));
         }
 
@@ -124,7 +124,7 @@ public sealed class ReportsController : Controller
     {
         using var conn = await _db.OpenAsync(ct);
 
-        // exemplos para botões rápidos (conforme @model List<string>)
+        // opções para botões rápidos (conforme @model List<string>)
         var examples = (await conn.QueryAsync<string>(
             """
             SELECT DISTINCT code
@@ -147,7 +147,7 @@ public sealed class ReportsController : Controller
 
         if (string.IsNullOrWhiteSpace(classCode))
         {
-            TempData["err"] = "Informe um código (ex.: TTD-001).";
+            TempData["err"] = "Informe um código (formato: TTD-001).";
             return RedirectToAction(nameof(TtdByClass));
         }
 

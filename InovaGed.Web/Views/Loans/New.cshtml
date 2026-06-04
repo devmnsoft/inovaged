@@ -32,7 +32,7 @@
             <!-- Cabeçalho -->
             <div class="col-md-6">
                 <label class="form-label">Solicitante (nome)</label>
-                <input class="form-control" name="RequesterName" value="@Model.RequesterName" placeholder="Ex.: Enfermagem / Dr(a). Fulano" />
+                <input class="form-control" name="RequesterName" value="@Model.RequesterName" placeholder="Formato: Enfermagem / Dr(a). Fulano" />
             </div>
             <div class="col-md-3">
                 <label class="form-label">Vencimento</label>
@@ -54,7 +54,7 @@
 
                 <div class="input-group">
                     <span class="input-group-text"><i class="bi bi-search"></i></span>
-                    <input class="form-control" id="docSearch" placeholder="Buscar por código ou título (ex.: PRONT, 2024, João, RX...)" />
+                    <input class="form-control" id="docSearch" placeholder="Buscar por código ou título (formato: PRONT, 2024, João, RX...)" />
                     <button class="btn btn-outline-secondary" type="button" onclick="searchDocs()">
                         Buscar
                     </button>
@@ -104,7 +104,7 @@
             <div class="col-12">
                 <label class="form-label">Observações</label>
                 <div class="form-text">Inclua justificativa e status será auditado automaticamente.</div>
-                <textarea class="form-control" name="Notes" rows="3" placeholder="Ex.: Urgência, retirar na recepção, acesso somente visualização...">@Model.Notes</textarea>
+                <textarea class="form-control" name="Notes" rows="3" placeholder="Formato: Urgência, retirar na recepção, acesso somente visualização...">@Model.Notes</textarea>
             </div>
         </div>
     </div>

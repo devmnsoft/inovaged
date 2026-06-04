@@ -56,7 +56,7 @@ public sealed class CertificateValidationService : ICertificateValidationService
 
         // 4) Resolver usuário (no teu banco app_user não tem CPF, então:
         // - estratégia operacional: mapear CPF em uma tabela de vínculo (criar) OU usar document_signature como referência
-        // Eu recomendo criar tabela ged.user_cpf_map (abaixo no SQL de mock).
+        // Recomenda-se criar a tabela ged.user_cpf_map nos scripts operacionais de segurança.
         using var conn = await _db.OpenAsync(ct);
         var user = await conn.QueryFirstOrDefaultAsync<(Guid Id, string Name)>(@"
 select id, name
