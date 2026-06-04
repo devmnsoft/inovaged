@@ -6,7 +6,7 @@ public sealed class RetentionQueueFilter
     public DateTimeOffset? DueUntil { get; set; }    // opcional
     public string? Q { get; set; }                   // busca textual
 
-    // ✅ NOVO: permite buckets por faixa (ex.: 31..60, 61..90)
+    // ✅ NOVO: permite buckets por faixa (formato: 31..60, 61..90)
     public int? DaysFrom { get; set; }               // inclusive
     public int? DaysTo { get; set; }                 // inclusive
 }
@@ -17,11 +17,11 @@ public sealed class RetentionQueueRow
     public Guid DocumentId { get; set; }
 
     // Dados do documento (para exibir na central)
-    public string? Code { get; set; }                // ex: DOC-2026-0001 (ou número, protocolo...)
+    public string? Code { get; set; }                // formato: DOC-2026-0001 (ou número, protocolo...)
     public string? Title { get; set; }               // título do documento
 
     // Classificação (PCD / Plano)
-    public string? ClassificationCode { get; set; }  // código da classe (ex: 01.02.003)
+    public string? ClassificationCode { get; set; }  // código da classe (formato: 01.02.003)
     public string? ClassificationName { get; set; }  // nome da classe
 
     // Temporalidade

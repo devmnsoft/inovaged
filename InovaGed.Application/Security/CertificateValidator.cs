@@ -4,7 +4,7 @@ namespace InovaGed.Application.Security;
 
 public static class CertificateValidator
 {
-    public static CertificateValidationResult Validate(X509Certificate2 cert, bool allowTestSelfSigned)
+    public static CertificateValidationResult Validate(X509Certificate2 cert, bool allowInternalSelfSigned)
     {
         var now = DateTimeOffset.UtcNow;
 
@@ -16,8 +16,8 @@ public static class CertificateValidator
 
         using var chain = new X509Chain();
 
-        // ✅ Em operacional/teste, NÃO checar revogação online (autoassinado não tem OCSP/CRL)
-        if (allowTestSelfSigned)
+        // ✅ Em operacional interno, NÃO checar revogação online (autoassinado não tem OCSP/CRL)
+        if (allowInternalSelfSigned)
         {
             chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
         }
@@ -37,9 +37,9 @@ public static class CertificateValidator
             var reasons = string.Join(" | ", chain.ChainStatus.Select(s =>
                 $"{s.Status}({(s.StatusInformation ?? "").Trim()})"));
 
-            if (allowTestSelfSigned)
+            if (allowInternalSelfSigned)
             {
-                // ✅ Em DEV/operacional aceita os status comuns de certificado de teste
+                // ✅ Em DEV/operacional aceita os status comuns de certificado autoassinado interno
                 var onlyAllowed = chain.ChainStatus.All(s =>
                     s.Status == X509ChainStatusFlags.UntrustedRoot ||
                     s.Status == X509ChainStatusFlags.PartialChain ||
@@ -49,7 +49,7 @@ public static class CertificateValidator
                 if (!onlyAllowed)
                     return new() { Ok = false, Error = $"Falha na cadeia (operacional): {reasons}" };
 
-                // se só veio coisa “esperada” em teste, segue
+                // se só veio coisa “esperada” nessa condição, segue
             }
             else
             {

@@ -12,7 +12,7 @@ public sealed class SimpleTextDocumentTypeSuggester
 
     public SimpleTextDocumentTypeSuggester()
     {
-        // Regras básicas (exemplos). Ajuste conforme seus tipos reais.
+        // Regras básicas. Ajuste conforme os tipos documentais reais.
         _rules = new List<Rule>
         {
             new("NF",        new []{ "nota fiscal", "danfe", "nf-e", "nfe", "xml nfe", "chave de acesso" }, Boost: 1.0m),

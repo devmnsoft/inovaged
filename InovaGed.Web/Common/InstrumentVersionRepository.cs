@@ -75,7 +75,7 @@ where cn.tenant_id=@tenantId and cn.reg_status='A';",
         }
         else if (instrumentType == "POP")
         {
-            // POP: snapshot de procedimentos (exemplo: tabela pop_procedure_version já existe no dump)
+            // POP: snapshot de procedimentos quando a tabela pop_procedure_version existir no banco operacional
             await conn.ExecuteAsync(@"
 insert into ged.pop_procedure_version
 (id, tenant_id, version_id, title, content, reg_date, reg_status)
@@ -95,7 +95,7 @@ where p.tenant_id=@tenantId and p.reg_status='A';",
     {
         using var conn = await _db.OpenAsync(ct);
 
-        // Exemplo focado em classificação (PCD/TTD):
+        // Fluxo focado em classificação (PCD/TTD):
         var sql = @"
 with a as (
   select code, title, parent_code, sort_order

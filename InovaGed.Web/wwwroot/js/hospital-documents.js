@@ -382,12 +382,12 @@
   function renderAssistant() {
     els.results.innerHTML = `<div class="hospital-assistant-grid">
       ${assistantCard('bi-123','Busque por prontuário','Digite o número do prontuário, atendimento ou código do documento.')}
-      ${assistantCard('bi-heart-pulse','Busque por termo clínico','Exemplo: APAC, carcinoma, oncologia, tomografia, laudo.')}
+      ${assistantCard('bi-heart-pulse','Busque por termo clínico','Termos de busca: APAC, carcinoma, oncologia, tomografia, laudo.')}
       ${assistantCard('bi-body-text','Busque pelo OCR','O sistema encontra palavras dentro dos documentos digitalizados, sem expor o OCR completo nos resultados.')}
       ${assistantCard('bi-funnel','Use filtros rápidos','Combine tipo de arquivo, OCR e período para refinar.')}
-      <div class="hospital-assistant-card" style="grid-column:1/-1"><strong>Exemplos de busca</strong><div class="hospital-example-row">${['APAC','carcinoma','tomografia','prontuário','laudo','exame'].map(x => `<button type="button" class="hospital-filter-chip" data-example="${x}">${x}</button>`).join('')}</div></div>
+      <div class="hospital-assistant-card" style="grid-column:1/-1"><strong>Sugestões de busca</strong><div class="hospital-example-row">${['APAC','carcinoma','tomografia','prontuário','laudo','exame'].map(x => `<button type="button" class="hospital-filter-chip" data-example="${x}">${x}</button>`).join('')}</div></div>
     </div>`;
-    els.results.querySelectorAll('[data-example]').forEach(b => b.addEventListener('click', () => { els.input.value = b.dataset.example; runSearchSafe({ reset: true }, 'exemplo de busca'); }));
+    els.results.querySelectorAll('[data-example]').forEach(b => b.addEventListener('click', () => { els.input.value = b.dataset.example; runSearchSafe({ reset: true }, 'sugestão de busca'); }));
   }
   function assistantCard(icon,title,text){return `<div class="hospital-assistant-card"><i class="bi ${icon}"></i><strong>${title}</strong><p>${text}</p></div>`;}
 

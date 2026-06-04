@@ -11,8 +11,8 @@ public sealed class ClassificationPlanController : Controller
     private readonly ILogger<ClassificationPlanController> _logger;
 
     // ✅ AJUSTE para o padrão real do seu projeto
-    // Exemplo 1: private readonly ICurrentContext _ctx;  => TenantId => _ctx.TenantId
-    // Exemplo 2: private readonly ICurrentUser _currentUser => TenantId => _currentUser.TenantId
+    // Opção 1: private readonly ICurrentContext _ctx;  => TenantId => _ctx.TenantId
+    // Opção 2: private readonly ICurrentUser _currentUser => TenantId => _currentUser.TenantId
     private Guid TenantId => Guid.Parse("00000000-0000-0000-0000-000000000001");
     private Guid UserId => Guid.Empty;
 

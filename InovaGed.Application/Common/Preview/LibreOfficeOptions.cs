@@ -4,7 +4,7 @@ public sealed class LibreOfficeOptions
 {
     /// <summary>
     /// Caminho completo do soffice.exe.
-    /// Exemplo:
+    /// Configuração de referência:
     /// C:\Program Files\LibreOffice\program\soffice.exe
     /// </summary>
     public string SofficePath { get; set; } = "";

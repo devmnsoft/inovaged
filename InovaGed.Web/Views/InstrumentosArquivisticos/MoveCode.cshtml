@@ -104,7 +104,7 @@
                     </li>
                     <li>
                         <strong>Descendentes acompanham:</strong> ao alterar o código do nó, todos os filhos são atualizados automaticamente
-                        (ex.: <code>01.02</code> → <code>03.01</code> faz <code>01.02.05</code> virar <code>03.01.05</code>).
+                        (formato: <code>01.02</code> → <code>03.01</code> faz <code>01.02.05</code> virar <code>03.01.05</code>).
                     </li>
                     <li><strong>Histórico:</strong> alterações registradas para auditoria e rastreabilidade.</li>
                 </ul>
@@ -154,13 +154,13 @@
 
             <div class="col-lg-4">
                 <label class="form-label">Novo código (opcional)</label>
-                <input class="form-control" asp-for="NewCode" placeholder="Ex.: 02.01.03" />
+                <input class="form-control" asp-for="NewCode" placeholder="Formato: 02.01.03" />
                 <div class="form-text">Se vazio, o sistema mantém o código atual.</div>
             </div>
 
             <div class="col-lg-8">
                 <label class="form-label">Motivo (vai para histórico)</label>
-                <input class="form-control" asp-for="Reason" placeholder="Ex.: Reclassificação conforme atualização do PCD/TTD" />
+                <input class="form-control" asp-for="Reason" placeholder="Formato: Reclassificação conforme atualização do PCD/TTD" />
             </div>
         </div>
     </div>

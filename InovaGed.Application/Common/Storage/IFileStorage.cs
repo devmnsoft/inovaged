@@ -11,7 +11,7 @@ public interface IFileStorage
          Guid versionId,
          CancellationToken ct);
 
-    // ✅ NOVO: salvar arquivo DERIVADO em um path fixo (ex: previews)
+    // ✅ NOVO: salvar arquivo DERIVADO em um path fixo (formato: previews)
     Task<(long sizeBytes, string md5, string sha256)> SaveDerivedAsync(
         string storagePath,
         Stream content,

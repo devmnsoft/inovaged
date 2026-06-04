@@ -111,7 +111,7 @@ returning id;
         }
         catch (PostgresException pg) when (pg.SqlState == "42883")
         {
-            // função inexistente (ex.: gen_random_uuid)
+            // função inexistente (formato: gen_random_uuid)
             _logger.LogError(pg, "POP missing function. Tenant={Tenant}", tenantId);
             return Result<Guid>.Fail("DB_FUNCTION", "Função do banco não encontrada (provável falta de extensão pgcrypto para gen_random_uuid).");
         }
