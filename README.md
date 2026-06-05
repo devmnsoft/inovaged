@@ -57,6 +57,7 @@ Comandos úteis:
 ```bash
 psql "$CONNECTION_STRING" -f database/migrations/20260601_upload_batch.sql
 psql "$CONNECTION_STRING" -f database/migrations/20260603_upload_chunk.sql
+psql "$CONNECTION_STRING" -f database/migrations/20260605_upload_ocr_partial_documents.sql
 psql "$CONNECTION_STRING" -f database/diagnostics/diagnostico_referencias_poc.sql
 ```
 
