@@ -92,6 +92,9 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using InovaGed.Application.Preview;
 using InovaGed.Application.Security;
+using InovaGed.Application.SystemHealth;
+using InovaGed.Infrastructure.SystemHealth;
+using InovaGed.Web.Filters;
 using Microsoft.AspNetCore.Http.Features;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -99,7 +102,10 @@ var builder = WebApplication.CreateBuilder(args);
 // =======================================================
 // MVC + Razor
 // =======================================================
-var mvc = builder.Services.AddControllersWithViews();
+var mvc = builder.Services.AddControllersWithViews(options =>
+{
+    options.Filters.Add<DatabaseSchemaExceptionFilter>();
+});
 #if DEBUG
 mvc.AddRazorRuntimeCompilation();
 #endif
@@ -108,6 +114,7 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddSignalR();
 builder.Services.AddMemoryCache();
 builder.Services.AddScoped<IDateTimeDisplayService, DateTimeDisplayService>();
+builder.Services.AddScoped<ISchemaHealthService, SchemaHealthService>();
 builder.Services.Configure<DocumentUploadOptions>(builder.Configuration.GetSection("DocumentUpload"));
 builder.WebHost.ConfigureKestrel(options =>
 {
@@ -505,6 +512,8 @@ builder.Services.AddScoped<DocumentAppService>();
 // =======================================================
 var app = builder.Build();
 
+await ValidateDatabaseSchemaOnStartupAsync(app);
+
 app.UseExceptionHandler("/Home/Error");
 if (!app.Environment.IsDevelopment())
 {
@@ -531,3 +540,38 @@ app.MapControllerRoute(
     pattern: "{controller=Home}/{action=Index}/{id?}");
 
 app.Run();
+
+static async Task ValidateDatabaseSchemaOnStartupAsync(WebApplication app)
+{
+    var validate = app.Configuration.GetValue("Database:ValidateSchemaOnStartup", true);
+    if (!validate)
+        return;
+
+    using var scope = app.Services.CreateScope();
+    var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("SchemaStartupValidation");
+
+    try
+    {
+        var service = scope.ServiceProvider.GetRequiredService<ISchemaHealthService>();
+        var report = await service.CheckAsync(CancellationToken.None);
+        if (report.IsHealthy)
+        {
+            logger.LogInformation("Validação de schema concluída: banco compatível com checks críticos.");
+            return;
+        }
+
+        var missingTables = string.Join(", ", report.MissingTables);
+        var missingColumns = string.Join(", ", report.MissingColumns);
+        logger.LogError("Schema do banco desatualizado. MissingTables=[{MissingTables}] MissingColumns=[{MissingColumns}] ScriptSugerido={Script}",
+            missingTables,
+            missingColumns,
+            "database/apply_all_required_migrations.sql");
+
+        if (app.Configuration.GetValue("Database:FailFastOnInvalidSchema", false))
+            throw new InvalidOperationException("Schema do banco desatualizado. Execute database/apply_all_required_migrations.sql antes de iniciar a aplicação.");
+    }
+    catch (Exception ex) when (!app.Configuration.GetValue("Database:FailFastOnInvalidSchema", false))
+    {
+        logger.LogError(ex, "Falha ou inconsistência durante validação de schema no startup. A aplicação continuará por configuração, mas telas críticas podem ser bloqueadas.");
+    }
+}

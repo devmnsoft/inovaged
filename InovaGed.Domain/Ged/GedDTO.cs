@@ -25,6 +25,10 @@ namespace InovaGed.Domain.Ged
         public bool HasOcrText { get; init; }
         public bool IsOcrAvailable { get; init; }
         public bool IsPartialDocument { get; init; }
+        public Guid? PartialGroupId { get; init; }
+        public int? PartialPartNumber { get; init; }
+        public int? PartialTotalParts { get; init; }
+        public string PartialStatus { get; init; } = "NOT_PARTIAL";
         public bool IsDocumentIncomplete { get; init; }
         public int? PartNumber { get; init; }
         public int? TotalParts { get; init; }
@@ -48,6 +52,10 @@ namespace InovaGed.Domain.Ged
         public bool HasOcrText { get; init; }
         public bool IsOcrAvailable { get; init; }
         public bool IsPartialDocument { get; init; }
+        public Guid? PartialGroupId { get; init; }
+        public int? PartialPartNumber { get; init; }
+        public int? PartialTotalParts { get; init; }
+        public string PartialStatus { get; init; } = "NOT_PARTIAL";
         public bool IsDocumentIncomplete { get; init; }
         public int? PartNumber { get; init; }
         public int? TotalParts { get; init; }

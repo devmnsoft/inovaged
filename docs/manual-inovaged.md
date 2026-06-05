@@ -159,3 +159,22 @@ Parâmetros principais: appsettings, storage, OCR, upload, preview, workers, lim
 - Ao enviar uma nova parte apontando para o documento existente, o sistema anexa a parte como nova versão; quando o total de partes é atingido, a versão atual é marcada como consolidada (`consolidated_version_id`) e o documento deixa de ser exibido como incompleto.
 - Cada parte gera auditoria com ação `UPLOAD_DOCUMENT_PART`, timestamp UTC, `documentId`, `versionId`, número da parte e total de partes. O registro operacional também é mantido em `ged.document_part`, com `uploaded_at_utc`, `is_consolidated` e `consolidated_at_utc` para rastrear a consolidação.
 - OCR e preview continuam assíncronos e são enfileirados normalmente após a consolidação da versão.
+
+### 18. Validação e atualização do banco de dados
+
+Administradores têm acesso ao diagnóstico em **/SystemHealth/Schema**. A tela mostra status geral, tabelas encontradas, colunas ausentes, índices recomendados, checks de OCR/logs/uploads e recomendações operacionais.
+
+Use essa tela quando ocorrerem mensagens de banco desatualizado, especialmente erros PostgreSQL:
+
+- **42703**: coluna ausente, por exemplo `uploaded_at_utc`, `is_partial_document` ou `user_name`.
+- **42P01**: relação/tabela ausente, por exemplo `ged.upload_batch`.
+
+Procedimento operacional recomendado:
+
+1. Solicitar backup do banco.
+2. Aplicar `database/apply_all_required_migrations.sql` em homologação e validar.
+3. Aplicar o mesmo script em produção com janela controlada.
+4. Acessar **/SystemHealth/Schema** e baixar o relatório para evidência.
+5. Liberar as telas críticas somente após os checks obrigatórios ficarem saudáveis.
+
+O sistema registra logs claros com `CorrelationId`, tabela/coluna ausente, código PostgreSQL e migration sugerida. Migrations não são executadas automaticamente pela tela administrativa em produção; a aplicação apenas diagnostica e orienta a correção.

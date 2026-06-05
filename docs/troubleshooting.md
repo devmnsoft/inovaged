@@ -31,3 +31,28 @@ Aplique migrations pendentes, confirme schema `ged` e revise scripts executados 
 ## Pool de conexão
 
 Monitore conexões abertas, consultas longas, timeouts e paralelismo de workers.
+
+## Validação e atualização do banco de dados
+
+Quando uma tela crítica retornar a mensagem **“Estrutura do banco de dados desatualizada. Execute as migrations do sistema.”**, trate como incompatibilidade de schema antes de investigar regra de negócio.
+
+### Corrigir erro 42703 (column not found)
+
+1. Identifique no log a coluna ausente, o `SqlState=42703` e o `CorrelationId`.
+2. Execute:
+
+```bash
+psql "$CONNECTION_STRING" -v ON_ERROR_STOP=1 -f database/apply_all_required_migrations.sql
+```
+
+3. Abra `/SystemHealth/Schema` e confirme que `ged.document_version.uploaded_at_utc`, campos de documento parcial, OCR e logs estão presentes.
+
+### Corrigir erro 42P01 (relation not found)
+
+1. Identifique no log a tabela ausente, o `SqlState=42P01` e o `CorrelationId`.
+2. Reaplique o script master idempotente.
+3. Rode `database/diagnostics/diagnostico_schema_ged.sql` para listar tabelas/colunas reais do schema `ged`.
+
+### Telas protegidas por diagnóstico
+
+As rotas `/Ged`, `/HospitalDocuments`, `/SystemLogs`, `/UploadBatch` e `/UploadChunk` não devem exibir stack trace para usuário final quando faltarem tabelas/colunas; elas retornam mensagem amigável e registram o script sugerido nos logs.
