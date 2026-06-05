@@ -33,4 +33,25 @@ CREATE INDEX IF NOT EXISTS ix_document_version_uploaded_at_utc
 CREATE INDEX IF NOT EXISTS ix_document_version_partial_document
   ON ged.document_version (tenant_id, document_id, is_partial_document, is_document_incomplete);
 
+CREATE TABLE IF NOT EXISTS ged.document_part (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL,
+  document_id uuid NOT NULL,
+  version_id uuid NOT NULL,
+  part_number integer NULL,
+  total_parts integer NULL,
+  uploaded_at_utc timestamptz NOT NULL DEFAULT now(),
+  is_consolidated boolean NOT NULL DEFAULT false,
+  consolidated_at_utc timestamptz NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT fk_document_part_document
+    FOREIGN KEY (document_id) REFERENCES ged.document(id) ON DELETE CASCADE,
+  CONSTRAINT fk_document_part_version
+    FOREIGN KEY (version_id) REFERENCES ged.document_version(id) ON DELETE CASCADE,
+  CONSTRAINT uq_document_part_version UNIQUE (tenant_id, document_id, version_id)
+);
+
+CREATE INDEX IF NOT EXISTS ix_document_part_document
+  ON ged.document_part (tenant_id, document_id, part_number);
+
 COMMIT;

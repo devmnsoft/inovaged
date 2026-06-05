@@ -61,6 +61,7 @@ public sealed class UploadChunkService : IUploadChunkService
             request.DuplicateStrategy,
             request.RunOcr,
             request.GeneratePreview,
+            request.FolderName,
             request.ExistingDocumentId,
             request.UploadName,
             UserName = userName,
@@ -160,7 +161,7 @@ WHERE s.tenant_id=@tenantId AND s.id=@uploadId;
         if (md.GeneratePreview && version is not null) { await _previewStatus.UpsertAsync(tenantId, version.VersionId, PreviewProcessingStatus.Pending, null, null, DateTimeOffset.UtcNow, null, ct); await _previewQueue.EnqueueAsync(tenantId, upload.Value.DocumentId, version.VersionId, version.StoragePath, version.FileName, ct); previewQueued = true; _logger.LogInformation("Preview queued Tenant={TenantId} User={UserId} Upload={UploadId} VersionId={VersionId} CorrelationId={CorrelationId}", tenantId, userId, uploadId, version.VersionId, session.CorrelationId); }
         await MarkCompletedAsync(tenantId, session, upload.Value.DocumentId, version?.VersionId, version?.FileName, version?.ChecksumSha256, sw.ElapsedMilliseconds, ct);
         _logger.LogInformation("Chunk complete finished Tenant={TenantId} User={UserId} Upload={UploadId} DocumentId={DocumentId} VersionId={VersionId} ElapsedMs={ElapsedMs} CorrelationId={CorrelationId}", tenantId, userId, uploadId, upload.Value.DocumentId, version?.VersionId, sw.ElapsedMilliseconds, session.CorrelationId);
-        return Result<UploadBatchFileResultDto>.Ok(new UploadBatchFileResultDto { ItemId = session.BatchItemId ?? uploadId, DocumentId = upload.Value.DocumentId, VersionId = version?.VersionId, Status = "COMPLETED", Message = "Arquivo grande recebido em partes com sucesso.", OcrQueued = ocrQueued, PreviewQueued = previewQueued, CorrelationId = session.CorrelationId });
+        return Result<UploadBatchFileResultDto>.Ok(new UploadBatchFileResultDto { ItemId = session.BatchItemId ?? uploadId, DocumentId = upload.Value.DocumentId, VersionId = version?.VersionId, RequestedFolderId = session.RequestedFolderId, ResolvedFolderId = session.FolderId, FolderName = md.FolderName, Title = upload.Value.Title, FileName = upload.Value.FileName, Status = "COMPLETED", Message = "Arquivo grande recebido em partes com sucesso.", OcrQueued = ocrQueued, PreviewQueued = previewQueued, CorrelationId = session.CorrelationId });
     }
 
     public async Task<Result<UploadChunkStatusDto>> GetStatusAsync(Guid tenantId, Guid userId, Guid uploadId, CancellationToken ct)
@@ -235,6 +236,7 @@ WHERE d.tenant_id=@tenantId AND d.id=@documentId;
         public Guid? BatchId { get; set; }
         public Guid? BatchItemId { get; set; }
         public Guid FolderId { get; set; }
+        public Guid? RequestedFolderId { get; set; }
         public string OriginalFileName { get; set; } = string.Empty;
         public string? ContentType { get; set; }
         public long TotalSizeBytes { get; set; }
@@ -255,6 +257,7 @@ WHERE d.tenant_id=@tenantId AND d.id=@documentId;
         public string? DuplicateStrategy { get; set; }
         public bool RunOcr { get; set; }
         public bool GeneratePreview { get; set; }
+        public string? FolderName { get; set; }
         public Guid? ExistingDocumentId { get; set; }
         public string? UploadName { get; set; }
         public string? UserName { get; set; }
