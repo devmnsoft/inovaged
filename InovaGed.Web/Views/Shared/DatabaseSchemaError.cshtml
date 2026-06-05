@@ -1,0 +1,78 @@
+@{
+    ViewData["Title"] = ViewData["Title"] ?? "Banco de dados desatualizado";
+
+    var message = ViewData["Message"]?.ToString() ?? "A estrutura do banco de dados está desatualizada. Execute as migrations do sistema.";
+    var correlationId = ViewData["CorrelationId"]?.ToString();
+    var sqlState = ViewData["SqlState"]?.ToString();
+    var controller = ViewData["Controller"]?.ToString();
+    var action = ViewData["Action"]?.ToString();
+    var path = ViewData["Path"]?.ToString();
+    var migration = ViewData["Migration"]?.ToString() ?? "database/apply_all_required_migrations.sql";
+    var detail = ViewData["Detail"]?.ToString();
+    var canOpenSchemaHealth = User?.IsInRole("ADMIN") == true || User?.IsInRole("Admin") == true;
+}
+
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-lg-8 col-xl-7">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body p-4 p-md-5">
+                    <div class="d-flex align-items-start gap-3 mb-4">
+                        <div class="rounded-circle bg-warning-subtle text-warning-emphasis d-inline-flex align-items-center justify-content-center flex-shrink-0" style="width: 3rem; height: 3rem;">
+                            <i class="bi bi-database-exclamation fs-4" aria-hidden="true"></i>
+                        </div>
+                        <div>
+                            <h1 class="h3 mb-2">Banco de dados desatualizado</h1>
+                            <p class="text-muted mb-0">@message</p>
+                        </div>
+                    </div>
+
+                    <div class="alert alert-warning" role="alert">
+                        <strong>Ação necessária:</strong> execute as migrations pendentes antes de continuar usando esta funcionalidade.
+                        <div class="mt-2"><strong>Script recomendado:</strong> <code>@migration</code></div>
+                    </div>
+
+                    <dl class="row small mb-4">
+                        @if (!string.IsNullOrWhiteSpace(correlationId))
+                        {
+                            <dt class="col-sm-4">CorrelationId</dt>
+                            <dd class="col-sm-8"><code>@correlationId</code></dd>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(sqlState))
+                        {
+                            <dt class="col-sm-4">SQL State</dt>
+                            <dd class="col-sm-8"><code>@sqlState</code></dd>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(controller) || !string.IsNullOrWhiteSpace(action))
+                        {
+                            <dt class="col-sm-4">Origem</dt>
+                            <dd class="col-sm-8"><code>@controller/@action</code></dd>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(path))
+                        {
+                            <dt class="col-sm-4">Caminho</dt>
+                            <dd class="col-sm-8"><code>@path</code></dd>
+                        }
+                    </dl>
+
+                    @if (!string.IsNullOrWhiteSpace(detail))
+                    {
+                        <details class="mb-4">
+                            <summary>Detalhe técnico disponível em desenvolvimento</summary>
+                            <pre class="bg-light border rounded p-3 mt-2 mb-0 small"><code>@detail</code></pre>
+                        </details>
+                    }
+
+                    <div class="d-flex flex-wrap gap-2">
+                        <button type="button" class="btn btn-secondary" onclick="history.back()">Voltar</button>
+                        <a class="btn btn-outline-primary" href="/">Ir para o início</a>
+                        @if (canOpenSchemaHealth)
+                        {
+                            <a class="btn btn-primary" href="/SystemHealth/Schema">Ver diagnóstico do schema</a>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

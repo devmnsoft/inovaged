@@ -102,9 +102,11 @@ var builder = WebApplication.CreateBuilder(args);
 // =======================================================
 // MVC + Razor
 // =======================================================
+builder.Services.AddScoped<DatabaseSchemaExceptionFilter>();
+
 var mvc = builder.Services.AddControllersWithViews(options =>
 {
-    options.Filters.Add<DatabaseSchemaExceptionFilter>();
+    options.Filters.AddService<DatabaseSchemaExceptionFilter>();
 });
 #if DEBUG
 mvc.AddRazorRuntimeCompilation();
