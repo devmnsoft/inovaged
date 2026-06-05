@@ -35,7 +35,9 @@ public sealed class DocumentBulkUploadService : IDocumentBulkUploadService
             var title = Path.GetFileNameWithoutExtension(safeName);
             var uploadedAtUtc = DateTime.UtcNow;
             var isPart = metadata.IsDocumentPart || metadata.PartNumber.HasValue || metadata.TotalParts.HasValue;
-            var isIncomplete = isPart && (!metadata.TotalParts.HasValue || metadata.PartNumber.GetValueOrDefault(1) < metadata.TotalParts.Value);
+            var expectedTotalParts = metadata.TotalParts.GetValueOrDefault();
+            var incomingPartNumber = metadata.PartNumber.GetValueOrDefault(isPart ? 1 : 0);
+            var isIncomplete = isPart && (!metadata.TotalParts.HasValue || incomingPartNumber < expectedTotalParts);
             Guid documentId;
             Guid? versionId = null;
             if (isPart && (metadata.ConsolidateIntoDocumentId.HasValue || metadata.ExistingDocumentId.HasValue) && (metadata.ConsolidateIntoDocumentId ?? metadata.ExistingDocumentId) is Guid existingDoc && existingDoc != Guid.Empty)
@@ -44,7 +46,12 @@ public sealed class DocumentBulkUploadService : IDocumentBulkUploadService
                 if (!addVersion.Success) return Result<DocumentBulkUploadResultDto>.Fail(addVersion.Error?.Code ?? "UPLOAD_PART", addVersion.Error?.Message ?? "Falha ao anexar parte do documento.");
                 documentId = existingDoc;
                 versionId = addVersion.Value;
-                await MarkPartialVersionAsync(tenantId, documentId, versionId.Value, uploadedAtUtc, isPart, isIncomplete, metadata.PartNumber, metadata.TotalParts, isIncomplete ? null : versionId, ct);
+                var partsAfterUpload = await CountDocumentPartsAsync(tenantId, documentId, ct) + 1;
+                var isConsolidated = metadata.TotalParts.HasValue && partsAfterUpload >= metadata.TotalParts.Value;
+                isIncomplete = !isConsolidated;
+                await MarkPartialVersionAsync(tenantId, documentId, versionId.Value, uploadedAtUtc, isPart, isIncomplete, metadata.PartNumber, metadata.TotalParts, isConsolidated ? versionId : null, ct);
+                await RegisterDocumentPartAsync(tenantId, documentId, versionId.Value, uploadedAtUtc, metadata.PartNumber, metadata.TotalParts, isConsolidated, ct);
+                if (isConsolidated) await ConsolidateDocumentPartsAsync(tenantId, documentId, versionId.Value, uploadedAtUtc, ct);
             }
             else
             {
@@ -53,6 +60,10 @@ public sealed class DocumentBulkUploadService : IDocumentBulkUploadService
                 if (!result.Success) return Result<DocumentBulkUploadResultDto>.Fail(result.Error?.Code ?? "UPLOAD", result.Error?.Message ?? "Falha no upload.");
                 documentId = result.Value;
                 versionId = await GetCurrentVersionIdAsync(tenantId, documentId, ct);
+                if (isPart && versionId.HasValue)
+                {
+                    await RegisterDocumentPartAsync(tenantId, documentId, versionId.Value, uploadedAtUtc, metadata.PartNumber, metadata.TotalParts, !isIncomplete, ct);
+                }
             }
             sw.Stop();
             _logger.LogInformation("Upload stream finalizado. Tenant={TenantId} User={UserId} Folder={FolderId} Batch={BatchId} File={FileName} FileSize={FileSize} ContentType={ContentType} DocumentId={DocumentId} ElapsedMs={ElapsedMs}",
@@ -71,6 +82,53 @@ public sealed class DocumentBulkUploadService : IDocumentBulkUploadService
             _logger.LogError(ex, "Erro em UploadStreamAsync. Tenant={TenantId} User={UserId} Folder={FolderId} Batch={BatchId} File={FileName}", tenantId, userId, folderId, metadata.BatchId, fileName);
             return Result<DocumentBulkUploadResultDto>.Fail("ERR", "Erro interno ao enviar arquivo.");
         }
+    }
+
+    private async Task<int> CountDocumentPartsAsync(Guid tenantId, Guid documentId, CancellationToken ct)
+    {
+        const string sql = """
+SELECT count(*)::int
+FROM ged.document_version
+WHERE tenant_id=@tenantId
+  AND document_id=@documentId
+  AND COALESCE(is_partial_document,false)=true;
+""";
+        await using var conn = await _db.OpenAsync(ct);
+        return await conn.ExecuteScalarAsync<int>(new CommandDefinition(sql, new { tenantId, documentId }, cancellationToken: ct));
+    }
+
+    private async Task RegisterDocumentPartAsync(Guid tenantId, Guid documentId, Guid versionId, DateTime uploadedAtUtc, int? partNumber, int? totalParts, bool isConsolidated, CancellationToken ct)
+    {
+        const string sql = """
+INSERT INTO ged.document_part (id, tenant_id, document_id, version_id, part_number, total_parts, uploaded_at_utc, is_consolidated)
+VALUES (gen_random_uuid(), @tenantId, @documentId, @versionId, @partNumber, @totalParts, @uploadedAtUtc, @isConsolidated)
+ON CONFLICT (tenant_id, document_id, version_id) DO UPDATE
+SET part_number=EXCLUDED.part_number,
+    total_parts=EXCLUDED.total_parts,
+    uploaded_at_utc=EXCLUDED.uploaded_at_utc,
+    is_consolidated=EXCLUDED.is_consolidated;
+""";
+        await using var conn = await _db.OpenAsync(ct);
+        await conn.ExecuteAsync(new CommandDefinition(sql, new { tenantId, documentId, versionId, partNumber, totalParts, uploadedAtUtc, isConsolidated }, cancellationToken: ct));
+    }
+
+    private async Task ConsolidateDocumentPartsAsync(Guid tenantId, Guid documentId, Guid consolidatedVersionId, DateTime uploadedAtUtc, CancellationToken ct)
+    {
+        const string sql = """
+UPDATE ged.document_version
+SET is_document_incomplete=false,
+    consolidated_version_id=@consolidatedVersionId
+WHERE tenant_id=@tenantId
+  AND document_id=@documentId
+  AND COALESCE(is_partial_document,false)=true;
+
+UPDATE ged.document_part
+SET is_consolidated=true, consolidated_at_utc=@uploadedAtUtc
+WHERE tenant_id=@tenantId
+  AND document_id=@documentId;
+""";
+        await using var conn = await _db.OpenAsync(ct);
+        await conn.ExecuteAsync(new CommandDefinition(sql, new { tenantId, documentId, consolidatedVersionId, uploadedAtUtc }, cancellationToken: ct));
     }
 
     private async Task<Guid?> GetCurrentVersionIdAsync(Guid tenantId, Guid documentId, CancellationToken ct)

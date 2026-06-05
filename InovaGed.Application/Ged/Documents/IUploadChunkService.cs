@@ -7,6 +7,7 @@ public sealed class StartUploadChunkRequestDto
     public Guid? BatchId { get; set; }
     public Guid? FolderId { get; set; }
     public Guid? RequestedFolderId { get; set; }
+    public string? FolderName { get; set; }
     public string OriginalFileName { get; set; } = string.Empty;
     public string? ContentType { get; set; }
     public long TotalSizeBytes { get; set; }

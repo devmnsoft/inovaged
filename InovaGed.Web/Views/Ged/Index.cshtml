@@ -32,7 +32,8 @@
     var currentCanReceiveDocuments = currentFolderNode?.CanReceiveDocuments ?? Model.CurrentFolderId.HasValue;
     var allowLegacyUploadFallback = DocumentUploadOptions.Value.AllowLegacyUploadFallback;
     var uploadOptions = DocumentUploadOptions.Value;
-    var ocrAvailableCount = Model.Documents.Count;
+    var ocrAvailableCount = Model.Documents.Count(d => d.IsOcrAvailable);
+    var incompleteCount = Model.Documents.Count(d => d.IsDocumentIncomplete);
     var pendingOcrCount = runningOcrCount;
     var breadcrumbText = currentFolderNode?.Path ?? (!string.IsNullOrWhiteSpace(Model.CurrentFolderName) ? Model.CurrentFolderName : "Raiz");
 }
@@ -387,10 +388,11 @@
                 </div>
             </div>
             <div class="ged-kpi-strip">
-                <div class="ged-kpi-card"><span>@Model.Documents.Count</span><small>documentos</small></div>
+                <div class="ged-kpi-card"><span id="documentsTotalKpi">@Model.Documents.Count</span><small>documentos</small></div>
                 <div class="ged-kpi-card"><span id="selectedDocumentsKpi">0</span><small>selecionados</small></div>
-                <div class="ged-kpi-card"><span>@unclassifiedCount</span><small>não classificados</small></div>
-                <div class="ged-kpi-card"><span>@ocrAvailableCount</span><small>com OCR</small></div>
+                <div class="ged-kpi-card"><span id="documentsUnclassifiedKpi">@unclassifiedCount</span><small>não classificados</small></div>
+                <div class="ged-kpi-card"><span id="documentsOcrKpi">@ocrAvailableCount</span><small>com OCR</small></div>
+                <div class="ged-kpi-card"><span id="documentsIncompleteKpi">@incompleteCount</span><small>incompletos</small></div>
                 <div class="ged-kpi-card"><span>@pendingOcrCount</span><small>pendentes</small></div>
             </div>
         </div>

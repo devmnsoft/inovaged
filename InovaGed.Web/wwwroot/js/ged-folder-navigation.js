@@ -165,14 +165,19 @@
         first?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
     }
     function updateDocumentCounters() {
-        const rows = Array.from(document.querySelectorAll('#gedDocumentsContainer [data-document-id]'));
-        const count = Number(document.querySelector('#gedDocumentsContainer')?.dataset?.documentCount || rows.length || 0);
-        const ocrDone = rows.filter(x => x.dataset.ocrAvailable === 'true').length;
-        const noOcr = Math.max(0, rows.length - ocrDone);
-        const unclassified = document.querySelectorAll('#gedDocumentsContainer .ged-badge-muted').length;
-        const firstKpi = document.querySelector('.ged-kpi-card:first-child span');
-        if (firstKpi && Number.isFinite(count)) firstKpi.textContent = String(count);
-        document.dispatchEvent(new CustomEvent('ged:documents-counters-updated', { detail: { total: count, ocrDone, noOcr, unclassified } }));
+        const container = document.querySelector('#gedDocumentsContainer');
+        const visibleRows = Array.from(document.querySelectorAll('#gedDocumentsContainer [data-documents-view="list"] [data-document-id]'));
+        const count = Number(container?.dataset?.documentCount || visibleRows.length || 0);
+        const ocrDone = Number(container?.dataset?.ocrCount || visibleRows.filter(x => x.dataset.ocrAvailable === 'true').length || 0);
+        const incomplete = Number(container?.dataset?.incompleteCount || visibleRows.filter(x => x.dataset.documentIncomplete === 'true').length || 0);
+        const unclassified = Number(container?.dataset?.unclassifiedCount || visibleRows.filter(x => x.dataset.documentUnclassified === 'true').length || 0);
+        const noOcr = Math.max(0, count - ocrDone);
+        const setText = (selector, value) => { const el = document.querySelector(selector); if (el && Number.isFinite(value)) el.textContent = String(value); };
+        setText('#documentsTotalKpi', count);
+        setText('#documentsOcrKpi', ocrDone);
+        setText('#documentsIncompleteKpi', incomplete);
+        setText('#documentsUnclassifiedKpi', unclassified);
+        document.dispatchEvent(new CustomEvent('ged:documents-counters-updated', { detail: { total: count, ocrDone, noOcr, incomplete, unclassified } }));
         window.updateMoveSelectedButton?.();
     }
     function selectedDocumentIds() { return Array.from(new Set(Array.from(document.querySelectorAll('.js-doc-select:checked')).map(x => x.value).filter(Boolean))); }

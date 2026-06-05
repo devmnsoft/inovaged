@@ -373,7 +373,7 @@
       <div class="hospital-file-icon"><i class="bi ${iconFor(item)}"></i></div>
       <div class="hospital-result-main"><div class="hospital-result-title">${escapeHtml(item.title || 'Documento sem título')}</div>
       <div class="hospital-result-file">${escapeHtml(item.fileName || '')}</div><div class="hospital-result-path"><i class="bi bi-folder2-open"></i> ${escapeHtml(item.folderPath || item.folderName || 'Sem pasta informada')}</div>
-      <div class="hospital-badges"><span class="hospital-badge">${escapeHtml(item.code || 'Sem código')}</span><span class="hospital-badge">${escapeHtml(item.friendlyType || item.type || 'Documento')}</span><span class="hospital-badge ${item.hasOcr ? 'ocr' : ''}">${ocrStatusLabel(item.ocrStatus, item.hasOcr)}</span><span class="hospital-badge match">${escapeHtml(item.matchSourceLabel || 'Relevância')}</span><span class="hospital-badge">${escapeHtml(item.createdAtFormatted || item.createdAt || '')}</span></div>
+      <div class="hospital-badges"><span class="hospital-badge">${escapeHtml(item.code || 'Sem código')}</span><span class="hospital-badge">${escapeHtml(item.friendlyType || item.type || 'Documento')}</span><span class="hospital-badge ${(item.isOcrAvailable ?? item.hasOcr) ? 'ocr' : ''}">${ocrStatusLabel(item.ocrStatus, item.isOcrAvailable ?? item.hasOcr, item.hasOcrText)}</span><span class="hospital-badge match">${escapeHtml(item.matchSourceLabel || 'Relevância')}</span><span class="hospital-badge">${escapeHtml(item.createdAtFormatted || item.createdAt || '')}</span></div>
       <div class="hospital-snippet">${sanitizeSnippet(item.snippet || 'Documento encontrado pelos metadados informados.')}</div></div>
       <div class="hospital-result-actions"><button class="btn btn-sm btn-primary js-open-preview-panel" data-result-action="preview" data-document-id="${documentId}" data-version-id="${versionId}" data-title="${escapeAttr(item.title || '')}" type="button"><i class="bi bi-eye"></i> Preview</button><button class="btn btn-sm btn-outline-primary" data-result-action="ocr" type="button"><i class="bi bi-body-text"></i> OCR</button><a class="btn btn-sm btn-outline-secondary" data-result-action="new-tab" href="${escapeAttr(item.viewerUrl || '#')}" target="_blank" rel="noopener"><i class="bi bi-box-arrow-up-right"></i> Dados</a></div>
     </article>`;
@@ -561,11 +561,11 @@
     try {
       const r = await fetch(item.ocrUrl || `/HospitalDocuments/OcrText?versionId=${encodeURIComponent(item.versionId)}`, { headers: { Accept: 'application/json' } });
       const data = await r.json();
-      if (data.success && data.hasOcr && data.text) {
+      if (data.success && (data.isOcrAvailable || data.hasOcr) && data.text) {
         els.ocrStatus.textContent = 'OCR disponível. Conteúdo carregado somente após ação do usuário.';
         els.ocrText.innerHTML = highlight(escapeHtml(data.text), els.input.value.trim(), true);
       } else {
-        els.ocrStatus.textContent = ocrStatusLabel(data.status, false);
+        els.ocrStatus.textContent = ocrStatusLabel(data.status, data.isOcrAvailable || false, data.hasOcrText || false);
         els.ocrText.textContent = 'Nenhum texto OCR foi gerado para esta versão do documento.';
       }
     } catch {
@@ -578,7 +578,7 @@
     els.metaContent.classList.remove('hospital-preview-empty');
     els.metaContent.innerHTML = [
       ['Código', item.code || 'Sem código'], ['Documento', item.documentId], ['Versão', item.versionId], ['Arquivo', item.fileName], ['Tipo', item.friendlyType || item.type || item.contentType],
-      ['Pasta', item.folderPath || item.folderName], ['Tamanho', item.sizeFormatted || item.size], ['Criado em', item.createdAtFormatted || item.createdAt], ['OCR', ocrStatusLabel(item.ocrStatus, item.hasOcr)]
+      ['Pasta', item.folderPath || item.folderName], ['Tamanho', item.sizeFormatted || item.size], ['Criado em', item.createdAtFormatted || item.createdAt], ['OCR', ocrStatusLabel(item.ocrStatus, item.isOcrAvailable ?? item.hasOcr, item.hasOcrText)]
     ].filter(([,v]) => v).map(([k,v]) => `<div class="hospital-meta-row"><span>${escapeHtml(k)}</span><strong>${escapeHtml(v)}</strong></div>`).join('');
   }
 
@@ -636,7 +636,7 @@
   function clearAll(){ clearSearchInput(); resetAdvancedFilters(); state.items=[]; state.lastResult=null; state.page=1; els.meta.textContent='Nenhuma busca executada ainda.'; els.loadMore.classList.add('d-none'); renderAssistant(); renderSummary(null); resetPreviewPanel(); }
 
   function setLoading(isLoading){ els.btnSearch.disabled=isLoading; els.btnSearch.querySelector('.btn-label').textContent = isLoading ? 'Pesquisando...' : 'Pesquisar'; if(isLoading && state.page === 1) els.results.innerHTML='<div class="hospital-results-skeleton"><div></div><div></div><div></div></div>'; }
-  function exportCsv(){ if(!state.items.length) return; const rows=[['Código','Título','Arquivo','Tipo','Pasta','OCR','Data'],...state.items.map(i=>[i.code,i.title,i.fileName,i.friendlyType||i.type,i.folderPath||i.folderName,ocrStatusLabel(i.ocrStatus,i.hasOcr),i.createdAtFormatted||i.createdAt])]; const csv=rows.map(r=>r.map(v=>`"${String(v||'').replaceAll('"','""')}"`).join(';')).join('\n'); const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'})); a.download='resultado-busca-hospitalar.csv'; a.click(); URL.revokeObjectURL(a.href); }
+  function exportCsv(){ if(!state.items.length) return; const rows=[['Código','Título','Arquivo','Tipo','Pasta','OCR','Data'],...state.items.map(i=>[i.code,i.title,i.fileName,i.friendlyType||i.type,i.folderPath||i.folderName,ocrStatusLabel(i.ocrStatus,i.isOcrAvailable ?? i.hasOcr,i.hasOcrText),i.createdAtFormatted||i.createdAt])]; const csv=rows.map(r=>r.map(v=>`"${String(v||'').replaceAll('"','""')}"`).join(';')).join('\n'); const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'})); a.download='resultado-busca-hospitalar.csv'; a.click(); URL.revokeObjectURL(a.href); }
   function rememberSearch(q){ const arr=[q,...state.recentSearches.filter(x=>x!==q)].slice(0,6); state.recentSearches=arr; localStorage.setItem('hospitalDocumentsRecentSearches',JSON.stringify(arr)); }
   function clinicalSuggestions(q){ const terms=['APAC','carcinoma','oncologia','quimioterapia','tomografia','laudo','exame','prontuário']; return terms.filter(x=>x.toLowerCase().includes(q.toLowerCase())).map(x=>({group:'Termos clínicos',suggestionType:'term',label:x,subtitle:'Pesquisar termo clínico',icon:'bi-heart-pulse'})); }
   function typeSuggestions(q){ const types=[['PDF','pdf'],['Imagens','image'],['Laudos','laudo'],['Exames','exame'],['APAC','APAC']]; return types.filter(([label])=>label.toLowerCase().includes(q.toLowerCase())).map(([label,value])=>({group:'Tipos documentais',suggestionType:'term',label,subtitle:'Aplicar como termo/tipo documental',icon:'bi-tags',query:value})); }
@@ -672,7 +672,7 @@
   function number(v){ return new Intl.NumberFormat('pt-BR').format(v||0); }
   function labelType(v){ return ({pdf:'PDF',image:'Imagens',word:'Documento Word'}[v]||v); }
   function ocrFilterLabel(v){ return ({with:'Com OCR',without:'Sem OCR',PROCESSING:'OCR em processamento',PENDING:'OCR na fila',ERROR:'OCR com erro'}[v]||v); }
-  function ocrStatusLabel(status, hasOcr){ const st=String(status||'').toUpperCase(); if(hasOcr)return 'OCR disponível'; if(st==='PROCESSING')return 'OCR em processamento'; if(st==='PENDING')return 'OCR na fila'; if(st==='ERROR')return 'OCR com erro'; return 'Sem OCR'; }
+  function ocrStatusLabel(status, isOcrAvailable, hasOcrText){ const st=String(status||'').toUpperCase(); if(isOcrAvailable)return 'OCR disponível'; if(st==='COMPLETED' && !hasOcrText)return 'OCR concluído sem texto'; if(st==='PROCESSING')return 'OCR em processamento'; if(st==='PENDING')return 'OCR na fila'; if(st==='ERROR')return 'OCR com erro'; if(st==='CANCELLED')return 'OCR cancelado'; return 'Sem OCR'; }
   function limitSnippet(s,n){ return sanitizeSnippet(String(s||'').slice(0,n)+(String(s||'').length>n?'…':'')); }
   function sanitizeSnippet(s){ return String(s||'').replace(/<(?!\/?mark\b)[^>]*>/gi,''); }
   function highlight(value, term, alreadyEscaped=false){ const safe = alreadyEscaped ? value : escapeHtml(value); if(!term)return safe; const escaped=escapeRegExp(escapeHtml(term)); return safe.replace(new RegExp(`(${escaped})`,'ig'),'<mark>$1</mark>'); }

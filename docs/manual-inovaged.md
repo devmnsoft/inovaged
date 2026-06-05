@@ -133,7 +133,7 @@ Parâmetros principais: appsettings, storage, OCR, upload, preview, workers, lim
 - O envio deve sempre usar a pasta real de listagem (`ListingFolderId`) resolvida pela árvore GED. Pastas visuais/virtuais continuam servindo para navegação, mas a listagem, o cabeçalho, a URL e os campos ocultos do modal passam a refletir a pasta real onde os documentos foram gravados.
 - Após upload simples, em lote ou por arrastar-e-soltar em subpastas, a pasta é recarregada automaticamente por Ajax. Não é necessário pressionar F5.
 - Os documentos recém-enviados recebem destaque visual por 5 segundos e a área lateral/listagem rola automaticamente até o primeiro documento criado no lote.
-- Os contadores da pasta são recalculados após a atualização: total de documentos, OCR disponível, sem OCR e não classificados.
+- Os contadores da pasta são recalculados após a atualização: total de documentos, OCR disponível, incompletos, sem OCR e não classificados.
 - O pop-up de feedback informa upload concluído, falha de upload ou duplicidade de nome. Em duplicidade, o operador pode sobrescrever/anexar ao documento existente quando permitido ou renomear o arquivo antes de reenviar.
 
 ### Upload de arquivos grandes (chunked upload)
@@ -157,5 +157,5 @@ Parâmetros principais: appsettings, storage, OCR, upload, preview, workers, lim
 - Um documento pode ser enviado em partes, por exemplo **Parte 1/2** e **Parte 2/2**.
 - Enquanto faltam partes, a listagem mostra o badge **Documento incompleto** e aplica destaque lateral âmbar.
 - Ao enviar uma nova parte apontando para o documento existente, o sistema anexa a parte como nova versão; quando o total de partes é atingido, a versão atual é marcada como consolidada (`consolidated_version_id`) e o documento deixa de ser exibido como incompleto.
-- Cada parte gera auditoria com ação `UPLOAD_DOCUMENT_PART`, timestamp UTC, `documentId`, `versionId`, número da parte e total de partes.
+- Cada parte gera auditoria com ação `UPLOAD_DOCUMENT_PART`, timestamp UTC, `documentId`, `versionId`, número da parte e total de partes. O registro operacional também é mantido em `ged.document_part`, com `uploaded_at_utc`, `is_consolidated` e `consolidated_at_utc` para rastrear a consolidação.
 - OCR e preview continuam assíncronos e são enfileirados normalmente após a consolidação da versão.

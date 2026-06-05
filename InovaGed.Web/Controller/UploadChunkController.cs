@@ -69,6 +69,7 @@ public sealed class UploadChunkController : Controller
                 BatchId = request.BatchId,
                 FolderId = folder.ResolvedFolderId,
                 RequestedFolderId = folder.RequestedFolderId,
+                FolderName = folder.FolderName,
                 OriginalFileName = request.OriginalFileName,
                 ContentType = request.ContentType,
                 TotalSizeBytes = request.TotalSizeBytes,
@@ -86,7 +87,7 @@ public sealed class UploadChunkController : Controller
             };
 
             var result = await _chunks.StartAsync(_currentUser.TenantId, _currentUser.UserId, isAdmin, User.Identity?.Name, appRequest, ct);
-            return result.Success ? Ok(new { success = true, session = result.Value, uploadId = result.Value!.UploadId, result.Value.ChunkSizeBytes, result.Value.TotalChunks, result.Value.NextChunk, result.Value.ReceivedChunks, result.Value.MissingChunks, result.Value.Percent, correlationId }) : BadRequest(Error(result.Error?.Message ?? "Falha ao iniciar upload em partes.", result.Error?.Code ?? "UploadChunkStart", true, correlationId));
+            return result.Success ? Ok(new { success = true, session = result.Value, uploadId = result.Value!.UploadId, result.Value.ChunkSizeBytes, result.Value.TotalChunks, result.Value.NextChunk, result.Value.ReceivedChunks, result.Value.MissingChunks, result.Value.Percent, requestedFolderId = folder.RequestedFolderId, folderId = folder.ResolvedFolderId, resolvedFolderId = folder.ResolvedFolderId, folderName = folder.FolderName, correlationId }) : BadRequest(Error(result.Error?.Message ?? "Falha ao iniciar upload em partes.", result.Error?.Code ?? "UploadChunkStart", true, correlationId));
         }
         catch (Exception ex)
         {
@@ -114,7 +115,7 @@ public sealed class UploadChunkController : Controller
     {
         var correlationId = HttpContext.TraceIdentifier;
         var result = await _chunks.CompleteAsync(_currentUser.TenantId, _currentUser.UserId, request.UploadId, ct);
-        return result.Success ? Ok(new { success = true, itemId = result.Value!.ItemId, documentId = result.Value.DocumentId, versionId = result.Value.VersionId, status = result.Value.Status, message = result.Value.Message, ocrQueued = result.Value.OcrQueued, previewQueued = result.Value.PreviewQueued, correlationId = result.Value.CorrelationId ?? correlationId }) : BadRequest(Error(result.Error?.Message ?? "Falha ao concluir upload em partes.", result.Error?.Code ?? "UploadChunkComplete", true, correlationId));
+        return result.Success ? Ok(new { success = true, itemId = result.Value!.ItemId, documentId = result.Value.DocumentId, versionId = result.Value.VersionId, status = result.Value.Status, message = result.Value.Message, ocrQueued = result.Value.OcrQueued, previewQueued = result.Value.PreviewQueued, requestedFolderId = result.Value.RequestedFolderId, folderId = result.Value.ResolvedFolderId, resolvedFolderId = result.Value.ResolvedFolderId, folderName = result.Value.FolderName, createdDocuments = result.Value.DocumentId.HasValue ? new object[] { new { documentId = result.Value.DocumentId, versionId = result.Value.VersionId, title = result.Value.Title, fileName = result.Value.FileName } } : Array.Empty<object>(), correlationId = result.Value.CorrelationId ?? correlationId }) : BadRequest(Error(result.Error?.Message ?? "Falha ao concluir upload em partes.", result.Error?.Code ?? "UploadChunkComplete", true, correlationId));
     }
 
     [HttpGet("Status/{uploadId:guid}")]
