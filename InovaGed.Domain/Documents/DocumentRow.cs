@@ -41,6 +41,10 @@
         public Guid? CreatedBy { get; init; }
         public DateTime UploadedAtUtc { get; init; } = DateTime.UtcNow;
         public bool IsPartialDocument { get; init; }
+        public Guid? PartialGroupId { get; init; }
+        public int? PartialPartNumber { get; init; }
+        public int? PartialTotalParts { get; init; }
+        public string PartialStatus { get; init; } = "NOT_PARTIAL";
         public bool IsDocumentIncomplete { get; init; }
         public int? PartNumber { get; init; }
         public int? TotalParts { get; init; }

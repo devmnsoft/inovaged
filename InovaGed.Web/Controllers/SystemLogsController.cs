@@ -2,6 +2,7 @@ using InovaGed.Application.Audit;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using InovaGed.Web.Security;
+using Npgsql;
 
 namespace InovaGed.Web.Controllers;
 
@@ -27,6 +28,25 @@ public sealed class SystemLogsController : Controller
             var data = await _query.SearchAsync(filter, ct);
             ViewBag.Filter = filter;
             return View(data);
+        }
+        catch (PostgresException ex) when (ex.SqlState is PostgresErrorCodes.UndefinedColumn or PostgresErrorCodes.UndefinedTable)
+        {
+            _logger.LogError(ex,
+                "Schema desatualizado ao carregar logs do sistema. SqlState={SqlState} Table={Table} Column={Column} MigrationSugerida={Migration} CorrelationId={CorrelationId}",
+                ex.SqlState,
+                ex.TableName,
+                ex.ColumnName,
+                "database/apply_all_required_migrations.sql",
+                HttpContext.TraceIdentifier);
+            TempData["Error"] = "Estrutura do banco de dados desatualizada. Execute as migrations do sistema.";
+            ViewBag.Filter = filter;
+            return View(new PagedResult<SystemLogListItemDto>
+            {
+                Items = Array.Empty<SystemLogListItemDto>(),
+                Page = Math.Max(1, filter.Page),
+                PageSize = Math.Clamp(filter.PageSize, 1, 200),
+                Total = 0
+            });
         }
         catch (Exception ex)
         {

@@ -24,14 +24,18 @@ public sealed class DocumentQueries : IDocumentQueries
         await using var conn = await _db.OpenAsync(ct);
         var schema = await GetDocumentVersionSchemaAsync(conn, ct);
 
-        var uploadedAtExpr = schema.HasUploadedAtUtc
-            ? "COALESCE(cv.uploaded_at_utc, cv.created_at, d.created_at)"
-            : "COALESCE(cv.created_at, d.created_at)";
-        var isPartialDocumentExpr = schema.HasIsPartialDocument ? "COALESCE(cv.is_partial_document,false)" : "false";
-        var isDocumentIncompleteExpr = schema.HasIsDocumentIncomplete ? "COALESCE(cv.is_document_incomplete,false)" : "false";
-        var partNumberExpr = schema.HasPartNumber ? "cv.part_number" : "NULL::integer";
-        var totalPartsExpr = schema.HasTotalParts ? "cv.total_parts" : "NULL::integer";
-        var consolidatedVersionExpr = schema.HasConsolidatedVersionId ? "cv.consolidated_version_id" : "NULL::uuid";
+        var uploadedAtExpr = schema.HasDocumentCreatedAtUtc
+            ? "COALESCE(cv.uploaded_at_utc, cv.created_at, d.created_at_utc, d.created_at)"
+            : "COALESCE(cv.uploaded_at_utc, cv.created_at, d.created_at)";
+        const string isPartialDocumentExpr = "COALESCE(cv.is_partial_document,false)";
+        const string partialGroupIdExpr = "cv.partial_group_id";
+        const string partialPartNumberExpr = "cv.partial_part_number";
+        const string partialTotalPartsExpr = "cv.partial_total_parts";
+        const string partialStatusExpr = "COALESCE(cv.partial_status, 'NOT_PARTIAL')";
+        const string isDocumentIncompleteExpr = "COALESCE(cv.is_document_incomplete,false)";
+        const string partNumberExpr = "COALESCE(cv.part_number, cv.partial_part_number)";
+        const string totalPartsExpr = "COALESCE(cv.total_parts, cv.partial_total_parts)";
+        const string consolidatedVersionExpr = "cv.consolidated_version_id";
 
         var sql = $@"
 SELECT
@@ -49,6 +53,10 @@ SELECT
     (NULLIF(COALESCE(ds.ocr_text,''),'') IS NOT NULL) AS ""HasOcrText"",
     (upper(COALESCE(oj.status::text,'')) = 'COMPLETED' AND NULLIF(COALESCE(ds.ocr_text,''),'') IS NOT NULL) AS ""IsOcrAvailable"",
     {isPartialDocumentExpr} AS ""IsPartialDocument"",
+    {partialGroupIdExpr} AS ""PartialGroupId"",
+    {partialPartNumberExpr} AS ""PartialPartNumber"",
+    {partialTotalPartsExpr} AS ""PartialTotalParts"",
+    {partialStatusExpr} AS ""PartialStatus"",
     {isDocumentIncompleteExpr} AS ""IsDocumentIncomplete"",
     {partNumberExpr}                 AS ""PartNumber"",
     {totalPartsExpr}                 AS ""TotalParts"",
@@ -94,7 +102,7 @@ ORDER BY {uploadedAtExpr} DESC;";
 
             return rows.AsList();
         }
-        catch (PostgresException ex) when (ex.SqlState == "42703")
+        catch (PostgresException ex) when (ex.SqlState == "42703" or "42P01")
         {
             _logger.LogError(ex,
                 "Erro de schema ao listar documentos. Verifique migrations de document_version/uploaded_at_utc. Tenant={TenantId} Folder={FolderId}",
@@ -149,12 +157,16 @@ WHERE d.tenant_id = @tenantId
         await using var conn = await _db.OpenAsync(ct);
         var schema = await GetDocumentVersionSchemaAsync(conn, ct);
 
-        var uploadedAtExpr = schema.HasUploadedAtUtc ? "COALESCE(v.uploaded_at_utc, v.created_at)" : "v.created_at";
-        var isPartialDocumentExpr = schema.HasIsPartialDocument ? "COALESCE(v.is_partial_document,false)" : "false";
-        var isDocumentIncompleteExpr = schema.HasIsDocumentIncomplete ? "COALESCE(v.is_document_incomplete,false)" : "false";
-        var partNumberExpr = schema.HasPartNumber ? "v.part_number" : "NULL::integer";
-        var totalPartsExpr = schema.HasTotalParts ? "v.total_parts" : "NULL::integer";
-        var consolidatedVersionExpr = schema.HasConsolidatedVersionId ? "v.consolidated_version_id" : "NULL::uuid";
+        const string uploadedAtExpr = "COALESCE(v.uploaded_at_utc, v.created_at)";
+        const string isPartialDocumentExpr = "COALESCE(v.is_partial_document,false)";
+        const string partialGroupIdExpr = "v.partial_group_id";
+        const string partialPartNumberExpr = "v.partial_part_number";
+        const string partialTotalPartsExpr = "v.partial_total_parts";
+        const string partialStatusExpr = "COALESCE(v.partial_status, 'NOT_PARTIAL')";
+        const string isDocumentIncompleteExpr = "COALESCE(v.is_document_incomplete,false)";
+        const string partNumberExpr = "COALESCE(v.part_number, v.partial_part_number)";
+        const string totalPartsExpr = "COALESCE(v.total_parts, v.partial_total_parts)";
+        const string consolidatedVersionExpr = "v.consolidated_version_id";
 
         var sql = $@"
 SELECT
@@ -171,6 +183,10 @@ SELECT
     (NULLIF(COALESCE(ds.ocr_text,''),'') IS NOT NULL) AS ""HasOcrText"",
     (upper(COALESCE(oj.status::text,'')) = 'COMPLETED' AND NULLIF(COALESCE(ds.ocr_text,''),'') IS NOT NULL) AS ""IsOcrAvailable"",
     {isPartialDocumentExpr} AS ""IsPartialDocument"",
+    {partialGroupIdExpr} AS ""PartialGroupId"",
+    {partialPartNumberExpr} AS ""PartialPartNumber"",
+    {partialTotalPartsExpr} AS ""PartialTotalParts"",
+    {partialStatusExpr} AS ""PartialStatus"",
     {isDocumentIncompleteExpr} AS ""IsDocumentIncomplete"",
     {partNumberExpr} AS ""PartNumber"",
     {totalPartsExpr} AS ""TotalParts"",
@@ -212,7 +228,7 @@ ORDER BY v.created_at DESC;";
 
             return rows.AsList();
         }
-        catch (PostgresException ex) when (ex.SqlState == "42703")
+        catch (PostgresException ex) when (ex.SqlState == "42703" or "42P01")
         {
             _logger.LogError(ex,
                 "Erro de schema ao listar versões de documento. Verifique migrations de document_version/uploaded_at_utc. Tenant={TenantId} DocumentId={DocumentId}",
@@ -230,9 +246,14 @@ SELECT
     COALESCE(bool_or(column_name = 'uploaded_at_utc'), false) AS ""HasUploadedAtUtc"",
     COALESCE(bool_or(column_name = 'is_partial_document'), false) AS ""HasIsPartialDocument"",
     COALESCE(bool_or(column_name = 'is_document_incomplete'), false) AS ""HasIsDocumentIncomplete"",
+    COALESCE(bool_or(column_name = 'partial_group_id'), false) AS ""HasPartialGroupId"",
+    COALESCE(bool_or(column_name = 'partial_part_number'), false) AS ""HasPartialPartNumber"",
+    COALESCE(bool_or(column_name = 'partial_total_parts'), false) AS ""HasPartialTotalParts"",
+    COALESCE(bool_or(column_name = 'partial_status'), false) AS ""HasPartialStatus"",
     COALESCE(bool_or(column_name = 'part_number'), false) AS ""HasPartNumber"",
     COALESCE(bool_or(column_name = 'total_parts'), false) AS ""HasTotalParts"",
-    COALESCE(bool_or(column_name = 'consolidated_version_id'), false) AS ""HasConsolidatedVersionId""
+    COALESCE(bool_or(column_name = 'consolidated_version_id'), false) AS ""HasConsolidatedVersionId"",
+    EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='ged' AND table_name='document' AND column_name='created_at_utc') AS ""HasDocumentCreatedAtUtc""
 FROM information_schema.columns
 WHERE table_schema = 'ged'
   AND table_name = 'document_version'
@@ -240,6 +261,10 @@ WHERE table_schema = 'ged'
       'uploaded_at_utc',
       'is_partial_document',
       'is_document_incomplete',
+      'partial_group_id',
+      'partial_part_number',
+      'partial_total_parts',
+      'partial_status',
       'part_number',
       'total_parts',
       'consolidated_version_id'
@@ -251,7 +276,7 @@ WHERE table_schema = 'ged'
         if (!schema.HasPartialDocumentMetadata)
         {
             _logger.LogWarning(
-                "Schema ged.document_version sem metadados de documento fracionado. Execute a migration 20260605_upload_ocr_partial_documents.sql.");
+                "Schema ged.document_version sem metadados de documento fracionado. Execute a migration 2026_06_ged_schema_consolidation.sql.");
         }
 
         return schema;
@@ -262,6 +287,11 @@ WHERE table_schema = 'ged'
         public bool HasUploadedAtUtc { get; set; }
         public bool HasIsPartialDocument { get; set; }
         public bool HasIsDocumentIncomplete { get; set; }
+        public bool HasPartialGroupId { get; set; }
+        public bool HasPartialPartNumber { get; set; }
+        public bool HasPartialTotalParts { get; set; }
+        public bool HasPartialStatus { get; set; }
+        public bool HasDocumentCreatedAtUtc { get; set; }
         public bool HasPartNumber { get; set; }
         public bool HasTotalParts { get; set; }
         public bool HasConsolidatedVersionId { get; set; }
@@ -270,6 +300,10 @@ WHERE table_schema = 'ged'
             HasUploadedAtUtc &&
             HasIsPartialDocument &&
             HasIsDocumentIncomplete &&
+            HasPartialGroupId &&
+            HasPartialPartNumber &&
+            HasPartialTotalParts &&
+            HasPartialStatus &&
             HasPartNumber &&
             HasTotalParts &&
             HasConsolidatedVersionId;
