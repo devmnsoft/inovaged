@@ -29,7 +29,17 @@ SELECT
     d.current_version_id           AS ""CurrentVersionId"",
     COALESCE(cv.file_size_bytes,0) AS ""SizeBytes"",
     d.created_at                   AS ""CreatedAt"",
+    COALESCE(cv.uploaded_at_utc, cv.created_at, d.created_at) AS ""UploadedAtUtc"",
     d.created_by                   AS ""CreatedBy"",
+    COALESCE(oj.status::text, 'NONE') AS ""OcrStatus"",
+    oj.finished_at                 AS ""OcrFinishedAt"",
+    (NULLIF(COALESCE(ds.ocr_text,''),'') IS NOT NULL) AS ""HasOcrText"",
+    (upper(COALESCE(oj.status::text,'')) = 'COMPLETED' AND NULLIF(COALESCE(ds.ocr_text,''),'') IS NOT NULL) AS ""IsOcrAvailable"",
+    COALESCE(cv.is_partial_document,false) AS ""IsPartialDocument"",
+    COALESCE(cv.is_document_incomplete,false) AS ""IsDocumentIncomplete"",
+    cv.part_number                 AS ""PartNumber"",
+    cv.total_parts                 AS ""TotalParts"",
+    cv.consolidated_version_id     AS ""ConsolidatedVersionId"",
     (d.visibility = 'CONFIDENTIAL'::ged.document_visibility_enum) AS ""IsConfidential""
 FROM ged.document d
 LEFT JOIN ged.document_type dt
@@ -38,6 +48,18 @@ LEFT JOIN ged.document_type dt
 LEFT JOIN ged.document_version cv
        ON cv.id = d.current_version_id
       AND cv.tenant_id = d.tenant_id
+LEFT JOIN LATERAL (
+    SELECT j.*
+    FROM ged.ocr_job j
+    WHERE j.tenant_id = d.tenant_id
+      AND j.document_version_id = cv.id
+    ORDER BY j.requested_at DESC
+    LIMIT 1
+) oj ON true
+LEFT JOIN ged.document_search ds
+       ON ds.tenant_id = d.tenant_id
+      AND ds.document_id = d.id
+      AND ds.version_id = cv.id
 WHERE d.tenant_id = @tenantId
   AND (
         (@folderId IS NULL AND d.folder_id IS NULL)
@@ -50,7 +72,7 @@ WHERE d.tenant_id = @tenantId
        d.title ILIKE ('%'||@q||'%') OR
        cv.file_name ILIKE ('%'||@q||'%') OR
        dt.name ILIKE ('%'||@q||'%'))
-ORDER BY d.created_at DESC;";
+ORDER BY COALESCE(cv.uploaded_at_utc, cv.created_at, d.created_at) DESC;";
 
         await using var conn = await _db.OpenAsync(ct);
 
@@ -110,8 +132,16 @@ SELECT
     v.file_size_bytes AS ""SizeBytes"",
     v.storage_path    AS ""StoragePath"",
     v.created_at      AS ""CreatedAt"",
+    COALESCE(v.uploaded_at_utc, v.created_at) AS ""UploadedAtUtc"",
     v.created_by      AS ""CreatedBy"",
     (v.id = d.current_version_id) AS ""IsCurrent"",
+    (NULLIF(COALESCE(ds.ocr_text,''),'') IS NOT NULL) AS ""HasOcrText"",
+    (upper(COALESCE(oj.status::text,'')) = 'COMPLETED' AND NULLIF(COALESCE(ds.ocr_text,''),'') IS NOT NULL) AS ""IsOcrAvailable"",
+    COALESCE(v.is_partial_document,false) AS ""IsPartialDocument"",
+    COALESCE(v.is_document_incomplete,false) AS ""IsDocumentIncomplete"",
+    v.part_number AS ""PartNumber"",
+    v.total_parts AS ""TotalParts"",
+    v.consolidated_version_id AS ""ConsolidatedVersionId"",
 
     oj.status::text   AS ""OcrStatus"",
     oj.id             AS ""OcrJobId"",
@@ -132,6 +162,10 @@ LEFT JOIN LATERAL (
     ORDER BY j.requested_at DESC
     LIMIT 1
 ) oj ON true
+LEFT JOIN ged.document_search ds
+  ON ds.tenant_id = v.tenant_id
+ AND ds.document_id = v.document_id
+ AND ds.version_id = v.id
 WHERE v.tenant_id = @tenantId
   AND v.document_id = @documentId
   AND d.status <> 'ARCHIVED'::ged.document_status_enum

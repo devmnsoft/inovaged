@@ -1,4 +1,7 @@
 @model InovaGed.Web.Models.Ged.GedExplorerVM
+@using InovaGed.Web.Ocr
+@inject Microsoft.Extensions.Configuration.IConfiguration Configuration
+@{ var localTimeZoneId = Configuration["App:LocalTimeZoneId"] ?? Configuration["TimeZoneId"] ?? "America/Sao_Paulo"; }
 
 <div class="ged-documents-list" id="gedDocumentsContainer" data-folder-id="@Model.CurrentFolderId" data-listing-folder-id="@Model.CurrentListingFolderId" data-upload-folder-id="@Model.CurrentUploadFolderId" data-folder-name="@Model.CurrentFolderName" data-document-count="@Model.Documents.Count">
     @if (!Model.Documents.Any())
@@ -31,7 +34,11 @@
             {
                 var isUnclassified = string.IsNullOrWhiteSpace(d.TypeName) || d.TypeName == "-";
                 var versionId = d.CurrentVersionId?.ToString() ?? string.Empty;
-                <article class="ged-document-row" draggable="true" data-document-id="@d.Id">
+                var uploadLocal = OcrUiHelper.ToConfiguredLocalTime(d.UploadedAtUtc == default ? d.CreatedAt : d.UploadedAtUtc, localTimeZoneId);
+                var ocrBadgeClass = OcrUiHelper.BadgeClass(d.IsOcrAvailable, d.OcrStatus);
+                var ocrLabel = OcrUiHelper.AvailabilityLabel(d.IsOcrAvailable, d.OcrStatus, d.HasOcrText);
+                var partialClass = d.IsDocumentIncomplete ? " ged-document-incomplete" : (d.IsPartialDocument ? " ged-document-partial" : "");
+                <article class="ged-document-row@partialClass" draggable="true" data-document-id="@d.Id" data-ocr-available="@(d.IsOcrAvailable ? "true" : "false")" data-uploaded-at-utc="@((d.UploadedAtUtc == default ? d.CreatedAt : d.UploadedAtUtc).ToString("O"))">
                     <div class="ged-document-check">
                         <input type="checkbox" class="form-check-input js-doc-select" value="@d.Id" data-document-title="@d.Title" />
                     </div>
@@ -47,8 +54,12 @@
                             {
                                 <span class="badge ged-badge ged-badge-ok"><i class="bi bi-tags me-1"></i>@d.TypeName</span>
                             }
-                            <span class="badge ged-badge ged-badge-info">OCR disponível</span>
-                            <span class="text-muted small"><i class="bi bi-clock me-1"></i>@d.CreatedAt.ToString("dd/MM/yyyy HH:mm")</span>
+                            <span class="badge ged-badge @ocrBadgeClass">@ocrLabel</span>
+                            @if (d.IsDocumentIncomplete || d.IsPartialDocument)
+                            {
+                                <span class="badge ged-badge @(d.IsDocumentIncomplete ? "ged-badge-warning" : "ged-badge-info")">@(d.IsDocumentIncomplete ? "Documento incompleto" : "Parcial") @(d.PartNumber.HasValue && d.TotalParts.HasValue ? $"{d.PartNumber}/{d.TotalParts}" : "")</span>
+                            }
+                            <span class="text-muted small" title="Upload em UTC: @((d.UploadedAtUtc == default ? d.CreatedAt : d.UploadedAtUtc).ToString("O"))"><i class="bi bi-cloud-arrow-up me-1"></i>Upload em @(uploadLocal.ToString("dd/MM/yyyy HH:mm"))</span>
                         </div>
                     </div>
                     <div class="ged-document-actions">
@@ -70,7 +81,7 @@
                                 <th style="width:220px;">Tipo/Classificação</th>
                                 <th style="width:260px;">Arquivo</th>
                                 <th style="width:120px;">OCR</th>
-                                <th style="width:150px;">Atualizado em</th>
+                                <th style="width:170px;">Upload em</th>
                                 <th style="width:70px;" class="text-end">Ações</th>
                             </tr>
                         </thead>
@@ -79,7 +90,11 @@
                             {
                                 var isUnclassified = string.IsNullOrWhiteSpace(d.TypeName) || d.TypeName == "-";
                                 var versionId = d.CurrentVersionId?.ToString() ?? string.Empty;
-                                <tr draggable="true" data-document-id="@d.Id">
+                                var uploadLocal = OcrUiHelper.ToConfiguredLocalTime(d.UploadedAtUtc == default ? d.CreatedAt : d.UploadedAtUtc, localTimeZoneId);
+                                var ocrBadgeClass = OcrUiHelper.BadgeClass(d.IsOcrAvailable, d.OcrStatus);
+                                var ocrLabel = OcrUiHelper.AvailabilityLabel(d.IsOcrAvailable, d.OcrStatus, d.HasOcrText);
+                                var partialClass = d.IsDocumentIncomplete ? "table-warning ged-document-incomplete" : (d.IsPartialDocument ? "ged-document-partial" : "");
+                                <tr class="@partialClass" draggable="true" data-document-id="@d.Id" data-ocr-available="@(d.IsOcrAvailable ? "true" : "false")" data-uploaded-at-utc="@((d.UploadedAtUtc == default ? d.CreatedAt : d.UploadedAtUtc).ToString("O"))">
                                     <td><input type="checkbox" class="js-doc-select" value="@d.Id" data-document-title="@d.Title" /></td>
                                     <td>
                                         <div class="ged-doc-title">@d.Title</div>
@@ -96,8 +111,8 @@
                                         }
                                     </td>
                                     <td class="text-muted small text-truncate" style="max-width:260px;" title="@d.FileName">@d.FileName</td>
-                                    <td><span class="badge ged-badge ged-badge-info">Disponível</span></td>
-                                    <td class="text-muted small">@d.CreatedAt.ToString("dd/MM/yyyy HH:mm")</td>
+                                    <td><span class="badge ged-badge @ocrBadgeClass">@ocrLabel</span></td>
+                                    <td class="text-muted small">Upload em @(uploadLocal.ToString("dd/MM/yyyy HH:mm"))</td>
                                     <td class="text-end">
                                         @await Html.PartialAsync("_DocumentActionsDropdown", (d.Id, d.Title, versionId, Model.CurrentFolderId))
                                     </td>

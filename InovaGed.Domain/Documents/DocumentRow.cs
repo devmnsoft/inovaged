@@ -39,5 +39,11 @@
         public string ContentType { get; init; } = "application/octet-stream";
 
         public Guid? CreatedBy { get; init; }
+        public DateTime UploadedAtUtc { get; init; } = DateTime.UtcNow;
+        public bool IsPartialDocument { get; init; }
+        public bool IsDocumentIncomplete { get; init; }
+        public int? PartNumber { get; init; }
+        public int? TotalParts { get; init; }
+        public Guid? ConsolidatedVersionId { get; init; }
     }
 }

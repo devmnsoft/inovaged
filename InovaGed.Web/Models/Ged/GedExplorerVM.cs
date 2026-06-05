@@ -40,7 +40,17 @@ public sealed class GedExplorerVM
         public Guid? CurrentVersionId { get; set; }
         public long SizeBytes { get; set; }
         public DateTime CreatedAt { get; set; }
+        public DateTime UploadedAtUtc { get; set; }
         public Guid CreatedBy { get; set; }   // ou Guid?
+        public string? OcrStatus { get; set; }
+        public DateTime? OcrFinishedAt { get; set; }
+        public bool HasOcrText { get; set; }
+        public bool IsOcrAvailable { get; set; }
+        public bool IsPartialDocument { get; set; }
+        public bool IsDocumentIncomplete { get; set; }
+        public int? PartNumber { get; set; }
+        public int? TotalParts { get; set; }
+        public Guid? ConsolidatedVersionId { get; set; }
 
         public bool IsConfidential { get; set; }
     }

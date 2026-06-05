@@ -22,6 +22,12 @@ public sealed class UploadDocumentCommand
     public string FileName { get; init; } = "";
     public string ContentType { get; init; } = "application/octet-stream";
     public Stream Content { get; init; } = Stream.Null;
+    public DateTime UploadedAtUtc { get; init; } = DateTime.UtcNow;
+    public bool IsPartialDocument { get; init; }
+    public bool IsDocumentIncomplete { get; init; }
+    public int? PartNumber { get; init; }
+    public int? TotalParts { get; init; }
+    public Guid? ConsolidatedVersionId { get; init; }
 
 
 }

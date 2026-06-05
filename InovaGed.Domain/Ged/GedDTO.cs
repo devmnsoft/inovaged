@@ -17,7 +17,17 @@ namespace InovaGed.Domain.Ged
         public Guid? CurrentVersionId { get; init; }
         public long SizeBytes { get; init; }
         public DateTime CreatedAt { get; init; }
+        public DateTime UploadedAtUtc { get; init; }
         public Guid CreatedBy { get; set; }   // ou Guid?
+        public string? OcrStatus { get; init; }
+        public DateTime? OcrFinishedAt { get; init; }
+        public bool HasOcrText { get; init; }
+        public bool IsOcrAvailable { get; init; }
+        public bool IsPartialDocument { get; init; }
+        public bool IsDocumentIncomplete { get; init; }
+        public int? PartNumber { get; init; }
+        public int? TotalParts { get; init; }
+        public Guid? ConsolidatedVersionId { get; init; }
          
         public bool IsConfidential { get; init; }
     }
@@ -30,8 +40,16 @@ namespace InovaGed.Domain.Ged
         public string? ContentType { get; init; }
         public long SizeBytes { get; init; }
         public DateTime CreatedAt { get; init; }
+        public DateTime UploadedAtUtc { get; init; }
         public Guid? CreatedBy { get; init; }
         public bool IsCurrent { get; init; }
+        public bool HasOcrText { get; init; }
+        public bool IsOcrAvailable { get; init; }
+        public bool IsPartialDocument { get; init; }
+        public bool IsDocumentIncomplete { get; init; }
+        public int? PartNumber { get; init; }
+        public int? TotalParts { get; init; }
+        public Guid? ConsolidatedVersionId { get; init; }
 
         public string? FileExtension { get; init; }
         public string OcrStatus { get; set; }

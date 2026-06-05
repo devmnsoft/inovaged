@@ -151,8 +151,30 @@
         updateDocumentCounters();
     }
 
-    function highlightUploadedDocuments(ids) { (ids || []).forEach(id => { if (!id) return; const row = document.querySelector(`[data-document-id="${esc(id)}"]`); if (row) { row.classList.add('document-row-new'); setTimeout(() => row.classList.remove('document-row-new'), 5000); } }); }
-    function updateDocumentCounters() { const count = Number(document.querySelector('#gedDocumentsContainer')?.dataset?.documentCount || document.querySelectorAll('[data-document-id]').length || 0); const firstKpi = document.querySelector('.ged-kpi-card:first-child span'); if (firstKpi && Number.isFinite(count)) firstKpi.textContent = String(count); window.updateMoveSelectedButton?.(); }
+    function highlightUploadedDocuments(ids) {
+        let first = null;
+        (ids || []).forEach(id => {
+            if (!id) return;
+            const row = document.querySelector(`[data-document-id="${esc(id)}"]`);
+            if (row) {
+                if (!first) first = row;
+                row.classList.add('document-row-new');
+                setTimeout(() => row.classList.remove('document-row-new'), 5000);
+            }
+        });
+        first?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+    }
+    function updateDocumentCounters() {
+        const rows = Array.from(document.querySelectorAll('#gedDocumentsContainer [data-document-id]'));
+        const count = Number(document.querySelector('#gedDocumentsContainer')?.dataset?.documentCount || rows.length || 0);
+        const ocrDone = rows.filter(x => x.dataset.ocrAvailable === 'true').length;
+        const noOcr = Math.max(0, rows.length - ocrDone);
+        const unclassified = document.querySelectorAll('#gedDocumentsContainer .ged-badge-muted').length;
+        const firstKpi = document.querySelector('.ged-kpi-card:first-child span');
+        if (firstKpi && Number.isFinite(count)) firstKpi.textContent = String(count);
+        document.dispatchEvent(new CustomEvent('ged:documents-counters-updated', { detail: { total: count, ocrDone, noOcr, unclassified } }));
+        window.updateMoveSelectedButton?.();
+    }
     function selectedDocumentIds() { return Array.from(new Set(Array.from(document.querySelectorAll('.js-doc-select:checked')).map(x => x.value).filter(Boolean))); }
 
     function handleFolderDrop(e) {
