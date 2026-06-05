@@ -680,6 +680,18 @@
                     <div class="step"><div class="n">5</div><div><b>Salvar e acompanhar.</b><div class="muted small">Verifique status, auditoria, OCR, assinatura e tramitação.</div></div></div>
                 </div>
 
+                <div class="callout blue mt-3">
+                    <h3 class="h6 mb-2"><i class="bi bi-calendar2-check me-1"></i>Data e hora do documento</h3>
+                    <ul class="mb-0">
+                        <li><b>Upload em</b> representa o momento em que o arquivo foi salvo no GED.</li>
+                        <li>O banco armazena esse horário em UTC no campo <code>uploaded_at_utc</code> da versão documental.</li>
+                        <li>A tela exibe o horário convertido para o fuso local configurado em <code>Localization:DefaultTimeZone</code>, usando o formato <code>dd/MM/yyyy HH:mm</code>.</li>
+                        <li><b>Data do documento</b> é um metadado próprio do documento, quando informado, e não deve ser confundido com o upload.</li>
+                        <li><b>OCR concluído em</b> indica quando o processamento de OCR terminou; é diferente de <b>Upload em</b>.</li>
+                        <li><b>Atualizado em</b> indica a última alteração cadastral/documental.</li>
+                    </ul>
+                </div>
+
                 <div class="quick-links mt-3">
                     @Btn("Abrir GED", "bi-folder2-open", "Ged", "Index", null)
                     @Btn("Importar/Exportar", "bi-arrow-left-right", "ImportExport", "Index", null)

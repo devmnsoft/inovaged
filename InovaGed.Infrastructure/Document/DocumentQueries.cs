@@ -4,6 +4,7 @@ using InovaGed.Application.Documents;
 using InovaGed.Domain.Documents;
 using InovaGed.Domain.Ged;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 
 namespace InovaGed.Infrastructure.Documents;
 
@@ -76,10 +77,22 @@ ORDER BY COALESCE(cv.uploaded_at_utc, cv.created_at, d.created_at) DESC;";
 
         await using var conn = await _db.OpenAsync(ct);
 
-        var rows = await conn.QueryAsync<DocumentRowDto>(
-            new CommandDefinition(sql, new { tenantId, folderId, q }, cancellationToken: ct));
+        try
+        {
+            var rows = await conn.QueryAsync<DocumentRowDto>(
+                new CommandDefinition(sql, new { tenantId, folderId, q }, cancellationToken: ct));
 
-        return rows.AsList();
+            return rows.AsList();
+        }
+        catch (PostgresException ex) when (ex.SqlState == "42703")
+        {
+            _logger.LogError(ex,
+                "Erro de schema ao listar documentos. Verifique migrations de document_version/uploaded_at_utc. Tenant={TenantId} Folder={FolderId}",
+                tenantId,
+                folderId);
+
+            throw;
+        }
     }
 
     public async Task<DocumentDetailsDto?> GetAsync(Guid tenantId, Guid documentId, CancellationToken ct)
@@ -174,10 +187,22 @@ ORDER BY v.created_at DESC;";
 
         await using var conn = await _db.OpenAsync(ct);
 
-        var rows = await conn.QueryAsync<DocumentVersionDto>(
-            new CommandDefinition(sql, new { tenantId, documentId }, cancellationToken: ct));
+        try
+        {
+            var rows = await conn.QueryAsync<DocumentVersionDto>(
+                new CommandDefinition(sql, new { tenantId, documentId }, cancellationToken: ct));
 
-        return rows.AsList();
+            return rows.AsList();
+        }
+        catch (PostgresException ex) when (ex.SqlState == "42703")
+        {
+            _logger.LogError(ex,
+                "Erro de schema ao listar versões de documento. Verifique migrations de document_version/uploaded_at_utc. Tenant={TenantId} DocumentId={DocumentId}",
+                tenantId,
+                documentId);
+
+            throw;
+        }
     }
 
     public async Task<DocumentVersionDownloadDto?> GetVersionForDownloadAsync(Guid tenantId, Guid versionId, CancellationToken ct)

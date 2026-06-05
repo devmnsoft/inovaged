@@ -225,7 +225,7 @@
                                             <td>
                                                 <div class="fw-semibold">@v.FileName</div>
                                                 <div class="text-muted small">@v.ContentType</div>
-                                                <div class="text-muted small">Upload em: @(Local(v.UploadedAtUtc == default ? v.CreatedAt : v.UploadedAtUtc).ToString("dd/MM/yyyy HH:mm"))</div>
+                                                <div class="text-muted small">Upload em: @(string.IsNullOrWhiteSpace(v.UploadedAtLocalFormatted) ? Local(v.UploadedAtUtc == default ? v.CreatedAt : v.UploadedAtUtc).ToString("dd/MM/yyyy HH:mm") : v.UploadedAtLocalFormatted)</div>
                                                 @if (v.IsDocumentIncomplete || v.IsPartialDocument)
                                                 {
                                                     <span class="badge @(v.IsDocumentIncomplete ? "bg-warning text-dark" : "bg-info text-dark")">@(v.IsDocumentIncomplete ? "Documento incompleto" : "Parcial") @(v.PartNumber.HasValue && v.TotalParts.HasValue ? $"{v.PartNumber}/{v.TotalParts}" : "")</span>

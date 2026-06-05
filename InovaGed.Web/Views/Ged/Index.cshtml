@@ -60,6 +60,12 @@
                 <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Fechar"></button>
             </div>
         }
+        @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+        {
+            <div class="alert alert-warning" role="alert">
+                <i class="bi bi-database-exclamation me-1"></i>@Model.ErrorMessage
+            </div>
+        }
     </div>
 
     <!-- COLUNA PASTAS -->
