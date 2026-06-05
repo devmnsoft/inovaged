@@ -8,24 +8,32 @@ using Microsoft.AspNetCore.Mvc;
 namespace InovaGed.Web.Controllers;
 
 [Authorize(Policy = AppPolicies.AdminOnly)]
-public sealed class SystemHealthController : Controller
+[Route("SystemHealth/Schema")]
+public sealed class SchemaHealthController : Controller
 {
     private readonly ISchemaHealthService _schemaHealth;
 
-    public SystemHealthController(ISchemaHealthService schemaHealth)
+    public SchemaHealthController(ISchemaHealthService schemaHealth)
     {
         _schemaHealth = schemaHealth;
     }
 
-    [HttpGet("/SystemHealth/Schema")]
-    public async Task<IActionResult> Schema(CancellationToken ct)
+    [HttpGet("")]
+    public async Task<IActionResult> Index(CancellationToken ct)
     {
         var report = await _schemaHealth.CheckAsync(ct);
-        return View(report);
+        return View("~/Views/SystemHealth/Schema.cshtml", report);
     }
 
-    [HttpGet("/SystemHealth/Schema/Report")]
-    public async Task<IActionResult> SchemaReport(CancellationToken ct)
+    [HttpGet("Data")]
+    public async Task<IActionResult> Data(CancellationToken ct)
+    {
+        var report = await _schemaHealth.CheckAsync(ct);
+        return Json(report);
+    }
+
+    [HttpGet("Report")]
+    public async Task<IActionResult> Report(CancellationToken ct)
     {
         var report = await _schemaHealth.CheckAsync(ct);
         var json = JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true });

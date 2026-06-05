@@ -133,9 +133,13 @@
 			<i class="bi bi-graph-up-arrow"></i>
 			<span>Alertas e Tendências</span>
 		</a>
-		<a asp-controller="SystemHealth" asp-action="Index" class="@Active("SystemHealth", "Index")">
+		<a asp-controller="SystemHealth" asp-action="Index" class="@ActivePathExact("/SystemHealth")">
 			<i class="bi bi-heart-pulse"></i>
-			<span>System Health</span>
+			<span>Saúde do Sistema</span>
+		</a>
+		<a href="/SystemHealth/Schema" class="@ActivePathStarts("/SystemHealth/Schema")">
+			<i class="bi bi-database-check"></i>
+			<span>Schema do Banco</span>
 		</a>
 	}
 }
