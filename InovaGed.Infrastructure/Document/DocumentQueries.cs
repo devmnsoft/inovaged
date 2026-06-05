@@ -24,44 +24,60 @@ public sealed class DocumentQueries : IDocumentQueries
         await using var conn = await _db.OpenAsync(ct);
         var schema = await GetDocumentVersionSchemaAsync(conn, ct);
 
-        var uploadedAtExpr = schema.HasDocumentCreatedAtUtc
-            ? "COALESCE(cv.uploaded_at_utc, cv.created_at, d.created_at_utc, d.created_at)"
-            : "COALESCE(cv.uploaded_at_utc, cv.created_at, d.created_at)";
-        const string isPartialDocumentExpr = "COALESCE(cv.is_partial_document,false)";
-        const string partialGroupIdExpr = "cv.partial_group_id";
-        const string partialPartNumberExpr = "cv.partial_part_number";
-        const string partialTotalPartsExpr = "cv.partial_total_parts";
-        const string partialStatusExpr = "COALESCE(cv.partial_status, 'NOT_PARTIAL')";
-        const string isDocumentIncompleteExpr = "COALESCE(cv.is_document_incomplete,false)";
-        const string partNumberExpr = "COALESCE(cv.part_number, cv.partial_part_number)";
-        const string totalPartsExpr = "COALESCE(cv.total_parts, cv.partial_total_parts)";
-        const string consolidatedVersionExpr = "cv.consolidated_version_id";
+        var uploadedAtExpr = schema.HasUploadedAtUtc
+            ? (schema.HasDocumentCreatedAtUtc
+                ? "COALESCE(cv.uploaded_at_utc, cv.created_at, d.created_at_utc, d.created_at)"
+                : "COALESCE(cv.uploaded_at_utc, cv.created_at, d.created_at)")
+            : (schema.HasDocumentCreatedAtUtc
+                ? "COALESCE(cv.created_at, d.created_at_utc, d.created_at)"
+                : "COALESCE(cv.created_at, d.created_at)");
+        var isPartialDocumentExpr = schema.HasIsPartialDocument ? "COALESCE(cv.is_partial_document,false)" : "false";
+        var partialGroupIdExpr = schema.HasPartialGroupId ? "cv.partial_group_id" : "NULL::uuid";
+        var partialPartNumberExpr = schema.HasPartialPartNumber ? "cv.partial_part_number" : "NULL::int";
+        var partialTotalPartsExpr = schema.HasPartialTotalParts ? "cv.partial_total_parts" : "NULL::int";
+        var partialStatusExpr = schema.HasPartialStatus ? "COALESCE(cv.partial_status, 'NOT_PARTIAL')" : "'NOT_PARTIAL'";
+        var isDocumentIncompleteExpr = schema.HasIsDocumentIncomplete ? "COALESCE(cv.is_document_incomplete,false)" : "false";
+        var partNumberExpr = (schema.HasPartNumber, schema.HasPartialPartNumber) switch
+        {
+            (true, true) => "COALESCE(cv.part_number, cv.partial_part_number)",
+            (true, false) => "cv.part_number",
+            (false, true) => "cv.partial_part_number",
+            _ => "NULL::int"
+        };
+        var totalPartsExpr = (schema.HasTotalParts, schema.HasPartialTotalParts) switch
+        {
+            (true, true) => "COALESCE(cv.total_parts, cv.partial_total_parts)",
+            (true, false) => "cv.total_parts",
+            (false, true) => "cv.partial_total_parts",
+            _ => "NULL::int"
+        };
+        var consolidatedVersionExpr = schema.HasConsolidatedVersionId ? "cv.consolidated_version_id" : "NULL::uuid";
 
-        var sql = $@"
+        var sql = $$"""
 SELECT
-    d.id                           AS ""Id"",
-    d.title                        AS ""Title"",
-    COALESCE(dt.name,'-')          AS ""TypeName"",
-    cv.file_name                   AS ""FileName"",
-    d.current_version_id           AS ""CurrentVersionId"",
-    COALESCE(cv.file_size_bytes,0) AS ""SizeBytes"",
-    d.created_at                   AS ""CreatedAt"",
-    {uploadedAtExpr} AS ""UploadedAtUtc"",
-    d.created_by                   AS ""CreatedBy"",
-    COALESCE(oj.status::text, 'NONE') AS ""OcrStatus"",
-    oj.finished_at                 AS ""OcrFinishedAt"",
-    (NULLIF(COALESCE(ds.ocr_text,''),'') IS NOT NULL) AS ""HasOcrText"",
-    (upper(COALESCE(oj.status::text,'')) = 'COMPLETED' AND NULLIF(COALESCE(ds.ocr_text,''),'') IS NOT NULL) AS ""IsOcrAvailable"",
-    {isPartialDocumentExpr} AS ""IsPartialDocument"",
-    {partialGroupIdExpr} AS ""PartialGroupId"",
-    {partialPartNumberExpr} AS ""PartialPartNumber"",
-    {partialTotalPartsExpr} AS ""PartialTotalParts"",
-    {partialStatusExpr} AS ""PartialStatus"",
-    {isDocumentIncompleteExpr} AS ""IsDocumentIncomplete"",
-    {partNumberExpr}                 AS ""PartNumber"",
-    {totalPartsExpr}                 AS ""TotalParts"",
-    {consolidatedVersionExpr}     AS ""ConsolidatedVersionId"",
-    (d.visibility = 'CONFIDENTIAL'::ged.document_visibility_enum) AS ""IsConfidential""
+    d.id                           AS "Id",
+    d.title                        AS "Title",
+    COALESCE(dt.name,'-')          AS "TypeName",
+    cv.file_name                   AS "FileName",
+    d.current_version_id           AS "CurrentVersionId",
+    COALESCE(cv.file_size_bytes,0) AS "SizeBytes",
+    d.created_at                   AS "CreatedAt",
+    {{uploadedAtExpr}} AS "UploadedAtUtc",
+    d.created_by                   AS "CreatedBy",
+    COALESCE(oj.status::text, 'NONE') AS "OcrStatus",
+    oj.finished_at                 AS "OcrFinishedAt",
+    (NULLIF(COALESCE(ds.ocr_text,''),'') IS NOT NULL) AS "HasOcrText",
+    (upper(COALESCE(oj.status::text,'')) = 'COMPLETED' AND NULLIF(COALESCE(ds.ocr_text,''),'') IS NOT NULL) AS "IsOcrAvailable",
+    {{isPartialDocumentExpr}} AS "IsPartialDocument",
+    {{partialGroupIdExpr}} AS "PartialGroupId",
+    {{partialPartNumberExpr}} AS "PartialPartNumber",
+    {{partialTotalPartsExpr}} AS "PartialTotalParts",
+    {{partialStatusExpr}} AS "PartialStatus",
+    {{isDocumentIncompleteExpr}} AS "IsDocumentIncomplete",
+    {{partNumberExpr}}                 AS "PartNumber",
+    {{totalPartsExpr}}                 AS "TotalParts",
+    {{consolidatedVersionExpr}}     AS "ConsolidatedVersionId",
+    (d.visibility = 'CONFIDENTIAL'::ged.document_visibility_enum) AS "IsConfidential"
 FROM ged.document d
 LEFT JOIN ged.document_type dt
        ON dt.id = d.type_id
@@ -93,7 +109,8 @@ WHERE d.tenant_id = @tenantId
        d.title ILIKE ('%'||@q||'%') OR
        cv.file_name ILIKE ('%'||@q||'%') OR
        dt.name ILIKE ('%'||@q||'%'))
-ORDER BY {uploadedAtExpr} DESC;";
+ORDER BY {{uploadedAtExpr}} DESC;
+""";
 
         try
         {
@@ -102,7 +119,7 @@ ORDER BY {uploadedAtExpr} DESC;";
 
             return rows.AsList();
         }
-        catch (PostgresException ex) when (ex.SqlState == "42703" or "42P01")
+        catch (PostgresException ex) when (ex.SqlState is "42703" or "42P01")
         {
             _logger.LogError(ex,
                 "Erro de schema ao listar documentos. Verifique migrations de document_version/uploaded_at_utc. Tenant={TenantId} Folder={FolderId}",
@@ -115,29 +132,30 @@ ORDER BY {uploadedAtExpr} DESC;";
 
     public async Task<DocumentDetailsDto?> GetAsync(Guid tenantId, Guid documentId, CancellationToken ct)
     {
-        const string sql = @"
+        const string sql = """
 SELECT
-    d.id                 AS ""Id"",
-    d.tenant_id          AS ""TenantId"",
-    ''                   AS ""Code"",
-    d.title              AS ""Title"",
-    d.description        AS ""Description"",
-    d.folder_id          AS ""FolderId"",
-    d.type_id            AS ""TypeId"",
-    NULL::uuid           AS ""ClassificationId"",
-    d.status             AS ""Status"",
-    d.visibility::text   AS ""Visibility"",
-    d.current_version_id AS ""CurrentVersionId"",
-    d.created_at         AS ""CreatedAt"",
-    d.created_by         AS ""CreatedBy"",
-    d.updated_at         AS ""UpdatedAt"",
-    d.updated_by         AS ""UpdatedBy"",
-    0                    AS ""CurrentVersion""
+    d.id                 AS "Id",
+    d.tenant_id          AS "TenantId",
+    ''                   AS "Code",
+    d.title              AS "Title",
+    d.description        AS "Description",
+    d.folder_id          AS "FolderId",
+    d.type_id            AS "TypeId",
+    NULL::uuid           AS "ClassificationId",
+    d.status             AS "Status",
+    d.visibility::text   AS "Visibility",
+    d.current_version_id AS "CurrentVersionId",
+    d.created_at         AS "CreatedAt",
+    d.created_by         AS "CreatedBy",
+    d.updated_at         AS "UpdatedAt",
+    d.updated_by         AS "UpdatedBy",
+    0                    AS "CurrentVersion"
 FROM ged.document d
 WHERE d.tenant_id = @tenantId
   AND d.id = @documentId
   AND d.status <> 'ARCHIVED'::ged.document_status_enum
-  AND d.reg_status = 'A'::bpchar;";
+  AND d.reg_status = 'A'::bpchar;
+""";
 
         await using var conn = await _db.OpenAsync(ct);
 
@@ -157,48 +175,60 @@ WHERE d.tenant_id = @tenantId
         await using var conn = await _db.OpenAsync(ct);
         var schema = await GetDocumentVersionSchemaAsync(conn, ct);
 
-        const string uploadedAtExpr = "COALESCE(v.uploaded_at_utc, v.created_at)";
-        const string isPartialDocumentExpr = "COALESCE(v.is_partial_document,false)";
-        const string partialGroupIdExpr = "v.partial_group_id";
-        const string partialPartNumberExpr = "v.partial_part_number";
-        const string partialTotalPartsExpr = "v.partial_total_parts";
-        const string partialStatusExpr = "COALESCE(v.partial_status, 'NOT_PARTIAL')";
-        const string isDocumentIncompleteExpr = "COALESCE(v.is_document_incomplete,false)";
-        const string partNumberExpr = "COALESCE(v.part_number, v.partial_part_number)";
-        const string totalPartsExpr = "COALESCE(v.total_parts, v.partial_total_parts)";
-        const string consolidatedVersionExpr = "v.consolidated_version_id";
+        var uploadedAtExpr = schema.HasUploadedAtUtc ? "COALESCE(v.uploaded_at_utc, v.created_at)" : "v.created_at";
+        var isPartialDocumentExpr = schema.HasIsPartialDocument ? "COALESCE(v.is_partial_document,false)" : "false";
+        var partialGroupIdExpr = schema.HasPartialGroupId ? "v.partial_group_id" : "NULL::uuid";
+        var partialPartNumberExpr = schema.HasPartialPartNumber ? "v.partial_part_number" : "NULL::int";
+        var partialTotalPartsExpr = schema.HasPartialTotalParts ? "v.partial_total_parts" : "NULL::int";
+        var partialStatusExpr = schema.HasPartialStatus ? "COALESCE(v.partial_status, 'NOT_PARTIAL')" : "'NOT_PARTIAL'";
+        var isDocumentIncompleteExpr = schema.HasIsDocumentIncomplete ? "COALESCE(v.is_document_incomplete,false)" : "false";
+        var partNumberExpr = (schema.HasPartNumber, schema.HasPartialPartNumber) switch
+        {
+            (true, true) => "COALESCE(v.part_number, v.partial_part_number)",
+            (true, false) => "v.part_number",
+            (false, true) => "v.partial_part_number",
+            _ => "NULL::int"
+        };
+        var totalPartsExpr = (schema.HasTotalParts, schema.HasPartialTotalParts) switch
+        {
+            (true, true) => "COALESCE(v.total_parts, v.partial_total_parts)",
+            (true, false) => "v.total_parts",
+            (false, true) => "v.partial_total_parts",
+            _ => "NULL::int"
+        };
+        var consolidatedVersionExpr = schema.HasConsolidatedVersionId ? "v.consolidated_version_id" : "NULL::uuid";
 
-        var sql = $@"
+        var sql = $$"""
 SELECT
-    v.id              AS ""Id"",
-    v.document_id     AS ""DocumentId"",
-    v.file_name       AS ""FileName"",
-    v.content_type    AS ""ContentType"",
-    v.file_size_bytes AS ""SizeBytes"",
-    v.storage_path    AS ""StoragePath"",
-    v.created_at      AS ""CreatedAt"",
-    {uploadedAtExpr} AS ""UploadedAtUtc"",
-    v.created_by      AS ""CreatedBy"",
-    (v.id = d.current_version_id) AS ""IsCurrent"",
-    (NULLIF(COALESCE(ds.ocr_text,''),'') IS NOT NULL) AS ""HasOcrText"",
-    (upper(COALESCE(oj.status::text,'')) = 'COMPLETED' AND NULLIF(COALESCE(ds.ocr_text,''),'') IS NOT NULL) AS ""IsOcrAvailable"",
-    {isPartialDocumentExpr} AS ""IsPartialDocument"",
-    {partialGroupIdExpr} AS ""PartialGroupId"",
-    {partialPartNumberExpr} AS ""PartialPartNumber"",
-    {partialTotalPartsExpr} AS ""PartialTotalParts"",
-    {partialStatusExpr} AS ""PartialStatus"",
-    {isDocumentIncompleteExpr} AS ""IsDocumentIncomplete"",
-    {partNumberExpr} AS ""PartNumber"",
-    {totalPartsExpr} AS ""TotalParts"",
-    {consolidatedVersionExpr} AS ""ConsolidatedVersionId"",
+    v.id              AS "Id",
+    v.document_id     AS "DocumentId",
+    v.file_name       AS "FileName",
+    v.content_type    AS "ContentType",
+    v.file_size_bytes AS "SizeBytes",
+    v.storage_path    AS "StoragePath",
+    v.created_at      AS "CreatedAt",
+    {{uploadedAtExpr}} AS "UploadedAtUtc",
+    v.created_by      AS "CreatedBy",
+    (v.id = d.current_version_id) AS "IsCurrent",
+    (NULLIF(COALESCE(ds.ocr_text,''),'') IS NOT NULL) AS "HasOcrText",
+    (upper(COALESCE(oj.status::text,'')) = 'COMPLETED' AND NULLIF(COALESCE(ds.ocr_text,''),'') IS NOT NULL) AS "IsOcrAvailable",
+    {{isPartialDocumentExpr}} AS "IsPartialDocument",
+    {{partialGroupIdExpr}} AS "PartialGroupId",
+    {{partialPartNumberExpr}} AS "PartialPartNumber",
+    {{partialTotalPartsExpr}} AS "PartialTotalParts",
+    {{partialStatusExpr}} AS "PartialStatus",
+    {{isDocumentIncompleteExpr}} AS "IsDocumentIncomplete",
+    {{partNumberExpr}} AS "PartNumber",
+    {{totalPartsExpr}} AS "TotalParts",
+    {{consolidatedVersionExpr}} AS "ConsolidatedVersionId",
 
-    oj.status::text   AS ""OcrStatus"",
-    oj.id             AS ""OcrJobId"",
-    oj.error_message  AS ""OcrErrorMessage"",
-    oj.requested_at   AS ""OcrRequestedAt"",
-    oj.started_at     AS ""OcrStartedAt"",
-    oj.finished_at    AS ""OcrFinishedAt"",
-    oj.invalidate_digital_signatures AS ""OcrInvalidateDigitalSignatures""
+    oj.status::text   AS "OcrStatus",
+    oj.id             AS "OcrJobId",
+    oj.error_message  AS "OcrErrorMessage",
+    oj.requested_at   AS "OcrRequestedAt",
+    oj.started_at     AS "OcrStartedAt",
+    oj.finished_at    AS "OcrFinishedAt",
+    oj.invalidate_digital_signatures AS "OcrInvalidateDigitalSignatures"
 FROM ged.document_version v
 JOIN ged.document d
   ON d.tenant_id = v.tenant_id
@@ -219,7 +249,8 @@ WHERE v.tenant_id = @tenantId
   AND v.document_id = @documentId
   AND d.status <> 'ARCHIVED'::ged.document_status_enum
   AND d.reg_status = 'A'::bpchar
-ORDER BY v.created_at DESC;";
+ORDER BY v.created_at DESC;
+""";
 
         try
         {
@@ -228,7 +259,7 @@ ORDER BY v.created_at DESC;";
 
             return rows.AsList();
         }
-        catch (PostgresException ex) when (ex.SqlState == "42703" or "42P01")
+        catch (PostgresException ex) when (ex.SqlState is "42703" or "42P01")
         {
             _logger.LogError(ex,
                 "Erro de schema ao listar versões de documento. Verifique migrations de document_version/uploaded_at_utc. Tenant={TenantId} DocumentId={DocumentId}",
@@ -241,19 +272,19 @@ ORDER BY v.created_at DESC;";
 
     private async Task<DocumentVersionSchema> GetDocumentVersionSchemaAsync(NpgsqlConnection conn, CancellationToken ct)
     {
-        const string sql = @"
+        const string sql = """
 SELECT
-    COALESCE(bool_or(column_name = 'uploaded_at_utc'), false) AS ""HasUploadedAtUtc"",
-    COALESCE(bool_or(column_name = 'is_partial_document'), false) AS ""HasIsPartialDocument"",
-    COALESCE(bool_or(column_name = 'is_document_incomplete'), false) AS ""HasIsDocumentIncomplete"",
-    COALESCE(bool_or(column_name = 'partial_group_id'), false) AS ""HasPartialGroupId"",
-    COALESCE(bool_or(column_name = 'partial_part_number'), false) AS ""HasPartialPartNumber"",
-    COALESCE(bool_or(column_name = 'partial_total_parts'), false) AS ""HasPartialTotalParts"",
-    COALESCE(bool_or(column_name = 'partial_status'), false) AS ""HasPartialStatus"",
-    COALESCE(bool_or(column_name = 'part_number'), false) AS ""HasPartNumber"",
-    COALESCE(bool_or(column_name = 'total_parts'), false) AS ""HasTotalParts"",
-    COALESCE(bool_or(column_name = 'consolidated_version_id'), false) AS ""HasConsolidatedVersionId"",
-    EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='ged' AND table_name='document' AND column_name='created_at_utc') AS ""HasDocumentCreatedAtUtc""
+    COALESCE(bool_or(column_name = 'uploaded_at_utc'), false) AS "HasUploadedAtUtc",
+    COALESCE(bool_or(column_name = 'is_partial_document'), false) AS "HasIsPartialDocument",
+    COALESCE(bool_or(column_name = 'is_document_incomplete'), false) AS "HasIsDocumentIncomplete",
+    COALESCE(bool_or(column_name = 'partial_group_id'), false) AS "HasPartialGroupId",
+    COALESCE(bool_or(column_name = 'partial_part_number'), false) AS "HasPartialPartNumber",
+    COALESCE(bool_or(column_name = 'partial_total_parts'), false) AS "HasPartialTotalParts",
+    COALESCE(bool_or(column_name = 'partial_status'), false) AS "HasPartialStatus",
+    COALESCE(bool_or(column_name = 'part_number'), false) AS "HasPartNumber",
+    COALESCE(bool_or(column_name = 'total_parts'), false) AS "HasTotalParts",
+    COALESCE(bool_or(column_name = 'consolidated_version_id'), false) AS "HasConsolidatedVersionId",
+    EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='ged' AND table_name='document' AND column_name='created_at_utc') AS "HasDocumentCreatedAtUtc"
 FROM information_schema.columns
 WHERE table_schema = 'ged'
   AND table_name = 'document_version'
@@ -268,7 +299,8 @@ WHERE table_schema = 'ged'
       'part_number',
       'total_parts',
       'consolidated_version_id'
-  );";
+  );
+""";
 
         var schema = await conn.QuerySingleAsync<DocumentVersionSchema>(
             new CommandDefinition(sql, cancellationToken: ct));
@@ -311,13 +343,13 @@ WHERE table_schema = 'ged'
 
     public async Task<DocumentVersionDownloadDto?> GetVersionForDownloadAsync(Guid tenantId, Guid versionId, CancellationToken ct)
     {
-        const string sql = @"
+        const string sql = """
 SELECT
-    v.id           AS ""VersionId"",
-    v.document_id  AS ""DocumentId"",
-    v.file_name    AS ""FileName"",
-    v.content_type AS ""ContentType"",
-    v.storage_path AS ""StoragePath""
+    v.id           AS "VersionId",
+    v.document_id  AS "DocumentId",
+    v.file_name    AS "FileName",
+    v.content_type AS "ContentType",
+    v.storage_path AS "StoragePath"
 FROM ged.document_version v
 JOIN ged.document d
   ON d.tenant_id = v.tenant_id
@@ -325,7 +357,8 @@ JOIN ged.document d
 WHERE v.tenant_id = @tenantId
   AND v.id = @versionId
   AND d.status <> 'ARCHIVED'::ged.document_status_enum
-  AND d.reg_status = 'A'::bpchar;";
+  AND d.reg_status = 'A'::bpchar;
+""";
 
         await using var conn = await _db.OpenAsync(ct);
 
