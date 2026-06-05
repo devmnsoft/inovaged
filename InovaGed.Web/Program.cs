@@ -85,6 +85,7 @@ using InovaGed.Web.Middleware;
 using InovaGed.Web.Hubs;
 using InovaGed.Web.ocr;
 using InovaGed.Web.Security;
+using InovaGed.Web.Services;
 using InovaGed.Web.Controllers;
 using Microsoft.AspNetCore.Authentication.Certificate;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -106,6 +107,7 @@ mvc.AddRazorRuntimeCompilation();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddSignalR();
 builder.Services.AddMemoryCache();
+builder.Services.AddScoped<IDateTimeDisplayService, DateTimeDisplayService>();
 builder.Services.Configure<DocumentUploadOptions>(builder.Configuration.GetSection("DocumentUpload"));
 builder.WebHost.ConfigureKestrel(options =>
 {

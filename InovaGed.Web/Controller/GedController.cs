@@ -27,6 +27,8 @@ using Microsoft.AspNetCore.Mvc;
 using System.Diagnostics;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.Net.Http.Headers;
+using Npgsql;
+using InovaGed.Web.Services;
 
 namespace InovaGed.Web.Controllers;
 
@@ -62,6 +64,7 @@ public sealed class GedController : Controller
     private readonly IFolderNavigationResolver _folderNavigationResolver;
     private readonly IGedSmartSearchService _smartSearch;
     private readonly IAuditWriter _auditWriter;
+    private readonly IDateTimeDisplayService _dateTimeDisplay;
 
     // ✅ classificação
     private readonly IDocumentClassificationQueries _clsQ;
@@ -100,7 +103,8 @@ public sealed class GedController : Controller
         IDocumentWorkflowCommands docWfC,
         IDocumentClassificationQueries clsQ,
         IDocumentCommands documentCommands,
-        IOcrSignalRNotifier ocrNotifier)
+        IOcrSignalRNotifier ocrNotifier,
+        IDateTimeDisplayService dateTimeDisplay)
     {
         _logger = logger;
         _currentUser = currentUser;
@@ -120,6 +124,7 @@ public sealed class GedController : Controller
         _folderNavigationResolver = folderNavigationResolver;
         _smartSearch = smartSearch;
         _auditWriter = auditWriter;
+        _dateTimeDisplay = dateTimeDisplay;
 
         _docs = docs;
         _documentApp = documentApp;
@@ -408,6 +413,7 @@ public sealed class GedController : Controller
                     SizeBytes = d.SizeBytes,
                     CreatedAt = d.CreatedAt,
                     UploadedAtUtc = d.UploadedAtUtc == default ? d.CreatedAt : d.UploadedAtUtc,
+                    UploadedAtLocalFormatted = _dateTimeDisplay.FormatUploadDate(d.UploadedAtUtc == default ? d.CreatedAt : d.UploadedAtUtc),
                     CreatedBy = d.CreatedBy,
                     OcrStatus = d.OcrStatus,
                     OcrFinishedAt = d.OcrFinishedAt,
@@ -424,11 +430,22 @@ public sealed class GedController : Controller
 
             return View(vm);
         }
+        catch (PostgresException ex) when (ex.SqlState == "42703")
+        {
+            _logger.LogError(ex, "Erro de schema ao carregar Explorer GED. FolderId={FolderId} q={Q}", folderId, q);
+
+            TempData["Error"] = "A estrutura do banco de dados está desatualizada. Execute as migrations do sistema.";
+
+            return View(new GedExplorerVM
+            {
+                ErrorMessage = "Estrutura do banco desatualizada. Campo de data de upload não encontrado."
+            });
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Erro ao carregar Explorer. FolderId={FolderId} q={q}", folderId, q);
-            TempData["erro"] = "Erro ao carregar Explorer.";
-            return View(new GedExplorerVM());
+            TempData["Error"] = "Erro ao carregar Explorer.";
+            return View(new GedExplorerVM { ErrorMessage = "Erro ao carregar Explorer." });
         }
     }
 
@@ -810,6 +827,7 @@ LIMIT 20;";
                     SizeBytes = v.SizeBytes,
                     CreatedAt = v.CreatedAt,
                     UploadedAtUtc = v.UploadedAtUtc == default ? v.CreatedAt : v.UploadedAtUtc,
+                    UploadedAtLocalFormatted = _dateTimeDisplay.FormatUploadDate(v.UploadedAtUtc == default ? v.CreatedAt : v.UploadedAtUtc),
                     CreatedBy = v.CreatedBy,
                     IsCurrent = doc.CurrentVersionId.HasValue && v.Id == doc.CurrentVersionId.Value,
                     HasOcrText = v.HasOcrText,

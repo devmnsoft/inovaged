@@ -40,6 +40,7 @@ public sealed class GedDetailsVM
         public long SizeBytes { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime UploadedAtUtc { get; set; }
+        public string UploadedAtLocalFormatted { get; set; } = "";
         public Guid? CreatedBy { get; set; }
         public bool IsCurrent { get; set; }
         public bool HasOcrText { get; set; }

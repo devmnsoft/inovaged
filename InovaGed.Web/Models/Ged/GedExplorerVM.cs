@@ -17,6 +17,7 @@ public sealed class GedExplorerVM
 
     public List<FolderNodeVM> Folders { get; set; } = new();
     public List<DocumentRowVM> Documents { get; set; } = new();
+    public string ErrorMessage { get; set; } = "";
 
     public sealed class FolderNodeVM
     {
@@ -41,6 +42,7 @@ public sealed class GedExplorerVM
         public long SizeBytes { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime UploadedAtUtc { get; set; }
+        public string UploadedAtLocalFormatted { get; set; } = "";
         public Guid CreatedBy { get; set; }   // ou Guid?
         public string? OcrStatus { get; set; }
         public DateTime? OcrFinishedAt { get; set; }

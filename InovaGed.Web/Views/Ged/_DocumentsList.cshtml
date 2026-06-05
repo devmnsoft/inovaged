@@ -2,7 +2,8 @@
 @using InovaGed.Web.Ocr
 @inject Microsoft.Extensions.Configuration.IConfiguration Configuration
 @{
-    var localTimeZoneId = Configuration["App:LocalTimeZoneId"] ?? Configuration["TimeZoneId"] ?? "America/Sao_Paulo";
+    var localTimeZoneId = Configuration["Localization:DefaultTimeZone"] ?? Configuration["App:LocalTimeZoneId"] ?? Configuration["TimeZoneId"] ?? "America/Belem";
+    var uploadDateFormat = Configuration["Localization:DateTimeFormat"] ?? "dd/MM/yyyy HH:mm";
     var totalDocuments = Model.Documents.Count;
     var ocrCount = Model.Documents.Count(d => d.IsOcrAvailable);
     var incompleteCount = Model.Documents.Count(d => d.IsDocumentIncomplete);
@@ -66,7 +67,7 @@
                             {
                                 <span class="badge ged-badge @(d.IsDocumentIncomplete ? "ged-badge-warning" : "ged-badge-info")">@(d.IsDocumentIncomplete ? "Documento incompleto" : "Parcial") @(d.PartNumber.HasValue && d.TotalParts.HasValue ? $"{d.PartNumber}/{d.TotalParts}" : "")</span>
                             }
-                            <span class="text-muted small" title="Upload em UTC: @((d.UploadedAtUtc == default ? d.CreatedAt : d.UploadedAtUtc).ToString("O"))"><i class="bi bi-cloud-arrow-up me-1"></i>Upload em @(uploadLocal.ToString("dd/MM/yyyy HH:mm"))</span>
+                            <span class="text-muted small" title="Upload em UTC: @((d.UploadedAtUtc == default ? d.CreatedAt : d.UploadedAtUtc).ToString("O"))"><i class="bi bi-cloud-arrow-up me-1"></i>Upload em @(string.IsNullOrWhiteSpace(d.UploadedAtLocalFormatted) ? uploadLocal.ToString(uploadDateFormat) : d.UploadedAtLocalFormatted)</span>
                         </div>
                     </div>
                     <div class="ged-document-actions">
@@ -120,7 +121,7 @@
                                     </td>
                                     <td class="text-muted small text-truncate" style="max-width:260px;" title="@d.FileName">@d.FileName</td>
                                     <td><span class="badge ged-badge @ocrBadgeClass" title="@ocrTitle">@ocrLabel</span></td>
-                                    <td class="text-muted small">Upload em @(uploadLocal.ToString("dd/MM/yyyy HH:mm"))</td>
+                                    <td class="text-muted small">Upload em @(string.IsNullOrWhiteSpace(d.UploadedAtLocalFormatted) ? uploadLocal.ToString(uploadDateFormat) : d.UploadedAtLocalFormatted)</td>
                                     <td class="text-end">
                                         @await Html.PartialAsync("_DocumentActionsDropdown", (d.Id, d.Title, versionId, Model.CurrentFolderId))
                                     </td>
