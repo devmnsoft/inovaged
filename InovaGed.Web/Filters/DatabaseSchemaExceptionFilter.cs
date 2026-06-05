@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Controllers;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Npgsql;
 
@@ -6,21 +7,19 @@ namespace InovaGed.Web.Filters;
 
 public sealed class DatabaseSchemaExceptionFilter : IExceptionFilter
 {
-    private const string FriendlyMessage = "Estrutura do banco de dados desatualizada. Execute as migrations do sistema.";
-    private static readonly HashSet<string> CriticalControllers = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "Ged",
-        "HospitalDocuments",
-        "SystemLogs",
-        "UploadBatch",
-        "UploadChunk"
-    };
+    private const string FriendlyMessage = "A estrutura do banco de dados está desatualizada. Execute as migrations do sistema.";
+    private const string ErrorStep = "DatabaseSchema";
+    private const string MigrationScript = "database/apply_all_required_migrations.sql";
 
     private readonly ILogger<DatabaseSchemaExceptionFilter> _logger;
+    private readonly IHostEnvironment _environment;
 
-    public DatabaseSchemaExceptionFilter(ILogger<DatabaseSchemaExceptionFilter> logger)
+    public DatabaseSchemaExceptionFilter(
+        ILogger<DatabaseSchemaExceptionFilter> logger,
+        IHostEnvironment environment)
     {
         _logger = logger;
+        _environment = environment;
     }
 
     public void OnException(ExceptionContext context)
@@ -28,20 +27,18 @@ public sealed class DatabaseSchemaExceptionFilter : IExceptionFilter
         if (FindSchemaException(context.Exception) is not { } pg)
             return;
 
-        var controller = context.RouteData.Values["controller"]?.ToString();
-        if (!CriticalControllers.Contains(controller ?? string.Empty))
-            return;
-
+        var (controllerName, actionName) = GetControllerAction(context);
         var correlationId = context.HttpContext.TraceIdentifier;
-        _logger.LogError(pg,
-            "Schema do banco desatualizado em tela crítica. Controller={Controller} Action={Action} SqlState={SqlState} Table={Table} Column={Column} Message={Message} MigrationSugerida={Migration} CorrelationId={CorrelationId}",
-            controller,
-            context.RouteData.Values["action"],
+        var requestPath = context.HttpContext.Request.Path.Value;
+
+        _logger.LogError(
+            pg,
+            "Erro de schema PostgreSQL. SqlState={SqlState} Message={MessageText} Controller={Controller} Action={Action} Path={Path} CorrelationId={CorrelationId}",
             pg.SqlState,
-            pg.TableName,
-            pg.ColumnName,
             pg.MessageText,
-            "database/apply_all_required_migrations.sql",
+            controllerName,
+            actionName,
+            requestPath,
             correlationId);
 
         if (IsAjaxOrApi(context.HttpContext.Request))
@@ -50,43 +47,69 @@ public sealed class DatabaseSchemaExceptionFilter : IExceptionFilter
             {
                 success = false,
                 message = FriendlyMessage,
-                code = pg.SqlState,
+                errorStep = ErrorStep,
+                sqlState = pg.SqlState,
                 correlationId,
-                migration = "database/apply_all_required_migrations.sql"
+                migration = MigrationScript
             })
             {
-                StatusCode = StatusCodes.Status503ServiceUnavailable
+                StatusCode = StatusCodes.Status500InternalServerError
             };
-        }
-        else
-        {
-            if (context.Controller is Controller mvcController)
-                mvcController.TempData["Error"] = FriendlyMessage;
 
-            context.Result = new ViewResult
-            {
-                ViewName = "~/Views/Shared/SchemaOutdated.cshtml",
-                StatusCode = StatusCodes.Status503ServiceUnavailable,
-                ViewData = new Microsoft.AspNetCore.Mvc.ViewFeatures.ViewDataDictionary(
-                    new Microsoft.AspNetCore.Mvc.ModelBinding.EmptyModelMetadataProvider(),
-                    context.ModelState)
-                {
-                    ["CorrelationId"] = correlationId,
-                    ["SqlState"] = pg.SqlState,
-                    ["Migration"] = "database/apply_all_required_migrations.sql"
-                },
-                TempData = (context.Controller as Controller)?.TempData
-            };
+            context.ExceptionHandled = true;
+            return;
         }
+
+        context.Result = new ViewResult
+        {
+            ViewName = "~/Views/Shared/DatabaseSchemaError.cshtml",
+            StatusCode = StatusCodes.Status500InternalServerError,
+            ViewData = new Microsoft.AspNetCore.Mvc.ViewFeatures.ViewDataDictionary(
+                new Microsoft.AspNetCore.Mvc.ModelBinding.EmptyModelMetadataProvider(),
+                context.ModelState)
+            {
+                ["Title"] = "Banco de dados desatualizado",
+                ["Message"] = FriendlyMessage,
+                ["SqlState"] = pg.SqlState,
+                ["CorrelationId"] = correlationId,
+                ["Controller"] = controllerName,
+                ["Action"] = actionName,
+                ["Path"] = requestPath,
+                ["Migration"] = MigrationScript,
+                ["Detail"] = _environment.IsDevelopment() ? pg.MessageText : null
+            }
+        };
 
         context.ExceptionHandled = true;
+    }
+
+    private static (string Controller, string Action) GetControllerAction(ExceptionContext context)
+    {
+        if (context.ActionDescriptor is ControllerActionDescriptor cad)
+        {
+            return (
+                cad.ControllerName ?? "UnknownController",
+                cad.ActionName ?? "UnknownAction");
+        }
+
+        var routeValues = context.RouteData.Values;
+
+        var controller = routeValues.TryGetValue("controller", out var c)
+            ? c?.ToString() ?? "UnknownController"
+            : "UnknownController";
+
+        var action = routeValues.TryGetValue("action", out var a)
+            ? a?.ToString() ?? "UnknownAction"
+            : "UnknownAction";
+
+        return (controller, action);
     }
 
     private static PostgresException? FindSchemaException(Exception exception)
     {
         for (var ex = exception; ex is not null; ex = ex.InnerException!)
         {
-            if (ex is PostgresException pg && pg.SqlState is PostgresErrorCodes.UndefinedColumn or PostgresErrorCodes.UndefinedTable)
+            if (ex is PostgresException pg && pg.SqlState is "42703" or "42P01" or "42804")
                 return pg;
         }
 
