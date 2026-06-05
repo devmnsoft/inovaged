@@ -10,8 +10,20 @@ ALTER TABLE ged.document_version
   ADD COLUMN IF NOT EXISTS consolidated_version_id uuid NULL;
 
 UPDATE ged.document_version
-SET uploaded_at_utc = COALESCE(uploaded_at_utc, created_at, now())
-WHERE uploaded_at_utc IS NULL;
+SET uploaded_at_utc = COALESCE(uploaded_at_utc, created_at, now()),
+    is_partial_document = COALESCE(is_partial_document, false),
+    is_document_incomplete = COALESCE(is_document_incomplete, false)
+WHERE uploaded_at_utc IS NULL
+   OR is_partial_document IS NULL
+   OR is_document_incomplete IS NULL;
+
+ALTER TABLE ged.document_version
+  ALTER COLUMN uploaded_at_utc SET DEFAULT now(),
+  ALTER COLUMN uploaded_at_utc SET NOT NULL,
+  ALTER COLUMN is_partial_document SET DEFAULT false,
+  ALTER COLUMN is_partial_document SET NOT NULL,
+  ALTER COLUMN is_document_incomplete SET DEFAULT false,
+  ALTER COLUMN is_document_incomplete SET NOT NULL;
 
 DO $$
 BEGIN
