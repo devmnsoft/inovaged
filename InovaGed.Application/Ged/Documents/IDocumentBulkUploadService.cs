@@ -15,11 +15,16 @@ public sealed class DocumentBulkUploadMetadata
     public string? DuplicateStrategy { get; set; }
     public Guid? ExistingDocumentId { get; set; }
     public string? UploadName { get; set; }
+    public bool IsDocumentPart { get; set; }
+    public int? PartNumber { get; set; }
+    public int? TotalParts { get; set; }
+    public Guid? ConsolidateIntoDocumentId { get; set; }
 }
 
 public sealed class DocumentBulkUploadResultDto
 {
     public Guid DocumentId { get; set; }
+    public Guid? VersionId { get; set; }
     public string FileName { get; set; } = string.Empty;
     public Guid? FolderId { get; set; }
     public string? Title { get; set; }

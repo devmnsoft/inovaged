@@ -69,6 +69,10 @@ public sealed class UploadChunkService : IUploadChunkService
             request.Metadata.ClassificationId,
             request.Metadata.Notes,
             request.Metadata.Visibility,
+            request.Metadata.IsDocumentPart,
+            request.Metadata.PartNumber,
+            request.Metadata.TotalParts,
+            request.Metadata.ConsolidateIntoDocumentId,
             BatchItemId = itemId
         });
 
@@ -142,7 +146,7 @@ WHERE s.tenant_id=@tenantId AND s.id=@uploadId;
         }
         await using var finalStream = new FileStream(assembled, FileMode.Open, FileAccess.Read, FileShare.Read, 1024 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
         var md = session.Metadata;
-        var bulkMd = new DocumentBulkUploadMetadata { BatchId = session.BatchId, DuplicateStrategy = md.DuplicateStrategy, ExistingDocumentId = md.ExistingDocumentId, UploadName = md.UploadName, DocumentTypeId = md.DocumentTypeId, ClassificationId = md.ClassificationId, Notes = md.Notes, Visibility = md.Visibility, RunOcr = md.RunOcr, GeneratePreview = md.GeneratePreview };
+        var bulkMd = new DocumentBulkUploadMetadata { BatchId = session.BatchId, DuplicateStrategy = md.DuplicateStrategy, ExistingDocumentId = md.ExistingDocumentId, UploadName = md.UploadName, DocumentTypeId = md.DocumentTypeId, ClassificationId = md.ClassificationId, Notes = md.Notes, Visibility = md.Visibility, RunOcr = md.RunOcr, GeneratePreview = md.GeneratePreview, IsDocumentPart = md.IsDocumentPart, PartNumber = md.PartNumber, TotalParts = md.TotalParts, ConsolidateIntoDocumentId = md.ConsolidateIntoDocumentId };
         var upload = await _bulkUpload.UploadStreamAsync(tenantId, userId, md.UserName, finalStream, session.OriginalFileName, session.ContentType ?? "application/octet-stream", session.TotalSizeBytes, session.FolderId, bulkMd, md.IsAdmin, ct);
         if (!upload.Success)
         {
@@ -259,6 +263,10 @@ WHERE d.tenant_id=@tenantId AND d.id=@documentId;
         public Guid? ClassificationId { get; set; }
         public string? Notes { get; set; }
         public string? Visibility { get; set; }
+        public bool IsDocumentPart { get; set; }
+        public int? PartNumber { get; set; }
+        public int? TotalParts { get; set; }
+        public Guid? ConsolidateIntoDocumentId { get; set; }
     }
     private sealed class VersionInfo { public Guid VersionId { get; set; } public string FileName { get; set; } = string.Empty; public string StoragePath { get; set; } = string.Empty; public string? ChecksumSha256 { get; set; } }
 }

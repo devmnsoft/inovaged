@@ -76,13 +76,13 @@ INSERT INTO ged.document_version (
     file_name, file_extension, file_size_bytes,
     storage_path, checksum_md5, checksum_sha256,
     content_type,
-    created_by
+    created_by, uploaded_at_utc, is_partial_document, is_document_incomplete, part_number, total_parts, consolidated_version_id
 ) VALUES (
     @Id, @TenantId, @DocumentId, @VersionNumber,
     @FileName, @FileExtension, @FileSizeBytes,
     @StoragePath, @ChecksumMd5, @ChecksumSha256,
     @ContentType,
-    @CreatedBy
+    @CreatedBy, @UploadedAtUtc, @IsPartialDocument, @IsDocumentIncomplete, @PartNumber, @TotalParts, @ConsolidatedVersionId
 );";
 
         try

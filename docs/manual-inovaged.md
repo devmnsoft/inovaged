@@ -126,3 +126,36 @@ Parâmetros principais: appsettings, storage, OCR, upload, preview, workers, lim
 - **CorrelationId**: identificador para rastrear uma requisição.
 - **Tenant**: unidade lógica de segregação do sistema.
 - **Perfil**: conjunto de permissões de acesso.
+
+## Upload, OCR e documentos fracionados
+
+### Upload simples, em lote e em subpastas
+- O envio deve sempre usar a pasta real de listagem (`ListingFolderId`) resolvida pela árvore GED. Pastas visuais/virtuais continuam servindo para navegação, mas a listagem, o cabeçalho, a URL e os campos ocultos do modal passam a refletir a pasta real onde os documentos foram gravados.
+- Após upload simples, em lote ou por arrastar-e-soltar em subpastas, a pasta é recarregada automaticamente por Ajax. Não é necessário pressionar F5.
+- Os documentos recém-enviados recebem destaque visual por 5 segundos e a área lateral/listagem rola automaticamente até o primeiro documento criado no lote.
+- Os contadores da pasta são recalculados após a atualização: total de documentos, OCR disponível, sem OCR e não classificados.
+- O pop-up de feedback informa upload concluído, falha de upload ou duplicidade de nome. Em duplicidade, o operador pode sobrescrever/anexar ao documento existente quando permitido ou renomear o arquivo antes de reenviar.
+
+### Upload de arquivos grandes (chunked upload)
+- Arquivos acima do limite configurado em `DocumentUpload:ChunkedThresholdMb` são enviados em partes.
+- Cada parte é registrada na sessão de upload; ao final, o backend remonta o arquivo, grava o documento/versão e enfileira OCR/preview sem bloquear a interface.
+- Se a conexão cair, a tela consulta o status da sessão e identifica partes recebidas e faltantes.
+
+### Horários exibidos
+- O banco armazena o momento real do upload em UTC na coluna `ged.document_version.uploaded_at_utc`.
+- A interface converte esse UTC para o fuso configurado em `App:LocalTimeZoneId` no `appsettings.json`.
+- **Upload em**: momento em que a versão/documento foi gravado pelo upload.
+- **Data do documento**: data administrativa/clínica do documento, quando preenchida nos metadados/classificação; não substitui o horário de upload.
+- **OCR concluído em**: momento em que o job de OCR terminou (`finished_at`), exibido apenas como marco do processamento de OCR.
+
+### OCR e badges
+- O badge **OCR disponível** só aparece quando o último job da versão está `COMPLETED` e existe texto extraído em `ged.document_search.ocr_text`.
+- Status `PENDING`, `PROCESSING`, `ERROR`, `CANCELLED` ou `COMPLETED` sem texto mostram mensagens próprias: “OCR na fila”, “OCR processando”, “OCR com erro”, “OCR cancelado” ou “OCR concluído sem texto”.
+- Cards, listas e resultados hospitalares usam os campos padronizados `HasOcrText` e `IsOcrAvailable` para cores e mensagens.
+
+### Documentos fracionados
+- Um documento pode ser enviado em partes, por exemplo **Parte 1/2** e **Parte 2/2**.
+- Enquanto faltam partes, a listagem mostra o badge **Documento incompleto** e aplica destaque lateral âmbar.
+- Ao enviar uma nova parte apontando para o documento existente, o sistema anexa a parte como nova versão; quando o total de partes é atingido, a versão atual é marcada como consolidada (`consolidated_version_id`) e o documento deixa de ser exibido como incompleto.
+- Cada parte gera auditoria com ação `UPLOAD_DOCUMENT_PART`, timestamp UTC, `documentId`, `versionId`, número da parte e total de partes.
+- OCR e preview continuam assíncronos e são enfileirados normalmente após a consolidação da versão.

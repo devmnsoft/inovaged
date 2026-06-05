@@ -168,7 +168,13 @@ public sealed class DocumentAppService
                 ChecksumMd5 = md5,
                 ChecksumSha256 = sha256,
                 ContentType = contentType,
-                CreatedBy = userId
+                CreatedBy = userId,
+                UploadedAtUtc = cmd.UploadedAtUtc == default ? DateTime.UtcNow : DateTime.SpecifyKind(cmd.UploadedAtUtc, DateTimeKind.Utc),
+                IsPartialDocument = cmd.IsPartialDocument,
+                IsDocumentIncomplete = cmd.IsDocumentIncomplete,
+                PartNumber = cmd.PartNumber,
+                TotalParts = cmd.TotalParts,
+                ConsolidatedVersionId = cmd.ConsolidatedVersionId
             }, tx, ct);
 
             // 4) current_version_id
@@ -279,7 +285,8 @@ public sealed class DocumentAppService
                 FileSizeBytes = fileSizeBytes,
                 StoragePath = storagePath,
                 ContentType = contentType,
-                CreatedBy = createdBy
+                CreatedBy = createdBy,
+                UploadedAtUtc = DateTime.UtcNow
             }, tx, ct);
 
             await _writeRepo.UpdateCurrentVersionAsync(tenantId, documentId, versionId, createdBy, tx, ct);
@@ -497,7 +504,8 @@ public sealed class DocumentAppService
                 ChecksumMd5 = md5,
                 ChecksumSha256 = sha256,
                 ContentType = string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType.Trim(),
-                CreatedBy = actorId
+                CreatedBy = actorId,
+                UploadedAtUtc = DateTime.UtcNow
             }, tx, ct);
 
             // 4) current_version_id

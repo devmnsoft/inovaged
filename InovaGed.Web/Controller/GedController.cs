@@ -142,7 +142,7 @@ public sealed class GedController : Controller
     [HttpPost("/Ged/Documents/BulkUploadSingle")]
     [ValidateAntiForgeryToken]
     [RequestSizeLimit(52428800)]
-    public async Task<IActionResult> BulkUploadSingle(IFormFile file, Guid? folderId, Guid? uploadFolderId, Guid? requestedFolderId, Guid? documentTypeId, Guid? classificationId, string? notes, string? visibility, bool runOcr, bool generatePreview, Guid? batchId, string? duplicateStrategy, Guid? existingDocumentId, string? uploadName, int? fileIndex, int? totalFiles, CancellationToken ct)
+    public async Task<IActionResult> BulkUploadSingle(IFormFile file, Guid? folderId, Guid? uploadFolderId, Guid? requestedFolderId, Guid? documentTypeId, Guid? classificationId, string? notes, string? visibility, bool runOcr, bool generatePreview, Guid? batchId, string? duplicateStrategy, Guid? existingDocumentId, string? uploadName, bool isDocumentPart, int? partNumber, int? totalParts, Guid? consolidateIntoDocumentId, int? fileIndex, int? totalFiles, CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
         var correlationId = HttpContext.TraceIdentifier;
@@ -165,7 +165,7 @@ public sealed class GedController : Controller
             }
             _logger.LogInformation("Bulk upload validações concluídas. RequestedFolderId={RequestedFolderId} ResolvedFolderId={ResolvedFolderId} WasVirtual={WasVirtual} CreatedRealFolder={CreatedRealFolder} ElapsedMs={ElapsedMs} CorrelationId={CorrelationId}", folderResolution.RequestedFolderId, folderResolution.ResolvedFolderId, folderResolution.WasVirtual, folderResolution.CreatedRealFolder, sw.ElapsedMilliseconds, correlationId);
 
-            var metadata = new DocumentBulkUploadMetadata { DocumentTypeId = documentTypeId, ClassificationId = classificationId, Notes = notes, Visibility = visibility, RunOcr = runOcr, GeneratePreview = generatePreview, BatchId = batchId, DuplicateStrategy = duplicateStrategy, ExistingDocumentId = existingDocumentId, UploadName = uploadName };
+            var metadata = new DocumentBulkUploadMetadata { DocumentTypeId = documentTypeId, ClassificationId = classificationId, Notes = notes, Visibility = visibility, RunOcr = runOcr, GeneratePreview = generatePreview, BatchId = batchId, DuplicateStrategy = duplicateStrategy, ExistingDocumentId = existingDocumentId, UploadName = uploadName, IsDocumentPart = isDocumentPart, PartNumber = partNumber, TotalParts = totalParts, ConsolidateIntoDocumentId = consolidateIntoDocumentId };
             var result = await _documentBulkUploadService.UploadSingleAsync(_currentUser.TenantId, _currentUser.UserId, User.Identity?.Name, file, folderResolution.ResolvedFolderId, metadata, isAdmin, ct);
             _logger.LogInformation("Bulk upload persistência concluída. Tenant={TenantId} User={UserId} Folder={FolderId} Batch={BatchId} FileIndex={FileIndex} TotalFiles={TotalFiles} File={FileName} Success={Success} ElapsedMs={ElapsedMs} ConnectionId={ConnectionId} CorrelationId={CorrelationId}", _currentUser.TenantId, _currentUser.UserId, folderId, batchId, fileIndex, totalFiles, file?.FileName, result.Success, sw.ElapsedMilliseconds, HttpContext.Connection.Id, correlationId);
             if (!result.Success)
@@ -179,7 +179,7 @@ public sealed class GedController : Controller
                 return BadRequest(JsonError(message, isExtensionError ? "Validação de extensão" : "Persistência", string.IsNullOrWhiteSpace(code) ? "Falha ao processar upload no backend." : code, !isExtensionError, correlationId));
             }
             var uploadedDocument = await _docs.GetAsync(_currentUser.TenantId, result.Value.DocumentId, ct);
-            var versionId = uploadedDocument?.CurrentVersionId;
+            var versionId = result.Value.VersionId ?? uploadedDocument?.CurrentVersionId;
             if (result.Value.DocumentId == Guid.Empty || !versionId.HasValue || versionId.Value == Guid.Empty)
             {
                 _logger.LogError("Upload retornou documento/versão inválidos. Tenant={TenantId} DocumentId={DocumentId} VersionId={VersionId} CorrelationId={CorrelationId}", _currentUser.TenantId, result.Value.DocumentId, versionId, correlationId);
@@ -244,7 +244,17 @@ public sealed class GedController : Controller
                 CurrentVersionId = d.CurrentVersionId,
                 SizeBytes = d.SizeBytes,
                 CreatedAt = d.CreatedAt,
+                UploadedAtUtc = d.UploadedAtUtc == default ? d.CreatedAt : d.UploadedAtUtc,
                 CreatedBy = d.CreatedBy,
+                OcrStatus = d.OcrStatus,
+                OcrFinishedAt = d.OcrFinishedAt,
+                HasOcrText = d.HasOcrText,
+                IsOcrAvailable = d.IsOcrAvailable,
+                IsPartialDocument = d.IsPartialDocument,
+                IsDocumentIncomplete = d.IsDocumentIncomplete,
+                PartNumber = d.PartNumber,
+                TotalParts = d.TotalParts,
+                ConsolidatedVersionId = d.ConsolidatedVersionId,
                 IsConfidential = d.IsConfidential
             }).ToList()
         });
@@ -397,7 +407,17 @@ public sealed class GedController : Controller
                     CurrentVersionId = d.CurrentVersionId,
                     SizeBytes = d.SizeBytes,
                     CreatedAt = d.CreatedAt,
+                    UploadedAtUtc = d.UploadedAtUtc == default ? d.CreatedAt : d.UploadedAtUtc,
                     CreatedBy = d.CreatedBy,
+                    OcrStatus = d.OcrStatus,
+                    OcrFinishedAt = d.OcrFinishedAt,
+                    HasOcrText = d.HasOcrText,
+                    IsOcrAvailable = d.IsOcrAvailable,
+                    IsPartialDocument = d.IsPartialDocument,
+                    IsDocumentIncomplete = d.IsDocumentIncomplete,
+                    PartNumber = d.PartNumber,
+                    TotalParts = d.TotalParts,
+                    ConsolidatedVersionId = d.ConsolidatedVersionId,
                     IsConfidential = d.IsConfidential
                 }).ToList()
             };
@@ -789,8 +809,16 @@ LIMIT 20;";
                     ContentType = v.ContentType ?? "",
                     SizeBytes = v.SizeBytes,
                     CreatedAt = v.CreatedAt,
+                    UploadedAtUtc = v.UploadedAtUtc == default ? v.CreatedAt : v.UploadedAtUtc,
                     CreatedBy = v.CreatedBy,
                     IsCurrent = doc.CurrentVersionId.HasValue && v.Id == doc.CurrentVersionId.Value,
+                    HasOcrText = v.HasOcrText,
+                    IsOcrAvailable = v.IsOcrAvailable,
+                    IsPartialDocument = v.IsPartialDocument,
+                    IsDocumentIncomplete = v.IsDocumentIncomplete,
+                    PartNumber = v.PartNumber,
+                    TotalParts = v.TotalParts,
+                    ConsolidatedVersionId = v.ConsolidatedVersionId,
 
                     // OCR (se existir no DTO)
                     OcrStatus = v.OcrStatus,

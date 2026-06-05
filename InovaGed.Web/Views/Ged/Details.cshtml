@@ -1,8 +1,12 @@
 ﻿@using InovaGed.Domain.Documents
+@using InovaGed.Web.Ocr
 @model InovaGed.Web.Models.Ged.GedDetailsVM
+@inject Microsoft.Extensions.Configuration.IConfiguration Configuration
 
 @{
     ViewData["Title"] = "Detalhes do Documento";
+    var localTimeZoneId = Configuration["App:LocalTimeZoneId"] ?? Configuration["TimeZoneId"] ?? "America/Sao_Paulo";
+    DateTime Local(DateTime utc) => OcrUiHelper.ToConfiguredLocalTime(utc, localTimeZoneId);
 
     string ToSize(long bytes)
     {
@@ -35,23 +39,33 @@
         _ => st.ToString()
     };
 
-    string OcrBadgeClass(string? status) => (status ?? "").ToUpperInvariant() switch
+    string OcrBadgeClass(bool isAvailable, string? status)
     {
-        "PENDING" => "bg-secondary",
-        "PROCESSING" => "bg-warning text-dark",
-        "COMPLETED" => "bg-success",
-        "ERROR" => "bg-danger",
-        _ => "bg-light text-dark"
-    };
+        if (isAvailable) return "bg-success";
+        return (status ?? "").ToUpperInvariant() switch
+        {
+            "PENDING" => "bg-secondary",
+            "PROCESSING" => "bg-warning text-dark",
+            "COMPLETED" => "bg-light text-dark",
+            "ERROR" => "bg-danger",
+            "CANCELLED" => "bg-light text-dark",
+            _ => "bg-light text-dark"
+        };
+    }
 
-    string OcrLabel(string? status) => (status ?? "").ToUpperInvariant() switch
+    string OcrLabel(bool isAvailable, string? status, bool hasText)
     {
-        "PENDING" => "Pendente",
-        "PROCESSING" => "Executando",
-        "COMPLETED" => "Concluído",
-        "ERROR" => "Erro",
-        _ => "Não executado"
-    };
+        if (isAvailable) return "OCR disponível";
+        return (status ?? "").ToUpperInvariant() switch
+        {
+            "PENDING" => "OCR na fila",
+            "PROCESSING" => "OCR processando",
+            "COMPLETED" => hasText ? "OCR disponível" : "OCR concluído sem texto",
+            "ERROR" => "OCR com erro",
+            "CANCELLED" => "OCR cancelado",
+            _ => "Sem OCR"
+        };
+    }
 
     bool IsOcrRunning(string? status)
     {
@@ -199,7 +213,7 @@
                                         var isSelected = selectedId.HasValue && v.Id == selectedId.Value;
                                         var hasOcrStatus = !string.IsNullOrWhiteSpace(v.OcrStatus);
                                         var ocrRunning = IsOcrRunning(v.OcrStatus);
-                                        var ocrCompleted = IsOcrCompleted(v.OcrStatus);
+                                        var ocrCompleted = v.IsOcrAvailable;
 
                                         <tr class="@(isSelected ? "table-active" : "")">
                                             <td>
@@ -211,6 +225,11 @@
                                             <td>
                                                 <div class="fw-semibold">@v.FileName</div>
                                                 <div class="text-muted small">@v.ContentType</div>
+                                                <div class="text-muted small">Upload em: @(Local(v.UploadedAtUtc == default ? v.CreatedAt : v.UploadedAtUtc).ToString("dd/MM/yyyy HH:mm"))</div>
+                                                @if (v.IsDocumentIncomplete || v.IsPartialDocument)
+                                                {
+                                                    <span class="badge @(v.IsDocumentIncomplete ? "bg-warning text-dark" : "bg-info text-dark")">@(v.IsDocumentIncomplete ? "Documento incompleto" : "Parcial") @(v.PartNumber.HasValue && v.TotalParts.HasValue ? $"{v.PartNumber}/{v.TotalParts}" : "")</span>
+                                                }
                                             </td>
 
                                             <td>@ToSize(v.SizeBytes)</td>
@@ -222,8 +241,8 @@
 
                                                     @if (hasOcrStatus)
                                                     {
-                                                        <span class="badge @OcrBadgeClass(v.OcrStatus) js-ocr-badge">
-                                                            <span data-ocr-badge="@v.Id">@OcrLabel(v.OcrStatus)</span>
+                                                        <span class="badge @OcrBadgeClass(v.IsOcrAvailable, v.OcrStatus) js-ocr-badge">
+                                                            <span data-ocr-badge="@v.Id">@OcrLabel(v.IsOcrAvailable, v.OcrStatus, v.HasOcrText)</span>
                                                         </span>
 
                                                         @if (ocrRunning)
@@ -250,21 +269,21 @@
                                                         @if (v.OcrRequestedAt.HasValue)
                                                         {
                                                             <div class="text-muted small js-ocr-requested">
-                                                                Solicitado: @v.OcrRequestedAt.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+                                                                Solicitado: @(Local(v.OcrRequestedAt.Value).ToString("dd/MM/yyyy HH:mm"))
                                                             </div>
                                                         }
 
                                                         @if (v.OcrStartedAt.HasValue)
                                                         {
                                                             <div class="text-muted small js-ocr-started">
-                                                                Início: @v.OcrStartedAt.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+                                                                Início: @(Local(v.OcrStartedAt.Value).ToString("dd/MM/yyyy HH:mm"))
                                                             </div>
                                                         }
 
                                                         @if (v.OcrFinishedAt.HasValue)
                                                         {
                                                             <div class="text-muted small js-ocr-finished">
-                                                                Fim: @v.OcrFinishedAt.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+                                                                OCR concluído em: @(Local(v.OcrFinishedAt.Value).ToString("dd/MM/yyyy HH:mm"))
                                                             </div>
                                                         }
                                                     }

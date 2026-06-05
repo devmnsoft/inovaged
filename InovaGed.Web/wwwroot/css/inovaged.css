@@ -359,3 +359,26 @@ body {
         padding: 1rem;
     }
 }
+
+/* GED upload/OCR synchronization states */
+.document-row-new,
+.ged-document-row.document-row-new,
+tr.document-row-new {
+  animation: gedNewDocumentPulse 5s ease-out;
+  outline: 2px solid #22c55e;
+  outline-offset: 2px;
+  background: #ecfdf5 !important;
+}
+.ged-document-incomplete {
+  border-left: 4px solid #f59e0b !important;
+  background: linear-gradient(90deg, rgba(245,158,11,.14), transparent 45%) !important;
+}
+.ged-document-partial {
+  border-left: 4px solid #38bdf8 !important;
+}
+.ged-badge-warning { background: #fef3c7; color: #92400e; }
+.ged-badge-danger { background: #fee2e2; color: #991b1b; }
+@keyframes gedNewDocumentPulse {
+  0%, 20% { box-shadow: 0 0 0 .25rem rgba(34,197,94,.25); }
+  100% { box-shadow: none; }
+}
