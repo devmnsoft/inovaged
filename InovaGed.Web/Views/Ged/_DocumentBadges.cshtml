@@ -11,24 +11,24 @@
 
 @if (isUnclassified)
 {
-    <span class="badge ged-badge ged-badge-muted">Sem classificação</span>
+    <span class="badge ged-badge ged-badge-muted"><i class="bi bi-tag me-1"></i>Sem classificação</span>
 }
 else
 {
-    <span class="badge ged-badge ged-badge-ok" title="Classificação: @Model.TypeName"><i class="bi bi-tags me-1"></i>@Model.TypeName</span>
+    <span class="badge ged-badge ged-badge-ok" title="Classificação: @Model.TypeName"><i class="bi bi-tags me-1"></i>Classificado</span>
 }
 
-<span class="badge ged-badge @ocrBadgeClass" title="@ocrTitle">@ocrLabel</span>
+<span class="badge ged-badge @ocrBadgeClass" title="@ocrTitle"><i class="bi bi-text-paragraph me-1"></i>@ocrLabel</span>
 
 @if (Model.IsDocumentIncomplete)
 {
-    <span class="badge ged-badge ged-badge-warning">Documento incompleto@partialSuffix</span>
+    <span class="badge ged-badge ged-badge-warning"><i class="bi bi-exclamation-triangle me-1"></i>Documento incompleto@partialSuffix</span>
 }
 else if (isConsolidated)
 {
-    <span class="badge ged-badge ged-badge-info">Documento consolidado@partialSuffix</span>
+    <span class="badge ged-badge ged-badge-info"><i class="bi bi-layers me-1"></i>Documento consolidado@partialSuffix</span>
 }
 else if (Model.IsPartialDocument)
 {
-    <span class="badge ged-badge ged-badge-info">Documento parcial@partialSuffix</span>
+    <span class="badge ged-badge ged-badge-info"><i class="bi bi-files me-1"></i>Documento parcial@partialSuffix</span>
 }

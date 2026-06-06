@@ -28,11 +28,11 @@
             </div>
             <div class="btn-group btn-group-sm" role="group" aria-label="Modo de visualização dos documentos">
                 <button type="button" class="btn btn-outline-primary js-doc-view-mode" data-view-mode="list"><i class="bi bi-view-list me-1"></i>Lista</button>
-                <button type="button" class="btn btn-outline-primary js-doc-view-mode" data-view-mode="table"><i class="bi bi-table me-1"></i>Tabela</button>
+                <button type="button" class="btn btn-primary active js-doc-view-mode" data-view-mode="table" aria-pressed="true"><i class="bi bi-table me-1"></i>Tabela</button>
             </div>
         </div>
 
-        <div class="ged-document-list-header" data-documents-view="list" aria-hidden="true">
+        <div class="ged-document-list-header d-none" data-documents-view="list" aria-hidden="true">
             <div></div>
             <div></div>
             <div>Documento</div>
@@ -41,7 +41,7 @@
             <div class="text-end">Ações</div>
         </div>
 
-        @await Html.PartialAsync("_DocumentListRows", Model)
         @await Html.PartialAsync("_DocumentTable", Model)
+        @await Html.PartialAsync("_DocumentListRows", Model)
     }
 </div>

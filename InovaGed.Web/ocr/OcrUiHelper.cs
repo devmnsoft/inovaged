@@ -29,8 +29,8 @@ public static class OcrUiHelper
     {
         if (isAvailable) return "OCR disponível";
         if (string.Equals(status, "COMPLETED", StringComparison.OrdinalIgnoreCase) && !hasText) return "OCR concluído sem texto";
-        if (string.Equals(status, "PROCESSING", StringComparison.OrdinalIgnoreCase)) return "OCR processando";
-        if (string.Equals(status, "PENDING", StringComparison.OrdinalIgnoreCase)) return "OCR na fila";
+        if (string.Equals(status, "PROCESSING", StringComparison.OrdinalIgnoreCase)) return "OCR em processamento";
+        if (string.Equals(status, "PENDING", StringComparison.OrdinalIgnoreCase)) return "OCR pendente";
         if (string.Equals(status, "ERROR", StringComparison.OrdinalIgnoreCase)) return "OCR com erro";
         if (string.Equals(status, "CANCELLED", StringComparison.OrdinalIgnoreCase)) return "OCR cancelado";
         return "Sem OCR";
