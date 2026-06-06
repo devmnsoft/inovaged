@@ -137,6 +137,7 @@
         const current = document.querySelector('#gedDocumentsContainer');
         if (current) current.outerHTML = html;
         window.GedDocumentsView?.init?.();
+        if (window.bootstrap?.Dropdown) document.querySelectorAll('#gedDocumentsContainer [data-bs-toggle="dropdown"]').forEach(el => window.bootstrap.Dropdown.getOrCreateInstance(el));
         if (activeLink) setSelectedFolderFromNode(activeLink); else updateHiddenFields(visualFolderId, uploadFolderId, listingFolderId, options.folderName || document.querySelector('#gedDocumentsContainer')?.dataset?.folderName || 'pasta selecionada');
         const resolvedFolderName = options.folderName || getFolderName(activeLink) || document.querySelector('#gedDocumentsContainer')?.dataset?.folderName;
         updateHeader(resolvedFolderName);
@@ -158,8 +159,8 @@
             const row = document.querySelector(`[data-document-id="${esc(id)}"]`);
             if (row) {
                 if (!first) first = row;
-                row.classList.add('document-row-new');
-                setTimeout(() => row.classList.remove('document-row-new'), 5000);
+                row.classList.add('document-row-new', 'is-new');
+                setTimeout(() => row.classList.remove('document-row-new', 'is-new'), 5000);
             }
         });
         first?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
