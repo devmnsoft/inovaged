@@ -756,10 +756,10 @@
     .ged-toolbar .input-group { align-items:stretch; }
     .ged-toolbar-actions { display:flex; flex-wrap:wrap; gap:.5rem; margin-top:.55rem; }
     .ged-documents-list { background:#fff; border-top:1px solid #e5e7eb; }
-    .ged-documents-view-toolbar { position:sticky; top:0; z-index:6; min-height:44px; padding:7px 14px !important; }
-    .ged-document-list-header { display:grid; grid-template-columns:34px 42px minmax(260px, 1fr) minmax(210px, 300px) 160px 44px; gap:12px; align-items:center; padding:8px 14px; background:#f8fafc; color:#64748b; font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; border-top:1px solid #edf2f7; border-bottom:1px solid #e5e7eb; position:sticky; top:44px; z-index:5; }
+    .ged-documents-view-toolbar { position:sticky; top:0; z-index:6; min-height:42px; padding:7px 14px !important; background:#fff; border-bottom:1px solid #e5e7eb; }
+    .ged-document-list-header { display:grid; grid-template-columns:34px 42px minmax(260px, 1fr) minmax(210px, 300px) 160px 44px; gap:12px; align-items:center; padding:8px 14px; background:#f8fafc; color:#64748b; font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; border-top:1px solid #edf2f7; border-bottom:1px solid #e5e7eb; position:sticky; top:42px; z-index:5; }
     .ged-document-list { display:flex; flex-direction:column; width:100%; background:#fff; }
-    .ged-document-row { display:grid; grid-template-columns:34px 42px minmax(260px, 1fr) minmax(210px, 300px) 160px 44px; gap:12px; align-items:center; min-height:74px; padding:9px 14px; border-bottom:1px solid #edf2f7; background:#fff; transition:background-color .15s ease, box-shadow .15s ease, border-color .15s ease; }
+    .ged-document-row { display:grid; grid-template-columns:34px 42px minmax(260px, 1fr) minmax(210px, 300px) 160px 44px; gap:12px; align-items:center; min-height:68px; padding:8px 14px; border-bottom:1px solid #edf2f7; background:#fff; transition:background-color .15s ease, box-shadow .15s ease, border-color .15s ease; }
     .ged-document-row:hover { background:#f8fbff; }
     .ged-document-row.is-selected { background:#eff6ff; }
     .ged-document-row.is-new, .document-row-new { background:#ecfdf5 !important; animation:gedNewDocPulse 2s ease; }
@@ -772,27 +772,36 @@
     .ged-document-title:hover { color:#0d6efd; text-decoration:underline; }
     .ged-document-file { color:#64748b; font-size:.8rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .ged-document-meta { color:#94a3b8; font-size:.73rem; display:flex; gap:5px; align-items:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .ged-document-badges { min-width:0; display:flex; flex-wrap:wrap; gap:4px; align-items:center; }
-    .ged-document-badges .badge, .ged-document-badges .ged-badge { font-size:.7rem; font-weight:600; border-radius:999px; padding:.25rem .48rem; line-height:1.1; }
     .ged-document-date { color:#475569; font-size:.8rem; white-space:nowrap; display:flex; align-items:center; justify-content:flex-start; }
     .ged-document-actions { display:flex; align-items:center; justify-content:flex-end; }
-    .ged-document-actions .btn, .ged-actions-btn, .document-actions-btn { width:34px; height:34px; border-radius:10px; display:inline-flex; align-items:center; justify-content:center; padding:0; }
+    .ged-table-shell { background:#fff; border-top:1px solid #e5e7eb; overflow:hidden; }
+    .ged-table-scroll { width:100%; overflow-x:auto; scrollbar-width:thin; }
+    .ged-documents-table { width:100%; min-width:920px; border-collapse:separate; border-spacing:0; table-layout:fixed; }
+    .ged-documents-table thead th { position:sticky; top:0; z-index:2; background:#f8fafc; color:#64748b; font-size:.72rem; font-weight:800; text-transform:uppercase; letter-spacing:.045em; border-bottom:1px solid #e5e7eb; padding:10px 12px; white-space:nowrap; }
+    .ged-documents-table tbody td { padding:10px 12px; border-bottom:1px solid #eef2f7; vertical-align:middle; }
+    .ged-document-table-row { background:#fff; transition:background-color .15s ease, box-shadow .15s ease; cursor:grab; }
+    .ged-document-table-row:hover { background:#f8fbff; }
+    .ged-document-table-row.is-selected { background:#eff6ff; }
+    .ged-document-table-row.is-new { background:#ecfdf5; animation:gedNewDocPulse 2s ease; }
+    .ged-row-incomplete, .ged-document-incomplete { background:#fffbeb; }
+    .ged-row-partial, .ged-document-partial { box-shadow:inset 3px 0 0 #38bdf8; }
+    .ged-col-check { width:44px; text-align:center; }
+    .ged-col-status { width:260px; }
+    .ged-col-upload { width:165px; }
+    .ged-col-actions { width:72px; }
+    .ged-table-document-cell { display:flex; align-items:center; gap:10px; min-width:0; }
+    .ged-table-file-icon { width:38px; height:38px; border-radius:11px; display:grid; place-items:center; background:#eff6ff; color:#2563eb; font-size:1.05rem; flex:0 0 auto; }
+    .ged-table-document-text { min-width:0; }
+    .ged-table-title { display:block; color:#0f172a; font-size:.94rem; font-weight:700; line-height:1.2; text-decoration:none; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:520px; }
+    .ged-table-title:hover { color:#0d6efd; text-decoration:underline; }
+    .ged-table-file-name { color:#64748b; font-size:.8rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:520px; }
+    .ged-table-meta { color:#94a3b8; font-size:.72rem; display:flex; align-items:center; gap:5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .ged-document-badges { min-width:0; display:flex; flex-wrap:wrap; gap:4px; align-items:center; }
+    .ged-document-badges .badge, .ged-document-badges .ged-badge { font-size:.7rem; font-weight:650; border-radius:999px; padding:.25rem .5rem; line-height:1.1; }
+    .ged-upload-date { color:#475569; font-size:.8rem; white-space:nowrap; }
+    .ged-document-actions .btn, .ged-actions-btn, .document-actions-btn, .ged-col-actions .btn { width:34px; height:34px; border-radius:10px; display:inline-flex; align-items:center; justify-content:center; padding:0; }
     .ged-actions-menu .dropdown-item { display:flex; align-items:center; gap:.35rem; font-size:.88rem; }
-    .ged-table-scroll-wrap { position:relative; }
-    .ged-table-top-scroll, .ged-table-scroll { overflow-x:auto; scrollbar-width:thin; }
-    .ged-table-top-scroll { height:14px; border-bottom:1px solid #e5e7eb; background:#f8fafc; }
-    .ged-table-top-scroll > div { height:1px; }
-    .ged-documents-table { font-size:.84rem; min-width:1040px; table-layout:fixed; }
-    .ged-documents-table thead th { position:sticky; top:0; z-index:2; background:#f8fafc; box-shadow:inset 0 -1px 0 #e5e7eb; }
-    .ged-documents-table th { font-size:.68rem; text-transform:uppercase; letter-spacing:.04em; color:#64748b; padding:.45rem .6rem; border-bottom:1px solid #e5e7eb; }
-    .ged-documents-table td { padding:.38rem .6rem; vertical-align:middle; border-color:#eef2f7; }
-    .ged-documents-table tbody tr { cursor:grab; height:50px; }
-    .ged-documents-table tbody tr:hover { background:#f8fbff; }
-    .ged-documents-table tbody tr.is-selected { background:#eff6ff; }
-    .ged-documents-table .ged-document-badges { flex-wrap:nowrap; overflow:hidden; }
-    .ged-doc-title { display:block; max-width:340px; font-weight:700; color:#0f172a; line-height:1.2; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .ged-doc-subtitle { font-size:.76rem; color:#64748b; margin-top:.15rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .ged-badge { border-radius:999px; font-weight:600; padding:.26rem .46rem; font-size:.7rem; line-height:1; }
+    .ged-badge { border-radius:999px; font-weight:650; padding:.26rem .5rem; font-size:.7rem; line-height:1; }
     .ged-badge-info { background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd; }
     .ged-badge-ok { background:#dcfce7; color:#166534; border:1px solid #bbf7d0; }
     .ged-badge-muted { background:#f1f5f9; color:#475569; border:1px solid #e2e8f0; }
@@ -1005,13 +1014,38 @@
             if (el) el.textContent = String(count);
         }
 
-        window.GedDocumentsView = window.GedDocumentsView || {
+        function escapeCssValue(value) {
+            return window.CSS?.escape ? CSS.escape(value) : String(value).replace(/[^a-zA-Z0-9_-]/g, "\\$&");
+        }
+
+        function syncDocumentSelection(documentId, checked) {
+            if (!documentId) return;
+            document.querySelectorAll(`#gedDocumentsContainer .js-doc-select[value="${escapeCssValue(documentId)}"]`).forEach(cb => {
+                cb.checked = checked;
+                cb.closest('[data-document-id]')?.classList.toggle('is-selected', checked);
+            });
+        }
+
+        function updateSelectAllStates() {
+            const container = document.getElementById('gedDocumentsContainer');
+            if (!container) return;
+            const ids = Array.from(new Set(Array.from(container.querySelectorAll('.js-doc-select')).map(x => x.value).filter(Boolean)));
+            const selected = new Set(Array.from(container.querySelectorAll('.js-doc-select:checked')).map(x => x.value).filter(Boolean));
+            const allChecked = ids.length > 0 && ids.every(id => selected.has(id));
+            const partial = selected.size > 0 && !allChecked;
+            container.querySelectorAll('#selectAllDocuments, #selectAllDocumentsTable').forEach(cb => {
+                cb.checked = allChecked;
+                cb.indeterminate = partial;
+            });
+        }
+
+        window.GedDocumentsView = {
             key: 'ged.documents.viewMode',
-            defaultMode: 'list',
+            defaultMode: 'table',
             apply: function (mode) {
                 const container = document.getElementById('gedDocumentsContainer');
                 if (!container) return;
-                const normalized = mode === 'table' ? 'table' : 'list';
+                const normalized = mode === 'list' ? 'list' : 'table';
                 const listHeader = container.querySelector('.ged-document-list-header');
                 const list = container.querySelector('.ged-document-list');
                 const table = container.querySelector('.ged-documents-table-mode');
@@ -1022,46 +1056,36 @@
                 table?.classList.toggle('d-none', !isTable);
 
                 container.querySelectorAll('.js-doc-view-mode').forEach(btn => {
-                    btn.classList.toggle('active', btn.dataset.viewMode === normalized);
-                    btn.classList.toggle('btn-primary', btn.dataset.viewMode === normalized);
-                    btn.classList.toggle('btn-outline-primary', btn.dataset.viewMode !== normalized);
+                    const active = btn.dataset.viewMode === normalized;
+                    btn.classList.toggle('active', active);
+                    btn.classList.toggle('btn-primary', active);
+                    btn.classList.toggle('btn-outline-primary', !active);
+                    btn.setAttribute('aria-pressed', active ? 'true' : 'false');
                 });
 
                 localStorage.setItem(this.key, normalized);
-                this.syncTableScroll();
                 this.initDropdowns();
+                updateSelectAllStates();
             },
             init: function () {
                 const container = document.getElementById('gedDocumentsContainer');
                 if (!container) return;
-                container.querySelectorAll('.js-doc-select').forEach(cb => {
-                    cb.closest('[data-document-id]')?.classList.toggle('is-selected', cb.checked);
-                });
+                const selected = new Set(Array.from(container.querySelectorAll('.js-doc-select:checked')).map(x => x.value).filter(Boolean));
+                selected.forEach(id => syncDocumentSelection(id, true));
+                container.querySelectorAll('.js-doc-select:not(:checked)').forEach(cb => cb.closest('[data-document-id]')?.classList.remove('is-selected'));
                 this.apply(localStorage.getItem(this.key) || this.defaultMode);
             },
             initDropdowns: function () {
                 if (!window.bootstrap?.Dropdown) return;
                 document.querySelectorAll('#gedDocumentsContainer [data-bs-toggle="dropdown"]').forEach(el => window.bootstrap.Dropdown.getOrCreateInstance(el));
-            },
-            syncTableScroll: function () {
-                document.querySelectorAll('.ged-table-scroll-wrap').forEach(wrap => {
-                    const top = wrap.querySelector('.ged-table-top-scroll');
-                    const body = wrap.querySelector('.ged-table-scroll');
-                    const table = body?.querySelector('table');
-                    const spacer = top?.firstElementChild;
-                    if (!top || !body || !table || !spacer || wrap.dataset.scrollSynced === 'true') return;
-                    const resize = () => { spacer.style.width = `${table.scrollWidth}px`; };
-                    resize();
-                    top.addEventListener('scroll', () => { body.scrollLeft = top.scrollLeft; });
-                    body.addEventListener('scroll', () => { top.scrollLeft = body.scrollLeft; });
-                    window.addEventListener('resize', resize);
-                    wrap.dataset.scrollSynced = 'true';
-                });
             }
         };
 
         window.applyDocumentsViewMode = function (mode) {
-            window.GedDocumentsView?.apply?.(mode || 'list');
+            window.GedDocumentsView?.apply?.(mode || 'table');
+        };
+        window.initializeDocumentsViewMode = function () {
+            window.GedDocumentsView?.init?.();
         };
 
         if (!window.__gedDocumentsViewClickBound) {
@@ -1070,22 +1094,26 @@
                 if (!btn) return;
 
                 e.preventDefault();
-                window.applyDocumentsViewMode(btn.dataset.viewMode || 'list');
+                window.applyDocumentsViewMode(btn.dataset.viewMode || 'table');
             });
             window.__gedDocumentsViewClickBound = true;
         }
 
         document.addEventListener('change', (e) => {
             if (e.target.matches('.js-doc-select')) {
-                e.target.closest('[data-document-id]')?.classList.toggle('is-selected', e.target.checked);
+                syncDocumentSelection(e.target.value, e.target.checked);
+                updateSelectAllStates();
                 setTimeout(updateSelectedKpi, 0);
+                window.updateMoveSelectedButton?.();
             }
-            if (e.target.matches('#selectAllDocuments')) {
+            if (e.target.matches('#selectAllDocuments, #selectAllDocumentsTable')) {
                 document.querySelectorAll('#gedDocumentsContainer .js-doc-select').forEach(cb => {
                     cb.checked = e.target.checked;
                     cb.closest('[data-document-id]')?.classList.toggle('is-selected', cb.checked);
                 });
+                updateSelectAllStates();
                 setTimeout(updateSelectedKpi, 0);
+                window.updateMoveSelectedButton?.();
             }
         });
         updateSelectedKpi();

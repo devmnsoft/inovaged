@@ -7,7 +7,7 @@
     var folderName = !string.IsNullOrWhiteSpace(Model.CurrentFolderName) ? Model.CurrentFolderName : "Raiz";
 }
 
-<div class="ged-document-list" data-documents-view="list" data-ged-document-list>
+<div class="ged-document-list d-none" data-documents-view="list" data-ged-document-list>
     @foreach (var d in Model.Documents)
     {
         var isUnclassified = string.IsNullOrWhiteSpace(d.TypeName) || d.TypeName == "-";
@@ -41,7 +41,7 @@
             </div>
 
             <div class="ged-document-actions">
-                @await Html.PartialAsync("_DocumentActionsDropdown", (d.Id, d.Title, versionId, Model.CurrentFolderId))
+                @await Html.PartialAsync("_DocumentActionsDropdown", (d.Id, d.Title, versionId, Model.CurrentFolderId, d.IsOcrAvailable))
             </div>
         </article>
     }

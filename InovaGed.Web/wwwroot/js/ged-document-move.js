@@ -57,6 +57,7 @@
         let mode = 'bulk';
 
         const getSelected = () => Array.from(new Set(Array.from(document.querySelectorAll('.js-doc-select:checked')).map(x => x.value).filter(Boolean)));
+        const escapeCssValue = (value) => window.CSS?.escape ? CSS.escape(value) : String(value).replace(/[^a-zA-Z0-9_-]/g, "\\$&");
         const host = document.getElementById('folderSearchResults');
         const empty = document.getElementById('folderSearchEmpty');
         const loading = document.getElementById('folderSearchLoading');
@@ -130,9 +131,19 @@
             button.classList.add('active'); clearMoveModalMessage(); updateConfirmButton();
         }
         function updateBulkUi() {
-            const selected = getSelected(); if (bulkBtn) bulkBtn.disabled = selected.length === 0;
+            const selected = getSelected();
+            if (bulkBtn) bulkBtn.disabled = selected.length === 0;
             if (moveSelectedCount) moveSelectedCount.textContent = `(${selected.length})`;
+            document.querySelectorAll('#gedDocumentsContainer [data-document-id]').forEach(row => {
+                row.classList.toggle('is-selected', selected.includes(row.dataset.documentId));
+            });
+            document.querySelectorAll('#selectAllDocuments, #selectAllDocumentsTable').forEach(selectAll => {
+                const ids = Array.from(new Set(Array.from(document.querySelectorAll('#gedDocumentsContainer .js-doc-select')).map(x => x.value).filter(Boolean)));
+                selectAll.checked = ids.length > 0 && ids.every(id => selected.includes(id));
+                selectAll.indeterminate = selected.length > 0 && !selectAll.checked;
+            });
         }
+        window.updateMoveSelectedButton = updateBulkUi;
 
         async function confirmMove() {
             if (!selectedIds.length) return;
@@ -219,9 +230,13 @@
             if (confirm) { e.preventDefault(); confirmMove(); }
         });
         document.addEventListener('change', function (e) {
-            if (e.target.closest('.js-doc-select') || e.target.closest('#selectAllDocuments')) {
-                const selectAll = document.getElementById('selectAllDocuments');
-                if (e.target.id === 'selectAllDocuments') document.querySelectorAll('.js-doc-select').forEach(cb => cb.checked = selectAll.checked);
+            if (e.target.closest('.js-doc-select') || e.target.closest('#selectAllDocuments') || e.target.closest('#selectAllDocumentsTable')) {
+                if (e.target.matches('#selectAllDocuments, #selectAllDocumentsTable')) {
+                    document.querySelectorAll('#gedDocumentsContainer .js-doc-select').forEach(cb => { cb.checked = e.target.checked; });
+                }
+                if (e.target.matches('.js-doc-select')) {
+                    document.querySelectorAll(`#gedDocumentsContainer .js-doc-select[value=\"${escapeCssValue(e.target.value)}\"]`).forEach(cb => { cb.checked = e.target.checked; });
+                }
                 updateBulkUi();
             }
         });
