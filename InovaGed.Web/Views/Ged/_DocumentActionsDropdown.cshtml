@@ -1,10 +1,10 @@
 @model (Guid Id, string Title, string VersionId, Guid? FolderId)
 
 <div class="dropdown">
-    <button class="btn btn-light btn-sm document-actions-btn border" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Ações">
+    <button class="btn btn-light border btn-sm ged-actions-btn document-actions-btn" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Ações">
         <i class="bi bi-three-dots"></i>
     </button>
-    <ul class="dropdown-menu dropdown-menu-end">
+    <ul class="dropdown-menu dropdown-menu-end ged-actions-menu">
         <li><a class="dropdown-item" asp-action="Details" asp-controller="Ged" asp-route-id="@Model.Id"><i class="bi bi-eye me-2"></i>Abrir</a></li>
         <li>
             <button class="dropdown-item js-preview-document" type="button" data-document-id="@Model.Id" data-version-id="@Model.VersionId" onclick="window.location.href='@Url.Action("Details", "Ged", new { id = Model.Id })'">
