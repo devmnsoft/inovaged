@@ -1,9 +1,5 @@
 @model InovaGed.Web.Models.Ged.GedExplorerVM
-@using InovaGed.Web.Ocr
-@inject Microsoft.Extensions.Configuration.IConfiguration Configuration
 @{
-    var localTimeZoneId = Configuration["Localization:DefaultTimeZone"] ?? Configuration["App:LocalTimeZoneId"] ?? Configuration["TimeZoneId"] ?? "America/Belem";
-    var uploadDateFormat = Configuration["Localization:DateTimeFormat"] ?? "dd/MM/yyyy HH:mm";
     var totalDocuments = Model.Documents.Count;
     var ocrCount = Model.Documents.Count(d => d.IsOcrAvailable);
     var incompleteCount = Model.Documents.Count(d => d.IsDocumentIncomplete);
@@ -26,8 +22,8 @@
     else
     {
         <div class="ged-documents-view-toolbar px-3 py-2 border-bottom bg-white d-flex justify-content-between align-items-center gap-2">
-            <div class="form-check mb-0">
-                <input type="checkbox" class="form-check-input" id="selectAllDocuments" />
+            <div class="form-check mb-0 d-flex align-items-center gap-2">
+                <input type="checkbox" class="form-check-input mt-0" id="selectAllDocuments" />
                 <label class="form-check-label small text-muted" for="selectAllDocuments">Selecionar todos</label>
             </div>
             <div class="btn-group btn-group-sm" role="group" aria-label="Modo de visualização dos documentos">
@@ -36,101 +32,7 @@
             </div>
         </div>
 
-        <div class="ged-documents-card-list" data-documents-view="list">
-            @foreach (var d in Model.Documents)
-            {
-                var isUnclassified = string.IsNullOrWhiteSpace(d.TypeName) || d.TypeName == "-";
-                var versionId = d.CurrentVersionId?.ToString() ?? string.Empty;
-                var uploadLocal = OcrUiHelper.ToConfiguredLocalTime(d.UploadedAtUtc == default ? d.CreatedAt : d.UploadedAtUtc, localTimeZoneId);
-                var ocrBadgeClass = OcrUiHelper.BadgeClass(d.IsOcrAvailable, d.OcrStatus);
-                var ocrLabel = OcrUiHelper.AvailabilityLabel(d.IsOcrAvailable, d.OcrStatus, d.HasOcrText);
-                var ocrTitle = $"Status OCR: {(string.IsNullOrWhiteSpace(d.OcrStatus) ? "NONE" : d.OcrStatus)}. Texto extraído: {(d.HasOcrText ? "sim" : "não")}";
-                var partialClass = d.IsDocumentIncomplete ? " ged-document-incomplete" : (d.IsPartialDocument ? " ged-document-partial" : "");
-                <article class="ged-document-row@partialClass" draggable="true" data-document-id="@d.Id" data-ocr-available="@(d.IsOcrAvailable ? "true" : "false")" data-document-incomplete="@(d.IsDocumentIncomplete ? "true" : "false")" data-document-unclassified="@(isUnclassified ? "true" : "false")" data-uploaded-at-utc="@((d.UploadedAtUtc == default ? d.CreatedAt : d.UploadedAtUtc).ToString("O"))">
-                    <div class="ged-document-check">
-                        <input type="checkbox" class="form-check-input js-doc-select" value="@d.Id" data-document-title="@d.Title" />
-                    </div>
-                    <div class="ged-document-main">
-                        <a class="ged-document-title" asp-action="Details" asp-controller="Ged" asp-route-id="@d.Id" title="@d.Title">@d.Title</a>
-                        <div class="ged-document-file" title="@d.FileName"><i class="bi bi-paperclip me-1"></i>@(!string.IsNullOrWhiteSpace(d.FileName) ? d.FileName : "Arquivo sem nome")</div>
-                        <div class="ged-document-meta">
-                            @if (isUnclassified)
-                            {
-                                <span class="badge ged-badge ged-badge-muted">Sem classificação</span>
-                            }
-                            else
-                            {
-                                <span class="badge ged-badge ged-badge-ok"><i class="bi bi-tags me-1"></i>@d.TypeName</span>
-                            }
-                            <span class="badge ged-badge @ocrBadgeClass" title="@ocrTitle">@ocrLabel</span>
-                            @if (d.IsDocumentIncomplete || d.IsPartialDocument)
-                            {
-                                <span class="badge ged-badge @(d.IsDocumentIncomplete ? "ged-badge-warning" : "ged-badge-info")">@(d.IsDocumentIncomplete ? "Documento incompleto" : "Parcial") @(d.PartNumber.HasValue && d.TotalParts.HasValue ? $"{d.PartNumber}/{d.TotalParts}" : "")</span>
-                            }
-                            <span class="text-muted small" title="Upload em UTC: @((d.UploadedAtUtc == default ? d.CreatedAt : d.UploadedAtUtc).ToString("O"))"><i class="bi bi-cloud-arrow-up me-1"></i>Upload em @(string.IsNullOrWhiteSpace(d.UploadedAtLocalFormatted) ? uploadLocal.ToString(uploadDateFormat) : d.UploadedAtLocalFormatted)</span>
-                        </div>
-                    </div>
-                    <div class="ged-document-actions">
-                        @await Html.PartialAsync("_DocumentActionsDropdown", (d.Id, d.Title, versionId, Model.CurrentFolderId))
-                    </div>
-                </article>
-            }
-        </div>
-
-        <div class="ged-documents-table-mode d-none" data-documents-view="table">
-            <div class="ged-table-scroll-wrap">
-                <div class="ged-table-top-scroll" aria-hidden="true"><div></div></div>
-                <div class="ged-table-scroll">
-                    <table class="table table-hover mb-0 align-middle ged-documents-table" data-ged-document-list>
-                        <thead class="table-light">
-                            <tr>
-                                <th style="width:40px;"></th>
-                                <th>Documento</th>
-                                <th style="width:220px;">Tipo/Classificação</th>
-                                <th style="width:260px;">Arquivo</th>
-                                <th style="width:120px;">OCR</th>
-                                <th style="width:170px;">Upload em</th>
-                                <th style="width:70px;" class="text-end">Ações</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var d in Model.Documents)
-                            {
-                                var isUnclassified = string.IsNullOrWhiteSpace(d.TypeName) || d.TypeName == "-";
-                                var versionId = d.CurrentVersionId?.ToString() ?? string.Empty;
-                                var uploadLocal = OcrUiHelper.ToConfiguredLocalTime(d.UploadedAtUtc == default ? d.CreatedAt : d.UploadedAtUtc, localTimeZoneId);
-                                var ocrBadgeClass = OcrUiHelper.BadgeClass(d.IsOcrAvailable, d.OcrStatus);
-                                var ocrLabel = OcrUiHelper.AvailabilityLabel(d.IsOcrAvailable, d.OcrStatus, d.HasOcrText);
-                                var ocrTitle = $"Status OCR: {(string.IsNullOrWhiteSpace(d.OcrStatus) ? "NONE" : d.OcrStatus)}. Texto extraído: {(d.HasOcrText ? "sim" : "não")}";
-                                var partialClass = d.IsDocumentIncomplete ? "table-warning ged-document-incomplete" : (d.IsPartialDocument ? "ged-document-partial" : "");
-                                <tr class="@partialClass" draggable="true" data-document-id="@d.Id" data-ocr-available="@(d.IsOcrAvailable ? "true" : "false")" data-document-incomplete="@(d.IsDocumentIncomplete ? "true" : "false")" data-document-unclassified="@(isUnclassified ? "true" : "false")" data-uploaded-at-utc="@((d.UploadedAtUtc == default ? d.CreatedAt : d.UploadedAtUtc).ToString("O"))">
-                                    <td><input type="checkbox" class="js-doc-select" value="@d.Id" data-document-title="@d.Title" /></td>
-                                    <td>
-                                        <div class="ged-doc-title">@d.Title</div>
-                                        <div class="ged-doc-subtitle">@(!string.IsNullOrWhiteSpace(Model.CurrentFolderName) ? Model.CurrentFolderName : "Raiz")</div>
-                                    </td>
-                                    <td>
-                                        @if (isUnclassified)
-                                        {
-                                            <span class="badge ged-badge ged-badge-muted">Sem classificação</span>
-                                        }
-                                        else
-                                        {
-                                            <span class="badge ged-badge ged-badge-ok"><i class="bi bi-tags me-1"></i>@d.TypeName</span>
-                                        }
-                                    </td>
-                                    <td class="text-muted small text-truncate" style="max-width:260px;" title="@d.FileName">@d.FileName</td>
-                                    <td><span class="badge ged-badge @ocrBadgeClass" title="@ocrTitle">@ocrLabel</span></td>
-                                    <td class="text-muted small">Upload em @(string.IsNullOrWhiteSpace(d.UploadedAtLocalFormatted) ? uploadLocal.ToString(uploadDateFormat) : d.UploadedAtLocalFormatted)</td>
-                                    <td class="text-end">
-                                        @await Html.PartialAsync("_DocumentActionsDropdown", (d.Id, d.Title, versionId, Model.CurrentFolderId))
-                                    </td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
+        @await Html.PartialAsync("_DocumentListRows", Model)
+        @await Html.PartialAsync("_DocumentTable", Model)
     }
 </div>

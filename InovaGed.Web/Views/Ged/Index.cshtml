@@ -370,36 +370,34 @@
     <!-- COLUNA DOCUMENTOS -->
     <section class="ged-main-panel">
         <div class="ged-folder-header">
-            <div class="d-flex justify-content-between gap-3 flex-wrap align-items-start">
-                <div class="d-flex gap-3 align-items-start">
-                    <div class="ged-folder-header-icon"><i class="bi bi-folder2-open"></i></div>
-                    <div>
-                        <h1 class="h4 mb-1" data-current-folder-title>@(!string.IsNullOrWhiteSpace(Model.CurrentFolderName) ? Model.CurrentFolderName : "Raiz")</h1>
-                        <div class="ged-breadcrumb" data-current-folder-breadcrumb><i class="bi bi-diagram-3 me-1"></i>@breadcrumbText</div>
-                    </div>
-                </div>
-                <div class="d-flex gap-2 flex-wrap">
-                    @if (Model.CanBulkUpload || Model.CurrentFolderId != null)
-                    {
-                        <button type="button" id="btnOpenBulkUpload" class="btn btn-primary"><i class="bi bi-cloud-arrow-up me-1"></i> Adicionar documentos</button>
-                    }
-                    <a class="btn btn-outline-secondary" href="@Url.Action("Index", "Ged", new { folderId = Model.CurrentFolderId, q = Model.Query })"><i class="bi bi-arrow-clockwise me-1"></i> Atualizar</a>
-                    <div class="dropdown">
-                        <button class="btn btn-light border" type="button" data-bs-toggle="dropdown"><i class="bi bi-three-dots"></i></button>
-                        <ul class="dropdown-menu dropdown-menu-end">
-                            <li><a class="dropdown-item" asp-controller="Ged" asp-action="Kpi"><i class="bi bi-bar-chart-line me-2"></i>KPI GED</a></li>
-                            <li><button class="dropdown-item" type="button" data-bs-toggle="modal" data-bs-target="#modalFilaOcr"><i class="bi bi-list-task me-2"></i>Ver fila OCR</button></li>
-                        </ul>
+            <div class="ged-folder-heading">
+                <div class="ged-folder-header-icon"><i class="bi bi-folder2-open"></i></div>
+                <div class="min-w-0">
+                    <h1 class="h5 mb-1 text-truncate" data-current-folder-title>@(!string.IsNullOrWhiteSpace(Model.CurrentFolderName) ? Model.CurrentFolderName : "Raiz")</h1>
+                    <div class="ged-breadcrumb text-truncate" data-current-folder-breadcrumb><i class="bi bi-diagram-3 me-1"></i>@breadcrumbText</div>
+                    <div class="ged-metrics-strip">
+                        <span class="ged-metric-pill"><strong id="documentsTotalKpi">@Model.Documents.Count</strong> Documentos</span>
+                        <span class="ged-metric-pill"><strong id="selectedDocumentsKpi">0</strong> Selecionados</span>
+                        <span class="ged-metric-pill"><strong id="documentsUnclassifiedKpi">@unclassifiedCount</strong> Não classificados</span>
+                        <span class="ged-metric-pill"><strong id="documentsOcrKpi">@ocrAvailableCount</strong> Com OCR</span>
+                        <span class="ged-metric-pill"><strong id="documentsIncompleteKpi">@incompleteCount</strong> Incompletos</span>
+                        <span class="ged-metric-pill"><strong>@pendingOcrCount</strong> Pendentes</span>
                     </div>
                 </div>
             </div>
-            <div class="ged-kpi-strip">
-                <div class="ged-kpi-card"><span id="documentsTotalKpi">@Model.Documents.Count</span><small>documentos</small></div>
-                <div class="ged-kpi-card"><span id="selectedDocumentsKpi">0</span><small>selecionados</small></div>
-                <div class="ged-kpi-card"><span id="documentsUnclassifiedKpi">@unclassifiedCount</span><small>não classificados</small></div>
-                <div class="ged-kpi-card"><span id="documentsOcrKpi">@ocrAvailableCount</span><small>com OCR</small></div>
-                <div class="ged-kpi-card"><span id="documentsIncompleteKpi">@incompleteCount</span><small>incompletos</small></div>
-                <div class="ged-kpi-card"><span>@pendingOcrCount</span><small>pendentes</small></div>
+            <div class="ged-folder-actions">
+                @if (Model.CanBulkUpload || Model.CurrentFolderId != null)
+                {
+                    <button type="button" id="btnOpenBulkUpload" class="btn btn-primary btn-sm"><i class="bi bi-cloud-arrow-up me-1"></i> Adicionar documentos</button>
+                }
+                <a class="btn btn-outline-secondary btn-sm" href="@Url.Action("Index", "Ged", new { folderId = Model.CurrentFolderId, q = Model.Query })"><i class="bi bi-arrow-clockwise me-1"></i> Atualizar</a>
+                <div class="dropdown">
+                    <button class="btn btn-light btn-sm border" type="button" data-bs-toggle="dropdown" aria-label="Mais ações"><i class="bi bi-three-dots"></i></button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><a class="dropdown-item" asp-controller="Ged" asp-action="Kpi"><i class="bi bi-bar-chart-line me-2"></i>KPI GED</a></li>
+                        <li><button class="dropdown-item" type="button" data-bs-toggle="modal" data-bs-target="#modalFilaOcr"><i class="bi bi-list-task me-2"></i>Ver fila OCR</button></li>
+                    </ul>
+                </div>
             </div>
         </div>
 
@@ -743,49 +741,68 @@
     .ged-tree-folder { width:18px; text-align:center; color:#f59e0b; }
     .ged-drop-target > .ged-tree-row, .ged-drop-target.ged-tree-root, .js-folder-node.ged-drop-target { outline:2px dashed #0d6efd; outline-offset:2px; background:rgba(13,110,253,.08); }
     .ged-folder-scroll { scrollbar-width:thin; scrollbar-color:rgba(13,110,253,.35) transparent; }
-    .ged-folder-header { padding:1.15rem; background:linear-gradient(135deg,#f8fbff,#fff); border-bottom:1px solid rgba(15,23,42,.08); }
-    .ged-folder-header-icon { width:48px; height:48px; border-radius:14px; display:grid; place-items:center; background:#eaf2ff; color:#0d6efd; font-size:1.5rem; }
-    .ged-breadcrumb { color:#64748b; font-size:.9rem; }
-    .ged-kpi-strip { display:grid; grid-template-columns:repeat(5,minmax(110px,1fr)); gap:.6rem; margin-top:1rem; }
-    .ged-kpi-card { border:1px solid rgba(15,23,42,.08); border-radius:14px; padding:.65rem .75rem; background:#fff; }
-    .ged-kpi-card span { display:block; font-weight:700; font-size:1.05rem; color:#0f172a; line-height:1; }
-    .ged-kpi-card small { color:#64748b; text-transform:uppercase; letter-spacing:.02em; font-size:.68rem; }
-    .ged-toolbar { padding:.85rem 1rem; border-bottom:1px solid rgba(15,23,42,.08); background:#fff; }
+    .ged-folder-header { display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; padding:1.1rem 1.25rem .75rem; background:linear-gradient(135deg,#f8fbff,#fff); border-bottom:1px solid #eef2f7; }
+    .ged-folder-heading { display:flex; gap:.85rem; align-items:flex-start; min-width:0; }
+    .ged-folder-actions { display:flex; gap:.5rem; align-items:center; flex-wrap:wrap; justify-content:flex-end; }
+    .ged-folder-header-icon { flex:0 0 auto; width:42px; height:42px; border-radius:13px; display:grid; place-items:center; background:#eaf2ff; color:#0d6efd; font-size:1.35rem; }
+    .ged-breadcrumb { color:#64748b; font-size:.84rem; }
+    .min-w-0 { min-width:0; }
+    .ged-metrics-strip { display:flex; flex-wrap:wrap; gap:.5rem; margin-top:.75rem; }
+    .ged-metric-pill { display:inline-flex; align-items:center; gap:.4rem; padding:.45rem .7rem; border:1px solid #e5e7eb; border-radius:999px; background:#fff; font-size:.82rem; color:#475569; line-height:1; }
+    .ged-metric-pill strong { color:#0f172a; font-size:.9rem; }
+    .ged-toolbar { padding:.75rem 1rem; border-bottom:1px solid #eef2f7; background:#fff; }
     .ged-toolbar-search { position:relative; }
-    .ged-toolbar-actions { display:flex; flex-wrap:wrap; gap:.5rem; margin-top:.65rem; }
+    .ged-toolbar .input-group { align-items:stretch; }
+    .ged-toolbar-actions { display:flex; flex-wrap:wrap; gap:.5rem; margin-top:.55rem; }
     .ged-documents-list { background:#fff; }
-    .ged-documents-view-toolbar { position:sticky; top:0; z-index:5; }
-    .ged-document-row { display:grid; grid-template-columns:32px minmax(0,1fr) auto; gap:1rem; align-items:center; padding:.78rem 1rem; border-bottom:1px solid #e5e7eb; transition:background .15s ease, box-shadow .15s ease; }
-    .ged-document-row:hover { background:#f8fafc; }
-    .document-row-new { animation:newDocumentPulse 2s ease; background:#ecfdf5 !important; }
-    keyframes newDocumentPulse { 0% { box-shadow:0 0 0 0 rgba(16,185,129,.5); } 100% { box-shadow:0 0 0 12px rgba(16,185,129,0); } }
-    .ged-document-check { display:flex; align-items:center; justify-content:center; }
+    .ged-documents-view-toolbar { position:sticky; top:0; z-index:5; min-height:43px; }
+    .ged-document-list { background:#fff; }
+    .ged-document-row { display:grid; grid-template-columns:34px 42px minmax(0, 1fr) minmax(180px, 260px) 150px 46px; gap:.75rem; align-items:center; padding:.72rem 1rem; min-height:78px; border-bottom:1px solid #eef2f7; transition:background .15s ease, box-shadow .15s ease; }
+    .ged-document-row:hover { background:#f8fbff; }
+    .ged-document-row.is-selected { background:#eff6ff; }
+    .ged-document-row.is-new, .document-row-new { background:#ecfdf5 !important; animation:gedNewDocPulse 2s ease; }
+    @@keyframes gedNewDocPulse { 0% { box-shadow:inset 4px 0 0 #10b981; } 100% { box-shadow:inset 4px 0 0 transparent; } }
+    .ged-document-select { display:flex; align-items:center; justify-content:center; }
+    .ged-document-select .form-check-input, .ged-documents-table .form-check-input { margin:0; }
+    .ged-document-icon { width:38px; height:38px; border-radius:12px; display:grid; place-items:center; background:#eff6ff; color:#2563eb; font-size:1.15rem; }
     .ged-document-main { min-width:0; }
     .ged-document-title { display:block; font-weight:700; color:#0f172a; line-height:1.2; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-decoration:none; }
     .ged-document-title:hover { color:#0d6efd; text-decoration:underline; }
-    .ged-document-file { margin-top:.18rem; color:#64748b; font-size:.82rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .ged-document-meta { display:flex; flex-wrap:wrap; align-items:center; gap:.35rem .5rem; margin-top:.35rem; }
+    .ged-document-file { margin-top:.16rem; color:#64748b; font-size:.84rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .ged-document-meta { display:flex; align-items:center; gap:.32rem; margin-top:.18rem; color:#94a3b8; font-size:.74rem; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+    .ged-document-badges { display:flex; flex-wrap:wrap; align-items:center; gap:.35rem; min-width:0; }
+    .ged-document-date { color:#475569; font-size:.84rem; white-space:nowrap; }
     .ged-document-actions { display:flex; justify-content:flex-end; }
     .document-actions-btn { min-width:34px; border-radius:10px; }
     .ged-table-scroll-wrap { position:relative; }
     .ged-table-top-scroll, .ged-table-scroll { overflow-x:auto; scrollbar-width:thin; }
     .ged-table-top-scroll { height:14px; border-bottom:1px solid #e5e7eb; background:#f8fafc; }
     .ged-table-top-scroll > div { height:1px; }
-    .ged-documents-table { font-size:.92rem; min-width:980px; }
-    .ged-documents-table th { font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; color:#64748b; padding:.6rem .75rem; }
-    .ged-documents-table td { padding:.55rem .75rem; vertical-align:middle; }
+    .ged-documents-table { font-size:.88rem; min-width:1040px; }
+    .ged-documents-table th { font-size:.7rem; text-transform:uppercase; letter-spacing:.04em; color:#64748b; padding:.55rem .7rem; }
+    .ged-documents-table td { padding:.5rem .7rem; vertical-align:middle; }
     .ged-documents-table tbody tr { cursor:grab; }
     .ged-doc-title { font-weight:700; color:#0f172a; line-height:1.2; }
-    .ged-doc-subtitle { font-size:.78rem; color:#64748b; margin-top:.15rem; }
-    .ged-badge { border-radius:999px; font-weight:600; padding:.28rem .48rem; font-size:.72rem; }
+    .ged-doc-subtitle { font-size:.76rem; color:#64748b; margin-top:.15rem; }
+    .ged-badge { border-radius:999px; font-weight:600; padding:.26rem .46rem; font-size:.7rem; line-height:1; }
     .ged-badge-info { background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd; }
     .ged-badge-ok { background:#dcfce7; color:#166534; border:1px solid #bbf7d0; }
     .ged-badge-muted { background:#f1f5f9; color:#475569; border:1px solid #e2e8f0; }
+    .ged-badge-warning { background:#fef3c7; color:#92400e; border:1px solid #fde68a; }
+    .ged-badge-danger { background:#fee2e2; color:#991b1b; border:1px solid #fecaca; }
     .ged-empty-state { background:linear-gradient(180deg,#fff,#f8fbff); border-radius:0 0 18px 18px; }
     .ged-empty-icon { width:74px; height:74px; border-radius:24px; display:grid; place-items:center; margin-inline:auto; color:#0d6efd; background:#eaf2ff; font-size:2.35rem; }
     .bulk-large-file-hint { color:#0369a1; }
-    media (max-width: 575.98px) { .ged-document-row { grid-template-columns:28px minmax(0,1fr); gap:.65rem; } .ged-document-actions { grid-column:2; justify-content:flex-start; } .ged-documents-view-toolbar { align-items:flex-start !important; flex-direction:column; } }
-    media (max-width: 1199.98px) { .ged-page { grid-template-columns:1fr; } .ged-folder-panel { position:static; } .ged-kpi-strip { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+    @@media (max-width: 1100px) {
+        .ged-document-row { grid-template-columns:30px 38px minmax(0, 1fr) 44px; }
+        .ged-document-badges, .ged-document-date { grid-column:3 / 4; }
+        .ged-document-date { margin-top:-.15rem; }
+        .ged-document-actions { grid-column:4; grid-row:1 / span 3; align-self:center; }
+        .ged-folder-header { flex-direction:column; }
+        .ged-folder-actions { justify-content:flex-start; }
+    }
+    @@media (max-width: 575.98px) { .ged-document-row { grid-template-columns:28px minmax(0,1fr); gap:.65rem; } .ged-document-actions { grid-column:2; justify-content:flex-start; } .ged-documents-view-toolbar { align-items:flex-start !important; flex-direction:column; } }
+    @@media (max-width: 1199.98px) { .ged-page { grid-template-columns:1fr; } .ged-folder-panel { position:static; } .ged-metrics-strip { gap:.4rem; } }
 </style>
 
 @section Scripts {
@@ -981,11 +998,19 @@
                     });
                     localStorage.setItem(this.key, normalized);
                     this.syncTableScroll();
+                    this.initDropdowns();
                 };
                 container.querySelectorAll('.js-doc-view-mode').forEach(btn => {
                     btn.addEventListener('click', () => apply(btn.dataset.viewMode));
                 });
+                container.querySelectorAll('.js-doc-select').forEach(cb => {
+                    cb.closest('[data-document-id]')?.classList.toggle('is-selected', cb.checked);
+                });
                 apply(localStorage.getItem(this.key) || 'list');
+            },
+            initDropdowns: function () {
+                if (!window.bootstrap?.Dropdown) return;
+                document.querySelectorAll('#gedDocumentsContainer [data-bs-toggle="dropdown"]').forEach(el => window.bootstrap.Dropdown.getOrCreateInstance(el));
             },
             syncTableScroll: function () {
                 document.querySelectorAll('.ged-table-scroll-wrap').forEach(wrap => {
@@ -1004,7 +1029,17 @@
             }
         };
         document.addEventListener('change', (e) => {
-            if (e.target.matches('.js-doc-select, #selectAllDocuments')) setTimeout(updateSelectedKpi, 0);
+            if (e.target.matches('.js-doc-select')) {
+                e.target.closest('[data-document-id]')?.classList.toggle('is-selected', e.target.checked);
+                setTimeout(updateSelectedKpi, 0);
+            }
+            if (e.target.matches('#selectAllDocuments')) {
+                document.querySelectorAll('#gedDocumentsContainer .js-doc-select').forEach(cb => {
+                    cb.checked = e.target.checked;
+                    cb.closest('[data-document-id]')?.classList.toggle('is-selected', cb.checked);
+                });
+                setTimeout(updateSelectedKpi, 0);
+            }
         });
         updateSelectedKpi();
         window.GedDocumentsView.init();

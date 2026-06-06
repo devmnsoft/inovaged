@@ -1,0 +1,34 @@
+@model InovaGed.Web.Models.Ged.GedExplorerVM.DocumentRowVM
+@using InovaGed.Web.Ocr
+@{
+    var isUnclassified = string.IsNullOrWhiteSpace(Model.TypeName) || Model.TypeName == "-";
+    var ocrBadgeClass = OcrUiHelper.BadgeClass(Model.IsOcrAvailable, Model.OcrStatus);
+    var ocrLabel = OcrUiHelper.AvailabilityLabel(Model.IsOcrAvailable, Model.OcrStatus, Model.HasOcrText);
+    var ocrTitle = $"Status OCR: {(string.IsNullOrWhiteSpace(Model.OcrStatus) ? "NONE" : Model.OcrStatus)}. Texto extraído: {(Model.HasOcrText ? "sim" : "não")}";
+    var partialSuffix = Model.PartNumber.HasValue && Model.TotalParts.HasValue ? $" {Model.PartNumber}/{Model.TotalParts}" : string.Empty;
+    var isConsolidated = Model.IsPartialDocument && Model.ConsolidatedVersionId.HasValue && !Model.IsDocumentIncomplete;
+}
+
+@if (isUnclassified)
+{
+    <span class="badge ged-badge ged-badge-muted">Sem classificação</span>
+}
+else
+{
+    <span class="badge ged-badge ged-badge-ok" title="Classificação: @Model.TypeName"><i class="bi bi-tags me-1"></i>@Model.TypeName</span>
+}
+
+<span class="badge ged-badge @ocrBadgeClass" title="@ocrTitle">@ocrLabel</span>
+
+@if (Model.IsDocumentIncomplete)
+{
+    <span class="badge ged-badge ged-badge-warning">Documento incompleto@partialSuffix</span>
+}
+else if (isConsolidated)
+{
+    <span class="badge ged-badge ged-badge-info">Documento consolidado@partialSuffix</span>
+}
+else if (Model.IsPartialDocument)
+{
+    <span class="badge ged-badge ged-badge-info">Documento parcial@partialSuffix</span>
+}
