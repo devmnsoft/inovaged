@@ -50,6 +50,8 @@ public sealed class UploadBatchFileResultDto
     public string? FolderName { get; set; }
     public string? Title { get; set; }
     public string? FileName { get; set; }
+    public DateTime? UploadedAtUtc { get; set; }
+    public string? UploadedAtLocalFormatted { get; set; }
     public string Status { get; set; } = "COMPLETED";
     public bool OcrQueued { get; set; }
     public bool PreviewQueued { get; set; }
@@ -63,6 +65,8 @@ public sealed class UploadBatchCreatedDocumentDto
     public Guid? VersionId { get; set; }
     public string? Title { get; set; }
     public string? FileName { get; set; }
+    public DateTime? UploadedAtUtc { get; set; }
+    public string? UploadedAtLocalFormatted { get; set; }
 }
 
 public sealed class UploadBatchStatusDto

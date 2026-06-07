@@ -28,9 +28,9 @@ public sealed class SystemLogQueryService : ISystemLogQueryService
         f.PageSize = Math.Clamp(f.PageSize, 1, 200);
 
         using var c = await _db.OpenAsync(ct);
-        var auditColumns = await GetColumnsAsync(c, "ged", "audit_log", ct);
+        var source = await ResolveAuditSourceAsync(c, ct);
         var userColumns = await GetColumnsAsync(c, "ged", "app_user", ct);
-        var query = BuildQuery(auditColumns, userColumns, includeDetails: false);
+        var query = BuildQuery(source.TableName, source.Columns, userColumns, includeDetails: false);
 
         var pageSize = f.PageSize;
         var offset = (f.Page - 1) * f.PageSize;
@@ -44,9 +44,9 @@ public sealed class SystemLogQueryService : ISystemLogQueryService
     public async Task<SystemLogDetailsDto?> GetDetailsAsync(string id, Guid tenantId, CancellationToken ct)
     {
         using var c = await _db.OpenAsync(ct);
-        var auditColumns = await GetColumnsAsync(c, "ged", "audit_log", ct);
+        var source = await ResolveAuditSourceAsync(c, ct);
         var userColumns = await GetColumnsAsync(c, "ged", "app_user", ct);
-        var query = BuildQuery(auditColumns, userColumns, includeDetails: true);
+        var query = BuildQuery(source.TableName, source.Columns, userColumns, includeDetails: true);
 
         var p = new DynamicParameters();
         p.Add("TenantId", tenantId, DbType.Guid);
@@ -91,7 +91,7 @@ public sealed class SystemLogQueryService : ISystemLogQueryService
         return p;
     }
 
-    private static BuiltQuery BuildQuery(IReadOnlySet<string> auditColumns, IReadOnlySet<string> userColumns, bool includeDetails)
+    private static BuiltQuery BuildQuery(string auditTableName, IReadOnlySet<string> auditColumns, IReadOnlySet<string> userColumns, bool includeDetails)
     {
         var dateExpr = FirstExisting(auditColumns, "l", "created_at", "created_at_utc", "reg_date", "event_time", "occurred_at", "happened_at") ?? "now()";
         var orderExpr = dateExpr == "now()" && auditColumns.Contains("id") ? "l.id" : dateExpr;
@@ -131,7 +131,7 @@ public sealed class SystemLogQueryService : ISystemLogQueryService
         where.Add($"((@Search)::text is null or {messageExpr} ilike '%' || (@Search)::text || '%' or {detailsExpr} ilike '%' || (@Search)::text || '%')");
         var whereSql = "where " + string.Join("\nand ", where);
 
-        var fromSql = $"from ged.audit_log l\n{join}";
+        var fromSql = $"from ged.{auditTableName} l\n{join}";
         var selectCommon = $@"{idExpr} as ""Id"",
 {tenantExpr} as ""TenantId"",
 {dateExpr} as ""CreatedAt"",
@@ -198,6 +198,7 @@ where {(auditColumns.Contains("tenant_id") ? "l.tenant_id = (@TenantId)::uuid an
             }
         }
 
+        if (auditColumns.Contains("user_name")) parts.Add("nullif(l.user_name::text, '')");
         if (auditColumns.Contains("user_id")) parts.Add("l.user_id::text");
         parts.Add("'Sistema'");
         return $"coalesce({string.Join(", ", parts)})";
@@ -206,6 +207,7 @@ where {(auditColumns.Contains("tenant_id") ? "l.tenant_id = (@TenantId)::uuid an
     private static string BuildUserFilters(IReadOnlySet<string> auditColumns, IReadOnlySet<string> userColumns, bool hasJoin)
     {
         var parts = new List<string>();
+        if (auditColumns.Contains("user_name")) parts.Add("l.user_name::text ilike '%' || (@User)::text || '%'");
         if (auditColumns.Contains("user_id")) parts.Add("l.user_id::text ilike '%' || (@User)::text || '%'");
         if (hasJoin)
         {
@@ -218,6 +220,17 @@ where {(auditColumns.Contains("tenant_id") ? "l.tenant_id = (@TenantId)::uuid an
         return parts.Count == 0
             ? "(@User)::text is null"
             : $"((@User)::text is null or {string.Join(" or ", parts)})";
+    }
+
+
+    private static async Task<AuditSource> ResolveAuditSourceAsync(IDbConnection conn, CancellationToken ct)
+    {
+        var appColumns = await GetColumnsAsync(conn, "ged", "app_audit_log", ct);
+        if (appColumns.Count > 0)
+            return new AuditSource("app_audit_log", appColumns);
+
+        var legacyColumns = await GetColumnsAsync(conn, "ged", "audit_log", ct);
+        return new AuditSource("audit_log", legacyColumns);
     }
 
     private static string? FirstExisting(IReadOnlySet<string> columns, string alias, params string[] names)
@@ -255,6 +268,8 @@ where table_schema = @SchemaName
     private static string? NullIfWhiteSpace(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     private static string EscapeCsv(string? value) => (value ?? string.Empty).Replace("\"", "'");
+
+    private sealed record AuditSource(string TableName, IReadOnlySet<string> Columns);
 
     private sealed record BuiltQuery(string ListSql, string CountSql, string DetailsSql);
 }

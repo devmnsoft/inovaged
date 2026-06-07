@@ -88,38 +88,7 @@
             </div>
 
             <div class="ged-operational-status-line">
-                @if (isUnclassified)
-                {
-                    <span class="badge rounded-pill bg-secondary-subtle text-secondary">
-                        <i class="bi bi-tag me-1"></i>Sem classificação
-                    </span>
-                }
-                else
-                {
-                    <span class="badge rounded-pill bg-success-subtle text-success">
-                        <i class="bi bi-tag-fill me-1"></i>@d.TypeName
-                    </span>
-                }
-
-                @if (d.IsOcrAvailable)
-                {
-                    <span class="badge rounded-pill bg-info-subtle text-info">
-                        <i class="bi bi-body-text me-1"></i>OCR disponível
-                    </span>
-                }
-                else
-                {
-                    <span class="badge rounded-pill bg-light text-muted border">
-                        <i class="bi bi-body-text me-1"></i>Sem OCR
-                    </span>
-                }
-
-                @if (d.IsPartialDocument && !d.IsDocumentIncomplete)
-                {
-                    <span class="badge rounded-pill bg-primary-subtle text-primary">
-                        Documento parcial
-                    </span>
-                }
+                @await Html.PartialAsync("_DocumentBadges", d)
             </div>
         </div>
 

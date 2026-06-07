@@ -1,9 +1,11 @@
 -- InovaGED - Consolidação idempotente de schema GED/OCR/upload/logs/versionamento.
 -- Pode ser executado repetidas vezes. Não apaga dados e não sobrescreve registros reais.
 
+-- Histórico de migrations / schema base
 CREATE SCHEMA IF NOT EXISTS ged;
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
+-- GED base: tipos usados por documentos, OCR e preview.
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace WHERE n.nspname = 'ged' AND t.typname = 'document_status_enum') THEN
@@ -35,6 +37,7 @@ BEGIN
     END IF;
 END $$;
 
+-- GED base: pastas e documentos.
 CREATE TABLE IF NOT EXISTS ged.folder (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id uuid NOT NULL,
@@ -112,6 +115,7 @@ BEGIN
     END IF;
 END $$;
 
+-- Documento parcial: controle de partes/fracionamento e consolidação.
 CREATE TABLE IF NOT EXISTS ged.document_partial_part (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id uuid NOT NULL,
@@ -131,6 +135,7 @@ CREATE TABLE IF NOT EXISTS ged.document_partial_part (
 );
 ALTER TABLE ged.document_partial_part ADD COLUMN IF NOT EXISTS notes text NULL;
 
+-- Upload batch: lote e itens de envio múltiplo.
 CREATE TABLE IF NOT EXISTS ged.upload_batch (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id uuid NOT NULL,
@@ -166,6 +171,7 @@ ALTER TABLE ged.upload_batch_item ADD COLUMN IF NOT EXISTS tenant_id uuid NULL;
 ALTER TABLE ged.upload_batch_item ADD COLUMN IF NOT EXISTS status text NULL DEFAULT 'PENDING';
 ALTER TABLE ged.upload_batch_item ADD COLUMN IF NOT EXISTS created_at timestamptz NULL DEFAULT now();
 
+-- Upload chunked: sessões e partes de arquivos grandes.
 CREATE TABLE IF NOT EXISTS ged.upload_session (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id uuid NOT NULL,
@@ -231,6 +237,7 @@ ALTER TABLE ged.upload_session_chunk ADD COLUMN IF NOT EXISTS temp_path text NUL
 ALTER TABLE ged.upload_session_chunk ADD COLUMN IF NOT EXISTS received_at timestamptz NULL DEFAULT now();
 ALTER TABLE ged.upload_session_chunk ADD COLUMN IF NOT EXISTS reg_status char(1) NULL DEFAULT 'A';
 
+-- OCR: índice textual e fila de processamento.
 CREATE TABLE IF NOT EXISTS ged.document_search (
     tenant_id uuid NOT NULL,
     document_id uuid NOT NULL,
@@ -263,6 +270,7 @@ ALTER TABLE ged.ocr_job ADD COLUMN IF NOT EXISTS requested_at timestamptz NULL D
 ALTER TABLE ged.ocr_job ADD COLUMN IF NOT EXISTS finished_at timestamptz NULL;
 ALTER TABLE ged.ocr_job ADD COLUMN IF NOT EXISTS invalidate_digital_signatures boolean NULL DEFAULT false;
 
+-- Auditoria: tabela legada com fallback para SystemLogs.
 CREATE TABLE IF NOT EXISTS ged.audit_log (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id uuid NULL,
@@ -299,6 +307,7 @@ BEGIN
     END IF;
 END $$;
 
+-- Auditoria: tabela padrão da aplicação para SystemLogs.
 CREATE TABLE IF NOT EXISTS ged.app_audit_log (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id uuid NULL,
@@ -353,6 +362,7 @@ CREATE TABLE IF NOT EXISTS ged.app_user (
     reg_status char(1) NOT NULL DEFAULT 'A'
 );
 
+-- Histórico de migrations: registro idempotente dos scripts aplicados.
 CREATE TABLE IF NOT EXISTS ged.schema_migration_history (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     script_name text NOT NULL,
@@ -364,7 +374,7 @@ CREATE TABLE IF NOT EXISTS ged.schema_migration_history (
 );
 
 
--- Backfills seguros para colunas recém-adicionadas como nullable em ambientes com dados.
+-- Backfills seguros: preenchem somente valores nulos para manter compatibilidade operacional, sem apagar ou substituir dados reais.
 UPDATE ged.document SET created_at = COALESCE(created_at, now()) WHERE created_at IS NULL;
 UPDATE ged.document SET reg_status = COALESCE(reg_status, 'A') WHERE reg_status IS NULL;
 UPDATE ged.upload_batch SET status = COALESCE(status, 'PENDING'), created_at = COALESCE(created_at, now()) WHERE status IS NULL OR created_at IS NULL;

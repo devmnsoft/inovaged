@@ -4,6 +4,9 @@
     var script = "database/apply_all_required_migrations.sql";
     var correctionSql = "psql \"$CONNECTION_STRING\" -v ON_ERROR_STOP=1 -f database/apply_all_required_migrations.sql";
     var ok = Model.IsHealthy;
+    var hasRecommendedFailures = Model.Checks.Any(c => !c.Success && c.Severity == "Recomendado");
+    var statusText = ok ? (hasRecommendedFailures ? "Schema funcional com recomendações de performance." : "Schema compatível") : "Schema incompatível";
+    var alertClass = ok ? (hasRecommendedFailures ? "alert-warning" : "alert-success") : "alert-danger";
 }
 
 <div class="container-fluid py-3">
@@ -19,8 +22,8 @@
         </div>
     </div>
 
-    <div class="alert @(ok ? "alert-success" : "alert-danger")">
-        <strong>Status geral:</strong> @(ok ? "Schema compatível" : "Schema desatualizado/incompatível")
+    <div class="alert @alertClass">
+        <strong>Status geral:</strong> @statusText
         <span class="ms-3"><strong>Script:</strong> <code>@script</code></span>
     </div>
 

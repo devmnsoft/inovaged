@@ -21,10 +21,6 @@
     var fileKind = string.IsNullOrWhiteSpace(extension) ? "DOC" : extension.Length > 4 ? extension[..4] : extension;
     var iconClass = fileName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) ? "bi-file-earmark-pdf" : "bi-file-earmark-text";
     var rowClass = d.IsDocumentIncomplete ? " is-incomplete" : d.IsPartialDocument ? " is-partial" : string.Empty;
-    var ocrLabel = OcrUiHelper.AvailabilityLabel(d.IsOcrAvailable, d.OcrStatus, d.HasOcrText);
-    var ocrBadgeClass = OcrUiHelper.BadgeClass(d.IsOcrAvailable, d.OcrStatus);
-    var partialSuffix = d.PartNumber.HasValue && d.TotalParts.HasValue ? $" {d.PartNumber}/{d.TotalParts}" : string.Empty;
-    var isConsolidated = d.IsPartialDocument && d.ConsolidatedVersionId.HasValue && !d.IsDocumentIncomplete;
 
     <article class="ged-smart-doc-row@rowClass"
              draggable="true"
@@ -59,29 +55,7 @@
                 </a>
 
                 <div class="ged-smart-inline-badges" aria-label="Indicadores do documento">
-                    @if (isUnclassified)
-                    {
-                        <span class="badge ged-badge ged-badge-muted"><i class="bi bi-tag me-1"></i>Sem classificação</span>
-                    }
-                    else
-                    {
-                        <span class="badge ged-badge ged-badge-ok" title="Classificação: @d.TypeName"><i class="bi bi-tags me-1"></i>@d.TypeName</span>
-                    }
-
-                    <span class="badge ged-badge @ocrBadgeClass" title="OCR: @ocrLabel"><i class="bi bi-text-paragraph me-1"></i>@ocrLabel</span>
-
-                    @if (d.IsDocumentIncomplete)
-                    {
-                        <span class="badge ged-badge ged-badge-warning"><i class="bi bi-exclamation-triangle me-1"></i>Incompleto@partialSuffix</span>
-                    }
-                    else if (isConsolidated)
-                    {
-                        <span class="badge ged-badge ged-badge-info"><i class="bi bi-layers me-1"></i>Consolidado@partialSuffix</span>
-                    }
-                    else if (d.IsPartialDocument)
-                    {
-                        <span class="badge ged-badge ged-badge-info"><i class="bi bi-files me-1"></i>Parcial@partialSuffix</span>
-                    }
+                    @await Html.PartialAsync("_DocumentBadges", d)
                 </div>
             </div>
 

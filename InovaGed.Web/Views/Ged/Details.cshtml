@@ -41,28 +41,29 @@
 
     string OcrBadgeClass(bool isAvailable, string? status)
     {
-        if (isAvailable) return "bg-success";
-        return (status ?? "").ToUpperInvariant() switch
+        var st = (status ?? "").ToUpperInvariant();
+        if (isAvailable && st == "COMPLETED") return "bg-success";
+        return st switch
         {
             "PENDING" => "bg-secondary",
             "PROCESSING" => "bg-warning text-dark",
             "COMPLETED" => "bg-light text-dark",
-            "ERROR" => "bg-danger",
-            "CANCELLED" => "bg-light text-dark",
+            "ERROR" or "FAILED" => "bg-danger",
+            "CANCELLED" or "CANCELED" => "bg-light text-dark",
             _ => "bg-light text-dark"
         };
     }
 
     string OcrLabel(bool isAvailable, string? status, bool hasText)
     {
-        if (isAvailable) return "OCR disponível";
-        return (status ?? "").ToUpperInvariant() switch
+        var st = (status ?? "").ToUpperInvariant();
+        return st switch
         {
+            "COMPLETED" => isAvailable && hasText ? "OCR disponível" : "OCR concluído sem texto",
             "PENDING" => "OCR na fila",
             "PROCESSING" => "OCR processando",
-            "COMPLETED" => hasText ? "OCR disponível" : "OCR concluído sem texto",
-            "ERROR" => "OCR com erro",
-            "CANCELLED" => "OCR cancelado",
+            "ERROR" or "FAILED" => "OCR com erro",
+            "CANCELLED" or "CANCELED" => "OCR cancelado",
             _ => "Sem OCR"
         };
     }

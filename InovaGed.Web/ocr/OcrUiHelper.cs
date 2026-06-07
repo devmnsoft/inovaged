@@ -19,20 +19,21 @@ public static class OcrUiHelper
 
     public static string BadgeClass(bool isAvailable, string? status)
     {
-        if (isAvailable) return "ged-badge-ok";
-        if (string.Equals(status, "ERROR", StringComparison.OrdinalIgnoreCase)) return "ged-badge-danger";
-        if (string.Equals(status, "PENDING", StringComparison.OrdinalIgnoreCase) || string.Equals(status, "PROCESSING", StringComparison.OrdinalIgnoreCase)) return "ged-badge-warning";
+        if (isAvailable && IsCompleted(status)) return "ged-badge-ok";
+        if (IsError(status)) return "ged-badge-danger";
+        if (IsPending(status) || IsProcessing(status)) return "ged-badge-warning";
         return "ged-badge-muted";
     }
 
     public static string AvailabilityLabel(bool isAvailable, string? status, bool hasText)
     {
-        if (isAvailable) return "OCR disponível";
-        if (string.Equals(status, "COMPLETED", StringComparison.OrdinalIgnoreCase) && !hasText) return "OCR concluído sem texto";
-        if (string.Equals(status, "PROCESSING", StringComparison.OrdinalIgnoreCase)) return "OCR em processamento";
-        if (string.Equals(status, "PENDING", StringComparison.OrdinalIgnoreCase)) return "OCR pendente";
-        if (string.Equals(status, "ERROR", StringComparison.OrdinalIgnoreCase)) return "OCR com erro";
-        if (string.Equals(status, "CANCELLED", StringComparison.OrdinalIgnoreCase)) return "OCR cancelado";
+        var completed = IsCompleted(status);
+        if (completed && isAvailable && hasText) return "OCR disponível";
+        if (completed && !hasText) return "OCR concluído sem texto";
+        if (IsProcessing(status)) return "OCR em processamento";
+        if (IsPending(status)) return "OCR pendente";
+        if (IsError(status)) return "OCR com erro";
+        if (IsCancelled(status)) return "OCR cancelado";
         return "Sem OCR";
     }
     public static string FriendlyMessage(string? status, string? errorMessage)
@@ -66,6 +67,22 @@ public static class OcrUiHelper
     }
 
     public static bool CanReprocess(string? status)
+        => IsError(status) || IsCompleted(status);
+
+    private static bool IsCompleted(string? status)
+        => string.Equals(status, "COMPLETED", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsPending(string? status)
+        => string.Equals(status, "PENDING", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsProcessing(string? status)
+        => string.Equals(status, "PROCESSING", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsError(string? status)
         => string.Equals(status, "ERROR", StringComparison.OrdinalIgnoreCase)
-           || string.Equals(status, "COMPLETED", StringComparison.OrdinalIgnoreCase);
+           || string.Equals(status, "FAILED", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsCancelled(string? status)
+        => string.Equals(status, "CANCELLED", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(status, "CANCELED", StringComparison.OrdinalIgnoreCase);
 }

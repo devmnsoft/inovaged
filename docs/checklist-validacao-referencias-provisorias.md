@@ -1,10 +1,10 @@
 # Checklist de validação pós-limpeza
 
-- [ ] Não há item PoC no menu.
-- [ ] Não há referência PoC nas telas.
-- [ ] Não há referência PoC no manual.
-- [ ] Não há referência PoC no README.
-- [ ] Não há referência PoC em seeds de produção.
+- [ ] Não há item referência provisória no menu.
+- [ ] Não há referência provisória nas telas.
+- [ ] Não há referência provisória no manual.
+- [ ] Não há referência provisória no README.
+- [ ] Não há referência provisória em seeds de produção.
 - [ ] Dados exibidos são registros reais do banco.
 - [ ] KPIs usam consultas reais.
 - [ ] Upload usa documentos e pastas reais.
