@@ -19,6 +19,7 @@ public sealed class SchemaCheckItemDto
     public string Area { get; set; } = string.Empty;
     public string ObjectName { get; set; } = string.Empty;
     public string CheckType { get; set; } = string.Empty;
+    public string Severity { get; set; } = "Crítico";
     public bool Success { get; set; }
     public string Message { get; set; } = string.Empty;
     public string FixSuggestion { get; set; } = string.Empty;

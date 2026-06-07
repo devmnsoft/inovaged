@@ -45,17 +45,27 @@
                 </span>
             </div>
 
+            <div class="ged-toolbar-spacer"></div>
+
+            <button type="button"
+                    class="btn btn-sm btn-outline-primary ged-move-selected-inline js-btn-move-selected"
+                    id="btnMoveSelected"
+                    disabled>
+                <i class="bi bi-folder-symlink me-1"></i>Mover selecionados
+                <span class="ms-1 js-move-selected-count">(0)</span>
+            </button>
+
             <div class="ged-view-actions" role="group" aria-label="Modo de visualização dos documentos">
                 <button type="button"
                         class="btn btn-sm btn-primary js-doc-view-mode active"
-                        data-view-mode="compact-operational-list"
+                        data-view-mode="smart-list"
                         aria-pressed="true">
-                    <i class="bi bi-list-check me-1"></i>Lista operacional
+                    <i class="bi bi-list-check me-1"></i>Smart
                 </button>
 
                 <button type="button"
                         class="btn btn-sm btn-outline-primary js-doc-view-mode"
-                        data-view-mode="technical-table"
+                        data-view-mode="table"
                         aria-pressed="false">
                     <i class="bi bi-table me-1"></i>Tabela
                 </button>
@@ -63,12 +73,12 @@
         </div>
 
         <div class="ged-documents-mode"
-             data-documents-view="compact-operational-list">
-            @await Html.PartialAsync("_DocumentOperationalList", Model)
+             data-documents-view="smart-list">
+            @await Html.PartialAsync("_DocumentSmartList", Model)
         </div>
 
         <div class="ged-documents-mode d-none"
-             data-documents-view="technical-table">
+             data-documents-view="table">
             @await Html.PartialAsync("_DocumentTable", Model)
         </div>
     }

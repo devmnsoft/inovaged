@@ -43,8 +43,8 @@
         if (!modalEl || typeof window.bootstrap === 'undefined' || !window.bootstrap.Modal) return;
         const moveModal = new window.bootstrap.Modal(modalEl);
 
-        const bulkBtn = document.getElementById('btnMoveSelected');
-        const moveSelectedCount = document.getElementById('moveSelectedCount');
+        const bulkButtons = Array.from(document.querySelectorAll('.js-btn-move-selected, #btnMoveSelected'));
+        const moveSelectedCounts = Array.from(document.querySelectorAll('.js-move-selected-count, #moveSelectedCount'));
         const summaryEl = document.getElementById('selectedDocumentsSummary');
         const folderSearchInput = document.getElementById('folderSearchInput');
         const destinationFolderId = document.getElementById('destinationFolderId');
@@ -132,11 +132,11 @@
         }
         function updateBulkUi() {
             const selected = getSelected();
-            if (bulkBtn) bulkBtn.disabled = selected.length === 0;
-            if (moveSelectedCount) moveSelectedCount.textContent = `(${selected.length})`;
+            bulkButtons.forEach(bulkBtn => { bulkBtn.disabled = selected.length === 0; bulkBtn.classList.toggle('has-selection', selected.length > 0); bulkBtn.classList.toggle('btn-primary', selected.length > 0); bulkBtn.classList.toggle('btn-outline-primary', selected.length === 0); });
+            moveSelectedCounts.forEach(moveSelectedCount => { moveSelectedCount.textContent = `(${selected.length})`; });
             const inlineInfo = document.getElementById('selectedDocumentsInlineInfo');
             if (inlineInfo) inlineInfo.textContent = `${selected.length} selecionado${selected.length === 1 ? '' : 's'}`;
-            document.querySelectorAll('#gedDocumentsContainer .ged-operational-row, #gedDocumentsContainer .ged-document-row, #gedDocumentsContainer tr[data-document-id]').forEach(row => {
+            document.querySelectorAll('#gedDocumentsContainer .ged-smart-doc-row, #gedDocumentsContainer .ged-operational-row, #gedDocumentsContainer .ged-document-row, #gedDocumentsContainer tr[data-document-id]').forEach(row => {
                 row.classList.toggle('is-selected', selected.includes(row.dataset.documentId));
             });
             document.querySelectorAll('#selectAllDocuments, #selectAllDocumentsTable').forEach(selectAll => {
@@ -224,7 +224,7 @@
         document.addEventListener('click', function (e) {
             const one = e.target.closest('.js-move-one');
             if (one) { e.preventDefault(); mode = 'single'; selectedIds = [one.dataset.documentId]; summaryEl.textContent = `1 documento selecionado: ${one.dataset.documentTitle || ''}`.trim(); resetModalState(); moveModal.show(); return; }
-            const bulk = e.target.closest('#btnMoveSelected');
+            const bulk = e.target.closest('.js-btn-move-selected, #btnMoveSelected');
             if (bulk) { e.preventDefault(); selectedIds = getSelected(); if (!selectedIds.length) return; mode = 'bulk'; summaryEl.textContent = `${selectedIds.length} documento(s) selecionado(s)`; resetModalState(); moveModal.show(); return; }
             const folderBtn = e.target.closest('.js-folder-result');
             if (folderBtn) { e.preventDefault(); selectFolder(folderBtn); return; }

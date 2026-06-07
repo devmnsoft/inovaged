@@ -425,7 +425,7 @@
             <div class="ged-toolbar-actions">
                 <a class="btn btn-sm btn-outline-dark" asp-controller="Ged" asp-action="Kpi"><i class="bi bi-bar-chart-line me-1"></i>KPI GED</a>
                 <button type="button" class="btn btn-sm btn-outline-dark" data-bs-toggle="modal" data-bs-target="#modalFilaOcr"><i class="bi bi-list-task me-1"></i> Fila OCR</button>
-                <button id="btnMoveSelected" type="button" class="btn btn-sm btn-outline-primary" disabled><i class="bi bi-folder-symlink me-1"></i>Mover <span id="moveSelectedCount">(0)</span></button>
+                <button id="btnMoveSelectedGlobal" type="button" class="btn btn-sm btn-outline-primary js-btn-move-selected" disabled><i class="bi bi-folder-symlink me-1"></i>Mover <span class="js-move-selected-count">(0)</span></button>
             </div>
         </div>
 
@@ -757,6 +757,9 @@
     .ged-toolbar-actions { display:flex; flex-wrap:wrap; gap:.5rem; margin-top:.55rem; }
     .ged-documents-list { background:#fff; border-top:1px solid #e5e7eb; }
     .ged-documents-view-toolbar { min-height:46px; padding:8px 16px; background:#fff; border-top:1px solid #e5e7eb; border-bottom:1px solid #e5e7eb; display:flex; align-items:center; justify-content:space-between; gap:12px; }
+    .ged-toolbar-spacer { flex:1 1 auto; }
+    .ged-move-selected-inline { opacity:.72; transition:opacity .15s ease, box-shadow .15s ease, background .15s ease; }
+    .ged-move-selected-inline.has-selection { opacity:1; box-shadow:0 8px 20px rgba(37,99,235,.16); }
     .ged-bulk-select { display:flex; align-items:center; gap:8px; color:#334155; font-size:.9rem; }
     .ged-bulk-select .form-check-input { margin:0; }
     .ged-bulk-select label { margin:0; font-weight:600; cursor:pointer; white-space:nowrap; }
@@ -785,6 +788,28 @@
     .ged-operational-status-line .badge { font-size:.70rem; font-weight:650; padding:.24rem .5rem; border-radius:999px; }
     .ged-operational-quick-actions { display:flex; align-items:center; justify-content:flex-end; gap:6px; }
     .ged-operational-quick-actions .btn, .ged-actions-btn { width:34px; height:34px; padding:0; border-radius:10px; display:inline-flex; justify-content:center; align-items:center; }
+
+    .ged-smart-list { background:#fff; }
+    .ged-smart-doc-row { display:grid; grid-template-columns:34px 46px minmax(0, 1fr) 150px 82px; gap:12px; align-items:center; min-height:68px; padding:9px 14px; border-bottom:1px solid #eef2f7; background:#fff; transition:background .15s ease, box-shadow .15s ease; cursor:grab; }
+    .ged-smart-doc-row:hover { background:#f8fbff; }
+    .ged-smart-doc-row.is-selected { background:#eff6ff; box-shadow:inset 3px 0 0 #2563eb; }
+    .ged-smart-doc-row.is-new, .ged-smart-doc-row.document-row-new { background:#ecfdf5 !important; animation:gedNewDocPulse 2s ease; }
+    .ged-smart-doc-row.is-incomplete { background:#fffbeb; }
+    .ged-smart-doc-row.is-partial { box-shadow:inset 3px 0 0 #38bdf8; }
+    .ged-smart-check { display:flex; align-items:center; justify-content:center; }
+    .ged-smart-check .form-check-input { margin:0; }
+    .ged-smart-type { width:38px; height:38px; border-radius:12px; display:grid; place-items:center; background:#eff6ff; color:#2563eb; font-size:1.05rem; position:relative; }
+    .ged-smart-type-label { position:absolute; bottom:3px; font-size:.48rem; font-weight:800; letter-spacing:.02em; line-height:1; }
+    .ged-smart-main { min-width:0; }
+    .ged-smart-title-line { display:flex; align-items:center; gap:8px; min-width:0; }
+    .ged-smart-title { color:#0f172a; font-weight:750; font-size:.95rem; text-decoration:none; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:420px; }
+    .ged-smart-title:hover { color:#0d6efd; text-decoration:underline; }
+    .ged-smart-inline-badges { display:flex; align-items:center; gap:5px; flex-wrap:nowrap; overflow:hidden; }
+    .ged-smart-inline-badges .badge { font-size:.68rem; font-weight:650; border-radius:999px; padding:.22rem .48rem; white-space:nowrap; }
+    .ged-smart-subtitle-line { margin-top:3px; color:#64748b; font-size:.78rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .ged-smart-upload { color:#475569; font-size:.78rem; white-space:nowrap; text-align:right; }
+    .ged-smart-actions { display:flex; justify-content:flex-end; gap:6px; }
+    .ged-smart-actions .btn, .ged-actions-btn { width:32px; height:32px; border-radius:10px; display:inline-flex; align-items:center; justify-content:center; padding:0; }
     .ged-table-shell { background:#fff; border-top:1px solid #e5e7eb; overflow:hidden; }
     .ged-table-scroll { width:100%; overflow-x:auto; scrollbar-width:thin; }
     .ged-documents-table { width:100%; min-width:920px; border-collapse:separate; border-spacing:0; table-layout:fixed; }
@@ -827,18 +852,18 @@
         .ged-page { grid-template-columns:1fr; }
         .ged-folder-panel { position:static; max-height:340px; }
         .ged-folder-tree { max-height:220px; }
-        .ged-operational-row { grid-template-columns:30px 38px minmax(0, 1fr) 40px; gap:8px; padding:9px 10px; }
+        .ged-operational-row, .ged-smart-doc-row { grid-template-columns:30px 38px minmax(0, 1fr) 40px; gap:8px; padding:9px 10px; }
         .ged-operational-title { font-size:.9rem; }
         .ged-operational-status-line { gap:4px; }
-        .ged-operational-icon { width:34px; height:34px; border-radius:9px; }
+        .ged-operational-icon, .ged-smart-type { width:34px; height:34px; border-radius:9px; }
         .ged-operational-quick-actions .btn:first-child { display:none; }
         .ged-operational-meta-line { flex-wrap:wrap; white-space:normal; }
     }
     @@media (max-width: 575.98px) {
-        .ged-operational-row { grid-template-columns:28px minmax(0,1fr) 40px; gap:.65rem; padding:.65rem .75rem; }
-        .ged-operational-icon { display:none; }
-        .ged-operational-content { grid-column:2 / 3; }
-        .ged-operational-quick-actions { grid-column:3; justify-content:flex-end; }
+        .ged-operational-row, .ged-smart-doc-row { grid-template-columns:28px minmax(0,1fr) 40px; gap:.65rem; padding:.65rem .75rem; }
+        .ged-operational-icon, .ged-smart-type, .ged-smart-upload { display:none; }
+        .ged-operational-content, .ged-smart-main { grid-column:2 / 3; }
+        .ged-operational-quick-actions, .ged-smart-actions { grid-column:3; justify-content:flex-end; }
         .ged-documents-view-toolbar { align-items:flex-start; flex-direction:column; }
         .ged-view-actions { width:100%; }
         .ged-view-actions .btn { flex:1 1 0; }
@@ -1031,7 +1056,7 @@
         }
 
         function updateDocumentSelectionState(checkbox) {
-            const row = checkbox.closest('.ged-operational-row, .ged-document-row, tr[data-document-id]');
+            const row = checkbox.closest('.ged-smart-doc-row, .ged-operational-row, .ged-document-row, tr[data-document-id]');
             if (row) row.classList.toggle('is-selected', checkbox.checked);
         }
 
@@ -1057,7 +1082,7 @@
         }
 
         function normalizeDocumentsViewMode(mode) {
-            return mode === 'technical-table' || mode === 'table' ? 'technical-table' : 'compact-operational-list';
+            return mode === 'table' || mode === 'technical-table' ? 'table' : 'smart-list';
         }
 
         function applyDocumentsViewMode(mode) {
@@ -1093,13 +1118,13 @@
             const selected = new Set(Array.from(container.querySelectorAll('.js-doc-select:checked')).map(x => x.value).filter(Boolean));
             selected.forEach(id => syncDocumentSelection(id, true));
             container.querySelectorAll('.js-doc-select:not(:checked)').forEach(updateDocumentSelectionState);
-            const saved = localStorage.getItem('ged.documents.viewMode') || 'compact-operational-list';
+            const saved = localStorage.getItem('ged.documents.viewMode') || 'smart-list';
             applyDocumentsViewMode(saved);
         }
 
         window.GedDocumentsView = {
             key: 'ged.documents.viewMode',
-            defaultMode: 'compact-operational-list',
+            defaultMode: 'smart-list',
             apply: applyDocumentsViewMode,
             init: initDocumentsViewMode,
             initDropdowns: initializeDocumentDropdowns
@@ -1116,7 +1141,7 @@
                 if (!btn) return;
 
                 e.preventDefault();
-                applyDocumentsViewMode(btn.dataset.viewMode || 'compact-operational-list');
+                applyDocumentsViewMode(btn.dataset.viewMode || 'smart-list');
             });
             window.__gedDocumentsViewClickBound = true;
         }
