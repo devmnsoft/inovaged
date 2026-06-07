@@ -1,0 +1,115 @@
+@model InovaGed.Web.Models.Ged.GedExplorerVM
+@using InovaGed.Web.Ocr
+@inject Microsoft.Extensions.Configuration.IConfiguration Configuration
+
+@{
+    var localTimeZoneId = Configuration["Localization:DefaultTimeZone"] ?? Configuration["App:LocalTimeZoneId"] ?? Configuration["TimeZoneId"] ?? "America/Belem";
+    var uploadDateFormat = Configuration["Localization:DateTimeFormat"] ?? "dd/MM/yyyy HH:mm";
+    var folderName = !string.IsNullOrWhiteSpace(Model.CurrentFolderName) ? Model.CurrentFolderName : "Raiz";
+}
+
+<div class="ged-smart-list" data-ged-document-list>
+@foreach (var d in Model.Documents)
+{
+    var isUnclassified = string.IsNullOrWhiteSpace(d.TypeName) || d.TypeName == "-";
+    var versionId = d.CurrentVersionId?.ToString() ?? string.Empty;
+    var uploadDateUtc = d.UploadedAtUtc == default ? d.CreatedAt : d.UploadedAtUtc;
+    var uploadLocal = OcrUiHelper.ToConfiguredLocalTime(uploadDateUtc, localTimeZoneId);
+    var uploadLabel = string.IsNullOrWhiteSpace(d.UploadedAtLocalFormatted) ? uploadLocal.ToString(uploadDateFormat) : d.UploadedAtLocalFormatted;
+    var fileName = !string.IsNullOrWhiteSpace(d.FileName) ? d.FileName : "Arquivo sem nome";
+    var extension = System.IO.Path.GetExtension(fileName)?.Trim('.').ToUpperInvariant();
+    var fileKind = string.IsNullOrWhiteSpace(extension) ? "DOC" : extension.Length > 4 ? extension[..4] : extension;
+    var iconClass = fileName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) ? "bi-file-earmark-pdf" : "bi-file-earmark-text";
+    var rowClass = d.IsDocumentIncomplete ? " is-incomplete" : d.IsPartialDocument ? " is-partial" : string.Empty;
+    var ocrLabel = OcrUiHelper.AvailabilityLabel(d.IsOcrAvailable, d.OcrStatus, d.HasOcrText);
+    var ocrBadgeClass = OcrUiHelper.BadgeClass(d.IsOcrAvailable, d.OcrStatus);
+    var partialSuffix = d.PartNumber.HasValue && d.TotalParts.HasValue ? $" {d.PartNumber}/{d.TotalParts}" : string.Empty;
+    var isConsolidated = d.IsPartialDocument && d.ConsolidatedVersionId.HasValue && !d.IsDocumentIncomplete;
+
+    <article class="ged-smart-doc-row@rowClass"
+             draggable="true"
+             data-document-id="@d.Id"
+             data-version-id="@versionId"
+             data-ocr-available="@(d.IsOcrAvailable ? "true" : "false")"
+             data-document-incomplete="@(d.IsDocumentIncomplete ? "true" : "false")"
+             data-document-unclassified="@(isUnclassified ? "true" : "false")"
+             data-uploaded-at-utc="@uploadDateUtc.ToString("O")">
+
+        <div class="ged-smart-check">
+            <input type="checkbox"
+                   class="form-check-input js-doc-select js-document-check"
+                   value="@d.Id"
+                   data-document-title="@d.Title"
+                   aria-label="Selecionar @d.Title" />
+        </div>
+
+        <div class="ged-smart-type" aria-label="Tipo @fileKind" title="@fileKind">
+            <i class="bi @iconClass" aria-hidden="true"></i>
+            <span class="ged-smart-type-label">@fileKind</span>
+        </div>
+
+        <div class="ged-smart-main">
+            <div class="ged-smart-title-line">
+                <a class="ged-smart-title"
+                   asp-controller="Ged"
+                   asp-action="Details"
+                   asp-route-id="@d.Id"
+                   title="@d.Title">
+                    @d.Title
+                </a>
+
+                <div class="ged-smart-inline-badges" aria-label="Indicadores do documento">
+                    @if (isUnclassified)
+                    {
+                        <span class="badge ged-badge ged-badge-muted"><i class="bi bi-tag me-1"></i>Sem classificação</span>
+                    }
+                    else
+                    {
+                        <span class="badge ged-badge ged-badge-ok" title="Classificação: @d.TypeName"><i class="bi bi-tags me-1"></i>@d.TypeName</span>
+                    }
+
+                    <span class="badge ged-badge @ocrBadgeClass" title="OCR: @ocrLabel"><i class="bi bi-text-paragraph me-1"></i>@ocrLabel</span>
+
+                    @if (d.IsDocumentIncomplete)
+                    {
+                        <span class="badge ged-badge ged-badge-warning"><i class="bi bi-exclamation-triangle me-1"></i>Incompleto@partialSuffix</span>
+                    }
+                    else if (isConsolidated)
+                    {
+                        <span class="badge ged-badge ged-badge-info"><i class="bi bi-layers me-1"></i>Consolidado@partialSuffix</span>
+                    }
+                    else if (d.IsPartialDocument)
+                    {
+                        <span class="badge ged-badge ged-badge-info"><i class="bi bi-files me-1"></i>Parcial@partialSuffix</span>
+                    }
+                </div>
+            </div>
+
+            <div class="ged-smart-subtitle-line" title="@fileName · @folderName · Versão atual">
+                <span>@fileName</span>
+                <span class="ged-meta-separator">·</span>
+                <span>@folderName</span>
+                <span class="ged-meta-separator">·</span>
+                <span>Versão atual</span>
+            </div>
+        </div>
+
+        <div class="ged-smart-upload" title="Upload em UTC: @uploadDateUtc.ToString("O")">
+            <i class="bi bi-cloud-arrow-up me-1"></i>@uploadLabel
+        </div>
+
+        <div class="ged-smart-actions">
+            <a class="btn btn-sm btn-light border"
+               asp-controller="Ged"
+               asp-action="Details"
+               asp-route-id="@d.Id"
+               title="Abrir documento"
+               aria-label="Abrir @d.Title">
+                <i class="bi bi-eye"></i>
+            </a>
+
+            @await Html.PartialAsync("_DocumentActionsDropdown", (d.Id, d.Title, versionId, Model.CurrentFolderId, d.IsOcrAvailable))
+        </div>
+    </article>
+}
+</div>

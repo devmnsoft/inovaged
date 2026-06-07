@@ -2,6 +2,7 @@
 @{
     ViewData["Title"] = "Diagnóstico do banco";
     var script = "database/apply_all_required_migrations.sql";
+    var correctionSql = "psql \"$CONNECTION_STRING\" -v ON_ERROR_STOP=1 -f database/apply_all_required_migrations.sql";
     var ok = Model.IsHealthy;
 }
 
@@ -13,12 +14,13 @@
         </div>
         <div class="d-flex gap-2">
             <button type="button" class="btn btn-outline-secondary" onclick="navigator.clipboard.writeText('@script')">Copiar script recomendado</button>
+            <button type="button" class="btn btn-primary" onclick="navigator.clipboard.writeText('@correctionSql')">Copiar SQL de correção</button>
             <a class="btn btn-outline-primary" href="/SystemHealth/Schema/Report">Baixar relatório</a>
         </div>
     </div>
 
     <div class="alert @(ok ? "alert-success" : "alert-danger")">
-        <strong>Status geral:</strong> @(ok ? "Saudável" : "Schema desatualizado/incompatível")
+        <strong>Status geral:</strong> @(ok ? "Schema compatível" : "Schema desatualizado/incompatível")
         <span class="ms-3"><strong>Script:</strong> <code>@script</code></span>
     </div>
 
@@ -57,18 +59,20 @@
                         <th>Status</th>
                         <th>Área</th>
                         <th>Tipo</th>
+                        <th>Severidade</th>
                         <th>Objeto</th>
                         <th>Mensagem</th>
                         <th>Correção sugerida</th>
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach (var check in Model.Checks.OrderBy(c => c.Success).ThenBy(c => c.Area).ThenBy(c => c.ObjectName))
+                    @foreach (var check in Model.Checks.OrderBy(c => c.Success).ThenBy(c => c.Severity == "Crítico" ? 0 : c.Severity == "Recomendado" ? 1 : 2).ThenBy(c => c.Area).ThenBy(c => c.ObjectName))
                     {
                         <tr>
                             <td>@(check.Success ? "✅ OK" : "❌ Falha")</td>
                             <td>@check.Area</td>
                             <td>@check.CheckType</td>
+                            <td><span class="badge @(check.Severity == "Crítico" ? "bg-danger" : check.Severity == "Recomendado" ? "bg-warning text-dark" : "bg-secondary")">@check.Severity</span></td>
                             <td><code>@check.ObjectName</code></td>
                             <td>@check.Message</td>
                             <td>@check.FixSuggestion</td>
