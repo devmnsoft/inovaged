@@ -17,6 +17,10 @@ public sealed class GedExplorerVM
 
     public List<FolderNodeVM> Folders { get; set; } = new();
     public List<DocumentRowVM> Documents { get; set; } = new();
+    public int Page { get; set; } = 1;
+    public int PageSize { get; set; } = 50;
+    public int TotalDocuments { get; set; }
+    public bool HasMoreDocuments { get; set; }
     public string ErrorMessage { get; set; } = "";
 
     public sealed class FolderNodeVM
