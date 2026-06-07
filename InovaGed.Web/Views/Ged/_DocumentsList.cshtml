@@ -32,33 +32,43 @@
     {
         <div class="ged-documents-view-toolbar">
             <div class="ged-bulk-select">
-                <input type="checkbox" class="form-check-input" id="selectAllDocuments" />
-                <label for="selectAllDocuments">Selecionar todos</label>
-                <span id="selectedDocumentsInlineInfo">0 selecionados</span>
+                <input type="checkbox"
+                       class="form-check-input"
+                       id="selectAllDocuments" />
+
+                <label for="selectAllDocuments" class="ged-select-all-label">
+                    Selecionar todos
+                </label>
+
+                <span id="selectedDocumentsInlineInfo" class="ged-selected-inline-info">
+                    0 selecionados
+                </span>
             </div>
 
-            <div class="btn-group btn-group-sm" role="group" aria-label="Modo de visualização dos documentos">
+            <div class="ged-view-actions" role="group" aria-label="Modo de visualização dos documentos">
                 <button type="button"
-                        class="btn btn-outline-primary js-doc-view-mode"
-                        data-view-mode="compact-list"
-                        aria-pressed="false">
-                    <i class="bi bi-view-list me-1"></i>Lista
+                        class="btn btn-sm btn-primary js-doc-view-mode active"
+                        data-view-mode="compact-operational-list"
+                        aria-pressed="true">
+                    <i class="bi bi-list-check me-1"></i>Lista operacional
                 </button>
 
                 <button type="button"
-                        class="btn btn-outline-primary js-doc-view-mode"
-                        data-view-mode="table"
+                        class="btn btn-sm btn-outline-primary js-doc-view-mode"
+                        data-view-mode="technical-table"
                         aria-pressed="false">
                     <i class="bi bi-table me-1"></i>Tabela
                 </button>
             </div>
         </div>
 
-        <div class="ged-documents-mode ged-documents-mode-list" data-documents-view="compact-list">
-            @await Html.PartialAsync("_DocumentListRows", Model)
+        <div class="ged-documents-mode"
+             data-documents-view="compact-operational-list">
+            @await Html.PartialAsync("_DocumentOperationalList", Model)
         </div>
 
-        <div class="ged-documents-mode ged-documents-mode-table d-none" data-documents-view="table">
+        <div class="ged-documents-mode d-none"
+             data-documents-view="technical-table">
             @await Html.PartialAsync("_DocumentTable", Model)
         </div>
     }
