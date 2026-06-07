@@ -672,7 +672,7 @@
   function number(v){ return new Intl.NumberFormat('pt-BR').format(v||0); }
   function labelType(v){ return ({pdf:'PDF',image:'Imagens',word:'Documento Word'}[v]||v); }
   function ocrFilterLabel(v){ return ({with:'Com OCR',without:'Sem OCR',PROCESSING:'OCR em processamento',PENDING:'OCR na fila',ERROR:'OCR com erro'}[v]||v); }
-  function ocrStatusLabel(status, isOcrAvailable, hasOcrText){ const st=String(status||'').toUpperCase(); if(isOcrAvailable)return 'OCR disponível'; if(st==='COMPLETED' && !hasOcrText)return 'OCR concluído sem texto'; if(st==='PROCESSING')return 'OCR em processamento'; if(st==='PENDING')return 'OCR na fila'; if(st==='ERROR')return 'OCR com erro'; if(st==='CANCELLED')return 'OCR cancelado'; return 'Sem OCR'; }
+  function ocrStatusLabel(status, isOcrAvailable, hasOcrText){ const st=String(status||'').toUpperCase(); if(st==='COMPLETED' && isOcrAvailable && hasOcrText)return 'OCR disponível'; if(st==='COMPLETED' && !hasOcrText)return 'OCR concluído sem texto'; if(st==='PROCESSING')return 'OCR em processamento'; if(st==='PENDING')return 'OCR na fila'; if(st==='ERROR'||st==='FAILED')return 'OCR com erro'; if(st==='CANCELLED'||st==='CANCELED')return 'OCR cancelado'; return 'Sem OCR'; }
   function limitSnippet(s,n){ return sanitizeSnippet(String(s||'').slice(0,n)+(String(s||'').length>n?'…':'')); }
   function sanitizeSnippet(s){ return String(s||'').replace(/<(?!\/?mark\b)[^>]*>/gi,''); }
   function highlight(value, term, alreadyEscaped=false){ const safe = alreadyEscaped ? value : escapeHtml(value); if(!term)return safe; const escaped=escapeRegExp(escapeHtml(term)); return safe.replace(new RegExp(`(${escaped})`,'ig'),'<mark>$1</mark>'); }

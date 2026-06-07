@@ -13,9 +13,14 @@ public sealed class SchemaHealthService : ISchemaHealthService
 
     private static readonly string[] RequiredTables =
     [
-        "ged.document", "ged.document_version", "ged.folder", "ged.document_search", "ged.ocr_job", "ged.audit_log",
-        "ged.app_audit_log", "ged.app_user", "ged.upload_batch", "ged.upload_batch_item", "ged.upload_session",
-        "ged.upload_session_chunk", "ged.document_partial_part", "ged.folder_virtual_map"
+        "ged.document", "ged.document_version", "ged.folder", "ged.document_search", "ged.ocr_job",
+        "ged.upload_batch", "ged.upload_batch_item", "ged.upload_session", "ged.upload_session_chunk",
+        "ged.document_partial_part", "ged.audit_log", "ged.app_audit_log", "ged.schema_migration_history"
+    ];
+
+    private static readonly string[] OptionalTables =
+    [
+        "ged.app_user", "ged.folder_virtual_map"
     ];
 
     private static readonly (string Table, string Column, string Area)[] RequiredColumns =
@@ -33,7 +38,6 @@ public sealed class SchemaHealthService : ISchemaHealthService
         ("upload_batch_item", "upload_session_id", "Upload batch"), ("upload_batch_item", "status", "Upload batch"),
         ("upload_session", "tenant_id", "Upload chunks"), ("upload_session", "total_chunks", "Upload chunks"),
         ("upload_session_chunk", "session_id", "Upload chunks"), ("upload_session_chunk", "chunk_index", "Upload chunks"),
-        ("audit_log", "created_at", "SystemLogs"), ("audit_log", "user_name", "SystemLogs"),
         ("app_audit_log", "created_at", "SystemLogs"), ("app_audit_log", "user_name", "SystemLogs")
     ];
 
@@ -75,8 +79,14 @@ where table_schema = 'ged';", cancellationToken: ct))).ToHashSet(StringComparer.
             foreach (var table in RequiredTables)
             {
                 var ok = existingTables.Contains(table);
-                AddCheck(report, "GED", table, "Tabela", "Crítico", ok, ok ? "Tabela encontrada." : "Tabela crítica ausente.", $"Execute {ConsolidationMigration}.");
+                AddCheck(report, "GED", table, "Tabela", "Crítico", ok, ok ? "Tabela crítica encontrada." : "Tabela crítica ausente.", $"Execute {ConsolidationMigration}.");
                 if (!ok) report.MissingTables.Add(table);
+            }
+
+            foreach (var table in OptionalTables)
+            {
+                var ok = existingTables.Contains(table);
+                AddCheck(report, "GED", table, "Tabela", "Opcional", ok, ok ? "Tabela auxiliar encontrada." : "Tabela auxiliar ausente; não bloqueia GED, OCR, upload ou logs.", $"Execute {ConsolidationMigration} se este recurso auxiliar for usado no ambiente.");
             }
 
             var existingColumns = (await conn.QueryAsync<string>(new CommandDefinition(@"
@@ -115,7 +125,7 @@ where n.nspname = 'ged' and t.typname in ('document_status_enum','document_visib
             foreach (var enumName in new[] { "ged.document_status_enum", "ged.document_visibility_enum", "ged.ocr_status_enum" })
             {
                 var ok = existingEnums.Contains(enumName);
-                AddCheck(report, "Enums", enumName, "Enum", "Crítico", ok, ok ? "Enum encontrado." : "Enum crítico ausente.", "Aplique as migrations base e a consolidação do GED.");
+                AddCheck(report, "Enums", enumName, "Enum", "Opcional", ok, ok ? "Enum encontrado." : "Enum não detectado. Ambientes que usam colunas text para status continuam funcionais se as tabelas/colunas críticas existirem.", "Aplique as migrations base e a consolidação do GED se o ambiente usar enums PostgreSQL.");
             }
 
             var migrationRegistered = existingTables.Contains("ged.schema_migration_history") || await conn.ExecuteScalarAsync<bool>(new CommandDefinition(@"
@@ -136,8 +146,11 @@ select exists (
         }
 
         report.IsHealthy = !report.Checks.Any(c => !c.Success && c.Severity == "Crítico");
+        var hasRecommendedFailures = report.Checks.Any(c => !c.Success && c.Severity == "Recomendado");
         report.Recommendations.Add(report.IsHealthy
-            ? "Schema compatível: tabelas e colunas críticas necessárias ao GED/OCR/upload/logs foram encontradas."
+            ? (hasRecommendedFailures
+                ? "Schema funcional com recomendações de performance."
+                : "Schema compatível: tabelas e colunas críticas necessárias ao GED/OCR/upload/logs foram encontradas.")
             : $"Execute o script consolidado {ConsolidationMigration} ou o master database/apply_all_required_migrations.sql.");
         report.Recommendations.Add("Use 'Copiar SQL de correção' para obter o comando psql recomendado e reabra /SystemHealth/Schema após aplicar.");
         report.Recommendations.Add("Pendências recomendadas são índices/performance; pendências opcionais são histórico/melhorias operacionais.");

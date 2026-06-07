@@ -36,7 +36,13 @@ public sealed class DocumentQueries : IDocumentQueries
         var partialPartNumberExpr = schema.HasPartialPartNumber ? "cv.partial_part_number" : "NULL::int";
         var partialTotalPartsExpr = schema.HasPartialTotalParts ? "cv.partial_total_parts" : "NULL::int";
         var partialStatusExpr = schema.HasPartialStatus ? "COALESCE(cv.partial_status, 'NOT_PARTIAL')" : "'NOT_PARTIAL'";
-        var isDocumentIncompleteExpr = schema.HasIsDocumentIncomplete ? "COALESCE(cv.is_document_incomplete,false)" : "false";
+        var isDocumentIncompleteExpr = (schema.HasIsDocumentIncomplete, schema.HasPartialStatus) switch
+        {
+            (true, true) => "COALESCE(cv.is_document_incomplete,false) OR upper(COALESCE(cv.partial_status,'')) = 'INCOMPLETE'",
+            (true, false) => "COALESCE(cv.is_document_incomplete,false)",
+            (false, true) => "upper(COALESCE(cv.partial_status,'')) = 'INCOMPLETE'",
+            _ => "false"
+        };
         var partNumberExpr = (schema.HasPartNumber, schema.HasPartialPartNumber) switch
         {
             (true, true) => "COALESCE(cv.part_number, cv.partial_part_number)",
@@ -181,7 +187,13 @@ WHERE d.tenant_id = @tenantId
         var partialPartNumberExpr = schema.HasPartialPartNumber ? "v.partial_part_number" : "NULL::int";
         var partialTotalPartsExpr = schema.HasPartialTotalParts ? "v.partial_total_parts" : "NULL::int";
         var partialStatusExpr = schema.HasPartialStatus ? "COALESCE(v.partial_status, 'NOT_PARTIAL')" : "'NOT_PARTIAL'";
-        var isDocumentIncompleteExpr = schema.HasIsDocumentIncomplete ? "COALESCE(v.is_document_incomplete,false)" : "false";
+        var isDocumentIncompleteExpr = (schema.HasIsDocumentIncomplete, schema.HasPartialStatus) switch
+        {
+            (true, true) => "COALESCE(v.is_document_incomplete,false) OR upper(COALESCE(v.partial_status,'')) = 'INCOMPLETE'",
+            (true, false) => "COALESCE(v.is_document_incomplete,false)",
+            (false, true) => "upper(COALESCE(v.partial_status,'')) = 'INCOMPLETE'",
+            _ => "false"
+        };
         var partNumberExpr = (schema.HasPartNumber, schema.HasPartialPartNumber) switch
         {
             (true, true) => "COALESCE(v.part_number, v.partial_part_number)",
@@ -331,13 +343,10 @@ WHERE table_schema = 'ged'
         public bool HasPartialDocumentMetadata =>
             HasUploadedAtUtc &&
             HasIsPartialDocument &&
-            HasIsDocumentIncomplete &&
             HasPartialGroupId &&
             HasPartialPartNumber &&
             HasPartialTotalParts &&
             HasPartialStatus &&
-            HasPartNumber &&
-            HasTotalParts &&
             HasConsolidatedVersionId;
     }
 

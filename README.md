@@ -58,7 +58,6 @@ Comandos úteis:
 psql "$CONNECTION_STRING" -f database/migrations/20260601_upload_batch.sql
 psql "$CONNECTION_STRING" -f database/migrations/20260603_upload_chunk.sql
 psql "$CONNECTION_STRING" -f database/migrations/20260605_upload_ocr_partial_documents.sql
-psql "$CONNECTION_STRING" -f database/diagnostics/diagnostico_referencias_poc.sql
 ```
 
 Antes de qualquer saneamento textual, gere backup e revise os SELECTs diagnósticos.
@@ -116,3 +115,13 @@ rg -n -i "termos_auditados" --glob '!**/bin/**' --glob '!**/obj/**'
 - `docs/ocr-preview.md`
 - `docs/perfis-e-permissoes.md`
 - `docs/troubleshooting.md`
+
+## Estabilização GED/OCR/Upload/Logs (Junho 2026)
+
+Para validar uma instalação antes de operar o GED, acesse `/SystemHealth/Schema` com perfil `ADMIN`. O diagnóstico diferencia pendências críticas, recomendações de performance e itens opcionais. A aplicação só considera o schema incompatível quando faltam tabelas ou colunas críticas; se restarem apenas índices recomendados, o status exibido será "Schema funcional com recomendações de performance.".
+
+A migration consolidada idempotente é `database/apply_all_required_migrations.sql`, que aplica `database/migrations/2026_06_ged_schema_consolidation.sql`. Os scripts usam `CREATE TABLE IF NOT EXISTS`, `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS` e registram aplicação em `ged.schema_migration_history`, sem `DROP` e sem remoção de dados.
+
+Após upload simples, em lote ou chunked, a resposta do backend inclui `documentId`, `versionId`, `resolvedFolderId`, `folderName`, `uploadedAtUtc` e `uploadedAtLocalFormatted` quando o documento é criado. A listagem do GED deve ser recarregada via AJAX pela pasta resolvida, sem exigir F5, mantendo a pasta ativa e destacando os documentos enviados.
+
+A etiqueta "OCR disponível" só deve aparecer quando o status do job é `COMPLETED` e existe texto OCR não vazio. Estados pendente, processamento, erro, cancelado, concluído sem texto e sem OCR são exibidos separadamente.

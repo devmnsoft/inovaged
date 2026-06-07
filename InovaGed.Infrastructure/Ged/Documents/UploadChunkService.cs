@@ -161,7 +161,7 @@ WHERE s.tenant_id=@tenantId AND s.id=@uploadId;
         if (md.GeneratePreview && version is not null) { await _previewStatus.UpsertAsync(tenantId, version.VersionId, PreviewProcessingStatus.Pending, null, null, DateTimeOffset.UtcNow, null, ct); await _previewQueue.EnqueueAsync(tenantId, upload.Value.DocumentId, version.VersionId, version.StoragePath, version.FileName, ct); previewQueued = true; _logger.LogInformation("Preview queued Tenant={TenantId} User={UserId} Upload={UploadId} VersionId={VersionId} CorrelationId={CorrelationId}", tenantId, userId, uploadId, version.VersionId, session.CorrelationId); }
         await MarkCompletedAsync(tenantId, session, upload.Value.DocumentId, version?.VersionId, version?.FileName, version?.ChecksumSha256, sw.ElapsedMilliseconds, ct);
         _logger.LogInformation("Chunk complete finished Tenant={TenantId} User={UserId} Upload={UploadId} DocumentId={DocumentId} VersionId={VersionId} ElapsedMs={ElapsedMs} CorrelationId={CorrelationId}", tenantId, userId, uploadId, upload.Value.DocumentId, version?.VersionId, sw.ElapsedMilliseconds, session.CorrelationId);
-        return Result<UploadBatchFileResultDto>.Ok(new UploadBatchFileResultDto { ItemId = session.BatchItemId ?? uploadId, DocumentId = upload.Value.DocumentId, VersionId = version?.VersionId, RequestedFolderId = session.RequestedFolderId, ResolvedFolderId = session.FolderId, FolderName = md.FolderName, Title = upload.Value.Title, FileName = upload.Value.FileName, Status = "COMPLETED", Message = "Arquivo grande recebido em partes com sucesso.", OcrQueued = ocrQueued, PreviewQueued = previewQueued, CorrelationId = session.CorrelationId });
+        return Result<UploadBatchFileResultDto>.Ok(new UploadBatchFileResultDto { ItemId = session.BatchItemId ?? uploadId, DocumentId = upload.Value.DocumentId, VersionId = version?.VersionId, RequestedFolderId = session.RequestedFolderId, ResolvedFolderId = session.FolderId, FolderName = md.FolderName, Title = upload.Value.Title, FileName = upload.Value.FileName, UploadedAtUtc = version?.UploadedAtUtc, UploadedAtLocalFormatted = version?.UploadedAtUtc?.ToUniversalTime().ToString("dd/MM/yyyy HH:mm"), Status = "COMPLETED", Message = "Arquivo grande recebido em partes com sucesso.", OcrQueued = ocrQueued, PreviewQueued = previewQueued, CorrelationId = session.CorrelationId });
     }
 
     public async Task<Result<UploadChunkStatusDto>> GetStatusAsync(Guid tenantId, Guid userId, Guid uploadId, CancellationToken ct)
@@ -222,7 +222,7 @@ UPDATE ged.upload_batch b SET success_files=c.success, failed_files=c.failed, sk
     private async Task<VersionInfo?> GetCurrentVersionAsync(Guid tenantId, Guid documentId, CancellationToken ct)
     {
         const string sql = """
-SELECT v.id AS VersionId, v.file_name AS FileName, v.storage_path AS StoragePath, v.checksum_sha256 AS ChecksumSha256
+SELECT v.id AS VersionId, v.file_name AS FileName, v.storage_path AS StoragePath, COALESCE(v.uploaded_at_utc, v.created_at) AS UploadedAtUtc, v.checksum_sha256 AS ChecksumSha256
 FROM ged.document d JOIN ged.document_version v ON v.tenant_id=d.tenant_id AND v.id=d.current_version_id
 WHERE d.tenant_id=@tenantId AND d.id=@documentId;
 """;
@@ -271,5 +271,5 @@ WHERE d.tenant_id=@tenantId AND d.id=@documentId;
         public int? TotalParts { get; set; }
         public Guid? ConsolidateIntoDocumentId { get; set; }
     }
-    private sealed class VersionInfo { public Guid VersionId { get; set; } public string FileName { get; set; } = string.Empty; public string StoragePath { get; set; } = string.Empty; public string? ChecksumSha256 { get; set; } }
+    private sealed class VersionInfo { public Guid VersionId { get; set; } public string FileName { get; set; } = string.Empty; public string StoragePath { get; set; } = string.Empty; public string? ChecksumSha256 { get; set; } public DateTime? UploadedAtUtc { get; set; } }
 }

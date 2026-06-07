@@ -144,7 +144,7 @@ VALUES (@id, @tenantId, @folderId, @requestedFolderId, @userId, 'OPEN', @totalFi
             await UpdateItemStatusAsync(tenantId, itemId, "COMPLETED", sw.ElapsedMilliseconds, ct);
             await RefreshBatchCountersAsync(tenantId, request.BatchId, finished: false, ct);
             _logger.LogInformation("File completed Tenant={TenantId} User={UserId} Batch={BatchId} Item={ItemId} File={FileName} ElapsedMs={ElapsedMs} CorrelationId={CorrelationId}", tenantId, userId, request.BatchId, itemId, request.File.FileName, sw.ElapsedMilliseconds, correlationId);
-            return Result<UploadBatchFileResultDto>.Ok(new UploadBatchFileResultDto { ItemId = itemId, DocumentId = result.Value.DocumentId, VersionId = version?.VersionId, RequestedFolderId = request.RequestedFolderId, ResolvedFolderId = request.FolderId, Title = result.Value.Title, FileName = result.Value.FileName, Status = "COMPLETED", Message = "Arquivo recebido com sucesso.", OcrQueued = ocrQueued, PreviewQueued = previewQueued, CorrelationId = correlationId });
+            return Result<UploadBatchFileResultDto>.Ok(new UploadBatchFileResultDto { ItemId = itemId, DocumentId = result.Value.DocumentId, VersionId = version?.VersionId, RequestedFolderId = request.RequestedFolderId, ResolvedFolderId = request.FolderId, Title = result.Value.Title, FileName = result.Value.FileName, UploadedAtUtc = version?.UploadedAtUtc, UploadedAtLocalFormatted = FormatUploadDate(version?.UploadedAtUtc), Status = "COMPLETED", Message = "Arquivo recebido com sucesso.", OcrQueued = ocrQueued, PreviewQueued = previewQueued, CorrelationId = correlationId });
         }
         catch (OperationCanceledException)
         {
@@ -278,6 +278,9 @@ VALUES (@itemId, @tenantId, @batchId, @folderId, @requestedFolderId, @fileName, 
         await conn.ExecuteAsync(new CommandDefinition(sql, new { itemId, tenantId, batchId = request.BatchId, request.FolderId, requestedFolderId = request.RequestedFolderId ?? request.FolderId, fileName = Path.GetFileName(request.UploadName ?? request.File.FileName), contentType = request.File.ContentType, sizeBytes = request.File.Length, correlationId }, cancellationToken: ct));
     }
 
+    private static string? FormatUploadDate(DateTime? uploadedAtUtc)
+        => uploadedAtUtc?.ToUniversalTime().ToString("dd/MM/yyyy HH:mm");
+
     private async Task EnsureBatchProcessingAsync(Guid tenantId, Guid batchId, CancellationToken ct)
     {
         await using var conn = await _db.OpenAsync(ct);
@@ -287,7 +290,7 @@ VALUES (@itemId, @tenantId, @batchId, @folderId, @requestedFolderId, @fileName, 
     private async Task<VersionInfo?> GetCurrentVersionAsync(Guid tenantId, Guid documentId, CancellationToken ct)
     {
         const string sql = """
-SELECT v.id AS VersionId, v.file_name AS FileName, v.storage_path AS StoragePath, v.checksum_sha256 AS ChecksumSha256
+SELECT v.id AS VersionId, v.file_name AS FileName, v.storage_path AS StoragePath, v.checksum_sha256 AS ChecksumSha256, COALESCE(v.uploaded_at_utc, v.created_at) AS UploadedAtUtc
 FROM ged.document d
 JOIN ged.document_version v ON v.tenant_id=d.tenant_id AND v.id=d.current_version_id
 WHERE d.tenant_id=@tenantId AND d.id=@documentId;
@@ -296,7 +299,7 @@ WHERE d.tenant_id=@tenantId AND d.id=@documentId;
         return await conn.QuerySingleOrDefaultAsync<VersionInfo>(new CommandDefinition(sql, new { tenantId, documentId }, cancellationToken: ct));
     }
 
-    private sealed class VersionInfo { public Guid VersionId { get; set; } public string FileName { get; set; } = string.Empty; public string StoragePath { get; set; } = string.Empty; public string? ChecksumSha256 { get; set; } }
+    private sealed class VersionInfo { public Guid VersionId { get; set; } public string FileName { get; set; } = string.Empty; public string StoragePath { get; set; } = string.Empty; public string? ChecksumSha256 { get; set; } public DateTime? UploadedAtUtc { get; set; } }
 
     private async Task UpdateItemDocumentAsync(Guid tenantId, Guid itemId, Guid documentId, Guid? versionId, string? storedFileName, string? contentType, long sizeBytes, string? checksum, string status, long elapsedMs, CancellationToken ct)
     {

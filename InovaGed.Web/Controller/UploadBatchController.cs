@@ -153,7 +153,9 @@ public sealed class UploadBatchController : Controller
                 folderId = folderResolution.ResolvedFolderId,
                 resolvedFolderId = folderResolution.ResolvedFolderId,
                 folderName = folderResolution.FolderName,
-                createdDocuments = result.Value.DocumentId.HasValue ? new object[] { new { documentId = result.Value.DocumentId, versionId = result.Value.VersionId, title = result.Value.Title, fileName = result.Value.FileName } } : Array.Empty<object>(),
+                uploadedAtUtc = result.Value.UploadedAtUtc,
+                uploadedAtLocalFormatted = result.Value.UploadedAtLocalFormatted,
+                createdDocuments = result.Value.DocumentId.HasValue ? new object[] { new { documentId = result.Value.DocumentId, versionId = result.Value.VersionId, title = result.Value.Title, fileName = result.Value.FileName, uploadedAtUtc = result.Value.UploadedAtUtc, uploadedAtLocalFormatted = result.Value.UploadedAtLocalFormatted } } : Array.Empty<object>(),
                 wasVirtual = folderResolution.WasVirtual,
                 createdRealFolder = folderResolution.CreatedRealFolder,
                 correlationId = result.Value.CorrelationId
