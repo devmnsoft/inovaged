@@ -23,6 +23,9 @@
     var rowClass = d.IsDocumentIncomplete ? " is-incomplete" : d.IsPartialDocument ? " is-partial" : string.Empty;
 
     <article class="ged-smart-doc-row@rowClass"
+             role="button"
+             tabindex="0"
+             aria-label="Abrir detalhes de @d.Title"
              draggable="true"
              data-document-id="@d.Id"
              data-version-id="@versionId"
@@ -46,13 +49,7 @@
 
         <div class="ged-smart-main">
             <div class="ged-smart-title-line">
-                <a class="ged-smart-title"
-                   asp-controller="Ged"
-                   asp-action="Details"
-                   asp-route-id="@d.Id"
-                   title="@d.Title">
-                    @d.Title
-                </a>
+                <span class="ged-smart-title" title="@d.Title">@d.Title</span>
 
                 <div class="ged-smart-inline-badges" aria-label="Indicadores do documento">
                     @await Html.PartialAsync("_DocumentBadges", d)
@@ -73,14 +70,14 @@
         </div>
 
         <div class="ged-smart-actions">
-            <a class="btn btn-sm btn-light border"
-               asp-controller="Ged"
-               asp-action="Details"
-               asp-route-id="@d.Id"
-               title="Abrir documento"
-               aria-label="Abrir @d.Title">
-                <i class="bi bi-eye"></i>
-            </a>
+            <button type="button"
+                    class="btn btn-sm btn-light border js-open-document-side-panel"
+                    data-document-id="@d.Id"
+                    title="Detalhes/Preview"
+                    aria-label="Abrir detalhes e preview de @d.Title">
+                <i class="bi bi-layout-sidebar-inset-reverse"></i>
+                <span class="d-none d-xl-inline ms-1">Preview</span>
+            </button>
 
             @await Html.PartialAsync("_DocumentActionsDropdown", (d.Id, d.Title, versionId, Model.CurrentFolderId, d.IsOcrAvailable))
         </div>

@@ -1,6 +1,7 @@
 @model InovaGed.Web.Models.Ged.GedExplorerVM
 @{
-    var totalDocuments = Model.Documents.Count;
+    var totalDocuments = Model.TotalDocuments > 0 ? Model.TotalDocuments : Model.Documents.Count;
+    var hasMoreDocuments = Model.HasMoreDocuments;
     var ocrCount = Model.Documents.Count(d => d.IsOcrAvailable);
     var incompleteCount = Model.Documents.Count(d => d.IsDocumentIncomplete);
     var unclassifiedCount = Model.Documents.Count(d => string.IsNullOrWhiteSpace(d.TypeName) || d.TypeName == "-");
@@ -15,7 +16,10 @@
      data-document-count="@totalDocuments"
      data-ocr-count="@ocrCount"
      data-incomplete-count="@incompleteCount"
-     data-unclassified-count="@unclassifiedCount">
+     data-unclassified-count="@unclassifiedCount"
+     data-page="@Model.Page"
+     data-page-size="@Model.PageSize"
+     data-has-more="@(hasMoreDocuments ? "true" : "false")">
     @if (!Model.Documents.Any())
     {
         <div class="ged-empty-state text-center p-5 text-muted">
@@ -80,6 +84,13 @@
         <div class="ged-documents-mode d-none"
              data-documents-view="table">
             @await Html.PartialAsync("_DocumentTable", Model)
+        </div>
+
+        <div class="ged-load-more-row @(hasMoreDocuments ? "" : "d-none")">
+            <button type="button" class="btn btn-sm btn-outline-primary js-ged-load-more" aria-label="Carregar mais documentos">
+                <i class="bi bi-plus-circle me-1"></i>Carregar mais
+            </button>
+            <span class="small text-muted ms-2">Exibindo @Model.Documents.Count de @totalDocuments documentos</span>
         </div>
     }
 </div>

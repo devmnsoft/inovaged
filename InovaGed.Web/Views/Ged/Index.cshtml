@@ -429,8 +429,16 @@
             </div>
         </div>
 
-            @await Html.PartialAsync("_DocumentsList", Model)
+        @await Html.PartialAsync("_DocumentsList", Model)
     </section>
+
+    <aside id="gedDocumentSidePanel" class="ged-document-side-panel" aria-live="polite" aria-label="Detalhes do documento" hidden>
+        <div class="ged-side-panel-empty">
+            <i class="bi bi-layout-sidebar-inset-reverse"></i>
+            <strong>Selecione um documento</strong>
+            <span>Preview, OCR, metadados, histórico e ações rápidas aparecerão aqui.</span>
+        </div>
+    </aside>
 </div>
 @Html.AntiForgeryToken()
 <div class="modal fade" id="moveDocumentsModal" tabindex="-1" aria-hidden="true">
@@ -699,6 +707,7 @@
   </div>
 </div>
 
+<link rel="stylesheet" href="~/css/ged-explorer.css" asp-append-version="true" />
 <style>
     .ged-page { display:grid; grid-template-columns:minmax(280px, 340px) minmax(0,1fr); gap:1rem; align-items:start; }
     #pageAlertHost { grid-column:1 / -1; }
@@ -855,6 +864,8 @@
 
 @section Scripts {
     <script src="~/js/ged-folder-navigation.js" asp-append-version="true"></script>
+    <script src="~/js/ged-documents-list.js" asp-append-version="true"></script>
+    <script src="~/js/ged-document-side-panel.js" asp-append-version="true"></script>
     <script src="~/js/ged-bulk-upload.js" asp-append-version="true"></script>
     <script src="~/js/ged-document-move.js" asp-append-version="true"></script>
     <script src="~/js/ged-queue-visualizer.js" asp-append-version="true"></script>
