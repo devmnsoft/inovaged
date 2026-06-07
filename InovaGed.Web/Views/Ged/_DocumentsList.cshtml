@@ -6,7 +6,16 @@
     var unclassifiedCount = Model.Documents.Count(d => string.IsNullOrWhiteSpace(d.TypeName) || d.TypeName == "-");
 }
 
-<div class="ged-documents-list" id="gedDocumentsContainer" data-folder-id="@Model.CurrentFolderId" data-listing-folder-id="@Model.CurrentListingFolderId" data-upload-folder-id="@Model.CurrentUploadFolderId" data-folder-name="@Model.CurrentFolderName" data-document-count="@totalDocuments" data-ocr-count="@ocrCount" data-incomplete-count="@incompleteCount" data-unclassified-count="@unclassifiedCount">
+<div class="ged-documents-list"
+     id="gedDocumentsContainer"
+     data-folder-id="@Model.CurrentFolderId"
+     data-listing-folder-id="@Model.CurrentListingFolderId"
+     data-upload-folder-id="@Model.CurrentUploadFolderId"
+     data-folder-name="@Model.CurrentFolderName"
+     data-document-count="@totalDocuments"
+     data-ocr-count="@ocrCount"
+     data-incomplete-count="@incompleteCount"
+     data-unclassified-count="@unclassifiedCount">
     @if (!Model.Documents.Any())
     {
         <div class="ged-empty-state text-center p-5 text-muted">
@@ -23,31 +32,34 @@
     {
         <div class="ged-documents-view-toolbar">
             <div class="ged-bulk-select">
-                <input type="checkbox" id="selectAllDocuments" class="form-check-input" />
+                <input type="checkbox" class="form-check-input" id="selectAllDocuments" />
                 <label for="selectAllDocuments">Selecionar todos</label>
-                <span id="selectedDocumentsInlineInfo" class="text-muted small">0 selecionados</span>
+                <span id="selectedDocumentsInlineInfo">0 selecionados</span>
             </div>
 
-            <div class="ged-view-actions" role="group" aria-label="Modo de visualização dos documentos">
-                <button type="button" class="btn btn-sm btn-primary active js-doc-view-mode" data-view-mode="compact-table" aria-pressed="true">
-                    <i class="bi bi-layout-text-window-reverse me-1"></i>Grade
-                </button>
-                <button type="button" class="btn btn-sm btn-outline-primary js-doc-view-mode" data-view-mode="comfortable-list" aria-pressed="false">
+            <div class="btn-group btn-group-sm" role="group" aria-label="Modo de visualização dos documentos">
+                <button type="button"
+                        class="btn btn-outline-primary js-doc-view-mode"
+                        data-view-mode="compact-list"
+                        aria-pressed="false">
                     <i class="bi bi-view-list me-1"></i>Lista
                 </button>
+
+                <button type="button"
+                        class="btn btn-outline-primary js-doc-view-mode"
+                        data-view-mode="table"
+                        aria-pressed="false">
+                    <i class="bi bi-table me-1"></i>Tabela
+                </button>
             </div>
         </div>
 
-        <div class="ged-document-list-header d-none" data-documents-view="comfortable-list" aria-hidden="true">
-            <div></div>
-            <div></div>
-            <div>Documento</div>
-            <div>Status</div>
-            <div>Upload em</div>
-            <div class="text-end">Ações</div>
+        <div class="ged-documents-mode ged-documents-mode-list" data-documents-view="compact-list">
+            @await Html.PartialAsync("_DocumentListRows", Model)
         </div>
 
-        @await Html.PartialAsync("_DocumentCompactGrid", Model)
-        @await Html.PartialAsync("_DocumentListRows", Model)
+        <div class="ged-documents-mode ged-documents-mode-table d-none" data-documents-view="table">
+            @await Html.PartialAsync("_DocumentTable", Model)
+        </div>
     }
 </div>

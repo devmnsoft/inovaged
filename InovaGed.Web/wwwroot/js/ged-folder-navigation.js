@@ -167,7 +167,7 @@
     }
     function updateDocumentCounters() {
         const container = document.querySelector('#gedDocumentsContainer');
-        const visibleRows = Array.from(document.querySelectorAll('#gedDocumentsContainer [data-documents-view="compact-table"] [data-document-id], #gedDocumentsContainer [data-documents-view="comfortable-list"] [data-document-id], #gedDocumentsContainer [data-documents-view="list"] [data-document-id]'));
+        const visibleRows = Array.from(document.querySelectorAll('#gedDocumentsContainer [data-documents-view="compact-list"] [data-document-id]'));
         const count = Number(container?.dataset?.documentCount || visibleRows.length || 0);
         const ocrDone = Number(container?.dataset?.ocrCount || visibleRows.filter(x => x.dataset.ocrAvailable === 'true').length || 0);
         const incomplete = Number(container?.dataset?.incompleteCount || visibleRows.filter(x => x.dataset.documentIncomplete === 'true').length || 0);

@@ -4,10 +4,9 @@
 @{
     var localTimeZoneId = Configuration["Localization:DefaultTimeZone"] ?? Configuration["App:LocalTimeZoneId"] ?? Configuration["TimeZoneId"] ?? "America/Belem";
     var uploadDateFormat = Configuration["Localization:DateTimeFormat"] ?? "dd/MM/yyyy HH:mm";
-    var folderName = !string.IsNullOrWhiteSpace(Model.CurrentFolderName) ? Model.CurrentFolderName : "Raiz";
 }
 
-<div class="ged-document-list d-none" data-documents-view="comfortable-list" data-ged-document-list>
+<div class="ged-document-list" data-ged-document-list>
     @foreach (var d in Model.Documents)
     {
         var isUnclassified = string.IsNullOrWhiteSpace(d.TypeName) || d.TypeName == "-";
@@ -17,27 +16,48 @@
         var uploadLabel = string.IsNullOrWhiteSpace(d.UploadedAtLocalFormatted) ? uploadLocal.ToString(uploadDateFormat) : d.UploadedAtLocalFormatted;
         var partialClass = d.IsDocumentIncomplete ? " ged-document-incomplete" : (d.IsPartialDocument ? " ged-document-partial" : string.Empty);
         var iconClass = (d.FileName ?? string.Empty).EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) ? "bi-file-earmark-pdf" : "bi-file-earmark-text";
-        <article class="ged-document-row@partialClass" draggable="true" data-document-id="@d.Id" data-version-id="@versionId" data-ocr-available="@(d.IsOcrAvailable ? "true" : "false")" data-document-incomplete="@(d.IsDocumentIncomplete ? "true" : "false")" data-document-unclassified="@(isUnclassified ? "true" : "false")" data-uploaded-at-utc="@uploadDateUtc.ToString("O")">
+
+        <article class="ged-document-row@partialClass"
+                 draggable="true"
+                 data-document-id="@d.Id"
+                 data-version-id="@versionId"
+                 data-ocr-available="@(d.IsOcrAvailable ? "true" : "false")"
+                 data-document-incomplete="@(d.IsDocumentIncomplete ? "true" : "false")"
+                 data-document-unclassified="@(isUnclassified ? "true" : "false")"
+                 data-uploaded-at-utc="@uploadDateUtc.ToString("O")">
+
             <div class="ged-document-select">
-                <input type="checkbox" class="form-check-input js-doc-select js-document-check" value="@d.Id" data-document-title="@d.Title" aria-label="Selecionar @d.Title" />
+                <input type="checkbox"
+                       class="form-check-input js-doc-select js-document-check"
+                       value="@d.Id"
+                       data-document-title="@d.Title"
+                       aria-label="Selecionar @d.Title" />
             </div>
 
             <div class="ged-document-icon" aria-hidden="true">
                 <i class="bi @iconClass"></i>
             </div>
 
-            <div class="ged-document-main">
-                <a class="ged-document-title" asp-action="Details" asp-controller="Ged" asp-route-id="@d.Id" title="@d.Title">@d.Title</a>
-                <div class="ged-document-file" title="@d.FileName">@(!string.IsNullOrWhiteSpace(d.FileName) ? d.FileName : "Arquivo sem nome")</div>
-                <div class="ged-document-meta"><span>@(isUnclassified ? "Tipo não definido" : d.TypeName)</span><span>•</span><span>@folderName</span><span>•</span><span>Versão atual</span></div>
-            </div>
+            <div class="ged-document-content">
+                <a class="ged-document-title"
+                   asp-action="Details"
+                   asp-controller="Ged"
+                   asp-route-id="@d.Id"
+                   title="@d.Title">
+                    @d.Title
+                </a>
 
-            <div class="ged-document-badges">
-                @await Html.PartialAsync("_DocumentBadges", d)
-            </div>
+                <div class="ged-document-file" title="@d.FileName">
+                    @(!string.IsNullOrWhiteSpace(d.FileName) ? d.FileName : "Arquivo sem nome")
+                </div>
 
-            <div class="ged-document-date" title="Upload em UTC: @uploadDateUtc.ToString("O")">
-                <i class="bi bi-cloud-arrow-up me-1"></i><span>@uploadLabel</span>
+                <div class="ged-document-info-row">
+                    @await Html.PartialAsync("_DocumentBadges", d)
+
+                    <span class="ged-document-upload-date" title="Upload em UTC: @uploadDateUtc.ToString("O")">
+                        <i class="bi bi-clock me-1"></i>@uploadLabel
+                    </span>
+                </div>
             </div>
 
             <div class="ged-document-actions">
