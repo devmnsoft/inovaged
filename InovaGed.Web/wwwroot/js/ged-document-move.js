@@ -134,7 +134,9 @@
             const selected = getSelected();
             if (bulkBtn) bulkBtn.disabled = selected.length === 0;
             if (moveSelectedCount) moveSelectedCount.textContent = `(${selected.length})`;
-            document.querySelectorAll('#gedDocumentsContainer [data-document-id]').forEach(row => {
+            const inlineInfo = document.getElementById('selectedDocumentsInlineInfo');
+            if (inlineInfo) inlineInfo.textContent = `${selected.length} selecionado${selected.length === 1 ? '' : 's'}`;
+            document.querySelectorAll('#gedDocumentsContainer .ged-compact-row, #gedDocumentsContainer .ged-document-row, #gedDocumentsContainer tr[data-document-id], #gedDocumentsContainer [data-document-id]').forEach(row => {
                 row.classList.toggle('is-selected', selected.includes(row.dataset.documentId));
             });
             document.querySelectorAll('#selectAllDocuments, #selectAllDocumentsTable').forEach(selectAll => {

@@ -7,7 +7,7 @@
     var folderName = !string.IsNullOrWhiteSpace(Model.CurrentFolderName) ? Model.CurrentFolderName : "Raiz";
 }
 
-<div class="ged-document-list d-none" data-documents-view="list" data-ged-document-list>
+<div class="ged-document-list d-none" data-documents-view="comfortable-list" data-ged-document-list>
     @foreach (var d in Model.Documents)
     {
         var isUnclassified = string.IsNullOrWhiteSpace(d.TypeName) || d.TypeName == "-";

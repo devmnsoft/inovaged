@@ -21,18 +21,24 @@
     }
     else
     {
-        <div class="ged-documents-view-toolbar px-3 py-2 border-bottom bg-white d-flex justify-content-between align-items-center gap-2">
-            <div class="form-check mb-0 d-flex align-items-center gap-2">
-                <input type="checkbox" class="form-check-input mt-0" id="selectAllDocuments" />
-                <label class="form-check-label small text-muted" for="selectAllDocuments">Selecionar todos</label>
+        <div class="ged-documents-view-toolbar">
+            <div class="ged-bulk-select">
+                <input type="checkbox" id="selectAllDocuments" class="form-check-input" />
+                <label for="selectAllDocuments">Selecionar todos</label>
+                <span id="selectedDocumentsInlineInfo" class="text-muted small">0 selecionados</span>
             </div>
-            <div class="btn-group btn-group-sm" role="group" aria-label="Modo de visualização dos documentos">
-                <button type="button" class="btn btn-outline-primary js-doc-view-mode" data-view-mode="list"><i class="bi bi-view-list me-1"></i>Lista</button>
-                <button type="button" class="btn btn-primary active js-doc-view-mode" data-view-mode="table" aria-pressed="true"><i class="bi bi-table me-1"></i>Tabela</button>
+
+            <div class="ged-view-actions" role="group" aria-label="Modo de visualização dos documentos">
+                <button type="button" class="btn btn-sm btn-primary active js-doc-view-mode" data-view-mode="compact-table" aria-pressed="true">
+                    <i class="bi bi-layout-text-window-reverse me-1"></i>Grade
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-primary js-doc-view-mode" data-view-mode="comfortable-list" aria-pressed="false">
+                    <i class="bi bi-view-list me-1"></i>Lista
+                </button>
             </div>
         </div>
 
-        <div class="ged-document-list-header d-none" data-documents-view="list" aria-hidden="true">
+        <div class="ged-document-list-header d-none" data-documents-view="comfortable-list" aria-hidden="true">
             <div></div>
             <div></div>
             <div>Documento</div>
@@ -41,7 +47,7 @@
             <div class="text-end">Ações</div>
         </div>
 
-        @await Html.PartialAsync("_DocumentTable", Model)
+        @await Html.PartialAsync("_DocumentCompactGrid", Model)
         @await Html.PartialAsync("_DocumentListRows", Model)
     }
 </div>
