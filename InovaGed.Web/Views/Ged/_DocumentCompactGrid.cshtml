@@ -1,0 +1,120 @@
+@model InovaGed.Web.Models.Ged.GedExplorerVM
+@using InovaGed.Web.Ocr
+@inject Microsoft.Extensions.Configuration.IConfiguration Configuration
+@{
+    var localTimeZoneId = Configuration["Localization:DefaultTimeZone"] ?? Configuration["App:LocalTimeZoneId"] ?? Configuration["TimeZoneId"] ?? "America/Belem";
+    var uploadDateFormat = Configuration["Localization:DateTimeFormat"] ?? "dd/MM/yyyy HH:mm";
+}
+
+<div class="ged-compact-grid" data-documents-view="compact-table">
+    <div class="ged-compact-grid-header">
+        <div class="ged-col-check"></div>
+        <div class="ged-col-document">Documento</div>
+        <div class="ged-col-classification">Classificação</div>
+        <div class="ged-col-ocr">OCR</div>
+        <div class="ged-col-status">Situação</div>
+        <div class="ged-col-upload">Upload em</div>
+        <div class="ged-col-actions">Ações</div>
+    </div>
+
+    <div class="ged-compact-grid-body">
+        @foreach (var d in Model.Documents)
+        {
+            var isUnclassified = string.IsNullOrWhiteSpace(d.TypeName) || d.TypeName == "-";
+            var versionId = d.CurrentVersionId?.ToString() ?? string.Empty;
+            var uploadDateUtc = d.UploadedAtUtc == default ? d.CreatedAt : d.UploadedAtUtc;
+            var uploadLocal = OcrUiHelper.ToConfiguredLocalTime(uploadDateUtc, localTimeZoneId);
+            var uploadLabel = string.IsNullOrWhiteSpace(d.UploadedAtLocalFormatted)
+                ? uploadLocal.ToString(uploadDateFormat)
+                : d.UploadedAtLocalFormatted;
+            var iconClass = (d.FileName ?? string.Empty).EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)
+                ? "bi-file-earmark-pdf"
+                : "bi-file-earmark-text";
+
+            <div class="ged-compact-row"
+                 draggable="true"
+                 data-document-id="@d.Id"
+                 data-version-id="@versionId"
+                 data-ocr-available="@(d.IsOcrAvailable ? "true" : "false")"
+                 data-document-incomplete="@(d.IsDocumentIncomplete ? "true" : "false")"
+                 data-document-unclassified="@(isUnclassified ? "true" : "false")"
+                 data-uploaded-at-utc="@uploadDateUtc.ToString("O")">
+
+                <div class="ged-col-check">
+                    <input type="checkbox"
+                           class="form-check-input js-doc-select js-document-check"
+                           value="@d.Id"
+                           data-document-title="@d.Title"
+                           aria-label="Selecionar @d.Title" />
+                </div>
+
+                <div class="ged-col-document">
+                    <div class="ged-doc-identity">
+                        <div class="ged-doc-icon" aria-hidden="true">
+                            <i class="bi @iconClass"></i>
+                        </div>
+                        <div class="ged-doc-text">
+                            <a class="ged-doc-title"
+                               asp-controller="Ged"
+                               asp-action="Details"
+                               asp-route-id="@d.Id"
+                               title="@d.Title">
+                                @d.Title
+                            </a>
+                            <div class="ged-doc-file" title="@d.FileName">
+                                @(!string.IsNullOrWhiteSpace(d.FileName) ? d.FileName : "Arquivo sem nome")
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="ged-col-classification">
+                    @if (isUnclassified)
+                    {
+                        <span class="badge rounded-pill bg-secondary-subtle text-secondary">Sem classificação</span>
+                    }
+                    else
+                    {
+                        <span class="badge rounded-pill bg-success-subtle text-success">@d.TypeName</span>
+                    }
+                </div>
+
+                <div class="ged-col-ocr">
+                    @if (d.IsOcrAvailable)
+                    {
+                        <span class="badge rounded-pill bg-success-subtle text-success">
+                            <i class="bi bi-check-circle me-1"></i>OCR disponível
+                        </span>
+                    }
+                    else
+                    {
+                        <span class="badge rounded-pill bg-light text-muted border">Sem OCR</span>
+                    }
+                </div>
+
+                <div class="ged-col-status">
+                    @if (d.IsDocumentIncomplete)
+                    {
+                        <span class="badge rounded-pill bg-warning-subtle text-warning">Incompleto</span>
+                    }
+                    else if (d.IsPartialDocument)
+                    {
+                        <span class="badge rounded-pill bg-info-subtle text-info">Parcial</span>
+                    }
+                    else
+                    {
+                        <span class="badge rounded-pill bg-light text-muted border">Atual</span>
+                    }
+                </div>
+
+                <div class="ged-col-upload">
+                    <span title="Upload em UTC: @uploadDateUtc.ToString("O")">@uploadLabel</span>
+                </div>
+
+                <div class="ged-col-actions">
+                    @await Html.PartialAsync("_DocumentActionsDropdown", (d.Id, d.Title, versionId, Model.CurrentFolderId, d.IsOcrAvailable))
+                </div>
+            </div>
+        }
+    </div>
+</div>
