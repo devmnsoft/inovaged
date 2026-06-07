@@ -1,0 +1,140 @@
+@model InovaGed.Web.Models.Ged.GedExplorerVM
+@using InovaGed.Web.Ocr
+@inject Microsoft.Extensions.Configuration.IConfiguration Configuration
+
+@{
+    var localTimeZoneId = Configuration["Localization:DefaultTimeZone"] ?? Configuration["App:LocalTimeZoneId"] ?? Configuration["TimeZoneId"] ?? "America/Belem";
+    var uploadDateFormat = Configuration["Localization:DateTimeFormat"] ?? "dd/MM/yyyy HH:mm";
+    var folderName = !string.IsNullOrWhiteSpace(Model.CurrentFolderName) ? Model.CurrentFolderName : "Raiz";
+}
+
+<div class="ged-operational-list" data-ged-document-list>
+@foreach (var d in Model.Documents)
+{
+    var isUnclassified = string.IsNullOrWhiteSpace(d.TypeName) || d.TypeName == "-";
+    var versionId = d.CurrentVersionId?.ToString() ?? string.Empty;
+    var uploadDateUtc = d.UploadedAtUtc == default ? d.CreatedAt : d.UploadedAtUtc;
+    var uploadLocal = OcrUiHelper.ToConfiguredLocalTime(uploadDateUtc, localTimeZoneId);
+    var uploadLabel = string.IsNullOrWhiteSpace(d.UploadedAtLocalFormatted)
+        ? uploadLocal.ToString(uploadDateFormat)
+        : d.UploadedAtLocalFormatted;
+
+    var iconClass = (d.FileName ?? string.Empty).EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)
+        ? "bi-file-earmark-pdf"
+        : "bi-file-earmark-text";
+
+    var rowClass = d.IsDocumentIncomplete
+        ? " is-incomplete"
+        : d.IsPartialDocument ? " is-partial" : "";
+
+    <article class="ged-operational-row@rowClass"
+             draggable="true"
+             data-document-id="@d.Id"
+             data-version-id="@versionId"
+             data-ocr-available="@(d.IsOcrAvailable ? "true" : "false")"
+             data-document-incomplete="@(d.IsDocumentIncomplete ? "true" : "false")"
+             data-document-unclassified="@(isUnclassified ? "true" : "false")"
+             data-uploaded-at-utc="@uploadDateUtc.ToString("O")">
+
+        <div class="ged-operational-check">
+            <input type="checkbox"
+                   class="form-check-input js-doc-select js-document-check"
+                   value="@d.Id"
+                   data-document-title="@d.Title"
+                   aria-label="Selecionar @d.Title" />
+        </div>
+
+        <div class="ged-operational-icon" aria-hidden="true">
+            <i class="bi @iconClass"></i>
+        </div>
+
+        <div class="ged-operational-content">
+            <div class="ged-operational-title-line">
+                <a class="ged-operational-title"
+                   asp-controller="Ged"
+                   asp-action="Details"
+                   asp-route-id="@d.Id"
+                   title="@d.Title">
+                    @d.Title
+                </a>
+
+                @if (d.IsDocumentIncomplete)
+                {
+                    <span class="badge rounded-pill bg-warning-subtle text-warning">
+                        Documento incompleto
+                    </span>
+                }
+            </div>
+
+            <div class="ged-operational-file-line" title="@d.FileName">
+                <i class="bi bi-paperclip me-1"></i>
+                @(!string.IsNullOrWhiteSpace(d.FileName) ? d.FileName : "Arquivo sem nome")
+            </div>
+
+            <div class="ged-operational-meta-line">
+                <span class="ged-meta-item">
+                    <i class="bi bi-folder2-open me-1"></i>@folderName
+                </span>
+
+                <span class="ged-meta-separator">•</span>
+
+                <span class="ged-meta-item">Versão atual</span>
+
+                <span class="ged-meta-separator">•</span>
+
+                <span class="ged-meta-item">
+                    <i class="bi bi-clock me-1"></i>Upload em @uploadLabel
+                </span>
+            </div>
+
+            <div class="ged-operational-status-line">
+                @if (isUnclassified)
+                {
+                    <span class="badge rounded-pill bg-secondary-subtle text-secondary">
+                        <i class="bi bi-tag me-1"></i>Sem classificação
+                    </span>
+                }
+                else
+                {
+                    <span class="badge rounded-pill bg-success-subtle text-success">
+                        <i class="bi bi-tag-fill me-1"></i>@d.TypeName
+                    </span>
+                }
+
+                @if (d.IsOcrAvailable)
+                {
+                    <span class="badge rounded-pill bg-info-subtle text-info">
+                        <i class="bi bi-body-text me-1"></i>OCR disponível
+                    </span>
+                }
+                else
+                {
+                    <span class="badge rounded-pill bg-light text-muted border">
+                        <i class="bi bi-body-text me-1"></i>Sem OCR
+                    </span>
+                }
+
+                @if (d.IsPartialDocument && !d.IsDocumentIncomplete)
+                {
+                    <span class="badge rounded-pill bg-primary-subtle text-primary">
+                        Documento parcial
+                    </span>
+                }
+            </div>
+        </div>
+
+        <div class="ged-operational-quick-actions">
+            <a class="btn btn-sm btn-light border"
+               asp-controller="Ged"
+               asp-action="Details"
+               asp-route-id="@d.Id"
+               title="Abrir documento"
+               aria-label="Abrir @d.Title">
+                <i class="bi bi-eye"></i>
+            </a>
+
+            @await Html.PartialAsync("_DocumentActionsDropdown", (d.Id, d.Title, versionId, Model.CurrentFolderId, d.IsOcrAvailable))
+        </div>
+    </article>
+}
+</div>
