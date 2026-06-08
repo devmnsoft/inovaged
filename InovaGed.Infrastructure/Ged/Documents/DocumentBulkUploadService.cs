@@ -11,6 +11,7 @@ using InovaGed.Infrastructure.Ged;
 using System.Diagnostics;
 using Dapper;
 using InovaGed.Application.Common.Database;
+using InovaGed.Application.Ged.Documents.Partials;
 
 namespace InovaGed.Infrastructure.Ged.Documents;
 
@@ -18,8 +19,8 @@ public sealed class DocumentBulkUploadService : IDocumentBulkUploadService
 {
     private static readonly HashSet<string> AllowedExtensions = new(StringComparer.OrdinalIgnoreCase) { ".pdf", ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt" };
     private readonly long _maxFileSizeBytes;
-    private readonly DocumentAppService _documentApp; private readonly IAuditWriter _audit; private readonly ILogger<DocumentBulkUploadService> _logger; private readonly IMemoryCache _cache; private readonly IDbConnectionFactory _db;
-    public DocumentBulkUploadService(DocumentAppService documentApp, IAuditWriter audit, ILogger<DocumentBulkUploadService> logger, IConfiguration configuration, IMemoryCache cache, IDbConnectionFactory db){_documentApp=documentApp;_audit=audit;_logger=logger;_cache=cache;_db=db;var maxFileSizeMb=Math.Max(1, configuration.GetValue<int?>("DocumentUpload:MaxFileSizeMb") ?? 50); _maxFileSizeBytes=maxFileSizeMb*1024L*1024L;}
+    private readonly DocumentAppService _documentApp; private readonly IAuditWriter _audit; private readonly ILogger<DocumentBulkUploadService> _logger; private readonly IMemoryCache _cache; private readonly IDbConnectionFactory _db; private readonly IDocumentPartialService _partialService;
+    public DocumentBulkUploadService(DocumentAppService documentApp, IAuditWriter audit, ILogger<DocumentBulkUploadService> logger, IConfiguration configuration, IMemoryCache cache, IDbConnectionFactory db, IDocumentPartialService partialService){_documentApp=documentApp;_audit=audit;_logger=logger;_cache=cache;_db=db;_partialService=partialService;var maxFileSizeMb=Math.Max(1, configuration.GetValue<int?>("DocumentUpload:MaxFileSizeMb") ?? 50); _maxFileSizeBytes=maxFileSizeMb*1024L*1024L;}
     public async Task<Result<DocumentBulkUploadResultDto>> UploadStreamAsync(Guid tenantId, Guid userId, string? userName, Stream content, string fileName, string contentType, long sizeBytes, Guid? folderId, DocumentBulkUploadMetadata metadata, bool isAdmin, CancellationToken ct)
     {
         try
@@ -49,9 +50,21 @@ public sealed class DocumentBulkUploadService : IDocumentBulkUploadService
                 var partsAfterUpload = await CountDocumentPartsAsync(tenantId, documentId, ct) + 1;
                 var isConsolidated = metadata.TotalParts.HasValue && partsAfterUpload >= metadata.TotalParts.Value;
                 isIncomplete = !isConsolidated;
-                await MarkPartialVersionAsync(tenantId, documentId, versionId.Value, uploadedAtUtc, isPart, isIncomplete, metadata.PartNumber, metadata.TotalParts, isConsolidated ? versionId : null, ct);
-                await RegisterDocumentPartAsync(tenantId, documentId, versionId.Value, uploadedAtUtc, metadata.PartNumber, metadata.TotalParts, isConsolidated, ct);
-                if (isConsolidated) await ConsolidateDocumentPartsAsync(tenantId, documentId, versionId.Value, uploadedAtUtc, ct);
+                var addPart = await _partialService.AddPartAsync(new AddDocumentPartRequest
+                {
+                    TenantId = tenantId,
+                    UserId = userId,
+                    DocumentId = documentId,
+                    VersionId = versionId.Value,
+                    PartNumber = incomingPartNumber <= 0 ? Math.Max(1, partsAfterUpload) : incomingPartNumber,
+                    TotalParts = metadata.TotalParts,
+                    FileName = safeName,
+                    SizeBytes = sizeBytes,
+                    Notes = metadata.Notes,
+                    UploadedAtUtc = uploadedAtUtc
+                }, ct);
+                if (!addPart.Success) return Result<DocumentBulkUploadResultDto>.Fail(addPart.Error?.Code ?? "PART", addPart.Error?.Message ?? "Falha ao registrar a parte.");
+                if (addPart.Value?.PartialStatus == "COMPLETE") isIncomplete = false;
             }
             else
             {
@@ -62,7 +75,21 @@ public sealed class DocumentBulkUploadService : IDocumentBulkUploadService
                 versionId = await GetCurrentVersionIdAsync(tenantId, documentId, ct);
                 if (isPart && versionId.HasValue)
                 {
-                    await RegisterDocumentPartAsync(tenantId, documentId, versionId.Value, uploadedAtUtc, metadata.PartNumber, metadata.TotalParts, !isIncomplete, ct);
+                    var addPart = await _partialService.AddPartAsync(new AddDocumentPartRequest
+                    {
+                        TenantId = tenantId,
+                        UserId = userId,
+                        DocumentId = documentId,
+                        VersionId = versionId.Value,
+                        PartNumber = incomingPartNumber <= 0 ? 1 : incomingPartNumber,
+                        TotalParts = metadata.TotalParts,
+                        FileName = safeName,
+                        SizeBytes = sizeBytes,
+                        Notes = metadata.Notes,
+                        UploadedAtUtc = uploadedAtUtc
+                    }, ct);
+                    if (!addPart.Success) return Result<DocumentBulkUploadResultDto>.Fail(addPart.Error?.Code ?? "PART", addPart.Error?.Message ?? "Falha ao registrar a parte.");
+                    isIncomplete = addPart.Value?.PartialStatus == "INCOMPLETE";
                 }
             }
             sw.Stop();

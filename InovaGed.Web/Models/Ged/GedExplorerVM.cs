@@ -58,6 +58,12 @@ public sealed class GedExplorerVM
         public int? TotalParts { get; set; }
         public Guid? ConsolidatedVersionId { get; set; }
         public string PartialStatus { get; set; } = "NOT_PARTIAL";
+        public Guid? PartialGroupId { get; set; }
+        public int? PartialPartNumber { get; set; }
+        public int? PartialTotalParts { get; set; }
+        public int PartialPartsCount { get; set; }
+        public string PartialStatusLabel { get; set; } = "";
+        public string PartialStatusCss { get; set; } = "";
 
         public bool IsConfidential { get; set; }
     }

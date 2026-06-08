@@ -58,6 +58,9 @@ public sealed class DocumentQueries : IDocumentQueries
             _ => "NULL::int"
         };
         var consolidatedVersionExpr = schema.HasConsolidatedVersionId ? "cv.consolidated_version_id" : "NULL::uuid";
+        var partialPartsCountExpr = schema.HasDocumentPartialPartTable
+            ? "(SELECT count(*)::int FROM ged.document_partial_part pp WHERE pp.tenant_id=d.tenant_id AND pp.document_id=d.id AND pp.reg_status='A')"
+            : "0";
 
         var sql = $$"""
 SELECT
@@ -83,6 +86,7 @@ SELECT
     {{partNumberExpr}}                 AS "PartNumber",
     {{totalPartsExpr}}                 AS "TotalParts",
     {{consolidatedVersionExpr}}     AS "ConsolidatedVersionId",
+    {{partialPartsCountExpr}} AS "PartialPartsCount",
     (d.visibility = 'CONFIDENTIAL'::ged.document_visibility_enum) AS "IsConfidential"
 FROM ged.document d
 LEFT JOIN ged.document_type dt
@@ -209,6 +213,9 @@ WHERE d.tenant_id = @tenantId
             _ => "NULL::int"
         };
         var consolidatedVersionExpr = schema.HasConsolidatedVersionId ? "v.consolidated_version_id" : "NULL::uuid";
+        var partialPartsCountExpr = schema.HasDocumentPartialPartTable
+            ? "(SELECT count(*)::int FROM ged.document_partial_part pp WHERE pp.tenant_id=v.tenant_id AND pp.partial_group_id=v.partial_group_id AND pp.reg_status='A')"
+            : "0";
 
         var sql = $$"""
 SELECT
@@ -233,6 +240,7 @@ SELECT
     {{partNumberExpr}} AS "PartNumber",
     {{totalPartsExpr}} AS "TotalParts",
     {{consolidatedVersionExpr}} AS "ConsolidatedVersionId",
+    {{partialPartsCountExpr}} AS "PartialPartsCount",
 
     oj.status::text   AS "OcrStatus",
     oj.id             AS "OcrJobId",
@@ -296,7 +304,8 @@ SELECT
     COALESCE(bool_or(column_name = 'part_number'), false) AS "HasPartNumber",
     COALESCE(bool_or(column_name = 'total_parts'), false) AS "HasTotalParts",
     COALESCE(bool_or(column_name = 'consolidated_version_id'), false) AS "HasConsolidatedVersionId",
-    EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='ged' AND table_name='document' AND column_name='created_at_utc') AS "HasDocumentCreatedAtUtc"
+    EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='ged' AND table_name='document' AND column_name='created_at_utc') AS "HasDocumentCreatedAtUtc",
+    (to_regclass('ged.document_partial_part') IS NOT NULL) AS "HasDocumentPartialPartTable"
 FROM information_schema.columns
 WHERE table_schema = 'ged'
   AND table_name = 'document_version'
@@ -339,6 +348,7 @@ WHERE table_schema = 'ged'
         public bool HasPartNumber { get; set; }
         public bool HasTotalParts { get; set; }
         public bool HasConsolidatedVersionId { get; set; }
+        public bool HasDocumentPartialPartTable { get; set; }
 
         public bool HasPartialDocumentMetadata =>
             HasUploadedAtUtc &&
