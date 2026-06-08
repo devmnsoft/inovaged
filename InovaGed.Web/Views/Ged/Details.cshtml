@@ -90,6 +90,10 @@
 
     var openClassify = (ViewBag.OpenClassify as bool?) == true;
     var ocrSwitched = (ViewBag.OcrSwitched as bool?) == true;
+    var partialVersion = selected ?? Model.Versions.OrderByDescending(v => v.VersionNumber).FirstOrDefault(v => v.IsDocumentIncomplete || v.IsPartialDocument);
+    var hasPartialState = partialVersion is not null && (partialVersion.IsDocumentIncomplete || partialVersion.IsPartialDocument || partialVersion.ConsolidatedVersionId.HasValue);
+    var partialStatusLabel = partialVersion?.IsDocumentIncomplete == true ? "Documento incompleto" : partialVersion?.ConsolidatedVersionId.HasValue == true ? "Documento consolidado" : partialVersion?.IsPartialDocument == true ? "Documento parcial" : "Documento completo";
+    var partsLabel = partialVersion?.PartNumber.HasValue == true && partialVersion?.TotalParts.HasValue == true ? $"{partialVersion.PartNumber} de {partialVersion.TotalParts} partes recebidas" : partialVersion?.PartNumber.HasValue == true ? $"Parte {partialVersion.PartNumber} registrada" : "Partes registradas no histórico";
 }
 
 <div class="container-fluid">
@@ -140,6 +144,23 @@
             </button>
         </div>
     </div>
+
+    @if (hasPartialState)
+    {
+        <div class="alert @(partialVersion?.IsDocumentIncomplete == true ? "alert-warning" : "alert-info") d-flex justify-content-between align-items-start gap-3">
+            <div>
+                <h5 class="alert-heading mb-1"><i class="bi bi-exclamation-triangle me-1"></i>@partialStatusLabel</h5>
+                <div>Este documento foi enviado parcialmente e ainda @(partialVersion?.IsDocumentIncomplete == true ? "aguarda novas partes" : "possui partes registradas para rastreabilidade").</div>
+                <div class="small mt-1"><strong>Partes:</strong> @partsLabel</div>
+                <div class="small mt-1">O OCR exibido refere-se à parte atualmente cadastrada. Após a consolidação, o OCR poderá ser reprocessado na versão final.</div>
+            </div>
+            <div class="d-flex gap-2 flex-wrap justify-content-end">
+                <a class="btn btn-sm btn-warning" href="@Url.Action("Index", "Ged", new { folderId = Model.FolderId })"><i class="bi bi-file-earmark-plus me-1"></i>Adicionar parte</a>
+                <a class="btn btn-sm btn-outline-primary" href="@Url.Action("Index", "Ged", new { folderId = Model.FolderId })"><i class="bi bi-files me-1"></i>Ver partes</a>
+                <a class="btn btn-sm btn-outline-secondary" href="@Url.Action("Index", "Ged", new { folderId = Model.FolderId })"><i class="bi bi-layers me-1"></i>Consolidar</a>
+            </div>
+        </div>
+    }
 
     <div class="row g-3">
         <div class="col-lg-8">

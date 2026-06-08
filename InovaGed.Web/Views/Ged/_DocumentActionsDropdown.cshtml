@@ -25,24 +25,46 @@
             <li><a class="dropdown-item js-classify-document" asp-action="Details" asp-controller="Ged" asp-route-id="@Model.DocumentId" asp-route-openClassify="true" data-document-id="@Model.DocumentId"><i class="bi bi-tags me-2"></i>Classificar</a></li>
         }
         <li><a class="dropdown-item" asp-action="Download" asp-controller="Ged" asp-route-id="@Model.VersionId"><i class="bi bi-download me-2"></i>Baixar</a></li>
-        @if (Model.IsDocumentIncomplete || Model.IsPartialDocument)
+
+        @if (Model.ShouldShowPartialActions)
         {
             <li><hr class="dropdown-divider" /></li>
-            <li>
-                <button type="button" class="dropdown-item js-add-document-part" data-document-id="@Model.DocumentId" data-document-title="@Model.Title">
-                    <i class="bi bi-file-earmark-plus me-2"></i>Adicionar parte
-                </button>
-            </li>
-            <li>
-                <button type="button" class="dropdown-item js-view-document-parts" data-document-id="@Model.DocumentId" data-document-title="@Model.Title">
-                    <i class="bi bi-files me-2"></i>Ver partes do documento
-                </button>
-            </li>
-            @if (!Model.IsDocumentIncomplete && string.Equals(Model.PartialStatus, "COMPLETE", StringComparison.OrdinalIgnoreCase))
+            <li><h6 class="dropdown-header text-warning"><i class="bi bi-exclamation-triangle me-1"></i>Documento incompleto</h6></li>
+            @if (Model.CanAddPart)
+            {
+                <li>
+                    <button type="button" class="dropdown-item js-add-document-part" data-document-id="@Model.DocumentId" data-document-title="@Model.Title">
+                        <i class="bi bi-file-earmark-plus me-2"></i>Adicionar parte
+                    </button>
+                </li>
+            }
+            @if (Model.CanViewParts)
+            {
+                <li>
+                    <button type="button" class="dropdown-item js-view-document-parts" data-document-id="@Model.DocumentId" data-document-title="@Model.Title">
+                        <i class="bi bi-files me-2"></i>Ver partes do documento
+                    </button>
+                </li>
+            }
+            @if (Model.CanConsolidate && Model.IsCompletePartial)
             {
                 <li><button type="button" class="dropdown-item js-consolidate-document" data-document-id="@Model.DocumentId"><i class="bi bi-layers me-2"></i>Consolidar documento</button></li>
             }
+            @if (Model.CanCancelPartial)
+            {
+                <li><button type="button" class="dropdown-item text-danger js-cancel-document-partial" data-document-id="@Model.DocumentId"><i class="bi bi-x-octagon me-2"></i>Cancelar fracionamento</button></li>
+            }
         }
+        else if (Model.CanMarkAsIncomplete)
+        {
+            <li><hr class="dropdown-divider" /></li>
+            <li>
+                <button type="button" class="dropdown-item js-mark-document-incomplete" data-document-id="@Model.DocumentId" data-document-title="@Model.Title">
+                    <i class="bi bi-exclamation-triangle me-2"></i>Marcar como incompleto
+                </button>
+            </li>
+        }
+
         @if (Model.CanDelete)
         {
             <li><hr class="dropdown-divider" /></li>

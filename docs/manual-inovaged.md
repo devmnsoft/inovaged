@@ -159,11 +159,11 @@ Parâmetros principais: appsettings, storage, OCR, upload, preview, workers, lim
 
 Quando usar:
 - Use **Documento completo** quando o arquivo já representa integralmente o conteúdo clínico/administrativo.
-- Use **Documento incompleto / parte de documento** quando apenas uma parte foi digitalizada ou recebida e outra parte chegará futuramente.
+- Use **Documento incompleto** quando apenas uma parte foi digitalizada ou recebida e outra parte chegará futuramente.
 
 Como enviar a primeira parte:
 1. Acesse o GED, escolha a pasta e clique em **Adicionar documentos**.
-2. Em **Tipo de envio**, marque **Documento incompleto / parte de documento**.
+2. Em **Tipo de envio**, marque **Documento incompleto**.
 3. Informe **Parte número**, **Total previsto** se conhecido e uma observação contextual.
 4. Envie o arquivo. A listagem exibirá o badge **Documento incompleto** e a ação **Adicionar parte**.
 
@@ -181,10 +181,17 @@ Como consolidar:
 - A consolidação atual é lógica: o status passa para `CONSOLIDATED`, `document.current_version_id` aponta para a versão consolidada selecionada e as partes originais continuam preservadas.
 - TODO técnico: homologar biblioteca de mesclagem física de PDFs para gerar um único PDF consolidado quando todas as partes forem PDF.
 
-OCR e auditoria:
-- OCR pode ser executado por parte individual. Após consolidação, a versão consolidada é enfileirada para OCR/preview.
-- O badge **OCR disponível** só aparece quando o OCR está `COMPLETED` e existe texto extraído.
-- Eventos auditados: `DOCUMENT_PART_CREATE`, `DOCUMENT_PART_UPLOAD`, `DOCUMENT_PART_VIEW`, `DOCUMENT_PART_CONSOLIDATE`, `DOCUMENT_PART_CANCEL`, `DOCUMENT_PART_COMPLETE`, `DOCUMENT_PART_PREVIEW` e `DOCUMENT_PART_DOWNLOAD`, com tenant, usuário, documento, versão, grupo parcial, parte, UTC e `CorrelationId` quando disponível.
+OCR, preview, busca e auditoria:
+- OCR pode existir para a parte já enviada. A interface informa que o OCR exibido refere-se à versão/parte atual e não necessariamente ao documento final completo.
+- Após consolidação, o OCR e o preview poderão ser reprocessados na versão final consolidada.
+- A busca GED e a busca hospitalar exibem o badge **Documento incompleto** quando aplicável para evitar que uma parte pareça documento completo.
+- Eventos auditados: `DOCUMENT_PART_MARK_INCOMPLETE`, `DOCUMENT_PART_ADD`, `DOCUMENT_PART_VIEW`, `DOCUMENT_PART_CONSOLIDATE`, `DOCUMENT_PART_CANCEL` e `DOCUMENT_PART_MARK_COMPLETE`, com `documentId`, `versionId`, `partialGroupId`, `partNumber`, `userId`, `tenantId`, `correlationId` e timestamp UTC quando disponíveis.
+
+Quem pode usar:
+- Administradores têm todas as permissões de documento incompleto/fracionado.
+- Arquivistas podem adicionar, visualizar e consolidar partes conforme a política da unidade.
+- Usuários somente leitura visualizam partes apenas quando autorizados.
+- Permissões técnicas: `DOCUMENT_PART_MARK_INCOMPLETE`, `DOCUMENT_PART_ADD`, `DOCUMENT_PART_VIEW`, `DOCUMENT_PART_CONSOLIDATE` e `DOCUMENT_PART_CANCEL`.
 
 ### 18. Validação e atualização do banco de dados
 

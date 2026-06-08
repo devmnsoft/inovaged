@@ -31,7 +31,7 @@
         const el = panel();
         if (!el) return;
         const ocrBadge = data.isOcrAvailable ? '<span class="badge ged-badge ged-badge-ok">OCR disponível</span>' : `<span class="badge ged-badge ged-badge-muted">OCR: ${esc(data.ocrStatus || 'NONE')}</span>`;
-        const partialBadge = data.isDocumentIncomplete ? '<span class="badge ged-badge ged-badge-warning">Documento incompleto</span>' : (data.isPartialDocument ? '<span class="badge ged-badge ged-badge-info">Documento parcial</span>' : '');
+        const partialBadge = data.isDocumentIncomplete ? '<span class="badge ged-badge ged-badge-incomplete" title="Este documento possui partes pendentes e poderá ser complementado futuramente.">⚠ Documento incompleto</span>' : (data.partialStatus === 'CONSOLIDATED' ? '<span class="badge ged-badge ged-badge-info" title="Este documento foi consolidado a partir de partes enviadas anteriormente.">Documento consolidado</span>' : (data.isPartialDocument ? '<span class="badge ged-badge ged-badge-info">Documento parcial</span>' : ''));
         el.hidden = false;
         el.dataset.documentId = data.documentId;
         el.innerHTML = `
@@ -62,7 +62,7 @@
                     <div class="ged-document-preview"><iframe title="Preview de ${esc(data.title)}" loading="lazy" src="${esc(data.previewUrl)}"></iframe></div>
                 </section>
                 <section class="d-none" data-ged-tab-panel="ocr">
-                    ${data.isOcrAvailable ? `<div class="ged-side-actions-bar"><button type="button" class="btn btn-sm btn-outline-primary js-copy-ocr"><i class="bi bi-clipboard me-1"></i>Copiar texto</button><a class="btn btn-sm btn-outline-secondary" href="${esc(data.ocrUrl)}" target="_blank" rel="noopener">Abrir OCR</a></div><pre class="ged-ocr-text">${esc(data.ocrText)}</pre>` : `<div class="alert alert-info mb-0"><i class="bi bi-info-circle me-1"></i>${esc(ocrMessage(data))}</div>`}
+                    ${data.isDocumentIncomplete || data.isPartialDocument ? '<div class="alert alert-warning small"><i class="bi bi-info-circle me-1"></i>O OCR exibido refere-se à parte atualmente cadastrada. Após a consolidação, o OCR poderá ser reprocessado na versão final.</div>' : ''}${data.isOcrAvailable ? `<div class="ged-side-actions-bar"><button type="button" class="btn btn-sm btn-outline-primary js-copy-ocr"><i class="bi bi-clipboard me-1"></i>Copiar texto</button><a class="btn btn-sm btn-outline-secondary" href="${esc(data.ocrUrl)}" target="_blank" rel="noopener">Abrir OCR</a></div><pre class="ged-ocr-text">${esc(data.ocrText)}</pre>` : `<div class="alert alert-info mb-0"><i class="bi bi-info-circle me-1"></i>${esc(ocrMessage(data))}</div>`}
                 </section>
                 <section class="d-none" data-ged-tab-panel="metadata">
                     <dl class="ged-metadata-list">
@@ -84,7 +84,7 @@
                         <button type="button" class="btn btn-outline-primary js-move-one js-move-document" data-document-id="${esc(data.documentId)}" data-document-title="${esc(data.title)}"><i class="bi bi-folder-symlink me-1"></i>Mover</button>
                         <a class="btn btn-outline-primary js-classify-document" href="/Ged/Details/${esc(data.documentId)}?openClassify=true" data-document-id="${esc(data.documentId)}"><i class="bi bi-tags me-1"></i>Classificar</a>
                         <a class="btn btn-outline-secondary" href="${esc(data.downloadUrl)}"><i class="bi bi-download me-1"></i>Baixar</a>
-                        ${data.isDocumentIncomplete || data.isPartialDocument ? '<button type="button" class="btn btn-outline-warning" disabled><i class="bi bi-plus-square me-1"></i>Adicionar parte (use upload fracionado)</button><button type="button" class="btn btn-outline-secondary" disabled>Consolidar / cancelar fracionamento</button>' : ''}
+                        ${data.isDocumentIncomplete || data.isPartialDocument ? `<button type="button" class="btn btn-outline-warning js-add-document-part" data-document-id="${esc(data.documentId)}" data-document-title="${esc(data.title)}"><i class="bi bi-plus-square me-1"></i>Adicionar parte</button><button type="button" class="btn btn-outline-secondary js-view-document-parts" data-document-id="${esc(data.documentId)}" data-document-title="${esc(data.title)}"><i class="bi bi-files me-1"></i>Ver partes</button><button type="button" class="btn btn-outline-secondary js-consolidate-document" data-document-id="${esc(data.documentId)}"><i class="bi bi-layers me-1"></i>Consolidar documento</button>` : ''}
                     </div>
                 </section>
             </div>`;
@@ -94,7 +94,7 @@
     function renderParts(data) {
         if (!data.isPartialDocument && !data.isDocumentIncomplete) return '';
         const rows = (data.versions || []).filter(v => v.isPartialDocument || v.isDocumentIncomplete || v.partNumber).map(v => `<tr><td>${esc(v.partNumber || '-')} / ${esc(v.totalParts || '-')}</td><td>${esc(v.fileName)}</td><td>${esc(v.uploadedAtLabel || '')}</td><td>${esc(v.createdBy || '-')}</td><td>${esc(v.partialStatus || v.ocrStatus || '-')}</td></tr>`).join('');
-        return `<div class="mt-4"><h6>Partes do documento</h6><div class="table-responsive"><table class="table table-sm"><thead><tr><th>Parte</th><th>Arquivo</th><th>Upload em</th><th>Enviado por</th><th>Status</th></tr></thead><tbody>${rows || '<tr><td colspan="5" class="text-muted">Nenhuma parte detalhada encontrada.</td></tr>'}</tbody></table></div></div>`;
+        return `<div class="mt-4"><h6>Documento incompleto</h6><p class="small text-muted mb-2">Este documento foi enviado parcialmente e ainda aguarda novas partes. As partes abaixo mostram o acompanhamento operacional.</p><h6>Partes do documento</h6><div class="table-responsive"><table class="table table-sm"><thead><tr><th>Parte</th><th>Arquivo</th><th>Upload em</th><th>Enviado por</th><th>Status</th></tr></thead><tbody>${rows || '<tr><td colspan="5" class="text-muted">Nenhuma parte detalhada encontrada.</td></tr>'}</tbody></table></div></div>`;
     }
 
     async function loadHistory(url) {
