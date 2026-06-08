@@ -1,6 +1,7 @@
-﻿using Dapper;
+using Dapper;
 using InovaGed.Application.Audit;
 using InovaGed.Application.ClassificationPlans;
+using InovaGed.Application.Common.Codes;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Ged.Instruments;
 using InovaGed.Domain.Primitives;
@@ -13,14 +14,17 @@ public sealed class ClassificationPlanRepository : IClassificationPlanRepository
     private readonly IDbConnectionFactory _db;
     private readonly ILogger<ClassificationPlanRepository> _logger;
     private readonly IAuditWriter _audit;
+    private readonly ICodeGeneratorService _codeGenerator;
 
     public ClassificationPlanRepository(
       IDbConnectionFactory db,
       IAuditWriter audit,
+      ICodeGeneratorService codeGenerator,
       ILogger<ClassificationPlanRepository> logger)
     {
         _db = db;
         _audit = audit;
+        _codeGenerator = codeGenerator;
         _logger = logger;
     }
 
@@ -101,8 +105,16 @@ limit 1;";
 
     public async Task<Guid> UpsertAsync(Guid tenantId, Guid userId, ClassificationEditVM vm, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(vm.Code)) throw new ArgumentException("Código é obrigatório.");
         if (string.IsNullOrWhiteSpace(vm.Name)) throw new ArgumentException("Nome é obrigatório.");
+
+        var isCreate = !vm.Id.HasValue || vm.Id.Value == Guid.Empty;
+        var generatedCode = false;
+        if (isCreate && string.IsNullOrWhiteSpace(vm.Code))
+        {
+            vm.Code = await _codeGenerator.GenerateNextCodeAsync(tenantId, "Classification", "CLA", ct);
+            generatedCode = true;
+        }
+        if (!isCreate && string.IsNullOrWhiteSpace(vm.Code)) throw new ArgumentException("Código atual não encontrado.");
 
         var id = vm.Id ?? Guid.NewGuid();
 

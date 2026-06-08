@@ -1,4 +1,4 @@
-﻿@model IEnumerable<object>
+@model IEnumerable<object>
 
 @{
     ViewData["Title"] = "POPs";
@@ -87,12 +87,13 @@
                         foreach (var row in Model)
                         {
                             var id = G(row, "Id");
+                            var code = S(row, "Code", "");
                             var title = S(row, "Title", S(row, "Name", "(sem título)"));
                             var desc = S(row, "Description", S(row, "Summary", ""));
                             var active = B(row, "IsActive");
 
                             <tr>
-                                <td class="fw-semibold">@title</td>
+                                <td class="fw-semibold"><span class="badge text-bg-light border me-2">@code</span>@title</td>
                                 <td class="text-muted">@desc</td>
                                 <td>
                                     @if (active)
@@ -118,6 +119,7 @@
                                           class="d-inline-block ms-1">
                                         @Html.AntiForgeryToken()
 
+                                        <input type="hidden" name="Code" value="@code" />
                                         <input type="hidden" name="Title" value="@title" />
                                         <input type="hidden" name="Description" value="@desc" />
                                         <input type="hidden" name="IsActive" value="true" />

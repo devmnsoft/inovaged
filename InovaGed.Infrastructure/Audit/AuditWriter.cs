@@ -244,6 +244,7 @@ select exists (
             "DELETE" => "HTTP",
 
             "CREATE" => "CREATE",
+            "CODE_GENERATED" => "CODE_GENERATED",
             "INSERT" => "CREATE",
             "ADD" => "CREATE",
 

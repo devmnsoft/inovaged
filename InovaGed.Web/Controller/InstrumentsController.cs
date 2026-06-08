@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using InovaGed.Application.Ged.Instruments;
 using InovaGed.Application.Identity;
@@ -44,12 +44,6 @@ public sealed class InstrumentsController : Controller
         if (vm == null)
         {
             TempData["Err"] = "Dados inválidos.";
-            return RedirectToRoute("PopIndex");
-        }
-
-        if (string.IsNullOrWhiteSpace(vm.Code))
-        {
-            TempData["Err"] = "Informe o código do POP.";
             return RedirectToRoute("PopIndex");
         }
 

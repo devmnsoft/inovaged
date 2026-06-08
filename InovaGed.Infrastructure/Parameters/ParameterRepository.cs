@@ -1,4 +1,5 @@
 using Dapper;
+using InovaGed.Application.Common.Codes;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Parameters;
 
@@ -7,10 +8,12 @@ namespace InovaGed.Infrastructure.Parameters;
 public sealed class ParameterRepository : IParameterRepository
 {
     private readonly IDbConnectionFactory _db;
+    private readonly ICodeGeneratorService _codeGenerator;
 
-    public ParameterRepository(IDbConnectionFactory db)
+    public ParameterRepository(IDbConnectionFactory db, ICodeGeneratorService codeGenerator)
     {
         _db = db;
+        _codeGenerator = codeGenerator;
     }
 
     public async Task<IReadOnlyList<ParameterCategoryRow>> ListCategoriesAsync(Guid tenantId, CancellationToken ct)
@@ -173,8 +176,11 @@ order by display_order, name;";
     public async Task<Guid> UpsertItemAsync(Guid tenantId, Guid userId, ParameterItemEditVM vm, CancellationToken ct)
     {
         if (vm.CategoryId == Guid.Empty) throw new ArgumentException("Categoria obrigatória.");
-        if (string.IsNullOrWhiteSpace(vm.Code)) throw new ArgumentException("Código obrigatório.");
         if (string.IsNullOrWhiteSpace(vm.Name)) throw new ArgumentException("Nome obrigatório.");
+        var isCreate = !vm.Id.HasValue || vm.Id.Value == Guid.Empty;
+        if (isCreate && string.IsNullOrWhiteSpace(vm.Code))
+            vm.Code = await _codeGenerator.GenerateNextCodeAsync(tenantId, "ParameterItem", "PAR", ct);
+        if (!isCreate && string.IsNullOrWhiteSpace(vm.Code)) throw new ArgumentException("Código atual não encontrado.");
         if (!string.IsNullOrWhiteSpace(vm.MetadataJson))
         {
             try { _ = System.Text.Json.JsonDocument.Parse(vm.MetadataJson); }

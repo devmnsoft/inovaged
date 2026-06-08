@@ -32,8 +32,9 @@
                     </div>
 
                     <div class="col-md-3">
-                        <label asp-for="Code" class="form-label">Código</label>
-                        <input asp-for="Code" class="form-control text-uppercase" maxlength="80" required />
+                        <label asp-for="Code" class="form-label">Código automático</label>
+                        <input asp-for="Code" class="form-control text-uppercase bg-light" maxlength="80" readonly placeholder="Gerado automaticamente ao salvar" />
+                        <div class="form-text">O código será gerado automaticamente e ficará bloqueado.</div>
                     </div>
 
                     <div class="col-md-4">

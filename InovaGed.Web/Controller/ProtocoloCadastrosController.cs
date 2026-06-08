@@ -1,4 +1,6 @@
 using Dapper;
+using InovaGed.Application.Audit;
+using InovaGed.Application.Common.Codes;
 using InovaGed.Application.Common.Database;
 using InovaGed.Web.Models.Protocolo;
 using InovaGed.Web.Security;
@@ -11,11 +13,79 @@ namespace InovaGed.Web.Controllers;
 [Authorize]
 public sealed class ProtocoloCadastrosController : GedControllerBase
 {
-    public ProtocoloCadastrosController(IDbConnectionFactory dbFactory) : base(dbFactory) { }
-    [HttpGet] public async Task<IActionResult> Index(string? tipo, string? q) { if (!PodeAdministrar()) return Forbid(); var cfg = Cfg(tipo); using var db = await OpenAsync(); var rows = await db.QueryAsync<ProtocoloCadastroItemVM>($"select id Id,codigo Codigo,nome Nome,sigla Sigla,descricao Descricao,ordem Ordem,prazo_dias PrazoDias,cor Cor,ativo Ativo,created_at CreatedAt from {cfg.Table} where tenant_id=@TenantId and reg_status='A' and (@Q is null or @Q='' or nome ilike '%'||@Q||'%' or coalesce(codigo,'') ilike '%'||@Q||'%' or coalesce(sigla,'') ilike '%'||@Q||'%') order by ordem,nome", new { TenantId, Q = q }); return View(new ProtocoloCadastrosIndexVM { Tipo = cfg.Tipo, Titulo = cfg.Titulo, Q = q, Itens = rows.ToList() }); }
-    [HttpGet] public IActionResult Novo(string? tipo) { if (!PodeAdministrar()) return Forbid(); var cfg = Cfg(tipo); return View("Form", new ProtocoloCadastroFormVM { Tipo = cfg.Tipo, Titulo = "Novo - " + cfg.Titulo, Ativo = true }); }
-    [HttpGet] public async Task<IActionResult> Editar(string? tipo, Guid id) { if (!PodeAdministrar()) return Forbid(); var cfg = Cfg(tipo); using var db = await OpenAsync(); var vm = await db.QuerySingleOrDefaultAsync<ProtocoloCadastroFormVM>($"select id Id,codigo Codigo,nome Nome,sigla Sigla,descricao Descricao,ordem Ordem,prazo_dias PrazoDias,cor Cor,ativo Ativo from {cfg.Table} where tenant_id=@TenantId and id=@Id and reg_status='A'", new { TenantId, Id = id }); if (vm == null) return NotFound(); vm.Tipo = cfg.Tipo; vm.Titulo = "Editar - " + cfg.Titulo; return View("Form", vm); }
-    [HttpPost, ValidateAntiForgeryToken] public async Task<IActionResult> Salvar(ProtocoloCadastroFormVM vm) { if (!PodeAdministrar()) return Forbid(); var cfg = Cfg(vm.Tipo); if (!ModelState.IsValid) { vm.Titulo = cfg.Titulo; return View("Form", vm); } using var db = await OpenAsync(); if (vm.Id == Guid.Empty) await db.ExecuteAsync($"insert into {cfg.Table}(tenant_id,codigo,nome,sigla,descricao,ordem,prazo_dias,cor,ativo,created_by) values(@TenantId,@Codigo,@Nome,@Sigla,@Descricao,@Ordem,@PrazoDias,@Cor,@Ativo,@UserId)", new { TenantId, vm.Codigo, vm.Nome, vm.Sigla, vm.Descricao, vm.Ordem, vm.PrazoDias, vm.Cor, vm.Ativo, UserId }); else await db.ExecuteAsync($"update {cfg.Table} set codigo=@Codigo,nome=@Nome,sigla=@Sigla,descricao=@Descricao,ordem=@Ordem,prazo_dias=@PrazoDias,cor=@Cor,ativo=@Ativo,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@Id", new { TenantId, vm.Id, vm.Codigo, vm.Nome, vm.Sigla, vm.Descricao, vm.Ordem, vm.PrazoDias, vm.Cor, vm.Ativo, UserId }); TempData["ok"] = "Cadastro salvo."; return RedirectToAction(nameof(Index), new { tipo = cfg.Tipo }); }
+    private readonly ICodeGeneratorService _codeGenerator;
+    private readonly IAuditWriter _audit;
+
+    public ProtocoloCadastrosController(
+        IDbConnectionFactory dbFactory,
+        ICodeGeneratorService codeGenerator,
+        IAuditWriter audit) : base(dbFactory)
+    {
+        _codeGenerator = codeGenerator;
+        _audit = audit;
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Index(string? tipo, string? q)
+    {
+        if (!PodeAdministrar()) return Forbid();
+        var cfg = Cfg(tipo);
+        using var db = await OpenAsync();
+        var rows = await db.QueryAsync<ProtocoloCadastroItemVM>($"select id Id,codigo Codigo,nome Nome,sigla Sigla,descricao Descricao,ordem Ordem,prazo_dias PrazoDias,cor Cor,ativo Ativo,created_at CreatedAt from {cfg.Table} where tenant_id=@TenantId and reg_status='A' and (@Q is null or @Q='' or nome ilike '%'||@Q||'%' or coalesce(codigo,'') ilike '%'||@Q||'%' or coalesce(sigla,'') ilike '%'||@Q||'%') order by ordem,nome", new { TenantId, Q = q });
+        return View(new ProtocoloCadastrosIndexVM { Tipo = cfg.Tipo, Titulo = cfg.Titulo, Q = q, Itens = rows.ToList() });
+    }
+
+    [HttpGet]
+    public IActionResult Novo(string? tipo)
+    {
+        if (!PodeAdministrar()) return Forbid();
+        var cfg = Cfg(tipo);
+        return View("Form", new ProtocoloCadastroFormVM { Tipo = cfg.Tipo, Titulo = "Novo - " + cfg.Titulo, Ativo = true });
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Editar(string? tipo, Guid id)
+    {
+        if (!PodeAdministrar()) return Forbid();
+        var cfg = Cfg(tipo);
+        using var db = await OpenAsync();
+        var vm = await db.QuerySingleOrDefaultAsync<ProtocoloCadastroFormVM>($"select id Id,codigo Codigo,nome Nome,sigla Sigla,descricao Descricao,ordem Ordem,prazo_dias PrazoDias,cor Cor,ativo Ativo from {cfg.Table} where tenant_id=@TenantId and id=@Id and reg_status='A'", new { TenantId, Id = id });
+        if (vm == null) return NotFound();
+        vm.Tipo = cfg.Tipo;
+        vm.Titulo = "Editar - " + cfg.Titulo;
+        return View("Form", vm);
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Salvar(ProtocoloCadastroFormVM vm, CancellationToken ct)
+    {
+        if (!PodeAdministrar()) return Forbid();
+        var cfg = Cfg(vm.Tipo);
+        ModelState.Remove(nameof(vm.Codigo));
+        if (!ModelState.IsValid)
+        {
+            vm.Titulo = cfg.Titulo;
+            return View("Form", vm);
+        }
+
+        using var db = await OpenAsync();
+        if (vm.Id == Guid.Empty)
+        {
+            vm.Codigo = await _codeGenerator.GenerateNextCodeAsync(TenantId, cfg.EntityName, cfg.Prefix, ct);
+            await db.ExecuteAsync($"insert into {cfg.Table}(tenant_id,codigo,nome,sigla,descricao,ordem,prazo_dias,cor,ativo,created_by) values(@TenantId,@Codigo,@Nome,@Sigla,@Descricao,@Ordem,@PrazoDias,@Cor,@Ativo,@UserId)", new { TenantId, vm.Codigo, vm.Nome, vm.Sigla, vm.Descricao, vm.Ordem, vm.PrazoDias, vm.Cor, vm.Ativo, UserId });
+            await AuditCodeGeneratedAsync(cfg, vm.Codigo, ct);
+        }
+        else
+        {
+            var existingCode = await db.ExecuteScalarAsync<string?>($"select codigo from {cfg.Table} where tenant_id=@TenantId and id=@Id and reg_status='A'", new { TenantId, vm.Id });
+            vm.Codigo = existingCode;
+            await db.ExecuteAsync($"update {cfg.Table} set nome=@Nome,sigla=@Sigla,descricao=@Descricao,ordem=@Ordem,prazo_dias=@PrazoDias,cor=@Cor,ativo=@Ativo,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@Id", new { TenantId, vm.Id, vm.Nome, vm.Sigla, vm.Descricao, vm.Ordem, vm.PrazoDias, vm.Cor, vm.Ativo, UserId });
+        }
+
+        TempData["ok"] = "Cadastro salvo.";
+        return RedirectToAction(nameof(Index), new { tipo = cfg.Tipo });
+    }
+
     [HttpPost, ValidateAntiForgeryToken] public async Task<IActionResult> Excluir(string? tipo, Guid id) { if (!PodeAdministrar()) return Forbid(); var cfg = Cfg(tipo); using var db = await OpenAsync(); await db.ExecuteAsync($"update {cfg.Table} set reg_status='E',ativo=false,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@Id", new { TenantId, Id = id, UserId }); return RedirectToAction(nameof(Index), new { tipo = cfg.Tipo }); }
     [HttpGet] public async Task<IActionResult> UsuariosSetor() { if (!PodeAdministrar()) return Forbid(); using var db = await OpenAsync(); var rows = await db.QueryAsync<ProtocoloUsuarioSetorRowVM>("select us.id Id,us.usuario_id UsuarioId,us.usuario_nome UsuarioNome,us.setor_id SetorId,s.nome SetorNome,s.sigla SetorSigla,us.ativo Ativo,us.created_at CreatedAt from ged.protocolo_usuario_setor us join ged.protocolo_setor s on s.id=us.setor_id where us.tenant_id=@TenantId and us.reg_status='A' order by s.nome,us.usuario_nome", new { TenantId }); return View(new ProtocoloUsuarioSetorIndexVM { Itens = rows.ToList() }); }
     [HttpGet] public async Task<IActionResult> NovoUsuarioSetor() { using var db = await OpenAsync(); return View("UsuarioSetorForm", new ProtocoloUsuarioSetorFormVM { Setores = await Setores(db), Ativo = true }); }
@@ -24,5 +94,20 @@ public sealed class ProtocoloCadastrosController : GedControllerBase
     [HttpPost, ValidateAntiForgeryToken] public async Task<IActionResult> ExcluirUsuarioSetor(Guid id) { using var db = await OpenAsync(); await db.ExecuteAsync("update ged.protocolo_usuario_setor set reg_status='E',ativo=false,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@Id", new { TenantId, Id = id, UserId }); return RedirectToAction(nameof(UsuariosSetor)); }
     private async Task<List<SelectListItem>> Setores(System.Data.IDbConnection db, Guid? selected = null) => (await db.QueryAsync<(Guid Id, string Nome)>("select id,nome from ged.protocolo_setor where tenant_id=@TenantId and reg_status='A' and ativo=true order by ordem,nome", new { TenantId })).Select(x => new SelectListItem { Value = x.Id.ToString(), Text = x.Nome, Selected = selected == x.Id }).ToList();
     private bool PodeAdministrar() => User.IsInRole(AppRoles.Admin) || User.IsInRole(AppRoles.Gestor) || User.IsInRole(AppRoles.Arquivista);
-    private static (string Tipo, string Titulo, string Table) Cfg(string? tipo) => (tipo ?? "setores") switch { "tipos" => ("tipos", "Tipos de Protocolo", "ged.protocolo_tipo"), "assuntos" => ("assuntos", "Assuntos", "ged.protocolo_assunto"), "prioridades" => ("prioridades", "Prioridades", "ged.protocolo_prioridade"), "tipos-documento" => ("tipos-documento", "Tipos de Documento", "ged.protocolo_tipo_documento"), "canais-entrada" => ("canais-entrada", "Canais de Entrada", "ged.protocolo_canal_entrada"), "motivos-arquivamento" => ("motivos-arquivamento", "Motivos de Arquivamento", "ged.protocolo_motivo_arquivamento"), _ => ("setores", "Setores", "ged.protocolo_setor") };
+
+    private Task AuditCodeGeneratedAsync(CadastroCfg cfg, string? generatedCode, CancellationToken ct)
+        => _audit.WriteAsync(TenantId, UserId, "CODE_GENERATED", cfg.EntityName, null, $"Código gerado automaticamente para {cfg.Titulo}: {generatedCode}", HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers.UserAgent.ToString(), new { tenantId = TenantId, entityName = cfg.EntityName, generatedCode, userId = UserId, correlationId = HttpContext.TraceIdentifier }, ct);
+
+    private static CadastroCfg Cfg(string? tipo) => (tipo ?? "setores") switch
+    {
+        "tipos" => new("tipos", "Tipos de Protocolo", "ged.protocolo_tipo", "ProtocoloTipo", "TIP"),
+        "assuntos" => new("assuntos", "Assuntos", "ged.protocolo_assunto", "ProtocoloAssunto", "ASS"),
+        "prioridades" => new("prioridades", "Prioridades", "ged.protocolo_prioridade", "ProtocoloPrioridade", "PRI"),
+        "tipos-documento" => new("tipos-documento", "Tipos de Documento", "ged.protocolo_tipo_documento", "ProtocoloTipoDocumento", "TDOC"),
+        "canais-entrada" => new("canais-entrada", "Canais de Entrada", "ged.protocolo_canal_entrada", "ProtocoloCanalEntrada", "CAN"),
+        "motivos-arquivamento" => new("motivos-arquivamento", "Motivos de Arquivamento", "ged.protocolo_motivo_arquivamento", "ProtocoloMotivoArquivamento", "ARQ"),
+        _ => new("setores", "Setores", "ged.protocolo_setor", "ProtocoloSetor", "SET")
+    };
+
+    private sealed record CadastroCfg(string Tipo, string Titulo, string Table, string EntityName, string Prefix);
 }

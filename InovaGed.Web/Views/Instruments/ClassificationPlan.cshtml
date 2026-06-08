@@ -1,4 +1,4 @@
-﻿@model IReadOnlyList<InovaGed.Application.Ged.Instruments.ClassificationPlanRow>
+@model IReadOnlyList<InovaGed.Application.Ged.Instruments.ClassificationPlanRow>
 
 @{
     ViewData["Title"] = "Plano de Classificação / TTD";
@@ -28,8 +28,9 @@
             @Html.AntiForgeryToken()
             <div class="row g-2">
                 <div class="col-md-2">
-                    <label class="form-label">Código</label>
-                    <input name="Code" class="form-control" required />
+                    <label class="form-label">Código automático</label>
+                    <input name="Code" class="form-control bg-light" readonly placeholder="Gerado ao salvar" />
+                    <div class="form-text">Gerado automaticamente pelo sistema.</div>
                 </div>
                 <div class="col-md-4">
                     <label class="form-label">Nome</label>
