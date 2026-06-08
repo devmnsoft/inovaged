@@ -153,12 +153,38 @@ Parâmetros principais: appsettings, storage, OCR, upload, preview, workers, lim
 - Status `PENDING`, `PROCESSING`, `ERROR`, `CANCELLED` ou `COMPLETED` sem texto mostram mensagens próprias: “OCR na fila”, “OCR processando”, “OCR com erro”, “OCR cancelado” ou “OCR concluído sem texto”.
 - Cards, listas e resultados hospitalares usam os campos padronizados `HasOcrText` e `IsOcrAvailable` para cores e mensagens.
 
-### Documentos fracionados
-- Um documento pode ser enviado em partes, por exemplo **Parte 1/2** e **Parte 2/2**.
-- Enquanto faltam partes, a listagem mostra o badge **Documento incompleto** e aplica destaque lateral âmbar.
-- Ao enviar uma nova parte apontando para o documento existente, o sistema anexa a parte como nova versão; quando o total de partes é atingido, a versão atual é marcada como consolidada (`consolidated_version_id`) e o documento deixa de ser exibido como incompleto.
-- Cada parte gera auditoria com ação `UPLOAD_DOCUMENT_PART`, timestamp UTC, `documentId`, `versionId`, número da parte e total de partes. O registro operacional também é mantido em `ged.document_part`, com `uploaded_at_utc`, `is_consolidated` e `consolidated_at_utc` para rastrear a consolidação.
-- OCR e preview continuam assíncronos e são enfileirados normalmente após a consolidação da versão.
+### Documentos incompletos/fracionados
+
+“Documento incompleto é um documento enviado parcialmente, que ainda depende de uma ou mais partes para representar o conteúdo completo. O sistema mantém cada parte registrada, permite complementação futura e, quando aplicável, consolidação em uma versão final.”
+
+Quando usar:
+- Use **Documento completo** quando o arquivo já representa integralmente o conteúdo clínico/administrativo.
+- Use **Documento incompleto / parte de documento** quando apenas uma parte foi digitalizada ou recebida e outra parte chegará futuramente.
+
+Como enviar a primeira parte:
+1. Acesse o GED, escolha a pasta e clique em **Adicionar documentos**.
+2. Em **Tipo de envio**, marque **Documento incompleto / parte de documento**.
+3. Informe **Parte número**, **Total previsto** se conhecido e uma observação contextual.
+4. Envie o arquivo. A listagem exibirá o badge **Documento incompleto** e a ação **Adicionar parte**.
+
+Como adicionar novas partes:
+1. No menu de ações do documento incompleto, clique em **Adicionar parte**.
+2. Informe o número da parte, total previsto se houver, arquivo e observação.
+3. O sistema valida que a parte não se repete no mesmo grupo fracionado, cria uma nova versão e registra a linha correspondente em `ged.document_partial_part`.
+
+Como ver partes:
+- Use **Ver partes** no menu do documento para abrir o painel com parte, arquivo, upload em, usuário, status, tamanho, preview, download e OCR quando disponível.
+- O preview de cada parte continua disponível individualmente; documentos consolidados mantêm o histórico das partes originais para auditoria.
+
+Como consolidar:
+- A ação **Consolidar documento** é liberada quando há mais de uma parte e, se o total previsto foi informado, a quantidade recebida atingiu esse total.
+- A consolidação atual é lógica: o status passa para `CONSOLIDATED`, `document.current_version_id` aponta para a versão consolidada selecionada e as partes originais continuam preservadas.
+- TODO técnico: homologar biblioteca de mesclagem física de PDFs para gerar um único PDF consolidado quando todas as partes forem PDF.
+
+OCR e auditoria:
+- OCR pode ser executado por parte individual. Após consolidação, a versão consolidada é enfileirada para OCR/preview.
+- O badge **OCR disponível** só aparece quando o OCR está `COMPLETED` e existe texto extraído.
+- Eventos auditados: `DOCUMENT_PART_CREATE`, `DOCUMENT_PART_UPLOAD`, `DOCUMENT_PART_VIEW`, `DOCUMENT_PART_CONSOLIDATE`, `DOCUMENT_PART_CANCEL`, `DOCUMENT_PART_COMPLETE`, `DOCUMENT_PART_PREVIEW` e `DOCUMENT_PART_DOWNLOAD`, com tenant, usuário, documento, versão, grupo parcial, parte, UTC e `CorrelationId` quando disponível.
 
 ### 18. Validação e atualização do banco de dados
 

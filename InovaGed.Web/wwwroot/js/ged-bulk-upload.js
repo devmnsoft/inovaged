@@ -89,6 +89,8 @@
 
         const uploadBtn = e.target.closest('#btnBulkUploadSubmit');
         if (uploadBtn) { e.preventDefault(); e.stopPropagation(); console.log('[BulkUpload] Enviar documentos clicado'); uploadFiles(); return; }
+        const partialMode = e.target.closest('input[name="bulkPartialMode"]');
+        if (partialMode) { togglePartialFields(); return; }
 
         const newBatchBtn = e.target.closest('#btnStartNewBulkBatch');
         if (newBatchBtn) { e.preventDefault(); e.stopPropagation(); resetBulkUploadState(); console.log('[BulkUpload] Novo lote iniciado'); showAppToast('Novo lote iniciado. Selecione os próximos arquivos.', 'info', 'Novo lote'); return; }
@@ -301,6 +303,26 @@
         }
 
         return true;
+    }
+
+    function togglePartialFields() {
+        const isPartial = document.getElementById('bulkUploadIncomplete')?.checked === true;
+        document.getElementById('bulkPartialFields')?.classList.toggle('d-none', !isPartial);
+    }
+
+    function appendPartialUploadFields(fd, fileIndex) {
+        const isPartial = document.getElementById('bulkUploadIncomplete')?.checked === true;
+        if (!isPartial) return;
+        const partNumberRaw = document.getElementById('bulkPartialPartNumber')?.value || '1';
+        const totalPartsRaw = document.getElementById('bulkPartialTotalParts')?.value || '';
+        const existingDocumentId = (document.getElementById('bulkPartialExistingDocumentId')?.value || '').trim();
+        const notes = document.getElementById('bulkPartialNotes')?.value || '';
+        const partNumber = Math.max(1, Number(partNumberRaw || 1) + Math.max(0, fileIndex || 0));
+        fd.set('isDocumentPart', 'true');
+        fd.set('partNumber', String(partNumber));
+        if (totalPartsRaw) fd.set('totalParts', totalPartsRaw);
+        if (existingDocumentId) { fd.set('existingDocumentId', existingDocumentId); fd.set('consolidateIntoDocumentId', existingDocumentId); }
+        if (notes) fd.set('notes', notes);
     }
 
     const openBulkUploadModal = () => {
@@ -855,6 +877,7 @@
             if (fileItem.duplicateStrategy || state.duplicateStrategy) fd.append('duplicateStrategy', fileItem.duplicateStrategy || state.duplicateStrategy);
             if (fileItem.existingDocumentId) fd.append('existingDocumentId', fileItem.existingDocumentId);
             if (fileItem.uploadName) fd.append('uploadName', fileItem.uploadName);
+            appendPartialUploadFields(fd, fileIndex);
 
             fileItem.status = 'uploading'; fileItem.progress = 0; fileItem.message = 'Enviando...'; fileItem.errorMessage = null; fileItem.errorLog = null;
             renderFileList();
