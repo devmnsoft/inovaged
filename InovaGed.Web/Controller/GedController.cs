@@ -288,6 +288,101 @@ public sealed class GedController : Controller
     }
 
 
+    [HttpGet("/Ged/DocumentPanel")]
+    public async Task<IActionResult> DocumentPanel(Guid id, CancellationToken ct)
+    {
+        if (!_currentUser.IsAuthenticated) return Unauthorized();
+
+        var tenantId = _currentUser.TenantId;
+        var doc = await _docs.GetAsync(tenantId, id, ct);
+        if (doc is null) return NotFound();
+
+        var versions = await _docs.ListVersionsAsync(tenantId, id, ct);
+        var current = versions.FirstOrDefault(v => v.Id == doc.CurrentVersionId) ?? versions.FirstOrDefault();
+        if (current is null) return NotFound();
+
+        var folderName = await ResolveFolderNameAsync(tenantId, doc.FolderId, ct);
+        var typeName = await ResolveDocumentTypeNameAsync(tenantId, doc.TypeId, ct);
+        var createdByName = await ResolveUserNameAsync(tenantId, current.CreatedBy ?? doc.CreatedBy, ct);
+        var canMove = await _accessPolicy.CanMoveDocumentAsync(tenantId, _currentUser.UserId, id, User, ct);
+        var canAddPart = CanAddDocumentPart();
+        var canViewParts = CanViewDocumentParts();
+        var canConsolidate = CanConsolidateDocumentParts() && (current.IsDocumentIncomplete || current.IsPartialDocument || string.Equals(current.PartialStatus, "COMPLETE", StringComparison.OrdinalIgnoreCase));
+        var isOcrAvailable = string.Equals(current.OcrStatus, "COMPLETED", StringComparison.OrdinalIgnoreCase) && current.HasOcrText;
+
+        var vm = new DocumentSidePanelVm
+        {
+            DocumentId = id,
+            VersionId = current.Id,
+            Title = doc.Title,
+            FileName = current.FileName,
+            TypeName = typeName,
+            FolderName = folderName,
+            VersionNumber = current.VersionNumber,
+            UploadedAtLocalFormatted = _dateTimeDisplay.FormatUploadDate(current.UploadedAtUtc == default ? current.CreatedAt : current.UploadedAtUtc),
+            CreatedByName = createdByName,
+            SizeBytesFormatted = FormatBytes(current.SizeBytes),
+            OcrStatus = string.IsNullOrWhiteSpace(current.OcrStatus) ? "NONE" : current.OcrStatus,
+            IsOcrAvailable = isOcrAvailable,
+            OcrBadgeText = isOcrAvailable ? "OCR disponível" : $"OCR: {(string.IsNullOrWhiteSpace(current.OcrStatus) ? "NONE" : current.OcrStatus)}",
+            OcrBadgeCss = isOcrAvailable ? "bg-success" : "bg-secondary",
+            IsPartialDocument = current.IsPartialDocument,
+            IsDocumentIncomplete = current.IsDocumentIncomplete,
+            PartialStatus = current.PartialStatus,
+            PartialStatusLabel = current.PartialStatusLabel,
+            PartialPartsCount = current.PartialPartsCount,
+            PartialTotalParts = current.TotalParts ?? current.PartialTotalParts,
+            PreviewUrl = Url.Action(nameof(Preview), "Ged", new { id = current.Id }) ?? string.Empty,
+            OcrTextUrl = Url.Action(nameof(DocumentOcrText), "Ged", new { versionId = current.Id }) ?? string.Empty,
+            DownloadUrl = Url.Action(nameof(Download), "Ged", new { id = current.Id }) ?? string.Empty,
+            DetailsUrl = Url.Action(nameof(Details), "Ged", new { id }) ?? string.Empty,
+            PartsUrl = Url.Action(nameof(DocumentPartsJson), "Ged", new { id }) ?? string.Empty,
+            HistoryUrl = Url.Action(nameof(DocumentHistory), "Ged", new { id }) ?? string.Empty,
+            CanMove = canMove,
+            CanClassify = true,
+            CanAddPart = canAddPart,
+            CanViewParts = canViewParts,
+            CanConsolidate = canConsolidate,
+            CanDelete = User.IsInRole(AppRoles.Admin)
+        };
+
+        await WriteGedAuditAsync("DOCUMENT_PANEL_VIEW", "DOCUMENT", id, "Painel lateral do documento aberto no GED", new { documentId = id, versionId = current.Id, correlationId = HttpContext.TraceIdentifier }, ct);
+        return PartialView("_DocumentSidePanel", vm);
+    }
+
+    [HttpGet("/Ged/DocumentOcrText")]
+    public async Task<IActionResult> DocumentOcrText(Guid versionId, CancellationToken ct)
+    {
+        if (!_currentUser.IsAuthenticated) return Unauthorized();
+
+        var tenantId = _currentUser.TenantId;
+        var v = await _docs.GetVersionForDownloadAsync(tenantId, versionId, ct);
+        if (v is null) return NotFound();
+
+        var status = await ResolveOcrStatusAsync(tenantId, versionId, ct);
+        var text = string.Equals(status, "COMPLETED", StringComparison.OrdinalIgnoreCase)
+            ? await TryReadOcrTextAsync(tenantId, v.DocumentId, versionId, ct)
+            : string.Empty;
+
+        await WriteGedAuditAsync("OCR_VIEW", "DOCUMENT_OCR", v.DocumentId, "OCR aberto no painel lateral GED", new { versionId, v.DocumentId, correlationId = HttpContext.TraceIdentifier }, ct);
+
+        if (string.Equals(status, "COMPLETED", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(text))
+            return Ok(new { success = true, text, status = "COMPLETED" });
+
+        return Ok(new { success = false, status, message = "OCR ainda não disponível para este documento." });
+    }
+
+    [HttpGet("/Ged/DocumentHistory")]
+    public async Task<IActionResult> DocumentHistory(Guid id, CancellationToken ct)
+    {
+        if (!_currentUser.IsAuthenticated) return Unauthorized();
+
+        var rows = await LoadDocumentHistoryAsync(_currentUser.TenantId, id, 20, ct);
+        await WriteGedAuditAsync("DOCUMENT_HISTORY_VIEW", "DOCUMENT_HISTORY", id, "Histórico do documento aberto no painel lateral GED", new { documentId = id, correlationId = HttpContext.TraceIdentifier }, ct);
+        return Ok(new { items = rows, hasMore = rows.Count >= 20 });
+    }
+
+
     [HttpGet("/Ged/DocumentDetailsJson")]
     public async Task<IActionResult> DocumentDetailsJson(Guid id, CancellationToken ct)
     {
@@ -1334,6 +1429,118 @@ LIMIT 20;";
             IsConfidential = d.IsConfidential
         };
 
+
+    private static string FormatBytes(long value)
+    {
+        if (value <= 0) return "0 B";
+        string[] units = ["B", "KB", "MB", "GB", "TB"];
+        var size = (double)value;
+        var unit = 0;
+        while (size >= 1024 && unit < units.Length - 1)
+        {
+            size /= 1024;
+            unit++;
+        }
+        return $"{size:0.#} {units[unit]}";
+    }
+
+    private async Task<string> ResolveUserNameAsync(Guid tenantId, Guid? userId, CancellationToken ct)
+    {
+        if (!userId.HasValue || userId.Value == Guid.Empty) return "Sistema";
+        try
+        {
+            const string sql = @"
+select coalesce(nullif(name,''), nullif(email,''), id::text)
+from ged.users
+where tenant_id=@tenantId and id=@userId
+limit 1";
+            await using var con = await _db.OpenAsync(ct);
+            return await con.ExecuteScalarAsync<string?>(new CommandDefinition(sql, new { tenantId, userId }, cancellationToken: ct)) ?? userId.Value.ToString();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Falha ao resolver usuário no painel GED. UserId={UserId}", userId);
+            return userId.Value.ToString();
+        }
+    }
+
+    private async Task<string> ResolveOcrStatusAsync(Guid tenantId, Guid versionId, CancellationToken ct)
+    {
+        try
+        {
+            const string sql = @"
+select coalesce(status::text, 'NONE')
+from ged.ocr_job
+where tenant_id=@tenantId and document_version_id=@versionId
+order by requested_at desc
+limit 1";
+            await using var con = await _db.OpenAsync(ct);
+            return await con.ExecuteScalarAsync<string?>(new CommandDefinition(sql, new { tenantId, versionId }, cancellationToken: ct)) ?? "NONE";
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Falha ao resolver status OCR no painel GED. VersionId={VersionId}", versionId);
+            return "NONE";
+        }
+    }
+
+    private async Task<IReadOnlyList<DocumentSidePanelHistoryVm>> LoadDocumentHistoryAsync(Guid tenantId, Guid documentId, int take, CancellationToken ct)
+    {
+        try
+        {
+            await using var con = await _db.OpenAsync(ct);
+            const string auditSql = @"
+select
+  coalesce(a.created_at, a.reg_date, now()) as ""OccurredAtUtc"",
+  coalesce(a.user_name, u.name, u.email, a.user_id::text, 'Sistema') as ""UserName"",
+  coalesce(a.action::text, '-') as ""Action"",
+  coalesce(a.summary, a.message, a.entity_name, '-') as ""Description"",
+  coalesce(a.correlation_id, a.data->>'correlationId', a.data->>'CorrelationId') as ""CorrelationId""
+from ged.audit_log a
+left join ged.users u on u.tenant_id = a.tenant_id and u.id = a.user_id
+where a.tenant_id=@tenantId
+  and (a.entity_id::text=@documentIdText or a.data->>'documentId'=@documentIdText or a.data->>'DocumentId'=@documentIdText)
+order by coalesce(a.created_at, a.reg_date, now()) desc
+limit @take";
+            var auditRows = (await con.QueryAsync<PanelHistoryRow>(new CommandDefinition(auditSql, new { tenantId, documentIdText = documentId.ToString(), take }, cancellationToken: ct))).AsList();
+            if (auditRows.Count > 0)
+            {
+                return auditRows.Select(x => new DocumentSidePanelHistoryVm
+                {
+                    OccurredAtLocalFormatted = _dateTimeDisplay.FormatUploadDate(x.OccurredAtUtc),
+                    UserName = x.UserName,
+                    Action = x.Action,
+                    Description = x.Description,
+                    CorrelationId = x.CorrelationId
+                }).ToList();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Falha ao carregar audit_log do painel GED; usando versões. DocumentId={DocumentId}", documentId);
+        }
+
+        var versions = await _docs.ListVersionsAsync(tenantId, documentId, ct);
+        return versions.Take(take).Select(v => new DocumentSidePanelHistoryVm
+        {
+            OccurredAtLocalFormatted = _dateTimeDisplay.FormatUploadDate(v.UploadedAtUtc == default ? v.CreatedAt : v.UploadedAtUtc),
+            UserName = v.CreatedBy?.ToString() ?? "Sistema",
+            Action = v.IsCurrent ? "Versão atual" : "Upload de versão",
+            Description = v.FileName,
+            CorrelationId = null
+        }).ToList();
+    }
+
+    private sealed class PanelHistoryRow
+    {
+        public DateTime OccurredAtUtc { get; set; }
+        public string UserName { get; set; } = "";
+        public string Action { get; set; } = "";
+        public string Description { get; set; } = "";
+        public string? CorrelationId { get; set; }
+    }
+
+
     private async Task<string> ResolveFolderNameAsync(Guid tenantId, Guid? folderId, CancellationToken ct)
     {
         if (!folderId.HasValue) return "Raiz";
@@ -1459,7 +1666,7 @@ LIMIT 20;";
             var v = await _docs.GetVersionForDownloadAsync(tenantId, id, ct);
             if (v == null) return NotFound();
 
-            await WriteGedAuditAsync(documentPart ? "DOCUMENT_PART_PREVIEW" : "VIEW", documentPart ? "DOCUMENT_PART" : "DOCUMENT_PREVIEW", id, documentPart ? "Preview de parte de documento" : "Preview de documento GED", new { versionId = id, v.DocumentId, v.FileName, partialGroupId, partNumber, tenantId = _currentUser.TenantId, userId = _currentUser.UserId, correlationId = HttpContext.TraceIdentifier, timestampUtc = DateTime.UtcNow }, ct);
+            await WriteGedAuditAsync(documentPart ? "DOCUMENT_PART_PREVIEW" : "FILE_PREVIEW", documentPart ? "DOCUMENT_PART" : "DOCUMENT_PREVIEW", id, documentPart ? "Preview de parte de documento" : "Preview de documento GED", new { versionId = id, v.DocumentId, v.FileName, partialGroupId, partNumber, tenantId = _currentUser.TenantId, userId = _currentUser.UserId, correlationId = HttpContext.TraceIdentifier, timestampUtc = DateTime.UtcNow }, ct);
 
             if (!await _storage.ExistsAsync(v.StoragePath, ct))
                 return NotFound("Arquivo não encontrado no storage.");

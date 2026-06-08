@@ -35,6 +35,7 @@
     <article class="ged-operational-row@rowClass"
              draggable="true"
              data-document-id="@d.Id"
+             data-open-panel="true"
              data-version-id="@versionId"
              data-ocr-available="@(d.IsOcrAvailable ? "true" : "false")"
              data-document-incomplete="@(d.IsDocumentIncomplete ? "true" : "false")"
@@ -98,14 +99,14 @@
         </div>
 
         <div class="ged-operational-quick-actions">
-            <a class="btn btn-sm btn-light border"
-               asp-controller="Ged"
-               asp-action="Details"
-               asp-route-id="@d.Id"
-               title="Abrir documento"
-               aria-label="Abrir @d.Title">
+            <button type="button"
+                    class="btn btn-sm btn-light border js-open-document-side-panel"
+                    data-document-id="@d.Id"
+                    data-version-id="@versionId"
+                    title="Visualizar documento"
+                    aria-label="Abrir detalhes e preview de @d.Title">
                 <i class="bi bi-eye"></i>
-            </a>
+            </button>
 
             @await Html.PartialAsync("_DocumentActionsDropdown", new InovaGed.Web.Models.Ged.DocumentActionsVm { DocumentId = d.Id, Title = d.Title, VersionId = versionId, CurrentFolderId = Model.CurrentFolderId, IsOcrAvailable = d.IsOcrAvailable, IsPartialDocument = d.IsPartialDocument, IsDocumentIncomplete = d.IsDocumentIncomplete, PartialStatus = d.PartialStatus, PartialPartsCount = d.PartialPartsCount, PartialTotalParts = d.TotalParts ?? d.PartialTotalParts, CanAddPart = canAddDocumentPart, CanViewParts = canViewDocumentParts, CanConsolidate = canConsolidateDocumentParts, CanCancelPartial = canCancelDocumentParts, CanMarkAsIncomplete = canAddDocumentPart })
         </div>
