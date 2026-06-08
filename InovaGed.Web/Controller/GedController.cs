@@ -1294,50 +1294,9 @@ LIMIT 20;";
         if (!CanAddDocumentPart()) return Forbid();
         if (documentId == Guid.Empty) return BadRequest(new { success = false, message = "Documento inválido." });
 
-        const string sql = """
-WITH current_version AS (
-    SELECT id
-    FROM ged.document_version
-    WHERE tenant_id=@tenantId AND document_id=@documentId AND is_current=true AND reg_status='A'
-    LIMIT 1
-), updated_version AS (
-    UPDATE ged.document_version v
-    SET is_partial_document=true,
-        is_document_incomplete=true,
-        partial_group_id=COALESCE(v.partial_group_id, @newGroupId),
-        partial_part_number=COALESCE(v.partial_part_number, v.part_number, 1),
-        partial_total_parts=COALESCE(@totalParts, v.partial_total_parts, v.total_parts),
-        partial_status='INCOMPLETE',
-        part_number=COALESCE(v.part_number, v.partial_part_number, 1),
-        total_parts=COALESCE(@totalParts, v.total_parts, v.partial_total_parts)
-    FROM current_version cv
-    WHERE v.tenant_id=@tenantId AND v.document_id=@documentId AND v.id=cv.id
-    RETURNING v.id, v.partial_group_id, COALESCE(v.partial_part_number, v.part_number, 1) AS part_number, v.partial_total_parts, v.file_name, v.file_size_bytes
-),
-insert_part AS (
-    INSERT INTO ged.document_partial_part
-        (tenant_id, document_id, version_id, partial_group_id, part_number, total_parts, file_name, size_bytes, uploaded_at_utc, uploaded_by, status, notes)
-    SELECT @tenantId, @documentId, id, partial_group_id, part_number, partial_total_parts, file_name, file_size_bytes, now(), @userId, 'UPLOADED', @notes
-    FROM updated_version uv
-    WHERE NOT EXISTS (
-        SELECT 1 FROM ged.document_partial_part pp
-        WHERE pp.tenant_id=@tenantId AND pp.version_id=uv.id AND pp.reg_status='A'
-    )
-    RETURNING version_id AS id, partial_group_id, part_number, total_parts AS partial_total_parts
-)
-SELECT id, partial_group_id, part_number, partial_total_parts FROM insert_part
-UNION ALL
-SELECT uv.id, uv.partial_group_id, uv.part_number, uv.partial_total_parts
-FROM updated_version uv
-WHERE NOT EXISTS (SELECT 1 FROM insert_part)
-LIMIT 1;
-""";
-        await using var con = await _db.OpenAsync(ct);
-        var row = await con.QuerySingleOrDefaultAsync(new CommandDefinition(sql, new { tenantId = _currentUser.TenantId, documentId, totalParts, newGroupId = Guid.NewGuid(), userId = _currentUser.UserId, notes }, cancellationToken: ct));
-        if (row is null) return NotFound(new { success = false, message = "Documento não encontrado." });
-
-        await WriteGedAuditAsync("DOCUMENT_PART_MARK_INCOMPLETE", "DOCUMENT_PART", documentId, "Documento marcado como incompleto", new { documentId, versionId = row.id, partialGroupId = row.partial_group_id, partNumber = row.part_number, userId = _currentUser.UserId, tenantId = _currentUser.TenantId, correlationId = HttpContext.TraceIdentifier, notes, timestampUtc = DateTime.UtcNow }, ct);
-        return Ok(new { success = true, message = "Documento marcado como incompleto. Agora ele poderá receber novas partes futuramente." });
+        var result = await _documentPartialService.MarkAsIncompleteAsync(_currentUser.TenantId, _currentUser.UserId, documentId, totalParts, notes, HttpContext.TraceIdentifier, ct);
+        if (!result.Success) return BadRequest(new { success = false, message = result.Error?.Message ?? "Não foi possível marcar como Documento incompleto." });
+        return Ok(new { success = true, message = "Documento marcado como incompleto. Agora ele poderá receber novas partes futuramente.", summary = result.Value });
     }
 
     private object JsonSuccess(string message, object? data = null, string? correlationId = null)
@@ -1453,7 +1412,7 @@ LIMIT 1;
     // DOWNLOAD (por versionId)
     // =========================
     [HttpGet]
-    public async Task<IActionResult> Download(Guid id, CancellationToken ct)
+    public async Task<IActionResult> Download(Guid id, bool documentPart = false, int? partNumber = null, Guid? partialGroupId = null, CancellationToken ct = default)
     {
         try
         {
@@ -1468,7 +1427,7 @@ LIMIT 1;
             var v = await _docs.GetVersionForDownloadAsync(tenantId, id, ct);
             if (v == null) return NotFound();
 
-            await WriteGedAuditAsync("DOWNLOAD", "DOCUMENT_VERSION", id, "Download de documento GED", new { versionId = id, v.DocumentId, v.FileName }, ct);
+            await WriteGedAuditAsync(documentPart ? "DOCUMENT_PART_DOWNLOAD" : "DOWNLOAD", documentPart ? "DOCUMENT_PART" : "DOCUMENT_VERSION", id, documentPart ? "Download de parte de documento" : "Download de documento GED", new { versionId = id, v.DocumentId, v.FileName, partialGroupId, partNumber, tenantId = _currentUser.TenantId, userId = _currentUser.UserId, correlationId = HttpContext.TraceIdentifier, timestampUtc = DateTime.UtcNow }, ct);
 
             if (!await _storage.ExistsAsync(v.StoragePath, ct))
                 return NotFound("Arquivo não encontrado no storage.");
@@ -1489,7 +1448,7 @@ LIMIT 1;
     // PREVIEW (inline antigo)
     // =========================
     [HttpGet]
-    public async Task<IActionResult> Preview(Guid id, CancellationToken ct)
+    public async Task<IActionResult> Preview(Guid id, bool documentPart = false, int? partNumber = null, Guid? partialGroupId = null, CancellationToken ct = default)
     {
         try
         {
@@ -1500,7 +1459,7 @@ LIMIT 1;
             var v = await _docs.GetVersionForDownloadAsync(tenantId, id, ct);
             if (v == null) return NotFound();
 
-            await WriteGedAuditAsync("VIEW", "DOCUMENT_PREVIEW", id, "Preview de documento GED", new { versionId = id, v.DocumentId, v.FileName }, ct);
+            await WriteGedAuditAsync(documentPart ? "DOCUMENT_PART_PREVIEW" : "VIEW", documentPart ? "DOCUMENT_PART" : "DOCUMENT_PREVIEW", id, documentPart ? "Preview de parte de documento" : "Preview de documento GED", new { versionId = id, v.DocumentId, v.FileName, partialGroupId, partNumber, tenantId = _currentUser.TenantId, userId = _currentUser.UserId, correlationId = HttpContext.TraceIdentifier, timestampUtc = DateTime.UtcNow }, ct);
 
             if (!await _storage.ExistsAsync(v.StoragePath, ct))
                 return NotFound("Arquivo não encontrado no storage.");

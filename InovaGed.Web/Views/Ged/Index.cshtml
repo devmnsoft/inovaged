@@ -382,7 +382,7 @@
                         <span class="ged-metric-pill"><strong id="selectedDocumentsKpi">0</strong> Selecionados</span>
                         <span class="ged-metric-pill"><strong id="documentsUnclassifiedKpi">@unclassifiedCount</strong> Não classificados</span>
                         <span class="ged-metric-pill"><strong id="documentsOcrKpi">@ocrAvailableCount</strong> Com OCR</span>
-                        <span class="ged-metric-pill"><strong id="documentsIncompleteKpi">@incompleteCount</strong> Incompletos <button type="button" class="btn btn-link btn-sm p-0 ged-help-popover" data-bs-toggle="popover" data-bs-trigger="focus" data-bs-placement="bottom" title="Documento incompleto" data-bs-content="Documento incompleto é um documento enviado em partes. Exemplo: um agendamento foi digitalizado parcialmente hoje e receberá complemento futuramente. Enquanto isso, ele fica marcado como incompleto. Quando todas as partes forem anexadas, o sistema pode consolidar em uma versão final." aria-label="Ajuda sobre documentos incompletos"><i class="bi bi-question-circle"></i></button></span>
+                        <span class="ged-metric-pill"><strong id="documentsIncompleteKpi">@incompleteCount</strong> Incompletos <button type="button" class="btn btn-link btn-sm p-0 ged-help-popover" data-bs-toggle="popover" data-bs-trigger="focus" data-bs-placement="bottom" title="Documento incompleto" data-bs-content="Documento incompleto é um documento enviado parcialmente e que poderá receber novas partes futuramente. Exemplo: um documento de agendamento foi digitalizado pela metade hoje e a outra parte será enviada depois. Quando todas as partes forem anexadas, o sistema pode consolidar em uma versão final." aria-label="Ajuda sobre documentos incompletos"><i class="bi bi-question-circle"></i></button></span>
                         <span class="ged-metric-pill"><strong>@pendingOcrCount</strong> Pendentes</span>
                     </div>
                 </div>
@@ -521,7 +521,7 @@
                 <div class="table-responsive">
                     <table class="table table-sm align-middle">
                         <thead><tr><th>Parte</th><th>Arquivo</th><th>Upload em</th><th>Usuário</th><th>Status</th><th>Tamanho</th><th>OCR</th><th class="text-end">Ações</th></tr></thead>
-                        <tbody id="documentPartsTableBody"><tr><td colspan="6" class="text-muted">Selecione um documento para visualizar as partes.</td></tr></tbody>
+                        <tbody id="documentPartsTableBody"><tr><td colspan="8" class="text-muted">Selecione um documento para visualizar as partes.</td></tr></tbody>
                     </table>
                 </div>
                 <div class="alert alert-info small mb-0">Quando todas as partes estiverem disponíveis, o sistema poderá consolidar o documento em uma versão final.</div>
@@ -542,13 +542,13 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
             </div>
             <div class="modal-body">
-                <p class="lead small mb-3">Documento incompleto é um documento enviado parcialmente, que poderá receber novas partes futuramente. Em detalhes técnicos, ele também é um documento fracionado.</p>
+                <p class="lead small mb-3">Documento incompleto é um documento enviado parcialmente e que poderá receber novas partes futuramente. Em detalhes técnicos, ele também é um documento fracionado.</p>
                 <ol class="ged-how-partial-list">
-                    <li><strong>Envio da primeira parte</strong><br><span>Quando um documento ainda não está completo, envie a primeira parte marcando a opção Documento incompleto.</span></li>
-                    <li><strong>Complemento futuro</strong><br><span>Quando a próxima parte estiver disponível, use a ação Adicionar parte no próprio documento.</span></li>
-                    <li><strong>Acompanhamento</strong><br><span>O sistema mostra as partes já enviadas, quem enviou e a data/hora do upload.</span></li>
-                    <li><strong>Consolidação</strong><br><span>Quando todas as partes forem anexadas, o documento pode ser consolidado em uma versão final.</span></li>
-                    <li><strong>Auditoria</strong><br><span>Todas as partes, uploads, visualizações e consolidações ficam registradas na auditoria.</span></li>
+                    <li><strong>Enviar primeira parte</strong><br><span>Marque Documento incompleto no upload quando o arquivo ainda não representa o documento inteiro.</span></li>
+                    <li><strong>Complementar futuramente</strong><br><span>Quando a próxima parte estiver disponível, use a ação Adicionar parte no documento.</span></li>
+                    <li><strong>Acompanhar partes</strong><br><span>O sistema mostra quais partes já foram enviadas, quem enviou e a data/hora.</span></li>
+                    <li><strong>Consolidar</strong><br><span>Quando todas as partes estiverem disponíveis, o documento pode ser consolidado em uma versão final.</span></li>
+                    <li><strong>Auditoria</strong><br><span>Todas as operações ficam registradas na auditoria.</span></li>
                 </ol>
                 <div class="alert alert-warning mb-0"><strong>Exemplo prático:</strong> Um documento de agendamento foi digitalizado pela metade hoje. Ele fica marcado como Documento incompleto até que a segunda parte seja anexada.</div>
             </div>
@@ -722,7 +722,7 @@
 
                     <div class="card border-warning-subtle mb-3">
                         <div class="card-body py-3">
-                            <div class="fw-semibold mb-2"><i class="bi bi-diagram-2 me-1"></i>Tipo de envio</div>
+                            <div class="fw-semibold mb-2"><i class="bi bi-diagram-2 me-1"></i>Tipo de documento enviado</div>
                             <div class="form-check mb-2">
                                 <input class="form-check-input js-upload-partial-mode" type="radio" name="uploadPartialMode" id="uploadDocumentComplete" value="complete" checked>
                                 <label class="form-check-label fw-semibold" for="uploadDocumentComplete">Documento completo</label>
@@ -731,12 +731,12 @@
                             <div class="form-check">
                                 <input class="form-check-input js-upload-partial-mode" type="radio" name="uploadPartialMode" id="uploadDocumentIncomplete" value="partial" @(canManagePartialDocuments ? null : "disabled")>
                                 <label class="form-check-label fw-semibold" for="uploadDocumentIncomplete">Documento incompleto</label>
-                                <button type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline" data-bs-toggle="popover" data-bs-trigger="hover focus" data-bs-placement="right" title="Documento fracionado" data-bs-content="Use esta opção quando o documento foi recebido ou digitalizado parcialmente. Exemplo: um agendamento está pela metade hoje e será complementado depois. O sistema manterá a parte atual registrada e permitirá anexar novas partes futuramente." aria-label="Ajuda sobre documento incompleto"><i class="bi bi-question-circle"></i></button>
+                                <button type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline" data-bs-toggle="popover" data-bs-trigger="hover focus" data-bs-placement="right" title="Documento fracionado" data-bs-content="Documento incompleto é um documento enviado parcialmente e que poderá receber novas partes futuramente. Exemplo: um documento de agendamento foi digitalizado pela metade hoje e a outra parte será enviada depois." aria-label="Ajuda sobre documento incompleto"><i class="bi bi-question-circle"></i></button>
                                 <div class="form-text">Use quando o documento está sendo enviado em partes e será complementado futuramente.@(!canManagePartialDocuments ? " Permissão necessária: DOCUMENT_PART_MARK_INCOMPLETE ou DOCUMENT_PART_ADD." : "")</div>
                             </div>
                             <div id="uploadPartialFields" class="alert alert-warning mt-3 mb-0 d-none">
                                 <input type="hidden" name="isDocumentPart" id="uploadIsDocumentPart" value="false" />
-                                <div class="mb-2"><i class="bi bi-exclamation-triangle me-1"></i>Este documento ficará marcado como incompleto na listagem. Depois você poderá adicionar novas partes e consolidar o documento.</div>
+                                <div class="mb-2"><i class="bi bi-exclamation-triangle me-1"></i>Documento incompleto é um documento enviado parcialmente e que poderá receber novas partes futuramente. Exemplo: um documento de agendamento foi digitalizado pela metade hoje e a outra parte será enviada depois.</div>
                                 <div class="row g-2">
                                     <div class="col-sm-4">
                                         <label class="form-label" for="uploadPartNumber">Parte número</label>
@@ -749,6 +749,11 @@
                                     <div class="col-12">
                                         <label class="form-label" for="uploadPartialNotes">Observação (opcional)</label>
                                         <textarea class="form-control" name="partialNotes" id="uploadPartialNotes" rows="2" placeholder="Primeira parte do agendamento, complemento será enviado posteriormente."></textarea>
+                                    </div>
+                                    <div class="col-12">
+                                        <label class="form-label" for="uploadExistingPartialDocumentId">Vincular a documento incompleto existente (opcional)</label>
+                                        <input type="text" class="form-control" name="existingDocumentId" id="uploadExistingPartialDocumentId" placeholder="UUID do documento incompleto, quando esta for uma nova parte" />
+                                        <div class="form-text">Use apenas quando o arquivo enviado deve complementar um documento incompleto já cadastrado.</div>
                                     </div>
                                 </div>
                             </div>
@@ -785,7 +790,7 @@
         <div id="bulkUploadMessage" class="d-none alert"></div>
         <div class="card border-warning-subtle mb-3">
             <div class="card-body py-3">
-                <div class="fw-semibold mb-2"><i class="bi bi-diagram-2 me-1"></i>Tipo de envio</div>
+                <div class="fw-semibold mb-2"><i class="bi bi-diagram-2 me-1"></i>Tipo de documento enviado</div>
                 <div class="form-check mb-2">
                     <input class="form-check-input" type="radio" name="bulkPartialMode" id="bulkUploadComplete" value="complete" checked>
                     <label class="form-check-label fw-semibold" for="bulkUploadComplete">Documento completo</label>
@@ -794,11 +799,11 @@
                 <div class="form-check">
                     <input class="form-check-input" type="radio" name="bulkPartialMode" id="bulkUploadIncomplete" value="partial" @(canManagePartialDocuments ? null : "disabled")>
                     <label class="form-check-label fw-semibold" for="bulkUploadIncomplete">Documento incompleto</label>
-                    <button type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline" data-bs-toggle="popover" data-bs-trigger="hover focus" data-bs-placement="right" title="Documento fracionado" data-bs-content="Use esta opção quando o documento foi recebido ou digitalizado parcialmente. Exemplo: um agendamento está pela metade hoje e será complementado depois. O sistema manterá a parte atual registrada e permitirá anexar novas partes futuramente." aria-label="Ajuda sobre documento incompleto"><i class="bi bi-question-circle"></i></button>
+                    <button type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline" data-bs-toggle="popover" data-bs-trigger="hover focus" data-bs-placement="right" title="Documento fracionado" data-bs-content="Documento incompleto é um documento enviado parcialmente e que poderá receber novas partes futuramente. Exemplo: um documento de agendamento foi digitalizado pela metade hoje e a outra parte será enviada depois." aria-label="Ajuda sobre documento incompleto"><i class="bi bi-question-circle"></i></button>
                     <div class="form-text">Use quando o documento está sendo enviado em partes e será complementado futuramente.@(!canManagePartialDocuments ? " Permissão necessária: DOCUMENT_PART_MARK_INCOMPLETE ou DOCUMENT_PART_ADD." : "")</div>
                 </div>
                 <div id="bulkPartialFields" class="alert alert-warning row g-2 mt-3 mb-0 d-none">
-                    <div class="col-12 small"><i class="bi bi-exclamation-triangle me-1"></i>Este documento ficará marcado como incompleto na listagem. Depois você poderá adicionar novas partes e consolidar o documento.</div>
+                    <div class="col-12 small"><i class="bi bi-exclamation-triangle me-1"></i>Documento incompleto é um documento enviado parcialmente e que poderá receber novas partes futuramente. Exemplo: um documento de agendamento foi digitalizado pela metade hoje e a outra parte será enviada depois.</div>
                     <div class="col-sm-4">
                         <label class="form-label" for="bulkPartialPartNumber">Parte número</label>
                         <input type="number" class="form-control" id="bulkPartialPartNumber" min="1" step="1" value="1">
@@ -1432,7 +1437,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const titleEl = document.getElementById('documentPartsTitle');
         const consolidateBtn = document.getElementById('btnConsolidateDocument');
         if (titleEl) titleEl.innerHTML = title ? `<strong>Documento:</strong> ${escapeHtml(title)}<br><span class="text-muted">Status e partes serão carregados abaixo.</span>` : '';
-        if (body) body.innerHTML = '<tr><td colspan="6" class="text-muted"><span class="spinner-border spinner-border-sm me-1"></span>Carregando partes...</td></tr>';
+        if (body) body.innerHTML = '<tr><td colspan="8" class="text-muted"><span class="spinner-border spinner-border-sm me-1"></span>Carregando partes...</td></tr>';
         if (consolidateBtn) { consolidateBtn.disabled = true; consolidateBtn.dataset.documentId = documentId || ''; }
         try {
             const res = await fetch(`/Ged/DocumentPartsJson?id=${encodeURIComponent(documentId)}`, { headers: { 'X-Requested-With': 'XMLHttpRequest', Accept: 'application/json' } });
@@ -1451,7 +1456,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const complete = parts.length > 1 && (!maxTotal || parts.length >= maxTotal);
             if (consolidateBtn) consolidateBtn.disabled = !complete;
         } catch {
-            if (body) body.innerHTML = '<tr><td colspan="6" class="text-danger">Não foi possível carregar as partes agora.</td></tr>';
+            if (body) body.innerHTML = '<tr><td colspan="8" class="text-danger">Não foi possível carregar as partes agora.</td></tr>';
         }
     }
 
@@ -1524,6 +1529,10 @@ document.addEventListener('DOMContentLoaded', function () {
         const file = fileInput?.files?.[0];
         const documentId = document.getElementById('partDocumentId')?.value;
         if (!documentId || !file) { showAddPartMessage('Selecione o arquivo da nova parte.', 'warning'); return; }
+        const partNumberValue = document.getElementById('partNumber')?.value;
+        const totalPartsValue = document.getElementById('partTotal')?.value;
+        if (!partNumberValue || Number(partNumberValue) <= 0) { showAddPartMessage('Informe o número da parte.', 'warning'); return; }
+        if (totalPartsValue && Number(partNumberValue) > Number(totalPartsValue)) { showAddPartMessage('O número da parte não pode ser maior que o total previsto.', 'warning'); return; }
         const fd = new FormData();
         fd.append('file', file);
         fd.append('folderId', document.getElementById('currentFolderId')?.value || document.getElementById('gedDocumentsContainer')?.dataset.uploadFolderId || '');
@@ -1536,8 +1545,8 @@ document.addEventListener('DOMContentLoaded', function () {
         fd.append('isDocumentPart', 'true');
         fd.append('existingDocumentId', documentId);
         fd.append('consolidateIntoDocumentId', documentId);
-        const partNumber = document.getElementById('partNumber')?.value;
-        const totalParts = document.getElementById('partTotal')?.value;
+        const partNumber = partNumberValue;
+        const totalParts = totalPartsValue;
         if (partNumber) fd.append('partNumber', partNumber);
         if (totalParts) fd.append('totalParts', totalParts);
         btn.disabled = true;

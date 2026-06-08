@@ -155,7 +155,7 @@ Parâmetros principais: appsettings, storage, OCR, upload, preview, workers, lim
 
 ### Documentos incompletos/fracionados
 
-“Documento incompleto é um documento enviado parcialmente, que ainda depende de uma ou mais partes para representar o conteúdo completo. O sistema mantém cada parte registrada, permite complementação futura e, quando aplicável, consolidação em uma versão final.”
+“Documento incompleto é um documento enviado parcialmente e que poderá receber novas partes futuramente.” O nome técnico complementar é **Documento fracionado**: o sistema mantém cada parte registrada, permite complementação futura e, quando aplicável, consolidação em uma versão final.
 
 Quando usar:
 - Use **Documento completo** quando o arquivo já representa integralmente o conteúdo clínico/administrativo.
@@ -163,7 +163,7 @@ Quando usar:
 
 Como enviar a primeira parte:
 1. Acesse o GED, escolha a pasta e clique em **Adicionar documentos**.
-2. Em **Tipo de envio**, marque **Documento incompleto**.
+2. Em **Tipo de documento enviado**, marque **Documento incompleto**.
 3. Informe **Parte número**, **Total previsto** se conhecido e uma observação contextual.
 4. Envie o arquivo. A listagem exibirá o badge **Documento incompleto** e a ação **Adicionar parte**.
 
@@ -185,7 +185,7 @@ OCR, preview, busca e auditoria:
 - OCR pode existir para a parte já enviada. A interface informa que o OCR exibido refere-se à versão/parte atual e não necessariamente ao documento final completo.
 - Após consolidação, o OCR e o preview poderão ser reprocessados na versão final consolidada.
 - A busca GED e a busca hospitalar exibem o badge **Documento incompleto** quando aplicável para evitar que uma parte pareça documento completo.
-- Eventos auditados: `DOCUMENT_PART_MARK_INCOMPLETE`, `DOCUMENT_PART_ADD`, `DOCUMENT_PART_VIEW`, `DOCUMENT_PART_CONSOLIDATE`, `DOCUMENT_PART_CANCEL` e `DOCUMENT_PART_MARK_COMPLETE`, com `documentId`, `versionId`, `partialGroupId`, `partNumber`, `userId`, `tenantId`, `correlationId` e timestamp UTC quando disponíveis.
+- Eventos auditados: `DOCUMENT_MARK_INCOMPLETE`, `DOCUMENT_PART_ADD`, `DOCUMENT_PART_VIEW`, `DOCUMENT_PART_PREVIEW`, `DOCUMENT_PART_DOWNLOAD`, `DOCUMENT_PART_CONSOLIDATE` e `DOCUMENT_PART_CANCEL`, com `documentId`, `versionId`, `partialGroupId`, `partNumber`, `userId`, `tenantId`, `correlationId` e timestamp UTC quando disponíveis.
 
 Quem pode usar:
 - Administradores têm todas as permissões de documento incompleto/fracionado.

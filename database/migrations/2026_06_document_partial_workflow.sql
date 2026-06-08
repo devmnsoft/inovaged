@@ -121,6 +121,7 @@ CREATE TABLE IF NOT EXISTS ged.permission (
 
 INSERT INTO ged.permission (code, name, description)
 VALUES
+    ('DOCUMENT_PART_MARK_INCOMPLETE', 'Marcar documento incompleto', 'Permite marcar documento completo como Documento incompleto / fracionado.'),
     ('DOCUMENT_PART_ADD', 'Adicionar parte de documento', 'Permite anexar partes a documentos fracionados.'),
     ('DOCUMENT_PART_VIEW', 'Ver partes de documento', 'Permite visualizar histórico e partes de documentos fracionados.'),
     ('DOCUMENT_PART_CONSOLIDATE', 'Consolidar documento fracionado', 'Permite consolidar logicamente documentos com partes completas.'),
@@ -143,6 +144,8 @@ BEGIN
 
     IF enum_exists THEN
         FOREACH action_value IN ARRAY ARRAY[
+            'DOCUMENT_MARK_INCOMPLETE',
+            'DOCUMENT_PART_MARK_INCOMPLETE',
             'DOCUMENT_PART_CREATE',
             'DOCUMENT_PART_UPLOAD',
             'DOCUMENT_PART_VIEW',
