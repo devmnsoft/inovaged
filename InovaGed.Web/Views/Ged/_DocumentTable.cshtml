@@ -41,7 +41,6 @@
                         <tr class="ged-document-table-row @rowClass"
                             draggable="true"
                             data-document-id="@d.Id"
-                            data-open-panel="true"
                             data-version-id="@versionId"
                             data-ocr-available="@(d.IsOcrAvailable ? "true" : "false")"
                             data-document-incomplete="@(d.IsDocumentIncomplete ? "true" : "false")"
@@ -97,7 +96,17 @@
                             </td>
 
                             <td class="ged-col-actions text-end">
-                                @await Html.PartialAsync("_DocumentActionsDropdown", new InovaGed.Web.Models.Ged.DocumentActionsVm { DocumentId = d.Id, Title = d.Title, VersionId = versionId, CurrentFolderId = Model.CurrentFolderId, IsOcrAvailable = d.IsOcrAvailable, IsPartialDocument = d.IsPartialDocument, IsDocumentIncomplete = d.IsDocumentIncomplete, PartialStatus = d.PartialStatus, PartialPartsCount = d.PartialPartsCount, PartialTotalParts = d.TotalParts ?? d.PartialTotalParts, CanAddPart = canAddDocumentPart, CanViewParts = canViewDocumentParts, CanConsolidate = canConsolidateDocumentParts, CanCancelPartial = canCancelDocumentParts, CanMarkAsIncomplete = canAddDocumentPart })
+                                <div class="ged-doc-actions">
+                                    <button type="button"
+                                            class="btn btn-sm btn-light border js-preview-document"
+                                            data-document-id="@d.Id"
+                                            data-version-id="@versionId"
+                                            title="Visualizar preview"
+                                            aria-label="Visualizar preview de @d.Title">
+                                        <i class="bi bi-eye"></i>
+                                    </button>
+                                    @await Html.PartialAsync("_DocumentActionsDropdown", new InovaGed.Web.Models.Ged.DocumentActionsVm { DocumentId = d.Id, Title = d.Title, VersionId = versionId, CurrentFolderId = Model.CurrentFolderId, IsOcrAvailable = d.IsOcrAvailable, IsPartialDocument = d.IsPartialDocument, IsDocumentIncomplete = d.IsDocumentIncomplete, PartialStatus = d.PartialStatus, PartialPartsCount = d.PartialPartsCount, PartialTotalParts = d.TotalParts ?? d.PartialTotalParts, CanAddPart = canAddDocumentPart, CanViewParts = canViewDocumentParts, CanConsolidate = canConsolidateDocumentParts, CanCancelPartial = canCancelDocumentParts, CanMarkAsIncomplete = canAddDocumentPart })
+                                </div>
                             </td>
                         </tr>
                     }

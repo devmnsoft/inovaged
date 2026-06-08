@@ -6,7 +6,10 @@
 
     function getPanel() { return document.getElementById('gedDocumentSidePanel'); }
     function getPage() { return document.querySelector('.ged-page'); }
-    function showToast(message, type) { window.showAppToast?.(message, type || 'info', 'GED'); }
+    function showToast(message, type) {
+        if (typeof window.showGedToast === 'function') { window.showGedToast(message, type || 'info'); return; }
+        window.showAppToast?.(message, type || 'info', 'GED');
+    }
 
     function setActiveDocumentRow(documentId) {
         document.querySelectorAll('[data-document-id].is-active, [data-document-id].ged-row-active').forEach(row => {
@@ -22,47 +25,76 @@
         });
     }
 
-    function loading(documentId) {
-        const panel = getPanel();
-        if (!panel) return;
-        panel.hidden = false;
-        panel.dataset.documentId = documentId || '';
-        getPage()?.classList.add('with-document-panel', 'ged-side-panel-open');
-        panel.innerHTML = '<div class="ged-side-empty"><span class="spinner-border text-primary" aria-hidden="true"></span><h5>Carregando documento...</h5><p>Buscando resumo, preview, OCR e histórico sob demanda.</p></div>';
+    function getSidePanelLoadingHtml() {
+        return '<div class="ged-side-empty"><span class="spinner-border text-primary" aria-hidden="true"></span><h5>Carregando documento...</h5><p>Buscando resumo, preview, OCR e histórico sob demanda.</p></div>';
     }
 
-    async function openGedDocumentPanel(documentId) {
-        if (!documentId) return;
+    function getSidePanelErrorHtml() {
+        return '<div class="alert alert-danger m-3">Não foi possível carregar o painel lateral do documento.</div>';
+    }
+
+    function showPanelShell(documentId, versionId) {
+        const page = getPage();
+        const panel = getPanel();
+        if (!page || !panel) return null;
+        page.classList.add('with-document-panel');
+        page.classList.remove('ged-side-panel-open');
+        panel.hidden = false;
+        panel.classList.remove('d-none');
+        panel.setAttribute('aria-hidden', 'false');
+        panel.dataset.documentId = documentId || '';
+        if (versionId) panel.dataset.versionId = versionId;
+        else delete panel.dataset.versionId;
+        panel.innerHTML = getSidePanelLoadingHtml();
+        return panel;
+    }
+
+    async function openGedDocumentPanel(documentId, versionId, initialTab = 'preview') {
+        if (!documentId) {
+            showToast('Documento não identificado.', 'warning');
+            return;
+        }
+        const panel = showPanelShell(documentId, versionId);
+        if (!panel) return;
         setActiveDocumentRow(documentId);
-        loading(documentId);
         try {
-            const res = await fetch(`/Ged/DocumentPanel?id=${encodeURIComponent(documentId)}`, {
+            const url = `/Ged/DocumentPanel?id=${encodeURIComponent(documentId)}&tab=${encodeURIComponent(initialTab || 'preview')}`;
+            const res = await fetch(url, {
                 headers: { 'X-Requested-With': 'XMLHttpRequest', Accept: 'text/html' }
             });
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const html = await res.text();
-            const panel = getPanel();
             panel.innerHTML = html;
             panel.hidden = false;
+            panel.classList.remove('d-none');
+            panel.setAttribute('aria-hidden', 'false');
             panel.dataset.documentId = documentId;
-            getPage()?.classList.add('with-document-panel', 'ged-side-panel-open');
+            if (versionId) panel.dataset.versionId = versionId;
+            activateTab(initialTab || 'preview');
         } catch (err) {
-            console.error('[GED DocumentPanel]', err);
-            const panel = getPanel();
-            if (panel) panel.innerHTML = '<div class="alert alert-danger m-3">Não foi possível carregar o painel lateral do documento.</div>';
+            console.warn('[GED] Erro ao abrir painel lateral', err);
+            panel.innerHTML = getSidePanelErrorHtml();
             showToast('Não foi possível carregar o painel lateral do documento.', 'error');
         }
     }
 
     function closeGedDocumentPanel() {
         const panel = getPanel();
-        if (!panel) return;
-        panel.hidden = true;
-        panel.classList.remove('is-expanded');
-        panel.dataset.documentId = '';
-        panel.innerHTML = '<div class="ged-side-empty"><i class="bi bi-file-earmark-text"></i><h5>Selecione um documento</h5><p>Clique em um documento da lista para visualizar detalhes, preview, OCR e histórico.</p></div>';
         getPage()?.classList.remove('with-document-panel', 'ged-side-panel-open');
-        setActiveDocumentRow(null);
+        if (panel) {
+            panel.hidden = true;
+            panel.classList.add('d-none');
+            panel.classList.remove('is-expanded');
+            panel.setAttribute('aria-hidden', 'true');
+            panel.innerHTML = '';
+            delete panel.dataset.documentId;
+            delete panel.dataset.versionId;
+        }
+        document.querySelectorAll('.ged-doc-row.is-active, .ged-smart-doc-row.is-active, .ged-operational-row.is-active, .ged-document-table-row.is-active, .ged-row-active')
+            .forEach(x => {
+                x.classList.remove('is-active', 'ged-row-active');
+                x.removeAttribute('aria-current');
+            });
     }
 
     function activateTab(tabName) {
@@ -148,7 +180,7 @@
     }
 
     document.addEventListener('click', function (e) {
-        if (e.target.closest('.js-close-side-panel')) { e.preventDefault(); closeGedDocumentPanel(); return; }
+        if (e.target.closest('.js-close-document-panel, .js-close-side-panel')) { e.preventDefault(); closeGedDocumentPanel(); return; }
         if (e.target.closest('.js-expand-side-panel')) { e.preventDefault(); getPanel()?.classList.toggle('is-expanded'); return; }
         const switcher = e.target.closest('[data-ged-side-switch]');
         if (switcher) { e.preventDefault(); activateTab(switcher.dataset.gedSideSwitch); return; }
@@ -157,31 +189,26 @@
         const copy = e.target.closest('.js-copy-ocr');
         if (copy) { e.preventDefault(); navigator.clipboard?.writeText(getPanel()?.querySelector('.ged-ocr-text')?.textContent || ''); showToast('Texto OCR copiado.', 'success'); return; }
 
-        if (e.target.closest('.js-doc-select')) return;
-        if (e.target.closest('.dropdown')) return;
-        if (e.target.closest('a, button')) {
-            const button = e.target.closest('.js-open-document-panel, .js-open-document-side-panel');
-            if (!button) return;
-            e.preventDefault();
-            e.stopPropagation();
-            openGedDocumentPanel(button.dataset.documentId || button.closest('[data-document-id]')?.dataset.documentId);
+        if (e.target.closest('.js-doc-select, .js-document-check')) return;
+
+        const button = e.target.closest('.js-open-document-panel, .js-open-document-side-panel, .js-preview-document, .js-view-document-details, .js-view-ocr-document');
+        if (!button) {
+            if (e.target.closest('.dropdown, [data-bs-toggle="dropdown"]')) return;
             return;
         }
 
-        const row = e.target.closest('[data-document-id][data-open-panel="true"], #gedDocumentsContainer [data-document-id]');
-        if (!row || row.closest('#gedDocumentSidePanel')) return;
-        const documentId = row.dataset.documentId;
-        if (!documentId) return;
         e.preventDefault();
-        openGedDocumentPanel(documentId);
-    });
+        e.stopPropagation();
 
-    document.addEventListener('keydown', function (e) {
-        if (e.key !== 'Enter' && e.key !== ' ') return;
-        const row = e.target.closest('[data-document-id][data-open-panel="true"], #gedDocumentsContainer [data-document-id]');
-        if (!row || e.target.closest('a, button, input, .dropdown')) return;
-        e.preventDefault();
-        openGedDocumentPanel(row.dataset.documentId);
+        const documentId = button.dataset.documentId || button.closest('[data-document-id]')?.dataset.documentId;
+        const versionId = button.dataset.versionId || button.closest('[data-version-id]')?.dataset.versionId;
+        const initialTab = button.classList.contains('js-view-ocr-document')
+            ? 'ocr'
+            : button.classList.contains('js-view-document-details')
+                ? 'metadata'
+                : 'preview';
+
+        openGedDocumentPanel(documentId, versionId, initialTab);
     });
 
     window.openGedDocumentPanel = openGedDocumentPanel;
@@ -189,5 +216,8 @@
     window.loadGedDocumentOcr = loadGedDocumentOcr;
     window.loadGedDocumentHistory = loadGedDocumentHistory;
     window.setActiveDocumentRow = setActiveDocumentRow;
+    window.openGedDocumentSidePanel = openGedDocumentPanel;
+    window.closeGedDocumentSidePanel = closeGedDocumentPanel;
+    window.activateGedSidePanelTab = activateTab;
     window.GedDocumentSidePanel = { open: openGedDocumentPanel, close: closeGedDocumentPanel };
 })();

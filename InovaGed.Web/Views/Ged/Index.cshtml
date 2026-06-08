@@ -40,7 +40,7 @@
     var breadcrumbText = currentFolderNode?.Path ?? (!string.IsNullOrWhiteSpace(Model.CurrentFolderName) ? Model.CurrentFolderName : "Raiz");
 }
 
-<div class="ged-page with-document-panel">
+<div class="ged-page">
     <div id="pageAlertHost" class="mb-2">
         @if (Model.CurrentFolderIsVirtual)
         {
@@ -434,13 +434,7 @@
         @await Html.PartialAsync("_DocumentsList", Model)
     </section>
 
-    <aside id="gedDocumentSidePanel" class="ged-document-side-panel" aria-live="polite" aria-label="Detalhes do documento">
-        <div class="ged-side-empty">
-            <i class="bi bi-file-earmark-text"></i>
-            <h5>Selecione um documento</h5>
-            <p>Clique em um documento da lista para visualizar detalhes, preview, OCR e histórico.</p>
-        </div>
-    </aside>
+    <aside id="gedDocumentSidePanel" class="ged-document-side-panel d-none" aria-hidden="true" aria-live="polite" aria-label="Detalhes do documento"></aside>
 </div>
 @Html.AntiForgeryToken()
 <div class="modal fade" id="moveDocumentsModal" tabindex="-1" aria-hidden="true">
@@ -877,8 +871,8 @@
 
 <link rel="stylesheet" href="~/css/ged-explorer.css" asp-append-version="true" />
 <style>
-    .ged-page { display:grid; grid-template-columns:minmax(280px, 340px) minmax(0,1fr); gap:1rem; align-items:start; }
-    .ged-page.with-document-panel { grid-template-columns:minmax(280px, 340px) minmax(0,1fr) 420px; }
+    .ged-page { display:grid; grid-template-columns:minmax(280px, 400px) minmax(0,1fr); gap:24px; align-items:start; }
+    .ged-page.with-document-panel { grid-template-columns:minmax(280px, 400px) minmax(0,1fr) 430px; }
     #pageAlertHost { grid-column:1 / -1; }
     .ged-folder-panel, .ged-main-panel { background:#fff; border-radius:18px; border:1px solid rgba(15,23,42,.08); box-shadow:0 14px 35px rgba(15,23,42,.06); overflow:hidden; }
     .ged-folder-panel { position:sticky; top:.75rem; }
@@ -1060,7 +1054,8 @@
         .ged-view-actions { width:100%; }
         .ged-view-actions .btn { flex:1 1 0; }
     }
-    @@media (max-width: 1199.98px) { .ged-page { grid-template-columns:1fr; } .ged-folder-panel { position:static; } .ged-metrics-strip { gap:6px; } }
+    @@media (max-width: 1199.98px) { .ged-page { grid-template-columns:360px minmax(0,1fr); } .ged-page.with-document-panel { grid-template-columns:360px minmax(0,1fr); } .ged-document-side-panel { grid-column:1 / -1; } .ged-folder-panel { position:static; } .ged-metrics-strip { gap:6px; } }
+    @@media (max-width: 768px) { .ged-page, .ged-page.with-document-panel { grid-template-columns:1fr; } }
     .bulk-large-file-hint { color:#0369a1; }
     .ged-how-partial-list li { margin-bottom:.9rem; }
     .ged-how-partial-list span { color:#475569; }
