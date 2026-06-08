@@ -1,0 +1,229 @@
+@model InovaGed.Application.SystemHealth.HomologationReportDto
+@using System.Text.Json
+@{
+    ViewData["Title"] = "Checklist de Homologação do InovaGED";
+    var grouped = Model.Checks.GroupBy(c => c.Area).OrderBy(g => g.Key).ToList();
+    var critical = Model.Checks.Where(c => c.Status == "Failed" && c.Severity == "Critical").ToList();
+    var warnings = Model.Checks.Where(c => c.Status == "Warning" || (c.Status == "Failed" && c.Severity != "Critical")).ToList();
+    string StatusBadge(string status) => status switch
+    {
+        "OK" => "bg-success",
+        "Warning" => "bg-warning text-dark",
+        "Failed" => "bg-danger",
+        "Manual" => "bg-info text-dark",
+        _ => "bg-secondary"
+    };
+    string SeverityBadge(string severity) => severity switch
+    {
+        "Critical" => "bg-danger",
+        "Medium" => "bg-warning text-dark",
+        "Low" => "bg-secondary",
+        "Info" => "bg-light text-dark border",
+        _ => "bg-secondary"
+    };
+    var statusBorder = Model.CriticalIssues > 0 ? "danger" : Model.WarningIssues > 0 ? "warning" : "success";
+}
+
+<div class="container-fluid py-3 homologation-page">
+    <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-start gap-3 mb-4">
+        <div>
+            <h1 class="h3 mb-1">Checklist de Homologação do InovaGED</h1>
+            <p class="text-muted mb-0">Visão consolidada técnica e funcional para reunião, demonstração e uso operacional.</p>
+            <div class="small text-muted mt-1">Gerado em @Model.GeneratedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss") • Ambiente @Model.Environment • Build @Model.Version</div>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            <a class="btn btn-primary" href="/SystemHealth/Homologation"><i class="bi bi-arrow-repeat"></i> Executar nova validação</a>
+            <a class="btn btn-outline-dark" target="_blank" href="/SystemHealth/Homologation/Report"><i class="bi bi-file-earmark-text"></i> Gerar relatório de homologação</a>
+            <button type="button" class="btn btn-success" id="copySummaryBtn"><i class="bi bi-whatsapp"></i> Copiar resumo</button>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <div class="card h-100 border-@statusBorder">
+                <div class="card-body">
+                    <div class="text-muted small">Status geral</div>
+                    <div class="h4 mb-0">@Model.OverallStatus</div>
+                    <div class="small mt-2">@(Model.IsReadyForPresentation ? "Sem bloqueio crítico para apresentação." : "Há pendências críticas bloqueantes.")</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3"><div class="card h-100"><div class="card-body"><div class="text-muted small">Checks OK</div><div class="display-6">@Model.PassedChecks</div></div></div></div>
+        <div class="col-md-3"><div class="card h-100"><div class="card-body"><div class="text-muted small">Pendências críticas</div><div class="display-6 text-danger">@Model.CriticalIssues</div></div></div></div>
+        <div class="col-md-3"><div class="card h-100"><div class="card-body"><div class="text-muted small">Pendências recomendadas</div><div class="display-6 text-warning">@Model.WarningIssues</div></div></div></div>
+    </div>
+
+    <div class="row g-3 mb-4">
+        @foreach (var area in grouped)
+        {
+            var areaCritical = area.Count(c => c.Status == "Failed" && c.Severity == "Critical");
+            var areaWarnings = area.Count(c => c.Status == "Warning" || (c.Status == "Failed" && c.Severity != "Critical"));
+            var areaOk = area.Count(c => c.Status == "OK");
+            <div class="col-sm-6 col-xl-3">
+                <div class="card h-100 shadow-sm">
+                    <div class="card-body">
+                        <div class="fw-semibold">@area.Key</div>
+                        <div class="small text-muted">@areaOk OK • @areaWarnings avisos • @areaCritical críticos</div>
+                        <div class="progress mt-2" style="height: 8px;">
+                            <div class="progress-bar bg-success" style="width:@(Math.Min(100, areaOk * 100 / Math.Max(1, area.Count())))%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+
+    @if (critical.Any())
+    {
+        <section class="card border-danger mb-4">
+            <div class="card-header bg-danger text-white">Pendências críticas</div>
+            <div class="list-group list-group-flush">
+                @foreach (var item in critical)
+                {
+                    <div class="list-group-item">
+                        <div class="fw-semibold">@item.Area — @item.Name</div>
+                        <div>@item.Evidence</div>
+                        <div class="small text-muted">Ação recomendada: @item.RecommendedAction</div>
+                    </div>
+                }
+            </div>
+        </section>
+    }
+
+    <section class="card border-warning mb-4">
+        <div class="card-header bg-warning-subtle">Pendências recomendadas</div>
+        @if (!warnings.Any())
+        {
+            <div class="card-body text-muted">Nenhuma pendência recomendada encontrada.</div>
+        }
+        else
+        {
+            <div class="list-group list-group-flush">
+                @foreach (var item in warnings)
+                {
+                    <div class="list-group-item">
+                        <div class="fw-semibold">@item.Area — @item.Name</div>
+                        <div>@item.Evidence</div>
+                        <div class="small text-muted">Ação recomendada: @item.RecommendedAction</div>
+                    </div>
+                }
+            </div>
+        }
+    </section>
+
+    <section class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span>Checks automáticos e manuais</span>
+            <span class="small text-muted">Status: OK, Warning, Failed ou Manual</span>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Área</th>
+                        <th>Check</th>
+                        <th>Status</th>
+                        <th>Severidade</th>
+                        <th>Evidência</th>
+                        <th>Ação recomendada</th>
+                        <th>Link</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var check in Model.Checks)
+                    {
+                        <tr>
+                            <td class="fw-semibold">@check.Area</td>
+                            <td>
+                                <div>@check.Name</div>
+                                <div class="small text-muted">@check.Description</div>
+                                <span class="badge @(check.IsAutomatic ? "bg-primary" : "bg-secondary")">@(check.IsAutomatic ? "Automático" : "Manual")</span>
+                            </td>
+                            <td><span class="badge @StatusBadge(check.Status)">@check.Status</span></td>
+                            <td><span class="badge @SeverityBadge(check.Severity)">@check.Severity</span></td>
+                            <td>@check.Evidence</td>
+                            <td>@check.RecommendedAction</td>
+                            <td>
+                                @if (!string.IsNullOrWhiteSpace(check.Link))
+                                {
+                                    <a href="@check.Link" target="_blank">Abrir</a>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="card mb-5">
+        <div class="card-header">Checklist manual de UX GED</div>
+        <div class="card-body">
+            <p class="text-muted">Use esta área durante a homologação visual. As marcações ficam no navegador para facilitar a reunião e não alteram regras de negócio.</p>
+            <div class="table-responsive">
+                <table class="table table-bordered align-middle" id="manualUxTable">
+                    <thead class="table-light"><tr><th>Item</th><th style="width:260px">Resultado</th><th>Observação</th></tr></thead>
+                    <tbody>
+                        @foreach (var item in Model.Checks.Where(c => c.Area == "UX GED" || (!c.IsAutomatic && (c.Area == "Preview" || c.Area == "HospitalDocuments" || c.Area == "Perfis e Menu" || c.Area == "Documentos incompletos"))))
+                        {
+                            var key = $"{item.Area}:{item.Name}".Replace(" ", "_");
+                            <tr data-key="@key">
+                                <td><strong>@item.Area</strong><br />@item.Name</td>
+                                <td>
+                                    <div class="btn-group" role="group" aria-label="Resultado manual">
+                                        <input type="radio" class="btn-check manual-radio" name="@key" id="@key-ok" value="Aprovado" autocomplete="off">
+                                        <label class="btn btn-outline-success btn-sm" for="@key-ok">Aprovado</label>
+                                        <input type="radio" class="btn-check manual-radio" name="@key" id="@key-fail" value="Reprovado" autocomplete="off">
+                                        <label class="btn btn-outline-danger btn-sm" for="@key-fail">Reprovado</label>
+                                    </div>
+                                </td>
+                                <td><input type="text" class="form-control form-control-sm manual-note" placeholder="Observação da homologação visual" /></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+</div>
+
+@section Scripts {
+<script>
+(function(){
+    const summary = @Html.Raw(JsonSerializer.Serialize(Model.SummaryText));
+    const storageKey = 'inovaged-homologation-manual-ux';
+    const data = JSON.parse(localStorage.getItem(storageKey) || '{}');
+
+    document.querySelectorAll('#manualUxTable tbody tr').forEach(row => {
+        const key = row.dataset.key;
+        const saved = data[key] || {};
+        if (saved.result) {
+            const radio = row.querySelector(`input[value="${saved.result}"]`);
+            if (radio) radio.checked = true;
+        }
+        const note = row.querySelector('.manual-note');
+        if (note) note.value = saved.note || '';
+    });
+
+    function persist(){
+        const next = {};
+        document.querySelectorAll('#manualUxTable tbody tr').forEach(row => {
+            const checked = row.querySelector('.manual-radio:checked');
+            const note = row.querySelector('.manual-note');
+            next[row.dataset.key] = { result: checked ? checked.value : '', note: note ? note.value : '' };
+        });
+        localStorage.setItem(storageKey, JSON.stringify(next));
+    }
+    document.querySelectorAll('.manual-radio,.manual-note').forEach(el => el.addEventListener('change', persist));
+    document.querySelectorAll('.manual-note').forEach(el => el.addEventListener('input', persist));
+
+    document.getElementById('copySummaryBtn')?.addEventListener('click', async () => {
+        await navigator.clipboard.writeText(summary);
+        const btn = document.getElementById('copySummaryBtn');
+        const old = btn.innerHTML;
+        btn.innerHTML = '<i class="bi bi-check2"></i> Resumo copiado';
+        setTimeout(() => btn.innerHTML = old, 1800);
+    });
+})();
+</script>
+}

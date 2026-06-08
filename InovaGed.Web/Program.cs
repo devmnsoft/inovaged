@@ -119,6 +119,7 @@ builder.Services.AddScoped<IDateTimeDisplayService, DateTimeDisplayService>();
 builder.Services.Configure<SchemaRepairOptions>(builder.Configuration.GetSection("SchemaRepair"));
 builder.Services.AddScoped<ISchemaFixSqlProvider, SchemaFixSqlProvider>();
 builder.Services.AddScoped<ISchemaHealthService, SchemaHealthService>();
+builder.Services.AddScoped<IHomologationHealthService, HomologationHealthService>();
 builder.Services.AddScoped<ISchemaRepairService, SchemaRepairService>();
 builder.Services.AddSingleton<ISchemaCompatibilityState, SchemaCompatibilityState>();
 builder.Services.Configure<DocumentUploadOptions>(builder.Configuration.GetSection("DocumentUpload"));
