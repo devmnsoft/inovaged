@@ -8,10 +8,15 @@ public sealed class DocumentSidePanelVm
     public string FileName { get; set; } = "";
     public string TypeName { get; set; } = "Sem classificação";
     public string FolderName { get; set; } = "";
+    public string ClassificationName { get; set; } = "Sem classificação";
     public int VersionNumber { get; set; }
+    public string CreatedAtLocalFormatted { get; set; } = "";
     public string UploadedAtLocalFormatted { get; set; } = "";
     public string CreatedByName { get; set; } = "";
     public string SizeBytesFormatted { get; set; } = "";
+    public string Extension { get; set; } = "";
+    public string DocumentStatus { get; set; } = "";
+    public string Visibility { get; set; } = "";
     public string OcrStatus { get; set; } = "NONE";
     public bool IsOcrAvailable { get; set; }
     public string OcrBadgeText { get; set; } = "OCR indisponível";
@@ -33,6 +38,9 @@ public sealed class DocumentSidePanelVm
     public bool CanAddPart { get; set; }
     public bool CanViewParts { get; set; }
     public bool CanConsolidate { get; set; }
+    public bool CanRunOcr { get; set; }
+    public bool CanReprocessOcr { get; set; }
+    public bool CanCancelPartial { get; set; }
     public bool CanDelete { get; set; }
     public IReadOnlyList<DocumentSidePanelPartVm> Parts { get; set; } = Array.Empty<DocumentSidePanelPartVm>();
     public IReadOnlyList<DocumentSidePanelHistoryVm> History { get; set; } = Array.Empty<DocumentSidePanelHistoryVm>();

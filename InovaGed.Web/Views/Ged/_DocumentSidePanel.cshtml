@@ -1,8 +1,24 @@
 @model InovaGed.Web.Models.Ged.DocumentSidePanelVm
+@using System
+@{
+    var versionLabel = Model.VersionNumber > 0 ? Model.VersionNumber.ToString() : "1";
+    var partialLabel = string.IsNullOrWhiteSpace(Model.PartialStatusLabel) ? "Documento sem fracionamento" : Model.PartialStatusLabel;
+    var hasParts = Model.Parts.Count > 0;
+    var ocrUnavailableText = Model.OcrStatus?.ToUpperInvariant() switch
+    {
+        "NONE" or "" => "Sem OCR",
+        "PENDING" or "QUEUED" => "OCR pendente",
+        "PROCESSING" or "RUNNING" => "OCR em processamento",
+        "ERROR" or "FAILED" => "OCR com erro",
+        "COMPLETED" => "OCR concluído sem texto",
+        _ => $"OCR: {Model.OcrStatus}"
+    };
+}
 
 <div class="ged-side-header" data-document-id="@Model.DocumentId" data-version-id="@Model.VersionId">
     <div class="d-flex justify-content-between gap-3 align-items-start">
         <div class="min-w-0">
+            <div class="ged-side-kicker">Painel inteligente do documento</div>
             <div class="ged-side-title">@Model.Title</div>
             <div class="ged-side-file">@Model.FileName</div>
             <div class="ged-document-badges mt-2">
@@ -16,19 +32,19 @@
                 {
                     <span class="badge bg-info text-dark">Documento fracionado</span>
                 }
+                @if (!string.IsNullOrWhiteSpace(Model.Visibility) && Model.Visibility.Contains("CONFIDENT", StringComparison.OrdinalIgnoreCase))
+                {
+                    <span class="badge bg-danger"><i class="bi bi-shield-lock me-1"></i>Confidencial</span>
+                }
             </div>
-            <div class="small text-muted mt-2"><i class="bi bi-cloud-arrow-up me-1"></i>Upload em: @Model.UploadedAtLocalFormatted</div>
         </div>
         <button type="button" class="btn btn-sm btn-light border js-close-document-panel js-close-side-panel" title="Fechar painel" aria-label="Fechar painel"><i class="bi bi-x-lg"></i></button>
-    </div>
-    <div class="ged-side-actions-bar mt-3 mb-0">
-        <a class="btn btn-sm btn-outline-primary" href="@Model.DetailsUrl" target="_blank" rel="noopener"><i class="bi bi-box-arrow-up-right me-1"></i>Abrir em nova aba</a>
-        <a class="btn btn-sm btn-outline-secondary" href="@Model.DownloadUrl"><i class="bi bi-download me-1"></i>Baixar</a>
     </div>
 </div>
 
 <div class="ged-side-tabs" role="tablist" aria-label="Detalhes do documento">
-    <button class="btn btn-sm ged-side-tab active" type="button" data-ged-side-tab="preview">Preview</button>
+    <button class="btn btn-sm ged-side-tab active" type="button" data-ged-side-tab="summary">Resumo</button>
+    <button class="btn btn-sm ged-side-tab" type="button" data-ged-side-tab="preview">Preview</button>
     <button class="btn btn-sm ged-side-tab" type="button" data-ged-side-tab="ocr" data-version-id="@Model.VersionId" data-ocr-url="@Model.OcrTextUrl">OCR</button>
     <button class="btn btn-sm ged-side-tab" type="button" data-ged-side-tab="metadata">Metadados</button>
     <button class="btn btn-sm ged-side-tab" type="button" data-ged-side-tab="parts" data-document-id="@Model.DocumentId" data-parts-url="@Model.PartsUrl">Partes</button>
@@ -37,33 +53,54 @@
 </div>
 
 <div class="ged-side-body">
-    @if (Model.IsDocumentIncomplete)
-    {
-        <div class="ged-side-incomplete-alert">
-            <strong><i class="bi bi-exclamation-triangle me-1"></i>Documento incompleto</strong>
-            <p>Este documento foi enviado parcialmente e aguarda novas partes. Use Adicionar parte quando o complemento deste documento estiver disponível.</p>
-            <div class="d-flex flex-wrap gap-2">
-                @if (Model.CanAddPart)
-                {
-                    <button type="button" class="btn btn-sm btn-warning js-add-document-part" data-document-id="@Model.DocumentId" data-document-title="@Model.Title">Adicionar parte</button>
-                }
-                @if (Model.CanViewParts)
-                {
-                    <button type="button" class="btn btn-sm btn-outline-warning" data-ged-side-switch="parts">Ver partes</button>
-                }
+    <section data-ged-tab-panel="summary">
+        @if (Model.IsDocumentIncomplete)
+        {
+            <div class="ged-side-incomplete-alert">
+                <strong><i class="bi bi-exclamation-triangle me-1"></i>Este documento está incompleto e aguarda novas partes.</strong>
+                <div class="d-flex flex-wrap gap-2 mt-2">
+                    @if (Model.CanAddPart)
+                    {
+                        <button type="button" class="btn btn-sm btn-warning js-add-document-part" data-document-id="@Model.DocumentId" data-document-title="@Model.Title">Adicionar parte</button>
+                    }
+                    @if (Model.CanViewParts)
+                    {
+                        <button type="button" class="btn btn-sm btn-outline-warning" data-ged-side-switch="parts">Ver partes</button>
+                    }
+                    @if (Model.CanConsolidate)
+                    {
+                        <button type="button" class="btn btn-sm btn-outline-secondary js-consolidate-document" data-document-id="@Model.DocumentId">Consolidar</button>
+                    }
+                </div>
             </div>
-        </div>
-    }
+        }
 
-    <section data-ged-tab-panel="preview">
+        <dl class="ged-metadata-list ged-summary-list">
+            <dt>Título</dt><dd>@Model.Title</dd>
+            <dt>Nome do arquivo</dt><dd>@Model.FileName</dd>
+            <dt>Pasta atual</dt><dd>@Model.FolderName</dd>
+            <dt>Versão atual</dt><dd>@versionLabel</dd>
+            <dt>Upload em</dt><dd>@Model.UploadedAtLocalFormatted</dd>
+            <dt>Classificação</dt><dd>@Model.ClassificationName</dd>
+            <dt>Status OCR</dt><dd><span class="badge @Model.OcrBadgeCss">@(Model.IsOcrAvailable ? "OCR disponível" : ocrUnavailableText)</span></dd>
+            <dt>Status incompleto</dt><dd>@(Model.IsDocumentIncomplete ? "Documento incompleto" : partialLabel)</dd>
+            <dt>Criado por</dt><dd>@Model.CreatedByName</dd>
+            <dt>Tamanho</dt><dd>@Model.SizeBytesFormatted</dd>
+            <dt>Extensão</dt><dd>@Model.Extension</dd>
+        </dl>
+    </section>
+
+    <section class="d-none" data-ged-tab-panel="preview">
         <div class="ged-side-actions-bar">
-            <a class="btn btn-sm btn-outline-primary" href="@Model.PreviewUrl" target="_blank" rel="noopener"><i class="bi bi-box-arrow-up-right me-1"></i>Abrir preview</a>
-            <button type="button" class="btn btn-sm btn-outline-secondary js-expand-side-panel"><i class="bi bi-arrows-fullscreen me-1"></i>Expandir</button>
+            <a class="btn btn-sm btn-outline-primary" href="@Model.PreviewUrl" target="_blank" rel="noopener"><i class="bi bi-box-arrow-up-right me-1"></i>Abrir em nova aba</a>
+            <a class="btn btn-sm btn-outline-secondary" href="@Model.DownloadUrl"><i class="bi bi-download me-1"></i>Baixar</a>
+            <button type="button" class="btn btn-sm btn-outline-secondary js-expand-side-panel" data-expanded-label="Restaurar"><i class="bi bi-arrows-fullscreen me-1"></i><span>Expandir</span></button>
         </div>
         @if (!string.IsNullOrWhiteSpace(Model.PreviewUrl))
         {
-            <div class="ged-side-preview-loading small text-muted"><span class="spinner-border spinner-border-sm me-1"></span>Carregando preview...</div>
-            <iframe class="ged-side-preview-frame" title="Preview de @Model.Title" src="@Model.PreviewUrl" loading="lazy" data-audit-on-load="FILE_PREVIEW"></iframe>
+            <div class="ged-document-preview">
+                <iframe class="ged-side-preview-frame" title="Preview de @Model.Title" src="@Model.PreviewUrl" loading="lazy" data-audit-on-load="FILE_PREVIEW"></iframe>
+            </div>
         }
         else
         {
@@ -72,49 +109,137 @@
     </section>
 
     <section class="d-none" data-ged-tab-panel="ocr" data-version-id="@Model.VersionId" data-ocr-loaded="false">
-        <div class="ged-ocr-host" data-ged-ocr-host>
-            <div class="text-muted small"><span class="spinner-border spinner-border-sm me-1"></span>Clique na aba OCR para carregar o texto sob demanda.</div>
+        <div class="ged-ocr-host" data-ged-ocr-host data-download-url="@Model.OcrTextUrl">
+            <div class="text-muted small"><span class="spinner-border spinner-border-sm me-1"></span>O texto OCR será carregado sob demanda.</div>
         </div>
     </section>
 
     <section class="d-none" data-ged-tab-panel="metadata">
         <dl class="ged-metadata-list">
-            <dt>Título</dt><dd>@Model.Title</dd>
-            <dt>Arquivo</dt><dd>@Model.FileName</dd>
-            <dt>Tipo</dt><dd>@Model.TypeName</dd>
+            <dt>ID do documento</dt><dd>@Model.DocumentId</dd>
+            <dt>ID da versão</dt><dd>@Model.VersionId</dd>
             <dt>Pasta</dt><dd>@Model.FolderName</dd>
-            <dt>Versão</dt><dd>@(Model.VersionNumber > 0 ? Model.VersionNumber : 1)</dd>
+            <dt>Classificação</dt><dd>@Model.ClassificationName</dd>
+            <dt>Tipo documental</dt><dd>@Model.TypeName</dd>
             <dt>Upload em</dt><dd>@Model.UploadedAtLocalFormatted</dd>
+            <dt>Criado em</dt><dd>@Model.CreatedAtLocalFormatted</dd>
             <dt>Criado por</dt><dd>@Model.CreatedByName</dd>
             <dt>Tamanho</dt><dd>@Model.SizeBytesFormatted</dd>
-            <dt>Status OCR</dt><dd>@Model.OcrStatus</dd>
-            <dt>Status parcial</dt><dd>@(string.IsNullOrWhiteSpace(Model.PartialStatusLabel) ? "Documento sem fracionamento" : Model.PartialStatusLabel)</dd>
+            <dt>Extensão</dt><dd>@Model.Extension</dd>
+            <dt>Status</dt><dd>@Model.DocumentStatus</dd>
+            <dt>OCR status</dt><dd>@Model.OcrStatus</dd>
+            <dt>Partial status</dt><dd>@Model.PartialStatus</dd>
+            <dt>Confidencialidade</dt><dd>@Model.Visibility</dd>
         </dl>
     </section>
 
     <section class="d-none" data-ged-tab-panel="parts" data-parts-loaded="false">
         <div data-ged-parts-host>
-            <div class="text-muted small"><span class="spinner-border spinner-border-sm me-1"></span>As partes serão carregadas sob demanda.</div>
+            @if (!Model.IsPartialDocument && !Model.IsDocumentIncomplete && !hasParts)
+            {
+                <div class="alert alert-info mb-0">Este documento não possui partes fracionadas.</div>
+            }
+            else if (hasParts)
+            {
+                <div class="ged-part-summary mb-3">
+                    <span class="badge bg-light text-dark border">Status: @partialLabel</span>
+                    <span class="badge bg-light text-dark border">Partes recebidas: @Model.PartialPartsCount</span>
+                    <span class="badge bg-light text-dark border">Total previsto: @(Model.PartialTotalParts?.ToString() ?? "Não informado")</span>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle ged-parts-table">
+                        <thead><tr><th>Parte</th><th>Arquivo</th><th>Upload em</th><th>Usuário</th><th>Status</th><th class="text-end">Ações</th></tr></thead>
+                        <tbody>
+                        @foreach (var part in Model.Parts)
+                        {
+                            <tr>
+                                <td>@part.PartNumber@(part.TotalParts.HasValue ? $"/{part.TotalParts}" : "")</td>
+                                <td>@part.FileName</td>
+                                <td>@part.UploadedAtLocalFormatted</td>
+                                <td>@part.UploadedByName</td>
+                                <td><span class="badge bg-light text-dark border">@part.Status</span></td>
+                                <td class="text-end"><a class="btn btn-sm btn-light border" href="@part.PreviewUrl" target="_blank" rel="noopener">Preview</a> <a class="btn btn-sm btn-light border" href="@part.DownloadUrl">Download</a></td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            else
+            {
+                <div class="alert alert-warning mb-0">Documento incompleto — aguardando novas partes.</div>
+            }
+        </div>
+        <div class="ged-side-actions-bar mt-3">
+            @if (Model.CanAddPart)
+            {
+                <button type="button" class="btn btn-sm btn-warning js-add-document-part" data-document-id="@Model.DocumentId" data-document-title="@Model.Title"><i class="bi bi-file-earmark-plus me-1"></i>Adicionar parte</button>
+            }
+            @if (Model.CanConsolidate)
+            {
+                <button type="button" class="btn btn-sm btn-outline-secondary js-consolidate-document" data-document-id="@Model.DocumentId"><i class="bi bi-layers me-1"></i>Consolidar</button>
+            }
+            @if (Model.CanCancelPartial)
+            {
+                <button type="button" class="btn btn-sm btn-outline-danger js-cancel-document-partial" data-document-id="@Model.DocumentId"><i class="bi bi-x-octagon me-1"></i>Cancelar fracionamento</button>
+            }
         </div>
     </section>
 
     <section class="d-none" data-ged-tab-panel="history" data-history-loaded="false">
         <div data-ged-history-host>
-            <div class="text-muted small"><span class="spinner-border spinner-border-sm me-1"></span>O histórico será carregado sob demanda.</div>
+            @if (Model.History.Count > 0)
+            {
+                <div class="ged-history-list">
+                    @foreach (var item in Model.History)
+                    {
+                        <div class="ged-history-item">
+                            <div class="fw-semibold">@item.Action</div>
+                            <div>@item.Description</div>
+                            <div class="small text-muted">@item.OccurredAtLocalFormatted · @(string.IsNullOrWhiteSpace(item.UserName) ? "Sistema" : item.UserName)</div>
+                            @if (!string.IsNullOrWhiteSpace(item.CorrelationId))
+                            {
+                                <div class="small text-muted">CorrelationId: @item.CorrelationId</div>
+                            }
+                        </div>
+                    }
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-secondary w-100 mt-2 js-load-more-history" data-document-id="@Model.DocumentId">Carregar mais</button>
+            }
+            else
+            {
+                <div class="text-muted small">O histórico será carregado sob demanda.</div>
+            }
         </div>
     </section>
 
     <section class="d-none" data-ged-tab-panel="actions">
         <div class="d-grid gap-2">
-            <a class="btn btn-outline-primary" href="@Model.PreviewUrl" target="_blank" rel="noopener"><i class="bi bi-file-earmark-richtext me-1"></i>Visualizar/Preview</a>
+            <a class="btn btn-outline-primary" href="@Model.PreviewUrl" target="_blank" rel="noopener"><i class="bi bi-file-earmark-richtext me-1"></i>Abrir</a>
             <a class="btn btn-outline-secondary" href="@Model.DownloadUrl"><i class="bi bi-download me-1"></i>Baixar</a>
             @if (Model.CanMove)
             {
-                <button type="button" class="btn btn-outline-primary js-move-one js-move-document" data-document-id="@Model.DocumentId" data-document-title="@Model.Title"><i class="bi bi-folder-symlink me-1"></i>Mover para outra pasta</button>
+                <button type="button" class="btn btn-outline-primary js-move-one js-move-document" data-document-id="@Model.DocumentId" data-document-title="@Model.Title"><i class="bi bi-folder-symlink me-1"></i>Mover</button>
             }
             @if (Model.CanClassify)
             {
-                <a class="btn btn-outline-primary js-classify-document" href="@Model.DetailsUrl?openClassify=true" data-document-id="@Model.DocumentId"><i class="bi bi-tags me-1"></i>Classificar documento</a>
+                <a class="btn btn-outline-primary js-classify-document" href="@Model.DetailsUrl?openClassify=true" data-document-id="@Model.DocumentId"><i class="bi bi-tags me-1"></i>Classificar</a>
+            }
+            @if (Model.CanRunOcr)
+            {
+                <form method="post" action="@Url.Action("RunOcr", "Ged")" class="m-0 js-feedback-form">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="versionId" value="@Model.VersionId" />
+                    <button type="submit" class="btn btn-outline-primary w-100"><i class="bi bi-cpu me-1"></i>Executar OCR</button>
+                </form>
+            }
+            @if (Model.CanReprocessOcr)
+            {
+                <form method="post" action="@Url.Action("ReprocessOcr", "Ged")" class="m-0 js-feedback-form">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="versionId" value="@Model.VersionId" />
+                    <button type="submit" class="btn btn-outline-secondary w-100"><i class="bi bi-arrow-clockwise me-1"></i>Reprocessar OCR</button>
+                </form>
             }
             @if (Model.CanAddPart)
             {
@@ -126,12 +251,13 @@
             }
             @if (Model.CanConsolidate)
             {
-                <button type="button" class="btn btn-outline-secondary js-consolidate-document" data-document-id="@Model.DocumentId"><i class="bi bi-layers me-1"></i>Consolidar documento</button>
+                <button type="button" class="btn btn-outline-secondary js-consolidate-document" data-document-id="@Model.DocumentId"><i class="bi bi-layers me-1"></i>Consolidar</button>
             }
             @if (Model.CanDelete)
             {
                 <button type="button" class="btn btn-outline-danger js-delete-document" data-document-id="@Model.DocumentId" data-document-title="@Model.Title"><i class="bi bi-trash me-1"></i>Excluir</button>
             }
+            <button type="button" class="btn btn-outline-dark js-copy-document-reference" data-reference="GED:@Model.DocumentId:@Model.VersionId"><i class="bi bi-link-45deg me-1"></i>Copiar referência</button>
         </div>
     </section>
 </div>

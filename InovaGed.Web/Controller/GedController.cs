@@ -308,7 +308,16 @@ public sealed class GedController : Controller
         var canAddPart = CanAddDocumentPart();
         var canViewParts = CanViewDocumentParts();
         var canConsolidate = CanConsolidateDocumentParts() && (current.IsDocumentIncomplete || current.IsPartialDocument || string.Equals(current.PartialStatus, "COMPLETE", StringComparison.OrdinalIgnoreCase));
-        var isOcrAvailable = string.Equals(current.OcrStatus, "COMPLETED", StringComparison.OrdinalIgnoreCase) && current.HasOcrText;
+        var canCancelPartial = CanCancelDocumentParts() && (current.IsDocumentIncomplete || current.IsPartialDocument || !string.Equals(current.PartialStatus, "NOT_PARTIAL", StringComparison.OrdinalIgnoreCase));
+        var normalizedOcrStatus = string.IsNullOrWhiteSpace(current.OcrStatus) ? "NONE" : current.OcrStatus.Trim().ToUpperInvariant();
+        var ocrText = string.Equals(normalizedOcrStatus, "COMPLETED", StringComparison.OrdinalIgnoreCase)
+            ? await TryReadOcrTextAsync(tenantId, id, current.Id, ct)
+            : string.Empty;
+        var isOcrAvailable = string.Equals(normalizedOcrStatus, "COMPLETED", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(ocrText);
+        var parts = (current.IsDocumentIncomplete || current.IsPartialDocument || !string.Equals(current.PartialStatus, "NOT_PARTIAL", StringComparison.OrdinalIgnoreCase)) && canViewParts
+            ? await _documentPartialService.GetPartsAsync(tenantId, id, ct)
+            : Array.Empty<DocumentPartialPartDto>();
+        var history = await LoadDocumentHistoryAsync(tenantId, id, 20, ct);
 
         var vm = new DocumentSidePanelVm
         {
@@ -318,14 +327,19 @@ public sealed class GedController : Controller
             FileName = current.FileName,
             TypeName = typeName,
             FolderName = folderName,
+            ClassificationName = typeName,
             VersionNumber = current.VersionNumber,
             UploadedAtLocalFormatted = _dateTimeDisplay.FormatUploadDate(current.UploadedAtUtc == default ? current.CreatedAt : current.UploadedAtUtc),
+            CreatedAtLocalFormatted = _dateTimeDisplay.FormatUploadDate(doc.CreatedAt),
             CreatedByName = createdByName,
             SizeBytesFormatted = FormatBytes(current.SizeBytes),
-            OcrStatus = string.IsNullOrWhiteSpace(current.OcrStatus) ? "NONE" : current.OcrStatus,
+            Extension = ResolveFileExtension(current.FileName, current.FileExtension),
+            DocumentStatus = doc.Status.ToString(),
+            Visibility = string.IsNullOrWhiteSpace(doc.Visibility) ? (doc.IsConfidential ? "CONFIDENTIAL" : "Padrão") : doc.Visibility,
+            OcrStatus = normalizedOcrStatus,
             IsOcrAvailable = isOcrAvailable,
-            OcrBadgeText = isOcrAvailable ? "OCR disponível" : $"OCR: {(string.IsNullOrWhiteSpace(current.OcrStatus) ? "NONE" : current.OcrStatus)}",
-            OcrBadgeCss = isOcrAvailable ? "bg-success" : "bg-secondary",
+            OcrBadgeText = GetOcrBadgeText(normalizedOcrStatus, isOcrAvailable),
+            OcrBadgeCss = isOcrAvailable ? "bg-success" : normalizedOcrStatus switch { "ERROR" or "FAILED" => "bg-danger", "PROCESSING" or "RUNNING" => "bg-info text-dark", "PENDING" or "QUEUED" => "bg-warning text-dark", _ => "bg-secondary" },
             IsPartialDocument = current.IsPartialDocument,
             IsDocumentIncomplete = current.IsDocumentIncomplete,
             PartialStatus = current.PartialStatus,
@@ -336,14 +350,30 @@ public sealed class GedController : Controller
             OcrTextUrl = Url.Action(nameof(DocumentOcrText), "Ged", new { versionId = current.Id }) ?? string.Empty,
             DownloadUrl = Url.Action(nameof(Download), "Ged", new { id = current.Id }) ?? string.Empty,
             DetailsUrl = Url.Action(nameof(Details), "Ged", new { id }) ?? string.Empty,
-            PartsUrl = Url.Action(nameof(DocumentPartsJson), "Ged", new { id }) ?? string.Empty,
+            PartsUrl = $"/Ged/DocumentParts?id={id}",
             HistoryUrl = Url.Action(nameof(DocumentHistory), "Ged", new { id }) ?? string.Empty,
             CanMove = canMove,
             CanClassify = true,
             CanAddPart = canAddPart,
             CanViewParts = canViewParts,
             CanConsolidate = canConsolidate,
-            CanDelete = User.IsInRole(AppRoles.Admin)
+            CanRunOcr = true,
+            CanReprocessOcr = string.Equals(normalizedOcrStatus, "ERROR", StringComparison.OrdinalIgnoreCase) || string.Equals(normalizedOcrStatus, "FAILED", StringComparison.OrdinalIgnoreCase) || string.Equals(normalizedOcrStatus, "COMPLETED", StringComparison.OrdinalIgnoreCase),
+            CanCancelPartial = canCancelPartial,
+            CanDelete = User.IsInRole(AppRoles.Admin),
+            Parts = parts.Select(p => new DocumentSidePanelPartVm
+            {
+                VersionId = p.VersionId,
+                PartNumber = p.PartNumber,
+                TotalParts = p.TotalParts,
+                FileName = p.FileName ?? string.Empty,
+                UploadedAtLocalFormatted = _dateTimeDisplay.FormatUploadDate(p.UploadedAtUtc),
+                UploadedByName = string.IsNullOrWhiteSpace(p.UploadedByName) ? (p.UploadedBy?.ToString() ?? "Sistema") : p.UploadedByName,
+                Status = p.Status,
+                PreviewUrl = Url.Action(nameof(Preview), "Ged", new { id = p.VersionId, documentPart = true, partNumber = p.PartNumber, partialGroupId = p.PartialGroupId }) ?? string.Empty,
+                DownloadUrl = Url.Action(nameof(Download), "Ged", new { id = p.VersionId, documentPart = true, partNumber = p.PartNumber, partialGroupId = p.PartialGroupId }) ?? string.Empty
+            }).ToList(),
+            History = history
         };
 
         await WriteGedAuditAsync("DOCUMENT_PANEL_VIEW", "DOCUMENT", id, "Painel lateral do documento aberto no GED", new { documentId = id, versionId = current.Id, correlationId = HttpContext.TraceIdentifier }, ct);
@@ -451,6 +481,7 @@ public sealed class GedController : Controller
     }
 
 
+    [HttpGet("/Ged/DocumentParts")]
     [HttpGet("/Ged/DocumentPartsJson")]
     public async Task<IActionResult> DocumentPartsJson(Guid id, CancellationToken ct)
     {
@@ -1444,6 +1475,27 @@ LIMIT 20;";
         return $"{size:0.#} {units[unit]}";
     }
 
+    private static string ResolveFileExtension(string? fileName, string? fileExtension)
+    {
+        var extension = !string.IsNullOrWhiteSpace(fileExtension) ? fileExtension : Path.GetExtension(fileName ?? string.Empty);
+        extension = (extension ?? string.Empty).Trim().TrimStart('.');
+        return string.IsNullOrWhiteSpace(extension) ? "-" : extension.ToUpperInvariant();
+    }
+
+    private static string GetOcrBadgeText(string? status, bool isAvailable)
+    {
+        if (isAvailable) return "OCR disponível";
+        return (status ?? "NONE").Trim().ToUpperInvariant() switch
+        {
+            "NONE" or "" => "Sem OCR",
+            "PENDING" or "QUEUED" => "OCR pendente",
+            "PROCESSING" or "RUNNING" => "OCR em processamento",
+            "ERROR" or "FAILED" => "OCR com erro",
+            "COMPLETED" => "OCR concluído sem texto",
+            var value => $"OCR: {value}"
+        };
+    }
+
     private async Task<string> ResolveUserNameAsync(Guid tenantId, Guid? userId, CancellationToken ct)
     {
         if (!userId.HasValue || userId.Value == Guid.Empty) return "Sistema";
@@ -1634,7 +1686,7 @@ limit @take";
             var v = await _docs.GetVersionForDownloadAsync(tenantId, id, ct);
             if (v == null) return NotFound();
 
-            await WriteGedAuditAsync(documentPart ? "DOCUMENT_PART_DOWNLOAD" : "DOWNLOAD", documentPart ? "DOCUMENT_PART" : "DOCUMENT_VERSION", id, documentPart ? "Download de parte de documento" : "Download de documento GED", new { versionId = id, v.DocumentId, v.FileName, partialGroupId, partNumber, tenantId = _currentUser.TenantId, userId = _currentUser.UserId, correlationId = HttpContext.TraceIdentifier, timestampUtc = DateTime.UtcNow }, ct);
+            await WriteGedAuditAsync(documentPart ? "DOCUMENT_PART_DOWNLOAD" : "DOCUMENT_DOWNLOAD", documentPart ? "DOCUMENT_PART" : "DOCUMENT_VERSION", id, documentPart ? "Download de parte de documento" : "Download de documento GED", new { versionId = id, v.DocumentId, v.FileName, partialGroupId, partNumber, tenantId = _currentUser.TenantId, userId = _currentUser.UserId, correlationId = HttpContext.TraceIdentifier, timestampUtc = DateTime.UtcNow }, ct);
 
             if (!await _storage.ExistsAsync(v.StoragePath, ct))
                 return NotFound("Arquivo não encontrado no storage.");

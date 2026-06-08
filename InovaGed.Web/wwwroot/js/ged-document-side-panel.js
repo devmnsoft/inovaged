@@ -3,6 +3,19 @@
     window.__gedDocumentSidePanelBound = true;
 
     const esc = (s) => String(s ?? '').replace(/[&<>'"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c]));
+    const escapeRegExp = (s) => String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    function getSearchTerm() {
+        try { return new URLSearchParams(window.location.search).get('q') || ''; } catch { return ''; }
+    }
+
+    function highlightOcrText(text) {
+        const escaped = esc(text);
+        const term = getSearchTerm().trim();
+        if (!term) return escaped;
+        const rx = new RegExp(`(${escapeRegExp(esc(term))})`, 'gi');
+        return escaped.replace(rx, '<mark>$1</mark>');
+    }
 
     function getPanel() { return document.getElementById('gedDocumentSidePanel'); }
     function getPage() { return document.querySelector('.ged-page'); }
@@ -49,7 +62,13 @@
         return panel;
     }
 
-    async function openGedDocumentPanel(documentId, versionId, initialTab = 'preview') {
+    async function openGedDocumentPanel(documentId, versionIdOrInitialTab, initialTabMaybe) {
+        let versionId = versionIdOrInitialTab;
+        let initialTab = initialTabMaybe || 'summary';
+        if (versionIdOrInitialTab && !initialTabMaybe && ['summary', 'preview', 'ocr', 'metadata', 'parts', 'history', 'actions'].includes(String(versionIdOrInitialTab).toLowerCase())) {
+            initialTab = String(versionIdOrInitialTab).toLowerCase();
+            versionId = null;
+        }
         if (!documentId) {
             showToast('Documento não identificado.', 'warning');
             return;
@@ -70,7 +89,7 @@
             panel.setAttribute('aria-hidden', 'false');
             panel.dataset.documentId = documentId;
             if (versionId) panel.dataset.versionId = versionId;
-            activateTab(initialTab || 'preview');
+            activateTab(initialTab || 'summary');
         } catch (err) {
             console.warn('[GED] Erro ao abrir painel lateral', err);
             panel.innerHTML = getSidePanelErrorHtml();
@@ -98,6 +117,7 @@
     }
 
     function activateTab(tabName) {
+        tabName = (tabName || 'summary').toLowerCase();
         const panel = getPanel();
         if (!panel || !tabName) return;
         panel.querySelectorAll('[data-ged-side-tab]').forEach(tab => tab.classList.toggle('active', tab.dataset.gedSideTab === tabName));
@@ -125,8 +145,8 @@
             const res = await fetch(`/Ged/DocumentOcrText?versionId=${encodeURIComponent(versionId)}`, { headers: { 'X-Requested-With': 'XMLHttpRequest', Accept: 'application/json' } });
             const data = await res.json();
             if (data.success && data.text) {
-                host.innerHTML = '<div class="ged-side-actions-bar"><button type="button" class="btn btn-sm btn-outline-primary js-copy-ocr"><i class="bi bi-clipboard me-1"></i>Copiar OCR</button></div><pre class="ged-ocr-text"></pre>';
-                host.querySelector('.ged-ocr-text').textContent = data.text;
+                host.innerHTML = '<div class="ged-side-actions-bar"><button type="button" class="btn btn-sm btn-outline-primary js-copy-ocr"><i class="bi bi-clipboard me-1"></i>Copiar OCR</button><button type="button" class="btn btn-sm btn-outline-secondary js-download-ocr"><i class="bi bi-download me-1"></i>Baixar texto</button></div><div class="ged-ocr-text"></div>';
+                host.querySelector('.ged-ocr-text').innerHTML = highlightOcrText(data.text);
             } else {
                 host.innerHTML = `<div class="alert alert-info mb-0"><i class="bi bi-info-circle me-1"></i>${esc(data.message || 'OCR ainda não disponível para este documento.')} <span class="badge bg-secondary ms-1">${esc(data.status || 'NONE')}</span></div>`;
             }
@@ -181,17 +201,42 @@
 
     document.addEventListener('click', function (e) {
         if (e.target.closest('.js-close-document-panel, .js-close-side-panel')) { e.preventDefault(); closeGedDocumentPanel(); return; }
-        if (e.target.closest('.js-expand-side-panel')) { e.preventDefault(); getPanel()?.classList.toggle('is-expanded'); return; }
+        if (e.target.closest('.js-expand-side-panel')) {
+            e.preventDefault();
+            const panel = getPanel();
+            const btn = e.target.closest('.js-expand-side-panel');
+            const expanded = panel?.classList.toggle('is-expanded');
+            const label = btn?.querySelector('span');
+            if (label) label.textContent = expanded ? 'Restaurar' : 'Expandir';
+            return;
+        }
         const switcher = e.target.closest('[data-ged-side-switch]');
         if (switcher) { e.preventDefault(); activateTab(switcher.dataset.gedSideSwitch); return; }
         const tab = e.target.closest('[data-ged-side-tab]');
         if (tab) { e.preventDefault(); activateTab(tab.dataset.gedSideTab); return; }
         const copy = e.target.closest('.js-copy-ocr');
         if (copy) { e.preventDefault(); navigator.clipboard?.writeText(getPanel()?.querySelector('.ged-ocr-text')?.textContent || ''); showToast('Texto OCR copiado.', 'success'); return; }
+        const downloadOcr = e.target.closest('.js-download-ocr');
+        if (downloadOcr) {
+            e.preventDefault();
+            const text = getPanel()?.querySelector('.ged-ocr-text')?.textContent || '';
+            const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = downloadOcr.dataset.fileName || 'ocr-documento.txt';
+            document.body.appendChild(a);
+            a.click();
+            URL.revokeObjectURL(a.href);
+            a.remove();
+            return;
+        }
+        const copyRef = e.target.closest('.js-copy-document-reference');
+        if (copyRef) { e.preventDefault(); navigator.clipboard?.writeText(copyRef.dataset.reference || ''); showToast('Referência copiada.', 'success'); return; }
+        if (e.target.closest('.js-load-more-history')) { e.preventDefault(); showToast('Os últimos 20 eventos já estão carregados. Paginação completa será habilitada conforme volume de auditoria.', 'info'); return; }
 
         if (e.target.closest('.js-doc-select, .js-document-check')) return;
 
-        const button = e.target.closest('.js-open-document-panel, .js-open-document-side-panel, .js-preview-document, .js-view-document-details, .js-view-ocr-document');
+        const button = e.target.closest('.js-open-document-panel, .js-open-document-side-panel, .js-preview-document, .js-view-document-details, .js-view-ocr-document, .js-view-document-parts, .js-view-document-history');
         if (!button) {
             if (e.target.closest('.dropdown, [data-bs-toggle="dropdown"]')) return;
             return;
@@ -205,8 +250,12 @@
         const initialTab = button.classList.contains('js-view-ocr-document')
             ? 'ocr'
             : button.classList.contains('js-view-document-details')
-                ? 'metadata'
-                : 'preview';
+                ? 'summary'
+                : button.classList.contains('js-view-document-parts')
+                    ? 'parts'
+                    : button.classList.contains('js-view-document-history')
+                        ? 'history'
+                        : 'preview';
 
         openGedDocumentPanel(documentId, versionId, initialTab);
     });
@@ -215,6 +264,11 @@
     window.closeGedDocumentPanel = closeGedDocumentPanel;
     window.loadGedDocumentOcr = loadGedDocumentOcr;
     window.loadGedDocumentHistory = loadGedDocumentHistory;
+    window.loadGedDocumentParts = loadGedDocumentParts;
+    window.activateGedPanelTab = activateTab;
+    window.loadGedPanelOcr = loadGedDocumentOcr;
+    window.loadGedPanelHistory = loadGedDocumentHistory;
+    window.loadGedPanelParts = loadGedDocumentParts;
     window.setActiveDocumentRow = setActiveDocumentRow;
     window.openGedDocumentSidePanel = openGedDocumentPanel;
     window.closeGedDocumentSidePanel = closeGedDocumentPanel;
