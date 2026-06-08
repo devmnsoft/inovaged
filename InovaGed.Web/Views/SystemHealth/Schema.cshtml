@@ -16,6 +16,7 @@
     var backupRecommendation = ViewData["SchemaRepairCreateBackupRecommendation"] as bool? == true;
     var environmentName = ViewData["SchemaRepairEnvironment"] as string ?? "n/a";
     var fixes = Model.Checks.Where(c => !c.Success && !string.IsNullOrWhiteSpace(c.FixSql)).ToList();
+    var autoFixes = fixes.Where(c => c.CanAutoFix).ToList();
     var fullScriptText = string.Join("\n\n", fixes.Select(c => $"-- CheckId: {c.Id}\n-- Objeto: {c.ObjectName}\n{c.FixSql}"));
     var jsonOptions = new JsonSerializerOptions { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 }
@@ -32,7 +33,7 @@
             <button type="button" class="btn btn-outline-primary" onclick="copyFullFixScript()" @(fixes.Count == 0 ? "disabled" : null)>Copiar script</button>
             <a class="btn btn-primary" href="/SystemHealth/Schema/FixScript">Baixar script</a>
             <a class="btn btn-outline-primary" href="/SystemHealth/Schema/Report">Baixar relatório</a>
-            <button type="button" class="btn btn-danger" onclick="openApplyAllModal()" @(!canApply || fixes.Count == 0 ? "disabled" : null)>Aplicar correções seguras</button>
+            <button type="button" class="btn btn-danger" onclick="openApplyAllModal()" @(!canApply || autoFixes.Count == 0 ? "disabled" : null)>Aplicar correções seguras</button>
         </div>
     </div>
 
@@ -51,6 +52,7 @@
             <div><strong>Críticas:</strong> <span class="badge bg-danger">@criticalCount</span></div>
             <div><strong>Recomendadas:</strong> <span class="badge bg-warning text-dark">@warningCount</span></div>
             <div><strong>Correções mapeadas:</strong> <span class="badge bg-info text-dark">@fixes.Count</span></div>
+            <div><strong>AutoFix disponíveis:</strong> <span class="badge bg-success">@autoFixes.Count</span></div>
         </div>
         @if (Model.LastMigration is not null)
         {
@@ -133,6 +135,10 @@
                                     @if (check.CanAutoFix)
                                     {
                                         <div><span class="badge bg-success">AutoFix</span> <span class="badge bg-light text-dark">Risco @check.RiskLevel</span></div>
+                                    }
+                                    else if (check.Id == "GED_INDEX_DOCUMENT_SEARCH_TENANT_VERSION")
+                                    {
+                                        <div class="small text-warning mt-1">Correção automática indisponível: não há coluna document_version_id, version_id ou document_id em ged.document_search.</div>
                                     }
                                 }
                                 else
@@ -263,7 +269,7 @@
         if (!canApply) return;
         applyAll = true;
         pendingApply = null;
-        document.getElementById('applyTarget').innerText = 'Todas as correções seguras pendentes serão aplicadas em transação.';
+        document.getElementById('applyTarget').innerText = 'Correções críticas serão aplicadas em transação; índices recomendados serão aplicados individualmente.';
         resetConfirmation();
         bootstrap.Modal.getOrCreateInstance(document.getElementById('applyModal')).show();
     }
@@ -288,13 +294,36 @@
             body: JSON.stringify(payload)
         });
         const result = await response.json();
+        const summary = formatRepairResult(result);
         if (!result.success) {
-            alert(`${result.message}\nCorrelationId: ${result.correlationId || '-'}`);
+            alert(summary);
             return;
         }
 
-        alert(`${result.message}\nCorrelationId: ${result.correlationId}`);
+        alert(summary);
         window.location.reload();
+    }
+
+    function formatRepairResult(result) {
+        const lines = [result.message || 'Processamento concluído.'];
+        lines.push(`CorrelationId: ${result.correlationId || '-'}`);
+
+        const items = result.items || result.Items || [];
+        if (items.length > 0) {
+            lines.push('');
+            lines.push('Itens:');
+            for (const item of items) {
+                const checkId = item.checkId || item.CheckId || '-';
+                const success = item.success ?? item.Success;
+                const skipped = item.skipped ?? item.Skipped;
+                const message = item.message || item.Message || '';
+                const error = item.error || item.Error || '';
+                const status = success ? 'OK' : skipped ? 'IGNORADO' : 'FALHA';
+                lines.push(`- ${status} ${checkId}: ${message}${error ? ` (${error})` : ''}`);
+            }
+        }
+
+        return lines.join('\n');
     }
 
     function normalizeFix(fix) {
