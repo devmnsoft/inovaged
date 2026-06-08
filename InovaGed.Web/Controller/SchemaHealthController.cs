@@ -16,6 +16,7 @@ public sealed class SchemaHealthController : Controller
 {
     private readonly ISchemaHealthService _schemaHealth;
     private readonly ISchemaRepairService _schemaRepair;
+    private readonly ISchemaFixSqlProvider _fixSqlProvider;
     private readonly ICurrentUser _currentUser;
     private readonly IWebHostEnvironment _environment;
     private readonly IOptions<SchemaRepairOptions> _repairOptions;
@@ -23,12 +24,14 @@ public sealed class SchemaHealthController : Controller
     public SchemaHealthController(
         ISchemaHealthService schemaHealth,
         ISchemaRepairService schemaRepair,
+        ISchemaFixSqlProvider fixSqlProvider,
         ICurrentUser currentUser,
         IWebHostEnvironment environment,
         IOptions<SchemaRepairOptions> repairOptions)
     {
         _schemaHealth = schemaHealth;
         _schemaRepair = schemaRepair;
+        _fixSqlProvider = fixSqlProvider;
         _currentUser = currentUser;
         _environment = environment;
         _repairOptions = repairOptions;
@@ -72,6 +75,21 @@ public sealed class SchemaHealthController : Controller
             return BadRequest(new SchemaRepairResultDto { Success = false, Message = "checkId é obrigatório.", CorrelationId = HttpContext.TraceIdentifier });
 
         var result = await _schemaRepair.ApplyFixAsync(request.CheckId, request.Confirmation ?? string.Empty, _currentUser.UserId, ct);
+        return Json(result);
+    }
+
+    [HttpPost("Preflight")]
+    public async Task<IActionResult> Preflight([FromBody] ApplySchemaFixRequest request, CancellationToken ct)
+    {
+        if (request is null || string.IsNullOrWhiteSpace(request.CheckId))
+            return BadRequest(new SchemaFixPreflightResult { CanRun = false, Message = "checkId é obrigatório." });
+
+        var report = await _schemaHealth.CheckAsync(ct);
+        var fix = (await _fixSqlProvider.GetFixesAsync(report, ct)).FirstOrDefault(x => string.Equals(x.CheckId, request.CheckId, StringComparison.OrdinalIgnoreCase));
+        if (fix is null)
+            return Json(new SchemaFixPreflightResult { AlreadyApplied = true, ShouldSkip = true, Message = "Correção não encontrada para falha atual ou já aplicada." });
+
+        var result = await _schemaRepair.ValidateFixAsync(fix, ct);
         return Json(result);
     }
 

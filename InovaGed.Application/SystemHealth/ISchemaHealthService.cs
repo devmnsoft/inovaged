@@ -16,6 +16,7 @@ public interface ISchemaRepairService
     Task<SchemaRepairResultDto> ApplyFixAsync(string checkId, string confirmation, Guid userId, CancellationToken ct);
     Task<SchemaRepairResultDto> ApplySafeFixesAsync(string confirmation, Guid userId, CancellationToken ct);
     Task<string> GenerateFixScriptAsync(CancellationToken ct);
+    Task<SchemaFixPreflightResult> ValidateFixAsync(SchemaFixDto fix, CancellationToken ct);
 }
 
 public sealed class SchemaHealthReportDto
@@ -63,9 +64,29 @@ public sealed class SchemaFixDto
     public string FixSql { get; set; } = string.Empty;
     public bool CanAutoFix { get; set; }
     public string RiskLevel { get; set; } = "Low";
+    public string FixType { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public string ScriptName { get; set; } = string.Empty;
-    public string[] Dependencies { get; set; } = Array.Empty<string>();
+    public List<SchemaObjectDependency> Dependencies { get; set; } = new();
+}
+
+public sealed class SchemaObjectDependency
+{
+    public string Type { get; set; } = string.Empty;
+    public string Schema { get; set; } = "ged";
+    public string Table { get; set; } = string.Empty;
+    public string Column { get; set; } = string.Empty;
+    public bool Required { get; set; } = true;
+}
+
+public sealed class SchemaFixPreflightResult
+{
+    public bool CanRun { get; set; }
+    public bool AlreadyApplied { get; set; }
+    public bool ShouldSkip { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public List<string> MissingDependencies { get; set; } = new();
+    public string? SafeSqlToRun { get; set; }
 }
 
 public sealed class SchemaRepairResultDto

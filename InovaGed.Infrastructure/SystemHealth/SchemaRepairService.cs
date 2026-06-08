@@ -107,7 +107,7 @@ public sealed class SchemaRepairService : ISchemaRepairService
 
             var items = await ExecuteFixesAsync(fixes, "SCHEMA_FIX_APPLY_ALL", userId, correlationId, ct);
             PopulateResultCounts(result, items);
-            result.Success = true;
+            result.Success = result.FailedCount == 0;
             result.Message = BuildRepairMessage(result, singleFix: false);
             result.Report = await _schemaHealth.CheckAsync(ct);
             return result;
@@ -115,13 +115,13 @@ public sealed class SchemaRepairService : ISchemaRepairService
         catch (PostgresException ex)
         {
             _logger.LogError(ex, "Erro PostgreSQL ao aplicar correções seguras de schema. CorrelationId={CorrelationId}", correlationId);
-            await TryAuditAsync("SCHEMA_FIX_APPLY_ALL", userId, null, null, null, false, correlationId, ex.MessageText, ct);
+            await TryAuditAsync("SCHEMA_FIX_FAILED", userId, null, null, null, false, correlationId, ex.MessageText, ct);
             return Fail(result, $"Erro PostgreSQL ao aplicar correções: {ex.MessageText}");
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Erro ao aplicar correções seguras de schema. CorrelationId={CorrelationId}", correlationId);
-            await TryAuditAsync("SCHEMA_FIX_APPLY_ALL", userId, null, null, null, false, correlationId, ex.Message, ct);
+            await TryAuditAsync("SCHEMA_FIX_FAILED", userId, null, null, null, false, correlationId, ex.Message, ct);
             return Fail(result, "Erro ao aplicar correções seguras de schema.");
         }
     }
@@ -156,6 +156,9 @@ public sealed class SchemaRepairService : ISchemaRepairService
         return sql;
     }
 
+    public Task<SchemaFixPreflightResult> ValidateFixAsync(SchemaFixDto fix, CancellationToken ct)
+        => ValidateFixCoreAsync(fix, _currentUser.UserId, NewCorrelationId(), audit: true, ct);
+
     private string? ValidateApplyRequest(string confirmation)
     {
         var options = _options.Value;
@@ -179,6 +182,41 @@ public sealed class SchemaRepairService : ISchemaRepairService
 
         await using var conn = await _db.OpenAsync(ct);
 
+        var preflightByCheckId = new Dictionary<string, SchemaFixPreflightResult>(StringComparer.OrdinalIgnoreCase);
+        foreach (var fix in fixes)
+        {
+            var preflight = await ValidateFixCoreAsync(fix, userId, correlationId, audit: true, ct);
+            preflightByCheckId[fix.CheckId] = preflight;
+
+            if (preflight.AlreadyApplied || preflight.ShouldSkip)
+            {
+                results.Add(new SchemaRepairItemResultDto
+                {
+                    CheckId = fix.CheckId,
+                    Success = preflight.AlreadyApplied,
+                    Skipped = true,
+                    Message = preflight.Message
+                });
+                await TryAuditAsync(preflight.AlreadyApplied ? "SCHEMA_FIX_SKIP" : "SCHEMA_FIX_SKIP", userId, fix.CheckId, fix.ObjectName, ComputeSha256(fix.FixSql), true, correlationId, preflight.Message, ct);
+            }
+            else if (!preflight.CanRun)
+            {
+                var isOptional = IsIndexFix(fix) || string.Equals(fix.RiskLevel, "Low", StringComparison.OrdinalIgnoreCase);
+                results.Add(new SchemaRepairItemResultDto
+                {
+                    CheckId = fix.CheckId,
+                    Success = false,
+                    Skipped = isOptional,
+                    Message = isOptional ? "Correção não aplicável ao schema atual." : "Correção bloqueada pelo preflight.",
+                    Error = preflight.Message
+                });
+                await TryAuditAsync(isOptional ? "SCHEMA_FIX_SKIP" : "SCHEMA_FIX_FAILED", userId, fix.CheckId, fix.ObjectName, ComputeSha256(fix.FixSql), false, correlationId, preflight.Message, ct);
+            }
+        }
+
+        transactionalFixes = transactionalFixes.Where(f => preflightByCheckId.TryGetValue(f.CheckId, out var p) && p.CanRun && !p.AlreadyApplied && !p.ShouldSkip).ToList();
+        indexFixes = indexFixes.Where(f => preflightByCheckId.TryGetValue(f.CheckId, out var p) && p.CanRun && !p.AlreadyApplied && !p.ShouldSkip).ToList();
+
         if (transactionalFixes.Count > 0)
         {
             await using var tx = await conn.BeginTransactionAsync(ct);
@@ -187,7 +225,8 @@ public sealed class SchemaRepairService : ISchemaRepairService
                 foreach (var fix in transactionalFixes)
                 {
                     _logger.LogInformation("Aplicando correção crítica de schema {CheckId}. CorrelationId={CorrelationId} SqlHash={SqlHash}", fix.CheckId, correlationId, ComputeSha256(fix.FixSql));
-                    await conn.ExecuteAsync(new CommandDefinition(fix.FixSql, transaction: tx, commandTimeout: CommandTimeoutSeconds, cancellationToken: ct));
+                    var sql = preflightByCheckId[fix.CheckId].SafeSqlToRun ?? fix.FixSql;
+                    await conn.ExecuteAsync(new CommandDefinition(sql, transaction: tx, commandTimeout: CommandTimeoutSeconds, cancellationToken: ct));
                 }
 
                 await tx.CommitAsync(ct);
@@ -198,9 +237,9 @@ public sealed class SchemaRepairService : ISchemaRepairService
                     {
                         CheckId = fix.CheckId,
                         Success = true,
-                        Message = "Correção crítica aplicada em transação."
+                        Message = "Correção crítica aplicada em transação após preflight."
                     });
-                    await TryAuditAsync(action, userId, fix.CheckId, fix.ObjectName, ComputeSha256(fix.FixSql), true, correlationId, null, ct);
+                    await TryAuditAsync("SCHEMA_FIX_APPLY", userId, fix.CheckId, fix.ObjectName, ComputeSha256(preflightByCheckId[fix.CheckId].SafeSqlToRun ?? fix.FixSql), true, correlationId, null, ct);
                 }
             }
             catch
@@ -215,7 +254,8 @@ public sealed class SchemaRepairService : ISchemaRepairService
             try
             {
                 _logger.LogInformation("Aplicando índice recomendado de schema {CheckId}. CorrelationId={CorrelationId} SqlHash={SqlHash}", fix.CheckId, correlationId, ComputeSha256(fix.FixSql));
-                await conn.ExecuteAsync(new CommandDefinition(fix.FixSql, commandTimeout: CommandTimeoutSeconds, cancellationToken: ct));
+                var sql = preflightByCheckId[fix.CheckId].SafeSqlToRun ?? fix.FixSql;
+                await conn.ExecuteAsync(new CommandDefinition(sql, commandTimeout: CommandTimeoutSeconds, cancellationToken: ct));
 
                 results.Add(new SchemaRepairItemResultDto
                 {
@@ -223,7 +263,7 @@ public sealed class SchemaRepairService : ISchemaRepairService
                     Success = true,
                     Message = "Índice recomendado aplicado ou já existente."
                 });
-                await TryAuditAsync(action, userId, fix.CheckId, fix.ObjectName, ComputeSha256(fix.FixSql), true, correlationId, null, ct);
+                await TryAuditAsync("SCHEMA_FIX_APPLY", userId, fix.CheckId, fix.ObjectName, ComputeSha256(sql), true, correlationId, null, ct);
             }
             catch (PostgresException ex) when (ex.SqlState == "42703")
             {
@@ -241,7 +281,7 @@ public sealed class SchemaRepairService : ISchemaRepairService
                     Message = "Índice não aplicado porque a coluna esperada não existe no schema atual.",
                     Error = ex.MessageText
                 });
-                await TryAuditAsync(action, userId, fix.CheckId, fix.ObjectName, ComputeSha256(fix.FixSql), false, correlationId, ex.MessageText, ct);
+                await TryAuditAsync("SCHEMA_FIX_SKIP", userId, fix.CheckId, fix.ObjectName, ComputeSha256(fix.FixSql), false, correlationId, ex.MessageText, ct);
             }
             catch (PostgresException ex)
             {
@@ -258,17 +298,215 @@ public sealed class SchemaRepairService : ISchemaRepairService
                     Message = "Índice recomendado não aplicado; as demais correções continuaram.",
                     Error = ex.MessageText
                 });
-                await TryAuditAsync(action, userId, fix.CheckId, fix.ObjectName, ComputeSha256(fix.FixSql), false, correlationId, ex.MessageText, ct);
+                await TryAuditAsync("SCHEMA_FIX_FAILED", userId, fix.CheckId, fix.ObjectName, ComputeSha256(fix.FixSql), false, correlationId, ex.MessageText, ct);
             }
         }
 
         return results;
     }
 
+    private async Task<SchemaFixPreflightResult> ValidateFixCoreAsync(SchemaFixDto fix, Guid userId, string correlationId, bool audit, CancellationToken ct)
+    {
+        var result = new SchemaFixPreflightResult();
+        try
+        {
+            if (!fix.CanAutoFix)
+                return PreflightBlocked(result, "Correção não marcada como automática/segura.");
+
+            var requestValidation = ValidateExecutionEnvironment();
+            if (requestValidation is not null)
+                return PreflightBlocked(result, requestValidation);
+
+            var safety = ValidateWhitelistedSql(fix);
+            if (safety is not null)
+                return PreflightBlocked(result, safety);
+
+            await using var conn = await _db.OpenAsync(ct);
+
+            if (IsDocumentSearchTenantVersionFix(fix))
+            {
+                await ValidateDocumentSearchTenantVersionIndexAsync(conn, fix, result, ct);
+            }
+            else
+            {
+                await ValidateDeclaredDependenciesAsync(conn, fix, result, ct);
+                result.AlreadyApplied = await IsFixAlreadyAppliedAsync(conn, fix, ct);
+                if (result.AlreadyApplied)
+                {
+                    result.CanRun = false;
+                    result.ShouldSkip = true;
+                    result.Message = "Correção já aplicada no schema atual.";
+                }
+                else if (result.MissingDependencies.Count == 0)
+                {
+                    result.CanRun = true;
+                    result.SafeSqlToRun = fix.FixSql;
+                    result.Message = "Preflight aprovado: dependências encontradas e SQL seguro.";
+                }
+                else
+                {
+                    result.CanRun = false;
+                    result.ShouldSkip = IsIndexFix(fix);
+                    result.Message = "Dependências ausentes: " + string.Join(", ", result.MissingDependencies);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Preflight de correção de schema falhou. CheckId={CheckId} CorrelationId={CorrelationId}", fix.CheckId, correlationId);
+            result.CanRun = false;
+            result.Message = "Falha ao validar preflight da correção.";
+        }
+
+        if (audit)
+        {
+            await TryAuditAsync("SCHEMA_FIX_PREFLIGHT", userId, fix.CheckId, fix.ObjectName, ComputeSha256(fix.FixSql), result.CanRun || result.AlreadyApplied || result.ShouldSkip, correlationId, result.Message, ct);
+        }
+
+        return result;
+    }
+
+    private string? ValidateExecutionEnvironment()
+    {
+        var options = _options.Value;
+        if (!options.Enabled)
+            return "Aplicação automática de correções de schema está desabilitada.";
+
+        if (_environment.IsProduction() && !options.AllowApplyInProduction)
+            return "Aplicação automática desabilitada em produção.";
+
+        return null;
+    }
+
+    private static SchemaFixPreflightResult PreflightBlocked(SchemaFixPreflightResult result, string message)
+    {
+        result.CanRun = false;
+        result.Message = message;
+        return result;
+    }
+
+    private static bool IsDocumentSearchTenantVersionFix(SchemaFixDto fix)
+        => string.Equals(fix.CheckId, "GED_INDEX_DOCUMENT_SEARCH_TENANT_VERSION", StringComparison.OrdinalIgnoreCase);
+
+    private async Task ValidateDocumentSearchTenantVersionIndexAsync(NpgsqlConnection conn, SchemaFixDto fix, SchemaFixPreflightResult result, CancellationToken ct)
+    {
+        var tableExists = await ObjectExistsAsync(conn, "Table", "ged", "document_search", null, ct);
+        if (!tableExists)
+        {
+            result.ShouldSkip = true;
+            result.Message = "Tabela ged.document_search não existe. Índice não aplicável ao schema atual.";
+            result.MissingDependencies.Add("table ged.document_search");
+            return;
+        }
+
+        var hasTenantId = await ObjectExistsAsync(conn, "Column", "ged", "document_search", "tenant_id", ct);
+        if (!hasTenantId)
+        {
+            result.ShouldSkip = true;
+            result.Message = "Coluna ged.document_search.tenant_id não existe. Índice não aplicável ao schema atual.";
+            result.MissingDependencies.Add("column ged.document_search.tenant_id");
+            return;
+        }
+
+        var candidates = new[]
+        {
+            (Column: "document_version_id", Index: "ix_ged_document_search_tenant_document_version"),
+            (Column: "version_id", Index: "ix_ged_document_search_tenant_version"),
+            (Column: "document_id", Index: "ix_ged_document_search_tenant_document")
+        };
+
+        foreach (var candidate in candidates)
+        {
+            if (await IndexExistsAsync(conn, "ged", candidate.Index, ct))
+            {
+                result.AlreadyApplied = true;
+                result.ShouldSkip = true;
+                result.Message = $"Índice recomendado já existe ({candidate.Index}).";
+                return;
+            }
+        }
+
+        foreach (var candidate in candidates)
+        {
+            if (await ObjectExistsAsync(conn, "Column", "ged", "document_search", candidate.Column, ct))
+            {
+                result.CanRun = true;
+                result.SafeSqlToRun = fix.FixSql;
+                result.Message = $"Preflight aprovado: o índice document_search será criado usando tenant_id + {candidate.Column}.";
+                return;
+            }
+        }
+
+        result.ShouldSkip = true;
+        result.Message = "Nenhuma coluna de vínculo encontrada em ged.document_search. Índice não aplicável ao schema atual.";
+        result.MissingDependencies.Add("column ged.document_search.document_version_id|version_id|document_id");
+    }
+
+    private async Task ValidateDeclaredDependenciesAsync(NpgsqlConnection conn, SchemaFixDto fix, SchemaFixPreflightResult result, CancellationToken ct)
+    {
+        foreach (var dependency in fix.Dependencies.Where(d => d.Required))
+        {
+            if (!await ObjectExistsAsync(conn, dependency.Type, dependency.Schema, dependency.Table, dependency.Column, ct))
+                result.MissingDependencies.Add(FormatDependency(dependency));
+        }
+    }
+
+    private static string FormatDependency(SchemaObjectDependency dependency)
+    {
+        return dependency.Type.ToLowerInvariant() switch
+        {
+            "schema" => $"schema {dependency.Schema}",
+            "table" => $"table {dependency.Schema}.{dependency.Table}",
+            "column" => $"column {dependency.Schema}.{dependency.Table}.{dependency.Column}",
+            "extension" => $"extension {dependency.Schema}",
+            _ => dependency.Type
+        };
+    }
+
+    private async Task<bool> IsFixAlreadyAppliedAsync(NpgsqlConnection conn, SchemaFixDto fix, CancellationToken ct)
+    {
+        if (string.Equals(fix.FixType, "Index", StringComparison.OrdinalIgnoreCase) || IsIndexFix(fix))
+            return await IndexExistsAsync(conn, "ged", GetObjectLeafName(fix.ObjectName), ct);
+
+        if (string.Equals(fix.FixType, "Table", StringComparison.OrdinalIgnoreCase))
+            return await ObjectExistsAsync(conn, "Table", "ged", GetObjectLeafName(fix.ObjectName), null, ct);
+
+        if (string.Equals(fix.FixType, "Column", StringComparison.OrdinalIgnoreCase))
+        {
+            var parts = fix.ObjectName.Split('.', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (parts.Length >= 3)
+                return await ObjectExistsAsync(conn, "Column", parts[^3], parts[^2], parts[^1], ct);
+        }
+
+        return false;
+    }
+
+    private static string GetObjectLeafName(string objectName)
+    {
+        var parts = objectName.Split('.', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return parts.Length == 0 ? objectName : parts[^1];
+    }
+
+    private static Task<bool> ObjectExistsAsync(NpgsqlConnection conn, string type, string schema, string table, string? column, CancellationToken ct)
+    {
+        var normalizedType = (type ?? string.Empty).Trim().ToLowerInvariant();
+        return normalizedType switch
+        {
+            "schema" => conn.ExecuteScalarAsync<bool>(new CommandDefinition("select exists (select 1 from information_schema.schemata where schema_name = @schema);", new { schema }, cancellationToken: ct)),
+            "table" => conn.ExecuteScalarAsync<bool>(new CommandDefinition("select exists (select 1 from information_schema.tables where table_schema = @schema and table_name = @table);", new { schema, table }, cancellationToken: ct)),
+            "column" => conn.ExecuteScalarAsync<bool>(new CommandDefinition("select exists (select 1 from information_schema.columns where table_schema = @schema and table_name = @table and column_name = @column);", new { schema, table, column }, cancellationToken: ct)),
+            "extension" => conn.ExecuteScalarAsync<bool>(new CommandDefinition("select exists (select 1 from pg_extension where extname = @extensionName);", new { extensionName = schema }, cancellationToken: ct)),
+            _ => Task.FromResult(true)
+        };
+    }
+
+    private static Task<bool> IndexExistsAsync(NpgsqlConnection conn, string schema, string indexName, CancellationToken ct)
+        => conn.ExecuteScalarAsync<bool>(new CommandDefinition("select exists (select 1 from pg_indexes where schemaname = @schema and indexname = @indexName);", new { schema, indexName }, cancellationToken: ct));
+
     private static void PopulateResultCounts(SchemaRepairResultDto result, List<SchemaRepairItemResultDto> items)
     {
         result.Items = items;
-        result.AppliedCount = items.Count(i => i.Success);
+        result.AppliedCount = items.Count(i => i.Success && !i.Skipped);
         result.FailedCount = items.Count(i => !i.Success && !i.Skipped);
         result.SkippedCount = items.Count(i => i.Skipped);
     }
@@ -283,6 +521,9 @@ public sealed class SchemaRepairService : ISchemaRepairService
                 return "Correção ignorada com segurança.";
             return "Falha ao aplicar correção.";
         }
+
+        if (result.FailedCount == 0 && result.SkippedCount > 0)
+            return "Correções aplicadas. Algumas recomendações de performance foram ignoradas por incompatibilidade com o schema atual.";
 
         return $"Correções processadas. Aplicadas: {result.AppliedCount}; ignoradas: {result.SkippedCount}; falharam: {result.FailedCount}.";
     }
