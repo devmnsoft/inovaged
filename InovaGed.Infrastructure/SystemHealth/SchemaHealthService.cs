@@ -56,7 +56,6 @@ public sealed class SchemaHealthService : ISchemaHealthService
         ("ix_upload_session_tenant_user_status", [], "Índice de sessões chunked por usuário/status."),
         ("ix_upload_session_chunk_session", [], "Índice dos chunks por sessão."),
         ("ix_ocr_job_tenant_version_status", [], "Índice da fila OCR por versão/status."),
-        ("ix_ged_document_search_tenant_version", [], "Índice de busca OCR por versão."),
         ("ix_app_audit_log_tenant_created", [], "Índice de auditoria por tenant/data."),
         ("ix_app_audit_log_user_created", [], "Índice de auditoria por usuário/data."),
         ("ix_app_audit_log_action_created", [], "Índice de auditoria por ação/data."),
@@ -109,10 +108,24 @@ where table_schema = 'ged';", cancellationToken: ct))).ToHashSet(StringComparer.
                 if (!ok) report.MissingColumns.Add(objectName);
             }
 
-            var existingIndexes = (await conn.QueryAsync<string>(new CommandDefinition(@"
-select indexname
+            if (existingTables.Contains("ged.document_search"))
+            {
+                var documentSearchColumns = (await conn.QueryAsync<DocumentSearchColumnInfo>(new CommandDefinition(@"
+select column_name as ""ColumnName"", data_type as ""DataType""
+from information_schema.columns
+where table_schema = 'ged'
+  and table_name = 'document_search'
+order by ordinal_position;", cancellationToken: ct))).ToList();
+                report.Recommendations.Add("Diagnóstico ged.document_search: " + string.Join(", ", documentSearchColumns.Select(c => $"{c.ColumnName} ({c.DataType})")));
+            }
+
+            var existingIndexRows = (await conn.QueryAsync<PgIndexInfo>(new CommandDefinition(@"
+select indexname as ""IndexName"", indexdef as ""IndexDef""
 from pg_indexes
-where schemaname = 'ged';", cancellationToken: ct))).ToHashSet(StringComparer.OrdinalIgnoreCase);
+where schemaname = 'ged';", cancellationToken: ct))).ToList();
+            var existingIndexes = existingIndexRows.Select(i => i.IndexName).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            AddDocumentSearchTenantVersionIndexCheck(report, existingColumns, existingIndexRows);
 
             foreach (var (name, alternatives, message) in RecommendedIndexes)
             {
@@ -191,7 +204,14 @@ limit 1;", cancellationToken: ct));
             if (!byId.TryGetValue(check.Id, out var fix))
                 continue;
 
-            check.CanAutoFix = fix.CanAutoFix;
+            var canAutoFix = fix.CanAutoFix;
+            if (string.Equals(check.Id, "GED_INDEX_DOCUMENT_SEARCH_TENANT_VERSION", StringComparison.OrdinalIgnoreCase)
+                && check.Message.Contains("Correção automática indisponível", StringComparison.OrdinalIgnoreCase))
+            {
+                canAutoFix = false;
+            }
+
+            check.CanAutoFix = canAutoFix;
             check.FixSql = fix.FixSql;
             check.FixScriptName = fix.ScriptName;
             check.RiskLevel = fix.RiskLevel;
@@ -199,6 +219,69 @@ limit 1;", cancellationToken: ct));
             check.FixSuggestion = fix.Description;
         }
     }
+
+
+    private static void AddDocumentSearchTenantVersionIndexCheck(SchemaHealthReportDto report, HashSet<string> existingColumns, IReadOnlyList<PgIndexInfo> existingIndexes)
+    {
+        const string checkId = "GED_INDEX_DOCUMENT_SEARCH_TENANT_VERSION";
+        const string objectName = "ged.ix_ged_document_search_tenant_version";
+        const string missingLinkMessage = "Não foi encontrada coluna de vínculo documental em ged.document_search. Verifique o modelo de busca. Correção automática indisponível: não há coluna document_version_id, version_id ou document_id em ged.document_search.";
+        const string noAutofixSuggestion = "Não foi possível gerar correção automática porque nenhuma coluna compatível foi encontrada.";
+
+        var hasTenantId = HasColumn(existingColumns, "document_search", "tenant_id");
+        var candidates = new[]
+        {
+            new DocumentSearchIndexCandidate("document_version_id", "ix_ged_document_search_tenant_document_version"),
+            new DocumentSearchIndexCandidate("version_id", "ix_ged_document_search_tenant_version"),
+            new DocumentSearchIndexCandidate("document_id", "ix_ged_document_search_tenant_document")
+        };
+
+        var availableCandidates = candidates.Where(c => HasColumn(existingColumns, "document_search", c.ColumnName)).ToList();
+        if (!hasTenantId || availableCandidates.Count == 0)
+        {
+            AddCheck(report, checkId, "Performance", objectName, "Índice", "Warning", false, missingLinkMessage, noAutofixSuggestion);
+            return;
+        }
+
+        var indexedCandidate = availableCandidates.FirstOrDefault(c => HasDocumentSearchIndex(existingIndexes, c.ColumnName));
+        if (indexedCandidate is not null)
+        {
+            AddCheck(report, checkId, "Performance", objectName, "Índice", "Warning", true,
+                $"Índice de busca OCR por tenant/{indexedCandidate.ColumnName} OK.",
+                "Índice recomendado já existe para a coluna documental compatível.");
+            return;
+        }
+
+        var selectedCandidate = availableCandidates[0];
+        AddCheck(report, checkId, "Performance", objectName, "Índice", "Warning", false,
+            $"Índice de busca OCR ausente. A correção automática usará tenant_id + {selectedCandidate.ColumnName} em ged.document_search.",
+            $"Será criado índice recomendado usando tenant_id + {selectedCandidate.ColumnName}; índices opcionais são criados somente quando as colunas existem.");
+    }
+
+    private static bool HasColumn(HashSet<string> existingColumns, string table, string column)
+        => existingColumns.Contains($"{table}.{column}");
+
+    private static bool HasDocumentSearchIndex(IReadOnlyList<PgIndexInfo> existingIndexes, string columnName)
+    {
+        var expectedColumns = $"(tenant_id, {columnName})";
+        return existingIndexes.Any(index =>
+            index.IndexDef.Contains(" on ged.document_search ", StringComparison.OrdinalIgnoreCase)
+            && index.IndexDef.Contains(expectedColumns, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private sealed class PgIndexInfo
+    {
+        public string IndexName { get; set; } = string.Empty;
+        public string IndexDef { get; set; } = string.Empty;
+    }
+
+    private sealed class DocumentSearchColumnInfo
+    {
+        public string ColumnName { get; set; } = string.Empty;
+        public string DataType { get; set; } = string.Empty;
+    }
+
+    private sealed record DocumentSearchIndexCandidate(string ColumnName, string IndexName);
 
     private static void AddCheck(SchemaHealthReportDto report, string id, string area, string objectName, string checkType, string severity, bool success, string message, string fixSuggestion)
     {
@@ -241,6 +324,8 @@ limit 1;", cancellationToken: ct));
             "ix_document_version_partial_status" => "GED_INDEX_DOCUMENT_VERSION_PARTIAL_STATUS",
             "ix_document_version_uploaded_at_utc" => "GED_INDEX_DOCUMENT_VERSION_UPLOADED_AT_UTC",
             "ix_ged_document_search_tenant_version" => "GED_INDEX_DOCUMENT_SEARCH_TENANT_VERSION",
+            "ix_ged_document_search_tenant_document_version" => "GED_INDEX_DOCUMENT_SEARCH_TENANT_VERSION",
+            "ix_ged_document_search_tenant_document" => "GED_INDEX_DOCUMENT_SEARCH_TENANT_VERSION",
             "ix_upload_session_tenant_user_status" => "GED_INDEX_UPLOAD_SESSION_TENANT_USER_STATUS",
             "ix_upload_session_chunk_session" => "GED_INDEX_UPLOAD_SESSION_CHUNK_SESSION",
             "ix_app_audit_log_tenant_created" => "GED_INDEX_APP_AUDIT_LOG_TENANT_CREATED",

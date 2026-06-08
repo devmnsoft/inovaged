@@ -75,7 +75,19 @@ public sealed class SchemaRepairResultDto
     public string? CheckId { get; set; }
     public string CorrelationId { get; set; } = string.Empty;
     public int AppliedCount { get; set; }
+    public int FailedCount { get; set; }
+    public int SkippedCount { get; set; }
+    public List<SchemaRepairItemResultDto> Items { get; set; } = new();
     public SchemaHealthReportDto? Report { get; set; }
+}
+
+public sealed class SchemaRepairItemResultDto
+{
+    public string CheckId { get; set; } = string.Empty;
+    public bool Success { get; set; }
+    public bool Skipped { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public string? Error { get; set; }
 }
 
 public sealed class SchemaRepairOptions

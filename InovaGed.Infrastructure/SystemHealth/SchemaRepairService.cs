@@ -65,10 +65,10 @@ public sealed class SchemaRepairService : ISchemaRepairService
             if (safety is not null)
                 return Fail(result, safety);
 
-            var success = await ExecuteFixesAsync([fix], "SCHEMA_FIX_APPLY", userId, correlationId, ct);
-            result.Success = success;
-            result.AppliedCount = success ? 1 : 0;
-            result.Message = success ? "Correção aplicada com sucesso." : "Falha ao aplicar correção.";
+            var items = await ExecuteFixesAsync([fix], "SCHEMA_FIX_APPLY", userId, correlationId, ct);
+            PopulateResultCounts(result, items);
+            result.Success = result.FailedCount == 0;
+            result.Message = BuildRepairMessage(result, singleFix: true);
             result.Report = await _schemaHealth.CheckAsync(ct);
             return result;
         }
@@ -105,10 +105,10 @@ public sealed class SchemaRepairService : ISchemaRepairService
             if (fixes.Count == 0)
                 return Fail(result, "Nenhuma correção segura pendente foi encontrada.");
 
-            var success = await ExecuteFixesAsync(fixes, "SCHEMA_FIX_APPLY_ALL", userId, correlationId, ct);
-            result.Success = success;
-            result.AppliedCount = success ? fixes.Count : 0;
-            result.Message = success ? $"{fixes.Count} correções seguras aplicadas com sucesso." : "Falha ao aplicar correções seguras.";
+            var items = await ExecuteFixesAsync(fixes, "SCHEMA_FIX_APPLY_ALL", userId, correlationId, ct);
+            PopulateResultCounts(result, items);
+            result.Success = true;
+            result.Message = BuildRepairMessage(result, singleFix: false);
             result.Report = await _schemaHealth.CheckAsync(ct);
             return result;
         }
@@ -171,34 +171,125 @@ public sealed class SchemaRepairService : ISchemaRepairService
         return null;
     }
 
-    private async Task<bool> ExecuteFixesAsync(IReadOnlyList<SchemaFixDto> fixes, string action, Guid userId, string correlationId, CancellationToken ct)
+    private async Task<List<SchemaRepairItemResultDto>> ExecuteFixesAsync(IReadOnlyList<SchemaFixDto> fixes, string action, Guid userId, string correlationId, CancellationToken ct)
     {
+        var results = new List<SchemaRepairItemResultDto>();
+        var transactionalFixes = fixes.Where(f => !IsIndexFix(f)).ToList();
+        var indexFixes = fixes.Where(IsIndexFix).ToList();
+
         await using var conn = await _db.OpenAsync(ct);
-        await using var tx = await conn.BeginTransactionAsync(ct);
 
-        try
+        if (transactionalFixes.Count > 0)
         {
-            foreach (var fix in fixes)
+            await using var tx = await conn.BeginTransactionAsync(ct);
+            try
             {
-                _logger.LogInformation("Aplicando correção de schema {CheckId}. CorrelationId={CorrelationId} SqlHash={SqlHash}", fix.CheckId, correlationId, ComputeSha256(fix.FixSql));
-                await conn.ExecuteAsync(new CommandDefinition(fix.FixSql, transaction: tx, commandTimeout: CommandTimeoutSeconds, cancellationToken: ct));
+                foreach (var fix in transactionalFixes)
+                {
+                    _logger.LogInformation("Aplicando correção crítica de schema {CheckId}. CorrelationId={CorrelationId} SqlHash={SqlHash}", fix.CheckId, correlationId, ComputeSha256(fix.FixSql));
+                    await conn.ExecuteAsync(new CommandDefinition(fix.FixSql, transaction: tx, commandTimeout: CommandTimeoutSeconds, cancellationToken: ct));
+                }
+
+                await tx.CommitAsync(ct);
+
+                foreach (var fix in transactionalFixes)
+                {
+                    results.Add(new SchemaRepairItemResultDto
+                    {
+                        CheckId = fix.CheckId,
+                        Success = true,
+                        Message = "Correção crítica aplicada em transação."
+                    });
+                    await TryAuditAsync(action, userId, fix.CheckId, fix.ObjectName, ComputeSha256(fix.FixSql), true, correlationId, null, ct);
+                }
             }
-
-            await tx.CommitAsync(ct);
-
-            foreach (var fix in fixes)
+            catch
             {
+                await tx.RollbackAsync(ct);
+                throw;
+            }
+        }
+
+        foreach (var fix in indexFixes)
+        {
+            try
+            {
+                _logger.LogInformation("Aplicando índice recomendado de schema {CheckId}. CorrelationId={CorrelationId} SqlHash={SqlHash}", fix.CheckId, correlationId, ComputeSha256(fix.FixSql));
+                await conn.ExecuteAsync(new CommandDefinition(fix.FixSql, commandTimeout: CommandTimeoutSeconds, cancellationToken: ct));
+
+                results.Add(new SchemaRepairItemResultDto
+                {
+                    CheckId = fix.CheckId,
+                    Success = true,
+                    Message = "Índice recomendado aplicado ou já existente."
+                });
                 await TryAuditAsync(action, userId, fix.CheckId, fix.ObjectName, ComputeSha256(fix.FixSql), true, correlationId, null, ct);
             }
+            catch (PostgresException ex) when (ex.SqlState == "42703")
+            {
+                _logger.LogWarning(ex,
+                    "Índice recomendado não aplicado por coluna ausente. CheckId={CheckId} Object={ObjectName} CorrelationId={CorrelationId}",
+                    fix.CheckId,
+                    fix.ObjectName,
+                    correlationId);
 
-            return true;
+                results.Add(new SchemaRepairItemResultDto
+                {
+                    CheckId = fix.CheckId,
+                    Success = false,
+                    Skipped = true,
+                    Message = "Índice não aplicado porque a coluna esperada não existe no schema atual.",
+                    Error = ex.MessageText
+                });
+                await TryAuditAsync(action, userId, fix.CheckId, fix.ObjectName, ComputeSha256(fix.FixSql), false, correlationId, ex.MessageText, ct);
+            }
+            catch (PostgresException ex)
+            {
+                _logger.LogWarning(ex,
+                    "Índice recomendado falhou e as demais correções continuarão. CheckId={CheckId} Object={ObjectName} CorrelationId={CorrelationId}",
+                    fix.CheckId,
+                    fix.ObjectName,
+                    correlationId);
+
+                results.Add(new SchemaRepairItemResultDto
+                {
+                    CheckId = fix.CheckId,
+                    Success = false,
+                    Message = "Índice recomendado não aplicado; as demais correções continuaram.",
+                    Error = ex.MessageText
+                });
+                await TryAuditAsync(action, userId, fix.CheckId, fix.ObjectName, ComputeSha256(fix.FixSql), false, correlationId, ex.MessageText, ct);
+            }
         }
-        catch
-        {
-            await tx.RollbackAsync(ct);
-            throw;
-        }
+
+        return results;
     }
+
+    private static void PopulateResultCounts(SchemaRepairResultDto result, List<SchemaRepairItemResultDto> items)
+    {
+        result.Items = items;
+        result.AppliedCount = items.Count(i => i.Success);
+        result.FailedCount = items.Count(i => !i.Success && !i.Skipped);
+        result.SkippedCount = items.Count(i => i.Skipped);
+    }
+
+    private static string BuildRepairMessage(SchemaRepairResultDto result, bool singleFix)
+    {
+        if (singleFix)
+        {
+            if (result.AppliedCount == 1)
+                return "Correção aplicada com sucesso.";
+            if (result.SkippedCount == 1)
+                return "Correção ignorada com segurança.";
+            return "Falha ao aplicar correção.";
+        }
+
+        return $"Correções processadas. Aplicadas: {result.AppliedCount}; ignoradas: {result.SkippedCount}; falharam: {result.FailedCount}.";
+    }
+
+    private static bool IsIndexFix(SchemaFixDto fix)
+        => fix.CheckId.Contains("_INDEX_", StringComparison.OrdinalIgnoreCase)
+           || fix.ObjectName.Contains(".ix_", StringComparison.OrdinalIgnoreCase);
 
     private static string? ValidateWhitelistedSql(SchemaFixDto fix)
     {

@@ -454,10 +454,17 @@ BEGIN
         EXECUTE 'CREATE INDEX IF NOT EXISTS ix_document_version_uploaded_at_utc ON ged.document_version(uploaded_at_utc DESC)';
     END IF;
 
-    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='ged' AND table_name='document_search' AND column_name='document_version_id') THEN
-        EXECUTE 'CREATE INDEX IF NOT EXISTS ix_ged_document_search_tenant_version ON ged.document_search(tenant_id, document_version_id)';
-    ELSIF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='ged' AND table_name='document_search' AND column_name='version_id') THEN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='ged' AND table_name='document_search' AND column_name='tenant_id')
+       AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='ged' AND table_name='document_search' AND column_name='document_version_id') THEN
+        EXECUTE 'CREATE INDEX IF NOT EXISTS ix_ged_document_search_tenant_document_version ON ged.document_search(tenant_id, document_version_id)';
+    ELSIF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='ged' AND table_name='document_search' AND column_name='tenant_id')
+       AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='ged' AND table_name='document_search' AND column_name='version_id') THEN
         EXECUTE 'CREATE INDEX IF NOT EXISTS ix_ged_document_search_tenant_version ON ged.document_search(tenant_id, version_id)';
+    ELSIF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='ged' AND table_name='document_search' AND column_name='tenant_id')
+       AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='ged' AND table_name='document_search' AND column_name='document_id') THEN
+        EXECUTE 'CREATE INDEX IF NOT EXISTS ix_ged_document_search_tenant_document ON ged.document_search(tenant_id, document_id)';
+    ELSE
+        RAISE NOTICE 'Índice ix_ged_document_search_tenant_version não criado: nenhuma coluna de versão/documento compatível encontrada em ged.document_search.';
     END IF;
 
     IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='ged' AND table_name='ocr_job' AND column_name='tenant_id')

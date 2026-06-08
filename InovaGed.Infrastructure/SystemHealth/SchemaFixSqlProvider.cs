@@ -5,6 +5,60 @@ namespace InovaGed.Infrastructure.SystemHealth;
 public sealed class SchemaFixSqlProvider : ISchemaFixSqlProvider
 {
     private const string ConsolidatedScriptName = "dynamic-schema-repair";
+
+    private const string DocumentSearchTenantVersionIndexSql = """
+do $$
+begin
+    if exists (
+        select 1
+        from information_schema.columns
+        where table_schema = 'ged'
+          and table_name = 'document_search'
+          and column_name = 'tenant_id'
+    ) and exists (
+        select 1
+        from information_schema.columns
+        where table_schema = 'ged'
+          and table_name = 'document_search'
+          and column_name = 'document_version_id'
+    ) then
+        execute 'create index if not exists ix_ged_document_search_tenant_document_version on ged.document_search(tenant_id, document_version_id)';
+
+    elsif exists (
+        select 1
+        from information_schema.columns
+        where table_schema = 'ged'
+          and table_name = 'document_search'
+          and column_name = 'tenant_id'
+    ) and exists (
+        select 1
+        from information_schema.columns
+        where table_schema = 'ged'
+          and table_name = 'document_search'
+          and column_name = 'version_id'
+    ) then
+        execute 'create index if not exists ix_ged_document_search_tenant_version on ged.document_search(tenant_id, version_id)';
+
+    elsif exists (
+        select 1
+        from information_schema.columns
+        where table_schema = 'ged'
+          and table_name = 'document_search'
+          and column_name = 'tenant_id'
+    ) and exists (
+        select 1
+        from information_schema.columns
+        where table_schema = 'ged'
+          and table_name = 'document_search'
+          and column_name = 'document_id'
+    ) then
+        execute 'create index if not exists ix_ged_document_search_tenant_document on ged.document_search(tenant_id, document_id)';
+
+    else
+        raise notice 'Índice ix_ged_document_search_tenant_version não criado: nenhuma coluna de versão/documento compatível encontrada em ged.document_search.';
+    end if;
+end $$;
+""";
     private static readonly IReadOnlyDictionary<string, SchemaFixDto> Fixes = BuildFixes();
 
     public Task<IReadOnlyList<SchemaFixDto>> GetFixesAsync(SchemaHealthReportDto report, CancellationToken ct)
@@ -13,7 +67,21 @@ public sealed class SchemaFixSqlProvider : ISchemaFixSqlProvider
 
         var fixes = report.Checks
             .Where(c => !c.Success)
-            .Select(c => ResolveFix(c.Id, c.ObjectName))
+            .Select(c =>
+            {
+                var fix = ResolveFix(c.Id, c.ObjectName);
+                if (fix is null)
+                    return null;
+
+                var clone = Clone(fix);
+                if (IsDocumentSearchTenantVersionCheck(c.Id) && !c.CanAutoFix && c.Message.Contains("Correção automática indisponível", StringComparison.OrdinalIgnoreCase))
+                {
+                    clone.CanAutoFix = false;
+                    clone.Description = "Não foi possível gerar correção automática porque nenhuma coluna compatível foi encontrada.";
+                }
+
+                return clone;
+            })
             .Where(f => f is not null)
             .GroupBy(f => f!.CheckId, StringComparer.OrdinalIgnoreCase)
             .Select(g => Clone(g.First()!))
@@ -195,7 +263,7 @@ end $$;
         fixes.Add(Index("GED_INDEX_DOCUMENT_VERSION_PARTIAL_GROUP_ID", "ged.ix_document_version_partial_group_id", "Performance", "Cria índice para agrupamento de documentos fracionados.", "create index if not exists ix_document_version_partial_group_id on ged.document_version(partial_group_id);"));
         fixes.Add(Index("GED_INDEX_DOCUMENT_VERSION_PARTIAL_STATUS", "ged.ix_document_version_partial_status", "Performance", "Cria índice para status parcial.", "create index if not exists ix_document_version_partial_status on ged.document_version(partial_status);"));
         fixes.Add(Index("GED_INDEX_DOCUMENT_VERSION_UPLOADED_AT_UTC", "ged.ix_document_version_uploaded_at_utc", "Performance", "Cria índice para ordenação por upload.", "create index if not exists ix_document_version_uploaded_at_utc on ged.document_version(uploaded_at_utc);"));
-        fixes.Add(Index("GED_INDEX_DOCUMENT_SEARCH_TENANT_VERSION", "ged.ix_ged_document_search_tenant_version", "Performance", "Cria índice de busca OCR por tenant/versão.", "create index if not exists ix_ged_document_search_tenant_version on ged.document_search(tenant_id, document_version_id);"));
+        fixes.Add(Index("GED_INDEX_DOCUMENT_SEARCH_TENANT_VERSION", "ged.ix_ged_document_search_tenant_version", "Performance", "Cria índice de busca OCR por tenant e coluna documental compatível detectada dinamicamente.", DocumentSearchTenantVersionIndexSql));
         fixes.Add(Index("GED_INDEX_UPLOAD_SESSION_TENANT_USER_STATUS", "ged.ix_upload_session_tenant_user_status", "Performance", "Cria índice de sessões chunked por tenant/usuário/status.", "create index if not exists ix_upload_session_tenant_user_status on ged.upload_session(tenant_id, user_id, status);"));
         fixes.Add(Index("GED_INDEX_UPLOAD_SESSION_CHUNK_SESSION", "ged.ix_upload_session_chunk_session", "Performance", "Cria índice dos chunks por sessão.", "create index if not exists ix_upload_session_chunk_session on ged.upload_session_chunk(session_id, chunk_index);"));
         fixes.Add(Index("GED_INDEX_APP_AUDIT_LOG_TENANT_CREATED", "ged.ix_app_audit_log_tenant_created", "Performance", "Cria índice de auditoria por tenant/data.", "create index if not exists ix_app_audit_log_tenant_created on ged.app_audit_log(tenant_id, created_at desc);"));
@@ -255,6 +323,9 @@ end $$;
         ScriptName = fix.ScriptName,
         Dependencies = fix.Dependencies.ToArray()
     };
+
+    private static bool IsDocumentSearchTenantVersionCheck(string checkId)
+        => string.Equals(NormalizeId(checkId), "GED_INDEX_DOCUMENT_SEARCH_TENANT_VERSION", StringComparison.OrdinalIgnoreCase);
 
     private static string NormalizeId(string id) => (id ?? string.Empty).Trim().Replace('.', '_').Replace('-', '_').ToUpperInvariant();
 }
