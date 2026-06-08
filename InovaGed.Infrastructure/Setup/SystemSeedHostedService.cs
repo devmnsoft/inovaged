@@ -1,6 +1,7 @@
 using Dapper;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Common.Security;
+using InovaGed.Application.SystemHealth;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -12,15 +13,23 @@ public sealed class SystemSeedHostedService : IHostedService
     private static readonly Guid DefaultTenantId = Guid.Parse("00000000-0000-0000-0000-000000000001");
     private readonly IDbConnectionFactory _db;
     private readonly ILogger<SystemSeedHostedService> _logger;
+    private readonly ISchemaCompatibilityState _schemaState;
 
-    public SystemSeedHostedService(IDbConnectionFactory db, ILogger<SystemSeedHostedService> logger)
+    public SystemSeedHostedService(IDbConnectionFactory db, ILogger<SystemSeedHostedService> logger, ISchemaCompatibilityState schemaState)
     {
         _db = db;
         _logger = logger;
+        _schemaState = schemaState;
     }
 
     public async Task StartAsync(CancellationToken ct)
     {
+        if (!await _schemaState.IsCompatibleAsync("SystemSeed", ct))
+        {
+            _logger.LogWarning("SystemSeedHostedService não iniciado: schema incompatível. Execute migrations.");
+            return;
+        }
+
         _logger.LogInformation("System Seed START");
 
         var adminUserId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbb001");

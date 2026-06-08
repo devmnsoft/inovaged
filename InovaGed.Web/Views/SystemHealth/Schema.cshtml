@@ -25,6 +25,22 @@
     <div class="alert @alertClass">
         <strong>Status geral:</strong> @statusText
         <span class="ms-3"><strong>Script:</strong> <code>@script</code></span>
+        @if (Model.LastMigration is not null)
+        {
+            <div class="mt-2">
+                <strong>Última migration aplicada:</strong>
+                <code>@Model.LastMigration.ScriptName</code>
+                em @Model.LastMigration.AppliedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")
+                @if (!string.IsNullOrWhiteSpace(Model.LastMigration.Notes))
+                {
+                    <span class="text-muted">— @Model.LastMigration.Notes</span>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="mt-2 text-muted"><strong>Última migration aplicada:</strong> não encontrada em <code>ged.schema_migration_history</code>.</div>
+        }
     </div>
 
     @if (Model.MissingTables.Count > 0)

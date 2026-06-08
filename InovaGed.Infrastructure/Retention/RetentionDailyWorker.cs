@@ -2,6 +2,7 @@
 using System.Threading;
 using System.Threading.Tasks;
 using InovaGed.Application.Retention;
+using InovaGed.Application.SystemHealth;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -12,6 +13,7 @@ public sealed class RetentionDailyWorker : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<RetentionDailyWorker> _logger;
+    private readonly ISchemaCompatibilityState _schemaState;
 
     // ✅ operacional: tenant padrão
     private static readonly Guid DefaultTenantId = Guid.Parse("00000000-0000-0000-0000-000000000001");
@@ -19,14 +21,21 @@ public sealed class RetentionDailyWorker : BackgroundService
     // ✅ operacional: janela "vence em breve"
     private const int DueSoonDays = 30;
 
-    public RetentionDailyWorker(IServiceScopeFactory scopeFactory, ILogger<RetentionDailyWorker> logger)
+    public RetentionDailyWorker(IServiceScopeFactory scopeFactory, ILogger<RetentionDailyWorker> logger, ISchemaCompatibilityState schemaState)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
+        _schemaState = schemaState;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        if (!await _schemaState.IsCompatibleAsync("Retention", stoppingToken))
+        {
+            _logger.LogWarning("RetentionDailyWorker não iniciado: schema incompatível. Execute migrations.");
+            return;
+        }
+
         _logger.LogInformation("RetentionDailyWorker iniciado.");
 
         while (!stoppingToken.IsCancellationRequested)

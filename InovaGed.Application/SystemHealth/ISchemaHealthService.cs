@@ -12,6 +12,16 @@ public sealed class SchemaHealthReportDto
     public List<string> MissingTables { get; set; } = new();
     public List<string> MissingColumns { get; set; } = new();
     public List<string> Recommendations { get; set; } = new();
+    public SchemaMigrationHistoryDto? LastMigration { get; set; }
+}
+
+public sealed class SchemaMigrationHistoryDto
+{
+    public string ScriptName { get; set; } = string.Empty;
+    public DateTimeOffset AppliedAt { get; set; }
+    public string? AppliedBy { get; set; }
+    public bool Success { get; set; }
+    public string? Notes { get; set; }
 }
 
 public sealed class SchemaCheckItemDto

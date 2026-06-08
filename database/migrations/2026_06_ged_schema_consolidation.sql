@@ -478,3 +478,14 @@ ON CONFLICT (script_name) DO UPDATE
 SET applied_at = now(),
     success = true,
     notes = EXCLUDED.notes;
+
+
+INSERT INTO ged.schema_migration_history(script_name, notes)
+VALUES (
+    'database/apply_all_required_migrations.sql',
+    'Schema consolidado GED/OCR/upload/logs/documentos parciais'
+)
+ON CONFLICT (script_name) DO UPDATE
+SET applied_at = now(),
+    success = true,
+    notes = EXCLUDED.notes;
