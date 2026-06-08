@@ -1,5 +1,6 @@
-﻿using Dapper;
+using Dapper;
 using InovaGed.Application.Audit;
+using InovaGed.Application.Common.Codes;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Ged.Instruments;
 using InovaGed.Domain.Primitives;
@@ -11,12 +12,14 @@ public sealed class ClassificationPlanCommands : IClassificationPlanCommands
 {
     private readonly IDbConnectionFactory _db;
     private readonly IAuditWriter _audit;
+    private readonly ICodeGeneratorService _codeGenerator;
     private readonly ILogger<ClassificationPlanCommands> _logger;
 
-    public ClassificationPlanCommands(IDbConnectionFactory db, IAuditWriter audit, ILogger<ClassificationPlanCommands> logger)
+    public ClassificationPlanCommands(IDbConnectionFactory db, IAuditWriter audit, ICodeGeneratorService codeGenerator, ILogger<ClassificationPlanCommands> logger)
     {
         _db = db;
         _audit = audit;
+        _codeGenerator = codeGenerator;
         _logger = logger;
     }
 
@@ -26,8 +29,13 @@ public sealed class ClassificationPlanCommands : IClassificationPlanCommands
         {
             if (tenantId == Guid.Empty) return Result<Guid>.Fail("TENANT", "Tenant inválido.");
             if (vm is null) return Result<Guid>.Fail("VM", "Dados inválidos.");
-            if (string.IsNullOrWhiteSpace(vm.Code)) return Result<Guid>.Fail("CODE", "Código é obrigatório.");
             if (string.IsNullOrWhiteSpace(vm.Name)) return Result<Guid>.Fail("NAME", "Nome é obrigatório.");
+            var generatedCode = false;
+            if (string.IsNullOrWhiteSpace(vm.Code))
+            {
+                vm.Code = await _codeGenerator.GenerateNextCodeAsync(tenantId, "Classification", "CLA", ct);
+                generatedCode = true;
+            }
 
             await using var conn = await _db.OpenAsync(ct);
             using var tx = conn.BeginTransaction();
@@ -98,6 +106,11 @@ where tenant_id=@tenant_id and id=@id;
 
             _ = await _audit.WriteAsync(tenantId, userId, "CREATE", "classification_plan", id,
                 "Classe criada (PCD/TTD)", null, null, new { vm.Code, vm.Name }, ct);
+            if (generatedCode)
+            {
+                _ = await _audit.WriteAsync(tenantId, userId, "CODE_GENERATED", "Classification", id,
+                    $"Código gerado automaticamente para classe: {vm.Code}", null, null, new { tenantId, entityName = "Classification", generatedCode = vm.Code, userId }, ct);
+            }
 
             return Result<Guid>.Ok(id);
         }

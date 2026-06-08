@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Security.Cryptography;
@@ -6,6 +6,7 @@ using System.Text;
 using System.Threading.Tasks;
 using Dapper;
 using InovaGed.Application.Audit;
+using InovaGed.Application.Common.Codes;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Instruments;
 using Microsoft.Extensions.Logging;
@@ -17,10 +18,11 @@ namespace InovaGed.Infrastructure.Instruments
         private readonly IDbConnectionFactory _db;
         private readonly ILogger<InstrumentRepository> _logger;
         private readonly IAuditWriter _audit;
+        private readonly ICodeGeneratorService _codeGenerator;
 
-        public InstrumentRepository(IDbConnectionFactory db, ILogger<InstrumentRepository> logger, IAuditWriter audit)
+        public InstrumentRepository(IDbConnectionFactory db, ILogger<InstrumentRepository> logger, IAuditWriter audit, ICodeGeneratorService codeGenerator)
         {
-            _db = db; _logger = logger; _audit = audit;
+            _db = db; _logger = logger; _audit = audit; _codeGenerator = codeGenerator;
         }
 
         public async Task<IReadOnlyList<InstrumentVersionRow>> ListVersionsAsync(Guid tenantId, string type, CancellationToken ct)
@@ -151,6 +153,8 @@ namespace InovaGed.Infrastructure.Instruments
             {
                 await using var con = await _db.OpenAsync(ct);
                 var nodeId = id ?? Guid.NewGuid();
+                if (!id.HasValue && string.IsNullOrWhiteSpace(code))
+                    code = await _codeGenerator.GenerateNextCodeAsync(tenantId, $"InstrumentNode{type}", type?.ToUpperInvariant(), ct);
 
                 var sql = """
             INSERT INTO ged.instrument_node(id, tenant_id, instrument_type, version_id, parent_id, code, title, description, sort_order, security_level)

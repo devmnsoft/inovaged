@@ -732,6 +732,8 @@ public sealed class GedController : Controller
                     OcrFinishedAt = d.OcrFinishedAt,
                     HasOcrText = d.HasOcrText,
                     IsOcrAvailable = d.IsOcrAvailable,
+                    OcrBadgeText = d.OcrBadgeText,
+                    OcrBadgeCss = d.OcrBadgeCss,
                     IsPartialDocument = d.IsPartialDocument,
                     IsDocumentIncomplete = d.IsDocumentIncomplete,
                     PartNumber = d.PartNumber,

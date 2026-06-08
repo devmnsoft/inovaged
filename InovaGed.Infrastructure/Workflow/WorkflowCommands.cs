@@ -1,4 +1,5 @@
     using Dapper;
+    using InovaGed.Application.Common.Codes;
     using InovaGed.Application.Common.Database;
     using InovaGed.Application.Workflow;
     using InovaGed.Domain.Primitives;
@@ -10,11 +11,13 @@ using Microsoft.Extensions.Logging;
     public sealed class WorkflowCommands : IWorkflowCommands
     {
         private readonly IDbConnectionFactory _db;
+        private readonly ICodeGeneratorService _codeGenerator;
         private readonly ILogger<WorkflowCommands> _logger;
 
-        public WorkflowCommands(IDbConnectionFactory db, ILogger<WorkflowCommands> logger)
+        public WorkflowCommands(IDbConnectionFactory db, ICodeGeneratorService codeGenerator, ILogger<WorkflowCommands> logger)
         {
             _db = db;
+            _codeGenerator = codeGenerator;
             _logger = logger;
         }
 
@@ -22,8 +25,11 @@ using Microsoft.Extensions.Logging;
         {
             try
             {
-                if (string.IsNullOrWhiteSpace(cmd.Code) || string.IsNullOrWhiteSpace(cmd.Name))
-                    return Result<Guid>.Fail("VALIDATION", "Código e nome são obrigatórios.");
+                if (string.IsNullOrWhiteSpace(cmd.Name))
+                    return Result<Guid>.Fail("VALIDATION", "Nome é obrigatório.");
+                var code = string.IsNullOrWhiteSpace(cmd.Code)
+                    ? await _codeGenerator.GenerateNextCodeAsync(tenantId, "Workflow", "WF", ct)
+                    : cmd.Code.Trim();
 
                 var id = Guid.NewGuid();
 
@@ -39,7 +45,7 @@ VALUES
                     id,
                     tenantId,
                     name = cmd.Name.Trim(),
-                    code = cmd.Code.Trim(),
+                    code,
                     description = string.IsNullOrWhiteSpace(cmd.Description) ? null : cmd.Description.Trim(),
                     userId
                 }, cancellationToken: ct));
@@ -119,8 +125,11 @@ WHERE tenant_id = @tenantId AND id = @id;";
             try
             {
                 if (cmd.WorkflowId == Guid.Empty) return Result<Guid>.Fail("VALIDATION", "Workflow inválido.");
-                if (string.IsNullOrWhiteSpace(cmd.Code) || string.IsNullOrWhiteSpace(cmd.Name))
-                    return Result<Guid>.Fail("VALIDATION", "Código e nome são obrigatórios.");
+                if (string.IsNullOrWhiteSpace(cmd.Name))
+                    return Result<Guid>.Fail("VALIDATION", "Nome é obrigatório.");
+                var code = string.IsNullOrWhiteSpace(cmd.Code)
+                    ? await _codeGenerator.GenerateNextCodeAsync(tenantId, "WorkflowStage", "WFS", ct)
+                    : cmd.Code.Trim();
 
                 // valida tenant do workflow
                 const string sqlCheck = @"SELECT 1 FROM ged.workflow_definition WHERE tenant_id=@tenantId AND id=@id;";
@@ -140,7 +149,7 @@ VALUES
                     id,
                     workflowId = cmd.WorkflowId,
                     name = cmd.Name.Trim(),
-                    code = cmd.Code.Trim(),
+                    code,
                     sortOrder = cmd.SortOrder,
                     isStart = cmd.IsStart,
                     isFinal = cmd.IsFinal,

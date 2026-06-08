@@ -16,7 +16,6 @@ public sealed class WorkflowDefinitionFormVM
 {
     public Guid? Id { get; set; }
 
-    [Required(ErrorMessage = "Informe o código.")]
     [StringLength(50)]
     public string? Code { get; set; }
 
@@ -34,7 +33,6 @@ public sealed class WorkflowStageFormVM
     public Guid? Id { get; set; }
     public Guid WorkflowId { get; set; }
 
-    [Required(ErrorMessage = "Informe o código.")]
     [StringLength(50)]
     public string? Code { get; set; }
 

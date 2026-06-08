@@ -1,5 +1,6 @@
-﻿using Dapper;
+using Dapper;
 using InovaGed.Application.Audit;
+using InovaGed.Application.Common.Codes;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Ged.Instruments;
 using InovaGed.Domain.Primitives;
@@ -12,12 +13,14 @@ public sealed class PopProcedureCommands : IPopProcedureCommands
 {
     private readonly IDbConnectionFactory _db;
     private readonly IAuditWriter _audit;
+    private readonly ICodeGeneratorService _codeGenerator;
     private readonly ILogger<PopProcedureCommands> _logger;
 
-    public PopProcedureCommands(IDbConnectionFactory db, IAuditWriter audit, ILogger<PopProcedureCommands> logger)
+    public PopProcedureCommands(IDbConnectionFactory db, IAuditWriter audit, ICodeGeneratorService codeGenerator, ILogger<PopProcedureCommands> logger)
     {
         _db = db;
         _audit = audit;
+        _codeGenerator = codeGenerator;
         _logger = logger;
     }
 
@@ -36,8 +39,14 @@ public sealed class PopProcedureCommands : IPopProcedureCommands
             var code = (vm.Code ?? "").Trim();
             var title = (vm.Title ?? "").Trim();
             var content = vm.ContentMd ?? "";
+            var generatedCode = false;
 
-            if (string.IsNullOrWhiteSpace(code)) return Result<Guid>.Fail("CODE", "Código é obrigatório.");
+            if (string.IsNullOrWhiteSpace(code))
+            {
+                code = await _codeGenerator.GenerateNextCodeAsync(tenantId, "PopProcedure", "POP", ct);
+                vm.Code = code;
+                generatedCode = true;
+            }
             if (string.IsNullOrWhiteSpace(title)) return Result<Guid>.Fail("TITLE", "Título é obrigatório.");
             if (string.IsNullOrWhiteSpace(content)) return Result<Guid>.Fail("CONTENT", "Conteúdo é obrigatório.");
 
@@ -88,6 +97,11 @@ returning id;
                 null,
                 new { Code = code, Title = title },
                 ct);
+            if (generatedCode)
+            {
+                _ = await _audit.WriteAsync(tenantId, userId, "CODE_GENERATED", "PopProcedure", id,
+                    $"Código gerado automaticamente para POP: {code}", null, null, new { tenantId, entityName = "PopProcedure", generatedCode = code, userId }, ct);
+            }
 
             return Result<Guid>.Ok(id);
         }

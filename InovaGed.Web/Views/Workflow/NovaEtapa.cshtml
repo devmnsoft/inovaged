@@ -24,7 +24,8 @@
     <div class="row g-3">
         <div class="col-md-3">
             <label class="form-label">Código</label>
-            <input asp-for="Code" class="form-control" />
+            <input asp-for="Code" class="form-control bg-light" readonly placeholder="Gerado automaticamente ao salvar" />
+            <div class="form-text">Código bloqueado para preservar a rastreabilidade.</div>
             <span asp-validation-for="Code" class="text-danger"></span>
         </div>
         <div class="col-md-6">

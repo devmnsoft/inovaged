@@ -12,6 +12,7 @@ using InovaGed.Application.Auditing;
 using InovaGed.Application.Auth;
 using InovaGed.Application.Classification;
 using InovaGed.Application.Common.Context;
+using InovaGed.Application.Common.Codes;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Common.Preview;
 using InovaGed.Application.Common.Notifications;
@@ -49,6 +50,7 @@ using InovaGed.Infrastructure.Auth;
 using InovaGed.Infrastructure.Classification;
 using InovaGed.Infrastructure.ClassificationPlans;
 using InovaGed.Infrastructure.Common.Database;
+using InovaGed.Infrastructure.Common.Codes;
 using InovaGed.Infrastructure.Common.Security;
 using InovaGed.Infrastructure.Documents;
 using InovaGed.Infrastructure.Ged;
@@ -248,6 +250,7 @@ builder.Services.AddScoped<IGedClassificationSuggestionService, GedClassificatio
 // Auth Repository
 // =======================================================
 builder.Services.AddScoped<IAuthRepository, AuthRepository>();
+builder.Services.AddScoped<ICodeGeneratorService, CodeGeneratorService>();
 
 // =======================================================
 // GED – Queries

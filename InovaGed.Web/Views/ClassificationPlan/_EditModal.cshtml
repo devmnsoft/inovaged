@@ -1,4 +1,4 @@
-﻿@model InovaGed.Application.ClassificationPlans.ClassificationEditVM
+@model InovaGed.Application.ClassificationPlans.ClassificationEditVM
 
 <form id="cpEditForm" method="post" action="/ClassificationPlan/Save">
     @Html.AntiForgeryToken()
@@ -8,8 +8,9 @@
 
     <div class="row g-3">
         <div class="col-md-4">
-            <label class="form-label">Código</label>
-            <input class="form-control" name="Code" value="@Model.Code" maxlength="50" required />
+            <label class="form-label">Código automático</label>
+            <input class="form-control bg-light" name="Code" value="@Model.Code" maxlength="50" readonly placeholder="Gerado automaticamente ao salvar" />
+            <div class="form-text">O código é bloqueado para preservar a rastreabilidade.</div>
         </div>
 
         <div class="col-md-8">

@@ -20,7 +20,7 @@ namespace InovaGed.Domain.Ged
         public DateTime UploadedAtUtc { get; init; }
         public string UploadedAtLocalFormatted { get; set; } = "";
         public Guid CreatedBy { get; set; }   // ou Guid?
-        public string? OcrStatus { get; init; }
+        public string OcrStatus { get; init; } = "NONE";
         public DateTime? OcrFinishedAt { get; init; }
         public bool HasOcrText { get; init; }
         public bool IsOcrAvailable { get; init; }
@@ -77,7 +77,9 @@ namespace InovaGed.Domain.Ged
         public string PartialStatusCss => PartialStatusLabels.GetCss(PartialStatus);
 
         public string? FileExtension { get; init; }
-        public string OcrStatus { get; set; }
+        public string OcrStatus { get; set; } = "NONE";
+        public string OcrBadgeText => OcrStatusLabels.GetText(OcrStatus, HasOcrText);
+        public string OcrBadgeCss => OcrStatusLabels.GetCss(OcrStatus, HasOcrText);
         public long? OcrJobId { get; set; }
         public string OcrErrorMessage { get; set; }
         public DateTime? OcrRequestedAt { get; set; }

@@ -1,4 +1,115 @@
 @model InovaGed.Web.Models.Protocolo.ProtocoloCadastroFormVM
-@{ ViewData["Title"] = "Cadastro do Protocolo"; }
-<div class="d-flex justify-content-between mb-3"><h4>@Model.Titulo</h4><a asp-action="Index" asp-route-tipo="@Model.Tipo" class="btn btn-outline-secondary">Voltar</a></div>
-<form asp-action="Salvar" method="post">@Html.AntiForgeryToken()<input type="hidden" asp-for="Id"/><input type="hidden" asp-for="Tipo"/><div class="card border-0 shadow-sm"><div class="card-body row g-3"><div class="col-md-3"><label>Código</label><input asp-for="Codigo" class="form-control"/></div><div class="col-md-6"><label>Nome</label><input asp-for="Nome" class="form-control"/></div><div class="col-md-3"><label>Sigla</label><input asp-for="Sigla" class="form-control"/></div><div class="col-md-12"><label>Descrição</label><textarea asp-for="Descricao" rows="4" class="form-control"></textarea></div><div class="col-md-3"><label>Ordem</label><input asp-for="Ordem" type="number" class="form-control"/></div><div class="col-md-3"><label>Prazo dias</label><input asp-for="PrazoDias" type="number" class="form-control"/></div><div class="col-md-3"><label>Cor</label><input asp-for="Cor" class="form-control"/></div><div class="col-md-3 d-flex align-items-end"><div class="form-check"><input asp-for="Ativo" class="form-check-input"/><label>Ativo</label></div></div></div><div class="card-footer bg-white text-end"><button class="btn btn-primary">Salvar</button></div></div></form>
+@{
+    ViewData["Title"] = Model.Titulo;
+    var isEdit = Model.Id != Guid.Empty;
+    var entityLabel = (Model.Titulo ?? "Cadastro").Replace("Novo - ", "", StringComparison.OrdinalIgnoreCase).Replace("Editar - ", "", StringComparison.OrdinalIgnoreCase);
+}
+
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
+    <div>
+        <h1 class="h3 mb-1">@Model.Titulo</h1>
+        <p class="text-muted mb-0">Cadastre e padronize @entityLabel.ToLowerInvariant() utilizados nos fluxos administrativos, protocolos e documentos do GED.</p>
+    </div>
+    <a asp-action="Index" asp-route-tipo="@Model.Tipo" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left me-1"></i>Voltar
+    </a>
+</div>
+
+<form asp-action="Salvar" method="post" class="needs-validation" novalidate>
+    @Html.AntiForgeryToken()
+    <input type="hidden" asp-for="Id" />
+    <input type="hidden" asp-for="Tipo" />
+
+    <div class="card border-0 shadow-sm overflow-hidden">
+        <div class="card-header bg-white border-0 pt-4 px-4">
+            <h2 class="h5 mb-1">Identificação</h2>
+            <p class="text-muted small mb-0">Informe os dados principais. Campos marcados com <span class="text-danger">*</span> são obrigatórios.</p>
+        </div>
+
+        <div class="card-body p-4">
+            <div asp-validation-summary="ModelOnly" class="alert alert-danger"></div>
+
+            <div class="row g-3 align-items-end">
+                <div class="col-md-3">
+                    <label asp-for="Codigo" class="form-label">Código automático</label>
+                    <input asp-for="Codigo"
+                           class="form-control bg-light"
+                           readonly
+                           aria-readonly="true"
+                           placeholder="Gerado automaticamente ao salvar" />
+                    <div class="form-text">@(isEdit ? "Código bloqueado para preservar a rastreabilidade." : "O código será gerado automaticamente pelo sistema ao salvar.")</div>
+                </div>
+
+                <div class="col-md-5">
+                    <label asp-for="Nome" class="form-label">Nome <span class="text-danger">*</span></label>
+                    <input asp-for="Nome" class="form-control" maxlength="160" required placeholder="Ex.: Setor de Arquivo" />
+                    <span asp-validation-for="Nome" class="text-danger small"></span>
+                </div>
+
+                <div class="col-md-2">
+                    <label asp-for="Sigla" class="form-label">Sigla</label>
+                    <input asp-for="Sigla" class="form-control text-uppercase" maxlength="20" placeholder="Ex.: ARQ" />
+                    <span asp-validation-for="Sigla" class="text-danger small"></span>
+                </div>
+
+                <div class="col-md-2">
+                    <div class="form-check form-switch border rounded-3 px-5 py-3 bg-light">
+                        <input asp-for="Ativo" class="form-check-input" role="switch" />
+                        <label asp-for="Ativo" class="form-check-label fw-semibold">Ativo</label>
+                    </div>
+                </div>
+            </div>
+
+            <hr class="my-4" />
+
+            <h3 class="h6 text-uppercase text-muted mb-3">Configurações</h3>
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <label asp-for="Ordem" class="form-label">Ordem</label>
+                    <input asp-for="Ordem" type="number" class="form-control" min="0" placeholder="0" />
+                    <div class="form-text">Define a ordenação nas listas.</div>
+                    <span asp-validation-for="Ordem" class="text-danger small"></span>
+                </div>
+
+                <div class="col-md-3">
+                    <label asp-for="PrazoDias" class="form-label">Prazo em dias</label>
+                    <input asp-for="PrazoDias" type="number" class="form-control" min="0" placeholder="Opcional" />
+                    <div class="form-text">Use quando o cadastro controlar prazo operacional.</div>
+                    <span asp-validation-for="PrazoDias" class="text-danger small"></span>
+                </div>
+
+                <div class="col-md-3">
+                    <label asp-for="Cor" class="form-label">Cor</label>
+                    <div class="input-group">
+                        <input asp-for="Cor" type="color" class="form-control form-control-color" title="Escolha uma cor" />
+                        <input name="CorPreview" value="@Model.Cor" class="form-control" placeholder="#0d6efd" oninput="document.getElementById('Cor').value=this.value" />
+                    </div>
+                    <div class="form-text">Ajuda a identificar visualmente o cadastro.</div>
+                    <span asp-validation-for="Cor" class="text-danger small"></span>
+                </div>
+            </div>
+
+            <hr class="my-4" />
+
+            <h3 class="h6 text-uppercase text-muted mb-3">Descrição</h3>
+            <div class="row g-3">
+                <div class="col-12">
+                    <label asp-for="Descricao" class="form-label">Descrição</label>
+                    <textarea asp-for="Descricao" rows="4" class="form-control" maxlength="1000" placeholder="Resumo objetivo de uso, regras ou observações deste cadastro."></textarea>
+                    <span asp-validation-for="Descricao" class="text-danger small"></span>
+                </div>
+            </div>
+        </div>
+
+        <div class="card-footer bg-white border-top d-flex justify-content-end gap-2 p-3 sticky-bottom">
+            <a asp-action="Index" asp-route-tipo="@Model.Tipo" class="btn btn-outline-secondary">Cancelar</a>
+            <button type="submit" class="btn btn-primary">
+                <i class="bi bi-check2-circle me-1"></i>Salvar cadastro
+            </button>
+        </div>
+    </div>
+</form>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

@@ -61,6 +61,10 @@ public sealed class DocumentQueries : IDocumentQueries
         var partialPartsCountExpr = schema.HasDocumentPartialPartTable
             ? "(SELECT count(*)::int FROM ged.document_partial_part pp WHERE pp.tenant_id=d.tenant_id AND pp.document_id=d.id AND pp.reg_status='A')"
             : "0";
+        var documentSearchJoin = BuildDocumentSearchJoin(schema, "d", "cv");
+        var ocrTextExpr = schema.HasDocumentSearchOcrText ? "ds.ocr_text" : "NULL::text";
+        var ocrStatusExpr = $"CASE WHEN oj.status IS NOT NULL THEN upper(oj.status::text) WHEN NULLIF(btrim(COALESCE({ocrTextExpr},'')), '') IS NOT NULL THEN 'COMPLETED' ELSE 'NONE' END";
+        var hasOcrTextExpr = $"(NULLIF(btrim(COALESCE({ocrTextExpr},'')),'') IS NOT NULL)";
 
         var sql = $$"""
 SELECT
@@ -73,21 +77,10 @@ SELECT
     d.created_at                   AS "CreatedAt",
     {{uploadedAtExpr}} AS "UploadedAtUtc",
     d.created_by                   AS "CreatedBy",
-    CASE
-      WHEN oj.status IS NOT NULL THEN upper(oj.status::text)
-      WHEN NULLIF(btrim(COALESCE(ds.ocr_text,'')), '') IS NOT NULL THEN 'COMPLETED'
-      ELSE 'NONE'
-    END AS "OcrStatus",
+    {{ocrStatusExpr}} AS "OcrStatus",
     oj.finished_at                 AS "OcrFinishedAt",
-    (NULLIF(btrim(COALESCE(ds.ocr_text,'')),'') IS NOT NULL) AS "HasOcrText",
-    (
-      CASE
-        WHEN oj.status IS NOT NULL THEN upper(oj.status::text)
-        WHEN NULLIF(btrim(COALESCE(ds.ocr_text,'')), '') IS NOT NULL THEN 'COMPLETED'
-        ELSE 'NONE'
-      END = 'COMPLETED'
-      AND NULLIF(btrim(COALESCE(ds.ocr_text,'')),'') IS NOT NULL
-    ) AS "IsOcrAvailable",
+    {{hasOcrTextExpr}} AS "HasOcrText",
+    ({{ocrStatusExpr}} = 'COMPLETED' AND {{hasOcrTextExpr}}) AS "IsOcrAvailable",
     dc.document_type_id            AS "ClassificationId",
     cdt.name                       AS "ClassificationLabel",
     NULL::text                     AS "ClassificationColor",
@@ -115,13 +108,10 @@ LEFT JOIN LATERAL (
     FROM ged.ocr_job j
     WHERE j.tenant_id = d.tenant_id
       AND j.document_version_id = cv.id
-    ORDER BY j.requested_at DESC
+    ORDER BY COALESCE(j.finished_at, j.requested_at) DESC NULLS LAST
     LIMIT 1
 ) oj ON true
-LEFT JOIN ged.document_search ds
-       ON ds.tenant_id = d.tenant_id
-      AND ds.document_id = d.id
-      AND ds.version_id = cv.id
+{{documentSearchJoin}}
 LEFT JOIN LATERAL (
     SELECT x.document_type_id
     FROM ged.document_classification x
@@ -243,6 +233,10 @@ WHERE d.tenant_id = @tenantId
         var partialPartsCountExpr = schema.HasDocumentPartialPartTable
             ? "(SELECT count(*)::int FROM ged.document_partial_part pp WHERE pp.tenant_id=v.tenant_id AND pp.partial_group_id=v.partial_group_id AND pp.reg_status='A')"
             : "0";
+        var documentSearchJoin = BuildDocumentSearchJoin(schema, "d", "v");
+        var ocrTextExpr = schema.HasDocumentSearchOcrText ? "ds.ocr_text" : "NULL::text";
+        var ocrStatusExpr = $"CASE WHEN oj.status IS NOT NULL THEN upper(oj.status::text) WHEN NULLIF(btrim(COALESCE({ocrTextExpr},'')), '') IS NOT NULL THEN 'COMPLETED' ELSE 'NONE' END";
+        var hasOcrTextExpr = $"(NULLIF(btrim(COALESCE({ocrTextExpr},'')),'') IS NOT NULL)";
 
         var sql = $$"""
 SELECT
@@ -256,8 +250,8 @@ SELECT
     {{uploadedAtExpr}} AS "UploadedAtUtc",
     v.created_by      AS "CreatedBy",
     (v.id = d.current_version_id) AS "IsCurrent",
-    (NULLIF(COALESCE(ds.ocr_text,''),'') IS NOT NULL) AS "HasOcrText",
-    (upper(COALESCE(oj.status::text,'')) = 'COMPLETED' AND NULLIF(COALESCE(ds.ocr_text,''),'') IS NOT NULL) AS "IsOcrAvailable",
+    {{hasOcrTextExpr}} AS "HasOcrText",
+    ({{ocrStatusExpr}} = 'COMPLETED' AND {{hasOcrTextExpr}}) AS "IsOcrAvailable",
     {{isPartialDocumentExpr}} AS "IsPartialDocument",
     {{partialGroupIdExpr}} AS "PartialGroupId",
     {{partialPartNumberExpr}} AS "PartialPartNumber",
@@ -269,7 +263,7 @@ SELECT
     {{consolidatedVersionExpr}} AS "ConsolidatedVersionId",
     {{partialPartsCountExpr}} AS "PartialPartsCount",
 
-    oj.status::text   AS "OcrStatus",
+    {{ocrStatusExpr}} AS "OcrStatus",
     oj.id             AS "OcrJobId",
     oj.error_message  AS "OcrErrorMessage",
     oj.requested_at   AS "OcrRequestedAt",
@@ -285,13 +279,10 @@ LEFT JOIN LATERAL (
     FROM ged.ocr_job j
     WHERE j.tenant_id = v.tenant_id
       AND j.document_version_id = v.id
-    ORDER BY j.requested_at DESC
+    ORDER BY COALESCE(j.finished_at, j.requested_at) DESC NULLS LAST
     LIMIT 1
 ) oj ON true
-LEFT JOIN ged.document_search ds
-  ON ds.tenant_id = v.tenant_id
- AND ds.document_id = v.document_id
- AND ds.version_id = v.id
+{{documentSearchJoin}}
 WHERE v.tenant_id = @tenantId
   AND v.document_id = @documentId
   AND d.status <> 'ARCHIVED'::ged.document_status_enum
@@ -332,7 +323,11 @@ SELECT
     COALESCE(bool_or(column_name = 'total_parts'), false) AS "HasTotalParts",
     COALESCE(bool_or(column_name = 'consolidated_version_id'), false) AS "HasConsolidatedVersionId",
     EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='ged' AND table_name='document' AND column_name='created_at_utc') AS "HasDocumentCreatedAtUtc",
-    (to_regclass('ged.document_partial_part') IS NOT NULL) AS "HasDocumentPartialPartTable"
+    (to_regclass('ged.document_partial_part') IS NOT NULL) AS "HasDocumentPartialPartTable",
+    EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='ged' AND table_name='document_search' AND column_name='ocr_text') AS "HasDocumentSearchOcrText",
+    EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='ged' AND table_name='document_search' AND column_name='document_id') AS "HasDocumentSearchDocumentId",
+    EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='ged' AND table_name='document_search' AND column_name='version_id') AS "HasDocumentSearchVersionId",
+    EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='ged' AND table_name='document_search' AND column_name='document_version_id') AS "HasDocumentSearchDocumentVersionId"
 FROM information_schema.columns
 WHERE table_schema = 'ged'
   AND table_name = 'document_version'
@@ -362,6 +357,38 @@ WHERE table_schema = 'ged'
         return schema;
     }
 
+
+    private static string BuildDocumentSearchJoin(DocumentVersionSchema schema, string documentAlias, string versionAlias)
+    {
+        if (!schema.HasDocumentSearchOcrText)
+        {
+            return "LEFT JOIN (SELECT NULL::uuid AS tenant_id, NULL::text AS ocr_text WHERE false) ds ON false";
+        }
+
+        var predicates = new List<string>();
+        if (schema.HasDocumentSearchDocumentId)
+        {
+            predicates.Add($"ds.document_id = {documentAlias}.id");
+        }
+
+        var versionPredicates = new List<string>();
+        if (schema.HasDocumentSearchVersionId)
+        {
+            versionPredicates.Add($"ds.version_id = {versionAlias}.id");
+        }
+        if (schema.HasDocumentSearchDocumentVersionId)
+        {
+            versionPredicates.Add($"ds.document_version_id = {versionAlias}.id");
+        }
+        if (versionPredicates.Count > 0)
+        {
+            predicates.Add($"({string.Join(" OR ", versionPredicates)})");
+        }
+
+        var entityPredicate = predicates.Count == 0 ? "true" : string.Join(" AND ", predicates);
+        return $"LEFT JOIN ged.document_search ds ON ds.tenant_id = {documentAlias}.tenant_id AND {entityPredicate}";
+    }
+
     private sealed class DocumentVersionSchema
     {
         public bool HasUploadedAtUtc { get; set; }
@@ -376,6 +403,10 @@ WHERE table_schema = 'ged'
         public bool HasTotalParts { get; set; }
         public bool HasConsolidatedVersionId { get; set; }
         public bool HasDocumentPartialPartTable { get; set; }
+        public bool HasDocumentSearchOcrText { get; set; }
+        public bool HasDocumentSearchDocumentId { get; set; }
+        public bool HasDocumentSearchVersionId { get; set; }
+        public bool HasDocumentSearchDocumentVersionId { get; set; }
 
         public bool HasPartialDocumentMetadata =>
             HasUploadedAtUtc &&
