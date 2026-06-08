@@ -138,6 +138,20 @@ select exists (
             AddCheck(report, "Migrations", "ged.schema_migration_history", "Diagnóstico", "Opcional", migrationRegistered,
                 migrationRegistered ? "Histórico de migrations encontrado." : "Histórico padronizado ainda não detectado.",
                 "O script consolidado cria ged.schema_migration_history e registra a aplicação.");
+
+            if (existingTables.Contains("ged.schema_migration_history"))
+            {
+                report.LastMigration = await conn.QueryFirstOrDefaultAsync<SchemaMigrationHistoryDto>(new CommandDefinition(@"
+select script_name as ""ScriptName"",
+       applied_at as ""AppliedAt"",
+       applied_by as ""AppliedBy"",
+       success as ""Success"",
+       notes as ""Notes""
+from ged.schema_migration_history
+where success = true
+order by applied_at desc
+limit 1;", cancellationToken: ct));
+            }
         }
         catch (Exception ex)
         {

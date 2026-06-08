@@ -5,6 +5,7 @@ using InovaGed.Application.Classification;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Documents;
 using InovaGed.Application.Ocr;
+using InovaGed.Application.SystemHealth;
 using InovaGed.Domain.Ged;
 using InovaGed.Infrastructure.Preview;
 using Microsoft.Extensions.DependencyInjection;
@@ -22,15 +23,23 @@ public sealed class OcrWorker : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<OcrWorker> _logger;
+    private readonly ISchemaCompatibilityState _schemaState;
 
-    public OcrWorker(IServiceScopeFactory scopeFactory, ILogger<OcrWorker> logger)
+    public OcrWorker(IServiceScopeFactory scopeFactory, ILogger<OcrWorker> logger, ISchemaCompatibilityState schemaState)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
+        _schemaState = schemaState;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        if (!await _schemaState.IsCompatibleAsync("OCR", stoppingToken))
+        {
+            _logger.LogWarning("OCR Worker não iniciado: schema incompatível. Execute migrations.");
+            return;
+        }
+
         _logger.LogInformation("OCR Worker iniciado.");
 
         while (!stoppingToken.IsCancellationRequested)

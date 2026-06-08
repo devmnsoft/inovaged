@@ -117,6 +117,7 @@ builder.Services.AddSignalR();
 builder.Services.AddMemoryCache();
 builder.Services.AddScoped<IDateTimeDisplayService, DateTimeDisplayService>();
 builder.Services.AddScoped<ISchemaHealthService, SchemaHealthService>();
+builder.Services.AddSingleton<ISchemaCompatibilityState, SchemaCompatibilityState>();
 builder.Services.Configure<DocumentUploadOptions>(builder.Configuration.GetSection("DocumentUpload"));
 builder.WebHost.ConfigureKestrel(options =>
 {
@@ -556,24 +557,37 @@ static async Task ValidateDatabaseSchemaOnStartupAsync(WebApplication app)
     {
         var service = scope.ServiceProvider.GetRequiredService<ISchemaHealthService>();
         var report = await service.CheckAsync(CancellationToken.None);
+        var schemaState = scope.ServiceProvider.GetRequiredService<ISchemaCompatibilityState>();
         if (report.IsHealthy)
         {
+            schemaState.MarkCompatible();
             logger.LogInformation("Validação de schema concluída: banco compatível com checks críticos.");
             return;
         }
 
         var missingTables = string.Join(", ", report.MissingTables);
         var missingColumns = string.Join(", ", report.MissingColumns);
+        var disableWorkers = app.Configuration.GetValue("Database:DisableWorkersWhenSchemaInvalid", true);
+        var message = "Schema do banco desatualizado. Execute database/apply_all_required_migrations.sql antes de iniciar módulos críticos.";
+        schemaState.MarkInvalid(report.MissingTables, report.MissingColumns, message, disableWorkers);
         logger.LogError("Schema do banco desatualizado. MissingTables=[{MissingTables}] MissingColumns=[{MissingColumns}] ScriptSugerido={Script}",
             missingTables,
             missingColumns,
             "database/apply_all_required_migrations.sql");
 
+        if (disableWorkers)
+            logger.LogWarning("Workers desativados temporariamente por schema inválido.");
+
         if (app.Configuration.GetValue("Database:FailFastOnInvalidSchema", false))
-            throw new InvalidOperationException("Schema do banco desatualizado. Execute database/apply_all_required_migrations.sql antes de iniciar a aplicação.");
+            throw new InvalidOperationException($"{message} MissingTables=[{missingTables}] MissingColumns=[{missingColumns}]");
     }
     catch (Exception ex) when (!app.Configuration.GetValue("Database:FailFastOnInvalidSchema", false))
     {
+        var disableWorkers = app.Configuration.GetValue("Database:DisableWorkersWhenSchemaInvalid", true);
+        scope.ServiceProvider.GetRequiredService<ISchemaCompatibilityState>()
+            .MarkInvalid(Array.Empty<string>(), Array.Empty<string>(), ex.Message, disableWorkers);
         logger.LogError(ex, "Falha ou inconsistência durante validação de schema no startup. A aplicação continuará por configuração, mas telas críticas podem ser bloqueadas.");
+        if (disableWorkers)
+            logger.LogWarning("Workers desativados temporariamente por schema inválido.");
     }
 }
