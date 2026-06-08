@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Dapper;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Documents;
@@ -29,6 +30,7 @@ public sealed class HomologationHealthService : IHomologationHealthService
     private readonly LocalStorageOptions _storageOptions;
     private readonly LoanOverdueWorkerOptions _loanOptions;
     private readonly ILogger<HomologationHealthService> _logger;
+    private readonly ConcurrentDictionary<string, byte> _loggedSafeSqlFailures = new();
 
     private const string Ok = "OK";
     private const string Warning = "Warning";
@@ -193,7 +195,7 @@ public sealed class HomologationHealthService : IHomologationHealthService
         var columns = await ColumnsExistAsync("ged", "document_version", ["is_partial_document", "partial_group_id", "partial_part_number", "partial_total_parts", "partial_status", "consolidated_version_id"], ct);
         Add(report, "Documentos incompletos", "Estrutura de colunas", "Verifica colunas de documento parcial em ged.document_version.", columns ? Ok : Failed, "Critical", columns ? "Colunas de documento parcial existem." : "Uma ou mais colunas de documento parcial estão ausentes.", "Aplicar migration de documentos fracionados.", "/SystemHealth/Schema");
         Add(report, "Documentos incompletos", "Tabela document_partial_part", "Verifica tabela de partes.", table ? Ok : Failed, "Critical", table ? "ged.document_partial_part existe." : "Tabela ged.document_partial_part ausente.", "Aplicar migration de documentos fracionados.", "/SystemHealth/Schema");
-        var count = await ScalarSafeAsync<long>("select count(*) from ged.document_version where tenant_id = @tenantId and (coalesce(is_partial_document,false) or upper(coalesce(partial_status,'')) in ('INCOMPLETE','PENDING'))", new { tenantId = _currentUser.TenantId }, ct);
+        var count = await ScalarSafeAsync<long>("select count(*) from ged.document_version where tenant_id = @tenantId and (coalesce(is_partial_document,false) or upper(coalesce(partial_status::text,'')) in ('INCOMPLETE','PENDING'))", new { tenantId = _currentUser.TenantId }, ct);
         Add(report, "Documentos incompletos", "Contador de incompletos", "Conta documentos fracionados/incompletos.", Ok, "Info", count > 0 ? $"{count} documento(s) incompleto(s) encontrado(s)." : "Estrutura disponível. Nenhum documento incompleto no momento.", "Se houver registros, conferir badge, ações e explicação no GED.", "/Ged");
         Add(report, "Documentos incompletos", "Ações e badges no GED", "Adicionar parte, Ver partes e Consolidar devem aparecer quando aplicável.", Manual, "Info", "Validação visual na listagem GED.", "Marcar checklist manual após validar dropdown e badges.", "/Ged", false);
     }
@@ -264,20 +266,29 @@ public sealed class HomologationHealthService : IHomologationHealthService
 
     private async Task AddUploadHistoryChecksAsync(HomologationReportDto report, CancellationToken ct)
     {
-        var lastSuccess = await ScalarSafeAsync<DateTimeOffset?>("select max(finished_at) from ged.upload_batch_item where tenant_id = @tenantId and upper(status) in ('COMPLETED','DONE','SUCCESS')", new { tenantId = _currentUser.TenantId }, ct);
-        var errors = await ScalarSafeAsync<long>("select count(*) from ged.upload_batch_item where tenant_id = @tenantId and upper(status) in ('ERROR','FAILED')", new { tenantId = _currentUser.TenantId }, ct);
-        Add(report, "Upload", "Último upload bem-sucedido", "Informa se há evidência recente de upload.", lastSuccess.HasValue ? Ok : Warning, "Low", lastSuccess.HasValue ? $"Último upload concluído em {lastSuccess.Value:dd/MM/yyyy HH:mm}." : "Nenhum upload bem-sucedido registrado.", "Realize upload de homologação antes da apresentação.", "/UploadBatch");
+        var lastSuccess = await ScalarDateTimeOffsetSafeAsync("select max(finished_at) from ged.upload_batch_item where tenant_id = @tenantId and upper(status::text) in ('COMPLETED','DONE','SUCCESS')", new { tenantId = _currentUser.TenantId }, ct, "Upload", "Último upload bem-sucedido");
+        var errors = await ScalarSafeAsync<long>("select count(*) from ged.upload_batch_item where tenant_id = @tenantId and upper(status::text) in ('ERROR','FAILED')", new { tenantId = _currentUser.TenantId }, ct, "Upload", "Uploads com erro");
+        Add(report, "Upload", "Último upload bem-sucedido", "Informa se há evidência recente de upload.", lastSuccess.HasValue ? Ok : Warning, "Low", lastSuccess.HasValue ? $"Último upload concluído em {lastSuccess.Value:dd/MM/yyyy HH:mm}." : "Nenhum upload concluído encontrado.", "Realize upload de homologação antes da apresentação.", "/UploadBatch");
         Add(report, "Upload", "Uploads com erro", "Exibe existência de falhas recentes/pendentes.", errors == 0 ? Ok : Warning, "Medium", errors == 0 ? "Nenhum item de upload com erro encontrado." : $"{errors} item(ns) com erro encontrados.", "Abrir /UploadBatch e revisar mensagens de erro.", "/UploadBatch");
     }
 
     private async Task AddOcrJobChecksAsync(HomologationReportDto report, CancellationToken ct)
     {
-        var pending = await ScalarSafeAsync<long>("select count(*) from ged.ocr_job where tenant_id=@tenantId and upper(status)='PENDING'", new { tenantId = _currentUser.TenantId }, ct);
-        var processing = await ScalarSafeAsync<long>("select count(*) from ged.ocr_job where tenant_id=@tenantId and upper(status)='PROCESSING'", new { tenantId = _currentUser.TenantId }, ct);
-        var completed = await ScalarSafeAsync<long>("select count(*) from ged.ocr_job where tenant_id=@tenantId and upper(status)='COMPLETED'", new { tenantId = _currentUser.TenantId }, ct);
-        var error = await ScalarSafeAsync<long>("select count(*) from ged.ocr_job where tenant_id=@tenantId and upper(status)='ERROR'", new { tenantId = _currentUser.TenantId }, ct);
-        Add(report, "OCR", "Jobs PENDING/PROCESSING/COMPLETED/ERROR", "Resumo da fila de OCR.", (pending + processing + completed + error) > 0 ? Ok : Warning, "Low", $"PENDING={pending}; PROCESSING={processing}; COMPLETED={completed}; ERROR={error}.", "Gerar job de OCR de homologação se a base estiver vazia.", "/SystemHealth");
-        var invalid = await ScalarSafeAsync<long>("select count(*) from ged.ocr_job oj left join ged.document_search ds on ds.tenant_id=oj.tenant_id and ds.version_id=oj.document_version_id where oj.tenant_id=@tenantId and upper(oj.status)='COMPLETED' and nullif(coalesce(ds.ocr_text,''),'') is null", new { tenantId = _currentUser.TenantId }, ct);
+        var args = new { tenantId = _currentUser.TenantId };
+        var pending = await ScalarSafeAsync<long>("select count(*) from ged.ocr_job where tenant_id=@tenantId and upper(status::text)='PENDING'", args, ct, "OCR", "Jobs PENDING");
+        var processing = await ScalarSafeAsync<long>("select count(*) from ged.ocr_job where tenant_id=@tenantId and upper(status::text)='PROCESSING'", args, ct, "OCR", "Jobs PROCESSING");
+        var completed = await ScalarSafeAsync<long>("select count(*) from ged.ocr_job where tenant_id=@tenantId and upper(status::text)='COMPLETED'", args, ct, "OCR", "Jobs COMPLETED");
+        var error = await ScalarSafeAsync<long>("select count(*) from ged.ocr_job where tenant_id=@tenantId and upper(status::text)='ERROR'", args, ct, "OCR", "Jobs ERROR");
+        Add(report, "OCR", "Jobs PENDING/PROCESSING/COMPLETED/ERROR", "Resumo da fila de OCR.", (pending + processing + completed + error) > 0 ? Ok : Warning, "Low", (pending + processing + completed + error) > 0 ? $"PENDING={pending}; PROCESSING={processing}; COMPLETED={completed}; ERROR={error}." : "Nenhum job OCR encontrado.", "Gerar job de OCR de homologação se a base estiver vazia.", "/SystemHealth");
+
+        var invalidSql = await BuildCompletedOcrWithoutTextSqlAsync(ct);
+        if (invalidSql is null)
+        {
+            AddCheckWarning(report, "OCR", "Regra OCR disponível", "Não foi possível validar COMPLETED sem texto porque ged.document_search não possui uma coluna de vínculo compatível.", "Aplicar migration de ged.document_search com version_id ou document_version_id.");
+            return;
+        }
+
+        var invalid = await ScalarSafeAsync<long>(invalidSql, args, ct, "OCR", "Regra OCR disponível");
         Add(report, "OCR", "Regra OCR disponível", "OCR disponível exige status COMPLETED e texto não vazio.", invalid == 0 ? Ok : Warning, "Medium", invalid == 0 ? "Nenhum COMPLETED sem texto encontrado." : $"{invalid} job(s) COMPLETED sem texto indexado.", "Reprocessar OCR/document_search dos documentos afetados.", "/HospitalDocuments");
     }
 
@@ -294,6 +305,9 @@ public sealed class HomologationHealthService : IHomologationHealthService
         var exists = File.Exists(Path.GetFullPath(path));
         Add(report, area, name, $"Verifica arquivo {relativePath}.", exists ? Ok : Warning, "Low", exists ? $"{relativePath} encontrado." : $"{relativePath} não encontrado.", "Criar/atualizar documentação para entrega ao cliente.", link);
     }
+
+    private static void AddCheckWarning(HomologationReportDto report, string area, string name, string message, string recommendedAction)
+        => Add(report, area, name, "Check auxiliar de homologação não crítico.", Warning, "Medium", message, recommendedAction, "/SystemHealth");
 
     private static void Add(HomologationReportDto report, string area, string name, string description, string status, string severity, string evidence, string action, string link, bool automatic = true)
     {
@@ -329,7 +343,73 @@ public sealed class HomologationHealthService : IHomologationHealthService
         return false;
     }
 
-    private async Task<T> ScalarSafeAsync<T>(string sql, object? args, CancellationToken ct)
+    private async Task<string?> GetDocumentSearchVersionColumnAsync(CancellationToken ct)
+    {
+        if (await ColumnsExistAsync("ged", "document_search", ["version_id"], ct)) return "version_id";
+        if (await ColumnsExistAsync("ged", "document_search", ["document_version_id"], ct)) return "document_version_id";
+        return null;
+    }
+
+    private async Task<string?> BuildCompletedOcrWithoutTextSqlAsync(CancellationToken ct)
+    {
+        if (!await TablesExistAsync(["ged.document_search"], ct) ||
+            !await ColumnsExistAsync("ged", "document_search", ["ocr_text"], ct))
+        {
+            return null;
+        }
+
+        var versionColumn = await GetDocumentSearchVersionColumnAsync(ct);
+        if (versionColumn is not null)
+        {
+            return $@"
+select count(*)
+from ged.ocr_job oj
+left join ged.document_search ds
+  on ds.tenant_id = oj.tenant_id
+ and ds.{versionColumn} = oj.document_version_id
+where oj.tenant_id = @tenantId
+  and upper(oj.status::text) = 'COMPLETED'
+  and nullif(trim(coalesce(ds.ocr_text, '')), '') is null";
+        }
+
+        if (await ColumnsExistAsync("ged", "document_search", ["document_id"], ct) &&
+            await ColumnsExistAsync("ged", "document_version", ["document_id"], ct))
+        {
+            return @"
+select count(*)
+from ged.ocr_job oj
+left join ged.document_version dv
+  on dv.tenant_id = oj.tenant_id
+ and dv.id = oj.document_version_id
+left join ged.document_search ds
+  on ds.tenant_id = oj.tenant_id
+ and ds.document_id = dv.document_id
+where oj.tenant_id = @tenantId
+  and upper(oj.status::text) = 'COMPLETED'
+  and nullif(trim(coalesce(ds.ocr_text, '')), '') is null";
+        }
+
+        return null;
+    }
+
+    private async Task<DateTimeOffset?> ScalarDateTimeOffsetSafeAsync(string sql, object? args, CancellationToken ct, string? area = null, string? name = null)
+    {
+        var value = await ScalarSafeAsync<object?>(sql, args, ct, area, name);
+
+        if (value is null || value is DBNull) return null;
+        if (value is DateTimeOffset dto) return dto;
+        if (value is DateTime dt)
+        {
+            var normalized = dt.Kind == DateTimeKind.Unspecified
+                ? DateTime.SpecifyKind(dt, DateTimeKind.Utc)
+                : dt.ToUniversalTime();
+            return new DateTimeOffset(normalized);
+        }
+
+        return DateTimeOffset.TryParse(value.ToString(), out var parsed) ? parsed : null;
+    }
+
+    private async Task<T> ScalarSafeAsync<T>(string sql, object? args, CancellationToken ct, string? area = null, string? name = null)
     {
         try
         {
@@ -338,7 +418,16 @@ public sealed class HomologationHealthService : IHomologationHealthService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Check de homologação ignorado por falha SQL segura. Sql={Sql}", sql);
+            var logKey = $"{area}|{name}|{ex.GetType().FullName}|{sql}";
+            if (_loggedSafeSqlFailures.TryAdd(logKey, 0))
+            {
+                _logger.LogWarning(ex, "Check de homologação ignorado por falha SQL segura. Area={Area} Check={CheckName} Sql={Sql}", area ?? "n/a", name ?? "n/a", sql);
+            }
+            else
+            {
+                _logger.LogDebug(ex, "Falha SQL segura repetida ignorada. Area={Area} Check={CheckName}", area ?? "n/a", name ?? "n/a");
+            }
+
             return default!;
         }
     }
