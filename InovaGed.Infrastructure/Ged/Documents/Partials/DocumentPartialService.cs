@@ -47,15 +47,13 @@ WITH document_row AS (
     SELECT v.id, v.partial_group_id, v.partial_part_number, v.part_number, v.partial_total_parts, v.total_parts, v.file_name, v.file_size_bytes
     FROM document_row d
     JOIN ged.document_version v ON v.tenant_id=@tenantId AND v.id=d.current_version_id AND v.document_id=d.id
-    WHERE COALESCE(v.reg_status, 'A')='A'
     LIMIT 1
 ), fallback_version AS (
     SELECT v.id, v.partial_group_id, v.partial_part_number, v.part_number, v.partial_total_parts, v.total_parts, v.file_name, v.file_size_bytes
     FROM document_row d
     JOIN ged.document_version v ON v.tenant_id=@tenantId AND v.document_id=d.id
     WHERE NOT EXISTS (SELECT 1 FROM current_version)
-      AND COALESCE(v.reg_status, 'A')='A'
-    ORDER BY COALESCE(v.uploaded_at_utc, v.created_at_utc, v.created_at, '-infinity'::timestamptz) DESC, v.id DESC
+    ORDER BY COALESCE(v.uploaded_at_utc, v.created_at, '-infinity'::timestamptz) DESC, v.id DESC
     LIMIT 1
 ), selected_version AS (
     SELECT * FROM current_version

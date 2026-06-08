@@ -28,6 +28,7 @@ public static class AppMenuPolicy
     public static bool CanSeeLoans(ClaimsPrincipal user)
         => IsAdmin(user)
            || IsAdministradorOphir(user)
+           || IsArquivistaOphir(user)
            || (!IsHospitalRestricted(user) && (HasRole(user, AppRoles.Arquivista) || HasRole(user, AppRoles.Gestor) || HasRole(user, AppRoles.Operador)));
 
     public static bool CanCreateHospitalDocuments(ClaimsPrincipal user)

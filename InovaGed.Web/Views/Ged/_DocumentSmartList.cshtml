@@ -65,6 +65,24 @@
 
             <div class="ged-doc-file" title="@fileName">@fileName</div>
 
+            @{
+                var classificationLabel = !string.IsNullOrWhiteSpace(d.ClassificationLabel) ? d.ClassificationLabel : (!isUnclassified ? d.TypeName : "Classificar");
+                var classificationStyle = !string.IsNullOrWhiteSpace(d.ClassificationColor) ? $"border-color:{d.ClassificationColor};color:{d.ClassificationColor};" : string.Empty;
+            }
+            <button type="button"
+                    class="ged-classification-tag js-open-classification-menu @(d.ClassificationId.HasValue ? "is-classified" : "is-empty")"
+                    data-document-id="@d.Id"
+                    data-current-classification-id="@d.ClassificationId"
+                    style="@classificationStyle"
+                    title="Classificação rápida">
+                <i class="bi @(string.IsNullOrWhiteSpace(d.ClassificationIcon) ? "bi-tag" : d.ClassificationIcon)"></i>
+                <span>@classificationLabel</span>
+                @if (d.HasOcrClassificationSuggestion)
+                {
+                    <span class="ged-classification-suggestion" title="Sugestão do OCR">⭐</span>
+                }
+            </button>
+
             <div class="ged-doc-meta ged-smart-inline-badges" aria-label="Indicadores do documento">
                 @await Html.PartialAsync("_DocumentBadges", d)
                 <span class="ged-doc-upload-date" title="Upload em UTC: @uploadDateUtc.ToString("O")">

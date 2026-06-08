@@ -73,10 +73,25 @@ SELECT
     d.created_at                   AS "CreatedAt",
     {{uploadedAtExpr}} AS "UploadedAtUtc",
     d.created_by                   AS "CreatedBy",
-    COALESCE(oj.status::text, 'NONE') AS "OcrStatus",
+    CASE
+      WHEN oj.status IS NOT NULL THEN upper(oj.status::text)
+      WHEN NULLIF(btrim(COALESCE(ds.ocr_text,'')), '') IS NOT NULL THEN 'COMPLETED'
+      ELSE 'NONE'
+    END AS "OcrStatus",
     oj.finished_at                 AS "OcrFinishedAt",
-    (NULLIF(COALESCE(ds.ocr_text,''),'') IS NOT NULL) AS "HasOcrText",
-    (upper(COALESCE(oj.status::text,'')) = 'COMPLETED' AND NULLIF(COALESCE(ds.ocr_text,''),'') IS NOT NULL) AS "IsOcrAvailable",
+    (NULLIF(btrim(COALESCE(ds.ocr_text,'')),'') IS NOT NULL) AS "HasOcrText",
+    (
+      CASE
+        WHEN oj.status IS NOT NULL THEN upper(oj.status::text)
+        WHEN NULLIF(btrim(COALESCE(ds.ocr_text,'')), '') IS NOT NULL THEN 'COMPLETED'
+        ELSE 'NONE'
+      END = 'COMPLETED'
+      AND NULLIF(btrim(COALESCE(ds.ocr_text,'')),'') IS NOT NULL
+    ) AS "IsOcrAvailable",
+    dc.document_type_id            AS "ClassificationId",
+    cdt.name                       AS "ClassificationLabel",
+    NULL::text                     AS "ClassificationColor",
+    NULL::text                     AS "ClassificationIcon",
     {{isPartialDocumentExpr}} AS "IsPartialDocument",
     {{partialGroupIdExpr}} AS "PartialGroupId",
     {{partialPartNumberExpr}} AS "PartialPartNumber",
@@ -107,6 +122,18 @@ LEFT JOIN ged.document_search ds
        ON ds.tenant_id = d.tenant_id
       AND ds.document_id = d.id
       AND ds.version_id = cv.id
+LEFT JOIN LATERAL (
+    SELECT x.document_type_id
+    FROM ged.document_classification x
+    WHERE x.tenant_id = d.tenant_id
+      AND x.document_id = d.id
+      AND x.reg_status = 'A'
+    ORDER BY x.classified_at DESC NULLS LAST, x.created_at DESC NULLS LAST
+    LIMIT 1
+) dc ON true
+LEFT JOIN ged.document_type cdt
+       ON cdt.tenant_id = d.tenant_id
+      AND cdt.id = dc.document_type_id
 WHERE d.tenant_id = @tenantId
   AND (
         (@folderId IS NULL AND d.folder_id IS NULL)

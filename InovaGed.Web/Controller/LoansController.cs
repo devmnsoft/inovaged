@@ -52,10 +52,11 @@ public sealed class LoansController : Controller
             var tenantId = _user.TenantId;
 
             var stats = new LoanStatsDto();
-            stats.Requested = await _service.PendingCountAsync(tenantId, _user.UserId, canViewAll: true, ct);
+            var canViewAll = CanManageLoans();
+            stats.Requested = await _service.PendingCountAsync(tenantId, _user.UserId, canViewAll, ct);
             ViewBag.Stats = stats;
 
-            var list = await _service.ListAsync(tenantId, q, status, _user.UserId, true, ct);
+            var list = await _service.ListAsync(tenantId, q, status, _user.UserId, canViewAll, ct);
             ViewBag.Q = q;
             ViewBag.Status = status;
 
@@ -99,6 +100,7 @@ public sealed class LoansController : Controller
         try
         {
             var tenantId = _user.TenantId;
+            if (!CanManageLoans()) return Forbid();
             var list = await _service.OverdueAsync(tenantId, _user.UserId, true, ct);
             return View(list);
         }
@@ -169,7 +171,7 @@ public sealed class LoansController : Controller
         try
         {
             var tenantId = _user.TenantId;
-            var count = await _service.PendingCountAsync(tenantId, _user.UserId, true, ct);
+            var count = await _service.PendingCountAsync(tenantId, _user.UserId, CanManageLoans(), ct);
             return Ok(new { success = true, count });
         }
         catch (Exception ex)
@@ -223,7 +225,7 @@ public sealed class LoansController : Controller
         try
         {
             var tenantId = _user.TenantId;
-            var vm = await _service.GetDetailsAsync(tenantId, id, _user.UserId, true, ct);
+            var vm = await _service.GetDetailsAsync(tenantId, id, _user.UserId, CanManageLoans(), ct);
 
             if (vm is null) return NotFound();
             return View(vm);
@@ -256,6 +258,7 @@ public sealed class LoansController : Controller
     // =========================================================
     // Transições de status
     // =========================================================
+    [Authorize(Roles = AppRoles.Admin + "," + AppRoles.AdministradorOphir)]
     [HttpPost("{id:guid}/Approve")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Approve(Guid id, string? notes, CancellationToken ct)
@@ -265,6 +268,7 @@ public sealed class LoansController : Controller
         return RedirectToAction(nameof(Details), new { id });
     }
 
+    [Authorize(Roles = AppRoles.Admin + "," + AppRoles.AdministradorOphir)]
     [HttpPost("{id:guid}/Deliver")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Deliver(Guid id, string? notes, CancellationToken ct)
@@ -274,6 +278,7 @@ public sealed class LoansController : Controller
         return RedirectToAction(nameof(Details), new { id });
     }
 
+    [Authorize(Roles = AppRoles.Admin + "," + AppRoles.AdministradorOphir)]
     [HttpPost("{id:guid}/Return")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Return(Guid id, string? notes, CancellationToken ct)
@@ -283,6 +288,7 @@ public sealed class LoansController : Controller
         return RedirectToAction(nameof(Details), new { id });
     }
 
+    [Authorize(Roles = AppRoles.Admin + "," + AppRoles.AdministradorOphir)]
     [HttpPost("{id:guid}/Cancel")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Cancel(Guid id, string? notes, CancellationToken ct)
@@ -291,6 +297,8 @@ public sealed class LoansController : Controller
         TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Solicitação cancelada com sucesso." : res.ErrorMessage;
         return RedirectToAction(nameof(Details), new { id });
     }
+
+    private bool CanManageLoans() => User.IsInRole(AppRoles.Admin) || User.IsInRole(AppRoles.AdministradorOphir);
 
     public override void OnActionExecuted(ActionExecutedContext context)
     {

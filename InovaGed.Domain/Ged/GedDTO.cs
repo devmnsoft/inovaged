@@ -24,6 +24,15 @@ namespace InovaGed.Domain.Ged
         public DateTime? OcrFinishedAt { get; init; }
         public bool HasOcrText { get; init; }
         public bool IsOcrAvailable { get; init; }
+        public string OcrBadgeText => OcrStatusLabels.GetText(OcrStatus, HasOcrText);
+        public string OcrBadgeCss => OcrStatusLabels.GetCss(OcrStatus, HasOcrText);
+        public Guid? ClassificationId { get; init; }
+        public string? ClassificationLabel { get; init; }
+        public string? ClassificationColor { get; init; }
+        public string? ClassificationIcon { get; init; }
+        public bool HasOcrClassificationSuggestion { get; init; }
+        public Guid? SuggestedClassificationId { get; init; }
+        public string? SuggestedClassificationLabel { get; init; }
         public bool IsPartialDocument { get; init; }
         public Guid? PartialGroupId { get; init; }
         public int? PartialPartNumber { get; init; }
@@ -88,6 +97,28 @@ namespace InovaGed.Domain.Ged
         public long SizeBytes { get; init; }
     }
 
+
+    internal static class OcrStatusLabels
+    {
+        public static string GetText(string? status, bool hasText) => (status ?? "NONE").Trim().ToUpperInvariant() switch
+        {
+            "COMPLETED" => hasText ? "OCR disponível" : "OCR concluído sem texto",
+            "PENDING" or "QUEUED" => "OCR pendente",
+            "PROCESSING" or "RUNNING" => "OCR em processamento",
+            "ERROR" or "FAILED" => "OCR com erro",
+            "NONE" or "" => "Sem OCR",
+            var value => $"OCR: {value}"
+        };
+
+        public static string GetCss(string? status, bool hasText) => (status ?? "NONE").Trim().ToUpperInvariant() switch
+        {
+            "COMPLETED" => hasText ? "bg-success" : "bg-light text-dark border",
+            "PENDING" or "QUEUED" => "bg-warning text-dark",
+            "PROCESSING" or "RUNNING" => "bg-info text-dark",
+            "ERROR" or "FAILED" => "bg-danger",
+            _ => "bg-secondary"
+        };
+    }
 
     internal static class PartialStatusLabels
     {

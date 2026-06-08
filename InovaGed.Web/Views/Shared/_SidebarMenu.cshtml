@@ -351,6 +351,44 @@
 	}
 }
 
+
+@if (IsArquivistaOphir() || IsAdministradorOphir())
+{
+    <div class="sidebar-section-title">Jornada Operacional</div>
+
+    @if (IsArquivistaOphir())
+    {
+        <a href="/ProtocolRequests" class="@ActivePathStarts("/protocolrequests")">
+            <i class="bi bi-file-earmark-plus"></i>
+            <span>Solicitar Protocolo</span>
+        </a>
+        <a href="/Protocolo?visao=enviados" class="@ActivePathStarts("/protocolo")">
+            <i class="bi bi-clock-history"></i>
+            <span>Minhas Solicitações</span>
+        </a>
+        <a asp-controller="Loans" asp-action="New" class="@Active("Loans", "New")">
+            <i class="bi bi-journal-plus"></i>
+            <span>Solicitar Documento/Empréstimo</span>
+        </a>
+    }
+
+    @if (IsAdministradorOphir())
+    {
+        <a href="/Protocols/WorkQueue" class="@ActivePathStarts("/protocols/workqueue")">
+            <i class="bi bi-inbox"></i>
+            <span>Fila de Protocolos</span>
+        </a>
+        <a href="/Protocols/WorkQueue" class="@ActivePathStarts("/protocols/workqueue")">
+            <i class="bi bi-kanban"></i>
+            <span>Manuseio de Processos</span>
+        </a>
+        <a asp-controller="Loans" asp-action="Index" class="@Active("Loans", "Index", "Details")">
+            <i class="bi bi-journal-check"></i>
+            <span>Loans/Empréstimos para aprovação</span>
+        </a>
+    }
+}
+
 @if (CanEmprestimos())
 {
 	<div class="sidebar-section-title">Empréstimos</div>

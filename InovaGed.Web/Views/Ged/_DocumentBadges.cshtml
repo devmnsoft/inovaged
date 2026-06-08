@@ -1,9 +1,9 @@
 @model InovaGed.Web.Models.Ged.GedExplorerVM.DocumentRowVM
 @using InovaGed.Web.Ocr
 @{
-    var isUnclassified = string.IsNullOrWhiteSpace(Model.TypeName) || Model.TypeName == "-";
-    var ocrBadgeClass = OcrUiHelper.BadgeClass(Model.IsOcrAvailable, Model.OcrStatus);
-    var ocrLabel = OcrUiHelper.AvailabilityLabel(Model.IsOcrAvailable, Model.OcrStatus, Model.HasOcrText);
+    var isUnclassified = !Model.ClassificationId.HasValue && (string.IsNullOrWhiteSpace(Model.TypeName) || Model.TypeName == "-");
+    var ocrBadgeClass = !string.IsNullOrWhiteSpace(Model.OcrBadgeCss) ? Model.OcrBadgeCss : OcrUiHelper.BadgeClass(Model.IsOcrAvailable, Model.OcrStatus);
+    var ocrLabel = !string.IsNullOrWhiteSpace(Model.OcrBadgeText) ? Model.OcrBadgeText : OcrUiHelper.AvailabilityLabel(Model.IsOcrAvailable, Model.OcrStatus, Model.HasOcrText);
     var ocrTitle = $"Status OCR: {(string.IsNullOrWhiteSpace(Model.OcrStatus) ? "NONE" : Model.OcrStatus)}. Texto extraído: {(Model.HasOcrText ? "sim" : "não")}.";
     if (Model.IsDocumentIncomplete || Model.IsPartialDocument)
     {
