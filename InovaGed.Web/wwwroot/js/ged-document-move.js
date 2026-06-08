@@ -136,7 +136,7 @@
             moveSelectedCounts.forEach(moveSelectedCount => { moveSelectedCount.textContent = `(${selected.length})`; });
             const inlineInfo = document.getElementById('selectedDocumentsInlineInfo');
             if (inlineInfo) inlineInfo.textContent = `${selected.length} selecionado${selected.length === 1 ? '' : 's'}`;
-            document.querySelectorAll('#gedDocumentsContainer .ged-smart-doc-row, #gedDocumentsContainer .ged-operational-row, #gedDocumentsContainer .ged-document-row, #gedDocumentsContainer tr[data-document-id]').forEach(row => {
+            document.querySelectorAll('#gedDocumentsContainer .ged-doc-row, #gedDocumentsContainer .ged-smart-doc-row, #gedDocumentsContainer .ged-operational-row, #gedDocumentsContainer .ged-document-row, #gedDocumentsContainer tr[data-document-id]').forEach(row => {
                 row.classList.toggle('is-selected', selected.includes(row.dataset.documentId));
             });
             document.querySelectorAll('#selectAllDocuments, #selectAllDocumentsTable').forEach(selectAll => {

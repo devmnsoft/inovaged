@@ -57,6 +57,7 @@ public sealed class GedExplorerVM
         public int? PartNumber { get; set; }
         public int? TotalParts { get; set; }
         public Guid? ConsolidatedVersionId { get; set; }
+        public string PartialStatus { get; set; } = "NOT_PARTIAL";
 
         public bool IsConfidential { get; set; }
     }

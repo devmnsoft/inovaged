@@ -5,7 +5,6 @@
 @{
     var localTimeZoneId = Configuration["Localization:DefaultTimeZone"] ?? Configuration["App:LocalTimeZoneId"] ?? Configuration["TimeZoneId"] ?? "America/Belem";
     var uploadDateFormat = Configuration["Localization:DateTimeFormat"] ?? "dd/MM/yyyy HH:mm";
-    var folderName = !string.IsNullOrWhiteSpace(Model.CurrentFolderName) ? Model.CurrentFolderName : "Raiz";
 }
 
 <div class="ged-smart-list" data-ged-document-list>
@@ -17,12 +16,10 @@
     var uploadLocal = OcrUiHelper.ToConfiguredLocalTime(uploadDateUtc, localTimeZoneId);
     var uploadLabel = string.IsNullOrWhiteSpace(d.UploadedAtLocalFormatted) ? uploadLocal.ToString(uploadDateFormat) : d.UploadedAtLocalFormatted;
     var fileName = !string.IsNullOrWhiteSpace(d.FileName) ? d.FileName : "Arquivo sem nome";
-    var extension = System.IO.Path.GetExtension(fileName)?.Trim('.').ToUpperInvariant();
-    var fileKind = string.IsNullOrWhiteSpace(extension) ? "DOC" : extension.Length > 4 ? extension[..4] : extension;
     var iconClass = fileName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) ? "bi-file-earmark-pdf" : "bi-file-earmark-text";
     var rowClass = d.IsDocumentIncomplete ? " is-incomplete" : d.IsPartialDocument ? " is-partial" : string.Empty;
 
-    <article class="ged-smart-doc-row@rowClass"
+    <article class="ged-doc-row ged-smart-doc-row@rowClass"
              role="button"
              tabindex="0"
              aria-label="Abrir detalhes de @d.Title"
@@ -34,7 +31,7 @@
              data-document-unclassified="@(isUnclassified ? "true" : "false")"
              data-uploaded-at-utc="@uploadDateUtc.ToString("O")">
 
-        <div class="ged-smart-check">
+        <div class="ged-doc-select ged-smart-check">
             <input type="checkbox"
                    class="form-check-input js-doc-select js-document-check"
                    value="@d.Id"
@@ -42,44 +39,49 @@
                    aria-label="Selecionar @d.Title" />
         </div>
 
-        <div class="ged-smart-type" aria-label="Tipo @fileKind" title="@fileKind">
-            <i class="bi @iconClass" aria-hidden="true"></i>
-            <span class="ged-smart-type-label">@fileKind</span>
+        <div class="ged-doc-icon ged-smart-type" aria-hidden="true">
+            <i class="bi @iconClass"></i>
         </div>
 
-        <div class="ged-smart-main">
-            <div class="ged-smart-title-line">
-                <span class="ged-smart-title" title="@d.Title">@d.Title</span>
+        <div class="ged-doc-main ged-smart-main">
+            <div class="ged-doc-title-line ged-smart-title-line">
+                <a class="ged-doc-title ged-smart-title"
+                   asp-controller="Ged"
+                   asp-action="Details"
+                   asp-route-id="@d.Id"
+                   title="@d.Title">
+                    @d.Title
+                </a>
 
-                <div class="ged-smart-inline-badges" aria-label="Indicadores do documento">
-                    @await Html.PartialAsync("_DocumentBadges", d)
-                </div>
+                @if (d.IsDocumentIncomplete)
+                {
+                    <span class="badge ged-badge-incomplete" title="Este documento ainda possui partes pendentes.">
+                        <i class="bi bi-exclamation-triangle me-1"></i>Documento incompleto
+                    </span>
+                }
             </div>
 
-            <div class="ged-smart-subtitle-line" title="@fileName · @folderName · Versão atual">
-                <span>@fileName</span>
-                <span class="ged-meta-separator">·</span>
-                <span>@folderName</span>
-                <span class="ged-meta-separator">·</span>
-                <span>Versão atual</span>
+            <div class="ged-doc-file" title="@fileName">@fileName</div>
+
+            <div class="ged-doc-meta ged-smart-inline-badges" aria-label="Indicadores do documento">
+                @await Html.PartialAsync("_DocumentBadges", d)
+                <span class="ged-doc-upload-date" title="Upload em UTC: @uploadDateUtc.ToString("O")">
+                    <i class="bi bi-clock me-1"></i>Upload em @uploadLabel
+                </span>
             </div>
         </div>
 
-        <div class="ged-smart-upload" title="Upload em UTC: @uploadDateUtc.ToString("O")">
-            <i class="bi bi-cloud-arrow-up me-1"></i>@uploadLabel
-        </div>
-
-        <div class="ged-smart-actions">
+        <div class="ged-doc-actions ged-smart-actions">
             <button type="button"
                     class="btn btn-sm btn-light border js-open-document-side-panel"
                     data-document-id="@d.Id"
-                    title="Detalhes/Preview"
+                    data-version-id="@versionId"
+                    title="Visualizar documento"
                     aria-label="Abrir detalhes e preview de @d.Title">
-                <i class="bi bi-layout-sidebar-inset-reverse"></i>
-                <span class="d-none d-xl-inline ms-1">Preview</span>
+                <i class="bi bi-eye"></i>
             </button>
 
-            @await Html.PartialAsync("_DocumentActionsDropdown", (d.Id, d.Title, versionId, Model.CurrentFolderId, d.IsOcrAvailable))
+            @await Html.PartialAsync("_DocumentActionsDropdown", new InovaGed.Web.Models.Ged.DocumentActionsVm { DocumentId = d.Id, Title = d.Title, VersionId = versionId, CurrentFolderId = Model.CurrentFolderId, IsOcrAvailable = d.IsOcrAvailable, IsPartialDocument = d.IsPartialDocument, IsDocumentIncomplete = d.IsDocumentIncomplete, PartialStatus = d.PartialStatus })
         </div>
     </article>
 }

@@ -60,8 +60,8 @@
 
                 @if (d.IsDocumentIncomplete)
                 {
-                    <span class="badge rounded-pill bg-warning-subtle text-warning">
-                        Documento incompleto
+                    <span class="badge ged-badge-incomplete" title="Este documento ainda possui partes pendentes.">
+                        <i class="bi bi-exclamation-triangle me-1"></i>Documento incompleto
                     </span>
                 }
             </div>
@@ -102,7 +102,7 @@
                 <i class="bi bi-eye"></i>
             </a>
 
-            @await Html.PartialAsync("_DocumentActionsDropdown", (d.Id, d.Title, versionId, Model.CurrentFolderId, d.IsOcrAvailable))
+            @await Html.PartialAsync("_DocumentActionsDropdown", new InovaGed.Web.Models.Ged.DocumentActionsVm { DocumentId = d.Id, Title = d.Title, VersionId = versionId, CurrentFolderId = Model.CurrentFolderId, IsOcrAvailable = d.IsOcrAvailable, IsPartialDocument = d.IsPartialDocument, IsDocumentIncomplete = d.IsDocumentIncomplete, PartialStatus = d.PartialStatus })
         </div>
     </article>
 }
