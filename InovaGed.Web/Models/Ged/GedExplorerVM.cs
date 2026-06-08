@@ -52,6 +52,15 @@ public sealed class GedExplorerVM
         public DateTime? OcrFinishedAt { get; set; }
         public bool HasOcrText { get; set; }
         public bool IsOcrAvailable { get; set; }
+        public string OcrBadgeText { get; set; } = "Sem OCR";
+        public string OcrBadgeCss { get; set; } = "bg-secondary";
+        public Guid? ClassificationId { get; set; }
+        public string? ClassificationLabel { get; set; }
+        public string? ClassificationColor { get; set; }
+        public string? ClassificationIcon { get; set; }
+        public bool HasOcrClassificationSuggestion { get; set; }
+        public Guid? SuggestedClassificationId { get; set; }
+        public string? SuggestedClassificationLabel { get; set; }
         public bool IsPartialDocument { get; set; }
         public bool IsDocumentIncomplete { get; set; }
         public int? PartNumber { get; set; }

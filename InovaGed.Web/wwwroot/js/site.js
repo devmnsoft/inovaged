@@ -99,3 +99,116 @@
     window.showAppToast = window.showAppToast || showAppToast;
     window.showAppConfirm = window.showAppConfirm || showAppConfirm;
 })();
+
+(function () {
+    let menuEl = null;
+    let activeButton = null;
+
+    function closeMenu() {
+        if (menuEl) menuEl.remove();
+        menuEl = null;
+        activeButton = null;
+    }
+
+    function renderItems(items, documentId, currentId) {
+        const hasCurrent = !!currentId;
+        const rows = items.map(x => `
+            <button type="button" class="classification-item ${x.suggestedByOcr ? 'classification-suggested' : ''}" data-classification-id="${x.id}" data-label="${window.escapeHtml(x.name)}" data-color="${window.escapeHtml(x.color || '')}" data-icon="${window.escapeHtml(x.icon || 'bi-tag')}">
+                <i class="bi ${window.escapeHtml(x.icon || 'bi-tag')}" style="color:${window.escapeHtml(x.color || '#2563eb')}"></i>
+                <span class="flex-grow-1">
+                    <strong>${window.escapeHtml(x.name)}</strong>
+                    ${x.suggestedByOcr ? '<span class="ms-1 small">⭐ sugestão do OCR</span>' : ''}
+                    ${x.description ? `<span class="d-block small text-muted">${window.escapeHtml(x.description)}</span>` : ''}
+                </span>
+            </button>`).join('');
+        return `
+            <div class="small text-muted fw-semibold mb-2">Classificação rápida</div>
+            <input type="search" class="form-control form-control-sm mb-2 js-classification-search" placeholder="Buscar classificação..." autocomplete="off" />
+            <div class="js-classification-items">${rows || '<div class="text-muted small p-2">Nenhuma classificação encontrada.</div>'}</div>
+            <div class="border-top mt-2 pt-2 d-flex justify-content-between gap-2">
+                <a class="btn btn-sm btn-outline-secondary" href="/Classification?documentId=${encodeURIComponent(documentId)}">Mais opções</a>
+                ${hasCurrent ? '<button type="button" class="btn btn-sm btn-outline-danger js-remove-classification">Remover classificação</button>' : ''}
+            </div>`;
+    }
+
+    async function loadItems(documentId, q) {
+        const res = await fetch(`/Ged/Classifications/QuickList?documentId=${encodeURIComponent(documentId)}&q=${encodeURIComponent(q || '')}`, { headers: { 'Accept': 'application/json' } });
+        if (!res.ok) throw new Error('Falha ao carregar classificações.');
+        const json = await res.json();
+        return json.items || [];
+    }
+
+    async function applyClassification(documentId, classificationId, button, meta) {
+        const res = await fetch(`/Ged/Documents/${encodeURIComponent(documentId)}/Classification`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            body: JSON.stringify({ classificationId: classificationId || null, reason: 'Classificação rápida pela listagem' })
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok || json.success === false) throw new Error(json.message || 'Não foi possível classificar o documento.');
+        const target = button || activeButton;
+        if (target) {
+            target.dataset.currentClassificationId = json.classificationId || '';
+            target.classList.toggle('is-empty', !json.classificationId);
+            target.classList.toggle('is-classified', !!json.classificationId);
+            target.innerHTML = `<i class="bi ${window.escapeHtml(json.classificationIcon || meta?.icon || 'bi-tag')}"></i><span>${window.escapeHtml(json.classificationLabel || meta?.label || 'Classificar')}</span>`;
+            if (json.classificationColor) {
+                target.style.borderColor = json.classificationColor;
+                target.style.color = json.classificationColor;
+            } else {
+                target.removeAttribute('style');
+            }
+        }
+        window.showAppToast?.(json.message || 'Classificação atualizada.', 'success');
+        closeMenu();
+    }
+
+    async function openMenu(button) {
+        closeMenu();
+        activeButton = button;
+        const documentId = button.dataset.documentId;
+        const currentId = button.dataset.currentClassificationId || '';
+        const rect = button.getBoundingClientRect();
+        menuEl = document.createElement('div');
+        menuEl.className = 'ged-classification-menu';
+        menuEl.style.left = `${Math.min(rect.left, window.innerWidth - 380)}px`;
+        menuEl.style.top = `${Math.min(rect.bottom + 8, window.innerHeight - 440)}px`;
+        menuEl.innerHTML = '<div class="text-muted small p-2"><span class="spinner-border spinner-border-sm me-1"></span>Carregando...</div>';
+        document.body.appendChild(menuEl);
+        const items = await loadItems(documentId, '');
+        menuEl.innerHTML = renderItems(items, documentId, currentId);
+
+        menuEl.addEventListener('click', async (ev) => {
+            const item = ev.target.closest('.classification-item');
+            if (item) {
+                await applyClassification(documentId, item.dataset.classificationId, button, { label: item.dataset.label, icon: item.dataset.icon });
+                return;
+            }
+            if (ev.target.closest('.js-remove-classification')) {
+                await applyClassification(documentId, null, button, { label: 'Classificar', icon: 'bi-tag' });
+            }
+        });
+
+        const search = menuEl.querySelector('.js-classification-search');
+        let timer = null;
+        search?.addEventListener('input', () => {
+            clearTimeout(timer);
+            timer = setTimeout(async () => {
+                const rows = await loadItems(documentId, search.value);
+                const host = menuEl?.querySelector('.js-classification-items');
+                if (host) host.innerHTML = rows.map(x => `<button type="button" class="classification-item ${x.suggestedByOcr ? 'classification-suggested' : ''}" data-classification-id="${x.id}" data-label="${window.escapeHtml(x.name)}" data-color="${window.escapeHtml(x.color || '')}" data-icon="${window.escapeHtml(x.icon || 'bi-tag')}"><i class="bi ${window.escapeHtml(x.icon || 'bi-tag')}"></i><span><strong>${window.escapeHtml(x.name)}</strong>${x.suggestedByOcr ? '<span class="ms-1 small">⭐ sugestão do OCR</span>' : ''}</span></button>`).join('') || '<div class="text-muted small p-2">Nenhuma classificação encontrada.</div>';
+            }, 250);
+        });
+    }
+
+    document.addEventListener('click', (ev) => {
+        const btn = ev.target.closest('.js-open-classification-menu');
+        if (btn) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            openMenu(btn).catch(err => window.showAppToast?.(err.message, 'error'));
+            return;
+        }
+        if (menuEl && !ev.target.closest('.ged-classification-menu')) closeMenu();
+    });
+})();

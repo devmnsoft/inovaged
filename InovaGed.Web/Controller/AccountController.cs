@@ -221,6 +221,10 @@ public sealed class AccountController : Controller
             {
                 return (Redirect(normalizedReturnUrl), normalizedReturnUrl, "hospital_allowed_return_url");
             }
+            if (isAdministradorOphir)
+                return (Redirect("/Protocols/WorkQueue"), "/Protocols/WorkQueue", "administrador_ophir_protocol_workqueue");
+            if (isArquivistaOphir)
+                return (Redirect("/ProtocolRequests"), "/ProtocolRequests", "arquivista_ophir_protocol_requests");
             return (RedirectToAction("Index", "HospitalDocuments"), "/HospitalDocuments", "hospital_default_redirect");
         }
 
@@ -229,7 +233,10 @@ public sealed class AccountController : Controller
             return (Redirect(normalizedReturnUrl), normalizedReturnUrl, "default_return_url");
         }
 
-        return (RedirectToAction("Index", "Home"), "/", isAdmin ? "admin_default" : "default_home");
+        if (isAdmin)
+            return (RedirectToAction("Index", "Ged"), "/Ged", "admin_ged_default");
+
+        return (RedirectToAction("Index", "Home"), "/", "default_home");
     }
 
     private static bool IsAllowedHospitalReturnUrl(string? returnUrl)
@@ -238,6 +245,9 @@ public sealed class AccountController : Controller
         var path = returnUrl.Split('?', '#')[0];
         return path.StartsWith("/HospitalDocuments", StringComparison.OrdinalIgnoreCase)
                || path.StartsWith("/Loans", StringComparison.OrdinalIgnoreCase)
+               || path.StartsWith("/ProtocolRequests", StringComparison.OrdinalIgnoreCase)
+               || path.StartsWith("/Protocols/WorkQueue", StringComparison.OrdinalIgnoreCase)
+               || path.StartsWith("/Protocolo", StringComparison.OrdinalIgnoreCase)
                || path.StartsWith("/Solicitacoes", StringComparison.OrdinalIgnoreCase);
     }
 

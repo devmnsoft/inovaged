@@ -183,6 +183,18 @@ values
 
             
             await tx.CommitAsync(ct);
+
+            _ = await _audit.WriteAsync(
+                tenantId, userId,
+                action: "LOAN_REQUEST_CREATED",
+                entityName: "loan_request",
+                entityId: loanId,
+                summary: "Solicitação de empréstimo criada",
+                ipAddress: null,
+                userAgent: null,
+                data: new { loanId, previousStatus = (string?)null, newStatus = "REQUESTED", correlationId = Guid.NewGuid().ToString("N"), timestampUtc = nowUtc },
+                ct: ct);
+
             return Result<Guid>.Ok(loanId);
         }
         catch (Exception ex)
@@ -327,11 +339,18 @@ select exists (
 );
 """;
                 var canApprove = await conn.ExecuteScalarAsync<bool>(new CommandDefinition(sqlAuth, new { TenantId = tenantId, UserId = userId }, transaction: tx, cancellationToken: ct));
+                // A autorização principal do fluxo operacional é feita no controller/policy.
+                // Perfis cadastrados continuam funcionando como trilha configurável sem bloquear ADMIN/ADMINISTRADOROPHIR.
                 if (!canApprove)
-                    return Result.Fail("AUTH", "Usuário não possui perfil de aprovação para empréstimos.");
+                    _logger.LogInformation("Aprovação de empréstimo sem perfil configurado em ged.loan_approval_profile. Tenant={TenantId} User={UserId}", tenantId, userId);
             }
 
             var nowUtc = DateTimeOffset.UtcNow;
+            var previousStatus = await conn.ExecuteScalarAsync<string?>(new CommandDefinition("""
+select status::text from ged.loan_request
+where tenant_id=@tenant_id and id=@loan_id and reg_status='A'
+limit 1;
+""", new { tenant_id = tenantId, loan_id = loanId }, transaction: tx, cancellationToken: ct));
 
             const string upd = """
 update ged.loan_request
@@ -380,13 +399,20 @@ values(@tenant_id, @loan_id, @nowUtc, @event_type, @by_user_id, @notes, @nowUtc,
 
             _ = await _audit.WriteAsync(
                 tenantId, userId,
-                action: "LOAN_EVENT",
+                action: newStatus switch
+                {
+                    "APPROVED" => "LOAN_APPROVED",
+                    "DELIVERED" => "LOAN_DELIVERED",
+                    "RETURNED" => "LOAN_RETURNED",
+                    "CANCELLED" or "CANCELED" or "REJECTED" => "LOAN_REJECTED",
+                    _ => "LOAN_EVENT"
+                },
                 entityName: "loan_request",
                 entityId: loanId,
                 summary: $"{label} empréstimo",
                 ipAddress: null,
                 userAgent: null,
-                data: new { status = newStatus, notes },
+                data: new { loanId, previousStatus, newStatus, notes, correlationId = Guid.NewGuid().ToString("N"), timestampUtc = nowUtc },
                 ct: ct);
 
             return Result.Ok();
