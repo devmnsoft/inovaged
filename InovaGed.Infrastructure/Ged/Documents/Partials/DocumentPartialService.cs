@@ -36,11 +36,31 @@ public sealed class DocumentPartialService : IDocumentPartialService
         try
         {
             var row = await conn.QuerySingleOrDefaultAsync(new CommandDefinition("""
-WITH current_version AS (
-    SELECT id
-    FROM ged.document_version
-    WHERE tenant_id=@tenantId AND document_id=@documentId AND is_current=true AND reg_status='A'
+WITH document_row AS (
+    SELECT d.id, d.current_version_id
+    FROM ged.document d
+    WHERE d.tenant_id=@tenantId
+      AND d.id=@documentId
+      AND COALESCE(d.reg_status, 'A')='A'
     LIMIT 1
+), current_version AS (
+    SELECT v.id, v.partial_group_id, v.partial_part_number, v.part_number, v.partial_total_parts, v.total_parts, v.file_name, v.file_size_bytes
+    FROM document_row d
+    JOIN ged.document_version v ON v.tenant_id=@tenantId AND v.id=d.current_version_id AND v.document_id=d.id
+    WHERE COALESCE(v.reg_status, 'A')='A'
+    LIMIT 1
+), fallback_version AS (
+    SELECT v.id, v.partial_group_id, v.partial_part_number, v.part_number, v.partial_total_parts, v.total_parts, v.file_name, v.file_size_bytes
+    FROM document_row d
+    JOIN ged.document_version v ON v.tenant_id=@tenantId AND v.document_id=d.id
+    WHERE NOT EXISTS (SELECT 1 FROM current_version)
+      AND COALESCE(v.reg_status, 'A')='A'
+    ORDER BY COALESCE(v.uploaded_at_utc, v.created_at_utc, v.created_at, '-infinity'::timestamptz) DESC, v.id DESC
+    LIMIT 1
+), selected_version AS (
+    SELECT * FROM current_version
+    UNION ALL
+    SELECT * FROM fallback_version
 ), updated_version AS (
     UPDATE ged.document_version v
     SET is_partial_document=true,
@@ -52,8 +72,8 @@ WITH current_version AS (
         part_number=COALESCE(v.part_number, v.partial_part_number, 1),
         total_parts=COALESCE(@totalParts, v.total_parts, v.partial_total_parts),
         uploaded_at_utc=COALESCE(v.uploaded_at_utc, v.created_at, now())
-    FROM current_version cv
-    WHERE v.tenant_id=@tenantId AND v.document_id=@documentId AND v.id=cv.id
+    FROM selected_version sv
+    WHERE v.tenant_id=@tenantId AND v.document_id=@documentId AND v.id=sv.id
     RETURNING v.id, v.partial_group_id, COALESCE(v.partial_part_number, v.part_number, 1) AS part_number, v.partial_total_parts, v.file_name, v.file_size_bytes
 ), insert_part AS (
     INSERT INTO ged.document_partial_part
@@ -79,7 +99,7 @@ LIMIT 1;
             if (row is null)
             {
                 await tx.RollbackAsync(ct);
-                return Result<DocumentPartialSummaryDto>.Fail("NOT_FOUND", "Documento não encontrado.");
+                return Result<DocumentPartialSummaryDto>.Fail("NOT_FOUND", "Documento não possui versão atual para marcar como incompleto.");
             }
 
             Guid groupId = row.partial_group_id;
@@ -93,7 +113,7 @@ LIMIT 1;
         {
             await tx.RollbackAsync(CancellationToken.None);
             _logger.LogError(ex, "Erro ao marcar documento como incompleto. Tenant={TenantId} Document={DocumentId}", tenantId, documentId);
-            return Result<DocumentPartialSummaryDto>.Fail("ERR", "Não foi possível marcar o documento como incompleto.");
+            return Result<DocumentPartialSummaryDto>.Fail("ERR", "Não foi possível marcar o documento como incompleto. Verifique se o banco está atualizado.");
         }
     }
 

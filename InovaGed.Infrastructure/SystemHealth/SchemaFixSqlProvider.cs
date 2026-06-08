@@ -258,8 +258,29 @@ begin
     end if;
 end $$;
 """));
-        fixes.Add(Index("GED_INDEX_DOCUMENT_CURRENT_VERSION", "ged.ix_document_current_version", "Performance", "Cria índice de versão atual do documento.", "create index if not exists ix_document_current_version on ged.document(current_version_id);"));
-        fixes.Add(Index("GED_INDEX_DOCUMENT_VERSION_DOCUMENT_CURRENT", "ged.ix_document_version_document_current", "Performance", "Cria índice alternativo de versão atual por documento.", "create index if not exists ix_document_version_document_current on ged.document_version(document_id, id);"));
+        fixes.Add(Index("GED_INDEX_DOCUMENT_CURRENT_VERSION", "ged.ix_document_current_version", "Performance", "Cria índice de versão atual do documento.", "create index if not exists ix_document_current_version on ged.document(current_version_id) where current_version_id is not null;"));
+        fixes.Add(Index("GED_INDEX_DOCUMENT_VERSION_DOCUMENT_CURRENT", "ged.ix_document_version_document_current", "Performance", "Cria índice compatível para resolução da versão atual sem exigir document_version.is_current.", """
+do $$
+begin
+    if exists (
+        select 1 from information_schema.columns
+        where table_schema='ged'
+          and table_name='document_version'
+          and column_name='is_current'
+    ) then
+        execute 'create index if not exists ix_document_version_document_current on ged.document_version(document_id, is_current)';
+    elsif exists (
+        select 1 from information_schema.columns
+        where table_schema='ged'
+          and table_name='document'
+          and column_name='current_version_id'
+    ) then
+        execute 'create index if not exists ix_document_current_version on ged.document(current_version_id) where current_version_id is not null';
+    else
+        raise notice 'GED_INDEX_DOCUMENT_VERSION_DOCUMENT_CURRENT skipped: document.current_version_id não existe.';
+    end if;
+end $$;
+"""));
         fixes.Add(Index("GED_INDEX_DOCUMENT_VERSION_PARTIAL_GROUP_ID", "ged.ix_document_version_partial_group_id", "Performance", "Cria índice para agrupamento de documentos fracionados.", "create index if not exists ix_document_version_partial_group_id on ged.document_version(partial_group_id);"));
         fixes.Add(Index("GED_INDEX_DOCUMENT_VERSION_PARTIAL_STATUS", "ged.ix_document_version_partial_status", "Performance", "Cria índice para status parcial.", "create index if not exists ix_document_version_partial_status on ged.document_version(partial_status);"));
         fixes.Add(Index("GED_INDEX_DOCUMENT_VERSION_UPLOADED_AT_UTC", "ged.ix_document_version_uploaded_at_utc", "Performance", "Cria índice para ordenação por upload.", "create index if not exists ix_document_version_uploaded_at_utc on ged.document_version(uploaded_at_utc);"));

@@ -72,7 +72,6 @@ CREATE TABLE IF NOT EXISTS ged.document_version (
     created_at timestamptz NOT NULL DEFAULT now(),
     created_at_utc timestamptz NULL,
     uploaded_at_utc timestamptz NULL,
-    is_current boolean NULL,
     is_partial_document boolean NOT NULL DEFAULT false,
     consolidated_version_id uuid NULL,
     partial_group_id uuid NULL,
@@ -87,7 +86,6 @@ ALTER TABLE ged.document_version ADD COLUMN IF NOT EXISTS file_name text NULL;
 ALTER TABLE ged.document_version ADD COLUMN IF NOT EXISTS created_at timestamptz NULL;
 ALTER TABLE ged.document_version ADD COLUMN IF NOT EXISTS created_at_utc timestamptz NULL;
 ALTER TABLE ged.document_version ADD COLUMN IF NOT EXISTS uploaded_at_utc timestamptz NULL;
-ALTER TABLE ged.document_version ADD COLUMN IF NOT EXISTS is_current boolean NULL;
 ALTER TABLE ged.document_version ADD COLUMN IF NOT EXISTS is_partial_document boolean NULL DEFAULT false;
 ALTER TABLE ged.document_version ADD COLUMN IF NOT EXISTS consolidated_version_id uuid NULL;
 ALTER TABLE ged.document_version ADD COLUMN IF NOT EXISTS partial_group_id uuid NULL;
@@ -134,6 +132,28 @@ CREATE TABLE IF NOT EXISTS ged.document_partial_part (
     reg_status char(1) NOT NULL DEFAULT 'A'
 );
 ALTER TABLE ged.document_partial_part ADD COLUMN IF NOT EXISTS notes text NULL;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'ux_document_partial_part_version'
+          AND conrelid = 'ged.document_partial_part'::regclass
+    ) THEN
+        ALTER TABLE ged.document_partial_part
+            ADD CONSTRAINT ux_document_partial_part_version
+            UNIQUE (tenant_id, version_id);
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'ux_document_partial_part_group_part_active'
+          AND conrelid = 'ged.document_partial_part'::regclass
+    ) THEN
+        ALTER TABLE ged.document_partial_part
+            ADD CONSTRAINT ux_document_partial_part_group_part_active
+            UNIQUE (tenant_id, partial_group_id, part_number);
+    END IF;
+END $$;
 
 -- Upload batch: lote e itens de envio múltiplo.
 CREATE TABLE IF NOT EXISTS ged.upload_batch (
@@ -329,7 +349,9 @@ CREATE TABLE IF NOT EXISTS ged.app_audit_log (
     created_at timestamptz NOT NULL DEFAULT now(),
     reg_status char(1) NOT NULL DEFAULT 'A'
 );
-ALTER TABLE ged.app_audit_log ADD COLUMN IF NOT EXISTS created_at timestamptz NULL DEFAULT now();
+ALTER TABLE ged.app_audit_log ADD COLUMN IF NOT EXISTS tenant_id uuid NULL;
+ALTER TABLE ged.app_audit_log ADD COLUMN IF NOT EXISTS user_id uuid NULL;
+ALTER TABLE ged.app_audit_log ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now();
 ALTER TABLE ged.app_audit_log ADD COLUMN IF NOT EXISTS user_name text NULL;
 ALTER TABLE ged.app_audit_log ADD COLUMN IF NOT EXISTS action text NULL;
 ALTER TABLE ged.app_audit_log ADD COLUMN IF NOT EXISTS event_type text NULL DEFAULT 'INFO';
@@ -344,7 +366,7 @@ ALTER TABLE ged.app_audit_log ADD COLUMN IF NOT EXISTS details jsonb NULL;
 ALTER TABLE ged.app_audit_log ADD COLUMN IF NOT EXISTS correlation_id text NULL;
 ALTER TABLE ged.app_audit_log ADD COLUMN IF NOT EXISTS ip_address text NULL;
 ALTER TABLE ged.app_audit_log ADD COLUMN IF NOT EXISTS user_agent text NULL;
-ALTER TABLE ged.app_audit_log ADD COLUMN IF NOT EXISTS reg_status char(1) NULL DEFAULT 'A';
+ALTER TABLE ged.app_audit_log ADD COLUMN IF NOT EXISTS reg_status char(1) NOT NULL DEFAULT 'A';
 
 CREATE TABLE IF NOT EXISTS ged.folder_virtual_map (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

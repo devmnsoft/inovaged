@@ -24,7 +24,28 @@ CREATE TABLE IF NOT EXISTS ged.document_timeline (
 );
 
 CREATE INDEX IF NOT EXISTS ix_document_tenant_folder_status ON ged.document (tenant_id, folder_id, status);
-CREATE INDEX IF NOT EXISTS ix_document_version_document_current ON ged.document_version (document_id, is_current);
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'ged'
+          AND table_name = 'document_version'
+          AND column_name = 'is_current'
+    ) THEN
+        EXECUTE 'CREATE INDEX IF NOT EXISTS ix_document_version_document_current ON ged.document_version (document_id, is_current)';
+    ELSIF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'ged'
+          AND table_name = 'document'
+          AND column_name = 'current_version_id'
+    ) THEN
+        EXECUTE 'CREATE INDEX IF NOT EXISTS ix_document_current_version ON ged.document (current_version_id) WHERE current_version_id IS NOT NULL';
+    END IF;
+END $$;
+
 CREATE INDEX IF NOT EXISTS ix_ocr_job_tenant_version_status ON ged.ocr_job (tenant_id, document_version_id, status);
 CREATE INDEX IF NOT EXISTS ix_preview_status_tenant_status ON ged.preview_status (tenant_id, status);
 CREATE INDEX IF NOT EXISTS ix_timeline_tenant_document_created_at ON ged.document_timeline (tenant_id, document_id, created_at DESC);
