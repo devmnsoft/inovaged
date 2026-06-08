@@ -3,7 +3,7 @@
     var totalDocuments = Model.TotalDocuments > 0 ? Model.TotalDocuments : Model.Documents.Count;
     var hasMoreDocuments = Model.HasMoreDocuments;
     var ocrCount = Model.Documents.Count(d => d.IsOcrAvailable);
-    var incompleteCount = Model.Documents.Count(d => d.IsDocumentIncomplete);
+    var incompleteCount = Model.Documents.Count(d => d.IsDocumentIncomplete || string.Equals(d.PartialStatus, "INCOMPLETE", StringComparison.OrdinalIgnoreCase));
     var unclassifiedCount = Model.Documents.Count(d => string.IsNullOrWhiteSpace(d.TypeName) || d.TypeName == "-");
 }
 
@@ -34,8 +34,22 @@
     }
     else
     {
-        <div class="ged-documents-view-toolbar">
-            <div class="ged-bulk-select">
+        @if (incompleteCount > 0)
+        {
+            <div class="ged-incomplete-info" id="gedIncompleteInfo">
+                <div>
+                    <strong>@incompleteCount documento(s) incompleto(s)</strong>
+                    <span>Documentos incompletos são arquivos enviados parcialmente e que podem receber novas partes futuramente.</span>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <span id="gedIncompleteFilterChip" class="ged-filter-chip d-none">Filtro ativo: Incompletos <button type="button" class="btn btn-link btn-sm p-0 ms-1" id="btnClearIncompleteFilter" aria-label="Limpar filtro de incompletos">×</button></span>
+                    <button type="button" class="btn btn-sm btn-outline-warning" id="btnFilterIncompleteDocs"><i class="bi bi-funnel me-1"></i>Ver incompletos</button>
+                </div>
+            </div>
+        }
+
+        <div class="ged-documents-view-toolbar ged-selection-bar">
+            <div class="ged-bulk-select ged-selection-info">
                 <input type="checkbox"
                        class="form-check-input"
                        id="selectAllDocuments" />
@@ -44,13 +58,14 @@
                     Selecionar todos
                 </label>
 
-                <span id="selectedDocumentsInlineInfo" class="ged-selected-inline-info">
+                <span id="selectedDocumentsInlineInfo" class="ged-selected-inline-info ged-selected-count">
                     0 selecionados
                 </span>
             </div>
 
             <div class="ged-toolbar-spacer"></div>
 
+            <div class="ged-selection-actions">
             <button type="button"
                     class="btn btn-sm btn-outline-primary ged-move-selected-inline js-btn-move-selected"
                     id="btnMoveSelected"
@@ -58,6 +73,7 @@
                 <i class="bi bi-folder-symlink me-1"></i>Mover selecionados
                 <span class="ms-1 js-move-selected-count">(0)</span>
             </button>
+            </div>
 
             <div class="ged-view-actions" role="group" aria-label="Modo de visualização dos documentos">
                 <button type="button"

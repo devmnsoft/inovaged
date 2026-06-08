@@ -534,6 +534,7 @@ public sealed class GedController : Controller
                     PartNumber = d.PartNumber,
                     TotalParts = d.TotalParts,
                     ConsolidatedVersionId = d.ConsolidatedVersionId,
+                    PartialStatus = d.PartialStatus,
                     IsConfidential = d.IsConfidential
                 }).ToList()
             };
@@ -1210,6 +1211,7 @@ LIMIT 20;";
             PartNumber = d.PartNumber,
             TotalParts = d.TotalParts,
             ConsolidatedVersionId = d.ConsolidatedVersionId,
+            PartialStatus = d.PartialStatus,
             IsConfidential = d.IsConfidential
         };
 

@@ -33,7 +33,7 @@
     var allowLegacyUploadFallback = DocumentUploadOptions.Value.AllowLegacyUploadFallback;
     var uploadOptions = DocumentUploadOptions.Value;
     var ocrAvailableCount = Model.Documents.Count(d => d.IsOcrAvailable);
-    var incompleteCount = Model.Documents.Count(d => d.IsDocumentIncomplete);
+    var incompleteCount = Model.Documents.Count(d => d.IsDocumentIncomplete || string.Equals(d.PartialStatus, "INCOMPLETE", StringComparison.OrdinalIgnoreCase));
     var pendingOcrCount = runningOcrCount;
     var breadcrumbText = currentFolderNode?.Path ?? (!string.IsNullOrWhiteSpace(Model.CurrentFolderName) ? Model.CurrentFolderName : "Raiz");
 }
@@ -380,7 +380,7 @@
                         <span class="ged-metric-pill"><strong id="selectedDocumentsKpi">0</strong> Selecionados</span>
                         <span class="ged-metric-pill"><strong id="documentsUnclassifiedKpi">@unclassifiedCount</strong> Não classificados</span>
                         <span class="ged-metric-pill"><strong id="documentsOcrKpi">@ocrAvailableCount</strong> Com OCR</span>
-                        <span class="ged-metric-pill"><strong id="documentsIncompleteKpi">@incompleteCount</strong> Incompletos</span>
+                        <span class="ged-metric-pill"><strong id="documentsIncompleteKpi">@incompleteCount</strong> Incompletos <button type="button" class="btn btn-link btn-sm p-0 ged-help-popover" data-bs-toggle="popover" data-bs-trigger="focus" data-bs-placement="bottom" title="Documento incompleto" data-bs-content="Documento incompleto é um documento enviado em partes. Exemplo: um agendamento foi digitalizado parcialmente hoje e receberá complemento futuramente. Enquanto isso, ele fica marcado como incompleto. Quando todas as partes forem anexadas, o sistema pode consolidar em uma versão final." aria-label="Ajuda sobre documentos incompletos"><i class="bi bi-question-circle"></i></button></span>
                         <span class="ged-metric-pill"><strong>@pendingOcrCount</strong> Pendentes</span>
                     </div>
                 </div>
@@ -459,6 +459,75 @@
                 <div id="moveDocumentsMessage" class="d-none mt-2"></div>
             </div>
             <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button><button id="btnConfirmMove" type="button" class="btn btn-primary" disabled>Confirmar movimentação</button></div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalAddDocumentPart" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-file-earmark-plus me-1"></i>Adicionar parte do documento</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning small mb-3">
+                    <i class="bi bi-info-circle me-1"></i>Use esta opção quando o documento foi enviado parcialmente e será complementado futuramente.
+                </div>
+                <input type="hidden" id="partDocumentId" />
+                <div class="mb-3">
+                    <label class="form-label">Documento atual</label>
+                    <input type="text" id="partDocumentTitle" class="form-control" readonly />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="partDocumentFile">Arquivo da nova parte</label>
+                    <input type="file" id="partDocumentFile" class="form-control" required />
+                </div>
+                <div class="row g-2">
+                    <div class="col-sm-6">
+                        <label class="form-label" for="partNumber">Número da parte</label>
+                        <input type="number" id="partNumber" class="form-control" min="1" step="1" placeholder="Ex.: 2" />
+                    </div>
+                    <div class="col-sm-6">
+                        <label class="form-label" for="partTotal">Total de partes (opcional)</label>
+                        <input type="number" id="partTotal" class="form-control" min="1" step="1" placeholder="Ex.: 4" />
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <label class="form-label" for="partNotes">Observação</label>
+                    <textarea id="partNotes" class="form-control" rows="2" placeholder="Informe o motivo do complemento ou contexto da parte."></textarea>
+                </div>
+                <div id="addPartMessage" class="d-none mt-3"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-warning" id="btnSubmitDocumentPart"><i class="bi bi-cloud-arrow-up me-1"></i>Enviar parte</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalDocumentParts" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-files me-1"></i>Partes do documento</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+            </div>
+            <div class="modal-body">
+                <div class="small text-muted mb-3" id="documentPartsTitle"></div>
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle">
+                        <thead><tr><th>Parte</th><th>Arquivo</th><th>Upload em</th><th>Usuário</th><th>Status</th><th class="text-end">Ações</th></tr></thead>
+                        <tbody id="documentPartsTableBody"><tr><td colspan="6" class="text-muted">Selecione um documento para visualizar as partes.</td></tr></tbody>
+                    </table>
+                </div>
+                <div class="alert alert-info small mb-0">Quando todas as partes estiverem disponíveis, o sistema poderá consolidar o documento em uma versão final.</div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Fechar</button>
+                <button type="button" class="btn btn-primary" id="btnConsolidateDocument" disabled><i class="bi bi-layers me-1"></i>Consolidar documento</button>
+            </div>
         </div>
     </div>
 </div>
@@ -833,6 +902,39 @@
     .ged-badge-warning { background:#fef3c7; color:#92400e; border:1px solid #fde68a; }
     .ged-badge-danger { background:#fee2e2; color:#991b1b; border:1px solid #fecaca; }
     .ged-empty-state { background:linear-gradient(180deg,#fff,#f8fbff); border-radius:0 0 18px 18px; }
+
+    .ged-selection-bar { min-height:46px; padding:8px 16px; background:#fff; border-bottom:1px solid #e5e7eb; display:flex; align-items:center; justify-content:space-between; }
+    .ged-selection-info { display:flex; align-items:center; gap:8px; }
+    .ged-selected-count { color:#64748b; font-size:.85rem; }
+    .ged-selection-actions { display:flex; align-items:center; gap:8px; }
+    .ged-incomplete-info { margin:10px 16px; padding:10px 12px; border:1px solid #fde68a; background:#fffbeb; color:#92400e; border-radius:12px; display:flex; align-items:center; justify-content:space-between; gap:12px; font-size:.86rem; }
+    .ged-incomplete-info strong { display:block; color:#78350f; }
+    .ged-filter-chip { display:inline-flex; align-items:center; border:1px solid #fde68a; background:#fff7ed; color:#92400e; border-radius:999px; padding:.25rem .55rem; font-size:.78rem; font-weight:700; }
+    .ged-help-popover { color:#64748b; line-height:1; text-decoration:none; }
+    .ged-badge-incomplete { background:#fef3c7 !important; color:#92400e !important; border:1px solid #fde68a; }
+    .ged-doc-row { display:grid; grid-template-columns:34px 42px minmax(0, 1fr) auto; gap:12px; align-items:center; min-height:78px; padding:10px 16px; border-bottom:1px solid #edf2f7; background:#fff; transition:background-color .15s ease, box-shadow .15s ease; cursor:grab; }
+    .ged-doc-row:hover { background:#f8fbff; }
+    .ged-doc-row.is-selected { background:#eff6ff; box-shadow:inset 4px 0 0 #2563eb; }
+    .ged-doc-row.is-incomplete { background:#fffdf5; }
+    .ged-doc-row.is-incomplete:hover { background:#fffbeb; }
+    .ged-doc-select { display:flex; align-items:center; justify-content:center; align-self:center; }
+    .ged-doc-select .form-check-input { margin:0; width:18px; height:18px; cursor:pointer; }
+    .ged-doc-icon { width:38px; height:38px; border-radius:12px; display:grid; place-items:center; background:#eff6ff; color:#2563eb; font-size:1.05rem; }
+    .ged-doc-main { min-width:0; }
+    .ged-doc-title-line { display:flex; align-items:center; gap:8px; min-width:0; }
+    .ged-doc-title { color:#0f172a; font-size:.96rem; font-weight:750; text-decoration:none; line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .ged-doc-title:hover { color:#0d6efd; text-decoration:underline; }
+    .ged-doc-file { color:#64748b; font-size:.82rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:2px; }
+    .ged-doc-meta { display:flex; align-items:center; flex-wrap:wrap; gap:6px; margin-top:4px; }
+    .ged-doc-upload-date { color:#475569; font-size:.78rem; display:inline-flex; align-items:center; }
+    .ged-doc-actions { display:flex; align-items:center; justify-content:flex-end; gap:6px; }
+    .ged-doc-actions .btn, .ged-actions-btn { width:34px; height:34px; border-radius:10px; padding:0; display:inline-flex; align-items:center; justify-content:center; }
+    .ged-smart-doc-row { grid-template-columns:34px 42px minmax(0, 1fr) auto; min-height:78px; padding:10px 16px; }
+    .ged-smart-upload, .ged-smart-type-label { display:none; }
+    .ged-operational-check .form-check-input, .ged-smart-check .form-check-input, .ged-documents-table .form-check-input { width:18px; height:18px; cursor:pointer; }
+    .ged-operational-row.is-selected, .ged-document-table-row.is-selected { background:#eff6ff; box-shadow:inset 4px 0 0 #2563eb; }
+    .ged-operational-row.is-incomplete:hover, .ged-row-incomplete:hover { background:#fffbeb; }
+
     .ged-empty-icon { width:74px; height:74px; border-radius:24px; display:grid; place-items:center; margin-inline:auto; color:#0d6efd; background:#eaf2ff; font-size:2.35rem; }
     @@media (max-width: 1200px) {
         .ged-folder-header { flex-direction:column; }
@@ -1048,7 +1150,7 @@
         }
 
         function updateDocumentSelectionState(checkbox) {
-            const row = checkbox.closest('.ged-smart-doc-row, .ged-operational-row, .ged-document-row, tr[data-document-id]');
+            const row = checkbox.closest('.ged-doc-row, .ged-smart-doc-row, .ged-operational-row, .ged-document-row, tr[data-document-id]');
             if (row) row.classList.toggle('is-selected', checkbox.checked);
         }
 
@@ -1126,6 +1228,7 @@
         window.initDocumentsViewMode = initDocumentsViewMode;
         window.initializeDocumentsViewMode = initDocumentsViewMode;
         window.updateDocumentSelectionState = updateDocumentSelectionState;
+        window.updateSelectedDocumentsState = function () { updateSelectAllStates(); updateSelectedKpi(); window.updateMoveSelectedButton?.(); };
 
         if (!window.__gedDocumentsViewClickBound) {
             document.addEventListener('click', function (e) {
@@ -1155,11 +1258,148 @@
                 window.updateMoveSelectedButton?.();
             }
         });
+
+        document.addEventListener('click', function (e) {
+            const filterBtn = e.target.closest('#btnFilterIncompleteDocs');
+            if (filterBtn) {
+                e.preventDefault();
+                document.querySelectorAll('#gedDocumentsContainer [data-document-incomplete]').forEach(row => {
+                    const isIncomplete = row.dataset.documentIncomplete === 'true';
+                    row.classList.toggle('d-none', !isIncomplete);
+                });
+                document.getElementById('gedIncompleteFilterChip')?.classList.remove('d-none');
+                filterBtn.textContent = 'Mostrando incompletos';
+            }
+
+            const clearFilterBtn = e.target.closest('#btnClearIncompleteFilter');
+            if (clearFilterBtn) {
+                e.preventDefault();
+                document.querySelectorAll('#gedDocumentsContainer [data-document-incomplete]').forEach(row => row.classList.remove('d-none'));
+                document.getElementById('gedIncompleteFilterChip')?.classList.add('d-none');
+                const btn = document.getElementById('btnFilterIncompleteDocs');
+                if (btn) btn.innerHTML = '<i class="bi bi-funnel me-1"></i>Ver incompletos';
+            }
+        });
+
+        document.addEventListener('DOMContentLoaded', function () {
+            document.querySelectorAll('[data-bs-toggle="popover"]').forEach(el => window.bootstrap?.Popover?.getOrCreateInstance(el));
+        });
+
         document.addEventListener('DOMContentLoaded', initDocumentsViewMode);
         updateSelectedKpi();
         initDocumentsViewMode();
 
     })();
+</script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const addPartEl = document.getElementById('modalAddDocumentPart');
+    const partsEl = document.getElementById('modalDocumentParts');
+    const addPartModal = addPartEl && window.bootstrap?.Modal ? window.bootstrap.Modal.getOrCreateInstance(addPartEl) : null;
+    const partsModal = partsEl && window.bootstrap?.Modal ? window.bootstrap.Modal.getOrCreateInstance(partsEl) : null;
+    const token = document.querySelector('input[name="__RequestVerificationToken"]')?.value;
+    const escapeHtml = (value) => window.escapeHtml ? window.escapeHtml(value) : String(value ?? '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+
+    function showAddPartMessage(message, type) {
+        const el = document.getElementById('addPartMessage');
+        if (!el) return;
+        el.className = `alert alert-${type || 'info'} mt-3`;
+        el.textContent = message;
+    }
+
+    async function loadDocumentParts(documentId, title) {
+        const body = document.getElementById('documentPartsTableBody');
+        const titleEl = document.getElementById('documentPartsTitle');
+        const consolidateBtn = document.getElementById('btnConsolidateDocument');
+        if (titleEl) titleEl.textContent = title ? `Documento: ${title}` : '';
+        if (body) body.innerHTML = '<tr><td colspan="6" class="text-muted"><span class="spinner-border spinner-border-sm me-1"></span>Carregando partes...</td></tr>';
+        if (consolidateBtn) { consolidateBtn.disabled = true; consolidateBtn.dataset.documentId = documentId || ''; }
+        try {
+            const res = await fetch(`/Ged/DocumentDetailsJson?id=${encodeURIComponent(documentId)}`, { headers: { 'X-Requested-With': 'XMLHttpRequest', Accept: 'application/json' } });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+            const versions = (data.versions || []).filter(v => v.isPartialDocument || v.isDocumentIncomplete || v.partNumber);
+            if (!versions.length) {
+                body.innerHTML = '<tr><td colspan="6" class="text-muted">Nenhuma parte detalhada encontrada para este documento.</td></tr>';
+                return;
+            }
+            body.innerHTML = versions.map(v => `<tr><td>${escapeHtml(v.partNumber || '-')} / ${escapeHtml(v.totalParts || '-')}</td><td>${escapeHtml(v.fileName || '-')}</td><td>${escapeHtml(v.uploadedAtLabel || '')}</td><td>${escapeHtml(v.createdBy || '-')}</td><td><span class="badge ged-badge ${v.isDocumentIncomplete ? 'ged-badge-warning' : 'ged-badge-info'}">${escapeHtml(v.partialStatus || v.ocrStatus || '-')}</span></td><td class="text-end">${v.versionId ? `<a class="btn btn-sm btn-light border" href="/Ged/Preview/${escapeHtml(v.versionId)}" target="_blank" rel="noopener" title="Visualizar parte"><i class="bi bi-eye"></i></a>` : ''}</td></tr>`).join('');
+            const hasIncomplete = Boolean(data.isDocumentIncomplete) || versions.some(v => v.isDocumentIncomplete || String(v.partialStatus || '').toUpperCase() === 'INCOMPLETE');
+            if (consolidateBtn) consolidateBtn.disabled = hasIncomplete;
+        } catch {
+            if (body) body.innerHTML = '<tr><td colspan="6" class="text-danger">Não foi possível carregar as partes agora.</td></tr>';
+        }
+    }
+
+    document.addEventListener('click', function (e) {
+        const addBtn = e.target.closest('.js-add-document-part');
+        if (addBtn && addPartModal) {
+            e.preventDefault();
+            document.getElementById('partDocumentId').value = addBtn.dataset.documentId || '';
+            document.getElementById('partDocumentTitle').value = addBtn.dataset.documentTitle || '';
+            document.getElementById('partDocumentFile').value = '';
+            document.getElementById('partNumber').value = '';
+            document.getElementById('partTotal').value = '';
+            document.getElementById('partNotes').value = '';
+            const msg = document.getElementById('addPartMessage');
+            if (msg) msg.className = 'd-none mt-3';
+            addPartModal.show();
+        }
+
+        const viewBtn = e.target.closest('.js-view-document-parts');
+        if (viewBtn && partsModal) {
+            e.preventDefault();
+            partsModal.show();
+            loadDocumentParts(viewBtn.dataset.documentId, viewBtn.dataset.documentTitle || '');
+        }
+
+        if (e.target.closest('.js-consolidate-document, #btnConsolidateDocument')) {
+            e.preventDefault();
+            window.showAppToast?.('A consolidação será executada automaticamente quando todas as partes forem anexadas.', 'info', 'Documento fracionado');
+        }
+    });
+
+    document.getElementById('btnSubmitDocumentPart')?.addEventListener('click', async function () {
+        const btn = this;
+        const fileInput = document.getElementById('partDocumentFile');
+        const file = fileInput?.files?.[0];
+        const documentId = document.getElementById('partDocumentId')?.value;
+        if (!documentId || !file) { showAddPartMessage('Selecione o arquivo da nova parte.', 'warning'); return; }
+        const fd = new FormData();
+        fd.append('file', file);
+        fd.append('folderId', document.getElementById('currentFolderId')?.value || document.getElementById('gedDocumentsContainer')?.dataset.uploadFolderId || '');
+        fd.append('uploadFolderId', document.getElementById('gedDocumentsContainer')?.dataset.uploadFolderId || document.getElementById('currentFolderId')?.value || '');
+        fd.append('requestedFolderId', document.getElementById('gedDocumentsContainer')?.dataset.listingFolderId || document.getElementById('currentFolderId')?.value || '');
+        fd.append('notes', document.getElementById('partNotes')?.value || '');
+        fd.append('visibility', 'INTERNAL');
+        fd.append('runOcr', 'true');
+        fd.append('generatePreview', 'true');
+        fd.append('isDocumentPart', 'true');
+        fd.append('existingDocumentId', documentId);
+        fd.append('consolidateIntoDocumentId', documentId);
+        const partNumber = document.getElementById('partNumber')?.value;
+        const totalParts = document.getElementById('partTotal')?.value;
+        if (partNumber) fd.append('partNumber', partNumber);
+        if (totalParts) fd.append('totalParts', totalParts);
+        btn.disabled = true;
+        const old = btn.innerHTML;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Enviando...';
+        try {
+            const res = await fetch('/Ged/Documents/BulkUploadSingle', { method: 'POST', body: fd, headers: token ? { RequestVerificationToken: token } : {} });
+            const payload = await res.json().catch(() => null);
+            if (!res.ok || payload?.success === false) throw new Error(payload?.message || 'Não foi possível enviar a parte.');
+            showAddPartMessage('Parte enviada com sucesso. A lista será atualizada.', 'success');
+            window.showAppToast?.('Parte do documento anexada com sucesso.', 'success', 'Documento fracionado');
+            setTimeout(() => window.GedFolderNavigation?.refreshCurrentFolder?.() || window.location.reload(), 700);
+        } catch (err) {
+            showAddPartMessage(err.message || 'Não foi possível enviar a parte.', 'danger');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = old;
+        }
+    });
+});
 </script>
 
 <script>
