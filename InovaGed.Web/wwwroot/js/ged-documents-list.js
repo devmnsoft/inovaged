@@ -65,16 +65,7 @@
             window.updateSelectedDocumentsState?.();
             return;
         }
-        const row = e.target.closest('.ged-smart-doc-row[data-document-id]');
-        if (row && !e.target.closest('a, button, input, .dropdown-menu')) {
-            e.preventDefault();
-            window.GedDocumentSidePanel?.open(row.dataset.documentId);
-        }
-    });
-
-    document.addEventListener('keydown', (e) => {
-        const row = e.target.closest?.('.ged-smart-doc-row[data-document-id]');
-        if (row && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); window.GedDocumentSidePanel?.open(row.dataset.documentId); }
+        if (e.target.closest('.js-doc-select, .js-document-check, .dropdown, [data-bs-toggle="dropdown"]')) return;
     });
 
     document.addEventListener('change', (e) => {

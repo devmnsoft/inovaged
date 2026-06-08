@@ -1,13 +1,14 @@
 .ged-explorer,
 .ged-page {
     display: grid;
-    grid-template-columns: minmax(280px, 340px) minmax(0, 1fr) 0 !important;
-    gap: 1rem;
+    grid-template-columns: minmax(280px, 400px) minmax(0, 1fr) !important;
+    gap: 24px;
     align-items: start;
 }
 
+.ged-page.with-document-panel,
 .ged-page.ged-side-panel-open {
-    grid-template-columns: minmax(260px, 320px) minmax(0, 1fr) minmax(360px, 440px) !important;
+    grid-template-columns: minmax(280px, 400px) minmax(0, 1fr) 430px !important;
 }
 
 .ged-folder-panel,
@@ -36,7 +37,7 @@
     background: #fff;
     box-shadow: 0 6px 18px rgba(15, 23, 42, .05);
     transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease, background-color .16s ease;
-    cursor: pointer;
+    cursor: default;
 }
 
 .ged-smart-doc-row:hover,
@@ -111,7 +112,8 @@
     flex-direction: column;
 }
 
-.ged-document-side-panel[hidden] { display: none; }
+.ged-document-side-panel[hidden],
+.ged-document-side-panel.d-none { display: none !important; }
 .ged-document-side-panel.is-expanded { position: fixed; inset: 1rem; z-index: 1060; height: auto; }
 .ged-side-panel-empty { height: 100%; display: grid; place-items: center; align-content: center; gap: .45rem; color: #64748b; text-align: center; padding: 2rem; }
 .ged-side-panel-empty .bi { font-size: 2rem; color: #2563eb; }
@@ -141,7 +143,8 @@
 
 @media (max-width: 767.98px) {
     .ged-page,
-    .ged-page.ged-side-panel-open { grid-template-columns: 1fr; }
+    .ged-page.with-document-panel,
+    .ged-page.ged-side-panel-open { grid-template-columns: 1fr !important; }
     .ged-smart-doc-row { grid-template-columns: 30px 42px minmax(0, 1fr) auto; min-height: 82px; }
     .ged-smart-upload { display: none; }
     .ged-smart-inline-badges { margin-top: .25rem; }
@@ -183,12 +186,14 @@
 
 /* Painel lateral operacional do documento no Explorer GED */
 .ged-page.with-document-panel {
-    grid-template-columns: 320px minmax(0, 1fr) 420px !important;
+    grid-template-columns: minmax(280px, 400px) minmax(0, 1fr) 430px !important;
 }
 
 .ged-document-side-panel {
     background: #fff;
-    border-left: 1px solid #e5e7eb;
+    border-radius: 22px;
+    border: 1px solid #e5e7eb;
+    box-shadow: 0 18px 45px rgba(15,23,42,.08);
     min-height: calc(100vh - 120px);
     max-height: calc(100vh - 120px);
     overflow: hidden;
@@ -278,18 +283,20 @@
 .ged-document-side-panel.is-expanded .ged-side-preview-frame { height: calc(100vh - 230px); }
 
 @media (max-width: 1199.98px) {
+    .ged-page,
     .ged-page.with-document-panel,
     .ged-page.ged-side-panel-open {
-        grid-template-columns: 1fr !important;
+        grid-template-columns: 360px minmax(0, 1fr) !important;
     }
 
     .ged-document-side-panel {
+        grid-column: 1 / -1;
         position: static;
         width: 100%;
         min-height: 520px;
         max-height: none;
         border-radius: 18px;
-        border-left: 1px solid #e5e7eb;
+        border: 1px solid #e5e7eb;
     }
 }
 

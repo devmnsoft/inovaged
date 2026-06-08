@@ -35,7 +35,6 @@
     <article class="ged-operational-row@rowClass"
              draggable="true"
              data-document-id="@d.Id"
-             data-open-panel="true"
              data-version-id="@versionId"
              data-ocr-available="@(d.IsOcrAvailable ? "true" : "false")"
              data-document-incomplete="@(d.IsDocumentIncomplete ? "true" : "false")"
@@ -100,11 +99,11 @@
 
         <div class="ged-operational-quick-actions">
             <button type="button"
-                    class="btn btn-sm btn-light border js-open-document-side-panel"
+                    class="btn btn-sm btn-light border js-preview-document"
                     data-document-id="@d.Id"
                     data-version-id="@versionId"
-                    title="Visualizar documento"
-                    aria-label="Abrir detalhes e preview de @d.Title">
+                    title="Visualizar preview"
+                    aria-label="Visualizar preview de @d.Title">
                 <i class="bi bi-eye"></i>
             </button>
 

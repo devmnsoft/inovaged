@@ -25,12 +25,8 @@
     var rowClass = d.IsDocumentIncomplete ? " is-incomplete" : d.IsPartialDocument ? " is-partial" : string.Empty;
 
     <article class="ged-doc-row ged-smart-doc-row@rowClass"
-             role="button"
-             tabindex="0"
-             aria-label="Abrir detalhes de @d.Title"
              draggable="true"
              data-document-id="@d.Id"
-             data-open-panel="true"
              data-version-id="@versionId"
              data-ocr-available="@(d.IsOcrAvailable ? "true" : "false")"
              data-document-incomplete="@(d.IsDocumentIncomplete ? "true" : "false")"
@@ -79,11 +75,11 @@
 
         <div class="ged-doc-actions ged-smart-actions">
             <button type="button"
-                    class="btn btn-sm btn-light border js-open-document-side-panel"
+                    class="btn btn-sm btn-light border js-preview-document"
                     data-document-id="@d.Id"
                     data-version-id="@versionId"
-                    title="Visualizar documento"
-                    aria-label="Abrir detalhes e preview de @d.Title">
+                    title="Visualizar preview"
+                    aria-label="Visualizar preview de @d.Title">
                 <i class="bi bi-eye"></i>
             </button>
 
