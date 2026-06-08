@@ -49,5 +49,8 @@
         public int? PartNumber { get; init; }
         public int? TotalParts { get; init; }
         public Guid? ConsolidatedVersionId { get; init; }
+        public int PartialPartsCount { get; init; }
+        public string PartialStatusLabel { get; init; } = "";
+        public string PartialStatusCss { get; init; } = "";
     }
 }

@@ -518,7 +518,7 @@
                 <div class="small text-muted mb-3" id="documentPartsTitle"></div>
                 <div class="table-responsive">
                     <table class="table table-sm align-middle">
-                        <thead><tr><th>Parte</th><th>Arquivo</th><th>Upload em</th><th>Usuário</th><th>Status</th><th class="text-end">Ações</th></tr></thead>
+                        <thead><tr><th>Parte</th><th>Arquivo</th><th>Upload em</th><th>Usuário</th><th>Status</th><th>Tamanho</th><th>OCR</th><th class="text-end">Ações</th></tr></thead>
                         <tbody id="documentPartsTableBody"><tr><td colspan="6" class="text-muted">Selecione um documento para visualizar as partes.</td></tr></tbody>
                     </table>
                 </div>
@@ -724,6 +724,37 @@
             <strong>Destino selecionado:</strong> @uploadFolderLabel. O sistema validará o destino ao iniciar o upload.
         </div>
         <div id="bulkUploadMessage" class="d-none alert"></div>
+        <div class="card border-warning-subtle mb-3">
+            <div class="card-body py-3">
+                <div class="fw-semibold mb-2"><i class="bi bi-diagram-2 me-1"></i>Tipo de envio</div>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="bulkPartialMode" id="bulkUploadComplete" value="complete" checked>
+                    <label class="form-check-label" for="bulkUploadComplete">Documento completo</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="bulkPartialMode" id="bulkUploadIncomplete" value="partial">
+                    <label class="form-check-label" for="bulkUploadIncomplete">Documento incompleto / parte de documento</label>
+                </div>
+                <div id="bulkPartialFields" class="row g-2 mt-2 d-none">
+                    <div class="col-sm-4">
+                        <label class="form-label" for="bulkPartialPartNumber">Parte número</label>
+                        <input type="number" class="form-control" id="bulkPartialPartNumber" min="1" step="1" value="1">
+                    </div>
+                    <div class="col-sm-4">
+                        <label class="form-label" for="bulkPartialTotalParts">Total previsto (opcional)</label>
+                        <input type="number" class="form-control" id="bulkPartialTotalParts" min="1" step="1">
+                    </div>
+                    <div class="col-sm-4">
+                        <label class="form-label" for="bulkPartialExistingDocumentId">Vincular a documento existente</label>
+                        <input type="text" class="form-control" id="bulkPartialExistingDocumentId" placeholder="UUID opcional">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label" for="bulkPartialNotes">Observação</label>
+                        <textarea class="form-control" id="bulkPartialNotes" rows="2" placeholder="Contexto da parte, pendências ou orientação para consolidação."></textarea>
+                    </div>
+                </div>
+            </div>
+        </div>
         <div id="bulkDropzone" class="border border-2 border-secondary-subtle rounded p-4 text-center mb-3" style="border-style:dashed !important; cursor:pointer;">
             <i class="bi bi-cloud-arrow-up fs-1 d-block mb-2"></i><strong>Arraste arquivos aqui ou clique para selecionar</strong>
             <input id="bulkFileInput" type="file" multiple class="d-none" />
@@ -1331,17 +1362,18 @@ document.addEventListener('DOMContentLoaded', function () {
         if (body) body.innerHTML = '<tr><td colspan="6" class="text-muted"><span class="spinner-border spinner-border-sm me-1"></span>Carregando partes...</td></tr>';
         if (consolidateBtn) { consolidateBtn.disabled = true; consolidateBtn.dataset.documentId = documentId || ''; }
         try {
-            const res = await fetch(`/Ged/DocumentDetailsJson?id=${encodeURIComponent(documentId)}`, { headers: { 'X-Requested-With': 'XMLHttpRequest', Accept: 'application/json' } });
+            const res = await fetch(`/Ged/DocumentPartsJson?id=${encodeURIComponent(documentId)}`, { headers: { 'X-Requested-With': 'XMLHttpRequest', Accept: 'application/json' } });
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const data = await res.json();
-            const versions = (data.versions || []).filter(v => v.isPartialDocument || v.isDocumentIncomplete || v.partNumber);
-            if (!versions.length) {
-                body.innerHTML = '<tr><td colspan="6" class="text-muted">Nenhuma parte detalhada encontrada para este documento.</td></tr>';
+            const parts = data.parts || [];
+            if (!parts.length) {
+                body.innerHTML = '<tr><td colspan="8" class="text-muted">Nenhuma parte detalhada encontrada para este documento.</td></tr>';
                 return;
             }
-            body.innerHTML = versions.map(v => `<tr><td>${escapeHtml(v.partNumber || '-')} / ${escapeHtml(v.totalParts || '-')}</td><td>${escapeHtml(v.fileName || '-')}</td><td>${escapeHtml(v.uploadedAtLabel || '')}</td><td>${escapeHtml(v.createdBy || '-')}</td><td><span class="badge ged-badge ${v.isDocumentIncomplete ? 'ged-badge-warning' : 'ged-badge-info'}">${escapeHtml(v.partialStatus || v.ocrStatus || '-')}</span></td><td class="text-end">${v.versionId ? `<a class="btn btn-sm btn-light border" href="/Ged/Preview/${escapeHtml(v.versionId)}" target="_blank" rel="noopener" title="Visualizar parte"><i class="bi bi-eye"></i></a>` : ''}</td></tr>`).join('');
-            const hasIncomplete = Boolean(data.isDocumentIncomplete) || versions.some(v => v.isDocumentIncomplete || String(v.partialStatus || '').toUpperCase() === 'INCOMPLETE');
-            if (consolidateBtn) consolidateBtn.disabled = hasIncomplete;
+            const maxTotal = parts.map(p => p.totalParts).filter(Boolean).sort((a,b)=>b-a)[0] || null;
+            body.innerHTML = parts.map(p => `<tr><td>${escapeHtml(p.partNumber || '-')} / ${escapeHtml(p.totalParts || maxTotal || '-')}</td><td>${escapeHtml(p.fileName || '-')}</td><td>${escapeHtml(p.uploadedAtLabel || '')}</td><td>${escapeHtml(p.uploadedByName || '-')}</td><td><span class="badge ged-badge ged-badge-info">${escapeHtml(p.status || '-')}</span></td><td>${p.sizeBytes ? (Number(p.sizeBytes)/1024).toFixed(1)+' KB' : '-'}</td><td>${p.isOcrAvailable ? '<span class="badge bg-success">OCR disponível</span>' : '<span class="text-muted small">-</span>'}</td><td class="text-end"><div class="btn-group btn-group-sm">${p.previewUrl ? `<a class="btn btn-light border" href="${escapeHtml(p.previewUrl)}" target="_blank" rel="noopener" title="Visualizar parte"><i class="bi bi-eye"></i></a>` : ''}${p.downloadUrl ? `<a class="btn btn-light border" href="${escapeHtml(p.downloadUrl)}" title="Baixar parte"><i class="bi bi-download"></i></a>` : ''}${p.ocrUrl ? `<a class="btn btn-light border" href="${escapeHtml(p.ocrUrl)}" target="_blank" rel="noopener" title="Ver OCR"><i class="bi bi-body-text"></i></a>` : ''}</div></td></tr>`).join('');
+            const complete = parts.length > 1 && (!maxTotal || parts.length >= maxTotal);
+            if (consolidateBtn) consolidateBtn.disabled = !complete;
         } catch {
             if (body) body.innerHTML = '<tr><td colspan="6" class="text-danger">Não foi possível carregar as partes agora.</td></tr>';
         }
@@ -1371,7 +1403,13 @@ document.addEventListener('DOMContentLoaded', function () {
 
         if (e.target.closest('.js-consolidate-document, #btnConsolidateDocument')) {
             e.preventDefault();
-            window.showAppToast?.('A consolidação será executada automaticamente quando todas as partes forem anexadas.', 'info', 'Documento fracionado');
+            const documentId = e.target.closest('.js-consolidate-document')?.dataset.documentId || document.getElementById('btnConsolidateDocument')?.dataset.documentId;
+            if (!documentId) return;
+            const fd = new FormData(); fd.append('documentId', documentId);
+            fetch('/Ged/DocumentParts/Consolidate', { method: 'POST', body: fd, headers: token ? { RequestVerificationToken: token } : {} })
+                .then(r => r.json().then(j => ({ ok: r.ok, j })))
+                .then(({ ok, j }) => { if (!ok || j.success === false) throw new Error(j.message || 'Falha ao consolidar.'); window.showAppToast?.(j.message || 'Documento consolidado.', 'success', 'Documento fracionado'); setTimeout(() => window.GedFolderNavigation?.refreshCurrentFolder?.() || window.location.reload(), 700); })
+                .catch(err => window.showAppToast?.(err.message || 'Falha ao consolidar.', 'danger', 'Documento fracionado'));
         }
     });
 

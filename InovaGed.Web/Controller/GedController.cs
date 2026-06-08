@@ -29,6 +29,7 @@ using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.Net.Http.Headers;
 using Npgsql;
 using InovaGed.Web.Services;
+using InovaGed.Application.Ged.Documents.Partials;
 
 namespace InovaGed.Web.Controllers;
 
@@ -65,6 +66,7 @@ public sealed class GedController : Controller
     private readonly IGedSmartSearchService _smartSearch;
     private readonly IAuditWriter _auditWriter;
     private readonly IDateTimeDisplayService _dateTimeDisplay;
+    private readonly IDocumentPartialService _documentPartialService;
 
     // ✅ classificação
     private readonly IDocumentClassificationQueries _clsQ;
@@ -104,7 +106,8 @@ public sealed class GedController : Controller
         IDocumentClassificationQueries clsQ,
         IDocumentCommands documentCommands,
         IOcrSignalRNotifier ocrNotifier,
-        IDateTimeDisplayService dateTimeDisplay)
+        IDateTimeDisplayService dateTimeDisplay,
+        IDocumentPartialService documentPartialService)
     {
         _logger = logger;
         _currentUser = currentUser;
@@ -125,6 +128,7 @@ public sealed class GedController : Controller
         _smartSearch = smartSearch;
         _auditWriter = auditWriter;
         _dateTimeDisplay = dateTimeDisplay;
+        _documentPartialService = documentPartialService;
 
         _docs = docs;
         _documentApp = documentApp;
@@ -156,6 +160,10 @@ public sealed class GedController : Controller
             _logger.LogInformation("Bulk upload iniciado. Tenant={TenantId} User={UserId} Folder={FolderId} Batch={BatchId} FileIndex={FileIndex} TotalFiles={TotalFiles} File={FileName} Size={FileSize} RunOcr={RunOcr} GeneratePreview={GeneratePreview} ConnectionId={ConnectionId} CorrelationId={CorrelationId}",
                 _currentUser.TenantId, _currentUser.UserId, uploadFolderId ?? folderId, batchId, fileIndex, totalFiles, file?.FileName, file?.Length, runOcr, generatePreview, HttpContext.Connection.Id, correlationId);
             if (!_currentUser.IsAuthenticated) return Unauthorized(JsonError("Sua sessão expirou. Faça login novamente.", "Autenticação", "Usuário sem sessão autenticada.", false, correlationId));
+            if (isDocumentPart && (existingDocumentId.HasValue || consolidateIntoDocumentId.HasValue) && !CanAddDocumentPart())
+            {
+                return StatusCode(403, JsonError("Você não possui permissão para adicionar partes a documentos.", "Autorização", "Permissão DOCUMENT_PART_ADD negada.", false, correlationId));
+            }
             var isAdmin = await _accessPolicy.IsAdminAsync(_currentUser.TenantId, _currentUser.UserId, User, ct);
             var receivedFolderId = uploadFolderId ?? folderId;
             var folderResolution = await ResolveUploadFolderAsync(receivedFolderId, requestedFolderId, isAdmin, correlationId, ct);
@@ -347,6 +355,75 @@ public sealed class GedController : Controller
         });
     }
 
+
+    [HttpGet("/Ged/DocumentPartsJson")]
+    public async Task<IActionResult> DocumentPartsJson(Guid id, CancellationToken ct)
+    {
+        if (!_currentUser.IsAuthenticated) return Unauthorized();
+        if (!CanViewDocumentParts()) return Forbid();
+
+        var parts = await _documentPartialService.GetPartsAsync(_currentUser.TenantId, id, ct);
+        await WriteGedAuditAsync("DOCUMENT_PART_VIEW", "DOCUMENT_PART", id, "Partes do documento visualizadas", new { documentId = id, correlationId = HttpContext.TraceIdentifier }, ct);
+        return Ok(new
+        {
+            documentId = id,
+            parts = parts.Select(p => new
+            {
+                p.Id,
+                p.VersionId,
+                p.PartialGroupId,
+                p.PartNumber,
+                p.TotalParts,
+                p.FileName,
+                p.SizeBytes,
+                uploadedAt = p.UploadedAtUtc,
+                uploadedAtLabel = _dateTimeDisplay.FormatUploadDate(p.UploadedAtUtc),
+                uploadedBy = p.UploadedBy,
+                uploadedByName = p.UploadedByName,
+                p.Status,
+                p.Notes,
+                p.OcrStatus,
+                p.IsOcrAvailable,
+                previewUrl = Url.Action(nameof(Preview), "Ged", new { id = p.VersionId }),
+                downloadUrl = Url.Action(nameof(Download), "Ged", new { id = p.VersionId }),
+                ocrUrl = p.IsOcrAvailable ? Url.Action(nameof(OcrText), "Ged", new { versionId = p.VersionId }) : null
+            })
+        });
+    }
+
+    [HttpPost("/Ged/DocumentParts/Consolidate")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ConsolidateDocumentPart([FromForm] Guid documentId, CancellationToken ct)
+    {
+        if (!_currentUser.IsAuthenticated) return Unauthorized();
+        if (!CanConsolidateDocumentParts()) return Forbid();
+        var result = await _documentPartialService.ConsolidateAsync(_currentUser.TenantId, _currentUser.UserId, documentId, HttpContext.TraceIdentifier, ct);
+        if (!result.Success) return BadRequest(new { success = false, message = result.Error?.Message ?? "Não foi possível consolidar o documento." });
+        return Ok(new { success = true, message = "Documento consolidado logicamente. As partes originais foram preservadas para auditoria.", summary = result.Value });
+    }
+
+    [HttpPost("/Ged/DocumentParts/Complete")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> MarkDocumentPartComplete([FromForm] Guid documentId, CancellationToken ct)
+    {
+        if (!_currentUser.IsAuthenticated) return Unauthorized();
+        if (!CanConsolidateDocumentParts()) return Forbid();
+        var result = await _documentPartialService.MarkAsCompleteAsync(_currentUser.TenantId, _currentUser.UserId, documentId, HttpContext.TraceIdentifier, ct);
+        if (!result.Success) return BadRequest(new { success = false, message = result.Error?.Message ?? "Não foi possível marcar como completo." });
+        return Ok(new { success = true, message = "Partes marcadas como completas.", summary = result.Value });
+    }
+
+    [HttpPost("/Ged/DocumentParts/Cancel")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> CancelDocumentPart([FromForm] Guid documentId, [FromForm] string? reason, CancellationToken ct)
+    {
+        if (!_currentUser.IsAuthenticated) return Unauthorized();
+        if (!CanCancelDocumentParts()) return Forbid();
+        var result = await _documentPartialService.CancelPartialAsync(_currentUser.TenantId, _currentUser.UserId, documentId, reason, HttpContext.TraceIdentifier, ct);
+        if (!result.Success) return BadRequest(new { success = false, message = result.Error?.Message ?? "Não foi possível cancelar o fracionamento." });
+        return Ok(new { success = true, message = "Fracionamento cancelado sem apagar arquivos.", summary = result.Value });
+    }
+
     [HttpGet("/Ged/DocumentHistoryJson")]
     public async Task<IActionResult> DocumentHistoryJson(Guid id, CancellationToken ct)
     {
@@ -535,6 +612,12 @@ public sealed class GedController : Controller
                     TotalParts = d.TotalParts,
                     ConsolidatedVersionId = d.ConsolidatedVersionId,
                     PartialStatus = d.PartialStatus,
+                    PartialGroupId = d.PartialGroupId,
+                    PartialPartNumber = d.PartialPartNumber,
+                    PartialTotalParts = d.PartialTotalParts,
+                    PartialPartsCount = d.PartialPartsCount,
+                    PartialStatusLabel = d.PartialStatusLabel,
+                    PartialStatusCss = d.PartialStatusCss,
                     IsConfidential = d.IsConfidential
                 }).ToList()
             };
@@ -1279,6 +1362,12 @@ LIMIT 20;";
             _logger.LogWarning(ex, "Falha ao registrar auditoria GED. Action={Action} Entity={Entity} EntityId={EntityId}", action, entity, entityId);
         }
     }
+
+
+    private bool CanAddDocumentPart() => User.IsInRole(AppRoles.Admin) || User.IsInRole(AppRoles.Arquivista) || User.IsInRole(AppRoles.ArquivistaOphir);
+    private bool CanViewDocumentParts() => _currentUser.IsAuthenticated;
+    private bool CanConsolidateDocumentParts() => User.IsInRole(AppRoles.Admin) || User.IsInRole(AppRoles.Arquivista) || User.IsInRole(AppRoles.ArquivistaOphir);
+    private bool CanCancelDocumentParts() => User.IsInRole(AppRoles.Admin) || User.IsInRole(AppRoles.AdministradorOphir);
 
     private object JsonError(string message, string errorStep, string errorLog, bool canRetry, string? correlationId = null)
         => new { success = false, message, errorStep, errorLog, canRetry, correlationId = correlationId ?? HttpContext.TraceIdentifier };

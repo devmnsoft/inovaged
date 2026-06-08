@@ -33,6 +33,9 @@ namespace InovaGed.Domain.Ged
         public int? PartNumber { get; init; }
         public int? TotalParts { get; init; }
         public Guid? ConsolidatedVersionId { get; init; }
+        public int PartialPartsCount { get; init; }
+        public string PartialStatusLabel => PartialStatusLabels.GetLabel(PartialStatus);
+        public string PartialStatusCss => PartialStatusLabels.GetCss(PartialStatus);
          
         public bool IsConfidential { get; init; }
     }
@@ -60,6 +63,9 @@ namespace InovaGed.Domain.Ged
         public int? PartNumber { get; init; }
         public int? TotalParts { get; init; }
         public Guid? ConsolidatedVersionId { get; init; }
+        public int PartialPartsCount { get; init; }
+        public string PartialStatusLabel => PartialStatusLabels.GetLabel(PartialStatus);
+        public string PartialStatusCss => PartialStatusLabels.GetCss(PartialStatus);
 
         public string? FileExtension { get; init; }
         public string OcrStatus { get; set; }
@@ -80,6 +86,28 @@ namespace InovaGed.Domain.Ged
         public string? ContentType { get; init; }
         public string StoragePath { get; init; } = "";
         public long SizeBytes { get; init; }
+    }
+
+
+    internal static class PartialStatusLabels
+    {
+        public static string GetLabel(string? status) => (status ?? "NOT_PARTIAL").Trim().ToUpperInvariant() switch
+        {
+            "INCOMPLETE" => "Documento incompleto",
+            "COMPLETE" => "Partes completas",
+            "CONSOLIDATED" => "Documento consolidado",
+            "CANCELLED" => "Fracionamento cancelado",
+            _ => string.Empty
+        };
+
+        public static string GetCss(string? status) => (status ?? "NOT_PARTIAL").Trim().ToUpperInvariant() switch
+        {
+            "INCOMPLETE" => "ged-badge-warning",
+            "COMPLETE" => "ged-badge-info",
+            "CONSOLIDATED" => "ged-badge-success",
+            "CANCELLED" => "ged-badge-muted",
+            _ => string.Empty
+        };
     }
 
 }
