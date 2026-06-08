@@ -23,6 +23,80 @@ public sealed class DocumentPartialService : IDocumentPartialService
         _logger = logger;
     }
 
+
+    public async Task<Result<DocumentPartialSummaryDto>> MarkAsIncompleteAsync(Guid tenantId, Guid userId, Guid documentId, int? totalParts, string? notes, string? correlationId, CancellationToken ct)
+    {
+        if (tenantId == Guid.Empty || documentId == Guid.Empty)
+            return Result<DocumentPartialSummaryDto>.Fail("VALIDATION", "Documento inválido.");
+        if (totalParts.HasValue && totalParts.Value <= 0)
+            return Result<DocumentPartialSummaryDto>.Fail("VALIDATION", "Total previsto de partes deve ser maior que zero.");
+
+        await using var conn = await _db.OpenAsync(ct);
+        await using var tx = await conn.BeginTransactionAsync(ct);
+        try
+        {
+            var row = await conn.QuerySingleOrDefaultAsync(new CommandDefinition("""
+WITH current_version AS (
+    SELECT id
+    FROM ged.document_version
+    WHERE tenant_id=@tenantId AND document_id=@documentId AND is_current=true AND reg_status='A'
+    LIMIT 1
+), updated_version AS (
+    UPDATE ged.document_version v
+    SET is_partial_document=true,
+        is_document_incomplete=true,
+        partial_group_id=COALESCE(v.partial_group_id, @newGroupId),
+        partial_part_number=COALESCE(v.partial_part_number, v.part_number, 1),
+        partial_total_parts=COALESCE(@totalParts, v.partial_total_parts, v.total_parts),
+        partial_status='INCOMPLETE',
+        part_number=COALESCE(v.part_number, v.partial_part_number, 1),
+        total_parts=COALESCE(@totalParts, v.total_parts, v.partial_total_parts),
+        uploaded_at_utc=COALESCE(v.uploaded_at_utc, v.created_at, now())
+    FROM current_version cv
+    WHERE v.tenant_id=@tenantId AND v.document_id=@documentId AND v.id=cv.id
+    RETURNING v.id, v.partial_group_id, COALESCE(v.partial_part_number, v.part_number, 1) AS part_number, v.partial_total_parts, v.file_name, v.file_size_bytes
+), insert_part AS (
+    INSERT INTO ged.document_partial_part
+        (tenant_id, document_id, version_id, partial_group_id, part_number, total_parts, file_name, size_bytes, uploaded_at_utc, uploaded_by, status, notes)
+    SELECT @tenantId, @documentId, id, partial_group_id, part_number, partial_total_parts, file_name, file_size_bytes, now(), @userId, 'UPLOADED', @notes
+    FROM updated_version uv
+    ON CONFLICT (tenant_id, version_id) DO UPDATE
+    SET partial_group_id=EXCLUDED.partial_group_id,
+        part_number=EXCLUDED.part_number,
+        total_parts=EXCLUDED.total_parts,
+        file_name=EXCLUDED.file_name,
+        size_bytes=EXCLUDED.size_bytes,
+        uploaded_at_utc=EXCLUDED.uploaded_at_utc,
+        uploaded_by=EXCLUDED.uploaded_by,
+        status='UPLOADED',
+        notes=EXCLUDED.notes,
+        reg_status='A'
+    RETURNING version_id AS id, partial_group_id, part_number, total_parts AS partial_total_parts
+)
+SELECT id, partial_group_id, part_number, partial_total_parts FROM insert_part
+LIMIT 1;
+""", new { tenantId, documentId, totalParts, newGroupId = Guid.NewGuid(), userId, notes }, tx, cancellationToken: ct));
+            if (row is null)
+            {
+                await tx.RollbackAsync(ct);
+                return Result<DocumentPartialSummaryDto>.Fail("NOT_FOUND", "Documento não encontrado.");
+            }
+
+            Guid groupId = row.partial_group_id;
+            var summary = await BuildSummaryAsync(conn, tx, tenantId, documentId, groupId, ct);
+            await tx.CommitAsync(ct);
+
+            await WriteAuditAsync(tenantId, userId, "DOCUMENT_MARK_INCOMPLETE", documentId, new { documentId, versionId = (Guid)row.id, partialGroupId = groupId, partNumber = (int)row.part_number, totalParts, userId, tenantId, correlationId, notes, timestampUtc = DateTime.UtcNow }, ct);
+            return Result<DocumentPartialSummaryDto>.Ok(summary with { PartialStatus = "INCOMPLETE", CanConsolidate = false });
+        }
+        catch (Exception ex)
+        {
+            await tx.RollbackAsync(CancellationToken.None);
+            _logger.LogError(ex, "Erro ao marcar documento como incompleto. Tenant={TenantId} Document={DocumentId}", tenantId, documentId);
+            return Result<DocumentPartialSummaryDto>.Fail("ERR", "Não foi possível marcar o documento como incompleto.");
+        }
+    }
+
     public async Task<Result<DocumentPartialSummaryDto>> AddPartAsync(AddDocumentPartRequest request, CancellationToken ct)
     {
         if (request.TenantId == Guid.Empty || request.DocumentId == Guid.Empty || request.VersionId == Guid.Empty)
@@ -133,7 +207,7 @@ ORDER BY pp.part_number, pp.uploaded_at_utc;
 """;
         await using var conn = await _db.OpenAsync(ct);
         var rows = await conn.QueryAsync<DocumentPartialPartDto>(new CommandDefinition(sql, new { tenantId, documentId }, cancellationToken: ct));
-        await WriteAuditAsync(tenantId, null, "DOCUMENT_PART_VIEW", documentId, new { documentId, tenantId, timestampUtc = DateTime.UtcNow }, ct);
+        await WriteAuditAsync(tenantId, null, "DOCUMENT_PART_VIEW", documentId, new { documentId, tenantId, correlationId = (string?)null, timestampUtc = DateTime.UtcNow }, ct);
         return rows.AsList();
     }
 
