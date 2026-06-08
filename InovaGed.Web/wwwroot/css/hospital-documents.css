@@ -281,3 +281,18 @@ body.hospital-autocomplete-open .hospital-suggestions {
         min-height: 520px;
     }
 }
+
+.hospital-badge.incomplete {
+  background: #fef3c7;
+  color: #92400e;
+  border-color: #fde68a;
+  font-weight: 700;
+}
+
+.hospital-badge.partial,
+.hospital-badge.consolidated {
+  background: #e0f2fe;
+  color: #075985;
+  border-color: #bae6fd;
+  font-weight: 700;
+}

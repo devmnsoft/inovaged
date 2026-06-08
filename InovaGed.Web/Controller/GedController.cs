@@ -160,9 +160,9 @@ public sealed class GedController : Controller
             _logger.LogInformation("Bulk upload iniciado. Tenant={TenantId} User={UserId} Folder={FolderId} Batch={BatchId} FileIndex={FileIndex} TotalFiles={TotalFiles} File={FileName} Size={FileSize} RunOcr={RunOcr} GeneratePreview={GeneratePreview} ConnectionId={ConnectionId} CorrelationId={CorrelationId}",
                 _currentUser.TenantId, _currentUser.UserId, uploadFolderId ?? folderId, batchId, fileIndex, totalFiles, file?.FileName, file?.Length, runOcr, generatePreview, HttpContext.Connection.Id, correlationId);
             if (!_currentUser.IsAuthenticated) return Unauthorized(JsonError("Sua sessão expirou. Faça login novamente.", "Autenticação", "Usuário sem sessão autenticada.", false, correlationId));
-            if (isDocumentPart && (existingDocumentId.HasValue || consolidateIntoDocumentId.HasValue) && !CanAddDocumentPart())
+            if (isDocumentPart && !CanAddDocumentPart())
             {
-                return StatusCode(403, JsonError("Você não possui permissão para adicionar partes a documentos.", "Autorização", "Permissão DOCUMENT_PART_ADD negada.", false, correlationId));
+                return StatusCode(403, JsonError("Você não possui permissão para marcar documentos como incompletos ou adicionar partes.", "Autorização", "Permissão DOCUMENT_PART_ADD/DOCUMENT_PART_MARK_INCOMPLETE negada.", false, correlationId));
             }
             var isAdmin = await _accessPolicy.IsAdminAsync(_currentUser.TenantId, _currentUser.UserId, User, ct);
             var receivedFolderId = uploadFolderId ?? folderId;
@@ -1211,6 +1211,10 @@ LIMIT 20;";
         [FromForm] IFormFile file,
         [FromForm] string? title,
         [FromForm] bool? isConfidential,
+        [FromForm] bool? isDocumentPart,
+        [FromForm] int? partNumber,
+        [FromForm] int? totalParts,
+        [FromForm] string? partialNotes,
         CancellationToken ct)
     {
         try
@@ -1232,6 +1236,12 @@ LIMIT 20;";
                 return RedirectToAction(nameof(Index), new { folderId });
             }
 
+            if (isDocumentPart == true && !CanAddDocumentPart())
+            {
+                TempData["Error"] = "Você não possui permissão para marcar documentos como incompletos ou adicionar partes.";
+                return RedirectToAction(nameof(Index), new { folderId });
+            }
+
             var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "";
             var ua = Request.Headers.UserAgent.ToString();
 
@@ -1243,11 +1253,18 @@ LIMIT 20;";
                 Title = string.IsNullOrWhiteSpace(title)
                     ? Path.GetFileNameWithoutExtension(file.FileName)
                     : title.Trim(),
-                Description = null,
+                Description = string.IsNullOrWhiteSpace(partialNotes) ? null : partialNotes.Trim(),
                 IsConfidential = isConfidential ?? false,
                 FileName = file.FileName,
                 ContentType = file.ContentType,
-                Content = stream
+                Content = stream,
+                IsPartialDocument = isDocumentPart == true,
+                IsDocumentIncomplete = isDocumentPart == true,
+                PartNumber = isDocumentPart == true ? partNumber : null,
+                TotalParts = isDocumentPart == true ? totalParts : null,
+                PartialPartNumber = isDocumentPart == true ? partNumber : null,
+                PartialTotalParts = isDocumentPart == true ? totalParts : null,
+                PartialStatus = isDocumentPart == true ? "INCOMPLETE" : "NOT_PARTIAL"
             };
 
             var result = await _documentApp.UploadAsync(cmd, ip, ua, ct);
@@ -1258,7 +1275,7 @@ LIMIT 20;";
                 return RedirectToAction(nameof(Index), new { folderId });
             }
 
-            TempData["Success"] = "Upload realizado com sucesso.";
+            TempData["Success"] = isDocumentPart == true ? "Documento incompleto enviado com sucesso. Ele poderá receber novas partes futuramente." : "Upload realizado com sucesso.";
             return RedirectToAction(nameof(Index), new { folderId });
         }
         catch (Exception ex)
@@ -1267,6 +1284,60 @@ LIMIT 20;";
             TempData["Error"] = "Erro ao enviar arquivo.";
             return RedirectToAction(nameof(Index), new { folderId });
         }
+    }
+
+    [HttpPost("/Ged/DocumentParts/MarkIncomplete")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> MarkDocumentIncomplete([FromForm] Guid documentId, [FromForm] int? totalParts, [FromForm] string? notes, CancellationToken ct)
+    {
+        if (!_currentUser.IsAuthenticated) return Unauthorized();
+        if (!CanAddDocumentPart()) return Forbid();
+        if (documentId == Guid.Empty) return BadRequest(new { success = false, message = "Documento inválido." });
+
+        const string sql = """
+WITH current_version AS (
+    SELECT id
+    FROM ged.document_version
+    WHERE tenant_id=@tenantId AND document_id=@documentId AND is_current=true AND reg_status='A'
+    LIMIT 1
+), updated_version AS (
+    UPDATE ged.document_version v
+    SET is_partial_document=true,
+        is_document_incomplete=true,
+        partial_group_id=COALESCE(v.partial_group_id, @newGroupId),
+        partial_part_number=COALESCE(v.partial_part_number, v.part_number, 1),
+        partial_total_parts=COALESCE(@totalParts, v.partial_total_parts, v.total_parts),
+        partial_status='INCOMPLETE',
+        part_number=COALESCE(v.part_number, v.partial_part_number, 1),
+        total_parts=COALESCE(@totalParts, v.total_parts, v.partial_total_parts)
+    FROM current_version cv
+    WHERE v.tenant_id=@tenantId AND v.document_id=@documentId AND v.id=cv.id
+    RETURNING v.id, v.partial_group_id, COALESCE(v.partial_part_number, v.part_number, 1) AS part_number, v.partial_total_parts, v.file_name, v.file_size_bytes
+),
+insert_part AS (
+    INSERT INTO ged.document_partial_part
+        (tenant_id, document_id, version_id, partial_group_id, part_number, total_parts, file_name, size_bytes, uploaded_at_utc, uploaded_by, status, notes)
+    SELECT @tenantId, @documentId, id, partial_group_id, part_number, partial_total_parts, file_name, file_size_bytes, now(), @userId, 'UPLOADED', @notes
+    FROM updated_version uv
+    WHERE NOT EXISTS (
+        SELECT 1 FROM ged.document_partial_part pp
+        WHERE pp.tenant_id=@tenantId AND pp.version_id=uv.id AND pp.reg_status='A'
+    )
+    RETURNING version_id AS id, partial_group_id, part_number, total_parts AS partial_total_parts
+)
+SELECT id, partial_group_id, part_number, partial_total_parts FROM insert_part
+UNION ALL
+SELECT uv.id, uv.partial_group_id, uv.part_number, uv.partial_total_parts
+FROM updated_version uv
+WHERE NOT EXISTS (SELECT 1 FROM insert_part)
+LIMIT 1;
+""";
+        await using var con = await _db.OpenAsync(ct);
+        var row = await con.QuerySingleOrDefaultAsync(new CommandDefinition(sql, new { tenantId = _currentUser.TenantId, documentId, totalParts, newGroupId = Guid.NewGuid(), userId = _currentUser.UserId, notes }, cancellationToken: ct));
+        if (row is null) return NotFound(new { success = false, message = "Documento não encontrado." });
+
+        await WriteGedAuditAsync("DOCUMENT_PART_MARK_INCOMPLETE", "DOCUMENT_PART", documentId, "Documento marcado como incompleto", new { documentId, versionId = row.id, partialGroupId = row.partial_group_id, partNumber = row.part_number, userId = _currentUser.UserId, tenantId = _currentUser.TenantId, correlationId = HttpContext.TraceIdentifier, notes, timestampUtc = DateTime.UtcNow }, ct);
+        return Ok(new { success = true, message = "Documento marcado como incompleto. Agora ele poderá receber novas partes futuramente." });
     }
 
     private object JsonSuccess(string message, object? data = null, string? correlationId = null)
@@ -1295,6 +1366,12 @@ LIMIT 20;";
             TotalParts = d.TotalParts,
             ConsolidatedVersionId = d.ConsolidatedVersionId,
             PartialStatus = d.PartialStatus,
+            PartialGroupId = d.PartialGroupId,
+            PartialPartNumber = d.PartialPartNumber,
+            PartialTotalParts = d.PartialTotalParts,
+            PartialPartsCount = d.PartialPartsCount,
+            PartialStatusLabel = d.PartialStatusLabel,
+            PartialStatusCss = d.PartialStatusCss,
             IsConfidential = d.IsConfidential
         };
 

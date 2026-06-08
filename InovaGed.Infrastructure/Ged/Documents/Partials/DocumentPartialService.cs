@@ -98,7 +98,7 @@ SET partial_group_id=EXCLUDED.partial_group_id,
             var summary = await RefreshStatusAsync(conn, tx, request.TenantId, request.DocumentId, groupId, ct);
             await tx.CommitAsync(ct);
 
-            await WriteAuditAsync(request.TenantId, request.UserId, "DOCUMENT_PART_UPLOAD", request.DocumentId, new { request.DocumentId, request.VersionId, partialGroupId = groupId, request.PartNumber, request.TotalParts, request.CorrelationId }, ct);
+            await WriteAuditAsync(request.TenantId, request.UserId, "DOCUMENT_PART_ADD", request.DocumentId, new { documentId = request.DocumentId, versionId = request.VersionId, partialGroupId = groupId, partNumber = request.PartNumber, totalParts = request.TotalParts, userId = request.UserId, tenantId = request.TenantId, correlationId = request.CorrelationId, timestampUtc = DateTime.UtcNow }, ct);
             return Result<DocumentPartialSummaryDto>.Ok(summary);
         }
         catch (Exception ex)
@@ -133,12 +133,12 @@ ORDER BY pp.part_number, pp.uploaded_at_utc;
 """;
         await using var conn = await _db.OpenAsync(ct);
         var rows = await conn.QueryAsync<DocumentPartialPartDto>(new CommandDefinition(sql, new { tenantId, documentId }, cancellationToken: ct));
-        await WriteAuditAsync(tenantId, null, "DOCUMENT_PART_VIEW", documentId, new { documentId }, ct);
+        await WriteAuditAsync(tenantId, null, "DOCUMENT_PART_VIEW", documentId, new { documentId, tenantId, timestampUtc = DateTime.UtcNow }, ct);
         return rows.AsList();
     }
 
     public async Task<Result<DocumentPartialSummaryDto>> MarkAsCompleteAsync(Guid tenantId, Guid userId, Guid documentId, string? correlationId, CancellationToken ct)
-        => await ChangeStatusAsync(tenantId, userId, documentId, "COMPLETE", "DOCUMENT_PART_COMPLETE", null, correlationId, ct);
+        => await ChangeStatusAsync(tenantId, userId, documentId, "COMPLETE", "DOCUMENT_PART_MARK_COMPLETE", null, correlationId, ct);
 
     public async Task<Result<DocumentPartialSummaryDto>> CancelPartialAsync(Guid tenantId, Guid userId, Guid documentId, string? reason, string? correlationId, CancellationToken ct)
         => await ChangeStatusAsync(tenantId, userId, documentId, "CANCELLED", "DOCUMENT_PART_CANCEL", reason, correlationId, ct);
@@ -185,7 +185,7 @@ WHERE tenant_id=@tenantId AND id=@documentId;
             await tx.CommitAsync(ct);
 
             await _ocrJobs.EnqueueAsync(tenantId, consolidatedVersionId.Value, userId, invalidateDigitalSignatures: false, ct);
-            await WriteAuditAsync(tenantId, userId, "DOCUMENT_PART_CONSOLIDATE", documentId, new { documentId, partialGroupId = groupId, consolidatedVersionId, correlationId, consolidationMode = "LOGICAL", technicalTodo = "Implementar mesclagem física de PDFs quando a biblioteca de merge for homologada." }, ct);
+            await WriteAuditAsync(tenantId, userId, "DOCUMENT_PART_CONSOLIDATE", documentId, new { documentId, versionId = consolidatedVersionId, partialGroupId = groupId, userId, tenantId, correlationId, timestampUtc = DateTime.UtcNow, consolidationMode = "LOGICAL", technicalTodo = "Implementar mesclagem física de PDFs quando a biblioteca de merge for homologada." }, ct);
 
             return Result<DocumentPartialSummaryDto>.Ok(summary with { PartialStatus = "CONSOLIDATED", ConsolidatedVersionId = consolidatedVersionId, CanConsolidate = false });
         }
@@ -216,7 +216,7 @@ WHERE tenant_id=@tenantId AND partial_group_id=@groupId AND reg_status='A';
 """, new { tenantId, groupId, status, partStatus = status == "CANCELLED" ? "CANCELLED" : "UPLOADED" }, tx, cancellationToken: ct));
             var summary = await BuildSummaryAsync(conn, tx, tenantId, documentId, groupId.Value, ct);
             await tx.CommitAsync(ct);
-            await WriteAuditAsync(tenantId, userId, auditAction, documentId, new { documentId, partialGroupId = groupId, reason, correlationId }, ct);
+            await WriteAuditAsync(tenantId, userId, auditAction, documentId, new { documentId, partialGroupId = groupId, userId, tenantId, reason, correlationId, timestampUtc = DateTime.UtcNow }, ct);
             return Result<DocumentPartialSummaryDto>.Ok(summary with { PartialStatus = status, CanConsolidate = status == "COMPLETE" && summary.CanConsolidate });
         }
         catch (Exception ex)

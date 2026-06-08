@@ -1,8 +1,13 @@
 @model InovaGed.Web.Models.Ged.GedExplorerVM
 @using InovaGed.Web.Ocr
+@using InovaGed.Web.Security
 @inject Microsoft.Extensions.Configuration.IConfiguration Configuration
 
 @{
+    var canAddDocumentPart = User.IsInRole(AppRoles.Admin) || User.IsInRole(AppRoles.Arquivista) || User.IsInRole(AppRoles.ArquivistaOphir);
+    var canViewDocumentParts = User.Identity?.IsAuthenticated == true;
+    var canConsolidateDocumentParts = User.IsInRole(AppRoles.Admin) || User.IsInRole(AppRoles.Arquivista) || User.IsInRole(AppRoles.ArquivistaOphir);
+    var canCancelDocumentParts = User.IsInRole(AppRoles.Admin) || User.IsInRole(AppRoles.AdministradorOphir);
     var localTimeZoneId = Configuration["Localization:DefaultTimeZone"] ?? Configuration["App:LocalTimeZoneId"] ?? Configuration["TimeZoneId"] ?? "America/Belem";
     var uploadDateFormat = Configuration["Localization:DateTimeFormat"] ?? "dd/MM/yyyy HH:mm";
 }
@@ -55,7 +60,7 @@
 
                 @if (d.IsDocumentIncomplete)
                 {
-                    <span class="badge ged-badge-incomplete" title="Este documento ainda possui partes pendentes.">
+                    <span class="badge ged-badge-incomplete" title="Este documento possui partes pendentes e poderá ser complementado futuramente.">
                         <i class="bi bi-exclamation-triangle me-1"></i>Documento incompleto
                     </span>
                 }
@@ -81,7 +86,7 @@
                 <i class="bi bi-eye"></i>
             </button>
 
-            @await Html.PartialAsync("_DocumentActionsDropdown", new InovaGed.Web.Models.Ged.DocumentActionsVm { DocumentId = d.Id, Title = d.Title, VersionId = versionId, CurrentFolderId = Model.CurrentFolderId, IsOcrAvailable = d.IsOcrAvailable, IsPartialDocument = d.IsPartialDocument, IsDocumentIncomplete = d.IsDocumentIncomplete, PartialStatus = d.PartialStatus })
+            @await Html.PartialAsync("_DocumentActionsDropdown", new InovaGed.Web.Models.Ged.DocumentActionsVm { DocumentId = d.Id, Title = d.Title, VersionId = versionId, CurrentFolderId = Model.CurrentFolderId, IsOcrAvailable = d.IsOcrAvailable, IsPartialDocument = d.IsPartialDocument, IsDocumentIncomplete = d.IsDocumentIncomplete, PartialStatus = d.PartialStatus, PartialPartsCount = d.PartialPartsCount, PartialTotalParts = d.TotalParts ?? d.PartialTotalParts, CanAddPart = canAddDocumentPart, CanViewParts = canViewDocumentParts, CanConsolidate = canConsolidateDocumentParts, CanCancelPartial = canCancelDocumentParts, CanMarkAsIncomplete = canAddDocumentPart })
         </div>
     </article>
 }
