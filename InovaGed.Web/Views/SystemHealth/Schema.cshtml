@@ -1,30 +1,57 @@
+@using System.Text.Json
 @model InovaGed.Application.SystemHealth.SchemaHealthReportDto
 @{
     ViewData["Title"] = "Diagnóstico do banco";
-    var script = "database/apply_all_required_migrations.sql";
-    var correctionSql = "psql \"$CONNECTION_STRING\" -v ON_ERROR_STOP=1 -f database/apply_all_required_migrations.sql";
     var ok = Model.IsHealthy;
-    var hasRecommendedFailures = Model.Checks.Any(c => !c.Success && c.Severity == "Recomendado");
+    var criticalCount = Model.Checks.Count(c => !c.Success && c.Severity == "Critical");
+    var warningCount = Model.Checks.Count(c => !c.Success && c.Severity == "Warning");
+    var hasRecommendedFailures = warningCount > 0;
     var statusText = ok ? (hasRecommendedFailures ? "Schema funcional com recomendações de performance." : "Schema compatível") : "Schema incompatível";
     var alertClass = ok ? (hasRecommendedFailures ? "alert-warning" : "alert-success") : "alert-danger";
+    var canApply = ViewData["SchemaRepairCanApply"] as bool? == true;
+    var productionBlocked = ViewData["SchemaRepairProductionBlocked"] as bool? == true;
+    var repairEnabled = ViewData["SchemaRepairEnabled"] as bool? == true;
+    var confirmationText = ViewData["SchemaRepairConfirmationText"] as string ?? "APLICAR CORRECAO";
+    var requireConfirmation = ViewData["SchemaRepairRequireConfirmationText"] as bool? != false;
+    var backupRecommendation = ViewData["SchemaRepairCreateBackupRecommendation"] as bool? == true;
+    var environmentName = ViewData["SchemaRepairEnvironment"] as string ?? "n/a";
+    var fixes = Model.Checks.Where(c => !c.Success && !string.IsNullOrWhiteSpace(c.FixSql)).ToList();
+    var fullScriptText = string.Join("\n\n", fixes.Select(c => $"-- CheckId: {c.Id}\n-- Objeto: {c.ObjectName}\n{c.FixSql}"));
+    var jsonOptions = new JsonSerializerOptions { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 }
 
-<div class="container-fluid py-3">
-    <div class="d-flex justify-content-between align-items-center mb-3">
+<div class="container-fluid py-3 schema-health-page">
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
         <div>
             <h1 class="h3 mb-1">Diagnóstico de schema do banco</h1>
             <p class="text-muted mb-0">Validação preventiva para GED, OCR, uploads, logs e versionamento documental.</p>
+            <small class="text-muted">Ambiente: <strong>@environmentName</strong></small>
         </div>
-        <div class="d-flex gap-2">
-            <button type="button" class="btn btn-outline-secondary" onclick="navigator.clipboard.writeText('@script')">Copiar script recomendado</button>
-            <button type="button" class="btn btn-primary" onclick="navigator.clipboard.writeText('@correctionSql')">Copiar SQL de correção</button>
+        <div class="d-flex flex-wrap gap-2">
+            <a class="btn btn-outline-secondary" href="/SystemHealth/Schema">Revalidar</a>
+            <button type="button" class="btn btn-outline-primary" onclick="copyFullFixScript()" @(fixes.Count == 0 ? "disabled" : null)>Copiar script</button>
+            <a class="btn btn-primary" href="/SystemHealth/Schema/FixScript">Baixar script</a>
             <a class="btn btn-outline-primary" href="/SystemHealth/Schema/Report">Baixar relatório</a>
+            <button type="button" class="btn btn-danger" onclick="openApplyAllModal()" @(!canApply || fixes.Count == 0 ? "disabled" : null)>Aplicar correções seguras</button>
         </div>
     </div>
 
+    @if (!repairEnabled)
+    {
+        <div class="alert alert-warning">Aplicação automática de correções de schema está desabilitada por configuração. Copiar e baixar script continuam disponíveis para o DBA.</div>
+    }
+    @if (productionBlocked)
+    {
+        <div class="alert alert-warning">Aplicação automática desabilitada em produção. Baixe o script e execute manualmente com o DBA.</div>
+    }
+
     <div class="alert @alertClass">
-        <strong>Status geral:</strong> @statusText
-        <span class="ms-3"><strong>Script:</strong> <code>@script</code></span>
+        <div class="d-flex flex-wrap gap-4 align-items-center">
+            <div><strong>Status geral:</strong> @statusText</div>
+            <div><strong>Críticas:</strong> <span class="badge bg-danger">@criticalCount</span></div>
+            <div><strong>Recomendadas:</strong> <span class="badge bg-warning text-dark">@warningCount</span></div>
+            <div><strong>Correções mapeadas:</strong> <span class="badge bg-info text-dark">@fixes.Count</span></div>
+        </div>
         @if (Model.LastMigration is not null)
         {
             <div class="mt-2">
@@ -40,6 +67,10 @@
         else
         {
             <div class="mt-2 text-muted"><strong>Última migration aplicada:</strong> não encontrada em <code>ged.schema_migration_history</code>.</div>
+        }
+        @if (backupRecommendation)
+        {
+            <div class="mt-2"><strong>Segurança:</strong> recomenda-se backup antes de aplicar correções em ambientes críticos.</div>
         }
     </div>
 
@@ -76,25 +107,52 @@
                 <thead>
                     <tr>
                         <th>Status</th>
-                        <th>Área</th>
-                        <th>Tipo</th>
                         <th>Severidade</th>
+                        <th>Área</th>
                         <th>Objeto</th>
                         <th>Mensagem</th>
-                        <th>Correção sugerida</th>
+                        <th>Correção</th>
+                        <th>Ações</th>
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach (var check in Model.Checks.OrderBy(c => c.Success).ThenBy(c => c.Severity == "Crítico" ? 0 : c.Severity == "Recomendado" ? 1 : 2).ThenBy(c => c.Area).ThenBy(c => c.ObjectName))
+                    @foreach (var check in Model.Checks.OrderBy(c => c.Success).ThenBy(c => c.Severity == "Critical" ? 0 : c.Severity == "Warning" ? 1 : 2).ThenBy(c => c.Area).ThenBy(c => c.ObjectName))
                     {
+                        var severityClass = check.Severity == "Critical" ? "bg-danger" : check.Severity == "Warning" ? "bg-warning text-dark" : "bg-secondary";
+                        var severityLabel = check.Severity == "Critical" ? "Crítico" : check.Severity == "Warning" ? "Recomendado" : "Info";
                         <tr>
                             <td>@(check.Success ? "✅ OK" : "❌ Falha")</td>
-                            <td>@check.Area</td>
-                            <td>@check.CheckType</td>
-                            <td><span class="badge @(check.Severity == "Crítico" ? "bg-danger" : check.Severity == "Recomendado" ? "bg-warning text-dark" : "bg-secondary")">@check.Severity</span></td>
-                            <td><code>@check.ObjectName</code></td>
+                            <td><span class="badge @severityClass">@severityLabel</span></td>
+                            <td>@check.Area<br /><small class="text-muted">@check.CheckType</small></td>
+                            <td><code>@check.ObjectName</code><br /><small class="text-muted">@check.Id</small></td>
                             <td>@check.Message</td>
-                            <td>@check.FixSuggestion</td>
+                            <td>
+                                @if (!string.IsNullOrWhiteSpace(check.FixSuggestion))
+                                {
+                                    <span>@check.FixSuggestion</span>
+                                    @if (check.CanAutoFix)
+                                    {
+                                        <div><span class="badge bg-success">AutoFix</span> <span class="badge bg-light text-dark">Risco @check.RiskLevel</span></div>
+                                    }
+                                }
+                                else
+                                {
+                                    <span class="text-muted">—</span>
+                                }
+                            </td>
+                            <td class="text-nowrap">
+                                @if (!string.IsNullOrWhiteSpace(check.FixSql))
+                                {
+                                    var rowJson = JsonSerializer.Serialize(new { check.Id, check.ObjectName, check.FixSql, check.CanAutoFix, check.RiskLevel }, jsonOptions);
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick='openSqlModal(@Html.Raw(rowJson))'>Ver SQL</button>
+                                    <button type="button" class="btn btn-sm btn-outline-primary" onclick='copyText(@Html.Raw(JsonSerializer.Serialize(check.FixSql, jsonOptions)))'>Copiar</button>
+                                    <button type="button" class="btn btn-sm btn-danger" onclick='openApplyModal(@Html.Raw(rowJson))' @(canApply && check.CanAutoFix ? null : "disabled")>Aplicar</button>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">Sem SQL mapeado</span>
+                                }
+                            </td>
                         </tr>
                     }
                 </tbody>
@@ -112,3 +170,146 @@
         </ul>
     </section>
 </div>
+
+<div class="modal fade" id="sqlModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">SQL de correção</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning">Este SQL é gerado por whitelist interna do sistema. Não há execução de SQL livre digitado pelo usuário.</div>
+                <p class="mb-1"><strong>Check:</strong> <code id="sqlModalCheckId"></code></p>
+                <p><strong>Objeto:</strong> <code id="sqlModalObjectName"></code></p>
+                <pre class="bg-dark text-light p-3 rounded"><code id="sqlModalCode"></code></pre>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-primary" onclick="copyCurrentSql()">Copiar</button>
+                <button type="button" class="btn btn-danger" id="sqlModalApplyButton" onclick="openApplyModal(currentSqlFix)">Aplicar</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fechar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="applyModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Aplicar correção no banco?</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+            </div>
+            <div class="modal-body">
+                <p>Esta ação executará SQL idempotente no banco de dados. Recomenda-se backup antes de aplicar em produção.</p>
+                <div class="alert alert-info mb-3" id="applyTarget"></div>
+                @if (requireConfirmation)
+                {
+                    <label class="form-label" for="confirmationInput">Digite <strong>@confirmationText</strong> para confirmar.</label>
+                    <input class="form-control" id="confirmationInput" autocomplete="off" />
+                }
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-danger" onclick="submitApply()">Aplicar correção</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    const confirmationText = @Html.Raw(JsonSerializer.Serialize(confirmationText, jsonOptions));
+    const requireConfirmation = @JsonSerializer.Serialize(requireConfirmation);
+    const canApply = @JsonSerializer.Serialize(canApply);
+    const fullScriptText = @Html.Raw(JsonSerializer.Serialize(fullScriptText, jsonOptions));
+    let currentSqlFix = null;
+    let pendingApply = null;
+    let applyAll = false;
+
+    function copyText(text) {
+        navigator.clipboard.writeText(text || '').then(() => showToast('SQL copiado.'));
+    }
+
+    async function copyFullFixScript() {
+        const response = await fetch('/SystemHealth/Schema/FixScript');
+        const text = response.ok ? await response.text() : fullScriptText;
+        copyText(text);
+    }
+
+    function copyCurrentSql() {
+        if (currentSqlFix) copyText(currentSqlFix.fixSql || currentSqlFix.FixSql || '');
+    }
+
+    function openSqlModal(fix) {
+        currentSqlFix = normalizeFix(fix);
+        document.getElementById('sqlModalCheckId').innerText = currentSqlFix.id;
+        document.getElementById('sqlModalObjectName').innerText = currentSqlFix.objectName;
+        document.getElementById('sqlModalCode').innerText = currentSqlFix.fixSql;
+        document.getElementById('sqlModalApplyButton').disabled = !canApply || !currentSqlFix.canAutoFix;
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('sqlModal')).show();
+    }
+
+    function openApplyModal(fix) {
+        if (!canApply) return;
+        applyAll = false;
+        pendingApply = normalizeFix(fix);
+        document.getElementById('applyTarget').innerText = `${pendingApply.id} - ${pendingApply.objectName}`;
+        resetConfirmation();
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('applyModal')).show();
+    }
+
+    function openApplyAllModal() {
+        if (!canApply) return;
+        applyAll = true;
+        pendingApply = null;
+        document.getElementById('applyTarget').innerText = 'Todas as correções seguras pendentes serão aplicadas em transação.';
+        resetConfirmation();
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('applyModal')).show();
+    }
+
+    function resetConfirmation() {
+        const input = document.getElementById('confirmationInput');
+        if (input) input.value = '';
+    }
+
+    async function submitApply() {
+        const confirmation = requireConfirmation ? (document.getElementById('confirmationInput')?.value || '') : confirmationText;
+        if (requireConfirmation && confirmation !== confirmationText) {
+            alert(`Digite exatamente: ${confirmationText}`);
+            return;
+        }
+
+        const url = applyAll ? '/SystemHealth/Schema/ApplySafeFixes' : '/SystemHealth/Schema/ApplyFix';
+        const payload = applyAll ? { confirmation } : { checkId: pendingApply.id, confirmation };
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const result = await response.json();
+        if (!result.success) {
+            alert(`${result.message}\nCorrelationId: ${result.correlationId || '-'}`);
+            return;
+        }
+
+        alert(`${result.message}\nCorrelationId: ${result.correlationId}`);
+        window.location.reload();
+    }
+
+    function normalizeFix(fix) {
+        return {
+            id: fix.id || fix.Id,
+            objectName: fix.objectName || fix.ObjectName,
+            fixSql: fix.fixSql || fix.FixSql,
+            canAutoFix: fix.canAutoFix ?? fix.CanAutoFix
+        };
+    }
+
+    function showToast(message) {
+        if (window.bootstrap) {
+            console.info(message);
+        }
+    }
+</script>
+}

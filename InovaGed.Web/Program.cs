@@ -116,7 +116,10 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddSignalR();
 builder.Services.AddMemoryCache();
 builder.Services.AddScoped<IDateTimeDisplayService, DateTimeDisplayService>();
+builder.Services.Configure<SchemaRepairOptions>(builder.Configuration.GetSection("SchemaRepair"));
+builder.Services.AddScoped<ISchemaFixSqlProvider, SchemaFixSqlProvider>();
 builder.Services.AddScoped<ISchemaHealthService, SchemaHealthService>();
+builder.Services.AddScoped<ISchemaRepairService, SchemaRepairService>();
 builder.Services.AddSingleton<ISchemaCompatibilityState, SchemaCompatibilityState>();
 builder.Services.Configure<DocumentUploadOptions>(builder.Configuration.GetSection("DocumentUpload"));
 builder.WebHost.ConfigureKestrel(options =>

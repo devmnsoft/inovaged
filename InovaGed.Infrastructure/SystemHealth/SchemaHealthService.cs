@@ -10,6 +10,7 @@ public sealed class SchemaHealthService : ISchemaHealthService
     private const string ConsolidationMigration = "database/migrations/2026_06_ged_schema_consolidation.sql";
     private readonly IDbConnectionFactory _db;
     private readonly ILogger<SchemaHealthService> _logger;
+    private readonly ISchemaFixSqlProvider _fixSqlProvider;
 
     private static readonly string[] RequiredTables =
     [
@@ -38,13 +39,14 @@ public sealed class SchemaHealthService : ISchemaHealthService
         ("upload_batch_item", "upload_session_id", "Upload batch"), ("upload_batch_item", "status", "Upload batch"),
         ("upload_session", "tenant_id", "Upload chunks"), ("upload_session", "total_chunks", "Upload chunks"),
         ("upload_session_chunk", "session_id", "Upload chunks"), ("upload_session_chunk", "chunk_index", "Upload chunks"),
-        ("app_audit_log", "created_at", "SystemLogs"), ("app_audit_log", "user_name", "SystemLogs")
+        ("app_audit_log", "created_at", "SystemLogs"), ("app_audit_log", "user_name", "SystemLogs"),
+        ("audit_log", "created_at", "SystemLogs"), ("audit_log", "user_name", "SystemLogs")
     ];
 
     private static readonly (string Name, string[] Alternatives, string Message)[] RecommendedIndexes =
     [
         ("ix_document_tenant_folder_status", ["ix_document_tenant_folder_reg_status"], "Índice de navegação por tenant/pasta/status."),
-        ("ix_document_version_document_current", ["ix_document_current_version"], "Índice de resolução da versão atual."),
+        ("ix_document_current_version", ["ix_document_version_document_current"], "Índice de resolução da versão atual."),
         ("ix_document_version_partial_group_id", [], "Índice para documentos fracionados por grupo."),
         ("ix_document_version_partial_status", [], "Índice para filtro por status parcial."),
         ("ix_document_version_uploaded_at_utc", [], "Índice para ordenação por upload."),
@@ -54,13 +56,18 @@ public sealed class SchemaHealthService : ISchemaHealthService
         ("ix_upload_session_tenant_user_status", [], "Índice de sessões chunked por usuário/status."),
         ("ix_upload_session_chunk_session", [], "Índice dos chunks por sessão."),
         ("ix_ocr_job_tenant_version_status", [], "Índice da fila OCR por versão/status."),
-        ("ix_ged_document_search_tenant_version", [], "Índice de busca OCR por versão.")
+        ("ix_ged_document_search_tenant_version", [], "Índice de busca OCR por versão."),
+        ("ix_app_audit_log_tenant_created", [], "Índice de auditoria por tenant/data."),
+        ("ix_app_audit_log_user_created", [], "Índice de auditoria por usuário/data."),
+        ("ix_app_audit_log_action_created", [], "Índice de auditoria por ação/data."),
+        ("ix_app_audit_log_correlation", [], "Índice de auditoria por correlationId.")
     ];
 
-    public SchemaHealthService(IDbConnectionFactory db, ILogger<SchemaHealthService> logger)
+    public SchemaHealthService(IDbConnectionFactory db, ILogger<SchemaHealthService> logger, ISchemaFixSqlProvider fixSqlProvider)
     {
         _db = db;
         _logger = logger;
+        _fixSqlProvider = fixSqlProvider;
     }
 
     public async Task<SchemaHealthReportDto> CheckAsync(CancellationToken ct)
@@ -79,14 +86,14 @@ where table_schema = 'ged';", cancellationToken: ct))).ToHashSet(StringComparer.
             foreach (var table in RequiredTables)
             {
                 var ok = existingTables.Contains(table);
-                AddCheck(report, "GED", table, "Tabela", "Crítico", ok, ok ? "Tabela crítica encontrada." : "Tabela crítica ausente.", $"Execute {ConsolidationMigration}.");
+                AddCheck(report, BuildTableId(table), "GED", table, "Tabela", "Critical", ok, ok ? "Tabela crítica encontrada." : "Tabela crítica ausente.", $"Execute o SQL específico desta linha ou {ConsolidationMigration}.");
                 if (!ok) report.MissingTables.Add(table);
             }
 
             foreach (var table in OptionalTables)
             {
                 var ok = existingTables.Contains(table);
-                AddCheck(report, "GED", table, "Tabela", "Opcional", ok, ok ? "Tabela auxiliar encontrada." : "Tabela auxiliar ausente; não bloqueia GED, OCR, upload ou logs.", $"Execute {ConsolidationMigration} se este recurso auxiliar for usado no ambiente.");
+                AddCheck(report, BuildTableId(table), "GED", table, "Tabela", "Info", ok, ok ? "Tabela auxiliar encontrada." : "Tabela auxiliar ausente; não bloqueia GED, OCR, upload ou logs.", $"Execute o SQL específico desta linha ou {ConsolidationMigration} se este recurso auxiliar for usado no ambiente.");
             }
 
             var existingColumns = (await conn.QueryAsync<string>(new CommandDefinition(@"
@@ -98,7 +105,7 @@ where table_schema = 'ged';", cancellationToken: ct))).ToHashSet(StringComparer.
             {
                 var objectName = $"ged.{table}.{column}";
                 var ok = existingColumns.Contains($"{table}.{column}");
-                AddCheck(report, area, objectName, "Coluna", "Crítico", ok, ok ? "Coluna encontrada." : "Coluna crítica ausente.", $"Execute {ConsolidationMigration}.");
+                AddCheck(report, BuildColumnId(table, column), area, objectName, "Coluna", "Critical", ok, ok ? "Coluna encontrada." : "Coluna crítica ausente.", $"Execute o SQL específico desta linha ou {ConsolidationMigration}.");
                 if (!ok) report.MissingColumns.Add(objectName);
             }
 
@@ -111,7 +118,7 @@ where schemaname = 'ged';", cancellationToken: ct))).ToHashSet(StringComparer.Or
             {
                 var foundName = existingIndexes.Contains(name) ? name : alternatives.FirstOrDefault(existingIndexes.Contains);
                 var ok = !string.IsNullOrWhiteSpace(foundName);
-                AddCheck(report, "Performance", $"ged.{name}", "Índice", "Recomendado", ok,
+                AddCheck(report, BuildIndexId(name), "Performance", $"ged.{name}", "Índice", "Warning", ok,
                     ok ? $"{message} OK ({foundName})." : $"{message} Ausente ou não aplicável por diferença de colunas no ambiente.",
                     $"Use o botão 'Copiar SQL de correção' e execute {ConsolidationMigration}; índices opcionais são criados somente quando as colunas existem.");
             }
@@ -125,7 +132,7 @@ where n.nspname = 'ged' and t.typname in ('document_status_enum','document_visib
             foreach (var enumName in new[] { "ged.document_status_enum", "ged.document_visibility_enum", "ged.ocr_status_enum" })
             {
                 var ok = existingEnums.Contains(enumName);
-                AddCheck(report, "Enums", enumName, "Enum", "Opcional", ok, ok ? "Enum encontrado." : "Enum não detectado. Ambientes que usam colunas text para status continuam funcionais se as tabelas/colunas críticas existirem.", "Aplique as migrations base e a consolidação do GED se o ambiente usar enums PostgreSQL.");
+                AddCheck(report, BuildGenericId("GED_ENUM", enumName), "Enums", enumName, "Enum", "Info", ok, ok ? "Enum encontrado." : "Enum não detectado. Ambientes que usam colunas text para status continuam funcionais se as tabelas/colunas críticas existirem.", "Aplique as migrations base e a consolidação do GED se o ambiente usar enums PostgreSQL.");
             }
 
             var migrationRegistered = existingTables.Contains("ged.schema_migration_history") || await conn.ExecuteScalarAsync<bool>(new CommandDefinition(@"
@@ -135,7 +142,7 @@ select exists (
     where table_schema = 'public'
       and table_name in ('schema_migrations','__efmigrationshistory','migration_history')
 );", cancellationToken: ct));
-            AddCheck(report, "Migrations", "ged.schema_migration_history", "Diagnóstico", "Opcional", migrationRegistered,
+            AddCheck(report, "GED_TABLE_SCHEMA_MIGRATION_HISTORY", "Migrations", "ged.schema_migration_history", "Diagnóstico", "Info", migrationRegistered,
                 migrationRegistered ? "Histórico de migrations encontrado." : "Histórico padronizado ainda não detectado.",
                 "O script consolidado cria ged.schema_migration_history e registra a aplicação.");
 
@@ -156,11 +163,13 @@ limit 1;", cancellationToken: ct));
         catch (Exception ex)
         {
             _logger.LogError(ex, "Falha ao executar diagnóstico de schema do banco.");
-            AddCheck(report, "Banco", "Conexão/diagnóstico", "Erro", "Crítico", false, "Falha ao consultar metadados do banco.", "Verifique a connection string e permissões de information_schema/pg_catalog.");
+            AddCheck(report, "GED_DIAGNOSTIC_DATABASE", "Banco", "Conexão/diagnóstico", "Erro", "Critical", false, "Falha ao consultar metadados do banco.", "Verifique a connection string e permissões de information_schema/pg_catalog.");
         }
 
-        report.IsHealthy = !report.Checks.Any(c => !c.Success && c.Severity == "Crítico");
-        var hasRecommendedFailures = report.Checks.Any(c => !c.Success && c.Severity == "Recomendado");
+        await EnrichFixesAsync(report, ct);
+
+        report.IsHealthy = !report.Checks.Any(c => !c.Success && c.Severity == "Critical");
+        var hasRecommendedFailures = report.Checks.Any(c => !c.Success && c.Severity == "Warning");
         report.Recommendations.Add(report.IsHealthy
             ? (hasRecommendedFailures
                 ? "Schema funcional com recomendações de performance."
@@ -172,10 +181,30 @@ limit 1;", cancellationToken: ct));
         return report;
     }
 
-    private static void AddCheck(SchemaHealthReportDto report, string area, string objectName, string checkType, string severity, bool success, string message, string fixSuggestion)
+    private async Task EnrichFixesAsync(SchemaHealthReportDto report, CancellationToken ct)
+    {
+        var fixes = await _fixSqlProvider.GetFixesAsync(report, ct);
+        var byId = fixes.ToDictionary(f => f.CheckId, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var check in report.Checks.Where(c => !c.Success))
+        {
+            if (!byId.TryGetValue(check.Id, out var fix))
+                continue;
+
+            check.CanAutoFix = fix.CanAutoFix;
+            check.FixSql = fix.FixSql;
+            check.FixScriptName = fix.ScriptName;
+            check.RiskLevel = fix.RiskLevel;
+            check.Dependencies = fix.Dependencies;
+            check.FixSuggestion = fix.Description;
+        }
+    }
+
+    private static void AddCheck(SchemaHealthReportDto report, string id, string area, string objectName, string checkType, string severity, bool success, string message, string fixSuggestion)
     {
         report.Checks.Add(new SchemaCheckItemDto
         {
+            Id = id,
             Area = area,
             ObjectName = objectName,
             CheckType = checkType,
@@ -185,4 +214,43 @@ limit 1;", cancellationToken: ct));
             FixSuggestion = success ? string.Empty : fixSuggestion
         });
     }
+
+    private static string BuildTableId(string table)
+    {
+        return table.ToLowerInvariant() switch
+        {
+            "ged.app_audit_log" => "GED_TABLE_APP_AUDIT_LOG",
+            "ged.schema_migration_history" => "GED_TABLE_SCHEMA_MIGRATION_HISTORY",
+            "ged.upload_session" => "GED_TABLE_UPLOAD_SESSION",
+            "ged.upload_session_chunk" => "GED_TABLE_UPLOAD_SESSION_CHUNK",
+            "ged.document_partial_part" => "GED_TABLE_DOCUMENT_PARTIAL_PART",
+            _ => BuildGenericId("GED_TABLE", table)
+        };
+    }
+
+    private static string BuildColumnId(string table, string column) => $"GED_COLUMN_{table.ToUpperInvariant()}_{column.ToUpperInvariant()}";
+
+    private static string BuildIndexId(string indexName)
+    {
+        return indexName.ToLowerInvariant() switch
+        {
+            "ix_document_tenant_folder_status" => "GED_INDEX_DOCUMENT_TENANT_FOLDER_STATUS",
+            "ix_document_version_document_current" => "GED_INDEX_DOCUMENT_VERSION_DOCUMENT_CURRENT",
+            "ix_document_current_version" => "GED_INDEX_DOCUMENT_CURRENT_VERSION",
+            "ix_document_version_partial_group_id" => "GED_INDEX_DOCUMENT_VERSION_PARTIAL_GROUP_ID",
+            "ix_document_version_partial_status" => "GED_INDEX_DOCUMENT_VERSION_PARTIAL_STATUS",
+            "ix_document_version_uploaded_at_utc" => "GED_INDEX_DOCUMENT_VERSION_UPLOADED_AT_UTC",
+            "ix_ged_document_search_tenant_version" => "GED_INDEX_DOCUMENT_SEARCH_TENANT_VERSION",
+            "ix_upload_session_tenant_user_status" => "GED_INDEX_UPLOAD_SESSION_TENANT_USER_STATUS",
+            "ix_upload_session_chunk_session" => "GED_INDEX_UPLOAD_SESSION_CHUNK_SESSION",
+            "ix_app_audit_log_tenant_created" => "GED_INDEX_APP_AUDIT_LOG_TENANT_CREATED",
+            "ix_app_audit_log_user_created" => "GED_INDEX_APP_AUDIT_LOG_USER_CREATED",
+            "ix_app_audit_log_action_created" => "GED_INDEX_APP_AUDIT_LOG_ACTION_CREATED",
+            "ix_app_audit_log_correlation" => "GED_INDEX_APP_AUDIT_LOG_CORRELATION",
+            _ => BuildGenericId("GED_INDEX", indexName)
+        };
+    }
+
+    private static string BuildGenericId(string prefix, string name)
+        => $"{prefix}_{name.Replace("ged.", string.Empty, StringComparison.OrdinalIgnoreCase).Replace('.', '_').Replace('-', '_').ToUpperInvariant()}";
 }
