@@ -16,7 +16,7 @@ public sealed class SchemaHealthService : ISchemaHealthService
     [
         "ged.document", "ged.document_version", "ged.folder", "ged.document_search", "ged.ocr_job",
         "ged.upload_batch", "ged.upload_batch_item", "ged.upload_session", "ged.upload_session_chunk",
-        "ged.document_partial_part", "ged.audit_log", "ged.app_audit_log", "ged.schema_migration_history"
+        "ged.document_partial_part", "ged.audit_log", "ged.app_audit_log"
     ];
 
     private static readonly string[] OptionalTables =
@@ -145,7 +145,7 @@ where n.nspname = 'ged' and t.typname in ('document_status_enum','document_visib
             foreach (var enumName in new[] { "ged.document_status_enum", "ged.document_visibility_enum", "ged.ocr_status_enum" })
             {
                 var ok = existingEnums.Contains(enumName);
-                AddCheck(report, BuildGenericId("GED_ENUM", enumName), "Enums", enumName, "Enum", "Info", ok, ok ? "Enum encontrado." : "Enum não detectado. Ambientes que usam colunas text para status continuam funcionais se as tabelas/colunas críticas existirem.", "Aplique as migrations base e a consolidação do GED se o ambiente usar enums PostgreSQL.");
+                AddCheck(report, BuildGenericId("GED_ENUM", enumName), "Enums", enumName, "Enum", "Critical", ok, ok ? "Enum encontrado." : "Enum crítico usado pelo código não detectado.", "Aplique as migrations base e a consolidação do GED para criar os enums PostgreSQL usados pelo código.");
             }
 
             var migrationRegistered = existingTables.Contains("ged.schema_migration_history") || await conn.ExecuteScalarAsync<bool>(new CommandDefinition(@"
@@ -155,7 +155,7 @@ select exists (
     where table_schema = 'public'
       and table_name in ('schema_migrations','__efmigrationshistory','migration_history')
 );", cancellationToken: ct));
-            AddCheck(report, "GED_TABLE_SCHEMA_MIGRATION_HISTORY", "Migrations", "ged.schema_migration_history", "Diagnóstico", "Info", migrationRegistered,
+            AddCheck(report, "GED_TABLE_SCHEMA_MIGRATION_HISTORY", "Migrations", "ged.schema_migration_history", "Diagnóstico", "Warning", migrationRegistered,
                 migrationRegistered ? "Histórico de migrations encontrado." : "Histórico padronizado ainda não detectado.",
                 "O script consolidado cria ged.schema_migration_history e registra a aplicação.");
 
@@ -215,9 +215,21 @@ limit 1;", cancellationToken: ct));
             check.FixSql = fix.FixSql;
             check.FixScriptName = fix.ScriptName;
             check.RiskLevel = fix.RiskLevel;
-            check.Dependencies = fix.Dependencies;
+            check.Dependencies = fix.Dependencies.Select(FormatDependency).ToArray();
             check.FixSuggestion = fix.Description;
         }
+    }
+
+    private static string FormatDependency(SchemaObjectDependency dependency)
+    {
+        return dependency.Type.ToLowerInvariant() switch
+        {
+            "schema" => $"schema {dependency.Schema}",
+            "table" => $"table {dependency.Schema}.{dependency.Table}",
+            "column" => $"column {dependency.Schema}.{dependency.Table}.{dependency.Column}{(dependency.Required ? string.Empty : " (alternativa)")}",
+            "extension" => $"extension {dependency.Schema}",
+            _ => $"{dependency.Type} {dependency.Schema}.{dependency.Table}.{dependency.Column}".Trim('.')
+        };
     }
 
 

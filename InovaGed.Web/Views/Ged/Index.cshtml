@@ -1142,7 +1142,9 @@
             const el = document.getElementById('selectedDocumentsKpi');
             if (el) el.textContent = String(count);
             const inline = document.getElementById('selectedDocumentsInlineInfo');
-            if (inline) inline.textContent = `${count} selecionado${count === 1 ? '' : 's'}`;
+            if (inline) inline.textContent = `${count} documento${count === 1 ? '' : 's'} selecionado${count === 1 ? '' : 's'}`;
+            document.querySelectorAll('.ged-selection-bar').forEach(x => x.classList.toggle('has-selection', count > 0));
+            document.querySelectorAll('.js-clear-document-selection').forEach(btn => { btn.disabled = count === 0; });
         }
 
         function escapeCssValue(value) {
@@ -1278,6 +1280,19 @@
                 document.getElementById('gedIncompleteFilterChip')?.classList.add('d-none');
                 const btn = document.getElementById('btnFilterIncompleteDocs');
                 if (btn) btn.innerHTML = '<i class="bi bi-funnel me-1"></i>Ver incompletos';
+            }
+
+            const clearSelectionBtn = e.target.closest('.js-clear-document-selection');
+            if (clearSelectionBtn) {
+                e.preventDefault();
+                document.querySelectorAll('#gedDocumentsContainer .js-doc-select, #selectAllDocuments, #selectAllDocumentsTable').forEach(cb => {
+                    cb.checked = false;
+                    cb.indeterminate = false;
+                    if (cb.classList.contains('js-doc-select')) updateDocumentSelectionState(cb);
+                });
+                updateSelectAllStates();
+                updateSelectedKpi();
+                window.updateMoveSelectedButton?.();
             }
         });
 

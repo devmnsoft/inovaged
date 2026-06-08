@@ -134,11 +134,35 @@
                                     <span>@check.FixSuggestion</span>
                                     @if (check.CanAutoFix)
                                     {
-                                        <div><span class="badge bg-success">AutoFix</span> <span class="badge bg-light text-dark">Risco @check.RiskLevel</span></div>
+                                        <div><span class="badge bg-success">AutoFix disponível</span> <span class="badge bg-light text-dark">Risco @check.RiskLevel</span></div>
                                     }
                                     else if (check.Id == "GED_INDEX_DOCUMENT_SEARCH_TENANT_VERSION")
                                     {
-                                        <div class="small text-warning mt-1">Correção automática indisponível: não há coluna document_version_id, version_id ou document_id em ged.document_search.</div>
+                                        <div class="small text-warning mt-1">Não aplicável ao schema atual: nenhuma coluna compatível encontrada.</div>
+                                    }
+                                    else
+                                    {
+                                        <div><span class="badge bg-secondary">AutoFix não aplicável</span></div>
+                                    }
+                                    @if (check.Dependencies.Length > 0)
+                                    {
+                                        <details class="small text-muted mt-1">
+                                            <summary>Dependências / motivo de bloqueio</summary>
+                                            <ul class="mb-0 ps-3">
+                                                @foreach (var dependency in check.Dependencies)
+                                                {
+                                                    <li><code>@dependency</code></li>
+                                                }
+                                            </ul>
+                                        </details>
+                                    }
+                                    @if (check.Id == "GED_INDEX_DOCUMENT_SEARCH_TENANT_VERSION")
+                                    {
+                                        var selectedColumn = check.Message.Contains("document_version_id", StringComparison.OrdinalIgnoreCase) ? "document_version_id"
+                                            : check.Message.Contains("version_id", StringComparison.OrdinalIgnoreCase) ? "version_id"
+                                            : check.Message.Contains("document_id", StringComparison.OrdinalIgnoreCase) ? "document_id"
+                                            : "nenhuma coluna compatível encontrada";
+                                        <div class="small text-muted mt-1">Coluna detectada para o índice: <strong>@selectedColumn</strong>.</div>
                                     }
                                 }
                                 else
@@ -152,6 +176,7 @@
                                     var rowJson = JsonSerializer.Serialize(new { check.Id, check.ObjectName, check.FixSql, check.CanAutoFix, check.RiskLevel }, jsonOptions);
                                     <button type="button" class="btn btn-sm btn-outline-secondary" onclick='openSqlModal(@Html.Raw(rowJson))'>Ver SQL</button>
                                     <button type="button" class="btn btn-sm btn-outline-primary" onclick='copyText(@Html.Raw(JsonSerializer.Serialize(check.FixSql, jsonOptions)))'>Copiar</button>
+                                    <button type="button" class="btn btn-sm btn-outline-info" onclick='runPreflight(@Html.Raw(rowJson))'>Preflight</button>
                                     <button type="button" class="btn btn-sm btn-danger" onclick='openApplyModal(@Html.Raw(rowJson))' @(canApply && check.CanAutoFix ? null : "disabled")>Aplicar</button>
                                 }
                                 else
@@ -265,6 +290,27 @@
         bootstrap.Modal.getOrCreateInstance(document.getElementById('applyModal')).show();
     }
 
+    async function runPreflight(fix) {
+        const normalized = normalizeFix(fix);
+        const response = await fetch('/SystemHealth/Schema/Preflight', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ checkId: normalized.id })
+        });
+        const result = await response.json();
+        const missing = result.missingDependencies || result.MissingDependencies || [];
+        const message = result.message || result.Message || 'Preflight concluído.';
+        const canRun = result.canRun ?? result.CanRun;
+        const alreadyApplied = result.alreadyApplied ?? result.AlreadyApplied;
+        const shouldSkip = result.shouldSkip ?? result.ShouldSkip;
+        alert([
+            `Preflight: ${canRun ? 'Disponível' : alreadyApplied ? 'Já aplicado' : shouldSkip ? 'Não aplicável ao schema atual' : 'Bloqueado'}`,
+            message,
+            missing.length ? `Dependências ausentes: ${missing.join(', ')}` : ''
+        ].filter(Boolean).join('\n'));
+        return result;
+    }
+
     function openApplyAllModal() {
         if (!canApply) return;
         applyAll = true;
@@ -288,6 +334,13 @@
 
         const url = applyAll ? '/SystemHealth/Schema/ApplySafeFixes' : '/SystemHealth/Schema/ApplyFix';
         const payload = applyAll ? { confirmation } : { checkId: pendingApply.id, confirmation };
+        if (!applyAll) {
+            const preflight = await runPreflight(pendingApply);
+            const canRun = preflight.canRun ?? preflight.CanRun;
+            const alreadyApplied = preflight.alreadyApplied ?? preflight.AlreadyApplied;
+            const shouldSkip = preflight.shouldSkip ?? preflight.ShouldSkip;
+            if (!canRun && !alreadyApplied && !shouldSkip) return;
+        }
         const response = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },

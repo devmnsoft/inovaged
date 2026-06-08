@@ -7,8 +7,10 @@
         document.querySelectorAll('#gedDocumentsContainer [data-document-id]').forEach(row => row.classList.toggle('is-selected', selected.has(row.dataset.documentId)));
         const count = selected.size;
         document.querySelectorAll('#selectedDocumentsKpi').forEach(x => { x.textContent = String(count); });
-        document.querySelectorAll('#selectedDocumentsInlineInfo').forEach(x => { x.textContent = `${count} selecionado${count === 1 ? '' : 's'}`; });
+        document.querySelectorAll('#selectedDocumentsInlineInfo').forEach(x => { x.textContent = `${count} documento${count === 1 ? '' : 's'} selecionado${count === 1 ? '' : 's'}`; });
+        document.querySelectorAll('.ged-selection-bar').forEach(x => x.classList.toggle('has-selection', count > 0));
         document.querySelectorAll('.js-btn-move-selected').forEach(btn => { btn.disabled = count === 0; });
+        document.querySelectorAll('.js-clear-document-selection').forEach(btn => { btn.disabled = count === 0; });
         document.querySelectorAll('.js-move-selected-count').forEach(x => { x.textContent = `(${count})`; });
     }
 
@@ -56,6 +58,13 @@
 
     document.addEventListener('click', (e) => {
         if (e.target.closest('.js-ged-load-more')) { e.preventDefault(); loadMore(); return; }
+        if (e.target.closest('.js-clear-document-selection')) {
+            e.preventDefault();
+            document.querySelectorAll('#gedDocumentsContainer .js-doc-select, #selectAllDocuments, #selectAllDocumentsTable').forEach(cb => { cb.checked = false; cb.indeterminate = false; });
+            updateSelectedState();
+            window.updateSelectedDocumentsState?.();
+            return;
+        }
         const row = e.target.closest('.ged-smart-doc-row[data-document-id]');
         if (row && !e.target.closest('a, button, input, .dropdown-menu')) {
             e.preventDefault();

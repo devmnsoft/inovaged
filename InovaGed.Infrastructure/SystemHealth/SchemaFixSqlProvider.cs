@@ -263,7 +263,13 @@ end $$;
         fixes.Add(Index("GED_INDEX_DOCUMENT_VERSION_PARTIAL_GROUP_ID", "ged.ix_document_version_partial_group_id", "Performance", "Cria índice para agrupamento de documentos fracionados.", "create index if not exists ix_document_version_partial_group_id on ged.document_version(partial_group_id);"));
         fixes.Add(Index("GED_INDEX_DOCUMENT_VERSION_PARTIAL_STATUS", "ged.ix_document_version_partial_status", "Performance", "Cria índice para status parcial.", "create index if not exists ix_document_version_partial_status on ged.document_version(partial_status);"));
         fixes.Add(Index("GED_INDEX_DOCUMENT_VERSION_UPLOADED_AT_UTC", "ged.ix_document_version_uploaded_at_utc", "Performance", "Cria índice para ordenação por upload.", "create index if not exists ix_document_version_uploaded_at_utc on ged.document_version(uploaded_at_utc);"));
-        fixes.Add(Index("GED_INDEX_DOCUMENT_SEARCH_TENANT_VERSION", "ged.ix_ged_document_search_tenant_version", "Performance", "Cria índice de busca OCR por tenant e coluna documental compatível detectada dinamicamente.", DocumentSearchTenantVersionIndexSql));
+        fixes.Add(Index("GED_INDEX_DOCUMENT_SEARCH_TENANT_VERSION", "ged.ix_ged_document_search_tenant_version", "Performance", "Cria índice de busca OCR por tenant e coluna documental compatível detectada dinamicamente.", DocumentSearchTenantVersionIndexSql, [
+            new SchemaObjectDependency { Type = "Table", Schema = "ged", Table = "document_search" },
+            new SchemaObjectDependency { Type = "Column", Schema = "ged", Table = "document_search", Column = "tenant_id" },
+            new SchemaObjectDependency { Type = "Column", Schema = "ged", Table = "document_search", Column = "document_version_id", Required = false },
+            new SchemaObjectDependency { Type = "Column", Schema = "ged", Table = "document_search", Column = "version_id", Required = false },
+            new SchemaObjectDependency { Type = "Column", Schema = "ged", Table = "document_search", Column = "document_id", Required = false }
+        ]));
         fixes.Add(Index("GED_INDEX_UPLOAD_SESSION_TENANT_USER_STATUS", "ged.ix_upload_session_tenant_user_status", "Performance", "Cria índice de sessões chunked por tenant/usuário/status.", "create index if not exists ix_upload_session_tenant_user_status on ged.upload_session(tenant_id, user_id, status);"));
         fixes.Add(Index("GED_INDEX_UPLOAD_SESSION_CHUNK_SESSION", "ged.ix_upload_session_chunk_session", "Performance", "Cria índice dos chunks por sessão.", "create index if not exists ix_upload_session_chunk_session on ged.upload_session_chunk(session_id, chunk_index);"));
         fixes.Add(Index("GED_INDEX_APP_AUDIT_LOG_TENANT_CREATED", "ged.ix_app_audit_log_tenant_created", "Performance", "Cria índice de auditoria por tenant/data.", "create index if not exists ix_app_audit_log_tenant_created on ged.app_audit_log(tenant_id, created_at desc);"));
@@ -281,6 +287,8 @@ end $$;
         FixSql = sql.Trim() + Environment.NewLine,
         CanAutoFix = true,
         RiskLevel = "Low",
+        FixType = "Table",
+        Dependencies = [new SchemaObjectDependency { Type = "Schema", Schema = "ged" }],
         ScriptName = ConsolidatedScriptName
     };
 
@@ -295,11 +303,13 @@ end $$;
             FixSql = $"alter table {table}\nadd column if not exists {column} {definition};\n",
             CanAutoFix = true,
             RiskLevel = "Low",
+            FixType = "Column",
+            Dependencies = [new SchemaObjectDependency { Type = "Table", Schema = "ged", Table = table.Replace("ged.", string.Empty, StringComparison.OrdinalIgnoreCase) }],
             ScriptName = ConsolidatedScriptName
         });
     }
 
-    private static SchemaFixDto Index(string id, string objectName, string area, string description, string sql) => new()
+    private static SchemaFixDto Index(string id, string objectName, string area, string description, string sql, List<SchemaObjectDependency>? dependencies = null) => new()
     {
         CheckId = id,
         ObjectName = objectName,
@@ -308,6 +318,8 @@ end $$;
         FixSql = sql.Trim() + Environment.NewLine,
         CanAutoFix = true,
         RiskLevel = "Low",
+        FixType = "Index",
+        Dependencies = dependencies ?? BuildIndexDependencies(sql),
         ScriptName = ConsolidatedScriptName
     };
 
@@ -319,10 +331,40 @@ end $$;
         FixSql = fix.FixSql,
         CanAutoFix = fix.CanAutoFix,
         RiskLevel = fix.RiskLevel,
+        FixType = fix.FixType,
         Description = fix.Description,
         ScriptName = fix.ScriptName,
-        Dependencies = fix.Dependencies.ToArray()
+        Dependencies = fix.Dependencies.Select(d => new SchemaObjectDependency
+        {
+            Type = d.Type,
+            Schema = d.Schema,
+            Table = d.Table,
+            Column = d.Column,
+            Required = d.Required
+        }).ToList()
     };
+
+    private static List<SchemaObjectDependency> BuildIndexDependencies(string sql)
+    {
+        if (sql.Contains("do $$", StringComparison.OrdinalIgnoreCase))
+            return [new SchemaObjectDependency { Type = "Schema", Schema = "ged" }];
+
+        var normalized = sql.Replace("\n", " ", StringComparison.Ordinal).Replace("\r", " ", StringComparison.Ordinal);
+        var match = System.Text.RegularExpressions.Regex.Match(normalized, @"on\s+ged\.(?<table>[a-zA-Z0-9_]+)\s*\((?<columns>[^\)]+)\)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (!match.Success)
+            return [new SchemaObjectDependency { Type = "Schema", Schema = "ged" }];
+
+        var table = match.Groups["table"].Value;
+        var dependencies = new List<SchemaObjectDependency> { new() { Type = "Table", Schema = "ged", Table = table } };
+        foreach (var column in match.Groups["columns"].Value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var cleanColumn = column.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim('"');
+            if (!string.IsNullOrWhiteSpace(cleanColumn) && !cleanColumn.Contains('('))
+                dependencies.Add(new SchemaObjectDependency { Type = "Column", Schema = "ged", Table = table, Column = cleanColumn });
+        }
+
+        return dependencies;
+    }
 
     private static bool IsDocumentSearchTenantVersionCheck(string checkId)
         => string.Equals(NormalizeId(checkId), "GED_INDEX_DOCUMENT_SEARCH_TENANT_VERSION", StringComparison.OrdinalIgnoreCase);
