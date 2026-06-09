@@ -9,7 +9,7 @@
     {
         var totalForOcr = Model.TotalParts ?? Model.PartialTotalParts ?? Model.PartialPartsCount;
         ocrTitle = Model.PartialPartsCount > 0
-            ? $"{Model.PartialPartsWithOcrCount} de {Model.PartialPartsCount} partes possui OCR disponível. Abra ‘Ver partes’ para consultar cada OCR."
+            ? $"{Model.PartialPartsWithOcrCount} de {totalForOcr} partes possui OCR disponível. Abra ‘Ver partes’ para consultar cada OCR."
             : "Documento enviado em partes. Abra ‘Ver partes’ para consultar o OCR de cada parte.";
     }
     var partialSuffix = Model.PartialPartsCount > 0

@@ -536,10 +536,14 @@ public sealed class GedController : Controller
         if (!CanViewDocumentParts()) return Forbid();
 
         var parts = await _documentPartialService.GetPartsAsync(_currentUser.TenantId, id, ct);
+        var partialGroupId = parts.Select(p => (Guid?)p.PartialGroupId).FirstOrDefault(x => x.HasValue);
+        var summary = partialGroupId.HasValue
+            ? await _documentPartialService.GetPartialOcrSummaryAsync(_currentUser.TenantId, partialGroupId.Value, ct)
+            : new PartialOcrSummaryDto { TotalParts = parts.Count, PartsWithoutOcr = parts.Count, SummaryText = BuildPartialOcrSummaryText(parts.Count, 0), SummaryCss = "bg-secondary" };
         var total = parts.Select(p => p.TotalParts).Where(x => x.HasValue).DefaultIfEmpty(parts.Count).Max() ?? parts.Count;
-        var withOcr = parts.Count(p => p.IsOcrAvailable);
+        var withOcr = summary.PartsWithOcr;
         var doc = await _docs.GetAsync(_currentUser.TenantId, id, ct);
-        await WriteGedAuditAsync("DOCUMENT_PART_VIEW", "DOCUMENT_PART", id, "Partes do documento visualizadas", new { documentId = id, correlationId = HttpContext.TraceIdentifier }, ct);
+        await WriteGedAuditAsync("DOCUMENT_PART_TAB_OPEN", "DOCUMENT_PART", id, "Partes do documento visualizadas", new { documentId = id, partialGroupId, userId = _currentUser.UserId, correlationId = HttpContext.TraceIdentifier }, ct);
         return Ok(new
         {
             documentId = id,
@@ -548,7 +552,9 @@ public sealed class GedController : Controller
             partsCount = parts.Count,
             partsWithOcr = withOcr,
             partsWithoutOcr = Math.Max(parts.Count - withOcr, 0),
-            ocrSummary = BuildPartialOcrSummaryText(parts.Count, withOcr),
+            ocrSummary = summary.SummaryText,
+            ocrSummaryCss = summary.SummaryCss,
+            partsCompletedWithoutText = summary.PartsCompletedWithoutText,
             parts = parts.Select(p => new
             {
                 p.Id,
@@ -574,6 +580,21 @@ public sealed class GedController : Controller
                 ocrUrl = Url.Action(nameof(PartOcrText), "Ged", new { versionId = p.VersionId, partNumber = p.PartNumber, partialGroupId = p.PartialGroupId })
             })
         });
+    }
+
+
+    public sealed class DocumentPartFilterAuditRequest
+    {
+        public string? FilterName { get; set; }
+    }
+
+    [HttpPost("/Ged/DocumentParts/FilterAudit")]
+    public async Task<IActionResult> DocumentPartFilterAudit([FromBody] DocumentPartFilterAuditRequest? request, CancellationToken ct)
+    {
+        if (!_currentUser.IsAuthenticated) return Unauthorized();
+        var filterName = string.IsNullOrWhiteSpace(request?.FilterName) ? "unknown" : request.FilterName.Trim();
+        await WriteGedAuditAsync("DOCUMENT_PART_FILTER_APPLIED", "DOCUMENT_PART", null, "Filtro rápido de documentos fracionados aplicado", new { filterName, userId = _currentUser.UserId, tenantId = _currentUser.TenantId, correlationId = HttpContext.TraceIdentifier, timestampUtc = DateTime.UtcNow }, ct);
+        return Ok(new { success = true });
     }
 
     [HttpPost("/Ged/DocumentParts/Consolidate")]
@@ -1564,7 +1585,7 @@ LIMIT 20;";
 
     private static string BuildPartialOcrSummaryText(int totalParts, int partsWithOcr)
     {
-        if (totalParts <= 0) return "Sem partes cadastradas";
+        if (totalParts <= 0) return "Sem partes registradas";
         if (partsWithOcr <= 0) return "Sem OCR nas partes";
         if (partsWithOcr >= totalParts) return "OCR disponível nas partes";
         return $"OCR parcial {partsWithOcr}/{totalParts}";

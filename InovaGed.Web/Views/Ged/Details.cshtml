@@ -79,6 +79,9 @@
         .OrderBy(v => v.PartNumber ?? v.PartialPartNumber ?? v.VersionNumber)
         .ToList();
     var totalParts = documentParts.Select(v => v.TotalParts ?? v.PartialTotalParts).FirstOrDefault(x => x.HasValue);
+    var totalPartsCount = totalParts ?? documentParts.Count;
+    var partialPartsWithOcr = documentParts.Count(v => v.IsOcrAvailable);
+    var partialOcrSummary = documentParts.Count == 0 ? "Sem partes registradas" : partialPartsWithOcr == 0 ? "Sem OCR nas partes" : partialPartsWithOcr >= totalPartsCount ? "OCR disponível nas partes" : $"OCR parcial {partialPartsWithOcr}/{totalPartsCount}";
 }
 
 <div class="container-fluid">
@@ -161,50 +164,60 @@
 
     @if (documentParts.Count > 0)
     {
+        var collapseId = "documentPartsCollapse";
         <div class="card mb-3">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <strong><i class="bi bi-files me-1"></i>Partes do documento</strong>
-                <span class="small text-muted">@(totalParts.HasValue ? $"{documentParts.Count} de {totalParts} partes recebidas" : $"{documentParts.Count} partes recebidas")</span>
-            </div>
             <div class="card-body">
-                <div class="document-parts-tabs d-flex flex-wrap gap-2 mb-3" role="tablist" aria-label="Partes do documento">
-                    @foreach (var part in documentParts)
-                    {
-                        var partNo = part.PartNumber ?? part.PartialPartNumber ?? part.VersionNumber;
-                        <button type="button"
-                                class="btn btn-sm @(part.Id == selectedId ? "btn-primary active" : "btn-outline-primary") js-open-document-part-details"
-                                data-version-id="@part.Id"
-                                data-preview-url="@Url.Action("PreviewInline", "Ged", new { versionId = part.Id })"
-                                data-ocr-url="@Url.Action("PartOcrText", "Ged", new { versionId = part.Id, partNumber = partNo, partialGroupId = part.PartialGroupId })"
-                                data-part-number="@partNo"
-                                data-file-name="@part.FileName">
-                            Parte @partNo
-                            <span class="badge @(part.IsOcrAvailable ? "bg-success" : (IsOcrCompleted(part.OcrStatus) ? "bg-light text-dark border" : "bg-secondary")) ms-1">@OcrLabel(part.IsOcrAvailable, part.OcrStatus, part.HasOcrText)</span>
-                        </button>
-                    }
-                    @if (partialVersion?.ConsolidatedVersionId.HasValue == true)
-                    {
-                        <span class="badge bg-info text-dark align-self-center">Consolidado</span>
-                    }
+                <div class="document-parts-summary d-flex justify-content-between align-items-center gap-3 flex-wrap">
+                    <div>
+                        <strong><i class="bi bi-files me-1"></i>Partes do documento</strong>
+                        <div class="small text-muted">@(totalParts.HasValue ? $"{documentParts.Count} de {totalParts} partes recebidas" : $"{documentParts.Count} partes recebidas") · @partialOcrSummary</div>
+                    </div>
+                    <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#@collapseId" aria-expanded="false" aria-controls="@collapseId">Expandir partes</button>
                 </div>
-                <div class="row g-2">
-                    @foreach (var part in documentParts)
-                    {
-                        var partNo = part.PartNumber ?? part.PartialPartNumber ?? part.VersionNumber;
-                        <div class="col-md-6 col-xl-4">
-                            <div class="border rounded p-2 h-100">
-                                <div class="fw-semibold">Parte @partNo@(totalParts.HasValue ? $" de {totalParts}" : "")</div>
-                                <div class="small text-muted text-truncate" title="@part.FileName">Arquivo: @part.FileName</div>
-                                <div class="small text-muted">Upload: @part.UploadedAtLocalFormatted</div>
-                                <div class="my-2"><span class="badge @(part.IsOcrAvailable ? "bg-success" : (IsOcrCompleted(part.OcrStatus) ? "bg-light text-dark border" : "bg-secondary"))">@OcrLabel(part.IsOcrAvailable, part.OcrStatus, part.HasOcrText)</span></div>
-                                <div class="btn-group btn-group-sm">
-                                    <button type="button" class="btn btn-outline-primary js-open-document-part-details" data-version-id="@part.Id" data-preview-url="@Url.Action("PreviewInline", "Ged", new { versionId = part.Id })" data-ocr-url="@Url.Action("PartOcrText", "Ged", new { versionId = part.Id, partNumber = partNo, partialGroupId = part.PartialGroupId })" data-part-number="@partNo" data-file-name="@part.FileName">Visualizar</button>
-                                    <button type="button" class="btn btn-outline-secondary js-open-document-part-ocr-details" data-version-id="@part.Id" data-ocr-url="@Url.Action("PartOcrText", "Ged", new { versionId = part.Id, partNumber = partNo, partialGroupId = part.PartialGroupId })" data-part-number="@partNo">OCR</button>
-                                    <a class="btn btn-outline-secondary" href="@Url.Action("Download", "Ged", new { id = part.Id, documentPart = true, partNumber = partNo, partialGroupId = part.PartialGroupId })">Baixar</a>
-                                </div>
-                            </div>
-                        </div>
-                    }
+                <div id="@collapseId" class="collapse mt-3">
+                    <div class="document-parts-tabs d-flex flex-wrap gap-2 mb-3" role="tablist" aria-label="Partes do documento">
+                        @foreach (var part in documentParts)
+                        {
+                            var partNo = part.PartNumber ?? part.PartialPartNumber ?? part.VersionNumber;
+                            var ocrLabel = OcrLabel(part.IsOcrAvailable, part.OcrStatus, part.HasOcrText);
+                            <button type="button"
+                                    class="btn btn-sm @(part.Id == selectedId ? "btn-primary active" : "btn-outline-primary") js-open-document-part-details"
+                                    data-version-id="@part.Id"
+                                    data-preview-url="@Url.Action("PreviewInline", "Ged", new { versionId = part.Id })"
+                                    data-ocr-url="@Url.Action("PartOcrText", "Ged", new { versionId = part.Id, partNumber = partNo, partialGroupId = part.PartialGroupId })"
+                                    data-part-number="@partNo"
+                                    data-total-parts="@totalPartsCount"
+                                    data-file-name="@part.FileName"
+                                    data-ocr-label="@ocrLabel">
+                                Parte @partNo · @ocrLabel
+                            </button>
+                        }
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle">
+                            <thead><tr><th>Parte</th><th>Arquivo</th><th>Upload</th><th>Status OCR</th><th class="text-end">Ações</th></tr></thead>
+                            <tbody>
+                            @foreach (var part in documentParts)
+                            {
+                                var partNo = part.PartNumber ?? part.PartialPartNumber ?? part.VersionNumber;
+                                var ocrLabel = OcrLabel(part.IsOcrAvailable, part.OcrStatus, part.HasOcrText);
+                                <tr>
+                                    <td>Parte @partNo@(totalParts.HasValue ? $" de {totalParts}" : "")</td>
+                                    <td class="text-truncate" style="max-width:260px" title="@part.FileName">@part.FileName</td>
+                                    <td>@part.UploadedAtLocalFormatted</td>
+                                    <td><span class="badge @(part.IsOcrAvailable ? "bg-success" : (IsOcrCompleted(part.OcrStatus) ? "bg-light text-dark border" : "bg-secondary"))">@ocrLabel</span></td>
+                                    <td class="text-end">
+                                        <div class="btn-group btn-group-sm">
+                                            <button type="button" class="btn btn-outline-primary js-open-document-part-details" data-version-id="@part.Id" data-preview-url="@Url.Action("PreviewInline", "Ged", new { versionId = part.Id })" data-ocr-url="@Url.Action("PartOcrText", "Ged", new { versionId = part.Id, partNumber = partNo, partialGroupId = part.PartialGroupId })" data-part-number="@partNo" data-total-parts="@totalPartsCount" data-file-name="@part.FileName" data-ocr-label="@ocrLabel">Visualizar</button>
+                                            <button type="button" class="btn btn-outline-secondary js-open-document-part-ocr-details" data-version-id="@part.Id" data-ocr-url="@Url.Action("PartOcrText", "Ged", new { versionId = part.Id, partNumber = partNo, partialGroupId = part.PartialGroupId })" data-part-number="@partNo" data-total-parts="@totalPartsCount" data-file-name="@part.FileName" data-ocr-label="@ocrLabel">OCR</button>
+                                            <a class="btn btn-outline-secondary" href="@Url.Action("Download", "Ged", new { id = part.Id, documentPart = true, partNumber = partNo, partialGroupId = part.PartialGroupId })">Baixar</a>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1558,10 +1571,15 @@
         try {
             const res = await fetch(btn.dataset.ocrUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest', Accept: 'application/json' } });
             const data = await res.json();
-            const context = `<div class="alert alert-light border py-2">Você está vendo o OCR da Parte ${esc(btn.dataset.partNumber || '')}.</div>`;
+            const totalParts = btn.dataset.totalParts || '';
+            const fileName = btn.dataset.fileName || '';
+            const status = btn.dataset.ocrLabel || data.status || 'Sem OCR';
+            const title = `<div class="mb-2"><strong>OCR da Parte ${esc(btn.dataset.partNumber || '')}${totalParts ? ' de ' + esc(totalParts) : ''}</strong><div class="small text-muted">Arquivo: ${esc(fileName || '-')} · Status: ${esc(status)}</div></div>`;
+            const token = document.querySelector('input[name="__RequestVerificationToken"]')?.value || '';
+            const tokenInput = token ? `<input type="hidden" name="__RequestVerificationToken" value="${esc(token)}">` : '';
             host.innerHTML = data.success && data.text
-                ? `${context}<pre class="mb-0" style="white-space:pre-wrap">${esc(data.text)}</pre>`
-                : `${context}<div class="alert alert-info mb-0">${esc(data.message || 'OCR não disponível nesta parte.')} <span class="badge bg-secondary ms-1">${esc(data.status || 'NONE')}</span></div>`;
+                ? `${title}<div class="alert alert-light border py-2">Você está vendo o OCR da Parte ${esc(btn.dataset.partNumber || '')}${totalParts ? ' de ' + esc(totalParts) : ''}.</div><pre class="mb-0" style="white-space:pre-wrap">${esc(data.text)}</pre>`
+                : `${title}<div class="alert alert-info mb-0">Esta parte ainda não possui OCR. Você pode solicitar o processamento. <span class="badge bg-secondary ms-1">${esc(status)}</span><form method="post" action="@Url.Action("RunOcr", "Ged")" class="mt-2">${tokenInput}<input type="hidden" name="versionId" value="${esc(btn.dataset.versionId || '')}"><button type="submit" class="btn btn-sm btn-outline-primary">Executar OCR desta parte</button></form></div>`;
         } catch {
             host.innerHTML = '<div class="alert alert-warning mb-0">Não foi possível carregar o OCR desta parte.</div>';
         }
@@ -1573,7 +1591,7 @@
             const frame = document.querySelector('[data-preview-frame="1"]');
             if (frame && btn.dataset.previewUrl) frame.src = btn.dataset.previewUrl;
             const title = document.getElementById('gedPreviewTitle');
-            if (title) title.innerHTML = `<i class="bi bi-eye me-1"></i> Visualizando Parte ${esc(btn.dataset.partNumber || '')} — ${esc(btn.dataset.fileName || '')}`;
+            if (title) title.innerHTML = `<i class="bi bi-eye me-1"></i> Visualizando Parte ${esc(btn.dataset.partNumber || '')}${btn.dataset.totalParts ? ' de ' + esc(btn.dataset.totalParts) : ''} — ${esc(btn.dataset.fileName || '')}`;
             document.querySelectorAll('.js-open-document-part-details.active').forEach(x => x.classList.remove('active','btn-primary'));
             btn.classList.add('active','btn-primary');
             loadPartOcr(btn);
