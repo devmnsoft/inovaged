@@ -1,22 +1,17 @@
-﻿@using InovaGed.Application.Ged.Loans
+@using InovaGed.Application.Ged.Loans
 @model LoanCreateVM
 
 @{
     ViewData["Title"] = "Novo Empréstimo";
-    ViewData["Subtitle"] = "Solicitação de empréstimo com protocolo automático ()";
+    ViewData["Subtitle"] = "Solicitação com documento GED ou referência manual";
 }
 
 <div class="d-flex align-items-center justify-content-between mb-3">
     <div>
         <h4 class="mb-0">Novo Empréstimo</h4>
-        <div class="text-muted small">Solicitação + itens + protocolo</div>
+        <div class="text-muted small">Solicitação + itens + protocolo automático</div>
     </div>
-
-    <div class="d-flex gap-2">
-        <a class="btn btn-sm btn-light border" href="/Loans">
-            <i class="bi bi-arrow-left me-1"></i>Voltar
-        </a>
-    </div>
+    <a class="btn btn-sm btn-light border" href="/Loans"><i class="bi bi-arrow-left me-1"></i>Voltar</a>
 </div>
 
 @if (TempData["Err"] is not null)
@@ -24,22 +19,20 @@
     <div class="alert alert-danger">@TempData["Err"]</div>
 }
 
-<form method="post" class="card shadow-sm">
+<form method="post" class="card shadow-sm" onsubmit="return validateBeforeSubmit();">
     @Html.AntiForgeryToken()
 
     <div class="card-body">
         <div class="row g-3">
-            <!-- Cabeçalho -->
             <div class="col-md-6">
                 <label class="form-label">Solicitante (nome)</label>
-                <input class="form-control" name="RequesterName" value="@Model.RequesterName" placeholder="Formato: Enfermagem / Dr(a). Fulano" />
+                <input class="form-control" name="RequesterName" value="@Model.RequesterName" placeholder="Nome do solicitante, equipe ou setor" />
             </div>
             <div class="col-md-3">
                 <label class="form-label">Vencimento</label>
                 <input type="date" class="form-control" name="DueAt" value="@(Model.DueAt?.ToString("yyyy-MM-dd"))" />
                 <div class="form-text">A devolução será cobrada automaticamente após o vencimento.</div>
             </div>
-
             <div class="col-md-3">
                 <label class="form-label">Tipo de empréstimo</label>
                 <select class="form-select" name="IsPhysical">
@@ -48,249 +41,154 @@
                 </select>
             </div>
 
-            <!-- Busca -->
             <div class="col-12">
-                <label class="form-label">Adicionar documentos</label>
-
-                <div class="input-group">
-                    <span class="input-group-text"><i class="bi bi-search"></i></span>
-                    <input class="form-control" id="docSearch" placeholder="Buscar por código ou título (formato: PRONT, 2024, João, RX...)" />
-                    <button class="btn btn-outline-secondary" type="button" onclick="searchDocs()">
-                        Buscar
-                    </button>
-                </div>
-
-                <div class="form-text">
-                    Busca no GED e adiciona itens ao empréstimo.
-                </div>
-
-                <!-- Resultados -->
-                <div id="docResultsWrap" class="mt-2 d-none">
-                    <div class="card border">
-                        <div class="card-header py-2 d-flex justify-content-between align-items-center">
-                            <strong class="small">Resultados</strong>
-                            <button type="button" class="btn btn-sm btn-light border" onclick="hideResults()">
-                                Fechar
-                            </button>
+                <h5 class="mb-2">Adicionar documentos ao pedido</h5>
+                <ul class="nav nav-tabs" role="tablist">
+                    <li class="nav-item" role="presentation"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#gedTab" type="button">Buscar no GED</button></li>
+                    <li class="nav-item" role="presentation"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#manualTab" type="button">Informar manualmente</button></li>
+                </ul>
+                <div class="tab-content border border-top-0 rounded-bottom p-3">
+                    <div class="tab-pane fade show active" id="gedTab">
+                        <p class="text-muted small mb-2">Use quando o documento já está digitalizado.</p>
+                        <div class="input-group">
+                            <span class="input-group-text"><i class="bi bi-search"></i></span>
+                            <input class="form-control" id="docSearch" placeholder="Buscar por título, prontuário, OCR, pasta ou arquivo" />
+                            <button class="btn btn-outline-secondary" type="button" onclick="searchDocs()">Buscar</button>
                         </div>
-                        <div id="docResults" class="list-group list-group-flush"></div>
+                        <div id="docResultsWrap" class="mt-2 d-none">
+                            <div class="card border">
+                                <div class="card-header py-2 d-flex justify-content-between align-items-center">
+                                    <strong class="small">Resultados</strong>
+                                    <button type="button" class="btn btn-sm btn-light border" onclick="hideResults()">Fechar</button>
+                                </div>
+                                <div id="docResults" class="list-group list-group-flush"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="tab-pane fade" id="manualTab">
+                        <p class="text-muted small mb-2">Use quando o documento ainda não está digitalizado ou será localizado fisicamente.</p>
+                        <div class="row g-2">
+                            <div class="col-md-3"><label class="form-label">Referência/código</label><input id="manualReference" class="form-control" placeholder="0105, caixa, guia..." /></div>
+                            <div class="col-md-5"><label class="form-label">Descrição <span class="text-danger">*</span></label><input id="manualDescription" class="form-control" placeholder="Descreva o documento solicitado" /></div>
+                            <div class="col-md-4"><label class="form-label">Tipo documental</label><input id="manualType" class="form-control" placeholder="Prontuário, exame, caixa..." /></div>
+                            <div class="col-md-4"><label class="form-label">Paciente</label><input id="manualPatient" class="form-control" /></div>
+                            <div class="col-md-3"><label class="form-label">Prontuário</label><input id="manualRecord" class="form-control" /></div>
+                            <div class="col-md-2"><label class="form-label">Caixa</label><input id="manualBox" class="form-control" /></div>
+                            <div class="col-md-3"><label class="form-label">Localização física</label><input id="manualLocation" class="form-control" /></div>
+                            <div class="col-12"><label class="form-label">Observação</label><textarea id="manualNotes" class="form-control" rows="2"></textarea></div>
+                            <div class="col-12"><button type="button" class="btn btn-outline-primary" onclick="addManualItem()"><i class="bi bi-plus-lg me-1"></i>Adicionar item manual</button></div>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Selecionados -->
             <div class="col-12">
                 <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <div class="fw-semibold">Itens selecionados</div>
-                        <div class="text-muted small">Esses documentos serão vinculados ao empréstimo.</div>
-                    </div>
+                    <div><div class="fw-semibold">Itens selecionados / solicitados</div><div class="text-muted small">A lista aceita documentos GED e referências manuais.</div></div>
                     <span id="selCount" class="badge text-bg-dark">0</span>
                 </div>
-
-                <div class="card mt-2">
-                    <div id="selectedDocs" class="list-group list-group-flush">
-                        <div id="emptySel" class="list-group-item text-muted">
-                            Nenhum documento selecionado.
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Hidden inputs -->
+                <div class="card mt-2"><div id="selectedDocs" class="list-group list-group-flush"><div id="emptySel" class="list-group-item text-muted">Nenhum item adicionado.</div></div></div>
                 <div id="hidden"></div>
             </div>
 
-            <!-- Observações -->
             <div class="col-12">
-                <label class="form-label">Observações</label>
-                <div class="form-text">Inclua justificativa e status será auditado automaticamente.</div>
-                <textarea class="form-control" name="Notes" rows="3" placeholder="Formato: Urgência, retirar na recepção, acesso somente visualização...">@Model.Notes</textarea>
+                <label class="form-label">Observações gerais</label>
+                <textarea class="form-control" name="Notes" rows="3" placeholder="Urgência, orientação para retirada, justificativa...">@Model.Notes</textarea>
             </div>
         </div>
     </div>
 
     <div class="card-footer bg-white d-flex gap-2">
-        <button class="btn btn-primary" type="submit" onclick="return validateBeforeSubmit();">
-            <i class="bi bi-check-lg me-1"></i>Salvar e gerar protocolo
-        </button>
+        <button class="btn btn-primary" type="submit"><i class="bi bi-check-lg me-1"></i>Salvar e gerar protocolo</button>
         <a class="btn btn-outline-secondary" href="/Loans">Cancelar</a>
-
-        <div class="ms-auto text-muted small d-none d-md-flex align-items-center">
-            <i class="bi bi-info-circle me-1"></i>
-            Após salvar, você verá o protocolo e poderá Aprovar / Entregar / Devolver.
-        </div>
+        <div class="ms-auto text-muted small d-none d-md-flex align-items-center"><i class="bi bi-info-circle me-1"></i>O protocolo pode nascer sem documento digitalizado.</div>
     </div>
 </form>
 
-@section Styles {
-    <style>
-        #docResults .list-group-item:hover {
-            cursor: pointer;
-        }
-
-        .doc-code {
-            font-weight: 700;
-        }
-
-        .doc-title {
-            font-size: .92rem;
-        }
-    </style>
-}
-
 @section Scripts {
-    <script>
-        const selected = new Map(); // id -> {id, code, title}
+<script>
+    const selectedGed = new Map();
+    const manualItems = [];
 
-        function setCount() {
-            const n = selected.size;
-            const el = document.getElementById('selCount');
-            if (el) el.textContent = n.toString();
-            const empty = document.getElementById('emptySel');
-            if (empty) empty.classList.toggle('d-none', n > 0);
-        }
+    function setCount() {
+        const n = selectedGed.size + manualItems.length;
+        document.getElementById('selCount').textContent = n.toString();
+        document.getElementById('emptySel').classList.toggle('d-none', n > 0);
+    }
 
-        function renderSelected() {
-            const list = document.getElementById('selectedDocs');
-            const hidden = document.getElementById('hidden');
-            list.querySelectorAll('.sel-row').forEach(x => x.remove());
-            hidden.innerHTML = '';
-
-            let idx = 0;
-            selected.forEach(v => {
-                // UI
-                const row = document.createElement('div');
-                row.className = 'list-group-item d-flex justify-content-between align-items-center sel-row';
-
-                const left = document.createElement('div');
-                left.innerHTML = `<div class="doc-code">${escapeHtml(v.code)}</div><div class="text-muted small doc-title">${escapeHtml(v.title)}</div>`;
-
-                const right = document.createElement('div');
-                right.className = 'd-flex gap-2 align-items-center';
-
-                const btn = document.createElement('button');
-                btn.type = 'button';
-                btn.className = 'btn btn-sm btn-outline-danger';
-                btn.innerHTML = `<i class="bi bi-x-lg"></i>`;
-                btn.title = 'Remover';
-                btn.onclick = () => removeDoc(v.id);
-
-                right.appendChild(btn);
-                row.appendChild(left);
-                row.appendChild(right);
-
-                list.appendChild(row);
-
-                // Hidden input para binding: DocumentIds[0], DocumentIds[1], ...
-                const input = document.createElement('input');
-                input.type = 'hidden';
-                input.name = 'DocumentIds[' + idx + ']';
-                input.value = v.id;
-                hidden.appendChild(input);
-
-                idx++;
-            });
-
-            setCount();
-        }
-
-        function addDoc(id, code, title) {
-            if (!id) return;
-            if (selected.has(id)) return;
-
-            selected.set(id, { id, code: code || '(sem código)', title: title || '(sem título)' });
-            renderSelected();
-        }
-
-        function removeDoc(id) {
-            selected.delete(id);
-            renderSelected();
-        }
-
-        function hideResults() {
-            const wrap = document.getElementById('docResultsWrap');
-            if (wrap) wrap.classList.add('d-none');
-        }
-
-        async function searchDocs() {
-            const q = document.getElementById('docSearch').value.trim();
-            if (!q) return;
-
-            const res = await fetch('/Loans/DocSearch?q=' + encodeURIComponent(q), {
-                headers: { 'X-Requested-With': 'XMLHttpRequest' }
-            });
-
-            const wrap = document.getElementById('docResultsWrap');
-            const box = document.getElementById('docResults');
-
-            if (!wrap || !box) return;
-
-            wrap.classList.remove('d-none');
-            box.innerHTML = '';
-
-            if (!res.ok) {
-                box.innerHTML = `<div class="list-group-item text-danger">Erro ao buscar. (Implementar /Loans/DocSearch)</div>`;
-                return;
-            }
-
-            const data = await res.json();
-
-            if (!data || data.length === 0) {
-                box.innerHTML = `<div class="list-group-item text-muted">Nada encontrado.</div>`;
-                return;
-            }
-
-            data.forEach(d => {
-                const id = d.id || d.Id;
-                const code = d.code || d.Code || '';
-                const title = d.title || d.Title || '';
-
-                const item = document.createElement('button');
-                item.type = 'button';
-                item.className = 'list-group-item list-group-item-action';
-
-                item.innerHTML = `
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <div class="doc-code">${escapeHtml(code)}</div>
-                            <div class="text-muted small doc-title">${escapeHtml(title)}</div>
-                        </div>
-                        <span class="badge text-bg-primary">Adicionar</span>
-                    </div>
-                `;
-
-                item.onclick = () => addDoc(id, code, title);
-
-                box.appendChild(item);
-            });
-        }
-
-        function validateBeforeSubmit() {
-            if (selected.size === 0) {
-                alert('Selecione pelo menos 1 documento para o empréstimo.');
-                return false;
-            }
-            return true;
-        }
-
-        function escapeHtml(s) {
-            return (s || '').replace(/[&<>"']/g, (m) => ({
-                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
-            }[m]));
-        }
-
-        // Enter no input de busca
-        document.addEventListener('DOMContentLoaded', () => {
-            setCount();
-            const el = document.getElementById('docSearch');
-            if (el) {
-                el.addEventListener('keydown', (e) => {
-                    if (e.key === 'Enter') {
-                        e.preventDefault();
-                        searchDocs();
-                    }
-                });
-            }
+    function renderSelected() {
+        const list = document.getElementById('selectedDocs');
+        const hidden = document.getElementById('hidden');
+        list.querySelectorAll('.sel-row').forEach(x => x.remove());
+        hidden.innerHTML = '';
+        let docIdx = 0;
+        selectedGed.forEach(v => {
+            list.insertAdjacentHTML('beforeend', `<div class="list-group-item d-flex justify-content-between align-items-center sel-row"><div><span class="badge text-bg-primary me-1">GED</span><strong>${escapeHtml(v.code)}</strong><div class="text-muted small">${escapeHtml(v.title)}</div></div><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeDoc('${v.id}')"><i class="bi bi-x-lg"></i></button></div>`);
+            hidden.insertAdjacentHTML('beforeend', `<input type="hidden" name="DocumentIds[${docIdx++}]" value="${escapeHtml(v.id)}" />`);
         });
-    </script>
+        manualItems.forEach((v, idx) => {
+            list.insertAdjacentHTML('beforeend', `<div class="list-group-item d-flex justify-content-between align-items-center sel-row"><div><span class="badge text-bg-warning text-dark me-1">Manual</span><strong>${escapeHtml(v.referenceCode || 'Sem referência')}</strong><div>${escapeHtml(v.description)}</div><div class="text-muted small">${escapeHtml([v.documentType, v.patientName, v.medicalRecordNumber, v.boxCode, v.physicalLocation].filter(Boolean).join(' • '))}</div></div><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeManual(${idx})"><i class="bi bi-x-lg"></i></button></div>`);
+            Object.entries(v).forEach(([key, value]) => hidden.insertAdjacentHTML('beforeend', `<input type="hidden" name="ManualItems[${idx}].${pascal(key)}" value="${escapeHtml(value || '')}" />`));
+        });
+        setCount();
+    }
+
+    function addDoc(id, code, title) {
+        if (!id || selectedGed.has(id)) return;
+        selectedGed.set(id, { id, code: code || '(sem código)', title: title || '(sem título)' });
+        renderSelected();
+    }
+    function removeDoc(id) { selectedGed.delete(id); renderSelected(); }
+    function removeManual(idx) { manualItems.splice(idx, 1); renderSelected(); }
+    function hideResults() { document.getElementById('docResultsWrap')?.classList.add('d-none'); }
+
+    function addManualItem(seed) {
+        const item = seed || {
+            referenceCode: val('manualReference'), description: val('manualDescription'), documentType: val('manualType'),
+            patientName: val('manualPatient'), medicalRecordNumber: val('manualRecord'), boxCode: val('manualBox'),
+            physicalLocation: val('manualLocation'), notes: val('manualNotes')
+        };
+        if (!item.description && !item.referenceCode) { alert('Informe uma descrição ou referência para o item manual.'); return; }
+        manualItems.push(item);
+        ['manualReference','manualDescription','manualType','manualPatient','manualRecord','manualBox','manualLocation','manualNotes'].forEach(id => document.getElementById(id).value = '');
+        renderSelected();
+    }
+
+    async function searchDocs() {
+        const q = document.getElementById('docSearch').value.trim();
+        if (!q) return;
+        const wrap = document.getElementById('docResultsWrap');
+        const box = document.getElementById('docResults');
+        wrap.classList.remove('d-none');
+        box.innerHTML = `<div class="list-group-item text-muted"><span class="spinner-border spinner-border-sm me-2"></span>Buscando...</div>`;
+        try {
+            const response = await fetch('/Loans/DocSearch?q=' + encodeURIComponent(q), { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+            const payload = await response.json().catch(() => ({}));
+            const items = Array.isArray(payload) ? payload : Array.isArray(payload.items) ? payload.items : Array.isArray(payload.data) ? payload.data : [];
+            if (!response.ok || payload.success === false) { box.innerHTML = `<div class="list-group-item text-danger">${escapeHtml(payload.message || 'Não foi possível buscar documentos.')}</div>`; return; }
+            if (items.length === 0) {
+                box.innerHTML = `<div class="list-group-item text-muted">Nenhum documento digitalizado encontrado. Você pode informar o documento manualmente abaixo.<div class="mt-2"><button type="button" class="btn btn-sm btn-outline-primary" onclick="addManualItem({referenceCode:'${escapeJs(q)}',description:'Solicitação manual: ${escapeJs(q)}'})">Solicitar documento ${escapeHtml(q)} manualmente</button></div></div>`;
+                return;
+            }
+            box.innerHTML = '';
+            items.forEach(d => {
+                const id = d.id || d.Id, code = d.code || d.Code || '', title = d.title || d.Title || '', status = d.status || d.Status || '';
+                const disabled = selectedGed.has(id);
+                box.insertAdjacentHTML('beforeend', `<button type="button" class="list-group-item list-group-item-action" ${disabled ? 'disabled' : ''} onclick="addDoc('${escapeHtml(id)}','${escapeJs(code)}','${escapeJs(title)}')"><div class="d-flex justify-content-between"><div><strong>${escapeHtml(code)}</strong><div class="text-muted small">${escapeHtml(title)}</div><div class="text-muted small">${escapeHtml(status)}</div></div><span class="badge text-bg-primary">${disabled ? 'Adicionado' : 'Adicionar'}</span></div></button>`);
+            });
+        } catch (e) { box.innerHTML = `<div class="list-group-item text-danger">Erro inesperado ao buscar documentos.</div>`; }
+    }
+
+    function validateBeforeSubmit() {
+        if (selectedGed.size === 0 && manualItems.length === 0) { alert('Adicione pelo menos um documento do GED ou informe um documento manualmente para solicitar.'); return false; }
+        renderSelected();
+        return true;
+    }
+    function val(id) { return document.getElementById(id)?.value.trim() || ''; }
+    function pascal(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+    function escapeHtml(s) { return (s || '').toString().replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m])); }
+    function escapeJs(s) { return (s || '').toString().replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, ' '); }
+    document.addEventListener('DOMContentLoaded', () => { setCount(); document.getElementById('docSearch')?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); searchDocs(); } }); });
+</script>
 }

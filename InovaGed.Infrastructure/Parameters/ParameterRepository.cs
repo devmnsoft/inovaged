@@ -178,8 +178,15 @@ order by display_order, name;";
         if (vm.CategoryId == Guid.Empty) throw new ArgumentException("Categoria obrigatória.");
         if (string.IsNullOrWhiteSpace(vm.Name)) throw new ArgumentException("Nome obrigatório.");
         var isCreate = !vm.Id.HasValue || vm.Id.Value == Guid.Empty;
+        await using var conn = await _db.OpenAsync(ct);
+        using var tx = conn.BeginTransaction();
+
+        const string categorySql = "select code from ged.parameter_category where tenant_id=@tenantId and id=@categoryId";
+        var categoryCode = await conn.ExecuteScalarAsync<string>(new CommandDefinition(categorySql, new { tenantId, categoryId = vm.CategoryId }, tx, cancellationToken: ct));
+        if (string.IsNullOrWhiteSpace(categoryCode)) throw new ArgumentException("Categoria não encontrada.");
+
         if (isCreate && string.IsNullOrWhiteSpace(vm.Code))
-            vm.Code = await _codeGenerator.GenerateNextCodeAsync(tenantId, "ParameterItem", "PAR", ct);
+            vm.Code = await _codeGenerator.GenerateNextCodeAsync(tenantId, $"ParameterItem:{categoryCode}", ResolveParameterPrefix(categoryCode), ct);
         if (!isCreate && string.IsNullOrWhiteSpace(vm.Code)) throw new ArgumentException("Código atual não encontrado.");
         if (!string.IsNullOrWhiteSpace(vm.MetadataJson))
         {
@@ -216,18 +223,12 @@ on conflict (id) do update set
     updated_at=now(),
     updated_by=@userId,
     reg_status='A';";
-        const string categorySql = "select code from ged.parameter_category where tenant_id=@tenantId and id=@categoryId";
         const string afterSql = @"select to_jsonb(t) from (select * from ged.parameter_item where tenant_id=@tenantId and id=@id) t;";
         const string historySql = @"
 insert into ged.parameter_item_history(tenant_id, item_id, category_code, action, changed_by, old_data, new_data)
 values(@tenantId, @id, @categoryCode, @action, @userId, cast(@oldData as jsonb), cast(@newData as jsonb));";
 
-        await using var conn = await _db.OpenAsync(ct);
-        using var tx = conn.BeginTransaction();
-
         var oldData = await conn.ExecuteScalarAsync<string?>(new CommandDefinition(beforeSql, new { tenantId, id }, tx, cancellationToken: ct));
-        var categoryCode = await conn.ExecuteScalarAsync<string>(new CommandDefinition(categorySql, new { tenantId, categoryId = vm.CategoryId }, tx, cancellationToken: ct));
-        if (string.IsNullOrWhiteSpace(categoryCode)) throw new ArgumentException("Categoria não encontrada.");
 
         await conn.ExecuteAsync(new CommandDefinition(upsertSql, new
         {
@@ -306,4 +307,15 @@ where i.tenant_id=@tenantId and i.id=@id;";
         await conn.ExecuteAsync(new CommandDefinition(historySql, new { tenantId, id, userId, oldData, reason }, tx, cancellationToken: ct));
         tx.Commit();
     }
+
+    private static string ResolveParameterPrefix(string categoryCode)
+        => (categoryCode ?? string.Empty).Trim().ToUpperInvariant() switch
+        {
+            "LOTACAO" => "LOT",
+            "TIPO_DOCUMENTAL" => "TIP",
+            "SETOR" => "SET",
+            "CLASSIFICACAO" => "CLA",
+            _ => new string((categoryCode ?? "PAR").Where(char.IsLetter).Take(3).ToArray()).ToUpperInvariant() is var p && !string.IsNullOrWhiteSpace(p) ? p : "PAR"
+        };
+
 }

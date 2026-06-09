@@ -52,11 +52,13 @@ public sealed class LoansController : Controller
             var tenantId = _user.TenantId;
 
             var stats = new LoanStatsDto();
-            var canViewAll = CanManageLoans();
-            stats.Requested = await _service.PendingCountAsync(tenantId, _user.UserId, canViewAll, ct);
+            var scope = await BuildLoanScopeAsync(ct);
+            if (scope.IsAdministradorOphir && string.IsNullOrWhiteSpace(scope.Sector))
+                TempData["Err"] = "Seu usuário não possui setor vinculado. Configure o setor para visualizar solicitações.";
+            stats.Requested = await _service.PendingCountAsync(tenantId, _user.UserId, scope, ct);
             ViewBag.Stats = stats;
 
-            var list = await _service.ListAsync(tenantId, q, status, _user.UserId, canViewAll, ct);
+            var list = await _service.ListAsync(tenantId, q, status, _user.UserId, scope, ct);
             ViewBag.Q = q;
             ViewBag.Status = status;
 
@@ -81,13 +83,13 @@ public sealed class LoansController : Controller
         {
             var tenantId = _user.TenantId;
             var rows = await _service.SearchDocumentsAsync(tenantId, q ?? "", ct);
-            var payload = rows.Select(x => new { id = x.Id, code = x.Code, title = x.Title, type = "", folderPath = "" });
-            return Json(new { success = true, items = payload });
+            var payload = rows.Select(x => new { id = x.Id, code = x.Code, title = x.Title, status = x.Status, createdAt = x.CreatedAt, type = "", folderPath = "" }).ToList();
+            return Json(new { success = true, items = payload, total = payload.Count, message = (string?)null });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Loans.DocSearch failed");
-            return Json(new { success = false, items = Array.Empty<object>() });
+            return Json(new { success = false, items = Array.Empty<object>(), total = 0, message = "Não foi possível buscar documentos." });
         }
     }
 
@@ -100,8 +102,10 @@ public sealed class LoansController : Controller
         try
         {
             var tenantId = _user.TenantId;
+            var scope = await BuildLoanScopeAsync(ct);
             if (!CanManageLoans()) return Forbid();
-            var list = await _service.OverdueAsync(tenantId, _user.UserId, true, ct);
+            scope.IsAdmin = true;
+            var list = await _service.OverdueAsync(tenantId, _user.UserId, scope, ct);
             return View(list);
         }
         catch (Exception ex)
@@ -171,7 +175,7 @@ public sealed class LoansController : Controller
         try
         {
             var tenantId = _user.TenantId;
-            var count = await _service.PendingCountAsync(tenantId, _user.UserId, CanManageLoans(), ct);
+            var count = await _service.PendingCountAsync(tenantId, _user.UserId, await BuildLoanScopeAsync(ct), ct);
             return Ok(new { success = true, count });
         }
         catch (Exception ex)
@@ -225,9 +229,13 @@ public sealed class LoansController : Controller
         try
         {
             var tenantId = _user.TenantId;
-            var vm = await _service.GetDetailsAsync(tenantId, id, _user.UserId, CanManageLoans(), ct);
+            var vm = await _service.GetDetailsAsync(tenantId, id, _user.UserId, await BuildLoanScopeAsync(ct), ct);
 
-            if (vm is null) return NotFound();
+            if (vm is null)
+            {
+                await AuditAccessDeniedAsync(id, ct);
+                return Forbid();
+            }
             return View(vm);
         }
         catch (Exception ex)
@@ -261,8 +269,10 @@ public sealed class LoansController : Controller
     [Authorize(Roles = AppRoles.Admin + "," + AppRoles.AdministradorOphir)]
     [HttpPost("{id:guid}/Approve")]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Approve(Guid id, string? notes, CancellationToken ct)
+    public async Task<IActionResult> Approve(Guid id, string? notes, string? internalNotes, bool notifyRequester, CancellationToken ct)
     {
+        if (!await CanOperateLoanAsync(id, ct)) return Forbid();
+        notes = CombineNotes(notes, internalNotes, notifyRequester);
         var res = await _service.ApproveAsync(_user.TenantId, id, _user.UserId, notes, ct);
         TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Solicitação aprovada com sucesso." : res.ErrorMessage;
         return RedirectToAction(nameof(Details), new { id });
@@ -271,8 +281,10 @@ public sealed class LoansController : Controller
     [Authorize(Roles = AppRoles.Admin + "," + AppRoles.AdministradorOphir)]
     [HttpPost("{id:guid}/Deliver")]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Deliver(Guid id, string? notes, CancellationToken ct)
+    public async Task<IActionResult> Deliver(Guid id, string? notes, string? internalNotes, bool notifyRequester, CancellationToken ct)
     {
+        if (!await CanOperateLoanAsync(id, ct)) return Forbid();
+        notes = CombineNotes(notes, internalNotes, notifyRequester);
         var res = await _service.DeliverAsync(_user.TenantId, id, _user.UserId, notes, ct);
         TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Solicitação entregue com sucesso." : res.ErrorMessage;
         return RedirectToAction(nameof(Details), new { id });
@@ -281,24 +293,93 @@ public sealed class LoansController : Controller
     [Authorize(Roles = AppRoles.Admin + "," + AppRoles.AdministradorOphir)]
     [HttpPost("{id:guid}/Return")]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Return(Guid id, string? notes, CancellationToken ct)
+    public async Task<IActionResult> Return(Guid id, string? notes, string? internalNotes, bool notifyRequester, CancellationToken ct)
     {
+        if (!await CanOperateLoanAsync(id, ct)) return Forbid();
+        notes = CombineNotes(notes, internalNotes, notifyRequester);
         var res = await _service.ReturnAsync(_user.TenantId, id, _user.UserId, notes, ct);
         TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Solicitação devolvida com sucesso." : res.ErrorMessage;
+        return RedirectToAction(nameof(Details), new { id });
+    }
+
+
+    [Authorize(Roles = AppRoles.Admin + "," + AppRoles.AdministradorOphir)]
+    [HttpPost("{id:guid}/Reject")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Reject(Guid id, string? notes, string? internalNotes, bool notifyRequester, CancellationToken ct)
+    {
+        if (!await CanOperateLoanAsync(id, ct)) return Forbid();
+        notes = CombineNotes(notes, internalNotes, notifyRequester);
+        var res = await _service.RejectAsync(_user.TenantId, id, _user.UserId, notes, ct);
+        TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Solicitação rejeitada com sucesso." : res.ErrorMessage;
+        return RedirectToAction(nameof(Details), new { id });
+    }
+
+    [Authorize(Roles = AppRoles.Admin + "," + AppRoles.AdministradorOphir)]
+    [HttpPost("{id:guid}/ReturnForAdjustment")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ReturnForAdjustment(Guid id, string? notes, string? internalNotes, bool notifyRequester, CancellationToken ct)
+    {
+        if (!await CanOperateLoanAsync(id, ct)) return Forbid();
+        notes = CombineNotes(notes, internalNotes, notifyRequester);
+        var res = await _service.ReturnForAdjustmentAsync(_user.TenantId, id, _user.UserId, notes, ct);
+        TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Solicitação devolvida para ajuste." : res.ErrorMessage;
         return RedirectToAction(nameof(Details), new { id });
     }
 
     [Authorize(Roles = AppRoles.Admin + "," + AppRoles.AdministradorOphir)]
     [HttpPost("{id:guid}/Cancel")]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Cancel(Guid id, string? notes, CancellationToken ct)
+    public async Task<IActionResult> Cancel(Guid id, string? notes, string? internalNotes, bool notifyRequester, CancellationToken ct)
     {
+        if (!await CanOperateLoanAsync(id, ct)) return Forbid();
+        notes = CombineNotes(notes, internalNotes, notifyRequester);
         var res = await _service.CancelAsync(_user.TenantId, id, _user.UserId, notes, ct);
         TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Solicitação cancelada com sucesso." : res.ErrorMessage;
         return RedirectToAction(nameof(Details), new { id });
     }
 
     private bool CanManageLoans() => User.IsInRole(AppRoles.Admin) || User.IsInRole(AppRoles.AdministradorOphir);
+
+    private async Task<LoanVisibilityScope> BuildLoanScopeAsync(CancellationToken ct)
+    {
+        var scope = new LoanVisibilityScope
+        {
+            IsAdmin = User.IsInRole(AppRoles.Admin),
+            IsAdministradorOphir = User.IsInRole(AppRoles.AdministradorOphir),
+            IsArquivistaOphir = User.IsInRole(AppRoles.ArquivistaOphir)
+        };
+
+        await using var conn = await _db.OpenAsync(ct);
+        scope.Sector = await conn.ExecuteScalarAsync<string?>(
+            new CommandDefinition("""
+select nullif(coalesce(s.setor, s.lotacao, ''), '')
+from ged.app_user u
+left join ged.servidor s on s.tenant_id=u.tenant_id and s.id=u.servidor_id
+where u.tenant_id=@TenantId and u.id=@UserId
+limit 1
+""",
+                new { TenantId = _user.TenantId, UserId = _user.UserId }, cancellationToken: ct));
+        return scope;
+    }
+
+    private async Task<bool> CanOperateLoanAsync(Guid id, CancellationToken ct)
+        => CanManageLoans() && await _service.GetDetailsAsync(_user.TenantId, id, _user.UserId, await BuildLoanScopeAsync(ct), ct) is not null;
+
+    private async Task AuditAccessDeniedAsync(Guid id, CancellationToken ct)
+    {
+        _ = await _audit.WriteAsync(_user.TenantId, _user.UserId, "ACCESS_DENIED", "loan_request", id,
+            "Tentativa de acesso a solicitação fora do escopo", null, null, new { loanId = id }, ct);
+    }
+
+    private static string? CombineNotes(string? notes, string? internalNotes, bool notifyRequester)
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(notes)) parts.Add(notes.Trim());
+        if (!string.IsNullOrWhiteSpace(internalNotes)) parts.Add($"Observação interna: {internalNotes.Trim()}");
+        parts.Add(notifyRequester ? "Notificar solicitante: sim" : "Notificar solicitante: não");
+        return string.Join(" | ", parts);
+    }
 
     public override void OnActionExecuted(ActionExecutedContext context)
     {

@@ -39,9 +39,12 @@ public sealed class LoanCommands : ILoanCommands
                 .Where(x => x != Guid.Empty)
                 .Distinct()
                 .ToList();
+            var manualItems = (vm.ManualItems ?? new List<LoanManualItemVM>())
+                .Where(x => !string.IsNullOrWhiteSpace(x.Description) || !string.IsNullOrWhiteSpace(x.ReferenceCode))
+                .ToList();
 
-            if (docIds.Count == 0)
-                return Result<Guid>.Fail("DOC", "Informe pelo menos 1 documento para o empréstimo.");
+            if (docIds.Count == 0 && manualItems.Count == 0)
+                return Result<Guid>.Fail("DOC", "Adicione pelo menos um documento do GED ou informe um documento manualmente para solicitar.");
 
             await using var con = await _db.OpenAsync(ct);
             await using var tx = await con.BeginTransactionAsync(ct);
@@ -73,6 +76,7 @@ insert into ged.loan_request
   requester_id,
   requester_name,
   document_id,
+  requester_sector,
   requested_at,
   due_at,
   reg_status
@@ -86,6 +90,7 @@ values
   @RequesterId,
   @RequesterName,
   @DocumentId,
+  (select nullif(coalesce(s.setor, s.lotacao, ''), '') from ged.app_user u left join ged.servidor s on s.tenant_id=u.tenant_id and s.id=u.servidor_id where u.tenant_id=@TenantId and u.id=@RequesterId limit 1),
   @RequestedAt,
   @DueAt,
   'A'
@@ -101,7 +106,7 @@ returning id;
                         TenantId = tenantId,
                         RequesterId = userId.Value,
                         RequesterName = (vm.RequesterName ?? "").Trim(),
-                        DocumentId = docIds[0],          // ✅ obrigatório no seu schema
+                        DocumentId = docIds.Count == 0 ? (Guid?)null : docIds[0],
                         RequestedAt = nowUtc,
                         DueAt = dueUtc
                     },
@@ -112,18 +117,42 @@ returning id;
             const string sqlItem = """
 insert into ged.loan_request_item
 (
+  id,
   tenant_id,
+  loan_request_id,
   loan_id,
   document_id,
+  is_manual,
   is_physical,
+  reference_code,
+  description,
+  document_type,
+  patient_name,
+  medical_record_number,
+  box_code,
+  physical_location,
+  notes,
+  created_at,
   reg_status
 )
 values
 (
+  gen_random_uuid(),
   @TenantId,
   @LoanId,
+  @LoanId,
   @DocumentId,
+  @IsManual,
   @IsPhysical,
+  @ReferenceCode,
+  @Description,
+  @DocumentType,
+  @PatientName,
+  @MedicalRecordNumber,
+  @BoxCode,
+  @PhysicalLocation,
+  @ItemNotes,
+  now(),
   'A'
 );
 """;
@@ -137,8 +166,42 @@ values
                         {
                             TenantId = tenantId,
                             LoanId = loanId,
-                            DocumentId = docId,
-                            IsPhysical = vm.IsPhysical
+                            DocumentId = (Guid?)docId,
+                            IsManual = false,
+                            IsPhysical = vm.IsPhysical,
+                            ReferenceCode = (string?)null,
+                            Description = (string?)null,
+                            DocumentType = (string?)null,
+                            PatientName = (string?)null,
+                            MedicalRecordNumber = (string?)null,
+                            BoxCode = (string?)null,
+                            PhysicalLocation = (string?)null,
+                            ItemNotes = (string?)null
+                        },
+                        transaction: tx,
+                        cancellationToken: ct));
+            }
+
+            foreach (var manual in manualItems)
+            {
+                await con.ExecuteAsync(
+                    new CommandDefinition(
+                        sqlItem,
+                        new
+                        {
+                            TenantId = tenantId,
+                            LoanId = loanId,
+                            DocumentId = (Guid?)null,
+                            IsManual = true,
+                            IsPhysical = vm.IsPhysical,
+                            ReferenceCode = TrimOrNull(manual.ReferenceCode),
+                            Description = TrimOrNull(manual.Description),
+                            DocumentType = TrimOrNull(manual.DocumentType),
+                            PatientName = TrimOrNull(manual.PatientName),
+                            MedicalRecordNumber = TrimOrNull(manual.MedicalRecordNumber),
+                            BoxCode = TrimOrNull(manual.BoxCode),
+                            PhysicalLocation = TrimOrNull(manual.PhysicalLocation),
+                            ItemNotes = TrimOrNull(manual.Notes)
                         },
                         transaction: tx,
                         cancellationToken: ct));
@@ -181,7 +244,8 @@ values
                     transaction: tx,
                     cancellationToken: ct));
 
-            
+            await WriteRichHistoryAsync(con, tx, tenantId, loanId, oldStatus: null, newStatus: "REQUESTED", action: "REQUESTED", userId, reason: vm.Notes, internalNotes: null, ct);
+
             await tx.CommitAsync(ct);
 
             _ = await _audit.WriteAsync(
@@ -211,6 +275,12 @@ values
 
     public Task<Result> ReturnAsync(Guid tenantId, Guid loanId, Guid? userId, string? notes, CancellationToken ct)
         => TransitionAsync(tenantId, loanId, userId, notes, newStatus: "RETURNED", label: "Devolver", setReturnedAt: true, ct);
+
+    public Task<Result> RejectAsync(Guid tenantId, Guid loanId, Guid? userId, string? notes, CancellationToken ct)
+        => TransitionAsync(tenantId, loanId, userId, notes, newStatus: "REJECTED", label: "Rejeitar", setReturnedAt: false, ct);
+
+    public Task<Result> ReturnForAdjustmentAsync(Guid tenantId, Guid loanId, Guid? userId, string? notes, CancellationToken ct)
+        => TransitionAsync(tenantId, loanId, userId, notes, newStatus: "RETURNED_FOR_ADJUSTMENT", label: "Devolver para ajuste", setReturnedAt: false, ct);
 
     public Task<Result> CancelAsync(Guid tenantId, Guid loanId, Guid? userId, string? notes, CancellationToken ct)
         => TransitionAsync(tenantId, loanId, userId, notes, newStatus: "CANCELLED", label: "Cancelar", setReturnedAt: false, ct);
@@ -395,6 +465,8 @@ values(@tenant_id, @loan_id, @nowUtc, @event_type, @by_user_id, @notes, @nowUtc,
                     nowUtc
                 }, transaction: tx, cancellationToken: ct));
 
+            await WriteRichHistoryAsync(conn, tx, tenantId, loanId, previousStatus, newStatus, newStatus, userId, notes, internalNotes: null, ct);
+
             await tx.CommitAsync(ct);
 
             _ = await _audit.WriteAsync(
@@ -404,7 +476,9 @@ values(@tenant_id, @loan_id, @nowUtc, @event_type, @by_user_id, @notes, @nowUtc,
                     "APPROVED" => "LOAN_APPROVED",
                     "DELIVERED" => "LOAN_DELIVERED",
                     "RETURNED" => "LOAN_RETURNED",
-                    "CANCELLED" or "CANCELED" or "REJECTED" => "LOAN_REJECTED",
+                    "RETURNED_FOR_ADJUSTMENT" => "LOAN_RETURNED_FOR_ADJUSTMENT",
+                    "CANCELLED" or "CANCELED" => "LOAN_CANCELLED",
+                    "REJECTED" => "LOAN_REJECTED",
                     _ => "LOAN_EVENT"
                 },
                 entityName: "loan_request",
@@ -423,4 +497,50 @@ values(@tenant_id, @loan_id, @nowUtc, @event_type, @by_user_id, @notes, @nowUtc,
             return Result.Fail("LOAN_TRANSITION", "Falha ao atualizar status do empréstimo.");
         }
     }
+
+    private static string? TrimOrNull(string? value)
+    {
+        value = value?.Trim();
+        return string.IsNullOrWhiteSpace(value) ? null : value;
+    }
+
+    private static async Task WriteRichHistoryAsync(
+        System.Data.Common.DbConnection conn,
+        System.Data.Common.DbTransaction tx,
+        Guid tenantId,
+        Guid loanId,
+        string? oldStatus,
+        string? newStatus,
+        string action,
+        Guid? userId,
+        string? reason,
+        string? internalNotes,
+        CancellationToken ct)
+    {
+        const string sql = """
+insert into ged.loan_request_history
+(tenant_id, loan_request_id, old_status, new_status, action, user_id, user_name, sector_id, reason, internal_notes, created_at, correlation_id)
+select @TenantId, @LoanId, @OldStatus, @NewStatus, @Action, @UserId,
+       coalesce(u.name, u.email, @UserId::text, 'Sistema'),
+       nullif(coalesce(s.setor, s.lotacao, ''), ''),
+       @Reason, @InternalNotes, now(), @CorrelationId
+from (select 1) seed
+left join ged.app_user u on u.tenant_id=@TenantId and u.id=@UserId
+left join ged.servidor s on s.tenant_id=u.tenant_id and s.id=u.servidor_id
+;
+""";
+        await conn.ExecuteAsync(new CommandDefinition(sql, new
+        {
+            TenantId = tenantId,
+            LoanId = loanId,
+            OldStatus = oldStatus,
+            NewStatus = newStatus,
+            Action = action,
+            UserId = userId,
+            Reason = TrimOrNull(reason),
+            InternalNotes = TrimOrNull(internalNotes),
+            CorrelationId = Guid.NewGuid().ToString("N")
+        }, tx, cancellationToken: ct));
+    }
+
 }

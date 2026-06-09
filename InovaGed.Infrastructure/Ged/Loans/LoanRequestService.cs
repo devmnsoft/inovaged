@@ -21,14 +21,42 @@ public sealed class LoanRequestService : ILoanRequestService
         _logger = logger;
     }
 
-    public async Task<IReadOnlyList<LoanRowDto>> ListAsync(Guid tenantId, string? q, string? status, Guid? requesterId, bool canViewAll, CancellationToken ct)
+    public async Task<IReadOnlyList<LoanRowDto>> ListAsync(Guid tenantId, string? q, string? status, Guid? requesterId, LoanVisibilityScope scope, CancellationToken ct)
     {
         var rows = await _queries.ListAsync(tenantId, q, status, ct);
-        return canViewAll || requesterId is null ? rows : rows.Where(x => x.RequesterName is not null).ToList();
+        if (scope.IsAdmin) return rows;
+
+        var sector = NormalizeSector(scope.Sector) ?? await ResolveUserSectorAsync(tenantId, requesterId, ct);
+        if (scope.IsAdministradorOphir && string.IsNullOrWhiteSpace(sector)) return Array.Empty<LoanRowDto>();
+
+        await using var con = await _db.OpenAsync(ct);
+        const string allowedSql = """
+select id
+from ged.loan_request
+where tenant_id=@TenantId
+  and reg_status='A'
+  and (
+      @IsAdmin = true
+      or (@IsAdministradorOphir = true and @Sector is not null and nullif(coalesce(requester_sector,''),'') = @Sector)
+      or (coalesce(@IsAdministradorOphir,false) = false and requester_id = @RequesterId)
+  );
+""";
+        var allowed = (await con.QueryAsync<Guid>(new CommandDefinition(allowedSql, new
+        {
+            TenantId = tenantId,
+            RequesterId = requesterId,
+            IsAdmin = scope.IsAdmin,
+            IsAdministradorOphir = scope.IsAdministradorOphir,
+            Sector = sector
+        }, cancellationToken: ct))).ToHashSet();
+        return rows.Where(x => allowed.Contains(x.Id)).ToList();
     }
 
-    public Task<LoanDetailsVM?> GetDetailsAsync(Guid tenantId, Guid loanId, Guid? requesterId, bool canViewAll, CancellationToken ct)
-        => _queries.GetAsync(tenantId, loanId, ct);
+    public async Task<LoanDetailsVM?> GetDetailsAsync(Guid tenantId, Guid loanId, Guid? requesterId, LoanVisibilityScope scope, CancellationToken ct)
+    {
+        if (!await CanAccessAsync(tenantId, loanId, requesterId, scope, ct)) return null;
+        return await _queries.GetAsync(tenantId, loanId, ct);
+    }
 
     public Task<Result<Guid>> CreateAsync(Guid tenantId, Guid userId, LoanCreateVM vm, CancellationToken ct)
         => _commands.CreateAsync(tenantId, userId, vm, ct);
@@ -37,6 +65,8 @@ public sealed class LoanRequestService : ILoanRequestService
     public Task<Result> CancelAsync(Guid tenantId, Guid loanId, Guid userId, string? notes, CancellationToken ct) => _commands.CancelAsync(tenantId, loanId, userId, notes, ct);
     public Task<Result> DeliverAsync(Guid tenantId, Guid loanId, Guid userId, string? notes, CancellationToken ct) => _commands.DeliverAsync(tenantId, loanId, userId, notes, ct);
     public Task<Result> ReturnAsync(Guid tenantId, Guid loanId, Guid userId, string? notes, CancellationToken ct) => _commands.ReturnAsync(tenantId, loanId, userId, notes, ct);
+    public Task<Result> RejectAsync(Guid tenantId, Guid loanId, Guid userId, string? notes, CancellationToken ct) => _commands.RejectAsync(tenantId, loanId, userId, notes, ct);
+    public Task<Result> ReturnForAdjustmentAsync(Guid tenantId, Guid loanId, Guid userId, string? notes, CancellationToken ct) => _commands.ReturnForAdjustmentAsync(tenantId, loanId, userId, notes, ct);
 
     public async Task<Result> DeleteAsync(Guid tenantId, Guid loanId, Guid userId, string reason, CancellationToken ct)
     {
@@ -70,12 +100,58 @@ where tenant_id=@TenantId and id=@LoanId and reg_status='A'", new { TenantId = t
         }
     }
 
-    public async Task<int> PendingCountAsync(Guid tenantId, Guid? userId, bool canViewAll, CancellationToken ct)
+    public async Task<int> PendingCountAsync(Guid tenantId, Guid? userId, LoanVisibilityScope scope, CancellationToken ct)
     {
-        var stats = await _queries.StatsAsync(tenantId, ct);
-        return stats.Requested;
+        var rows = await ListAsync(tenantId, null, "REQUESTED", userId, scope, ct);
+        return rows.Count;
     }
 
     public Task<IReadOnlyList<DocumentPickDto>> SearchDocumentsAsync(Guid tenantId, string term, CancellationToken ct) => _queries.SearchDocumentsAsync(tenantId, term, ct);
-    public Task<IReadOnlyList<LoanRowDto>> OverdueAsync(Guid tenantId, Guid? userId, bool canViewAll, CancellationToken ct) => _queries.ListOverdueAsync(tenantId, ct);
+
+    public async Task<IReadOnlyList<LoanRowDto>> OverdueAsync(Guid tenantId, Guid? userId, LoanVisibilityScope scope, CancellationToken ct)
+    {
+        var rows = await _queries.ListOverdueAsync(tenantId, ct);
+        if (scope.IsAdmin) return rows;
+        var allowed = await ListAsync(tenantId, null, null, userId, scope, ct);
+        var ids = allowed.Select(x => x.Id).ToHashSet();
+        return rows.Where(x => ids.Contains(x.Id)).ToList();
+    }
+
+    private async Task<bool> CanAccessAsync(Guid tenantId, Guid loanId, Guid? requesterId, LoanVisibilityScope scope, CancellationToken ct)
+    {
+        if (scope.IsAdmin) return true;
+        var sector = NormalizeSector(scope.Sector) ?? await ResolveUserSectorAsync(tenantId, requesterId, ct);
+        await using var con = await _db.OpenAsync(ct);
+        const string sql = """
+select exists (
+  select 1 from ged.loan_request
+  where tenant_id=@TenantId and id=@LoanId and reg_status='A'
+    and (
+      (@IsAdministradorOphir = true and @Sector is not null and nullif(coalesce(requester_sector,''),'') = @Sector)
+      or (coalesce(@IsAdministradorOphir,false) = false and requester_id = @RequesterId)
+    )
+);
+""";
+        return await con.ExecuteScalarAsync<bool>(new CommandDefinition(sql, new { TenantId = tenantId, LoanId = loanId, RequesterId = requesterId, IsAdministradorOphir = scope.IsAdministradorOphir, Sector = sector }, cancellationToken: ct));
+    }
+
+    private async Task<string?> ResolveUserSectorAsync(Guid tenantId, Guid? userId, CancellationToken ct)
+    {
+        if (userId is null || userId == Guid.Empty) return null;
+        await using var con = await _db.OpenAsync(ct);
+        const string sql = """
+select nullif(coalesce(s.setor, s.lotacao, ''), '')
+from ged.app_user u
+left join ged.servidor s on s.tenant_id=u.tenant_id and s.id=u.servidor_id
+where u.tenant_id=@TenantId and u.id=@UserId
+limit 1;
+""";
+        return NormalizeSector(await con.ExecuteScalarAsync<string?>(new CommandDefinition(sql, new { TenantId = tenantId, UserId = userId }, cancellationToken: ct)));
+    }
+
+    private static string? NormalizeSector(string? value)
+    {
+        value = value?.Trim();
+        return string.IsNullOrWhiteSpace(value) ? null : value;
+    }
 }

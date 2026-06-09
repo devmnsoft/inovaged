@@ -154,13 +154,21 @@ select
   i.document_id as DocumentId,
   i.is_physical as IsPhysical,
   d.code as DocumentCode,
-  d.title as DocumentTitle,
-  dt.name as DocumentType
+  coalesce(d.title, i.description, i.reference_code) as DocumentTitle,
+  coalesce(dt.name, i.document_type) as DocumentType,
+  coalesce(i.is_manual, i.document_id is null) as IsManual,
+  i.reference_code as ReferenceCode,
+  i.description as Description,
+  i.patient_name as PatientName,
+  i.medical_record_number as MedicalRecordNumber,
+  i.box_code as BoxCode,
+  i.physical_location as PhysicalLocation,
+  i.notes as Notes
 from ged.loan_request_item i
-join ged.document d on d.tenant_id=i.tenant_id and d.id=i.document_id
+left join ged.document d on d.tenant_id=i.tenant_id and d.id=i.document_id
 left join ged.document_type dt on dt.tenant_id=d.tenant_id and dt.id=d.type_id
-where i.tenant_id=@tenant_id and i.loan_id=@loan_id and i.reg_status='A'
-order by d.title;
+where i.tenant_id=@tenant_id and coalesce(i.loan_request_id, i.loan_id)=@loan_id and i.reg_status='A'
+order by coalesce(d.title, i.description, i.reference_code);
 """;
 
             var items = (await conn.QueryAsync<LoanItemDto>(
@@ -169,14 +177,34 @@ order by d.title;
 
             const string histSql = """
 select
-  (h.event_time)::timestamp as "EventTime",
-  h.event_type             as "EventType",
+  (h.created_at)::timestamp as "EventTime",
+  h.action             as "EventType",
+  coalesce(h.user_name, 'Usuário') as "ByUserName",
+  h.reason                  as "Notes",
+  h.old_status as "OldStatus",
+  h.new_status as "NewStatus",
+  h.reason as "Reason",
+  h.internal_notes as "InternalNotes",
+  h.sector_id as "Sector",
+  h.correlation_id as "CorrelationId"
+from ged.loan_request_history h
+where h.tenant_id=@tenant_id and h.loan_request_id=@loan_id
+union all
+select
+  (lh.event_time)::timestamp as "EventTime",
+  lh.event_type as "EventType",
   coalesce(u.name, u.email, 'Usuário') as "ByUserName",
-  h.notes                  as "Notes"
-from ged.loan_history h
-left join ged.app_user u on u.tenant_id=h.tenant_id and u.id=h.by_user_id
-where h.tenant_id=@tenant_id and h.loan_id=@loan_id and h.reg_status='A'
-order by h.event_time desc;
+  lh.notes as "Notes",
+  null as "OldStatus",
+  lh.event_type as "NewStatus",
+  lh.notes as "Reason",
+  null as "InternalNotes",
+  null as "Sector",
+  null as "CorrelationId"
+from ged.loan_history lh
+left join ged.users u on u.tenant_id=lh.tenant_id and u.id=lh.by_user_id
+where lh.tenant_id=@tenant_id and lh.loan_id=@loan_id and lh.reg_status='A'
+order by "EventTime" desc;
 """;
 
             var history = (await conn.QueryAsync<LoanEventDto>(
@@ -208,16 +236,26 @@ order by h.event_time desc;
                 return Array.Empty<DocumentPickDto>();
 
             const string sql = """
-select
+select distinct
   d.id   as "Id",
   d.code as "Code",
-  d.title as "Title"
+  d.title as "Title",
+  d.status::text as "Status",
+  d.created_at as "CreatedAt"
 from ged.document d
+left join ged.document_version v on v.tenant_id=d.tenant_id and v.document_id=d.id
+left join ged.document_search ds on ds.tenant_id=d.tenant_id and ds.document_id=d.id
+left join ged.folder f on f.tenant_id=d.tenant_id and f.id=d.folder_id
 where d.tenant_id = @TenantId
+  and coalesce(d.reg_status,'A') = 'A'
   and d.status <> 'DELETED'::ged.document_status_enum
   and (
         d.code  ilike ('%'||@Q||'%')
      or d.title ilike ('%'||@Q||'%')
+     or coalesce(v.file_name,'') ilike ('%'||@Q||'%')
+     or coalesce(f.name,'') ilike ('%'||@Q||'%')
+     or coalesce(ds.ocr_text,'') ilike ('%'||@Q||'%')
+     or coalesce(ds.file_name,'') ilike ('%'||@Q||'%')
   )
 order by d.title
 limit 20;

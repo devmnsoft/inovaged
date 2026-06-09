@@ -1,54 +1,58 @@
-﻿@using InovaGed.Application.Ged.Loans
+@using InovaGed.Application.Ged.Loans
 @model LoanDetailsVM
+
+@functions {
+    string StatusPt(string? status) => (status ?? "").ToUpperInvariant() switch
+    {
+        "REQUESTED" => "Solicitado",
+        "APPROVED" => "Aprovado",
+        "REJECTED" => "Rejeitado",
+        "DELIVERED" => "Entregue",
+        "RETURNED" => "Devolvido",
+        "OVERDUE" => "Vencido",
+        "CANCELLED" => "Cancelado",
+        "RETURNED_FOR_ADJUSTMENT" => "Devolvido para ajuste",
+        _ => status ?? "-"
+    };
+}
 
 @{
     ViewData["Title"] = "Detalhes do Empréstimo";
     var h = Model.Header;
+    var itemCount = Model.Items.Count;
 }
 
-<div class="d-flex justify-content-between align-items-center mb-3">
+<div class="d-flex justify-content-between align-items-start mb-3">
     <div>
-        <h2 class="mb-0">@h.ProtocolNo</h2>
-        <div class="text-muted">@h.RequesterName — <span class="badge bg-secondary">@h.Status</span></div>
+        <div class="text-muted small">Protocolo</div>
+        <h2 class="mb-1">@h.ProtocolNo</h2>
+        <div><span class="badge bg-secondary">@StatusPt(h.Status)</span> <span class="text-muted">@h.RequesterName</span></div>
     </div>
-    <div class="d-flex gap-2">
-        <a class="btn btn-outline-secondary" href="/Loans">Voltar</a>
-    </div>
+    <div class="d-flex gap-2"><a class="btn btn-outline-secondary" href="/Loans">Voltar</a><button class="btn btn-outline-dark" type="button" onclick="window.print()"><i class="bi bi-printer me-1"></i>Imprimir protocolo</button></div>
 </div>
 
-@if (TempData["Ok"] is not null)
-{
-    <div class="alert alert-success">@TempData["Ok"]</div>
-}
-@if (TempData["Err"] is not null)
-{
-    <div class="alert alert-danger">@TempData["Err"]</div>
-}
+@if (TempData["Ok"] is not null) { <div class="alert alert-success">@TempData["Ok"]</div> }
+@if (TempData["Err"] is not null) { <div class="alert alert-danger">@TempData["Err"]</div> }
+
+<div class="row g-3 mb-3">
+    <div class="col-md-3"><div class="card card-body h-100"><div class="small text-muted">Solicitado em</div><div class="fw-semibold">@h.RequestedAt.ToString("dd/MM/yyyy HH:mm")</div></div></div>
+    <div class="col-md-3"><div class="card card-body h-100"><div class="small text-muted">Aprovado em</div><div class="fw-semibold">@(h.ApprovedAt?.ToString("dd/MM/yyyy HH:mm") ?? "-")</div></div></div>
+    <div class="col-md-3"><div class="card card-body h-100"><div class="small text-muted">Entregue em</div><div class="fw-semibold">@(h.DeliveredAt?.ToString("dd/MM/yyyy HH:mm") ?? "-")</div></div></div>
+    <div class="col-md-3"><div class="card card-body h-100"><div class="small text-muted">Devolvido em</div><div class="fw-semibold">@(h.ReturnedAt?.ToString("dd/MM/yyyy HH:mm") ?? "-")</div></div></div>
+    <div class="col-md-3"><div class="card card-body h-100"><div class="small text-muted">Vencimento</div><div class="fw-semibold">@h.DueAt.ToString("dd/MM/yyyy")</div></div></div>
+    <div class="col-md-3"><div class="card card-body h-100"><div class="small text-muted">Itens</div><div class="fw-semibold">@itemCount</div></div></div>
+    <div class="col-md-6"><div class="card card-body h-100"><div class="small text-muted">Responsável atual</div><div class="fw-semibold">@(Model.History.FirstOrDefault()?.ByUserName ?? h.RequesterName ?? "Sistema")</div></div></div>
+</div>
 
 <div class="card card-body mb-3">
-    <div class="row g-2">
-        <div class="col-md-3"><strong>Solicitado:</strong><div>@h.RequestedAt.ToString("dd/MM/yyyy HH:mm")</div></div>
-        <div class="col-md-3"><strong>Vencimento:</strong><div>@(h.DueAt.ToString("dd/MM/yyyy") ?? "-")</div></div>
-        <div class="col-md-2"><strong>Aprovado:</strong><div>@(h.ApprovedAt?.ToString("dd/MM/yyyy HH:mm") ?? "-")</div></div>
-        <div class="col-md-2"><strong>Entregue:</strong><div>@(h.DeliveredAt?.ToString("dd/MM/yyyy HH:mm") ?? "-")</div></div>
-        <div class="col-md-2"><strong>Devolvido:</strong><div>@(h.ReturnedAt?.ToString("dd/MM/yyyy HH:mm") ?? "-")</div></div>
-    </div>
-
-    <hr />
-
     <div class="d-flex gap-2 flex-wrap">
-        <form method="post" action="/Loans/@h.Id/Approve">
-            @Html.AntiForgeryToken()
-            <button class="btn btn-outline-primary" type="submit">Aprovar</button>
-        </form>
-        <form method="post" action="/Loans/@h.Id/Deliver">
-            @Html.AntiForgeryToken()
-            <button class="btn btn-outline-warning" type="submit">Entregar</button>
-        </form>
-        <form method="post" action="/Loans/@h.Id/Return">
-            @Html.AntiForgeryToken()
-            <button class="btn btn-outline-success" type="submit">Devolver</button>
-        </form>
+        <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#approveModal">Aprovar</button>
+        <button class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#rejectModal">Rejeitar</button>
+        <button class="btn btn-outline-warning" data-bs-toggle="modal" data-bs-target="#deliverModal">Entregar</button>
+        <button class="btn btn-outline-success" data-bs-toggle="modal" data-bs-target="#returnModal">Devolver</button>
+        <button class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#adjustModal">Devolver para ajuste</button>
+        <button class="btn btn-outline-dark" data-bs-toggle="modal" data-bs-target="#cancelModal">Cancelar</button>
+        <button class="btn btn-light border" onclick="window.print()">Gerar recibo</button>
     </div>
 </div>
 
@@ -57,17 +61,21 @@
         <div class="card">
             <div class="card-header"><strong>Itens</strong></div>
             <div class="table-responsive">
-                <table class="table mb-0">
-                    <thead><tr><th>Documento</th><th>Tipo</th><th>Físico</th></tr></thead>
+                <table class="table mb-0 align-middle">
+                    <thead><tr><th>Origem</th><th>Documento</th><th>Tipo</th><th>Localização</th><th>Observações</th></tr></thead>
                     <tbody>
-                        @foreach (var i in Model.Items)
-                        {
-                            <tr>
-                                <td>@(i.DocumentTitle ?? i.DocumentId.ToString())</td>
-                                <td>@(i.DocumentType ?? "-")</td>
-                                <td>@(i.IsPhysical ? "Sim" : "Não")</td>
-                            </tr>
-                        }
+                    @foreach (var i in Model.Items)
+                    {
+                        <tr>
+                            <td><span class="badge @(i.IsManual ? "text-bg-warning text-dark" : "text-bg-primary")">@(i.IsManual ? "Manual" : "GED")</span></td>
+                            <td><div class="fw-semibold">@(i.DocumentTitle ?? i.Description ?? i.ReferenceCode ?? i.DocumentId?.ToString())</div><div class="text-muted small">@(i.ReferenceCode ?? i.DocumentCode)</div><div class="text-muted small">@(i.PatientName) @(i.MedicalRecordNumber)</div></td>
+                            <td>@(i.DocumentType ?? "-")</td>
+                            @{ var location = string.Join(" / ", new[] { i.BoxCode, i.PhysicalLocation }.Where(x => !string.IsNullOrWhiteSpace(x))); }
+                            <td>@(string.IsNullOrWhiteSpace(location) ? "-" : location)</td>
+                            <td>@(i.Notes ?? "-")</td>
+                        </tr>
+                    }
+                    @if (!Model.Items.Any()) { <tr><td colspan="5" class="text-muted">Sem itens.</td></tr> }
                     </tbody>
                 </table>
             </div>
@@ -75,27 +83,51 @@
     </div>
     <div class="col-lg-5">
         <div class="card">
-            <div class="card-header"><strong>Histórico</strong></div>
+            <div class="card-header"><strong>Histórico operacional</strong></div>
             <div class="list-group list-group-flush">
                 @foreach (var ev in Model.History)
                 {
                     <div class="list-group-item">
-                        <div class="d-flex justify-content-between">
-                            <strong>@ev.EventType</strong>
-                            <span class="text-muted">@ev.EventTime.ToString("dd/MM/yyyy HH:mm")</span>
-                        </div>
-                        <div class="text-muted small">@ev.ByUserName</div>
-                        @if (!string.IsNullOrWhiteSpace(ev.Notes))
-                        {
-                            <div>@ev.Notes</div>
-                        }
+                        <div class="d-flex justify-content-between"><strong>@StatusPt(ev.EventType)</strong><span class="text-muted">@ev.EventTime.ToString("dd/MM/yyyy HH:mm")</span></div>
+                        <div class="text-muted small">@ev.ByUserName @(string.IsNullOrWhiteSpace(ev.Sector) ? "" : $"• {ev.Sector}")</div>
+                        @if (!string.IsNullOrWhiteSpace(ev.OldStatus) || !string.IsNullOrWhiteSpace(ev.NewStatus)) { <div class="small">@StatusPt(ev.OldStatus) → @StatusPt(ev.NewStatus)</div> }
+                        @if (!string.IsNullOrWhiteSpace(ev.Notes)) { <div>@ev.Notes</div> }
+                        @if (!string.IsNullOrWhiteSpace(ev.InternalNotes)) { <div class="text-muted small">Interno: @ev.InternalNotes</div> }
+                        @if (!string.IsNullOrWhiteSpace(ev.CorrelationId)) { <div class="text-muted small font-monospace">@ev.CorrelationId</div> }
                     </div>
                 }
-                @if (Model.History.Count == 0)
-                {
-                    <div class="list-group-item text-muted">Sem eventos.</div>
-                }
+                @if (Model.History.Count == 0) { <div class="list-group-item text-muted">Sem eventos.</div> }
             </div>
         </div>
     </div>
 </div>
+
+@{
+    var modals = new[]
+    {
+        new { Id = "approveModal", Title = "Aprovar solicitação", Action = "Approve", Help = "Informe uma observação de aprovação ou orientação para retirada.", Button = "btn-primary" },
+        new { Id = "rejectModal", Title = "Rejeitar solicitação", Action = "Reject", Help = "Informe o motivo da rejeição.", Button = "btn-danger" },
+        new { Id = "deliverModal", Title = "Registrar entrega", Action = "Deliver", Help = "Informe quem retirou, documento de identificação ou observação da entrega.", Button = "btn-warning" },
+        new { Id = "returnModal", Title = "Registrar devolução", Action = "Return", Help = "Informe as condições da devolução e observações.", Button = "btn-success" },
+        new { Id = "adjustModal", Title = "Devolver para ajuste", Action = "ReturnForAdjustment", Help = "Informe a devolutiva para ajuste da solicitação.", Button = "btn-secondary" },
+        new { Id = "cancelModal", Title = "Cancelar solicitação", Action = "Cancel", Help = "Informe o motivo do cancelamento.", Button = "btn-dark" }
+    };
+}
+@foreach (var modal in modals)
+{
+    <div class="modal fade" id="@modal.Id" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog"><div class="modal-content">
+            <form method="post" action="/Loans/@h.Id/@modal.Action">
+                @Html.AntiForgeryToken()
+                <div class="modal-header"><h5 class="modal-title">@modal.Title</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">
+                    <p class="text-muted">@modal.Help</p>
+                    <label class="form-label">Justificativa/devolutiva</label><textarea class="form-control" name="notes" rows="3" required></textarea>
+                    <label class="form-label mt-2">Observação interna</label><textarea class="form-control" name="internalNotes" rows="2"></textarea>
+                    <div class="form-check mt-2"><input class="form-check-input" type="checkbox" name="notifyRequester" value="true" id="notify_@modal.Id" checked /><label class="form-check-label" for="notify_@modal.Id">notificar solicitante</label></div>
+                </div>
+                <div class="modal-footer"><button type="button" class="btn btn-light border" data-bs-dismiss="modal">Fechar</button><button class="btn @modal.Button" type="submit">Confirmar</button></div>
+            </form>
+        </div></div>
+    </div>
+}
