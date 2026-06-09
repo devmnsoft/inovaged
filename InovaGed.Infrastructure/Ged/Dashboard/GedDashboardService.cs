@@ -9,8 +9,8 @@ namespace InovaGed.Infrastructure.Ged.Dashboard;
 
 public sealed class GedDashboardService : IGedDashboardService
 {
-    private static readonly string[] SecurityDateColumnCandidates = ["created_at", "created_at_utc", "reg_date", "occurred_at", "timestamp", "event_time", "access_time", "failure_time", "logged_at"];
-    private static readonly string[] AuditDateColumnCandidates = ["created_at", "created_at_utc", "reg_date", "occurred_at", "timestamp", "event_time"];
+    private static readonly string[] SecurityDateColumnCandidates = ["created_at", "created_at_utc", "reg_date", "occurred_at", "timestamp", "event_at", "event_time", "access_time", "failure_time", "logged_at"];
+    private static readonly string[] AuditDateColumnCandidates = ["created_at", "created_at_utc", "reg_date", "occurred_at", "timestamp", "event_at", "event_time"];
 
     private readonly IDbConnectionFactory _db;
     private readonly IMemoryCache _cache;
@@ -235,8 +235,8 @@ limit 10";
         {
             vm.AccessDenied24h = 0;
             vm.RecentAccessDenied = [];
-            MarkUnavailable(vm, "Indicador de acessos negados indisponível nesta instalação.");
-            _logger.LogWarning("Dashboard partial failure. Tenant={TenantId} User={UserId} Indicator=security Reason=source-not-found", tenantId, userId);
+            MarkUnavailable(vm, "Nenhum dado encontrado para este indicador.");
+            _logger.LogInformation("Dashboard indicator without data source. Tenant={TenantId} User={UserId} Indicator=security Reason=source-or-date-column-not-found", tenantId, userId);
         }
         else
         {
@@ -256,7 +256,7 @@ limit 10";
             vm.LockedUsers = await conn.QuerySingleAsync<int>(new CommandDefinition(sql, new { tenantId }, cancellationToken: ct));
         });
 
-        var auditDateColumn = await ResolveDateColumnAsync(conn, "ged", "audit_log", AuditDateColumnCandidates, ct);
+        var auditDateColumn = await ResolveDateColumnAsync(conn, "ged", "audit_log", ct, AuditDateColumnCandidates);
         if (auditDateColumn is null)
         {
             vm.RecentAuditEvents = [];
@@ -345,32 +345,34 @@ select exists (
 
     private static async Task<SecurityDashboardSource?> ResolveSecuritySourceAsync(IDbConnection conn, CancellationToken ct)
     {
-        var source = await BuildSecuritySourceAsync(conn, "ged", "security_access_failure_log", string.Empty, ct)
-            ?? await BuildSecuritySourceAsync(conn, "ged", "access_failure", string.Empty, ct);
-        if (source is not null) return source;
-
         if (await TableExistsAsync(conn, "ged", "app_audit_log", ct))
         {
             var filter = await BuildAuditSecurityFilterAsync(conn, "ged", "app_audit_log", ct);
-            source = await BuildSecuritySourceAsync(conn, "ged", "app_audit_log", filter, ct);
+            var source = await BuildSecuritySourceAsync(conn, "ged", "app_audit_log", filter, ct, "created_at");
             if (source is not null) return source;
         }
 
         if (await TableExistsAsync(conn, "ged", "audit_log", ct))
         {
             var filter = await BuildAuditSecurityFilterAsync(conn, "ged", "audit_log", ct);
-            source = await BuildSecuritySourceAsync(conn, "ged", "audit_log", filter, ct);
+            var source = await BuildSecuritySourceAsync(conn, "ged", "audit_log", filter, ct, "created_at");
+            if (source is not null) return source;
+
+            source = await BuildSecuritySourceAsync(conn, "ged", "audit_log", filter, ct, "reg_date");
             if (source is not null) return source;
         }
 
-        return await BuildSecuritySourceAsync(conn, "ged", "document", " and false", ct);
+        return await BuildSecuritySourceAsync(conn, "ged", "security_access_failure_log", string.Empty, ct)
+            ?? await BuildSecuritySourceAsync(conn, "ged", "access_failure", string.Empty, ct)
+            ?? await BuildSecuritySourceAsync(conn, "ged", "document", " and false", ct);
     }
 
-    private static async Task<SecurityDashboardSource?> BuildSecuritySourceAsync(IDbConnection conn, string schema, string table, string filterSql, CancellationToken ct)
+    private static async Task<SecurityDashboardSource?> BuildSecuritySourceAsync(IDbConnection conn, string schema, string table, string filterSql, CancellationToken ct, params string[] preferredColumns)
     {
         if (!await TableExistsAsync(conn, schema, table, ct)) return null;
 
-        var dateColumn = await ResolveDateColumnAsync(conn, schema, table, SecurityDateColumnCandidates, ct);
+        var candidates = preferredColumns.Length > 0 ? preferredColumns : SecurityDateColumnCandidates;
+        var dateColumn = await ResolveDateColumnAsync(conn, schema, table, ct, candidates);
         if (dateColumn is null) return null;
 
         var userNameExpression = await TextExpressionAsync(conn, schema, table, ["user_name", "user_id", "username", "email"], ct);
@@ -408,10 +410,16 @@ select exists (
         return column is null ? "'-'::text" : $"coalesce({column}::text,'-')";
     }
 
-    private static async Task<string?> ResolveDateColumnAsync(IDbConnection conn, string schema, string table, IReadOnlyList<string> preferredColumns, CancellationToken ct)
+    private static async Task<string?> ResolveDateColumnAsync(
+        IDbConnection conn,
+        string schema,
+        string table,
+        CancellationToken ct,
+        params string[] preferredColumns)
     {
         if (!await TableExistsAsync(conn, schema, table, ct)) return null;
-        return await ResolveFirstExistingColumnAsync(conn, schema, table, preferredColumns, ct);
+        var candidates = preferredColumns.Length > 0 ? preferredColumns : SecurityDateColumnCandidates;
+        return await ResolveFirstExistingColumnAsync(conn, schema, table, candidates, ct);
     }
 
     private static async Task<string?> ResolveFirstExistingColumnAsync(IDbConnection conn, string schema, string table, IReadOnlyList<string> candidates, CancellationToken ct)
