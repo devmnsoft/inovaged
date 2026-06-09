@@ -54,4 +54,18 @@ begin
     end if;
 end $$;
 
+-- Loans: remover rótulos explícitos de PoC dos solicitantes e observações sem criar novos dados fictícios.
+do $$
+begin
+    if to_regclass('ged.loan_request') is not null then
+        update ged.loan_request
+           set requester_name = nullif(trim(regexp_replace(regexp_replace(requester_name, '(?i)\s*\(?\s*poc\s*\)?', '', 'g'), '\s+', ' ', 'g')), '')
+         where requester_name ~* '\m(poc|proof of concept|prova de conceito)\M';
+
+        update ged.loan_request
+           set notes = null
+         where notes ~* '\m(poc|proof of concept|prova de conceito|demo|demonstração|sample|mock|fake|fict[ií]cio|simulado|lorem ipsum)\M';
+    end if;
+end $$;
+
 commit;

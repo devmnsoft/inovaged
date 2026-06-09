@@ -8,6 +8,8 @@ public interface ILoanCommands
     Task<Result> ApproveAsync(Guid tenantId, Guid loanId, Guid? userId, string? notes, CancellationToken ct);
     Task<Result> DeliverAsync(Guid tenantId, Guid loanId, Guid? userId, string? notes, CancellationToken ct);
     Task<Result> ReturnAsync(Guid tenantId, Guid loanId, Guid? userId, string? notes, CancellationToken ct);
+    Task<Result> RejectAsync(Guid tenantId, Guid loanId, Guid? userId, string? notes, CancellationToken ct);
+    Task<Result> ReturnForAdjustmentAsync(Guid tenantId, Guid loanId, Guid? userId, string? notes, CancellationToken ct);
     Task<Result> CancelAsync(Guid tenantId, Guid loanId, Guid? userId, string? notes, CancellationToken ct);
 
     // Job/manual: marca evento OVERDUE e grava audit

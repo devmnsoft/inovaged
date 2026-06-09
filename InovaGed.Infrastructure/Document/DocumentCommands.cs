@@ -89,28 +89,14 @@ where v.tenant_id = @tenantId
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
-                        // 2) inativa versões e documento (exclusão lógica)
-            await conn.ExecuteAsync(new CommandDefinition(@"
-update ged.document_version
-set reg_status = 'I',
-    updated_at = now(),
-    updated_by = @userId,
-    deleted_at_utc = now(),
-    deleted_by = @userId
-where tenant_id = @tenantId
-  and document_id = @documentId
-  and coalesce(reg_status,'A') = 'A';",
-                new { tenantId, documentId, userId },
-                tx,
-                cancellationToken: ct));
-
-            // 3) inativa documento
+            // 2) exclusão lógica resiliente: não referencia document_version.reg_status.
             var rows = await conn.ExecuteAsync(new CommandDefinition(@"
 update ged.document
 set reg_status = 'I',
     status = 'DELETED'::ged.document_status_enum,
     updated_at = now(),
     updated_by = @userId,
+    deleted_at = now(),
     deleted_at_utc = now(),
     deleted_by = @userId
 where tenant_id = @tenantId
@@ -120,11 +106,19 @@ where tenant_id = @tenantId
                 tx,
                 cancellationToken: ct));
 
-if (rows == 0)
+            if (rows == 0)
             {
                 await tx.RollbackAsync(ct);
                 return Result.Fail("DOC_NOT_FOUND", "Documento não encontrado.");
             }
+
+            await conn.ExecuteAsync(new CommandDefinition(@"
+insert into ged.app_audit_log(tenant_id, user_id, created_at, action, entity_name, entity_id, message, details, correlation_id, reg_status)
+values(@tenantId, @userId, now(), 'DOCUMENT_DELETED', 'document', @documentId::text, 'Documento excluído logicamente', jsonb_build_object('forceStopOcr', @forceStopOcr), @correlationId, 'A')
+on conflict do nothing;",
+                new { tenantId, userId, documentId, forceStopOcr, correlationId = Guid.NewGuid().ToString("N") },
+                tx,
+                cancellationToken: ct));
 
             await tx.CommitAsync(ct);
 

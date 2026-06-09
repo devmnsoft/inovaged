@@ -1,6 +1,21 @@
 ﻿@using InovaGed.Application.Ged.Loans
 @model IReadOnlyList<LoanRowDto>
 
+@functions {
+    string StatusPt(string? status) => (status ?? "").ToUpperInvariant() switch
+    {
+        "REQUESTED" => "Solicitado",
+        "APPROVED" => "Aprovado",
+        "REJECTED" => "Rejeitado",
+        "DELIVERED" => "Entregue",
+        "RETURNED" => "Devolvido",
+        "OVERDUE" => "Vencido",
+        "CANCELLED" => "Cancelado",
+        "RETURNED_FOR_ADJUSTMENT" => "Devolvido para ajuste",
+        _ => status ?? "-"
+    };
+}
+
 @{
     ViewData["Title"] = "Empréstimos";
     ViewData["Subtitle"] = "Solicitação e controle de empréstimos (físico e digital)";
@@ -50,10 +65,12 @@
             <label class="form-label small text-muted mb-1">Status</label>
             <select class="form-select form-select-sm" name="status">
                 <option value="">(Todos)</option>
-                <option value="REQUESTED" selected="@(status=="REQUESTED")">REQUESTED</option>
-                <option value="APPROVED" selected="@(status=="APPROVED")">APPROVED</option>
-                <option value="DELIVERED" selected="@(status=="DELIVERED")">DELIVERED</option>
-                <option value="RETURNED" selected="@(status=="RETURNED")">RETURNED</option>
+                <option value="REQUESTED" selected="@(status=="REQUESTED")">Solicitado</option>
+                <option value="APPROVED" selected="@(status=="APPROVED")">Aprovado</option>
+                <option value="DELIVERED" selected="@(status=="DELIVERED")">Entregue</option>
+                <option value="RETURNED" selected="@(status=="RETURNED")">Devolvido</option>
+                <option value="REJECTED" selected="@(status=="REJECTED")">Rejeitado</option>
+                <option value="CANCELLED" selected="@(status=="CANCELLED")">Cancelado</option>
             </select>
         </div>
 
@@ -93,7 +110,7 @@
                     {
                         <tr>
                             <td class="fw-semibold">@r.ProtocolNo</td>
-                            <td><span class="badge bg-secondary">@r.Status</span></td>
+                            <td><span class="badge bg-secondary">@StatusPt(r.Status)</span></td>
                             <td>@r.RequesterName</td>
                             <td>@r.RequestedAt.ToString("dd/MM/yyyy HH:mm")</td>
                             <td>@r.DueAt.ToString("dd/MM/yyyy")</td>

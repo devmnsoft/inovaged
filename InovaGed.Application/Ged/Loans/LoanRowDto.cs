@@ -17,11 +17,19 @@ public sealed class LoanRowDto
 }
 
 public sealed record LoanItemDto(
-    Guid DocumentId,
+    Guid? DocumentId,
     bool IsPhysical,
     string? DocumentCode,
     string? DocumentTitle,
-    string? DocumentType);
+    string? DocumentType,
+    bool IsManual,
+    string? ReferenceCode,
+    string? Description,
+    string? PatientName,
+    string? MedicalRecordNumber,
+    string? BoxCode,
+    string? PhysicalLocation,
+    string? Notes);
 
 public sealed class LoanCreateVM
 {
@@ -32,9 +40,22 @@ public sealed class LoanCreateVM
     public bool IsPhysical { get; set; } = true;
     public bool AllowDigitalFileAccess { get; set; }
 
-    // seleção de documentos (mínimo 1)
+    // seleção de documentos GED ou itens manuais (mínimo 1 no total)
     public List<Guid> DocumentIds { get; set; } = new();
+    public List<LoanManualItemVM> ManualItems { get; set; } = new();
     public List<Guid> AllowedFileIds { get; set; } = new();
+    public string? Notes { get; set; }
+}
+
+public sealed class LoanManualItemVM
+{
+    public string? ReferenceCode { get; set; }
+    public string? Description { get; set; }
+    public string? DocumentType { get; set; }
+    public string? PatientName { get; set; }
+    public string? MedicalRecordNumber { get; set; }
+    public string? BoxCode { get; set; }
+    public string? PhysicalLocation { get; set; }
     public string? Notes { get; set; }
 }
 
@@ -47,16 +68,14 @@ public sealed class LoanDetailsVM
 
 public sealed class LoanEventDto
 {
-    public DateTime EventTime { get; }
-    public string EventType { get; }
-    public string ByUserName { get; }
-    public string? Notes { get; }
-
-    public LoanEventDto(DateTime eventTime, string eventType, string byUserName, string? notes)
-    {
-        EventTime = eventTime;
-        EventType = eventType;
-        ByUserName = byUserName;
-        Notes = notes;
-    }
+    public DateTime EventTime { get; set; }
+    public string EventType { get; set; } = string.Empty;
+    public string ByUserName { get; set; } = string.Empty;
+    public string? Notes { get; set; }
+    public string? OldStatus { get; set; }
+    public string? NewStatus { get; set; }
+    public string? Reason { get; set; }
+    public string? InternalNotes { get; set; }
+    public string? Sector { get; set; }
+    public string? CorrelationId { get; set; }
 }

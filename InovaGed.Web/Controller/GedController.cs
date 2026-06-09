@@ -1678,16 +1678,16 @@ limit 1";
             await using var con = await _db.OpenAsync(ct);
             const string auditSql = @"
 select
-  coalesce(a.created_at, a.reg_date, now()) as ""OccurredAtUtc"",
+  a.created_at as ""OccurredAtUtc"",
   coalesce(a.user_name, u.name, u.email, a.user_id::text, 'Sistema') as ""UserName"",
   coalesce(a.action::text, '-') as ""Action"",
-  coalesce(a.summary, a.message, a.entity_name, '-') as ""Description"",
-  coalesce(a.correlation_id, a.data->>'correlationId', a.data->>'CorrelationId') as ""CorrelationId""
-from ged.audit_log a
+  coalesce(a.message, a.entity_name, '-') as ""Description"",
+  coalesce(a.correlation_id, a.details->>'correlationId', a.details->>'CorrelationId') as ""CorrelationId""
+from ged.app_audit_log a
 left join ged.users u on u.tenant_id = a.tenant_id and u.id = a.user_id
 where a.tenant_id=@tenantId
-  and (a.entity_id::text=@documentIdText or a.data->>'documentId'=@documentIdText or a.data->>'DocumentId'=@documentIdText)
-order by coalesce(a.created_at, a.reg_date, now()) desc
+  and (a.entity_id::text=@documentIdText or a.details::text ilike '%' || @documentIdText || '%')
+order by a.created_at desc
 limit @take";
             var auditRows = (await con.QueryAsync<PanelHistoryRow>(new CommandDefinition(auditSql, new { tenantId, documentIdText = documentId.ToString(), take }, cancellationToken: ct))).AsList();
             if (auditRows.Count > 0)
@@ -1704,7 +1704,7 @@ limit @take";
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Falha ao carregar audit_log do painel GED; usando versões. DocumentId={DocumentId}", documentId);
+            _logger.LogWarning(ex, "Falha ao carregar app_audit_log do painel GED; usando versões. DocumentId={DocumentId}", documentId);
         }
 
         var versions = await _docs.ListVersionsAsync(tenantId, documentId, ct);
