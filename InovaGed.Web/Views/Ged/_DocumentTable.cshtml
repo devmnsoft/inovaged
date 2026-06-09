@@ -37,6 +37,9 @@
                         var uploadLabel = string.IsNullOrWhiteSpace(d.UploadedAtLocalFormatted) ? uploadLocal.ToString(uploadDateFormat) : d.UploadedAtLocalFormatted;
                         var iconClass = (d.FileName ?? string.Empty).EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) ? "bi-file-earmark-pdf" : "bi-file-earmark-text";
                         var rowClass = d.IsDocumentIncomplete ? "ged-row-incomplete" : (d.IsPartialDocument ? "ged-row-partial" : string.Empty);
+                        var isConsolidated = string.Equals(d.PartialStatus, "CONSOLIDATED", StringComparison.OrdinalIgnoreCase) || d.ConsolidatedVersionId.HasValue;
+                        var isReadyToConsolidate = !isConsolidated && d.IsPartialDocument && !d.IsDocumentIncomplete && string.Equals(d.PartialStatus, "COMPLETE", StringComparison.OrdinalIgnoreCase);
+                        var hasPartialOcr = d.PartialPartsWithOcrCount > 0 && d.PartialPartsWithOcrCount < (d.TotalParts ?? d.PartialTotalParts ?? d.PartialPartsCount);
 
                         <tr class="ged-document-table-row @rowClass"
                             draggable="true"
@@ -44,6 +47,12 @@
                             data-version-id="@versionId"
                             data-ocr-available="@(d.IsOcrAvailable ? "true" : "false")"
                             data-document-incomplete="@(d.IsDocumentIncomplete ? "true" : "false")"
+                            data-document-ready-to-consolidate="@(isReadyToConsolidate ? "true" : "false")"
+                            data-document-ready-consolidate="@(isReadyToConsolidate ? "true" : "false")"
+                            data-document-consolidated="@(isConsolidated ? "true" : "false")"
+                            data-document-ocr-partial="@(hasPartialOcr ? "true" : "false")"
+                            data-partial-parts-count="@(d.TotalParts ?? d.PartialTotalParts ?? d.PartialPartsCount)"
+                            data-partial-parts-with-ocr="@d.PartialPartsWithOcrCount"
                             data-document-unclassified="@(isUnclassified ? "true" : "false")"
                             data-uploaded-at-utc="@uploadDateUtc.ToString("O")">
 

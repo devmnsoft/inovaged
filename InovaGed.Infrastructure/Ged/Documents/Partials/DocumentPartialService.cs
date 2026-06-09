@@ -240,20 +240,77 @@ ORDER BY pp.part_number, pp.uploaded_at_utc;
     }
 
 
-    public async Task<DocumentPartialOcrSummaryDto> GetPartialOcrSummaryAsync(Guid tenantId, Guid documentId, Guid partialGroupId, CancellationToken ct)
+    public async Task<PartialOcrSummaryDto> GetPartialOcrSummaryAsync(Guid tenantId, Guid partialGroupId, CancellationToken ct)
     {
-        var parts = await GetPartsAsync(tenantId, documentId, ct);
-        var groupParts = parts.Where(p => p.PartialGroupId == partialGroupId).ToList();
-        var total = groupParts.Count;
-        var withOcr = groupParts.Count(p => p.IsOcrAvailable);
-        return new DocumentPartialOcrSummaryDto
+        await using var conn = await _db.OpenAsync(ct);
+        var searchVersionColumn = await ResolveDocumentSearchVersionColumnAsync(conn, ct);
+        var searchJoin = searchVersionColumn is null
+            ? "LEFT JOIN (SELECT NULL::uuid AS tenant_id, NULL::text AS ocr_text WHERE false) ds ON false"
+            : $"LEFT JOIN ged.document_search ds ON ds.tenant_id = p.tenant_id AND ds.{searchVersionColumn} = p.version_id";
+
+        var sql = $"""
+SELECT
+    p.id as "PartId",
+    p.version_id as "VersionId",
+    p.part_number as "PartNumber",
+    COALESCE(p.file_name, '') as "FileName",
+    p.uploaded_at_utc as "UploadedAt",
+    COALESCE(oj.status::text, 'NONE') as "OcrStatus",
+    CASE
+        WHEN ds.ocr_text IS NOT NULL AND length(trim(ds.ocr_text)) > 0
+        THEN true
+        ELSE false
+    END as "HasOcrText"
+FROM ged.document_partial_part p
+LEFT JOIN LATERAL (
+    SELECT j.*
+    FROM ged.ocr_job j
+    WHERE j.tenant_id = p.tenant_id
+      AND j.document_version_id = p.version_id
+    ORDER BY COALESCE(j.finished_at, j.requested_at) DESC NULLS LAST
+    LIMIT 1
+) oj ON true
+{searchJoin}
+WHERE p.tenant_id = @TenantId
+  AND p.partial_group_id = @PartialGroupId
+  AND COALESCE(p.reg_status, 'A') = 'A'
+ORDER BY p.part_number;
+""";
+
+        var rows = (await conn.QueryAsync<PartialOcrPartRow>(new CommandDefinition(sql, new { TenantId = tenantId, PartialGroupId = partialGroupId }, cancellationToken: ct))).AsList();
+        var parts = rows.Select(row =>
+        {
+            var normalized = NormalizeOcrStatus(row.OcrStatus);
+            var hasOcr = normalized == "COMPLETED" && row.HasOcrText;
+            return new DocumentPartOcrDto
+            {
+                PartId = row.PartId,
+                VersionId = row.VersionId,
+                PartNumber = row.PartNumber,
+                FileName = row.FileName,
+                UploadedAt = row.UploadedAt,
+                OcrStatus = normalized,
+                HasOcrText = row.HasOcrText,
+                IsOcrAvailable = hasOcr,
+                OcrBadgeText = BuildPartOcrBadgeText(normalized, row.HasOcrText),
+                OcrBadgeCss = BuildPartOcrBadgeCss(normalized, row.HasOcrText)
+            };
+        }).ToList();
+
+        var total = parts.Count;
+        var withOcr = parts.Count(p => p.IsOcrAvailable);
+        var completedWithoutText = parts.Count(p => p.OcrStatus == "COMPLETED" && !p.HasOcrText);
+        return new PartialOcrSummaryDto
         {
             TotalParts = total,
             PartsWithOcr = withOcr,
             PartsWithoutOcr = Math.Max(total - withOcr, 0),
+            PartsCompletedWithoutText = completedWithoutText,
             HasAnyOcr = withOcr > 0,
             HasAllOcr = total > 0 && withOcr == total,
-            SummaryText = total == 0 ? "Sem partes cadastradas" : withOcr == 0 ? "Sem OCR nas partes" : withOcr == total ? "OCR disponível nas partes" : $"OCR parcial: {withOcr}/{total} partes"
+            SummaryText = BuildPartialOcrSummaryText(total, withOcr),
+            SummaryCss = BuildPartialOcrSummaryCss(total, withOcr),
+            Parts = parts
         };
     }
 
@@ -407,6 +464,69 @@ SELECT
         public bool HasDocumentId { get; set; }
         public bool HasVersionId { get; set; }
         public bool HasDocumentVersionId { get; set; }
+    }
+
+    private static async Task<string?> ResolveDocumentSearchVersionColumnAsync(System.Data.IDbConnection conn, CancellationToken ct)
+    {
+        const string sql = """
+SELECT column_name
+FROM information_schema.columns
+WHERE table_schema = 'ged'
+  AND table_name = 'document_search'
+  AND column_name IN ('version_id', 'document_version_id')
+ORDER BY CASE column_name WHEN 'version_id' THEN 0 ELSE 1 END
+LIMIT 1;
+""";
+        return await conn.ExecuteScalarAsync<string?>(new CommandDefinition(sql, cancellationToken: ct));
+    }
+
+    private static string BuildPartialOcrSummaryText(int totalParts, int partsWithOcr)
+    {
+        if (totalParts <= 0) return "Sem partes registradas";
+        if (partsWithOcr <= 0) return "Sem OCR nas partes";
+        if (partsWithOcr >= totalParts) return "OCR disponível nas partes";
+        return $"OCR parcial {partsWithOcr}/{totalParts}";
+    }
+
+    private static string BuildPartialOcrSummaryCss(int totalParts, int partsWithOcr)
+    {
+        if (totalParts <= 0 || partsWithOcr <= 0) return "bg-secondary";
+        if (partsWithOcr >= totalParts) return "bg-success";
+        return "bg-warning text-dark";
+    }
+
+    private static string NormalizeOcrStatus(string? status)
+        => string.IsNullOrWhiteSpace(status) ? "NONE" : status.Trim().ToUpperInvariant();
+
+    private static string BuildPartOcrBadgeText(string status, bool hasText)
+        => status switch
+        {
+            "COMPLETED" => hasText ? "OCR disponível" : "OCR concluído sem texto",
+            "PENDING" or "QUEUED" => "OCR pendente",
+            "PROCESSING" or "RUNNING" => "OCR em processamento",
+            "ERROR" or "FAILED" => "OCR com erro",
+            _ => "Sem OCR"
+        };
+
+    private static string BuildPartOcrBadgeCss(string status, bool hasText)
+        => status switch
+        {
+            "COMPLETED" => hasText ? "bg-success" : "bg-light text-dark border",
+            "PENDING" or "QUEUED" => "bg-warning text-dark",
+            "PROCESSING" or "RUNNING" => "bg-info text-dark",
+            "ERROR" or "FAILED" => "bg-danger",
+            _ => "bg-secondary"
+        };
+
+    private sealed class PartialOcrPartRow
+    {
+        public Guid PartId { get; init; }
+        public Guid VersionId { get; init; }
+        public int PartNumber { get; init; }
+        public string FileName { get; init; } = "";
+        public DateTimeOffset UploadedAt { get; init; }
+        public string OcrStatus { get; init; } = "NONE";
+        public bool HasOcrText { get; init; }
     }
 
     private async Task WriteAuditAsync(Guid tenantId, Guid? userId, string action, Guid documentId, object data, CancellationToken ct)

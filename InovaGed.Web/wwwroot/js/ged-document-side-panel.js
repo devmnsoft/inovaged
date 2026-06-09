@@ -147,11 +147,21 @@
             const res = await fetch(endpoint, { headers: { 'X-Requested-With': 'XMLHttpRequest', Accept: 'application/json' } });
             const data = await res.json();
             if (data.success && data.text) {
-                const context = partNumber ? `<div class="alert alert-light border small mb-2">Você está vendo o OCR da Parte ${esc(partNumber)}.</div>` : '';
+                const totalParts = body.dataset.totalParts || '';
+                const fileName = body.dataset.fileName || '';
+                const status = body.dataset.ocrLabel || 'OCR disponível';
+                const context = partNumber ? `<div class="alert alert-light border small mb-2"><strong>OCR da Parte ${esc(partNumber)}${totalParts ? ' de ' + esc(totalParts) : ''}</strong><div>Arquivo: ${esc(fileName || '-')}</div><div>Status: ${esc(status)}</div><div>Você está vendo o OCR da Parte ${esc(partNumber)}${totalParts ? ' de ' + esc(totalParts) : ''}.</div></div>` : '';
                 host.innerHTML = `${context}<div class="ged-side-actions-bar"><button type="button" class="btn btn-sm btn-outline-primary js-copy-ocr"><i class="bi bi-clipboard me-1"></i>Copiar OCR</button><button type="button" class="btn btn-sm btn-outline-secondary js-download-ocr"><i class="bi bi-download me-1"></i>Baixar texto</button></div><div class="ged-ocr-text"></div>`;
                 host.querySelector('.ged-ocr-text').innerHTML = highlightOcrText(data.text);
             } else {
-                host.innerHTML = `<div class="alert alert-info mb-0"><i class="bi bi-info-circle me-1"></i>${esc(data.message || 'OCR ainda não disponível para este documento.')} <span class="badge bg-secondary ms-1">${esc(data.status || 'NONE')}</span></div>`;
+                const totalParts = body.dataset.totalParts || '';
+                const fileName = body.dataset.fileName || '';
+                const status = body.dataset.ocrLabel || data.status || 'Sem OCR';
+                const context = partNumber ? `<div class="mb-2"><strong>OCR da Parte ${esc(partNumber)}${totalParts ? ' de ' + esc(totalParts) : ''}</strong><div class="small text-muted">Arquivo: ${esc(fileName || '-')} · Status: ${esc(status)}</div></div>` : '';
+                const token = document.querySelector('input[name="__RequestVerificationToken"]')?.value || '';
+                const tokenInput = token ? `<input type="hidden" name="__RequestVerificationToken" value="${esc(token)}">` : '';
+                const action = partNumber ? `<form method="post" action="/Ged/RunOcr" class="mt-2">${tokenInput}<input type="hidden" name="versionId" value="${esc(versionId)}"><button type="submit" class="btn btn-sm btn-outline-primary">Executar OCR desta parte</button></form>` : '';
+                host.innerHTML = `${context}<div class="alert alert-info mb-0"><i class="bi bi-info-circle me-1"></i>${partNumber ? `A Parte ${esc(partNumber)} ainda não possui OCR. Você pode solicitar o processamento.` : esc(data.message || 'OCR ainda não disponível para este documento.')} <span class="badge bg-secondary ms-1">${esc(status)}</span>${action}</div>`;
             }
         } catch (err) {
             console.error('[GED OCR]', err);
@@ -196,7 +206,8 @@
                 return;
             }
             const percent = data.totalParts ? Math.min(100, Math.round((parts.length * 100) / data.totalParts)) : 0;
-            host.innerHTML = `<div class="ged-part-summary mb-3"><span class="badge bg-light text-dark border">${esc(parts.length)}${data.totalParts ? '/' + esc(data.totalParts) : ''} partes recebidas</span> <span class="badge ${parts.some(p => p.isOcrAvailable) ? 'bg-warning text-dark' : 'bg-secondary'}">${esc(data.ocrSummary || '')}</span>${data.totalParts ? `<div class="progress mt-2" style="height:.5rem"><div class="progress-bar" style="width:${percent}%"></div></div>` : ''}</div><div class="ged-side-actions-bar"><button type="button" class="btn btn-sm btn-outline-warning js-add-document-part" data-document-id="${esc(documentId)}"><i class="bi bi-file-earmark-plus me-1"></i>Adicionar parte</button></div><div class="table-responsive"><table class="table table-sm align-middle"><thead><tr><th>Nº</th><th>Arquivo</th><th>Upload em</th><th>Usuário</th><th>Status</th><th>OCR</th><th class="text-end">Ações</th></tr></thead><tbody>${parts.map(p => `<tr><td>${esc(p.partNumber)}${p.totalParts ? `/${esc(p.totalParts)}` : ''}</td><td>${esc(p.fileName || '-')}</td><td>${esc(p.uploadedAtLabel || '-')}</td><td>${esc(p.uploadedByName || p.uploadedBy || '-')}</td><td><span class="badge bg-light text-dark border">${esc(p.status || '-')}</span></td><td><span class="badge ${esc(p.ocrCss || 'bg-secondary')}">${esc(p.ocrLabel || 'Sem OCR')}</span></td><td class="text-end"><div class="btn-group btn-group-sm"><a class="btn btn-light border js-open-document-part" href="${esc(p.previewUrl)}" target="_blank" rel="noopener" data-preview-url="${esc(p.previewUrl)}" data-ocr-url="${esc(p.ocrUrl || '')}" data-version-id="${esc(p.versionId)}" data-part-number="${esc(p.partNumber)}" data-file-name="${esc(p.fileName || '')}">Visualizar</a><button type="button" class="btn btn-light border js-open-document-part-ocr" data-ocr-url="${esc(p.ocrUrl || '')}" data-version-id="${esc(p.versionId)}" data-part-number="${esc(p.partNumber)}">OCR</button><a class="btn btn-light border" href="${esc(p.downloadUrl)}">Baixar</a></div></td></tr>`).join('')}</tbody></table></div>`;
+            const collapseId = `documentPartsCollapse_${esc(documentId).replace(/[^a-zA-Z0-9_-]/g, '')}`;
+            host.innerHTML = `<div class="document-parts-summary border rounded p-3 d-flex justify-content-between align-items-center gap-3 flex-wrap"><div><strong><i class="bi bi-files me-1"></i>Partes do documento</strong><div class="small text-muted">${esc(parts.length)}${data.totalParts ? ' de ' + esc(data.totalParts) : ''} partes recebidas · <span class="badge ${esc(data.ocrSummaryCss || 'bg-secondary')}">${esc(data.ocrSummary || '')}</span></div>${data.totalParts ? `<div class="progress mt-2" style="height:.5rem"><div class="progress-bar" style="width:${percent}%"></div></div>` : ''}</div><button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#${collapseId}" aria-expanded="false" aria-controls="${collapseId}">Expandir partes</button></div><div id="${collapseId}" class="collapse mt-3"><div class="document-parts-tabs d-flex flex-wrap gap-2 mb-3" role="tablist">${parts.map(p => `<button type="button" class="btn btn-sm btn-outline-primary js-open-document-part" data-preview-url="${esc(p.previewUrl)}" data-ocr-url="${esc(p.ocrUrl || '')}" data-version-id="${esc(p.versionId)}" data-part-number="${esc(p.partNumber)}" data-file-name="${esc(p.fileName || '')}" data-ocr-label="${esc(p.ocrLabel || 'Sem OCR')}" data-total-parts="${esc(p.totalParts || data.totalParts || parts.length)}">Parte ${esc(p.partNumber)} · ${esc(p.ocrLabel || 'Sem OCR')}</button>`).join('')}</div><div class="ged-side-actions-bar mb-2"><button type="button" class="btn btn-sm btn-outline-warning js-add-document-part" data-document-id="${esc(documentId)}"><i class="bi bi-file-earmark-plus me-1"></i>Adicionar parte</button></div><div class="table-responsive"><table class="table table-sm align-middle"><thead><tr><th>Parte</th><th>Arquivo</th><th>Upload</th><th>Status OCR</th><th class="text-end">Ações</th></tr></thead><tbody>${parts.map(p => `<tr><td>Parte ${esc(p.partNumber)}${p.totalParts ? `/${esc(p.totalParts)}` : ''}</td><td>${esc(p.fileName || '-')}</td><td>${esc(p.uploadedAtLabel || '-')}</td><td><span class="badge ${esc(p.ocrCss || 'bg-secondary')}">${esc(p.ocrLabel || 'Sem OCR')}</span></td><td class="text-end"><div class="btn-group btn-group-sm"><button type="button" class="btn btn-light border js-open-document-part" data-preview-url="${esc(p.previewUrl)}" data-ocr-url="${esc(p.ocrUrl || '')}" data-version-id="${esc(p.versionId)}" data-part-number="${esc(p.partNumber)}" data-file-name="${esc(p.fileName || '')}" data-ocr-label="${esc(p.ocrLabel || 'Sem OCR')}" data-total-parts="${esc(p.totalParts || data.totalParts || parts.length)}">Visualizar</button><button type="button" class="btn btn-light border js-open-document-part-ocr" data-ocr-url="${esc(p.ocrUrl || '')}" data-version-id="${esc(p.versionId)}" data-part-number="${esc(p.partNumber)}" data-file-name="${esc(p.fileName || '')}" data-ocr-label="${esc(p.ocrLabel || 'Sem OCR')}" data-total-parts="${esc(p.totalParts || data.totalParts || parts.length)}">OCR</button><a class="btn btn-light border" href="${esc(p.downloadUrl)}">Baixar</a></div></td></tr>`).join('')}</tbody></table></div></div>`;
         } catch (err) {
             console.error('[GED Parts]', err);
             host.innerHTML = '<div class="alert alert-warning mb-0">Não foi possível carregar as partes agora.</div>';
@@ -240,9 +251,14 @@
             const panel = getPanel();
             const frame = panel?.querySelector('.ged-side-preview-frame');
             if (frame && partPreview.dataset.previewUrl) frame.src = partPreview.dataset.previewUrl;
-            panel?.querySelectorAll('.js-open-document-part.active').forEach(x => x.classList.remove('active'));
-            partPreview.classList.add('active');
+            const title = panel?.querySelector('[data-part-preview-title]');
+            if (title) title.textContent = `Visualizando Parte ${partPreview.dataset.partNumber || ''}${partPreview.dataset.totalParts ? ' de ' + partPreview.dataset.totalParts : ''} — ${partPreview.dataset.fileName || ''}`;
+            panel?.querySelectorAll('.js-open-document-part.active').forEach(x => x.classList.remove('active', 'btn-primary'));
+            partPreview.classList.add('active', 'btn-primary');
             activateTab('preview');
+            const ocrPanel = panel?.querySelector('[data-ged-tab-panel="ocr"]');
+            if (ocrPanel) { ocrPanel.dataset.ocrLoaded = 'false'; ocrPanel.dataset.fileName = partPreview.dataset.fileName || ''; ocrPanel.dataset.ocrLabel = partPreview.dataset.ocrLabel || ''; ocrPanel.dataset.totalParts = partPreview.dataset.totalParts || ''; }
+            loadGedDocumentOcr(partPreview.dataset.versionId, partPreview.dataset.ocrUrl, partPreview.dataset.partNumber);
             showToast(`Visualizando Parte ${partPreview.dataset.partNumber || ''} — ${partPreview.dataset.fileName || ''}`, 'info');
             return;
         }
@@ -251,7 +267,12 @@
             e.preventDefault();
             const panel = getPanel();
             const ocrPanel = panel?.querySelector('[data-ged-tab-panel="ocr"]');
-            if (ocrPanel) ocrPanel.dataset.ocrLoaded = 'false';
+            if (ocrPanel) {
+                ocrPanel.dataset.ocrLoaded = 'false';
+                ocrPanel.dataset.fileName = partOcr.dataset.fileName || '';
+                ocrPanel.dataset.ocrLabel = partOcr.dataset.ocrLabel || '';
+                ocrPanel.dataset.totalParts = partOcr.dataset.totalParts || '';
+            }
             activateTab('ocr');
             loadGedDocumentOcr(partOcr.dataset.versionId, partOcr.dataset.ocrUrl, partOcr.dataset.partNumber);
             return;

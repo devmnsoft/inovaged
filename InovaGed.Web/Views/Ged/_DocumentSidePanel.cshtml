@@ -91,6 +91,7 @@
     </section>
 
     <section class="d-none" data-ged-tab-panel="preview">
+        <div class="small fw-semibold mb-2" data-part-preview-title>Visualização do documento atual — @Model.FileName</div>
         <div class="ged-side-actions-bar">
             <a class="btn btn-sm btn-outline-primary" href="@Model.PreviewUrl" target="_blank" rel="noopener"><i class="bi bi-box-arrow-up-right me-1"></i>Abrir em nova aba</a>
             <a class="btn btn-sm btn-outline-secondary" href="@Model.DownloadUrl"><i class="bi bi-download me-1"></i>Baixar</a>
@@ -133,7 +134,7 @@
         </dl>
     </section>
 
-    <section class="d-none" data-ged-tab-panel="parts" data-parts-loaded="false">
+    <section class="d-none" data-ged-tab-panel="parts" data-parts-loaded="true">
         <div data-ged-parts-host>
             @if (!Model.IsPartialDocument && !Model.IsDocumentIncomplete && !hasParts)
             {
@@ -141,42 +142,51 @@
             }
             else if (hasParts)
             {
-                <div class="ged-part-summary mb-3">
-                    <span class="badge bg-light text-dark border">Status: @partialLabel</span>
-                    <span class="badge bg-light text-dark border">Partes recebidas: @Model.PartialPartsCount@(Model.PartialTotalParts.HasValue ? $"/{Model.PartialTotalParts}" : "")</span>
-                    <span class="badge @Model.PartialOcrSummaryCss">@(string.IsNullOrWhiteSpace(Model.PartialOcrSummaryText) ? $"OCR: {Model.PartialPartsWithOcrCount}/{Model.PartialPartsCount}" : Model.PartialOcrSummaryText)</span>
-                    @if (Model.PartialTotalParts.HasValue && Model.PartialTotalParts.Value > 0)
-                    {
-                        var percent = Math.Min(100, (int)Math.Round((Model.PartialPartsCount * 100d) / Model.PartialTotalParts.Value));
-                        <div class="progress w-100 mt-2" style="height:.5rem;" title="@percent% das partes recebidas">
-                            <div class="progress-bar" role="progressbar" style="width:@percent%" aria-valuenow="@percent" aria-valuemin="0" aria-valuemax="100"></div>
+                var collapseId = $"documentPartsCollapse_{Model.DocumentId:N}";
+                <div class="document-parts-summary border rounded p-3 d-flex justify-content-between align-items-center gap-3 flex-wrap">
+                    <div>
+                        <strong><i class="bi bi-files me-1"></i>Partes do documento</strong>
+                        <div class="small text-muted">
+                            @Model.PartialPartsCount@(Model.PartialTotalParts.HasValue ? $" de {Model.PartialTotalParts}" : "") partes recebidas · @(string.IsNullOrWhiteSpace(Model.PartialOcrSummaryText) ? $"OCR {Model.PartialPartsWithOcrCount}/{Model.PartialPartsCount}" : Model.PartialOcrSummaryText)
                         </div>
-                    }
+                    </div>
+                    <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#@collapseId" aria-expanded="false" aria-controls="@collapseId">
+                        Expandir partes
+                    </button>
                 </div>
-                <div class="table-responsive">
-                    <table class="table table-sm align-middle ged-parts-table">
-                        <thead><tr><th>Parte</th><th>Arquivo</th><th>Upload em</th><th>Usuário</th><th>Status</th><th>OCR</th><th class="text-end">Ações</th></tr></thead>
-                        <tbody>
+                <div id="@collapseId" class="collapse mt-3">
+                    <div class="document-parts-tabs d-flex flex-wrap gap-2 mb-3" role="tablist" aria-label="Partes do documento">
                         @foreach (var part in Model.Parts)
                         {
-                            <tr>
-                                <td>@part.PartNumber@(part.TotalParts.HasValue ? $"/{part.TotalParts}" : "")</td>
-                                <td>@part.FileName</td>
-                                <td>@part.UploadedAtLocalFormatted</td>
-                                <td>@part.UploadedByName</td>
-                                <td><span class="badge bg-light text-dark border">@part.Status</span></td>
-                                <td><span class="badge @part.OcrCss">@part.OcrLabel</span></td>
-                                <td class="text-end">
-                                    <div class="btn-group btn-group-sm">
-                                        <a class="btn btn-light border js-open-document-part" href="@part.PreviewUrl" target="_blank" rel="noopener" data-version-id="@part.VersionId" data-preview-url="@part.PreviewUrl" data-ocr-url="@part.OcrUrl" data-part-number="@part.PartNumber" data-file-name="@part.FileName">Visualizar</a>
-                                        <button type="button" class="btn btn-light border js-open-document-part-ocr" data-version-id="@part.VersionId" data-ocr-url="@part.OcrUrl" data-part-number="@part.PartNumber">OCR</button>
-                                        <a class="btn btn-light border" href="@part.DownloadUrl">Baixar</a>
-                                    </div>
-                                </td>
-                            </tr>
+                            <button type="button" class="btn btn-sm btn-outline-primary js-open-document-part" data-version-id="@part.VersionId" data-preview-url="@part.PreviewUrl" data-ocr-url="@part.OcrUrl" data-part-number="@part.PartNumber" data-file-name="@part.FileName" data-ocr-label="@part.OcrLabel" data-total-parts="@(part.TotalParts ?? Model.PartialTotalParts ?? Model.PartialPartsCount)">
+                                Parte @part.PartNumber · @part.OcrLabel
+                            </button>
                         }
-                        </tbody>
-                    </table>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle ged-parts-table">
+                            <thead><tr><th>Parte</th><th>Arquivo</th><th>Upload em</th><th>Usuário</th><th>Status OCR</th><th class="text-end">Ações</th></tr></thead>
+                            <tbody>
+                            @foreach (var part in Model.Parts)
+                            {
+                                <tr>
+                                    <td>Parte @part.PartNumber@(part.TotalParts.HasValue ? $"/{part.TotalParts}" : "")</td>
+                                    <td class="text-truncate" style="max-width:180px" title="@part.FileName">@part.FileName</td>
+                                    <td>@part.UploadedAtLocalFormatted</td>
+                                    <td>@part.UploadedByName</td>
+                                    <td><span class="badge @part.OcrCss">@part.OcrLabel</span></td>
+                                    <td class="text-end">
+                                        <div class="btn-group btn-group-sm">
+                                            <button type="button" class="btn btn-light border js-open-document-part" data-version-id="@part.VersionId" data-preview-url="@part.PreviewUrl" data-ocr-url="@part.OcrUrl" data-part-number="@part.PartNumber" data-file-name="@part.FileName" data-ocr-label="@part.OcrLabel" data-total-parts="@(part.TotalParts ?? Model.PartialTotalParts ?? Model.PartialPartsCount)">Visualizar</button>
+                                            <button type="button" class="btn btn-light border js-open-document-part-ocr" data-version-id="@part.VersionId" data-ocr-url="@part.OcrUrl" data-part-number="@part.PartNumber" data-file-name="@part.FileName" data-ocr-label="@part.OcrLabel" data-total-parts="@(part.TotalParts ?? Model.PartialTotalParts ?? Model.PartialPartsCount)">OCR</button>
+                                            <a class="btn btn-light border" href="@part.DownloadUrl">Baixar</a>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             }
             else
@@ -191,7 +201,7 @@
             }
             @if (Model.CanConsolidate)
             {
-                <button type="button" class="btn btn-sm btn-outline-secondary js-consolidate-document" data-document-id="@Model.DocumentId"><i class="bi bi-layers me-1"></i>Consolidar</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary js-consolidate-document" data-document-id="@Model.DocumentId" data-parts-with-ocr="@Model.PartialPartsWithOcrCount" data-parts-count="@Model.PartialPartsCount"><i class="bi bi-layers me-1"></i>Consolidar</button>
             }
             @if (Model.CanCancelPartial)
             {

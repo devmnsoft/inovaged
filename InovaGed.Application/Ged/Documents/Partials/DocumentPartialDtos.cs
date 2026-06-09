@@ -39,14 +39,31 @@ public sealed class DocumentPartialPartDto
     public bool IsOcrAvailable { get; init; }
 }
 
-public sealed record DocumentPartialOcrSummaryDto
+public sealed record DocumentPartOcrDto
+{
+    public Guid PartId { get; init; }
+    public Guid VersionId { get; init; }
+    public int PartNumber { get; init; }
+    public string FileName { get; init; } = "";
+    public DateTimeOffset UploadedAt { get; init; }
+    public string OcrStatus { get; init; } = "NONE";
+    public bool HasOcrText { get; init; }
+    public bool IsOcrAvailable { get; init; }
+    public string OcrBadgeText { get; init; } = "Sem OCR";
+    public string OcrBadgeCss { get; init; } = "bg-secondary";
+}
+
+public sealed record PartialOcrSummaryDto
 {
     public int TotalParts { get; init; }
     public int PartsWithOcr { get; init; }
     public int PartsWithoutOcr { get; init; }
+    public int PartsCompletedWithoutText { get; init; }
     public bool HasAnyOcr { get; init; }
     public bool HasAllOcr { get; init; }
     public string SummaryText { get; init; } = "";
+    public string SummaryCss { get; init; } = "bg-secondary";
+    public List<DocumentPartOcrDto> Parts { get; init; } = new();
 }
 
 public sealed record DocumentPartialSummaryDto
@@ -65,7 +82,7 @@ public interface IDocumentPartialService
     Task<Result<DocumentPartialSummaryDto>> MarkAsIncompleteAsync(Guid tenantId, Guid userId, Guid documentId, int? totalParts, string? notes, string? correlationId, CancellationToken ct);
     Task<Result<DocumentPartialSummaryDto>> AddPartAsync(AddDocumentPartRequest request, CancellationToken ct);
     Task<IReadOnlyList<DocumentPartialPartDto>> GetPartsAsync(Guid tenantId, Guid documentId, CancellationToken ct);
-    Task<DocumentPartialOcrSummaryDto> GetPartialOcrSummaryAsync(Guid tenantId, Guid documentId, Guid partialGroupId, CancellationToken ct);
+    Task<PartialOcrSummaryDto> GetPartialOcrSummaryAsync(Guid tenantId, Guid partialGroupId, CancellationToken ct);
     Task<Result<DocumentPartialSummaryDto>> ConsolidateAsync(Guid tenantId, Guid userId, Guid documentId, string? correlationId, CancellationToken ct);
     Task<Result<DocumentPartialSummaryDto>> CancelPartialAsync(Guid tenantId, Guid userId, Guid documentId, string? reason, string? correlationId, CancellationToken ct);
     Task<Result<DocumentPartialSummaryDto>> MarkAsCompleteAsync(Guid tenantId, Guid userId, Guid documentId, string? correlationId, CancellationToken ct);

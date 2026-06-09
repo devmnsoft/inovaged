@@ -38,7 +38,7 @@
     var incompleteCount = Model.Documents.Count(d => d.IsDocumentIncomplete || string.Equals(d.PartialStatus, "INCOMPLETE", StringComparison.OrdinalIgnoreCase));
     var readyToConsolidateCount = Model.Documents.Count(d => d.IsPartialDocument && !d.IsDocumentIncomplete && string.Equals(d.PartialStatus, "COMPLETE", StringComparison.OrdinalIgnoreCase));
     var consolidatedCount = Model.Documents.Count(d => string.Equals(d.PartialStatus, "CONSOLIDATED", StringComparison.OrdinalIgnoreCase) || d.ConsolidatedVersionId.HasValue);
-    var partialOcrCount = Model.Documents.Count(d => d.IsPartialDocument && d.HasAnyPartialOcr && !d.HasAllPartialOcr);
+    var partialOcrCount = Model.Documents.Count(d => d.PartialPartsWithOcrCount > 0 && d.PartialPartsWithOcrCount < (d.TotalParts ?? d.PartialTotalParts ?? d.PartialPartsCount));
     var pendingOcrCount = runningOcrCount;
     var breadcrumbText = currentFolderNode?.Path ?? (!string.IsNullOrWhiteSpace(Model.CurrentFolderName) ? Model.CurrentFolderName : "Raiz");
 }
@@ -386,8 +386,9 @@
                         <span class="ged-metric-pill"><strong id="documentsUnclassifiedKpi">@unclassifiedCount</strong> Não classificados</span>
                         <span class="ged-metric-pill"><strong id="documentsOcrKpi">@ocrAvailableCount</strong> Com OCR</span>
                         <span class="ged-metric-pill"><strong id="documentsIncompleteKpi">@incompleteCount</strong> Incompletos <button type="button" class="btn btn-link btn-sm p-0 ged-help-popover" data-bs-toggle="popover" data-bs-trigger="focus" data-bs-placement="bottom" title="Documento incompleto" data-bs-content="Documento incompleto é um documento enviado parcialmente e que poderá receber novas partes futuramente. Exemplo: um documento de agendamento foi digitalizado pela metade hoje e a outra parte será enviada depois. Quando todas as partes forem anexadas, o sistema pode consolidar em uma versão final." aria-label="Ajuda sobre documentos incompletos"><i class="bi bi-question-circle"></i></button></span>
-                        <span class="ged-metric-pill"><strong>@readyToConsolidateCount</strong> Prontos para consolidar</span>
-                        <span class="ged-metric-pill"><strong>@consolidatedCount</strong> Consolidados</span>
+                        <span class="ged-metric-pill"><strong id="documentsReadyConsolidateKpi">@readyToConsolidateCount</strong> Prontos para consolidar</span>
+                        <span class="ged-metric-pill"><strong id="documentsConsolidatedKpi">@consolidatedCount</strong> Consolidados</span>
+                        <span class="ged-metric-pill"><strong id="documentsPartialOcrKpi">@partialOcrCount</strong> OCR parcial</span>
                         <span class="ged-metric-pill"><strong>@pendingOcrCount</strong> Pendentes</span>
                     </div>
                 </div>
@@ -414,7 +415,9 @@
             <button type="button" class="btn btn-sm btn-outline-info js-quick-partial-filter" data-filter="consolidated"><i class="bi bi-layers me-1"></i>Ver consolidados</button>
             <button type="button" class="btn btn-sm btn-outline-secondary js-quick-partial-filter" data-filter="ocr-partial"><i class="bi bi-text-paragraph me-1"></i>Ver OCR parcial</button>
             <button type="button" class="btn btn-sm btn-light border d-none" id="btnClearPartialFilters"><i class="bi bi-x-circle me-1"></i>Limpar filtro</button>
+            <span id="gedActiveQuickFilterChip" class="ged-filter-chip d-none">Filtro: <span data-filter-label></span> <button type="button" class="btn btn-link btn-sm p-0 ms-1" id="btnClearQuickFilterChip" aria-label="Limpar filtro rápido">×</button></span>
         </div>
+        <div id="gedFilteredEmptyState" class="alert alert-info d-none" role="status">Nenhum documento encontrado para este filtro.</div>
 
         <div class="ged-toolbar">
             <div class="ged-toolbar-search">
@@ -1372,25 +1375,58 @@
         });
 
         document.addEventListener('click', function (e) {
+            const filterLabels = { incomplete: 'Incompletos', ready: 'Prontos para consolidar', consolidated: 'Consolidados', 'ocr-partial': 'OCR parcial' };
+            function matchesGedQuickFilter(row, filterName) {
+                if (filterName === 'ready') return row.dataset.documentReadyToConsolidate === 'true' || row.dataset.documentReadyConsolidate === 'true';
+                if (filterName === 'consolidated') return row.dataset.documentConsolidated === 'true';
+                if (filterName === 'ocr-partial') return row.dataset.documentOcrPartial === 'true';
+                return row.dataset.documentIncomplete === 'true';
+            }
+            function updateGedFilterChip(filterName) {
+                const chip = document.getElementById('gedActiveQuickFilterChip');
+                if (!chip) return;
+                chip.querySelector('[data-filter-label]').textContent = filterLabels[filterName] || filterName;
+                chip.classList.remove('d-none');
+            }
+            function toggleGedFilteredEmptyState(isEmpty, filterName) {
+                const empty = document.getElementById('gedFilteredEmptyState');
+                if (!empty) return;
+                empty.textContent = isEmpty ? `Nenhum documento encontrado para este filtro (${filterLabels[filterName] || filterName}).` : '';
+                empty.classList.toggle('d-none', !isEmpty);
+            }
+            function applyGedQuickFilter(filterName, sourceButton) {
+                const activeRows = document.querySelectorAll('#gedDocumentsContainer [data-documents-view="smart-list"] [data-document-id]');
+                let visibleCount = 0;
+                document.querySelectorAll('#gedDocumentsContainer [data-document-id]').forEach(row => {
+                    const visible = matchesGedQuickFilter(row, filterName);
+                    row.classList.toggle('d-none', !visible);
+                });
+                activeRows.forEach(row => { if (!row.classList.contains('d-none')) visibleCount++; });
+                document.querySelectorAll('.js-quick-partial-filter').forEach(btn => btn.classList.toggle('active', btn === sourceButton));
+                document.getElementById('btnClearPartialFilters')?.classList.remove('d-none');
+                updateGedFilterChip(filterName);
+                toggleGedFilteredEmptyState(visibleCount === 0, filterName);
+                fetch('/Ged/DocumentParts/FilterAudit', { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest', 'Content-Type': 'application/json' }, body: JSON.stringify({ filterName }) }).catch(() => {});
+            }
+            function clearGedQuickFilter() {
+                document.querySelectorAll('#gedDocumentsContainer [data-document-id]').forEach(row => row.classList.remove('d-none'));
+                document.querySelectorAll('.js-quick-partial-filter').forEach(btn => btn.classList.remove('active'));
+                document.getElementById('btnClearPartialFilters')?.classList.add('d-none');
+                document.getElementById('gedActiveQuickFilterChip')?.classList.add('d-none');
+                document.getElementById('gedFilteredEmptyState')?.classList.add('d-none');
+            }
+
             const partialFilterBtn = e.target.closest('.js-quick-partial-filter');
             if (partialFilterBtn) {
                 e.preventDefault();
-                const filter = partialFilterBtn.dataset.filter;
-                const attr = filter === 'ready' ? 'documentReadyConsolidate' : filter === 'consolidated' ? 'documentConsolidated' : filter === 'ocr-partial' ? 'documentOcrPartial' : 'documentIncomplete';
-                document.querySelectorAll('#gedDocumentsContainer [data-document-id]').forEach(row => {
-                    row.classList.toggle('d-none', row.dataset[attr] !== 'true');
-                });
-                document.querySelectorAll('.js-quick-partial-filter').forEach(btn => btn.classList.toggle('active', btn === partialFilterBtn));
-                document.getElementById('btnClearPartialFilters')?.classList.remove('d-none');
+                applyGedQuickFilter(partialFilterBtn.dataset.filter, partialFilterBtn);
                 return;
             }
 
-            const clearPartialFilters = e.target.closest('#btnClearPartialFilters');
+            const clearPartialFilters = e.target.closest('#btnClearPartialFilters, #btnClearQuickFilterChip');
             if (clearPartialFilters) {
                 e.preventDefault();
-                document.querySelectorAll('#gedDocumentsContainer [data-document-id]').forEach(row => row.classList.remove('d-none'));
-                document.querySelectorAll('.js-quick-partial-filter').forEach(btn => btn.classList.remove('active'));
-                clearPartialFilters.classList.add('d-none');
+                clearGedQuickFilter();
                 return;
             }
 
@@ -1545,10 +1581,17 @@ document.addEventListener('DOMContentLoaded', function () {
 
         if (e.target.closest('.js-consolidate-document, #btnConsolidateDocument')) {
             e.preventDefault();
-            const documentId = e.target.closest('.js-consolidate-document')?.dataset.documentId || document.getElementById('btnConsolidateDocument')?.dataset.documentId;
+            const consolidateBtn = e.target.closest('.js-consolidate-document');
+            const documentId = consolidateBtn?.dataset.documentId || document.getElementById('btnConsolidateDocument')?.dataset.documentId;
             if (!documentId) return;
+            const sourceRow = document.querySelector(`[data-document-id="${window.CSS?.escape ? CSS.escape(documentId) : documentId}"]`);
+            const partsWithOcr = Number(consolidateBtn?.dataset.partsWithOcr || sourceRow?.dataset.partialPartsWithOcr || 0);
+            const partsCount = Number(consolidateBtn?.dataset.partsCount || sourceRow?.dataset.partialPartsCount || 0);
+            if (partsCount > 0 && partsWithOcr > 0 && partsWithOcr < partsCount) {
+                const choice = prompt(`Este documento possui OCR parcial: ${partsWithOcr} de ${partsCount} partes possui OCR. Após consolidar, o sistema poderá reprocessar o OCR da versão final.\n\nDigite 1 para Consolidar e reprocessar OCR, 2 para Consolidar sem reprocessar agora, ou deixe vazio para Cancelar.`);
+                if (choice !== '1' && choice !== '2') return;
+            } else if (!confirm('Revise o OCR de cada parte antes de consolidar. Deseja consolidar agora?')) return;
             const fd = new FormData(); fd.append('documentId', documentId);
-            if (!confirm('Revise o OCR de cada parte antes de consolidar. Se alguma parte não possui OCR, o sistema poderá reprocessar o OCR da versão final após a consolidação. Deseja consolidar agora?')) return;
             fetch('/Ged/DocumentParts/Consolidate', { method: 'POST', body: fd, headers: token ? { RequestVerificationToken: token } : {} })
                 .then(r => r.json().then(j => ({ ok: r.ok, j })))
                 .then(({ ok, j }) => { if (!ok || j.success === false) throw new Error(j.message || 'Falha ao consolidar.'); window.showAppToast?.(j.message || 'Documento consolidado.', 'success', 'Documento fracionado'); setTimeout(() => window.GedFolderNavigation?.refreshCurrentFolder?.() || window.location.reload(), 700); })
