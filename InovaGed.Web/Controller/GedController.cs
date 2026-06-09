@@ -339,7 +339,11 @@ public sealed class GedController : Controller
             OcrStatus = normalizedOcrStatus,
             IsOcrAvailable = isOcrAvailable,
             OcrBadgeText = GetOcrBadgeText(normalizedOcrStatus, isOcrAvailable),
-            OcrBadgeCss = isOcrAvailable ? "bg-success" : normalizedOcrStatus switch { "ERROR" or "FAILED" => "bg-danger", "PROCESSING" or "RUNNING" => "bg-info text-dark", "PENDING" or "QUEUED" => "bg-warning text-dark", _ => "bg-secondary" },
+            OcrBadgeCss = !string.IsNullOrWhiteSpace(current.OcrSummaryCss) ? current.OcrSummaryCss : (isOcrAvailable ? "bg-success" : normalizedOcrStatus switch { "ERROR" or "FAILED" => "bg-danger", "PROCESSING" or "RUNNING" => "bg-info text-dark", "PENDING" or "QUEUED" => "bg-warning text-dark", _ => "bg-secondary" }),
+            PartialPartsWithOcrCount = current.PartialPartsWithOcrCount,
+            PartialPartsWithoutOcrCount = current.PartialPartsWithoutOcrCount,
+            PartialOcrSummaryText = current.OcrSummaryText,
+            PartialOcrSummaryCss = string.IsNullOrWhiteSpace(current.OcrSummaryCss) ? "bg-secondary" : current.OcrSummaryCss,
             IsPartialDocument = current.IsPartialDocument,
             IsDocumentIncomplete = current.IsDocumentIncomplete,
             PartialStatus = current.PartialStatus,
@@ -370,6 +374,12 @@ public sealed class GedController : Controller
                 UploadedAtLocalFormatted = _dateTimeDisplay.FormatUploadDate(p.UploadedAtUtc),
                 UploadedByName = string.IsNullOrWhiteSpace(p.UploadedByName) ? (p.UploadedBy?.ToString() ?? "Sistema") : p.UploadedByName,
                 Status = p.Status,
+                OcrStatus = string.IsNullOrWhiteSpace(p.OcrStatus) ? "NONE" : p.OcrStatus.Trim().ToUpperInvariant(),
+                HasOcrText = p.HasOcrText,
+                IsOcrAvailable = p.IsOcrAvailable,
+                OcrLabel = GetPartOcrLabel(p.OcrStatus, p.HasOcrText),
+                OcrCss = GetPartOcrCss(p.OcrStatus, p.HasOcrText),
+                OcrUrl = Url.Action(nameof(PartOcrText), "Ged", new { versionId = p.VersionId, partNumber = p.PartNumber, partialGroupId = p.PartialGroupId }) ?? string.Empty,
                 PreviewUrl = Url.Action(nameof(Preview), "Ged", new { id = p.VersionId, documentPart = true, partNumber = p.PartNumber, partialGroupId = p.PartialGroupId }) ?? string.Empty,
                 DownloadUrl = Url.Action(nameof(Download), "Ged", new { id = p.VersionId, documentPart = true, partNumber = p.PartNumber, partialGroupId = p.PartialGroupId }) ?? string.Empty
             }).ToList(),
@@ -390,9 +400,11 @@ public sealed class GedController : Controller
         if (v is null) return NotFound();
 
         var status = await ResolveOcrStatusAsync(tenantId, versionId, ct);
-        var text = string.Equals(status, "COMPLETED", StringComparison.OrdinalIgnoreCase)
-            ? await TryReadOcrTextAsync(tenantId, v.DocumentId, versionId, ct)
-            : string.Empty;
+        var text = await TryReadOcrTextAsync(tenantId, v.DocumentId, versionId, ct);
+        if (!string.IsNullOrWhiteSpace(text) && !string.Equals(status, "COMPLETED", StringComparison.OrdinalIgnoreCase))
+        {
+            status = "COMPLETED";
+        }
 
         await WriteGedAuditAsync("OCR_VIEW", "DOCUMENT_OCR", v.DocumentId, "OCR aberto no painel lateral GED", new { versionId, v.DocumentId, correlationId = HttpContext.TraceIdentifier }, ct);
 
@@ -400,6 +412,41 @@ public sealed class GedController : Controller
             return Ok(new { success = true, text, status = "COMPLETED" });
 
         return Ok(new { success = false, status, message = "OCR ainda não disponível para este documento." });
+    }
+
+    [HttpGet("/Ged/PartOcrText")]
+    public async Task<IActionResult> PartOcrText(Guid versionId, int? partNumber = null, Guid? partialGroupId = null, CancellationToken ct = default)
+    {
+        if (!_currentUser.IsAuthenticated) return Unauthorized();
+
+        var tenantId = _currentUser.TenantId;
+        var v = await _docs.GetVersionForDownloadAsync(tenantId, versionId, ct);
+        if (v is null) return NotFound();
+
+        var status = (await ResolveOcrStatusAsync(tenantId, versionId, ct)).Trim().ToUpperInvariant();
+        var text = await TryReadOcrTextAsync(tenantId, v.DocumentId, versionId, ct);
+        if (!string.IsNullOrWhiteSpace(text) && !string.Equals(status, "COMPLETED", StringComparison.OrdinalIgnoreCase))
+        {
+            status = "COMPLETED";
+        }
+
+        await WriteGedAuditAsync("DOCUMENT_PART_OCR_VIEW", "DOCUMENT_PART", v.DocumentId, "OCR de parte do documento visualizado", new { documentId = v.DocumentId, versionId, partialGroupId, partNumber, tenantId, userId = _currentUser.UserId, correlationId = HttpContext.TraceIdentifier, timestampUtc = DateTime.UtcNow }, ct);
+
+        if (!string.IsNullOrWhiteSpace(text))
+        {
+            return Ok(new { success = true, status = "COMPLETED", text, message = $"Você está vendo o OCR da Parte {partNumber?.ToString() ?? "selecionada"}." });
+        }
+
+        var message = status switch
+        {
+            "COMPLETED" => "OCR concluído nesta parte, mas nenhum texto foi encontrado.",
+            "PENDING" or "QUEUED" => "OCR pendente nesta parte.",
+            "PROCESSING" or "RUNNING" => "OCR em processamento nesta parte.",
+            "ERROR" or "FAILED" => "OCR com erro nesta parte. Tente reprocessar.",
+            _ => "OCR não executado nesta parte."
+        };
+
+        return Ok(new { success = false, status = string.IsNullOrWhiteSpace(status) ? "NONE" : status, text = string.Empty, message });
     }
 
     [HttpGet("/Ged/DocumentHistory")]
@@ -489,10 +536,19 @@ public sealed class GedController : Controller
         if (!CanViewDocumentParts()) return Forbid();
 
         var parts = await _documentPartialService.GetPartsAsync(_currentUser.TenantId, id, ct);
+        var total = parts.Select(p => p.TotalParts).Where(x => x.HasValue).DefaultIfEmpty(parts.Count).Max() ?? parts.Count;
+        var withOcr = parts.Count(p => p.IsOcrAvailable);
+        var doc = await _docs.GetAsync(_currentUser.TenantId, id, ct);
         await WriteGedAuditAsync("DOCUMENT_PART_VIEW", "DOCUMENT_PART", id, "Partes do documento visualizadas", new { documentId = id, correlationId = HttpContext.TraceIdentifier }, ct);
         return Ok(new
         {
             documentId = id,
+            title = doc?.Title ?? string.Empty,
+            totalParts = total,
+            partsCount = parts.Count,
+            partsWithOcr = withOcr,
+            partsWithoutOcr = Math.Max(parts.Count - withOcr, 0),
+            ocrSummary = BuildPartialOcrSummaryText(parts.Count, withOcr),
             parts = parts.Select(p => new
             {
                 p.Id,
@@ -509,10 +565,13 @@ public sealed class GedController : Controller
                 p.Status,
                 p.Notes,
                 p.OcrStatus,
+                p.HasOcrText,
                 p.IsOcrAvailable,
-                previewUrl = Url.Action(nameof(Preview), "Ged", new { id = p.VersionId }),
-                downloadUrl = Url.Action(nameof(Download), "Ged", new { id = p.VersionId }),
-                ocrUrl = p.IsOcrAvailable ? Url.Action(nameof(OcrText), "Ged", new { versionId = p.VersionId }) : null
+                ocrLabel = GetPartOcrLabel(p.OcrStatus, p.HasOcrText),
+                ocrCss = GetPartOcrCss(p.OcrStatus, p.HasOcrText),
+                previewUrl = Url.Action(nameof(Preview), "Ged", new { id = p.VersionId, documentPart = true, partNumber = p.PartNumber, partialGroupId = p.PartialGroupId }),
+                downloadUrl = Url.Action(nameof(Download), "Ged", new { id = p.VersionId, documentPart = true, partNumber = p.PartNumber, partialGroupId = p.PartialGroupId }),
+                ocrUrl = Url.Action(nameof(PartOcrText), "Ged", new { versionId = p.VersionId, partNumber = p.PartNumber, partialGroupId = p.PartialGroupId })
             })
         });
     }
@@ -1156,6 +1215,10 @@ LIMIT 20;";
                     IsOcrAvailable = v.IsOcrAvailable,
                     IsPartialDocument = v.IsPartialDocument,
                     IsDocumentIncomplete = v.IsDocumentIncomplete,
+                    PartialGroupId = v.PartialGroupId,
+                    PartialPartNumber = v.PartialPartNumber,
+                    PartialTotalParts = v.PartialTotalParts,
+                    PartialStatus = v.PartialStatus,
                     PartNumber = v.PartNumber,
                     TotalParts = v.TotalParts,
                     ConsolidatedVersionId = v.ConsolidatedVersionId,
@@ -1449,6 +1512,12 @@ LIMIT 20;";
             IsOcrAvailable = d.IsOcrAvailable,
             OcrBadgeText = d.OcrBadgeText,
             OcrBadgeCss = d.OcrBadgeCss,
+            PartialPartsWithOcrCount = d.PartialPartsWithOcrCount,
+            PartialPartsWithoutOcrCount = d.PartialPartsWithoutOcrCount,
+            HasAnyPartialOcr = d.HasAnyPartialOcr,
+            HasAllPartialOcr = d.HasAllPartialOcr,
+            OcrSummaryText = d.OcrSummaryText,
+            OcrSummaryCss = d.OcrSummaryCss,
             ClassificationId = d.ClassificationId,
             ClassificationLabel = d.ClassificationLabel,
             ClassificationColor = d.ClassificationColor,
@@ -1491,6 +1560,40 @@ LIMIT 20;";
         var extension = !string.IsNullOrWhiteSpace(fileExtension) ? fileExtension : Path.GetExtension(fileName ?? string.Empty);
         extension = (extension ?? string.Empty).Trim().TrimStart('.');
         return string.IsNullOrWhiteSpace(extension) ? "-" : extension.ToUpperInvariant();
+    }
+
+    private static string BuildPartialOcrSummaryText(int totalParts, int partsWithOcr)
+    {
+        if (totalParts <= 0) return "Sem partes cadastradas";
+        if (partsWithOcr <= 0) return "Sem OCR nas partes";
+        if (partsWithOcr >= totalParts) return "OCR disponível nas partes";
+        return $"OCR parcial {partsWithOcr}/{totalParts}";
+    }
+
+    private static string GetPartOcrLabel(string? status, bool hasText)
+    {
+        var normalized = (status ?? "NONE").Trim().ToUpperInvariant();
+        return normalized switch
+        {
+            "COMPLETED" => hasText ? "OCR disponível" : "OCR concluído sem texto",
+            "PENDING" or "QUEUED" => "OCR pendente",
+            "PROCESSING" or "RUNNING" => "OCR em processamento",
+            "ERROR" or "FAILED" => "OCR com erro",
+            _ => "Sem OCR"
+        };
+    }
+
+    private static string GetPartOcrCss(string? status, bool hasText)
+    {
+        var normalized = (status ?? "NONE").Trim().ToUpperInvariant();
+        return normalized switch
+        {
+            "COMPLETED" => hasText ? "bg-success" : "bg-light text-dark border",
+            "PENDING" or "QUEUED" => "bg-warning text-dark",
+            "PROCESSING" or "RUNNING" => "bg-info text-dark",
+            "ERROR" or "FAILED" => "bg-danger",
+            _ => "bg-secondary"
+        };
     }
 
     private static string GetOcrBadgeText(string? status, bool isAvailable)
@@ -1640,10 +1743,28 @@ limit @take";
     {
         try
         {
-            const string sql = "select ocr_text from ged.document_search where tenant_id=@tenantId and document_id=@documentId and version_id=@versionId limit 1";
-            using var con = _db.CreateConnection();
-            var dbText = await con.ExecuteScalarAsync<string?>(new CommandDefinition(sql, new { tenantId, documentId, versionId }, cancellationToken: ct));
-            if (!string.IsNullOrWhiteSpace(dbText)) return dbText;
+            await using var con = await _db.OpenAsync(ct);
+            const string schemaSql = """
+SELECT
+    EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='ged' AND table_name='document_search' AND column_name='ocr_text') AS "HasOcrText",
+    EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='ged' AND table_name='document_search' AND column_name='document_id') AS "HasDocumentId",
+    EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='ged' AND table_name='document_search' AND column_name='version_id') AS "HasVersionId",
+    EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='ged' AND table_name='document_search' AND column_name='document_version_id') AS "HasDocumentVersionId";
+""";
+            var schema = await con.QuerySingleAsync<DocumentSearchSchemaInfo>(new CommandDefinition(schemaSql, cancellationToken: ct));
+            if (schema.HasOcrText)
+            {
+                var predicates = new List<string>();
+                if (schema.HasDocumentId) predicates.Add("document_id=@documentId");
+                var versionPredicates = new List<string>();
+                if (schema.HasVersionId) versionPredicates.Add("version_id=@versionId");
+                if (schema.HasDocumentVersionId) versionPredicates.Add("document_version_id=@versionId");
+                if (versionPredicates.Count > 0) predicates.Add($"({string.Join(" OR ", versionPredicates)})");
+                var entityPredicate = predicates.Count == 0 ? "true" : string.Join(" AND ", predicates);
+                var sql = $"select ocr_text from ged.document_search where tenant_id=@tenantId and {entityPredicate} and NULLIF(btrim(COALESCE(ocr_text,'')),'') IS NOT NULL limit 1";
+                var dbText = await con.ExecuteScalarAsync<string?>(new CommandDefinition(sql, new { tenantId, documentId, versionId }, cancellationToken: ct));
+                if (!string.IsNullOrWhiteSpace(dbText)) return dbText;
+            }
         }
         catch (Exception ex)
         {
@@ -1655,6 +1776,14 @@ limit @take";
         await using var stream = await _storage.OpenReadAsync(ocrRelPath, ct);
         using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
         return await reader.ReadToEndAsync(ct);
+    }
+
+    private sealed class DocumentSearchSchemaInfo
+    {
+        public bool HasOcrText { get; set; }
+        public bool HasDocumentId { get; set; }
+        public bool HasVersionId { get; set; }
+        public bool HasDocumentVersionId { get; set; }
     }
 
     private async Task WriteGedAuditAsync(string action, string entity, Guid? entityId, string summary, object data, CancellationToken ct)

@@ -23,7 +23,7 @@
             <div class="ged-side-file">@Model.FileName</div>
             <div class="ged-document-badges mt-2">
                 <span class="badge @(string.IsNullOrWhiteSpace(Model.TypeName) || Model.TypeName == "Sem classificação" ? "bg-secondary" : "bg-primary")">@(string.IsNullOrWhiteSpace(Model.TypeName) ? "Sem classificação" : Model.TypeName)</span>
-                <span class="badge @Model.OcrBadgeCss">@Model.OcrBadgeText</span>
+                <span class="badge @Model.OcrBadgeCss">@(string.IsNullOrWhiteSpace(Model.PartialOcrSummaryText) ? Model.OcrBadgeText : Model.PartialOcrSummaryText)</span>
                 @if (Model.IsDocumentIncomplete)
                 {
                     <span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle me-1"></i>Documento incompleto</span>
@@ -143,12 +143,19 @@
             {
                 <div class="ged-part-summary mb-3">
                     <span class="badge bg-light text-dark border">Status: @partialLabel</span>
-                    <span class="badge bg-light text-dark border">Partes recebidas: @Model.PartialPartsCount</span>
-                    <span class="badge bg-light text-dark border">Total previsto: @(Model.PartialTotalParts?.ToString() ?? "Não informado")</span>
+                    <span class="badge bg-light text-dark border">Partes recebidas: @Model.PartialPartsCount@(Model.PartialTotalParts.HasValue ? $"/{Model.PartialTotalParts}" : "")</span>
+                    <span class="badge @Model.PartialOcrSummaryCss">@(string.IsNullOrWhiteSpace(Model.PartialOcrSummaryText) ? $"OCR: {Model.PartialPartsWithOcrCount}/{Model.PartialPartsCount}" : Model.PartialOcrSummaryText)</span>
+                    @if (Model.PartialTotalParts.HasValue && Model.PartialTotalParts.Value > 0)
+                    {
+                        var percent = Math.Min(100, (int)Math.Round((Model.PartialPartsCount * 100d) / Model.PartialTotalParts.Value));
+                        <div class="progress w-100 mt-2" style="height:.5rem;" title="@percent% das partes recebidas">
+                            <div class="progress-bar" role="progressbar" style="width:@percent%" aria-valuenow="@percent" aria-valuemin="0" aria-valuemax="100"></div>
+                        </div>
+                    }
                 </div>
                 <div class="table-responsive">
                     <table class="table table-sm align-middle ged-parts-table">
-                        <thead><tr><th>Parte</th><th>Arquivo</th><th>Upload em</th><th>Usuário</th><th>Status</th><th class="text-end">Ações</th></tr></thead>
+                        <thead><tr><th>Parte</th><th>Arquivo</th><th>Upload em</th><th>Usuário</th><th>Status</th><th>OCR</th><th class="text-end">Ações</th></tr></thead>
                         <tbody>
                         @foreach (var part in Model.Parts)
                         {
@@ -158,7 +165,14 @@
                                 <td>@part.UploadedAtLocalFormatted</td>
                                 <td>@part.UploadedByName</td>
                                 <td><span class="badge bg-light text-dark border">@part.Status</span></td>
-                                <td class="text-end"><a class="btn btn-sm btn-light border" href="@part.PreviewUrl" target="_blank" rel="noopener">Preview</a> <a class="btn btn-sm btn-light border" href="@part.DownloadUrl">Download</a></td>
+                                <td><span class="badge @part.OcrCss">@part.OcrLabel</span></td>
+                                <td class="text-end">
+                                    <div class="btn-group btn-group-sm">
+                                        <a class="btn btn-light border js-open-document-part" href="@part.PreviewUrl" target="_blank" rel="noopener" data-version-id="@part.VersionId" data-preview-url="@part.PreviewUrl" data-ocr-url="@part.OcrUrl" data-part-number="@part.PartNumber" data-file-name="@part.FileName">Visualizar</a>
+                                        <button type="button" class="btn btn-light border js-open-document-part-ocr" data-version-id="@part.VersionId" data-ocr-url="@part.OcrUrl" data-part-number="@part.PartNumber">OCR</button>
+                                        <a class="btn btn-light border" href="@part.DownloadUrl">Baixar</a>
+                                    </div>
+                                </td>
                             </tr>
                         }
                         </tbody>
