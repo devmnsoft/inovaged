@@ -36,6 +36,9 @@
     var uploadOptions = DocumentUploadOptions.Value;
     var ocrAvailableCount = Model.Documents.Count(d => d.IsOcrAvailable);
     var incompleteCount = Model.Documents.Count(d => d.IsDocumentIncomplete || string.Equals(d.PartialStatus, "INCOMPLETE", StringComparison.OrdinalIgnoreCase));
+    var readyToConsolidateCount = Model.Documents.Count(d => d.IsPartialDocument && !d.IsDocumentIncomplete && string.Equals(d.PartialStatus, "COMPLETE", StringComparison.OrdinalIgnoreCase));
+    var consolidatedCount = Model.Documents.Count(d => string.Equals(d.PartialStatus, "CONSOLIDATED", StringComparison.OrdinalIgnoreCase) || d.ConsolidatedVersionId.HasValue);
+    var partialOcrCount = Model.Documents.Count(d => d.IsPartialDocument && d.HasAnyPartialOcr && !d.HasAllPartialOcr);
     var pendingOcrCount = runningOcrCount;
     var breadcrumbText = currentFolderNode?.Path ?? (!string.IsNullOrWhiteSpace(Model.CurrentFolderName) ? Model.CurrentFolderName : "Raiz");
 }
@@ -383,6 +386,8 @@
                         <span class="ged-metric-pill"><strong id="documentsUnclassifiedKpi">@unclassifiedCount</strong> Não classificados</span>
                         <span class="ged-metric-pill"><strong id="documentsOcrKpi">@ocrAvailableCount</strong> Com OCR</span>
                         <span class="ged-metric-pill"><strong id="documentsIncompleteKpi">@incompleteCount</strong> Incompletos <button type="button" class="btn btn-link btn-sm p-0 ged-help-popover" data-bs-toggle="popover" data-bs-trigger="focus" data-bs-placement="bottom" title="Documento incompleto" data-bs-content="Documento incompleto é um documento enviado parcialmente e que poderá receber novas partes futuramente. Exemplo: um documento de agendamento foi digitalizado pela metade hoje e a outra parte será enviada depois. Quando todas as partes forem anexadas, o sistema pode consolidar em uma versão final." aria-label="Ajuda sobre documentos incompletos"><i class="bi bi-question-circle"></i></button></span>
+                        <span class="ged-metric-pill"><strong>@readyToConsolidateCount</strong> Prontos para consolidar</span>
+                        <span class="ged-metric-pill"><strong>@consolidatedCount</strong> Consolidados</span>
                         <span class="ged-metric-pill"><strong>@pendingOcrCount</strong> Pendentes</span>
                     </div>
                 </div>
@@ -401,6 +406,14 @@
                     </ul>
                 </div>
             </div>
+        </div>
+
+        <div class="d-flex flex-wrap gap-2 mb-2" aria-label="Filtros rápidos de documentos fracionados">
+            <button type="button" class="btn btn-sm btn-outline-warning js-quick-partial-filter" data-filter="incomplete"><i class="bi bi-funnel me-1"></i>Ver incompletos</button>
+            <button type="button" class="btn btn-sm btn-outline-primary js-quick-partial-filter" data-filter="ready"><i class="bi bi-check2-circle me-1"></i>Ver prontos para consolidar</button>
+            <button type="button" class="btn btn-sm btn-outline-info js-quick-partial-filter" data-filter="consolidated"><i class="bi bi-layers me-1"></i>Ver consolidados</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary js-quick-partial-filter" data-filter="ocr-partial"><i class="bi bi-text-paragraph me-1"></i>Ver OCR parcial</button>
+            <button type="button" class="btn btn-sm btn-light border d-none" id="btnClearPartialFilters"><i class="bi bi-x-circle me-1"></i>Limpar filtro</button>
         </div>
 
         <div class="ged-toolbar">
@@ -504,7 +517,7 @@
 </div>
 
 <div class="modal fade" id="modalDocumentParts" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title"><i class="bi bi-files me-1"></i>Partes do documento</h5>
@@ -518,7 +531,7 @@
                         <tbody id="documentPartsTableBody"><tr><td colspan="8" class="text-muted">Selecione um documento para visualizar as partes.</td></tr></tbody>
                     </table>
                 </div>
-                <div class="alert alert-info small mb-0">Quando todas as partes estiverem disponíveis, o sistema poderá consolidar o documento em uma versão final.</div>
+                <div class="alert alert-info small mb-0">Antes de consolidar, confira o OCR de cada parte. Se alguma parte estiver sem OCR, você ainda poderá consolidar e reprocessar o OCR da versão final.</div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Fechar</button>
@@ -1359,6 +1372,28 @@
         });
 
         document.addEventListener('click', function (e) {
+            const partialFilterBtn = e.target.closest('.js-quick-partial-filter');
+            if (partialFilterBtn) {
+                e.preventDefault();
+                const filter = partialFilterBtn.dataset.filter;
+                const attr = filter === 'ready' ? 'documentReadyConsolidate' : filter === 'consolidated' ? 'documentConsolidated' : filter === 'ocr-partial' ? 'documentOcrPartial' : 'documentIncomplete';
+                document.querySelectorAll('#gedDocumentsContainer [data-document-id]').forEach(row => {
+                    row.classList.toggle('d-none', row.dataset[attr] !== 'true');
+                });
+                document.querySelectorAll('.js-quick-partial-filter').forEach(btn => btn.classList.toggle('active', btn === partialFilterBtn));
+                document.getElementById('btnClearPartialFilters')?.classList.remove('d-none');
+                return;
+            }
+
+            const clearPartialFilters = e.target.closest('#btnClearPartialFilters');
+            if (clearPartialFilters) {
+                e.preventDefault();
+                document.querySelectorAll('#gedDocumentsContainer [data-document-id]').forEach(row => row.classList.remove('d-none'));
+                document.querySelectorAll('.js-quick-partial-filter').forEach(btn => btn.classList.remove('active'));
+                clearPartialFilters.classList.add('d-none');
+                return;
+            }
+
             const filterBtn = e.target.closest('#btnFilterIncompleteDocs');
             if (filterBtn) {
                 e.preventDefault();
@@ -1444,11 +1479,12 @@ document.addEventListener('DOMContentLoaded', function () {
                 body.innerHTML = '<tr><td colspan="8" class="text-muted">Nenhuma parte detalhada encontrada para este documento.</td></tr>';
                 return;
             }
-            const maxTotal = parts.map(p => p.totalParts).filter(Boolean).sort((a,b)=>b-a)[0] || null;
+            const maxTotal = data.totalParts || parts.map(p => p.totalParts).filter(Boolean).sort((a,b)=>b-a)[0] || null;
             const receivedLabel = maxTotal ? `${parts.length} de ${maxTotal}` : `${parts.length}`;
             const statusLabel = maxTotal && parts.length >= maxTotal ? 'Partes completas — pronto para consolidar' : 'Documento incompleto';
-            if (titleEl) titleEl.innerHTML = `<strong>Documento:</strong> ${escapeHtml(title || '')}<br><strong>Status:</strong> ${statusLabel}<br><strong>Partes recebidas:</strong> ${receivedLabel}`;
-            body.innerHTML = parts.map(p => `<tr><td>${escapeHtml(p.partNumber || '-')} / ${escapeHtml(p.totalParts || maxTotal || '-')}</td><td>${escapeHtml(p.fileName || '-')}</td><td>${escapeHtml(p.uploadedAtLabel || '')}</td><td>${escapeHtml(p.uploadedByName || '-')}</td><td><span class="badge ged-badge ged-badge-info">${escapeHtml(p.status || '-')}</span></td><td>${p.sizeBytes ? (Number(p.sizeBytes)/1024).toFixed(1)+' KB' : '-'}</td><td>${p.isOcrAvailable ? '<span class="badge bg-success">OCR disponível</span>' : '<span class="text-muted small">-</span>'}</td><td class="text-end"><div class="btn-group btn-group-sm">${p.previewUrl ? `<a class="btn btn-light border" href="${escapeHtml(p.previewUrl)}" target="_blank" rel="noopener" title="Visualizar parte"><i class="bi bi-eye"></i></a>` : ''}${p.downloadUrl ? `<a class="btn btn-light border" href="${escapeHtml(p.downloadUrl)}" title="Baixar parte"><i class="bi bi-download"></i></a>` : ''}${p.ocrUrl ? `<a class="btn btn-light border" href="${escapeHtml(p.ocrUrl)}" target="_blank" rel="noopener" title="Ver OCR"><i class="bi bi-body-text"></i></a>` : ''}</div></td></tr>`).join('');
+            const ocrLabel = data.ocrSummary || `${data.partsWithOcr || 0} de ${parts.length} partes com OCR`;
+            if (titleEl) titleEl.innerHTML = `<strong>Documento:</strong> ${escapeHtml(title || data.title || '')}<br><strong>Status:</strong> ${statusLabel}<br><strong>Partes recebidas:</strong> ${receivedLabel}<br><strong>OCR:</strong> ${escapeHtml(ocrLabel)}${(data.partsWithoutOcr || 0) > 0 ? '<div class="alert alert-warning py-2 mt-2 mb-0">Atenção: nem todas as partes possuem OCR. Você pode consolidar mesmo assim e reprocessar o OCR na versão final.</div>' : ''}`;
+            body.innerHTML = parts.map(p => `<tr><td>${escapeHtml(p.partNumber || '-')} / ${escapeHtml(p.totalParts || maxTotal || '-')}</td><td>${escapeHtml(p.fileName || '-')}</td><td>${escapeHtml(p.uploadedAtLabel || '')}</td><td>${escapeHtml(p.uploadedByName || '-')}</td><td><span class="badge ged-badge ged-badge-info">${escapeHtml(p.status || '-')}</span></td><td>${p.sizeBytes ? (Number(p.sizeBytes)/1024).toFixed(1)+' KB' : '-'}</td><td><span class="badge ${escapeHtml(p.ocrCss || 'bg-secondary')}">${escapeHtml(p.ocrLabel || 'Sem OCR')}</span></td><td class="text-end"><div class="btn-group btn-group-sm">${p.previewUrl ? `<a class="btn btn-light border" href="${escapeHtml(p.previewUrl)}" target="_blank" rel="noopener" title="Visualizar parte"><i class="bi bi-eye"></i></a>` : ''}${p.ocrUrl ? `<a class="btn btn-light border" href="${escapeHtml(p.ocrUrl)}" target="_blank" rel="noopener" title="Ver OCR"><i class="bi bi-body-text"></i></a>` : ''}${p.downloadUrl ? `<a class="btn btn-light border" href="${escapeHtml(p.downloadUrl)}" title="Baixar parte"><i class="bi bi-download"></i></a>` : ''}</div></td></tr>`).join('');
             const complete = parts.length > 1 && (!maxTotal || parts.length >= maxTotal);
             if (consolidateBtn) consolidateBtn.disabled = !complete;
         } catch {
@@ -1512,6 +1548,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const documentId = e.target.closest('.js-consolidate-document')?.dataset.documentId || document.getElementById('btnConsolidateDocument')?.dataset.documentId;
             if (!documentId) return;
             const fd = new FormData(); fd.append('documentId', documentId);
+            if (!confirm('Revise o OCR de cada parte antes de consolidar. Se alguma parte não possui OCR, o sistema poderá reprocessar o OCR da versão final após a consolidação. Deseja consolidar agora?')) return;
             fetch('/Ged/DocumentParts/Consolidate', { method: 'POST', body: fd, headers: token ? { RequestVerificationToken: token } : {} })
                 .then(r => r.json().then(j => ({ ok: r.ok, j })))
                 .then(({ ok, j }) => { if (!ok || j.success === false) throw new Error(j.message || 'Falha ao consolidar.'); window.showAppToast?.(j.message || 'Documento consolidado.', 'success', 'Documento fracionado'); setTimeout(() => window.GedFolderNavigation?.refreshCurrentFolder?.() || window.location.reload(), 700); })

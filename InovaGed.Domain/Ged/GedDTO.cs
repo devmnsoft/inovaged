@@ -24,8 +24,14 @@ namespace InovaGed.Domain.Ged
         public DateTime? OcrFinishedAt { get; init; }
         public bool HasOcrText { get; init; }
         public bool IsOcrAvailable { get; init; }
-        public string OcrBadgeText => OcrStatusLabels.GetText(OcrStatus, HasOcrText);
-        public string OcrBadgeCss => OcrStatusLabels.GetCss(OcrStatus, HasOcrText);
+        public int PartialPartsWithOcrCount { get; init; }
+        public int PartialPartsWithoutOcrCount { get; init; }
+        public bool HasAnyPartialOcr { get; init; }
+        public bool HasAllPartialOcr { get; init; }
+        public string OcrSummaryText { get; init; } = "";
+        public string OcrSummaryCss { get; init; } = "";
+        public string OcrBadgeText => !string.IsNullOrWhiteSpace(OcrSummaryText) ? OcrSummaryText : OcrStatusLabels.GetText(OcrStatus, HasOcrText);
+        public string OcrBadgeCss => !string.IsNullOrWhiteSpace(OcrSummaryCss) ? OcrSummaryCss : OcrStatusLabels.GetCss(OcrStatus, HasOcrText);
         public Guid? ClassificationId { get; init; }
         public string? ClassificationLabel { get; init; }
         public string? ClassificationColor { get; init; }
@@ -63,6 +69,12 @@ namespace InovaGed.Domain.Ged
         public bool IsCurrent { get; init; }
         public bool HasOcrText { get; init; }
         public bool IsOcrAvailable { get; init; }
+        public int PartialPartsWithOcrCount { get; init; }
+        public int PartialPartsWithoutOcrCount { get; init; }
+        public bool HasAnyPartialOcr { get; init; }
+        public bool HasAllPartialOcr { get; init; }
+        public string OcrSummaryText { get; init; } = "";
+        public string OcrSummaryCss { get; init; } = "";
         public bool IsPartialDocument { get; init; }
         public Guid? PartialGroupId { get; init; }
         public int? PartialPartNumber { get; init; }

@@ -21,6 +21,9 @@
         var uploadLabel = string.IsNullOrWhiteSpace(d.UploadedAtLocalFormatted) ? uploadLocal.ToString(uploadDateFormat) : d.UploadedAtLocalFormatted;
         var partialClass = d.IsDocumentIncomplete ? " ged-document-incomplete" : (d.IsPartialDocument ? " ged-document-partial" : string.Empty);
         var iconClass = (d.FileName ?? string.Empty).EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) ? "bi-file-earmark-pdf" : "bi-file-earmark-text";
+        var isReadyToConsolidate = d.IsPartialDocument && !d.IsDocumentIncomplete && string.Equals(d.PartialStatus, "COMPLETE", StringComparison.OrdinalIgnoreCase);
+        var isConsolidated = string.Equals(d.PartialStatus, "CONSOLIDATED", StringComparison.OrdinalIgnoreCase) || d.ConsolidatedVersionId.HasValue;
+        var hasPartialOcr = d.IsPartialDocument && d.HasAnyPartialOcr && !d.HasAllPartialOcr;
 
         <article class="ged-document-row@partialClass"
                  draggable="true"
@@ -28,6 +31,9 @@
                  data-version-id="@versionId"
                  data-ocr-available="@(d.IsOcrAvailable ? "true" : "false")"
                  data-document-incomplete="@(d.IsDocumentIncomplete ? "true" : "false")"
+                 data-document-ready-consolidate="@(isReadyToConsolidate ? "true" : "false")"
+                 data-document-consolidated="@(isConsolidated ? "true" : "false")"
+                 data-document-ocr-partial="@(hasPartialOcr ? "true" : "false")"
                  data-document-unclassified="@(isUnclassified ? "true" : "false")"
                  data-uploaded-at-utc="@uploadDateUtc.ToString("O")">
 
@@ -77,6 +83,16 @@
                         <i class="bi bi-clock me-1"></i>@uploadLabel
                     </span>
                 </div>
+                @if (d.IsPartialDocument || d.IsDocumentIncomplete)
+                {
+                    var totalPartsLabel = d.TotalParts ?? d.PartialTotalParts;
+                    var partialInfo = totalPartsLabel.HasValue
+                        ? $"Documento enviado em partes · {d.PartialPartsCount}/{totalPartsLabel} partes recebidas"
+                        : $"Documento enviado em partes · {d.PartialPartsCount} partes recebidas";
+                    <div class="small text-muted mt-1">
+                        <i class="bi bi-files me-1"></i>@partialInfo · Última parte em @uploadLabel
+                    </div>
+                }
             </div>
 
             <div class="ged-document-actions">

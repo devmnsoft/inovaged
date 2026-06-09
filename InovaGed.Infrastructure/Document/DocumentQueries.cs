@@ -65,7 +65,13 @@ public sealed class DocumentQueries : IDocumentQueries
         var ocrTextExpr = schema.HasDocumentSearchOcrText ? "ds.ocr_text" : "NULL::text";
         var ocrStatusExpr = $"CASE WHEN oj.status IS NOT NULL THEN upper(oj.status::text) WHEN NULLIF(btrim(COALESCE({ocrTextExpr},'')), '') IS NOT NULL THEN 'COMPLETED' ELSE 'NONE' END";
         var hasOcrTextExpr = $"(NULLIF(btrim(COALESCE({ocrTextExpr},'')),'') IS NOT NULL)";
-
+        var partialOcrJoin = BuildPartialOcrSummaryJoin(schema, "d", "cv");
+        var partialPartsWithOcrExpr = schema.HasDocumentPartialPartTable && schema.HasDocumentSearchOcrText ? "COALESCE(pos.parts_with_ocr,0)" : "0";
+        var partialPartsWithoutOcrExpr = schema.HasDocumentPartialPartTable && schema.HasDocumentSearchOcrText ? "GREATEST(COALESCE(pos.total_parts,0)-COALESCE(pos.parts_with_ocr,0),0)" : "0";
+        var hasAnyPartialOcrExpr = schema.HasDocumentPartialPartTable && schema.HasDocumentSearchOcrText ? "COALESCE(pos.parts_with_ocr,0) > 0" : "false";
+        var hasAllPartialOcrExpr = schema.HasDocumentPartialPartTable && schema.HasDocumentSearchOcrText ? "COALESCE(pos.total_parts,0) > 0 AND COALESCE(pos.parts_with_ocr,0) = COALESCE(pos.total_parts,0)" : "false";
+        var ocrSummaryTextExpr = schema.HasDocumentPartialPartTable && schema.HasDocumentSearchOcrText ? $"CASE WHEN ({isPartialDocumentExpr}) OR COALESCE(pos.total_parts,0) > 0 THEN CASE WHEN upper(COALESCE({partialStatusExpr},'')) = 'CONSOLIDATED' AND ({ocrStatusExpr} = 'COMPLETED' AND {hasOcrTextExpr}) THEN 'OCR consolidado disponível' WHEN COALESCE(pos.total_parts,0)=0 THEN '' WHEN COALESCE(pos.parts_with_ocr,0)=0 THEN 'Sem OCR nas partes' WHEN COALESCE(pos.parts_with_ocr,0)=COALESCE(pos.total_parts,0) THEN 'OCR disponível nas partes' ELSE 'OCR parcial ' || COALESCE(pos.parts_with_ocr,0)::text || '/' || COALESCE(pos.total_parts,0)::text END ELSE '' END" : "''";
+        var ocrSummaryCssExpr = schema.HasDocumentPartialPartTable && schema.HasDocumentSearchOcrText ? $"CASE WHEN ({isPartialDocumentExpr}) OR COALESCE(pos.total_parts,0) > 0 THEN CASE WHEN upper(COALESCE({partialStatusExpr},'')) = 'CONSOLIDATED' AND ({ocrStatusExpr} = 'COMPLETED' AND {hasOcrTextExpr}) THEN 'bg-success' WHEN COALESCE(pos.total_parts,0)=0 THEN '' WHEN COALESCE(pos.parts_with_ocr,0)=0 THEN 'bg-secondary' WHEN COALESCE(pos.parts_with_ocr,0)=COALESCE(pos.total_parts,0) THEN 'bg-success' ELSE 'bg-warning text-dark' END ELSE '' END" : "''";
         var sql = $$"""
 SELECT
     d.id                           AS "Id",
@@ -81,6 +87,12 @@ SELECT
     oj.finished_at                 AS "OcrFinishedAt",
     {{hasOcrTextExpr}} AS "HasOcrText",
     ({{ocrStatusExpr}} = 'COMPLETED' AND {{hasOcrTextExpr}}) AS "IsOcrAvailable",
+    {{partialPartsWithOcrExpr}} AS "PartialPartsWithOcrCount",
+    {{partialPartsWithoutOcrExpr}} AS "PartialPartsWithoutOcrCount",
+    {{hasAnyPartialOcrExpr}} AS "HasAnyPartialOcr",
+    {{hasAllPartialOcrExpr}} AS "HasAllPartialOcr",
+    {{ocrSummaryTextExpr}} AS "OcrSummaryText",
+    {{ocrSummaryCssExpr}} AS "OcrSummaryCss",
     dc.document_type_id            AS "ClassificationId",
     cdt.name                       AS "ClassificationLabel",
     NULL::text                     AS "ClassificationColor",
@@ -112,6 +124,7 @@ LEFT JOIN LATERAL (
     LIMIT 1
 ) oj ON true
 {{documentSearchJoin}}
+{{partialOcrJoin}}
 LEFT JOIN LATERAL (
     SELECT x.document_type_id
     FROM ged.document_classification x
@@ -237,7 +250,13 @@ WHERE d.tenant_id = @tenantId
         var ocrTextExpr = schema.HasDocumentSearchOcrText ? "ds.ocr_text" : "NULL::text";
         var ocrStatusExpr = $"CASE WHEN oj.status IS NOT NULL THEN upper(oj.status::text) WHEN NULLIF(btrim(COALESCE({ocrTextExpr},'')), '') IS NOT NULL THEN 'COMPLETED' ELSE 'NONE' END";
         var hasOcrTextExpr = $"(NULLIF(btrim(COALESCE({ocrTextExpr},'')),'') IS NOT NULL)";
-
+        var partialOcrJoin = BuildPartialOcrSummaryJoin(schema, "d", "v");
+        var partialPartsWithOcrExpr = schema.HasDocumentPartialPartTable && schema.HasDocumentSearchOcrText ? "COALESCE(pos.parts_with_ocr,0)" : "0";
+        var partialPartsWithoutOcrExpr = schema.HasDocumentPartialPartTable && schema.HasDocumentSearchOcrText ? "GREATEST(COALESCE(pos.total_parts,0)-COALESCE(pos.parts_with_ocr,0),0)" : "0";
+        var hasAnyPartialOcrExpr = schema.HasDocumentPartialPartTable && schema.HasDocumentSearchOcrText ? "COALESCE(pos.parts_with_ocr,0) > 0" : "false";
+        var hasAllPartialOcrExpr = schema.HasDocumentPartialPartTable && schema.HasDocumentSearchOcrText ? "COALESCE(pos.total_parts,0) > 0 AND COALESCE(pos.parts_with_ocr,0) = COALESCE(pos.total_parts,0)" : "false";
+        var ocrSummaryTextExpr = schema.HasDocumentPartialPartTable && schema.HasDocumentSearchOcrText ? $"CASE WHEN ({isPartialDocumentExpr}) OR COALESCE(pos.total_parts,0) > 0 THEN CASE WHEN upper(COALESCE({partialStatusExpr},'')) = 'CONSOLIDATED' AND ({ocrStatusExpr} = 'COMPLETED' AND {hasOcrTextExpr}) THEN 'OCR consolidado disponível' WHEN COALESCE(pos.total_parts,0)=0 THEN '' WHEN COALESCE(pos.parts_with_ocr,0)=0 THEN 'Sem OCR nas partes' WHEN COALESCE(pos.parts_with_ocr,0)=COALESCE(pos.total_parts,0) THEN 'OCR disponível nas partes' ELSE 'OCR parcial ' || COALESCE(pos.parts_with_ocr,0)::text || '/' || COALESCE(pos.total_parts,0)::text END ELSE '' END" : "''";
+        var ocrSummaryCssExpr = schema.HasDocumentPartialPartTable && schema.HasDocumentSearchOcrText ? $"CASE WHEN ({isPartialDocumentExpr}) OR COALESCE(pos.total_parts,0) > 0 THEN CASE WHEN upper(COALESCE({partialStatusExpr},'')) = 'CONSOLIDATED' AND ({ocrStatusExpr} = 'COMPLETED' AND {hasOcrTextExpr}) THEN 'bg-success' WHEN COALESCE(pos.total_parts,0)=0 THEN '' WHEN COALESCE(pos.parts_with_ocr,0)=0 THEN 'bg-secondary' WHEN COALESCE(pos.parts_with_ocr,0)=COALESCE(pos.total_parts,0) THEN 'bg-success' ELSE 'bg-warning text-dark' END ELSE '' END" : "''";
         var sql = $$"""
 SELECT
     v.id              AS "Id",
@@ -252,6 +271,12 @@ SELECT
     (v.id = d.current_version_id) AS "IsCurrent",
     {{hasOcrTextExpr}} AS "HasOcrText",
     ({{ocrStatusExpr}} = 'COMPLETED' AND {{hasOcrTextExpr}}) AS "IsOcrAvailable",
+    {{partialPartsWithOcrExpr}} AS "PartialPartsWithOcrCount",
+    {{partialPartsWithoutOcrExpr}} AS "PartialPartsWithoutOcrCount",
+    {{hasAnyPartialOcrExpr}} AS "HasAnyPartialOcr",
+    {{hasAllPartialOcrExpr}} AS "HasAllPartialOcr",
+    {{ocrSummaryTextExpr}} AS "OcrSummaryText",
+    {{ocrSummaryCssExpr}} AS "OcrSummaryCss",
     {{isPartialDocumentExpr}} AS "IsPartialDocument",
     {{partialGroupIdExpr}} AS "PartialGroupId",
     {{partialPartNumberExpr}} AS "PartialPartNumber",
@@ -283,6 +308,7 @@ LEFT JOIN LATERAL (
     LIMIT 1
 ) oj ON true
 {{documentSearchJoin}}
+{{partialOcrJoin}}
 WHERE v.tenant_id = @tenantId
   AND v.document_id = @documentId
   AND d.status <> 'ARCHIVED'::ged.document_status_enum
@@ -357,6 +383,55 @@ WHERE table_schema = 'ged'
         return schema;
     }
 
+
+    private static string BuildPartialOcrSummaryJoin(DocumentVersionSchema schema, string documentAlias, string versionAlias)
+    {
+        if (!schema.HasDocumentPartialPartTable || !schema.HasDocumentSearchOcrText || !schema.HasPartialGroupId)
+        {
+            return "LEFT JOIN LATERAL (SELECT 0::int AS total_parts, 0::int AS parts_with_ocr) pos ON false";
+        }
+
+        var searchVersionPredicate = BuildDocumentSearchVersionPredicate(schema, "ds", "pp.version_id");
+        var searchJoin = searchVersionPredicate is null
+            ? "LEFT JOIN (SELECT NULL::uuid AS tenant_id, NULL::text AS ocr_text WHERE false) ds ON false"
+            : $"LEFT JOIN ged.document_search ds ON ds.tenant_id = pp.tenant_id AND {searchVersionPredicate}";
+
+        return $@"LEFT JOIN LATERAL (
+    SELECT count(*)::int AS total_parts,
+           count(*) FILTER (
+               WHERE NULLIF(btrim(COALESCE(ds.ocr_text,'')), '') IS NOT NULL
+                 AND upper(COALESCE(oj.status::text,'')) = 'COMPLETED'
+           )::int AS parts_with_ocr
+    FROM ged.document_partial_part pp
+    LEFT JOIN LATERAL (
+        SELECT j.*
+        FROM ged.ocr_job j
+        WHERE j.tenant_id = pp.tenant_id
+          AND j.document_version_id = pp.version_id
+        ORDER BY COALESCE(j.finished_at, j.requested_at) DESC NULLS LAST
+        LIMIT 1
+    ) oj ON true
+    {searchJoin}
+    WHERE pp.tenant_id = {documentAlias}.tenant_id
+      AND pp.partial_group_id = {versionAlias}.partial_group_id
+      AND COALESCE(pp.reg_status, 'A') = 'A'
+) pos ON true";
+    }
+
+    private static string? BuildDocumentSearchVersionPredicate(DocumentVersionSchema schema, string searchAlias, string versionExpression)
+    {
+        var predicates = new List<string>();
+        if (schema.HasDocumentSearchVersionId)
+        {
+            predicates.Add($"{searchAlias}.version_id = {versionExpression}");
+        }
+        if (schema.HasDocumentSearchDocumentVersionId)
+        {
+            predicates.Add($"{searchAlias}.document_version_id = {versionExpression}");
+        }
+
+        return predicates.Count == 0 ? null : $"({string.Join(" OR ", predicates)})";
+    }
 
     private static string BuildDocumentSearchJoin(DocumentVersionSchema schema, string documentAlias, string versionAlias)
     {

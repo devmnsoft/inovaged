@@ -2,14 +2,19 @@
 @using InovaGed.Web.Ocr
 @{
     var isUnclassified = !Model.ClassificationId.HasValue && (string.IsNullOrWhiteSpace(Model.TypeName) || Model.TypeName == "-");
-    var ocrBadgeClass = !string.IsNullOrWhiteSpace(Model.OcrBadgeCss) ? Model.OcrBadgeCss : OcrUiHelper.BadgeClass(Model.IsOcrAvailable, Model.OcrStatus);
-    var ocrLabel = !string.IsNullOrWhiteSpace(Model.OcrBadgeText) ? Model.OcrBadgeText : OcrUiHelper.AvailabilityLabel(Model.IsOcrAvailable, Model.OcrStatus, Model.HasOcrText);
+    var ocrBadgeClass = !string.IsNullOrWhiteSpace(Model.OcrSummaryCss) ? Model.OcrSummaryCss : (!string.IsNullOrWhiteSpace(Model.OcrBadgeCss) ? Model.OcrBadgeCss : OcrUiHelper.BadgeClass(Model.IsOcrAvailable, Model.OcrStatus));
+    var ocrLabel = !string.IsNullOrWhiteSpace(Model.OcrSummaryText) ? Model.OcrSummaryText : (!string.IsNullOrWhiteSpace(Model.OcrBadgeText) ? Model.OcrBadgeText : OcrUiHelper.AvailabilityLabel(Model.IsOcrAvailable, Model.OcrStatus, Model.HasOcrText));
     var ocrTitle = $"Status OCR: {(string.IsNullOrWhiteSpace(Model.OcrStatus) ? "NONE" : Model.OcrStatus)}. Texto extraído: {(Model.HasOcrText ? "sim" : "não")}.";
     if (Model.IsDocumentIncomplete || Model.IsPartialDocument)
     {
-        ocrTitle += " Em documentos incompletos, o OCR refere-se à parte/versão atualmente cadastrada; após consolidar, ele poderá ser reprocessado na versão final.";
+        var totalForOcr = Model.TotalParts ?? Model.PartialTotalParts ?? Model.PartialPartsCount;
+        ocrTitle = Model.PartialPartsCount > 0
+            ? $"{Model.PartialPartsWithOcrCount} de {Model.PartialPartsCount} partes possui OCR disponível. Abra ‘Ver partes’ para consultar cada OCR."
+            : "Documento enviado em partes. Abra ‘Ver partes’ para consultar o OCR de cada parte.";
     }
-    var partialSuffix = Model.PartNumber.HasValue && Model.TotalParts.HasValue ? $" {Model.PartNumber}/{Model.TotalParts}" : string.Empty;
+    var partialSuffix = Model.PartialPartsCount > 0
+        ? (Model.TotalParts.HasValue || Model.PartialTotalParts.HasValue ? $"{Model.PartialPartsCount}/{(Model.TotalParts ?? Model.PartialTotalParts)} partes" : $"{Model.PartialPartsCount} partes")
+        : (Model.PartNumber.HasValue && Model.TotalParts.HasValue ? $"{Model.PartNumber}/{Model.TotalParts} partes" : string.Empty);
     var isConsolidated = (Model.IsPartialDocument && Model.ConsolidatedVersionId.HasValue && !Model.IsDocumentIncomplete) || string.Equals(Model.PartialStatus, "CONSOLIDATED", StringComparison.OrdinalIgnoreCase);
     var isReadyToConsolidate = !isConsolidated && Model.IsPartialDocument && (string.Equals(Model.PartialStatus, "COMPLETE", StringComparison.OrdinalIgnoreCase) || (Model.PartialPartsCount > 1 && (!Model.TotalParts.HasValue || Model.PartialPartsCount >= Model.TotalParts.Value)));
 }
@@ -27,17 +32,17 @@ else
 
 @if (Model.IsDocumentIncomplete)
 {
-    <span class="badge ged-badge ged-badge-incomplete" title="Este documento possui partes pendentes e poderá ser complementado futuramente."><i class="bi bi-exclamation-triangle me-1"></i>Documento incompleto@partialSuffix</span>
+    <span class="badge ged-badge ged-badge-incomplete" title="Este documento possui partes pendentes e poderá ser complementado futuramente."><i class="bi bi-exclamation-triangle me-1"></i>@(string.IsNullOrWhiteSpace(partialSuffix) ? "Documento incompleto" : $"Documento incompleto · {partialSuffix}")</span>
 }
 else if (isReadyToConsolidate)
 {
-    <span class="badge ged-badge ged-badge-warning" title="Partes completas — pronto para consolidar."><i class="bi bi-check2-circle me-1"></i>Pronto para consolidar@partialSuffix</span>
+    <span class="badge ged-badge ged-badge-warning" title="Todas as partes previstas foram recebidas. Você pode consolidar este documento."><i class="bi bi-check2-circle me-1"></i>@(string.IsNullOrWhiteSpace(partialSuffix) ? "Pronto para consolidar" : $"{partialSuffix} · pronto para consolidar")</span>
 }
 else if (isConsolidated)
 {
-    <span class="badge ged-badge ged-badge-info" title="Este documento foi consolidado a partir de partes enviadas anteriormente."><i class="bi bi-layers me-1"></i>Documento consolidado@partialSuffix</span>
+    <span class="badge ged-badge ged-badge-info" title="Este documento foi consolidado a partir de partes enviadas anteriormente."><i class="bi bi-layers me-1"></i>@(string.IsNullOrWhiteSpace(partialSuffix) ? "Documento consolidado" : $"Documento consolidado · {partialSuffix}")</span>
 }
 else if (Model.IsPartialDocument)
 {
-    <span class="badge ged-badge ged-badge-info" title="Documento fracionado com partes registradas."><i class="bi bi-files me-1"></i>Documento parcial@partialSuffix</span>
+    <span class="badge ged-badge ged-badge-info" title="Documento fracionado com partes registradas."><i class="bi bi-files me-1"></i>@(string.IsNullOrWhiteSpace(partialSuffix) ? "Documento enviado em partes" : $"Documento enviado em partes · {partialSuffix}")</span>
 }

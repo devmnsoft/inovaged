@@ -21,6 +21,10 @@ public sealed class DocumentSidePanelVm
     public bool IsOcrAvailable { get; set; }
     public string OcrBadgeText { get; set; } = "OCR indisponível";
     public string OcrBadgeCss { get; set; } = "bg-secondary";
+    public int PartialPartsWithOcrCount { get; set; }
+    public int PartialPartsWithoutOcrCount { get; set; }
+    public string PartialOcrSummaryText { get; set; } = "";
+    public string PartialOcrSummaryCss { get; set; } = "bg-secondary";
     public bool IsPartialDocument { get; set; }
     public bool IsDocumentIncomplete { get; set; }
     public string PartialStatus { get; set; } = "NOT_PARTIAL";
@@ -55,6 +59,12 @@ public sealed class DocumentSidePanelPartVm
     public string UploadedAtLocalFormatted { get; set; } = "";
     public string UploadedByName { get; set; } = "";
     public string Status { get; set; } = "";
+    public string OcrStatus { get; set; } = "NONE";
+    public bool HasOcrText { get; set; }
+    public bool IsOcrAvailable { get; set; }
+    public string OcrLabel { get; set; } = "Sem OCR";
+    public string OcrCss { get; set; } = "bg-secondary";
+    public string OcrUrl { get; set; } = "";
     public string PreviewUrl { get; set; } = "";
     public string DownloadUrl { get; set; } = "";
 }

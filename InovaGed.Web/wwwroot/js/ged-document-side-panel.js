@@ -134,18 +134,21 @@
         }
     }
 
-    async function loadGedDocumentOcr(versionId) {
+    async function loadGedDocumentOcr(versionId, url, partNumber) {
         const panel = getPanel();
         const body = panel?.querySelector('[data-ged-tab-panel="ocr"]');
         const host = body?.querySelector('[data-ged-ocr-host]');
         if (!body || !host || !versionId) return;
         body.dataset.ocrLoaded = 'true';
+        body.dataset.versionId = versionId;
         host.innerHTML = '<div class="text-muted small"><span class="spinner-border spinner-border-sm me-1"></span>Carregando OCR...</div>';
         try {
-            const res = await fetch(`/Ged/DocumentOcrText?versionId=${encodeURIComponent(versionId)}`, { headers: { 'X-Requested-With': 'XMLHttpRequest', Accept: 'application/json' } });
+            const endpoint = url || `/Ged/DocumentOcrText?versionId=${encodeURIComponent(versionId)}`;
+            const res = await fetch(endpoint, { headers: { 'X-Requested-With': 'XMLHttpRequest', Accept: 'application/json' } });
             const data = await res.json();
             if (data.success && data.text) {
-                host.innerHTML = '<div class="ged-side-actions-bar"><button type="button" class="btn btn-sm btn-outline-primary js-copy-ocr"><i class="bi bi-clipboard me-1"></i>Copiar OCR</button><button type="button" class="btn btn-sm btn-outline-secondary js-download-ocr"><i class="bi bi-download me-1"></i>Baixar texto</button></div><div class="ged-ocr-text"></div>';
+                const context = partNumber ? `<div class="alert alert-light border small mb-2">Você está vendo o OCR da Parte ${esc(partNumber)}.</div>` : '';
+                host.innerHTML = `${context}<div class="ged-side-actions-bar"><button type="button" class="btn btn-sm btn-outline-primary js-copy-ocr"><i class="bi bi-clipboard me-1"></i>Copiar OCR</button><button type="button" class="btn btn-sm btn-outline-secondary js-download-ocr"><i class="bi bi-download me-1"></i>Baixar texto</button></div><div class="ged-ocr-text"></div>`;
                 host.querySelector('.ged-ocr-text').innerHTML = highlightOcrText(data.text);
             } else {
                 host.innerHTML = `<div class="alert alert-info mb-0"><i class="bi bi-info-circle me-1"></i>${esc(data.message || 'OCR ainda não disponível para este documento.')} <span class="badge bg-secondary ms-1">${esc(data.status || 'NONE')}</span></div>`;
@@ -192,7 +195,8 @@
                     : '<div class="alert alert-info mb-0">Este documento não possui partes.</div>';
                 return;
             }
-            host.innerHTML = `<div class="ged-side-actions-bar"><button type="button" class="btn btn-sm btn-outline-warning js-add-document-part" data-document-id="${esc(documentId)}"><i class="bi bi-file-earmark-plus me-1"></i>Adicionar parte</button></div><div class="table-responsive"><table class="table table-sm align-middle"><thead><tr><th>Nº</th><th>Arquivo</th><th>Upload em</th><th>Usuário</th><th>Status</th><th class="text-end">Ações</th></tr></thead><tbody>${parts.map(p => `<tr><td>${esc(p.partNumber)}${p.totalParts ? `/${esc(p.totalParts)}` : ''}</td><td>${esc(p.fileName || '-')}</td><td>${esc(p.uploadedAtLabel || '-')}</td><td>${esc(p.uploadedByName || p.uploadedBy || '-')}</td><td><span class="badge bg-light text-dark border">${esc(p.status || p.ocrStatus || '-')}</span></td><td class="text-end"><a class="btn btn-sm btn-light border" href="${esc(p.previewUrl)}" target="_blank" rel="noopener">Preview</a> <a class="btn btn-sm btn-light border" href="${esc(p.downloadUrl)}">Download</a></td></tr>`).join('')}</tbody></table></div>`;
+            const percent = data.totalParts ? Math.min(100, Math.round((parts.length * 100) / data.totalParts)) : 0;
+            host.innerHTML = `<div class="ged-part-summary mb-3"><span class="badge bg-light text-dark border">${esc(parts.length)}${data.totalParts ? '/' + esc(data.totalParts) : ''} partes recebidas</span> <span class="badge ${parts.some(p => p.isOcrAvailable) ? 'bg-warning text-dark' : 'bg-secondary'}">${esc(data.ocrSummary || '')}</span>${data.totalParts ? `<div class="progress mt-2" style="height:.5rem"><div class="progress-bar" style="width:${percent}%"></div></div>` : ''}</div><div class="ged-side-actions-bar"><button type="button" class="btn btn-sm btn-outline-warning js-add-document-part" data-document-id="${esc(documentId)}"><i class="bi bi-file-earmark-plus me-1"></i>Adicionar parte</button></div><div class="table-responsive"><table class="table table-sm align-middle"><thead><tr><th>Nº</th><th>Arquivo</th><th>Upload em</th><th>Usuário</th><th>Status</th><th>OCR</th><th class="text-end">Ações</th></tr></thead><tbody>${parts.map(p => `<tr><td>${esc(p.partNumber)}${p.totalParts ? `/${esc(p.totalParts)}` : ''}</td><td>${esc(p.fileName || '-')}</td><td>${esc(p.uploadedAtLabel || '-')}</td><td>${esc(p.uploadedByName || p.uploadedBy || '-')}</td><td><span class="badge bg-light text-dark border">${esc(p.status || '-')}</span></td><td><span class="badge ${esc(p.ocrCss || 'bg-secondary')}">${esc(p.ocrLabel || 'Sem OCR')}</span></td><td class="text-end"><div class="btn-group btn-group-sm"><a class="btn btn-light border js-open-document-part" href="${esc(p.previewUrl)}" target="_blank" rel="noopener" data-preview-url="${esc(p.previewUrl)}" data-ocr-url="${esc(p.ocrUrl || '')}" data-version-id="${esc(p.versionId)}" data-part-number="${esc(p.partNumber)}" data-file-name="${esc(p.fileName || '')}">Visualizar</a><button type="button" class="btn btn-light border js-open-document-part-ocr" data-ocr-url="${esc(p.ocrUrl || '')}" data-version-id="${esc(p.versionId)}" data-part-number="${esc(p.partNumber)}">OCR</button><a class="btn btn-light border" href="${esc(p.downloadUrl)}">Baixar</a></div></td></tr>`).join('')}</tbody></table></div>`;
         } catch (err) {
             console.error('[GED Parts]', err);
             host.innerHTML = '<div class="alert alert-warning mb-0">Não foi possível carregar as partes agora.</div>';
@@ -230,6 +234,29 @@
             a.remove();
             return;
         }
+        const partPreview = e.target.closest('.js-open-document-part');
+        if (partPreview) {
+            e.preventDefault();
+            const panel = getPanel();
+            const frame = panel?.querySelector('.ged-side-preview-frame');
+            if (frame && partPreview.dataset.previewUrl) frame.src = partPreview.dataset.previewUrl;
+            panel?.querySelectorAll('.js-open-document-part.active').forEach(x => x.classList.remove('active'));
+            partPreview.classList.add('active');
+            activateTab('preview');
+            showToast(`Visualizando Parte ${partPreview.dataset.partNumber || ''} — ${partPreview.dataset.fileName || ''}`, 'info');
+            return;
+        }
+        const partOcr = e.target.closest('.js-open-document-part-ocr');
+        if (partOcr) {
+            e.preventDefault();
+            const panel = getPanel();
+            const ocrPanel = panel?.querySelector('[data-ged-tab-panel="ocr"]');
+            if (ocrPanel) ocrPanel.dataset.ocrLoaded = 'false';
+            activateTab('ocr');
+            loadGedDocumentOcr(partOcr.dataset.versionId, partOcr.dataset.ocrUrl, partOcr.dataset.partNumber);
+            return;
+        }
+
         const copyRef = e.target.closest('.js-copy-document-reference');
         if (copyRef) { e.preventDefault(); navigator.clipboard?.writeText(copyRef.dataset.reference || ''); showToast('Referência copiada.', 'success'); return; }
         if (e.target.closest('.js-load-more-history')) { e.preventDefault(); showToast('Os últimos 20 eventos já estão carregados. Paginação completa será habilitada conforme volume de auditoria.', 'info'); return; }

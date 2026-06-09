@@ -47,6 +47,10 @@ public sealed class GedDetailsVM
         public bool IsOcrAvailable { get; set; }
         public bool IsPartialDocument { get; set; }
         public bool IsDocumentIncomplete { get; set; }
+        public Guid? PartialGroupId { get; set; }
+        public int? PartialPartNumber { get; set; }
+        public int? PartialTotalParts { get; set; }
+        public string PartialStatus { get; set; } = "NOT_PARTIAL";
         public int? PartNumber { get; set; }
         public int? TotalParts { get; set; }
         public Guid? ConsolidatedVersionId { get; set; }

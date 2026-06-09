@@ -203,30 +203,58 @@ SET partial_group_id=EXCLUDED.partial_group_id,
 
     public async Task<IReadOnlyList<DocumentPartialPartDto>> GetPartsAsync(Guid tenantId, Guid documentId, CancellationToken ct)
     {
-        const string sql = """
+        await using var conn = await _db.OpenAsync(ct);
+        var search = await GetDocumentSearchSchemaAsync(conn, ct);
+        var documentPredicate = search.HasDocumentId ? "ds.document_id=pp.document_id" : "true";
+        var versionPredicates = new List<string>();
+        if (search.HasVersionId) versionPredicates.Add("ds.version_id=pp.version_id");
+        if (search.HasDocumentVersionId) versionPredicates.Add("ds.document_version_id=pp.version_id");
+        var versionPredicate = versionPredicates.Count > 0 ? $"({string.Join(" OR ", versionPredicates)})" : "true";
+        var searchJoin = search.HasOcrText
+            ? $"LEFT JOIN ged.document_search ds ON ds.tenant_id=pp.tenant_id AND {documentPredicate} AND {versionPredicate}"
+            : "LEFT JOIN (SELECT NULL::uuid AS tenant_id, NULL::text AS ocr_text WHERE false) ds ON false";
+
+        var sql = $"""
 SELECT pp.id AS "Id", pp.tenant_id AS "TenantId", pp.document_id AS "DocumentId", pp.version_id AS "VersionId",
        pp.partial_group_id AS "PartialGroupId", pp.part_number AS "PartNumber", pp.total_parts AS "TotalParts",
        pp.file_name AS "FileName", pp.size_bytes AS "SizeBytes", pp.uploaded_at_utc AS "UploadedAtUtc",
        pp.uploaded_by AS "UploadedBy", COALESCE(u.user_name, pp.uploaded_by::text) AS "UploadedByName",
        pp.status AS "Status", pp.notes AS "Notes",
-       oj.status::text AS "OcrStatus",
-       (NULLIF(COALESCE(ds.ocr_text,''),'') IS NOT NULL) AS "HasOcrText",
-       (upper(COALESCE(oj.status::text,'')) = 'COMPLETED' AND NULLIF(COALESCE(ds.ocr_text,''),'') IS NOT NULL) AS "IsOcrAvailable"
+       COALESCE(oj.status::text, CASE WHEN NULLIF(btrim(COALESCE(ds.ocr_text,'')), '') IS NOT NULL THEN 'COMPLETED' ELSE 'NONE' END) AS "OcrStatus",
+       (NULLIF(btrim(COALESCE(ds.ocr_text,'')),'') IS NOT NULL) AS "HasOcrText",
+       (upper(COALESCE(oj.status::text,'')) = 'COMPLETED' AND NULLIF(btrim(COALESCE(ds.ocr_text,'')),'') IS NOT NULL) AS "IsOcrAvailable"
 FROM ged.document_partial_part pp
 LEFT JOIN ged.app_user u ON u.tenant_id=pp.tenant_id AND u.id=pp.uploaded_by
 LEFT JOIN LATERAL (
     SELECT j.* FROM ged.ocr_job j
     WHERE j.tenant_id=pp.tenant_id AND j.document_version_id=pp.version_id
-    ORDER BY j.requested_at DESC LIMIT 1
+    ORDER BY COALESCE(j.finished_at, j.requested_at) DESC NULLS LAST LIMIT 1
 ) oj ON true
-LEFT JOIN ged.document_search ds ON ds.tenant_id=pp.tenant_id AND ds.document_id=pp.document_id AND ds.version_id=pp.version_id
-WHERE pp.tenant_id=@tenantId AND pp.document_id=@documentId AND pp.reg_status='A'
+{searchJoin}
+WHERE pp.tenant_id=@tenantId AND pp.document_id=@documentId AND COALESCE(pp.reg_status,'A')='A'
 ORDER BY pp.part_number, pp.uploaded_at_utc;
 """;
-        await using var conn = await _db.OpenAsync(ct);
         var rows = await conn.QueryAsync<DocumentPartialPartDto>(new CommandDefinition(sql, new { tenantId, documentId }, cancellationToken: ct));
         await WriteAuditAsync(tenantId, null, "DOCUMENT_PART_VIEW", documentId, new { documentId, tenantId, correlationId = (string?)null, timestampUtc = DateTime.UtcNow }, ct);
         return rows.AsList();
+    }
+
+
+    public async Task<DocumentPartialOcrSummaryDto> GetPartialOcrSummaryAsync(Guid tenantId, Guid documentId, Guid partialGroupId, CancellationToken ct)
+    {
+        var parts = await GetPartsAsync(tenantId, documentId, ct);
+        var groupParts = parts.Where(p => p.PartialGroupId == partialGroupId).ToList();
+        var total = groupParts.Count;
+        var withOcr = groupParts.Count(p => p.IsOcrAvailable);
+        return new DocumentPartialOcrSummaryDto
+        {
+            TotalParts = total,
+            PartsWithOcr = withOcr,
+            PartsWithoutOcr = Math.Max(total - withOcr, 0),
+            HasAnyOcr = withOcr > 0,
+            HasAllOcr = total > 0 && withOcr == total,
+            SummaryText = total == 0 ? "Sem partes cadastradas" : withOcr == 0 ? "Sem OCR nas partes" : withOcr == total ? "OCR disponível nas partes" : $"OCR parcial: {withOcr}/{total} partes"
+        };
     }
 
     public async Task<Result<DocumentPartialSummaryDto>> MarkAsCompleteAsync(Guid tenantId, Guid userId, Guid documentId, string? correlationId, CancellationToken ct)
@@ -359,6 +387,26 @@ WHERE pp.tenant_id=@tenantId AND pp.document_id=@documentId AND pp.partial_group
         var summary = await conn.QuerySingleAsync<DocumentPartialSummaryDto>(new CommandDefinition(sql, new { tenantId, documentId, groupId }, tx, cancellationToken: ct));
         var canConsolidate = summary.PartsCount > 1 && (!summary.TotalParts.HasValue || summary.PartsCount >= summary.TotalParts.Value);
         return summary with { CanConsolidate = canConsolidate };
+    }
+
+    private static async Task<DocumentSearchSchema> GetDocumentSearchSchemaAsync(System.Data.IDbConnection conn, CancellationToken ct)
+    {
+        const string sql = """
+SELECT
+    EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='ged' AND table_name='document_search' AND column_name='ocr_text') AS "HasOcrText",
+    EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='ged' AND table_name='document_search' AND column_name='document_id') AS "HasDocumentId",
+    EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='ged' AND table_name='document_search' AND column_name='version_id') AS "HasVersionId",
+    EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='ged' AND table_name='document_search' AND column_name='document_version_id') AS "HasDocumentVersionId";
+""";
+        return await conn.QuerySingleAsync<DocumentSearchSchema>(new CommandDefinition(sql, cancellationToken: ct));
+    }
+
+    private sealed class DocumentSearchSchema
+    {
+        public bool HasOcrText { get; set; }
+        public bool HasDocumentId { get; set; }
+        public bool HasVersionId { get; set; }
+        public bool HasDocumentVersionId { get; set; }
     }
 
     private async Task WriteAuditAsync(Guid tenantId, Guid? userId, string action, Guid documentId, object data, CancellationToken ct)

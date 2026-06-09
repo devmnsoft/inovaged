@@ -39,6 +39,16 @@ public sealed class DocumentPartialPartDto
     public bool IsOcrAvailable { get; init; }
 }
 
+public sealed record DocumentPartialOcrSummaryDto
+{
+    public int TotalParts { get; init; }
+    public int PartsWithOcr { get; init; }
+    public int PartsWithoutOcr { get; init; }
+    public bool HasAnyOcr { get; init; }
+    public bool HasAllOcr { get; init; }
+    public string SummaryText { get; init; } = "";
+}
+
 public sealed record DocumentPartialSummaryDto
 {
     public Guid DocumentId { get; init; }
@@ -55,6 +65,7 @@ public interface IDocumentPartialService
     Task<Result<DocumentPartialSummaryDto>> MarkAsIncompleteAsync(Guid tenantId, Guid userId, Guid documentId, int? totalParts, string? notes, string? correlationId, CancellationToken ct);
     Task<Result<DocumentPartialSummaryDto>> AddPartAsync(AddDocumentPartRequest request, CancellationToken ct);
     Task<IReadOnlyList<DocumentPartialPartDto>> GetPartsAsync(Guid tenantId, Guid documentId, CancellationToken ct);
+    Task<DocumentPartialOcrSummaryDto> GetPartialOcrSummaryAsync(Guid tenantId, Guid documentId, Guid partialGroupId, CancellationToken ct);
     Task<Result<DocumentPartialSummaryDto>> ConsolidateAsync(Guid tenantId, Guid userId, Guid documentId, string? correlationId, CancellationToken ct);
     Task<Result<DocumentPartialSummaryDto>> CancelPartialAsync(Guid tenantId, Guid userId, Guid documentId, string? reason, string? correlationId, CancellationToken ct);
     Task<Result<DocumentPartialSummaryDto>> MarkAsCompleteAsync(Guid tenantId, Guid userId, Guid documentId, string? correlationId, CancellationToken ct);
