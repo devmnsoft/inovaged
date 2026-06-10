@@ -1,0 +1,60 @@
+@model InovaGed.Application.DocumentQuality.DocumentQualityResultDto
+@{
+    ViewData["Title"] = "Qualidade do Documento";
+    var history = ViewBag.History as IReadOnlyList<InovaGed.Application.DocumentQuality.DocumentQualityResultDto> ?? Array.Empty<InovaGed.Application.DocumentQuality.DocumentQualityResultDto>();
+    string StatusClass(string s) => s switch { "Excelente" => "success", "Bom" => "primary", "Atenção" => "warning text-dark", "Crítico" => "danger", _ => "secondary" };
+    string StatusTone(string s) => StatusClass(s).Split(' ')[0];
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div><h1 class="h3 mb-1">Qualidade do Documento</h1><div class="text-muted">@Model.DocumentTitle</div></div>
+    <form asp-action="Reanalyze" asp-route-documentId="@Model.DocumentId" method="post">@Html.AntiForgeryToken()<button class="btn btn-primary"><i class="bi bi-arrow-clockwise me-1"></i>Reanalisar</button></form>
+</div>
+
+@if (TempData["Success"] is string success) { <div class="alert alert-success">@success</div> }
+
+<div class="row g-3">
+    <div class="col-lg-4">
+        <div class="card shadow-sm h-100"><div class="card-body text-center">
+            <div class="display-3 fw-bold text-@StatusTone(Model.QualityStatus)">@Model.QualityScore</div>
+            <div class="progress my-3" style="height:14px"><div class="progress-bar bg-@StatusClass(Model.QualityStatus)" style="width:@Model.QualityScore%"></div></div>
+            <span class="badge bg-@StatusClass(Model.QualityStatus) fs-6">@Model.QualityStatus</span>
+            <div class="text-muted small mt-3">Analisado em @Model.AnalyzedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</div>
+        </div></div>
+    </div>
+    <div class="col-lg-8">
+        <div class="card shadow-sm mb-3"><div class="card-body">
+            <h2 class="h5">Pendências</h2>
+            @if (!Model.Issues.Any()) { <div class="alert alert-success mb-0">Nenhuma pendência encontrada.</div> }
+            else { <ol>@foreach (var issue in Model.Issues) { <li>@issue</li> }</ol> }
+        </div></div>
+        <div class="card shadow-sm"><div class="card-body">
+            <h2 class="h5">Recomendações</h2>
+            <ol>@foreach (var rec in Model.Recommendations) { <li>@rec</li> }</ol>
+            <div class="alert alert-info mb-0"><strong>Próxima ação sugerida:</strong> @Model.NextAction</div>
+        </div></div>
+    </div>
+</div>
+
+<div class="card shadow-sm mt-3"><div class="card-body">
+    <h2 class="h5">Dados técnicos</h2>
+    <div class="row g-2 small">
+        <div class="col-md-6"><strong>documentId:</strong> @Model.DocumentId</div>
+        <div class="col-md-6"><strong>versionId:</strong> @(Model.CurrentVersionId?.ToString() ?? "-")</div>
+        <div class="col-md-3"><strong>OCR:</strong> @(Model.HasOcr ? "Sim" : Model.HasOcrError ? "Erro" : "Não")</div>
+        <div class="col-md-3"><strong>Classificação:</strong> @(Model.HasClassification ? "Sim" : "Não")</div>
+        <div class="col-md-3"><strong>Metadados:</strong> @(Model.HasRequiredMetadata ? "Ok" : "Pendentes")</div>
+        <div class="col-md-3"><strong>Storage:</strong> @(Model.StorageFileExists.HasValue ? (Model.StorageFileExists.Value ? "Arquivo encontrado" : "Arquivo ausente") : "Não validado")</div>
+        <div class="col-md-3"><strong>LGPD:</strong> @(Model.HasLgpdRisk ? "Risco" : "Ok")</div>
+    </div>
+</div></div>
+
+<div class="card shadow-sm mt-3"><div class="card-body">
+    <h2 class="h5">Histórico das análises</h2>
+    <table class="table table-sm"><thead><tr><th>Data</th><th>Score</th><th>Status</th><th>Pendências</th></tr></thead><tbody>
+    @foreach (var h in history)
+    {
+        <tr><td>@h.AnalyzedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td><td>@h.QualityScore</td><td><span class="badge bg-@StatusClass(h.QualityStatus)">@h.QualityStatus</span></td><td>@string.Join("; ", h.Issues.Take(4))</td></tr>
+    }
+    </tbody></table>
+</div></div>

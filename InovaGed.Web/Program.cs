@@ -19,6 +19,7 @@ using InovaGed.Application.Common.Notifications;
 using InovaGed.Application.Common.Security;
 using InovaGed.Application.Common.Storage;
 using InovaGed.Application.Documents;
+using InovaGed.Application.DocumentQuality;
 using InovaGed.Application.Ged;
 using InovaGed.Application.Ged.Batches;
 using InovaGed.Application.Ged.Classification;
@@ -53,6 +54,7 @@ using InovaGed.Infrastructure.Common.Database;
 using InovaGed.Infrastructure.Common.Codes;
 using InovaGed.Infrastructure.Common.Security;
 using InovaGed.Infrastructure.Documents;
+using InovaGed.Infrastructure.DocumentQuality;
 using InovaGed.Infrastructure.Ged;
 using InovaGed.Infrastructure.Ged.Batches;
 using InovaGed.Infrastructure.Ged.Classification;
@@ -153,6 +155,10 @@ builder.Services.AddScoped<IHospitalOcrAnalyticsService, HospitalOcrAnalyticsSer
 builder.Services.AddScoped<IHospitalIntelligenceService, HospitalIntelligenceService>();
 builder.Services.AddScoped<IHospitalTrendsService, HospitalTrendsService>();
 builder.Services.AddScoped<IOperationsDashboardService, OperationsDashboardService>();
+
+builder.Services.Configure<DocumentQualityOptions>(builder.Configuration.GetSection("DocumentQuality"));
+builder.Services.AddScoped<IDocumentQualityAnalyzerService, DocumentQualityAnalyzerService>();
+builder.Services.AddHostedService<DocumentQualitySchedulerWorker>();
 
 // =======================================================
 // Database (PostgreSQL)

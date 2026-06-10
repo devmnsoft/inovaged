@@ -23,7 +23,7 @@ public sealed class OperationsDashboardService : IOperationsDashboardService
         var scope = await BuildScopeAsync(conn, tenantId, userId, roles, filter, ct);
 
         var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        foreach (var key in new[] { "unclassified", "withoutOcr", "ocrError", "incomplete", "readyToConsolidate", "documentsToday", "accessedToday", "failures" })
+        foreach (var key in new[] { "documentQuality", "unclassified", "withoutOcr", "ocrError", "incomplete", "readyToConsolidate", "documentsToday", "accessedToday", "failures" })
         {
             counts[key] = await SafeScalarAsync(conn, CountSql(key, scope), new { TenantId = tenantId, UserId = userId, SectorIds = scope.SectorIds, Sector = scope.Sector, From = filter.From, To = filter.To }, ct);
         }
@@ -101,6 +101,7 @@ public sealed class OperationsDashboardService : IOperationsDashboardService
 
     private static IReadOnlyList<OperationsSummaryDto> BuildSummary(IReadOnlyDictionary<string, int> c) => new[]
     {
+        Card("documentQuality", "Qualidade Documental", "Críticos, em atenção, sem OCR e risco LGPD.", c, "danger", "/DocumentQuality?Status=Crítico", "Ver pendências"),
         Card("unclassified", "Documentos sem classificação", "Aguardam definição de tipo/classe.", c, "warning", "/GedClassification/Queue", "Classificar agora"),
         Card("withoutOcr", "Documentos sem OCR", "Precisam de texto pesquisável.", c, "secondary", "/Ged/Processing?status=without-ocr", "Executar OCR"),
         Card("ocrError", "OCR com erro", "Falhas de processamento OCR.", c, "danger", "/Ged/Processing?status=error", "Reprocessar OCR"),
@@ -124,6 +125,7 @@ public sealed class OperationsDashboardService : IOperationsDashboardService
 
     private static string CountSql(string key, Scope scope) => key switch
     {
+        "documentQuality" => "select count(*) from (select distinct on (r.tenant_id,r.document_id) r.quality_status, r.has_ocr, r.has_lgpd_risk from ged.document_quality_result r where r.tenant_id=@TenantId order by r.tenant_id,r.document_id,r.analyzed_at_utc desc) q where q.quality_status in ('Crítico','Atenção') or q.has_ocr=false or q.has_lgpd_risk=true",
         "unclassified" => "select count(*) from ged.document d where d.tenant_id=@TenantId and d.reg_status='A' and (d.type_id is null or d.classification_id is null)" + DocumentScope(scope),
         "withoutOcr" => "select count(*) from ged.document d left join ged.document_version v on v.tenant_id=d.tenant_id and v.id=d.current_version_id where d.tenant_id=@TenantId and d.reg_status='A' and nullif(coalesce(v.ocr_text,''),'') is null" + DocumentScope(scope),
         "ocrError" => "select count(distinct coalesce(v.document_id,d.id)) from ged.ocr_job j left join ged.document_version v on v.id=j.document_version_id left join ged.document d on d.tenant_id=j.tenant_id and d.current_version_id=v.id where j.tenant_id=@TenantId and upper(j.status::text) in ('ERROR','FAILED','FAILURE')" + DocumentScope(scope),

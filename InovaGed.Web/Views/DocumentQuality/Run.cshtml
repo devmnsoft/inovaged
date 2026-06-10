@@ -1,0 +1,16 @@
+@{
+    ViewData["Title"] = "Executar Qualidade Documental";
+}
+<div class="card shadow-sm"><div class="card-body">
+    <h1 class="h4">Executar análise agora</h1>
+    <p class="text-muted">A análise roda em lotes de 100 documentos e registra score, pendências, recomendações e auditoria.</p>
+    <form asp-action="RunNow" method="post">
+        @Html.AntiForgeryToken()
+        <div class="row g-3">
+            <div class="col-md-4"><label class="form-label">Máximo de documentos</label><input name="MaxDocuments" class="form-control" type="number" value="2000" min="1" max="20000" /></div>
+            <div class="col-md-4 form-check mt-5"><input class="form-check-input" type="checkbox" name="AnalyzeStorage" value="true" checked /><label class="form-check-label">Validar storage</label></div>
+            <div class="col-md-4 form-check mt-5"><input class="form-check-input" type="checkbox" name="AnalyzeLgpd" value="true" checked /><label class="form-check-label">Analisar LGPD</label></div>
+        </div>
+        <button class="btn btn-primary mt-3"><i class="bi bi-play-circle me-1"></i>Iniciar</button>
+    </form>
+</div></div>
