@@ -276,6 +276,56 @@ create table if not exists ged.loan_request_item (
     created_at timestamptz not null default now(),
     reg_status char(1) not null default 'A'
 );
+"""),
+            Table("GED_TABLE_DOCUMENT_QUALITY_RUN", "ged.document_quality_run", "Qualidade Documental", "Cria a tabela de execuções da Qualidade Documental.", """
+create extension if not exists pgcrypto;
+create schema if not exists ged;
+create table if not exists ged.document_quality_run (
+    id uuid primary key default gen_random_uuid(),
+    tenant_id uuid not null,
+    started_at_utc timestamptz not null default now(),
+    finished_at_utc timestamptz null,
+    status text not null default 'STARTED',
+    total_documents int not null default 0,
+    excellent_count int not null default 0,
+    good_count int not null default 0,
+    warning_count int not null default 0,
+    critical_count int not null default 0,
+    failed_count int not null default 0,
+    message text null,
+    correlation_id text null,
+    created_at timestamptz not null default now()
+);
+"""),
+            Table("GED_TABLE_DOCUMENT_QUALITY_RESULT", "ged.document_quality_result", "Qualidade Documental", "Cria a tabela de resultados da Qualidade Documental.", """
+create extension if not exists pgcrypto;
+create schema if not exists ged;
+create table if not exists ged.document_quality_result (
+    id uuid primary key default gen_random_uuid(),
+    run_id uuid null,
+    tenant_id uuid not null,
+    document_id uuid not null,
+    current_version_id uuid null,
+    quality_score int not null default 0,
+    quality_status text not null default 'Não analisado',
+    has_ocr boolean not null default false,
+    has_ocr_error boolean not null default false,
+    has_classification boolean not null default false,
+    has_document_type boolean not null default false,
+    has_required_metadata boolean not null default false,
+    is_partial_document boolean not null default false,
+    is_partial_incomplete boolean not null default false,
+    is_ready_to_consolidate boolean not null default false,
+    is_consolidated boolean not null default false,
+    storage_file_exists boolean null,
+    has_possible_duplicate boolean not null default false,
+    has_lgpd_risk boolean not null default false,
+    issues_json jsonb not null default '[]'::jsonb,
+    recommendations_json jsonb not null default '[]'::jsonb,
+    next_action text null,
+    analyzed_at_utc timestamptz not null default now(),
+    created_at timestamptz not null default now()
+);
 """)
         };
 
@@ -326,6 +376,33 @@ create table if not exists ged.loan_request_item (
         AddColumn(fixes, "ged.loan_request_item", "document_version_id", "uuid null", "Loans");
         AddColumn(fixes, "ged.loan_request_item", "created_at", "timestamptz not null default now()", "Loans");
         AddColumn(fixes, "ged.loan_request_item", "loan_request_id", "uuid null", "Loans");
+        AddColumn(fixes, "ged.document_quality_run", "tenant_id", "uuid null", "Qualidade Documental");
+        AddColumn(fixes, "ged.document_quality_run", "started_at_utc", "timestamptz not null default now()", "Qualidade Documental");
+        AddColumn(fixes, "ged.document_quality_run", "status", "text not null default 'STARTED'", "Qualidade Documental");
+        AddColumn(fixes, "ged.document_quality_run", "total_documents", "int not null default 0", "Qualidade Documental");
+        AddColumn(fixes, "ged.document_quality_run", "excellent_count", "int not null default 0", "Qualidade Documental");
+        AddColumn(fixes, "ged.document_quality_run", "good_count", "int not null default 0", "Qualidade Documental");
+        AddColumn(fixes, "ged.document_quality_run", "warning_count", "int not null default 0", "Qualidade Documental");
+        AddColumn(fixes, "ged.document_quality_run", "critical_count", "int not null default 0", "Qualidade Documental");
+        AddColumn(fixes, "ged.document_quality_run", "failed_count", "int not null default 0", "Qualidade Documental");
+        AddColumn(fixes, "ged.document_quality_result", "tenant_id", "uuid null", "Qualidade Documental");
+        AddColumn(fixes, "ged.document_quality_result", "document_id", "uuid null", "Qualidade Documental");
+        AddColumn(fixes, "ged.document_quality_result", "quality_score", "int not null default 0", "Qualidade Documental");
+        AddColumn(fixes, "ged.document_quality_result", "quality_status", "text not null default 'Não analisado'", "Qualidade Documental");
+        AddColumn(fixes, "ged.document_quality_result", "has_ocr", "boolean not null default false", "Qualidade Documental");
+        AddColumn(fixes, "ged.document_quality_result", "has_ocr_error", "boolean not null default false", "Qualidade Documental");
+        AddColumn(fixes, "ged.document_quality_result", "has_classification", "boolean not null default false", "Qualidade Documental");
+        AddColumn(fixes, "ged.document_quality_result", "has_document_type", "boolean not null default false", "Qualidade Documental");
+        AddColumn(fixes, "ged.document_quality_result", "has_required_metadata", "boolean not null default false", "Qualidade Documental");
+        AddColumn(fixes, "ged.document_quality_result", "is_partial_document", "boolean not null default false", "Qualidade Documental");
+        AddColumn(fixes, "ged.document_quality_result", "is_partial_incomplete", "boolean not null default false", "Qualidade Documental");
+        AddColumn(fixes, "ged.document_quality_result", "is_ready_to_consolidate", "boolean not null default false", "Qualidade Documental");
+        AddColumn(fixes, "ged.document_quality_result", "is_consolidated", "boolean not null default false", "Qualidade Documental");
+        AddColumn(fixes, "ged.document_quality_result", "has_possible_duplicate", "boolean not null default false", "Qualidade Documental");
+        AddColumn(fixes, "ged.document_quality_result", "has_lgpd_risk", "boolean not null default false", "Qualidade Documental");
+        AddColumn(fixes, "ged.document_quality_result", "issues_json", "jsonb not null default '[]'::jsonb", "Qualidade Documental");
+        AddColumn(fixes, "ged.document_quality_result", "recommendations_json", "jsonb not null default '[]'::jsonb", "Qualidade Documental");
+        AddColumn(fixes, "ged.document_quality_result", "analyzed_at_utc", "timestamptz not null default now()", "Qualidade Documental");
     }
 
     private static void AddIndexFixes(List<SchemaFixDto> fixes)
@@ -409,6 +486,14 @@ end $$;
         fixes.Add(Index("GED_INDEX_APP_AUDIT_LOG_USER_CREATED", "ged.ix_app_audit_log_user_created", "Performance", "Cria índice de auditoria por usuário/data.", "create index if not exists ix_app_audit_log_user_created on ged.app_audit_log(user_id, created_at desc);"));
         fixes.Add(Index("GED_INDEX_APP_AUDIT_LOG_ACTION_CREATED", "ged.ix_app_audit_log_action_created", "Performance", "Cria índice de auditoria por ação/data.", "create index if not exists ix_app_audit_log_action_created on ged.app_audit_log(action, created_at desc);"));
         fixes.Add(Index("GED_INDEX_APP_AUDIT_LOG_CORRELATION", "ged.ix_app_audit_log_correlation", "Performance", "Cria índice de auditoria por correlationId.", "create index if not exists ix_app_audit_log_correlation on ged.app_audit_log(correlation_id);"));
+        fixes.Add(Index("GED_INDEX_DOCUMENT_QUALITY_RESULT_TENANT_DOCUMENT_ANALYZED", "ged.ix_document_quality_result_tenant_document_analyzed", "Qualidade Documental", "Cria índice por tenant/documento/última análise.", "create index if not exists ix_document_quality_result_tenant_document_analyzed on ged.document_quality_result(tenant_id, document_id, analyzed_at_utc desc);"));
+        fixes.Add(Index("GED_INDEX_DOCUMENT_QUALITY_RESULT_TENANT_STATUS", "ged.ix_document_quality_result_tenant_status", "Qualidade Documental", "Cria índice por tenant/status.", "create index if not exists ix_document_quality_result_tenant_status on ged.document_quality_result(tenant_id, quality_status);"));
+        fixes.Add(Index("GED_INDEX_DOCUMENT_QUALITY_RESULT_TENANT_SCORE", "ged.ix_document_quality_result_tenant_score", "Qualidade Documental", "Cria índice por tenant/score.", "create index if not exists ix_document_quality_result_tenant_score on ged.document_quality_result(tenant_id, quality_score);"));
+        fixes.Add(Index("GED_INDEX_DOCUMENT_QUALITY_RESULT_TENANT_HAS_OCR", "ged.ix_document_quality_result_tenant_has_ocr", "Qualidade Documental", "Cria índice por tenant/OCR.", "create index if not exists ix_document_quality_result_tenant_has_ocr on ged.document_quality_result(tenant_id, has_ocr);"));
+        fixes.Add(Index("GED_INDEX_DOCUMENT_QUALITY_RESULT_TENANT_LGPD", "ged.ix_document_quality_result_tenant_lgpd", "Qualidade Documental", "Cria índice por tenant/risco LGPD.", "create index if not exists ix_document_quality_result_tenant_lgpd on ged.document_quality_result(tenant_id, has_lgpd_risk);"));
+        fixes.Add(Index("GED_INDEX_DOCUMENT_QUALITY_RESULT_RUN", "ged.ix_document_quality_result_run", "Qualidade Documental", "Cria índice por execução.", "create index if not exists ix_document_quality_result_run on ged.document_quality_result(run_id);"));
+        fixes.Add(Index("GED_INDEX_DOCUMENT_QUALITY_RUN_TENANT_STARTED", "ged.ix_document_quality_run_tenant_started", "Qualidade Documental", "Cria índice de execuções por tenant/data.", "create index if not exists ix_document_quality_run_tenant_started on ged.document_quality_run(tenant_id, started_at_utc desc);"));
+        fixes.Add(Index("GED_INDEX_DOCUMENT_QUALITY_RUN_STATUS", "ged.ix_document_quality_run_status", "Qualidade Documental", "Cria índice de execuções por tenant/status.", "create index if not exists ix_document_quality_run_status on ged.document_quality_run(tenant_id, status);"));
     }
 
     private static SchemaFixDto Table(string id, string objectName, string area, string description, string sql) => new()

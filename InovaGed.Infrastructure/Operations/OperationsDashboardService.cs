@@ -25,6 +25,13 @@ public sealed class OperationsDashboardService : IOperationsDashboardService
         var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         foreach (var key in new[] { "documentQuality", "unclassified", "withoutOcr", "ocrError", "incomplete", "readyToConsolidate", "documentsToday", "accessedToday", "failures" })
         {
+            if (key == "documentQuality" && !await TableExistsAsync(conn, "ged", "document_quality_result", ct))
+            {
+                _logger.LogWarning("Qualidade Documental indisponível: tabela ged.document_quality_result não existe.");
+                counts[key] = 0;
+                continue;
+            }
+
             counts[key] = await SafeScalarAsync(conn, CountSql(key, scope), new { TenantId = tenantId, UserId = userId, SectorIds = scope.SectorIds, Sector = scope.Sector, From = filter.From, To = filter.To }, ct);
         }
 
@@ -101,7 +108,7 @@ public sealed class OperationsDashboardService : IOperationsDashboardService
 
     private static IReadOnlyList<OperationsSummaryDto> BuildSummary(IReadOnlyDictionary<string, int> c) => new[]
     {
-        Card("documentQuality", "Qualidade Documental", "Críticos, em atenção, sem OCR e risco LGPD.", c, "danger", "/DocumentQuality?Status=Crítico", "Ver pendências"),
+        Card("documentQuality", "Qualidade Documental", "Críticos, em atenção, sem OCR e risco LGPD. Se aparecer 0 com schema pendente, execute as migrations.", c, "danger", "/DocumentQuality?Status=Crítico", "Ver pendências"),
         Card("unclassified", "Documentos sem classificação", "Aguardam definição de tipo/classe.", c, "warning", "/GedClassification/Queue", "Classificar agora"),
         Card("withoutOcr", "Documentos sem OCR", "Precisam de texto pesquisável.", c, "secondary", "/Ged/Processing?status=without-ocr", "Executar OCR"),
         Card("ocrError", "OCR com erro", "Falhas de processamento OCR.", c, "danger", "/Ged/Processing?status=error", "Reprocessar OCR"),
@@ -201,6 +208,25 @@ order by 8 desc nulls last offset @Offset limit @Limit
         filter.Page = Math.Max(1, filter.Page);
         filter.PageSize = Math.Clamp(filter.PageSize <= 0 ? 10 : filter.PageSize, 1, 50);
         return filter;
+    }
+
+    private async Task<bool> TableExistsAsync(Npgsql.NpgsqlConnection conn, string schema, string table, CancellationToken ct)
+    {
+        try
+        {
+            return await conn.ExecuteScalarAsync<bool>(new CommandDefinition("""
+select exists (
+    select 1
+    from information_schema.tables
+    where table_schema = @schema and table_name = @table
+);
+""", new { schema, table }, cancellationToken: ct));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Falha ao verificar existência da tabela {Schema}.{Table}.", schema, table);
+            return false;
+        }
     }
 
     private async Task<int> SafeScalarAsync(Npgsql.NpgsqlConnection conn, string sql, object? args, CancellationToken ct)

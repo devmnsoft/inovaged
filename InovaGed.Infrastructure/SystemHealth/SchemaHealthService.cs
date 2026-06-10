@@ -17,7 +17,8 @@ public sealed class SchemaHealthService : ISchemaHealthService
         "ged.document", "ged.document_version", "ged.folder", "ged.document_search", "ged.ocr_job",
         "ged.upload_batch", "ged.upload_batch_item", "ged.upload_session", "ged.upload_session_chunk",
         "ged.document_partial_part", "ged.audit_log", "ged.app_audit_log",
-        "ged.ocr_auto_schedule_run", "ged.ocr_auto_schedule_run_item", "ged.loan_request", "ged.loan_request_item"
+        "ged.ocr_auto_schedule_run", "ged.ocr_auto_schedule_run_item", "ged.loan_request", "ged.loan_request_item",
+        "ged.document_quality_run", "ged.document_quality_result"
     ];
 
     private static readonly string[] OptionalTables =
@@ -49,7 +50,21 @@ public sealed class SchemaHealthService : ISchemaHealthService
         ("upload_session", "tenant_id", "Upload chunks"), ("upload_session", "total_chunks", "Upload chunks"),
         ("upload_session_chunk", "session_id", "Upload chunks"), ("upload_session_chunk", "chunk_index", "Upload chunks"),
         ("app_audit_log", "created_at", "SystemLogs"), ("app_audit_log", "user_name", "SystemLogs"),
-        ("audit_log", "created_at", "SystemLogs"), ("audit_log", "user_name", "SystemLogs")
+        ("audit_log", "created_at", "SystemLogs"), ("audit_log", "user_name", "SystemLogs"),
+        ("document_quality_run", "tenant_id", "Qualidade Documental"), ("document_quality_run", "started_at_utc", "Qualidade Documental"),
+        ("document_quality_run", "status", "Qualidade Documental"), ("document_quality_run", "total_documents", "Qualidade Documental"),
+        ("document_quality_run", "excellent_count", "Qualidade Documental"), ("document_quality_run", "good_count", "Qualidade Documental"),
+        ("document_quality_run", "warning_count", "Qualidade Documental"), ("document_quality_run", "critical_count", "Qualidade Documental"),
+        ("document_quality_run", "failed_count", "Qualidade Documental"),
+        ("document_quality_result", "tenant_id", "Qualidade Documental"), ("document_quality_result", "document_id", "Qualidade Documental"),
+        ("document_quality_result", "quality_score", "Qualidade Documental"), ("document_quality_result", "quality_status", "Qualidade Documental"),
+        ("document_quality_result", "has_ocr", "Qualidade Documental"), ("document_quality_result", "has_ocr_error", "Qualidade Documental"),
+        ("document_quality_result", "has_classification", "Qualidade Documental"), ("document_quality_result", "has_document_type", "Qualidade Documental"),
+        ("document_quality_result", "has_required_metadata", "Qualidade Documental"), ("document_quality_result", "is_partial_document", "Qualidade Documental"),
+        ("document_quality_result", "is_partial_incomplete", "Qualidade Documental"), ("document_quality_result", "is_ready_to_consolidate", "Qualidade Documental"),
+        ("document_quality_result", "is_consolidated", "Qualidade Documental"), ("document_quality_result", "has_possible_duplicate", "Qualidade Documental"),
+        ("document_quality_result", "has_lgpd_risk", "Qualidade Documental"), ("document_quality_result", "issues_json", "Qualidade Documental"),
+        ("document_quality_result", "recommendations_json", "Qualidade Documental"), ("document_quality_result", "analyzed_at_utc", "Qualidade Documental")
     ];
 
     private static readonly (string Name, string[] Alternatives, string Message)[] RecommendedIndexes =
@@ -77,7 +92,15 @@ public sealed class SchemaHealthService : ISchemaHealthService
         ("ix_app_audit_log_tenant_created", [], "Índice de auditoria por tenant/data."),
         ("ix_app_audit_log_user_created", [], "Índice de auditoria por usuário/data."),
         ("ix_app_audit_log_action_created", [], "Índice de auditoria por ação/data."),
-        ("ix_app_audit_log_correlation", [], "Índice de auditoria por correlationId.")
+        ("ix_app_audit_log_correlation", [], "Índice de auditoria por correlationId."),
+        ("ix_document_quality_result_tenant_document_analyzed", [], "Índice de qualidade documental por tenant/documento/análise."),
+        ("ix_document_quality_result_tenant_status", [], "Índice de qualidade documental por tenant/status."),
+        ("ix_document_quality_result_tenant_score", [], "Índice de qualidade documental por tenant/score."),
+        ("ix_document_quality_result_tenant_has_ocr", [], "Índice de qualidade documental por tenant/OCR."),
+        ("ix_document_quality_result_tenant_lgpd", [], "Índice de qualidade documental por tenant/risco LGPD."),
+        ("ix_document_quality_result_run", [], "Índice de resultados por execução de qualidade documental."),
+        ("ix_document_quality_run_tenant_started", [], "Índice de execuções de qualidade documental por tenant/data."),
+        ("ix_document_quality_run_status", [], "Índice de execuções de qualidade documental por tenant/status.")
     ];
 
     public SchemaHealthService(IDbConnectionFactory db, ILogger<SchemaHealthService> logger, ISchemaFixSqlProvider fixSqlProvider)
@@ -337,6 +360,8 @@ limit 1;", cancellationToken: ct));
             "ged.upload_session" => "GED_TABLE_UPLOAD_SESSION",
             "ged.upload_session_chunk" => "GED_TABLE_UPLOAD_SESSION_CHUNK",
             "ged.document_partial_part" => "GED_TABLE_DOCUMENT_PARTIAL_PART",
+            "ged.document_quality_run" => "GED_TABLE_DOCUMENT_QUALITY_RUN",
+            "ged.document_quality_result" => "GED_TABLE_DOCUMENT_QUALITY_RESULT",
             _ => BuildGenericId("GED_TABLE", table)
         };
     }

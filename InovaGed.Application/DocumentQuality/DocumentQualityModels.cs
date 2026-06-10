@@ -58,6 +58,8 @@ public sealed class DocumentQualityResultDto
 
 public sealed class DocumentQualityDashboardDto
 {
+    public bool SchemaReady { get; set; } = true;
+    public string? SchemaMessage { get; set; }
     public DocumentQualityFilter Filter { get; set; } = new();
     public double AverageScore { get; set; }
     public int TotalDocuments { get; set; }

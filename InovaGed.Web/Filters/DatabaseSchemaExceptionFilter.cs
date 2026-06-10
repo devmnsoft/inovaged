@@ -41,12 +41,17 @@ public sealed class DatabaseSchemaExceptionFilter : IExceptionFilter
             requestPath,
             correlationId);
 
+        var isDocumentQualitySchemaPending = IsDocumentQualitySchemaException(pg);
+        var friendlyMessage = isDocumentQualitySchemaPending
+            ? "A funcionalidade de Qualidade Documental foi ativada, mas as tabelas ainda não foram criadas."
+            : FriendlyMessage;
+
         if (IsAjaxOrApi(context.HttpContext.Request))
         {
             context.Result = new ObjectResult(new
             {
                 success = false,
-                message = FriendlyMessage,
+                message = friendlyMessage,
                 errorStep = ErrorStep,
                 sqlState = pg.SqlState,
                 correlationId,
@@ -68,14 +73,15 @@ public sealed class DatabaseSchemaExceptionFilter : IExceptionFilter
                 new Microsoft.AspNetCore.Mvc.ModelBinding.EmptyModelMetadataProvider(),
                 context.ModelState)
             {
-                ["Title"] = "Banco de dados desatualizado",
-                ["Message"] = FriendlyMessage,
+                ["Title"] = isDocumentQualitySchemaPending ? "Schema de Qualidade Documental pendente" : "Banco de dados desatualizado",
+                ["Message"] = friendlyMessage,
                 ["SqlState"] = pg.SqlState,
                 ["CorrelationId"] = correlationId,
                 ["Controller"] = controllerName,
                 ["Action"] = actionName,
                 ["Path"] = requestPath,
                 ["Migration"] = MigrationScript,
+                ["CopyCommand"] = isDocumentQualitySchemaPending ? @"psql ""$DATABASE_URL"" -f database/apply_all_required_migrations.sql" : null,
                 ["Detail"] = _environment.IsDevelopment() ? pg.MessageText : null
             }
         };
@@ -103,6 +109,16 @@ public sealed class DatabaseSchemaExceptionFilter : IExceptionFilter
             : "UnknownAction";
 
         return (controller, action);
+    }
+
+    private static bool IsDocumentQualitySchemaException(PostgresException pg)
+    {
+        if (pg.SqlState != "42P01")
+            return false;
+
+        var text = $"{pg.MessageText} {pg.Detail} {pg.TableName} {pg.Where}";
+        return text.Contains("document_quality_result", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("document_quality_run", StringComparison.OrdinalIgnoreCase);
     }
 
     private static PostgresException? FindSchemaException(Exception exception)

@@ -12,6 +12,7 @@ namespace InovaGed.Infrastructure.DocumentQuality;
 public sealed class DocumentQualityAnalyzerService : IDocumentQualityAnalyzerService
 {
     private const int BatchSize = 100;
+    private const string DocumentQualitySchemaPendingMessage = "As tabelas da Qualidade Documental ainda não foram criadas. Execute database/apply_all_required_migrations.sql ou use o Schema Repair.";
     private readonly IDbConnectionFactory _db;
     private readonly IFileStorage _storage;
     private readonly IAuditWriter _audit;
@@ -31,6 +32,11 @@ public sealed class DocumentQualityAnalyzerService : IDocumentQualityAnalyzerSer
         var runId = Guid.NewGuid();
         var started = DateTime.UtcNow;
         await using var conn = await _db.OpenAsync(ct);
+        if (!await IsDocumentQualitySchemaReadyAsync(conn, ct))
+        {
+            throw new InvalidOperationException(DocumentQualitySchemaPendingMessage);
+        }
+
         await conn.ExecuteAsync(new CommandDefinition("""
 insert into ged.document_quality_run(id, tenant_id, started_at_utc, status, message)
 values (@RunId, @TenantId, @Started, 'RUNNING', 'Análise de qualidade documental iniciada')
@@ -93,13 +99,34 @@ where id=@RunId and tenant_id=@TenantId
         }
     }
 
-    public Task<DocumentQualityResultDto> AnalyzeOneAsync(Guid tenantId, Guid documentId, CancellationToken ct)
-        => AnalyzeOneInternalAsync(tenantId, documentId, analyzeStorage: true, analyzeLgpd: true, ct);
+    public async Task<DocumentQualityResultDto> AnalyzeOneAsync(Guid tenantId, Guid documentId, CancellationToken ct)
+    {
+        await using var conn = await _db.OpenAsync(ct);
+        if (!await IsDocumentQualitySchemaReadyAsync(conn, ct))
+        {
+            throw new InvalidOperationException(DocumentQualitySchemaPendingMessage);
+        }
+
+        return await AnalyzeOneInternalAsync(tenantId, documentId, analyzeStorage: true, analyzeLgpd: true, ct);
+    }
 
     public async Task<DocumentQualityDashboardDto> GetDashboardAsync(Guid tenantId, DocumentQualityFilter filter, CancellationToken ct)
     {
         filter = NormalizeFilter(filter);
         await using var conn = await _db.OpenAsync(ct);
+        if (!await IsDocumentQualitySchemaReadyAsync(conn, ct))
+        {
+            _logger.LogWarning("Qualidade Documental indisponível: tabelas ged.document_quality_result ou ged.document_quality_run não existem.");
+            return new DocumentQualityDashboardDto
+            {
+                SchemaReady = false,
+                SchemaMessage = DocumentQualitySchemaPendingMessage,
+                Filter = filter,
+                Page = filter.Page,
+                PageSize = filter.PageSize
+            };
+        }
+
         var args = BuildResultWhere(filter, out var where);
         args.Add("TenantId", tenantId);
         args.Add("Offset", (filter.Page - 1) * filter.PageSize);
@@ -168,6 +195,12 @@ limit @PageSize offset @Offset
     public async Task<IReadOnlyList<DocumentQualityResultDto>> GetHistoryAsync(Guid tenantId, Guid documentId, CancellationToken ct)
     {
         await using var conn = await _db.OpenAsync(ct);
+        if (!await IsDocumentQualitySchemaReadyAsync(conn, ct))
+        {
+            _logger.LogWarning("Histórico de Qualidade Documental indisponível: schema pendente para o documento {DocumentId}.", documentId);
+            return Array.Empty<DocumentQualityResultDto>();
+        }
+
         var rows = await conn.QueryAsync<DocumentQualityResultRecord>(new CommandDefinition("""
 select r.*, d.title as "DocumentTitle", f.name as "FolderName", dt.name as "DocumentTypeName"
 from ged.document_quality_result r
@@ -179,6 +212,15 @@ order by r.analyzed_at_utc desc
 limit 50
 """, new { TenantId = tenantId, DocumentId = documentId }, cancellationToken: ct));
         return rows.Select(MapRecord).ToArray();
+    }
+
+    private static async Task<bool> IsDocumentQualitySchemaReadyAsync(NpgsqlConnection conn, CancellationToken ct)
+    {
+        const string sql = """
+select exists (select 1 from information_schema.tables where table_schema='ged' and table_name='document_quality_result')
+   and exists (select 1 from information_schema.tables where table_schema='ged' and table_name='document_quality_run');
+""";
+        return await conn.ExecuteScalarAsync<bool>(new CommandDefinition(sql, cancellationToken: ct));
     }
 
     private async Task<DocumentQualityResultDto> AnalyzeOneInternalAsync(Guid tenantId, Guid documentId, bool analyzeStorage, bool analyzeLgpd, CancellationToken ct)
