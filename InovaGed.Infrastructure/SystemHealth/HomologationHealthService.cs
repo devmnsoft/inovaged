@@ -226,7 +226,7 @@ public sealed class HomologationHealthService : IHomologationHealthService
     private void AddPermissionChecks(HomologationReportDto report)
     {
         Add(report, "Perfis e Menu", "ADMIN vê tudo", "Tela acessível somente a ADMIN.", Ok, "Critical", "Controller protegido por AppPolicies.AdminOnly.", "Manter rota administrativa restrita.", "/SystemHealth/Homologation");
-        Add(report, "Perfis e Menu", "Perfis hospitalares", "ADMINISTRADOROPHIR/ARQUIVISTAOPHIR redirecionam para /HospitalDocuments e veem menus permitidos.", Manual, "Critical", "Requer sessão com perfis restritos.", "Validar login, sidebar, item ativo e 403 em rotas administrativas.", "/HospitalDocuments", false);
+        Add(report, "Perfis e Menu", "Perfis hospitalares", "ADMINISTRADOROPHIR redireciona para /Operations, ARQUIVISTAOPHIR para /Loans/New e ambos veem menus permitidos.", Manual, "Critical", "Requer sessão com perfis restritos.", "Validar login, sidebar, item ativo e 403 em rotas administrativas.", "/HospitalDocuments", false);
         Add(report, "Perfis e Menu", "Rotas administrativas 403", "Usuários não ADMIN devem ter acesso negado à homologação/schema/logs.", Manual, "Critical", "Requer teste com usuário não ADMIN.", "Entrar com usuário restrito e abrir /SystemHealth/Homologation.", "/SystemHealth/Homologation", false);
     }
 

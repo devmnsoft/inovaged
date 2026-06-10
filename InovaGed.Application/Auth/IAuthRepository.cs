@@ -12,6 +12,11 @@ public interface IAuthRepository
         Guid userId,
         CancellationToken ct);
 
+    Task<string?> GetUserSectorAsync(
+        Guid tenantId,
+        Guid userId,
+        CancellationToken ct);
+
     Task<string?> GetPasswordHashAsync(
         Guid tenantId,
         Guid userId,

@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize(Policy = AppPolicies.Operations)]
+[Authorize(Policy = AppPolicies.OperationsAccess)]
 [Route("[controller]")]
 public sealed class OperationsController : Controller
 {
@@ -72,7 +72,7 @@ public sealed class OperationsController : Controller
     }
 
     private bool CanAccessOperations()
-        => RolePolicyHelper.IsFullAdmin(User) || User.IsInRole(AppRoles.AdministradorOphir) || User.IsInRole(AppRoles.ArquivistaOphir);
+        => RolePolicyHelper.IsFullAdmin(User) || User.IsInNormalizedRole(AppRoles.AdministradorOphir) || User.IsInNormalizedRole(AppRoles.ArquivistaOphir);
 
     private Task AuditAsync(string action, string summary, object data, CancellationToken ct)
         => _audit.WriteAsync(

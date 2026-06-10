@@ -48,7 +48,7 @@
         AppRoles.Hospital => "Usuário Hospitalar",
         _ => "Perfil operacional"
     };
-    var sector = User?.FindFirst("sector")?.Value ?? User?.FindFirst("setor")?.Value ?? User?.FindFirst("lotacao")?.Value;
+    var sector = User?.FindFirst("sector")?.Value ?? User?.FindFirst("setor")?.Value ?? User?.FindFirst("lotacao")?.Value ?? User?.FindFirst("sector_name")?.Value;
     var showSectorWarning = (string.Equals(primaryRole, AppRoles.AdministradorOphir, StringComparison.OrdinalIgnoreCase)
         || string.Equals(primaryRole, AppRoles.ArquivistaOphir, StringComparison.OrdinalIgnoreCase))
         && string.IsNullOrWhiteSpace(sector);
@@ -179,7 +179,7 @@
                     </div>
 
                     <div class="topbar-actions">
-                        @if (CanDocumentos())
+                        @if (AppMenuPolicy.IsFullAdmin(User))
                         {
                             <a class="btn btn-sm btn-primary d-none d-sm-inline-flex"
                                asp-controller="Ged"

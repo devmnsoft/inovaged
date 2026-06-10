@@ -6,6 +6,7 @@ using InovaGed.Application.Common.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Infrastructure;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 
 namespace InovaGed.Infrastructure.Common.Security;
 
@@ -13,17 +14,19 @@ public sealed class AccessFailureLogger : IAccessFailureLogger
 {
     private readonly IDbConnectionFactory _db;
     private readonly ITenantAccessor _tenant;
+    private readonly ILogger<AccessFailureLogger> _logger;
 
-    public AccessFailureLogger(IDbConnectionFactory db, ITenantAccessor tenant)
+    public AccessFailureLogger(IDbConnectionFactory db, ITenantAccessor tenant, ILogger<AccessFailureLogger> logger)
     {
         _db = db;
         _tenant = tenant;
+        _logger = logger;
     }
 
     public async Task LogAsync(HttpContext ctx, AuthorizationPolicy? policy, int statusCode, string reason)
     {
         // Tenant
-        var tenantId = _tenant.GetTenantIdOrThrow(ctx);
+        var tenantId = ResolveTenantId(ctx);
 
         // User (tenta pegar Guid do NameIdentifier; se não tiver, fica null)
         Guid? userId = null;
@@ -63,31 +66,112 @@ values
  @Method, @Path, @Query, @StatusCode,
  @RequiredRoles, @Ip, @UserAgent, @CorrelationId, @TraceId, @Reason);";
 
+        var roles = ctx.User?.Claims
+            .Where(c => c.Type == ClaimTypes.Role || c.Type == "role")
+            .Select(c => c.Value)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray() ?? Array.Empty<string>();
+
+        var controller = ctx.Request.RouteValues.TryGetValue("controller", out var controllerValue) ? controllerValue?.ToString() : null;
+        var action = ctx.Request.RouteValues.TryGetValue("action", out var actionValue) ? actionValue?.ToString() : null;
+
+        if (statusCode == StatusCodes.Status403Forbidden && roles.Any(r => IsRole(r, "ADMIN") || IsRole(r, "ADMINISTRADOR")))
+        {
+            _logger.LogWarning("Full admin recebeu 403. UserId={UserId} UserName={UserName} Roles={Roles} Path={Path} Method={Method} Controller={Controller} Action={Action} CorrelationId={CorrelationId}",
+                userId, userName, string.Join(",", roles), ctx.Request.Path.Value, ctx.Request.Method, controller, action, correlationId);
+        }
+
         using var conn = _db.CreateConnection();
 
-        await conn.ExecuteAsync(sql, new
+        if (tenantId != Guid.Empty && await SecurityFailureLogExistsAsync(conn))
         {
-            Id = Guid.NewGuid(),
-            TenantId = tenantId,
+            await conn.ExecuteAsync(sql, new
+            {
+                Id = Guid.NewGuid(),
+                TenantId = tenantId,
 
-            UserId = userId,
-            UserName = userName,
-            UserEmail = userEmail,
+                UserId = userId,
+                UserName = userName,
+                UserEmail = userEmail,
 
-            Method = ctx.Request.Method,
-            Path = ctx.Request.Path.Value ?? "",
-            Query = ctx.Request.QueryString.HasValue ? ctx.Request.QueryString.Value : null,
-            StatusCode = statusCode,
+                Method = ctx.Request.Method,
+                Path = ctx.Request.Path.Value ?? "",
+                Query = ctx.Request.QueryString.HasValue ? ctx.Request.QueryString.Value : null,
+                StatusCode = statusCode,
 
-            RequiredRoles = requiredRoles,
+                RequiredRoles = requiredRoles,
 
-            Ip = ip,
-            UserAgent = userAgent,
-            CorrelationId = correlationId,
-            TraceId = traceId,
-            Reason = reason
-        });
+                Ip = ip,
+                UserAgent = userAgent,
+                CorrelationId = correlationId,
+                TraceId = traceId,
+                Reason = reason
+            });
+        }
+
+        if (statusCode == StatusCodes.Status403Forbidden && tenantId != Guid.Empty && await AppAuditLogExistsAsync(conn))
+        {
+            const string auditSql = @"
+insert into ged.app_audit_log
+(id, tenant_id, user_id, user_name, action, event_type, source, entity_name, method, path, status_code, message, details, correlation_id, ip_address, user_agent, created_at, reg_status)
+values
+(gen_random_uuid(), @TenantId, @UserId, @UserName, 'ACCESS_DENIED', 'WARNING', 'Authorization', 'security', @Method, @Path, 403, @Message, @Details::jsonb, @CorrelationId, @Ip, @UserAgent, now(), 'A');";
+            var details = System.Text.Json.JsonSerializer.Serialize(new
+            {
+                userId,
+                userName,
+                roles,
+                path = ctx.Request.Path.Value,
+                method = ctx.Request.Method,
+                policy = requiredRoles,
+                controller,
+                action,
+                ip,
+                userAgent,
+                correlationId,
+                created_at = DateTimeOffset.UtcNow
+            });
+
+            await conn.ExecuteAsync(auditSql, new
+            {
+                TenantId = tenantId,
+                UserId = userId,
+                UserName = userName,
+                Method = ctx.Request.Method,
+                Path = ctx.Request.Path.Value ?? string.Empty,
+                Message = $"ACCESS_DENIED em {ctx.Request.Method} {ctx.Request.Path}",
+                Details = details,
+                CorrelationId = correlationId,
+                Ip = ip,
+                UserAgent = userAgent
+            });
+        }
     }
+
+    private Guid ResolveTenantId(HttpContext ctx)
+    {
+        try
+        {
+            return _tenant.GetTenantIdOrThrow(ctx);
+        }
+        catch
+        {
+            var raw = ctx.User?.FindFirst("tenant_id")?.Value;
+            return Guid.TryParse(raw, out var tenantId) ? tenantId : Guid.Empty;
+        }
+    }
+
+    private static async Task<bool> SecurityFailureLogExistsAsync(System.Data.IDbConnection conn)
+        => await conn.ExecuteScalarAsync<bool>("select to_regclass('ged.security_access_failure_log') is not null;");
+
+    private static async Task<bool> AppAuditLogExistsAsync(System.Data.IDbConnection conn)
+        => await conn.ExecuteScalarAsync<bool>("select to_regclass('ged.app_audit_log') is not null;");
+
+    private static bool IsRole(string? value, string role)
+        => string.Equals(NormalizeRole(value), NormalizeRole(role), StringComparison.OrdinalIgnoreCase);
+
+    private static string NormalizeRole(string? value)
+        => (value ?? string.Empty).Trim().Replace(" ", string.Empty).Replace("_", string.Empty).Replace("-", string.Empty).ToUpperInvariant();
 
     private static string? ExtractRoles(AuthorizationPolicy? policy)
     {

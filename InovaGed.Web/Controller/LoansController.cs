@@ -20,19 +20,22 @@ public sealed class LoansController : Controller
     private readonly ILoanRequestService _service;
     private readonly IAuditWriter _audit;
     private readonly IDbConnectionFactory _db;
+    private readonly ILoanAccessService _loanAccess;
 
     public LoansController(
         ILogger<LoansController> logger,
         ICurrentUser user,
         ILoanRequestService service,
         IAuditWriter audit,
-        IDbConnectionFactory db)
+        IDbConnectionFactory db,
+        ILoanAccessService loanAccess)
     {
         _logger = logger;
         _user = user;
         _service = service;
         _audit = audit;
         _db = db;
+        _loanAccess = loanAccess;
     }
 
     public override void OnActionExecuting(ActionExecutingContext context)
@@ -52,7 +55,7 @@ public sealed class LoansController : Controller
             var tenantId = _user.TenantId;
 
             var stats = new LoanStatsDto();
-            var scope = await BuildLoanScopeAsync(ct);
+            var scope = await _loanAccess.BuildLoanScopeAsync(_user.TenantId, _user.UserId, User, ct);
             if (scope.IsAdministradorOphir && string.IsNullOrWhiteSpace(scope.Sector))
                 TempData["Err"] = "Seu usuário não possui setor vinculado. Configure o setor para visualizar solicitações.";
             stats.Requested = await _service.PendingCountAsync(tenantId, _user.UserId, scope, ct);
@@ -103,7 +106,7 @@ public sealed class LoansController : Controller
         try
         {
             var tenantId = _user.TenantId;
-            var scope = await BuildLoanScopeAsync(ct);
+            var scope = await _loanAccess.BuildLoanScopeAsync(_user.TenantId, _user.UserId, User, ct);
             if (!CanManageLoans()) return Forbid();
             scope.IsAdmin = true;
             var list = await _service.OverdueAsync(tenantId, _user.UserId, scope, ct);
@@ -178,7 +181,7 @@ public sealed class LoansController : Controller
         try
         {
             var tenantId = _user.TenantId;
-            var count = await _service.PendingCountAsync(tenantId, _user.UserId, await BuildLoanScopeAsync(ct), ct);
+            var count = await _service.PendingCountAsync(tenantId, _user.UserId, await _loanAccess.BuildLoanScopeAsync(_user.TenantId, _user.UserId, User, ct), ct);
             return Ok(new { success = true, count });
         }
         catch (Exception ex)
@@ -234,7 +237,7 @@ public sealed class LoansController : Controller
         try
         {
             var tenantId = _user.TenantId;
-            var vm = await _service.GetDetailsAsync(tenantId, id, _user.UserId, await BuildLoanScopeAsync(ct), ct);
+            var vm = await _service.GetDetailsAsync(tenantId, id, _user.UserId, await _loanAccess.BuildLoanScopeAsync(_user.TenantId, _user.UserId, User, ct), ct);
 
             if (vm is null)
             {
@@ -332,45 +335,25 @@ public sealed class LoansController : Controller
         return RedirectToAction(nameof(Details), new { id });
     }
 
-    [Authorize(Policy = AppPolicies.LoansManage)]
+    [Authorize(Policy = AppPolicies.LoansView)]
     [HttpPost("{id:guid}/Cancel")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Cancel(Guid id, string? notes, string? internalNotes, bool notifyRequester, CancellationToken ct)
     {
-        if (!await CanOperateLoanAsync(id, ct)) return Forbid();
+        var scope = await _loanAccess.BuildLoanScopeAsync(_user.TenantId, _user.UserId, User, ct);
+        var details = await _service.GetDetailsAsync(_user.TenantId, id, _user.UserId, scope, ct);
+        if (details is null) return Forbid();
+        if (!scope.CanManage && !new[] { "REQUESTED", "RETURNED_FOR_ADJUSTMENT" }.Contains((details.Header.Status ?? string.Empty).ToUpperInvariant())) return Forbid();
         notes = CombineNotes(notes, internalNotes, notifyRequester);
         var res = await _service.CancelAsync(_user.TenantId, id, _user.UserId, notes, ct);
         TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Solicitação cancelada com sucesso." : res.ErrorMessage;
         return RedirectToAction(nameof(Details), new { id });
     }
 
-    private bool CanManageLoans() => RolePolicyHelper.IsFullAdmin(User) || User.IsInRole(AppRoles.AdministradorOphir);
-
-    private async Task<LoanVisibilityScope> BuildLoanScopeAsync(CancellationToken ct)
-    {
-        var scope = new LoanVisibilityScope
-        {
-            IsAdmin = RolePolicyHelper.IsFullAdmin(User),
-            IsAdministradorOphir = User.IsInRole(AppRoles.AdministradorOphir),
-            IsArquivistaOphir = User.IsInRole(AppRoles.ArquivistaOphir),
-            UserId = _user.UserId
-        };
-
-        await using var conn = await _db.OpenAsync(ct);
-        scope.Sector = await conn.ExecuteScalarAsync<string?>(
-            new CommandDefinition("""
-select nullif(coalesce(s.setor, s.lotacao, ''), '')
-from ged.app_user u
-left join ged.servidor s on s.tenant_id=u.tenant_id and s.id=u.servidor_id
-where u.tenant_id=@TenantId and u.id=@UserId
-limit 1
-""",
-                new { TenantId = _user.TenantId, UserId = _user.UserId }, cancellationToken: ct));
-        return scope;
-    }
+    private bool CanManageLoans() => RolePolicyHelper.IsFullAdmin(User) || User.IsInNormalizedRole(AppRoles.AdministradorOphir);
 
     private async Task<bool> CanOperateLoanAsync(Guid id, CancellationToken ct)
-        => CanManageLoans() && await _service.GetDetailsAsync(_user.TenantId, id, _user.UserId, await BuildLoanScopeAsync(ct), ct) is not null;
+        => await _loanAccess.CanManageLoanAsync(_user.TenantId, id, _user.UserId, User, ct);
 
     private async Task AuditAccessDeniedAsync(Guid id, CancellationToken ct)
     {

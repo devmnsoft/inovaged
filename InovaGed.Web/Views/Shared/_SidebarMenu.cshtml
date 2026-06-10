@@ -1,631 +1,98 @@
-@using Dapper
 @using Microsoft.AspNetCore.Mvc.TagHelpers
 @addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
-@using InovaGed.Application.Common.Database
 @using InovaGed.Web.Security
-@inject IDbConnectionFactory DbFactory
-@inject IMenuVisibilityService MenuVisibility
 
 @{
-	var ctrl = (ViewContext.RouteData.Values["controller"]?.ToString() ?? "").ToLowerInvariant();
-	var act = (ViewContext.RouteData.Values["action"]?.ToString() ?? "").ToLowerInvariant();
-	var path = Context.Request.Path.Value?.ToLowerInvariant() ?? "";
+    var ctrl = (ViewContext.RouteData.Values["controller"]?.ToString() ?? string.Empty).ToLowerInvariant();
+    var act = (ViewContext.RouteData.Values["action"]?.ToString() ?? string.Empty).ToLowerInvariant();
+    var path = Context.Request.Path.Value?.ToLowerInvariant() ?? string.Empty;
 
-	string Active(string controller, params string[] actions)
-	{
-		var c = controller.ToLowerInvariant();
-
-		if (ctrl != c)
-			return "";
-
-		if (actions == null || actions.Length == 0)
-			return "active";
-
-		return actions.Any(a => string.Equals(act, a.ToLowerInvariant(), StringComparison.OrdinalIgnoreCase))
-			? "active"
-			: "";
-	}
-
-	string ActiveAny(params string[] controllers)
-		=> controllers.Any(c => string.Equals(ctrl, c.ToLowerInvariant(), StringComparison.OrdinalIgnoreCase))
-			? "active"
-			: "";
-
-	string ActivePathStarts(string startsWith)
-	{
-		var sw = (startsWith ?? "").ToLowerInvariant();
-		return path.StartsWith(sw) ? "active" : "";
-	}
-
-	string ActivePathExact(string exactPath)
-	{
-		var current = path.TrimEnd('/');
-		var exact = (exactPath ?? "").ToLowerInvariant().TrimEnd('/');
-
-		if (string.IsNullOrWhiteSpace(current))
-			current = "/";
-
-		return current == exact ? "active" : "";
-	}
-
-	bool IsAdmin() => AppMenuPolicy.IsAdmin(User);
-	bool IsArquivistaOphir() => AppMenuPolicy.IsArquivistaOphir(User);
-	bool IsAdministradorOphir() => AppMenuPolicy.IsAdministradorOphir(User);
-	bool IsHospitalRestricted() => AppMenuPolicy.IsHospitalRestricted(User);
-	bool CanDashboard() => AppMenuPolicy.CanSeeDashboard(User);
-	bool CanDocumentos() => MenuVisibility.CanSeeHospitalDocuments(User);
-	bool CanEmprestimos() => MenuVisibility.CanSeeLoansRequest(User) || MenuVisibility.CanSeeLoansManage(User);
-	bool CanCreateHospitalDocuments() => AppMenuPolicy.CanCreateHospitalDocuments(User);
-	bool CanRelatorios() => AppMenuPolicy.CanSeeReports(User);
-	bool CanAuditoria() => AppMenuPolicy.CanSeeAudit(User);
-	bool CanArquivistico() => AppMenuPolicy.CanSeeArchivisticInstruments(User);
-	bool CanAssinaturaDigital() => AppMenuPolicy.CanSeeDigitalSignature(User);
-
-	int pacsBadge = 0;
-	int dispElimBadge = 0;
-	int dispTransBadge = 0;
-	int dispReviewBadge = 0;
-	int loanPendingBadge = 0;
-
-	try
-	{
-		using var conn = await DbFactory.OpenAsync(Context.RequestAborted);
-
-		pacsBadge = await conn.ExecuteScalarAsync<int>(
-			new CommandDefinition(
-										@"select count(*)
-                  from pacs.ocr_job
-                  where status='PENDING'",
-				cancellationToken: Context.RequestAborted));
-
-		dispElimBadge = await conn.ExecuteScalarAsync<int>(
-			new CommandDefinition(
-										@"select count(*)
-                  from ged.document
-                  where disposition_status='ELIMINATION_READY'",
-				cancellationToken: Context.RequestAborted));
-
-		dispTransBadge = await conn.ExecuteScalarAsync<int>(
-			new CommandDefinition(
-										@"select count(*)
-                  from ged.document
-                  where disposition_status='TRANSFER_READY'",
-				cancellationToken: Context.RequestAborted));
-
-		dispReviewBadge = await conn.ExecuteScalarAsync<int>(
-			new CommandDefinition(
-										@"select count(*)
-                  from ged.document
-                  where disposition_status='REVIEW_REQUIRED'",
-				cancellationToken: Context.RequestAborted));
-	}
-	catch
-	{
-		pacsBadge = 0;
-		dispElimBadge = 0;
-		dispTransBadge = 0;
-		dispReviewBadge = 0;
-		loanPendingBadge = 0;
-	}
-
-	var dispTotalBadge = dispElimBadge + dispTransBadge + dispReviewBadge;
-}
-
-@if (!CanDashboard() && (IsAdmin() || IsAdministradorOphir() || IsArquivistaOphir()))
-{
-	<div class="sidebar-section-title">Operação</div>
-	<a asp-controller="Operations" asp-action="Index" class="@ActivePathStarts("/Operations")">
-		<i class="bi bi-command"></i>
-		<span>Central Operacional</span>
-	</a>
-}
-
-@if (CanDashboard())
-{
-	<div class="sidebar-section-title">Visão Geral</div>
-
-	<a asp-controller="Home" asp-action="Index" class="@Active("Home", "Index")">
-		<i class="bi bi-speedometer2"></i>
-		<span>Dashboard</span>
-	</a>
-
-	@if (IsAdmin() || IsAdministradorOphir() || IsArquivistaOphir())
-	{
-		<a asp-controller="Operations" asp-action="Index" class="@ActivePathStarts("/Operations")">
-			<i class="bi bi-command"></i>
-			<span>Central Operacional</span>
-		</a>
-	}
-
-	@if (RolePolicyHelper.IsFullAdmin(User))
-	{
-		<a asp-controller="GedDashboard" asp-action="Index" class="@Active("GedDashboard", "Index")">
-			<i class="bi bi-bar-chart"></i>
-			<span>Painel GED</span>
-		</a>
-		<a asp-controller="HospitalIntelligence" asp-action="Index" class="@Active("HospitalIntelligence", "Index")">
-			<i class="bi bi-activity"></i>
-			<span>Inteligência Hospitalar</span>
-		</a>
-		<a asp-controller="HospitalTrends" asp-action="Index" class="@Active("HospitalTrends", "Index")">
-			<i class="bi bi-graph-up-arrow"></i>
-			<span>Alertas e Tendências</span>
-		</a>
-		<a asp-controller="SystemHealth" asp-action="Index" class="@ActivePathExact("/SystemHealth")">
-			<i class="bi bi-heart-pulse"></i>
-			<span>Saúde do Sistema</span>
-		</a>
-		<a href="/SystemHealth/Schema" class="@ActivePathStarts("/SystemHealth/Schema")">
-			<i class="bi bi-database-check"></i>
-			<span>Schema do Banco</span>
-		</a>
-		<a href="/SystemHealth/Homologation" class="@ActivePathStarts("/SystemHealth/Homologation")">
-			<i class="bi bi-clipboard2-check"></i>
-			<span>Homologação</span>
-		</a>
-	}
-}
-@if (CanDocumentos())
-{
-	<div class="sidebar-section-title">Documentos</div>
-	@if (IsHospitalRestricted())
-	{
-		<a asp-controller="HospitalDocuments"
-		   asp-action="Index"
-		   class="@Active("HospitalDocuments", "Index", "Viewer")">
-			<i class="bi bi-search-heart"></i>
-			<span>Buscar Prontuários e Documentos</span>
-		</a>
-	}
-	else
-	{
-
-	<a asp-controller="Ged" asp-action="Index" class="@Active("Ged", "Index", "Details", "Create", "Edit", "Preview")">
-		<i class="bi bi-folder2-open"></i>
-		<span>Explorer de Documentos</span>
-	</a>
-
-
-	<a asp-controller="HospitalDocuments"
-	   asp-action="Index"
-	   class="@Active("HospitalDocuments", "Index", "Viewer")">
-		<i class="bi bi-search-heart"></i>
-		<span>Buscar Prontuários e Documentos</span>
-	</a>
-
-	@if (CanCreateHospitalDocuments())
-	{
-		<a asp-controller="Ged" asp-action="Create" class="@Active("Ged", "Create")">
-			<i class="bi bi-plus-circle"></i>
-			<span>Criar Documento</span>
-		</a>
-	}
-
-		<a asp-controller="Ged" asp-action="Folders" class="@Active("Ged", "Folders")">
-			<i class="bi bi-folder"></i>
-			<span>Pastas e Dossiês</span>
-		</a>
-
-		<a asp-controller="Ged"
-		   asp-action="Processing"
-		   class="@Active("Ged", "Processing")">
-			<i class="bi bi-diagram-3"></i>
-			<span>Fila de Processamento OCR</span>
-		</a>
-
-	@if (IsAdmin())
-	{
-		<a asp-controller="Ged"
-		   asp-action="Kpi"
-		   class="@Active("Ged", "Kpi")">
-			<i class="bi bi-bar-chart-line"></i>
-			<span>KPI do GED</span>
-		</a>
-
-		<a asp-controller="Batches" asp-action="Index" class="@ActiveAny("Batches")">
-			<i class="bi bi-box-seam"></i>
-			<span>Lotes de Tratamento</span>
-		</a>
-
-		<a asp-controller="ImportExport" asp-action="Index" class="@Active("ImportExport", "Index", "Import", "ExportCenter", "Export")">
-			<i class="bi bi-arrow-left-right"></i>
-			<span>Importação e Exportação</span>
-		</a>
-	}
-
-	<a href="https://yndustech.com.br/GedDocs" target="_blank" rel="noopener noreferrer">
-		<i class="bi bi-heart-pulse"></i>
-		<span class="d-flex align-items-center gap-2">
-			Sistema de Imagem
-			<span class="badge text-bg-danger @(pacsBadge > 0 ? "" : "d-none")">@pacsBadge</span>
-		</span>
-	</a>
-
-	@if (IsAdmin())
-	{
-		<div class="sidebar-section-title">Guarda Física</div>
-
-		<a asp-controller="Physical"
-		   asp-action="Locations"
-		   class="@Active("Physical", "Locations", "NewLocation", "EditLocation", "SaveLocation")">
-			<i class="bi bi-geo-alt"></i>
-			<span>Localizações</span>
-		</a>
-
-		<a asp-controller="Physical"
-		   asp-action="Boxes"
-		   class="@Active("Physical", "Boxes", "NewBox", "EditBox", "SaveBox")">
-			<i class="bi bi-inbox"></i>
-			<span>Caixas</span>
-		</a>
-
-		<a asp-controller="Physical"
-		   asp-action="BoxContents"
-		   class="@Active("Physical", "BoxContents", "AddDocumentToBox", "RemoveDocumentFromBox", "MoveDocumentToBox")">
-			<i class="bi bi-box2"></i>
-			<span>Conteúdo da Caixa</span>
-		</a>
-
-		<a asp-controller="Physical"
-		   asp-action="BoxHistory"
-		   class="@Active("Physical", "BoxHistory")">
-			<i class="bi bi-list-columns-reverse"></i>
-			<span>Histórico da Caixa</span>
-		</a>
-
-		<a asp-controller="Physical"
-		   asp-action="PhysicalMap"
-		   class="@Active("Physical", "PhysicalMap")">
-			<i class="bi bi-map"></i>
-			<span>Mapa de Guarda Física</span>
-		</a>
-
-		<a asp-controller="Labels"
-		   asp-action="Boxes"
-		   class="@Active("Labels", "Boxes", "BoxLabel")">
-			<i class="bi bi-upc-scan"></i>
-			<span>Etiquetas de Caixas</span>
-		</a>
-
-		<a asp-controller="Labels"
-		   asp-action="Documents"
-		   class="@Active("Labels", "Documents", "DocumentLabel")">
-			<i class="bi bi-upc"></i>
-			<span>Etiquetas de Documentos</span>
-		</a>
-
-		<a asp-controller="Labels"
-		   asp-action="History"
-		   class="@Active("Labels", "History")">
-			<i class="bi bi-clock-history"></i>
-			<span>Histórico de Etiquetas</span>
-		</a>
-	}
-
-	<div class="sidebar-section-title">Protocolo</div>
-
-	<a href="/Protocolo/Dashboard"
-	   class="@ActivePathStarts("/protocolo/dashboard")">
-		<i class="bi bi-bar-chart"></i>
-		<span>Dashboard Protocolo</span>
-	</a>
-
-	<a href="/Protocolo?visao=entrada"
-	   class="@(path == "/protocolo" || path.StartsWith("/protocolo?visao=entrada") ? "active" : "")">
-		<i class="bi bi-inbox"></i>
-		<span>Caixa de Entrada</span>
-	</a>
-
-	<a href="/Protocolo?visao=enviados"
-	   class="@ActivePathStarts("/protocolo?visao=enviados")">
-		<i class="bi bi-send"></i>
-		<span>Protocolos Enviados</span>
-	</a>
-
-	<a href="/Protocolo?visao=historico"
-	   class="@ActivePathStarts("/protocolo?visao=historico")">
-		<i class="bi bi-clock-history"></i>
-		<span>Histórico de Protocolos</span>
-	</a>
-
-	<a asp-controller="Protocolo"
-	   asp-action="Novo"
-	   class="@Active("Protocolo", "Novo")">
-		<i class="bi bi-file-earmark-plus"></i>
-		<span>Novo Protocolo</span>
-	</a>
-
-	<a asp-controller="ProtocoloCadastros"
-	   asp-action="Index"
-	   asp-route-tipo="setores"
-	   class="@ActiveAny("ProtocoloCadastros")">
-		<i class="bi bi-sliders"></i>
-		<span>Cadastros do Protocolo</span>
-	</a>
-
-	<a href="/Protocolo/Relatorios"
-	   class="@ActivePathStarts("/protocolo/relatorios")">
-		<i class="bi bi-file-earmark-bar-graph"></i>
-		<span>Relatórios Protocolo</span>
-	</a>
-
-	<a href="/Protocolo/Notificacoes"
-	   class="@ActivePathStarts("/protocolo/notificacoes")">
-		<i class="bi bi-bell"></i>
-		<span>Notificações Protocolo</span>
-	</a>
-
-	<a href="/Protocolo/Parametros"
-	   class="@ActivePathStarts("/protocolo/parametros")">
-		<i class="bi bi-sliders2"></i>
-		<span>Parâmetros Protocolo</span>
-	</a>
-
-	<a href="/Protocolo/UsuariosSetorAvancado/BuscarUsuarios"
-	   class="@ActivePathStarts("/protocolo/usuariossetoravancado")">
-		<i class="bi bi-person-gear"></i>
-		<span>Usuários x Setor Avançado</span>
-	</a>
-	}
-}
-
-
-@if (IsArquivistaOphir() || IsAdministradorOphir())
-{
-    <div class="sidebar-section-title">Jornada Operacional</div>
-
-    @if (IsArquivistaOphir())
+    string Active(string controller, params string[] actions)
     {
-        <a href="/ProtocolRequests" class="@ActivePathStarts("/protocolrequests")">
-            <i class="bi bi-file-earmark-plus"></i>
-            <span>Solicitar Protocolo</span>
-        </a>
-        <a href="/Protocolo?visao=enviados" class="@ActivePathStarts("/protocolo")">
-            <i class="bi bi-clock-history"></i>
-            <span>Minhas Solicitações</span>
-        </a>
-        <a asp-controller="Loans" asp-action="New" class="@Active("Loans", "New")">
-            <i class="bi bi-journal-plus"></i>
-            <span>Solicitar Documento/Empréstimo</span>
-        </a>
+        if (!string.Equals(ctrl, controller.ToLowerInvariant(), StringComparison.OrdinalIgnoreCase)) return string.Empty;
+        return actions.Length == 0 || actions.Any(a => string.Equals(act, a.ToLowerInvariant(), StringComparison.OrdinalIgnoreCase)) ? "active" : string.Empty;
     }
 
-    @if (IsAdministradorOphir())
-    {
-        <a href="/Protocolo?visao=entrada" class="@ActivePathStarts("/protocolo")">
-            <i class="bi bi-inbox"></i>
-            <span>Fila de Protocolos</span>
-        </a>
-        <a href="/Protocolo?visao=entrada" class="@ActivePathStarts("/protocolo")">
-            <i class="bi bi-kanban"></i>
-            <span>Manuseio de Processos</span>
-        </a>
-        <a asp-controller="Loans" asp-action="Index" class="@Active("Loans", "Index", "Details")">
-            <i class="bi bi-journal-check"></i>
-            <span>Loans/Empréstimos para aprovação</span>
-        </a>
-    }
+    string ActiveAny(params string[] controllers) => controllers.Any(c => string.Equals(ctrl, c.ToLowerInvariant(), StringComparison.OrdinalIgnoreCase)) ? "active" : string.Empty;
+    string ActivePathStarts(string startsWith) => path.StartsWith((startsWith ?? string.Empty).ToLowerInvariant()) ? "active" : string.Empty;
+
+    var isFullAdmin = AppMenuPolicy.IsFullAdmin(User);
+    var isAdministradorOphir = AppMenuPolicy.IsAdministradorOphir(User) && !isFullAdmin;
+    var isArquivistaOphir = AppMenuPolicy.IsArquivistaOphir(User) && !isFullAdmin;
+    var isHospital = AppMenuPolicy.IsHospitalUser(User) && !isFullAdmin && !isAdministradorOphir && !isArquivistaOphir;
 }
 
-@if (CanEmprestimos())
+@if (isFullAdmin)
 {
-	<div class="sidebar-section-title">Empréstimos</div>
+    <div class="sidebar-section-title">Visão Geral</div>
+    <a asp-controller="Home" asp-action="Index" class="@Active("Home", "Index")"><i class="bi bi-speedometer2"></i><span>Dashboard</span></a>
+    <a asp-controller="Operations" asp-action="Index" class="@ActivePathStarts("/operations")"><i class="bi bi-command"></i><span>Central Operacional</span></a>
 
-	<a asp-controller="Loans" asp-action="Index" class="@Active("Loans", "Index", "Details", "Create", "Approve", "Deliver", "Return")">
-		<i class="bi bi-journal-arrow-up"></i>
-		<span class="d-flex align-items-center gap-2">Solicitações <span class="badge text-bg-danger @(loanPendingBadge > 0 ? "" : "d-none")">@loanPendingBadge</span></span>
-	</a>
+    <div class="sidebar-section-title">Documentos</div>
+    <a asp-controller="Ged" asp-action="Index" class="@ActiveAny("Ged", "GedSearch")"><i class="bi bi-folder2-open"></i><span>GED / Explorer</span></a>
+    <a asp-controller="HospitalDocuments" asp-action="Index" class="@ActiveAny("HospitalDocuments")"><i class="bi bi-search-heart"></i><span>Busca Hospitalar</span></a>
+    <a asp-controller="HospitalIntelligence" asp-action="Index" class="@ActiveAny("HospitalIntelligence")"><i class="bi bi-activity"></i><span>Inteligência Hospitalar</span></a>
+    <a asp-controller="HospitalTrends" asp-action="Index" class="@ActiveAny("HospitalTrends")"><i class="bi bi-graph-up-arrow"></i><span>Alertas e Tendências</span></a>
+    <a asp-controller="Ged" asp-action="Create" class="@Active("Ged", "Create")"><i class="bi bi-cloud-upload"></i><span>Uploads</span></a>
+    <a asp-controller="Ocr" asp-action="Index" class="@ActiveAny("Ocr")"><i class="bi bi-filetype-pdf"></i><span>OCR</span></a>
+    <a asp-controller="Pacs" asp-action="Index" class="@ActiveAny("Pacs")"><i class="bi bi-list-check"></i><span>Fila OCR</span></a>
+    <a asp-controller="GedClassification" asp-action="Queue" class="@ActiveAny("GedClassification", "GedClassifications", "ClassificationDashboard")"><i class="bi bi-tags"></i><span>Classificação</span></a>
+    <a asp-controller="Ged" asp-action="Folders" class="@Active("Ged", "Folders")"><i class="bi bi-folder"></i><span>Pastas</span></a>
+    <a asp-controller="Batches" asp-action="Index" class="@ActiveAny("Batches")"><i class="bi bi-collection"></i><span>Dossiês</span></a>
 
-	@if (!IsHospitalRestricted())
-	{
-		<a asp-controller="Loans" asp-action="Overdue" class="@Active("Loans", "Overdue")">
-			<i class="bi bi-alarm"></i>
-			<span>Empréstimos Vencidos</span>
-		</a>
+    <div class="sidebar-section-title">Guarda Física</div>
+    <a asp-controller="Physical" asp-action="Locations" class="@Active("Physical", "Locations")"><i class="bi bi-geo-alt"></i><span>Localizações</span></a>
+    <a asp-controller="Physical" asp-action="Boxes" class="@Active("Physical", "Boxes")"><i class="bi bi-inbox"></i><span>Caixas</span></a>
+    <a asp-controller="Labels" asp-action="Boxes" class="@ActiveAny("Labels")"><i class="bi bi-upc-scan"></i><span>Etiquetas</span></a>
 
-		<a asp-controller="Loans" asp-action="RunOverdue" class="@Active("Loans", "RunOverdue")">
-			<i class="bi bi-play-circle"></i>
-			<span>Processar Cobranças</span>
-		</a>
-	}
+    <div class="sidebar-section-title">Operação</div>
+    <a asp-controller="Loans" asp-action="Index" class="@ActiveAny("Loans", "Solicitacoes")"><i class="bi bi-arrow-left-right"></i><span>Empréstimos</span></a>
+    <a asp-controller="Protocolo" asp-action="Index" class="@ActiveAny("Protocolo")"><i class="bi bi-journal-check"></i><span>Protocolo</span></a>
+
+    <div class="sidebar-section-title">Administração</div>
+    <a asp-controller="Parameters" asp-action="Index" class="@ActiveAny("Parameters", "ProtocoloParametros")"><i class="bi bi-sliders"></i><span>Parâmetros</span></a>
+    <a asp-controller="Users" asp-action="Index" class="@ActiveAny("Users")"><i class="bi bi-people"></i><span>Usuários</span></a>
+    <a asp-controller="SystemLogs" asp-action="Index" class="@ActiveAny("SystemLogs", "Audit", "AuditDashboard", "SecurityAudit")"><i class="bi bi-activity"></i><span>Logs</span></a>
+    <a asp-controller="SystemHealth" asp-action="Index" class="@ActiveAny("SystemHealth")"><i class="bi bi-heart-pulse"></i><span>SystemHealth</span></a>
+    <a href="/SystemHealth/Schema" class="@ActivePathStarts("/systemhealth/schema")"><i class="bi bi-database-check"></i><span>Schema do Banco</span></a>
+    <a href="/SystemHealth/Homologation" class="@ActivePathStarts("/systemhealth/homologation")"><i class="bi bi-clipboard2-check"></i><span>Homologação</span></a>
+    <a asp-controller="Security" asp-action="Roles" class="@ActiveAny("Security")"><i class="bi bi-gear"></i><span>Configurações</span></a>
 }
-
-@if (CanArquivistico())
+else if (isAdministradorOphir)
 {
-	<div class="sidebar-section-title">Instrumentos Arquivísticos</div>
-
-	<a asp-controller="Classification" asp-action="Index" class="@ActiveAny("Classification")">
-		<i class="bi bi-diagram-3"></i>
-		<span>PCD / TTD / POP</span>
-	</a>
-
-	<a asp-controller="ClassificationDashboard" asp-action="Index" class="@ActiveAny("ClassificationDashboard")">
-		<i class="bi bi-inboxes"></i>
-		<span class="d-flex align-items-center gap-2">
-			Pendências de Classificação
-			<span class="js-cls-badge badge text-bg-danger d-none">0</span>
-		</span>
-	</a>
-
-	<a asp-controller="InstrumentosArquivisticos" asp-action="MoveCode" class="@Active("InstrumentosArquivisticos", "MoveCode")">
-		<i class="bi bi-arrow-left-right"></i>
-		<span>Movimentar Código</span>
-	</a>
-
-	<a asp-controller="InstrumentosArquivisticos" asp-action="Versions" class="@Active("InstrumentosArquivisticos", "Versions")">
-		<i class="bi bi-clock-history"></i>
-		<span>Versionamento</span>
-	</a>
-
-	<div class="sidebar-section-title">Temporalidade e Destinação</div>
-
-	<a asp-controller="Temporalidade" asp-action="Index" class="@ActiveAny("Temporalidade")">
-		<i class="bi bi-hourglass-split"></i>
-		<span>Central de Temporalidade</span>
-	</a>
-
-	<a asp-controller="Retention" asp-action="Queue" class="@Active("Retention", "Queue")">
-		<i class="bi bi-list-check"></i>
-		<span>Fila Operacional</span>
-	</a>
-
-	<a asp-controller="Disposition" asp-action="Index" class="@Active("Disposition", "Index")">
-		<i class="bi bi-archive"></i>
-		<span>Painel de Destinação</span>
-	</a>
-
-	<a asp-controller="Disposition" asp-action="Queue" class="@Active("Disposition", "Queue")">
-		<i class="bi bi-inbox"></i>
-		<span class="d-flex align-items-center gap-2">
-			Fila de Destinação
-			<span class="badge text-bg-danger @(dispTotalBadge > 0 ? "" : "d-none")">@dispTotalBadge</span>
-		</span>
-	</a>
-
-	<a href="/RetentionCases" class="@ActivePathStarts("/retentioncases")">
-		<i class="bi bi-journal-text"></i>
-		<span>Casos de Temporalidade</span>
-	</a>
-
-	<a href="/RetentionTerms" class="@ActivePathStarts("/retentionterms")">
-		<i class="bi bi-file-earmark-text"></i>
-		<span>Termos de Destinação</span>
-	</a>
-
-	<a asp-controller="Disposition" asp-action="Terms" class="@Active("Disposition", "Terms")">
-		<i class="bi bi-card-list"></i>
-		<span>Relatório de Termos</span>
-	</a>
+    <div class="sidebar-section-title">Operação Ophir</div>
+    <a asp-controller="Operations" asp-action="Index" class="@ActivePathStarts("/operations")"><i class="bi bi-command"></i><span>Central Operacional</span></a>
+    <a asp-controller="HospitalDocuments" asp-action="Index" class="@ActiveAny("HospitalDocuments")"><i class="bi bi-search-heart"></i><span>Buscar Prontuários e Documentos</span></a>
+    <a href="/Protocols/WorkQueue" class="@ActivePathStarts("/protocols/workqueue")"><i class="bi bi-inboxes"></i><span>Fila de Protocolos</span></a>
+    <a asp-controller="Protocolo" asp-action="Index" class="@ActiveAny("Protocolo")"><i class="bi bi-tools"></i><span>Manuseio de Processos</span></a>
+    <a asp-controller="ProtocolRequests" asp-action="Index" class="@ActiveAny("ProtocolRequests")"><i class="bi bi-journal-text"></i><span>Solicitações de Documentos</span></a>
+    <a asp-controller="Loans" asp-action="Index" class="@ActiveAny("Loans")"><i class="bi bi-arrow-left-right"></i><span>Empréstimos para Aprovação/Tratamento</span></a>
+    <a asp-controller="Ged" asp-action="Index" class="@ActiveAny("Ged")"><i class="bi bi-folder2"></i><span>Documentos do Setor</span></a>
 }
-
-@if (CanAssinaturaDigital())
+else if (isArquivistaOphir)
 {
-	<div class="sidebar-section-title">Assinatura Digital</div>
-
-	<a href="/Signature" class="@ActivePathExact("/signature")">
-		<i class="bi bi-pen"></i>
-		<span>Assinar Documento</span>
-	</a>
-
-	<a href="/Signature/Batch" class="@ActivePathExact("/signature/batch")">
-		<i class="bi bi-stack"></i>
-		<span>Assinar em Lote</span>
-	</a>
+    <div class="sidebar-section-title">Solicitações</div>
+    <a asp-controller="HospitalDocuments" asp-action="Index" class="@ActiveAny("HospitalDocuments")"><i class="bi bi-search-heart"></i><span>Buscar Prontuários e Documentos</span></a>
+    <a asp-controller="ProtocolRequests" asp-action="New" class="@Active("ProtocolRequests", "New")"><i class="bi bi-send-plus"></i><span>Solicitar Protocolo</span></a>
+    <a asp-controller="ProtocolRequests" asp-action="Index" class="@Active("ProtocolRequests", "Index")"><i class="bi bi-list-check"></i><span>Minhas Solicitações de Protocolo</span></a>
+    <a asp-controller="Loans" asp-action="New" class="@Active("Loans", "New")"><i class="bi bi-file-earmark-plus"></i><span>Solicitar Documento/Empréstimo</span></a>
+    <a asp-controller="Loans" asp-action="Index" class="@Active("Loans", "Index")"><i class="bi bi-collection"></i><span>Meus Pedidos</span></a>
 }
-
-@if (CanRelatorios())
+else if (isHospital)
 {
-	<div class="sidebar-section-title">Relatórios</div>
-
-	<a asp-controller="Reports" asp-action="Loans" class="@Active("Reports", "Loans")">
-		<i class="bi bi-file-earmark-text"></i>
-		<span>Empréstimos</span>
-	</a>
-
-	<a asp-controller="Reports" asp-action="PcdFull" class="@Active("Reports", "PcdFull")">
-		<i class="bi bi-printer"></i>
-		<span>PCD Completo</span>
-	</a>
-
-	<a asp-controller="Reports" asp-action="PcdByClass" class="@Active("Reports", "PcdByClass")">
-		<i class="bi bi-funnel"></i>
-		<span>PCD por Classe</span>
-	</a>
-
-	<a asp-controller="Reports" asp-action="TtdFull" class="@Active("Reports", "TtdFull")">
-		<i class="bi bi-hourglass"></i>
-		<span>TTD Completa</span>
-	</a>
-
-	<a asp-controller="Reports" asp-action="TtdByClass" class="@Active("Reports", "TtdByClass")">
-		<i class="bi bi-funnel"></i>
-		<span>TTD por Classe</span>
-	</a>
-
-	<a asp-controller="Reports" asp-action="SignatureValidation" class="@Active("Reports", "SignatureValidation")">
-		<i class="bi bi-patch-check"></i>
-		<span>Validação de Assinaturas</span>
-	</a>
-
-	<a asp-controller="Reports" asp-action="SignedSetPrint" class="@Active("Reports", "SignedSetPrint", "SignedSetPrintView")">
-		<i class="bi bi-patch-check-fill"></i>
-		<span>Conjunto Assinado</span>
-	</a>
+    <div class="sidebar-section-title">Consulta</div>
+    <a asp-controller="HospitalDocuments" asp-action="Index" class="@ActiveAny("HospitalDocuments")"><i class="bi bi-search-heart"></i><span>Buscar Prontuários e Documentos</span></a>
 }
-
-@if (CanAuditoria())
+else
 {
-	<div class="sidebar-section-title">Auditoria</div>
-
-	<a asp-controller="Audit" asp-action="Index" class="@ActiveAny("Audit")">
-		<i class="bi bi-shield-lock"></i>
-		<span>Log de Auditoria</span>
-	</a>
-
-	<a asp-controller="SecurityAudit" asp-action="AccessFailures" class="@Active("SecurityAudit", "AccessFailures")">
-		<i class="bi bi-shield-x"></i>
-		<span>Falhas de Acesso</span>
-	</a>
-}
-
-@if (IsAdmin())
-{
-	<div class="sidebar-section-title">Administração</div>
-
-	<a asp-controller="Users" asp-action="Index" class="@Active("Users", "Index", "Details", "Edit")">
-		<i class="bi bi-people"></i>
-		<span>Usuários</span>
-	</a>
-
-	<a asp-controller="Users" asp-action="Create" class="@Active("Users", "Create")">
-		<i class="bi bi-person-plus"></i>
-		<span>Criar Usuário</span>
-	</a>
-
-	<a asp-controller="Security" asp-action="Roles" class="@Active("Security", "Roles", "RolePermissions")">
-		<i class="bi bi-shield-check"></i>
-		<span>Perfis e Permissões</span>
-	</a>
-
-	<a asp-controller="AuthoritySources" asp-action="Index" class="@Active("AuthoritySources", "Index", "Create", "Edit")">
-		<i class="bi bi-patch-exclamation"></i>
-		<span>Fontes de Autoridade</span>
-	</a>
-
-	<a asp-controller="Parameters" asp-action="Index" class="@ActiveAny("Parameters")">
-		<i class="bi bi-sliders"></i>
-		<span>Parâmetros do Sistema</span>
-	</a>
-
-	<a asp-controller="SystemLogs" asp-action="Index" class="@ActiveAny("SystemLogs")">
-		<i class="bi bi-activity"></i>
-		<span>Logs do Sistema</span>
-	</a>
-}
-
-<div class="sidebar-section-title">Ajuda</div>
-
-@{
-	var canSeeManual = AppMenuPolicy.CanSeeManual(User);
-}
-
-@if (canSeeManual)
-{
-	<a asp-controller="Manual" asp-action="Index" class="@Active("Manual", "Index")">
-		<i class="bi bi-book"></i>
-		<span>Manual do Sistema</span>
-	</a>
+    <div class="sidebar-section-title">Consulta</div>
+    <a asp-controller="HospitalDocuments" asp-action="Index" class="@ActiveAny("HospitalDocuments")"><i class="bi bi-search-heart"></i><span>Buscar Prontuários e Documentos</span></a>
 }
 
 <div class="sidebar-section-title">Conta</div>
-
 <form asp-controller="Account" asp-action="Logout" method="post" class="m-0 p-0">
-	@Html.AntiForgeryToken()
-
-	<button type="submit" class="btn btn-link sidebar-link text-start p-0 w-100" style="text-decoration:none;">
-		<span class="d-flex align-items-center gap-2 px-3 py-2">
-			<i class="bi bi-box-arrow-right"></i>
-			<span>Sair</span>
-		</span>
-	</button>
+    @Html.AntiForgeryToken()
+    <button type="submit" class="btn btn-link sidebar-link text-start p-0 w-100" style="text-decoration:none;">
+        <span class="d-flex align-items-center gap-2 px-3 py-2"><i class="bi bi-box-arrow-right"></i><span>Sair</span></span>
+    </button>
 </form>

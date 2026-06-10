@@ -349,6 +349,8 @@ builder.Services.AddScoped<IGedIntelligenceService, GedIntelligenceService>();
 builder.Services.AddScoped<ILoanQueries, LoanQueries>();
 builder.Services.AddScoped<ILoanCommands, LoanCommands>();
 builder.Services.AddScoped<ILoanRequestService, LoanRequestService>();
+builder.Services.AddScoped<ILoanAccessService, LoanAccessService>();
+builder.Services.AddScoped<IProtocolAccessService, ProtocolAccessService>();
 builder.Services.AddScoped<ISolicitacaoService, SolicitacaoService>();
 
 builder.Services.AddScoped<IBatchQueries, BatchQueries>();
@@ -399,9 +401,9 @@ builder.Services.AddAuthorization(options =>
     static void RequireAny(Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder p, params string[] roles)
         => p.RequireRole(roles);
 
-    var fullAdmin = new[] { AppRoles.Admin, AppRoles.Administrador };
-    var gedAccess = new[] { AppRoles.Admin, AppRoles.Administrador, AppRoles.AdministradorOphir, AppRoles.ArquivistaOphir };
-    var hospitalDocumentsAccess = new[] { AppRoles.Admin, AppRoles.Administrador, AppRoles.AdministradorOphir, AppRoles.ArquivistaOphir, AppRoles.Hospital };
+    var fullAdmin = AppRoleGroups.FullAdmins;
+    var gedAccess = AppRoleGroups.GedUsers;
+    var hospitalDocumentsAccess = AppRoleGroups.HospitalDocumentUsers;
     var loansView = new[] { AppRoles.Admin, AppRoles.Administrador, AppRoles.AdministradorOphir, AppRoles.ArquivistaOphir };
     var loansManage = new[] { AppRoles.Admin, AppRoles.Administrador, AppRoles.AdministradorOphir };
     var loansRequest = new[] { AppRoles.Admin, AppRoles.Administrador, AppRoles.ArquivistaOphir };
@@ -413,7 +415,7 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy(AppPolicies.SystemHealth, p => RequireAny(p, fullAdmin));
     options.AddPolicy(AppPolicies.ParametersAdmin, p => RequireAny(p, fullAdmin));
     options.AddPolicy(AppPolicies.UsersAdmin, p => RequireAny(p, fullAdmin));
-    options.AddPolicy(AppPolicies.LogsAccess, p => RequireAny(p, fullAdmin));
+    options.AddPolicy(AppPolicies.SystemLogs, p => RequireAny(p, fullAdmin));
     options.AddPolicy(AppPolicies.SchemaRepair, p => RequireAny(p, fullAdmin));
 
     options.AddPolicy(AppPolicies.GedAccess, p => RequireAny(p, gedAccess));
@@ -446,8 +448,8 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy(AppPolicies.HospitalDocumentsOrLoansAccess,
         p => p.RequireRole(AppRoles.Admin, AppRoles.Administrador, AppRoles.AdministradorOphir, AppRoles.ArquivistaOphir, AppRoles.Hospital, AppRoles.Arquivista, AppRoles.Gestor, AppRoles.Operador));
 
-    options.AddPolicy(AppPolicies.Operations,
-        p => p.RequireRole(AppRoles.Admin, AppRoles.Administrador, AppRoles.AdministradorOphir, AppRoles.ArquivistaOphir));
+    options.AddPolicy(AppPolicies.Operations, p => RequireAny(p, gedAccess));
+    options.AddPolicy(AppPolicies.OperationsAccess, p => RequireAny(p, gedAccess));
 
     options.AddPolicy(Policies.CanViewRetention,
         p => p.RequireRole(AppRoles.Admin, AppRoles.Administrador, AppRoles.Arquivista, AppRoles.Auditor));

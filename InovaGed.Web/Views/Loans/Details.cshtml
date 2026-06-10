@@ -22,6 +22,9 @@
     var h = Model.Header;
     var itemCount = Model.Items.Count;
     var canManageLoans = AppMenuPolicy.CanSeeLoansManage(User);
+    var canRequestLoans = AppMenuPolicy.CanSeeLoansRequest(User);
+    var canCancelOwn = !canManageLoans && canRequestLoans && new[] { "REQUESTED", "RETURNED_FOR_ADJUSTMENT" }.Contains((h.Status ?? string.Empty).ToUpperInvariant());
+    var canRespondAdjustment = !canManageLoans && canRequestLoans && string.Equals(h.Status, "RETURNED_FOR_ADJUSTMENT", StringComparison.OrdinalIgnoreCase);
 }
 
 <div class="d-flex justify-content-between align-items-start mb-3">
@@ -55,7 +58,14 @@
             <button class="btn btn-outline-warning" data-bs-toggle="modal" data-bs-target="#deliverModal">Entregar</button>
             <button class="btn btn-outline-success" data-bs-toggle="modal" data-bs-target="#returnModal">Devolver</button>
             <button class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#adjustModal">Devolver para ajuste</button>
-            <button class="btn btn-outline-dark" data-bs-toggle="modal" data-bs-target="#cancelModal">Cancelar</button>
+        }
+        @if (canCancelOwn)
+        {
+            <button class="btn btn-outline-dark" data-bs-toggle="modal" data-bs-target="#cancelModal">Cancelar solicitação</button>
+        }
+        @if (canRespondAdjustment)
+        {
+            <a class="btn btn-outline-primary" href="/Loans/New">Responder ajuste</a>
         }
         <button class="btn btn-light border" onclick="window.print()">Gerar recibo</button>
     </div>
@@ -118,9 +128,9 @@
         new { Id = "cancelModal", Title = "Cancelar solicitação", Action = "Cancel", Help = "Informe o motivo do cancelamento.", Button = "btn-dark" }
     };
 }
-@if (canManageLoans)
+@if (canManageLoans || canCancelOwn)
 {
-    foreach (var modal in modals)
+    foreach (var modal in modals.Where(m => canManageLoans || m.Action == "Cancel"))
     {
     <div class="modal fade" id="@modal.Id" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog"><div class="modal-content">

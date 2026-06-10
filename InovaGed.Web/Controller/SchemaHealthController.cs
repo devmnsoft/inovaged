@@ -10,7 +10,7 @@ using Microsoft.Extensions.Options;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize(Policy = AppPolicies.SchemaRepair)]
+[Authorize(Policy = AppPolicies.SystemAdmin)]
 [Route("SystemHealth/Schema")]
 public sealed class SchemaHealthController : Controller
 {
@@ -60,6 +60,7 @@ public sealed class SchemaHealthController : Controller
         return File(Encoding.UTF8.GetBytes(json), "application/json", $"schema-health-{DateTime.UtcNow:yyyyMMddHHmmss}.json");
     }
 
+    [Authorize(Policy = AppPolicies.SchemaRepair)]
     [HttpGet("FixScript")]
     public async Task<IActionResult> FixScript(CancellationToken ct)
     {
@@ -68,6 +69,7 @@ public sealed class SchemaHealthController : Controller
         return File(Encoding.UTF8.GetBytes(sql), "text/plain; charset=utf-8", fileName);
     }
 
+    [Authorize(Policy = AppPolicies.SchemaRepair)]
     [HttpPost("ApplyFix")]
     public async Task<IActionResult> ApplyFix([FromBody] ApplySchemaFixRequest request, CancellationToken ct)
     {
@@ -78,6 +80,7 @@ public sealed class SchemaHealthController : Controller
         return Json(result);
     }
 
+    [Authorize(Policy = AppPolicies.SchemaRepair)]
     [HttpPost("Preflight")]
     public async Task<IActionResult> Preflight([FromBody] ApplySchemaFixRequest request, CancellationToken ct)
     {
@@ -93,6 +96,7 @@ public sealed class SchemaHealthController : Controller
         return Json(result);
     }
 
+    [Authorize(Policy = AppPolicies.SchemaRepair)]
     [HttpPost("ApplySafeFixes")]
     public async Task<IActionResult> ApplySafeFixes([FromBody] ApplySchemaFixRequest request, CancellationToken ct)
     {
