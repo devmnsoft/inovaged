@@ -27,6 +27,7 @@
     <div class="sidebar-section-title">Visão Geral</div>
     <a asp-controller="Home" asp-action="Index" class="@Active("Home", "Index")"><i class="bi bi-speedometer2"></i><span>Dashboard</span></a>
     <a asp-controller="Operations" asp-action="Index" class="@ActivePathStarts("/operations")"><i class="bi bi-command"></i><span>Central Operacional</span></a>
+    <a asp-controller="DocumentQuality" asp-action="Index" class="@ActivePathStarts("/documentquality")"><i class="bi bi-shield-check"></i><span>Qualidade Documental</span></a>
 
     <div class="sidebar-section-title">Documentos</div>
     <a asp-controller="Ged" asp-action="Index" class="@ActiveAny("Ged", "GedSearch")"><i class="bi bi-folder2-open"></i><span>GED / Explorer</span></a>
@@ -62,6 +63,7 @@ else if (isAdministradorOphir)
 {
     <div class="sidebar-section-title">Operação Ophir</div>
     <a asp-controller="Operations" asp-action="Index" class="@ActivePathStarts("/operations")"><i class="bi bi-command"></i><span>Central Operacional</span></a>
+    <a asp-controller="DocumentQuality" asp-action="Index" class="@ActivePathStarts("/documentquality")"><i class="bi bi-shield-check"></i><span>Qualidade Documental</span></a>
     <a asp-controller="HospitalDocuments" asp-action="Index" class="@ActiveAny("HospitalDocuments")"><i class="bi bi-search-heart"></i><span>Buscar Prontuários e Documentos</span></a>
     <a href="/Protocols/WorkQueue" class="@ActivePathStarts("/protocols/workqueue")"><i class="bi bi-inboxes"></i><span>Fila de Protocolos</span></a>
     <a asp-controller="Protocolo" asp-action="Index" class="@ActiveAny("Protocolo")"><i class="bi bi-tools"></i><span>Manuseio de Processos</span></a>
@@ -73,6 +75,7 @@ else if (isArquivistaOphir)
 {
     <div class="sidebar-section-title">Solicitações</div>
     <a asp-controller="HospitalDocuments" asp-action="Index" class="@ActiveAny("HospitalDocuments")"><i class="bi bi-search-heart"></i><span>Buscar Prontuários e Documentos</span></a>
+    <a asp-controller="DocumentQuality" asp-action="Index" class="@ActivePathStarts("/documentquality")"><i class="bi bi-shield-check"></i><span>Qualidade Documental</span></a>
     <a asp-controller="ProtocolRequests" asp-action="New" class="@Active("ProtocolRequests", "New")"><i class="bi bi-send-plus"></i><span>Solicitar Protocolo</span></a>
     <a asp-controller="ProtocolRequests" asp-action="Index" class="@Active("ProtocolRequests", "Index")"><i class="bi bi-list-check"></i><span>Minhas Solicitações de Protocolo</span></a>
     <a asp-controller="Loans" asp-action="New" class="@Active("Loans", "New")"><i class="bi bi-file-earmark-plus"></i><span>Solicitar Documento/Empréstimo</span></a>

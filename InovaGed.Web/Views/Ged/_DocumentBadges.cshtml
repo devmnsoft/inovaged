@@ -54,3 +54,22 @@ else if (Model.IsPartialDocument)
 {
     <span class="badge ged-badge ged-badge-info" title="Documento fracionado com partes registradas."><i class="bi bi-files me-1"></i>@(string.IsNullOrWhiteSpace(partialSuffix) ? "Documento enviado em partes" : $"Documento enviado em partes · {partialSuffix}")</span>
 }
+
+@if (!string.IsNullOrWhiteSpace(Model.QualityStatus))
+{
+    var qualityCss = Model.QualityStatus switch
+    {
+        "Excelente" => "bg-success",
+        "Bom" => "bg-primary",
+        "Atenção" => "bg-warning text-dark",
+        "Crítico" => "bg-danger",
+        _ => "bg-secondary"
+    };
+    <a class="badge ged-badge @qualityCss text-decoration-none"
+       asp-controller="DocumentQuality"
+       asp-action="Details"
+       asp-route-documentId="@Model.Id"
+       title="Clique para ver pendências de qualidade deste documento. @Model.QualityNextAction">
+        <i class="bi bi-shield-check me-1"></i>Qualidade: @Model.QualityStatus (@Model.QualityScore)
+    </a>
+}

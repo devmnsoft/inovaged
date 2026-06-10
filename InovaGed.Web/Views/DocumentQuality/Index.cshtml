@@ -1,0 +1,81 @@
+@model InovaGed.Application.DocumentQuality.DocumentQualityDashboardDto
+@{
+    ViewData["Title"] = "Qualidade Documental";
+    string StatusClass(string s) => s switch { "Excelente" => "success", "Bom" => "primary", "Atenção" => "warning text-dark", "Crítico" => "danger", _ => "secondary" };
+}
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <div>
+        <h1 class="h3 mb-1">Qualidade Documental</h1>
+        <p class="text-muted mb-0">Central proativa para documentos sem OCR, mal classificados, incompletos, inseguros ou com falha de storage.</p>
+    </div>
+    <form asp-action="RunNow" method="post" class="d-inline">
+        @Html.AntiForgeryToken()
+        <button class="btn btn-primary"><i class="bi bi-play-circle me-1"></i>Rodar análise agora</button>
+    </form>
+</div>
+
+@if (TempData["Success"] is string success)
+{
+    <div class="alert alert-success">@success</div>
+}
+
+<div class="row g-3 mb-4">
+    <div class="col-6 col-lg-2"><a class="text-decoration-none" href="/DocumentQuality"><div class="card h-100 shadow-sm"><div class="card-body"><div class="text-muted small">Score médio geral</div><div class="h3 mb-0">@Model.AverageScore</div></div></div></a></div>
+    <div class="col-6 col-lg-2"><a class="text-decoration-none" href="/DocumentQuality?Status=Excelente"><div class="card h-100 border-success"><div class="card-body"><div class="text-muted small">Excelentes</div><div class="h3 mb-0 text-success">@Model.ExcellentCount</div></div></div></a></div>
+    <div class="col-6 col-lg-2"><a class="text-decoration-none" href="/DocumentQuality?Status=Bom"><div class="card h-100 border-primary"><div class="card-body"><div class="text-muted small">Bons</div><div class="h3 mb-0 text-primary">@Model.GoodCount</div></div></div></a></div>
+    <div class="col-6 col-lg-2"><a class="text-decoration-none" href="/DocumentQuality?Status=Atenção"><div class="card h-100 border-warning"><div class="card-body"><div class="text-muted small">Em atenção</div><div class="h3 mb-0 text-warning">@Model.WarningCount</div></div></div></a></div>
+    <div class="col-6 col-lg-2"><a class="text-decoration-none" href="/DocumentQuality?Status=Crítico"><div class="card h-100 border-danger"><div class="card-body"><div class="text-muted small">Críticos</div><div class="h3 mb-0 text-danger">@Model.CriticalCount</div></div></div></a></div>
+    <div class="col-6 col-lg-2"><a class="text-decoration-none" href="/DocumentQuality?WithoutOcr=true"><div class="card h-100"><div class="card-body"><div class="text-muted small">Sem OCR</div><div class="h3 mb-0">@Model.WithoutOcrCount</div></div></div></a></div>
+    <div class="col-6 col-lg-2"><a class="text-decoration-none" href="/DocumentQuality?WithoutClassification=true"><div class="card h-100"><div class="card-body"><div class="text-muted small">Sem classificação</div><div class="h3 mb-0">@Model.WithoutClassificationCount</div></div></div></a></div>
+    <div class="col-6 col-lg-2"><a class="text-decoration-none" href="/DocumentQuality?PartialDocument=true"><div class="card h-100"><div class="card-body"><div class="text-muted small">Incompletos</div><div class="h3 mb-0">@Model.IncompleteCount</div></div></div></a></div>
+    <div class="col-6 col-lg-2"><a class="text-decoration-none" href="/DocumentQuality?LgpdRisk=true"><div class="card h-100 border-danger"><div class="card-body"><div class="text-muted small">Risco LGPD</div><div class="h3 mb-0 text-danger">@Model.LgpdRiskCount</div></div></div></a></div>
+    <div class="col-6 col-lg-2"><a class="text-decoration-none" href="/DocumentQuality?MissingStorageFile=true"><div class="card h-100 border-danger"><div class="card-body"><div class="text-muted small">Arquivo ausente</div><div class="h3 mb-0 text-danger">@Model.MissingStorageCount</div></div></div></a></div>
+</div>
+
+<form method="get" class="card mb-3 shadow-sm">
+    <div class="card-body row g-2 align-items-end">
+        <div class="col-md-2"><label class="form-label">Status</label><select name="Status" class="form-select"><option value="">Todos</option><option>Excelente</option><option>Bom</option><option>Atenção</option><option>Crítico</option></select></div>
+        <div class="col-md-2"><label class="form-label">Score mín.</label><input name="ScoreMin" value="@Model.Filter.ScoreMin" class="form-control" type="number" min="0" max="100" /></div>
+        <div class="col-md-2"><label class="form-label">Score máx.</label><input name="ScoreMax" value="@Model.Filter.ScoreMax" class="form-control" type="number" min="0" max="100" /></div>
+        <div class="col-md-6 d-flex flex-wrap gap-3">
+            <label class="form-check"><input class="form-check-input" name="WithoutOcr" value="true" type="checkbox" checked="@(Model.Filter.WithoutOcr == true)" /> Sem OCR</label>
+            <label class="form-check"><input class="form-check-input" name="WithoutClassification" value="true" type="checkbox" checked="@(Model.Filter.WithoutClassification == true)" /> Sem classificação</label>
+            <label class="form-check"><input class="form-check-input" name="PartialDocument" value="true" type="checkbox" checked="@(Model.Filter.PartialDocument == true)" /> Parcial</label>
+            <label class="form-check"><input class="form-check-input" name="LgpdRisk" value="true" type="checkbox" checked="@(Model.Filter.LgpdRisk == true)" /> Risco LGPD</label>
+            <label class="form-check"><input class="form-check-input" name="MissingStorageFile" value="true" type="checkbox" checked="@(Model.Filter.MissingStorageFile == true)" /> Arquivo ausente</label>
+        </div>
+        <div class="col-12"><button class="btn btn-outline-primary"><i class="bi bi-funnel me-1"></i>Filtrar</button></div>
+    </div>
+</form>
+
+<div class="card shadow-sm">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light"><tr><th>Documento</th><th>Pasta</th><th>Tipo</th><th>Score</th><th>Status</th><th>Pendências</th><th>Próxima ação</th><th>Última análise</th><th>Ações</th></tr></thead>
+            <tbody>
+            @if (!Model.Items.Any())
+            {
+                <tr><td colspan="9" class="text-center text-muted py-4">Nenhum resultado. Clique em “Rodar análise agora”.</td></tr>
+            }
+            @foreach (var item in Model.Items)
+            {
+                <tr>
+                    <td><a asp-controller="Ged" asp-action="Details" asp-route-id="@item.DocumentId">@item.DocumentTitle</a></td>
+                    <td>@(item.FolderName ?? "-")</td>
+                    <td>@(item.DocumentTypeName ?? "-")</td>
+                    <td><div class="progress" style="width:90px"><div class="progress-bar bg-@StatusClass(item.QualityStatus)" style="width:@item.QualityScore%">@item.QualityScore</div></div></td>
+                    <td><span class="badge bg-@StatusClass(item.QualityStatus)">@item.QualityStatus</span></td>
+                    <td><span title="@string.Join(" | ", item.Issues)">@(item.Issues.Count == 0 ? "Nenhuma" : string.Join("; ", item.Issues.Take(3)))</span></td>
+                    <td>@item.NextAction</td>
+                    <td>@item.AnalyzedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                    <td class="text-nowrap">
+                        <a class="btn btn-sm btn-outline-primary" asp-action="Details" asp-route-documentId="@item.DocumentId">Detalhes</a>
+                        <form asp-action="Reanalyze" asp-route-documentId="@item.DocumentId" method="post" class="d-inline">@Html.AntiForgeryToken()<button class="btn btn-sm btn-outline-secondary">Reanalisar</button></form>
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+</div>

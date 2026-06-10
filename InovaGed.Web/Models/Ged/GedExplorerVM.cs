@@ -81,5 +81,8 @@ public sealed class GedExplorerVM
         public string PartialStatusCss { get; set; } = "";
 
         public bool IsConfidential { get; set; }
+        public int? QualityScore { get; set; }
+        public string? QualityStatus { get; set; }
+        public string? QualityNextAction { get; set; }
     }
 }

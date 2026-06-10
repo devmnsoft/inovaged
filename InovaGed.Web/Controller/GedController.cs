@@ -830,6 +830,8 @@ public sealed class GedController : Controller
                 }).ToList()
             };
 
+            await ApplyQualityBadgesAsync(vm.Documents, tenantId, ct);
+
             return View(vm);
         }
         catch (PostgresException ex) when (ex.SqlState == "42703")
@@ -1513,6 +1515,45 @@ LIMIT 20;";
 
     private object JsonSuccess(string message, object? data = null, string? correlationId = null)
         => new { success = true, message, data = data ?? new { }, correlationId = correlationId ?? HttpContext.TraceIdentifier };
+
+    private async Task ApplyQualityBadgesAsync(IReadOnlyCollection<GedExplorerVM.DocumentRowVM> documents, Guid tenantId, CancellationToken ct)
+    {
+        if (documents.Count == 0) return;
+        try
+        {
+            await using var conn = await _db.OpenAsync(ct);
+            var rows = await conn.QueryAsync<QualityBadgeRow>(new CommandDefinition("""
+with latest as (
+  select distinct on (tenant_id, document_id) document_id, quality_score, quality_status, next_action
+  from ged.document_quality_result
+  where tenant_id=@TenantId and document_id = any(@DocumentIds)
+  order by tenant_id, document_id, analyzed_at_utc desc
+)
+select document_id as "DocumentId", quality_score as "QualityScore", quality_status as "QualityStatus", next_action as "QualityNextAction"
+from latest
+""", new { TenantId = tenantId, DocumentIds = documents.Select(d => d.Id).ToArray() }, cancellationToken: ct));
+            var map = rows.ToDictionary(x => x.DocumentId);
+            foreach (var doc in documents)
+            {
+                if (!map.TryGetValue(doc.Id, out var quality)) continue;
+                doc.QualityScore = quality.QualityScore;
+                doc.QualityStatus = quality.QualityStatus;
+                doc.QualityNextAction = quality.QualityNextAction;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Não foi possível carregar badges de qualidade documental para a listagem GED.");
+        }
+    }
+
+    private sealed class QualityBadgeRow
+    {
+        public Guid DocumentId { get; set; }
+        public int QualityScore { get; set; }
+        public string QualityStatus { get; set; } = string.Empty;
+        public string? QualityNextAction { get; set; }
+    }
 
 
     private static GedExplorerVM.DocumentRowVM MapDocumentRow(DocumentRowDto d)
