@@ -13,6 +13,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Npgsql;
 
 namespace InovaGed.Infrastructure.SystemHealth;
 
@@ -79,6 +80,7 @@ public sealed class HomologationHealthService : IHomologationHealthService
         await AddGedChecksAsync(report, ct);
         await AddUploadChecksAsync(report, ct);
         await AddOcrChecksAsync(report, ct);
+        await AddOcrAutoScheduleChecksAsync(report, ct);
         await AddPreviewChecksAsync(report, ct);
         await AddPartialDocumentChecksAsync(report, ct);
         await AddHospitalDocumentsChecksAsync(report, ct);
@@ -175,6 +177,68 @@ public sealed class HomologationHealthService : IHomologationHealthService
         Add(report, "OCR", "Linguagens configuradas", "Confirma idiomas de OCR.", string.IsNullOrWhiteSpace(languages) ? Failed : Ok, string.IsNullOrWhiteSpace(languages) ? "Critical" : "Info", string.IsNullOrWhiteSpace(languages) ? "Nenhuma linguagem configurada." : $"Languages={languages}.", "Configure Ocr:Languages, ex.: por+eng.", "/SystemHealth");
 
         await AddOcrJobChecksAsync(report, ct);
+    }
+
+
+    private async Task AddOcrAutoScheduleChecksAsync(HomologationReportDto report, CancellationToken ct)
+    {
+        var enabled = _configuration.GetValue("OcrAutoSchedule:Enabled", true);
+        var runAt = _configuration["OcrAutoSchedule:RunAt"] ?? "18:00";
+        var timeZone = _configuration["OcrAutoSchedule:TimeZone"] ?? "America/Belem";
+        var tenant = _configuration["OcrAutoSchedule:TenantId"] ?? _currentUser.TenantId.ToString();
+
+        Add(report, "OCR Auto Schedule", "OCR Auto Schedule habilitado?", "Confirma se a rotina diária está habilitada por configuração.", enabled ? Ok : Warning, "Medium", $"OcrAutoSchedule:Enabled={enabled}.", "Habilite OcrAutoSchedule:Enabled quando a rotina automática diária deve rodar.", "/Ocr/AutoSchedule");
+        Add(report, "OCR Auto Schedule", "Horário configurado?", "Valida horário diário no formato HH:mm.", TimeSpan.TryParse(runAt, out _ ) ? Ok : Failed, "Critical", $"RunAt={runAt}; TimeZone={timeZone}; TenantId={tenant}.", "Configure OcrAutoSchedule:RunAt no formato HH:mm e TimeZone válido.", "/Ocr/AutoSchedule");
+
+        try
+        {
+            var nextRun = InovaGed.Application.Ocr.OcrAutoScheduleClock.CalculateNextRun(DateTimeOffset.UtcNow, runAt, timeZone);
+            Add(report, "OCR Auto Schedule", "Próxima execução calculada?", "Calcula a próxima execução usando o fuso configurado.", Ok, "Info", $"NextRunUtc={nextRun:O}; Local={InovaGed.Application.Ocr.OcrAutoScheduleClock.FormatLocal(nextRun, timeZone)}.", "Abrir /Ocr/AutoSchedule para validar a tela administrativa.", "/Ocr/AutoSchedule");
+        }
+        catch (Exception ex)
+        {
+            Add(report, "OCR Auto Schedule", "Próxima execução calculada?", "Calcula a próxima execução usando o fuso configurado.", Failed, "Critical", ex.Message, "Corrija OcrAutoSchedule:TimeZone/RunAt.", "/Ocr/AutoSchedule");
+        }
+
+        var tables = await TablesExistAsync(["ged.ocr_auto_schedule_run", "ged.ocr_auto_schedule_run_item"], ct);
+        Add(report, "OCR Auto Schedule", "Tabelas de histórico existem?", "Verifica tabelas de histórico da rotina.", tables ? Ok : Failed, "Critical", tables ? "ged.ocr_auto_schedule_run e ged.ocr_auto_schedule_run_item existem." : "Tabelas de histórico ausentes.", "Aplicar database/migrations/2026_06_ocr_auto_schedule.sql.", "/SystemHealth/Schema");
+
+        var tenantId = Guid.TryParse(tenant, out var parsedTenant) ? parsedTenant : _currentUser.TenantId;
+        var lastStatus = await ScalarSafeAsync<string?>("OCR Auto Schedule / Última execução", "select status from ged.ocr_auto_schedule_run where tenant_id=@tenantId order by started_at_utc desc limit 1", new { tenantId }, ct);
+        Add(report, "OCR Auto Schedule", "Última execução OK?", "Mostra o último status registrado da rotina.", string.Equals(lastStatus, "SUCCESS", StringComparison.OrdinalIgnoreCase) ? Ok : Warning, "Medium", string.IsNullOrWhiteSpace(lastStatus) ? "Nenhuma execução registrada." : $"Último status={lastStatus}.", "Executar agora em /Ocr/AutoSchedule se não houver histórico recente.", "/Ocr/AutoSchedule");
+
+        var recentFailures = await ScalarSafeAsync<long>("OCR Auto Schedule / Falhas recentes", "select count(*) from ged.ocr_auto_schedule_run where tenant_id=@tenantId and started_at_utc >= now() - interval '7 days' and status in ('FAILED','PARTIAL_FAILURE')", new { tenantId }, ct);
+        Add(report, "OCR Auto Schedule", "Há falhas recentes?", "Conta execuções com falha nos últimos 7 dias.", recentFailures == 0 ? Ok : Warning, "Medium", recentFailures == 0 ? "Nenhuma falha recente." : $"{recentFailures} falha(s) recente(s).", "Revisar histórico e logs em /Ocr/AutoSchedule.", "/Ocr/AutoSchedule");
+
+        var withoutOcrSql = await BuildDocumentsWithoutOcrCountSqlAsync(ct);
+        if (withoutOcrSql is null)
+        {
+            Add(report, "OCR Auto Schedule", "Documentos sem OCR", "Conta documentos elegíveis sem OCR.", Warning, "Medium", "Não foi possível montar query: document_search sem coluna de versão ou tabelas ausentes.", "Aplicar migrations de OCR/document_search.", "/SystemHealth/Schema");
+            return;
+        }
+
+        var withoutOcr = await ScalarSafeAsync<long>("OCR Auto Schedule / Documentos sem OCR", withoutOcrSql, new { tenantId }, ct);
+        Add(report, "OCR Auto Schedule", "Quantos documentos sem OCR existem?", "Conta documentos ativos com versão atual e sem OCR indexado.", Ok, "Info", $"Documentos sem OCR={withoutOcr}.", "A rotina irá enfileirar até MaxDocumentsPerRun por execução.", "/Ocr/AutoSchedule");
+    }
+
+    private async Task<string?> BuildDocumentsWithoutOcrCountSqlAsync(CancellationToken ct)
+    {
+        if (!await TablesExistAsync(["ged.document", "ged.document_version", "ged.document_search"], ct) ||
+            !await ColumnsExistAsync("ged", "document_search", ["ocr_text"], ct))
+            return null;
+
+        var versionColumn = await ResolveDocumentSearchVersionColumnAsync(ct);
+        if (versionColumn is null) return null;
+
+        return $@"
+select count(*)
+from ged.document d
+join ged.document_version v on v.id = d.current_version_id
+left join ged.document_search ds on ds.tenant_id = d.tenant_id and ds.{versionColumn} = v.id
+where d.tenant_id = @tenantId
+  and coalesce(d.reg_status, 'A') = 'A'
+  and d.current_version_id is not null
+  and nullif(trim(coalesce(ds.ocr_text, '')), '') is null";
     }
 
     private async Task AddPreviewChecksAsync(HomologationReportDto report, CancellationToken ct)

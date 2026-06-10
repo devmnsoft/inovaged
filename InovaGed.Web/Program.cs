@@ -123,6 +123,7 @@ builder.Services.AddSignalR();
 builder.Services.AddMemoryCache();
 builder.Services.AddScoped<IDateTimeDisplayService, DateTimeDisplayService>();
 builder.Services.Configure<SchemaRepairOptions>(builder.Configuration.GetSection("SchemaRepair"));
+builder.Services.Configure<OcrAutoScheduleOptions>(builder.Configuration.GetSection("OcrAutoSchedule"));
 builder.Services.AddScoped<ISchemaFixSqlProvider, SchemaFixSqlProvider>();
 builder.Services.AddScoped<ISchemaHealthService, SchemaHealthService>();
 builder.Services.AddScoped<IHomologationHealthService, HomologationHealthService>();
@@ -275,6 +276,9 @@ builder.Services.AddScoped<IWorkflowCommands, WorkflowCommands>();
 // OCR Jobs + Worker
 // =======================================================
 builder.Services.AddScoped<IOcrJobRepository, OcrJobRepository>();
+builder.Services.AddScoped<IOcrAutoScheduleRepository, OcrAutoScheduleRepository>();
+builder.Services.AddScoped<IOcrAutoSchedulerService, OcrAutoSchedulerService>();
+builder.Services.AddHostedService<OcrAutoSchedulerWorker>();
 if (builder.Configuration.GetValue<bool>("OcrWorker:Enabled"))
 {
     builder.Services.AddHostedService<OcrWorker>();
