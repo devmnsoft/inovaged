@@ -416,9 +416,9 @@ order by coalesce(d.updated_at, d.created_at) desc nulls last
 limit @Limit
 """;
 
-    private static SqlMapper.DynamicParameters BuildResultWhere(DocumentQualityFilter filter, out string where)
+    private static DynamicParameters BuildResultWhere(DocumentQualityFilter filter, out string where)
     {
-        var args = new SqlMapper.DynamicParameters();
+        var args = new DynamicParameters();
         var predicates = new List<string>();
         if (!string.IsNullOrWhiteSpace(filter.Status)) { predicates.Add("l.quality_status=@Status"); args.Add("Status", filter.Status); }
         if (filter.ScoreMin.HasValue) { predicates.Add("l.quality_score>=@ScoreMin"); args.Add("ScoreMin", filter.ScoreMin); }
