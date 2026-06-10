@@ -24,6 +24,8 @@ public static class AppPolicies
     public const string SystemHealth = "SystemHealth";
     public const string ParametersAdmin = "ParametersAdmin";
     public const string UsersAdmin = "UsersAdmin";
-    public const string LogsAccess = "LogsAccess";
+    public const string SystemLogs = "SystemLogs";
+    public const string LogsAccess = SystemLogs;
     public const string SchemaRepair = "SchemaRepair";
+    public const string OperationsAccess = "OperationsAccess";
 }

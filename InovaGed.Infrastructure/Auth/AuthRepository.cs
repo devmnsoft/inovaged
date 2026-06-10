@@ -98,6 +98,26 @@ WHERE ur.user_id = @userId;
         return roles.ToList();
     }
 
+
+    public async Task<string?> GetUserSectorAsync(Guid tenantId, Guid userId, CancellationToken ct)
+    {
+        const string sql = @"
+SELECT NULLIF(COALESCE(s.setor, s.lotacao, ''), '')
+FROM ged.app_user u
+LEFT JOIN ged.servidor s
+       ON s.id = u.servidor_id
+      AND s.tenant_id = u.tenant_id
+      AND s.reg_status = 'A'
+WHERE u.tenant_id = @tenantId
+  AND u.id = @userId
+LIMIT 1;
+";
+
+        using var conn = await _factory.OpenAsync(ct);
+        return await conn.QueryFirstOrDefaultAsync<string?>(
+            new CommandDefinition(sql, new { tenantId, userId }, cancellationToken: ct));
+    }
+
     public async Task<string?> GetPasswordHashAsync(
         Guid tenantId,
         Guid userId,

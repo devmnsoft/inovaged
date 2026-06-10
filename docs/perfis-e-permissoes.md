@@ -1,123 +1,100 @@
-# Perfis e permissões do InovaGED
+# Perfis e Permissões do InovaGED
 
-Este documento consolida a matriz oficial de acesso do InovaGED. A segurança deve ser aplicada em policies, controllers, endpoints AJAX e escopos de consulta; o menu lateral é apenas uma camada de UX.
+Este documento consolida as regras oficiais de acesso por perfil. Segurança deve ser aplicada em menus, controllers, actions, endpoints AJAX, preview/download e queries com escopo.
 
-## Perfis oficiais
+## Perfis padronizados
 
-- **ADMIN**: administrador global, com acesso total a telas, ações administrativas, GED, documentos hospitalares, empréstimos, protocolo, parâmetros, usuários, logs, schema health, homologação e dashboards.
-- **ADMINISTRADOR**: administrador global equivalente ao ADMIN, com o mesmo acesso total.
-- **ADMINISTRADOROPHIR**: perfil operacional de gestão Ophir. Acessa documentos hospitalares, filas operacionais, manuseio/processamento de protocolos do seu setor e gestão de empréstimos do seu setor. Não acessa administração global.
-- **ARQUIVISTAOPHIR**: perfil operacional de solicitação e acompanhamento. Acessa documentos hospitalares, solicitação de protocolo, minhas solicitações, criação de solicitação de documento/empréstimo e acompanhamento dos próprios pedidos. Não executa ações de aprovação, entrega ou devolução.
-- **HOSPITAL**: perfil hospitalar/leitura. Acessa apenas a busca hospitalar/documentos permitidos, sem ações administrativas.
+| Perfil | Descrição |
+|---|---|
+| `ADMIN` | Administrador global com acesso total. |
+| `ADMINISTRADOR` | Administrador global equivalente ao `ADMIN`, com acesso total. |
+| `ADMINISTRADOROPHIR` | Operação Ophir: manuseio, aprovação e acompanhamento do setor vinculado. |
+| `ARQUIVISTAOPHIR` | Solicitação e acompanhamento de protocolos/empréstimos próprios. |
+| `HOSPITAL` | Usuário hospitalar de leitura, restrito à busca/visualização permitida. |
 
-## Redirecionamento pós-login
-
-- **ADMIN / ADMINISTRADOR**: `/Ged` por padrão, respeitando `returnUrl` local válido.
-- **ADMINISTRADOROPHIR**: `/Operations`; se acessar um `returnUrl` operacional permitido, ele é respeitado.
-- **ARQUIVISTAOPHIR**: `/ProtocolRequests`; se acessar um `returnUrl` operacional permitido, ele é respeitado.
-- **HOSPITAL**: `/HospitalDocuments`.
-
-## Menus visíveis
-
-### ADMIN e ADMINISTRADOR
-
-Exibem todos os menus administrativos e operacionais: Dashboard, Painel GED, Inteligência Hospitalar, Alertas e Tendências, System Health, Schema do Banco, Homologação, Explorer de Documentos, Busca Hospitalar, Criar Documento, Pastas e Dossiês, OCR, KPI do GED, lotes, importação/exportação, sistema de imagem, guarda física, empréstimos, protocolo, parâmetros, usuários, logs e configurações.
-
-### ADMINISTRADOROPHIR
-
-- Buscar Prontuários e Documentos
-- Central Operacional
-- Fila de Protocolos / Manuseio de Processos
-- Loans/Empréstimos para aprovação e tratamento
-- Solicitações de Documentos
-- Sair
-
-### ARQUIVISTAOPHIR
-
-- Buscar Prontuários e Documentos
-- Solicitar Protocolo
-- Minhas Solicitações de Protocolo
-- Solicitar Documento/Empréstimo
-- Meus Pedidos
-- Sair
-
-### HOSPITAL
-
-- Buscar Prontuários e Documentos
-- Sair
-
-## Matriz de permissões
+## Matriz de funcionalidades
 
 | Funcionalidade | ADMIN | ADMINISTRADOR | ADMINISTRADOROPHIR | ARQUIVISTAOPHIR | HOSPITAL |
 |---|---:|---:|---:|---:|---:|
-| GED administrativo | Total | Total | Operacional | Operacional | Não |
-| HospitalDocuments | Total | Total | Sim | Sim | Leitura |
-| Loans - visualizar | Todos | Todos | Setor | Próprios | Não |
-| Loans - criar | Sim | Sim | Sim | Sim | Não |
-| Loans - aprovar/rejeitar | Sim | Sim | Setor | Não | Não |
-| Loans - entregar/devolver | Sim | Sim | Setor | Não | Não |
-| Protocolo - solicitar | Sim | Sim | Sim | Sim | Não |
-| Protocolo - manusear fila | Sim | Sim | Setor | Não | Não |
-| Operações | Total | Total | Sim | Sim | Não |
+| Dashboard | Sim | Sim | Não | Não | Não |
+| Central Operacional | Sim | Sim | Sim | Não | Não |
+| GED / Explorer | Sim | Sim | Setor/autorizado | Não administrativo | Não |
+| HospitalDocuments / Busca Hospitalar | Sim | Sim | Sim, conforme escopo | Sim, conforme permissão | Somente leitura permitida |
+| Inteligência Hospitalar | Sim | Sim | Não | Não | Não |
+| Alertas e Tendências | Sim | Sim | Não | Não | Não |
+| Uploads / OCR / Fila OCR / Classificação | Sim | Sim | Não administrativo | Não | Não |
+| Pastas / Dossiês | Sim | Sim | Não administrativo | Não | Não |
+| Guarda Física / Localizações / Caixas / Etiquetas | Sim | Sim | Não | Não | Não |
+| Empréstimos - ver | Sim | Sim | Pedidos do setor | Próprios pedidos | Não |
+| Empréstimos - solicitar | Sim | Sim | Não | Sim | Não |
+| Empréstimos - aprovar/rejeitar/entregar/devolver | Sim | Sim | Sim, se pedido pertence ao setor | Não | Não |
+| Protocolo - solicitar | Sim | Sim | Não | Sim | Não |
+| Protocolo - fila/manuseio | Sim | Sim | Sim, setor vinculado | Não | Não |
 | Parâmetros | Sim | Sim | Não | Não | Não |
 | Usuários | Sim | Sim | Não | Não | Não |
-| Logs/Auditoria global | Sim | Sim | Não | Não | Não |
-| System Health | Sim | Sim | Não | Não | Não |
-| Schema Repair | Sim | Sim | Não | Não | Não |
-| Homologação | Sim | Sim | Não | Não | Não |
+| Logs | Sim | Sim | Não | Não | Não |
+| SystemHealth / Schema do Banco / Homologação | Sim | Sim | Não | Não | Não |
+| SchemaRepair | Sim | Sim | Não | Não | Não |
 
-## Policies oficiais
+## Menus por perfil
 
-- `FullAdminOnly`: ADMIN, ADMINISTRADOR
-- `GedAccess`: ADMIN, ADMINISTRADOR, ADMINISTRADOROPHIR, ARQUIVISTAOPHIR
-- `HospitalDocumentsAccess`: ADMIN, ADMINISTRADOR, ADMINISTRADOROPHIR, ARQUIVISTAOPHIR, HOSPITAL
-- `LoansView`: ADMIN, ADMINISTRADOR, ADMINISTRADOROPHIR, ARQUIVISTAOPHIR
-- `LoansManage`: ADMIN, ADMINISTRADOR, ADMINISTRADOROPHIR
-- `LoansRequest`: ADMIN, ADMINISTRADOR, ARQUIVISTAOPHIR
-- `ProtocolRequest`: ADMIN, ADMINISTRADOR, ARQUIVISTAOPHIR
-- `ProtocolManage`: ADMIN, ADMINISTRADOR, ADMINISTRADOROPHIR
-- `SystemAdmin`, `SystemHealth`, `ParametersAdmin`, `UsersAdmin`, `LogsAccess`, `SchemaRepair`: ADMIN, ADMINISTRADOR
+### ADMIN e ADMINISTRADOR
+Visualizam todos os menus globais: Dashboard, Central Operacional, GED/Explorer, Busca Hospitalar, Inteligência Hospitalar, Alertas e Tendências, Uploads, OCR, Fila OCR, Classificação, Pastas, Dossiês, Guarda Física, Localizações, Caixas, Etiquetas, Empréstimos, Protocolo, Parâmetros, Usuários, Logs, SystemHealth, Schema do Banco, Homologação, Configurações e Sair.
+
+### ADMINISTRADOROPHIR
+Visualiza somente a jornada operacional: Central Operacional, Buscar Prontuários e Documentos, Fila de Protocolos, Manuseio de Processos, Solicitações de Documentos, Empréstimos para Aprovação/Tratamento, Documentos do Setor e Sair.
+
+### ARQUIVISTAOPHIR
+Visualiza: Buscar Prontuários e Documentos, Solicitar Protocolo, Minhas Solicitações de Protocolo, Solicitar Documento/Empréstimo, Meus Pedidos e Sair.
+
+### HOSPITAL
+Visualiza apenas Buscar Prontuários e Documentos e Sair.
+
+## Rotas e policies
+
+| Policy | Perfis |
+|---|---|
+| `FullAdminOnly` | `ADMIN`, `ADMINISTRADOR` |
+| `GedAccess` | `ADMIN`, `ADMINISTRADOR`, `ADMINISTRADOROPHIR`, `ARQUIVISTAOPHIR` |
+| `HospitalDocumentsAccess` | `ADMIN`, `ADMINISTRADOR`, `ADMINISTRADOROPHIR`, `ARQUIVISTAOPHIR`, `HOSPITAL` |
+| `LoansView` | `ADMIN`, `ADMINISTRADOR`, `ADMINISTRADOROPHIR`, `ARQUIVISTAOPHIR` |
+| `LoansRequest` | `ADMIN`, `ADMINISTRADOR`, `ARQUIVISTAOPHIR` |
+| `LoansManage` | `ADMIN`, `ADMINISTRADOR`, `ADMINISTRADOROPHIR` |
+| `ProtocolRequest` | `ADMIN`, `ADMINISTRADOR`, `ARQUIVISTAOPHIR` |
+| `ProtocolManage` | `ADMIN`, `ADMINISTRADOR`, `ADMINISTRADOROPHIR` |
+| `SystemAdmin`, `SystemLogs`, `SchemaRepair`, `UsersAdmin`, `ParametersAdmin` | `ADMIN`, `ADMINISTRADOR` |
+| `OperationsAccess` | `ADMIN`, `ADMINISTRADOR`, `ADMINISTRADOROPHIR`, `ARQUIVISTAOPHIR` |
+
+## Redirecionamento pós-login
+
+| Perfil | Destino padrão |
+|---|---|
+| `ADMIN` | `/Ged` ou returnUrl local permitido |
+| `ADMINISTRADOR` | `/Ged` ou returnUrl local permitido |
+| `ADMINISTRADOROPHIR` | `/Operations` |
+| `ARQUIVISTAOPHIR` | `/Loans/New` |
+| `HOSPITAL` | `/HospitalDocuments` |
+| Sem perfil reconhecido | `/HospitalDocuments` |
+
+Cada login concluído registra UserId, login, roles e redirect escolhido no log estruturado e na auditoria de aplicação.
+
+## Escopo por setor
+
+### Empréstimos
+- `ADMIN` e `ADMINISTRADOR` veem e gerenciam todos os pedidos.
+- `ADMINISTRADOROPHIR` vê e gerencia apenas pedidos cujo setor do solicitante corresponde ao setor vinculado ao usuário.
+- `ARQUIVISTAOPHIR` vê os próprios pedidos e pode cancelar/responder ajuste quando o status permitir, sem ações administrativas.
+
+### Protocolo
+- `ADMIN` e `ADMINISTRADOR` veem e processam tudo.
+- `ADMINISTRADOROPHIR` vê a fila do setor, manuseia processos do setor atual e aprova/devolve/finaliza conforme policy.
+- `ARQUIVISTAOPHIR` cria solicitações e acompanha as próprias/participantes autorizadas, sem fila administrativa.
+
+### HospitalDocuments
+Busca, preview e download devem respeitar o mesmo critério de autorização do backend. O perfil `HOSPITAL` é sempre somente leitura.
 
 ## Auditoria de acesso negado
 
-Tentativas bloqueadas por autorização são registradas como `ACCESS_DENIED` com usuário, roles exigidas pela policy, método HTTP, path, query string, status code, IP, user agent, correlation id e trace id. A UI exibe página 403 amigável com o texto “Você não possui permissão para acessar esta funcionalidade.” e botão “Voltar para minha área”.
+Quando a autorização gera 403, o sistema grava `ACCESS_DENIED` com userId, userName, roles, path, method, policy/roles exigidos, controller, action, IP, userAgent, correlationId e data em `ged.app_audit_log`, além do log técnico `ged.security_access_failure_log`.
 
-## Checklist de testes funcionais
-
-### ADMIN
-
-1. Login ADMIN.
-2. Validar todos os menus.
-3. Acessar `/Ged`, `/HospitalDocuments`, `/Loans`, `/Protocolo`, `/Parameters`, `/Users`, `/SystemLogs`, `/SystemHealth/Schema`.
-4. Validar schema repair conforme ambiente.
-
-### ADMINISTRADOR
-
-1. Login ADMINISTRADOR.
-2. Validar equivalência total ao ADMIN.
-3. Confirmar menus e rotas administrativas.
-
-### ADMINISTRADOROPHIR
-
-1. Login ADMINISTRADOROPHIR.
-2. Confirmar ausência de Parameters/Users/SystemLogs/SchemaRepair.
-3. Acessar HospitalDocuments, Central Operacional, fila de protocolo e Loans do setor.
-4. Aprovar/entregar/devolver apenas empréstimos do setor.
-5. Acesso indevido deve retornar 403 e gerar auditoria.
-
-### ARQUIVISTAOPHIR
-
-1. Login ARQUIVISTAOPHIR.
-2. Acessar HospitalDocuments, Solicitar Protocolo, Minhas Solicitações e Solicitar Empréstimo.
-3. Confirmar ausência de aprovação/manuseio e administração global.
-4. Acesso indevido deve retornar 403 e gerar auditoria.
-
-### HOSPITAL
-
-1. Login HOSPITAL.
-2. Confirmar apenas busca hospitalar.
-3. Bloquear GED administrativo, Loans e Protocolo administrativo.
-
-## Testes diretos por URL
-
-Validar acesso direto a `/Users`, `/Parameters`, `/SystemLogs`, `/SystemHealth/Schema`, `/Loans/{id}`, `/Loans/{id}/Approve`, `/Protocolo?visao=entrada` e ações de manuseio. ADMIN/ADMINISTRADOR acessam tudo; perfis restritos acessam apenas seu escopo; tentativas indevidas retornam 403 e geram auditoria.
+Se `ADMIN` ou `ADMINISTRADOR` receber 403, o evento é warning operacional porque indica inconsistência de policy ou rota.

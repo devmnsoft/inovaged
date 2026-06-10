@@ -725,8 +725,8 @@ public sealed class GedController : Controller
     {
         base.OnActionExecuting(context);
         var isAdmin = RolePolicyHelper.IsFullAdmin(User);
-        var isOphir = User.IsInRole(AppRoles.AdministradorOphir) || User.IsInRole(AppRoles.ArquivistaOphir);
-        if (!isAdmin && isOphir)
+        var isOphir = User.IsInNormalizedRole(AppRoles.AdministradorOphir) || User.IsInNormalizedRole(AppRoles.ArquivistaOphir);
+        if (!isAdmin && isOphir && !HttpContext.Request.Path.StartsWithSegments("/Ged"))
         {
             _logger.LogWarning("Acesso bloqueado ao GED para perfil Ophir. Path={Path} User={User}", HttpContext.Request.Path.Value, User.Identity?.Name ?? "anonymous");
             context.Result = Forbid();
@@ -1820,10 +1820,10 @@ SELECT
     }
 
 
-    private bool CanAddDocumentPart() => RolePolicyHelper.IsFullAdmin(User) || User.IsInRole(AppRoles.Arquivista) || User.IsInRole(AppRoles.ArquivistaOphir);
+    private bool CanAddDocumentPart() => RolePolicyHelper.IsFullAdmin(User) || User.IsInRole(AppRoles.Arquivista) || User.IsInNormalizedRole(AppRoles.ArquivistaOphir);
     private bool CanViewDocumentParts() => _currentUser.IsAuthenticated;
-    private bool CanConsolidateDocumentParts() => RolePolicyHelper.IsFullAdmin(User) || User.IsInRole(AppRoles.Arquivista) || User.IsInRole(AppRoles.ArquivistaOphir);
-    private bool CanCancelDocumentParts() => RolePolicyHelper.IsFullAdmin(User) || User.IsInRole(AppRoles.AdministradorOphir);
+    private bool CanConsolidateDocumentParts() => RolePolicyHelper.IsFullAdmin(User) || User.IsInRole(AppRoles.Arquivista) || User.IsInNormalizedRole(AppRoles.ArquivistaOphir);
+    private bool CanCancelDocumentParts() => RolePolicyHelper.IsFullAdmin(User) || User.IsInNormalizedRole(AppRoles.AdministradorOphir);
 
     private object JsonError(string message, string errorStep, string errorLog, bool canRetry, string? correlationId = null)
         => new { success = false, message, errorStep, errorLog, canRetry, correlationId = correlationId ?? HttpContext.TraceIdentifier };

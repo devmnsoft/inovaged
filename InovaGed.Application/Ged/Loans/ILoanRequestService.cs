@@ -25,9 +25,18 @@ public sealed class LoanVisibilityScope
     public bool IsAdmin { get; set; }
     public bool IsAdministradorOphir { get; set; }
     public bool IsArquivistaOphir { get; set; }
+    public Guid TenantId { get; set; }
+    public string? SectorId { get; set; }
     public string? Sector { get; set; }
     public Guid? UserId { get; set; }
-    public bool CanSeeAll => IsAdmin;
-    public bool OnlyOwnRequests => !IsAdmin && !IsAdministradorOphir;
-    public bool CanManage => IsAdmin || IsAdministradorOphir;
+    public bool CanSeeAll { get; set; }
+    public bool OnlyOwnRequests { get; set; }
+    public bool CanManage { get; set; }
+
+    public void BuildLoanScope()
+    {
+        CanSeeAll = IsAdmin;
+        CanManage = IsAdmin || IsAdministradorOphir;
+        OnlyOwnRequests = !IsAdmin && !IsAdministradorOphir;
+    }
 }

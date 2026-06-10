@@ -144,6 +144,13 @@ public sealed class AccountController : Controller
         if (user.ServidorId.HasValue)
             claims.Add(new Claim("servidor_id", user.ServidorId.Value.ToString()));
 
+        var sector = await ResolveUserSectorAsync(user.TenantId, user.UserId, ct);
+        if (!string.IsNullOrWhiteSpace(sector))
+        {
+            claims.Add(new Claim("sector", sector));
+            claims.Add(new Claim("setor", sector));
+        }
+
         foreach (var role in normalizedRoles)
             claims.Add(new Claim(ClaimTypes.Role, role));
 
@@ -200,6 +207,19 @@ public sealed class AccountController : Controller
         }
     }
 
+    private async Task<string?> ResolveUserSectorAsync(Guid tenantId, Guid userId, CancellationToken ct)
+    {
+        try
+        {
+            return await _repo.GetUserSectorAsync(tenantId, userId, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Não foi possível carregar setor do usuário para indicador de perfil. Tenant={TenantId} UserId={UserId}", tenantId, userId);
+            return null;
+        }
+    }
+
     private (IActionResult Result, string TargetDescription, string Reason) ResolvePostLoginRedirect(string? returnUrl, string? username, IReadOnlyCollection<string> normalizedRoles, ClaimsPrincipal principal)
     {
         var normalizedUsername = (username ?? string.Empty).Trim().ToUpperInvariant();
@@ -224,7 +244,7 @@ public sealed class AccountController : Controller
             if (isAdministradorOphir)
                 return (Redirect("/Operations"), "/Operations", "administrador_ophir_operations");
             if (isArquivistaOphir)
-                return (Redirect("/ProtocolRequests"), "/ProtocolRequests", "arquivista_ophir_protocol_requests");
+                return (Redirect("/Loans/New"), "/Loans/New", "arquivista_ophir_loan_request");
             return (RedirectToAction("Index", "HospitalDocuments"), "/HospitalDocuments", "hospital_default_redirect");
         }
 
@@ -236,7 +256,7 @@ public sealed class AccountController : Controller
         if (isAdmin)
             return (RedirectToAction("Index", "Ged"), "/Ged", "admin_ged_default");
 
-        return (RedirectToAction("Index", "Home"), "/", "default_home");
+        return (RedirectToAction("Index", "HospitalDocuments"), "/HospitalDocuments", "default_hospital_documents");
     }
 
     private static bool IsAllowedHospitalReturnUrl(string? returnUrl)

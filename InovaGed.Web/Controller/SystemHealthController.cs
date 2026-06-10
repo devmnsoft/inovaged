@@ -9,7 +9,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize(Policy = AppPolicies.SystemHealth)]
+[Authorize(Policy = AppPolicies.SystemAdmin)]
 public sealed class SystemHealthController : Controller
 {
     private readonly IDbConnectionFactory _db;
