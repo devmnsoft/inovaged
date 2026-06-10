@@ -16,7 +16,8 @@ public sealed class SchemaHealthService : ISchemaHealthService
     [
         "ged.document", "ged.document_version", "ged.folder", "ged.document_search", "ged.ocr_job",
         "ged.upload_batch", "ged.upload_batch_item", "ged.upload_session", "ged.upload_session_chunk",
-        "ged.document_partial_part", "ged.audit_log", "ged.app_audit_log"
+        "ged.document_partial_part", "ged.audit_log", "ged.app_audit_log",
+        "ged.ocr_auto_schedule_run", "ged.ocr_auto_schedule_run_item"
     ];
 
     private static readonly string[] OptionalTables =
@@ -36,6 +37,9 @@ public sealed class SchemaHealthService : ISchemaHealthService
         ("document_version", "consolidated_version_id", "GED partial documents"), ("document_search", "ocr_text", "OCR"),
         ("ocr_job", "document_version_id", "OCR"), ("ocr_job", "status", "OCR"), ("ocr_job", "requested_at", "OCR"),
         ("ocr_job", "finished_at", "OCR"), ("ocr_job", "invalidate_digital_signatures", "OCR"),
+        ("ocr_auto_schedule_run", "tenant_id", "OCR Auto Schedule"), ("ocr_auto_schedule_run", "started_at_utc", "OCR Auto Schedule"),
+        ("ocr_auto_schedule_run", "status", "OCR Auto Schedule"), ("ocr_auto_schedule_run_item", "run_id", "OCR Auto Schedule"),
+        ("ocr_auto_schedule_run_item", "status", "OCR Auto Schedule"),
         ("upload_batch", "tenant_id", "Upload batch"), ("upload_batch", "status", "Upload batch"),
         ("upload_batch", "requested_folder_id", "Upload batch"), ("upload_batch_item", "batch_id", "Upload batch"),
         ("upload_batch_item", "upload_session_id", "Upload batch"), ("upload_batch_item", "status", "Upload batch"),
@@ -61,6 +65,8 @@ public sealed class SchemaHealthService : ISchemaHealthService
         ("ix_upload_session_tenant_user_status", [], "Índice de sessões chunked por usuário/status."),
         ("ix_upload_session_chunk_session", [], "Índice dos chunks por sessão."),
         ("ix_ocr_job_tenant_version_status", [], "Índice da fila OCR por versão/status."),
+        ("ix_ocr_auto_schedule_run_tenant_started", [], "Índice do histórico do agendamento automático de OCR."),
+        ("ix_ocr_auto_schedule_run_item_run", [], "Índice dos itens do agendamento automático de OCR."),
         ("ix_app_audit_log_tenant_created", [], "Índice de auditoria por tenant/data."),
         ("ix_app_audit_log_user_created", [], "Índice de auditoria por usuário/data."),
         ("ix_app_audit_log_action_created", [], "Índice de auditoria por ação/data."),

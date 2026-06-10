@@ -2,6 +2,7 @@
 using InovaGed.Application.Ocr;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 using InovaGed.Web.Security;
 
 namespace InovaGed.Web.Controllers;
@@ -12,16 +13,68 @@ public sealed class OcrController : Controller
 {
     private readonly ICurrentUser _currentUser;
     private readonly IOcrStatusQueries _ocrStatus;
+    private readonly IOcrAutoSchedulerService _scheduler;
+    private readonly IOcrAutoScheduleRepository _repository;
+    private readonly IOptionsMonitor<OcrAutoScheduleOptions> _options;
     private readonly ILogger<OcrController> _logger;
 
     public OcrController(
         ICurrentUser currentUser,
         IOcrStatusQueries ocrStatus,
+        IOcrAutoSchedulerService scheduler,
+        IOcrAutoScheduleRepository repository,
+        IOptionsMonitor<OcrAutoScheduleOptions> options,
         ILogger<OcrController> logger)
     {
         _currentUser = currentUser;
         _ocrStatus = ocrStatus;
+        _scheduler = scheduler;
+        _repository = repository;
+        _options = options;
         _logger = logger;
+    }
+
+    [HttpGet("AutoSchedule")]
+    public async Task<IActionResult> AutoSchedule(CancellationToken ct)
+    {
+        var options = _options.CurrentValue;
+        var nextRunUtc = OcrAutoScheduleClock.CalculateNextRun(DateTimeOffset.UtcNow, options.RunAt, options.TimeZone);
+        var history = await _repository.GetRunHistoryAsync(options.TenantId, 20, ct);
+        var eligibleCount = 0;
+        try
+        {
+            eligibleCount = await _repository.CountDocumentsWithoutOcrAsync(options, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Não foi possível contar documentos elegíveis ao OCR automático.");
+        }
+
+        var vm = new OcrAutoScheduleDashboardDto
+        {
+            Enabled = options.Enabled,
+            RunAt = options.RunAt,
+            TimeZone = options.TimeZone,
+            TenantId = options.TenantId,
+            MaxDocumentsPerRun = options.MaxDocumentsPerRun,
+            BatchSize = options.BatchSize,
+            NextRunUtc = nextRunUtc,
+            NextRunLocal = OcrAutoScheduleClock.FormatLocal(nextRunUtc, options.TimeZone),
+            LastRun = history.FirstOrDefault(),
+            EligibleDocumentsCount = eligibleCount,
+            History = history.ToList()
+        };
+
+        return View("~/Views/Ocr/AutoSchedule.cshtml", vm);
+    }
+
+    [HttpPost("AutoSchedule/RunNow")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> RunNow(CancellationToken ct)
+    {
+        var result = await _scheduler.RunAsync(ct);
+        TempData[result.Status is "SUCCESS" or "PARTIAL_FAILURE" ? "SuccessMessage" : "WarningMessage"] = result.Message ?? "Rotina de OCR automático executada.";
+        return RedirectToAction(nameof(AutoSchedule));
     }
 
     [HttpGet("Status")]

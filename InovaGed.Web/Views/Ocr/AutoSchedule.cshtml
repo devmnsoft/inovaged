@@ -1,0 +1,151 @@
+@model InovaGed.Application.Ocr.OcrAutoScheduleDashboardDto
+@{
+    ViewData["Title"] = "Agendamento Automático de OCR";
+}
+
+<div class="container-fluid py-3">
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <div>
+            <h1 class="h3 mb-1">Agendamento Automático de OCR</h1>
+            <p class="text-muted mb-0">Rotina diária que enfileira OCR para documentos e partes sem texto pesquisável.</p>
+        </div>
+        <form asp-controller="Ocr" asp-action="RunNow" method="post" class="ms-3">
+            @Html.AntiForgeryToken()
+            <button type="submit" class="btn btn-primary">Executar agora</button>
+        </form>
+    </div>
+
+    @if (TempData["SuccessMessage"] is string success)
+    {
+        <div class="alert alert-success">@success</div>
+    }
+    @if (TempData["WarningMessage"] is string warning)
+    {
+        <div class="alert alert-warning">@warning</div>
+    }
+
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <div class="card h-100">
+                <div class="card-body">
+                    <div class="text-muted small">Status</div>
+                    <span class="badge @(Model.Enabled ? "bg-success" : "bg-secondary") fs-6">@(Model.Enabled ? "Habilitado" : "Desabilitado")</span>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card h-100">
+                <div class="card-body">
+                    <div class="text-muted small">Horário configurado</div>
+                    <div class="fs-5 fw-semibold">@Model.RunAt</div>
+                    <div class="small text-muted">@Model.TimeZone</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card h-100">
+                <div class="card-body">
+                    <div class="text-muted small">Próxima execução</div>
+                    <div class="fs-6 fw-semibold">@Model.NextRunLocal</div>
+                    <div class="small text-muted">UTC: @Model.NextRunUtc.ToString("dd/MM/yyyy HH:mm")</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card h-100">
+                <div class="card-body">
+                    <div class="text-muted small">Elegíveis agora</div>
+                    <div class="fs-5 fw-semibold">@Model.EligibleDocumentsCount</div>
+                    <div class="small text-muted">Limite por execução: @Model.MaxDocumentsPerRun</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-lg-6">
+            <div class="card h-100">
+                <div class="card-header fw-semibold">Última execução</div>
+                <div class="card-body">
+                    @if (Model.LastRun is null)
+                    {
+                        <p class="text-muted mb-0">Nenhuma execução registrada.</p>
+                    }
+                    else
+                    {
+                        <dl class="row mb-0">
+                            <dt class="col-sm-4">Status</dt>
+                            <dd class="col-sm-8"><span class="badge bg-info text-dark">@Model.LastRun.Status</span></dd>
+                            <dt class="col-sm-4">Início UTC</dt>
+                            <dd class="col-sm-8">@Model.LastRun.StartedAtUtc.ToString("dd/MM/yyyy HH:mm:ss")</dd>
+                            <dt class="col-sm-4">Fim UTC</dt>
+                            <dd class="col-sm-8">@(Model.LastRun.FinishedAtUtc?.ToString("dd/MM/yyyy HH:mm:ss") ?? "Em aberto")</dd>
+                            <dt class="col-sm-4">Enfileirados</dt>
+                            <dd class="col-sm-8">@Model.LastRun.EnqueuedCount</dd>
+                            <dt class="col-sm-4">Falhas</dt>
+                            <dd class="col-sm-8">@Model.LastRun.FailedCount</dd>
+                            <dt class="col-sm-4">Mensagem</dt>
+                            <dd class="col-sm-8">@Model.LastRun.Message</dd>
+                        </dl>
+                    }
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <div class="card h-100">
+                <div class="card-header fw-semibold">Configuração operacional</div>
+                <div class="card-body">
+                    <ul class="mb-0">
+                        <li>Tenant: <code>@Model.TenantId</code></li>
+                        <li>Tamanho do lote: <strong>@Model.BatchSize</strong></li>
+                        <li>Documentos sem OCR recebem OCR automaticamente no próximo ciclo.</li>
+                        <li>Jobs pendentes/processando não são duplicados.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span class="fw-semibold">Histórico de execuções</span>
+            <a class="btn btn-sm btn-outline-secondary" href="/SystemHealth/Homologation">Ver homologação</a>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0 align-middle">
+                <thead>
+                    <tr>
+                        <th>Início UTC</th>
+                        <th>Status</th>
+                        <th>Candidatos</th>
+                        <th>Enfileirados</th>
+                        <th>Ignorados</th>
+                        <th>Falhas</th>
+                        <th>Correlação</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @if (Model.History.Count == 0)
+                {
+                    <tr><td colspan="7" class="text-muted">Sem histórico.</td></tr>
+                }
+                else
+                {
+                    foreach (var run in Model.History)
+                    {
+                        <tr>
+                            <td>@run.StartedAtUtc.ToString("dd/MM/yyyy HH:mm:ss")</td>
+                            <td><span class="badge @(run.Status == "SUCCESS" ? "bg-success" : run.Status == "FAILED" ? "bg-danger" : "bg-warning text-dark")">@run.Status</span></td>
+                            <td>@run.CandidatesFound</td>
+                            <td>@run.EnqueuedCount</td>
+                            <td>@run.SkippedCount</td>
+                            <td>@run.FailedCount</td>
+                            <td><code>@run.CorrelationId</code></td>
+                        </tr>
+                    }
+                }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

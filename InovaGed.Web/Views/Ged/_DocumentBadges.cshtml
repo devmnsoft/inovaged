@@ -1,10 +1,18 @@
 @model InovaGed.Web.Models.Ged.GedExplorerVM.DocumentRowVM
 @using InovaGed.Web.Ocr
+@inject Microsoft.Extensions.Configuration.IConfiguration Configuration
 @{
     var isUnclassified = !Model.ClassificationId.HasValue && (string.IsNullOrWhiteSpace(Model.TypeName) || Model.TypeName == "-");
     var ocrBadgeClass = !string.IsNullOrWhiteSpace(Model.OcrSummaryCss) ? Model.OcrSummaryCss : (!string.IsNullOrWhiteSpace(Model.OcrBadgeCss) ? Model.OcrBadgeCss : OcrUiHelper.BadgeClass(Model.IsOcrAvailable, Model.OcrStatus));
     var ocrLabel = !string.IsNullOrWhiteSpace(Model.OcrSummaryText) ? Model.OcrSummaryText : (!string.IsNullOrWhiteSpace(Model.OcrBadgeText) ? Model.OcrBadgeText : OcrUiHelper.AvailabilityLabel(Model.IsOcrAvailable, Model.OcrStatus, Model.HasOcrText));
+    var autoOcrEnabled = Configuration.GetValue("OcrAutoSchedule:Enabled", true);
     var ocrTitle = $"Status OCR: {(string.IsNullOrWhiteSpace(Model.OcrStatus) ? "NONE" : Model.OcrStatus)}. Texto extraído: {(Model.HasOcrText ? "sim" : "não")}.";
+    if (!Model.IsOcrAvailable && !Model.HasOcrText && (string.IsNullOrWhiteSpace(Model.OcrStatus) || string.Equals(Model.OcrStatus, "NONE", StringComparison.OrdinalIgnoreCase)))
+    {
+        ocrTitle = autoOcrEnabled
+            ? "Este documento será incluído na rotina automática diária de OCR, caso permaneça sem OCR."
+            : "OCR automático está desabilitado. Execute manualmente ou habilite nas configurações.";
+    }
     if (Model.IsDocumentIncomplete || Model.IsPartialDocument)
     {
         var totalForOcr = Model.TotalParts ?? Model.PartialTotalParts ?? Model.PartialPartsCount;

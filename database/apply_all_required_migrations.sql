@@ -461,6 +461,37 @@ CREATE INDEX IF NOT EXISTS ix_upload_session_tenant_user_status ON ged.upload_se
 CREATE INDEX IF NOT EXISTS ix_upload_session_status ON ged.upload_session(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS ix_upload_session_chunk_session ON ged.upload_session_chunk(session_id, chunk_index);
 CREATE UNIQUE INDEX IF NOT EXISTS ux_schema_migration_history_script ON ged.schema_migration_history(script_name);
+CREATE TABLE IF NOT EXISTS ged.ocr_auto_schedule_run (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id uuid NOT NULL,
+    started_at_utc timestamptz NOT NULL,
+    finished_at_utc timestamptz NULL,
+    status text NOT NULL,
+    candidates_found int NOT NULL DEFAULT 0,
+    enqueued_count int NOT NULL DEFAULT 0,
+    skipped_count int NOT NULL DEFAULT 0,
+    failed_count int NOT NULL DEFAULT 0,
+    message text NULL,
+    correlation_id text NULL,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS ged.ocr_auto_schedule_run_item (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    run_id uuid NOT NULL REFERENCES ged.ocr_auto_schedule_run(id) ON DELETE CASCADE,
+    tenant_id uuid NOT NULL,
+    document_id uuid NULL,
+    version_id uuid NULL,
+    file_name text NULL,
+    status text NOT NULL,
+    reason text NULL,
+    ocr_job_id text NULL,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS ix_ocr_auto_schedule_run_tenant_started ON ged.ocr_auto_schedule_run(tenant_id, started_at_utc DESC);
+CREATE INDEX IF NOT EXISTS ix_ocr_auto_schedule_run_item_run ON ged.ocr_auto_schedule_run_item(run_id);
+CREATE INDEX IF NOT EXISTS ix_ocr_auto_schedule_run_item_status ON ged.ocr_auto_schedule_run_item(status);
+CREATE INDEX IF NOT EXISTS ix_ocr_auto_schedule_run_item_tenant_version ON ged.ocr_auto_schedule_run_item(tenant_id, version_id);
+
 
 -- Índices com validação de colunas opcionais/ambientes heterogêneos.
 DO $$
@@ -527,7 +558,7 @@ SET applied_at = now(),
 INSERT INTO ged.schema_migration_history(script_name, notes)
 VALUES (
     'database/apply_all_required_migrations.sql',
-    'Schema consolidado GED/OCR/upload/logs/documentos parciais'
+    'Schema consolidado GED/OCR/upload/logs/documentos parciais/agendamento automático de OCR'
 )
 ON CONFLICT (script_name) DO UPDATE
 SET applied_at = now(),
