@@ -82,7 +82,7 @@
                     @foreach (var i in Model.Items)
                     {
                         <tr>
-                            <td><span class="badge @(i.IsManual ? "text-bg-warning text-dark" : "text-bg-primary")">@(i.IsManual ? "Manual" : "GED")</span></td>
+                            <td><span class="badge @(i.IsManual ? "text-bg-warning text-dark" : "text-bg-primary")">@(i.IsManual ? "Documento físico/manual" : "Documento digitalizado")</span></td>
                             <td><div class="fw-semibold">@(i.DocumentTitle ?? i.Description ?? i.ReferenceCode ?? i.DocumentId?.ToString())</div><div class="text-muted small">@(i.ReferenceCode ?? i.DocumentCode)</div><div class="text-muted small">@(i.PatientName) @(i.MedicalRecordNumber)</div></td>
                             <td>@(i.DocumentType ?? "-")</td>
                             @{ var location = string.Join(" / ", new[] { i.BoxCode, i.PhysicalLocation }.Where(x => !string.IsNullOrWhiteSpace(x))); }

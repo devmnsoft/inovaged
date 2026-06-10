@@ -461,12 +461,17 @@ CREATE INDEX IF NOT EXISTS ix_upload_session_tenant_user_status ON ged.upload_se
 CREATE INDEX IF NOT EXISTS ix_upload_session_status ON ged.upload_session(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS ix_upload_session_chunk_session ON ged.upload_session_chunk(session_id, chunk_index);
 CREATE UNIQUE INDEX IF NOT EXISTS ux_schema_migration_history_script ON ged.schema_migration_history(script_name);
+-- Agendamento Automático de OCR: histórico de execuções e itens.
+-- Idempotente, seguro para bancos existentes e compatível com execução repetida.
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE SCHEMA IF NOT EXISTS ged;
+
 CREATE TABLE IF NOT EXISTS ged.ocr_auto_schedule_run (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id uuid NOT NULL,
-    started_at_utc timestamptz NOT NULL,
+    started_at_utc timestamptz NOT NULL DEFAULT now(),
     finished_at_utc timestamptz NULL,
-    status text NOT NULL,
+    status text NOT NULL DEFAULT 'STARTED',
     candidates_found int NOT NULL DEFAULT 0,
     enqueued_count int NOT NULL DEFAULT 0,
     skipped_count int NOT NULL DEFAULT 0,
@@ -475,23 +480,117 @@ CREATE TABLE IF NOT EXISTS ged.ocr_auto_schedule_run (
     correlation_id text NULL,
     created_at timestamptz NOT NULL DEFAULT now()
 );
+
+ALTER TABLE ged.ocr_auto_schedule_run ADD COLUMN IF NOT EXISTS tenant_id uuid;
+ALTER TABLE ged.ocr_auto_schedule_run ADD COLUMN IF NOT EXISTS started_at_utc timestamptz NOT NULL DEFAULT now();
+ALTER TABLE ged.ocr_auto_schedule_run ADD COLUMN IF NOT EXISTS finished_at_utc timestamptz NULL;
+ALTER TABLE ged.ocr_auto_schedule_run ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'STARTED';
+ALTER TABLE ged.ocr_auto_schedule_run ADD COLUMN IF NOT EXISTS candidates_found int NOT NULL DEFAULT 0;
+ALTER TABLE ged.ocr_auto_schedule_run ADD COLUMN IF NOT EXISTS enqueued_count int NOT NULL DEFAULT 0;
+ALTER TABLE ged.ocr_auto_schedule_run ADD COLUMN IF NOT EXISTS skipped_count int NOT NULL DEFAULT 0;
+ALTER TABLE ged.ocr_auto_schedule_run ADD COLUMN IF NOT EXISTS failed_count int NOT NULL DEFAULT 0;
+ALTER TABLE ged.ocr_auto_schedule_run ADD COLUMN IF NOT EXISTS message text NULL;
+ALTER TABLE ged.ocr_auto_schedule_run ADD COLUMN IF NOT EXISTS correlation_id text NULL;
+ALTER TABLE ged.ocr_auto_schedule_run ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now();
+
 CREATE TABLE IF NOT EXISTS ged.ocr_auto_schedule_run_item (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    run_id uuid NOT NULL REFERENCES ged.ocr_auto_schedule_run(id) ON DELETE CASCADE,
+    run_id uuid NOT NULL,
     tenant_id uuid NOT NULL,
     document_id uuid NULL,
     version_id uuid NULL,
     file_name text NULL,
-    status text NOT NULL,
+    status text NOT NULL DEFAULT 'PENDING',
     reason text NULL,
-    ocr_job_id text NULL,
+    ocr_job_id uuid NULL,
     created_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX IF NOT EXISTS ix_ocr_auto_schedule_run_tenant_started ON ged.ocr_auto_schedule_run(tenant_id, started_at_utc DESC);
-CREATE INDEX IF NOT EXISTS ix_ocr_auto_schedule_run_item_run ON ged.ocr_auto_schedule_run_item(run_id);
-CREATE INDEX IF NOT EXISTS ix_ocr_auto_schedule_run_item_status ON ged.ocr_auto_schedule_run_item(status);
-CREATE INDEX IF NOT EXISTS ix_ocr_auto_schedule_run_item_tenant_version ON ged.ocr_auto_schedule_run_item(tenant_id, version_id);
 
+ALTER TABLE ged.ocr_auto_schedule_run_item ADD COLUMN IF NOT EXISTS run_id uuid;
+ALTER TABLE ged.ocr_auto_schedule_run_item ADD COLUMN IF NOT EXISTS tenant_id uuid;
+ALTER TABLE ged.ocr_auto_schedule_run_item ADD COLUMN IF NOT EXISTS document_id uuid NULL;
+ALTER TABLE ged.ocr_auto_schedule_run_item ADD COLUMN IF NOT EXISTS version_id uuid NULL;
+ALTER TABLE ged.ocr_auto_schedule_run_item ADD COLUMN IF NOT EXISTS file_name text NULL;
+ALTER TABLE ged.ocr_auto_schedule_run_item ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'PENDING';
+ALTER TABLE ged.ocr_auto_schedule_run_item ADD COLUMN IF NOT EXISTS reason text NULL;
+ALTER TABLE ged.ocr_auto_schedule_run_item ADD COLUMN IF NOT EXISTS ocr_job_id uuid NULL;
+ALTER TABLE ged.ocr_auto_schedule_run_item ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now();
+
+CREATE INDEX IF NOT EXISTS ix_ocr_auto_schedule_run_tenant_started
+ON ged.ocr_auto_schedule_run(tenant_id, started_at_utc DESC);
+
+CREATE INDEX IF NOT EXISTS ix_ocr_auto_schedule_run_status
+ON ged.ocr_auto_schedule_run(tenant_id, status);
+
+CREATE INDEX IF NOT EXISTS ix_ocr_auto_schedule_run_item_run
+ON ged.ocr_auto_schedule_run_item(run_id);
+
+CREATE INDEX IF NOT EXISTS ix_ocr_auto_schedule_run_item_status
+ON ged.ocr_auto_schedule_run_item(tenant_id, status);
+
+-- Empréstimos: itens manuais/físicos em solicitações.
+-- Idempotente e seguro para tabelas com dados existentes.
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE SCHEMA IF NOT EXISTS ged;
+
+CREATE TABLE IF NOT EXISTS ged.loan_request_item (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id uuid NOT NULL,
+    loan_request_id uuid NULL,
+    loan_id uuid NULL,
+    document_id uuid NULL,
+    is_physical boolean NOT NULL DEFAULT false,
+    is_manual boolean NOT NULL DEFAULT false,
+    reference_code text NULL,
+    description text NULL,
+    document_type text NULL,
+    patient_name text NULL,
+    medical_record_number text NULL,
+    box_code text NULL,
+    physical_location text NULL,
+    notes text NULL,
+    document_version_id uuid NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    reg_status char(1) NOT NULL DEFAULT 'A'
+);
+
+ALTER TABLE ged.loan_request_item ADD COLUMN IF NOT EXISTS is_manual boolean NOT NULL DEFAULT false;
+ALTER TABLE ged.loan_request_item ADD COLUMN IF NOT EXISTS is_physical boolean NOT NULL DEFAULT false;
+ALTER TABLE ged.loan_request_item ADD COLUMN IF NOT EXISTS reference_code text NULL;
+ALTER TABLE ged.loan_request_item ADD COLUMN IF NOT EXISTS description text NULL;
+ALTER TABLE ged.loan_request_item ADD COLUMN IF NOT EXISTS document_type text NULL;
+ALTER TABLE ged.loan_request_item ADD COLUMN IF NOT EXISTS patient_name text NULL;
+ALTER TABLE ged.loan_request_item ADD COLUMN IF NOT EXISTS medical_record_number text NULL;
+ALTER TABLE ged.loan_request_item ADD COLUMN IF NOT EXISTS box_code text NULL;
+ALTER TABLE ged.loan_request_item ADD COLUMN IF NOT EXISTS physical_location text NULL;
+ALTER TABLE ged.loan_request_item ADD COLUMN IF NOT EXISTS notes text NULL;
+ALTER TABLE ged.loan_request_item ADD COLUMN IF NOT EXISTS document_version_id uuid NULL;
+ALTER TABLE ged.loan_request_item ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now();
+ALTER TABLE ged.loan_request_item ADD COLUMN IF NOT EXISTS loan_request_id uuid NULL;
+ALTER TABLE ged.loan_request_item ADD COLUMN IF NOT EXISTS loan_id uuid NULL;
+ALTER TABLE ged.loan_request_item ADD COLUMN IF NOT EXISTS document_id uuid NULL;
+ALTER TABLE ged.loan_request_item ADD COLUMN IF NOT EXISTS reg_status char(1) NOT NULL DEFAULT 'A';
+
+UPDATE ged.loan_request_item
+SET loan_request_id = COALESCE(loan_request_id, loan_id),
+    loan_id = COALESCE(loan_id, loan_request_id),
+    is_manual = COALESCE(is_manual, document_id IS NULL, false),
+    created_at = COALESCE(created_at, now()),
+    reg_status = COALESCE(reg_status, 'A')
+WHERE loan_request_id IS NULL
+   OR loan_id IS NULL
+   OR is_manual IS NULL
+   OR created_at IS NULL
+   OR reg_status IS NULL;
+
+CREATE INDEX IF NOT EXISTS ix_loan_request_item_request
+ON ged.loan_request_item(loan_request_id);
+
+CREATE INDEX IF NOT EXISTS ix_loan_request_item_document
+ON ged.loan_request_item(document_id);
+
+CREATE INDEX IF NOT EXISTS ix_loan_request_item_manual
+ON ged.loan_request_item(is_manual);
 
 -- Índices com validação de colunas opcionais/ambientes heterogêneos.
 DO $$
@@ -558,7 +657,7 @@ SET applied_at = now(),
 INSERT INTO ged.schema_migration_history(script_name, notes)
 VALUES (
     'database/apply_all_required_migrations.sql',
-    'Schema consolidado GED/OCR/upload/logs/documentos parciais/agendamento automático de OCR'
+    'Schema consolidado GED/OCR/upload/logs/documentos parciais/agendamento automático de OCR/empréstimos manuais'
 )
 ON CONFLICT (script_name) DO UPDATE
 SET applied_at = now(),

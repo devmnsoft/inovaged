@@ -1,6 +1,61 @@
-@{ ViewData["Title"] = "Fila de Classificação"; }
-<div class="container py-4">
-    <h2>Fila de Classificação</h2>
-    <p class="text-muted">Documentos sem classificação, com sugestão e aguardando OCR.</p>
-    <div class="alert alert-info">Use os filtros e ações em lote para gerar/aplicar sugestões.</div>
+@{
+    ViewData["Title"] = "Fila de Classificação";
+}
+
+<div class="container-fluid py-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <div>
+            <h1 class="h3 mb-1">Fila de Classificação</h1>
+            <p class="text-muted mb-0">Documentos pendentes de classificação, conferência de OCR e aplicação de sugestões automáticas.</p>
+        </div>
+        <a class="btn btn-outline-secondary" href="/Ged"><i class="bi bi-arrow-left me-1"></i>Voltar ao GED</a>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-xl-3"><div class="card h-100 border-warning"><div class="card-body"><div class="text-muted small">Pendentes</div><div class="display-6 fw-semibold">0</div></div></div></div>
+        <div class="col-6 col-xl-3"><div class="card h-100 border-success"><div class="card-body"><div class="text-muted small">Classificados hoje</div><div class="display-6 fw-semibold">0</div></div></div></div>
+        <div class="col-6 col-xl-3"><div class="card h-100 border-secondary"><div class="card-body"><div class="text-muted small">Sem OCR</div><div class="display-6 fw-semibold">0</div></div></div></div>
+        <div class="col-6 col-xl-3"><div class="card h-100 border-info"><div class="card-body"><div class="text-muted small">Com sugestão automática</div><div class="display-6 fw-semibold">0</div></div></div></div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-header bg-white"><strong>Filtros</strong></div>
+        <div class="card-body">
+            <form method="get" class="row g-3 align-items-end">
+                <div class="col-md-3"><label class="form-label">Pasta</label><input class="form-control" name="folder" value="@Context.Request.Query["folder"]" placeholder="Todas" /></div>
+                <div class="col-md-3"><label class="form-label">Tipo documental</label><input class="form-control" name="documentType" value="@Context.Request.Query["documentType"]" placeholder="Todos" /></div>
+                <div class="col-md-2"><label class="form-label">Status OCR</label><select class="form-select" name="ocrStatus"><option value="">Todos</option><option>PENDING</option><option>PROCESSING</option><option>DONE</option><option>FAILED</option></select></div>
+                <div class="col-md-2"><label class="form-label">Período</label><input class="form-control" type="date" name="period" value="@Context.Request.Query["period"]" /></div>
+                <div class="col-md-2"><label class="form-label">Texto</label><input class="form-control" name="q" value="@Context.Request.Query["q"]" placeholder="Documento, arquivo, OCR" /></div>
+                <div class="col-12 d-flex gap-2"><button class="btn btn-primary" type="submit"><i class="bi bi-search me-1"></i>Filtrar</button><a class="btn btn-light border" href="/GedClassification/Queue">Limpar</a></div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Documento</th>
+                        <th>Arquivo</th>
+                        <th>Pasta</th>
+                        <th>Upload em</th>
+                        <th>OCR</th>
+                        <th>Classificação atual</th>
+                        <th>Sugestão</th>
+                        <th class="text-end">Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td colspan="8" class="text-center text-muted py-5">Nenhum documento pendente de classificação encontrado.</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="card-footer bg-white text-muted small">
+            A rota está pronta para receber dados do ViewModel/serviço de classificação sem quebrar a navegação.
+        </div>
+    </div>
 </div>

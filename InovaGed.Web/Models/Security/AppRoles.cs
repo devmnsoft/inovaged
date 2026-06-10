@@ -75,8 +75,19 @@ public static class AppRoleGroups
 
 public static class ClaimsPrincipalRoleExtensions
 {
+    public static bool HasRoleIgnoreCase(this ClaimsPrincipal? user, string role)
+    {
+        if (user is null) return false;
+        return user.Claims
+            .Where(c => c.Type == ClaimTypes.Role || c.Type == "role")
+            .Any(c => string.Equals(c.Value, role, StringComparison.OrdinalIgnoreCase));
+    }
+
     public static bool IsFullAdmin(this ClaimsPrincipal user)
-        => user.IsInNormalizedRole(AppRoles.Admin) || user.IsInNormalizedRole(AppRoles.Administrador);
+        => user.IsInNormalizedRole(AppRoles.Admin)
+           || user.IsInNormalizedRole(AppRoles.Administrador)
+           || user.HasRoleIgnoreCase("Admin")
+           || user.HasRoleIgnoreCase("Administrador");
 
     public static bool IsInNormalizedRole(this ClaimsPrincipal? user, string role)
     {

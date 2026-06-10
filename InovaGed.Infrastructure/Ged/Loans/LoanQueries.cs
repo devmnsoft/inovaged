@@ -154,11 +154,11 @@ select
   i.document_id as DocumentId,
   i.is_physical as IsPhysical,
   d.code as DocumentCode,
-  coalesce(d.title, i.description, i.reference_code) as DocumentTitle,
+  coalesce(i.description, d.title, i.reference_code, 'Documento solicitado') as DocumentTitle,
   coalesce(dt.name, i.document_type) as DocumentType,
   coalesce(i.is_manual, i.document_id is null) as IsManual,
   i.reference_code as ReferenceCode,
-  i.description as Description,
+  coalesce(i.description, d.title, i.reference_code, 'Documento solicitado') as Description,
   i.patient_name as PatientName,
   i.medical_record_number as MedicalRecordNumber,
   i.box_code as BoxCode,
@@ -168,7 +168,7 @@ from ged.loan_request_item i
 left join ged.document d on d.tenant_id=i.tenant_id and d.id=i.document_id
 left join ged.document_type dt on dt.tenant_id=d.tenant_id and dt.id=d.type_id
 where i.tenant_id=@tenant_id and coalesce(i.loan_request_id, i.loan_id)=@loan_id and i.reg_status='A'
-order by coalesce(d.title, i.description, i.reference_code);
+order by coalesce(i.description, d.title, i.reference_code, 'Documento solicitado');
 """;
 
             var items = (await conn.QueryAsync<LoanItemDto>(
