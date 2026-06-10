@@ -5,10 +5,11 @@ using InovaGed.Application.Identity;
 using InovaGed.Application.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using InovaGed.Web.Security;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize]
+[Authorize(Policy = AppPolicies.GedAccess)]
 [Route("Ged/UploadChunk")]
 [DisableRequestSizeLimit]
 public sealed class UploadChunkController : Controller

@@ -10,7 +10,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize(Roles = AppRoles.Admin)]
+[Authorize(Policy = AppPolicies.FullAdminOnly)]
 [Route("HospitalIntelligence")]
 public sealed class HospitalIntelligenceController : Controller
 {

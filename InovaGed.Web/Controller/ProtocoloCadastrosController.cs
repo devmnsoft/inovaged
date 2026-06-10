@@ -10,7 +10,7 @@ using Microsoft.AspNetCore.Mvc.Rendering;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize]
+[Authorize(Policy = AppPolicies.ProtocolManage)]
 public sealed class ProtocoloCadastrosController : GedControllerBase
 {
     private readonly ICodeGeneratorService _codeGenerator;
@@ -93,7 +93,7 @@ public sealed class ProtocoloCadastrosController : GedControllerBase
     [HttpPost, ValidateAntiForgeryToken] public async Task<IActionResult> SalvarUsuarioSetor(ProtocoloUsuarioSetorFormVM vm) { using var db = await OpenAsync(); if (!ModelState.IsValid) { vm.Setores = await Setores(db, vm.SetorId); return View("UsuarioSetorForm", vm); } if (!vm.Id.HasValue || vm.Id == Guid.Empty) await db.ExecuteAsync("insert into ged.protocolo_usuario_setor(tenant_id,usuario_id,usuario_nome,setor_id,ativo,created_by) values(@TenantId,@UsuarioId,@UsuarioNome,@SetorId,@Ativo,@UserId) on conflict(tenant_id,usuario_id,setor_id) where reg_status='A' do update set usuario_nome=excluded.usuario_nome,ativo=excluded.ativo,updated_at=now(),updated_by=@UserId", new { TenantId, vm.UsuarioId, vm.UsuarioNome, vm.SetorId, vm.Ativo, UserId }); else await db.ExecuteAsync("update ged.protocolo_usuario_setor set usuario_id=@UsuarioId,usuario_nome=@UsuarioNome,setor_id=@SetorId,ativo=@Ativo,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@Id", new { TenantId, vm.Id, vm.UsuarioId, vm.UsuarioNome, vm.SetorId, vm.Ativo, UserId }); return RedirectToAction(nameof(UsuariosSetor)); }
     [HttpPost, ValidateAntiForgeryToken] public async Task<IActionResult> ExcluirUsuarioSetor(Guid id) { using var db = await OpenAsync(); await db.ExecuteAsync("update ged.protocolo_usuario_setor set reg_status='E',ativo=false,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@Id", new { TenantId, Id = id, UserId }); return RedirectToAction(nameof(UsuariosSetor)); }
     private async Task<List<SelectListItem>> Setores(System.Data.IDbConnection db, Guid? selected = null) => (await db.QueryAsync<(Guid Id, string Nome)>("select id,nome from ged.protocolo_setor where tenant_id=@TenantId and reg_status='A' and ativo=true order by ordem,nome", new { TenantId })).Select(x => new SelectListItem { Value = x.Id.ToString(), Text = x.Nome, Selected = selected == x.Id }).ToList();
-    private bool PodeAdministrar() => User.IsInRole(AppRoles.Admin) || User.IsInRole(AppRoles.Gestor) || User.IsInRole(AppRoles.Arquivista);
+    private bool PodeAdministrar() => RolePolicyHelper.IsFullAdmin(User) || User.IsInRole(AppRoles.Gestor) || User.IsInRole(AppRoles.Arquivista);
 
     private Task AuditCodeGeneratedAsync(CadastroCfg cfg, string? generatedCode, CancellationToken ct)
         => _audit.WriteAsync(TenantId, UserId, "CODE_GENERATED", cfg.EntityName, null, $"Código gerado automaticamente para {cfg.Titulo}: {generatedCode}", HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers.UserAgent.ToString(), new { tenantId = TenantId, entityName = cfg.EntityName, generatedCode, userId = UserId, correlationId = HttpContext.TraceIdentifier }, ct);

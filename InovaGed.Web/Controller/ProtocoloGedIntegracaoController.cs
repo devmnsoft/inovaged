@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Mvc.Rendering;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize]
+[Authorize(Policy = AppPolicies.ProtocolManage)]
 [Route("Protocolo/Ged")]
 public sealed class ProtocoloGedIntegracaoController : GedControllerBase
 {
@@ -65,7 +65,7 @@ values (gen_random_uuid(), @TenantId, @ProtocoloId, @ProtocoloDocumentoId, @GedD
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> RemoverVinculo(Guid id, Guid protocoloId)
     {
-        if (!User.IsInRole(AppRoles.Admin) && !User.IsInRole(AppRoles.Gestor) && !User.IsInRole(AppRoles.Arquivista))
+        if (!RolePolicyHelper.IsFullAdmin(User) && !User.IsInRole(AppRoles.Gestor) && !User.IsInRole(AppRoles.Arquivista))
             return Forbid();
 
         using var db = await OpenAsync();

@@ -1,9 +1,12 @@
 ﻿using Dapper;
 using Microsoft.AspNetCore.Mvc;
 using InovaGed.Application.Common.Database;
+using InovaGed.Web.Security;
+using Microsoft.AspNetCore.Authorization;
 
 namespace InovaGed.Web.Controllers;
 
+[Authorize(Policy = AppPolicies.SystemAdmin)]
 public class SecurityController : GedControllerBase
 {
     public SecurityController(IDbConnectionFactory dbFactory) : base(dbFactory) { }

@@ -1,12 +1,13 @@
 using InovaGed.Application.Common.Context;
 using InovaGed.Application.Parameters;
+using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Rendering;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize]
+[Authorize(Policy = AppPolicies.ParametersAdmin)]
 [Route("Parameters")]
 public sealed class ParametersController : Controller
 {

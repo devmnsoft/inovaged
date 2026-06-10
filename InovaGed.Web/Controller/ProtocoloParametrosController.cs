@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize]
+[Authorize(Policy = AppPolicies.ParametersAdmin)]
 [Route("Protocolo/Parametros")]
 public sealed class ProtocoloParametrosController : GedControllerBase
 {
@@ -48,5 +48,5 @@ where tenant_id = @TenantId and id = @Id;", new { TenantId, item.Id, item.Valor,
     }
 
     private bool PodeAdministrar() =>
-        User.IsInRole(AppRoles.Admin) || User.IsInRole(AppRoles.Gestor) || User.IsInRole(AppRoles.Arquivista);
+        RolePolicyHelper.IsFullAdmin(User) || User.IsInRole(AppRoles.Gestor) || User.IsInRole(AppRoles.Arquivista);
 }

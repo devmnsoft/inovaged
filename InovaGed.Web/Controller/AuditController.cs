@@ -2,10 +2,11 @@
 using InovaGed.Application.Identity;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using InovaGed.Web.Security;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize]
+[Authorize(Policy = AppPolicies.LogsAccess)]
 [Route("[controller]")]
 public sealed class AuditController : Controller
 {

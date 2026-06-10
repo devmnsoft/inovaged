@@ -7,7 +7,7 @@
     var metrics = ViewBag.ProcessingMetrics as InovaGed.Web.Controllers.GedController.ProcessingMetricsVm
         ?? new InovaGed.Web.Controllers.GedController.ProcessingMetricsVm();
 
-    var isAdmin = User.IsInRole(AppRoles.Admin);
+    var isAdmin = RolePolicyHelper.IsFullAdmin(User);
 }
 
 <div class="d-flex justify-content-between align-items-center mb-3">

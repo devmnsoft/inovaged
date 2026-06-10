@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Mvc.Rendering;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize]
+[Authorize(Policy = AppPolicies.ProtocolManage)]
 [Route("Protocolo/UsuariosSetorAvancado")]
 public sealed class ProtocoloUsuariosSetorAvancadoController : GedControllerBase
 {
@@ -87,5 +87,5 @@ values
         return rows.Select(x => new SelectListItem { Value = x.Id.ToString(), Text = x.Nome }).ToList();
     }
 
-    private bool PodeAdministrar() => User.IsInRole(AppRoles.Admin) || User.IsInRole(AppRoles.Gestor) || User.IsInRole(AppRoles.Arquivista);
+    private bool PodeAdministrar() => RolePolicyHelper.IsFullAdmin(User) || User.IsInRole(AppRoles.Gestor) || User.IsInRole(AppRoles.Arquivista);
 }

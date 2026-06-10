@@ -3,12 +3,13 @@ using InovaGed.Application.Audit;
 using InovaGed.Application.Ged.Search;
 using InovaGed.Application.Identity;
 using InovaGed.Application.Security;
+using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize]
+[Authorize(Policy = AppPolicies.HospitalDocumentsAccess)]
 [Route("Ged/Search")]
 public sealed class GedSearchController : Controller
 {
@@ -64,7 +65,7 @@ public sealed class GedSearchController : Controller
                 Scope = string.Equals(scope, "global", StringComparison.OrdinalIgnoreCase) ? "global" : "folder",
                 Module = "GED",
                 Limit = 16,
-                IsAdmin = User.IsInRole("ADMIN") || _currentUser.Roles.Any(r => string.Equals(r, "ADMIN", StringComparison.OrdinalIgnoreCase))
+                IsAdmin = RolePolicyHelper.IsFullAdmin(User)
             };
 
             var items = await _smartSearch.SuggestAsync(request, ct);

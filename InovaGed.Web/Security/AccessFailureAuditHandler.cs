@@ -30,7 +30,7 @@ public sealed class AccessFailureAuditHandler : IAuthorizationMiddlewareResultHa
                 using var scope = _scopeFactory.CreateScope();
                 var logger = scope.ServiceProvider.GetRequiredService<IAccessFailureLogger>();
 
-                var reason = authorizeResult.Forbidden ? "FORBIDDEN" : "CHALLENGE";
+                var reason = authorizeResult.Forbidden ? "ACCESS_DENIED" : "AUTHENTICATION_REQUIRED";
                 var statusCode = authorizeResult.Forbidden
                     ? StatusCodes.Status403Forbidden
                     : StatusCodes.Status401Unauthorized;

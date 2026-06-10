@@ -381,6 +381,7 @@ builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, AccessFailu
 
 
 builder.Services.AddScoped<IAccessFailureLogger, AccessFailureLogger>();
+builder.Services.AddScoped<IMenuVisibilityService, MenuVisibilityService>();
 // =======================================================
 // ✅ LoanOverdueWorker (corrigido: Options + feature-flag)
 // =======================================================
@@ -395,79 +396,70 @@ if (builder.Configuration.GetValue<bool>("Workers:LoanOverdue:Enabled"))
 // =======================================================
 builder.Services.AddAuthorization(options =>
 {
-    // =======================================================
-    // POLICIES DO MENU / PERFIS DO INOVAGED
-    // =======================================================
+    static void RequireAny(Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder p, params string[] roles)
+        => p.RequireRole(roles);
 
+    var fullAdmin = new[] { AppRoles.Admin, AppRoles.Administrador };
+    var gedAccess = new[] { AppRoles.Admin, AppRoles.Administrador, AppRoles.AdministradorOphir, AppRoles.ArquivistaOphir };
+    var hospitalDocumentsAccess = new[] { AppRoles.Admin, AppRoles.Administrador, AppRoles.AdministradorOphir, AppRoles.ArquivistaOphir, AppRoles.Hospital };
+    var loansView = new[] { AppRoles.Admin, AppRoles.Administrador, AppRoles.AdministradorOphir, AppRoles.ArquivistaOphir };
+    var loansManage = new[] { AppRoles.Admin, AppRoles.Administrador, AppRoles.AdministradorOphir };
+    var loansRequest = new[] { AppRoles.Admin, AppRoles.Administrador, AppRoles.ArquivistaOphir };
+    var protocolRequest = new[] { AppRoles.Admin, AppRoles.Administrador, AppRoles.ArquivistaOphir };
+    var protocolManage = new[] { AppRoles.Admin, AppRoles.Administrador, AppRoles.AdministradorOphir };
+
+    options.AddPolicy(AppPolicies.FullAdminOnly, p => RequireAny(p, fullAdmin));
+    options.AddPolicy(AppPolicies.SystemAdmin, p => RequireAny(p, fullAdmin));
+    options.AddPolicy(AppPolicies.SystemHealth, p => RequireAny(p, fullAdmin));
+    options.AddPolicy(AppPolicies.ParametersAdmin, p => RequireAny(p, fullAdmin));
+    options.AddPolicy(AppPolicies.UsersAdmin, p => RequireAny(p, fullAdmin));
+    options.AddPolicy(AppPolicies.LogsAccess, p => RequireAny(p, fullAdmin));
+    options.AddPolicy(AppPolicies.SchemaRepair, p => RequireAny(p, fullAdmin));
+
+    options.AddPolicy(AppPolicies.GedAccess, p => RequireAny(p, gedAccess));
+    options.AddPolicy(AppPolicies.HospitalDocumentsAccess, p => RequireAny(p, hospitalDocumentsAccess));
+    options.AddPolicy(AppPolicies.LoansView, p => RequireAny(p, loansView));
+    options.AddPolicy(AppPolicies.LoansManage, p => RequireAny(p, loansManage));
+    options.AddPolicy(AppPolicies.LoansRequest, p => RequireAny(p, loansRequest));
+    options.AddPolicy(AppPolicies.ProtocolRequest, p => RequireAny(p, protocolRequest));
+    options.AddPolicy(AppPolicies.ProtocolManage, p => RequireAny(p, protocolManage));
+
+    // Policies legadas mantidas como aliases compatíveis para controllers/views existentes.
     options.AddPolicy(AppPolicies.Dashboard,
-        p => p.RequireRole(
-            AppRoles.Admin,
-            AppRoles.Arquivista,
-            AppRoles.Operador));
+        p => p.RequireRole(AppRoles.Admin, AppRoles.Administrador, AppRoles.Arquivista, AppRoles.Operador));
 
     options.AddPolicy(AppPolicies.Documentos,
-        p => p.RequireRole(
-            AppRoles.Admin,
-            AppRoles.Arquivista));
+        p => p.RequireRole(AppRoles.Admin, AppRoles.Administrador, AppRoles.Arquivista));
 
     options.AddPolicy(AppPolicies.Emprestimos,
-        p => p.RequireRole(
-            AppRoles.Admin,
-            AppRoles.Arquivista,
-            AppRoles.Gestor));
+        p => p.RequireRole(AppRoles.Admin, AppRoles.Administrador, AppRoles.Arquivista, AppRoles.Gestor));
 
     options.AddPolicy(AppPolicies.Relatorios,
-        p => p.RequireRole(
-            AppRoles.Admin,
-            AppRoles.Arquivista,
-            AppRoles.Gestor,
-            AppRoles.Auditor,
-            AppRoles.Operador));
+        p => p.RequireRole(AppRoles.Admin, AppRoles.Administrador, AppRoles.Arquivista, AppRoles.Gestor, AppRoles.Auditor, AppRoles.Operador));
 
     options.AddPolicy(AppPolicies.Auditoria,
-        p => p.RequireRole(
-            AppRoles.Admin,
-            AppRoles.Gestor,
-            AppRoles.Auditor));
+        p => p.RequireRole(AppRoles.Admin, AppRoles.Administrador, AppRoles.Gestor, AppRoles.Auditor));
 
-    options.AddPolicy(AppPolicies.Administracao,
-        p => p.RequireRole(AppRoles.Admin));
-    
-    options.AddPolicy(AppPolicies.AdminOnly,
-        p => p.RequireRole(AppRoles.Admin));
+    options.AddPolicy(AppPolicies.Administracao, p => RequireAny(p, fullAdmin));
+    options.AddPolicy(AppPolicies.AdminOnly, p => RequireAny(p, fullAdmin));
 
     options.AddPolicy(AppPolicies.HospitalDocumentsOrLoansAccess,
-        p => p.RequireRole(
-            AppRoles.Admin,
-            AppRoles.AdministradorOphir,
-            AppRoles.ArquivistaOphir,
-            AppRoles.Hospital,
-            AppRoles.Arquivista,
-            AppRoles.Gestor,
-            AppRoles.Operador));
+        p => p.RequireRole(AppRoles.Admin, AppRoles.Administrador, AppRoles.AdministradorOphir, AppRoles.ArquivistaOphir, AppRoles.Hospital, AppRoles.Arquivista, AppRoles.Gestor, AppRoles.Operador));
 
     options.AddPolicy(AppPolicies.Operations,
-        p => p.RequireRole(
-            AppRoles.Admin,
-            AppRoles.AdministradorOphir,
-            AppRoles.ArquivistaOphir));
-
-    // =======================================================
-    // POLICIES QUE JÁ EXISTEM NO PROJETO
-    // manter para não quebrar Temporalidade/Retention
-    // =======================================================
+        p => p.RequireRole(AppRoles.Admin, AppRoles.Administrador, AppRoles.AdministradorOphir, AppRoles.ArquivistaOphir));
 
     options.AddPolicy(Policies.CanViewRetention,
-        p => p.RequireRole(AppRoles.Admin, AppRoles.Arquivista, AppRoles.Auditor));
+        p => p.RequireRole(AppRoles.Admin, AppRoles.Administrador, AppRoles.Arquivista, AppRoles.Auditor));
 
     options.AddPolicy(Policies.CanManageRetention,
-        p => p.RequireRole(AppRoles.Admin, AppRoles.Arquivista));
+        p => p.RequireRole(AppRoles.Admin, AppRoles.Administrador, AppRoles.Arquivista));
 
     options.AddPolicy(Policies.CanSignRetention,
-        p => p.RequireRole(AppRoles.Admin, AppRoles.Arquivista));
+        p => p.RequireRole(AppRoles.Admin, AppRoles.Administrador, AppRoles.Arquivista));
 
     options.AddPolicy(Policies.CanExecuteFinal,
-        p => p.RequireRole(AppRoles.Admin));
+        p => p.RequireRole(AppRoles.Admin, AppRoles.Administrador));
 });
 // =======================================================
 // ✅ Authentication (CORRIGIDO: apenas uma cadeia de AddAuthentication)

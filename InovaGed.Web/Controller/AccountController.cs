@@ -205,7 +205,7 @@ public sealed class AccountController : Controller
         var normalizedUsername = (username ?? string.Empty).Trim().ToUpperInvariant();
         var normalizedReturnUrl = (returnUrl ?? string.Empty).Trim();
 
-        var isAdmin = _accessPolicy.IsAdmin(principal) || normalizedRoles.Any(r => IsRole(r, AppRoles.Admin));
+        var isAdmin = RolePolicyHelper.IsFullAdmin(principal) || normalizedRoles.Any(r => IsRole(r, AppRoles.Admin) || IsRole(r, AppRoles.Administrador));
         var isAdministradorOphir = _accessPolicy.IsAdministradorOphir(principal) || normalizedRoles.Any(r => IsRole(r, AppRoles.AdministradorOphir)) || IsRole(normalizedUsername, AppRoles.AdministradorOphir);
         var isArquivistaOphir = _accessPolicy.IsArquivistaOphir(principal) || normalizedRoles.Any(r => IsRole(r, AppRoles.ArquivistaOphir)) || IsRole(normalizedUsername, AppRoles.ArquivistaOphir);
         var isHospitalUser = AppMenuPolicy.IsHospitalUser(principal) || normalizedRoles.Any(r => IsRole(r, AppRoles.Hospital)) || IsRole(normalizedUsername, AppRoles.Hospital);
@@ -222,7 +222,7 @@ public sealed class AccountController : Controller
                 return (Redirect(normalizedReturnUrl), normalizedReturnUrl, "hospital_allowed_return_url");
             }
             if (isAdministradorOphir)
-                return (Redirect("/Protocols/WorkQueue"), "/Protocols/WorkQueue", "administrador_ophir_protocol_workqueue");
+                return (Redirect("/Operations"), "/Operations", "administrador_ophir_operations");
             if (isArquivistaOphir)
                 return (Redirect("/ProtocolRequests"), "/ProtocolRequests", "arquivista_ophir_protocol_requests");
             return (RedirectToAction("Index", "HospitalDocuments"), "/HospitalDocuments", "hospital_default_redirect");

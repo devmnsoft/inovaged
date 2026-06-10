@@ -26,4 +26,8 @@ public sealed class LoanVisibilityScope
     public bool IsAdministradorOphir { get; set; }
     public bool IsArquivistaOphir { get; set; }
     public string? Sector { get; set; }
+    public Guid? UserId { get; set; }
+    public bool CanSeeAll => IsAdmin;
+    public bool OnlyOwnRequests => !IsAdmin && !IsAdministradorOphir;
+    public bool CanManage => IsAdmin || IsAdministradorOphir;
 }

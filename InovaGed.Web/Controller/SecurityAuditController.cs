@@ -1,11 +1,12 @@
 ﻿using Dapper;
 using InovaGed.Application.Common.Database;
+using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize]
+[Authorize(Policy = AppPolicies.SystemAdmin)]
 public sealed class SecurityAuditController : Controller
 {
     private readonly IDbConnectionFactory _db;

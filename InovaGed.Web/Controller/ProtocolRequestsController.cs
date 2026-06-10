@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize(Roles = AppRoles.Admin + "," + AppRoles.ArquivistaOphir)]
+[Authorize(Policy = AppPolicies.ProtocolRequest)]
 [Route("ProtocolRequests")]
 public sealed class ProtocolRequestsController : Controller
 {

@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize(Roles = AppRoles.Admin)]
+[Authorize(Policy = AppPolicies.FullAdminOnly)]
 [Route("[controller]")]
 public sealed class GedDashboardController : Controller
 {
@@ -22,7 +22,7 @@ public sealed class GedDashboardController : Controller
     [HttpGet("")]
     public async Task<IActionResult> Index(CancellationToken ct = default)
     {
-        if (!User.IsInRole(AppRoles.Admin))
+        if (!RolePolicyHelper.IsFullAdmin(User))
         {
             await _auditWriter.WriteAsync(_currentUser.TenantId, _currentUser.UserId, "ACCESS_DENIED", "GED_DASHBOARD", null, "Tentativa de acesso ao Painel Operacional do GED", HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers.UserAgent.ToString(), new { denied = true }, ct);
             return RedirectToAction("AccessDenied", "Account");

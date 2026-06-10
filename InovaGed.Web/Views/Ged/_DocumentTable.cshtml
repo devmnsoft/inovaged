@@ -3,10 +3,10 @@
 @using InovaGed.Web.Security
 @inject Microsoft.Extensions.Configuration.IConfiguration Configuration
 @{
-    var canAddDocumentPart = User.IsInRole(AppRoles.Admin) || User.IsInRole(AppRoles.Arquivista) || User.IsInRole(AppRoles.ArquivistaOphir);
+    var canAddDocumentPart = RolePolicyHelper.IsFullAdmin(User) || User.IsInRole(AppRoles.Arquivista) || User.IsInRole(AppRoles.ArquivistaOphir);
     var canViewDocumentParts = User.Identity?.IsAuthenticated == true;
-    var canConsolidateDocumentParts = User.IsInRole(AppRoles.Admin) || User.IsInRole(AppRoles.Arquivista) || User.IsInRole(AppRoles.ArquivistaOphir);
-    var canCancelDocumentParts = User.IsInRole(AppRoles.Admin) || User.IsInRole(AppRoles.AdministradorOphir);
+    var canConsolidateDocumentParts = RolePolicyHelper.IsFullAdmin(User) || User.IsInRole(AppRoles.Arquivista) || User.IsInRole(AppRoles.ArquivistaOphir);
+    var canCancelDocumentParts = RolePolicyHelper.IsFullAdmin(User) || User.IsInRole(AppRoles.AdministradorOphir);
     var localTimeZoneId = Configuration["Localization:DefaultTimeZone"] ?? Configuration["App:LocalTimeZoneId"] ?? Configuration["TimeZoneId"] ?? "America/Belem";
     var uploadDateFormat = Configuration["Localization:DateTimeFormat"] ?? "dd/MM/yyyy HH:mm";
     var folderName = !string.IsNullOrWhiteSpace(Model.CurrentFolderName) ? Model.CurrentFolderName : "Raiz";

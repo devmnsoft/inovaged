@@ -1,3 +1,4 @@
+@using InovaGed.Web.Security
 @{
     ViewData["Title"] = ViewData["Title"] ?? "Banco de dados desatualizado";
 
@@ -9,7 +10,7 @@
     var path = ViewData["Path"]?.ToString();
     var migration = ViewData["Migration"]?.ToString() ?? "database/apply_all_required_migrations.sql";
     var detail = ViewData["Detail"]?.ToString();
-    var canOpenSchemaHealth = User?.IsInRole("ADMIN") == true || User?.IsInRole("Admin") == true;
+    var canOpenSchemaHealth = User is not null && RolePolicyHelper.IsFullAdmin(User);
 }
 
 <div class="container py-5">

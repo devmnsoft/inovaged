@@ -1,3 +1,4 @@
+@using InovaGed.Web.Security
 ﻿@model InovaGed.Web.Models.Users.UserListVM
 
 @{
@@ -276,7 +277,7 @@
                                             </li>
                                         }
 
-                                        @if (item.UserId.HasValue && item.IsLocked && (User.IsInRole("ADMINISTRATOR") || User.IsInRole("ADMIN")))
+                                        @if (item.UserId.HasValue && item.IsLocked && (RolePolicyHelper.IsFullAdmin(User)))
                                         {
                                             <li>
                                                 <button type="button"

@@ -5,7 +5,8 @@ namespace InovaGed.Web.Security;
 
 public static class AppMenuPolicy
 {
-    public static bool IsAdmin(ClaimsPrincipal user) => HasRole(user, AppRoles.Admin);
+    public static bool IsAdmin(ClaimsPrincipal user) => RolePolicyHelper.IsFullAdmin(user);
+    public static bool IsFullAdmin(ClaimsPrincipal user) => RolePolicyHelper.IsFullAdmin(user);
     public static bool IsAdministradorOphir(ClaimsPrincipal user) => HasRole(user, AppRoles.AdministradorOphir);
     public static bool IsArquivistaOphir(ClaimsPrincipal user) => HasRole(user, AppRoles.ArquivistaOphir);
     public static bool IsHospitalUser(ClaimsPrincipal user) => HasRole(user, AppRoles.Hospital);
@@ -32,7 +33,7 @@ public static class AppMenuPolicy
            || (!IsHospitalRestricted(user) && (HasRole(user, AppRoles.Arquivista) || HasRole(user, AppRoles.Gestor) || HasRole(user, AppRoles.Operador)));
 
     public static bool CanCreateHospitalDocuments(ClaimsPrincipal user)
-        => IsAdmin(user) || (!IsHospitalRestricted(user) && IsAdministradorOphir(user));
+        => IsAdmin(user);
 
     public static bool CanSeeReports(ClaimsPrincipal user)
         => !IsHospitalRestricted(user)
@@ -50,6 +51,30 @@ public static class AppMenuPolicy
 
     public static bool CanSeeManual(ClaimsPrincipal user)
         => IsAdmin(user) || !IsHospitalRestricted(user);
+
+    public static bool CanSeeGed(ClaimsPrincipal user)
+        => IsAdmin(user) || IsAdministradorOphir(user) || IsArquivistaOphir(user);
+
+    public static bool CanSeeLoansRequest(ClaimsPrincipal user)
+        => IsAdmin(user) || IsArquivistaOphir(user);
+
+    public static bool CanSeeLoansManage(ClaimsPrincipal user)
+        => IsAdmin(user) || IsAdministradorOphir(user);
+
+    public static bool CanSeeProtocolRequest(ClaimsPrincipal user)
+        => IsAdmin(user) || IsArquivistaOphir(user);
+
+    public static bool CanSeeProtocolManage(ClaimsPrincipal user)
+        => IsAdmin(user) || IsAdministradorOphir(user);
+
+    public static bool CanSeeSystemAdmin(ClaimsPrincipal user)
+        => IsAdmin(user);
+
+    public static bool CanSeeSchemaRepair(ClaimsPrincipal user)
+        => IsAdmin(user);
+
+    public static bool CanSeeLogs(ClaimsPrincipal user)
+        => IsAdmin(user);
 
     public static bool HasRole(ClaimsPrincipal? user, string role)
     {

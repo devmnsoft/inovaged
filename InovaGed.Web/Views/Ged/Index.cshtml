@@ -25,7 +25,7 @@
     }
 
     var runningOcrCount = (ViewBag.RunningOcrCount as int?) ?? 0;
-    var canManagePartialDocuments = User.IsInRole(AppRoles.Admin) || User.IsInRole(AppRoles.Arquivista) || User.IsInRole(AppRoles.ArquivistaOphir);
+    var canManagePartialDocuments = RolePolicyHelper.IsFullAdmin(User) || User.IsInRole(AppRoles.Arquivista) || User.IsInRole(AppRoles.ArquivistaOphir);
     var uploadFolderIsVirtual = Model.CurrentFolderIsVirtual || FolderIdHelper.IsVirtualFolder(Model.CurrentFolderId);
     var uploadFolderLabel = !string.IsNullOrWhiteSpace(Model.CurrentFolderName) ? Model.CurrentFolderName : "pasta selecionada";
     var currentFolderNode = Model.CurrentFolderId.HasValue ? Model.Folders.FirstOrDefault(x => x.Id == Model.CurrentFolderId.Value || x.ListingFolderId == Model.CurrentFolderId.Value || x.UploadFolderId == Model.CurrentFolderId.Value) : null;

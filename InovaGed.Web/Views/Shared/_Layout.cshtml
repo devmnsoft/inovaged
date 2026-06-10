@@ -1,4 +1,6 @@
 @using Microsoft.AspNetCore.Mvc.TagHelpers
+@using System.Security.Claims
+@using InovaGed.Web.Security
 @addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
 
 @{
@@ -27,9 +29,29 @@
     var userName = User?.Identity?.Name ?? "Usuário";
 
     bool CanDocumentos() =>
-        User.IsInRole(InovaGed.Web.Security.AppRoles.Admin) ||
-        User.IsInRole(InovaGed.Web.Security.AppRoles.Arquivista) ||
-        User.IsInRole(InovaGed.Web.Security.AppRoles.Operador);
+        AppMenuPolicy.CanCreateHospitalDocuments(User);
+
+    var roles = User?.FindAll(ClaimTypes.Role).Select(x => x.Value).ToArray() ?? Array.Empty<string>();
+    var primaryRole = roles.FirstOrDefault(r => string.Equals(r, AppRoles.Admin, StringComparison.OrdinalIgnoreCase))
+        ?? roles.FirstOrDefault(r => string.Equals(r, AppRoles.Administrador, StringComparison.OrdinalIgnoreCase))
+        ?? roles.FirstOrDefault(r => string.Equals(r, AppRoles.AdministradorOphir, StringComparison.OrdinalIgnoreCase))
+        ?? roles.FirstOrDefault(r => string.Equals(r, AppRoles.ArquivistaOphir, StringComparison.OrdinalIgnoreCase))
+        ?? roles.FirstOrDefault(r => string.Equals(r, AppRoles.Hospital, StringComparison.OrdinalIgnoreCase))
+        ?? roles.FirstOrDefault()
+        ?? "SEM PERFIL";
+    var primaryRoleLabel = primaryRole.ToUpperInvariant() switch
+    {
+        AppRoles.Admin => "Administrador do Sistema",
+        AppRoles.Administrador => "Administrador do Sistema",
+        AppRoles.AdministradorOphir => "Administrador Ophir",
+        AppRoles.ArquivistaOphir => "Arquivista Ophir",
+        AppRoles.Hospital => "Usuário Hospitalar",
+        _ => "Perfil operacional"
+    };
+    var sector = User?.FindFirst("sector")?.Value ?? User?.FindFirst("setor")?.Value ?? User?.FindFirst("lotacao")?.Value;
+    var showSectorWarning = (string.Equals(primaryRole, AppRoles.AdministradorOphir, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(primaryRole, AppRoles.ArquivistaOphir, StringComparison.OrdinalIgnoreCase))
+        && string.IsNullOrWhiteSpace(sector);
 }
 
 <!DOCTYPE html>
@@ -172,7 +194,10 @@
                                     data-bs-toggle="dropdown"
                                     aria-expanded="false">
                                 <span class="topbar-user-avatar">@UserInitials()</span>
-                                <span class="d-none d-md-inline">@userName</span>
+                                <span class="d-none d-md-inline text-start lh-sm">
+                                    <span class="d-block">@userName</span>
+                                    <span class="d-block small text-muted">Perfil: @primaryRole</span>
+                                </span>
                                 <i class="bi bi-chevron-down small"></i>
                             </button>
 
@@ -180,6 +205,16 @@
                                 <li class="px-3 py-2">
                                     <div class="small text-muted">Logado como</div>
                                     <div class="fw-semibold">@userName</div>
+                                    <div class="small text-muted mt-1">@primaryRoleLabel</div>
+                                    <div class="small">Perfil: <span class="fw-semibold">@primaryRole</span></div>
+                                    @if (!string.IsNullOrWhiteSpace(sector))
+                                    {
+                                        <div class="small">Setor: <span class="fw-semibold">@sector</span></div>
+                                    }
+                                    else if (showSectorWarning)
+                                    {
+                                        <div class="small text-warning"><i class="bi bi-exclamation-triangle me-1"></i>Setor não configurado</div>
+                                    }
                                 </li>
 
                                 <li><hr class="dropdown-divider" /></li>

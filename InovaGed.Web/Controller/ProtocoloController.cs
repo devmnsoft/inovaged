@@ -10,7 +10,7 @@ using Microsoft.AspNetCore.Mvc.Rendering;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize(Roles = AppRoles.Admin + "," + AppRoles.AdministradorOphir + "," + AppRoles.ArquivistaOphir + "," + AppRoles.Gestor + "," + AppRoles.Auditor)]
+[Authorize(Policy = AppPolicies.GedAccess)]
 public sealed class ProtocoloController : GedControllerBase
 {
     private const long MaxFileSizeBytes = 25 * 1024 * 1024;
@@ -35,11 +35,11 @@ public sealed class ProtocoloController : GedControllerBase
         return View(new ProtocoloIndexVM { Q = q, Status = status, Visao = visao!, Itens = rows.ToList() });
     }
 
-    [Authorize(Roles = AppRoles.Admin + "," + AppRoles.ArquivistaOphir)]
+    [Authorize(Policy = AppPolicies.ProtocolRequest)]
     [HttpGet]
     public async Task<IActionResult> Novo() { using var db = await OpenAsync(); var vm = new ProtocoloNovoVM(); await PopularCombosAsync(db, vm); return View(vm); }
 
-    [Authorize(Roles = AppRoles.Admin + "," + AppRoles.ArquivistaOphir)]
+    [Authorize(Policy = AppPolicies.ProtocolRequest)]
     [HttpPost, ValidateAntiForgeryToken, RequestSizeLimit(150_000_000)]
     public async Task<IActionResult> Novo(ProtocoloNovoVM vm, List<IFormFile>? arquivos)
     {
@@ -121,11 +121,11 @@ order by coalesce(ordem, 0), nome;";
     private async Task RegistrarTramitacaoAsync(IDbConnection db, IDbTransaction tx, Guid pid, Guid? origem, Guid? destino, string acao, string? ant, string? novo, string? despacho, string? obs, string? just) => await db.ExecuteAsync("insert into ged.protocolo_tramitacao(tenant_id,protocolo_id,setor_origem_id,setor_origem_nome,setor_destino_id,setor_destino_nome,usuario_id,usuario_nome,acao,status_anterior,status_novo,despacho,observacao,justificativa,ip,user_agent) values(@TenantId,@Pid,@Origem,@OrigemNome,@Destino,@DestinoNome,@UserId,@UserName,@Acao,@Ant,@Novo,@Despacho,@Obs,@Just,@Ip,@Ua)", new { TenantId, Pid = pid, Origem = origem, OrigemNome = origem.HasValue ? await GetSetorNomeAsync(db, origem.Value) : null, Destino = destino, DestinoNome = destino.HasValue ? await GetSetorNomeAsync(db, destino.Value) : null, UserId, UserName = UserNameSafe, Acao = acao, Ant = ant, Novo = novo, Despacho = despacho, Obs = obs, Just = just, Ip = HttpContext.Connection.RemoteIpAddress?.ToString(), Ua = Request.Headers.UserAgent.ToString() }, tx);
     private async Task SalvarArquivosAsync(IDbConnection db, IDbTransaction tx, Guid pid, Guid setor, string setorNome, List<IFormFile>? arqs, Guid? tipoId, string? desc) { if (arqs == null) return; var tipo = await GetNomeCadastroAsync(db, "ged.protocolo_tipo_documento", tipoId); foreach (var f in arqs.Where(x => x.Length > 0)) { await using var ms = new MemoryStream(); await f.CopyToAsync(ms); var b = ms.ToArray(); var hash = Convert.ToHexString(SHA256.HashData(b)).ToLowerInvariant(); await db.ExecuteAsync("insert into ged.protocolo_documento(tenant_id,protocolo_id,nome_arquivo,content_type,tamanho_bytes,arquivo_bytes,hash_arquivo,tipo_documento_id,tipo_documento,descricao,anexado_por,anexado_por_nome,setor_id,setor_nome) values(@TenantId,@Pid,@Nome,@Content,@Tam,@Bytes,@Hash,@TipoId,@Tipo,@Desc,@UserId,@UserName,@Setor,@SetorNome)", new { TenantId, Pid = pid, Nome = Path.GetFileName(f.FileName), Content = f.ContentType, Tam = f.Length, Bytes = b, Hash = hash, TipoId = tipoId, Tipo = tipo, Desc = desc, UserId, UserName = UserNameSafe, Setor = setor, SetorNome = setorNome }, tx); } }
     private List<string> ValidarArquivos(List<IFormFile>? arqs) { var l = new List<string>(); if (arqs == null) return l; foreach (var f in arqs) { if (f.Length > MaxFileSizeBytes) l.Add($"{f.FileName} excede 25MB."); if (ExtensoesBloqueadas.Contains(Path.GetExtension(f.FileName))) l.Add($"{f.FileName} possui extensão bloqueada."); } return l; }
-    [Authorize(Roles = AppRoles.Admin + "," + AppRoles.AdministradorOphir)]
+    [Authorize(Policy = AppPolicies.ProtocolManage)]
     [HttpGet("/Protocols/WorkQueue")]
     public Task<IActionResult> WorkQueue(string? q, string? status) => Index(q, status, "entrada");
 
-    private bool IsAdminOrGestor() => User.IsInRole(AppRoles.Admin) || User.IsInRole(AppRoles.AdministradorOphir) || User.IsInRole(AppRoles.Gestor) || User.IsInRole(AppRoles.Auditor);
+    private bool IsAdminOrGestor() => RolePolicyHelper.IsFullAdmin(User) || User.IsInRole(AppRoles.AdministradorOphir) || User.IsInRole(AppRoles.Gestor) || User.IsInRole(AppRoles.Auditor);
     private static bool StatusEncerrado(string? s) => new[] { "FINALIZADO", "ARQUIVADO", "CANCELADO", "DEFERIDO", "INDEFERIDO" }.Contains((s ?? "").ToUpperInvariant());
     private sealed class NumeroGerado { public int Sequencial { get; set; } public string Numero { get; set; } = ""; }
     private sealed class Basico { public Guid Id { get; set; } public string Status { get; set; } = ""; public Guid? SetorAtualId { get; set; } }

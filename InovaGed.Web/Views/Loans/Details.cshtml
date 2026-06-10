@@ -1,4 +1,5 @@
 @using InovaGed.Application.Ged.Loans
+@using InovaGed.Web.Security
 @model LoanDetailsVM
 
 @functions {
@@ -20,6 +21,7 @@
     ViewData["Title"] = "Detalhes do Empréstimo";
     var h = Model.Header;
     var itemCount = Model.Items.Count;
+    var canManageLoans = AppMenuPolicy.CanSeeLoansManage(User);
 }
 
 <div class="d-flex justify-content-between align-items-start mb-3">
@@ -46,12 +48,15 @@
 
 <div class="card card-body mb-3">
     <div class="d-flex gap-2 flex-wrap">
-        <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#approveModal">Aprovar</button>
-        <button class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#rejectModal">Rejeitar</button>
-        <button class="btn btn-outline-warning" data-bs-toggle="modal" data-bs-target="#deliverModal">Entregar</button>
-        <button class="btn btn-outline-success" data-bs-toggle="modal" data-bs-target="#returnModal">Devolver</button>
-        <button class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#adjustModal">Devolver para ajuste</button>
-        <button class="btn btn-outline-dark" data-bs-toggle="modal" data-bs-target="#cancelModal">Cancelar</button>
+        @if (canManageLoans)
+        {
+            <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#approveModal">Aprovar</button>
+            <button class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#rejectModal">Rejeitar</button>
+            <button class="btn btn-outline-warning" data-bs-toggle="modal" data-bs-target="#deliverModal">Entregar</button>
+            <button class="btn btn-outline-success" data-bs-toggle="modal" data-bs-target="#returnModal">Devolver</button>
+            <button class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#adjustModal">Devolver para ajuste</button>
+            <button class="btn btn-outline-dark" data-bs-toggle="modal" data-bs-target="#cancelModal">Cancelar</button>
+        }
         <button class="btn btn-light border" onclick="window.print()">Gerar recibo</button>
     </div>
 </div>
@@ -113,8 +118,10 @@
         new { Id = "cancelModal", Title = "Cancelar solicitação", Action = "Cancel", Help = "Informe o motivo do cancelamento.", Button = "btn-dark" }
     };
 }
-@foreach (var modal in modals)
+@if (canManageLoans)
 {
+    foreach (var modal in modals)
+    {
     <div class="modal fade" id="@modal.Id" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog"><div class="modal-content">
             <form method="post" action="/Loans/@h.Id/@modal.Action">
@@ -130,4 +137,5 @@
             </form>
         </div></div>
     </div>
+    }
 }

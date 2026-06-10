@@ -4,6 +4,7 @@ using InovaGed.Application.Common.Database;
 using InovaGed.Web.Auth;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using InovaGed.Web.Security;
 
 namespace InovaGed.Web.Controllers;
 

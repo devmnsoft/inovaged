@@ -9,7 +9,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize]
+[Authorize(Policy = AppPolicies.GedAccess)]
 public sealed class GedClassificationsController : Controller
 {
     private static readonly string[] AllowedRoles = [AppRoles.Admin, AppRoles.AdministradorOphir, AppRoles.ArquivistaOphir, AppRoles.Arquivista];
