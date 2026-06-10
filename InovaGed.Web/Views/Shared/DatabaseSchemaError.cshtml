@@ -9,6 +9,7 @@
     var action = ViewData["Action"]?.ToString();
     var path = ViewData["Path"]?.ToString();
     var migration = ViewData["Migration"]?.ToString() ?? "database/apply_all_required_migrations.sql";
+    var copyCommand = ViewData["CopyCommand"]?.ToString();
     var detail = ViewData["Detail"]?.ToString();
     var canOpenSchemaHealth = User is not null && RolePolicyHelper.IsFullAdmin(User);
 }
@@ -23,7 +24,7 @@
                             <i class="bi bi-database-exclamation fs-4" aria-hidden="true"></i>
                         </div>
                         <div>
-                            <h1 class="h3 mb-2">Banco de dados desatualizado</h1>
+                            <h1 class="h3 mb-2">@ViewData["Title"]</h1>
                             <p class="text-muted mb-0">@message</p>
                         </div>
                     </div>
@@ -31,6 +32,10 @@
                     <div class="alert alert-warning" role="alert">
                         <strong>Ação necessária:</strong> execute as migrations pendentes antes de continuar usando esta funcionalidade.
                         <div class="mt-2"><strong>Script recomendado:</strong> <code>@migration</code></div>
+                        @if (!string.IsNullOrWhiteSpace(copyCommand))
+                        {
+                            <div class="mt-2"><strong>Comando:</strong> <code>@copyCommand</code></div>
+                        }
                     </div>
 
                     <dl class="row small mb-4">
@@ -67,6 +72,10 @@
                     <div class="d-flex flex-wrap gap-2">
                         <button type="button" class="btn btn-secondary" onclick="history.back()">Voltar</button>
                         <a class="btn btn-outline-primary" href="/">Ir para o início</a>
+                        @if (!string.IsNullOrWhiteSpace(copyCommand))
+                        {
+                            <button type="button" class="btn btn-outline-secondary" onclick="navigator.clipboard?.writeText('@copyCommand')">Copiar comando de migration</button>
+                        }
                         @if (canOpenSchemaHealth)
                         {
                             <a class="btn btn-primary" href="/SystemHealth/Schema">Ver diagnóstico do schema</a>

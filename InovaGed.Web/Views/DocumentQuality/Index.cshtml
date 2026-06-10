@@ -2,6 +2,7 @@
 @{
     ViewData["Title"] = "Qualidade Documental";
     string StatusClass(string s) => s switch { "Excelente" => "success", "Bom" => "primary", "Atenção" => "warning text-dark", "Crítico" => "danger", _ => "secondary" };
+    var canRunDocumentQuality = ViewData["CanRunDocumentQuality"] as bool? == true;
 }
 
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
@@ -9,17 +10,44 @@
         <h1 class="h3 mb-1">Qualidade Documental</h1>
         <p class="text-muted mb-0">Central proativa para documentos sem OCR, mal classificados, incompletos, inseguros ou com falha de storage.</p>
     </div>
-    <form asp-action="RunNow" method="post" class="d-inline">
-        @Html.AntiForgeryToken()
-        <button class="btn btn-primary"><i class="bi bi-play-circle me-1"></i>Rodar análise agora</button>
-    </form>
+    @if (Model.SchemaReady && canRunDocumentQuality)
+    {
+        <form asp-action="RunNow" method="post" class="d-inline">
+            @Html.AntiForgeryToken()
+            <button class="btn btn-primary"><i class="bi bi-play-circle me-1"></i>Executar análise agora</button>
+        </form>
+    }
 </div>
 
 @if (TempData["Success"] is string success)
 {
     <div class="alert alert-success">@success</div>
 }
+@if (TempData["Warning"] is string warning)
+{
+    <div class="alert alert-warning">@warning</div>
+}
 
+@if (!Model.SchemaReady)
+{
+    <div class="alert alert-warning shadow-sm" role="alert">
+        <h2 class="h5 alert-heading">Qualidade Documental ainda não configurada.</h2>
+        <p>As tabelas necessárias ainda não existem no banco de dados. Execute as migrations ou acesse o Schema Health para aplicar as correções.</p>
+        @if (!string.IsNullOrWhiteSpace(Model.SchemaMessage))
+        {
+            <p class="small mb-3"><strong>Detalhe:</strong> @Model.SchemaMessage</p>
+        }
+        <div class="d-flex flex-wrap gap-2">
+            @if (canRunDocumentQuality)
+            {
+                <a class="btn btn-primary" href="/SystemHealth/Schema"><i class="bi bi-wrench-adjustable me-1"></i>Abrir Schema Health</a>
+            }
+            <a class="btn btn-outline-secondary" asp-controller="Ged" asp-action="Index"><i class="bi bi-arrow-left me-1"></i>Voltar para GED</a>
+        </div>
+    </div>
+}
+else
+{
 <div class="row g-3 mb-4">
     <div class="col-6 col-lg-2"><a class="text-decoration-none" href="/DocumentQuality"><div class="card h-100 shadow-sm"><div class="card-body"><div class="text-muted small">Score médio geral</div><div class="h3 mb-0">@Model.AverageScore</div></div></div></a></div>
     <div class="col-6 col-lg-2"><a class="text-decoration-none" href="/DocumentQuality?Status=Excelente"><div class="card h-100 border-success"><div class="card-body"><div class="text-muted small">Excelentes</div><div class="h3 mb-0 text-success">@Model.ExcellentCount</div></div></div></a></div>
@@ -56,7 +84,7 @@
             <tbody>
             @if (!Model.Items.Any())
             {
-                <tr><td colspan="9" class="text-center text-muted py-4">Nenhum resultado. Clique em “Rodar análise agora”.</td></tr>
+                <tr><td colspan="9" class="text-center text-muted py-4">Nenhuma análise executada ainda. Clique em Executar análise agora.</td></tr>
             }
             @foreach (var item in Model.Items)
             {
@@ -79,3 +107,5 @@
         </table>
     </div>
 </div>
+
+}
