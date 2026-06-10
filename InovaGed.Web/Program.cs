@@ -229,6 +229,7 @@ builder.Services.AddScoped<PacsIntegrationService>();
 // =======================================================
 // Seed
 // =======================================================
+builder.Services.Configure<InovaGed.Infrastructure.Setup.SystemSeedOptions>(builder.Configuration.GetSection("SystemSeed"));
 builder.Services.AddHostedService<InovaGed.Infrastructure.Setup.SystemSeedHostedService>();
 
 // =======================================================

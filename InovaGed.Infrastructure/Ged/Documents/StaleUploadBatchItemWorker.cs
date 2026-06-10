@@ -27,21 +27,31 @@ public sealed class StaleUploadBatchItemWorker : BackgroundService
             return;
         }
 
-        using var timer = new PeriodicTimer(TimeSpan.FromMinutes(5));
-        while (await timer.WaitForNextTickAsync(stoppingToken))
+        try
         {
-            try
+            using var timer = new PeriodicTimer(TimeSpan.FromMinutes(5));
+            while (await timer.WaitForNextTickAsync(stoppingToken))
             {
-                using var scope = _scopeFactory.CreateScope();
-                var service = scope.ServiceProvider.GetRequiredService<IUploadBatchService>();
-                var count = await service.MarkStaleReceivingItemsAsErrorAsync(TimeSpan.FromMinutes(10), stoppingToken);
-                if (count > 0) _logger.LogWarning("Itens de upload RECEIVING antigos marcados como ERROR. Count={Count}", count);
+                try
+                {
+                    using var scope = _scopeFactory.CreateScope();
+                    var service = scope.ServiceProvider.GetRequiredService<IUploadBatchService>();
+                    var count = await service.MarkStaleReceivingItemsAsErrorAsync(TimeSpan.FromMinutes(10), stoppingToken);
+                    if (count > 0) _logger.LogWarning("Itens de upload RECEIVING antigos marcados como ERROR. Count={Count}", count);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Falha na rotina MarkStaleReceivingItemsAsError.");
+                }
             }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Falha na rotina MarkStaleReceivingItemsAsError.");
-            }
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            _logger.LogInformation("StaleUploadBatchItemWorker encerrado por solicitação de parada.");
         }
     }
 }

@@ -537,7 +537,6 @@ CREATE TABLE IF NOT EXISTS ged.loan_request_item (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id uuid NOT NULL,
     loan_request_id uuid NULL,
-    loan_id uuid NULL,
     document_id uuid NULL,
     is_physical boolean NOT NULL DEFAULT false,
     is_manual boolean NOT NULL DEFAULT false,
@@ -566,22 +565,71 @@ ALTER TABLE ged.loan_request_item ADD COLUMN IF NOT EXISTS physical_location tex
 ALTER TABLE ged.loan_request_item ADD COLUMN IF NOT EXISTS notes text NULL;
 ALTER TABLE ged.loan_request_item ADD COLUMN IF NOT EXISTS document_version_id uuid NULL;
 ALTER TABLE ged.loan_request_item ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now();
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema='ged'
+          AND table_name='loan_request_item'
+          AND column_name='request_id'
+    )
+    AND NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema='ged'
+          AND table_name='loan_request_item'
+          AND column_name='loan_request_id'
+    )
+    THEN
+        ALTER TABLE ged.loan_request_item
+        ADD COLUMN loan_request_id uuid;
+
+        UPDATE ged.loan_request_item
+        SET loan_request_id = request_id
+        WHERE loan_request_id IS NULL;
+    END IF;
+END $$;
+
 ALTER TABLE ged.loan_request_item ADD COLUMN IF NOT EXISTS loan_request_id uuid NULL;
-ALTER TABLE ged.loan_request_item ADD COLUMN IF NOT EXISTS loan_id uuid NULL;
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema='ged'
+          AND table_name='loan_request_item'
+          AND column_name='loan_id'
+    )
+    AND EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema='ged'
+          AND table_name='loan_request_item'
+          AND column_name='loan_request_id'
+    )
+    THEN
+        UPDATE ged.loan_request_item
+        SET loan_request_id = loan_id
+        WHERE loan_request_id IS NULL;
+    END IF;
+END $$;
+
 ALTER TABLE ged.loan_request_item ADD COLUMN IF NOT EXISTS document_id uuid NULL;
 ALTER TABLE ged.loan_request_item ADD COLUMN IF NOT EXISTS reg_status char(1) NOT NULL DEFAULT 'A';
 
 UPDATE ged.loan_request_item
-SET loan_request_id = COALESCE(loan_request_id, loan_id),
-    loan_id = COALESCE(loan_id, loan_request_id),
-    is_manual = COALESCE(is_manual, document_id IS NULL, false),
+SET is_manual = COALESCE(is_manual, document_id IS NULL, false),
     created_at = COALESCE(created_at, now()),
     reg_status = COALESCE(reg_status, 'A')
-WHERE loan_request_id IS NULL
-   OR loan_id IS NULL
-   OR is_manual IS NULL
+WHERE is_manual IS NULL
    OR created_at IS NULL
    OR reg_status IS NULL;
+
+CREATE INDEX IF NOT EXISTS ix_loan_request_item_loan_request
+ON ged.loan_request_item(loan_request_id);
 
 CREATE INDEX IF NOT EXISTS ix_loan_request_item_request
 ON ged.loan_request_item(loan_request_id);

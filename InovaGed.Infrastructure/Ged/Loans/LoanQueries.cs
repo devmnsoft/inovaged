@@ -44,7 +44,7 @@ select
         select count(*)::int
         from ged.loan_request_item i
         where i.tenant_id = l.tenant_id
-          and i.loan_id   = l.id
+          and i.loan_request_id = l.id
           and i.reg_status='A'
     )                             as ItemsCount
 from ged.loan_request l
@@ -97,7 +97,7 @@ select
         select count(*)::int
         from ged.loan_request_item i
         where i.tenant_id = l.tenant_id
-          and i.loan_id   = l.id
+          and i.loan_request_id = l.id
           and i.reg_status='A'
     )                             as ItemsCount
 from ged.loan_request l
@@ -139,7 +139,7 @@ select
   lr.delivered_at as DeliveredAt,
   lr.returned_at as ReturnedAt,
   (select count(*)::int from ged.loan_request_item i
-     where i.tenant_id = lr.tenant_id and i.loan_id = lr.id and i.reg_status='A') as ItemsCount
+     where i.tenant_id = lr.tenant_id and i.loan_request_id = lr.id and i.reg_status='A') as ItemsCount
 from ged.loan_request lr
 where lr.tenant_id = @tenant_id and lr.id = @loan_id and lr.reg_status='A';
 """;
@@ -167,7 +167,7 @@ select
 from ged.loan_request_item i
 left join ged.document d on d.tenant_id=i.tenant_id and d.id=i.document_id
 left join ged.document_type dt on dt.tenant_id=d.tenant_id and dt.id=d.type_id
-where i.tenant_id=@tenant_id and coalesce(i.loan_request_id, i.loan_id)=@loan_id and i.reg_status='A'
+where i.tenant_id=@tenant_id and i.loan_request_id=@loan_id and i.reg_status='A'
 order by coalesce(i.description, d.title, i.reference_code, 'Documento solicitado');
 """;
 
