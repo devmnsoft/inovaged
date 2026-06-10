@@ -295,7 +295,7 @@ public sealed class GedController : Controller
 
         var tenantId = _currentUser.TenantId;
         var doc = await _docs.GetAsync(tenantId, id, ct);
-        if (doc is null) return NotFound();
+        if (doc is null) return NotFound("Documento excluído ou indisponível.");
 
         var versions = await _docs.ListVersionsAsync(tenantId, id, ct);
         var current = versions.FirstOrDefault(v => v.Id == doc.CurrentVersionId) ?? versions.FirstOrDefault();
@@ -397,7 +397,7 @@ public sealed class GedController : Controller
 
         var tenantId = _currentUser.TenantId;
         var v = await _docs.GetVersionForDownloadAsync(tenantId, versionId, ct);
-        if (v is null) return NotFound();
+        if (v is null) return NotFound("Documento excluído ou indisponível.");
 
         var status = await ResolveOcrStatusAsync(tenantId, versionId, ct);
         var text = await TryReadOcrTextAsync(tenantId, v.DocumentId, versionId, ct);
@@ -421,7 +421,7 @@ public sealed class GedController : Controller
 
         var tenantId = _currentUser.TenantId;
         var v = await _docs.GetVersionForDownloadAsync(tenantId, versionId, ct);
-        if (v is null) return NotFound();
+        if (v is null) return NotFound("Documento excluído ou indisponível.");
 
         var status = (await ResolveOcrStatusAsync(tenantId, versionId, ct)).Trim().ToUpperInvariant();
         var text = await TryReadOcrTextAsync(tenantId, v.DocumentId, versionId, ct);
@@ -467,7 +467,7 @@ public sealed class GedController : Controller
 
         var tenantId = _currentUser.TenantId;
         var doc = await _docs.GetAsync(tenantId, id, ct);
-        if (doc is null) return NotFound();
+        if (doc is null) return NotFound("Documento excluído ou indisponível.");
 
         var versions = await _docs.ListVersionsAsync(tenantId, id, ct);
         var current = versions.FirstOrDefault(v => v.Id == doc.CurrentVersionId) ?? versions.FirstOrDefault();
@@ -1156,7 +1156,7 @@ LIMIT 20;";
             var tenantId = _currentUser.TenantId;
 
             var doc = await _docs.GetAsync(tenantId, id, ct);
-            if (doc is null) return NotFound();
+            if (doc is null) return NotFound("Documento excluído ou indisponível.");
 
             var versions = await _docs.ListVersionsAsync(tenantId, id, ct);
 
@@ -1845,7 +1845,7 @@ SELECT
             var tenantId = _currentUser.TenantId;
 
             var v = await _docs.GetVersionForDownloadAsync(tenantId, id, ct);
-            if (v == null) return NotFound();
+            if (v == null) return NotFound("Documento excluído ou indisponível.");
 
             await WriteGedAuditAsync(documentPart ? "DOCUMENT_PART_DOWNLOAD" : "DOCUMENT_DOWNLOAD", documentPart ? "DOCUMENT_PART" : "DOCUMENT_VERSION", id, documentPart ? "Download de parte de documento" : "Download de documento GED", new { versionId = id, v.DocumentId, v.FileName, partialGroupId, partNumber, tenantId = _currentUser.TenantId, userId = _currentUser.UserId, correlationId = HttpContext.TraceIdentifier, timestampUtc = DateTime.UtcNow }, ct);
 
@@ -1877,7 +1877,7 @@ SELECT
             var tenantId = _currentUser.TenantId;
 
             var v = await _docs.GetVersionForDownloadAsync(tenantId, id, ct);
-            if (v == null) return NotFound();
+            if (v == null) return NotFound("Documento excluído ou indisponível.");
 
             await WriteGedAuditAsync(documentPart ? "DOCUMENT_PART_PREVIEW" : "FILE_PREVIEW", documentPart ? "DOCUMENT_PART" : "DOCUMENT_PREVIEW", id, documentPart ? "Preview de parte de documento" : "Preview de documento GED", new { versionId = id, v.DocumentId, v.FileName, partialGroupId, partNumber, tenantId = _currentUser.TenantId, userId = _currentUser.UserId, correlationId = HttpContext.TraceIdentifier, timestampUtc = DateTime.UtcNow }, ct);
 
@@ -1908,7 +1908,7 @@ SELECT
             var tenantId = _currentUser.TenantId;
 
             var v = await _docs.GetVersionForDownloadAsync(tenantId, versionId, ct);
-            if (v is null) return NotFound();
+            if (v is null) return NotFound("Documento excluído ou indisponível.");
 
             var stream = await _storage.OpenReadAsync(v.StoragePath, ct);
             return File(stream, v.ContentType, v.FileName);
@@ -2093,7 +2093,7 @@ SELECT
             var tenantId = _currentUser.TenantId;
 
             var v = await _docs.GetVersionForDownloadAsync(tenantId, versionId, ct);
-            if (v is null) return NotFound();
+            if (v is null) return NotFound("Documento excluído ou indisponível.");
 
             if (IsImage(v.ContentType, v.FileName))
             {
@@ -2155,7 +2155,7 @@ SELECT
         try
         {
             var v = await _docs.GetVersionForDownloadAsync(tenantId, versionId, ct);
-            if (v is null) return NotFound();
+            if (v is null) return NotFound("Documento excluído ou indisponível.");
 
             if (!await _storage.ExistsAsync(v.StoragePath, ct))
                 return NotFound("Arquivo não encontrado no storage.");
@@ -2655,7 +2655,7 @@ VALUES
             var tenantId = _currentUser.TenantId;
 
             var v = await _docs.GetVersionForDownloadAsync(tenantId, versionId, ct);
-            if (v is null) return NotFound();
+            if (v is null) return NotFound("Documento excluído ou indisponível.");
 
             await WriteGedAuditAsync("VIEW", "DOCUMENT_OCR", v.DocumentId, "OCR aberto no GED", new { versionId, v.DocumentId, v.FileName }, ct);
 
@@ -2769,7 +2769,7 @@ VALUES
             var tenantId = _currentUser.TenantId;
 
             var v = await _docs.GetVersionForDownloadAsync(tenantId, versionId, ct);
-            if (v is null) return NotFound();
+            if (v is null) return NotFound("Documento excluído ou indisponível.");
 
             if (IsImage(v.ContentType, v.FileName) || IsPdf(v.ContentType, v.FileName))
                 return RedirectToAction(nameof(Details), new { id = v.DocumentId });

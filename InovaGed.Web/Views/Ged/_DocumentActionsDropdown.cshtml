@@ -71,7 +71,7 @@
                     @Html.AntiForgeryToken()
                     <input type="hidden" name="id" value="@Model.DocumentId" />
                     <input type="hidden" name="folderId" value="@Model.CurrentFolderId" />
-                    <button type="button" class="dropdown-item text-danger js-delete-document" data-document-id="@Model.DocumentId" data-folder-id="@Model.CurrentFolderId" data-document-title="@Model.Title"><i class="bi bi-trash me-2"></i>Excluir</button>
+                    <button type="button" class="dropdown-item text-danger js-delete-document" data-document-id="@Model.DocumentId" data-folder-id="@Model.CurrentFolderId" data-document-title="@Model.Title" data-is-partial-document="@(Model.IsPartialDocument || Model.IsDocumentIncomplete ? "true" : "false")" data-partial-parts-count="@Model.PartialPartsCount"><i class="bi bi-trash me-2"></i>Excluir</button>
                 </form>
             </li>
         }

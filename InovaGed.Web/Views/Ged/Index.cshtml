@@ -1652,7 +1652,7 @@ document.addEventListener('DOMContentLoaded', function () {
     console.error('[GED] Bootstrap JS não carregado. Verifique _Layout.cshtml.');
     return;
   }
-  const state={documentId:null,folderId:null,title:''};
+  const state={documentId:null,folderId:null,title:'',isPartial:false};
   const modalEl=document.getElementById('deleteDocumentModal');
   if(!modalEl) return;
   const modal=window.bootstrap.Modal.getOrCreateInstance(modalEl);
@@ -1661,7 +1661,12 @@ document.addEventListener('DOMContentLoaded', function () {
     const btn=e.target.closest('.js-delete-document');
     if(!btn) return;
     state.documentId=btn.dataset.documentId; state.folderId=btn.dataset.folderId; state.title=btn.dataset.documentTitle||'';
-    document.getElementById('deleteDocumentMessage').textContent=`Deseja realmente excluir este documento${state.title?` (${state.title})`:''}? Se houver OCR em andamento, ele será cancelado.`;
+    const row=btn.closest('[data-document-id]');
+    state.isPartial=(btn.dataset.isPartialDocument==='true') || (row?.dataset.documentPartial==='true') || (row?.dataset.documentIncomplete==='true');
+    document.getElementById('deleteDocumentMessage').textContent=state.isPartial
+      ? 'Este documento possui partes vinculadas. Deseja excluir o conjunto completo? As partes e arquivos físicos serão preservados para auditoria.'
+      : `Deseja realmente excluir este documento${state.title?` (${state.title})`:''}? Se houver OCR em andamento, ele será cancelado.`;
+    document.getElementById('btnConfirmDeleteDocument').textContent=state.isPartial ? 'Excluir conjunto' : 'Excluir documento';
     inline.className='d-none alert'; inline.textContent='';
     modal.show();
   });
@@ -1674,9 +1679,24 @@ document.addEventListener('DOMContentLoaded', function () {
       const token=document.querySelector('input[name="__RequestVerificationToken"]')?.value;
       const res=await fetch('/Ged/DeleteDocument',{method:'POST',body:fd,headers: token?{'RequestVerificationToken':token}:{}});
       const payload=await res.json().catch(()=>({success:false,message:'Não foi possível excluir o documento.'}));
-      if(res.ok&&payload.success){ window.showAppToast?.(payload.message||'Documento excluído com sucesso.','success','Exclusão'); modal.hide(); window.GedFolderNavigation?.refreshCurrentFolder?.(); return; }
-      inline.className='alert alert-danger'; inline.textContent=payload.message||'Não foi possível excluir o documento.'; window.showAppToast?.(inline.textContent,'error','Erro');
-    }catch{ inline.className='alert alert-danger'; inline.textContent='Não foi possível excluir o documento.'; window.showAppToast?.(inline.textContent,'error','Erro'); }
+      if(res.ok&&payload.success){
+        const successMessage=payload.message||'Documento excluído com sucesso.';
+        window.showAppToast?.(successMessage,'success','Exclusão');
+        modal.hide();
+        document.querySelectorAll(`[data-document-id="${CSS.escape(state.documentId || '')}"]`).forEach(el=>{
+          if(el.closest('#documentSidePanelHost')) return;
+          el.remove();
+        });
+        document.getElementById('documentSidePanelHost')?.replaceChildren();
+        document.querySelector('.ged-page')?.classList.remove('with-document-panel');
+        const totalEl=document.querySelector('[data-ged-total-documents]') || document.getElementById('totalDocumentsKpi');
+        if(totalEl){ const n=Number((totalEl.textContent||'').replace(/\D/g,'')); if(Number.isFinite(n)&&n>0) totalEl.textContent=String(n-1); }
+        window.updateSelectedDocumentsState?.();
+        window.GedFolderNavigation?.refreshCurrentCounters?.();
+        return;
+      }
+      inline.className='alert alert-danger'; inline.textContent=payload.message||'Não foi possível excluir o documento. Tente novamente ou verifique os logs.'; window.showAppToast?.(inline.textContent,'error','Erro');
+    }catch{ inline.className='alert alert-danger'; inline.textContent='Não foi possível excluir o documento. Tente novamente ou verifique os logs.'; window.showAppToast?.(inline.textContent,'error','Erro'); }
     finally{ btn.disabled=false; btn.innerHTML=old; }
   });
 })();

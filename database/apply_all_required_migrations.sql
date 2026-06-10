@@ -55,6 +55,11 @@ CREATE TABLE IF NOT EXISTS ged.document (
     current_version_id uuid NULL,
     status text NULL,
     created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NULL,
+    updated_by uuid NULL,
+    deleted_at timestamptz NULL,
+    deleted_by uuid NULL,
+    deleted_reason text NULL,
     reg_status char(1) NOT NULL DEFAULT 'A'
 );
 ALTER TABLE ged.document ADD COLUMN IF NOT EXISTS tenant_id uuid NULL;
@@ -63,6 +68,17 @@ ALTER TABLE ged.document ADD COLUMN IF NOT EXISTS current_version_id uuid NULL;
 ALTER TABLE ged.document ADD COLUMN IF NOT EXISTS status text NULL;
 ALTER TABLE ged.document ADD COLUMN IF NOT EXISTS created_at timestamptz NULL DEFAULT now();
 ALTER TABLE ged.document ADD COLUMN IF NOT EXISTS reg_status char(1) NULL DEFAULT 'A';
+
+-- GED document soft delete: campos próprios de exclusão lógica.
+ALTER TABLE ged.document ADD COLUMN IF NOT EXISTS reg_status char(1) NOT NULL DEFAULT 'A';
+ALTER TABLE ged.document ADD COLUMN IF NOT EXISTS deleted_at timestamptz NULL;
+ALTER TABLE ged.document ADD COLUMN IF NOT EXISTS deleted_by uuid NULL;
+ALTER TABLE ged.document ADD COLUMN IF NOT EXISTS deleted_reason text NULL;
+ALTER TABLE ged.document ADD COLUMN IF NOT EXISTS updated_at timestamptz NULL;
+ALTER TABLE ged.document ADD COLUMN IF NOT EXISTS updated_by uuid NULL;
+CREATE INDEX IF NOT EXISTS ix_document_tenant_reg_status ON ged.document(tenant_id, reg_status);
+CREATE INDEX IF NOT EXISTS ix_document_tenant_folder_reg_status ON ged.document(tenant_id, folder_id, reg_status);
+CREATE INDEX IF NOT EXISTS ix_document_deleted_at ON ged.document(deleted_at) WHERE deleted_at IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS ged.document_version (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

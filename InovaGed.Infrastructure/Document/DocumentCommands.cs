@@ -65,65 +65,137 @@ where tenant_id = @tenantId
                     cancellationToken: ct));
             }
 
-            await conn.ExecuteAsync(new CommandDefinition(@"
-delete from ged.preview_status
-where tenant_id = @tenantId
-  and document_version_id in (
-      select id from ged.document_version where tenant_id = @tenantId and document_id = @documentId
-  );",
-                new { tenantId, documentId }, tx, cancellationToken: ct));
-
-            // 1) coleta paths
-            var paths = (await conn.QueryAsync<string>(
-                new CommandDefinition(@"
-select v.storage_path
-from ged.document_version v
-where v.tenant_id = @tenantId
-  and v.document_id = @documentId
-  and v.storage_path is not null
-  and v.storage_path <> '';
-",
+            // 1) valida documento ativo e coleta metadados mínimos. Não apaga/atualiza versões, busca, OCR, preview_status ou arquivos.
+            var document = await conn.QuerySingleOrDefaultAsync<DeleteDocumentInfo>(new CommandDefinition(@"
+select d.id,
+       exists (
+           select 1
+           from ged.document_version v
+           where v.tenant_id = d.tenant_id
+             and v.document_id = d.id
+             and coalesce(v.is_partial_document, false) = true
+       ) or exists (
+           select 1
+           from ged.document_partial_part pp
+           where pp.tenant_id = d.tenant_id
+             and pp.document_id = d.id
+             and coalesce(pp.reg_status, 'A') = 'A'
+       ) as ""WasPartialDocument"",
+       (
+           select coalesce(v.partial_group_id, pp.partial_group_id)
+           from ged.document_version v
+           full join ged.document_partial_part pp
+             on pp.tenant_id = v.tenant_id
+            and pp.version_id = v.id
+           where coalesce(v.tenant_id, pp.tenant_id) = d.tenant_id
+             and coalesce(v.document_id, pp.document_id) = d.id
+             and coalesce(v.partial_group_id, pp.partial_group_id) is not null
+           limit 1
+       ) as ""PartialGroupId""
+from ged.document d
+where d.tenant_id = @tenantId
+  and d.id = @documentId
+  and coalesce(d.reg_status, 'A') = 'A';",
                 new { tenantId, documentId },
                 transaction: tx,
-                cancellationToken: ct)))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList();
+                cancellationToken: ct));
 
-            // 2) exclusão lógica resiliente: não referencia document_version.reg_status.
+            if (document is null)
+            {
+                await tx.RollbackAsync(ct);
+                return Result.Fail("DOC_NOT_FOUND", "Documento não encontrado ou já excluído.");
+            }
+
+            const string reason = "Exclusão lógica solicitada no GED";
+            var correlationId = Guid.NewGuid().ToString("N");
+
+            // 2) exclusão lógica somente em ged.document. Versões, busca, OCR, partes e arquivos físicos permanecem preservados.
             var rows = await conn.ExecuteAsync(new CommandDefinition(@"
 update ged.document
 set reg_status = 'I',
-    status = 'DELETED'::ged.document_status_enum,
-    updated_at = now(),
-    updated_by = @userId,
     deleted_at = now(),
-    deleted_at_utc = now(),
-    deleted_by = @userId
+    deleted_by = @userId,
+    deleted_reason = @reason,
+    updated_at = now(),
+    updated_by = @userId
 where tenant_id = @tenantId
   and id = @documentId
-  and coalesce(reg_status,'A') = 'A';",
-                new { tenantId, documentId, userId },
+  and coalesce(reg_status, 'A') = 'A';",
+                new { tenantId, documentId, userId, reason },
                 tx,
                 cancellationToken: ct));
 
             if (rows == 0)
             {
                 await tx.RollbackAsync(ct);
-                return Result.Fail("DOC_NOT_FOUND", "Documento não encontrado.");
+                return Result.Fail("DOC_NOT_FOUND", "Documento não encontrado ou já excluído.");
             }
 
             await conn.ExecuteAsync(new CommandDefinition(@"
 insert into ged.app_audit_log(tenant_id, user_id, created_at, action, entity_name, entity_id, message, details, correlation_id, reg_status)
-values(@tenantId, @userId, now(), 'DOCUMENT_DELETED', 'document', @documentId::text, 'Documento excluído logicamente', jsonb_build_object('forceStopOcr', @forceStopOcr), @correlationId, 'A')
+values(
+    @tenantId,
+    @userId,
+    now(),
+    'DOCUMENT_DELETED',
+    'document',
+    @documentId::text,
+    'Documento excluído logicamente',
+    jsonb_build_object(
+        'tenantId', @tenantId,
+        'userId', @userId,
+        'documentId', @documentId,
+        'reason', @reason,
+        'forceStopOcr', @forceStopOcr,
+        'wasPartialDocument', @wasPartialDocument,
+        'partialGroupId', @partialGroupId,
+        'correlationId', @correlationId,
+        'timestampUtc', now()
+    ),
+    @correlationId,
+    'A'
+)
 on conflict do nothing;",
-                new { tenantId, userId, documentId, forceStopOcr, correlationId = Guid.NewGuid().ToString("N") },
+                new { tenantId, userId, documentId, reason, forceStopOcr, document.WasPartialDocument, document.PartialGroupId, correlationId },
                 tx,
                 cancellationToken: ct));
 
+            if (document.WasPartialDocument)
+            {
+                await conn.ExecuteAsync(new CommandDefinition(@"
+insert into ged.app_audit_log(tenant_id, user_id, created_at, action, entity_name, entity_id, message, details, correlation_id, reg_status)
+values(
+    @tenantId,
+    @userId,
+    now(),
+    'DOCUMENT_PARTIAL_DOCUMENT_DELETED',
+    'document',
+    @documentId::text,
+    'Documento parcial excluído logicamente; partes preservadas para auditoria',
+    jsonb_build_object(
+        'tenantId', @tenantId,
+        'userId', @userId,
+        'documentId', @documentId,
+        'reason', @reason,
+        'forceStopOcr', @forceStopOcr,
+        'wasPartialDocument', true,
+        'partialGroupId', @partialGroupId,
+        'correlationId', @correlationId,
+        'timestampUtc', now()
+    ),
+    @correlationId,
+    'A'
+)
+on conflict do nothing;",
+                    new { tenantId, userId, documentId, reason, forceStopOcr, document.PartialGroupId, correlationId },
+                    tx,
+                    cancellationToken: ct));
+            }
+
             await tx.CommitAsync(ct);
 
-            // 4) mantem arquivo físico para aderir à exclusão lógica
-            _logger.LogInformation("Documento inativado logicamente. Tenant={TenantId} DocumentId={DocumentId} Versions={VersionCount}", tenantId, documentId, paths.Count);
+            // 4) mantém arquivo físico, versões, OCR, busca e partes para aderir à exclusão lógica e à auditoria.
+            _logger.LogInformation("Documento inativado logicamente. Tenant={TenantId} DocumentId={DocumentId} WasPartialDocument={WasPartialDocument} PartialGroupId={PartialGroupId}", tenantId, documentId, document.WasPartialDocument, document.PartialGroupId);
             return Result.Ok();
         }
         catch (Exception ex)
@@ -142,6 +214,12 @@ on conflict do nothing;",
         }
     }
 
+    private sealed class DeleteDocumentInfo
+    {
+        public Guid Id { get; set; }
+        public bool WasPartialDocument { get; set; }
+        public Guid? PartialGroupId { get; set; }
+    }
 
     public async Task ApplyClassificationAsync(Guid tenantId, Guid userId, Guid documentId, Guid classificationId, CancellationToken ct)
     {

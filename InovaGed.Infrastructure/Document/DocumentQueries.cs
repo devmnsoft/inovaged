@@ -144,7 +144,7 @@ WHERE d.tenant_id = @tenantId
         (@folderId IS NOT NULL AND d.folder_id = @folderId)
       )
   AND d.status <> 'ARCHIVED'::ged.document_status_enum
-  AND d.reg_status = 'A'::bpchar
+  AND coalesce(d.reg_status, 'A') = 'A'
   AND (@q IS NULL OR @q = '' OR
        d.title ILIKE ('%'||@q||'%') OR
        cv.file_name ILIKE ('%'||@q||'%') OR
@@ -194,7 +194,7 @@ FROM ged.document d
 WHERE d.tenant_id = @tenantId
   AND d.id = @documentId
   AND d.status <> 'ARCHIVED'::ged.document_status_enum
-  AND d.reg_status = 'A'::bpchar;
+  AND coalesce(d.reg_status, 'A') = 'A';
 """;
 
         await using var conn = await _db.OpenAsync(ct);
@@ -312,7 +312,7 @@ LEFT JOIN LATERAL (
 WHERE v.tenant_id = @tenantId
   AND v.document_id = @documentId
   AND d.status <> 'ARCHIVED'::ged.document_status_enum
-  AND d.reg_status = 'A'::bpchar
+  AND coalesce(d.reg_status, 'A') = 'A'
 ORDER BY v.created_at DESC;
 """;
 
@@ -509,7 +509,7 @@ JOIN ged.document d
 WHERE v.tenant_id = @tenantId
   AND v.id = @versionId
   AND d.status <> 'ARCHIVED'::ged.document_status_enum
-  AND d.reg_status = 'A'::bpchar;
+  AND coalesce(d.reg_status, 'A') = 'A';
 """;
 
         await using var conn = await _db.OpenAsync(ct);

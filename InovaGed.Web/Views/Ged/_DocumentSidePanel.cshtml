@@ -279,7 +279,7 @@
             }
             @if (Model.CanDelete)
             {
-                <button type="button" class="btn btn-outline-danger js-delete-document" data-document-id="@Model.DocumentId" data-document-title="@Model.Title"><i class="bi bi-trash me-1"></i>Excluir</button>
+                <button type="button" class="btn btn-outline-danger js-delete-document" data-document-id="@Model.DocumentId" data-document-title="@Model.Title" data-is-partial-document="@(Model.IsPartialDocument || Model.IsDocumentIncomplete ? "true" : "false")" data-partial-parts-count="@Model.PartialPartsCount"><i class="bi bi-trash me-1"></i>Excluir</button>
             }
             <button type="button" class="btn btn-outline-dark js-copy-document-reference" data-reference="GED:@Model.DocumentId:@Model.VersionId"><i class="bi bi-link-45deg me-1"></i>Copiar referência</button>
         </div>
