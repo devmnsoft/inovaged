@@ -7,7 +7,7 @@ using InovaGed.Web.Security;
 namespace InovaGed.Web.Controllers;
 
 [Authorize(Policy = AppPolicies.GedAccess)]
-[Route("Ged")]
+[Route("GedClassification")]
 public sealed class GedClassificationController : Controller
 {
     private readonly ICurrentUser _currentUser;
@@ -16,10 +16,12 @@ public sealed class GedClassificationController : Controller
     public GedClassificationController(ICurrentUser currentUser, IGedClassificationSuggestionService suggestionService)
     { _currentUser = currentUser; _suggestionService = suggestionService; }
 
-    [HttpGet("ClassificationQueue")]
-    public IActionResult Queue() => View("~/InovaGed.Web/Views/GedClassification/Queue.cshtml");
+    [HttpGet("Queue")]
+    [HttpGet("/Ged/ClassificationQueue")]
+    public IActionResult Queue() => View("Queue");
 
     [HttpPost("Classification/GenerateSuggestion")]
+    [HttpPost("/Ged/Classification/GenerateSuggestion")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> GenerateSuggestion(Guid documentId, CancellationToken ct)
     {

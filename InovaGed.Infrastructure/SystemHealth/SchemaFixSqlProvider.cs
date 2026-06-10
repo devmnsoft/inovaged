@@ -218,6 +218,64 @@ create table if not exists ged.document_partial_part (
     created_at timestamptz not null default now(),
     reg_status char(1) not null default 'A'
 );
+"""),
+            Table("GED_TABLE_OCR_AUTO_SCHEDULE_RUN", "ged.ocr_auto_schedule_run", "OCR Auto Schedule", "Cria a tabela de execuções do agendamento automático de OCR.", """
+create extension if not exists pgcrypto;
+create schema if not exists ged;
+create table if not exists ged.ocr_auto_schedule_run (
+    id uuid primary key default gen_random_uuid(),
+    tenant_id uuid not null,
+    started_at_utc timestamptz not null default now(),
+    finished_at_utc timestamptz null,
+    status text not null default 'STARTED',
+    candidates_found int not null default 0,
+    enqueued_count int not null default 0,
+    skipped_count int not null default 0,
+    failed_count int not null default 0,
+    message text null,
+    correlation_id text null,
+    created_at timestamptz not null default now()
+);
+"""),
+            Table("GED_TABLE_OCR_AUTO_SCHEDULE_RUN_ITEM", "ged.ocr_auto_schedule_run_item", "OCR Auto Schedule", "Cria a tabela de itens do agendamento automático de OCR.", """
+create extension if not exists pgcrypto;
+create schema if not exists ged;
+create table if not exists ged.ocr_auto_schedule_run_item (
+    id uuid primary key default gen_random_uuid(),
+    run_id uuid not null,
+    tenant_id uuid not null,
+    document_id uuid null,
+    version_id uuid null,
+    file_name text null,
+    status text not null default 'PENDING',
+    reason text null,
+    ocr_job_id uuid null,
+    created_at timestamptz not null default now()
+);
+"""),
+            Table("GED_TABLE_LOAN_REQUEST_ITEM", "ged.loan_request_item", "Loans", "Cria a tabela de itens de empréstimo com suporte a itens manuais.", """
+create extension if not exists pgcrypto;
+create schema if not exists ged;
+create table if not exists ged.loan_request_item (
+    id uuid primary key default gen_random_uuid(),
+    tenant_id uuid not null,
+    loan_request_id uuid null,
+    loan_id uuid null,
+    document_id uuid null,
+    is_physical boolean not null default false,
+    is_manual boolean not null default false,
+    reference_code text null,
+    description text null,
+    document_type text null,
+    patient_name text null,
+    medical_record_number text null,
+    box_code text null,
+    physical_location text null,
+    notes text null,
+    document_version_id uuid null,
+    created_at timestamptz not null default now(),
+    reg_status char(1) not null default 'A'
+);
 """)
         };
 
@@ -250,6 +308,24 @@ create table if not exists ged.document_partial_part (
         AddColumn(fixes, "ged.app_audit_log", "user_name", "text null", "SystemLogs");
         AddColumn(fixes, "ged.audit_log", "created_at", "timestamptz null", "SystemLogs");
         AddColumn(fixes, "ged.audit_log", "user_name", "text null", "SystemLogs");
+        AddColumn(fixes, "ged.ocr_auto_schedule_run", "tenant_id", "uuid null", "OCR Auto Schedule");
+        AddColumn(fixes, "ged.ocr_auto_schedule_run", "started_at_utc", "timestamptz not null default now()", "OCR Auto Schedule");
+        AddColumn(fixes, "ged.ocr_auto_schedule_run", "status", "text not null default 'STARTED'", "OCR Auto Schedule");
+        AddColumn(fixes, "ged.ocr_auto_schedule_run_item", "run_id", "uuid null", "OCR Auto Schedule");
+        AddColumn(fixes, "ged.ocr_auto_schedule_run_item", "status", "text not null default 'PENDING'", "OCR Auto Schedule");
+        AddColumn(fixes, "ged.loan_request_item", "is_manual", "boolean not null default false", "Loans");
+        AddColumn(fixes, "ged.loan_request_item", "is_physical", "boolean not null default false", "Loans");
+        AddColumn(fixes, "ged.loan_request_item", "reference_code", "text null", "Loans");
+        AddColumn(fixes, "ged.loan_request_item", "description", "text null", "Loans");
+        AddColumn(fixes, "ged.loan_request_item", "document_type", "text null", "Loans");
+        AddColumn(fixes, "ged.loan_request_item", "patient_name", "text null", "Loans");
+        AddColumn(fixes, "ged.loan_request_item", "medical_record_number", "text null", "Loans");
+        AddColumn(fixes, "ged.loan_request_item", "box_code", "text null", "Loans");
+        AddColumn(fixes, "ged.loan_request_item", "physical_location", "text null", "Loans");
+        AddColumn(fixes, "ged.loan_request_item", "notes", "text null", "Loans");
+        AddColumn(fixes, "ged.loan_request_item", "document_version_id", "uuid null", "Loans");
+        AddColumn(fixes, "ged.loan_request_item", "created_at", "timestamptz not null default now()", "Loans");
+        AddColumn(fixes, "ged.loan_request_item", "loan_request_id", "uuid null", "Loans");
     }
 
     private static void AddIndexFixes(List<SchemaFixDto> fixes)
@@ -325,6 +401,10 @@ end $$;
         ]));
         fixes.Add(Index("GED_INDEX_UPLOAD_SESSION_TENANT_USER_STATUS", "ged.ix_upload_session_tenant_user_status", "Performance", "Cria índice de sessões chunked por tenant/usuário/status.", "create index if not exists ix_upload_session_tenant_user_status on ged.upload_session(tenant_id, user_id, status);"));
         fixes.Add(Index("GED_INDEX_UPLOAD_SESSION_CHUNK_SESSION", "ged.ix_upload_session_chunk_session", "Performance", "Cria índice dos chunks por sessão.", "create index if not exists ix_upload_session_chunk_session on ged.upload_session_chunk(session_id, chunk_index);"));
+        fixes.Add(Index("GED_INDEX_OCR_AUTO_SCHEDULE_RUN_STATUS", "ged.ix_ocr_auto_schedule_run_status", "OCR Auto Schedule", "Cria índice por tenant/status do agendamento automático de OCR.", "create index if not exists ix_ocr_auto_schedule_run_status on ged.ocr_auto_schedule_run(tenant_id, status);"));
+        fixes.Add(Index("GED_INDEX_LOAN_REQUEST_ITEM_REQUEST", "ged.ix_loan_request_item_request", "Loans", "Cria índice dos itens por solicitação de empréstimo.", "create index if not exists ix_loan_request_item_request on ged.loan_request_item(loan_request_id);"));
+        fixes.Add(Index("GED_INDEX_LOAN_REQUEST_ITEM_DOCUMENT", "ged.ix_loan_request_item_document", "Loans", "Cria índice dos itens por documento GED.", "create index if not exists ix_loan_request_item_document on ged.loan_request_item(document_id);"));
+        fixes.Add(Index("GED_INDEX_LOAN_REQUEST_ITEM_MANUAL", "ged.ix_loan_request_item_manual", "Loans", "Cria índice dos itens manuais/físicos.", "create index if not exists ix_loan_request_item_manual on ged.loan_request_item(is_manual);"));
         fixes.Add(Index("GED_INDEX_APP_AUDIT_LOG_TENANT_CREATED", "ged.ix_app_audit_log_tenant_created", "Performance", "Cria índice de auditoria por tenant/data.", "create index if not exists ix_app_audit_log_tenant_created on ged.app_audit_log(tenant_id, created_at desc);"));
         fixes.Add(Index("GED_INDEX_APP_AUDIT_LOG_USER_CREATED", "ged.ix_app_audit_log_user_created", "Performance", "Cria índice de auditoria por usuário/data.", "create index if not exists ix_app_audit_log_user_created on ged.app_audit_log(user_id, created_at desc);"));
         fixes.Add(Index("GED_INDEX_APP_AUDIT_LOG_ACTION_CREATED", "ged.ix_app_audit_log_action_created", "Performance", "Cria índice de auditoria por ação/data.", "create index if not exists ix_app_audit_log_action_created on ged.app_audit_log(action, created_at desc);"));

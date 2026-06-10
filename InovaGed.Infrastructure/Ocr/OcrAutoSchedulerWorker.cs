@@ -1,4 +1,5 @@
 using InovaGed.Application.Ocr;
+using InovaGed.Application.SystemHealth;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -11,19 +12,28 @@ public sealed class OcrAutoSchedulerWorker : BackgroundService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IOptionsMonitor<OcrAutoScheduleOptions> _options;
     private readonly ILogger<OcrAutoSchedulerWorker> _logger;
+    private readonly ISchemaCompatibilityState _schemaState;
 
     public OcrAutoSchedulerWorker(
         IServiceScopeFactory scopeFactory,
         IOptionsMonitor<OcrAutoScheduleOptions> options,
-        ILogger<OcrAutoSchedulerWorker> logger)
+        ILogger<OcrAutoSchedulerWorker> logger,
+        ISchemaCompatibilityState schemaState)
     {
         _scopeFactory = scopeFactory;
         _options = options;
         _logger = logger;
+        _schemaState = schemaState;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        if (!await _schemaState.IsCompatibleAsync("OcrAutoSchedule", stoppingToken))
+        {
+            _logger.LogWarning("OCR Auto Scheduler não iniciado: schema incompatível do módulo de agendamento automático. Execute migrations.");
+            return;
+        }
+
         while (!stoppingToken.IsCancellationRequested)
         {
             try

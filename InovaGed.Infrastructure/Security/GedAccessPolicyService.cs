@@ -18,7 +18,7 @@ public sealed class GedAccessPolicyService : IGedAccessPolicyService
         _logger = logger;
     }
 
-    public bool IsAdmin(ClaimsPrincipal principal) => HasRole(principal, "ADMIN");
+    public bool IsAdmin(ClaimsPrincipal principal) => HasRole(principal, "ADMIN") || HasRole(principal, "ADMINISTRADOR");
     public bool IsAdministradorOphir(ClaimsPrincipal principal) => HasRole(principal, "ADMINISTRADOROPHIR");
     public bool IsArquivistaOphir(ClaimsPrincipal principal) => HasRole(principal, "ARQUIVISTAOPHIR");
 
@@ -32,7 +32,7 @@ public sealed class GedAccessPolicyService : IGedAccessPolicyService
            || HasRole(principal, "OPERADOR");
 
     public async Task<bool> IsAdminAsync(Guid tenantId, Guid userId, ClaimsPrincipal? principal, CancellationToken ct)
-        => (principal is not null && IsAdmin(principal)) || await HasRoleInDatabaseAsync(tenantId, userId, "ADMIN", ct);
+        => (principal is not null && IsAdmin(principal)) || await HasRoleInDatabaseAsync(tenantId, userId, "ADMIN", ct) || await HasRoleInDatabaseAsync(tenantId, userId, "ADMINISTRADOR", ct);
 
     public async Task<bool> IsAdministradorOphirAsync(Guid tenantId, Guid userId, ClaimsPrincipal? principal, CancellationToken ct)
         => (principal is not null && IsAdministradorOphir(principal)) || await HasRoleInDatabaseAsync(tenantId, userId, "ADMINISTRADOROPHIR", ct);

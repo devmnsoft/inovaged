@@ -10,5 +10,6 @@ public interface ISchemaCompatibilityState
     IReadOnlyList<string> MissingColumns { get; }
     void MarkCompatible();
     void MarkInvalid(IEnumerable<string> missingTables, IEnumerable<string> missingColumns, string? error, bool workersDisabled);
+    bool IsModuleCompatible(string moduleName);
     Task<bool> IsCompatibleAsync(string moduleName, CancellationToken ct);
 }

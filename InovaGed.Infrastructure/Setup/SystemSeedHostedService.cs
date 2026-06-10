@@ -99,6 +99,24 @@ public sealed class SystemSeedHostedService : IHostedService
         INSERT INTO ged.user_role (user_id, role_id)
         SELECT @arquivistaUserId, r.id FROM ged.app_role r WHERE r.tenant_id = @tenantId AND r.normalized_name = 'ARQUIVISTAOPHIR'
         ON CONFLICT DO NOTHING;
+
+        INSERT INTO ged.user_role (user_id, role_id)
+        SELECT ur.user_id, upper_role.id
+        FROM ged.user_role ur
+        JOIN ged.app_role old_role ON old_role.id = ur.role_id
+        JOIN ged.app_role upper_role ON upper_role.tenant_id = old_role.tenant_id AND upper_role.normalized_name = 'ADMIN'
+        WHERE old_role.tenant_id = @tenantId
+          AND (old_role.name = 'Admin' OR old_role.normalized_name = 'ADMIN')
+        ON CONFLICT DO NOTHING;
+
+        INSERT INTO ged.user_role (user_id, role_id)
+        SELECT ur.user_id, upper_role.id
+        FROM ged.user_role ur
+        JOIN ged.app_role old_role ON old_role.id = ur.role_id
+        JOIN ged.app_role upper_role ON upper_role.tenant_id = old_role.tenant_id AND upper_role.normalized_name = 'ADMINISTRADOR'
+        WHERE old_role.tenant_id = @tenantId
+          AND (old_role.name = 'Administrador' OR old_role.normalized_name = 'ADMINISTRADOR')
+        ON CONFLICT DO NOTHING;
         """;
 
         await using var con = await _db.OpenAsync(ct);
