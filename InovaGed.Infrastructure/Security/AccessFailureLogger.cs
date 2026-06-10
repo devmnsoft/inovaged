@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Security.Claims;
 using Dapper;
 using InovaGed.Application.Common.Database;
@@ -6,6 +6,7 @@ using InovaGed.Application.Common.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Infrastructure;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Logging;
 
 namespace InovaGed.Infrastructure.Common.Security;
@@ -24,6 +25,19 @@ public sealed class AccessFailureLogger : IAccessFailureLogger
     }
 
     public async Task LogAsync(HttpContext ctx, AuthorizationPolicy? policy, int statusCode, string reason)
+    {
+        try
+        {
+            await LogInternalAsync(ctx, policy, statusCode, reason);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Falha ao registrar auditoria de acesso negado. Path={Path} Method={Method} CorrelationId={CorrelationId}",
+                ctx.Request.Path.Value, ctx.Request.Method, ctx.TraceIdentifier);
+        }
+    }
+
+    private async Task LogInternalAsync(HttpContext ctx, AuthorizationPolicy? policy, int statusCode, string reason)
     {
         // Tenant
         var tenantId = ResolveTenantId(ctx);
@@ -72,8 +86,15 @@ values
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray() ?? Array.Empty<string>();
 
-        var controller = ctx.Request.RouteValues.TryGetValue("controller", out var controllerValue) ? controllerValue?.ToString() : null;
-        var action = ctx.Request.RouteValues.TryGetValue("action", out var actionValue) ? actionValue?.ToString() : null;
+        var routeValues = ctx.Request.HttpContext.GetRouteData().Values;
+
+        var controller = routeValues.TryGetValue("controller", out var controllerValue)
+            ? controllerValue?.ToString() ?? "UnknownController"
+            : "UnknownController";
+
+        var action = routeValues.TryGetValue("action", out var actionValue)
+            ? actionValue?.ToString() ?? "UnknownAction"
+            : "UnknownAction";
 
         if (statusCode == StatusCodes.Status403Forbidden && roles.Any(r => IsRole(r, "ADMIN") || IsRole(r, "ADMINISTRADOR")))
         {
