@@ -21,41 +21,48 @@ public sealed class DocumentQualitySchedulerWorker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        while (!stoppingToken.IsCancellationRequested)
+        try
         {
-            var options = _options.CurrentValue;
-            if (!options.Enabled)
+            while (!stoppingToken.IsCancellationRequested)
             {
-                await Task.Delay(TimeSpan.FromMinutes(5), stoppingToken);
-                continue;
-            }
-
-            var delay = CalculateDelay(options);
-            _logger.LogInformation("DocumentQualitySchedulerWorker aguardando {Delay} para próxima execução às {RunAt} ({TimeZone}).", delay, options.RunAt, options.TimeZone);
-            await Task.Delay(delay, stoppingToken);
-
-            if (stoppingToken.IsCancellationRequested) break;
-
-            try
-            {
-                using var scope = _scopeFactory.CreateScope();
-                var analyzer = scope.ServiceProvider.GetRequiredService<IDocumentQualityAnalyzerService>();
-                await analyzer.AnalyzeAllAsync(options.TenantId, new DocumentQualityFilter
+                var options = _options.CurrentValue;
+                if (!options.Enabled)
                 {
-                    MaxDocuments = options.MaxDocumentsPerRun,
-                    AnalyzeStorage = options.AnalyzeStorage,
-                    AnalyzeLgpd = options.AnalyzeLgpd
-                }, stoppingToken);
+                    await Task.Delay(TimeSpan.FromMinutes(5), stoppingToken);
+                    continue;
+                }
+
+                var delay = CalculateDelay(options);
+                _logger.LogInformation("DocumentQualitySchedulerWorker aguardando {Delay} para próxima execução às {RunAt} ({TimeZone}).", delay, options.RunAt, options.TimeZone);
+                await Task.Delay(delay, stoppingToken);
+
+                if (stoppingToken.IsCancellationRequested) break;
+
+                try
+                {
+                    using var scope = _scopeFactory.CreateScope();
+                    var analyzer = scope.ServiceProvider.GetRequiredService<IDocumentQualityAnalyzerService>();
+                    await analyzer.AnalyzeAllAsync(options.TenantId, new DocumentQualityFilter
+                    {
+                        MaxDocuments = options.MaxDocumentsPerRun,
+                        AnalyzeStorage = options.AnalyzeStorage,
+                        AnalyzeLgpd = options.AnalyzeLgpd
+                    }, stoppingToken);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Falha na rotina diária de Qualidade Documental.");
+                    await Task.Delay(TimeSpan.FromMinutes(10), stoppingToken);
+                }
             }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                break;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Falha na rotina diária de Qualidade Documental.");
-                await Task.Delay(TimeSpan.FromMinutes(10), stoppingToken);
-            }
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            _logger.LogInformation("DocumentQualitySchedulerWorker encerrado por solicitação de parada.");
         }
     }
 

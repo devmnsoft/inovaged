@@ -260,7 +260,6 @@ create table if not exists ged.loan_request_item (
     id uuid primary key default gen_random_uuid(),
     tenant_id uuid not null,
     loan_request_id uuid null,
-    loan_id uuid null,
     document_id uuid null,
     is_physical boolean not null default false,
     is_manual boolean not null default false,
@@ -402,7 +401,7 @@ end $$;
         fixes.Add(Index("GED_INDEX_UPLOAD_SESSION_TENANT_USER_STATUS", "ged.ix_upload_session_tenant_user_status", "Performance", "Cria índice de sessões chunked por tenant/usuário/status.", "create index if not exists ix_upload_session_tenant_user_status on ged.upload_session(tenant_id, user_id, status);"));
         fixes.Add(Index("GED_INDEX_UPLOAD_SESSION_CHUNK_SESSION", "ged.ix_upload_session_chunk_session", "Performance", "Cria índice dos chunks por sessão.", "create index if not exists ix_upload_session_chunk_session on ged.upload_session_chunk(session_id, chunk_index);"));
         fixes.Add(Index("GED_INDEX_OCR_AUTO_SCHEDULE_RUN_STATUS", "ged.ix_ocr_auto_schedule_run_status", "OCR Auto Schedule", "Cria índice por tenant/status do agendamento automático de OCR.", "create index if not exists ix_ocr_auto_schedule_run_status on ged.ocr_auto_schedule_run(tenant_id, status);"));
-        fixes.Add(Index("GED_INDEX_LOAN_REQUEST_ITEM_REQUEST", "ged.ix_loan_request_item_request", "Loans", "Cria índice dos itens por solicitação de empréstimo.", "create index if not exists ix_loan_request_item_request on ged.loan_request_item(loan_request_id);"));
+        fixes.Add(Index("GED_INDEX_LOAN_REQUEST_ITEM_LOAN_REQUEST", "ged.ix_loan_request_item_loan_request", "Loans", "Cria índice dos itens por solicitação de empréstimo.", "create index if not exists ix_loan_request_item_loan_request on ged.loan_request_item(loan_request_id);"));
         fixes.Add(Index("GED_INDEX_LOAN_REQUEST_ITEM_DOCUMENT", "ged.ix_loan_request_item_document", "Loans", "Cria índice dos itens por documento GED.", "create index if not exists ix_loan_request_item_document on ged.loan_request_item(document_id);"));
         fixes.Add(Index("GED_INDEX_LOAN_REQUEST_ITEM_MANUAL", "ged.ix_loan_request_item_manual", "Loans", "Cria índice dos itens manuais/físicos.", "create index if not exists ix_loan_request_item_manual on ged.loan_request_item(is_manual);"));
         fixes.Add(Index("GED_INDEX_APP_AUDIT_LOG_TENANT_CREATED", "ged.ix_app_audit_log_tenant_created", "Performance", "Cria índice de auditoria por tenant/data.", "create index if not exists ix_app_audit_log_tenant_created on ged.app_audit_log(tenant_id, created_at desc);"));

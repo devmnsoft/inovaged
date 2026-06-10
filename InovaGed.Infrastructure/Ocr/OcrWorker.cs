@@ -346,6 +346,10 @@ public sealed class OcrWorker : BackgroundService
                         "OCR_WORKER",
                         stoppingToken);
                 }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    throw;
+                }
                 catch (Exception ex)
                 {
                     await jobs.MarkErrorAsync(job.Id, ex.Message, stoppingToken);
@@ -378,6 +382,11 @@ public sealed class OcrWorker : BackgroundService
                     _logger.LogError(ex, "Erro ao processar OCR. JobId={JobId}", job.Id);
                 }
             }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                _logger.LogInformation("OcrWorker encerrado por solicitação de parada.");
+                break;
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Falha inesperada no OCR Worker.");
@@ -399,7 +408,7 @@ public sealed class OcrWorker : BackgroundService
             {
                 return await action(ct);
             }
-            catch (Exception ex) when (attempt < maxAttempts)
+            catch (Exception ex) when (ex is not OperationCanceledException && attempt < maxAttempts)
             {
                 var delay = delays[Math.Min(attempt - 1, delays.Length - 1)];
                 _logger.LogWarning(ex,

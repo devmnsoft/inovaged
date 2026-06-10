@@ -37,40 +37,47 @@ public sealed class LoanOverdueWorker : BackgroundService
 
         var interval = TimeSpan.FromMinutes(Math.Max(1, _options.IntervalMinutes));
 
-        while (!stoppingToken.IsCancellationRequested)
+        try
         {
-            try
+            while (!stoppingToken.IsCancellationRequested)
             {
-                using var scope = _sp.CreateScope();
-
-                var current = scope.ServiceProvider.GetRequiredService<ICurrentUser>();
-                var commands = scope.ServiceProvider.GetRequiredService<ILoanCommands>();
-
-                var tenantId = _options.TenantId != Guid.Empty ? _options.TenantId : current.TenantId;
-                if (tenantId == Guid.Empty)
+                try
                 {
-                    _logger.LogWarning(
-                        "LoanOverdueWorker ignorado: TenantId não configurado. Configure Workers:LoanOverdue:TenantId ou desative com Workers:LoanOverdue:Enabled=false.");
-                    await Task.Delay(interval, stoppingToken);
-                    continue;
+                    using var scope = _sp.CreateScope();
+
+                    var current = scope.ServiceProvider.GetRequiredService<ICurrentUser>();
+                    var commands = scope.ServiceProvider.GetRequiredService<ILoanCommands>();
+
+                    var tenantId = _options.TenantId != Guid.Empty ? _options.TenantId : current.TenantId;
+                    if (tenantId == Guid.Empty)
+                    {
+                        _logger.LogWarning(
+                            "LoanOverdueWorker ignorado: TenantId não configurado. Configure Workers:LoanOverdue:TenantId ou desative com Workers:LoanOverdue:Enabled=false.");
+                        await Task.Delay(interval, stoppingToken);
+                        continue;
+                    }
+
+                    var res = await commands.RegisterOverdueEventsAsync(tenantId, current.UserId, stoppingToken);
+                    if (res.IsSuccess)
+                        _logger.LogInformation("Overdue registrados. Tenant={Tenant} Count={Count}", tenantId, res.Value);
+                    else
+                        _logger.LogWarning("Overdue falhou. Tenant={Tenant} Err={Err}", tenantId, res.ErrorMessage);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "LoanOverdueWorker falhou durante a execução; nova tentativa será feita no próximo ciclo.");
                 }
 
-                var res = await commands.RegisterOverdueEventsAsync(tenantId, current.UserId, stoppingToken);
-                if (res.IsSuccess)
-                    _logger.LogInformation("Overdue registrados. Tenant={Tenant} Count={Count}", tenantId, res.Value);
-                else
-                    _logger.LogWarning("Overdue falhou. Tenant={Tenant} Err={Err}", tenantId, res.ErrorMessage);
+                await Task.Delay(interval, stoppingToken);
             }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                _logger.LogInformation("LoanOverdueWorker finalizado por cancelamento da aplicação.");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "LoanOverdueWorker falhou durante a execução; nova tentativa será feita no próximo ciclo.");
-            }
-
-            await Task.Delay(interval, stoppingToken);
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            _logger.LogInformation("LoanOverdueWorker finalizado por cancelamento da aplicação.");
         }
     }
 }

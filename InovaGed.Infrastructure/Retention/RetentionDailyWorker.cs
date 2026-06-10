@@ -38,32 +38,39 @@ public sealed class RetentionDailyWorker : BackgroundService
 
         _logger.LogInformation("RetentionDailyWorker iniciado.");
 
-        while (!stoppingToken.IsCancellationRequested)
+        try
         {
-            try
+            while (!stoppingToken.IsCancellationRequested)
             {
-                using var scope = _scopeFactory.CreateScope();
+                try
+                {
+                    using var scope = _scopeFactory.CreateScope();
 
-                // ✅ use a interface (recomendado)
-                var svc = scope.ServiceProvider.GetRequiredService<IRetentionRecalcService>();
+                    // ✅ use a interface (recomendado)
+                    var svc = scope.ServiceProvider.GetRequiredService<IRetentionRecalcService>();
 
-                var rows = await svc.RunAsync(DefaultTenantId, DueSoonDays, stoppingToken);
+                    var rows = await svc.RunAsync(DefaultTenantId, DueSoonDays, stoppingToken);
 
-                _logger.LogInformation(
-                    "RetentionDailyWorker execução OK. Tenant={TenantId} DueSoonDays={DueSoonDays} Rows={Rows}",
-                    DefaultTenantId, DueSoonDays, rows);
+                    _logger.LogInformation(
+                        "RetentionDailyWorker execução OK. Tenant={TenantId} DueSoonDays={DueSoonDays} Rows={Rows}",
+                        DefaultTenantId, DueSoonDays, rows);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Falha no RetentionDailyWorker.");
+                }
+
+                // ✅ roda 1x ao dia (pode trocar por cron depois)
+                await Task.Delay(TimeSpan.FromDays(1), stoppingToken);
             }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                // encerramento normal
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Falha no RetentionDailyWorker.");
-            }
-
-            // ✅ roda 1x ao dia (pode trocar por cron depois)
-            await Task.Delay(TimeSpan.FromDays(1), stoppingToken);
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            _logger.LogInformation("RetentionDailyWorker encerrado por solicitação de parada.");
         }
     }
 }

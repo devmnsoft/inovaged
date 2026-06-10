@@ -68,6 +68,7 @@ public sealed class OcrAutoSchedulerWorker : BackgroundService
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
+                _logger.LogInformation("OcrAutoSchedulerWorker encerrado por solicitação de parada.");
                 break;
             }
             catch (Exception ex)
@@ -79,6 +80,7 @@ public sealed class OcrAutoSchedulerWorker : BackgroundService
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
+                    _logger.LogInformation("OcrAutoSchedulerWorker encerrado por cancelamento.");
                     break;
                 }
             }

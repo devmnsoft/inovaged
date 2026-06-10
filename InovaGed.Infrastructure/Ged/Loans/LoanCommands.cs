@@ -120,7 +120,6 @@ insert into ged.loan_request_item
   id,
   tenant_id,
   loan_request_id,
-  loan_id,
   document_id,
   is_manual,
   is_physical,
@@ -139,7 +138,6 @@ values
 (
   gen_random_uuid(),
   @TenantId,
-  @LoanId,
   @LoanId,
   @DocumentId,
   @IsManual,
