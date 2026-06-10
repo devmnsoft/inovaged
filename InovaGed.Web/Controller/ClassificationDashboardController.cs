@@ -60,7 +60,7 @@ public sealed class ClassificationDashboardController : Controller
         if (!_currentUser.IsAuthenticated) return Unauthorized();
 
         var tenantId = _currentUser.TenantId;
-        var scope = User.IsInRole(AppRoles.Admin) ? "admin" : _currentUser.UserId.ToString();
+        var scope = RolePolicyHelper.IsFullAdmin(User) ? "admin" : _currentUser.UserId.ToString();
         var cacheKey = $"ClassificationDashboardCount:{tenantId}:{scope}:{folderId}";
         var total = await _cache.GetOrCreateAsync(cacheKey, async entry =>
         {

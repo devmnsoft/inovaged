@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize(Policy = AppPolicies.AdminOnly)]
+[Authorize(Policy = AppPolicies.SystemHealth)]
 [Route("SystemHealth/Homologation")]
 public sealed class SystemHealthHomologationController : Controller
 {

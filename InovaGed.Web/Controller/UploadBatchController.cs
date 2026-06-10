@@ -10,7 +10,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize]
+[Authorize(Policy = AppPolicies.GedAccess)]
 [Route("Ged/UploadBatch")]
 public sealed class UploadBatchController : Controller
 {

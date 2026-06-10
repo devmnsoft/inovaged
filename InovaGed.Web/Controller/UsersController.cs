@@ -12,7 +12,7 @@ using Npgsql;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize(Roles = AppRoles.Admin)]
+[Authorize(Policy = AppPolicies.UsersAdmin)]
 [Route("Users")]
 public sealed class UsersController : AppControllerBase
 {
@@ -49,7 +49,7 @@ public sealed class UsersController : AppControllerBase
     }
 
     [HttpPost("Unlock/{id:guid}")]
-    [Authorize(Roles = AppRoles.Admin + ",ADMINISTRATOR")]
+    [Authorize(Policy = AppPolicies.UsersAdmin)]
     public async Task<IActionResult> Unlock(Guid id, CancellationToken ct)
     {
         var tenantId = _currentUser.TenantId;
@@ -118,7 +118,7 @@ public sealed class UsersController : AppControllerBase
 
     [HttpGet("")]
     [HttpGet("Index")]
-    [Authorize(Roles = AppRoles.Admin + ",ADMINISTRATOR")]
+    [Authorize(Policy = AppPolicies.UsersAdmin)]
     public async Task<IActionResult> Index(string? q, bool? active, bool? locked, int page = 1, int pageSize = 10, CancellationToken ct = default)
     {
         if (!_currentUser.IsAuthenticated) return Unauthorized();
@@ -323,7 +323,7 @@ public sealed class UsersController : AppControllerBase
             HttpContext.TraceIdentifier);
     }
     [HttpGet("Edit/{id:guid}")]
-    [Authorize(Roles = AppRoles.Admin + ",ADMINISTRATOR")]
+    [Authorize(Policy = AppPolicies.UsersAdmin)]
     public async Task<IActionResult> Edit(Guid id, CancellationToken ct)
     {
         if (!_currentUser.IsAuthenticated) return Unauthorized();
@@ -341,10 +341,7 @@ public sealed class UsersController : AppControllerBase
             return RedirectToAction(nameof(Index));
         }
 
-        var isAdmin =
-            User.IsInRole(AppRoles.Admin) ||
-            User.IsInRole("ADMIN") ||
-            User.IsInRole("ADMINISTRATOR");
+        var isAdmin = RolePolicyHelper.IsFullAdmin(User);
 
         _logger.LogInformation(
             "Edit user requested. Tenant={TenantId} CurrentUser={CurrentUserId} IsAdmin={IsAdmin} RouteId={RouteId} CorrelationId={CorrelationId}",
@@ -500,15 +497,12 @@ public sealed class UsersController : AppControllerBase
     }
 
     [HttpGet("DiagnoseEdit/{id:guid}")]
-    [Authorize(Roles = AppRoles.Admin + ",ADMINISTRATOR")]
+    [Authorize(Policy = AppPolicies.UsersAdmin)]
     public async Task<IActionResult> DiagnoseEdit(Guid id, CancellationToken ct)
     {
         if (!_currentUser.IsAuthenticated) return Unauthorized();
 
-        var isAdmin =
-            User.IsInRole(AppRoles.Admin) ||
-            User.IsInRole("ADMIN") ||
-            User.IsInRole("ADMINISTRATOR");
+        var isAdmin = RolePolicyHelper.IsFullAdmin(User);
         if (!isAdmin) return Forbid();
 
         var tenantId = _currentUser.TenantId;

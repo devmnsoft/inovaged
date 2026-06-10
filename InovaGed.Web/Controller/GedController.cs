@@ -33,7 +33,7 @@ using InovaGed.Application.Ged.Documents.Partials;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize]
+[Authorize(Policy = AppPolicies.GedAccess)]
 public sealed class GedController : Controller
 {
     private readonly ILogger<GedController> _logger;
@@ -364,7 +364,7 @@ public sealed class GedController : Controller
             CanRunOcr = true,
             CanReprocessOcr = string.Equals(normalizedOcrStatus, "ERROR", StringComparison.OrdinalIgnoreCase) || string.Equals(normalizedOcrStatus, "FAILED", StringComparison.OrdinalIgnoreCase) || string.Equals(normalizedOcrStatus, "COMPLETED", StringComparison.OrdinalIgnoreCase),
             CanCancelPartial = canCancelPartial,
-            CanDelete = User.IsInRole(AppRoles.Admin),
+            CanDelete = RolePolicyHelper.IsFullAdmin(User),
             Parts = parts.Select(p => new DocumentSidePanelPartVm
             {
                 VersionId = p.VersionId,
@@ -724,7 +724,7 @@ public sealed class GedController : Controller
     public override void OnActionExecuting(ActionExecutingContext context)
     {
         base.OnActionExecuting(context);
-        var isAdmin = User.IsInRole(AppRoles.Admin);
+        var isAdmin = RolePolicyHelper.IsFullAdmin(User);
         var isOphir = User.IsInRole(AppRoles.AdministradorOphir) || User.IsInRole(AppRoles.ArquivistaOphir);
         if (!isAdmin && isOphir)
         {
@@ -851,7 +851,7 @@ public sealed class GedController : Controller
         }
     }
 
-    [Authorize(Policy = AppPolicies.AdminOnly)]
+    [Authorize(Policy = AppPolicies.FullAdminOnly)]
     [HttpGet]
     public async Task<IActionResult> Processing(CancellationToken ct)
     {
@@ -900,7 +900,7 @@ SELECT
         return View(vm);
     }
 
-    [Authorize(Policy = AppPolicies.AdminOnly)]
+    [Authorize(Policy = AppPolicies.FullAdminOnly)]
     [HttpGet]
     public async Task<IActionResult> ProcessingStatus(CancellationToken ct)
     {
@@ -912,7 +912,7 @@ SELECT
         return Json(new { success = true, count = rows.Count, items = rows });
     }
 
-    [Authorize(Policy = AppPolicies.AdminOnly)]
+    [Authorize(Policy = AppPolicies.FullAdminOnly)]
     [HttpGet]
     public async Task<IActionResult> ProcessingMetrics(CancellationToken ct)
     {
@@ -1820,10 +1820,10 @@ SELECT
     }
 
 
-    private bool CanAddDocumentPart() => User.IsInRole(AppRoles.Admin) || User.IsInRole(AppRoles.Arquivista) || User.IsInRole(AppRoles.ArquivistaOphir);
+    private bool CanAddDocumentPart() => RolePolicyHelper.IsFullAdmin(User) || User.IsInRole(AppRoles.Arquivista) || User.IsInRole(AppRoles.ArquivistaOphir);
     private bool CanViewDocumentParts() => _currentUser.IsAuthenticated;
-    private bool CanConsolidateDocumentParts() => User.IsInRole(AppRoles.Admin) || User.IsInRole(AppRoles.Arquivista) || User.IsInRole(AppRoles.ArquivistaOphir);
-    private bool CanCancelDocumentParts() => User.IsInRole(AppRoles.Admin) || User.IsInRole(AppRoles.AdministradorOphir);
+    private bool CanConsolidateDocumentParts() => RolePolicyHelper.IsFullAdmin(User) || User.IsInRole(AppRoles.Arquivista) || User.IsInRole(AppRoles.ArquivistaOphir);
+    private bool CanCancelDocumentParts() => RolePolicyHelper.IsFullAdmin(User) || User.IsInRole(AppRoles.AdministradorOphir);
 
     private object JsonError(string message, string errorStep, string errorLog, bool canRetry, string? correlationId = null)
         => new { success = false, message, errorStep, errorLog, canRetry, correlationId = correlationId ?? HttpContext.TraceIdentifier };
@@ -2367,7 +2367,7 @@ SELECT
         try
         {
             if (!_currentUser.IsAuthenticated) return Unauthorized();
-            var isAdmin = User.IsInRole(AppRoles.Admin);
+            var isAdmin = RolePolicyHelper.IsFullAdmin(User);
             _logger.LogInformation("Upload/drop destino resolvido. Tenant={TenantId} User={UserId} RequestedFolderId={RequestedFolderId} UploadFolderId={UploadFolderId} Source={Source} DocumentIds={DocumentIds} FileCount={FileCount}", _currentUser.TenantId, _currentUser.UserId, request.RequestedFolderId ?? request.DestinationFolderId, request.DestinationFolderId, request.Source ?? "SINGLE", request.DocumentId, 0);
             var result = await _documentMoveService.MoveAsync(_currentUser.TenantId, _currentUser.UserId, User.Identity?.Name, request.DocumentId, request.DestinationFolderId, request.Reason, request.Source ?? "SINGLE", isAdmin, ct);
             if (!result.IsSuccess)
@@ -2388,7 +2388,7 @@ SELECT
         try
         {
             if (!_currentUser.IsAuthenticated) return Unauthorized();
-            var isAdmin = User.IsInRole(AppRoles.Admin);
+            var isAdmin = RolePolicyHelper.IsFullAdmin(User);
             _logger.LogInformation("Upload/drop destino resolvido. Tenant={TenantId} User={UserId} RequestedFolderId={RequestedFolderId} UploadFolderId={UploadFolderId} Source={Source} DocumentIds={DocumentIds} FileCount={FileCount}", _currentUser.TenantId, _currentUser.UserId, request.RequestedFolderId ?? request.DestinationFolderId, request.DestinationFolderId, request.Source ?? "BULK", string.Join(",", request.DocumentIds), 0);
             var result = await _documentMoveService.MoveBulkAsync(_currentUser.TenantId, _currentUser.UserId, User.Identity?.Name, request.DocumentIds, request.DestinationFolderId, request.Reason, request.Source ?? "BULK", isAdmin, ct);
             if (!result.IsSuccess)
@@ -2712,7 +2712,7 @@ VALUES
                 Scope = isGlobal ? "global" : "folder",
                 Module = "GED",
                 Limit = limit,
-                IsAdmin = User.IsInRole("ADMIN") || _currentUser.Roles.Any(r => string.Equals(r, "ADMIN", StringComparison.OrdinalIgnoreCase))
+                IsAdmin = RolePolicyHelper.IsFullAdmin(User)
             }, ct);
 
             var rows = result.Items.Select(x => new DocumentSearchRowDto(
@@ -2852,7 +2852,7 @@ VALUES
         }
     }
 
-    [Authorize(Roles = AppRoles.Admin)]
+    [Authorize(Policy = AppPolicies.FullAdminOnly)]
     [HttpPost]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> StopOcrQueue(Guid? documentId, CancellationToken ct)
@@ -2872,7 +2872,7 @@ VALUES
         }
     }
 
-    [Authorize(Roles = AppRoles.Admin)]
+    [Authorize(Policy = AppPolicies.FullAdminOnly)]
     [HttpPost]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> CancelOcrJob(long jobId, Guid versionId, CancellationToken ct)

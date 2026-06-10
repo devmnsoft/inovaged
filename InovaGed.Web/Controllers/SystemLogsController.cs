@@ -6,7 +6,7 @@ using Npgsql;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize(Policy = AppPolicies.AdminOnly)]
+[Authorize(Policy = AppPolicies.LogsAccess)]
 public sealed class SystemLogsController : Controller
 {
     private readonly ISystemLogQueryService _query;

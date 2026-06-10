@@ -3,10 +3,11 @@ using InovaGed.Application.Identity;
 using InovaGed.Application.Retention;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using InovaGed.Web.Security;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize]
+[Authorize(Policy = AppPolicies.GedAccess)]
 [Route("DocumentClassification")]
 public sealed class DocumentClassificationController : Controller
 {

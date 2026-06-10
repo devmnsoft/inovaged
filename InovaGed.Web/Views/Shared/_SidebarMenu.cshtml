@@ -4,6 +4,7 @@
 @using InovaGed.Application.Common.Database
 @using InovaGed.Web.Security
 @inject IDbConnectionFactory DbFactory
+@inject IMenuVisibilityService MenuVisibility
 
 @{
 	var ctrl = (ViewContext.RouteData.Values["controller"]?.ToString() ?? "").ToLowerInvariant();
@@ -52,8 +53,8 @@
 	bool IsAdministradorOphir() => AppMenuPolicy.IsAdministradorOphir(User);
 	bool IsHospitalRestricted() => AppMenuPolicy.IsHospitalRestricted(User);
 	bool CanDashboard() => AppMenuPolicy.CanSeeDashboard(User);
-	bool CanDocumentos() => AppMenuPolicy.CanSeeHospitalDocuments(User);
-	bool CanEmprestimos() => AppMenuPolicy.CanSeeLoans(User);
+	bool CanDocumentos() => MenuVisibility.CanSeeHospitalDocuments(User);
+	bool CanEmprestimos() => MenuVisibility.CanSeeLoansRequest(User) || MenuVisibility.CanSeeLoansManage(User);
 	bool CanCreateHospitalDocuments() => AppMenuPolicy.CanCreateHospitalDocuments(User);
 	bool CanRelatorios() => AppMenuPolicy.CanSeeReports(User);
 	bool CanAuditoria() => AppMenuPolicy.CanSeeAudit(User);
@@ -136,7 +137,7 @@
 		</a>
 	}
 
-	@if (User.IsInRole(AppRoles.Admin))
+	@if (RolePolicyHelper.IsFullAdmin(User))
 	{
 		<a asp-controller="GedDashboard" asp-action="Index" class="@Active("GedDashboard", "Index")">
 			<i class="bi bi-bar-chart"></i>
@@ -391,11 +392,11 @@
 
     @if (IsAdministradorOphir())
     {
-        <a href="/Protocols/WorkQueue" class="@ActivePathStarts("/protocols/workqueue")">
+        <a href="/Protocolo?visao=entrada" class="@ActivePathStarts("/protocolo")">
             <i class="bi bi-inbox"></i>
             <span>Fila de Protocolos</span>
         </a>
-        <a href="/Protocols/WorkQueue" class="@ActivePathStarts("/protocols/workqueue")">
+        <a href="/Protocolo?visao=entrada" class="@ActivePathStarts("/protocolo")">
             <i class="bi bi-kanban"></i>
             <span>Manuseio de Processos</span>
         </a>

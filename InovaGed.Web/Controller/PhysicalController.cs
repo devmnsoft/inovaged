@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize(Roles = AppRoles.Admin)]
+[Authorize(Policy = AppPolicies.FullAdminOnly)]
 [Route("[controller]")]
 public sealed class PhysicalController : Controller
 {

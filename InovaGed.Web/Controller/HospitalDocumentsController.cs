@@ -18,7 +18,7 @@ using System.Text.Json;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize(Policy = AppPolicies.HospitalDocumentsOrLoansAccess)]
+[Authorize(Policy = AppPolicies.HospitalDocumentsAccess)]
 public sealed class HospitalDocumentsController : Controller
 {
     private static readonly Guid EmptyGuid = Guid.Empty;

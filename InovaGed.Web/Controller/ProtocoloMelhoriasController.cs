@@ -9,7 +9,7 @@ using Microsoft.AspNetCore.Mvc.Rendering;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize]
+[Authorize(Policy = AppPolicies.ProtocolManage)]
 [Route("Protocolo")]
 public sealed class ProtocoloMelhoriasController : GedControllerBase
 {
@@ -664,7 +664,7 @@ values
 
     private bool IsAdminOrGestor()
     {
-        return User.IsInRole(AppRoles.Admin) || User.IsInRole(AppRoles.Gestor) || User.IsInRole(AppRoles.Auditor);
+        return RolePolicyHelper.IsFullAdmin(User) || User.IsInRole(AppRoles.Gestor) || User.IsInRole(AppRoles.Auditor);
     }
 
     private sealed class ProtocoloBasico

@@ -10,7 +10,7 @@ using Microsoft.Extensions.Options;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize(Policy = AppPolicies.AdminOnly)]
+[Authorize(Policy = AppPolicies.SchemaRepair)]
 [Route("SystemHealth/Schema")]
 public sealed class SchemaHealthController : Controller
 {

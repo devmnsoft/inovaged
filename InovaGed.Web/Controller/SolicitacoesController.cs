@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize(Policy = AppPolicies.HospitalDocumentsOrLoansAccess)]
+[Authorize(Policy = AppPolicies.LoansView)]
 [Route("[controller]")]
 public sealed class SolicitacoesController : Controller
 {
@@ -27,7 +27,7 @@ public sealed class SolicitacoesController : Controller
         try
         {
             // ADMIN possui visão global das solicitações.
-            var isAdmin = User.IsInRole(AppRoles.Admin);
+            var isAdmin = RolePolicyHelper.IsFullAdmin(User);
             var setorId = GetSetorId();
             var userId = _user.UserId != Guid.Empty ? _user.UserId : (Guid?)null;
 
@@ -50,7 +50,7 @@ public sealed class SolicitacoesController : Controller
         try
         {
             // ADMIN possui visão global do histórico.
-            var isAdmin = User.IsInRole(AppRoles.Admin);
+            var isAdmin = RolePolicyHelper.IsFullAdmin(User);
             var userId = _user.UserId != Guid.Empty ? _user.UserId : (Guid?)null;
             var rows = await _service.HistoricoAsync(_user.TenantId, userId, GetSetorId(), isAdmin, ct);
 
@@ -93,7 +93,7 @@ public sealed class SolicitacoesController : Controller
     }
 
     // Feedback administrativo exclusivo para ADMIN global.
-    [Authorize(Roles = AppRoles.Admin + "," + AppRoles.AdministradorOphir)]
+    [Authorize(Policy = AppPolicies.LoansManage)]
     [HttpPost("{id:guid}/Status")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> AtualizarStatus(Guid id, SolicitacaoUpdateStatusVM vm, CancellationToken ct)
@@ -124,7 +124,7 @@ public sealed class SolicitacoesController : Controller
 
 
 
-    [Authorize(Roles = AppRoles.Admin)]
+    [Authorize(Policy = AppPolicies.FullAdminOnly)]
     [HttpPost("ExcluirAntigas")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> ExcluirAntigas(int dias = 90, CancellationToken ct = default)

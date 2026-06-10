@@ -2,10 +2,11 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using InovaGed.Application.Common.Database;
+using InovaGed.Web.Security;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize]
+[Authorize(Policy = AppPolicies.FullAdminOnly)]
 public class LabelsController : GedControllerBase
 {
     public LabelsController(IDbConnectionFactory dbFactory) : base(dbFactory)

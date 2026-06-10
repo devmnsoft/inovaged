@@ -2,10 +2,11 @@
 using InovaGed.Application.Workflow;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using InovaGed.Web.Security;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize]
+[Authorize(Policy = AppPolicies.GedAccess)]
 [Route("Ged/Workflow")]
 public sealed class GedWorkflowController : Controller
 {

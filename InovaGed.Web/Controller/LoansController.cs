@@ -11,7 +11,7 @@ using Microsoft.AspNetCore.Mvc.Filters;
 namespace InovaGed.Web.Controllers;
 
 // ADMIN sempre com acesso total; perfis Ophir mantêm acesso ao módulo hospitalar/empréstimos.
-[Authorize(Policy = AppPolicies.HospitalDocumentsOrLoansAccess)]
+[Authorize(Policy = AppPolicies.LoansView)]
 [Route("[controller]")]
 public sealed class LoansController : Controller
 {
@@ -96,6 +96,7 @@ public sealed class LoansController : Controller
     // =========================================================
     // GET /Loans/Overdue
     // =========================================================
+    [Authorize(Policy = AppPolicies.LoansManage)]
     [HttpGet("Overdue")]
     public async Task<IActionResult> Overdue(CancellationToken ct)
     {
@@ -120,6 +121,7 @@ public sealed class LoansController : Controller
     // GET /Loans/RunOverdue
     // (rotina: tenta função ged.loan_run_overdue; fallback se não existir)
     // =========================================================
+    [Authorize(Policy = AppPolicies.LoansManage)]
     [HttpGet("RunOverdue")]
     public async Task<IActionResult> RunOverdue(CancellationToken ct)
     {
@@ -144,6 +146,7 @@ public sealed class LoansController : Controller
     // POST /Loans/Overdue/Register
     // (registra eventos OVERDUE no histórico via vw_loan_overdue)
     // =========================================================
+    [Authorize(Policy = AppPolicies.LoansManage)]
     [HttpPost("Overdue/Register")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> RegisterOverdue(CancellationToken ct)
@@ -187,6 +190,7 @@ public sealed class LoansController : Controller
     // =========================================================
     // GET /Loans/New
     // =========================================================
+    [Authorize(Policy = AppPolicies.LoansRequest)]
     [HttpGet("New")]
     public IActionResult New()
         => View(new LoanCreateVM { DueAt = DateTimeOffset.Now.AddDays(7) });
@@ -194,6 +198,7 @@ public sealed class LoansController : Controller
     // =========================================================
     // POST /Loans/New
     // =========================================================
+    [Authorize(Policy = AppPolicies.LoansRequest)]
     [HttpPost("New")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> New(LoanCreateVM vm, CancellationToken ct)
@@ -266,7 +271,7 @@ public sealed class LoansController : Controller
     // =========================================================
     // Transições de status
     // =========================================================
-    [Authorize(Roles = AppRoles.Admin + "," + AppRoles.AdministradorOphir)]
+    [Authorize(Policy = AppPolicies.LoansManage)]
     [HttpPost("{id:guid}/Approve")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Approve(Guid id, string? notes, string? internalNotes, bool notifyRequester, CancellationToken ct)
@@ -278,7 +283,7 @@ public sealed class LoansController : Controller
         return RedirectToAction(nameof(Details), new { id });
     }
 
-    [Authorize(Roles = AppRoles.Admin + "," + AppRoles.AdministradorOphir)]
+    [Authorize(Policy = AppPolicies.LoansManage)]
     [HttpPost("{id:guid}/Deliver")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Deliver(Guid id, string? notes, string? internalNotes, bool notifyRequester, CancellationToken ct)
@@ -290,7 +295,7 @@ public sealed class LoansController : Controller
         return RedirectToAction(nameof(Details), new { id });
     }
 
-    [Authorize(Roles = AppRoles.Admin + "," + AppRoles.AdministradorOphir)]
+    [Authorize(Policy = AppPolicies.LoansManage)]
     [HttpPost("{id:guid}/Return")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Return(Guid id, string? notes, string? internalNotes, bool notifyRequester, CancellationToken ct)
@@ -303,7 +308,7 @@ public sealed class LoansController : Controller
     }
 
 
-    [Authorize(Roles = AppRoles.Admin + "," + AppRoles.AdministradorOphir)]
+    [Authorize(Policy = AppPolicies.LoansManage)]
     [HttpPost("{id:guid}/Reject")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Reject(Guid id, string? notes, string? internalNotes, bool notifyRequester, CancellationToken ct)
@@ -315,7 +320,7 @@ public sealed class LoansController : Controller
         return RedirectToAction(nameof(Details), new { id });
     }
 
-    [Authorize(Roles = AppRoles.Admin + "," + AppRoles.AdministradorOphir)]
+    [Authorize(Policy = AppPolicies.LoansManage)]
     [HttpPost("{id:guid}/ReturnForAdjustment")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> ReturnForAdjustment(Guid id, string? notes, string? internalNotes, bool notifyRequester, CancellationToken ct)
@@ -327,7 +332,7 @@ public sealed class LoansController : Controller
         return RedirectToAction(nameof(Details), new { id });
     }
 
-    [Authorize(Roles = AppRoles.Admin + "," + AppRoles.AdministradorOphir)]
+    [Authorize(Policy = AppPolicies.LoansManage)]
     [HttpPost("{id:guid}/Cancel")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Cancel(Guid id, string? notes, string? internalNotes, bool notifyRequester, CancellationToken ct)
@@ -339,15 +344,16 @@ public sealed class LoansController : Controller
         return RedirectToAction(nameof(Details), new { id });
     }
 
-    private bool CanManageLoans() => User.IsInRole(AppRoles.Admin) || User.IsInRole(AppRoles.AdministradorOphir);
+    private bool CanManageLoans() => RolePolicyHelper.IsFullAdmin(User) || User.IsInRole(AppRoles.AdministradorOphir);
 
     private async Task<LoanVisibilityScope> BuildLoanScopeAsync(CancellationToken ct)
     {
         var scope = new LoanVisibilityScope
         {
-            IsAdmin = User.IsInRole(AppRoles.Admin),
+            IsAdmin = RolePolicyHelper.IsFullAdmin(User),
             IsAdministradorOphir = User.IsInRole(AppRoles.AdministradorOphir),
-            IsArquivistaOphir = User.IsInRole(AppRoles.ArquivistaOphir)
+            IsArquivistaOphir = User.IsInRole(AppRoles.ArquivistaOphir),
+            UserId = _user.UserId
         };
 
         await using var conn = await _db.OpenAsync(ct);

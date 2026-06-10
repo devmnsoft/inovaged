@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize]
+[Authorize(Policy = AppPolicies.ProtocolManage)]
 [Route("Protocolo")]
 public sealed class ProtocoloEdicaoController : GedControllerBase
 {
@@ -101,7 +101,7 @@ values (gen_random_uuid(), @TenantId, @Id, @UserId, @UserName, 'EDICAO', @Status
 
     private async Task<bool> PodeEditarAsync(IDbConnection db, Guid protocoloId)
     {
-        if (User.IsInRole(AppRoles.Admin) || User.IsInRole(AppRoles.Gestor)) return true;
+        if (RolePolicyHelper.IsFullAdmin(User) || User.IsInRole(AppRoles.Gestor)) return true;
         if (UserId == null) return false;
 
         return await db.ExecuteScalarAsync<bool>(@"

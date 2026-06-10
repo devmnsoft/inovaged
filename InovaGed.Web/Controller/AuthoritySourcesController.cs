@@ -2,10 +2,13 @@
 using System.Text;
 using Dapper;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using InovaGed.Application.Common.Database;
+using InovaGed.Web.Security;
 
 namespace InovaGed.Web.Controllers;
 
+[Authorize(Policy = AppPolicies.SystemAdmin)]
 public class AuthoritySourcesController : GedControllerBase
 {
     public AuthoritySourcesController(IDbConnectionFactory dbFactory) : base(dbFactory) { }

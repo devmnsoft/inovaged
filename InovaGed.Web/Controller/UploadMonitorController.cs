@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize(Roles = AppRoles.Admin + ",ADMINISTRATOR")]
+[Authorize(Policy = AppPolicies.FullAdminOnly)]
 [Route("Ged/UploadMonitor")]
 public sealed class UploadMonitorController : Controller
 {

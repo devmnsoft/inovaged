@@ -3,7 +3,7 @@
 @model IReadOnlyList<SolicitacaoRowDto>
 @{
     ViewData["Title"] = "Solicitações";
-    var isAdmin = User.IsInRole(AppRoles.Admin);
+    var isAdmin = RolePolicyHelper.IsFullAdmin(User);
     var pendentes = (int?)ViewBag.PendentesCount ?? 0;
 }
 <div class="d-flex justify-content-between align-items-center mb-3">

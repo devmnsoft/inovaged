@@ -72,7 +72,7 @@ public sealed class OperationsController : Controller
     }
 
     private bool CanAccessOperations()
-        => User.IsInRole(AppRoles.Admin) || User.IsInRole(AppRoles.AdministradorOphir) || User.IsInRole(AppRoles.ArquivistaOphir);
+        => RolePolicyHelper.IsFullAdmin(User) || User.IsInRole(AppRoles.AdministradorOphir) || User.IsInRole(AppRoles.ArquivistaOphir);
 
     private Task AuditAsync(string action, string summary, object data, CancellationToken ct)
         => _audit.WriteAsync(

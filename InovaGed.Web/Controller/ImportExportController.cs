@@ -17,7 +17,7 @@ using Microsoft.Extensions.Logging;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize(Roles = AppRoles.Admin)]
+[Authorize(Policy = AppPolicies.FullAdminOnly)]
 [Route("ImportExport")]
 public sealed class ImportExportController : Controller
 {
