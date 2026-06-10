@@ -228,6 +228,12 @@ create table if not exists ged.document_partial_part (
 
     private static void AddColumnFixes(List<SchemaFixDto> fixes)
     {
+        AddColumn(fixes, "ged.document", "reg_status", "char(1) not null default 'A'", "GED soft delete");
+        AddColumn(fixes, "ged.document", "deleted_at", "timestamptz null", "GED soft delete");
+        AddColumn(fixes, "ged.document", "deleted_by", "uuid null", "GED soft delete");
+        AddColumn(fixes, "ged.document", "deleted_reason", "text null", "GED soft delete");
+        AddColumn(fixes, "ged.document", "updated_at", "timestamptz null", "GED soft delete");
+        AddColumn(fixes, "ged.document", "updated_by", "uuid null", "GED soft delete");
         AddColumn(fixes, "ged.document_version", "partial_group_id", "uuid null", "GED partial documents");
         AddColumn(fixes, "ged.document_version", "partial_part_number", "int null", "GED partial documents");
         AddColumn(fixes, "ged.document_version", "partial_total_parts", "int null", "GED partial documents");
@@ -248,6 +254,32 @@ create table if not exists ged.document_partial_part (
 
     private static void AddIndexFixes(List<SchemaFixDto> fixes)
     {
+        fixes.Add(Index("GED_INDEX_DOCUMENT_TENANT_REG_STATUS", "ged.ix_document_tenant_reg_status", "GED soft delete", "Cria índice de filtro por tenant/status lógico.", """
+do $$
+begin
+    if exists (select 1 from information_schema.columns where table_schema='ged' and table_name='document' and column_name='reg_status') then
+        execute 'create index if not exists ix_document_tenant_reg_status on ged.document(tenant_id, reg_status)';
+    end if;
+end $$;
+"""));
+        fixes.Add(Index("GED_INDEX_DOCUMENT_TENANT_FOLDER_REG_STATUS", "ged.ix_document_tenant_folder_reg_status", "GED soft delete", "Cria índice de navegação por tenant/pasta/status lógico.", """
+do $$
+begin
+    if exists (select 1 from information_schema.columns where table_schema='ged' and table_name='document' and column_name='tenant_id')
+       and exists (select 1 from information_schema.columns where table_schema='ged' and table_name='document' and column_name='folder_id')
+       and exists (select 1 from information_schema.columns where table_schema='ged' and table_name='document' and column_name='reg_status') then
+        execute 'create index if not exists ix_document_tenant_folder_reg_status on ged.document(tenant_id, folder_id, reg_status)';
+    end if;
+end $$;
+"""));
+        fixes.Add(Index("GED_INDEX_DOCUMENT_DELETED_AT", "ged.ix_document_deleted_at", "GED soft delete", "Cria índice parcial para auditoria/expurgo futuro de excluídos.", """
+do $$
+begin
+    if exists (select 1 from information_schema.columns where table_schema='ged' and table_name='document' and column_name='deleted_at') then
+        execute 'create index if not exists ix_document_deleted_at on ged.document(deleted_at) where deleted_at is not null';
+    end if;
+end $$;
+"""));
         fixes.Add(Index("GED_INDEX_DOCUMENT_TENANT_FOLDER_STATUS", "ged.ix_document_tenant_folder_status", "Performance", "Cria índice de navegação por tenant/pasta/status quando as colunas existem.", """
 do $$
 begin

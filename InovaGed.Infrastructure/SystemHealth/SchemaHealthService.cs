@@ -28,6 +28,8 @@ public sealed class SchemaHealthService : ISchemaHealthService
     [
         ("document", "id", "GED base"), ("document", "tenant_id", "GED base"), ("document", "folder_id", "GED folders"),
         ("document", "current_version_id", "GED versions"), ("document", "created_at", "GED base"),
+        ("document", "reg_status", "GED soft delete"), ("document", "deleted_at", "GED soft delete"),
+        ("document", "deleted_by", "GED soft delete"), ("document", "deleted_reason", "GED soft delete"),
         ("document_version", "uploaded_at_utc", "GED versions"), ("document_version", "is_partial_document", "GED partial documents"),
         ("document_version", "partial_group_id", "GED partial documents"), ("document_version", "partial_part_number", "GED partial documents"),
         ("document_version", "partial_total_parts", "GED partial documents"), ("document_version", "partial_status", "GED partial documents"),
@@ -45,6 +47,9 @@ public sealed class SchemaHealthService : ISchemaHealthService
 
     private static readonly (string Name, string[] Alternatives, string Message)[] RecommendedIndexes =
     [
+        ("ix_document_tenant_reg_status", [], "Índice de exclusão lógica por tenant/status."),
+        ("ix_document_tenant_folder_reg_status", [], "Índice de navegação por tenant/pasta/status lógico."),
+        ("ix_document_deleted_at", [], "Índice parcial para auditoria/expurgo futuro de documentos excluídos."),
         ("ix_document_tenant_folder_status", ["ix_document_tenant_folder_reg_status"], "Índice de navegação por tenant/pasta/status."),
         ("ix_document_current_version", ["ix_document_version_document_current"], "Índice de resolução da versão atual."),
         ("ix_document_version_partial_group_id", [], "Índice para documentos fracionados por grupo."),
