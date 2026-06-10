@@ -68,6 +68,8 @@ using InovaGed.Infrastructure.Ged.Reports;
 using InovaGed.Infrastructure.Ged.Search;
 using InovaGed.Infrastructure.Instruments;
 using InovaGed.Infrastructure.Ocr;
+using InovaGed.Application.Operations;
+using InovaGed.Infrastructure.Operations;
 using InovaGed.Infrastructure.Pacs;
 using InovaGed.Infrastructure.Parameters;
 using InovaGed.Infrastructure.Preview;
@@ -149,6 +151,7 @@ builder.Services.AddScoped<IGedDashboardService, GedDashboardService>();
 builder.Services.AddScoped<IHospitalOcrAnalyticsService, HospitalOcrAnalyticsService>();
 builder.Services.AddScoped<IHospitalIntelligenceService, HospitalIntelligenceService>();
 builder.Services.AddScoped<IHospitalTrendsService, HospitalTrendsService>();
+builder.Services.AddScoped<IOperationsDashboardService, OperationsDashboardService>();
 
 // =======================================================
 // Database (PostgreSQL)
@@ -442,6 +445,12 @@ builder.Services.AddAuthorization(options =>
             AppRoles.Arquivista,
             AppRoles.Gestor,
             AppRoles.Operador));
+
+    options.AddPolicy(AppPolicies.Operations,
+        p => p.RequireRole(
+            AppRoles.Admin,
+            AppRoles.AdministradorOphir,
+            AppRoles.ArquivistaOphir));
 
     // =======================================================
     // POLICIES QUE JÁ EXISTEM NO PROJETO

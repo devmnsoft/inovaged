@@ -1,0 +1,162 @@
+@model InovaGed.Application.Operations.OperationsDashboardVm
+@{
+    ViewData["Title"] = "Central Operacional";
+    string SeverityBadge(string severity) => severity switch { "critical" => "danger", "high" => "warning", "medium" => "info", _ => "secondary" };
+}
+
+<style>
+    .operations-hero{background:linear-gradient(135deg,#102a43,#1d4ed8);color:#fff;border-radius:1.25rem;padding:1.5rem;box-shadow:0 1rem 2rem rgba(15,23,42,.16)}
+    .ops-card{border:0;border-radius:1rem;box-shadow:0 .5rem 1.25rem rgba(15,23,42,.08);height:100%}
+    .ops-card .count{font-size:2rem;font-weight:800;line-height:1}.ops-action-list .list-group-item{border:0;border-bottom:1px solid #eef2f7}.ops-action-list .list-group-item:last-child{border-bottom:0}
+    .ops-tab-card{border:0;border-radius:1rem;box-shadow:0 .5rem 1.25rem rgba(15,23,42,.08)}.ops-empty{padding:2rem;text-align:center;color:#64748b}.ops-filter{background:#fff;border-radius:1rem;box-shadow:0 .5rem 1.25rem rgba(15,23,42,.06)}
+</style>
+
+<div class="container-fluid py-3 operations-page">
+    <div class="operations-hero mb-4">
+        <div class="d-flex flex-wrap justify-content-between gap-3 align-items-center">
+            <div>
+                <div class="text-white-50 small text-uppercase fw-semibold">InovaGED</div>
+                <h1 class="h3 mb-1">Central Operacional</h1>
+                <p class="mb-0 text-white-50">Painel diário para pendências de GED, OCR, solicitações, empréstimos, protocolos e alertas.</p>
+            </div>
+            <div class="text-end">
+                <div class="badge bg-light text-primary fs-6 mb-2">@Model.ScopeLabel</div>
+                <div class="small text-white-50">Carregamento inicial: resumo + 10 pendências críticas. Abas sob demanda.</div>
+            </div>
+        </div>
+    </div>
+
+    <form id="operationsFilters" class="ops-filter p-3 mb-4">
+        <div class="row g-2 align-items-end">
+            <div class="col-md-2"><label class="form-label small">Período inicial</label><input type="date" name="from" class="form-control" /></div>
+            <div class="col-md-2"><label class="form-label small">Período final</label><input type="date" name="to" class="form-control" /></div>
+            @if (Model.IsGlobalScope)
+            {
+                <div class="col-md-2"><label class="form-label small">Setor</label><input name="sector" class="form-control" placeholder="Setor" /></div>
+            }
+            <div class="col-md-2"><label class="form-label small">Tipo de pendência</label><select name="pendingType" class="form-select"><option value="">Todas</option><option value="unclassified">Sem classificação</option><option value="withoutOcr">Sem OCR</option><option value="ocrError">OCR com erro</option><option value="incomplete">Incompletos</option><option value="readyToConsolidate">Prontos para consolidar</option></select></div>
+            <div class="col-md-2"><label class="form-label small">Prioridade</label><select name="priority" class="form-select"><option value="">Todas</option><option>Baixa</option><option>Média</option><option>Alta</option><option>Crítica</option></select></div>
+            <div class="col-md-2"><label class="form-label small">Status</label><input name="status" class="form-control" placeholder="Status" /></div>
+            <div class="col-md-3 d-flex gap-3 pt-2">
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="onlyMine" value="true" id="onlyMine"><label class="form-check-label" for="onlyMine">Apenas meus itens</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="onlyOverdue" value="true" id="onlyOverdue"><label class="form-check-label" for="onlyOverdue">Vencidos</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="onlyCritical" value="true" id="onlyCritical"><label class="form-check-label" for="onlyCritical">Críticos</label></div>
+            </div>
+            <div class="col-md-2 ms-auto"><button class="btn btn-primary w-100" type="submit"><i class="bi bi-funnel"></i> Aplicar filtros</button></div>
+        </div>
+    </form>
+
+    <section class="mb-4">
+        <div class="d-flex align-items-center justify-content-between mb-2"><h2 class="h5 mb-0">O que preciso fazer agora?</h2><span class="text-muted small">Ordenado por criticidade</span></div>
+        <div class="card ops-card ops-action-list">
+            <div class="list-group list-group-flush">
+                @if (Model.NextActions.Any())
+                {
+                    foreach (var action in Model.NextActions)
+                    {
+                        <div class="list-group-item d-flex flex-wrap justify-content-between align-items-center gap-2">
+                            <div><span class="badge bg-@SeverityBadge(action.Severity) me-2">@action.Severity</span>@action.Message</div>
+                            <a href="@action.Url" class="btn btn-sm btn-outline-primary">@action.ButtonText</a>
+                        </div>
+                    }
+                }
+                else
+                {
+                    <div class="ops-empty">Nenhuma pendência encontrada. Tudo em dia para os filtros selecionados.</div>
+                }
+            </div>
+        </div>
+    </section>
+
+    <div class="row g-3 mb-4" id="summaryCards">
+        @foreach (var card in Model.Summary)
+        {
+            <div class="col-12 col-sm-6 col-xl-3">
+                <div class="card ops-card border-top border-4 border-@card.CssClass">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div><div class="count text-@card.CssClass">@card.Count</div><div class="fw-semibold">@card.Title</div></div>
+                            <span class="badge bg-@card.CssClass">@card.Severity</span>
+                        </div>
+                        <p class="text-muted small my-2">@card.Description</p>
+                        <a href="@card.Url" class="btn btn-sm btn-outline-@card.CssClass">Ver itens</a>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+
+    <div class="card ops-tab-card">
+        <div class="card-header bg-white border-0 pt-3">
+            <ul class="nav nav-tabs card-header-tabs" id="operationsTabs" role="tablist">
+                <li class="nav-item"><button class="nav-link active" data-endpoint="GedQueue" data-pending="unclassified" data-bs-toggle="tab" data-bs-target="#tabContent" type="button">GED</button></li>
+                <li class="nav-item"><button class="nav-link" data-endpoint="GedQueue" data-pending="withoutOcr" data-bs-toggle="tab" data-bs-target="#tabContent" type="button">OCR</button></li>
+                <li class="nav-item"><button class="nav-link" data-endpoint="GedQueue" data-pending="incomplete" data-bs-toggle="tab" data-bs-target="#tabContent" type="button">Documentos incompletos</button></li>
+                <li class="nav-item"><button class="nav-link" data-endpoint="LoanQueue" data-bs-toggle="tab" data-bs-target="#tabContent" type="button">Solicitações</button></li>
+                <li class="nav-item"><button class="nav-link" data-endpoint="ProtocolQueue" data-bs-toggle="tab" data-bs-target="#tabContent" type="button">Protocolo</button></li>
+                <li class="nav-item"><button class="nav-link" data-endpoint="Alerts" data-bs-toggle="tab" data-bs-target="#tabContent" type="button">Alertas</button></li>
+            </ul>
+        </div>
+        <div class="card-body tab-content"><div class="tab-pane fade show active" id="tabContent"><div id="queueContent" class="text-center text-muted py-4">Carregando fila...</div></div></div>
+    </div>
+</div>
+
+<div class="modal fade" id="operationActionModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog"><div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title">Registrar justificativa/devolutiva</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button></div>
+        <div class="modal-body"><textarea class="form-control" rows="4" placeholder="Informe justificativa, devolutiva ou observação da ação operacional."></textarea><div class="form-text">A ação detalhada será concluída na tela de origem do item.</div></div>
+        <div class="modal-footer"><button class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button><a id="modalActionLink" class="btn btn-primary" href="#">Continuar</a></div>
+    </div></div>
+</div>
+
+@section Scripts {
+<script>
+(function(){
+    const content = document.getElementById('queueContent');
+    const form = document.getElementById('operationsFilters');
+    const modalEl = document.getElementById('operationActionModal');
+    const actionModal = modalEl && window.bootstrap ? new bootstrap.Modal(modalEl) : null;
+    const actionLink = document.getElementById('modalActionLink');
+
+    function params(extra){
+        const data = new FormData(form);
+        const qs = new URLSearchParams();
+        for (const [k,v] of data.entries()) if (v) qs.set(k, v);
+        Object.entries(extra || {}).forEach(([k,v]) => { if (v) qs.set(k, v); });
+        qs.set('pageSize','10');
+        return qs.toString();
+    }
+    function activeTab(){ return document.querySelector('#operationsTabs .nav-link.active'); }
+    async function loadQueue(){
+        const tab = activeTab(); if(!tab) return;
+        content.innerHTML = '<div class="text-center text-muted py-4"><span class="spinner-border spinner-border-sm me-2"></span>Carregando...</div>';
+        const endpoint = tab.dataset.endpoint;
+        const pending = tab.dataset.pending;
+        const res = await fetch(`/Operations/${endpoint}?${params({ pendingType: pending })}`, { headers: { 'X-Requested-With':'XMLHttpRequest' }});
+        if(!res.ok){ content.innerHTML = '<div class="alert alert-danger">Não foi possível carregar a fila.</div>'; return; }
+        render(await res.json(), endpoint);
+    }
+    function render(page, endpoint){
+        const items = page.items || [];
+        if(items.length === 0){ content.innerHTML = `<div class="ops-empty">${page.emptyMessage || 'Nenhuma pendência encontrada. Tudo em dia para os filtros selecionados.'}</div>`; return; }
+        const isLoan = endpoint === 'LoanQueue', isProtocol = endpoint === 'ProtocolQueue', isAlert = endpoint === 'Alerts';
+        const head = isAlert ? ['Nível','Mensagem','Data/Hora','Responsável','Ação'] : isLoan ? ['Protocolo','Solicitante','Setor','Status','Vencimento','Itens','Ação'] : isProtocol ? ['Número','Solicitante','Setor','Tipo','Status','Responsável','Última atualização','Ação'] : ['Documento','Pasta','Upload em','OCR/Partes','Ação'];
+        const rows = items.map(x => `<tr>${cells(x,isLoan,isProtocol,isAlert)}</tr>`).join('');
+        content.innerHTML = `<div class="table-responsive"><table class="table align-middle"><thead><tr>${head.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div><div class="text-muted small">Total: ${page.total}</div>`;
+        content.querySelectorAll('[data-modal-action]').forEach(btn => btn.addEventListener('click', e => { e.preventDefault(); actionLink.href = btn.href; actionModal ? actionModal.show() : (location.href = btn.href); }));
+    }
+    function fmt(d){ return d ? new Date(d).toLocaleString('pt-BR') : '-'; }
+    function esc(v){ return (v ?? '-').toString().replace(/[&<>"]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m])); }
+    function btn(x, modal){ return `<a ${modal ? 'data-modal-action' : ''} class="btn btn-sm btn-outline-primary" href="${esc(x.actionUrl || '#')}">${esc(x.actionLabel || 'Ver detalhes')}</a>`; }
+    function cells(x,isLoan,isProtocol,isAlert){
+        if(isAlert) return `<td><span class="badge bg-danger">${esc(x.severity || 'Alto')}</span></td><td>${esc(x.title)}<div class="small text-muted">${esc(x.protocol || x.error || '')}</div></td><td>${fmt(x.uploadedAt || x.updatedAt)}</td><td>${esc(x.requester)}</td><td>${btn(x,false)}</td>`;
+        if(isLoan) return `<td>${esc(x.protocol)}</td><td>${esc(x.requester)}</td><td>${esc(x.sector)}</td><td>${esc(x.status)}</td><td>${fmt(x.dueAt)}</td><td>${esc(x.itemsCount)}</td><td>${btn(x,true)}</td>`;
+        if(isProtocol) return `<td>${esc(x.protocol)}</td><td>${esc(x.requester)}</td><td>${esc(x.sector)}</td><td>${esc(x.documentType)}</td><td>${esc(x.status)}</td><td>${esc(x.requester)}</td><td>${fmt(x.updatedAt)}</td><td>${btn(x,true)}</td>`;
+        return `<td><strong>${esc(x.title)}</strong><div class="small text-muted">${esc(x.code)}</div></td><td>${esc(x.folder)}</td><td>${fmt(x.uploadedAt)}</td><td>${esc(x.ocr || x.parts || x.error)}</td><td>${btn(x,false)}</td>`;
+    }
+    document.querySelectorAll('#operationsTabs .nav-link').forEach(t => t.addEventListener('shown.bs.tab', loadQueue));
+    form.addEventListener('submit', e => { e.preventDefault(); loadQueue(); });
+    loadQueue();
+})();
+</script>
+}

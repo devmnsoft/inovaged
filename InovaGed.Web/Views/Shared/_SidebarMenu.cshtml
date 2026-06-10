@@ -110,6 +110,15 @@
 	var dispTotalBadge = dispElimBadge + dispTransBadge + dispReviewBadge;
 }
 
+@if (!CanDashboard() && (IsAdmin() || IsAdministradorOphir() || IsArquivistaOphir()))
+{
+	<div class="sidebar-section-title">Operação</div>
+	<a asp-controller="Operations" asp-action="Index" class="@ActivePathStarts("/Operations")">
+		<i class="bi bi-command"></i>
+		<span>Central Operacional</span>
+	</a>
+}
+
 @if (CanDashboard())
 {
 	<div class="sidebar-section-title">Visão Geral</div>
@@ -118,6 +127,14 @@
 		<i class="bi bi-speedometer2"></i>
 		<span>Dashboard</span>
 	</a>
+
+	@if (IsAdmin() || IsAdministradorOphir() || IsArquivistaOphir())
+	{
+		<a asp-controller="Operations" asp-action="Index" class="@ActivePathStarts("/Operations")">
+			<i class="bi bi-command"></i>
+			<span>Central Operacional</span>
+		</a>
+	}
 
 	@if (User.IsInRole(AppRoles.Admin))
 	{
