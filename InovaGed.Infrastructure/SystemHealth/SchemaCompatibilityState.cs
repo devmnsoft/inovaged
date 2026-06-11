@@ -25,8 +25,11 @@ public sealed class SchemaCompatibilityState : ISchemaCompatibilityState
             ["ged.upload_batch", "ged.upload_batch_item", "ged.upload_session"],
             ["ged.upload_batch.tenant_id", "ged.upload_batch.status", "ged.upload_batch_item.batch_id", "ged.upload_batch_item.status", "ged.upload_session.tenant_id"]),
         ["LoanOverdue"] = new(
-            ["ged.loan_request", "ged.loan_request_item"],
-            ["ged.loan_request.id", "ged.loan_request.status", "ged.loan_request_item.loan_request_id", "ged.loan_request_item.description"]),
+            ["ged.loan_request", "ged.loan_request_item", "ged.loan_request_history"],
+            ["ged.loan_request.id", "ged.loan_request.status", "ged.loan_request.updated_at", "ged.loan_request.updated_by", "ged.loan_request_item.loan_request_id", "ged.loan_request_item.description", "ged.loan_request_history.loan_request_id", "ged.loan_request_history.action", "ged.loan_request_history.created_at"]),
+        ["LoansHistory"] = new(
+            ["ged.loan_request_history"],
+            ["ged.loan_request_history.tenant_id", "ged.loan_request_history.loan_request_id", "ged.loan_request_history.action", "ged.loan_request_history.old_status", "ged.loan_request_history.new_status", "ged.loan_request_history.user_id", "ged.loan_request_history.user_name", "ged.loan_request_history.sector_id", "ged.loan_request_history.sector_name", "ged.loan_request_history.reason", "ged.loan_request_history.internal_notes", "ged.loan_request_history.metadata_json", "ged.loan_request_history.correlation_id", "ged.loan_request_history.created_at", "ged.loan_request_history.reg_status"]),
         ["Retention"] = new(
             ["ged.retention_rule", "ged.retention_event"],
             []),

@@ -25,6 +25,7 @@
     var canRequestLoans = AppMenuPolicy.CanSeeLoansRequest(User);
     var canCancelOwn = !canManageLoans && canRequestLoans && new[] { "REQUESTED", "RETURNED_FOR_ADJUSTMENT" }.Contains((h.Status ?? string.Empty).ToUpperInvariant());
     var canRespondAdjustment = !canManageLoans && canRequestLoans && string.Equals(h.Status, "RETURNED_FOR_ADJUSTMENT", StringComparison.OrdinalIgnoreCase);
+    var canOpenSchemaHealth = AppMenuPolicy.IsFullAdmin(User);
 }
 
 <div class="d-flex justify-content-between align-items-start mb-3">
@@ -38,6 +39,16 @@
 
 @if (TempData["Ok"] is not null) { <div class="alert alert-success">@TempData["Ok"]</div> }
 @if (TempData["Err"] is not null) { <div class="alert alert-danger">@TempData["Err"]</div> }
+@if (Model.HistorySchemaMissing)
+{
+    <div class="alert alert-warning d-flex justify-content-between align-items-center gap-3">
+        <span>Histórico de empréstimos ainda não configurado. Execute as migrations.</span>
+        @if (canOpenSchemaHealth)
+        {
+            <a class="btn btn-sm btn-outline-dark" href="/SystemHealth/Schema">Abrir Schema Health</a>
+        }
+    </div>
+}
 
 <div class="row g-3 mb-3">
     <div class="col-md-3"><div class="card card-body h-100"><div class="small text-muted">Solicitado em</div><div class="fw-semibold">@h.RequestedAt.ToString("dd/MM/yyyy HH:mm")</div></div></div>
@@ -111,7 +122,8 @@
                         @if (!string.IsNullOrWhiteSpace(ev.CorrelationId)) { <div class="text-muted small font-monospace">@ev.CorrelationId</div> }
                     </div>
                 }
-                @if (Model.History.Count == 0) { <div class="list-group-item text-muted">Sem eventos.</div> }
+                @if (Model.HistorySchemaMissing) { <div class="list-group-item text-warning">Histórico de empréstimos ainda não configurado.</div> }
+                else if (Model.History.Count == 0) { <div class="list-group-item text-muted">Nenhuma movimentação registrada ainda.</div> }
             </div>
         </div>
     </div>

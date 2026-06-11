@@ -64,6 +64,7 @@ public sealed class LoanDetailsVM
     public LoanRowDto Header { get; set; } = default!;
     public List<LoanItemDto> Items { get; set; } = new();
     public List<LoanEventDto> History { get; set; } = new();
+    public bool HistorySchemaMissing { get; set; }
 }
 
 public sealed class LoanEventDto

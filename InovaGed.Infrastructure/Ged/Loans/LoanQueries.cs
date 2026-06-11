@@ -175,7 +175,17 @@ order by coalesce(i.description, d.title, i.reference_code, 'Documento solicitad
                 new CommandDefinition(itemsSql, new { tenant_id = tenantId, loan_id = loanId }, cancellationToken: ct)
             )).AsList();
 
-            const string histSql = """
+            var historySchemaMissing = string.IsNullOrWhiteSpace(await conn.ExecuteScalarAsync<string?>(
+                new CommandDefinition("select to_regclass('ged.loan_request_history')::text", cancellationToken: ct)));
+
+            List<LoanEventDto> history = new();
+            if (historySchemaMissing)
+            {
+                _logger.LogWarning("Histórico de empréstimos ainda não configurado. Tenant={Tenant} Loan={Loan}", tenantId, loanId);
+            }
+            else
+            {
+                const string histSql = """
 select
   (h.created_at)::timestamp as "EventTime",
   h.action as "EventType",
@@ -194,15 +204,17 @@ where h.tenant_id = @tenant_id
 order by h.created_at desc;
 """;
 
-            var history = (await conn.QueryAsync<LoanEventDto>(
-                new CommandDefinition(histSql, new { tenant_id = tenantId, loan_id = loanId }, cancellationToken: ct)
-            )).AsList();
+                history = (await conn.QueryAsync<LoanEventDto>(
+                    new CommandDefinition(histSql, new { tenant_id = tenantId, loan_id = loanId }, cancellationToken: ct)
+                )).AsList();
+            }
 
             return new LoanDetailsVM
             {
                 Header = header,
                 Items = items,
-                History = history
+                History = history,
+                HistorySchemaMissing = historySchemaMissing
             };
         }
         catch (Exception ex)

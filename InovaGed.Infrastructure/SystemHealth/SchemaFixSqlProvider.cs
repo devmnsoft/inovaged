@@ -122,7 +122,7 @@ create table if not exists ged.app_audit_log (
     tenant_id uuid null,
     user_id uuid null,
     user_name text null,
-    action text not null,
+    action text not null default 'INFO',
     event_type text not null default 'INFO',
     source text null,
     entity_name text null,
@@ -285,7 +285,7 @@ create table if not exists ged.loan_request_history (
     loan_request_id uuid not null,
     old_status text null,
     new_status text null,
-    action text not null,
+    action text not null default 'INFO',
     user_id uuid null,
     user_name text null,
     sector_id uuid null,
@@ -402,13 +402,17 @@ create table if not exists ged.document_quality_result (
         AddColumn(fixes, "ged.loan_request", "sector_id", "uuid null", "Loans");
         AddColumn(fixes, "ged.loan_request_history", "tenant_id", "uuid null", "Loans History");
         AddColumn(fixes, "ged.loan_request_history", "loan_request_id", "uuid null", "Loans History");
-        AddColumn(fixes, "ged.loan_request_history", "action", "text null", "Loans History");
+        AddColumn(fixes, "ged.loan_request_history", "action", "text not null default 'INFO'", "Loans History");
         AddColumn(fixes, "ged.loan_request_history", "old_status", "text null", "Loans History");
         AddColumn(fixes, "ged.loan_request_history", "new_status", "text null", "Loans History");
         AddColumn(fixes, "ged.loan_request_history", "user_id", "uuid null", "Loans History");
         AddColumn(fixes, "ged.loan_request_history", "user_name", "text null", "Loans History");
+        AddColumn(fixes, "ged.loan_request_history", "sector_id", "uuid null", "Loans History");
+        AddColumn(fixes, "ged.loan_request_history", "sector_name", "text null", "Loans History");
         AddColumn(fixes, "ged.loan_request_history", "reason", "text null", "Loans History");
         AddColumn(fixes, "ged.loan_request_history", "internal_notes", "text null", "Loans History");
+        AddColumn(fixes, "ged.loan_request_history", "metadata_json", "jsonb not null default '{}'::jsonb", "Loans History");
+        AddColumn(fixes, "ged.loan_request_history", "correlation_id", "text null", "Loans History");
         AddColumn(fixes, "ged.loan_request_history", "created_at", "timestamptz not null default now()", "Loans History");
         AddColumn(fixes, "ged.loan_request_history", "reg_status", "char(1) not null default 'A'", "Loans History");
         AddColumn(fixes, "ged.document_quality_run", "tenant_id", "uuid null", "Qualidade Documental");
@@ -518,6 +522,9 @@ end $$;
         fixes.Add(Index("GED_INDEX_LOAN_REQUEST_ITEM_DOCUMENT", "ged.ix_loan_request_item_document", "Loans", "Cria índice dos itens por documento GED.", "create index if not exists ix_loan_request_item_document on ged.loan_request_item(document_id);"));
         fixes.Add(Index("GED_INDEX_LOAN_REQUEST_ITEM_MANUAL", "ged.ix_loan_request_item_manual", "Loans", "Cria índice dos itens manuais/físicos.", "create index if not exists ix_loan_request_item_manual on ged.loan_request_item(is_manual);"));
         fixes.Add(Index("GED_INDEX_LOAN_REQUEST_HISTORY_TENANT_LOAN_CREATED", "ged.ix_loan_request_history_tenant_loan_created", "Loans History", "Cria índice do histórico rico por solicitação/data.", "create index if not exists ix_loan_request_history_tenant_loan_created on ged.loan_request_history(tenant_id, loan_request_id, created_at desc);"));
+        fixes.Add(Index("GED_INDEX_LOAN_REQUEST_HISTORY_TENANT_ACTION", "ged.ix_loan_request_history_tenant_action", "Loans History", "Cria índice do histórico rico por ação.", "create index if not exists ix_loan_request_history_tenant_action on ged.loan_request_history(tenant_id, action);"));
+        fixes.Add(Index("GED_INDEX_LOAN_REQUEST_HISTORY_TENANT_CREATED", "ged.ix_loan_request_history_tenant_created", "Loans History", "Cria índice do histórico rico por data.", "create index if not exists ix_loan_request_history_tenant_created on ged.loan_request_history(tenant_id, created_at desc);"));
+        fixes.Add(Index("GED_INDEX_LOAN_REQUEST_HISTORY_TENANT_USER", "ged.ix_loan_request_history_tenant_user", "Loans History", "Cria índice do histórico rico por usuário.", "create index if not exists ix_loan_request_history_tenant_user on ged.loan_request_history(tenant_id, user_id);"));
         fixes.Add(Index("GED_INDEX_APP_AUDIT_LOG_TENANT_CREATED", "ged.ix_app_audit_log_tenant_created", "Performance", "Cria índice de auditoria por tenant/data.", "create index if not exists ix_app_audit_log_tenant_created on ged.app_audit_log(tenant_id, created_at desc);"));
         fixes.Add(Index("GED_INDEX_APP_AUDIT_LOG_USER_CREATED", "ged.ix_app_audit_log_user_created", "Performance", "Cria índice de auditoria por usuário/data.", "create index if not exists ix_app_audit_log_user_created on ged.app_audit_log(user_id, created_at desc);"));
         fixes.Add(Index("GED_INDEX_APP_AUDIT_LOG_ACTION_CREATED", "ged.ix_app_audit_log_action_created", "Performance", "Cria índice de auditoria por ação/data.", "create index if not exists ix_app_audit_log_action_created on ged.app_audit_log(action, created_at desc);"));

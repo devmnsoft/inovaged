@@ -14,6 +14,7 @@ public sealed class LoanOverdueWorker : BackgroundService
     private readonly IServiceProvider _sp;
     private readonly ISchemaCompatibilityState _schemaState;
     private readonly LoanOverdueWorkerOptions _options;
+    private bool _loanHistoryWarningLogged;
 
     public LoanOverdueWorker(
         ILogger<LoanOverdueWorker> logger,
@@ -53,6 +54,18 @@ public sealed class LoanOverdueWorker : BackgroundService
                     {
                         _logger.LogWarning(
                             "LoanOverdueWorker ignorado: TenantId não configurado. Configure Workers:LoanOverdue:TenantId ou desative com Workers:LoanOverdue:Enabled=false.");
+                        await Task.Delay(interval, stoppingToken);
+                        continue;
+                    }
+
+                    if (!await _schemaState.IsCompatibleAsync("LoansHistory", stoppingToken))
+                    {
+                        if (!_loanHistoryWarningLogged)
+                        {
+                            _logger.LogWarning("LoanOverdueWorker não executado: histórico de Loans não configurado.");
+                            _loanHistoryWarningLogged = true;
+                        }
+
                         await Task.Delay(interval, stoppingToken);
                         continue;
                     }
