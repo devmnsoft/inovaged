@@ -14,6 +14,7 @@ public static class AppPolicies
 
     public const string FullAdminOnly = "FullAdminOnly";
     public const string GedAccess = "GedAccess";
+    public const string Ocr = "OCR";
     public const string HospitalDocumentsAccess = "HospitalDocumentsAccess";
     public const string LoansView = "LoansView";
     public const string LoansManage = "LoansManage";

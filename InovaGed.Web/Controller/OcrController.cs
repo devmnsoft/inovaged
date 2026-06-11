@@ -1,4 +1,6 @@
-﻿using InovaGed.Application.Identity;
+﻿using Dapper;
+using InovaGed.Application.Common.Database;
+using InovaGed.Application.Identity;
 using InovaGed.Application.Ocr;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -7,12 +9,15 @@ using InovaGed.Web.Security;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize(Policy = AppPolicies.FullAdminOnly)]
+[Authorize(Policy = AppPolicies.GedAccess)]
 [Route("Ocr")]
 public sealed class OcrController : Controller
 {
     private readonly ICurrentUser _currentUser;
     private readonly IOcrStatusQueries _ocrStatus;
+    private readonly IOcrDashboardService _dashboard;
+    private readonly IOcrJobRepository _ocrJobs;
+    private readonly IDbConnectionFactory _db;
     private readonly IOcrAutoSchedulerService _scheduler;
     private readonly IOcrAutoScheduleRepository _repository;
     private readonly IOptionsMonitor<OcrAutoScheduleOptions> _options;
@@ -21,6 +26,9 @@ public sealed class OcrController : Controller
     public OcrController(
         ICurrentUser currentUser,
         IOcrStatusQueries ocrStatus,
+        IOcrDashboardService dashboard,
+        IOcrJobRepository ocrJobs,
+        IDbConnectionFactory db,
         IOcrAutoSchedulerService scheduler,
         IOcrAutoScheduleRepository repository,
         IOptionsMonitor<OcrAutoScheduleOptions> options,
@@ -28,13 +36,44 @@ public sealed class OcrController : Controller
     {
         _currentUser = currentUser;
         _ocrStatus = ocrStatus;
+        _dashboard = dashboard;
+        _ocrJobs = ocrJobs;
+        _db = db;
         _scheduler = scheduler;
         _repository = repository;
         _options = options;
         _logger = logger;
     }
 
+    [HttpGet("")]
+    public async Task<IActionResult> Index([FromQuery] OcrDashboardFilter filter, CancellationToken ct)
+    {
+        var vm = await _dashboard.GetDashboardAsync(_currentUser.TenantId, filter ?? new OcrDashboardFilter(), ct);
+        return View("~/Views/Ocr/Index.cshtml", vm);
+    }
+
+    [HttpGet("Queue")]
+    public async Task<IActionResult> Queue(string? status, CancellationToken ct)
+    {
+        var filter = new OcrDashboardFilter { Status = status };
+        var items = await _dashboard.GetQueueAsync(_currentUser.TenantId, filter, ct);
+        if (Request.Headers.Accept.Any(x => x?.Contains("application/json", StringComparison.OrdinalIgnoreCase) == true))
+            return Json(new { success = true, items });
+
+        var vm = await _dashboard.GetDashboardAsync(_currentUser.TenantId, filter, ct);
+        return View("~/Views/Ocr/Index.cshtml", vm);
+    }
+
+    [HttpGet("/Ged/Ocr")]
+    [HttpGet("/OcrQueue")]
+    [HttpGet("/Processing/Ocr")]
+    public IActionResult LegacyOcrRoutes()
+    {
+        return RedirectToAction(nameof(Index), "Ocr");
+    }
+
     [HttpGet("AutoSchedule")]
+    [Authorize(Policy = AppPolicies.SystemAdmin)]
     public async Task<IActionResult> AutoSchedule(CancellationToken ct)
     {
         var options = _options.CurrentValue;
@@ -69,12 +108,52 @@ public sealed class OcrController : Controller
     }
 
     [HttpPost("AutoSchedule/RunNow")]
+    [Authorize(Policy = AppPolicies.SystemAdmin)]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> RunNow(CancellationToken ct)
+    public async Task<IActionResult> RunAutoScheduleNow(CancellationToken ct)
     {
         var result = await _scheduler.RunAsync(ct);
         TempData[result.Status is "SUCCESS" or "PARTIAL_FAILURE" ? "SuccessMessage" : "WarningMessage"] = result.Message ?? "Rotina de OCR automático executada.";
         return RedirectToAction(nameof(AutoSchedule));
+    }
+
+    [HttpPost("Retry/{jobId:guid}")]
+    [ValidateAntiForgeryToken]
+    public IActionResult Retry(Guid jobId, CancellationToken ct)
+    {
+        TempData["WarningMessage"] = "Reprocessamento por job legado deve ser feito pela versão do documento.";
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost("RunForDocument/{documentId:guid}")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> RunForDocument(Guid documentId, CancellationToken ct)
+    {
+        const string sql = """
+select current_version_id
+from ged.document
+where tenant_id = @tenantId
+  and id = @documentId
+  and coalesce(reg_status, 'A') = 'A'
+limit 1;
+""";
+        await using var conn = await _db.OpenAsync(ct);
+        var versionId = await conn.ExecuteScalarAsync<Guid?>(new CommandDefinition(sql, new { tenantId = _currentUser.TenantId, documentId }, cancellationToken: ct));
+        if (!versionId.HasValue)
+            return NotFound();
+
+        await _ocrJobs.EnqueueAsync(_currentUser.TenantId, versionId.Value, _currentUser.UserId, false, ct);
+        TempData["SuccessMessage"] = "OCR enfileirado para o documento.";
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost("RunForVersion/{versionId:guid}")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> RunForVersion(Guid versionId, CancellationToken ct)
+    {
+        await _ocrJobs.EnqueueAsync(_currentUser.TenantId, versionId, _currentUser.UserId, false, ct);
+        TempData["SuccessMessage"] = "OCR enfileirado para a versão.";
+        return RedirectToAction(nameof(Index));
     }
 
     [HttpGet("Status")]
