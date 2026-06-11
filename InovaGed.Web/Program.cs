@@ -287,6 +287,7 @@ builder.Services.AddScoped<IWorkflowCommands, WorkflowCommands>();
 builder.Services.AddScoped<IOcrJobRepository, OcrJobRepository>();
 builder.Services.AddScoped<IOcrAutoScheduleRepository, OcrAutoScheduleRepository>();
 builder.Services.AddScoped<IOcrAutoSchedulerService, OcrAutoSchedulerService>();
+builder.Services.AddScoped<IOcrDashboardService, OcrDashboardService>();
 builder.Services.AddHostedService<OcrAutoSchedulerWorker>();
 if (builder.Configuration.GetValue<bool>("OcrWorker:Enabled"))
 {
@@ -438,6 +439,7 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy(AppPolicies.SchemaRepair, p => RequireAny(p, fullAdmin));
 
     options.AddPolicy(AppPolicies.GedAccess, p => RequireAny(p, gedAccess));
+    options.AddPolicy(AppPolicies.Ocr, p => RequireAny(p, gedAccess));
     options.AddPolicy(AppPolicies.HospitalDocumentsAccess, p => RequireAny(p, hospitalDocumentsAccess));
     options.AddPolicy(AppPolicies.LoansView, p => RequireAny(p, loansView));
     options.AddPolicy(AppPolicies.LoansManage, p => RequireAny(p, loansManage));

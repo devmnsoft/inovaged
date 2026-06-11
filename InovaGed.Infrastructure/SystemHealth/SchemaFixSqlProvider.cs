@@ -298,6 +298,315 @@ create table if not exists ged.loan_request_history (
     reg_status char(1) not null default 'A'
 );
 """),
+
+            Table("GED_TABLE_PROTOCOL_REQUEST", "ged.protocol_request", "Protocolo", "Cria as tabelas consolidadas do módulo Protocolo.", """
+create extension if not exists pgcrypto;
+create schema if not exists ged;
+create table if not exists ged.protocol_request (
+    id uuid primary key default gen_random_uuid(),
+    tenant_id uuid not null,
+    protocol_no text not null,
+    requester_user_id uuid null,
+    requester_name text null,
+    requester_sector_id uuid null,
+    requester_sector_name text null,
+    assigned_sector_id uuid null,
+    assigned_sector_name text null,
+    assigned_user_id uuid null,
+    assigned_user_name text null,
+    title text not null,
+    description text null,
+    priority text not null default 'NORMAL',
+    status text not null default 'REQUESTED',
+    due_at timestamptz null,
+    requested_at timestamptz not null default now(),
+    updated_at timestamptz null,
+    finished_at timestamptz null,
+    reg_status char(1) not null default 'A',
+    correlation_id text null,
+    created_at timestamptz not null default now()
+);
+create table if not exists ged.protocol_request_item (
+    id uuid primary key default gen_random_uuid(),
+    tenant_id uuid not null,
+    protocol_request_id uuid not null,
+    document_id uuid null,
+    document_version_id uuid null,
+    is_manual boolean not null default false,
+    reference_code text null,
+    description text null,
+    document_type text null,
+    patient_name text null,
+    medical_record_number text null,
+    box_code text null,
+    physical_location text null,
+    notes text null,
+    created_at timestamptz not null default now(),
+    reg_status char(1) not null default 'A'
+);
+create table if not exists ged.protocol_request_attachment (
+    id uuid primary key default gen_random_uuid(),
+    tenant_id uuid not null,
+    protocol_request_id uuid not null,
+    file_name text not null,
+    content_type text null,
+    size_bytes bigint null,
+    storage_path text not null,
+    uploaded_by uuid null,
+    uploaded_by_name text null,
+    uploaded_at timestamptz not null default now(),
+    reg_status char(1) not null default 'A'
+);
+create table if not exists ged.protocol_request_history (
+    id uuid primary key default gen_random_uuid(),
+    tenant_id uuid not null,
+    protocol_request_id uuid not null,
+    old_status text null,
+    new_status text null,
+    action text not null default 'INFO',
+    user_id uuid null,
+    user_name text null,
+    sector_id uuid null,
+    sector_name text null,
+    reason text null,
+    internal_notes text null,
+    metadata_json jsonb not null default '{}'::jsonb,
+    correlation_id text null,
+    created_at timestamptz not null default now(),
+    reg_status char(1) not null default 'A'
+);
+"""),
+            Table("GED_TABLE_PROTOCOL_REQUEST_ITEM", "ged.protocol_request_item", "Protocolo", "Cria as tabelas consolidadas do módulo Protocolo.", """
+create extension if not exists pgcrypto;
+create schema if not exists ged;
+create table if not exists ged.protocol_request (
+    id uuid primary key default gen_random_uuid(),
+    tenant_id uuid not null,
+    protocol_no text not null,
+    requester_user_id uuid null,
+    requester_name text null,
+    requester_sector_id uuid null,
+    requester_sector_name text null,
+    assigned_sector_id uuid null,
+    assigned_sector_name text null,
+    assigned_user_id uuid null,
+    assigned_user_name text null,
+    title text not null,
+    description text null,
+    priority text not null default 'NORMAL',
+    status text not null default 'REQUESTED',
+    due_at timestamptz null,
+    requested_at timestamptz not null default now(),
+    updated_at timestamptz null,
+    finished_at timestamptz null,
+    reg_status char(1) not null default 'A',
+    correlation_id text null,
+    created_at timestamptz not null default now()
+);
+create table if not exists ged.protocol_request_item (
+    id uuid primary key default gen_random_uuid(),
+    tenant_id uuid not null,
+    protocol_request_id uuid not null,
+    document_id uuid null,
+    document_version_id uuid null,
+    is_manual boolean not null default false,
+    reference_code text null,
+    description text null,
+    document_type text null,
+    patient_name text null,
+    medical_record_number text null,
+    box_code text null,
+    physical_location text null,
+    notes text null,
+    created_at timestamptz not null default now(),
+    reg_status char(1) not null default 'A'
+);
+create table if not exists ged.protocol_request_attachment (
+    id uuid primary key default gen_random_uuid(),
+    tenant_id uuid not null,
+    protocol_request_id uuid not null,
+    file_name text not null,
+    content_type text null,
+    size_bytes bigint null,
+    storage_path text not null,
+    uploaded_by uuid null,
+    uploaded_by_name text null,
+    uploaded_at timestamptz not null default now(),
+    reg_status char(1) not null default 'A'
+);
+create table if not exists ged.protocol_request_history (
+    id uuid primary key default gen_random_uuid(),
+    tenant_id uuid not null,
+    protocol_request_id uuid not null,
+    old_status text null,
+    new_status text null,
+    action text not null default 'INFO',
+    user_id uuid null,
+    user_name text null,
+    sector_id uuid null,
+    sector_name text null,
+    reason text null,
+    internal_notes text null,
+    metadata_json jsonb not null default '{}'::jsonb,
+    correlation_id text null,
+    created_at timestamptz not null default now(),
+    reg_status char(1) not null default 'A'
+);
+"""),
+            Table("GED_TABLE_PROTOCOL_REQUEST_ATTACHMENT", "ged.protocol_request_attachment", "Protocolo", "Cria as tabelas consolidadas do módulo Protocolo.", """
+create extension if not exists pgcrypto;
+create schema if not exists ged;
+create table if not exists ged.protocol_request (
+    id uuid primary key default gen_random_uuid(),
+    tenant_id uuid not null,
+    protocol_no text not null,
+    requester_user_id uuid null,
+    requester_name text null,
+    requester_sector_id uuid null,
+    requester_sector_name text null,
+    assigned_sector_id uuid null,
+    assigned_sector_name text null,
+    assigned_user_id uuid null,
+    assigned_user_name text null,
+    title text not null,
+    description text null,
+    priority text not null default 'NORMAL',
+    status text not null default 'REQUESTED',
+    due_at timestamptz null,
+    requested_at timestamptz not null default now(),
+    updated_at timestamptz null,
+    finished_at timestamptz null,
+    reg_status char(1) not null default 'A',
+    correlation_id text null,
+    created_at timestamptz not null default now()
+);
+create table if not exists ged.protocol_request_item (
+    id uuid primary key default gen_random_uuid(),
+    tenant_id uuid not null,
+    protocol_request_id uuid not null,
+    document_id uuid null,
+    document_version_id uuid null,
+    is_manual boolean not null default false,
+    reference_code text null,
+    description text null,
+    document_type text null,
+    patient_name text null,
+    medical_record_number text null,
+    box_code text null,
+    physical_location text null,
+    notes text null,
+    created_at timestamptz not null default now(),
+    reg_status char(1) not null default 'A'
+);
+create table if not exists ged.protocol_request_attachment (
+    id uuid primary key default gen_random_uuid(),
+    tenant_id uuid not null,
+    protocol_request_id uuid not null,
+    file_name text not null,
+    content_type text null,
+    size_bytes bigint null,
+    storage_path text not null,
+    uploaded_by uuid null,
+    uploaded_by_name text null,
+    uploaded_at timestamptz not null default now(),
+    reg_status char(1) not null default 'A'
+);
+create table if not exists ged.protocol_request_history (
+    id uuid primary key default gen_random_uuid(),
+    tenant_id uuid not null,
+    protocol_request_id uuid not null,
+    old_status text null,
+    new_status text null,
+    action text not null default 'INFO',
+    user_id uuid null,
+    user_name text null,
+    sector_id uuid null,
+    sector_name text null,
+    reason text null,
+    internal_notes text null,
+    metadata_json jsonb not null default '{}'::jsonb,
+    correlation_id text null,
+    created_at timestamptz not null default now(),
+    reg_status char(1) not null default 'A'
+);
+"""),
+            Table("GED_TABLE_PROTOCOL_REQUEST_HISTORY", "ged.protocol_request_history", "Protocolo", "Cria as tabelas consolidadas do módulo Protocolo.", """
+create extension if not exists pgcrypto;
+create schema if not exists ged;
+create table if not exists ged.protocol_request (
+    id uuid primary key default gen_random_uuid(),
+    tenant_id uuid not null,
+    protocol_no text not null,
+    requester_user_id uuid null,
+    requester_name text null,
+    requester_sector_id uuid null,
+    requester_sector_name text null,
+    assigned_sector_id uuid null,
+    assigned_sector_name text null,
+    assigned_user_id uuid null,
+    assigned_user_name text null,
+    title text not null,
+    description text null,
+    priority text not null default 'NORMAL',
+    status text not null default 'REQUESTED',
+    due_at timestamptz null,
+    requested_at timestamptz not null default now(),
+    updated_at timestamptz null,
+    finished_at timestamptz null,
+    reg_status char(1) not null default 'A',
+    correlation_id text null,
+    created_at timestamptz not null default now()
+);
+create table if not exists ged.protocol_request_item (
+    id uuid primary key default gen_random_uuid(),
+    tenant_id uuid not null,
+    protocol_request_id uuid not null,
+    document_id uuid null,
+    document_version_id uuid null,
+    is_manual boolean not null default false,
+    reference_code text null,
+    description text null,
+    document_type text null,
+    patient_name text null,
+    medical_record_number text null,
+    box_code text null,
+    physical_location text null,
+    notes text null,
+    created_at timestamptz not null default now(),
+    reg_status char(1) not null default 'A'
+);
+create table if not exists ged.protocol_request_attachment (
+    id uuid primary key default gen_random_uuid(),
+    tenant_id uuid not null,
+    protocol_request_id uuid not null,
+    file_name text not null,
+    content_type text null,
+    size_bytes bigint null,
+    storage_path text not null,
+    uploaded_by uuid null,
+    uploaded_by_name text null,
+    uploaded_at timestamptz not null default now(),
+    reg_status char(1) not null default 'A'
+);
+create table if not exists ged.protocol_request_history (
+    id uuid primary key default gen_random_uuid(),
+    tenant_id uuid not null,
+    protocol_request_id uuid not null,
+    old_status text null,
+    new_status text null,
+    action text not null default 'INFO',
+    user_id uuid null,
+    user_name text null,
+    sector_id uuid null,
+    sector_name text null,
+    reason text null,
+    internal_notes text null,
+    metadata_json jsonb not null default '{}'::jsonb,
+    correlation_id text null,
+    created_at timestamptz not null default now(),
+    reg_status char(1) not null default 'A'
+);
+"""),
             Table("GED_TABLE_DOCUMENT_QUALITY_RUN", "ged.document_quality_run", "Qualidade Documental", "Cria a tabela de execuções da Qualidade Documental.", """
 create extension if not exists pgcrypto;
 create schema if not exists ged;
@@ -400,6 +709,69 @@ create table if not exists ged.document_quality_result (
         AddColumn(fixes, "ged.loan_request_item", "reg_status", "char(1) not null default 'A'", "Loans");
         AddColumn(fixes, "ged.loan_request", "requester_sector", "text null", "Loans");
         AddColumn(fixes, "ged.loan_request", "sector_id", "uuid null", "Loans");
+        AddColumn(fixes, "ged.loan_request", "protocol_request_id", "uuid null", "Loans");
+        AddColumn(fixes, "ged.protocol_request", "tenant_id", "uuid null", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request", "protocol_no", "text null", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request", "requester_user_id", "uuid null", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request", "requester_name", "text null", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request", "requester_sector_id", "uuid null", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request", "requester_sector_name", "text null", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request", "assigned_sector_id", "uuid null", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request", "assigned_sector_name", "text null", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request", "assigned_user_id", "uuid null", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request", "assigned_user_name", "text null", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request", "title", "text null", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request", "description", "text null", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request", "priority", "text not null default 'NORMAL'", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request", "status", "text not null default 'REQUESTED'", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request", "due_at", "timestamptz null", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request", "requested_at", "timestamptz not null default now()", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request", "updated_at", "timestamptz null", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request", "finished_at", "timestamptz null", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request", "reg_status", "char(1) not null default 'A'", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request", "correlation_id", "text null", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request", "created_at", "timestamptz not null default now()", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request_item", "tenant_id", "uuid null", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request_item", "protocol_request_id", "uuid null", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request_item", "document_id", "uuid null", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request_item", "document_version_id", "uuid null", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request_item", "is_manual", "boolean not null default false", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request_item", "reference_code", "text null", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request_item", "description", "text null", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request_item", "document_type", "text null", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request_item", "patient_name", "text null", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request_item", "medical_record_number", "text null", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request_item", "box_code", "text null", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request_item", "physical_location", "text null", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request_item", "notes", "text null", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request_item", "created_at", "timestamptz not null default now()", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request_item", "reg_status", "char(1) not null default 'A'", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request_attachment", "tenant_id", "uuid null", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request_attachment", "protocol_request_id", "uuid null", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request_attachment", "file_name", "text null", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request_attachment", "content_type", "text null", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request_attachment", "size_bytes", "bigint null", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request_attachment", "storage_path", "text null", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request_attachment", "uploaded_by", "uuid null", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request_attachment", "uploaded_by_name", "text null", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request_attachment", "uploaded_at", "timestamptz not null default now()", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request_attachment", "reg_status", "char(1) not null default 'A'", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request_history", "tenant_id", "uuid null", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request_history", "protocol_request_id", "uuid null", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request_history", "old_status", "text null", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request_history", "new_status", "text null", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request_history", "action", "text not null default 'INFO'", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request_history", "user_id", "uuid null", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request_history", "user_name", "text null", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request_history", "sector_id", "uuid null", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request_history", "sector_name", "text null", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request_history", "reason", "text null", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request_history", "internal_notes", "text null", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request_history", "metadata_json", "jsonb not null default '{}'::jsonb", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request_history", "correlation_id", "text null", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request_history", "created_at", "timestamptz not null default now()", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request_history", "reg_status", "char(1) not null default 'A'", "Protocolo");
+
         AddColumn(fixes, "ged.loan_request_history", "tenant_id", "uuid null", "Loans History");
         AddColumn(fixes, "ged.loan_request_history", "loan_request_id", "uuid null", "Loans History");
         AddColumn(fixes, "ged.loan_request_history", "action", "text not null default 'INFO'", "Loans History");
@@ -525,6 +897,14 @@ end $$;
         fixes.Add(Index("GED_INDEX_LOAN_REQUEST_HISTORY_TENANT_ACTION", "ged.ix_loan_request_history_tenant_action", "Loans History", "Cria índice do histórico rico por ação.", "create index if not exists ix_loan_request_history_tenant_action on ged.loan_request_history(tenant_id, action);"));
         fixes.Add(Index("GED_INDEX_LOAN_REQUEST_HISTORY_TENANT_CREATED", "ged.ix_loan_request_history_tenant_created", "Loans History", "Cria índice do histórico rico por data.", "create index if not exists ix_loan_request_history_tenant_created on ged.loan_request_history(tenant_id, created_at desc);"));
         fixes.Add(Index("GED_INDEX_LOAN_REQUEST_HISTORY_TENANT_USER", "ged.ix_loan_request_history_tenant_user", "Loans History", "Cria índice do histórico rico por usuário.", "create index if not exists ix_loan_request_history_tenant_user on ged.loan_request_history(tenant_id, user_id);"));
+        fixes.Add(Index("GED_INDEX_PROTOCOL_REQUEST_TENANT_PROTOCOL_NO", "ged.ux_protocol_request_tenant_protocol_no", "Protocolo", "Cria índice único por tenant/número de protocolo.", "create unique index if not exists ux_protocol_request_tenant_protocol_no on ged.protocol_request(tenant_id, protocol_no);"));
+        fixes.Add(Index("GED_INDEX_PROTOCOL_REQUEST_TENANT_STATUS", "ged.ix_protocol_request_tenant_status", "Protocolo", "Cria índice por tenant/status.", "create index if not exists ix_protocol_request_tenant_status on ged.protocol_request(tenant_id, status);"));
+        fixes.Add(Index("GED_INDEX_PROTOCOL_REQUEST_TENANT_REQUESTED_AT", "ged.ix_protocol_request_tenant_requested_at", "Protocolo", "Cria índice por tenant/data solicitada.", "create index if not exists ix_protocol_request_tenant_requested_at on ged.protocol_request(tenant_id, requested_at desc);"));
+        fixes.Add(Index("GED_INDEX_PROTOCOL_REQUEST_ITEM_PROTOCOL", "ged.ix_protocol_request_item_protocol", "Protocolo", "Cria índice dos itens por protocolo.", "create index if not exists ix_protocol_request_item_protocol on ged.protocol_request_item(tenant_id, protocol_request_id);"));
+        fixes.Add(Index("GED_INDEX_PROTOCOL_REQUEST_ATTACHMENT_PROTOCOL", "ged.ix_protocol_request_attachment_protocol", "Protocolo", "Cria índice dos anexos por protocolo.", "create index if not exists ix_protocol_request_attachment_protocol on ged.protocol_request_attachment(tenant_id, protocol_request_id);"));
+        fixes.Add(Index("GED_INDEX_PROTOCOL_REQUEST_HISTORY_PROTOCOL_CREATED", "ged.ix_protocol_request_history_protocol_created", "Protocolo", "Cria índice do histórico por protocolo/data.", "create index if not exists ix_protocol_request_history_protocol_created on ged.protocol_request_history(tenant_id, protocol_request_id, created_at desc);"));
+        fixes.Add(Index("GED_INDEX_LOAN_REQUEST_PROTOCOL_REQUEST", "ged.ix_loan_request_protocol_request", "Loans", "Cria índice do vínculo entre empréstimo e protocolo.", "create index if not exists ix_loan_request_protocol_request on ged.loan_request(tenant_id, protocol_request_id);"));
+
         fixes.Add(Index("GED_INDEX_APP_AUDIT_LOG_TENANT_CREATED", "ged.ix_app_audit_log_tenant_created", "Performance", "Cria índice de auditoria por tenant/data.", "create index if not exists ix_app_audit_log_tenant_created on ged.app_audit_log(tenant_id, created_at desc);"));
         fixes.Add(Index("GED_INDEX_APP_AUDIT_LOG_USER_CREATED", "ged.ix_app_audit_log_user_created", "Performance", "Cria índice de auditoria por usuário/data.", "create index if not exists ix_app_audit_log_user_created on ged.app_audit_log(user_id, created_at desc);"));
         fixes.Add(Index("GED_INDEX_APP_AUDIT_LOG_ACTION_CREATED", "ged.ix_app_audit_log_action_created", "Performance", "Cria índice de auditoria por ação/data.", "create index if not exists ix_app_audit_log_action_created on ged.app_audit_log(action, created_at desc);"));

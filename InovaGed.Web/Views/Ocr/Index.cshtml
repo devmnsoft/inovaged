@@ -1,0 +1,133 @@
+@using InovaGed.Web.Security
+@model InovaGed.Application.Ocr.OcrDashboardVm
+@{
+    ViewData["Title"] = "Central de OCR";
+    var filter = Model.Filter ?? new InovaGed.Application.Ocr.OcrDashboardFilter();
+    var canManageAutoSchedule = AppMenuPolicy.IsFullAdmin(User);
+
+    string FormatBytes(long? bytes)
+    {
+        if (!bytes.HasValue || bytes.Value <= 0) return "-";
+        var units = new[] { "B", "KB", "MB", "GB" };
+        var value = (double)bytes.Value;
+        var unit = 0;
+        while (value >= 1024 && unit < units.Length - 1) { value /= 1024; unit++; }
+        return $"{value:N1} {units[unit]}";
+    }
+}
+
+<div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-4">
+    <div>
+        <h1 class="h3 mb-1">Central de OCR</h1>
+        <p class="text-muted mb-0">Acompanhe, execute e corrija o processamento OCR dos documentos.</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a class="btn btn-outline-secondary" href="/Ocr/Queue"><i class="bi bi-list-task me-1"></i>Fila OCR</a>
+        @if (canManageAutoSchedule)
+        {
+            <a class="btn btn-outline-primary" href="/Ocr/AutoSchedule"><i class="bi bi-calendar2-check me-1"></i>Agendamento OCR</a>
+            <form asp-controller="Ocr" asp-action="RunAutoScheduleNow" method="post">
+                @Html.AntiForgeryToken()
+                <button type="submit" class="btn btn-primary"><i class="bi bi-play-fill me-1"></i>Executar OCR automático agora</button>
+            </form>
+        }
+    </div>
+</div>
+
+@if (TempData["SuccessMessage"] is string successMessage)
+{
+    <div class="alert alert-success">@successMessage</div>
+}
+@if (TempData["WarningMessage"] is string warningMessage)
+{
+    <div class="alert alert-warning">@warningMessage</div>
+}
+
+<div class="row g-3 mb-4">
+    <div class="col-6 col-xl-2"><a class="text-decoration-none" href="/Ocr?OnlyWithoutOcr=true"><div class="card h-100 border-secondary"><div class="card-body"><div class="text-muted small">Sem OCR</div><div class="display-6 fw-semibold">@Model.WithoutOcrCount</div></div></div></a></div>
+    <div class="col-6 col-xl-2"><a class="text-decoration-none" href="/Ocr?Status=PENDING"><div class="card h-100 border-warning"><div class="card-body"><div class="text-muted small">Pendente</div><div class="display-6 fw-semibold">@Model.PendingCount</div></div></div></a></div>
+    <div class="col-6 col-xl-2"><a class="text-decoration-none" href="/Ocr?Status=PROCESSING"><div class="card h-100 border-info"><div class="card-body"><div class="text-muted small">Em processamento</div><div class="display-6 fw-semibold">@Model.ProcessingCount</div></div></div></a></div>
+    <div class="col-6 col-xl-2"><a class="text-decoration-none" href="/Ocr?Status=COMPLETED"><div class="card h-100 border-success"><div class="card-body"><div class="text-muted small">Concluído</div><div class="display-6 fw-semibold">@Model.CompletedCount</div></div></div></a></div>
+    <div class="col-6 col-xl-2"><a class="text-decoration-none" href="/Ocr?OnlyErrors=true"><div class="card h-100 border-danger"><div class="card-body"><div class="text-muted small">Com erro</div><div class="display-6 fw-semibold">@Model.ErrorCount</div></div></div></a></div>
+    <div class="col-6 col-xl-2"><div class="card h-100 border-primary"><div class="card-body"><div class="text-muted small">OCR automático</div><div class="h5 mb-1">@(Model.AutoScheduleEnabled ? "Ativo" : "Inativo")</div><div class="small text-muted">@Model.AutoScheduleRunAt@if (Model.NextAutoRun.HasValue){<span> • @Model.NextAutoRun.Value.ToLocalTime().ToString("dd/MM HH:mm")</span>}</div></div></div></div>
+</div>
+
+<div class="card shadow-sm mb-4">
+    <div class="card-header bg-white fw-semibold"><i class="bi bi-funnel me-1"></i>Filtros</div>
+    <div class="card-body">
+        <form method="get" class="row g-3 align-items-end">
+            <div class="col-md-2"><label class="form-label">Status OCR</label><select class="form-select" name="Status"><option value="">Todos</option>@foreach (var s in new[] { "NONE", "PENDING", "PROCESSING", "COMPLETED", "ERROR", "CANCELED" }) { <option value="@s" selected="@(string.Equals(filter.Status, s, StringComparison.OrdinalIgnoreCase))">@s</option> }</select></div>
+            <div class="col-md-2"><label class="form-label">Pasta</label><input class="form-control" name="Folder" value="@filter.Folder" placeholder="Nome da pasta" /></div>
+            <div class="col-md-2"><label class="form-label">Período inicial</label><input class="form-control" type="date" name="From" value="@(filter.From?.ToString("yyyy-MM-dd"))" /></div>
+            <div class="col-md-2"><label class="form-label">Período final</label><input class="form-control" type="date" name="To" value="@(filter.To?.ToString("yyyy-MM-dd"))" /></div>
+            <div class="col-md-2"><label class="form-label">Tipo documental</label><input class="form-control" name="DocumentType" value="@filter.DocumentType" placeholder="Tipo" /></div>
+            <div class="col-md-2 d-grid"><button class="btn btn-primary" type="submit"><i class="bi bi-search me-1"></i>Aplicar</button></div>
+            <div class="col-12 d-flex flex-wrap gap-3">
+                <label class="form-check"><input class="form-check-input" type="checkbox" name="OnlyPartialDocuments" value="true" checked="@filter.OnlyPartialDocuments" /> Apenas documentos parciais</label>
+                <label class="form-check"><input class="form-check-input" type="checkbox" name="OnlyErrors" value="true" checked="@filter.OnlyErrors" /> Apenas erros</label>
+                <label class="form-check"><input class="form-check-input" type="checkbox" name="OnlyWithoutOcr" value="true" checked="@filter.OnlyWithoutOcr" /> Apenas sem OCR</label>
+                <a class="ms-auto" href="/Ocr">Limpar filtros</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card shadow-sm">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Documento</th>
+                    <th>Arquivo</th>
+                    <th>Pasta</th>
+                    <th>Status OCR</th>
+                    <th>Última tentativa</th>
+                    <th>Usuário/upload</th>
+                    <th>Tipo</th>
+                    <th>Tamanho</th>
+                    <th class="text-end">Ações</th>
+                </tr>
+            </thead>
+            <tbody>
+            @if (Model.Items.Count == 0)
+            {
+                <tr><td colspan="9" class="text-center text-muted py-5">Nenhum documento encontrado para os filtros selecionados.</td></tr>
+            }
+            else
+            {
+                foreach (var item in Model.Items)
+                {
+                    <tr>
+                        <td><div class="fw-semibold">@item.DocumentTitle</div>@if (item.IsPartialDocument){<span class="badge bg-light text-dark border">Parte @(item.PartNumber?.ToString() ?? "-")/@(item.TotalParts?.ToString() ?? "-")</span>}</td>
+                        <td>@item.FileName</td>
+                        <td>@(item.FolderName ?? "-")</td>
+                        <td><span class="badge @item.OcrStatusCss">@item.OcrStatusText</span>@if (!string.IsNullOrWhiteSpace(item.ErrorMessage)){<button class="btn btn-link btn-sm p-0 ms-1" type="button" data-bs-toggle="collapse" data-bs-target="#err-@item.DocumentId">erro</button>}</td>
+                        <td>@((item.FinishedAt ?? item.RequestedAt)?.ToLocalTime().ToString("dd/MM/yyyy HH:mm") ?? "-")</td>
+                        <td>@(item.UploadedBy ?? "-")</td>
+                        <td>@(item.DocumentType ?? "-")</td>
+                        <td>@FormatBytes(item.SizeBytes)</td>
+                        <td class="text-end">
+                            <div class="btn-group btn-group-sm">
+                                <a class="btn btn-outline-secondary" href="@item.ActionUrl">Ver documento</a>
+                                @if (item.VersionId.HasValue)
+                                {
+                                    <a class="btn btn-outline-info" href="/Ged/DocumentOcrText?versionId=@item.VersionId">Ver OCR</a>
+                                    <form asp-controller="Ocr" asp-action="RunForVersion" asp-route-versionId="@item.VersionId" method="post" class="d-inline">
+                                        @Html.AntiForgeryToken()
+                                        <button class="btn btn-outline-primary" type="submit">@(item.OcrStatus is "ERROR" or "FAILED" or "FAILURE" ? "Reprocessar" : "Executar OCR")</button>
+                                    </form>
+                                    <a class="btn btn-outline-success" href="/Ged/Download?id=@item.VersionId">Baixar</a>
+                                }
+                            </div>
+                        </td>
+                    </tr>
+                    @if (!string.IsNullOrWhiteSpace(item.ErrorMessage))
+                    {
+                        <tr class="collapse" id="err-@item.DocumentId"><td colspan="9"><div class="alert alert-danger mb-0"><strong>Detalhes do erro:</strong> @item.ErrorMessage</div></td></tr>
+                    }
+                }
+            }
+            </tbody>
+        </table>
+    </div>
+</div>
