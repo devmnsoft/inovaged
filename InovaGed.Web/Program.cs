@@ -156,6 +156,7 @@ builder.Services.AddScoped<IGedDashboardService, GedDashboardService>();
 builder.Services.AddScoped<IHospitalOcrAnalyticsService, HospitalOcrAnalyticsService>();
 builder.Services.AddScoped<IHospitalIntelligenceService, HospitalIntelligenceService>();
 builder.Services.AddScoped<IHospitalTrendsService, HospitalTrendsService>();
+builder.Services.AddScoped<ITableSchemaGuard, TableSchemaGuard>();
 builder.Services.AddScoped<IOperationsDashboardService, OperationsDashboardService>();
 
 builder.Services.Configure<DocumentQualityOptions>(builder.Configuration.GetSection("DocumentQuality"));
@@ -473,8 +474,8 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy(AppPolicies.HospitalDocumentsOrLoansAccess,
         p => RequireAny(p, AppRoles.Admin, AppRoles.Administrador, AppRoles.AdministradorOphir, AppRoles.ArquivistaOphir, AppRoles.Hospital, AppRoles.Arquivista, AppRoles.Gestor, AppRoles.Operador));
 
-    options.AddPolicy(AppPolicies.Operations, p => RequireAny(p, gedAccess));
-    options.AddPolicy(AppPolicies.OperationsAccess, p => RequireAny(p, gedAccess));
+    options.AddPolicy(AppPolicies.Operations, p => RequireAny(p, AppRoles.Admin, AppRoles.Administrador, AppRoles.AdministradorOphir, AppRoles.ArquivistaOphir));
+    options.AddPolicy(AppPolicies.OperationsAccess, p => RequireAny(p, AppRoles.Admin, AppRoles.Administrador, AppRoles.AdministradorOphir, AppRoles.ArquivistaOphir));
 
     options.AddPolicy(Policies.CanViewRetention,
         p => RequireAny(p, AppRoles.Admin, AppRoles.Administrador, AppRoles.Arquivista, AppRoles.Auditor));
