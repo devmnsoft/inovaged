@@ -35,10 +35,11 @@ public sealed class OperationsDashboardService : IOperationsDashboardService
             counts[key] = await SafeScalarAsync(conn, CountSql(key, scope), new { TenantId = tenantId, UserId = userId, SectorIds = scope.SectorIds, Sector = scope.Sector, From = filter.From, To = filter.To }, ct);
         }
 
-        var loanCounts = await SafeQueryAsync<StatusCount>(conn, LoanCountsSql(scope), new { TenantId = tenantId, UserId = userId, Sector = scope.Sector }, ct);
+        var loanSectorExpr = await ResolveLoanSectorSqlExpressionAsync(conn, ct);
+        var loanCounts = await SafeQueryAsync<StatusCount>(conn, LoanCountsSql(scope, loanSectorExpr), new { TenantId = tenantId, UserId = userId, Sector = scope.Sector }, ct);
         var protocolCounts = await SafeQueryAsync<StatusCount>(conn, ProtocolCountsSql(scope), new { TenantId = tenantId, UserId = userId, SectorIds = scope.SectorIds }, ct);
         counts["loanPending"] = loanCounts.Where(x => IsOneOf(x.Status, "REQUESTED", "SOLICITADO", "PENDING", "PENDENTE")).Sum(x => x.Total);
-        counts["loanOverdue"] = await SafeScalarAsync(conn, LoanOverdueSql(scope), new { TenantId = tenantId, UserId = userId, Sector = scope.Sector }, ct);
+        counts["loanOverdue"] = await SafeScalarAsync(conn, LoanOverdueSql(scope, loanSectorExpr), new { TenantId = tenantId, UserId = userId, Sector = scope.Sector }, ct);
         counts["protocolWaiting"] = protocolCounts.Where(x => IsOneOf(x.Status, "NOVO", "ABERTO", "EM_ANALISE", "EM_TRAMITACAO")).Sum(x => x.Total);
         counts["protocolReturned"] = protocolCounts.Where(x => x.Status.Contains("DEVOL", StringComparison.OrdinalIgnoreCase)).Sum(x => x.Total);
 
@@ -78,9 +79,10 @@ public sealed class OperationsDashboardService : IOperationsDashboardService
         filter = NormalizeFilter(filter);
         await using var conn = await _db.OpenAsync(ct);
         var scope = await BuildScopeAsync(conn, tenantId, userId, roles, filter, ct);
+        var sectorExpr = await ResolveLoanSectorSqlExpressionAsync(conn, ct);
         var args = new { TenantId = tenantId, UserId = userId, Sector = scope.Sector, Status = filter.Status, OnlyOverdue = filter.OnlyOverdue, Offset = (filter.Page - 1) * filter.PageSize, Limit = filter.PageSize };
-        var items = await SafeQueryAsync<OperationQueueItemDto>(conn, LoanQueueSql(scope, count: false), args, ct);
-        var total = await SafeScalarAsync(conn, LoanQueueSql(scope, count: true), args, ct);
+        var items = await SafeQueryAsync<OperationQueueItemDto>(conn, LoanQueueSql(scope, sectorExpr, count: false), args, ct);
+        var total = await SafeScalarAsync(conn, LoanQueueSql(scope, sectorExpr, count: true), args, ct);
         return Page(items, filter, total);
     }
 
@@ -101,7 +103,8 @@ public sealed class OperationsDashboardService : IOperationsDashboardService
         await using var conn = await _db.OpenAsync(ct);
         var scope = await BuildScopeAsync(conn, tenantId, userId, roles, filter, ct);
         var alerts = new List<OperationQueueItemDto>();
-        alerts.AddRange(await SafeQueryAsync<OperationQueueItemDto>(conn, AlertsSql(scope), new { TenantId = tenantId, UserId = userId, SectorIds = scope.SectorIds, Sector = scope.Sector, Offset = (filter.Page - 1) * filter.PageSize, Limit = filter.PageSize }, ct));
+        var sectorExpr = await ResolveLoanSectorSqlExpressionAsync(conn, ct);
+        alerts.AddRange(await SafeQueryAsync<OperationQueueItemDto>(conn, AlertsSql(scope, sectorExpr), new { TenantId = tenantId, UserId = userId, SectorIds = scope.SectorIds, Sector = scope.Sector, Offset = (filter.Page - 1) * filter.PageSize, Limit = filter.PageSize }, ct));
         var filtered = filter.OnlyCritical ? alerts.Where(x => x.Severity == "critical").ToList() : alerts;
         return Page(filtered.Take(filter.PageSize).ToList(), filter, filtered.Count);
     }
@@ -159,13 +162,14 @@ public sealed class OperationsDashboardService : IOperationsDashboardService
         return $"{select} from ged.document d left join ged.document_version v on v.tenant_id=d.tenant_id and v.id=d.current_version_id left join ged.folder f on f.tenant_id=d.tenant_id and f.id=d.folder_id left join ged.document_type dt on dt.tenant_id=d.tenant_id and dt.id=d.type_id left join ged.ocr_job j on j.tenant_id=d.tenant_id and (j.document_version_id=v.id) where d.tenant_id=@TenantId and d.reg_status='A' {DocumentScope(scope)} {where}{order}";
     }
 
-    private static string LoanCountsSql(Scope scope) => "select status::text as Status, count(*)::int as Total from ged.loan_request l where l.tenant_id=@TenantId and l.reg_status='A'" + LoanScope(scope) + " group by status::text";
-    private static string LoanOverdueSql(Scope scope) => "select count(*) from ged.loan_request l where l.tenant_id=@TenantId and l.reg_status='A' and l.due_at < now() and upper(l.status::text) in ('APPROVED','DELIVERED','APROVADO','ENTREGUE')" + LoanScope(scope);
-    private static string LoanQueueSql(Scope scope, bool count)
+    private static string LoanCountsSql(Scope scope, string sectorExpr) => "select status::text as Status, count(*)::int as Total from ged.loan_request l where l.tenant_id=@TenantId and l.reg_status='A'" + LoanScope(scope, sectorExpr) + " group by status::text";
+    private static string LoanOverdueSql(Scope scope, string sectorExpr) => "select count(*) from ged.loan_request l where l.tenant_id=@TenantId and l.reg_status='A' and l.due_at < now() and upper(l.status::text) in ('APPROVED','DELIVERED','APROVADO','ENTREGUE')" + LoanScope(scope, sectorExpr);
+    private static string LoanQueueSql(Scope scope, string sectorExpr, bool count)
     {
-        var select = count ? "select count(*)" : "select l.id as Id, 'loans' as Queue, 'Solicitação #' || l.protocol_no as Title, l.protocol_no::text as Protocol, l.requester_name as Requester, l.requester_sector as Sector, l.status::text as Status, l.due_at as DueAt, (select count(*)::int from ged.loan_request_item i where i.tenant_id=l.tenant_id and i.loan_request_id=l.id and i.reg_status='A') as ItemsCount, case when l.due_at < now() then 'Cobrar devolução' when upper(l.status::text) in ('REQUESTED','SOLICITADO') then 'Aprovar' when upper(l.status::text) in ('APPROVED','APROVADO') then 'Entregar' else 'Ver detalhes' end as ActionLabel, '/Loans/Details/' || l.id as ActionUrl, case when l.due_at < now() then 'critical' else 'high' end as Severity";
+        var scopeSql = LoanScope(scope, sectorExpr);
+        var select = count ? "select count(*)" : $"select l.id as Id, 'loans' as Queue, 'Solicitação #' || l.protocol_no as Title, l.protocol_no::text as Protocol, l.requester_name as Requester, {sectorExpr} as Sector, l.status::text as Status, l.due_at as DueAt, (select count(*)::int from ged.loan_request_item i where i.tenant_id=l.tenant_id and i.loan_request_id=l.id and coalesce(i.reg_status,'A')='A') as ItemsCount, case when l.due_at < now() then 'Cobrar devolução' when upper(l.status::text) in ('REQUESTED','SOLICITADO') then 'Aprovar' when upper(l.status::text) in ('APPROVED','APROVADO') then 'Entregar' else 'Ver detalhes' end as ActionLabel, '/Loans/' || l.id as ActionUrl, case when l.due_at < now() then 'critical' else 'high' end as Severity";
         var page = count ? "" : " order by l.due_at nulls last, l.requested_at desc offset @Offset limit @Limit";
-        return select + " from ged.loan_request l where l.tenant_id=@TenantId and l.reg_status='A' and (@Status is null or @Status='' or upper(l.status::text)=upper(@Status)) and (@OnlyOverdue=false or l.due_at < now())" + LoanScope(scope) + page;
+        return select + " from ged.loan_request l where l.tenant_id=@TenantId and l.reg_status='A' and (@Status is null or @Status='' or upper(l.status::text)=upper(@Status)) and (@OnlyOverdue=false or l.due_at < now())" + scopeSql + page;
     }
 
     private static string ProtocolCountsSql(Scope scope) => "select p.status as Status, count(*)::int as Total from ged.protocolo p where p.tenant_id=@TenantId and p.reg_status='A'" + ProtocolScope(scope) + " group by p.status";
@@ -176,20 +180,20 @@ public sealed class OperationsDashboardService : IOperationsDashboardService
         return select + " from ged.protocolo p left join ged.protocolo_setor sa on sa.tenant_id=p.tenant_id and sa.id=p.setor_atual_id where p.tenant_id=@TenantId and p.reg_status='A' and (@Status is null or @Status='' or p.status=@Status)" + ProtocolScope(scope) + page;
     }
 
-    private static string AlertsSql(Scope scope) => $"""
+    private static string AlertsSql(Scope scope, string sectorExpr) => $"""
 select d.id as Id, 'alerts' as Queue, 'Documento sem classificação há mais de 5 dias' as Title, d.code as Code, d.title as Protocol, null::text as Requester, null::text as Sector, d.created_at as UploadedAt, 'Classificar agora' as ActionLabel, '/Ged/Details/' || d.id as ActionUrl, 'critical' as Severity
 from ged.document d where d.tenant_id=@TenantId and d.reg_status='A' and (d.type_id is null or d.classification_id is null) and d.created_at < now() - interval '5 days' {DocumentScope(scope)}
 union all
 select null::uuid as Id, 'alerts' as Queue, 'OCR com erro repetido' as Title, null::text as Code, coalesce(j.error_message,'Falha OCR') as Protocol, null::text, null::text, j.requested_at, 'Reprocessar OCR', '/Ged/Processing?status=error', 'critical'
 from ged.ocr_job j where j.tenant_id=@TenantId and upper(j.status::text) in ('ERROR','FAILED','FAILURE') and j.requested_at < now() - interval '1 hour'
 union all
-select l.id, 'alerts', 'Empréstimo vencido há mais de 3 dias', l.protocol_no::text, l.requester_name, l.requester_name, l.requester_sector, l.due_at, 'Cobrar devolução', '/Loans/Details/' || l.id, 'critical'
-from ged.loan_request l where l.tenant_id=@TenantId and l.reg_status='A' and l.due_at < now() - interval '3 days' {LoanScope(scope)}
+select l.id, 'alerts', 'Empréstimo vencido há mais de 3 dias', l.protocol_no::text, l.requester_name, l.requester_name, {sectorExpr}, l.due_at, 'Cobrar devolução', '/Loans/' || l.id, 'critical'
+from ged.loan_request l where l.tenant_id=@TenantId and l.reg_status='A' and l.due_at < now() - interval '3 days' {LoanScope(scope, sectorExpr)}
 order by 8 desc nulls last offset @Offset limit @Limit
 """;
 
     private static string DocumentScope(Scope scope) => scope.IsAdmin ? string.Empty : scope.IsArquivistaOphir ? " and d.created_by=@UserId" : string.Empty;
-    private static string LoanScope(Scope scope) => scope.IsAdmin ? string.Empty : scope.IsAdministradorOphir ? " and nullif(coalesce(l.requester_sector,''),'') = @Sector" : " and l.requester_id=@UserId";
+    private static string LoanScope(Scope scope, string sectorExpr) => scope.IsAdmin ? string.Empty : scope.IsAdministradorOphir && sectorExpr != "null::text" ? $" and nullif(coalesce({sectorExpr},''),'') = @Sector" : scope.IsAdministradorOphir ? string.Empty : " and l.requester_id=@UserId";
     private static string ProtocolScope(Scope scope) => scope.IsAdmin ? string.Empty : " and (p.setor_atual_id = any(@SectorIds) or exists(select 1 from ged.protocolo_setor_participante sp where sp.tenant_id=p.tenant_id and sp.protocolo_id=p.id and sp.setor_id=any(@SectorIds) and sp.pode_visualizar=true))";
 
     private async Task<Scope> BuildScopeAsync(Npgsql.NpgsqlConnection conn, Guid tenantId, Guid userId, IReadOnlyCollection<string> roles, OperationsDashboardFilter filter, CancellationToken ct)
@@ -208,6 +212,36 @@ order by 8 desc nulls last offset @Offset limit @Limit
         filter.Page = Math.Max(1, filter.Page);
         filter.PageSize = Math.Clamp(filter.PageSize <= 0 ? 10 : filter.PageSize, 1, 50);
         return filter;
+    }
+
+    private async Task<string> ResolveLoanSectorSqlExpressionAsync(Npgsql.NpgsqlConnection conn, CancellationToken ct)
+    {
+        foreach (var column in new[] { "requester_sector", "sector_name", "requesting_sector", "requester_department", "department_name" })
+        {
+            if (await ColumnExistsAsync(conn, "ged", "loan_request", column, ct))
+                return $"l.{column}";
+        }
+
+        return "null::text";
+    }
+
+    private async Task<bool> ColumnExistsAsync(Npgsql.NpgsqlConnection conn, string schema, string table, string column, CancellationToken ct)
+    {
+        try
+        {
+            return await conn.ExecuteScalarAsync<bool>(new CommandDefinition("""
+select exists (
+    select 1
+    from information_schema.columns
+    where table_schema = @schema and table_name = @table and column_name = @column
+);
+""", new { schema, table, column }, cancellationToken: ct));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Falha ao verificar existência da coluna {Schema}.{Table}.{Column}.", schema, table, column);
+            return false;
+        }
     }
 
     private async Task<bool> TableExistsAsync(Npgsql.NpgsqlConnection conn, string schema, string table, CancellationToken ct)

@@ -178,33 +178,20 @@ order by coalesce(i.description, d.title, i.reference_code, 'Documento solicitad
             const string histSql = """
 select
   (h.created_at)::timestamp as "EventTime",
-  h.action             as "EventType",
-  coalesce(h.user_name, 'Usuário') as "ByUserName",
-  h.reason                  as "Notes",
+  h.action as "EventType",
+  coalesce(h.user_name, 'Sistema') as "ByUserName",
+  h.reason as "Notes",
   h.old_status as "OldStatus",
   h.new_status as "NewStatus",
   h.reason as "Reason",
   h.internal_notes as "InternalNotes",
-  h.sector_id as "Sector",
+  h.sector_name as "Sector",
   h.correlation_id as "CorrelationId"
 from ged.loan_request_history h
-where h.tenant_id=@tenant_id and h.loan_request_id=@loan_id
-union all
-select
-  (lh.event_time)::timestamp as "EventTime",
-  lh.event_type as "EventType",
-  coalesce(u.name, u.email, 'Usuário') as "ByUserName",
-  lh.notes as "Notes",
-  null as "OldStatus",
-  lh.event_type as "NewStatus",
-  lh.notes as "Reason",
-  null as "InternalNotes",
-  null as "Sector",
-  null as "CorrelationId"
-from ged.loan_history lh
-left join ged.users u on u.tenant_id=lh.tenant_id and u.id=lh.by_user_id
-where lh.tenant_id=@tenant_id and lh.loan_id=@loan_id and lh.reg_status='A'
-order by "EventTime" desc;
+where h.tenant_id = @tenant_id
+  and h.loan_request_id = @loan_id
+  and coalesce(h.reg_status, 'A') = 'A'
+order by h.created_at desc;
 """;
 
             var history = (await conn.QueryAsync<LoanEventDto>(
