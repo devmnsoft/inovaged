@@ -1,0 +1,7 @@
+@model IReadOnlyList<InovaGed.Application.Ged.Protocols.ProtocolRequestRowVm>
+@{ ViewData["Title"] = "Minhas Solicitações"; }
+<div class="d-flex justify-content-between align-items-center mb-3"><h1 class="h3">Minhas Solicitações</h1><a class="btn btn-primary" asp-action="New">Solicitar Protocolo</a></div>
+<form class="row g-2 mb-3"><div class="col-md-4"><input name="q" value="@ViewBag.Q" class="form-control" placeholder="Protocolo ou título" /></div><div class="col-md-3"><select name="status" class="form-select"><option value="">Todos os status</option><option>REQUESTED</option><option>IN_REVIEW</option><option>RETURNED_FOR_ADJUSTMENT</option><option>ADJUSTMENT_ANSWERED</option><option>APPROVED</option><option>REJECTED</option><option>FINISHED</option></select></div><div class="col-md-2"><button class="btn btn-outline-primary">Filtrar</button></div></form>
+<div class="card shadow-sm"><div class="table-responsive"><table class="table table-hover mb-0"><thead><tr><th>Protocolo</th><th>Título</th><th>Status</th><th>Prioridade</th><th>Prazo</th><th></th></tr></thead><tbody>
+@foreach (var x in Model) { <tr><td class="fw-semibold">@x.ProtocolNo</td><td>@x.Title</td><td><span class="badge bg-info text-dark">@x.StatusLabel</span></td><td>@x.Priority</td><td>@(x.DueAt?.ToString("dd/MM/yyyy HH:mm") ?? "-")</td><td><a class="btn btn-sm btn-outline-primary" asp-controller="Protocols" asp-action="Details" asp-route-id="@x.Id">Detalhes</a></td></tr> }
+</tbody></table></div></div>

@@ -37,11 +37,12 @@ public sealed class OperationsDashboardService : IOperationsDashboardService
 
         var loanSectorExpr = await ResolveLoanSectorSqlExpressionAsync(conn, ct);
         var loanCounts = await SafeQueryAsync<StatusCount>(conn, LoanCountsSql(scope, loanSectorExpr), new { TenantId = tenantId, UserId = userId, Sector = scope.Sector }, ct);
-        var protocolCounts = await SafeQueryAsync<StatusCount>(conn, ProtocolCountsSql(scope), new { TenantId = tenantId, UserId = userId, SectorIds = scope.SectorIds }, ct);
+        var protocolCounts = await SafeQueryAsync<StatusCount>(conn, ProtocolCountsSql(scope), new { TenantId = tenantId, UserId = userId, SectorIds = scope.SectorIds, Sector = scope.Sector }, ct);
         counts["loanPending"] = loanCounts.Where(x => IsOneOf(x.Status, "REQUESTED", "SOLICITADO", "PENDING", "PENDENTE")).Sum(x => x.Total);
         counts["loanOverdue"] = await SafeScalarAsync(conn, LoanOverdueSql(scope, loanSectorExpr), new { TenantId = tenantId, UserId = userId, Sector = scope.Sector }, ct);
-        counts["protocolWaiting"] = protocolCounts.Where(x => IsOneOf(x.Status, "NOVO", "ABERTO", "EM_ANALISE", "EM_TRAMITACAO")).Sum(x => x.Total);
+        counts["protocolWaiting"] = protocolCounts.Where(x => IsOneOf(x.Status, "REQUESTED", "IN_REVIEW", "ADJUSTMENT_ANSWERED", "NOVO", "ABERTO", "EM_ANALISE", "EM_TRAMITACAO")).Sum(x => x.Total);
         counts["protocolReturned"] = protocolCounts.Where(x => x.Status.Contains("DEVOL", StringComparison.OrdinalIgnoreCase)).Sum(x => x.Total);
+        counts["protocolFinishedToday"] = await SafeScalarAsync(conn, "select count(*) from ged.protocol_request p where p.tenant_id=@TenantId and p.reg_status='A' and p.status='FINISHED' and p.finished_at::date=current_date" + ProtocolScope(scope), new { TenantId = tenantId, UserId = userId, Sector = scope.Sector }, ct);
 
         var summary = BuildSummary(counts);
         var actions = BuildActions(summary);
@@ -91,7 +92,9 @@ public sealed class OperationsDashboardService : IOperationsDashboardService
         filter = NormalizeFilter(filter);
         await using var conn = await _db.OpenAsync(ct);
         var scope = await BuildScopeAsync(conn, tenantId, userId, roles, filter, ct);
-        var args = new { TenantId = tenantId, UserId = userId, SectorIds = scope.SectorIds, Status = filter.Status, Offset = (filter.Page - 1) * filter.PageSize, Limit = filter.PageSize };
+        if (!await TableExistsAsync(conn, "ged", "protocol_request", ct))
+            return new OperationQueuePageDto { Items = Array.Empty<OperationQueueItemDto>(), Page = filter.Page, PageSize = filter.PageSize, Total = 0, EmptyMessage = "Módulo Protocolo não configurado. Execute as migrations obrigatórias." };
+        var args = new { TenantId = tenantId, UserId = userId, SectorIds = scope.SectorIds, Sector = scope.Sector, Status = filter.Status, Offset = (filter.Page - 1) * filter.PageSize, Limit = filter.PageSize };
         var items = await SafeQueryAsync<OperationQueueItemDto>(conn, ProtocolQueueSql(scope, count: false), args, ct);
         var total = await SafeScalarAsync(conn, ProtocolQueueSql(scope, count: true), args, ct);
         return Page(items, filter, total);
@@ -119,8 +122,9 @@ public sealed class OperationsDashboardService : IOperationsDashboardService
         Card("readyToConsolidate", "Prontos para consolidar", "Partes prontas para união.", c, "success", "/Ged?partialStatus=READY_TO_CONSOLIDATE", "Consolidar"),
         Card("loanPending", "Solicitações pendentes", "Pedidos aguardando aprovação.", c, "warning", "/Loans?status=REQUESTED", "Aprovar solicitações"),
         Card("loanOverdue", "Empréstimos vencidos", "Itens com prazo expirado.", c, "danger", "/Loans/Overdue", "Cobrar devolução"),
-        Card("protocolWaiting", "Protocolos aguardando análise", "Protocolos novos ou em análise.", c, "info", "/Protocolo?visao=entrada", "Analisar"),
-        Card("protocolReturned", "Protocolos devolvidos", "Precisam de ajuste/complementação.", c, "warning", "/Protocolo?status=DEVOLVIDO", "Ajustar protocolo"),
+        Card("protocolWaiting", "Protocolos solicitados/em análise", "Protocolos novos, em análise ou com ajuste respondido.", c, "info", "/Protocols/WorkQueue", "Analisar"),
+        Card("protocolReturned", "Protocolos devolvidos", "Precisam de ajuste/complementação.", c, "warning", "/Protocols/WorkQueue?Status=RETURNED_FOR_ADJUSTMENT", "Ajustar protocolo"),
+        Card("protocolFinishedToday", "Protocolos finalizados hoje", "Protocolos concluídos no dia.", c, "success", "/Protocols/WorkQueue?Status=FINISHED", "Ver finalizados"),
         Card("documentsToday", "Documentos enviados hoje", "Uploads realizados hoje.", c, "primary", "/Ged?period=today", "Ver itens"),
         Card("accessedToday", "Documentos acessados hoje", "Consultas registradas hoje.", c, "primary", "/Audit?entity=DOCUMENT", "Ver acessos"),
         Card("failures", "Falhas recentes de sistema", "Erros e eventos críticos recentes.", c, "dark", "/SystemLogs", "Ver falhas")
@@ -172,12 +176,12 @@ public sealed class OperationsDashboardService : IOperationsDashboardService
         return select + " from ged.loan_request l where l.tenant_id=@TenantId and l.reg_status='A' and (@Status is null or @Status='' or upper(l.status::text)=upper(@Status)) and (@OnlyOverdue=false or l.due_at < now())" + scopeSql + page;
     }
 
-    private static string ProtocolCountsSql(Scope scope) => "select p.status as Status, count(*)::int as Total from ged.protocolo p where p.tenant_id=@TenantId and p.reg_status='A'" + ProtocolScope(scope) + " group by p.status";
+    private static string ProtocolCountsSql(Scope scope) => "select p.status as Status, count(*)::int as Total from ged.protocol_request p where p.tenant_id=@TenantId and p.reg_status='A'" + ProtocolScope(scope) + " group by p.status";
     private static string ProtocolQueueSql(Scope scope, bool count)
     {
-        var select = count ? "select count(*)" : "select p.id as Id, 'protocols' as Queue, coalesce(p.assunto,p.numero) as Title, p.numero as Protocol, p.solicitante_nome as Requester, sa.nome as Sector, p.status as Status, p.updated_at as UpdatedAt, p.tipo_solicitacao as DocumentType, case when p.status in ('NOVO','ABERTO') then 'Assumir' when p.status like '%DEVOL%' then 'Ajustar protocolo' when p.status in ('EM_ANALISE','EM_TRAMITACAO') then 'Analisar' else 'Ver histórico' end as ActionLabel, '/Protocolo/Details/' || p.id as ActionUrl, case when p.status like '%DEVOL%' then 'critical' else 'high' end as Severity";
-        var page = count ? "" : " order by coalesce(p.updated_at,p.created_at) desc offset @Offset limit @Limit";
-        return select + " from ged.protocolo p left join ged.protocolo_setor sa on sa.tenant_id=p.tenant_id and sa.id=p.setor_atual_id where p.tenant_id=@TenantId and p.reg_status='A' and (@Status is null or @Status='' or p.status=@Status)" + ProtocolScope(scope) + page;
+        var select = count ? "select count(*)" : "select p.id as Id, 'protocols' as Queue, p.title as Title, p.protocol_no as Protocol, p.requester_name as Requester, coalesce(p.assigned_sector_name,p.requester_sector_name) as Sector, p.status as Status, p.updated_at as UpdatedAt, p.priority as DocumentType, case when p.status in ('REQUESTED') then 'Assumir' when p.status='RETURNED_FOR_ADJUSTMENT' then 'Ajustar protocolo' when p.status in ('IN_REVIEW','ADJUSTMENT_ANSWERED') then 'Analisar' when p.status='APPROVED' then 'Finalizar' else 'Ver histórico' end as ActionLabel, '/Protocols/' || p.id as ActionUrl, case when p.due_at is not null and p.due_at < now() and p.status not in ('FINISHED','REJECTED','CANCELLED') then 'critical' when p.status='RETURNED_FOR_ADJUSTMENT' then 'high' else 'medium' end as Severity";
+        var page = count ? "" : " order by coalesce(p.updated_at,p.requested_at) desc offset @Offset limit @Limit";
+        return select + " from ged.protocol_request p where p.tenant_id=@TenantId and p.reg_status='A' and (@Status is null or @Status='' or p.status=@Status)" + ProtocolScope(scope) + page;
     }
 
     private static string AlertsSql(Scope scope, string sectorExpr) => $"""
@@ -194,7 +198,7 @@ order by 8 desc nulls last offset @Offset limit @Limit
 
     private static string DocumentScope(Scope scope) => scope.IsAdmin ? string.Empty : scope.IsArquivistaOphir ? " and d.created_by=@UserId" : string.Empty;
     private static string LoanScope(Scope scope, string sectorExpr) => scope.IsAdmin ? string.Empty : scope.IsAdministradorOphir && sectorExpr != "null::text" ? $" and nullif(coalesce({sectorExpr},''),'') = @Sector" : scope.IsAdministradorOphir ? string.Empty : " and l.requester_id=@UserId";
-    private static string ProtocolScope(Scope scope) => scope.IsAdmin ? string.Empty : " and (p.setor_atual_id = any(@SectorIds) or exists(select 1 from ged.protocolo_setor_participante sp where sp.tenant_id=p.tenant_id and sp.protocolo_id=p.id and sp.setor_id=any(@SectorIds) and sp.pode_visualizar=true))";
+    private static string ProtocolScope(Scope scope) => scope.IsAdmin ? string.Empty : " and ((@Sector is not null and (p.assigned_sector_name=@Sector or p.requester_sector_name=@Sector)) or p.assigned_user_id=@UserId or p.requester_user_id=@UserId)";
 
     private async Task<Scope> BuildScopeAsync(Npgsql.NpgsqlConnection conn, Guid tenantId, Guid userId, IReadOnlyCollection<string> roles, OperationsDashboardFilter filter, CancellationToken ct)
     {

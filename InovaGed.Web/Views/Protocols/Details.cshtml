@@ -1,0 +1,58 @@
+@model InovaGed.Application.Ged.Protocols.ProtocolRequestDetailsVm
+@using InovaGed.Web.Security
+@{
+    ViewData["Title"] = "Protocolo " + Model.Header.ProtocolNo;
+    var canManage = AppMenuPolicy.CanSeeProtocolManage(User);
+}
+<div class="d-flex justify-content-between align-items-start mb-3">
+  <div><h1 class="h3 mb-1">@Model.Header.ProtocolNo</h1><div class="text-muted">@Model.Header.Title</div></div>
+  <div><span class="badge bg-info text-dark fs-6">@Model.Header.StatusLabel</span> <span class="badge bg-secondary fs-6">@Model.Header.Priority</span></div>
+</div>
+@if (TempData["Ok"] is not null) { <div class="alert alert-success">@TempData["Ok"]</div> }
+@if (TempData["Err"] is not null) { <div class="alert alert-danger">@TempData["Err"]</div> }
+@if (Model.HasDocumentsWithoutOcr) { <div class="alert alert-warning">Este protocolo possui documentos sem OCR. Você pode continuar a análise ou solicitar OCR.</div> }
+<div class="row g-3">
+  <div class="col-lg-8">
+    <div class="card shadow-sm mb-3"><div class="card-header fw-semibold">Cabeçalho</div><div class="card-body row g-2 small">
+      <div class="col-md-4"><b>Solicitante:</b> @Model.Header.RequesterName</div><div class="col-md-4"><b>Setor:</b> @Model.Header.RequesterSectorName</div><div class="col-md-4"><b>Responsável:</b> @(Model.Header.AssignedUserName ?? "-")</div>
+      <div class="col-md-4"><b>Prazo:</b> @(Model.Header.DueAt?.ToString("dd/MM/yyyy HH:mm") ?? "-")</div><div class="col-md-4"><b>Criado em:</b> @Model.Header.RequestedAt.ToString("dd/MM/yyyy HH:mm")</div><div class="col-md-4"><b>Destino:</b> @Model.Header.AssignedSectorName</div>
+      <div class="col-12"><b>Descrição:</b><br />@Model.Description</div>
+    </div></div>
+    <div class="card shadow-sm mb-3"><div class="card-header fw-semibold">Documentos e itens</div><div class="card-body">
+      @foreach (var item in Model.Items) {
+        <div class="border rounded p-2 mb-2">
+          @if (item.IsManual) { <span class="badge bg-secondary">Documento físico/manual</span> } else { <span class="badge bg-primary">GED</span> }
+          <b>@(item.DocumentTitle ?? item.Description ?? item.ReferenceCode)</b>
+          <div class="small text-muted">Tipo/Classificação: @(item.Classification ?? item.DocumentType ?? "-") • Referência: @(item.ReferenceCode ?? item.DocumentCode ?? "-")</div>
+          @if (!item.IsManual) { <div class="small">OCR: <span class="badge @(item.HasOcr ? "bg-success" : "bg-warning text-dark")">@(item.HasOcr ? "Disponível" : item.OcrStatus ?? "Pendente")</span> @if (item.PartialTotalParts.HasValue && item.PartialTotalParts > 1) { <span>OCR parcial @item.PartialPartNumber/@item.PartialTotalParts</span> } @if (!item.HasOcr) { <a class="btn btn-sm btn-outline-secondary ms-2" asp-controller="Ocr" asp-action="Index">Executar OCR</a> }</div> }
+          @if (item.IsManual) { <div class="small">Localização: @item.PhysicalLocation • Caixa: @item.BoxCode • Paciente: @item.PatientName • Prontuário: @item.MedicalRecordNumber</div> }
+          @if (item.DocumentId.HasValue) { <a class="btn btn-sm btn-outline-primary mt-1" asp-controller="Ged" asp-action="Details" asp-route-id="@item.DocumentId">Abrir GED</a> }
+        </div>
+      }
+      <h6>Anexos</h6>
+      @foreach (var a in Model.Attachments) { <div class="small border rounded p-2 mb-1"><i class="bi bi-paperclip"></i> @a.FileName (@a.SizeBytes bytes) — @a.UploadedByName em @a.UploadedAt.ToString("dd/MM/yyyy HH:mm")</div> }
+    </div></div>
+    <div class="card shadow-sm"><div class="card-header fw-semibold">Histórico</div><div class="card-body">
+      <div class="timeline">
+      @foreach (var h in Model.History) { <div class="border-start ps-3 mb-3"><div class="fw-semibold">@h.Action <span class="text-muted small">@h.CreatedAt.ToString("dd/MM/yyyy HH:mm")</span></div><div class="small">@h.OldStatus → @h.NewStatus • @h.UserName • @h.SectorName</div><div>@h.Reason</div>@if(!string.IsNullOrWhiteSpace(h.InternalNotes)){<div class="text-muted small">Interno: @h.InternalNotes</div>}</div> }
+      </div>
+    </div></div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card shadow-sm mb-3"><div class="card-header fw-semibold">Ações contextuais</div><div class="card-body d-grid gap-2">
+      @if (canManage) {
+        <form asp-action="Assume" asp-route-id="@Model.Header.Id" method="post">@Html.AntiForgeryToken()<input name="notes" class="form-control mb-2" placeholder="Observação opcional" /><button class="btn btn-outline-primary w-100">Assumir / Analisar</button></form>
+        <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#actionModal" data-action="Approve" data-title="Aprovar">Aprovar</button>
+        <button class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#actionModal" data-action="ReturnForAdjustment" data-title="Devolver para ajuste">Devolver para ajuste</button>
+        <button class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#actionModal" data-action="Reject" data-title="Rejeitar">Rejeitar</button>
+        <button class="btn btn-dark" data-bs-toggle="modal" data-bs-target="#actionModal" data-action="Finish" data-title="Finalizar">Finalizar</button>
+        <form asp-action="CreateLoan" asp-route-id="@Model.Header.Id" method="post">@Html.AntiForgeryToken()<button class="btn btn-outline-secondary w-100">Gerar solicitação de empréstimo/documento</button></form>
+      }
+      <button onclick="window.print()" class="btn btn-outline-secondary">Imprimir protocolo</button>
+    </div></div>
+    <div class="card shadow-sm mb-3"><div class="card-header fw-semibold">Responder ajuste / anexar</div><div class="card-body"><form asp-action="RespondAdjustment" asp-route-id="@Model.Header.Id" method="post" enctype="multipart/form-data">@Html.AntiForgeryToken()<textarea name="response" class="form-control mb-2" required placeholder="Resposta obrigatória"></textarea><input type="file" name="attachments" multiple class="form-control mb-2" /><button class="btn btn-primary w-100">Responder / adicionar anexo</button></form></div></div>
+    <div class="card shadow-sm"><div class="card-header fw-semibold">Empréstimos vinculados</div><div class="card-body small">@foreach(var l in Model.Loans){<div><a asp-controller="Loans" asp-action="Details" asp-route-id="@l.Id">Loan @l.ProtocolNo</a> — @l.Status</div>} @if(!Model.Loans.Any()){<span class="text-muted">Nenhum empréstimo vinculado.</span>}</div></div>
+  </div>
+</div>
+<div class="modal fade" id="actionModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content"><form id="criticalForm" method="post">@Html.AntiForgeryToken()<div class="modal-header"><h5 class="modal-title" id="modalTitle">Ação</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><label class="form-label">Parecer / motivo / conclusão</label><textarea name="reason" class="form-control" required></textarea><label class="form-label mt-2">Observação interna</label><textarea name="internalNotes" class="form-control"></textarea></div><div class="modal-footer"><button class="btn btn-primary">Confirmar</button></div></form></div></div></div>
+@section Scripts {<script>document.getElementById('actionModal')?.addEventListener('show.bs.modal',e=>{const b=e.relatedTarget;document.getElementById('modalTitle').innerText=b.dataset.title;document.getElementById('criticalForm').action=`/Protocols/@Model.Header.Id/${b.dataset.action}`;});</script>}
