@@ -1,0 +1,79 @@
+@model InovaGed.Application.Ged.Protocols.ProtocolRequestCreateVm
+@{
+    ViewData["Title"] = "Solicitar Protocolo";
+}
+<h1 class="h3 mb-3">Solicitar Protocolo</h1>
+<p class="text-muted">Número gerado automaticamente ao salvar.</p>
+<form asp-action="New" method="post" enctype="multipart/form-data" id="protocolForm">
+    @Html.AntiForgeryToken()
+    <div class="row g-3">
+        <div class="col-lg-6">
+            <div class="card shadow-sm mb-3"><div class="card-header fw-semibold">Dados da solicitação</div><div class="card-body">
+                <div class="mb-3"><label class="form-label">Título</label><input asp-for="Title" class="form-control" required /></div>
+                <div class="mb-3"><label class="form-label">Descrição / observação</label><textarea asp-for="Description" class="form-control" rows="4"></textarea></div>
+                <div class="row g-2">
+                    <div class="col-md-4"><label class="form-label">Prioridade</label><select asp-for="Priority" class="form-select"><option>NORMAL</option><option value="LOW">Baixa</option><option value="HIGH">Alta</option><option value="URGENT">Urgente</option></select></div>
+                    <div class="col-md-8"><label class="form-label">Setor destino</label><input asp-for="AssignedSectorName" class="form-control" placeholder="Nome do setor destino" /></div>
+                    <div class="col-md-6"><label class="form-label">Prazo desejado</label><input asp-for="DueAt" type="datetime-local" class="form-control" /></div>
+                </div>
+            </div></div>
+            <div class="card shadow-sm mb-3"><div class="card-header fw-semibold">Documentos do GED</div><div class="card-body">
+                <div class="input-group mb-2"><input id="docQ" class="form-control" placeholder="Buscar por código ou título" /><button type="button" class="btn btn-outline-primary" onclick="searchDocs()">Buscar</button></div>
+                <div id="docResults" class="list-group small"></div>
+            </div></div>
+            <div class="card shadow-sm mb-3"><div class="card-header fw-semibold">Anexos</div><div class="card-body">
+                <input type="file" name="attachments" class="form-control" multiple />
+                <div class="form-text">Anexe documentos complementares quando necessário.</div>
+            </div></div>
+        </div>
+        <div class="col-lg-6">
+            <div class="card shadow-sm mb-3"><div class="card-header fw-semibold">Documento físico/manual</div><div class="card-body">
+                <div class="row g-2">
+                    <div class="col-md-4"><input id="manualRef" class="form-control" placeholder="Referência/código" /></div>
+                    <div class="col-md-8"><input id="manualDesc" class="form-control" placeholder="Descrição obrigatória" /></div>
+                    <div class="col-md-6"><input id="manualType" class="form-control" placeholder="Tipo documental" /></div>
+                    <div class="col-md-6"><input id="manualPatient" class="form-control" placeholder="Paciente" /></div>
+                    <div class="col-md-4"><input id="manualRecord" class="form-control" placeholder="Prontuário" /></div>
+                    <div class="col-md-4"><input id="manualLocation" class="form-control" placeholder="Localização física" /></div>
+                    <div class="col-md-4"><input id="manualBox" class="form-control" placeholder="Caixa" /></div>
+                    <div class="col-12"><input id="manualNotes" class="form-control" placeholder="Observação" /></div>
+                </div>
+                <button type="button" class="btn btn-outline-secondary mt-2" onclick="addManual()">Adicionar item manual</button>
+            </div></div>
+            <div class="card shadow-sm"><div class="card-header fw-semibold">Itens adicionados</div><div class="card-body">
+                <div class="alert alert-info py-2">Adicione um documento digitalizado, informe um documento físico/manual ou anexe um arquivo para abrir o protocolo.</div>
+                <ul id="addedItems" class="list-group mb-3"></ul>
+                <div id="hiddenItems"></div>
+                <button class="btn btn-primary btn-lg w-100" type="submit">Abrir protocolo</button>
+            </div></div>
+        </div>
+    </div>
+</form>
+@section Scripts {
+<script>
+let docIndex = 0, manualIndex = 0;
+function addHidden(name, value) { const i=document.createElement('input'); i.type='hidden'; i.name=name; i.value=value||''; document.getElementById('hiddenItems').appendChild(i); return i; }
+function addGed(id, title, ocr, classification) {
+  const idx = docIndex++;
+  addHidden(`DocumentIds[${idx}]`, id);
+  const li=document.createElement('li'); li.className='list-group-item d-flex justify-content-between align-items-start';
+  li.innerHTML=`<span><span class="badge bg-primary me-1">GED</span>${title}<br><small class="text-muted">OCR: ${ocr||'Pendente'} • Classificação: ${classification||'-'}</small></span>`;
+  document.getElementById('addedItems').appendChild(li);
+}
+async function searchDocs(){
+  const q=document.getElementById('docQ').value;
+  const r=await fetch(`/ProtocolRequests/DocSearch?q=${encodeURIComponent(q)}`); const j=await r.json();
+  const box=document.getElementById('docResults'); box.innerHTML='';
+  (j.rows||[]).forEach(d=>{ const a=document.createElement('button'); a.type='button'; a.className='list-group-item list-group-item-action'; a.innerHTML=`<b>${d.code||''}</b> ${d.title}<br><small>OCR: ${d.ocrStatus||'Pendente'} • ${d.classification||''}</small>`; a.onclick=()=>addGed(d.id,d.title,d.ocrStatus,d.classification); box.appendChild(a); });
+}
+function addManual(){
+ const desc=document.getElementById('manualDesc').value; if(!desc){ alert('Informe a descrição do item manual.'); return; }
+ const idx=manualIndex++;
+ const fields={ReferenceCode:'manualRef',Description:'manualDesc',DocumentType:'manualType',PatientName:'manualPatient',MedicalRecordNumber:'manualRecord',PhysicalLocation:'manualLocation',BoxCode:'manualBox',Notes:'manualNotes'};
+ Object.entries(fields).forEach(([k,id])=>addHidden(`ManualItems[${idx}].${k}`, document.getElementById(id).value));
+ const li=document.createElement('li'); li.className='list-group-item'; li.innerHTML=`<span class="badge bg-secondary me-1">Documento físico/manual</span>${desc}`; document.getElementById('addedItems').appendChild(li);
+ Object.values(fields).forEach(id=>document.getElementById(id).value='');
+}
+@if (Model.PreselectedDocumentId.HasValue) { <text>addGed('@Model.PreselectedDocumentId.Value', 'Documento GED pré-selecionado', '', '');</text> }
+</script>
+}

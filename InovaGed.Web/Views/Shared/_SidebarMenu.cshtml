@@ -49,6 +49,9 @@
     <div class="sidebar-section-title">Operação</div>
     <a asp-controller="Loans" asp-action="Index" class="@ActiveAny("Loans", "Solicitacoes")"><i class="bi bi-arrow-left-right"></i><span>Empréstimos</span></a>
     <a asp-controller="Protocolo" asp-action="Index" class="@ActiveAny("Protocolo")"><i class="bi bi-journal-check"></i><span>Protocolo</span></a>
+    <a asp-controller="ProtocolRequests" asp-action="New" class="@Active("ProtocolRequests", "New")"><i class="bi bi-send-plus"></i><span>Solicitar Protocolo</span></a>
+    <a asp-controller="ProtocolRequests" asp-action="My" class="@Active("ProtocolRequests", "My")"><i class="bi bi-list-check"></i><span>Minhas Solicitações</span></a>
+    <a href="/Protocols/WorkQueue" class="@ActivePathStarts("/protocols/workqueue")"><i class="bi bi-inboxes"></i><span>Fila de Protocolos</span></a>
 
     <div class="sidebar-section-title">Administração</div>
     <a asp-controller="Parameters" asp-action="Index" class="@ActiveAny("Parameters", "ProtocoloParametros")"><i class="bi bi-sliders"></i><span>Parâmetros</span></a>
@@ -77,7 +80,7 @@ else if (isArquivistaOphir)
     <a asp-controller="HospitalDocuments" asp-action="Index" class="@ActiveAny("HospitalDocuments")"><i class="bi bi-search-heart"></i><span>Buscar Prontuários e Documentos</span></a>
     <a asp-controller="DocumentQuality" asp-action="Index" class="@ActivePathStarts("/documentquality")"><i class="bi bi-shield-check"></i><span>Qualidade Documental</span></a>
     <a asp-controller="ProtocolRequests" asp-action="New" class="@Active("ProtocolRequests", "New")"><i class="bi bi-send-plus"></i><span>Solicitar Protocolo</span></a>
-    <a asp-controller="ProtocolRequests" asp-action="Index" class="@Active("ProtocolRequests", "Index")"><i class="bi bi-list-check"></i><span>Minhas Solicitações de Protocolo</span></a>
+    <a asp-controller="ProtocolRequests" asp-action="My" class="@Active("ProtocolRequests", "My")"><i class="bi bi-list-check"></i><span>Minhas Solicitações de Protocolo</span></a>
     <a asp-controller="Loans" asp-action="New" class="@Active("Loans", "New")"><i class="bi bi-file-earmark-plus"></i><span>Solicitar Documento/Empréstimo</span></a>
     <a asp-controller="Loans" asp-action="Index" class="@Active("Loans", "Index")"><i class="bi bi-collection"></i><span>Meus Pedidos</span></a>
 }

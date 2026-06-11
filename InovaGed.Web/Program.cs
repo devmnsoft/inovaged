@@ -29,6 +29,7 @@ using InovaGed.Application.Ged.Folders;
 using InovaGed.Application.Ged.Instruments;
 using InovaGed.Application.Ged.Loans;
 using InovaGed.Application.Ged.Physical;
+using InovaGed.Application.Ged.Protocols;
 using InovaGed.Application.Ged.Reports;
 using InovaGed.Application.Ged.Search;
 using InovaGed.Application.Identity;
@@ -66,6 +67,7 @@ using InovaGed.Infrastructure.Ged.Folders;
 using InovaGed.Infrastructure.Ged.Instruments;
 using InovaGed.Infrastructure.Ged.Loans;
 using InovaGed.Infrastructure.Ged.Physical;
+using InovaGed.Infrastructure.Ged.Protocols;
 using InovaGed.Infrastructure.Ged.Reports;
 using InovaGed.Infrastructure.Ged.Search;
 using InovaGed.Infrastructure.Instruments;
@@ -361,8 +363,11 @@ builder.Services.AddScoped<ILoanQueries, LoanQueries>();
 builder.Services.AddScoped<ILoanCommands, LoanCommands>();
 builder.Services.AddScoped<ILoanHistoryWriter, LoanHistoryWriter>();
 builder.Services.AddScoped<ILoanRequestService, LoanRequestService>();
+builder.Services.AddScoped<IProtocolRequestService, ProtocolRequestService>();
+builder.Services.AddScoped<InovaGed.Application.Ged.Protocols.IProtocolAccessService, InovaGed.Infrastructure.Ged.Protocols.ProtocolAccessService>();
+builder.Services.AddScoped<IProtocolHistoryWriter, ProtocolHistoryWriter>();
 builder.Services.AddScoped<ILoanAccessService, LoanAccessService>();
-builder.Services.AddScoped<IProtocolAccessService, ProtocolAccessService>();
+builder.Services.AddScoped<InovaGed.Application.Ged.Loans.IProtocolAccessService, InovaGed.Infrastructure.Ged.Loans.ProtocolAccessService>();
 builder.Services.AddScoped<ISolicitacaoService, SolicitacaoService>();
 
 builder.Services.AddScoped<IBatchQueries, BatchQueries>();
@@ -420,7 +425,9 @@ builder.Services.AddAuthorization(options =>
     var loansManage = new[] { AppRoles.Admin, AppRoles.Administrador, AppRoles.AdministradorOphir };
     var loansRequest = new[] { AppRoles.Admin, AppRoles.Administrador, AppRoles.ArquivistaOphir };
     var protocolRequest = new[] { AppRoles.Admin, AppRoles.Administrador, AppRoles.ArquivistaOphir };
+    var protocolView = new[] { AppRoles.Admin, AppRoles.Administrador, AppRoles.AdministradorOphir, AppRoles.ArquivistaOphir };
     var protocolManage = new[] { AppRoles.Admin, AppRoles.Administrador, AppRoles.AdministradorOphir };
+    var protocolAdmin = new[] { AppRoles.Admin, AppRoles.Administrador };
 
     options.AddPolicy(AppPolicies.FullAdminOnly, p => RequireAny(p, fullAdmin));
     options.AddPolicy(AppPolicies.SystemAdmin, p => RequireAny(p, fullAdmin));
@@ -436,7 +443,9 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy(AppPolicies.LoansManage, p => RequireAny(p, loansManage));
     options.AddPolicy(AppPolicies.LoansRequest, p => RequireAny(p, loansRequest));
     options.AddPolicy(AppPolicies.ProtocolRequest, p => RequireAny(p, protocolRequest));
+    options.AddPolicy(AppPolicies.ProtocolView, p => RequireAny(p, protocolView));
     options.AddPolicy(AppPolicies.ProtocolManage, p => RequireAny(p, protocolManage));
+    options.AddPolicy(AppPolicies.ProtocolAdmin, p => RequireAny(p, protocolAdmin));
 
     // Policies legadas mantidas como aliases compatíveis para controllers/views existentes.
     options.AddPolicy(AppPolicies.Dashboard,

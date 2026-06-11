@@ -18,7 +18,8 @@ public sealed class SchemaHealthService : ISchemaHealthService
         "ged.upload_batch", "ged.upload_batch_item", "ged.upload_session", "ged.upload_session_chunk",
         "ged.document_partial_part", "ged.audit_log", "ged.app_audit_log",
         "ged.ocr_auto_schedule_run", "ged.ocr_auto_schedule_run_item", "ged.loan_request", "ged.loan_request_item",
-        "ged.document_quality_run", "ged.document_quality_result", "ged.loan_request_history"
+        "ged.document_quality_run", "ged.document_quality_result", "ged.loan_request_history",
+        "ged.protocol_request", "ged.protocol_request_item", "ged.protocol_request_attachment", "ged.protocol_request_history"
     ];
 
     private static readonly string[] OptionalTables =
@@ -44,7 +45,7 @@ public sealed class SchemaHealthService : ISchemaHealthService
         ("loan_request_item", "description", "Loans"), ("loan_request_item", "reference_code", "Loans"),
         ("loan_request_item", "is_manual", "Loans"), ("loan_request_item", "document_version_id", "Loans"),
         ("loan_request_item", "loan_request_id", "Loans"), ("loan_request_item", "reg_status", "Loans"),
-        ("loan_request", "requester_sector", "Loans"), ("loan_request", "sector_id", "Loans"),
+        ("loan_request", "requester_sector", "Loans"), ("loan_request", "sector_id", "Loans"), ("loan_request", "protocol_request_id", "Loans"),
         ("loan_request_history", "tenant_id", "Loans History"), ("loan_request_history", "loan_request_id", "Loans History"),
         ("loan_request_history", "action", "Loans History"), ("loan_request_history", "old_status", "Loans History"),
         ("loan_request_history", "new_status", "Loans History"), ("loan_request_history", "user_id", "Loans History"),
@@ -53,6 +54,19 @@ public sealed class SchemaHealthService : ISchemaHealthService
         ("loan_request_history", "internal_notes", "Loans History"), ("loan_request_history", "metadata_json", "Loans History"),
         ("loan_request_history", "correlation_id", "Loans History"), ("loan_request_history", "created_at", "Loans History"),
         ("loan_request_history", "reg_status", "Loans History"),
+
+        ("protocol_request", "tenant_id", "Protocolo"), ("protocol_request", "protocol_no", "Protocolo"),
+        ("protocol_request", "requester_user_id", "Protocolo"), ("protocol_request", "assigned_sector_id", "Protocolo"),
+        ("protocol_request", "assigned_user_id", "Protocolo"), ("protocol_request", "title", "Protocolo"),
+        ("protocol_request", "priority", "Protocolo"), ("protocol_request", "status", "Protocolo"),
+        ("protocol_request", "requested_at", "Protocolo"), ("protocol_request", "reg_status", "Protocolo"),
+        ("protocol_request_item", "protocol_request_id", "Protocolo"), ("protocol_request_item", "document_id", "Protocolo"),
+        ("protocol_request_item", "is_manual", "Protocolo"), ("protocol_request_item", "description", "Protocolo"),
+        ("protocol_request_attachment", "protocol_request_id", "Protocolo"), ("protocol_request_attachment", "file_name", "Protocolo"),
+        ("protocol_request_attachment", "storage_path", "Protocolo"),
+        ("protocol_request_history", "protocol_request_id", "Protocolo"), ("protocol_request_history", "action", "Protocolo"),
+        ("protocol_request_history", "old_status", "Protocolo"), ("protocol_request_history", "new_status", "Protocolo"),
+        ("protocol_request_history", "metadata_json", "Protocolo"), ("protocol_request_history", "created_at", "Protocolo"),
         ("upload_batch", "tenant_id", "Upload batch"), ("upload_batch", "status", "Upload batch"),
         ("upload_batch", "requested_folder_id", "Upload batch"), ("upload_batch_item", "batch_id", "Upload batch"),
         ("upload_batch_item", "upload_session_id", "Upload batch"), ("upload_batch_item", "status", "Upload batch"),

@@ -25,6 +25,7 @@
             <li><a class="dropdown-item js-classify-document" asp-action="Details" asp-controller="Ged" asp-route-id="@Model.DocumentId" asp-route-openClassify="true" data-document-id="@Model.DocumentId"><i class="bi bi-tags me-2"></i>Classificar</a></li>
         }
         <li><a class="dropdown-item" asp-action="Download" asp-controller="Ged" asp-route-id="@Model.VersionId"><i class="bi bi-download me-2"></i>Baixar</a></li>
+        <li><a class="dropdown-item" asp-controller="ProtocolRequests" asp-action="New" asp-route-documentId="@Model.DocumentId"><i class="bi bi-send-plus me-2"></i>Criar protocolo com este documento</a></li>
 
         @if (Model.IsConsolidated)
         {

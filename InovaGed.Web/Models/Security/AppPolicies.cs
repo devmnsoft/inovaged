@@ -19,7 +19,9 @@ public static class AppPolicies
     public const string LoansManage = "LoansManage";
     public const string LoansRequest = "LoansRequest";
     public const string ProtocolRequest = "ProtocolRequest";
+    public const string ProtocolView = "ProtocolView";
     public const string ProtocolManage = "ProtocolManage";
+    public const string ProtocolAdmin = "ProtocolAdmin";
     public const string SystemAdmin = "SystemAdmin";
     public const string SystemHealth = "SystemHealth";
     public const string ParametersAdmin = "ParametersAdmin";
