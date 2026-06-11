@@ -287,7 +287,9 @@ builder.Services.AddScoped<IWorkflowCommands, WorkflowCommands>();
 builder.Services.AddScoped<IOcrJobRepository, OcrJobRepository>();
 builder.Services.AddScoped<IOcrAutoScheduleRepository, OcrAutoScheduleRepository>();
 builder.Services.AddScoped<IOcrAutoSchedulerService, OcrAutoSchedulerService>();
-builder.Services.AddScoped<IOcrDashboardService, OcrDashboardService>();
+builder.Services.AddScoped<OcrDashboardService>();
+builder.Services.AddScoped<IOcrDashboardService>(sp => sp.GetRequiredService<OcrDashboardService>());
+builder.Services.AddScoped<IOcrStatusResolver>(sp => sp.GetRequiredService<OcrDashboardService>());
 builder.Services.AddHostedService<OcrAutoSchedulerWorker>();
 if (builder.Configuration.GetValue<bool>("OcrWorker:Enabled"))
 {

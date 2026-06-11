@@ -17,14 +17,14 @@ public sealed class SchemaHealthService : ISchemaHealthService
         "ged.document", "ged.document_version", "ged.folder", "ged.document_search", "ged.ocr_job",
         "ged.upload_batch", "ged.upload_batch_item", "ged.upload_session", "ged.upload_session_chunk",
         "ged.document_partial_part", "ged.audit_log", "ged.app_audit_log",
-        "ged.ocr_auto_schedule_run", "ged.ocr_auto_schedule_run_item", "ged.loan_request", "ged.loan_request_item",
+        "ged.loan_request", "ged.loan_request_item",
         "ged.document_quality_run", "ged.document_quality_result", "ged.loan_request_history",
         "ged.protocol_request", "ged.protocol_request_item", "ged.protocol_request_attachment", "ged.protocol_request_history"
     ];
 
     private static readonly string[] OptionalTables =
     [
-        "ged.app_user", "ged.folder_virtual_map"
+        "ged.app_user", "ged.folder_virtual_map", "ged.ocr_auto_schedule_run", "ged.ocr_auto_schedule_run_item"
     ];
 
     private static readonly (string Table, string Column, string Area)[] RequiredColumns =
@@ -163,7 +163,8 @@ where table_schema = 'ged';", cancellationToken: ct))).ToHashSet(StringComparer.
             foreach (var table in OptionalTables)
             {
                 var ok = existingTables.Contains(table);
-                AddCheck(report, BuildTableId(table), "GED", table, "Tabela", "Info", ok, ok ? "Tabela auxiliar encontrada." : "Tabela auxiliar ausente; não bloqueia GED, OCR, upload ou logs.", $"Execute o SQL específico desta linha ou {ConsolidationMigration} se este recurso auxiliar for usado no ambiente.");
+                var isOcrAutoSchedule = table.Contains("ocr_auto_schedule", StringComparison.OrdinalIgnoreCase);
+                AddCheck(report, BuildTableId(table), isOcrAutoSchedule ? "OCR Auto Schedule" : "GED", table, "Tabela", isOcrAutoSchedule ? "Warning" : "Info", ok, ok ? "Tabela auxiliar encontrada." : isOcrAutoSchedule ? "Tabela de agendamento OCR ausente; a Central OCR continua funcional, mas /Ocr/AutoSchedule exige migrations." : "Tabela auxiliar ausente; não bloqueia GED, OCR, upload ou logs.", $"Execute o SQL específico desta linha ou {ConsolidationMigration} se este recurso auxiliar for usado no ambiente.");
             }
 
             var existingColumns = (await conn.QueryAsync<string>(new CommandDefinition(@"
@@ -175,7 +176,9 @@ where table_schema = 'ged';", cancellationToken: ct))).ToHashSet(StringComparer.
             {
                 var objectName = $"ged.{table}.{column}";
                 var ok = existingColumns.Contains($"{table}.{column}");
-                AddCheck(report, BuildColumnId(table, column), area, objectName, "Coluna", "Critical", ok, ok ? "Coluna encontrada." : "Coluna crítica ausente.", $"Execute o SQL específico desta linha ou {ConsolidationMigration}.");
+                var severity = string.Equals(area, "OCR Auto Schedule", StringComparison.OrdinalIgnoreCase) ? "Warning" : "Critical";
+                var missingMessage = severity == "Warning" ? "Coluna de agendamento OCR ausente; a Central OCR funciona, mas a página de agendamento exige migration." : "Coluna crítica ausente.";
+                AddCheck(report, BuildColumnId(table, column), area, objectName, "Coluna", severity, ok, ok ? "Coluna encontrada." : missingMessage, $"Execute o SQL específico desta linha ou {ConsolidationMigration}.");
                 if (!ok) report.MissingColumns.Add(objectName);
             }
 
