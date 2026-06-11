@@ -10,6 +10,9 @@ begin
 end $$;
 
 alter table if exists ged.loan_request add column if not exists requester_sector text null;
+alter table if exists ged.loan_request add column if not exists sector_id uuid null;
+alter table if exists ged.loan_request add column if not exists updated_at timestamptz null;
+alter table if exists ged.loan_request add column if not exists updated_by uuid null;
 alter table if exists ged.loan_request alter column document_id drop not null;
 
 create table if not exists ged.loan_request_item (
@@ -53,6 +56,7 @@ alter table if exists ged.loan_request_item add column if not exists box_code te
 alter table if exists ged.loan_request_item add column if not exists physical_location text null;
 alter table if exists ged.loan_request_item add column if not exists notes text null;
 alter table if exists ged.loan_request_item add column if not exists created_at timestamptz not null default now();
+alter table if exists ged.loan_request_item add column if not exists reg_status char(1) not null default 'A';
 
 do $$
 begin
@@ -65,7 +69,14 @@ begin
 end $$;
 
 create index if not exists ix_loan_request_item_request on ged.loan_request_item(tenant_id, loan_request_id, reg_status);
-create index if not exists ix_loan_request_requester_sector on ged.loan_request(tenant_id, requester_sector, requested_at desc) where reg_status='A';
+do $$
+begin
+    if exists (select 1 from information_schema.columns where table_schema='ged' and table_name='loan_request' and column_name='requested_at') then
+        execute 'create index if not exists ix_loan_request_requester_sector on ged.loan_request(tenant_id, requester_sector, requested_at desc) where reg_status=''A''';
+    else
+        execute 'create index if not exists ix_loan_request_requester_sector on ged.loan_request(tenant_id, requester_sector) where reg_status=''A''';
+    end if;
+end $$;
 
 create table if not exists ged.loan_request_history (
     id uuid primary key default gen_random_uuid(),
@@ -76,14 +87,21 @@ create table if not exists ged.loan_request_history (
     action text not null,
     user_id uuid null,
     user_name text null,
-    sector_id text null,
+    sector_id uuid null,
+    sector_name text null,
     reason text null,
     internal_notes text null,
     created_at timestamptz not null default now(),
     correlation_id text null
 );
 
+alter table if exists ged.loan_request_history add column if not exists sector_name text null;
+alter table if exists ged.loan_request_history add column if not exists metadata_json jsonb not null default '{}'::jsonb;
+alter table if exists ged.loan_request_history add column if not exists reg_status char(1) not null default 'A';
 create index if not exists ix_loan_request_history_request on ged.loan_request_history(tenant_id, loan_request_id, created_at desc);
+create index if not exists ix_loan_request_history_tenant_loan_created on ged.loan_request_history(tenant_id, loan_request_id, created_at desc);
+create index if not exists ix_loan_request_history_tenant_action on ged.loan_request_history(tenant_id, action);
+create index if not exists ix_loan_request_history_tenant_user on ged.loan_request_history(tenant_id, user_id);
 
 do $$
 begin

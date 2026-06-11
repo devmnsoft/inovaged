@@ -242,13 +242,13 @@ values
                     transaction: tx,
                     cancellationToken: ct));
 
-            await WriteRichHistoryAsync(con, tx, tenantId, loanId, oldStatus: null, newStatus: "REQUESTED", action: "REQUESTED", userId, reason: vm.Notes, internalNotes: null, ct);
+            await WriteRichHistoryAsync(con, tx, tenantId, loanId, oldStatus: null, newStatus: "REQUESTED", action: "LOAN_CREATED", userId, reason: vm.Notes, internalNotes: null, ct);
 
             await tx.CommitAsync(ct);
 
             _ = await _audit.WriteAsync(
                 tenantId, userId,
-                action: "LOAN_REQUEST_CREATED",
+                action: "LOAN_CREATED",
                 entityName: "loan_request",
                 entityId: loanId,
                 summary: "Solicitação de empréstimo criada",
@@ -357,6 +357,36 @@ where lr.tenant_id=@tenant_id
             var inserted = await conn.ExecuteAsync(
                 new CommandDefinition(sql, new { tenant_id = tenantId, user_id = userId, nowUtc }, cancellationToken: ct));
 
+            const string richHistorySql = """
+insert into ged.loan_request_history
+(tenant_id, loan_request_id, old_status, new_status, action, user_id, user_name, reason, internal_notes, metadata_json, correlation_id, created_at, reg_status)
+select
+  lr.tenant_id,
+  lr.id,
+  lr.status::text,
+  'OVERDUE',
+  'LOAN_OVERDUE',
+  @user_id,
+  'Sistema',
+  'Empréstimo vencido (registro automático).',
+  null,
+  '{}'::jsonb,
+  @correlation_id,
+  @nowUtc,
+  'A'
+from ged.vw_loan_overdue lr
+where lr.tenant_id=@tenant_id
+  and not exists (
+    select 1 from ged.loan_request_history h
+    where h.tenant_id=lr.tenant_id
+      and h.loan_request_id=lr.id
+      and h.action='LOAN_OVERDUE'
+      and coalesce(h.reg_status,'A')='A'
+  );
+""";
+
+            await conn.ExecuteAsync(new CommandDefinition(richHistorySql, new { tenant_id = tenantId, user_id = userId, nowUtc, correlation_id = Guid.NewGuid().ToString("N") }, cancellationToken: ct));
+
             _ = await _audit.WriteAsync(
                 tenantId, userId,
                 action: "LOAN_OVERDUE_REGISTER",
@@ -463,7 +493,7 @@ values(@tenant_id, @loan_id, @nowUtc, @event_type, @by_user_id, @notes, @nowUtc,
                     nowUtc
                 }, transaction: tx, cancellationToken: ct));
 
-            await WriteRichHistoryAsync(conn, tx, tenantId, loanId, previousStatus, newStatus, newStatus, userId, notes, internalNotes: null, ct);
+            await WriteRichHistoryAsync(conn, tx, tenantId, loanId, previousStatus, newStatus, ActionForStatus(newStatus), userId, notes, internalNotes: null, ct);
 
             await tx.CommitAsync(ct);
 
@@ -502,6 +532,18 @@ values(@tenant_id, @loan_id, @nowUtc, @event_type, @by_user_id, @notes, @nowUtc,
         return string.IsNullOrWhiteSpace(value) ? null : value;
     }
 
+    private static string ActionForStatus(string status) => status switch
+    {
+        "APPROVED" => "LOAN_APPROVED",
+        "REJECTED" => "LOAN_REJECTED",
+        "DELIVERED" => "LOAN_DELIVERED",
+        "RETURNED" => "LOAN_RETURNED",
+        "CANCELLED" or "CANCELED" => "LOAN_CANCELLED",
+        "RETURNED_FOR_ADJUSTMENT" => "LOAN_RETURNED_FOR_ADJUSTMENT",
+        "OVERDUE" => "LOAN_OVERDUE",
+        _ => "LOAN_EVENT"
+    };
+
     private static async Task WriteRichHistoryAsync(
         System.Data.Common.DbConnection conn,
         System.Data.Common.DbTransaction tx,
@@ -517,11 +559,12 @@ values(@tenant_id, @loan_id, @nowUtc, @event_type, @by_user_id, @notes, @nowUtc,
     {
         const string sql = """
 insert into ged.loan_request_history
-(tenant_id, loan_request_id, old_status, new_status, action, user_id, user_name, sector_id, reason, internal_notes, created_at, correlation_id)
+(tenant_id, loan_request_id, old_status, new_status, action, user_id, user_name, sector_id, sector_name, reason, internal_notes, metadata_json, created_at, correlation_id, reg_status)
 select @TenantId, @LoanId, @OldStatus, @NewStatus, @Action, @UserId,
        coalesce(u.name, u.email, @UserId::text, 'Sistema'),
+       s.id,
        nullif(coalesce(s.setor, s.lotacao, ''), ''),
-       @Reason, @InternalNotes, now(), @CorrelationId
+       @Reason, @InternalNotes, '{}'::jsonb, now(), @CorrelationId, 'A'
 from (select 1) seed
 left join ged.app_user u on u.tenant_id=@TenantId and u.id=@UserId
 left join ged.servidor s on s.tenant_id=u.tenant_id and s.id=u.servidor_id

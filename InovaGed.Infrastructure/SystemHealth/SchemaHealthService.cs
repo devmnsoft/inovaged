@@ -18,7 +18,7 @@ public sealed class SchemaHealthService : ISchemaHealthService
         "ged.upload_batch", "ged.upload_batch_item", "ged.upload_session", "ged.upload_session_chunk",
         "ged.document_partial_part", "ged.audit_log", "ged.app_audit_log",
         "ged.ocr_auto_schedule_run", "ged.ocr_auto_schedule_run_item", "ged.loan_request", "ged.loan_request_item",
-        "ged.document_quality_run", "ged.document_quality_result"
+        "ged.document_quality_run", "ged.document_quality_result", "ged.loan_request_history"
     ];
 
     private static readonly string[] OptionalTables =
@@ -43,7 +43,14 @@ public sealed class SchemaHealthService : ISchemaHealthService
         ("ocr_auto_schedule_run_item", "status", "OCR Auto Schedule"),
         ("loan_request_item", "description", "Loans"), ("loan_request_item", "reference_code", "Loans"),
         ("loan_request_item", "is_manual", "Loans"), ("loan_request_item", "document_version_id", "Loans"),
-        ("loan_request_item", "loan_request_id", "Loans"),
+        ("loan_request_item", "loan_request_id", "Loans"), ("loan_request_item", "reg_status", "Loans"),
+        ("loan_request", "requester_sector", "Loans"), ("loan_request", "sector_id", "Loans"),
+        ("loan_request_history", "tenant_id", "Loans History"), ("loan_request_history", "loan_request_id", "Loans History"),
+        ("loan_request_history", "action", "Loans History"), ("loan_request_history", "old_status", "Loans History"),
+        ("loan_request_history", "new_status", "Loans History"), ("loan_request_history", "user_id", "Loans History"),
+        ("loan_request_history", "user_name", "Loans History"), ("loan_request_history", "reason", "Loans History"),
+        ("loan_request_history", "internal_notes", "Loans History"), ("loan_request_history", "created_at", "Loans History"),
+        ("loan_request_history", "reg_status", "Loans History"),
         ("upload_batch", "tenant_id", "Upload batch"), ("upload_batch", "status", "Upload batch"),
         ("upload_batch", "requested_folder_id", "Upload batch"), ("upload_batch_item", "batch_id", "Upload batch"),
         ("upload_batch_item", "upload_session_id", "Upload batch"), ("upload_batch_item", "status", "Upload batch"),
@@ -89,6 +96,7 @@ public sealed class SchemaHealthService : ISchemaHealthService
         ("ix_loan_request_item_loan_request", [], "Índice dos itens por solicitação de empréstimo."),
         ("ix_loan_request_item_document", [], "Índice dos itens por documento GED."),
         ("ix_loan_request_item_manual", [], "Índice dos itens manuais/físicos de empréstimo."),
+        ("ix_loan_request_history_tenant_loan_created", [], "Índice do histórico de empréstimo por solicitação/data."),
         ("ix_app_audit_log_tenant_created", [], "Índice de auditoria por tenant/data."),
         ("ix_app_audit_log_user_created", [], "Índice de auditoria por usuário/data."),
         ("ix_app_audit_log_action_created", [], "Índice de auditoria por ação/data."),
@@ -126,7 +134,10 @@ where table_schema = 'ged';", cancellationToken: ct))).ToHashSet(StringComparer.
             foreach (var table in RequiredTables)
             {
                 var ok = existingTables.Contains(table);
-                AddCheck(report, BuildTableId(table), "GED", table, "Tabela", "Critical", ok, ok ? "Tabela crítica encontrada." : "Tabela crítica ausente.", $"Execute o SQL específico desta linha ou {ConsolidationMigration}.");
+                var tableFix = string.Equals(table, "ged.loan_request_history", StringComparison.OrdinalIgnoreCase)
+                    ? "Execute database/migrations/2026_06_loans_history.sql ou database/apply_all_required_migrations.sql."
+                    : $"Execute o SQL específico desta linha ou {ConsolidationMigration}.";
+                AddCheck(report, BuildTableId(table), "GED", table, "Tabela", "Critical", ok, ok ? "Tabela crítica encontrada." : "Tabela crítica ausente.", tableFix);
                 if (!ok) report.MissingTables.Add(table);
             }
 
@@ -362,6 +373,7 @@ limit 1;", cancellationToken: ct));
             "ged.document_partial_part" => "GED_TABLE_DOCUMENT_PARTIAL_PART",
             "ged.document_quality_run" => "GED_TABLE_DOCUMENT_QUALITY_RUN",
             "ged.document_quality_result" => "GED_TABLE_DOCUMENT_QUALITY_RESULT",
+            "ged.loan_request_history" => "GED_TABLE_LOAN_REQUEST_HISTORY",
             _ => BuildGenericId("GED_TABLE", table)
         };
     }
