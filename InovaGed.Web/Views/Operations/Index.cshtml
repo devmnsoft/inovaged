@@ -4,14 +4,9 @@
     string SeverityBadge(string severity) => severity switch { "critical" => "danger", "high" => "warning text-dark", "medium" => "info text-dark", _ => "secondary" };
 }
 
-<style>
-    .operations-hero{background:linear-gradient(135deg,#102a43,#1d4ed8);color:#fff;border-radius:1.25rem;padding:1.5rem;box-shadow:0 1rem 2rem rgba(15,23,42,.16)}
-    .ops-card{border:0;border-radius:1rem;box-shadow:0 .5rem 1.25rem rgba(15,23,42,.08);height:100%;transition:.18s ease-in-out;cursor:pointer}.ops-card:hover{transform:translateY(-2px);box-shadow:0 1rem 2rem rgba(15,23,42,.12)}
-    .ops-card .count{font-size:2rem;font-weight:800;line-height:1}.ops-action-list .list-group-item{border:0;border-bottom:1px solid #eef2f7}.ops-action-list .list-group-item:last-child{border-bottom:0}
-    .ops-tab-card{border:0;border-radius:1rem;box-shadow:0 .5rem 1.25rem rgba(15,23,42,.08)}.ops-empty{padding:2rem;text-align:center;color:#64748b}.ops-filter{background:#fff;border-radius:1rem;box-shadow:0 .5rem 1.25rem rgba(15,23,42,.06)}
-    .ops-skeleton{min-height:180px;border-radius:.75rem;background:linear-gradient(90deg,#f1f5f9 25%,#e2e8f0 37%,#f1f5f9 63%);background-size:400% 100%;animation:opsShimmer 1.2s ease-in-out infinite}@keyframes opsShimmer{0%{background-position:100% 0}100%{background-position:0 0}}
-    .ops-table th{white-space:nowrap;color:#475569;font-size:.78rem;text-transform:uppercase}.ops-table td{vertical-align:middle}.ops-toast{position:fixed;right:1rem;bottom:1rem;z-index:1080;min-width:280px}
-</style>
+@section Styles {
+    <link rel="stylesheet" href="~/css/operations.css" asp-append-version="true" />
+}
 
 <div class="container-fluid py-3 operations-page">
     <div class="operations-hero mb-4">
@@ -129,56 +124,5 @@
 </div>
 
 @section Scripts {
-<script>
-(() => {
-    const form = document.getElementById('operationsFilters');
-    const content = document.getElementById('queueContent');
-    const toastEl = document.getElementById('opsToast');
-    const toastBody = document.getElementById('opsToastBody');
-    const toast = window.bootstrap && toastEl ? new bootstrap.Toast(toastEl, { delay: 3500 }) : null;
-
-    function showToast(message, ok){
-        if(!toast){ console.log(message); return; }
-        toastEl.classList.toggle('text-bg-danger', ok === false);
-        toastEl.classList.toggle('text-bg-success', ok !== false);
-        toastBody.textContent = message;
-        toast.show();
-    }
-    function params(extra){
-        const data = new FormData(form);
-        const qs = new URLSearchParams();
-        for (const [k,v] of data.entries()) if (v && k !== '__RequestVerificationToken') qs.set(k, v);
-        Object.entries(extra || {}).forEach(([k,v]) => { if (v) qs.set(k, v); });
-        qs.set('pageSize','20');
-        return qs.toString();
-    }
-    function activeType(){ return document.querySelector('#operationsTabs .nav-link.active')?.dataset.type || 'ged'; }
-    async function loadQueue(type){
-        type = type || activeType();
-        const tab = document.querySelector(`#operationsTabs .nav-link[data-type="${type}"]`);
-        if(tab && !tab.classList.contains('active')) bootstrap.Tab.getOrCreateInstance(tab).show();
-        content.innerHTML = '<div class="ops-skeleton"></div>';
-        try{
-            const res = await fetch(`/Operations/Queue?${params({ type })}`, { headers: { 'X-Requested-With':'XMLHttpRequest' }});
-            const payload = await res.json();
-            if(!payload.success){ content.innerHTML = `<div class="alert alert-danger">${payload.message || 'Não foi possível carregar esta fila.'}</div>`; showToast(payload.message || 'Falha ao carregar fila.', false); return; }
-            content.innerHTML = payload.html || '<div class="ops-empty">Nenhum item encontrado.</div>';
-        }catch(e){
-            content.innerHTML = '<div class="alert alert-danger">Não foi possível carregar esta fila.</div>';
-            showToast('Falha de comunicação ao carregar fila.', false);
-        }
-    }
-    document.querySelectorAll('#operationsTabs .nav-link').forEach(t => t.addEventListener('shown.bs.tab', () => loadQueue(t.dataset.type)));
-    document.querySelectorAll('[data-card-target]').forEach(a => a.addEventListener('click', e => { const target = a.dataset.cardTarget; if(target){ e.preventDefault(); loadQueue(target); } }));
-    form.addEventListener('submit', e => { e.preventDefault(); showToast('Filtros aplicados à fila ativa.'); loadQueue(); });
-    document.addEventListener('click', e => { const action = e.target.closest('[data-ops-action]'); if(action){ showToast(`Abrindo ação: ${action.textContent.trim()}`); const token = form.querySelector('input[name="__RequestVerificationToken"]')?.value || ''; const body = new URLSearchParams({ module: activeType(), actionUrl: action.getAttribute('href') || '', actionLabel: action.textContent.trim() }); fetch('/Operations/ActionClicked', { method:'POST', headers:{ 'RequestVerificationToken': token, 'Content-Type':'application/x-www-form-urlencoded' }, body }).catch(() => {}); } });
-    document.getElementById('btnRevalidate')?.addEventListener('click', async () => {
-        const token = form.querySelector('input[name="__RequestVerificationToken"]')?.value || '';
-        const res = await fetch('/Operations/Revalidate', { method:'POST', headers:{ 'RequestVerificationToken': token }});
-        const payload = await res.json();
-        showToast(payload.message || 'Schema revalidado.', payload.success);
-    });
-    loadQueue('ged');
-})();
-</script>
+    <script src="~/js/operations.js" asp-append-version="true"></script>
 }
