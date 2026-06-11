@@ -36,6 +36,20 @@ public sealed class LoanHistoryWriter : ILoanHistoryWriter
         try
         {
             await using var conn = await _db.OpenAsync(ct);
+
+            var historyExists = await conn.ExecuteScalarAsync<string?>(
+                new CommandDefinition("select to_regclass('ged.loan_request_history')::text", cancellationToken: ct));
+
+            if (string.IsNullOrWhiteSpace(historyExists))
+            {
+                _logger.LogWarning(
+                    "Histórico de Loans não configurado. Ignorando registro de histórico. Tenant={TenantId} Loan={LoanRequestId} Action={Action}",
+                    tenantId,
+                    loanRequestId,
+                    action);
+                return;
+            }
+
             const string sql = """
 insert into ged.loan_request_history
 (tenant_id, loan_request_id, old_status, new_status, action, user_id, user_name, sector_id, sector_name, reason, internal_notes, metadata_json, correlation_id, created_at, reg_status)
@@ -61,8 +75,7 @@ values
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Falha ao gravar histórico rico de empréstimo. Tenant={TenantId} Loan={LoanRequestId} Action={Action}", tenantId, loanRequestId, action);
-            throw;
+            _logger.LogError(ex, "Falha ao gravar histórico rico de empréstimo. Fluxo principal preservado. Tenant={TenantId} Loan={LoanRequestId} Action={Action}", tenantId, loanRequestId, action);
         }
     }
 

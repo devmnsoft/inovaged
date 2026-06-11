@@ -333,59 +333,128 @@ values
 
             await using var conn = await _db.OpenAsync(ct);
 
-            var nowUtc = DateTimeOffset.UtcNow;
+            var historyExists = await conn.ExecuteScalarAsync<string?>(
+                new CommandDefinition("select to_regclass('ged.loan_request_history')::text", cancellationToken: ct));
 
-            const string sql = """
-insert into ged.loan_history(tenant_id, loan_id, event_time, event_type, by_user_id, notes, reg_date, reg_status)
+            if (string.IsNullOrWhiteSpace(historyExists))
+            {
+                _logger.LogWarning(
+                    "Histórico de Loans não configurado. Ignorando registro de overdue events. Tenant={TenantId}",
+                    tenantId);
+                return Result<int>.Ok(0);
+            }
+
+            // Regra de negócio: o worker registra o vencimento no histórico rico e atualiza o status textual para OVERDUE
+            // apenas para empréstimos em estados operacionais abertos (APPROVED/DELIVERED ou equivalentes PT-BR).
+            // A guarda por h.created_at::date evita duplicidade a cada execução diária do worker.
+            const string richHistorySql = """
+insert into ged.loan_request_history (
+    tenant_id,
+    loan_request_id,
+    old_status,
+    new_status,
+    action,
+    user_id,
+    user_name,
+    reason,
+    internal_notes,
+    metadata_json,
+    created_at,
+    reg_status
+)
 select
-  lr.tenant_id,
-  lr.id,
-  @nowUtc,
-  'OVERDUE',
-  @user_id,
-  'Empréstimo vencido (registro automático).',
-  @nowUtc,
-  'A'
-from ged.vw_loan_overdue lr
-where lr.tenant_id=@tenant_id
+    l.tenant_id,
+    l.id,
+    l.status::text,
+    'OVERDUE',
+    'LOAN_OVERDUE',
+    @UserId,
+    'Sistema - Verificação de vencimento',
+    'Empréstimo vencido',
+    'Registro automático de vencimento pelo LoanOverdueWorker',
+    jsonb_build_object(
+        'dueAt', l.due_at,
+        'protocolNo', l.protocol_no
+    ),
+    now(),
+    'A'
+from ged.loan_request l
+where l.tenant_id = @TenantId
+  and coalesce(l.reg_status, 'A') = 'A'
+  and l.due_at is not null
+  and l.due_at < now()
+  and upper(l.status::text) not in ('RETURNED','DEVOLVIDO','CANCELLED','CANCELADO','CANCELED','OVERDUE','VENCIDO')
   and not exists (
-    select 1 from ged.loan_history h
-    where h.tenant_id=lr.tenant_id and h.loan_id=lr.id and h.event_type='OVERDUE' and h.reg_status='A'
+      select 1
+      from ged.loan_request_history h
+      where h.tenant_id = l.tenant_id
+        and h.loan_request_id = l.id
+        and h.action = 'LOAN_OVERDUE'
+        and h.created_at::date = now()::date
+        and h.old_status is not distinct from l.status::text
+        and coalesce(h.reg_status, 'A') = 'A'
   );
 """;
 
             var inserted = await conn.ExecuteAsync(
-                new CommandDefinition(sql, new { tenant_id = tenantId, user_id = userId, nowUtc }, cancellationToken: ct));
+                new CommandDefinition(richHistorySql, new { TenantId = tenantId, UserId = userId }, cancellationToken: ct));
 
-            const string richHistorySql = """
-insert into ged.loan_request_history
-(tenant_id, loan_request_id, old_status, new_status, action, user_id, user_name, reason, internal_notes, metadata_json, correlation_id, created_at, reg_status)
+            const string legacyHistorySql = """
+insert into ged.loan_history(tenant_id, loan_id, event_time, event_type, by_user_id, notes, reg_date, reg_status)
 select
-  lr.tenant_id,
-  lr.id,
-  lr.status::text,
+  l.tenant_id,
+  l.id,
+  now(),
   'OVERDUE',
-  'LOAN_OVERDUE',
-  @user_id,
-  'Sistema',
+  @UserId,
   'Empréstimo vencido (registro automático).',
-  null,
-  '{}'::jsonb,
-  @correlation_id,
-  @nowUtc,
+  now(),
   'A'
-from ged.vw_loan_overdue lr
-where lr.tenant_id=@tenant_id
+from ged.loan_request l
+where l.tenant_id = @TenantId
+  and coalesce(l.reg_status, 'A') = 'A'
+  and l.due_at is not null
+  and l.due_at < now()
+  and upper(l.status::text) not in ('RETURNED','DEVOLVIDO','CANCELLED','CANCELADO','CANCELED','OVERDUE','VENCIDO')
   and not exists (
-    select 1 from ged.loan_request_history h
-    where h.tenant_id=lr.tenant_id
-      and h.loan_request_id=lr.id
-      and h.action='LOAN_OVERDUE'
-      and coalesce(h.reg_status,'A')='A'
+    select 1
+    from ged.loan_history h
+    where h.tenant_id = l.tenant_id
+      and h.loan_id = l.id
+      and h.event_type = 'OVERDUE'
+      and h.event_time::date = now()::date
+      and coalesce(h.reg_status, 'A') = 'A'
   );
 """;
 
-            await conn.ExecuteAsync(new CommandDefinition(richHistorySql, new { tenant_id = tenantId, user_id = userId, nowUtc, correlation_id = Guid.NewGuid().ToString("N") }, cancellationToken: ct));
+            await conn.ExecuteAsync(
+                new CommandDefinition(legacyHistorySql, new { TenantId = tenantId, UserId = userId }, cancellationToken: ct));
+
+            var canUpdateOverdueStatus = await conn.ExecuteScalarAsync<bool>(new CommandDefinition("""
+select to_regtype('ged.loan_status') is not null
+   and exists (select 1 from pg_enum e join pg_type t on t.oid = e.enumtypid join pg_namespace n on n.oid = t.typnamespace where n.nspname = 'ged' and t.typname = 'loan_status' and e.enumlabel = 'OVERDUE')
+   and exists (select 1 from information_schema.columns where table_schema = 'ged' and table_name = 'loan_request' and column_name = 'updated_at')
+   and exists (select 1 from information_schema.columns where table_schema = 'ged' and table_name = 'loan_request' and column_name = 'updated_by');
+""", cancellationToken: ct));
+
+            if (canUpdateOverdueStatus)
+            {
+                const string updateSql = """
+update ged.loan_request
+set
+    status = 'OVERDUE'::ged.loan_status,
+    updated_at = now(),
+    updated_by = @UserId
+where tenant_id = @TenantId
+  and coalesce(reg_status, 'A') = 'A'
+  and due_at is not null
+  and due_at < now()
+  and upper(status::text) in ('DELIVERED','ENTREGUE','APPROVED','APROVADO');
+""";
+
+                await conn.ExecuteAsync(
+                    new CommandDefinition(updateSql, new { TenantId = tenantId, UserId = userId }, cancellationToken: ct));
+            }
 
             _ = await _audit.WriteAsync(
                 tenantId, userId,
@@ -544,7 +613,7 @@ values(@tenant_id, @loan_id, @nowUtc, @event_type, @by_user_id, @notes, @nowUtc,
         _ => "LOAN_EVENT"
     };
 
-    private static async Task WriteRichHistoryAsync(
+    private async Task WriteRichHistoryAsync(
         System.Data.Common.DbConnection conn,
         System.Data.Common.DbTransaction tx,
         Guid tenantId,
@@ -557,7 +626,22 @@ values(@tenant_id, @loan_id, @nowUtc, @event_type, @by_user_id, @notes, @nowUtc,
         string? internalNotes,
         CancellationToken ct)
     {
-        const string sql = """
+        try
+        {
+            var historyExists = await conn.ExecuteScalarAsync<string?>(
+                new CommandDefinition("select to_regclass('ged.loan_request_history')::text", transaction: tx, cancellationToken: ct));
+
+            if (string.IsNullOrWhiteSpace(historyExists))
+            {
+                _logger.LogWarning(
+                    "Loan history table missing. Skipping rich history registration. Tenant={TenantId} Loan={LoanId} Action={Action}",
+                    tenantId,
+                    loanId,
+                    action);
+                return;
+            }
+
+            const string sql = """
 insert into ged.loan_request_history
 (tenant_id, loan_request_id, old_status, new_status, action, user_id, user_name, sector_id, sector_name, reason, internal_notes, metadata_json, created_at, correlation_id, reg_status)
 select @TenantId, @LoanId, @OldStatus, @NewStatus, @Action, @UserId,
@@ -570,18 +654,24 @@ left join ged.app_user u on u.tenant_id=@TenantId and u.id=@UserId
 left join ged.servidor s on s.tenant_id=u.tenant_id and s.id=u.servidor_id
 ;
 """;
-        await conn.ExecuteAsync(new CommandDefinition(sql, new
+            await conn.ExecuteAsync(new CommandDefinition(sql, new
+            {
+                TenantId = tenantId,
+                LoanId = loanId,
+                OldStatus = oldStatus,
+                NewStatus = newStatus,
+                Action = action,
+                UserId = userId,
+                Reason = TrimOrNull(reason),
+                InternalNotes = TrimOrNull(internalNotes),
+                CorrelationId = Guid.NewGuid().ToString("N")
+            }, tx, cancellationToken: ct));
+        }
+        catch (Exception ex)
         {
-            TenantId = tenantId,
-            LoanId = loanId,
-            OldStatus = oldStatus,
-            NewStatus = newStatus,
-            Action = action,
-            UserId = userId,
-            Reason = TrimOrNull(reason),
-            InternalNotes = TrimOrNull(internalNotes),
-            CorrelationId = Guid.NewGuid().ToString("N")
-        }, tx, cancellationToken: ct));
+            // O histórico rico não deve derrubar o fluxo transacional principal; a migration e o SchemaRepair corrigem o schema definitivo.
+            _logger.LogError(ex, "Falha ao gravar histórico rico de empréstimo. Fluxo principal preservado. Tenant={TenantId} Loan={LoanId} Action={Action}", tenantId, loanId, action);
+        }
     }
 
 }
