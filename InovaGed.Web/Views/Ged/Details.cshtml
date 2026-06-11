@@ -484,9 +484,9 @@
                             </table>
                         </div>
 
-                        <div class="alert alert-info small mb-0">
-                            <i class="bi bi-info-circle me-1"></i>
-                            Quando o OCR for solicitado, a tela acompanhará o processamento automaticamente e avisará ao concluir.
+                        <div class="alert alert-info small mb-0 d-flex flex-wrap align-items-center justify-content-between gap-2">
+                            <span><i class="bi bi-info-circle me-1"></i>Quando o OCR for solicitado, a tela acompanhará o processamento automaticamente e avisará ao concluir.</span>
+                            <a class="btn btn-sm btn-outline-primary" href="/Ocr?Search=@Uri.EscapeDataString(Model.Title ?? string.Empty)">Abrir na Central OCR</a>
                         </div>
                     }
                 </div>
