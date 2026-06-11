@@ -101,7 +101,7 @@
         }
     </style>
 
-    @RenderSection("Styles", required: false)
+    @await RenderSectionAsync("Styles", required: false)
 </head>
 
 <body class="@(isAuthenticated ? "layout-app" : "layout-auth")">
