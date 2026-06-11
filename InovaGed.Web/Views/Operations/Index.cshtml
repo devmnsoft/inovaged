@@ -1,14 +1,16 @@
 @model InovaGed.Application.Operations.OperationsDashboardVm
 @{
     ViewData["Title"] = "Central Operacional";
-    string SeverityBadge(string severity) => severity switch { "critical" => "danger", "high" => "warning", "medium" => "info", _ => "secondary" };
+    string SeverityBadge(string severity) => severity switch { "critical" => "danger", "high" => "warning text-dark", "medium" => "info text-dark", _ => "secondary" };
 }
 
 <style>
     .operations-hero{background:linear-gradient(135deg,#102a43,#1d4ed8);color:#fff;border-radius:1.25rem;padding:1.5rem;box-shadow:0 1rem 2rem rgba(15,23,42,.16)}
-    .ops-card{border:0;border-radius:1rem;box-shadow:0 .5rem 1.25rem rgba(15,23,42,.08);height:100%}
+    .ops-card{border:0;border-radius:1rem;box-shadow:0 .5rem 1.25rem rgba(15,23,42,.08);height:100%;transition:.18s ease-in-out;cursor:pointer}.ops-card:hover{transform:translateY(-2px);box-shadow:0 1rem 2rem rgba(15,23,42,.12)}
     .ops-card .count{font-size:2rem;font-weight:800;line-height:1}.ops-action-list .list-group-item{border:0;border-bottom:1px solid #eef2f7}.ops-action-list .list-group-item:last-child{border-bottom:0}
     .ops-tab-card{border:0;border-radius:1rem;box-shadow:0 .5rem 1.25rem rgba(15,23,42,.08)}.ops-empty{padding:2rem;text-align:center;color:#64748b}.ops-filter{background:#fff;border-radius:1rem;box-shadow:0 .5rem 1.25rem rgba(15,23,42,.06)}
+    .ops-skeleton{min-height:180px;border-radius:.75rem;background:linear-gradient(90deg,#f1f5f9 25%,#e2e8f0 37%,#f1f5f9 63%);background-size:400% 100%;animation:opsShimmer 1.2s ease-in-out infinite}@keyframes opsShimmer{0%{background-position:100% 0}100%{background-position:0 0}}
+    .ops-table th{white-space:nowrap;color:#475569;font-size:.78rem;text-transform:uppercase}.ops-table td{vertical-align:middle}.ops-toast{position:fixed;right:1rem;bottom:1rem;z-index:1080;min-width:280px}
 </style>
 
 <div class="container-fluid py-3 operations-page">
@@ -17,16 +19,32 @@
             <div>
                 <div class="text-white-50 small text-uppercase fw-semibold">InovaGED</div>
                 <h1 class="h3 mb-1">Central Operacional</h1>
-                <p class="mb-0 text-white-50">Painel diário para pendências de GED, OCR, solicitações, empréstimos, protocolos e alertas.</p>
+                <p class="mb-0 text-white-50">Acompanhe pendências, filas de trabalho e ações críticas do GED.</p>
             </div>
             <div class="text-end">
                 <div class="badge bg-light text-primary fs-6 mb-2">@Model.ScopeLabel</div>
-                <div class="small text-white-50">Carregamento inicial: resumo + 10 pendências críticas. Abas sob demanda.</div>
+                <div class="small text-white-50">Resumo inicial e abas carregadas sob demanda.</div>
             </div>
         </div>
     </div>
 
+    @if (Model.HasSchemaWarnings)
+    {
+        <div class="alert alert-warning d-flex flex-wrap align-items-center justify-content-between gap-3" role="status">
+            <div><i class="bi bi-exclamation-triangle me-2"></i><strong>Alguns módulos ainda não estão configurados.</strong> Execute o Schema Health para aplicar as migrations pendentes.</div>
+            @if (Model.IsGlobalScope)
+            {
+                <div class="d-flex gap-2">
+                    <a class="btn btn-sm btn-warning" href="/SchemaHealth">Abrir Schema Health</a>
+                    <button id="btnRevalidate" class="btn btn-sm btn-outline-dark" type="button">Revalidar</button>
+                    <a class="btn btn-sm btn-outline-dark" href="/SystemHealth">Ver Startup Guard</a>
+                </div>
+            }
+        </div>
+    }
+
     <form id="operationsFilters" class="ops-filter p-3 mb-4">
+        @Html.AntiForgeryToken()
         <div class="row g-2 align-items-end">
             <div class="col-md-2"><label class="form-label small">Período inicial</label><input type="date" name="from" class="form-control" /></div>
             <div class="col-md-2"><label class="form-label small">Período final</label><input type="date" name="to" class="form-control" /></div>
@@ -55,8 +73,8 @@
                     foreach (var action in Model.NextActions)
                     {
                         <div class="list-group-item d-flex flex-wrap justify-content-between align-items-center gap-2">
-                            <div><span class="badge bg-@SeverityBadge(action.Severity) me-2">@action.Severity</span>@action.Message</div>
-                            <a href="@action.Url" class="btn btn-sm btn-outline-primary">@action.ButtonText</a>
+                            <div><i class="bi @action.Icon me-2"></i><span class="badge bg-@SeverityBadge(action.Severity) me-2">Prioridade @action.Priority</span>@action.Message</div>
+                            <a href="@action.Url" class="btn btn-sm btn-outline-primary" data-card-target="@(action.Url.TrimStart('#'))">@action.ButtonText</a>
                         </div>
                     }
                 }
@@ -72,91 +90,95 @@
         @foreach (var card in Model.Summary)
         {
             <div class="col-12 col-sm-6 col-xl-3">
-                <div class="card ops-card border-top border-4 border-@card.CssClass">
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-start">
-                            <div><div class="count text-@card.CssClass">@card.Count</div><div class="fw-semibold">@card.Title</div></div>
-                            <span class="badge bg-@card.CssClass">@card.Severity</span>
+                <a class="text-decoration-none text-body" href="@card.Url" data-card-target="@(card.Url.TrimStart('#'))">
+                    <div class="card ops-card border-top border-4 border-@card.CssClass">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div><div class="count text-@card.CssClass">@card.Count</div><div class="fw-semibold">@card.Title</div></div>
+                                <span class="badge bg-@SeverityBadge(card.Severity)">@(card.ModuleReady ? card.Severity : "Não configurado")</span>
+                            </div>
+                            <p class="small text-muted mt-2 mb-3">@(card.ModuleReady ? card.Description : card.StatusText)</p>
+                            <span class="btn btn-sm btn-outline-@card.CssClass">@card.ActionLabel</span>
                         </div>
-                        <p class="text-muted small my-2">@card.Description</p>
-                        <a href="@card.Url" class="btn btn-sm btn-outline-@card.CssClass">Ver itens</a>
                     </div>
-                </div>
+                </a>
             </div>
         }
     </div>
 
     <div class="card ops-tab-card">
-        <div class="card-header bg-white border-0 pt-3">
-            <ul class="nav nav-tabs card-header-tabs" id="operationsTabs" role="tablist">
-                <li class="nav-item"><button class="nav-link active" data-endpoint="GedQueue" data-pending="unclassified" data-bs-toggle="tab" data-bs-target="#tabContent" type="button">GED</button></li>
-                <li class="nav-item"><button class="nav-link" data-endpoint="GedQueue" data-pending="withoutOcr" data-bs-toggle="tab" data-bs-target="#tabContent" type="button">OCR</button></li>
-                <li class="nav-item"><button class="nav-link" data-endpoint="GedQueue" data-pending="incomplete" data-bs-toggle="tab" data-bs-target="#tabContent" type="button">Documentos incompletos</button></li>
-                <li class="nav-item"><button class="nav-link" data-endpoint="LoanQueue" data-bs-toggle="tab" data-bs-target="#tabContent" type="button">Solicitações</button></li>
-                <li class="nav-item"><button class="nav-link" data-endpoint="ProtocolQueue" data-bs-toggle="tab" data-bs-target="#tabContent" type="button">Protocolo</button></li>
-                <li class="nav-item"><button class="nav-link" data-endpoint="Alerts" data-bs-toggle="tab" data-bs-target="#tabContent" type="button">Alertas</button></li>
+        <div class="card-header bg-white border-0">
+            <ul class="nav nav-pills flex-wrap gap-2" id="operationsTabs" role="tablist">
+                <li class="nav-item"><button class="nav-link active" data-bs-toggle="pill" type="button" data-type="ged">GED</button></li>
+                <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" type="button" data-type="ocr">OCR</button></li>
+                <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" type="button" data-type="partials">Documentos Parciais</button></li>
+                <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" type="button" data-type="loans">Loans</button></li>
+                <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" type="button" data-type="protocol">Protocolo</button></li>
+                <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" type="button" data-type="quality">Qualidade</button></li>
+                <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" type="button" data-type="alerts">Alertas</button></li>
             </ul>
         </div>
-        <div class="card-body tab-content"><div class="tab-pane fade show active" id="tabContent"><div id="queueContent" class="text-center text-muted py-4">Carregando fila...</div></div></div>
+        <div class="card-body">
+            <div id="queueContent"><div class="ops-skeleton"></div></div>
+        </div>
     </div>
 </div>
 
-<div class="modal fade" id="operationActionModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog"><div class="modal-content">
-        <div class="modal-header"><h5 class="modal-title">Registrar justificativa/devolutiva</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button></div>
-        <div class="modal-body"><textarea class="form-control" rows="4" placeholder="Informe justificativa, devolutiva ou observação da ação operacional."></textarea><div class="form-text">A ação detalhada será concluída na tela de origem do item.</div></div>
-        <div class="modal-footer"><button class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button><a id="modalActionLink" class="btn btn-primary" href="#">Continuar</a></div>
-    </div></div>
+<div class="toast align-items-center border-0 ops-toast" id="opsToast" role="status" aria-live="polite" aria-atomic="true">
+    <div class="d-flex"><div class="toast-body" id="opsToastBody">Ação registrada.</div><button type="button" class="btn-close me-2 m-auto" data-bs-dismiss="toast" aria-label="Fechar"></button></div>
 </div>
 
 @section Scripts {
 <script>
-(function(){
-    const content = document.getElementById('queueContent');
+(() => {
     const form = document.getElementById('operationsFilters');
-    const modalEl = document.getElementById('operationActionModal');
-    const actionModal = modalEl && window.bootstrap ? new bootstrap.Modal(modalEl) : null;
-    const actionLink = document.getElementById('modalActionLink');
+    const content = document.getElementById('queueContent');
+    const toastEl = document.getElementById('opsToast');
+    const toastBody = document.getElementById('opsToastBody');
+    const toast = window.bootstrap && toastEl ? new bootstrap.Toast(toastEl, { delay: 3500 }) : null;
 
+    function showToast(message, ok){
+        if(!toast){ console.log(message); return; }
+        toastEl.classList.toggle('text-bg-danger', ok === false);
+        toastEl.classList.toggle('text-bg-success', ok !== false);
+        toastBody.textContent = message;
+        toast.show();
+    }
     function params(extra){
         const data = new FormData(form);
         const qs = new URLSearchParams();
-        for (const [k,v] of data.entries()) if (v) qs.set(k, v);
+        for (const [k,v] of data.entries()) if (v && k !== '__RequestVerificationToken') qs.set(k, v);
         Object.entries(extra || {}).forEach(([k,v]) => { if (v) qs.set(k, v); });
-        qs.set('pageSize','10');
+        qs.set('pageSize','20');
         return qs.toString();
     }
-    function activeTab(){ return document.querySelector('#operationsTabs .nav-link.active'); }
-    async function loadQueue(){
-        const tab = activeTab(); if(!tab) return;
-        content.innerHTML = '<div class="text-center text-muted py-4"><span class="spinner-border spinner-border-sm me-2"></span>Carregando...</div>';
-        const endpoint = tab.dataset.endpoint;
-        const pending = tab.dataset.pending;
-        const res = await fetch(`/Operations/${endpoint}?${params({ pendingType: pending })}`, { headers: { 'X-Requested-With':'XMLHttpRequest' }});
-        if(!res.ok){ content.innerHTML = '<div class="alert alert-danger">Não foi possível carregar a fila.</div>'; return; }
-        render(await res.json(), endpoint);
+    function activeType(){ return document.querySelector('#operationsTabs .nav-link.active')?.dataset.type || 'ged'; }
+    async function loadQueue(type){
+        type = type || activeType();
+        const tab = document.querySelector(`#operationsTabs .nav-link[data-type="${type}"]`);
+        if(tab && !tab.classList.contains('active')) bootstrap.Tab.getOrCreateInstance(tab).show();
+        content.innerHTML = '<div class="ops-skeleton"></div>';
+        try{
+            const res = await fetch(`/Operations/Queue?${params({ type })}`, { headers: { 'X-Requested-With':'XMLHttpRequest' }});
+            const payload = await res.json();
+            if(!payload.success){ content.innerHTML = `<div class="alert alert-danger">${payload.message || 'Não foi possível carregar esta fila.'}</div>`; showToast(payload.message || 'Falha ao carregar fila.', false); return; }
+            content.innerHTML = payload.html || '<div class="ops-empty">Nenhum item encontrado.</div>';
+        }catch(e){
+            content.innerHTML = '<div class="alert alert-danger">Não foi possível carregar esta fila.</div>';
+            showToast('Falha de comunicação ao carregar fila.', false);
+        }
     }
-    function render(page, endpoint){
-        const items = page.items || [];
-        if(items.length === 0){ content.innerHTML = `<div class="ops-empty">${page.emptyMessage || 'Nenhuma pendência encontrada. Tudo em dia para os filtros selecionados.'}</div>`; return; }
-        const isLoan = endpoint === 'LoanQueue', isProtocol = endpoint === 'ProtocolQueue', isAlert = endpoint === 'Alerts';
-        const head = isAlert ? ['Nível','Mensagem','Data/Hora','Responsável','Ação'] : isLoan ? ['Protocolo','Solicitante','Setor','Status','Vencimento','Itens','Ação'] : isProtocol ? ['Número','Solicitante','Setor','Tipo','Status','Responsável','Última atualização','Ação'] : ['Documento','Pasta','Upload em','OCR/Partes','Ação'];
-        const rows = items.map(x => `<tr>${cells(x,isLoan,isProtocol,isAlert)}</tr>`).join('');
-        content.innerHTML = `<div class="table-responsive"><table class="table align-middle"><thead><tr>${head.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div><div class="text-muted small">Total: ${page.total}</div>`;
-        content.querySelectorAll('[data-modal-action]').forEach(btn => btn.addEventListener('click', e => { e.preventDefault(); actionLink.href = btn.href; actionModal ? actionModal.show() : (location.href = btn.href); }));
-    }
-    function fmt(d){ return d ? new Date(d).toLocaleString('pt-BR') : '-'; }
-    function esc(v){ return (v ?? '-').toString().replace(/[&<>"]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m])); }
-    function btn(x, modal){ return `<a ${modal ? 'data-modal-action' : ''} class="btn btn-sm btn-outline-primary" href="${esc(x.actionUrl || '#')}">${esc(x.actionLabel || 'Ver detalhes')}</a>`; }
-    function cells(x,isLoan,isProtocol,isAlert){
-        if(isAlert) return `<td><span class="badge bg-danger">${esc(x.severity || 'Alto')}</span></td><td>${esc(x.title)}<div class="small text-muted">${esc(x.protocol || x.error || '')}</div></td><td>${fmt(x.uploadedAt || x.updatedAt)}</td><td>${esc(x.requester)}</td><td>${btn(x,false)}</td>`;
-        if(isLoan) return `<td>${esc(x.protocol)}</td><td>${esc(x.requester)}</td><td>${esc(x.sector)}</td><td>${esc(x.status)}</td><td>${fmt(x.dueAt)}</td><td>${esc(x.itemsCount)}</td><td>${btn(x,true)}</td>`;
-        if(isProtocol) return `<td>${esc(x.protocol)}</td><td>${esc(x.requester)}</td><td>${esc(x.sector)}</td><td>${esc(x.documentType)}</td><td>${esc(x.status)}</td><td>${esc(x.requester)}</td><td>${fmt(x.updatedAt)}</td><td>${btn(x,true)}</td>`;
-        return `<td><strong>${esc(x.title)}</strong><div class="small text-muted">${esc(x.code)}</div></td><td>${esc(x.folder)}</td><td>${fmt(x.uploadedAt)}</td><td>${esc(x.ocr || x.parts || x.error)}</td><td>${btn(x,false)}</td>`;
-    }
-    document.querySelectorAll('#operationsTabs .nav-link').forEach(t => t.addEventListener('shown.bs.tab', loadQueue));
-    form.addEventListener('submit', e => { e.preventDefault(); loadQueue(); });
-    loadQueue();
+    document.querySelectorAll('#operationsTabs .nav-link').forEach(t => t.addEventListener('shown.bs.tab', () => loadQueue(t.dataset.type)));
+    document.querySelectorAll('[data-card-target]').forEach(a => a.addEventListener('click', e => { const target = a.dataset.cardTarget; if(target){ e.preventDefault(); loadQueue(target); } }));
+    form.addEventListener('submit', e => { e.preventDefault(); showToast('Filtros aplicados à fila ativa.'); loadQueue(); });
+    document.addEventListener('click', e => { const action = e.target.closest('[data-ops-action]'); if(action){ showToast(`Abrindo ação: ${action.textContent.trim()}`); const token = form.querySelector('input[name="__RequestVerificationToken"]')?.value || ''; const body = new URLSearchParams({ module: activeType(), actionUrl: action.getAttribute('href') || '', actionLabel: action.textContent.trim() }); fetch('/Operations/ActionClicked', { method:'POST', headers:{ 'RequestVerificationToken': token, 'Content-Type':'application/x-www-form-urlencoded' }, body }).catch(() => {}); } });
+    document.getElementById('btnRevalidate')?.addEventListener('click', async () => {
+        const token = form.querySelector('input[name="__RequestVerificationToken"]')?.value || '';
+        const res = await fetch('/Operations/Revalidate', { method:'POST', headers:{ 'RequestVerificationToken': token }});
+        const payload = await res.json();
+        showToast(payload.message || 'Schema revalidado.', payload.success);
+    });
+    loadQueue('ged');
 })();
 </script>
 }
