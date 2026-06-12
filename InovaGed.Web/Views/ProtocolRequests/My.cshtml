@@ -1,7 +1,113 @@
 @model IReadOnlyList<InovaGed.Application.Ged.Protocols.ProtocolRequestRowVm>
-@{ ViewData["Title"] = "Minhas Solicitações"; }
-<div class="d-flex justify-content-between align-items-center mb-3"><h1 class="h3">Minhas Solicitações</h1><a class="btn btn-primary" asp-action="New">Solicitar Protocolo</a></div>
-<form class="row g-2 mb-3"><div class="col-md-4"><input name="q" value="@ViewBag.Q" class="form-control" placeholder="Protocolo ou título" /></div><div class="col-md-3"><select name="status" class="form-select"><option value="">Todos os status</option><option>REQUESTED</option><option>IN_REVIEW</option><option>RETURNED_FOR_ADJUSTMENT</option><option>ADJUSTMENT_ANSWERED</option><option>APPROVED</option><option>REJECTED</option><option>FINISHED</option></select></div><div class="col-md-2"><button class="btn btn-outline-primary">Filtrar</button></div></form>
-<div class="card shadow-sm"><div class="table-responsive"><table class="table table-hover mb-0"><thead><tr><th>Protocolo</th><th>Título</th><th>Status</th><th>Prioridade</th><th>Prazo</th><th></th></tr></thead><tbody>
-@foreach (var x in Model) { <tr><td class="fw-semibold">@x.ProtocolNo</td><td>@x.Title</td><td><span class="badge bg-info text-dark">@x.StatusLabel</span></td><td>@x.Priority</td><td>@(x.DueAt?.ToString("dd/MM/yyyy HH:mm") ?? "-")</td><td><a class="btn btn-sm btn-outline-primary" asp-controller="Protocols" asp-action="Details" asp-route-id="@x.Id">Detalhes</a></td></tr> }
-</tbody></table></div></div>
+@using InovaGed.Application.Ged.Protocols
+@{
+    ViewData["Title"] = "Minhas Solicitações de Protocolo";
+    var currentStatus = ViewBag.Status as string;
+    var error = ViewBag.Error as string;
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h1 class="h3 mb-1">Minhas Solicitações de Protocolo</h1>
+        <p class="text-muted mb-0">Acompanhe protocolos criados por você ou devolvidos para sua resposta.</p>
+    </div>
+    <a class="btn btn-primary" asp-action="New">Solicitar Protocolo</a>
+</div>
+
+<form method="get" class="card shadow-sm mb-3">
+    <div class="card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col-lg-4 col-md-6">
+                <label class="form-label" for="q">Busca</label>
+                <input id="q" name="q" value="@ViewBag.Q" class="form-control" placeholder="Protocolo, título, descrição ou solicitante" />
+            </div>
+            <div class="col-lg-3 col-md-6">
+                <label class="form-label" for="status">Status</label>
+                <select id="status" name="status" class="form-select">
+                    <option value="">Todos os status</option>
+                    @foreach (var status in new[] { ProtocolStatuses.Requested, ProtocolStatuses.InReview, ProtocolStatuses.ReturnedForAdjustment, ProtocolStatuses.AdjustmentAnswered, ProtocolStatuses.Approved, ProtocolStatuses.Rejected, ProtocolStatuses.Finished, ProtocolStatuses.Cancelled })
+                    {
+                        <option value="@status" selected="@(string.Equals(currentStatus, status, StringComparison.OrdinalIgnoreCase))">@ProtocolStatuses.Label(status)</option>
+                    }
+                </select>
+            </div>
+            <div class="col-lg-2 col-md-6">
+                <label class="form-label" for="from">De</label>
+                <input id="from" name="from" value="@ViewBag.From" type="date" class="form-control" />
+            </div>
+            <div class="col-lg-2 col-md-6">
+                <label class="form-label" for="to">Até</label>
+                <input id="to" name="to" value="@ViewBag.To" type="date" class="form-control" />
+            </div>
+            <input type="hidden" name="pageSize" value="@ViewBag.PageSize" />
+            <div class="col-lg-1 col-md-12 d-grid">
+                <button class="btn btn-outline-primary">Filtrar</button>
+            </div>
+        </div>
+    </div>
+</form>
+
+@if (!string.IsNullOrWhiteSpace(error))
+{
+    <div class="alert alert-danger" role="alert">Não foi possível carregar suas solicitações.</div>
+}
+
+<div class="card shadow-sm">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead>
+                <tr>
+                    <th>Protocolo</th>
+                    <th>Título</th>
+                    <th>Status</th>
+                    <th>Prioridade</th>
+                    <th>Solicitado em</th>
+                    <th>Última atualização</th>
+                    <th class="text-end">Ação</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (Model.Count == 0)
+                {
+                    <tr>
+                        <td colspan="7" class="text-center text-muted py-4">Nenhuma solicitação de protocolo encontrada.</td>
+                    </tr>
+                }
+                else
+                {
+                    foreach (var x in Model)
+                    {
+                        <tr>
+                            <td class="fw-semibold">@x.ProtocolNo</td>
+                            <td>
+                                <div class="fw-semibold">@x.Title</div>
+                                @if (!string.IsNullOrWhiteSpace(x.RequesterName))
+                                {
+                                    <small class="text-muted">Solicitante: @x.RequesterName</small>
+                                }
+                            </td>
+                            <td><span class="badge bg-info text-dark">@x.StatusLabel</span></td>
+                            <td>@x.Priority</td>
+                            <td>@x.RequestedAt.ToString("dd/MM/yyyy HH:mm")</td>
+                            <td>@(x.UpdatedAt?.ToString("dd/MM/yyyy HH:mm") ?? "-")</td>
+                            <td class="text-end">
+                                <div class="btn-group btn-group-sm" role="group" aria-label="Ações do protocolo">
+                                    <a class="btn btn-outline-primary" asp-controller="Protocols" asp-action="Details" asp-route-id="@x.Id">Ver detalhes</a>
+                                    @if (string.Equals(x.Status, ProtocolStatuses.ReturnedForAdjustment, StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        <a class="btn btn-outline-warning" asp-controller="Protocols" asp-action="Details" asp-route-id="@x.Id">Responder ajuste</a>
+                                    }
+                                    <a class="btn btn-outline-secondary" asp-controller="Protocols" asp-action="Details" asp-route-id="@x.Id">Adicionar anexo</a>
+                                    @if (string.Equals(x.Status, ProtocolStatuses.Requested, StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        <a class="btn btn-outline-danger" asp-controller="Protocols" asp-action="Details" asp-route-id="@x.Id">Cancelar</a>
+                                    }
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+</div>

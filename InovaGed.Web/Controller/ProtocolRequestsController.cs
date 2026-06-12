@@ -4,6 +4,7 @@ using InovaGed.Application.Identity;
 using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Npgsql;
 
 namespace InovaGed.Web.Controllers;
 
@@ -24,12 +25,52 @@ public sealed class ProtocolRequestsController : Controller
     public IActionResult Index() => RedirectToAction(nameof(My));
 
     [HttpGet("My")]
-    public async Task<IActionResult> My(string? q, string? status, CancellationToken ct)
+    public async Task<IActionResult> My(
+        string? q,
+        string? status,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        int page = 1,
+        int pageSize = 20,
+        bool showAll = false,
+        CancellationToken ct = default)
     {
-        var scope = await _access.BuildScopeAsync(_user.TenantId, _user.UserId, User, ct);
-        var rows = await _service.ListMyAsync(_user.TenantId, _user.UserId, scope, new ProtocolWorkQueueFilter { Q = q, Status = status }, ct);
-        ViewBag.Q = q; ViewBag.Status = status;
-        return View(rows);
+        var filter = new ProtocolWorkQueueFilter
+        {
+            Search = q,
+            Status = status,
+            From = from,
+            To = to,
+            Page = page,
+            PageSize = pageSize,
+            ShowAll = showAll
+        };
+
+        try
+        {
+            var scope = await _access.BuildScopeAsync(_user.TenantId, _user.UserId, User, ct);
+            var rows = await _service.ListMyAsync(_user.TenantId, _user.UserId, scope, filter, ct);
+            SetMyViewBag(filter);
+            return View(rows);
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.SyntaxError)
+        {
+            _logger.LogError(ex, "Erro SQL na tela Minhas Solicitações.");
+            SetMyViewBag(filter, "Não foi possível carregar suas solicitações.");
+            return View(Array.Empty<ProtocolRequestRowVm>());
+        }
+    }
+
+    private void SetMyViewBag(ProtocolWorkQueueFilter filter, string? error = null)
+    {
+        ViewBag.Q = filter.Search;
+        ViewBag.Status = filter.Status;
+        ViewBag.From = filter.From?.ToString("yyyy-MM-dd");
+        ViewBag.To = filter.To?.ToString("yyyy-MM-dd");
+        ViewBag.Page = filter.Page;
+        ViewBag.PageSize = filter.PageSize;
+        ViewBag.ShowAll = filter.ShowAll;
+        ViewBag.Error = error;
     }
 
     [HttpGet("New")]
