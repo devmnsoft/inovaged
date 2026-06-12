@@ -35,6 +35,7 @@ public sealed class ProtocolVisibilityScope
     public bool IsArquivistaOphir { get; init; }
     public Guid? SectorId { get; init; }
     public string? SectorName { get; init; }
+    public bool CanSeeAll => IsAdmin;
     public bool CanManage => IsAdmin || IsAdministradorOphir;
 }
 
@@ -67,6 +68,7 @@ public sealed class ProtocolManualItemVm
 public sealed class ProtocolWorkQueueFilter
 {
     public string? Q { get; set; }
+    public string? Search { get; set; }
     public string? Status { get; set; }
     public string? Priority { get; set; }
     public Guid? SectorId { get; set; }
@@ -76,6 +78,9 @@ public sealed class ProtocolWorkQueueFilter
     public bool OnlyMine { get; set; }
     public bool Overdue { get; set; }
     public bool ReturnedForAdjustment { get; set; }
+    public bool ShowAll { get; set; }
+    public int Page { get; set; } = 1;
+    public int PageSize { get; set; } = 20;
 }
 
 public sealed class ProtocolRequestRowVm
@@ -86,13 +91,19 @@ public sealed class ProtocolRequestRowVm
     public string Status { get; set; } = string.Empty;
     public string StatusLabel => ProtocolStatuses.Label(Status);
     public string Priority { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public Guid RequesterUserId { get; set; }
     public string? RequesterName { get; set; }
+    public Guid? RequesterSectorId { get; set; }
     public string? RequesterSectorName { get; set; }
+    public Guid? AssignedSectorId { get; set; }
     public string? AssignedSectorName { get; set; }
+    public Guid? AssignedUserId { get; set; }
     public string? AssignedUserName { get; set; }
     public DateTimeOffset RequestedAt { get; set; }
     public DateTimeOffset? UpdatedAt { get; set; }
     public DateTimeOffset? DueAt { get; set; }
+    public DateTimeOffset? FinishedAt { get; set; }
     public int ItemsCount { get; set; }
     public int AttachmentsCount { get; set; }
     public bool IsOverdue { get; set; }

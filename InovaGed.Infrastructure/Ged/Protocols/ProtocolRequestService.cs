@@ -4,6 +4,8 @@ using InovaGed.Application.Common.Database;
 using InovaGed.Application.Ged.Protocols;
 using InovaGed.Domain.Primitives;
 using Microsoft.Extensions.Logging;
+using Npgsql;
+using System.Text;
 
 namespace InovaGed.Infrastructure.Ged.Protocols;
 
@@ -129,33 +131,104 @@ returning id;
     public async Task<IReadOnlyList<ProtocolRequestRowVm>> ListMyAsync(Guid tenantId, Guid userId, ProtocolVisibilityScope scope, ProtocolWorkQueueFilter filter, CancellationToken ct)
     {
         filter ??= new();
-        await using var conn = await _db.OpenAsync(ct);
-        var rows = await conn.QueryAsync<ProtocolRequestRowVm>(new CommandDefinition(BaseListSql + """
-where p.tenant_id=@TenantId and p.reg_status='A'
-  and (@IsAdmin = true or p.requester_user_id=@UserId)
-  and (@Status is null or @Status='' or p.status=@Status)
-  and (@Q is null or @Q='' or p.protocol_no ilike '%'||@Q||'%' or p.title ilike '%'||@Q||'%')
-order by p.requested_at desc limit 300;
-""", new { TenantId = tenantId, UserId = userId, IsAdmin = scope.IsAdmin, filter.Status, filter.Q }, cancellationToken: ct));
-        return rows.ToList();
+        var sql = new StringBuilder(BaseListSql);
+        sql.AppendLine("where p.tenant_id = @TenantId");
+        sql.AppendLine("  and coalesce(p.reg_status, 'A') = 'A'");
+
+        var parameters = new DynamicParameters();
+        parameters.Add("TenantId", tenantId);
+
+        if (!(scope.CanSeeAll && filter.ShowAll))
+        {
+            sql.AppendLine("""
+and (
+    p.requester_user_id = @UserId
+    or p.assigned_user_id = @UserId
+)
+""");
+            parameters.Add("UserId", userId);
+        }
+
+        AppendCommonProtocolFilters(sql, parameters, filter);
+        AppendPagination(sql, parameters, filter, defaultPageSize: 20, maxPageSize: 100);
+
+        var finalSql = sql.ToString();
+        LogPotentiallyInvalidSql(finalSql);
+
+        try
+        {
+            await using var conn = await _db.OpenAsync(ct);
+            var rows = await conn.QueryAsync<ProtocolRequestRowVm>(new CommandDefinition(finalSql, parameters, cancellationToken: ct));
+            return rows.ToList();
+        }
+        catch (PostgresException ex)
+        {
+            _logger.LogError(ex, "Protocol ListMyAsync query failed. Tenant={TenantId} User={UserId} Sql={Sql}", tenantId, userId, finalSql);
+            throw;
+        }
     }
 
     public async Task<IReadOnlyList<ProtocolRequestRowVm>> ListWorkQueueAsync(Guid tenantId, Guid userId, ProtocolVisibilityScope scope, ProtocolWorkQueueFilter filter, CancellationToken ct)
     {
         filter ??= new();
-        await using var conn = await _db.OpenAsync(ct);
-        var rows = await conn.QueryAsync<ProtocolRequestRowVm>(new CommandDefinition(BaseListSql + """
-where p.tenant_id=@TenantId and p.reg_status='A'
-  and (@IsAdmin = true or ((@IsAdministradorOphir = true) and ((@SectorId is not null and p.assigned_sector_id=@SectorId) or p.assigned_user_id=@UserId)))
-  and (@Status is null or @Status='' or p.status=@Status)
-  and (@Priority is null or @Priority='' or p.priority=@Priority)
-  and (@OnlyMine=false or p.assigned_user_id=@UserId)
-  and (@Overdue=false or (p.due_at is not null and p.due_at < now() and p.status not in ('FINISHED','REJECTED','CANCELLED')))
-  and (@Returned=false or p.status='RETURNED_FOR_ADJUSTMENT')
-  and (@Q is null or @Q='' or p.protocol_no ilike '%'||@Q||'%' or p.title ilike '%'||@Q||'%' or coalesce(p.requester_name,'') ilike '%'||@Q||'%')
-order by p.requested_at desc limit 500;
-""", new { TenantId = tenantId, UserId = userId, IsAdmin = scope.IsAdmin, IsAdministradorOphir = scope.IsAdministradorOphir, scope.SectorId, filter.Status, filter.Priority, filter.OnlyMine, filter.Overdue, Returned = filter.ReturnedForAdjustment, filter.Q }, cancellationToken: ct));
-        return rows.ToList();
+        var sql = new StringBuilder(BaseListSql);
+        sql.AppendLine("where p.tenant_id = @TenantId");
+        sql.AppendLine("  and coalesce(p.reg_status, 'A') = 'A'");
+        sql.AppendLine("""
+and (
+    @IsAdmin = true
+    or (
+        @IsAdministradorOphir = true
+        and (
+            (@SectorId is not null and p.assigned_sector_id = @SectorId)
+            or p.assigned_user_id = @UserId
+        )
+    )
+)
+""");
+
+        var parameters = new DynamicParameters();
+        parameters.Add("TenantId", tenantId);
+        parameters.Add("UserId", userId);
+        parameters.Add("IsAdmin", scope.IsAdmin);
+        parameters.Add("IsAdministradorOphir", scope.IsAdministradorOphir);
+        parameters.Add("SectorId", scope.SectorId);
+
+        AppendCommonProtocolFilters(sql, parameters, filter);
+
+        if (filter.OnlyMine)
+        {
+            sql.AppendLine("and p.assigned_user_id = @UserId");
+        }
+
+        if (filter.Overdue)
+        {
+            sql.AppendLine("and p.due_at is not null");
+            sql.AppendLine("and p.due_at < now()");
+            sql.AppendLine("and upper(p.status::text) not in ('FINISHED', 'REJECTED', 'CANCELLED')");
+        }
+
+        if (filter.ReturnedForAdjustment)
+        {
+            sql.AppendLine("and upper(p.status::text) = 'RETURNED_FOR_ADJUSTMENT'");
+        }
+
+        AppendPagination(sql, parameters, filter, defaultPageSize: 20, maxPageSize: 500);
+
+        var finalSql = sql.ToString();
+        LogPotentiallyInvalidSql(finalSql);
+
+        try
+        {
+            await using var conn = await _db.OpenAsync(ct);
+            var rows = await conn.QueryAsync<ProtocolRequestRowVm>(new CommandDefinition(finalSql, parameters, cancellationToken: ct));
+            return rows.ToList();
+        }
+        catch (PostgresException ex)
+        {
+            _logger.LogError(ex, "Protocol ListWorkQueueAsync query failed. Tenant={TenantId} User={UserId} Sql={Sql}", tenantId, userId, finalSql);
+            throw;
+        }
     }
 
     public async Task<ProtocolRequestDetailsVm?> GetDetailsAsync(Guid tenantId, Guid id, Guid userId, ProtocolVisibilityScope scope, CancellationToken ct)
@@ -261,14 +334,106 @@ from (select 1) seed left join ged.app_user u on u.tenant_id=@TenantId and u.id=
         => _audit.WriteAsync(tenantId, userId, action, "protocol_request", id, summary, null, null, data, ct);
 
     private const string BaseListSql = """
-select p.id, p.protocol_no as ProtocolNo, p.title as Title, p.status as Status, p.priority as Priority,
-       p.requester_name as RequesterName, p.requester_sector_name as RequesterSectorName, p.assigned_sector_name as AssignedSectorName,
-       p.assigned_user_name as AssignedUserName, p.requested_at as RequestedAt, p.updated_at as UpdatedAt, p.due_at as DueAt,
-       (select count(*)::int from ged.protocol_request_item i where i.tenant_id=p.tenant_id and i.protocol_request_id=p.id and i.reg_status='A') as ItemsCount,
-       (select count(*)::int from ged.protocol_request_attachment a where a.tenant_id=p.tenant_id and a.protocol_request_id=p.id and a.reg_status='A') as AttachmentsCount,
-       (p.due_at is not null and p.due_at < now() and p.status not in ('FINISHED','REJECTED','CANCELLED')) as IsOverdue
+select
+    p.id as "Id",
+    p.protocol_no as "ProtocolNo",
+    p.title as "Title",
+    p.description as "Description",
+    p.requester_user_id as "RequesterUserId",
+    p.requester_name as "RequesterName",
+    p.requester_sector_id as "RequesterSectorId",
+    p.requester_sector_name as "RequesterSectorName",
+    p.assigned_sector_id as "AssignedSectorId",
+    p.assigned_sector_name as "AssignedSectorName",
+    p.assigned_user_id as "AssignedUserId",
+    p.assigned_user_name as "AssignedUserName",
+    p.priority as "Priority",
+    p.status as "Status",
+    p.due_at as "DueAt",
+    p.requested_at as "RequestedAt",
+    p.updated_at as "UpdatedAt",
+    p.finished_at as "FinishedAt",
+    (
+        select count(*)::int
+        from ged.protocol_request_item i
+        where i.tenant_id = p.tenant_id
+          and i.protocol_request_id = p.id
+          and coalesce(i.reg_status, 'A') = 'A'
+    ) as "ItemsCount",
+    (
+        select count(*)::int
+        from ged.protocol_request_attachment a
+        where a.tenant_id = p.tenant_id
+          and a.protocol_request_id = p.id
+          and coalesce(a.reg_status, 'A') = 'A'
+    ) as "AttachmentsCount",
+    (p.due_at is not null and p.due_at < now() and upper(p.status::text) not in ('FINISHED', 'REJECTED', 'CANCELLED')) as "IsOverdue"
 from ged.protocol_request p
 """;
+
+    private void LogPotentiallyInvalidSql(string finalSql)
+    {
+        if (finalSql.Contains("where and", StringComparison.OrdinalIgnoreCase)
+            || finalSql.Contains("and and", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogWarning("SQL de Protocolo possivelmente inválido: {Sql}", finalSql);
+        }
+    }
+
+    private static void AppendCommonProtocolFilters(StringBuilder sql, DynamicParameters parameters, ProtocolWorkQueueFilter filter)
+    {
+        var search = string.IsNullOrWhiteSpace(filter.Search) ? filter.Q : filter.Search;
+
+        if (!string.IsNullOrWhiteSpace(filter.Status))
+        {
+            sql.AppendLine("and upper(p.status::text) = upper(@Status)");
+            parameters.Add("Status", filter.Status.Trim());
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.Priority))
+        {
+            sql.AppendLine("and upper(p.priority::text) = upper(@Priority)");
+            parameters.Add("Priority", filter.Priority.Trim());
+        }
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            sql.AppendLine("""
+and (
+    p.protocol_no ilike @Search
+    or p.title ilike @Search
+    or coalesce(p.description, '') ilike @Search
+    or coalesce(p.requester_name, '') ilike @Search
+)
+""");
+            parameters.Add("Search", $"%{search.Trim()}%");
+        }
+
+        if (filter.From.HasValue)
+        {
+            sql.AppendLine("and p.requested_at >= @From");
+            parameters.Add("From", filter.From.Value);
+        }
+
+        if (filter.To.HasValue)
+        {
+            sql.AppendLine("and p.requested_at < @To");
+            parameters.Add("To", filter.To.Value.AddDays(1));
+        }
+    }
+
+    private static void AppendPagination(StringBuilder sql, DynamicParameters parameters, ProtocolWorkQueueFilter filter, int defaultPageSize, int maxPageSize)
+    {
+        var page = filter.Page <= 0 ? 1 : filter.Page;
+        var pageSize = filter.PageSize <= 0 ? defaultPageSize : Math.Min(filter.PageSize, maxPageSize);
+        var offset = (page - 1) * pageSize;
+
+        parameters.Add("Offset", offset);
+        parameters.Add("Limit", pageSize);
+
+        sql.AppendLine("order by p.requested_at desc");
+        sql.AppendLine("offset @Offset limit @Limit");
+    }
 
     private static string NormalizePriority(string? p) => (p ?? "NORMAL").Trim().ToUpperInvariant() switch { "LOW" or "BAIXA" => "LOW", "HIGH" or "ALTA" => "HIGH", "URGENT" or "URGENTE" => "URGENT", _ => "NORMAL" };
     private static string? Trim(string? value) { value = value?.Trim(); return string.IsNullOrWhiteSpace(value) ? null : value; }
