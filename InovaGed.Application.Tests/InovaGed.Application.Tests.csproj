@@ -11,5 +11,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../InovaGed.Application/InovaGed.Application.csproj" />
+    <ProjectReference Include="../InovaGed.Infrastructure/InovaGed.Infrastructure.csproj" />
   </ItemGroup>
 </Project>
