@@ -314,7 +314,7 @@ create table if not exists ged.protocol_request (
     assigned_sector_name text null,
     assigned_user_id uuid null,
     assigned_user_name text null,
-    title text not null,
+    title text not null default 'Solicitação de Protocolo',
     description text null,
     priority text not null default 'NORMAL',
     status text not null default 'REQUESTED',
@@ -391,7 +391,7 @@ create table if not exists ged.protocol_request (
     assigned_sector_name text null,
     assigned_user_id uuid null,
     assigned_user_name text null,
-    title text not null,
+    title text not null default 'Solicitação de Protocolo',
     description text null,
     priority text not null default 'NORMAL',
     status text not null default 'REQUESTED',
@@ -468,7 +468,7 @@ create table if not exists ged.protocol_request (
     assigned_sector_name text null,
     assigned_user_id uuid null,
     assigned_user_name text null,
-    title text not null,
+    title text not null default 'Solicitação de Protocolo',
     description text null,
     priority text not null default 'NORMAL',
     status text not null default 'REQUESTED',
@@ -545,7 +545,7 @@ create table if not exists ged.protocol_request (
     assigned_sector_name text null,
     assigned_user_id uuid null,
     assigned_user_name text null,
-    title text not null,
+    title text not null default 'Solicitação de Protocolo',
     description text null,
     priority text not null default 'NORMAL',
     status text not null default 'REQUESTED',
@@ -720,7 +720,7 @@ create table if not exists ged.document_quality_result (
         AddColumn(fixes, "ged.protocol_request", "assigned_sector_name", "text null", "Protocolo");
         AddColumn(fixes, "ged.protocol_request", "assigned_user_id", "uuid null", "Protocolo");
         AddColumn(fixes, "ged.protocol_request", "assigned_user_name", "text null", "Protocolo");
-        AddColumn(fixes, "ged.protocol_request", "title", "text null", "Protocolo");
+        AddColumn(fixes, "ged.protocol_request", "title", "text not null default 'Solicitação de Protocolo'", "Protocolo");
         AddColumn(fixes, "ged.protocol_request", "description", "text null", "Protocolo");
         AddColumn(fixes, "ged.protocol_request", "priority", "text not null default 'NORMAL'", "Protocolo");
         AddColumn(fixes, "ged.protocol_request", "status", "text not null default 'REQUESTED'", "Protocolo");
@@ -899,6 +899,9 @@ end $$;
         fixes.Add(Index("GED_INDEX_LOAN_REQUEST_HISTORY_TENANT_USER", "ged.ix_loan_request_history_tenant_user", "Loans History", "Cria índice do histórico rico por usuário.", "create index if not exists ix_loan_request_history_tenant_user on ged.loan_request_history(tenant_id, user_id);"));
         fixes.Add(Index("GED_INDEX_PROTOCOL_REQUEST_TENANT_PROTOCOL_NO", "ged.ux_protocol_request_tenant_protocol_no", "Protocolo", "Cria índice único por tenant/número de protocolo.", "create unique index if not exists ux_protocol_request_tenant_protocol_no on ged.protocol_request(tenant_id, protocol_no);"));
         fixes.Add(Index("GED_INDEX_PROTOCOL_REQUEST_TENANT_STATUS", "ged.ix_protocol_request_tenant_status", "Protocolo", "Cria índice por tenant/status.", "create index if not exists ix_protocol_request_tenant_status on ged.protocol_request(tenant_id, status);"));
+        fixes.Add(Index("GED_INDEX_PROTOCOL_REQUEST_TENANT_REQUESTER", "ged.ix_protocol_request_tenant_requester", "Protocolo", "Cria índice por tenant/solicitante.", "create index if not exists ix_protocol_request_tenant_requester on ged.protocol_request(tenant_id, requester_user_id);"));
+        fixes.Add(Index("GED_INDEX_PROTOCOL_REQUEST_TENANT_ASSIGNED_SECTOR", "ged.ix_protocol_request_tenant_assigned_sector", "Protocolo", "Cria índice por tenant/setor atribuído.", "create index if not exists ix_protocol_request_tenant_assigned_sector on ged.protocol_request(tenant_id, assigned_sector_id);"));
+        fixes.Add(Index("GED_INDEX_PROTOCOL_REQUEST_TENANT_ASSIGNED_USER", "ged.ix_protocol_request_tenant_assigned_user", "Protocolo", "Cria índice por tenant/usuário atribuído.", "create index if not exists ix_protocol_request_tenant_assigned_user on ged.protocol_request(tenant_id, assigned_user_id);"));
         fixes.Add(Index("GED_INDEX_PROTOCOL_REQUEST_TENANT_REQUESTED_AT", "ged.ix_protocol_request_tenant_requested_at", "Protocolo", "Cria índice por tenant/data solicitada.", "create index if not exists ix_protocol_request_tenant_requested_at on ged.protocol_request(tenant_id, requested_at desc);"));
         fixes.Add(Index("GED_INDEX_PROTOCOL_REQUEST_ITEM_PROTOCOL", "ged.ix_protocol_request_item_protocol", "Protocolo", "Cria índice dos itens por protocolo.", "create index if not exists ix_protocol_request_item_protocol on ged.protocol_request_item(tenant_id, protocol_request_id);"));
         fixes.Add(Index("GED_INDEX_PROTOCOL_REQUEST_ATTACHMENT_PROTOCOL", "ged.ix_protocol_request_attachment_protocol", "Protocolo", "Cria índice dos anexos por protocolo.", "create index if not exists ix_protocol_request_attachment_protocol on ged.protocol_request_attachment(tenant_id, protocol_request_id);"));

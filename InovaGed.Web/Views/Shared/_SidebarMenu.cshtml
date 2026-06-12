@@ -32,6 +32,7 @@
     <div class="sidebar-section-title">Documentos</div>
     <a asp-controller="Ged" asp-action="Index" class="@ActiveAny("Ged", "GedSearch")"><i class="bi bi-folder2-open"></i><span>GED / Explorer</span></a>
     <a asp-controller="HospitalDocuments" asp-action="Index" class="@ActiveAny("HospitalDocuments")"><i class="bi bi-search-heart"></i><span>Busca Hospitalar</span></a>
+    <a asp-controller="SmartSearch" asp-action="Index" class="@ActiveAny("SmartSearch")"><i class="bi bi-stars"></i><span>Busca Inteligente</span></a>
     <a asp-controller="HospitalIntelligence" asp-action="Index" class="@ActiveAny("HospitalIntelligence")"><i class="bi bi-activity"></i><span>Inteligência Hospitalar</span></a>
     <a asp-controller="HospitalTrends" asp-action="Index" class="@ActiveAny("HospitalTrends")"><i class="bi bi-graph-up-arrow"></i><span>Alertas e Tendências</span></a>
     <a asp-controller="Ged" asp-action="Create" class="@Active("Ged", "Create")"><i class="bi bi-cloud-upload"></i><span>Uploads</span></a>
@@ -70,6 +71,7 @@ else if (isAdministradorOphir)
     <a asp-controller="DocumentQuality" asp-action="Index" class="@ActivePathStarts("/documentquality")"><i class="bi bi-shield-check"></i><span>Qualidade Documental</span></a>
     <a asp-controller="Ocr" asp-action="Index" class="@ActiveAny("Ocr")"><i class="bi bi-filetype-pdf"></i><span>Central OCR</span></a>
     <a asp-controller="HospitalDocuments" asp-action="Index" class="@ActiveAny("HospitalDocuments")"><i class="bi bi-search-heart"></i><span>Buscar Prontuários e Documentos</span></a>
+    <a asp-controller="SmartSearch" asp-action="Index" class="@ActiveAny("SmartSearch")"><i class="bi bi-stars"></i><span>Busca Inteligente</span></a>
     <a href="/Protocols/WorkQueue" class="@ActivePathStarts("/protocols/workqueue")"><i class="bi bi-inboxes"></i><span>Fila de Protocolos</span></a>
     <a asp-controller="Protocolo" asp-action="Index" class="@ActiveAny("Protocolo")"><i class="bi bi-tools"></i><span>Manuseio de Processos</span></a>
     <a asp-controller="ProtocolRequests" asp-action="Index" class="@ActiveAny("ProtocolRequests")"><i class="bi bi-journal-text"></i><span>Solicitações de Documentos</span></a>
@@ -80,6 +82,7 @@ else if (isArquivistaOphir)
 {
     <div class="sidebar-section-title">Solicitações</div>
     <a asp-controller="HospitalDocuments" asp-action="Index" class="@ActiveAny("HospitalDocuments")"><i class="bi bi-search-heart"></i><span>Buscar Prontuários e Documentos</span></a>
+    <a asp-controller="SmartSearch" asp-action="Index" class="@ActiveAny("SmartSearch")"><i class="bi bi-stars"></i><span>Busca Inteligente</span></a>
     <a asp-controller="DocumentQuality" asp-action="Index" class="@ActivePathStarts("/documentquality")"><i class="bi bi-shield-check"></i><span>Qualidade Documental</span></a>
     <a asp-controller="Ocr" asp-action="Index" class="@ActiveAny("Ocr")"><i class="bi bi-filetype-pdf"></i><span>Central OCR</span></a>
     <a asp-controller="ProtocolRequests" asp-action="New" class="@Active("ProtocolRequests", "New")"><i class="bi bi-send-plus"></i><span>Solicitar Protocolo</span></a>
@@ -91,11 +94,13 @@ else if (isHospital)
 {
     <div class="sidebar-section-title">Consulta</div>
     <a asp-controller="HospitalDocuments" asp-action="Index" class="@ActiveAny("HospitalDocuments")"><i class="bi bi-search-heart"></i><span>Buscar Prontuários e Documentos</span></a>
+    <a asp-controller="SmartSearch" asp-action="Index" class="@ActiveAny("SmartSearch")"><i class="bi bi-stars"></i><span>Busca Inteligente</span></a>
 }
 else
 {
     <div class="sidebar-section-title">Consulta</div>
     <a asp-controller="HospitalDocuments" asp-action="Index" class="@ActiveAny("HospitalDocuments")"><i class="bi bi-search-heart"></i><span>Buscar Prontuários e Documentos</span></a>
+    <a asp-controller="SmartSearch" asp-action="Index" class="@ActiveAny("SmartSearch")"><i class="bi bi-stars"></i><span>Busca Inteligente</span></a>
 }
 
 <div class="sidebar-section-title">Conta</div>
