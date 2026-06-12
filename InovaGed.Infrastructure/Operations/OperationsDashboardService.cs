@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using Dapper;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Operations;
+using InovaGed.Infrastructure.Sql;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
@@ -128,6 +129,7 @@ public sealed class OperationsDashboardService : IOperationsDashboardService
         async Task Add(string module, string sql)
         {
             if (!(await ModuleStatusAsync(module, ct)).IsReady) return;
+            SqlSafetyValidator.EnsureValid(sql, requireAllSqlParameters: false);
             alerts.AddRange(await SafeQueryAsync<OperationQueueItemDto>(conn, sql, Args(tenantId, userId, scope, filter), ct, module));
         }
         await Add("GED", await GedAlertsSqlAsync(conn, scope, ct));
@@ -150,6 +152,8 @@ public sealed class OperationsDashboardService : IOperationsDashboardService
         try
         {
             var (sql, countSql, args) = await build(conn, scope, filter);
+            SqlSafetyValidator.EnsureValid(sql, requireAllSqlParameters: false);
+            SqlSafetyValidator.EnsureValid(countSql, requireAllSqlParameters: false);
             var items = await SafeQueryAsync<OperationQueueItemDto>(conn, sql, args, ct, module);
             var total = await SafeScalarAsync(conn, countSql, args, ct, module);
             return Page(items, filter, total, module);
@@ -299,6 +303,19 @@ public sealed class OperationsDashboardService : IOperationsDashboardService
     private static string LoanAlertsSql(Scope scope, string sectorExpr) => $"select l.id as Id, 'alerts' as Queue, 'Empréstimo vencido há mais de 3 dias' as Title, l.protocol_no::text as Code, l.requester_name as Requester, {sectorExpr} as Sector, l.due_at as DueAt, 'Cobrar devolução' as ActionLabel, '/Loans/' || l.id as ActionUrl, 'critical' as Severity from ged.loan_request l where l.tenant_id=@TenantId and coalesce(l.reg_status,'A')='A' and l.due_at < now() - interval '3 days'{LoanScope(scope, sectorExpr)} limit 20";
     private static string ProtocolAlertsSql(Scope scope) => $"select p.id as Id, 'alerts' as Queue, 'Protocolo parado há mais de 48h' as Title, p.protocol_no as Code, p.requester_name as Requester, coalesce(p.assigned_sector_name,p.requester_sector_name) as Sector, p.updated_at as UpdatedAt, 'Analisar protocolos' as ActionLabel, '/Protocols/' || p.id as ActionUrl, 'high' as Severity from ged.protocol_request p where p.tenant_id=@TenantId and coalesce(p.reg_status,'A')='A' and coalesce(p.updated_at,p.requested_at) < now() - interval '48 hours' and upper(p.status::text) not in ('FINISHED','CANCELLED','REJECTED'){ProtocolScope(scope)} limit 20";
     private static string QualityAlertsSql() => "select q.document_id as Id, 'alerts' as Queue, 'Qualidade documental crítica' as Title, d.code as Code, q.quality_status as Status, q.analyzed_at_utc as UpdatedAt, 'Ver qualidade documental' as ActionLabel, '/DocumentQuality/' || q.document_id as ActionUrl, 'critical' as Severity from (select distinct on (r.tenant_id,r.document_id) r.* from ged.document_quality_result r where r.tenant_id=@TenantId order by r.tenant_id,r.document_id,r.analyzed_at_utc desc) q left join ged.document d on d.tenant_id=q.tenant_id and d.id=q.document_id where q.quality_status='Crítico' limit 20";
+
+
+    internal static string BuildLoansQueueSqlForTests(bool isAdmin = true)
+        => LoanQueueSql(new Scope { IsAdmin = isAdmin, Sector = "Arquivo" }, "l.requester_sector_name", " and coalesce(i.reg_status,'A')='A'", count: false);
+
+    internal static string BuildOcrQueueSqlForTests(bool isAdmin = true)
+        => OcrQueueSql(new Scope { IsAdmin = isAdmin }, count: false);
+
+    internal static string BuildAlertsSqlForTests(bool isAdmin = true)
+        => string.Join(Environment.NewLine + "union all" + Environment.NewLine,
+            OcrAlertsSql(new Scope { IsAdmin = isAdmin }),
+            LoanAlertsSql(new Scope { IsAdmin = isAdmin, Sector = "Arquivo" }, "l.requester_sector_name"),
+            ProtocolAlertsSql(new Scope { IsAdmin = isAdmin }));
 
     private async Task<Scope> BuildScopeAsync(NpgsqlConnection conn, Guid tenantId, Guid userId, IReadOnlyCollection<string> roles, CancellationToken ct)
     {

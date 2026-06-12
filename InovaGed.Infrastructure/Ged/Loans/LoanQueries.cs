@@ -127,7 +127,53 @@ limit 200;
         {
             await using var conn = await _db.OpenAsync(ct);
 
-            const string headSql = """
+            var headSql = LoanDetailsHeaderSql;
+
+            var header = await conn.QuerySingleOrDefaultAsync<LoanRowDto>(
+                new CommandDefinition(headSql, new { tenant_id = tenantId, loan_id = loanId }, cancellationToken: ct));
+
+            if (header is null) return null;
+
+            var itemsSql = LoanDetailsItemsSql;
+
+            var items = (await conn.QueryAsync<LoanItemDto>(
+                new CommandDefinition(itemsSql, new { tenant_id = tenantId, loan_id = loanId }, cancellationToken: ct)
+            )).AsList();
+
+            var historySchemaMissing = string.IsNullOrWhiteSpace(await conn.ExecuteScalarAsync<string?>(
+                new CommandDefinition("select to_regclass('ged.loan_request_history')::text", cancellationToken: ct)));
+
+            List<LoanEventDto> history = new();
+            if (historySchemaMissing)
+            {
+                _logger.LogWarning("Histórico de empréstimos ainda não configurado. Tenant={Tenant} Loan={Loan}", tenantId, loanId);
+            }
+            else
+            {
+                var histSql = LoanDetailsHistorySql;
+
+                history = (await conn.QueryAsync<LoanEventDto>(
+                    new CommandDefinition(histSql, new { tenant_id = tenantId, loan_id = loanId }, cancellationToken: ct)
+                )).AsList();
+            }
+
+            return new LoanDetailsVM
+            {
+                Header = header,
+                Items = items,
+                History = history,
+                HistorySchemaMissing = historySchemaMissing
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "LoanQueries.GetAsync failed. Tenant={Tenant} Loan={Loan}", tenantId, loanId);
+            return null;
+        }
+    }
+
+
+    internal const string LoanDetailsHeaderSql = """
 select
   lr.id,
   lr.protocol_no as ProtocolNo,
@@ -144,12 +190,8 @@ from ged.loan_request lr
 where lr.tenant_id = @tenant_id and lr.id = @loan_id and lr.reg_status='A';
 """;
 
-            var header = await conn.QuerySingleOrDefaultAsync<LoanRowDto>(
-                new CommandDefinition(headSql, new { tenant_id = tenantId, loan_id = loanId }, cancellationToken: ct));
 
-            if (header is null) return null;
-
-            const string itemsSql = """
+    internal const string LoanDetailsItemsSql = """
 select
   i.document_id as DocumentId,
   i.is_physical as IsPhysical,
@@ -171,21 +213,8 @@ where i.tenant_id=@tenant_id and i.loan_request_id=@loan_id and i.reg_status='A'
 order by coalesce(i.description, d.title, i.reference_code, 'Documento solicitado');
 """;
 
-            var items = (await conn.QueryAsync<LoanItemDto>(
-                new CommandDefinition(itemsSql, new { tenant_id = tenantId, loan_id = loanId }, cancellationToken: ct)
-            )).AsList();
 
-            var historySchemaMissing = string.IsNullOrWhiteSpace(await conn.ExecuteScalarAsync<string?>(
-                new CommandDefinition("select to_regclass('ged.loan_request_history')::text", cancellationToken: ct)));
-
-            List<LoanEventDto> history = new();
-            if (historySchemaMissing)
-            {
-                _logger.LogWarning("Histórico de empréstimos ainda não configurado. Tenant={Tenant} Loan={Loan}", tenantId, loanId);
-            }
-            else
-            {
-                const string histSql = """
+    internal const string LoanDetailsHistorySql = """
 select
   (h.created_at)::timestamp as "EventTime",
   h.action as "EventType",
@@ -204,25 +233,6 @@ where h.tenant_id = @tenant_id
 order by h.created_at desc;
 """;
 
-                history = (await conn.QueryAsync<LoanEventDto>(
-                    new CommandDefinition(histSql, new { tenant_id = tenantId, loan_id = loanId }, cancellationToken: ct)
-                )).AsList();
-            }
-
-            return new LoanDetailsVM
-            {
-                Header = header,
-                Items = items,
-                History = history,
-                HistorySchemaMissing = historySchemaMissing
-            };
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "LoanQueries.GetAsync failed. Tenant={Tenant} Loan={Loan}", tenantId, loanId);
-            return null;
-        }
-    }
 
     public async Task<IReadOnlyList<DocumentPickDto>> SearchDocumentsAsync(Guid tenantId, string q, CancellationToken ct)
     {

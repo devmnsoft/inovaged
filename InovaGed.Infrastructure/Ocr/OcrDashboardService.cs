@@ -1,4 +1,5 @@
 using Dapper;
+using InovaGed.Infrastructure.Sql;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Ocr;
 using Microsoft.Extensions.Logging;
@@ -195,6 +196,8 @@ from (
 order by coalesce(q."RequestedAt", q."FinishedAt") desc nulls last, q."DocumentTitle"
 limit @limit offset @offset;
 """;
+
+        SqlSafetyValidator.EnsureValid(sql, requireAllSqlParameters: false);
 
         return (await conn.QueryAsync<OcrDashboardRow>(new CommandDefinition(sql, new
         {

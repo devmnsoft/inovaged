@@ -4,6 +4,7 @@ using InovaGed.Application.Common.Database;
 using InovaGed.Application.Ged.Protocols;
 using InovaGed.Domain.Primitives;
 using Microsoft.Extensions.Logging;
+using InovaGed.Infrastructure.Sql;
 using Npgsql;
 using System.Text;
 
@@ -133,7 +134,7 @@ returning id;
         filter ??= new();
         var finalSql = BuildListMySql(userId, scope, filter, out var parameters);
         parameters.Add("TenantId", tenantId);
-        ValidateGeneratedSql(finalSql);
+        ValidateGeneratedSql(finalSql, parameters);
 
         try
         {
@@ -153,7 +154,7 @@ returning id;
         filter ??= new();
         var finalSql = BuildListWorkQueueSql(userId, scope, filter, out var parameters);
         parameters.Add("TenantId", tenantId);
-        ValidateGeneratedSql(finalSql);
+        ValidateGeneratedSql(finalSql, parameters);
 
         try
         {
@@ -276,13 +277,13 @@ from (select 1) seed left join ged.app_user u on u.tenant_id=@TenantId and u.id=
 
     internal static string BuildListMySql(Guid userId, ProtocolVisibilityScope scope, ProtocolWorkQueueFilter filter, out DynamicParameters parameters)
     {
-        var sql = new StringBuilder(BaseProtocolRequestListSql);
+        var sql = new SafeSqlBuilder(BaseProtocolRequestListSql);
         parameters = new DynamicParameters();
 
         if (!(scope.CanSeeAll && filter.ShowAll))
         {
-            sql.AppendLine("""
-and (
+            sql.And("""
+(
     p.requester_user_id = @UserId
     or p.assigned_user_id = @UserId
 )
@@ -293,14 +294,14 @@ and (
         AppendCommonProtocolFilters(sql, parameters, filter);
         AppendPagination(sql, parameters, filter, defaultPageSize: 20, maxPageSize: 100);
 
-        return sql.ToString();
+        return sql.ToSql();
     }
 
     internal static string BuildListWorkQueueSql(Guid userId, ProtocolVisibilityScope scope, ProtocolWorkQueueFilter filter, out DynamicParameters parameters)
     {
-        var sql = new StringBuilder(BaseProtocolRequestListSql);
-        sql.AppendLine("""
-and (
+        var sql = new SafeSqlBuilder(BaseProtocolRequestListSql);
+        sql.And("""
+(
     @IsAdmin = true
     or (
         @IsAdministradorOphir = true
@@ -320,26 +321,20 @@ and (
 
         AppendCommonProtocolFilters(sql, parameters, filter);
 
-        if (filter.OnlyMine)
-        {
-            sql.AppendLine("and p.assigned_user_id = @UserId");
-        }
+        sql.AndIf(filter.OnlyMine, "p.assigned_user_id = @UserId");
 
         if (filter.Overdue)
         {
-            sql.AppendLine("and p.due_at is not null");
-            sql.AppendLine("and p.due_at < now()");
-            sql.AppendLine("and upper(p.status::text) not in ('FINISHED', 'REJECTED', 'CANCELLED')");
+            sql.And("p.due_at is not null");
+            sql.And("p.due_at < now()");
+            sql.And("upper(p.status::text) not in ('FINISHED', 'REJECTED', 'CANCELLED')");
         }
 
-        if (filter.ReturnedForAdjustment)
-        {
-            sql.AppendLine("and upper(p.status::text) = 'RETURNED_FOR_ADJUSTMENT'");
-        }
+        sql.AndIf(filter.ReturnedForAdjustment, "upper(p.status::text) = 'RETURNED_FOR_ADJUSTMENT'");
 
         AppendPagination(sql, parameters, filter, defaultPageSize: 20, maxPageSize: 500);
 
-        return sql.ToString();
+        return sql.ToSql();
     }
 
     private const string BaseProtocolRequestListSql = """
@@ -382,46 +377,41 @@ where p.tenant_id = @TenantId
   and coalesce(p.reg_status, 'A') = 'A'
 """;
 
-    private void ValidateGeneratedSql(string sql)
+    private void ValidateGeneratedSql(string sql, DynamicParameters? parameters = null)
     {
-        var invalidPatterns = new[]
+        var result = SqlSafetyValidator.Validate(sql, parameters);
+        if (!result.IsValid)
         {
-            "pwhere",
-            "where and",
-            "and and",
-            "from ged.protocol_request pwhere"
-        };
+            _logger.LogError("SQL inválido gerado em ProtocolRequestService. Errors={Errors} Sql={Sql}", string.Join("; ", result.Errors), sql);
+            result.ThrowIfInvalid();
+        }
 
-        foreach (var pattern in invalidPatterns)
+        foreach (var warning in result.Warnings)
         {
-            if (sql.Contains(pattern, StringComparison.OrdinalIgnoreCase))
-            {
-                _logger.LogError("SQL inválido gerado em ProtocolRequestService. Pattern={Pattern} Sql={Sql}", pattern, sql);
-                throw new InvalidOperationException($"SQL inválido gerado: {pattern}");
-            }
+            _logger.LogWarning("Aviso de SQL gerado em ProtocolRequestService. Warning={Warning} Sql={Sql}", warning, sql);
         }
     }
 
-    private static void AppendCommonProtocolFilters(StringBuilder sql, DynamicParameters parameters, ProtocolWorkQueueFilter filter)
+    private static void AppendCommonProtocolFilters(SafeSqlBuilder sql, DynamicParameters parameters, ProtocolWorkQueueFilter filter)
     {
         var search = string.IsNullOrWhiteSpace(filter.Search) ? filter.Q : filter.Search;
 
         if (!string.IsNullOrWhiteSpace(filter.Status))
         {
-            sql.AppendLine("and upper(p.status::text) = upper(@Status)");
+            sql.And("upper(p.status::text) = upper(@Status)");
             parameters.Add("Status", filter.Status.Trim());
         }
 
         if (!string.IsNullOrWhiteSpace(filter.Priority))
         {
-            sql.AppendLine("and upper(p.priority::text) = upper(@Priority)");
+            sql.And("upper(p.priority::text) = upper(@Priority)");
             parameters.Add("Priority", filter.Priority.Trim());
         }
 
         if (!string.IsNullOrWhiteSpace(search))
         {
-            sql.AppendLine("""
-and (
+            sql.And("""
+(
     p.protocol_no ilike @Search
     or p.title ilike @Search
     or coalesce(p.description, '') ilike @Search
@@ -433,18 +423,18 @@ and (
 
         if (filter.From.HasValue)
         {
-            sql.AppendLine("and p.requested_at >= @From");
+            sql.And("p.requested_at >= @From");
             parameters.Add("From", filter.From.Value);
         }
 
         if (filter.To.HasValue)
         {
-            sql.AppendLine("and p.requested_at < @To");
+            sql.And("p.requested_at < @To");
             parameters.Add("To", filter.To.Value.AddDays(1));
         }
     }
 
-    private static void AppendPagination(StringBuilder sql, DynamicParameters parameters, ProtocolWorkQueueFilter filter, int defaultPageSize, int maxPageSize)
+    private static void AppendPagination(SafeSqlBuilder sql, DynamicParameters parameters, ProtocolWorkQueueFilter filter, int defaultPageSize, int maxPageSize)
     {
         var page = filter.Page <= 0 ? 1 : filter.Page;
         var pageSize = filter.PageSize <= 0 ? defaultPageSize : Math.Min(filter.PageSize, maxPageSize);
@@ -453,8 +443,8 @@ and (
         parameters.Add("Offset", offset);
         parameters.Add("Limit", pageSize);
 
-        sql.AppendLine("order by p.requested_at desc");
-        sql.AppendLine("offset @Offset limit @Limit");
+        sql.OrderBy("p.requested_at desc");
+        sql.Paginate();
     }
 
     private static string NormalizePriority(string? p) => (p ?? "NORMAL").Trim().ToUpperInvariant() switch { "LOW" or "BAIXA" => "LOW", "HIGH" or "ALTA" => "HIGH", "URGENT" or "URGENTE" => "URGENT", _ => "NORMAL" };
