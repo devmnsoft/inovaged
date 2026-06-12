@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS ged.protocol_request (
     assigned_sector_name text null,
     assigned_user_id uuid null,
     assigned_user_name text null,
-    title text not null,
+    title text not null default 'Solicitação de Protocolo',
     description text null,
     priority text not null default 'NORMAL',
     status text not null default 'REQUESTED',
@@ -91,7 +91,7 @@ ALTER TABLE ged.protocol_request ADD COLUMN IF NOT EXISTS assigned_sector_id uui
 ALTER TABLE ged.protocol_request ADD COLUMN IF NOT EXISTS assigned_sector_name text null;
 ALTER TABLE ged.protocol_request ADD COLUMN IF NOT EXISTS assigned_user_id uuid null;
 ALTER TABLE ged.protocol_request ADD COLUMN IF NOT EXISTS assigned_user_name text null;
-ALTER TABLE ged.protocol_request ADD COLUMN IF NOT EXISTS title text;
+ALTER TABLE ged.protocol_request ADD COLUMN IF NOT EXISTS title text not null default 'Solicitação de Protocolo';
 ALTER TABLE ged.protocol_request ADD COLUMN IF NOT EXISTS description text null;
 ALTER TABLE ged.protocol_request ADD COLUMN IF NOT EXISTS priority text not null default 'NORMAL';
 ALTER TABLE ged.protocol_request ADD COLUMN IF NOT EXISTS status text not null default 'REQUESTED';

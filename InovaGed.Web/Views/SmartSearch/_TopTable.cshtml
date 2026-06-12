@@ -1,0 +1,16 @@
+@model Tuple<string, IReadOnlyList<KeyValuePair<string, int>>>
+<div class="card border-0 shadow-sm h-100">
+    <div class="card-header bg-white fw-semibold">@Model.Item1</div>
+    <div class="table-responsive">
+        <table class="table table-sm mb-0"><tbody>
+        @foreach (var item in Model.Item2)
+        {
+            <tr><td>@item.Key</td><td class="text-end fw-semibold">@item.Value</td></tr>
+        }
+        @if (!Model.Item2.Any())
+        {
+            <tr><td class="text-muted">Sem dados suficientes.</td><td></td></tr>
+        }
+        </tbody></table>
+    </div>
+</div>

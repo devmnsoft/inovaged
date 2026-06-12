@@ -41,6 +41,7 @@ using InovaGed.Application.Retention;
 using InovaGed.Application.RetentionCases;
 using InovaGed.Application.RetentionTerms;
 using InovaGed.Application.Search;
+using InovaGed.Application.SmartSearch;
 using InovaGed.Application.Security.Users;
 using InovaGed.Application.Signatures;
 using InovaGed.Application.Users;
@@ -83,6 +84,7 @@ using InovaGed.Infrastructure.Retention;
 using InovaGed.Infrastructure.RetentionCases;
 using InovaGed.Infrastructure.RetentionTerms;
 using InovaGed.Infrastructure.Search;
+using InovaGed.Infrastructure.SmartSearch;
 using InovaGed.Infrastructure.Security;
 using InovaGed.Infrastructure.Security.Users;
 using InovaGed.Infrastructure.Signatures;
@@ -258,6 +260,12 @@ builder.Services.AddHostedService<StaleUploadBatchItemWorker>();
 builder.Services.AddScoped<IGedAccessPolicyService, GedAccessPolicyService>();
 builder.Services.AddScoped<IGedSearchService, GedSearchService>();
 builder.Services.AddScoped<IGedSmartSearchService, GedSmartSearchService>();
+builder.Services.AddScoped<ISmartQueryParser, SmartQueryParser>();
+builder.Services.AddScoped<IDocumentOcrMetadataExtractor, DocumentOcrMetadataExtractor>();
+builder.Services.AddScoped<ISmartSearchRepository, SmartSearchRepository>();
+builder.Services.AddScoped<ISmartSearchService, SmartSearchService>();
+builder.Services.AddScoped<IDocumentChatService, DocumentChatService>();
+builder.Services.AddScoped<ISearchStatisticsService, SearchStatisticsService>();
 builder.Services.AddScoped<IGedClassificationSuggestionService, GedClassificationSuggestionService>();
 
 // =======================================================

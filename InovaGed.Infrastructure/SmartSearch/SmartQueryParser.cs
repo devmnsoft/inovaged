@@ -1,0 +1,139 @@
+using System.Globalization;
+using System.Text;
+using System.Text.RegularExpressions;
+using Dapper;
+using InovaGed.Application.Common.Database;
+using InovaGed.Application.SmartSearch;
+
+namespace InovaGed.Infrastructure.SmartSearch;
+
+public sealed class SmartQueryParser : ISmartQueryParser
+{
+    private static readonly Regex AgeRegex = new(@"(?<age>\d{1,3})\s*anos?", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex AgeRangeRegex = new(@"(?:entre|de)\s*(?<from>\d{1,3})\s*(?:a|e|até|ate)\s*(?<to>\d{1,3})\s*anos?", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex YearRegex = new(@"\b(?<year>19\d{2}|20\d{2})\b", RegexOptions.Compiled);
+    private static readonly Regex NameRegex = new(@"(?:paciente|do paciente|da paciente|do|da|de)\s+(?<name>[A-ZÁÉÍÓÚÂÊÔÃÕÇ][\p{L}'´`~-]+(?:\s+(?:da|de|do|dos|das|e|[A-ZÁÉÍÓÚÂÊÔÃÕÇ][\p{L}'´`~-]+)){0,5})", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly string[] DocumentWords = ["laudo", "exame", "prontuário", "prontuario", "resultado", "relatório", "relatorio"];
+    private static readonly string[] ExamWords = ["tomografia", "tc", "raio x", "raio-x", "rx", "radiografia", "ressonância", "ressonancia", "ultrassom", "laboratorial", "laboratório", "laboratorio"];
+    private static readonly string[] ClinicalWords = ["avc", "acidente vascular cerebral", "diabetes", "diabete", "dm", "doença renal", "doenca renal", "renal", "rim", "câncer", "cancer", "neoplasia", "tumor", "cardíaco", "cardiaco", "coração", "coracao"];
+
+    private readonly IDbConnectionFactory _db;
+
+    public SmartQueryParser(IDbConnectionFactory db) => _db = db;
+
+    public async Task<SmartSearchIntent> ParseAsync(Guid tenantId, string query, SmartSearchRequest request, CancellationToken ct)
+    {
+        query = (query ?? string.Empty).Trim();
+        var normalized = Normalize(query);
+        var intent = new SmartSearchIntent { OriginalQuery = query, DocumentType = request.DocumentType, From = request.From, To = request.To };
+
+        var range = AgeRangeRegex.Match(query);
+        if (range.Success && int.TryParse(range.Groups["from"].Value, out var fromAge) && int.TryParse(range.Groups["to"].Value, out var toAge))
+        {
+            intent.AgeFrom = Math.Min(fromAge, toAge);
+            intent.AgeTo = Math.Max(fromAge, toAge);
+        }
+        else
+        {
+            var age = AgeRegex.Match(query);
+            if (age.Success && int.TryParse(age.Groups["age"].Value, out var exactAge)) intent.Age = exactAge;
+        }
+
+        var year = YearRegex.Match(query);
+        if (year.Success && int.TryParse(year.Groups["year"].Value, out var y))
+        {
+            intent.Year = y;
+            if (intent.From is null && intent.To is null)
+            {
+                intent.From = new DateTime(y, normalized.Contains("meados de") ? 4 : 1, 1);
+                intent.To = new DateTime(y, normalized.Contains("meados de") ? 9 : 12, normalized.Contains("meados de") ? 30 : 31);
+                intent.IsApproxDate = normalized.Contains("meados de");
+            }
+        }
+        else if (normalized.Contains("ano passado"))
+        {
+            var lastYear = DateTime.UtcNow.Year - 1;
+            intent.Year = lastYear;
+            intent.From ??= new DateTime(lastYear, 1, 1);
+            intent.To ??= new DateTime(lastYear, 12, 31);
+            intent.IsApproxDate = true;
+        }
+
+        var name = NameRegex.Match(query);
+        if (name.Success)
+        {
+            var value = Regex.Replace(name.Groups["name"].Value, @"\s+(que|com|tem|em|no|na|internad[oa]|entrou|fala|falam).*$", string.Empty, RegexOptions.IgnoreCase).Trim(' ', ',', '.');
+            if (value.Length >= 2)
+            {
+                intent.PatientName = CultureInfo.CurrentCulture.TextInfo.ToTitleCase(value.ToLowerInvariant());
+                intent.PersonName = intent.PatientName;
+            }
+        }
+
+        intent.DocumentType = DocumentWords.FirstOrDefault(w => normalized.Contains(Normalize(w))) ?? intent.DocumentType;
+        intent.ExamType = ExamWords.FirstOrDefault(w => normalized.Contains(Normalize(w)));
+        intent.ClinicalTerms = ClinicalWords.Where(w => normalized.Contains(Normalize(w))).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        if (intent.ClinicalTerms.Count > 0) intent.DiseaseTerm = intent.ClinicalTerms[0];
+
+        var termsForSynonyms = intent.ClinicalTerms.ToList();
+        if (!string.IsNullOrWhiteSpace(intent.ExamType)) termsForSynonyms.Add(intent.ExamType);
+        foreach (var synonym in await LoadSynonymsAsync(tenantId, termsForSynonyms, ct))
+            if (!intent.ClinicalTerms.Contains(synonym, StringComparer.OrdinalIgnoreCase)) intent.ClinicalTerms.Add(synonym);
+
+        intent.Keywords = BuildKeywords(query, intent).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        intent.ExpandedQuery = string.Join(' ', intent.Keywords.Concat(intent.ClinicalTerms).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase));
+        intent.Explanation = BuildExplanation(intent);
+        return intent;
+    }
+
+    private async Task<IReadOnlyList<string>> LoadSynonymsAsync(Guid tenantId, IEnumerable<string> terms, CancellationToken ct)
+    {
+        var values = terms.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        if (values.Length == 0) return [];
+        const string sql = """
+select synonym from ged.search_synonym
+where tenant_id = @tenantId and coalesce(reg_status,'A') = 'A' and lower(term) = any(@terms)
+union
+select term from ged.search_synonym
+where tenant_id = @tenantId and coalesce(reg_status,'A') = 'A' and lower(synonym) = any(@terms)
+""";
+        try
+        {
+            await using var conn = await _db.OpenAsync(ct);
+            return (await conn.QueryAsync<string>(new CommandDefinition(sql, new { tenantId, terms = values.Select(v => v.ToLowerInvariant()).ToArray() }, cancellationToken: ct))).ToList();
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    private static IEnumerable<string> BuildKeywords(string query, SmartSearchIntent intent)
+    {
+        if (!string.IsNullOrWhiteSpace(intent.PatientName)) yield return intent.PatientName;
+        if (!string.IsNullOrWhiteSpace(intent.DocumentType)) yield return intent.DocumentType!;
+        if (!string.IsNullOrWhiteSpace(intent.ExamType)) yield return intent.ExamType!;
+        foreach (var word in Regex.Split(query, @"[^\p{L}\p{N}]+"))
+            if (word.Length >= 3 && !int.TryParse(word, out _)) yield return word;
+    }
+
+    private static string BuildExplanation(SmartSearchIntent intent)
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(intent.PatientName)) parts.Add($"nome parecido com {intent.PatientName}");
+        if (intent.Age.HasValue) parts.Add($"idade aproximada de {intent.Age} anos");
+        if (intent.AgeFrom.HasValue) parts.Add($"idade entre {intent.AgeFrom} e {intent.AgeTo} anos");
+        if (intent.Year.HasValue) parts.Add($"período de {intent.Year}");
+        if (!string.IsNullOrWhiteSpace(intent.DocumentType)) parts.Add($"tipo documental {intent.DocumentType}");
+        if (!string.IsNullOrWhiteSpace(intent.ExamType)) parts.Add($"exame {intent.ExamType}");
+        if (intent.ClinicalTerms.Count > 0) parts.Add($"termos documentais/clinico-administrativos: {string.Join(", ", intent.ClinicalTerms.Take(4))}");
+        return parts.Count == 0 ? "Busca textual ampliada em metadados e OCR." : "Entendi que você procura documentos com " + string.Join("; ", parts) + ".";
+    }
+
+    private static string Normalize(string value)
+    {
+        var formD = (value ?? string.Empty).Normalize(NormalizationForm.FormD);
+        var chars = formD.Where(c => CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark).ToArray();
+        return new string(chars).Normalize(NormalizationForm.FormC).ToLowerInvariant();
+    }
+}
