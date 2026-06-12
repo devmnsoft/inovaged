@@ -131,29 +131,9 @@ returning id;
     public async Task<IReadOnlyList<ProtocolRequestRowVm>> ListMyAsync(Guid tenantId, Guid userId, ProtocolVisibilityScope scope, ProtocolWorkQueueFilter filter, CancellationToken ct)
     {
         filter ??= new();
-        var sql = new StringBuilder(BaseListSql);
-        sql.AppendLine("where p.tenant_id = @TenantId");
-        sql.AppendLine("  and coalesce(p.reg_status, 'A') = 'A'");
-
-        var parameters = new DynamicParameters();
+        var finalSql = BuildListMySql(userId, scope, filter, out var parameters);
         parameters.Add("TenantId", tenantId);
-
-        if (!(scope.CanSeeAll && filter.ShowAll))
-        {
-            sql.AppendLine("""
-and (
-    p.requester_user_id = @UserId
-    or p.assigned_user_id = @UserId
-)
-""");
-            parameters.Add("UserId", userId);
-        }
-
-        AppendCommonProtocolFilters(sql, parameters, filter);
-        AppendPagination(sql, parameters, filter, defaultPageSize: 20, maxPageSize: 100);
-
-        var finalSql = sql.ToString();
-        LogPotentiallyInvalidSql(finalSql);
+        ValidateGeneratedSql(finalSql);
 
         try
         {
@@ -171,52 +151,9 @@ and (
     public async Task<IReadOnlyList<ProtocolRequestRowVm>> ListWorkQueueAsync(Guid tenantId, Guid userId, ProtocolVisibilityScope scope, ProtocolWorkQueueFilter filter, CancellationToken ct)
     {
         filter ??= new();
-        var sql = new StringBuilder(BaseListSql);
-        sql.AppendLine("where p.tenant_id = @TenantId");
-        sql.AppendLine("  and coalesce(p.reg_status, 'A') = 'A'");
-        sql.AppendLine("""
-and (
-    @IsAdmin = true
-    or (
-        @IsAdministradorOphir = true
-        and (
-            (@SectorId is not null and p.assigned_sector_id = @SectorId)
-            or p.assigned_user_id = @UserId
-        )
-    )
-)
-""");
-
-        var parameters = new DynamicParameters();
+        var finalSql = BuildListWorkQueueSql(userId, scope, filter, out var parameters);
         parameters.Add("TenantId", tenantId);
-        parameters.Add("UserId", userId);
-        parameters.Add("IsAdmin", scope.IsAdmin);
-        parameters.Add("IsAdministradorOphir", scope.IsAdministradorOphir);
-        parameters.Add("SectorId", scope.SectorId);
-
-        AppendCommonProtocolFilters(sql, parameters, filter);
-
-        if (filter.OnlyMine)
-        {
-            sql.AppendLine("and p.assigned_user_id = @UserId");
-        }
-
-        if (filter.Overdue)
-        {
-            sql.AppendLine("and p.due_at is not null");
-            sql.AppendLine("and p.due_at < now()");
-            sql.AppendLine("and upper(p.status::text) not in ('FINISHED', 'REJECTED', 'CANCELLED')");
-        }
-
-        if (filter.ReturnedForAdjustment)
-        {
-            sql.AppendLine("and upper(p.status::text) = 'RETURNED_FOR_ADJUSTMENT'");
-        }
-
-        AppendPagination(sql, parameters, filter, defaultPageSize: 20, maxPageSize: 500);
-
-        var finalSql = sql.ToString();
-        LogPotentiallyInvalidSql(finalSql);
+        ValidateGeneratedSql(finalSql);
 
         try
         {
@@ -234,7 +171,11 @@ and (
     public async Task<ProtocolRequestDetailsVm?> GetDetailsAsync(Guid tenantId, Guid id, Guid userId, ProtocolVisibilityScope scope, CancellationToken ct)
     {
         await using var conn = await _db.OpenAsync(ct);
-        var header = await conn.QuerySingleOrDefaultAsync<ProtocolRequestRowVm>(new CommandDefinition(BaseListSql + "where p.tenant_id=@TenantId and p.id=@Id and p.reg_status='A';", new { TenantId = tenantId, Id = id }, cancellationToken: ct));
+        var detailsSql = new StringBuilder(BaseProtocolRequestListSql);
+        detailsSql.AppendLine("and p.id = @Id");
+        var finalSql = detailsSql.ToString();
+        ValidateGeneratedSql(finalSql);
+        var header = await conn.QuerySingleOrDefaultAsync<ProtocolRequestRowVm>(new CommandDefinition(finalSql, new { TenantId = tenantId, Id = id }, cancellationToken: ct));
         if (header is null) return null;
         var desc = await conn.ExecuteScalarAsync<string?>(new CommandDefinition("select description from ged.protocol_request where tenant_id=@TenantId and id=@Id", new { TenantId = tenantId, Id = id }, cancellationToken: ct));
         var items = (await conn.QueryAsync<ProtocolItemVm>(new CommandDefinition("""
@@ -333,7 +274,75 @@ from (select 1) seed left join ged.app_user u on u.tenant_id=@TenantId and u.id=
     private Task AuditAsync(Guid tenantId, Guid userId, string action, Guid id, string summary, object data, CancellationToken ct)
         => _audit.WriteAsync(tenantId, userId, action, "protocol_request", id, summary, null, null, data, ct);
 
-    private const string BaseListSql = """
+    internal static string BuildListMySql(Guid userId, ProtocolVisibilityScope scope, ProtocolWorkQueueFilter filter, out DynamicParameters parameters)
+    {
+        var sql = new StringBuilder(BaseProtocolRequestListSql);
+        parameters = new DynamicParameters();
+
+        if (!(scope.CanSeeAll && filter.ShowAll))
+        {
+            sql.AppendLine("""
+and (
+    p.requester_user_id = @UserId
+    or p.assigned_user_id = @UserId
+)
+""");
+            parameters.Add("UserId", userId);
+        }
+
+        AppendCommonProtocolFilters(sql, parameters, filter);
+        AppendPagination(sql, parameters, filter, defaultPageSize: 20, maxPageSize: 100);
+
+        return sql.ToString();
+    }
+
+    internal static string BuildListWorkQueueSql(Guid userId, ProtocolVisibilityScope scope, ProtocolWorkQueueFilter filter, out DynamicParameters parameters)
+    {
+        var sql = new StringBuilder(BaseProtocolRequestListSql);
+        sql.AppendLine("""
+and (
+    @IsAdmin = true
+    or (
+        @IsAdministradorOphir = true
+        and (
+            (@SectorId is not null and p.assigned_sector_id = @SectorId)
+            or p.assigned_user_id = @UserId
+        )
+    )
+)
+""");
+
+        parameters = new DynamicParameters();
+        parameters.Add("UserId", userId);
+        parameters.Add("IsAdmin", scope.IsAdmin);
+        parameters.Add("IsAdministradorOphir", scope.IsAdministradorOphir);
+        parameters.Add("SectorId", scope.SectorId);
+
+        AppendCommonProtocolFilters(sql, parameters, filter);
+
+        if (filter.OnlyMine)
+        {
+            sql.AppendLine("and p.assigned_user_id = @UserId");
+        }
+
+        if (filter.Overdue)
+        {
+            sql.AppendLine("and p.due_at is not null");
+            sql.AppendLine("and p.due_at < now()");
+            sql.AppendLine("and upper(p.status::text) not in ('FINISHED', 'REJECTED', 'CANCELLED')");
+        }
+
+        if (filter.ReturnedForAdjustment)
+        {
+            sql.AppendLine("and upper(p.status::text) = 'RETURNED_FOR_ADJUSTMENT'");
+        }
+
+        AppendPagination(sql, parameters, filter, defaultPageSize: 20, maxPageSize: 500);
+
+        return sql.ToString();
+    }
+
+    private const string BaseProtocolRequestListSql = """
 select
     p.id as "Id",
     p.protocol_no as "ProtocolNo",
@@ -369,14 +378,27 @@ select
     ) as "AttachmentsCount",
     (p.due_at is not null and p.due_at < now() and upper(p.status::text) not in ('FINISHED', 'REJECTED', 'CANCELLED')) as "IsOverdue"
 from ged.protocol_request p
+where p.tenant_id = @TenantId
+  and coalesce(p.reg_status, 'A') = 'A'
 """;
 
-    private void LogPotentiallyInvalidSql(string finalSql)
+    private void ValidateGeneratedSql(string sql)
     {
-        if (finalSql.Contains("where and", StringComparison.OrdinalIgnoreCase)
-            || finalSql.Contains("and and", StringComparison.OrdinalIgnoreCase))
+        var invalidPatterns = new[]
         {
-            _logger.LogWarning("SQL de Protocolo possivelmente inválido: {Sql}", finalSql);
+            "pwhere",
+            "where and",
+            "and and",
+            "from ged.protocol_request pwhere"
+        };
+
+        foreach (var pattern in invalidPatterns)
+        {
+            if (sql.Contains(pattern, StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogError("SQL inválido gerado em ProtocolRequestService. Pattern={Pattern} Sql={Sql}", pattern, sql);
+                throw new InvalidOperationException($"SQL inválido gerado: {pattern}");
+            }
         }
     }
 

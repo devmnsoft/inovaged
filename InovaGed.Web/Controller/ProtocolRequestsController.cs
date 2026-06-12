@@ -56,7 +56,7 @@ public sealed class ProtocolRequestsController : Controller
         catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.SyntaxError)
         {
             _logger.LogError(ex, "Erro SQL na tela Minhas Solicitações.");
-            SetMyViewBag(filter, "Não foi possível carregar suas solicitações.");
+            SetMyViewBag(filter, "Não foi possível carregar suas solicitações de protocolo.");
             return View(Array.Empty<ProtocolRequestRowVm>());
         }
     }

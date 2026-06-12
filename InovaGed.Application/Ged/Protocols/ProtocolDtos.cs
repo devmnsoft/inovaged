@@ -35,7 +35,7 @@ public sealed class ProtocolVisibilityScope
     public bool IsArquivistaOphir { get; init; }
     public Guid? SectorId { get; init; }
     public string? SectorName { get; init; }
-    public bool CanSeeAll => IsAdmin;
+    public bool CanSeeAll => IsAdmin || IsAdministradorOphir;
     public bool CanManage => IsAdmin || IsAdministradorOphir;
 }
 
