@@ -1,3 +1,4 @@
+using Xunit;
 using InovaGed.Application.Ged.Protocols;
 using InovaGed.Infrastructure.Ged.Protocols;
 
