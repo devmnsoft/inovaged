@@ -5,6 +5,56 @@ namespace InovaGed.Application.Ged.Search;
 public interface IGedSmartQueryParser : ISmartQueryParser { }
 public interface IGedSmartSearchRepository : ISmartSearchRepository { }
 
+
+public interface IGedSmartSearchDiagnosticsService
+{
+    Task<GedSmartSearchDiagnosticsVm> GetAsync(Guid tenantId, CancellationToken ct);
+    Task<int> EnqueueReindexDocumentAsync(Guid tenantId, Guid documentId, CancellationToken ct);
+    Task<int> EnqueueReindexAllAsync(Guid tenantId, CancellationToken ct);
+    Task<int> EnqueueReindexMissingAsync(Guid tenantId, CancellationToken ct);
+    Task<int> RebuildVectorsAsync(Guid tenantId, CancellationToken ct);
+}
+
+public sealed class GedSmartSearchDiagnosticsVm
+{
+    public int ActiveDocuments { get; set; }
+    public int IndexedDocuments { get; set; }
+    public int MissingIndexDocuments { get; set; }
+    public int EmptySearchTextDocuments { get; set; }
+    public int NullSearchVectorDocuments { get; set; }
+    public DateTimeOffset? LastIndexing { get; set; }
+    public int OcrAvailable { get; set; }
+    public bool HasUnaccent { get; set; }
+    public bool HasPgTrgm { get; set; }
+    public bool HasProcessingJob { get; set; }
+    public string? SchemaWarning { get; set; }
+    public IReadOnlyList<GedSmartSearchTenantCountVm> Tenants { get; set; } = Array.Empty<GedSmartSearchTenantCountVm>();
+    public IReadOnlyList<GedSmartSearchJobStatusVm> SmartIndexJobs { get; set; } = Array.Empty<GedSmartSearchJobStatusVm>();
+    public IReadOnlyList<GedSmartSearchMissingDocumentVm> TopMissingDocuments { get; set; } = Array.Empty<GedSmartSearchMissingDocumentVm>();
+}
+
+public sealed class GedSmartSearchTenantCountVm
+{
+    public Guid TenantId { get; set; }
+    public int ActiveDocuments { get; set; }
+    public int IndexedDocuments { get; set; }
+}
+
+public sealed class GedSmartSearchJobStatusVm
+{
+    public string Status { get; set; } = string.Empty;
+    public int Total { get; set; }
+}
+
+public sealed class GedSmartSearchMissingDocumentVm
+{
+    public Guid DocumentId { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public string? FileName { get; set; }
+    public string? FolderName { get; set; }
+    public DateTimeOffset? CreatedAt { get; set; }
+}
+
 public interface IGedSearchSuggestionService
 {
     Task<IReadOnlyList<SmartSearchSuggestionDto>> SuggestAsync(SmartSearchRequest request, CancellationToken ct);

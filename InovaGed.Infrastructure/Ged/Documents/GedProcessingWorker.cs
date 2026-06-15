@@ -1,4 +1,5 @@
 using InovaGed.Application.Ged.Documents;
+using InovaGed.Application.Ged.Search;
 using InovaGed.Application.Ocr;
 using InovaGed.Application.Preview;
 using Microsoft.Extensions.DependencyInjection;
@@ -73,6 +74,12 @@ public sealed class GedProcessingWorker : BackgroundService
                     // PreviewWorker/PreviewQueue existente processa o cache quando a requisição/serviço especializado enfileira detalhes de storage.
                     break;
                 case "SMART_INDEX":
+                    if (job.DocumentId.HasValue)
+                    {
+                        var index = services.GetRequiredService<IGedSearchIndexService>();
+                        await index.ReindexDocumentAsync(job.TenantId, job.DocumentId.Value, ct);
+                    }
+                    break;
                 case "QUALITY":
                 case "CLASSIFICATION":
                     // Mantém job rastreável; integrações específicas podem consumir estes tipos sem bloquear UploadBatch/File.

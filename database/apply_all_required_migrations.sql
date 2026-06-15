@@ -1769,3 +1769,6 @@ BEGIN
         RAISE NOTICE 'Atenção: ged.protocol_request ainda ausente.';
     END IF;
 END $$;
+
+-- Included migration: database/migrations/2026_06_fix_smart_search_index.sql
+\i database/migrations/2026_06_fix_smart_search_index.sql

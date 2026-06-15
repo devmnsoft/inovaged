@@ -2,6 +2,7 @@ using InovaGed.Application.Audit;
 using InovaGed.Application.Identity;
 using InovaGed.Application.Security;
 using InovaGed.Application.SmartSearch;
+using InovaGed.Application.Ged.Search;
 using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -18,6 +19,7 @@ public sealed class GedSmartSearchController : Controller
     private readonly ISmartSearchRepository _repository;
     private readonly ISearchStatisticsService _statistics;
     private readonly IAuditWriter _audit;
+    private readonly IGedSmartSearchDiagnosticsService _diagnostics;
 
     public GedSmartSearchController(
         ICurrentUser currentUser,
@@ -25,7 +27,8 @@ public sealed class GedSmartSearchController : Controller
         ISmartSearchService smartSearch,
         ISmartSearchRepository repository,
         ISearchStatisticsService statistics,
-        IAuditWriter audit)
+        IAuditWriter audit,
+        IGedSmartSearchDiagnosticsService diagnostics)
     {
         _currentUser = currentUser;
         _accessPolicy = accessPolicy;
@@ -33,6 +36,7 @@ public sealed class GedSmartSearchController : Controller
         _repository = repository;
         _statistics = statistics;
         _audit = audit;
+        _diagnostics = diagnostics;
     }
 
     [HttpPost("Smart")]
@@ -42,7 +46,7 @@ public sealed class GedSmartSearchController : Controller
         if (!_currentUser.IsAuthenticated) return Unauthorized(new { success = false, message = "Sessão expirada." });
         if (!await _accessPolicy.CanAccessGedAsync(_currentUser.TenantId, _currentUser.UserId, User, ct)) return Forbid();
 
-        var result = await _smartSearch.SearchAsync(new SmartSearchRequest
+        var result = await _smartSearch.SearchAsync(new InovaGed.Application.SmartSearch.SmartSearchRequest
         {
             TenantId = _currentUser.TenantId,
             UserId = _currentUser.UserId,
@@ -65,6 +69,40 @@ public sealed class GedSmartSearchController : Controller
         if (!RolePolicyHelper.IsFullAdmin(User)) return Forbid();
         var model = await _statistics.GetAsync(_currentUser.TenantId, ct);
         return View("~/InovaGed.Web/Views/SmartSearch/Statistics.cshtml", model);
+    }
+
+
+    [HttpGet("Diagnostics")]
+    public async Task<IActionResult> Diagnostics(CancellationToken ct)
+    {
+        if (!_currentUser.IsAuthenticated) return RedirectToAction("Login", "Account");
+        if (!RolePolicyHelper.IsFullAdmin(User)) return Forbid();
+        var model = await _diagnostics.GetAsync(_currentUser.TenantId, ct);
+        return Json(new { success = true, model });
+    }
+
+    [HttpPost("ReindexDocument/{documentId:guid}")]
+    [IgnoreAntiforgeryToken]
+    public async Task<IActionResult> ReindexDocument(Guid documentId, CancellationToken ct) => await ReindexJsonAsync(() => _diagnostics.EnqueueReindexDocumentAsync(_currentUser.TenantId, documentId, ct));
+
+    [HttpPost("ReindexAll")]
+    [IgnoreAntiforgeryToken]
+    public async Task<IActionResult> ReindexAll(CancellationToken ct) => await ReindexJsonAsync(() => _diagnostics.EnqueueReindexAllAsync(_currentUser.TenantId, ct));
+
+    [HttpPost("ReindexMissing")]
+    [IgnoreAntiforgeryToken]
+    public async Task<IActionResult> ReindexMissing(CancellationToken ct) => await ReindexJsonAsync(() => _diagnostics.EnqueueReindexMissingAsync(_currentUser.TenantId, ct));
+
+    [HttpPost("RebuildVectors")]
+    [IgnoreAntiforgeryToken]
+    public async Task<IActionResult> RebuildVectors(CancellationToken ct) => await ReindexJsonAsync(() => _diagnostics.RebuildVectorsAsync(_currentUser.TenantId, ct));
+
+    private async Task<IActionResult> ReindexJsonAsync(Func<Task<int>> action)
+    {
+        if (!_currentUser.IsAuthenticated) return Unauthorized(new { success = false, message = "Sessão expirada." });
+        if (!RolePolicyHelper.IsFullAdmin(User)) return Forbid();
+        try { var count = await action(); return Json(new { success = true, jobsCreated = count, affected = count }); }
+        catch (InvalidOperationException ex) { return Json(new { success = false, message = ex.Message, migration = "database/apply_all_required_migrations.sql" }); }
     }
 
     [HttpPost("AuditClick")]

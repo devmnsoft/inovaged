@@ -286,6 +286,7 @@ builder.Services.AddScoped<ISearchStatisticsService, SearchStatisticsService>();
 builder.Services.AddScoped<IGedSearchSuggestionService, GedSearchSuggestionService>();
 builder.Services.AddScoped<IGedSearchStatisticsService, GedSearchStatisticsService>();
 builder.Services.AddScoped<IGedSearchIndexService, GedSearchIndexService>();
+builder.Services.AddScoped<IGedSmartSearchDiagnosticsService, GedSmartSearchDiagnosticsService>();
 builder.Services.AddScoped<IGedClassificationSuggestionService, GedClassificationSuggestionService>();
 
 // =======================================================

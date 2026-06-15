@@ -6,6 +6,7 @@ using InovaGed.Application.Common.Database;
 using InovaGed.Application.Ged.Search;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
+using InovaGed.Infrastructure.SmartSearch;
 
 namespace InovaGed.Infrastructure.Ged.Search;
 
@@ -109,88 +110,68 @@ public sealed class GedSmartSearchService : IGedSmartSearchService
         p.Add("Limit", limit, DbType.Int32);
 
         const string sql = @"
-WITH candidates AS (
-    SELECT
-        d.id AS document_id,
-        COALESCE(NULLIF(ds.version_id, '00000000-0000-0000-0000-000000000000'::uuid), NULLIF(d.current_version_id, '00000000-0000-0000-0000-000000000000'::uuid), latest_v.id) AS version_id,
-        d.folder_id,
-        COALESCE(NULLIF(d.title, ''), 'Documento sem título') AS title,
-        COALESCE(NULLIF(ds.file_name, ''), NULLIF(d.original_file_name, ''), NULLIF(latest_v.file_name, ''), 'arquivo') AS file_name,
-        COALESCE(f.name, 'Sem pasta') AS folder_name,
-        f.path AS folder_path,
-        dt.name AS document_type,
-        cp.code AS classification_code,
-        cp.name AS classification_name,
-        COALESCE(oj.status::text, ds.ocr_status::text, 'NONE') AS ocr_status,
-        d.status::text AS document_status,
-        d.created_at,
-        COALESCE(d.code, '') AS code,
-        COALESCE(d.description, '') AS description,
-        substring(COALESCE(ds.ocr_text, '') from 1 for 4000) AS ocr_limited
+WITH q AS (
+    SELECT @TenantId::uuid AS tenant_id, NULLIF(@Q::text, '') AS raw_query, ('%' || NULLIF(@Q::text, '') || '%') AS pattern
+), indexed AS (
+    SELECT si.document_id, COALESCE(si.document_version_id, si.version_id, d.current_version_id) AS version_id, d.folder_id,
+           COALESCE(NULLIF(si.title,''), d.title, 'Documento sem título') AS title,
+           COALESCE(NULLIF(si.file_name,''), latest_v.file_name, 'arquivo') AS file_name,
+           COALESCE(NULLIF(si.folder_name,''), f.name, 'Sem pasta') AS folder_name, f.path AS folder_path,
+           si.document_type, NULL::text AS classification_code, COALESCE(si.classification_name, si.classification) AS classification_name,
+           COALESCE(oj.status::text, 'NONE') AS ocr_status, d.status::text AS document_status, d.created_at,
+           COALESCE(d.code,'') AS code, COALESCE(d.description,'') AS description, substring(COALESCE(si.ocr_text,'') from 1 for 4000) AS ocr_limited,
+           COALESCE(si.search_text,'') AS search_text, 'INDEX'::text AS source
+    FROM ged.document_search_index si
+    JOIN ged.document d ON d.tenant_id=si.tenant_id AND d.id=si.document_id
+    LEFT JOIN ged.folder f ON f.tenant_id=d.tenant_id AND f.id=d.folder_id
+    LEFT JOIN LATERAL (SELECT vx.id, vx.file_name FROM ged.document_version vx WHERE vx.tenant_id=d.tenant_id AND vx.document_id=d.id ORDER BY vx.version_number DESC NULLS LAST, vx.created_at DESC NULLS LAST LIMIT 1) latest_v ON true
+    LEFT JOIN LATERAL (SELECT j.status FROM ged.ocr_job j WHERE j.tenant_id=d.tenant_id AND j.document_version_id=COALESCE(si.document_version_id, si.version_id, d.current_version_id, latest_v.id) ORDER BY j.requested_at DESC LIMIT 1) oj ON true
+    JOIN q ON q.tenant_id=si.tenant_id
+    WHERE COALESCE(si.reg_status,'A')='A' AND COALESCE(d.reg_status,'A')='A' AND UPPER(COALESCE(d.status::text,'')) <> 'DELETED'
+      AND (@FolderId::uuid IS NULL OR d.folder_id=@FolderId::uuid)
+), fallback_docs AS (
+    SELECT d.id AS document_id, COALESCE(NULLIF(d.current_version_id, '00000000-0000-0000-0000-000000000000'::uuid), latest_v.id, ds.version_id) AS version_id, d.folder_id,
+           COALESCE(NULLIF(d.title,''), NULLIF(latest_v.file_name,''), 'Documento sem título') AS title,
+           COALESCE(NULLIF(latest_v.file_name,''), NULLIF(ds.file_name,''), 'arquivo') AS file_name,
+           COALESCE(f.name,'Sem pasta') AS folder_name, f.path AS folder_path, dt.name AS document_type, cp.code AS classification_code, cp.name AS classification_name,
+           COALESCE(oj.status::text, ds.ocr_status::text, 'NONE') AS ocr_status, d.status::text AS document_status, d.created_at, COALESCE(d.code,'') AS code, COALESCE(d.description,'') AS description,
+           substring(COALESCE(ds.ocr_text,'') from 1 for 4000) AS ocr_limited,
+           concat_ws(' ', d.title, d.code, d.description, latest_v.file_name, ds.file_name, f.name, f.path, dt.name, cp.name, cp.code, ds.ocr_text) AS search_text, 'FALLBACK'::text AS source
     FROM ged.document d
-    LEFT JOIN ged.document_search ds ON ds.tenant_id = d.tenant_id AND ds.document_id = d.id
-    LEFT JOIN ged.folder f ON f.tenant_id = d.tenant_id AND f.id = d.folder_id
-    LEFT JOIN ged.document_type dt ON dt.tenant_id = d.tenant_id AND dt.id = d.document_type_id
-    LEFT JOIN ged.document_classification dc ON dc.tenant_id = d.tenant_id AND dc.document_id = d.id AND dc.reg_status = 'A'
-    LEFT JOIN ged.classification_plan cp ON cp.tenant_id = d.tenant_id AND cp.id = dc.classification_id
-    LEFT JOIN LATERAL (
-        SELECT vx.id, vx.file_name
-        FROM ged.document_version vx
-        WHERE vx.tenant_id = d.tenant_id AND vx.document_id = d.id
-        ORDER BY vx.version_number DESC, vx.created_at DESC
-        LIMIT 1
-    ) latest_v ON true
-    LEFT JOIN LATERAL (
-        SELECT j.status
-        FROM ged.ocr_job j
-        WHERE j.tenant_id = d.tenant_id
-          AND j.document_version_id = COALESCE(NULLIF(ds.version_id, '00000000-0000-0000-0000-000000000000'::uuid), NULLIF(d.current_version_id, '00000000-0000-0000-0000-000000000000'::uuid), latest_v.id)
-        ORDER BY j.requested_at DESC
-        LIMIT 1
-    ) oj ON true
-    WHERE d.tenant_id = @TenantId::uuid
-      AND COALESCE(d.reg_status, 'A') = 'A'
-      AND UPPER(COALESCE(d.status::text, '')) <> 'DELETED'
-      AND (@FolderId::uuid IS NULL OR d.folder_id = @FolderId::uuid)
+    LEFT JOIN ged.document_search ds ON ds.tenant_id=d.tenant_id AND ds.document_id=d.id
+    LEFT JOIN ged.folder f ON f.tenant_id=d.tenant_id AND f.id=d.folder_id
+    LEFT JOIN ged.document_type dt ON dt.tenant_id=d.tenant_id AND dt.id=d.document_type_id
+    LEFT JOIN ged.document_classification dc ON dc.tenant_id=d.tenant_id AND dc.document_id=d.id AND dc.reg_status='A'
+    LEFT JOIN ged.classification_plan cp ON cp.tenant_id=d.tenant_id AND cp.id=dc.classification_id
+    LEFT JOIN LATERAL (SELECT vx.id, vx.file_name FROM ged.document_version vx WHERE vx.tenant_id=d.tenant_id AND vx.document_id=d.id ORDER BY vx.version_number DESC NULLS LAST, vx.created_at DESC NULLS LAST LIMIT 1) latest_v ON true
+    LEFT JOIN LATERAL (SELECT j.status FROM ged.ocr_job j WHERE j.tenant_id=d.tenant_id AND j.document_version_id=COALESCE(d.current_version_id, latest_v.id, ds.version_id) ORDER BY j.requested_at DESC LIMIT 1) oj ON true
+    JOIN q ON q.tenant_id=d.tenant_id
+    WHERE COALESCE(d.reg_status,'A')='A' AND UPPER(COALESCE(d.status::text,'')) <> 'DELETED' AND (@FolderId::uuid IS NULL OR d.folder_id=@FolderId::uuid)
+), combined AS (
+    SELECT * FROM indexed UNION ALL SELECT * FROM fallback_docs
+), normalized AS (
+    SELECT *, lower(translate(search_text, 'áàâãäéèêëíìîïóòôõöúùûüçÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇ', 'aaaaaeeeeiiiiooooouuuucAAAAAEEEEIIIIOOOOOUUUUC')) AS search_norm,
+              lower(translate(title, 'áàâãäéèêëíìîïóòôõöúùûüçÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇ', 'aaaaaeeeeiiiiooooouuuucAAAAAEEEEIIIIOOOOOUUUUC')) AS title_norm,
+              lower(translate(file_name, 'áàâãäéèêëíìîïóòôõöúùûüçÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇ', 'aaaaaeeeeiiiiooooouuuucAAAAAEEEEIIIIOOOOOUUUUC')) AS file_norm
+    FROM combined
 ), ranked AS (
-    SELECT *,
-        CASE
-            WHEN @Q::text IS NULL THEN 0
-            WHEN lower(title) LIKE lower(@Q::text) || '%' THEN 100 ELSE 0 END +
-        CASE WHEN @Q::text IS NOT NULL AND title ILIKE '%' || @Q::text || '%' THEN 80 ELSE 0 END +
-        CASE WHEN @Q::text IS NOT NULL AND file_name ILIKE '%' || @Q::text || '%' THEN 70 ELSE 0 END +
-        CASE WHEN @Q::text IS NOT NULL AND code ILIKE @Q::text THEN 100 ELSE 0 END +
-        CASE WHEN @Q::text IS NOT NULL AND COALESCE(folder_name, '') ILIKE '%' || @Q::text || '%' THEN 50 ELSE 0 END +
-        CASE WHEN @Q::text IS NOT NULL AND COALESCE(document_type, '') ILIKE '%' || @Q::text || '%' THEN 45 ELSE 0 END +
-        CASE WHEN @Q::text IS NOT NULL AND ocr_limited ILIKE '%' || @Q::text || '%' THEN 60 ELSE 0 END +
-        CASE WHEN created_at >= now() - interval '30 days' THEN 5 ELSE 0 END +
-        CASE WHEN @FolderId::uuid IS NOT NULL AND folder_id = @FolderId::uuid THEN 10 ELSE 0 END AS score
-    FROM candidates
-    WHERE version_id IS NOT NULL
-      AND (
-        @Q::text IS NULL
-        OR title ILIKE '%' || @Q::text || '%'
-        OR file_name ILIKE '%' || @Q::text || '%'
-        OR code ILIKE '%' || @Q::text || '%'
-        OR description ILIKE '%' || @Q::text || '%'
-        OR COALESCE(folder_name, '') ILIKE '%' || @Q::text || '%'
-        OR COALESCE(folder_path, '') ILIKE '%' || @Q::text || '%'
-        OR COALESCE(document_type, '') ILIKE '%' || @Q::text || '%'
-        OR ocr_limited ILIKE '%' || @Q::text || '%'
-      )
+    SELECT DISTINCT ON (document_id) *,
+       (CASE WHEN raw_query IS NULL THEN 0 WHEN file_norm LIKE pattern THEN 80 ELSE 0 END +
+        CASE WHEN raw_query IS NOT NULL AND title_norm LIKE pattern THEN 70 ELSE 0 END +
+        CASE WHEN raw_query IS NOT NULL AND lower(COALESCE(ocr_limited,'')) LIKE pattern THEN 50 ELSE 0 END +
+        CASE WHEN raw_query IS NOT NULL AND search_norm LIKE pattern THEN 35 ELSE 0 END +
+        CASE WHEN source='INDEX' THEN 10 ELSE 5 END +
+        CASE WHEN created_at >= now() - interval '30 days' THEN 3 ELSE 0 END)::numeric AS score
+    FROM normalized, q
+    WHERE raw_query IS NULL OR search_norm LIKE pattern OR document_id::text ILIKE pattern
+    ORDER BY document_id, score DESC
 )
-SELECT document_id AS ""DocumentId"", version_id AS ""VersionId"", folder_id AS ""FolderId"", title AS ""Title"", file_name AS ""FileName"",
-       folder_name AS ""FolderName"", folder_path AS ""FolderPath"", document_type AS ""DocumentType"",
-       classification_code AS ""ClassificationCode"", classification_name AS ""ClassificationName"", ocr_status AS ""OcrStatus"",
-       document_status AS ""DocumentStatus"", created_at AS ""CreatedAt"", (ocr_limited <> '') AS ""HasOcr"",
-       CASE
-           WHEN @Q::text IS NOT NULL AND ocr_limited ILIKE '%' || @Q::text || '%' THEN substring(ocr_limited from greatest(1, position(lower(@Q::text) in lower(ocr_limited)) - 70) for 180)
-           WHEN @Q::text IS NOT NULL AND description ILIKE '%' || @Q::text || '%' THEN substring(description from 1 for 180)
-           ELSE NULL
-       END AS ""Snippet"",
-       score::numeric AS ""Score""
+SELECT document_id AS "DocumentId", version_id AS "VersionId", folder_id AS "FolderId", title AS "Title", file_name AS "FileName",
+       folder_name AS "FolderName", folder_path AS "FolderPath", document_type AS "DocumentType", classification_code AS "ClassificationCode", classification_name AS "ClassificationName",
+       ocr_status AS "OcrStatus", document_status AS "DocumentStatus", created_at AS "CreatedAt", (ocr_limited <> '') AS "HasOcr",
+       CASE WHEN raw_query IS NOT NULL AND lower(COALESCE(ocr_limited,'')) LIKE pattern THEN substring(ocr_limited from 1 for 180) ELSE NULL END AS "Snippet", score AS "Score"
 FROM ranked
-WHERE score > 0 OR @Q::text IS NULL
+WHERE score > 0 OR raw_query IS NULL
 ORDER BY score DESC, created_at DESC
 LIMIT @Limit::int;";
 
@@ -233,7 +214,7 @@ LIMIT @Limit::int;";
         };
     }
 
-    private static string? NormalizeQuery(string? query) => string.IsNullOrWhiteSpace(query) ? null : Regex.Replace(query.Trim(), "\\s+", " ");
+    private static string? NormalizeQuery(string? query) => string.IsNullOrWhiteSpace(query) ? null : GedSearchTextNormalizer.Normalize(query);
     private static bool CanSearch(string? query) => !string.IsNullOrWhiteSpace(query) && (query.Length >= 3 || (query.Length >= 2 && query.All(char.IsDigit)));
     private static string? TruncateSnippet(string? text, int max) => string.IsNullOrWhiteSpace(text) ? null : (text.Length <= max ? text : text[..max] + "…");
     private static string IconFor(string? fileName, bool ocr) => ocr ? "bi-body-text" : (Path.GetExtension(fileName ?? string.Empty).ToLowerInvariant() switch { ".pdf" => "bi-file-earmark-pdf", ".jpg" or ".jpeg" or ".png" or ".tif" or ".tiff" => "bi-file-earmark-image", ".doc" or ".docx" => "bi-file-earmark-word", _ => "bi-file-earmark-text" });
