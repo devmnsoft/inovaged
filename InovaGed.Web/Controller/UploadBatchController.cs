@@ -99,7 +99,7 @@ public sealed class UploadBatchController : Controller
     [ValidateAntiForgeryToken]
     [DisableRequestSizeLimit]
     [RequestFormLimits(MultipartBodyLengthLimit = long.MaxValue, ValueLengthLimit = int.MaxValue, MultipartHeadersLengthLimit = int.MaxValue)]
-    public async Task<IActionResult> File(IFormFile file, Guid batchId, int fileIndex, int totalFiles, Guid? folderId, Guid? uploadFolderId, Guid? requestedFolderId, string? duplicateStrategy, bool runOcr, bool generatePreview, Guid? documentTypeId, Guid? classificationId, string? notes, string? visibility, Guid? existingDocumentId, string? uploadName, CancellationToken ct)
+    public async Task<IActionResult> File(IFormFile file, Guid batchId, int fileIndex, int totalFiles, Guid? folderId, Guid? uploadFolderId, Guid? requestedFolderId, string? duplicateStrategy, bool runOcr, bool generatePreview, Guid? documentTypeId, Guid? classificationId, string? notes, string? visibility, Guid? existingDocumentId, string? uploadName, bool markAsIncomplete, string? incompleteReason, string? uploadClientId, CancellationToken ct)
     {
         var correlationId = HttpContext.TraceIdentifier;
         try
@@ -125,18 +125,21 @@ public sealed class UploadBatchController : Controller
                 RunOcr = runOcr,
                 GeneratePreview = generatePreview,
                 UploadName = uploadName,
+                MarkAsIncomplete = markAsIncomplete,
+                IncompleteReason = incompleteReason,
+                UploadClientId = uploadClientId,
                 ExistingDocumentId = existingDocumentId,
                 UserName = User.Identity?.Name,
                 IsAdmin = isAdmin,
                 CorrelationId = correlationId,
-                Metadata = new DocumentBulkUploadMetadata { DocumentTypeId = documentTypeId, ClassificationId = classificationId, Notes = notes, Visibility = visibility }
+                Metadata = new DocumentBulkUploadMetadata { DocumentTypeId = documentTypeId, ClassificationId = classificationId, Notes = notes, Visibility = visibility, MarkAsIncomplete = markAsIncomplete, IncompleteReason = incompleteReason }
             }, ct);
 
             if (!result.Success)
             {
                 var code = result.Error?.Code ?? "UPLOAD";
                 var statusCode = string.Equals(code, "CONCURRENCY", StringComparison.OrdinalIgnoreCase) ? 429 : 400;
-                return StatusCode(statusCode, Error(result.Error?.Message ?? "Não foi possível enviar o arquivo.", code == "CONCURRENCY" ? "Concorrência" : code, code != "EXTENSION", correlationId));
+                return StatusCode(statusCode, Error(result.Error?.Message ?? "Não foi possível enviar o arquivo.", code == "CONCURRENCY" ? "Concorrência" : code, code != "EXTENSION", correlationId, code));
             }
 
             return Ok(new
@@ -164,7 +167,7 @@ public sealed class UploadBatchController : Controller
         catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)
         {
             _logger.LogWarning("Upload cancelado pelo cliente. Tenant={TenantId} User={UserId} Batch={BatchId} File={FileName} CorrelationId={CorrelationId}", _currentUser.TenantId, _currentUser.UserId, batchId, file?.FileName, correlationId);
-            return StatusCode(499, Error("Upload cancelado/interrompido pelo cliente.", "Conexão", true, correlationId));
+            return StatusCode(499, Error("Upload interrompido. Clique em tentar novamente.", "Network", true, correlationId, "CLIENT_ABORT"));
         }
     }
 

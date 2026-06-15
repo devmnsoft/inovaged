@@ -1,7 +1,9 @@
 (function () {
     const DuplicateStrategy = { overwrite: 'overwrite', rename: 'rename', skip: 'skip', cancel: 'cancel' };
+    const MAX_PARALLEL_UPLOADS = 2;
+    const RETRY_BACKOFF_MS = [2000, 5000, 10000];
     const ValidationStep = 'Validação de extensão';
-    const state = { files: [], uploading: false, isStarting: false, isFinishing: false, activeUploads: 0, maxConcurrency: 2, completed: 0, failed: 0, skipped: 0, isCheckingDuplicates: false, duplicateCheckKey: null, duplicateCheckPromise: null, duplicateCheckResult: null, lastDuplicateSignature: null, batchId: null, requestedFolderId: null, resolvedFolderId: null, listingFolderId: null, folderName: null, createdDocuments: [], useLegacyUploadFallback: false, duplicateStrategy: null, uploadAbortController: null, chunkOptions: { enabled: true, thresholdBytes: 50 * 1024 * 1024, chunkSizeBytes: 10 * 1024 * 1024, timeoutMs: 1800 * 1000 } };
+    const state = { files: [], uploading: false, isStarting: false, isFinishing: false, activeUploads: 0, maxConcurrency: MAX_PARALLEL_UPLOADS, completed: 0, failed: 0, skipped: 0, isCheckingDuplicates: false, duplicateCheckKey: null, duplicateCheckPromise: null, duplicateCheckResult: null, lastDuplicateSignature: null, batchId: null, requestedFolderId: null, resolvedFolderId: null, listingFolderId: null, folderName: null, createdDocuments: [], useLegacyUploadFallback: false, duplicateStrategy: null, uploadAbortController: null, chunkOptions: { enabled: true, thresholdBytes: 50 * 1024 * 1024, chunkSizeBytes: 10 * 1024 * 1024, timeoutMs: 1800 * 1000 } };
 
     function getBootstrapOrNull() {
         if (!window.bootstrap) {
@@ -733,6 +735,7 @@
             }
 
             await uploadQueue();
+            if (state.files.some(x => ['waiting', 'uploading', 'retrying', 'duplicate'].includes(x.status))) throw new Error('Ainda há arquivos pendentes ou em retentativa. Aguarde a conclusão antes de finalizar.');
             const finished = await finishUploadBatch();
             const success = finished?.success ?? state.files.filter(x => x.status === 'success').length;
             const error = finished?.failed ?? state.files.filter(x => x.status === 'error').length;
@@ -778,7 +781,7 @@
         state.isStarting = true;
         const token = document.querySelector('input[name="__RequestVerificationToken"]')?.value;
         const selected = getSelectedUploadFolder();
-        const payload = { requestedFolderId: selected?.folderId, folderId: selected?.uploadFolderId, uploadFolderId: selected?.uploadFolderId, totalFiles: state.files.length, options: { runOcr: false, generatePreview: false, duplicateStrategy: state.duplicateStrategy || null } };
+        const payload = { requestedFolderId: selected?.folderId, folderId: selected?.uploadFolderId, uploadFolderId: selected?.uploadFolderId, totalFiles: state.files.length, options: { runOcr: false, generatePreview: false, duplicateStrategy: state.duplicateStrategy || null, markAsIncomplete: document.getElementById('bulkUploadIncomplete')?.checked === true, incompleteReason: document.getElementById('bulkPartialNotes')?.value || null } };
         console.log('[BulkUpload] sending folder', { requestedFolderId: payload.requestedFolderId, uploadFolderId: payload.uploadFolderId });
         const r = await fetch('/Ged/UploadBatch/Start', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { RequestVerificationToken: token } : {}) }, body: JSON.stringify(payload) });
         const j = await r.json().catch(() => ({ success: false, message: 'Resposta inválida ao iniciar lote.' }));
@@ -873,7 +876,10 @@
             fd.append('totalFiles', String(totalFiles || state.files.length || 0));
             fd.append('runOcr', 'false');
             fd.append('generatePreview', 'false');
-            fd.append('notes', '');
+            fd.append('notes', document.getElementById('bulkPartialNotes')?.value || '');
+            fd.append('markAsIncomplete', document.getElementById('bulkUploadIncomplete')?.checked === true ? 'true' : 'false');
+            fd.append('incompleteReason', document.getElementById('bulkPartialNotes')?.value || '');
+            fd.append('uploadClientId', fileItem.uploadClientId || (fileItem.uploadClientId = `${Date.now()}-${Math.random().toString(16).slice(2)}`));
             if (fileItem.duplicateStrategy || state.duplicateStrategy) fd.append('duplicateStrategy', fileItem.duplicateStrategy || state.duplicateStrategy);
             if (fileItem.existingDocumentId) fd.append('existingDocumentId', fileItem.existingDocumentId);
             if (fileItem.uploadName) fd.append('uploadName', fileItem.uploadName);
@@ -901,9 +907,8 @@
                 const payload = parseUploadResponse(xhr);
 
                 if (xhr.status === 429 && attempt < 3) {
-                    const delays = [2000, 5000, 10000];
-                    const delay = delays[attempt] || 10000;
-                    fileItem.status = 'waiting';
+                    const delay = RETRY_BACKOFF_MS[attempt] || 10000;
+                    fileItem.status = 'retrying';
                     fileItem.progress = 0;
                     fileItem.message = `Muitos uploads simultâneos. Nova tentativa em ${Math.round(delay / 1000)}s...`;
                     fileItem.canRetry = true;
@@ -943,7 +948,7 @@
                 resolve('error');
             };
             xhr.ontimeout = async () => {
-                fileItem.status = 'error';
+                fileItem.status = 'aborted';
                 fileItem.message = 'Tempo limite excedido ao enviar o arquivo.';
                 fileItem.errorMessage = 'Tempo limite excedido ao enviar o arquivo.';
                 fileItem.errorStep = 'Timeout';
@@ -957,12 +962,21 @@
                 resolve('error');
             };
             xhr.onerror = async () => {
-                fileItem.status = 'error';
+                fileItem.status = 'aborted';
                 fileItem.message = 'Falha de comunicação com o servidor.';
                 fileItem.errorMessage = 'Falha de comunicação com o servidor.';
                 fileItem.errorLog = 'XMLHttpRequest network error';
-                fileItem.errorStep = 'Rede';
+                fileItem.errorStep = 'NETWORK_ERROR';
                 fileItem.canRetry = true;
+                if (attempt < 3) {
+                    fileItem.status = 'retrying';
+                    fileItem.message = `Falha de comunicação. Nova tentativa em ${Math.round((RETRY_BACKOFF_MS[attempt] || 10000) / 1000)}s...`;
+                    renderFileList();
+                    await sleep(RETRY_BACKOFF_MS[attempt] || 10000);
+                    const retryResult = await uploadSingleFile(fileItem, fileIndex, totalFiles, attempt + 1);
+                    resolve(retryResult);
+                    return;
+                }
                 if (await confirmBatchStatus(fileItem)) { renderFileList(); resolve('success'); return; }
                 renderFileList();
                 resolve('error');
@@ -1085,7 +1099,7 @@
             uploadName: fileItem.uploadName,
             runOcr: false,
             generatePreview: false,
-            metadata: {}
+            metadata: { markAsIncomplete: document.getElementById('bulkUploadIncomplete')?.checked === true, incompleteReason: document.getElementById('bulkPartialNotes')?.value || null }
         };
         const r = await fetch('/Ged/UploadChunk/Start', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { RequestVerificationToken: token } : {}) }, body: JSON.stringify(payload) });
         const j = await r.json().catch(() => ({ success: false, message: 'Resposta inválida ao iniciar upload em partes.' }));
@@ -1128,7 +1142,7 @@
     }
 
     function retryFailedFiles() {
-        const failed = state.files.filter(x => x.status === 'error');
+        const failed = state.files.filter(x => x.status === 'error' || x.status === 'aborted');
         if (!failed.length) {
             showAppToast('Não há arquivos com erro para tentar novamente.', 'info', 'Nada para reenviar');
             return;
@@ -1151,7 +1165,7 @@
         }
 
         retryable.forEach(x => {
-            x.status = 'waiting'; x.progress = 0; x.message = null;
+            x.status = 'waiting'; x.progress = 0; x.message = null; x.errorStep = null;
         });
         renderFileList();
         updateUploadSummary();

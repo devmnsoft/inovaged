@@ -38,7 +38,8 @@ public sealed class DocumentBulkUploadService : IDocumentBulkUploadService
             var isPart = metadata.IsDocumentPart || metadata.PartNumber.HasValue || metadata.TotalParts.HasValue;
             var expectedTotalParts = metadata.TotalParts.GetValueOrDefault();
             var incomingPartNumber = metadata.PartNumber.GetValueOrDefault(isPart ? 1 : 0);
-            var isIncomplete = isPart && (!metadata.TotalParts.HasValue || incomingPartNumber < expectedTotalParts);
+            var isMarkedIncomplete = metadata.MarkAsIncomplete;
+            var isIncomplete = isMarkedIncomplete || (isPart && (!metadata.TotalParts.HasValue || incomingPartNumber < expectedTotalParts));
             Guid documentId;
             Guid? versionId = null;
             if (isPart && (metadata.ConsolidateIntoDocumentId.HasValue || metadata.ExistingDocumentId.HasValue) && (metadata.ConsolidateIntoDocumentId ?? metadata.ExistingDocumentId) is Guid existingDoc && existingDoc != Guid.Empty)
@@ -49,7 +50,7 @@ public sealed class DocumentBulkUploadService : IDocumentBulkUploadService
                 versionId = addVersion.Value;
                 var partsAfterUpload = await CountDocumentPartsAsync(tenantId, documentId, ct) + 1;
                 var isConsolidated = metadata.TotalParts.HasValue && partsAfterUpload >= metadata.TotalParts.Value;
-                isIncomplete = !isConsolidated;
+                isIncomplete = metadata.MarkAsIncomplete || !isConsolidated;
                 var addPart = await _partialService.AddPartAsync(new AddDocumentPartRequest
                 {
                     TenantId = tenantId,
@@ -64,11 +65,11 @@ public sealed class DocumentBulkUploadService : IDocumentBulkUploadService
                     UploadedAtUtc = uploadedAtUtc
                 }, ct);
                 if (!addPart.Success) return Result<DocumentBulkUploadResultDto>.Fail(addPart.Error?.Code ?? "PART", addPart.Error?.Message ?? "Falha ao registrar a parte.");
-                if (addPart.Value?.PartialStatus == "COMPLETE") isIncomplete = false;
+                if (addPart.Value?.PartialStatus == "COMPLETE" && !isMarkedIncomplete) isIncomplete = false;
             }
             else
             {
-                var cmd = new UploadDocumentCommand { FolderId = folderId.Value, TypeId = metadata.DocumentTypeId, ClassificationId = metadata.ClassificationId, Description = metadata.Notes, Visibility = string.IsNullOrWhiteSpace(metadata.Visibility) ? "INTERNAL" : metadata.Visibility.Trim().ToUpperInvariant(), Title = title, FileName = safeName, ContentType = string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType, Content = content, UploadedAtUtc = uploadedAtUtc, IsPartialDocument = isPart, IsDocumentIncomplete = isIncomplete, PartNumber = metadata.PartNumber, TotalParts = metadata.TotalParts };
+                var cmd = new UploadDocumentCommand { FolderId = folderId.Value, TypeId = metadata.DocumentTypeId, ClassificationId = metadata.ClassificationId, Description = metadata.Notes, Visibility = string.IsNullOrWhiteSpace(metadata.Visibility) ? "INTERNAL" : metadata.Visibility.Trim().ToUpperInvariant(), Title = title, FileName = safeName, ContentType = string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType, Content = content, UploadedAtUtc = uploadedAtUtc, IsPartialDocument = isPart, IsDocumentIncomplete = isIncomplete, IncompleteReason = metadata.IncompleteReason, PartNumber = metadata.PartNumber, TotalParts = metadata.TotalParts };
                 var result = await _documentApp.UploadAsync(cmd, "BULK", userName ?? "BULK", ct);
                 if (!result.Success) return Result<DocumentBulkUploadResultDto>.Fail(result.Error?.Code ?? "UPLOAD", result.Error?.Message ?? "Falha no upload.");
                 documentId = result.Value;
@@ -89,13 +90,17 @@ public sealed class DocumentBulkUploadService : IDocumentBulkUploadService
                         UploadedAtUtc = uploadedAtUtc
                     }, ct);
                     if (!addPart.Success) return Result<DocumentBulkUploadResultDto>.Fail(addPart.Error?.Code ?? "PART", addPart.Error?.Message ?? "Falha ao registrar a parte.");
-                    isIncomplete = addPart.Value?.PartialStatus == "INCOMPLETE";
+                    isIncomplete = metadata.MarkAsIncomplete || addPart.Value?.PartialStatus == "INCOMPLETE";
                 }
+            }
+            if (metadata.MarkAsIncomplete && versionId.HasValue)
+            {
+                await MarkDocumentIncompleteAsync(tenantId, documentId, versionId, metadata.IncompleteReason, ct);
             }
             sw.Stop();
             _logger.LogInformation("Upload stream finalizado. Tenant={TenantId} User={UserId} Folder={FolderId} Batch={BatchId} File={FileName} FileSize={FileSize} ContentType={ContentType} DocumentId={DocumentId} ElapsedMs={ElapsedMs}",
                 tenantId, userId, folderId, metadata.BatchId, safeName, sizeBytes, contentType, documentId, sw.ElapsedMilliseconds);
-            await _audit.WriteAsync(tenantId, userId, isPart ? "UPLOAD_DOCUMENT_PART" : "UPLOAD", "DOCUMENT", documentId, isPart ? "Parte de documento anexada" : "Upload em lote concluído", null, null, new { folderId, fileName = safeName, fileSize = sizeBytes, contentType, metadata.RunOcr, metadata.GeneratePreview, metadata.BatchId, versionId, metadata.PartNumber, metadata.TotalParts, isIncomplete }, ct);
+            await _audit.WriteAsync(tenantId, userId, isPart ? "UPLOAD_DOCUMENT_PART" : "UPLOAD", "DOCUMENT", documentId, isPart ? "Parte de documento anexada" : "Upload em lote concluído", null, null, new { folderId, fileName = safeName, fileSize = sizeBytes, contentType, metadata.RunOcr, metadata.GeneratePreview, metadata.BatchId, versionId, metadata.PartNumber, metadata.TotalParts, metadata.MarkAsIncomplete, metadata.IncompleteReason, isIncomplete }, ct);
             InvalidateGedFolderCache(tenantId, folderId.Value);
             return Result<DocumentBulkUploadResultDto>.Ok(new DocumentBulkUploadResultDto { DocumentId = documentId, VersionId = versionId, FileName = safeName, FolderId = folderId.Value, Title = title });
         }
@@ -109,6 +114,30 @@ public sealed class DocumentBulkUploadService : IDocumentBulkUploadService
             _logger.LogError(ex, "Erro em UploadStreamAsync. Tenant={TenantId} User={UserId} Folder={FolderId} Batch={BatchId} File={FileName}", tenantId, userId, folderId, metadata.BatchId, fileName);
             return Result<DocumentBulkUploadResultDto>.Fail("ERR", "Erro interno ao enviar arquivo.");
         }
+    }
+
+
+    private async Task MarkDocumentIncompleteAsync(Guid tenantId, Guid documentId, Guid? versionId, string? reason, CancellationToken ct)
+    {
+        const string sql = """
+UPDATE ged.document
+SET is_document_incomplete = true,
+    incomplete_reason = COALESCE(@reason, incomplete_reason),
+    incomplete_source = 'USER_MARKED',
+    updated_at = now()
+WHERE tenant_id = @tenantId
+  AND id = @documentId;
+
+UPDATE ged.document_version
+SET is_document_incomplete = true,
+    incomplete_reason = COALESCE(@reason, incomplete_reason),
+    incomplete_source = 'USER_MARKED',
+    partial_status = CASE WHEN COALESCE(partial_status, 'NOT_PARTIAL') = 'NOT_PARTIAL' THEN 'INCOMPLETE' ELSE partial_status END
+WHERE tenant_id = @tenantId
+  AND id = @versionId;
+""";
+        await using var conn = await _db.OpenAsync(ct);
+        await conn.ExecuteAsync(new CommandDefinition(sql, new { tenantId, documentId, versionId, reason }, cancellationToken: ct));
     }
 
     private async Task<int> CountDocumentPartsAsync(Guid tenantId, Guid documentId, CancellationToken ct)
@@ -143,7 +172,7 @@ SET part_number=EXCLUDED.part_number,
     {
         const string sql = """
 UPDATE ged.document_version
-SET is_document_incomplete=false,
+SET is_document_incomplete=CASE WHEN incomplete_source='USER_MARKED' THEN true ELSE false END,
     consolidated_version_id=@consolidatedVersionId
 WHERE tenant_id=@tenantId
   AND document_id=@documentId
@@ -169,7 +198,7 @@ WHERE tenant_id=@tenantId
     {
         const string sql = @"
 UPDATE ged.document_version
-SET uploaded_at_utc=@uploadedAtUtc, is_partial_document=@isPart, is_document_incomplete=@isIncomplete, part_number=@partNumber, total_parts=@totalParts, consolidated_version_id=@consolidatedVersionId
+SET uploaded_at_utc=@uploadedAtUtc, is_partial_document=@isPart, is_document_incomplete=CASE WHEN incomplete_source='USER_MARKED' THEN true ELSE @isIncomplete END, part_number=@partNumber, total_parts=@totalParts, consolidated_version_id=@consolidatedVersionId
 WHERE tenant_id=@tenantId AND id=@versionId;
 UPDATE ged.document
 SET current_version_id=@versionId

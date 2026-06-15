@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.Json;
 using Dapper;
 using InovaGed.Application.Audit;
 using InovaGed.Application.Common.Database;
@@ -52,13 +53,14 @@ public sealed class UploadBatchService : IUploadBatchService
         var id = Guid.NewGuid();
         var requestedFolderId = request.RequestedFolderId ?? request.FolderId;
         const string sql = """
-INSERT INTO ged.upload_batch (id, tenant_id, folder_id, requested_folder_id, created_by, status, total_files, source_ip, user_agent, correlation_id)
-VALUES (@id, @tenantId, @folderId, @requestedFolderId, @userId, 'OPEN', @totalFiles, @sourceIp, @userAgent, @correlationId);
+INSERT INTO ged.upload_batch (id, tenant_id, folder_id, requested_folder_id, created_by, status, total_files, source_ip, user_agent, correlation_id, options_json)
+VALUES (@id, @tenantId, @folderId, @requestedFolderId, @userId, 'OPEN', @totalFiles, @sourceIp, @userAgent, @correlationId, CAST(@optionsJson AS jsonb));
 """;
         try
         {
             await using var conn = await _db.OpenAsync(ct);
-            await conn.ExecuteAsync(new CommandDefinition(sql, new { id, tenantId, folderId = request.FolderId, requestedFolderId, userId, totalFiles = request.TotalFiles, request.SourceIp, request.UserAgent, request.CorrelationId }, cancellationToken: ct));
+            var optionsJson = JsonSerializer.Serialize(request.Options ?? new UploadBatchOptionsDto());
+            await conn.ExecuteAsync(new CommandDefinition(sql, new { id, tenantId, folderId = request.FolderId, requestedFolderId, userId, totalFiles = request.TotalFiles, request.SourceIp, request.UserAgent, request.CorrelationId, optionsJson }, cancellationToken: ct));
             _logger.LogInformation("StartBatch Tenant={TenantId} User={UserId} Batch={BatchId} RequestedFolder={RequestedFolderId} Folder={FolderId} Total={TotalFiles} CorrelationId={CorrelationId}", tenantId, userId, id, requestedFolderId, request.FolderId, request.TotalFiles, request.CorrelationId);
             await _audit.WriteAsync(tenantId, userId, "BATCH_EVENT", "UPLOAD_BATCH", id, "Lote de upload iniciado", null, null, new { RequestedFolderId = requestedFolderId, request.FolderId, request.TotalFiles, request.Options, request.CorrelationId }, ct);
             return Result<Guid>.Ok(id);
@@ -94,12 +96,16 @@ VALUES (@id, @tenantId, @folderId, @requestedFolderId, @userId, 'OPEN', @totalFi
         try
         {
             await EnsureBatchProcessingAsync(tenantId, request.BatchId, ct);
+            var batchOptions = await GetBatchOptionsAsync(tenantId, request.BatchId, ct);
+            request.MarkAsIncomplete = request.MarkAsIncomplete || batchOptions?.MarkAsIncomplete == true;
+            request.IncompleteReason = string.IsNullOrWhiteSpace(request.IncompleteReason) ? batchOptions?.IncompleteReason : request.IncompleteReason;
             await InsertItemAsync(tenantId, request, itemId, correlationId, ct);
             _logger.LogInformation("File upload started Tenant={TenantId} User={UserId} Batch={BatchId} Item={ItemId} Folder={FolderId} File={FileName} Size={SizeBytes} CorrelationId={CorrelationId}", tenantId, userId, request.BatchId, itemId, request.FolderId, request.File.FileName, request.File.Length, correlationId);
 
             if (string.Equals(request.DuplicateStrategy, "skip", StringComparison.OrdinalIgnoreCase) && request.ExistingDocumentId.HasValue)
             {
-                await MarkItemSkippedAsync(tenantId, itemId, "Arquivo ignorado por regra de duplicidade.", sw.ElapsedMilliseconds, ct);
+                await MarkItemSkippedAsync(tenantId, itemId, "Arquivo ignorado por regra de duplicidade.", sw.ElapsedMilliseconds, CancellationToken.None);
+                await IncrementBatchCounterAsync(tenantId, request.BatchId, "skipped_files", CancellationToken.None);
                 return Result<UploadBatchFileResultDto>.Ok(new UploadBatchFileResultDto { ItemId = itemId, Status = "SKIPPED", Message = "Arquivo ignorado por duplicidade.", RequestedFolderId = request.RequestedFolderId, ResolvedFolderId = request.FolderId, CorrelationId = correlationId });
             }
 
@@ -110,11 +116,14 @@ VALUES (@id, @tenantId, @folderId, @requestedFolderId, @userId, 'OPEN', @totalFi
             metadata.DuplicateStrategy = request.DuplicateStrategy;
             metadata.UploadName = request.UploadName;
             metadata.ExistingDocumentId = request.ExistingDocumentId;
+            metadata.MarkAsIncomplete = request.MarkAsIncomplete || metadata.MarkAsIncomplete;
+            metadata.IncompleteReason = string.IsNullOrWhiteSpace(request.IncompleteReason) ? metadata.IncompleteReason : request.IncompleteReason;
 
             var result = await _bulkUpload.UploadSingleAsync(tenantId, userId, request.UserName, request.File, request.FolderId, metadata, request.IsAdmin, ct);
             if (!result.Success)
             {
-                await MarkItemErrorAsync(tenantId, itemId, result.Error?.Message ?? "Falha ao persistir arquivo.", result.Error?.Code ?? "Persistência", true, sw.ElapsedMilliseconds, ct);
+                await MarkItemErrorAsync(tenantId, itemId, result.Error?.Message ?? "Falha ao persistir arquivo.", result.Error?.Code ?? "Persistência", true, sw.ElapsedMilliseconds, CancellationToken.None);
+                await IncrementBatchCounterAsync(tenantId, request.BatchId, "failed_files", CancellationToken.None);
                 return Result<UploadBatchFileResultDto>.Fail(result.Error?.Code ?? "UPLOAD", result.Error?.Message ?? "Falha ao enviar arquivo.");
             }
 
@@ -144,14 +153,15 @@ VALUES (@id, @tenantId, @folderId, @requestedFolderId, @userId, 'OPEN', @totalFi
             }
 
             await UpdateItemStatusAsync(tenantId, itemId, "QUEUED", sw.ElapsedMilliseconds, ct);
-            await UpdateItemStatusAsync(tenantId, itemId, "COMPLETED", sw.ElapsedMilliseconds, ct);
-            await RefreshBatchCountersAsync(tenantId, request.BatchId, finished: false, ct);
+            await UpdateItemStatusAsync(tenantId, itemId, "COMPLETED", sw.ElapsedMilliseconds, CancellationToken.None);
+            await IncrementBatchCounterAsync(tenantId, request.BatchId, "success_files", CancellationToken.None);
             _logger.LogInformation("File completed Tenant={TenantId} User={UserId} Batch={BatchId} Item={ItemId} File={FileName} ElapsedMs={ElapsedMs} CorrelationId={CorrelationId}", tenantId, userId, request.BatchId, itemId, request.File.FileName, sw.ElapsedMilliseconds, correlationId);
             return Result<UploadBatchFileResultDto>.Ok(new UploadBatchFileResultDto { ItemId = itemId, DocumentId = result.Value.DocumentId, VersionId = version?.VersionId, RequestedFolderId = request.RequestedFolderId, ResolvedFolderId = request.FolderId, Title = result.Value.Title, FileName = result.Value.FileName, UploadedAtUtc = version?.UploadedAtUtc, UploadedAtLocalFormatted = FormatUploadDate(version?.UploadedAtUtc), Status = "COMPLETED", Message = "Arquivo recebido e processamento pesado enfileirado.", OcrQueued = ocrQueued, PreviewQueued = previewQueued, CorrelationId = correlationId });
         }
         catch (OperationCanceledException)
         {
-            await MarkItemErrorAsync(tenantId, itemId, "Upload cancelado/interrompido pelo cliente.", "ClientAbort", true, sw.ElapsedMilliseconds, CancellationToken.None);
+            await MarkItemAbortedAsync(tenantId, itemId, sw.ElapsedMilliseconds, CancellationToken.None);
+            await IncrementBatchCounterAsync(tenantId, request.BatchId, "failed_files", CancellationToken.None);
             _logger.LogWarning("Client aborted Tenant={TenantId} User={UserId} Batch={BatchId} Item={ItemId} File={FileName} CorrelationId={CorrelationId}", tenantId, userId, request.BatchId, itemId, request.File?.FileName, correlationId);
             throw;
         }
@@ -163,6 +173,7 @@ VALUES (@id, @tenantId, @folderId, @requestedFolderId, @userId, 'OPEN', @totalFi
         catch (Exception ex)
         {
             await MarkItemErrorAsync(tenantId, itemId, "Erro interno ao enviar arquivo.", "Servidor", true, sw.ElapsedMilliseconds, CancellationToken.None);
+            await IncrementBatchCounterAsync(tenantId, request.BatchId, "failed_files", CancellationToken.None);
             _logger.LogError(ex, "File failed Tenant={TenantId} User={UserId} Batch={BatchId} Item={ItemId} File={FileName} CorrelationId={CorrelationId}", tenantId, userId, request.BatchId, itemId, request.File?.FileName, correlationId);
             return Result<UploadBatchFileResultDto>.Fail("ERR", "Erro interno ao enviar arquivo.");
         }
@@ -203,7 +214,7 @@ VALUES (@id, @tenantId, @folderId, @requestedFolderId, @userId, 'OPEN', @totalFi
         const string sql = """
 UPDATE ged.upload_batch_item
 SET status='PENDING', error_message=NULL, error_step=NULL, attempt=attempt+1, started_at=NULL, finished_at=NULL, elapsed_ms=NULL
-WHERE tenant_id=@tenantId AND batch_id=@batchId AND status='ERROR' AND can_retry=true AND reg_status='A';
+WHERE tenant_id=@tenantId AND batch_id=@batchId AND status IN ('ERROR','ABORTED','RETRYABLE') AND can_retry=true AND reg_status='A';
 """;
         try
         {
@@ -274,11 +285,11 @@ LIMIT 100;
     private async Task InsertItemAsync(Guid tenantId, UploadBatchFileRequestDto request, Guid itemId, string correlationId, CancellationToken ct)
     {
         const string sql = """
-INSERT INTO ged.upload_batch_item (id, tenant_id, batch_id, folder_id, requested_folder_id, original_file_name, content_type, size_bytes, status, started_at, attempt, correlation_id)
-VALUES (@itemId, @tenantId, @batchId, @folderId, @requestedFolderId, @fileName, @contentType, @sizeBytes, 'RECEIVING', now(), 1, @correlationId);
+INSERT INTO ged.upload_batch_item (id, tenant_id, batch_id, folder_id, requested_folder_id, original_file_name, content_type, size_bytes, status, started_at, attempt, correlation_id, upload_client_id, mark_as_incomplete, incomplete_reason)
+VALUES (@itemId, @tenantId, @batchId, @folderId, @requestedFolderId, @fileName, @contentType, @sizeBytes, 'RECEIVING', now(), 1, @correlationId, @uploadClientId, @markAsIncomplete, @incompleteReason);
 """;
         await using var conn = await _db.OpenAsync(ct);
-        await conn.ExecuteAsync(new CommandDefinition(sql, new { itemId, tenantId, batchId = request.BatchId, request.FolderId, requestedFolderId = request.RequestedFolderId ?? request.FolderId, fileName = Path.GetFileName(request.UploadName ?? request.File.FileName), contentType = request.File.ContentType, sizeBytes = request.File.Length, correlationId }, cancellationToken: ct));
+        await conn.ExecuteAsync(new CommandDefinition(sql, new { itemId, tenantId, batchId = request.BatchId, request.FolderId, requestedFolderId = request.RequestedFolderId ?? request.FolderId, fileName = Path.GetFileName(request.UploadName ?? request.File.FileName), contentType = request.File.ContentType, sizeBytes = request.File.Length, correlationId, uploadClientId = request.UploadClientId, markAsIncomplete = request.MarkAsIncomplete, incompleteReason = request.IncompleteReason }, cancellationToken: ct));
     }
 
     private static string? FormatUploadDate(DateTime? uploadedAtUtc)
@@ -308,7 +319,7 @@ WHERE d.tenant_id=@tenantId AND d.id=@documentId;
     {
         const string sql = """
 UPDATE ged.upload_batch_item
-SET document_id=@documentId, version_id=@versionId, stored_file_name=@storedFileName, content_type=@contentType, size_bytes=@sizeBytes, checksum_sha256=@checksum, status=@status, elapsed_ms=@elapsedMs
+SET document_id=@documentId, version_id=@versionId, stored_file_name=@storedFileName, content_type=@contentType, size_bytes=@sizeBytes, checksum_sha256=@checksum, content_hash=@checksum, status=@status, elapsed_ms=@elapsedMs
 WHERE tenant_id=@tenantId AND id=@itemId;
 """;
         await using var conn = await _db.OpenAsync(ct);
@@ -317,7 +328,7 @@ WHERE tenant_id=@tenantId AND id=@itemId;
 
     private async Task UpdateItemStatusAsync(Guid tenantId, Guid itemId, string status, long elapsedMs, CancellationToken ct)
     {
-        const string sql = "UPDATE ged.upload_batch_item SET status=@status, finished_at=CASE WHEN @status IN ('COMPLETED','ERROR','SKIPPED','CANCELLED') THEN now() ELSE finished_at END, elapsed_ms=@elapsedMs WHERE tenant_id=@tenantId AND id=@itemId;";
+        const string sql = "UPDATE ged.upload_batch_item SET status=@status, finished_at=CASE WHEN @status IN ('COMPLETED','ERROR','SKIPPED','CANCELLED','ABORTED','DUPLICATE') THEN now() ELSE finished_at END, elapsed_ms=@elapsedMs WHERE tenant_id=@tenantId AND id=@itemId;";
         await using var conn = await _db.OpenAsync(ct);
         await conn.ExecuteAsync(new CommandDefinition(sql, new { tenantId, itemId, status, elapsedMs }, cancellationToken: ct));
     }
@@ -329,11 +340,36 @@ WHERE tenant_id=@tenantId AND id=@itemId;
         await conn.ExecuteAsync(new CommandDefinition(sql, new { tenantId, itemId, message, elapsedMs }, cancellationToken: ct));
     }
 
+    private async Task MarkItemAbortedAsync(Guid tenantId, Guid itemId, long elapsedMs, CancellationToken ct)
+    {
+        const string sql = "UPDATE ged.upload_batch_item SET status='ABORTED', error_message='Falha de comunicação com o servidor ou upload interrompido.', error_step='Network', can_retry=true, finished_at=now(), retry_after_at=now() + interval '5 seconds', elapsed_ms=@elapsedMs WHERE tenant_id=@tenantId AND id=@itemId;";
+        await using var conn = await _db.OpenAsync(ct);
+        await conn.ExecuteAsync(new CommandDefinition(sql, new { tenantId, itemId, elapsedMs }, cancellationToken: ct));
+    }
+
     private async Task MarkItemErrorAsync(Guid tenantId, Guid itemId, string message, string step, bool canRetry, long elapsedMs, CancellationToken ct)
     {
         const string sql = "UPDATE ged.upload_batch_item SET status='ERROR', error_message=@message, error_step=@step, can_retry=@canRetry, finished_at=now(), elapsed_ms=@elapsedMs WHERE tenant_id=@tenantId AND id=@itemId;";
         await using var conn = await _db.OpenAsync(ct);
         await conn.ExecuteAsync(new CommandDefinition(sql, new { tenantId, itemId, message, step, canRetry, elapsedMs }, cancellationToken: ct));
+    }
+
+    private async Task IncrementBatchCounterAsync(Guid tenantId, Guid batchId, string column, CancellationToken ct)
+    {
+        if (column is not ("success_files" or "failed_files" or "skipped_files")) return;
+        var sql = $"UPDATE ged.upload_batch SET {column} = COALESCE({column},0) + 1, updated_at=now() WHERE tenant_id=@tenantId AND id=@batchId;";
+        await using var conn = await _db.OpenAsync(ct);
+        await conn.ExecuteAsync(new CommandDefinition(sql, new { tenantId, batchId }, cancellationToken: ct));
+    }
+
+    private async Task<UploadBatchOptionsDto?> GetBatchOptionsAsync(Guid tenantId, Guid batchId, CancellationToken ct)
+    {
+        const string sql = "SELECT options_json::text FROM ged.upload_batch WHERE tenant_id=@tenantId AND id=@batchId;";
+        await using var conn = await _db.OpenAsync(ct);
+        var json = await conn.ExecuteScalarAsync<string?>(new CommandDefinition(sql, new { tenantId, batchId }, cancellationToken: ct));
+        if (string.IsNullOrWhiteSpace(json)) return null;
+        try { return JsonSerializer.Deserialize<UploadBatchOptionsDto>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }); }
+        catch (JsonException ex) { _logger.LogWarning(ex, "Opções inválidas no lote de upload. Tenant={TenantId} Batch={BatchId}", tenantId, batchId); return null; }
     }
 
     private async Task RefreshBatchCountersAsync(Guid tenantId, Guid batchId, bool finished, CancellationToken ct)
@@ -342,9 +378,9 @@ WHERE tenant_id=@tenantId AND id=@itemId;
 WITH c AS (
   SELECT count(*)::int total,
          count(*) FILTER (WHERE status='COMPLETED')::int success,
-         count(*) FILTER (WHERE status='ERROR')::int failed,
-         count(*) FILTER (WHERE status='SKIPPED')::int skipped,
-         count(*) FILTER (WHERE status IN ('PENDING','RECEIVING','SAVED','DOCUMENT_CREATED','OCR_QUEUED','PREVIEW_QUEUED','QUEUED'))::int pending
+         count(*) FILTER (WHERE status IN ('ERROR','ABORTED','RETRYABLE'))::int failed,
+         count(*) FILTER (WHERE status IN ('SKIPPED','DUPLICATE'))::int skipped,
+         count(*) FILTER (WHERE status IN ('PENDING','RECEIVING','SAVED','DOCUMENT_CREATED','OCR_QUEUED','PREVIEW_QUEUED','QUEUED','RETRYABLE'))::int pending
   FROM ged.upload_batch_item WHERE tenant_id=@tenantId AND batch_id=@batchId AND reg_status='A'
 )
 UPDATE ged.upload_batch b
@@ -376,7 +412,7 @@ FROM ged.upload_batch_item
 WHERE tenant_id=@tenantId AND batch_id=@batchId AND reg_status='A'
 ORDER BY created_at, original_file_name;
 """, new { tenantId, batchId }, cancellationToken: ct))).AsList();
-        var pending = Math.Max(0, batch.TotalFiles - items.Count(x => x.Status is "COMPLETED" or "ERROR" or "SKIPPED"));
+        var pending = Math.Max(0, batch.TotalFiles - items.Count(x => x.Status is "COMPLETED" or "ERROR" or "SKIPPED" or "ABORTED" or "DUPLICATE"));
         var created = items
             .Where(x => x.Status == "COMPLETED" && x.DocumentId.HasValue)
             .Select(x => new UploadBatchCreatedDocumentDto
@@ -387,6 +423,6 @@ ORDER BY created_at, original_file_name;
                 Title = Path.GetFileNameWithoutExtension(x.StoredFileName ?? x.OriginalFileName)
             })
             .ToList();
-        return new UploadBatchStatusDto { BatchId = batchId, RequestedFolderId = batch.RequestedFolderId, ResolvedFolderId = batch.ResolvedFolderId, FolderName = batch.FolderName, CreatedDocuments = created, Status = batch.Status ?? "OPEN", Total = batch.TotalFiles, Success = items.Count(x => x.Status == "COMPLETED"), Failed = items.Count(x => x.Status == "ERROR"), Skipped = items.Count(x => x.Status == "SKIPPED"), Pending = pending, Items = includeAllItems ? items : Array.Empty<UploadBatchItemStatusDto>(), Errors = items.Where(x => x.Status == "ERROR").ToList() };
+        return new UploadBatchStatusDto { BatchId = batchId, RequestedFolderId = batch.RequestedFolderId, ResolvedFolderId = batch.ResolvedFolderId, FolderName = batch.FolderName, CreatedDocuments = created, Status = batch.Status ?? "OPEN", Total = batch.TotalFiles, Success = items.Count(x => x.Status == "COMPLETED"), Failed = items.Count(x => x.Status == "ERROR" || x.Status == "ABORTED" || x.Status == "RETRYABLE"), Skipped = items.Count(x => x.Status == "SKIPPED" || x.Status == "DUPLICATE"), Pending = pending, Items = includeAllItems ? items : Array.Empty<UploadBatchItemStatusDto>(), Errors = items.Where(x => x.Status == "ERROR" || x.Status == "ABORTED" || x.Status == "RETRYABLE").ToList() };
     }
 }
