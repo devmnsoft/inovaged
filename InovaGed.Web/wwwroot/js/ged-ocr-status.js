@@ -1,7 +1,8 @@
 ﻿(function () {
     const POLL_INTERVAL_MS = 3000;
     const MAX_ATTEMPTS = 120;
-    const pollTimers = new Map();
+    const pollTimers = window.__GED_OCR_POLL_TIMERS__ || new Map();
+    window.__GED_OCR_POLL_TIMERS__ = pollTimers;
 
     function badgeClass(status) {
         switch ((status || '').toUpperCase()) {
@@ -12,6 +13,9 @@
             case 'COMPLETED':
                 return 'badge bg-success js-ocr-badge';
             case 'ERROR':
+            case 'FAILED':
+            case 'FAILED_ENVIRONMENT':
+            case 'FAILED_PERMANENT':
                 return 'badge bg-danger js-ocr-badge';
             default:
                 return 'badge bg-light text-dark js-ocr-badge';
@@ -74,6 +78,9 @@
                     <i class="bi bi-exclamation-triangle me-1"></i>
                     ${escapeHtml(data.errorMessage)}
                 </div>`;
+            if (/OCR_ENVIRONMENT_INVALID|OCR_GHOSTSCRIPT_NOT_FOUND|OCR_QPDF_NOT_FOUND|OCR_TESSERACT_LANGUAGE_MISSING/i.test(data.errorMessage)) {
+                html += `<div class="small mt-1"><a href="/SystemHealth/OcrEnvironment">Ver diagnóstico do ambiente OCR</a></div>`;
+            }
         }
 
         cell.innerHTML = html;
@@ -101,7 +108,8 @@
         if (!versionId) return;
         attempt = attempt || 1;
 
-        if (attempt > MAX_ATTEMPTS) return;
+        if (attempt === 1 && pollTimers.has(versionId)) return;
+        if (attempt > MAX_ATTEMPTS) { pollTimers.delete(versionId); return; }
 
         try {
             const data = await fetchStatus(versionId);
@@ -109,8 +117,11 @@
             if (data && data.success) {
                 updateCell(versionId, data);
 
-                if (data.isCompleted || data.isError) {
-                    if (data.isCompleted) {
+                if (data.isCompleted || data.isError || ['COMPLETED','ERROR','FAILED','FAILED_ENVIRONMENT','FAILED_PERMANENT','CANCELLED'].includes((data.status || '').toUpperCase())) {
+                    const existing = pollTimers.get(versionId);
+                    if (existing) clearTimeout(existing);
+                    pollTimers.delete(versionId);
+                    if (data.isCompleted || (data.status || '').toUpperCase() === 'COMPLETED') {
                         showLocalAlert('OCR concluído. A página será atualizada para exibir a nova versão e a sugestão.', 'success');
 
                         setTimeout(() => {

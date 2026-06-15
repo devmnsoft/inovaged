@@ -350,6 +350,40 @@ public sealed class OcrWorker : BackgroundService
                 {
                     throw;
                 }
+                catch (OcrProcessingException ex)
+                {
+                    await jobs.MarkErrorAsync(job.Id, $"{ex.FriendlyMessage} Código: {ex.Code}", ex.DetailsJson, stoppingToken);
+
+                    await SaveOcrDescriptionAndMetadataAsync(
+                        db,
+                        job.TenantId,
+                        sourceVersion.DocumentId,
+                        actorId,
+                        "",
+                        ex.IsPermanent ? "OCR_FAILED_PERMANENT" : "OCR_ERROR",
+                        stoppingToken);
+
+                    await InsertDocumentAuditAsync(
+                        db,
+                        job.TenantId,
+                        sourceVersion.DocumentId,
+                        actorId,
+                        "OCR_ERROR",
+                        "OCR",
+                        null,
+                        new
+                        {
+                            jobId = job.Id,
+                            error = ex.Message,
+                            friendlyMessage = ex.FriendlyMessage,
+                            code = ex.Code.ToString(),
+                            permanent = ex.IsPermanent
+                        },
+                        "OCR_WORKER",
+                        stoppingToken);
+
+                    _logger.LogError(ex, "Erro classificado ao processar OCR. JobId={JobId} Code={Code}", job.Id, ex.Code);
+                }
                 catch (Exception ex)
                 {
                     await jobs.MarkErrorAsync(job.Id, ex.Message, stoppingToken);
@@ -408,7 +442,7 @@ public sealed class OcrWorker : BackgroundService
             {
                 return await action(ct);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && attempt < maxAttempts)
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OcrProcessingException { IsPermanent: true } && attempt < maxAttempts)
             {
                 var delay = delays[Math.Min(attempt - 1, delays.Length - 1)];
                 _logger.LogWarning(ex,

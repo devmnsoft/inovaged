@@ -3,6 +3,7 @@ using System.Data;
 using Dapper;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Identity;
+using InovaGed.Application.Ocr;
 using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -16,13 +17,15 @@ public sealed class SystemHealthController : Controller
     private readonly ICurrentUser _currentUser;
     private readonly ILogger<SystemHealthController> _logger;
     private readonly IWebHostEnvironment _env;
+    private readonly IOcrEnvironmentValidator _ocrEnvironmentValidator;
 
-    public SystemHealthController(IDbConnectionFactory db, ICurrentUser currentUser, ILogger<SystemHealthController> logger, IWebHostEnvironment env)
+    public SystemHealthController(IDbConnectionFactory db, ICurrentUser currentUser, ILogger<SystemHealthController> logger, IWebHostEnvironment env, IOcrEnvironmentValidator ocrEnvironmentValidator)
     {
         _db = db;
         _currentUser = currentUser;
         _logger = logger;
         _env = env;
+        _ocrEnvironmentValidator = ocrEnvironmentValidator;
     }
 
     [HttpGet("/SystemHealth")]
@@ -82,5 +85,12 @@ where tenant_id = @tenantId;";
             OcrErrors = errors,
             DiskFreeGb = diskFreeGb
         });
+    }
+
+    [HttpGet("/SystemHealth/OcrEnvironment")]
+    public async Task<IActionResult> OcrEnvironment(CancellationToken ct)
+    {
+        var report = await _ocrEnvironmentValidator.ValidateAsync(ct);
+        return View("~/Views/SystemHealth/OcrEnvironment.cshtml", report);
     }
 }
