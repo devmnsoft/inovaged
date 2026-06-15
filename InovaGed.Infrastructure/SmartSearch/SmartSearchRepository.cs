@@ -10,7 +10,7 @@ using Microsoft.Extensions.Logging;
 
 namespace InovaGed.Infrastructure.SmartSearch;
 
-public sealed class SmartSearchRepository : ISmartSearchRepository
+public sealed class SmartSearchRepository : ISmartSearchRepository, InovaGed.Application.Ged.Search.IGedSmartSearchRepository
 {
     private readonly IDbConnectionFactory _db;
     private readonly IDocumentOcrMetadataExtractor _extractor;
@@ -42,6 +42,8 @@ public sealed class SmartSearchRepository : ISmartSearchRepository
         p.Add("documentType", intent.DocumentType ?? request.DocumentType, DbType.String);
         p.Add("examType", intent.ExamType, DbType.String);
         p.Add("clinicalTerms", intent.ClinicalTerms.ToArray());
+        p.Add("medicalRecordNumber", intent.MedicalRecordNumber, DbType.String);
+        p.Add("protocolNumber", intent.ProtocolNumber, DbType.String);
         p.Add("age", intent.Age, DbType.Int32);
         p.Add("ageFrom", intent.AgeFrom, DbType.Int32);
         p.Add("ageTo", intent.AgeTo, DbType.Int32);
@@ -154,19 +156,19 @@ select
     public async Task<int> ReindexAsync(Guid tenantId, Guid? documentId, CancellationToken ct)
     {
         const string sql = """
-insert into ged.document_search_index(document_id, version_id, tenant_id, title, file_name, document_type, classification, folder_name, patient_name, extracted_age, extracted_year, extracted_terms, ocr_text, search_text, search_vector, updated_at)
-select d.id, coalesce(v.id, ds.version_id), d.tenant_id, coalesce(d.title, ds.file_name, v.file_name, 'Documento'), coalesce(v.file_name, ds.file_name), null, null, f.name,
+insert into ged.document_search_index(document_id, version_id, document_version_id, tenant_id, title, file_name, document_type, classification, classification_name, folder_id, folder_name, patient_name, extracted_age, extracted_year, extracted_terms, ocr_text, search_text, search_vector, last_indexed_at, updated_at)
+select d.id, coalesce(v.id, ds.version_id), coalesce(v.id, ds.version_id), d.tenant_id, coalesce(d.title, ds.file_name, v.file_name, 'Documento'), coalesce(v.file_name, ds.file_name), null, null, null, d.folder_id, f.name,
 null, null, null, array[]::text[], ds.ocr_text,
 concat_ws(' ', d.title, v.file_name, f.name, ds.ocr_text),
-to_tsvector('portuguese', unaccent(coalesce(concat_ws(' ', d.title, v.file_name, f.name, ds.ocr_text),''))), now()
+to_tsvector('portuguese', unaccent(coalesce(concat_ws(' ', d.title, v.file_name, f.name, ds.ocr_text),''))), now(), now()
 from ged.document d
 left join ged.document_search ds on ds.tenant_id=d.tenant_id and ds.document_id=d.id
 left join ged.document_version v on v.tenant_id=d.tenant_id and (v.id=coalesce(ds.version_id, d.current_version_id) or v.id=d.current_version_id)
 left join ged.folder f on f.tenant_id=d.tenant_id and f.id=d.folder_id
 where d.tenant_id=@tenantId and coalesce(d.reg_status,'A')='A' and (@documentId is null or d.id=@documentId)
 on conflict (tenant_id, document_id) do update set
-version_id=excluded.version_id, title=excluded.title, file_name=excluded.file_name, folder_name=excluded.folder_name,
-ocr_text=excluded.ocr_text, search_text=excluded.search_text, search_vector=excluded.search_vector, updated_at=now()
+version_id=excluded.version_id, document_version_id=excluded.document_version_id, title=excluded.title, file_name=excluded.file_name, folder_id=excluded.folder_id, folder_name=excluded.folder_name,
+ocr_text=excluded.ocr_text, search_text=excluded.search_text, search_vector=excluded.search_vector, last_indexed_at=now(), updated_at=now()
 """;
         await using var conn = await _db.OpenAsync(ct);
         return await conn.ExecuteAsync(new CommandDefinition(sql, new { tenantId, documentId }, cancellationToken: ct, commandTimeout: 120));
@@ -181,7 +183,7 @@ ocr_text=excluded.ocr_text, search_text=excluded.search_text, search_vector=excl
         foreach (var term in intent.ClinicalTerms.Take(3).Where(t => Contains(r.SearchText, t))) reasons.Add(new() { Reason = "OCR/metadados mencionam termo pesquisado", Evidence = term, Weight = 20 });
         if (!string.IsNullOrWhiteSpace(intent.DocumentType) && Contains(r.DocumentType + " " + r.Title + " " + r.FileName, intent.DocumentType)) reasons.Add(new() { Reason = "Tipo documental compatível", Evidence = intent.DocumentType!, Weight = 15 });
         if (r.HasOcr) reasons.Add(new() { Reason = "OCR disponível", Evidence = "Trecho curto apresentado", Weight = 5 });
-        return new SmartSearchResultItem { DocumentId = r.DocumentId, VersionId = r.VersionId, Title = r.Title, FileName = r.FileName, FolderName = r.FolderName, DocumentType = r.DocumentType, Classification = r.Classification, PatientName = r.PatientName, Age = r.Age, Year = r.Year, OcrSnippet = MaskSensitive(TruncateSnippet(r.Snippet, 260)), Score = r.Score, HasOcr = r.HasOcr, Reasons = reasons };
+        return new SmartSearchResultItem { DocumentId = r.DocumentId, VersionId = r.VersionId, Title = r.Title, FileName = r.FileName, FolderName = r.FolderName, DocumentType = r.DocumentType, Classification = r.Classification, ClassificationName = r.Classification, PatientName = r.PatientName, Age = r.Age, Year = r.Year, OcrSnippet = MaskSensitive(TruncateSnippet(r.Snippet, 260)), Score = r.Score, HasOcr = r.HasOcr, Reasons = reasons };
     }
 
     private static async Task<bool> ExistsAsync(IDbConnection conn, string regclass, CancellationToken ct)
@@ -199,7 +201,7 @@ ocr_text=excluded.ocr_text, search_text=excluded.search_text, search_vector=excl
 
     private const string SmartIndexSql = """
 with ranked as (
-select idx.document_id as "DocumentId", idx.version_id as "VersionId", idx.title as "Title", idx.file_name as "FileName", idx.folder_name as "FolderName", idx.document_type as "DocumentType", idx.classification as "Classification", idx.patient_name as "PatientName", idx.extracted_age as "Age", idx.extracted_year as "Year", idx.search_text as "SearchText", idx.ocr_text as "Snippet", nullif(idx.ocr_text,'') is not null as "HasOcr",
+select idx.document_id as "DocumentId", coalesce(idx.document_version_id, idx.version_id) as "VersionId", idx.title as "Title", idx.file_name as "FileName", idx.folder_name as "FolderName", idx.document_type as "DocumentType", idx.classification as "Classification", idx.patient_name as "PatientName", idx.extracted_age as "Age", idx.extracted_year as "Year", idx.search_text as "SearchText", idx.ocr_text as "Snippet", nullif(idx.ocr_text,'') is not null as "HasOcr",
 (
 case when @patientName is not null and idx.patient_name ilike @likePatientName then 40 else 0 end +
 case when @patientName is not null and similarity(coalesce(idx.patient_name,''), @patientName) > 0.25 then 25 else 0 end +
@@ -208,6 +210,8 @@ case when @age is not null and idx.extracted_age between @age - 1 and @age + 1 t
 case when @ageFrom is not null and idx.extracted_age between @ageFrom and @ageTo then 10 else 0 end +
 case when @documentType is not null and coalesce(idx.document_type, idx.title, idx.file_name, '') ilike '%'||@documentType||'%' then 15 else 0 end +
 case when @examType is not null and idx.search_text ilike '%'||@examType||'%' then 15 else 0 end +
+case when @medicalRecordNumber is not null and idx.medical_record_number = @medicalRecordNumber then 50 else 0 end +
+case when @protocolNumber is not null and idx.protocol_number = @protocolNumber then 50 else 0 end +
 case when nullif(idx.ocr_text,'') is not null then 5 else 0 end +
 coalesce(ts_rank(idx.search_vector, plainto_tsquery('portuguese', unaccent(@query))) * 40, 0) +
 coalesce(similarity(idx.search_text, @originalQuery) * 20, 0)

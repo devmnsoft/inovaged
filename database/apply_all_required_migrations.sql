@@ -1259,3 +1259,6 @@ END $$;
 
 \echo Applying 2026_06_ged_processing_pipeline.sql
 \i database/migrations/2026_06_ged_processing_pipeline.sql
+
+\echo Applying 2026_06_ged_search_intelligence.sql
+\i database/migrations/2026_06_ged_search_intelligence.sql
