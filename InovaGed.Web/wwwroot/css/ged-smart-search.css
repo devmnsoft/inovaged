@@ -1,0 +1,12 @@
+.ged-smart-search-panel { background: linear-gradient(135deg,#ffffff 0%,#f8fbff 100%); }
+.ged-smart-search-panel .input-group-lg .form-control { font-size: 1rem; }
+.ged-smart-suggestions { position:absolute; z-index:1040; display:none; width:min(780px, calc(100vw - 2rem)); max-height:420px; overflow:auto; background:#fff; border:1px solid #dbe4f0; border-radius: .85rem; box-shadow:0 18px 40px rgba(15,23,42,.16); margin-top:.35rem; }
+.ged-smart-group-title { padding:.55rem .85rem .25rem; font-size:.72rem; font-weight:800; text-transform:uppercase; color:#64748b; letter-spacing:.04em; }
+.ged-smart-item { width:100%; border:0; background:#fff; display:flex; gap:.7rem; align-items:flex-start; padding:.7rem .85rem; text-align:left; color:#0f172a; }
+.ged-smart-item:hover,.ged-smart-item.active { background:#eff6ff; }
+.ged-smart-text { flex:1; min-width:0; display:flex; flex-direction:column; }
+.ged-smart-text small,.ged-smart-snippet { color:#64748b; }
+.ged-smart-score { color:#2563eb; font-weight:800; font-size:.8rem; }
+.ged-smart-examples { display:flex; flex-wrap:wrap; gap:.4rem; }
+.ged-smart-chip { font-weight:700; }
+.ged-smart-error { padding:.8rem; color:#b45309; }

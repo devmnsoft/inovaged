@@ -409,6 +409,8 @@
             </div>
         </div>
 
+        @await Html.PartialAsync("_SmartSearchPanel", Model)
+
         <div class="d-flex flex-wrap gap-2 mb-2" aria-label="Filtros rápidos de documentos fracionados">
             <button type="button" class="btn btn-sm btn-outline-warning js-quick-partial-filter" data-filter="incomplete"><i class="bi bi-funnel me-1"></i>Ver incompletos</button>
             <button type="button" class="btn btn-sm btn-outline-primary js-quick-partial-filter" data-filter="ready"><i class="bi bi-check2-circle me-1"></i>Ver prontos para consolidar</button>
@@ -424,20 +426,20 @@
                 <input type="hidden" id="currentFolderId" value="@Model.CurrentFolderId" />
                 <div class="input-group">
                     <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
-                    <input id="smartSearchInput" class="form-control" name="q" value="@Model.Query" placeholder="Busque por documento, prontuário, paciente, pasta, tipo, termo do OCR ou número..." />
-                    <button id="btnSmartSearchClear" class="btn btn-outline-secondary" type="button" title="Limpar busca"><i class="bi bi-x-lg"></i></button>
-                    <button id="btnSmartFilters" class="btn btn-outline-secondary" type="button" title="Filtros avançados"><i class="bi bi-sliders"></i> Filtros</button>
-                    <button id="btnSmartSearch" class="btn btn-primary" type="button"><i class="bi bi-search"></i> Pesquisar</button>
+                    <input id="legacySmartSearchInput" class="form-control" name="q" value="@Model.Query" placeholder="Busque por documento, prontuário, paciente, pasta, tipo, termo do OCR ou número..." />
+                    <button id="legacyBtnSmartSearchClear" class="btn btn-outline-secondary" type="button" title="Limpar busca"><i class="bi bi-x-lg"></i></button>
+                    <button id="legacyBtnSmartFilters" class="btn btn-outline-secondary" type="button" title="Filtros avançados"><i class="bi bi-sliders"></i> Filtros</button>
+                    <button id="legacyBtnSmartSearch" class="btn btn-primary" type="button"><i class="bi bi-search"></i> Pesquisar</button>
                 </div>
-                <div id="smartSearchSuggestions" class="ged-smart-suggestions"></div>
-                <div id="smartSearchFilters" class="border rounded-3 p-2 mt-2 bg-light d-none">
+                <div id="legacySmartSearchSuggestions" class="ged-smart-suggestions"></div>
+                <div id="legacySmartSearchFilters" class="border rounded-3 p-2 mt-2 bg-light d-none">
                     <div class="d-flex gap-3 flex-wrap small">
                         <label class="form-check-label"><input class="form-check-input" type="radio" name="searchScope" value="folder" checked /> Pasta atual</label>
                         <label class="form-check-label"><input class="form-check-input" type="radio" name="searchScope" value="global" /> Todo GED</label>
                         <label class="form-check-label"><input class="form-check-input" type="checkbox" disabled /> Apenas com OCR</label>
                         <label class="form-check-label"><input class="form-check-input" type="checkbox" disabled /> Sem classificação</label>
                     </div>
-                    <div id="smartSearchChips" class="d-flex flex-wrap gap-1 mt-2"></div>
+                    <div id="legacySmartSearchChips" class="d-flex flex-wrap gap-1 mt-2"></div>
                 </div>
             </div>
             <div class="ged-toolbar-actions">
@@ -886,6 +888,7 @@
 </div>
 
 <link rel="stylesheet" href="~/css/ged-explorer.css" asp-append-version="true" />
+<link rel="stylesheet" href="~/css/ged-smart-search.css" asp-append-version="true" />
 <style>
     .ged-page { display:grid; grid-template-columns:minmax(280px, 400px) minmax(0,1fr); gap:24px; align-items:start; }
     .ged-page.with-document-panel { grid-template-columns:minmax(280px, 400px) minmax(0,1fr) 430px; }

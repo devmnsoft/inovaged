@@ -275,11 +275,17 @@ builder.Services.AddScoped<IGedAccessPolicyService, GedAccessPolicyService>();
 builder.Services.AddScoped<IGedSearchService, GedSearchService>();
 builder.Services.AddScoped<IGedSmartSearchService, GedSmartSearchService>();
 builder.Services.AddScoped<ISmartQueryParser, SmartQueryParser>();
+builder.Services.AddScoped<IGedSmartQueryParser, SmartQueryParser>();
 builder.Services.AddScoped<IDocumentOcrMetadataExtractor, DocumentOcrMetadataExtractor>();
+builder.Services.AddScoped<IGedOcrMetadataExtractor, DocumentOcrMetadataExtractor>();
 builder.Services.AddScoped<ISmartSearchRepository, SmartSearchRepository>();
+builder.Services.AddScoped<IGedSmartSearchRepository, SmartSearchRepository>();
 builder.Services.AddScoped<ISmartSearchService, SmartSearchService>();
 builder.Services.AddScoped<IDocumentChatService, DocumentChatService>();
 builder.Services.AddScoped<ISearchStatisticsService, SearchStatisticsService>();
+builder.Services.AddScoped<IGedSearchSuggestionService, GedSearchSuggestionService>();
+builder.Services.AddScoped<IGedSearchStatisticsService, GedSearchStatisticsService>();
+builder.Services.AddScoped<IGedSearchIndexService, GedSearchIndexService>();
 builder.Services.AddScoped<IGedClassificationSuggestionService, GedClassificationSuggestionService>();
 
 // =======================================================

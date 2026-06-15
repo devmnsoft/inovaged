@@ -3,7 +3,7 @@ using InovaGed.Application.SmartSearch;
 
 namespace InovaGed.Infrastructure.SmartSearch;
 
-public sealed class DocumentOcrMetadataExtractor : IDocumentOcrMetadataExtractor
+public sealed class DocumentOcrMetadataExtractor : IDocumentOcrMetadataExtractor, InovaGed.Application.Ged.Search.IGedOcrMetadataExtractor
 {
     private static readonly Regex AgeRegex = new(@"(?<age>\d{1,3})\s*anos?", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex YearRegex = new(@"\b(?<year>19\d{2}|20\d{2})\b", RegexOptions.Compiled);

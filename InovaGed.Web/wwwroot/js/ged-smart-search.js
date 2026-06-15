@@ -52,7 +52,7 @@
         input.addEventListener('focus', () => {
             if (!input.value.trim()) renderRecent(state);
         });
-        input.addEventListener('input', () => schedule(state));
+        input.addEventListener('input', () => { schedule(state); renderChips(state); });
         input.addEventListener('keydown', (e) => onKeydown(e, state));
 
         document.querySelector(cfg.searchButtonSelector)?.addEventListener('click', (e) => {
@@ -70,6 +70,14 @@
             document.querySelector(cfg.filtersPanelSelector)?.classList.toggle('d-none');
             renderChips(state);
         });
+        document.querySelector('#btnSmartExamples')?.addEventListener('click', () => {
+            document.querySelector('#smartSearchExamples')?.classList.toggle('d-none');
+        });
+        document.querySelectorAll('[data-smart-example]').forEach(btn => btn.addEventListener('click', () => {
+            input.value = btn.getAttribute('data-smart-example') || '';
+            renderChips(state);
+            input.focus();
+        }));
         document.addEventListener('click', (e) => {
             if (!state.suggestions.contains(e.target) && e.target !== state.input) hide(state);
         });
@@ -219,8 +227,28 @@
     function renderChips(state) {
         const host = document.querySelector(state.cfg.chipsSelector);
         if (!host) return;
+        const q = state.input.value || '';
+        const chips = [];
         const scope = safeValue(state.cfg.scopeProvider) || 'folder';
-        host.innerHTML = `<span class="badge rounded-pill text-bg-primary">Escopo: ${scope === 'global' ? 'todo GED' : 'pasta atual'}</span>`;
+        chips.push(['Escopo', scope === 'global' ? 'todo GED' : 'pasta atual', 'primary']);
+        const year = q.match(/\b(19\d{2}|20\d{2})\b/);
+        if (year) chips.push(['Ano', year[1], 'info']);
+        const age = q.match(/(\d{1,3})\s*anos?/i);
+        if (age) chips.push(['Idade', age[1], 'warning']);
+        const prontuario = q.match(/prontu[aá]rio\s*[:\-]?\s*(\d{3,})/i);
+        if (prontuario) chips.push(['Prontuário', prontuario[1], 'danger']);
+        const tipo = q.match(/\b(exame|laudo|prontu[aá]rio|ultrassom|tomografia|resson[aâ]ncia|raio-?x|laborat[oó]rio|receita|relat[oó]rio|ficha|guia)\b/i);
+        if (tipo) chips.push(['Tipo', tipo[1], 'secondary']);
+        const termo = q.match(/\b(diabetes|avc|c[aâ]ncer|neoplasia|renal|card[ií]aco|pneumonia|hipertens[aã]o|gesta[cç][aã]o|trauma|fratura|infec[cç][aã]o|doen[cç]a renal)\b/i);
+        if (termo) chips.push(['Termo', termo[1], 'success']);
+        const nome = q.match(/(?:do|da|de|paciente)\s+([A-ZÁÉÍÓÚÂÊÔÃÕÇ][\p{L}]{1,}(?:\s+[A-ZÁÉÍÓÚÂÊÔÃÕÇ][\p{L}]{1,})?)/u);
+        if (nome) chips.push(['Nome', nome[1], 'dark']);
+        host.innerHTML = chips.map(c => `<span class="badge rounded-pill text-bg-${c[2]} ged-smart-chip">${escapeHtml(c[0])}: ${escapeHtml(c[1])}</span>`).join('');
+        const explanation = document.querySelector('#smartSearchExplanation');
+        if (explanation) {
+            const parts = chips.filter(c => c[0] !== 'Escopo').map(c => `${c[0].toLowerCase()} ${c[1]}`);
+            explanation.textContent = parts.length ? `Entendi que você procura documentos com ${parts.join(', ')}.` : 'Vou buscar pelos termos informados.';
+        }
     }
 
     function setLoading(state, loading) {

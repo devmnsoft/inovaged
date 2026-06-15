@@ -23,11 +23,14 @@ public sealed class SmartSearchIntent
     public string OriginalQuery { get; set; } = string.Empty;
     public string? PatientName { get; set; }
     public string? PersonName { get; set; }
+    public string? MedicalRecordNumber { get; set; }
+    public string? ProtocolNumber { get; set; }
     public int? Age { get; set; }
     public int? AgeFrom { get; set; }
     public int? AgeTo { get; set; }
     public string? DiseaseTerm { get; set; }
     public List<string> ClinicalTerms { get; set; } = [];
+    public List<string> ExpandedTerms { get; set; } = [];
     public string? DocumentType { get; set; }
     public string? ExamType { get; set; }
     public int? Year { get; set; }
@@ -61,6 +64,7 @@ public sealed class SmartSearchResultItem
     public string? FolderName { get; set; }
     public string? DocumentType { get; set; }
     public string? Classification { get; set; }
+    public string? ClassificationName { get; set; }
     public string? PatientName { get; set; }
     public int? Age { get; set; }
     public int? Year { get; set; }
