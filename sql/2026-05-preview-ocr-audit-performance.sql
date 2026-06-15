@@ -17,7 +17,7 @@ BEGIN
           AND table_name = 'ocr_job'
           AND column_name = 'version_id'
     ) THEN
-        EXECUTE 'CREATE INDEX IF NOT EXISTS ix_ocr_job_tenant_version_status ON ged.ocr_job (tenant_id, /* legacy compatibility */ version_id, status, requested_at DESC)';
+        EXECUTE 'CREATE INDEX IF NOT EXISTS ix_ocr_job_tenant_version_status ON ged.ocr_job (tenant_id, ' || quote_ident('version_id') || ', status, requested_at DESC)';
     ELSE
         RAISE NOTICE 'Índice ix_ocr_job_tenant_version_status não criado: ged.ocr_job não possui document_version_id nem version_id.';
     END IF;
