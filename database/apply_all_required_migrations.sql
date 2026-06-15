@@ -3,7 +3,14 @@
 
 -- Histórico de migrations / schema base
 CREATE SCHEMA IF NOT EXISTS ged;
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
+DO $$
+BEGIN
+    CREATE EXTENSION IF NOT EXISTS pgcrypto;
+EXCEPTION WHEN insufficient_privilege THEN
+    RAISE NOTICE 'Sem permissão para criar extensão pgcrypto. Continuando sem ela.';
+WHEN others THEN
+    RAISE NOTICE 'Não foi possível criar extensão pgcrypto: %', SQLERRM;
+END $$;
 
 -- GED base: tipos usados por documentos, OCR e preview.
 DO $$
@@ -465,7 +472,14 @@ CREATE INDEX IF NOT EXISTS ix_upload_session_chunk_session ON ged.upload_session
 CREATE UNIQUE INDEX IF NOT EXISTS ux_schema_migration_history_script ON ged.schema_migration_history(script_name);
 -- Agendamento Automático de OCR: histórico de execuções e itens.
 -- Idempotente, seguro para bancos existentes e compatível com execução repetida.
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
+DO $$
+BEGIN
+    CREATE EXTENSION IF NOT EXISTS pgcrypto;
+EXCEPTION WHEN insufficient_privilege THEN
+    RAISE NOTICE 'Sem permissão para criar extensão pgcrypto. Continuando sem ela.';
+WHEN others THEN
+    RAISE NOTICE 'Não foi possível criar extensão pgcrypto: %', SQLERRM;
+END $$;
 CREATE SCHEMA IF NOT EXISTS ged;
 
 CREATE TABLE IF NOT EXISTS ged.ocr_auto_schedule_run (
@@ -532,7 +546,14 @@ ON ged.ocr_auto_schedule_run_item(tenant_id, status);
 
 -- Empréstimos: itens manuais/físicos em solicitações.
 -- Idempotente e seguro para tabelas com dados existentes.
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
+DO $$
+BEGIN
+    CREATE EXTENSION IF NOT EXISTS pgcrypto;
+EXCEPTION WHEN insufficient_privilege THEN
+    RAISE NOTICE 'Sem permissão para criar extensão pgcrypto. Continuando sem ela.';
+WHEN others THEN
+    RAISE NOTICE 'Não foi possível criar extensão pgcrypto: %', SQLERRM;
+END $$;
 CREATE SCHEMA IF NOT EXISTS ged;
 
 CREATE TABLE IF NOT EXISTS ged.loan_request_item (
@@ -691,7 +712,7 @@ BEGIN
         IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='ged' AND table_name='ocr_job' AND column_name='document_version_id') THEN
             EXECUTE 'CREATE INDEX IF NOT EXISTS ix_ocr_job_tenant_version_status ON ged.ocr_job (tenant_id, document_version_id, status, requested_at DESC)';
         ELSIF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='ged' AND table_name='ocr_job' AND column_name='version_id') THEN
-            EXECUTE 'CREATE INDEX IF NOT EXISTS ix_ocr_job_tenant_version_status ON ged.ocr_job (tenant_id, /* legacy compatibility */ version_id, status, requested_at DESC)';
+            EXECUTE 'CREATE INDEX IF NOT EXISTS ix_ocr_job_tenant_version_status ON ged.ocr_job (tenant_id, ' || quote_ident('version_id') || ', status, requested_at DESC)';
         ELSE
             RAISE NOTICE 'Índice ix_ocr_job_tenant_version_status não criado: ged.ocr_job não possui document_version_id nem version_id.';
         END IF;
@@ -934,7 +955,14 @@ SET applied_at = now(),
 -- InovaGED - Módulo Protocolo consolidado (idempotente)
 -- Cria solicitações de protocolo, itens GED/manuais, anexos, histórico e vínculo com empréstimos.
 
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
+DO $$
+BEGIN
+    CREATE EXTENSION IF NOT EXISTS pgcrypto;
+EXCEPTION WHEN insufficient_privilege THEN
+    RAISE NOTICE 'Sem permissão para criar extensão pgcrypto. Continuando sem ela.';
+WHEN others THEN
+    RAISE NOTICE 'Não foi possível criar extensão pgcrypto: %', SQLERRM;
+END $$;
 CREATE SCHEMA IF NOT EXISTS ged;
 
 CREATE TABLE IF NOT EXISTS ged.protocol_request (
@@ -1125,7 +1153,14 @@ BEGIN
 END $$;
 -- InovaGED - Busca Inteligente Conversacional (idempotente)
 CREATE SCHEMA IF NOT EXISTS ged;
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
+DO $$
+BEGIN
+    CREATE EXTENSION IF NOT EXISTS pgcrypto;
+EXCEPTION WHEN insufficient_privilege THEN
+    RAISE NOTICE 'Sem permissão para criar extensão pgcrypto. Continuando sem ela.';
+WHEN others THEN
+    RAISE NOTICE 'Não foi possível criar extensão pgcrypto: %', SQLERRM;
+END $$;
 DO $$
 BEGIN
     CREATE EXTENSION IF NOT EXISTS unaccent;
@@ -1289,7 +1324,14 @@ END $$;
 
 -- Applying 2026_06_ged_processing_pipeline.sql
 CREATE SCHEMA IF NOT EXISTS ged;
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
+DO $$
+BEGIN
+    CREATE EXTENSION IF NOT EXISTS pgcrypto;
+EXCEPTION WHEN insufficient_privilege THEN
+    RAISE NOTICE 'Sem permissão para criar extensão pgcrypto. Continuando sem ela.';
+WHEN others THEN
+    RAISE NOTICE 'Não foi possível criar extensão pgcrypto: %', SQLERRM;
+END $$;
 
 CREATE TABLE IF NOT EXISTS ged.processing_job (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -1376,7 +1418,14 @@ WHERE content_hash IS NOT NULL AND reg_status='A';
 -- Applying 2026_06_ged_search_intelligence.sql
 -- InovaGED - GED Smart Search Intelligence (idempotent, text-only)
 CREATE SCHEMA IF NOT EXISTS ged;
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
+DO $$
+BEGIN
+    CREATE EXTENSION IF NOT EXISTS pgcrypto;
+EXCEPTION WHEN insufficient_privilege THEN
+    RAISE NOTICE 'Sem permissão para criar extensão pgcrypto. Continuando sem ela.';
+WHEN others THEN
+    RAISE NOTICE 'Não foi possível criar extensão pgcrypto: %', SQLERRM;
+END $$;
 DO $$
 BEGIN
     CREATE EXTENSION IF NOT EXISTS unaccent;
