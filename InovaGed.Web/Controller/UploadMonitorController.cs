@@ -8,6 +8,7 @@ namespace InovaGed.Web.Controllers;
 
 [Authorize(Policy = AppPolicies.FullAdminOnly)]
 [Route("Ged/UploadMonitor")]
+[Route("Operations/Uploads")]
 public sealed class UploadMonitorController : Controller
 {
     private readonly ICurrentUser _currentUser;

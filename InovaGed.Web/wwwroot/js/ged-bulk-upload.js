@@ -2,6 +2,7 @@
     const DuplicateStrategy = { overwrite: 'overwrite', rename: 'rename', skip: 'skip', cancel: 'cancel' };
     const MAX_PARALLEL_UPLOADS = 2;
     const RETRY_BACKOFF_MS = [2000, 5000, 10000];
+    const BULK_UPLOAD_STORAGE_KEY = 'InovaGED:bulkUpload:v2';
     const ValidationStep = 'Validação de extensão';
     const state = { files: [], uploading: false, isStarting: false, isFinishing: false, activeUploads: 0, maxConcurrency: MAX_PARALLEL_UPLOADS, completed: 0, failed: 0, skipped: 0, isCheckingDuplicates: false, duplicateCheckKey: null, duplicateCheckPromise: null, duplicateCheckResult: null, lastDuplicateSignature: null, batchId: null, requestedFolderId: null, resolvedFolderId: null, listingFolderId: null, folderName: null, createdDocuments: [], useLegacyUploadFallback: false, duplicateStrategy: null, uploadAbortController: null, chunkOptions: { enabled: true, thresholdBytes: 50 * 1024 * 1024, chunkSizeBytes: 10 * 1024 * 1024, timeoutMs: 1800 * 1000 } };
 
@@ -445,6 +446,7 @@
         renderFileList();
         updateUploadSummary();
         updateFooterActions();
+        persistBulkUploadUiState();
         setBulkUploadLoading(false);
         showRefreshAfterUploadButton(false);
     }
@@ -459,6 +461,7 @@
         if (fi) fi.value = '';
         renderFileList();
         updateUploadSummary();
+        persistBulkUploadUiState();
         showAppToast('Lista de arquivos limpa.', 'info', 'Upload em lote');
     }
 
@@ -480,6 +483,7 @@
         if (fi) fi.value = '';
         renderFileList();
         updateUploadSummary();
+        persistBulkUploadUiState();
     }
 
     function renderActions(fileItem) {
@@ -773,6 +777,7 @@
             setBulkUploadLoading(false);
             renderFileList();
             updateUploadSummary();
+            persistBulkUploadUiState();
         }
     }
 
@@ -910,7 +915,7 @@
                     const delay = RETRY_BACKOFF_MS[attempt] || 10000;
                     fileItem.status = 'retrying';
                     fileItem.progress = 0;
-                    fileItem.message = `Muitos uploads simultâneos. Nova tentativa em ${Math.round(delay / 1000)}s...`;
+                    fileItem.message = `Servidor ocupado. Tentando novamente em ${Math.round(delay / 1000)}s...`;
                     fileItem.canRetry = true;
                     renderFileList();
                     await sleep(delay);
@@ -966,7 +971,8 @@
                 fileItem.message = 'Falha de comunicação com o servidor.';
                 fileItem.errorMessage = 'Falha de comunicação com o servidor.';
                 fileItem.errorLog = 'XMLHttpRequest network error';
-                fileItem.errorStep = 'NETWORK_ERROR';
+                fileItem.errorStep = 'Rede';
+                fileItem.httpStatus = null;
                 fileItem.canRetry = true;
                 if (attempt < 3) {
                     fileItem.status = 'retrying';
@@ -1310,7 +1316,36 @@
         window.location.href = url.toString();
     }
 
+    function persistBulkUploadUiState() {
+        try {
+            const snapshot = {
+                batchId: state.batchId,
+                requestedFolderId: state.requestedFolderId,
+                resolvedFolderId: state.resolvedFolderId,
+                folderName: state.folderName,
+                updatedAt: new Date().toISOString(),
+                files: state.files.map(f => ({ id: f.id, name: f.originalName, uploadName: f.uploadName, size: f.size, status: f.status, progress: f.progress, message: f.message, canRetry: f.canRetry, uploadClientId: f.uploadClientId, serverDocumentId: f.serverDocumentId, serverVersionId: f.serverVersionId, correlationId: f.correlationId }))
+            };
+            localStorage.setItem(BULK_UPLOAD_STORAGE_KEY, JSON.stringify(snapshot));
+        } catch (err) { console.warn('[BulkUpload] não foi possível salvar estado local', err); }
+    }
+
+    function restoreBulkUploadUiState() {
+        try {
+            const raw = localStorage.getItem(BULK_UPLOAD_STORAGE_KEY);
+            if (!raw || state.files.length) return;
+            const snapshot = JSON.parse(raw);
+            if (!snapshot || !Array.isArray(snapshot.files) || !snapshot.files.length) return;
+            state.batchId = snapshot.batchId || null;
+            state.requestedFolderId = snapshot.requestedFolderId || null;
+            state.resolvedFolderId = snapshot.resolvedFolderId || null;
+            state.folderName = snapshot.folderName || null;
+            showBulkUploadMessage('Estado do último lote recuperado. Selecione novamente os arquivos locais para reenviar itens pendentes sem perder o histórico.', 'info');
+        } catch (err) { console.warn('[BulkUpload] não foi possível recuperar estado local', err); }
+    }
+
     function recoverBulkUploadUiState() {
+        restoreBulkUploadUiState();
         if (!state.uploading) {
             setBulkUploadLoading(false);
         }

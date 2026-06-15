@@ -672,6 +672,9 @@ create table if not exists ged.document_quality_result (
         AddColumn(fixes, "ged.document", "deleted_reason", "text null", "GED soft delete");
         AddColumn(fixes, "ged.document", "updated_at", "timestamptz null", "GED soft delete");
         AddColumn(fixes, "ged.document", "updated_by", "uuid null", "GED soft delete");
+        AddColumn(fixes, "ged.document", "is_document_incomplete", "boolean not null default false", "GED incomplete documents");
+        AddColumn(fixes, "ged.document", "incomplete_reason", "text null", "GED incomplete documents");
+        AddColumn(fixes, "ged.document", "incomplete_source", "text null", "GED incomplete documents");
         AddColumn(fixes, "ged.document_version", "partial_group_id", "uuid null", "GED partial documents");
         AddColumn(fixes, "ged.document_version", "partial_part_number", "int null", "GED partial documents");
         AddColumn(fixes, "ged.document_version", "partial_total_parts", "int null", "GED partial documents");
@@ -679,6 +682,17 @@ create table if not exists ged.document_quality_result (
         AddColumn(fixes, "ged.document_version", "is_partial_document", "boolean not null default false", "GED partial documents");
         AddColumn(fixes, "ged.document_version", "consolidated_version_id", "uuid null", "GED partial documents");
         AddColumn(fixes, "ged.document_version", "uploaded_at_utc", "timestamptz null", "GED versions");
+        AddColumn(fixes, "ged.document_version", "is_document_incomplete", "boolean not null default false", "GED incomplete documents");
+        AddColumn(fixes, "ged.document_version", "incomplete_reason", "text null", "GED incomplete documents");
+        AddColumn(fixes, "ged.document_version", "incomplete_source", "text null", "GED incomplete documents");
+        AddColumn(fixes, "ged.upload_batch", "options_json", "jsonb not null default {}::jsonb", "Upload batch");
+        AddColumn(fixes, "ged.upload_batch", "updated_at", "timestamptz null", "Upload batch");
+        AddColumn(fixes, "ged.upload_batch_item", "upload_client_id", "text null", "Upload batch");
+        AddColumn(fixes, "ged.upload_batch_item", "content_hash", "text null", "Upload batch");
+        AddColumn(fixes, "ged.upload_batch_item", "mark_as_incomplete", "boolean not null default false", "Upload batch");
+        AddColumn(fixes, "ged.upload_batch_item", "incomplete_reason", "text null", "Upload batch");
+        AddColumn(fixes, "ged.upload_batch_item", "retry_after_at", "timestamptz null", "Upload batch");
+        AddColumn(fixes, "ged.upload_batch_item", "updated_at", "timestamptz null", "Upload batch");
         AddColumn(fixes, "ged.upload_batch_item", "upload_session_id", "uuid null", "Upload batch");
         AddColumn(fixes, "ged.upload_session", "tenant_id", "uuid null", "Upload chunks");
         AddColumn(fixes, "ged.upload_session", "total_chunks", "int not null default 0", "Upload chunks");

@@ -39,7 +39,9 @@ public sealed class DocumentBulkUploadService : IDocumentBulkUploadService
             var expectedTotalParts = metadata.TotalParts.GetValueOrDefault();
             var incomingPartNumber = metadata.PartNumber.GetValueOrDefault(isPart ? 1 : 0);
             var isMarkedIncomplete = metadata.MarkAsIncomplete;
-            var isIncomplete = isMarkedIncomplete || (isPart && (!metadata.TotalParts.HasValue || incomingPartNumber < expectedTotalParts));
+            var isPartialIncomplete = isPart && (!metadata.TotalParts.HasValue || incomingPartNumber < expectedTotalParts);
+            var isIncomplete = isMarkedIncomplete || isPartialIncomplete;
+            var incompleteSource = isMarkedIncomplete ? "USER_MARKED" : isPartialIncomplete ? "PARTIAL_AUTO" : metadata.IncompleteSource;
             Guid documentId;
             Guid? versionId = null;
             if (isPart && (metadata.ConsolidateIntoDocumentId.HasValue || metadata.ExistingDocumentId.HasValue) && (metadata.ConsolidateIntoDocumentId ?? metadata.ExistingDocumentId) is Guid existingDoc && existingDoc != Guid.Empty)
@@ -69,7 +71,7 @@ public sealed class DocumentBulkUploadService : IDocumentBulkUploadService
             }
             else
             {
-                var cmd = new UploadDocumentCommand { FolderId = folderId.Value, TypeId = metadata.DocumentTypeId, ClassificationId = metadata.ClassificationId, Description = metadata.Notes, Visibility = string.IsNullOrWhiteSpace(metadata.Visibility) ? "INTERNAL" : metadata.Visibility.Trim().ToUpperInvariant(), Title = title, FileName = safeName, ContentType = string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType, Content = content, UploadedAtUtc = uploadedAtUtc, IsPartialDocument = isPart, IsDocumentIncomplete = isIncomplete, IncompleteReason = metadata.IncompleteReason, PartNumber = metadata.PartNumber, TotalParts = metadata.TotalParts };
+                var cmd = new UploadDocumentCommand { FolderId = folderId.Value, TypeId = metadata.DocumentTypeId, ClassificationId = metadata.ClassificationId, Description = metadata.Notes, Visibility = string.IsNullOrWhiteSpace(metadata.Visibility) ? "INTERNAL" : metadata.Visibility.Trim().ToUpperInvariant(), Title = title, FileName = safeName, ContentType = string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType, Content = content, UploadedAtUtc = uploadedAtUtc, IsPartialDocument = isPart, IsDocumentIncomplete = isIncomplete, IncompleteReason = metadata.IncompleteReason, IncompleteSource = incompleteSource, PartNumber = metadata.PartNumber, TotalParts = metadata.TotalParts };
                 var result = await _documentApp.UploadAsync(cmd, "BULK", userName ?? "BULK", ct);
                 if (!result.Success) return Result<DocumentBulkUploadResultDto>.Fail(result.Error?.Code ?? "UPLOAD", result.Error?.Message ?? "Falha no upload.");
                 documentId = result.Value;
@@ -95,7 +97,8 @@ public sealed class DocumentBulkUploadService : IDocumentBulkUploadService
             }
             if (metadata.MarkAsIncomplete && versionId.HasValue)
             {
-                await MarkDocumentIncompleteAsync(tenantId, documentId, versionId, metadata.IncompleteReason, ct);
+                await MarkDocumentIncompleteAsync(tenantId, documentId, versionId, metadata.IncompleteReason, "USER_MARKED", ct);
+                await _audit.WriteAsync(tenantId, userId, "DOCUMENT_MARKED_INCOMPLETE_FROM_BATCH", "DOCUMENT", documentId, "Documento marcado como incompleto pelo upload em massa", null, null, new { metadata.BatchId, versionId, metadata.IncompleteReason }, ct);
             }
             sw.Stop();
             _logger.LogInformation("Upload stream finalizado. Tenant={TenantId} User={UserId} Folder={FolderId} Batch={BatchId} File={FileName} FileSize={FileSize} ContentType={ContentType} DocumentId={DocumentId} ElapsedMs={ElapsedMs}",
@@ -117,13 +120,13 @@ public sealed class DocumentBulkUploadService : IDocumentBulkUploadService
     }
 
 
-    private async Task MarkDocumentIncompleteAsync(Guid tenantId, Guid documentId, Guid? versionId, string? reason, CancellationToken ct)
+    private async Task MarkDocumentIncompleteAsync(Guid tenantId, Guid documentId, Guid? versionId, string? reason, string source, CancellationToken ct)
     {
         const string sql = """
 UPDATE ged.document
 SET is_document_incomplete = true,
     incomplete_reason = COALESCE(@reason, incomplete_reason),
-    incomplete_source = 'USER_MARKED',
+    incomplete_source = @source,
     updated_at = now()
 WHERE tenant_id = @tenantId
   AND id = @documentId;
@@ -131,13 +134,13 @@ WHERE tenant_id = @tenantId
 UPDATE ged.document_version
 SET is_document_incomplete = true,
     incomplete_reason = COALESCE(@reason, incomplete_reason),
-    incomplete_source = 'USER_MARKED',
+    incomplete_source = @source,
     partial_status = CASE WHEN COALESCE(partial_status, 'NOT_PARTIAL') = 'NOT_PARTIAL' THEN 'INCOMPLETE' ELSE partial_status END
 WHERE tenant_id = @tenantId
   AND id = @versionId;
 """;
         await using var conn = await _db.OpenAsync(ct);
-        await conn.ExecuteAsync(new CommandDefinition(sql, new { tenantId, documentId, versionId, reason }, cancellationToken: ct));
+        await conn.ExecuteAsync(new CommandDefinition(sql, new { tenantId, documentId, versionId, reason, source }, cancellationToken: ct));
     }
 
     private async Task<int> CountDocumentPartsAsync(Guid tenantId, Guid documentId, CancellationToken ct)

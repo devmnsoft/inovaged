@@ -17,6 +17,9 @@
         public Guid? CurrentVersionId { get; set; }
         public Guid? CreatedBy { get; set; }
         public bool IsConfidential { get; set; }
+        public bool IsDocumentIncomplete { get; set; }
+        public string? IncompleteReason { get; set; }
+        public string? IncompleteSource { get; set; }
     }
 
     public sealed class DocumentVersionRow
@@ -46,6 +49,8 @@
         public int? PartialTotalParts { get; init; }
         public string PartialStatus { get; init; } = "NOT_PARTIAL";
         public bool IsDocumentIncomplete { get; init; }
+        public string? IncompleteReason { get; init; }
+        public string? IncompleteSource { get; init; }
         public int? PartNumber { get; init; }
         public int? TotalParts { get; init; }
         public Guid? ConsolidatedVersionId { get; init; }

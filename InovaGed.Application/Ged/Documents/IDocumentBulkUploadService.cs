@@ -21,6 +21,7 @@ public sealed class DocumentBulkUploadMetadata
     public Guid? ConsolidateIntoDocumentId { get; set; }
     public bool MarkAsIncomplete { get; set; }
     public string? IncompleteReason { get; set; }
+    public string? IncompleteSource { get; set; }
 }
 
 public sealed class DocumentBulkUploadResultDto

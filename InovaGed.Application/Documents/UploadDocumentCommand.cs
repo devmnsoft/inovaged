@@ -26,6 +26,7 @@ public sealed class UploadDocumentCommand
     public bool IsPartialDocument { get; init; }
     public bool IsDocumentIncomplete { get; init; }
     public string? IncompleteReason { get; init; }
+    public string? IncompleteSource { get; init; }
     public int? PartNumber { get; init; }
     public int? TotalParts { get; init; }
     public Guid? PartialGroupId { get; init; }
