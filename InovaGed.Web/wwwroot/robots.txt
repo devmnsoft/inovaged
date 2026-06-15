@@ -1,2 +1,13 @@
 User-agent: *
-Disallow: /
+Disallow: /Account/
+Disallow: /Users/
+Disallow: /SystemHealth/
+Disallow: /SystemLogs/
+Disallow: /Parameters/
+Disallow: /Ged/
+Disallow: /HospitalDocuments/
+Disallow: /Loans/
+Disallow: /Protocols/
+Disallow: /Ocr/
+Disallow: /Operations/
+Disallow: /SmartSearch/

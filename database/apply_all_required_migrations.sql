@@ -1256,3 +1256,6 @@ BEGIN
         ON CONFLICT DO NOTHING;
     END LOOP;
 END $$;
+
+\echo Applying 2026_06_ged_processing_pipeline.sql
+\i database/migrations/2026_06_ged_processing_pipeline.sql

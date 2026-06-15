@@ -18,9 +18,7 @@ public sealed class UploadBatchService : IUploadBatchService
     private readonly IDbConnectionFactory _db;
     private readonly IDocumentBulkUploadService _bulkUpload;
     private readonly IUploadConcurrencyLimiter _limiter;
-    private readonly IOcrJobRepository _ocrJobs;
-    private readonly IPreviewJobQueue _previewQueue;
-    private readonly IPreviewStatusRepository _previewStatus;
+    private readonly IGedProcessingJobRepository _processingJobs;
     private readonly IAuditWriter _audit;
     private readonly ILogger<UploadBatchService> _logger;
     private readonly DocumentUploadOptions _options;
@@ -30,9 +28,7 @@ public sealed class UploadBatchService : IUploadBatchService
         IDbConnectionFactory db,
         IDocumentBulkUploadService bulkUpload,
         IUploadConcurrencyLimiter limiter,
-        IOcrJobRepository ocrJobs,
-        IPreviewJobQueue previewQueue,
-        IPreviewStatusRepository previewStatus,
+        IGedProcessingJobRepository processingJobs,
         IAuditWriter audit,
         IOptions<DocumentUploadOptions> options,
         ILogger<UploadBatchService> logger)
@@ -40,9 +36,7 @@ public sealed class UploadBatchService : IUploadBatchService
         _db = db;
         _bulkUpload = bulkUpload;
         _limiter = limiter;
-        _ocrJobs = ocrJobs;
-        _previewQueue = previewQueue;
-        _previewStatus = previewStatus;
+        _processingJobs = processingJobs;
         _audit = audit;
         _logger = logger;
         _options = options.Value;
@@ -84,6 +78,12 @@ VALUES (@id, @tenantId, @folderId, @requestedFolderId, @userId, 'OPEN', @totalFi
         if (request.File is null || request.File.Length <= 0) return Result<UploadBatchFileResultDto>.Fail("VALIDATION", "Arquivo inválido.");
         if (request.File.Length > Math.Max(1, _options.MaxFileSizeMb) * 1024L * 1024L) return Result<UploadBatchFileResultDto>.Fail("LIMIT", $"O arquivo excede o limite de {_options.MaxFileSizeMb} MB.");
         var ext = Path.GetExtension(request.UploadName ?? request.File.FileName ?? string.Empty);
+        var blockedExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".exe", ".bat", ".ps1", ".cmd", ".php", ".aspx", ".config", ".env", ".dll" };
+        if (blockedExtensions.Contains(ext))
+        {
+            _logger.LogWarning("SECURITY_UPLOAD_BLOCKED Tenant={TenantId} User={UserId} Batch={BatchId} File={FileName} Extension={Extension} CorrelationId={CorrelationId}", tenantId, userId, request.BatchId, request.File.FileName, ext, correlationId);
+            return Result<UploadBatchFileResultDto>.Fail("SECURITY_UPLOAD_BLOCKED", $"Extensão bloqueada por política de segurança: {ext}");
+        }
         if (_allowedExtensions.Count > 0 && !_allowedExtensions.Contains(ext)) return Result<UploadBatchFileResultDto>.Fail("EXTENSION", $"Extensão não permitida: {ext}");
 
         await using var lease = await _limiter.AcquireAsync(tenantId, userId, request.BatchId, ct);
@@ -124,27 +124,30 @@ VALUES (@id, @tenantId, @folderId, @requestedFolderId, @userId, 'OPEN', @totalFi
 
             var ocrQueued = false;
             var previewQueued = false;
-            if (request.RunOcr && version?.VersionId is Guid ocrVersionId)
-            {
-                await _ocrJobs.EnqueueAsync(tenantId, ocrVersionId, userId, false, ct);
-                ocrQueued = true;
-                await UpdateItemStatusAsync(tenantId, itemId, "OCR_QUEUED", sw.ElapsedMilliseconds, ct);
-                _logger.LogInformation("OCR queued Tenant={TenantId} User={UserId} Batch={BatchId} Item={ItemId} VersionId={VersionId} CorrelationId={CorrelationId}", tenantId, userId, request.BatchId, itemId, ocrVersionId, correlationId);
-            }
-
             if (request.GeneratePreview && version is not null)
             {
-                await _previewStatus.UpsertAsync(tenantId, version.VersionId, PreviewProcessingStatus.Pending, null, null, DateTimeOffset.UtcNow, null, ct);
-                await _previewQueue.EnqueueAsync(tenantId, result.Value.DocumentId, version.VersionId, version.StoragePath, version.FileName, ct);
+                await _processingJobs.EnqueueAsync(tenantId, result.Value.DocumentId, version.VersionId, request.BatchId, itemId, "PREVIEW", 3, ct);
                 previewQueued = true;
-                await UpdateItemStatusAsync(tenantId, itemId, "PREVIEW_QUEUED", sw.ElapsedMilliseconds, ct);
-                _logger.LogInformation("Preview queued Tenant={TenantId} User={UserId} Batch={BatchId} Item={ItemId} VersionId={VersionId} CorrelationId={CorrelationId}", tenantId, userId, request.BatchId, itemId, version.VersionId, correlationId);
+                _logger.LogInformation("PROCESSING_JOB_CREATED Type=PREVIEW Tenant={TenantId} User={UserId} Batch={BatchId} Item={ItemId} VersionId={VersionId} CorrelationId={CorrelationId}", tenantId, userId, request.BatchId, itemId, version.VersionId, correlationId);
             }
 
+            if (request.RunOcr && version?.VersionId is Guid ocrVersionId)
+            {
+                await _processingJobs.EnqueueAsync(tenantId, result.Value.DocumentId, ocrVersionId, request.BatchId, itemId, "OCR", 5, ct);
+                ocrQueued = true;
+                _logger.LogInformation("PROCESSING_JOB_CREATED Type=OCR Tenant={TenantId} User={UserId} Batch={BatchId} Item={ItemId} VersionId={VersionId} CorrelationId={CorrelationId}", tenantId, userId, request.BatchId, itemId, ocrVersionId, correlationId);
+            }
+
+            if (version?.VersionId is Guid indexVersionId)
+            {
+                await _processingJobs.EnqueueAsync(tenantId, result.Value.DocumentId, indexVersionId, request.BatchId, itemId, "SMART_INDEX", 7, ct);
+            }
+
+            await UpdateItemStatusAsync(tenantId, itemId, "QUEUED", sw.ElapsedMilliseconds, ct);
             await UpdateItemStatusAsync(tenantId, itemId, "COMPLETED", sw.ElapsedMilliseconds, ct);
             await RefreshBatchCountersAsync(tenantId, request.BatchId, finished: false, ct);
             _logger.LogInformation("File completed Tenant={TenantId} User={UserId} Batch={BatchId} Item={ItemId} File={FileName} ElapsedMs={ElapsedMs} CorrelationId={CorrelationId}", tenantId, userId, request.BatchId, itemId, request.File.FileName, sw.ElapsedMilliseconds, correlationId);
-            return Result<UploadBatchFileResultDto>.Ok(new UploadBatchFileResultDto { ItemId = itemId, DocumentId = result.Value.DocumentId, VersionId = version?.VersionId, RequestedFolderId = request.RequestedFolderId, ResolvedFolderId = request.FolderId, Title = result.Value.Title, FileName = result.Value.FileName, UploadedAtUtc = version?.UploadedAtUtc, UploadedAtLocalFormatted = FormatUploadDate(version?.UploadedAtUtc), Status = "COMPLETED", Message = "Arquivo recebido com sucesso.", OcrQueued = ocrQueued, PreviewQueued = previewQueued, CorrelationId = correlationId });
+            return Result<UploadBatchFileResultDto>.Ok(new UploadBatchFileResultDto { ItemId = itemId, DocumentId = result.Value.DocumentId, VersionId = version?.VersionId, RequestedFolderId = request.RequestedFolderId, ResolvedFolderId = request.FolderId, Title = result.Value.Title, FileName = result.Value.FileName, UploadedAtUtc = version?.UploadedAtUtc, UploadedAtLocalFormatted = FormatUploadDate(version?.UploadedAtUtc), Status = "COMPLETED", Message = "Arquivo recebido e processamento pesado enfileirado.", OcrQueued = ocrQueued, PreviewQueued = previewQueued, CorrelationId = correlationId });
         }
         catch (OperationCanceledException)
         {
@@ -341,7 +344,7 @@ WITH c AS (
          count(*) FILTER (WHERE status='COMPLETED')::int success,
          count(*) FILTER (WHERE status='ERROR')::int failed,
          count(*) FILTER (WHERE status='SKIPPED')::int skipped,
-         count(*) FILTER (WHERE status IN ('PENDING','RECEIVING','SAVED','DOCUMENT_CREATED','OCR_QUEUED','PREVIEW_QUEUED'))::int pending
+         count(*) FILTER (WHERE status IN ('PENDING','RECEIVING','SAVED','DOCUMENT_CREATED','OCR_QUEUED','PREVIEW_QUEUED','QUEUED'))::int pending
   FROM ged.upload_batch_item WHERE tenant_id=@tenantId AND batch_id=@batchId AND reg_status='A'
 )
 UPDATE ged.upload_batch b
