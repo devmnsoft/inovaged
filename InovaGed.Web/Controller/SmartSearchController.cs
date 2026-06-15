@@ -56,6 +56,19 @@ public sealed class SmartSearchController : Controller
                 await _audit.WriteAsync(_currentUser.TenantId, _currentUser.UserId, "VIEW", "SEARCH_SENSITIVE_TERM", null, "Busca inteligente com termo sensível registrada de forma reduzida", HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers.UserAgent.ToString(), new { termsCount = result.Intent.ClinicalTerms.Count, correlationId = HttpContext.TraceIdentifier }, ct);
             return Json(new { success = true, result });
         }
+        catch (ArgumentException ex) when (ex.Message.Contains("DateTime", StringComparison.OrdinalIgnoreCase))
+        {
+            var correlationId = HttpContext.TraceIdentifier;
+            _logger.LogError(ex, "Erro de data na busca inteligente. CorrelationId={CorrelationId}", correlationId);
+
+            return BadRequest(new
+            {
+                success = false,
+                code = "INVALID_DATE_FILTER",
+                message = "A busca recebeu um filtro de data inválido. Tente novamente ou remova o período informado.",
+                correlationId
+            });
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Erro na busca inteligente. CorrelationId={CorrelationId}", HttpContext.TraceIdentifier);
