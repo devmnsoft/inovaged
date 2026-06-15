@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using Dapper;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.SmartSearch;
+using InovaGed.Infrastructure.Common;
 using Microsoft.Extensions.Logging;
 
 namespace InovaGed.Infrastructure.SmartSearch;
@@ -49,8 +50,24 @@ public sealed class SmartSearchRepository : ISmartSearchRepository, InovaGed.App
         p.Add("ageTo", intent.AgeTo, DbType.Int32);
         p.Add("year", intent.Year, DbType.Int32);
         p.Add("folderId", request.FolderId, DbType.Guid);
-        p.Add("from", intent.From, DbType.DateTime);
-        p.Add("to", intent.To, DbType.DateTime);
+        var fromUtc = PostgresDateTimeHelper.ToUtc(intent.From);
+        var toUtc = PostgresDateTimeHelper.ToUtc(intent.To);
+        var dateFilters = new StringBuilder();
+        if (fromUtc.HasValue)
+        {
+            dateFilters.AppendLine("and d.created_at >= @from");
+            p.Add("from", fromUtc.Value, DbType.DateTime);
+            intent.From = fromUtc.Value;
+        }
+
+        if (toUtc.HasValue)
+        {
+            dateFilters.AppendLine("and d.created_at < @to");
+            p.Add("to", toUtc.Value, DbType.DateTime);
+            intent.To = toUtc.Value;
+        }
+
+        sql = sql.Replace("/*DATE_FILTERS*/", dateFilters.ToString());
         p.Add("offset", offset, DbType.Int32);
         p.Add("limit", pageSize, DbType.Int32);
 
@@ -104,14 +121,14 @@ order by updated_at desc nulls last limit 1
     public async Task LogQueryAsync(SmartSearchRequest request, SmartSearchIntent intent, int resultsCount, long durationMs, CancellationToken ct)
     {
         const string sql = """
-insert into ged.search_query_log(tenant_id, user_id, query_text, query_hash, interpreted_json, results_count, duration_ms)
-values (@TenantId, @UserId, @QueryText, @QueryHash, cast(@InterpretedJson as jsonb), @ResultsCount, @DurationMs)
+insert into ged.search_query_log(tenant_id, user_id, query_text, query_hash, interpreted_json, results_count, duration_ms, created_at)
+values (@TenantId, @UserId, @QueryText, @QueryHash, cast(@InterpretedJson as jsonb), @ResultsCount, @DurationMs, @CreatedAt)
 """;
         try
         {
             await using var conn = await _db.OpenAsync(ct);
             var redacted = RedactSensitive(request.Query);
-            await conn.ExecuteAsync(new CommandDefinition(sql, new { request.TenantId, request.UserId, QueryText = redacted.Length > 300 ? redacted[..300] : redacted, QueryHash = Sha256(request.Query), InterpretedJson = JsonSerializer.Serialize(intent), ResultsCount = resultsCount, DurationMs = (int)Math.Min(durationMs, int.MaxValue) }, cancellationToken: ct));
+            await conn.ExecuteAsync(new CommandDefinition(sql, new { request.TenantId, request.UserId, QueryText = redacted.Length > 300 ? redacted[..300] : redacted, QueryHash = Sha256(request.Query), InterpretedJson = JsonSerializer.Serialize(intent), ResultsCount = resultsCount, DurationMs = (int)Math.Min(durationMs, int.MaxValue), CreatedAt = DateTime.UtcNow }, cancellationToken: ct));
         }
         catch (Exception ex) { _logger.LogDebug(ex, "Não foi possível registrar log da busca inteligente."); }
     }
@@ -219,8 +236,7 @@ coalesce(similarity(idx.search_text, @originalQuery) * 20, 0)
 from ged.document_search_index idx
 join ged.document d on d.tenant_id=idx.tenant_id and d.id=idx.document_id
 where idx.tenant_id=@tenantId and coalesce(d.reg_status,'A')='A' and (@folderId is null or d.folder_id=@folderId)
-and (@from is null or d.created_at::date >= @from::date) and (@to is null or d.created_at::date <= @to::date)
-and (idx.search_vector @@ plainto_tsquery('portuguese', unaccent(@query)) or idx.search_text ilike @likeQuery or similarity(idx.search_text, @originalQuery) > 0.15 or @patientName is not null and idx.patient_name ilike @likePatientName)
+/*DATE_FILTERS*/and (idx.search_vector @@ plainto_tsquery('portuguese', unaccent(@query)) or idx.search_text ilike @likeQuery or similarity(idx.search_text, @originalQuery) > 0.15 or @patientName is not null and idx.patient_name ilike @likePatientName)
 )
 select *, count(*) over()::int as "TotalRows" from ranked order by "Score" desc, "Title" limit @limit offset @offset
 """;
@@ -234,8 +250,7 @@ left join ged.document_search ds on ds.tenant_id=d.tenant_id and ds.document_id=
 left join ged.document_version v on v.tenant_id=d.tenant_id and (v.id=coalesce(ds.version_id, d.current_version_id) or v.id=d.current_version_id)
 left join ged.folder f on f.tenant_id=d.tenant_id and f.id=d.folder_id
 where d.tenant_id=@tenantId and coalesce(d.reg_status,'A')='A' and (@folderId is null or d.folder_id=@folderId)
-and (@from is null or d.created_at::date >= @from::date) and (@to is null or d.created_at::date <= @to::date)
-and (concat_ws(' ', d.title, v.file_name, f.name, ds.ocr_text) ilike @likeQuery or @query = '')
+/*DATE_FILTERS*/and (concat_ws(' ', d.title, v.file_name, f.name, ds.ocr_text) ilike @likeQuery or @query = '')
 )
 select *, count(*) over()::int as "TotalRows" from base order by "Score" desc, "Title" limit @limit offset @offset
 """;

@@ -4,6 +4,7 @@ using System.Text.RegularExpressions;
 using Dapper;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.SmartSearch;
+using InovaGed.Infrastructure.Common;
 
 namespace InovaGed.Infrastructure.SmartSearch;
 
@@ -29,15 +30,21 @@ public sealed class SmartQueryParser : ISmartQueryParser, InovaGed.Application.G
     {
         query = (query ?? string.Empty).Trim();
         var normalized = Normalize(query);
-        var intent = new SmartSearchIntent { OriginalQuery = query, DocumentType = request.DocumentType, From = request.From, To = request.To };
+        var intent = new SmartSearchIntent
+        {
+            OriginalQuery = query,
+            DocumentType = request.DocumentType,
+            From = PostgresDateTimeHelper.ToUtc(request.From),
+            To = PostgresDateTimeHelper.ToUtc(request.To)
+        };
 
 
         var monthYear = MonthYearRegex.Match(query);
         if (monthYear.Success && int.TryParse(monthYear.Groups["month"].Value, out var month) && int.TryParse(monthYear.Groups["year"].Value, out var monthYearValue))
         {
             intent.Year = monthYearValue;
-            intent.From = new DateTime(monthYearValue, month, 1);
-            intent.To = intent.From.Value.AddMonths(1).AddDays(-1);
+            intent.From = PostgresDateTimeHelper.StartOfDayUtc(new DateTime(monthYearValue, month, 1, 0, 0, 0, DateTimeKind.Utc));
+            intent.To = intent.From.Value.AddMonths(1);
         }
 
         var mr = MedicalRecordRegex.Match(query);
@@ -63,18 +70,45 @@ public sealed class SmartQueryParser : ISmartQueryParser, InovaGed.Application.G
             intent.Year = y;
             if (intent.From is null && intent.To is null)
             {
-                intent.From = new DateTime(y, normalized.Contains("meados de") ? 4 : 1, 1);
-                intent.To = new DateTime(y, normalized.Contains("meados de") ? 9 : 12, normalized.Contains("meados de") ? 30 : 31);
-                intent.IsApproxDate = normalized.Contains("meados de");
+                var isMidYear = normalized.Contains("meados de");
+                intent.From = isMidYear
+                    ? new DateTime(y, 5, 1, 0, 0, 0, DateTimeKind.Utc)
+                    : PostgresDateTimeHelper.YearStartUtc(y);
+                intent.To = isMidYear
+                    ? new DateTime(y, 9, 1, 0, 0, 0, DateTimeKind.Utc)
+                    : PostgresDateTimeHelper.YearEndExclusiveUtc(y);
+                intent.IsApproxDate = isMidYear;
             }
         }
         else if (normalized.Contains("ano passado"))
         {
             var lastYear = DateTime.UtcNow.Year - 1;
             intent.Year = lastYear;
-            intent.From ??= new DateTime(lastYear, 1, 1);
-            intent.To ??= new DateTime(lastYear, 12, 31);
+            intent.From ??= PostgresDateTimeHelper.YearStartUtc(lastYear);
+            intent.To ??= PostgresDateTimeHelper.YearEndExclusiveUtc(lastYear);
             intent.IsApproxDate = true;
+        }
+
+        if (intent.From is null && intent.To is null)
+        {
+            var todayUtc = DateTime.UtcNow.Date;
+            if (normalized.Contains("hoje"))
+            {
+                intent.From = todayUtc;
+                intent.To = todayUtc.AddDays(1);
+            }
+            else if (normalized.Contains("ontem"))
+            {
+                intent.From = todayUtc.AddDays(-1);
+                intent.To = todayUtc;
+            }
+            else if (normalized.Contains("neste ano") || normalized.Contains("esse ano") || normalized.Contains("este ano"))
+            {
+                var currentYear = DateTime.UtcNow.Year;
+                intent.Year = currentYear;
+                intent.From = PostgresDateTimeHelper.YearStartUtc(currentYear);
+                intent.To = PostgresDateTimeHelper.YearEndExclusiveUtc(currentYear);
+            }
         }
 
         var name = NameRegex.Match(query);
