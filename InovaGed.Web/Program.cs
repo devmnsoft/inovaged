@@ -100,6 +100,7 @@ using InovaGed.Web.Security;
 using InovaGed.Web.Services;
 using InovaGed.Web.Controllers;
 using Microsoft.AspNetCore.Authentication.Certificate;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using InovaGed.Application.Preview;
@@ -142,6 +143,17 @@ builder.WebHost.ConfigureKestrel(options =>
     options.Limits.KeepAliveTimeout = TimeSpan.FromMinutes(30);
     options.Limits.RequestHeadersTimeout = TimeSpan.FromMinutes(5);
 });
+
+// =======================================================
+// DataProtection persistente para evitar logout após recycle do app pool
+// =======================================================
+var keysPath = builder.Configuration.GetValue<string>("DataProtection:KeysPath")
+    ?? Path.Combine(builder.Environment.ContentRootPath, "App_Data", "DataProtectionKeys");
+Directory.CreateDirectory(keysPath);
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo(keysPath))
+    .SetApplicationName("InovaGed");
+
 builder.Services.Configure<FormOptions>(options =>
 {
     options.MultipartBodyLengthLimit = long.MaxValue;
@@ -254,9 +266,11 @@ builder.Services.AddScoped<IDocumentBulkUploadService, DocumentBulkUploadService
 builder.Services.AddScoped<IDocumentPartialService, DocumentPartialService>();
 builder.Services.AddScoped<IUploadFolderResolver, UploadFolderResolver>();
 builder.Services.AddSingleton<IUploadConcurrencyLimiter, UploadConcurrencyLimiter>();
+builder.Services.AddScoped<IGedProcessingJobRepository, GedProcessingJobRepository>();
 builder.Services.AddScoped<IUploadBatchService, UploadBatchService>();
 builder.Services.AddScoped<IUploadChunkService, UploadChunkService>();
 builder.Services.AddHostedService<StaleUploadBatchItemWorker>();
+builder.Services.AddHostedService<GedProcessingWorker>();
 builder.Services.AddScoped<IGedAccessPolicyService, GedAccessPolicyService>();
 builder.Services.AddScoped<IGedSearchService, GedSearchService>();
 builder.Services.AddScoped<IGedSmartSearchService, GedSmartSearchService>();
@@ -573,6 +587,7 @@ if (!app.Environment.IsDevelopment())
 app.UseStatusCodePagesWithReExecute("/Home/Status/{0}");
 
 app.UseHttpsRedirection();
+app.UseMiddleware<SuspiciousRequestMiddleware>();
 app.UseStaticFiles();
 
 app.UseRouting();
