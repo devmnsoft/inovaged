@@ -4,6 +4,7 @@ using InovaGed.Application.Identity;
 using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Npgsql;
 
 namespace InovaGed.Web.Controllers;
 
@@ -15,17 +16,27 @@ public sealed class ProtocolsController : Controller
     private readonly IProtocolRequestService _service;
     private readonly IProtocolAccessService _access;
     private readonly IFileStorage _storage;
+    private readonly ILogger<ProtocolsController> _logger;
 
-    public ProtocolsController(ICurrentUser user, IProtocolRequestService service, IProtocolAccessService access, IFileStorage storage)
-    { _user = user; _service = service; _access = access; _storage = storage; }
+    public ProtocolsController(ICurrentUser user, IProtocolRequestService service, IProtocolAccessService access, IFileStorage storage, ILogger<ProtocolsController> logger)
+    { _user = user; _service = service; _access = access; _storage = storage; _logger = logger; }
 
     [Authorize(Policy = AppPolicies.ProtocolManage)]
     [HttpGet("WorkQueue")]
     public async Task<IActionResult> WorkQueue(ProtocolWorkQueueFilter filter, CancellationToken ct)
     {
         var scope = await _access.BuildScopeAsync(_user.TenantId, _user.UserId, User, ct);
-        var rows = await _service.ListWorkQueueAsync(_user.TenantId, _user.UserId, scope, filter ?? new(), ct);
-        return View(new ProtocolWorkQueueVm { Filter = filter ?? new(), Rows = rows.ToList() });
+        try
+        {
+            var rows = await _service.ListWorkQueueAsync(_user.TenantId, _user.UserId, scope, filter ?? new(), ct);
+            return View(new ProtocolWorkQueueVm { Filter = filter ?? new(), Rows = rows.ToList() });
+        }
+        catch (PostgresException ex)
+        {
+            _logger.LogError(ex, "Erro ao carregar fila de protocolos.");
+            TempData["Error"] = "Não foi possível carregar a fila de protocolos. Verifique o status do banco e as migrations.";
+            return View(new ProtocolWorkQueueVm { Filter = filter ?? new(), Rows = new List<ProtocolRequestRowVm>() });
+        }
     }
 
     [HttpGet("{id:guid}")]

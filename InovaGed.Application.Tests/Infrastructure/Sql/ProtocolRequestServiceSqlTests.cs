@@ -30,7 +30,7 @@ public sealed class ProtocolRequestServiceSqlTests
 
     [Fact]
     public void BuildWorkQueueSql_Admin_IsValid()
-        => AssertProtocolSqlIsValid(ProtocolRequestService.BuildListWorkQueueSql(UserId, new ProtocolVisibilityScope { IsAdmin = true }, new ProtocolWorkQueueFilter(), out var parameters), parameters, "@IsAdmin");
+        => AssertProtocolSqlIsValid(ProtocolRequestService.BuildListWorkQueueSql(UserId, new ProtocolVisibilityScope { IsAdmin = true }, new ProtocolWorkQueueFilter(), out var parameters), parameters);
 
     [Fact]
     public void BuildWorkQueueSql_Manager_IsValid()

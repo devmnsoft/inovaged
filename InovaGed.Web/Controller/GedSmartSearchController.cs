@@ -36,8 +36,8 @@ public sealed class GedSmartSearchController : Controller
     }
 
     [HttpPost("Smart")]
-    [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Smart([FromForm] string? query, [FromForm] Guid? folderId, [FromForm] string? scope, [FromForm] int pageSize = 20, CancellationToken ct = default)
+    [IgnoreAntiforgeryToken]
+    public async Task<IActionResult> Smart([FromBody] GedSmartSearchPostRequest? body, [FromForm] string? query, [FromForm] Guid? folderId, [FromForm] string? scope, [FromForm] int pageSize = 20, CancellationToken ct = default)
     {
         if (!_currentUser.IsAuthenticated) return Unauthorized(new { success = false, message = "Sessão expirada." });
         if (!await _accessPolicy.CanAccessGedAsync(_currentUser.TenantId, _currentUser.UserId, User, ct)) return Forbid();
@@ -46,16 +46,16 @@ public sealed class GedSmartSearchController : Controller
         {
             TenantId = _currentUser.TenantId,
             UserId = _currentUser.UserId,
-            Query = query ?? string.Empty,
-            FolderId = string.Equals(scope, "global", StringComparison.OrdinalIgnoreCase) ? null : folderId,
-            PageSize = pageSize,
+            Query = body?.Query ?? query ?? string.Empty,
+            FolderId = string.Equals(body?.Scope ?? scope, "global", StringComparison.OrdinalIgnoreCase) ? null : body?.FolderId ?? folderId,
+            PageSize = body?.PageSize > 0 ? body.PageSize : pageSize,
             IsAdmin = RolePolicyHelper.IsFullAdmin(User),
             Source = "GED_SMART_SEARCH"
         }, ct);
 
         var auditEvent = result.Total == 0 ? "GED_SMART_SEARCH_NO_RESULT" : "GED_SMART_SEARCH";
         await _audit.WriteAsync(_currentUser.TenantId, _currentUser.UserId, "VIEW", auditEvent, null, "Busca inteligente GED executada", HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers.UserAgent.ToString(), new { queryHashOnly = true, result.Total, result.DurationMs, correlationId = HttpContext.TraceIdentifier }, ct);
-        return Json(new { success = true, result });
+        return Json(new { success = true, result, items = result.Items });
     }
 
     [HttpGet("Stats")]
@@ -78,4 +78,13 @@ public sealed class GedSmartSearchController : Controller
         await _audit.WriteAsync(_currentUser.TenantId, _currentUser.UserId, "VIEW", "GED_SMART_SEARCH_CLICK", documentId, "Clique em resultado da busca inteligente", HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers.UserAgent.ToString(), new { action = safeAction, correlationId = HttpContext.TraceIdentifier }, ct);
         return Json(new { success = true });
     }
+}
+
+public sealed class GedSmartSearchPostRequest
+{
+    public string? Query { get; set; }
+    public Guid? FolderId { get; set; }
+    public string? Scope { get; set; }
+    public int Page { get; set; } = 1;
+    public int PageSize { get; set; } = 20;
 }

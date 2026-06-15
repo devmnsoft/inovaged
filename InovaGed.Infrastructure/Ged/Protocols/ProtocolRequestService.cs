@@ -1,3 +1,4 @@
+using System.Data;
 using Dapper;
 using InovaGed.Application.Audit;
 using InovaGed.Application.Common.Database;
@@ -133,7 +134,7 @@ returning id;
     {
         filter ??= new();
         var finalSql = BuildListMySql(userId, scope, filter, out var parameters);
-        parameters.Add("TenantId", tenantId);
+        parameters.Add("TenantId", tenantId, DbType.Guid);
         ValidateGeneratedSql(finalSql, parameters);
 
         try
@@ -153,7 +154,7 @@ returning id;
     {
         filter ??= new();
         var finalSql = BuildListWorkQueueSql(userId, scope, filter, out var parameters);
-        parameters.Add("TenantId", tenantId);
+        parameters.Add("TenantId", tenantId, DbType.Guid);
         ValidateGeneratedSql(finalSql, parameters);
 
         try
@@ -288,36 +289,53 @@ from (select 1) seed left join ged.app_user u on u.tenant_id=@TenantId and u.id=
     or p.assigned_user_id = @UserId
 )
 """);
-            parameters.Add("UserId", userId);
+            parameters.Add("UserId", userId, DbType.Guid);
         }
 
         AppendCommonProtocolFilters(sql, parameters, filter);
         AppendPagination(sql, parameters, filter, defaultPageSize: 20, maxPageSize: 100);
 
-        return sql.ToSql();
+        var finalSql = sql.ToSql();
+        ValidateProtocolSql(finalSql);
+        return finalSql;
     }
 
     internal static string BuildListWorkQueueSql(Guid userId, ProtocolVisibilityScope scope, ProtocolWorkQueueFilter filter, out DynamicParameters parameters)
     {
         var sql = new SafeSqlBuilder(BaseProtocolRequestListSql);
-        sql.And("""
+        parameters = new DynamicParameters();
+
+        if (scope.IsAdmin)
+        {
+            // Administradores globais enxergam toda a fila do tenant.
+        }
+        else if (scope.IsAdministradorOphir && scope.SectorId.HasValue)
+        {
+            sql.And("""
 (
-    @IsAdmin = true
-    or (
-        @IsAdministradorOphir = true
-        and (
-            (@SectorId is not null and p.assigned_sector_id = @SectorId)
-            or p.assigned_user_id = @UserId
-        )
-    )
+    p.assigned_sector_id = @SectorId
+    or p.requester_sector_id = @SectorId
+    or p.assigned_user_id = @UserId
 )
 """);
-
-        parameters = new DynamicParameters();
-        parameters.Add("UserId", userId);
-        parameters.Add("IsAdmin", scope.IsAdmin);
-        parameters.Add("IsAdministradorOphir", scope.IsAdministradorOphir);
-        parameters.Add("SectorId", scope.SectorId);
+            parameters.Add("SectorId", scope.SectorId.Value, DbType.Guid);
+            parameters.Add("UserId", userId, DbType.Guid);
+        }
+        else if (scope.IsAdministradorOphir)
+        {
+            sql.And("p.assigned_user_id = @UserId");
+            parameters.Add("UserId", userId, DbType.Guid);
+        }
+        else
+        {
+            sql.And("""
+(
+    p.requester_user_id = @UserId
+    or p.assigned_user_id = @UserId
+)
+""");
+            parameters.Add("UserId", userId, DbType.Guid);
+        }
 
         AppendCommonProtocolFilters(sql, parameters, filter);
 
@@ -334,7 +352,9 @@ from (select 1) seed left join ged.app_user u on u.tenant_id=@TenantId and u.id=
 
         AppendPagination(sql, parameters, filter, defaultPageSize: 20, maxPageSize: 500);
 
-        return sql.ToSql();
+        var finalSql = sql.ToSql();
+        ValidateProtocolSql(finalSql);
+        return finalSql;
     }
 
     private const string BaseProtocolRequestListSql = """
@@ -376,6 +396,28 @@ from ged.protocol_request p
 where p.tenant_id = @TenantId
   and coalesce(p.reg_status, 'A') = 'A'
 """;
+
+
+    private static void ValidateProtocolSql(string sql)
+    {
+        var forbidden = new[]
+        {
+            "@SectorId" + " is not null",
+            "@Is" + "Admin",
+            "@Is" + "AdministradorOphir",
+            "pwhere",
+            "where and",
+            "and and"
+        };
+
+        foreach (var item in forbidden)
+        {
+            if (sql.Contains(item, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("SQL de protocolo contém padrão proibido: " + item);
+            }
+        }
+    }
 
     private void ValidateGeneratedSql(string sql, DynamicParameters? parameters = null)
     {
@@ -440,8 +482,8 @@ where p.tenant_id = @TenantId
         var pageSize = filter.PageSize <= 0 ? defaultPageSize : Math.Min(filter.PageSize, maxPageSize);
         var offset = (page - 1) * pageSize;
 
-        parameters.Add("Offset", offset);
-        parameters.Add("Limit", pageSize);
+        parameters.Add("Offset", offset, DbType.Int32);
+        parameters.Add("Limit", pageSize, DbType.Int32);
 
         sql.OrderBy("p.requested_at desc");
         sql.Paginate();

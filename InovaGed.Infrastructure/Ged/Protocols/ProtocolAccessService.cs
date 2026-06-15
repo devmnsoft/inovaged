@@ -1,3 +1,4 @@
+using System.Data;
 using System.Security.Claims;
 using Dapper;
 using InovaGed.Application.Common.Database;
@@ -30,16 +31,44 @@ public sealed class ProtocolAccessService : IProtocolAccessService
         var scope = await BuildScopeAsync(tenantId, userId, user, ct);
         if (scope.IsAdmin) return true;
         await using var conn = await _db.OpenAsync(ct);
-        return await conn.ExecuteScalarAsync<bool>(new CommandDefinition("""
+        var sql = """
 select exists (
   select 1 from ged.protocol_request p
   where p.tenant_id=@TenantId and p.id=@Id and p.reg_status='A'
+""";
+        var parameters = new DynamicParameters();
+        parameters.Add("TenantId", tenantId, DbType.Guid);
+        parameters.Add("Id", protocolRequestId, DbType.Guid);
+        parameters.Add("UserId", userId, DbType.Guid);
+
+        if (scope.CanManage && scope.SectorId.HasValue)
+        {
+            sql += """
     and (
-      (@IsManage = true and ((@SectorId is not null and p.assigned_sector_id=@SectorId) or p.assigned_user_id=@UserId))
+      p.assigned_sector_id=@SectorId
+      or p.assigned_user_id=@UserId
       or p.requester_user_id=@UserId
     )
 );
-""", new { TenantId = tenantId, Id = protocolRequestId, UserId = userId, IsManage = scope.CanManage, scope.SectorId }, cancellationToken: ct));
+""";
+            parameters.Add("SectorId", scope.SectorId.Value, DbType.Guid);
+        }
+        else if (scope.CanManage)
+        {
+            sql += """
+    and (p.assigned_user_id=@UserId or p.requester_user_id=@UserId)
+);
+""";
+        }
+        else
+        {
+            sql += """
+    and p.requester_user_id=@UserId
+);
+""";
+        }
+
+        return await conn.ExecuteScalarAsync<bool>(new CommandDefinition(sql, parameters, cancellationToken: ct));
     }
 
     public async Task<bool> CanManageAsync(Guid tenantId, Guid protocolRequestId, Guid? userId, ClaimsPrincipal user, CancellationToken ct)
@@ -48,13 +77,33 @@ select exists (
         if (scope.IsAdmin) return true;
         if (!scope.IsAdministradorOphir) return false;
         await using var conn = await _db.OpenAsync(ct);
-        return await conn.ExecuteScalarAsync<bool>(new CommandDefinition("""
+        var sql = """
 select exists (
   select 1 from ged.protocol_request p
   where p.tenant_id=@TenantId and p.id=@Id and p.reg_status='A'
-    and ((@SectorId is not null and p.assigned_sector_id=@SectorId) or p.assigned_user_id=@UserId)
+""";
+        var parameters = new DynamicParameters();
+        parameters.Add("TenantId", tenantId, DbType.Guid);
+        parameters.Add("Id", protocolRequestId, DbType.Guid);
+        parameters.Add("UserId", userId, DbType.Guid);
+
+        if (scope.SectorId.HasValue)
+        {
+            sql += """
+    and (p.assigned_sector_id=@SectorId or p.assigned_user_id=@UserId)
 );
-""", new { TenantId = tenantId, Id = protocolRequestId, UserId = userId, scope.SectorId }, cancellationToken: ct));
+""";
+            parameters.Add("SectorId", scope.SectorId.Value, DbType.Guid);
+        }
+        else
+        {
+            sql += """
+    and p.assigned_user_id=@UserId
+);
+""";
+        }
+
+        return await conn.ExecuteScalarAsync<bool>(new CommandDefinition(sql, parameters, cancellationToken: ct));
     }
 
     private async Task<(Guid? Id, string? Name)> ResolveSectorAsync(Guid tenantId, Guid? userId, CancellationToken ct)

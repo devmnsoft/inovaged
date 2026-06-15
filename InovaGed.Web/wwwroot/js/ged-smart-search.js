@@ -265,5 +265,128 @@
     function escapeAttr(s) { return escapeHtml(s).replace(/'/g, '&#39;'); }
     function highlight(text, query) { if (!query) return text; return String(text).replace(new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'ig'), '<mark>$1</mark>'); }
 
-    window.GedSmartSearch = { __loaded: true, init };
+
+    function initStandaloneSearch() {
+        const input = document.getElementById("gedSmartSearchInput");
+        const button = document.getElementById("gedSmartSearchBtn");
+        const results = document.getElementById("gedSmartSearchResults");
+        const status = document.getElementById("gedSmartSearchStatus");
+        const chips = document.getElementById("gedSmartSearchChips");
+
+        if (!input || !button || !results) return;
+
+        function showStatus(message, type) {
+            if (!status) return;
+            status.className = "alert alert-" + (type || "info");
+            status.textContent = message;
+            status.classList.remove("d-none");
+        }
+
+        function clearStatus() {
+            if (!status) return;
+            status.classList.add("d-none");
+            status.textContent = "";
+        }
+
+        function renderEmpty(message) {
+            results.innerHTML = '<div class="p-4 text-muted">' + escapeHtml(message) + '</div>';
+        }
+
+        function renderResults(data) {
+            const items = Array.isArray(data) ? data : (data.items || data.results || data.result?.items || []);
+
+            if (!items.length) {
+                renderEmpty("Nenhum documento encontrado.");
+                return;
+            }
+
+            let html = '<table class="table table-hover align-middle mb-0">';
+            html += '<thead><tr><th>Documento</th><th>Pasta</th><th>Tipo</th><th>Score</th><th>Ações</th></tr></thead><tbody>';
+
+            for (const item of items) {
+                const id = item.documentId || item.id || "";
+                const title = item.title || item.fileName || item.originalFileName || "Documento";
+                const folder = item.folderName || "-";
+                const type = item.documentType || "-";
+                const score = item.score || "-";
+
+                html += '<tr>';
+                html += '<td>' + escapeHtml(title) + '</td>';
+                html += '<td>' + escapeHtml(folder) + '</td>';
+                html += '<td>' + escapeHtml(type) + '</td>';
+                html += '<td>' + escapeHtml(String(score)) + '</td>';
+                html += '<td><a class="btn btn-sm btn-outline-primary" href="/Ged/Details/' + encodeURIComponent(id) + '">Ver</a></td>';
+                html += '</tr>';
+            }
+
+            html += '</tbody></table>';
+            results.innerHTML = html;
+        }
+
+        function renderStandaloneChips(query) {
+            if (!chips) return;
+            chips.innerHTML = "";
+
+            const tokens = [];
+            const year = query.match(/\b(19|20)\d{2}\b/);
+            if (year) tokens.push("Ano: " + year[0]);
+
+            const age = query.match(/\b\d{1,3}\s*anos\b/i);
+            if (age) tokens.push("Idade: " + age[0]);
+
+            if (/prontu[aá]rio/i.test(query)) tokens.push("Prontuário");
+            if (/exame/i.test(query)) tokens.push("Exame");
+            if (/laudo/i.test(query)) tokens.push("Laudo");
+            if (/ultrassom|ultrassonografia|usg/i.test(query)) tokens.push("Ultrassom");
+
+            for (const token of tokens) {
+                const span = document.createElement("span");
+                span.className = "badge rounded-pill text-bg-light border";
+                span.textContent = token;
+                chips.appendChild(span);
+            }
+        }
+
+        async function search() {
+            const query = input.value.trim();
+
+            if (!query) {
+                renderEmpty("Informe uma busca para localizar documentos.");
+                return;
+            }
+
+            clearStatus();
+            renderStandaloneChips(query);
+            showStatus("Buscando documentos...", "info");
+
+            try {
+                const response = await fetch("/Ged/Search/Smart", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ query: query, page: 1, pageSize: 20 })
+                });
+
+                if (!response.ok) throw new Error("Falha ao buscar documentos.");
+
+                const data = await response.json();
+                clearStatus();
+                renderResults(data);
+            } catch (err) {
+                showStatus(err.message || "Erro ao executar busca.", "danger");
+                renderEmpty("Não foi possível carregar os resultados.");
+            }
+        }
+
+        button.addEventListener("click", search);
+        input.addEventListener("keydown", function (event) {
+            if (event.key === "Enter") {
+                event.preventDefault();
+                search();
+            }
+        });
+    }
+
+    document.addEventListener('DOMContentLoaded', initStandaloneSearch);
+
+    window.GedSmartSearch = { __loaded: true, init, initStandaloneSearch };
 })(window, document);
