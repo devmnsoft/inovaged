@@ -1,12 +1,64 @@
+@model InovaGed.Web.Models.GedSearch.GedSearchIndexVm
+
 @{
-    ViewData["Title"] = "Busca Avançada de Documentos";
+    ViewData["Title"] = "Busca Inteligente GED";
 }
-<div class="container py-4">
-    <h2>Busca Avançada de Documentos</h2>
-    <p class="text-muted">Localize documentos por nome, OCR, pasta, classificação, tipo documental e metadados.</p>
-    <form method="post" action="/Ged/Search/Results">
-        @Html.AntiForgeryToken()
-        <input class="form-control form-control-lg" name="Term" placeholder="Pesquise por nome, prontuário, protocolo, CPF, OCR, pasta ou tipo documental..." />
-        <div class="mt-3"><button class="btn btn-primary">Pesquisar</button></div>
-    </form>
+
+<div class="container-fluid ged-search-page">
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <div>
+            <h1 class="h3 mb-1">Busca Inteligente GED</h1>
+            <p class="text-muted mb-0">
+                Pesquise documentos por nome, prontuário, OCR, pasta, tipo documental, classificação ou termos relacionados.
+            </p>
+        </div>
+        <a class="btn btn-outline-secondary" asp-controller="Ged" asp-action="Index">
+            Voltar ao GED
+        </a>
+    </div>
+
+    <div class="card shadow-sm mb-3">
+        <div class="card-body">
+            <label for="gedSmartSearchInput" class="form-label fw-semibold">
+                Descreva o documento que procura
+            </label>
+
+            <div class="input-group input-group-lg">
+                <input id="gedSmartSearchInput"
+                       type="text"
+                       class="form-control"
+                       placeholder="Ex: exame do João, doença renal, 24 anos, em 2022"
+                       value="@Model.Query" />
+
+                <button id="gedSmartSearchBtn" type="button" class="btn btn-primary">
+                    Buscar
+                </button>
+            </div>
+
+            <div class="form-text">
+                Exemplos: “prontuário 285775”, “laudo de diabetes”, “ultrassom 05/2026”.
+            </div>
+
+            <div id="gedSmartSearchChips" class="mt-3 d-flex flex-wrap gap-2"></div>
+        </div>
+    </div>
+
+    <div id="gedSmartSearchStatus" class="alert alert-info d-none"></div>
+
+    <div class="card shadow-sm">
+        <div class="card-header bg-white">
+            <strong>Resultados</strong>
+        </div>
+        <div class="card-body p-0">
+            <div id="gedSmartSearchResults" class="table-responsive">
+                <div class="p-4 text-muted">
+                    Informe uma busca para localizar documentos.
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
+
+@section Scripts {
+    <script src="~/js/ged-smart-search.js" asp-append-version="true"></script>
+}

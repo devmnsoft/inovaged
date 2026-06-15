@@ -3,6 +3,7 @@ using InovaGed.Application.Audit;
 using InovaGed.Application.Ged.Search;
 using InovaGed.Application.Identity;
 using InovaGed.Application.Security;
+using InovaGed.Web.Models.GedSearch;
 using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -23,12 +24,20 @@ public sealed class GedSearchController : Controller
     public GedSearchController(ICurrentUser currentUser, IGedAccessPolicyService accessPolicy, IGedSearchService service, IGedSmartSearchService smartSearch, IAuditWriter audit, ILogger<GedSearchController> logger)
     { _currentUser = currentUser; _accessPolicy = accessPolicy; _service = service; _smartSearch = smartSearch; _audit = audit; _logger = logger; }
 
-    [HttpGet("Advanced")]
-    public async Task<IActionResult> Index(CancellationToken ct)
+    [HttpGet("")]
+    public async Task<IActionResult> Index(string? q = null, Guid? folderId = null, string? scope = null, CancellationToken ct = default)
     {
         if (!_currentUser.IsAuthenticated) return RedirectToAction("Login", "Account");
         if (!await _accessPolicy.CanAccessGedAsync(_currentUser.TenantId, _currentUser.UserId, User, ct)) return Forbid();
-        return View("~/InovaGed.Web/Views/GedSearch/Index.cshtml");
+
+        var vm = new GedSearchIndexVm
+        {
+            Query = q,
+            FolderId = folderId,
+            Scope = scope
+        };
+
+        return View(vm);
     }
 
     [HttpPost("Results")]
