@@ -160,7 +160,7 @@ insert into ged.document_search_index(document_id, version_id, document_version_
 select d.id, coalesce(v.id, ds.version_id), coalesce(v.id, ds.version_id), d.tenant_id, coalesce(d.title, ds.file_name, v.file_name, 'Documento'), coalesce(v.file_name, ds.file_name), null, null, null, d.folder_id, f.name,
 null, null, null, array[]::text[], ds.ocr_text,
 concat_ws(' ', d.title, v.file_name, f.name, ds.ocr_text),
-to_tsvector('portuguese', unaccent(coalesce(concat_ws(' ', d.title, v.file_name, f.name, ds.ocr_text),''))), now(), now()
+to_tsvector('portuguese', coalesce(concat_ws(' ', d.title, v.file_name, f.name, ds.ocr_text),'')), now(), now()
 from ged.document d
 left join ged.document_search ds on ds.tenant_id=d.tenant_id and ds.document_id=d.id
 left join ged.document_version v on v.tenant_id=d.tenant_id and (v.id=coalesce(ds.version_id, d.current_version_id) or v.id=d.current_version_id)

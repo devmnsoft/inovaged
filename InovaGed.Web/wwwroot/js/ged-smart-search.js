@@ -289,14 +289,29 @@
         }
 
         function renderEmpty(message) {
-            results.innerHTML = '<div class="p-4 text-muted">' + escapeHtml(message) + '</div>';
+            const params = new URLSearchParams(window.location.search);
+            const scope = params.get("scope") || "all";
+            const admin = document.body?.dataset?.isAdmin === "true" || document.querySelector('[data-role="admin"]');
+            let html = '<div class="p-4 text-muted">' + escapeHtml(message || "Nenhum resultado encontrado nesta busca.") + '</div>';
+            html += '<div class="px-4 pb-4 d-flex flex-wrap gap-2">';
+            if (scope === "folder") html += '<button type="button" class="btn btn-outline-primary btn-sm" id="gedSearchAllBtn">Buscar em todo o GED</button>';
+            html += '<button type="button" class="btn btn-outline-secondary btn-sm" id="gedSearchClearFiltersBtn">Remover filtros</button>';
+            if (admin) {
+                html += '<button type="button" class="btn btn-outline-warning btn-sm" id="gedSearchReindexBtn">Reindexar busca</button>';
+                html += '<a class="btn btn-outline-info btn-sm" href="/Ged/Search/Diagnostics">Ver diagnóstico</a>';
+            }
+            html += '</div>';
+            results.innerHTML = html;
+            document.getElementById("gedSearchAllBtn")?.addEventListener("click", () => { params.set("scope", "all"); params.delete("folderId"); window.location.search = params.toString(); });
+            document.getElementById("gedSearchClearFiltersBtn")?.addEventListener("click", () => { input.value = ""; window.location.href = "/Ged/Search?scope=all"; });
+            document.getElementById("gedSearchReindexBtn")?.addEventListener("click", async () => { await fetch("/Ged/Search/ReindexMissing", { method: "POST" }); showStatus("Reindexação solicitada.", "warning"); });
         }
 
         function renderResults(data) {
             const items = Array.isArray(data) ? data : (data.items || data.results || data.result?.items || []);
 
             if (!items.length) {
-                renderEmpty("Nenhum documento encontrado.");
+                renderEmpty(new URLSearchParams(window.location.search).get("scope") === "folder" ? "Nenhum resultado nesta pasta. Deseja buscar em todas as pastas?" : "Nenhum resultado encontrado nesta busca.");
                 return;
             }
 
