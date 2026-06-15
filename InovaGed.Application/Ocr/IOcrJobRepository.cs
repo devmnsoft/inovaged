@@ -19,6 +19,8 @@ public interface IOcrJobRepository
 
     Task MarkErrorAsync(long jobId, string errorMessage, CancellationToken ct);
 
+    Task MarkErrorAsync(long jobId, string errorMessage, string? errorDetailsJson, CancellationToken ct);
+
     Task MarkRetryAsync(long jobId, int attempts, DateTimeOffset nextAttemptAt, string errorMessage, CancellationToken ct);
 
     Task<bool> IsCancelRequestedAsync(long jobId, CancellationToken ct);

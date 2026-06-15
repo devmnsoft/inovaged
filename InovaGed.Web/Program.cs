@@ -131,6 +131,7 @@ builder.Services.AddMemoryCache();
 builder.Services.AddScoped<IDateTimeDisplayService, DateTimeDisplayService>();
 builder.Services.Configure<SchemaRepairOptions>(builder.Configuration.GetSection("SchemaRepair"));
 builder.Services.Configure<OcrAutoScheduleOptions>(builder.Configuration.GetSection("OcrAutoSchedule"));
+builder.Services.Configure<OcrOptions>(builder.Configuration.GetSection("Ocr"));
 builder.Services.AddScoped<ISchemaFixSqlProvider, SchemaFixSqlProvider>();
 builder.Services.AddScoped<ISchemaHealthService, SchemaHealthService>();
 builder.Services.AddScoped<IHomologationHealthService, HomologationHealthService>();
@@ -212,6 +213,7 @@ builder.Services.Configure<StorageLocalOptions>(builder.Configuration.GetSection
 // =======================================================
 // OCR / Preview pipeline
 // =======================================================
+builder.Services.AddScoped<IOcrEnvironmentValidator, OcrEnvironmentValidator>();
 builder.Services.AddScoped<IOcrService, OcrMyPdfOcrService>();
 builder.Services.AddScoped<IPdfTextExtractor, PopplerPdfTextExtractor>();
 

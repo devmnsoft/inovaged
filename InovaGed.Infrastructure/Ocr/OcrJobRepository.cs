@@ -251,12 +251,18 @@ WHERE id = @jobId;";
 
     public async Task MarkErrorAsync(long jobId, string errorMessage, CancellationToken ct)
     {
+        await MarkErrorAsync(jobId, errorMessage, null, ct);
+    }
+
+    public async Task MarkErrorAsync(long jobId, string errorMessage, string? errorDetailsJson, CancellationToken ct)
+    {
         const string sql = @"
 UPDATE ged.ocr_job
 SET status = 'ERROR'::ged.ocr_status_enum,
     finished_at = now(),
     lease_expires_at = null,
-    error_message = @error
+    error_message = @error,
+    error_details_json = CASE WHEN @details IS NULL THEN error_details_json ELSE CAST(@details AS jsonb) END
 WHERE id = @jobId;";
 
         await using var conn = await _db.OpenAsync(ct);
@@ -264,7 +270,7 @@ WHERE id = @jobId;";
         await conn.ExecuteAsync(
             new CommandDefinition(
                 sql,
-                new { jobId, error = errorMessage },
+                new { jobId, error = errorMessage, details = errorDetailsJson },
                 cancellationToken: ct));
     }
 
