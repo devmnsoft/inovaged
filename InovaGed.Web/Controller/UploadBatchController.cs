@@ -99,7 +99,7 @@ public sealed class UploadBatchController : Controller
     [ValidateAntiForgeryToken]
     [DisableRequestSizeLimit]
     [RequestFormLimits(MultipartBodyLengthLimit = long.MaxValue, ValueLengthLimit = int.MaxValue, MultipartHeadersLengthLimit = int.MaxValue)]
-    public async Task<IActionResult> File(IFormFile file, Guid batchId, int fileIndex, int totalFiles, Guid? folderId, Guid? uploadFolderId, Guid? requestedFolderId, string? duplicateStrategy, bool runOcr, bool generatePreview, Guid? documentTypeId, Guid? classificationId, string? notes, string? visibility, Guid? existingDocumentId, string? uploadName, bool markAsIncomplete, string? incompleteReason, string? uploadClientId, CancellationToken ct)
+    public async Task<IActionResult> File(IFormFile file, Guid batchId, int fileIndex, int totalFiles, Guid? folderId, Guid? uploadFolderId, Guid? requestedFolderId, string? duplicateStrategy, bool runOcr, bool generatePreview, Guid? documentTypeId, Guid? classificationId, string? notes, string? visibility, Guid? existingDocumentId, string? uploadName, bool markAsIncomplete, string? incompleteReason, string? uploadClientId, string? contentHash, CancellationToken ct)
     {
         var correlationId = HttpContext.TraceIdentifier;
         try
@@ -128,6 +128,7 @@ public sealed class UploadBatchController : Controller
                 MarkAsIncomplete = markAsIncomplete,
                 IncompleteReason = incompleteReason,
                 UploadClientId = uploadClientId,
+                ContentHash = contentHash,
                 ExistingDocumentId = existingDocumentId,
                 UserName = User.Identity?.Name,
                 IsAdmin = isAdmin,
@@ -167,7 +168,15 @@ public sealed class UploadBatchController : Controller
         catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)
         {
             _logger.LogWarning("Upload cancelado pelo cliente. Tenant={TenantId} User={UserId} Batch={BatchId} File={FileName} CorrelationId={CorrelationId}", _currentUser.TenantId, _currentUser.UserId, batchId, file?.FileName, correlationId);
-            return StatusCode(499, Error("Upload interrompido. Clique em tentar novamente.", "Network", true, correlationId, "CLIENT_ABORT"));
+            return StatusCode(499, new
+            {
+                success = false,
+                code = "CLIENT_ABORT",
+                message = "Upload interrompido antes da conclusão. Você pode tentar novamente.",
+                errorStep = "Rede",
+                canRetry = true,
+                correlationId
+            });
         }
     }
 

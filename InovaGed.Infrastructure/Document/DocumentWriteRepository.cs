@@ -23,14 +23,14 @@ public sealed class DocumentWriteRepository : IDocumentWriteRepository
             id, tenant_id, code, title, description,
             folder_id, department_id, type_id, classification_id,
             status, visibility, current_version_id,
-            created_at, created_by
+            created_at, created_by, is_document_incomplete, incomplete_reason, incomplete_source
         ) VALUES (
             @Id, @TenantId, @Code, @Title, @Description,
             @FolderId, @DepartmentId, @TypeId, @ClassificationId,
             @Status::ged.document_status_enum,
             @Visibility::ged.document_visibility_enum,
             @CurrentVersionId,
-            NOW(), @CreatedBy
+            NOW(), @CreatedBy, @IsDocumentIncomplete, @IncompleteReason, @IncompleteSource
         );";
 
 
@@ -78,7 +78,7 @@ INSERT INTO ged.document_version (
     content_type,
     created_at, created_by, uploaded_at_utc, is_partial_document, is_document_incomplete,
     partial_group_id, partial_part_number, partial_total_parts, partial_status,
-    part_number, total_parts, consolidated_version_id
+    part_number, total_parts, consolidated_version_id, incomplete_reason, incomplete_source
 ) VALUES (
     @Id, @TenantId, @DocumentId, @VersionNumber,
     @FileName, @FileExtension, @FileSizeBytes,
@@ -86,7 +86,7 @@ INSERT INTO ged.document_version (
     @ContentType,
     @UploadedAtUtc, @CreatedBy, @UploadedAtUtc, @IsPartialDocument, @IsDocumentIncomplete,
     @PartialGroupId, @PartialPartNumber, @PartialTotalParts, @PartialStatus,
-    @PartNumber, @TotalParts, @ConsolidatedVersionId
+    @PartNumber, @TotalParts, @ConsolidatedVersionId, @IncompleteReason, @IncompleteSource
 );";
 
         try

@@ -38,6 +38,7 @@ public sealed class UploadBatchFileRequestDto
     public bool MarkAsIncomplete { get; set; }
     public string? IncompleteReason { get; set; }
     public string? UploadClientId { get; set; }
+    public string? ContentHash { get; set; }
     public Guid? ExistingDocumentId { get; set; }
     public DocumentBulkUploadMetadata Metadata { get; set; } = new();
     public string? UserName { get; set; }

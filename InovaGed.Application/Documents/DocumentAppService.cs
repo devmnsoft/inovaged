@@ -128,7 +128,10 @@ public sealed class DocumentAppService
                         Visibility = visibility,
                         CurrentVersionId = versionId,
                         CreatedBy = userId,
-                        IsConfidential = isConfidential
+                        IsConfidential = isConfidential,
+                        IsDocumentIncomplete = cmd.IsDocumentIncomplete,
+                        IncompleteReason = cmd.IncompleteReason,
+                        IncompleteSource = cmd.IncompleteSource
                     }, tx, ct);
 
                     break;
@@ -178,7 +181,9 @@ public sealed class DocumentAppService
                 IsDocumentIncomplete = cmd.IsDocumentIncomplete,
                 PartNumber = cmd.PartNumber,
                 TotalParts = cmd.TotalParts,
-                ConsolidatedVersionId = cmd.ConsolidatedVersionId
+                ConsolidatedVersionId = cmd.ConsolidatedVersionId,
+                IncompleteReason = cmd.IncompleteReason,
+                IncompleteSource = cmd.IncompleteSource
             }, tx, ct);
 
             // 4) current_version_id
