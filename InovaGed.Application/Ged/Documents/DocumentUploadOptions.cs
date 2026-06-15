@@ -10,6 +10,7 @@ public sealed class DocumentUploadOptions
     public int MaxConcurrentUploadsGlobal { get; set; } = 8;
     public int MaxConcurrentUploadsPerUser { get; set; } = 2;
     public int MaxConcurrentUploadsPerBatch { get; set; } = 2;
+    public int MaxConcurrentUploadsPerTenant { get; set; } = 10;
     public int UploadTimeoutSeconds { get; set; } = 1800;
     public bool AllowLegacyUploadFallback { get; set; } = false;
     public string[] AllowedExtensions { get; set; } = [".pdf", ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt"];

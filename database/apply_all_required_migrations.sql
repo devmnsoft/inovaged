@@ -1262,3 +1262,9 @@ END $$;
 
 \echo Applying 2026_06_ged_search_intelligence.sql
 \i database/migrations/2026_06_ged_search_intelligence.sql
+
+\echo Applying 2026_06_upload_batch_incomplete_options.sql
+\i database/migrations/2026_06_upload_batch_incomplete_options.sql
+
+\echo Applying 2026_06_upload_batch_resilience.sql
+\i database/migrations/2026_06_upload_batch_resilience.sql

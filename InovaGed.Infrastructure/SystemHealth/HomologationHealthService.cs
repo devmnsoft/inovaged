@@ -256,7 +256,7 @@ where d.tenant_id = @tenantId
     private async Task AddPartialDocumentChecksAsync(HomologationReportDto report, CancellationToken ct)
     {
         var table = await TablesExistAsync(["ged.document_partial_part"], ct);
-        var columns = await ColumnsExistAsync("ged", "document_version", ["is_partial_document", "partial_group_id", "partial_part_number", "partial_total_parts", "partial_status", "consolidated_version_id"], ct);
+        var columns = await ColumnsExistAsync("ged", "document_version", ["is_partial_document", "is_document_incomplete", "incomplete_reason", "incomplete_source", "partial_group_id", "partial_part_number", "partial_total_parts", "partial_status", "consolidated_version_id"], ct);
         Add(report, "Documentos incompletos", "Estrutura de colunas", "Verifica colunas de documento parcial em ged.document_version.", columns ? Ok : Failed, "Critical", columns ? "Colunas de documento parcial existem." : "Uma ou mais colunas de documento parcial estão ausentes.", "Aplicar migration de documentos fracionados.", "/SystemHealth/Schema");
         Add(report, "Documentos incompletos", "Tabela document_partial_part", "Verifica tabela de partes.", table ? Ok : Failed, "Critical", table ? "ged.document_partial_part existe." : "Tabela ged.document_partial_part ausente.", "Aplicar migration de documentos fracionados.", "/SystemHealth/Schema");
         var count = await ScalarSafeAsync<long>("Documentos incompletos / Contador", "select count(*) from ged.document_version where tenant_id = @tenantId and (coalesce(is_partial_document,false) or upper(coalesce(partial_status::text,'')) in ('INCOMPLETE','PENDING'))", new { tenantId = _currentUser.TenantId }, ct);

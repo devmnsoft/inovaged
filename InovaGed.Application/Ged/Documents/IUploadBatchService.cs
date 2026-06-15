@@ -8,6 +8,8 @@ public sealed class UploadBatchOptionsDto
     public bool RunOcr { get; set; }
     public bool GeneratePreview { get; set; }
     public string? DuplicateStrategy { get; set; }
+    public bool MarkAsIncomplete { get; set; }
+    public string? IncompleteReason { get; set; }
 }
 
 public sealed class StartUploadBatchRequestDto
@@ -33,6 +35,9 @@ public sealed class UploadBatchFileRequestDto
     public bool RunOcr { get; set; }
     public bool GeneratePreview { get; set; }
     public string? UploadName { get; set; }
+    public bool MarkAsIncomplete { get; set; }
+    public string? IncompleteReason { get; set; }
+    public string? UploadClientId { get; set; }
     public Guid? ExistingDocumentId { get; set; }
     public DocumentBulkUploadMetadata Metadata { get; set; } = new();
     public string? UserName { get; set; }

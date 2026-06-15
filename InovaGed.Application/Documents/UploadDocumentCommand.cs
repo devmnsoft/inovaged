@@ -25,6 +25,7 @@ public sealed class UploadDocumentCommand
     public DateTime UploadedAtUtc { get; init; } = DateTime.UtcNow;
     public bool IsPartialDocument { get; init; }
     public bool IsDocumentIncomplete { get; init; }
+    public string? IncompleteReason { get; init; }
     public int? PartNumber { get; init; }
     public int? TotalParts { get; init; }
     public Guid? PartialGroupId { get; init; }

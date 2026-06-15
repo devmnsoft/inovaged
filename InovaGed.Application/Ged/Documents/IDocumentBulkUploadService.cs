@@ -19,6 +19,8 @@ public sealed class DocumentBulkUploadMetadata
     public int? PartNumber { get; set; }
     public int? TotalParts { get; set; }
     public Guid? ConsolidateIntoDocumentId { get; set; }
+    public bool MarkAsIncomplete { get; set; }
+    public string? IncompleteReason { get; set; }
 }
 
 public sealed class DocumentBulkUploadResultDto

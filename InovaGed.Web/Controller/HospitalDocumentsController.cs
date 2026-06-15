@@ -135,7 +135,18 @@ LIMIT @pageSize OFFSET @offset;
             _logger.LogInformation("Hospital document search executed. TenantId={TenantId} UserId={UserId} Query={Query} Type={Type} OcrStatus={OcrStatus} Filters={Filters} TotalResults={TotalResults} ElapsedMs={ElapsedMs} CorrelationId={CorrelationId}", tenantId, userId, query, normalizedType, normalizedOcrStatus, new { dateFrom, dateTo, folder, ocrRequired, recentOnly, previewOnly, sort = normalizedSort }, total, elapsedMs, correlationId);
             await _audit.WriteAsync(tenantId, userId, "VIEW", "HOSPITAL_DOCUMENT_SEARCH", null, "Busca hospitalar executada", HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers.UserAgent.ToString(), new { EventType = "INFO", tenantId, userId, query, type = normalizedType, filters = new { ocrStatus = normalizedOcrStatus, dateFrom, dateTo, folder, ocrRequired, recentOnly, previewOnly, sort = normalizedSort }, totalResults = total, elapsedMs, correlationId }, ct);
             return Json(result);
-        } catch (Exception ex) { var errorCorrelationId = HttpContext.TraceIdentifier; _logger.LogError(ex, "Erro na busca hospitalar. CorrelationId={CorrelationId}", errorCorrelationId); return StatusCode(500, new { success = false, message = "Não foi possível executar a busca agora.", correlationId = errorCorrelationId }); }
+        }
+        catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)
+        {
+            _logger.LogInformation("Busca hospitalar cancelada pelo cliente. Tenant={TenantId} User={UserId} CorrelationId={CorrelationId}", tenantId, userId, correlationId);
+            return StatusCode(499, new { success = false, code = "CLIENT_ABORT", message = "Busca cancelada pelo cliente.", correlationId });
+        }
+        catch (OperationCanceledException ex)
+        {
+            _logger.LogWarning(ex, "Timeout/cancelamento interno na busca hospitalar. Tenant={TenantId} User={UserId} CorrelationId={CorrelationId}", tenantId, userId, correlationId);
+            return StatusCode(504, new { success = false, code = "SEARCH_TIMEOUT", message = "A busca demorou mais que o esperado. Refine os filtros e tente novamente.", correlationId });
+        }
+        catch (Exception ex) { var errorCorrelationId = HttpContext.TraceIdentifier; _logger.LogError(ex, "Erro na busca hospitalar. CorrelationId={CorrelationId}", errorCorrelationId); return StatusCode(500, new { success = false, message = "Não foi possível executar a busca agora.", correlationId = errorCorrelationId }); }
     }
 
 
