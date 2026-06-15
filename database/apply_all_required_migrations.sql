@@ -206,6 +206,8 @@ ALTER TABLE ged.upload_batch_item ADD COLUMN IF NOT EXISTS batch_id uuid NULL;
 ALTER TABLE ged.upload_batch_item ADD COLUMN IF NOT EXISTS tenant_id uuid NULL;
 ALTER TABLE ged.upload_batch_item ADD COLUMN IF NOT EXISTS status text NULL DEFAULT 'PENDING';
 ALTER TABLE ged.upload_batch_item ADD COLUMN IF NOT EXISTS created_at timestamptz NULL DEFAULT now();
+ALTER TABLE ged.upload_batch_item ADD COLUMN IF NOT EXISTS size_bytes bigint NULL;
+ALTER TABLE ged.upload_batch_item ADD COLUMN IF NOT EXISTS content_hash text NULL;
 
 -- Upload chunked: sessões e partes de arquivos grandes.
 CREATE TABLE IF NOT EXISTS ged.upload_session (
@@ -684,9 +686,15 @@ BEGIN
     END IF;
 
     IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='ged' AND table_name='ocr_job' AND column_name='tenant_id')
-       AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='ged' AND table_name='ocr_job' AND column_name='document_version_id')
-       AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='ged' AND table_name='ocr_job' AND column_name='status') THEN
-        EXECUTE 'CREATE INDEX IF NOT EXISTS ix_ocr_job_tenant_version_status ON ged.ocr_job(tenant_id, document_version_id, status)';
+       AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='ged' AND table_name='ocr_job' AND column_name='status')
+       AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='ged' AND table_name='ocr_job' AND column_name='requested_at') THEN
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='ged' AND table_name='ocr_job' AND column_name='document_version_id') THEN
+            EXECUTE 'CREATE INDEX IF NOT EXISTS ix_ocr_job_tenant_version_status ON ged.ocr_job (tenant_id, document_version_id, status, requested_at DESC)';
+        ELSIF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='ged' AND table_name='ocr_job' AND column_name='version_id') THEN
+            EXECUTE 'CREATE INDEX IF NOT EXISTS ix_ocr_job_tenant_version_status ON ged.ocr_job (tenant_id, /* legacy compatibility */ version_id, status, requested_at DESC)';
+        ELSE
+            RAISE NOTICE 'Índice ix_ocr_job_tenant_version_status não criado: ged.ocr_job não possui document_version_id nem version_id.';
+        END IF;
     END IF;
 
     IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='ged' AND table_name='document' AND column_name='tenant_id')
@@ -1118,8 +1126,23 @@ END $$;
 -- InovaGED - Busca Inteligente Conversacional (idempotente)
 CREATE SCHEMA IF NOT EXISTS ged;
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
-CREATE EXTENSION IF NOT EXISTS unaccent;
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
+DO $$
+BEGIN
+    CREATE EXTENSION IF NOT EXISTS unaccent;
+EXCEPTION WHEN insufficient_privilege THEN
+    RAISE NOTICE 'Sem permissão para criar extensão unaccent. Continuando sem ela.';
+WHEN others THEN
+    RAISE NOTICE 'Não foi possível criar extensão unaccent: %', SQLERRM;
+END $$;
+
+DO $$
+BEGIN
+    CREATE EXTENSION IF NOT EXISTS pg_trgm;
+EXCEPTION WHEN insufficient_privilege THEN
+    RAISE NOTICE 'Sem permissão para criar extensão pg_trgm. Continuando sem ela.';
+WHEN others THEN
+    RAISE NOTICE 'Não foi possível criar extensão pg_trgm: %', SQLERRM;
+END $$;
 
 CREATE TABLE IF NOT EXISTS ged.search_synonym (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -1222,7 +1245,14 @@ ALTER TABLE ged.document_access_stat ADD COLUMN IF NOT EXISTS created_at timesta
 CREATE INDEX IF NOT EXISTS ix_search_synonym_tenant_term ON ged.search_synonym(tenant_id, lower(term));
 CREATE INDEX IF NOT EXISTS ix_search_synonym_tenant_synonym ON ged.search_synonym(tenant_id, lower(synonym));
 CREATE INDEX IF NOT EXISTS ix_document_search_index_vector ON ged.document_search_index USING GIN(search_vector);
-CREATE INDEX IF NOT EXISTS ix_document_search_index_text_trgm ON ged.document_search_index USING GIN(search_text gin_trgm_ops);
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm') THEN
+        EXECUTE 'CREATE INDEX IF NOT EXISTS ix_document_search_index_text_trgm ON ged.document_search_index USING GIN(search_text gin_trgm_ops)';
+    ELSE
+        RAISE NOTICE 'Índice trigram não criado: extensão pg_trgm ausente.';
+    END IF;
+END $$;
 CREATE INDEX IF NOT EXISTS ix_document_search_index_tenant ON ged.document_search_index(tenant_id);
 CREATE INDEX IF NOT EXISTS ix_document_search_index_document ON ged.document_search_index(document_id);
 CREATE INDEX IF NOT EXISTS ix_document_search_index_age ON ged.document_search_index(tenant_id, extracted_age);
@@ -1257,17 +1287,436 @@ BEGIN
     END LOOP;
 END $$;
 
-\echo Applying 2026_06_ged_processing_pipeline.sql
-\i database/migrations/2026_06_ged_processing_pipeline.sql
+-- Applying 2026_06_ged_processing_pipeline.sql
+CREATE SCHEMA IF NOT EXISTS ged;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
-\echo Applying 2026_06_ged_search_intelligence.sql
-\i database/migrations/2026_06_ged_search_intelligence.sql
+CREATE TABLE IF NOT EXISTS ged.processing_job (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id uuid NOT NULL,
+    document_id uuid NULL,
+    document_version_id uuid NULL,
+    upload_batch_id uuid NULL,
+    upload_batch_item_id uuid NULL,
+    job_type text NOT NULL,
+    status text NOT NULL DEFAULT 'PENDING',
+    priority int NOT NULL DEFAULT 5,
+    attempt_count int NOT NULL DEFAULT 0,
+    max_attempts int NOT NULL DEFAULT 3,
+    error_message text NULL,
+    started_at timestamptz NULL,
+    finished_at timestamptz NULL,
+    next_attempt_at timestamptz NULL,
+    locked_by text NULL,
+    locked_at timestamptz NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NULL,
+    reg_status char(1) NOT NULL DEFAULT 'A',
+    CONSTRAINT ck_processing_job_type CHECK (job_type IN ('PREVIEW','OCR','SMART_INDEX','QUALITY','CLASSIFICATION')),
+    CONSTRAINT ck_processing_job_status CHECK (status IN ('PENDING','PROCESSING','COMPLETED','FAILED','CANCELLED'))
+);
 
-\echo Applying 2026_06_upload_batch_incomplete_options.sql
-\i database/migrations/2026_06_upload_batch_incomplete_options.sql
+ALTER TABLE ged.processing_job ADD COLUMN IF NOT EXISTS payload jsonb NOT NULL DEFAULT '{}'::jsonb;
 
-\echo Applying 2026_06_upload_batch_resilience.sql
-\i database/migrations/2026_06_upload_batch_resilience.sql
+CREATE INDEX IF NOT EXISTS ix_processing_job_tenant_status_type
+ON ged.processing_job (tenant_id, status, job_type);
 
-\echo Applying 2026_06_upload_batch_incomplete_and_resilience.sql
-\i database/migrations/2026_06_upload_batch_incomplete_and_resilience.sql
+CREATE INDEX IF NOT EXISTS ix_processing_job_tenant_version_type
+ON ged.processing_job (tenant_id, document_version_id, job_type);
+
+CREATE INDEX IF NOT EXISTS ix_processing_job_tenant_upload_batch
+ON ged.processing_job (tenant_id, upload_batch_id);
+
+CREATE INDEX IF NOT EXISTS ix_processing_job_status_next_attempt
+ON ged.processing_job (status, next_attempt_at);
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_processing_job_active_dedup_idx
+ON ged.processing_job (tenant_id, (COALESCE(document_version_id, '00000000-0000-0000-0000-000000000000'::uuid)), (COALESCE(upload_batch_item_id, '00000000-0000-0000-0000-000000000000'::uuid)), job_type)
+WHERE status IN ('PENDING','PROCESSING') AND reg_status='A';
+
+CREATE TABLE IF NOT EXISTS ged.preview_result (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id uuid NOT NULL,
+    document_id uuid NULL,
+    document_version_id uuid NOT NULL,
+    status text NOT NULL DEFAULT 'PENDING',
+    preview_path text NULL,
+    thumbnail_path text NULL,
+    content_type text NULL,
+    size_bytes bigint NULL,
+    error_message text NULL,
+    generated_at timestamptz NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    reg_status char(1) NOT NULL DEFAULT 'A'
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_preview_result_tenant_version_active
+ON ged.preview_result (tenant_id, document_version_id)
+WHERE reg_status='A';
+
+CREATE INDEX IF NOT EXISTS ix_document_tenant_folder_status_created
+ON ged.document(tenant_id, folder_id, reg_status, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS ix_document_version_tenant_document
+ON ged.document_version(tenant_id, document_id);
+
+CREATE INDEX IF NOT EXISTS ix_document_search_tenant_document
+ON ged.document_search(tenant_id, document_id);
+
+ALTER TABLE IF EXISTS ged.upload_batch_item
+    ADD COLUMN IF NOT EXISTS safe_file_name text NULL,
+    ADD COLUMN IF NOT EXISTS storage_path text NULL,
+    ADD COLUMN IF NOT EXISTS content_hash text NULL,
+    ADD COLUMN IF NOT EXISTS attempt_count int NOT NULL DEFAULT 0;
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_upload_batch_item_file_idempotency
+ON ged.upload_batch_item (tenant_id, batch_id, original_file_name, size_bytes, content_hash)
+WHERE content_hash IS NOT NULL AND reg_status='A';
+
+-- Applying 2026_06_ged_search_intelligence.sql
+-- InovaGED - GED Smart Search Intelligence (idempotent, text-only)
+CREATE SCHEMA IF NOT EXISTS ged;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+DO $$
+BEGIN
+    CREATE EXTENSION IF NOT EXISTS unaccent;
+EXCEPTION WHEN insufficient_privilege THEN
+    RAISE NOTICE 'Sem permissão para criar extensão unaccent. Continuando sem ela.';
+WHEN others THEN
+    RAISE NOTICE 'Não foi possível criar extensão unaccent: %', SQLERRM;
+END $$;
+DO $$
+BEGIN
+    CREATE EXTENSION IF NOT EXISTS pg_trgm;
+EXCEPTION WHEN insufficient_privilege THEN
+    RAISE NOTICE 'Sem permissão para criar extensão pg_trgm. Continuando sem ela.';
+WHEN others THEN
+    RAISE NOTICE 'Não foi possível criar extensão pg_trgm: %', SQLERRM;
+END $$;
+
+CREATE TABLE IF NOT EXISTS ged.search_synonym (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id uuid NOT NULL,
+    term text NOT NULL,
+    synonym text NOT NULL,
+    category text NULL,
+    weight numeric NOT NULL DEFAULT 1,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    reg_status char(1) NOT NULL DEFAULT 'A'
+);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_search_synonym_tenant_term_synonym ON ged.search_synonym(tenant_id, lower(term), lower(synonym));
+
+CREATE TABLE IF NOT EXISTS ged.document_search_index (
+    id uuid DEFAULT gen_random_uuid(),
+    tenant_id uuid NOT NULL,
+    document_id uuid NOT NULL,
+    document_version_id uuid NULL,
+    version_id uuid NULL,
+    folder_id uuid NULL,
+    title text NULL,
+    file_name text NULL,
+    document_type text NULL,
+    classification_name text NULL,
+    classification text NULL,
+    folder_name text NULL,
+    patient_name text NULL,
+    medical_record_number text NULL,
+    protocol_number text NULL,
+    extracted_age int NULL,
+    extracted_year int NULL,
+    extracted_terms text[] NULL,
+    ocr_text text NULL,
+    search_text text NOT NULL DEFAULT '',
+    search_vector tsvector NULL,
+    last_indexed_at timestamptz NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NULL,
+    reg_status char(1) NOT NULL DEFAULT 'A',
+    PRIMARY KEY (tenant_id, document_id)
+);
+ALTER TABLE ged.document_search_index ADD COLUMN IF NOT EXISTS id uuid DEFAULT gen_random_uuid();
+ALTER TABLE ged.document_search_index ADD COLUMN IF NOT EXISTS document_version_id uuid NULL;
+ALTER TABLE ged.document_search_index ADD COLUMN IF NOT EXISTS version_id uuid NULL;
+ALTER TABLE ged.document_search_index ADD COLUMN IF NOT EXISTS folder_id uuid NULL;
+ALTER TABLE ged.document_search_index ADD COLUMN IF NOT EXISTS classification_name text NULL;
+ALTER TABLE ged.document_search_index ADD COLUMN IF NOT EXISTS classification text NULL;
+ALTER TABLE ged.document_search_index ADD COLUMN IF NOT EXISTS protocol_number text NULL;
+ALTER TABLE ged.document_search_index ADD COLUMN IF NOT EXISTS last_indexed_at timestamptz NULL;
+ALTER TABLE ged.document_search_index ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now();
+ALTER TABLE ged.document_search_index ADD COLUMN IF NOT EXISTS reg_status char(1) NOT NULL DEFAULT 'A';
+ALTER TABLE ged.document_search_index ALTER COLUMN search_text SET DEFAULT '';
+UPDATE ged.document_search_index SET search_text = '' WHERE search_text IS NULL;
+
+CREATE TABLE IF NOT EXISTS ged.search_query_log (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id uuid NOT NULL,
+    user_id uuid NULL,
+    query_text text NULL,
+    query_hash text NULL,
+    interpreted_json jsonb NULL,
+    results_count int NOT NULL DEFAULT 0,
+    duration_ms int NOT NULL DEFAULT 0,
+    clicked_document_id uuid NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    reg_status char(1) NOT NULL DEFAULT 'A'
+);
+ALTER TABLE ged.search_query_log ADD COLUMN IF NOT EXISTS duration_ms int NOT NULL DEFAULT 0;
+ALTER TABLE ged.search_query_log ADD COLUMN IF NOT EXISTS clicked_document_id uuid NULL;
+ALTER TABLE ged.search_query_log ADD COLUMN IF NOT EXISTS reg_status char(1) NOT NULL DEFAULT 'A';
+
+CREATE TABLE IF NOT EXISTS ged.document_access_stat (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id uuid NOT NULL,
+    user_id uuid NULL,
+    document_id uuid NOT NULL,
+    source text NOT NULL,
+    action text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE ged.document_access_stat ALTER COLUMN source SET DEFAULT 'SMART_SEARCH';
+ALTER TABLE ged.document_access_stat ALTER COLUMN action SET DEFAULT 'ACCESS';
+
+CREATE INDEX IF NOT EXISTS ix_document_search_index_tenant_document ON ged.document_search_index(tenant_id, document_id);
+CREATE INDEX IF NOT EXISTS ix_document_search_index_tenant_folder ON ged.document_search_index(tenant_id, folder_id);
+CREATE INDEX IF NOT EXISTS ix_document_search_index_tenant_year ON ged.document_search_index(tenant_id, extracted_year);
+CREATE INDEX IF NOT EXISTS ix_document_search_index_tenant_age ON ged.document_search_index(tenant_id, extracted_age);
+CREATE INDEX IF NOT EXISTS ix_document_search_index_vector ON ged.document_search_index USING GIN(search_vector);
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm') THEN
+        EXECUTE 'CREATE INDEX IF NOT EXISTS ix_document_search_index_text_trgm ON ged.document_search_index USING GIN(search_text gin_trgm_ops)';
+    ELSE
+        RAISE NOTICE 'Índice trigram não criado: extensão pg_trgm ausente.';
+    END IF;
+END $$;
+CREATE INDEX IF NOT EXISTS ix_search_query_log_tenant_created ON ged.search_query_log(tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS ix_search_query_log_tenant_user ON ged.search_query_log(tenant_id, user_id);
+CREATE INDEX IF NOT EXISTS ix_search_query_log_query_hash ON ged.search_query_log(query_hash);
+CREATE INDEX IF NOT EXISTS ix_document_access_stat_tenant_created ON ged.document_access_stat(tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS ix_document_access_stat_tenant_user ON ged.document_access_stat(tenant_id, user_id);
+CREATE INDEX IF NOT EXISTS ix_document_access_stat_tenant_document ON ged.document_access_stat(tenant_id, document_id);
+
+DO $$
+DECLARE seed_tenant uuid;
+BEGIN
+  FOR seed_tenant IN SELECT DISTINCT tenant_id FROM ged.document WHERE tenant_id IS NOT NULL LOOP
+    INSERT INTO ged.search_synonym(tenant_id, term, synonym, category, weight) VALUES
+    (seed_tenant,'AVC','acidente vascular cerebral','clinical',1),(seed_tenant,'AVC','derrame','clinical',1),
+    (seed_tenant,'diabetes','diabete','clinical',1),(seed_tenant,'diabetes','dm','clinical',1),
+    (seed_tenant,'tomografia','tc','exam',1),(seed_tenant,'tomografia','tomografia computadorizada','exam',1),
+    (seed_tenant,'raio-x','rx','exam',1),(seed_tenant,'raio-x','radiografia','exam',1),
+    (seed_tenant,'câncer','neoplasia','clinical',1),(seed_tenant,'câncer','tumor','clinical',1),
+    (seed_tenant,'renal','rim','clinical',1),(seed_tenant,'renal','rins','clinical',1),(seed_tenant,'renal','nefrologia','clinical',1),
+    (seed_tenant,'cardíaco','coração','clinical',1),(seed_tenant,'cardíaco','cardiologia','clinical',1),
+    (seed_tenant,'ultrassom','ultrassonografia','exam',1),(seed_tenant,'ultrassom','usg','exam',1),
+    (seed_tenant,'laboratório','exame laboratorial','exam',1),(seed_tenant,'laboratório','resultado laboratorial','exam',1)
+    ON CONFLICT DO NOTHING;
+  END LOOP;
+END $$;
+
+DO $$
+BEGIN
+  IF to_regclass('ged.processing_job') IS NOT NULL THEN
+    INSERT INTO ged.processing_job(tenant_id, job_type, status, payload, created_at)
+    SELECT DISTINCT tenant_id, 'SMART_INDEX', 'PENDING', '{}'::jsonb, now()
+    FROM ged.document d
+    WHERE d.tenant_id IS NOT NULL
+    ON CONFLICT DO NOTHING;
+  END IF;
+END $$;
+
+-- Applying 2026_06_upload_batch_incomplete_options.sql
+alter table ged.upload_batch
+add column if not exists options_json jsonb not null default '{}'::jsonb;
+
+alter table ged.upload_batch_item
+add column if not exists mark_as_incomplete boolean not null default false;
+
+alter table ged.upload_batch_item
+add column if not exists incomplete_reason text null;
+
+alter table ged.document
+add column if not exists is_document_incomplete boolean not null default false;
+
+alter table ged.document
+add column if not exists incomplete_reason text null;
+
+alter table ged.document_version
+add column if not exists is_document_incomplete boolean not null default false;
+
+alter table ged.document_version
+add column if not exists incomplete_reason text null;
+
+alter table ged.document
+add column if not exists incomplete_source text null;
+
+alter table ged.document_version
+add column if not exists incomplete_source text null;
+
+-- Applying 2026_06_upload_batch_resilience.sql
+create schema if not exists ged;
+
+alter table ged.upload_batch
+add column if not exists options_json jsonb not null default '{}'::jsonb;
+
+alter table ged.upload_batch
+add column if not exists updated_at timestamptz null;
+
+alter table ged.upload_batch_item
+add column if not exists upload_client_id text null;
+
+alter table ged.upload_batch_item
+add column if not exists content_hash text null;
+
+alter table ged.upload_batch_item
+add column if not exists mark_as_incomplete boolean not null default false;
+
+alter table ged.upload_batch_item
+add column if not exists incomplete_reason text null;
+
+alter table ged.upload_batch_item
+add column if not exists retry_after_at timestamptz null;
+
+alter table ged.upload_batch_item
+add column if not exists updated_at timestamptz null;
+
+alter table ged.document
+add column if not exists is_document_incomplete boolean not null default false;
+
+alter table ged.document
+add column if not exists incomplete_reason text null;
+
+alter table ged.document
+add column if not exists incomplete_source text null;
+
+alter table ged.document_version
+add column if not exists is_document_incomplete boolean not null default false;
+
+alter table ged.document_version
+add column if not exists incomplete_reason text null;
+
+alter table ged.document_version
+add column if not exists incomplete_source text null;
+
+create index if not exists ix_upload_batch_item_tenant_batch_status
+on ged.upload_batch_item(tenant_id, batch_id, status);
+
+create index if not exists ix_upload_batch_item_tenant_hash
+on ged.upload_batch_item(tenant_id, batch_id, content_hash);
+
+create unique index if not exists ux_upload_batch_item_dedup
+on ged.upload_batch_item(tenant_id, batch_id, original_file_name, size_bytes, content_hash)
+where coalesce(reg_status,'A')='A'
+  and content_hash is not null;
+
+create index if not exists ix_document_incomplete
+on ged.document(tenant_id, is_document_incomplete)
+where coalesce(reg_status,'A')='A';
+
+-- Applying 2026_06_upload_batch_incomplete_and_resilience.sql
+create schema if not exists ged;
+
+alter table ged.upload_batch
+add column if not exists options_json jsonb not null default '{}'::jsonb;
+
+alter table ged.upload_batch
+add column if not exists updated_at timestamptz null;
+
+alter table ged.upload_batch_item
+add column if not exists upload_client_id text null;
+
+alter table ged.upload_batch_item
+add column if not exists content_hash text null;
+
+alter table ged.upload_batch_item
+add column if not exists mark_as_incomplete boolean not null default false;
+
+alter table ged.upload_batch_item
+add column if not exists incomplete_reason text null;
+
+alter table ged.upload_batch_item
+add column if not exists retry_after_at timestamptz null;
+
+alter table ged.upload_batch_item
+add column if not exists updated_at timestamptz null;
+
+alter table ged.document
+add column if not exists is_document_incomplete boolean not null default false;
+
+alter table ged.document
+add column if not exists incomplete_reason text null;
+
+alter table ged.document
+add column if not exists incomplete_source text null;
+
+alter table ged.document_version
+add column if not exists is_document_incomplete boolean not null default false;
+
+alter table ged.document_version
+add column if not exists incomplete_reason text null;
+
+alter table ged.document_version
+add column if not exists incomplete_source text null;
+
+create index if not exists ix_upload_batch_item_tenant_batch_status
+on ged.upload_batch_item(tenant_id, batch_id, status);
+
+create index if not exists ix_upload_batch_item_tenant_hash
+on ged.upload_batch_item(tenant_id, batch_id, content_hash);
+
+create unique index if not exists ux_upload_batch_item_dedup
+on ged.upload_batch_item(tenant_id, batch_id, original_file_name, size_bytes, content_hash)
+where coalesce(reg_status,'A')='A'
+  and content_hash is not null;
+
+create index if not exists ix_document_incomplete
+on ged.document(tenant_id, is_document_incomplete)
+where coalesce(reg_status,'A')='A';
+
+-- Views/materialized views condicionais.
+DO $$
+BEGIN
+    IF to_regclass('ged.ocr_job') IS NOT NULL
+       AND to_regclass('ged.mv_dashboard_ocr') IS NULL THEN
+        EXECUTE '
+            CREATE MATERIALIZED VIEW ged.mv_dashboard_ocr AS
+            SELECT tenant_id, status, count(*) AS total
+            FROM ged.ocr_job
+            GROUP BY tenant_id, status
+        ';
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF to_regclass('ged.mv_dashboard_ocr') IS NOT NULL THEN
+        EXECUTE 'CREATE UNIQUE INDEX IF NOT EXISTS ix_mv_dashboard_ocr ON ged.mv_dashboard_ocr (tenant_id, status)';
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF to_regclass('ged.schema_migration_history') IS NOT NULL THEN
+        INSERT INTO ged.schema_migration_history(script_name, notes)
+        VALUES ('database/apply_all_required_migrations.sql', 'Script master SQL puro aplicado com migrations obrigatórias incorporadas')
+        ON CONFLICT (script_name) DO UPDATE
+        SET applied_at = now(), success = true, notes = EXCLUDED.notes;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    RAISE NOTICE 'Schema GED aplicado com sucesso.';
+
+    IF to_regclass('ged.processing_job') IS NULL THEN
+        RAISE NOTICE 'Atenção: ged.processing_job ainda ausente.';
+    END IF;
+
+    IF to_regclass('ged.ocr_job') IS NULL THEN
+        RAISE NOTICE 'Atenção: ged.ocr_job ainda ausente.';
+    END IF;
+
+    IF to_regclass('ged.protocol_request') IS NULL THEN
+        RAISE NOTICE 'Atenção: ged.protocol_request ainda ausente.';
+    END IF;
+END $$;
