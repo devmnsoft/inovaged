@@ -109,7 +109,7 @@ public sealed class GedSmartSearchService : IGedSmartSearchService
         p.Add("Q", normalized, DbType.String);
         p.Add("Limit", limit, DbType.Int32);
 
-        const string sql = @"
+        const string sql = """
 WITH q AS (
     SELECT @TenantId::uuid AS tenant_id, NULLIF(@Q::text, '') AS raw_query, ('%' || NULLIF(@Q::text, '') || '%') AS pattern
 ), indexed AS (
@@ -173,7 +173,8 @@ SELECT document_id AS "DocumentId", version_id AS "VersionId", folder_id AS "Fol
 FROM ranked
 WHERE score > 0 OR raw_query IS NULL
 ORDER BY score DESC, created_at DESC
-LIMIT @Limit::int;";
+LIMIT @Limit::int;
+""";
 
         var rows = await conn.QueryAsync<SmartSearchRow>(new CommandDefinition(sql, p, cancellationToken: ct));
         return rows.AsList();
