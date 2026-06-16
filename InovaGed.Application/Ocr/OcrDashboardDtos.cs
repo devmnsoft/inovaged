@@ -51,6 +51,9 @@ public sealed class OcrQueueItemVm
     public bool HasOcrText { get; set; }
     public bool HasOcrError { get; set; }
     public string? ErrorMessage { get; set; }
+    public string? ErrorDetailsJson { get; set; }
+    public string? FailureCode { get; set; }
+    public bool HasTechnicalDiagnostics { get; set; }
     public DateTimeOffset? RequestedAt { get; set; }
     public DateTimeOffset? StartedAt { get; set; }
     public DateTimeOffset? FinishedAt { get; set; }
@@ -73,6 +76,9 @@ public sealed class OcrJobDetailsVm
     public string StatusText { get; set; } = "Não executado";
     public string? FileName { get; set; }
     public string? ErrorMessage { get; set; }
+    public string? ErrorDetailsJson { get; set; }
+    public string? FailureCode { get; set; }
+    public bool HasTechnicalDiagnostics { get; set; }
     public DateTimeOffset? RequestedAt { get; set; }
     public DateTimeOffset? StartedAt { get; set; }
     public DateTimeOffset? FinishedAt { get; set; }

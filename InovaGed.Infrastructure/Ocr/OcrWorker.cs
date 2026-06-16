@@ -11,6 +11,7 @@ using InovaGed.Infrastructure.Preview;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 
 namespace InovaGed.Infrastructure.Ocr;
 
@@ -421,14 +422,30 @@ public sealed class OcrWorker : BackgroundService
                 _logger.LogInformation("OcrWorker encerrado por solicitação de parada.");
                 break;
             }
+            catch (PostgresException ex) when (ex.SqlState == "42703")
+            {
+                _logger.LogError(ex, "Schema OCR desatualizado. Execute migrations.");
+                await DelayAfterWorkerFailureAsync(stoppingToken);
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Falha inesperada no OCR Worker.");
-                await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
+                await DelayAfterWorkerFailureAsync(stoppingToken);
             }
         }
 
         _logger.LogInformation("OCR Worker finalizado.");
+    }
+
+    private static async Task DelayAfterWorkerFailureAsync(CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(30), ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+        }
     }
 
 
