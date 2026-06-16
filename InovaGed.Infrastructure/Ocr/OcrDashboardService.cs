@@ -234,13 +234,13 @@ limit @limit offset @offset;
             : "join ged.document_version v on v.tenant_id = d.tenant_id and v.id = d.current_version_id";
         var ocrJoin = schema.HasOcrJob ? $"""
 left join lateral (
-    select j.id::text as job_id, j.status::text as status, {schema.OcrRequestedAtExpr("j")} as requested_at, {schema.OcrStartedAtExpr("j")} as started_at, {schema.OcrFinishedAtExpr("j")} as finished_at, {schema.OcrErrorMessageExpr("j")} as error_message
+    select j.id::text as job_id, j.status::text as status, {schema.OcrRequestedAtExpr("j")} as requested_at, {schema.OcrStartedAtExpr("j")} as started_at, {schema.OcrFinishedAtExpr("j")} as finished_at, {schema.OcrErrorMessageExpr("j")} as error_message, {schema.OcrErrorDetailsJsonExpr("j")} as error_details_json, {schema.OcrFailureCodeExpr("j")} as failure_code
     from ged.ocr_job j
     where j.tenant_id = d.tenant_id and j.document_version_id = {v}.id
     order by coalesce({schema.OcrFinishedAtExpr("j")}, {schema.OcrStartedAtExpr("j")}, {schema.OcrRequestedAtExpr("j")}) desc nulls last
     limit 1
 ) oj on true
-""" : "left join (select null::text job_id, null::text status, null::timestamptz requested_at, null::timestamptz started_at, null::timestamptz finished_at, null::text error_message where false) oj on false";
+""" : "left join (select null::text job_id, null::text status, null::timestamptz requested_at, null::timestamptz started_at, null::timestamptz finished_at, null::text error_message, null::text error_details_json, null::text failure_code where false) oj on false";
         var searchJoin = schema.HasDocumentSearch && schema.HasDocumentSearchOcrText && schema.DocumentSearchVersionColumn is not null ? $"""
 left join lateral (
     select ds.ocr_text
@@ -282,6 +282,8 @@ select
     oj.started_at as "StartedAt",
     oj.finished_at as "FinishedAt",
     oj.error_message as "ErrorMessage",
+    oj.error_details_json as "ErrorDetailsJson",
+    oj.failure_code as "FailureCode",
     {isPartialExpr} as "IsPartialDocument",
     {partNumberExpr} as "PartNumber",
     {totalPartsExpr} as "TotalParts",
@@ -343,6 +345,9 @@ where {where}
             HasOcrText = row.HasOcrText,
             HasOcrError = status is "ERROR" or "FAILED" or "FAILURE",
             ErrorMessage = row.ErrorMessage,
+            ErrorDetailsJson = row.ErrorDetailsJson,
+            FailureCode = row.FailureCode,
+            HasTechnicalDiagnostics = !string.IsNullOrWhiteSpace(row.ErrorDetailsJson) || !string.IsNullOrWhiteSpace(row.FailureCode),
             RequestedAt = row.RequestedAt,
             StartedAt = row.StartedAt,
             FinishedAt = row.FinishedAt,
@@ -455,7 +460,9 @@ where table_schema = 'ged'
             HasOcrRequestedAt = HasColumn("ocr_job", "requested_at"),
             HasOcrStartedAt = HasColumn("ocr_job", "started_at"),
             HasOcrFinishedAt = HasColumn("ocr_job", "finished_at"),
-            HasOcrErrorMessage = HasColumn("ocr_job", "error_message")
+            HasOcrErrorMessage = HasColumn("ocr_job", "error_message"),
+            HasOcrErrorDetailsJson = HasColumn("ocr_job", "error_details_json"),
+            HasOcrFailureCode = HasColumn("ocr_job", "failure_code")
         };
     }
 
@@ -486,6 +493,8 @@ where table_schema = 'ged'
         public bool HasOcrStartedAt { get; set; }
         public bool HasOcrFinishedAt { get; set; }
         public bool HasOcrErrorMessage { get; set; }
+        public bool HasOcrErrorDetailsJson { get; set; }
+        public bool HasOcrFailureCode { get; set; }
         public string UploadedAtExpr(string alias) => $"{alias}.{UploadedAtColumn}";
         public string SizeBytesExpr(string alias) => SizeBytesColumn is null ? "null::bigint" : $"{alias}.{SizeBytesColumn}";
         public string CreatedByExpr(string alias) => CreatedByColumn is null ? "null::text" : $"{alias}.{CreatedByColumn}";
@@ -494,6 +503,8 @@ where table_schema = 'ged'
         public string OcrStartedAtExpr(string alias) => HasOcrStartedAt ? $"{alias}.started_at" : "null::timestamptz";
         public string OcrFinishedAtExpr(string alias) => HasOcrFinishedAt ? $"{alias}.finished_at" : "null::timestamptz";
         public string OcrErrorMessageExpr(string alias) => HasOcrErrorMessage ? $"{alias}.error_message" : "null::text";
+        public string OcrErrorDetailsJsonExpr(string alias) => HasOcrErrorDetailsJson ? $"{alias}.error_details_json::text" : "null::text";
+        public string OcrFailureCodeExpr(string alias) => HasOcrFailureCode ? $"{alias}.failure_code" : "null::text";
     }
 
     private sealed class OcrDashboardRow
@@ -509,6 +520,8 @@ where table_schema = 'ged'
         public DateTimeOffset? StartedAt { get; set; }
         public DateTimeOffset? FinishedAt { get; set; }
         public string? ErrorMessage { get; set; }
+        public string? ErrorDetailsJson { get; set; }
+        public string? FailureCode { get; set; }
         public bool IsPartialDocument { get; set; }
         public int? PartNumber { get; set; }
         public int? TotalParts { get; set; }

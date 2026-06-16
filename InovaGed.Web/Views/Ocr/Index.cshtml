@@ -4,6 +4,7 @@
     ViewData["Title"] = "Central de OCR";
     var filter = Model.Filter ?? new InovaGed.Application.Ocr.OcrDashboardFilter();
     var canManageAutoSchedule = AppMenuPolicy.IsFullAdmin(User);
+    var canSeeTechnicalDiagnostics = AppMenuPolicy.IsFullAdmin(User);
 
     string FormatBytes(long? bytes)
     {
@@ -142,9 +143,36 @@
                             </div>
                         </td>
                     </tr>
-                    @if (!string.IsNullOrWhiteSpace(item.ErrorMessage))
+                    @if (item.HasOcrError)
                     {
-                        <tr class="collapse" id="err-@item.VersionId"><td colspan="10"><div class="alert alert-danger mb-0"><strong>Falha OCR:</strong> @item.ErrorMessage</div></td></tr>
+                        var diagnosticMissingMessage = !item.HasTechnicalDiagnostics
+                            ? "O OCR falhou e o banco ainda não possui os campos de diagnóstico técnico. Execute as migrations do OCR."
+                            : null;
+                        <tr class="collapse" id="err-@item.VersionId">
+                            <td colspan="10">
+                                <div class="alert alert-danger mb-0">
+                                    <strong>Falha OCR:</strong> @(string.IsNullOrWhiteSpace(item.ErrorMessage) ? "Falha ao processar OCR." : item.ErrorMessage)
+                                    @if (!string.IsNullOrWhiteSpace(diagnosticMissingMessage))
+                                    {
+                                        <div class="small mt-2">@diagnosticMissingMessage</div>
+                                    }
+                                    @if (canSeeTechnicalDiagnostics && item.HasTechnicalDiagnostics)
+                                    {
+                                        <button class="btn btn-sm btn-outline-dark mt-2" type="button" data-bs-toggle="collapse" data-bs-target="#diag-@item.VersionId">Ver diagnóstico técnico</button>
+                                        <div class="collapse mt-2" id="diag-@item.VersionId">
+                                            @if (!string.IsNullOrWhiteSpace(item.FailureCode))
+                                            {
+                                                <div><strong>Código:</strong> @item.FailureCode</div>
+                                            }
+                                            @if (!string.IsNullOrWhiteSpace(item.ErrorDetailsJson))
+                                            {
+                                                <pre class="bg-light border rounded p-2 small mb-0">@item.ErrorDetailsJson</pre>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            </td>
+                        </tr>
                     }
                 }
             }

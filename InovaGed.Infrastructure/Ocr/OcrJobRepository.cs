@@ -3,6 +3,8 @@ using InovaGed.Application.Common.Database;
 using InovaGed.Application.Ocr;
 using InovaGed.Domain.Ged;
 using Microsoft.Extensions.Logging;
+using Npgsql;
+using System.Text.Json;
 
 namespace InovaGed.Infrastructure.Ocr;
 
@@ -259,10 +261,58 @@ WHERE id = @jobId;";
         const string sql = @"
 UPDATE ged.ocr_job
 SET status = 'ERROR'::ged.ocr_status_enum,
-    finished_at = now(),
-    lease_expires_at = null,
     error_message = @error,
-    error_details_json = CASE WHEN @details IS NULL THEN error_details_json ELSE CAST(@details AS jsonb) END
+    error_details_json = CASE WHEN @details IS NULL THEN error_details_json ELSE CAST(@details AS jsonb) END,
+    failure_code = COALESCE(@failureCode, failure_code),
+    finished_at = now(),
+    updated_at = now(),
+    lease_expires_at = null,
+    locked_by = null,
+    locked_at = null
+WHERE id = @jobId;";
+
+        try
+        {
+            await using var conn = await _db.OpenAsync(ct);
+
+            await conn.ExecuteAsync(
+                new CommandDefinition(
+                    sql,
+                    new
+                    {
+                        jobId,
+                        error = errorMessage,
+                        details = errorDetailsJson,
+                        failureCode = ExtractFailureCode(errorDetailsJson)
+                    },
+                    cancellationToken: ct));
+        }
+        catch (PostgresException ex) when (ex.SqlState == "42703")
+        {
+            if (ex.MessageText.Contains("error_details_json", StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning(ex,
+                    "Coluna ged.ocr_job.error_details_json ausente. Aplicando fallback sem detalhes JSON. JobId={JobId}",
+                    jobId);
+            }
+            else
+            {
+                _logger.LogWarning(ex,
+                    "Schema ged.ocr_job desatualizado. Aplicando fallback legacy para marcar erro OCR. JobId={JobId}",
+                    jobId);
+            }
+
+            await MarkErrorLegacyAsync(jobId, errorMessage, ct);
+        }
+    }
+
+    private async Task MarkErrorLegacyAsync(long jobId, string errorMessage, CancellationToken ct)
+    {
+        const string sql = @"
+UPDATE ged.ocr_job
+SET status = 'ERROR'::ged.ocr_status_enum,
+    error_message = @errorMessage,
+    finished_at = now()
 WHERE id = @jobId;";
 
         await using var conn = await _db.OpenAsync(ct);
@@ -270,8 +320,31 @@ WHERE id = @jobId;";
         await conn.ExecuteAsync(
             new CommandDefinition(
                 sql,
-                new { jobId, error = errorMessage, details = errorDetailsJson },
+                new { jobId, errorMessage },
                 cancellationToken: ct));
+    }
+
+    private static string? ExtractFailureCode(string? errorDetailsJson)
+    {
+        if (string.IsNullOrWhiteSpace(errorDetailsJson)) return null;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(errorDetailsJson);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object) return null;
+
+            foreach (var name in new[] { "code", "Code", "failureCode", "failure_code" })
+            {
+                if (doc.RootElement.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String)
+                    return value.GetString();
+            }
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+
+        return null;
     }
 
     
