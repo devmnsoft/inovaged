@@ -1,0 +1,55 @@
+@model InovaGed.Web.Models.Ged.GedUploadBatchDetailVM
+@{
+    ViewData["Title"] = "Detalhe do upload";
+    var failed = Model.Items.Count(i => i.Status == "ERROR" || i.Status == "RETRYABLE" || i.Status == "ABORTED");
+    var createdIds = string.Join(',', Model.Items.Where(i => i.DocumentId.HasValue).Select(i => i.DocumentId!.Value));
+}
+<div class="container-fluid py-3">
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <div>
+            <h1 class="h4 mb-1">Detalhe do lote</h1>
+            <div class="text-muted small">@Model.Batch.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm") · @Model.Batch.Status · CorrelationId: <code>@Model.Batch.CorrelationId</code></div>
+        </div>
+        <div class="btn-group">
+            <a class="btn btn-outline-secondary" asp-action="Index">Voltar</a>
+            <a class="btn btn-outline-success" asp-action="ExportCsv" asp-route-batchId="@Model.Batch.Id">Baixar CSV</a>
+            @if (failed > 0) { <button class="btn btn-warning js-upload-retry" data-batch-id="@Model.Batch.Id">Reenviar todos com erro (@failed)</button> }
+        </div>
+    </div>
+    <div class="alert @(failed > 0 ? "alert-warning" : "alert-success")">
+        <strong>@Model.Batch.SuccessFiles enviados</strong>, <strong>@failed com erro/abortados</strong>, @Model.Batch.SkippedFiles ignorados. Use a tabela para identificar exatamente os arquivos afetados.
+    </div>
+    <div class="mb-2 d-flex gap-2 flex-wrap">
+        <button class="btn btn-sm btn-outline-warning js-batch-created-incomplete" data-document-ids="@createdIds">Marcar documentos criados como incompletos</button>
+        <button class="btn btn-sm btn-outline-danger js-batch-created-delete" data-document-ids="@createdIds">Excluir documentos criados neste lote</button>
+        <button class="btn btn-sm btn-outline-secondary js-upload-cancel" data-batch-id="@Model.Batch.Id">Fechar lote</button>
+    </div>
+    <div class="card shadow-sm"><div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+            <thead class="table-light"><tr><th>Arquivo</th><th>Tamanho</th><th>Status</th><th>Documento</th><th>Versão</th><th>Erro</th><th>Etapa</th><th>Duração</th><th>Pode tentar?</th><th>Ações</th></tr></thead>
+            <tbody>
+            @foreach (var i in Model.Items)
+            {
+                <tr class="@(i.Status == "ERROR" || i.Status == "ABORTED" ? "table-warning" : "")">
+                    <td>@i.OriginalFileName</td><td>@(i.SizeBytes.HasValue ? $"{i.SizeBytes.Value:n0}" : "-")</td><td><span class="badge bg-secondary">@i.Status</span></td>
+                    <td>@if (i.DocumentId.HasValue) { <a asp-controller="Ged" asp-action="Details" asp-route-id="@i.DocumentId">Abrir</a> } else { <span>-</span> }</td>
+                    <td><code>@i.VersionId</code></td><td class="text-danger">@(i.ErrorMessage ?? i.ProcessingWarning ?? "-")</td><td>@(i.ErrorStep ?? "-")</td><td>@(i.ElapsedMs.HasValue ? $"{i.ElapsedMs.Value}ms" : "-")</td><td>@(i.CanRetry ? "Sim" : "Não")</td>
+                    <td><button class="btn btn-sm btn-outline-secondary js-copy-error" data-error="@(i.ErrorMessage ?? i.ProcessingWarning)" data-correlation="@i.CorrelationId">Copiar erro</button></td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div></div>
+</div>
+<form id="uploadDetailTokenForm">@Html.AntiForgeryToken()</form>
+@section Scripts { <script src="~/js/ged-bulk-actions.js" asp-append-version="true"></script><script>
+const token = () => document.querySelector('#uploadDetailTokenForm input[name="__RequestVerificationToken"]')?.value;
+document.addEventListener('click', async e => {
+ const retry = e.target.closest('.js-upload-retry');
+ if (retry) { const r = await fetch(`/Ged/Uploads/${retry.dataset.batchId}/RetryFailed`, { method:'POST', headers: token() ? { RequestVerificationToken: token() } : {} }); const j = await r.json().catch(()=>({})); window.showAppToast?.(j.message || 'Retentativa solicitada.', j.success?'success':'danger','Uploads'); if(j.success) location.reload(); }
+ const cancel = e.target.closest('.js-upload-cancel');
+ if (cancel && confirm('Fechar/cancelar este lote?')) { const r = await fetch(`/Ged/Uploads/${cancel.dataset.batchId}/Cancel`, { method:'POST', headers: token() ? { RequestVerificationToken: token() } : {} }); const j = await r.json().catch(()=>({})); window.showAppToast?.(j.message || 'Lote atualizado.', j.success?'success':'danger','Uploads'); if(j.success) location.reload(); }
+ const copy = e.target.closest('.js-copy-error');
+ if (copy) navigator.clipboard?.writeText(`Erro: ${copy.dataset.error || ''}\nCorrelationId: ${copy.dataset.correlation || ''}`);
+});
+</script> }

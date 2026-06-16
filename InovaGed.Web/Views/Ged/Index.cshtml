@@ -51,6 +51,14 @@
                 <i class="bi bi-info-circle me-1"></i>Destino selecionado: @uploadFolderLabel. O sistema validará o destino ao iniciar o upload.
             </div>
         }
+
+        <div id="gedUploadProblemBanner" class="alert alert-warning alert-dismissible fade show d-none" role="alert">
+            <i class="bi bi-exclamation-triangle me-1"></i>
+            <span data-upload-problem-message>Seu último upload teve falhas.</span>
+            <a class="alert-link ms-2" data-upload-problem-link href="/Ged/Uploads">Ver detalhes</a>
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Fechar"></button>
+        </div>
+
         @if (TempData["Success"] is string okMsg && !string.IsNullOrWhiteSpace(okMsg))
         {
             <div class="alert alert-success alert-dismissible fade show" role="alert">
@@ -842,7 +850,7 @@
         <div id="bulkDuplicateDecision" class="alert alert-warning d-none"><strong>Arquivos com o mesmo nome já existem.</strong><div class="small mb-2">Escolha como deseja continuar.</div><ul id="bulkDuplicateList" class="mb-2"></ul><div class="btn-group btn-group-sm"><button type="button" class="btn btn-outline-danger" id="btnDupOverwrite">Sobrescrever todos</button><button type="button" class="btn btn-outline-primary" id="btnDupRename">Renomear todos</button><button type="button" class="btn btn-outline-secondary" id="btnDupSkip">Ignorar duplicados</button><button type="button" class="btn btn-outline-dark" id="btnDupCancel">Cancelar envio</button></div></div><div class="d-flex justify-content-between align-items-center mb-2"><strong>Arquivos selecionados</strong><button class="btn btn-sm btn-outline-secondary" id="btnBulkClear">Limpar lista</button></div><div id="bulkSummary" class="small text-muted mb-2"></div>
         <div class="table-responsive"><table class="table table-sm"><thead><tr><th>Arquivo</th><th>Tamanho</th><th>Status</th><th>Progresso</th><th></th></tr></thead><tbody id="bulkFileList"></tbody></table></div>
       </div>
-      <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button><button type="button" class="btn btn-outline-info d-none" id="btnBulkRefreshFolder" onclick="window.location.reload();">Atualizar pasta</button><button type="button" class="btn btn-outline-primary d-none" id="btnStartNewBulkBatch">Novo lote</button><button type="button" class="btn btn-outline-warning d-none" id="btnBulkRetryFailed">Tentar novamente falhos</button><button type="button" class="btn btn-outline-secondary d-none" id="btnClearSuccessfulUploads">Limpar enviados</button><button type="button" class="btn btn-primary" id="btnBulkUploadSubmit" @(Model.CurrentFolderId == null ? "disabled" : "")>Enviar documentos</button></div>
+      <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button><button type="button" class="btn btn-outline-info d-none" id="btnBulkRefreshFolder" onclick="window.location.reload();">Atualizar pasta</button><button type="button" class="btn btn-outline-primary d-none" id="btnStartNewBulkBatch">Novo lote</button><a class="btn btn-outline-dark d-none" id="btnBulkViewLog" href="/Ged/Uploads">Ver log do lote</a><button type="button" class="btn btn-outline-warning d-none" id="btnBulkRetryFailed">Tentar novamente falhos</button><button type="button" class="btn btn-outline-secondary d-none" id="btnClearSuccessfulUploads">Limpar enviados</button><button type="button" class="btn btn-primary" id="btnBulkUploadSubmit" @(Model.CurrentFolderId == null ? "disabled" : "")>Enviar documentos</button></div>
     </div>
   </div>
 </div>
@@ -1080,9 +1088,25 @@
     .ged-how-partial-list span { color:#475569; }
 </style>
 
+<div class="modal fade" id="gedBulkReasonModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title" data-bulk-modal-title>Marcar documentos como incompletos</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button></div>
+      <div class="modal-body">
+        <p class="text-muted" data-bulk-modal-text>Use esta opção quando os documentos enviados ainda precisam de complementação, revisão ou nova parte.</p>
+        <label class="form-label" for="gedBulkReason">Motivo</label>
+        <textarea id="gedBulkReason" class="form-control" rows="3" maxlength="500"></textarea>
+        <div class="alert alert-info small mt-3 d-none" data-bulk-result></div>
+      </div>
+      <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button><button type="button" class="btn btn-primary" data-bulk-confirm>Confirmar</button></div>
+    </div>
+  </div>
+</div>
+
 @section Scripts {
     <script src="~/js/ged-folder-navigation.js" asp-append-version="true"></script>
     <script src="~/js/ged-documents-list.js" asp-append-version="true"></script>
+    <script src="~/js/ged-bulk-actions.js" asp-append-version="true"></script>
     <script src="~/js/ged-document-side-panel.js" asp-append-version="true"></script>
     <script src="~/js/ged-bulk-upload.js" asp-append-version="true"></script>
     <script src="~/js/ged-document-move.js" asp-append-version="true"></script>

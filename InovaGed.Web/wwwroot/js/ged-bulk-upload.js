@@ -749,12 +749,15 @@
             console.log('[BulkUpload] upload finished', { batchId: state.batchId, success, error, finished });
 
             if (success > 0 && error === 0) {
+                showBulkUploadMessage(`Upload concluído: ${success} documento(s) enviado(s). Você pode fechar esta janela ou iniciar novo lote.`, 'success');
                 showAppToast(`${success} documento(s) enviado(s) com sucesso.`, 'success', 'Upload concluído');
-                setTimeout(async () => { const navigation = getUploadNavigationTarget(finished); closeBulkUploadModal(); resetBulkUploadState(); await navigateToUploadedFolder(navigation.folderId, navigation.folderName, navigation.createdDocuments); }, 900);
+                showRefreshAfterUploadButton(true);
+                await onBatchFinished(finished);
                 return;
             }
             if (success > 0 && error > 0) {
-                showBulkUploadMessage(`${success} enviado(s), ${error} falharam. Use Reenviar falhos para continuar sem duplicar concluídos.`, 'warning');
+                try { localStorage.setItem('ged:lastUploadBatchHadFailures', 'true'); } catch (_) { }
+                showBulkUploadMessage(`Upload concluído com falhas: ${success} enviados, ${error} falharam. O modal permanecerá aberto para conferência.`, 'warning');
                 showAppToast('Alguns documentos não foram enviados.', 'warning', 'Upload parcial');
                 showRefreshAfterUploadButton(true);
                 await onBatchFinished(finished);
@@ -762,6 +765,7 @@
             }
             if (success === 0 && error > 0) {
                 showBulkUploadMessage('Nenhum documento foi enviado. Verifique os erros por arquivo.', 'danger');
+                try { localStorage.setItem('ged:lastUploadBatchHadFailures', 'true'); } catch (_) { }
                 showAppToast('Nenhum documento foi enviado.', 'error', 'Erro no upload');
             }
         } catch (err) {
@@ -801,6 +805,7 @@
             throw new Error(j.message || 'Não foi possível iniciar o lote.');
         }
         state.batchId = j.batchId;
+        try { localStorage.setItem('ged:lastUploadBatchId', j.batchId); } catch (_) { }
         state.requestedFolderId = j.requestedFolderId || payload.requestedFolderId;
         state.resolvedFolderId = j.resolvedFolderId || j.folderId || payload.uploadFolderId;
         state.folderName = j.folderName || selected?.folderName || null;
@@ -1198,6 +1203,7 @@
         const btnClearSuccess = document.getElementById('btnClearSuccessfulUploads');
         const btnRefresh = document.getElementById('btnBulkRefreshFolder');
         const btnNewBatch = document.getElementById('btnStartNewBulkBatch');
+        const btnLog = document.getElementById('btnBulkViewLog');
 
         const hasFolder = !isMissingFolderId(getCurrentFolderId());
         const waitingOrDuplicate = state.files.some(x => x.status === 'waiting' || x.status === 'duplicate' || (x.status === 'error' && x.canRetry !== false));
@@ -1214,6 +1220,7 @@
         if (btnClearSuccess) btnClearSuccess.classList.toggle('d-none', !hasSuccess || state.uploading);
         if (btnRefresh) btnRefresh.classList.toggle('d-none', !hasSuccess || state.uploading);
         if (btnNewBatch) btnNewBatch.classList.toggle('d-none', !hasAnyFinished || state.uploading);
+        if (btnLog) { btnLog.classList.toggle('d-none', !state.batchId || state.uploading); btnLog.href = state.batchId ? `/Ged/Uploads/${state.batchId}` : '/Ged/Uploads'; }
     }
 
     function showRefreshAfterUploadButton(show) {

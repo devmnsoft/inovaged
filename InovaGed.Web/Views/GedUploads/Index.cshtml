@@ -1,0 +1,61 @@
+@model InovaGed.Web.Models.Ged.GedUploadHistoryVM
+@{
+    ViewData["Title"] = "Histórico de uploads";
+}
+<div class="container-fluid py-3">
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <div>
+            <h1 class="h4 mb-1">Histórico de uploads</h1>
+            <div class="text-muted small">Consulte lotes concluídos, falhas, duplicados, ignorados e itens passíveis de retentativa.</div>
+        </div>
+        <a class="btn btn-outline-secondary" asp-controller="Ged" asp-action="Index"><i class="bi bi-arrow-left me-1"></i>Voltar ao GED</a>
+    </div>
+    <div class="card shadow-sm">
+        <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Data/hora</th><th>Usuário</th><th>Pasta destino</th><th>Total</th><th>Sucesso</th><th>Falhas</th><th>Ignorados</th><th>Duplicados</th><th>Abortados</th><th>Status</th><th>Duração</th><th>Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var b in Model.Batches)
+                {
+                    <tr class="@(b.FailedFiles > 0 ? "table-warning" : "")">
+                        <td>@b.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                        <td>@(b.UserName ?? b.CreatedBy.ToString())</td>
+                        <td>@(b.FolderName ?? "-")</td>
+                        <td>@b.TotalFiles</td><td class="text-success fw-semibold">@b.SuccessFiles</td><td class="text-danger fw-semibold">@b.FailedFiles</td><td>@b.SkippedFiles</td><td>@b.DuplicateFiles</td><td>@b.AbortedFiles</td>
+                        <td><span class="badge bg-secondary">@b.Status</span></td>
+                        <td>@(b.DurationMs.HasValue ? $"{b.DurationMs.Value / 1000.0:n1}s" : "-")</td>
+                        <td class="text-nowrap">
+                            <a class="btn btn-sm btn-outline-primary" asp-action="Details" asp-route-batchId="@b.Id">Ver detalhes</a>
+                            @if (b.HasRetryableItems)
+                            {
+                                <button class="btn btn-sm btn-outline-warning js-upload-retry" data-batch-id="@b.Id">Reenviar falhas</button>
+                            }
+                        </td>
+                    </tr>
+                }
+                @if (!Model.Batches.Any())
+                {
+                    <tr><td colspan="12" class="text-center text-muted py-4">Nenhum lote encontrado.</td></tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+<form id="uploadHistoryTokenForm">@Html.AntiForgeryToken()</form>
+@section Scripts {
+<script>
+document.addEventListener('click', async e => {
+ const btn = e.target.closest('.js-upload-retry'); if (!btn) return;
+ const token = document.querySelector('#uploadHistoryTokenForm input[name="__RequestVerificationToken"]')?.value;
+ const r = await fetch(`/Ged/Uploads/${btn.dataset.batchId}/RetryFailed`, { method:'POST', headers: token ? { RequestVerificationToken: token } : {} });
+ const j = await r.json().catch(() => ({}));
+ window.showAppToast?.(j.message || 'Retentativa solicitada.', j.success ? 'success' : 'danger', 'Uploads');
+ if (j.success) location.reload();
+});
+</script>
+}

@@ -265,6 +265,7 @@ builder.Services.AddScoped<IDocumentSearchQueries, DocumentSearchQueries>();
 builder.Services.AddScoped<IDocumentSearchTextQueries, DocumentSearchTextQueries>();
 builder.Services.AddScoped<IDocumentMoveService, DocumentMoveService>();
 builder.Services.AddScoped<IDocumentBulkUploadService, DocumentBulkUploadService>();
+builder.Services.AddScoped<IGedBulkDocumentActionService, GedBulkDocumentActionService>();
 builder.Services.AddScoped<IDocumentPartialService, DocumentPartialService>();
 builder.Services.AddScoped<IUploadFolderResolver, UploadFolderResolver>();
 builder.Services.AddSingleton<IUploadConcurrencyLimiter, UploadConcurrencyLimiter>();
