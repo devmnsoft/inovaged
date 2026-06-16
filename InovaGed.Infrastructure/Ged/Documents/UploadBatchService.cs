@@ -72,14 +72,14 @@ public sealed class UploadBatchService : IUploadBatchService
         var id = Guid.NewGuid();
         var requestedFolderId = request.RequestedFolderId ?? request.FolderId;
         const string sql = """
-INSERT INTO ged.upload_batch (id, tenant_id, folder_id, requested_folder_id, created_by, status, total_files, source_ip, user_agent, correlation_id, options_json)
-VALUES (@id, @tenantId, @folderId, @requestedFolderId, @userId, 'OPEN', @totalFiles, @sourceIp, @userAgent, @correlationId, CAST(@optionsJson AS jsonb));
+INSERT INTO ged.upload_batch (id, tenant_id, folder_id, requested_folder_id, created_by, created_by_name, status, total_files, source_ip, user_agent, correlation_id, options_json)
+VALUES (@id, @tenantId, @folderId, @requestedFolderId, @userId, @userName, 'OPEN', @totalFiles, @sourceIp, @userAgent, @correlationId, CAST(@optionsJson AS jsonb));
 """;
         try
         {
             await using var conn = await _db.OpenAsync(ct);
             var optionsJson = JsonSerializer.Serialize(request.Options ?? new UploadBatchOptionsDto());
-            await conn.ExecuteAsync(new CommandDefinition(sql, new { id, tenantId, folderId = request.FolderId, requestedFolderId, userId, totalFiles = request.TotalFiles, request.SourceIp, request.UserAgent, request.CorrelationId, optionsJson }, cancellationToken: ct));
+            await conn.ExecuteAsync(new CommandDefinition(sql, new { id, tenantId, folderId = request.FolderId, requestedFolderId, userId, userName = string.IsNullOrWhiteSpace(request.UserName) ? userId.ToString() : request.UserName, totalFiles = request.TotalFiles, request.SourceIp, request.UserAgent, request.CorrelationId, optionsJson }, cancellationToken: ct));
             _logger.LogInformation("StartBatch Tenant={TenantId} User={UserId} Batch={BatchId} RequestedFolder={RequestedFolderId} Folder={FolderId} Total={TotalFiles} CorrelationId={CorrelationId}", tenantId, userId, id, requestedFolderId, request.FolderId, request.TotalFiles, request.CorrelationId);
             await _audit.WriteAsync(tenantId, userId, "UPLOAD_BATCH_STARTED", "UPLOAD_BATCH", id, "Lote de upload iniciado", null, null, new { RequestedFolderId = requestedFolderId, request.FolderId, request.TotalFiles, request.Options, request.CorrelationId }, ct);
             return Result<Guid>.Ok(id);
@@ -337,11 +337,11 @@ LIMIT 100;
     private async Task InsertItemAsync(Guid tenantId, UploadBatchFileRequestDto request, Guid itemId, string correlationId, CancellationToken ct)
     {
         const string sql = """
-INSERT INTO ged.upload_batch_item (id, tenant_id, batch_id, folder_id, requested_folder_id, original_file_name, content_type, size_bytes, status, started_at, attempt, correlation_id, upload_client_id, content_hash, mark_as_incomplete, incomplete_reason, updated_at)
-VALUES (@itemId, @tenantId, @batchId, @folderId, @requestedFolderId, @fileName, @contentType, @sizeBytes, 'RECEIVING', now(), 1, @correlationId, @uploadClientId, @contentHash, @markAsIncomplete, @incompleteReason, now());
+INSERT INTO ged.upload_batch_item (id, tenant_id, batch_id, folder_id, requested_folder_id, original_file_name, content_type, size_bytes, status, started_at, attempt, correlation_id, upload_client_id, content_hash, mark_as_incomplete, incomplete_reason, uploaded_by_name, updated_at)
+VALUES (@itemId, @tenantId, @batchId, @folderId, @requestedFolderId, @fileName, @contentType, @sizeBytes, 'RECEIVING', now(), 1, @correlationId, @uploadClientId, @contentHash, @markAsIncomplete, @incompleteReason, @uploadedByName, now());
 """;
         await using var conn = await _db.OpenAsync(ct);
-        await conn.ExecuteAsync(new CommandDefinition(sql, new { itemId, tenantId, batchId = request.BatchId, request.FolderId, requestedFolderId = request.RequestedFolderId ?? request.FolderId, fileName = Path.GetFileName(request.UploadName ?? request.File.FileName), contentType = request.File.ContentType, sizeBytes = request.File.Length, correlationId, uploadClientId = request.UploadClientId, contentHash = request.ContentHash, markAsIncomplete = request.MarkAsIncomplete, incompleteReason = request.IncompleteReason }, cancellationToken: ct));
+        await conn.ExecuteAsync(new CommandDefinition(sql, new { itemId, tenantId, batchId = request.BatchId, request.FolderId, requestedFolderId = request.RequestedFolderId ?? request.FolderId, fileName = Path.GetFileName(request.UploadName ?? request.File.FileName), contentType = request.File.ContentType, sizeBytes = request.File.Length, correlationId, uploadClientId = request.UploadClientId, contentHash = request.ContentHash, markAsIncomplete = request.MarkAsIncomplete, incompleteReason = request.IncompleteReason, uploadedByName = request.UserName }, cancellationToken: ct));
     }
 
     private static string? FormatUploadDate(DateTime? uploadedAtUtc)

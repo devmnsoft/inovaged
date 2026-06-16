@@ -71,7 +71,8 @@ public sealed class UploadBatchController : Controller
                 Options = request.Options,
                 SourceIp = HttpContext.Connection.RemoteIpAddress?.ToString(),
                 UserAgent = Request.Headers.UserAgent.ToString(),
-                CorrelationId = correlationId
+                CorrelationId = correlationId,
+                UserName = User.Identity?.Name
             }, ct);
 
             if (!result.Success)

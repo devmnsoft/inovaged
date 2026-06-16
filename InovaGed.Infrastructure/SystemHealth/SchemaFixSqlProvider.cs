@@ -748,6 +748,7 @@ create table if not exists ged.document_quality_result (
         AddColumn(fixes, "ged.document_version", "incomplete_source", "text null", "GED incomplete documents");
         AddColumn(fixes, "ged.upload_batch", "options_json", "jsonb not null default {}::jsonb", "Upload batch");
         AddColumn(fixes, "ged.upload_batch", "updated_at", "timestamptz null", "Upload batch");
+        AddColumn(fixes, "ged.upload_batch", "created_by_name", "text null", "Upload batch");
         AddColumn(fixes, "ged.upload_batch_item", "upload_client_id", "text null", "Upload batch");
         AddColumn(fixes, "ged.upload_batch_item", "content_hash", "text null", "Upload batch");
         AddColumn(fixes, "ged.upload_batch_item", "mark_as_incomplete", "boolean not null default false", "Upload batch");
@@ -756,6 +757,7 @@ create table if not exists ged.document_quality_result (
         AddColumn(fixes, "ged.upload_batch_item", "processing_warning", "text null", "Upload batch");
         AddColumn(fixes, "ged.upload_batch_item", "updated_at", "timestamptz null", "Upload batch");
         AddColumn(fixes, "ged.upload_batch_item", "upload_session_id", "uuid null", "Upload batch");
+        AddColumn(fixes, "ged.upload_batch_item", "uploaded_by_name", "text null", "Upload batch");
         AddColumn(fixes, "ged.upload_session", "tenant_id", "uuid null", "Upload chunks");
         AddColumn(fixes, "ged.upload_session", "total_chunks", "int not null default 0", "Upload chunks");
         AddColumn(fixes, "ged.upload_session_chunk", "session_id", "uuid null", "Upload chunks");

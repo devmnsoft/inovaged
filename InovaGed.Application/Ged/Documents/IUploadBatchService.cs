@@ -21,6 +21,7 @@ public sealed class StartUploadBatchRequestDto
     public string? SourceIp { get; set; }
     public string? UserAgent { get; set; }
     public string? CorrelationId { get; set; }
+    public string? UserName { get; set; }
 }
 
 public sealed class UploadBatchFileRequestDto
