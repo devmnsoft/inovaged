@@ -1875,3 +1875,5 @@ on ged.upload_batch_item(tenant_id, batch_id, status);
 create index if not exists ix_upload_batch_item_retryable
 on ged.upload_batch_item(tenant_id, batch_id, status, can_retry)
 where status in ('ERROR', 'ABORTED', 'RETRYABLE');
+
+\i database/migrations/2026_06_ged_bulk_actions_and_upload_logs.sql
