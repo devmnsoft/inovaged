@@ -59,6 +59,54 @@ begin
     end if;
 end $$;
 """;
+    private const string UploadBatchItemStatusConstraintSql = """
+create schema if not exists ged;
+
+alter table if exists ged.upload_batch_item
+add column if not exists status text not null default 'PENDING';
+
+alter table if exists ged.upload_batch_item
+add column if not exists processing_warning text null;
+
+update ged.upload_batch_item
+set status = 'PENDING'
+where status is null or trim(status) = '';
+
+update ged.upload_batch_item
+set status = 'CANCELLED'
+where upper(status) = 'CANCELED';
+
+update ged.upload_batch_item
+set status = 'QUEUED'
+where upper(status) in ('OCR_QUEUED', 'PREVIEW_QUEUED', 'SMART_INDEX_QUEUED');
+
+update ged.upload_batch_item
+set status = upper(status)
+where status <> upper(status);
+
+update ged.upload_batch_item
+set status = 'PENDING', processing_warning = concat_ws(' | ', processing_warning, 'Status legado incompatível normalizado para PENDING: ' || status)
+where status not in ('PENDING','RECEIVING','SAVED','DOCUMENT_CREATED','QUEUED','COMPLETED','ERROR','SKIPPED','ABORTED','RETRYABLE','DUPLICATE','CANCELLED');
+
+do $$
+begin
+    if exists (select 1 from pg_constraint where conname = 'ck_upload_batch_item_status' and conrelid = 'ged.upload_batch_item'::regclass) then
+        alter table ged.upload_batch_item drop constraint ck_upload_batch_item_status;
+    end if;
+end $$;
+
+alter table ged.upload_batch_item
+add constraint ck_upload_batch_item_status
+check (status in ('PENDING','RECEIVING','SAVED','DOCUMENT_CREATED','QUEUED','COMPLETED','ERROR','SKIPPED','ABORTED','RETRYABLE','DUPLICATE','CANCELLED'));
+
+create index if not exists ix_upload_batch_item_tenant_batch_status
+on ged.upload_batch_item(tenant_id, batch_id, status);
+
+create index if not exists ix_upload_batch_item_retryable
+on ged.upload_batch_item(tenant_id, batch_id, status, can_retry)
+where status in ('ERROR', 'ABORTED', 'RETRYABLE');
+""";
+
     private static readonly IReadOnlyDictionary<string, SchemaFixDto> Fixes = BuildFixes();
 
     public Task<IReadOnlyList<SchemaFixDto>> GetFixesAsync(SchemaHealthReportDto report, CancellationToken ct)
@@ -659,6 +707,19 @@ create table if not exists ged.document_quality_result (
 """)
         };
 
+        fixes.Add(new SchemaFixDto
+        {
+            CheckId = "GED_CONSTRAINT_UPLOAD_BATCH_ITEM_STATUS",
+            ObjectName = "ged.upload_batch_item.ck_upload_batch_item_status",
+            Area = "Upload batch",
+            Description = "Normaliza status legados e recria a constraint de status dos itens de upload em lote.",
+            FixSql = UploadBatchItemStatusConstraintSql.Trim() + Environment.NewLine,
+            CanAutoFix = true,
+            RiskLevel = "Medium",
+            FixType = "Constraint",
+            Dependencies = [new SchemaObjectDependency { Type = "Table", Schema = "ged", Table = "upload_batch_item" }],
+            ScriptName = ConsolidatedScriptName
+        });
         AddColumnFixes(fixes);
         AddIndexFixes(fixes);
         return fixes.ToDictionary(f => NormalizeId(f.CheckId), StringComparer.OrdinalIgnoreCase);
@@ -692,6 +753,7 @@ create table if not exists ged.document_quality_result (
         AddColumn(fixes, "ged.upload_batch_item", "mark_as_incomplete", "boolean not null default false", "Upload batch");
         AddColumn(fixes, "ged.upload_batch_item", "incomplete_reason", "text null", "Upload batch");
         AddColumn(fixes, "ged.upload_batch_item", "retry_after_at", "timestamptz null", "Upload batch");
+        AddColumn(fixes, "ged.upload_batch_item", "processing_warning", "text null", "Upload batch");
         AddColumn(fixes, "ged.upload_batch_item", "updated_at", "timestamptz null", "Upload batch");
         AddColumn(fixes, "ged.upload_batch_item", "upload_session_id", "uuid null", "Upload batch");
         AddColumn(fixes, "ged.upload_session", "tenant_id", "uuid null", "Upload chunks");

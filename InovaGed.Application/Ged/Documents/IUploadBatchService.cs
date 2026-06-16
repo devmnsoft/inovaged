@@ -63,6 +63,7 @@ public sealed class UploadBatchFileResultDto
     public bool PreviewQueued { get; set; }
     public string Message { get; set; } = string.Empty;
     public string? CorrelationId { get; set; }
+    public string? ProcessingWarning { get; set; }
 }
 
 public sealed class UploadBatchCreatedDocumentDto
@@ -105,6 +106,7 @@ public sealed class UploadBatchItemStatusDto
     public bool CanRetry { get; set; }
     public long? SizeBytes { get; set; }
     public string? CorrelationId { get; set; }
+    public string? ProcessingWarning { get; set; }
 }
 
 public sealed class UploadMonitorDto

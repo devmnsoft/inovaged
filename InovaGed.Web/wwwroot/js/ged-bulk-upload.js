@@ -518,7 +518,7 @@
                 <td>${formatFileSize(x.size)}</td>
                 <td>
                     <span class='badge bg-${statusColor(x.status)}'>${statusLabel(x.status)}</span>
-                    <div class='small text-muted'>${escapeHtml(x.errorMessage || x.message || '')}</div><div class='small bulk-large-file-hint'>${shouldUseChunkedUpload(x) ? 'Arquivo grande: envio em partes com retomada.' : ''}</div><div class='small text-muted'>${escapeHtml([x.speedText, x.etaText].filter(Boolean).join(' · '))}</div>
+                    <div class='small ${x.processingWarning ? 'text-warning' : 'text-muted'}'>${escapeHtml(x.processingWarning || x.errorMessage || x.message || '')}</div><div class='small bulk-large-file-hint'>${shouldUseChunkedUpload(x) ? 'Arquivo grande: envio em partes com retomada.' : ''}</div><div class='small text-muted'>${escapeHtml([x.speedText, x.etaText].filter(Boolean).join(' · '))}</div>
                 </td>
                 <td>
                     <div class='progress'>
@@ -854,10 +854,12 @@
             const j = await r.json();
             const items = j.data?.items || j.data?.Items || [];
             const hit = items.find(x => (x.originalFileName || x.OriginalFileName || '').toLowerCase() === (fileItem.uploadName || fileItem.originalName || '').toLowerCase());
-            if (hit && ((hit.status || hit.Status) === 'COMPLETED')) {
+            const backendStatus = normalizeBackendUploadStatus(hit.status || hit.Status);
+            if (hit && backendStatus.uiStatus === 'success') {
                 fileItem.status = 'success';
                 fileItem.progress = 100;
-                fileItem.message = 'Confirmado no banco após falha de comunicação.';
+                fileItem.message = backendStatus.message || 'Confirmado no banco após falha de comunicação.';
+                fileItem.processingWarning = hit.processingWarning || hit.ProcessingWarning || null;
                 fileItem.serverDocumentId = hit.documentId || hit.DocumentId || null;
                 fileItem.serverVersionId = hit.versionId || hit.VersionId || null;
                 return true;
@@ -925,12 +927,14 @@
                 }
 
                 if (xhr.status >= 200 && xhr.status < 300 && payload?.success === true) {
-                    fileItem.status = (payload.status === 'SKIPPED' ? 'ignored' : 'success');
+                    const backendStatus = normalizeBackendUploadStatus(payload.status);
+                    fileItem.status = backendStatus.uiStatus;
                     fileItem.serverDocumentId = payload.documentId || payload.data?.documentId || null;
                     fileItem.serverVersionId = payload.versionId || payload.data?.versionId || null;
                     captureUploadDestination(payload);
                     captureCreatedDocument(payload, fileItem);
-                    fileItem.message = payload.message || 'Enviado com sucesso.';
+                    fileItem.processingWarning = payload.processingWarning || payload.data?.processingWarning || null;
+                    fileItem.message = fileItem.processingWarning || payload.message || backendStatus.message || 'Enviado com sucesso.';
                     fileItem.errorMessage = null;
                     fileItem.errorLog = null;
                     fileItem.errorStep = null;
@@ -1066,9 +1070,11 @@
                 renderFileList();
             }
             const completed = await completeChunkSession(fileItem.uploadId);
-            fileItem.status = completed.status === 'SKIPPED' ? 'ignored' : 'success';
+            const backendStatus = normalizeBackendUploadStatus(completed.status);
+            fileItem.status = backendStatus.uiStatus;
             fileItem.progress = 100;
-            fileItem.message = completed.message || 'Arquivo grande enviado com sucesso.';
+            fileItem.processingWarning = completed.processingWarning || null;
+            fileItem.message = fileItem.processingWarning || completed.message || backendStatus.message || 'Arquivo grande enviado com sucesso.';
             fileItem.serverDocumentId = completed.documentId || null;
             fileItem.serverVersionId = completed.versionId || null;
             captureUploadDestination(completed);
@@ -1398,8 +1404,27 @@
 
     const formatFileSize = b => b < 1024 ? `${b} B` : b < 1048576 ? `${(b / 1024).toFixed(1)} KB` : `${(b / 1048576).toFixed(1)} MB`;
     const escapeHtml = v => (v || '').replace(/[&<>'"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c]));
-    const statusLabel = s => ({ waiting: 'Aguardando', validating: 'Validando', duplicate: 'Duplicado', uploading: 'Enviando', paused: 'Pausado', success: 'Enviado', ignored: 'Ignorado', error: 'Erro' }[s] || s);
-    const statusColor = s => ({ success: 'success', error: 'danger', uploading: 'primary', paused: 'warning', duplicate: 'warning', ignored: 'secondary', waiting: 'light', validating: 'info' }[s] || 'light');
+    function normalizeBackendUploadStatus(status) {
+        const normalized = (status || '').toString().trim().toUpperCase();
+        const map = {
+            PENDING: { uiStatus: 'waiting', message: 'Aguardando início.' },
+            RECEIVING: { uiStatus: 'uploading', message: 'Arquivo sendo recebido.' },
+            SAVED: { uiStatus: 'uploading', message: 'Arquivo salvo.' },
+            DOCUMENT_CREATED: { uiStatus: 'success', message: 'Documento criado.' },
+            QUEUED: { uiStatus: 'success', message: 'Processamento enfileirado.' },
+            COMPLETED: { uiStatus: 'success', message: 'Concluído.' },
+            ERROR: { uiStatus: 'error', message: 'Erro.' },
+            SKIPPED: { uiStatus: 'ignored', message: 'Ignorado.' },
+            ABORTED: { uiStatus: 'error', message: 'Upload interrompido. Pode tentar novamente.' },
+            RETRYABLE: { uiStatus: 'error', message: 'Falha temporária. Pode tentar novamente.' },
+            DUPLICATE: { uiStatus: 'ignored', message: 'Duplicado.' },
+            CANCELLED: { uiStatus: 'error', message: 'Cancelado pelo usuário.' }
+        };
+        return map[normalized] || { uiStatus: normalized === 'SKIPPED' ? 'ignored' : 'success', message: status || '' };
+    }
+
+    const statusLabel = s => ({ waiting: 'Aguardando', validating: 'Validando', duplicate: 'Duplicado', uploading: 'Enviando', paused: 'Pausado', retrying: 'Tentando novamente', success: 'Enviado', ignored: 'Ignorado', error: 'Erro', PENDING: 'Aguardando', RECEIVING: 'Recebendo', SAVED: 'Salvo', DOCUMENT_CREATED: 'Documento criado', QUEUED: 'Processamento enfileirado', COMPLETED: 'Concluído', ERROR: 'Erro', SKIPPED: 'Ignorado', ABORTED: 'Interrompido', RETRYABLE: 'Falha temporária', DUPLICATE: 'Duplicado', CANCELLED: 'Cancelado' }[s] || s);
+    const statusColor = s => ({ success: 'success', error: 'danger', uploading: 'primary', paused: 'warning', retrying: 'warning', duplicate: 'warning', ignored: 'secondary', waiting: 'light', validating: 'info', PENDING: 'light', RECEIVING: 'primary', SAVED: 'info', DOCUMENT_CREATED: 'success', QUEUED: 'info', COMPLETED: 'success', ERROR: 'danger', SKIPPED: 'secondary', ABORTED: 'warning', RETRYABLE: 'warning', DUPLICATE: 'secondary', CANCELLED: 'secondary' }[s] || 'light');
 
     window.GedBulkUpload = { startUploadToFolder, setUploadDestination, openBulkUploadModal, getSelectedUploadFolder, setSelectedFolderFromNode, refreshCurrentFolderDocuments, navigateToUploadedFolder, updateCurrentFolderState };
     document.addEventListener('DOMContentLoaded', initBulkUpload);

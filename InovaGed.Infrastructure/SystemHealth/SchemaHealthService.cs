@@ -41,7 +41,8 @@ public sealed class SchemaHealthService : ISchemaHealthService
         ("document", "incomplete_source", "GED incomplete documents"), ("document_version", "incomplete_reason", "GED incomplete documents"),
         ("document_version", "incomplete_source", "GED incomplete documents"), ("upload_batch", "options_json", "Upload batch"),
         ("upload_batch_item", "upload_client_id", "Upload batch"), ("upload_batch_item", "content_hash", "Upload batch"),
-        ("upload_batch_item", "mark_as_incomplete", "Upload batch"), ("upload_batch_item", "retry_after_at", "Upload batch"), ("document_search", "ocr_text", "OCR"),
+        ("upload_batch_item", "mark_as_incomplete", "Upload batch"), ("upload_batch_item", "retry_after_at", "Upload batch"),
+        ("upload_batch_item", "processing_warning", "Upload batch"), ("document_search", "ocr_text", "OCR"),
         ("ocr_job", "document_version_id", "OCR"), ("ocr_job", "status", "OCR"), ("ocr_job", "requested_at", "OCR"),
         ("ocr_job", "finished_at", "OCR"), ("ocr_job", "invalidate_digital_signatures", "OCR"),
         ("ocr_auto_schedule_run", "tenant_id", "OCR Auto Schedule"), ("ocr_auto_schedule_run", "started_at_utc", "OCR Auto Schedule"),
@@ -243,6 +244,21 @@ where schemaname = 'ged';", cancellationToken: ct))).ToList();
                 AddCheck(report, BuildIndexId(name), "Performance", $"ged.{name}", "Índice", "Warning", ok,
                     ok ? $"{message} OK ({foundName})." : $"{message} Ausente ou não aplicável por diferença de colunas no ambiente.",
                     $"Use o botão 'Copiar SQL de correção' e execute {ConsolidationMigration}; índices opcionais são criados somente quando as colunas existem.");
+            }
+
+
+            if (existingTables.Contains("ged.upload_batch_item"))
+            {
+                var constraintDef = await conn.ExecuteScalarAsync<string?>(new CommandDefinition(@"
+select pg_get_constraintdef(oid)
+from pg_constraint
+where conrelid = 'ged.upload_batch_item'::regclass
+  and conname = 'ck_upload_batch_item_status';", cancellationToken: ct));
+                var requiredStatuses = new[] { "PENDING", "RECEIVING", "SAVED", "DOCUMENT_CREATED", "QUEUED", "COMPLETED", "ERROR", "SKIPPED", "ABORTED", "RETRYABLE", "DUPLICATE", "CANCELLED" };
+                var constraintOk = !string.IsNullOrWhiteSpace(constraintDef) && requiredStatuses.All(status => constraintDef.Contains($"'{status}'", StringComparison.OrdinalIgnoreCase));
+                AddCheck(report, "GED_CONSTRAINT_UPLOAD_BATCH_ITEM_STATUS", "Upload batch", "ged.upload_batch_item.ck_upload_batch_item_status", "Constraint", "Critical", constraintOk,
+                    constraintOk ? "Constraint de status do upload em lote compatível." : "Constraint ck_upload_batch_item_status antiga ou ausente; status atuais do upload em lote podem falhar com 23514.",
+                    "Execute database/migrations/2026_06_fix_upload_batch_item_status_constraint.sql ou aplique o SchemaRepair.");
             }
 
             var existingEnums = (await conn.QueryAsync<string>(new CommandDefinition(@"
