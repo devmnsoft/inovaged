@@ -57,9 +57,9 @@ public sealed class SolicitacaoService : ISolicitacaoService
             await using var con = await _db.OpenAsync(ct);
             var sql = @"SELECT s.id, s.usuario_id AS UsuarioId, s.setor_id AS SetorId, s.arquivo_id AS ArquivoId, s.descricao,
                         s.status::text AS Status, s.data_solicitacao AS DataSolicitacao, s.data_atualizacao AS DataAtualizacao, s.admin_id AS AdminId,
-                        COALESCE(u.full_name,u.user_name) AS UsuarioNome, sa.nome AS SetorNome,
+                        COALESCE(u.user_name, u.email, u.id::text) AS UsuarioNome, sa.nome AS SetorNome,
                         COALESCE(da.codigo,d.codigo) AS ArquivoCodigo, COALESCE(da.nome_arquivo,d.title) AS ArquivoTitulo,
-                        COALESCE(a.full_name,a.user_name) AS AdminNome
+                        COALESCE(a.user_name, a.email, a.id::text) AS AdminNome
                         FROM ged.solicitacoes s
                         LEFT JOIN ged.documentos d ON d.id=s.arquivo_id AND d.tenant_id=s.tenant_id
                         LEFT JOIN ged.documentos_arquivo da ON da.id=s.arquivo_id AND da.tenant_id=s.tenant_id
@@ -88,7 +88,7 @@ public sealed class SolicitacaoService : ISolicitacaoService
         {
             await using var con = await _db.OpenAsync(ct);
             var sql = @"SELECT h.id, h.solicitacao_id AS SolicitacaoId, h.usuario_id AS UsuarioId,
-                        COALESCE(u.full_name,u.user_name) AS UsuarioNome,
+                        COALESCE(u.user_name, u.email, u.id::text) AS UsuarioNome,
                         h.acao::text AS Acao, h.comentario, h.data
                         FROM ged.historico_solicitacoes h
                         JOIN ged.solicitacoes s ON s.id=h.solicitacao_id AND s.tenant_id=h.tenant_id

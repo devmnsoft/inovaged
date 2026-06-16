@@ -1771,7 +1771,72 @@ BEGIN
 END $$;
 
 -- Included migration: database/migrations/2026_06_fix_smart_search_index.sql
-\i database/migrations/2026_06_fix_smart_search_index.sql
+-- Applying 2026_06_fix_smart_search_index.sql
+-- Compatibilidade e robustez para SmartSearch/GED. Idempotente e textual.
+CREATE SCHEMA IF NOT EXISTS ged;
+DO $$ BEGIN CREATE EXTENSION IF NOT EXISTS unaccent; EXCEPTION WHEN insufficient_privilege THEN RAISE NOTICE 'Sem permissão para unaccent.'; WHEN others THEN RAISE NOTICE 'unaccent indisponível: %', SQLERRM; END $$;
+DO $$ BEGIN CREATE EXTENSION IF NOT EXISTS pg_trgm; EXCEPTION WHEN insufficient_privilege THEN RAISE NOTICE 'Sem permissão para pg_trgm.'; WHEN others THEN RAISE NOTICE 'pg_trgm indisponível: %', SQLERRM; END $$;
+
+CREATE TABLE IF NOT EXISTS ged.document_search_index (
+    id uuid DEFAULT gen_random_uuid(),
+    tenant_id uuid NOT NULL,
+    document_id uuid NOT NULL,
+    document_version_id uuid NULL,
+    version_id uuid NULL,
+    title text NULL,
+    file_name text NULL,
+    document_type text NULL,
+    classification text NULL,
+    classification_name text NULL,
+    folder_id uuid NULL,
+    folder_name text NULL,
+    patient_name text NULL,
+    medical_record_number text NULL,
+    protocol_number text NULL,
+    extracted_age int NULL,
+    extracted_year int NULL,
+    extracted_terms text[] NULL,
+    ocr_text text NULL,
+    search_text text NOT NULL DEFAULT '',
+    search_vector tsvector NULL,
+    reg_status char(1) NOT NULL DEFAULT 'A',
+    last_indexed_at timestamptz NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT uq_document_search_index_tenant_document UNIQUE (tenant_id, document_id)
+);
+
+ALTER TABLE ged.document_search_index ADD COLUMN IF NOT EXISTS document_version_id uuid NULL;
+ALTER TABLE ged.document_search_index ADD COLUMN IF NOT EXISTS version_id uuid NULL;
+ALTER TABLE ged.document_search_index ADD COLUMN IF NOT EXISTS search_text text NOT NULL DEFAULT '';
+ALTER TABLE ged.document_search_index ADD COLUMN IF NOT EXISTS reg_status char(1) NOT NULL DEFAULT 'A';
+ALTER TABLE ged.document_search_index ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
+ALTER TABLE ged.document_search_index ADD COLUMN IF NOT EXISTS last_indexed_at timestamptz NULL;
+ALTER TABLE ged.document_search_index ADD COLUMN IF NOT EXISTS folder_id uuid NULL;
+ALTER TABLE ged.document_search_index ADD COLUMN IF NOT EXISTS classification_name text NULL;
+ALTER TABLE ged.document_search_index ADD COLUMN IF NOT EXISTS protocol_number text NULL;
+
+UPDATE ged.document_search_index SET search_text = coalesce(search_text, '');
+UPDATE ged.document_search_index SET document_version_id = version_id WHERE document_version_id IS NULL AND version_id IS NOT NULL;
+UPDATE ged.document_search_index SET version_id = document_version_id WHERE version_id IS NULL AND document_version_id IS NOT NULL;
+
+DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM pg_extension WHERE extname='unaccent') THEN
+        UPDATE ged.document_search_index SET search_vector = to_tsvector('portuguese', unaccent(coalesce(search_text,''))) WHERE search_vector IS NULL;
+    ELSE
+        UPDATE ged.document_search_index SET search_vector = to_tsvector('portuguese', coalesce(search_text,'')) WHERE search_vector IS NULL;
+    END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS ix_document_search_index_tenant_document ON ged.document_search_index(tenant_id, document_id);
+CREATE INDEX IF NOT EXISTS ix_document_search_index_tenant_folder ON ged.document_search_index(tenant_id, folder_id);
+CREATE INDEX IF NOT EXISTS ix_document_search_index_vector ON ged.document_search_index USING GIN(search_vector);
+DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM pg_extension WHERE extname='pg_trgm') THEN
+        EXECUTE 'CREATE INDEX IF NOT EXISTS ix_document_search_index_text_trgm ON ged.document_search_index USING GIN(search_text gin_trgm_ops)';
+    END IF;
+END $$;
+
 
 -- OCR environment diagnostics and structured external-process failures
 DO $$
@@ -1876,6 +1941,75 @@ create index if not exists ix_upload_batch_item_retryable
 on ged.upload_batch_item(tenant_id, batch_id, status, can_retry)
 where status in ('ERROR', 'ABORTED', 'RETRYABLE');
 
-\i database/migrations/2026_06_ged_bulk_actions_and_upload_logs.sql
+-- Applying 2026_06_ged_bulk_actions_and_upload_logs.sql
+create schema if not exists ged;
 
-\i database/migrations/2026_06_upload_batch_acknowledgement.sql
+alter table ged.document add column if not exists is_document_incomplete boolean not null default false;
+alter table ged.document add column if not exists incomplete_reason text null;
+alter table ged.document add column if not exists incomplete_source text null;
+alter table ged.document add column if not exists deleted_at timestamptz null;
+alter table ged.document add column if not exists deleted_by uuid null;
+alter table ged.document add column if not exists deleted_reason text null;
+alter table ged.document add column if not exists updated_at timestamptz null;
+alter table ged.document add column if not exists updated_by uuid null;
+
+alter table ged.document_version add column if not exists is_document_incomplete boolean not null default false;
+alter table ged.document_version add column if not exists incomplete_reason text null;
+alter table ged.document_version add column if not exists incomplete_source text null;
+
+alter table ged.upload_batch add column if not exists finished_at timestamptz null;
+alter table ged.upload_batch add column if not exists updated_at timestamptz null;
+alter table ged.upload_batch add column if not exists source_ip text null;
+alter table ged.upload_batch add column if not exists user_agent text null;
+alter table ged.upload_batch add column if not exists correlation_id text null;
+alter table ged.upload_batch add column if not exists options_json jsonb not null default '{}'::jsonb;
+
+alter table ged.upload_batch_item add column if not exists error_step text null;
+alter table ged.upload_batch_item add column if not exists can_retry boolean not null default false;
+alter table ged.upload_batch_item add column if not exists finished_at timestamptz null;
+alter table ged.upload_batch_item add column if not exists elapsed_ms bigint null;
+alter table ged.upload_batch_item add column if not exists processing_warning text null;
+alter table ged.upload_batch_item add column if not exists updated_at timestamptz null;
+
+create index if not exists ix_document_tenant_incomplete on ged.document(tenant_id, is_document_incomplete) where coalesce(reg_status,'A')='A';
+create index if not exists ix_document_tenant_deleted on ged.document(tenant_id, deleted_at) where deleted_at is not null;
+create index if not exists ix_upload_batch_tenant_created on ged.upload_batch(tenant_id, created_at desc);
+create index if not exists ix_upload_batch_item_tenant_batch_status on ged.upload_batch_item(tenant_id, batch_id, status);
+create index if not exists ix_upload_batch_item_retry on ged.upload_batch_item(tenant_id, batch_id, can_retry, status) where can_retry = true;
+
+
+-- Applying 2026_06_upload_batch_acknowledgement.sql
+-- Persistência de reconhecimento operacional de lotes de upload GED.
+alter table ged.upload_batch
+add column if not exists acknowledged_at timestamptz null;
+
+alter table ged.upload_batch
+add column if not exists acknowledged_by uuid null;
+
+alter table ged.upload_batch
+add column if not exists user_notes text null;
+
+alter table ged.upload_batch
+add column if not exists problem_seen boolean not null default false;
+
+create index if not exists ix_upload_batch_last_problem_user
+on ged.upload_batch(tenant_id, created_by, created_at desc)
+where coalesce(reg_status,'A')='A';
+
+
+-- Applying 2026_06_fix_upload_batch_user_display_name.sql
+create schema if not exists ged;
+
+alter table ged.upload_batch
+add column if not exists created_by_name text null;
+
+alter table ged.upload_batch_item
+add column if not exists uploaded_by_name text null;
+
+update ged.upload_batch
+set created_by_name = coalesce(created_by_name, created_by::text)
+where created_by_name is null
+  and created_by is not null;
+
+create index if not exists ix_upload_batch_tenant_created_by
+on ged.upload_batch(tenant_id, created_by, created_at desc);

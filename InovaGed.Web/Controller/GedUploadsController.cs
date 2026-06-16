@@ -9,6 +9,7 @@ using InovaGed.Web.Models.Ged;
 using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Npgsql;
 
 namespace InovaGed.Web.Controllers;
 
@@ -23,8 +24,9 @@ public sealed class GedUploadsController : Controller
     private readonly IAuditWriter _audit;
     private readonly IGedBulkDocumentActionService _bulkActions;
     private readonly IUploadBatchConsistencyService _consistency;
+    private readonly ILogger<GedUploadsController> _logger;
 
-    public GedUploadsController(ICurrentUser currentUser, IDbConnectionFactory db, IUploadBatchService batches, IGedAccessPolicyService accessPolicy, IAuditWriter audit, IGedBulkDocumentActionService bulkActions, IUploadBatchConsistencyService consistency)
+    public GedUploadsController(ICurrentUser currentUser, IDbConnectionFactory db, IUploadBatchService batches, IGedAccessPolicyService accessPolicy, IAuditWriter audit, IGedBulkDocumentActionService bulkActions, IUploadBatchConsistencyService consistency, ILogger<GedUploadsController> logger)
     {
         _currentUser = currentUser;
         _db = db;
@@ -33,6 +35,7 @@ public sealed class GedUploadsController : Controller
         _audit = audit;
         _bulkActions = bulkActions;
         _consistency = consistency;
+        _logger = logger;
     }
 
     [HttpGet("")]
@@ -41,7 +44,7 @@ public sealed class GedUploadsController : Controller
         var canViewTenant = await _accessPolicy.IsAdminAsync(_currentUser.TenantId, _currentUser.UserId, User, ct);
         await using var conn = await _db.OpenAsync(ct);
         var rows = (await conn.QueryAsync<GedUploadBatchRowVM>(new CommandDefinition("""
-SELECT b.id, b.created_by AS CreatedBy, coalesce(u.full_name, u.email, u.user_name) AS UserName, b.folder_id AS FolderId, f.name AS FolderName,
+SELECT b.id, b.created_by AS CreatedBy, coalesce(b.created_by_name, b.created_by::text, 'Usuário') AS UserName, b.folder_id AS FolderId, f.name AS FolderName,
        b.created_at AS CreatedAt, b.finished_at AS FinishedAt, b.status, b.total_files AS TotalFiles,
        b.success_files AS SuccessFiles, b.failed_files AS FailedFiles, b.skipped_files AS SkippedFiles,
        count(i.id) FILTER (WHERE i.status='DUPLICATE')::int AS DuplicateFiles,
@@ -52,9 +55,8 @@ SELECT b.id, b.created_by AS CreatedBy, coalesce(u.full_name, u.email, u.user_na
 FROM ged.upload_batch b
 LEFT JOIN ged.upload_batch_item i ON i.tenant_id=b.tenant_id AND i.batch_id=b.id AND coalesce(i.reg_status,'A')='A'
 LEFT JOIN ged.folder f ON f.tenant_id=b.tenant_id AND f.id=b.folder_id
-LEFT JOIN ged.app_user u ON u.id=b.created_by
 WHERE b.tenant_id=@tenantId AND coalesce(b.reg_status,'A')='A' AND (@canViewTenant OR b.created_by=@userId)
-GROUP BY b.id, u.full_name, u.email, u.user_name, f.name
+GROUP BY b.id, b.created_by, b.created_by_name, b.folder_id, f.name, b.created_at, b.finished_at, b.status, b.total_files, b.success_files, b.failed_files, b.skipped_files, b.correlation_id
 ORDER BY b.created_at DESC
 LIMIT 200;
 """, new { tenantId = _currentUser.TenantId, userId = _currentUser.UserId, canViewTenant }, cancellationToken: ct))).AsList();
@@ -67,19 +69,27 @@ LIMIT 200;
     {
         var canViewTenant = await _accessPolicy.IsAdminAsync(_currentUser.TenantId, _currentUser.UserId, User, ct);
         await using var conn = await _db.OpenAsync(ct);
-        var batch = await conn.QuerySingleOrDefaultAsync<GedUploadBatchRowVM>(new CommandDefinition("""
-SELECT b.id, b.created_by AS CreatedBy, coalesce(u.full_name, u.email, u.user_name) AS UserName, b.folder_id AS FolderId, f.name AS FolderName,
+        try
+        {
+            var batch = await conn.QuerySingleOrDefaultAsync<GedUploadBatchRowVM>(new CommandDefinition("""
+SELECT b.id, b.created_by AS CreatedBy, coalesce(b.created_by_name, b.created_by::text, 'Usuário') AS UserName, b.folder_id AS FolderId, f.name AS FolderName,
        b.created_at AS CreatedAt, b.finished_at AS FinishedAt, b.status, b.total_files AS TotalFiles, b.success_files AS SuccessFiles, b.failed_files AS FailedFiles, b.skipped_files AS SkippedFiles,
        b.correlation_id AS CorrelationId
 FROM ged.upload_batch b
 LEFT JOIN ged.folder f ON f.tenant_id=b.tenant_id AND f.id=b.folder_id
-LEFT JOIN ged.app_user u ON u.id=b.created_by
 WHERE b.tenant_id=@tenantId AND b.id=@batchId AND coalesce(b.reg_status,'A')='A' AND (@canViewTenant OR b.created_by=@userId);
 """, new { tenantId = _currentUser.TenantId, userId = _currentUser.UserId, batchId, canViewTenant }, cancellationToken: ct));
-        if (batch is null) return NotFound();
-        var items = await LoadItemsAsync(conn, batchId, ct);
-        await _audit.WriteAsync(_currentUser.TenantId, _currentUser.UserId, "UPLOAD_BATCH_DETAIL_VIEW", "UPLOAD_BATCH", batchId, "Detalhe de upload visualizado", null, null, null, ct);
-        return View(new GedUploadBatchDetailVM { Batch = batch, Items = items });
+            if (batch is null) return NotFound();
+            var items = await LoadItemsAsync(conn, batchId, ct);
+            await _audit.WriteAsync(_currentUser.TenantId, _currentUser.UserId, "UPLOAD_BATCH_DETAIL_VIEW", "UPLOAD_BATCH", batchId, "Detalhe de upload visualizado", null, null, null, ct);
+            return View(new GedUploadBatchDetailVM { Batch = batch, Items = items });
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UndefinedColumn)
+        {
+            _logger.LogError(ex, "Erro de schema ao carregar detalhe do lote de upload. BatchId={BatchId} CorrelationId={CorrelationId}", batchId, HttpContext.TraceIdentifier);
+            TempData["Error"] = "A tela de uploads encontrou uma diferença de schema. Execute as migrations do sistema.";
+            return RedirectToAction("Index", "SchemaHealth");
+        }
     }
 
     [HttpGet("{batchId:guid}/Items")]
