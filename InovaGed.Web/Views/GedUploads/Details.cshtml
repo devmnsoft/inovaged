@@ -2,39 +2,74 @@
 @{
     ViewData["Title"] = "Detalhe do upload";
     var failed = Model.Items.Count(i => i.Status == "ERROR" || i.Status == "RETRYABLE" || i.Status == "ABORTED");
-    var createdIds = string.Join(',', Model.Items.Where(i => i.DocumentId.HasValue).Select(i => i.DocumentId!.Value));
+    var duplicated = Model.Items.Count(i => i.Status == "DUPLICATE");
+    var aborted = Model.Items.Count(i => i.Status == "ABORTED");
+    var created = Model.Items.Count(i => i.DocumentId.HasValue);
+    var retryable = Model.Items.Count(i => i.CanRetry && (i.Status == "ERROR" || i.Status == "RETRYABLE" || i.Status == "ABORTED"));
 }
 <div class="container-fluid py-3">
     <div class="d-flex align-items-center justify-content-between mb-3">
         <div>
             <h1 class="h4 mb-1">Detalhe do lote</h1>
-            <div class="text-muted small">@Model.Batch.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm") · @Model.Batch.Status · CorrelationId: <code>@Model.Batch.CorrelationId</code></div>
+            <div class="text-muted small">@Model.Batch.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm") · @Model.Batch.Status · Usuário: @(Model.Batch.UserName ?? Model.Batch.CreatedBy.ToString()) · CorrelationId: <code>@Model.Batch.CorrelationId</code></div>
         </div>
-        <div class="btn-group">
-            <a class="btn btn-outline-secondary" asp-action="Index">Voltar</a>
-            <a class="btn btn-outline-success" asp-action="ExportCsv" asp-route-batchId="@Model.Batch.Id">Baixar CSV</a>
-            @if (failed > 0) { <button class="btn btn-warning js-upload-retry" data-batch-id="@Model.Batch.Id">Reenviar todos com erro (@failed)</button> }
+        <div class="btn-group flex-wrap">
+            <a class="btn btn-outline-secondary" asp-controller="Ged" asp-action="Index">Voltar ao GED</a>
+            <a class="btn btn-outline-success" asp-action="ExportCsv" asp-route-batchId="@Model.Batch.Id">Exportar CSV</a>
+            <button class="btn btn-outline-primary js-upload-ack" data-batch-id="@Model.Batch.Id">Marcar como visto</button>
+            @if (failed > 0) { <button class="btn btn-warning js-upload-retry" data-batch-id="@Model.Batch.Id">Reenviar falhas (@failed)</button> }
         </div>
     </div>
+
+    <div class="row g-2 mb-3">
+        <div class="col-md-3"><div class="card card-body py-2"><span class="text-muted small">Pasta destino</span><strong>@(Model.Batch.FolderName ?? "-")</strong></div></div>
+        <div class="col-md-2"><div class="card card-body py-2"><span class="text-muted small">Total</span><strong>@Model.Batch.TotalFiles</strong></div></div>
+        <div class="col-md-2"><div class="card card-body py-2"><span class="text-muted small">Enviados</span><strong class="text-success">@Model.Batch.SuccessFiles</strong></div></div>
+        <div class="col-md-2"><div class="card card-body py-2"><span class="text-muted small">Falharam</span><strong class="text-danger">@failed</strong></div></div>
+        <div class="col-md-3"><div class="card card-body py-2"><span class="text-muted small">Tempo total</span><strong>@(Model.Batch.DurationMs.HasValue ? $"{Model.Batch.DurationMs.Value / 1000.0:n1}s" : "-")</strong></div></div>
+    </div>
+
     <div class="alert @(failed > 0 ? "alert-warning" : "alert-success")">
-        <strong>@Model.Batch.SuccessFiles enviados</strong>, <strong>@failed com erro/abortados</strong>, @Model.Batch.SkippedFiles ignorados. Use a tabela para identificar exatamente os arquivos afetados.
+        <strong>@Model.Batch.SuccessFiles enviados</strong>, <strong>@failed com erro/abortados</strong>, @Model.Batch.SkippedFiles ignorados, @duplicated duplicados, @aborted abortados, @created documentos criados. O histórico permanece disponível para recuperação operacional.
     </div>
-    <div class="mb-2 d-flex gap-2 flex-wrap">
-        <button class="btn btn-sm btn-outline-warning js-batch-created-incomplete" data-document-ids="@createdIds">Marcar documentos criados como incompletos</button>
-        <button class="btn btn-sm btn-outline-danger js-batch-created-delete" data-document-ids="@createdIds">Excluir documentos criados neste lote</button>
+
+    <div class="mb-2 d-flex gap-2 flex-wrap align-items-center">
+        <button class="btn btn-sm btn-outline-warning js-batch-created-incomplete" data-batch-id="@Model.Batch.Id">Marcar documentos criados como incompletos</button>
+        <button class="btn btn-sm btn-outline-warning js-batch-selected-incomplete" data-batch-id="@Model.Batch.Id">Marcar selecionados como incompletos</button>
+        <button class="btn btn-sm btn-outline-danger js-batch-created-delete" data-batch-id="@Model.Batch.Id">Excluir documentos criados neste lote</button>
+        <button class="btn btn-sm btn-outline-danger js-batch-selected-delete" data-batch-id="@Model.Batch.Id">Excluir selecionados</button>
         <button class="btn btn-sm btn-outline-secondary js-upload-cancel" data-batch-id="@Model.Batch.Id">Fechar lote</button>
+        <span class="small text-muted">Retry disponível: @retryable</span>
     </div>
+
+    <ul class="nav nav-pills gap-1 mb-2" id="uploadFilters">
+        <li class="nav-item"><button class="nav-link active" data-filter="all">Todos</button></li>
+        <li class="nav-item"><button class="nav-link" data-filter="COMPLETED">Sucesso</button></li>
+        <li class="nav-item"><button class="nav-link" data-filter="failures">Falhas</button></li>
+        <li class="nav-item"><button class="nav-link" data-filter="ABORTED">Abortados</button></li>
+        <li class="nav-item"><button class="nav-link" data-filter="DUPLICATE">Duplicados</button></li>
+        <li class="nav-item"><button class="nav-link" data-filter="created">Criados</button></li>
+        <li class="nav-item"><button class="nav-link" data-filter="retry">Retry disponível</button></li>
+    </ul>
+
     <div class="card shadow-sm"><div class="table-responsive">
-        <table class="table table-sm align-middle mb-0">
-            <thead class="table-light"><tr><th>Arquivo</th><th>Tamanho</th><th>Status</th><th>Documento</th><th>Versão</th><th>Erro</th><th>Etapa</th><th>Duração</th><th>Pode tentar?</th><th>Ações</th></tr></thead>
+        <table class="table table-sm align-middle mb-0" id="uploadItemsTable">
+            <thead class="table-light"><tr><th><input type="checkbox" id="checkAllUploadDocs" /></th><th>Arquivo original</th><th>Status</th><th>Mensagem de erro</th><th>Etapa</th><th>Documento criado</th><th>Tamanho</th><th>Duração</th><th>CorrelationId</th><th>Ações</th></tr></thead>
             <tbody>
             @foreach (var i in Model.Items)
             {
-                <tr class="@(i.Status == "ERROR" || i.Status == "ABORTED" ? "table-warning" : "")">
-                    <td>@i.OriginalFileName</td><td>@(i.SizeBytes.HasValue ? $"{i.SizeBytes.Value:n0}" : "-")</td><td><span class="badge bg-secondary">@i.Status</span></td>
-                    <td>@if (i.DocumentId.HasValue) { <a asp-controller="Ged" asp-action="Details" asp-route-id="@i.DocumentId">Abrir</a> } else { <span>-</span> }</td>
-                    <td><code>@i.VersionId</code></td><td class="text-danger">@(i.ErrorMessage ?? i.ProcessingWarning ?? "-")</td><td>@(i.ErrorStep ?? "-")</td><td>@(i.ElapsedMs.HasValue ? $"{i.ElapsedMs.Value}ms" : "-")</td><td>@(i.CanRetry ? "Sim" : "Não")</td>
-                    <td><button class="btn btn-sm btn-outline-secondary js-copy-error" data-error="@(i.ErrorMessage ?? i.ProcessingWarning)" data-correlation="@i.CorrelationId">Copiar erro</button></td>
+                var isFailure = i.Status == "ERROR" || i.Status == "ABORTED" || i.Status == "RETRYABLE";
+                <tr class="@(isFailure ? "table-warning" : "")" data-status="@i.Status" data-created="@(i.DocumentId.HasValue ? "true" : "false")" data-retry="@(i.CanRetry ? "true" : "false")">
+                    <td>@if (i.DocumentId.HasValue) { <input type="checkbox" class="js-upload-doc-check" value="@i.DocumentId" /> }</td>
+                    <td>@i.OriginalFileName</td>
+                    <td><span class="badge bg-secondary">@i.Status</span></td>
+                    <td class="text-danger">@(i.ErrorMessage ?? i.ProcessingWarning ?? "-")</td>
+                    <td>@(i.ErrorStep ?? "-")</td>
+                    <td>@if (i.DocumentId.HasValue) { <a asp-controller="Ged" asp-action="Details" asp-route-id="@i.DocumentId">@i.DocumentId</a> } else { <span>-</span> }</td>
+                    <td>@(i.SizeBytes.HasValue ? $"{i.SizeBytes.Value:n0}" : "-")</td>
+                    <td>@(i.ElapsedMs.HasValue ? $"{i.ElapsedMs.Value}ms" : "-")</td>
+                    <td><code>@i.CorrelationId</code></td>
+                    <td class="text-nowrap"><button class="btn btn-sm btn-outline-secondary js-copy-error" data-error="@(i.ErrorMessage ?? i.ProcessingWarning)" data-correlation="@i.CorrelationId">Copiar erro</button></td>
                 </tr>
             }
             </tbody>
@@ -44,11 +79,21 @@
 <form id="uploadDetailTokenForm">@Html.AntiForgeryToken()</form>
 @section Scripts { <script src="~/js/ged-bulk-actions.js" asp-append-version="true"></script><script>
 const token = () => document.querySelector('#uploadDetailTokenForm input[name="__RequestVerificationToken"]')?.value;
+const selectedDocs = () => Array.from(document.querySelectorAll('.js-upload-doc-check:checked')).map(x => x.value);
+async function postJson(url, body) { const r = await fetch(url, { method:'POST', headers: { 'Content-Type':'application/json', ...(token() ? { RequestVerificationToken: token() } : {}) }, body: JSON.stringify(body || {}) }); return await r.json().catch(()=>({ success:false, message:'Resposta inválida.' })); }
+document.getElementById('checkAllUploadDocs')?.addEventListener('change', e => document.querySelectorAll('.js-upload-doc-check').forEach(x => x.checked = e.target.checked));
+document.getElementById('uploadFilters')?.addEventListener('click', e => { const b=e.target.closest('[data-filter]'); if(!b) return; document.querySelectorAll('#uploadFilters .nav-link').forEach(x=>x.classList.remove('active')); b.classList.add('active'); const f=b.dataset.filter; document.querySelectorAll('#uploadItemsTable tbody tr').forEach(tr => { const show = f==='all' || tr.dataset.status===f || (f==='failures' && ['ERROR','ABORTED','RETRYABLE'].includes(tr.dataset.status)) || (f==='created' && tr.dataset.created==='true') || (f==='retry' && tr.dataset.retry==='true'); tr.classList.toggle('d-none', !show); }); });
 document.addEventListener('click', async e => {
  const retry = e.target.closest('.js-upload-retry');
- if (retry) { const r = await fetch(`/Ged/Uploads/${retry.dataset.batchId}/RetryFailed`, { method:'POST', headers: token() ? { RequestVerificationToken: token() } : {} }); const j = await r.json().catch(()=>({})); window.showAppToast?.(j.message || 'Retentativa solicitada.', j.success?'success':'danger','Uploads'); if(j.success) location.reload(); }
+ if (retry) { const j = await postJson(`/Ged/Uploads/${retry.dataset.batchId}/RetryFailed`); window.showAppToast?.(j.message || 'Selecione novamente os arquivos que falharam se o navegador não mantiver o conteúdo local.', j.success?'success':'warning','Uploads'); if(j.success) location.reload(); }
+ const ack = e.target.closest('.js-upload-ack');
+ if (ack) { const j = await postJson(`/Ged/Uploads/${ack.dataset.batchId}/Acknowledge`, { notes:'Reconhecido na tela de detalhe do lote.' }); window.showAppToast?.(j.message || 'Atualizado.', j.success?'success':'danger','Uploads'); }
  const cancel = e.target.closest('.js-upload-cancel');
- if (cancel && confirm('Fechar/cancelar este lote?')) { const r = await fetch(`/Ged/Uploads/${cancel.dataset.batchId}/Cancel`, { method:'POST', headers: token() ? { RequestVerificationToken: token() } : {} }); const j = await r.json().catch(()=>({})); window.showAppToast?.(j.message || 'Lote atualizado.', j.success?'success':'danger','Uploads'); if(j.success) location.reload(); }
+ if (cancel && confirm('Fechar/cancelar este lote?')) { const j = await postJson(`/Ged/Uploads/${cancel.dataset.batchId}/Cancel`); window.showAppToast?.(j.message || 'Lote atualizado.', j.success?'success':'danger','Uploads'); if(j.success) location.reload(); }
+ const del = e.target.closest('.js-batch-created-delete,.js-batch-selected-delete');
+ if (del) { const only = del.classList.contains('js-batch-selected-delete') ? selectedDocs() : null; if(only && !only.length) return alert('Selecione documentos.'); if(confirm('Excluir logicamente os documentos do lote?')) { const j=await postJson(`/Ged/Uploads/${del.dataset.batchId}/DeleteCreatedDocuments`, { reason:'Reinício do upload após falha parcial', onlySelectedDocumentIds: only }); window.showAppToast?.(j.message || 'Ação concluída.', j.success?'success':'warning','Uploads'); } }
+ const inc = e.target.closest('.js-batch-created-incomplete,.js-batch-selected-incomplete');
+ if (inc) { const only = inc.classList.contains('js-batch-selected-incomplete') ? selectedDocs() : null; if(only && !only.length) return alert('Selecione documentos.'); const reason=prompt('Motivo:', 'Upload precisa de conferência/complementação'); if(reason) { const j=await postJson(`/Ged/Uploads/${inc.dataset.batchId}/MarkCreatedIncomplete`, { reason, onlySelectedDocumentIds: only }); window.showAppToast?.(j.message || 'Ação concluída.', j.success?'success':'warning','Uploads'); } }
  const copy = e.target.closest('.js-copy-error');
  if (copy) navigator.clipboard?.writeText(`Erro: ${copy.dataset.error || ''}\nCorrelationId: ${copy.dataset.correlation || ''}`);
 });

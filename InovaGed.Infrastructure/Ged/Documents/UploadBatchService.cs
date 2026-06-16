@@ -22,6 +22,7 @@ public sealed class UploadBatchService : IUploadBatchService
     private readonly IGedProcessingJobRepository _processingJobs;
     private readonly IAuditWriter _audit;
     private readonly ILogger<UploadBatchService> _logger;
+    private readonly IUploadBatchConsistencyService _consistency;
     private readonly DocumentUploadOptions _options;
     private readonly HashSet<string> _allowedExtensions;
 
@@ -48,7 +49,8 @@ public sealed class UploadBatchService : IUploadBatchService
         IGedProcessingJobRepository processingJobs,
         IAuditWriter audit,
         IOptions<DocumentUploadOptions> options,
-        ILogger<UploadBatchService> logger)
+        ILogger<UploadBatchService> logger,
+        IUploadBatchConsistencyService consistency)
     {
         _db = db;
         _bulkUpload = bulkUpload;
@@ -56,6 +58,7 @@ public sealed class UploadBatchService : IUploadBatchService
         _processingJobs = processingJobs;
         _audit = audit;
         _logger = logger;
+        _consistency = consistency;
         _options = options.Value;
         _allowedExtensions = new HashSet<string>(_options.AllowedExtensions ?? Array.Empty<string>(), StringComparer.OrdinalIgnoreCase);
     }
@@ -232,7 +235,7 @@ VALUES (@id, @tenantId, @folderId, @requestedFolderId, @userId, 'OPEN', @totalFi
     {
         try
         {
-            await RefreshBatchCountersAsync(tenantId, batchId, finished: true, ct);
+            await _consistency.RecalculateAsync(tenantId, batchId, ct);
             var status = await LoadStatusAsync(tenantId, batchId, includeAllItems: true, ct);
             _logger.LogInformation("Batch finished Tenant={TenantId} User={UserId} Batch={BatchId} Status={Status} Success={Success} Failed={Failed} Skipped={Skipped}", tenantId, userId, batchId, status.Status, status.Success, status.Failed, status.Skipped);
             await _audit.WriteAsync(tenantId, userId, "UPLOAD_BATCH_FINISHED", "UPLOAD_BATCH", batchId, "Lote de upload finalizado", null, null, status, ct);

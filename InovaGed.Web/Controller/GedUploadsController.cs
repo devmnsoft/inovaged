@@ -21,14 +21,18 @@ public sealed class GedUploadsController : Controller
     private readonly IUploadBatchService _batches;
     private readonly IGedAccessPolicyService _accessPolicy;
     private readonly IAuditWriter _audit;
+    private readonly IGedBulkDocumentActionService _bulkActions;
+    private readonly IUploadBatchConsistencyService _consistency;
 
-    public GedUploadsController(ICurrentUser currentUser, IDbConnectionFactory db, IUploadBatchService batches, IGedAccessPolicyService accessPolicy, IAuditWriter audit)
+    public GedUploadsController(ICurrentUser currentUser, IDbConnectionFactory db, IUploadBatchService batches, IGedAccessPolicyService accessPolicy, IAuditWriter audit, IGedBulkDocumentActionService bulkActions, IUploadBatchConsistencyService consistency)
     {
         _currentUser = currentUser;
         _db = db;
         _batches = batches;
         _accessPolicy = accessPolicy;
         _audit = audit;
+        _bulkActions = bulkActions;
+        _consistency = consistency;
     }
 
     [HttpGet("")]
@@ -93,7 +97,7 @@ WHERE b.tenant_id=@tenantId AND b.id=@batchId AND coalesce(b.reg_status,'A')='A'
         if (!await CanAccessBatchAsync(batchId, ct)) return Forbid();
         var result = await _batches.RetryFailedAsync(_currentUser.TenantId, _currentUser.UserId, batchId, ct);
         await _audit.WriteAsync(_currentUser.TenantId, _currentUser.UserId, "UPLOAD_BATCH_RETRY_FAILED", "UPLOAD_BATCH", batchId, "Retentativa de falhas solicitada", null, null, null, ct);
-        return Json(new { success = result.Success, data = result.Value, message = result.Success ? "Falhas liberadas para reenvio." : result.Error?.Message });
+        return Json(new { success = result.Success, data = result.Value, message = result.Success ? "Falhas liberadas para reenvio. Se o navegador não mantiver os arquivos em memória, selecione novamente os arquivos que falharam." : result.Error?.Message });
     }
 
     [HttpPost("{batchId:guid}/Cancel")]
@@ -111,13 +115,70 @@ WHERE b.tenant_id=@tenantId AND b.id=@batchId AND coalesce(b.reg_status,'A')='A'
     {
         await using var conn = await _db.OpenAsync(ct);
         var row = await conn.QuerySingleOrDefaultAsync<LastProblemRow>(new CommandDefinition("""
-SELECT id AS BatchId, failed_files AS Failed, total_files AS Total
-FROM ged.upload_batch
-WHERE tenant_id=@tenantId AND created_by=@userId AND coalesce(reg_status,'A')='A' AND failed_files > 0 AND status IN ('PARTIAL_ERROR','ERROR') AND created_at > now() - interval '24 hours'
-ORDER BY created_at DESC LIMIT 1;
+SELECT b.id AS BatchId, b.folder_id AS FolderId, f.name AS FolderName, b.total_files AS Total,
+       b.success_files AS SuccessCount, b.failed_files AS FailedCount, b.skipped_files AS SkippedCount,
+       b.created_at AS CreatedAt
+FROM ged.upload_batch b
+LEFT JOIN ged.folder f ON f.tenant_id=b.tenant_id AND f.id=b.folder_id
+WHERE b.tenant_id=@tenantId
+  AND b.created_by=@userId
+  AND coalesce(b.reg_status,'A')='A'
+  AND (coalesce(b.problem_seen,false)=false OR b.created_at > now() - interval '7 days')
+  AND (b.failed_files > 0 OR b.status IN ('ERROR','PARTIAL_ERROR') OR EXISTS (
+      SELECT 1 FROM ged.upload_batch_item i
+      WHERE i.tenant_id=b.tenant_id AND i.batch_id=b.id AND coalesce(i.reg_status,'A')='A' AND i.status IN ('ERROR','ABORTED','RETRYABLE')
+  ))
+ORDER BY b.created_at DESC LIMIT 1;
 """, new { tenantId = _currentUser.TenantId, userId = _currentUser.UserId }, cancellationToken: ct));
         var hasProblem = row is not null && row.BatchId != Guid.Empty;
-        return Json(new { success = true, hasProblem, batchId = row?.BatchId, failed = row?.Failed ?? 0, total = row?.Total ?? 0, message = hasProblem ? $"Seu último upload teve falhas. {row!.Failed} arquivo(s) não foram enviados." : string.Empty });
+        return Json(hasProblem
+            ? new { success = true, hasProblem = true, batchId = row!.BatchId, folderId = row.FolderId, folderName = row.FolderName, total = row.Total, successCount = row.SuccessCount, failedCount = row.FailedCount, skippedCount = row.SkippedCount, createdAt = row.CreatedAt, message = $"Seu último upload teve {row.FailedCount} falha(s)." }
+            : new { success = true, hasProblem = false });
+    }
+
+    [HttpPost("{batchId:guid}/Acknowledge")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Acknowledge(Guid batchId, [FromBody] AcknowledgeRequest? request, CancellationToken ct)
+    {
+        if (!await CanAccessBatchAsync(batchId, ct)) return Forbid();
+        await using var conn = await _db.OpenAsync(ct);
+        await conn.ExecuteAsync(new CommandDefinition("UPDATE ged.upload_batch SET problem_seen=true, acknowledged_at=now(), acknowledged_by=@userId, user_notes=COALESCE(@notes,user_notes), updated_at=now() WHERE tenant_id=@tenantId AND id=@batchId;", new { tenantId = _currentUser.TenantId, userId = _currentUser.UserId, batchId, notes = request?.Notes }, cancellationToken: ct));
+        await _audit.WriteAsync(_currentUser.TenantId, _currentUser.UserId, "UPLOAD_BATCH_ACKNOWLEDGED", "UPLOAD_BATCH", batchId, "Lote marcado como visto", null, null, new { request?.Notes }, ct);
+        return Json(new { success = true, message = "Lote marcado como visto." });
+    }
+
+    [HttpPost("{batchId:guid}/DeleteCreatedDocuments")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> DeleteCreatedDocuments(Guid batchId, [FromBody] BatchDocumentActionRequest? request, CancellationToken ct)
+    {
+        if (!await CanAccessBatchAsync(batchId, ct)) return Forbid();
+        var ids = await LoadBatchDocumentIdsAsync(batchId, request?.OnlySelectedDocumentIds, ct);
+        await _audit.WriteAsync(_currentUser.TenantId, _currentUser.UserId, "UPLOAD_BATCH_DELETE_CREATED_START", "UPLOAD_BATCH", batchId, "Exclusão de documentos do lote iniciada", null, null, new { ids.Count, request?.Reason }, ct);
+        var result = await _bulkActions.DeleteAsync(_currentUser.TenantId, _currentUser.UserId, User, new BulkDocumentActionRequest { DocumentIds = ids, Reason = request?.Reason ?? "Reinício do upload após falha parcial" }, ct);
+        await _audit.WriteAsync(_currentUser.TenantId, _currentUser.UserId, "UPLOAD_BATCH_DELETE_CREATED_FINISH", "UPLOAD_BATCH", batchId, "Exclusão de documentos do lote finalizada", null, null, result, ct);
+        return Json(new { result.Success, result.Requested, result.Succeeded, result.Failed, result.Message, result.Items });
+    }
+
+    [HttpPost("{batchId:guid}/MarkCreatedIncomplete")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> MarkCreatedIncomplete(Guid batchId, [FromBody] BatchDocumentActionRequest? request, CancellationToken ct)
+    {
+        if (!await CanAccessBatchAsync(batchId, ct)) return Forbid();
+        var ids = await LoadBatchDocumentIdsAsync(batchId, request?.OnlySelectedDocumentIds, ct);
+        await _audit.WriteAsync(_currentUser.TenantId, _currentUser.UserId, "UPLOAD_BATCH_MARK_CREATED_INCOMPLETE_START", "UPLOAD_BATCH", batchId, "Marcação de incompletos do lote iniciada", null, null, new { ids.Count, request?.Reason }, ct);
+        var result = await _bulkActions.MarkIncompleteAsync(_currentUser.TenantId, _currentUser.UserId, User, new BulkDocumentActionRequest { DocumentIds = ids, Reason = request?.Reason ?? "Upload precisa de conferência/complementação" }, ct);
+        await _audit.WriteAsync(_currentUser.TenantId, _currentUser.UserId, "UPLOAD_BATCH_MARK_CREATED_INCOMPLETE_FINISH", "UPLOAD_BATCH", batchId, "Marcação de incompletos do lote finalizada", null, null, result, ct);
+        return Json(new { result.Success, result.Requested, result.Succeeded, result.Failed, result.Message, result.Items });
+    }
+
+    [HttpPost("{batchId:guid}/Recalculate")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Recalculate(Guid batchId, CancellationToken ct)
+    {
+        if (!await _accessPolicy.IsAdminAsync(_currentUser.TenantId, _currentUser.UserId, User, ct)) return Forbid();
+        var result = await _consistency.RecalculateAsync(_currentUser.TenantId, batchId, ct);
+        await _audit.WriteAsync(_currentUser.TenantId, _currentUser.UserId, "UPLOAD_BATCH_RECALCULATE", "UPLOAD_BATCH", batchId, "Consistência do lote recalculada", null, null, result.Value, ct);
+        return Json(new { success = result.Success, data = result.Value, message = result.Success ? "Lote recalculado." : result.Error?.Message });
     }
 
     [HttpGet("{batchId:guid}/ExportCsv")]
@@ -127,19 +188,34 @@ ORDER BY created_at DESC LIMIT 1;
         await using var conn = await _db.OpenAsync(ct);
         var items = await LoadItemsAsync(conn, batchId, ct);
         var sb = new StringBuilder();
-        sb.AppendLine("arquivo,status,mensagem_erro,etapa_erro,document_id,version_id,tamanho_bytes,duracao_ms,correlation_id");
-        foreach (var i in items) sb.AppendLine(string.Join(',', Csv(i.OriginalFileName), Csv(i.Status), Csv(i.ErrorMessage), Csv(i.ErrorStep), Csv(i.DocumentId?.ToString()), Csv(i.VersionId?.ToString()), i.SizeBytes?.ToString() ?? "", i.ElapsedMs?.ToString() ?? "", Csv(i.CorrelationId)));
+        sb.AppendLine("arquivo_original;status;mensagem_erro;etapa_erro;document_id;version_id;tamanho_bytes;duracao_ms;correlation_id");
+        foreach (var i in items) sb.AppendLine(string.Join(';', Csv(i.OriginalFileName), Csv(i.Status), Csv(i.ErrorMessage), Csv(i.ErrorStep), Csv(i.DocumentId?.ToString()), Csv(i.VersionId?.ToString()), i.SizeBytes?.ToString() ?? "", i.ElapsedMs?.ToString() ?? "", Csv(i.CorrelationId)));
         await _audit.WriteAsync(_currentUser.TenantId, _currentUser.UserId, "UPLOAD_BATCH_EXPORT_CSV", "UPLOAD_BATCH", batchId, "CSV textual de upload exportado", null, null, new { items.Count }, ct);
         return Content(sb.ToString(), "text/csv", Encoding.UTF8);
     }
 
-    private sealed class LastProblemRow { public Guid BatchId { get; set; } public int Failed { get; set; } public int Total { get; set; } }
+    private sealed class LastProblemRow { public Guid BatchId { get; set; } public Guid? FolderId { get; set; } public string? FolderName { get; set; } public int FailedCount { get; set; } public int SuccessCount { get; set; } public int SkippedCount { get; set; } public int Total { get; set; } public DateTimeOffset CreatedAt { get; set; } }
+    public sealed class AcknowledgeRequest { public string? Notes { get; set; } }
+    public sealed class BatchDocumentActionRequest { public string? Reason { get; set; } public IReadOnlyList<Guid>? OnlySelectedDocumentIds { get; set; } }
 
     private async Task<bool> CanAccessBatchAsync(Guid batchId, CancellationToken ct)
     {
         var canViewTenant = await _accessPolicy.IsAdminAsync(_currentUser.TenantId, _currentUser.UserId, User, ct);
         await using var conn = await _db.OpenAsync(ct);
         return await conn.ExecuteScalarAsync<bool>(new CommandDefinition("SELECT exists(SELECT 1 FROM ged.upload_batch WHERE tenant_id=@tenantId AND id=@batchId AND coalesce(reg_status,'A')='A' AND (@canViewTenant OR created_by=@userId));", new { tenantId = _currentUser.TenantId, userId = _currentUser.UserId, batchId, canViewTenant }, cancellationToken: ct));
+    }
+
+
+    private async Task<IReadOnlyList<Guid>> LoadBatchDocumentIdsAsync(Guid batchId, IReadOnlyList<Guid>? onlySelectedDocumentIds, CancellationToken ct)
+    {
+        await using var conn = await _db.OpenAsync(ct);
+        var selected = (onlySelectedDocumentIds ?? Array.Empty<Guid>()).Where(x => x != Guid.Empty).Distinct().ToArray();
+        return (await conn.QueryAsync<Guid>(new CommandDefinition("""
+SELECT DISTINCT i.document_id
+FROM ged.upload_batch_item i
+WHERE i.tenant_id=@tenantId AND i.batch_id=@batchId AND coalesce(i.reg_status,'A')='A' AND i.document_id IS NOT NULL
+  AND (cardinality(@selected)=0 OR i.document_id = ANY(@selected));
+""", new { tenantId = _currentUser.TenantId, batchId, selected }, cancellationToken: ct))).AsList();
     }
 
     private async Task<IReadOnlyList<GedUploadBatchItemVM>> LoadItemsAsync(System.Data.IDbConnection conn, Guid batchId, CancellationToken ct)
