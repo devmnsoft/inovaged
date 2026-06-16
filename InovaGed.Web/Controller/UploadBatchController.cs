@@ -72,7 +72,7 @@ public sealed class UploadBatchController : Controller
                 SourceIp = HttpContext.Connection.RemoteIpAddress?.ToString(),
                 UserAgent = Request.Headers.UserAgent.ToString(),
                 CorrelationId = correlationId,
-                UserName = User.Identity?.Name
+                UserName = FirstNonEmpty(_currentUser.Email, User.Identity?.Name, _currentUser.UserId.ToString())
             }, ct);
 
             if (!result.Success)
@@ -131,7 +131,7 @@ public sealed class UploadBatchController : Controller
                 UploadClientId = uploadClientId,
                 ContentHash = contentHash,
                 ExistingDocumentId = existingDocumentId,
-                UserName = User.Identity?.Name,
+                UserName = FirstNonEmpty(_currentUser.Email, User.Identity?.Name, _currentUser.UserId.ToString()),
                 IsAdmin = isAdmin,
                 CorrelationId = correlationId,
                 Metadata = new DocumentBulkUploadMetadata { DocumentTypeId = documentTypeId, ClassificationId = classificationId, Notes = notes, Visibility = visibility, MarkAsIncomplete = markAsIncomplete, IncompleteReason = incompleteReason }
@@ -230,6 +230,8 @@ public sealed class UploadBatchController : Controller
 
     private static object FolderResolutionError(UploadFolderResolutionResult resolution, string correlationId)
         => new { success = false, message = resolution.Message, errorStep = "Resolução da pasta", canRetry = false, requestedFolderId = resolution.RequestedFolderId, folderId = resolution.ResolvedFolderId, resolvedFolderId = resolution.ResolvedFolderId, folderName = resolution.FolderName, wasVirtual = resolution.WasVirtual, createdRealFolder = resolution.CreatedRealFolder, correlationId };
+
+    private static string FirstNonEmpty(params string?[] values) => values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v)) ?? "Usuário não identificado";
 
     private static object Error(string message, string errorStep, bool canRetry, string correlationId, string? code = null)
         => new { success = false, message, errorStep, canRetry, correlationId, code };

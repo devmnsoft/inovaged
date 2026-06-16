@@ -43,8 +43,10 @@ public sealed class GedUploadsController : Controller
     {
         var canViewTenant = await _accessPolicy.IsAdminAsync(_currentUser.TenantId, _currentUser.UserId, User, ct);
         await using var conn = await _db.OpenAsync(ct);
-        var rows = (await conn.QueryAsync<GedUploadBatchRowVM>(new CommandDefinition("""
-SELECT b.id, b.created_by AS CreatedBy, coalesce(b.created_by_name, b.created_by::text, 'Usuário') AS UserName, b.folder_id AS FolderId, f.name AS FolderName,
+        try
+        {
+            var rows = (await conn.QueryAsync<GedUploadBatchRowVM>(new CommandDefinition("""
+SELECT b.id, b.created_by AS CreatedBy, coalesce(nullif(b.created_by_name, ''), b.created_by::text, 'Usuário não identificado') AS UserName, b.folder_id AS FolderId, f.name AS FolderName,
        b.created_at AS CreatedAt, b.finished_at AS FinishedAt, b.status, b.total_files AS TotalFiles,
        b.success_files AS SuccessFiles, b.failed_files AS FailedFiles, b.skipped_files AS SkippedFiles,
        count(i.id) FILTER (WHERE i.status='DUPLICATE')::int AS DuplicateFiles,
@@ -60,8 +62,15 @@ GROUP BY b.id, b.created_by, b.created_by_name, b.folder_id, f.name, b.created_a
 ORDER BY b.created_at DESC
 LIMIT 200;
 """, new { tenantId = _currentUser.TenantId, userId = _currentUser.UserId, canViewTenant }, cancellationToken: ct))).AsList();
-        await _audit.WriteAsync(_currentUser.TenantId, _currentUser.UserId, "UPLOAD_BATCH_VIEW", "UPLOAD_BATCH", null, "Histórico de uploads visualizado", null, null, new { canViewTenant }, ct);
-        return View(new GedUploadHistoryVM { Batches = rows, CanViewTenantBatches = canViewTenant });
+            await _audit.WriteAsync(_currentUser.TenantId, _currentUser.UserId, "UPLOAD_BATCH_VIEW", "UPLOAD_BATCH", null, "Histórico de uploads visualizado", null, null, new { canViewTenant }, ct);
+            return View(new GedUploadHistoryVM { Batches = rows, CanViewTenantBatches = canViewTenant });
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UndefinedColumn)
+        {
+            _logger.LogError(ex, "Schema incompatível ao carregar histórico de uploads. CorrelationId={CorrelationId}", HttpContext.TraceIdentifier);
+            TempData["Error"] = "O histórico de uploads precisa de atualização de schema. Execute as migrations.";
+            return RedirectToAction("Index", "SchemaHealth");
+        }
     }
 
     [HttpGet("{batchId:guid}")]
@@ -72,22 +81,23 @@ LIMIT 200;
         try
         {
             var batch = await conn.QuerySingleOrDefaultAsync<GedUploadBatchRowVM>(new CommandDefinition("""
-SELECT b.id, b.created_by AS CreatedBy, coalesce(b.created_by_name, b.created_by::text, 'Usuário') AS UserName, b.folder_id AS FolderId, f.name AS FolderName,
+SELECT b.id, b.created_by AS CreatedBy, coalesce(nullif(b.created_by_name, ''), b.created_by::text, 'Usuário não identificado') AS UserName, b.folder_id AS FolderId, f.name AS FolderName,
        b.created_at AS CreatedAt, b.finished_at AS FinishedAt, b.status, b.total_files AS TotalFiles, b.success_files AS SuccessFiles, b.failed_files AS FailedFiles, b.skipped_files AS SkippedFiles,
        b.correlation_id AS CorrelationId
 FROM ged.upload_batch b
 LEFT JOIN ged.folder f ON f.tenant_id=b.tenant_id AND f.id=b.folder_id
-WHERE b.tenant_id=@tenantId AND b.id=@batchId AND coalesce(b.reg_status,'A')='A' AND (@canViewTenant OR b.created_by=@userId);
+WHERE b.tenant_id=@tenantId AND b.id=@batchId AND coalesce(b.reg_status,'A')='A';
 """, new { tenantId = _currentUser.TenantId, userId = _currentUser.UserId, batchId, canViewTenant }, cancellationToken: ct));
             if (batch is null) return NotFound();
+            if (!canViewTenant && batch.CreatedBy != _currentUser.UserId) return Forbid();
             var items = await LoadItemsAsync(conn, batchId, ct);
             await _audit.WriteAsync(_currentUser.TenantId, _currentUser.UserId, "UPLOAD_BATCH_DETAIL_VIEW", "UPLOAD_BATCH", batchId, "Detalhe de upload visualizado", null, null, null, ct);
             return View(new GedUploadBatchDetailVM { Batch = batch, Items = items });
         }
         catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UndefinedColumn)
         {
-            _logger.LogError(ex, "Erro de schema ao carregar detalhe do lote de upload. BatchId={BatchId} CorrelationId={CorrelationId}", batchId, HttpContext.TraceIdentifier);
-            TempData["Error"] = "A tela de uploads encontrou uma diferença de schema. Execute as migrations do sistema.";
+            _logger.LogError(ex, "Schema incompatível ao carregar histórico de uploads. BatchId={BatchId} CorrelationId={CorrelationId}", batchId, HttpContext.TraceIdentifier);
+            TempData["Error"] = "O histórico de uploads precisa de atualização de schema. Execute as migrations.";
             return RedirectToAction("Index", "SchemaHealth");
         }
     }
@@ -230,11 +240,24 @@ WHERE i.tenant_id=@tenantId AND i.batch_id=@batchId AND coalesce(i.reg_status,'A
 
     private async Task<IReadOnlyList<GedUploadBatchItemVM>> LoadItemsAsync(System.Data.IDbConnection conn, Guid batchId, CancellationToken ct)
         => (await conn.QueryAsync<GedUploadBatchItemVM>(new CommandDefinition("""
-SELECT id, original_file_name AS OriginalFileName, size_bytes AS SizeBytes, status, document_id AS DocumentId, version_id AS VersionId,
-       error_message AS ErrorMessage, error_step AS ErrorStep, can_retry AS CanRetry, elapsed_ms AS ElapsedMs, correlation_id AS CorrelationId, processing_warning AS ProcessingWarning
-FROM ged.upload_batch_item
-WHERE tenant_id=@tenantId AND batch_id=@batchId AND coalesce(reg_status,'A')='A'
-ORDER BY created_at, original_file_name;
+SELECT i.id AS Id,
+       i.original_file_name AS OriginalFileName,
+       i.stored_file_name AS StoredFileName,
+       i.document_id AS DocumentId,
+       i.version_id AS VersionId,
+       i.status AS Status,
+       i.error_message AS ErrorMessage,
+       i.error_step AS ErrorStep,
+       i.can_retry AS CanRetry,
+       i.size_bytes AS SizeBytes,
+       i.elapsed_ms AS ElapsedMs,
+       i.processing_warning AS ProcessingWarning,
+       i.correlation_id AS CorrelationId,
+       i.created_at AS CreatedAt,
+       i.finished_at AS FinishedAt
+FROM ged.upload_batch_item i
+WHERE i.tenant_id=@tenantId AND i.batch_id=@batchId AND coalesce(i.reg_status,'A')='A'
+ORDER BY i.created_at, i.original_file_name;
 """, new { tenantId = _currentUser.TenantId, batchId }, cancellationToken: ct))).AsList();
 
     private static string Csv(string? value)

@@ -89,6 +89,11 @@ VALUES (@id, @tenantId, @folderId, @requestedFolderId, @userId, @userName, 'OPEN
             _logger.LogError(ex, "Tabelas de upload em lote não existem. Execute a migration 2026_06_01_upload_batch.sql. Tenant={TenantId} User={UserId}", tenantId, userId);
             return Result<Guid>.Fail("UPLOAD_BATCH_SCHEMA_MISSING", "Upload em lote indisponível. Estrutura de banco pendente.");
         }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UndefinedColumn)
+        {
+            _logger.LogError(ex, "Schema incompatível ao iniciar lote de upload. Execute a migration 2026_06_harden_ged_uploads_schema.sql. Tenant={TenantId} User={UserId}", tenantId, userId);
+            return Result<Guid>.Fail("UPLOAD_BATCH_SCHEMA_MISSING", "Upload em lote indisponível. Estrutura de banco pendente.");
+        }
     }
 
     public async Task<Result<UploadBatchFileResultDto>> UploadFileAsync(Guid tenantId, Guid userId, UploadBatchFileRequestDto request, CancellationToken ct)
