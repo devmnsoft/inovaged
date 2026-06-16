@@ -3,6 +3,7 @@
     const MAX_PARALLEL_UPLOADS = 2;
     const RETRY_BACKOFF_MS = [2000, 5000, 10000];
     const BULK_UPLOAD_STORAGE_KEY = 'InovaGED:bulkUpload:v2';
+    const CURRENT_BATCH_STORAGE_KEY = 'inovaged.uploadBatch.current';
     const ValidationStep = 'Validação de extensão';
     const state = { files: [], uploading: false, isStarting: false, isFinishing: false, activeUploads: 0, maxConcurrency: MAX_PARALLEL_UPLOADS, completed: 0, failed: 0, skipped: 0, isCheckingDuplicates: false, duplicateCheckKey: null, duplicateCheckPromise: null, duplicateCheckResult: null, lastDuplicateSignature: null, batchId: null, requestedFolderId: null, resolvedFolderId: null, listingFolderId: null, folderName: null, createdDocuments: [], useLegacyUploadFallback: false, duplicateStrategy: null, uploadAbortController: null, chunkOptions: { enabled: true, thresholdBytes: 50 * 1024 * 1024, chunkSizeBytes: 10 * 1024 * 1024, timeoutMs: 1800 * 1000 } };
 
@@ -21,6 +22,7 @@
         bindBulkUploadEvents();
         loadChunkOptions();
         recoverBulkUploadUiState();
+        checkLastProblemUpload();
     }
 
     function bindBulkUploadEvents() {
@@ -74,8 +76,13 @@
                 if (hasOnlyFinished) resetBulkUploadState();
                 console.log('[BulkUpload] modal aberto', { selectedFiles: state.files.length, isUploading: state.uploading, isCheckingDuplicates: state.isCheckingDuplicates });
             });
+            modal.addEventListener('hide.bs.modal', function (e) {
+                if (!state.uploading && hasBatchFailures() && !confirm('Existem arquivos com falha. Deseja fechar mesmo assim? Você poderá consultar o lote depois em Histórico de Uploads.')) {
+                    e.preventDefault();
+                }
+            });
             modal.addEventListener('hidden.bs.modal', function () {
-                if (!state.uploading) {
+                if (!state.uploading && !hasBatchFailures()) {
                     const hasNoPending = state.files.every(x => x.status === 'success' || x.status === 'ignored');
                     if (hasNoPending) resetBulkUploadState();
                 }
@@ -749,7 +756,8 @@
             console.log('[BulkUpload] upload finished', { batchId: state.batchId, success, error, finished });
 
             if (success > 0 && error === 0) {
-                showBulkUploadMessage(`Upload concluído: ${success} documento(s) enviado(s). Você pode fechar esta janela ou iniciar novo lote.`, 'success');
+                persistCurrentUploadBatch(finished?.status || 'COMPLETED');
+                showBulkUploadMessage(`Upload concluído com sucesso. ${success} documento(s) enviado(s).`, 'success');
                 showAppToast(`${success} documento(s) enviado(s) com sucesso.`, 'success', 'Upload concluído');
                 showRefreshAfterUploadButton(true);
                 await onBatchFinished(finished);
@@ -757,15 +765,17 @@
             }
             if (success > 0 && error > 0) {
                 try { localStorage.setItem('ged:lastUploadBatchHadFailures', 'true'); } catch (_) { }
-                showBulkUploadMessage(`Upload concluído com falhas: ${success} enviados, ${error} falharam. O modal permanecerá aberto para conferência.`, 'warning');
+                persistCurrentUploadBatch(finished?.status || 'PARTIAL_ERROR');
+                showBulkUploadMessage(`Upload concluído com falhas: ${success} arquivos enviados com sucesso e ${error} falharam. Verifique a lista, reenvie falhas ou abra o log do lote.`, 'warning');
                 showAppToast('Alguns documentos não foram enviados.', 'warning', 'Upload parcial');
                 showRefreshAfterUploadButton(true);
-                await onBatchFinished(finished);
+                updateFooterActions();
                 return;
             }
             if (success === 0 && error > 0) {
                 showBulkUploadMessage('Nenhum documento foi enviado. Verifique os erros por arquivo.', 'danger');
                 try { localStorage.setItem('ged:lastUploadBatchHadFailures', 'true'); } catch (_) { }
+                persistCurrentUploadBatch('ERROR');
                 showAppToast('Nenhum documento foi enviado.', 'error', 'Erro no upload');
             }
         } catch (err) {
@@ -806,6 +816,7 @@
         }
         state.batchId = j.batchId;
         try { localStorage.setItem('ged:lastUploadBatchId', j.batchId); } catch (_) { }
+        persistCurrentUploadBatch('PROCESSING');
         state.requestedFolderId = j.requestedFolderId || payload.requestedFolderId;
         state.resolvedFolderId = j.resolvedFolderId || j.folderId || payload.uploadFolderId;
         state.folderName = j.folderName || selected?.folderName || null;
@@ -946,6 +957,7 @@
                     fileItem.canRetry = true;
                     fileItem.progress = 100;
                     renderFileList();
+                    persistCurrentUploadBatch('PROCESSING');
                     resolve(fileItem.status === 'ignored' ? 'ignored' : 'success');
                     return;
                 }
@@ -959,6 +971,7 @@
                 fileItem.correlationId = payload?.correlationId || null;
                 fileItem.canRetry = payload?.canRetry !== false;
                 renderFileList();
+                persistCurrentUploadBatch('PROCESSING');
                 resolve('error');
             };
             xhr.ontimeout = async () => {
@@ -973,6 +986,7 @@
                 }
                 if (await confirmBatchStatus(fileItem)) { renderFileList(); resolve('success'); return; }
                 renderFileList();
+                persistCurrentUploadBatch('PROCESSING');
                 resolve('error');
             };
             xhr.onerror = async () => {
@@ -994,6 +1008,7 @@
                 }
                 if (await confirmBatchStatus(fileItem)) { renderFileList(); resolve('success'); return; }
                 renderFileList();
+                persistCurrentUploadBatch('PROCESSING');
                 resolve('error');
             };
             xhr.send(fd);
@@ -1257,6 +1272,8 @@
     }
 
     async function onBatchFinished(result) {
+        persistCurrentUploadBatch(result?.status || (hasBatchFailures() ? 'PARTIAL_ERROR' : 'COMPLETED'));
+        if (hasBatchFailures()) { updateFooterActions(); return; }
         const target = getUploadNavigationTarget(result);
         await navigateToUploadedFolder(target.folderId, target.folderName, target.createdDocuments);
     }
@@ -1327,6 +1344,52 @@
         if (visualFolderId) url.searchParams.set('visualFolderId', visualFolderId);
         url.searchParams.set('_ts', Date.now().toString());
         window.location.href = url.toString();
+    }
+
+
+    function hasBatchFailures() {
+        return state.files.some(x => ['error', 'aborted'].includes(x.status)) || state.failed > 0;
+    }
+
+    function persistCurrentUploadBatch(status) {
+        if (!state.batchId) return;
+        try {
+            const failedCount = state.files.filter(x => ['error', 'aborted'].includes(x.status)).length || state.failed || 0;
+            const successCount = state.files.filter(x => x.status === 'success').length || state.completed || 0;
+            localStorage.setItem(CURRENT_BATCH_STORAGE_KEY, JSON.stringify({
+                batchId: state.batchId,
+                folderId: state.resolvedFolderId || getSelectedUploadFolder()?.uploadFolderId || null,
+                folderName: state.folderName || getSelectedUploadFolder()?.folderName || null,
+                startedAt: new Date().toISOString(),
+                totalFiles: state.files.length,
+                status: status || (failedCount ? 'PARTIAL_ERROR' : 'PROCESSING'),
+                lastUpdatedAt: new Date().toISOString(),
+                hasFailures: failedCount > 0,
+                failedCount,
+                successCount
+            }));
+        } catch (err) { console.warn('[BulkUpload] não foi possível persistir lote atual', err); }
+    }
+
+    async function checkLastProblemUpload() {
+        const banner = document.getElementById('gedUploadProblemBanner');
+        if (!banner) return;
+        try {
+            const r = await fetch('/Ged/Uploads/LastProblem', { headers: { Accept: 'application/json' } });
+            const j = await r.json();
+            if (!j?.success || !j.hasProblem) return;
+            banner.classList.remove('d-none');
+            const msg = banner.querySelector('[data-upload-problem-message]');
+            const link = banner.querySelector('[data-upload-problem-link]');
+            if (msg) msg.textContent = j.message || 'Seu último upload teve falhas.';
+            if (link && j.batchId) link.href = `/Ged/Uploads/${j.batchId}`;
+            const close = banner.querySelector('.btn-close');
+            close?.addEventListener('click', async () => {
+                if (!j.batchId) return;
+                const token = document.querySelector('input[name="__RequestVerificationToken"]')?.value;
+                await fetch(`/Ged/Uploads/${j.batchId}/Acknowledge`, { method:'POST', headers: { 'Content-Type':'application/json', ...(token ? { RequestVerificationToken: token } : {}) }, body: JSON.stringify({ notes:'Aviso fechado no GED.' }) }).catch(() => null);
+            }, { once:true });
+        } catch (err) { console.warn('[BulkUpload] falha ao consultar último lote problemático', err); }
     }
 
     function persistBulkUploadUiState() {

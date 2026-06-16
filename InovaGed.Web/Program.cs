@@ -271,6 +271,7 @@ builder.Services.AddScoped<IUploadFolderResolver, UploadFolderResolver>();
 builder.Services.AddSingleton<IUploadConcurrencyLimiter, UploadConcurrencyLimiter>();
 builder.Services.AddScoped<IGedProcessingJobRepository, GedProcessingJobRepository>();
 builder.Services.AddScoped<IUploadBatchService, UploadBatchService>();
+builder.Services.AddScoped<IUploadBatchConsistencyService, UploadBatchConsistencyService>();
 builder.Services.AddScoped<IUploadChunkService, UploadChunkService>();
 builder.Services.AddHostedService<StaleUploadBatchItemWorker>();
 builder.Services.AddHostedService<GedProcessingWorker>();
