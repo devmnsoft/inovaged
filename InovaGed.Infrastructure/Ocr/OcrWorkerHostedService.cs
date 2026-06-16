@@ -81,8 +81,15 @@ public sealed class OcrWorkerHostedService : BackgroundService
             if (!_opt.Enabled)
                 throw new InvalidOperationException("OCR Worker está desabilitado em configuração.");
 
-            if (string.IsNullOrWhiteSpace(_opt.OcrMyPdfPath) || !File.Exists(_opt.OcrMyPdfPath))
-                throw new FileNotFoundException("Caminho do ocrmypdf.exe inválido", _opt.OcrMyPdfPath);
+            var ocrMyPdfPath = _opt.OcrMyPdfPath;
+            if (string.IsNullOrWhiteSpace(ocrMyPdfPath))
+            {
+                _logger.LogWarning("OCRmyPDF não configurado. Configure Ocr:OcrMyPdfPath.");
+                throw new InvalidOperationException("Ocr:OcrMyPdfPath não configurado.");
+            }
+
+            if (!File.Exists(ocrMyPdfPath))
+                throw new FileNotFoundException("Caminho do ocrmypdf.exe inválido", ocrMyPdfPath);
 
             // ✅ baixa do storage para um arquivo temporário local (sem GetPhysicalPathAsync)
             var ext = Path.GetExtension(v.FileName);
@@ -92,7 +99,7 @@ public sealed class OcrWorkerHostedService : BackgroundService
             await DownloadToLocalTempAsync(v.StoragePath, inputTmp, ct);
 
             // roda OCR
-            await RunOcrMyPdfAsync(_opt.OcrMyPdfPath!, inputTmp, outputPdf, sidecarTxt, ct);
+            await RunOcrMyPdfAsync(ocrMyPdfPath, inputTmp, outputPdf, sidecarTxt, ct);
 
             // lê texto OCR
             var ocrText = File.Exists(sidecarTxt)
@@ -169,7 +176,8 @@ public sealed class OcrWorkerHostedService : BackgroundService
             CreateNoWindow = true
         };
 
-        using var p = Process.Start(psi)!;
+        using var p = Process.Start(psi)
+            ?? throw new InvalidOperationException("Não foi possível iniciar o processo ocrmypdf.");
         _ = await p.StandardOutput.ReadToEndAsync();
         var stdErr = await p.StandardError.ReadToEndAsync();
 
@@ -178,15 +186,4 @@ public sealed class OcrWorkerHostedService : BackgroundService
         if (p.ExitCode != 0)
             throw new InvalidOperationException($"ocrmypdf falhou (exit={p.ExitCode}). Erro: {stdErr}");
     }
-}
-
-public sealed class OcrOptions
-{
-    public bool Enabled { get; set; } = true;
-    public string? OcrMyPdfPath { get; set; }
-    public int MaxAttempts { get; set; } = 3;
-    public int WorkerDelaySeconds { get; set; } = 5;
-    public int[] RetryBackoffSeconds { get; set; } = new[] { 30, 120, 300 };
-    public int MaxParallelJobs { get; set; } = 1;
-    public int PreviewStatusPollingSeconds { get; set; } = 5;
 }
