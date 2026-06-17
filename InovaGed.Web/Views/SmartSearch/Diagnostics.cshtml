@@ -1,0 +1,20 @@
+@model InovaGed.Application.Ged.Search.GedSmartSearchDiagnosticsVm
+@{
+    ViewData["Title"] = "Diagnóstico SmartSearch";
+}
+<div class="container-fluid py-3">
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+        <div><h1 class="h4 mb-1"><i class="bi bi-activity me-1"></i>Diagnóstico SmartSearch</h1><p class="text-muted mb-0">Saúde do índice, OCR e reindexação da busca inteligente.</p></div>
+        <form method="post" asp-action="ReindexMissing">@Html.AntiForgeryToken()<button class="btn btn-primary"><i class="bi bi-arrow-repeat me-1"></i>ReindexMissing</button></form>
+    </div>
+    <div class="row g-3 mb-3">
+        <div class="col-md-3"><div class="card"><div class="card-body"><div class="text-muted small">Documentos ativos</div><div class="fs-4 fw-bold">@Model.ActiveDocuments</div></div></div></div>
+        <div class="col-md-3"><div class="card"><div class="card-body"><div class="text-muted small">No índice</div><div class="fs-4 fw-bold">@Model.IndexedDocuments</div></div></div></div>
+        <div class="col-md-3"><div class="card"><div class="card-body"><div class="text-muted small">Sem índice</div><div class="fs-4 fw-bold text-warning">@Model.MissingIndexDocuments</div></div></div></div>
+        <div class="col-md-3"><div class="card"><div class="card-body"><div class="text-muted small">Com OCR</div><div class="fs-4 fw-bold text-success">@Model.OcrAvailable</div></div></div></div>
+    </div>
+    <div class="row g-3">
+        <div class="col-lg-6"><div class="card"><div class="card-header bg-white"><strong>Últimos jobs SMART_INDEX</strong></div><div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>Status</th><th>Qtd</th></tr></thead><tbody>@foreach (var x in Model.SmartIndexJobs){<tr><td>@x.Status</td><td>@x.Total</td></tr>}</tbody></table></div></div></div>
+        <div class="col-lg-6"><div class="card"><div class="card-header bg-white"><strong>Documentos sem índice</strong></div><div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>Documento</th><th>Arquivo</th></tr></thead><tbody>@foreach (var x in Model.TopMissingDocuments){<tr><td>@x.Title</td><td>@x.FileName</td></tr>}</tbody></table></div></div></div>
+    </div>
+</div>

@@ -270,6 +270,7 @@ public sealed class GedController : Controller
 
         var vm = new GedExplorerVM
         {
+            RequestedFolderId = resolved.RequestedFolderId,
             CurrentFolderId = resolved.VisualFolderId,
             CurrentListingFolderId = listingFolderId,
             CurrentUploadFolderId = resolved.UploadFolderId,
@@ -773,11 +774,13 @@ public sealed class GedController : Controller
             var vm = new GedExplorerVM
             {
                 CanBulkUpload = canUseCurrentFolderForUpload && uploadFolderId.HasValue && await _accessPolicy.CanUploadDocumentToFolderAsync(tenantId, _currentUser.UserId, uploadFolderId, User, ct),
+                RequestedFolderId = resolved.RequestedFolderId,
                 CurrentFolderId = effectiveFolderId,
                 CurrentListingFolderId = listingFolderId,
                 CurrentUploadFolderId = uploadFolderId,
                 CurrentFolderIsVirtual = resolved.WasVirtual,
                 CurrentFolderName = resolved.Success ? resolved.FolderName : ResolveCurrentFolderName(tree, effectiveFolderId, folderId),
+                ErrorMessage = resolved.Success || !folderId.HasValue ? string.Empty : "Pasta não encontrada ou sem permissão.",
                 FolderId = listingFolderId,
                 Query = q,
                 Folders = tree.Select(x => new GedExplorerVM.FolderNodeVM

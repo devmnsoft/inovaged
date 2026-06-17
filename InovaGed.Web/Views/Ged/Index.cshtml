@@ -43,7 +43,7 @@
     var breadcrumbText = currentFolderNode?.Path ?? (!string.IsNullOrWhiteSpace(Model.CurrentFolderName) ? Model.CurrentFolderName : "Raiz");
 }
 
-<div class="ged-page">
+<div class="ged-page" data-requested-folder-id="@Model.RequestedFolderId" data-visual-folder-id="@Model.CurrentFolderId" data-listing-folder-id="@currentListingFolderId" data-upload-folder-id="@currentUploadFolderId">
     <div id="pageAlertHost" class="mb-2">
         @if (Model.CurrentFolderIsVirtual)
         {
@@ -457,6 +457,8 @@
                     <li><button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#modalFilaOcr"><i class="bi bi-list-task me-1"></i>Fila OCR</button></li>
                     <li><a class="dropdown-item" href="/SmartSearch"><i class="bi bi-stars me-1"></i>Busca inteligente</a></li>
                     <li><a class="dropdown-item" href="/Ged/Uploads"><i class="bi bi-clock-history me-1"></i>Histórico de uploads</a></li>
+                    <li><a class="dropdown-item" href="/Operations"><i class="bi bi-gear-wide-connected me-1"></i>Operações</a></li>
+                    <li><a class="dropdown-item" href="/Ged/Intelligence"><i class="bi bi-speedometer2 me-1"></i>BI GED</a></li>
                 </ul>
             </div>
         </div>
@@ -1287,7 +1289,12 @@
             if (el) el.textContent = String(count);
             const inline = document.getElementById('selectedDocumentsInlineInfo');
             if (inline) inline.textContent = `${count} documento${count === 1 ? '' : 's'} selecionado${count === 1 ? '' : 's'}`;
-            document.querySelectorAll('.ged-selection-bar').forEach(x => x.classList.toggle('has-selection', count > 0));
+            document.querySelectorAll('.ged-selection-bar').forEach(x => {
+                x.classList.toggle('has-selection', count > 0);
+                x.classList.toggle('is-visible', count > 0);
+                x.classList.toggle('is-hidden', count === 0);
+                x.dataset.hasSelection = count > 0 ? 'true' : 'false';
+            });
             document.querySelectorAll('.js-clear-document-selection').forEach(btn => { btn.disabled = count === 0; });
         }
 

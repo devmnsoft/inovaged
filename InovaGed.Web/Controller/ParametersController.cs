@@ -86,23 +86,28 @@ public sealed class ParametersController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Save(ParameterItemEditVM vm, CancellationToken ct)
     {
-        if (!vm.Id.HasValue || vm.Id == Guid.Empty)
+        var isCreate = !vm.Id.HasValue || vm.Id.Value == Guid.Empty;
+        if (isCreate)
         {
             ModelState.Remove(nameof(vm.Id));
+            ModelState.Remove(nameof(vm.Code));
+            ModelState.Remove("Id");
+            ModelState.Remove("Code");
             vm.Id = null;
+            vm.Code = null;
         }
 
         if (string.IsNullOrWhiteSpace(vm.Code))
         {
             ModelState.Remove(nameof(vm.Code));
-            vm.Code = string.Empty;
+            ModelState.Remove("Code");
         }
 
         if (vm.CategoryId == Guid.Empty)
-            ModelState.AddModelError(nameof(vm.CategoryId), "Selecione uma categoria válida para o parâmetro.");
+            ModelState.AddModelError(nameof(vm.CategoryId), "Categoria obrigatória.");
 
         if (string.IsNullOrWhiteSpace(vm.Name))
-            ModelState.AddModelError(nameof(vm.Name), "Informe o nome do parâmetro.");
+            ModelState.AddModelError(nameof(vm.Name), "Nome obrigatório.");
 
         if (!string.IsNullOrWhiteSpace(vm.MetadataJson))
         {

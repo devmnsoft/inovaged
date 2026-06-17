@@ -190,12 +190,17 @@ order by display_order, name;";
         if (string.IsNullOrWhiteSpace(categoryCode)) throw new ArgumentException("Categoria não encontrada.");
 
         if (isCreate && string.IsNullOrWhiteSpace(vm.Code))
-            vm.Code = await _codeGenerator.GenerateNextCodeAsync(tenantId, $"ParameterItem:{categoryCode}", ResolveParameterPrefix(categoryCode), ct);
-        if (!isCreate && string.IsNullOrWhiteSpace(vm.Code)) throw new ArgumentException("Código atual não encontrado.");
+        {
+            vm.Code = await _codeGenerator.GenerateNextCodeAsync(
+                tenantId,
+                $"ParameterItem:{categoryCode}",
+                ResolveParameterPrefix(categoryCode),
+                ct);
+        }
 
-        var normalizedCode = string.IsNullOrWhiteSpace(vm.Code)
-            ? (await _codeGenerator.GenerateNextCodeAsync(tenantId, $"ParameterItem:{categoryCode}", ResolveParameterPrefix(categoryCode), ct)).Trim().ToUpperInvariant()
-            : vm.Code.Trim().ToUpperInvariant();
+        var normalizedCode = vm.Code?.Trim().ToUpperInvariant();
+        if (string.IsNullOrWhiteSpace(normalizedCode))
+            throw new ArgumentException("Código não foi gerado. Verifique a configuração de geração de código.");
         if (!string.IsNullOrWhiteSpace(vm.MetadataJson))
         {
             try { _ = System.Text.Json.JsonDocument.Parse(vm.MetadataJson); }

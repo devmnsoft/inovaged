@@ -3,6 +3,8 @@ using InovaGed.Application.HospitalIntelligence;
 using InovaGed.Application.HospitalTrends;
 using InovaGed.Infrastructure.HospitalAnalytics;
 using InovaGed.Infrastructure.HospitalIntelligence;
+using InovaGed.Application.Ged.Intelligence;
+using InovaGed.Infrastructure.Ged.Intelligence;
 using InovaGed.Infrastructure.HospitalTrends;
 using System.Security.Claims;
 using System.Security.Cryptography.X509Certificates;
@@ -392,6 +394,7 @@ builder.Services.AddScoped<IAuditSecurityService, AuditSecurityService>();
 builder.Services.AddScoped<IAbacAuthorizationService, AbacAuthorizationService>();
 builder.Services.AddScoped<ISensitiveDocumentCryptoService, SensitiveDocumentCryptoService>();
 builder.Services.AddScoped<IGedIntelligenceService, GedIntelligenceService>();
+builder.Services.AddScoped<IGedAdministrativeIntelligenceService, GedAdministrativeIntelligenceService>();
 
 
 // =======================================================

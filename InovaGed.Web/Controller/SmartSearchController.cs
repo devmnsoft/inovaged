@@ -131,7 +131,10 @@ public sealed class SmartSearchController : Controller
     {
         if (!_currentUser.IsAuthenticated) return RedirectToAction("Login", "Account");
         if (!RolePolicyHelper.IsFullAdmin(User)) return Forbid();
-        return Json(new { success = true, model = await _diagnostics.GetAsync(_currentUser.TenantId, ct) });
+        var model = await _diagnostics.GetAsync(_currentUser.TenantId, ct);
+        if ((Request.Headers.Accept.ToString() ?? string.Empty).Contains("application/json", StringComparison.OrdinalIgnoreCase))
+            return Json(new { success = true, model });
+        return View(model);
     }
 
     [HttpPost]

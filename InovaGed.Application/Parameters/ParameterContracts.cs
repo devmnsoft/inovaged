@@ -65,7 +65,7 @@ public sealed class ParameterItemEditVM
     public Guid? Id { get; set; }
     public Guid CategoryId { get; set; }
     public Guid? ParentId { get; set; }
-    public string Code { get; set; } = string.Empty;
+    public string? Code { get; set; }
     public string Name { get; set; } = string.Empty;
     public string? Description { get; set; }
     public string? Abbreviation { get; set; }

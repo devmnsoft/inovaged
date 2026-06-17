@@ -9,6 +9,8 @@
 
 <div class="ged-documents-list"
      id="gedDocumentsContainer"
+     data-requested-folder-id="@Model.RequestedFolderId"
+     data-visual-folder-id="@Model.CurrentFolderId"
      data-folder-id="@Model.CurrentFolderId"
      data-listing-folder-id="@Model.CurrentListingFolderId"
      data-upload-folder-id="@Model.CurrentUploadFolderId"
@@ -49,7 +51,7 @@
             </div>
         }
 
-        <div class="ged-documents-view-toolbar ged-selection-bar" data-has-selection="false">
+        <div class="ged-documents-view-toolbar ged-selection-bar is-hidden" data-has-selection="false">
             <div class="ged-bulk-select ged-selection-info">
                 <input type="checkbox"
                        class="form-check-input"
@@ -73,9 +75,9 @@
                     disabled>
                 <i class="bi bi-folder-symlink me-1"></i>Mover
             </button>
-            <button type="button" class="btn btn-sm btn-outline-warning js-bulk-mark-incomplete" disabled><i class="bi bi-exclamation-diamond me-1"></i>Marcar como incompleto</button>
-            <button type="button" class="btn btn-sm btn-outline-success js-bulk-mark-complete" disabled><i class="bi bi-check2-circle me-1"></i>Marcar como completo</button>
-            <button type="button" class="btn btn-sm btn-outline-danger js-bulk-delete" disabled><i class="bi bi-trash me-1"></i>Excluir selecionados</button>
+            <button type="button" class="btn btn-sm btn-outline-warning js-bulk-mark-incomplete" disabled><i class="bi bi-exclamation-diamond me-1"></i>Incompleto</button>
+            <button type="button" class="btn btn-sm btn-outline-success js-bulk-mark-complete" disabled><i class="bi bi-check2-circle me-1"></i>Completo</button>
+            <button type="button" class="btn btn-sm btn-outline-danger js-bulk-delete" disabled><i class="bi bi-trash me-1"></i>Excluir</button>
             <button type="button" class="btn btn-sm btn-outline-secondary js-clear-document-selection" disabled>Limpar seleção</button>
             </div>
 

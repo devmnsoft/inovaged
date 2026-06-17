@@ -105,7 +105,11 @@
             li.classList.toggle('open', expanded.has(li.dataset.id));
             children.style.display = expanded.has(li.dataset.id) ? 'block' : 'none';
         });
-        activateFolderFromCurrentId(new URL(location.href).searchParams.get('visualFolderId') || localStorage.getItem(keys.active) || new URL(location.href).searchParams.get('folderId'));
+        const page = document.querySelector('.ged-page');
+        const container = document.querySelector('#gedDocumentsContainer');
+        const url = new URL(location.href);
+        const serverVisualId = container?.dataset?.visualFolderId || page?.dataset?.visualFolderId || url.searchParams.get('visualFolderId') || url.searchParams.get('folderId');
+        activateFolderFromCurrentId(serverVisualId);
         const scroller = getTreeScroll();
         if (scroller) scroller.scrollTop = Number(localStorage.getItem(keys.scrollTop) || '0');
     }
@@ -145,9 +149,10 @@
         updateHeader(resolvedFolderName);
         if (pushUrl) {
             const url = new URL(window.location.href);
-            url.searchParams.set('folderId', listingFolderId);
+            url.searchParams.set('folderId', visualFolderId);
+            if (listingFolderId && listingFolderId !== visualFolderId) url.searchParams.set('listingFolderId', listingFolderId); else url.searchParams.delete('listingFolderId');
             url.searchParams.set('visualFolderId', visualFolderId);
-            history.pushState({ folderId: listingFolderId, visualFolderId }, '', url.toString());
+            history.pushState({ folderId: visualFolderId, listingFolderId, visualFolderId }, '', url.toString());
         }
         restoreTreeState();
         highlightUploadedDocuments(options.highlightDocumentIds || []);
