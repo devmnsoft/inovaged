@@ -3,6 +3,7 @@ using InovaGed.Application.Common.Codes;
 using InovaGed.Application.Common.Database;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 
 namespace InovaGed.Infrastructure.Common.Codes;
 
@@ -35,39 +36,82 @@ public sealed class CodeGeneratorService : ICodeGeneratorService
 
     private async Task<string> GenerateAsync(Guid tenantId, string entityName, string? prefix, int padding, CancellationToken ct)
     {
-        if (tenantId == Guid.Empty) throw new ArgumentException("Tenant inválido.", nameof(tenantId));
-        if (string.IsNullOrWhiteSpace(entityName)) throw new ArgumentException("Entidade inválida.", nameof(entityName));
+        if (tenantId == Guid.Empty) throw new ArgumentException("Tenant inválido para geração de código.", nameof(tenantId));
+        if (string.IsNullOrWhiteSpace(entityName)) throw new ArgumentException("Entidade obrigatória para geração de código.", nameof(entityName));
+
+        entityName = entityName.Trim();
+        prefix = NormalizePrefix(prefix) ?? "COD";
+        padding = Math.Clamp(padding <= 0 ? 4 : padding, 2, 12);
 
         await using var conn = await _db.OpenAsync(ct);
         await using var tx = await conn.BeginTransactionAsync(ct);
 
-        const string insertSql = """
-insert into ged.code_sequence(tenant_id, entity_name, prefix, current_value, padding)
-values (@TenantId, @EntityName, @Prefix, 0, @Padding)
-on conflict (tenant_id, entity_name) do nothing;
+        try
+        {
+            const string selectSql = """
+select id as "Id", current_value as "CurrentValue", prefix as "Prefix", padding as "Padding"
+from ged.code_sequence
+where tenant_id = @TenantId
+  and entity_name = @EntityName
+  and coalesce(reg_status,'A') = 'A'
+for update;
 """;
 
-        const string updateSql = """
+            var args = new { TenantId = tenantId, EntityName = entityName, Prefix = prefix, Padding = padding };
+            await conn.ExecuteAsync(new CommandDefinition("select pg_advisory_xact_lock(hashtextextended(cast(@TenantId as text) || ':' || @EntityName, 0))", args, tx, cancellationToken: ct));
+            var row = await conn.QueryFirstOrDefaultAsync<SequenceRow>(new CommandDefinition(selectSql, args, tx, cancellationToken: ct));
+            long next;
+            string? finalPrefix;
+            int finalPadding;
+
+            if (row is null)
+            {
+                next = 1;
+                const string insertSql = """
+insert into ged.code_sequence(tenant_id, entity_name, prefix, current_value, padding, created_at, updated_at, reg_status)
+values (@TenantId, @EntityName, @Prefix, 1, @Padding, now(), now(), 'A')
+returning current_value as "CurrentValue", prefix as "Prefix", padding as "Padding";
+""";
+                row = await conn.QuerySingleAsync<SequenceRow>(new CommandDefinition(insertSql, args, tx, cancellationToken: ct));
+                finalPrefix = row.Prefix;
+                finalPadding = row.Padding;
+            }
+            else
+            {
+                const string updateSql = """
 update ged.code_sequence
    set current_value = current_value + 1,
-       prefix = coalesce(nullif(@Prefix, ''), prefix),
-       padding = greatest(@Padding, 1),
+       prefix = @Prefix,
+       padding = @Padding,
        updated_at = now()
  where tenant_id = @TenantId
    and entity_name = @EntityName
+   and coalesce(reg_status,'A') = 'A'
 returning current_value as "CurrentValue", prefix as "Prefix", padding as "Padding";
 """;
+                row = await conn.QuerySingleAsync<SequenceRow>(new CommandDefinition(updateSql, args, tx, cancellationToken: ct));
+                next = row.CurrentValue;
+                finalPrefix = row.Prefix;
+                finalPadding = row.Padding;
+            }
 
-        var args = new { TenantId = tenantId, EntityName = entityName.Trim(), Prefix = prefix, Padding = Math.Max(1, padding) };
-        await conn.ExecuteAsync(new CommandDefinition(insertSql, args, tx, cancellationToken: ct));
-        var row = await conn.QuerySingleAsync<SequenceRow>(new CommandDefinition(updateSql, args, tx, cancellationToken: ct));
-        await tx.CommitAsync(ct);
+            await tx.CommitAsync(ct);
 
-        var number = row.CurrentValue.ToString().PadLeft(Math.Max(1, row.Padding), '0');
-        var finalPrefix = NormalizePrefix(row.Prefix);
-        var code = string.IsNullOrWhiteSpace(finalPrefix) ? number : $"{finalPrefix}-{number}";
-        _logger.LogInformation("Código gerado. Tenant={TenantId} Entity={EntityName} Code={Code}", tenantId, entityName, code);
-        return code;
+            var number = next.ToString().PadLeft(finalPadding, '0');
+            var code = $"{NormalizePrefix(finalPrefix) ?? "COD"}-{number}";
+            _logger.LogInformation("Código gerado. Tenant={TenantId} Entity={EntityName} Code={Code}", tenantId, entityName, code);
+            return code;
+        }
+        catch (PostgresException ex) when (ex.SqlState == "42P01")
+        {
+            await tx.RollbackAsync(CancellationToken.None);
+            throw new InvalidOperationException("Tabela ged.code_sequence não existe. Execute as migrations do sistema.", ex);
+        }
+        catch
+        {
+            await tx.RollbackAsync(CancellationToken.None);
+            throw;
+        }
     }
 
     private static string? NormalizePrefix(string? value)

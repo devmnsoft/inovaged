@@ -132,7 +132,10 @@ public sealed class ParametersController : Controller
         catch (Exception ex)
         {
             _logger.LogError(ex, "Erro ao salvar parâmetro");
-            ModelState.AddModelError(string.Empty, ex.Message);
+            var message = ex.Message.Contains("ged.code_sequence", StringComparison.OrdinalIgnoreCase) || ex.Message.Contains("gerar o código", StringComparison.OrdinalIgnoreCase)
+                ? "Não foi possível gerar o código automático. Execute as migrations do sistema."
+                : ex.Message;
+            ModelState.AddModelError(string.Empty, message);
             await LoadCombos(vm, ct);
             return View("Edit", vm);
         }

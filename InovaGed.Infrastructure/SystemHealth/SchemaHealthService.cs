@@ -15,6 +15,7 @@ public sealed class SchemaHealthService : ISchemaHealthService
     private static readonly string[] RequiredTables =
     [
         "ged.document", "ged.document_version", "ged.folder", "ged.document_search", "ged.ocr_job",
+        "ged.code_sequence",
         "ged.upload_batch", "ged.upload_batch_item", "ged.upload_session", "ged.upload_session_chunk",
         "ged.document_partial_part", "ged.audit_log", "ged.app_audit_log",
         "ged.loan_request", "ged.loan_request_item",
@@ -29,6 +30,11 @@ public sealed class SchemaHealthService : ISchemaHealthService
 
     private static readonly (string Table, string Column, string Area)[] RequiredColumns =
     [
+        ("code_sequence", "id", "Code Generation"), ("code_sequence", "tenant_id", "Code Generation"),
+        ("code_sequence", "entity_name", "Code Generation"), ("code_sequence", "prefix", "Code Generation"),
+        ("code_sequence", "current_value", "Code Generation"), ("code_sequence", "padding", "Code Generation"),
+        ("code_sequence", "created_at", "Code Generation"), ("code_sequence", "updated_at", "Code Generation"),
+        ("code_sequence", "reg_status", "Code Generation"),
         ("document", "id", "GED base"), ("document", "tenant_id", "GED base"), ("document", "folder_id", "GED folders"),
         ("document", "current_version_id", "GED versions"), ("document", "created_at", "GED base"),
         ("document", "reg_status", "GED soft delete"), ("document", "deleted_at", "GED soft delete"),

@@ -51,6 +51,7 @@ public sealed class SmartSearchController : Controller
         request.IsAdmin = RolePolicyHelper.IsFullAdmin(User);
         request.Page = request.Page <= 0 ? 1 : request.Page;
         request.PageSize = request.PageSize <= 0 ? 20 : request.PageSize;
+        if (!string.Equals(request.Source, "folder", StringComparison.OrdinalIgnoreCase)) request.FolderId = null;
 
         try
         {
@@ -143,8 +144,15 @@ public sealed class SmartSearchController : Controller
     {
         if (!_currentUser.IsAuthenticated) return Unauthorized(new { success = false, message = "Sessão expirada." });
         if (!RolePolicyHelper.IsFullAdmin(User) && !User.IsInNormalizedRole(AppRoles.Administrador)) return Forbid();
-        var count = await _diagnostics.EnqueueReindexMissingAsync(_currentUser.TenantId, ct);
-        return Json(new { success = true, jobsCreated = count, affected = count });
+        try
+        {
+            var count = await _diagnostics.EnqueueReindexMissingAsync(_currentUser.TenantId, ct);
+            return Json(new { success = true, jobsCreated = count, affected = count });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return StatusCode(503, new { success = false, code = "PROCESSING_JOB_SCHEMA_MISSING", message = ex.Message });
+        }
     }
 
     [HttpPost]

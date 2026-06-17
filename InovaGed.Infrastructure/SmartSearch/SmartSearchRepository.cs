@@ -31,7 +31,9 @@ public sealed class SmartSearchRepository : ISmartSearchRepository, InovaGed.App
         var offset = (page - 1) * pageSize;
         await using var conn = await _db.OpenAsync(ct);
         var hasSmartIndex = await ExistsAsync(conn, "ged.document_search_index", ct);
-        var sql = hasSmartIndex ? SmartIndexSql : FallbackSql;
+        var hasLegacyOcr = await ExistsAsync(conn, "ged.document_search", ct);
+        var fallbackSql = hasLegacyOcr ? FallbackSql : DirectSql;
+        var sql = hasSmartIndex ? SmartIndexSql : fallbackSql;
         var query = string.IsNullOrWhiteSpace(intent.ExpandedQuery) ? intent.OriginalQuery : intent.ExpandedQuery;
         var p = new DynamicParameters();
         p.Add("tenantId", scope.TenantId, DbType.Guid);
@@ -42,6 +44,9 @@ public sealed class SmartSearchRepository : ISmartSearchRepository, InovaGed.App
         var numericTerm = Regex.Match(intent.OriginalQuery ?? string.Empty, @"\d{4,}").Value;
         p.Add("numericTerm", string.IsNullOrWhiteSpace(numericTerm) ? null : numericTerm, DbType.String);
         p.Add("likeNumericTerm", string.IsNullOrWhiteSpace(numericTerm) ? null : $"%{numericTerm}%", DbType.String);
+        var tokens = SmartSearchTextNormalizer.Tokenize(intent.OriginalQuery);
+        p.Add("tokens", tokens.ToArray());
+        p.Add("tokenCount", tokens.Count, DbType.Int32);
         p.Add("patientName", intent.PatientName, DbType.String);
         p.Add("likePatientName", string.IsNullOrWhiteSpace(intent.PatientName) ? null : $"%{EscapeLike(intent.PatientName)}%", DbType.String);
         p.Add("documentType", intent.DocumentType ?? request.DocumentType, DbType.String);
@@ -80,7 +85,7 @@ public sealed class SmartSearchRepository : ISmartSearchRepository, InovaGed.App
         var fallbackCount = 0;
         if (hasSmartIndex && rows.Count == 0)
         {
-            rows = (await conn.QueryAsync<SearchRow>(new CommandDefinition(FallbackSql.Replace("/*DATE_FILTERS*/", dateFilters.ToString()), p, cancellationToken: ct, commandTimeout: 30))).ToList();
+            rows = (await conn.QueryAsync<SearchRow>(new CommandDefinition(fallbackSql.Replace("/*DATE_FILTERS*/", dateFilters.ToString()), p, cancellationToken: ct, commandTimeout: 30))).ToList();
             fallbackCount = rows.Count;
         }
         if (rows.Count == 0)
@@ -98,7 +103,7 @@ public sealed class SmartSearchRepository : ISmartSearchRepository, InovaGed.App
             Page = page,
             PageSize = pageSize,
             TotalPages = total == 0 ? 0 : (int)Math.Ceiling(total / (double)pageSize),
-            Warning = hasSmartIndex ? null : "Índice inteligente ainda não otimizado; usando fallback em metadados e OCR existente."
+            Warning = rows.Count == 0 ? $"Nenhum resultado encontrado. Tokens={string.Join(",", tokens)}; searchedIndexed={hasSmartIndex}; searchedDirect=true; searchedOcr={hasLegacyOcr}; indexAvailable={hasSmartIndex}; indexCount={indexCount}; fallbackCount={fallbackCount}. Tentamos buscar em nome, arquivo, pasta e OCR." : (hasSmartIndex ? null : "Índice inteligente indisponível; usando fallback direto em documentos, arquivos, pastas e OCR legado.")
         };
     }
 
@@ -237,7 +242,6 @@ with ranked as (
 select idx.document_id as "DocumentId", coalesce(idx.document_version_id, idx.version_id) as "VersionId", idx.title as "Title", idx.file_name as "FileName", idx.folder_name as "FolderName", idx.document_type as "DocumentType", idx.classification as "Classification", idx.patient_name as "PatientName", idx.extracted_age as "Age", idx.extracted_year as "Year", idx.search_text as "SearchText", idx.ocr_text as "Snippet", nullif(idx.ocr_text,'') is not null as "HasOcr",
 (
 case when @patientName is not null and idx.patient_name ilike @likePatientName then 40 else 0 end +
-case when @patientName is not null and similarity(coalesce(idx.patient_name,''), @patientName) > 0.25 then 25 else 0 end +
 case when @year is not null and idx.extracted_year = @year then 15 else 0 end +
 case when @age is not null and idx.extracted_age between @age - 1 and @age + 1 then 10 else 0 end +
 case when @ageFrom is not null and idx.extracted_age between @ageFrom and @ageTo then 10 else 0 end +
@@ -250,13 +254,13 @@ case when @numericTerm is not null and coalesce(idx.title,'') ilike @likeNumeric
 case when @numericTerm is not null and coalesce(idx.ocr_text,'') ilike @likeNumericTerm then 50 else 0 end +
 case when @numericTerm is not null and coalesce(idx.folder_name,'') ilike @likeNumericTerm then 20 else 0 end +
 case when nullif(idx.ocr_text,'') is not null then 5 else 0 end +
-coalesce(ts_rank(idx.search_vector, plainto_tsquery('portuguese', unaccent(@query))) * 40, 0) +
-coalesce(similarity(idx.search_text, @originalQuery) * 20, 0)
+coalesce(ts_rank(idx.search_vector, plainto_tsquery('portuguese', @query)) * 40, 0) +
+0
 )::numeric(10,2) as "Score"
 from ged.document_search_index idx
 join ged.document d on d.tenant_id=idx.tenant_id and d.id=idx.document_id
 where idx.tenant_id=@tenantId and coalesce(d.reg_status,'A')='A' and (@folderId is null or d.folder_id=@folderId)
-/*DATE_FILTERS*/and (idx.search_vector @@ plainto_tsquery('portuguese', unaccent(@query)) or idx.search_text ilike @likeQuery or idx.file_name ilike @likeOriginalQuery or idx.title ilike @likeOriginalQuery or idx.document_id::text ilike @likeOriginalQuery or (@numericTerm is not null and (idx.file_name ilike @likeNumericTerm or idx.title ilike @likeNumericTerm or idx.search_text ilike @likeNumericTerm or idx.document_id::text ilike @likeNumericTerm)) or similarity(idx.search_text, @originalQuery) > 0.15 or @patientName is not null and idx.patient_name ilike @likePatientName)
+/*DATE_FILTERS*/and (idx.search_vector @@ plainto_tsquery('portuguese', @query) or idx.search_text ilike @likeQuery or idx.file_name ilike @likeOriginalQuery or idx.title ilike @likeOriginalQuery or idx.document_id::text ilike @likeOriginalQuery or (@numericTerm is not null and (idx.file_name ilike @likeNumericTerm or idx.title ilike @likeNumericTerm or idx.search_text ilike @likeNumericTerm or idx.document_id::text ilike @likeNumericTerm)) or @patientName is not null and idx.patient_name ilike @likePatientName)
 )
 select *, count(*) over()::int as "TotalRows" from ranked order by "Score" desc, "Title" limit @limit offset @offset
 """;
@@ -277,6 +281,25 @@ left join ged.document_version v on v.tenant_id=d.tenant_id and (v.id=coalesce(d
 left join ged.folder f on f.tenant_id=d.tenant_id and f.id=d.folder_id
 where d.tenant_id=@tenantId and coalesce(d.reg_status,'A')='A' and (@folderId is null or d.folder_id=@folderId)
 /*DATE_FILTERS*/and (concat_ws(' ', d.title, v.file_name, f.name, ds.ocr_text, d.id::text) ilike @likeQuery or concat_ws(' ', d.title, v.file_name, f.name, ds.ocr_text, d.id::text) ilike @likeOriginalQuery or (@numericTerm is not null and concat_ws(' ', d.title, v.file_name, ds.file_name, f.name, ds.ocr_text, d.id::text) ilike @likeNumericTerm) or @query = '')
+)
+select *, count(*) over()::int as "TotalRows" from base order by "Score" desc, "Title" limit @limit offset @offset
+""";
+
+
+    private const string DirectSql = """
+with base as (
+select d.id as "DocumentId", v.id as "VersionId", coalesce(d.title, v.file_name, 'Documento') as "Title", v.file_name as "FileName", f.name as "FolderName", null::text as "DocumentType", null::text as "Classification", null::text as "PatientName", null::int as "Age", extract(year from d.created_at)::int as "Year", concat_ws(' ', d.title, v.file_name, f.name) as "SearchText", null::text as "Snippet", false as "HasOcr",
+(case when coalesce(v.file_name,'') ilike @likeOriginalQuery then 120 else 0 end +
+case when @numericTerm is not null and coalesce(v.file_name, '') ilike @likeNumericTerm then 150 else 0 end +
+case when coalesce(d.title,'') ilike @likeOriginalQuery then 100 else 0 end +
+case when coalesce(f.name,'') ilike @likeOriginalQuery then 50 else 0 end +
+case when concat_ws(' ', d.title, v.file_name, f.name) ilike @likeQuery then 20 else 0 end +
+case when d.created_at >= now() - interval '90 days' then 5 else 0 end + 20)::numeric(10,2) as "Score"
+from ged.document d
+left join ged.document_version v on v.tenant_id=d.tenant_id and v.id=d.current_version_id
+left join ged.folder f on f.tenant_id=d.tenant_id and f.id=d.folder_id
+where d.tenant_id=@tenantId and coalesce(d.reg_status,'A')='A' and (@folderId is null or d.folder_id=@folderId)
+/*DATE_FILTERS*/and (concat_ws(' ', d.title, v.file_name, f.name, d.id::text) ilike @likeQuery or concat_ws(' ', d.title, v.file_name, f.name, d.id::text) ilike @likeOriginalQuery or (@numericTerm is not null and concat_ws(' ', d.title, v.file_name, f.name, d.id::text) ilike @likeNumericTerm) or @query = '')
 )
 select *, count(*) over()::int as "TotalRows" from base order by "Score" desc, "Title" limit @limit offset @offset
 """;

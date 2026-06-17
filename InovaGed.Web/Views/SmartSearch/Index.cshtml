@@ -14,8 +14,14 @@
     <form id="smartSearchForm" class="card shadow-sm border-0 mb-3">
         @Html.AntiForgeryToken()
         <div class="card-body">
-            <label for="Query" class="form-label fw-semibold">Descreva o que procura</label>
-            <textarea id="Query" name="Query" class="form-control form-control-lg" rows="3" placeholder="Descreva o que procura. Ex: exame do João, 24 anos, doença renal, internado em 2022."></textarea>
+            <label for="Query" class="form-label fw-semibold">Descreva o documento que procura</label>
+            <textarea id="Query" name="Query" class="form-control form-control-lg" rows="3" placeholder="Ex.: 306679, APAC 2025, laudo diabetes, pasta 02_2025 ou quero o exame APAC de 2025"></textarea>
+            <div class="row g-2 mt-3">
+                <div class="col-md-3"><select class="form-select" name="Source"><option value="all" selected>Buscar em todo GED</option><option value="folder">Buscar apenas pasta atual</option></select></div>
+                <div class="col-md-3 form-check form-switch pt-2"><input class="form-check-input" type="checkbox" name="IncludeOcr" value="true" checked id="IncludeOcr"><label class="form-check-label" for="IncludeOcr">Incluir OCR</label></div>
+                <div class="col-md-3 form-check form-switch pt-2"><input class="form-check-input" type="checkbox" name="OnlyWithOcr" value="true" id="OnlyWithOcr"><label class="form-check-label" for="OnlyWithOcr">Apenas documentos com OCR</label></div>
+                <div class="col-md-3 form-check form-switch pt-2"><input class="form-check-input" type="checkbox" name="OnlyIncomplete" value="true" id="OnlyIncomplete"><label class="form-check-label" for="OnlyIncomplete">Apenas incompletos</label></div>
+            </div>
             <div class="row g-2 mt-2 collapse" id="advancedFilters">
                 <div class="col-md-3"><input class="form-control" name="DocumentType" placeholder="Tipo documental" /></div>
                 <div class="col-md-3"><input class="form-control" name="From" type="date" /></div>
@@ -29,10 +35,11 @@
                 <button class="btn btn-outline-dark" type="button" data-bs-toggle="collapse" data-bs-target="#advancedFilters"><i class="bi bi-sliders"></i> Busca avançada</button>
             </div>
             <div id="smartExamples" class="alert alert-light border mt-3 d-none">
-                <button type="button" class="btn btn-sm btn-outline-primary me-1 mb-1 example-query">exame do João com doença renal em 2022</button>
-                <button type="button" class="btn btn-sm btn-outline-primary me-1 mb-1 example-query">laudos de pacientes com suspeita de AVC em 2023</button>
-                <button type="button" class="btn btn-sm btn-outline-primary me-1 mb-1 example-query">prontuários de pacientes entre 20 e 30 anos com diabetes</button>
-                <button type="button" class="btn btn-sm btn-outline-primary me-1 mb-1 example-query">documentos da Maria que falam de câncer de mama e foram digitalizados no ano passado</button>
+                <button type="button" class="btn btn-sm btn-outline-primary me-1 mb-1 example-query">306679</button>
+                <button type="button" class="btn btn-sm btn-outline-primary me-1 mb-1 example-query">APAC 2025</button>
+                <button type="button" class="btn btn-sm btn-outline-primary me-1 mb-1 example-query">laudo diabetes</button>
+                <button type="button" class="btn btn-sm btn-outline-primary me-1 mb-1 example-query">ultrassom 2024</button>
+                <button type="button" class="btn btn-sm btn-outline-primary me-1 mb-1 example-query">pasta 02_2025</button>
             </div>
         </div>
     </form>
@@ -114,7 +121,7 @@
     explanation.textContent = intent.explanation || '';
     intentPanel.classList.remove('d-none');
     if (result.warning) { warning.textContent = result.warning; warning.classList.remove('d-none'); }
-    if (!result.items || result.items.length === 0) { results.innerHTML = '<div class="alert alert-secondary"><strong>Não encontrei resultados na busca inteligente.</strong><div class="mt-1">Deseja tentar busca ampla no GED?</div><div class="mt-3 d-flex flex-wrap gap-2"><a class="btn btn-sm btn-outline-primary" href="/Ged?scope=all&q=' + encodeURIComponent(form.querySelector('[name=Query]')?.value || '') + '">Buscar em todo o GED</a><a class="btn btn-sm btn-outline-secondary" href="/Ged?fileName=' + encodeURIComponent(form.querySelector('[name=Query]')?.value || '') + '">Buscar por nome de arquivo</a><button type="button" class="btn btn-sm btn-outline-warning" onclick="fetch(\'/SmartSearch/ReindexMissing\',{method:\'POST\'}).then(()=>alert(\'Reindexação solicitada.\'))">Reindexar busca</button><a class="btn btn-sm btn-outline-info" href="/SmartSearch/Diagnostics">Diagnóstico</a></div></div>'; return; }
+    if (!result.items || result.items.length === 0) { results.innerHTML = '<div class="alert alert-secondary"><strong>Nenhum resultado encontrado.</strong><div class="mt-1">Tentamos buscar em nome, arquivo, pasta e OCR.</div><div class="mt-3 d-flex flex-wrap gap-2"><a class="btn btn-sm btn-outline-primary" href="/Ged?scope=all&q=' + encodeURIComponent(form.querySelector('[name=Query]')?.value || '') + '">Buscar em todo o GED</a><a class="btn btn-sm btn-outline-secondary" href="/Ged?fileName=' + encodeURIComponent(form.querySelector('[name=Query]')?.value || '') + '">Buscar por nome de arquivo</a><button type="button" class="btn btn-sm btn-outline-warning" onclick="fetch(\'/SmartSearch/ReindexMissing\',{method:\'POST\'}).then(()=>alert(\'Reindexação solicitada.\'))">Reindexar busca</button><a class="btn btn-sm btn-outline-info" href="/SmartSearch/Diagnostics">Diagnóstico</a></div></div>'; return; }
     results.innerHTML = `<div class="text-muted">${result.total} resultado(s) em ${result.durationMs} ms.</div>` + result.items.map(item => `
       <div class="card shadow-sm border-0">
         <div class="card-body">
