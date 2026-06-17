@@ -335,8 +335,25 @@ public sealed class AccountController : Controller
 
         await _repo.ResetPasswordByUserIdAsync(tenantId, userId, newHash, ct);
 
+        _logger.LogInformation(
+            "Senha alterada com sucesso. Tenant={TenantId} UserId={UserId} Redirect=/HospitalDocuments",
+            tenantId,
+            userId);
+
+        await _audit.WriteAsync(
+            tenantId: tenantId,
+            userId: userId,
+            action: "PASSWORD_CHANGED",
+            entityName: "auth",
+            entityId: userId.ToString(),
+            summary: "Usuário alterou a senha com sucesso.",
+            ipAddress: HttpContext.Connection.RemoteIpAddress?.ToString(),
+            userAgent: Request.Headers.UserAgent.ToString(),
+            data: new { redirect = "/HospitalDocuments" },
+            ct: ct);
+
         TempData["Success"] = "Senha alterada com sucesso.";
-        return RedirectToAction("Index", "Home");
+        return RedirectToAction("Index", "HospitalDocuments");
     }
 
     [HttpGet]
