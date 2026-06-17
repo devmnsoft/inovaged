@@ -1,27 +1,91 @@
 @model InovaGed.Web.Controllers.SharedDocumentLinkVm
 @{
     ViewData["Title"] = "Documento compartilhado";
+
+    var now = DateTimeOffset.UtcNow;
+    var expiresText = Model.IsPermanent || Model.ExpiresAt is null
+        ? "Link permanente"
+        : $"Expira em {Model.ExpiresAt.Value.ToString("dd/MM/yyyy HH:mm")} UTC";
+
+    var accessText = Model.MaxAccessCount.HasValue
+        ? $"Acessos {Model.AccessCount}/{Model.MaxAccessCount.Value}"
+        : $"Acessos {Model.AccessCount}/ilimitado";
+
+    var token = Context.Request.RouteValues["token"]?.ToString() ?? string.Empty;
+    var isExpired = !Model.IsPermanent && Model.ExpiresAt.HasValue && Model.ExpiresAt.Value <= now;
+    var statusText = Model.RevokedAt.HasValue
+        ? "Revogado"
+        : isExpired
+            ? "Expirado"
+            : Model.IsPermanent
+                ? "Permanente"
+                : "Temporário";
+    var statusClass = Model.RevokedAt.HasValue || isExpired ? "bg-danger" : Model.IsPermanent ? "bg-success" : "bg-primary";
 }
 <div class="container py-4">
-    <div class="alert alert-info">Acesso seguro, temporário e isolado. Este link exibe somente o documento autorizado.</div>
-    <div class="card mb-3"><div class="card-body">
-        <h4 class="mb-1">Documento compartilhado</h4>
-        <div class="text-muted small">Expira em @Model.ExpiresAt.ToString("dd/MM/yyyy HH:mm") UTC • Acessos @Model.AccessCount/@Model.MaxAccessCount</div>
-        <a class="btn btn-outline-primary mt-3" href="/SharedDocument/@Context.Request.RouteValues["token"]/Preview" target="_blank">Abrir visualização</a>
-    </div></div>
-    <div class="card"><div class="card-body">
-        <h5>Pesquisar dentro deste documento</h5>
-        <form id="searchForm" method="post" action="/SharedDocument/@Context.Request.RouteValues["token"]/Search">
-            @Html.AntiForgeryToken()
-            <div class="input-group"><input class="form-control" name="q" placeholder="Digite um termo do OCR" /><button class="btn btn-primary">Pesquisar</button></div>
-        </form>
-        <div id="results" class="list-group mt-3"></div>
-    </div></div>
+    <div class="alert alert-info">
+        <strong>Acesso seguro e isolado.</strong> Este link exibe somente o documento autorizado.
+    </div>
+
+    <div class="card shadow-sm mb-3">
+        <div class="card-body">
+            <div class="d-flex flex-wrap justify-content-between gap-2 align-items-start">
+                <div>
+                    <h4 class="mb-1">Documento compartilhado</h4>
+                    <div class="text-muted small">@expiresText • @accessText</div>
+                </div>
+                <span class="badge @statusClass">@statusText</span>
+            </div>
+
+            <div class="d-flex flex-wrap gap-2 mt-3">
+                <a class="btn btn-outline-primary" href="/SharedDocument/@token/Preview" target="_blank" rel="noopener">Abrir visualização</a>
+                @if (Model.AllowDownload)
+                {
+                    <a class="btn btn-outline-secondary" href="/SharedDocument/@token/Download">Baixar PDF</a>
+                }
+                else
+                {
+                    <button type="button" class="btn btn-outline-secondary" disabled title="Download não autorizado para este link.">Baixar PDF</button>
+                }
+            </div>
+        </div>
+    </div>
+
+    <div class="card shadow-sm mb-3">
+        <div class="card-body">
+            <h5>Pesquisar dentro deste documento</h5>
+            @if (Model.AllowSmartSearch)
+            {
+                <form id="searchForm" method="post" action="/SharedDocument/@token/Search">
+                    @Html.AntiForgeryToken()
+                    <div class="input-group">
+                        <input class="form-control" name="q" minlength="3" placeholder="Digite pelo menos 3 caracteres do OCR" />
+                        <button class="btn btn-primary">Pesquisar</button>
+                    </div>
+                </form>
+                <div id="results" class="list-group mt-3"></div>
+            }
+            else
+            {
+                <p class="text-muted mb-0">Busca textual desabilitada para este link.</p>
+            }
+        </div>
+    </div>
+
+    <div class="alert alert-warning mb-0">
+        <ul class="mb-0">
+            <li>Este acesso é individual, auditado e restrito ao documento autorizado.</li>
+            <li>Este link não permite navegar pelo GED completo.</li>
+            <li>Não compartilhe este link com pessoas não autorizadas.</li>
+        </ul>
+    </div>
 </div>
 @section Scripts{
 <script>
 document.getElementById('searchForm')?.addEventListener('submit', async e => {
- e.preventDefault(); const box=document.getElementById('results'); box.innerHTML='<div class="list-group-item text-muted">Pesquisando...</div>';
+ e.preventDefault(); const box=document.getElementById('results'); const term=(new FormData(e.target).get('q')||'').toString();
+ if(term.trim().length<3){box.innerHTML='<div class="list-group-item text-muted">Digite pelo menos 3 caracteres.</div>'; return;}
+ box.innerHTML='<div class="list-group-item text-muted">Pesquisando...</div>';
  const r=await fetch(e.target.action,{method:'POST',body:new FormData(e.target),headers:{'X-Requested-With':'XMLHttpRequest'}}); const p=await r.json();
  const items=p.items||[]; box.innerHTML=items.length?items.map(x=>`<div class="list-group-item">${escapeHtml(x)}</div>`).join(''):`<div class="list-group-item text-muted">${escapeHtml(p.message||'Sem evidências.')}</div>`;
 });
