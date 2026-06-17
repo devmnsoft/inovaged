@@ -281,6 +281,7 @@ builder.Services.AddHostedService<GedProcessingWorker>();
 builder.Services.AddScoped<IGedAccessPolicyService, GedAccessPolicyService>();
 builder.Services.AddScoped<IGedSearchService, GedSearchService>();
 builder.Services.AddScoped<IGedSmartSearchService, GedSmartSearchService>();
+builder.Services.AddScoped<ISmartSearchContextParser, SmartSearchContextParser>();
 builder.Services.AddScoped<ISmartQueryParser, SmartQueryParser>();
 builder.Services.AddScoped<IGedSmartQueryParser, SmartQueryParser>();
 builder.Services.AddScoped<IDocumentOcrMetadataExtractor, DocumentOcrMetadataExtractor>();

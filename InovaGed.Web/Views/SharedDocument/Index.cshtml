@@ -1,0 +1,29 @@
+@model InovaGed.Web.Controllers.SharedDocumentLinkVm
+@{
+    ViewData["Title"] = "Documento compartilhado";
+}
+<div class="container py-4">
+    <div class="alert alert-info">Acesso seguro, temporário e isolado. Este link exibe somente o documento autorizado.</div>
+    <div class="card mb-3"><div class="card-body">
+        <h4 class="mb-1">Documento compartilhado</h4>
+        <div class="text-muted small">Expira em @Model.ExpiresAt.ToString("dd/MM/yyyy HH:mm") UTC • Acessos @Model.AccessCount/@Model.MaxAccessCount</div>
+        <a class="btn btn-outline-primary mt-3" href="/SharedDocument/@Context.Request.RouteValues["token"]/Preview" target="_blank">Abrir visualização</a>
+    </div></div>
+    <div class="card"><div class="card-body">
+        <h5>Pesquisar dentro deste documento</h5>
+        <form id="searchForm" method="post" action="/SharedDocument/@Context.Request.RouteValues["token"]/Search">
+            @Html.AntiForgeryToken()
+            <div class="input-group"><input class="form-control" name="q" placeholder="Digite um termo do OCR" /><button class="btn btn-primary">Pesquisar</button></div>
+        </form>
+        <div id="results" class="list-group mt-3"></div>
+    </div></div>
+</div>
+@section Scripts{
+<script>
+document.getElementById('searchForm')?.addEventListener('submit', async e => {
+ e.preventDefault(); const box=document.getElementById('results'); box.innerHTML='<div class="list-group-item text-muted">Pesquisando...</div>';
+ const r=await fetch(e.target.action,{method:'POST',body:new FormData(e.target),headers:{'X-Requested-With':'XMLHttpRequest'}}); const p=await r.json();
+ const items=p.items||[]; box.innerHTML=items.length?items.map(x=>`<div class="list-group-item">${escapeHtml(x)}</div>`).join(''):`<div class="list-group-item text-muted">${escapeHtml(p.message||'Sem evidências.')}</div>`;
+});
+function escapeHtml(s){return (s||'').toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));}
+</script>}

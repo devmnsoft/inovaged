@@ -157,11 +157,14 @@ limit 200;
                 )).AsList();
             }
 
+            var messages = (await conn.QueryAsync<LoanMessageDto>(new CommandDefinition("select created_at as \"CreatedAt\", coalesce(sender_name,'Sistema') as \"SenderName\", message as \"Message\", message_type as \"MessageType\", is_internal as \"IsInternal\" from ged.loan_request_message where tenant_id=@tenant_id and loan_request_id=@loan_id and coalesce(reg_status,'A')='A' order by created_at", new { tenant_id = tenantId, loan_id = loanId }, cancellationToken: ct))).AsList();
+
             return new LoanDetailsVM
             {
                 Header = header,
                 Items = items,
                 History = history,
+                Messages = messages,
                 HistorySchemaMissing = historySchemaMissing
             };
         }
@@ -184,6 +187,11 @@ select
   lr.approved_at as ApprovedAt,
   lr.delivered_at as DeliveredAt,
   lr.returned_at as ReturnedAt,
+  lr.request_no as RequestNo,
+  lr.delivery_mode as DeliveryMode,
+  lr.sla_due_at as SlaDueAt,
+  lr.admin_response as AdminResponse,
+  lr.delivery_instructions as DeliveryInstructions,
   (select count(*)::int from ged.loan_request_item i
      where i.tenant_id = lr.tenant_id and i.loan_request_id = lr.id and i.reg_status='A') as ItemsCount
 from ged.loan_request lr

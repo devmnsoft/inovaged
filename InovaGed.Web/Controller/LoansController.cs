@@ -1,8 +1,11 @@
 ﻿using InovaGed.Application.Audit;
 using Dapper;
+using System.Security.Cryptography;
+using System.Text;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Ged.Loans;
 using InovaGed.Application.Identity;
+using InovaGed.Application.SmartSearch;
 using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -21,6 +24,7 @@ public sealed class LoansController : Controller
     private readonly IAuditWriter _audit;
     private readonly IDbConnectionFactory _db;
     private readonly ILoanAccessService _loanAccess;
+    private readonly ISmartSearchService _smartSearch;
 
     public LoansController(
         ILogger<LoansController> logger,
@@ -28,7 +32,8 @@ public sealed class LoansController : Controller
         ILoanRequestService service,
         IAuditWriter audit,
         IDbConnectionFactory db,
-        ILoanAccessService loanAccess)
+        ILoanAccessService loanAccess,
+        ISmartSearchService smartSearch)
     {
         _logger = logger;
         _user = user;
@@ -36,6 +41,7 @@ public sealed class LoansController : Controller
         _audit = audit;
         _db = db;
         _loanAccess = loanAccess;
+        _smartSearch = smartSearch;
     }
 
     public override void OnActionExecuting(ActionExecutingContext context)
@@ -85,9 +91,35 @@ public sealed class LoansController : Controller
         try
         {
             var tenantId = _user.TenantId;
-            var rows = await _service.SearchDocumentsAsync(tenantId, q ?? "", ct);
-            var payload = rows.Select(x => new { id = x.Id, code = x.Code, title = x.Title, status = x.Status, createdAt = x.CreatedAt, type = "", folderPath = "" }).ToList();
-            return Json(new { success = true, items = payload, total = payload.Count, message = (string?)null });
+            var result = await _smartSearch.SearchAsync(new SmartSearchRequest
+            {
+                TenantId = tenantId,
+                UserId = _user.UserId,
+                Query = q ?? string.Empty,
+                PageSize = 15,
+                Source = "LOANS_DOC_SEARCH",
+                IsAdmin = CanManageLoans()
+            }, ct);
+            _ = await _audit.WriteAsync(tenantId, _user.UserId, "LOAN_REQUEST_SMART_SEARCH_USED", "loan_request", null, "Busca contextual usada no pedido documental", null, null, new { query = q, results = result.Items.Count, suggestions = result.Suggestions }, ct);
+            var payload = result.Items.Select(x => new
+            {
+                id = x.DocumentId,
+                versionId = x.VersionId,
+                code = x.DocumentId.ToString("N")[..8],
+                title = x.Title,
+                status = "Disponível para solicitação",
+                createdAt = (DateTime?)null,
+                type = x.DocumentType ?? x.ClassificationName ?? "Documento",
+                folderPath = x.FolderName ?? "",
+                score = x.Score,
+                reasons = x.Reasons.Select(r => new { type = r.Reason, message = string.IsNullOrWhiteSpace(r.Evidence) ? r.Reason : $"{r.Reason}: {r.Evidence}", weight = r.Weight }),
+                hasOcr = x.HasOcr,
+                ocrSnippet = x.OcrSnippet,
+                digitalAvailable = true,
+                physicalAvailable = true,
+                physicalLocation = x.FolderName ?? "Localização física a confirmar"
+            }).ToList();
+            return Json(new { success = true, items = payload, total = payload.Count, message = result.Message, suggestions = result.Suggestions, explanation = result.Intent.Explanation });
         }
         catch (Exception ex)
         {
@@ -349,6 +381,135 @@ public sealed class LoansController : Controller
         TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Solicitação cancelada com sucesso." : res.ErrorMessage;
         return RedirectToAction(nameof(Details), new { id });
     }
+
+
+    [Authorize(Policy = AppPolicies.LoansManage)]
+    [HttpPost("{id:guid}/Respond")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Respond(Guid id, string message, CancellationToken ct)
+    {
+        if (!await CanOperateLoanAsync(id, ct)) return Forbid();
+        await WriteLoanMessageAsync(id, message, "ADMIN_RESPONSE", false, "TRIAGE", ct);
+        TempData["Ok"] = "Resposta registrada para o solicitante.";
+        return RedirectToAction(nameof(Details), new { id });
+    }
+
+    [Authorize(Policy = AppPolicies.LoansManage)]
+    [HttpPost("{id:guid}/SetSla")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SetSla(Guid id, int slaHours, DateTimeOffset? dueAt, CancellationToken ct)
+    {
+        if (!await CanOperateLoanAsync(id, ct)) return Forbid();
+        var slaDue = dueAt?.UtcDateTime ?? DateTime.UtcNow.AddHours(Math.Clamp(slaHours <= 0 ? 24 : slaHours, 1, 720));
+        await using var conn = await _db.OpenAsync(ct);
+        await conn.ExecuteAsync(new CommandDefinition("update ged.loan_request set sla_hours=@slaHours, sla_due_at=@slaDue, due_at=@slaDue, last_message_at=now() where tenant_id=@tenantId and id=@id", new { tenantId = _user.TenantId, id, slaHours, slaDue }, cancellationToken: ct));
+        await WriteLoanMessageAsync(id, $"SLA definido para {slaDue:dd/MM/yyyy HH:mm} UTC.", "SLA", true, null, ct);
+        TempData["Ok"] = "SLA atualizado.";
+        return RedirectToAction(nameof(Details), new { id });
+    }
+
+    [Authorize(Policy = AppPolicies.LoansManage)]
+    [HttpPost("{id:guid}/RequestMoreInfo")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> RequestMoreInfo(Guid id, string message, CancellationToken ct)
+    {
+        if (!await CanOperateLoanAsync(id, ct)) return Forbid();
+        await WriteLoanMessageAsync(id, message, "NEEDS_INFO", false, "NEEDS_INFO", ct);
+        TempData["Ok"] = "Solicitação de informações enviada.";
+        return RedirectToAction(nameof(Details), new { id });
+    }
+
+    [Authorize(Policy = AppPolicies.LoansView)]
+    [HttpPost("{id:guid}/RequesterReply")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> RequesterReply(Guid id, string message, CancellationToken ct)
+    {
+        var scope = await _loanAccess.BuildLoanScopeAsync(_user.TenantId, _user.UserId, User, ct);
+        if (await _service.GetDetailsAsync(_user.TenantId, id, _user.UserId, scope, ct) is null) return Forbid();
+        await WriteLoanMessageAsync(id, message, "REQUESTER_REPLY", false, "TRIAGE", ct);
+        TempData["Ok"] = "Complemento enviado.";
+        return RedirectToAction(nameof(Details), new { id });
+    }
+
+    [Authorize(Policy = AppPolicies.LoansManage)]
+    [HttpPost("{id:guid}/LinkDocument")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> LinkDocument(Guid id, Guid documentId, Guid? versionId, CancellationToken ct)
+    {
+        if (!await CanOperateLoanAsync(id, ct)) return Forbid();
+        await using var conn = await _db.OpenAsync(ct);
+        await conn.ExecuteAsync(new CommandDefinition("update ged.loan_request_item set matched_document_id=@documentId, matched_version_id=@versionId, document_id=coalesce(document_id,@documentId), match_reason='Vinculado pelo ADMIN' where tenant_id=@tenantId and loan_request_id=@id", new { tenantId = _user.TenantId, id, documentId, versionId }, cancellationToken: ct));
+        await WriteLoanMessageAsync(id, "Documento vinculado pelo ADMIN.", "LINK_DOCUMENT", true, null, ct);
+        TempData["Ok"] = "Documento vinculado.";
+        return RedirectToAction(nameof(Details), new { id });
+    }
+
+    [Authorize(Policy = AppPolicies.LoansManage)]
+    [HttpPost("{id:guid}/GenerateSecureLink")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> GenerateSecureLink(Guid id, Guid documentId, Guid? versionId, int expiresHours = 24, int maxAccessCount = 5, CancellationToken ct = default)
+    {
+        if (!await CanOperateLoanAsync(id, ct)) return Forbid();
+        var token = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)).Replace('+', '-').Replace('/', '_').TrimEnd('=');
+        var hash = Sha256Token(token);
+        await using var conn = await _db.OpenAsync(ct);
+        var linkId = await conn.ExecuteScalarAsync<Guid>(new CommandDefinition("""
+insert into ged.secure_document_link(tenant_id, loan_request_id, document_id, version_id, token_hash, expires_at, max_access_count, created_by)
+values(@tenantId,@id,@documentId,@versionId,@hash,now()+(@hours||' hours')::interval,@maxAccess,@userId) returning id
+""", new { tenantId = _user.TenantId, id, documentId, versionId, hash, hours = Math.Clamp(expiresHours, 1, 720), maxAccess = Math.Clamp(maxAccessCount, 1, 100), userId = _user.UserId }, cancellationToken: ct));
+        await conn.ExecuteAsync(new CommandDefinition("update ged.loan_request set secure_link_id=@linkId, digital_delivery_enabled=true, status='DIGITAL_LINK_SENT', last_message_at=now() where tenant_id=@tenantId and id=@id", new { tenantId = _user.TenantId, id, linkId }, cancellationToken: ct));
+        await WriteLoanMessageAsync(id, $"Link seguro gerado: /SharedDocument/{token}", "DIGITAL_LINK", false, "DIGITAL_LINK_SENT", ct);
+        TempData["Ok"] = $"Link seguro gerado: /SharedDocument/{token}";
+        return RedirectToAction(nameof(Details), new { id });
+    }
+
+    [Authorize(Policy = AppPolicies.LoansManage)]
+    [HttpPost("{id:guid}/SendDigitalLink")]
+    [ValidateAntiForgeryToken]
+    public Task<IActionResult> SendDigitalLink(Guid id, string? message, CancellationToken ct) => Respond(id, string.IsNullOrWhiteSpace(message) ? "Link digital seguro enviado ao solicitante." : message, ct);
+
+    [Authorize(Policy = AppPolicies.LoansManage)]
+    [HttpPost("{id:guid}/SetPhysicalDelivery")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SetPhysicalDelivery(Guid id, string instructions, string? location, string? boxCode, CancellationToken ct)
+    {
+        if (!await CanOperateLoanAsync(id, ct)) return Forbid();
+        await using var conn = await _db.OpenAsync(ct);
+        await conn.ExecuteAsync(new CommandDefinition("update ged.loan_request set delivery_instructions=@instructions, physical_delivery_enabled=true, status='PREPARING_PHYSICAL', last_message_at=now() where tenant_id=@tenantId and id=@id; update ged.loan_request_item set physical_location=coalesce(@location, physical_location), box_code=coalesce(@boxCode, box_code), physical_available=true where tenant_id=@tenantId and loan_request_id=@id", new { tenantId = _user.TenantId, id, instructions, location, boxCode }, cancellationToken: ct));
+        await WriteLoanMessageAsync(id, instructions, "PHYSICAL_LOCATION", false, "PREPARING_PHYSICAL", ct);
+        TempData["Ok"] = "Entrega física configurada.";
+        return RedirectToAction(nameof(Details), new { id });
+    }
+
+    [Authorize(Policy = AppPolicies.LoansManage)]
+    [HttpPost("{id:guid}/MarkReadyForPickup")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> MarkReadyForPickup(Guid id, string? notes, CancellationToken ct)
+    {
+        if (!await CanOperateLoanAsync(id, ct)) return Forbid();
+        await WriteLoanMessageAsync(id, notes ?? "Documento físico disponível para retirada.", "READY_FOR_PICKUP", false, "WAITING_PICKUP", ct);
+        TempData["Ok"] = "Pedido marcado como aguardando retirada.";
+        return RedirectToAction(nameof(Details), new { id });
+    }
+
+    [Authorize(Policy = AppPolicies.LoansManage)]
+    [HttpPost("{id:guid}/MarkDelivered")]
+    [ValidateAntiForgeryToken]
+    public Task<IActionResult> MarkDelivered(Guid id, string? notes, CancellationToken ct) => Deliver(id, notes, null, true, ct);
+
+    private async Task WriteLoanMessageAsync(Guid id, string? message, string type, bool isInternal, string? status, CancellationToken ct)
+    {
+        message = string.IsNullOrWhiteSpace(message) ? "Atualização do pedido." : message.Trim();
+        await using var conn = await _db.OpenAsync(ct);
+        await conn.ExecuteAsync(new CommandDefinition("""
+insert into ged.loan_request_message(tenant_id, loan_request_id, sender_user_id, sender_name, sender_role, message, message_type, is_internal)
+values(@tenantId,@id,@userId,@sender,@role,@message,@type,@isInternal);
+update ged.loan_request set admin_response=case when @isInternal then admin_response else @message end, admin_response_at=case when @isInternal then admin_response_at else now() end, admin_response_by=case when @isInternal then admin_response_by else @userId end, last_message_at=now(), status=case when @status is null then status else @status::ged.loan_status end where tenant_id=@tenantId and id=@id;
+""", new { tenantId = _user.TenantId, id, userId = _user.UserId, sender = _user.Email, role = string.Join(',', _user.Roles), message, type, isInternal, status }, cancellationToken: ct));
+        _ = await _audit.WriteAsync(_user.TenantId, _user.UserId, type switch { "SLA" => "LOAN_REQUEST_SLA_SET", "DIGITAL_LINK" => "LOAN_REQUEST_DIGITAL_LINK_CREATED", "PHYSICAL_LOCATION" => "LOAN_REQUEST_PHYSICAL_LOCATION_SET", "NEEDS_INFO" => "LOAN_REQUEST_MORE_INFO_REQUESTED", _ => "LOAN_REQUEST_ADMIN_RESPONDED" }, "loan_request", id, message.Length > 250 ? message[..250] : message, null, null, new { type, status }, ct);
+    }
+
+    private static string Sha256Token(string token) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token))).ToLowerInvariant();
 
     private bool CanManageLoans() => RolePolicyHelper.IsFullAdmin(User) || User.IsInNormalizedRole(AppRoles.AdministradorOphir);
 

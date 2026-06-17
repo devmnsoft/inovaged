@@ -79,7 +79,17 @@ insert into ged.loan_request
   requester_sector,
   requested_at,
   due_at,
-  reg_status
+  reg_status,
+  request_no,
+  request_type,
+  delivery_mode,
+  request_description,
+  desired_due_at,
+  priority,
+  requester_contact,
+  requester_sector_name,
+  digital_delivery_enabled,
+  physical_delivery_enabled
 )
 values
 (
@@ -93,7 +103,17 @@ values
   (select nullif(coalesce(s.setor, s.lotacao, ''), '') from ged.app_user u left join ged.servidor s on s.tenant_id=u.tenant_id and s.id=u.servidor_id where u.tenant_id=@TenantId and u.id=@RequesterId limit 1),
   @RequestedAt,
   @DueAt,
-  'A'
+  'A',
+  'REQ-' || to_char(now(),'YYYYMMDD') || '-' || lpad(((select coalesce(max(protocol_no),0)+1 from ged.loan_request where tenant_id=@TenantId))::text, 6, '0'),
+  'DOCUMENT_REQUEST',
+  @DeliveryMode,
+  @RequestDescription,
+  @DesiredDueAt,
+  @Priority,
+  @RequesterContact,
+  @RequesterSectorName,
+  @DigitalEnabled,
+  @PhysicalEnabled
 )
 returning id;
 """;
@@ -108,7 +128,15 @@ returning id;
                         RequesterName = (vm.RequesterName ?? "").Trim(),
                         DocumentId = docIds.Count == 0 ? (Guid?)null : docIds[0],
                         RequestedAt = nowUtc,
-                        DueAt = dueUtc
+                        DueAt = dueUtc,
+                        DeliveryMode = string.IsNullOrWhiteSpace(vm.DeliveryMode) ? (vm.IsPhysical ? "PHYSICAL" : "DIGITAL") : vm.DeliveryMode!.Trim().ToUpperInvariant(),
+                        RequestDescription = TrimOrNull(vm.RequestDescription),
+                        DesiredDueAt = dueUtc,
+                        Priority = string.IsNullOrWhiteSpace(vm.Priority) ? "NORMAL" : vm.Priority!.Trim().ToUpperInvariant(),
+                        RequesterContact = TrimOrNull(vm.RequesterContact),
+                        RequesterSectorName = TrimOrNull(vm.RequesterSectorName),
+                        DigitalEnabled = string.Equals(vm.DeliveryMode, "DIGITAL", StringComparison.OrdinalIgnoreCase) || string.Equals(vm.DeliveryMode, "BOTH", StringComparison.OrdinalIgnoreCase) || vm.AllowDigitalFileAccess,
+                        PhysicalEnabled = string.Equals(vm.DeliveryMode, "PHYSICAL", StringComparison.OrdinalIgnoreCase) || string.Equals(vm.DeliveryMode, "BOTH", StringComparison.OrdinalIgnoreCase) || vm.IsPhysical
                     },
                     transaction: tx,
                     cancellationToken: ct));
@@ -242,16 +270,16 @@ values
                     transaction: tx,
                     cancellationToken: ct));
 
-            await WriteRichHistoryAsync(con, tx, tenantId, loanId, oldStatus: null, newStatus: "REQUESTED", action: "LOAN_CREATED", userId, reason: vm.Notes, internalNotes: null, ct);
+            await WriteRichHistoryAsync(con, tx, tenantId, loanId, oldStatus: null, newStatus: "REQUESTED", action: "LOAN_REQUEST_CREATED_CONTEXTUAL", userId, reason: vm.Notes, internalNotes: null, ct);
 
             await tx.CommitAsync(ct);
 
             _ = await _audit.WriteAsync(
                 tenantId, userId,
-                action: "LOAN_CREATED",
+                action: "LOAN_REQUEST_CREATED_CONTEXTUAL",
                 entityName: "loan_request",
                 entityId: loanId,
-                summary: "Solicitação de empréstimo criada",
+                summary: "Solicitação documental contextual criada",
                 ipAddress: null,
                 userAgent: null,
                 data: new { loanId, previousStatus = (string?)null, newStatus = "REQUESTED", correlationId = Guid.NewGuid().ToString("N"), timestampUtc = nowUtc },
