@@ -80,7 +80,7 @@ from ged.secure_document_link where token_hash=@hash and reg_status='A'
             return null;
         }
 
-        var reason = GetDeniedReason(link, DateTimeOffset.UtcNow);
+        var reason = GetDeniedReason(link, PostgresDateTimeHelper.UtcNow());
         if (reason is not null)
         {
             if (countAccess) await LogAccessAsync(link, false, reason, ct);
@@ -91,7 +91,7 @@ from ged.secure_document_link where token_hash=@hash and reg_status='A'
         {
             var updated = await conn.ExecuteAsync(new CommandDefinition("""
 update ged.secure_document_link
-set access_count=access_count+1
+set access_count=access_count+1, last_access_at=now()
 where id=@id and (max_access_count is null or access_count < max_access_count)
 """, new { link.Id }, cancellationToken: ct));
             if (updated == 0)

@@ -2945,8 +2945,22 @@ VALUES
     {
         if (!RolePolicyHelper.IsFullAdmin(User) && !User.IsInNormalizedRole(AppRoles.AdministradorOphir)) return Forbid();
         request.LoanRequestId = null;
-        var result = await secureLinks.CreateAsync(_currentUser.TenantId, _currentUser.UserId, request, ct);
-        return Json(new { success = true, publicUrl = result.PublicUrl, linkId = result.LinkId });
+
+        try
+        {
+            var result = await secureLinks.CreateAsync(_currentUser.TenantId, _currentUser.UserId, request, ct);
+            return Json(new { success = true, publicUrl = result.PublicUrl, link = result.PublicUrl, linkId = result.LinkId, expiresAtUtc = result.ExpiresAtUtc });
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning(ex, "Falha de validação ao gerar link seguro. Tenant={TenantId} User={UserId} DocumentId={DocumentId}", _currentUser.TenantId, _currentUser.UserId, request.DocumentId);
+            return BadRequest(new { success = false, message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro ao gerar link seguro. Tenant={TenantId} User={UserId} DocumentId={DocumentId}", _currentUser.TenantId, _currentUser.UserId, request.DocumentId);
+            return StatusCode(500, new { success = false, message = "Não foi possível gerar o link seguro agora.", correlationId = HttpContext.TraceIdentifier });
+        }
     }
 
     // =========================

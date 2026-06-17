@@ -493,16 +493,20 @@ where tenant_id=@tenantId and loan_request_id=@id and coalesce(reg_status,'A')='
     public async Task<IActionResult> GenerateSecureLink(Guid id, CreateSecureDocumentLinkRequest request, CancellationToken ct = default)
     {
         if (!await CanOperateLoanAsync(id, ct)) return Forbid();
-        if (!request.IsPermanent && request.ExpiresAtUtc is null)
-        {
-            TempData["Err"] = "Informe a expiração para link temporário.";
-            return RedirectToAction(nameof(Details), new { id });
-        }
         request.LoanRequestId = id;
         request.AllowPreview = true;
-        var result = await _secureLinks.CreateAsync(_user.TenantId, _user.UserId, request, ct);
-        await _audit.WriteAsync(_user.TenantId, _user.UserId, "LOAN_REQUEST_DIGITAL_LINK_SENT", "loan_request", id, "Link digital enviado ao solicitante.", null, null, new { result.LinkId, request.DocumentId }, ct);
-        TempData["Ok"] = $"Link seguro gerado: {result.PublicUrl}";
+
+        try
+        {
+            var result = await _secureLinks.CreateAsync(_user.TenantId, _user.UserId, request, ct);
+            await _audit.WriteAsync(_user.TenantId, _user.UserId, "LOAN_REQUEST_DIGITAL_LINK_SENT", "loan_request", id, "Link digital enviado ao solicitante.", null, null, new { result.LinkId, request.DocumentId }, ct);
+            TempData["Ok"] = $"Link seguro gerado: {result.PublicUrl}";
+        }
+        catch (InvalidOperationException ex)
+        {
+            TempData["Err"] = ex.Message;
+        }
+
         return RedirectToAction(nameof(Details), new { id });
     }
 
