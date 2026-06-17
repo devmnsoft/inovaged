@@ -50,14 +50,39 @@ public sealed class SecureDocumentLinkValidationResult
     public bool AllowSmartSearch { get; set; }
 }
 
-public sealed class SecureDocumentLinkRow : SecureDocumentLinkResult
+public sealed class SecureDocumentLinkRow
 {
+    public Guid Id { get; set; }
+    public Guid TenantId { get; set; }
+    public Guid? LoanRequestId { get; set; }
     public Guid DocumentId { get; set; }
     public Guid? VersionId { get; set; }
+
+    public string? PublicUrl { get; set; }
     public string? Title { get; set; }
+    public string? Description { get; set; }
+    public string? RecipientName { get; set; }
+    public string? RecipientContact { get; set; }
+
+    public bool IsPermanent { get; set; }
+    public DateTimeOffset? ExpiresAtUtc { get; set; }
+    public int? MaxAccessCount { get; set; }
     public int AccessCount { get; set; }
-    public DateTimeOffset? RevokedAt { get; set; }
+
+    public bool AllowPreview { get; set; }
+    public bool AllowDownload { get; set; }
+    public bool AllowSmartSearch { get; set; }
+
+    public Guid? CreatedBy { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? RevokedAt { get; set; }
+    public Guid? RevokedBy { get; set; }
+    public string? RevokeReason { get; set; }
+
+    public bool IsRevoked => RevokedAt.HasValue;
+    public bool IsExpired => !IsPermanent && ExpiresAtUtc.HasValue && ExpiresAtUtc.Value <= DateTimeOffset.UtcNow;
+    public bool IsAccessLimitReached => MaxAccessCount.HasValue && AccessCount >= MaxAccessCount.Value;
+    public bool IsActive => !IsRevoked && !IsExpired && !IsAccessLimitReached;
 }
 
 public interface ISecureDocumentLinkService
