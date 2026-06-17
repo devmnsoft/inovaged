@@ -4,6 +4,7 @@ using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Rendering;
+using System.Text.Json;
 
 namespace InovaGed.Web.Controllers;
 
@@ -85,6 +86,30 @@ public sealed class ParametersController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Save(ParameterItemEditVM vm, CancellationToken ct)
     {
+        if (!vm.Id.HasValue || vm.Id == Guid.Empty)
+        {
+            ModelState.Remove(nameof(vm.Id));
+            vm.Id = null;
+        }
+
+        if (string.IsNullOrWhiteSpace(vm.Code))
+        {
+            ModelState.Remove(nameof(vm.Code));
+            vm.Code = string.Empty;
+        }
+
+        if (vm.CategoryId == Guid.Empty)
+            ModelState.AddModelError(nameof(vm.CategoryId), "Selecione uma categoria válida para o parâmetro.");
+
+        if (string.IsNullOrWhiteSpace(vm.Name))
+            ModelState.AddModelError(nameof(vm.Name), "Informe o nome do parâmetro.");
+
+        if (!string.IsNullOrWhiteSpace(vm.MetadataJson))
+        {
+            try { _ = JsonDocument.Parse(vm.MetadataJson); }
+            catch (JsonException) { ModelState.AddModelError(nameof(vm.MetadataJson), "Metadados JSON inválidos. Revise a sintaxe antes de salvar."); }
+        }
+
         if (!ModelState.IsValid)
         {
             await LoadCombos(vm, ct);

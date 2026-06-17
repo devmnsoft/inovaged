@@ -2123,3 +2123,6 @@ begin
             notes = excluded.notes;
     end if;
 end $$;
+
+-- Applying 2026_06_fix_parameters_create.sql
+\i database/migrations/2026_06_fix_parameters_create.sql

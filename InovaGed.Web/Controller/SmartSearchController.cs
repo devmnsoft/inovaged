@@ -1,5 +1,6 @@
 using InovaGed.Application.Audit;
 using InovaGed.Application.Identity;
+using InovaGed.Application.Ged.Search;
 using InovaGed.Application.Security;
 using InovaGed.Application.SmartSearch;
 using InovaGed.Web.Security;
@@ -16,16 +17,18 @@ public sealed class SmartSearchController : Controller
     private readonly IDocumentChatService _documentChat;
     private readonly ISearchStatisticsService _statistics;
     private readonly ISmartSearchRepository _repository;
+    private readonly IGedSmartSearchDiagnosticsService _diagnostics;
     private readonly IAuditWriter _audit;
     private readonly ILogger<SmartSearchController> _logger;
 
-    public SmartSearchController(ICurrentUser currentUser, ISmartSearchService smartSearch, IDocumentChatService documentChat, ISearchStatisticsService statistics, ISmartSearchRepository repository, IAuditWriter audit, ILogger<SmartSearchController> logger)
+    public SmartSearchController(ICurrentUser currentUser, ISmartSearchService smartSearch, IDocumentChatService documentChat, ISearchStatisticsService statistics, ISmartSearchRepository repository, IGedSmartSearchDiagnosticsService diagnostics, IAuditWriter audit, ILogger<SmartSearchController> logger)
     {
         _currentUser = currentUser;
         _smartSearch = smartSearch;
         _documentChat = documentChat;
         _statistics = statistics;
         _repository = repository;
+        _diagnostics = diagnostics;
         _audit = audit;
         _logger = logger;
     }
@@ -69,6 +72,18 @@ public sealed class SmartSearchController : Controller
                 correlationId
             });
         }
+        catch (Exception ex) when (IsPostgresSchemaException(ex))
+        {
+            var correlationId = HttpContext.TraceIdentifier;
+            _logger.LogError(ex, "Schema de busca inteligente incompleto. CorrelationId={CorrelationId}", correlationId);
+            return StatusCode(503, new { success = false, code = "SEARCH_SCHEMA_NOT_READY", message = "Índice de busca não configurado. Execute migrations ou use busca ampla no GED.", correlationId });
+        }
+        catch (TimeoutException ex)
+        {
+            var correlationId = HttpContext.TraceIdentifier;
+            _logger.LogError(ex, "Timeout na busca inteligente. CorrelationId={CorrelationId}", correlationId);
+            return StatusCode(504, new { success = false, code = "SEARCH_TIMEOUT", message = "Busca demorou demais. Tente reduzir filtros.", correlationId });
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Erro na busca inteligente. CorrelationId={CorrelationId}", HttpContext.TraceIdentifier);
@@ -110,6 +125,24 @@ public sealed class SmartSearchController : Controller
         return View(model);
     }
 
+    [HttpGet]
+    public async Task<IActionResult> Diagnostics(CancellationToken ct)
+    {
+        if (!_currentUser.IsAuthenticated) return RedirectToAction("Login", "Account");
+        if (!RolePolicyHelper.IsFullAdmin(User)) return Forbid();
+        return Json(new { success = true, model = await _diagnostics.GetAsync(_currentUser.TenantId, ct) });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ReindexMissing(CancellationToken ct)
+    {
+        if (!_currentUser.IsAuthenticated) return Unauthorized(new { success = false, message = "Sessão expirada." });
+        if (!RolePolicyHelper.IsFullAdmin(User) && !User.IsInNormalizedRole(AppRoles.Administrador)) return Forbid();
+        var count = await _diagnostics.EnqueueReindexMissingAsync(_currentUser.TenantId, ct);
+        return Json(new { success = true, jobsCreated = count, affected = count });
+    }
+
     [HttpPost]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Reindex([FromForm] Guid? documentId, CancellationToken ct)
@@ -117,5 +150,12 @@ public sealed class SmartSearchController : Controller
         if (!RolePolicyHelper.IsFullAdmin(User) && !User.IsInNormalizedRole(AppRoles.Administrador)) return Forbid();
         var count = await _repository.ReindexAsync(_currentUser.TenantId, documentId, ct);
         return Json(new { success = true, count });
+    }
+
+    private static bool IsPostgresSchemaException(Exception ex)
+    {
+        if (ex.GetType().Name != "PostgresException") return false;
+        var sqlState = ex.GetType().GetProperty("SqlState")?.GetValue(ex) as string;
+        return sqlState is "42P01" or "42703";
     }
 }

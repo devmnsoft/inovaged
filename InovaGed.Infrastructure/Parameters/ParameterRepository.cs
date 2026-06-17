@@ -2,6 +2,8 @@ using Dapper;
 using InovaGed.Application.Common.Codes;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Parameters;
+using Microsoft.Extensions.Logging;
+using Npgsql;
 
 namespace InovaGed.Infrastructure.Parameters;
 
@@ -9,11 +11,13 @@ public sealed class ParameterRepository : IParameterRepository
 {
     private readonly IDbConnectionFactory _db;
     private readonly ICodeGeneratorService _codeGenerator;
+    private readonly ILogger<ParameterRepository> _logger;
 
-    public ParameterRepository(IDbConnectionFactory db, ICodeGeneratorService codeGenerator)
+    public ParameterRepository(IDbConnectionFactory db, ICodeGeneratorService codeGenerator, ILogger<ParameterRepository> logger)
     {
         _db = db;
         _codeGenerator = codeGenerator;
+        _logger = logger;
     }
 
     public async Task<IReadOnlyList<ParameterCategoryRow>> ListCategoriesAsync(Guid tenantId, CancellationToken ct)
@@ -188,6 +192,10 @@ order by display_order, name;";
         if (isCreate && string.IsNullOrWhiteSpace(vm.Code))
             vm.Code = await _codeGenerator.GenerateNextCodeAsync(tenantId, $"ParameterItem:{categoryCode}", ResolveParameterPrefix(categoryCode), ct);
         if (!isCreate && string.IsNullOrWhiteSpace(vm.Code)) throw new ArgumentException("Código atual não encontrado.");
+
+        var normalizedCode = string.IsNullOrWhiteSpace(vm.Code)
+            ? (await _codeGenerator.GenerateNextCodeAsync(tenantId, $"ParameterItem:{categoryCode}", ResolveParameterPrefix(categoryCode), ct)).Trim().ToUpperInvariant()
+            : vm.Code.Trim().ToUpperInvariant();
         if (!string.IsNullOrWhiteSpace(vm.MetadataJson))
         {
             try { _ = System.Text.Json.JsonDocument.Parse(vm.MetadataJson); }
@@ -236,7 +244,7 @@ values(@tenantId, @id, @categoryCode, @action, @userId, cast(@oldData as jsonb),
             tenantId,
             categoryId = vm.CategoryId,
             parentId = vm.ParentId,
-            code = vm.Code.Trim().ToUpperInvariant(),
+            code = normalizedCode,
             name = vm.Name.Trim(),
             description = vm.Description,
             abbreviation = vm.Abbreviation,
@@ -260,18 +268,26 @@ where tenant_id=@tenantId and category_id=@categoryId and id<>@id and reg_status
         }
 
         var newData = await conn.ExecuteScalarAsync<string?>(new CommandDefinition(afterSql, new { tenantId, id }, tx, cancellationToken: ct));
-        await conn.ExecuteAsync(new CommandDefinition(historySql, new
-        {
-            tenantId,
-            id,
-            categoryCode,
-            action = oldData is null ? "CREATE" : "UPDATE",
-            userId,
-            oldData,
-            newData
-        }, tx, cancellationToken: ct));
-
         tx.Commit();
+
+        try
+        {
+            await conn.ExecuteAsync(new CommandDefinition(historySql, new
+            {
+                tenantId,
+                id,
+                categoryCode,
+                action = oldData is null ? "CREATE" : "UPDATE",
+                userId,
+                oldData,
+                newData
+            }, cancellationToken: ct));
+        }
+        catch (PostgresException ex) when (ex.SqlState is "42P01" or "42703")
+        {
+            _logger.LogWarning(ex, "Histórico de parâmetros indisponível por schema desatualizado; item salvo. Tenant={TenantId} Item={ItemId}", tenantId, id);
+        }
+
         return id;
     }
 
