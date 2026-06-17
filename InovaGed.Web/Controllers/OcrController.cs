@@ -24,6 +24,7 @@ public sealed class OcrController : Controller
     private readonly IOcrAutoScheduleRepository _repository;
     private readonly IOptionsMonitor<OcrAutoScheduleOptions> _options;
     private readonly IAuditWriter _audit;
+    private readonly IOcrEnvironmentValidator _ocrEnvironmentValidator;
     private readonly ILogger<OcrController> _logger;
 
     public OcrController(
@@ -36,6 +37,7 @@ public sealed class OcrController : Controller
         IOcrAutoScheduleRepository repository,
         IOptionsMonitor<OcrAutoScheduleOptions> options,
         IAuditWriter audit,
+        IOcrEnvironmentValidator ocrEnvironmentValidator,
         ILogger<OcrController> logger)
     {
         _currentUser = currentUser;
@@ -47,6 +49,7 @@ public sealed class OcrController : Controller
         _repository = repository;
         _options = options;
         _audit = audit;
+        _ocrEnvironmentValidator = ocrEnvironmentValidator;
         _logger = logger;
     }
 
@@ -122,6 +125,14 @@ public sealed class OcrController : Controller
         await AuditAsync("OCR_AUTO_RUN_NOW", null, null, null, new { action = "run-now" }, ct);
         try
         {
+            var env = await _ocrEnvironmentValidator.ValidateAsync(ct);
+            if (!env.IsValid)
+            {
+                const string message = "Ambiente OCR inválido. Corrija /SystemHealth/OcrEnvironment antes de executar OCR em massa.";
+                if (WantsJson()) return Json(new { success = false, message, details = env.Summary, status = "SKIPPED_ENVIRONMENT_INVALID", enqueued = 0 });
+                TempData["WarningMessage"] = message;
+                return RedirectToAction(nameof(AutoSchedule));
+            }
             var result = await _scheduler.RunAsync(ct);
             var payload = new { success = result.Status is "SUCCESS" or "PARTIAL_FAILURE", message = result.Message ?? "Rotina de OCR automático executada.", status = result.Status, enqueued = result.EnqueuedCount };
             if (WantsJson()) return Json(payload);
@@ -279,8 +290,10 @@ limit 1;
 
         try
         {
+            var env = await _ocrEnvironmentValidator.ValidateAsync(ct);
             var jobId = await _ocrJobs.EnqueueAsync(_currentUser.TenantId, versionId, _currentUser.UserId, forceReprocess, ct);
-            return OcrResponse(true, successMessage, jobId: jobId.ToString(), documentId: documentId, versionId: versionId);
+            var message = env.IsValid ? successMessage : successMessage + " Atenção: ambiente OCR inválido; o job falhará até corrigir /SystemHealth/OcrEnvironment. " + env.Summary;
+            return OcrResponse(true, message, jobId: jobId.ToString(), documentId: documentId, versionId: versionId);
         }
         catch (Exception ex)
         {

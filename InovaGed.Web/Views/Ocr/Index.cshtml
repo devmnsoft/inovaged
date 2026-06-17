@@ -126,7 +126,7 @@
                         <td>@if (item.IsPartialDocument){<span class="badge bg-light text-dark border">Parte @(item.PartNumber?.ToString() ?? "-")/@(item.TotalParts?.ToString() ?? "-")</span><div class="small text-muted">@(item.PartialSummaryText ?? $"{item.PartsWithOcr ?? 0}/{item.TotalParts ?? 0} com OCR")</div>}else{<span>-</span>}</td>
                         <td>@(item.RequestedAt?.ToLocalTime().ToString("dd/MM/yyyy HH:mm") ?? "-")</td>
                         <td>@(item.FinishedAt?.ToLocalTime().ToString("dd/MM/yyyy HH:mm") ?? "-")</td>
-                        <td>@if (item.HasOcrError){<button class="btn btn-link btn-sm p-0" type="button" data-bs-toggle="collapse" data-bs-target="#err-@item.VersionId">Ver erro</button>}else{<span>-</span>}</td>
+                        <td>@if (item.HasOcrError){ if (string.Equals(item.FailureCode, "OCR_ENVIRONMENT_INVALID", StringComparison.OrdinalIgnoreCase)){<span class="badge bg-danger me-1">Ambiente OCR inválido</span>}<button class="btn btn-link btn-sm p-0" type="button" data-bs-toggle="collapse" data-bs-target="#err-@item.VersionId">Ver erro</button>}else{<span>-</span>}</td>
                         <td class="text-end">
                             <div class="btn-group btn-group-sm flex-wrap">
                                 <a class="btn btn-outline-secondary" href="@item.ActionUrl">Ver documento</a>
@@ -136,7 +136,14 @@
                                     <button class="btn btn-outline-primary js-ocr-post" data-url="/Ocr/RunForVersion/@item.VersionId" data-row="#@rowId" data-loading="Enfileirando..." type="button">Executar OCR</button>
                                     @if (item.HasOcrError && !string.IsNullOrWhiteSpace(item.JobId))
                                     {
-                                        <button class="btn btn-outline-warning js-ocr-post" data-url="/Ocr/Retry/@item.JobId" data-row="#@rowId" data-loading="Reprocessando..." type="button">Reprocessar</button>
+                                        @if (string.Equals(item.FailureCode, "OCR_ENVIRONMENT_INVALID", StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            <button class="btn btn-outline-warning" type="button" disabled title="Corrija o ambiente antes de tentar novamente.">Reprocessar</button>
+                                        }
+                                        else
+                                        {
+                                            <button class="btn btn-outline-warning js-ocr-post" data-url="/Ocr/Retry/@item.JobId" data-row="#@rowId" data-loading="Reprocessando..." type="button">Reprocessar</button>
+                                        }
                                     }
                                     <a class="btn btn-outline-success" href="/Ged/Download?id=@item.VersionId">Baixar</a>
                                 }
@@ -152,6 +159,11 @@
                             <td colspan="10">
                                 <div class="alert alert-danger mb-0">
                                     <strong>Falha OCR:</strong> @(string.IsNullOrWhiteSpace(item.ErrorMessage) ? "Falha ao processar OCR." : item.ErrorMessage)
+                                    @if (string.Equals(item.FailureCode, "OCR_ENVIRONMENT_INVALID", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        <div class="mt-2"><span class="badge bg-danger">Ambiente OCR inválido</span> <a class="ms-2" href="/SystemHealth/OcrEnvironment">Ver diagnóstico OCR</a> <a class="btn btn-sm btn-outline-danger ms-2" href="/SystemHealth/OcrEnvironment">Revalidar ambiente</a></div>
+                                        <div class="small mt-1">Corrija o ambiente antes de tentar novamente.</div>
+                                    }
                                     @if (!string.IsNullOrWhiteSpace(diagnosticMissingMessage))
                                     {
                                         <div class="small mt-2">@diagnosticMissingMessage</div>
