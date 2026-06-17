@@ -29,7 +29,7 @@ public sealed class OcrMyPdfOcrService : IOcrService
     {
         var env = await _environmentValidator.ValidateAsync(ct);
         if (!env.IsValid)
-            throw BuildException(OcrFailureCode.OCR_ENVIRONMENT_INVALID, "OCR falhou porque o ambiente OCR não está configurado corretamente.", "Ambiente OCR inválido. Verifique /SystemHealth/OcrEnvironment.", env);
+            throw BuildEnvironmentException(env);
 
         var tempDir = Path.Combine(Path.GetTempPath(), "InovaGedOcr", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempDir);
@@ -108,15 +108,11 @@ public sealed class OcrMyPdfOcrService : IOcrService
         if (invalidateDigitalSignatures) psi.ArgumentList.Add("--invalidate-digital-signatures");
         psi.ArgumentList.Add(inPdf); psi.ArgumentList.Add(outPdf);
         if (!string.IsNullOrWhiteSpace(_options.TesseractDataPath)) psi.Environment["TESSDATA_PREFIX"] = _options.TesseractDataPath;
-        psi.Environment["PATH"] = BuildOcrPathEnvironment();
+        psi.Environment["PATH"] = BuildOcrPathEnvironment(_options);
         return psi;
     }
 
-    private string BuildOcrPathEnvironment()
-    {
-        var parts = new[] { _options.GhostscriptBinPath, Path.GetDirectoryName(_options.TesseractPath ?? ""), _options.PopplerBinPath, _options.QpdfBinPath, Path.GetDirectoryName(_options.PythonPath ?? ""), Path.GetDirectoryName(_options.OcrMyPdfPath ?? "") }.Where(p => !string.IsNullOrWhiteSpace(p));
-        return string.Join(Path.PathSeparator, parts.Concat(new[] { Environment.GetEnvironmentVariable("PATH") ?? "" }));
-    }
+    private static string BuildOcrPathEnvironment(OcrOptions options) => OcrEnvironmentValidator.BuildOcrPathEnvironment(options);
 
     private async Task<string?> ExtractTextWithPdfToTextAsync(string pdfPath, string tempDir, CancellationToken ct)
     {
@@ -124,7 +120,7 @@ public sealed class OcrMyPdfOcrService : IOcrService
         if (string.IsNullOrWhiteSpace(pdftotext) || !File.Exists(pdftotext)) return "";
         var outTxt = Path.Combine(tempDir, "out.txt");
         var psi = new ProcessStartInfo(pdftotext) { UseShellExecute = false, RedirectStandardError = true, RedirectStandardOutput = true, CreateNoWindow = true, WorkingDirectory = tempDir, StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8 };
-        psi.ArgumentList.Add(pdfPath); psi.ArgumentList.Add(outTxt); psi.Environment["PATH"] = BuildOcrPathEnvironment();
+        psi.ArgumentList.Add(pdfPath); psi.ArgumentList.Add(outTxt); psi.Environment["PATH"] = BuildOcrPathEnvironment(_options);
         var (exit, stdout, stderr, _) = await RunProcessAsync(psi, TimeSpan.FromSeconds(60), ct);
         if (exit != 0) { _logger.LogWarning("pdftotext falhou. Exit={ExitCode}. STDERR={Err}. STDOUT={Out}", exit, TrimMax(stderr, 2000), TrimMax(stdout, 2000)); return ""; }
         return File.Exists(outTxt) ? await File.ReadAllTextAsync(outTxt, Encoding.UTF8, ct) : "";
@@ -163,7 +159,20 @@ public sealed class OcrMyPdfOcrService : IOcrService
         _ => $"OCR falhou ao chamar OCRmyPDF. Verifique o ambiente OCR em /SystemHealth/OcrEnvironment. Código: {code}."
     };
 
-    private static OcrProcessingException BuildException(OcrFailureCode code, string friendly, string technical, object? details) => new(code, friendly, technical, details is null ? null : JsonSerializer.Serialize(details));
+    private static OcrProcessingException BuildEnvironmentException(OcrEnvironmentValidationResult env)
+    {
+        var failed = env.Checks.Where(c => c.Required && !c.Success).ToList();
+        var reasons = failed.Select(c => $"{c.Name} {(c.CanExecute ? "" : "não executa ")}{c.Message ?? c.Suggestion ?? "inválido"}".Trim()).ToList();
+        var summary = reasons.Count == 0 ? env.Summary : "Ambiente OCR inválido: " + string.Join("; ", reasons) + ". Verifique /SystemHealth/OcrEnvironment.";
+        var details = new { code = OcrFailureCode.OCR_ENVIRONMENT_INVALID.ToString(), summary, processUser = env.ProcessUser, windowsIdentity = env.WindowsIdentity, machineName = env.MachineName, checks = failed };
+        return new OcrProcessingException(OcrFailureCode.OCR_ENVIRONMENT_INVALID, summary, summary, JsonSerializer.Serialize(details));
+    }
+
+    private static OcrProcessingException BuildException(OcrFailureCode code, string friendly, string technical, object? details)
+    {
+        var payload = details is null ? new { code = code.ToString() } : new { code = code.ToString(), details };
+        return new(code, friendly, technical, JsonSerializer.Serialize(payload));
+    }
     private static string NormalizePdfMode(string? mode) => (mode ?? "skip-text").Trim().ToLowerInvariant() switch { "force-ocr" => "--force-ocr", "redo-ocr" => "--redo-ocr", _ => "--skip-text" };
     private static string TrimMax(string s, int max) => string.IsNullOrEmpty(s) ? "" : (s.Length <= max ? s : s[..max] + "...");
 }

@@ -213,6 +213,7 @@ builder.Services.Configure<StorageLocalOptions>(builder.Configuration.GetSection
 // =======================================================
 // OCR / Preview pipeline
 // =======================================================
+builder.Services.AddScoped<IOcrProcessRunner, OcrProcessRunner>();
 builder.Services.AddScoped<IOcrEnvironmentValidator, OcrEnvironmentValidator>();
 builder.Services.AddScoped<IOcrService, OcrMyPdfOcrService>();
 builder.Services.AddScoped<IPdfTextExtractor, PopplerPdfTextExtractor>();

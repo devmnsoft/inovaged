@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Security.Principal;
 using System.Text;
 using InovaGed.Application.Common.Storage;
@@ -11,116 +10,75 @@ public sealed class OcrEnvironmentValidator : IOcrEnvironmentValidator
 {
     private readonly OcrOptions _options;
     private readonly IFileStorage _storage;
+    private readonly IOcrProcessRunner _runner;
 
-    public OcrEnvironmentValidator(IOptions<OcrOptions> options, IFileStorage storage)
+    public OcrEnvironmentValidator(IOptions<OcrOptions> options, IFileStorage storage, IOcrProcessRunner runner)
     {
         _options = options.Value;
         _storage = storage;
+        _runner = runner;
     }
 
-    public async Task<OcrEnvironmentReport> ValidateAsync(CancellationToken ct)
+    public async Task<OcrEnvironmentValidationResult> ValidateAsync(CancellationToken ct)
     {
-        var checks = new List<OcrEnvironmentCheck>();
-        var warnings = new List<string>();
-        var storagePath = ResolveStoragePath();
-
-        if ((_options.OcrMyPdfPath ?? "").Contains(@"\Users\Administrator\AppData\", StringComparison.OrdinalIgnoreCase))
-            warnings.Add("O OCRmyPDF está instalado no perfil do Administrator. Em produção IIS, recomenda-se instalar Python/OCRmyPDF em caminho global, como C:\\Tools\\Python311 ou C:\\Program Files\\Python311, com permissão para o usuário do AppPool.");
-
-        checks.Add(await CheckFileAsync("OcrMyPdfPath", _options.OcrMyPdfPath, "--version", ct));
-        checks.Add(await CheckFileAsync("PythonPath", _options.PythonPath, "--version", ct));
-        checks.Add(await CheckFileAsync("TesseractPath", _options.TesseractPath, "--version", ct));
-        checks.Add(CheckDirectory("TesseractDataPath", _options.TesseractDataPath));
-        checks.Add(CheckFileOnly("Tesseract por.traineddata", Path.Combine(_options.TesseractDataPath ?? "", "por.traineddata")));
-        checks.Add(CheckFileOnly("Tesseract eng.traineddata", Path.Combine(_options.TesseractDataPath ?? "", "eng.traineddata")));
-        checks.Add(CheckDirectory("GhostscriptBinPath", _options.GhostscriptBinPath));
-        var gs = ResolveGhostscriptExe();
-        checks.Add(await CheckFileAsync("Ghostscript", gs, "--version", ct));
-        checks.Add(await CheckFileAsync("QpdfPath", _options.QpdfPath, "--version", ct));
-        checks.Add(await CheckFileAsync("PdfToTextPath", _options.PdfToTextPath, "-v", ct));
-        checks.Add(CheckDirectory("PopplerBinPath", _options.PopplerBinPath));
-        checks.Add(CheckStorage(storagePath));
-
-        var valid = checks.All(c => c.Exists && c.PermissionOk && (c.CommandResult is null || (c.CommandResult.ExitCode == 0 && !c.CommandResult.TimedOut)));
-        return new OcrEnvironmentReport(valid, Environment.UserName, WindowsIdentity.GetCurrent().Name, storagePath, checks, warnings, DateTimeOffset.UtcNow);
-    }
-
-    private string ResolveStoragePath()
-    {
-        var type = _storage.GetType();
-        foreach (var name in new[] { "RootPath", "BasePath", "StorageRoot", "Root" })
+        var result = new OcrEnvironmentValidationResult
         {
-            var prop = type.GetProperty(name);
-            if (prop?.GetValue(_storage) is string value && !string.IsNullOrWhiteSpace(value)) return value;
-        }
-        return AppContext.BaseDirectory;
+            ProcessUser = Environment.UserName,
+            WindowsIdentity = WindowsIdentity.GetCurrent().Name,
+            MachineName = Environment.MachineName,
+            CurrentDirectory = Directory.GetCurrentDirectory(),
+            BaseDirectory = AppContext.BaseDirectory,
+            StoragePath = ResolveStoragePath(),
+            EffectivePath = BuildOcrPathEnvironment(_options),
+            GeneratedAtUtc = DateTimeOffset.UtcNow
+        };
+        var env = new Dictionary<string, string> { ["PATH"] = result.EffectivePath };
+        if (!string.IsNullOrWhiteSpace(_options.TesseractDataPath)) env["TESSDATA_PREFIX"] = _options.TesseractDataPath!;
+
+        if ((_options.OcrMyPdfPath ?? string.Empty).Contains(@"\Users\Administrator\AppData\", StringComparison.OrdinalIgnoreCase))
+            result.Warnings.Add("O OCRmyPDF está instalado dentro do perfil do usuário Administrator. Em ambiente IIS, o AppPool pode não ter acesso. Recomenda-se instalar em caminho global, por exemplo C:\\Tools\\Python311 ou C:\\Program Files\\Python311.");
+
+        result.Checks.Add(await CheckExecutableAsync("OCRmyPDF", "Ocr:OcrMyPdfPath", _options.OcrMyPdfPath, new[] { "--version" }, env, ct));
+        result.Checks.Add(await CheckExecutableAsync("Python", "Ocr:PythonPath", _options.PythonPath, new[] { "--version" }, env, ct));
+        result.Checks.Add(await CheckExecutableAsync("Tesseract", "Ocr:TesseractPath", _options.TesseractPath, new[] { "--version" }, env, ct));
+        result.Checks.Add(CheckDirectory("TesseractDataPath", "Ocr:TesseractDataPath", _options.TesseractDataPath, "Configure a pasta tessdata do Tesseract."));
+        result.Checks.Add(CheckFile("Tesseract idioma português", "Ocr:TesseractDataPath", Path.Combine(_options.TesseractDataPath ?? string.Empty, "por.traineddata"), "Instale/copiei por.traineddata para a pasta tessdata."));
+        result.Checks.Add(CheckFile("Tesseract idioma inglês", "Ocr:TesseractDataPath", Path.Combine(_options.TesseractDataPath ?? string.Empty, "eng.traineddata"), "Instale/copiei eng.traineddata para a pasta tessdata."));
+        result.Checks.Add(CheckDirectory("GhostscriptBinPath", "Ocr:GhostscriptBinPath", _options.GhostscriptBinPath, "Configure a pasta bin do Ghostscript."));
+        result.Checks.Add(await CheckExecutableAsync("Ghostscript", "Ocr:GhostscriptBinPath", ResolveGhostscriptExe(), new[] { "--version" }, env, ct));
+        result.Checks.Add(await CheckExecutableAsync("qpdf", "Ocr:QpdfPath", _options.QpdfPath, new[] { "--version" }, env, ct));
+        result.Checks.Add(await CheckExecutableAsync("Poppler pdftotext", "Ocr:PdfToTextPath", _options.PdfToTextPath, new[] { "-v" }, env, ct));
+        result.Checks.Add(CheckDirectory("PopplerBinPath", "Ocr:PopplerBinPath", _options.PopplerBinPath, "Configure a pasta bin do Poppler."));
+        result.Checks.Add(CheckStorage(result.StoragePath));
+
+        result.IsValid = result.Checks.Where(c => c.Required).All(c => c.Success);
+        var failed = result.Checks.Where(c => c.Required && !c.Success).Select(c => $"{c.Name}: {c.Message ?? c.Suggestion ?? "falhou"}").ToList();
+        result.Summary = result.IsValid ? "Ambiente OCR válido." : "Ambiente OCR inválido: " + string.Join("; ", failed);
+        return result;
     }
 
-    private OcrEnvironmentCheck CheckStorage(string path)
+    public static string BuildOcrPathEnvironment(OcrOptions options)
     {
-        try
-        {
-            var exists = Directory.Exists(path);
-            if (exists)
-            {
-                var probe = Path.Combine(path, $".ocr-permission-{Guid.NewGuid():N}.tmp");
-                File.WriteAllText(probe, "ok", Encoding.UTF8);
-                _ = File.ReadAllText(probe, Encoding.UTF8);
-                File.Delete(probe);
-            }
-            return new("Storage", path, exists, exists, null, "write/read probe", null, exists ? null : "Pasta de storage não existe.");
-        }
-        catch (Exception ex) { return new("Storage", path, Directory.Exists(path), false, null, "write/read probe", null, ex.Message); }
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var parts = new[] { Path.GetDirectoryName(options.OcrMyPdfPath ?? string.Empty), Path.GetDirectoryName(options.PythonPath ?? string.Empty), options.GhostscriptBinPath, Path.GetDirectoryName(options.TesseractPath ?? string.Empty), options.PopplerBinPath, options.QpdfBinPath, Path.GetDirectoryName(options.QpdfPath ?? string.Empty), Environment.GetEnvironmentVariable("PATH") ?? string.Empty };
+        return string.Join(Path.PathSeparator, parts.SelectMany(p => (p ?? string.Empty).Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)).Select(p => p.Trim()).Where(p => !string.IsNullOrWhiteSpace(p) && seen.Add(p)));
     }
 
-    private OcrEnvironmentCheck CheckDirectory(string name, string? path)
+    private async Task<OcrEnvironmentCheckResult> CheckExecutableAsync(string name, string configKey, string? path, IReadOnlyList<string> args, IDictionary<string, string> env, CancellationToken ct)
     {
-        var p = path ?? "";
-        var exists = Directory.Exists(p);
-        return new(name, p, exists, exists, null, null, null, exists ? null : "Diretório não encontrado.");
+        var exists = !string.IsNullOrWhiteSpace(path) && (!Path.IsPathRooted(path) || File.Exists(path));
+        var cmd = $"\"{path}\" {string.Join(' ', args)}";
+        if (!exists)
+            return Check(name, configKey, path, false, false, cmd, null, "Arquivo não encontrado ou caminho não configurado.", SuggestExecutable(path));
+        var proc = await _runner.RunVersionAsync(path!, args, AppContext.BaseDirectory, env, TimeSpan.FromSeconds(10), ct);
+        return Check(name, configKey, path, true, proc.Success, cmd, proc, proc.Success ? null : proc.ExceptionMessage ?? "Comando de versão falhou.", proc.Success ? null : SuggestExecutable(path));
     }
 
-    private OcrEnvironmentCheck CheckFileOnly(string name, string path)
-    {
-        var exists = File.Exists(path);
-        return new(name, path, exists, exists, null, null, null, exists ? null : "Arquivo não encontrado.");
-    }
-
-    private async Task<OcrEnvironmentCheck> CheckFileAsync(string name, string? path, string versionArgs, CancellationToken ct)
-    {
-        var p = path ?? "";
-        if (!File.Exists(p)) return new(name, p, false, false, null, $"\"{p}\" {versionArgs}", null, "Arquivo não encontrado ou inacessível pelo usuário do processo.");
-        try
-        {
-            await using (File.Open(p, FileMode.Open, FileAccess.Read, FileShare.ReadWrite)) { }
-            var result = await RunVersionAsync(p, versionArgs, ct);
-            var version = FirstLine(result.StdOut, result.StdErr);
-            return new(name, p, true, result.ExitCode == 0 && !result.TimedOut, version, $"\"{p}\" {versionArgs}", result, result.ExitCode == 0 && !result.TimedOut ? null : "Comando de versão falhou.");
-        }
-        catch (Exception ex) { return new(name, p, true, false, null, $"\"{p}\" {versionArgs}", null, ex.Message); }
-    }
-
-    private string ResolveGhostscriptExe()
-    {
-        var dir = _options.GhostscriptBinPath ?? "";
-        var x64 = Path.Combine(dir, "gswin64c.exe");
-        if (File.Exists(x64)) return x64;
-        return Path.Combine(dir, "gswin32c.exe");
-    }
-
-    private static string? FirstLine(params string[] values) => values.SelectMany(v => (v ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries)).Select(v => v.Trim()).FirstOrDefault();
-
-    private static async Task<OcrCommandResult> RunVersionAsync(string file, string args, CancellationToken ct)
-    {
-        var sw = Stopwatch.StartNew();
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeout.CancelAfter(TimeSpan.FromSeconds(10));
-        var psi = new ProcessStartInfo(file, args) { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true, StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8 };
-        using var p = Process.Start(psi) ?? throw new InvalidOperationException("Falha ao iniciar processo.");
-        var stdout = p.StandardOutput.ReadToEndAsync();
-        var stderr = p.StandardError.ReadToEndAsync();
-        try { await p.WaitForExitAsync(timeout.Token); }
-        catch (OperationCanceledException) { try { p.Kill(true); } catch { } return new(null, await stdout, await stderr, sw.ElapsedMilliseconds, true); }
-        return new(p.ExitCode, await stdout, await stderr, sw.ElapsedMilliseconds, false);
-    }
+    private static OcrEnvironmentCheckResult Check(string name, string? key, string? path, bool exists, bool success, string? cmd, OcrProcessResult? proc, string? message, string? suggestion) => new() { Name = name, ConfigKey = key, Path = path, Required = true, Exists = exists, CanExecute = proc?.Success ?? success, Success = success, VersionCommand = cmd, ExitCode = proc?.ExitCode, StdOut = proc?.StdOut, StdErr = proc?.StdErr, ElapsedMs = proc?.ElapsedMs ?? 0, ProcessResult = proc, Message = message, Suggestion = suggestion };
+    private static OcrEnvironmentCheckResult CheckDirectory(string name, string key, string? path, string suggestion) { var ok = !string.IsNullOrWhiteSpace(path) && Directory.Exists(path); return Check(name, key, path, ok, ok, null, null, ok ? null : "Diretório não encontrado.", suggestion); }
+    private static OcrEnvironmentCheckResult CheckFile(string name, string key, string path, string suggestion) { var ok = File.Exists(path); return Check(name, key, path, ok, ok, null, null, ok ? null : "Arquivo não encontrado.", suggestion); }
+    private OcrEnvironmentCheckResult CheckStorage(string path) { try { var ok = Directory.Exists(path); if (ok) { var f = Path.Combine(path, $".ocr-permission-{Guid.NewGuid():N}.tmp"); File.WriteAllText(f, "ok", Encoding.UTF8); File.Delete(f); } return Check("Storage", "Storage:Local:RootPath", path, ok, ok, "criar/apagar arquivo temporário", null, ok ? null : "Pasta de storage não existe.", "Crie a pasta e conceda leitura/escrita ao AppPool."); } catch (Exception ex) { return Check("Storage", "Storage:Local:RootPath", path, Directory.Exists(path), false, "criar/apagar arquivo temporário", null, ex.Message, "Conceda permissão de leitura/escrita ao usuário do AppPool."); } }
+    private string ResolveStoragePath() { foreach (var name in new[] { "RootPath", "BasePath", "StorageRoot", "Root" }) if (_storage.GetType().GetProperty(name)?.GetValue(_storage) is string v && !string.IsNullOrWhiteSpace(v)) return v; return AppContext.BaseDirectory; }
+    private string ResolveGhostscriptExe() { var dir = _options.GhostscriptBinPath ?? string.Empty; var x64 = Path.Combine(dir, "gswin64c.exe"); return File.Exists(x64) ? x64 : Path.Combine(dir, "gswin32c.exe"); }
+    private static string SuggestExecutable(string? path) => (path ?? string.Empty).Contains(@"\Users\Administrator\AppData\", StringComparison.OrdinalIgnoreCase) ? "Conceda permissão de leitura/execução ao usuário do AppPool ou reinstale Python/OCRmyPDF em caminho global." : "Corrija o caminho configurado e garanta permissão de leitura/execução ao usuário do AppPool.";
 }

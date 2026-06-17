@@ -17,6 +17,7 @@ public sealed class OcrAutoSchedulerService : IOcrAutoSchedulerService
     private readonly IOcrJobRepository _ocrJobs;
     private readonly IDbConnectionFactory _db;
     private readonly IOptionsMonitor<OcrAutoScheduleOptions> _options;
+    private readonly IOcrEnvironmentValidator _ocrEnvironmentValidator;
     private readonly ILogger<OcrAutoSchedulerService> _logger;
 
     public OcrAutoSchedulerService(
@@ -24,12 +25,14 @@ public sealed class OcrAutoSchedulerService : IOcrAutoSchedulerService
         IOcrJobRepository ocrJobs,
         IDbConnectionFactory db,
         IOptionsMonitor<OcrAutoScheduleOptions> options,
+        IOcrEnvironmentValidator ocrEnvironmentValidator,
         ILogger<OcrAutoSchedulerService> logger)
     {
         _repository = repository;
         _ocrJobs = ocrJobs;
         _db = db;
         _options = options;
+        _ocrEnvironmentValidator = ocrEnvironmentValidator;
         _logger = logger;
     }
 
@@ -54,6 +57,18 @@ public sealed class OcrAutoSchedulerService : IOcrAutoSchedulerService
 
         try
         {
+            var env = await _ocrEnvironmentValidator.ValidateAsync(ct);
+            if (!env.IsValid)
+            {
+                result.Status = "SKIPPED_ENVIRONMENT_INVALID";
+                result.Message = "Ambiente OCR inválido. Corrija /SystemHealth/OcrEnvironment antes de executar OCR em massa. " + env.Summary;
+                result.FinishedAtUtc = DateTimeOffset.UtcNow;
+                await SafeInsertRunAsync(result, ct);
+                await SafeUpdateRunAsync(result, ct);
+                _logger.LogWarning("OCR Auto Scheduler bloqueado por ambiente inválido. {Summary}", env.Summary);
+                return result;
+            }
+
             _logger.LogInformation("OCR Auto Scheduler START. Tenant={TenantId} RunId={RunId}", result.TenantId, result.RunId);
             await SafeAuditAsync(options.TenantId, result.RunId, "OCR_AUTO_SCHEDULE_STARTED", null, null, null, result.CorrelationId, new
             {

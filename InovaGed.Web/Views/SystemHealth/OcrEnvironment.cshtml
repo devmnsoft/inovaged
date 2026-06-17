@@ -1,6 +1,9 @@
-@model InovaGed.Application.Ocr.OcrEnvironmentReport
+@model InovaGed.Application.Ocr.OcrEnvironmentValidationResult
 @{
     ViewData["Title"] = "Diagnóstico do Ambiente OCR";
+    var okCount = Model.Checks.Count(c => c.Success);
+    var failCount = Model.Checks.Count(c => c.Required && !c.Success);
+    var diagnosticText = System.Text.Json.JsonSerializer.Serialize(Model, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
 }
 <div class="container-fluid py-3">
     <div class="d-flex justify-content-between align-items-center mb-3">
@@ -8,49 +11,57 @@
             <h1 class="h3 mb-1">Diagnóstico do Ambiente OCR</h1>
             <div class="text-muted">Gerado em @Model.GeneratedAtUtc.ToString("yyyy-MM-dd HH:mm:ss 'UTC'")</div>
         </div>
-        <a class="btn btn-outline-secondary" href="/SystemHealth/OcrEnvironment">Revalidar</a>
+        <div class="btn-group">
+            <a class="btn btn-outline-primary" href="/SystemHealth/OcrEnvironment">Revalidar ambiente</a>
+            <button class="btn btn-outline-secondary" type="button" onclick="navigator.clipboard.writeText(document.getElementById('ocrDiagnosticJson').value)">Copiar diagnóstico</button>
+            <a class="btn btn-outline-secondary" href="/Ocr">Voltar para OCR</a>
+            <a class="btn btn-outline-secondary" href="/Ocr/Queue">Ver fila OCR</a>
+        </div>
     </div>
 
-    <div class="alert @(Model.IsValid ? "alert-success" : "alert-danger")">
-        <strong>@(Model.IsValid ? "Ambiente OCR válido" : "Ambiente OCR inválido")</strong><br />
-        Usuário do processo: <code>@Model.ProcessUser</code> — WindowsIdentity: <code>@Model.WindowsIdentity</code><br />
-        Storage: <code>@Model.StoragePath</code>
-    </div>
+    @if (!Model.IsValid)
+    {
+        <div class="alert alert-danger"><strong>Ambiente OCR inválido.</strong> Corrija os itens abaixo antes de reprocessar OCR.<br />@Model.Summary</div>
+    }
+    else
+    {
+        <div class="alert alert-success"><strong>Ambiente OCR válido.</strong> Todos os checks obrigatórios passaram.</div>
+    }
+
+    <div class="card mb-3"><div class="card-body">
+        <div class="row g-2 small">
+            <div class="col-md-3"><strong>Usuário:</strong> <code>@Model.ProcessUser</code></div>
+            <div class="col-md-3"><strong>WindowsIdentity/AppPool:</strong> <code>@Model.WindowsIdentity</code></div>
+            <div class="col-md-2"><strong>Máquina:</strong> <code>@Model.MachineName</code></div>
+            <div class="col-md-2"><strong>Checks:</strong> @okCount OK / @failCount falha(s)</div>
+            <div class="col-md-2"><strong>Storage Root:</strong> <code>@Model.StoragePath</code></div>
+            <div class="col-12"><strong>BaseDirectory:</strong> <code>@Model.BaseDirectory</code></div>
+            <div class="col-12"><strong>CurrentDirectory:</strong> <code>@Model.CurrentDirectory</code></div>
+            <div class="col-12"><strong>PATH efetivo:</strong> <code class="text-break">@Model.EffectivePath</code></div>
+        </div>
+    </div></div>
 
     @if (Model.Warnings.Any())
     {
-        <div class="alert alert-warning">
-            <ul class="mb-0">
-            @foreach (var warning in Model.Warnings) { <li>@warning</li> }
-            </ul>
-        </div>
+        <div class="alert alert-warning"><ul class="mb-0">@foreach (var warning in Model.Warnings) { <li>@warning</li> }</ul></div>
     }
 
     <div class="table-responsive">
         <table class="table table-sm table-bordered align-middle">
-            <thead class="table-light"><tr><th>Item</th><th>Caminho configurado</th><th>Existe</th><th>Permissão</th><th>Versão</th><th>Comando de teste</th><th>Resultado</th><th>Erro</th></tr></thead>
+            <thead class="table-light"><tr><th>Dependência</th><th>Config key</th><th>Caminho</th><th>Existe?</th><th>Executa?</th><th>ExitCode</th><th>Versão/stdout</th><th>Erro/stderr</th><th>Sugestão</th></tr></thead>
             <tbody>
             @foreach (var c in Model.Checks)
             {
-                <tr class="@(c.Exists && c.PermissionOk ? "" : "table-danger")">
-                    <td>@c.Name</td>
-                    <td><code>@c.ConfiguredPath</code></td>
-                    <td>@(c.Exists ? "OK" : "Falha")</td>
-                    <td>@(c.PermissionOk ? "OK" : "Falha")</td>
-                    <td><code>@c.Version</code></td>
-                    <td><code>@c.TestCommand</code></td>
-                    <td>
-                        @if (c.CommandResult is not null)
-                        {
-                            <div>ExitCode: @c.CommandResult.ExitCode — @c.CommandResult.ElapsedMs ms — Timeout: @c.CommandResult.TimedOut</div>
-                            <details><summary>stdout/stderr</summary><pre class="small">@c.CommandResult.StdOut
-@c.CommandResult.StdErr</pre></details>
-                        }
-                    </td>
-                    <td>@c.ErrorMessage</td>
+                <tr class="@(c.Success ? "" : "table-danger")">
+                    <td>@c.Name</td><td><code>@c.ConfigKey</code></td><td><code class="text-break">@c.Path</code></td>
+                    <td>@(c.Exists ? "Sim" : "Não")</td><td>@(c.CanExecute ? "Sim" : "Não")</td><td>@(c.ExitCode?.ToString() ?? "-")</td>
+                    <td><code>@c.Version</code><details><summary>stdout</summary><pre class="small">@c.StdOut</pre></details></td>
+                    <td>@c.Message<details><summary>stderr</summary><pre class="small">@c.StdErr</pre></details></td>
+                    <td>@c.Suggestion</td>
                 </tr>
             }
             </tbody>
         </table>
     </div>
+    <textarea id="ocrDiagnosticJson" class="visually-hidden">@diagnosticText</textarea>
 </div>
