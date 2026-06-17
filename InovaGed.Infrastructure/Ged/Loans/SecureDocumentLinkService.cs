@@ -78,7 +78,38 @@ values(@tenantId,@loanId,@userId,'Gestor','ADMIN',coalesce(nullif(@msg,''),'O do
 
     public Task<IReadOnlyList<SecureDocumentLinkRow>> ListByLoanAsync(Guid tenantId, Guid loanRequestId, CancellationToken ct) => ListAsync("loan_request_id=@id", tenantId, loanRequestId, ct);
     public Task<IReadOnlyList<SecureDocumentLinkRow>> ListByDocumentAsync(Guid tenantId, Guid documentId, CancellationToken ct) => ListAsync("document_id=@id", tenantId, documentId, ct);
-    private async Task<IReadOnlyList<SecureDocumentLinkRow>> ListAsync(string predicate, Guid tenantId, Guid id, CancellationToken ct) { await using var c = await _db.OpenAsync(ct); return (await c.QueryAsync<SecureDocumentLinkRow>(new CommandDefinition($"select id as LinkId, public_url as PublicUrl, expires_at as ExpiresAtUtc, is_permanent as IsPermanent, max_access_count as MaxAccessCount, document_id as DocumentId, version_id as VersionId, title as Title, access_count as AccessCount, revoked_at as RevokedAt, created_at as CreatedAt from ged.secure_document_link where tenant_id=@tenantId and {predicate} order by created_at desc", new { tenantId, id }, cancellationToken: ct))).AsList(); }
+    private async Task<IReadOnlyList<SecureDocumentLinkRow>> ListAsync(string predicate, Guid tenantId, Guid id, CancellationToken ct)
+    {
+        await using var c = await _db.OpenAsync(ct);
+        return (await c.QueryAsync<SecureDocumentLinkRow>(new CommandDefinition($"""
+select
+    id as "Id",
+    tenant_id as "TenantId",
+    loan_request_id as "LoanRequestId",
+    document_id as "DocumentId",
+    version_id as "VersionId",
+    public_url as "PublicUrl",
+    title as "Title",
+    description as "Description",
+    recipient_name as "RecipientName",
+    recipient_contact as "RecipientContact",
+    is_permanent as "IsPermanent",
+    expires_at as "ExpiresAtUtc",
+    max_access_count as "MaxAccessCount",
+    access_count as "AccessCount",
+    allow_preview as "AllowPreview",
+    allow_download as "AllowDownload",
+    allow_smart_search as "AllowSmartSearch",
+    created_by as "CreatedBy",
+    created_at as "CreatedAt",
+    revoked_at as "RevokedAt",
+    revoked_by as "RevokedBy",
+    revoke_reason as "RevokeReason"
+from ged.secure_document_link
+where tenant_id=@tenantId and {predicate}
+order by created_at desc
+""", new { tenantId, id }, cancellationToken: ct))).AsList();
+    }
     private string BuildPublicUrl(string token) { var baseUrl = _configuration["SecureDocumentLinks:PublicBaseUrl"]?.TrimEnd('/'); if (string.IsNullOrWhiteSpace(baseUrl)) { var r = _http.HttpContext?.Request; baseUrl = r is null ? string.Empty : $"{r.Scheme}://{r.Host}"; } return $"{baseUrl}/SharedDocument/{token}"; }
     private static string CreateToken() => Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)).Replace('+', '-').Replace('/', '_').TrimEnd('=');
     private static string Sha256Token(string token) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token))).ToLowerInvariant();
