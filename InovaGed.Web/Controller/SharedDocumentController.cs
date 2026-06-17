@@ -19,7 +19,7 @@ public sealed class SharedDocumentController : Controller
     {
         var link = await ValidateAsync(token, true, ct);
         if (link is null) return View("SharedDocumentDenied");
-        return View("Index", link);
+        return View("View", link);
     }
 
     [HttpGet("{token}/Preview")]
@@ -28,6 +28,16 @@ public sealed class SharedDocumentController : Controller
         var link = await ValidateAsync(token, true, ct);
         if (link is null) return NotFound("Link inválido, expirado ou revogado.");
         return Content("Pré-visualização isolada habilitada para este documento. Integre aqui o viewer existente usando DocumentId/VersionId.", "text/plain", Encoding.UTF8);
+    }
+
+    [HttpGet("{token}/Download")]
+    public async Task<IActionResult> Download(string token, CancellationToken ct)
+    {
+        var link = await ValidateAsync(token, true, ct);
+        if (link is null) return NotFound("Link inválido, expirado ou revogado.");
+        if (!link.AllowDownload) return Forbid();
+        await LogAccessAsync(link, true, "SECURE_DOCUMENT_LINK_DOWNLOAD", ct);
+        return Content("Download autorizado apenas para o documento vinculado. Integre aqui o streaming do arquivo versionado GED.", "text/plain", Encoding.UTF8);
     }
 
     [HttpGet("{token}/OcrText")]
@@ -60,10 +70,10 @@ public sealed class SharedDocumentController : Controller
         var hash = Sha256Token(token ?? string.Empty);
         await using var conn = await _db.OpenAsync(ct);
         var link = await conn.QuerySingleOrDefaultAsync<SharedDocumentLinkVm>(new CommandDefinition("""
-select id as "Id", tenant_id as "TenantId", loan_request_id as "LoanRequestId", document_id as "DocumentId", version_id as "VersionId", expires_at as "ExpiresAt", max_access_count as "MaxAccessCount", access_count as "AccessCount", allow_smart_search as "AllowSmartSearch", allow_download as "AllowDownload", revoked_at as "RevokedAt"
+select id as "Id", tenant_id as "TenantId", loan_request_id as "LoanRequestId", document_id as "DocumentId", version_id as "VersionId", expires_at as "ExpiresAt", is_permanent as "IsPermanent", max_access_count as "MaxAccessCount", access_count as "AccessCount", allow_smart_search as "AllowSmartSearch", allow_download as "AllowDownload", revoked_at as "RevokedAt"
 from ged.secure_document_link where token_hash=@hash and reg_status='A'
 """, new { hash }, cancellationToken: ct));
-        var ok = link is not null && link.RevokedAt is null && link.ExpiresAt > DateTimeOffset.UtcNow && link.AccessCount < link.MaxAccessCount;
+        var ok = link is not null && link.RevokedAt is null && (link.IsPermanent || link.ExpiresAt is null || link.ExpiresAt > DateTimeOffset.UtcNow) && (link.MaxAccessCount is null || link.AccessCount < link.MaxAccessCount);
         if (link is not null && countAccess)
         {
             await LogAccessAsync(link, ok, ok ? "SECURE_DOCUMENT_LINK_OPENED" : "DENIED", ct);
@@ -89,8 +99,9 @@ public sealed class SharedDocumentLinkVm
     public Guid? LoanRequestId { get; set; }
     public Guid DocumentId { get; set; }
     public Guid? VersionId { get; set; }
-    public DateTimeOffset ExpiresAt { get; set; }
-    public int MaxAccessCount { get; set; }
+    public DateTimeOffset? ExpiresAt { get; set; }
+    public bool IsPermanent { get; set; }
+    public int? MaxAccessCount { get; set; }
     public int AccessCount { get; set; }
     public bool AllowSmartSearch { get; set; }
     public bool AllowDownload { get; set; }

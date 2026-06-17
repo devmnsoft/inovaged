@@ -447,19 +447,40 @@ public sealed class LoansController : Controller
     [Authorize(Policy = AppPolicies.LoansManage)]
     [HttpPost("{id:guid}/GenerateSecureLink")]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> GenerateSecureLink(Guid id, Guid documentId, Guid? versionId, int expiresHours = 24, int maxAccessCount = 5, CancellationToken ct = default)
+    public async Task<IActionResult> GenerateSecureLink(Guid id, GenerateSecureLinkRequest request, CancellationToken ct = default)
     {
         if (!await CanOperateLoanAsync(id, ct)) return Forbid();
+        if (!request.IsPermanent && request.ExpiresAtUtc is null)
+        {
+            TempData["Err"] = "Informe a expiração para link temporário.";
+            return RedirectToAction(nameof(Details), new { id });
+        }
         var token = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)).Replace('+', '-').Replace('/', '_').TrimEnd('=');
         var hash = Sha256Token(token);
         await using var conn = await _db.OpenAsync(ct);
+        var expiresAt = request.IsPermanent ? null : request.ExpiresAtUtc;
         var linkId = await conn.ExecuteScalarAsync<Guid>(new CommandDefinition("""
-insert into ged.secure_document_link(tenant_id, loan_request_id, document_id, version_id, token_hash, expires_at, max_access_count, created_by)
-values(@tenantId,@id,@documentId,@versionId,@hash,now()+(@hours||' hours')::interval,@maxAccess,@userId) returning id
-""", new { tenantId = _user.TenantId, id, documentId, versionId, hash, hours = Math.Clamp(expiresHours, 1, 720), maxAccess = Math.Clamp(maxAccessCount, 1, 100), userId = _user.UserId }, cancellationToken: ct));
+insert into ged.secure_document_link(tenant_id, loan_request_id, document_id, version_id, token_hash, expires_at, is_permanent, max_access_count, allow_download, allow_smart_search, created_by)
+values(@tenantId,@id,@documentId,@versionId,@hash,@expiresAt,@isPermanent,@maxAccess,@allowDownload,@allowSmartSearch,@userId) returning id
+""", new { tenantId = _user.TenantId, id, request.DocumentId, request.VersionId, hash, expiresAt, request.IsPermanent, maxAccess = request.MaxAccessCount, request.AllowDownload, request.AllowSmartSearch, userId = _user.UserId }, cancellationToken: ct));
         await conn.ExecuteAsync(new CommandDefinition("update ged.loan_request set secure_link_id=@linkId, digital_delivery_enabled=true, status='DIGITAL_LINK_SENT', last_message_at=now() where tenant_id=@tenantId and id=@id", new { tenantId = _user.TenantId, id, linkId }, cancellationToken: ct));
-        await WriteLoanMessageAsync(id, $"Link seguro gerado: /SharedDocument/{token}", "DIGITAL_LINK", false, "DIGITAL_LINK_SENT", ct);
+        var linkMessage = string.IsNullOrWhiteSpace(request.MessageToRequester) ? $"O documento digital está disponível pelo link seguro: /SharedDocument/{token}" : $"{request.MessageToRequester} /SharedDocument/{token}";
+        await WriteLoanMessageAsync(id, linkMessage, "DIGITAL_LINK", false, "DIGITAL_LINK_SENT", ct);
         TempData["Ok"] = $"Link seguro gerado: /SharedDocument/{token}";
+        return RedirectToAction(nameof(Details), new { id });
+    }
+
+
+    [Authorize(Policy = AppPolicies.LoansManage)]
+    [HttpPost("{id:guid}/RevokeSecureLink")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> RevokeSecureLink(Guid id, string? reason, CancellationToken ct)
+    {
+        if (!await CanOperateLoanAsync(id, ct)) return Forbid();
+        await using var conn = await _db.OpenAsync(ct);
+        await conn.ExecuteAsync(new CommandDefinition("update ged.secure_document_link set revoked_at=now(), revoked_by=@userId, revoke_reason=@reason where tenant_id=@tenantId and loan_request_id=@id and revoked_at is null", new { tenantId = _user.TenantId, id, userId = _user.UserId, reason }, cancellationToken: ct));
+        await WriteLoanMessageAsync(id, "Link digital revogado." + (string.IsNullOrWhiteSpace(reason) ? string.Empty : " Motivo: " + reason), "DIGITAL_LINK_REVOKED", true, null, ct);
+        TempData["Ok"] = "Link seguro revogado.";
         return RedirectToAction(nameof(Details), new { id });
     }
 
@@ -550,4 +571,17 @@ update ged.loan_request set admin_response=case when @isInternal then admin_resp
             base.OnActionExecuted(context);
         }
     }
+}
+
+
+public sealed class GenerateSecureLinkRequest
+{
+    public Guid DocumentId { get; set; }
+    public Guid? VersionId { get; set; }
+    public bool IsPermanent { get; set; }
+    public DateTime? ExpiresAtUtc { get; set; }
+    public int? MaxAccessCount { get; set; }
+    public bool AllowDownload { get; set; } = true;
+    public bool AllowSmartSearch { get; set; } = true;
+    public string? MessageToRequester { get; set; }
 }
