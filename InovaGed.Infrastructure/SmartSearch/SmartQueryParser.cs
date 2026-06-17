@@ -3,8 +3,8 @@ using System.Text;
 using System.Text.RegularExpressions;
 using Dapper;
 using InovaGed.Application.Common.Database;
+using DbDateTime = InovaGed.Application.Common.Database.PostgresDateTimeHelper;
 using InovaGed.Application.SmartSearch;
-using InovaGed.Infrastructure.Common;
 
 namespace InovaGed.Infrastructure.SmartSearch;
 
@@ -40,8 +40,8 @@ public sealed class SmartQueryParser : ISmartQueryParser, InovaGed.Application.G
         {
             OriginalQuery = query,
             DocumentType = request.DocumentType,
-            From = PostgresDateTimeHelper.ToUtc(request.From),
-            To = PostgresDateTimeHelper.ToUtc(request.To)
+            From = DbDateTime.ToUtc(request.From),
+            To = DbDateTime.ToUtc(request.To)
         };
 
 
@@ -49,7 +49,7 @@ public sealed class SmartQueryParser : ISmartQueryParser, InovaGed.Application.G
         if (monthYear.Success && int.TryParse(monthYear.Groups["month"].Value, out var month) && int.TryParse(monthYear.Groups["year"].Value, out var monthYearValue))
         {
             intent.Year = monthYearValue;
-            intent.From = PostgresDateTimeHelper.StartOfDayUtc(new DateTime(monthYearValue, month, 1, 0, 0, 0, DateTimeKind.Utc));
+            intent.From = DbDateTime.StartOfDayUtc(new DateTime(monthYearValue, month, 1, 0, 0, 0, DateTimeKind.Utc));
             intent.To = intent.From.Value.AddMonths(1);
         }
 
@@ -79,10 +79,10 @@ public sealed class SmartQueryParser : ISmartQueryParser, InovaGed.Application.G
                 var isMidYear = normalized.Contains("meados de");
                 intent.From = isMidYear
                     ? new DateTime(y, 5, 1, 0, 0, 0, DateTimeKind.Utc)
-                    : PostgresDateTimeHelper.YearStartUtc(y);
+                    : DbDateTime.YearStartUtc(y);
                 intent.To = isMidYear
                     ? new DateTime(y, 9, 1, 0, 0, 0, DateTimeKind.Utc)
-                    : PostgresDateTimeHelper.YearEndExclusiveUtc(y);
+                    : DbDateTime.YearEndExclusiveUtc(y);
                 intent.IsApproxDate = isMidYear;
             }
         }
@@ -90,8 +90,8 @@ public sealed class SmartQueryParser : ISmartQueryParser, InovaGed.Application.G
         {
             var lastYear = DateTime.UtcNow.Year - 1;
             intent.Year = lastYear;
-            intent.From ??= PostgresDateTimeHelper.YearStartUtc(lastYear);
-            intent.To ??= PostgresDateTimeHelper.YearEndExclusiveUtc(lastYear);
+            intent.From ??= DbDateTime.YearStartUtc(lastYear);
+            intent.To ??= DbDateTime.YearEndExclusiveUtc(lastYear);
             intent.IsApproxDate = true;
         }
 
@@ -112,8 +112,8 @@ public sealed class SmartQueryParser : ISmartQueryParser, InovaGed.Application.G
             {
                 var currentYear = DateTime.UtcNow.Year;
                 intent.Year = currentYear;
-                intent.From = PostgresDateTimeHelper.YearStartUtc(currentYear);
-                intent.To = PostgresDateTimeHelper.YearEndExclusiveUtc(currentYear);
+                intent.From = DbDateTime.YearStartUtc(currentYear);
+                intent.To = DbDateTime.YearEndExclusiveUtc(currentYear);
             }
         }
 

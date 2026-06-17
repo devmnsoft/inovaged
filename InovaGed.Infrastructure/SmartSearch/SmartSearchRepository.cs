@@ -5,8 +5,8 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Dapper;
 using InovaGed.Application.Common.Database;
+using DbDateTime = InovaGed.Application.Common.Database.PostgresDateTimeHelper;
 using InovaGed.Application.SmartSearch;
-using InovaGed.Infrastructure.Common;
 using Microsoft.Extensions.Logging;
 
 namespace InovaGed.Infrastructure.SmartSearch;
@@ -59,8 +59,8 @@ public sealed class SmartSearchRepository : ISmartSearchRepository, InovaGed.App
         p.Add("ageTo", intent.AgeTo, DbType.Int32);
         p.Add("year", intent.Year, DbType.Int32);
         p.Add("folderId", request.FolderId, DbType.Guid);
-        var fromUtc = PostgresDateTimeHelper.ToUtc(intent.From);
-        var toUtc = PostgresDateTimeHelper.ToUtc(intent.To);
+        var fromUtc = DbDateTime.ToUtc(intent.From);
+        var toUtc = DbDateTime.ToUtc(intent.To);
         var dateFilters = new StringBuilder();
         if (fromUtc.HasValue)
         {
