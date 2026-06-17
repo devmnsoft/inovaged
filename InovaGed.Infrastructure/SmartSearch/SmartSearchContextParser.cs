@@ -31,6 +31,9 @@ public sealed class SmartSearchContextParser : ISmartSearchContextParser
         foreach (var row in rows)
         {
             if (row.Category == "clinical") intent.ClinicalTerms.Add(row.Term);
+            if (row.Category == "administrative") intent.AdministrativeTerms.Add(row.Term);
+            if (row.Category == "document_type" || row.Category == "exam") intent.DocumentTypes.Add(row.Term);
+            intent.MainTerms.Add(row.Term);
             intent.Synonyms.AddRange(row.Synonyms ?? []);
             intent.RelatedTerms.AddRange(row.RelatedTerms ?? []);
             intent.HasSensitiveTerms |= row.IsSensitive;
@@ -38,14 +41,19 @@ public sealed class SmartSearchContextParser : ISmartSearchContextParser
         foreach (var w in Regex.Split(query, @"[^\p{L}\p{N}]+"))
         {
             if (w.Length < 3 || StopWords.Contains(w)) continue;
+            intent.Tokens.Add(w);
             if (int.TryParse(w, out _)) continue;
             intent.OptionalTerms.Add(w);
         }
         if (intent.ClinicalTerms.Any(t => Normalize(t).Contains("cancer") || Normalize(t).Contains("cancer de mama")))
         {
-            intent.RequiredTerms.Add("câncer"); intent.RequiredTerms.Add("mama");
+            intent.RequiredTerms.Add("câncer de mama"); intent.RequiredTerms.Add("câncer"); intent.RequiredTerms.Add("mama");
         }
         else intent.RequiredTerms.AddRange(intent.OptionalTerms.Take(3));
+        intent.MainTerms = intent.MainTerms.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        intent.Tokens = intent.Tokens.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        intent.PatientNameHint = ExtractPatientHint(query);
+        intent.MedicalRecordHint = intent.NumericTokens.FirstOrDefault(x => x.Length >= 4 && x != intent.Year?.ToString());
         intent.RequiredTerms = intent.RequiredTerms.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         intent.OptionalTerms = intent.OptionalTerms.Concat(intent.Synonyms).Concat(intent.RelatedTerms).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         intent.Explanation = intent.ClinicalTerms.Count > 0
@@ -60,10 +68,15 @@ public sealed class SmartSearchContextParser : ISmartSearchContextParser
 select term as "Term", category as "Category", synonyms as "Synonyms", related_terms as "RelatedTerms", is_sensitive as "IsSensitive"
 from ged.search_context_term
 where tenant_id=@tenantId and coalesce(reg_status,'A')='A'
-  and (position(normalized_term in @normalized) > 0 or exists(select 1 from unnest(coalesce(synonyms,array[]::text[])) s where position(lower(unaccent(s)) in @normalized) > 0))
+  and (position(normalized_term in @normalized) > 0 or exists(select 1 from unnest(coalesce(synonyms,array[]::text[])) s where position(lower(s) in @normalized) > 0))
 """;
         try { await using var c = await _db.OpenAsync(ct); return (await c.QueryAsync<Row>(new CommandDefinition(sql, new { tenantId, normalized }, cancellationToken: ct))).ToList(); }
         catch { return []; }
+    }
+    private static string? ExtractPatientHint(string query)
+    {
+        var m = Regex.Match(query ?? string.Empty, @"(?:paciente|pacient[ea]|prontuário\s+d[ao])\s+([A-ZÁÉÍÓÚÂÊÔÃÕÇ][\p{L}]+(?:\s+[A-ZÁÉÍÓÚÂÊÔÃÕÇ][\p{L}]+){0,3})", RegexOptions.IgnoreCase);
+        return m.Success ? m.Groups[1].Value.Trim() : null;
     }
     private static string Normalize(string value) { var formD = (value ?? string.Empty).Normalize(NormalizationForm.FormD); return new string(formD.Where(c => CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark).ToArray()).Normalize(NormalizationForm.FormC).ToLowerInvariant(); }
     private sealed class Row { public string Term { get; set; } = ""; public string Category { get; set; } = ""; public string[]? Synonyms { get; set; } public string[]? RelatedTerms { get; set; } public bool IsSensitive { get; set; } }
