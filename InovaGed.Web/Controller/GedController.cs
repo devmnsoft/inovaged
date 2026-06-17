@@ -2941,26 +2941,70 @@ VALUES
     [Authorize(Policy = AppPolicies.GedAccess)]
     [HttpPost("Ged/ShareDocument")]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> ShareDocument([FromServices] ISecureDocumentLinkService secureLinks, CreateSecureDocumentLinkRequest request, CancellationToken ct)
+    public async Task<IActionResult> ShareDocument([FromServices] ISecureDocumentLinkService secureLinks, [FromBody] CreateSecureDocumentLinkRequest request, CancellationToken ct)
     {
         if (!RolePolicyHelper.IsFullAdmin(User) && !User.IsInNormalizedRole(AppRoles.AdministradorOphir)) return Forbid();
+        request ??= new CreateSecureDocumentLinkRequest();
         request.LoanRequestId = null;
 
         try
         {
             var result = await secureLinks.CreateAsync(_currentUser.TenantId, _currentUser.UserId, request, ct);
-            return Json(new { success = true, publicUrl = result.PublicUrl, link = result.PublicUrl, linkId = result.LinkId, expiresAtUtc = result.ExpiresAtUtc });
+            return Json(new { success = true, publicUrl = result.PublicUrl, link = result.PublicUrl, linkId = result.LinkId, expiresAtUtc = result.ExpiresAtUtc, isPermanent = result.IsPermanent, maxAccessCount = result.MaxAccessCount });
         }
         catch (InvalidOperationException ex)
         {
             _logger.LogWarning(ex, "Falha de validação ao gerar link seguro. Tenant={TenantId} User={UserId} DocumentId={DocumentId}", _currentUser.TenantId, _currentUser.UserId, request.DocumentId);
-            return BadRequest(new { success = false, message = ex.Message });
+            return BadRequest(new { success = false, message = ex.Message, correlationId = HttpContext.TraceIdentifier });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Erro ao gerar link seguro. Tenant={TenantId} User={UserId} DocumentId={DocumentId}", _currentUser.TenantId, _currentUser.UserId, request.DocumentId);
             return StatusCode(500, new { success = false, message = "Não foi possível gerar o link seguro agora.", correlationId = HttpContext.TraceIdentifier });
         }
+    }
+
+
+    [Authorize(Policy = AppPolicies.FullAdminOnly)]
+    [HttpGet("Ged/SecureLinks/Diagnostics")]
+    public async Task<IActionResult> SecureLinksDiagnostics(CancellationToken ct)
+    {
+        await using var conn = await _db.OpenAsync(ct);
+        var linkTableExists = await conn.ExecuteScalarAsync<bool>(new CommandDefinition("select to_regclass('ged.secure_document_link') is not null", cancellationToken: ct));
+        var accessTableExists = await conn.ExecuteScalarAsync<bool>(new CommandDefinition("select to_regclass('ged.secure_document_link_access') is not null", cancellationToken: ct));
+        if (!linkTableExists)
+        {
+            return Json(new { success = true, summary = new { secure_document_link_exists = false, secure_document_link_access_exists = accessTableExists }, latestLinks = Array.Empty<object>(), latestAccess = Array.Empty<object>(), message = "Tabela ged.secure_document_link ausente. Execute database/migrations/2026_06_fix_secure_document_link_sharing.sql.", correlationId = HttpContext.TraceIdentifier });
+        }
+
+        var summary = await conn.QuerySingleAsync(new CommandDefinition("""
+select
+    true as secure_document_link_exists,
+    @accessTableExists as secure_document_link_access_exists,
+    count(*) filter (where coalesce(reg_status,'A')='A') as active_links,
+    count(*) filter (where coalesce(reg_status,'A')='A' and is_permanent=false and expires_at <= now()) as expired_links,
+    count(*) filter (where coalesce(reg_status,'A')='A' and is_permanent=true) as permanent_links,
+    count(*) filter (where revoked_at is not null) as revoked_links,
+    count(*) filter (where version_id is null) as links_without_version_id
+from ged.secure_document_link
+""", new { accessTableExists }, cancellationToken: ct));
+        var latestLinks = await conn.QueryAsync(new CommandDefinition("""
+select id, tenant_id, document_id, version_id, title, is_permanent, expires_at, max_access_count, access_count, revoked_at, created_at
+from ged.secure_document_link
+order by created_at desc
+limit 20
+""", cancellationToken: ct));
+        IEnumerable<object> latestAccess = Array.Empty<object>();
+        if (accessTableExists)
+        {
+            latestAccess = (await conn.QueryAsync(new CommandDefinition("""
+select secure_link_id, accessed_at, success, reason, ip_address
+from ged.secure_document_link_access
+order by accessed_at desc
+limit 20
+""", cancellationToken: ct))).Cast<object>().ToArray();
+        }
+        return Json(new { success = true, summary, latestLinks, latestAccess, correlationId = HttpContext.TraceIdentifier });
     }
 
     // =========================

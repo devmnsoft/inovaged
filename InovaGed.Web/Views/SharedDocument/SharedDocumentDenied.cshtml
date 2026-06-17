@@ -1,2 +1,13 @@
-@{ ViewData["Title"] = "Link indisponível"; }
-<div class="container py-5"><div class="alert alert-warning">Link inválido, expirado, revogado ou com limite de acessos esgotado.</div></div>
+@model string
+@{
+    ViewData["Title"] = "Link indisponível";
+    var message = string.IsNullOrWhiteSpace(Model) ? "Link inválido, expirado, revogado ou com limite de acessos esgotado." : Model;
+}
+<div class="container py-5">
+    <div class="card shadow-sm border-warning">
+        <div class="card-body">
+            <h4 class="card-title text-warning">Link indisponível</h4>
+            <p class="mb-0">@message</p>
+        </div>
+    </div>
+</div>

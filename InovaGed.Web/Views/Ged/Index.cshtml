@@ -1756,30 +1756,43 @@ window.GedSmartSearch?.init({
 
 }
 
-<div class="modal fade" id="shareDocumentModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog"><div class="modal-content">
+<div class="modal fade" id="modalShareDocument" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg"><div class="modal-content">
     <form id="shareDocumentForm" method="post" action="/Ged/ShareDocument">@Html.AntiForgeryToken()
-      <div class="modal-header"><h5 class="modal-title">Compartilhar documento</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-header"><h5 class="modal-title">Compartilhar documento</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button></div>
       <div class="modal-body">
-        <input type="hidden" name="DocumentId" id="shareDocumentId" /><input type="hidden" name="VersionId" id="shareVersionId" />
-        <div class="fw-semibold mb-2" id="shareDocumentTitle"></div>
-        <select class="form-select mb-2" id="shareLinkType"><option value="temporary">Temporário</option><option value="permanent">Permanente</option></select>
-        <input class="form-control mb-2" type="datetime-local" id="shareExpiresAt" />
-        <input type="hidden" name="ExpiresAtUtc" id="shareExpiresAtUtc" />
-        <input class="form-control mb-2" type="number" name="MaxAccessCount" min="1" placeholder="Limite de acessos (opcional)" />
-        <div class="form-check"><input class="form-check-input" type="checkbox" name="AllowDownload" value="true" id="shareAllowDownload" /><label class="form-check-label" for="shareAllowDownload">Permitir download PDF</label></div>
-        <div class="form-check"><input class="form-check-input" type="checkbox" name="AllowSmartSearch" value="true" id="shareAllowSearch" checked /><label class="form-check-label" for="shareAllowSearch">Permitir busca dentro do documento</label></div>
-        <input class="form-control my-2" name="RecipientName" placeholder="Nome do destinatário" /><input class="form-control mb-2" name="RecipientContact" placeholder="Contato do destinatário" />
-        <textarea class="form-control" name="Description" rows="2" placeholder="Descrição/mensagem"></textarea>
-        <input type="hidden" name="IsPermanent" id="shareIsPermanent" value="false" />
-        <div class="alert alert-success mt-3 d-none" id="shareResult"><span></span> <button class="btn btn-sm btn-outline-dark" type="button" id="copyShareLink">Copiar link</button></div>
-      </div><div class="modal-footer"><button class="btn btn-primary">Gerar link seguro</button></div>
+        <input type="hidden" id="shareDocumentId" name="DocumentId" />
+        <input type="hidden" id="shareVersionId" name="VersionId" />
+        <div class="border rounded p-3 mb-3 bg-light">
+          <div class="fw-semibold" id="shareDocumentTitle">Documento</div>
+          <div class="text-muted small" id="shareDocumentFileName"></div>
+        </div>
+        <div class="row g-3">
+          <div class="col-md-6"><label class="form-label" for="shareLinkType">Tipo do link</label><select class="form-select" id="shareLinkType"><option value="temporary">Temporário</option><option value="permanent">Permanente</option></select></div>
+          <div class="col-md-6"><label class="form-label" for="shareExpiresAt">Expiração</label><input class="form-control" type="datetime-local" id="shareExpiresAt" /></div>
+          <div class="col-md-6"><label class="form-label" for="shareMaxAccessCount">Limite de acessos</label><input class="form-control" type="number" id="shareMaxAccessCount" min="1" placeholder="Ilimitado" /></div>
+          <div class="col-md-6"><label class="form-label">Permissões</label><div class="form-check"><input class="form-check-input" type="checkbox" id="shareAllowPreview" checked /><label class="form-check-label" for="shareAllowPreview">Permitir visualização</label></div><div class="form-check"><input class="form-check-input" type="checkbox" id="shareAllowDownload" /><label class="form-check-label" for="shareAllowDownload">Permitir download PDF</label></div><div class="form-check"><input class="form-check-input" type="checkbox" id="shareAllowSearch" checked /><label class="form-check-label" for="shareAllowSearch">Permitir busca dentro do documento</label></div></div>
+          <div class="col-md-6"><label class="form-label" for="shareRecipientName">Destinatário</label><input class="form-control" id="shareRecipientName" placeholder="Nome opcional" /></div>
+          <div class="col-md-6"><label class="form-label" for="shareRecipientContact">Contato</label><input class="form-control" id="shareRecipientContact" placeholder="E-mail/telefone opcional" /></div>
+          <div class="col-12"><label class="form-label" for="shareDescription">Mensagem</label><textarea class="form-control" id="shareDescription" rows="2" placeholder="Mensagem opcional"></textarea></div>
+        </div>
+        <div class="alert mt-3 d-none" id="shareMessage" role="alert"></div>
+        <div class="input-group mt-3 d-none" id="shareUrlGroup"><input class="form-control" id="sharePublicUrl" readonly /><button class="btn btn-outline-secondary" type="button" id="copyShareLink">Copiar link</button></div>
+      </div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Fechar</button><button class="btn btn-primary" type="submit" id="shareGenerateButton">Gerar link seguro</button></div>
     </form>
   </div></div>
 </div>
 <script>
-document.addEventListener('click', e => { const b=e.target.closest('.js-share-document'); if(!b) return; shareDocumentId.value=b.dataset.documentId; shareVersionId.value=b.dataset.versionId||''; shareDocumentTitle.textContent=b.dataset.title||'Documento'; bootstrap.Modal.getOrCreateInstance(document.getElementById('shareDocumentModal')).show(); });
-document.getElementById('shareLinkType')?.addEventListener('change', e => { const permanent=e.target.value==='permanent'; shareIsPermanent.value=permanent; shareExpiresAt.disabled=permanent; if (permanent) { shareExpiresAt.value=''; shareExpiresAtUtc.value=''; } });
-document.getElementById('shareDocumentForm')?.addEventListener('submit', async e => { e.preventDefault(); const permanent=shareLinkType.value==='permanent'; if (!permanent && !shareExpiresAt.value) { const box=document.getElementById('shareResult'); box.classList.remove('d-none'); box.classList.replace('alert-success','alert-warning'); box.querySelector('span').textContent='Informe a expiração do link temporário.'; return; } shareExpiresAtUtc.value = permanent || !shareExpiresAt.value ? '' : new Date(shareExpiresAt.value).toISOString(); const box=document.getElementById('shareResult'); box.classList.add('d-none'); box.classList.remove('alert-warning'); box.classList.add('alert-success'); const btn=e.target.querySelector('button[type="submit"]'); btn.disabled=true; try { const r=await fetch(e.target.action,{method:'POST',body:new FormData(e.target),headers:{'X-Requested-With':'XMLHttpRequest'}}); const j=await r.json(); box.classList.remove('d-none'); box.classList.toggle('alert-success', !!j.success); box.classList.toggle('alert-warning', !j.success); box.querySelector('span').textContent=j.success?j.publicUrl:(j.message||'Falha ao gerar link.'); box.dataset.url=j.publicUrl||''; } finally { btn.disabled=false; } });
-document.getElementById('copyShareLink')?.addEventListener('click',()=>navigator.clipboard?.writeText(document.getElementById('shareResult').dataset.url||''));
+(() => {
+const modalEl=document.getElementById('modalShareDocument'); const form=document.getElementById('shareDocumentForm'); const msg=document.getElementById('shareMessage'); const urlGroup=document.getElementById('shareUrlGroup'); const urlInput=document.getElementById('sharePublicUrl');
+function showMessage(text,type='warning',correlationId){ msg.className=`alert alert-${type} mt-3`; msg.textContent=correlationId?`${text} (Código: ${correlationId})`:text; }
+function resetShare(){ msg.className='alert mt-3 d-none'; msg.textContent=''; urlGroup.classList.add('d-none'); urlInput.value=''; form.reset(); document.getElementById('shareAllowPreview').checked=true; document.getElementById('shareAllowSearch').checked=true; syncType(); }
+function syncType(){ const permanent=document.getElementById('shareLinkType').value==='permanent'; const expires=document.getElementById('shareExpiresAt'); expires.disabled=permanent; expires.required=!permanent; if(permanent) expires.value=''; }
+document.addEventListener('click', e => { const btn=e.target.closest('.js-share-document'); if(!btn) return; resetShare(); document.getElementById('shareDocumentId').value=btn.dataset.documentId||''; document.getElementById('shareVersionId').value=btn.dataset.versionId||''; document.getElementById('shareDocumentTitle').textContent=btn.dataset.title||'Documento'; document.getElementById('shareDocumentFileName').textContent=btn.dataset.fileName||''; bootstrap.Modal.getOrCreateInstance(modalEl).show(); });
+document.getElementById('shareLinkType')?.addEventListener('change', syncType);
+form?.addEventListener('submit', async e => { e.preventDefault(); const documentId=document.getElementById('shareDocumentId').value; const isPermanent=document.getElementById('shareLinkType').value==='permanent'; const expiresLocal=document.getElementById('shareExpiresAt').value; if(!documentId){ showMessage('Documento inválido para compartilhamento.'); return; } if(!isPermanent && !expiresLocal){ showMessage('Informe a expiração do link temporário.'); return; } const token=form.querySelector('input[name="__RequestVerificationToken"]')?.value||''; const payload={ documentId, versionId: document.getElementById('shareVersionId').value||null, isPermanent, expiresAtUtc: expiresLocal?new Date(expiresLocal).toISOString():null, maxAccessCount: document.getElementById('shareMaxAccessCount').value?Number(document.getElementById('shareMaxAccessCount').value):null, allowPreview: document.getElementById('shareAllowPreview').checked, allowDownload: document.getElementById('shareAllowDownload').checked, allowSmartSearch: document.getElementById('shareAllowSearch').checked, recipientName: document.getElementById('shareRecipientName').value, recipientContact: document.getElementById('shareRecipientContact').value, description: document.getElementById('shareDescription').value, title: document.getElementById('shareDocumentTitle').textContent };
+ const btn=document.getElementById('shareGenerateButton'); btn.disabled=true; showMessage('Gerando link seguro...','info'); try { const r=await fetch(form.action,{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json','RequestVerificationToken':token,'X-Requested-With':'XMLHttpRequest'},body:JSON.stringify(payload)}); const j=await r.json().catch(()=>({success:false,message:'Resposta inválida do servidor.'})); if(!r.ok||!j.success){ showMessage(j.message||'Falha ao gerar link seguro.','warning',j.correlationId); return; } urlInput.value=j.publicUrl; urlGroup.classList.remove('d-none'); showMessage('Link seguro gerado com sucesso.','success'); } catch(err){ showMessage('Falha de comunicação ao gerar o link seguro.','danger'); } finally { btn.disabled=false; } });
+document.getElementById('copyShareLink')?.addEventListener('click', async()=>{ if(!urlInput.value) return; await navigator.clipboard.writeText(urlInput.value); showMessage('Link copiado para a área de transferência.','success'); });
+syncType();
+})();
 </script>

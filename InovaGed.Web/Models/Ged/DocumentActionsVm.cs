@@ -6,6 +6,7 @@ public sealed class DocumentActionsVm
 {
     public Guid DocumentId { get; set; }
     public string Title { get; set; } = string.Empty;
+    public string? FileName { get; set; }
     public string? VersionId { get; set; }
     public Guid? CurrentFolderId { get; set; }
 
