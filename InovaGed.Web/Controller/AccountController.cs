@@ -1,7 +1,6 @@
 using System.Security.Claims;
 using InovaGed.Application.Auth;
 using InovaGed.Web.Models.Auth;
-using InovaGed.Web.Routing;
 using InovaGed.Web.Security;
 using InovaGed.Application.Audit;
 using InovaGed.Application.Common.Security;
@@ -170,14 +169,19 @@ public sealed class AccountController : Controller
         if (user.MustChangePassword)
             return RedirectToAction(nameof(ChangePassword), "Account");
 
-        // Regra especial de redirecionamento:
-        // - administradoophir e arquivistaophir devem ir sempre para /HospitalDocuments.
-        // - ADMIN mantém acesso completo e segue fluxo padrão do sistema.
-        // - Demais usuários continuam no fluxo padrão (ReturnUrl local ou Home).
+        // Regra centralizada de redirecionamento pós-login por perfil:
+        // - ADMIN/ADMINISTRADOR respeitam ReturnUrl local seguro ou iniciam no GED.
+        // - Ophir/Hospital respeitam apenas ReturnUrls permitidas ou iniciam em HospitalDocuments.
         var redirectResult = ResolvePostLoginRedirect(vm.ReturnUrl, user.UserName, normalizedRoles, principal);
 
-        _logger.LogInformation("Login concluído. Tenant={TenantId} UserId={UserId} Login={Login} Redirect={Redirect} Roles={Roles}",
-            user.TenantId, user.UserId, loginOrCpf, redirectResult.TargetDescription, string.Join(",", normalizedRoles));
+        _logger.LogInformation(
+            "Login redirect resolvido. User={UserId} Roles={Roles} IsFullAdmin={IsFullAdmin} Target={Target} Reason={Reason} ReturnUrl={ReturnUrl}",
+            user.UserId,
+            string.Join(",", normalizedRoles),
+            RolePolicyHelper.IsFullAdmin(principal),
+            redirectResult.TargetDescription,
+            redirectResult.Reason,
+            vm.ReturnUrl);
 
         await _audit.WriteAsync(
             tenantId: user.TenantId,
@@ -231,52 +235,43 @@ public sealed class AccountController : Controller
         var isArquivistaOphir = _accessPolicy.IsArquivistaOphir(principal) || normalizedRoles.Any(r => IsRole(r, AppRoles.ArquivistaOphir)) || IsRole(normalizedUsername, AppRoles.ArquivistaOphir);
         var isHospitalUser = AppMenuPolicy.IsHospitalUser(principal) || normalizedRoles.Any(r => IsRole(r, AppRoles.Hospital)) || IsRole(normalizedUsername, AppRoles.Hospital);
 
-        if (isAdmin && IsSafeLocalReturnUrl(normalizedReturnUrl))
-            return (Redirect(normalizedReturnUrl), normalizedReturnUrl, "full_admin_return_url");
+        if (isAdmin)
+        {
+            if (IsSafeLocalReturnUrl(normalizedReturnUrl) && AppStartRouteResolver.IsAllowedReturnUrlForUser(principal, normalizedReturnUrl))
+                return (Redirect(normalizedReturnUrl), normalizedReturnUrl, "admin_return_url");
 
-        if (!isAdmin && isAdministradorOphir && IsAllowedReturnUrlForAdministradorOphir(normalizedReturnUrl))
-            return (Redirect(normalizedReturnUrl), normalizedReturnUrl, "administrador_ophir_allowed_return_url");
+            return (Redirect(AppStartRouteResolver.AdminHome), AppStartRouteResolver.AdminHome, "admin_default_ged");
+        }
 
-        if (!isAdmin && isArquivistaOphir && IsAllowedReturnUrlForArquivistaOphir(normalizedReturnUrl))
-            return (Redirect(normalizedReturnUrl), normalizedReturnUrl, "arquivista_ophir_allowed_return_url");
+        if (isAdministradorOphir)
+        {
+            if (IsSafeLocalReturnUrl(normalizedReturnUrl) && AppStartRouteResolver.IsAllowedReturnUrlForUser(principal, normalizedReturnUrl))
+                return (Redirect(normalizedReturnUrl), normalizedReturnUrl, "administrador_ophir_allowed_return_url");
 
-        if (!isAdmin && isHospitalUser && IsAllowedReturnUrlForHospital(normalizedReturnUrl))
-            return (Redirect(normalizedReturnUrl), normalizedReturnUrl, "hospital_allowed_return_url");
+            return (Redirect(AppStartRouteResolver.HospitalHome), AppStartRouteResolver.HospitalHome, "administrador_ophir_default_hospital_documents");
+        }
 
-        return (Redirect(AppDefaultRoutes.HospitalDocuments), AppDefaultRoutes.HospitalDocuments, isAdmin ? "full_admin_default_hospital_documents" : "profile_default_hospital_documents");
+        if (isArquivistaOphir)
+        {
+            if (IsSafeLocalReturnUrl(normalizedReturnUrl) && AppStartRouteResolver.IsAllowedReturnUrlForUser(principal, normalizedReturnUrl))
+                return (Redirect(normalizedReturnUrl), normalizedReturnUrl, "arquivista_ophir_allowed_return_url");
+
+            return (Redirect(AppStartRouteResolver.HospitalHome), AppStartRouteResolver.HospitalHome, "arquivista_ophir_default_hospital_documents");
+        }
+
+        if (isHospitalUser)
+        {
+            if (IsSafeLocalReturnUrl(normalizedReturnUrl) && AppStartRouteResolver.IsAllowedReturnUrlForUser(principal, normalizedReturnUrl))
+                return (Redirect(normalizedReturnUrl), normalizedReturnUrl, "hospital_allowed_return_url");
+
+            return (Redirect(AppStartRouteResolver.HospitalHome), AppStartRouteResolver.HospitalHome, "hospital_default");
+        }
+
+        return (Redirect(AppStartRouteResolver.HospitalHome), AppStartRouteResolver.HospitalHome, "profile_default_hospital_documents");
     }
 
     private bool IsSafeLocalReturnUrl(string? returnUrl)
         => !string.IsNullOrWhiteSpace(returnUrl) && Url.IsLocalUrl(returnUrl);
-
-    private bool IsAllowedReturnUrlForArquivistaOphir(string? returnUrl)
-        => IsSafeLocalReturnUrl(returnUrl) && IsAllowedPath(returnUrl,
-            "/HospitalDocuments",
-            "/Loans",
-            "/Loans/New",
-            "/ProtocolRequests/My");
-
-    private bool IsAllowedReturnUrlForAdministradorOphir(string? returnUrl)
-        => IsSafeLocalReturnUrl(returnUrl) && IsAllowedPath(returnUrl,
-            "/HospitalDocuments",
-            "/Loans",
-            "/Protocols/WorkQueue",
-            "/Users/Sector",
-            "/Users/Sector/Create",
-            "/Users/CreateSectorUser");
-
-    private bool IsAllowedReturnUrlForHospital(string? returnUrl)
-        => IsSafeLocalReturnUrl(returnUrl) && IsAllowedPath(returnUrl, "/HospitalDocuments");
-
-    private static bool IsAllowedPath(string? returnUrl, params string[] allowedPaths)
-    {
-        if (string.IsNullOrWhiteSpace(returnUrl)) return false;
-        var path = returnUrl.Split('?', '#')[0].TrimEnd('/');
-        if (path.Length == 0) path = "/";
-        return allowedPaths.Any(allowed =>
-            string.Equals(path, allowed.TrimEnd('/'), StringComparison.OrdinalIgnoreCase)
-            || path.StartsWith(allowed.TrimEnd('/') + "/", StringComparison.OrdinalIgnoreCase));
-    }
 
     private static bool IsRole(string? value, string role)
         => string.Equals(NormalizeRole(value), NormalizeRole(role), StringComparison.OrdinalIgnoreCase);
@@ -336,11 +331,13 @@ public sealed class AccountController : Controller
 
         await _repo.ResetPasswordByUserIdAsync(tenantId, userId, newHash, ct);
 
+        var passwordChangeTarget = AppStartRouteResolver.GetDefaultHome(User);
+
         _logger.LogInformation(
             "Senha alterada com sucesso. Tenant={TenantId} UserId={UserId} Redirect={Redirect}",
             tenantId,
             userId,
-            AppDefaultRoutes.HospitalDocuments);
+            passwordChangeTarget);
 
         await _audit.WriteAsync(
             tenantId: tenantId,
@@ -354,13 +351,13 @@ public sealed class AccountController : Controller
             data: new
             {
                 eventCode = "PASSWORD_CHANGED",
-                redirect = AppDefaultRoutes.HospitalDocuments,
+                redirect = passwordChangeTarget,
                 correlationId = HttpContext.TraceIdentifier
             },
             ct: ct);
 
         TempData["Success"] = "Senha alterada com sucesso.";
-        return Redirect(AppDefaultRoutes.HospitalDocuments);
+        return Redirect(passwordChangeTarget);
     }
 
     [HttpGet]
