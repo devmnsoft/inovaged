@@ -1,18 +1,35 @@
-﻿using Microsoft.AspNetCore.Diagnostics;
-using InovaGed.Web.Routing;
+using InovaGed.Web.Security;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 
 namespace InovaGed.Web.Controllers;
 
-public  class HomeController : Controller
+[Authorize]
+public class HomeController : Controller
 {
-    public IActionResult Index()
+    private readonly ILogger<HomeController> _logger;
+
+    public HomeController(ILogger<HomeController> logger)
     {
-        // Página inicial padrão do sistema: busca de documentos hospitalares.
-        // Não redirecionar para /Ged, pois perfis Ophir/Hospital não devem iniciar no GED administrativo.
-        return Redirect(AppDefaultRoutes.HospitalDocuments);
+        _logger = logger;
     }
 
+    public IActionResult Index()
+    {
+        var isFullAdmin = RolePolicyHelper.IsFullAdmin(User);
+        var target = AppStartRouteResolver.GetDefaultHome(User);
+
+        _logger.LogInformation(
+            "Home redirect resolvido. FullAdmin={FullAdmin} Target={Target} User={User}",
+            isFullAdmin,
+            target,
+            User.Identity?.Name ?? "anonymous");
+
+        return Redirect(target);
+    }
+
+    [AllowAnonymous]
     [Route("Home/Error")]
     public IActionResult Error()
     {
@@ -22,6 +39,7 @@ public  class HomeController : Controller
         return View();
     }
 
+    [AllowAnonymous]
     [Route("Home/Status/{statusCode:int}")]
     public IActionResult Status(int statusCode)
     {
