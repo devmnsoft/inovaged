@@ -76,9 +76,17 @@ public sealed class SmartSearchRepository : ISmartSearchRepository, InovaGed.App
         p.Add("limit", pageSize, DbType.Int32);
 
         var rows = (await conn.QueryAsync<SearchRow>(new CommandDefinition(sql, p, cancellationToken: ct, commandTimeout: 30))).ToList();
+        var indexCount = rows.Count;
+        var fallbackCount = 0;
         if (hasSmartIndex && rows.Count == 0)
         {
             rows = (await conn.QueryAsync<SearchRow>(new CommandDefinition(FallbackSql.Replace("/*DATE_FILTERS*/", dateFilters.ToString()), p, cancellationToken: ct, commandTimeout: 30))).ToList();
+            fallbackCount = rows.Count;
+        }
+        if (rows.Count == 0)
+        {
+            _logger.LogWarning("GED_SMART_SEARCH_NO_RESULT Tenant={TenantId} User={UserId} Query={Query} Tokens={Tokens} Scope={Scope} FolderId={FolderId} IndexCount={IndexCount} FallbackCount={FallbackCount} CorrelationId={CorrelationId}",
+                request.TenantId, request.UserId, RedactSensitive(request.Query), string.Join(',', intent.Keywords.Take(12)), request.Source, request.FolderId, indexCount, fallbackCount, string.Empty);
         }
         var total = rows.FirstOrDefault()?.TotalRows ?? 0;
         var items = rows.Select(r => Map(r, intent)).ToList();
@@ -235,8 +243,12 @@ case when @age is not null and idx.extracted_age between @age - 1 and @age + 1 t
 case when @ageFrom is not null and idx.extracted_age between @ageFrom and @ageTo then 10 else 0 end +
 case when @documentType is not null and coalesce(idx.document_type, idx.title, idx.file_name, '') ilike '%'||@documentType||'%' then 15 else 0 end +
 case when @examType is not null and idx.search_text ilike '%'||@examType||'%' then 15 else 0 end +
-case when @medicalRecordNumber is not null and idx.medical_record_number = @medicalRecordNumber then 50 else 0 end +
-case when @protocolNumber is not null and idx.protocol_number = @protocolNumber then 50 else 0 end +
+case when @medicalRecordNumber is not null and idx.search_text ilike '%'||@medicalRecordNumber||'%' then 50 else 0 end +
+case when @protocolNumber is not null and idx.search_text ilike '%'||@protocolNumber||'%' then 50 else 0 end +
+case when @numericTerm is not null and coalesce(idx.file_name,'') ilike @likeNumericTerm then 100 else 0 end +
+case when @numericTerm is not null and coalesce(idx.title,'') ilike @likeNumericTerm then 80 else 0 end +
+case when @numericTerm is not null and coalesce(idx.ocr_text,'') ilike @likeNumericTerm then 50 else 0 end +
+case when @numericTerm is not null and coalesce(idx.folder_name,'') ilike @likeNumericTerm then 20 else 0 end +
 case when nullif(idx.ocr_text,'') is not null then 5 else 0 end +
 coalesce(ts_rank(idx.search_vector, plainto_tsquery('portuguese', unaccent(@query))) * 40, 0) +
 coalesce(similarity(idx.search_text, @originalQuery) * 20, 0)
@@ -252,7 +264,12 @@ select *, count(*) over()::int as "TotalRows" from ranked order by "Score" desc,
     private const string FallbackSql = """
 with base as (
 select d.id as "DocumentId", coalesce(v.id, ds.version_id) as "VersionId", coalesce(d.title, ds.file_name, v.file_name, 'Documento') as "Title", coalesce(v.file_name, ds.file_name) as "FileName", f.name as "FolderName", null::text as "DocumentType", null::text as "Classification", null::text as "PatientName", null::int as "Age", extract(year from coalesce(d.created_at, ds.updated_at))::int as "Year", concat_ws(' ', d.title, v.file_name, f.name, ds.ocr_text) as "SearchText", ds.ocr_text as "Snippet", nullif(ds.ocr_text,'') is not null as "HasOcr",
-(case when concat_ws(' ', d.title, v.file_name, f.name, ds.ocr_text) ilike @likeQuery then 45 else 0 end + case when @year is not null and extract(year from coalesce(d.created_at, ds.updated_at))::int=@year then 15 else 0 end + case when @numericTerm is not null and (coalesce(v.file_name, ds.file_name, '') ilike @likeNumericTerm or coalesce(d.title,'') ilike @likeNumericTerm or d.id::text ilike @likeNumericTerm) then 55 else 0 end +
+(case when concat_ws(' ', d.title, v.file_name, f.name, ds.ocr_text) ilike @likeQuery then 45 else 0 end + case when @year is not null and extract(year from coalesce(d.created_at, ds.updated_at))::int=@year then 15 else 0 end +
+case when @numericTerm is not null and coalesce(v.file_name, ds.file_name, '') ilike @likeNumericTerm then 100 else 0 end +
+case when @numericTerm is not null and coalesce(d.title,'') ilike @likeNumericTerm then 80 else 0 end +
+case when @numericTerm is not null and coalesce(ds.ocr_text,'') ilike @likeNumericTerm then 50 else 0 end +
+case when @numericTerm is not null and coalesce(f.name,'') ilike @likeNumericTerm then 20 else 0 end +
+case when @numericTerm is not null and d.id::text ilike @likeNumericTerm then 55 else 0 end +
 case when nullif(ds.ocr_text,'') is not null then 5 else 0 end)::numeric(10,2) as "Score"
 from ged.document d
 left join ged.document_search ds on ds.tenant_id=d.tenant_id and ds.document_id=d.id

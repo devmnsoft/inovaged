@@ -1,0 +1,96 @@
+@model InovaGed.Application.Ged.Intelligence.GedIntelligenceVm
+@{
+    ViewData["Title"] = "Inteligência GED";
+    var tables = new (string Title, IReadOnlyList<InovaGed.Application.Ged.Intelligence.GedRankVm> Rows)[]
+    {
+        ("Top 10 pastas por volume", Model.TopFolders),
+        ("Top 10 pastas por erro de OCR", Model.TopOcrErrorFolders),
+        ("Top 10 usuários por upload", Model.TopUsers),
+        ("Últimos uploads com falha", Model.LastFailedUploads),
+        ("Documentos incompletos antigos", Model.OldIncompleteDocuments),
+        ("Documentos sem OCR", Model.DocumentsWithoutOcr),
+        ("Documentos sem classificação", Model.DocumentsWithoutClassification),
+        ("SmartSearch sem resultado", Model.SmartSearchWithoutResult)
+    };
+}
+
+<div class="container-fluid py-3 ged-bi-page">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <div>
+            <h1 class="h3 mb-1"><i class="bi bi-speedometer2 me-2"></i>Inteligência GED</h1>
+            <p class="text-muted mb-0">Visão administrativa sobre acervo, qualidade, gargalos, OCR e busca inteligente.</p>
+        </div>
+        <a class="btn btn-outline-secondary" href="/Ged"><i class="bi bi-folder2-open me-1"></i>Voltar ao GED</a>
+    </div>
+
+    @foreach (var warning in Model.Warnings)
+    {
+        <div class="alert alert-warning"><i class="bi bi-exclamation-triangle me-1"></i>@warning</div>
+    }
+
+    <section class="row g-3 mb-4">
+        @foreach (var kpi in Model.Kpis)
+        {
+            <div class="col-12 col-sm-6 col-lg-3 col-xxl-2">
+                <div class="card h-100 border-0 shadow-sm">
+                    <div class="card-body">
+                        <div class="small text-muted">@kpi.Label</div>
+                        <div class="fs-4 fw-bold text-@kpi.Css">@kpi.Value</div>
+                        @if (!string.IsNullOrWhiteSpace(kpi.Hint)) { <div class="small text-muted">@kpi.Hint</div> }
+                    </div>
+                </div>
+            </div>
+        }
+    </section>
+
+    <section class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white"><strong>Índices de saúde do GED</strong></div>
+        <div class="card-body row g-3">
+            @foreach (var item in Model.HealthIndexes)
+            {
+                var color = item.Status == "Bom" ? "success" : item.Status == "Atenção" ? "warning" : "danger";
+                <div class="col-12 col-lg-6">
+                    <div class="d-flex justify-content-between"><strong>@item.Name</strong><span class="badge bg-@color">@item.Status</span></div>
+                    <div class="progress my-2" style="height:10px"><div class="progress-bar bg-@color" style="width:@item.Percent.ToString(System.Globalization.CultureInfo.InvariantCulture)%"></div></div>
+                    <div class="small"><strong>@item.Percent.ToString("N1")%</strong> — @item.Suggestion</div>
+                </div>
+            }
+        </div>
+    </section>
+
+    <section class="row g-3 mb-4">
+        @foreach (var insight in Model.Insights)
+        {
+            <div class="col-12 col-md-6 col-xl-3"><div class="alert alert-info h-100 mb-0"><i class="bi bi-lightbulb me-1"></i>@insight</div></div>
+        }
+    </section>
+
+    <section class="row g-3">
+        @foreach (var table in tables)
+        {
+            <div class="col-12 col-xl-6">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-header bg-white"><strong>@table.Title</strong></div>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0">
+                            <thead><tr><th>Item</th><th>Detalhe</th><th class="text-end">Qtd</th></tr></thead>
+                            <tbody>
+                            @if (table.Rows.Any())
+                            {
+                                foreach (var row in table.Rows)
+                                {
+                                    <tr><td>@row.Label</td><td class="text-muted small">@row.Detail</td><td class="text-end fw-semibold">@row.Count</td></tr>
+                                }
+                            }
+                            else
+                            {
+                                <tr><td colspan="3" class="text-muted">Sem dados disponíveis.</td></tr>
+                            }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        }
+    </section>
+</div>
