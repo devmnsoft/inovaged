@@ -30,6 +30,7 @@ using Microsoft.Net.Http.Headers;
 using Npgsql;
 using InovaGed.Web.Services;
 using InovaGed.Application.Ged.Documents.Partials;
+using InovaGed.Application.Ged.Loans;
 
 namespace InovaGed.Web.Controllers;
 
@@ -2937,6 +2938,17 @@ VALUES
     }
 
   
+    [Authorize(Policy = AppPolicies.GedAccess)]
+    [HttpPost("Ged/ShareDocument")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ShareDocument([FromServices] ISecureDocumentLinkService secureLinks, CreateSecureDocumentLinkRequest request, CancellationToken ct)
+    {
+        if (!RolePolicyHelper.IsFullAdmin(User) && !User.IsInNormalizedRole(AppRoles.AdministradorOphir)) return Forbid();
+        request.LoanRequestId = null;
+        var result = await secureLinks.CreateAsync(_currentUser.TenantId, _currentUser.UserId, request, ct);
+        return Json(new { success = true, publicUrl = result.PublicUrl, linkId = result.LinkId });
+    }
+
     // =========================
     // Content-Disposition seguro
     // =========================

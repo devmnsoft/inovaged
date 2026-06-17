@@ -265,8 +265,8 @@ where schemaname = 'ged';", cancellationToken: ct))).ToList();
             var existingIndexes = existingIndexRows.Select(i => i.IndexName).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
             AddDocumentSearchTenantVersionIndexCheck(report, existingColumns, existingIndexRows);
-            AddCheck(report, "SMART_SEARCH_CONTEXT_TERM", "SmartSearch", "ged.search_context_term", "Tabela", "Warning", existingTables.Contains("ged.search_context_term"), "Dicionário de contexto da busca inteligente disponível.", "Execute database/migrations/2026_06_contextual_search_and_loan_delivery.sql.");
-            AddCheck(report, "LOANS_SECURE_DOCUMENT_LINK", "Loans", "ged.secure_document_link", "Tabela", "Warning", existingTables.Contains("ged.secure_document_link"), "Links seguros de entrega digital disponíveis.", "Execute database/migrations/2026_06_contextual_search_and_loan_delivery.sql.");
+            AddCheck(report, "SMART_SEARCH_CONTEXT_TERM", "SmartSearch", "ged.search_context_term", "Tabela", "Warning", existingTables.Contains("ged.search_context_term"), "Dicionário de contexto da busca inteligente disponível.", "Execute database/migrations/2026_06_finalize_loans_secure_document_sharing.sql.");
+            AddCheck(report, "LOANS_SECURE_DOCUMENT_LINK", "Loans", "ged.secure_document_link", "Tabela", "Warning", existingTables.Contains("ged.secure_document_link"), "Links seguros de entrega digital disponíveis.", "Execute database/migrations/2026_06_finalize_loans_secure_document_sharing.sql.");
 
             foreach (var (name, alternatives, message) in RecommendedIndexes)
             {

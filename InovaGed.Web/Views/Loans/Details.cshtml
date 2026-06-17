@@ -106,6 +106,30 @@
     }
 </div>
 
+
+@if (canManageLoans)
+{
+<div class="card mb-3">
+    <div class="card-header"><strong>Documentos associados ao pedido</strong></div>
+    <div class="card-body">
+        <form class="row g-2 mb-3" method="get" action="/Loans/@h.Id/DocumentSearch">
+            <div class="col"><input class="form-control" name="q" placeholder="Buscar por paciente, prontuário, OCR, pasta ou título" /></div>
+            <div class="col-auto"><button class="btn btn-outline-primary" type="submit">Pesquisar</button></div>
+        </form>
+        <div class="table-responsive"><table class="table table-sm align-middle"><thead><tr><th>Título</th><th>Arquivo/código</th><th>Pasta/local</th><th>Ações</th></tr></thead><tbody>
+        @foreach (var i in Model.Items.Where(x => x.DocumentId.HasValue))
+        {
+            <tr><td>@(i.DocumentTitle ?? i.Description)</td><td>@(i.DocumentCode ?? i.DocumentId.ToString())</td><td>@(i.PhysicalLocation ?? "GED")</td><td class="d-flex gap-1"><button class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#secureLinkModal" type="button">Gerar link seguro</button><form method="post" action="/Loans/@h.Id/RemoveAssociatedDocument">@Html.AntiForgeryToken()<input type="hidden" name="documentId" value="@i.DocumentId" /><button class="btn btn-sm btn-outline-danger">Remover associação</button></form></td></tr>
+        }
+        @if (!Model.Items.Any(x => x.DocumentId.HasValue)) { <tr><td colspan="4" class="text-muted">Nenhum documento associado. Use a busca contextual e associe o documento correto antes de gerar link.</td></tr> }
+        </tbody></table></div>
+        <form method="post" action="/Loans/@h.Id/AssociateDocument" class="border rounded p-2 bg-light">
+            @Html.AntiForgeryToken()<div class="row g-2"><div class="col-md-4"><input class="form-control" name="DocumentId" placeholder="UUID do documento encontrado" required /></div><div class="col-md-4"><input class="form-control" name="VersionId" placeholder="UUID da versão (opcional)" /></div><div class="col-md-3"><input class="form-control" name="MatchReason" placeholder="Motivo/score da associação" /></div><div class="col-md-1"><button class="btn btn-primary w-100">Associar</button></div></div>
+        </form>
+    </div>
+</div>
+}
+
 <div class="row g-3">
     <div class="col-lg-7">
         <div class="card">

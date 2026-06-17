@@ -25,6 +25,7 @@ public sealed class LoansController : Controller
     private readonly IDbConnectionFactory _db;
     private readonly ILoanAccessService _loanAccess;
     private readonly ISmartSearchService _smartSearch;
+    private readonly ISecureDocumentLinkService _secureLinks;
 
     public LoansController(
         ILogger<LoansController> logger,
@@ -33,7 +34,8 @@ public sealed class LoansController : Controller
         IAuditWriter audit,
         IDbConnectionFactory db,
         ILoanAccessService loanAccess,
-        ISmartSearchService smartSearch)
+        ISmartSearchService smartSearch,
+        ISecureDocumentLinkService secureLinks)
     {
         _logger = logger;
         _user = user;
@@ -42,6 +44,7 @@ public sealed class LoansController : Controller
         _db = db;
         _loanAccess = loanAccess;
         _smartSearch = smartSearch;
+        _secureLinks = secureLinks;
     }
 
     public override void OnActionExecuting(ActionExecutingContext context)
@@ -431,6 +434,46 @@ public sealed class LoansController : Controller
         return RedirectToAction(nameof(Details), new { id });
     }
 
+
+    [Authorize(Policy = AppPolicies.LoansManage)]
+    [HttpGet("{id:guid}/DocumentSearch")]
+    public Task<IActionResult> DocumentSearch(Guid id, string? q, CancellationToken ct) => DocSearch(q, ct);
+
+    [Authorize(Policy = AppPolicies.LoansManage)]
+    [HttpPost("{id:guid}/AssociateDocument")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> AssociateDocument(Guid id, AssociateLoanDocumentRequest request, CancellationToken ct)
+    {
+        if (!await CanOperateLoanAsync(id, ct)) return Forbid();
+        await using var conn = await _db.OpenAsync(ct);
+        var title = await conn.ExecuteScalarAsync<string?>(new CommandDefinition("select title from ged.document where tenant_id=@tenantId and id=@documentId and coalesce(reg_status,'A')='A'", new { tenantId = _user.TenantId, request.DocumentId }, cancellationToken: ct)) ?? request.DocumentId.ToString();
+        var updated = await conn.ExecuteAsync(new CommandDefinition("""
+update ged.loan_request_item
+set matched_document_id=@documentId, matched_version_id=@versionId, document_id=coalesce(document_id,@documentId), document_version_id=coalesce(document_version_id,@versionId), match_score=@matchScore, match_reason=coalesce(@matchReason,'Associado manualmente pelo gestor'), notes=coalesce(@notes, notes), digital_available=true
+where tenant_id=@tenantId and loan_request_id=@id and coalesce(reg_status,'A')='A' and (is_manual=true or matched_document_id is null);
+""", new { tenantId = _user.TenantId, id, request.DocumentId, request.VersionId, request.MatchScore, request.MatchReason, request.Notes }, cancellationToken: ct));
+        if (updated == 0)
+            await conn.ExecuteAsync(new CommandDefinition("insert into ged.loan_request_item(tenant_id, loan_request_id, document_id, document_version_id, matched_document_id, matched_version_id, match_score, match_reason, notes, is_manual, digital_available) values(@tenantId,@id,@documentId,@versionId,@documentId,@versionId,@matchScore,coalesce(@matchReason,'Associado manualmente pelo gestor'),@notes,false,true)", new { tenantId = _user.TenantId, id, request.DocumentId, request.VersionId, request.MatchScore, request.MatchReason, request.Notes }, cancellationToken: ct));
+        await WriteLoanMessageAsync(id, $"Documento {title} associado ao pedido pelo gestor.", "DOCUMENT_ASSOCIATED", true, "TRIAGE", ct);
+        await _audit.WriteAsync(_user.TenantId, _user.UserId, "LOAN_REQUEST_DOCUMENT_ASSOCIATED", "loan_request", id, "Documento associado ao pedido pelo gestor.", null, null, new { request.DocumentId, request.VersionId }, ct);
+        TempData["Ok"] = "Documento associado ao pedido.";
+        return RedirectToAction(nameof(Details), new { id });
+    }
+
+    [Authorize(Policy = AppPolicies.LoansManage)]
+    [HttpPost("{id:guid}/RemoveAssociatedDocument")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> RemoveAssociatedDocument(Guid id, Guid documentId, CancellationToken ct)
+    {
+        if (!await CanOperateLoanAsync(id, ct)) return Forbid();
+        await using var conn = await _db.OpenAsync(ct);
+        await conn.ExecuteAsync(new CommandDefinition("update ged.loan_request_item set matched_document_id=null, matched_version_id=null, match_score=null, match_reason=null, digital_available=false where tenant_id=@tenantId and loan_request_id=@id and (matched_document_id=@documentId or document_id=@documentId)", new { tenantId = _user.TenantId, id, documentId }, cancellationToken: ct));
+        await WriteLoanMessageAsync(id, "Documento removido do pedido pelo gestor.", "DOCUMENT_UNLINKED", true, null, ct);
+        await _audit.WriteAsync(_user.TenantId, _user.UserId, "LOAN_REQUEST_DOCUMENT_UNLINKED", "loan_request", id, "Documento removido do pedido.", null, null, new { documentId }, ct);
+        TempData["Ok"] = "Associação removida.";
+        return RedirectToAction(nameof(Details), new { id });
+    }
+
     [Authorize(Policy = AppPolicies.LoansManage)]
     [HttpPost("{id:guid}/LinkDocument")]
     [ValidateAntiForgeryToken]
@@ -447,7 +490,7 @@ public sealed class LoansController : Controller
     [Authorize(Policy = AppPolicies.LoansManage)]
     [HttpPost("{id:guid}/GenerateSecureLink")]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> GenerateSecureLink(Guid id, GenerateSecureLinkRequest request, CancellationToken ct = default)
+    public async Task<IActionResult> GenerateSecureLink(Guid id, CreateSecureDocumentLinkRequest request, CancellationToken ct = default)
     {
         if (!await CanOperateLoanAsync(id, ct)) return Forbid();
         if (!request.IsPermanent && request.ExpiresAtUtc is null)
@@ -455,18 +498,11 @@ public sealed class LoansController : Controller
             TempData["Err"] = "Informe a expiração para link temporário.";
             return RedirectToAction(nameof(Details), new { id });
         }
-        var token = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)).Replace('+', '-').Replace('/', '_').TrimEnd('=');
-        var hash = Sha256Token(token);
-        await using var conn = await _db.OpenAsync(ct);
-        var expiresAt = request.IsPermanent ? null : request.ExpiresAtUtc;
-        var linkId = await conn.ExecuteScalarAsync<Guid>(new CommandDefinition("""
-insert into ged.secure_document_link(tenant_id, loan_request_id, document_id, version_id, token_hash, expires_at, is_permanent, max_access_count, allow_download, allow_smart_search, created_by)
-values(@tenantId,@id,@documentId,@versionId,@hash,@expiresAt,@isPermanent,@maxAccess,@allowDownload,@allowSmartSearch,@userId) returning id
-""", new { tenantId = _user.TenantId, id, request.DocumentId, request.VersionId, hash, expiresAt, request.IsPermanent, maxAccess = request.MaxAccessCount, request.AllowDownload, request.AllowSmartSearch, userId = _user.UserId }, cancellationToken: ct));
-        await conn.ExecuteAsync(new CommandDefinition("update ged.loan_request set secure_link_id=@linkId, digital_delivery_enabled=true, status='DIGITAL_LINK_SENT', last_message_at=now() where tenant_id=@tenantId and id=@id", new { tenantId = _user.TenantId, id, linkId }, cancellationToken: ct));
-        var linkMessage = string.IsNullOrWhiteSpace(request.MessageToRequester) ? $"O documento digital está disponível pelo link seguro: /SharedDocument/{token}" : $"{request.MessageToRequester} /SharedDocument/{token}";
-        await WriteLoanMessageAsync(id, linkMessage, "DIGITAL_LINK", false, "DIGITAL_LINK_SENT", ct);
-        TempData["Ok"] = $"Link seguro gerado: /SharedDocument/{token}";
+        request.LoanRequestId = id;
+        request.AllowPreview = true;
+        var result = await _secureLinks.CreateAsync(_user.TenantId, _user.UserId, request, ct);
+        await _audit.WriteAsync(_user.TenantId, _user.UserId, "LOAN_REQUEST_DIGITAL_LINK_SENT", "loan_request", id, "Link digital enviado ao solicitante.", null, null, new { result.LinkId, request.DocumentId }, ct);
+        TempData["Ok"] = $"Link seguro gerado: {result.PublicUrl}";
         return RedirectToAction(nameof(Details), new { id });
     }
 
@@ -574,14 +610,12 @@ update ged.loan_request set admin_response=case when @isInternal then admin_resp
 }
 
 
-public sealed class GenerateSecureLinkRequest
+
+public sealed class AssociateLoanDocumentRequest
 {
     public Guid DocumentId { get; set; }
     public Guid? VersionId { get; set; }
-    public bool IsPermanent { get; set; }
-    public DateTime? ExpiresAtUtc { get; set; }
-    public int? MaxAccessCount { get; set; }
-    public bool AllowDownload { get; set; } = true;
-    public bool AllowSmartSearch { get; set; } = true;
-    public string? MessageToRequester { get; set; }
+    public decimal? MatchScore { get; set; }
+    public string? MatchReason { get; set; }
+    public string? Notes { get; set; }
 }

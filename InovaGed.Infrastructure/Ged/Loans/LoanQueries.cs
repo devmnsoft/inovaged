@@ -201,7 +201,7 @@ where lr.tenant_id = @tenant_id and lr.id = @loan_id and lr.reg_status='A';
 
     internal const string LoanDetailsItemsSql = """
 select
-  i.document_id as DocumentId,
+  coalesce(i.matched_document_id, i.document_id) as DocumentId,
   i.is_physical as IsPhysical,
   d.code as DocumentCode,
   coalesce(i.description, d.title, i.reference_code, 'Documento solicitado') as DocumentTitle,
@@ -215,7 +215,7 @@ select
   i.physical_location as PhysicalLocation,
   i.notes as Notes
 from ged.loan_request_item i
-left join ged.document d on d.tenant_id=i.tenant_id and d.id=i.document_id
+left join ged.document d on d.tenant_id=i.tenant_id and d.id=coalesce(i.matched_document_id, i.document_id)
 left join ged.document_type dt on dt.tenant_id=d.tenant_id and dt.id=d.type_id
 where i.tenant_id=@tenant_id and i.loan_request_id=@loan_id and i.reg_status='A'
 order by coalesce(i.description, d.title, i.reference_code, 'Documento solicitado');
