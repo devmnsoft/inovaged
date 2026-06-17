@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using InovaGed.Application;
 using InovaGed.Application.Common.Storage;
 using InovaGed.Application.Ocr;
@@ -170,9 +171,24 @@ public sealed class OcrMyPdfOcrService : IOcrService
 
     private static OcrProcessingException BuildException(OcrFailureCode code, string friendly, string technical, object? details)
     {
-        var payload = details is null ? new { code = code.ToString() } : new { code = code.ToString(), details };
+        var payload = new OcrFailurePayload
+        {
+            Code = code.ToString(),
+            Details = details
+        };
+
         return new(code, friendly, technical, JsonSerializer.Serialize(payload));
     }
+
+    private sealed class OcrFailurePayload
+    {
+        [JsonPropertyName("code")]
+        public string Code { get; init; } = string.Empty;
+
+        [JsonPropertyName("details")]
+        public object? Details { get; init; }
+    }
+
     private static string NormalizePdfMode(string? mode) => (mode ?? "skip-text").Trim().ToLowerInvariant() switch { "force-ocr" => "--force-ocr", "redo-ocr" => "--redo-ocr", _ => "--skip-text" };
     private static string TrimMax(string s, int max) => string.IsNullOrEmpty(s) ? "" : (s.Length <= max ? s : s[..max] + "...");
 }
