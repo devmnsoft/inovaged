@@ -118,7 +118,14 @@ public sealed class SmartQueryParser : ISmartQueryParser, InovaGed.Application.G
         }
 
         var name = NameRegex.Match(query);
-        if (name.Success)
+        if (!string.IsNullOrWhiteSpace(contextIntent.PatientNameHint))
+        {
+            intent.PatientName = CultureInfo.CurrentCulture.TextInfo.ToTitleCase(contextIntent.PatientNameHint.ToLowerInvariant());
+            intent.PersonName = intent.PatientName;
+        }
+        if (string.IsNullOrWhiteSpace(intent.MedicalRecordNumber)) intent.MedicalRecordNumber = contextIntent.MedicalRecordHint;
+
+        if (name.Success && string.IsNullOrWhiteSpace(intent.PatientName))
         {
             var value = Regex.Replace(name.Groups["name"].Value, @"\s+(que|com|tem|em|no|na|internad[oa]|entrou|fala|falam).*$", string.Empty, RegexOptions.IgnoreCase).Trim(' ', ',', '.');
             if (value.Length >= 2)

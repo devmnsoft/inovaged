@@ -2387,3 +2387,4 @@ create index if not exists ix_parameter_item_tenant_category
 on ged.parameter_item(tenant_id, category_id, display_order, name);
 
 \i migrations/2026_06_smart_context_loans_secure_delivery.sql
+\i migrations/2026_06_contextual_smart_search_and_loans.sql

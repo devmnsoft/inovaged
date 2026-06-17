@@ -9,13 +9,18 @@ public sealed class SmartSearchContextIntent
 {
     public string OriginalQuery { get; set; } = string.Empty;
     public string NormalizedQuery { get; set; } = string.Empty;
+    public List<string> Tokens { get; set; } = new();
+    public List<string> MainTerms { get; set; } = new();
     public List<string> RequiredTerms { get; set; } = new();
     public List<string> OptionalTerms { get; set; } = new();
     public List<string> ClinicalTerms { get; set; } = new();
+    public List<string> AdministrativeTerms { get; set; } = new();
     public List<string> Synonyms { get; set; } = new();
     public List<string> RelatedTerms { get; set; } = new();
     public List<string> DocumentTypes { get; set; } = new();
     public List<string> PatientHints { get; set; } = new();
+    public string? PatientNameHint { get; set; }
+    public string? MedicalRecordHint { get; set; }
     public List<string> NumericTokens { get; set; } = new();
     public int? Year { get; set; }
     public DateTime? FromUtc { get; set; }
