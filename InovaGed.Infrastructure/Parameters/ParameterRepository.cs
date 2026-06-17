@@ -333,6 +333,7 @@ where i.tenant_id=@tenantId and i.id=@id;";
         => (categoryCode ?? string.Empty).Trim().ToUpperInvariant() switch
         {
             "LOTACAO" => "LOT",
+            "TIPO_DOCUMENTO" => "TIP",
             "TIPO_DOCUMENTAL" => "TIP",
             "SETOR" => "SET",
             "CLASSIFICACAO" => "CLA",
