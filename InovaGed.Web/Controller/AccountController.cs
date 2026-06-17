@@ -343,13 +343,18 @@ public sealed class AccountController : Controller
         await _audit.WriteAsync(
             tenantId: tenantId,
             userId: userId,
-            action: "PASSWORD_CHANGED",
+            action: "SECURITY",
             entityName: "auth",
-            entityId: userId.ToString(),
+            entityId: userId,
             summary: "Usuário alterou a senha com sucesso.",
             ipAddress: HttpContext.Connection.RemoteIpAddress?.ToString(),
             userAgent: Request.Headers.UserAgent.ToString(),
-            data: new { redirect = "/HospitalDocuments" },
+            data: new
+            {
+                eventCode = "PASSWORD_CHANGED",
+                redirect = "/HospitalDocuments",
+                correlationId = HttpContext.TraceIdentifier
+            },
             ct: ct);
 
         TempData["Success"] = "Senha alterada com sucesso.";
