@@ -316,15 +316,22 @@ from (select 1) seed left join ged.app_user u on u.tenant_id=@TenantId and u.id=
     p.assigned_sector_id = @SectorId
     or p.requester_sector_id = @SectorId
     or p.assigned_user_id = @UserId
+    or nullif(coalesce(p.assigned_sector_name, ''), '') = @SectorName
+    or nullif(coalesce(p.requester_sector_name, ''), '') = @SectorName
 )
 """);
             parameters.Add("SectorId", scope.SectorId.Value, DbType.Guid);
+            parameters.Add("SectorName", scope.SectorName, DbType.String);
             parameters.Add("UserId", userId, DbType.Guid);
+        }
+        else if (scope.IsAdministradorOphir && !string.IsNullOrWhiteSpace(scope.SectorName))
+        {
+            sql.And("(nullif(coalesce(p.assigned_sector_name, ''), '') = @SectorName or nullif(coalesce(p.requester_sector_name, ''), '') = @SectorName)");
+            parameters.Add("SectorName", scope.SectorName, DbType.String);
         }
         else if (scope.IsAdministradorOphir)
         {
-            sql.And("p.assigned_user_id = @UserId");
-            parameters.Add("UserId", userId, DbType.Guid);
+            sql.And("1 = 0");
         }
         else
         {

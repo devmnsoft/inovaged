@@ -15,7 +15,9 @@ public static class AppMenuPolicy
         => !IsAdmin(user) && (IsAdministradorOphir(user) || IsArquivistaOphir(user) || IsHospitalUser(user));
 
     public static bool CanSeeDashboard(ClaimsPrincipal user)
-        => !IsHospitalRestricted(user)
+        => !IsAdministradorOphir(user)
+           && !IsArquivistaOphir(user)
+           && !IsHospitalUser(user)
            && (IsAdmin(user) || HasRole(user, AppRoles.Arquivista) || HasRole(user, AppRoles.Operador) || HasRole(user, AppRoles.Gestor) || HasRole(user, AppRoles.Auditor));
 
     public static bool CanSeeHospitalDocuments(ClaimsPrincipal user)
@@ -53,7 +55,7 @@ public static class AppMenuPolicy
         => IsAdmin(user) || !IsHospitalRestricted(user);
 
     public static bool CanSeeGed(ClaimsPrincipal user)
-        => IsAdmin(user) || IsAdministradorOphir(user) || IsArquivistaOphir(user);
+        => IsAdmin(user);
 
     public static bool CanSeeLoansRequest(ClaimsPrincipal user)
         => IsAdmin(user) || IsArquivistaOphir(user);
@@ -69,6 +71,15 @@ public static class AppMenuPolicy
 
     public static bool CanSeeSystemAdmin(ClaimsPrincipal user)
         => IsAdmin(user);
+
+    public static bool CanCreateSectorUser(ClaimsPrincipal user)
+        => IsAdmin(user) || IsAdministradorOphir(user);
+
+    public static bool CanSeeGlobalUsers(ClaimsPrincipal user)
+        => IsAdmin(user);
+
+    public static bool CanSeeSectorUsers(ClaimsPrincipal user)
+        => IsAdmin(user) || IsAdministradorOphir(user);
 
     public static bool CanSeeSchemaRepair(ClaimsPrincipal user)
         => IsAdmin(user);

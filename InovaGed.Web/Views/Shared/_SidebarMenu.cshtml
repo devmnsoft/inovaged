@@ -66,35 +66,24 @@
 }
 else if (isAdministradorOphir)
 {
-    <div class="sidebar-section-title">Operação Ophir</div>
-    <a asp-controller="Operations" asp-action="Index" class="@ActivePathStarts("/operations")"><i class="bi bi-command"></i><span>Central Operacional</span></a>
-    <a asp-controller="DocumentQuality" asp-action="Index" class="@ActivePathStarts("/documentquality")"><i class="bi bi-shield-check"></i><span>Qualidade Documental</span></a>
-    <a asp-controller="Ocr" asp-action="Index" class="@ActiveAny("Ocr")"><i class="bi bi-filetype-pdf"></i><span>Central OCR</span></a>
-    <a asp-controller="HospitalDocuments" asp-action="Index" class="@ActiveAny("HospitalDocuments")"><i class="bi bi-search-heart"></i><span>Buscar Prontuários e Documentos</span></a>
-    <a asp-controller="SmartSearch" asp-action="Index" class="@ActiveAny("SmartSearch")"><i class="bi bi-stars"></i><span>Busca Inteligente</span></a>
+    <div class="sidebar-section-title">Setor</div>
+    <a asp-controller="HospitalDocuments" asp-action="Index" class="@ActiveAny("HospitalDocuments")"><i class="bi bi-search-heart"></i><span>Documentos Hospitalares</span></a>
+    <a asp-controller="Loans" asp-action="Index" class="@ActiveAny("Loans")"><i class="bi bi-arrow-left-right"></i><span>Pedidos do Setor</span></a>
     <a href="/Protocols/WorkQueue" class="@ActivePathStarts("/protocols/workqueue")"><i class="bi bi-inboxes"></i><span>Fila de Protocolos</span></a>
-    <a asp-controller="Protocolo" asp-action="Index" class="@ActiveAny("Protocolo")"><i class="bi bi-tools"></i><span>Manuseio de Processos</span></a>
-    <a asp-controller="ProtocolRequests" asp-action="Index" class="@ActiveAny("ProtocolRequests")"><i class="bi bi-journal-text"></i><span>Solicitações de Documentos</span></a>
-    <a asp-controller="Loans" asp-action="Index" class="@ActiveAny("Loans")"><i class="bi bi-arrow-left-right"></i><span>Empréstimos para Aprovação/Tratamento</span></a>
-    <a asp-controller="Ged" asp-action="Index" class="@ActiveAny("Ged")"><i class="bi bi-folder2"></i><span>Documentos do Setor</span></a>
+    <a href="/Users/Sector" class="@ActivePathStarts("/users/sector")"><i class="bi bi-people"></i><span>Usuários do meu setor</span></a>
 }
 else if (isArquivistaOphir)
 {
     <div class="sidebar-section-title">Solicitações</div>
-    <a asp-controller="HospitalDocuments" asp-action="Index" class="@ActiveAny("HospitalDocuments")"><i class="bi bi-search-heart"></i><span>Buscar Prontuários e Documentos</span></a>
-    <a asp-controller="SmartSearch" asp-action="Index" class="@ActiveAny("SmartSearch")"><i class="bi bi-stars"></i><span>Busca Inteligente</span></a>
-    <a asp-controller="DocumentQuality" asp-action="Index" class="@ActivePathStarts("/documentquality")"><i class="bi bi-shield-check"></i><span>Qualidade Documental</span></a>
-    <a asp-controller="Ocr" asp-action="Index" class="@ActiveAny("Ocr")"><i class="bi bi-filetype-pdf"></i><span>Central OCR</span></a>
-    <a asp-controller="ProtocolRequests" asp-action="New" class="@Active("ProtocolRequests", "New")"><i class="bi bi-send-plus"></i><span>Solicitar Protocolo</span></a>
-    <a asp-controller="ProtocolRequests" asp-action="My" class="@Active("ProtocolRequests", "My")"><i class="bi bi-list-check"></i><span>Minhas Solicitações de Protocolo</span></a>
-    <a asp-controller="Loans" asp-action="New" class="@Active("Loans", "New")"><i class="bi bi-file-earmark-plus"></i><span>Solicitar Documento/Empréstimo</span></a>
+    <a asp-controller="HospitalDocuments" asp-action="Index" class="@ActiveAny("HospitalDocuments")"><i class="bi bi-search-heart"></i><span>Documentos Hospitalares</span></a>
+    <a asp-controller="Loans" asp-action="New" class="@Active("Loans", "New")"><i class="bi bi-file-earmark-plus"></i><span>Novo Pedido de Documento</span></a>
     <a asp-controller="Loans" asp-action="Index" class="@Active("Loans", "Index")"><i class="bi bi-collection"></i><span>Meus Pedidos</span></a>
+    <a asp-controller="ProtocolRequests" asp-action="My" class="@Active("ProtocolRequests", "My")"><i class="bi bi-list-check"></i><span>Meus Protocolos</span></a>
 }
 else if (isHospital)
 {
     <div class="sidebar-section-title">Consulta</div>
-    <a asp-controller="HospitalDocuments" asp-action="Index" class="@ActiveAny("HospitalDocuments")"><i class="bi bi-search-heart"></i><span>Buscar Prontuários e Documentos</span></a>
-    <a asp-controller="SmartSearch" asp-action="Index" class="@ActiveAny("SmartSearch")"><i class="bi bi-stars"></i><span>Busca Inteligente</span></a>
+    <a asp-controller="HospitalDocuments" asp-action="Index" class="@ActiveAny("HospitalDocuments")"><i class="bi bi-search-heart"></i><span>Documentos Hospitalares</span></a>
 }
 else
 {

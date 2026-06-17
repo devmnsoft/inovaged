@@ -23,33 +23,10 @@ public sealed class LoanRequestService : ILoanRequestService
 
     public async Task<IReadOnlyList<LoanRowDto>> ListAsync(Guid tenantId, string? q, string? status, Guid? requesterId, LoanVisibilityScope scope, CancellationToken ct)
     {
-        var rows = await _queries.ListAsync(tenantId, q, status, ct);
-        if (scope.IsAdmin) return rows;
-
         var sector = NormalizeSector(scope.Sector) ?? await ResolveUserSectorAsync(tenantId, requesterId, ct);
+        scope.Sector = sector;
         if (scope.IsAdministradorOphir && string.IsNullOrWhiteSpace(sector)) return Array.Empty<LoanRowDto>();
-
-        await using var con = await _db.OpenAsync(ct);
-        const string allowedSql = """
-select id
-from ged.loan_request
-where tenant_id=@TenantId
-  and reg_status='A'
-  and (
-      @IsAdmin = true
-      or (@IsAdministradorOphir = true and @Sector is not null and nullif(coalesce(requester_sector,''),'') = @Sector)
-      or (coalesce(@IsAdministradorOphir,false) = false and requester_id = @RequesterId)
-  );
-""";
-        var allowed = (await con.QueryAsync<Guid>(new CommandDefinition(allowedSql, new
-        {
-            TenantId = tenantId,
-            RequesterId = requesterId,
-            IsAdmin = scope.IsAdmin,
-            IsAdministradorOphir = scope.IsAdministradorOphir,
-            Sector = sector
-        }, cancellationToken: ct))).ToHashSet();
-        return rows.Where(x => allowed.Contains(x.Id)).ToList();
+        return await _queries.ListScopedAsync(tenantId, q, status, requesterId, scope, ct);
     }
 
     public async Task<LoanDetailsVM?> GetDetailsAsync(Guid tenantId, Guid loanId, Guid? requesterId, LoanVisibilityScope scope, CancellationToken ct)
@@ -119,7 +96,7 @@ where tenant_id=@TenantId and id=@LoanId and reg_status='A'", new { TenantId = t
 
     private async Task<bool> CanAccessAsync(Guid tenantId, Guid loanId, Guid? requesterId, LoanVisibilityScope scope, CancellationToken ct)
     {
-        if (scope.IsAdmin) return true;
+        if (scope.IsFullAdmin || scope.IsAdmin) return true;
         var sector = NormalizeSector(scope.Sector) ?? await ResolveUserSectorAsync(tenantId, requesterId, ct);
         await using var con = await _db.OpenAsync(ct);
         const string sql = """
@@ -127,8 +104,8 @@ select exists (
   select 1 from ged.loan_request
   where tenant_id=@TenantId and id=@LoanId and reg_status='A'
     and (
-      (@IsAdministradorOphir = true and @Sector is not null and nullif(coalesce(requester_sector,''),'') = @Sector)
-      or (coalesce(@IsAdministradorOphir,false) = false and requester_id = @RequesterId)
+      (@IsAdministradorOphir = true and @Sector is not null and (nullif(coalesce(requester_sector_name, requester_sector, ''),'') = @Sector or nullif(coalesce(assigned_sector_name,''),'') = @Sector or nullif(coalesce(current_sector_name,''),'') = @Sector))
+      or (coalesce(@IsAdministradorOphir,false) = false and (requester_id = @RequesterId or created_by = @RequesterId))
     )
 );
 """;

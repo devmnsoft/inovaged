@@ -22,6 +22,7 @@ public interface ILoanRequestService
 
 public sealed class LoanVisibilityScope
 {
+    public bool IsFullAdmin { get; set; }
     public bool IsAdmin { get; set; }
     public bool IsAdministradorOphir { get; set; }
     public bool IsArquivistaOphir { get; set; }

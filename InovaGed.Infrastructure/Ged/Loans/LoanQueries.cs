@@ -76,6 +76,85 @@ limit 200;
         }
     }
 
+
+    public async Task<IReadOnlyList<LoanRowDto>> ListScopedAsync(Guid tenantId, string? q, string? status, Guid? requesterId, LoanVisibilityScope scope, CancellationToken ct)
+    {
+        try
+        {
+            await using var con = await _db.OpenAsync(ct);
+            var qTrim = (q ?? string.Empty).Trim();
+            long? protocolNo = long.TryParse(qTrim, out var p) ? p : null;
+            var sector = string.IsNullOrWhiteSpace(scope.Sector) ? null : scope.Sector.Trim();
+
+            const string sql = """
+select
+    l.id,
+    l.protocol_no                 as ProtocolNo,
+    l.status::text                as Status,
+    coalesce(l.requester_name,'') as RequesterName,
+    l.requested_at                as RequestedAt,
+    l.due_at                      as DueAt,
+    l.approved_at                 as ApprovedAt,
+    l.delivered_at                as DeliveredAt,
+    l.returned_at                 as ReturnedAt,
+    (
+        select count(*)::int
+        from ged.loan_request_item i
+        where i.tenant_id = l.tenant_id
+          and i.loan_request_id = l.id
+          and i.reg_status='A'
+    )                             as ItemsCount
+from ged.loan_request l
+where l.tenant_id = @TenantId
+  and l.reg_status = 'A'
+  and (@Status is null or @Status = '' or l.status::text = @Status)
+  and (
+        @Q is null or @Q = ''
+        or coalesce(l.requester_name,'') ilike ('%' || @Q || '%')
+        or l.status::text ilike ('%' || @Q || '%')
+        or l.protocol_no::text ilike ('%' || @Q || '%')
+        or (@ProtocolNo is not null and l.protocol_no = @ProtocolNo)
+  )
+  and (
+        @IsFullAdmin = true
+        or (
+            @IsAdministradorOphir = true
+            and @Sector is not null
+            and (
+                nullif(coalesce(l.requester_sector_name, l.requester_sector, ''), '') = @Sector
+                or nullif(coalesce(l.assigned_sector_name, ''), '') = @Sector
+                or nullif(coalesce(l.current_sector_name, ''), '') = @Sector
+            )
+        )
+        or (
+            @IsArquivistaOphir = true
+            and (l.requester_id = @RequesterId or l.created_by = @RequesterId)
+        )
+  )
+order by l.requested_at desc
+limit 200;
+""";
+            var rows = await con.QueryAsync<LoanRowDto>(new CommandDefinition(sql, new
+            {
+                TenantId = tenantId,
+                Q = qTrim,
+                Status = status,
+                ProtocolNo = protocolNo,
+                RequesterId = requesterId,
+                IsFullAdmin = scope.IsFullAdmin || scope.IsAdmin,
+                scope.IsAdministradorOphir,
+                scope.IsArquivistaOphir,
+                Sector = sector
+            }, cancellationToken: ct));
+            return rows.ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "LoanQueries.ListScopedAsync failed. Tenant={Tenant}", tenantId);
+            throw;
+        }
+    }
+
     public async Task<IReadOnlyList<LoanRowDto>> ListOverdueAsync(Guid tenantId, CancellationToken ct)
     {
         try

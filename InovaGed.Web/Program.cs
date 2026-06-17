@@ -477,6 +477,8 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy(AppPolicies.SystemHealth, p => RequireAny(p, fullAdmin));
     options.AddPolicy(AppPolicies.ParametersAdmin, p => RequireAny(p, fullAdmin));
     options.AddPolicy(AppPolicies.UsersAdmin, p => RequireAny(p, fullAdmin));
+    options.AddPolicy(AppPolicies.UsersGlobalManage, p => RequireAny(p, fullAdmin));
+    options.AddPolicy(AppPolicies.UsersSectorManage, p => RequireAny(p, AppRoles.Admin, AppRoles.Administrador, AppRoles.AdministradorOphir));
     options.AddPolicy(AppPolicies.SystemLogs, p => RequireAny(p, fullAdmin));
     options.AddPolicy(AppPolicies.SchemaRepair, p => RequireAny(p, fullAdmin));
 
@@ -513,8 +515,8 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy(AppPolicies.HospitalDocumentsOrLoansAccess,
         p => RequireAny(p, AppRoles.Admin, AppRoles.Administrador, AppRoles.AdministradorOphir, AppRoles.ArquivistaOphir, AppRoles.Hospital, AppRoles.Arquivista, AppRoles.Gestor, AppRoles.Operador));
 
-    options.AddPolicy(AppPolicies.Operations, p => RequireAny(p, AppRoles.Admin, AppRoles.Administrador, AppRoles.AdministradorOphir, AppRoles.ArquivistaOphir));
-    options.AddPolicy(AppPolicies.OperationsAccess, p => RequireAny(p, AppRoles.Admin, AppRoles.Administrador, AppRoles.AdministradorOphir, AppRoles.ArquivistaOphir));
+    options.AddPolicy(AppPolicies.Operations, p => RequireAny(p, AppRoles.Admin, AppRoles.Administrador));
+    options.AddPolicy(AppPolicies.OperationsAccess, p => RequireAny(p, AppRoles.Admin, AppRoles.Administrador));
 
     options.AddPolicy(Policies.CanViewRetention,
         p => RequireAny(p, AppRoles.Admin, AppRoles.Administrador, AppRoles.Arquivista, AppRoles.Auditor));

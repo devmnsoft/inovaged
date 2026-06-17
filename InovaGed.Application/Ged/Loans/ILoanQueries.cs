@@ -3,6 +3,7 @@
 public interface ILoanQueries
 {
     Task<IReadOnlyList<LoanRowDto>> ListAsync(Guid tenantId, string? q, string? status, CancellationToken ct);
+    Task<IReadOnlyList<LoanRowDto>> ListScopedAsync(Guid tenantId, string? q, string? status, Guid? requesterId, LoanVisibilityScope scope, CancellationToken ct);
     Task<IReadOnlyList<LoanRowDto>> ListOverdueAsync(Guid tenantId, CancellationToken ct);
     Task<LoanDetailsVM?> GetAsync(Guid tenantId, Guid loanId, CancellationToken ct);
 
