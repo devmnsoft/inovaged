@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Diagnostics;
+using InovaGed.Web.Routing;
 using Microsoft.AspNetCore.Mvc;
 
 namespace InovaGed.Web.Controllers;
@@ -6,7 +7,11 @@ namespace InovaGed.Web.Controllers;
 public  class HomeController : Controller
 {
     public IActionResult Index()
-        => RedirectToAction("Index", "Ged"); // manda direto pro GED
+    {
+        // Página inicial padrão do sistema: busca de documentos hospitalares.
+        // Não redirecionar para /Ged, pois perfis Ophir/Hospital não devem iniciar no GED administrativo.
+        return Redirect(AppDefaultRoutes.HospitalDocuments);
+    }
 
     [Route("Home/Error")]
     public IActionResult Error()

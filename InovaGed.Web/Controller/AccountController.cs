@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using InovaGed.Application.Auth;
 using InovaGed.Web.Models.Auth;
+using InovaGed.Web.Routing;
 using InovaGed.Web.Security;
 using InovaGed.Application.Audit;
 using InovaGed.Application.Common.Security;
@@ -242,7 +243,7 @@ public sealed class AccountController : Controller
         if (!isAdmin && isHospitalUser && IsAllowedReturnUrlForHospital(normalizedReturnUrl))
             return (Redirect(normalizedReturnUrl), normalizedReturnUrl, "hospital_allowed_return_url");
 
-        return (RedirectToAction("Index", "HospitalDocuments"), "/HospitalDocuments", isAdmin ? "full_admin_default_hospital_documents" : "profile_default_hospital_documents");
+        return (Redirect(AppDefaultRoutes.HospitalDocuments), AppDefaultRoutes.HospitalDocuments, isAdmin ? "full_admin_default_hospital_documents" : "profile_default_hospital_documents");
     }
 
     private bool IsSafeLocalReturnUrl(string? returnUrl)
@@ -336,9 +337,10 @@ public sealed class AccountController : Controller
         await _repo.ResetPasswordByUserIdAsync(tenantId, userId, newHash, ct);
 
         _logger.LogInformation(
-            "Senha alterada com sucesso. Tenant={TenantId} UserId={UserId} Redirect=/HospitalDocuments",
+            "Senha alterada com sucesso. Tenant={TenantId} UserId={UserId} Redirect={Redirect}",
             tenantId,
-            userId);
+            userId,
+            AppDefaultRoutes.HospitalDocuments);
 
         await _audit.WriteAsync(
             tenantId: tenantId,
@@ -352,13 +354,13 @@ public sealed class AccountController : Controller
             data: new
             {
                 eventCode = "PASSWORD_CHANGED",
-                redirect = "/HospitalDocuments",
+                redirect = AppDefaultRoutes.HospitalDocuments,
                 correlationId = HttpContext.TraceIdentifier
             },
             ct: ct);
 
         TempData["Success"] = "Senha alterada com sucesso.";
-        return RedirectToAction("Index", "HospitalDocuments");
+        return Redirect(AppDefaultRoutes.HospitalDocuments);
     }
 
     [HttpGet]

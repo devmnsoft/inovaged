@@ -21,6 +21,7 @@ using InovaGed.Domain.Ged;
 using InovaGed.Domain.Primitives;
 using InovaGed.Web.Models.Ged;
 using InovaGed.Web.ocr;
+using InovaGed.Web.Routing;
 using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -726,13 +727,24 @@ public sealed class GedController : Controller
     public override void OnActionExecuting(ActionExecutingContext context)
     {
         base.OnActionExecuting(context);
+
+        if (context.Result is not null)
+            return;
+
         var isAdmin = RolePolicyHelper.IsFullAdmin(User);
-        var isOphir = User.IsInNormalizedRole(AppRoles.AdministradorOphir) || User.IsInNormalizedRole(AppRoles.ArquivistaOphir);
-        if (!isAdmin && isOphir && !HttpContext.Request.Path.StartsWithSegments("/Ged"))
-        {
-            _logger.LogWarning("Acesso bloqueado ao GED para perfil Ophir. Path={Path} User={User}", HttpContext.Request.Path.Value, User.Identity?.Name ?? "anonymous");
-            context.Result = Forbid();
-        }
+        var isHospitalRestricted = AppMenuPolicy.IsHospitalRestricted(User);
+        if (isAdmin || !isHospitalRestricted)
+            return;
+
+        _logger.LogWarning(
+            "Perfil hospitalar tentou acessar GED administrativo; redirecionado para HospitalDocuments. Path={Path} Method={Method} User={User}",
+            HttpContext.Request.Path.Value,
+            HttpContext.Request.Method,
+            User.Identity?.Name ?? "anonymous");
+
+        context.Result = HttpMethods.IsGet(HttpContext.Request.Method)
+            ? Redirect(AppDefaultRoutes.HospitalDocuments)
+            : Forbid();
     }
 
     // =========================
