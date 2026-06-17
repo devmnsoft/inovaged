@@ -18,22 +18,24 @@ public sealed class SharedDocumentController : Controller
     public async Task<IActionResult> Index(string token, CancellationToken ct)
     {
         var link = await ValidateAsync(token, true, ct);
-        if (link is null) return View("SharedDocumentDenied");
+        if (link is null) return View("SharedDocumentDenied", ViewData["DeniedReason"]);
         return View("Index", link);
     }
 
     [HttpGet("{token}/Preview")]
     public async Task<IActionResult> Preview(string token, CancellationToken ct)
     {
-        var link = await ValidateAsync(token, true, ct);
+        var link = await ValidateAsync(token, false, ct);
         if (link is null) return NotFound("Link inválido, expirado ou revogado.");
-        return Content("Pré-visualização isolada habilitada para este documento. Integre aqui o viewer existente usando DocumentId/VersionId.", "text/plain", Encoding.UTF8);
+        if (!link.AllowPreview) return Content("Visualização não autorizada para este link.", "text/plain", Encoding.UTF8);
+        await LogAccessAsync(link, true, "SECURE_DOCUMENT_LINK_PREVIEW", ct);
+        return Content("Pré-visualização isolada habilitada apenas para este documento. Integre aqui o viewer existente usando DocumentId/VersionId.", "text/plain", Encoding.UTF8);
     }
 
     [HttpGet("{token}/Download")]
     public async Task<IActionResult> Download(string token, CancellationToken ct)
     {
-        var link = await ValidateAsync(token, true, ct);
+        var link = await ValidateAsync(token, false, ct);
         if (link is null) return NotFound("Link inválido, expirado ou revogado.");
         if (!link.AllowDownload) return Content("Download não autorizado para este link.", "text/plain", Encoding.UTF8);
         await LogAccessAsync(link, true, "SECURE_DOCUMENT_LINK_DOWNLOAD", ct);
@@ -43,7 +45,7 @@ public sealed class SharedDocumentController : Controller
     [HttpGet("{token}/OcrText")]
     public async Task<IActionResult> OcrText(string token, CancellationToken ct)
     {
-        var link = await ValidateAsync(token, true, ct);
+        var link = await ValidateAsync(token, false, ct);
         if (link is null) return NotFound();
         var ocr = await LoadOcrAsync(link.TenantId, link.DocumentId, link.VersionId, ct);
         if (string.IsNullOrWhiteSpace(ocr)) return Content("Este documento ainda não possui OCR pesquisável.");
@@ -54,7 +56,7 @@ public sealed class SharedDocumentController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Search(string token, string q, CancellationToken ct)
     {
-        var link = await ValidateAsync(token, true, ct);
+        var link = await ValidateAsync(token, false, ct);
         if (link is null) return Json(new { success = false, message = "Link inválido, expirado ou revogado." });
         if (!link.AllowSmartSearch) return Json(new { success = false, message = "Busca textual desabilitada para este link." });
         if (string.IsNullOrWhiteSpace(q) || q.Trim().Length < 3) return Json(new { success = false, message = "Digite pelo menos 3 caracteres." });
@@ -71,11 +73,12 @@ public sealed class SharedDocumentController : Controller
         var hash = Sha256Token(token ?? string.Empty);
         await using var conn = await _db.OpenAsync(ct);
         var link = await conn.QuerySingleOrDefaultAsync<SharedDocumentLinkVm>(new CommandDefinition("""
-select id as "Id", tenant_id as "TenantId", loan_request_id as "LoanRequestId", document_id as "DocumentId", version_id as "VersionId", expires_at as "ExpiresAt", is_permanent as "IsPermanent", max_access_count as "MaxAccessCount", access_count as "AccessCount", allow_smart_search as "AllowSmartSearch", allow_download as "AllowDownload", revoked_at as "RevokedAt"
+select id as "Id", tenant_id as "TenantId", loan_request_id as "LoanRequestId", document_id as "DocumentId", version_id as "VersionId", title as "Title", description as "Description", expires_at as "ExpiresAt", is_permanent as "IsPermanent", max_access_count as "MaxAccessCount", access_count as "AccessCount", allow_preview as "AllowPreview", allow_smart_search as "AllowSmartSearch", allow_download as "AllowDownload", revoked_at as "RevokedAt"
 from ged.secure_document_link where token_hash=@hash and reg_status='A'
 """, new { hash }, cancellationToken: ct));
         if (link is null)
         {
+            ViewData["DeniedReason"] = "Link inválido.";
             _logger.LogInformation("Acesso negado ao link seguro. Reason={Reason}", "INVALID_TOKEN");
             return null;
         }
@@ -83,6 +86,7 @@ from ged.secure_document_link where token_hash=@hash and reg_status='A'
         var reason = GetDeniedReason(link, PostgresDateTimeHelper.UtcNow());
         if (reason is not null)
         {
+            ViewData["DeniedReason"] = FriendlyDeniedReason(reason);
             if (countAccess) await LogAccessAsync(link, false, reason, ct);
             return null;
         }
@@ -96,6 +100,7 @@ where id=@id and (max_access_count is null or access_count < max_access_count)
 """, new { link.Id }, cancellationToken: ct));
             if (updated == 0)
             {
+                ViewData["DeniedReason"] = FriendlyDeniedReason("ACCESS_LIMIT");
                 await LogAccessAsync(link, false, "ACCESS_LIMIT", ct);
                 return null;
             }
@@ -116,6 +121,7 @@ where id=@id and (max_access_count is null or access_count < max_access_count)
         return null;
     }
 
+    private static string FriendlyDeniedReason(string reason) => reason switch { "REVOKED" => "Este link foi revogado.", "EXPIRED" => "Este link expirou.", "ACCESS_LIMIT" => "O limite de acessos deste link foi atingido.", "INVALID_EXPIRATION" => "Este link está sem expiração válida.", _ => "Link inválido, expirado ou indisponível." };
     private async Task LogAccessAsync(SharedDocumentLinkVm link, bool success, string reason, CancellationToken ct)
     {
         try { await using var conn = await _db.OpenAsync(ct); await conn.ExecuteAsync(new CommandDefinition("insert into ged.secure_document_link_access(tenant_id, secure_link_id, ip_address, user_agent, success, reason) values(@tenantId,@id,@ip,@ua,@success,@reason)", new { tenantId = link.TenantId, id = link.Id, ip = HttpContext.Connection.RemoteIpAddress?.ToString(), ua = Request.Headers.UserAgent.ToString(), success, reason }, cancellationToken: ct)); } catch (Exception ex) { _logger.LogDebug(ex, "Falha ao auditar link seguro."); }
@@ -133,10 +139,13 @@ public sealed class SharedDocumentLinkVm
     public Guid? LoanRequestId { get; set; }
     public Guid DocumentId { get; set; }
     public Guid? VersionId { get; set; }
+    public string? Title { get; set; }
+    public string? Description { get; set; }
     public DateTimeOffset? ExpiresAt { get; set; }
     public bool IsPermanent { get; set; }
     public int? MaxAccessCount { get; set; }
     public int AccessCount { get; set; }
+    public bool AllowPreview { get; set; }
     public bool AllowSmartSearch { get; set; }
     public bool AllowDownload { get; set; }
     public DateTimeOffset? RevokedAt { get; set; }

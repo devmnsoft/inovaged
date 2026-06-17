@@ -1,5 +1,6 @@
 @model InovaGed.Web.Models.Ged.DocumentActionsVm
 @using System
+@using InovaGed.Web.Security
 
 <div class="dropdown">
     <button class="btn btn-light border ged-actions-btn document-actions-btn" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Ações de @Model.Title" aria-label="Ações de @Model.Title">
@@ -26,7 +27,10 @@
         }
         <li><a class="dropdown-item" asp-action="Download" asp-controller="Ged" asp-route-id="@Model.VersionId"><i class="bi bi-download me-2"></i>Baixar</a></li>
         <li><a class="dropdown-item" asp-controller="ProtocolRequests" asp-action="New" asp-route-documentId="@Model.DocumentId"><i class="bi bi-send-plus me-2"></i>Criar protocolo com este documento</a></li>
-        <li><button class="dropdown-item js-share-document" type="button" data-document-id="@Model.DocumentId" data-version-id="@Model.VersionId" data-title="@Model.Title"><i class="bi bi-share me-2"></i>Compartilhar documento</button></li>
+        @if (AppMenuPolicy.IsFullAdmin(User))
+        {
+            <li><button class="dropdown-item js-share-document" type="button" data-document-id="@Model.DocumentId" data-version-id="@Model.VersionId" data-title="@Model.Title" data-file-name="@Model.FileName"><i class="bi bi-share me-2"></i>Compartilhar documento</button></li>
+        }
 
         @if (Model.IsConsolidated)
         {

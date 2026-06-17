@@ -266,7 +266,8 @@ where schemaname = 'ged';", cancellationToken: ct))).ToList();
 
             AddDocumentSearchTenantVersionIndexCheck(report, existingColumns, existingIndexRows);
             AddCheck(report, "SMART_SEARCH_CONTEXT_TERM", "SmartSearch", "ged.search_context_term", "Tabela", "Warning", existingTables.Contains("ged.search_context_term"), "Dicionário de contexto da busca inteligente disponível.", "Execute database/migrations/2026_06_finalize_loans_secure_document_sharing.sql.");
-            AddCheck(report, "LOANS_SECURE_DOCUMENT_LINK", "Loans", "ged.secure_document_link", "Tabela", "Warning", existingTables.Contains("ged.secure_document_link"), "Links seguros de entrega digital disponíveis.", "Execute database/migrations/2026_06_finalize_loans_secure_document_sharing.sql.");
+            AddCheck(report, "LOANS_SECURE_DOCUMENT_LINK", "Loans", "ged.secure_document_link", "Tabela", "Warning", existingTables.Contains("ged.secure_document_link"), "Links seguros de entrega digital disponíveis.", "Execute database/migrations/2026_06_fix_secure_document_link_sharing.sql.");
+            AddCheck(report, "LOANS_SECURE_DOCUMENT_LINK_ACCESS", "Loans", "ged.secure_document_link_access", "Tabela", "Warning", existingTables.Contains("ged.secure_document_link_access"), "Auditoria de acessos a links seguros disponível.", "Execute database/migrations/2026_06_fix_secure_document_link_sharing.sql.");
 
             foreach (var (name, alternatives, message) in RecommendedIndexes)
             {
