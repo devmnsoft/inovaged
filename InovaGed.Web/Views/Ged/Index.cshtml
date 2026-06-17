@@ -419,18 +419,18 @@
 
         @await Html.PartialAsync("_SmartSearchPanel", Model)
 
-        <div class="d-flex flex-wrap gap-2 mb-2" aria-label="Filtros rápidos de documentos fracionados">
-            <button type="button" class="btn btn-sm btn-outline-warning js-quick-partial-filter" data-filter="incomplete"><i class="bi bi-funnel me-1"></i>Ver incompletos</button>
-            <button type="button" class="btn btn-sm btn-outline-primary js-quick-partial-filter" data-filter="ready"><i class="bi bi-check2-circle me-1"></i>Ver prontos para consolidar</button>
-            <button type="button" class="btn btn-sm btn-outline-info js-quick-partial-filter" data-filter="consolidated"><i class="bi bi-layers me-1"></i>Ver consolidados</button>
-            <button type="button" class="btn btn-sm btn-outline-secondary js-quick-partial-filter" data-filter="ocr-partial"><i class="bi bi-text-paragraph me-1"></i>Ver OCR parcial</button>
-            <button type="button" class="btn btn-sm btn-light border d-none" id="btnClearPartialFilters"><i class="bi bi-x-circle me-1"></i>Limpar filtro</button>
-            <span id="gedActiveQuickFilterChip" class="ged-filter-chip d-none">Filtro: <span data-filter-label></span> <button type="button" class="btn btn-link btn-sm p-0 ms-1" id="btnClearQuickFilterChip" aria-label="Limpar filtro rápido">×</button></span>
+        <div class="ged-quick-filter-row" aria-label="Filtros rápidos de documentos fracionados">
+            <button type="button" class="ged-filter-chip js-quick-partial-filter" data-filter="incomplete"><i class="bi bi-funnel"></i> Incompletos</button>
+            <button type="button" class="ged-filter-chip js-quick-partial-filter" data-filter="ready"><i class="bi bi-check2-circle"></i> Prontos</button>
+            <button type="button" class="ged-filter-chip js-quick-partial-filter" data-filter="consolidated"><i class="bi bi-layers"></i> Consolidados</button>
+            <button type="button" class="ged-filter-chip js-quick-partial-filter" data-filter="ocr-partial"><i class="bi bi-text-paragraph"></i> OCR parcial</button>
+            <button type="button" class="ged-filter-chip d-none" id="btnClearPartialFilters"><i class="bi bi-x-circle"></i> Limpar filtros</button>
+            <span id="gedActiveQuickFilterChip" class="ged-filter-chip active d-none">Filtro: <span data-filter-label></span> <button type="button" class="btn btn-link btn-sm p-0 ms-1" id="btnClearQuickFilterChip" aria-label="Limpar filtro rápido">×</button></span>
         </div>
         <div id="gedFilteredEmptyState" class="alert alert-info d-none" role="status">Nenhum documento encontrado para este filtro.</div>
 
         <div class="ged-toolbar">
-            <div class="ged-toolbar-search">
+            <div class="ged-search-row">
                 <input type="hidden" id="currentFolderId" value="@Model.CurrentFolderId" />
                 <div class="input-group">
                     <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
@@ -450,10 +450,14 @@
                     <div id="legacySmartSearchChips" class="d-flex flex-wrap gap-1 mt-2"></div>
                 </div>
             </div>
-            <div class="ged-toolbar-actions">
-                <a class="btn btn-sm btn-outline-dark" asp-controller="Ged" asp-action="Kpi"><i class="bi bi-bar-chart-line me-1"></i>KPI GED</a>
-                <button type="button" class="btn btn-sm btn-outline-dark" data-bs-toggle="modal" data-bs-target="#modalFilaOcr"><i class="bi bi-list-task me-1"></i> Fila OCR</button>
-                <button id="btnMoveSelectedGlobal" type="button" class="btn btn-sm btn-outline-primary js-btn-move-selected" disabled><i class="bi bi-folder-symlink me-1"></i>Mover <span class="js-move-selected-count">(0)</span></button>
+            <div class="ged-toolbar-actions dropdown">
+                <button class="btn btn-sm btn-outline-dark dropdown-toggle" type="button" data-bs-toggle="dropdown"><i class="bi bi-three-dots"></i> Mais ações</button>
+                <ul class="dropdown-menu dropdown-menu-end">
+                    <li><a class="dropdown-item" asp-controller="Ged" asp-action="Kpi"><i class="bi bi-bar-chart-line me-1"></i>KPI GED</a></li>
+                    <li><button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#modalFilaOcr"><i class="bi bi-list-task me-1"></i>Fila OCR</button></li>
+                    <li><a class="dropdown-item" href="/SmartSearch"><i class="bi bi-stars me-1"></i>Busca inteligente</a></li>
+                    <li><a class="dropdown-item" href="/Ged/Uploads"><i class="bi bi-clock-history me-1"></i>Histórico de uploads</a></li>
+                </ul>
             </div>
         </div>
 

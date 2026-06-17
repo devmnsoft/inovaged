@@ -49,7 +49,7 @@
             </div>
         }
 
-        <div class="ged-documents-view-toolbar ged-selection-bar">
+        <div class="ged-documents-view-toolbar ged-selection-bar" data-has-selection="false">
             <div class="ged-bulk-select ged-selection-info">
                 <input type="checkbox"
                        class="form-check-input"
@@ -66,13 +66,12 @@
 
             <div class="ged-toolbar-spacer"></div>
 
-            <div class="ged-selection-actions">
+            <div class="ged-selection-actions d-none" data-bulk-actions>
             <button type="button"
                     class="btn btn-sm btn-outline-primary ged-move-selected-inline js-btn-move-selected"
                     id="btnMoveSelected"
                     disabled>
-                <i class="bi bi-folder-symlink me-1"></i>Mover selecionados
-                <span class="ms-1 js-move-selected-count">(0)</span>
+                <i class="bi bi-folder-symlink me-1"></i>Mover
             </button>
             <button type="button" class="btn btn-sm btn-outline-warning js-bulk-mark-incomplete" disabled><i class="bi bi-exclamation-diamond me-1"></i>Marcar como incompleto</button>
             <button type="button" class="btn btn-sm btn-outline-success js-bulk-mark-complete" disabled><i class="bi bi-check2-circle me-1"></i>Marcar como completo</button>

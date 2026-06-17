@@ -4,6 +4,10 @@
     function setButtons() {
         const count = selectedIds().length;
         document.querySelectorAll('.js-bulk-mark-incomplete,.js-bulk-mark-complete,.js-bulk-delete,.js-btn-move-selected,.js-clear-document-selection').forEach(b => b.disabled = count === 0);
+        document.querySelectorAll('.js-move-selected-count').forEach(el => { el.textContent = count > 0 ? `(${count})` : ''; });
+        document.querySelectorAll('.ged-selected-count,#selectedDocumentsInlineInfo').forEach(el => { el.textContent = count === 1 ? '1 documento selecionado' : `${count} documentos selecionados`; });
+        document.querySelectorAll('.ged-selection-bar').forEach(bar => { bar.dataset.hasSelection = count > 0 ? 'true' : 'false'; });
+        document.querySelectorAll('[data-bulk-actions],.ged-selection-actions').forEach(el => { el.classList.toggle('d-none', count === 0); });
     }
     function toast(msg, type) { window.showAppToast ? window.showAppToast(msg, type || 'info', 'GED') : alert(msg); }
     async function post(url, payload) {
@@ -15,6 +19,7 @@
         return j;
     }
     function refresh() {
+        if (window.GedFolderNavigation?.refreshCurrentFolder) { window.GedFolderNavigation.refreshCurrentFolder(); return; }
         if (window.GedFolderNavigation?.reloadCurrent) { window.GedFolderNavigation.reloadCurrent(); return; }
         location.reload();
     }
