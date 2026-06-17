@@ -1,6 +1,6 @@
 using System.Diagnostics;
 using InovaGed.Application.SmartSearch;
-using InovaGed.Infrastructure.Common;
+using DbDateTime = InovaGed.Application.Common.Database.PostgresDateTimeHelper;
 
 namespace InovaGed.Infrastructure.SmartSearch;
 
@@ -19,8 +19,8 @@ public sealed class SmartSearchService : ISmartSearchService
     {
         request.Page = Math.Max(1, request.Page);
         request.PageSize = Math.Clamp(request.PageSize <= 0 ? 20 : request.PageSize, 1, 50);
-        request.From = PostgresDateTimeHelper.ToUtc(request.From);
-        request.To = PostgresDateTimeHelper.ToUtc(request.To);
+        request.From = DbDateTime.ToUtc(request.From);
+        request.To = DbDateTime.ToUtc(request.To);
         var sw = Stopwatch.StartNew();
         var intent = await _parser.ParseAsync(request.TenantId, request.Query, request, ct);
         var result = await _repository.SearchAsync(intent, new UserDocumentScope { TenantId = request.TenantId, UserId = request.UserId, IsAdmin = request.IsAdmin }, request, ct);
