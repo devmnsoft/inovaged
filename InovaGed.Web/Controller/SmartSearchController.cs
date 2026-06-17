@@ -3,6 +3,7 @@ using InovaGed.Application.Identity;
 using InovaGed.Application.Ged.Search;
 using InovaGed.Application.Security;
 using InovaGed.Application.SmartSearch;
+using SmartSearchRequestDto = InovaGed.Application.SmartSearch.SmartSearchRequest;
 using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -42,7 +43,7 @@ public sealed class SmartSearchController : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Search([FromForm] SmartSearchRequest request, CancellationToken ct)
+    public async Task<IActionResult> Search([FromForm] SmartSearchRequestDto request, CancellationToken ct)
     {
         if (!_currentUser.IsAuthenticated) return Unauthorized(new { success = false, message = "Sessão expirada." });
         request.TenantId = _currentUser.TenantId;
