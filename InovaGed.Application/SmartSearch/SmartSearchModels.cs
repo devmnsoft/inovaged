@@ -53,6 +53,14 @@ public sealed class SmartSearchResult
     public int TotalPages { get; set; }
     public long DurationMs { get; set; }
     public string? Warning { get; set; }
+    public IReadOnlyList<string> Tokens { get; set; } = [];
+    public bool SearchedDirect { get; set; }
+    public bool SearchedIndex { get; set; }
+    public bool SearchedOcr { get; set; }
+    public bool IndexAvailable { get; set; }
+    public int FallbackCount { get; set; }
+    public string? Message { get; set; }
+    public IReadOnlyList<string> Suggestions { get; set; } = [];
 }
 
 public sealed class SmartSearchResultItem

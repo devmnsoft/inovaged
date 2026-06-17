@@ -81,12 +81,19 @@ public sealed class SmartSearchRepository : ISmartSearchRepository, InovaGed.App
         p.Add("limit", pageSize, DbType.Int32);
 
         var rows = (await conn.QueryAsync<SearchRow>(new CommandDefinition(sql, p, cancellationToken: ct, commandTimeout: 30))).ToList();
-        var indexCount = rows.Count;
+        var indexCount = hasSmartIndex ? rows.Count : 0;
         var fallbackCount = 0;
-        if (hasSmartIndex && rows.Count == 0)
+        if (hasSmartIndex)
         {
-            rows = (await conn.QueryAsync<SearchRow>(new CommandDefinition(fallbackSql.Replace("/*DATE_FILTERS*/", dateFilters.ToString()), p, cancellationToken: ct, commandTimeout: 30))).ToList();
-            fallbackCount = rows.Count;
+            var fallbackRows = (await conn.QueryAsync<SearchRow>(new CommandDefinition(fallbackSql.Replace("/*DATE_FILTERS*/", dateFilters.ToString()), p, cancellationToken: ct, commandTimeout: 30))).ToList();
+            fallbackCount = fallbackRows.Count;
+            rows = rows.Concat(fallbackRows)
+                .GroupBy(x => x.DocumentId)
+                .Select(g => g.OrderByDescending(x => x.Score).First())
+                .OrderByDescending(x => x.Score)
+                .ThenBy(x => x.Title)
+                .Take(pageSize)
+                .ToList();
         }
         if (rows.Count == 0)
         {
@@ -103,7 +110,15 @@ public sealed class SmartSearchRepository : ISmartSearchRepository, InovaGed.App
             Page = page,
             PageSize = pageSize,
             TotalPages = total == 0 ? 0 : (int)Math.Ceiling(total / (double)pageSize),
-            Warning = rows.Count == 0 ? $"Nenhum resultado encontrado. Tokens={string.Join(",", tokens)}; searchedIndexed={hasSmartIndex}; searchedDirect=true; searchedOcr={hasLegacyOcr}; indexAvailable={hasSmartIndex}; indexCount={indexCount}; fallbackCount={fallbackCount}. Tentamos buscar em nome, arquivo, pasta e OCR." : (hasSmartIndex ? null : "Índice inteligente indisponível; usando fallback direto em documentos, arquivos, pastas e OCR legado.")
+            Warning = rows.Count == 0 ? $"Nenhum resultado encontrado. Tokens={string.Join(",", tokens)}; searchedIndexed={hasSmartIndex}; searchedDirect=true; searchedOcr={hasLegacyOcr}; indexAvailable={hasSmartIndex}; indexCount={indexCount}; fallbackCount={fallbackCount}. Tentamos buscar em nome, arquivo, pasta e OCR." : (hasSmartIndex ? null : "Índice inteligente indisponível; usando fallback direto em documentos, arquivos, pastas e OCR legado."),
+            Tokens = tokens,
+            SearchedDirect = true,
+            SearchedIndex = hasSmartIndex,
+            SearchedOcr = hasLegacyOcr,
+            IndexAvailable = hasSmartIndex,
+            FallbackCount = fallbackCount,
+            Message = rows.Count == 0 ? "Nenhum resultado encontrado. Tentamos buscar em nome, arquivo, pasta e OCR." : null,
+            Suggestions = rows.Count == 0 ? new[] { "Buscar em todo GED", "Remover filtros", "Ver diagnóstico SmartSearch", "Reindexar busca (ADMIN)" } : []
         };
     }
 
@@ -249,13 +264,17 @@ case when @documentType is not null and coalesce(idx.document_type, idx.title, i
 case when @examType is not null and idx.search_text ilike '%'||@examType||'%' then 15 else 0 end +
 case when @medicalRecordNumber is not null and idx.search_text ilike '%'||@medicalRecordNumber||'%' then 50 else 0 end +
 case when @protocolNumber is not null and idx.search_text ilike '%'||@protocolNumber||'%' then 50 else 0 end +
-case when @numericTerm is not null and coalesce(idx.file_name,'') ilike @likeNumericTerm then 100 else 0 end +
-case when @numericTerm is not null and coalesce(idx.title,'') ilike @likeNumericTerm then 80 else 0 end +
-case when @numericTerm is not null and coalesce(idx.ocr_text,'') ilike @likeNumericTerm then 50 else 0 end +
-case when @numericTerm is not null and coalesce(idx.folder_name,'') ilike @likeNumericTerm then 20 else 0 end +
+case when @numericTerm is not null and coalesce(idx.file_name,'') ilike @likeNumericTerm then 150 else 0 end +
+case when coalesce(idx.file_name,'') ilike @likeOriginalQuery then 120 else 0 end +
+case when coalesce(idx.title,'') ilike @likeOriginalQuery then 100 else 0 end +
+case when @numericTerm is not null and coalesce(idx.title,'') ilike @likeNumericTerm then 100 else 0 end +
+case when coalesce(idx.search_text,'') ilike @likeOriginalQuery then 80 else 0 end +
+case when @numericTerm is not null and coalesce(idx.ocr_text,'') ilike @likeNumericTerm then 70 else 0 end +
+case when coalesce(idx.folder_name,'') ilike @likeOriginalQuery then 40 else 0 end +
+case when @numericTerm is not null and coalesce(idx.folder_name,'') ilike @likeNumericTerm then 40 else 0 end +
 case when nullif(idx.ocr_text,'') is not null then 5 else 0 end +
 coalesce(ts_rank(idx.search_vector, plainto_tsquery('portuguese', @query)) * 40, 0) +
-0
+coalesce((select count(*) * 20 from unnest(@tokens::text[]) t where idx.search_text ilike '%'||t||'%'), 0)
 )::numeric(10,2) as "Score"
 from ged.document_search_index idx
 join ged.document d on d.tenant_id=idx.tenant_id and d.id=idx.document_id
@@ -268,13 +287,18 @@ select *, count(*) over()::int as "TotalRows" from ranked order by "Score" desc,
     private const string FallbackSql = """
 with base as (
 select d.id as "DocumentId", coalesce(v.id, ds.version_id) as "VersionId", coalesce(d.title, ds.file_name, v.file_name, 'Documento') as "Title", coalesce(v.file_name, ds.file_name) as "FileName", f.name as "FolderName", null::text as "DocumentType", null::text as "Classification", null::text as "PatientName", null::int as "Age", extract(year from coalesce(d.created_at, ds.updated_at))::int as "Year", concat_ws(' ', d.title, v.file_name, f.name, ds.ocr_text) as "SearchText", ds.ocr_text as "Snippet", nullif(ds.ocr_text,'') is not null as "HasOcr",
-(case when concat_ws(' ', d.title, v.file_name, f.name, ds.ocr_text) ilike @likeQuery then 45 else 0 end + case when @year is not null and extract(year from coalesce(d.created_at, ds.updated_at))::int=@year then 15 else 0 end +
+(case when concat_ws(' ', d.title, v.file_name, f.name, ds.ocr_text) ilike @likeQuery then 45 else 0 end +
+case when coalesce(v.file_name, ds.file_name, '') ilike @likeOriginalQuery then 120 else 0 end +
+case when coalesce(d.title,'') ilike @likeOriginalQuery then 100 else 0 end +
+case when coalesce(ds.ocr_text,'') ilike @likeOriginalQuery then 70 else 0 end +
+case when coalesce(f.name,'') ilike @likeOriginalQuery then 40 else 0 end + case when @year is not null and extract(year from coalesce(d.created_at, ds.updated_at))::int=@year then 15 else 0 end +
 case when @numericTerm is not null and coalesce(v.file_name, ds.file_name, '') ilike @likeNumericTerm then 100 else 0 end +
 case when @numericTerm is not null and coalesce(d.title,'') ilike @likeNumericTerm then 80 else 0 end +
 case when @numericTerm is not null and coalesce(ds.ocr_text,'') ilike @likeNumericTerm then 50 else 0 end +
 case when @numericTerm is not null and coalesce(f.name,'') ilike @likeNumericTerm then 20 else 0 end +
 case when @numericTerm is not null and d.id::text ilike @likeNumericTerm then 55 else 0 end +
-case when nullif(ds.ocr_text,'') is not null then 5 else 0 end)::numeric(10,2) as "Score"
+case when nullif(ds.ocr_text,'') is not null then 5 else 0 end +
+coalesce((select count(*) * 20 from unnest(@tokens::text[]) t where concat_ws(' ', d.title, v.file_name, f.name, ds.ocr_text) ilike '%'||t||'%'), 0) + 20)::numeric(10,2) as "Score"
 from ged.document d
 left join ged.document_search ds on ds.tenant_id=d.tenant_id and ds.document_id=d.id
 left join ged.document_version v on v.tenant_id=d.tenant_id and (v.id=coalesce(ds.version_id, d.current_version_id) or v.id=d.current_version_id)
@@ -294,7 +318,8 @@ case when @numericTerm is not null and coalesce(v.file_name, '') ilike @likeNume
 case when coalesce(d.title,'') ilike @likeOriginalQuery then 100 else 0 end +
 case when coalesce(f.name,'') ilike @likeOriginalQuery then 50 else 0 end +
 case when concat_ws(' ', d.title, v.file_name, f.name) ilike @likeQuery then 20 else 0 end +
-case when d.created_at >= now() - interval '90 days' then 5 else 0 end + 20)::numeric(10,2) as "Score"
+case when d.created_at >= now() - interval '90 days' then 5 else 0 end +
+coalesce((select count(*) * 20 from unnest(@tokens::text[]) t where concat_ws(' ', d.title, v.file_name, f.name) ilike '%'||t||'%'), 0) + 20)::numeric(10,2) as "Score"
 from ged.document d
 left join ged.document_version v on v.tenant_id=d.tenant_id and v.id=d.current_version_id
 left join ged.folder f on f.tenant_id=d.tenant_id and f.id=d.folder_id
