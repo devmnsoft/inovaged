@@ -25,8 +25,8 @@ select exists (
       and id=@LoanId
       and reg_status='A'
       and (
-          (@IsAdministradorOphir = true and @Sector is not null and nullif(coalesce(requester_sector,''),'') = @Sector)
-          or (@IsArquivistaOphir = true and requester_id = @UserId)
+          (@IsAdministradorOphir = true and @Sector is not null and (nullif(coalesce(requester_sector_name, requester_sector, ''),'') = @Sector or nullif(coalesce(assigned_sector_name,''),'') = @Sector or nullif(coalesce(current_sector_name,''),'') = @Sector))
+          or (@IsArquivistaOphir = true and (requester_id = @UserId or created_by = @UserId))
       )
 );
 """, new { TenantId = tenantId, LoanId = loanId, UserId = userId, scope.IsAdministradorOphir, scope.IsArquivistaOphir, Sector = sector }, cancellationToken: ct));
@@ -47,7 +47,7 @@ select exists (
     where tenant_id=@TenantId
       and id=@LoanId
       and reg_status='A'
-      and nullif(coalesce(requester_sector,''),'') = @Sector
+      and (nullif(coalesce(requester_sector_name, requester_sector, ''),'') = @Sector or nullif(coalesce(assigned_sector_name,''),'') = @Sector or nullif(coalesce(current_sector_name,''),'') = @Sector)
 );
 """, new { TenantId = tenantId, LoanId = loanId, Sector = sector }, cancellationToken: ct));
     }
@@ -56,6 +56,7 @@ select exists (
     {
         var scope = new LoanVisibilityScope
         {
+            IsFullAdmin = HasRole(user, "ADMIN") || HasRole(user, "ADMINISTRADOR"),
             IsAdmin = HasRole(user, "ADMIN") || HasRole(user, "ADMINISTRADOR"),
             IsAdministradorOphir = HasRole(user, "ADMINISTRADOROPHIR"),
             IsArquivistaOphir = HasRole(user, "ARQUIVISTAOPHIR"),

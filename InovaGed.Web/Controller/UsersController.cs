@@ -12,7 +12,7 @@ using Npgsql;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize(Policy = AppPolicies.UsersAdmin)]
+[Authorize(Policy = AppPolicies.UsersSectorManage)]
 [Route("Users")]
 public sealed class UsersController : AppControllerBase
 {
@@ -49,7 +49,7 @@ public sealed class UsersController : AppControllerBase
     }
 
     [HttpPost("Unlock/{id:guid}")]
-    [Authorize(Policy = AppPolicies.UsersAdmin)]
+    [Authorize(Policy = AppPolicies.UsersGlobalManage)]
     public async Task<IActionResult> Unlock(Guid id, CancellationToken ct)
     {
         var tenantId = _currentUser.TenantId;
@@ -118,7 +118,7 @@ public sealed class UsersController : AppControllerBase
 
     [HttpGet("")]
     [HttpGet("Index")]
-    [Authorize(Policy = AppPolicies.UsersAdmin)]
+    [Authorize(Policy = AppPolicies.UsersGlobalManage)]
     public async Task<IActionResult> Index(string? q, bool? active, bool? locked, int page = 1, int pageSize = 10, CancellationToken ct = default)
     {
         if (!_currentUser.IsAuthenticated) return Unauthorized();
@@ -187,7 +187,46 @@ public sealed class UsersController : AppControllerBase
         return View(vm);
     }
 
+    [HttpGet("Sector")]
+    [Authorize(Policy = AppPolicies.UsersSectorManage)]
+    public async Task<IActionResult> Sector(string? q, bool? active, bool? locked, int page = 1, int pageSize = 10, CancellationToken ct = default)
+    {
+        if (!_currentUser.IsAuthenticated) return Unauthorized();
+        if (IsFullAdmin()) return RedirectToAction(nameof(Index), new { q, active, locked, page, pageSize });
+
+        var sector = CurrentSector();
+        if (string.IsNullOrWhiteSpace(sector))
+        {
+            TempData["Error"] = "Seu usuário não possui setor vinculado. Configure o setor para gerenciar usuários.";
+            return View("Index", new UserListVM { Q = q, Active = active, Locked = locked, Page = page, PageSize = pageSize, Items = new List<UserListVM.Row>() });
+        }
+
+        var res = await _queries.ListUsersAsync(_currentUser.TenantId, q, active, locked, page, pageSize, ct);
+        var rows = res.Items.Where(x => string.Equals((x.Setor ?? string.Empty).Trim(), sector, StringComparison.OrdinalIgnoreCase)).Select(x => new UserListVM.Row
+        {
+            Id = x.EffectiveEditId.GetValueOrDefault(), ServidorId = x.ServidorId, UserId = x.UserId, EditIdSource = x.EffectiveEditIdSource, ServidorExists = x.ServidorExists, UserExists = x.UserExists,
+            Name = x.Name, Email = x.Email, Cpf = x.Cpf, Matricula = x.Matricula, Cargo = x.Cargo, Funcao = x.Funcao, Setor = x.Setor, Lotacao = x.Lotacao,
+            Roles = (x.RolesCsv ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries).Select(r => r.Trim()).ToList(),
+            SecurityLevel = x.SecurityLevel, IsActive = x.IsActive, IsLocked = x.IsLocked, MustChangePassword = x.MustChangePassword, MfaEnabled = x.MfaEnabled, CertificateRequired = x.CertificateRequired, CanSignWithIcp = x.CanSignWithIcp, LastLoginAt = x.LastLoginAt
+        }).ToList();
+        ViewData["Title"] = "Usuários do meu setor";
+        ViewData["Subtitle"] = $"Gerencie usuários vinculados ao setor {sector}";
+        return View("Index", new UserListVM { Q = q, Active = active, Locked = locked, Page = page, PageSize = pageSize, Total = rows.Count, Items = rows });
+    }
+
+    [HttpGet("Sector/Create")]
+    [HttpGet("CreateSectorUser")]
+    [Authorize(Policy = AppPolicies.UsersSectorManage)]
+    public async Task<IActionResult> CreateSectorUser(CancellationToken ct)
+    {
+        var vm = await BuildCreateVmAsync(new CreateUserVM(), ct);
+        ApplySectorUserRestrictions(vm);
+        ViewData["Title"] = "Novo usuário do meu setor";
+        return View("Create", vm);
+    }
+
     [HttpGet("Create")]
+    [Authorize(Policy = AppPolicies.UsersGlobalManage)]
     public async Task<IActionResult> Create(CancellationToken ct)
     {
         if (!_currentUser.IsAuthenticated) return Unauthorized();
@@ -200,6 +239,7 @@ public sealed class UsersController : AppControllerBase
 
     [HttpPost("Create")]
     [ValidateAntiForgeryToken]
+    [Authorize(Policy = AppPolicies.UsersGlobalManage)]
     public async Task<IActionResult> Create([FromForm] CreateUserVM vm, CancellationToken ct)
     {
         if (!_currentUser.IsAuthenticated) return Unauthorized();
@@ -307,6 +347,57 @@ public sealed class UsersController : AppControllerBase
     }
 
 
+    [HttpPost("Sector/Create")]
+    [HttpPost("CreateSectorUser")]
+    [ValidateAntiForgeryToken]
+    [Authorize(Policy = AppPolicies.UsersSectorManage)]
+    public async Task<IActionResult> CreateSectorUser([FromForm] CreateUserVM vm, CancellationToken ct)
+    {
+        if (!_currentUser.IsAuthenticated) return Unauthorized();
+        if (IsFullAdmin()) return await Create(vm, ct);
+
+        var sector = CurrentSector();
+        if (string.IsNullOrWhiteSpace(sector))
+        {
+            TempData["Error"] = "Seu usuário não possui setor vinculado. Configure o setor para criar usuários.";
+            await ReloadCreateLookupsAsync(vm, ct);
+            ApplySectorUserRestrictions(vm);
+            return View("Create", vm);
+        }
+
+        NormalizeCreateVm(vm);
+        vm.Setor = sector;
+        vm.Lotacao = sector;
+        await RestrictSelectedRolesToSectorAllowedAsync(vm, ct);
+        ValidateCreateVm(vm);
+        if (!ModelState.IsValid)
+        {
+            await ReloadCreateLookupsAsync(vm, ct);
+            ApplySectorUserRestrictions(vm);
+            return View("Create", vm);
+        }
+
+        var tenantId = _currentUser.TenantId;
+        var hasher = new PasswordHasher<object>();
+        var command = new CreateServidorUsuarioCommand
+        {
+            ServidorId = vm.ServidorId, NomeCompleto = vm.NomeCompleto, Cpf = vm.Cpf, Rg = vm.Rg, DataNascimento = vm.DataNascimento,
+            EmailInstitucional = vm.EmailInstitucional, EmailAlternativo = vm.EmailAlternativo, Telefone = vm.Telefone, Celular = vm.Celular, Matricula = vm.Matricula,
+            Cargo = vm.Cargo, Funcao = vm.Funcao, Setor = sector, Lotacao = sector, Unidade = vm.Unidade, TipoVinculo = vm.TipoVinculo,
+            ConselhoProfissional = vm.ConselhoProfissional, NumeroConselho = vm.NumeroConselho, UfConselho = vm.UfConselho, Especialidade = vm.Especialidade,
+            DataAdmissao = vm.DataAdmissao, SituacaoFuncional = vm.SituacaoFuncional, Observacao = vm.Observacao, CriarUsuarioAcesso = true,
+            EmailLogin = vm.EmailLogin, UserName = vm.UserName, PasswordHash = hasher.HashPassword(null!, vm.Password), IsActive = vm.IsActive,
+            MustChangePassword = vm.MustChangePassword, MfaEnabled = vm.MfaEnabled, CertificateRequired = vm.CertificateRequired, CanSignWithIcp = vm.CanSignWithIcp,
+            SecurityLevel = vm.SecurityLevel, RoleIds = vm.SelectedRoleIds.Where(x => x != Guid.Empty).Distinct().ToList(), CreatedBy = _currentUser.UserId,
+            IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString(), UserAgent = Request.Headers.UserAgent.ToString(), CorrelationId = HttpContext.TraceIdentifier
+        };
+        var result = await _repo.CreateServidorUsuarioAsync(tenantId, command, ct);
+        await _auditWriter.WriteAsync(tenantId, _currentUser.UserId, "USER_SECTOR_CREATED", "app_user", result.UserId, "Usuário setorial criado", null, null, new { sector, result.UserId }, ct);
+        TempData["Success"] = "Usuário do setor criado com sucesso.";
+        return RedirectToAction(nameof(Sector));
+    }
+
+
     private void LogCreateValidationFailure(Guid tenantId)
     {
         var fields = ModelState
@@ -323,7 +414,7 @@ public sealed class UsersController : AppControllerBase
             HttpContext.TraceIdentifier);
     }
     [HttpGet("Edit/{id:guid}")]
-    [Authorize(Policy = AppPolicies.UsersAdmin)]
+    [Authorize(Policy = AppPolicies.UsersGlobalManage)]
     public async Task<IActionResult> Edit(Guid id, CancellationToken ct)
     {
         if (!_currentUser.IsAuthenticated) return Unauthorized();
@@ -497,7 +588,7 @@ public sealed class UsersController : AppControllerBase
     }
 
     [HttpGet("DiagnoseEdit/{id:guid}")]
-    [Authorize(Policy = AppPolicies.UsersAdmin)]
+    [Authorize(Policy = AppPolicies.UsersGlobalManage)]
     public async Task<IActionResult> DiagnoseEdit(Guid id, CancellationToken ct)
     {
         if (!_currentUser.IsAuthenticated) return Unauthorized();
@@ -750,6 +841,36 @@ public sealed class UsersController : AppControllerBase
         valueProp.SetValue(item, current);
         textProp.SetValue(item, current + " (valor atual)");
         list.Insert(0, item);
+    }
+
+    private bool IsFullAdmin() => User.IsInNormalizedRole(AppRoles.Admin) || User.IsInNormalizedRole(AppRoles.Administrador);
+
+    private string? CurrentSector()
+        => User.FindFirst("sector")?.Value?.Trim() ?? User.FindFirst("setor")?.Value?.Trim();
+
+    private void ApplySectorUserRestrictions(CreateUserVM vm)
+    {
+        var sector = CurrentSector();
+        if (!string.IsNullOrWhiteSpace(sector))
+        {
+            vm.Setor = sector;
+            vm.Lotacao = sector;
+        }
+        vm.AvailableRoles = vm.AvailableRoles
+            .Where(r => string.Equals(AppRoles.Normalize(r.Name), AppRoles.ArquivistaOphir, StringComparison.OrdinalIgnoreCase)
+                     || string.Equals(AppRoles.Normalize(r.Name), AppRoles.Hospital, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+    }
+
+    private async Task RestrictSelectedRolesToSectorAllowedAsync(CreateUserVM vm, CancellationToken ct)
+    {
+        var roles = await _repo.ListRolesAsync(_currentUser.TenantId, ct);
+        var allowed = roles
+            .Where(r => string.Equals(AppRoles.Normalize(r.Name), AppRoles.ArquivistaOphir, StringComparison.OrdinalIgnoreCase)
+                     || string.Equals(AppRoles.Normalize(r.Name), AppRoles.Hospital, StringComparison.OrdinalIgnoreCase))
+            .Select(r => r.Id)
+            .ToHashSet();
+        vm.SelectedRoleIds = vm.SelectedRoleIds.Where(allowed.Contains).Distinct().ToList();
     }
 
     private void ValidateCreateVm(CreateUserVM vm)

@@ -28,6 +28,8 @@ public sealed class ProtocolsController : Controller
         var scope = await _access.BuildScopeAsync(_user.TenantId, _user.UserId, User, ct);
         try
         {
+            if (scope.IsAdministradorOphir && !scope.SectorId.HasValue && string.IsNullOrWhiteSpace(scope.SectorName))
+                TempData["Error"] = "Seu usuário não possui setor vinculado. Configure o setor para visualizar solicitações.";
             var rows = await _service.ListWorkQueueAsync(_user.TenantId, _user.UserId, scope, filter ?? new(), ct);
             return View(new ProtocolWorkQueueVm { Filter = filter ?? new(), Rows = rows.ToList() });
         }

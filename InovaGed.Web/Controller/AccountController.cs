@@ -230,45 +230,51 @@ public sealed class AccountController : Controller
         var isArquivistaOphir = _accessPolicy.IsArquivistaOphir(principal) || normalizedRoles.Any(r => IsRole(r, AppRoles.ArquivistaOphir)) || IsRole(normalizedUsername, AppRoles.ArquivistaOphir);
         var isHospitalUser = AppMenuPolicy.IsHospitalUser(principal) || normalizedRoles.Any(r => IsRole(r, AppRoles.Hospital)) || IsRole(normalizedUsername, AppRoles.Hospital);
 
-        if (isAdmin && !string.IsNullOrWhiteSpace(normalizedReturnUrl) && Url.IsLocalUrl(normalizedReturnUrl))
-        {
-            return (Redirect(normalizedReturnUrl), normalizedReturnUrl, "admin_return_url");
-        }
+        if (isAdmin && IsSafeLocalReturnUrl(normalizedReturnUrl))
+            return (Redirect(normalizedReturnUrl), normalizedReturnUrl, "full_admin_return_url");
 
-        if (!isAdmin && (isAdministradorOphir || isArquivistaOphir || isHospitalUser))
-        {
-            if (IsAllowedHospitalReturnUrl(normalizedReturnUrl))
-            {
-                return (Redirect(normalizedReturnUrl), normalizedReturnUrl, "hospital_allowed_return_url");
-            }
-            if (isAdministradorOphir)
-                return (Redirect("/Operations"), "/Operations", "administrador_ophir_operations");
-            if (isArquivistaOphir)
-                return (Redirect("/Loans/New"), "/Loans/New", "arquivista_ophir_loan_request");
-            return (RedirectToAction("Index", "HospitalDocuments"), "/HospitalDocuments", "hospital_default_redirect");
-        }
+        if (!isAdmin && isAdministradorOphir && IsAllowedReturnUrlForAdministradorOphir(normalizedReturnUrl))
+            return (Redirect(normalizedReturnUrl), normalizedReturnUrl, "administrador_ophir_allowed_return_url");
 
-        if (!string.IsNullOrWhiteSpace(normalizedReturnUrl) && Url.IsLocalUrl(normalizedReturnUrl))
-        {
-            return (Redirect(normalizedReturnUrl), normalizedReturnUrl, "default_return_url");
-        }
+        if (!isAdmin && isArquivistaOphir && IsAllowedReturnUrlForArquivistaOphir(normalizedReturnUrl))
+            return (Redirect(normalizedReturnUrl), normalizedReturnUrl, "arquivista_ophir_allowed_return_url");
 
-        if (isAdmin)
-            return (RedirectToAction("Index", "Ged"), "/Ged", "admin_ged_default");
+        if (!isAdmin && isHospitalUser && IsAllowedReturnUrlForHospital(normalizedReturnUrl))
+            return (Redirect(normalizedReturnUrl), normalizedReturnUrl, "hospital_allowed_return_url");
 
-        return (RedirectToAction("Index", "HospitalDocuments"), "/HospitalDocuments", "default_hospital_documents");
+        return (RedirectToAction("Index", "HospitalDocuments"), "/HospitalDocuments", isAdmin ? "full_admin_default_hospital_documents" : "profile_default_hospital_documents");
     }
 
-    private static bool IsAllowedHospitalReturnUrl(string? returnUrl)
+    private bool IsSafeLocalReturnUrl(string? returnUrl)
+        => !string.IsNullOrWhiteSpace(returnUrl) && Url.IsLocalUrl(returnUrl);
+
+    private bool IsAllowedReturnUrlForArquivistaOphir(string? returnUrl)
+        => IsSafeLocalReturnUrl(returnUrl) && IsAllowedPath(returnUrl,
+            "/HospitalDocuments",
+            "/Loans",
+            "/Loans/New",
+            "/ProtocolRequests/My");
+
+    private bool IsAllowedReturnUrlForAdministradorOphir(string? returnUrl)
+        => IsSafeLocalReturnUrl(returnUrl) && IsAllowedPath(returnUrl,
+            "/HospitalDocuments",
+            "/Loans",
+            "/Protocols/WorkQueue",
+            "/Users/Sector",
+            "/Users/Sector/Create",
+            "/Users/CreateSectorUser");
+
+    private bool IsAllowedReturnUrlForHospital(string? returnUrl)
+        => IsSafeLocalReturnUrl(returnUrl) && IsAllowedPath(returnUrl, "/HospitalDocuments");
+
+    private static bool IsAllowedPath(string? returnUrl, params string[] allowedPaths)
     {
         if (string.IsNullOrWhiteSpace(returnUrl)) return false;
-        var path = returnUrl.Split('?', '#')[0];
-        return path.StartsWith("/HospitalDocuments", StringComparison.OrdinalIgnoreCase)
-               || path.StartsWith("/Loans", StringComparison.OrdinalIgnoreCase)
-               || path.StartsWith("/ProtocolRequests", StringComparison.OrdinalIgnoreCase)
-               || path.StartsWith("/Protocols/WorkQueue", StringComparison.OrdinalIgnoreCase)
-               || path.StartsWith("/Protocolo", StringComparison.OrdinalIgnoreCase)
-               || path.StartsWith("/Solicitacoes", StringComparison.OrdinalIgnoreCase);
+        var path = returnUrl.Split('?', '#')[0].TrimEnd('/');
+        if (path.Length == 0) path = "/";
+        return allowedPaths.Any(allowed =>
+            string.Equals(path, allowed.TrimEnd('/'), StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith(allowed.TrimEnd('/') + "/", StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool IsRole(string? value, string role)
