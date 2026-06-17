@@ -117,8 +117,8 @@ public sealed class SmartSearchRepository : ISmartSearchRepository, InovaGed.App
             SearchedOcr = hasLegacyOcr,
             IndexAvailable = hasSmartIndex,
             FallbackCount = fallbackCount,
-            Message = rows.Count == 0 ? "Nenhum resultado encontrado. Tentamos buscar em nome, arquivo, pasta e OCR." : null,
-            Suggestions = rows.Count == 0 ? new[] { "Buscar em todo GED", "Remover filtros", "Ver diagnóstico SmartSearch", "Reindexar busca (ADMIN)" } : []
+            Message = rows.Count == 0 ? "Não encontrei documentos com esse contexto." : null,
+            Suggestions = rows.Count == 0 ? intent.ClinicalTerms.Concat(new[] { "Tentar: neoplasia mamária", "Tentar: carcinoma mamário", "Buscar em todo GED", "Buscar apenas por OCR", "Ver diagnóstico SmartSearch", "Reindexar busca (ADMIN)" }).Distinct(StringComparer.OrdinalIgnoreCase).Take(8).ToArray() : []
         };
     }
 
@@ -233,7 +233,10 @@ ocr_text=excluded.ocr_text, search_text=excluded.search_text, search_vector=excl
         if (!string.IsNullOrWhiteSpace(intent.PatientName) && Contains(r.PatientName + " " + r.SearchText, intent.PatientName)) reasons.Add(new() { Reason = "Nome parecido", Evidence = intent.PatientName!, Weight = 40 });
         if (intent.Year.HasValue && r.Year == intent.Year) reasons.Add(new() { Reason = "Ano/período compatível", Evidence = intent.Year.Value.ToString(), Weight = 15 });
         if (intent.Age.HasValue && r.Age.HasValue && Math.Abs(r.Age.Value - intent.Age.Value) <= 1) reasons.Add(new() { Reason = "Idade aproximada", Evidence = r.Age.Value.ToString(), Weight = 10 });
-        foreach (var term in intent.ClinicalTerms.Take(3).Where(t => Contains(r.SearchText, t))) reasons.Add(new() { Reason = "OCR/metadados mencionam termo pesquisado", Evidence = term, Weight = 20 });
+        foreach (var term in intent.ClinicalTerms.Take(6).Where(t => Contains(r.SearchText, t))) reasons.Add(new() { Reason = r.HasOcr ? "OCR menciona termo relacionado" : "Metadados mencionam termo relacionado", Evidence = term, Weight = 80 });
+        foreach (var term in intent.Keywords.Take(4).Where(t => Contains(r.FileName, t))) reasons.Add(new() { Reason = "Nome do arquivo contém termo", Evidence = term, Weight = 120 });
+        foreach (var term in intent.Keywords.Take(4).Where(t => Contains(r.Title, t))) reasons.Add(new() { Reason = "Título contém termo principal", Evidence = term, Weight = 100 });
+        foreach (var term in intent.Keywords.Take(4).Where(t => Contains(r.FolderName, t))) reasons.Add(new() { Reason = "Pasta relacionada ao contexto", Evidence = term, Weight = 30 });
         if (!string.IsNullOrWhiteSpace(intent.DocumentType) && Contains(r.DocumentType + " " + r.Title + " " + r.FileName, intent.DocumentType)) reasons.Add(new() { Reason = "Tipo documental compatível", Evidence = intent.DocumentType!, Weight = 15 });
         if (r.HasOcr) reasons.Add(new() { Reason = "OCR disponível", Evidence = "Trecho curto apresentado", Weight = 5 });
         return new SmartSearchResultItem { DocumentId = r.DocumentId, VersionId = r.VersionId, Title = r.Title, FileName = r.FileName, FolderName = r.FolderName, DocumentType = r.DocumentType, Classification = r.Classification, ClassificationName = r.Classification, PatientName = r.PatientName, Age = r.Age, Year = r.Year, OcrSnippet = MaskSensitive(TruncateSnippet(r.Snippet, 260)), Score = r.Score, HasOcr = r.HasOcr, Reasons = reasons };

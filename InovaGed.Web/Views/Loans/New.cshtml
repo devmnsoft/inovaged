@@ -2,14 +2,14 @@
 @model LoanCreateVM
 
 @{
-    ViewData["Title"] = "Novo Empréstimo";
-    ViewData["Subtitle"] = "Solicitação com documento GED ou referência manual";
+    ViewData["Title"] = "Solicitar documento";
+    ViewData["Subtitle"] = "Jornada guiada por descrição em linguagem natural";
 }
 
 <div class="d-flex align-items-center justify-content-between mb-3">
     <div>
-        <h4 class="mb-0">Novo Empréstimo</h4>
-        <div class="text-muted small">Solicitação + itens + protocolo automático</div>
+        <h4 class="mb-0">Solicitar documento</h4>
+        <div class="text-muted small">Comece descrevendo o que precisa; não é obrigatório saber referência ou código.</div>
     </div>
     <a class="btn btn-sm btn-light border" href="/Loans"><i class="bi bi-arrow-left me-1"></i>Voltar</a>
 </div>
@@ -24,6 +24,14 @@
 
     <div class="card-body">
         <div class="row g-3">
+            <div class="col-12">
+                <div class="alert alert-primary mb-0"><strong>Etapa 1 — O que você procura?</strong><div class="small">Ex: prontuário da paciente Maria, exame de câncer de mama de 2024, APAC do paciente João.</div></div>
+            </div>
+            <div class="col-12">
+                <label class="form-label">Descreva o documento que precisa</label>
+                <textarea class="form-control" id="requestDescription" name="RequestDescription" rows="3" placeholder="Ex: documento de paciente com câncer de mama, APAC de 2025, prontuário da Maria">@Model.RequestDescription</textarea>
+                <div class="mt-2 d-flex gap-2 flex-wrap"><button class="btn btn-outline-primary btn-sm" type="button" onclick="copyDescriptionToSearch(); searchDocs();">Buscar no GED</button><button class="btn btn-outline-secondary btn-sm" type="button" onclick="showManualTab();">Não sei o código</button><span class="badge text-bg-light border">Documento físico</span><span class="badge text-bg-light border">Documento digital</span></div>
+            </div>
             <div class="col-md-6">
                 <label class="form-label">Solicitante (nome)</label>
                 <input class="form-control" name="RequesterName" value="@Model.RequesterName" placeholder="Nome do solicitante, equipe ou setor" />
@@ -34,11 +42,12 @@
                 <div class="form-text">A devolução será cobrada automaticamente após o vencimento.</div>
             </div>
             <div class="col-md-3">
-                <label class="form-label">Tipo de empréstimo</label>
-                <select class="form-select" name="IsPhysical">
-                    <option value="true" selected="@(Model.IsPhysical)">Físico (retirada)</option>
-                    <option value="false" selected="@(!Model.IsPhysical)">Digital (visualização)</option>
-                </select>
+                <label class="form-label">Forma de entrega</label>
+                <select class="form-select" name="DeliveryMode" onchange="document.querySelector('[name=IsPhysical]').value=(this.value!=='DIGITAL')">
+                    <option value="PHYSICAL">Documento físico</option>
+                    <option value="DIGITAL">Documento digital</option>
+                    <option value="BOTH">Ambos</option>
+                </select><input type="hidden" name="IsPhysical" value="true" />
             </div>
 
             <div class="col-12">
@@ -94,7 +103,7 @@
 
             <div class="col-12">
                 <label class="form-label">Observações gerais</label>
-                <textarea class="form-control" name="Notes" rows="3" placeholder="Urgência, orientação para retirada, justificativa...">@Model.Notes</textarea>
+                <div class="row g-2"><div class="col-md-3"><label class="form-label">Prioridade</label><select class="form-select" name="Priority"><option value="NORMAL">Normal</option><option value="URGENT">Urgente</option></select></div><div class="col-md-4"><label class="form-label">Setor solicitante</label><input class="form-control" name="RequesterSectorName" value="@Model.RequesterSectorName" /></div><div class="col-md-5"><label class="form-label">Contato/e-mail destinatário</label><input class="form-control" name="RequesterContact" value="@Model.RequesterContact" /></div><div class="col-12"><label class="form-label">Justificativa e observações gerais</label><textarea class="form-control" name="Notes" rows="3" placeholder="Finalidade, urgência, orientação para retirada, prazo desejado...">@Model.Notes</textarea></div></div>
             </div>
         </div>
     </div>
@@ -155,8 +164,10 @@
         renderSelected();
     }
 
+    function showManualTab(){ const btn = document.querySelector('[data-bs-target="#manualTab"]'); if (btn && window.bootstrap) bootstrap.Tab.getOrCreateInstance(btn).show(); else btn?.click(); }
+    function copyDescriptionToSearch() { const d = document.getElementById('requestDescription')?.value.trim(); if (d) document.getElementById('docSearch').value = d; }
     async function searchDocs() {
-        const q = document.getElementById('docSearch').value.trim();
+        const q = (document.getElementById('docSearch').value || document.getElementById('requestDescription').value).trim();
         if (!q) return;
         const wrap = document.getElementById('docResultsWrap');
         const box = document.getElementById('docResults');
@@ -175,7 +186,7 @@
             items.forEach(d => {
                 const id = d.id || d.Id, code = d.code || d.Code || '', title = d.title || d.Title || '', status = d.status || d.Status || '';
                 const disabled = selectedGed.has(id);
-                box.insertAdjacentHTML('beforeend', `<button type="button" class="list-group-item list-group-item-action" ${disabled ? 'disabled' : ''} onclick="addDoc('${escapeHtml(id)}','${escapeJs(code)}','${escapeJs(title)}')"><div class="d-flex justify-content-between"><div><strong>${escapeHtml(code)}</strong><div class="text-muted small">${escapeHtml(title)}</div><div class="text-muted small">${escapeHtml(status)}</div></div><span class="badge text-bg-primary">${disabled ? 'Adicionado' : 'Adicionar'}</span></div></button>`);
+                box.insertAdjacentHTML('beforeend', `<button type="button" class="list-group-item list-group-item-action" ${disabled ? 'disabled' : ''} onclick="addDoc('${escapeHtml(id)}','${escapeJs(code)}','${escapeJs(title)}')"><div class="d-flex justify-content-between"><div><strong>${escapeHtml(code)}</strong><div class="text-muted small">${escapeHtml(title)}</div><div class="text-muted small">Score: ${escapeHtml((d.score||0).toString())} • ${escapeHtml(status)}</div><div class="text-muted small">${escapeHtml(d.ocrSnippet||'')}</div><details class="small mt-1"><summary>Por que apareceu?</summary>${(d.reasons||[]).map(r=>`<div>${escapeHtml(r.message||r.type)}</div>`).join('')}</details></div><span class="badge text-bg-primary">${disabled ? 'Adicionado' : 'Adicionar'}</span></div></button>`);
             });
         } catch (e) { box.innerHTML = `<div class="list-group-item text-danger">Erro inesperado ao buscar documentos.</div>`; }
     }

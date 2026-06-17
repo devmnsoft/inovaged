@@ -14,6 +14,11 @@ public sealed class LoanRowDto
 
     // ⚠️ TEM que ser int para bater com o erro (System.Int32 itemscount)
     public int ItemsCount { get; set; }
+    public string? RequestNo { get; set; }
+    public string? DeliveryMode { get; set; }
+    public DateTime? SlaDueAt { get; set; }
+    public string? AdminResponse { get; set; }
+    public string? DeliveryInstructions { get; set; }
 }
 
 public sealed record LoanItemDto(
@@ -45,6 +50,12 @@ public sealed class LoanCreateVM
     public List<LoanManualItemVM> ManualItems { get; set; } = new();
     public List<Guid> AllowedFileIds { get; set; } = new();
     public string? Notes { get; set; }
+    public string? RequestDescription { get; set; }
+    public string? DeliveryMode { get; set; } = "PHYSICAL";
+    public string? Priority { get; set; } = "NORMAL";
+    public string? RequesterContact { get; set; }
+    public string? RequesterSectorName { get; set; }
+    public string? Justification { get; set; }
 }
 
 public sealed class LoanManualItemVM
@@ -57,6 +68,12 @@ public sealed class LoanManualItemVM
     public string? BoxCode { get; set; }
     public string? PhysicalLocation { get; set; }
     public string? Notes { get; set; }
+    public string? RequestDescription { get; set; }
+    public string? DeliveryMode { get; set; } = "PHYSICAL";
+    public string? Priority { get; set; } = "NORMAL";
+    public string? RequesterContact { get; set; }
+    public string? RequesterSectorName { get; set; }
+    public string? Justification { get; set; }
 }
 
 public sealed class LoanDetailsVM
@@ -64,6 +81,7 @@ public sealed class LoanDetailsVM
     public LoanRowDto Header { get; set; } = default!;
     public List<LoanItemDto> Items { get; set; } = new();
     public List<LoanEventDto> History { get; set; } = new();
+    public List<LoanMessageDto> Messages { get; set; } = new();
     public bool HistorySchemaMissing { get; set; }
 }
 
@@ -79,4 +97,13 @@ public sealed class LoanEventDto
     public string? InternalNotes { get; set; }
     public string? Sector { get; set; }
     public string? CorrelationId { get; set; }
+}
+
+public sealed class LoanMessageDto
+{
+    public DateTime CreatedAt { get; set; }
+    public string SenderName { get; set; } = string.Empty;
+    public string Message { get; set; } = string.Empty;
+    public string MessageType { get; set; } = string.Empty;
+    public bool IsInternal { get; set; }
 }

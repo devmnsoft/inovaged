@@ -23,13 +23,19 @@ public sealed class SmartQueryParser : ISmartQueryParser, InovaGed.Application.G
     private static readonly string[] ClinicalWords = ["avc", "acidente vascular cerebral", "derrame", "diabetes", "diabete", "dm", "doença renal", "doenca renal", "renal", "rim", "rins", "nefrologia", "câncer", "cancer", "neoplasia", "tumor", "cardíaco", "cardiaco", "coração", "coracao", "cardiologia", "pneumonia", "hipertensão", "hipertensao", "gestação", "gestacao", "trauma", "fratura", "infecção", "infeccao"];
 
     private readonly IDbConnectionFactory _db;
+    private readonly ISmartSearchContextParser _contextParser;
 
-    public SmartQueryParser(IDbConnectionFactory db) => _db = db;
+    public SmartQueryParser(IDbConnectionFactory db, ISmartSearchContextParser contextParser)
+    {
+        _db = db;
+        _contextParser = contextParser;
+    }
 
     public async Task<SmartSearchIntent> ParseAsync(Guid tenantId, string query, SmartSearchRequest request, CancellationToken ct)
     {
         query = (query ?? string.Empty).Trim();
         var normalized = Normalize(query);
+        var contextIntent = await _contextParser.ParseAsync(tenantId, query, ct);
         var intent = new SmartSearchIntent
         {
             OriginalQuery = query,
@@ -124,18 +130,20 @@ public sealed class SmartQueryParser : ISmartQueryParser, InovaGed.Application.G
 
         intent.DocumentType = DocumentWords.FirstOrDefault(w => normalized.Contains(Normalize(w))) ?? intent.DocumentType;
         intent.ExamType = ExamWords.FirstOrDefault(w => normalized.Contains(Normalize(w)));
-        intent.ClinicalTerms = ClinicalWords.Where(w => normalized.Contains(Normalize(w))).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        intent.ClinicalTerms = ClinicalWords.Where(w => normalized.Contains(Normalize(w))).Concat(contextIntent.ClinicalTerms).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         if (intent.ClinicalTerms.Count > 0) intent.DiseaseTerm = intent.ClinicalTerms[0];
+        foreach (var dt in contextIntent.DocumentTypes)
+            if (string.IsNullOrWhiteSpace(intent.DocumentType)) intent.DocumentType = dt;
 
         var termsForSynonyms = intent.ClinicalTerms.ToList();
         if (!string.IsNullOrWhiteSpace(intent.ExamType)) termsForSynonyms.Add(intent.ExamType);
-        foreach (var synonym in await LoadSynonymsAsync(tenantId, termsForSynonyms, ct))
+        foreach (var synonym in contextIntent.Synonyms.Concat(contextIntent.RelatedTerms).Concat(await LoadSynonymsAsync(tenantId, termsForSynonyms, ct)))
             if (!intent.ClinicalTerms.Contains(synonym, StringComparer.OrdinalIgnoreCase)) intent.ClinicalTerms.Add(synonym);
 
-        intent.Keywords = BuildKeywords(query, intent).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        intent.Keywords = BuildKeywords(query, intent).Concat(contextIntent.RequiredTerms).Concat(contextIntent.NumericTokens).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         intent.ExpandedTerms = intent.ClinicalTerms.ToList();
         intent.ExpandedQuery = string.Join(' ', intent.Keywords.Concat(intent.ClinicalTerms).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase));
-        intent.Explanation = BuildExplanation(intent);
+        intent.Explanation = contextIntent.ClinicalTerms.Count > 0 ? contextIntent.Explanation : BuildExplanation(intent);
         return intent;
     }
 

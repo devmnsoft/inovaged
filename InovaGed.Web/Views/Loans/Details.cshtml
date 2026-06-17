@@ -6,7 +6,12 @@
     string StatusPt(string? status) => (status ?? "").ToUpperInvariant() switch
     {
         "REQUESTED" => "Solicitado",
+        "TRIAGE" => "Em triagem",
+        "NEEDS_INFO" => "Precisa de informações",
         "APPROVED" => "Aprovado",
+        "PREPARING_PHYSICAL" => "Preparando físico",
+        "WAITING_PICKUP" => "Aguardando retirada",
+        "DIGITAL_LINK_SENT" => "Link digital enviado",
         "REJECTED" => "Rejeitado",
         "DELIVERED" => "Entregue",
         "RETURNED" => "Devolvido",
@@ -32,7 +37,7 @@
     <div>
         <div class="text-muted small">Protocolo</div>
         <h2 class="mb-1">@h.ProtocolNo</h2>
-        <div><span class="badge bg-secondary">@StatusPt(h.Status)</span> <span class="text-muted">@h.RequesterName</span></div>
+        <div><span class="badge bg-secondary">@StatusPt(h.Status)</span> <span class="text-muted">@h.RequesterName</span></div><div class="text-muted small">Pedido @(h.RequestNo ?? h.ProtocolNo.ToString()) • Entrega: @(h.DeliveryMode ?? "PHYSICAL")</div>
     </div>
     <div class="d-flex gap-2"><a class="btn btn-outline-secondary" href="/Loans">Voltar</a><button class="btn btn-outline-dark" type="button" onclick="window.print()"><i class="bi bi-printer me-1"></i>Imprimir protocolo</button></div>
 </div>
@@ -57,7 +62,7 @@
     <div class="col-md-3"><div class="card card-body h-100"><div class="small text-muted">Devolvido em</div><div class="fw-semibold">@(h.ReturnedAt?.ToString("dd/MM/yyyy HH:mm") ?? "-")</div></div></div>
     <div class="col-md-3"><div class="card card-body h-100"><div class="small text-muted">Vencimento</div><div class="fw-semibold">@h.DueAt.ToString("dd/MM/yyyy")</div></div></div>
     <div class="col-md-3"><div class="card card-body h-100"><div class="small text-muted">Itens</div><div class="fw-semibold">@itemCount</div></div></div>
-    <div class="col-md-6"><div class="card card-body h-100"><div class="small text-muted">Responsável atual</div><div class="fw-semibold">@(Model.History.FirstOrDefault()?.ByUserName ?? h.RequesterName ?? "Sistema")</div></div></div>
+    <div class="col-md-3"><div class="card card-body h-100"><div class="small text-muted">SLA</div><div class="fw-semibold">@(h.SlaDueAt?.ToString("dd/MM/yyyy HH:mm") ?? "A definir")</div></div></div><div class="col-md-3"><div class="card card-body h-100"><div class="small text-muted">Responsável atual</div><div class="fw-semibold">@(Model.History.FirstOrDefault()?.ByUserName ?? h.RequesterName ?? "Sistema")</div></div></div><div class="col-md-6"><div class="card card-body h-100"><div class="small text-muted">Resposta/entrega</div><div class="fw-semibold">@(h.AdminResponse ?? h.DeliveryInstructions ?? "Aguardando análise")</div></div></div>
 </div>
 
 <div class="card card-body mb-3">
@@ -69,6 +74,9 @@
             <button class="btn btn-outline-warning" data-bs-toggle="modal" data-bs-target="#deliverModal">Entregar</button>
             <button class="btn btn-outline-success" data-bs-toggle="modal" data-bs-target="#returnModal">Devolver</button>
             <button class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#adjustModal">Devolver para ajuste</button>
+            <button class="btn btn-outline-info" data-bs-toggle="modal" data-bs-target="#respondModal">Responder/Definir SLA</button>
+            <button class="btn btn-outline-dark" data-bs-toggle="modal" data-bs-target="#physicalModal">Entrega física</button>
+            <button class="btn btn-outline-success" data-bs-toggle="modal" data-bs-target="#secureLinkModal">Gerar link seguro</button>
         }
         @if (canCancelOwn)
         {
@@ -80,6 +88,21 @@
         }
         <button class="btn btn-light border" onclick="window.print()">Gerar recibo</button>
     </div>
+</div>
+
+<div class="card mb-3">
+    <div class="card-header"><strong>Mensagens e acompanhamento</strong></div>
+    <div class="list-group list-group-flush">
+        @foreach (var m in Model.Messages.Where(x => canManageLoans || !x.IsInternal))
+        {
+            <div class="list-group-item"><div class="d-flex justify-content-between"><strong>@m.SenderName</strong><span class="text-muted">@m.CreatedAt.ToString("dd/MM/yyyy HH:mm")</span></div><div>@m.Message</div><div class="text-muted small">@m.MessageType</div></div>
+        }
+        @if (!Model.Messages.Any()) { <div class="list-group-item text-muted">Nenhuma mensagem registrada.</div> }
+    </div>
+    @if (!canManageLoans && string.Equals(h.Status, "NEEDS_INFO", StringComparison.OrdinalIgnoreCase))
+    {
+        <div class="card-footer"><form method="post" action="/Loans/@h.Id/RequesterReply">@Html.AntiForgeryToken()<label class="form-label">Responder com mais informações</label><textarea class="form-control" name="message" rows="2" required></textarea><button class="btn btn-primary mt-2">Enviar complemento</button></form></div>
+    }
 </div>
 
 <div class="row g-3">
@@ -128,6 +151,14 @@
         </div>
     </div>
 </div>
+
+
+@if (canManageLoans)
+{
+<div class="modal fade" id="respondModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content"><form method="post" action="/Loans/@h.Id/Respond">@Html.AntiForgeryToken()<div class="modal-header"><h5>Responder ao solicitante</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><textarea class="form-control" name="message" rows="4" required placeholder="Documento físico estará disponível até... / Documento digital será enviado por link seguro..."></textarea></div><div class="modal-footer"><button class="btn btn-primary">Enviar resposta</button></div></form><form method="post" action="/Loans/@h.Id/SetSla" class="border-top p-3">@Html.AntiForgeryToken()<label class="form-label">SLA em horas</label><input class="form-control" type="number" name="slaHours" value="24" min="1" /><button class="btn btn-outline-primary mt-2">Definir SLA</button></form></div></div></div>
+<div class="modal fade" id="physicalModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content"><form method="post" action="/Loans/@h.Id/SetPhysicalDelivery">@Html.AntiForgeryToken()<div class="modal-header"><h5>Localização física e retirada</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><input class="form-control mb-2" name="location" placeholder="unidade / setor / sala / estante / pasta física" /><input class="form-control mb-2" name="boxCode" placeholder="caixa/código de localização" /><textarea class="form-control" name="instructions" rows="3" required placeholder="Instruções de entrega/retirada"></textarea></div><div class="modal-footer"><button class="btn btn-dark">Salvar localização</button></div></form></div></div></div>
+<div class="modal fade" id="secureLinkModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content"><form method="post" action="/Loans/@h.Id/GenerateSecureLink">@Html.AntiForgeryToken()<div class="modal-header"><h5>Gerar link seguro digital</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><select class="form-select mb-2" name="documentId">@foreach (var i in Model.Items.Where(x => x.DocumentId.HasValue)) { <option value="@i.DocumentId">@i.DocumentTitle</option> }</select><input class="form-control mb-2" type="number" name="expiresHours" value="24" min="1" /><input class="form-control" type="number" name="maxAccessCount" value="5" min="1" /></div><div class="modal-footer"><button class="btn btn-success">Gerar link</button></div></form></div></div></div>
+}
 
 @{
     var modals = new[]
