@@ -1755,3 +1755,30 @@ window.GedSmartSearch?.init({
 </script>
 
 }
+
+<div class="modal fade" id="shareDocumentModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog"><div class="modal-content">
+    <form id="shareDocumentForm" method="post" action="/Ged/ShareDocument">@Html.AntiForgeryToken()
+      <div class="modal-header"><h5 class="modal-title">Compartilhar documento</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <input type="hidden" name="DocumentId" id="shareDocumentId" /><input type="hidden" name="VersionId" id="shareVersionId" />
+        <div class="fw-semibold mb-2" id="shareDocumentTitle"></div>
+        <select class="form-select mb-2" id="shareLinkType"><option value="temporary">Temporário</option><option value="permanent">Permanente</option></select>
+        <input class="form-control mb-2" type="datetime-local" name="ExpiresAtUtc" id="shareExpiresAt" />
+        <input class="form-control mb-2" type="number" name="MaxAccessCount" min="1" placeholder="Limite de acessos (opcional)" />
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="AllowDownload" value="true" id="shareAllowDownload" /><label class="form-check-label" for="shareAllowDownload">Permitir download PDF</label></div>
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="AllowSmartSearch" value="true" id="shareAllowSearch" checked /><label class="form-check-label" for="shareAllowSearch">Permitir busca dentro do documento</label></div>
+        <input class="form-control my-2" name="RecipientName" placeholder="Nome do destinatário" /><input class="form-control mb-2" name="RecipientContact" placeholder="Contato do destinatário" />
+        <textarea class="form-control" name="Description" rows="2" placeholder="Descrição/mensagem"></textarea>
+        <input type="hidden" name="IsPermanent" id="shareIsPermanent" value="false" />
+        <div class="alert alert-success mt-3 d-none" id="shareResult"><span></span> <button class="btn btn-sm btn-outline-dark" type="button" id="copyShareLink">Copiar link</button></div>
+      </div><div class="modal-footer"><button class="btn btn-primary">Gerar link seguro</button></div>
+    </form>
+  </div></div>
+</div>
+<script>
+document.addEventListener('click', e => { const b=e.target.closest('.js-share-document'); if(!b) return; shareDocumentId.value=b.dataset.documentId; shareVersionId.value=b.dataset.versionId||''; shareDocumentTitle.textContent=b.dataset.title||'Documento'; bootstrap.Modal.getOrCreateInstance(document.getElementById('shareDocumentModal')).show(); });
+document.getElementById('shareLinkType')?.addEventListener('change', e => { shareIsPermanent.value=e.target.value==='permanent'; shareExpiresAt.disabled=e.target.value==='permanent'; });
+document.getElementById('shareDocumentForm')?.addEventListener('submit', async e => { e.preventDefault(); const r=await fetch(e.target.action,{method:'POST',body:new FormData(e.target),headers:{'X-Requested-With':'XMLHttpRequest'}}); const j=await r.json(); const box=document.getElementById('shareResult'); box.classList.remove('d-none'); box.querySelector('span').textContent=j.success?j.publicUrl:(j.message||'Falha ao gerar link.'); box.dataset.url=j.publicUrl||''; });
+document.getElementById('copyShareLink')?.addEventListener('click',()=>navigator.clipboard?.writeText(document.getElementById('shareResult').dataset.url||''));
+</script>

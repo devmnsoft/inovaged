@@ -411,6 +411,7 @@ builder.Services.AddScoped<IProtocolHistoryWriter, ProtocolHistoryWriter>();
 builder.Services.AddScoped<ILoanAccessService, LoanAccessService>();
 builder.Services.AddScoped<InovaGed.Application.Ged.Loans.IProtocolAccessService, InovaGed.Infrastructure.Ged.Loans.ProtocolAccessService>();
 builder.Services.AddScoped<ISolicitacaoService, SolicitacaoService>();
+builder.Services.AddScoped<ISecureDocumentLinkService, SecureDocumentLinkService>();
 
 builder.Services.AddScoped<IBatchQueries, BatchQueries>();
 builder.Services.AddScoped<IBatchCommands, BatchCommands>();
