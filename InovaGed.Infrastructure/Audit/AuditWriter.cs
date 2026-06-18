@@ -296,6 +296,7 @@ select exists (
             "LOAN_DELIVERED" => "LOAN_DELIVERED",
             "LOAN_RETURNED" => "LOAN_RETURNED",
             "LOAN_OVERDUE" => "LOAN_OVERDUE",
+            "GED_FOLDER_MOVED" => "GED_FOLDER_MOVED",
 
             _ => "VIEW"
         };

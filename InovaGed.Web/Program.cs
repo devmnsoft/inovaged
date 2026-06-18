@@ -271,6 +271,7 @@ builder.Services.AddScoped<IDocumentBulkUploadService, DocumentBulkUploadService
 builder.Services.AddScoped<IGedBulkDocumentActionService, GedBulkDocumentActionService>();
 builder.Services.AddScoped<IDocumentPartialService, DocumentPartialService>();
 builder.Services.AddScoped<IUploadFolderResolver, UploadFolderResolver>();
+builder.Services.AddScoped<IGedFolderMoveService, GedFolderMoveService>();
 builder.Services.AddSingleton<IUploadConcurrencyLimiter, UploadConcurrencyLimiter>();
 builder.Services.AddScoped<IGedProcessingJobRepository, GedProcessingJobRepository>();
 builder.Services.AddScoped<IUploadBatchService, UploadBatchService>();

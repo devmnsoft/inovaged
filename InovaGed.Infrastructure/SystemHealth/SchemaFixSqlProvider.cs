@@ -780,6 +780,8 @@ create table if not exists ged.document_quality_result (
 
     private static void AddColumnFixes(List<SchemaFixDto> fixes)
     {
+        AddColumn(fixes, "ged.folder", "updated_at", "timestamptz null", "GED folders");
+        AddColumn(fixes, "ged.folder", "updated_by", "uuid null", "GED folders");
         AddColumn(fixes, "ged.document", "reg_status", "char(1) not null default 'A'", "GED soft delete");
         AddColumn(fixes, "ged.document", "deleted_at", "timestamptz null", "GED soft delete");
         AddColumn(fixes, "ged.document", "deleted_by", "uuid null", "GED soft delete");
@@ -993,6 +995,11 @@ create table if not exists ged.document_quality_result (
 
     private static void AddIndexFixes(List<SchemaFixDto> fixes)
     {
+        fixes.Add(Index("GED_INDEX_FOLDER_TENANT_PARENT_NAME", "ged.ix_folder_tenant_parent_name", "GED folders", "Cria índice de unicidade operacional por tenant/pasta pai/nome para movimentação de pastas.", """
+create index if not exists ix_folder_tenant_parent_name
+on ged.folder(tenant_id, parent_id, lower(name))
+where coalesce(reg_status, 'A') = 'A';
+"""));
         fixes.Add(Index("GED_INDEX_DOCUMENT_TENANT_REG_STATUS", "ged.ix_document_tenant_reg_status", "GED soft delete", "Cria índice de filtro por tenant/status lógico.", """
 do $$
 begin

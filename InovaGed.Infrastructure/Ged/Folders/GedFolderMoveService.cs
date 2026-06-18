@@ -1,0 +1,174 @@
+using Dapper;
+using InovaGed.Application.Audit;
+using InovaGed.Application.Common.Database;
+using InovaGed.Application.Ged.Folders;
+using InovaGed.Domain.Primitives;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
+
+namespace InovaGed.Infrastructure.Ged.Folders;
+
+public sealed class GedFolderMoveService : IGedFolderMoveService
+{
+    private readonly IDbConnectionFactory _db;
+    private readonly IAuditWriter _audit;
+    private readonly IMemoryCache _cache;
+    private readonly ILogger<GedFolderMoveService> _logger;
+
+    public GedFolderMoveService(IDbConnectionFactory db, IAuditWriter audit, IMemoryCache cache, ILogger<GedFolderMoveService> logger)
+    {
+        _db = db;
+        _audit = audit;
+        _cache = cache;
+        _logger = logger;
+    }
+
+    public async Task<Result<MoveFolderResult>> MoveAsync(Guid tenantId, Guid userId, MoveFolderRequest request, CancellationToken ct)
+    {
+        if (tenantId == Guid.Empty) return Result<MoveFolderResult>.Fail("TENANT", "Tenant inválido.");
+        if (userId == Guid.Empty) return Result<MoveFolderResult>.Fail("USER", "Usuário inválido.");
+        if (request.FolderId == Guid.Empty) return Result<MoveFolderResult>.Fail("VALIDATION", "Pasta de origem obrigatória.");
+        if (FolderIdHelper.IsVirtualFolder(request.FolderId)) return Result<MoveFolderResult>.Fail("VIRTUAL", "Não é permitido mover pasta virtual.");
+        if (request.DestinationParentId.HasValue && FolderIdHelper.IsVirtualFolder(request.DestinationParentId.Value)) return Result<MoveFolderResult>.Fail("VIRTUAL_DESTINATION", "Não é permitido mover para uma pasta virtual.");
+        if (request.DestinationParentId == request.FolderId) return Result<MoveFolderResult>.Fail("CYCLE", "Não é possível mover uma pasta para dentro dela mesma ou de uma subpasta dela.");
+
+        await using var conn = await _db.OpenAsync(ct);
+        using var tx = conn.BeginTransaction();
+        try
+        {
+            var hasPath = await ColumnExistsAsync(conn, "path", ct, tx);
+            var source = await conn.QuerySingleOrDefaultAsync<FolderRow>(new CommandDefinition($"""
+select id, tenant_id as TenantId, parent_id as ParentId, name, {(hasPath ? "path" : "null::text as path")}
+from ged.folder
+where tenant_id=@tenantId and id=@folderId and is_active=true and coalesce(reg_status,'A')='A'
+for update;
+""", new { tenantId, folderId = request.FolderId }, tx, cancellationToken: ct));
+            if (source is null) return RollbackFail("NOT_FOUND", "Pasta de origem não encontrada ou inativa.");
+
+            FolderRow? destination = null;
+            if (request.DestinationParentId.HasValue)
+            {
+                destination = await conn.QuerySingleOrDefaultAsync<FolderRow>(new CommandDefinition($"""
+select id, tenant_id as TenantId, parent_id as ParentId, name, {(hasPath ? "path" : "null::text as path")}
+from ged.folder
+where tenant_id=@tenantId and id=@destinationParentId and is_active=true and coalesce(reg_status,'A')='A';
+""", new { tenantId, destinationParentId = request.DestinationParentId.Value }, tx, cancellationToken: ct));
+                if (destination is null) return RollbackFail("DESTINATION_NOT_FOUND", "Pasta de destino não encontrada ou inativa.");
+
+                var isDescendant = await IsDescendantAsync(conn, tx, tenantId, request.FolderId, request.DestinationParentId.Value, ct);
+                if (isDescendant) return RollbackFail("CYCLE", "Não é possível mover uma pasta para dentro dela mesma ou de uma subpasta dela.");
+            }
+
+            var duplicate = await conn.ExecuteScalarAsync<bool>(new CommandDefinition("""
+select exists (
+    select 1 from ged.folder
+    where tenant_id=@tenantId
+      and lower(name)=lower(@name)
+      and ((@destinationParentId is null and parent_id is null) or parent_id=@destinationParentId)
+      and id<>@folderId
+      and is_active=true
+      and coalesce(reg_status,'A')='A'
+);
+""", new { tenantId, name = source.Name, destinationParentId = request.DestinationParentId, folderId = request.FolderId }, tx, cancellationToken: ct));
+            if (duplicate) return RollbackFail("DUPLICATE", "Já existe uma pasta com esse nome no destino.");
+
+            var oldPath = source.Path;
+            var newPath = hasPath ? BuildPath(destination, source.Name) : null;
+            await conn.ExecuteAsync(new CommandDefinition($"""
+update ged.folder
+set parent_id=@destinationParentId,
+    {(hasPath ? "path=@newPath," : string.Empty)}
+    updated_at=now(),
+    updated_by=@userId
+where tenant_id=@tenantId and id=@folderId;
+""", new { tenantId, folderId = request.FolderId, destinationParentId = request.DestinationParentId, newPath, userId }, tx, cancellationToken: ct));
+
+            if (hasPath)
+            {
+                await conn.ExecuteAsync(new CommandDefinition("""
+with recursive tree as (
+    select id, parent_id, name, path, 0 as level
+    from ged.folder
+    where tenant_id=@tenantId and id=@folderId and coalesce(reg_status,'A')='A'
+    union all
+    select f.id, f.parent_id, f.name, f.path, t.level + 1
+    from ged.folder f join tree t on f.parent_id=t.id
+    where f.tenant_id=@tenantId and coalesce(f.reg_status,'A')='A'
+), recalculated as (
+    select id, @newPath::text as new_path from tree where id=@folderId
+    union all
+    select child.id, parent.new_path || ' > ' || child.name
+    from tree child join recalculated parent on child.parent_id=parent.id
+)
+update ged.folder f
+set path = r.new_path, updated_at=now(), updated_by=@userId
+from recalculated r
+where f.tenant_id=@tenantId and f.id=r.id;
+""", new { tenantId, folderId = request.FolderId, newPath, userId }, tx, cancellationToken: ct));
+            }
+
+            tx.Commit();
+            _cache.Remove($"ged:folders:{tenantId}");
+
+            var result = new MoveFolderResult { FolderId = request.FolderId, OldParentId = source.ParentId, NewParentId = request.DestinationParentId, OldPath = oldPath, NewPath = newPath };
+            await _audit.WriteAsync(tenantId, userId, "GED_FOLDER_MOVED", "ged.folder", request.FolderId, "Pasta movida no GED.", request.IpAddress, request.UserAgent, new { folderId = request.FolderId, folderName = source.Name, oldParentId = source.ParentId, newParentId = request.DestinationParentId, oldPath, newPath, reason = request.Reason, movedBy = userId, tenantId }, ct);
+            return Result<MoveFolderResult>.Ok(result);
+        }
+        catch (Exception ex)
+        {
+            tx.Rollback();
+            _logger.LogError(ex, "Erro ao mover pasta GED. Tenant={TenantId} Folder={FolderId}", tenantId, request.FolderId);
+            return Result<MoveFolderResult>.Fail("ERR", "Não foi possível mover a pasta.");
+        }
+
+        Result<MoveFolderResult> RollbackFail(string code, string message)
+        {
+            tx.Rollback();
+            return Result<MoveFolderResult>.Fail(code, message);
+        }
+    }
+
+    public async Task<IReadOnlyList<MoveFolderTarget>> GetMoveTargetsAsync(Guid tenantId, Guid userId, Guid folderId, bool includeRoot, CancellationToken ct)
+    {
+        await using var conn = await _db.OpenAsync(ct);
+        var rows = (await conn.QueryAsync<MoveFolderTarget>(new CommandDefinition("""
+with recursive excluded as (
+    select id from ged.folder where tenant_id=@tenantId and id=@folderId and coalesce(reg_status,'A')='A'
+    union all
+    select f.id from ged.folder f join excluded e on f.parent_id=e.id
+    where f.tenant_id=@tenantId and f.is_active=true and coalesce(f.reg_status,'A')='A'
+), tree as (
+    select id, name, coalesce(path, name) as path, 1 as level
+    from ged.folder
+    where tenant_id=@tenantId and parent_id is null and is_active=true and coalesce(reg_status,'A')='A' and id not in (select id from excluded)
+    union all
+    select f.id, f.name, coalesce(f.path, tree.path || ' > ' || f.name) as path, tree.level + 1
+    from ged.folder f join tree on f.parent_id=tree.id
+    where f.tenant_id=@tenantId and f.is_active=true and coalesce(f.reg_status,'A')='A' and f.id not in (select id from excluded)
+)
+select id, name, path, level from tree order by path;
+""", new { tenantId, folderId }, cancellationToken: ct))).AsList();
+        if (includeRoot) rows.Insert(0, new MoveFolderTarget { Id = null, Name = "Raiz", Path = "Raiz", Level = 0 });
+        return rows;
+    }
+
+    private static async Task<bool> IsDescendantAsync(System.Data.IDbConnection conn, System.Data.IDbTransaction tx, Guid tenantId, Guid folderId, Guid destinationParentId, CancellationToken ct)
+        => await conn.ExecuteScalarAsync<bool>(new CommandDefinition("""
+with recursive tree as (
+    select id, parent_id from ged.folder where tenant_id=@tenantId and id=@folderId and coalesce(reg_status,'A')='A'
+    union all
+    select f.id, f.parent_id from ged.folder f join tree t on f.parent_id=t.id
+    where f.tenant_id=@tenantId and coalesce(f.reg_status,'A')='A'
+)
+select exists (select 1 from tree where id=@destinationParentId);
+""", new { tenantId, folderId, destinationParentId }, tx, cancellationToken: ct));
+
+    private static async Task<bool> ColumnExistsAsync(System.Data.IDbConnection conn, string column, CancellationToken ct, System.Data.IDbTransaction? tx = null)
+        => await conn.ExecuteScalarAsync<bool>(new CommandDefinition("""
+select exists (select 1 from information_schema.columns where table_schema='ged' and table_name='folder' and column_name=@column);
+""", new { column }, tx, cancellationToken: ct));
+
+    private static string BuildPath(FolderRow? destination, string name) => string.IsNullOrWhiteSpace(destination?.Path) ? name : destination.Path + " > " + name;
+
+    private sealed class FolderRow { public Guid Id { get; set; } public Guid TenantId { get; set; } public Guid? ParentId { get; set; } public string Name { get; set; } = string.Empty; public string? Path { get; set; } }
+}

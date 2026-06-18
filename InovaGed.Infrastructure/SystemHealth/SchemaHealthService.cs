@@ -35,6 +35,7 @@ public sealed class SchemaHealthService : ISchemaHealthService
         ("code_sequence", "current_value", "Code Generation"), ("code_sequence", "padding", "Code Generation"),
         ("code_sequence", "created_at", "Code Generation"), ("code_sequence", "updated_at", "Code Generation"),
         ("code_sequence", "reg_status", "Code Generation"),
+        ("folder", "updated_at", "GED folders"), ("folder", "updated_by", "GED folders"),
         ("document", "id", "GED base"), ("document", "tenant_id", "GED base"), ("document", "folder_id", "GED folders"),
         ("document", "current_version_id", "GED versions"), ("document", "created_at", "GED base"),
         ("document", "reg_status", "GED soft delete"), ("document", "deleted_at", "GED soft delete"),

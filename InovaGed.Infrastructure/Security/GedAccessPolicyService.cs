@@ -64,6 +64,9 @@ public sealed class GedAccessPolicyService : IGedAccessPolicyService
     public Task<bool> CanMoveDocumentAsync(Guid tenantId, Guid userId, Guid documentId, ClaimsPrincipal principal, CancellationToken ct)
         => IsAdminAsync(tenantId, userId, principal, ct);
 
+    public Task<bool> CanMoveFolderAsync(Guid tenantId, Guid userId, Guid folderId, ClaimsPrincipal principal, CancellationToken ct)
+        => IsAdminAsync(tenantId, userId, principal, ct);
+
     public async Task<bool> CanUploadDocumentToFolderAsync(Guid tenantId, Guid userId, Guid? folderId, ClaimsPrincipal principal, CancellationToken ct)
     {
         if (await IsAdminAsync(tenantId, userId, principal, ct)) return true;
