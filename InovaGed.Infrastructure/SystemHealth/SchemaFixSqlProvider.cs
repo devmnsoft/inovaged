@@ -687,6 +687,27 @@ create table if not exists ged.protocol_request_history (
     reg_status char(1) not null default 'A'
 );
 """),
+            Table("GED_TABLE_UPLOAD_DUPLICATE_DECISION", "ged.upload_duplicate_decision", "Upload batch", "Cria a tabela de auditoria das decisões de possível duplicidade no upload.", """
+create extension if not exists pgcrypto;
+create schema if not exists ged;
+create table if not exists ged.upload_duplicate_decision (
+    id uuid primary key default gen_random_uuid(),
+    tenant_id uuid not null,
+    batch_id uuid null,
+    upload_batch_item_id uuid null,
+    document_id uuid null,
+    duplicate_of_document_id uuid null,
+    file_name text not null,
+    duplicate_scope text not null,
+    selected_action text not null,
+    confirmed_duplicate_upload boolean not null default false,
+    reason text null,
+    decided_by uuid null,
+    decided_at timestamptz not null default now(),
+    details_json jsonb null,
+    reg_status char(1) not null default 'A'
+);
+"""),
             Table("GED_TABLE_DOCUMENT_QUALITY_RUN", "ged.document_quality_run", "Qualidade Documental", "Cria a tabela de execuções da Qualidade Documental.", """
 create extension if not exists pgcrypto;
 create schema if not exists ged;
@@ -802,6 +823,10 @@ create table if not exists ged.document_quality_result (
         AddColumn(fixes, "ged.upload_batch", "options_json", "jsonb not null default {}::jsonb", "Upload batch");
         AddColumn(fixes, "ged.upload_batch_item", "upload_client_id", "text null", "Upload batch");
         AddColumn(fixes, "ged.upload_batch_item", "content_hash", "text null", "Upload batch");
+        AddColumn(fixes, "ged.upload_batch_item", "duplicate_of_document_id", "uuid null", "Upload batch");
+        AddColumn(fixes, "ged.upload_batch_item", "duplicate_scope", "text null", "Upload batch");
+        AddColumn(fixes, "ged.upload_batch_item", "duplicate_resolution", "text null", "Upload batch");
+        AddColumn(fixes, "ged.upload_batch_item", "confirmed_duplicate_upload", "boolean not null default false", "Upload batch");
         AddColumn(fixes, "ged.upload_batch_item", "mark_as_incomplete", "boolean not null default false", "Upload batch");
         AddColumn(fixes, "ged.upload_batch_item", "incomplete_reason", "text null", "Upload batch");
         AddColumn(fixes, "ged.upload_batch_item", "retry_after_at", "timestamptz null", "Upload batch");
@@ -1062,6 +1087,8 @@ end $$;
         fixes.Add(Index("GED_INDEX_APP_AUDIT_LOG_USER_CREATED", "ged.ix_app_audit_log_user_created", "Performance", "Cria índice de auditoria por usuário/data.", "create index if not exists ix_app_audit_log_user_created on ged.app_audit_log(user_id, created_at desc);"));
         fixes.Add(Index("GED_INDEX_APP_AUDIT_LOG_ACTION_CREATED", "ged.ix_app_audit_log_action_created", "Performance", "Cria índice de auditoria por ação/data.", "create index if not exists ix_app_audit_log_action_created on ged.app_audit_log(action, created_at desc);"));
         fixes.Add(Index("GED_INDEX_APP_AUDIT_LOG_CORRELATION", "ged.ix_app_audit_log_correlation", "Performance", "Cria índice de auditoria por correlationId.", "create index if not exists ix_app_audit_log_correlation on ged.app_audit_log(correlation_id);"));
+        fixes.Add(Index("GED_INDEX_UPLOAD_DUPLICATE_DECISION_TENANT_BATCH", "ged.ix_upload_duplicate_decision_tenant_batch", "Upload batch", "Cria índice para auditoria de decisões de duplicidade por lote.", "create index if not exists ix_upload_duplicate_decision_tenant_batch on ged.upload_duplicate_decision(tenant_id, batch_id, decided_at desc);"));
+        fixes.Add(Index("GED_INDEX_UPLOAD_BATCH_ITEM_TENANT_DUPLICATE", "ged.ix_upload_batch_item_tenant_duplicate", "Upload batch", "Cria índice para vínculo de possível duplicidade.", "create index if not exists ix_upload_batch_item_tenant_duplicate on ged.upload_batch_item(tenant_id, duplicate_of_document_id);"));
         fixes.Add(Index("GED_INDEX_DOCUMENT_QUALITY_RESULT_TENANT_DOCUMENT_ANALYZED", "ged.ix_document_quality_result_tenant_document_analyzed", "Qualidade Documental", "Cria índice por tenant/documento/última análise.", "create index if not exists ix_document_quality_result_tenant_document_analyzed on ged.document_quality_result(tenant_id, document_id, analyzed_at_utc desc);"));
         fixes.Add(Index("GED_INDEX_DOCUMENT_QUALITY_RESULT_TENANT_STATUS", "ged.ix_document_quality_result_tenant_status", "Qualidade Documental", "Cria índice por tenant/status.", "create index if not exists ix_document_quality_result_tenant_status on ged.document_quality_result(tenant_id, quality_status);"));
         fixes.Add(Index("GED_INDEX_DOCUMENT_QUALITY_RESULT_TENANT_SCORE", "ged.ix_document_quality_result_tenant_score", "Qualidade Documental", "Cria índice por tenant/score.", "create index if not exists ix_document_quality_result_tenant_score on ged.document_quality_result(tenant_id, quality_score);"));

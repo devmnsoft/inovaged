@@ -24,6 +24,68 @@ public sealed class StartUploadBatchRequestDto
     public string? UserName { get; set; }
 }
 
+public static class DuplicateScope
+{
+    public const string SameBatch = "SAME_BATCH";
+    public const string SameFolder = "SAME_FOLDER";
+    public const string SameTenant = "SAME_TENANT";
+    public const string SamePatient = "SAME_PATIENT";
+    public const string SameHash = "SAME_HASH";
+    public const string SameFolderAndHash = "SAME_FOLDER_AND_HASH";
+    public const string SameNameDifferentHash = "SAME_NAME_DIFFERENT_HASH";
+    public const string PreviousFailedAttempt = "PREVIOUS_FAILED_ATTEMPT";
+    public const string Unknown = "UNKNOWN";
+}
+
+public static class DuplicateResolutionAction
+{
+    public const string UploadAnyway = "UPLOAD_ANYWAY";
+    public const string NewDocument = "NEW_DOCUMENT";
+    public const string NewVersion = "NEW_VERSION";
+    public const string ReplaceExisting = "REPLACE_EXISTING";
+    public const string RenameNewFile = "RENAME_NEW_FILE";
+    public const string Ignore = "IGNORE";
+    public const string CancelItem = "CANCEL_ITEM";
+}
+
+public sealed class DuplicateFileCheckResult
+{
+    public string ClientFileId { get; set; } = string.Empty;
+    public string FileName { get; set; } = string.Empty;
+    public long SizeBytes { get; set; }
+    public string? ContentHash { get; set; }
+    public bool HasDuplicate { get; set; }
+    public bool CanUploadAnyway { get; set; } = true;
+    public List<DuplicateFileCandidate> Candidates { get; set; } = new();
+    public string Summary { get; set; } = string.Empty;
+    public string RecommendedAction { get; set; } = string.Empty;
+}
+
+public sealed class DuplicateFileCandidate
+{
+    public Guid? DocumentId { get; set; }
+    public Guid? VersionId { get; set; }
+    public string ExistingFileName { get; set; } = string.Empty;
+    public string? ExistingTitle { get; set; }
+    public string? FolderName { get; set; }
+    public string? FolderPath { get; set; }
+    public string? PatientName { get; set; }
+    public string? MedicalRecordNumber { get; set; }
+    public string? RegistryNumber { get; set; }
+    public string? DocumentType { get; set; }
+    public DateTimeOffset? UploadedAt { get; set; }
+    public string? UploadedByName { get; set; }
+    public string DuplicateScope { get; set; } = "UNKNOWN";
+    public bool SameFolder { get; set; }
+    public bool SameHash { get; set; }
+    public bool SamePatient { get; set; }
+    public bool SameFileName { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public bool IsIncomplete { get; set; }
+    public bool HasOcr { get; set; }
+    public string Explanation { get; set; } = string.Empty;
+}
+
 public sealed class UploadBatchFileRequestDto
 {
     public Guid BatchId { get; set; }
@@ -33,6 +95,9 @@ public sealed class UploadBatchFileRequestDto
     public Guid? FolderId { get; set; }
     public Guid? RequestedFolderId { get; set; }
     public string? DuplicateStrategy { get; set; }
+    public string? DuplicateResolution { get; set; }
+    public bool ConfirmedDuplicateUpload { get; set; }
+    public string? DuplicateScope { get; set; }
     public bool RunOcr { get; set; }
     public bool GeneratePreview { get; set; }
     public string? UploadName { get; set; }

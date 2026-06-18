@@ -1,5 +1,5 @@
 (function () {
-    const DuplicateStrategy = { overwrite: 'overwrite', rename: 'rename', skip: 'skip', cancel: 'cancel' };
+    const DuplicateStrategy = { uploadAnyway: 'UPLOAD_ANYWAY', newVersion: 'NEW_VERSION', rename: 'RENAME_NEW_FILE', skip: 'IGNORE', cancel: 'CANCEL_ITEM' };
     const MAX_PARALLEL_UPLOADS = 2;
     const RETRY_BACKOFF_MS = [2000, 5000, 10000];
     const BULK_UPLOAD_STORAGE_KEY = 'InovaGED:bulkUpload:v2';
@@ -130,11 +130,16 @@
         const cancelBtn = e.target.closest('.js-cancel-upload-file');
         if (cancelBtn) { e.preventDefault(); cancelUploadFile(cancelBtn.getAttribute('data-file-id')); return; }
 
-        const duplicateBtn = e.target.closest('#btnDupOverwrite, #btnDupRename, #btnDupSkip, #btnDupCancel');
+        const individualDupBtn = e.target.closest('[data-dup-action]');
+        if (individualDupBtn) { e.preventDefault(); applyDuplicateActionToFile(individualDupBtn.getAttribute('data-file-name'), individualDupBtn.getAttribute('data-dup-action')); return; }
+
+        const duplicateBtn = e.target.closest('#btnDupAnalyze, #btnDupUploadAnyway, #btnDupNewVersion, #btnDupRename, #btnDupSkip, #btnDupCancel');
         if (duplicateBtn) {
             e.preventDefault();
             applyDuplicateStrategy({
-                btnDupOverwrite: DuplicateStrategy.overwrite,
+                btnDupAnalyze: 'ANALYZE',
+                btnDupUploadAnyway: DuplicateStrategy.uploadAnyway,
+                btnDupNewVersion: DuplicateStrategy.newVersion,
                 btnDupRename: DuplicateStrategy.rename,
                 btnDupSkip: DuplicateStrategy.skip,
                 btnDupCancel: DuplicateStrategy.cancel
@@ -669,16 +674,54 @@
         }
     }
 
+    function duplicateScopeMessage(scope) {
+        return {
+            SAME_BATCH: 'Este arquivo foi selecionado mais de uma vez neste lote.',
+            SAME_FOLDER: 'Já existe um arquivo com este nome nesta mesma pasta.',
+            SAME_TENANT: 'Já existe um arquivo com este nome em outra pasta do sistema.',
+            SAME_PATIENT: 'Existe documento semelhante para o mesmo paciente/prontuário.',
+            SAME_HASH: 'O conteúdo parece idêntico a outro documento.',
+            SAME_FOLDER_AND_HASH: 'Já existe arquivo com mesmo nome e conteúdo aparentemente idêntico nesta pasta.',
+            SAME_NAME_DIFFERENT_HASH: 'O nome é igual, mas o conteúdo pode ser diferente. Pode ser um novo exame.',
+            PREVIOUS_FAILED_ATTEMPT: 'Existe uma tentativa anterior de envio com erro. Você pode reenviar sem duplicar ou continuar criando novo documento.',
+            UNKNOWN: 'Foi encontrada possível semelhança, mas não foi possível confirmar a duplicidade.'
+        }[(scope || 'UNKNOWN').toUpperCase()] || 'Foi encontrada possível semelhança, mas não foi possível confirmar a duplicidade.';
+    }
+
     function showDuplicateDecision(dups) {
         const box = document.getElementById('bulkDuplicateDecision');
         const list = document.getElementById('bulkDuplicateList');
         if (!box || !list) return;
         box.classList.remove('d-none');
-        list.innerHTML = dups.map(d => `<li><strong>${escapeHtml(d.fileName)}</strong> já existe.</li>`).join('');
+        list.innerHTML = dups.map(d => {
+            const c = (d.candidates && d.candidates[0]) || d;
+            const scope = c.duplicateScope || d.duplicateScope || 'UNKNOWN';
+            return `<li class="mb-2"><strong>${escapeHtml(d.fileName || c.existingFileName || '')}</strong><div class="small">${escapeHtml(c.explanation || duplicateScopeMessage(scope))}</div><div class="small text-muted">Onde está: ${escapeHtml(c.folderPath || c.folderName || 'Não informado')} · Paciente: ${escapeHtml(c.patientName || 'Não informado')} · Registro/Prontuário: ${escapeHtml(c.registryNumber || c.medicalRecordNumber || 'Não informado')} · Enviado por: ${escapeHtml(c.uploadedByName || 'Não informado')} · Escopo: ${escapeHtml(scope)}</div><div class="btn-group btn-group-sm mt-1"><button type="button" class="btn btn-outline-danger" data-dup-action="UPLOAD_ANYWAY" data-file-name="${escapeHtml(d.fileName || '')}">Enviar mesmo assim</button><button type="button" class="btn btn-outline-primary" data-dup-action="NEW_VERSION" data-file-name="${escapeHtml(d.fileName || '')}">Salvar como nova versão</button><button type="button" class="btn btn-outline-secondary" data-dup-action="RENAME_NEW_FILE" data-file-name="${escapeHtml(d.fileName || '')}">Renomear</button><button type="button" class="btn btn-outline-dark" data-dup-action="IGNORE" data-file-name="${escapeHtml(d.fileName || '')}">Ignorar</button></div></li>`;
+        }).join('');
     }
     function hideDuplicateDecision() { document.getElementById('bulkDuplicateDecision')?.classList.add('d-none'); }
 
+
+    function confirmDuplicateUpload(message) {
+        return confirm(`${message}
+
+Marque mentalmente a confirmação: estou ciente e desejo enviar mesmo assim.`);
+    }
+
+    function applyDuplicateActionToFile(fileName, action) {
+        if (!action) return;
+        if (action === DuplicateStrategy.uploadAnyway && !confirmDuplicateUpload('Confirmar envio de possível duplicidade. Essa ação criará um novo documento. Use apenas se este arquivo for realmente um novo exame, novo atendimento ou novo documento válido.')) return;
+        const item = state.files.find(f => (f.uploadName || f.originalName || '').toLowerCase() === (fileName || '').toLowerCase() || (f.uploadName || f.originalName || '').replace(/\.[^.]+$/, '').toLowerCase() === (fileName || '').toLowerCase());
+        if (!item) return;
+        item.duplicateStrategy = action;
+        if (action === DuplicateStrategy.cancel) item.status = 'cancelled';
+        if (action === DuplicateStrategy.skip) item.status = 'ignored';
+        uploadFiles(true);
+    }
+
     function applyDuplicateStrategy(strategy) {
+        if (strategy === 'ANALYZE') return;
+        if (strategy === DuplicateStrategy.uploadAnyway && !confirmDuplicateUpload('Confirmar envio de possível duplicidade\n\nJá existe um documento com o mesmo nome ou características semelhantes. Se você continuar, o sistema criará um novo documento mesmo assim. Use essa opção quando o arquivo representar um novo exame, novo atendimento ou novo envio válido.')) return;
         state.duplicateStrategy = strategy;
         hideDuplicateDecision();
         if (strategy === DuplicateStrategy.cancel) {
@@ -717,8 +760,8 @@
                 const dups = await checkDuplicatesBeforeUpload();
                 if (dups.length) {
                     state.files.forEach(f => {
-                        const hit = dups.find(d => (d.fileName || '').toLowerCase() === (f.uploadName || '').toLowerCase());
-                        if (hit) { f.status = 'duplicate'; f.existingDocumentId = hit.existingDocumentId || null; }
+                        const hit = dups.find(d => (d.fileName || '').toLowerCase() === (f.uploadName || '').toLowerCase() || (d.fileName || '').toLowerCase() === (f.uploadName || '').replace(/\.[^.]+$/, '').toLowerCase());
+                        if (hit) { const c = (hit.candidates && hit.candidates[0]) || hit; f.status = 'duplicate'; f.existingDocumentId = c.documentId || hit.existingDocumentId || null; f.duplicateScope = c.duplicateScope || hit.duplicateScope || 'UNKNOWN'; }
                     });
                     state.uploading = false;
                     setBulkUploadLoading(false);
@@ -903,8 +946,9 @@
             fd.append('markAsIncomplete', document.getElementById('bulkUploadIncomplete')?.checked === true ? 'true' : 'false');
             fd.append('incompleteReason', document.getElementById('bulkPartialNotes')?.value || '');
             fd.append('uploadClientId', fileItem.uploadClientId || (fileItem.uploadClientId = `${Date.now()}-${Math.random().toString(16).slice(2)}`));
-            if (fileItem.duplicateStrategy || state.duplicateStrategy) fd.append('duplicateStrategy', fileItem.duplicateStrategy || state.duplicateStrategy);
+            if (fileItem.duplicateStrategy || state.duplicateStrategy) { const dr = fileItem.duplicateStrategy || state.duplicateStrategy; fd.append('duplicateStrategy', dr); fd.append('duplicateResolution', dr); if (dr === 'UPLOAD_ANYWAY' || dr === 'NEW_DOCUMENT') fd.append('confirmedDuplicateUpload', 'true'); }
             if (fileItem.existingDocumentId) fd.append('existingDocumentId', fileItem.existingDocumentId);
+            if (fileItem.duplicateScope) fd.append('duplicateScope', fileItem.duplicateScope);
             if (fileItem.uploadName) fd.append('uploadName', fileItem.uploadName);
             appendPartialUploadFields(fd, fileIndex);
 
