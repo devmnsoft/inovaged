@@ -695,30 +695,77 @@ public sealed class GedController : Controller
             }
 
             const string sql = @"
-select d.id as DocumentId, v.id as VersionId, coalesce(v.file_name, d.title) as ExistingFileName, d.title as ExistingTitle,
-       f.name as FolderName, f.name as FolderPath, coalesce(v.uploaded_at_utc, v.created_at, d.created_at) as UploadedAt,
-       coalesce(u.user_name, u.email, d.updated_by::text) as UploadedByName,
-       case when d.folder_id=@folderId::uuid then 'SAME_FOLDER' else 'SAME_TENANT' end as DuplicateScope,
-       (d.folder_id=@folderId::uuid) as SameFolder, false as SameHash, false as SamePatient, true as SameFileName,
-       coalesce(d.status, 'Documento completo') as Status, false as IsIncomplete, false as HasOcr
+select d.id as "DocumentId",
+       v.id as "VersionId",
+       coalesce(nullif(v.file_name, ''), nullif(d.title, ''), '') as "ExistingFileName",
+       d.title as "ExistingTitle",
+       f.name as "FolderName",
+       f.name as "FolderPath",
+       null::text as "PatientName",
+       null::text as "MedicalRecordNumber",
+       null::text as "RegistryNumber",
+       null::text as "DocumentType",
+       coalesce(v.uploaded_at_utc, v.created_at, d.created_at) as "UploadedAt",
+       coalesce(u.user_name, u.email, d.updated_by::text, '') as "UploadedByName",
+       case when d.folder_id = @folderId::uuid then 'SAME_FOLDER' else 'SAME_TENANT' end as "DuplicateScope",
+       (d.folder_id = @folderId::uuid) as "SameFolder",
+       false as "SameHash",
+       false as "SamePatient",
+       true as "SameFileName",
+       d.status::text as "TechnicalStatus",
+       case
+           when coalesce(d.is_document_incomplete, false) = true then 'Documento incompleto'
+           when coalesce(d.reg_status, 'A') = 'A' then 'Documento completo'
+           else 'Documento inativo'
+       end as "StatusLabel",
+       coalesce(d.is_document_incomplete, false) as "IsIncomplete",
+       exists (
+           select 1
+           from ged.document_search ds
+           where ds.tenant_id = d.tenant_id
+             and ds.document_id = d.id
+             and nullif(btrim(coalesce(ds.ocr_text, '')), '') is not null
+       ) as "HasOcr"
 from ged.document d
-left join ged.document_version v on v.tenant_id=d.tenant_id and v.id=d.current_version_id
-left join ged.folder f on f.tenant_id=d.tenant_id and f.id=d.folder_id
-left join ged.app_user u on u.tenant_id=d.tenant_id and u.id=d.updated_by
-where d.tenant_id=@tenantId::uuid and coalesce(d.reg_status,'A')='A' and d.title = any(@titles);";
+left join ged.document_version v
+    on v.tenant_id = d.tenant_id
+   and v.id = d.current_version_id
+   and coalesce(v.reg_status, 'A') = 'A'
+left join ged.folder f
+    on f.tenant_id = d.tenant_id
+   and f.id = d.folder_id
+left join ged.app_user u
+    on u.tenant_id = d.tenant_id
+   and u.id = d.updated_by
+where d.tenant_id = @tenantId::uuid
+  and coalesce(d.reg_status, 'A') = 'A'
+  and (
+        lower(coalesce(v.file_name, '')) = any(@normalizedNames)
+        or lower(coalesce(d.title, '')) = any(@normalizedNames)
+      )
+limit 50;";
             using var con = _db.CreateConnection();
-            var candidates = (await con.QueryAsync<DuplicateFileCandidate>(sql, new { tenantId = _currentUser.TenantId, folderId = folderResolution.ResolvedFolderId, titles = fileNames })).ToList();
-            foreach (var candidate in candidates) candidate.Explanation = candidate.DuplicateScope == DuplicateScope.SameFolder ? "Já existe um arquivo com este nome nesta mesma pasta." : "Já existe um arquivo com este nome em outra pasta do sistema.";
+            var normalizedNames = fileNames.Select(x => x.ToLowerInvariant()).ToArray();
+            var candidates = (await con.QueryAsync<DuplicateFileCandidate>(sql, new { tenantId = _currentUser.TenantId, folderId = folderResolution.ResolvedFolderId, normalizedNames })).ToList();
+            foreach (var candidate in candidates)
+            {
+                var where = string.IsNullOrWhiteSpace(candidate.FolderPath ?? candidate.FolderName) ? "local não informado" : candidate.FolderPath ?? candidate.FolderName;
+                var status = string.IsNullOrWhiteSpace(candidate.StatusLabel) ? "situação não informada" : candidate.StatusLabel;
+                candidate.Explanation = candidate.DuplicateScope == DuplicateScope.SameFolder
+                    ? $"Já existe arquivo com nome semelhante nesta mesma pasta ({where}) em situação: {status}."
+                    : $"Já existe arquivo com nome semelhante em outra pasta ({where}) em situação: {status}.";
+            }
             var rows = candidates.GroupBy(x => Path.GetFileNameWithoutExtension(x.ExistingTitle ?? x.ExistingFileName), StringComparer.OrdinalIgnoreCase)
-                .Select(g => new DuplicateFileCheckResult { FileName = g.Key, HasDuplicate = true, CanUploadAnyway = true, Candidates = g.ToList(), Summary = "Pode ser duplicidade ou novo exame. Confirme a ação desejada.", RecommendedAction = DuplicateResolutionAction.UploadAnyway })
+                .Select(g => new DuplicateFileCheckResult { FileName = g.Key, HasDuplicate = true, CanUploadAnyway = true, Candidates = g.ToList(), Summary = "Já existe arquivo com nome ou conteúdo semelhante. Você pode enviar mesmo assim se este arquivo representar um novo exame, novo atendimento ou novo documento válido.", RecommendedAction = DuplicateResolutionAction.UploadAnyway })
                 .ToList();
             _logger.LogInformation("Possíveis duplicidades verificadas. Tenant={TenantId} User={UserId} RequestedFolderId={RequestedFolderId} ResolvedFolderId={ResolvedFolderId} WasVirtual={WasVirtual} CreatedRealFolder={CreatedRealFolder} FileCount={FileCount} CorrelationId={CorrelationId}", _currentUser.TenantId, _currentUser.UserId, folderResolution.RequestedFolderId, folderResolution.ResolvedFolderId, folderResolution.WasVirtual, folderResolution.CreatedRealFolder, fileNames.Length, correlationId);
             return Ok(new { success = true, message = "Possíveis duplicidades verificadas com sucesso.", duplicates = rows, requestedFolderId = folderResolution.RequestedFolderId, folderId = folderResolution.ResolvedFolderId, resolvedFolderId = folderResolution.ResolvedFolderId, folderName = folderResolution.FolderName, wasVirtual = folderResolution.WasVirtual, createdRealFolder = folderResolution.CreatedRealFolder, data = new { duplicates = rows, requestedFolderId = folderResolution.RequestedFolderId, folderId = folderResolution.ResolvedFolderId, resolvedFolderId = folderResolution.ResolvedFolderId, folderName = folderResolution.FolderName, wasVirtual = folderResolution.WasVirtual, createdRealFolder = folderResolution.CreatedRealFolder }, correlationId });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Erro ao verificar duplicidade de nomes.");
-            return StatusCode(500, JsonError("Não foi possível verificar duplicidades. Tente novamente.", "Servidor", ex.Message, true, HttpContext.TraceIdentifier));
+            _logger.LogError(ex, "Erro ao verificar duplicidade de nomes. Tenant={TenantId} User={UserId} CorrelationId={CorrelationId}", _currentUser.TenantId, _currentUser.UserId, HttpContext.TraceIdentifier);
+            var candidates = Array.Empty<DuplicateFileCandidate>();
+            return Ok(new { success = false, message = "Não foi possível verificar duplicidade agora. Você ainda pode continuar o envio, mas confira se o arquivo já existe.", canContinue = true, candidates, duplicates = Array.Empty<DuplicateFileCheckResult>(), data = new { canContinue = true, candidates, duplicates = Array.Empty<DuplicateFileCheckResult>() }, correlationId = HttpContext.TraceIdentifier });
         }
     }
 
