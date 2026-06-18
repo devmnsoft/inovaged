@@ -80,7 +80,8 @@ public sealed class DuplicateFileCandidate
     public bool SameHash { get; set; }
     public bool SamePatient { get; set; }
     public bool SameFileName { get; set; }
-    public string Status { get; set; } = string.Empty;
+    public string? TechnicalStatus { get; set; }
+    public string StatusLabel { get; set; } = string.Empty;
     public bool IsIncomplete { get; set; }
     public bool HasOcr { get; set; }
     public string Explanation { get; set; } = string.Empty;

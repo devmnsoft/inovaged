@@ -651,9 +651,15 @@
         const token = document.querySelector('input[name="__RequestVerificationToken"]')?.value;
         state.duplicateCheckPromise = (async () => {
             const r = await fetch('/Ged/Documents/CheckDuplicateNames', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { RequestVerificationToken: token } : {}) }, body: JSON.stringify({ requestedFolderId, folderId, uploadFolderId: folderId, fileNames: names }) });
-            const j = await r.json().catch(() => ({ success: false, message: 'Erro ao verificar duplicidades' }));
-            if (!r.ok || !j.success) throw new Error(j.message || 'Não foi possível verificar duplicidades.');
+            const j = await r.json().catch(() => ({ success: false, message: 'Erro ao verificar duplicidades', canContinue: true }));
+            if (!r.ok) throw new Error(j.message || 'Não foi possível verificar duplicidades.');
             const data = j.data || j;
+            if (!j.success && (j.canContinue || data.canContinue)) {
+                showBulkUploadMessage('A verificação de duplicidade falhou. Você pode continuar, mas recomendamos conferir a pasta antes.', 'warning');
+                showAppToast(j.message || 'A verificação de duplicidade falhou. Você pode continuar com atenção.', 'warning', 'Duplicidade não verificada');
+                return [];
+            }
+            if (!j.success) throw new Error(j.message || 'Não foi possível verificar duplicidades.');
             if (data.resolvedFolderId) {
                 console.log('[BulkUpload] destino resolvido para duplicidade', {
                     requestedFolderId: data.requestedFolderId,
@@ -696,21 +702,58 @@
         list.innerHTML = dups.map(d => {
             const c = (d.candidates && d.candidates[0]) || d;
             const scope = c.duplicateScope || d.duplicateScope || 'UNKNOWN';
-            return `<li class="mb-2"><strong>${escapeHtml(d.fileName || c.existingFileName || '')}</strong><div class="small">${escapeHtml(c.explanation || duplicateScopeMessage(scope))}</div><div class="small text-muted">Onde está: ${escapeHtml(c.folderPath || c.folderName || 'Não informado')} · Paciente: ${escapeHtml(c.patientName || 'Não informado')} · Registro/Prontuário: ${escapeHtml(c.registryNumber || c.medicalRecordNumber || 'Não informado')} · Enviado por: ${escapeHtml(c.uploadedByName || 'Não informado')} · Escopo: ${escapeHtml(scope)}</div><div class="btn-group btn-group-sm mt-1"><button type="button" class="btn btn-outline-danger" data-dup-action="UPLOAD_ANYWAY" data-file-name="${escapeHtml(d.fileName || '')}">Enviar mesmo assim</button><button type="button" class="btn btn-outline-primary" data-dup-action="NEW_VERSION" data-file-name="${escapeHtml(d.fileName || '')}">Salvar como nova versão</button><button type="button" class="btn btn-outline-secondary" data-dup-action="RENAME_NEW_FILE" data-file-name="${escapeHtml(d.fileName || '')}">Renomear</button><button type="button" class="btn btn-outline-dark" data-dup-action="IGNORE" data-file-name="${escapeHtml(d.fileName || '')}">Ignorar</button></div></li>`;
+            const uploadedAt = c.uploadedAt ? formatDateTime(c.uploadedAt) : 'Não informado';
+            return `<li class="mb-2"><strong>${escapeHtml(d.fileName || c.existingFileName || '')}</strong><div class="small">${escapeHtml(c.explanation || duplicateScopeMessage(scope))}</div><div class="small text-muted">Arquivo: ${escapeHtml(c.existingFileName || d.fileName || 'Não informado')} · Pasta: ${escapeHtml(c.folderPath || c.folderName || 'Não informado')} · Paciente: ${escapeHtml(c.patientName || 'Não informado')} · Registro/Prontuário: ${escapeHtml(c.registryNumber || c.medicalRecordNumber || 'Não informado')} · Data: ${escapeHtml(uploadedAt)} · Usuário: ${escapeHtml(c.uploadedByName || 'Não informado')} · Situação: ${escapeHtml(c.statusLabel || 'Não informado')} · Escopo: ${escapeHtml(scope)}</div><div class="btn-group btn-group-sm mt-1"><button type="button" class="btn btn-outline-danger" data-dup-action="UPLOAD_ANYWAY" data-file-name="${escapeHtml(d.fileName || '')}">Enviar mesmo assim</button><button type="button" class="btn btn-outline-primary" data-dup-action="NEW_VERSION" data-file-name="${escapeHtml(d.fileName || '')}">Salvar como nova versão</button><button type="button" class="btn btn-outline-secondary" data-dup-action="RENAME_NEW_FILE" data-file-name="${escapeHtml(d.fileName || '')}">Renomear</button><button type="button" class="btn btn-outline-dark" data-dup-action="IGNORE" data-file-name="${escapeHtml(d.fileName || '')}">Ignorar duplicados</button></div></li>`;
         }).join('');
     }
     function hideDuplicateDecision() { document.getElementById('bulkDuplicateDecision')?.classList.add('d-none'); }
 
 
-    function confirmDuplicateUpload(message) {
-        return confirm(`${message}
-
-Marque mentalmente a confirmação: estou ciente e desejo enviar mesmo assim.`);
+    function ensureDuplicateConfirmModal() {
+        let modal = document.getElementById('duplicateUploadConfirmModal');
+        if (modal) return modal;
+        modal = document.createElement('div');
+        modal.className = 'modal fade';
+        modal.id = 'duplicateUploadConfirmModal';
+        modal.tabIndex = -1;
+        modal.innerHTML = `<div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5 class="modal-title">Enviar mesmo assim?</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button></div><div class="modal-body"><p class="mb-2" data-dup-confirm-message></p><div class="alert alert-warning small mb-3">Se continuar, será criado um novo documento mesmo havendo possível duplicidade.</div><div class="form-check"><input class="form-check-input" type="checkbox" id="duplicateUploadAwareCheck"><label class="form-check-label" for="duplicateUploadAwareCheck">Estou ciente e desejo enviar mesmo assim.</label></div></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar envio</button><button type="button" class="btn btn-danger" id="btnConfirmDuplicateUpload" disabled>Enviar mesmo assim</button></div></div></div>`;
+        document.body.appendChild(modal);
+        return modal;
     }
 
-    function applyDuplicateActionToFile(fileName, action) {
+    function confirmDuplicateUpload(message) {
+        const modalEl = ensureDuplicateConfirmModal();
+        const bs = getBootstrapOrNull();
+        if (!bs?.Modal) return Promise.resolve(confirm(`${message}
+
+Se continuar, será criado um novo documento mesmo havendo possível duplicidade.`));
+        modalEl.querySelector('[data-dup-confirm-message]').textContent = message;
+        const check = modalEl.querySelector('#duplicateUploadAwareCheck');
+        const confirmBtn = modalEl.querySelector('#btnConfirmDuplicateUpload');
+        check.checked = false;
+        confirmBtn.disabled = true;
+        return new Promise(resolve => {
+            const modal = bs.Modal.getOrCreateInstance(modalEl);
+            const cleanup = result => {
+                confirmBtn.removeEventListener('click', onConfirm);
+                check.removeEventListener('change', onChange);
+                modalEl.removeEventListener('hidden.bs.modal', onHidden);
+                modal.hide();
+                resolve(result);
+            };
+            const onChange = () => { confirmBtn.disabled = !check.checked; };
+            const onConfirm = () => cleanup(check.checked === true);
+            const onHidden = () => cleanup(false);
+            check.addEventListener('change', onChange);
+            confirmBtn.addEventListener('click', onConfirm);
+            modalEl.addEventListener('hidden.bs.modal', onHidden, { once: true });
+            modal.show();
+        });
+    }
+
+    async function applyDuplicateActionToFile(fileName, action) {
         if (!action) return;
-        if (action === DuplicateStrategy.uploadAnyway && !confirmDuplicateUpload('Confirmar envio de possível duplicidade. Essa ação criará um novo documento. Use apenas se este arquivo for realmente um novo exame, novo atendimento ou novo documento válido.')) return;
+        if (action === DuplicateStrategy.uploadAnyway && !(await confirmDuplicateUpload('Já existe arquivo com nome ou conteúdo semelhante. Você pode enviar mesmo assim se este arquivo representar um novo exame, novo atendimento ou novo documento válido.'))) return;
         const item = state.files.find(f => (f.uploadName || f.originalName || '').toLowerCase() === (fileName || '').toLowerCase() || (f.uploadName || f.originalName || '').replace(/\.[^.]+$/, '').toLowerCase() === (fileName || '').toLowerCase());
         if (!item) return;
         item.duplicateStrategy = action;
@@ -719,9 +762,9 @@ Marque mentalmente a confirmação: estou ciente e desejo enviar mesmo assim.`);
         uploadFiles(true);
     }
 
-    function applyDuplicateStrategy(strategy) {
+    async function applyDuplicateStrategy(strategy) {
         if (strategy === 'ANALYZE') return;
-        if (strategy === DuplicateStrategy.uploadAnyway && !confirmDuplicateUpload('Confirmar envio de possível duplicidade\n\nJá existe um documento com o mesmo nome ou características semelhantes. Se você continuar, o sistema criará um novo documento mesmo assim. Use essa opção quando o arquivo representar um novo exame, novo atendimento ou novo envio válido.')) return;
+        if (strategy === DuplicateStrategy.uploadAnyway && !(await confirmDuplicateUpload('Já existe arquivo com nome ou conteúdo semelhante. Você pode enviar mesmo assim se este arquivo representar um novo exame, novo atendimento ou novo documento válido.'))) return;
         state.duplicateStrategy = strategy;
         hideDuplicateDecision();
         if (strategy === DuplicateStrategy.cancel) {
@@ -1518,6 +1561,7 @@ Marque mentalmente a confirmação: estou ciente e desejo enviar mesmo assim.`);
 
     const formatFileSize = b => b < 1024 ? `${b} B` : b < 1048576 ? `${(b / 1024).toFixed(1)} KB` : `${(b / 1048576).toFixed(1)} MB`;
     const escapeHtml = v => (v || '').replace(/[&<>'"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c]));
+    const formatDateTime = v => { const d = new Date(v); return Number.isNaN(d.getTime()) ? 'Não informado' : d.toLocaleString('pt-BR'); };
     function normalizeBackendUploadStatus(status) {
         const normalized = (status || '').toString().trim().toUpperCase();
         const map = {
