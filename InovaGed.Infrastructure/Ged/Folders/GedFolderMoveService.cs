@@ -44,10 +44,12 @@ for update;
 """, new { tenantId, folderId = request.FolderId }, tx, cancellationToken: ct));
             if (source is null) return RollbackFail("NOT_FOUND", "Pasta de origem não encontrada ou inativa.");
 
-            FolderRow? destination = null;
+            if (source.ParentId == request.DestinationParentId)
+                return RollbackFail("SAME_DESTINATION", "A pasta já está neste destino.");
+
             if (request.DestinationParentId.HasValue)
             {
-                destination = await conn.QuerySingleOrDefaultAsync<FolderRow>(new CommandDefinition("""
+                var destination = await conn.QuerySingleOrDefaultAsync<FolderRow>(new CommandDefinition("""
 select id, tenant_id as TenantId, parent_id as ParentId, name
 from ged.folder
 where tenant_id=@tenantId and id=@destinationParentId and is_active=true and coalesce(reg_status,'A')='A';
@@ -73,19 +75,32 @@ select exists (
 
             var oldPath = await GetFolderPathAsync(conn, tx, tenantId, request.FolderId, ct);
             var newPath = await BuildMovedFolderPathAsync(conn, tx, tenantId, request.DestinationParentId, source.Name, ct);
-            await conn.ExecuteAsync(new CommandDefinition("""
+            var rowsAffected = await conn.ExecuteAsync(new CommandDefinition("""
 update ged.folder
 set parent_id=@destinationParentId,
     updated_at=now(),
     updated_by=@userId
-where tenant_id=@tenantId and id=@folderId;
+where tenant_id=@tenantId
+  and id=@folderId
+  and is_active=true
+  and coalesce(reg_status,'A')='A';
 """, new { tenantId, folderId = request.FolderId, destinationParentId = request.DestinationParentId, userId }, tx, cancellationToken: ct));
+            if (rowsAffected == 0)
+                return RollbackFail("NOT_MOVED", "Não foi possível mover a pasta. A pasta pode ter sido alterada por outro usuário.");
+
+            var confirmedParentId = await conn.ExecuteScalarAsync<Guid?>(new CommandDefinition("""
+select parent_id
+from ged.folder
+where tenant_id=@tenantId and id=@folderId and is_active=true and coalesce(reg_status,'A')='A';
+""", new { tenantId, folderId = request.FolderId }, tx, cancellationToken: ct));
+            if (confirmedParentId != request.DestinationParentId)
+                return RollbackFail("NOT_CONFIRMED", "Não foi possível confirmar a movimentação da pasta no banco de dados.");
+
+            var result = new MoveFolderResult { FolderId = request.FolderId, OldParentId = source.ParentId, NewParentId = confirmedParentId, OldPath = oldPath, NewPath = newPath, Moved = true, RowsAffected = rowsAffected };
+            await _audit.WriteAsync(tenantId, userId, "GED_FOLDER_MOVED", "ged.folder", request.FolderId, "Pasta movida no GED.", request.IpAddress, request.UserAgent, new { folderId = request.FolderId, folderName = source.Name, oldParentId = source.ParentId, newParentId = confirmedParentId, oldPath, newPath, reason = request.Reason, movedBy = userId, tenantId, rowsAffected }, ct);
 
             tx.Commit();
             _cache.Remove($"ged:folders:{tenantId}");
-
-            var result = new MoveFolderResult { FolderId = request.FolderId, OldParentId = source.ParentId, NewParentId = request.DestinationParentId, OldPath = oldPath, NewPath = newPath };
-            await _audit.WriteAsync(tenantId, userId, "GED_FOLDER_MOVED", "ged.folder", request.FolderId, "Pasta movida no GED.", request.IpAddress, request.UserAgent, new { folderId = request.FolderId, folderName = source.Name, oldParentId = source.ParentId, newParentId = request.DestinationParentId, oldPath, newPath, reason = request.Reason, movedBy = userId, tenantId }, ct);
             return Result<MoveFolderResult>.Ok(result);
         }
         catch (Exception ex)
@@ -125,13 +140,13 @@ with recursive descendants as (
     join folder_tree ft on ft.id=c.parent_id
     where c.tenant_id=@tenantId and c.is_active=true and coalesce(c.reg_status,'A')='A'
 )
-select ft.id as "Id", ft.name as "Name", ft.full_path as "Path", ft.level as "Level"
+select ft.id as "Id", ft.parent_id as "ParentId", ft.name as "Name", ft.full_path as "Path", ft.level as "Level"
 from folder_tree ft
 where ft.id <> @folderId
   and not exists (select 1 from descendants d where d.id=ft.id)
 order by ft.full_path;
 """, new { tenantId, folderId }, cancellationToken: ct))).AsList();
-        if (includeRoot) rows.Insert(0, new MoveFolderTarget { Id = null, Name = "Raiz", Path = "Raiz", Level = 0 });
+        if (includeRoot) rows.Insert(0, new MoveFolderTarget { Id = null, ParentId = null, Name = "Raiz", Path = "Raiz", Level = 0 });
         return rows;
     }
 

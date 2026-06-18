@@ -155,7 +155,7 @@ public sealed class GedController : Controller
 
 
     [HttpGet("/Ged/Folders/MoveTargets")]
-    public async Task<IActionResult> MoveFolderTargets(Guid folderId, CancellationToken ct)
+    public async Task<IActionResult> MoveFolderTargets(Guid folderId, bool includeRoot = true, CancellationToken ct = default)
     {
         var correlationId = HttpContext.TraceIdentifier;
         try
@@ -164,7 +164,7 @@ public sealed class GedController : Controller
             if (!await _accessPolicy.CanMoveFolderAsync(_currentUser.TenantId, _currentUser.UserId, folderId, User, ct))
                 return Forbid();
 
-            var items = await _folderMoveService.GetMoveTargetsAsync(_currentUser.TenantId, _currentUser.UserId, folderId, includeRoot: true, ct);
+            var items = await _folderMoveService.GetMoveTargetsAsync(_currentUser.TenantId, _currentUser.UserId, folderId, includeRoot, ct);
             return Ok(new { success = true, items });
         }
         catch (Exception ex)
@@ -202,7 +202,7 @@ public sealed class GedController : Controller
             if (!result.Success || result.Value is null)
                 return BadRequest(new { success = false, message = result.Error?.Message ?? "Não foi possível mover a pasta.", correlationId });
 
-            return Ok(new { success = true, message = "Pasta movida com sucesso.", folderId = result.Value.FolderId, newParentId = result.Value.NewParentId, newPath = result.Value.NewPath });
+            return Ok(new { success = true, message = "Pasta movida com sucesso.", folderId = result.Value.FolderId, oldParentId = result.Value.OldParentId, newParentId = result.Value.NewParentId, oldPath = result.Value.OldPath, newPath = result.Value.NewPath, moved = result.Value.Moved, rowsAffected = result.Value.RowsAffected });
         }
         catch (Exception ex)
         {
