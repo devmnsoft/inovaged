@@ -44,6 +44,15 @@ BEGIN
     END IF;
 END $$;
 
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace WHERE n.nspname = 'ged' AND t.typname = 'audit_action_enum') THEN
+        IF NOT EXISTS (SELECT 1 FROM pg_enum e JOIN pg_type t ON t.oid=e.enumtypid JOIN pg_namespace n ON n.oid=t.typnamespace WHERE n.nspname='ged' AND t.typname='audit_action_enum' AND e.enumlabel='GED_FOLDER_MOVED') THEN
+            ALTER TYPE ged.audit_action_enum ADD VALUE 'GED_FOLDER_MOVED';
+        END IF;
+    END IF;
+END $$;
+
 -- GED base: pastas e documentos.
 CREATE TABLE IF NOT EXISTS ged.folder (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -51,8 +60,15 @@ CREATE TABLE IF NOT EXISTS ged.folder (
     parent_id uuid NULL,
     name text NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NULL,
+    updated_by uuid NULL,
     reg_status char(1) NOT NULL DEFAULT 'A'
 );
+ALTER TABLE ged.folder ADD COLUMN IF NOT EXISTS updated_at timestamptz NULL;
+ALTER TABLE ged.folder ADD COLUMN IF NOT EXISTS updated_by uuid NULL;
+CREATE INDEX IF NOT EXISTS ix_folder_tenant_parent_name
+ON ged.folder(tenant_id, parent_id, lower(name))
+WHERE coalesce(reg_status, 'A') = 'A';
 
 CREATE TABLE IF NOT EXISTS ged.document (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

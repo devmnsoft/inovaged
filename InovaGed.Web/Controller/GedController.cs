@@ -64,6 +64,7 @@ public sealed class GedController : Controller
     private readonly IDocumentBulkUploadService _documentBulkUploadService;
     private readonly IGedAccessPolicyService _accessPolicy;
     private readonly IUploadFolderResolver _uploadFolderResolver;
+    private readonly IGedFolderMoveService _folderMoveService;
     private readonly IFolderNavigationResolver _folderNavigationResolver;
     private readonly IGedSmartSearchService _smartSearch;
     private readonly IAuditWriter _auditWriter;
@@ -90,6 +91,7 @@ public sealed class GedController : Controller
         IDocumentBulkUploadService documentBulkUploadService,
         IGedAccessPolicyService accessPolicy,
         IUploadFolderResolver uploadFolderResolver,
+        IGedFolderMoveService folderMoveService,
         IFolderNavigationResolver folderNavigationResolver,
         IGedSmartSearchService smartSearch,
         IAuditWriter auditWriter,
@@ -126,6 +128,7 @@ public sealed class GedController : Controller
         _documentBulkUploadService = documentBulkUploadService;
         _accessPolicy = accessPolicy;
         _uploadFolderResolver = uploadFolderResolver;
+        _folderMoveService = folderMoveService;
         _folderNavigationResolver = folderNavigationResolver;
         _smartSearch = smartSearch;
         _auditWriter = auditWriter;
@@ -148,6 +151,54 @@ public sealed class GedController : Controller
 
         _documentCommands = documentCommands;
         _ocrNotifier = ocrNotifier;
+    }
+
+
+    [HttpGet("/Ged/Folders/MoveTargets")]
+    public async Task<IActionResult> MoveFolderTargets(Guid folderId, CancellationToken ct)
+    {
+        var correlationId = HttpContext.TraceIdentifier;
+        try
+        {
+            if (!_currentUser.IsAuthenticated) return Unauthorized(new { success = false, message = "Sua sessão expirou. Faça login novamente.", correlationId });
+            if (!await _accessPolicy.CanMoveFolderAsync(_currentUser.TenantId, _currentUser.UserId, folderId, User, ct))
+                return Forbid();
+
+            var items = await _folderMoveService.GetMoveTargetsAsync(_currentUser.TenantId, _currentUser.UserId, folderId, includeRoot: true, ct);
+            return Ok(new { success = true, items });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro ao listar destinos de movimentação de pasta. Folder={FolderId} CorrelationId={CorrelationId}", folderId, correlationId);
+            return StatusCode(500, new { success = false, message = "Não foi possível carregar os destinos para mover a pasta.", correlationId });
+        }
+    }
+
+    [HttpPost("/Ged/Folders/Move")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> MoveFolder([FromBody] MoveFolderRequest request, CancellationToken ct)
+    {
+        var correlationId = HttpContext.TraceIdentifier;
+        try
+        {
+            if (!_currentUser.IsAuthenticated) return Unauthorized(new { success = false, message = "Sua sessão expirou. Faça login novamente.", correlationId });
+            if (request is null || request.FolderId == Guid.Empty) return BadRequest(new { success = false, message = "Pasta de origem obrigatória.", correlationId });
+            if (!await _accessPolicy.CanMoveFolderAsync(_currentUser.TenantId, _currentUser.UserId, request.FolderId, User, ct))
+                return Forbid();
+
+            request.IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString();
+            request.UserAgent = Request.Headers[HeaderNames.UserAgent].ToString();
+            var result = await _folderMoveService.MoveAsync(_currentUser.TenantId, _currentUser.UserId, request, ct);
+            if (!result.Success || result.Value is null)
+                return BadRequest(new { success = false, message = result.Error?.Message ?? "Não foi possível mover a pasta.", correlationId });
+
+            return Ok(new { success = true, message = "Pasta movida com sucesso.", folderId = result.Value.FolderId, newParentId = result.Value.NewParentId, newPath = result.Value.NewPath });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro ao mover pasta. Folder={FolderId} CorrelationId={CorrelationId}", request?.FolderId, correlationId);
+            return StatusCode(500, new { success = false, message = "Não foi possível mover a pasta. Informe o código ao suporte.", correlationId });
+        }
     }
 
     [HttpPost("/Ged/Documents/BulkUploadSingle")]
