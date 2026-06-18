@@ -131,19 +131,35 @@ VALUES (@id, @tenantId, @folderId, @requestedFolderId, @userId, @userName, 'OPEN
             await _audit.WriteAsync(tenantId, userId, "UPLOAD_FILE_RECEIVED", "UPLOAD_BATCH_ITEM", itemId, "Arquivo recebido no lote", null, null, new { request.BatchId, request.FileIndex, request.TotalFiles, FileName = request.File.FileName, request.File.Length, correlationId }, CancellationToken.None);
             _logger.LogInformation("File upload started Tenant={TenantId} User={UserId} Batch={BatchId} Item={ItemId} Folder={FolderId} File={FileName} Size={SizeBytes} CorrelationId={CorrelationId}", tenantId, userId, request.BatchId, itemId, request.FolderId, request.File.FileName, request.File.Length, correlationId);
 
-            if (string.Equals(request.DuplicateStrategy, "skip", StringComparison.OrdinalIgnoreCase) && request.ExistingDocumentId.HasValue)
+            var duplicateResolution = NormalizeDuplicateResolution(request.DuplicateResolution, request.DuplicateStrategy);
+            var duplicateScope = string.IsNullOrWhiteSpace(request.DuplicateScope) ? DuplicateScope.Unknown : request.DuplicateScope.Trim().ToUpperInvariant();
+            if ((duplicateResolution == DuplicateResolutionAction.UploadAnyway || duplicateResolution == DuplicateResolutionAction.NewDocument) && !request.ConfirmedDuplicateUpload)
             {
-                await MarkItemSkippedAsync(tenantId, itemId, "Arquivo ignorado por regra de duplicidade.", sw.ElapsedMilliseconds, CancellationToken.None);
-                await _audit.WriteAsync(tenantId, userId, "UPLOAD_FILE_DUPLICATE", "UPLOAD_BATCH_ITEM", itemId, "Arquivo ignorado por duplicidade", null, null, new { request.BatchId, request.ExistingDocumentId, correlationId }, CancellationToken.None);
+                await MarkItemErrorAsync(tenantId, itemId, "Confirme que deseja enviar mesmo com possível duplicidade.", "Duplicidade", true, sw.ElapsedMilliseconds, CancellationToken.None);
+                return Result<UploadBatchFileResultDto>.Fail("DUPLICATE_CONFIRMATION_REQUIRED", "Confirme que deseja enviar mesmo com possível duplicidade.");
+            }
+
+            if (duplicateResolution == DuplicateResolutionAction.Ignore || string.Equals(request.DuplicateStrategy, "skip", StringComparison.OrdinalIgnoreCase))
+            {
+                await MarkItemSkippedAsync(tenantId, itemId, "Arquivo ignorado por decisão do usuário após análise de possível duplicidade.", sw.ElapsedMilliseconds, CancellationToken.None);
+                await RecordDuplicateDecisionAsync(tenantId, userId, itemId, request, duplicateResolution, duplicateScope, "UPLOAD_DUPLICATE_IGNORED", null, CancellationToken.None);
                 await IncrementBatchCounterAsync(tenantId, request.BatchId, "skipped_files", CancellationToken.None);
-                return Result<UploadBatchFileResultDto>.Ok(new UploadBatchFileResultDto { ItemId = itemId, Status = "SKIPPED", Message = "Arquivo ignorado por duplicidade.", RequestedFolderId = request.RequestedFolderId, ResolvedFolderId = request.FolderId, CorrelationId = correlationId });
+                return Result<UploadBatchFileResultDto>.Ok(new UploadBatchFileResultDto { ItemId = itemId, Status = "SKIPPED", Message = "Arquivo ignorado após análise de possível duplicidade.", RequestedFolderId = request.RequestedFolderId, ResolvedFolderId = request.FolderId, CorrelationId = correlationId });
+            }
+
+            if (duplicateResolution == DuplicateResolutionAction.CancelItem)
+            {
+                await UpdateItemStatusAsync(tenantId, itemId, "CANCELLED", sw.ElapsedMilliseconds, CancellationToken.None);
+                await RecordDuplicateDecisionAsync(tenantId, userId, itemId, request, duplicateResolution, duplicateScope, "UPLOAD_DUPLICATE_CANCELLED", null, CancellationToken.None);
+                await IncrementBatchCounterAsync(tenantId, request.BatchId, "skipped_files", CancellationToken.None);
+                return Result<UploadBatchFileResultDto>.Ok(new UploadBatchFileResultDto { ItemId = itemId, Status = "CANCELLED", Message = "Item cancelado após análise de possível duplicidade.", RequestedFolderId = request.RequestedFolderId, ResolvedFolderId = request.FolderId, CorrelationId = correlationId });
             }
 
             var metadata = request.Metadata;
             metadata.BatchId = request.BatchId;
             metadata.RunOcr = request.RunOcr;
             metadata.GeneratePreview = request.GeneratePreview;
-            metadata.DuplicateStrategy = request.DuplicateStrategy;
+            metadata.DuplicateStrategy = duplicateResolution == DuplicateResolutionAction.NewVersion ? "overwrite" : request.DuplicateStrategy;
             metadata.UploadName = request.UploadName;
             metadata.ExistingDocumentId = request.ExistingDocumentId;
             metadata.MarkAsIncomplete = markAsIncomplete;
@@ -162,6 +178,11 @@ VALUES (@id, @tenantId, @folderId, @requestedFolderId, @userId, @userName, 'OPEN
             var version = await GetCurrentVersionAsync(tenantId, result.Value.DocumentId, ct);
             createdVersionId = version?.VersionId;
             await UpdateItemDocumentAsync(tenantId, itemId, result.Value.DocumentId, version?.VersionId, version?.FileName, request.File.ContentType, request.File.Length, version?.ChecksumSha256, "DOCUMENT_CREATED", sw.ElapsedMilliseconds, ct);
+            if (!string.IsNullOrWhiteSpace(request.DuplicateResolution))
+            {
+                var auditAction = duplicateResolution == DuplicateResolutionAction.UploadAnyway ? "UPLOAD_DUPLICATE_UPLOAD_ANYWAY_CONFIRMED" : duplicateResolution == DuplicateResolutionAction.NewDocument ? "UPLOAD_DUPLICATE_NEW_DOCUMENT" : duplicateResolution == DuplicateResolutionAction.NewVersion ? "UPLOAD_DUPLICATE_NEW_VERSION" : duplicateResolution == DuplicateResolutionAction.ReplaceExisting ? "UPLOAD_DUPLICATE_REPLACE_EXISTING" : duplicateResolution == DuplicateResolutionAction.RenameNewFile ? "UPLOAD_DUPLICATE_RENAMED" : "UPLOAD_DUPLICATE_DETECTED";
+                await RecordDuplicateDecisionAsync(tenantId, userId, itemId, request, duplicateResolution, duplicateScope, auditAction, result.Value.DocumentId, CancellationToken.None);
+            }
             _logger.LogInformation("Document created Tenant={TenantId} User={UserId} Batch={BatchId} Item={ItemId} DocumentId={DocumentId} VersionId={VersionId} CorrelationId={CorrelationId}", tenantId, userId, request.BatchId, itemId, result.Value.DocumentId, version?.VersionId, correlationId);
 
             var ocrQueued = false;
@@ -342,11 +363,47 @@ LIMIT 100;
     private async Task InsertItemAsync(Guid tenantId, UploadBatchFileRequestDto request, Guid itemId, string correlationId, CancellationToken ct)
     {
         const string sql = """
-INSERT INTO ged.upload_batch_item (id, tenant_id, batch_id, folder_id, requested_folder_id, original_file_name, content_type, size_bytes, status, started_at, attempt, correlation_id, upload_client_id, content_hash, mark_as_incomplete, incomplete_reason, uploaded_by_name, updated_at)
-VALUES (@itemId, @tenantId, @batchId, @folderId, @requestedFolderId, @fileName, @contentType, @sizeBytes, 'RECEIVING', now(), 1, @correlationId, @uploadClientId, @contentHash, @markAsIncomplete, @incompleteReason, @uploadedByName, now());
+INSERT INTO ged.upload_batch_item (id, tenant_id, batch_id, folder_id, requested_folder_id, original_file_name, content_type, size_bytes, status, started_at, attempt, correlation_id, upload_client_id, content_hash, duplicate_of_document_id, duplicate_scope, duplicate_resolution, confirmed_duplicate_upload, mark_as_incomplete, incomplete_reason, uploaded_by_name, updated_at)
+VALUES (@itemId, @tenantId, @batchId, @folderId, @requestedFolderId, @fileName, @contentType, @sizeBytes, 'RECEIVING', now(), 1, @correlationId, @uploadClientId, @contentHash, @existingDocumentId, @duplicateScope, @duplicateResolution, @confirmedDuplicateUpload, @markAsIncomplete, @incompleteReason, @uploadedByName, now());
 """;
         await using var conn = await _db.OpenAsync(ct);
-        await conn.ExecuteAsync(new CommandDefinition(sql, new { itemId, tenantId, batchId = request.BatchId, request.FolderId, requestedFolderId = request.RequestedFolderId ?? request.FolderId, fileName = Path.GetFileName(request.UploadName ?? request.File.FileName), contentType = request.File.ContentType, sizeBytes = request.File.Length, correlationId, uploadClientId = request.UploadClientId, contentHash = request.ContentHash, markAsIncomplete = request.MarkAsIncomplete, incompleteReason = request.IncompleteReason, uploadedByName = request.UserName }, cancellationToken: ct));
+        await conn.ExecuteAsync(new CommandDefinition(sql, new { itemId, tenantId, batchId = request.BatchId, request.FolderId, requestedFolderId = request.RequestedFolderId ?? request.FolderId, fileName = Path.GetFileName(request.UploadName ?? request.File.FileName), contentType = request.File.ContentType, sizeBytes = request.File.Length, correlationId, uploadClientId = request.UploadClientId, contentHash = request.ContentHash, existingDocumentId = request.ExistingDocumentId, duplicateScope = request.DuplicateScope, duplicateResolution = request.DuplicateResolution, confirmedDuplicateUpload = request.ConfirmedDuplicateUpload, markAsIncomplete = request.MarkAsIncomplete, incompleteReason = request.IncompleteReason, uploadedByName = request.UserName }, cancellationToken: ct));
+    }
+
+
+    private static string? NormalizeDuplicateResolution(string? resolution, string? strategy)
+    {
+        var value = string.IsNullOrWhiteSpace(resolution) ? strategy : resolution;
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        value = value.Trim().ToUpperInvariant();
+        return value switch
+        {
+            "OVERWRITE" => DuplicateResolutionAction.NewVersion,
+            "RENAME" => DuplicateResolutionAction.RenameNewFile,
+            "SKIP" => DuplicateResolutionAction.Ignore,
+            "CANCEL" => DuplicateResolutionAction.CancelItem,
+            "NEW_DOCUMENT" => DuplicateResolutionAction.NewDocument,
+            "UPLOAD_ANYWAY" => DuplicateResolutionAction.UploadAnyway,
+            "NEW_VERSION" => DuplicateResolutionAction.NewVersion,
+            "REPLACE_EXISTING" => DuplicateResolutionAction.ReplaceExisting,
+            "RENAME_NEW_FILE" => DuplicateResolutionAction.RenameNewFile,
+            "IGNORE" => DuplicateResolutionAction.Ignore,
+            "CANCEL_ITEM" => DuplicateResolutionAction.CancelItem,
+            _ => value
+        };
+    }
+
+    private async Task RecordDuplicateDecisionAsync(Guid tenantId, Guid userId, Guid itemId, UploadBatchFileRequestDto request, string? selectedAction, string duplicateScope, string auditAction, Guid? documentId, CancellationToken ct)
+    {
+        selectedAction ??= DuplicateResolutionAction.NewDocument;
+        await _audit.WriteAsync(tenantId, userId, auditAction, "UPLOAD_BATCH_ITEM", itemId, "Decisão registrada para possível duplicidade no upload", null, null, new { request.BatchId, UploadClientId = request.UploadClientId, FileName = Path.GetFileName(request.UploadName ?? request.File.FileName), DuplicateScope = duplicateScope, SelectedAction = selectedAction, DocumentId = documentId, DuplicateOfDocumentId = request.ExistingDocumentId, ConfirmedDuplicateUpload = request.ConfirmedDuplicateUpload }, ct);
+        const string sql = """
+INSERT INTO ged.upload_duplicate_decision (tenant_id, batch_id, upload_batch_item_id, document_id, duplicate_of_document_id, file_name, duplicate_scope, selected_action, confirmed_duplicate_upload, decided_by, details_json)
+VALUES (@tenantId, @batchId, @itemId, @documentId, @duplicateOfDocumentId, @fileName, @duplicateScope, @selectedAction, @confirmed, @userId, CAST(@details AS jsonb));
+""";
+        await using var conn = await _db.OpenAsync(ct);
+        var details = JsonSerializer.Serialize(new { request.UploadClientId, request.ContentHash });
+        await conn.ExecuteAsync(new CommandDefinition(sql, new { tenantId, batchId = request.BatchId, itemId, documentId, duplicateOfDocumentId = request.ExistingDocumentId, fileName = Path.GetFileName(request.UploadName ?? request.File.FileName), duplicateScope, selectedAction, confirmed = request.ConfirmedDuplicateUpload, userId, details }, cancellationToken: ct));
     }
 
     private static string? FormatUploadDate(DateTime? uploadedAtUtc)

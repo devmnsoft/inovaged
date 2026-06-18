@@ -694,11 +694,26 @@ public sealed class GedController : Controller
                 return Ok(new { success = true, message = "Nenhum arquivo para validação de duplicidade.", duplicates = emptyDuplicates, requestedFolderId = folderResolution.RequestedFolderId, folderId = folderResolution.ResolvedFolderId, resolvedFolderId = folderResolution.ResolvedFolderId, folderName = folderResolution.FolderName, wasVirtual = folderResolution.WasVirtual, createdRealFolder = folderResolution.CreatedRealFolder, data = new { duplicates = emptyDuplicates, requestedFolderId = folderResolution.RequestedFolderId, folderId = folderResolution.ResolvedFolderId, resolvedFolderId = folderResolution.ResolvedFolderId, folderName = folderResolution.FolderName, wasVirtual = folderResolution.WasVirtual, createdRealFolder = folderResolution.CreatedRealFolder }, correlationId });
             }
 
-            const string sql = @"select id as ExistingDocumentId, title as FileName from ged.document where tenant_id=@tenantId::uuid and folder_id=@folderId::uuid and title = any(@titles) and reg_status='A';";
+            const string sql = @"
+select d.id as DocumentId, v.id as VersionId, coalesce(v.file_name, d.title) as ExistingFileName, d.title as ExistingTitle,
+       f.name as FolderName, f.name as FolderPath, coalesce(v.uploaded_at_utc, v.created_at, d.created_at) as UploadedAt,
+       coalesce(u.user_name, u.email, d.updated_by::text) as UploadedByName,
+       case when d.folder_id=@folderId::uuid then 'SAME_FOLDER' else 'SAME_TENANT' end as DuplicateScope,
+       (d.folder_id=@folderId::uuid) as SameFolder, false as SameHash, false as SamePatient, true as SameFileName,
+       coalesce(d.status, 'Documento completo') as Status, false as IsIncomplete, false as HasOcr
+from ged.document d
+left join ged.document_version v on v.tenant_id=d.tenant_id and v.id=d.current_version_id
+left join ged.folder f on f.tenant_id=d.tenant_id and f.id=d.folder_id
+left join ged.app_user u on u.tenant_id=d.tenant_id and u.id=d.updated_by
+where d.tenant_id=@tenantId::uuid and coalesce(d.reg_status,'A')='A' and d.title = any(@titles);";
             using var con = _db.CreateConnection();
-            var rows = await con.QueryAsync(sql, new { tenantId = _currentUser.TenantId, folderId = folderResolution.ResolvedFolderId, titles = fileNames });
-            _logger.LogInformation("Duplicidades verificadas. Tenant={TenantId} User={UserId} RequestedFolderId={RequestedFolderId} ResolvedFolderId={ResolvedFolderId} WasVirtual={WasVirtual} CreatedRealFolder={CreatedRealFolder} FileCount={FileCount} CorrelationId={CorrelationId}", _currentUser.TenantId, _currentUser.UserId, folderResolution.RequestedFolderId, folderResolution.ResolvedFolderId, folderResolution.WasVirtual, folderResolution.CreatedRealFolder, fileNames.Length, correlationId);
-            return Ok(new { success = true, message = "Duplicidades verificadas com sucesso.", duplicates = rows, requestedFolderId = folderResolution.RequestedFolderId, folderId = folderResolution.ResolvedFolderId, resolvedFolderId = folderResolution.ResolvedFolderId, folderName = folderResolution.FolderName, wasVirtual = folderResolution.WasVirtual, createdRealFolder = folderResolution.CreatedRealFolder, data = new { duplicates = rows, requestedFolderId = folderResolution.RequestedFolderId, folderId = folderResolution.ResolvedFolderId, resolvedFolderId = folderResolution.ResolvedFolderId, folderName = folderResolution.FolderName, wasVirtual = folderResolution.WasVirtual, createdRealFolder = folderResolution.CreatedRealFolder }, correlationId });
+            var candidates = (await con.QueryAsync<DuplicateFileCandidate>(sql, new { tenantId = _currentUser.TenantId, folderId = folderResolution.ResolvedFolderId, titles = fileNames })).ToList();
+            foreach (var candidate in candidates) candidate.Explanation = candidate.DuplicateScope == DuplicateScope.SameFolder ? "Já existe um arquivo com este nome nesta mesma pasta." : "Já existe um arquivo com este nome em outra pasta do sistema.";
+            var rows = candidates.GroupBy(x => Path.GetFileNameWithoutExtension(x.ExistingTitle ?? x.ExistingFileName), StringComparer.OrdinalIgnoreCase)
+                .Select(g => new DuplicateFileCheckResult { FileName = g.Key, HasDuplicate = true, CanUploadAnyway = true, Candidates = g.ToList(), Summary = "Pode ser duplicidade ou novo exame. Confirme a ação desejada.", RecommendedAction = DuplicateResolutionAction.UploadAnyway })
+                .ToList();
+            _logger.LogInformation("Possíveis duplicidades verificadas. Tenant={TenantId} User={UserId} RequestedFolderId={RequestedFolderId} ResolvedFolderId={ResolvedFolderId} WasVirtual={WasVirtual} CreatedRealFolder={CreatedRealFolder} FileCount={FileCount} CorrelationId={CorrelationId}", _currentUser.TenantId, _currentUser.UserId, folderResolution.RequestedFolderId, folderResolution.ResolvedFolderId, folderResolution.WasVirtual, folderResolution.CreatedRealFolder, fileNames.Length, correlationId);
+            return Ok(new { success = true, message = "Possíveis duplicidades verificadas com sucesso.", duplicates = rows, requestedFolderId = folderResolution.RequestedFolderId, folderId = folderResolution.ResolvedFolderId, resolvedFolderId = folderResolution.ResolvedFolderId, folderName = folderResolution.FolderName, wasVirtual = folderResolution.WasVirtual, createdRealFolder = folderResolution.CreatedRealFolder, data = new { duplicates = rows, requestedFolderId = folderResolution.RequestedFolderId, folderId = folderResolution.ResolvedFolderId, resolvedFolderId = folderResolution.ResolvedFolderId, folderName = folderResolution.FolderName, wasVirtual = folderResolution.WasVirtual, createdRealFolder = folderResolution.CreatedRealFolder }, correlationId });
         }
         catch (Exception ex)
         {

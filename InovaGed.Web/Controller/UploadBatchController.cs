@@ -100,7 +100,7 @@ public sealed class UploadBatchController : Controller
     [ValidateAntiForgeryToken]
     [DisableRequestSizeLimit]
     [RequestFormLimits(MultipartBodyLengthLimit = long.MaxValue, ValueLengthLimit = int.MaxValue, MultipartHeadersLengthLimit = int.MaxValue)]
-    public async Task<IActionResult> File(IFormFile file, Guid batchId, int fileIndex, int totalFiles, Guid? folderId, Guid? uploadFolderId, Guid? requestedFolderId, string? duplicateStrategy, bool runOcr, bool generatePreview, Guid? documentTypeId, Guid? classificationId, string? notes, string? visibility, Guid? existingDocumentId, string? uploadName, bool markAsIncomplete, string? incompleteReason, string? uploadClientId, string? contentHash, CancellationToken ct)
+    public async Task<IActionResult> File(IFormFile file, Guid batchId, int fileIndex, int totalFiles, Guid? folderId, Guid? uploadFolderId, Guid? requestedFolderId, string? duplicateStrategy, string? duplicateResolution, bool confirmedDuplicateUpload, string? duplicateScope, bool runOcr, bool generatePreview, Guid? documentTypeId, Guid? classificationId, string? notes, string? visibility, Guid? existingDocumentId, string? uploadName, bool markAsIncomplete, string? incompleteReason, string? uploadClientId, string? contentHash, CancellationToken ct)
     {
         var correlationId = HttpContext.TraceIdentifier;
         try
@@ -123,6 +123,9 @@ public sealed class UploadBatchController : Controller
                 FolderId = folderResolution.ResolvedFolderId,
                 RequestedFolderId = folderResolution.RequestedFolderId,
                 DuplicateStrategy = duplicateStrategy,
+                DuplicateResolution = duplicateResolution,
+                ConfirmedDuplicateUpload = confirmedDuplicateUpload,
+                DuplicateScope = duplicateScope,
                 RunOcr = runOcr,
                 GeneratePreview = generatePreview,
                 UploadName = uploadName,
