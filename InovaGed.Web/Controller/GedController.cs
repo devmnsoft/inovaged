@@ -169,8 +169,18 @@ public sealed class GedController : Controller
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Erro ao listar destinos de movimentação de pasta. Folder={FolderId} CorrelationId={CorrelationId}", folderId, correlationId);
-            return StatusCode(500, new { success = false, message = "Não foi possível carregar os destinos para mover a pasta.", correlationId });
+            _logger.LogError(ex,
+                "Erro ao listar destinos de movimentação de pasta. Folder={FolderId} CorrelationId={CorrelationId}",
+                folderId,
+                HttpContext.TraceIdentifier);
+
+            return Json(new
+            {
+                success = false,
+                message = "Não foi possível listar os destinos agora. Atualize a página e tente novamente.",
+                correlationId = HttpContext.TraceIdentifier,
+                items = Array.Empty<object>()
+            });
         }
     }
 
