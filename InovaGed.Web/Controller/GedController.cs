@@ -719,25 +719,24 @@ public sealed class GedController : Controller
         public Guid? FolderId { get; set; }
         public Guid? UploadFolderId { get; set; }
         public Guid? RequestedFolderId { get; set; }
-        public IReadOnlyList<string>? FileNames { get; set; }
+        public IReadOnlyList<string> FileNames { get; set; } = Array.Empty<string>();
+        public IReadOnlyList<string> Names { get; set; } = Array.Empty<string>();
     }
 
     [HttpPost("/Ged/Documents/CheckDuplicateNames")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> CheckDuplicateNames([FromBody] CheckDuplicateNamesRequest request, CancellationToken ct)
     {
-        var correlationId = HttpContext.TraceIdentifier;
         var tenantId = _currentUser.TenantId;
         var userId = _currentUser.UserId;
 
         try
         {
-            if (!_currentUser.IsAuthenticated)
-            {
-                return Unauthorized(JsonError("Sua sessão expirou. Faça login novamente.", "Autenticação", "Usuário não autenticado.", false, correlationId));
-            }
+            var rawNames = request?.FileNames?.Any() == true
+                ? request.FileNames
+                : request?.Names;
 
-            var names = request?.FileNames?
+            var names = rawNames?
                 .Where(x => !string.IsNullOrWhiteSpace(x))
                 .Select(x => Path.GetFileName(x).Trim())
                 .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -751,46 +750,15 @@ public sealed class GedController : Controller
                     hasDuplicates = false,
                     canContinue = true,
                     items = Array.Empty<object>(),
-                    duplicates = Array.Empty<DuplicateFileCheckResult>(),
-                    message = string.Empty,
-                    correlationId
+                    message = ""
                 });
-            }
-
-            var isAdmin = await _accessPolicy.IsAdminAsync(tenantId, userId, User, ct);
-            Guid? requestedFolderId = request?.UploadFolderId ?? request?.FolderId;
-            Guid? folderId = requestedFolderId;
-            string? folderName = null;
-            var wasVirtual = false;
-            var createdRealFolder = false;
-
-            if (requestedFolderId.HasValue && requestedFolderId.Value != Guid.Empty)
-            {
-                var folderResolution = await ResolveUploadFolderAsync(requestedFolderId, request?.RequestedFolderId, isAdmin, correlationId, ct);
-                if (!folderResolution.Success)
-                {
-                    return BadRequest(FolderResolutionJsonError(folderResolution, correlationId));
-                }
-
-                if (!isAdmin)
-                {
-                    var allowed = await _accessPolicy.CanUploadDocumentToFolderAsync(tenantId, userId, folderResolution.ResolvedFolderId, User, ct);
-                    if (!allowed)
-                    {
-                        return StatusCode(403, JsonError("Você não possui permissão para adicionar documentos nesta pasta.", "Autorização", "Permissão negada para upload na pasta.", false, correlationId));
-                    }
-                }
-
-                requestedFolderId = folderResolution.RequestedFolderId;
-                folderId = folderResolution.ResolvedFolderId;
-                folderName = folderResolution.FolderName;
-                wasVirtual = folderResolution.WasVirtual;
-                createdRealFolder = folderResolution.CreatedRealFolder;
             }
 
             var normalizedNames = names
                 .Select(x => x.ToLowerInvariant())
                 .ToArray();
+
+            var folderId = request?.UploadFolderId ?? request?.FolderId;
 
             const string sql = """
 select
@@ -799,13 +767,13 @@ select
     coalesce(nullif(dv.file_name, ''), d.title, '') as "ExistingFileName",
     d.title as "ExistingTitle",
     f.name as "FolderName",
-    f.name as "FolderPath",
+    null::text as "FolderPath",
     null::text as "PatientName",
     null::text as "MedicalRecordNumber",
     null::text as "RegistryNumber",
     null::text as "DocumentType",
-    coalesce(dv.uploaded_at_utc, dv.created_at_utc, dv.created_at, d.created_at) as "UploadedAt",
-    d.updated_by::text as "UploadedByName",
+    coalesce(dv.created_at, d.created_at) as "UploadedAt",
+    null::text as "UploadedByName",
     case
         when d.status is null then null
         else d.status::text
@@ -821,7 +789,7 @@ select
         from ged.document_search ds
         where ds.tenant_id = d.tenant_id
           and ds.document_id = d.id
-          and nullif(btrim(coalesce(ds.ocr_text, '')), '') is not null
+          and nullif(btrim(ds.ocr_text), '') is not null
     ) as "HasOcr",
     case
         when @FolderId is not null and d.folder_id = @FolderId then 'SAME_FOLDER'
@@ -853,6 +821,7 @@ limit 100;
 """;
 
             await using var conn = await _db.OpenAsync(ct);
+
             var rows = (await conn.QueryAsync<DuplicateFileCandidate>(
                 new CommandDefinition(
                     sql,
@@ -862,44 +831,28 @@ limit 100;
                         FolderId = folderId,
                         NormalizedNames = normalizedNames
                     },
-                    cancellationToken: ct))).ToList();
-
-            var duplicates = rows
-                .GroupBy(x => Path.GetFileName(x.ExistingFileName), StringComparer.OrdinalIgnoreCase)
-                .Select(g => new DuplicateFileCheckResult
-                {
-                    FileName = g.Key,
-                    HasDuplicate = true,
-                    CanUploadAnyway = true,
-                    Candidates = g.ToList(),
-                    Summary = "Foram encontrados arquivos possivelmente duplicados. Você pode enviar mesmo assim se for um novo exame ou novo documento válido.",
-                    RecommendedAction = DuplicateResolutionAction.UploadAnyway
-                })
+                    cancellationToken: ct)))
                 .ToList();
 
             return Json(new
             {
                 success = true,
-                hasDuplicates = rows.Any(),
+                hasDuplicates = rows.Count > 0,
                 canContinue = true,
-                message = rows.Any()
+                message = rows.Count > 0
                     ? "Foram encontrados arquivos possivelmente duplicados. Você pode enviar mesmo assim se for um novo exame ou novo documento válido."
-                    : string.Empty,
-                items = rows,
-                duplicates,
-                requestedFolderId,
-                folderId,
-                resolvedFolderId = folderId,
-                folderName,
-                wasVirtual,
-                createdRealFolder,
-                data = new { duplicates, items = rows, requestedFolderId, folderId, resolvedFolderId = folderId, folderName, wasVirtual, createdRealFolder },
-                correlationId
+                    : "",
+                items = rows
             });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Erro ao verificar duplicidade de nomes. Tenant={TenantId} User={UserId} FolderId={FolderId}", tenantId, userId, request?.FolderId);
+            _logger.LogError(ex,
+                "Erro ao verificar duplicidade de nomes. Tenant={TenantId} User={UserId} FolderId={FolderId} CorrelationId={CorrelationId}",
+                tenantId,
+                userId,
+                request?.FolderId,
+                HttpContext.TraceIdentifier);
 
             return Json(new
             {
@@ -908,9 +861,7 @@ limit 100;
                 canContinue = true,
                 message = "Não foi possível verificar duplicidade agora. Você ainda pode continuar o envio, mas confira se o arquivo já existe.",
                 items = Array.Empty<object>(),
-                duplicates = Array.Empty<DuplicateFileCheckResult>(),
-                data = new { canContinue = true, items = Array.Empty<object>(), duplicates = Array.Empty<DuplicateFileCheckResult>() },
-                correlationId
+                correlationId = HttpContext.TraceIdentifier
             });
         }
     }
