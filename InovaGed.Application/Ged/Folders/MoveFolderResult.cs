@@ -7,4 +7,6 @@ public sealed class MoveFolderResult
     public Guid? NewParentId { get; set; }
     public string? OldPath { get; set; }
     public string? NewPath { get; set; }
+    public bool Moved { get; set; }
+    public int RowsAffected { get; set; }
 }
