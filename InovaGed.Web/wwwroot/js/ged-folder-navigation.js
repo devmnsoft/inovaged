@@ -1,6 +1,8 @@
 (function () {
     const keys = { expanded: 'ged.folderTree.expanded', scrollTop: 'ged.folderTree.scrollTop', active: 'ged.folderTree.activeFolderId' };
     const emptyGuid = '00000000-0000-0000-0000-000000000000';
+    const GedMoveType = { DOCUMENTS: 'documents', FOLDER: 'folder' };
+    window.GedMoveType = window.GedMoveType || GedMoveType;
     const esc = (v) => window.CSS?.escape ? CSS.escape(v) : v;
     const getTreeScroll = () => document.querySelector('.ged-folder-scroll');
     const getFolderTarget = (e) => e.target.closest('.js-folder-node[data-folder-id], .ged-tree-node[data-folder-id], .ged-tree-root[data-folder-id]');
@@ -189,18 +191,59 @@
         window.updateMoveSelectedButton?.();
     }
     function selectedDocumentIds() { return Array.from(new Set(Array.from(document.querySelectorAll('.js-doc-select:checked')).map(x => x.value).filter(Boolean))); }
+    function getAntiForgeryToken() { return document.querySelector('input[name="__RequestVerificationToken"]')?.value || ''; }
+    function getDraggedMoveType(e) {
+        const explicitType = e.dataTransfer?.getData('application/x-ged-drag-type');
+        if (explicitType === GedMoveType.FOLDER || explicitType === GedMoveType.DOCUMENTS) return explicitType;
+        if (e.dataTransfer?.getData('application/x-ged-folder')) return GedMoveType.FOLDER;
+        if (e.dataTransfer?.getData('application/x-ged-document')) return GedMoveType.DOCUMENTS;
+        return '';
+    }
+    async function moveFolderToParent(folderId, destinationParentId) {
+        if (!folderId) { window.showAppToast?.('Não foi possível identificar a pasta arrastada.', 'warning', 'Movimentação'); return; }
+        if (folderId === destinationParentId) { window.showAppToast?.('Destino inválido para movimentação.', 'warning', 'Movimentação'); return; }
+        try {
+            const response = await fetch('/Ged/Folders/Move', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'RequestVerificationToken': getAntiForgeryToken(), 'X-Requested-With': 'XMLHttpRequest' },
+                body: JSON.stringify({ folderId, destinationParentId: destinationParentId || null, reason: null })
+            });
+            const payload = await response.json().catch(() => null);
+            if (!response.ok || payload?.success === false) { window.showAppToast?.(payload?.message || 'Não foi possível mover a pasta agora.', 'error', 'Movimentação'); return; }
+            window.showAppToast?.(payload?.message || 'Pasta movida com sucesso.', 'success', 'Movimentação');
+            window.location.href = `/Ged?folderId=${encodeURIComponent(folderId)}`;
+        } catch {
+            window.showAppToast?.('Não foi possível mover a pasta agora.', 'error', 'Movimentação');
+        }
+    }
 
     function handleFolderDrop(e) {
         const target = getFolderTarget(e); if (!target) return; e.preventDefault(); e.stopPropagation(); target.classList.remove('ged-drop-target');
         const requestedFolderId = getVisualFolderId(target); const uploadFolderId = getUploadFolderId(target) || requestedFolderId; const destinationFolderName = getFolderName(target); const canReceive = target.dataset.canReceiveDocuments !== 'false' && target.closest('[data-can-receive-documents="false"]') == null;
         if (!canReceive || !uploadFolderId || uploadFolderId === emptyGuid) { window.showAppToast?.('Pasta de destino inválida para upload/movimentação.', 'warning', 'Destino inválido'); return; }
         if ((e.dataTransfer?.files?.length || 0) > 0) { window.GedBulkUpload?.startUploadToFolder(uploadFolderId, e.dataTransfer.files, destinationFolderName, requestedFolderId, canReceive); return; }
-        const ids = selectedDocumentIds(); if (!ids.length) { window.showAppToast?.('Selecione os documentos do GED antes de arrastar para uma pasta.', 'warning', 'Movimentação'); return; }
-        window.moveSelectedDocumentsToFolder?.(uploadFolderId, destinationFolderName, requestedFolderId);
+        const dragType = getDraggedMoveType(e);
+        if (dragType === GedMoveType.DOCUMENTS) {
+            const ids = selectedDocumentIds();
+            if (!ids.length) {
+                // Esta mensagem é exclusiva do fluxo de mover documentos.
+                // Não usar no fluxo de mover pasta.
+                window.showAppToast?.('Selecione os documentos do GED antes de arrastar para uma pasta.', 'warning', 'Movimentação');
+                return;
+            }
+            window.moveSelectedDocumentsToFolder?.(uploadFolderId, destinationFolderName, requestedFolderId);
+            return;
+        }
+        if (dragType === GedMoveType.FOLDER) {
+            const folderId = e.dataTransfer?.getData('application/x-ged-folder') || '';
+            moveFolderToParent(folderId, requestedFolderId);
+            return;
+        }
+        window.showAppToast?.('Não foi possível identificar o item arrastado.', 'warning', 'Movimentação');
     }
 
     document.addEventListener('click', function (e) { const link = e.target.closest('.js-folder-node'); if (!link || e.target.closest('.dropdown, .ged-tree-toggle')) return; e.preventDefault(); setSelectedFolderFromNode(link); loadFolderDocuments(getListingFolderId(link), { visualFolderId: getVisualFolderId(link), listingFolderId: getListingFolderId(link), folderName: getFolderName(link), forceRefresh: true }).catch(err => console.error('[GED Navigation]', err)); });
-    document.addEventListener('dragstart', function (e) { const row = e.target.closest('[data-document-id]'); if (!row) return; const ids = selectedDocumentIds(); const id = row.dataset.documentId; if (!ids.includes(id)) row.querySelector('.js-doc-select')?.click(); e.dataTransfer?.setData('application/x-ged-document', selectedDocumentIds().join(',')); });
+    document.addEventListener('dragstart', function (e) { const folder = e.target.closest('[data-drag-type="folder"][data-folder-id]'); if (folder && !e.target.closest('.dropdown, .ged-tree-toggle')) { e.dataTransfer?.setData('application/x-ged-drag-type', GedMoveType.FOLDER); e.dataTransfer?.setData('application/x-ged-folder', folder.dataset.folderId || ''); return; } const row = e.target.closest('[data-document-id]'); if (!row) return; const ids = selectedDocumentIds(); const id = row.dataset.documentId; if (!ids.includes(id)) row.querySelector('.js-doc-select')?.click(); e.dataTransfer?.setData('application/x-ged-drag-type', GedMoveType.DOCUMENTS); e.dataTransfer?.setData('application/x-ged-document', selectedDocumentIds().join(',')); });
     document.addEventListener('dragover', function (e) { const target = getFolderTarget(e); if (!target) return; e.preventDefault(); target.classList.add('ged-drop-target'); });
     document.addEventListener('dragleave', function (e) { getFolderTarget(e)?.classList.remove('ged-drop-target'); });
     document.addEventListener('drop', handleFolderDrop, true);
