@@ -217,7 +217,7 @@ public sealed class GedController : Controller
     [HttpPost("/Ged/Documents/BulkUploadSingle")]
     [ValidateAntiForgeryToken]
     [RequestSizeLimit(52428800)]
-    public async Task<IActionResult> BulkUploadSingle(IFormFile file, Guid? folderId, Guid? uploadFolderId, Guid? requestedFolderId, Guid? documentTypeId, Guid? classificationId, string? notes, string? visibility, bool runOcr, bool generatePreview, Guid? batchId, string? duplicateStrategy, Guid? existingDocumentId, string? uploadName, bool isDocumentPart, int? partNumber, int? totalParts, Guid? consolidateIntoDocumentId, int? fileIndex, int? totalFiles, CancellationToken ct)
+    public async Task<IActionResult> BulkUploadSingle(IFormFile file, Guid? folderId, Guid? uploadFolderId, Guid? requestedFolderId, Guid? documentTypeId, Guid? classificationId, string? notes, string? visibility, bool runOcr, bool generatePreview, Guid? batchId, string? duplicateStrategy, string? duplicateResolution, bool confirmedDuplicateUpload, Guid? existingDocumentId, string? uploadName, bool isDocumentPart, int? partNumber, int? totalParts, Guid? consolidateIntoDocumentId, int? fileIndex, int? totalFiles, CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
         var correlationId = HttpContext.TraceIdentifier;
@@ -230,6 +230,12 @@ public sealed class GedController : Controller
             {
                 return StatusCode(403, JsonError("Você não possui permissão para marcar documentos como incompletos ou adicionar partes.", "Autorização", "Permissão DOCUMENT_PART_ADD/DOCUMENT_PART_MARK_INCOMPLETE negada.", false, correlationId));
             }
+            var duplicateDecision = string.IsNullOrWhiteSpace(duplicateResolution) ? duplicateStrategy : duplicateResolution;
+            if (string.Equals(duplicateDecision, "UPLOAD_ANYWAY", StringComparison.OrdinalIgnoreCase) && !confirmedDuplicateUpload)
+            {
+                return BadRequest(JsonError("Confirme que deseja enviar mesmo com possível duplicidade.", "Duplicidade", "DUPLICATE_CONFIRMATION_REQUIRED", false, correlationId));
+            }
+
             var isAdmin = await _accessPolicy.IsAdminAsync(_currentUser.TenantId, _currentUser.UserId, User, ct);
             var receivedFolderId = uploadFolderId ?? folderId;
             var folderResolution = await ResolveUploadFolderAsync(receivedFolderId, requestedFolderId, isAdmin, correlationId, ct);
@@ -785,18 +791,14 @@ select
     null::text as "MedicalRecordNumber",
     null::text as "RegistryNumber",
     null::text as "DocumentType",
-    coalesce(dv.created_at, d.created_at) as "UploadedAt",
+    null::timestamptz as "UploadedAt",
     null::text as "UploadedByName",
+    null::text as "TechnicalStatus",
     case
-        when d.status is null then null
-        else d.status::text
-    end as "TechnicalStatus",
-    case
-        when coalesce(d.is_document_incomplete, false) = true then 'Documento incompleto'
         when coalesce(d.reg_status, 'A') = 'A' then 'Documento completo'
         else 'Documento inativo'
     end as "StatusLabel",
-    coalesce(d.is_document_incomplete, false) as "IsIncomplete",
+    false as "IsIncomplete",
     exists (
         select 1
         from ged.document_search ds
@@ -817,10 +819,14 @@ select
         else 'Existe arquivo com este nome em outra pasta do sistema.'
     end as "Explanation"
 from ged.document d
-left join ged.document_version dv
-       on dv.tenant_id = d.tenant_id
-      and dv.document_id = d.id
-      and coalesce(dv.reg_status, 'A') = 'A'
+left join lateral (
+    select v.id, v.document_id, v.tenant_id, v.file_name
+    from ged.document_version v
+    where v.tenant_id = d.tenant_id
+      and v.document_id = d.id
+    order by v.id desc
+    limit 1
+) dv on true
 left join ged.folder f
        on f.tenant_id = d.tenant_id
       and f.id = d.folder_id
@@ -847,15 +853,29 @@ limit 100;
                     cancellationToken: ct)))
                 .ToList();
 
+            var duplicates = rows
+                .GroupBy(x => string.IsNullOrWhiteSpace(x.ExistingFileName) ? x.ExistingTitle ?? string.Empty : x.ExistingFileName, StringComparer.OrdinalIgnoreCase)
+                .Select(g => new
+                {
+                    fileName = g.Key,
+                    hasDuplicate = true,
+                    canUploadAnyway = true,
+                    candidates = g.ToList(),
+                    summary = "Atenção: já existe um arquivo com nome ou conteúdo semelhante. Você pode enviar mesmo assim se este arquivo representar um novo exame, novo atendimento ou novo documento válido.",
+                    recommendedAction = "UPLOAD_ANYWAY"
+                })
+                .ToList();
+
             return Json(new
             {
                 success = true,
                 hasDuplicates = rows.Count > 0,
                 canContinue = true,
                 message = rows.Count > 0
-                    ? "Foram encontrados arquivos possivelmente duplicados. Você pode enviar mesmo assim se for um novo exame ou novo documento válido."
+                    ? "Atenção: já existe um arquivo com nome ou conteúdo semelhante. Você pode enviar mesmo assim se este arquivo representar um novo exame, novo atendimento ou novo documento válido."
                     : "",
-                items = rows
+                items = rows,
+                duplicates
             });
         }
         catch (Exception ex)

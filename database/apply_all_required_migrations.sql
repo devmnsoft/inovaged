@@ -122,6 +122,7 @@ CREATE TABLE IF NOT EXISTS ged.document_version (
 ALTER TABLE ged.document_version ADD COLUMN IF NOT EXISTS tenant_id uuid NULL;
 ALTER TABLE ged.document_version ADD COLUMN IF NOT EXISTS document_id uuid NULL;
 ALTER TABLE ged.document_version ADD COLUMN IF NOT EXISTS file_name text NULL;
+ALTER TABLE ged.document_version ADD COLUMN IF NOT EXISTS reg_status char(1) NOT NULL DEFAULT 'A';
 ALTER TABLE ged.document_version ADD COLUMN IF NOT EXISTS created_at timestamptz NULL;
 ALTER TABLE ged.document_version ADD COLUMN IF NOT EXISTS created_at_utc timestamptz NULL;
 ALTER TABLE ged.document_version ADD COLUMN IF NOT EXISTS uploaded_at_utc timestamptz NULL;
@@ -1418,6 +1419,9 @@ ON ged.document(tenant_id, folder_id, reg_status, created_at DESC);
 CREATE INDEX IF NOT EXISTS ix_document_version_tenant_document
 ON ged.document_version(tenant_id, document_id);
 
+CREATE INDEX IF NOT EXISTS ix_document_version_tenant_document_reg_status
+ON ged.document_version(tenant_id, document_id, reg_status);
+
 CREATE INDEX IF NOT EXISTS ix_document_search_tenant_document
 ON ged.document_search(tenant_id, document_id);
 
@@ -2234,6 +2238,9 @@ on ged.document(tenant_id, folder_id, created_at desc);
 
 create index if not exists ix_document_version_tenant_document
 on ged.document_version(tenant_id, document_id);
+
+create index if not exists ix_document_version_tenant_document_reg_status
+on ged.document_version(tenant_id, document_id, reg_status);
 
 do $$
 begin
