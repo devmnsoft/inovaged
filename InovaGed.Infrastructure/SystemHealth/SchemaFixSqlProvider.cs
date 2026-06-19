@@ -798,6 +798,7 @@ create table if not exists ged.document_quality_result (
         AddColumn(fixes, "ged.document_version", "is_partial_document", "boolean not null default false", "GED partial documents");
         AddColumn(fixes, "ged.document_version", "consolidated_version_id", "uuid null", "GED partial documents");
         AddColumn(fixes, "ged.document_version", "uploaded_at_utc", "timestamptz null", "GED versions");
+        AddColumn(fixes, "ged.document_version", "reg_status", "char(1) not null default 'A'", "GED soft delete");
         AddColumn(fixes, "ged.document_version", "is_document_incomplete", "boolean not null default false", "GED incomplete documents");
         AddColumn(fixes, "ged.document_version", "incomplete_reason", "text null", "GED incomplete documents");
         AddColumn(fixes, "ged.document_version", "incomplete_source", "text null", "GED incomplete documents");
@@ -1062,6 +1063,7 @@ end $$;
         fixes.Add(Index("GED_INDEX_DOCUMENT_VERSION_PARTIAL_GROUP_ID", "ged.ix_document_version_partial_group_id", "Performance", "Cria índice para agrupamento de documentos fracionados.", "create index if not exists ix_document_version_partial_group_id on ged.document_version(partial_group_id);"));
         fixes.Add(Index("GED_INDEX_DOCUMENT_VERSION_PARTIAL_STATUS", "ged.ix_document_version_partial_status", "Performance", "Cria índice para status parcial.", "create index if not exists ix_document_version_partial_status on ged.document_version(partial_status);"));
         fixes.Add(Index("GED_INDEX_DOCUMENT_VERSION_UPLOADED_AT_UTC", "ged.ix_document_version_uploaded_at_utc", "Performance", "Cria índice para ordenação por upload.", "create index if not exists ix_document_version_uploaded_at_utc on ged.document_version(uploaded_at_utc);"));
+        fixes.Add(Index("GED_INDEX_DOCUMENT_VERSION_TENANT_DOCUMENT_REG_STATUS", "ged.ix_document_version_tenant_document_reg_status", "Performance", "Cria índice para versões por documento/status lógico.", "create index if not exists ix_document_version_tenant_document_reg_status on ged.document_version(tenant_id, document_id, reg_status);"));
         fixes.Add(Index("GED_INDEX_DOCUMENT_SEARCH_TENANT_VERSION", "ged.ix_ged_document_search_tenant_version", "Performance", "Cria índice de busca OCR por tenant e coluna documental compatível detectada dinamicamente.", DocumentSearchTenantVersionIndexSql, [
             new SchemaObjectDependency { Type = "Table", Schema = "ged", Table = "document_search" },
             new SchemaObjectDependency { Type = "Column", Schema = "ged", Table = "document_search", Column = "tenant_id" },

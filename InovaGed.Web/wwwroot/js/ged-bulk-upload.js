@@ -668,7 +668,7 @@
                     createdRealFolder: data.createdRealFolder
                 });
             }
-            return data.duplicates || [];
+            return data.duplicates || data.items || [];
         })();
 
         try {
@@ -716,7 +716,7 @@
         modal.className = 'modal fade';
         modal.id = 'duplicateUploadConfirmModal';
         modal.tabIndex = -1;
-        modal.innerHTML = `<div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5 class="modal-title">Enviar mesmo assim?</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button></div><div class="modal-body"><p class="mb-2" data-dup-confirm-message></p><div class="alert alert-warning small mb-3">Se continuar, será criado um novo documento mesmo havendo possível duplicidade.</div><div class="form-check"><input class="form-check-input" type="checkbox" id="duplicateUploadAwareCheck"><label class="form-check-label" for="duplicateUploadAwareCheck">Estou ciente e desejo enviar mesmo assim.</label></div></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar envio</button><button type="button" class="btn btn-danger" id="btnConfirmDuplicateUpload" disabled>Enviar mesmo assim</button></div></div></div>`;
+        modal.innerHTML = `<div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5 class="modal-title">Enviar mesmo assim?</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button></div><div class="modal-body"><p class="mb-2" data-dup-confirm-message></p><div class="alert alert-warning small mb-3">Atenção: já existe um arquivo com nome ou conteúdo semelhante. Você pode enviar mesmo assim se este arquivo representar um novo exame, novo atendimento ou novo documento válido.</div><div class="form-check"><input class="form-check-input" type="checkbox" id="duplicateUploadAwareCheck"><label class="form-check-label" for="duplicateUploadAwareCheck">Estou ciente e desejo enviar mesmo assim.</label></div></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar envio</button><button type="button" class="btn btn-danger" id="btnConfirmDuplicateUpload" disabled>Enviar mesmo assim</button></div></div></div>`;
         document.body.appendChild(modal);
         return modal;
     }
