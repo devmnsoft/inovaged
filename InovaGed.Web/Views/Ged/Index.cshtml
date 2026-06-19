@@ -145,6 +145,8 @@
                                 var isVirtual = FolderIdHelper.IsVirtualFolder(n.Id);
 
                                 <li class="ged-tree-node"
+                                    draggable="@((canMoveFolders && !n.IsVirtual && !isVirtual) ? "true" : "false")"
+                                    data-drag-type="folder"
                                     data-id="@n.Id"
                                     data-parent="@(n.ParentId?.ToString() ?? "")"
                                     data-has-children="@(hasChildren ? "1" : "0")"
@@ -173,6 +175,8 @@
                                         <i class="bi bi-folder2 ged-tree-folder"></i>
 
                                         <a class="js-folder-node ged-tree-link flex-grow-1" href="@href"
+                                           draggable="@((canMoveFolders && !n.IsVirtual && !isVirtual) ? "true" : "false")"
+                                           data-drag-type="folder"
                                            data-folder-id="@n.Id"
                                            data-upload-folder-id="@(n.UploadFolderId == Guid.Empty ? n.Id : n.UploadFolderId)"
                                     data-listing-folder-id="@(n.ListingFolderId == Guid.Empty ? (n.UploadFolderId == Guid.Empty ? n.Id : n.UploadFolderId) : n.ListingFolderId)"
@@ -294,6 +298,8 @@
                                 var isVirtual = FolderIdHelper.IsVirtualFolder(n.Id);
 
                                 <li class="ged-tree-node"
+                                    draggable="@((canMoveFolders && !n.IsVirtual && !isVirtual) ? "true" : "false")"
+                                    data-drag-type="folder"
                                     data-id="@n.Id"
                                     data-parent=""
                                     data-has-children="@(hasChildren ? "1" : "0")"
@@ -321,6 +327,8 @@
 
                                         <i class="bi bi-folder2 ged-tree-folder"></i>
                                         <a class="js-folder-node ged-tree-link flex-grow-1" href="@href"
+                                           draggable="@((canMoveFolders && !n.IsVirtual && !isVirtual) ? "true" : "false")"
+                                           data-drag-type="folder"
                                            data-folder-id="@n.Id"
                                            data-upload-folder-id="@(n.UploadFolderId == Guid.Empty ? n.Id : n.UploadFolderId)"
                                     data-listing-folder-id="@(n.ListingFolderId == Guid.Empty ? (n.UploadFolderId == Guid.Empty ? n.Id : n.UploadFolderId) : n.ListingFolderId)"
@@ -721,29 +729,29 @@
         <div class="modal-content">
             <form id="moveFolderForm">
                 @Html.AntiForgeryToken()
-                <input type="hidden" id="move-folder-id" />
+                <input type="hidden" id="moveFolderId" />
                 <div class="modal-header">
                     <h5 class="modal-title"><i class="bi bi-arrows-move me-1"></i> Mover pasta</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
                 </div>
                 <div class="modal-body">
-                    <div class="mb-3 text-muted">Pasta selecionada: <strong id="move-folder-name"></strong></div>
+                    <div class="mb-3 text-muted">Pasta selecionada: <strong id="moveFolderName"></strong></div>
                     <div class="alert alert-info small">Ao mover a pasta, todas as subpastas e documentos dentro dela continuarão vinculados e serão exibidos no novo local.</div>
                     <div class="mb-3">
-                        <label class="form-label" for="move-folder-destination">Escolha a pasta de destino</label>
-                        <select class="form-select" id="move-folder-destination">
+                        <label class="form-label" for="moveFolderDestination">Escolha a pasta de destino</label>
+                        <select class="form-select" id="moveFolderDestination">
                             <option value="">Carregando destinos...</option>
                         </select>
                     </div>
                     <div class="mb-0">
-                        <label class="form-label" for="move-folder-reason">Motivo da movimentação</label>
-                        <textarea class="form-control" id="move-folder-reason" rows="2" maxlength="500" placeholder="Opcional"></textarea>
+                        <label class="form-label" for="moveFolderReason">Motivo da movimentação</label>
+                        <textarea class="form-control" id="moveFolderReason" rows="2" maxlength="500" placeholder="Opcional"></textarea>
                     </div>
-                    <div class="alert mt-3 d-none" id="move-folder-message" role="alert"></div>
+                    <div class="alert mt-3 d-none" id="moveFolderMessage" role="alert"></div>
                 </div>
                 <div class="modal-footer">
                     <button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">Cancelar</button>
-                    <button class="btn btn-primary" type="submit" id="move-folder-submit"><span class="btn-text"><i class="bi bi-check2 me-1"></i> Mover pasta</span><span class="btn-loading d-none">Movendo...</span></button>
+                    <button class="btn btn-primary" type="submit" id="btnConfirmMoveFolder"><span class="btn-text"><i class="bi bi-check2 me-1"></i> Mover pasta</span><span class="btn-loading d-none">Movendo...</span></button>
                 </div>
             </form>
         </div>
@@ -1292,8 +1300,8 @@
 
         const moveFolderModal = document.getElementById('modalMoverPasta');
         const moveFolderForm = document.getElementById('moveFolderForm');
-        const moveFolderSelect = document.getElementById('move-folder-destination');
-        const moveFolderMessage = document.getElementById('move-folder-message');
+        const moveFolderSelect = document.getElementById('moveFolderDestination');
+        const moveFolderMessage = document.getElementById('moveFolderMessage');
 
         function showMoveFolderMessage(message, type = 'warning') {
             if (!moveFolderMessage) return;
@@ -1301,13 +1309,12 @@
             moveFolderMessage.textContent = message || '';
         }
 
-        document.addEventListener('click', async (e) => {
-            const btn = e.target.closest('.js-move-folder');
-            if (!btn) return;
-            const folderId = btn.dataset.folderId || '';
-            document.getElementById('move-folder-id').value = folderId;
-            document.getElementById('move-folder-name').textContent = btn.dataset.folderName || 'Pasta';
-            document.getElementById('move-folder-reason').value = '';
+        async function openMoveFolderModal(folderId, folderName, parentId) {
+            // Fluxo exclusivo de mover pasta: não consultar documentos selecionados e não chamar moveSelectedDocumentsToFolder.
+            document.getElementById('moveFolderId').value = folderId || '';
+            document.getElementById('moveFolderName').textContent = folderName || 'Pasta';
+            document.getElementById('moveFolderReason').value = '';
+            moveFolderModal.dataset.parentId = parentId || '';
             moveFolderMessage?.classList.add('d-none');
             moveFolderSelect.innerHTML = '<option value="">Carregando destinos...</option>';
             bootstrap.Modal.getOrCreateInstance(moveFolderModal).show();
@@ -1319,29 +1326,41 @@
                 (payload.items || []).forEach(item => {
                     const opt = document.createElement('option');
                     opt.value = item.id || '';
-                    opt.textContent = `${'— '.repeat(Math.max(0, item.level || 0))}${item.path || item.name || 'Pasta'}`;
+                    opt.textContent = item.path || item.name || 'Pasta';
                     moveFolderSelect.appendChild(opt);
                 });
             } catch {
                 showMoveFolderMessage('Falha de comunicação ao carregar destinos.');
             }
+        }
+
+        document.addEventListener('click', async (e) => {
+            const btn = e.target.closest('.js-move-folder');
+            if (!btn) return;
+            e.preventDefault();
+            e.stopPropagation();
+            await openMoveFolderModal(btn.dataset.folderId || '', btn.dataset.folderName || 'Pasta', btn.dataset.parentId || null);
         });
 
         moveFolderForm?.addEventListener('submit', async (e) => {
             e.preventDefault();
-            const folderId = document.getElementById('move-folder-id').value;
+            const folderId = document.getElementById('moveFolderId').value;
             const destinationValue = moveFolderSelect.value;
             if (!folderId) { showMoveFolderMessage('Pasta inválida.'); return; }
             if (destinationValue && destinationValue.toLowerCase() === folderId.toLowerCase()) { showMoveFolderMessage('Não é possível mover a pasta para ela mesma.'); return; }
             const token = moveFolderForm.querySelector('input[name="__RequestVerificationToken"]')?.value || '';
-            const btn = document.getElementById('move-folder-submit');
+            const btn = document.getElementById('btnConfirmMoveFolder');
             setBtnLoading(btn, true);
+            const destinationName = moveFolderSelect.options[moveFolderSelect.selectedIndex]?.textContent || 'Raiz';
+            const folderName = document.getElementById('moveFolderName').textContent || 'Pasta';
+            const confirmed = await window.showAppConfirm?.(`Mover a pasta '${folderName}' para '${destinationName}'? Todas as subpastas e documentos continuarão dentro dela.`, 'Mover pasta');
+            if (confirmed === false) { setBtnLoading(btn, false); return; }
             showMoveFolderMessage('Movendo pasta...', 'info');
             try {
                 const res = await fetch('/Ged/Folders/Move', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'RequestVerificationToken': token, 'X-Requested-With': 'XMLHttpRequest' },
-                    body: JSON.stringify({ folderId, destinationParentId: destinationValue || null, reason: document.getElementById('move-folder-reason').value || null })
+                    body: JSON.stringify({ folderId, destinationParentId: destinationValue || null, reason: document.getElementById('moveFolderReason').value || null })
                 });
                 const payload = await res.json().catch(() => ({ success: false, message: 'Resposta inválida do servidor.' }));
                 if (!res.ok || !payload.success) { showMoveFolderMessage(payload.message || 'Não foi possível mover a pasta.'); return; }

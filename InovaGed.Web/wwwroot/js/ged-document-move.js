@@ -201,7 +201,9 @@
         async function moveDocumentsToFolder(targetFolderId, targetFolderName, requestedFolderId) {
             selectedIds = getSelected();
             if (!selectedIds.length) {
-                window.showAppToast?.('Selecione ao menos um documento para mover.', 'warning', 'Movimentação');
+                // Esta mensagem é exclusiva do fluxo de mover documentos.
+                // Não usar no fluxo de mover pasta.
+                window.showAppToast?.('Selecione os documentos do GED antes de arrastar para uma pasta.', 'warning', 'Movimentação');
                 return;
             }
             destinationFolderId.value = targetFolderId || '';
