@@ -2930,3 +2930,17 @@ on ged.upload_duplicate_decision(tenant_id, batch_id, decided_at desc);
 
 create index if not exists ix_upload_duplicate_decision_tenant_document
 on ged.upload_duplicate_decision(tenant_id, document_id);
+
+-- 2026_06_fix_folder_move_columns.sql
+-- InovaGED - Colunas e índice necessários para movimentação confiável de pastas GED.
+-- Idempotente e sem criação de coluna path.
+
+alter table if exists ged.folder
+add column if not exists updated_at timestamptz null;
+
+alter table if exists ged.folder
+add column if not exists updated_by uuid null;
+
+create index if not exists ix_folder_tenant_parent_name
+on ged.folder(tenant_id, parent_id, lower(name))
+where coalesce(reg_status, 'A') = 'A';
