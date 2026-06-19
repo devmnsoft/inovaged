@@ -202,6 +202,9 @@ public sealed class GedController : Controller
             if (!result.Success || result.Value is null)
                 return BadRequest(new { success = false, message = result.Error?.Message ?? "Não foi possível mover a pasta.", correlationId });
 
+            if (result.Value.RowsAffected <= 0)
+                return BadRequest(new { success = false, message = "A movimentação não foi confirmada no banco.", correlationId });
+
             return Ok(new { success = true, message = "Pasta movida com sucesso.", folderId = result.Value.FolderId, oldParentId = result.Value.OldParentId, newParentId = result.Value.NewParentId, oldPath = result.Value.OldPath, newPath = result.Value.NewPath, moved = result.Value.Moved, rowsAffected = result.Value.RowsAffected });
         }
         catch (Exception ex)
