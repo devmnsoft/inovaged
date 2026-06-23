@@ -20,7 +20,7 @@
         const nextPage = Number(container.dataset.page || '1') + 1;
         const pageSize = Number(container.dataset.pageSize || '50');
         const folderId = container.dataset.listingFolderId || container.dataset.folderId || document.getElementById('currentFolderId')?.value || '';
-        const q = document.getElementById('smartSearchInput')?.value || '';
+        const q = document.getElementById('legacySmartSearchInput')?.value || document.getElementById('smartSearchInput')?.value || '';
         const btn = document.querySelector('.js-ged-load-more');
         const old = btn?.innerHTML;
         if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Carregando...'; }
@@ -50,7 +50,7 @@
     function refreshBySearch() {
         const selected = window.GedFolderSelection?.getSelected?.();
         const folderId = selected?.listingFolderId || document.querySelector('#gedDocumentsContainer')?.dataset?.listingFolderId || document.getElementById('currentFolderId')?.value;
-        const q = document.getElementById('smartSearchInput')?.value || '';
+        const q = document.getElementById('legacySmartSearchInput')?.value || document.getElementById('smartSearchInput')?.value || '';
         if (folderId && window.GedFolderNavigation?.loadFolderDocuments) {
             window.GedFolderNavigation.loadFolderDocuments(folderId, { forceRefresh: true, listingFolderId: folderId, visualFolderId: selected?.folderId || selected?.visualFolderId || folderId, folderName: selected?.folderName, q });
         }
@@ -74,10 +74,14 @@
     });
 
     document.getElementById('btnSmartSearch')?.addEventListener('click', refreshBySearch);
+    document.getElementById('legacyBtnSmartSearch')?.addEventListener('click', refreshBySearch);
+    document.getElementById('legacyBtnSmartSearchClear')?.addEventListener('click', () => { const input = document.getElementById('legacySmartSearchInput'); if (input) input.value = ''; refreshBySearch(); });
+    document.addEventListener('click', (e) => { if (e.target.closest('#btnEmptyClearSearch')) { e.preventDefault(); const input = document.getElementById('legacySmartSearchInput'); if (input) input.value = ''; refreshBySearch(); } });
     document.getElementById('smartSearchInput')?.addEventListener('input', () => {
         clearTimeout(debounceTimer);
         debounceTimer = setTimeout(refreshBySearch, 450);
     });
+    document.getElementById('legacySmartSearchInput')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); refreshBySearch(); } });
 
     window.GedDocumentsList = { updateSelectedState, loadMore };
     document.addEventListener('DOMContentLoaded', updateSelectedState);

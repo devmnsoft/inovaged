@@ -740,6 +740,7 @@ public sealed class GedController : Controller
         public Guid? RequestedFolderId { get; set; }
         public IReadOnlyList<string> FileNames { get; set; } = Array.Empty<string>();
         public IReadOnlyList<string> Names { get; set; } = Array.Empty<string>();
+        public string DuplicateCheckScope { get; set; } = "CURRENT_FOLDER";
     }
 
     [HttpPost("/Ged/Documents/CheckDuplicateNames")]
@@ -777,9 +778,38 @@ public sealed class GedController : Controller
                 .Select(x => x.ToLowerInvariant())
                 .ToArray();
 
-            var folderId = request?.UploadFolderId ?? request?.FolderId;
+            var folderId = request?.UploadFolderId ?? request?.FolderId ?? request?.RequestedFolderId;
+            var duplicateCheckScope = NormalizeDuplicateCheckScope(request?.DuplicateCheckScope);
+
+            if (folderId is null && duplicateCheckScope != "ALL_SYSTEM")
+            {
+                return Json(new
+                {
+                    success = true,
+                    hasDuplicates = false,
+                    canContinue = true,
+                    duplicateCheckScope,
+                    items = Array.Empty<object>(),
+                    duplicates = Array.Empty<object>(),
+                    message = "Não foi possível identificar a pasta de destino para verificar duplicidade."
+                });
+            }
 
             const string sql = """
+with recursive folder_scope as (
+    select f.id
+    from ged.folder f
+    where f.tenant_id = @TenantId
+      and f.id = @FolderId
+      and @DuplicateCheckScope = 'CURRENT_FOLDER_AND_SUBFOLDERS'
+
+    union all
+
+    select child.id
+    from ged.folder child
+    join folder_scope parent_scope on parent_scope.id = child.parent_id
+    where child.tenant_id = @TenantId
+)
 select
     d.id as "DocumentId",
     dv.id as "VersionId",
@@ -794,10 +824,7 @@ select
     null::timestamptz as "UploadedAt",
     null::text as "UploadedByName",
     null::text as "TechnicalStatus",
-    case
-        when coalesce(d.reg_status, 'A') = 'A' then 'Documento completo'
-        else 'Documento inativo'
-    end as "StatusLabel",
+    case when coalesce(d.reg_status, 'A') = 'A' then 'Ativo' else 'Inativo' end as "StatusLabel",
     false as "IsIncomplete",
     exists (
         select 1
@@ -807,16 +834,18 @@ select
           and nullif(btrim(ds.ocr_text), '') is not null
     ) as "HasOcr",
     case
-        when @FolderId is not null and d.folder_id = @FolderId then 'SAME_FOLDER'
-        else 'SAME_TENANT'
+        when @DuplicateCheckScope = 'ALL_SYSTEM' and (@FolderId is null or d.folder_id <> @FolderId) then 'SAME_TENANT'
+        when @DuplicateCheckScope = 'CURRENT_FOLDER_AND_SUBFOLDERS' and d.folder_id <> @FolderId then 'SAME_FOLDER_AND_SUBFOLDERS'
+        else 'SAME_FOLDER'
     end as "DuplicateScope",
     (@FolderId is not null and d.folder_id = @FolderId) as "SameFolder",
     true as "SameFileName",
     false as "SameHash",
     false as "SamePatient",
     case
-        when @FolderId is not null and d.folder_id = @FolderId then 'Já existe arquivo com este nome nesta mesma pasta.'
-        else 'Existe arquivo com este nome em outra pasta do sistema.'
+        when @DuplicateCheckScope = 'ALL_SYSTEM' and (@FolderId is null or d.folder_id <> @FolderId) then 'Existe arquivo com este nome em outra pasta do sistema.'
+        when @DuplicateCheckScope = 'CURRENT_FOLDER_AND_SUBFOLDERS' and d.folder_id <> @FolderId then 'Já existe arquivo com este nome nesta pasta ou em uma subpasta.'
+        else 'Já existe arquivo com este nome nesta pasta.'
     end as "Explanation"
 from ged.document d
 left join lateral (
@@ -833,6 +862,11 @@ left join ged.folder f
 where d.tenant_id = @TenantId
   and coalesce(d.reg_status, 'A') = 'A'
   and (
+        (@DuplicateCheckScope = 'CURRENT_FOLDER' and d.folder_id = @FolderId)
+        or (@DuplicateCheckScope = 'CURRENT_FOLDER_AND_SUBFOLDERS' and d.folder_id in (select id from folder_scope))
+        or (@DuplicateCheckScope = 'ALL_SYSTEM')
+  )
+  and (
         lower(coalesce(dv.file_name, '')) = any(@NormalizedNames)
         or lower(coalesce(d.title, '')) = any(@NormalizedNames)
   )
@@ -848,10 +882,15 @@ limit 100;
                     {
                         TenantId = tenantId,
                         FolderId = folderId,
+                        DuplicateCheckScope = duplicateCheckScope,
                         NormalizedNames = normalizedNames
                     },
                     cancellationToken: ct)))
                 .ToList();
+
+            var message = duplicateCheckScope == "ALL_SYSTEM"
+                ? "Encontramos possíveis duplicidades no sistema todo."
+                : "Já existe arquivo com este nome nesta pasta.";
 
             var duplicates = rows
                 .GroupBy(x => string.IsNullOrWhiteSpace(x.ExistingFileName) ? x.ExistingTitle ?? string.Empty : x.ExistingFileName, StringComparer.OrdinalIgnoreCase)
@@ -861,7 +900,9 @@ limit 100;
                     hasDuplicate = true,
                     canUploadAnyway = true,
                     candidates = g.ToList(),
-                    summary = "Atenção: já existe um arquivo com nome ou conteúdo semelhante. Você pode enviar mesmo assim se este arquivo representar um novo exame, novo atendimento ou novo documento válido.",
+                    summary = duplicateCheckScope == "ALL_SYSTEM"
+                        ? "Encontramos possíveis duplicidades no sistema todo. Você pode enviar mesmo assim se este arquivo representar um novo exame, novo atendimento ou novo documento válido."
+                        : "Este arquivo já existe nesta pasta. Você pode enviar mesmo assim se representar um novo exame, novo atendimento ou novo documento válido.",
                     recommendedAction = "UPLOAD_ANYWAY"
                 })
                 .ToList();
@@ -871,9 +912,8 @@ limit 100;
                 success = true,
                 hasDuplicates = rows.Count > 0,
                 canContinue = true,
-                message = rows.Count > 0
-                    ? "Atenção: já existe um arquivo com nome ou conteúdo semelhante. Você pode enviar mesmo assim se este arquivo representar um novo exame, novo atendimento ou novo documento válido."
-                    : "",
+                duplicateCheckScope,
+                message = rows.Count > 0 ? message : "",
                 items = rows,
                 duplicates
             });
@@ -897,6 +937,12 @@ limit 100;
                 correlationId = HttpContext.TraceIdentifier
             });
         }
+    }
+
+    private static string NormalizeDuplicateCheckScope(string? scope)
+    {
+        var value = (scope ?? "CURRENT_FOLDER").Trim().ToUpperInvariant();
+        return value is "CURRENT_FOLDER_AND_SUBFOLDERS" or "ALL_SYSTEM" ? value : "CURRENT_FOLDER";
     }
 
     private async Task<UploadFolderResolutionResult> ResolveUploadFolderAsync(Guid? folderId, Guid? requestedFolderId, bool isAdmin, string correlationId, CancellationToken ct)

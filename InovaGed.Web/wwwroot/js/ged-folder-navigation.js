@@ -136,7 +136,7 @@
         saveTreeState();
         const container = document.querySelector('#gedDocumentsContainer');
         if (container) container.innerHTML = '<div class="p-4 text-muted"><span class="spinner-border spinner-border-sm me-2"></span>Carregando documentos...</div>';
-        const query = options.q ?? document.getElementById('smartSearchInput')?.value ?? '';
+        const query = options.q ?? document.getElementById('legacySmartSearchInput')?.value ?? document.getElementById('smartSearchInput')?.value ?? '';
         const qParam = query ? `&q=${encodeURIComponent(query)}` : '';
         const cacheBust = options.forceRefresh ? `&_ts=${Date.now()}` : '';
         const res = await fetch(`/Ged/DocumentsList?folderId=${encodeURIComponent(listingFolderId)}${qParam}${cacheBust}`, { headers: { 'X-Requested-With': 'XMLHttpRequest' }, cache: options.forceRefresh ? 'no-store' : 'default' });

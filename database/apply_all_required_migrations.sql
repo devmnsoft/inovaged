@@ -2527,7 +2527,10 @@ cross join (values
 ('APAC','apac','administrative',array['autorização de procedimento','autorização de alta complexidade'],array['guia','autorização','oncologia'],2,false),
 ('ultrassom','ultrassom','exam',array['ultrassonografia','USG'],array['exame','laudo'],1.5,false),
 ('tomografia','tomografia','exam',array['TC','tomografia computadorizada'],array['exame','laudo'],1.5,false),
-('prontuário','prontuario','document_type',array['registro do paciente','ficha do paciente'],array['paciente','histórico clínico'],1.5,true)
+('prontuário','prontuario','document_type',array['registro do paciente','ficha do paciente'],array['paciente','histórico clínico'],1.5,true),
+('oncologia','oncologia','clinical',array['tratamento oncológico','oncologico'],array['câncer','neoplasia','quimioterapia','radioterapia'],2,true),
+('laudo','laudo','document_type',array['resultado'],array['exame'],1,false),
+('exame','exame','document_type',array['procedimento'],array['laudo'],1,false)
 ) as s(term, normalized_term, category, synonyms, related_terms, weight, is_sensitive)
 where not exists (select 1 from ged.search_context_term x where x.tenant_id=t.id and x.normalized_term=lower(s.normalized_term) and x.reg_status='A');
 

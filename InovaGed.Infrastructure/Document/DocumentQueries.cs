@@ -5,6 +5,9 @@ using InovaGed.Domain.Documents;
 using InovaGed.Domain.Ged;
 using Microsoft.Extensions.Logging;
 using Npgsql;
+using System.Globalization;
+using System.Text;
+using System.Text.RegularExpressions;
 
 namespace InovaGed.Infrastructure.Documents;
 
@@ -72,6 +75,7 @@ public sealed class DocumentQueries : IDocumentQueries
         var hasAllPartialOcrExpr = schema.HasDocumentPartialPartTable && schema.HasDocumentSearchOcrText ? "COALESCE(pos.total_parts,0) > 0 AND COALESCE(pos.parts_with_ocr,0) = COALESCE(pos.total_parts,0)" : "false";
         var ocrSummaryTextExpr = schema.HasDocumentPartialPartTable && schema.HasDocumentSearchOcrText ? $"CASE WHEN ({isPartialDocumentExpr}) OR COALESCE(pos.total_parts,0) > 0 THEN CASE WHEN upper(COALESCE({partialStatusExpr},'')) = 'CONSOLIDATED' AND ({ocrStatusExpr} = 'COMPLETED' AND {hasOcrTextExpr}) THEN 'OCR consolidado' WHEN COALESCE(pos.total_parts,0)=0 THEN '' WHEN COALESCE(pos.parts_with_ocr,0)=0 THEN 'Sem OCR nas partes' WHEN COALESCE(pos.parts_with_ocr,0)=COALESCE(pos.total_parts,0) THEN 'OCR disponível nas partes' ELSE 'OCR parcial ' || COALESCE(pos.parts_with_ocr,0)::text || '/' || COALESCE(pos.total_parts,0)::text END ELSE '' END" : "''";
         var ocrSummaryCssExpr = schema.HasDocumentPartialPartTable && schema.HasDocumentSearchOcrText ? $"CASE WHEN ({isPartialDocumentExpr}) OR COALESCE(pos.total_parts,0) > 0 THEN CASE WHEN upper(COALESCE({partialStatusExpr},'')) = 'CONSOLIDATED' AND ({ocrStatusExpr} = 'COMPLETED' AND {hasOcrTextExpr}) THEN 'bg-success' WHEN COALESCE(pos.total_parts,0)=0 THEN '' WHEN COALESCE(pos.parts_with_ocr,0)=0 THEN 'bg-secondary' WHEN COALESCE(pos.parts_with_ocr,0)=COALESCE(pos.total_parts,0) THEN 'bg-success' ELSE 'bg-warning text-dark' END ELSE '' END" : "''";
+        var normalizedQ = NormalizeSearchTerm(q);
         var sql = $$"""
 SELECT
     d.id                           AS "Id",
@@ -146,16 +150,20 @@ WHERE d.tenant_id = @tenantId
   AND d.status <> 'ARCHIVED'::ged.document_status_enum
   AND coalesce(d.reg_status, 'A') = 'A'
   AND (@q IS NULL OR @q = '' OR
-       d.title ILIKE ('%'||@q||'%') OR
-       cv.file_name ILIKE ('%'||@q||'%') OR
-       dt.name ILIKE ('%'||@q||'%'))
+       lower(coalesce(d.title, '')) LIKE ('%'||@q||'%') OR
+       lower(coalesce(cv.file_name, '')) LIKE ('%'||@q||'%') OR
+       lower(coalesce(dt.name, '')) LIKE ('%'||@q||'%') OR
+       lower(coalesce(cdt.name, '')) LIKE ('%'||@q||'%') OR
+       lower(coalesce(d.description, '')) LIKE ('%'||@q||'%') OR
+       lower(coalesce(d.code, '')) LIKE ('%'||@q||'%') OR
+       lower(coalesce({{ocrTextExpr}}, '')) LIKE ('%'||@q||'%'))
 ORDER BY {{uploadedAtExpr}} DESC;
 """;
 
         try
         {
             var rows = await conn.QueryAsync<DocumentRowDto>(
-                new CommandDefinition(sql, new { tenantId, folderId, q }, cancellationToken: ct));
+                new CommandDefinition(sql, new { tenantId, folderId, q = normalizedQ }, cancellationToken: ct));
 
             return rows.AsList();
         }
@@ -168,6 +176,15 @@ ORDER BY {{uploadedAtExpr}} DESC;
 
             throw;
         }
+    }
+
+    private static string? NormalizeSearchTerm(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var formD = value.Trim().Normalize(NormalizationForm.FormD);
+        var withoutAccents = new string(formD.Where(c => CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark).ToArray()).Normalize(NormalizationForm.FormC);
+        var collapsed = Regex.Replace(withoutAccents, @"\s+", " ");
+        return string.IsNullOrWhiteSpace(collapsed) ? null : collapsed.ToLowerInvariant();
     }
 
     public async Task<DocumentDetailsDto?> GetAsync(Guid tenantId, Guid documentId, CancellationToken ct)

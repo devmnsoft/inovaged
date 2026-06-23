@@ -71,8 +71,22 @@ where tenant_id=@tenantId and coalesce(reg_status,'A')='A'
   and (position(normalized_term in @normalized) > 0 or exists(select 1 from unnest(coalesce(synonyms,array[]::text[])) s where position(lower(s) in @normalized) > 0))
 """;
         try { await using var c = await _db.OpenAsync(ct); return (await c.QueryAsync<Row>(new CommandDefinition(sql, new { tenantId, normalized }, cancellationToken: ct))).ToList(); }
-        catch { return []; }
+        catch { return BuiltInTerms(normalized); }
     }
+    private static IReadOnlyList<Row> BuiltInTerms(string normalized)
+    {
+        var rows = new[]
+        {
+            new Row { Term = "câncer de mama", Category = "clinical", Synonyms = ["neoplasia mamária", "carcinoma mamário", "tumor de mama", "CA de mama", "câncer mamário", "cancer de mama", "oncologia mamária", "mastologia"], RelatedTerms = ["mama", "mamografia", "biópsia", "quimioterapia", "radioterapia", "oncologia"], IsSensitive = true },
+            new Row { Term = "APAC", Category = "administrative", Synonyms = ["autorização de procedimento", "autorização de alta complexidade"], RelatedTerms = ["oncologia", "guia", "autorização"], IsSensitive = false },
+            new Row { Term = "oncologia", Category = "clinical", Synonyms = ["tratamento oncológico"], RelatedTerms = ["câncer", "neoplasia", "quimioterapia", "radioterapia"], IsSensitive = true },
+            new Row { Term = "laudo", Category = "document_type", Synonyms = ["resultado"], RelatedTerms = ["exame"], IsSensitive = false },
+            new Row { Term = "exame", Category = "document_type", Synonyms = ["procedimento"], RelatedTerms = ["laudo"], IsSensitive = false },
+            new Row { Term = "prontuário", Category = "document_type", Synonyms = ["prontuario", "registro do paciente"], RelatedTerms = ["paciente", "histórico clínico"], IsSensitive = true }
+        };
+        return rows.Where(r => normalized.Contains(Normalize(r.Term)) || (r.Synonyms ?? []).Any(s => normalized.Contains(Normalize(s)))).ToArray();
+    }
+
     private static string? ExtractPatientHint(string query)
     {
         var m = Regex.Match(query ?? string.Empty, @"(?:paciente|pacient[ea]|prontuário\s+d[ao])\s+([A-ZÁÉÍÓÚÂÊÔÃÕÇ][\p{L}]+(?:\s+[A-ZÁÉÍÓÚÂÊÔÃÕÇ][\p{L}]+){0,3})", RegexOptions.IgnoreCase);
