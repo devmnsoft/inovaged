@@ -231,7 +231,16 @@ public sealed class LoansController : Controller
     [Authorize(Policy = AppPolicies.LoansRequest)]
     [HttpGet("New")]
     public IActionResult New()
-        => View(new LoanCreateVM { DueAt = DateTimeOffset.Now.AddDays(7) });
+    {
+        var sector = User.FindFirst("sector")?.Value ?? User.FindFirst("setor")?.Value;
+        return View(new LoanCreateVM
+        {
+            DeliveryMode = "DIGITAL",
+            Priority = "NORMAL",
+            RequesterSectorName = sector,
+            RequesterName = User.Identity?.Name ?? string.Empty
+        });
+    }
 
     // =========================================================
     // POST /Loans/New
@@ -252,13 +261,14 @@ public sealed class LoansController : Controller
                 return View(vm);
             }
 
-            TempData["Ok"] = "Empréstimo criado com sucesso.";
+            TempData["Ok"] = "Solicitação enviada com sucesso. Um responsável analisará sua solicitação e responderá por aqui.";
             return RedirectToAction(nameof(Details), new { id = res.Value });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Loans.New POST failed");
-            TempData["Err"] = "Erro ao criar empréstimo.";
+            var correlationId = HttpContext.TraceIdentifier;
+            _logger.LogError(ex, "Loans.New POST failed. CorrelationId={CorrelationId}", correlationId);
+            TempData["Err"] = $"Não foi possível registrar sua solicitação. Informe o suporte com o código: {correlationId}";
             return View(vm);
         }
     }

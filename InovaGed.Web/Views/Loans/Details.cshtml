@@ -45,6 +45,23 @@
 
 @if (TempData["Ok"] is not null) { <div class="alert alert-success">@TempData["Ok"]</div> }
 @if (TempData["Err"] is not null) { <div class="alert alert-danger">@TempData["Err"]</div> }
+@if (TempData["Ok"] is not null && string.Equals(h.Status, "REQUESTED", StringComparison.OrdinalIgnoreCase))
+{
+    <div class="alert alert-success border-success">
+        <h5 class="alert-heading mb-2"><i class="bi bi-check-circle me-1"></i>Solicitação enviada com sucesso.</h5>
+        <div class="row g-2 small">
+            <div class="col-md-3"><strong>Número do pedido:</strong> @(h.RequestNo ?? h.ProtocolNo.ToString())</div>
+            <div class="col-md-3"><strong>Status:</strong> @StatusPt(h.Status)</div>
+            <div class="col-md-3"><strong>Entrega:</strong> @(h.DeliveryMode ?? "DIGITAL")</div>
+            <div class="col-md-3"><strong>Prazo estimado:</strong> @(h.SlaDueAt?.ToString("dd/MM/yyyy HH:mm") ?? h.DueAt.ToString("dd/MM/yyyy HH:mm"))</div>
+            @if (!string.IsNullOrWhiteSpace(h.RequestDescription))
+            {
+                <div class="col-12"><strong>Descrição:</strong> @h.RequestDescription</div>
+            }
+        </div>
+        <div class="mt-2">Um responsável analisará sua solicitação e responderá por aqui.</div>
+    </div>
+}
 @if (Model.HistorySchemaMissing)
 {
     <div class="alert alert-warning d-flex justify-content-between align-items-center gap-3">
@@ -64,6 +81,10 @@
     <div class="col-md-3"><div class="card card-body h-100"><div class="small text-muted">Vencimento</div><div class="fw-semibold">@h.DueAt.ToString("dd/MM/yyyy")</div></div></div>
     <div class="col-md-3"><div class="card card-body h-100"><div class="small text-muted">Itens</div><div class="fw-semibold">@itemCount</div></div></div>
     <div class="col-md-3"><div class="card card-body h-100"><div class="small text-muted">SLA</div><div class="fw-semibold">@(h.SlaDueAt?.ToString("dd/MM/yyyy HH:mm") ?? "A definir")</div></div></div><div class="col-md-3"><div class="card card-body h-100"><div class="small text-muted">Responsável atual</div><div class="fw-semibold">@(Model.History.FirstOrDefault()?.ByUserName ?? h.RequesterName ?? "Sistema")</div></div></div><div class="col-md-6"><div class="card card-body h-100"><div class="small text-muted">Resposta/entrega</div><div class="fw-semibold">@(h.AdminResponse ?? h.DeliveryInstructions ?? "Aguardando análise")</div></div></div>
+    @if (!string.IsNullOrWhiteSpace(h.RequestDescription))
+    {
+        <div class="col-12"><div class="card card-body h-100"><div class="small text-muted">O que foi solicitado</div><div class="fw-semibold">@h.RequestDescription</div></div></div>
+    }
 </div>
 
 <div class="card card-body mb-3">

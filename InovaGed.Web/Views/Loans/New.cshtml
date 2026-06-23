@@ -3,15 +3,17 @@
 
 @{
     ViewData["Title"] = "Solicitar documento";
-    ViewData["Subtitle"] = "Jornada guiada por descrição em linguagem natural";
+    ViewData["Subtitle"] = "Descreva o que precisa. O responsável localizará o documento para você.";
+    var delivery = string.IsNullOrWhiteSpace(Model.DeliveryMode) ? "DIGITAL" : Model.DeliveryMode!.Trim().ToUpperInvariant();
+    var priority = string.IsNullOrWhiteSpace(Model.Priority) ? "NORMAL" : Model.Priority!.Trim().ToUpperInvariant();
 }
 
-<div class="d-flex align-items-center justify-content-between mb-3">
+<div class="d-flex align-items-start justify-content-between gap-3 mb-4">
     <div>
-        <h4 class="mb-0">Solicitar documento</h4>
-        <div class="text-muted small">Comece descrevendo o que precisa; não é obrigatório saber referência ou código.</div>
+        <h2 class="mb-1">Solicitar documento</h2>
+        <div class="text-muted">Descreva o que precisa. O responsável localizará o documento para você.</div>
     </div>
-    <a class="btn btn-sm btn-light border" href="/Loans"><i class="bi bi-arrow-left me-1"></i>Voltar</a>
+    <a class="btn btn-light border" href="/Loans"><i class="bi bi-arrow-left me-1"></i>Cancelar</a>
 </div>
 
 @if (TempData["Err"] is not null)
@@ -19,187 +21,211 @@
     <div class="alert alert-danger">@TempData["Err"]</div>
 }
 
-<form method="post" class="card shadow-sm" onsubmit="return validateBeforeSubmit();">
+<div id="formMessage" class="alert d-none" role="alert"></div>
+
+<form method="post" class="loan-simple-form" onsubmit="return validateBeforeSubmit();" novalidate>
     @Html.AntiForgeryToken()
+    <input type="hidden" id="deliveryMode" name="DeliveryMode" value="@delivery" />
+    <input type="hidden" id="isPhysical" name="IsPhysical" value="@(delivery != "DIGITAL" ? "true" : "false")" />
+    <input type="hidden" id="allowDigital" name="AllowDigitalFileAccess" value="@(delivery != "PHYSICAL" ? "true" : "false")" />
+    <input type="hidden" name="RequesterName" value="@Model.RequesterName" />
 
-    <div class="card-body">
-        <div class="row g-3">
-            <div class="col-12">
-                <div class="alert alert-primary mb-0"><strong>Etapa 1 — O que você procura?</strong><div class="small">Ex: prontuário da paciente Maria, exame de câncer de mama de 2024, APAC do paciente João.</div></div>
+    <div class="card shadow-sm mb-3">
+        <div class="card-body p-4">
+            <div class="d-flex align-items-center gap-2 mb-2">
+                <span class="badge rounded-pill text-bg-primary">1</span>
+                <h5 class="mb-0">O que você precisa?</h5>
             </div>
-            <div class="col-12">
-                <label class="form-label">Descreva o documento que precisa</label>
-                <textarea class="form-control" id="requestDescription" name="RequestDescription" rows="3" placeholder="Ex: documento de paciente com câncer de mama, APAC de 2025, prontuário da Maria">@Model.RequestDescription</textarea>
-                <div class="mt-2 d-flex gap-2 flex-wrap"><button class="btn btn-outline-primary btn-sm" type="button" onclick="copyDescriptionToSearch(); searchDocs();">Buscar no GED</button><button class="btn btn-outline-secondary btn-sm" type="button" onclick="showManualTab();">Não sei o código</button><span class="badge text-bg-light border">Documento físico</span><span class="badge text-bg-light border">Documento digital</span></div>
-            </div>
-            <div class="col-md-6">
-                <label class="form-label">Solicitante (nome)</label>
-                <input class="form-control" name="RequesterName" value="@Model.RequesterName" placeholder="Nome do solicitante, equipe ou setor" />
-            </div>
-            <div class="col-md-3">
-                <label class="form-label">Vencimento</label>
-                <input type="date" class="form-control" name="DueAt" value="@(Model.DueAt?.ToString("yyyy-MM-dd"))" />
-                <div class="form-text">A devolução será cobrada automaticamente após o vencimento.</div>
-            </div>
-            <div class="col-md-3">
-                <label class="form-label">Forma de entrega</label>
-                <select class="form-select" name="DeliveryMode" onchange="document.querySelector('[name=IsPhysical]').value=(this.value!=='DIGITAL')">
-                    <option value="PHYSICAL">Documento físico</option>
-                    <option value="DIGITAL">Documento digital</option>
-                    <option value="BOTH">Ambos</option>
-                </select><input type="hidden" name="IsPhysical" value="true" />
-            </div>
+            <label class="form-label fw-semibold" for="requestDescription">Descreva o documento que você precisa</label>
+            <textarea class="form-control form-control-lg" id="requestDescription" name="RequestDescription" rows="6" maxlength="1000" required placeholder="Ex: Preciso do prontuário da paciente Maria de 2024, exame de câncer de mama, APAC de oncologia, documento do prontuário 306679...">@Model.RequestDescription</textarea>
+            <div class="form-text">Não precisa saber código, caixa ou pasta. Descreva com suas palavras.</div>
+            <div class="invalid-feedback d-block d-none" id="requestDescriptionError">Descreva o documento que você precisa.</div>
+        </div>
+    </div>
 
-            <div class="col-12">
-                <h5 class="mb-2">Adicionar documentos ao pedido</h5>
-                <ul class="nav nav-tabs" role="tablist">
-                    <li class="nav-item" role="presentation"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#gedTab" type="button">Buscar no GED</button></li>
-                    <li class="nav-item" role="presentation"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#manualTab" type="button">Informar manualmente</button></li>
-                </ul>
-                <div class="tab-content border border-top-0 rounded-bottom p-3">
-                    <div class="tab-pane fade show active" id="gedTab">
-                        <p class="text-muted small mb-2">Use quando o documento já está digitalizado.</p>
-                        <div class="input-group">
-                            <span class="input-group-text"><i class="bi bi-search"></i></span>
-                            <input class="form-control" id="docSearch" placeholder="Buscar por título, prontuário, OCR, pasta ou arquivo" />
-                            <button class="btn btn-outline-secondary" type="button" onclick="searchDocs()">Buscar</button>
-                        </div>
-                        <div id="docResultsWrap" class="mt-2 d-none">
-                            <div class="card border">
-                                <div class="card-header py-2 d-flex justify-content-between align-items-center">
-                                    <strong class="small">Resultados</strong>
-                                    <button type="button" class="btn btn-sm btn-light border" onclick="hideResults()">Fechar</button>
-                                </div>
-                                <div id="docResults" class="list-group list-group-flush"></div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="tab-pane fade" id="manualTab">
-                        <p class="text-muted small mb-2">Use quando o documento ainda não está digitalizado ou será localizado fisicamente.</p>
-                        <div class="row g-2">
-                            <div class="col-md-3"><label class="form-label">Referência/código</label><input id="manualReference" class="form-control" placeholder="0105, caixa, guia..." /></div>
-                            <div class="col-md-5"><label class="form-label">Descrição <span class="text-danger">*</span></label><input id="manualDescription" class="form-control" placeholder="Descreva o documento solicitado" /></div>
-                            <div class="col-md-4"><label class="form-label">Tipo documental</label><input id="manualType" class="form-control" placeholder="Prontuário, exame, caixa..." /></div>
-                            <div class="col-md-4"><label class="form-label">Paciente</label><input id="manualPatient" class="form-control" /></div>
-                            <div class="col-md-3"><label class="form-label">Prontuário</label><input id="manualRecord" class="form-control" /></div>
-                            <div class="col-md-2"><label class="form-label">Caixa</label><input id="manualBox" class="form-control" /></div>
-                            <div class="col-md-3"><label class="form-label">Localização física</label><input id="manualLocation" class="form-control" /></div>
-                            <div class="col-12"><label class="form-label">Observação</label><textarea id="manualNotes" class="form-control" rows="2"></textarea></div>
-                            <div class="col-12"><button type="button" class="btn btn-outline-primary" onclick="addManualItem()"><i class="bi bi-plus-lg me-1"></i>Adicionar item manual</button></div>
-                        </div>
-                    </div>
+    <div class="card shadow-sm mb-3">
+        <div class="card-body p-4">
+            <div class="d-flex align-items-center gap-2 mb-3">
+                <span class="badge rounded-pill text-bg-primary">2</span>
+                <h5 class="mb-0">Como deseja receber?</h5>
+            </div>
+            <div class="row g-3" role="radiogroup" aria-label="Forma de entrega">
+                <div class="col-md-4">
+                    <button type="button" class="delivery-card btn w-100 text-start border rounded-3 p-3 h-100 @(delivery == "DIGITAL" ? "active" : "")" data-mode="DIGITAL" onclick="selectDeliveryMode('DIGITAL')">
+                        <div class="fw-bold"><i class="bi bi-link-45deg me-1"></i>Digital</div>
+                        <div class="small text-muted">Quero receber um link seguro para visualizar o documento digitalizado.</div>
+                    </button>
                 </div>
-            </div>
-
-            <div class="col-12">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div><div class="fw-semibold">Itens selecionados / solicitados</div><div class="text-muted small">A lista aceita documentos GED e referências manuais.</div></div>
-                    <span id="selCount" class="badge text-bg-dark">0</span>
+                <div class="col-md-4">
+                    <button type="button" class="delivery-card btn w-100 text-start border rounded-3 p-3 h-100 @(delivery == "PHYSICAL" ? "active" : "")" data-mode="PHYSICAL" onclick="selectDeliveryMode('PHYSICAL')">
+                        <div class="fw-bold"><i class="bi bi-archive me-1"></i>Físico</div>
+                        <div class="small text-muted">Preciso que o arquivo físico seja localizado e separado.</div>
+                    </button>
                 </div>
-                <div class="card mt-2"><div id="selectedDocs" class="list-group list-group-flush"><div id="emptySel" class="list-group-item text-muted">Nenhum item adicionado.</div></div></div>
-                <div id="hidden"></div>
-            </div>
-
-            <div class="col-12">
-                <label class="form-label">Observações gerais</label>
-                <div class="row g-2"><div class="col-md-3"><label class="form-label">Prioridade</label><select class="form-select" name="Priority"><option value="NORMAL">Normal</option><option value="URGENT">Urgente</option></select></div><div class="col-md-4"><label class="form-label">Setor solicitante</label><input class="form-control" name="RequesterSectorName" value="@Model.RequesterSectorName" /></div><div class="col-md-5"><label class="form-label">Contato/e-mail destinatário</label><input class="form-control" name="RequesterContact" value="@Model.RequesterContact" /></div><div class="col-12"><label class="form-label">Justificativa e observações gerais</label><textarea class="form-control" name="Notes" rows="3" placeholder="Finalidade, urgência, orientação para retirada, prazo desejado...">@Model.Notes</textarea></div></div>
+                <div class="col-md-4">
+                    <button type="button" class="delivery-card btn w-100 text-start border rounded-3 p-3 h-100 @(delivery == "BOTH" ? "active" : "")" data-mode="BOTH" onclick="selectDeliveryMode('BOTH')">
+                        <div class="fw-bold"><i class="bi bi-files me-1"></i>Ambos</div>
+                        <div class="small text-muted">Preciso do digital e também do documento físico.</div>
+                    </button>
+                </div>
             </div>
         </div>
     </div>
 
-    <div class="card-footer bg-white d-flex gap-2">
-        <button class="btn btn-primary" type="submit"><i class="bi bi-check-lg me-1"></i>Salvar e gerar protocolo</button>
-        <a class="btn btn-outline-secondary" href="/Loans">Cancelar</a>
-        <div class="ms-auto text-muted small d-none d-md-flex align-items-center"><i class="bi bi-info-circle me-1"></i>O protocolo pode nascer sem documento digitalizado.</div>
+    <div class="card shadow-sm mb-3">
+        <div class="card-body p-4">
+            <div class="d-flex align-items-center gap-2 mb-3">
+                <span class="badge rounded-pill text-bg-primary">3</span>
+                <h5 class="mb-0">Contato e urgência</h5>
+            </div>
+            <div class="row g-3">
+                <div class="col-md-4"><label class="form-label" for="requesterSector">Setor solicitante</label><input class="form-control" id="requesterSector" name="RequesterSectorName" value="@Model.RequesterSectorName" placeholder="Seu setor" /></div>
+                <div class="col-md-4"><label class="form-label" for="requesterContact">Contato</label><input class="form-control" id="requesterContact" name="RequesterContact" value="@Model.RequesterContact" placeholder="E-mail, telefone ou ramal" /></div>
+                <div class="col-md-4"><label class="form-label" for="priority">Prioridade</label><select class="form-select" id="priority" name="Priority">
+                        @if (priority == "URGENT")
+                        {
+                            <option value="NORMAL">Normal</option>
+                            <option value="URGENT" selected>Urgente</option>
+                        }
+                        else
+                        {
+                            <option value="NORMAL" selected>Normal</option>
+                            <option value="URGENT">Urgente</option>
+                        }
+                    </select></div>
+                <div class="col-12"><label class="form-label" for="notes">Observação</label><textarea class="form-control" id="notes" name="Notes" rows="3" placeholder="Alguma orientação adicional para localizar ou entregar o documento?">@Model.Notes</textarea></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="accordion mb-3" id="optionalAccordion">
+        <div class="accordion-item">
+            <h2 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#gedSearchPanel">Já sabe qual documento é? Clique para procurar no GED</button></h2>
+            <div id="gedSearchPanel" class="accordion-collapse collapse" data-bs-parent="#optionalAccordion"><div class="accordion-body">
+                <p class="text-muted small">Opcional. Se não encontrar, você pode enviar a solicitação mesmo assim.</p>
+                <div class="input-group"><span class="input-group-text"><i class="bi bi-search"></i></span><input class="form-control" id="docSearch" placeholder="Buscar por título, prontuário, OCR, pasta ou arquivo" /><button class="btn btn-outline-primary" type="button" onclick="searchDocs()">Buscar</button></div>
+                <div id="docResults" class="list-group mt-3"></div>
+                <div id="selectedDocs" class="mt-3"></div>
+            </div></div>
+        </div>
+        <div class="accordion-item">
+            <h2 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#advancedPanel">Opcional: tenho mais detalhes para ajudar na busca</button></h2>
+            <div id="advancedPanel" class="accordion-collapse collapse" data-bs-parent="#optionalAccordion"><div class="accordion-body">
+                <div class="row g-3">
+                    <div class="col-md-4"><label class="form-label">Paciente</label><input id="manualPatient" class="form-control" placeholder="Nome, se souber" /></div>
+                    <div class="col-md-3"><label class="form-label">Prontuário</label><input id="manualRecord" class="form-control" /></div>
+                    <div class="col-md-3"><label class="form-label">Tipo de documento</label><input id="manualType" class="form-control" placeholder="Prontuário, exame, APAC..." /></div>
+                    <div class="col-md-2"><label class="form-label">Período</label><input id="manualReference" class="form-control" placeholder="2024, jan/2025..." /></div>
+                    <div class="col-md-4"><label class="form-label">Caixa/localização, se souber</label><input id="manualLocation" class="form-control" /></div>
+                    <div class="col-md-8"><label class="form-label">Detalhe adicional</label><input id="manualNotes" class="form-control" placeholder="Qualquer informação que ajude a equipe" /></div>
+                    <div class="col-12"><button type="button" class="btn btn-outline-secondary" onclick="addManualItemFromAdvanced()">Adicionar esses detalhes à solicitação</button></div>
+                </div>
+            </div></div>
+        </div>
+    </div>
+
+    <div id="hidden"></div>
+
+    <div class="card shadow-sm sticky-bottom mb-3">
+        <div class="card-body d-flex flex-wrap gap-2 justify-content-end bg-white">
+            <a class="btn btn-outline-secondary btn-lg" href="/Loans">Cancelar</a>
+            <button id="submitBtn" class="btn btn-primary btn-lg" type="submit"><i class="bi bi-send me-1"></i>Enviar solicitação</button>
+        </div>
     </div>
 </form>
+
+<style>
+    .delivery-card.active { border-color: var(--bs-primary) !important; background: rgba(var(--bs-primary-rgb), .08); box-shadow: 0 0 0 .2rem rgba(var(--bs-primary-rgb), .12); }
+</style>
 
 @section Scripts {
 <script>
     const selectedGed = new Map();
     const manualItems = [];
 
-    function setCount() {
-        const n = selectedGed.size + manualItems.length;
-        document.getElementById('selCount').textContent = n.toString();
-        document.getElementById('emptySel').classList.toggle('d-none', n > 0);
+    function selectDeliveryMode(mode) {
+        const normalized = ['DIGITAL', 'PHYSICAL', 'BOTH'].includes(mode) ? mode : 'DIGITAL';
+        document.getElementById('deliveryMode').value = normalized;
+        document.getElementById('isPhysical').value = normalized !== 'DIGITAL' ? 'true' : 'false';
+        document.getElementById('allowDigital').value = normalized !== 'PHYSICAL' ? 'true' : 'false';
+        document.querySelectorAll('.delivery-card').forEach(card => card.classList.toggle('active', card.dataset.mode === normalized));
     }
 
-    function renderSelected() {
-        const list = document.getElementById('selectedDocs');
+    function validateBeforeSubmit() {
+        clearMessage();
+        const field = document.getElementById('requestDescription');
+        const description = field?.value?.trim() || '';
+        if (description.length < 5) {
+            field?.classList.add('is-invalid');
+            document.getElementById('requestDescriptionError')?.classList.remove('d-none');
+            showMessage('Descreva o documento que você precisa.', 'danger');
+            field?.focus();
+            return false;
+        }
+        field.classList.remove('is-invalid');
+        document.getElementById('requestDescriptionError')?.classList.add('d-none');
+        if (selectedGed.size === 0 && manualItems.length === 0) addHiddenManualItemFromDescription(description);
+        renderHidden();
+        const btn = document.getElementById('submitBtn');
+        if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Enviando...'; }
+        return true;
+    }
+
+    function addHiddenManualItemFromDescription(description) {
+        manualItems.push({ description, requestDescription: description, deliveryMode: val('deliveryMode'), priority: val('priority'), requesterSectorName: val('requesterSector'), requesterContact: val('requesterContact'), notes: val('notes') });
+    }
+
+    function addManualItemFromAdvanced() {
+        const description = val('requestDescription');
+        manualItems.push({ referenceCode: val('manualReference'), description: description || 'Detalhes adicionais para triagem', documentType: val('manualType'), patientName: val('manualPatient'), medicalRecordNumber: val('manualRecord'), physicalLocation: val('manualLocation'), notes: val('manualNotes'), deliveryMode: val('deliveryMode'), priority: val('priority') });
+        showMessage('Detalhes adicionados. Você já pode enviar a solicitação.', 'success');
+        renderHidden();
+    }
+
+    function addDoc(id, code, title) { if (!id || selectedGed.has(id)) return; selectedGed.set(id, { id, code: code || '(sem código)', title: title || '(sem título)' }); renderSelectedDocs(); renderHidden(); }
+    function removeDoc(id) { selectedGed.delete(id); renderSelectedDocs(); renderHidden(); }
+
+    function renderSelectedDocs() {
+        const box = document.getElementById('selectedDocs');
+        if (!box) return;
+        if (selectedGed.size === 0) { box.innerHTML = ''; return; }
+        box.innerHTML = '<div class="fw-semibold mb-2">Documentos adicionados</div>';
+        selectedGed.forEach(v => box.insertAdjacentHTML('beforeend', `<div class="alert alert-light border d-flex justify-content-between align-items-center py-2"><div><span class="badge text-bg-primary me-2">GED</span><strong>${escapeHtml(v.code)}</strong><div class="small text-muted">${escapeHtml(v.title)}</div></div><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeDoc('${escapeHtml(v.id)}')">Remover</button></div>`));
+    }
+
+    function renderHidden() {
         const hidden = document.getElementById('hidden');
-        list.querySelectorAll('.sel-row').forEach(x => x.remove());
         hidden.innerHTML = '';
         let docIdx = 0;
-        selectedGed.forEach(v => {
-            list.insertAdjacentHTML('beforeend', `<div class="list-group-item d-flex justify-content-between align-items-center sel-row"><div><span class="badge text-bg-primary me-1">GED</span><strong>${escapeHtml(v.code)}</strong><div class="text-muted small">${escapeHtml(v.title)}</div></div><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeDoc('${v.id}')"><i class="bi bi-x-lg"></i></button></div>`);
-            hidden.insertAdjacentHTML('beforeend', `<input type="hidden" name="DocumentIds[${docIdx++}]" value="${escapeHtml(v.id)}" />`);
-        });
-        manualItems.forEach((v, idx) => {
-            list.insertAdjacentHTML('beforeend', `<div class="list-group-item d-flex justify-content-between align-items-center sel-row"><div><span class="badge text-bg-warning text-dark me-1">Manual</span><strong>${escapeHtml(v.referenceCode || 'Sem referência')}</strong><div>${escapeHtml(v.description)}</div><div class="text-muted small">${escapeHtml([v.documentType, v.patientName, v.medicalRecordNumber, v.boxCode, v.physicalLocation].filter(Boolean).join(' • '))}</div></div><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeManual(${idx})"><i class="bi bi-x-lg"></i></button></div>`);
-            Object.entries(v).forEach(([key, value]) => hidden.insertAdjacentHTML('beforeend', `<input type="hidden" name="ManualItems[${idx}].${pascal(key)}" value="${escapeHtml(value || '')}" />`));
-        });
-        setCount();
+        selectedGed.forEach(v => hidden.insertAdjacentHTML('beforeend', `<input type="hidden" name="DocumentIds[${docIdx++}]" value="${escapeHtml(v.id)}" />`));
+        manualItems.forEach((v, idx) => Object.entries(v).forEach(([key, value]) => hidden.insertAdjacentHTML('beforeend', `<input type="hidden" name="ManualItems[${idx}].${pascal(key)}" value="${escapeHtml(value || '')}" />`)));
     }
 
-    function addDoc(id, code, title) {
-        if (!id || selectedGed.has(id)) return;
-        selectedGed.set(id, { id, code: code || '(sem código)', title: title || '(sem título)' });
-        renderSelected();
-    }
-    function removeDoc(id) { selectedGed.delete(id); renderSelected(); }
-    function removeManual(idx) { manualItems.splice(idx, 1); renderSelected(); }
-    function hideResults() { document.getElementById('docResultsWrap')?.classList.add('d-none'); }
-
-    function addManualItem(seed) {
-        const item = seed || {
-            referenceCode: val('manualReference'), description: val('manualDescription'), documentType: val('manualType'),
-            patientName: val('manualPatient'), medicalRecordNumber: val('manualRecord'), boxCode: val('manualBox'),
-            physicalLocation: val('manualLocation'), notes: val('manualNotes')
-        };
-        if (!item.description && !item.referenceCode) { alert('Informe uma descrição ou referência para o item manual.'); return; }
-        manualItems.push(item);
-        ['manualReference','manualDescription','manualType','manualPatient','manualRecord','manualBox','manualLocation','manualNotes'].forEach(id => document.getElementById(id).value = '');
-        renderSelected();
-    }
-
-    function showManualTab(){ const btn = document.querySelector('[data-bs-target="#manualTab"]'); if (btn && window.bootstrap) bootstrap.Tab.getOrCreateInstance(btn).show(); else btn?.click(); }
-    function copyDescriptionToSearch() { const d = document.getElementById('requestDescription')?.value.trim(); if (d) document.getElementById('docSearch').value = d; }
     async function searchDocs() {
-        const q = (document.getElementById('docSearch').value || document.getElementById('requestDescription').value).trim();
-        if (!q) return;
-        const wrap = document.getElementById('docResultsWrap');
+        const q = (val('docSearch') || val('requestDescription')).trim();
         const box = document.getElementById('docResults');
-        wrap.classList.remove('d-none');
+        if (!q) { showMessage('Digite uma palavra para buscar ou descreva o documento acima.', 'warning'); return; }
         box.innerHTML = `<div class="list-group-item text-muted"><span class="spinner-border spinner-border-sm me-2"></span>Buscando...</div>`;
         try {
             const response = await fetch('/Loans/DocSearch?q=' + encodeURIComponent(q), { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
             const payload = await response.json().catch(() => ({}));
-            const items = Array.isArray(payload) ? payload : Array.isArray(payload.items) ? payload.items : Array.isArray(payload.data) ? payload.data : [];
-            if (!response.ok || payload.success === false) { box.innerHTML = `<div class="list-group-item text-danger">${escapeHtml(payload.message || 'Não foi possível buscar documentos.')}</div>`; return; }
-            if (items.length === 0) {
-                box.innerHTML = `<div class="list-group-item text-muted">Nenhum documento digitalizado encontrado. Você pode informar o documento manualmente abaixo.<div class="mt-2"><button type="button" class="btn btn-sm btn-outline-primary" onclick="addManualItem({referenceCode:'${escapeJs(q)}',description:'Solicitação manual: ${escapeJs(q)}'})">Solicitar documento ${escapeHtml(q)} manualmente</button></div></div>`;
-                return;
-            }
+            const items = Array.isArray(payload.items) ? payload.items : [];
+            if (!response.ok || payload.success === false) { box.innerHTML = `<div class="list-group-item text-warning">${escapeHtml(payload.message || 'Não foi possível buscar agora. Você pode enviar a solicitação mesmo assim.')}</div>`; return; }
+            if (items.length === 0) { box.innerHTML = '<div class="list-group-item text-muted">Não encontramos documento digitalizado. Sua solicitação será enviada para triagem.<div class="mt-2"><button type="submit" class="btn btn-sm btn-primary">Enviar solicitação mesmo assim</button></div></div>'; return; }
             box.innerHTML = '';
             items.forEach(d => {
-                const id = d.id || d.Id, code = d.code || d.Code || '', title = d.title || d.Title || '', status = d.status || d.Status || '';
-                const disabled = selectedGed.has(id);
-                box.insertAdjacentHTML('beforeend', `<button type="button" class="list-group-item list-group-item-action" ${disabled ? 'disabled' : ''} onclick="addDoc('${escapeHtml(id)}','${escapeJs(code)}','${escapeJs(title)}')"><div class="d-flex justify-content-between"><div><strong>${escapeHtml(code)}</strong><div class="text-muted small">${escapeHtml(title)}</div><div class="text-muted small">Score: ${escapeHtml((d.score||0).toString())} • ${escapeHtml(status)}</div><div class="text-muted small">${escapeHtml(d.ocrSnippet||'')}</div><details class="small mt-1"><summary>Por que apareceu?</summary>${(d.reasons||[]).map(r=>`<div>${escapeHtml(r.message||r.type)}</div>`).join('')}</details></div><span class="badge text-bg-primary">${disabled ? 'Adicionado' : 'Adicionar'}</span></div></button>`);
+                const id = d.id || d.Id, code = d.code || d.Code || '', title = d.title || d.Title || 'Documento encontrado';
+                box.insertAdjacentHTML('beforeend', `<button type="button" class="list-group-item list-group-item-action" onclick="addDoc('${escapeHtml(id)}','${escapeJs(code)}','${escapeJs(title)}')"><div class="d-flex justify-content-between gap-3"><div><strong>${escapeHtml(title)}</strong><div class="small text-muted">${escapeHtml(code)} • ${escapeHtml(d.type || d.status || '')}</div><div class="small text-muted">${escapeHtml(d.ocrSnippet || '')}</div></div><span class="badge text-bg-primary align-self-start">Adicionar</span></div></button>`);
             });
-        } catch (e) { box.innerHTML = `<div class="list-group-item text-danger">Erro inesperado ao buscar documentos.</div>`; }
+        } catch { box.innerHTML = '<div class="list-group-item text-warning">Não foi possível buscar agora. Você pode enviar a solicitação mesmo assim.</div>'; }
     }
 
-    function validateBeforeSubmit() {
-        if (selectedGed.size === 0 && manualItems.length === 0) { alert('Adicione pelo menos um documento do GED ou informe um documento manualmente para solicitar.'); return false; }
-        renderSelected();
-        return true;
-    }
-    function val(id) { return document.getElementById(id)?.value.trim() || ''; }
+    function showMessage(message, kind) { const el = document.getElementById('formMessage'); el.textContent = message; el.className = `alert alert-${kind || 'info'}`; }
+    function clearMessage() { const el = document.getElementById('formMessage'); el.textContent = ''; el.className = 'alert d-none'; }
+    function val(id) { return document.getElementById(id)?.value?.trim() || ''; }
     function pascal(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
     function escapeHtml(s) { return (s || '').toString().replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m])); }
     function escapeJs(s) { return (s || '').toString().replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, ' '); }
-    document.addEventListener('DOMContentLoaded', () => { setCount(); document.getElementById('docSearch')?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); searchDocs(); } }); });
+    document.addEventListener('DOMContentLoaded', () => { selectDeliveryMode(val('deliveryMode') || 'DIGITAL'); document.getElementById('docSearch')?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); searchDocs(); } }); });
 </script>
 }
