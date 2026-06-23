@@ -5,7 +5,7 @@
     const BULK_UPLOAD_STORAGE_KEY = 'InovaGED:bulkUpload:v2';
     const CURRENT_BATCH_STORAGE_KEY = 'inovaged.uploadBatch.current';
     const ValidationStep = 'Validação de extensão';
-    const state = { files: [], uploading: false, isStarting: false, isFinishing: false, activeUploads: 0, maxConcurrency: MAX_PARALLEL_UPLOADS, completed: 0, failed: 0, skipped: 0, isCheckingDuplicates: false, duplicateCheckKey: null, duplicateCheckPromise: null, duplicateCheckResult: null, lastDuplicateSignature: null, batchId: null, requestedFolderId: null, resolvedFolderId: null, listingFolderId: null, folderName: null, createdDocuments: [], useLegacyUploadFallback: false, duplicateStrategy: null, uploadAbortController: null, chunkOptions: { enabled: true, thresholdBytes: 50 * 1024 * 1024, chunkSizeBytes: 10 * 1024 * 1024, timeoutMs: 1800 * 1000 } };
+    const state = { files: [], uploading: false, isStarting: false, isFinishing: false, activeUploads: 0, maxConcurrency: MAX_PARALLEL_UPLOADS, completed: 0, failed: 0, skipped: 0, isCheckingDuplicates: false, duplicateCheckKey: null, duplicateCheckPromise: null, duplicateCheckResult: null, lastDuplicateSignature: null, batchId: null, requestedFolderId: null, resolvedFolderId: null, listingFolderId: null, folderName: null, createdDocuments: [], useLegacyUploadFallback: false, duplicateStrategy: null, duplicateCheckScope: 'CURRENT_FOLDER', uploadAbortController: null, chunkOptions: { enabled: true, thresholdBytes: 50 * 1024 * 1024, chunkSizeBytes: 10 * 1024 * 1024, timeoutMs: 1800 * 1000 } };
 
     function getBootstrapOrNull() {
         if (!window.bootstrap) {
@@ -627,6 +627,10 @@
         return true;
     }
 
+    function getDuplicateCheckScope() {
+        return document.querySelector('input[name="bulkDuplicateCheckScope"]:checked')?.value || state.duplicateCheckScope || 'CURRENT_FOLDER';
+    }
+
     async function checkDuplicatesBeforeUpload() {
         const selected = getSelectedUploadFolder();
         const folderId = selected?.uploadFolderId;
@@ -636,7 +640,8 @@
         const names = candidates.map(f => f.uploadName);
         if (!names.length) return [];
         const batchSignature = candidates.map(f => `${f.originalName}:${f.size}`).join('|');
-        const checkKey = `${folderId}|${batchSignature}`;
+        const duplicateCheckScope = getDuplicateCheckScope();
+        const checkKey = `${folderId}|${duplicateCheckScope}|${batchSignature}`;
         if (state.duplicateCheckKey === checkKey && Array.isArray(state.duplicateCheckResult)) {
             console.log('[BulkUpload] check duplicates signature reaproveitada', checkKey);
             return state.duplicateCheckResult;
@@ -650,7 +655,7 @@
         state.duplicateCheckKey = checkKey;
         const token = document.querySelector('input[name="__RequestVerificationToken"]')?.value;
         state.duplicateCheckPromise = (async () => {
-            const r = await fetch('/Ged/Documents/CheckDuplicateNames', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { RequestVerificationToken: token } : {}) }, body: JSON.stringify({ requestedFolderId, folderId, uploadFolderId: folderId, fileNames: names }) });
+            const r = await fetch('/Ged/Documents/CheckDuplicateNames', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { RequestVerificationToken: token } : {}) }, body: JSON.stringify({ requestedFolderId, folderId, uploadFolderId: folderId, fileNames: names, duplicateCheckScope }) });
             const j = await r.json().catch(() => ({ success: false, message: 'Erro ao verificar duplicidades', canContinue: true }));
             if (!r.ok) throw new Error(j.message || 'Não foi possível verificar duplicidades.');
             const data = j.data || j;
@@ -684,7 +689,8 @@
         return {
             SAME_BATCH: 'Este arquivo foi selecionado mais de uma vez neste lote.',
             SAME_FOLDER: 'Já existe um arquivo com este nome nesta mesma pasta.',
-            SAME_TENANT: 'Já existe um arquivo com este nome em outra pasta do sistema.',
+            SAME_TENANT: 'Existe arquivo com este nome em outra pasta do sistema.',
+            SAME_FOLDER_AND_SUBFOLDERS: 'Já existe arquivo com este nome nesta pasta ou em uma subpasta.',
             SAME_PATIENT: 'Existe documento semelhante para o mesmo paciente/prontuário.',
             SAME_HASH: 'O conteúdo parece idêntico a outro documento.',
             SAME_FOLDER_AND_HASH: 'Já existe arquivo com mesmo nome e conteúdo aparentemente idêntico nesta pasta.',

@@ -922,6 +922,15 @@
             <i class="bi bi-cloud-arrow-up fs-1 d-block mb-2"></i><strong>Arraste arquivos aqui ou clique para selecionar</strong>
             <input id="bulkFileInput" type="file" multiple class="d-none" />
         </div>
+        <div class="border rounded-3 p-3 mb-3 bg-light">
+            <div class="fw-semibold mb-2">Verificar duplicidade</div>
+            <div class="d-flex gap-3 flex-wrap small">
+                <label class="form-check-label"><input class="form-check-input" type="radio" name="bulkDuplicateCheckScope" value="CURRENT_FOLDER" checked /> Apenas nesta pasta</label>
+                <label class="form-check-label"><input class="form-check-input" type="radio" name="bulkDuplicateCheckScope" value="CURRENT_FOLDER_AND_SUBFOLDERS" /> Nesta pasta e subpastas</label>
+                <label class="form-check-label"><input class="form-check-input" type="radio" name="bulkDuplicateCheckScope" value="ALL_SYSTEM" /> Sistema todo</label>
+            </div>
+            <div class="form-text">Por padrão, o sistema verifica duplicidade apenas na pasta de destino. Isso evita alertas desnecessários quando pacientes possuem novos exames com nomes parecidos em outras pastas.</div>
+        </div>
         <div id="bulkDuplicateDecision" class="alert alert-warning d-none"><strong>Foram encontrados arquivos possivelmente duplicados</strong><div class="small mb-1">Alguns arquivos possuem o mesmo nome ou características semelhantes a documentos já existentes. Isso pode ser uma duplicidade real ou um novo exame do mesmo paciente. Confira as informações antes de continuar.</div><div class="small mb-2">O sistema não bloqueará o envio. Você pode enviar mesmo assim, salvar como nova versão, renomear ou ignorar.</div><ul id="bulkDuplicateList" class="mb-2"></ul><div class="btn-group btn-group-sm flex-wrap"><button type="button" class="btn btn-outline-info" id="btnDupAnalyze">Analisar um por um</button><button type="button" class="btn btn-outline-danger" id="btnDupUploadAnyway">Enviar todos mesmo assim</button><button type="button" class="btn btn-outline-primary" id="btnDupNewVersion">Salvar como nova versão</button><button type="button" class="btn btn-outline-secondary" id="btnDupRename">Renomear novos arquivos</button><button type="button" class="btn btn-outline-secondary" id="btnDupSkip">Ignorar duplicados</button><button type="button" class="btn btn-outline-dark" id="btnDupCancel">Cancelar envio</button></div></div><div class="d-flex justify-content-between align-items-center mb-2"><strong>Arquivos selecionados</strong><button class="btn btn-sm btn-outline-secondary" id="btnBulkClear">Limpar lista</button></div><div id="bulkSummary" class="small text-muted mb-2"></div>
         <div class="table-responsive"><table class="table table-sm"><thead><tr><th>Arquivo</th><th>Tamanho</th><th>Status</th><th>Progresso</th><th></th></tr></thead><tbody id="bulkFileList"></tbody></table></div>
       </div>
