@@ -19,7 +19,10 @@ public sealed class LoanRowDto
     public DateTime? SlaDueAt { get; set; }
     public string? AdminResponse { get; set; }
     public string? DeliveryInstructions { get; set; }
+    public string? RequestDescription { get; set; }
+    public string? Priority { get; set; }
 }
+
 
 public sealed record LoanItemDto(
     Guid? DocumentId,
@@ -42,7 +45,7 @@ public sealed class LoanCreateVM
     public Guid? RequesterId { get; set; }
     public string? RequesterProfile { get; set; }
     public DateTimeOffset? DueAt { get; set; }
-    public bool IsPhysical { get; set; } = true;
+    public bool IsPhysical { get; set; }
     public bool AllowDigitalFileAccess { get; set; }
 
     // seleção de documentos GED ou itens manuais (mínimo 1 no total)
@@ -51,7 +54,7 @@ public sealed class LoanCreateVM
     public List<Guid> AllowedFileIds { get; set; } = new();
     public string? Notes { get; set; }
     public string? RequestDescription { get; set; }
-    public string? DeliveryMode { get; set; } = "PHYSICAL";
+    public string? DeliveryMode { get; set; } = "DIGITAL";
     public string? Priority { get; set; } = "NORMAL";
     public string? RequesterContact { get; set; }
     public string? RequesterSectorName { get; set; }
@@ -69,7 +72,7 @@ public sealed class LoanManualItemVM
     public string? PhysicalLocation { get; set; }
     public string? Notes { get; set; }
     public string? RequestDescription { get; set; }
-    public string? DeliveryMode { get; set; } = "PHYSICAL";
+    public string? DeliveryMode { get; set; } = "DIGITAL";
     public string? Priority { get; set; } = "NORMAL";
     public string? RequesterContact { get; set; }
     public string? RequesterSectorName { get; set; }

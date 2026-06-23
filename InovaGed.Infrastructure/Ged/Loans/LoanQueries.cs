@@ -271,6 +271,8 @@ select
   lr.sla_due_at as SlaDueAt,
   lr.admin_response as AdminResponse,
   lr.delivery_instructions as DeliveryInstructions,
+  lr.request_description as RequestDescription,
+  lr.priority as Priority,
   (select count(*)::int from ged.loan_request_item i
      where i.tenant_id = lr.tenant_id and i.loan_request_id = lr.id and i.reg_status='A') as ItemsCount
 from ged.loan_request lr

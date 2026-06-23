@@ -35,36 +35,53 @@ public sealed class LoanCommands : ILoanCommands
             if (userId is null || userId == Guid.Empty)
                 return Result<Guid>.Fail("USER", "Usuário logado não identificado para requester_id.");
 
+            var requestDescription = TrimOrNull(vm.RequestDescription);
+            if (string.IsNullOrWhiteSpace(requestDescription) || requestDescription.Length < 5)
+                return Result<Guid>.Fail("DESCRIPTION", "Descreva o documento que você precisa.");
+
+            if (requestDescription.Length > 1000)
+                requestDescription = requestDescription[..1000];
+
+            var deliveryMode = NormalizeDeliveryMode(vm.DeliveryMode, vm.IsPhysical);
+            if (deliveryMode is null)
+                return Result<Guid>.Fail("DELIVERY", "Escolha como deseja receber o documento.");
+
+            var priority = NormalizePriority(vm.Priority);
+            vm.DeliveryMode = deliveryMode;
+            vm.Priority = priority;
+            vm.IsPhysical = deliveryMode is "PHYSICAL" or "BOTH";
+            vm.AllowDigitalFileAccess = deliveryMode is "DIGITAL" or "BOTH" || vm.AllowDigitalFileAccess;
+
             var docIds = (vm.DocumentIds ?? new List<Guid>())
                 .Where(x => x != Guid.Empty)
                 .Distinct()
                 .ToList();
             var manualItems = (vm.ManualItems ?? new List<LoanManualItemVM>())
-                .Where(x => !string.IsNullOrWhiteSpace(x.Description) || !string.IsNullOrWhiteSpace(x.ReferenceCode))
+                .Where(x => !string.IsNullOrWhiteSpace(x.Description) || !string.IsNullOrWhiteSpace(x.ReferenceCode) || !string.IsNullOrWhiteSpace(x.RequestDescription))
                 .ToList();
 
-            if (docIds.Count == 0 && manualItems.Count == 0)
-                return Result<Guid>.Fail("DOC", "Adicione pelo menos um documento do GED ou informe um documento manualmente para solicitar.");
+            var createdFromDescription = docIds.Count == 0 && (manualItems.Count == 0 || manualItems.All(IsDescriptionOnlyManualItem));
+            if (manualItems.Count == 0)
+            {
+                manualItems.Add(new LoanManualItemVM
+                {
+                    Description = requestDescription,
+                    RequestDescription = requestDescription,
+                    DeliveryMode = deliveryMode,
+                    Priority = priority,
+                    RequesterContact = vm.RequesterContact,
+                    RequesterSectorName = vm.RequesterSectorName,
+                    Justification = vm.Justification,
+                    Notes = vm.Notes
+                });
+            }
 
             await using var con = await _db.OpenAsync(ct);
             await using var tx = await con.BeginTransactionAsync(ct);
 
             var nowUtc = DateTimeOffset.UtcNow;
-
-            DateTimeOffset dueUtc;
-            if (vm.DueAt.HasValue)
-            {
-                var due = vm.DueAt.Value;
-
-                if (due.TimeOfDay == TimeSpan.Zero)
-                    due = new DateTimeOffset(due.Year, due.Month, due.Day, 23, 59, 59, due.Offset);
-
-                dueUtc = due.ToUniversalTime();
-            }
-            else
-            {
-                dueUtc = nowUtc.AddDays(7);
-            }
+            var dueUtc = CalculateSlaDueAt(nowUtc, deliveryMode, priority);
+            var correlationId = Guid.NewGuid().ToString("N");
 
             const string sqlHead = """
 insert into ged.loan_request
@@ -88,6 +105,10 @@ insert into ged.loan_request
   priority,
   requester_contact,
   requester_sector_name,
+  current_sector_name,
+  created_by,
+  sla_due_at,
+  sla_hours,
   digital_delivery_enabled,
   physical_delivery_enabled
 )
@@ -112,6 +133,10 @@ values
   @Priority,
   @RequesterContact,
   @RequesterSectorName,
+  coalesce(@RequesterSectorName, (select nullif(coalesce(s.setor, s.lotacao, ''), '') from ged.app_user u left join ged.servidor s on s.tenant_id=u.tenant_id and s.id=u.servidor_id where u.tenant_id=@TenantId and u.id=@RequesterId limit 1)),
+  @RequesterId,
+  @SlaDueAt,
+  @SlaHours,
   @DigitalEnabled,
   @PhysicalEnabled
 )
@@ -129,14 +154,16 @@ returning id;
                         DocumentId = docIds.Count == 0 ? (Guid?)null : docIds[0],
                         RequestedAt = nowUtc,
                         DueAt = dueUtc,
-                        DeliveryMode = string.IsNullOrWhiteSpace(vm.DeliveryMode) ? (vm.IsPhysical ? "PHYSICAL" : "DIGITAL") : vm.DeliveryMode!.Trim().ToUpperInvariant(),
-                        RequestDescription = TrimOrNull(vm.RequestDescription),
+                        DeliveryMode = deliveryMode,
+                        RequestDescription = requestDescription,
                         DesiredDueAt = dueUtc,
-                        Priority = string.IsNullOrWhiteSpace(vm.Priority) ? "NORMAL" : vm.Priority!.Trim().ToUpperInvariant(),
+                        Priority = priority,
                         RequesterContact = TrimOrNull(vm.RequesterContact),
                         RequesterSectorName = TrimOrNull(vm.RequesterSectorName),
-                        DigitalEnabled = string.Equals(vm.DeliveryMode, "DIGITAL", StringComparison.OrdinalIgnoreCase) || string.Equals(vm.DeliveryMode, "BOTH", StringComparison.OrdinalIgnoreCase) || vm.AllowDigitalFileAccess,
-                        PhysicalEnabled = string.Equals(vm.DeliveryMode, "PHYSICAL", StringComparison.OrdinalIgnoreCase) || string.Equals(vm.DeliveryMode, "BOTH", StringComparison.OrdinalIgnoreCase) || vm.IsPhysical
+                        SlaDueAt = dueUtc,
+                        SlaHours = (int)Math.Ceiling((dueUtc - nowUtc).TotalHours),
+                        DigitalEnabled = deliveryMode is "DIGITAL" or "BOTH",
+                        PhysicalEnabled = deliveryMode is "PHYSICAL" or "BOTH"
                     },
                     transaction: tx,
                     cancellationToken: ct));
@@ -194,7 +221,7 @@ values
                             LoanId = loanId,
                             DocumentId = (Guid?)docId,
                             IsManual = false,
-                            IsPhysical = vm.IsPhysical,
+                            IsPhysical = deliveryMode is "PHYSICAL" or "BOTH",
                             ReferenceCode = (string?)null,
                             Description = (string?)null,
                             DocumentType = (string?)null,
@@ -219,9 +246,9 @@ values
                             LoanId = loanId,
                             DocumentId = (Guid?)null,
                             IsManual = true,
-                            IsPhysical = vm.IsPhysical,
+                            IsPhysical = deliveryMode is "PHYSICAL" or "BOTH",
                             ReferenceCode = TrimOrNull(manual.ReferenceCode),
-                            Description = TrimOrNull(manual.Description),
+                            Description = TrimOrNull(manual.Description) ?? TrimOrNull(manual.RequestDescription) ?? requestDescription,
                             DocumentType = TrimOrNull(manual.DocumentType),
                             PatientName = TrimOrNull(manual.PatientName),
                             MedicalRecordNumber = TrimOrNull(manual.MedicalRecordNumber),
@@ -270,19 +297,19 @@ values
                     transaction: tx,
                     cancellationToken: ct));
 
-            await WriteRichHistoryAsync(con, tx, tenantId, loanId, oldStatus: null, newStatus: "REQUESTED", action: "LOAN_REQUEST_CREATED_CONTEXTUAL", userId, reason: vm.Notes, internalNotes: null, ct);
+            await WriteRichHistoryAsync(con, tx, tenantId, loanId, oldStatus: null, newStatus: "REQUESTED", action: createdFromDescription ? "LOAN_REQUEST_CREATED_FROM_DESCRIPTION" : "LOAN_REQUEST_CREATED", userId, reason: requestDescription, internalNotes: null, ct);
 
             await tx.CommitAsync(ct);
 
             _ = await _audit.WriteAsync(
                 tenantId, userId,
-                action: "LOAN_REQUEST_CREATED_CONTEXTUAL",
+                action: createdFromDescription ? "LOAN_REQUEST_CREATED_FROM_DESCRIPTION" : "LOAN_REQUEST_CREATED",
                 entityName: "loan_request",
                 entityId: loanId,
-                summary: "Solicitação documental contextual criada",
+                summary: createdFromDescription ? "Solicitação documental criada a partir de descrição" : "Solicitação documental criada",
                 ipAddress: null,
                 userAgent: null,
-                data: new { loanId, previousStatus = (string?)null, newStatus = "REQUESTED", correlationId = Guid.NewGuid().ToString("N"), timestampUtc = nowUtc },
+                data: new { loanId, tenantId, userId, requestDescription, deliveryMode, priority, requesterSectorName = TrimOrNull(vm.RequesterSectorName), hasGedDocuments = docIds.Count > 0, manualItemsCount = manualItems.Count, previousStatus = (string?)null, newStatus = "REQUESTED", correlationId, timestampUtc = nowUtc },
                 ct: ct);
 
             return Result<Guid>.Ok(loanId);
@@ -290,7 +317,7 @@ values
         catch (Exception ex)
         {
             _logger.LogError(ex, "LoanCommands.CreateAsync failed. Tenant={Tenant}", tenantId);
-            return Result<Guid>.Fail("LOAN", "Erro ao criar empréstimo.");
+            return Result<Guid>.Fail("LOAN", "Não foi possível enviar sua solicitação agora. Confira os campos destacados ou tente novamente.");
         }
     }
     public Task<Result> ApproveAsync(Guid tenantId, Guid loanId, Guid? userId, string? notes, CancellationToken ct)
@@ -621,6 +648,43 @@ values(@tenant_id, @loan_id, @nowUtc, @event_type, @by_user_id, @notes, @nowUtc,
             _logger.LogError(ex, "LoanCommands.TransitionAsync failed. Tenant={Tenant} Loan={Loan}", tenantId, loanId);
             return Result.Fail("LOAN_TRANSITION", "Falha ao atualizar status do empréstimo.");
         }
+    }
+
+    private static bool IsDescriptionOnlyManualItem(LoanManualItemVM item)
+    {
+        return string.IsNullOrWhiteSpace(item.ReferenceCode)
+            && string.IsNullOrWhiteSpace(item.DocumentType)
+            && string.IsNullOrWhiteSpace(item.PatientName)
+            && string.IsNullOrWhiteSpace(item.MedicalRecordNumber)
+            && string.IsNullOrWhiteSpace(item.BoxCode)
+            && string.IsNullOrWhiteSpace(item.PhysicalLocation);
+    }
+
+    private static string? NormalizeDeliveryMode(string? value, bool isPhysical)
+    {
+        var mode = string.IsNullOrWhiteSpace(value) ? (isPhysical ? "PHYSICAL" : "DIGITAL") : value.Trim().ToUpperInvariant();
+        return mode is "DIGITAL" or "PHYSICAL" or "BOTH" ? mode : null;
+    }
+
+    private static string NormalizePriority(string? value)
+    {
+        var priority = string.IsNullOrWhiteSpace(value) ? "NORMAL" : value.Trim().ToUpperInvariant();
+        return priority == "URGENT" ? "URGENT" : "NORMAL";
+    }
+
+    private static DateTimeOffset CalculateSlaDueAt(DateTimeOffset nowUtc, string deliveryMode, string priority)
+    {
+        var hours = (deliveryMode, priority) switch
+        {
+            ("DIGITAL", "URGENT") => 8,
+            ("DIGITAL", _) => 24,
+            ("PHYSICAL", "URGENT") => 24,
+            ("PHYSICAL", _) => 48,
+            ("BOTH", "URGENT") => 24,
+            ("BOTH", _) => 48,
+            _ => 24
+        };
+        return nowUtc.AddHours(hours);
     }
 
     private static string? TrimOrNull(string? value)
