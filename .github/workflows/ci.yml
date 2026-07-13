@@ -12,7 +12,25 @@ jobs:
         with:
           dotnet-version: '8.0.x'
       - name: Restore
-        run: dotnet restore InovaGed.sln
+        run: dotnet restore InovaGed.sln 2>&1 | tee restore.log
+      - name: Dependency tree
+        run: dotnet list InovaGed.Infrastructure/InovaGed.Infrastructure.csproj package --include-transitive 2>&1 | tee dependencies-infrastructure.log
+      - name: Package regression guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -RIn "NU1605" restore.log dependencies-infrastructure.log --exclude-dir=bin --exclude-dir=obj; then
+            echo "NU1605 detected during restore/dependency inspection." >&2
+            exit 1
+          fi
+          if grep -RIn "Microsoft.AspNetCore.Cryptography.KeyDerivation.*8\.0\.11" . --include='*.csproj' --include='*.props' --include='*.targets' --include='packages.lock.json' --exclude-dir=bin --exclude-dir=obj; then
+            echo "KeyDerivation 8.0.11 is not allowed in active package files." >&2
+            exit 1
+          fi
+          if grep -RInE "<PackageReference Include=\"(Microsoft\.AspNet\.Identity\.Core|Microsoft\.AspNetCore(\.Authorization|\.Mvc\.Core)?|Microsoft\.AspNetCore\.Authorization)\" Version=\"2\." . --include='*.csproj' --exclude-dir=bin --exclude-dir=obj; then
+            echo "Legacy ASP.NET Core/Identity 2.x package reference detected." >&2
+            exit 1
+          fi
       - name: Build
         run: dotnet build InovaGed.sln --no-restore --configuration Release
       - name: Test
