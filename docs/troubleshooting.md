@@ -56,3 +56,11 @@ psql "$CONNECTION_STRING" -v ON_ERROR_STOP=1 -f database/apply_all_required_migr
 ### Telas protegidas por diagnóstico
 
 As rotas `/Ged`, `/HospitalDocuments`, `/SystemLogs`, `/UploadBatch` e `/UploadChunk` não devem exibir stack trace para usuário final quando faltarem tabelas/colunas; elas retornam mensagem amigável e registram o script sugerido nos logs.
+
+## Falha controlada de configuração no startup
+
+Se a aplicação encerrar com **“Configuração obrigatória ausente ou insegura”**, verifique os logs `StartupConfiguration` e corrija variáveis de ambiente. Nunca cole senha completa em tickets; use apenas o valor mascarado exibido em `/SystemHealth/SecurityConfiguration`.
+
+## OCR/Preview indisponível
+
+A resolução de executáveis deve seguir: valor configurado, variável de ambiente, diretórios conhecidos, `PATH` e, por fim, indisponibilidade. Recurso opcional ausente não deve derrubar o GED inteiro; apenas o worker dependente deve ficar desabilitado ou em alerta.

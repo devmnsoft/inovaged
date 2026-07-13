@@ -1,0 +1,15 @@
+@model IEnumerable<dynamic>
+@{
+    ViewData["Title"] = "Workers";
+}
+<h1>Workers</h1>
+<table class="table table-sm table-striped">
+<thead><tr><th>Worker</th><th>Habilitado</th><th>Dependência</th><th>Último início</th><th>Último sucesso</th><th>Último erro</th><th>Tenant</th><th>Duração</th><th>Processados</th><th>Próxima execução</th><th>Status</th><th>CorrelationId</th></tr></thead>
+<tbody>
+@foreach (var w in Model)
+{
+<tr><td>@w.worker_name</td><td>@w.enabled</td><td>@w.dependency</td><td>@w.last_started_at_utc</td><td>@w.last_success_at_utc</td><td>@w.last_error</td><td>@w.tenant_id</td><td>@w.duration_ms</td><td>@w.processed_count</td><td>@w.next_run_at_utc</td><td>@w.status</td><td>@w.last_error_correlation_id</td></tr>
+}
+</tbody>
+</table>
+@if (!Model.Any()) { <div class="alert alert-info">Nenhum estado persistido encontrado. Execute a migration de worker_execution_state.</div> }
