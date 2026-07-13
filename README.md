@@ -125,3 +125,12 @@ A migration consolidada idempotente é `database/apply_all_required_migrations.s
 Após upload simples, em lote ou chunked, a resposta do backend inclui `documentId`, `versionId`, `resolvedFolderId`, `folderName`, `uploadedAtUtc` e `uploadedAtLocalFormatted` quando o documento é criado. A listagem do GED deve ser recarregada via AJAX pela pasta resolvida, sem exigir F5, mantendo a pasta ativa e destacando os documentos enviados.
 
 A etiqueta "OCR disponível" só deve aparecer quando o status do job é `COMPLETED` e existe texto OCR não vazio. Estados pendente, processamento, erro, cancelado, concluído sem texto e sem OCR são exibidos separadamente.
+
+## Estabilização de configuração e segurança (Julho 2026)
+
+- `appsettings.json` não versiona senha PostgreSQL nem caminhos pessoais obrigatórios.
+- Configure `ConnectionStrings__DefaultConnection` por variável de ambiente, User Secrets, IIS ou Docker.
+- Em produção, configurações críticas inseguras bloqueiam o startup e aparecem em `/SystemHealth/SecurityConfiguration` com valores mascarados.
+- O timezone padrão operacional é `America/Belem`; persistência deve permanecer em UTC e a apresentação deve usar o timezone do tenant.
+- Seeds ficam desabilitados por padrão e só podem rodar em `Development` ou `PoC` com senha informada por variável `INOVAGED_DEV_SEED_PASSWORD`.
+- Consulte `docs/configuracao-por-ambiente.md`, `docs/seguranca-configuracao.md` e `docs/workers-multitenant.md` antes da publicação.

@@ -576,14 +576,18 @@ public sealed class SystemSeedHostedService : IHostedService
 
     private static IReadOnlyList<SeedUser> BuildSeedUsers(PasswordHasher<ApplicationUser> hasher)
     {
-        return new[]
-        {
-            CreateSeedUser(hasher, Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbb001"), "Administrador do Sistema", "admin@inovaged.local", "Admin@123", "ADMIN"),
-            CreateSeedUser(hasher, Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbb002"), "Administrador", "administrador@inovaged.local", "Administrador@123", "ADMINISTRADOR"),
-            CreateSeedUser(hasher, Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbb003"), "Administrador Ophir", "administradorophir@inovaged.local", "Administrador@123", "ADMINISTRADOROPHIR"),
-            CreateSeedUser(hasher, Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbb004"), "Arquivista Ophir", "arquivistaophir@inovaged.local", "Arquivista@123", "ARQUIVISTAOPHIR"),
-            CreateSeedUser(hasher, Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbb005"), "Hospital", "hospital@inovaged.local", "Hospital@123", "HOSPITAL")
-        };
+        var password = Environment.GetEnvironmentVariable("INOVAGED_DEV_SEED_PASSWORD");
+        if (string.IsNullOrWhiteSpace(password))
+            return [];
+
+        return
+        [
+            CreateSeedUser(hasher, Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbb001"), "Administrador do Sistema", "admin@inovaged.local", password, "ADMIN"),
+            CreateSeedUser(hasher, Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbb002"), "Administrador", "administrador@inovaged.local", password, "ADMINISTRADOR"),
+            CreateSeedUser(hasher, Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbb003"), "Administrador Ophir", "administradorophir@inovaged.local", password, "ADMINISTRADOROPHIR"),
+            CreateSeedUser(hasher, Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbb004"), "Arquivista Ophir", "arquivistaophir@inovaged.local", password, "ARQUIVISTAOPHIR"),
+            CreateSeedUser(hasher, Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbb005"), "Hospital", "hospital@inovaged.local", password, "HOSPITAL")
+        ];
     }
 
     private static SeedUser CreateSeedUser(PasswordHasher<ApplicationUser> hasher, Guid id, string name, string email, string password, string roleName)

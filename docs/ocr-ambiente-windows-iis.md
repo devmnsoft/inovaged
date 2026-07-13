@@ -47,3 +47,14 @@ dir "C:\Program Files\Tesseract-OCR\tessdata\eng.traineddata"
 ## Atenção ao perfil Administrator
 
 Evite manter OCRmyPDF/Python em `C:\Users\Administrator\AppData\...` em produção IIS. O usuário do AppPool pode não ter permissão para acessar esse perfil. Caso o diagnóstico aponte falha de execução, conceda leitura/execução ao usuário do AppPool ou reinstale em caminho global.
+
+## Configuração segura de caminhos
+
+Evite configurar executáveis em perfis pessoais, como `C:\Users\Administrator\...`. Instale dependências em `C:\Tools` ou `C:\Program Files` e configure variáveis de ambiente, por exemplo:
+
+```powershell
+[Environment]::SetEnvironmentVariable("Ocr__PythonPath", "C:\Tools\Python311\python.exe", "Machine")
+[Environment]::SetEnvironmentVariable("Ocr__OcrMyPdfPath", "C:\Tools\Python311\Scripts\ocrmypdf.exe", "Machine")
+[Environment]::SetEnvironmentVariable("Ocr__TesseractPath", "C:\Program Files\Tesseract-OCR\tesseract.exe", "Machine")
+iisreset
+```
