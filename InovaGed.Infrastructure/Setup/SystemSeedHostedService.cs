@@ -12,7 +12,8 @@ namespace InovaGed.Infrastructure.Setup;
 
 public sealed class SystemSeedOptions
 {
-    public bool Enabled { get; set; } = true;
+    public bool Enabled { get; set; } = false;
+    public bool AllowPoC { get; set; }
     public bool FailFastOnSeedError { get; set; }
     public bool UpdateExistingPasswords { get; set; }
     public bool NormalizeLegacyRoles { get; set; } = true;
@@ -25,6 +26,7 @@ public sealed class SystemSeedHostedService : IHostedService
     private readonly ILogger<SystemSeedHostedService> _logger;
     private readonly ISchemaCompatibilityState _schemaState;
     private readonly SystemSeedOptions _options;
+    private readonly IHostEnvironment _environment;
     private NpgsqlTransaction? _currentSeedTransaction;
 
     private NpgsqlTransaction CurrentSeedTransaction => _currentSeedTransaction ?? throw new InvalidOperationException("System Seed transaction was not initialized.");
@@ -33,12 +35,14 @@ public sealed class SystemSeedHostedService : IHostedService
         IDbConnectionFactory db,
         ILogger<SystemSeedHostedService> logger,
         ISchemaCompatibilityState schemaState,
-        IOptions<SystemSeedOptions> options)
+        IOptions<SystemSeedOptions> options,
+        IHostEnvironment environment)
     {
         _db = db;
         _logger = logger;
         _schemaState = schemaState;
         _options = options.Value;
+        _environment = environment;
     }
 
     public async Task StartAsync(CancellationToken ct)
@@ -47,6 +51,14 @@ public sealed class SystemSeedHostedService : IHostedService
         {
             _logger.LogInformation("SystemSeedHostedService desabilitado por configuração.");
             return;
+        }
+
+        var allowedEnvironment = _environment.IsDevelopment() || string.Equals(_environment.EnvironmentName, "PoC", StringComparison.OrdinalIgnoreCase);
+        if (!allowedEnvironment)
+        {
+            var correlationId = Guid.NewGuid().ToString("N");
+            _logger.LogCritical("SystemSeed bloqueado fora de Development/PoC. Environment={Environment} CorrelationId={CorrelationId}", _environment.EnvironmentName, correlationId);
+            throw new InvalidOperationException($"SystemSeed bloqueado em ambiente {_environment.EnvironmentName}. CorrelationId={correlationId}");
         }
 
         if (!await _schemaState.IsCompatibleAsync("SystemSeed", ct))
@@ -560,14 +572,18 @@ public sealed class SystemSeedHostedService : IHostedService
 
     private static IReadOnlyList<SeedUser> BuildSeedUsers(PasswordHasher<ApplicationUser> hasher)
     {
-        return new[]
-        {
-            CreateSeedUser(hasher, Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbb001"), "Administrador do Sistema", "admin@inovaged.local", "Admin@123", "ADMIN"),
-            CreateSeedUser(hasher, Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbb002"), "Administrador", "administrador@inovaged.local", "Administrador@123", "ADMINISTRADOR"),
-            CreateSeedUser(hasher, Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbb003"), "Administrador Ophir", "administradorophir@inovaged.local", "Administrador@123", "ADMINISTRADOROPHIR"),
-            CreateSeedUser(hasher, Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbb004"), "Arquivista Ophir", "arquivistaophir@inovaged.local", "Arquivista@123", "ARQUIVISTAOPHIR"),
-            CreateSeedUser(hasher, Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbb005"), "Hospital", "hospital@inovaged.local", "Hospital@123", "HOSPITAL")
-        };
+        var password = Environment.GetEnvironmentVariable("INOVAGED_DEV_SEED_PASSWORD");
+        if (string.IsNullOrWhiteSpace(password))
+            return [];
+
+        return
+        [
+            CreateSeedUser(hasher, Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbb001"), "Administrador do Sistema", "admin@inovaged.local", password, "ADMIN"),
+            CreateSeedUser(hasher, Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbb002"), "Administrador", "administrador@inovaged.local", password, "ADMINISTRADOR"),
+            CreateSeedUser(hasher, Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbb003"), "Administrador Ophir", "administradorophir@inovaged.local", password, "ADMINISTRADOROPHIR"),
+            CreateSeedUser(hasher, Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbb004"), "Arquivista Ophir", "arquivistaophir@inovaged.local", password, "ARQUIVISTAOPHIR"),
+            CreateSeedUser(hasher, Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbb005"), "Hospital", "hospital@inovaged.local", password, "HOSPITAL")
+        ];
     }
 
     private static SeedUser CreateSeedUser(PasswordHasher<ApplicationUser> hasher, Guid id, string name, string email, string password, string roleName)

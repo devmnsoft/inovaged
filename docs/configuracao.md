@@ -60,3 +60,16 @@ psql "$CONNECTION_STRING" -f database/diagnostics/diagnostico_schema_ged.sql
 4. Acesse `/SystemHealth/Schema` com perfil `ADMIN` e confirme que tabelas e colunas críticas estão OK.
 
 O script consolidado `database/migrations/2026_06_ged_schema_consolidation.sql` é idempotente: usa `CREATE TABLE IF NOT EXISTS`, `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` e `CREATE INDEX IF NOT EXISTS`, podendo ser reaplicado em ambientes já existentes.
+
+## Estabilização por ambiente
+
+A partir desta etapa, `appsettings.json` contém somente valores seguros e genéricos. A string PostgreSQL deve ser fornecida por `ConnectionStrings__DefaultConnection`, User Secrets, IIS ou Docker. O exemplo sem credenciais está em `InovaGed.Web/appsettings.Example.json`.
+
+Comandos Windows úteis:
+
+```powershell
+dotnet user-secrets set "ConnectionStrings:DefaultConnection" "Host=localhost;Port=5432;Database=inovaged;Username=inovaged_app;Password=<senha>" --project .\InovaGed.Web\InovaGed.Web.csproj
+[Environment]::SetEnvironmentVariable("ConnectionStrings__DefaultConnection", "Host=db;Port=5432;Database=inovaged;Username=inovaged_app;Password=<senha>", "Machine")
+```
+
+Em produção, mantenha `SystemSeed:Enabled=false`, `Auth:AllowInternalSelfSignedCertificates=false`, `SchemaRepair:Enabled=false` e `AllowedHosts` restrito aos hosts reais.

@@ -109,6 +109,9 @@ using InovaGed.Application.Preview;
 using InovaGed.Application.Security;
 using InovaGed.Application.SystemHealth;
 using InovaGed.Infrastructure.SystemHealth;
+using InovaGed.Infrastructure.Common.Time;
+using InovaGed.Infrastructure.Tenants;
+using InovaGed.Infrastructure.Jobs;
 using InovaGed.Web.Filters;
 using Microsoft.AspNetCore.Http.Features;
 
@@ -131,6 +134,15 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddSignalR();
 builder.Services.AddMemoryCache();
 builder.Services.AddScoped<IDateTimeDisplayService, DateTimeDisplayService>();
+builder.Services.AddSingleton<ISecretMasker, SecretMasker>();
+builder.Services.AddSingleton<IStartupConfigurationValidator, StartupConfigurationValidator>();
+builder.Services.AddSingleton<IExecutableResolver, ExecutableResolver>();
+builder.Services.AddSingleton<IApplicationClock, SystemApplicationClock>();
+builder.Services.AddScoped<ITenantTimeZoneProvider, ConfigurationTenantTimeZoneProvider>();
+builder.Services.AddScoped<IDateTimeZoneConverter, TenantDateTimeZoneConverter>();
+builder.Services.AddScoped<ITenantCatalog, DatabaseTenantCatalog>();
+builder.Services.AddScoped<ISystemUserProvider, ConfiguredSystemUserProvider>();
+builder.Services.AddScoped<IJobExecutionLock, PostgresJobExecutionLock>();
 builder.Services.Configure<SchemaRepairOptions>(builder.Configuration.GetSection("SchemaRepair"));
 builder.Services.Configure<OcrAutoScheduleOptions>(builder.Configuration.GetSection("OcrAutoSchedule"));
 builder.Services.Configure<OcrOptions>(builder.Configuration.GetSection("Ocr"));
@@ -596,6 +608,7 @@ builder.Services.AddScoped<DocumentAppService>();
 // =======================================================
 var app = builder.Build();
 
+ValidateStartupConfiguration(app);
 await ValidateDatabaseSchemaOnStartupAsync(app);
 
 app.UseExceptionHandler("/Home/Error");
@@ -625,6 +638,24 @@ app.MapControllerRoute(
     pattern: "{controller=Home}/{action=Index}/{id?}");
 
 app.Run();
+
+static void ValidateStartupConfiguration(WebApplication app)
+{
+    using var scope = app.Services.CreateScope();
+    var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("StartupConfiguration");
+    var checks = scope.ServiceProvider.GetRequiredService<IStartupConfigurationValidator>().Validate();
+    foreach (var check in checks)
+    {
+        if (check.Severity == StartupConfigurationSeverity.Critical)
+            logger.LogError("Configuração crítica: {Item} Status={Status} Valor={Value} Origem={Source} Ambiente={Environment} Recomendação={Recommendation}", check.Item, check.Status, check.MaskedValue, check.Source, check.Environment, check.Recommendation);
+        else if (check.Severity == StartupConfigurationSeverity.Warning)
+            logger.LogWarning("Configuração alerta: {Item} Status={Status} Valor={Value} Origem={Source} Ambiente={Environment} Recomendação={Recommendation}", check.Item, check.Status, check.MaskedValue, check.Source, check.Environment, check.Recommendation);
+        else
+            logger.LogInformation("Configuração: {Item} Status={Status} Origem={Source} Ambiente={Environment}", check.Item, check.Status, check.Source, check.Environment);
+    }
+    if (checks.Any(c => c.Severity == StartupConfigurationSeverity.Critical))
+        throw new InvalidOperationException("Configuração obrigatória ausente ou insegura. Consulte logs StartupConfiguration e /SystemHealth/SecurityConfiguration.");
+}
 
 static async Task ValidateDatabaseSchemaOnStartupAsync(WebApplication app)
 {

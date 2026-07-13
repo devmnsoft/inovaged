@@ -1,0 +1,16 @@
+@model IReadOnlyList<InovaGed.Application.SystemHealth.StartupConfigurationCheck>
+@{
+    ViewData["Title"] = "Configuração de Segurança";
+}
+<h1>Configuração de Segurança</h1>
+<table class="table table-sm table-striped">
+<thead><tr><th>Item</th><th>Status</th><th>Severidade</th><th>Valor mascarado</th><th>Recomendação</th><th>Origem</th><th>Ambiente</th></tr></thead>
+<tbody>
+@foreach (var i in Model)
+{
+    <tr>
+        <td>@i.Item</td><td>@i.Status</td><td>@i.Severity</td><td><code>@i.MaskedValue</code></td><td>@i.Recommendation</td><td>@i.Source</td><td>@i.Environment</td>
+    </tr>
+}
+</tbody>
+</table>
