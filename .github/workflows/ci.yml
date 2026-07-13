@@ -1,0 +1,36 @@
+name: ci
+on:
+  pull_request:
+  push:
+    branches: [ main, develop, "feature/**" ]
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Restore
+        run: dotnet restore InovaGed.sln
+      - name: Build
+        run: dotnet build InovaGed.sln --no-restore --configuration Release
+      - name: Test
+        run: dotnet test InovaGed.sln --no-build --configuration Release --logger trx --results-directory TestResults
+      - name: JSON validation
+        run: find . -name '*.json' -not -path './**/bin/**' -not -path './**/obj/**' -print0 | xargs -0 -r python -m json.tool >/dev/null
+      - name: Whitespace diff check
+        run: git diff --check
+      - name: Secret scan
+        run: |
+          ! git grep -n -E '(password|secret|token|apikey|api_key)\s*[:=]\s*["'"''][^"'"'']{12,}["'"'']' -- ':!**/bin/**' ':!**/obj/**'
+      - name: Migration validation
+        run: |
+          test -f database/migrations/2026_07_document_guardian.sql
+          test -f database/migrations/2026_07_guardian_consolidation_queue_events_dossiers.sql
+          ! grep -RniE '\bdrop\s+(table|view|schema|column)\b' database/migrations
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: TestResults
