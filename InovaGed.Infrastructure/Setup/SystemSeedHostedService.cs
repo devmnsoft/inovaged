@@ -12,7 +12,8 @@ namespace InovaGed.Infrastructure.Setup;
 
 public sealed class SystemSeedOptions
 {
-    public bool Enabled { get; set; } = true;
+    public bool Enabled { get; set; } = false;
+    public bool AllowInPoc { get; set; }
     public bool FailFastOnSeedError { get; set; }
     public bool UpdateExistingPasswords { get; set; }
     public bool NormalizeLegacyRoles { get; set; } = true;
@@ -25,6 +26,7 @@ public sealed class SystemSeedHostedService : IHostedService
     private readonly ILogger<SystemSeedHostedService> _logger;
     private readonly ISchemaCompatibilityState _schemaState;
     private readonly SystemSeedOptions _options;
+    private readonly IHostEnvironment _environment;
     private NpgsqlTransaction? _currentSeedTransaction;
 
     private NpgsqlTransaction CurrentSeedTransaction => _currentSeedTransaction ?? throw new InvalidOperationException("System Seed transaction was not initialized.");
@@ -33,12 +35,14 @@ public sealed class SystemSeedHostedService : IHostedService
         IDbConnectionFactory db,
         ILogger<SystemSeedHostedService> logger,
         ISchemaCompatibilityState schemaState,
-        IOptions<SystemSeedOptions> options)
+        IOptions<SystemSeedOptions> options,
+        IHostEnvironment environment)
     {
         _db = db;
         _logger = logger;
         _schemaState = schemaState;
         _options = options.Value;
+        _environment = environment;
     }
 
     public async Task StartAsync(CancellationToken ct)
@@ -46,6 +50,18 @@ public sealed class SystemSeedHostedService : IHostedService
         if (!_options.Enabled)
         {
             _logger.LogInformation("SystemSeedHostedService desabilitado por configuração.");
+            return;
+        }
+
+        if (!_environment.IsDevelopment() && !_options.AllowInPoc)
+        {
+            _logger.LogCritical("SystemSeed bloqueado fora de Development porque AllowInPoc=false. Environment={Environment}", _environment.EnvironmentName);
+            return;
+        }
+
+        if (_environment.IsProduction())
+        {
+            _logger.LogCritical("SystemSeed bloqueado em Production para impedir criação de usuários demonstrativos.");
             return;
         }
 

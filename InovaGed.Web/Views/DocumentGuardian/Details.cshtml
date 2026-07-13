@@ -1,0 +1,57 @@
+@model InovaGed.Application.DocumentGuardian.DocumentGuardianViewModel
+@{
+    ViewData["Title"] = "InovaGED Guardião";
+}
+
+<section class="container-fluid py-3 document-guardian" aria-labelledby="guardian-title">
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
+        <div>
+            <h1 id="guardian-title" class="h3 mb-1">InovaGED Guardião</h1>
+            <p class="text-muted mb-0">Gêmeo digital vivo baseado em evidências reais persistidas.</p>
+        </div>
+        <a class="btn btn-outline-secondary" href="/Ged">Voltar ao GED</a>
+    </div>
+
+    <div class="card shadow-sm mb-3">
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-lg-6"><strong>Documento:</strong> @Model.Title<br /><span class="text-muted">@Model.FileName</span></div>
+                <div class="col-lg-3"><strong>Pasta:</strong> @(Model.FolderName ?? "-")</div>
+                <div class="col-lg-3"><strong>Tipo:</strong> @(Model.DocumentTypeName ?? "Não classificado")</div>
+                <div class="col-lg-3"><strong>Completude:</strong><div class="progress" aria-label="Score de completude"><div class="progress-bar" style="width:@Model.CompletenessScore%">@Model.CompletenessScore%</div></div></div>
+                <div class="col-lg-3"><strong>Risco:</strong><div class="progress" aria-label="Score de risco"><div class="progress-bar bg-warning text-dark" style="width:@Model.RiskScore%">@Model.RiskScore%</div></div></div>
+                <div class="col-lg-3"><strong>Sigiloso:</strong> @(Model.IsConfidential ? "Sim" : "Não")</div>
+                <div class="col-lg-3"><strong>Tenant:</strong> @Model.TenantId</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-3">
+        <div class="col-xl-6">
+            <div class="card h-100"><div class="card-header">Alertas e evidências</div><div class="card-body">
+            @if (!Model.Findings.Any()) { <p class="text-muted">Nenhum alerta persistido para este documento.</p> }
+            @foreach (var f in Model.Findings)
+            {
+                <article class="border rounded p-3 mb-3">
+                    <h2 class="h6 mb-1">@f.RuleCode v@f.RuleVersion — @f.Severity/@f.Category</h2>
+                    <p class="mb-1">@f.Description</p>
+                    <p class="mb-2"><strong>Ação recomendada:</strong> @f.Recommendation</p>
+                    <small class="text-muted">Confiança: @f.Confidence | Status: @f.Status | UTC: @f.CreatedAtUtc</small>
+                    <ul class="mt-2 mb-0">
+                    @foreach (var e in f.Evidences)
+                    {
+                        <li><strong>@e.SourceType/@e.EvidenceKey:</strong> @e.EvidenceValue <span class="text-muted">@e.Excerpt</span></li>
+                    }
+                    </ul>
+                </article>
+            }
+            </div></div>
+        </div>
+        <div class="col-xl-6">
+            <div class="card mb-3"><div class="card-header">Documentos relacionados</div><div class="card-body"><ul class="mb-0">@foreach (var r in Model.Relationships){<li>@r.RelationshipType — @r.RelatedTitle (@r.Confidence)</li>} @if(!Model.Relationships.Any()){<li class="text-muted">Nenhum relacionamento persistido.</li>}</ul></div></div>
+            <div class="card mb-3"><div class="card-header">Obrigações e prazos</div><div class="card-body"><ul class="mb-0">@foreach (var o in Model.Obligations){<li>@o.ObligationType — @o.Status — @(o.DueAtUtc?.ToString("u") ?? "sem prazo")</li>} @if(!Model.Obligations.Any()){<li class="text-muted">Nenhuma obrigação persistida.</li>}</ul></div></div>
+            <div class="card"><div class="card-header">Decisões humanas</div><div class="card-body"><ul class="mb-0">@foreach (var d in Model.Decisions){<li>@d.Decision — @d.DecidedByName — @d.DecidedAtUtc.ToString("u")<br /><span class="text-muted">@d.Justification</span></li>} @if(!Model.Decisions.Any()){<li class="text-muted">Nenhuma decisão registrada.</li>}</ul></div></div>
+        </div>
+        <div class="col-12"><div class="card"><div class="card-header">Linha do tempo probatória</div><div class="card-body"><ol class="mb-0">@foreach (var ev in Model.Timeline){<li><strong>@ev.EventAtUtc.ToString("u")</strong> — @ev.EventType (@ev.Source): @ev.Summary</li>} @if(!Model.Timeline.Any()){<li class="text-muted">Nenhum evento encontrado.</li>}</ol></div></div></div>
+    </div>
+</section>

@@ -1,0 +1,5 @@
+-- Rollback lógico do Guardião: não executa DROP nem remove dados automaticamente.
+-- Para desativar em produção, execute em janela controlada:
+-- update ged.document_rule set is_active=false where code like 'GUARDIAN_%';
+-- update ged.document_twin set status='DISABLED', reg_status='I', updated_at_utc=now() where tenant_id='<tenant>';
+-- Preserve tabelas para auditoria, decisões humanas e evidências probatórias.
