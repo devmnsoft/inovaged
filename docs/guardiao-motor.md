@@ -1,4 +1,4 @@
-# arquitetura
+# guardiao motor
 
 Consolidação funcional iniciada em 2026-07-13.
 

@@ -1,4 +1,4 @@
-# arquitetura
+# roteiro demo completo
 
 Consolidação funcional iniciada em 2026-07-13.
 

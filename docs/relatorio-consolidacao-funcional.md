@@ -1,4 +1,4 @@
-# arquitetura
+# relatorio consolidacao funcional
 
 Consolidação funcional iniciada em 2026-07-13.
 
