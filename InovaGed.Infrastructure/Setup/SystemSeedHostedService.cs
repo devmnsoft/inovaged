@@ -13,7 +13,7 @@ namespace InovaGed.Infrastructure.Setup;
 public sealed class SystemSeedOptions
 {
     public bool Enabled { get; set; } = false;
-    public bool AllowPoC { get; set; }
+    public bool AllowInPoc { get; set; }
     public bool FailFastOnSeedError { get; set; }
     public bool UpdateExistingPasswords { get; set; }
     public bool NormalizeLegacyRoles { get; set; } = true;
@@ -53,12 +53,16 @@ public sealed class SystemSeedHostedService : IHostedService
             return;
         }
 
-        var allowedEnvironment = _environment.IsDevelopment() || string.Equals(_environment.EnvironmentName, "PoC", StringComparison.OrdinalIgnoreCase);
-        if (!allowedEnvironment)
+        if (!_environment.IsDevelopment() && !_options.AllowInPoc)
         {
-            var correlationId = Guid.NewGuid().ToString("N");
-            _logger.LogCritical("SystemSeed bloqueado fora de Development/PoC. Environment={Environment} CorrelationId={CorrelationId}", _environment.EnvironmentName, correlationId);
-            throw new InvalidOperationException($"SystemSeed bloqueado em ambiente {_environment.EnvironmentName}. CorrelationId={correlationId}");
+            _logger.LogCritical("SystemSeed bloqueado fora de Development porque AllowInPoc=false. Environment={Environment}", _environment.EnvironmentName);
+            return;
+        }
+
+        if (_environment.IsProduction())
+        {
+            _logger.LogCritical("SystemSeed bloqueado em Production para impedir criação de usuários demonstrativos.");
+            return;
         }
 
         if (!await _schemaState.IsCompatibleAsync("SystemSeed", ct))

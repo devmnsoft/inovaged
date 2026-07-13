@@ -61,15 +61,24 @@ psql "$CONNECTION_STRING" -f database/diagnostics/diagnostico_schema_ged.sql
 
 O script consolidado `database/migrations/2026_06_ged_schema_consolidation.sql` é idempotente: usa `CREATE TABLE IF NOT EXISTS`, `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` e `CREATE INDEX IF NOT EXISTS`, podendo ser reaplicado em ambientes já existentes.
 
-## Estabilização por ambiente
+## Segredos e string de conexão
 
-A partir desta etapa, `appsettings.json` contém somente valores seguros e genéricos. A string PostgreSQL deve ser fornecida por `ConnectionStrings__DefaultConnection`, User Secrets, IIS ou Docker. O exemplo sem credenciais está em `InovaGed.Web/appsettings.Example.json`.
+`InovaGed.Web/appsettings.json` não deve conter senha. Configure a senha por variável de ambiente ou User Secrets em desenvolvimento:
 
-Comandos Windows úteis:
-
-```powershell
-dotnet user-secrets set "ConnectionStrings:DefaultConnection" "Host=localhost;Port=5432;Database=inovaged;Username=inovaged_app;Password=<senha>" --project .\InovaGed.Web\InovaGed.Web.csproj
-[Environment]::SetEnvironmentVariable("ConnectionStrings__DefaultConnection", "Host=db;Port=5432;Database=inovaged;Username=inovaged_app;Password=<senha>", "Machine")
+```bash
+dotnet user-secrets set "ConnectionStrings:DefaultConnection" "Host=localhost;Port=5432;Database=inovaged;Username=inovaged;Password=<senha>;Pooling=true;Application Name=InovaGed" --project InovaGed.Web/InovaGed.Web.csproj
+# ou variável de ambiente
+ConnectionStrings__DefaultConnection="Host=localhost;Port=5432;Database=inovaged;Username=inovaged;Password=<senha>;Pooling=true;Application Name=InovaGed"
 ```
 
-Em produção, mantenha `SystemSeed:Enabled=false`, `Auth:AllowInternalSelfSignedCertificates=false`, `SchemaRepair:Enabled=false` e `AllowedHosts` restrito aos hosts reais.
+Use `InovaGed.Web/appsettings.Example.json` como modelo sem credenciais reais.
+
+## Seed e certificados internos
+
+`SystemSeed:Enabled` é `false` por padrão. O seed só pode executar em `Development` ou em PoC explicitamente configurada com `SystemSeed:AllowInPoc=true`; em `Production` é bloqueado.
+
+`Auth:AllowInternalSelfSignedCertificates` é `false` por padrão. Em `Production`, a aplicação bloqueia startup se a opção insegura for habilitada. Isso se aplica apenas a certificados internos autoassinados e não altera validação ICP-Brasil.
+
+## Fuso horário
+
+Datas persistidas devem ser UTC. A visualização usa o fuso do tenant quando disponível e fallback operacional `America/Belem` (`App:LocalTimeZoneId` e `Localization:DefaultTimeZone`).

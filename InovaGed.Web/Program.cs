@@ -20,7 +20,9 @@ using InovaGed.Application.Common.Preview;
 using InovaGed.Application.Common.Notifications;
 using InovaGed.Application.Common.Security;
 using InovaGed.Application.Common.Storage;
+using InovaGed.Application.Common.Time;
 using InovaGed.Application.Documents;
+using InovaGed.Application.DocumentGuardian;
 using InovaGed.Application.DocumentQuality;
 using InovaGed.Application.Ged;
 using InovaGed.Application.Ged.Batches;
@@ -57,7 +59,9 @@ using InovaGed.Infrastructure.ClassificationPlans;
 using InovaGed.Infrastructure.Common.Database;
 using InovaGed.Infrastructure.Common.Codes;
 using InovaGed.Infrastructure.Common.Security;
+using InovaGed.Infrastructure.Common.Time;
 using InovaGed.Infrastructure.Documents;
+using InovaGed.Infrastructure.DocumentGuardian;
 using InovaGed.Infrastructure.DocumentQuality;
 using InovaGed.Infrastructure.Ged;
 using InovaGed.Infrastructure.Ged.Batches;
@@ -116,6 +120,12 @@ using InovaGed.Web.Filters;
 using Microsoft.AspNetCore.Http.Features;
 
 var builder = WebApplication.CreateBuilder(args);
+var allowInternalSelfSigned = builder.Configuration.GetValue<bool>("Auth:AllowInternalSelfSignedCertificates");
+if (builder.Environment.IsProduction() && allowInternalSelfSigned)
+{
+    builder.Logging.AddFilter((category, level) => level >= LogLevel.Critical);
+    throw new InvalidOperationException("Configuração insegura bloqueada: Auth:AllowInternalSelfSignedCertificates=true não é permitido em Production.");
+}
 
 // =======================================================
 // MVC + Razor
@@ -134,15 +144,8 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddSignalR();
 builder.Services.AddMemoryCache();
 builder.Services.AddScoped<IDateTimeDisplayService, DateTimeDisplayService>();
-builder.Services.AddSingleton<ISecretMasker, SecretMasker>();
-builder.Services.AddSingleton<IStartupConfigurationValidator, StartupConfigurationValidator>();
-builder.Services.AddSingleton<IExecutableResolver, ExecutableResolver>();
-builder.Services.AddSingleton<IApplicationClock, SystemApplicationClock>();
-builder.Services.AddScoped<ITenantTimeZoneProvider, ConfigurationTenantTimeZoneProvider>();
-builder.Services.AddScoped<IDateTimeZoneConverter, TenantDateTimeZoneConverter>();
-builder.Services.AddScoped<ITenantCatalog, DatabaseTenantCatalog>();
-builder.Services.AddScoped<ISystemUserProvider, ConfiguredSystemUserProvider>();
-builder.Services.AddScoped<IJobExecutionLock, PostgresJobExecutionLock>();
+builder.Services.AddSingleton<IClock, SystemClock>();
+builder.Services.AddSingleton<ITenantTimeZoneService, TenantTimeZoneService>();
 builder.Services.Configure<SchemaRepairOptions>(builder.Configuration.GetSection("SchemaRepair"));
 builder.Services.Configure<OcrAutoScheduleOptions>(builder.Configuration.GetSection("OcrAutoSchedule"));
 builder.Services.Configure<OcrOptions>(builder.Configuration.GetSection("Ocr"));
@@ -187,6 +190,7 @@ builder.Services.AddScoped<IHospitalIntelligenceService, HospitalIntelligenceSer
 builder.Services.AddScoped<IHospitalTrendsService, HospitalTrendsService>();
 builder.Services.AddScoped<ITableSchemaGuard, TableSchemaGuard>();
 builder.Services.AddScoped<IOperationsDashboardService, OperationsDashboardService>();
+builder.Services.AddScoped<IDocumentGuardianService, DocumentGuardianService>();
 
 builder.Services.Configure<DocumentQualityOptions>(builder.Configuration.GetSection("DocumentQuality"));
 builder.Services.AddScoped<IDocumentQualityAnalyzerService, DocumentQualityAnalyzerService>();

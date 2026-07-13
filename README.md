@@ -33,7 +33,7 @@ dotnet restore
 dotnet build InovaGed.sln
 ```
 
-Configure a string de conexão e os caminhos de storage antes de executar a aplicação.
+Configure a string de conexão por variável de ambiente ou User Secrets; não versionar senhas em `appsettings.json`. Use `InovaGed.Web/appsettings.Example.json` como referência e configure os caminhos de storage antes de executar a aplicação.
 
 ## Configuração
 
