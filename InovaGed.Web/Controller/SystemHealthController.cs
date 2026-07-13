@@ -4,6 +4,7 @@ using Dapper;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Identity;
 using InovaGed.Application.Ocr;
+using InovaGed.Application.SystemHealth;
 using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -18,14 +19,16 @@ public sealed class SystemHealthController : Controller
     private readonly ILogger<SystemHealthController> _logger;
     private readonly IWebHostEnvironment _env;
     private readonly IOcrEnvironmentValidator _ocrEnvironmentValidator;
+    private readonly IStartupConfigurationValidator _startupConfigurationValidator;
 
-    public SystemHealthController(IDbConnectionFactory db, ICurrentUser currentUser, ILogger<SystemHealthController> logger, IWebHostEnvironment env, IOcrEnvironmentValidator ocrEnvironmentValidator)
+    public SystemHealthController(IDbConnectionFactory db, ICurrentUser currentUser, ILogger<SystemHealthController> logger, IWebHostEnvironment env, IOcrEnvironmentValidator ocrEnvironmentValidator, IStartupConfigurationValidator startupConfigurationValidator)
     {
         _db = db;
         _currentUser = currentUser;
         _logger = logger;
         _env = env;
         _ocrEnvironmentValidator = ocrEnvironmentValidator;
+        _startupConfigurationValidator = startupConfigurationValidator;
     }
 
     [HttpGet("/SystemHealth")]
@@ -85,6 +88,28 @@ where tenant_id = @tenantId;";
             OcrErrors = errors,
             DiskFreeGb = diskFreeGb
         });
+    }
+
+    [HttpGet("/SystemHealth/SecurityConfiguration")]
+    public IActionResult SecurityConfiguration()
+    {
+        var checks = _startupConfigurationValidator.Validate();
+        return View("~/Views/SystemHealth/SecurityConfiguration.cshtml", checks);
+    }
+
+    [HttpGet("/SystemHealth/Workers")]
+    public async Task<IActionResult> Workers(CancellationToken ct)
+    {
+        var rows = new List<dynamic>();
+        try
+        {
+            using var con = _db.CreateConnection();
+            if (con.State != ConnectionState.Open) con.Open();
+            var exists = await con.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from information_schema.tables where table_schema='ged' and table_name='worker_execution_state')", cancellationToken: ct));
+            if (exists) rows.AddRange(await con.QueryAsync(new CommandDefinition("select worker_name, enabled, dependency, last_started_at_utc, last_success_at_utc, last_error, tenant_id, duration_ms, processed_count, next_run_at_utc, status, last_error_correlation_id from ged.worker_execution_state order by worker_name, tenant_id", cancellationToken: ct)));
+        }
+        catch (Exception ex) { _logger.LogWarning(ex, "Worker health indisponível."); }
+        return View("~/Views/SystemHealth/Workers.cshtml", rows);
     }
 
     [HttpGet("/SystemHealth/OcrEnvironment")]
