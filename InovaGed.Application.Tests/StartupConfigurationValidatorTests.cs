@@ -3,6 +3,7 @@ using InovaGed.Infrastructure.Common.Time;
 using InovaGed.Infrastructure.SystemHealth;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.FileProviders;
 using Xunit;
 
 public sealed class StartupConfigurationValidatorTests
@@ -54,7 +55,7 @@ public sealed class StartupConfigurationValidatorTests
         public string EnvironmentName { get; set; }
         public string ApplicationName { get; set; } = "Tests";
         public string ContentRootPath { get; set; } = Directory.GetCurrentDirectory();
-        public Microsoft.Extensions.FileProviders.IFileProvider ContentRootFileProvider { get; set; } = null!;
+        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
     }
 }
 

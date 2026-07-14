@@ -46,7 +46,9 @@ public sealed class SmartQueryParserDateTests
 
     private sealed class ThrowingDbConnectionFactory : IDbConnectionFactory
     {
-        public IDbConnection CreateConnection() => throw new NotSupportedException();
-        public Task<NpgsqlConnection> OpenAsync(CancellationToken ct) => throw new NotSupportedException();
+        public IDbConnection CreateConnection() =>
+            throw new InvalidOperationException("O teste não deve abrir conexão síncrona.");
+        public Task<NpgsqlConnection> OpenAsync(CancellationToken ct) =>
+            Task.FromException<NpgsqlConnection>(new InvalidOperationException("O teste não deve abrir conexão assíncrona."));
     }
 }

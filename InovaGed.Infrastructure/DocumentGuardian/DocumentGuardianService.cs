@@ -46,12 +46,11 @@ order by created_at_utc desc limit 100;
 """, new { tenantId, documentId }, cancellationToken: ct))).AsList();
 
         var evidenceRows = (await conn.QueryAsync<DocumentGuardianEvidenceRow>(new CommandDefinition("""
-select finding_id as FindingId, id, source_type as SourceType, evidence_key as EvidenceKey, evidence_value as EvidenceValue, excerpt, confidence
+select tenant_id as TenantId, finding_id as FindingId, id as Id, source_type as SourceType, evidence_key as EvidenceKey, evidence_value as EvidenceValue, excerpt as Excerpt, confidence as Confidence
 from ged.document_finding_evidence
 where tenant_id=@tenantId and document_id=@documentId and coalesce(reg_status,'A')='A';
 """, new { tenantId, documentId }, cancellationToken: ct))).ToLookup(x => x.FindingId);
-        foreach (var f in findings)
-            f.Evidences = evidenceRows[f.Id].Select(e => new DocumentGuardianEvidenceDto { Id = e.Id, SourceType = e.SourceType, EvidenceKey = e.EvidenceKey, EvidenceValue = e.EvidenceValue, Excerpt = e.Excerpt, Confidence = e.Confidence }).ToArray();
+        AssignEvidencesToFindings(findings, evidenceRows.SelectMany(x => x), tenantId);
 
         header.Findings = findings;
         header.Relationships = (await conn.QueryAsync<DocumentGuardianRelationshipDto>(new CommandDefinition("""
@@ -81,5 +80,37 @@ order by EventAtUtc desc limit 200;
         return header;
     }
 
-    private sealed class DocumentGuardianEvidenceRow : DocumentGuardianEvidenceDto { public Guid FindingId { get; set; } }
+    internal static void AssignEvidencesToFindings(IEnumerable<DocumentGuardianFindingDto> findings, IEnumerable<DocumentGuardianEvidenceRow> evidenceRows, Guid tenantId)
+    {
+        var evidenceLookup = evidenceRows
+            .Where(e => e.TenantId == tenantId)
+            .ToLookup(e => e.FindingId);
+
+        foreach (var finding in findings)
+        {
+            finding.Evidences = evidenceLookup[finding.Id]
+                .Select(e => new DocumentGuardianEvidenceDto
+                {
+                    Id = e.Id,
+                    SourceType = e.SourceType,
+                    EvidenceKey = e.EvidenceKey,
+                    EvidenceValue = e.EvidenceValue,
+                    Excerpt = e.Excerpt,
+                    Confidence = e.Confidence
+                })
+                .ToArray();
+        }
+    }
+
+    internal sealed class DocumentGuardianEvidenceRow
+    {
+        public Guid TenantId { get; set; }
+        public Guid FindingId { get; set; }
+        public Guid Id { get; set; }
+        public string SourceType { get; set; } = string.Empty;
+        public string EvidenceKey { get; set; } = string.Empty;
+        public string? EvidenceValue { get; set; }
+        public string? Excerpt { get; set; }
+        public decimal Confidence { get; set; }
+    }
 }
