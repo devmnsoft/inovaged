@@ -2,14 +2,14 @@
 
 ## Causa raiz
 
-O downgrade era provocado por uma referência direta antiga de `Microsoft.AspNetCore.Cryptography.KeyDerivation` em `8.0.11` no ambiente local/árvore anterior, enquanto `Microsoft.Extensions.Identity.Core 8.0.27` exige transitivamente `Microsoft.AspNetCore.Cryptography.KeyDerivation >= 8.0.27`. A árvore atual já trazia `KeyDerivation 8.0.27`, mas ainda misturava pacotes ASP.NET Core 2.x (`Microsoft.AspNet.Identity.Core 2.2.4`, `Microsoft.AspNetCore.Authorization 2.3.0`, `Microsoft.AspNetCore 2.3.0`, `Microsoft.AspNetCore.Mvc.Core 2.3.0`) com projetos `net8.0`, aumentando o risco de restaurações incoerentes.
+O downgrade era provocado por uma referência direta antiga de `Microsoft.AspNetCore.Cryptography.KeyDerivation` em patch antigo incompatível no ambiente local/árvore anterior, enquanto `Microsoft.Extensions.Identity.Core 8.0.27` exige transitivamente `Microsoft.AspNetCore.Cryptography.KeyDerivation >= 8.0.27`. A árvore atual já trazia `KeyDerivation 8.0.27`, mas ainda misturava pacotes ASP.NET Core 2.x (`Microsoft.AspNet.Identity.Core 2.2.4`, `Microsoft.AspNetCore.Authorization 2.3.0`, `Microsoft.AspNetCore 2.3.0`, `Microsoft.AspNetCore.Mvc.Core 2.3.0`) com projetos `net8.0`, aumentando o risco de restaurações incoerentes.
 
 ## Arquivos alterados
 
 - `InovaGed.Infrastructure/InovaGed.Infrastructure.csproj`: manteve `KeyDerivation 8.0.27`, manteve `Microsoft.Extensions.Identity.Core 8.0.27`, removeu pacotes Identity/Authorization 2.x obsoletos e adicionou `FrameworkReference Microsoft.AspNetCore.App`.
 - `InovaGed.Application/InovaGed.Application.csproj`: removeu pacotes ASP.NET Core 2.x e adicionou `FrameworkReference Microsoft.AspNetCore.App`.
 - `InovaGed.Web/InovaGed.Web.csproj`: removeu `Microsoft.AspNetCore.Mvc.Core 2.3.0`, usando o shared framework do SDK Web.
-- `.github/workflows/ci.yml`: adicionou listagem de dependências e validação contra `NU1605`, `KeyDerivation 8.0.11` e referências conflitantes.
+- `.github/workflows/ci.yml`: adicionou listagem de dependências e validação contra `NU1605`, `KeyDerivation` em patch antigo incompatível e referências conflitantes.
 
 ## Versão resolvida esperada
 
