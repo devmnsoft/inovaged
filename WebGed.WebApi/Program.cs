@@ -1,4 +1,5 @@
 using System.Text;
+using InovaGed.Application.Audit;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Documents;
 using InovaGed.Application.Ged.Documents;
