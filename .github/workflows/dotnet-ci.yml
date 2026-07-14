@@ -22,8 +22,9 @@ jobs:
           if rg -n "Microsoft\.AspNetCore\.Cryptography\.KeyDerivation.*8\.0\.11" \
             --glob '*.csproj' \
             --glob '*.props' \
-            --glob '*.targets'; then
-            echo "Versão proibida de KeyDerivation encontrada."
+            --glob '*.targets' \
+            --glob 'packages.lock.json'; then
+            echo "Versão 8.0.11 de KeyDerivation encontrada."
             exit 1
           fi
 
