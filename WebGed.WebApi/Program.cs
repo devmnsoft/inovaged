@@ -4,7 +4,7 @@ using InovaGed.Application.Documents;
 using InovaGed.Application.Ged.Documents;
 using InovaGed.Application.Identity;
 using InovaGed.Infrastructure.Audit;
-using InovaGed.Infrastructure.Database;
+using InovaGed.Infrastructure.Common.Database;
 using InovaGed.Infrastructure.Ged.Documents;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
@@ -19,8 +19,13 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUser, CurrentUser>();
 
-builder.Services.AddSingleton<IDbConnectionFactory>(_ =>
-    new NpgsqlConnectionFactory(builder.Configuration.GetConnectionString("Default")!));
+var connectionString =
+    builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? throw new InvalidOperationException(
+        "ConnectionStrings:DefaultConnection não configurada.");
+
+builder.Services.AddSingleton<IDbConnectionFactory>(
+    _ => new NpgsqlConnectionFactory(connectionString));
 
 builder.Services.AddScoped<DocumentAppService>();
 builder.Services.AddScoped<IAuditWriter, AuditWriter>();
@@ -55,3 +60,5 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 app.Run();
+
+public partial class Program;
