@@ -33,7 +33,7 @@ public sealed class DocumentGuardianFindingDto
     public IReadOnlyList<DocumentGuardianEvidenceDto> Evidences { get; set; } = Array.Empty<DocumentGuardianEvidenceDto>();
 }
 
-public sealed class DocumentGuardianEvidenceDto
+public class DocumentGuardianEvidenceDto
 {
     public Guid Id { get; set; }
     public string SourceType { get; set; } = string.Empty;
