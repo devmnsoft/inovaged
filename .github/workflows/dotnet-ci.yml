@@ -42,4 +42,7 @@ jobs:
         run: dotnet build InovaGed.sln --no-restore --configuration Release
 
       - name: Test
-        run: dotnet test InovaGed.sln --no-build --configuration Release
+        run: dotnet test InovaGed.sln --no-build --configuration Release --logger "trx;LogFileName=test-results.trx"
+
+      - name: DI composition tests
+        run: dotnet test InovaGed.Application.Tests/InovaGed.Application.Tests.csproj --no-build --configuration Release --filter "FullyQualifiedName~WebApiDependencyInjectionTests" --logger "trx;LogFileName=di-test-results.trx"

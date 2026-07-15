@@ -141,6 +141,9 @@ mvc.AddRazorRuntimeCompilation();
 #endif
 
 builder.Services.AddHttpContextAccessor();
+builder.Services
+    .AddInovaGedApplication(builder.Configuration)
+    .AddInovaGedInfrastructure(builder.Configuration);
 builder.Services.AddSignalR();
 builder.Services.AddMemoryCache();
 builder.Services.AddScoped<IDateTimeDisplayService, DateTimeDisplayService>();
