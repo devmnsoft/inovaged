@@ -1,8 +1,9 @@
+using System.Diagnostics;
 using System.Text;
-using InovaGed.Application;
 using InovaGed.Application.Identity;
 using InovaGed.Infrastructure;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
 using WebGed.WebApi.Security;
 
@@ -17,19 +18,26 @@ builder.Host.UseDefaultServiceProvider(options =>
     options.ValidateOnBuild = true;
 });
 
+var startupCorrelationId = Activity.Current?.Id ?? Guid.NewGuid().ToString("N");
+
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-
+builder.Services.AddProblemDetails();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddMemoryCache();
 builder.Services.AddScoped<ICurrentUser, CurrentUser>();
+
 builder.Services
     .AddInovaGedApplication(builder.Configuration)
     .AddInovaGedInfrastructure(builder.Configuration);
-builder.Services.AddHealthChecks();
 
-var jwtKey = builder.Configuration["Jwt:Key"]!;
+var jwtKey = builder.Configuration["Jwt:Key"];
+if (string.IsNullOrWhiteSpace(jwtKey))
+{
+    throw new InvalidOperationException("Jwt:Key não configurada.");
+}
+
 var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
 
 builder.Services
@@ -52,21 +60,44 @@ builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
-var startupCorrelationId = Guid.NewGuid().ToString("N");
-app.Logger.LogInformation("WebApi startup completed Environment={Environment} CorrelationId={CorrelationId} Modules={Modules}", app.Environment.EnvironmentName, startupCorrelationId, "Application,Infrastructure,GED,Guardian");
-app.UseSwagger();
-app.UseSwaggerUI();
+app.Logger.LogInformation(
+    "WebApi startup diagnostics. Environment={Environment} StartupCorrelationId={StartupCorrelationId} Modules={Modules}",
+    app.Environment.EnvironmentName,
+    startupCorrelationId,
+    new[] { "Application", "Infrastructure", "Ged", "Preview", "Storage", "Guardian" });
+
+app.UseExceptionHandler();
+
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+
 app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
-app.MapHealthChecks("/health");
-app.MapGet("/api/system/diagnostics/dependencies", () => Results.Ok(new[]
+app.MapHealthChecks("/health", new HealthCheckOptions
 {
-    new { module = "Application", enabled = true, configurationValid = true, health = "Healthy", implementationRegistered = true, lifetime = "Scoped", lastKnownFailure = (string?)null },
-    new { module = "Infrastructure", enabled = true, configurationValid = true, health = "Healthy", implementationRegistered = true, lifetime = "Scoped/Singleton", lastKnownFailure = (string?)null },
-    new { module = "Guardian", enabled = true, configurationValid = true, health = "Healthy", implementationRegistered = true, lifetime = "Scoped", lastKnownFailure = (string?)null }
-})).RequireAuthorization();
+    ResponseWriter = async (context, report) =>
+    {
+        context.Response.ContentType = "application/json";
+        var payload = new
+        {
+            status = report.Status.ToString(),
+            correlationId = context.TraceIdentifier,
+            checks = report.Entries.Select(entry => new
+            {
+                name = entry.Key,
+                status = entry.Value.Status.ToString(),
+                description = entry.Value.Description,
+                data = entry.Value.Data
+            })
+        };
+        await context.Response.WriteAsJsonAsync(payload);
+    }
+});
 app.Run();
 
 public partial class Program;
