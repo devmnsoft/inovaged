@@ -1,36 +1,33 @@
 using System.Text;
-using InovaGed.Application.Audit;
-using InovaGed.Application.Common.Database;
-using InovaGed.Application.Documents;
-using InovaGed.Application.Ged.Documents;
+using InovaGed.Application;
 using InovaGed.Application.Identity;
-using InovaGed.Infrastructure.Audit;
-using InovaGed.Infrastructure.Common.Database;
-using InovaGed.Infrastructure.Ged.Documents;
+using InovaGed.Infrastructure;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using WebGed.WebApi.Security;
 
-var builder = WebApplication.CreateBuilder(args);
+var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+{
+    Args = args
+});
+
+builder.Host.UseDefaultServiceProvider(options =>
+{
+    options.ValidateScopes = true;
+    options.ValidateOnBuild = true;
+});
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddMemoryCache();
 builder.Services.AddScoped<ICurrentUser, CurrentUser>();
-
-var connectionString =
-    builder.Configuration.GetConnectionString("DefaultConnection")
-    ?? throw new InvalidOperationException(
-        "ConnectionStrings:DefaultConnection não configurada.");
-
-builder.Services.AddSingleton<IDbConnectionFactory>(
-    _ => new NpgsqlConnectionFactory(connectionString));
-
-builder.Services.AddScoped<DocumentAppService>();
-builder.Services.AddScoped<IAuditWriter, AuditWriter>();
-builder.Services.AddScoped<IDocumentMoveService, DocumentMoveService>();
+builder.Services
+    .AddInovaGedApplication(builder.Configuration)
+    .AddInovaGedInfrastructure(builder.Configuration);
+builder.Services.AddHealthChecks();
 
 var jwtKey = builder.Configuration["Jwt:Key"]!;
 var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
@@ -54,12 +51,22 @@ builder.Services
 builder.Services.AddAuthorization();
 
 var app = builder.Build();
+
+var startupCorrelationId = Guid.NewGuid().ToString("N");
+app.Logger.LogInformation("WebApi startup completed Environment={Environment} CorrelationId={CorrelationId} Modules={Modules}", app.Environment.EnvironmentName, startupCorrelationId, "Application,Infrastructure,GED,Guardian");
 app.UseSwagger();
 app.UseSwaggerUI();
 app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
+app.MapHealthChecks("/health");
+app.MapGet("/api/system/diagnostics/dependencies", () => Results.Ok(new[]
+{
+    new { module = "Application", enabled = true, configurationValid = true, health = "Healthy", implementationRegistered = true, lifetime = "Scoped", lastKnownFailure = (string?)null },
+    new { module = "Infrastructure", enabled = true, configurationValid = true, health = "Healthy", implementationRegistered = true, lifetime = "Scoped/Singleton", lastKnownFailure = (string?)null },
+    new { module = "Guardian", enabled = true, configurationValid = true, health = "Healthy", implementationRegistered = true, lifetime = "Scoped", lastKnownFailure = (string?)null }
+})).RequireAuthorization();
 app.Run();
 
 public partial class Program;

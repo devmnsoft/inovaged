@@ -119,7 +119,16 @@ using InovaGed.Infrastructure.Jobs;
 using InovaGed.Web.Filters;
 using Microsoft.AspNetCore.Http.Features;
 
-var builder = WebApplication.CreateBuilder(args);
+var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+{
+    Args = args
+});
+
+builder.Host.UseDefaultServiceProvider(options =>
+{
+    options.ValidateScopes = true;
+    options.ValidateOnBuild = true;
+});
 var allowInternalSelfSigned = builder.Configuration.GetValue<bool>("Auth:AllowInternalSelfSignedCertificates");
 if (builder.Environment.IsProduction() && allowInternalSelfSigned)
 {
@@ -143,6 +152,9 @@ mvc.AddRazorRuntimeCompilation();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddSignalR();
 builder.Services.AddMemoryCache();
+builder.Services
+    .AddInovaGedApplication(builder.Configuration)
+    .AddInovaGedInfrastructure(builder.Configuration);
 builder.Services.AddScoped<IDateTimeDisplayService, DateTimeDisplayService>();
 builder.Services.AddSingleton<IClock, SystemClock>();
 builder.Services.AddSingleton<ITenantTimeZoneService, TenantTimeZoneService>();
