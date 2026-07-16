@@ -8,7 +8,7 @@ using Xunit;
 
 namespace InovaGed.Application.Tests;
 
-public sealed class DependencyInjectionCompositionTests
+public sealed class ServiceCompositionTests
 {
     [Fact]
     public void SharedComposition_Builds_WithScopeAndBuildValidation()

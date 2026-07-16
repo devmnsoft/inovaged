@@ -154,19 +154,8 @@ builder.Services
     .AddInovaGedApplication(builder.Configuration)
     .AddInovaGedInfrastructure(builder.Configuration);
 builder.Services.AddSignalR();
-builder.Services.AddMemoryCache();
 builder.Services.AddScoped<IDateTimeDisplayService, DateTimeDisplayService>();
-builder.Services.AddSingleton<IClock, SystemClock>();
-builder.Services.AddSingleton<ITenantTimeZoneService, TenantTimeZoneService>();
 builder.Services.Configure<SchemaRepairOptions>(builder.Configuration.GetSection("SchemaRepair"));
-builder.Services.Configure<OcrAutoScheduleOptions>(builder.Configuration.GetSection("OcrAutoSchedule"));
-builder.Services.Configure<OcrOptions>(builder.Configuration.GetSection("Ocr"));
-builder.Services.AddScoped<ISchemaFixSqlProvider, SchemaFixSqlProvider>();
-builder.Services.AddScoped<ISchemaHealthService, SchemaHealthService>();
-builder.Services.AddScoped<IHomologationHealthService, HomologationHealthService>();
-builder.Services.AddScoped<ISchemaRepairService, SchemaRepairService>();
-builder.Services.AddSingleton<ISchemaCompatibilityState, SchemaCompatibilityState>();
-builder.Services.Configure<DocumentUploadOptions>(builder.Configuration.GetSection("DocumentUpload"));
 builder.Services.Configure<SuspiciousRequestOptions>(builder.Configuration.GetSection("SuspiciousRequest"));
 builder.WebHost.ConfigureKestrel(options =>
 {
@@ -197,85 +186,32 @@ builder.Services.Configure<FormOptions>(options =>
 // =======================================================
 builder.Services.AddScoped<ICurrentUser, CurrentUser>();
 builder.Services.AddScoped<ICurrentContext, CurrentContext>();
-builder.Services.AddScoped<IGedDashboardService, GedDashboardService>();
 builder.Services.AddScoped<IHospitalOcrAnalyticsService, HospitalOcrAnalyticsService>();
 builder.Services.AddScoped<IHospitalIntelligenceService, HospitalIntelligenceService>();
 builder.Services.AddScoped<IHospitalTrendsService, HospitalTrendsService>();
-builder.Services.AddScoped<ITableSchemaGuard, TableSchemaGuard>();
-builder.Services.AddScoped<IOperationsDashboardService, OperationsDashboardService>();
-builder.Services.AddScoped<IDocumentGuardianService, DocumentGuardianService>();
 
-builder.Services.Configure<DocumentQualityOptions>(builder.Configuration.GetSection("DocumentQuality"));
-builder.Services.AddScoped<IDocumentQualityAnalyzerService, DocumentQualityAnalyzerService>();
-builder.Services.AddHostedService<DocumentQualitySchedulerWorker>();
-
-// =======================================================
-// Database (PostgreSQL)
-// =======================================================
-builder.Services.AddSingleton<IDbConnectionFactory>(_ =>
-{
-    var cs = builder.Configuration.GetConnectionString("DefaultConnection")
-        ?? throw new InvalidOperationException("ConnectionString 'DefaultConnection' não configurada.");
-    return new NpgsqlConnectionFactory(cs);
-});
 
 // =======================================================
 // Storage / Preview
 // =======================================================
-builder.Services.Configure<LocalStorageOptions>(builder.Configuration.GetSection("Storage:Local"));
-builder.Services.AddScoped<IFileStorage, LocalFileStorage>();
 
 // =======================================================
 // Preview / LibreOffice
 // =======================================================
-builder.Services.Configure<LibreOfficeOptions>(
-    builder.Configuration.GetSection("Preview"));
-
-builder.Services.AddScoped<IPreviewGenerator, LibreOfficePreviewGenerator>();
-builder.Services.AddScoped<IPreviewStatusRepository, PreviewStatusRepository>();
-
-builder.Services.AddSingleton<PreviewQueue>();
-builder.Services.AddSingleton<IPreviewJobQueue>(sp => sp.GetRequiredService<PreviewQueue>());
 builder.Services.AddScoped<IPreviewNotificationService, SignalRPreviewNotificationService>();
-builder.Services.AddHostedService<PreviewWorker>();
 
-builder.Services.Configure<StorageLocalOptions>(builder.Configuration.GetSection("Storage:Local"));
 
 // =======================================================
 // OCR / Preview pipeline
 // =======================================================
-builder.Services.AddScoped<IOcrProcessRunner, OcrProcessRunner>();
-builder.Services.AddScoped<IOcrEnvironmentValidator, OcrEnvironmentValidator>();
-builder.Services.AddScoped<IOcrService, OcrMyPdfOcrService>();
-builder.Services.AddScoped<IPdfTextExtractor, PopplerPdfTextExtractor>();
 
-builder.Services.AddScoped<IDocumentClassifier, RuleBasedDocumentClassifier>();
-builder.Services.AddScoped<IDocumentClassificationRepository, DocumentClassificationRepository>();
-builder.Services.AddScoped<IDocumentTypeQueries, DocumentTypeQueries>();
-builder.Services.AddScoped<IDocumentClassificationQueries, DocumentClassificationQueries>();
-builder.Services.AddScoped<DocumentClassificationAppService>();
 
-builder.Services.AddScoped<IDocumentCommands, DocumentCommands>();
-builder.Services.AddScoped<IDocumentTypeCatalogQueries, DocumentTypeCatalogQueries>();
-builder.Services.AddScoped<IFolderClassificationRuleRepository, FolderClassificationRuleRepository>();
-builder.Services.AddScoped<IOcrTextProvider, DbOcrTextProvider>();
-builder.Services.AddScoped<IOcrAutoClassificationService, OcrAutoClassificationService>();
-builder.Services.AddScoped<IDocumentClassificationCommands, DocumentClassificationCommands>();
 
-builder.Services.AddScoped<IClassificationPendingCounter, ClassificationPendingCounter>();
-builder.Services.AddScoped<IClassificationDashboardQueries, ClassificationDashboardQueries>();
-builder.Services.AddScoped<IDocumentClassificationAuditQueries, DocumentClassificationAuditQueries>();
 
-builder.Services.AddScoped<SimpleTextDocumentTypeSuggester>();
-builder.Services.AddScoped<HybridDocumentTypeSuggester>();
 
 // =======================================================
 // PACS
 // =======================================================
-builder.Services.Configure<PacsIntegrationOptions>(builder.Configuration.GetSection("PacsIntegration"));
-builder.Services.AddScoped<ITicketRepository, TicketRepository>();
-builder.Services.AddScoped<IOcrQueue, OcrQueue>();
-builder.Services.AddScoped<PacsIntegrationService>();
 
 // =======================================================
 // Seed
@@ -286,177 +222,63 @@ builder.Services.AddHostedService<InovaGed.Infrastructure.Setup.SystemSeedHosted
 // =======================================================
 // Classification Plan
 // =======================================================
-builder.Services.AddScoped<InovaGed.Application.ClassificationPlans.IClassificationPlanRepository, ClassificationPlanRepository>();
-builder.Services.AddScoped<IClassificationPlanCommands, ClassificationPlanCommands>();
-builder.Services.AddScoped<IClassificationPlanQueries, ClassificationPlanQueries>();
 
 // =======================================================
 // Search
 // =======================================================
-builder.Services.AddScoped<IDocumentSearchQueries, DocumentSearchQueries>();
-builder.Services.AddScoped<IDocumentSearchTextQueries, DocumentSearchTextQueries>();
-builder.Services.AddScoped<IDocumentMoveService, DocumentMoveService>();
-builder.Services.AddScoped<IDocumentBulkUploadService, DocumentBulkUploadService>();
-builder.Services.AddScoped<IGedBulkDocumentActionService, GedBulkDocumentActionService>();
-builder.Services.AddScoped<IDocumentPartialService, DocumentPartialService>();
-builder.Services.AddScoped<IUploadFolderResolver, UploadFolderResolver>();
-builder.Services.AddScoped<IGedFolderMoveService, GedFolderMoveService>();
-builder.Services.AddSingleton<IUploadConcurrencyLimiter, UploadConcurrencyLimiter>();
-builder.Services.AddScoped<IGedProcessingJobRepository, GedProcessingJobRepository>();
-builder.Services.AddScoped<IUploadBatchService, UploadBatchService>();
-builder.Services.AddScoped<IUploadBatchConsistencyService, UploadBatchConsistencyService>();
-builder.Services.AddScoped<IUploadChunkService, UploadChunkService>();
-builder.Services.AddHostedService<StaleUploadBatchItemWorker>();
-builder.Services.AddHostedService<GedProcessingWorker>();
-builder.Services.AddScoped<IGedAccessPolicyService, GedAccessPolicyService>();
-builder.Services.AddScoped<IGedSearchService, GedSearchService>();
-builder.Services.AddScoped<IGedSmartSearchService, GedSmartSearchService>();
-builder.Services.AddScoped<ISmartSearchContextParser, SmartSearchContextParser>();
-builder.Services.AddScoped<ISmartQueryParser, SmartQueryParser>();
-builder.Services.AddScoped<IGedSmartQueryParser, SmartQueryParser>();
-builder.Services.AddScoped<IDocumentOcrMetadataExtractor, DocumentOcrMetadataExtractor>();
-builder.Services.AddScoped<IGedOcrMetadataExtractor, DocumentOcrMetadataExtractor>();
-builder.Services.AddScoped<ISmartSearchRepository, SmartSearchRepository>();
-builder.Services.AddScoped<IGedSmartSearchRepository, SmartSearchRepository>();
-builder.Services.AddScoped<ISmartSearchService, SmartSearchService>();
-builder.Services.AddScoped<IDocumentChatService, DocumentChatService>();
-builder.Services.AddScoped<ISearchStatisticsService, SearchStatisticsService>();
-builder.Services.AddScoped<IGedSearchSuggestionService, GedSearchSuggestionService>();
-builder.Services.AddScoped<IGedSearchStatisticsService, GedSearchStatisticsService>();
-builder.Services.AddScoped<IGedSearchIndexService, GedSearchIndexService>();
-builder.Services.AddScoped<IGedSmartSearchDiagnosticsService, GedSmartSearchDiagnosticsService>();
-builder.Services.AddScoped<IGedClassificationSuggestionService, GedClassificationSuggestionService>();
 
 // =======================================================
 // Auth Repository
 // =======================================================
-builder.Services.AddScoped<IAuthRepository, AuthRepository>();
-builder.Services.AddScoped<ICodeGeneratorService, CodeGeneratorService>();
 
 // =======================================================
 // GED – Queries
 // =======================================================
-builder.Services.AddScoped<IFolderQueries, FolderQueries>();
-builder.Services.AddScoped<IFolderNavigationResolver, FolderNavigationResolver>();
-builder.Services.AddScoped<IDocumentQueries, DocumentQueries>();
-builder.Services.AddScoped<IDocumentWorkflowQueries, DocumentWorkflowQueries>();
-builder.Services.AddScoped<IWorkflowQueries, WorkflowQueries>();
 
 // =======================================================
 // GED – Commands
 // =======================================================
-builder.Services.AddScoped<IFolderCommands, FolderCommands>();
-builder.Services.AddScoped<IDocumentWorkflowCommands, DocumentWorkflowCommands>();
-builder.Services.AddScoped<IWorkflowCommands, WorkflowCommands>();
 
 // =======================================================
 // OCR Jobs + Worker
 // =======================================================
-builder.Services.AddScoped<IOcrJobRepository, OcrJobRepository>();
-builder.Services.AddScoped<IOcrAutoScheduleRepository, OcrAutoScheduleRepository>();
-builder.Services.AddScoped<IOcrAutoSchedulerService, OcrAutoSchedulerService>();
-builder.Services.AddScoped<OcrDashboardService>();
-builder.Services.AddScoped<IOcrDashboardService>(sp => sp.GetRequiredService<OcrDashboardService>());
-builder.Services.AddScoped<IOcrStatusResolver>(sp => sp.GetRequiredService<OcrDashboardService>());
-builder.Services.AddHostedService<OcrAutoSchedulerWorker>();
-if (builder.Configuration.GetValue<bool>("OcrWorker:Enabled"))
-{
-    builder.Services.AddHostedService<OcrWorker>();
-}
 
 // =======================================================
 // Document Write + AuditLog (não confundir com IAuditWriter)
 // =======================================================
 builder.Services.AddScoped<ICurrentUserAccessor, CurrentUserAccessorAdapter>();
-builder.Services.AddScoped<IDocumentWriteRepository, DocumentWriteRepository>();
-builder.Services.AddScoped<IAuditLogWriter, AuditLogWriter>();
-builder.Services.AddScoped<IOcrStatusQueries, OcrStatusQueries>();
 builder.Services.AddScoped<IOcrSignalRNotifier, OcrSignalRNotifier>();
 
 // =======================================================
 // Retention (Dashboard + Queue + Worker diário)
 // =======================================================
-builder.Services.AddScoped<IRetentionJobRepository, RetentionJobRepository>();
-builder.Services.AddScoped<RetentionRecalcService>();
-builder.Services.AddScoped<IRetentionRecalcService, RetentionRecalcService>();
 
-builder.Services.AddScoped<IRetentionQueueQueries, RetentionQueueQueries>();
-builder.Services.AddScoped<IRetentionAuditWriter, RetentionAuditWriter>();
-builder.Services.AddScoped<IRetentionQueueRepository, RetentionQueueRepository>();
-builder.Services.AddScoped<IRetentionQueueJob, RetentionQueueJob>();
-builder.Services.AddHostedService<RetentionDailyWorker>();
 
 // =======================================================
 // Retention Cases
 // =======================================================
-builder.Services.AddScoped<IRetentionCaseRepository, RetentionCaseRepository>();
-builder.Services.AddScoped<IRetentionCaseExecutionRepository, RetentionCaseExecutionRepository>();
-builder.Services.AddScoped<RetentionCaseExecutionService>();
 
 // =======================================================
 // Retention Terms
 // =======================================================
-builder.Services.AddScoped<IRetentionTermRepository, RetentionTermRepository>();
-builder.Services.AddScoped<ITermPdfGenerator, LibreOfficeTermPdfGenerator>();
 
 // =======================================================
 // Reports / Signatures
 // =======================================================
-builder.Services.AddScoped<IDispositionReportsQueries, DispositionReportsQueries>();
-builder.Services.AddScoped<IReportService, ReportService>();
-builder.Services.AddScoped<ISignatureProvider, InternalSignatureProvider>();
 
 // =======================================================
 // Users / Permissions / Audit
 // =======================================================
-builder.Services.AddScoped<IUserAdminRepository, UserAdminRepository>();
-builder.Services.AddScoped<IUserAdminQueries, UserAdminQueries>();
-builder.Services.AddScoped<UserService>();
 
-builder.Services.AddScoped<IPermissionChecker, AllowAllPermissionChecker>();
-builder.Services.AddScoped<PermissionService>();
-builder.Services.AddScoped<IPermissionService>(sp => sp.GetRequiredService<PermissionService>());
-builder.Services.AddScoped<IParameterRepository, ParameterRepository>();
-builder.Services.AddScoped<IAuditWriter, AuditWriter>();     // ✅ uma vez só
-builder.Services.AddScoped<IAppAuditLogService, AppAuditLogService>();
-builder.Services.AddScoped<ISystemLogQueryService, SystemLogQueryService>();
-builder.Services.AddScoped<IAuditQueries, AuditQueries>();
-builder.Services.AddScoped<IAuditSecurityService, AuditSecurityService>();
-builder.Services.AddScoped<IAbacAuthorizationService, AbacAuthorizationService>();
-builder.Services.AddScoped<ISensitiveDocumentCryptoService, SensitiveDocumentCryptoService>();
-builder.Services.AddScoped<IGedIntelligenceService, GedIntelligenceService>();
-builder.Services.AddScoped<IGedAdministrativeIntelligenceService, GedAdministrativeIntelligenceService>();
 
 
 // =======================================================
 // Loans / Batches / Physical / POP / Instruments
 // =======================================================
-builder.Services.AddScoped<ILoanQueries, LoanQueries>();
-builder.Services.AddScoped<ILoanCommands, LoanCommands>();
-builder.Services.AddScoped<ILoanHistoryWriter, LoanHistoryWriter>();
-builder.Services.AddScoped<ILoanRequestService, LoanRequestService>();
-builder.Services.AddScoped<IProtocolRequestService, ProtocolRequestService>();
-builder.Services.AddScoped<InovaGed.Application.Ged.Protocols.IProtocolAccessService, InovaGed.Infrastructure.Ged.Protocols.ProtocolAccessService>();
-builder.Services.AddScoped<IProtocolHistoryWriter, ProtocolHistoryWriter>();
-builder.Services.AddScoped<ILoanAccessService, LoanAccessService>();
-builder.Services.AddScoped<InovaGed.Application.Ged.Loans.IProtocolAccessService, InovaGed.Infrastructure.Ged.Loans.ProtocolAccessService>();
-builder.Services.AddScoped<ISolicitacaoService, SolicitacaoService>();
-builder.Services.AddScoped<ISecureDocumentLinkService, SecureDocumentLinkService>();
 
-builder.Services.AddScoped<IBatchQueries, BatchQueries>();
-builder.Services.AddScoped<IBatchCommands, BatchCommands>();
 
-builder.Services.AddScoped<IPhysicalQueries, PhysicalQueries>();
-builder.Services.AddScoped<IPhysicalCommands, PhysicalCommands>();
 
-builder.Services.AddScoped<IPopProcedureCommands, PopProcedureCommands>();
-builder.Services.AddScoped<IPopProcedureQueries, PopProcedureQueries>();
 
-builder.Services.AddScoped<RetentionRecalculateService>();        // <-- ESTA LINHA resolve o erro
-builder.Services.AddScoped<IRetentionQueueRepository, RetentionQueueRepository>();
-builder.Services.AddScoped<IRetentionCaseRepository, RetentionCaseRepository>();
-builder.Services.AddScoped<IRetentionQueueJob, RetentionQueueJob>();
-builder.Services.AddScoped<InstrumentRepository>();
 
 builder.Services.AddScoped<ICertificateValidationService, InovaGed.Web.Common.CertificateValidationStub>();
 
@@ -474,15 +296,6 @@ builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, AccessFailu
 
 builder.Services.AddScoped<IAccessFailureLogger, AccessFailureLogger>();
 builder.Services.AddScoped<IMenuVisibilityService, MenuVisibilityService>();
-// =======================================================
-// ✅ LoanOverdueWorker (corrigido: Options + feature-flag)
-// =======================================================
-builder.Services.Configure<LoanOverdueWorkerOptions>(builder.Configuration.GetSection("Workers:LoanOverdue"));
-if (builder.Configuration.GetValue<bool>("Workers:LoanOverdue:Enabled"))
-{
-    builder.Services.AddHostedService<LoanOverdueWorker>();
-}
-
 // =======================================================
 // Authorization Policies
 // =======================================================
@@ -618,7 +431,6 @@ builder.Services
 // =======================================================
 // Application Services
 // =======================================================
-builder.Services.AddScoped<DocumentAppService>();
 
 // =======================================================
 // Build + Pipeline

@@ -38,6 +38,17 @@ jobs:
           ! rg -n "SearchFoldersAsync\([^\n]*CurrentTenantId\(|MoveAsync\([^\n]*CurrentTenantId\(|MoveBulkAsync\([^\n]*CurrentTenantId\(|MoveAsync\([^\n]*CancellationToken\.None|MoveBulkAsync\([^\n]*CancellationToken\.None" --glob "*.cs"
           test -f WebGed.WebApi/WebGed.WebApi.csproj
 
+      - name: DI extension ambiguity guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          COUNT=$(rg -n "public static IServiceCollection AddInovaGedApplication\(" --glob "*.cs" | wc -l)
+          if [ "$COUNT" -ne 1 ]; then
+            echo "Possível duplicidade de AddInovaGedApplication."
+            exit 1
+          fi
+          ! rg -n "class DependencyInjection" --glob "*.cs"
+
       - name: Build
         run: dotnet build InovaGed.sln --no-restore --configuration Release
       - name: Test
