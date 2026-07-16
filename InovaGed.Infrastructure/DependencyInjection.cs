@@ -19,6 +19,7 @@ using InovaGed.Infrastructure.Security;
 using InovaGed.Infrastructure.Storage;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using InovaGed.Application.Identity;
 
 namespace InovaGed.Infrastructure;
 

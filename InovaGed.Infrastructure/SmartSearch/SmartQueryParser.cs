@@ -24,12 +24,14 @@ public sealed class SmartQueryParser : ISmartQueryParser, InovaGed.Application.G
 
     private readonly IDbConnectionFactory _db;
     private readonly ISmartSearchContextParser _contextParser;
-
+    
     public SmartQueryParser(IDbConnectionFactory db, ISmartSearchContextParser contextParser)
     {
         _db = db;
         _contextParser = contextParser;
     }
+
+   
 
     public async Task<SmartSearchIntent> ParseAsync(Guid tenantId, string query, SmartSearchRequest request, CancellationToken ct)
     {
