@@ -20,5 +20,6 @@
     <ProjectReference Include="../InovaGed.Application/InovaGed.Application.csproj" />
     <ProjectReference Include="../InovaGed.Infrastructure/InovaGed.Infrastructure.csproj" />
     <ProjectReference Include="../WebGed.WebApi/WebGed.WebApi.csproj" />
+    <ProjectReference Include="../InovaGed.Web/InovaGed.Web.csproj" />
   </ItemGroup>
 </Project>
