@@ -1,16 +1,45 @@
 @model IReadOnlyList<InovaGed.Application.SystemHealth.StartupConfigurationCheck>
 @{
     ViewData["Title"] = "Configuração de Segurança";
+    var groups = Model
+        .GroupBy(i => string.IsNullOrWhiteSpace(i.Module) ? "Startup" : i.Module)
+        .OrderBy(g => g.Key);
 }
 <h1>Configuração de Segurança</h1>
-<table class="table table-sm table-striped">
-<thead><tr><th>Item</th><th>Status</th><th>Severidade</th><th>Origem</th><th>Valor mascarado</th><th>Recomendação</th><th>Ambiente</th><th>Módulo afetado</th><th>Bloqueia inicialização</th><th>Última validação (UTC)</th></tr></thead>
-<tbody>
-@foreach (var i in Model)
+@foreach (var group in groups)
 {
-    <tr>
-        <td>@i.Item</td><td>@i.Status</td><td>@i.Severity</td><td>@i.Source</td><td><code>@i.MaskedValue</code></td><td>@i.Recommendation</td><td>@i.Environment</td><td>@i.Module</td><td>@(i.BlocksStartup ? "Sim" : "Não")</td><td>@i.LastValidatedAtUtc.ToString("O")</td>
-    </tr>
+    <h2 class="h5 mt-4">@group.Key</h2>
+    <table class="table table-sm table-striped">
+    <thead>
+        <tr>
+            <th>Módulo</th>
+            <th>Item</th>
+            <th>Status</th>
+            <th>Severidade</th>
+            <th>Ambiente</th>
+            <th>Origem</th>
+            <th>Valor mascarado</th>
+            <th>Recomendação</th>
+            <th>Bloqueia startup</th>
+            <th>Data da verificação (UTC)</th>
+        </tr>
+    </thead>
+    <tbody>
+    @foreach (var i in group)
+    {
+        <tr>
+            <td>@i.Module</td>
+            <td>@i.Item</td>
+            <td>@i.Status</td>
+            <td>@i.Severity</td>
+            <td>@i.Environment</td>
+            <td>@i.Source</td>
+            <td><code>@i.MaskedValue</code></td>
+            <td>@i.Recommendation</td>
+            <td>@(i.BlocksStartup ? "Sim" : "Não")</td>
+            <td>@i.LastValidatedAtUtc.ToString("O")</td>
+        </tr>
+    }
+    </tbody>
+    </table>
 }
-</tbody>
-</table>

@@ -150,6 +150,7 @@ public static class InfrastructureServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(configuration);
 
         services.TryAddSingleton<ISecretMasker, SecretMasker>();
+        services.TryAddSingleton<IDatabaseConfigurationValidator, PostgresConfigurationValidator>();
 
         services.TryAddSingleton<
             IStartupConfigurationValidator,
