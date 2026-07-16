@@ -5,7 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace InovaGed.Application;
 
-public static class DependencyInjection
+public static class ApplicationServiceCollectionExtensions
 {
     public static IServiceCollection AddInovaGedApplication(this IServiceCollection services, IConfiguration configuration)
     {

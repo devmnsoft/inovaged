@@ -38,6 +38,17 @@ jobs:
           ! rg -n "SearchFoldersAsync\([^\n]*CurrentTenantId\(|MoveAsync\([^\n]*CurrentTenantId\(|MoveBulkAsync\([^\n]*CurrentTenantId\(|MoveAsync\([^\n]*CancellationToken\.None|MoveBulkAsync\([^\n]*CancellationToken\.None" --glob "*.cs"
           test -f WebGed.WebApi/WebGed.WebApi.csproj
 
+      - name: DI composition guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_DEFINITIONS=$(rg -n "public static IServiceCollection AddInovaGedApplication\(" --glob "*.cs" | wc -l)
+          INFRA_DEFINITIONS=$(rg -n "public static IServiceCollection AddInovaGedInfrastructure\(" --glob "*.cs" | wc -l)
+          if [ "$APP_DEFINITIONS" -ne 1 ] || [ "$INFRA_DEFINITIONS" -ne 1 ]; then
+            echo "DI composition extension methods must have exactly one Application definition and one Infrastructure definition."
+            exit 1
+          fi
+
       - name: Build
         run: dotnet build InovaGed.sln --no-restore --configuration Release
       - name: Test

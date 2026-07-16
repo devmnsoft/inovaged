@@ -154,7 +154,6 @@ builder.Services
     .AddInovaGedApplication(builder.Configuration)
     .AddInovaGedInfrastructure(builder.Configuration);
 builder.Services.AddSignalR();
-builder.Services.AddMemoryCache();
 builder.Services.AddScoped<IDateTimeDisplayService, DateTimeDisplayService>();
 builder.Services.AddSingleton<IClock, SystemClock>();
 builder.Services.AddSingleton<ITenantTimeZoneService, TenantTimeZoneService>();
@@ -203,35 +202,12 @@ builder.Services.AddScoped<IHospitalIntelligenceService, HospitalIntelligenceSer
 builder.Services.AddScoped<IHospitalTrendsService, HospitalTrendsService>();
 builder.Services.AddScoped<ITableSchemaGuard, TableSchemaGuard>();
 builder.Services.AddScoped<IOperationsDashboardService, OperationsDashboardService>();
-builder.Services.AddScoped<IDocumentGuardianService, DocumentGuardianService>();
 
 builder.Services.Configure<DocumentQualityOptions>(builder.Configuration.GetSection("DocumentQuality"));
 builder.Services.AddScoped<IDocumentQualityAnalyzerService, DocumentQualityAnalyzerService>();
 builder.Services.AddHostedService<DocumentQualitySchedulerWorker>();
 
-// =======================================================
-// Database (PostgreSQL)
-// =======================================================
-builder.Services.AddSingleton<IDbConnectionFactory>(_ =>
-{
-    var cs = builder.Configuration.GetConnectionString("DefaultConnection")
-        ?? throw new InvalidOperationException("ConnectionString 'DefaultConnection' não configurada.");
-    return new NpgsqlConnectionFactory(cs);
-});
 
-// =======================================================
-// Storage / Preview
-// =======================================================
-builder.Services.Configure<LocalStorageOptions>(builder.Configuration.GetSection("Storage:Local"));
-builder.Services.AddScoped<IFileStorage, LocalFileStorage>();
-
-// =======================================================
-// Preview / LibreOffice
-// =======================================================
-builder.Services.Configure<LibreOfficeOptions>(
-    builder.Configuration.GetSection("Preview"));
-
-builder.Services.AddScoped<IPreviewGenerator, LibreOfficePreviewGenerator>();
 builder.Services.AddScoped<IPreviewStatusRepository, PreviewStatusRepository>();
 
 builder.Services.AddSingleton<PreviewQueue>();
@@ -247,7 +223,6 @@ builder.Services.Configure<StorageLocalOptions>(builder.Configuration.GetSection
 builder.Services.AddScoped<IOcrProcessRunner, OcrProcessRunner>();
 builder.Services.AddScoped<IOcrEnvironmentValidator, OcrEnvironmentValidator>();
 builder.Services.AddScoped<IOcrService, OcrMyPdfOcrService>();
-builder.Services.AddScoped<IPdfTextExtractor, PopplerPdfTextExtractor>();
 
 builder.Services.AddScoped<IDocumentClassifier, RuleBasedDocumentClassifier>();
 builder.Services.AddScoped<IDocumentClassificationRepository, DocumentClassificationRepository>();
@@ -295,7 +270,6 @@ builder.Services.AddScoped<IClassificationPlanQueries, ClassificationPlanQueries
 // =======================================================
 builder.Services.AddScoped<IDocumentSearchQueries, DocumentSearchQueries>();
 builder.Services.AddScoped<IDocumentSearchTextQueries, DocumentSearchTextQueries>();
-builder.Services.AddScoped<IDocumentMoveService, DocumentMoveService>();
 builder.Services.AddScoped<IDocumentBulkUploadService, DocumentBulkUploadService>();
 builder.Services.AddScoped<IGedBulkDocumentActionService, GedBulkDocumentActionService>();
 builder.Services.AddScoped<IDocumentPartialService, DocumentPartialService>();
@@ -368,8 +342,6 @@ if (builder.Configuration.GetValue<bool>("OcrWorker:Enabled"))
 // Document Write + AuditLog (não confundir com IAuditWriter)
 // =======================================================
 builder.Services.AddScoped<ICurrentUserAccessor, CurrentUserAccessorAdapter>();
-builder.Services.AddScoped<IDocumentWriteRepository, DocumentWriteRepository>();
-builder.Services.AddScoped<IAuditLogWriter, AuditLogWriter>();
 builder.Services.AddScoped<IOcrStatusQueries, OcrStatusQueries>();
 builder.Services.AddScoped<IOcrSignalRNotifier, OcrSignalRNotifier>();
 
@@ -413,11 +385,7 @@ builder.Services.AddScoped<IUserAdminRepository, UserAdminRepository>();
 builder.Services.AddScoped<IUserAdminQueries, UserAdminQueries>();
 builder.Services.AddScoped<UserService>();
 
-builder.Services.AddScoped<IPermissionChecker, AllowAllPermissionChecker>();
-builder.Services.AddScoped<PermissionService>();
-builder.Services.AddScoped<IPermissionService>(sp => sp.GetRequiredService<PermissionService>());
 builder.Services.AddScoped<IParameterRepository, ParameterRepository>();
-builder.Services.AddScoped<IAuditWriter, AuditWriter>();     // ✅ uma vez só
 builder.Services.AddScoped<IAppAuditLogService, AppAuditLogService>();
 builder.Services.AddScoped<ISystemLogQueryService, SystemLogQueryService>();
 builder.Services.AddScoped<IAuditQueries, AuditQueries>();

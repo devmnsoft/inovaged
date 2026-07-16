@@ -8,7 +8,7 @@ using Xunit;
 
 namespace InovaGed.Application.Tests;
 
-public sealed class DependencyInjectionCompositionTests
+public sealed class DiCompositionTests
 {
     [Fact]
     public void SharedComposition_Builds_WithScopeAndBuildValidation()
@@ -39,4 +39,60 @@ public sealed class DependencyInjectionCompositionTests
             ["Preview:LibreOfficePath"] = "soffice"
         })
         .Build();
+}
+
+public sealed class DiArchitectureTests
+{
+    [Fact]
+    public void DiExtensionMethods_DoNotExposeAmbiguousApplicationRegistration()
+    {
+        var extensionMethods = new[]
+        {
+            typeof(InovaGed.Application.ApplicationServiceCollectionExtensions),
+            typeof(InovaGed.Infrastructure.InfrastructureServiceCollectionExtensions)
+        }.SelectMany(type => type.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static))
+         .Where(method => method.IsDefined(typeof(System.Runtime.CompilerServices.ExtensionAttribute), inherit: false))
+         .Select(method => new
+         {
+             method.Name,
+             Parameters = string.Join(",", method.GetParameters().Select(parameter => parameter.ParameterType.FullName))
+         })
+         .ToArray();
+
+        Assert.Single(extensionMethods, method => method.Name == "AddInovaGedApplication");
+        Assert.Single(extensionMethods, method => method.Name == "AddInovaGedInfrastructure");
+        Assert.DoesNotContain(extensionMethods.GroupBy(method => (method.Name, method.Parameters)), group => group.Count() > 1);
+    }
+
+    [Fact]
+    public void InfrastructureComposition_ExposesInternalModuleCatalog()
+    {
+        var services = new ServiceCollection();
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=inovaged_tests;Username=test;Password=test",
+                ["Storage:Local:RootPath"] = Path.GetTempPath(),
+                ["Preview:LibreOfficePath"] = "soffice"
+            })
+            .Build();
+
+        services.AddLogging();
+        services.AddInovaGedInfrastructure(configuration);
+
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions
+        {
+            ValidateScopes = true,
+            ValidateOnBuild = true
+        });
+
+        var catalog = provider.GetRequiredService<InovaGed.Infrastructure.IInfrastructureModuleCatalog>();
+        var modules = catalog.GetModules();
+
+        Assert.Contains(modules, module => module.Name == "Database");
+        Assert.Contains(modules, module => module.Name == "GED");
+        Assert.Contains(modules, module => module.Name == "OCR");
+        Assert.Contains(modules, module => module.Name == "Preview");
+        Assert.Contains(modules, module => module.Name == "Guardian");
+    }
 }
