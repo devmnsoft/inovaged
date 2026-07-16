@@ -104,6 +104,7 @@ using InovaGed.Web.Middleware;
 using InovaGed.Web.Hubs;
 using InovaGed.Web.ocr;
 using InovaGed.Web.Security;
+using InovaGed.Web.Setup;
 using InovaGed.Web.Services;
 using InovaGed.Web.Controllers;
 using Microsoft.AspNetCore.Authentication.Certificate;
