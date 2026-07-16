@@ -38,6 +38,17 @@ jobs:
           ! rg -n "SearchFoldersAsync\([^\n]*CurrentTenantId\(|MoveAsync\([^\n]*CurrentTenantId\(|MoveBulkAsync\([^\n]*CurrentTenantId\(|MoveAsync\([^\n]*CancellationToken\.None|MoveBulkAsync\([^\n]*CancellationToken\.None" --glob "*.cs"
           test -f WebGed.WebApi/WebGed.WebApi.csproj
 
+      - name: DI composition guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_DEFINITIONS=$(rg -n "public static IServiceCollection AddInovaGedApplication\(" --glob "*.cs" | wc -l)
+          INFRA_DEFINITIONS=$(rg -n "public static IServiceCollection AddInovaGedInfrastructure\(" --glob "*.cs" | wc -l)
+          if [ "$APP_DEFINITIONS" -ne 1 ] || [ "$INFRA_DEFINITIONS" -ne 1 ]; then
+            echo "DI composition extension methods must have exactly one Application definition and one Infrastructure definition."
+            exit 1
+          fi
+
       - name: Build
         run: dotnet build InovaGed.sln --no-restore --configuration Release
 
@@ -45,7 +56,7 @@ jobs:
         run: dotnet test InovaGed.sln --no-build --configuration Release --logger "trx;LogFileName=test-results.trx"
 
       - name: DI and security architecture tests
-        run: dotnet test InovaGed.Application.Tests/InovaGed.Application.Tests.csproj --no-build --configuration Release --filter "FullyQualifiedName~DependencyInjectionCompositionTests|FullyQualifiedName~SuspiciousRequestMiddlewareTests" --logger "trx;LogFileName=architecture-test-results.trx"
+        run: dotnet test InovaGed.Application.Tests/InovaGed.Application.Tests.csproj --no-build --configuration Release --filter "FullyQualifiedName~DiCompositionTests|FullyQualifiedName~DiArchitectureTests|FullyQualifiedName~SuspiciousRequestMiddlewareTests" --logger "trx;LogFileName=architecture-test-results.trx"
 
       - name: Regex safety guard
         shell: bash
