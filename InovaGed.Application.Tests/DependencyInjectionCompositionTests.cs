@@ -2,6 +2,9 @@ using InovaGed.Application.Documents;
 using InovaGed.Application.Ged.Documents;
 using InovaGed.Application.DocumentGuardian;
 using InovaGed.Infrastructure;
+using InovaGed.Application.Common.Database;
+using InovaGed.Application.SystemHealth;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
@@ -16,8 +19,11 @@ public sealed class DiCompositionTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddMemoryCache();
-        services.AddInovaGedApplication(CreateConfiguration());
-        services.AddInovaGedInfrastructure(CreateConfiguration());
+        services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment());
+        var configuration = CreateConfiguration();
+        services.AddSingleton<IConfiguration>(configuration);
+        services.AddInovaGedApplication(configuration);
+        services.AddInovaGedInfrastructure(configuration);
 
         using var provider = services.BuildServiceProvider(new ServiceProviderOptions
         {
@@ -29,6 +35,10 @@ public sealed class DiCompositionTests
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<DocumentAppService>());
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<IDocumentMoveService>());
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<IDocumentGuardianService>());
+        Assert.NotNull(provider.GetRequiredService<ISecretMasker>());
+        Assert.NotNull(provider.GetRequiredService<IStartupConfigurationValidator>());
+        Assert.NotNull(provider.GetRequiredService<IExecutableResolver>());
+        Assert.NotNull(provider.GetRequiredService<IDbConnectionFactory>());
     }
 
     private static IConfiguration CreateConfiguration() => new ConfigurationBuilder()
@@ -78,6 +88,8 @@ public sealed class DiArchitectureTests
             .Build();
 
         services.AddLogging();
+        services.AddSingleton<IConfiguration>(configuration);
+        services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment());
         services.AddInovaGedInfrastructure(configuration);
 
         using var provider = services.BuildServiceProvider(new ServiceProviderOptions
@@ -95,4 +107,12 @@ public sealed class DiArchitectureTests
         Assert.Contains(modules, module => module.Name == "Preview");
         Assert.Contains(modules, module => module.Name == "Guardian");
     }
+}
+
+internal sealed class FakeHostEnvironment : IHostEnvironment
+{
+    public string EnvironmentName { get; set; } = Environments.Development;
+    public string ApplicationName { get; set; } = "InovaGed.Tests";
+    public string ContentRootPath { get; set; } = Path.GetTempPath();
+    public Microsoft.Extensions.FileProviders.IFileProvider ContentRootFileProvider { get; set; } = new Microsoft.Extensions.FileProviders.NullFileProvider();
 }

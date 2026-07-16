@@ -59,6 +59,8 @@ builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
+app.ValidateInovaGedStartupConfiguration();
+
 app.Logger.LogInformation(
     "WebApi startup diagnostics. Environment={Environment} StartupCorrelationId={StartupCorrelationId} Modules={Modules}",
     app.Environment.EnvironmentName,
@@ -77,7 +79,8 @@ app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
-app.MapHealthChecks("/health", new HealthCheckOptions
+app.MapHealthChecks("/health/live");
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
 {
     ResponseWriter = async (context, report) =>
     {

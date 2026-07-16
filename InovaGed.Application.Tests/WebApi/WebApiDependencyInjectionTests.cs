@@ -3,6 +3,9 @@ using InovaGed.Application.DocumentGuardian;
 using InovaGed.Application.Ged.Documents;
 using InovaGed.Application.Identity;
 using InovaGed.Infrastructure;
+using InovaGed.Application.Common.Database;
+using InovaGed.Application.SystemHealth;
+using Microsoft.Extensions.Hosting;
 using Microsoft.AspNetCore.Mvc.Controllers;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -27,6 +30,10 @@ public sealed class WebApiDependencyInjectionTests
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<DocumentAppService>());
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<IDocumentMoveService>());
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<IDocumentGuardianService>());
+        Assert.NotNull(provider.GetRequiredService<ISecretMasker>());
+        Assert.NotNull(provider.GetRequiredService<IStartupConfigurationValidator>());
+        Assert.NotNull(provider.GetRequiredService<IExecutableResolver>());
+        Assert.NotNull(provider.GetRequiredService<IDbConnectionFactory>());
     }
 
     [Fact]
@@ -69,6 +76,7 @@ public sealed class WebApiDependencyInjectionTests
         var services = new ServiceCollection();
         services.AddSingleton<IConfiguration>(configuration);
         services.AddLogging();
+        services.AddSingleton<IHostEnvironment>(new InovaGed.Application.Tests.FakeHostEnvironment());
         services.AddHttpContextAccessor();
         services.AddScoped<ICurrentUser, FakeCurrentUser>();
         services.AddControllers()

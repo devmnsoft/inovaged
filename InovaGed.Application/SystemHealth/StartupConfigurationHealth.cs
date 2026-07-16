@@ -14,7 +14,12 @@ public sealed record StartupConfigurationCheck(
     string MaskedValue,
     string Recommendation,
     string Source,
-    string Environment);
+    string Environment)
+{
+    public string Module { get; init; } = "Startup";
+    public bool BlocksStartup => Severity == StartupConfigurationSeverity.Critical;
+    public DateTimeOffset LastValidatedAtUtc { get; init; } = DateTimeOffset.UtcNow;
+}
 
 public interface IStartupConfigurationValidator
 {

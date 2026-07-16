@@ -48,6 +48,9 @@ jobs:
             echo "DI composition extension methods must have exactly one Application definition and one Infrastructure definition."
             exit 1
           fi
+          rg -n "TryAddSingleton<IStartupConfigurationValidator, StartupConfigurationValidator>" InovaGed.Infrastructure/DependencyInjection.cs
+          rg -n "TryAddSingleton<ISecretMasker, SecretMasker>" InovaGed.Infrastructure/DependencyInjection.cs
+          rg -n "TryAddSingleton<IExecutableResolver, ExecutableResolver>" InovaGed.Infrastructure/DependencyInjection.cs
 
       - name: Build
         run: dotnet build InovaGed.sln --no-restore --configuration Release
