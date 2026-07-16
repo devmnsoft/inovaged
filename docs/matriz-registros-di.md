@@ -19,3 +19,4 @@ Data: 2026-07-14
 | `IDocumentGuardianService` | `DocumentGuardianService` | Scoped | API/Controller do Guardião | `InovaGed.Infrastructure` | OK | Registrado para composição e evolução da API do Guardião. |
 | `LocalStorageOptions` | Options `Storage:Local` | Singleton/options | `LocalFileStorage` | `InovaGed.Infrastructure` | OK | Validado no startup. |
 | `LibreOfficeOptions` | Options `Preview` | Singleton/options | `LibreOfficePreviewGenerator` | `InovaGed.Infrastructure` | OK | Ligado e validado no startup. |
+| `SuspiciousRequestOptions` | Options `SuspiciousRequest` | Singleton/options | `SuspiciousRequestMiddleware` | `InovaGed.Web` | OK | Limites de path e campos de log configuráveis. |

@@ -155,9 +155,6 @@ builder.Services
     .AddInovaGedInfrastructure(builder.Configuration);
 builder.Services.AddSignalR();
 builder.Services.AddMemoryCache();
-builder.Services
-    .AddInovaGedApplication(builder.Configuration)
-    .AddInovaGedInfrastructure(builder.Configuration);
 builder.Services.AddScoped<IDateTimeDisplayService, DateTimeDisplayService>();
 builder.Services.AddSingleton<IClock, SystemClock>();
 builder.Services.AddSingleton<ITenantTimeZoneService, TenantTimeZoneService>();
@@ -170,6 +167,7 @@ builder.Services.AddScoped<IHomologationHealthService, HomologationHealthService
 builder.Services.AddScoped<ISchemaRepairService, SchemaRepairService>();
 builder.Services.AddSingleton<ISchemaCompatibilityState, SchemaCompatibilityState>();
 builder.Services.Configure<DocumentUploadOptions>(builder.Configuration.GetSection("DocumentUpload"));
+builder.Services.Configure<SuspiciousRequestOptions>(builder.Configuration.GetSection("SuspiciousRequest"));
 builder.WebHost.ConfigureKestrel(options =>
 {
     options.Limits.MaxRequestBodySize = null;

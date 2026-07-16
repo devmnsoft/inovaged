@@ -44,5 +44,14 @@ jobs:
       - name: Test
         run: dotnet test InovaGed.sln --no-build --configuration Release --logger "trx;LogFileName=test-results.trx"
 
-      - name: DI composition tests
-        run: dotnet test InovaGed.Application.Tests/InovaGed.Application.Tests.csproj --no-build --configuration Release --filter "FullyQualifiedName~WebApiDependencyInjectionTests" --logger "trx;LogFileName=di-test-results.trx"
+      - name: DI and security architecture tests
+        run: dotnet test InovaGed.Application.Tests/InovaGed.Application.Tests.csproj --no-build --configuration Release --filter "FullyQualifiedName~DependencyInjectionCompositionTests|FullyQualifiedName~SuspiciousRequestMiddlewareTests" --logger "trx;LogFileName=architecture-test-results.trx"
+
+      - name: Regex safety guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          if rg -n "new Regex\(|Regex\." InovaGed.Web InovaGed.Application InovaGed.Infrastructure --glob '*.cs' | rg -v "RegexOptions\.NonBacktracking|// REGEX_JUSTIFIED"; then
+            echo "Regex crítico sem RegexOptions.NonBacktracking ou justificativa REGEX_JUSTIFIED."
+            exit 1
+          fi
