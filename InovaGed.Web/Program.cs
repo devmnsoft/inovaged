@@ -8,6 +8,7 @@ using InovaGed.Infrastructure.Ged.Intelligence;
 using InovaGed.Infrastructure.HospitalTrends;
 using System.Security.Claims;
 using System.Security.Cryptography.X509Certificates;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using InovaGed.Application;
 using InovaGed.Application.Audit;
 using InovaGed.Application.Auditing;
@@ -593,7 +594,7 @@ builder.Services.AddScoped<DocumentAppService>();
 // =======================================================
 var app = builder.Build();
 
-ValidateStartupConfiguration(app);
+app.ValidateInovaGedStartupConfiguration();
 await ValidateDatabaseSchemaOnStartupAsync(app);
 
 app.UseExceptionHandler("/Home/Error");
@@ -618,29 +619,14 @@ app.UseMiddleware<AccessDeniedAuditMiddleware>();
 
 app.MapHub<OcrStatusHub>(OcrStatusHub.Route);
 
+app.MapHealthChecks("/health/live");
+app.MapHealthChecks("/health/ready", new HealthCheckOptions());
+
 app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Home}/{action=Index}/{id?}");
 
 app.Run();
-
-static void ValidateStartupConfiguration(WebApplication app)
-{
-    using var scope = app.Services.CreateScope();
-    var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("StartupConfiguration");
-    var checks = scope.ServiceProvider.GetRequiredService<IStartupConfigurationValidator>().Validate();
-    foreach (var check in checks)
-    {
-        if (check.Severity == StartupConfigurationSeverity.Critical)
-            logger.LogError("Configuração crítica: {Item} Status={Status} Valor={Value} Origem={Source} Ambiente={Environment} Recomendação={Recommendation}", check.Item, check.Status, check.MaskedValue, check.Source, check.Environment, check.Recommendation);
-        else if (check.Severity == StartupConfigurationSeverity.Warning)
-            logger.LogWarning("Configuração alerta: {Item} Status={Status} Valor={Value} Origem={Source} Ambiente={Environment} Recomendação={Recommendation}", check.Item, check.Status, check.MaskedValue, check.Source, check.Environment, check.Recommendation);
-        else
-            logger.LogInformation("Configuração: {Item} Status={Status} Origem={Source} Ambiente={Environment}", check.Item, check.Status, check.Source, check.Environment);
-    }
-    if (checks.Any(c => c.Severity == StartupConfigurationSeverity.Critical))
-        throw new InvalidOperationException("Configuração obrigatória ausente ou insegura. Consulte logs StartupConfiguration e /SystemHealth/SecurityConfiguration.");
-}
 
 static async Task ValidateDatabaseSchemaOnStartupAsync(WebApplication app)
 {

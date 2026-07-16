@@ -9,6 +9,7 @@ using InovaGed.Application.Ocr;
 using InovaGed.Application.Ged.Documents;
 using InovaGed.Application.DocumentGuardian;
 using InovaGed.Application.Security;
+using InovaGed.Application.SystemHealth;
 using InovaGed.Infrastructure.Audit;
 using InovaGed.Infrastructure.Auditing;
 using InovaGed.Infrastructure.Common.Database;
@@ -17,9 +18,11 @@ using InovaGed.Infrastructure.Documents;
 using InovaGed.Infrastructure.Ged.Documents;
 using InovaGed.Infrastructure.Ocr;
 using InovaGed.Infrastructure.Security;
+using InovaGed.Infrastructure.SystemHealth;
 using InovaGed.Infrastructure.Storage;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using InovaGed.Application.Identity;
 
@@ -143,7 +146,10 @@ public static class InfrastructureServiceCollectionExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        services.AddSingleton<IInfrastructureModuleCatalog, InfrastructureModuleCatalog>();
+        services.TryAddSingleton<ISecretMasker, SecretMasker>();
+        services.TryAddSingleton<IStartupConfigurationValidator, StartupConfigurationValidator>();
+        services.TryAddSingleton<IExecutableResolver, ExecutableResolver>();
+        services.TryAddSingleton<IInfrastructureModuleCatalog, InfrastructureModuleCatalog>();
         services.AddHealthChecks()
             .AddCheck<InovaGedDependencyHealthCheck>("inovaged-dependencies");
         return services;

@@ -4,12 +4,12 @@
 }
 <h1>Configuração de Segurança</h1>
 <table class="table table-sm table-striped">
-<thead><tr><th>Item</th><th>Status</th><th>Severidade</th><th>Valor mascarado</th><th>Recomendação</th><th>Origem</th><th>Ambiente</th></tr></thead>
+<thead><tr><th>Item</th><th>Status</th><th>Severidade</th><th>Origem</th><th>Valor mascarado</th><th>Recomendação</th><th>Ambiente</th><th>Módulo afetado</th><th>Bloqueia inicialização</th><th>Última validação (UTC)</th></tr></thead>
 <tbody>
 @foreach (var i in Model)
 {
     <tr>
-        <td>@i.Item</td><td>@i.Status</td><td>@i.Severity</td><td><code>@i.MaskedValue</code></td><td>@i.Recommendation</td><td>@i.Source</td><td>@i.Environment</td>
+        <td>@i.Item</td><td>@i.Status</td><td>@i.Severity</td><td>@i.Source</td><td><code>@i.MaskedValue</code></td><td>@i.Recommendation</td><td>@i.Environment</td><td>@i.Module</td><td>@(i.BlocksStartup ? "Sim" : "Não")</td><td>@i.LastValidatedAtUtc.ToString("O")</td>
     </tr>
 }
 </tbody>

@@ -7,12 +7,34 @@ namespace InovaGed.Infrastructure.SystemHealth;
 
 public sealed class SecretMasker : ISecretMasker
 {
-    private static readonly Regex SecretRegex = new(@"(?i)(password|pwd|token|secret|key)\s*=\s*([^;\s]+)", RegexOptions.Compiled);
+    private static readonly Regex SecretRegex = new(
+        @"(?i)(password|pwd|token|secret|key)\s*=\s*([^;\s]+)",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.NonBacktracking,
+        TimeSpan.FromMilliseconds(50));
+
+    private static readonly Regex DefaultPasswordRegex = new(
+        @"(?i)(password|pwd)\s*=\s*(123456|postgres|admin|admin@123|password)\b",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.NonBacktracking,
+        TimeSpan.FromMilliseconds(50));
+
     public string Mask(string? value)
     {
-        if (string.IsNullOrWhiteSpace(value)) return string.Empty;
-        var masked = SecretRegex.Replace(value, m => $"{m.Groups[1].Value}=***");
-        return masked.Length > 180 ? masked[..180] + "..." : masked;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var limited = value.Length > 4096 ? value[..4096] : value;
+
+        try
+        {
+            var masked = SecretRegex.Replace(limited, match => $"{match.Groups[1].Value}=***");
+            return masked.Length > 180 ? masked[..180] + "..." : masked;
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            return "***";
+        }
     }
 }
 
@@ -36,7 +58,7 @@ public sealed class StartupConfigurationValidator : IStartupConfigurationValidat
         var checks = new List<StartupConfigurationCheck>();
         var cs = _configuration.GetConnectionString("DefaultConnection");
         Add(checks, "ConnectionStrings:DefaultConnection", !string.IsNullOrWhiteSpace(cs), true, _masker.Mask(cs), "Configure via variável ConnectionStrings__DefaultConnection, User Secrets, IIS ou Docker Secret.", "configuration", env);
-        if (!string.IsNullOrWhiteSpace(cs) && Regex.IsMatch(cs, @"(?i)(password|pwd)\s*=\s*(123456|postgres|admin|admin@123|password)\b"))
+        if (!string.IsNullOrWhiteSpace(cs) && DefaultPasswordRegex.IsMatch(cs))
             checks.Add(Critical("Senha padrão PostgreSQL", "inseguro", "Password=***", "Troque a senha e remova credenciais versionadas.", "ConnectionStrings:DefaultConnection", env));
 
         AddPath(checks, "Storage:Local:RootPath", _configuration["Storage:Local:RootPath"], prod, env, "Use volume/pasta dedicada fora de TEMP e com ACL do AppPool.");
@@ -45,7 +67,7 @@ public sealed class StartupConfigurationValidator : IStartupConfigurationValidat
         AddPath(checks, "Ocr:PythonPath", _configuration["Ocr:PythonPath"], false, env, "Opcional: configure Python globalmente ou PATH.");
 
         var tz = _configuration["Localization:DefaultTimeZone"] ?? _configuration["App:LocalTimeZoneId"];
-        checks.Add(new("Timezone padrão", string.IsNullOrWhiteSpace(tz) ? "fallback" : "ok", StartupConfigurationSeverity.Info, tz ?? "America/Belem", "Persistir UTC e apresentar pelo timezone do tenant; fallback America/Belem.", "Localization:DefaultTimeZone", env));
+        checks.Add(new("Timezone padrão", string.IsNullOrWhiteSpace(tz) ? "fallback" : "ok", StartupConfigurationSeverity.Info, _masker.Mask(tz ?? "America/Belem"), "Persistir UTC e apresentar pelo timezone do tenant; fallback America/Belem.", "Localization:DefaultTimeZone", env));
 
         ProdBlock(checks, prod && _configuration.GetValue<bool>("SystemSeed:Enabled"), "Seed habilitado", "Desabilite SystemSeed em Production.", "SystemSeed:Enabled", env);
         ProdBlock(checks, prod && _configuration.GetValue<bool>("Auth:AllowInternalSelfSignedCertificates"), "Certificado interno autoassinado permitido", "Use false em Production.", "Auth:AllowInternalSelfSignedCertificates", env);
@@ -60,10 +82,10 @@ public sealed class StartupConfigurationValidator : IStartupConfigurationValidat
         checks.Add(new(item, ok ? "ok" : "ausente", ok ? StartupConfigurationSeverity.Info : criticalIfMissing ? StartupConfigurationSeverity.Critical : StartupConfigurationSeverity.Warning, masked, rec, source, env));
     private static StartupConfigurationCheck Critical(string item, string status, string value, string rec, string source, string env) => new(item, status, StartupConfigurationSeverity.Critical, value, rec, source, env);
     private static void ProdBlock(List<StartupConfigurationCheck> checks, bool condition, string item, string rec, string source, string env) { if (condition) checks.Add(Critical(item, "bloqueado-em-producao", "true", rec, source, env)); }
-    private static void AddPath(List<StartupConfigurationCheck> checks, string key, string? value, bool criticalIfMissing, string env, string rec)
+    private void AddPath(List<StartupConfigurationCheck> checks, string key, string? value, bool criticalIfMissing, string env, string rec)
     {
         var unsafePersonal = !string.IsNullOrWhiteSpace(value) && (value.Contains(@"\Users\", StringComparison.OrdinalIgnoreCase) || value.Contains("Administrator", StringComparison.OrdinalIgnoreCase));
-        checks.Add(new(key, string.IsNullOrWhiteSpace(value) ? "não configurado" : unsafePersonal ? "caminho-pessoal" : "ok", unsafePersonal ? StartupConfigurationSeverity.Warning : string.IsNullOrWhiteSpace(value) && criticalIfMissing ? StartupConfigurationSeverity.Critical : StartupConfigurationSeverity.Info, value ?? "", rec, key, env));
+        checks.Add(new(key, string.IsNullOrWhiteSpace(value) ? "não configurado" : unsafePersonal ? "caminho-pessoal" : "ok", unsafePersonal ? StartupConfigurationSeverity.Warning : string.IsNullOrWhiteSpace(value) && criticalIfMissing ? StartupConfigurationSeverity.Critical : StartupConfigurationSeverity.Info, _masker.Mask(value), rec, key, env));
     }
 }
 
