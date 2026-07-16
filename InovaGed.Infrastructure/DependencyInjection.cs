@@ -146,12 +146,28 @@ public static class InfrastructureServiceCollectionExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+
         services.TryAddSingleton<ISecretMasker, SecretMasker>();
-        services.TryAddSingleton<IStartupConfigurationValidator, StartupConfigurationValidator>();
-        services.TryAddSingleton<IExecutableResolver, ExecutableResolver>();
-        services.TryAddSingleton<IInfrastructureModuleCatalog, InfrastructureModuleCatalog>();
-        services.AddHealthChecks()
-            .AddCheck<InovaGedDependencyHealthCheck>("inovaged-dependencies");
+
+        services.TryAddSingleton<
+            IStartupConfigurationValidator,
+            StartupConfigurationValidator>();
+
+        services.TryAddSingleton<
+            IExecutableResolver,
+            ExecutableResolver>();
+
+        services.TryAddSingleton<
+            IInfrastructureModuleCatalog,
+            InfrastructureModuleCatalog>();
+
+        services
+            .AddHealthChecks()
+            .AddCheck<InovaGedDependencyHealthCheck>(
+                "inovaged-dependencies");
+
         return services;
     }
 

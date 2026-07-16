@@ -3,6 +3,7 @@ using InovaGed.Application;
 using InovaGed.Infrastructure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using InovaGed.Infrastructure.SystemHealth;
 
 namespace InovaGed.Application.Tests;
@@ -40,28 +41,70 @@ public sealed class SystemHealthStartupTests
 public sealed class InfrastructureHealthModuleRegistrationTests
 {
     [Fact]
-    public void InfrastructureModule_RegistersStartupConfigurationServices()
+    public void Infrastructure_RegistersStartupConfigurationServices()
     {
-        var builder = Microsoft.AspNetCore.Builder.WebApplication.CreateBuilder();
+        var services = new ServiceCollection();
 
-        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
-        {
-            ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=test;Username=test;Password=test",
-            ["Storage:Local:RootPath"] = Path.GetTempPath()
-        });
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:DefaultConnection"] =
+                        "Host=localhost;Database=test;" +
+                        "Username=test;Password=segura",
 
-        builder.Services
-            .AddInovaGedApplication(builder.Configuration)
-            .AddInovaGedInfrastructure(builder.Configuration);
+                    ["Storage:Local:RootPath"] =
+                        Path.GetTempPath(),
 
-        using var provider = builder.Services.BuildServiceProvider(new ServiceProviderOptions
-        {
-            ValidateOnBuild = true,
-            ValidateScopes = true
-        });
+                    ["Auth:AllowInternalSelfSignedCertificates"] =
+                        "false",
 
-        Assert.NotNull(provider.GetRequiredService<ISecretMasker>());
-        Assert.NotNull(provider.GetRequiredService<IStartupConfigurationValidator>());
-        Assert.NotNull(provider.GetRequiredService<IExecutableResolver>());
+                    ["SystemSeed:Enabled"] = "false"
+                })
+            .Build();
+
+        services.AddSingleton<IHostEnvironment>(
+            new TestHostEnvironment("Development"));
+
+        services
+            .AddInovaGedApplication(configuration)
+            .AddInovaGedInfrastructure(configuration);
+
+        using var provider =
+            services.BuildServiceProvider(
+                new ServiceProviderOptions
+                {
+                    ValidateOnBuild = true,
+                    ValidateScopes = true
+                });
+
+        Assert.NotNull(
+            provider.GetRequiredService<ISecretMasker>());
+
+        Assert.NotNull(
+            provider.GetRequiredService<
+                IStartupConfigurationValidator>());
+
+        Assert.NotNull(
+            provider.GetRequiredService<IExecutableResolver>());
     }
+}
+
+internal sealed class TestHostEnvironment : IHostEnvironment
+{
+    public TestHostEnvironment(string environmentName)
+    {
+        EnvironmentName = environmentName;
+        ApplicationName = "InovaGed.Application.Tests";
+        ContentRootPath = Directory.GetCurrentDirectory();
+        ContentRootFileProvider = new Microsoft.Extensions.FileProviders.NullFileProvider();
+    }
+
+    public string EnvironmentName { get; set; }
+
+    public string ApplicationName { get; set; }
+
+    public string ContentRootPath { get; set; }
+
+    public Microsoft.Extensions.FileProviders.IFileProvider ContentRootFileProvider { get; set; }
 }
