@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text;
+using InovaGed.Application;
 using InovaGed.Application.Identity;
 using InovaGed.Infrastructure;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
