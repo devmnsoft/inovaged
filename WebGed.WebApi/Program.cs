@@ -56,7 +56,13 @@ builder.Services
         };
     });
 
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    static void RequireAdmin(Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder p)
+        => p.RequireRole("ADMIN", "ADMINISTRADOR", "ADMINISTRADOROPHIR");
+    foreach (var policy in new[] { "ContinuityView", "ContinuityManage", "BackupRequest", "BackupVerify", "PortabilityExport", "PortabilityDownload", "RestoreTest", "TenantOffboarding", "GlobalTenantOperations" })
+        options.AddPolicy(policy, RequireAdmin);
+});
 
 var app = builder.Build();
 

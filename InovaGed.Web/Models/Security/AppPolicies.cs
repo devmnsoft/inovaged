@@ -33,4 +33,14 @@ public static class AppPolicies
     public const string LogsAccess = SystemLogs;
     public const string SchemaRepair = "SchemaRepair";
     public const string OperationsAccess = "OperationsAccess";
+
+    public const string ContinuityView = "ContinuityView";
+    public const string ContinuityManage = "ContinuityManage";
+    public const string BackupRequest = "BackupRequest";
+    public const string BackupVerify = "BackupVerify";
+    public const string PortabilityExport = "PortabilityExport";
+    public const string PortabilityDownload = "PortabilityDownload";
+    public const string RestoreTest = "RestoreTest";
+    public const string TenantOffboarding = "TenantOffboarding";
+    public const string GlobalTenantOperations = "GlobalTenantOperations";
 }

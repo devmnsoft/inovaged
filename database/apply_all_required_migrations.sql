@@ -2954,3 +2954,8 @@ add column if not exists updated_by uuid null;
 create index if not exists ix_folder_tenant_parent_name
 on ged.folder(tenant_id, parent_id, lower(name))
 where coalesce(reg_status, 'A') = 'A';
+
+-- Evolução 03: garante participação explícita das migrations de Administração/Segurança e Continuidade/Portabilidade.
+\i database/migrations/2026_07_administration_security_governance.sql
+\i database/migrations/2026_07_backup_continuity_portability.sql
+\i database/migrations/2026_07_estabilizar_admin_continuity_ci.sql

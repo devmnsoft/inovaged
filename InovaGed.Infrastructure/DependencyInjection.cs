@@ -158,6 +158,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddOptions<OperationsOptions>().Bind(configuration.GetSection("Operations")).ValidateOnStart();
         services.AddOptions<BackupOptions>().Bind(configuration.GetSection("Backup")).ValidateDataAnnotations().ValidateOnStart();
         services.AddOptions<PortabilityOptions>().Bind(configuration.GetSection("Portability")).ValidateDataAnnotations().ValidateOnStart();
+        services.AddScoped<IAdministrativeTenantScopeResolver, AdministrativeTenantScopeResolver>();
         services.AddScoped<ContinuityRepository>();
         services.AddScoped<IBackupPolicyService>(sp => sp.GetRequiredService<ContinuityRepository>());
         services.AddScoped<IBackupCatalogService>(sp => sp.GetRequiredService<ContinuityRepository>());

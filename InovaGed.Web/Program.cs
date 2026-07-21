@@ -517,6 +517,15 @@ builder.Services.AddAuthorization(options =>
 
     options.AddPolicy(AppPolicies.Operations, p => RequireAny(p, AppRoles.Admin, AppRoles.Administrador));
     options.AddPolicy(AppPolicies.OperationsAccess, p => RequireAny(p, AppRoles.Admin, AppRoles.Administrador));
+    options.AddPolicy(AppPolicies.ContinuityView, p => RequireAny(p, AppRoles.Admin, AppRoles.Administrador));
+    options.AddPolicy(AppPolicies.ContinuityManage, p => RequireAny(p, AppRoles.Admin, AppRoles.Administrador));
+    options.AddPolicy(AppPolicies.BackupRequest, p => RequireAny(p, AppRoles.Admin, AppRoles.Administrador));
+    options.AddPolicy(AppPolicies.BackupVerify, p => RequireAny(p, AppRoles.Admin, AppRoles.Administrador));
+    options.AddPolicy(AppPolicies.PortabilityExport, p => RequireAny(p, AppRoles.Admin, AppRoles.Administrador));
+    options.AddPolicy(AppPolicies.PortabilityDownload, p => RequireAny(p, AppRoles.Admin, AppRoles.Administrador));
+    options.AddPolicy(AppPolicies.RestoreTest, p => RequireAny(p, AppRoles.Admin, AppRoles.Administrador));
+    options.AddPolicy(AppPolicies.TenantOffboarding, p => RequireAny(p, AppRoles.Admin, AppRoles.Administrador));
+    options.AddPolicy(AppPolicies.GlobalTenantOperations, p => RequireAny(p, fullAdmin));
 
     options.AddPolicy(Policies.CanViewRetention,
         p => RequireAny(p, AppRoles.Admin, AppRoles.Administrador, AppRoles.Arquivista, AppRoles.Auditor));

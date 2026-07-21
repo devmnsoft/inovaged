@@ -19,15 +19,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if grep -RIn "NU1605" restore.log dependencies-infrastructure.log --exclude-dir=bin --exclude-dir=obj; then
+          if rg -n "NU1605" restore.log dependencies-infrastructure.log; then
             echo "NU1605 detected during restore/dependency inspection." >&2
             exit 1
           fi
-          if grep -RIn "Microsoft.AspNetCore.Cryptography.KeyDerivation.*8\.0\.11" . --include='*.csproj' --include='*.props' --include='*.targets' --include='packages.lock.json' --exclude-dir=bin --exclude-dir=obj; then
+          if rg -n "Microsoft.AspNetCore.Cryptography.KeyDerivation.*8\.0\.11" --glob '*.csproj' --glob '*.props' --glob '*.targets' --glob 'packages.lock.json' --glob '!**/bin/**' --glob '!**/obj/**' .; then
             echo "KeyDerivation 8.0.11 is not allowed in active package files." >&2
             exit 1
           fi
-          if grep -RInE "<PackageReference Include=\"(Microsoft\.AspNet\.Identity\.Core|Microsoft\.AspNetCore(\.Authorization|\.Mvc\.Core)?|Microsoft\.AspNetCore\.Authorization)\" Version=\"2\." . --include='*.csproj' --exclude-dir=bin --exclude-dir=obj; then
+          if rg -nE "<PackageReference Include=\"(Microsoft\.AspNet\.Identity\.Core|Microsoft\.AspNetCore(\.Authorization|\.Mvc\.Core)?|Microsoft\.AspNetCore\.Authorization)\" Version=\"2\." --glob '*.csproj' --glob '!**/bin/**' --glob '!**/obj/**' .; then
             echo "Legacy ASP.NET Core/Identity 2.x package reference detected." >&2
             exit 1
           fi
@@ -38,19 +38,8 @@ jobs:
           ! rg -n "SearchFoldersAsync\([^\n]*CurrentTenantId\(|MoveAsync\([^\n]*CurrentTenantId\(|MoveBulkAsync\([^\n]*CurrentTenantId\(|MoveAsync\([^\n]*CancellationToken\.None|MoveBulkAsync\([^\n]*CancellationToken\.None" --glob "*.cs"
           test -f WebGed.WebApi/WebGed.WebApi.csproj
 
-      - name: DI composition guard
-        shell: bash
-        run: |
-          set -euo pipefail
-          APP_DEFINITIONS=$(rg -n "public static IServiceCollection AddInovaGedApplication\(" --glob "*.cs" | wc -l)
-          INFRA_DEFINITIONS=$(rg -n "public static IServiceCollection AddInovaGedInfrastructure\(" --glob "*.cs" | wc -l)
-          if [ "$APP_DEFINITIONS" -ne 1 ] || [ "$INFRA_DEFINITIONS" -ne 1 ]; then
-            echo "DI composition extension methods must have exactly one Application definition and one Infrastructure definition."
-            exit 1
-          fi
-          rg -n "TryAddSingleton<IStartupConfigurationValidator, StartupConfigurationValidator>" InovaGed.Infrastructure/DependencyInjection.cs
-          rg -n "TryAddSingleton<ISecretMasker, SecretMasker>" InovaGed.Infrastructure/DependencyInjection.cs
-          rg -n "TryAddSingleton<IExecutableResolver, ExecutableResolver>" InovaGed.Infrastructure/DependencyInjection.cs
+      - name: Architecture and DI guard
+        run: dotnet test InovaGed.Application.Tests/InovaGed.Application.Tests.csproj --no-restore --configuration Release --filter "FullyQualifiedName~SolutionAndContinuityArchitectureTests|FullyQualifiedName~DependencyInjectionCompositionTests"
 
       - name: Build
         run: dotnet build InovaGed.sln --no-restore --configuration Release
@@ -67,7 +56,7 @@ jobs:
         run: |
           test -f database/migrations/2026_07_document_guardian.sql
           test -f database/migrations/2026_07_guardian_consolidation_queue_events_dossiers.sql
-          ! grep -RniE '\bdrop\s+(table|view|schema|column)\b' database/migrations
+          ! rg -ni '\bdrop\s+(table|view|schema|column)\b' database/migrations
       - uses: actions/upload-artifact@v4
         if: always()
         with:
