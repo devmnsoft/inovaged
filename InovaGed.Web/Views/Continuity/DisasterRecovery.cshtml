@@ -1,0 +1,2 @@
+@model IReadOnlyList<InovaGed.Application.Continuity.RecoveryPlanDto>
+<h1>Plano de Recuperação de Desastres</h1><table class="table"><thead><tr><th>Plano</th><th>Versão</th><th>RPO</th><th>RTO</th><th>Status</th><th>Próxima revisão</th></tr></thead><tbody>@foreach(var p in Model){<tr><td>@p.Name</td><td>@p.CurrentVersion</td><td>@p.RpoMinutes</td><td>@p.RtoMinutes</td><td>@p.Status</td><td>@p.NextReviewAtUtc</td></tr>}</tbody></table>

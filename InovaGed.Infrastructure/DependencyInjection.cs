@@ -21,6 +21,8 @@ using InovaGed.Infrastructure.Security;
 using InovaGed.Infrastructure.SystemHealth;
 using InovaGed.Application.Administration;
 using InovaGed.Infrastructure.Administration;
+using InovaGed.Application.Continuity;
+using InovaGed.Infrastructure.Continuity;
 using InovaGed.Infrastructure.Storage;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -50,7 +52,8 @@ public static class InfrastructureServiceCollectionExtensions
             .AddPreviewModule(configuration)
             .AddGuardianModule(configuration)
             .AddSecurityOperationsModule(configuration)
-            .AddInfrastructureHealthModule(configuration);
+            .AddInfrastructureHealthModule(configuration)
+            .AddContinuityModule(configuration);
 
         return services;
     }
@@ -144,6 +147,32 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<PermissionService>();
         services.AddScoped<IPermissionService, PermissionService>();
         services.AddInfrastructureModule("SecurityOperations", true, ["Database"], true, HealthStatus.Healthy);
+        return services;
+    }
+
+
+    public static IServiceCollection AddContinuityModule(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        services.AddOptions<OperationsOptions>().Bind(configuration.GetSection("Operations")).ValidateOnStart();
+        services.AddOptions<BackupOptions>().Bind(configuration.GetSection("Backup")).ValidateDataAnnotations().ValidateOnStart();
+        services.AddOptions<PortabilityOptions>().Bind(configuration.GetSection("Portability")).ValidateDataAnnotations().ValidateOnStart();
+        services.AddScoped<ContinuityRepository>();
+        services.AddScoped<IBackupPolicyService>(sp => sp.GetRequiredService<ContinuityRepository>());
+        services.AddScoped<IBackupCatalogService>(sp => sp.GetRequiredService<ContinuityRepository>());
+        services.AddScoped<IRecoveryObjectiveService>(sp => sp.GetRequiredService<ContinuityRepository>());
+        services.AddScoped<IPortabilityExportService>(sp => sp.GetRequiredService<ContinuityRepository>());
+        services.AddScoped<IRecoveryPlanService>(sp => sp.GetRequiredService<ContinuityRepository>());
+        services.AddScoped<ITenantOffboardingService>(sp => sp.GetRequiredService<ContinuityRepository>());
+        services.AddScoped<IDataDeletionWorkflowService>(sp => sp.GetRequiredService<ContinuityRepository>());
+        services.AddScoped<IBackupOrchestrator, BackupOrchestrator>();
+        services.AddScoped<IBackupIntegrityService, BackupIntegrityService>();
+        services.AddScoped<IRestoreValidationService, RestoreValidationService>();
+        services.AddScoped<IPortabilityManifestService, PortabilityManifestService>();
+        services.AddScoped<IPortabilityPackageVerifier, PortabilityPackageVerifier>();
+        services.AddScoped<IPostgresBackupProvider, PostgresBackupProvider>();
+        services.AddInfrastructureModule("ContinuityPortability", configuration.GetValue("Backup:Enabled", false) || configuration.GetValue("Portability:Enabled", false), ["Database", "Storage"], true, HealthStatus.Degraded);
         return services;
     }
 
