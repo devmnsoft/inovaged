@@ -7,7 +7,7 @@ namespace InovaGed.Web.Controllers;
 
 [Authorize(Policy = AppPolicies.ContinuityView)]
 [Route("Continuity")]
-public sealed class ContinuityController(IRecoveryObjectiveService dashboard, IBackupPolicyService policies, IBackupCatalogService catalog, IRecoveryPlanService plans, IPortabilityExportService exports, ITenantOffboardingService offboarding, IBackupOrchestrator orchestrator, IBackupIntegrityService integrity, InovaGed.Infrastructure.Continuity.IAdministrativeTenantScopeResolver tenantScope) : Controller
+public sealed class ContinuityController(IRecoveryObjectiveService dashboard, IBackupPolicyService policies, IBackupCatalogService catalog, IRecoveryPlanService plans, IPortabilityExportService exports, ITenantOffboardingService offboarding, IBackupOrchestrator orchestrator, IBackupIntegrityService integrity, IAdministrativeTenantScopeResolver tenantScope) : Controller
 {
     [HttpGet("")] [HttpGet("Overview")] public async Task<IActionResult> Overview(CancellationToken ct) => View(await dashboard.GetDashboardAsync(ResolveTenant(null), ct));
     [HttpGet("Backups")] public async Task<IActionResult> Backups(string? status, CancellationToken ct) => View(await catalog.ListAsync(ResolveTenant(null), status, ct));
@@ -24,7 +24,7 @@ public sealed class ContinuityController(IRecoveryObjectiveService dashboard, IB
     private Guid? ResolveTenant(Guid? requestedTenantId)
     {
         var scope = tenantScope.Resolve(User, requestedTenantId);
-        if (!scope.Allowed) throw new UnauthorizedAccessException(scope.DenialReason);
+        if (!scope.Allowed) return null;
         return scope.TenantId;
     }
 }

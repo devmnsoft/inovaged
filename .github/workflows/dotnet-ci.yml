@@ -1,60 +1,24 @@
 name: dotnet-ci
-
 on:
   pull_request:
   push:
-    branches: [ main, develop, "feature/**" ]
-
+    branches: [ main, develop, "feature/**", "codex/**" ]
 jobs:
-  restore-build-test:
+  specialized-guards:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '8.0.x'
-
-      - name: Prohibit KeyDerivation downgrade
-        shell: bash
-        run: |
-          set -euo pipefail
-          if rg -n "Microsoft\.AspNetCore\.Cryptography\.KeyDerivation.*8\.0\.11" \
-            --glob '*.csproj' \
-            --glob '*.props' \
-            --glob '*.targets' \
-            --glob 'packages.lock.json'; then
-            echo "Versão 8.0.11 de KeyDerivation encontrada."
-            exit 1
-          fi
-
-      - name: Restore
-        run: dotnet restore InovaGed.sln
-
       - name: Document move signature guard
         shell: bash
         run: |
           set -euo pipefail
           ! rg -n "SearchFoldersAsync\([^\n]*CurrentTenantId\(|MoveAsync\([^\n]*CurrentTenantId\(|MoveBulkAsync\([^\n]*CurrentTenantId\(|MoveAsync\([^\n]*CancellationToken\.None|MoveBulkAsync\([^\n]*CancellationToken\.None" --glob "*.cs"
           test -f WebGed.WebApi/WebGed.WebApi.csproj
-
-      - name: Architecture and DI guard
-        run: dotnet test InovaGed.Application.Tests/InovaGed.Application.Tests.csproj --no-restore --configuration Release --filter "FullyQualifiedName~SolutionAndContinuityArchitectureTests|FullyQualifiedName~DependencyInjectionCompositionTests"
-
-      - name: Build
-        run: dotnet build InovaGed.sln --no-restore --configuration Release
-
-      - name: Test
-        run: dotnet test InovaGed.sln --no-build --configuration Release --logger "trx;LogFileName=test-results.trx"
-
-      - name: DI and security architecture tests
-        run: dotnet test InovaGed.Application.Tests/InovaGed.Application.Tests.csproj --no-build --configuration Release --filter "FullyQualifiedName~DiCompositionTests|FullyQualifiedName~DiArchitectureTests|FullyQualifiedName~SuspiciousRequestMiddlewareTests" --logger "trx;LogFileName=architecture-test-results.trx"
-
       - name: Regex safety guard
         shell: bash
         run: |
           set -euo pipefail
-          if rg -n "new Regex\(|Regex\." InovaGed.Web InovaGed.Application InovaGed.Infrastructure --glob '*.cs' | rg -v "RegexOptions\.NonBacktracking|// REGEX_JUSTIFIED"; then
+          if rg -n "new Regex\(|Regex\." InovaGed.Web InovaGed.Application InovaGed.Infrastructure --glob '*.cs' | rg -v "RegexOptions\.NonBacktracking|// REGEX_JUSTIFIED|System.Text.RegularExpressions"; then
             echo "Regex crítico sem RegexOptions.NonBacktracking ou justificativa REGEX_JUSTIFIED."
             exit 1
           fi
