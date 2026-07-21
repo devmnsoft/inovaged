@@ -6,10 +6,10 @@ using Microsoft.AspNetCore.Mvc;
 namespace InovaGed.Web.Controllers;
 
 [ApiController]
-[Authorize(Policy = "SignatureCmsCreate")]
 public sealed class SigningApiController(ISigningOrchestrator orchestrator) : ControllerBase
 {
     [HttpPost("/api/signing/sessions")]
+    [Authorize(Policy = "SignatureCmsCreate")]
     public async Task<IActionResult> Create([FromBody] CreateSigningSessionRequest request, CancellationToken ct)
     {
         Response.Headers.CacheControl = "no-store";
@@ -22,6 +22,7 @@ public sealed class SigningApiController(ISigningOrchestrator orchestrator) : Co
     }
 
     [HttpGet("/api/signing/sessions/{id:guid}")]
+    [Authorize(Policy = "SignatureView")]
     public IActionResult Get(Guid id) { Response.Headers.CacheControl = "no-store"; return Ok(new { id, status = "REQUESTED" }); }
 
     [HttpGet("/api/signing/sessions/{id:guid}/content")]
@@ -29,6 +30,7 @@ public sealed class SigningApiController(ISigningOrchestrator orchestrator) : Co
     { Response.Headers.CacheControl = "no-store"; return Unauthorized(new { error = "Content repository must validate one-time token before streaming the exact version." }); }
 
     [HttpPost("/api/signing/sessions/{id:guid}/complete")]
+    [Authorize(Policy = "SignatureCmsCreate")]
     public async Task<IActionResult> Complete(Guid id, [FromBody] CompleteSigningSessionRequest request, CancellationToken ct)
     {
         Response.Headers.CacheControl = "no-store";
@@ -39,6 +41,7 @@ public sealed class SigningApiController(ISigningOrchestrator orchestrator) : Co
     private Guid? ReadGuidClaim(string type) => Guid.TryParse(User.FindFirst(type)?.Value, out var value) ? value : null;
 
     [HttpPost("/api/signing/sessions/{id:guid}/cancel")]
+    [Authorize(Policy = "SignatureCmsCreate")]
     public IActionResult Cancel(Guid id) { Response.Headers.CacheControl = "no-store"; return NoContent(); }
 
     [HttpGet("/api/signatures/{id:guid}")]

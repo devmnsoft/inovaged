@@ -1,4 +1,4 @@
-# cms validation package
+# cms server persistence
 
 Documento de homologação da Evolução 04.1.3.
 

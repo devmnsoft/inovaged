@@ -1,4 +1,4 @@
-# cms validation package
+# signing agent pairing v2
 
 Documento de homologação da Evolução 04.1.3.
 

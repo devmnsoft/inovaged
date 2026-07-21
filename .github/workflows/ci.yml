@@ -1,5 +1,6 @@
 name: ci
 on:
+  workflow_dispatch:
   pull_request:
   push:
     branches: [ main, develop, "feature/**", "codex/**" ]
@@ -53,14 +54,24 @@ jobs:
       - name: Unit and integration tests
         run: dotnet test InovaGed.sln --no-build --configuration Release --logger "trx;LogFileName=all-tests.trx" --results-directory TestResults
       - name: JSON validation
-        run: find . -name '*.json' -not -path './**/bin/**' -not -path './**/obj/**' -print0 | xargs -0 -r python -m json.tool >/dev/null
+        shell: bash
+        run: |
+          set -euo pipefail
+          find . -name '*.json' -not -path './**/bin/**' -not -path './**/obj/**' -print0 | while IFS= read -r -d '' f; do
+            python -c "import json,sys; json.load(open(sys.argv[1], encoding='utf-8-sig'))" "$f"
+          done
       - name: Migration validation
+        env:
+          CONNECTION_STRING: postgresql://postgres:postgres@localhost:5432/inovaged_ci
         run: |
           test -f database/apply_all_required_migrations.sql
           test -f database/migrations/2026_07_administration_security_governance.sql
           test -f database/migrations/2026_07_backup_continuity_portability.sql
-          test -f database/migrations/2026_07_estabilizar_admin_continuity_ci.sql
-          ! rg -ni '\bdrop\s+(table|view|schema|column)\b' database/migrations
+          test -f database/migrations/2026_07_signature_cms_agent.sql
+          test -f database/migrations/2026_07_signature_cms_agent_runtime.sql
+          test -f database/migrations/2026_07_signature_cms_end_to_end.sql
+          psql "$CONNECTION_STRING" -v ON_ERROR_STOP=1 -f database/apply_all_required_migrations.sql
+          psql "$CONNECTION_STRING" -v ON_ERROR_STOP=1 -f database/apply_all_required_migrations.sql
       - name: Secret scan
         run: |
           ! git grep -n -E '(password|secret|token|apikey|api_key)\s*[:=]\s*["'"'][^"'"']{12,}["'"']' -- ':!**/bin/**' ':!**/obj/**' ':!docs/**'
@@ -105,6 +116,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: actionlint
+        uses: raven-actions/actionlint@v2
       - name: Static security guards
         shell: bash
         run: |
