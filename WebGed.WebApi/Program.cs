@@ -62,7 +62,7 @@ builder.Services.AddAuthorization(options =>
         => p.RequireRole("ADMIN", "ADMINISTRADOR", "ADMINISTRADOROPHIR");
     foreach (var policy in new[] { "ContinuityView", "ContinuityManage", "BackupRequest", "BackupVerify", "PortabilityExport", "PortabilityDownload", "RestoreTest", "TenantOffboarding", "GlobalTenantOperations" })
         options.AddPolicy(policy, RequireAdmin);
-    foreach (var policy in new[] { "SignatureView", "SignatureInternalCreate", "SignatureCryptographicCreate", "SignatureValidate", "SignatureDownload", "SignatureEvidenceView", "SignatureAdmin" })
+    foreach (var policy in new[] { "SignatureView", "SignatureInternalCreate", "SignatureCmsCreate", "SignatureValidate", "SignatureDownload", "SignatureEvidenceView", "SignatureAdmin" })
         options.AddPolicy(policy, RequireAdmin);
 });
 
