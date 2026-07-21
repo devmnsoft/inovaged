@@ -194,6 +194,8 @@ public static class InfrastructureServiceCollectionExtensions
             .ValidateDataAnnotations()
             .Validate(options => !options.AllowedAgentOrigins.Any(o => o == "*"), "DigitalSignature:AllowedAgentOrigins não pode conter origem curinga.")
             .Validate(options => !options.RequireLoopbackHttps || options.AgentBaseUrl.StartsWith("https://127.0.0.1", StringComparison.OrdinalIgnoreCase) || options.AgentBaseUrl.StartsWith("https://[::1]", StringComparison.OrdinalIgnoreCase), "AgentBaseUrl deve ser HTTPS loopback quando RequireLoopbackHttps=true.")
+            .Validate(options => Uri.TryCreate(options.PublicServerBaseUrl, UriKind.Absolute, out var publicUri) && publicUri.Scheme == Uri.UriSchemeHttps, "DigitalSignature:PublicServerBaseUrl deve ser uma URL HTTPS absoluta.")
+            .Validate(options => !(options.Enabled && options.RequireCertificateIdentityMatch) || (!string.IsNullOrWhiteSpace(options.CertificateIdentityHmacKeyVersion) && !string.IsNullOrWhiteSpace(options.CertificateIdentityHmacKey) && options.CertificateIdentityHmacKey.Length >= 32), "DigitalSignature:CertificateIdentityHmacKey e versão são obrigatórios com pelo menos 32 caracteres quando a conferência de identidade está habilitada.")
             .Validate(options => !string.Equals(environment, "Production", StringComparison.OrdinalIgnoreCase) || !options.AllowServerSidePfxUpload, "Upload PFX server-side é bloqueado em Production.")
             .Validate(options => !string.Equals(environment, "Production", StringComparison.OrdinalIgnoreCase) || !options.AllowInternalTestCertificates, "Certificados internos de teste são bloqueados em Production.")
             .ValidateOnStart();

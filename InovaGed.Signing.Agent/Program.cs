@@ -4,6 +4,45 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.Pkcs;
 using System.Security.Cryptography.X509Certificates;
 
+
+var cliArgs = args.Where(a => !string.Equals(a, "--", StringComparison.Ordinal)).ToArray();
+if (cliArgs.Length > 0)
+{
+    var command = cliArgs[0].TrimStart('-').ToLowerInvariant();
+    if (command is "version")
+    {
+        Console.WriteLine("InovaGed Signing Agent agent-cms-detached-v1");
+        return;
+    }
+    if (command is "doctor")
+    {
+        var configuredUrls = Environment.GetEnvironmentVariable("SigningAgent__Urls") ?? "https://127.0.0.1:17891;https://[::1]:17891";
+        foreach (var candidate in configuredUrls.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var uri = new Uri(candidate);
+            if (uri.Scheme != Uri.UriSchemeHttps || !IPAddress.TryParse(uri.Host.Trim('[', ']'), out var address) || !IPAddress.IsLoopback(address))
+            {
+                Console.Error.WriteLine($"Invalid listener URL for local agent: {candidate}");
+                Environment.ExitCode = 2;
+                return;
+            }
+        }
+        Console.WriteLine("Signing Agent doctor: healthy");
+        return;
+    }
+    if (command is "install" or "uninstall" or "rotate-certificate")
+    {
+        Console.WriteLine($"Signing Agent {command}: no-op in portable build");
+        return;
+    }
+    if (command is not "serve")
+    {
+        Console.Error.WriteLine("Usage: InovaGed.Signing.Agent [serve|doctor|version|install|uninstall|rotate-certificate]");
+        Environment.ExitCode = 64;
+        return;
+    }
+}
+
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.Configure<AgentOptions>(builder.Configuration.GetSection("SigningAgent"));
 builder.Services.AddSingleton<PairingStore>();
@@ -35,9 +74,9 @@ app.MapGet("/info", () => Results.Ok(new { product = "InovaGed Signing Agent", p
 app.MapPost("/pair", (PairingRequest request, PairingStore store) => store.Create(request));
 app.MapDelete("/pairing", (string token, PairingStore store) => store.Revoke(token) ? Results.NoContent() : Results.NotFound());
 app.MapGet("/certificates", (HttpRequest req, IAgentAuthenticationService auth, CertificateStoreReader reader) => auth.Authenticate(req) ? Results.Ok(reader.ListUsableCertificates()) : Results.Unauthorized());
-app.MapPost("/operations", async (CmsSignRequest request, OperationStore operations, PairingStore pairings, CertificateStoreReader certs, CancellationToken ct) =>
+app.MapPost("/operations", async (CmsSignRequest request, HttpRequest http, IAgentAuthenticationService auth, OperationStore operations, CertificateStoreReader certs, CancellationToken ct) =>
 {
-    if (!pairings.IsValid(request.PairingToken, request.Origin)) return Results.Unauthorized();
+    if (!auth.Authenticate(http)) return Results.Unauthorized();
     var op = await operations.CreateAsync(request, certs, ct);
     return Results.Accepted($"/operations/{op.Id}", op.PublicView());
 });
@@ -52,7 +91,7 @@ public sealed class AgentOptions { public string[] AllowedOrigins { get; set; } 
 public sealed record PairingRequest(string Origin, string Code);
 public sealed record PairingResponse(string PairingToken, DateTimeOffset ExpiresAt);
 public sealed record CertificateInfo(string Thumbprint, string Name, string Issuer, string Serial, DateTimeOffset NotBefore, DateTimeOffset NotAfter, string Algorithm, string? MaskedCpf, bool HasPrivateKey, string KeyKind);
-public sealed record CmsSignRequest(string PairingToken, string Origin, Uri ContentUrl, string ContentToken, string ExpectedSha256, string CertificateThumbprint, string DocumentName, string Version, long Size, string Purpose);
+public sealed record CmsSignRequest(Uri ContentUrl, string ContentToken, string ExpectedSha256, string CertificateThumbprint, string DocumentName, string Version, long Size, string Purpose);
 public sealed record CmsSignResult(Guid OperationId, string Status, string SignatureCmsBase64, string SignatureHashSha256, string CertificateDerBase64, CertificateInfo Certificate);
 
 public sealed class PairingStore : IAgentPairingService
@@ -73,10 +112,9 @@ public sealed class PairingStore : IAgentPairingService
     public bool Revoke(string token) => _tokens.TryRemove(token, out _);
 }
 
-public sealed class OperationStore
+public sealed class OperationStore(ISigningContentDownloader downloader)
 {
     private readonly ConcurrentDictionary<Guid, SigningOperation> _operations = new();
-    private static readonly HttpClient Http = new();
     public async Task<SigningOperation> CreateAsync(CmsSignRequest request, CertificateStoreReader certs, CancellationToken ct)
     {
         var cert = certs.Find(request.CertificateThumbprint) ?? throw new InvalidOperationException("Certificado não encontrado.");
@@ -87,26 +125,10 @@ public sealed class OperationStore
     }
     public bool TryGet(Guid id, out SigningOperation? op) => _operations.TryGetValue(id, out op);
     public bool Cancel(Guid id) => _operations.TryUpdate(id, _operations[id] with { Status = "CANCELLED" }, _operations[id]);
-    private static void ValidateContentUrl(Uri url)
-    {
-        if (url.Scheme != Uri.UriSchemeHttps) throw new InvalidOperationException("CONTENT_URL_HTTPS_REQUIRED");
-        if (!string.IsNullOrEmpty(url.UserInfo)) throw new InvalidOperationException("CONTENT_URL_CREDENTIALS_FORBIDDEN");
-        if (IPAddress.TryParse(url.Host, out var ip) && (IPAddress.IsLoopback(ip) || IsPrivate(ip))) throw new InvalidOperationException("CONTENT_URL_PRIVATE_NETWORK_FORBIDDEN");
-    }
-    private static bool IsPrivate(IPAddress ip)
-    {
-        var b = ip.GetAddressBytes();
-        return ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork && (b[0] == 10 || (b[0] == 172 && b[1] >= 16 && b[1] <= 31) || (b[0] == 192 && b[1] == 168) || (b[0] == 169 && b[1] == 254));
-    }
     public async Task<CmsSignResult?> ConfirmAndSignAsync(Guid id, CertificateStoreReader certs, CancellationToken ct)
     {
         if (!_operations.TryGetValue(id, out var op) || op.Status != "WAITING_CONFIRMATION" || op.ExpiresAt < DateTimeOffset.UtcNow) return null;
-        ValidateContentUrl(op.Request.ContentUrl);
-        using var request = new HttpRequestMessage(HttpMethod.Get, op.Request.ContentUrl);
-        request.Headers.Add("X-InovaGed-Content-Token", op.Request.ContentToken);
-        using var response = await Http.SendAsync(request, ct);
-        response.EnsureSuccessStatusCode();
-        var bytes = await response.Content.ReadAsByteArrayAsync(ct);
+        var bytes = await downloader.DownloadAsync(op.Request.ContentUrl, op.Request.ContentToken, op.Request.Size, ct);
         var hash = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
         if (!CryptographicOperations.FixedTimeEquals(Convert.FromHexString(hash), Convert.FromHexString(op.Request.ExpectedSha256))) throw new InvalidOperationException("DOCUMENT_CHANGED");
         var cert = certs.Find(op.Request.CertificateThumbprint) ?? throw new InvalidOperationException("Certificado indisponível.");
@@ -132,7 +154,7 @@ public sealed class CertificateStoreReader : ILocalCertificateStore
         using var store = new X509Store(StoreName.My, StoreLocation.CurrentUser); store.Open(OpenFlags.ReadOnly);
         return store.Certificates.OfType<X509Certificate2>().Where(c => c.HasPrivateKey && DateTimeOffset.UtcNow >= c.NotBefore && DateTimeOffset.UtcNow <= c.NotAfter && AllowsDigitalSignature(c)).ToArray();
     }
-    public CertificateInfo ToInfo(X509Certificate2 c) => new(Normalize(c.Thumbprint), c.GetNameInfo(X509NameType.SimpleName, false), c.Issuer, c.SerialNumber, c.NotBefore, c.NotAfter, c.PublicKey.Oid.FriendlyName ?? c.PublicKey.Oid.Value ?? "unknown", MaskCpf(c.Subject), c.HasPrivateKey, c.GetRSAPrivateKey() is not null ? "A1/A3" : "UNKNOWN");
+    public CertificateInfo ToInfo(X509Certificate2 c) => new(Normalize(c.Thumbprint), c.GetNameInfo(X509NameType.SimpleName, false), c.Issuer, c.SerialNumber, c.NotBefore, c.NotAfter, c.PublicKey.Oid.FriendlyName ?? c.PublicKey.Oid.Value ?? "unknown", MaskCpf(c.Subject), c.HasPrivateKey, "UNKNOWN");
     private static bool AllowsDigitalSignature(X509Certificate2 c) => c.Extensions.OfType<X509KeyUsageExtension>().FirstOrDefault() is not { } ku || ku.KeyUsages.HasFlag(X509KeyUsageFlags.DigitalSignature);
     private static string Normalize(string? s) => (s ?? string.Empty).Replace(" ", string.Empty).ToUpperInvariant();
     private static string? MaskCpf(string subject) { var digits = new string(subject.Where(char.IsDigit).ToArray()); return digits.Length >= 11 ? $"***.{digits[^8..^5]}.{digits[^5..^2]}-**" : null; }

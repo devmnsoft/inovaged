@@ -12,6 +12,9 @@ public sealed class DigitalSignatureOptions
     [Range(1, 1024)] public int MaxDocumentSizeMb { get; set; } = 100;
     [Required] public string HashAlgorithm { get; set; } = "SHA256";
     public bool RequireCertificateIdentityMatch { get; set; } = true;
+    public string PublicServerBaseUrl { get; set; } = "https://gedophir.sistemasld.com.br";
+    public string? CertificateIdentityHmacKey { get; set; }
+    public string? CertificateIdentityHmacKeyVersion { get; set; }
     public bool AllowServerSidePfxUpload { get; set; }
     public bool AllowInternalTestCertificates { get; set; }
     public bool RequireLoopbackHttps { get; set; } = true;
