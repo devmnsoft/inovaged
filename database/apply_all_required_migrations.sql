@@ -2960,4 +2960,4 @@ where coalesce(reg_status, 'A') = 'A';
 \i database/migrations/2026_07_backup_continuity_portability.sql
 \i database/migrations/2026_07_estabilizar_admin_continuity_ci.sql
 
-\i database/migrations/2026_07_signature_cms_agent.sql
+\i database/migrations/2026_07_signature_cms_agent_runtime.sql

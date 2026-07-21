@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace InovaGed.Web.Controllers;
 
 [ApiController]
-[Authorize(Policy = "SignatureCryptographicCreate")]
+[Authorize(Policy = "SignatureCmsCreate")]
 public sealed class SigningApiController(ISigningOrchestrator orchestrator) : ControllerBase
 {
     [HttpPost("/api/signing/sessions")]
@@ -29,6 +29,10 @@ public sealed class SigningApiController(ISigningOrchestrator orchestrator) : Co
     [HttpPost("/api/signing/sessions/{id:guid}/cancel")]
     public IActionResult Cancel(Guid id) { Response.Headers.CacheControl = "no-store"; return NoContent(); }
 
+    [HttpGet("/api/signatures/{id:guid}")]
+    [Authorize(Policy = "SignatureView")]
+    public IActionResult Signature(Guid id) { Response.Headers.CacheControl = "no-store"; return Ok(new { id, type = "CMS_DETACHED", conformityStatus = "NOT_EVALUATED" }); }
+
     [HttpGet("/api/signatures/{id:guid}/validation")]
     [Authorize(Policy = "SignatureValidate")]
     public IActionResult Validation(Guid id) { Response.Headers.CacheControl = "no-store"; return Ok(new { id, conformityStatus = "NOT_EVALUATED" }); }
@@ -36,4 +40,8 @@ public sealed class SigningApiController(ISigningOrchestrator orchestrator) : Co
     [HttpGet("/api/signatures/{id:guid}/download")]
     [Authorize(Policy = "SignatureDownload")]
     public IActionResult Download(Guid id) { Response.Headers.CacheControl = "no-store"; return NotFound(); }
+
+    [HttpGet("/api/signatures/{id:guid}/package")]
+    [Authorize(Policy = "SignatureDownload")]
+    public IActionResult Package(Guid id) { Response.Headers.CacheControl = "no-store"; return NotFound(); }
 }

@@ -73,3 +73,29 @@ jobs:
           path: |
             *.log
             TestResults/**/*.trx
+
+  signing-agent-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Restore agent
+        run: dotnet restore InovaGed.Signing.Agent/InovaGed.Signing.Agent.csproj
+      - name: Build agent Release
+        run: dotnet build InovaGed.Signing.Agent/InovaGed.Signing.Agent.csproj --no-restore --configuration Release
+      - name: Test agent guards
+        run: dotnet test InovaGed.Signing.Agent.Tests/InovaGed.Signing.Agent.Tests.csproj --configuration Release --logger "trx;LogFileName=signing-agent-windows.trx" --results-directory TestResults
+      - name: Publish win-x64
+        run: dotnet publish InovaGed.Signing.Agent/InovaGed.Signing.Agent.csproj --configuration Release --runtime win-x64 --self-contained false --output publish/signing-agent-win-x64
+      - name: Verify executable
+        shell: pwsh
+        run: Test-Path publish/signing-agent-win-x64/InovaGed.Signing.Agent.exe
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: signing-agent-windows
+          path: |
+            TestResults/**/*.trx
+            publish/signing-agent-win-x64/**
