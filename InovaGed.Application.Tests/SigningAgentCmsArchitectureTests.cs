@@ -37,3 +37,34 @@ public sealed class SigningAgentCmsArchitectureTests
         Assert.Contains("CmsDetachedSignatureValidationService", source);
     }
 }
+
+public sealed class SigningAgentCmsEndToEndGuards
+{
+    private static readonly string Root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../"));
+
+    [Fact]
+    public void AgentCmsModeRegistersPostgresRepositoriesInsteadOfNoopDefaults()
+    {
+        var source = File.ReadAllText(Path.Combine(Root, "InovaGed.Infrastructure/DependencyInjection.cs"));
+        Assert.Contains("services.AddScoped<ISigningSessionRepository, PostgresSigningSessionRepository>()", source);
+        Assert.Contains("services.AddScoped<ISignatureEvidenceRepository, PostgresSignatureEvidenceRepository>()", source);
+        Assert.Contains("else\n        {\n            services.AddScoped<ISigningSessionRepository, NoopSigningSessionRepository>()", source);
+    }
+
+    [Fact]
+    public void PublicSigningControllerDoesNotBindInternalPrepareCommand()
+    {
+        var source = File.ReadAllText(Path.Combine(Root, "InovaGed.Web/Controller/SigningApiController.cs"));
+        Assert.Contains("CreateSigningSessionRequest request", source);
+        Assert.DoesNotContain("Create([FromBody] PrepareSignatureCommand", source);
+        Assert.Contains("CompleteSigningSessionRequest request", source);
+    }
+
+    [Fact]
+    public void CertificateIdentityUsesHmacInsteadOfPlainSha256CpfSearch()
+    {
+        var source = File.ReadAllText(Path.Combine(Root, "InovaGed.Infrastructure/Signatures/CmsDetachedSignatureServices.cs"));
+        Assert.Contains("HMACSHA256", source);
+        Assert.DoesNotContain("SHA256.HashData(Encoding.UTF8.GetBytes(cpf))", source);
+    }
+}

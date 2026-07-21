@@ -4,7 +4,7 @@ on:
   push:
     branches: [ main, develop, "feature/**", "codex/**" ]
 jobs:
-  build-test:
+  server-linux:
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -74,7 +74,7 @@ jobs:
             *.log
             TestResults/**/*.trx
 
-  signing-agent-windows:
+  agent-windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -99,3 +99,17 @@ jobs:
           path: |
             TestResults/**/*.trx
             publish/signing-agent-win-x64/**
+
+
+  security-guards:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Static security guards
+        shell: bash
+        run: |
+          set -euo pipefail
+          ! rg -n "AllowAnyOrigin" --glob '!**/bin/**' --glob '!**/obj/**' .
+          ! rg -n "return Task.FromResult\(.*VALID" InovaGed.Infrastructure/Signatures InovaGed.Web/Common --glob '!**/bin/**' --glob '!**/obj/**'
+          ! rg -n "NoopSigningSessionRepository|NoopSignatureEvidenceRepository" InovaGed.Infrastructure/DependencyInjection.cs | rg "AgentCms"
+          ! rg -n "BEGIN (RSA|OPENSSH|DSA|EC) PRIVATE KEY|PRIVATE KEY-----" --glob '!**/bin/**' --glob '!**/obj/**' .

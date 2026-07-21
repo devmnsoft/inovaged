@@ -198,17 +198,24 @@ public static class InfrastructureServiceCollectionExtensions
             .Validate(options => !string.Equals(environment, "Production", StringComparison.OrdinalIgnoreCase) || !options.AllowInternalTestCertificates, "Certificados internos de teste são bloqueados em Production.")
             .ValidateOnStart();
 
-        services.TryAddScoped<ISigningSessionRepository, NoopSigningSessionRepository>();
-        services.TryAddScoped<ISignatureEvidenceRepository, NoopSignatureEvidenceRepository>();
         services.TryAddScoped<ICertificateIdentityService, CertificateIdentityService>();
 
         if (enabled && string.Equals(mode, "AgentCms", StringComparison.OrdinalIgnoreCase))
         {
+            services.AddScoped<ISigningSessionRepository, PostgresSigningSessionRepository>();
+            services.AddScoped<ISignatureRepository, PostgresSignatureRepository>();
+            services.AddScoped<ISignatureEvidenceRepository, PostgresSignatureEvidenceRepository>();
+            services.AddScoped<ISignatureValidationRepository, PostgresSignatureValidationRepository>();
+            services.AddScoped<ISignatureEventRepository, PostgresSignatureEventRepository>();
+            services.AddScoped<IDocumentVersionSigningContentService, DocumentVersionSigningContentService>();
+            services.AddScoped<ISignaturePackageService, SignaturePackageService>();
             services.AddScoped<ISignatureValidationService, CmsDetachedSignatureValidationService>();
             services.AddScoped<ISigningOrchestrator, CmsSigningOrchestrator>();
         }
         else
         {
+            services.AddScoped<ISigningSessionRepository, NoopSigningSessionRepository>();
+            services.AddScoped<ISignatureEvidenceRepository, NoopSignatureEvidenceRepository>();
             services.AddScoped<ISignatureValidationService, NotConfiguredSignatureValidationService>();
             services.AddScoped<ISigningOrchestrator, NotConfiguredSigningOrchestrator>();
         }
