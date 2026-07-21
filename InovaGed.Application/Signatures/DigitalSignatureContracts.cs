@@ -1,11 +1,13 @@
 namespace InovaGed.Application.Signatures;
 
 public enum SignatureType { INTERNAL, CMS_DETACHED, PADES, CADES, IMPORTED, REMOTE_PROVIDER }
-public enum SigningProcessStatus { REQUESTED, WAITING_SIGNER, SIGNING, SIGNED, VALIDATING, COMPLETED, FAILED, CANCELLED, EXPIRED }
+public enum SigningProcessStatus { REQUESTED, WAITING_AGENT, CONTENT_ACCESSED, WAITING_CONFIRMATION, SIGNING, VALIDATING, COMPLETED, FAILED, CANCELLED, EXPIRED }
 public enum SignatureValidationStatus { PENDING, VALID, INVALID, INDETERMINATE, NOT_VERIFIABLE, REVOKED, EXPIRED, NOT_YET_VALID, TRUSTED_TEST_CHAIN, TRUSTED_SYSTEM_CHAIN, UNTRUSTED_CHAIN, POLICY_INVALID, CPF_MISMATCH, CERTIFICATE_PURPOSE_INVALID, TIMESTAMP_INVALID, DOCUMENT_CHANGED, SIGNATURE_CORRUPTED, UNSUPPORTED_ALGORITHM, INTERNAL_ONLY }
 public enum SignatureConformityStatus { NOT_EVALUATED, INDETERMINATE, NON_COMPLIANT, COMPLIANT }
 public enum SignatureProfile { AD_RB, AD_RT, AD_RV, AD_RC, AD_RA, UNKNOWN, NOT_APPLICABLE }
 
+public sealed record CreateSigningSessionRequest(Guid DocumentId, Guid DocumentVersionId, string? Purpose);
+public sealed record CompleteSigningSessionRequest(string CompletionToken, string IdempotencyKey, string SignatureCmsBase64, string CertificateDerBase64, IReadOnlyList<string> CertificateChainDerBase64, string AgentOperationId, string AgentVersion);
 public sealed record PrepareSignatureCommand(Guid TenantId, Guid UserId, Guid DocumentId, Guid DocumentVersionId, SignatureType Type, string Format, string? PolicyOid, string ContentHash, string ContentHashAlgorithm, string Nonce, DateTimeOffset ExpiresAt, string CorrelationId);
 public sealed record PrepareSignatureResult(bool Success, Guid? SessionId, SigningProcessStatus Status, string? Nonce, DateTimeOffset? ExpiresAt, string? Error);
 public sealed record CompleteSignatureCommand(Guid SessionId, byte[] Signature, byte[] PublicCertificateDer, IReadOnlyList<byte[]> CertificateChainDer, byte[]? TimestampToken, IReadOnlyDictionary<string, string> TechnicalMetadata);
@@ -30,6 +32,11 @@ public interface ITimestampAuthorityClient { Task<TimestampTokenResult> RequestT
 public interface ISignaturePolicyCatalog { Task<SignaturePolicyDescriptor?> GetActiveForGenerationAsync(SignatureType type, SignatureProfile profile, CancellationToken ct); Task<SignaturePolicyDescriptor?> GetAcceptedForVerificationAsync(string oid, string? version, DateTimeOffset signingTime, CancellationToken ct); }
 public interface ISignatureEvidenceRepository { Task StoreAsync(SignatureEvidence evidence, CancellationToken ct); }
 public interface ISigningSessionRepository { Task SaveAsync(PrepareSignatureCommand command, PrepareSignatureResult result, CancellationToken ct); }
+public interface ISignatureRepository { }
+public interface ISignatureValidationRepository { }
+public interface ISignatureEventRepository { }
+public interface IDocumentVersionSigningContentService { }
+public interface ISignaturePackageService { }
 public interface ISigningJobRepository { Task SaveEventAsync(Guid jobId, string message, CancellationToken ct); }
 public interface ISignedDocumentVersionService { Task<Guid> CreateSignedVersionAsync(Guid tenantId, Guid documentId, Guid sourceVersionId, byte[] signedBytes, string contentHash, CancellationToken ct); }
 public interface IImportedSignatureDetector { Task<SignatureValidationReport> DetectAndValidateAsync(Guid tenantId, Guid documentId, Guid documentVersionId, byte[] contentBytes, CancellationToken ct); }
