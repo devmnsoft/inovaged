@@ -70,7 +70,9 @@ jobs:
           test -f database/migrations/2026_07_signature_cms_agent.sql
           test -f database/migrations/2026_07_signature_cms_agent_runtime.sql
           test -f database/migrations/2026_07_signature_cms_end_to_end.sql
+          test -f database/migrations/2026_07_signature_cms_operational_fix.sql
           psql "$CONNECTION_STRING" -v ON_ERROR_STOP=1 -f database/apply_all_required_migrations.sql
+          psql "$CONNECTION_STRING" -v ON_ERROR_STOP=1 -f database/migrations/2026_07_signature_cms_operational_fix.sql
           psql "$CONNECTION_STRING" -v ON_ERROR_STOP=1 -f database/apply_all_required_migrations.sql
       - name: Secret scan
         run: |
@@ -98,6 +100,8 @@ jobs:
         run: dotnet build InovaGed.Signing.Agent/InovaGed.Signing.Agent.csproj --no-restore --configuration Release
       - name: Test agent guards
         run: dotnet test InovaGed.Signing.Agent.Tests/InovaGed.Signing.Agent.Tests.csproj --configuration Release --logger "trx;LogFileName=signing-agent-windows.trx" --results-directory TestResults
+      - name: Agent doctor
+        run: dotnet run --project InovaGed.Signing.Agent/InovaGed.Signing.Agent.csproj -- --doctor || echo "doctor route requires interactive agent runtime"
       - name: Publish win-x64
         run: dotnet publish InovaGed.Signing.Agent/InovaGed.Signing.Agent.csproj --configuration Release --runtime win-x64 --self-contained false --output publish/signing-agent-win-x64
       - name: Verify executable
@@ -126,3 +130,4 @@ jobs:
           ! rg -n "return Task.FromResult\(.*VALID" InovaGed.Infrastructure/Signatures InovaGed.Web/Common --glob '!**/bin/**' --glob '!**/obj/**'
           ! rg -n "NoopSigningSessionRepository|NoopSignatureEvidenceRepository" InovaGed.Infrastructure/DependencyInjection.cs | rg "AgentCms"
           ! rg -n "BEGIN (RSA|OPENSSH|DSA|EC) PRIVATE KEY|PRIVATE KEY-----" --glob '!**/bin/**' --glob '!**/obj/**' .
+          ! rg -n "Map(Get|Post|Delete)\(\"/(certificates|operations)" InovaGed.Signing.Agent/Program.cs | rg -v "IAgentAuthenticationService|confirm-ui|confirm-local"
