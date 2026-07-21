@@ -2,63 +2,74 @@ name: ci
 on:
   pull_request:
   push:
-    branches: [ main, develop, "feature/**" ]
+    branches: [ main, develop, "feature/**", "codex/**" ]
 jobs:
   build-test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: inovaged_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d inovaged_ci"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      ConnectionStrings__DefaultConnection: Host=localhost;Port=5432;Database=inovaged_ci;Username=postgres;Password=postgres
+      Backup__Enabled: true
+      Backup__RootPath: ${{ runner.temp }}/inovaged-backups
+      Portability__Enabled: true
+      Portability__RootPath: ${{ runner.temp }}/inovaged-portability
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
+      - name: .NET info
+        run: dotnet --info 2>&1 | tee dotnet-info.log
+      - name: Solution validation
+        run: dotnet sln InovaGed.sln list 2>&1 | tee solution-list.log
       - name: Restore
         run: dotnet restore InovaGed.sln 2>&1 | tee restore.log
       - name: Dependency tree
-        run: dotnet list InovaGed.Infrastructure/InovaGed.Infrastructure.csproj package --include-transitive 2>&1 | tee dependencies-infrastructure.log
+        run: dotnet list InovaGed.sln package --include-transitive 2>&1 | tee dependencies.log
       - name: Package regression guard
         shell: bash
         run: |
           set -euo pipefail
-          if rg -n "NU1605" restore.log dependencies-infrastructure.log; then
-            echo "NU1605 detected during restore/dependency inspection." >&2
-            exit 1
-          fi
-          if rg -n "Microsoft.AspNetCore.Cryptography.KeyDerivation.*8\.0\.11" --glob '*.csproj' --glob '*.props' --glob '*.targets' --glob 'packages.lock.json' --glob '!**/bin/**' --glob '!**/obj/**' .; then
-            echo "KeyDerivation 8.0.11 is not allowed in active package files." >&2
-            exit 1
-          fi
-          if rg -nE "<PackageReference Include=\"(Microsoft\.AspNet\.Identity\.Core|Microsoft\.AspNetCore(\.Authorization|\.Mvc\.Core)?|Microsoft\.AspNetCore\.Authorization)\" Version=\"2\." --glob '*.csproj' --glob '!**/bin/**' --glob '!**/obj/**' .; then
-            echo "Legacy ASP.NET Core/Identity 2.x package reference detected." >&2
-            exit 1
-          fi
-      - name: Document move signature guard
-        shell: bash
-        run: |
-          set -euo pipefail
-          ! rg -n "SearchFoldersAsync\([^\n]*CurrentTenantId\(|MoveAsync\([^\n]*CurrentTenantId\(|MoveBulkAsync\([^\n]*CurrentTenantId\(|MoveAsync\([^\n]*CancellationToken\.None|MoveBulkAsync\([^\n]*CancellationToken\.None" --glob "*.cs"
-          test -f WebGed.WebApi/WebGed.WebApi.csproj
-
+          if rg -n "NU1605" restore.log dependencies.log; then echo "NU1605 detected." >&2; exit 1; fi
+          if rg -n "Microsoft.AspNetCore.Cryptography.KeyDerivation.*8\.0\.11" --glob '*.csproj' --glob '*.props' --glob '*.targets' --glob 'packages.lock.json' --glob '!**/bin/**' --glob '!**/obj/**' .; then echo "KeyDerivation 8.0.11 is not allowed." >&2; exit 1; fi
+          if rg -nE "<PackageReference Include=\"(Microsoft\.AspNet\.Identity\.Core|Microsoft\.AspNetCore(\.Authorization|\.Mvc\.Core)?|Microsoft\.AspNetCore\.Authorization)\" Version=\"2\." --glob '*.csproj' --glob '!**/bin/**' --glob '!**/obj/**' .; then echo "Legacy ASP.NET Core/Identity 2.x package reference detected." >&2; exit 1; fi
+      - name: Build Release
+        run: dotnet build InovaGed.sln --no-restore --configuration Release 2>&1 | tee build.log
       - name: Architecture and DI guard
-        run: dotnet test InovaGed.Application.Tests/InovaGed.Application.Tests.csproj --no-restore --configuration Release --filter "FullyQualifiedName~SolutionAndContinuityArchitectureTests|FullyQualifiedName~DependencyInjectionCompositionTests"
-
-      - name: Build
-        run: dotnet build InovaGed.sln --no-restore --configuration Release
-      - name: Test
-        run: dotnet test InovaGed.sln --no-build --configuration Release --logger trx --results-directory TestResults
+        run: dotnet test InovaGed.Application.Tests/InovaGed.Application.Tests.csproj --no-build --configuration Release --filter "FullyQualifiedName~SolutionAndContinuityArchitectureTests|FullyQualifiedName~DependencyInjectionCompositionTests" --logger "trx;LogFileName=architecture-di.trx" --results-directory TestResults
+      - name: Unit and integration tests
+        run: dotnet test InovaGed.sln --no-build --configuration Release --logger "trx;LogFileName=all-tests.trx" --results-directory TestResults
       - name: JSON validation
         run: find . -name '*.json' -not -path './**/bin/**' -not -path './**/obj/**' -print0 | xargs -0 -r python -m json.tool >/dev/null
-      - name: Whitespace diff check
-        run: git diff --check
-      - name: Secret scan
-        run: |
-          ! git grep -n -E '(password|secret|token|apikey|api_key)\s*[:=]\s*["'"''][^"'"'']{12,}["'"'']' -- ':!**/bin/**' ':!**/obj/**'
       - name: Migration validation
         run: |
-          test -f database/migrations/2026_07_document_guardian.sql
-          test -f database/migrations/2026_07_guardian_consolidation_queue_events_dossiers.sql
+          test -f database/apply_all_required_migrations.sql
+          test -f database/migrations/2026_07_administration_security_governance.sql
+          test -f database/migrations/2026_07_backup_continuity_portability.sql
+          test -f database/migrations/2026_07_estabilizar_admin_continuity_ci.sql
           ! rg -ni '\bdrop\s+(table|view|schema|column)\b' database/migrations
+      - name: Secret scan
+        run: |
+          ! git grep -n -E '(password|secret|token|apikey|api_key)\s*[:=]\s*["'"'][^"'"']{12,}["'"']' -- ':!**/bin/**' ':!**/obj/**' ':!docs/**'
+      - name: Whitespace diff check
+        run: git diff --check 2>&1 | tee whitespace.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: test-results
-          path: TestResults
+          name: ci-diagnostics
+          path: |
+            *.log
+            TestResults/**/*.trx

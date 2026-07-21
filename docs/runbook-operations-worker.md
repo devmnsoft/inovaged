@@ -1,6 +1,7 @@
-# Runbook Operations Worker
+# Runbook — Operations Worker
 
-- O worker permanece desabilitado por padrão via `Operations:WorkerEnabled=false`.
-- Para homologação, configurar connection string, habilitar o worker e registrar `workerId` único por instância.
-- O claim usa transação e `FOR UPDATE SKIP LOCKED`, preenchendo `worker_id`, `locked_until_utc`, `current_step` e `progress_percent`.
-- Em incidentes, pausar o worker, analisar `ged.backup_job` e mover manualmente para `RETRY` apenas jobs idempotentes.
+1. Configurar `ConnectionStrings:DefaultConnection`, `Backup:Enabled=true`, `Backup:RootPath` e caminho de binários PostgreSQL quando necessário.
+2. Executar o worker com identidade sem privilégios administrativos locais.
+3. Monitorar `ged.operations_worker_heartbeat`, `ged.backup_job` e `ged.operation_job_event`.
+4. Jobs válidos usam estados `PENDING`, `CLAIMED`, `RUNNING`, `VERIFYING`, `COMPLETED`, `RETRY`, `FAILED`, `CANCEL_REQUESTED`, `CANCELLED` e `DEAD_LETTER`.
+5. Em falha, conferir `current_step`, eventos e artefatos `.partial` antes de reprocessar.
