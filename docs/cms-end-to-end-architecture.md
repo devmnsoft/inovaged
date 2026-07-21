@@ -1,4 +1,4 @@
-# cms validation package
+# cms end to end architecture
 
 Documento de homologação da Evolução 04.1.3.
 
