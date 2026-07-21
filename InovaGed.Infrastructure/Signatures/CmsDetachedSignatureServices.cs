@@ -5,7 +5,11 @@ using System.Text;
 using System.Text.RegularExpressions;
 using Dapper;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Options;
 using InovaGed.Application.Common.Database;
+using InovaGed.Application.Common.Storage;
+using System.IO.Compression;
+using System.Text.Json;
 using InovaGed.Application.Signatures;
 
 namespace InovaGed.Infrastructure.Signatures;
@@ -111,28 +115,218 @@ public sealed class NoopSigningSessionRepository : ISigningSessionRepository
 }
 public sealed class PostgresSignatureRepository(IDbConnectionFactory db) : ISignatureRepository
 {
-    public async Task<Guid> CreateAsync(DocumentSignatureRecord signature, CancellationToken ct) { await using var c = await db.OpenAsync(ct); await c.ExecuteAsync(new CommandDefinition("insert into ged.document_signature (id,tenant_id,signing_session_id,document_id,document_version_id,signature_type,signature_format,signature_profile,signature_source,cryptographic_status,validation_status,conformity_status,cms_bytes,cms_sha256,content_sha256,certificate_der,certificate_chain_der,engine_version,correlation_id,created_at) values (@Id,@TenantId,@SessionId,@DocumentId,@DocumentVersionId,@SignatureType,@SignatureFormat,@SignatureProfile,@SignatureSource,@CryptographicStatus,@ValidationStatus,@ConformityStatus,@CmsBytes,@CmsSha256,@ContentSha256,@CertificateDer,@CertificateChainDer,@EngineVersion,@CorrelationId,@CreatedAt) on conflict (tenant_id, signing_session_id) do nothing", new { signature.Id, signature.TenantId, signature.SessionId, signature.DocumentId, signature.DocumentVersionId, signature.SignatureType, signature.SignatureFormat, signature.SignatureProfile, signature.SignatureSource, signature.CryptographicStatus, signature.ValidationStatus, signature.ConformityStatus, signature.CmsBytes, signature.CmsSha256, signature.ContentSha256, signature.CertificateDer, CertificateChainDer=signature.CertificateChainDer.ToArray(), signature.EngineVersion, signature.CorrelationId, signature.CreatedAt }, cancellationToken: ct)); return signature.Id; }
-    public async Task<DocumentSignatureRecord?> GetAsync(Guid tenantId, Guid signatureId, CancellationToken ct) { await using var c=await db.OpenAsync(ct); return await c.QuerySingleOrDefaultAsync<DocumentSignatureRecord>(new CommandDefinition("select id,tenant_id TenantId,signing_session_id SessionId,document_id DocumentId,document_version_id DocumentVersionId,signature_type SignatureType,signature_format SignatureFormat,signature_profile SignatureProfile,signature_source SignatureSource,cryptographic_status CryptographicStatus,validation_status ValidationStatus,conformity_status ConformityStatus,cms_sha256 CmsSha256,content_sha256 ContentSha256,cms_bytes CmsBytes,certificate_der CertificateDer,engine_version EngineVersion,correlation_id CorrelationId,created_at CreatedAt from ged.document_signature where tenant_id=@tenantId and id=@signatureId", new{tenantId,signatureId}, cancellationToken:ct)); }
-    public async Task<IReadOnlyList<DocumentSignatureRecord>> ListByDocumentAsync(Guid tenantId, Guid documentId, CancellationToken ct) { await using var c=await db.OpenAsync(ct); return (await c.QueryAsync<DocumentSignatureRecord>(new CommandDefinition("select id,tenant_id TenantId,signing_session_id SessionId,document_id DocumentId,document_version_id DocumentVersionId,signature_type SignatureType,signature_format SignatureFormat,signature_profile SignatureProfile,signature_source SignatureSource,cryptographic_status CryptographicStatus,validation_status ValidationStatus,conformity_status ConformityStatus,cms_sha256 CmsSha256,content_sha256 ContentSha256,cms_bytes CmsBytes,certificate_der CertificateDer,engine_version EngineVersion,correlation_id CorrelationId,created_at CreatedAt from ged.document_signature where tenant_id=@tenantId and document_id=@documentId order by created_at desc", new{tenantId,documentId}, cancellationToken:ct))).ToList(); }
-    public Task<IReadOnlyList<DocumentSignatureRecord>> ListByVersionAsync(Guid tenantId, Guid documentId, Guid documentVersionId, CancellationToken ct) => ListByDocumentAsync(tenantId, documentId, ct);
+    private const string Select = "select id,tenant_id TenantId,signing_session_id SessionId,document_id DocumentId,document_version_id DocumentVersionId,signature_type SignatureType,signature_format SignatureFormat,signature_profile SignatureProfile,signature_source SignatureSource,cryptographic_status CryptographicStatus,validation_status ValidationStatus,conformity_status ConformityStatus,cms_sha256 CmsSha256,content_sha256 ContentSha256,cms_bytes CmsBytes,certificate_der CertificateDer,coalesce(certificate_chain_der,ARRAY[]::bytea[]) CertificateChainDer,engine_version EngineVersion,correlation_id CorrelationId,created_at CreatedAt from ged.document_signature";
+    public async Task<Guid> CreateAsync(DocumentSignatureRecord signature, CancellationToken ct)
+    {
+        await using var c = await db.OpenAsync(ct);
+        var id = await c.ExecuteScalarAsync<Guid?>(new CommandDefinition(@"""
+insert into ged.document_signature (id,tenant_id,signing_session_id,document_id,document_version_id,signature_type,signature_format,signature_profile,signature_source,cryptographic_status,validation_status,conformity_status,cms_bytes,cms_sha256,content_sha256,certificate_der,certificate_chain_der,engine_version,correlation_id,created_at)
+values (@Id,@TenantId,@SessionId,@DocumentId,@DocumentVersionId,@SignatureType,@SignatureFormat,@SignatureProfile,@SignatureSource,@CryptographicStatus,@ValidationStatus,@ConformityStatus,@CmsBytes,@CmsSha256,@ContentSha256,@CertificateDer,@CertificateChainDer,@EngineVersion,@CorrelationId,@CreatedAt)
+on conflict (tenant_id, signing_session_id) do update set signing_session_id=excluded.signing_session_id returning id
+""", new { signature.Id, signature.TenantId, signature.SessionId, signature.DocumentId, signature.DocumentVersionId, signature.SignatureType, signature.SignatureFormat, signature.SignatureProfile, signature.SignatureSource, signature.CryptographicStatus, signature.ValidationStatus, signature.ConformityStatus, signature.CmsBytes, signature.CmsSha256, signature.ContentSha256, signature.CertificateDer, CertificateChainDer=signature.CertificateChainDer.ToArray(), signature.EngineVersion, signature.CorrelationId, signature.CreatedAt }, cancellationToken: ct));
+        return id ?? signature.Id;
+    }
+    public async Task<DocumentSignatureRecord?> GetAsync(Guid tenantId, Guid signatureId, CancellationToken ct) { await using var c=await db.OpenAsync(ct); return await c.QuerySingleOrDefaultAsync<DocumentSignatureRecord>(new CommandDefinition(Select+" where tenant_id=@tenantId and id=@signatureId", new{tenantId,signatureId}, cancellationToken:ct)); }
+    public async Task<IReadOnlyList<DocumentSignatureRecord>> ListByDocumentAsync(Guid tenantId, Guid documentId, CancellationToken ct) { await using var c=await db.OpenAsync(ct); return (await c.QueryAsync<DocumentSignatureRecord>(new CommandDefinition(Select+" where tenant_id=@tenantId and document_id=@documentId order by created_at desc", new{tenantId,documentId}, cancellationToken:ct))).ToList(); }
+    public async Task<IReadOnlyList<DocumentSignatureRecord>> ListByVersionAsync(Guid tenantId, Guid documentId, Guid documentVersionId, CancellationToken ct) { await using var c=await db.OpenAsync(ct); return (await c.QueryAsync<DocumentSignatureRecord>(new CommandDefinition(Select+" where tenant_id=@tenantId and document_id=@documentId and document_version_id=@documentVersionId order by created_at desc", new{tenantId,documentId,documentVersionId}, cancellationToken:ct))).ToList(); }
     public async Task<byte[]?> GetCmsBytesAsync(Guid tenantId, Guid signatureId, CancellationToken ct) { await using var c=await db.OpenAsync(ct); return await c.ExecuteScalarAsync<byte[]>(new CommandDefinition("select cms_bytes from ged.document_signature where tenant_id=@tenantId and id=@signatureId", new{tenantId,signatureId}, cancellationToken:ct)); }
     public async Task<byte[]?> GetCertificateAsync(Guid tenantId, Guid signatureId, CancellationToken ct) { await using var c=await db.OpenAsync(ct); return await c.ExecuteScalarAsync<byte[]>(new CommandDefinition("select certificate_der from ged.document_signature where tenant_id=@tenantId and id=@signatureId", new{tenantId,signatureId}, cancellationToken:ct)); }
     public async Task<bool> ExistsForSessionAsync(Guid tenantId, Guid sessionId, CancellationToken ct) { await using var c=await db.OpenAsync(ct); return await c.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from ged.document_signature where tenant_id=@tenantId and signing_session_id=@sessionId)", new{tenantId,sessionId}, cancellationToken:ct)); }
 }
-public sealed class PostgresSignatureValidationRepository(IDbConnectionFactory db) : ISignatureValidationRepository { public async Task<Guid> CreateRunAsync(SignatureValidationRunRecord run, CancellationToken ct){ await using var c=await db.OpenAsync(ct); await c.ExecuteAsync(new CommandDefinition("insert into ged.signature_validation_run(id,tenant_id,signature_id,cryptographic_status,validation_status,conformity_status,engine_version,validated_at,correlation_id) values(@Id,@TenantId,@SignatureId,@CryptographicStatus,@ValidationStatus,@ConformityStatus,@EngineVersion,@ValidatedAt,@CorrelationId)", run, cancellationToken:ct)); return run.Id;} public Task StoreChecksAsync(Guid tenantId, Guid validationRunId, IReadOnlyList<SignatureValidationCheck> checks, CancellationToken ct)=>Task.CompletedTask; public Task StoreChainAsync(Guid tenantId, Guid validationRunId, IReadOnlyList<byte[]> chainDer, CancellationToken ct)=>Task.CompletedTask; public Task<SignatureValidationRunRecord?> GetLatestAsync(Guid tenantId, Guid signatureId, CancellationToken ct)=>Task.FromResult<SignatureValidationRunRecord?>(null); public Task<IReadOnlyList<SignatureValidationRunRecord>> ListHistoryAsync(Guid tenantId, Guid signatureId, CancellationToken ct)=>Task.FromResult<IReadOnlyList<SignatureValidationRunRecord>>(Array.Empty<SignatureValidationRunRecord>()); }
-public sealed class PostgresSignatureEventRepository(IDbConnectionFactory db) : ISignatureEventRepository { public async Task RegisterAsync(SignatureEventRecord evt, CancellationToken ct){ await using var c=await db.OpenAsync(ct); await c.ExecuteAsync(new CommandDefinition("insert into ged.signature_event(id,tenant_id,signing_session_id,signature_id,event_type,safe_message,correlation_id,created_at) values(@Id,@TenantId,@SessionId,@SignatureId,@EventType,@SafeMessage,@CorrelationId,@CreatedAt)", evt, cancellationToken:ct)); } public Task<IReadOnlyList<SignatureEventRecord>> ListBySessionAsync(Guid tenantId, Guid sessionId, CancellationToken ct)=>Task.FromResult<IReadOnlyList<SignatureEventRecord>>(Array.Empty<SignatureEventRecord>()); public Task<IReadOnlyList<SignatureEventRecord>> ListBySignatureAsync(Guid tenantId, Guid signatureId, CancellationToken ct)=>Task.FromResult<IReadOnlyList<SignatureEventRecord>>(Array.Empty<SignatureEventRecord>()); }
-public sealed class DocumentVersionSigningContentService : IDocumentVersionSigningContentService { public Task<SigningContentMetadata?> LocateVersionAsync(Guid tenantId, Guid documentId, Guid documentVersionId, CancellationToken ct)=>Task.FromResult<SigningContentMetadata?>(null); public Task<bool> ValidateTenantAsync(Guid tenantId, Guid documentId, Guid documentVersionId, CancellationToken ct)=>Task.FromResult(false); public Task<SigningContentMetadata> GetMetadataAsync(Guid tenantId, Guid documentId, Guid documentVersionId, CancellationToken ct)=>throw new InvalidOperationException("Signing content metadata repository not configured."); public Task<Stream> OpenReadAsync(Guid tenantId, Guid documentId, Guid documentVersionId, CancellationToken ct)=>throw new InvalidOperationException("Signing content storage not configured."); public async Task<string> CalculateSha256Async(Stream content, CancellationToken ct){ using var sha=SHA256.Create(); return Convert.ToHexString(await sha.ComputeHashAsync(content, ct)).ToLowerInvariant(); } public Task ValidateSizeAsync(long sizeBytes, CancellationToken ct){ if(sizeBytes<=0) throw new InvalidOperationException("Invalid signing content size."); return Task.CompletedTask;} public Task<bool> ConfirmDocumentVersionLinkAsync(Guid tenantId, Guid documentId, Guid documentVersionId, CancellationToken ct)=>Task.FromResult(false); }
-public sealed class SignaturePackageService : ISignaturePackageService { public Task<SignaturePackageFile> GenerateP7sAsync(Guid tenantId, Guid signatureId, CancellationToken ct)=>throw new InvalidOperationException("Signature package repository not configured."); public Task<SignaturePackageFile> GenerateValidationReportJsonAsync(Guid tenantId, Guid signatureId, CancellationToken ct)=>throw new InvalidOperationException("Signature package repository not configured."); public Task<SignaturePackageFile> GenerateZipAsync(Guid tenantId, Guid signatureId, CancellationToken ct)=>throw new InvalidOperationException("Signature package repository not configured."); public Task<IReadOnlyDictionary<string,string>> CalculateChecksumsAsync(IReadOnlyList<SignaturePackageFile> files, CancellationToken ct)=>Task.FromResult<IReadOnlyDictionary<string,string>>(new Dictionary<string,string>()); }
-public sealed class PostgresSignatureEvidenceRepository(IDbConnectionFactory db) : ISignatureEvidenceRepository { public async Task StoreAsync(SignatureEvidence evidence, CancellationToken ct) { await using var c = await db.OpenAsync(ct); await c.ExecuteAsync(new CommandDefinition("insert into ged.signature_evidence (id, tenant_id, signature_id, evidence_type, hash_algorithm, evidence_hash, evidence_bytes, captured_at, correlation_id) values (gen_random_uuid(), @TenantId,@SignatureId,@EvidenceType,@HashAlgorithm,@EvidenceHash,@EvidenceBytes,@CapturedAt,@CorrelationId)", evidence, cancellationToken: ct)); } }
-public sealed class PostgresSigningSessionRepository(IDbConnectionFactory db) : ISigningSessionRepository { public async Task SaveAsync(PrepareSignatureCommand command, PrepareSignatureResult result, CancellationToken ct) { if (result.SessionId is null) return; await CreateAsync(new SigningSessionRecord(result.SessionId.Value, command.TenantId, command.UserId, command.DocumentId, command.DocumentVersionId, result.Status.ToString(), command.ContentHash, command.ContentHashAlgorithm, 0, string.Empty, string.Empty, string.Empty, command.ExpiresAt, null, null, null, 0, command.CorrelationId), string.Empty, string.Empty, Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(command.Nonce))).ToLowerInvariant(), ct); } public async Task CreateAsync(SigningSessionRecord s, string contentTokenHash, string completionTokenHash, string nonceHash, CancellationToken ct){ await using var c=await db.OpenAsync(ct); await c.ExecuteAsync(new CommandDefinition("insert into ged.signing_session (id,tenant_id,user_id,document_id,document_version_id,status,content_hash,content_hash_algorithm,content_token_hash,completion_token_hash,nonce_hash,expires_at,signature_type,signature_format,correlation_id,size_bytes,file_name,document_code,version_label) values (@Id,@TenantId,@UserId,@DocumentId,@DocumentVersionId,@Status,@ContentHash,@ContentHashAlgorithm,@contentTokenHash,@completionTokenHash,@nonceHash,@ExpiresAt,'CMS_DETACHED','CMS_PKCS7_DETACHED',@CorrelationId,@SizeBytes,@FileName,@DocumentCode,@VersionLabel) on conflict (id) do nothing", new{s.Id,s.TenantId,s.UserId,s.DocumentId,s.DocumentVersionId,s.Status,s.ContentHash,s.ContentHashAlgorithm,contentTokenHash,completionTokenHash,nonceHash,s.ExpiresAt,s.CorrelationId,s.SizeBytes,s.FileName,s.DocumentCode,s.VersionLabel}, cancellationToken:ct)); } public Task<SigningSessionRecord?> GetAsync(Guid tenantId, Guid sessionId, CancellationToken ct)=>Task.FromResult<SigningSessionRecord?>(null); public Task<SigningSessionRecord?> GetForContentAsync(Guid tenantId, Guid sessionId, string contentTokenHash, CancellationToken ct)=>Task.FromResult<SigningSessionRecord?>(null); public Task<bool> ConsumeContentTokenAsync(Guid tenantId, Guid sessionId, string contentTokenHash, CancellationToken ct)=>Task.FromResult(false); public Task<SigningSessionRecord?> GetForCompletionAsync(Guid tenantId, Guid sessionId, string completionTokenHash, CancellationToken ct)=>Task.FromResult<SigningSessionRecord?>(null); public Task<bool> ConsumeCompletionTokenAsync(Guid tenantId, Guid sessionId, string completionTokenHash, string idempotencyKey, string payloadHash, CancellationToken ct)=>Task.FromResult(false); public Task MarkContentAccessedAsync(Guid tenantId, Guid sessionId, CancellationToken ct)=>Task.CompletedTask; public Task MarkWaitingConfirmationAsync(Guid tenantId, Guid sessionId, CancellationToken ct)=>Task.CompletedTask; public Task MarkSigningAsync(Guid tenantId, Guid sessionId, CancellationToken ct)=>Task.CompletedTask; public Task CompleteAsync(Guid tenantId, Guid sessionId, Guid signatureId, CancellationToken ct)=>Task.CompletedTask; public Task<bool> CancelAsync(Guid tenantId, Guid sessionId, Guid userId, CancellationToken ct)=>Task.FromResult(false); public Task<int> ExpireAsync(Guid tenantId, DateTimeOffset now, CancellationToken ct)=>Task.FromResult(0); public Task IncrementFailureAsync(Guid tenantId, Guid sessionId, string safeError, CancellationToken ct)=>Task.CompletedTask; public Task<DocumentSignatureRecord?> GetExistingCompletionAsync(Guid tenantId, Guid sessionId, string idempotencyKey, string payloadHash, CancellationToken ct)=>Task.FromResult<DocumentSignatureRecord?>(null); }
-public sealed class CmsSigningOrchestrator(ISignatureValidationService validation, ISigningSessionRepository sessions) : ISigningOrchestrator
+
+public sealed class PostgresSignatureValidationRepository(IDbConnectionFactory db) : ISignatureValidationRepository
 {
-    public async Task<PrepareSignatureResult> PrepareAsync(PrepareSignatureCommand command, CancellationToken ct)
+    public async Task<Guid> CreateRunAsync(SignatureValidationRunRecord run, CancellationToken ct)
     {
-        var result = new PrepareSignatureResult(true, Guid.NewGuid(), SigningProcessStatus.REQUESTED, command.Nonce, command.ExpiresAt, null);
-        await sessions.SaveAsync(command, result, ct);
-        return result;
+        await using var c = await db.OpenAsync(ct);
+        await c.ExecuteAsync(new CommandDefinition(@"""
+insert into ged.signature_validation_run(id,tenant_id,signature_id,cryptographic_status,validation_status,conformity_status,engine_version,validated_at,correlation_id)
+values(@Id,@TenantId,@SignatureId,@CryptographicStatus,@ValidationStatus,@ConformityStatus,@EngineVersion,@ValidatedAt,@CorrelationId)
+on conflict (id) do nothing
+""", run, cancellationToken: ct));
+        return run.Id;
     }
-    public Task<CompleteSignatureResult> CompleteAsync(CompleteSignatureCommand command, CancellationToken ct) => Task.FromResult(new CompleteSignatureResult(true, Guid.NewGuid(), SignatureValidationStatus.INDETERMINATE, null));
+
+    public async Task StoreChecksAsync(Guid tenantId, Guid validationRunId, IReadOnlyList<SignatureValidationCheck> checks, CancellationToken ct)
+    {
+        await using var c = await db.OpenAsync(ct);
+        var order = 0;
+        foreach (var check in checks)
+            await c.ExecuteAsync(new CommandDefinition(@"""
+insert into ged.signature_validation_check(id,tenant_id,validation_run_id,name,status,message,evidence_hash,check_order,created_at)
+values(gen_random_uuid(),@tenantId,@validationRunId,@Name,@Status,@Message,@EvidenceHash,@order,now())
+on conflict do nothing
+""", new { tenantId, validationRunId, check.Name, Status = check.Status.ToString(), check.Message, check.EvidenceHash, order = order++ }, cancellationToken: ct));
+    }
+
+    public async Task StoreChainAsync(Guid tenantId, Guid validationRunId, IReadOnlyList<byte[]> chainDer, CancellationToken ct)
+    {
+        await using var c = await db.OpenAsync(ct);
+        for (var i = 0; i < chainDer.Count; i++)
+        {
+            var hash = Convert.ToHexString(SHA256.HashData(chainDer[i])).ToLowerInvariant();
+            await c.ExecuteAsync(new CommandDefinition(@"""
+insert into ged.signature_certificate_chain(id,tenant_id,validation_run_id,chain_order,certificate_der,certificate_sha256,created_at)
+values(gen_random_uuid(),@tenantId,@validationRunId,@i,@der,@hash,now())
+on conflict do nothing
+""", new { tenantId, validationRunId, i, der = chainDer[i], hash }, cancellationToken: ct));
+        }
+    }
+
+    public async Task<SignatureValidationRunRecord?> GetLatestAsync(Guid tenantId, Guid signatureId, CancellationToken ct)
+    {
+        await using var c = await db.OpenAsync(ct);
+        return await c.QuerySingleOrDefaultAsync<SignatureValidationRunRecord>(new CommandDefinition(@"""
+select id, tenant_id TenantId, signature_id SignatureId, cryptographic_status CryptographicStatus, validation_status ValidationStatus,
+       conformity_status ConformityStatus, engine_version EngineVersion, validated_at ValidatedAt, correlation_id CorrelationId
+from ged.signature_validation_run where tenant_id=@tenantId and signature_id=@signatureId order by validated_at desc limit 1
+""", new { tenantId, signatureId }, cancellationToken: ct));
+    }
+
+    public async Task<IReadOnlyList<SignatureValidationRunRecord>> ListHistoryAsync(Guid tenantId, Guid signatureId, CancellationToken ct)
+    {
+        await using var c = await db.OpenAsync(ct);
+        return (await c.QueryAsync<SignatureValidationRunRecord>(new CommandDefinition(@"""
+select id, tenant_id TenantId, signature_id SignatureId, cryptographic_status CryptographicStatus, validation_status ValidationStatus,
+       conformity_status ConformityStatus, engine_version EngineVersion, validated_at ValidatedAt, correlation_id CorrelationId
+from ged.signature_validation_run where tenant_id=@tenantId and signature_id=@signatureId order by validated_at desc
+""", new { tenantId, signatureId }, cancellationToken: ct))).ToList();
+    }
+}
+
+public sealed class PostgresSignatureEventRepository(IDbConnectionFactory db) : ISignatureEventRepository
+{
+    public async Task RegisterAsync(SignatureEventRecord evt, CancellationToken ct)
+    {
+        await using var c = await db.OpenAsync(ct);
+        await c.ExecuteAsync(new CommandDefinition("insert into ged.signature_event(id,tenant_id,signing_session_id,signature_id,event_type,safe_message,correlation_id,created_at) values(@Id,@TenantId,@SessionId,@SignatureId,@EventType,@SafeMessage,@CorrelationId,@CreatedAt) on conflict do nothing", evt, cancellationToken: ct));
+    }
+    public async Task<IReadOnlyList<SignatureEventRecord>> ListBySessionAsync(Guid tenantId, Guid sessionId, CancellationToken ct)
+    {
+        await using var c=await db.OpenAsync(ct);
+        return (await c.QueryAsync<SignatureEventRecord>(new CommandDefinition("select id,tenant_id TenantId,signing_session_id SessionId,signature_id SignatureId,event_type EventType,safe_message SafeMessage,correlation_id CorrelationId,created_at CreatedAt from ged.signature_event where tenant_id=@tenantId and signing_session_id=@sessionId order by created_at", new{tenantId,sessionId}, cancellationToken:ct))).ToList();
+    }
+    public async Task<IReadOnlyList<SignatureEventRecord>> ListBySignatureAsync(Guid tenantId, Guid signatureId, CancellationToken ct)
+    {
+        await using var c=await db.OpenAsync(ct);
+        return (await c.QueryAsync<SignatureEventRecord>(new CommandDefinition("select id,tenant_id TenantId,signing_session_id SessionId,signature_id SignatureId,event_type EventType,safe_message SafeMessage,correlation_id CorrelationId,created_at CreatedAt from ged.signature_event where tenant_id=@tenantId and signature_id=@signatureId order by created_at", new{tenantId,signatureId}, cancellationToken:ct))).ToList();
+    }
+}
+
+public sealed class DocumentVersionSigningContentService(IDbConnectionFactory db, IFileStorage storage, IOptions<DigitalSignatureOptions> options) : IDocumentVersionSigningContentService
+{
+    public async Task<SigningContentMetadata?> LocateVersionAsync(Guid tenantId, Guid documentId, Guid documentVersionId, CancellationToken ct)
+    {
+        await using var c=await db.OpenAsync(ct);
+        return await c.QuerySingleOrDefaultAsync<SigningContentMetadata>(new CommandDefinition(@"""
+select v.tenant_id TenantId, v.document_id DocumentId, v.id DocumentVersionId, coalesce(v.file_name,'documento.bin') FileName,
+       coalesce(d.code,d.id::text) DocumentCode, coalesce(v.version_number::text,v.id::text) VersionLabel,
+       coalesce(v.content_type,'application/octet-stream') ContentType, coalesce(v.size_bytes,0) SizeBytes
+from ged.document_version v join ged.document d on d.tenant_id=v.tenant_id and d.id=v.document_id
+where v.tenant_id=@tenantId and v.document_id=@documentId and v.id=@documentVersionId and coalesce(v.reg_status,'A')='A' and coalesce(d.reg_status,'A')='A'
+""", new{tenantId,documentId,documentVersionId}, cancellationToken:ct));
+    }
+    public async Task<bool> ValidateTenantAsync(Guid tenantId, Guid documentId, Guid documentVersionId, CancellationToken ct) => await LocateVersionAsync(tenantId, documentId, documentVersionId, ct) is not null;
+    public async Task<SigningContentMetadata> GetMetadataAsync(Guid tenantId, Guid documentId, Guid documentVersionId, CancellationToken ct) => await LocateVersionAsync(tenantId, documentId, documentVersionId, ct) ?? throw new InvalidOperationException("Versão documental não localizada para assinatura CMS.");
+    public async Task<Stream> OpenReadAsync(Guid tenantId, Guid documentId, Guid documentVersionId, CancellationToken ct)
+    {
+        await using var c=await db.OpenAsync(ct);
+        var path=await c.ExecuteScalarAsync<string>(new CommandDefinition("select storage_path from ged.document_version where tenant_id=@tenantId and document_id=@documentId and id=@documentVersionId and nullif(storage_path,'') is not null", new{tenantId,documentId,documentVersionId}, cancellationToken:ct));
+        if (string.IsNullOrWhiteSpace(path) || !await storage.ExistsAsync(path, ct)) throw new FileNotFoundException("Arquivo físico da versão não encontrado.");
+        return await storage.OpenReadAsync(path, ct);
+    }
+    public async Task<string> CalculateSha256Async(Stream content, CancellationToken ct){ using var sha=SHA256.Create(); return Convert.ToHexString(await sha.ComputeHashAsync(content, ct)).ToLowerInvariant(); }
+    public Task ValidateSizeAsync(long sizeBytes, CancellationToken ct){ if(sizeBytes<=0 || sizeBytes>(long)options.Value.MaxDocumentSizeMb*1024*1024) throw new InvalidOperationException("Tamanho de conteúdo inválido para assinatura CMS."); return Task.CompletedTask;}
+    public async Task<bool> ConfirmDocumentVersionLinkAsync(Guid tenantId, Guid documentId, Guid documentVersionId, CancellationToken ct) => await ValidateTenantAsync(tenantId, documentId, documentVersionId, ct);
+}
+
+public sealed class SignaturePackageService(ISignatureRepository signatures, ISignatureValidationRepository validations, IDocumentVersionSigningContentService content) : ISignaturePackageService
+{
+    public async Task<SignaturePackageFile> GenerateP7sAsync(Guid tenantId, Guid signatureId, CancellationToken ct)
+    {
+        var bytes = await signatures.GetCmsBytesAsync(tenantId, signatureId, ct) ?? throw new FileNotFoundException("CMS não encontrado.");
+        return new SignaturePackageFile("assinatura.p7s", "application/pkcs7-signature", new MemoryStream(bytes, writable:false), Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant());
+    }
+    public async Task<SignaturePackageFile> GenerateValidationReportJsonAsync(Guid tenantId, Guid signatureId, CancellationToken ct)
+    {
+        var sig = await signatures.GetAsync(tenantId, signatureId, ct) ?? throw new FileNotFoundException("Assinatura não encontrada.");
+        var run = await validations.GetLatestAsync(tenantId, signatureId, ct);
+        var json = JsonSerializer.SerializeToUtf8Bytes(new { signature=sig, validation=run, notice="CMS destacado; ICP-Brasil, revogação e carimbo do tempo não avaliados nesta etapa." }, new JsonSerializerOptions{WriteIndented=true});
+        return new SignaturePackageFile("validation-report.json", "application/json", new MemoryStream(json, writable:false), Convert.ToHexString(SHA256.HashData(json)).ToLowerInvariant());
+    }
+    public async Task<SignaturePackageFile> GenerateZipAsync(Guid tenantId, Guid signatureId, CancellationToken ct)
+    {
+        var sig = await signatures.GetAsync(tenantId, signatureId, ct) ?? throw new FileNotFoundException("Assinatura não encontrada.");
+        await using var original = await content.OpenReadAsync(tenantId, sig.DocumentId, sig.DocumentVersionId, ct);
+        var p7s = await GenerateP7sAsync(tenantId, signatureId, ct); var report = await GenerateValidationReportJsonAsync(tenantId, signatureId, ct);
+        var ms = new MemoryStream(); using (var zip = new ZipArchive(ms, ZipArchiveMode.Create, leaveOpen:true))
+        { await Add(zip,"documento-original.bin",original,ct); await Add(zip,p7s.FileName,p7s.Content,ct); await Add(zip,report.FileName,report.Content,ct); var readme="Assinatura CMS destacada. Conformidade ICP-Brasil não avaliada. Revogação não avaliada. Carimbo do tempo inexistente nesta etapa."; await Write(zip,"README.txt",readme,ct); }
+        ms.Position=0; return new SignaturePackageFile("validation-package.zip", "application/zip", ms, Convert.ToHexString(SHA256.HashData(ms.ToArray())).ToLowerInvariant());
+    }
+    public async Task<IReadOnlyDictionary<string,string>> CalculateChecksumsAsync(IReadOnlyList<SignaturePackageFile> files, CancellationToken ct){ var d=new Dictionary<string,string>(); foreach(var f in files){ using var sha=SHA256.Create(); f.Content.Position=0; d[f.FileName]=Convert.ToHexString(await sha.ComputeHashAsync(f.Content,ct)).ToLowerInvariant(); f.Content.Position=0;} return d; }
+    static async Task Add(ZipArchive z,string n,Stream s,CancellationToken ct){ var e=z.CreateEntry(n); await using var o=e.Open(); s.Position=0; await s.CopyToAsync(o,ct); }
+    static async Task Write(ZipArchive z,string n,string t,CancellationToken ct){ var e=z.CreateEntry(n); await using var o=e.Open(); await o.WriteAsync(Encoding.UTF8.GetBytes(t),ct); }
+}
+
+public sealed class PostgresSignatureEvidenceRepository(IDbConnectionFactory db) : ISignatureEvidenceRepository { public async Task StoreAsync(SignatureEvidence evidence, CancellationToken ct) { if (evidence.EvidenceBytes?.Length > 10_000_000) throw new InvalidOperationException("Evidência excede limite permitido."); await using var c = await db.OpenAsync(ct); await c.ExecuteAsync(new CommandDefinition("insert into ged.signature_evidence (id, tenant_id, signature_id, evidence_type, hash_algorithm, evidence_hash, evidence_bytes, captured_at, correlation_id) values (gen_random_uuid(), @TenantId,@SignatureId,@EvidenceType,@HashAlgorithm,@EvidenceHash,@EvidenceBytes,@CapturedAt,@CorrelationId) on conflict (tenant_id,signature_id,evidence_type,evidence_hash) do nothing", evidence, cancellationToken: ct)); } }
+
+public sealed class PostgresSigningSessionRepository(IDbConnectionFactory db) : ISigningSessionRepository
+{
+    const string SelectSql = "select id,tenant_id TenantId,user_id UserId,document_id DocumentId,document_version_id DocumentVersionId,status,content_hash ContentHash,content_hash_algorithm ContentHashAlgorithm,coalesce(size_bytes,0) SizeBytes,coalesce(file_name,'') FileName,coalesce(document_code,'') DocumentCode,coalesce(version_label,'') VersionLabel,expires_at ExpiresAt,first_content_accessed_at FirstContentAccessedAt,completed_at CompletedAt,cancelled_at CancelledAt,coalesce(failure_count,failed_attempts,0) FailureCount,correlation_id CorrelationId,signature_id SignatureId,safe_error SafeError from ged.signing_session";
+    public async Task SaveAsync(PrepareSignatureCommand command, PrepareSignatureResult result, CancellationToken ct) { if (result.SessionId is null) return; await CreateAsync(new SigningSessionRecord(result.SessionId.Value, command.TenantId, command.UserId, command.DocumentId, command.DocumentVersionId, result.Status.ToString(), command.ContentHash, command.ContentHashAlgorithm, 0, string.Empty, string.Empty, string.Empty, command.ExpiresAt, null, null, null, 0, command.CorrelationId), string.Empty, string.Empty, Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(command.Nonce))).ToLowerInvariant(), ct); }
+    public async Task CreateAsync(SigningSessionRecord s, string contentTokenHash, string completionTokenHash, string nonceHash, CancellationToken ct){ await using var c=await db.OpenAsync(ct); await c.ExecuteAsync(new CommandDefinition(@"""insert into ged.signing_session (id,tenant_id,user_id,document_id,document_version_id,status,content_hash,content_hash_algorithm,content_token_hash,completion_token_hash,nonce_hash,expires_at,signature_type,signature_format,correlation_id,size_bytes,file_name,document_code,version_label,failure_count,failed_attempts) values (@Id,@TenantId,@UserId,@DocumentId,@DocumentVersionId,@Status,@ContentHash,@ContentHashAlgorithm,@contentTokenHash,@completionTokenHash,@nonceHash,@ExpiresAt,'CMS_DETACHED','CMS_PKCS7_DETACHED',@CorrelationId,@SizeBytes,@FileName,@DocumentCode,@VersionLabel,0,0) on conflict (id) do nothing""", new{s.Id,s.TenantId,s.UserId,s.DocumentId,s.DocumentVersionId,s.Status,s.ContentHash,s.ContentHashAlgorithm,contentTokenHash,completionTokenHash,nonceHash,s.ExpiresAt,s.CorrelationId,s.SizeBytes,s.FileName,s.DocumentCode,s.VersionLabel}, cancellationToken:ct)); }
+    public async Task<SigningSessionRecord?> GetAsync(Guid tenantId, Guid sessionId, CancellationToken ct){ await using var c=await db.OpenAsync(ct); return await c.QuerySingleOrDefaultAsync<SigningSessionRecord>(new CommandDefinition(SelectSql+" where tenant_id=@tenantId and id=@sessionId", new{tenantId,sessionId}, cancellationToken:ct)); }
+    public async Task<SigningSessionRecord?> GetForContentAsync(Guid tenantId, Guid sessionId, string contentTokenHash, CancellationToken ct){ await using var c=await db.OpenAsync(ct); return await c.QuerySingleOrDefaultAsync<SigningSessionRecord>(new CommandDefinition(SelectSql+" where tenant_id=@tenantId and id=@sessionId and (content_token_hash=@contentTokenHash or content_download_token_hash=@contentTokenHash)", new{tenantId,sessionId,contentTokenHash}, cancellationToken:ct)); }
+    public async Task<bool> ConsumeContentTokenAsync(Guid tenantId, Guid sessionId, string contentTokenHash, CancellationToken ct){ await using var c=await db.OpenAsync(ct); return await c.ExecuteScalarAsync<int>(new CommandDefinition("update ged.signing_session set status='CONTENT_ACCESSED', first_content_accessed_at=coalesce(first_content_accessed_at,now()), content_token_consumed_at=coalesce(content_token_consumed_at,now()) where tenant_id=@tenantId and id=@sessionId and status in ('REQUESTED','WAITING_AGENT') and expires_at>now() and content_token_consumed_at is null and (content_token_hash=@contentTokenHash or content_download_token_hash=@contentTokenHash) returning 1", new{tenantId,sessionId,contentTokenHash}, cancellationToken:ct))==1; }
+    public async Task<SigningSessionRecord?> GetForCompletionAsync(Guid tenantId, Guid sessionId, string completionTokenHash, CancellationToken ct){ await using var c=await db.OpenAsync(ct); return await c.QuerySingleOrDefaultAsync<SigningSessionRecord>(new CommandDefinition(SelectSql+" where tenant_id=@tenantId and id=@sessionId and completion_token_hash=@completionTokenHash", new{tenantId,sessionId,completionTokenHash}, cancellationToken:ct)); }
+    public async Task<bool> ConsumeCompletionTokenAsync(Guid tenantId, Guid sessionId, string completionTokenHash, string idempotencyKey, string payloadHash, CancellationToken ct){ await using var c=await db.OpenAsync(ct); await using var tx=await c.BeginTransactionAsync(ct); var ok=await c.ExecuteScalarAsync<int>(new CommandDefinition("update ged.signing_session set status='VALIDATING', completion_token_consumed_at=coalesce(completion_token_consumed_at,now()), completion_idempotency_key=@idempotencyKey, idempotency_payload_hash=@payloadHash where tenant_id=@tenantId and id=@sessionId and status in ('CONTENT_ACCESSED','WAITING_CONFIRMATION','SIGNING') and expires_at>now() and completion_token_hash=@completionTokenHash and (completion_idempotency_key is null or (completion_idempotency_key=@idempotencyKey and idempotency_payload_hash=@payloadHash)) returning 1", new{tenantId,sessionId,completionTokenHash,idempotencyKey,payloadHash}, tx, cancellationToken:ct)); await tx.CommitAsync(ct); return ok==1; }
+    public Task MarkContentAccessedAsync(Guid tenantId, Guid sessionId, CancellationToken ct)=>SetStatus(tenantId,sessionId,"CONTENT_ACCESSED",ct);
+    public Task MarkWaitingConfirmationAsync(Guid tenantId, Guid sessionId, CancellationToken ct)=>SetStatus(tenantId,sessionId,"WAITING_CONFIRMATION",ct);
+    public Task MarkSigningAsync(Guid tenantId, Guid sessionId, CancellationToken ct)=>SetStatus(tenantId,sessionId,"SIGNING",ct);
+    public async Task CompleteAsync(Guid tenantId, Guid sessionId, Guid signatureId, CancellationToken ct){ await using var c=await db.OpenAsync(ct); await c.ExecuteAsync(new CommandDefinition("update ged.signing_session set status='COMPLETED',completed_at=now(),signature_id=@signatureId where tenant_id=@tenantId and id=@sessionId and status='VALIDATING'", new{tenantId,sessionId,signatureId}, cancellationToken:ct)); }
+    public async Task<bool> CancelAsync(Guid tenantId, Guid sessionId, Guid userId, CancellationToken ct){ await using var c=await db.OpenAsync(ct); return await c.ExecuteScalarAsync<int>(new CommandDefinition("update ged.signing_session set status='CANCELLED',cancelled_at=now() where tenant_id=@tenantId and id=@sessionId and user_id=@userId and status not in ('COMPLETED','CANCELLED','EXPIRED') returning 1", new{tenantId,sessionId,userId}, cancellationToken:ct))==1; }
+    public async Task<int> ExpireAsync(Guid tenantId, DateTimeOffset now, CancellationToken ct){ await using var c=await db.OpenAsync(ct); return await c.ExecuteAsync(new CommandDefinition("update ged.signing_session set status='EXPIRED' where tenant_id=@tenantId and expires_at<=@now and status not in ('COMPLETED','CANCELLED','FAILED','EXPIRED')", new{tenantId,now}, cancellationToken:ct)); }
+    public async Task IncrementFailureAsync(Guid tenantId, Guid sessionId, string safeError, CancellationToken ct){ await using var c=await db.OpenAsync(ct); await c.ExecuteAsync(new CommandDefinition("update ged.signing_session set status='FAILED', failure_count=coalesce(failure_count,0)+1, failed_attempts=coalesce(failed_attempts,0)+1, safe_error=left(@safeError,500) where tenant_id=@tenantId and id=@sessionId", new{tenantId,sessionId,safeError}, cancellationToken:ct)); }
+    public async Task<DocumentSignatureRecord?> GetExistingCompletionAsync(Guid tenantId, Guid sessionId, string idempotencyKey, string payloadHash, CancellationToken ct){ await using var c=await db.OpenAsync(ct); return await c.QuerySingleOrDefaultAsync<DocumentSignatureRecord>(new CommandDefinition("select s.id,s.tenant_id TenantId,s.signing_session_id SessionId,s.document_id DocumentId,s.document_version_id DocumentVersionId,s.signature_type SignatureType,s.signature_format SignatureFormat,s.signature_profile SignatureProfile,s.signature_source SignatureSource,s.cryptographic_status CryptographicStatus,s.validation_status ValidationStatus,s.conformity_status ConformityStatus,s.cms_sha256 CmsSha256,s.content_sha256 ContentSha256,s.cms_bytes CmsBytes,s.certificate_der CertificateDer,s.engine_version EngineVersion,s.correlation_id CorrelationId,s.created_at CreatedAt from ged.document_signature s join ged.signing_session ss on ss.tenant_id=s.tenant_id and ss.id=s.signing_session_id where ss.tenant_id=@tenantId and ss.id=@sessionId and ss.completion_idempotency_key=@idempotencyKey and ss.idempotency_payload_hash=@payloadHash", new{tenantId,sessionId,idempotencyKey,payloadHash}, cancellationToken:ct)); }
+    async Task SetStatus(Guid tenantId,Guid sessionId,string status,CancellationToken ct){ await using var c=await db.OpenAsync(ct); await c.ExecuteAsync(new CommandDefinition("update ged.signing_session set status=@status where tenant_id=@tenantId and id=@sessionId and status not in ('COMPLETED','CANCELLED','EXPIRED')", new{tenantId,sessionId,status}, cancellationToken:ct)); }
+}
+public sealed class CmsSigningOrchestrator(ISignatureValidationService validation, ISigningSessionRepository sessions, IDocumentVersionSigningContentService content, ISignatureRepository signatures, ISignatureValidationRepository validationRuns, ISignatureEvidenceRepository evidences) : ISigningOrchestrator
+{
+    public Task<PrepareSignatureResult> PrepareAsync(PrepareSignatureCommand command, CancellationToken ct)
+        => Task.FromResult(new PrepareSignatureResult(true, Guid.NewGuid(), SigningProcessStatus.REQUESTED, command.Nonce, command.ExpiresAt, null));
+
+    public async Task<CompleteSignatureResult> CompleteAsync(CompleteSignatureCommand command, CancellationToken ct)
+    {
+        if (!command.TechnicalMetadata.TryGetValue("tenant_id", out var tenantText) || !Guid.TryParse(tenantText, out var tenantId))
+            return new CompleteSignatureResult(false, null, SignatureValidationStatus.NOT_VERIFIABLE, "tenant_not_resolved");
+        var completionTokenHash = command.TechnicalMetadata.GetValueOrDefault("completion_token_hash") ?? string.Empty;
+        var idempotencyKey = command.TechnicalMetadata.GetValueOrDefault("idempotency_key") ?? string.Empty;
+        var payloadHash = Convert.ToHexString(SHA256.HashData(command.Signature)).ToLowerInvariant();
+        var existing = await sessions.GetExistingCompletionAsync(tenantId, command.SessionId, idempotencyKey, payloadHash, ct);
+        if (existing is not null) return new CompleteSignatureResult(true, existing.Id, SignatureValidationStatus.INDETERMINATE, null);
+        var session = await sessions.GetForCompletionAsync(tenantId, command.SessionId, completionTokenHash, ct);
+        if (session is null) return new CompleteSignatureResult(false, null, SignatureValidationStatus.NOT_VERIFIABLE, "invalid_session_or_completion_token");
+        if (!await sessions.ConsumeCompletionTokenAsync(tenantId, command.SessionId, completionTokenHash, idempotencyKey, payloadHash, ct))
+            return new CompleteSignatureResult(false, null, SignatureValidationStatus.INVALID, "invalid_state_or_idempotency_conflict");
+        try
+        {
+            await using var doc = await content.OpenReadAsync(tenantId, session.DocumentId, session.DocumentVersionId, ct);
+            var report = await validation.ValidateDetachedAsync(doc, command.Signature, command.PublicCertificateDer, ct);
+            var crypto = report.Checks.Any(c => c.Status is SignatureValidationStatus.SIGNATURE_CORRUPTED) ? SignatureValidationStatus.SIGNATURE_CORRUPTED : report.Checks.Any(c => c.Status is SignatureValidationStatus.INVALID) ? SignatureValidationStatus.INVALID : SignatureValidationStatus.VALID;
+            var signatureId = Guid.NewGuid();
+            var sig = new DocumentSignatureRecord(signatureId, tenantId, command.SessionId, session.DocumentId, session.DocumentVersionId, "CMS_DETACHED", "CMS_PKCS7_DETACHED", "UNKNOWN", "LOCAL_AGENT", crypto.ToString(), "INDETERMINATE", "NOT_EVALUATED", payloadHash, session.ContentHash, command.Signature, command.PublicCertificateDer, command.CertificateChainDer, report.EngineVersion, session.CorrelationId, DateTimeOffset.UtcNow);
+            var storedId = await signatures.CreateAsync(sig, ct);
+            var run = new SignatureValidationRunRecord(Guid.NewGuid(), tenantId, storedId, crypto.ToString(), "INDETERMINATE", "NOT_EVALUATED", report.EngineVersion, DateTimeOffset.UtcNow, session.CorrelationId);
+            await validationRuns.CreateRunAsync(run, ct); await validationRuns.StoreChecksAsync(tenantId, run.Id, report.Checks.Append(new SignatureValidationCheck("REVOCATION_NOT_EVALUATED", SignatureValidationStatus.INDETERMINATE, "Revogação não avaliada nesta evolução.")).ToList(), ct); await validationRuns.StoreChainAsync(tenantId, run.Id, command.CertificateChainDer, ct);
+            await evidences.StoreAsync(new SignatureEvidence(tenantId, storedId, "CMS_DETACHED_DER", "SHA-256", payloadHash, command.Signature, DateTimeOffset.UtcNow, session.CorrelationId), ct);
+            await sessions.CompleteAsync(tenantId, command.SessionId, storedId, ct);
+            return new CompleteSignatureResult(true, storedId, crypto, null);
+        }
+        catch (Exception ex) when (ex is CryptographicException or InvalidOperationException or IOException)
+        {
+            await sessions.IncrementFailureAsync(tenantId, command.SessionId, ex.GetType().Name, ct);
+            return new CompleteSignatureResult(false, null, SignatureValidationStatus.SIGNATURE_CORRUPTED, ex.GetType().Name);
+        }
+    }
     public Task<SignatureValidationReport> ValidateAsync(ValidateSignatureCommand command, CancellationToken ct) => validation.ValidateAsync(command, ct);
 }

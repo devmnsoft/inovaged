@@ -7,6 +7,10 @@ using System.Security.Cryptography.X509Certificates;
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.Configure<AgentOptions>(builder.Configuration.GetSection("SigningAgent"));
 builder.Services.AddSingleton<PairingStore>();
+builder.Services.AddSingleton<IAgentReplayProtectionService, AgentReplayProtectionService>();
+builder.Services.AddSingleton<IAgentAuthenticationService, AgentAuthenticationService>();
+builder.Services.AddHttpClient("signing-content").ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+builder.Services.AddSingleton<ISigningContentDownloader, SigningContentDownloader>();
 builder.Services.AddSingleton<OperationStore>();
 builder.Services.AddSingleton<CertificateStoreReader>();
 builder.Services.AddCors(options => options.AddPolicy("agent", policy =>
@@ -30,17 +34,18 @@ app.MapGet("/health", () => Results.Ok(new { status = "Healthy", product = "Inov
 app.MapGet("/info", () => Results.Ok(new { product = "InovaGed Signing Agent", protocol = "agent-cms-detached-v1", cmsDetached = true, conformity = "NOT_EVALUATED" }));
 app.MapPost("/pair", (PairingRequest request, PairingStore store) => store.Create(request));
 app.MapDelete("/pairing", (string token, PairingStore store) => store.Revoke(token) ? Results.NoContent() : Results.NotFound());
-app.MapGet("/certificates", (CertificateStoreReader reader) => Results.Ok(reader.ListUsableCertificates()));
+app.MapGet("/certificates", (HttpRequest req, IAgentAuthenticationService auth, CertificateStoreReader reader) => auth.Authenticate(req) ? Results.Ok(reader.ListUsableCertificates()) : Results.Unauthorized());
 app.MapPost("/operations", async (CmsSignRequest request, OperationStore operations, PairingStore pairings, CertificateStoreReader certs, CancellationToken ct) =>
 {
     if (!pairings.IsValid(request.PairingToken, request.Origin)) return Results.Unauthorized();
     var op = await operations.CreateAsync(request, certs, ct);
     return Results.Accepted($"/operations/{op.Id}", op.PublicView());
 });
-app.MapGet("/operations/{id:guid}", (Guid id, OperationStore operations) => operations.TryGet(id, out var op) ? Results.Ok(op.PublicView()) : Results.NotFound());
-app.MapPost("/operations/{id:guid}/confirm", async (Guid id, OperationStore operations, CertificateStoreReader certs, CancellationToken ct) =>
+app.MapGet("/operations/{id:guid}", (Guid id, HttpRequest req, IAgentAuthenticationService auth, OperationStore operations) => auth.Authenticate(req) && operations.TryGet(id, out var op) ? Results.Ok(op.PublicView()) : Results.NotFound());
+app.MapGet("/operations/{id:guid}/confirm-ui", (Guid id, OperationStore operations) => operations.TryGet(id, out var op) ? Results.Content($"<html><body><h1>Confirmação local</h1><p>{System.Net.WebUtility.HtmlEncode(op.Request.DocumentName)}</p><p>{op.Request.Version}</p><p>{op.Request.ExpectedSha256}</p><p>{op.Request.Size}</p><p>{System.Net.WebUtility.HtmlEncode(op.Certificate.Name)}</p><p>{System.Net.WebUtility.HtmlEncode(op.Certificate.Issuer)}</p><p>{op.Certificate.MaskedCpf}</p><form method=\"post\" action=\"/operations/{id}/confirm-local\"><button type=\"submit\">Assinar</button></form></body></html>", "text/html") : Results.NotFound());
+app.MapPost("/operations/{id:guid}/confirm-local", async (Guid id, OperationStore operations, CertificateStoreReader certs, CancellationToken ct) =>
     await operations.ConfirmAndSignAsync(id, certs, ct) is { } result ? Results.Ok(result) : Results.NotFound());
-app.MapPost("/operations/{id:guid}/cancel", (Guid id, OperationStore operations) => operations.Cancel(id) ? Results.NoContent() : Results.NotFound());
+app.MapPost("/operations/{id:guid}/cancel", (Guid id, HttpRequest req, IAgentAuthenticationService auth, OperationStore operations) => auth.Authenticate(req) && operations.Cancel(id) ? Results.NoContent() : Results.NotFound());
 app.Run();
 
 public sealed class AgentOptions { public string[] AllowedOrigins { get; set; } = []; public string[] AllowedServerHosts { get; set; } = []; public bool RequireHttps { get; set; } = true; }
@@ -50,9 +55,9 @@ public sealed record CertificateInfo(string Thumbprint, string Name, string Issu
 public sealed record CmsSignRequest(string PairingToken, string Origin, Uri ContentUrl, string ContentToken, string ExpectedSha256, string CertificateThumbprint, string DocumentName, string Version, long Size, string Purpose);
 public sealed record CmsSignResult(Guid OperationId, string Status, string SignatureCmsBase64, string SignatureHashSha256, string CertificateDerBase64, CertificateInfo Certificate);
 
-public sealed class PairingStore
+public sealed class PairingStore : IAgentPairingService
 {
-    private readonly ConcurrentDictionary<string, (string Origin, DateTimeOffset ExpiresAt, bool Used)> _tokens = new();
+    private readonly ConcurrentDictionary<string, (string Origin, DateTimeOffset ExpiresAt, bool Revoked)> _tokens = new();
     public PairingResponse Create(PairingRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Origin) || request.Origin.Contains('*')) throw new InvalidOperationException("Origem inválida.");
@@ -63,9 +68,7 @@ public sealed class PairingStore
     }
     public bool IsValid(string token, string origin)
     {
-        if (!_tokens.TryGetValue(token, out var entry) || entry.Used || entry.ExpiresAt < DateTimeOffset.UtcNow || !StringComparer.Ordinal.Equals(entry.Origin, origin)) return false;
-        _tokens[token] = (entry.Origin, entry.ExpiresAt, true);
-        return true;
+        return _tokens.TryGetValue(token, out var entry) && !entry.Revoked && entry.ExpiresAt >= DateTimeOffset.UtcNow && StringComparer.Ordinal.Equals(entry.Origin, origin);
     }
     public bool Revoke(string token) => _tokens.TryRemove(token, out _);
 }
@@ -120,7 +123,7 @@ public sealed class OperationStore
 public sealed record SigningOperation(Guid Id, CmsSignRequest Request, CertificateInfo Certificate, string Status, CmsSignResult? Result, DateTimeOffset ExpiresAt)
 { public object PublicView() => new { Id, Status, Request.DocumentName, Request.Version, Request.ExpectedSha256, Request.Size, Request.Purpose, Certificate, ExpiresAt }; }
 
-public sealed class CertificateStoreReader
+public sealed class CertificateStoreReader : ILocalCertificateStore
 {
     public IReadOnlyList<CertificateInfo> ListUsableCertificates() => Open().Select(ToInfo).ToList();
     public X509Certificate2? Find(string thumbprint) => Open().FirstOrDefault(c => string.Equals(Normalize(c.Thumbprint), Normalize(thumbprint), StringComparison.OrdinalIgnoreCase));
