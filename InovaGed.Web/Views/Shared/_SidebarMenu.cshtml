@@ -60,6 +60,7 @@
     <a asp-controller="Parameters" asp-action="Index" class="@ActiveAny("Parameters", "ProtocoloParametros")"><i class="bi bi-sliders"></i><span>Parâmetros</span></a>
     <a asp-controller="Users" asp-action="Index" class="@ActiveAny("Users")"><i class="bi bi-people"></i><span>Usuários</span></a>
     <a asp-controller="SystemLogs" asp-action="Index" class="@ActiveAny("SystemLogs", "Audit", "AuditDashboard", "SecurityAudit")"><i class="bi bi-activity"></i><span>Logs</span></a>
+    <a asp-controller="Continuity" asp-action="Overview" class="@ActiveAny("Continuity")"><i class="bi bi-life-preserver"></i><span>Continuidade e Portabilidade</span></a>
     <a asp-controller="SystemHealth" asp-action="Index" class="@ActiveAny("SystemHealth")"><i class="bi bi-heart-pulse"></i><span>SystemHealth</span></a>
     <a href="/SystemHealth/Schema" class="@ActivePathStarts("/systemhealth/schema")"><i class="bi bi-database-check"></i><span>Schema do Banco</span></a>
     <a href="/SystemHealth/Homologation" class="@ActivePathStarts("/systemhealth/homologation")"><i class="bi bi-clipboard2-check"></i><span>Homologação</span></a>

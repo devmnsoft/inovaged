@@ -1,0 +1,4 @@
+@model IReadOnlyList<InovaGed.Application.Continuity.BackupSetDto>
+@{ ViewData["Title"] = "Catálogo de Backups"; }
+<h1>Catálogo de Backups</h1><form method="post" action="/Continuity/Backups/Request">@Html.AntiForgeryToken()<button class="btn btn-primary">Solicitar backup assíncrono</button></form>
+<table class="table table-sm table-striped mt-3"><thead><tr><th>ID</th><th>Tenant</th><th>Tipo</th><th>Início</th><th>Status</th><th>Integridade</th><th>Tamanho</th><th>Correlação</th></tr></thead><tbody>@foreach(var b in Model){<tr><td>@b.Id</td><td>@b.TenantId</td><td>@b.BackupType</td><td>@b.StartedAtUtc:u</td><td>@b.Status</td><td>@b.IntegrityStatus</td><td>@b.SizeBytes</td><td>@b.CorrelationId</td></tr>}</tbody></table>

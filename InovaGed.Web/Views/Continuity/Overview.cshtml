@@ -1,0 +1,9 @@
+@model InovaGed.Application.Continuity.ContinuityDashboardDto
+@{ ViewData["Title"] = "Continuidade e Portabilidade"; }
+<h1><i class="bi bi-life-preserver"></i> Continuidade e Portabilidade</h1>
+<div class="alert alert-@(Model.OverallStatus == "SAUDAVEL" ? "success" : "warning")">Status: <strong>@Model.OverallStatus</strong>. Dados consultados do catálogo operacional, sem simulação.</div>
+<div class="row g-3">
+@foreach (var item in new[]{($"Último backup", Model.LastCompletedBackupUtc?.ToString("u") ?? "Não configurado"),($"Último válido", Model.LastValidBackupUtc?.ToString("u") ?? "Não verificado"),($"Integridade", $"{Model.IntegrityPercent:n1}%"),($"Falhas", Model.FailedBackups.ToString()),($"RPO observado", Model.ObservedRpoMinutes?.ToString()+" min" ?? "Sem evidência"),($"Pacotes ativos", Model.ActivePortabilityPackages.ToString()),($"Dead-letter", Model.DeadLetterJobs.ToString())}) { <div class="col-md-3"><div class="card h-100"><div class="card-body"><small class="text-muted">@item.Item1</small><div class="fs-5 fw-semibold">@item.Item2</div></div></div></div> }
+</div>
+@if (Model.Alerts.Any()) { <h2 class="mt-4">Alertas</h2><ul>@foreach(var a in Model.Alerts){<li>@a</li>}</ul> }
+<div class="mt-4 d-flex flex-wrap gap-2"><a class="btn btn-primary" href="/Continuity/Policies">Políticas</a><a class="btn btn-outline-primary" href="/Continuity/Backups">Backups</a><a class="btn btn-outline-primary" href="/Continuity/DisasterRecovery">DRP</a><a class="btn btn-outline-primary" href="/Continuity/Portability">Exportação Integral</a></div>

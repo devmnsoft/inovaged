@@ -1,0 +1,2 @@
+@model IReadOnlyList<InovaGed.Application.Continuity.TenantOffboardingDto>
+<h1>Encerramento do Tenant</h1><div class="alert alert-warning">Não há exclusão física automática nesta evolução. Legal hold bloqueia avanço.</div><table class="table"><thead><tr><th>Tenant</th><th>Status</th><th>Efetiva</th><th>Acesso até</th><th>Legal hold</th></tr></thead><tbody>@foreach(var o in Model){<tr><td>@o.TenantId</td><td>@o.Status</td><td>@o.EffectiveAtUtc:u</td><td>@o.AccessUntilUtc:u</td><td>@o.LegalHold</td></tr>}</tbody></table>
