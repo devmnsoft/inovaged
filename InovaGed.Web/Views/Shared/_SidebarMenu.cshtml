@@ -56,6 +56,7 @@
     <a href="/Protocols/WorkQueue" class="@ActivePathStarts("/protocols/workqueue")"><i class="bi bi-inboxes"></i><span>Fila de Protocolos</span></a>
 
     <div class="sidebar-section-title">Administração</div>
+    <a asp-controller="Administration" asp-action="Index" class="@ActiveAny("Administration")"><i class="bi bi-shield-lock"></i><span>Administração</span></a>
     <a asp-controller="Parameters" asp-action="Index" class="@ActiveAny("Parameters", "ProtocoloParametros")"><i class="bi bi-sliders"></i><span>Parâmetros</span></a>
     <a asp-controller="Users" asp-action="Index" class="@ActiveAny("Users")"><i class="bi bi-people"></i><span>Usuários</span></a>
     <a asp-controller="SystemLogs" asp-action="Index" class="@ActiveAny("SystemLogs", "Audit", "AuditDashboard", "SecurityAudit")"><i class="bi bi-activity"></i><span>Logs</span></a>

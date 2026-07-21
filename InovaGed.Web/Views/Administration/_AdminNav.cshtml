@@ -1,0 +1,3 @@
+<nav class="mb-3 d-flex flex-wrap gap-2" aria-label="Módulos administrativos">
+@foreach (var item in new[]{("Index","Visão Geral"),("Security","Segurança e Permissões"),("Identities","Identidades e CPF"),("Users","Usuários e Autoridades"),("Audit","Auditoria e Acessos"),("Tenants","Tenants"),("Workers","Workers e Filas"),("Health","Saúde do Sistema"),("Settings","Configurações Seguras"),("Migrations","Migrações e Compatibilidade"),("Compliance","Conformidade e LGPD")}) { <a class="btn btn-outline-primary btn-sm" asp-controller="Administration" asp-action="@item.Item1">@item.Item2</a> }
+</nav>
