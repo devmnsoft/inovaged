@@ -481,6 +481,8 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy(AppPolicies.UsersSectorManage, p => RequireAny(p, AppRoles.Admin, AppRoles.Administrador, AppRoles.AdministradorOphir));
     options.AddPolicy(AppPolicies.SystemLogs, p => RequireAny(p, fullAdmin));
     options.AddPolicy(AppPolicies.SchemaRepair, p => RequireAny(p, fullAdmin));
+    foreach (var policy in new[] { "SignatureView", "SignatureInternalCreate", "SignatureCryptographicCreate", "SignatureValidate", "SignatureDownload", "SignatureEvidenceView", "SignatureAdmin" })
+        options.AddPolicy(policy, p => RequireAny(p, fullAdmin.Concat(gedAccess).ToArray()));
 
     options.AddPolicy(AppPolicies.GedAccess, p => RequireAny(p, gedAccess));
     options.AddPolicy(AppPolicies.Ocr, p => RequireAny(p, gedAccess));

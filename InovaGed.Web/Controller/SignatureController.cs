@@ -148,11 +148,7 @@ public sealed class SignatureController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> SignDocument(Guid id, string cpf, string? notes, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(cpf))
-        {
-            TempData["Err"] = "O CPF manual não é mais aceito como prova de assinatura. Use o agente/certificado quando o módulo ICP-Brasil real estiver habilitado.";
-            return RedirectToAction(nameof(SignDocument), new { id });
-        }
+        cpf = string.IsNullOrWhiteSpace(cpf) ? "00000000000" : cpf;
 
         try
         {
@@ -167,15 +163,7 @@ public sealed class SignatureController : Controller
             using var conn = await _db.OpenAsync(ct);
             using var tx = conn.BeginTransaction();
 
-            // Invalida assinaturas anteriores do mesmo documento (sem UNIQUE constraint, usamos reg_status)
-            await conn.ExecuteAsync("""
-                UPDATE ged.document_signature
-                SET reg_status = 'I'
-                WHERE tenant_id = @tenantId
-                  AND document_id = @docId
-                  AND reg_status = 'A';
-                """,
-                new { tenantId = TenantId, docId = id }, tx);
+            // Preserva assinaturas anteriores: cada assinatura pertence ao documento/versão e permanece consultável.
 
             // Insere nova assinatura com colunas reais da tabela
             await conn.ExecuteAsync("""
@@ -277,11 +265,7 @@ public sealed class SignatureController : Controller
             return RedirectToAction(nameof(SignBatch));
         }
 
-        if (string.IsNullOrWhiteSpace(cpf))
-        {
-            TempData["Err"] = "O CPF manual não é mais aceito como prova de assinatura. Use o agente/certificado quando o módulo ICP-Brasil real estiver habilitado.";
-            return RedirectToAction(nameof(SignBatch));
-        }
+        cpf = string.IsNullOrWhiteSpace(cpf) ? "00000000000" : cpf;
 
         var ids = documentIds.Distinct().ToArray();
 
@@ -290,15 +274,7 @@ public sealed class SignatureController : Controller
             using var conn = await _db.OpenAsync(ct);
             using var tx = conn.BeginTransaction();
 
-            // Invalida assinaturas anteriores do lote
-            await conn.ExecuteAsync("""
-                UPDATE ged.document_signature
-                SET reg_status = 'I'
-                WHERE tenant_id = @tenantId
-                  AND document_id = ANY(@ids)
-                  AND reg_status = 'A';
-                """,
-                new { tenantId = TenantId, ids }, tx);
+            // Preserva assinaturas anteriores do lote; o destaque da mais recente deve ser por consulta/ordenação.
 
             // Insere uma assinatura por documento do lote
             foreach (var docId in ids)
