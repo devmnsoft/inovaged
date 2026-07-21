@@ -1,18 +1,21 @@
 # Diagnóstico pré Signing Agent CMS
 
-- SHA inicial: `
-a6a9fdd306b1173e6e226614a088c2cac0d96301
-`
-- Branch base local disponível: `work` (não há remoto/main configurado no clone atual).
 - Data: 2026-07-21.
-/bin/bash: line 7: dotnet: command not found
-/bin/bash: line 7: dotnet: command not found
-/bin/bash: line 7: dotnet: command not found
-/bin/bash: line 7: dotnet: command not found
-/bin/bash: line 7: dotnet: command not found
-/bin/bash: line 7: dotnet: command not found
+- Branch solicitada: `codex/implementar-signing-agent-cms`.
+- SHA inicial registrado: `a0361921717358a7baf331d1a50c747f3a1acdd6`.
+- Atualização a partir de `main`: bloqueada porque o repositório local não possui remoto `origin` configurado no ambiente.
+- Gate .NET: bloqueado porque o SDK `dotnet` não está instalado no container (`/bin/bash: dotnet: command not found`).
 
+## Comandos executados
 
-## Resultado do gate inicial
+```bash
+git remote -v
+git branch --show-current
+git fetch origin main
+git rev-parse HEAD
+dotnet --info
+```
 
-O ambiente não possui `dotnet` instalado (`dotnet: command not found`), portanto clean/restore/build/test/list não puderam ser executados localmente. `git diff --check` será executado após as alterações.
+## Impacto
+
+A implementação foi conduzida com inspeção estática e preservação não destrutiva. Os comandos completos de restore, build e test devem ser repetidos em ambiente com .NET 8 SDK antes do merge.

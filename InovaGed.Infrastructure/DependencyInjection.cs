@@ -210,7 +210,7 @@ public static class InfrastructureServiceCollectionExtensions
         else
         {
             services.AddScoped<ISignatureValidationService, NotConfiguredSignatureValidationService>();
-            services.AddScoped<ISigningOrchestrator, CmsSigningOrchestrator>();
+            services.AddScoped<ISigningOrchestrator, NotConfiguredSigningOrchestrator>();
         }
 
         services.AddInfrastructureModule("DigitalSignature", enabled, ["Database", "Storage"], true, enabled ? HealthStatus.Degraded : HealthStatus.Healthy);

@@ -13,3 +13,24 @@ public sealed class NotConfiguredTimestampAuthorityClient : ITimestampAuthorityC
     public Task<TimestampTokenResult> RequestTimestampAsync(byte[] hash, string hashAlgorithm, string? policyOid, CancellationToken ct) =>
         Task.FromResult(new TimestampTokenResult(false, null, null, SignatureValidationStatus.NOT_VERIFIABLE, "Autoridade de Carimbo do Tempo não configurada."));
 }
+
+
+public sealed class NotConfiguredSigningOrchestrator : ISigningOrchestrator
+{
+    private static SignatureValidationReport NotVerifiableReport(string message) => new(
+        Guid.NewGuid(),
+        SignatureValidationStatus.NOT_VERIFIABLE,
+        SignatureProfile.UNKNOWN,
+        DateTimeOffset.UtcNow,
+        "not-configured-icp-brasil-v1",
+        new[] { new SignatureValidationCheck("DigitalSignature.Enabled", SignatureValidationStatus.NOT_VERIFIABLE, message) });
+
+    public Task<PrepareSignatureResult> PrepareAsync(PrepareSignatureCommand command, CancellationToken ct) =>
+        Task.FromResult(new PrepareSignatureResult(false, null, SigningProcessStatus.FAILED, null, null, "Módulo de assinatura digital desabilitado."));
+
+    public Task<CompleteSignatureResult> CompleteAsync(CompleteSignatureCommand command, CancellationToken ct) =>
+        Task.FromResult(new CompleteSignatureResult(false, null, SignatureValidationStatus.NOT_VERIFIABLE, "Módulo de assinatura digital desabilitado."));
+
+    public Task<SignatureValidationReport> ValidateAsync(ValidateSignatureCommand command, CancellationToken ct) =>
+        Task.FromResult(NotVerifiableReport("Módulo de assinatura digital desabilitado; resultado criptográfico não verificável."));
+}
