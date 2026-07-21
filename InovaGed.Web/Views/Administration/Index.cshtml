@@ -1,0 +1,12 @@
+@model InovaGed.Web.Models.Administration.AdministrationPageVm
+@{ ViewData["Title"] = "Administração"; ViewData["Subtitle"] = "Segurança, governança e compatibilidade"; }
+<partial name="_AdminNav" />
+<div class="row g-3">
+@foreach (var m in Model.Overview?.Metrics ?? []) {
+  <div class="col-12 col-sm-6 col-xl-3"><div class="card h-100 shadow-sm"><div class="card-body"><div class="d-flex justify-content-between"><span class="text-muted small">@m.Title</span><i class="bi @(m.Icon ?? "bi-info-circle")"></i></div><div class="fs-3 fw-bold">@m.Value</div><span class="badge bg-secondary">@m.State</span>@if(!string.IsNullOrWhiteSpace(m.Reason)){<p class="small text-muted mt-2">@m.Reason</p><p class="small">@m.Guidance</p>}</div></div></div>
+}
+</div>
+<h2 class="h5 mt-4">Ações recomendadas</h2>
+<div class="list-group">
+@foreach (var r in Model.Overview?.Recommendations ?? []) { <div class="list-group-item"><strong>@r.Title</strong><div class="small text-muted">@r.Reason</div><div>@r.Guidance</div></div> }
+</div>

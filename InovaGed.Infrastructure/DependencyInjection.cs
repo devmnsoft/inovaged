@@ -19,6 +19,8 @@ using InovaGed.Infrastructure.Ged.Documents;
 using InovaGed.Infrastructure.Ocr;
 using InovaGed.Infrastructure.Security;
 using InovaGed.Infrastructure.SystemHealth;
+using InovaGed.Application.Administration;
+using InovaGed.Infrastructure.Administration;
 using InovaGed.Infrastructure.Storage;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -135,7 +137,10 @@ public static class InfrastructureServiceCollectionExtensions
     {
         services.AddScoped<IAuditLogWriter, AuditLogWriter>();
         services.AddScoped<IAuditWriter, AuditWriter>();
-        services.AddScoped<IPermissionChecker, AllowAllPermissionChecker>();
+        services.AddScoped<IAdministrationDashboardService, AdministrationDashboardService>();
+        services.AddScoped<IRealPermissionChecker, DatabasePermissionChecker>();
+        services.AddScoped<IPermissionGovernanceRepository, PermissionGovernanceRepository>();
+        services.AddScoped<IPermissionChecker, CompositePermissionChecker>();
         services.AddScoped<PermissionService>();
         services.AddScoped<IPermissionService, PermissionService>();
         services.AddInfrastructureModule("SecurityOperations", true, ["Database"], true, HealthStatus.Healthy);
