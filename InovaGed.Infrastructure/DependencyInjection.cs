@@ -29,6 +29,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using InovaGed.Application.Identity;
+using InovaGed.Application.Signatures;
+using InovaGed.Infrastructure.Signatures;
 
 namespace InovaGed.Infrastructure;
 
@@ -53,7 +55,8 @@ public static class InfrastructureServiceCollectionExtensions
             .AddGuardianModule(configuration)
             .AddSecurityOperationsModule(configuration)
             .AddInfrastructureHealthModule(configuration)
-            .AddContinuityModule(configuration);
+            .AddContinuityModule(configuration)
+            .AddDigitalSignatureModule(configuration);
 
         return services;
     }
@@ -174,6 +177,43 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<IPortabilityPackageVerifier, PortabilityPackageVerifier>();
         services.AddScoped<IPostgresBackupProvider, PostgresBackupProvider>();
         services.AddInfrastructureModule("ContinuityPortability", configuration.GetValue("Backup:Enabled", false) || configuration.GetValue("Portability:Enabled", false), ["Database", "Storage"], true, HealthStatus.Degraded);
+        return services;
+    }
+
+
+    public static IServiceCollection AddDigitalSignatureModule(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        var section = configuration.GetSection("DigitalSignature");
+        var enabled = section.GetValue("Enabled", false);
+        var mode = section.GetValue("Mode", "AgentCms");
+        var environment = configuration["ASPNETCORE_ENVIRONMENT"] ?? configuration["DOTNET_ENVIRONMENT"];
+        services.AddOptions<DigitalSignatureOptions>()
+            .Bind(section)
+            .ValidateDataAnnotations()
+            .Validate(options => !options.AllowedAgentOrigins.Any(o => o == "*"), "DigitalSignature:AllowedAgentOrigins não pode conter origem curinga.")
+            .Validate(options => !options.RequireLoopbackHttps || options.AgentBaseUrl.StartsWith("https://127.0.0.1", StringComparison.OrdinalIgnoreCase) || options.AgentBaseUrl.StartsWith("https://[::1]", StringComparison.OrdinalIgnoreCase), "AgentBaseUrl deve ser HTTPS loopback quando RequireLoopbackHttps=true.")
+            .Validate(options => !string.Equals(environment, "Production", StringComparison.OrdinalIgnoreCase) || !options.AllowServerSidePfxUpload, "Upload PFX server-side é bloqueado em Production.")
+            .Validate(options => !string.Equals(environment, "Production", StringComparison.OrdinalIgnoreCase) || !options.AllowInternalTestCertificates, "Certificados internos de teste são bloqueados em Production.")
+            .ValidateOnStart();
+
+        services.TryAddScoped<ISigningSessionRepository, NoopSigningSessionRepository>();
+        services.TryAddScoped<ISignatureEvidenceRepository, NoopSignatureEvidenceRepository>();
+        services.TryAddScoped<ICertificateIdentityService, CertificateIdentityService>();
+
+        if (enabled && string.Equals(mode, "AgentCms", StringComparison.OrdinalIgnoreCase))
+        {
+            services.AddScoped<ISignatureValidationService, CmsDetachedSignatureValidationService>();
+            services.AddScoped<ISigningOrchestrator, CmsSigningOrchestrator>();
+        }
+        else
+        {
+            services.AddScoped<ISignatureValidationService, NotConfiguredSignatureValidationService>();
+            services.AddScoped<ISigningOrchestrator, CmsSigningOrchestrator>();
+        }
+
+        services.AddInfrastructureModule("DigitalSignature", enabled, ["Database", "Storage"], true, enabled ? HealthStatus.Degraded : HealthStatus.Healthy);
         return services;
     }
 
