@@ -5,7 +5,15 @@ on:
   push:
     branches: [ main, develop, "feature/**", "codex/**" ]
 jobs:
+  actionlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: actionlint
+        uses: raven-actions/actionlint@v2
+
   server-linux:
+    needs: actionlint
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -88,6 +96,7 @@ jobs:
             TestResults/**/*.trx
 
   agent-windows:
+    needs: actionlint
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -101,7 +110,7 @@ jobs:
       - name: Test agent guards
         run: dotnet test InovaGed.Signing.Agent.Tests/InovaGed.Signing.Agent.Tests.csproj --configuration Release --logger "trx;LogFileName=signing-agent-windows.trx" --results-directory TestResults
       - name: Agent doctor
-        run: dotnet run --project InovaGed.Signing.Agent/InovaGed.Signing.Agent.csproj -- --doctor || echo "doctor route requires interactive agent runtime"
+        run: dotnet run --project InovaGed.Signing.Agent/InovaGed.Signing.Agent.csproj -- doctor
       - name: Publish win-x64
         run: dotnet publish InovaGed.Signing.Agent/InovaGed.Signing.Agent.csproj --configuration Release --runtime win-x64 --self-contained false --output publish/signing-agent-win-x64
       - name: Verify executable
@@ -117,6 +126,7 @@ jobs:
 
 
   security-guards:
+    needs: actionlint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

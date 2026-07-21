@@ -2956,11 +2956,11 @@ on ged.folder(tenant_id, parent_id, lower(name))
 where coalesce(reg_status, 'A') = 'A';
 
 -- Evolução 03: garante participação explícita das migrations de Administração/Segurança e Continuidade/Portabilidade.
-\i database/migrations/2026_07_administration_security_governance.sql
-\i database/migrations/2026_07_backup_continuity_portability.sql
-\i database/migrations/2026_07_estabilizar_admin_continuity_ci.sql
+\ir migrations/2026_07_administration_security_governance.sql
+\ir migrations/2026_07_backup_continuity_portability.sql
+\ir migrations/2026_07_estabilizar_admin_continuity_ci.sql
 
-\i database/migrations/2026_07_signature_cms_agent_runtime.sql
+\ir migrations/2026_07_signature_cms_agent_runtime.sql
 
-\i database/migrations/2026_07_signature_cms_end_to_end.sql
-\i migrations/2026_07_signature_cms_operational_fix.sql
+\ir migrations/2026_07_signature_cms_end_to_end.sql
+\ir migrations/2026_07_signature_cms_operational_fix.sql
