@@ -17,6 +17,8 @@ if (cliArgs.Length > 0)
     if (command is "doctor")
     {
         var configuredUrls = Environment.GetEnvironmentVariable("SigningAgent__Urls") ?? "https://127.0.0.1:17891;https://[::1]:17891";
+        var allowedHosts = (Environment.GetEnvironmentVariable("SigningAgent__AllowedServerHosts") ?? string.Empty)
+            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         foreach (var candidate in configuredUrls.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
             var uri = new Uri(candidate);
@@ -26,6 +28,19 @@ if (cliArgs.Length > 0)
                 Environment.ExitCode = 2;
                 return;
             }
+        }
+        var dataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "InovaGed", "SigningAgent");
+        Directory.CreateDirectory(dataDir);
+        using (var store = new X509Store(StoreName.My, StoreLocation.CurrentUser))
+        {
+            store.Open(OpenFlags.ReadOnly);
+            _ = store.Certificates.Count;
+        }
+        if (string.Equals(Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT"), "Production", StringComparison.OrdinalIgnoreCase) && allowedHosts.Length == 0)
+        {
+            Console.Error.WriteLine("SigningAgent__AllowedServerHosts is required in Production.");
+            Environment.ExitCode = 3;
+            return;
         }
         Console.WriteLine("Signing Agent doctor: healthy");
         return;

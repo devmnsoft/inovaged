@@ -20,10 +20,11 @@ public sealed record PrepareSignatureCommand(Guid TenantId, Guid UserId, Guid Do
 public sealed record PrepareSignatureResult(bool Success, Guid? SessionId, SigningProcessStatus Status, string? Nonce, DateTimeOffset? ExpiresAt, string? Error);
 public sealed record CompleteSignatureCommand(Guid SessionId, byte[] Signature, byte[] PublicCertificateDer, IReadOnlyList<byte[]> CertificateChainDer, byte[]? TimestampToken, IReadOnlyDictionary<string, string> TechnicalMetadata);
 public sealed record CompleteSigningSessionCommand(Guid TenantId, Guid UserId, Guid SessionId, string CompletionToken, string IdempotencyKey, byte[] Cms, byte[] Certificate, IReadOnlyList<byte[]> CertificateChain, string AgentOperationId, string AgentVersion, string CorrelationId);
-public sealed record CompleteSignatureResult(bool Success, Guid? SignatureId, SignatureValidationStatus CryptographicStatus, SignatureValidationStatus CertificateStatus, SignatureConformityStatus ConformityStatus, string? Error)
+public sealed record ContentCapabilityResult(Guid TenantId, Guid DocumentId, Guid DocumentVersionId, string FileName, string ContentType, long SizeBytes, string ExpectedSha256);
+
+public sealed record CompleteSignatureResult(bool Success, Guid? SignatureId, SignatureValidationStatus CryptographicStatus, SignatureValidationStatus CertificateStatus, SignatureValidationStatus ValidationStatus, SignatureConformityStatus ConformityStatus, string? Error)
 {
-    public SignatureValidationStatus ValidationStatus => CryptographicStatus;
-    public CompleteSignatureResult(bool Success, Guid? SignatureId, SignatureValidationStatus ValidationStatus, string? Error) : this(Success, SignatureId, ValidationStatus, SignatureValidationStatus.INDETERMINATE, SignatureConformityStatus.NOT_EVALUATED, Error) { }
+    public CompleteSignatureResult(bool Success, Guid? SignatureId, SignatureValidationStatus ValidationStatus, string? Error) : this(Success, SignatureId, ValidationStatus, SignatureValidationStatus.INDETERMINATE, ValidationStatus, SignatureConformityStatus.NOT_EVALUATED, Error) { }
 }
 public sealed record ValidateSignatureCommand(Guid TenantId, Guid SignatureId, Guid DocumentId, Guid DocumentVersionId, byte[] ContentBytes, string CorrelationId);
 public sealed record SignatureValidationReport(Guid ValidationRunId, SignatureValidationStatus Status, SignatureProfile Profile, DateTimeOffset ValidatedAt, string EngineVersion, IReadOnlyList<SignatureValidationCheck> Checks);
@@ -49,6 +50,7 @@ public interface ISigningSessionRepository
     Task CreateAsync(SigningSessionRecord session, string contentTokenHash, string completionTokenHash, string nonceHash, CancellationToken ct);
     Task<SigningSessionRecord?> GetAsync(Guid tenantId, Guid sessionId, CancellationToken ct);
     Task<SigningSessionRecord?> GetForContentAsync(Guid tenantId, Guid sessionId, string contentTokenHash, CancellationToken ct);
+    Task<ContentCapabilityResult?> ResolveAndConsumeContentCapabilityAsync(Guid sessionId, string contentTokenHash, CancellationToken ct);
     Task<SigningSessionRecord?> ResolveContentCapabilityAsync(Guid sessionId, string contentTokenHash, CancellationToken ct);
     Task<SigningSessionRecord?> ConsumeContentCapabilityAsync(Guid sessionId, string contentTokenHash, CancellationToken ct);
     Task<bool> ConsumeContentTokenAsync(Guid tenantId, Guid sessionId, string contentTokenHash, CancellationToken ct);
