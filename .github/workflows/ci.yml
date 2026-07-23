@@ -144,3 +144,27 @@ jobs:
           ! rg -n "NoopSigningSessionRepository|NoopSignatureEvidenceRepository" InovaGed.Infrastructure/DependencyInjection.cs | rg "AgentCms"
           ! rg -n "BEGIN (RSA|OPENSSH|DSA|EC) PRIVATE KEY|PRIVATE KEY-----" --glob '!**/bin/**' --glob '!**/obj/**' .
           ! rg -n "Map(Get|Post|Delete)\(\"/(certificates|operations)" InovaGed.Signing.Agent/Program.cs | rg -v "IAgentAuthenticationService|confirm-ui|confirm-local"
+
+
+  cms-e2e:
+    needs: [server-linux, agent-windows, security-guards]
+    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Restore CMS E2E projects
+        run: dotnet restore InovaGed.sln
+      - name: Build CMS E2E projects
+        run: dotnet build InovaGed.sln --no-restore --configuration Release
+      - name: Run CMS E2E guards
+        run: dotnet test InovaGed.Signing.Agent.Tests/InovaGed.Signing.Agent.Tests.csproj --no-build --configuration Release --filter "FullyQualifiedName~Cms|FullyQualifiedName~Pairing|FullyQualifiedName~Confirmation|FullyQualifiedName~Downloader" --logger "trx;LogFileName=cms-e2e.trx" --results-directory TestResults
+      - name: OpenSSL availability
+        run: openssl version
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cms-e2e-diagnostics
+          path: TestResults/**/*.trx

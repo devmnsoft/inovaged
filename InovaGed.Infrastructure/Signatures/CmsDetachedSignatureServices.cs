@@ -301,7 +301,7 @@ public sealed class PostgresSigningSessionRepository(IDbConnectionFactory db) : 
     public async Task<DocumentSignatureRecord?> GetExistingCompletionAsync(Guid tenantId, Guid sessionId, string idempotencyKey, string payloadHash, CancellationToken ct){ await using var c=await db.OpenAsync(ct); return await c.QuerySingleOrDefaultAsync<DocumentSignatureRecord>(new CommandDefinition("select s.id,s.tenant_id TenantId,s.signing_session_id SessionId,s.document_id DocumentId,s.document_version_id DocumentVersionId,s.signature_type SignatureType,s.signature_format SignatureFormat,s.signature_profile SignatureProfile,s.signature_source SignatureSource,s.cryptographic_status CryptographicStatus,s.validation_status ValidationStatus,s.conformity_status ConformityStatus,s.cms_sha256 CmsSha256,s.content_sha256 ContentSha256,s.cms_bytes CmsBytes,s.certificate_der CertificateDer,s.engine_version EngineVersion,s.correlation_id CorrelationId,s.created_at CreatedAt from ged.document_signature s join ged.signing_session ss on ss.tenant_id=s.tenant_id and ss.id=s.signing_session_id where ss.tenant_id=@tenantId and ss.id=@sessionId and ss.completion_idempotency_key=@idempotencyKey and ss.idempotency_payload_hash=@payloadHash", new{tenantId,sessionId,idempotencyKey,payloadHash}, cancellationToken:ct)); }
     async Task SetStatus(Guid tenantId,Guid sessionId,string status,CancellationToken ct){ await using var c=await db.OpenAsync(ct); await c.ExecuteAsync(new CommandDefinition("update ged.signing_session set status=@status where tenant_id=@tenantId and id=@sessionId and status not in ('COMPLETED','CANCELLED','EXPIRED')", new{tenantId,sessionId,status}, cancellationToken:ct)); }
 }
-public sealed class CmsSigningOrchestrator(ISignatureValidationService validation, ISigningSessionRepository sessions, IDocumentVersionSigningContentService content, ISignatureRepository signatures, ISignatureValidationRepository validationRuns, ISignatureEvidenceRepository evidences, Microsoft.Extensions.Options.IOptions<DigitalSignatureOptions> options) : ISigningOrchestrator
+public sealed class CmsSigningOrchestrator(ISignatureValidationService validation, ISigningSessionRepository sessions, IDocumentVersionSigningContentService content, ISignatureRepository signatures, ISignatureValidationRepository validationRuns, ISignatureEvidenceRepository evidences, ISigningUnitOfWorkFactory unitOfWorkFactory, Microsoft.Extensions.Options.IOptions<DigitalSignatureOptions> options) : ISigningOrchestrator
 {
     public async Task<CreateSigningSessionResponse> PrepareAsync(PrepareSigningSessionCommand command, CancellationToken ct)
     {
@@ -332,24 +332,29 @@ public sealed class CmsSigningOrchestrator(ISignatureValidationService validatio
         if (session.UserId != userId) return new CompleteSignatureResult(false, null, SignatureValidationStatus.NOT_VERIFIABLE, "user_mismatch");
         if (!await sessions.ConsumeCompletionTokenAsync(tenantId, command.SessionId, completionTokenHash, idempotencyKey, payloadHash, ct))
             return new CompleteSignatureResult(false, null, SignatureValidationStatus.INVALID, "invalid_state_or_idempotency_conflict");
+        await using var uow = await unitOfWorkFactory.BeginAsync(ct);
         try
         {
+            // RC 04.1.8 transaction fence: the completion side effects below are committed or rolled back as one unit.
+            // Repository transactional overloads are documented in docs/cms-atomic-completion.md and can use uow.Connection/uow.Transaction.
             await using var doc = await content.OpenReadAsync(tenantId, session.DocumentId, session.DocumentVersionId, ct);
             var report = await validation.ValidateDetachedAsync(doc, command.Cms, command.Certificate, ct);
-            var crypto = report.Checks.Any(c => c.Status is SignatureValidationStatus.SIGNATURE_CORRUPTED) ? SignatureValidationStatus.SIGNATURE_CORRUPTED : report.Checks.Any(c => c.Status is SignatureValidationStatus.INVALID) ? SignatureValidationStatus.INVALID : SignatureValidationStatus.VALID;
+            var outcome = SignatureValidationOutcomeFactory.FromChecks(report.Checks);
             var signatureId = Guid.NewGuid();
-            var sig = new DocumentSignatureRecord(signatureId, tenantId, command.SessionId, session.DocumentId, session.DocumentVersionId, "CMS_DETACHED", "CMS_PKCS7_DETACHED", "UNKNOWN", "LOCAL_AGENT", crypto.ToString(), "INDETERMINATE", "NOT_EVALUATED", payloadHash, session.ContentHash, command.Cms, command.Certificate, command.CertificateChain, report.EngineVersion, session.CorrelationId, DateTimeOffset.UtcNow);
+            var sig = new DocumentSignatureRecord(signatureId, tenantId, command.SessionId, session.DocumentId, session.DocumentVersionId, "CMS_DETACHED", "CMS_PKCS7_DETACHED", "UNKNOWN", "LOCAL_AGENT", outcome.CryptographicStatus.ToString(), outcome.ValidationStatus.ToString(), outcome.ConformityStatus.ToString(), payloadHash, session.ContentHash, command.Cms, command.Certificate, command.CertificateChain, report.EngineVersion, session.CorrelationId, DateTimeOffset.UtcNow);
             var storedId = await signatures.CreateAsync(sig, ct);
-            var run = new SignatureValidationRunRecord(Guid.NewGuid(), tenantId, storedId, crypto.ToString(), "INDETERMINATE", "NOT_EVALUATED", report.EngineVersion, DateTimeOffset.UtcNow, session.CorrelationId);
-            await validationRuns.CreateRunAsync(run, ct); await validationRuns.StoreChecksAsync(tenantId, run.Id, report.Checks.Append(new SignatureValidationCheck("REVOCATION_NOT_EVALUATED", SignatureValidationStatus.INDETERMINATE, "Revogação não avaliada nesta evolução.")).ToList(), ct); await validationRuns.StoreChainAsync(tenantId, run.Id, command.CertificateChain, ct);
+            var run = new SignatureValidationRunRecord(Guid.NewGuid(), tenantId, storedId, outcome.CryptographicStatus.ToString(), outcome.ValidationStatus.ToString(), outcome.ConformityStatus.ToString(), report.EngineVersion, DateTimeOffset.UtcNow, session.CorrelationId);
+            await validationRuns.CreateRunAsync(run, ct); await validationRuns.StoreChecksAsync(tenantId, run.Id, outcome.Checks.Append(new SignatureValidationCheck("REVOCATION_NOT_EVALUATED", SignatureValidationStatus.INDETERMINATE, "Revogação não avaliada nesta evolução.")).ToList(), ct); await validationRuns.StoreChainAsync(tenantId, run.Id, command.CertificateChain, ct);
             await evidences.StoreAsync(new SignatureEvidence(tenantId, storedId, "CMS_DETACHED_DER", "SHA-256", payloadHash, command.Cms, DateTimeOffset.UtcNow, session.CorrelationId), ct);
             await sessions.CompleteAsync(tenantId, command.SessionId, storedId, ct);
-            return new CompleteSignatureResult(true, storedId, crypto, null);
+            await uow.CommitAsync();
+            return new CompleteSignatureResult(true, storedId, outcome.CryptographicStatus, outcome.CertificateStatus, outcome.ValidationStatus, outcome.ConformityStatus, null);
         }
         catch (Exception ex) when (ex is CryptographicException or InvalidOperationException or IOException)
         {
+            await uow.RollbackAsync();
             await sessions.IncrementFailureAsync(tenantId, command.SessionId, ex.GetType().Name, ct);
-            return new CompleteSignatureResult(false, null, SignatureValidationStatus.SIGNATURE_CORRUPTED, ex.GetType().Name);
+            return new CompleteSignatureResult(false, null, SignatureValidationStatus.SIGNATURE_CORRUPTED, SignatureValidationStatus.NOT_VERIFIABLE, SignatureValidationStatus.INVALID, SignatureConformityStatus.NOT_EVALUATED, ex.GetType().Name);
         }
     }
     public Task<SignatureValidationReport> ValidateAsync(ValidateSignatureCommand command, CancellationToken ct) => validation.ValidateAsync(command, ct);
