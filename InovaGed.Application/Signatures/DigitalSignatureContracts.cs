@@ -18,8 +18,11 @@ public sealed record SignaturePackageFile(string FileName, string ContentType, S
 public sealed record CompleteSigningSessionRequest(string CompletionToken, string IdempotencyKey, string SignatureCmsBase64, string CertificateDerBase64, IReadOnlyList<string> CertificateChainDerBase64, string AgentOperationId, string AgentVersion);
 public sealed record PrepareSignatureCommand(Guid TenantId, Guid UserId, Guid DocumentId, Guid DocumentVersionId, SignatureType Type, string Format, string? PolicyOid, string ContentHash, string ContentHashAlgorithm, string Nonce, DateTimeOffset ExpiresAt, string CorrelationId);
 public sealed record PrepareSignatureResult(bool Success, Guid? SessionId, SigningProcessStatus Status, string? Nonce, DateTimeOffset? ExpiresAt, string? Error);
+[Obsolete("Use CompleteSigningSessionCommand for CMS local-agent completion. Kept only for legacy providers.")]
 public sealed record CompleteSignatureCommand(Guid SessionId, byte[] Signature, byte[] PublicCertificateDer, IReadOnlyList<byte[]> CertificateChainDer, byte[]? TimestampToken, IReadOnlyDictionary<string, string> TechnicalMetadata);
+public sealed record PrepareSigningSessionCommand(Guid TenantId, Guid UserId, Guid DocumentId, Guid DocumentVersionId, string? Purpose, string CorrelationId, string RequestIpHash, string UserAgentHash);
 public sealed record CompleteSigningSessionCommand(Guid TenantId, Guid UserId, Guid SessionId, string CompletionToken, string IdempotencyKey, byte[] Cms, byte[] Certificate, IReadOnlyList<byte[]> CertificateChain, string AgentOperationId, string AgentVersion, string CorrelationId);
+public sealed record SignatureValidationOutcome(SignatureValidationStatus CryptographicStatus, SignatureValidationStatus CertificateStatus, SignatureValidationStatus TrustStatus, SignatureValidationStatus ValidationStatus, SignatureConformityStatus ConformityStatus, IReadOnlyList<SignatureValidationCheck> Checks);
 public sealed record ContentCapabilityResult(Guid TenantId, Guid DocumentId, Guid DocumentVersionId, string FileName, string ContentType, long SizeBytes, string ExpectedSha256);
 
 public sealed record CompleteSignatureResult(bool Success, Guid? SignatureId, SignatureValidationStatus CryptographicStatus, SignatureValidationStatus CertificateStatus, SignatureValidationStatus ValidationStatus, SignatureConformityStatus ConformityStatus, string? Error)
@@ -32,8 +35,8 @@ public sealed record SignatureValidationCheck(string Name, SignatureValidationSt
 
 public interface ISigningOrchestrator
 {
-    Task<PrepareSignatureResult> PrepareAsync(PrepareSignatureCommand command, CancellationToken ct);
-    Task<CompleteSignatureResult> CompleteAsync(CompleteSignatureCommand command, CancellationToken ct);
+    Task<CreateSigningSessionResponse> PrepareAsync(PrepareSigningSessionCommand command, CancellationToken ct);
+    Task<CompleteSignatureResult> CompleteAsync(CompleteSigningSessionCommand command, CancellationToken ct);
     Task<SignatureValidationReport> ValidateAsync(ValidateSignatureCommand command, CancellationToken ct);
 }
 

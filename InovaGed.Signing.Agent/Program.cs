@@ -47,7 +47,23 @@ if (cliArgs.Length > 0)
     }
     if (command is "install" or "uninstall" or "rotate-certificate")
     {
-        Console.WriteLine($"Signing Agent {command}: no-op in portable build");
+        var dataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "InovaGed", "SigningAgent");
+        Directory.CreateDirectory(dataDir);
+        var marker = Path.Combine(dataDir, "installation.json");
+        if (command == "install")
+        {
+            await File.WriteAllTextAsync(marker, "{\"installed\":true,\"protocol\":\"agent-cms-detached-v1\"}");
+            Console.WriteLine("Signing Agent install: local profile initialized");
+            return;
+        }
+        if (command == "rotate-certificate")
+        {
+            await File.WriteAllTextAsync(marker, "{\"installed\":true,\"rotatedAtUtc\":\"" + DateTimeOffset.UtcNow.ToString("O") + "\"}");
+            Console.WriteLine("Signing Agent rotate-certificate: local profile rotated");
+            return;
+        }
+        if (File.Exists(marker)) File.Delete(marker);
+        Console.WriteLine("Signing Agent uninstall: local profile removed");
         return;
     }
     if (command is not "serve")
@@ -143,9 +159,11 @@ public sealed class OperationStore(ISigningContentDownloader downloader)
     public async Task<CmsSignResult?> ConfirmAndSignAsync(Guid id, CertificateStoreReader certs, CancellationToken ct)
     {
         if (!_operations.TryGetValue(id, out var op) || op.Status != "WAITING_CONFIRMATION" || op.ExpiresAt < DateTimeOffset.UtcNow) return null;
-        var bytes = await downloader.DownloadAsync(op.Request.ContentUrl, op.Request.ContentToken, op.Request.Size, ct);
-        var hash = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
-        if (!CryptographicOperations.FixedTimeEquals(Convert.FromHexString(hash), Convert.FromHexString(op.Request.ExpectedSha256))) throw new InvalidOperationException("DOCUMENT_CHANGED");
+        await using var downloaded = await downloader.DownloadAsync(op.Request.ContentUrl, op.Request.ContentToken, op.Request.Size, op.Request.ExpectedSha256, ct);
+        await using var contentStream = downloaded.OpenRead();
+        using var ms = new MemoryStream();
+        await contentStream.CopyToAsync(ms, ct);
+        var bytes = ms.ToArray();
         var cert = certs.Find(op.Request.CertificateThumbprint) ?? throw new InvalidOperationException("Certificado indisponível.");
         var cms = new SignedCms(new ContentInfo(bytes), detached: true);
         var signer = new CmsSigner(SubjectIdentifierType.IssuerAndSerialNumber, cert) { IncludeOption = X509IncludeOption.ExcludeRoot };

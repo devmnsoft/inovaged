@@ -212,6 +212,7 @@ public static class InfrastructureServiceCollectionExtensions
             services.AddScoped<IDocumentVersionSigningContentService, DocumentVersionSigningContentService>();
             services.AddScoped<ISignaturePackageService, SignaturePackageService>();
             services.AddScoped<ISignatureValidationService, CmsDetachedSignatureValidationService>();
+            services.AddScoped<ISigningUnitOfWorkFactory, PostgresSigningUnitOfWorkFactory>();
             services.AddScoped<ISigningOrchestrator, CmsSigningOrchestrator>();
         }
         else
