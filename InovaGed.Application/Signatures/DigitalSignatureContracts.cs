@@ -10,8 +10,8 @@ public sealed record CreateSigningSessionRequest(Guid DocumentId, Guid DocumentV
 
 public sealed record CreateSigningSessionResponse(Guid SessionId, string Status, string ContentUrl, string ContentToken, string CompletionToken, string ExpectedSha256, long SizeBytes, string FileName, string DocumentCode, string VersionLabel, DateTimeOffset ExpiresAt, string CorrelationId);
 public sealed record SigningSessionRecord(Guid Id, Guid TenantId, Guid UserId, Guid DocumentId, Guid DocumentVersionId, string Status, string ContentHash, string ContentHashAlgorithm, long SizeBytes, string FileName, string DocumentCode, string VersionLabel, DateTimeOffset ExpiresAt, DateTimeOffset? FirstContentAccessedAt, DateTimeOffset? CompletedAt, DateTimeOffset? CancelledAt, int FailureCount, string CorrelationId, Guid? SignatureId = null, string? SafeError = null);
-public sealed record DocumentSignatureRecord(Guid Id, Guid TenantId, Guid SessionId, Guid DocumentId, Guid DocumentVersionId, string SignatureType, string SignatureFormat, string SignatureProfile, string SignatureSource, string CryptographicStatus, string ValidationStatus, string ConformityStatus, string CmsSha256, string ContentSha256, byte[] CmsBytes, byte[] CertificateDer, IReadOnlyList<byte[]> CertificateChainDer, string EngineVersion, string CorrelationId, DateTimeOffset CreatedAt);
-public sealed record SignatureValidationRunRecord(Guid Id, Guid TenantId, Guid SignatureId, string CryptographicStatus, string ValidationStatus, string ConformityStatus, string EngineVersion, DateTimeOffset ValidatedAt, string CorrelationId);
+public sealed record DocumentSignatureRecord(Guid Id, Guid TenantId, Guid SessionId, Guid DocumentId, Guid DocumentVersionId, string SignatureType, string SignatureFormat, string SignatureProfile, string SignatureSource, string CryptographicStatus, string ValidationStatus, string ConformityStatus, string CmsSha256, string ContentSha256, byte[] CmsBytes, byte[] CertificateDer, IReadOnlyList<byte[]> CertificateChainDer, string EngineVersion, string CorrelationId, DateTimeOffset CreatedAt, string CertificateStatus = "NOT_VERIFIABLE", string TrustStatus = "NOT_VERIFIABLE");
+public sealed record SignatureValidationRunRecord(Guid Id, Guid TenantId, Guid SignatureId, string CryptographicStatus, string ValidationStatus, string ConformityStatus, string EngineVersion, DateTimeOffset ValidatedAt, string CorrelationId, string CertificateStatus = "NOT_VERIFIABLE", string TrustStatus = "NOT_VERIFIABLE");
 public sealed record SignatureEventRecord(Guid Id, Guid TenantId, Guid? SessionId, Guid? SignatureId, string EventType, string SafeMessage, string CorrelationId, DateTimeOffset CreatedAt);
 public sealed record SigningContentMetadata(Guid TenantId, Guid DocumentId, Guid DocumentVersionId, string FileName, string DocumentCode, string VersionLabel, string ContentType, long SizeBytes);
 public sealed record SignaturePackageFile(string FileName, string ContentType, Stream Content, string Sha256);
@@ -25,9 +25,10 @@ public sealed record CompleteSigningSessionCommand(Guid TenantId, Guid UserId, G
 public sealed record SignatureValidationOutcome(SignatureValidationStatus CryptographicStatus, SignatureValidationStatus CertificateStatus, SignatureValidationStatus TrustStatus, SignatureValidationStatus ValidationStatus, SignatureConformityStatus ConformityStatus, IReadOnlyList<SignatureValidationCheck> Checks);
 public sealed record ContentCapabilityResult(Guid TenantId, Guid DocumentId, Guid DocumentVersionId, string FileName, string ContentType, long SizeBytes, string ExpectedSha256);
 
-public sealed record CompleteSignatureResult(bool Success, Guid? SignatureId, SignatureValidationStatus CryptographicStatus, SignatureValidationStatus CertificateStatus, SignatureValidationStatus ValidationStatus, SignatureConformityStatus ConformityStatus, string? Error)
+public sealed record CompleteSignatureResult(bool Success, Guid? SignatureId, SignatureValidationStatus CryptographicStatus, SignatureValidationStatus CertificateStatus, SignatureValidationStatus TrustStatus, SignatureValidationStatus ValidationStatus, SignatureConformityStatus ConformityStatus, string? Error)
 {
-    public CompleteSignatureResult(bool Success, Guid? SignatureId, SignatureValidationStatus ValidationStatus, string? Error) : this(Success, SignatureId, ValidationStatus, SignatureValidationStatus.INDETERMINATE, ValidationStatus, SignatureConformityStatus.NOT_EVALUATED, Error) { }
+    public CompleteSignatureResult(bool Success, Guid? SignatureId, SignatureValidationStatus ValidationStatus, string? Error) : this(Success, SignatureId, ValidationStatus, SignatureValidationStatus.INDETERMINATE, SignatureValidationStatus.NOT_VERIFIABLE, ValidationStatus, SignatureConformityStatus.NOT_EVALUATED, Error) { }
+    public CompleteSignatureResult(bool Success, Guid? SignatureId, SignatureValidationStatus CryptographicStatus, SignatureValidationStatus CertificateStatus, SignatureValidationStatus ValidationStatus, SignatureConformityStatus ConformityStatus, string? Error) : this(Success, SignatureId, CryptographicStatus, CertificateStatus, SignatureValidationStatus.NOT_VERIFIABLE, ValidationStatus, ConformityStatus, Error) { }
 }
 public sealed record ValidateSignatureCommand(Guid TenantId, Guid SignatureId, Guid DocumentId, Guid DocumentVersionId, byte[] ContentBytes, string CorrelationId);
 public sealed record SignatureValidationReport(Guid ValidationRunId, SignatureValidationStatus Status, SignatureProfile Profile, DateTimeOffset ValidatedAt, string EngineVersion, IReadOnlyList<SignatureValidationCheck> Checks);
@@ -121,3 +122,41 @@ public sealed record CertificateIdentity(string? CommonName, string? MaskedCpf, 
 public sealed record TimestampTokenResult(bool Success, byte[]? Token, DateTimeOffset? TimestampTime, SignatureValidationStatus Status, string? Error);
 public sealed record SignaturePolicyDescriptor(string Oid, string Name, SignatureType Type, SignatureProfile Profile, string Version, string Status, string? Hash, DateTimeOffset? ValidFrom, DateTimeOffset? ValidTo);
 public sealed record SignatureEvidence(Guid TenantId, Guid SignatureId, string EvidenceType, string HashAlgorithm, string EvidenceHash, byte[]? EvidenceBytes, DateTimeOffset CapturedAt, string CorrelationId);
+
+public sealed record SignatureDetailsResponse(
+    Guid Id,
+    Guid TenantId,
+    Guid DocumentId,
+    Guid DocumentVersionId,
+    string SignatureType,
+    string SignatureFormat,
+    string SignatureProfile,
+    string SignatureSource,
+    string CmsSha256,
+    string ContentSha256,
+    string? SignerMaskedDocument,
+    string? Issuer,
+    string? SerialAbbreviated,
+    DateTimeOffset? CertificateNotBefore,
+    DateTimeOffset? CertificateNotAfter,
+    string CryptographicStatus,
+    string CertificateStatus,
+    string TrustStatus,
+    string ValidationStatus,
+    string ConformityStatus,
+    string EngineVersion,
+    DateTimeOffset CreatedAt,
+    string CorrelationId);
+
+public sealed record SignatureValidationDetailsResponse(
+    Guid ValidationRunId,
+    Guid SignatureId,
+    string CryptographicStatus,
+    string CertificateStatus,
+    string TrustStatus,
+    string ValidationStatus,
+    string ConformityStatus,
+    string EngineVersion,
+    DateTimeOffset ValidatedAt,
+    IReadOnlyList<SignatureValidationCheck> Checks,
+    string CorrelationId);

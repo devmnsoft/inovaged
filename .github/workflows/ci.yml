@@ -80,6 +80,7 @@ jobs:
           test -f database/migrations/2026_07_signature_cms_agent_runtime.sql
           test -f database/migrations/2026_07_signature_cms_end_to_end.sql
           test -f database/migrations/2026_07_signature_cms_operational_fix.sql
+          test -f database/migrations/2026_07_signature_cms_rc3_status.sql
           cd /
           psql "$CONNECTION_STRING" -v ON_ERROR_STOP=1 -f "$GITHUB_WORKSPACE/database/apply_all_required_migrations.sql"
           psql "$CONNECTION_STRING" -v ON_ERROR_STOP=1 -f "$GITHUB_WORKSPACE/database/apply_all_required_migrations.sql"
@@ -159,12 +160,44 @@ jobs:
         run: dotnet restore InovaGed.sln
       - name: Build CMS E2E projects
         run: dotnet build InovaGed.sln --no-restore --configuration Release
-      - name: Run CMS E2E guards
-        run: dotnet test InovaGed.Signing.Agent.Tests/InovaGed.Signing.Agent.Tests.csproj --no-build --configuration Release --filter "FullyQualifiedName~Cms|FullyQualifiedName~Pairing|FullyQualifiedName~Confirmation|FullyQualifiedName~Downloader" --logger "trx;LogFileName=cms-e2e.trx" --results-directory TestResults
-      - name: OpenSSL availability
-        run: openssl version
+      - name: Run CMS E2E tests
+        run: dotnet test InovaGed.Signing.EndToEndTests/InovaGed.Signing.EndToEndTests.csproj --configuration Release --logger "trx;LogFileName=cms-e2e.trx" --results-directory TestResults
+      - name: Fail when CMS E2E executed zero tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import pathlib, re, sys, xml.etree.ElementTree as ET
+          trx = next(pathlib.Path('TestResults').rglob('cms-e2e.trx'))
+          root = ET.parse(trx).getroot()
+          counters = next(e for e in root.iter() if e.tag.endswith('Counters'))
+          total = int(counters.attrib.get('total', '0'))
+          if total == 0:
+              raise SystemExit('cms-e2e.trx reported total=0')
+          print(f'cms-e2e total={total}')
+          PY
+      - name: Generate synthetic CMS fixture and validate with OpenSSL
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p cms-artifacts/certificate-chain
+          printf 'InovaGed CMS E2E synthetic document\n' > cms-artifacts/documento-original.bin
+          openssl req -x509 -newkey rsa:2048 -nodes -keyout "$RUNNER_TEMP/cms.key" -out cms-artifacts/certificate.cer -days 2 -subj "/CN=InovaGed CMS E2E" -addext "keyUsage=digitalSignature" -addext "extendedKeyUsage=clientAuth"
+          cp cms-artifacts/certificate.cer cms-artifacts/certificate-chain/01.cer
+          openssl cms -sign -binary -in cms-artifacts/documento-original.bin -signer cms-artifacts/certificate.cer -inkey "$RUNNER_TEMP/cms.key" -outform DER -nodetach -out "$RUNNER_TEMP/attached.der"
+          openssl cms -sign -binary -in cms-artifacts/documento-original.bin -signer cms-artifacts/certificate.cer -inkey "$RUNNER_TEMP/cms.key" -outform DER -out cms-artifacts/assinatura.p7s
+          openssl cms -verify -binary -inform DER -in cms-artifacts/assinatura.p7s -content cms-artifacts/documento-original.bin -noverify -out /dev/null
+          cat > cms-artifacts/validation-report.json <<'JSON'
+          {"signature_type":"CMS_DETACHED","signature_format":"CMS_PKCS7_DETACHED","conformity_status":"NOT_EVALUATED","openssl_verify":"passed"}
+          JSON
+          cat > cms-artifacts/README.txt <<'TXT'
+          Pacote sintético de homologação CMS detached. Conformidade ICP-Brasil, revogação e carimbo do tempo não avaliados.
+          TXT
+          (cd cms-artifacts && sha256sum documento-original.bin assinatura.p7s certificate.cer certificate-chain/01.cer validation-report.json README.txt > checksums.sha256 && zip -r validation-package.zip .)
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: cms-e2e-diagnostics
-          path: TestResults/**/*.trx
+          path: |
+            TestResults/**/*.trx
+            cms-artifacts/**

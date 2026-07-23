@@ -2963,3 +2963,4 @@ where coalesce(reg_status, 'A') = 'A';
 \ir migrations/2026_07_signature_cms_agent_runtime.sql
 \ir migrations/2026_07_signature_cms_end_to_end.sql
 \ir migrations/2026_07_signature_cms_operational_fix.sql
+\ir migrations/2026_07_signature_cms_rc3_status.sql

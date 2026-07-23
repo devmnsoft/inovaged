@@ -3,7 +3,8 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 
 public interface IAgentPairingService { PairingResponse Create(PairingRequest request); bool IsValid(string token, string origin); bool Revoke(string token); }
-public interface IAgentAuthenticationService { bool Authenticate(HttpRequest request); }
+public sealed record AgentAuthenticationResult(bool Success, Guid? PairingId, string? Origin, string? ProtocolVersion, string? Error);
+public interface IAgentAuthenticationService { AgentAuthenticationResult Authenticate(HttpRequest request); }
 public interface IAgentReplayProtectionService { bool Accept(string origin, string nonce); }
 public interface ILocalCertificateStore { IReadOnlyList<CertificateInfo> ListUsableCertificates(); X509Certificate2? Find(string thumbprint); }
 public interface ILocalConfirmationService { IResult Render(Guid operationId); }
@@ -38,13 +39,16 @@ public sealed class AgentReplayProtectionService : IAgentReplayProtectionService
 
 public sealed class AgentAuthenticationService(PairingStore pairings, IAgentReplayProtectionService replay) : IAgentAuthenticationService
 {
-    public bool Authenticate(HttpRequest request)
+    public AgentAuthenticationResult Authenticate(HttpRequest request)
     {
         var token = request.Headers["X-InovaGed-Pairing-Token"].ToString();
         var origin = request.Headers["X-InovaGed-Origin"].ToString();
         var nonce = request.Headers["X-InovaGed-Request-Nonce"].ToString();
         var protocol = request.Headers["X-InovaGed-Agent-Protocol"].ToString();
-        return protocol == "agent-cms-detached-v1" && replay.Accept(origin, nonce) && pairings.IsValid(token, origin);
+        if (protocol != "agent-cms-detached-v1") return new(false, null, origin, protocol, "protocol_invalid");
+        if (!replay.Accept(origin, nonce)) return new(false, null, origin, protocol, "replay_or_nonce_invalid");
+        var pairingId = pairings.GetPairingId(token, origin);
+        return pairingId is { } id ? new(true, id, origin, protocol, null) : new(false, null, origin, protocol, "pairing_invalid");
     }
 }
 
