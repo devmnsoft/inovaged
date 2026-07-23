@@ -15,3 +15,5 @@ public interface ISigningUnitOfWorkFactory
 {
     Task<ISigningUnitOfWork> BeginAsync(CancellationToken ct);
 }
+
+public sealed record SigningTransactionContext(IDbConnection Connection, IDbTransaction Transaction, CancellationToken CancellationToken);
