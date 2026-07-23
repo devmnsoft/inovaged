@@ -24,19 +24,15 @@ public sealed class SigningApiController(
         var tenantId = ReadGuidClaim("tenant_id");
         var userId = ReadGuidClaim("sub") ?? ReadGuidClaim(System.Security.Claims.ClaimTypes.NameIdentifier);
         if (tenantId is null || userId is null) return Forbid();
-        var metadata = await content.GetMetadataAsync(tenantId.Value, request.DocumentId, request.DocumentVersionId, ct);
-        await content.ValidateSizeAsync(metadata.SizeBytes, ct);
-        await using var stream = await content.OpenReadAsync(tenantId.Value, request.DocumentId, request.DocumentVersionId, ct);
-        var sha256 = await content.CalculateSha256Async(stream, ct);
-        var contentToken = Token();
-        var completionToken = Token();
-        var nonce = Token();
-        var expires = DateTimeOffset.UtcNow.AddSeconds(options.Value.SessionTtlSeconds);
-        var command = new PrepareSignatureCommand(tenantId.Value, userId.Value, request.DocumentId, request.DocumentVersionId, SignatureType.CMS_DETACHED, "CMS_PKCS7_DETACHED", null, sha256, "SHA-256", nonce, expires, HttpContext.TraceIdentifier);
-        var result = await orchestrator.PrepareAsync(command, ct);
-        if (!result.Success || result.SessionId is null) return Problem(result.Error, statusCode: 500);
-        await sessions.CreateAsync(new SigningSessionRecord(result.SessionId.Value, tenantId.Value, userId.Value, request.DocumentId, request.DocumentVersionId, SigningProcessStatus.REQUESTED.ToString(), sha256, "SHA-256", metadata.SizeBytes, metadata.FileName, metadata.DocumentCode, metadata.VersionLabel, expires, null, null, null, 0, HttpContext.TraceIdentifier), Hash(contentToken), Hash(completionToken), Hash(nonce), ct);
-        return Ok(new CreateSigningSessionResponse(result.SessionId.Value, SigningProcessStatus.REQUESTED.ToString(), BuildPublicContentUrl(result.SessionId.Value), contentToken, completionToken, sha256, metadata.SizeBytes, metadata.FileName, metadata.DocumentCode, metadata.VersionLabel, expires, HttpContext.TraceIdentifier));
+        var command = new PrepareSigningSessionCommand(tenantId.Value, userId.Value, request.DocumentId, request.DocumentVersionId, request.Purpose, HttpContext.TraceIdentifier, Hash(HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown"), Hash(Request.Headers.UserAgent.ToString()));
+        try
+        {
+            return Ok(await orchestrator.PrepareAsync(command, ct));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Problem(ex.Message, statusCode: 400);
+        }
     }
 
     [HttpGet("/api/signing/sessions/{id:guid}")]
@@ -65,8 +61,7 @@ public sealed class SigningApiController(
         if (!TryDecode(request.SignatureCmsBase64, options.Value.MaxDocumentSizeMb * 1024 * 1024, out var cms, out var error) || !TryDecode(request.CertificateDerBase64, 1024 * 1024, out var cert, out error)) return Problem(error, statusCode: 400);
         var chain = new List<byte[]>(); foreach (var item in request.CertificateChainDerBase64.Take(10)) { if(!TryDecode(item,1024*1024,out var der,out error)) return Problem(error,statusCode:400); chain.Add(der); }
         var tenantId = ReadGuidClaim("tenant_id"); var userId = ReadGuidClaim("sub") ?? ReadGuidClaim(System.Security.Claims.ClaimTypes.NameIdentifier); if (tenantId is null || userId is null) return Forbid();
-        var typed = new CompleteSigningSessionCommand(tenantId.Value, userId.Value, id, request.CompletionToken, request.IdempotencyKey, cms, cert, chain, request.AgentOperationId, request.AgentVersion, HttpContext.TraceIdentifier);
-        var command = new CompleteSignatureCommand(typed.SessionId, typed.Cms, typed.Certificate, typed.CertificateChain, null, new Dictionary<string, string> { ["completion_token_hash"] = Hash(typed.CompletionToken), ["idempotency_key"] = typed.IdempotencyKey, ["agent_operation_id"] = typed.AgentOperationId, ["agent_version"] = typed.AgentVersion, ["tenant_id"] = typed.TenantId.ToString(), ["user_id"] = typed.UserId.ToString() });
+        var command = new CompleteSigningSessionCommand(tenantId.Value, userId.Value, id, request.CompletionToken, request.IdempotencyKey, cms, cert, chain, request.AgentOperationId, request.AgentVersion, HttpContext.TraceIdentifier);
         return Ok(await orchestrator.CompleteAsync(command, ct));
     }
 

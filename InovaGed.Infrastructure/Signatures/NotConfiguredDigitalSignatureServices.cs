@@ -25,10 +25,10 @@ public sealed class NotConfiguredSigningOrchestrator : ISigningOrchestrator
         "not-configured-icp-brasil-v1",
         new[] { new SignatureValidationCheck("DigitalSignature.Enabled", SignatureValidationStatus.NOT_VERIFIABLE, message) });
 
-    public Task<PrepareSignatureResult> PrepareAsync(PrepareSignatureCommand command, CancellationToken ct) =>
-        Task.FromResult(new PrepareSignatureResult(false, null, SigningProcessStatus.FAILED, null, null, "Módulo de assinatura digital desabilitado."));
+    public Task<CreateSigningSessionResponse> PrepareAsync(PrepareSigningSessionCommand command, CancellationToken ct) =>
+        throw new InvalidOperationException("Módulo de assinatura digital desabilitado.");
 
-    public Task<CompleteSignatureResult> CompleteAsync(CompleteSignatureCommand command, CancellationToken ct) =>
+    public Task<CompleteSignatureResult> CompleteAsync(CompleteSigningSessionCommand command, CancellationToken ct) =>
         Task.FromResult(new CompleteSignatureResult(false, null, SignatureValidationStatus.NOT_VERIFIABLE, "Módulo de assinatura digital desabilitado."));
 
     public Task<SignatureValidationReport> ValidateAsync(ValidateSignatureCommand command, CancellationToken ct) =>

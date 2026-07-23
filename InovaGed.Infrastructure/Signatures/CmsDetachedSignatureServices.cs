@@ -301,20 +301,30 @@ public sealed class PostgresSigningSessionRepository(IDbConnectionFactory db) : 
     public async Task<DocumentSignatureRecord?> GetExistingCompletionAsync(Guid tenantId, Guid sessionId, string idempotencyKey, string payloadHash, CancellationToken ct){ await using var c=await db.OpenAsync(ct); return await c.QuerySingleOrDefaultAsync<DocumentSignatureRecord>(new CommandDefinition("select s.id,s.tenant_id TenantId,s.signing_session_id SessionId,s.document_id DocumentId,s.document_version_id DocumentVersionId,s.signature_type SignatureType,s.signature_format SignatureFormat,s.signature_profile SignatureProfile,s.signature_source SignatureSource,s.cryptographic_status CryptographicStatus,s.validation_status ValidationStatus,s.conformity_status ConformityStatus,s.cms_sha256 CmsSha256,s.content_sha256 ContentSha256,s.cms_bytes CmsBytes,s.certificate_der CertificateDer,s.engine_version EngineVersion,s.correlation_id CorrelationId,s.created_at CreatedAt from ged.document_signature s join ged.signing_session ss on ss.tenant_id=s.tenant_id and ss.id=s.signing_session_id where ss.tenant_id=@tenantId and ss.id=@sessionId and ss.completion_idempotency_key=@idempotencyKey and ss.idempotency_payload_hash=@payloadHash", new{tenantId,sessionId,idempotencyKey,payloadHash}, cancellationToken:ct)); }
     async Task SetStatus(Guid tenantId,Guid sessionId,string status,CancellationToken ct){ await using var c=await db.OpenAsync(ct); await c.ExecuteAsync(new CommandDefinition("update ged.signing_session set status=@status where tenant_id=@tenantId and id=@sessionId and status not in ('COMPLETED','CANCELLED','EXPIRED')", new{tenantId,sessionId,status}, cancellationToken:ct)); }
 }
-public sealed class CmsSigningOrchestrator(ISignatureValidationService validation, ISigningSessionRepository sessions, IDocumentVersionSigningContentService content, ISignatureRepository signatures, ISignatureValidationRepository validationRuns, ISignatureEvidenceRepository evidences) : ISigningOrchestrator
+public sealed class CmsSigningOrchestrator(ISignatureValidationService validation, ISigningSessionRepository sessions, IDocumentVersionSigningContentService content, ISignatureRepository signatures, ISignatureValidationRepository validationRuns, ISignatureEvidenceRepository evidences, Microsoft.Extensions.Options.IOptions<DigitalSignatureOptions> options) : ISigningOrchestrator
 {
-    public Task<PrepareSignatureResult> PrepareAsync(PrepareSignatureCommand command, CancellationToken ct)
-        => Task.FromResult(new PrepareSignatureResult(true, Guid.NewGuid(), SigningProcessStatus.REQUESTED, command.Nonce, command.ExpiresAt, null));
-
-    public async Task<CompleteSignatureResult> CompleteAsync(CompleteSignatureCommand command, CancellationToken ct)
+    public async Task<CreateSigningSessionResponse> PrepareAsync(PrepareSigningSessionCommand command, CancellationToken ct)
     {
-        if (!command.TechnicalMetadata.TryGetValue("tenant_id", out var tenantText) || !Guid.TryParse(tenantText, out var tenantId))
-            return new CompleteSignatureResult(false, null, SignatureValidationStatus.NOT_VERIFIABLE, "tenant_not_resolved");
-        if (!command.TechnicalMetadata.TryGetValue("user_id", out var userText) || !Guid.TryParse(userText, out var userId))
-            return new CompleteSignatureResult(false, null, SignatureValidationStatus.NOT_VERIFIABLE, "user_not_resolved");
-        var completionTokenHash = command.TechnicalMetadata.GetValueOrDefault("completion_token_hash") ?? string.Empty;
-        var idempotencyKey = command.TechnicalMetadata.GetValueOrDefault("idempotency_key") ?? string.Empty;
-        var payloadHash = ComputeCompletionPayloadHash(command, tenantId, userId);
+        var metadata = await content.GetMetadataAsync(command.TenantId, command.DocumentId, command.DocumentVersionId, ct);
+        await content.ValidateSizeAsync(metadata.SizeBytes, ct);
+        await using var stream = await content.OpenReadAsync(command.TenantId, command.DocumentId, command.DocumentVersionId, ct);
+        var sha256 = await content.CalculateSha256Async(stream, ct);
+        var contentToken = Token();
+        var completionToken = Token();
+        var nonce = Token();
+        var expires = DateTimeOffset.UtcNow.AddSeconds(options.Value.SessionTtlSeconds);
+        var sessionId = Guid.NewGuid();
+        await sessions.CreateAsync(new SigningSessionRecord(sessionId, command.TenantId, command.UserId, command.DocumentId, command.DocumentVersionId, SigningProcessStatus.REQUESTED.ToString(), sha256, "SHA-256", metadata.SizeBytes, metadata.FileName, metadata.DocumentCode, metadata.VersionLabel, expires, null, null, null, 0, command.CorrelationId), Hash(contentToken), Hash(completionToken), Hash(nonce), ct);
+        return new CreateSigningSessionResponse(sessionId, SigningProcessStatus.REQUESTED.ToString(), BuildContentUrl(sessionId), contentToken, completionToken, sha256, metadata.SizeBytes, metadata.FileName, metadata.DocumentCode, metadata.VersionLabel, expires, command.CorrelationId);
+    }
+
+    public async Task<CompleteSignatureResult> CompleteAsync(CompleteSigningSessionCommand command, CancellationToken ct)
+    {
+        var tenantId = command.TenantId;
+        var userId = command.UserId;
+        var completionTokenHash = Hash(command.CompletionToken);
+        var idempotencyKey = command.IdempotencyKey;
+        var payloadHash = ComputeCompletionPayloadHash(command);
         var existing = await sessions.GetExistingCompletionAsync(tenantId, command.SessionId, idempotencyKey, payloadHash, ct);
         if (existing is not null) return new CompleteSignatureResult(true, existing.Id, SignatureValidationStatus.INDETERMINATE, null);
         var session = await sessions.GetForCompletionAsync(tenantId, command.SessionId, completionTokenHash, ct);
@@ -325,14 +335,14 @@ public sealed class CmsSigningOrchestrator(ISignatureValidationService validatio
         try
         {
             await using var doc = await content.OpenReadAsync(tenantId, session.DocumentId, session.DocumentVersionId, ct);
-            var report = await validation.ValidateDetachedAsync(doc, command.Signature, command.PublicCertificateDer, ct);
+            var report = await validation.ValidateDetachedAsync(doc, command.Cms, command.Certificate, ct);
             var crypto = report.Checks.Any(c => c.Status is SignatureValidationStatus.SIGNATURE_CORRUPTED) ? SignatureValidationStatus.SIGNATURE_CORRUPTED : report.Checks.Any(c => c.Status is SignatureValidationStatus.INVALID) ? SignatureValidationStatus.INVALID : SignatureValidationStatus.VALID;
             var signatureId = Guid.NewGuid();
-            var sig = new DocumentSignatureRecord(signatureId, tenantId, command.SessionId, session.DocumentId, session.DocumentVersionId, "CMS_DETACHED", "CMS_PKCS7_DETACHED", "UNKNOWN", "LOCAL_AGENT", crypto.ToString(), "INDETERMINATE", "NOT_EVALUATED", payloadHash, session.ContentHash, command.Signature, command.PublicCertificateDer, command.CertificateChainDer, report.EngineVersion, session.CorrelationId, DateTimeOffset.UtcNow);
+            var sig = new DocumentSignatureRecord(signatureId, tenantId, command.SessionId, session.DocumentId, session.DocumentVersionId, "CMS_DETACHED", "CMS_PKCS7_DETACHED", "UNKNOWN", "LOCAL_AGENT", crypto.ToString(), "INDETERMINATE", "NOT_EVALUATED", payloadHash, session.ContentHash, command.Cms, command.Certificate, command.CertificateChain, report.EngineVersion, session.CorrelationId, DateTimeOffset.UtcNow);
             var storedId = await signatures.CreateAsync(sig, ct);
             var run = new SignatureValidationRunRecord(Guid.NewGuid(), tenantId, storedId, crypto.ToString(), "INDETERMINATE", "NOT_EVALUATED", report.EngineVersion, DateTimeOffset.UtcNow, session.CorrelationId);
-            await validationRuns.CreateRunAsync(run, ct); await validationRuns.StoreChecksAsync(tenantId, run.Id, report.Checks.Append(new SignatureValidationCheck("REVOCATION_NOT_EVALUATED", SignatureValidationStatus.INDETERMINATE, "Revogação não avaliada nesta evolução.")).ToList(), ct); await validationRuns.StoreChainAsync(tenantId, run.Id, command.CertificateChainDer, ct);
-            await evidences.StoreAsync(new SignatureEvidence(tenantId, storedId, "CMS_DETACHED_DER", "SHA-256", payloadHash, command.Signature, DateTimeOffset.UtcNow, session.CorrelationId), ct);
+            await validationRuns.CreateRunAsync(run, ct); await validationRuns.StoreChecksAsync(tenantId, run.Id, report.Checks.Append(new SignatureValidationCheck("REVOCATION_NOT_EVALUATED", SignatureValidationStatus.INDETERMINATE, "Revogação não avaliada nesta evolução.")).ToList(), ct); await validationRuns.StoreChainAsync(tenantId, run.Id, command.CertificateChain, ct);
+            await evidences.StoreAsync(new SignatureEvidence(tenantId, storedId, "CMS_DETACHED_DER", "SHA-256", payloadHash, command.Cms, DateTimeOffset.UtcNow, session.CorrelationId), ct);
             await sessions.CompleteAsync(tenantId, command.SessionId, storedId, ct);
             return new CompleteSignatureResult(true, storedId, crypto, null);
         }
@@ -343,16 +353,26 @@ public sealed class CmsSigningOrchestrator(ISignatureValidationService validatio
         }
     }
     public Task<SignatureValidationReport> ValidateAsync(ValidateSignatureCommand command, CancellationToken ct) => validation.ValidateAsync(command, ct);
-    private static string ComputeCompletionPayloadHash(CompleteSignatureCommand command, Guid tenantId, Guid userId)
+    private string BuildContentUrl(Guid sessionId)
+    {
+        var baseUrl = options.Value.PublicServerBaseUrl?.TrimEnd();
+        if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps) throw new InvalidOperationException("DigitalSignature:PublicServerBaseUrl deve ser URL HTTPS absoluta.");
+        return $"{uri.GetLeftPart(UriPartial.Authority)}/api/signing/sessions/{sessionId}/content";
+    }
+    private static string ComputeCompletionPayloadHash(CompleteSigningSessionCommand command)
     {
         using var ms = new MemoryStream();
         using var writer = new BinaryWriter(ms, Encoding.UTF8, leaveOpen: true);
-        writer.Write(command.SessionId.ToByteArray()); writer.Write(tenantId.ToByteArray()); writer.Write(userId.ToByteArray());
-        WriteBytes(writer, command.Signature); WriteBytes(writer, command.PublicCertificateDer);
-        foreach (var item in command.CertificateChainDer.OrderBy(b => Convert.ToHexString(SHA256.HashData(b)), StringComparer.Ordinal)) WriteBytes(writer, item);
-        writer.Write(command.TechnicalMetadata.GetValueOrDefault("agent_operation_id") ?? string.Empty);
-        writer.Write(command.TechnicalMetadata.GetValueOrDefault("agent_version") ?? string.Empty);
+        writer.Write(command.SessionId.ToByteArray()); writer.Write(command.TenantId.ToByteArray()); writer.Write(command.UserId.ToByteArray());
+        WriteBytes(writer, command.Cms); WriteBytes(writer, command.Certificate);
+        foreach (var item in command.CertificateChain.OrderBy(b => Convert.ToHexString(SHA256.HashData(b)), StringComparer.Ordinal)) WriteBytes(writer, item);
+        writer.Write(command.AgentOperationId ?? string.Empty);
+        writer.Write(command.AgentVersion ?? string.Empty);
+        writer.Write("CMS_PKCS7_DETACHED");
+        writer.Write("LOCAL_AGENT");
         writer.Flush(); return Convert.ToHexString(SHA256.HashData(ms.ToArray())).ToLowerInvariant();
     }
+    private static string Token() => Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
+    private static string Hash(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
     private static void WriteBytes(BinaryWriter writer, byte[] value){ writer.Write(value.Length); writer.Write(value); }
 }
