@@ -272,4 +272,31 @@ public static class InfrastructureServiceCollectionExtensions
         return services;
     }
 
+    public static IServiceCollection AddInovaGedWebRuntime(this IServiceCollection services, IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+        services.AddInovaGedApplication(configuration);
+        services.AddInovaGedInfrastructure(configuration);
+        return services;
+    }
+
+    public static IServiceCollection AddInovaGedApiRuntime(this IServiceCollection services, IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+        services.AddInovaGedApplication(configuration);
+        services.AddInovaGedInfrastructure(configuration);
+        return services;
+    }
+
+    public static IServiceCollection AddInovaGedWorkerRuntime(this IServiceCollection services, IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+        services.AddInovaGedApplication(configuration);
+        services.AddInovaGedInfrastructure(configuration);
+        return services;
+    }
+
 }

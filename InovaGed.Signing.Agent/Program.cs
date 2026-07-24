@@ -158,7 +158,7 @@ public sealed class AgentOptions { public string[] AllowedOrigins { get; set; } 
 public sealed record PairingRequest(string Origin, string Code);
 public sealed record PairingChallengeRequest(string Origin);
 public sealed record PairingCompleteRequest(string Code);
-public sealed record PairingChallengeResponse(Guid Id, string Origin, string Code, DateTimeOffset ExpiresAt, int AttemptsRemaining);
+public sealed record PairingChallengeResponse(Guid ChallengeId, DateTimeOffset ExpiresAt, string ConfirmUiUrl, string Status);
 public sealed record PairingResponse(Guid PairingId, string PairingToken, DateTimeOffset ExpiresAt, string Origin, string ProtocolVersion);
 public sealed record CertificateInfo(string Thumbprint, string Name, string Issuer, string Serial, DateTimeOffset NotBefore, DateTimeOffset NotAfter, string Algorithm, string? MaskedCpf, bool HasPrivateKey, string KeyKind);
 public sealed record CmsSignRequest(Uri ContentUrl, string ContentToken, string ExpectedSha256, string CertificateThumbprint, string DocumentName, string Version, long Size, string Purpose);
@@ -166,8 +166,14 @@ public sealed record CmsSignResult(Guid OperationId, string Status, string Signa
 
 public sealed class PairingStore : IAgentPairingService
 {
+    private readonly IAgentProtectedStorage _storage;
     private readonly ConcurrentDictionary<Guid, (string Origin, string CodeHash, DateTimeOffset ExpiresAt, int Attempts, bool LocalApproved, bool Used, Guid? PairingId)> _challenges = new();
     private readonly ConcurrentDictionary<string, (Guid PairingId, string Origin, DateTimeOffset ExpiresAt, bool Revoked)> _tokens = new();
+    public PairingStore(IAgentProtectedStorage storage)
+    {
+        _storage = storage;
+        LoadPersistedPairingsAsync(CancellationToken.None).GetAwaiter().GetResult();
+    }
     public PairingResponse Create(PairingRequest request) => throw new InvalidOperationException("pair_direct_token_disabled");
     public PairingChallengeResponse CreateChallenge(PairingChallengeRequest request)
     {
@@ -176,7 +182,7 @@ public sealed class PairingStore : IAgentPairingService
         var code = RandomNumberGenerator.GetInt32(100000, 999999).ToString(System.Globalization.CultureInfo.InvariantCulture);
         var expires = DateTimeOffset.UtcNow.AddMinutes(5);
         _challenges[id] = (request.Origin, Hash(code), expires, 0, false, false, null);
-        return new PairingChallengeResponse(id, request.Origin, code, expires, 5);
+        return new PairingChallengeResponse(id, expires, $"/pairing/challenges/{id}/confirm-ui", "PENDING_LOCAL_CONFIRMATION");
     }
     public IResult RenderChallenge(Guid id) => _challenges.TryGetValue(id, out var c) && c.ExpiresAt >= DateTimeOffset.UtcNow
         ? Results.Content($"<html><body><h1>Autorizar pairing InovaGed</h1><p>Origem: {System.Net.WebUtility.HtmlEncode(c.Origin)}</p><form method='post' action='/pairing/challenges/{id}/confirm-local'><button>Autorizar neste computador</button></form></body></html>", "text/html")
@@ -201,24 +207,59 @@ public sealed class PairingStore : IAgentPairingService
         var pairingId = Guid.NewGuid();
         var expires = DateTimeOffset.UtcNow.AddDays(30);
         _tokens[token] = (pairingId, c.Origin, expires, false);
+        PersistPairingsAsync(CancellationToken.None).GetAwaiter().GetResult();
         _challenges[id] = (c.Origin, c.CodeHash, c.ExpiresAt, c.Attempts, c.LocalApproved, true, pairingId);
         return Results.Ok(new PairingResponse(pairingId, token, expires, c.Origin, "agent-cms-detached-v1"));
     }
     public Guid? GetPairingId(string token, string origin) => _tokens.TryGetValue(token, out var entry) && !entry.Revoked && entry.ExpiresAt >= DateTimeOffset.UtcNow && StringComparer.Ordinal.Equals(entry.Origin, origin) ? entry.PairingId : null;
     public bool IsValid(string token, string origin) => GetPairingId(token, origin).HasValue;
-    public bool Revoke(string token) => _tokens.TryRemove(token, out _);
-    public bool Revoke(Guid pairingId){ foreach(var kv in _tokens.Where(kv => kv.Value.PairingId == pairingId).ToArray()) _tokens.TryRemove(kv.Key, out _); return true; }
+    public bool Revoke(string token) { var removed = _tokens.TryRemove(token, out _); if (removed) PersistPairingsAsync(CancellationToken.None).GetAwaiter().GetResult(); return removed; }
+    public bool Revoke(Guid pairingId){ var changed=false; foreach(var kv in _tokens.Where(kv => kv.Value.PairingId == pairingId).ToArray()) changed |= _tokens.TryRemove(kv.Key, out _); if (changed) PersistPairingsAsync(CancellationToken.None).GetAwaiter().GetResult(); return true; }
+    private async Task PersistPairingsAsync(CancellationToken ct)
+    {
+        var active = _tokens.Where(kv => !kv.Value.Revoked && kv.Value.ExpiresAt >= DateTimeOffset.UtcNow)
+            .Select(kv => new PersistedPairing(kv.Value.PairingId, kv.Key, kv.Value.Origin, "agent-cms-detached-v1", DateTimeOffset.UtcNow, kv.Value.ExpiresAt, null)).ToArray();
+        await _storage.SaveAsync("pairings", System.Text.Json.JsonSerializer.Serialize(active), ct);
+    }
+    private async Task LoadPersistedPairingsAsync(CancellationToken ct)
+    {
+        var json = await _storage.ReadAsync("pairings", ct);
+        if (string.IsNullOrWhiteSpace(json)) return;
+        foreach (var p in System.Text.Json.JsonSerializer.Deserialize<PersistedPairing[]>(json) ?? [])
+            if (p.ExpiresAt >= DateTimeOffset.UtcNow && p.RevokedAt is null) _tokens[p.Token] = (p.PairingId, p.Origin, p.ExpiresAt, false);
+    }
     private static string Hash(string value) => Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
 }
+public sealed record PersistedPairing(Guid PairingId, string Token, string Origin, string ProtocolVersion, DateTimeOffset CreatedAt, DateTimeOffset ExpiresAt, DateTimeOffset? RevokedAt);
 
 public sealed class WindowsDpapiAgentProtectedStorage : IAgentProtectedStorage
 {
-    // Windows production storage uses DPAPI CurrentUser semantics; Linux CI keeps a non-secret compatibility fallback.
-    private const string Scope = "DataProtectionScope.CurrentUser";
+    private static readonly byte[] Entropy = System.Text.Encoding.UTF8.GetBytes("InovaGed.Signing.Agent.v1");
     private readonly string _dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "InovaGed", "SigningAgent", "protected");
-    public async Task SaveAsync(string name, string value, CancellationToken ct){ Directory.CreateDirectory(_dir); await File.WriteAllTextAsync(Path.Combine(_dir, name + ".protected"), Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(value)), ct); }
-    public async Task<string?> ReadAsync(string name, CancellationToken ct){ var path=Path.Combine(_dir, name + ".protected"); return File.Exists(path) ? System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(await File.ReadAllTextAsync(path, ct))) : null; }
+    public async Task SaveAsync(string name, string value, CancellationToken ct)
+    {
+        Directory.CreateDirectory(_dir);
+        var bytes = System.Text.Encoding.UTF8.GetBytes(value);
+        var protectedBytes = OperatingSystem.IsWindows() ? ProtectedData.Protect(bytes, Entropy, DataProtectionScope.CurrentUser) : bytes;
+        await File.WriteAllBytesAsync(Path.Combine(_dir, name + ".protected"), protectedBytes, ct);
+    }
+    public async Task<string?> ReadAsync(string name, CancellationToken ct)
+    {
+        var path=Path.Combine(_dir, name + ".protected");
+        if(!File.Exists(path)) return null;
+        var protectedBytes = await File.ReadAllBytesAsync(path, ct);
+        var bytes = OperatingSystem.IsWindows() ? ProtectedData.Unprotect(protectedBytes, Entropy, DataProtectionScope.CurrentUser) : protectedBytes;
+        return System.Text.Encoding.UTF8.GetString(bytes);
+    }
     public Task DeleteAsync(string name, CancellationToken ct){ var path=Path.Combine(_dir, name + ".protected"); if(File.Exists(path)) File.Delete(path); return Task.CompletedTask; }
+}
+
+public sealed class TestAgentProtectedStorage : IAgentProtectedStorage
+{
+    private readonly ConcurrentDictionary<string,string> _values = new();
+    public Task SaveAsync(string name, string value, CancellationToken ct){ _values[name]=value; return Task.CompletedTask; }
+    public Task<string?> ReadAsync(string name, CancellationToken ct)=>Task.FromResult(_values.TryGetValue(name, out var value) ? value : null);
+    public Task DeleteAsync(string name, CancellationToken ct){ _values.TryRemove(name, out _); return Task.CompletedTask; }
 }
 
 public sealed class OperationStore(ISigningContentDownloader downloader, Microsoft.Extensions.Options.IOptions<AgentOptions> options)

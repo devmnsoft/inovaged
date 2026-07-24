@@ -428,7 +428,6 @@ builder.Services.AddScoped<IRetentionCaseRepository, RetentionCaseRepository>();
 builder.Services.AddScoped<IRetentionQueueJob, RetentionQueueJob>();
 builder.Services.AddScoped<InstrumentRepository>();
 
-builder.Services.AddScoped<ICertificateValidationService, InovaGed.Web.Common.CertificateValidationStub>();
 
 builder.Services.AddScoped<ICertificateValidationService, CertificateValidationService>();
 

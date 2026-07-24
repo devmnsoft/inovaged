@@ -1,0 +1,127 @@
+name: inovaged-ci
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: [ main, develop, "feature/**", "codex/**" ]
+
+permissions:
+  contents: read
+  actions: read
+  checks: read
+
+jobs:
+  actionlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: raven-actions/actionlint@v2
+
+  solution-and-build:
+    needs: actionlint
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - run: dotnet --info
+      - run: dotnet sln InovaGed.sln list
+      - run: dotnet restore InovaGed.sln
+      - run: dotnet build InovaGed.sln --no-restore --configuration Release
+      - run: dotnet test InovaGed.sln --no-build --configuration Release --logger "trx;LogFileName=all-tests.trx" --results-directory TestResults
+      - run: git diff --check
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: solution-and-build-test-results
+          path: TestResults/**/*.trx
+
+  server-integration:
+    needs: solution-and-build
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: inovaged_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd="pg_isready -U postgres -d inovaged_ci"
+          --health-interval=10s --health-timeout=5s --health-retries=10
+    env:
+      ConnectionStrings__DefaultConnection: Host=localhost;Port=5432;Database=inovaged_ci;Username=postgres;Password=postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '8.0.x' }
+      - run: dotnet restore InovaGed.sln
+      - run: dotnet build InovaGed.Web/InovaGed.Web.csproj --no-restore --configuration Release
+      - run: dotnet build WebGed.WebApi/WebGed.WebApi.csproj --no-restore --configuration Release
+      - run: dotnet test InovaGed.Application.Tests/InovaGed.Application.Tests.csproj --configuration Release --filter "FullyQualifiedName~DependencyInjection|FullyQualifiedName~Antiforgery|FullyQualifiedName~PocPhase"
+
+  agent-windows:
+    needs: actionlint
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '8.0.x' }
+      - run: dotnet restore InovaGed.Signing.Agent/InovaGed.Signing.Agent.csproj
+      - run: dotnet build InovaGed.Signing.Agent/InovaGed.Signing.Agent.csproj --no-restore --configuration Release
+      - run: dotnet test InovaGed.Signing.Agent.Tests/InovaGed.Signing.Agent.Tests.csproj --configuration Release
+      - run: dotnet run --project InovaGed.Signing.Agent/InovaGed.Signing.Agent.csproj -- doctor
+
+  security:
+    needs: actionlint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          set -euo pipefail
+          ! rg -n "AllowAnyOrigin" --glob '!**/bin/**' --glob '!**/obj/**' .
+          ! rg -n "AllowAllPermissionChecker|CertificateValidationStub" InovaGed.Web InovaGed.Infrastructure WebGed.WebApi --glob '!**/bin/**' --glob '!**/obj/**'
+          ! rg -n "EnsureMandatoryChecks|Check registrado para homologação" InovaGed.Infrastructure/Signatures --glob '!**/bin/**' --glob '!**/obj/**'
+          ! rg -n "return Task.FromResult\(.*VALID|SignatureValidationResult\(\"VALID\"" InovaGed.Web InovaGed.Infrastructure --glob '!**/bin/**' --glob '!**/obj/**'
+
+  cms-e2e:
+    needs: [server-integration, agent-windows, security]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '8.0.x' }
+      - run: dotnet test InovaGed.Signing.EndToEndTests/InovaGed.Signing.EndToEndTests.csproj --configuration Release --logger "trx;LogFileName=cms-e2e.trx" --results-directory TestResults
+      - run: |
+          set -euo pipefail
+          test -s TestResults/cms-e2e.trx
+          openssl version
+
+  poc-contract-tests:
+    needs: solution-and-build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '8.0.x' }
+      - run: python -m json.tool docs/poc/matriz-poc-1-27.json >/dev/null
+      - run: dotnet test InovaGed.Application.Tests/InovaGed.Application.Tests.csproj --configuration Release --filter "FullyQualifiedName~PocPhase|FullyQualifiedName~PocMatrix"
+
+  migration-matrix:
+    needs: solution-and-build
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_USER: postgres, POSTGRES_PASSWORD: postgres, POSTGRES_DB: inovaged_migrations }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd="pg_isready -U postgres -d inovaged_migrations"
+          --health-interval=10s --health-timeout=5s --health-retries=10
+    steps:
+      - uses: actions/checkout@v4
+      - run: test -f database/apply_all_required_migrations.sql
+      - run: psql "postgresql://postgres:postgres@localhost:5432/inovaged_migrations" -v ON_ERROR_STOP=1 -f database/apply_all_required_migrations.sql
