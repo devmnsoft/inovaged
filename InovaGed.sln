@@ -81,6 +81,4 @@ Global
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {C650633B-7ED7-4BEF-A355-6EAD406A2BDC}
 	EndGlobalSection
-EndProject("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "InovaGed.Signing.EndToEndTests", "InovaGed.Signing.EndToEndTests\InovaGed.Signing.EndToEndTests.csproj", "{A7777777-8888-4999-9AAA-BBBBBBBBBBBB}"
-EndProject
-Global
+EndGlobal

@@ -10,7 +10,7 @@ public interface ICertificateValidationService
 }
 
 public sealed record CertLoginResult(bool Success, Guid? UserId, string? UserName, string? Cpf, string? Error);
-public sealed record SignatureValidationResult(string Status, string? Details); // VALID / INVALID / UNVERIFIABLE
+public sealed record SignatureValidationResult(string Status, string? Details); // VALID apenas após verificação criptográfica real; INVALID / UNVERIFIABLE
 
 public sealed class CertificateValidationService : ICertificateValidationService
 {
@@ -81,7 +81,8 @@ limit 1;", new { tenantId, cpf });
         if (signatureBytes == null || signatureBytes.Length == 0)
             return Task.FromResult(new SignatureValidationResult("UNVERIFIABLE", "Sem bytes de assinatura."));
 
-        return Task.FromResult(new SignatureValidationResult("VALID", "Validação operacional (stub)."));
+        var hash = Convert.ToHexString(SHA256.HashData(signatureBytes)).ToLowerInvariant();
+        return Task.FromResult(new SignatureValidationResult("UNVERIFIABLE", $"Validação CMS/ICP-Brasil deve ser executada pelo validador CMS real; sha256={hash[..12]}..."));
     }
 
     private static string? ExtractCpf(X509Certificate2 cert)
