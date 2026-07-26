@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: raven-actions/actionlint@v2
 
-  solution-and-build:
+  solution-validation:
     needs: actionlint
     runs-on: ubuntu-latest
     timeout-minutes: 35
@@ -38,8 +38,8 @@ jobs:
           name: solution-and-build-test-results
           path: TestResults/**/*.trx
 
-  server-integration:
-    needs: solution-and-build
+  server-linux:
+    needs: solution-validation
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -75,7 +75,7 @@ jobs:
       - run: dotnet test InovaGed.Signing.Agent.Tests/InovaGed.Signing.Agent.Tests.csproj --configuration Release
       - run: dotnet run --project InovaGed.Signing.Agent/InovaGed.Signing.Agent.csproj -- doctor
 
-  security:
+  security-guards:
     needs: actionlint
     runs-on: ubuntu-latest
     steps:
@@ -88,7 +88,7 @@ jobs:
           ! rg -n "return Task.FromResult\(.*VALID|SignatureValidationResult\(\"VALID\"" InovaGed.Web InovaGed.Infrastructure --glob '!**/bin/**' --glob '!**/obj/**'
 
   cms-e2e:
-    needs: [server-integration, agent-windows, security]
+    needs: [server-linux, agent-windows, security-guards]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -101,7 +101,7 @@ jobs:
           openssl version
 
   poc-contract-tests:
-    needs: solution-and-build
+    needs: solution-validation
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -111,7 +111,7 @@ jobs:
       - run: dotnet test InovaGed.Application.Tests/InovaGed.Application.Tests.csproj --configuration Release --filter "FullyQualifiedName~PocPhase|FullyQualifiedName~PocMatrix"
 
   migration-matrix:
-    needs: solution-and-build
+    needs: solution-validation
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -125,3 +125,29 @@ jobs:
       - uses: actions/checkout@v4
       - run: test -f database/apply_all_required_migrations.sql
       - run: psql "postgresql://postgres:postgres@localhost:5432/inovaged_migrations" -v ON_ERROR_STOP=1 -f database/apply_all_required_migrations.sql
+      - run: psql "postgresql://postgres:postgres@localhost:5432/inovaged_migrations" -v ON_ERROR_STOP=1 -f database/apply_all_required_migrations.sql
+
+  release-gate:
+    if: always()
+    needs:
+      - actionlint
+      - solution-validation
+      - server-linux
+      - agent-windows
+      - security-guards
+      - migration-matrix
+      - cms-e2e
+      - poc-contract-tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every mandatory gate to pass
+        env:
+          NEEDS_CONTEXT: ${{ toJson(needs) }}
+        run: |
+          python - <<'PY'
+          import json, os, sys
+          results = {name: job["result"] for name, job in json.loads(os.environ["NEEDS_CONTEXT"]).items()}
+          failed = {name: result for name, result in results.items() if result != "success"}
+          print(json.dumps(results, indent=2, sort_keys=True))
+          sys.exit(1 if failed else 0)
+          PY
