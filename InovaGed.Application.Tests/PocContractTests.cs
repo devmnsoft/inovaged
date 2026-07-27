@@ -31,19 +31,19 @@ internal static class PocMatrixContract
     }
 }
 
-[Trait("Category", "PoC")]
+[Trait("Category", "PoCContract")]
 public sealed class PocPhase1InstrumentsTests { [Fact] public void InstrumentsHaveExecutableContracts() => PocMatrixContract.AssertItems(1, 2, 3, 4); }
-[Trait("Category", "PoC")]
+[Trait("Category", "PoCContract")]
 public sealed class PocPhase2RetentionTests { [Fact] public void RetentionHasExecutableContracts() => PocMatrixContract.AssertItems(5, 6, 26); }
-[Trait("Category", "PoC")]
+[Trait("Category", "PoCContract")]
 public sealed class PocPhase3SecurityTests { [Fact] public void SecurityHasExecutableContracts() => PocMatrixContract.AssertItems(8, 10, 11, 12, 27); }
-[Trait("Category", "PoC")]
+[Trait("Category", "PoCContract")]
 public sealed class PocPhase4SigningTests { [Fact] public void SigningHasExecutableContracts() => PocMatrixContract.AssertItems(7, 9, 19, 20, 21, 22, 23); }
-[Trait("Category", "PoC")]
+[Trait("Category", "PoCContract")]
 public sealed class PocPhase5PhysicalArchiveTests { [Fact] public void PhysicalArchiveHasExecutableContracts() => PocMatrixContract.AssertItems(16, 17, 18, 24); }
-[Trait("Category", "PoC")]
+[Trait("Category", "PoCContract")]
 public sealed class PocPhase6LoansTests { [Fact] public void LoansHaveExecutableContracts() => PocMatrixContract.AssertItems(13, 14, 15); }
-[Trait("Category", "PoC")]
+[Trait("Category", "PoCContract")]
 public sealed class PocPhase7AuditTests { [Fact] public void AuditHasExecutableContracts() => PocMatrixContract.AssertItems(25, 27); }
-[Trait("Category", "PoC")]
+[Trait("Category", "PoCContract")]
 public sealed class PocMatrixValidationTests { [Fact] public void MatrixContainsExactlyItemsOneThroughTwentySeven() => Assert.Equal(Enumerable.Range(1, 27), PocMatrixContract.Load().Select(item => item.GetProperty("item").GetInt32()).Order()); }

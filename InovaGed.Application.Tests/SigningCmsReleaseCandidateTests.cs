@@ -2,6 +2,7 @@ using System.IO;
 
 namespace InovaGed.Application.Tests;
 
+[Trait("Category", "CmsContract")]
 public sealed class SigningCmsReleaseCandidateTests
 {
     [Fact]
