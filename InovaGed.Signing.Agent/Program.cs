@@ -5,10 +5,17 @@ using System.Security.Cryptography.Pkcs;
 using System.Security.Cryptography.X509Certificates;
 
 
-var cliArgs = args.Where(a => !string.Equals(a, "--", StringComparison.Ordinal)).ToArray();
-if (cliArgs.Length > 0)
+var parseResult = AgentCommandLine.Parse(args);
+if (!parseResult.Success)
 {
-    var command = cliArgs[0].TrimStart('-').ToLowerInvariant();
+    Console.Error.WriteLine(parseResult.Error);
+    Environment.ExitCode = 64;
+    return;
+}
+var cli = parseResult.Options!;
+if (cli.Command != "serve")
+{
+    var command = cli.Command;
     if (command is "version")
     {
         Console.WriteLine("InovaGed Signing Agent agent-cms-detached-v1");
@@ -29,7 +36,7 @@ if (cliArgs.Length > 0)
                 return;
             }
         }
-        var dataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "InovaGed", "SigningAgent");
+        var dataDir = cli.DataDirectory;
         Directory.CreateDirectory(dataDir);
         using (var store = new X509Store(StoreName.My, StoreLocation.CurrentUser))
         {
@@ -47,40 +54,45 @@ if (cliArgs.Length > 0)
     }
     if (command is "install" or "uninstall" or "rotate-certificate")
     {
-        var dataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "InovaGed", "SigningAgent");
+        var dataDir = cli.DataDirectory;
         Directory.CreateDirectory(dataDir);
         var marker = Path.Combine(dataDir, "installation.json");
         if (command == "install")
         {
-            var cert = LocalHttpsCertificate.CreateAndTrust();
+            var cert = cli.UsesExplicitDataDirectory
+                ? LocalHttpsCertificate.CreateIsolated(dataDir)
+                : LocalHttpsCertificate.CreateAndTrust();
             await File.WriteAllTextAsync(marker, $"{{\"installed\":true,\"protocol\":\"agent-cms-detached-v1\",\"httpsThumbprint\":\"{cert.Thumbprint}\"}}");
             Console.WriteLine("Signing Agent install: local HTTPS certificate initialized") ;
             return;
         }
         if (command == "rotate-certificate")
         {
-            var cert = LocalHttpsCertificate.CreateAndTrust();
+            var cert = cli.UsesExplicitDataDirectory
+                ? LocalHttpsCertificate.CreateIsolated(dataDir)
+                : LocalHttpsCertificate.CreateAndTrust();
             await File.WriteAllTextAsync(marker, "{\"installed\":true,\"rotatedAtUtc\":\"" + DateTimeOffset.UtcNow.ToString("O") + "\",\"httpsThumbprint\":\"" + cert.Thumbprint + "\"}");
             Console.WriteLine("Signing Agent rotate-certificate: local HTTPS profile rotated");
             return;
         }
         if (File.Exists(marker)) File.Delete(marker);
-        LocalHttpsCertificate.RemoveAgentCertificates();
+        if (!cli.UsesExplicitDataDirectory) LocalHttpsCertificate.RemoveAgentCertificates();
+        var certificate = Path.Combine(dataDir, "https-certificate.pfx");
+        if (File.Exists(certificate)) File.Delete(certificate);
         Console.WriteLine("Signing Agent uninstall: local profile removed");
-        return;
-    }
-    if (command is not "serve")
-    {
-        Console.Error.WriteLine("Usage: InovaGed.Signing.Agent [serve|doctor|version|install|uninstall|rotate-certificate]");
-        Environment.ExitCode = 64;
         return;
     }
 }
 
-var builder = WebApplication.CreateBuilder(args);
+var builder = WebApplication.CreateBuilder(cli.HostArguments);
 builder.Services.Configure<AgentOptions>(builder.Configuration.GetSection("SigningAgent"));
 builder.Services.AddSingleton<PairingStore>();
-builder.Services.AddSingleton<IAgentProtectedStorage, WindowsDpapiAgentProtectedStorage>();
+if (builder.Environment.IsEnvironment("Testing"))
+    builder.Services.AddSingleton<IAgentProtectedStorage, TestAgentProtectedStorage>();
+else if (OperatingSystem.IsWindows())
+    builder.Services.AddSingleton<IAgentProtectedStorage>(_ => new WindowsDpapiAgentProtectedStorage(cli.DataDirectory));
+else
+    throw new PlatformNotSupportedException("O armazenamento protegido do Signing Agent requer Windows DPAPI.");
 builder.Services.AddSingleton<IAgentReplayProtectionService, AgentReplayProtectionService>();
 builder.Services.AddSingleton<IAgentAuthenticationService, AgentAuthenticationService>();
 builder.Services.AddHttpClient("signing-content").ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
@@ -93,7 +105,7 @@ builder.Services.AddCors(options => options.AddPolicy("agent", policy =>
     if (origins.Length > 0) policy.WithOrigins(origins).AllowAnyHeader().AllowAnyMethod();
 }));
 
-var urls = builder.Configuration["SigningAgent:Urls"] ?? "https://127.0.0.1:17891;https://[::1]:17891";
+var urls = cli.Urls ?? builder.Configuration["SigningAgent:Urls"] ?? "https://127.0.0.1:17891;https://[::1]:17891";
 foreach (var url in urls.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
 {
     var uri = new Uri(url);
@@ -144,6 +156,24 @@ public static class LocalHttpsCertificate
         using (var my = new X509Store(StoreName.My, StoreLocation.CurrentUser)) { my.Open(OpenFlags.ReadWrite); my.Add(exportable); }
         using (var root = new X509Store(StoreName.Root, StoreLocation.CurrentUser)) { root.Open(OpenFlags.ReadWrite); root.Add(new X509Certificate2(exportable.Export(X509ContentType.Cert))); }
         return exportable;
+    }
+    public static X509Certificate2 CreateIsolated(string dataDirectory)
+    {
+        Directory.CreateDirectory(dataDirectory);
+        using var rsa = RSA.Create(2048);
+        var req = new CertificateRequest("CN=InovaGed Signing Agent Local HTTPS", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        var san = new SubjectAlternativeNameBuilder();
+        san.AddIpAddress(IPAddress.Loopback);
+        san.AddIpAddress(IPAddress.IPv6Loopback);
+        san.AddDnsName("localhost");
+        req.CertificateExtensions.Add(san.Build());
+        req.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension(new OidCollection { new Oid("1.3.6.1.5.5.7.3.1") }, false));
+        using var created = req.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-5), DateTimeOffset.UtcNow.AddYears(1));
+        var password = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
+        var pfx = created.Export(X509ContentType.Pfx, password);
+        File.WriteAllBytes(Path.Combine(dataDirectory, "https-certificate.pfx"), pfx);
+        CryptographicOperations.ZeroMemory(pfx);
+        return new X509Certificate2(created.Export(X509ContentType.Cert));
     }
     public static void RemoveAgentCertificates()
     {
@@ -235,12 +265,17 @@ public sealed record PersistedPairing(Guid PairingId, string Token, string Origi
 public sealed class WindowsDpapiAgentProtectedStorage : IAgentProtectedStorage
 {
     private static readonly byte[] Entropy = System.Text.Encoding.UTF8.GetBytes("InovaGed.Signing.Agent.v1");
-    private readonly string _dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "InovaGed", "SigningAgent", "protected");
+    private readonly string _dir;
+    public WindowsDpapiAgentProtectedStorage(string dataDirectory)
+    {
+        if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Windows DPAPI is required.");
+        _dir = Path.Combine(dataDirectory, "protected");
+    }
     public async Task SaveAsync(string name, string value, CancellationToken ct)
     {
         Directory.CreateDirectory(_dir);
         var bytes = System.Text.Encoding.UTF8.GetBytes(value);
-        var protectedBytes = OperatingSystem.IsWindows() ? ProtectedData.Protect(bytes, Entropy, DataProtectionScope.CurrentUser) : bytes;
+        var protectedBytes = ProtectedData.Protect(bytes, Entropy, DataProtectionScope.CurrentUser);
         await File.WriteAllBytesAsync(Path.Combine(_dir, name + ".protected"), protectedBytes, ct);
     }
     public async Task<string?> ReadAsync(string name, CancellationToken ct)
@@ -248,10 +283,51 @@ public sealed class WindowsDpapiAgentProtectedStorage : IAgentProtectedStorage
         var path=Path.Combine(_dir, name + ".protected");
         if(!File.Exists(path)) return null;
         var protectedBytes = await File.ReadAllBytesAsync(path, ct);
-        var bytes = OperatingSystem.IsWindows() ? ProtectedData.Unprotect(protectedBytes, Entropy, DataProtectionScope.CurrentUser) : protectedBytes;
+        var bytes = ProtectedData.Unprotect(protectedBytes, Entropy, DataProtectionScope.CurrentUser);
         return System.Text.Encoding.UTF8.GetString(bytes);
     }
     public Task DeleteAsync(string name, CancellationToken ct){ var path=Path.Combine(_dir, name + ".protected"); if(File.Exists(path)) File.Delete(path); return Task.CompletedTask; }
+}
+
+public sealed record AgentCliOptions(string Command, string DataDirectory, bool UsesExplicitDataDirectory, string? Urls, string[] HostArguments);
+public sealed record AgentCliParseResult(bool Success, AgentCliOptions? Options, string? Error);
+public static class AgentCommandLine
+{
+    private static readonly HashSet<string> Commands = new(StringComparer.OrdinalIgnoreCase)
+        { "serve", "doctor", "version", "install", "uninstall", "rotate-certificate" };
+
+    public static AgentCliParseResult Parse(string[] arguments)
+    {
+        var args = arguments.Where(value => value != "--").ToArray();
+        var command = "serve";
+        var index = 0;
+        if (args.Length > 0 && !args[0].StartsWith("--", StringComparison.Ordinal))
+        {
+            command = args[0].ToLowerInvariant();
+            index++;
+        }
+        if (!Commands.Contains(command)) return Fail($"Comando desconhecido: {command}.");
+
+        string? dataDirectory = null;
+        string? urls = null;
+        while (index < args.Length)
+        {
+            var option = args[index++];
+            if (option is not ("--data-dir" or "--urls")) return Fail($"Opção desconhecida: {option}.");
+            if (index == args.Length || args[index].StartsWith("--", StringComparison.Ordinal)) return Fail($"A opção {option} requer um valor.");
+            var value = args[index++];
+            if (option == "--data-dir") dataDirectory = Path.GetFullPath(value);
+            else urls = value;
+        }
+
+        var explicitDataDirectory = dataDirectory is not null;
+        dataDirectory ??= Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "InovaGed", "SigningAgent");
+        var hostArguments = urls is null ? Array.Empty<string>() : new[] { "--urls", urls };
+        return new(true, new(command, dataDirectory, explicitDataDirectory, urls, hostArguments), null);
+    }
+
+    private static AgentCliParseResult Fail(string message) => new(false, null,
+        message + " Uso: InovaGed.Signing.Agent [serve|doctor|version|install|uninstall|rotate-certificate] [--data-dir <diretório>] [--urls <urls>]");
 }
 
 public sealed class TestAgentProtectedStorage : IAgentProtectedStorage
