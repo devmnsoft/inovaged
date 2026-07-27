@@ -81,23 +81,44 @@ jobs:
       Ocr__Enabled: 'false'
       DigitalSignature__Enabled: 'true'
       DigitalSignature__Mode: AgentCms
-      DigitalSignature__CertificateIdentityHmacKey: ci-only-not-for-production
       DigitalSignature__CertificateIdentityHmacKeyVersion: ci-v1
-      DigitalSignature__PublicServerBaseUrl: http://localhost:5080
+      DigitalSignature__PublicServerBaseUrl: https://localhost:5081
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
       - name: Install .NET SDK
         uses: actions/setup-dotnet@v4
         with: { dotnet-version: '8.0.x' }
+      - name: Generate CI signature secrets
+        shell: bash
+        run: |
+          hmac_key=$(openssl rand -hex 32)
+          echo "::add-mask::$hmac_key"
+          {
+            echo "DigitalSignature__CertificateIdentityHmacKey=$hmac_key"
+            echo "DigitalSignature__CertificateIdentityHmacKeyVersion=ci-v1"
+          } >> "$GITHUB_ENV"
       - name: Restore solution
         run: dotnet restore InovaGed.sln
       - name: Build server hosts
         run: dotnet build InovaGed.Web/InovaGed.Web.csproj --no-restore --configuration Release && dotnet build WebGed.WebApi/WebGed.WebApi.csproj --no-restore --configuration Release
+      - name: Start server hosts and verify health
+        shell: bash
+        run: bash scripts/ci/verify-server-startup.sh
       - name: Run server integration tests
         run: dotnet test InovaGed.Application.Tests/InovaGed.Application.Tests.csproj --configuration Release --filter "FullyQualifiedName~DependencyInjection|FullyQualifiedName~Antiforgery" --logger "trx;LogFileName=server-linux.trx" --results-directory TestResults
       - name: Reject empty or failed server test run
         run: python3 scripts/ci/assert-trx-has-tests.py TestResults/server-linux.trx
+      - name: Stop server hosts
+        if: always()
+        shell: bash
+        run: bash scripts/ci/stop-server-hosts.sh
+      - name: Upload server diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-linux-logs
+          path: .ci-logs/*.log
 
   agent-windows:
     needs: solution-validation
@@ -117,8 +138,27 @@ jobs:
         run: dotnet test InovaGed.Signing.Agent.Tests/InovaGed.Signing.Agent.Tests.csproj --configuration Release --logger "trx;LogFileName=agent-windows.trx" --results-directory TestResults
       - name: Reject empty or failed agent test run
         run: python scripts/ci/assert-trx-has-tests.py TestResults/agent-windows.trx
-      - name: Run Signing Agent doctor
-        run: dotnet run --project InovaGed.Signing.Agent/InovaGed.Signing.Agent.csproj -- doctor
+      - name: Exercise Signing Agent lifecycle
+        shell: pwsh
+        run: |
+          $agent = "InovaGed.Signing.Agent/InovaGed.Signing.Agent.csproj"
+          $data = Join-Path $env:RUNNER_TEMP "signing-agent-lifecycle"
+          dotnet run --project $agent -- version
+          dotnet run --project $agent -- doctor
+          dotnet run --project $agent -- install --data-dir $data
+          dotnet run --project $agent -- rotate-certificate --data-dir $data
+          dotnet run --project $agent -- uninstall --data-dir $data
+      - name: Publish Signing Agent win-x64
+        run: dotnet publish InovaGed.Signing.Agent/InovaGed.Signing.Agent.csproj --configuration Release --runtime win-x64 --self-contained false --output publish/signing-agent-win-x64
+      - name: Verify Signing Agent executable
+        shell: pwsh
+        run: |
+          if (-not (Test-Path publish/signing-agent-win-x64/InovaGed.Signing.Agent.exe)) { throw "Signing Agent executable was not published" }
+      - name: Upload Signing Agent package
+        uses: actions/upload-artifact@v4
+        with:
+          name: signing-agent-win-x64
+          path: publish/signing-agent-win-x64/**
 
   security-guards:
     needs: solution-validation
@@ -130,15 +170,34 @@ jobs:
       - name: Enforce static security guards
         run: |
           set -euo pipefail
-          ! rg -n "AllowAnyOrigin" --glob '!**/bin/**' --glob '!**/obj/**' .
+          ! rg -n "AllowAnyOrigin" InovaGed.Web InovaGed.Infrastructure WebGed.WebApi InovaGed.Signing.Agent --glob '!**/bin/**' --glob '!**/obj/**' .
           ! rg -n "AllowAllPermissionChecker|CertificateValidationStub" InovaGed.Web InovaGed.Infrastructure WebGed.WebApi --glob '!**/bin/**' --glob '!**/obj/**'
           ! rg -n "EnsureMandatoryChecks|Check registrado para homologação" InovaGed.Infrastructure/Signatures --glob '!**/bin/**' --glob '!**/obj/**'
           ! rg -n "return Task.FromResult\(.*VALID|SignatureValidationResult\(\"VALID\"" InovaGed.Web InovaGed.Infrastructure --glob '!**/bin/**' --glob '!**/obj/**'
+          ! rg -n "SearchFoldersAsync\([^\n]*CurrentTenantId\(|MoveAsync\([^\n]*CurrentTenantId\(|MoveBulkAsync\([^\n]*CurrentTenantId\(" --glob '*.cs'
+          if rg -n "new Regex\(|Regex\." InovaGed.Web InovaGed.Application InovaGed.Infrastructure --glob '*.cs' | rg -v "RegexOptions\.NonBacktracking|// REGEX_JUSTIFIED|System.Text.RegularExpressions"; then
+            echo "Regex crítico sem RegexOptions.NonBacktracking ou justificativa REGEX_JUSTIFIED." >&2
+            exit 1
+          fi
+          ! rg -n "BEGIN (RSA|OPENSSH|DSA|EC) PRIVATE KEY|PRIVATE KEY-----" InovaGed.Web InovaGed.Infrastructure WebGed.WebApi InovaGed.Signing.Agent --glob '!**/bin/**' --glob '!**/obj/**' .
 
   cms-e2e:
     needs: migration-matrix
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: inovaged_cms_e2e
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd="pg_isready -U postgres -d inovaged_cms_e2e"
+          --health-interval=10s --health-timeout=5s --health-retries=10
+    env:
+      ConnectionStrings__DefaultConnection: Host=localhost;Port=5432;Database=inovaged_cms_e2e;Username=postgres;Password=postgres
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
