@@ -1,0 +1,10 @@
+@model InovaGed.Web.Models.Administration.AdministrationSectionVM
+<div class="ig-admin-section">
+    <h3>@Model.Title</h3><p>@Model.Description</p>
+    <div class="ig-action-grid">
+        @foreach (var actionItem in Model.Actions)
+        {
+            <partial name="_AdministrationActionCard" model="actionItem" />
+        }
+    </div>
+</div>

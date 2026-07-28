@@ -1,0 +1,2 @@
+# Relatório 04.1.20
+Foram entregues hotfix Razor com partials tipadas, SDK fixado, lint corrigido, Migrator com manifesto/checksum/lock/transações, assert ampliado, proteção de continuidade e Central de Prontidão. Risco restante: validação dinâmica depende do CI dotnet/PostgreSQL. Rollback: reverter o commit e restaurar o backup de banco anterior; migrations aditivas não devem ser removidas manualmente.

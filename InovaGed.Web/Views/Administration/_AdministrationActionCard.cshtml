@@ -1,0 +1,13 @@
+@model InovaGed.Web.Models.Administration.AdministrationActionVM
+@if (Model.Available)
+{
+    <a class="ig-action-card" asp-controller="@Model.Controller" asp-action="@Model.Action" aria-label="@Model.Title">
+        <span class="ig-action-icon"><i class="bi @Model.Icon" aria-hidden="true"></i></span><span><strong>@Model.Title</strong><small>@Model.Description</small></span><i class="bi bi-arrow-right" aria-hidden="true"></i>
+    </a>
+}
+else
+{
+    <div class="ig-action-card is-disabled" aria-disabled="true" tabindex="0" title="@Model.UnavailableReason">
+        <span class="ig-action-icon"><i class="bi @Model.Icon" aria-hidden="true"></i></span><span><strong>@Model.Title</strong><small>@Model.Description</small><small>@Model.UnavailableReason</small></span>
+    </div>
+}

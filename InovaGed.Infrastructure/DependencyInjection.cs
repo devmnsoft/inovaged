@@ -22,6 +22,8 @@ using InovaGed.Infrastructure.SystemHealth;
 using InovaGed.Application.Administration;
 using InovaGed.Infrastructure.Administration;
 using InovaGed.Application.Continuity;
+using InovaGed.Application.Readiness;
+using InovaGed.Infrastructure.Readiness;
 using InovaGed.Infrastructure.Continuity;
 using InovaGed.Infrastructure.Storage;
 using Microsoft.Extensions.Configuration;
@@ -161,6 +163,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddOptions<OperationsOptions>().Bind(configuration.GetSection("Operations")).ValidateOnStart();
         services.AddOptions<BackupOptions>().Bind(configuration.GetSection("Backup")).ValidateDataAnnotations().ValidateOnStart();
         services.AddOptions<PortabilityOptions>().Bind(configuration.GetSection("Portability")).ValidateDataAnnotations().ValidateOnStart();
+        services.AddScoped<IModuleReadinessService, PostgresModuleReadinessService>();
         services.AddScoped<IAdministrativeTenantScopeResolver, AdministrativeTenantScopeResolver>();
         services.AddScoped<IBackupPolicyService, BackupPolicyRepository>();
         services.AddScoped<IBackupCatalogService, BackupCatalogRepository>();

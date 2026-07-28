@@ -1,0 +1,5 @@
+@model InovaGed.Application.Readiness.ModuleReadinessResult
+@{ ViewData["Title"] = "Continuidade indisponível"; }
+<header class="ig-page-header"><div><span class="ig-eyebrow">Prontidão operacional</span><h1>Módulo temporariamente indisponível</h1><p>O módulo foi bloqueado com segurança antes de consultar um schema incompatível.</p></div></header>
+<section class="ig-banner ig-banner-warning"><i class="bi bi-exclamation-triangle" aria-hidden="true"></i><div><h2>@Model.Status</h2><p>Solicite a um administrador que valide o ambiente pela Central de Prontidão.</p>@foreach (var recommendationItem in Model.Recommendations) { <p>@recommendationItem</p> }</div></section>
+<a class="btn btn-primary" asp-controller="Administration" asp-action="Readiness">Abrir Central de Prontidão</a>

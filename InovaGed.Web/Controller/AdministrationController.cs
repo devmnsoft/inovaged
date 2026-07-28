@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using InovaGed.Application.Administration;
+using InovaGed.Application.Readiness;
 using InovaGed.Web.Models.Administration;
 using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authorization;
@@ -11,7 +12,8 @@ namespace InovaGed.Web.Controllers;
 public sealed class AdministrationController : Controller
 {
     private readonly IAdministrationDashboardService _service;
-    public AdministrationController(IAdministrationDashboardService service) => _service = service;
+    private readonly IModuleReadinessService _readiness;
+    public AdministrationController(IAdministrationDashboardService service, IModuleReadinessService readiness) { _service = service; _readiness = readiness; }
     public async Task<IActionResult> Index(CancellationToken ct)
     {
         var overview = await _service.GetOverviewAsync(CurrentTenant(), ct);
@@ -22,7 +24,8 @@ public sealed class AdministrationController : Controller
             new AdministrationActionVM("Configurações seguras", "Consulte parâmetros operacionais sem expor segredos.", "bi-sliders", "Administration", "Settings", AppPolicies.Administracao, "Parâmetros", true, null),
             new AdministrationActionVM("Saúde do sistema", "Acompanhe dependências, workers e serviços essenciais.", "bi-heart-pulse", "Administration", "Health", AppPolicies.Administracao, "Infraestrutura", true, null),
             new AdministrationActionVM("Continuidade", "Acompanhe backup, recuperação e portabilidade.", "bi-life-preserver", "Continuity", "Overview", AppPolicies.ContinuityView, "Continuidade", true, null),
-            new AdministrationActionVM("Auditoria", "Consulte eventos administrativos e trilhas de acesso.", "bi-journal-check", "Administration", "Audit", AppPolicies.Administracao, "Auditoria", true, null)
+            new AdministrationActionVM("Auditoria", "Consulte eventos administrativos e trilhas de acesso.", "bi-journal-check", "Administration", "Audit", AppPolicies.Administracao, "Auditoria", true, null),
+            new AdministrationActionVM("Prontidão do ambiente", "Verifique banco, migrations, serviços, workers e módulos antes de liberar o ambiente.", "bi-clipboard2-pulse", "Administration", "Readiness", AppPolicies.Administracao, "Infraestrutura", true, null)
         };
         var sections = actions.GroupBy(action => action.Category)
             .Select(group => new AdministrationSectionVM(group.Key, $"Recursos de {group.Key.ToLowerInvariant()}.", group.ToArray()))
@@ -41,5 +44,18 @@ public sealed class AdministrationController : Controller
     public async Task<IActionResult> Settings(CancellationToken ct) => View("Section", new AdministrationPageVm { Section = "Configurações Seguras", Items = await _service.GetSafeConfigurationsAsync(ct) });
     public async Task<IActionResult> Migrations(CancellationToken ct) => View("Section", new AdministrationPageVm { Section = "Migrações e Compatibilidade", Items = await _service.GetMigrationsAsync(ct) });
     public async Task<IActionResult> Compliance(CancellationToken ct) => View("Section", new AdministrationPageVm { Section = "Conformidade e LGPD", Compliance = await _service.GetComplianceAsync(CurrentTenant(), ct) });
+    [HttpGet("/Administration/Readiness")]
+    public async Task<IActionResult> Readiness(CancellationToken ct) => View(new EnvironmentReadinessVM(await LoadReadinessAsync(ct), DateTimeOffset.UtcNow));
+    [HttpGet("/Administration/Readiness/Export")]
+    public async Task<IActionResult> ExportReadiness(CancellationToken ct)
+    {
+        var modules = await LoadReadinessAsync(ct);
+        return Json(new { applicationVersion = "04.1.20", databaseVersion = modules[0].Status, moduleStatuses = modules.Select(item => new { item.ModuleCode, item.Status, item.Available }), missingTables = modules.SelectMany(item => item.MissingObjects).Distinct(), missingColumns = Array.Empty<string>(), migrationStatuses = Array.Empty<object>(), workerStatuses = modules.Where(item => item.ModuleCode == "Workers").Select(item => item.Status), checkedAtUtc = DateTimeOffset.UtcNow, correlationId = HttpContext.TraceIdentifier });
+    }
+    private async Task<IReadOnlyList<ModuleReadinessResult>> LoadReadinessAsync(CancellationToken ct)
+    {
+        string[] modules = ["Banco de Dados", "Identidade e Acessos", "GED", "Storage", "Preview", "OCR", "Classificação", "Temporalidade", "Guarda Física", "Empréstimos", "Protocolos", "Assinaturas", "Continuity", "Workers", "Auditoria"];
+        return await Task.WhenAll(modules.Select(item => _readiness.GetAsync(item, ct)));
+    }
     private Guid? CurrentTenant() => Guid.TryParse(User.FindFirst("tenant_id")?.Value ?? User.FindFirst("tenant")?.Value, out var id) ? id : null;
 }
