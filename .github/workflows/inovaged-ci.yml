@@ -34,7 +34,6 @@ jobs:
         run: actionlint -verbose -color never .github/workflows/inovaged-ci.yml
 
   solution-validation:
-    needs: actionlint
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
