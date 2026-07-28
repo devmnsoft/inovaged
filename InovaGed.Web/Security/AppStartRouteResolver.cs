@@ -4,7 +4,7 @@ namespace InovaGed.Web.Security;
 
 public static class AppStartRouteResolver
 {
-    public const string AdminHome = "/Ged";
+    public const string AdminHome = "/GedDashboard";
     public const string HospitalHome = "/HospitalDocuments";
 
     public static bool IsFullAdmin(ClaimsPrincipal user)
