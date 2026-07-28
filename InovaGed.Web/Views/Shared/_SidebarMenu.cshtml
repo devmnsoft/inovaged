@@ -24,47 +24,51 @@
 
 @if (isFullAdmin)
 {
-    <div class="sidebar-section-title">Visão Geral</div>
-    <a asp-controller="GedDashboard" asp-action="Index" class="@Active("GedDashboard", "Index")"><i class="bi bi-speedometer2"></i><span>Dashboard</span></a>
-    <a asp-controller="Operations" asp-action="Index" class="@ActivePathStarts("/operations")"><i class="bi bi-command"></i><span>Central Operacional</span></a>
-    <a asp-controller="DocumentQuality" asp-action="Index" class="@ActivePathStarts("/documentquality")"><i class="bi bi-shield-check"></i><span>Qualidade Documental</span></a>
-
-    <div class="sidebar-section-title">Documentos</div>
-    <a asp-controller="Ged" asp-action="Index" class="@ActiveAny("Ged", "GedSearch")"><i class="bi bi-folder2-open"></i><span>GED / Explorer</span></a>
-    <a asp-controller="HospitalDocuments" asp-action="Index" class="@ActiveAny("HospitalDocuments")"><i class="bi bi-search-heart"></i><span>Busca Hospitalar</span></a>
-    <a asp-controller="SmartSearch" asp-action="Index" class="@ActiveAny("SmartSearch")"><i class="bi bi-stars"></i><span>Busca Inteligente</span></a>
-    <a asp-controller="HospitalIntelligence" asp-action="Index" class="@ActiveAny("HospitalIntelligence")"><i class="bi bi-activity"></i><span>Inteligência Hospitalar</span></a>
-    <a asp-controller="HospitalTrends" asp-action="Index" class="@ActiveAny("HospitalTrends")"><i class="bi bi-graph-up-arrow"></i><span>Alertas e Tendências</span></a>
-    <a asp-controller="Ged" asp-action="Create" class="@Active("Ged", "Create")"><i class="bi bi-cloud-upload"></i><span>Uploads</span></a>
-    <a asp-controller="Ocr" asp-action="Index" class="@ActiveAny("Ocr")"><i class="bi bi-filetype-pdf"></i><span>Central OCR</span></a>
-    <a href="/Ocr/Queue" class="@ActivePathStarts("/ocr/queue")"><i class="bi bi-list-check"></i><span>Fila OCR</span></a>
-    <a href="/Ocr/AutoSchedule" class="@ActivePathStarts("/ocr/autoschedule")"><i class="bi bi-calendar2-check"></i><span>Agendamento OCR</span></a>
-    <a asp-controller="GedClassification" asp-action="Queue" class="@ActiveAny("GedClassification", "GedClassifications", "ClassificationDashboard")"><i class="bi bi-tags"></i><span>Classificação</span></a>
-    <a asp-controller="Ged" asp-action="Folders" class="@Active("Ged", "Folders")"><i class="bi bi-folder"></i><span>Pastas</span></a>
-    <a asp-controller="Batches" asp-action="Index" class="@ActiveAny("Batches")"><i class="bi bi-collection"></i><span>Dossiês</span></a>
-
-    <div class="sidebar-section-title">Guarda Física</div>
-    <a asp-controller="Physical" asp-action="Locations" class="@Active("Physical", "Locations")"><i class="bi bi-geo-alt"></i><span>Localizações</span></a>
-    <a asp-controller="Physical" asp-action="Boxes" class="@Active("Physical", "Boxes")"><i class="bi bi-inbox"></i><span>Caixas</span></a>
-    <a asp-controller="Labels" asp-action="Boxes" class="@ActiveAny("Labels")"><i class="bi bi-upc-scan"></i><span>Etiquetas</span></a>
-
-    <div class="sidebar-section-title">Operação</div>
-    <a asp-controller="Loans" asp-action="Index" class="@ActiveAny("Loans", "Solicitacoes")"><i class="bi bi-arrow-left-right"></i><span>Empréstimos</span></a>
-    <a asp-controller="Protocolo" asp-action="Index" class="@ActiveAny("Protocolo")"><i class="bi bi-journal-check"></i><span>Protocolo</span></a>
-    <a asp-controller="ProtocolRequests" asp-action="New" class="@Active("ProtocolRequests", "New")"><i class="bi bi-send-plus"></i><span>Solicitar Protocolo</span></a>
-    <a asp-controller="ProtocolRequests" asp-action="My" class="@Active("ProtocolRequests", "My")"><i class="bi bi-list-check"></i><span>Minhas Solicitações</span></a>
-    <a href="/Protocols/WorkQueue" class="@ActivePathStarts("/protocols/workqueue")"><i class="bi bi-inboxes"></i><span>Fila de Protocolos</span></a>
-
-    <div class="sidebar-section-title">Administração</div>
-    <a asp-controller="Administration" asp-action="Index" class="@ActiveAny("Administration")"><i class="bi bi-shield-lock"></i><span>Administração</span></a>
-    <a asp-controller="Parameters" asp-action="Index" class="@ActiveAny("Parameters", "ProtocoloParametros")"><i class="bi bi-sliders"></i><span>Parâmetros</span></a>
-    <a asp-controller="Users" asp-action="Index" class="@ActiveAny("Users")"><i class="bi bi-people"></i><span>Usuários</span></a>
-    <a asp-controller="SystemLogs" asp-action="Index" class="@ActiveAny("SystemLogs", "Audit", "AuditDashboard", "SecurityAudit")"><i class="bi bi-activity"></i><span>Logs</span></a>
-    <a asp-controller="Continuity" asp-action="Overview" class="@ActiveAny("Continuity")"><i class="bi bi-life-preserver"></i><span>Continuidade e Portabilidade</span></a>
-    <a asp-controller="SystemHealth" asp-action="Index" class="@ActiveAny("SystemHealth")"><i class="bi bi-heart-pulse"></i><span>SystemHealth</span></a>
-    <a href="/SystemHealth/Schema" class="@ActivePathStarts("/systemhealth/schema")"><i class="bi bi-database-check"></i><span>Schema do Banco</span></a>
-    <a href="/SystemHealth/Homologation" class="@ActivePathStarts("/systemhealth/homologation")"><i class="bi bi-clipboard2-check"></i><span>Homologação</span></a>
-    <a asp-controller="Security" asp-action="Roles" class="@ActiveAny("Security")"><i class="bi bi-gear"></i><span>Configurações</span></a>
+    <details class="sidebar-group" open="@(ActiveAny("GedDashboard", "Operations", "HospitalTrends") == "active" ? "open" : null)">
+        <summary>Visão Geral</summary>
+        <a asp-controller="GedDashboard" asp-action="Index" class="@Active("GedDashboard", "Index")"><i class="bi bi-speedometer2"></i><span>Dashboard</span></a>
+        <a asp-controller="Operations" asp-action="Index" class="@ActivePathStarts("/operations")"><i class="bi bi-command"></i><span>Central Operacional</span></a>
+        <a asp-controller="HospitalTrends" asp-action="Index" class="@ActiveAny("HospitalTrends")"><i class="bi bi-bell"></i><span>Alertas</span></a>
+    </details>
+    <details class="sidebar-group" open="@(ActiveAny("Ged", "GedSearch", "GedUploads", "SmartSearch", "Ocr", "DocumentQuality", "GedClassification", "ClassificationDashboard", "Disposition") == "active" ? "open" : null)">
+        <summary>Gestão Documental</summary>
+        <a asp-controller="Ged" asp-action="Index" class="@ActiveAny("Ged", "GedSearch")"><i class="bi bi-folder2-open"></i><span>GED</span></a>
+        <a asp-controller="GedUploads" asp-action="Index" class="@ActiveAny("GedUploads")"><i class="bi bi-cloud-upload"></i><span>Uploads</span></a>
+        <a asp-controller="SmartSearch" asp-action="Index" class="@ActiveAny("SmartSearch")"><i class="bi bi-search"></i><span>Busca Inteligente</span></a>
+        <a asp-controller="Ocr" asp-action="Index" class="@ActiveAny("Ocr")"><i class="bi bi-filetype-pdf"></i><span>OCR</span></a>
+        <a asp-controller="DocumentQuality" asp-action="Index" class="@ActiveAny("DocumentQuality")"><i class="bi bi-shield-check"></i><span>Qualidade Documental</span></a>
+        <a asp-controller="GedClassification" asp-action="Queue" class="@ActiveAny("GedClassification", "ClassificationDashboard")"><i class="bi bi-tags"></i><span>Classificação</span></a>
+        <a asp-controller="Disposition" asp-action="Index" class="@ActiveAny("Disposition")"><i class="bi bi-calendar-check"></i><span>Temporalidade</span></a>
+    </details>
+    <details class="sidebar-group" open="@(ActiveAny("Batches", "Physical", "Labels") == "active" ? "open" : null)">
+        <summary>Arquivo Físico</summary>
+        <a asp-controller="Batches" asp-action="Index" class="@ActiveAny("Batches")"><i class="bi bi-collection"></i><span>Lotes</span></a>
+        <a asp-controller="Physical" asp-action="Boxes" class="@Active("Physical", "Boxes")"><i class="bi bi-inbox"></i><span>Caixas</span></a>
+        <a asp-controller="Physical" asp-action="Locations" class="@Active("Physical", "Locations")"><i class="bi bi-geo-alt"></i><span>Localizações</span></a>
+        <a asp-controller="Labels" asp-action="Boxes" class="@ActiveAny("Labels")"><i class="bi bi-upc-scan"></i><span>Etiquetas</span></a>
+        <a asp-controller="Physical" asp-action="PhysicalMap" class="@Active("Physical", "PhysicalMap")"><i class="bi bi-boxes"></i><span>Inventário</span></a>
+    </details>
+    <details class="sidebar-group" open="@(ActiveAny("Loans", "Solicitacoes", "Protocolo", "Protocols", "ProtocolRequests") == "active" ? "open" : null)">
+        <summary>Atendimento</summary>
+        <a asp-controller="Loans" asp-action="Index" class="@ActiveAny("Loans", "Solicitacoes")"><i class="bi bi-arrow-left-right"></i><span>Empréstimos</span></a>
+        <a asp-controller="Protocolo" asp-action="Index" class="@ActiveAny("Protocolo", "Protocols")"><i class="bi bi-journal-check"></i><span>Protocolos</span></a>
+        <a asp-controller="ProtocolRequests" asp-action="My" class="@ActiveAny("ProtocolRequests")"><i class="bi bi-send"></i><span>Solicitações</span></a>
+    </details>
+    <details class="sidebar-group" open="@(ActiveAny("Signature", "SystemLogs", "Audit", "AuditDashboard", "Reports", "Continuity") == "active" ? "open" : null)">
+        <summary>Governança</summary>
+        <a asp-controller="Signature" asp-action="Index" class="@ActiveAny("Signature")"><i class="bi bi-pen"></i><span>Assinaturas</span></a>
+        <a asp-controller="SystemLogs" asp-action="Index" class="@ActiveAny("SystemLogs", "Audit", "AuditDashboard")"><i class="bi bi-clock-history"></i><span>Auditoria</span></a>
+        <a asp-controller="Reports" asp-action="Index" class="@ActiveAny("Reports")"><i class="bi bi-bar-chart"></i><span>Relatórios</span></a>
+        <a asp-controller="Continuity" asp-action="Overview" class="@ActiveAny("Continuity")"><i class="bi bi-life-preserver"></i><span>Continuidade</span></a>
+    </details>
+    <details class="sidebar-group" open="@(ActiveAny("Administration", "Users", "Security", "Parameters", "SystemHealth") == "active" ? "open" : null)">
+        <summary>Administração</summary>
+        <a asp-controller="Users" asp-action="Index" class="@ActiveAny("Users")"><i class="bi bi-people"></i><span>Usuários</span></a>
+        <a asp-controller="Security" asp-action="Roles" class="@ActiveAny("Security")"><i class="bi bi-person-lock"></i><span>Perfis e Permissões</span></a>
+        <a asp-controller="Parameters" asp-action="Index" class="@ActiveAny("Parameters")"><i class="bi bi-sliders"></i><span>Parâmetros</span></a>
+        <a asp-controller="SystemHealth" asp-action="Index" class="@ActiveAny("SystemHealth")"><i class="bi bi-heart-pulse"></i><span>Saúde do Sistema</span></a>
+        <a asp-controller="Administration" asp-action="Readiness" class="@Active("Administration", "Readiness")"><i class="bi bi-clipboard2-check"></i><span>Prontidão do Ambiente</span></a>
+    </details>
 }
 else if (isAdministradorOphir)
 {
