@@ -275,6 +275,40 @@ jobs:
             fi
           done
 
+  continuity-integration:
+    needs: [actionlint, solution-validation]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_USER: postgres, POSTGRES_PASSWORD: postgres, POSTGRES_DB: inovaged_continuity }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd="pg_isready -U postgres -d inovaged_continuity"
+          --health-interval=10s --health-timeout=5s --health-retries=10
+    env:
+      ConnectionStrings__DefaultConnection: Host=localhost;Port=5432;Database=inovaged_continuity;Username=postgres;Password=postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '8.0.x' }
+      - name: Apply continuity migrations
+        run: psql "postgresql://postgres:postgres@localhost:5432/inovaged_continuity" -v ON_ERROR_STOP=1 -f database/apply_all_required_migrations.sql > continuity-migrations.log
+      - name: Run continuity tests
+        run: dotnet test InovaGed.Application.Tests/InovaGed.Application.Tests.csproj --configuration Release --filter "FullyQualifiedName~Continuity" --logger "trx;LogFileName=continuity.trx" --results-directory TestResults > continuity-tests.log
+      - name: Reject empty or failed continuity run
+        run: python3 scripts/ci/assert-trx-has-tests.py TestResults/continuity.trx
+      - name: Publish continuity evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: continuity-integration-evidence
+          path: |
+            TestResults/continuity.trx
+            continuity-migrations.log
+            continuity-tests.log
+
   engineering-gate:
     if: always()
     needs:
@@ -286,6 +320,7 @@ jobs:
       - migration-idempotency
       - cms-contract-tests
       - poc-matrix-contract-tests
+      - continuity-integration
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:

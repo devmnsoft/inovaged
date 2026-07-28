@@ -162,20 +162,20 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddOptions<BackupOptions>().Bind(configuration.GetSection("Backup")).ValidateDataAnnotations().ValidateOnStart();
         services.AddOptions<PortabilityOptions>().Bind(configuration.GetSection("Portability")).ValidateDataAnnotations().ValidateOnStart();
         services.AddScoped<IAdministrativeTenantScopeResolver, AdministrativeTenantScopeResolver>();
-        services.AddScoped<ContinuityRepository>();
-        services.AddScoped<IBackupPolicyService>(sp => sp.GetRequiredService<ContinuityRepository>());
-        services.AddScoped<IBackupCatalogService>(sp => sp.GetRequiredService<ContinuityRepository>());
-        services.AddScoped<IRecoveryObjectiveService>(sp => sp.GetRequiredService<ContinuityRepository>());
-        services.AddScoped<IPortabilityExportService>(sp => sp.GetRequiredService<ContinuityRepository>());
-        services.AddScoped<IRecoveryPlanService>(sp => sp.GetRequiredService<ContinuityRepository>());
-        services.AddScoped<ITenantOffboardingService>(sp => sp.GetRequiredService<ContinuityRepository>());
-        services.AddScoped<IDataDeletionWorkflowService>(sp => sp.GetRequiredService<ContinuityRepository>());
+        services.AddScoped<IBackupPolicyService, BackupPolicyRepository>();
+        services.AddScoped<IBackupCatalogService, BackupCatalogRepository>();
+        services.AddScoped<IRecoveryObjectiveService, RecoveryObjectiveService>();
+        services.AddScoped<IPortabilityExportService, PortabilityExportRepository>();
+        services.AddScoped<IRecoveryPlanService, RecoveryPlanRepository>();
+        services.AddScoped<ITenantOffboardingService, TenantOffboardingRepository>();
+        services.AddScoped<IDataDeletionWorkflowService, DataDeletionWorkflowService>();
         services.AddScoped<IBackupOrchestrator, BackupOrchestrator>();
         services.AddScoped<IBackupIntegrityService, BackupIntegrityService>();
         services.AddScoped<IRestoreValidationService, RestoreValidationService>();
         services.AddScoped<IPortabilityManifestService, PortabilityManifestService>();
         services.AddScoped<IPortabilityPackageVerifier, PortabilityPackageVerifier>();
         services.AddScoped<IPostgresBackupProvider, PostgresBackupProvider>();
+        services.AddScoped<IBackupRetentionService, BackupRetentionService>();
         services.AddInfrastructureModule("ContinuityPortability", configuration.GetValue("Backup:Enabled", false) || configuration.GetValue("Portability:Enabled", false), ["Database", "Storage"], true, HealthStatus.Degraded);
         return services;
     }
