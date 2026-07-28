@@ -21,8 +21,17 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
-      - name: Lint every workflow
-        run: bash scripts/ci/lint-workflows.sh
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+          cache: false
+      - name: Install pinned actionlint
+        run: |
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - name: Lint workflow
+        run: actionlint -verbose -color never .github/workflows/inovaged-ci.yml
 
   solution-validation:
     needs: actionlint
