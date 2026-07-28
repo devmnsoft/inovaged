@@ -115,9 +115,23 @@ public sealed class AccountController : Controller
             return View(vm);
         }
 
-        await _repo.RegisterLoginSuccessAsync(user.TenantId, user.UserId, ip, userAgent, correlationId, ct);
-
-        var rolesFromDatabase = await _repo.GetRolesAsync(user.TenantId, user.UserId, ct);
+        IReadOnlyList<string> rolesFromDatabase;
+        try
+        {
+            rolesFromDatabase = await _repo.GetRolesAsync(user.TenantId, user.UserId, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Falha ao carregar autorização. Tenant={TenantId} UserId={UserId} CorrelationId={CorrelationId}",
+                user.TenantId, user.UserId, correlationId);
+            await _audit.WriteAsync(
+                user.TenantId, user.UserId, "LOGIN_ERROR_AUTHORIZATION_LOAD", "authentication", user.UserId.ToString(),
+                "Não foi possível carregar os perfis do usuário.", ip, userAgent,
+                new { correlationId }, ct);
+            ModelState.AddModelError("", "Não foi possível concluir a autenticação. Tente novamente.");
+            return View(vm);
+        }
 
         var normalizedRoles = rolesFromDatabase
             .Where(r => !string.IsNullOrWhiteSpace(r))
@@ -126,7 +140,17 @@ public sealed class AccountController : Controller
             .ToList();
 
         if (normalizedRoles.Count == 0)
-            normalizedRoles.Add(AppRoles.Operador);
+        {
+            await _audit.WriteAsync(
+                user.TenantId, user.UserId, "LOGIN_DENIED_NO_ROLE", "authentication", user.UserId.ToString(),
+                "Usuário ativo sem perfil de acesso.", ip, userAgent,
+                new { correlationId }, ct);
+            _logger.LogWarning(
+                "Login negado por ausência de perfil. Tenant={TenantId} UserId={UserId} CorrelationId={CorrelationId}",
+                user.TenantId, user.UserId, correlationId);
+            ModelState.AddModelError("", "Seu usuário está ativo, mas ainda não possui um perfil de acesso. Procure o administrador do sistema.");
+            return View(vm);
+        }
 
         var claims = new List<Claim>
         {
@@ -166,13 +190,15 @@ public sealed class AccountController : Controller
                 AllowRefresh = true
             });
 
+        await _repo.RegisterLoginSuccessAsync(user.TenantId, user.UserId, ip, userAgent, correlationId, ct);
+
         if (user.MustChangePassword)
             return RedirectToAction(nameof(ChangePassword), "Account");
 
         // Regra centralizada de redirecionamento pós-login por perfil:
         // - ADMIN/ADMINISTRADOR respeitam ReturnUrl local seguro ou iniciam no GED.
         // - Ophir/Hospital respeitam apenas ReturnUrls permitidas ou iniciam em HospitalDocuments.
-        var redirectResult = ResolvePostLoginRedirect(vm.ReturnUrl, user.UserName, normalizedRoles, principal);
+        var redirectResult = ResolvePostLoginRedirect(vm.ReturnUrl, normalizedRoles, principal);
 
         _logger.LogInformation(
             "Login redirect resolvido. User={UserId} Roles={Roles} IsFullAdmin={IsFullAdmin} Target={Target} Reason={Reason} ReturnUrl={ReturnUrl}",
@@ -225,15 +251,14 @@ public sealed class AccountController : Controller
         }
     }
 
-    private (IActionResult Result, string TargetDescription, string Reason) ResolvePostLoginRedirect(string? returnUrl, string? username, IReadOnlyCollection<string> normalizedRoles, ClaimsPrincipal principal)
+    private (IActionResult Result, string TargetDescription, string Reason) ResolvePostLoginRedirect(string? returnUrl, IReadOnlyCollection<string> normalizedRoles, ClaimsPrincipal principal)
     {
-        var normalizedUsername = (username ?? string.Empty).Trim().ToUpperInvariant();
         var normalizedReturnUrl = (returnUrl ?? string.Empty).Trim();
 
         var isAdmin = RolePolicyHelper.IsFullAdmin(principal) || normalizedRoles.Any(r => IsRole(r, AppRoles.Admin) || IsRole(r, AppRoles.Administrador));
-        var isAdministradorOphir = _accessPolicy.IsAdministradorOphir(principal) || normalizedRoles.Any(r => IsRole(r, AppRoles.AdministradorOphir)) || IsRole(normalizedUsername, AppRoles.AdministradorOphir);
-        var isArquivistaOphir = _accessPolicy.IsArquivistaOphir(principal) || normalizedRoles.Any(r => IsRole(r, AppRoles.ArquivistaOphir)) || IsRole(normalizedUsername, AppRoles.ArquivistaOphir);
-        var isHospitalUser = AppMenuPolicy.IsHospitalUser(principal) || normalizedRoles.Any(r => IsRole(r, AppRoles.Hospital)) || IsRole(normalizedUsername, AppRoles.Hospital);
+        var isAdministradorOphir = _accessPolicy.IsAdministradorOphir(principal) || normalizedRoles.Any(r => IsRole(r, AppRoles.AdministradorOphir));
+        var isArquivistaOphir = _accessPolicy.IsArquivistaOphir(principal) || normalizedRoles.Any(r => IsRole(r, AppRoles.ArquivistaOphir));
+        var isHospitalUser = AppMenuPolicy.IsHospitalUser(principal) || normalizedRoles.Any(r => IsRole(r, AppRoles.Hospital));
 
         if (isAdmin)
         {
