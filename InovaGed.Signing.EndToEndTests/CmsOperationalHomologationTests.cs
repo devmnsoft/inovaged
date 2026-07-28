@@ -1,5 +1,6 @@
 using InovaGed.Application.Signatures;
 using InovaGed.Infrastructure.Signatures;
+using Xunit;
 
 namespace InovaGed.Signing.EndToEndTests;
 
