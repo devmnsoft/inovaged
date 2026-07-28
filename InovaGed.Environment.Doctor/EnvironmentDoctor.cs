@@ -4,6 +4,7 @@ using InovaGed.Application.Readiness;
 using InovaGed.Infrastructure.Readiness;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
+using BclEnvironment = global::System.Environment;
 
 namespace InovaGed.Environment.Doctor;
 
@@ -62,7 +63,35 @@ public sealed class EnvironmentDoctor(IConfiguration configuration, Func<string,
     { var check = Run(command, "--version"); return check.ExitCode == 0 ? Result($"{code}_READY", category, EnvironmentCheckStatuses.Pass, code, "Executável detectado.", null, false) : Result($"{code}_NOT_FOUND", category, optional ? EnvironmentCheckStatuses.Warning : EnvironmentCheckStatuses.Fail, code, "Executável não encontrado.", "Configure um executável homologado.", !optional); }
     private static EnvironmentCheckResult CheckHost() => OperatingSystem.IsWindows() ? Result("IIS_NOT_VERIFIABLE", "IIS", EnvironmentCheckStatuses.NotVerifiable, "IIS/Hosting Bundle", "A inspeção requer privilégios e contexto do host.", "Valide IIS, Hosting Bundle, binding, porta e permissões.", false) : Result("IIS_NOT_APPLICABLE", "IIS", EnvironmentCheckStatuses.NotApplicable, "IIS", "Host não Windows.", null, false);
     private static (int ExitCode, string Output) Run(string file, string args) { try { using var p = Process.Start(new ProcessStartInfo(file, args) { RedirectStandardOutput=true, RedirectStandardError=true, UseShellExecute=false, CreateNoWindow=true }); if (p is null) return (-1, ""); var output=p.StandardOutput.ReadToEnd(); p.WaitForExit(5000); return (p.ExitCode, output.Trim()); } catch { return (-1, ""); } }
-    private static string? FindRepositoryFile(string name) { var current=new DirectoryInfo(AppContext.BaseDirectory); while(current is not null) { var file=Path.Combine(current.FullName,name); if(File.Exists(file)) return file; current=current.Parent; } current=new DirectoryInfo(Environment.CurrentDirectory); while(current is not null) { var file=Path.Combine(current.FullName,name); if(File.Exists(file)) return file; current=current.Parent; } return null; }
+    private static string? FindRepositoryFile(string name)
+        => FindRepositoryFile(name, AppContext.BaseDirectory, BclEnvironment.CurrentDirectory);
+
+    internal static string? FindRepositoryFile(string name, string baseDirectory, string currentDirectory)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        var allowedNames = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "global.json", "InovaGed.sln", "Directory.Build.props",
+            "Directory.Packages.props", "database/migrations.manifest.json"
+        };
+        var normalizedName = name.Replace('\\', '/');
+        if (!allowedNames.Contains(normalizedName) || Path.IsPathRooted(name) || name.Contains('\0'))
+            throw new ArgumentException("O nome não pertence ao catálogo seguro de arquivos do repositório.", nameof(name));
+
+        foreach (var start in new[] { baseDirectory, currentDirectory })
+        {
+            if (string.IsNullOrWhiteSpace(start) || !Directory.Exists(start)) continue;
+            var current = new DirectoryInfo(start);
+            while (current is not null)
+            {
+                var file = Path.Combine(current.FullName, name);
+                try { if (File.Exists(file)) return file; }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+                current = current.Parent;
+            }
+        }
+        return null;
+    }
     private static string SafeMajor(string value) => string.IsNullOrWhiteSpace(value) ? "not-detected" : value.Split('.')[0] + ".x";
     private static string MaskPath(string path) => $"…/{Path.GetFileName(Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar))}";
     private static EnvironmentCheckResult Result(string code,string category,string status,string title,string message,string? recommendation,bool blocking,params (string Key,string? Value)[] metadata) => new(code,category,status,title,message,recommendation,blocking,metadata.ToDictionary(x=>x.Key,x=>x.Value));
