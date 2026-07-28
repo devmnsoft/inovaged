@@ -4,6 +4,9 @@ namespace InovaGed.Application.Audit
 {
     public interface IAuditWriter
     {
+        Task<Result> WriteAsync(AuditWriteCommand command, CancellationToken ct);
+
+        [Obsolete("Use WriteAsync(AuditWriteCommand, CancellationToken) para evitar inversão de argumentos.")]
         Task<Result> WriteAsync(
             Guid tenantId,
             Guid? userId,
