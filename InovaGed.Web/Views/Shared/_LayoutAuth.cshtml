@@ -15,8 +15,8 @@
     <link rel="stylesheet"
           href="~/lib/bootstrap-icons/font/bootstrap-icons.min.css" />
 
-    <link href="~/css/inovaged.css" rel="stylesheet" asp-append-version="true" />
-    <link href="~/css/inovaged.tokens.css" rel="stylesheet" asp-append-version="true" />
+    <link href="~/css/design-system/tokens.css" rel="stylesheet" asp-append-version="true" />
+    <link href="~/css/themes/inovaged-classic.css" rel="stylesheet" asp-append-version="true" />
     <link href="~/css/inovaged.layout.css" rel="stylesheet" asp-append-version="true" />
     <link href="~/css/inovaged.utilities.css" rel="stylesheet" asp-append-version="true" />
     <link href="~/css/pages/login.css" rel="stylesheet" asp-append-version="true" />
@@ -25,7 +25,7 @@
     @await RenderSectionAsync("Styles", required: false)
 </head>
 
-<body>
+<body data-theme="inovaged-classic">
     <main class="auth-page-root">
         @RenderBody()
     </main>
