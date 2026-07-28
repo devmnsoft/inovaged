@@ -2,6 +2,7 @@ using System.Text.Json;
 using InovaGed.Application.EnvironmentDiagnostics;
 using InovaGed.Environment.Doctor;
 using Microsoft.Extensions.Configuration;
+using BclEnvironment = global::System.Environment;
 
 try
 {
@@ -12,20 +13,20 @@ try
         return 3;
     }
     var configuration = new ConfigurationBuilder()
-        .SetBasePath(Environment.CurrentDirectory)
+        .SetBasePath(BclEnvironment.CurrentDirectory)
         .AddJsonFile("InovaGed.Web/appsettings.json", optional: true)
         .AddEnvironmentVariables()
         .Build();
     var results = await new EnvironmentDoctor(configuration).CheckAsync();
     var json = JsonSerializer.Serialize(results, new JsonSerializerOptions { WriteIndented = true });
-    var text = string.Join(Environment.NewLine, results.Select(r => $"[{r.Status}] {r.Category}/{r.Code}: {r.Title}{Environment.NewLine}  {r.Message}{(r.Recommendation is null ? "" : Environment.NewLine + "  Recomendação: " + r.Recommendation)}"));
+    var text = string.Join(BclEnvironment.NewLine, results.Select(r => $"[{r.Status}] {r.Category}/{r.Code}: {r.Title}{BclEnvironment.NewLine}  {r.Message}{(r.Recommendation is null ? "" : BclEnvironment.NewLine + "  Recomendação: " + r.Recommendation)}"));
     if (command == "report")
     {
-        var output = Path.Combine(Environment.CurrentDirectory, "artifacts", "environment-doctor");
+        var output = Path.Combine(BclEnvironment.CurrentDirectory, "artifacts", "environment-doctor");
         Directory.CreateDirectory(output);
         await File.WriteAllTextAsync(Path.Combine(output, "report.json"), json);
         await File.WriteAllTextAsync(Path.Combine(output, "report.txt"), text);
-        Console.WriteLine($"Relatório seguro criado em {Path.GetRelativePath(Environment.CurrentDirectory, output)}");
+        Console.WriteLine($"Relatório seguro criado em {Path.GetRelativePath(BclEnvironment.CurrentDirectory, output)}");
     }
     else Console.WriteLine(args.Contains("--json", StringComparer.Ordinal) ? json : text);
     if (results.Any(r => r.Blocking && r.Status == EnvironmentCheckStatuses.Fail)) return 2;
