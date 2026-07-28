@@ -1,3 +1,4 @@
+@using InovaGed.Web.Models.Ged
 @model InovaGed.Web.Models.Ged.GedExplorerVM
 @using InovaGed.Web.Ocr
 @using InovaGed.Web.Security
@@ -94,7 +95,7 @@
             </div>
 
             <div class="ged-operational-status-line">
-                @await Html.PartialAsync("_DocumentBadges", d)
+                @await Html.PartialAsync("_DocumentBadges", DocumentBadgesVM.FromDocument(d))
             </div>
         </div>
 

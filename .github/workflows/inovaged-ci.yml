@@ -177,6 +177,10 @@ jobs:
       - name: Enforce static security guards
         run: |
           set -euo pipefail
+          if git grep -nEi '(Password|Pwd)=[^;"[:space:]]+' -- ':(glob)**/appsettings*.json' ':(glob)**/*.config' | rg -v 'Password=(SUA_SENHA|YOUR_PASSWORD|\$\{|%|<)'; then
+            echo "Connection string with a populated password found in tracked configuration." >&2
+            exit 1
+          fi
           ! rg -n "AllowAnyOrigin" InovaGed.Web InovaGed.Infrastructure WebGed.WebApi InovaGed.Signing.Agent --glob '!**/bin/**' --glob '!**/obj/**' .
           ! rg -n "AllowAllPermissionChecker|CertificateValidationStub" InovaGed.Web InovaGed.Infrastructure WebGed.WebApi --glob '!**/bin/**' --glob '!**/obj/**'
           ! rg -n "EnsureMandatoryChecks|Check registrado para homologação" InovaGed.Infrastructure/Signatures --glob '!**/bin/**' --glob '!**/obj/**'
@@ -294,6 +298,8 @@ jobs:
         with: { dotnet-version: '8.0.x' }
       - name: Apply continuity migrations
         run: psql "postgresql://postgres:postgres@localhost:5432/inovaged_continuity" -v ON_ERROR_STOP=1 -f database/apply_all_required_migrations.sql > continuity-migrations.log
+      - name: Assert continuity schema
+        run: psql "postgresql://postgres:postgres@localhost:5432/inovaged_continuity" -v ON_ERROR_STOP=1 -f database/assert_continuity_schema.sql
       - name: Run continuity tests
         run: dotnet test InovaGed.Application.Tests/InovaGed.Application.Tests.csproj --configuration Release --filter "FullyQualifiedName~Continuity" --logger "trx;LogFileName=continuity.trx" --results-directory TestResults > continuity-tests.log
       - name: Reject empty or failed continuity run

@@ -1,0 +1,11 @@
+# Local configuration and secrets
+appsettings.Development.local.json
+appsettings.Local.json
+*.secrets.json
+
+# Build and test outputs
+**/bin/
+**/obj/
+artifacts/
+TestResults/
+playwright-report/

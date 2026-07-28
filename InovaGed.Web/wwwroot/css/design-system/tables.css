@@ -1,0 +1,1 @@
+.table-responsive{border:1px solid var(--ig-border);border-radius:var(--ig-radius-card);background:var(--ig-surface)}.table{margin:0}.table>:not(caption)>*>*{padding:.75rem 1rem;border-color:var(--ig-border);vertical-align:middle}.table thead th{background:var(--ig-surface-soft);color:var(--ig-text-secondary);font-size:.75rem;letter-spacing:.03em;text-transform:uppercase}

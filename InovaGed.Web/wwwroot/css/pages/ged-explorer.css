@@ -1,0 +1,2 @@
+/* Page-level refinements for ged-explorer. Shared primitives live in the design system. */
+.ged-explorer-page { min-width: 0; }

@@ -1,3 +1,4 @@
+@using InovaGed.Web.Models.Ged
 @model InovaGed.Web.Models.Ged.GedExplorerVM
 @using InovaGed.Web.Ocr
 @using InovaGed.Web.Security
@@ -107,7 +108,7 @@
 
                             <td class="ged-col-status">
                                 <div class="ged-document-badges">
-                                    @await Html.PartialAsync("_DocumentBadges", d)
+                                    @await Html.PartialAsync("_DocumentBadges", DocumentBadgesVM.FromDocument(d))
                                 </div>
                             </td>
 
