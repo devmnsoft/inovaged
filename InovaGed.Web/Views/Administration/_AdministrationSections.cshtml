@@ -1,0 +1,8 @@
+@model IReadOnlyList<InovaGed.Web.Models.Administration.AdministrationSectionVM>
+<section aria-labelledby="categories-title">
+    <div class="ig-section-heading"><div><h2 id="categories-title">Categorias administrativas</h2><p>Acesse recursos organizados por responsabilidade.</p></div></div>
+    @foreach (var adminSection in Model)
+    {
+        <partial name="_AdministrationSection" model="adminSection" />
+    }
+</section>

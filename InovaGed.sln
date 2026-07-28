@@ -24,6 +24,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "InovaGed.Signing.Agent.Test
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "InovaGed.Signing.EndToEndTests", "InovaGed.Signing.EndToEndTests\InovaGed.Signing.EndToEndTests.csproj", "{A7777777-8888-4999-9AAA-BBBBBBBBBBBB}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "InovaGed.Database.Migrator", "InovaGed.Database.Migrator\InovaGed.Database.Migrator.csproj", "{B8888888-9999-4AAA-8BBB-CCCCCCCCCCCC}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -74,6 +76,10 @@ Global
 		{A7777777-8888-4999-9AAA-BBBBBBBBBBBB}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A7777777-8888-4999-9AAA-BBBBBBBBBBBB}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A7777777-8888-4999-9AAA-BBBBBBBBBBBB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B8888888-9999-4AAA-8BBB-CCCCCCCCCCCC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B8888888-9999-4AAA-8BBB-CCCCCCCCCCCC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B8888888-9999-4AAA-8BBB-CCCCCCCCCCCC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B8888888-9999-4AAA-8BBB-CCCCCCCCCCCC}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "migrations": [
+    { "id": "2026_07_identity_role_integrity", "path": "database/migrations/2026_07_identity_role_integrity.sql", "module": "Identity", "transactional": true },
+    { "id": "2026_07_administration_security_governance", "path": "database/migrations/2026_07_administration_security_governance.sql", "module": "Administration", "transactional": true },
+    { "id": "2026_07_backup_continuity_portability", "path": "database/migrations/2026_07_backup_continuity_portability.sql", "module": "Continuity", "transactional": true },
+    { "id": "2026_07_estabilizar_admin_continuity_ci", "path": "database/migrations/2026_07_estabilizar_admin_continuity_ci.sql", "module": "Continuity", "transactional": true }
+  ]
+}

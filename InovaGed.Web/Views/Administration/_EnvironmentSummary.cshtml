@@ -1,0 +1,15 @@
+@model IReadOnlyList<InovaGed.Web.Models.Administration.AdministrationHealthVM>
+<section aria-labelledby="environment-title">
+    <div class="ig-section-heading"><div><h2 id="environment-title">Resumo do ambiente</h2><p>Indicadores reais coletados dos serviços administrativos.</p></div></div>
+    <div class="ig-kpi-grid">
+        @foreach (var healthItem in Model)
+        {
+            <article class="ig-kpi-card">
+                <div class="ig-kpi-icon"><i class="bi @healthItem.Icon" aria-hidden="true"></i></div>
+                <div><span class="ig-kpi-label">@healthItem.Title</span><strong>@(healthItem.Value ?? "—")</strong><span class="ig-status" data-status="@healthItem.Status.ToLowerInvariant()">@healthItem.Status</span>
+                    @if (!string.IsNullOrWhiteSpace(healthItem.Message)) { <p title="@healthItem.Message">@healthItem.Message</p> }
+                </div>
+            </article>
+        }
+    </div>
+</section>

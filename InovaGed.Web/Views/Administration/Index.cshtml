@@ -1,40 +1,14 @@
 @model InovaGed.Web.Models.Administration.AdministrationDashboardVM
-@{ ViewData["Title"] = "Administração"; ViewData["Subtitle"] = "Governança, segurança e saúde do ambiente"; }
+@{
+    ViewData["Title"] = "Administração";
+    ViewData["Subtitle"] = "Governança, segurança e saúde do ambiente";
+}
 
 <header class="ig-page-header">
     <div><span class="ig-eyebrow">Governança institucional</span><h1>Administração</h1><p>Gerencie acessos, parâmetros e continuidade em um único espaço seguro.</p></div>
     <a class="btn btn-outline-secondary" asp-action="Health"><i class="bi bi-heart-pulse" aria-hidden="true"></i> Ver saúde do sistema</a>
 </header>
 
-<section aria-labelledby="environment-title">
-    <div class="ig-section-heading"><div><h2 id="environment-title">Resumo do ambiente</h2><p>Indicadores reais coletados dos serviços administrativos.</p></div></div>
-    <div class="ig-kpi-grid">
-        @foreach (var health in Model.Health)
-        {
-            <article class="ig-kpi-card">
-                <div class="ig-kpi-icon"><i class="bi @health.Icon" aria-hidden="true"></i></div>
-                <div><span class="ig-kpi-label">@health.Title</span><strong>@(health.Value ?? "—")</strong><span class="ig-status" data-status="@health.Status.ToLowerInvariant()">@health.Status</span>@if (!string.IsNullOrWhiteSpace(health.Message)) { <p title="@health.Message">@health.Message</p> }</div>
-            </article>
-        }
-    </div>
-</section>
-
-@if (Model.Recommendations.Count > 0)
-{
-    <section class="ig-banner ig-banner-warning" aria-labelledby="recommendations-title"><i class="bi bi-exclamation-triangle" aria-hidden="true"></i><div><h2 id="recommendations-title">Alertas de configuração</h2>@foreach (var recommendation in Model.Recommendations) { <div class="ig-recommendation"><strong>@recommendation.Title</strong><p>@recommendation.Reason @recommendation.Guidance</p></div> }</div></section>
-}
-
-<section aria-labelledby="categories-title">
-    <div class="ig-section-heading"><div><h2 id="categories-title">Categorias administrativas</h2><p>Acesse recursos organizados por responsabilidade.</p></div></div>
-    @foreach (var section in Model.Sections)
-    {
-        <div class="ig-admin-section"><h3>@section.Title</h3><p>@section.Description</p><div class="ig-action-grid">
-        @foreach (var action in section.Actions)
-        {
-            <a class="ig-action-card @(action.Available ? string.Empty : "is-disabled")" asp-controller="@action.Controller" asp-action="@action.Action" aria-disabled="@(!action.Available)" title="@action.UnavailableReason">
-                <span class="ig-action-icon"><i class="bi @action.Icon" aria-hidden="true"></i></span><span><strong>@action.Title</strong><small>@action.Description</small></span><i class="bi bi-arrow-right" aria-hidden="true"></i>
-            </a>
-        }
-    </div></div>
-    }
-</section>
+<partial name="_EnvironmentSummary" model="Model.Health" />
+<partial name="_ConfigurationRecommendations" model="Model.Recommendations" />
+<partial name="_AdministrationSections" model="Model.Sections" />

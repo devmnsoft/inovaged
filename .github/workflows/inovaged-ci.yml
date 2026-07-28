@@ -31,7 +31,12 @@ jobs:
           go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - name: Lint workflow
-        run: actionlint -verbose -color never .github/workflows/inovaged-ci.yml
+        shell: bash
+        run: |
+          shopt -s nullglob
+          workflows=(.github/workflows/*.yml .github/workflows/*.yaml)
+          ((${#workflows[@]} > 0))
+          actionlint -verbose "${workflows[@]}"
 
   solution-validation:
     runs-on: ubuntu-latest
@@ -44,13 +49,21 @@ jobs:
         with:
           dotnet-version: '8.0.x'
       - name: Show SDK information
-        run: dotnet --info
+        run: |
+          dotnet --info
+          dotnet --version | grep -E '^8\.0\.'
       - name: Validate solution projects
         run: dotnet sln InovaGed.sln list
       - name: Restore solution
-        run: dotnet restore InovaGed.sln --verbosity normal > restore.log 2>&1
+        shell: bash
+        run: |
+          set -o pipefail
+          dotnet restore InovaGed.sln --verbosity normal 2>&1 | tee restore.log
       - name: Build solution
-        run: dotnet build InovaGed.sln --no-restore --configuration Release --verbosity normal > build.log 2>&1
+        shell: bash
+        run: |
+          set -o pipefail
+          dotnet build InovaGed.sln --no-restore --configuration Release --verbosity normal 2>&1 | tee build.log
       - name: Run infrastructure-free tests
         run: dotnet test InovaGed.sln --no-build --configuration Release --filter "Category=Unit|Category=Architecture|Category=CmsContract|Category=PoCContract" --logger "trx;LogFileName=all-tests.trx" --results-directory TestResults
       - name: Reject empty or failed test runs
@@ -66,6 +79,27 @@ jobs:
             restore.log
             build.log
             TestResults/**/*.trx
+
+  razor-view-compilation:
+    needs: solution-validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '8.0.x' }
+      - run: dotnet restore InovaGed.Web/InovaGed.Web.csproj
+      - run: dotnet build InovaGed.Web/InovaGed.Web.csproj --no-restore --configuration Debug
+      - run: dotnet build InovaGed.Web/InovaGed.Web.csproj --no-restore --configuration Release
+      - run: dotnet publish InovaGed.Web/InovaGed.Web.csproj --no-build --configuration Release --output publish/web
+
+  migration-manifest-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '8.0.x' }
+      - run: python3 -m json.tool database/migrations.manifest.json >/dev/null
+      - run: dotnet test InovaGed.Application.Tests/InovaGed.Application.Tests.csproj --configuration Release --filter "FullyQualifiedName~MigrationManifestTests"
 
   server-linux:
     needs: solution-validation
@@ -355,6 +389,8 @@ jobs:
     needs:
       - actionlint
       - solution-validation
+      - razor-view-compilation
+      - migration-manifest-validation
       - server-linux
       - agent-windows
       - security-guards
