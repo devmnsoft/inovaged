@@ -5,7 +5,7 @@ using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
-namespace InovaGed.Web.Controller;
+namespace InovaGed.Web.Controllers;
 
 [Authorize(Policy = AppPolicies.Administracao)]
 public sealed class AdministrationController : Controller
