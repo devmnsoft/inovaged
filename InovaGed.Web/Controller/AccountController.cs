@@ -17,14 +17,16 @@ public sealed class AccountController : Controller
 {
     private readonly IAuthRepository _repo;
     private readonly IAuditWriter _audit;
+    private readonly IAuthenticationAuditService _authenticationAudit;
     private readonly ILogger<AccountController> _logger;
     private readonly IGedAccessPolicyService _accessPolicy;
     private static readonly PasswordHasher<ApplicationUser> _hasher = new();
 
-    public AccountController(IAuthRepository repo, IAuditWriter audit, ILogger<AccountController> logger, IGedAccessPolicyService accessPolicy)
+    public AccountController(IAuthRepository repo, IAuditWriter audit, IAuthenticationAuditService authenticationAudit, ILogger<AccountController> logger, IGedAccessPolicyService accessPolicy)
     {
         _repo = repo;
         _audit = audit;
+        _authenticationAudit = authenticationAudit;
         _logger = logger;
         _accessPolicy = accessPolicy;
     }
@@ -125,10 +127,10 @@ public sealed class AccountController : Controller
             _logger.LogError(ex,
                 "Falha ao carregar autorização. Tenant={TenantId} UserId={UserId} CorrelationId={CorrelationId}",
                 user.TenantId, user.UserId, correlationId);
-            await _audit.WriteAsync(
-                user.TenantId, user.UserId, "LOGIN_ERROR_AUTHORIZATION_LOAD", "authentication", user.UserId.ToString(),
-                "Não foi possível carregar os perfis do usuário.", ip, userAgent,
-                new { correlationId }, ct);
+            await _authenticationAudit.LoginFailedAsync(
+                new AuthenticationAuditContext(user.TenantId, user.UserId, ip, userAgent, correlationId),
+                AuthenticationFailureReason.AuthorizationLoadError,
+                ct);
             ModelState.AddModelError("", "Não foi possível concluir a autenticação. Tente novamente.");
             return View(vm);
         }
@@ -141,10 +143,10 @@ public sealed class AccountController : Controller
 
         if (normalizedRoles.Count == 0)
         {
-            await _audit.WriteAsync(
-                user.TenantId, user.UserId, "LOGIN_DENIED_NO_ROLE", "authentication", user.UserId.ToString(),
-                "Usuário ativo sem perfil de acesso.", ip, userAgent,
-                new { correlationId }, ct);
+            await _authenticationAudit.LoginDeniedAsync(
+                new AuthenticationAuditContext(user.TenantId, user.UserId, ip, userAgent, correlationId),
+                AuthenticationDenialReason.NoAccessRole,
+                ct);
             _logger.LogWarning(
                 "Login negado por ausência de perfil. Tenant={TenantId} UserId={UserId} CorrelationId={CorrelationId}",
                 user.TenantId, user.UserId, correlationId);
