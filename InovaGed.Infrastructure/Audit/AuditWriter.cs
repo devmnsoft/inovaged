@@ -23,7 +23,16 @@ public sealed class AuditWriter : IAuditWriter
         _configuration = configuration;
     }
 
-    public async Task<Result> WriteAsync(
+    public Task<Result> WriteAsync(AuditWriteCommand command, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        return WriteCoreAsync(command.TenantId, command.UserId, command.Action, command.EntityName,
+            command.EntityId, command.Summary, command.IpAddress, command.UserAgent,
+            MergeAuditMetadata(command), command.CorrelationId, command.EventType, ct);
+    }
+
+    [Obsolete("Use WriteAsync(AuditWriteCommand, CancellationToken) para evitar inversão de argumentos.")]
+    public Task<Result> WriteAsync(
         Guid tenantId,
         Guid? userId,
         string action,
@@ -34,8 +43,17 @@ public sealed class AuditWriter : IAuditWriter
         string? userAgent,
         object? data,
         CancellationToken ct)
+        => WriteCoreAsync(tenantId, userId, action, entityName, entityId, summary, ipAddress,
+            userAgent, data, null, "INFO", ct);
+
+    private async Task<Result> WriteCoreAsync(
+        Guid tenantId, Guid? userId, string action, string entityName, Guid? entityId,
+        string? summary, string? ipAddress, string? userAgent, object? data,
+        string? correlationId, string eventType, CancellationToken ct)
     {
-        var strictAudit = _configuration.GetValue<bool>("AuditLogs:StrictAudit");
+        var strictAudit = _configuration.GetValue<bool>("AuditLogs:StrictAudit") ||
+            (_configuration.GetValue<bool>("AuditLogs:StrictAuthenticationAudit") &&
+             string.Equals(entityName, "authentication", StringComparison.OrdinalIgnoreCase));
 
         try
         {
@@ -54,7 +72,7 @@ public sealed class AuditWriter : IAuditWriter
 
             if (preferAppAuditLog && await TableExistsAsync(conn, "app_audit_log", ct))
             {
-                await WriteAppAuditLogAsync(conn, tenantId, normalizedUserId, userName, action, entityName, entityId, summary, ipAddress, userAgent, json, ct);
+                await WriteAppAuditLogAsync(conn, tenantId, normalizedUserId, userName, action, entityName, entityId, summary, ipAddress, userAgent, json, correlationId, eventType, ct);
                 return Result.Ok();
             }
 
@@ -96,7 +114,7 @@ public sealed class AuditWriter : IAuditWriter
         }
     }
 
-    private static async Task WriteAppAuditLogAsync(IDbConnection conn, Guid tenantId, Guid? userId, string userName, string action, string entityName, Guid? entityId, string? summary, string? ipAddress, string? userAgent, string? details, CancellationToken ct)
+    private static async Task WriteAppAuditLogAsync(IDbConnection conn, Guid tenantId, Guid? userId, string userName, string action, string entityName, Guid? entityId, string? summary, string? ipAddress, string? userAgent, string? details, string? correlationId, string eventType, CancellationToken ct)
     {
         const string sql = @"
 insert into ged.app_audit_log
@@ -150,7 +168,7 @@ values
             UserId = userId,
             UserName = userName,
             Action = action,
-            EventType = "INFO",
+            EventType = NormalizeEventType(eventType),
             Source = "AuditWriter",
             EntityName = entityName,
             EntityId = entityId?.ToString(),
@@ -159,7 +177,7 @@ values
             StatusCode = (int?)null,
             Message = summary,
             Details = details,
-            CorrelationId = (string?)null,
+            CorrelationId = correlationId,
             IpAddress = ipAddress,
             UserAgent = userAgent
         }, cancellationToken: ct));
@@ -226,6 +244,35 @@ select exists (
 
         return "Sistema";
     }
+
+    private static object? MergeAuditMetadata(AuditWriteCommand command)
+    {
+        if (command.Data is null && command.CorrelationId is null && command.Outcome is null && command.ReasonCode is null)
+            return null;
+
+        var values = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        if (command.Data is not null)
+        {
+            var element = JsonSerializer.SerializeToElement(command.Data);
+            if (element.ValueKind == JsonValueKind.Object)
+                foreach (var property in element.EnumerateObject())
+                    values[property.Name] = property.Value.Clone();
+            else
+                values["data"] = element;
+        }
+        if (!string.IsNullOrWhiteSpace(command.CorrelationId)) values["correlationId"] = command.CorrelationId;
+        if (!string.IsNullOrWhiteSpace(command.Outcome)) values["outcome"] = command.Outcome;
+        if (!string.IsNullOrWhiteSpace(command.ReasonCode)) values["reasonCode"] = command.ReasonCode;
+        return values;
+    }
+
+    private static string NormalizeEventType(string? eventType)
+        => eventType?.Trim().ToUpperInvariant() switch
+        {
+            "SECURITY" => "SECURITY",
+            "ERROR" => "ERROR",
+            _ => "INFO"
+        };
 
     private static string MapAction(string? action)
     {

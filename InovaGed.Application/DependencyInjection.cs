@@ -1,5 +1,6 @@
 using InovaGed.Application.Classification;
 using InovaGed.Application.Documents;
+using InovaGed.Application.Auth;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -16,6 +17,7 @@ public static class ApplicationServiceCollectionExtensions
         services.AddScoped<DocumentClassificationAppService>();
         services.AddScoped<SimpleTextDocumentTypeSuggester>();
         services.AddScoped<HybridDocumentTypeSuggester>();
+        services.AddScoped<IAuthenticationAuditService, AuthenticationAuditService>();
 
         return services;
     }
