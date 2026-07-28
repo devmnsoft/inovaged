@@ -7,5 +7,7 @@ appsettings.Local.json
 **/bin/
 **/obj/
 artifacts/
+artifacts/diagnostics/
+artifacts/environment-doctor/
 TestResults/
 playwright-report/

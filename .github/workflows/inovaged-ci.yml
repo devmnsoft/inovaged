@@ -15,6 +15,59 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  toolchain-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '8.0.x' }
+      - name: Verify .NET toolchain and repository contracts
+        shell: bash
+        run: |
+          bash eng/verify-dotnet-sdk.sh
+          dotnet --version
+          dotnet --list-sdks
+          python3 - <<'PY'
+          import json, pathlib, sys, xml.etree.ElementTree as ET
+          root=pathlib.Path('.')
+          sdk=json.loads((root/'global.json').read_text())['sdk']
+          assert sdk == {'version':'8.0.100','rollForward':'latestFeature','allowPrerelease':False}
+          projects=list(root.glob('**/*.csproj'))
+          assert projects and all((ET.parse(p).findtext('.//TargetFramework') == 'net8.0') for p in projects)
+          assert ET.parse('Directory.Build.props').findtext('.//LangVersion') == '12.0'
+          assert ET.parse('Directory.Packages.props').findtext('.//ManagePackageVersionsCentrally') == 'true'
+          PY
+      - name: Create safe toolchain diagnostics
+        if: always()
+        run: bash eng/dotnet-diagnostics.sh
+      - name: Publish toolchain diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with: { name: toolchain-diagnostics, path: artifacts/diagnostics/ }
+
+  linux-build-validation:
+    needs: toolchain-validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '8.0.x' }
+      - run: bash eng/build.sh
+
+  windows-build-validation:
+    needs: toolchain-validation
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '8.0.x' }
+      - name: Validate PowerShell build and Windows paths
+        shell: pwsh
+        run: |
+          .\eng\verify-dotnet-sdk.ps1
+          .\eng\build.ps1
+
   actionlint:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -388,6 +441,9 @@ jobs:
     if: always()
     needs:
       - actionlint
+      - toolchain-validation
+      - linux-build-validation
+      - windows-build-validation
       - solution-validation
       - razor-view-compilation
       - migration-manifest-validation

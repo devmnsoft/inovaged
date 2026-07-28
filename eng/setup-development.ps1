@@ -1,0 +1,3 @@
+param([switch]$Build)
+$ErrorActionPreference='Stop'; $root=(Resolve-Path (Join-Path $PSScriptRoot '..')).Path; Push-Location $root
+try { & "$PSScriptRoot\verify-dotnet-sdk.ps1"; if (-not (Get-Command git -ErrorAction SilentlyContinue)) { throw 'Git não encontrado.' }; dotnet restore InovaGed.sln; Write-Host 'Configure segredos com dotnet user-secrets; não grave credenciais no repositório.'; dotnet run --project InovaGed.Environment.Doctor -- check; if ($LASTEXITCODE -gt 1) { exit $LASTEXITCODE }; Write-Host 'Use o Database.Migrator documentado para migrations.'; if ($Build) { & "$PSScriptRoot\build.ps1" } } finally { Pop-Location }
