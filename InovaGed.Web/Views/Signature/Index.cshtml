@@ -1,9 +1,13 @@
 ﻿@model IEnumerable<InovaGed.Web.Controllers.SignatureController.PendingDocRow>
 @{
-    ViewData["Title"] = "Assinatura Digital";
-    ViewData["Subtitle"] = "Assine documentos individualmente ou em lote";
+    ViewData["Title"] = "Assinatura interna operacional";
+    ViewData["Subtitle"] = "Registro interno de autoria e integridade operacional; não representa assinatura digital qualificada ICP-Brasil isoladamente";
     string q = ViewBag.Q ?? "";
 }
+
+<div class="alert alert-warning">
+    <strong>Assinatura interna operacional.</strong> Esta assinatura é um registro interno de autoria e integridade operacional. Ela não representa, isoladamente, uma assinatura digital qualificada ICP-Brasil.
+</div>
 
 @if (TempData["Ok"] is string ok)
 {
@@ -26,7 +30,7 @@
         <div class="text-muted">@ViewData["Subtitle"]</div>
     </div>
     <a class="btn btn-outline-primary" asp-action="SignBatch">
-        <i class="bi bi-pen me-1"></i> Assinar em Lote
+        <i class="bi bi-pen me-1"></i> Registrar lote interno
     </a>
 </div>
 
@@ -108,7 +112,7 @@
                                 <a class="btn btn-sm btn-outline-primary"
                                    asp-action="SignDocument" asp-route-id="@doc.Id">
                                     <i class="bi bi-pen me-1"></i>
-                                    @(doc.SignatureStatus == null ? "Assinar" : "Reassinar")
+                                    @(doc.SignatureStatus == null ? "Registrar" : "Registrar novo")
                                 </a>
                             </td>
                         </tr>

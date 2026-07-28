@@ -1,0 +1,25 @@
+name: dotnet-ci
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: [ main, develop, "feature/**", "codex/**" ]
+jobs:
+  specialized-guards:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Document move signature guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          ! rg -n "SearchFoldersAsync\([^\n]*CurrentTenantId\(|MoveAsync\([^\n]*CurrentTenantId\(|MoveBulkAsync\([^\n]*CurrentTenantId\(|MoveAsync\([^\n]*CancellationToken\.None|MoveBulkAsync\([^\n]*CancellationToken\.None" --glob "*.cs"
+          test -f WebGed.WebApi/WebGed.WebApi.csproj
+      - name: Regex safety guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          if rg -n "new Regex\(|Regex\." InovaGed.Web InovaGed.Application InovaGed.Infrastructure --glob '*.cs' | rg -v "RegexOptions\.NonBacktracking|// REGEX_JUSTIFIED|System.Text.RegularExpressions"; then
+            echo "Regex crítico sem RegexOptions.NonBacktracking ou justificativa REGEX_JUSTIFIED."
+            exit 1
+          fi

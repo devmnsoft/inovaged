@@ -1,0 +1,302 @@
+name: inovaged-ci
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: [ main, develop, "feature/**", "codex/**" ]
+
+permissions:
+  contents: read
+  actions: read
+  checks: read
+
+concurrency:
+  group: inovaged-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  actionlint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+          cache: false
+      - name: Install pinned actionlint
+        run: |
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - name: Lint workflow
+        run: actionlint -verbose -color never .github/workflows/inovaged-ci.yml
+
+  solution-validation:
+    needs: actionlint
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Show SDK information
+        run: dotnet --info
+      - name: Validate solution projects
+        run: dotnet sln InovaGed.sln list
+      - name: Restore solution
+        run: dotnet restore InovaGed.sln --verbosity normal > restore.log 2>&1
+      - name: Build solution
+        run: dotnet build InovaGed.sln --no-restore --configuration Release --verbosity normal > build.log 2>&1
+      - name: Run infrastructure-free tests
+        run: dotnet test InovaGed.sln --no-build --configuration Release --filter "Category=Unit|Category=Architecture|Category=CmsContract|Category=PoCContract" --logger "trx;LogFileName=all-tests.trx" --results-directory TestResults
+      - name: Reject empty or failed test runs
+        run: python3 scripts/ci/assert-trx-has-tests.py 'TestResults/**/*.trx'
+      - name: Check patch whitespace
+        run: git diff --check
+      - name: Upload solution diagnostics
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: solution-and-build-test-results
+          path: |
+            restore.log
+            build.log
+            TestResults/**/*.trx
+
+  server-linux:
+    needs: solution-validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: inovaged_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd="pg_isready -U postgres -d inovaged_ci"
+          --health-interval=10s --health-timeout=5s --health-retries=10
+    env:
+      ConnectionStrings__DefaultConnection: Host=localhost;Port=5432;Database=inovaged_ci;Username=postgres;Password=postgres
+      Storage__Local__RootPath: ${{ github.workspace }}/.ci-storage
+      Preview__LibreOfficePath: /usr/bin/libreoffice
+      Ocr__Enabled: 'false'
+      DigitalSignature__Enabled: 'false'
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '8.0.x' }
+      - name: Generate CI signature secrets
+        shell: bash
+        run: |
+          hmac_key=$(openssl rand -hex 32)
+          echo "::add-mask::$hmac_key"
+          {
+            echo "DigitalSignature__CertificateIdentityHmacKey=$hmac_key"
+            echo "DigitalSignature__CertificateIdentityHmacKeyVersion=ci-v1"
+          } >> "$GITHUB_ENV"
+      - name: Restore solution
+        run: dotnet restore InovaGed.sln
+      - name: Build server hosts
+        run: dotnet build InovaGed.Web/InovaGed.Web.csproj --no-restore --configuration Release && dotnet build WebGed.WebApi/WebGed.WebApi.csproj --no-restore --configuration Release
+      - name: Apply server migrations
+        run: psql "postgresql://postgres:postgres@localhost:5432/inovaged_ci" -v ON_ERROR_STOP=1 -f database/apply_all_required_migrations.sql
+      - name: Start server hosts and verify health
+        shell: bash
+        run: bash scripts/ci/verify-server-startup.sh
+      - name: Run server integration tests
+        run: dotnet test InovaGed.Application.Tests/InovaGed.Application.Tests.csproj --configuration Release --filter "FullyQualifiedName~DependencyInjection|FullyQualifiedName~Antiforgery" --logger "trx;LogFileName=server-linux.trx" --results-directory TestResults
+      - name: Reject empty or failed server test run
+        run: python3 scripts/ci/assert-trx-has-tests.py TestResults/server-linux.trx
+      - name: Stop server hosts
+        if: always()
+        shell: bash
+        run: bash scripts/ci/stop-server-hosts.sh
+      - name: Upload server diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-linux-logs
+          path: .ci-logs/*.log
+
+  agent-windows:
+    needs: solution-validation
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '8.0.x' }
+      - name: Restore Signing Agent
+        run: dotnet restore InovaGed.Signing.Agent/InovaGed.Signing.Agent.csproj
+      - name: Build Signing Agent
+        run: dotnet build InovaGed.Signing.Agent/InovaGed.Signing.Agent.csproj --no-restore --configuration Release
+      - name: Test Signing Agent
+        run: dotnet test InovaGed.Signing.Agent.Tests/InovaGed.Signing.Agent.Tests.csproj --configuration Release --logger "trx;LogFileName=agent-windows.trx" --results-directory TestResults
+      - name: Reject empty or failed agent test run
+        run: python scripts/ci/assert-trx-has-tests.py TestResults/agent-windows.trx
+      - name: Exercise Signing Agent lifecycle
+        shell: pwsh
+        run: |
+          $agent = "InovaGed.Signing.Agent/InovaGed.Signing.Agent.csproj"
+          $data = Join-Path $env:RUNNER_TEMP "signing-agent-lifecycle"
+          dotnet run --project $agent -- version
+          dotnet run --project $agent -- doctor --data-dir $data
+          dotnet run --project $agent -- install --data-dir $data
+          dotnet run --project $agent -- rotate-certificate --data-dir $data
+          dotnet run --project $agent -- uninstall --data-dir $data
+      - name: Publish Signing Agent win-x64
+        run: dotnet publish InovaGed.Signing.Agent/InovaGed.Signing.Agent.csproj --configuration Release --runtime win-x64 --self-contained false --output publish/signing-agent-win-x64
+      - name: Verify Signing Agent executable
+        shell: pwsh
+        run: |
+          if (-not (Test-Path publish/signing-agent-win-x64/InovaGed.Signing.Agent.exe)) { throw "Signing Agent executable was not published" }
+      - name: Upload Signing Agent package
+        uses: actions/upload-artifact@v4
+        with:
+          name: signing-agent-win-x64
+          path: publish/signing-agent-win-x64/**
+
+  security-guards:
+    needs: solution-validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Enforce static security guards
+        run: |
+          set -euo pipefail
+          ! rg -n "AllowAnyOrigin" InovaGed.Web InovaGed.Infrastructure WebGed.WebApi InovaGed.Signing.Agent --glob '!**/bin/**' --glob '!**/obj/**' .
+          ! rg -n "AllowAllPermissionChecker|CertificateValidationStub" InovaGed.Web InovaGed.Infrastructure WebGed.WebApi --glob '!**/bin/**' --glob '!**/obj/**'
+          ! rg -n "EnsureMandatoryChecks|Check registrado para homologação" InovaGed.Infrastructure/Signatures --glob '!**/bin/**' --glob '!**/obj/**'
+          ! rg -n "return Task.FromResult\(.*VALID|SignatureValidationResult\(\"VALID\"" InovaGed.Web InovaGed.Infrastructure --glob '!**/bin/**' --glob '!**/obj/**'
+          ! rg -n "SearchFoldersAsync\([^\n]*CurrentTenantId\(|MoveAsync\([^\n]*CurrentTenantId\(|MoveBulkAsync\([^\n]*CurrentTenantId\(" --glob '*.cs'
+          if rg -n "new Regex\(|Regex\." InovaGed.Web InovaGed.Application InovaGed.Infrastructure --glob '*.cs' | rg -v "RegexOptions\.NonBacktracking|// REGEX_JUSTIFIED|System.Text.RegularExpressions"; then
+            echo "Regex crítico sem RegexOptions.NonBacktracking ou justificativa REGEX_JUSTIFIED." >&2
+            exit 1
+          fi
+          ! rg -n "BEGIN (RSA|OPENSSH|DSA|EC) PRIVATE KEY|PRIVATE KEY-----" InovaGed.Web InovaGed.Infrastructure WebGed.WebApi InovaGed.Signing.Agent --glob '!**/bin/**' --glob '!**/obj/**' .
+
+  cms-contract-tests:
+    needs: migration-idempotency
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: inovaged_cms_contract
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd="pg_isready -U postgres -d inovaged_cms_contract"
+          --health-interval=10s --health-timeout=5s --health-retries=10
+    env:
+      ConnectionStrings__DefaultConnection: Host=localhost;Port=5432;Database=inovaged_cms_contract;Username=postgres;Password=postgres
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '8.0.x' }
+      - name: Run CMS contract tests
+        run: dotnet test InovaGed.Application.Tests/InovaGed.Application.Tests.csproj --configuration Release --filter "Category=CmsContract" --logger "trx;LogFileName=cms-contract.trx" --results-directory TestResults
+      - name: Reject empty or failed CMS test run
+        run: python3 scripts/ci/assert-trx-has-tests.py TestResults/cms-contract.trx
+
+  poc-matrix-contract-tests:
+    needs: cms-contract-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '8.0.x' }
+      - name: Validate PoC matrix JSON
+        run: python3 -m json.tool docs/poc/matriz-poc-1-27.json >/dev/null
+      - name: Run PoC contract suites
+        shell: bash
+        run: |
+          set -euo pipefail
+          for suite in PocPhase1InstrumentsTests PocPhase2RetentionTests PocPhase3SecurityTests PocPhase4SigningTests PocPhase5PhysicalArchiveTests PocPhase6LoansTests PocPhase7AuditTests PocMatrixValidationTests; do
+            dotnet test InovaGed.Application.Tests/InovaGed.Application.Tests.csproj --configuration Release --filter "FullyQualifiedName~${suite}" --logger "trx;LogFileName=${suite}.trx" --results-directory TestResults
+          done
+      - name: Reject empty or failed PoC test run
+        run: python3 scripts/ci/assert-trx-has-tests.py 'TestResults/Poc*.trx'
+
+  migration-idempotency:
+    needs: [server-linux, agent-windows, security-guards]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_USER: postgres, POSTGRES_PASSWORD: postgres, POSTGRES_DB: inovaged_migrations }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd="pg_isready -U postgres -d inovaged_migrations"
+          --health-interval=10s --health-timeout=5s --health-retries=10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Validate migration orchestrator exists
+        run: test -f database/apply_all_required_migrations.sql
+      - name: Apply required migrations
+        shell: bash
+        run: |
+          set -euo pipefail
+          for scenario in empty pre_cms; do
+            database="inovaged_${scenario}"
+            createdb "postgresql://postgres:postgres@localhost:5432/postgres" "$database"
+            connection="postgresql://postgres:postgres@localhost:5432/$database"
+            if [[ "$scenario" == pre_cms ]]; then
+              psql "$connection" -f database/fixtures/pre-cms-base.sql
+            fi
+            psql "$connection" -v ON_ERROR_STOP=1 -f database/apply_all_required_migrations.sql | tee "migration-${scenario}-first.log"
+            psql "$connection" -v ON_ERROR_STOP=1 -f database/apply_all_required_migrations.sql | tee "migration-${scenario}-second.log"
+            psql "$connection" -f database/assert_migration_state.sql
+            if [[ "$scenario" == pre_cms ]]; then
+              test "$(psql "$connection" -Atc "select count(*) from ged.folder where id='00000000-0000-0000-0000-000000000101'")" = 1
+            fi
+          done
+
+  engineering-gate:
+    if: always()
+    needs:
+      - actionlint
+      - solution-validation
+      - server-linux
+      - agent-windows
+      - security-guards
+      - migration-idempotency
+      - cms-contract-tests
+      - poc-matrix-contract-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Require every mandatory gate to pass
+        env:
+          NEEDS_CONTEXT: ${{ toJson(needs) }}
+        run: |
+          python - <<'PY'
+          import json, os, sys
+          results = {name: job["result"] for name, job in json.loads(os.environ["NEEDS_CONTEXT"]).items()}
+          failed = {name: result for name, result in results.items() if result != "success"}
+          print(json.dumps(results, indent=2, sort_keys=True))
+          sys.exit(1 if failed else 0)
+          PY

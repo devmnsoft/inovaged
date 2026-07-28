@@ -24,3 +24,21 @@ create table if not exists ged.data_retention_hold (id uuid primary key default 
 create table if not exists ged.operations_worker_heartbeat (worker_id text primary key, host_name text not null, process_id int not null, last_seen_at_utc timestamptz not null, current_job_id uuid null, metadata_json jsonb not null default '{}'::jsonb);
 create table if not exists ged.operations_dead_letter (id uuid primary key default gen_random_uuid(), job_id uuid null, job_type text not null, tenant_id uuid null, reason text not null, payload_json jsonb not null default '{}'::jsonb, created_at_utc timestamptz not null default now(), resolved_at_utc timestamptz null);
 do $$ begin if to_regclass('ged.schema_migration_history') is not null then insert into ged.schema_migration_history(script_name, notes) values ('2026_07_backup_continuity_portability.sql','Estruturas aditivas para backup, continuidade, recuperação e portabilidade.') on conflict (script_name) do nothing; end if; end $$;
+
+-- Evolução 03.1: campos operacionais aditivos e reaplicáveis para lease, histórico, artefatos reais e portabilidade segura.
+alter table if exists ged.backup_job add column if not exists started_at_utc timestamptz null;
+alter table if exists ged.backup_job add column if not exists finished_at_utc timestamptz null;
+alter table if exists ged.backup_job add column if not exists lease_seconds int not null default 900;
+alter table if exists ged.backup_job add constraint ck_backup_job_status_e031 check (status in ('PENDING','CLAIMED','RUNNING','VERIFYING','COMPLETED','RETRY','FAILED','CANCEL_REQUESTED','CANCELLED','DEAD_LETTER')) not valid;
+create table if not exists ged.operation_job_event (id uuid primary key default gen_random_uuid(), job_id uuid not null, old_status text null, new_status text not null, worker_id text null, occurred_at_utc timestamptz not null default now(), reason text null, progress_percent int null, correlation_id text null);
+create index if not exists ix_operation_job_event_job on ged.operation_job_event(job_id, occurred_at_utc);
+alter table if exists ged.backup_set add column if not exists location_internal text null;
+alter table if exists ged.backup_set add column if not exists manifest_path_internal text null;
+alter table if exists ged.backup_set add column if not exists checksums_path_internal text null;
+alter table if exists ged.backup_artifact add column if not exists location_internal text null;
+alter table if exists ged.operations_worker_heartbeat add column if not exists started_at_utc timestamptz null;
+alter table if exists ged.operations_worker_heartbeat add column if not exists last_success_at_utc timestamptz null;
+alter table if exists ged.operations_worker_heartbeat add column if not exists last_error text null;
+alter table if exists ged.portability_export add column if not exists package_location_internal text null;
+alter table if exists ged.portability_export add column if not exists checkpoint_json jsonb not null default '{}'::jsonb;
+alter table if exists ged.portability_export add column if not exists progress_percent int not null default 0;

@@ -29,6 +29,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using InovaGed.Application.Identity;
+using InovaGed.Application.Signatures;
+using InovaGed.Infrastructure.Signatures;
 
 namespace InovaGed.Infrastructure;
 
@@ -53,7 +55,8 @@ public static class InfrastructureServiceCollectionExtensions
             .AddGuardianModule(configuration)
             .AddSecurityOperationsModule(configuration)
             .AddInfrastructureHealthModule(configuration)
-            .AddContinuityModule(configuration);
+            .AddContinuityModule(configuration)
+            .AddDigitalSignatureModule(configuration);
 
         return services;
     }
@@ -158,6 +161,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddOptions<OperationsOptions>().Bind(configuration.GetSection("Operations")).ValidateOnStart();
         services.AddOptions<BackupOptions>().Bind(configuration.GetSection("Backup")).ValidateDataAnnotations().ValidateOnStart();
         services.AddOptions<PortabilityOptions>().Bind(configuration.GetSection("Portability")).ValidateDataAnnotations().ValidateOnStart();
+        services.AddScoped<IAdministrativeTenantScopeResolver, AdministrativeTenantScopeResolver>();
         services.AddScoped<ContinuityRepository>();
         services.AddScoped<IBackupPolicyService>(sp => sp.GetRequiredService<ContinuityRepository>());
         services.AddScoped<IBackupCatalogService>(sp => sp.GetRequiredService<ContinuityRepository>());
@@ -173,6 +177,54 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<IPortabilityPackageVerifier, PortabilityPackageVerifier>();
         services.AddScoped<IPostgresBackupProvider, PostgresBackupProvider>();
         services.AddInfrastructureModule("ContinuityPortability", configuration.GetValue("Backup:Enabled", false) || configuration.GetValue("Portability:Enabled", false), ["Database", "Storage"], true, HealthStatus.Degraded);
+        return services;
+    }
+
+
+    public static IServiceCollection AddDigitalSignatureModule(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        var section = configuration.GetSection("DigitalSignature");
+        var enabled = section.GetValue("Enabled", false);
+        var mode = section.GetValue("Mode", "AgentCms");
+        var environment = configuration["ASPNETCORE_ENVIRONMENT"] ?? configuration["DOTNET_ENVIRONMENT"];
+        services.AddOptions<DigitalSignatureOptions>()
+            .Bind(section)
+            .ValidateDataAnnotations()
+            .Validate(options => !options.AllowedAgentOrigins.Any(o => o == "*"), "DigitalSignature:AllowedAgentOrigins não pode conter origem curinga.")
+            .Validate(options => !options.RequireLoopbackHttps || options.AgentBaseUrl.StartsWith("https://127.0.0.1", StringComparison.OrdinalIgnoreCase) || options.AgentBaseUrl.StartsWith("https://[::1]", StringComparison.OrdinalIgnoreCase), "AgentBaseUrl deve ser HTTPS loopback quando RequireLoopbackHttps=true.")
+            .Validate(options => Uri.TryCreate(options.PublicServerBaseUrl, UriKind.Absolute, out var publicUri) && publicUri.Scheme == Uri.UriSchemeHttps, "DigitalSignature:PublicServerBaseUrl deve ser uma URL HTTPS absoluta.")
+            .Validate(options => !(options.Enabled && options.RequireCertificateIdentityMatch) || (!string.IsNullOrWhiteSpace(options.CertificateIdentityHmacKeyVersion) && !string.IsNullOrWhiteSpace(options.CertificateIdentityHmacKey) && options.CertificateIdentityHmacKey.Length >= 32), "DigitalSignature:CertificateIdentityHmacKey e versão são obrigatórios com pelo menos 32 caracteres quando a conferência de identidade está habilitada.")
+            .Validate(options => !string.Equals(environment, "Production", StringComparison.OrdinalIgnoreCase) || !options.AllowServerSidePfxUpload, "Upload PFX server-side é bloqueado em Production.")
+            .Validate(options => !string.Equals(environment, "Production", StringComparison.OrdinalIgnoreCase) || !options.AllowInternalTestCertificates, "Certificados internos de teste são bloqueados em Production.")
+            .ValidateOnStart();
+
+        services.TryAddScoped<ICertificateIdentityService, CertificateIdentityService>();
+
+        if (enabled && string.Equals(mode, "AgentCms", StringComparison.OrdinalIgnoreCase))
+        {
+            services.AddScoped<ISigningSessionRepository, PostgresSigningSessionRepository>();
+            services.AddScoped<ISignatureRepository, PostgresSignatureRepository>();
+            services.AddScoped<ISignatureEvidenceRepository, PostgresSignatureEvidenceRepository>();
+            services.AddScoped<ISignatureValidationRepository, PostgresSignatureValidationRepository>();
+            services.AddScoped<ISignatureEventRepository, PostgresSignatureEventRepository>();
+            services.AddScoped<IDocumentVersionSigningContentService, DocumentVersionSigningContentService>();
+            services.AddScoped<ISignaturePackageService, SignaturePackageService>();
+            services.AddScoped<ISignatureValidationService, CmsDetachedSignatureValidationService>();
+            services.AddScoped<ISignatureValidationOutcomeFactory, SignatureValidationOutcomeFactory>();
+            services.AddScoped<ISigningUnitOfWorkFactory, PostgresSigningUnitOfWorkFactory>();
+            services.AddScoped<ISigningOrchestrator, CmsSigningOrchestrator>();
+        }
+        else
+        {
+            services.AddScoped<ISigningSessionRepository, NoopSigningSessionRepository>();
+            services.AddScoped<ISignatureEvidenceRepository, NoopSignatureEvidenceRepository>();
+            services.AddScoped<ISignatureValidationService, NotConfiguredSignatureValidationService>();
+            services.AddScoped<ISigningOrchestrator, NotConfiguredSigningOrchestrator>();
+        }
+
+        services.AddInfrastructureModule("DigitalSignature", enabled, ["Database", "Storage"], true, enabled ? HealthStatus.Degraded : HealthStatus.Healthy);
         return services;
     }
 
@@ -217,6 +269,33 @@ public static class InfrastructureServiceCollectionExtensions
     {
         var version = typeof(InfrastructureServiceCollectionExtensions).Assembly.GetName().Version?.ToString() ?? "n/a";
         services.AddSingleton(new InfrastructureModuleDescriptor(name, enabled, dependencies, configurationValid, health, version, lastFailure));
+        return services;
+    }
+
+    public static IServiceCollection AddInovaGedWebRuntime(this IServiceCollection services, IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+        services.AddInovaGedApplication(configuration);
+        services.AddInovaGedInfrastructure(configuration);
+        return services;
+    }
+
+    public static IServiceCollection AddInovaGedApiRuntime(this IServiceCollection services, IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+        services.AddInovaGedApplication(configuration);
+        services.AddInovaGedInfrastructure(configuration);
+        return services;
+    }
+
+    public static IServiceCollection AddInovaGedWorkerRuntime(this IServiceCollection services, IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+        services.AddInovaGedApplication(configuration);
+        services.AddInovaGedInfrastructure(configuration);
         return services;
     }
 

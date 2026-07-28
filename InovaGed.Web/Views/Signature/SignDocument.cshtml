@@ -2,8 +2,8 @@
 @addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
 
 @{
-    ViewData["Title"] = "Assinar Documento";
-    ViewData["Subtitle"] = $"Assinatura ICP-Brasil — {Model.Code}";
+    ViewData["Title"] = "Registrar assinatura interna operacional";
+    ViewData["Subtitle"] = $"Assinatura interna operacional — {Model.Code}";
 }
 
 <div class="row justify-content-center">
@@ -76,7 +76,7 @@
             <div class="card-header bg-white">
                 <strong>
                     <i class="bi bi-pen me-1"></i>
-                    @(Model.SignatureStatus == null ? "Registrar Assinatura" : "Reassinar Documento")
+                    @(Model.SignatureStatus == null ? "Registrar assinatura interna operacional" : "Registrar novo Documento")
                 </strong>
             </div>
             <div class="card-body">
@@ -85,14 +85,14 @@
 
                     <div class="mb-3">
                         <label class="form-label fw-semibold">
-                            CPF do Certificado ICP-Brasil <span class="text-danger">*</span>
+                            CPF final/identidade do certificado (legado) <span class="text-danger">*</span>
                         </label>
                         <input name="cpf" type="text" class="form-control"
                                placeholder="000.000.000-00"
                                required maxlength="18"
                                pattern="\d{3}\.?\d{3}\.?\d{3}-?\d{2}" />
                         <div class="form-text">
-                            Informe o CPF vinculado ao certificado digital utilizado para assinar.
+                            Campo legado: não é prova de assinatura ICP-Brasil. A assinatura ICP-Brasil real deverá ser feita por agente local/provedor remoto e certificado público.
                         </div>
                     </div>
 
@@ -105,7 +105,7 @@
                     <div class="d-flex gap-2">
                         <button type="submit" class="btn btn-success">
                             <i class="bi bi-pen me-1"></i>
-                            @(Model.SignatureStatus == null ? "Assinar Documento" : "Reassinar")
+                            @(Model.SignatureStatus == null ? "Registrar assinatura interna operacional" : "Registrar novo")
                         </button>
                         <a asp-action="Index" class="btn btn-outline-secondary">Cancelar</a>
                     </div>

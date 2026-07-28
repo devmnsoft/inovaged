@@ -240,7 +240,7 @@ public sealed class AccountController : Controller
             if (IsSafeLocalReturnUrl(normalizedReturnUrl) && AppStartRouteResolver.IsAllowedReturnUrlForUser(principal, normalizedReturnUrl))
                 return (Redirect(normalizedReturnUrl), normalizedReturnUrl, "admin_return_url");
 
-            return (Redirect(AppStartRouteResolver.AdminHome), AppStartRouteResolver.AdminHome, "admin_default_ged");
+            return (Redirect(AppStartRouteResolver.AdminHome), AppStartRouteResolver.AdminHome, "admin_default_dashboard");
         }
 
         if (isAdministradorOphir)

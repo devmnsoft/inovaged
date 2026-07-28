@@ -1,0 +1,37 @@
+@{
+    ViewData["Title"] = "Assinatura criptográfica CMS";
+}
+<form id="cms-antiforgery-form" method="post">@Html.AntiForgeryToken()</form>
+<section class="container py-3" data-signing-agent-root data-agent-url="https://127.0.0.1:17891">
+  <h1>Assinaturas do documento</h1>
+  <div class="alert alert-info">
+    <strong>Registro interno operacional:</strong> não é assinatura criptográfica, não solicita CPF manual e usa o usuário autenticado, tenant, data e observações para manter histórico.
+  </div>
+  <div class="card mb-3">
+    <div class="card-header">Assinatura CMS destacada</div>
+    <div class="card-body">
+      <ol id="cms-signing-steps">
+        <li>Agente não detectado</li><li>Agente detectado</li><li>Pairing necessário</li><li>Pairing autorizado</li>
+        <li>Certificados carregados</li><li>Sessão criada</li><li>Aguardando confirmação</li><li>Assinando</li><li>Validando</li><li>Concluído</li><li>Falha</li>
+      </ol>
+      <dl class="row">
+        <dt class="col-sm-3">Documento</dt><dd class="col-sm-9" data-cms-documento>-</dd>
+        <dt class="col-sm-3">Versão</dt><dd class="col-sm-9" data-cms-versao>-</dd>
+        <dt class="col-sm-3">Tamanho</dt><dd class="col-sm-9" data-cms-tamanho>-</dd>
+        <dt class="col-sm-3">SHA-256</dt><dd class="col-sm-9"><code data-cms-sha256>-</code></dd>
+        <dt class="col-sm-3">Certificado</dt><dd class="col-sm-9" data-cms-certificado>-</dd>
+        <dt class="col-sm-3">Emissor</dt><dd class="col-sm-9" data-cms-emissor>-</dd>
+        <dt class="col-sm-3">Validade</dt><dd class="col-sm-9" data-cms-validade>-</dd>
+        <dt class="col-sm-3">CPF/CNPJ</dt><dd class="col-sm-9" data-cms-documento-mascarado>-</dd>
+        <dt class="col-sm-3">Criptográfico</dt><dd class="col-sm-9" data-cms-cryptographic-status>-</dd>
+        <dt class="col-sm-3">Certificado</dt><dd class="col-sm-9" data-cms-certificate-status>-</dd>
+        <dt class="col-sm-3">Confiança</dt><dd class="col-sm-9" data-cms-trust-status>-</dd>
+        <dt class="col-sm-3">Conformidade</dt><dd class="col-sm-9">NOT_EVALUATED</dd>
+      </dl>
+      <button type="button" class="btn btn-primary" data-cms-start>Iniciar assinatura CMS</button>
+      <button type="button" class="btn btn-outline-secondary" data-cms-cancel>Cancelar</button>
+      <div data-cms-downloads class="mt-3"></div>
+    </div>
+  </div>
+</section>
+<script src="~/js/signing-agent-client.js" asp-append-version="true"></script>

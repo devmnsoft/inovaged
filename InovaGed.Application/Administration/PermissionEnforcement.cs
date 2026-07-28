@@ -9,10 +9,7 @@ public interface IPermissionGovernanceRepository
     Task<PermissionMode> GetModeAsync(Guid tenantId, CancellationToken ct = default);
     Task LogEvaluationAsync(PermissionEvaluationContext context, bool legacyAllowed, bool realAllowed, PermissionMode mode, CancellationToken ct = default);
 }
-public sealed class DatabasePermissionChecker : IRealPermissionChecker
-{
-    public Task<bool> IsAllowedAsync(Guid tenantId, Guid userId, string permissionCode, CancellationToken ct = default) => Task.FromResult(false);
-}
+
 public sealed class CompositePermissionChecker : IPermissionChecker
 {
     private readonly IRealPermissionChecker _real;

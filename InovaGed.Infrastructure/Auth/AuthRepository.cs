@@ -1,4 +1,4 @@
-﻿using Dapper;
+using Dapper;
 using InovaGed.Application.Auth;
 using InovaGed.Application.Common.Database;
 
@@ -83,8 +83,11 @@ LIMIT 1;
         const string sql = @"
 SELECT r.normalized_name
 FROM ged.user_role ur
-JOIN ged.app_role r ON r.id = ur.role_id
-WHERE ur.user_id = @userId;
+JOIN ged.app_role r ON r.id = ur.role_id AND r.tenant_id = ur.tenant_id
+WHERE ur.tenant_id = @tenantId
+  AND ur.user_id = @userId
+  AND coalesce(ur.is_active, true) = true
+  AND coalesce(r.is_active, true) = true;
 ";
 
         using var conn = await _factory.OpenAsync(ct);

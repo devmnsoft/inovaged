@@ -1,0 +1,2 @@
+/* Login-specific rules are kept outside Razor so the authentication surface works under a strict CSP. */
+.login-submit[aria-busy="true"]{cursor:wait;opacity:var(--ig-loading-opacity)}

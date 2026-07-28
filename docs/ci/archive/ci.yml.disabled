@@ -1,0 +1,203 @@
+name: ci
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: [ main, develop, "feature/**", "codex/**" ]
+jobs:
+  actionlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: actionlint
+        uses: raven-actions/actionlint@v2
+
+  server-linux:
+    needs: actionlint
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: inovaged_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d inovaged_ci"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      ConnectionStrings__DefaultConnection: Host=localhost;Port=5432;Database=inovaged_ci;Username=postgres;Password=postgres
+      Backup__Enabled: true
+      Backup__RootPath: ${{ runner.temp }}/inovaged-backups
+      Portability__Enabled: true
+      Portability__RootPath: ${{ runner.temp }}/inovaged-portability
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: .NET info
+        run: dotnet --info 2>&1 | tee dotnet-info.log
+      - name: Solution validation
+        run: dotnet sln InovaGed.sln list 2>&1 | tee solution-list.log
+      - name: Restore
+        run: dotnet restore InovaGed.sln 2>&1 | tee restore.log
+      - name: Dependency tree
+        run: dotnet list InovaGed.sln package --include-transitive 2>&1 | tee dependencies.log
+      - name: Package regression guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          if rg -n "NU1605" restore.log dependencies.log; then echo "NU1605 detected." >&2; exit 1; fi
+          if rg -n "Microsoft.AspNetCore.Cryptography.KeyDerivation.*8\.0\.11" --glob '*.csproj' --glob '*.props' --glob '*.targets' --glob 'packages.lock.json' --glob '!**/bin/**' --glob '!**/obj/**' .; then echo "KeyDerivation 8.0.11 is not allowed." >&2; exit 1; fi
+          if rg -nE "<PackageReference Include=\"(Microsoft\.AspNet\.Identity\.Core|Microsoft\.AspNetCore(\.Authorization|\.Mvc\.Core)?|Microsoft\.AspNetCore\.Authorization)\" Version=\"2\." --glob '*.csproj' --glob '!**/bin/**' --glob '!**/obj/**' .; then echo "Legacy ASP.NET Core/Identity 2.x package reference detected." >&2; exit 1; fi
+      - name: Build Release
+        run: dotnet build InovaGed.sln --no-restore --configuration Release 2>&1 | tee build.log
+      - name: Architecture and DI guard
+        run: dotnet test InovaGed.Application.Tests/InovaGed.Application.Tests.csproj --no-build --configuration Release --filter "FullyQualifiedName~SolutionAndContinuityArchitectureTests|FullyQualifiedName~DependencyInjectionCompositionTests" --logger "trx;LogFileName=architecture-di.trx" --results-directory TestResults
+      - name: Unit and integration tests
+        run: dotnet test InovaGed.sln --no-build --configuration Release --logger "trx;LogFileName=all-tests.trx" --results-directory TestResults
+      - name: JSON validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          find . -name '*.json' -not -path './**/bin/**' -not -path './**/obj/**' -print0 | while IFS= read -r -d '' f; do
+            python -c "import json,sys; json.load(open(sys.argv[1], encoding='utf-8-sig'))" "$f"
+          done
+      - name: Migration validation
+        env:
+          CONNECTION_STRING: postgresql://postgres:postgres@localhost:5432/inovaged_ci
+        run: |
+          test -f database/apply_all_required_migrations.sql
+          test -f database/migrations/2026_07_administration_security_governance.sql
+          test -f database/migrations/2026_07_backup_continuity_portability.sql
+          test -f database/migrations/2026_07_signature_cms_agent.sql
+          test -f database/migrations/2026_07_signature_cms_agent_runtime.sql
+          test -f database/migrations/2026_07_signature_cms_end_to_end.sql
+          test -f database/migrations/2026_07_signature_cms_operational_fix.sql
+          test -f database/migrations/2026_07_signature_cms_rc3_status.sql
+          cd /
+          psql "$CONNECTION_STRING" -v ON_ERROR_STOP=1 -f "$GITHUB_WORKSPACE/database/apply_all_required_migrations.sql"
+          psql "$CONNECTION_STRING" -v ON_ERROR_STOP=1 -f "$GITHUB_WORKSPACE/database/apply_all_required_migrations.sql"
+      - name: Secret scan
+        run: |
+          ! git grep -n -E '(password|secret|token|apikey|api_key)\s*[:=]\s*["'"'][^"'"']{12,}["'"']' -- ':!**/bin/**' ':!**/obj/**' ':!docs/**'
+      - name: Whitespace diff check
+        run: git diff --check 2>&1 | tee whitespace.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ci-diagnostics
+          path: |
+            *.log
+            TestResults/**/*.trx
+
+  agent-windows:
+    needs: actionlint
+    timeout-minutes: 20
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Restore agent
+        run: dotnet restore InovaGed.Signing.Agent/InovaGed.Signing.Agent.csproj
+      - name: Build agent Release
+        run: dotnet build InovaGed.Signing.Agent/InovaGed.Signing.Agent.csproj --no-restore --configuration Release
+      - name: Test agent guards
+        run: dotnet test InovaGed.Signing.Agent.Tests/InovaGed.Signing.Agent.Tests.csproj --configuration Release --logger "trx;LogFileName=signing-agent-windows.trx" --results-directory TestResults
+      - name: Agent doctor
+        run: dotnet run --project InovaGed.Signing.Agent/InovaGed.Signing.Agent.csproj -- doctor
+      - name: Publish win-x64
+        run: dotnet publish InovaGed.Signing.Agent/InovaGed.Signing.Agent.csproj --configuration Release --runtime win-x64 --self-contained false --output publish/signing-agent-win-x64
+      - name: Verify executable
+        shell: pwsh
+        run: Test-Path publish/signing-agent-win-x64/InovaGed.Signing.Agent.exe
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: signing-agent-windows
+          path: |
+            TestResults/**/*.trx
+            publish/signing-agent-win-x64/**
+
+
+  security-guards:
+    needs: actionlint
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: actionlint
+        uses: raven-actions/actionlint@v2
+      - name: Static security guards
+        shell: bash
+        run: |
+          set -euo pipefail
+          ! rg -n "AllowAnyOrigin" --glob '!**/bin/**' --glob '!**/obj/**' .
+          ! rg -n "return Task.FromResult\(.*VALID" InovaGed.Infrastructure/Signatures InovaGed.Web/Common --glob '!**/bin/**' --glob '!**/obj/**'
+          ! rg -n "NoopSigningSessionRepository|NoopSignatureEvidenceRepository" InovaGed.Infrastructure/DependencyInjection.cs | rg "AgentCms"
+          ! rg -n "BEGIN (RSA|OPENSSH|DSA|EC) PRIVATE KEY|PRIVATE KEY-----" --glob '!**/bin/**' --glob '!**/obj/**' .
+          ! rg -n "Map(Get|Post|Delete)\(\"/(certificates|operations)" InovaGed.Signing.Agent/Program.cs | rg -v "IAgentAuthenticationService|confirm-ui|confirm-local"
+
+
+  cms-e2e:
+    needs: [server-linux, agent-windows, security-guards]
+    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Restore CMS E2E projects
+        run: dotnet restore InovaGed.sln
+      - name: Build CMS E2E projects
+        run: dotnet build InovaGed.sln --no-restore --configuration Release
+      - name: Run CMS E2E tests
+        run: dotnet test InovaGed.Signing.EndToEndTests/InovaGed.Signing.EndToEndTests.csproj --configuration Release --logger "trx;LogFileName=cms-e2e.trx" --results-directory TestResults
+      - name: Fail when CMS E2E executed zero tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import pathlib, re, sys, xml.etree.ElementTree as ET
+          trx = next(pathlib.Path('TestResults').rglob('cms-e2e.trx'))
+          root = ET.parse(trx).getroot()
+          counters = next(e for e in root.iter() if e.tag.endswith('Counters'))
+          total = int(counters.attrib.get('total', '0'))
+          if total == 0:
+              raise SystemExit('cms-e2e.trx reported total=0')
+          print(f'cms-e2e total={total}')
+          PY
+      - name: Generate synthetic CMS fixture and validate with OpenSSL
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p cms-artifacts/certificate-chain
+          printf 'InovaGed CMS E2E synthetic document\n' > cms-artifacts/documento-original.bin
+          openssl req -x509 -newkey rsa:2048 -nodes -keyout "$RUNNER_TEMP/cms.key" -out cms-artifacts/certificate.cer -days 2 -subj "/CN=InovaGed CMS E2E" -addext "keyUsage=digitalSignature" -addext "extendedKeyUsage=clientAuth"
+          cp cms-artifacts/certificate.cer cms-artifacts/certificate-chain/01.cer
+          openssl cms -sign -binary -in cms-artifacts/documento-original.bin -signer cms-artifacts/certificate.cer -inkey "$RUNNER_TEMP/cms.key" -outform DER -nodetach -out "$RUNNER_TEMP/attached.der"
+          openssl cms -sign -binary -in cms-artifacts/documento-original.bin -signer cms-artifacts/certificate.cer -inkey "$RUNNER_TEMP/cms.key" -outform DER -out cms-artifacts/assinatura.p7s
+          openssl cms -verify -binary -inform DER -in cms-artifacts/assinatura.p7s -content cms-artifacts/documento-original.bin -noverify -out /dev/null
+          cat > cms-artifacts/validation-report.json <<'JSON'
+          {"signature_type":"CMS_DETACHED","signature_format":"CMS_PKCS7_DETACHED","conformity_status":"NOT_EVALUATED","openssl_verify":"passed"}
+          JSON
+          cat > cms-artifacts/README.txt <<'TXT'
+          Pacote sintético de homologação CMS detached. Conformidade ICP-Brasil, revogação e carimbo do tempo não avaliados.
+          TXT
+          (cd cms-artifacts && sha256sum documento-original.bin assinatura.p7s certificate.cer certificate-chain/01.cer validation-report.json README.txt > checksums.sha256 && zip -r validation-package.zip .)
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cms-e2e-diagnostics
+          path: |
+            TestResults/**/*.trx
+            cms-artifacts/**

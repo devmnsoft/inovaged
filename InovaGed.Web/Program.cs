@@ -428,7 +428,6 @@ builder.Services.AddScoped<IRetentionCaseRepository, RetentionCaseRepository>();
 builder.Services.AddScoped<IRetentionQueueJob, RetentionQueueJob>();
 builder.Services.AddScoped<InstrumentRepository>();
 
-builder.Services.AddScoped<ICertificateValidationService, InovaGed.Web.Common.CertificateValidationStub>();
 
 builder.Services.AddScoped<ICertificateValidationService, CertificateValidationService>();
 
@@ -481,6 +480,8 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy(AppPolicies.UsersSectorManage, p => RequireAny(p, AppRoles.Admin, AppRoles.Administrador, AppRoles.AdministradorOphir));
     options.AddPolicy(AppPolicies.SystemLogs, p => RequireAny(p, fullAdmin));
     options.AddPolicy(AppPolicies.SchemaRepair, p => RequireAny(p, fullAdmin));
+    foreach (var policy in new[] { "SignatureView", "SignatureInternalCreate", "SignatureCmsCreate", "SignatureValidate", "SignatureDownload", "SignatureEvidenceView", "SignatureAdmin" })
+        options.AddPolicy(policy, p => RequireAny(p, fullAdmin.Concat(gedAccess).ToArray()));
 
     options.AddPolicy(AppPolicies.GedAccess, p => RequireAny(p, gedAccess));
     options.AddPolicy(AppPolicies.Ocr, p => RequireAny(p, gedAccess));
@@ -517,6 +518,15 @@ builder.Services.AddAuthorization(options =>
 
     options.AddPolicy(AppPolicies.Operations, p => RequireAny(p, AppRoles.Admin, AppRoles.Administrador));
     options.AddPolicy(AppPolicies.OperationsAccess, p => RequireAny(p, AppRoles.Admin, AppRoles.Administrador));
+    options.AddPolicy(AppPolicies.ContinuityView, p => RequireAny(p, AppRoles.Admin, AppRoles.Administrador));
+    options.AddPolicy(AppPolicies.ContinuityManage, p => RequireAny(p, AppRoles.Admin, AppRoles.Administrador));
+    options.AddPolicy(AppPolicies.BackupRequest, p => RequireAny(p, AppRoles.Admin, AppRoles.Administrador));
+    options.AddPolicy(AppPolicies.BackupVerify, p => RequireAny(p, AppRoles.Admin, AppRoles.Administrador));
+    options.AddPolicy(AppPolicies.PortabilityExport, p => RequireAny(p, AppRoles.Admin, AppRoles.Administrador));
+    options.AddPolicy(AppPolicies.PortabilityDownload, p => RequireAny(p, AppRoles.Admin, AppRoles.Administrador));
+    options.AddPolicy(AppPolicies.RestoreTest, p => RequireAny(p, AppRoles.Admin, AppRoles.Administrador));
+    options.AddPolicy(AppPolicies.TenantOffboarding, p => RequireAny(p, AppRoles.Admin, AppRoles.Administrador));
+    options.AddPolicy(AppPolicies.GlobalTenantOperations, p => RequireAny(p, fullAdmin));
 
     options.AddPolicy(Policies.CanViewRetention,
         p => RequireAny(p, AppRoles.Admin, AppRoles.Administrador, AppRoles.Arquivista, AppRoles.Auditor));

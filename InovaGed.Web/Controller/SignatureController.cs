@@ -1,5 +1,6 @@
 ﻿using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using Dapper;
 using InovaGed.Application.Audit;
 using InovaGed.Application.Common.Context;
@@ -33,6 +34,21 @@ public sealed class SignatureController : Controller
     private Guid TenantId => _ctx.TenantId;
     private Guid UserId => _ctx.UserId;
     private string UserName => _ctx.UserDisplay ?? _ctx.UserEmail ?? "Usuário";
+
+
+    private static string OnlyDigits(string? value) => Regex.Replace(value ?? string.Empty, "[^0-9]", string.Empty);
+
+    private static string CpfFinal(string? value)
+    {
+        var digits = OnlyDigits(value);
+        return digits.Length >= 2 ? digits[^2..] : "**";
+    }
+
+    private static string MaskCpf(string? value)
+    {
+        var digits = OnlyDigits(value);
+        return digits.Length == 11 ? $"***.***.***-{digits[^2..]}" : "***.***.***-**";
+    }
 
     // =========================================================
     // GET /Signature  — lista documentos
@@ -132,11 +148,7 @@ public sealed class SignatureController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> SignDocument(Guid id, string cpf, string? notes, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(cpf))
-        {
-            TempData["Err"] = "CPF do certificado é obrigatório.";
-            return RedirectToAction(nameof(SignDocument), new { id });
-        }
+        cpf = string.IsNullOrWhiteSpace(cpf) ? "00000000000" : cpf;
 
         try
         {
@@ -145,21 +157,13 @@ public sealed class SignatureController : Controller
             var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload))).ToLowerInvariant();
 
             var details = string.IsNullOrWhiteSpace(notes)
-                ? $"Assinatura interna (operacional) • hash:{hash[..16]}…"
+                ? $"Assinatura interna operacional • NÃO ICP-Brasil • hash:{hash[..16]}…"
                 : $"{notes.Trim()} • hash:{hash[..16]}…";
 
             using var conn = await _db.OpenAsync(ct);
             using var tx = conn.BeginTransaction();
 
-            // Invalida assinaturas anteriores do mesmo documento (sem UNIQUE constraint, usamos reg_status)
-            await conn.ExecuteAsync("""
-                UPDATE ged.document_signature
-                SET reg_status = 'I'
-                WHERE tenant_id = @tenantId
-                  AND document_id = @docId
-                  AND reg_status = 'A';
-                """,
-                new { tenantId = TenantId, docId = id }, tx);
+            // Preserva assinaturas anteriores: cada assinatura pertence ao documento/versão e permanece consultável.
 
             // Insere nova assinatura com colunas reais da tabela
             await conn.ExecuteAsync("""
@@ -170,7 +174,7 @@ public sealed class SignatureController : Controller
                 VALUES
                     (gen_random_uuid(), @tenantId, @docId, @userId, @signedByName,
                      @cpf, @certSubject, @certSerial,
-                     now(), 'VALID'::ged.signature_status, @details, now(), 'A');
+                     now(), 'PENDING'::ged.signature_status, @details, now(), 'A');
                 """,
                 new
                 {
@@ -178,8 +182,8 @@ public sealed class SignatureController : Controller
                     docId = id,
                     userId = UserId,
                     signedByName = UserName,
-                    cpf = cpf.Trim(),
-                    certSubject = $"CN={UserName};CPF={cpf.Trim()}",
+                    cpf = MaskCpf(cpf),
+                    certSubject = $"CN={UserName};CPF={MaskCpf(cpf)}",
                     certSerial = hash[..16].ToUpperInvariant(),
                     details
                 }, tx);
@@ -188,13 +192,13 @@ public sealed class SignatureController : Controller
 
             await _audit.WriteAsync(
                 TenantId, UserId, "UPDATE", "document_signature", id,
-                $"Documento assinado por {UserName} (CPF {cpf.Trim()})",
+                $"Registro interno operacional criado por {UserName}, CPF final {CpfFinal(cpf)}",
                 HttpContext.Connection.RemoteIpAddress?.ToString(),
                 Request.Headers.UserAgent.ToString(),
-                new { documentId = id, cpf = cpf.Trim(), hash = hash[..16] },
+                new { documentId = id, cpfFinal = CpfFinal(cpf), hash = hash[..16] },
                 ct);
 
-            TempData["Ok"] = "Documento assinado com sucesso.";
+            TempData["Ok"] = "Registro interno operacional criado. Não é assinatura ICP-Brasil.";
             return RedirectToAction(nameof(Index));
         }
         catch (Exception ex)
@@ -261,11 +265,7 @@ public sealed class SignatureController : Controller
             return RedirectToAction(nameof(SignBatch));
         }
 
-        if (string.IsNullOrWhiteSpace(cpf))
-        {
-            TempData["Err"] = "CPF do certificado é obrigatório.";
-            return RedirectToAction(nameof(SignBatch));
-        }
+        cpf = string.IsNullOrWhiteSpace(cpf) ? "00000000000" : cpf;
 
         var ids = documentIds.Distinct().ToArray();
 
@@ -274,15 +274,7 @@ public sealed class SignatureController : Controller
             using var conn = await _db.OpenAsync(ct);
             using var tx = conn.BeginTransaction();
 
-            // Invalida assinaturas anteriores do lote
-            await conn.ExecuteAsync("""
-                UPDATE ged.document_signature
-                SET reg_status = 'I'
-                WHERE tenant_id = @tenantId
-                  AND document_id = ANY(@ids)
-                  AND reg_status = 'A';
-                """,
-                new { tenantId = TenantId, ids }, tx);
+            // Preserva assinaturas anteriores do lote; o destaque da mais recente deve ser por consulta/ordenação.
 
             // Insere uma assinatura por documento do lote
             foreach (var docId in ids)
@@ -291,7 +283,7 @@ public sealed class SignatureController : Controller
                 var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload))).ToLowerInvariant();
 
                 var details = string.IsNullOrWhiteSpace(notes)
-                    ? $"Assinatura em lote (operacional) • hash:{hash[..16]}…"
+                    ? $"Assinatura interna operacional em lote • NÃO ICP-Brasil • hash:{hash[..16]}…"
                     : $"{notes.Trim()} • hash:{hash[..16]}…";
 
                 await conn.ExecuteAsync("""
@@ -302,7 +294,7 @@ public sealed class SignatureController : Controller
                     VALUES
                         (gen_random_uuid(), @tenantId, @docId, @userId, @signedByName,
                          @cpf, @certSubject, @certSerial,
-                         now(), 'VALID'::ged.signature_status, @details, now(), 'A');
+                         now(), 'PENDING'::ged.signature_status, @details, now(), 'A');
                     """,
                     new
                     {
@@ -310,8 +302,8 @@ public sealed class SignatureController : Controller
                         docId,
                         userId = UserId,
                         signedByName = UserName,
-                        cpf = cpf.Trim(),
-                        certSubject = $"CN={UserName};CPF={cpf.Trim()}",
+                        cpf = MaskCpf(cpf),
+                        certSubject = $"CN={UserName};CPF={MaskCpf(cpf)}",
                         certSerial = hash[..16].ToUpperInvariant(),
                         details
                     }, tx);
@@ -321,13 +313,13 @@ public sealed class SignatureController : Controller
 
             await _audit.WriteAsync(
                 TenantId, UserId, "UPDATE", "document_signature", null,
-                $"Lote de {ids.Length} documento(s) assinado por {UserName} (CPF {cpf.Trim()})",
+                $"Lote interno operacional de {ids.Length} documento(s) criado por {UserName}, CPF final {CpfFinal(cpf)}",
                 HttpContext.Connection.RemoteIpAddress?.ToString(),
                 Request.Headers.UserAgent.ToString(),
-                new { count = ids.Length, cpf = cpf.Trim() },
+                new { count = ids.Length, cpfFinal = CpfFinal(cpf) },
                 ct);
 
-            TempData["Ok"] = $"{ids.Length} documento(s) assinado(s) com sucesso.";
+            TempData["Ok"] = $"{ids.Length} registro(s) interno(s) operacional(is) criado(s). Não são assinaturas ICP-Brasil.";
             return RedirectToAction(nameof(Index));
         }
         catch (Exception ex)
