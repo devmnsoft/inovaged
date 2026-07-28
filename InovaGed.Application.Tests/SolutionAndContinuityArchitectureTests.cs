@@ -40,7 +40,8 @@ public sealed class SolutionAndContinuityArchitectureTests
 
         var permissionImplementation = File.ReadAllText(Path.Combine(Root, "InovaGed.Infrastructure/Security/DatabasePermissionChecker.cs"));
         Assert.Contains("u.tenant_id = @tenantId", permissionImplementation);
-        Assert.Contains("join ged.user_role ur on ur.tenant_id = u.tenant_id", permissionImplementation);
+        Assert.Contains("join ged.user_role ur on ur.user_id = u.id", permissionImplementation);
+        Assert.DoesNotContain("ur.tenant_id", permissionImplementation);
     }
 
     [Fact]

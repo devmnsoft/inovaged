@@ -182,7 +182,13 @@ VALUES (
 
         const string insertRoleSql = @"
 INSERT INTO ged.user_role (user_id, role_id)
-VALUES (@UserId, @RoleId)
+SELECT u.id, r.id
+FROM ged.app_user u
+JOIN ged.app_role r
+  ON r.id = @RoleId
+ AND r.tenant_id = u.tenant_id
+WHERE u.id = @UserId
+  AND u.tenant_id = @TenantId
 ON CONFLICT DO NOTHING;
 ";
 
@@ -297,16 +303,19 @@ SELECT ged.audit_user_security_event(
 
                 foreach (var roleId in command.RoleIds.Where(x => x != Guid.Empty).Distinct())
                 {
-                    await con.ExecuteAsync(
+                    var assigned = await con.ExecuteAsync(
                         new CommandDefinition(
                             insertRoleSql,
                             new
                             {
                                 UserId = userId.Value,
-                                RoleId = roleId
+                                RoleId = roleId,
+                                TenantId = tenantId
                             },
                             transaction: tx,
                             cancellationToken: ct));
+                    if (assigned != 1)
+                        throw new InvalidOperationException("O perfil informado não existe ou pertence a outro tenant.");
                 }
             }
 
@@ -1362,7 +1371,13 @@ WHERE user_id = @UserId;
 
         const string insertRoleSql = @"
 INSERT INTO ged.user_role (user_id, role_id)
-VALUES (@UserId, @RoleId)
+SELECT u.id, r.id
+FROM ged.app_user u
+JOIN ged.app_role r
+  ON r.id = @RoleId
+ AND r.tenant_id = u.tenant_id
+WHERE u.id = @UserId
+  AND u.tenant_id = @TenantId
 ON CONFLICT DO NOTHING;
 ";
 
@@ -1522,16 +1537,19 @@ SELECT ged.audit_user_security_event(
 
             foreach (var roleId in command.RoleIds.Where(x => x != Guid.Empty).Distinct())
             {
-                await con.ExecuteAsync(
+                var assigned = await con.ExecuteAsync(
                     new CommandDefinition(
                         insertRoleSql,
                         new
                         {
                             UserId = command.UserId!.Value,
-                            RoleId = roleId
+                            RoleId = roleId,
+                            TenantId = tenantId
                         },
                         transaction: tx,
                         cancellationToken: ct));
+                if (assigned != 1)
+                    throw new InvalidOperationException("O perfil informado não existe ou pertence a outro tenant.");
             }
 
             await con.ExecuteAsync(

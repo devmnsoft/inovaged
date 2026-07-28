@@ -81,13 +81,18 @@ LIMIT 1;
         CancellationToken ct)
     {
         const string sql = @"
-SELECT r.normalized_name
-FROM ged.user_role ur
-JOIN ged.app_role r ON r.id = ur.role_id AND r.tenant_id = ur.tenant_id
-WHERE ur.tenant_id = @tenantId
-  AND ur.user_id = @userId
-  AND coalesce(ur.is_active, true) = true
-  AND coalesce(r.is_active, true) = true;
+SELECT DISTINCT r.normalized_name
+FROM ged.app_user u
+JOIN ged.user_role ur
+  ON ur.user_id = u.id
+JOIN ged.app_role r
+  ON r.id = ur.role_id
+ AND r.tenant_id = u.tenant_id
+WHERE u.tenant_id = @tenantId
+  AND u.id = @userId
+  AND u.is_active = true
+  AND u.deleted_at_utc IS NULL
+ORDER BY r.normalized_name;
 ";
 
         using var conn = await _factory.OpenAsync(ct);
