@@ -1,5 +1,7 @@
 using InovaGed.Application.Continuity;
 using InovaGed.Web.Security;
+using InovaGed.Web.Services;
+using InovaGed.Web.Models.Continuity;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -7,9 +9,15 @@ namespace InovaGed.Web.Controllers;
 
 [Authorize(Policy = AppPolicies.ContinuityView)]
 [Route("Continuity")]
-public sealed class ContinuityController(IRecoveryObjectiveService dashboard, IBackupPolicyService policies, IBackupCatalogService catalog, IRecoveryPlanService plans, IPortabilityExportService exports, ITenantOffboardingService offboarding, IBackupOrchestrator orchestrator, IBackupIntegrityService integrity, IAdministrativeTenantScopeResolver tenantScope) : Controller
+public sealed class ContinuityController(IRecoveryObjectiveService dashboard, IBackupPolicyService policies, IBackupCatalogService catalog, IRecoveryPlanService plans, IPortabilityExportService exports, ITenantOffboardingService offboarding, IBackupOrchestrator orchestrator, IBackupIntegrityService integrity, IAdministrativeTenantScopeResolver tenantScope, IUiModuleAvailabilityService availability) : Controller
 {
-    [HttpGet("")] [HttpGet("Overview")] public async Task<IActionResult> Overview(CancellationToken ct) => View(await dashboard.GetDashboardAsync(ResolveTenant(null), ct));
+    [HttpGet("")] [HttpGet("Overview")]
+    public async Task<IActionResult> Overview(CancellationToken ct)
+    {
+        var module = await availability.GetContinuityAsync(ct);
+        var model = module.Available ? await dashboard.GetDashboardAsync(ResolveTenant(null), ct) : null;
+        return View(new ContinuityOverviewVM(module, model));
+    }
     [HttpGet("Backups")] public async Task<IActionResult> Backups(string? status, CancellationToken ct) => View(await catalog.ListAsync(ResolveTenant(null), status, ct));
     [HttpPost("Backups/Request")] [ValidateAntiForgeryToken] public async Task<IActionResult> RequestBackup(CancellationToken ct){ await orchestrator.EnqueueBackupAsync(ResolveTenant(null),null,User.Identity?.Name??"admin",HttpContext.TraceIdentifier,ct); return RedirectToAction(nameof(Backups)); }
     [HttpPost("Backups/{id:guid}/Verify")] [ValidateAntiForgeryToken] public async Task<IActionResult> Verify(Guid id, CancellationToken ct){ await integrity.VerifyAsync(id, Environment.MachineName, ct); return RedirectToAction(nameof(Backups)); }

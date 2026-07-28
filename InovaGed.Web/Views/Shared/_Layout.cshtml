@@ -70,6 +70,18 @@
     <link rel="stylesheet" href="~/css/inovaged.layout.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/inovaged.components.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/inovaged.utilities.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/design-system/tokens.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/design-system/reset.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/design-system/typography.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/design-system/layout.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/design-system/navigation.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/design-system/components.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/design-system/forms.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/design-system/tables.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/design-system/feedback.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/design-system/responsive.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/design-system/accessibility.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/pages/administration.css" asp-append-version="true" />
 
 
     @await RenderSectionAsync("Styles", required: false)
@@ -82,25 +94,7 @@
     {
         <div class="wrapper app-shell">
 
-            <!-- SIDEBAR DESKTOP -->
-            <aside class="sidebar app-sidebar d-none d-lg-flex" aria-label="Menu lateral">
-                <div class="sidebar-brand">
-                    <span class="logo">IG</span>
-
-                    <div class="sidebar-brand-title">
-                        <span class="name">InovaGED</span>
-                        <span class="subtitle">Gestão Eletrônica de Documentos</span>
-                    </div>
-                </div>
-
-                <nav class="sidebar-menu">
-                    <partial name="_SidebarMenu" />
-                </nav>
-
-                <div class="sidebar-footer">
-                    <div>© @DateTime.Now.Year InovaGED</div>
-                </div>
-            </aside>
+            <partial name="AppShell/_AppSidebar" />
 
             <!-- SIDEBAR MOBILE -->
             <div class="offcanvas offcanvas-start" tabindex="-1" id="ocSidebar" aria-labelledby="ocSidebarLabel">
@@ -224,6 +218,9 @@
     <script src="~/lib/jquery-validation/dist/jquery.validate.min.js" asp-append-version="true"></script>
     <script src="~/lib/jquery-validation-unobtrusive/jquery.validate.unobtrusive.min.js" asp-append-version="true"></script>
     <script src="~/js/site.js" asp-append-version="true"></script>
+
+    <partial name="AppShell/_AppCommandPalette" />
+    <script src="~/js/app-shell.js" asp-append-version="true"></script>
 
     @await RenderSectionAsync("Scripts", required: false)
 

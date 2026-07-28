@@ -1,0 +1,3 @@
+/* Page-level refinements for continuity. Shared primitives live in the design system. */
+.continuity-page { min-width: 0; }
+.ig-module-unavailable{display:flex;gap:1.5rem;max-width:760px;margin:3rem auto;padding:2rem;border:1px solid var(--ig-border);border-radius:var(--ig-radius-panel);background:var(--ig-surface)}.ig-module-unavailable>.app-icon{width:3rem;height:3rem;color:var(--ig-primary-700)}.ig-banner-success{border-color:#86efac;background:var(--ig-success-100);color:var(--ig-success-700)}

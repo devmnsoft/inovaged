@@ -1,3 +1,4 @@
+@using InovaGed.Web.Models.Ged
 @model InovaGed.Web.Models.Ged.GedExplorerVM
 @using InovaGed.Web.Ocr
 @using InovaGed.Web.Security
@@ -78,7 +79,7 @@
                 </button>
 
                 <div class="ged-document-info-row">
-                    @await Html.PartialAsync("_DocumentBadges", d)
+                    @await Html.PartialAsync("_DocumentBadges", DocumentBadgesVM.FromDocument(d))
 
                     <span class="ged-document-upload-date" title="Upload em UTC: @uploadDateUtc.ToString("O")">
                         <i class="bi bi-clock me-1"></i>@uploadLabel

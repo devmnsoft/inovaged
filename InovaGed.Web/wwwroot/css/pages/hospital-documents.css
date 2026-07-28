@@ -1,0 +1,2 @@
+/* Page-level refinements for hospital-documents. Shared primitives live in the design system. */
+.hospital-documents-page { min-width: 0; }

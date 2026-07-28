@@ -1,9 +1,16 @@
-@model InovaGed.Application.Continuity.ContinuityDashboardDto
-@{ ViewData["Title"] = "Continuidade e Portabilidade"; }
-<h1><i class="bi bi-life-preserver"></i> Continuidade e Portabilidade</h1>
-<div class="alert alert-@(Model.OverallStatus == "SAUDAVEL" ? "success" : "warning")">Status: <strong>@Model.OverallStatus</strong>. Dados consultados do catálogo operacional, sem simulação.</div>
-<div class="row g-3">
-@foreach (var item in new[]{($"Último backup", Model.LastCompletedBackupUtc?.ToString("u") ?? "Não configurado"),($"Último válido", Model.LastValidBackupUtc?.ToString("u") ?? "Não verificado"),($"Integridade", $"{Model.IntegrityPercent:n1}%"),($"Falhas", Model.FailedBackups.ToString()),($"RPO observado", Model.ObservedRpoMinutes?.ToString()+" min" ?? "Sem evidência"),($"Pacotes ativos", Model.ActivePortabilityPackages.ToString()),($"Dead-letter", Model.DeadLetterJobs.ToString())}) { <div class="col-md-3"><div class="card h-100"><div class="card-body"><small class="text-muted">@item.Item1</small><div class="fs-5 fw-semibold">@item.Item2</div></div></div></div> }
-</div>
-@if (Model.Alerts.Any()) { <h2 class="mt-4">Alertas</h2><ul>@foreach(var a in Model.Alerts){<li>@a</li>}</ul> }
-<div class="mt-4 d-flex flex-wrap gap-2"><a class="btn btn-primary" href="/Continuity/Policies">Políticas</a><a class="btn btn-outline-primary" href="/Continuity/Backups">Backups</a><a class="btn btn-outline-primary" href="/Continuity/DisasterRecovery">DRP</a><a class="btn btn-outline-primary" href="/Continuity/Portability">Exportação Integral</a></div>
+@model InovaGed.Web.Models.Continuity.ContinuityOverviewVM
+@{ ViewData["Title"] = "Continuidade e Portabilidade"; ViewData["Subtitle"] = "Resiliência, recuperação e custódia institucional"; }
+<header class="ig-page-header"><div><span class="ig-eyebrow">Resiliência operacional</span><h1>Continuidade e Portabilidade</h1><p>Acompanhe evidências reais de backup, integridade, RPO e RTO.</p></div></header>
+@if (!Model.Availability.Available)
+{
+  <section class="ig-module-unavailable" role="status"><app-icon name="continuity" label="Continuidade"></app-icon><div><h2>@Model.Availability.UserMessage</h2><p>@(Model.Availability.Enabled ? "As migrations de continuidade ainda não foram aplicadas." : "Backup e portabilidade estão desabilitados neste ambiente.")</p>@if (User.IsInRole("ADMIN") || User.IsInRole("ADMINISTRADOR")) { <div class="ig-banner ig-banner-warning"><i class="bi bi-tools"></i><span>@Model.Availability.AdministratorMessage</span></div> }</div></section>
+}
+else if (Model.Dashboard is { } dashboard)
+{
+  <div class="ig-banner @(dashboard.OverallStatus == "SAUDAVEL" ? "ig-banner-success" : "ig-banner-warning")">Status geral: <strong>@dashboard.OverallStatus</strong></div>
+  <div class="ig-kpi-grid">
+  @foreach (var item in new[] { ("Último backup", dashboard.LastCompletedBackupUtc?.ToString("u") ?? "Não configurado"), ("Último válido", dashboard.LastValidBackupUtc?.ToString("u") ?? "Não verificado"), ("Integridade", $"{dashboard.IntegrityPercent:n1}%"), ("Jobs com falha", dashboard.FailedBackups.ToString()), ("RPO observado", dashboard.ObservedRpoMinutes.HasValue ? $"{dashboard.ObservedRpoMinutes} min" : "Sem evidência"), ("RTO observado", dashboard.LastObservedRtoMinutes.HasValue ? $"{dashboard.LastObservedRtoMinutes} min" : "Sem evidência"), ("Espaço utilizado", $"{dashboard.TotalBytesUsed / 1048576d:n1} MB"), ("Dead letters", dashboard.DeadLetterJobs.ToString()) }) { <article class="ig-kpi-card"><div><span class="ig-kpi-label">@item.Item1</span><strong>@item.Item2</strong></div></article> }
+  </div>
+  @if (dashboard.Alerts.Any()) { <section class="ig-banner ig-banner-warning"><i class="bi bi-exclamation-triangle"></i><div><h2 class="h5">Alertas operacionais</h2><ul>@foreach (var alert in dashboard.Alerts) { <li>@alert</li> }</ul></div></section> }
+  <div class="mt-4 d-flex flex-wrap gap-2"><a class="btn btn-primary" asp-action="Policies">Políticas</a><a class="btn btn-outline-primary" asp-action="Backups">Backups</a><a class="btn btn-outline-primary" asp-action="DisasterRecovery">Recuperação</a><a class="btn btn-outline-primary" asp-action="Portability">Portabilidade</a></div>
+}

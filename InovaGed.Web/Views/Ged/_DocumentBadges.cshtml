@@ -1,75 +1,46 @@
-@model InovaGed.Web.Models.Ged.GedExplorerVM.DocumentRowVM
-@using InovaGed.Web.Ocr
-@inject Microsoft.Extensions.Configuration.IConfiguration Configuration
+@model InovaGed.Web.Models.Ged.DocumentBadgesVM
 @{
-    var isUnclassified = !Model.ClassificationId.HasValue && (string.IsNullOrWhiteSpace(Model.TypeName) || Model.TypeName == "-");
-    var ocrBadgeClass = !string.IsNullOrWhiteSpace(Model.OcrSummaryCss) ? Model.OcrSummaryCss : (!string.IsNullOrWhiteSpace(Model.OcrBadgeCss) ? Model.OcrBadgeCss : OcrUiHelper.BadgeClass(Model.IsOcrAvailable, Model.OcrStatus));
-    var ocrLabel = !string.IsNullOrWhiteSpace(Model.OcrSummaryText) ? Model.OcrSummaryText : (!string.IsNullOrWhiteSpace(Model.OcrBadgeText) ? Model.OcrBadgeText : OcrUiHelper.AvailabilityLabel(Model.IsOcrAvailable, Model.OcrStatus, Model.HasOcrText));
-    var autoOcrEnabled = Configuration.GetValue("OcrAutoSchedule:Enabled", true);
-    var ocrTitle = $"Status OCR: {(string.IsNullOrWhiteSpace(Model.OcrStatus) ? "NONE" : Model.OcrStatus)}. Texto extraído: {(Model.HasOcrText ? "sim" : "não")}.";
-    if (!Model.IsOcrAvailable && !Model.HasOcrText && (string.IsNullOrWhiteSpace(Model.OcrStatus) || string.Equals(Model.OcrStatus, "NONE", StringComparison.OrdinalIgnoreCase)))
+    var badges = new List<(string Css, string Icon, string Label, string Title)>();
+
+    if (Model.IsRestricted)
+        badges.Add(("ged-badge-danger", "bi-shield-lock", "Restrito", "Acesso limitado por política de segurança"));
+    if (Model.IsPartial)
+        badges.Add(("ged-badge-warning", "bi-layers", "Parcial", "Documento composto por partes"));
+    if (Model.ShowOcrBadge)
     {
-        ocrTitle = autoOcrEnabled
-            ? "Este documento será incluído na rotina automática diária de OCR, caso permaneça sem OCR."
-            : "OCR automático está desabilitado. Execute manualmente ou habilite nas configurações.";
+        var ocrReady = string.Equals(Model.OcrStatus, "COMPLETED", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(Model.OcrStatus, "AVAILABLE", StringComparison.OrdinalIgnoreCase);
+        badges.Add(ocrReady
+            ? ("ged-badge-success", "bi-file-earmark-check", "OCR pronto", "Texto pesquisável disponível")
+            : ("ged-badge-muted", "bi-hourglass-split", "OCR pendente", "Extração de texto ainda não concluída"));
     }
-    if (Model.IsDocumentIncomplete || Model.IsPartialDocument)
+    if (Model.ShowPreviewBadge && string.Equals(Model.PreviewStatus, "FAILED", StringComparison.OrdinalIgnoreCase))
+        badges.Add(("ged-badge-danger", "bi-file-earmark-x", "Preview falhou", "A visualização não pôde ser gerada"));
+    if (Model.ShowClassificationBadge)
     {
-        var totalForOcr = Model.TotalParts ?? Model.PartialTotalParts ?? Model.PartialPartsCount;
-        ocrTitle = Model.PartialPartsCount > 0
-            ? $"{Model.PartialPartsWithOcrCount} de {totalForOcr} partes possui OCR disponível. Abra ‘Ver partes’ para consultar cada OCR."
-            : "Documento enviado em partes. Abra ‘Ver partes’ para consultar o OCR de cada parte.";
+        var classified = string.Equals(Model.ClassificationStatus, "CLASSIFIED", StringComparison.OrdinalIgnoreCase);
+        badges.Add(classified
+            ? ("ged-badge-success", "bi-tags", "Classificado", "Classificação arquivística aplicada")
+            : ("ged-badge-muted", "bi-tag", "Sem classificação", "Classificação arquivística pendente"));
     }
-    var partialSuffix = Model.PartialPartsCount > 0
-        ? (Model.TotalParts.HasValue || Model.PartialTotalParts.HasValue ? $"{Model.PartialPartsCount}/{(Model.TotalParts ?? Model.PartialTotalParts)} partes" : $"{Model.PartialPartsCount} partes")
-        : (Model.PartNumber.HasValue && Model.TotalParts.HasValue ? $"{Model.PartNumber}/{Model.TotalParts} partes" : string.Empty);
-    var isConsolidated = (Model.IsPartialDocument && Model.ConsolidatedVersionId.HasValue && !Model.IsDocumentIncomplete) || string.Equals(Model.PartialStatus, "CONSOLIDATED", StringComparison.OrdinalIgnoreCase);
-    var isReadyToConsolidate = !isConsolidated && Model.IsPartialDocument && (string.Equals(Model.PartialStatus, "COMPLETE", StringComparison.OrdinalIgnoreCase) || (Model.PartialPartsCount > 1 && (!Model.TotalParts.HasValue || Model.PartialPartsCount >= Model.TotalParts.Value)));
-}
+    if (Model.ShowRetentionBadge)
+        badges.Add(Model.IsOverdue
+            ? ("ged-badge-danger", "bi-calendar-x", "Vencido", "Prazo de temporalidade vencido")
+            : ("ged-badge-info", "bi-calendar-check", Model.RetentionStatus ?? "Temporalidade", "Situação da temporalidade"));
+    if (Model.ShowSignatureBadge && string.Equals(Model.SignatureStatus, "VALID", StringComparison.OrdinalIgnoreCase))
+        badges.Add(("ged-badge-success", "bi-patch-check", "Assinado", "Assinatura criptográfica validada"));
 
-@if (isUnclassified)
-{
-    <span class="badge ged-badge ged-badge-muted"><i class="bi bi-tag me-1"></i>Sem classificação</span>
+    var visibleBadges = badges.Take(3).ToArray();
+    var overflowBadges = badges.Skip(3).ToArray();
 }
-else
-{
-    <span class="badge ged-badge ged-badge-ok" title="Classificação: @Model.TypeName"><i class="bi bi-tags me-1"></i>Classificado</span>
-}
-
-<span class="badge ged-badge @ocrBadgeClass" title="@ocrTitle"><i class="bi bi-text-paragraph me-1"></i>@ocrLabel</span>
-
-@if (Model.IsDocumentIncomplete)
-{
-    <span class="badge ged-badge ged-badge-incomplete" title="Este documento possui partes pendentes e poderá ser complementado futuramente."><i class="bi bi-exclamation-triangle me-1"></i>@(string.IsNullOrWhiteSpace(partialSuffix) ? "Documento incompleto" : $"Documento incompleto · {partialSuffix}")</span>
-}
-else if (isReadyToConsolidate)
-{
-    <span class="badge ged-badge ged-badge-warning" title="Todas as partes previstas foram recebidas. Você pode consolidar este documento."><i class="bi bi-check2-circle me-1"></i>@(string.IsNullOrWhiteSpace(partialSuffix) ? "Pronto para consolidar" : $"{partialSuffix} · pronto para consolidar")</span>
-}
-else if (isConsolidated)
-{
-    <span class="badge ged-badge ged-badge-info" title="Este documento foi consolidado a partir de partes enviadas anteriormente."><i class="bi bi-layers me-1"></i>@(string.IsNullOrWhiteSpace(partialSuffix) ? "Documento consolidado" : $"Documento consolidado · {partialSuffix}")</span>
-}
-else if (Model.IsPartialDocument)
-{
-    <span class="badge ged-badge ged-badge-info" title="Documento fracionado com partes registradas."><i class="bi bi-files me-1"></i>@(string.IsNullOrWhiteSpace(partialSuffix) ? "Documento enviado em partes" : $"Documento enviado em partes · {partialSuffix}")</span>
-}
-
-@if (!string.IsNullOrWhiteSpace(Model.QualityStatus))
-{
-    var qualityCss = Model.QualityStatus switch
+<div class="ged-document-badges" aria-label="Status do documento">
+    @foreach (var badge in visibleBadges)
     {
-        "Excelente" => "bg-success",
-        "Bom" => "bg-primary",
-        "Atenção" => "bg-warning text-dark",
-        "Crítico" => "bg-danger",
-        _ => "bg-secondary"
-    };
-    <a class="badge ged-badge @qualityCss text-decoration-none"
-       asp-controller="DocumentQuality"
-       asp-action="Details"
-       asp-route-documentId="@Model.Id"
-       title="Clique para ver pendências de qualidade deste documento. @Model.QualityNextAction">
-        <i class="bi bi-shield-check me-1"></i>Qualidade: @Model.QualityStatus (@Model.QualityScore)
-    </a>
-}
+        <span class="badge ged-badge @badge.Css" title="@badge.Title"><i class="bi @badge.Icon" aria-hidden="true"></i>@badge.Label</span>
+    }
+    @if (overflowBadges.Length > 0)
+    {
+        var overflowTitle = string.Join(", ", overflowBadges.Select(item => item.Label));
+        <button type="button" class="badge ged-badge ged-badge-more" title="@overflowTitle" aria-label="Mais estados: @overflowTitle">+@overflowBadges.Length</button>
+    }
+</div>
