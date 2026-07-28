@@ -8,6 +8,7 @@ public sealed class BackupOptions
     public bool Enabled { get; set; } = false; public string RootPath { get; set; } = string.Empty; public string PostgresBinPath { get; set; } = string.Empty;
     [Range(1,16)] public int MaxParallelJobs { get; set; } = 1; [Range(1,3650)] public int DefaultRetentionDays { get; set; } = 30; public bool VerificationEnabled { get; set; } = true;
     public int CommandTimeoutSeconds { get; set; } = 3600; public int CompressionLevel { get; set; } = 6; public string EncryptionKeyId { get; set; } = string.Empty;
+    public bool RetentionDeletionEnabled { get; set; } = false;
 }
 public sealed class PortabilityOptions { public bool Enabled { get; set; } = false; public string RootPath { get; set; } = string.Empty; [Range(1,365)] public int PackageExpirationDays { get; set; } = 7; [Range(1,16)] public int MaxParallelJobs { get; set; } = 1; public bool IncludeAuditByDefault { get; set; } = false; }
 
@@ -23,7 +24,10 @@ public interface IBackupPolicyService { Task<IReadOnlyList<BackupPolicyDto>> Lis
 public interface IBackupOrchestrator { Task<OperationJobDto> EnqueueBackupAsync(Guid? tenantId, Guid? policyId, string requestedBy, string correlationId, CancellationToken ct); Task<int> ProcessDueJobsAsync(string workerId, CancellationToken ct); }
 public interface IBackupCatalogService { Task<IReadOnlyList<BackupSetDto>> ListAsync(Guid? tenantId, string? status, CancellationToken ct); Task<BackupSetDto?> GetAsync(Guid id, Guid? tenantId, CancellationToken ct); }
 public interface IBackupIntegrityService { Task<BackupVerificationResult> VerifyAsync(Guid backupSetId, string workerId, CancellationToken ct); }
+public interface IBackupRetentionService { Task<int> MarkExpiredAsync(Guid? tenantId, string requestedBy, CancellationToken ct); }
 public sealed record BackupVerificationResult(Guid BackupSetId, string Status, IReadOnlyList<string> Findings, DateTime VerifiedAtUtc);
+public sealed record BackupManifest(string FormatVersion, Guid BackupSetId, Guid? TenantId, DateTime StartedAtUtc, DateTime CompletedAtUtc, string Application, string Schema, string PostgreSqlVersion, string PgDumpVersion, string BackupType, string ConsistencyMode, string Status, string CorrelationId, IReadOnlyList<BackupManifestArtifact> Artifacts);
+public sealed record BackupManifestArtifact(string Path, string Sha256, long SizeBytes);
 public interface IRestoreValidationService { Task<RestoreValidationResult> ValidateTargetAsync(string host, string database, bool confirmed, string justification, CancellationToken ct); }
 public sealed record RestoreValidationResult(bool Allowed, string Reason);
 public interface IRecoveryPlanService { Task<IReadOnlyList<RecoveryPlanDto>> ListAsync(Guid? tenantId, CancellationToken ct); }

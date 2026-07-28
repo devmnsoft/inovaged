@@ -9,7 +9,7 @@ using Microsoft.Extensions.Options;
 namespace InovaGed.Infrastructure.Continuity;
 
 public interface IPostgresBackupProvider { Task<PostgresBackupResult> DumpAsync(string connectionString, string outputFile, CancellationToken ct); }
-public sealed record PostgresBackupResult(bool Success, int ExitCode, string Sha256, string PgDumpVersion, string SanitizedError);
+public sealed record PostgresBackupResult(bool Success, int ExitCode, string Sha256, string PgDumpVersion, string SanitizedError, bool PgRestoreListValidated = false, long SizeBytes = 0);
 
 public sealed class PostgresBackupProvider(IExecutableResolver resolver, IOptions<BackupOptions> options, ILogger<PostgresBackupProvider> logger) : IPostgresBackupProvider
 {
@@ -52,7 +52,7 @@ public sealed class PostgresBackupProvider(IExecutableResolver resolver, IOption
             if (verify.ExitCode != 0) return new(false, verify.ExitCode, string.Empty, await VersionAsync(pgDump, ct), Mask(await verify.StandardError.ReadToEndAsync(ct)));
             await using var fs = File.OpenRead(outputFile); var hash = Convert.ToHexString(await SHA256.HashDataAsync(fs, ct)).ToLowerInvariant();
             logger.LogInformation("Backup PostgreSQL concluído com senha mascarada. Database={Database} Sha256={Sha256}", builder.Database, hash);
-            return new(true, 0, hash, await VersionAsync(pgDump, ct), string.Empty);
+            return new(true, 0, hash, await VersionAsync(pgDump, ct), string.Empty, true, new FileInfo(outputFile).Length);
         }
         finally { TryDelete(passFile); TryDelete(partialFile); }
     }

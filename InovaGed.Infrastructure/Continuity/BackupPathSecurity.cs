@@ -1,0 +1,5 @@
+namespace InovaGed.Infrastructure.Continuity;
+internal static class BackupPathSecurity
+{
+ public static string CreateSetDirectory(string configuredRoot,Guid? tenantId,Guid setId){if(string.IsNullOrWhiteSpace(configuredRoot)||!Path.IsPathFullyQualified(configuredRoot))throw new InvalidOperationException("Backup:RootPath deve ser absoluto.");var root=Path.GetFullPath(configuredRoot);if(root.Split(Path.DirectorySeparatorChar,Path.AltDirectorySeparatorChar).Any(x=>x.Equals("wwwroot",StringComparison.OrdinalIgnoreCase)))throw new InvalidOperationException("Backup:RootPath não pode estar em pasta pública.");Directory.CreateDirectory(root);var scope=tenantId.HasValue?Path.Combine("tenants",tenantId.Value.ToString("N")):"global";var result=Path.GetFullPath(Path.Combine(root,scope,setId.ToString("N")));if(!result.StartsWith(root+Path.DirectorySeparatorChar,StringComparison.Ordinal))throw new InvalidOperationException("Path traversal bloqueado.");Directory.CreateDirectory(result);var probe=Path.Combine(result,$".write-{Guid.NewGuid():N}");File.WriteAllText(probe,string.Empty);File.Delete(probe);return result;}
+}
