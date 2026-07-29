@@ -120,6 +120,7 @@ using InovaGed.Infrastructure.Tenants;
 using InovaGed.Infrastructure.Jobs;
 using InovaGed.Web.Filters;
 using Microsoft.AspNetCore.Http.Features;
+using InovaGed.Application.Cluster;
 
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 {
@@ -193,14 +194,14 @@ builder.WebHost.ConfigureKestrel(options =>
 // =======================================================
 // DataProtection persistente para evitar logout após recycle do app pool
 // =======================================================
-var keysPath = builder.Configuration.GetValue<string>("DataProtection:KeysPath")
-    ?? (OperatingSystem.IsWindows()
+var configuredKeysPath = builder.Configuration.GetValue<string>("DataProtection:KeysPath");
+var keysPath = !string.IsNullOrWhiteSpace(configuredKeysPath) ? configuredKeysPath : (OperatingSystem.IsWindows()
         ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "InovaGed", "data-protection")
         : Path.Combine(builder.Environment.ContentRootPath, "App_Data", "DataProtectionKeys"));
 Directory.CreateDirectory(keysPath);
-builder.Services.AddDataProtection()
+var dataProtection = builder.Services.AddDataProtection()
     .PersistKeysToFileSystem(new DirectoryInfo(keysPath))
-    .SetApplicationName("InovaGed");
+    .SetApplicationName(builder.Configuration["DataProtection:ApplicationName"] ?? "InovaGed");
 
 builder.Services.Configure<FormOptions>(options =>
 {
@@ -646,8 +647,14 @@ app.UseMiddleware<AccessDeniedAuditMiddleware>();
 
 app.MapHub<OcrStatusHub>(OcrStatusHub.Route);
 
-app.MapHealthChecks("/health/live");
+app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = registration => registration.Tags.Contains("live") });
 app.MapHealthChecks("/health/ready", new HealthCheckOptions());
+app.MapGet("/health/node", (INodeIdentity node) => Results.Ok(new
+{
+    status = "Healthy", nodeId = node.NodeId, color = node.Color,
+    version = node.ApplicationVersion, commit = node.CommitSha.Length > 7 ? node.CommitSha[..7] : node.CommitSha,
+    ready = true
+})).AllowAnonymous();
 
 app.MapControllerRoute(
     name: "default",

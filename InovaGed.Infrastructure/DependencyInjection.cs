@@ -33,6 +33,8 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 using InovaGed.Application.Identity;
 using InovaGed.Application.Signatures;
 using InovaGed.Infrastructure.Signatures;
+using InovaGed.Application.Cluster;
+using InovaGed.Infrastructure.Cluster;
 
 namespace InovaGed.Infrastructure;
 
@@ -59,6 +61,21 @@ public static class InfrastructureServiceCollectionExtensions
             .AddInfrastructureHealthModule(configuration)
             .AddContinuityModule(configuration)
             .AddDigitalSignatureModule(configuration);
+
+        services.AddOptions<NodeIdentityOptions>()
+            .Bind(configuration.GetSection("Cluster"))
+            .Validate(o => o.HeartbeatSeconds >= 5 && o.NodeExpirationSeconds > o.HeartbeatSeconds, "Cluster heartbeat/expiration inválidos.")
+            .Validate(o => o.Mode == ClusterMode.SingleNode || !o.RequireDistributedDependencies ||
+                (!string.IsNullOrWhiteSpace(configuration.GetConnectionString("Redis")) &&
+                 string.Equals(configuration["Storage:Provider"], "SharedFileSystem", StringComparison.OrdinalIgnoreCase) &&
+                 new[] { "SharedFileSystem", "Redis" }.Contains(configuration["DataProtection:Provider"], StringComparer.OrdinalIgnoreCase)),
+                "MultiNode/BlueGreen requer Redis, storage compartilhado e Data Protection compartilhado.")
+            .ValidateOnStart();
+        services.AddSingleton<INodeIdentity, NodeIdentity>();
+        services.AddSingleton<IClusterNodeRegistry, PostgresClusterNodeRegistry>();
+        services.AddScoped<IClusterLeaseManager, PostgresClusterLeaseManager>();
+        if (configuration.GetValue<ClusterMode>("Cluster:Mode") != ClusterMode.SingleNode)
+            services.AddHostedService<ClusterHeartbeatWorker>();
 
         return services;
     }
@@ -255,8 +272,9 @@ public static class InfrastructureServiceCollectionExtensions
 
         services
             .AddHealthChecks()
+            .AddCheck("self", () => HealthCheckResult.Healthy(), tags: ["live"])
             .AddCheck<InovaGedDependencyHealthCheck>(
-                "inovaged-dependencies");
+                "inovaged-dependencies", tags: ["ready"]);
 
         return services;
     }

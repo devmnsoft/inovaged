@@ -2,6 +2,17 @@
   "version": 1,
   "migrations": [
     {
+      "id": "2026_07_cluster_nodes_and_deployments",
+      "path": "database/migrations/2026_07_cluster_nodes_and_deployments.sql",
+      "module": "HighAvailability",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.24",
+      "maximumApplicationVersion": "04.1.25",
+      "requiresMaintenanceWindow": false,
+      "requiresVerifiedBackup": true
+    },
+    {
       "id": "2026_07_identity_role_integrity",
       "path": "database/migrations/2026_07_identity_role_integrity.sql",
       "module": "Identity",

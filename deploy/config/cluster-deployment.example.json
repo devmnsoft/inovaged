@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "1.0", "clusterId": "inovaged-production", "environment": "Production",
+  "strategy": "BlueGreen", "activeColor": "Blue",
+  "loadBalancer": { "provider": "Manual", "healthPath": "/health/ready", "drainTimeoutSeconds": 120 },
+  "blue": { "nodes": [{ "nodeId": "blue-01", "managementEndpoint": "https://blue-01.management.invalid" }] },
+  "green": { "nodes": [{ "nodeId": "green-01", "managementEndpoint": "https://green-01.management.invalid" }] },
+  "canaryPercent": 10, "canaryObservationSeconds": 180, "postSwitchObservationSeconds": 300,
+  "automaticRollback": true
+}
