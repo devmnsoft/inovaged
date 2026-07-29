@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "InovaGed.Signing.Agent": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "applicationUrl": "https://localhost:57868;http://localhost:57869"
+    }
+  }
+}
