@@ -121,6 +121,8 @@ using InovaGed.Infrastructure.Jobs;
 using InovaGed.Web.Filters;
 using Microsoft.AspNetCore.Http.Features;
 using InovaGed.Application.Cluster;
+using InovaGed.Infrastructure.Observability;
+using InovaGed.Web.Observability;
 
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 {
@@ -165,6 +167,10 @@ mvc.AddRazorRuntimeCompilation();
 #endif
 
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<ICorrelationContext, CorrelationContext>();
+builder.Services.AddTransient<CorrelationIdHandler>();
+builder.Services.AddHttpClient("InovaGed").AddHttpMessageHandler<CorrelationIdHandler>();
+builder.Services.AddInovaGedObservability(builder.Configuration);
 builder.Services
     .AddInovaGedApplication(builder.Configuration)
     .AddInovaGedInfrastructure(builder.Configuration);
@@ -638,6 +644,8 @@ app.UseMiddleware<SuspiciousRequestMiddleware>();
 app.UseStaticFiles();
 
 app.UseRouting();
+app.UseMiddleware<CorrelationIdMiddleware>();
+app.UseMiddleware<RequestTelemetryMiddleware>();
 
 app.UseAuthentication();
 app.UseAuthorization();

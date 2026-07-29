@@ -518,6 +518,27 @@ jobs:
       - env: { NEEDS_CONTEXT: '${{ toJson(needs) }}' }
         run: python -c 'import json,os,sys; r=json.loads(os.environ["NEEDS_CONTEXT"]); print(r); sys.exit(any(v["result"]!="success" for v in r.values()))'
 
+  observability-contract-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '8.0.x' }
+      - name: Run privacy, cardinality, SLO, alert and incident contracts
+        run: dotnet test InovaGed.Application.Tests/InovaGed.Application.Tests.csproj --configuration Release --filter "FullyQualifiedName~Observability|FullyQualifiedName~TelemetrySanitizer|FullyQualifiedName~ErrorBudget|FullyQualifiedName~Cardinality|FullyQualifiedName~IncidentLifecycle|FullyQualifiedName~AlertDeduplication"
+      - name: Validate offline Collector configuration
+        shell: pwsh
+        run: ./deploy/observability/validate-otel-collector.ps1
+
+  observability-gate:
+    if: always()
+    needs: [observability-contract-tests]
+    runs-on: ubuntu-latest
+    steps:
+      - env: { NEEDS_CONTEXT: '${{ toJson(needs) }}' }
+        run: python -c 'import json,os,sys; r=json.loads(os.environ["NEEDS_CONTEXT"]); print(r); sys.exit(any(v["result"]!="success" for v in r.values()))'
+
   engineering-gate:
     if: always()
     needs:
@@ -537,6 +558,7 @@ jobs:
       - continuity-integration
       - identity-auth-integration
       - deployment-gate
+      - observability-gate
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
