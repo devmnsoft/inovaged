@@ -1,0 +1,7 @@
+{
+  "schemaVersion": "1.0", "environment": "Homologation", "siteName": "InovaGED-Homolog", "appPoolName": "InovaGED-Homolog",
+  "hostName": "ged-homolog.exemplo.local", "httpPort": 80, "httpsPort": 443, "certificateThumbprint": "",
+  "releasesRoot": "C:\\inetpub\\InovaGed\\releases", "currentPath": "C:\\inetpub\\InovaGed\\current",
+  "sharedDataRoot": "C:\\ProgramData\\InovaGed", "configPath": "C:\\ProgramData\\InovaGed\\config\\appsettings.Production.local.json",
+  "healthCheckBaseUrl": "http://127.0.0.1:5088", "keepReleases": 5, "deploymentTimeoutSeconds": 180, "requireDatabaseBackup": true
+}

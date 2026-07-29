@@ -126,6 +126,18 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
     Args = args
 });
 
+// Segredos e caminhos operacionais permanecem fora da release publicada. Variáveis de
+// ambiente já foram carregadas pelo host e, quando indicado, o arquivo externo tem
+// precedência sobre appsettings.* sem permitir edição silenciosa do pacote.
+var externalConfigurationPath = builder.Configuration["INOVAGED_CONFIG_PATH"]
+    ?? Environment.GetEnvironmentVariable("INOVAGED_CONFIG_PATH");
+if (!string.IsNullOrWhiteSpace(externalConfigurationPath))
+{
+    if (!Path.IsPathFullyQualified(externalConfigurationPath))
+        throw new InvalidOperationException("INOVAGED_CONFIG_PATH deve ser um caminho absoluto.");
+    builder.Configuration.AddJsonFile(externalConfigurationPath, optional: false, reloadOnChange: false);
+}
+
 builder.Host.UseDefaultServiceProvider(options =>
 {
     options.ValidateScopes = true;
@@ -182,7 +194,9 @@ builder.WebHost.ConfigureKestrel(options =>
 // DataProtection persistente para evitar logout após recycle do app pool
 // =======================================================
 var keysPath = builder.Configuration.GetValue<string>("DataProtection:KeysPath")
-    ?? Path.Combine(builder.Environment.ContentRootPath, "App_Data", "DataProtectionKeys");
+    ?? (OperatingSystem.IsWindows()
+        ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "InovaGed", "data-protection")
+        : Path.Combine(builder.Environment.ContentRootPath, "App_Data", "DataProtectionKeys"));
 Directory.CreateDirectory(keysPath);
 builder.Services.AddDataProtection()
     .PersistKeysToFileSystem(new DirectoryInfo(keysPath))
