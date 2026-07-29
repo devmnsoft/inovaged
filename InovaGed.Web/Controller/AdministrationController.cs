@@ -13,7 +13,8 @@ public sealed class AdministrationController : Controller
 {
     private readonly IAdministrationDashboardService _service;
     private readonly IModuleReadinessService _readiness;
-    public AdministrationController(IAdministrationDashboardService service, IModuleReadinessService readiness) { _service = service; _readiness = readiness; }
+    private readonly IConfiguration _configuration;
+    public AdministrationController(IAdministrationDashboardService service, IModuleReadinessService readiness, IConfiguration configuration) { _service = service; _readiness = readiness; _configuration = configuration; }
     public async Task<IActionResult> Index(CancellationToken ct)
     {
         var overview = await _service.GetOverviewAsync(CurrentTenant(), ct);
@@ -45,7 +46,18 @@ public sealed class AdministrationController : Controller
     public async Task<IActionResult> Migrations(CancellationToken ct) => View("Section", new AdministrationPageVm { Section = "Migrações e Compatibilidade", Items = await _service.GetMigrationsAsync(ct) });
     public async Task<IActionResult> Compliance(CancellationToken ct) => View("Section", new AdministrationPageVm { Section = "Conformidade e LGPD", Compliance = await _service.GetComplianceAsync(CurrentTenant(), ct) });
     [HttpGet("/Administration/Readiness")]
-    public async Task<IActionResult> Readiness(CancellationToken ct) => View(new EnvironmentReadinessVM(await LoadReadinessAsync(ct), DateTimeOffset.UtcNow));
+    public async Task<IActionResult> Readiness(CancellationToken ct)
+    {
+        var release = new ReleaseReadinessVM(
+            _configuration["Deployment:Version"] ?? "04.1.24",
+            _configuration["Deployment:Commit"] ?? "não informado",
+            _configuration["Deployment:DeploymentId"] ?? "não informado",
+            _configuration["Deployment:PreviousReleaseId"] ?? "não disponível",
+            _configuration["Deployment:SchemaVersion"] ?? "não informado",
+            DateTimeOffset.TryParse(_configuration["Deployment:DeployedAtUtc"], out var deployedAt) ? deployedAt : null,
+            !string.IsNullOrWhiteSpace(_configuration["Deployment:PreviousReleaseId"]));
+        return View(new EnvironmentReadinessVM(await LoadReadinessAsync(ct), DateTimeOffset.UtcNow, release));
+    }
     [HttpGet("/Administration/Readiness/Export")]
     public async Task<IActionResult> ExportReadiness(CancellationToken ct)
     {

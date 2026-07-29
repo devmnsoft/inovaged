@@ -437,6 +437,87 @@ jobs:
           name: identity-auth-integration-results
           path: TestResults/identity-auth-integration.trx
 
+  release-package-build:
+    needs: solution-validation
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '8.0.x' }
+      - name: Build deployment tool
+        run: dotnet publish InovaGed.Deployment.Tool/InovaGed.Deployment.Tool.csproj -c Release -r win-x64 --self-contained false -o artifacts/deployment-tool
+      - uses: actions/upload-artifact@v4
+        with: { name: deployment-tool, path: artifacts/deployment-tool, retention-days: 14 }
+
+  release-package-validation:
+    needs: release-package-build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '8.0.x' }
+      - run: dotnet build InovaGed.Deployment.Tool/InovaGed.Deployment.Tool.csproj -c Release
+      - run: python3 -m json.tool database/migrations.manifest.json >/dev/null
+
+  release-package-security:
+    needs: release-package-validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject deployable secrets and private key material
+        shell: bash
+        run: |
+          ! rg -n -i 'BEGIN (RSA )?PRIVATE KEY|BEGIN CERTIFICATE|Bearer [A-Za-z0-9]' deploy eng/release docs/deployment
+          ! find deploy -type f \( -iname '*.pfx' -o -iname '*.key' \) -print -quit | grep .
+
+  iis-install-smoke:
+    needs: release-package-validation
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Pester
+        shell: pwsh
+        run: Install-Module Pester -Force -Scope CurrentUser -MinimumVersion 5.5
+      - name: Test isolated IIS installer contracts
+        shell: pwsh
+        run: Invoke-Pester deploy/tests/InovaGed.IisDeployment.Tests.ps1 -CI
+
+  iis-update-smoke:
+    needs: iis-install-smoke
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert versioned update and cutover safeguards
+        shell: pwsh
+        run: |
+          $text=Get-Content deploy/iis/Invoke-InovaGedDeployment.ps1 -Raw
+          if($text -notmatch 'Expand-Archive' -or $text -notmatch 'Switch-InovaGedRelease'){throw 'Update contract missing'}
+
+  iis-rollback-smoke:
+    needs: iis-update-smoke
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert rollback is binary-only
+        shell: pwsh
+        run: |
+          $text=Get-Content deploy/iis/Invoke-InovaGedDeployment.ps1 -Raw
+          if($text -match 'psql|DROP DATABASE'){throw 'Database rollback is forbidden'}
+
+  deployment-documentation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: test "$(find docs/deployment -maxdepth 1 -type f | wc -l)" -ge 17
+
+  deployment-gate:
+    if: always()
+    needs: [release-package-build, release-package-validation, release-package-security, iis-install-smoke, iis-update-smoke, iis-rollback-smoke, deployment-documentation]
+    runs-on: ubuntu-latest
+    steps:
+      - env: { NEEDS_CONTEXT: '${{ toJson(needs) }}' }
+        run: python -c 'import json,os,sys; r=json.loads(os.environ["NEEDS_CONTEXT"]); print(r); sys.exit(any(v["result"]!="success" for v in r.values()))'
+
   engineering-gate:
     if: always()
     needs:
@@ -455,6 +536,7 @@ jobs:
       - poc-matrix-contract-tests
       - continuity-integration
       - identity-auth-integration
+      - deployment-gate
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:

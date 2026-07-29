@@ -28,12 +28,24 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "InovaGed.Database.Migrator"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "InovaGed.Environment.Doctor", "InovaGed.Environment.Doctor\InovaGed.Environment.Doctor.csproj", "{C9999999-AAAA-4BBB-8CCC-DDDDDDDDDDDD}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "InovaGed.Deployment.Tool", "InovaGed.Deployment.Tool\InovaGed.Deployment.Tool.csproj", "{D1234567-89AB-4CDE-8F01-23456789ABCD}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "InovaGed.Deployment.Tool.Tests", "InovaGed.Deployment.Tool.Tests\InovaGed.Deployment.Tool.Tests.csproj", "{E2345678-9ABC-4DEF-8012-3456789ABCDE}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{E2345678-9ABC-4DEF-8012-3456789ABCDE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E2345678-9ABC-4DEF-8012-3456789ABCDE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E2345678-9ABC-4DEF-8012-3456789ABCDE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E2345678-9ABC-4DEF-8012-3456789ABCDE}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D1234567-89AB-4CDE-8F01-23456789ABCD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D1234567-89AB-4CDE-8F01-23456789ABCD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D1234567-89AB-4CDE-8F01-23456789ABCD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D1234567-89AB-4CDE-8F01-23456789ABCD}.Release|Any CPU.Build.0 = Release|Any CPU
 		{2439FABE-89EA-3D65-6826-A5394181AAE7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{2439FABE-89EA-3D65-6826-A5394181AAE7}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{2439FABE-89EA-3D65-6826-A5394181AAE7}.Release|Any CPU.ActiveCfg = Release|Any CPU
