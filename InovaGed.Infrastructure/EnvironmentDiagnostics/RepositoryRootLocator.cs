@@ -32,6 +32,6 @@ public sealed class RepositoryRootLocator(IEnvironmentContext environment) : IRe
         }
         return null;
     }
-    private static string[] Evidence(string root) => ["InovaGed.sln", "global.json", "Directory.Build.props"]
+    private static string[] Evidence(string root) => new[] { "InovaGed.sln", "global.json", "Directory.Build.props" }
         .Where(file => File.Exists(Path.Combine(root, file))).ToArray();
 }
