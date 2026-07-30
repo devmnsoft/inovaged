@@ -121,11 +121,10 @@
                     </div>
 
                     <div class="topbar-actions">
-                        <form class="topbar-search d-none d-xl-flex" role="search" asp-controller="GedSearch" asp-action="Index" method="get">
-                            <label class="visually-hidden" for="global-search">Busca global</label>
+                        <button class="topbar-search d-none d-xl-flex" type="button" data-command-open aria-haspopup="dialog" aria-controls="appCommandPalette">
                             <i class="bi bi-search" aria-hidden="true"></i>
-                            <input id="global-search" name="q" type="search" placeholder="Busca global" autocomplete="off" />
-                        </form>
+                            <span>Busca global</span><kbd>Ctrl K</kbd>
+                        </button>
                         <partial name="AppShell/_AppNotifications" />
                         <a class="btn btn-sm btn-light border" asp-controller="Manual" asp-action="Index" aria-label="Ajuda"><i class="bi bi-question-circle" aria-hidden="true"></i></a>
 
