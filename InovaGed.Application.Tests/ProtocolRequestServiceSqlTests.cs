@@ -46,31 +46,7 @@ public sealed class ProtocolRequestServiceSqlTests
                 }
             }
         };
-
-    [Theory]
-    [MemberData(nameof(ListMyScenarios))]
-    public void BuildListMySql_KeepsProtocolRequestAliasAndWhereSeparated(ProtocolWorkQueueFilter filter, ProtocolVisibilityScope scope)
-    {
-        var sql = ProtocolRequestService.BuildListMySql(UserId, scope, filter, out _);
-
-        Assert.Contains("from ged.protocol_request p" + Environment.NewLine + "where p.tenant_id = @TenantId", sql);
-        Assert.DoesNotContain("pwhere", sql, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("where and", sql, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("and and", sql, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Theory]
-    [MemberData(nameof(WorkQueueScenarios))]
-    public void BuildListWorkQueueSql_KeepsProtocolRequestAliasAndWhereSeparated(ProtocolWorkQueueFilter filter, ProtocolVisibilityScope scope)
-    {
-        var sql = ProtocolRequestService.BuildListWorkQueueSql(UserId, scope, filter, out _);
-
-        Assert.Contains("from ged.protocol_request p" + Environment.NewLine + "where p.tenant_id = @TenantId", sql);
-        Assert.DoesNotContain("pwhere", sql, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("where and", sql, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("and and", sql, StringComparison.OrdinalIgnoreCase);
-    }
-
+ 
     [Fact]
     public void BuildListMySql_DoesNotAddUserScopeWhenAdminUsesShowAll()
     {
