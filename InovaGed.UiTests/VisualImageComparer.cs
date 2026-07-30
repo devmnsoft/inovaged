@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Advanced;
 using SixLabors.ImageSharp.PixelFormats;
 
 namespace InovaGed.UiTests;
