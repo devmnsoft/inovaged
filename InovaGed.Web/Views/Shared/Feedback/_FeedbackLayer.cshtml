@@ -1,0 +1,11 @@
+@using System.Text.Json
+@{
+    var feedback = new[] {
+        new { type = "success", message = TempData["Success"]?.ToString() },
+        new { type = "info", message = TempData["Info"]?.ToString() },
+        new { type = "warning", message = TempData["Warning"]?.ToString() },
+        new { type = "error", message = TempData["Error"]?.ToString() }
+    }.Where(x => !string.IsNullOrWhiteSpace(x.message));
+}
+<div id="appToastContainer" class="ig-toast-region" aria-live="polite" aria-relevant="additions"></div>
+<script type="application/json" id="serverFeedback">@Html.Raw(JsonSerializer.Serialize(feedback))</script>

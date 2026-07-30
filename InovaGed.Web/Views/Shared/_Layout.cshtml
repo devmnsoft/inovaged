@@ -126,6 +126,7 @@
                             <span>Busca global</span><kbd>Ctrl K</kbd>
                         </button>
                         <partial name="AppShell/_AppNotifications" />
+                        <button class="btn btn-sm btn-primary d-none d-md-inline-flex align-items-center gap-2" type="button" data-bs-toggle="offcanvas" data-bs-target="#assistantDrawer" aria-controls="assistantDrawer" title="Assistente InovaGED"><i class="bi bi-chat-square-text" aria-hidden="true"></i><span>Assistente</span></button>
                         <a class="btn btn-sm btn-light border" asp-controller="Manual" asp-action="Index" aria-label="Ajuda"><i class="bi bi-question-circle" aria-hidden="true"></i></a>
 
                         <div class="dropdown">
@@ -190,6 +191,7 @@
     <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js" asp-append-version="true"></script>
     <script src="~/lib/jquery-validation/dist/jquery.validate.min.js" asp-append-version="true"></script>
     <script src="~/lib/jquery-validation-unobtrusive/jquery.validate.unobtrusive.min.js" asp-append-version="true"></script>
+    <script src="~/js/inovaged-feedback.js" asp-append-version="true"></script>
     <script src="~/js/site.js" asp-append-version="true"></script>
 
     <partial name="AppShell/_AppCommandPalette" />
@@ -198,9 +200,7 @@
     @await RenderSectionAsync("Scripts", required: false)
 
 
-    <div id="appToastContainer"
-         class="toast-container position-fixed top-0 end-0 p-3">
-    </div>
+    <partial name="AppShell/_AppExperienceLayers" />
 
     <div class="modal fade" id="appConfirmModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
@@ -210,7 +210,8 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
                 </div>
                 <div class="modal-body">
-                    <p id="appConfirmMessage" class="mb-0">Deseja continuar?</p>
+                    <p id="appConfirmMessage">Deseja continuar?</p>
+                    <input id="appConfirmRequiredText" class="form-control" autocomplete="off" hidden />
                 </div>
                 <div class="modal-footer">
                     <button type="button" id="appConfirmCancel" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
@@ -221,6 +222,10 @@
     </div>
 
     <script>
+        document.getElementById('assistantSearchButton')?.addEventListener('click', function () {
+            const query = document.getElementById('assistantQuestion')?.value.trim();
+            if (query) window.location.assign('/SmartSearch?query=' + encodeURIComponent(query));
+        });
         (function () {
             async function loadClassificationBadge() {
                 try {
