@@ -1,1 +1,0 @@
-.form-control,.form-select,.btn{min-height:40px;border-radius:var(--ig-radius-control)}.form-control:focus,.form-select:focus{border-color:var(--ig-primary-500);box-shadow:0 0 0 3px rgb(59 130 246 / .16)}.btn{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;font-weight:500}.btn-primary{background:var(--ig-primary-600);border-color:var(--ig-primary-600)}

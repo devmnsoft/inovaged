@@ -10,13 +10,13 @@ public sealed class ClassicThemeContractTests
     {
         var layout = Read("InovaGed.Web/Views/Shared/_Layout.cshtml");
         var auth = Read("InovaGed.Web/Views/Shared/_LayoutAuth.cshtml");
-        var theme = Read("InovaGed.Web/wwwroot/css/themes/inovaged-classic.css");
+        var theme = Read("InovaGed.Web/wwwroot/css/inovaged.tokens.css");
 
         Assert.Contains("data-theme=\"inovaged-classic\"", layout);
         Assert.Contains("data-theme=\"inovaged-classic\"", auth);
-        Assert.Contains("--ig-primary-600: #2563eb", theme);
-        Assert.Contains("--ig-accent-500: #22c55e", theme);
-        Assert.Contains("linear-gradient(135deg, #2563eb 0%, #22c55e 100%)", theme);
+        Assert.Contains("--ig-primary-600:#2563eb", theme);
+        Assert.Contains("--ig-accent-500:#22c55e", theme);
+        Assert.Contains("linear-gradient(135deg,#2563eb,#22c55e)", theme);
         Assert.DoesNotMatch(new Regex("(purple|violet|#7c3aed|#8b5cf6)", RegexOptions.IgnoreCase), theme);
     }
 

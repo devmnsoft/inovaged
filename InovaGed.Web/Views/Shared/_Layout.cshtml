@@ -63,25 +63,12 @@
     <link href="~/lib/bootstrap/dist/css/bootstrap.min.css" rel="stylesheet" />
     <link href="~/lib/bootstrap-icons/font/bootstrap-icons.min.css" rel="stylesheet" />
     <link rel="icon" type="image/svg+xml" href="~/favicon.svg" asp-append-version="true" />
-    <link rel="stylesheet" href="~/css/design-system/tokens.css" asp-append-version="true" />
-    <link rel="stylesheet" href="~/css/design-system/reset.css" asp-append-version="true" />
-    <link rel="stylesheet" href="~/css/design-system/typography.css" asp-append-version="true" />
-    <link rel="stylesheet" href="~/css/design-system/layout.css" asp-append-version="true" />
-    <link rel="stylesheet" href="~/css/design-system/navigation.css" asp-append-version="true" />
-    <link rel="stylesheet" href="~/css/design-system/components.css" asp-append-version="true" />
-    <link rel="stylesheet" href="~/css/design-system/forms.css" asp-append-version="true" />
-    <link rel="stylesheet" href="~/css/design-system/tables.css" asp-append-version="true" />
-    <link rel="stylesheet" href="~/css/design-system/feedback.css" asp-append-version="true" />
-    <link rel="stylesheet" href="~/css/design-system/responsive.css" asp-append-version="true" />
-    <link rel="stylesheet" href="~/css/design-system/accessibility.css" asp-append-version="true" />
-    <link rel="stylesheet" href="~/css/themes/inovaged-classic.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/inovaged.tokens.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/inovaged.base.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/inovaged.shell.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/inovaged.components.css" asp-append-version="true" />
-    <link rel="stylesheet" href="~/css/inovaged.layout.css" asp-append-version="true" />
-    <link rel="stylesheet" href="~/css/pages/administration.css" asp-append-version="true" />
-    <link rel="stylesheet" href="~/css/inovaged.utilities.css" asp-append-version="true" />
-
-
     @await RenderSectionAsync("Styles", required: false)
+    <link rel="stylesheet" href="~/css/inovaged.utilities.css" asp-append-version="true" />
 </head>
 
 <body data-theme="inovaged-classic" class="@(isAuthenticated ? "layout-app" : "layout-auth")">

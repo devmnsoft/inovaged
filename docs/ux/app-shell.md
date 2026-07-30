@@ -1,3 +1,3 @@
 # App shell
 
-A shell é formada por sidebar 272 px (76 px recolhida), topbar, breadcrumb, conteúdo, navegação móvel, usuário, notificações e paleta de comandos. A preferência de recolhimento é local e a busca de módulos não envia dados ao servidor. `Ctrl+K` abre a busca global acessível.
+O shell usa flex, sidebar de 260 px, main flexível com `min-width: 0`, topbar opaca de 60 px e conteúdo fluido até 1600 px. Em desktop a preferência recolhida usa 76 px e `localStorage`; abaixo de 992 px a navegação é offcanvas. Não há posicionamento absoluto do conteúdo principal.

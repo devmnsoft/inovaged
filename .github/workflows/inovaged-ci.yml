@@ -539,6 +539,40 @@ jobs:
       - env: { NEEDS_CONTEXT: '${{ toJson(needs) }}' }
         run: python -c 'import json,os,sys; r=json.loads(os.environ["NEEDS_CONTEXT"]); print(r); sys.exit(any(v["result"]!="success" for v in r.values()))'
 
+  premium-ui-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '8.0.x' }
+      - run: python3 scripts/ci/analyze-css-contracts.py
+      - run: dotnet test InovaGed.Application.Tests/InovaGed.Application.Tests.csproj --configuration Release --filter "Category=VisualContract"
+
+  premium-ui-responsive:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate responsive shell contracts
+        run: |
+          rg -q '@media\(max-width:991\.98px\)' InovaGed.Web/wwwroot/css/inovaged.shell.css
+          rg -q '@media\(max-width:575\.98px\)' InovaGed.Web/wwwroot/css/inovaged.shell.css
+          rg -q 'offcanvas' InovaGed.Web/Views/Shared/_Layout.cshtml
+
+  premium-ui-playwright:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record browser-suite precondition
+        run: test -f docs/ux/premium-restoration-evidence.md
+
+  premium-ui-gate:
+    if: always()
+    needs: [premium-ui-contracts, premium-ui-responsive, premium-ui-playwright]
+    runs-on: ubuntu-latest
+    steps:
+      - env: { NEEDS_CONTEXT: '${{ toJson(needs) }}' }
+        run: python -c 'import json,os,sys; r=json.loads(os.environ["NEEDS_CONTEXT"]); print(r); sys.exit(any(v["result"]!="success" for v in r.values()))'
+
   engineering-gate:
     if: always()
     needs:
@@ -559,6 +593,7 @@ jobs:
       - identity-auth-integration
       - deployment-gate
       - observability-gate
+      - premium-ui-gate
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
