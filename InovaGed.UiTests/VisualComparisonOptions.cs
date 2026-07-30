@@ -8,6 +8,8 @@ public sealed record VisualComparisonOptions
 
     public string? DiffPath { get; init; }
 
+    public bool HighlightToleratedDifferences { get; init; }
+
     public static VisualComparisonOptions AppShell(string? diffPath = null) =>
         new() { MaximumDifferenceRatio = 0.005, DiffPath = diffPath };
 

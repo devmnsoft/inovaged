@@ -1,1 +1,12 @@
-<div class="modal fade" id="appCommandPalette" tabindex="-1" aria-labelledby="command-title"><div class="modal-dialog modal-lg"><div class="modal-content"><div class="modal-header"><h2 class="modal-title h5" id="command-title">Busca global</h2><button class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button></div><div class="modal-body"><label for="global-search" class="form-label">Documentos, pastas, protocolos, empréstimos ou usuários</label><input id="global-search" class="form-control" type="search" autocomplete="off" /><div class="ig-empty-state mt-3" aria-live="polite">Digite para pesquisar no ambiente autorizado.</div></div></div></div></div>
+<div class="modal fade command-palette" id="appCommandPalette" tabindex="-1" aria-labelledby="command-title" aria-describedby="command-help">
+  <div class="modal-dialog modal-lg modal-dialog-centered"><div class="modal-content">
+    <div class="modal-header border-0 pb-0"><h2 class="modal-title h5" id="command-title">Ir para...</h2><button class="btn-close" data-bs-dismiss="modal" aria-label="Fechar busca"></button></div>
+    <div class="modal-body">
+      <label for="command-search" class="visually-hidden">Pesquisar módulos e ações autorizadas</label>
+      <div class="command-palette-search"><i class="bi bi-search" aria-hidden="true"></i><input id="command-search" class="form-control" type="search" autocomplete="off" placeholder="Pesquise um módulo ou ação" aria-controls="command-results" aria-activedescendant="" /></div>
+      <p id="command-help" class="small text-muted my-2">Use ↑ ↓ para navegar, Enter para abrir e Esc para fechar.</p>
+      <div id="command-results" class="command-results" role="listbox" aria-label="Resultados autorizados"></div>
+      <div id="command-empty" class="ig-empty-state py-4" aria-live="polite" hidden>Nenhum comando autorizado encontrado.</div>
+    </div>
+  </div></div>
+</div>
