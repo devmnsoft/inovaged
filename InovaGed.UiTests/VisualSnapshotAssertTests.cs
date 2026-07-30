@@ -1,5 +1,5 @@
 using Xunit.Sdk;
-
+using Xunit;
 namespace InovaGed.UiTests;
 
 public sealed class VisualSnapshotAssertTests : IDisposable
