@@ -548,7 +548,7 @@ jobs:
       - run: dotnet restore InovaGed.UiTests/InovaGed.UiTests.csproj
       - run: dotnet build InovaGed.UiTests/InovaGed.UiTests.csproj --no-restore --configuration Release
 
-  premium-ui-browser-tests:
+  ui-tests-build:
     needs: premium-ui-build
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -581,6 +581,7 @@ jobs:
           echo "::add-mask::$INOVAGED_UI_PASSWORD"
           dotnet restore InovaGed.UiTests/InovaGed.UiTests.csproj
           dotnet build InovaGed.UiTests/InovaGed.UiTests.csproj --no-restore --configuration Release
+          dotnet build InovaGed.Web/InovaGed.Web.csproj --configuration Release
       - name: Install Playwright Chromium
         run: pwsh InovaGed.UiTests/bin/Release/net8.0/playwright.ps1 install --with-deps chromium
       - name: Apply official migrations
@@ -609,7 +610,7 @@ jobs:
             TestResults/
 
   premium-ui-visual-diff:
-    needs: premium-ui-browser-tests
+    needs: ui-tests-build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -619,7 +620,7 @@ jobs:
         run: python3 scripts/ci/assert-ui-tests-executed.py
 
   premium-ui-responsive:
-    needs: premium-ui-browser-tests
+    needs: ui-tests-build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -629,7 +630,7 @@ jobs:
         run: python3 scripts/ci/assert-ui-tests-executed.py
 
   premium-ui-accessibility:
-    needs: premium-ui-browser-tests
+    needs: ui-tests-build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -639,7 +640,7 @@ jobs:
         run: python3 scripts/ci/assert-ui-tests-executed.py
 
   premium-ui-interactions:
-    needs: premium-ui-browser-tests
+    needs: ui-tests-build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -649,7 +650,7 @@ jobs:
         run: python3 scripts/ci/assert-ui-tests-executed.py
 
   premium-ui-performance:
-    needs: premium-ui-browser-tests
+    needs: ui-tests-build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -659,7 +660,7 @@ jobs:
         run: python3 scripts/ci/assert-ui-tests-executed.py
 
   premium-ui-artifacts:
-    needs: premium-ui-browser-tests
+    needs: ui-tests-build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -670,7 +671,7 @@ jobs:
 
   premium-ui-gate:
     if: always()
-    needs: [premium-ui-build, premium-ui-browser-tests, premium-ui-visual-diff, premium-ui-responsive, premium-ui-accessibility, premium-ui-interactions, premium-ui-performance, premium-ui-artifacts]
+    needs: [premium-ui-build, ui-tests-build, premium-ui-visual-diff, premium-ui-responsive, premium-ui-accessibility, premium-ui-interactions, premium-ui-performance, premium-ui-artifacts]
     runs-on: ubuntu-latest
     steps:
       - env: { NEEDS_CONTEXT: '${{ toJson(needs) }}' }

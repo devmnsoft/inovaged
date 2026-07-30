@@ -34,7 +34,16 @@ public sealed class BrowserTestMatrix
     public async Task Page_matches_reviewed_visual_baseline(string profile, string name, string path, int width, int height)
     {
         var baseUrl = Environment.GetEnvironmentVariable("INOVAGED_UI_BASE_URL");
-        if (string.IsNullOrWhiteSpace(baseUrl)) return; // Browser suite is activated only by its isolated CI environment.
+        if (string.IsNullOrWhiteSpace(baseUrl))
+        {
+            var runningInCi = string.Equals(Environment.GetEnvironmentVariable("CI"), "true", StringComparison.OrdinalIgnoreCase);
+            if (runningInCi)
+            {
+                throw new InvalidOperationException("INOVAGED_UI_BASE_URL é obrigatório para os testes de UI no CI.");
+            }
+
+            return; // Local unit-test runs do not require the isolated browser environment.
+        }
 
         using var playwright = await Playwright.CreateAsync();
         await using var browser = await playwright.Chromium.LaunchAsync(new() { Headless = true });
@@ -57,18 +66,30 @@ public sealed class BrowserTestMatrix
         Assert.NotNull(response);
         Assert.True(response!.Status < 500, $"{path} returned HTTP {response.Status}");
         await page.EvaluateAsync("document.fonts.ready");
-        await page.Locator("[data-dynamic], time").EvaluateAllAsync("nodes => nodes.forEach(n => n.textContent = '30/07/2026 12:00')");
+        await page.EvaluateAsync(
+            """
+            () => {
+                document
+                    .querySelectorAll('[data-dynamic], time')
+                    .forEach(node => {
+                        node.textContent = '30/07/2026 12:00';
+                    });
+            }
+            """);
 
-        var relativeScreenshot = Path.Combine("Screenshots", "actual", $"{Slug(profile)}-{Slug(name)}-{width}x{height}.png");
-        var screenshot = Path.Combine(EvidenceRoot, relativeScreenshot);
-        Directory.CreateDirectory(Path.GetDirectoryName(screenshot)!);
-        await page.ScreenshotAsync(new() { Path = screenshot, FullPage = true, Animations = ScreenshotAnimations.Disabled });
-        await Assertions.Expect(page).ToHaveScreenshotAsync(new PageAssertionsToHaveScreenshotOptions
+        var screenshotFileName = $"{Slug(profile)}-{Slug(name)}-{width}x{height}.png";
+        var relativeScreenshot = Path.Combine("Screenshots", "actual", screenshotFileName);
+        var screenshotPath = Path.Combine(EvidenceRoot, relativeScreenshot);
+        Directory.CreateDirectory(Path.GetDirectoryName(screenshotPath)!);
+        var screenshotBytes = await page.ScreenshotAsync(new PageScreenshotOptions
         {
+            Path = screenshotPath,
             FullPage = true,
-            Animations = ScreenshotAnimations.Disabled,
-            MaxDiffPixelRatio = name == "Login" ? 0.005 : 0.015
+            Animations = ScreenshotAnimations.Disabled
         });
+
+        var goldenPath = Path.Combine(EvidenceRoot, "Screenshots", "golden", screenshotFileName);
+        await VisualSnapshotAssert.MatchAsync(screenshotBytes, goldenPath, screenshotPath);
 
         Assert.Empty(consoleErrors);
         await RecordAsync(profile, name, width, height, relativeScreenshot);
