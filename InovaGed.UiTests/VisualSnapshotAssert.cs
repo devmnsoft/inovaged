@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using Xunit.Sdk;
 
 namespace InovaGed.UiTests;
@@ -54,15 +53,19 @@ public static class VisualSnapshotAssert
                 "Crie o baseline localmente e aprove-o somente após revisão visual explícita.");
         }
 
-        var goldenBytes = await File.ReadAllBytesAsync(goldenPath, cancellationToken);
-        var goldenHash = Convert.ToHexString(SHA256.HashData(goldenBytes));
-        var actualHash = Convert.ToHexString(SHA256.HashData(actualBytes));
-        if (goldenBytes.Length != actualBytes.Length || !CryptographicOperations.FixedTimeEquals(
-                Convert.FromHexString(goldenHash), Convert.FromHexString(actualHash)))
+        var diffPath = Path.Combine(Path.GetDirectoryName(actualPath)!, "diff", Path.GetFileName(actualPath));
+        var result = await new VisualImageComparer().CompareAsync(
+            goldenPath,
+            actualPath,
+            VisualComparisonOptions.Page(diffPath),
+            cancellationToken);
+        if (!result.Matches)
         {
             throw new XunitException(
                 $"Visual snapshot mismatch.\n\nGolden:\n{goldenPath}\n\nActual:\n{actualPath}\n\n" +
-                $"Golden SHA-256:\n{goldenHash}\n\nActual SHA-256:\n{actualHash}\n\n" +
+                $"Pixels diferentes: {result.DifferentPixels}/{result.TotalPixels} ({result.DifferenceRatio:P3})\n\n" +
+                $"Diff:\n{result.DiffPath ?? "não gerado (dimensões divergentes)"}\n\n" +
+                $"Golden SHA-256:\n{result.GoldenSha256}\n\nActual SHA-256:\n{result.ActualSha256}\n\n" +
                 "Atualize o baseline somente após revisão visual explícita.");
         }
     }
