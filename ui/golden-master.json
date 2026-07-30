@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "1.0",
+  "commitSha": "0aac61be26eebc23e8d4c7bca586f9a5dfd5f79d",
+  "selectedAtUtc": "2026-07-30T00:00:00Z",
+  "selectionReason": "Última fundação premium anterior às simplificações da PR #308, escolhida por inspeção comparativa do shell, login, GED e CSS; a main permanece a fonte funcional.",
+  "pages": ["Login", "Dashboard", "GED", "HospitalSearch", "Administration", "Loans", "Protocols", "Continuity"],
+  "viewports": ["390x844", "768x1024", "1366x768", "1440x900", "1920x1080"]
+}

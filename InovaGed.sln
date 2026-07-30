@@ -32,12 +32,18 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "InovaGed.Deployment.Tool", 
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "InovaGed.Deployment.Tool.Tests", "InovaGed.Deployment.Tool.Tests\InovaGed.Deployment.Tool.Tests.csproj", "{E2345678-9ABC-4DEF-8012-3456789ABCDE}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "InovaGed.UiTests", "InovaGed.UiTests\InovaGed.UiTests.csproj", "{D1010101-ABCD-4CCC-8DDD-101010101010}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{D1010101-ABCD-4CCC-8DDD-101010101010}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D1010101-ABCD-4CCC-8DDD-101010101010}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D1010101-ABCD-4CCC-8DDD-101010101010}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D1010101-ABCD-4CCC-8DDD-101010101010}.Release|Any CPU.Build.0 = Release|Any CPU
 		{E2345678-9ABC-4DEF-8012-3456789ABCDE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{E2345678-9ABC-4DEF-8012-3456789ABCDE}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{E2345678-9ABC-4DEF-8012-3456789ABCDE}.Release|Any CPU.ActiveCfg = Release|Any CPU
