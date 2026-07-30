@@ -1,0 +1,15 @@
+@model InovaGed.Web.Models.AppShell.AppShellVM
+<aside class="sidebar app-sidebar d-none d-lg-flex" aria-label="Navegação principal">
+    <partial name="AppShell/_Brand" />
+    <nav class="sidebar-menu" aria-label="Módulos">
+        <partial name="AppShell/_Menu" model="Model" />
+    </nav>
+    <div class="sidebar-account">
+        <div class="sidebar-section-title">Conta</div>
+        <form asp-controller="Account" asp-action="Logout" method="post">
+            @Html.AntiForgeryToken()
+            <button type="submit" class="sidebar-logout"><i class="bi bi-box-arrow-right" aria-hidden="true"></i><span>Sair</span></button>
+        </form>
+    </div>
+    <footer class="sidebar-footer">© @DateTime.UtcNow.Year InovaGED</footer>
+</aside>

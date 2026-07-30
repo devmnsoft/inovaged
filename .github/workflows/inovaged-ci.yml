@@ -677,6 +677,63 @@ jobs:
       - env: { NEEDS_CONTEXT: '${{ toJson(needs) }}' }
         run: python -c 'import json,os,sys; r=json.loads(os.environ["NEEDS_CONTEXT"]); print(r); sys.exit(any(v["result"]!="success" for v in r.values()))'
 
+  template-recovery-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '8.0.x' }
+      - run: dotnet build InovaGed.Web/InovaGed.Web.csproj --configuration Release
+
+  template-recovery-routes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '8.0.x' }
+      - run: dotnet test InovaGed.UiTests/InovaGed.UiTests.csproj --configuration Release --filter "FullyQualifiedName~MenuRouteRecoveryTests"
+
+  template-recovery-browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '8.0.x' }
+      - run: dotnet test InovaGed.UiTests/InovaGed.UiTests.csproj --configuration Release --filter "FullyQualifiedName~AppShellRecoveryTests|FullyQualifiedName~TopbarRecoveryTests"
+
+  template-recovery-mobile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '8.0.x' }
+      - run: dotnet test InovaGed.UiTests/InovaGed.UiTests.csproj --configuration Release --filter "FullyQualifiedName~MobileNavigationRecoveryTests"
+
+  template-recovery-feedback:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '8.0.x' }
+      - run: dotnet test InovaGed.UiTests/InovaGed.UiTests.csproj --configuration Release --filter "FullyQualifiedName~FeedbackRecoveryTests"
+
+  template-recovery-visual:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '8.0.x' }
+      - run: dotnet test InovaGed.UiTests/InovaGed.UiTests.csproj --configuration Release --filter "FullyQualifiedName~SidebarRecoveryTests|FullyQualifiedName~LegacyParityTests"
+      - run: test -d InovaGed.UiTests/Screenshots/legacy -a -d InovaGed.UiTests/Screenshots/current -a -d InovaGed.UiTests/Screenshots/restored -a -d InovaGed.UiTests/Screenshots/diff
+
+  template-recovery-gate:
+    if: always()
+    needs: [template-recovery-build, template-recovery-routes, template-recovery-browser, template-recovery-mobile, template-recovery-feedback, template-recovery-visual]
+    runs-on: ubuntu-latest
+    steps:
+      - env: { NEEDS_CONTEXT: '${{ toJson(needs) }}' }
+        run: python -c 'import json,os,sys; r=json.loads(os.environ["NEEDS_CONTEXT"]); print(r); sys.exit(any(v["result"]!="success" for v in r.values()))'
+
   engineering-gate:
     if: always()
     needs:
@@ -698,6 +755,7 @@ jobs:
       - deployment-gate
       - observability-gate
       - premium-ui-gate
+      - template-recovery-gate
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:

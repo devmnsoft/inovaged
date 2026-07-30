@@ -178,6 +178,7 @@ builder.Services.AddSignalR();
 builder.Services.AddScoped<IDateTimeDisplayService, DateTimeDisplayService>();
 builder.Services.AddSingleton<IIconCatalog, IconCatalog>();
 builder.Services.AddScoped<IUiModuleAvailabilityService, UiModuleAvailabilityService>();
+builder.Services.AddScoped<IUserShellContextService, UserShellContextService>();
 builder.Services.AddSingleton<IClock, SystemClock>();
 builder.Services.AddSingleton<ITenantTimeZoneService, TenantTimeZoneService>();
 builder.Services.Configure<SchemaRepairOptions>(builder.Configuration.GetSection("SchemaRepair"));
