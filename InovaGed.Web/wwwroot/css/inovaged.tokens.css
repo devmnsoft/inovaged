@@ -1,8 +1,8 @@
 :root {
   --ig-primary-700:#1d4ed8; --ig-primary-600:#2563eb; --ig-primary-500:#3b82f6; --ig-primary-100:#dbeafe; --ig-primary-50:#eff6ff;
   --ig-accent-600:#16a34a; --ig-accent-500:#22c55e; --ig-accent-100:#dcfce7; --ig-accent-50:#f0fdf4;
-  --ig-page:#f3f4f6; --ig-background:#f3f4f6; --ig-surface:#fff; --ig-surface-soft:#f9fafb; --ig-surface-muted:#f3f4f6;
-  --ig-text:#111827; --ig-text-secondary:#4b5563; --ig-text-muted:#6b7280; --ig-border:#e5e7eb; --ig-border-strong:#d1d5db;
+  --ig-page: #f3f4f6; --ig-page-background: #f3f4f6; --ig-background:#f3f4f6; --ig-surface:#fff; --ig-surface-soft:#f9fafb; --ig-surface-muted:#f3f4f6;
+  --ig-text: #111827; --ig-text-primary: #111827; --ig-text-secondary:#4b5563; --ig-text-muted:#6b7280; --ig-border:#e5e7eb; --ig-border-strong:#d1d5db;
   --ig-success:#16a34a; --ig-success-600:#16a34a; --ig-success-700:#15803d; --ig-success-100:#dcfce7;
   --ig-warning:#d97706; --ig-warning-600:#d97706; --ig-warning-700:#b45309; --ig-warning-100:#fef3c7;
   --ig-danger:#dc2626; --ig-danger-600:#dc2626; --ig-danger-700:#b91c1c; --ig-danger-100:#fee2e2;

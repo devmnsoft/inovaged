@@ -539,35 +539,138 @@ jobs:
       - env: { NEEDS_CONTEXT: '${{ toJson(needs) }}' }
         run: python -c 'import json,os,sys; r=json.loads(os.environ["NEEDS_CONTEXT"]); print(r); sys.exit(any(v["result"]!="success" for v in r.values()))'
 
-  premium-ui-contracts:
+  premium-ui-build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with: { dotnet-version: '8.0.x' }
-      - run: python3 scripts/ci/analyze-css-contracts.py
-      - run: dotnet test InovaGed.Application.Tests/InovaGed.Application.Tests.csproj --configuration Release --filter "Category=VisualContract"
+      - run: dotnet restore InovaGed.UiTests/InovaGed.UiTests.csproj
+      - run: dotnet build InovaGed.UiTests/InovaGed.UiTests.csproj --no-restore --configuration Release
+
+  premium-ui-browser-tests:
+    needs: premium-ui-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_USER: postgres, POSTGRES_PASSWORD: postgres, POSTGRES_DB: inovaged_ui }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd="pg_isready -U postgres -d inovaged_ui"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+    env:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://127.0.0.1:5080
+      ConnectionStrings__DefaultConnection: Host=localhost;Port=5432;Database=inovaged_ui;Username=postgres;Password=postgres
+      INOVAGED_UI_BASE_URL: http://127.0.0.1:5080
+      INOVAGED_UI_PASSWORD: ${{ secrets.INOVAGED_UI_PASSWORD }}
+      INOVAGED_DEV_SEED_PASSWORD: ${{ secrets.INOVAGED_UI_PASSWORD }}
+      SystemSeed__Enabled: 'true'
+      SystemSeed__FailFastOnSeedError: 'true'
+      Ocr__Enabled: 'false'
+      DigitalSignature__Enabled: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '8.0.x' }
+      - name: Restore and build the real browser suite
+        run: |
+          test -n "$INOVAGED_UI_PASSWORD"
+          echo "::add-mask::$INOVAGED_UI_PASSWORD"
+          dotnet restore InovaGed.UiTests/InovaGed.UiTests.csproj
+          dotnet build InovaGed.UiTests/InovaGed.UiTests.csproj --no-restore --configuration Release
+      - name: Install Playwright Chromium
+        run: pwsh InovaGed.UiTests/bin/Release/net8.0/playwright.ps1 install --with-deps chromium
+      - name: Apply official migrations
+        run: psql "postgresql://postgres:postgres@localhost:5432/inovaged_ui" -v ON_ERROR_STOP=1 -f database/apply_all_required_migrations.sql
+      - name: Start InovaGED and await readiness
+        shell: bash
+        run: |
+          dotnet run --project InovaGed.Web/InovaGed.Web.csproj --no-build --configuration Release >InovaGed.UiTests/Reports/web.log 2>&1 &
+          echo $! > InovaGed.UiTests/Reports/web.pid
+          for attempt in {1..60}; do curl --fail --silent http://127.0.0.1:5080/health/ready && exit 0; sleep 2; done
+          cat InovaGed.UiTests/Reports/web.log
+          exit 1
+      - name: Execute Playwright interactions and screenshot comparisons
+        run: dotnet test InovaGed.UiTests/InovaGed.UiTests.csproj --no-build --configuration Release --logger "trx;LogFileName=ui.trx" --results-directory TestResults
+      - name: Reject empty or simulated UI execution
+        run: python3 scripts/ci/assert-ui-tests-executed.py
+      - name: Publish browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: premium-ui-browser-evidence
+          if-no-files-found: error
+          path: |
+            InovaGed.UiTests/Screenshots/
+            InovaGed.UiTests/Reports/
+            TestResults/
+
+  premium-ui-visual-diff:
+    needs: premium-ui-browser-tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: premium-ui-browser-evidence, path: InovaGed.UiTests }
+      - name: Validate visual comparison
+        run: python3 scripts/ci/assert-ui-tests-executed.py
 
   premium-ui-responsive:
+    needs: premium-ui-browser-tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Validate responsive shell contracts
-        run: |
-          rg -q '@media\(max-width:991\.98px\)' InovaGed.Web/wwwroot/css/inovaged.shell.css
-          rg -q '@media\(max-width:575\.98px\)' InovaGed.Web/wwwroot/css/inovaged.shell.css
-          rg -q 'offcanvas' InovaGed.Web/Views/Shared/_Layout.cshtml
+      - uses: actions/download-artifact@v4
+        with: { name: premium-ui-browser-evidence, path: InovaGed.UiTests }
+      - name: Validate responsive matrix
+        run: python3 scripts/ci/assert-ui-tests-executed.py
 
-  premium-ui-playwright:
+  premium-ui-accessibility:
+    needs: premium-ui-browser-tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Record browser-suite precondition
-        run: test -f docs/ux/premium-restoration-evidence.md
+      - uses: actions/download-artifact@v4
+        with: { name: premium-ui-browser-evidence, path: InovaGed.UiTests }
+      - name: Validate accessibility browser run
+        run: python3 scripts/ci/assert-ui-tests-executed.py
+
+  premium-ui-interactions:
+    needs: premium-ui-browser-tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: premium-ui-browser-evidence, path: InovaGed.UiTests }
+      - name: Validate keyboard and interaction run
+        run: python3 scripts/ci/assert-ui-tests-executed.py
+
+  premium-ui-performance:
+    needs: premium-ui-browser-tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: premium-ui-browser-evidence, path: InovaGed.UiTests }
+      - name: Validate performance evidence
+        run: python3 scripts/ci/assert-ui-tests-executed.py
+
+  premium-ui-artifacts:
+    needs: premium-ui-browser-tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: premium-ui-browser-evidence, path: InovaGed.UiTests }
+      - name: Validate published UI artifacts
+        run: python3 scripts/ci/assert-ui-tests-executed.py
 
   premium-ui-gate:
     if: always()
-    needs: [premium-ui-contracts, premium-ui-responsive, premium-ui-playwright]
+    needs: [premium-ui-build, premium-ui-browser-tests, premium-ui-visual-diff, premium-ui-responsive, premium-ui-accessibility, premium-ui-interactions, premium-ui-performance, premium-ui-artifacts]
     runs-on: ubuntu-latest
     steps:
       - env: { NEEDS_CONTEXT: '${{ toJson(needs) }}' }

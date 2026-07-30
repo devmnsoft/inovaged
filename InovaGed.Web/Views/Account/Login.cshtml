@@ -1,31 +1,115 @@
 @model InovaGed.Web.Models.Auth.LoginVM
-@{ ViewData["Title"] = "Entrar"; Layout = "_LayoutAuth"; }
+@{
+    ViewData["Title"] = "Entrar";
+    Layout = "_LayoutAuth";
+}
+
 <div class="login-page">
-  <div class="login-shell">
-    <aside class="login-info" aria-label="Apresentação do InovaGED">
-      <div class="login-brand"><span class="login-logo" aria-hidden="true">IG</span><div><h1>InovaGED</h1><p>Gestão Eletrônica de Documentos</p></div></div>
-      <div class="login-message"><i class="bi bi-folder-check" aria-hidden="true"></i><h2>Gestão documental segura, organizada e acessível.</h2><p>Documentos e processos em um ambiente institucional simples e confiável.</p></div>
-      <small>© @DateTime.Now.Year InovaGED</small>
-    </aside>
-    <main class="login-panel">
-      <div class="login-card">
-        <div class="login-mobile-brand"><span class="login-logo" aria-hidden="true">IG</span><strong>InovaGED</strong></div>
-        <h2>Bem-vindo</h2><p>Informe suas credenciais para acessar o sistema.</p>
-        <form id="loginForm" asp-action="Login" method="post" novalidate>
-          @Html.AntiForgeryToken()<input type="hidden" asp-for="ReturnUrl" /><input type="hidden" asp-for="TenantSlug" value="default" />
-          <div class="mb-3"><label asp-for="Email" class="form-label">E-mail ou CPF</label><input asp-for="Email" class="form-control" autocomplete="username" /><span asp-validation-for="Email" class="text-danger small"></span></div>
-          <div class="mb-2"><label asp-for="Password" class="form-label"></label><div class="input-group"><input asp-for="Password" type="password" class="form-control" id="passwordInput" autocomplete="current-password" /><button type="button" class="btn btn-outline-secondary password-toggle" aria-label="Mostrar ou ocultar senha" aria-pressed="false"><i class="bi bi-eye" aria-hidden="true"></i></button></div><span asp-validation-for="Password" class="text-danger small"></span></div>
-          @if (!ViewData.ModelState.IsValid) { <div class="alert alert-danger small mt-3" role="alert">@Html.ValidationSummary(excludePropertyErrors: true)</div> }
-          <button id="loginBtn" type="submit" class="btn btn-primary w-100 mt-3"><span class="btn-text"><i class="bi bi-box-arrow-in-right" aria-hidden="true"></i> Entrar</span><span class="btn-wait"><span class="spinner-border spinner-border-sm"></span> Entrando...</span></button>
-          <a class="forgot-link" href="@Url.Action("ForgotPassword", "Account")">Esqueci minha senha</a>
-        </form>
-      </div>
-    </main>
-  </div>
+    <div class="login-shell">
+        <aside class="login-info" aria-labelledby="login-product-title">
+            <div class="login-brand">
+                <span class="login-logo" aria-hidden="true">IG</span>
+                <div>
+                    <h1 id="login-product-title">InovaGED</h1>
+                    <p>Gestão Eletrônica de Documentos</p>
+                </div>
+            </div>
+
+            <div class="login-message">
+                <span class="login-eyebrow"><i class="bi bi-shield-check" aria-hidden="true"></i> Ambiente institucional</span>
+                <h2>Informação organizada para decisões mais seguras.</h2>
+                <p>Centralize documentos, preserve o histórico e encontre o que precisa em uma experiência clara e confiável.</p>
+
+                <div class="login-document-illustration" aria-hidden="true">
+                    <div class="login-folder"><i class="bi bi-folder2-open"></i></div>
+                    <div class="login-paper login-paper--back"></div>
+                    <div class="login-paper login-paper--front">
+                        <span></span><span></span><span></span>
+                        <i class="bi bi-check2-circle"></i>
+                    </div>
+                </div>
+            </div>
+
+            <small>InovaGED · Gestão documental segura</small>
+        </aside>
+
+        <main class="login-panel">
+            <div class="login-card">
+                <div class="login-mobile-brand">
+                    <span class="login-logo" aria-hidden="true">IG</span>
+                    <div><strong>InovaGED</strong><small>Gestão documental</small></div>
+                </div>
+                <header class="login-card-header">
+                    <span class="login-card-icon" aria-hidden="true"><i class="bi bi-person-lock"></i></span>
+                    <h2>Bem-vindo</h2>
+                    <p>Informe suas credenciais para acessar o sistema.</p>
+                </header>
+
+                <form id="loginForm" asp-action="Login" method="post" novalidate aria-busy="false">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" asp-for="ReturnUrl" />
+                    <input type="hidden" asp-for="TenantSlug" value="default" />
+
+                    <div class="mb-3">
+                        <label asp-for="Email" class="form-label">E-mail ou CPF</label>
+                        <div class="input-group">
+                            <span class="input-group-text" aria-hidden="true"><i class="bi bi-person"></i></span>
+                            <input asp-for="Email" class="form-control" autocomplete="username" placeholder="Digite seu e-mail ou CPF" autofocus />
+                        </div>
+                        <span asp-validation-for="Email" class="text-danger small"></span>
+                    </div>
+
+                    <div class="mb-2">
+                        <label asp-for="Password" class="form-label"></label>
+                        <div class="input-group">
+                            <span class="input-group-text" aria-hidden="true"><i class="bi bi-lock"></i></span>
+                            <input asp-for="Password" type="password" class="form-control" id="passwordInput" autocomplete="current-password" placeholder="Digite sua senha" />
+                            <button type="button" class="btn btn-outline-secondary password-toggle" aria-label="Mostrar senha" aria-pressed="false"><i class="bi bi-eye" aria-hidden="true"></i></button>
+                        </div>
+                        <span asp-validation-for="Password" class="text-danger small"></span>
+                    </div>
+
+                    @if (!ViewData.ModelState.IsValid)
+                    {
+                        <div class="alert alert-danger small mt-3" role="alert" aria-live="assertive">
+                            <i class="bi bi-exclamation-triangle me-1" aria-hidden="true"></i>
+                            @Html.ValidationSummary(excludePropertyErrors: true)
+                        </div>
+                    }
+
+                    <button id="loginBtn" type="submit" class="btn btn-primary w-100 mt-3">
+                        <span class="btn-text"><i class="bi bi-box-arrow-in-right" aria-hidden="true"></i> Entrar</span>
+                        <span class="btn-wait"><span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Entrando...</span>
+                    </button>
+                    <a class="forgot-link" href="@Url.Action("ForgotPassword", "Account")">Esqueci minha senha</a>
+                </form>
+                <footer class="login-security"><i class="bi bi-shield-lock" aria-hidden="true"></i> Seus dados são protegidos durante o acesso.</footer>
+            </div>
+        </main>
+    </div>
 </div>
+
 @section Scripts {
-  <partial name="_ValidationScriptsPartial" />
-  <script>
-    (() => { const form=document.getElementById('loginForm'); const button=document.getElementById('loginBtn'); const toggle=document.querySelector('.password-toggle'); const password=document.getElementById('passwordInput'); toggle?.addEventListener('click',()=>{const visible=password.type==='text';password.type=visible?'password':'text';toggle.setAttribute('aria-pressed',String(!visible));toggle.querySelector('i')?.classList.toggle('bi-eye',visible);toggle.querySelector('i')?.classList.toggle('bi-eye-slash',!visible);}); form?.addEventListener('submit',()=>{button?.classList.add('is-loading');button?.setAttribute('disabled','disabled');}); })();
-  </script>
+    <partial name="_ValidationScriptsPartial" />
+    <script>
+        (() => {
+            const form = document.getElementById('loginForm');
+            const button = document.getElementById('loginBtn');
+            const toggle = document.querySelector('.password-toggle');
+            const password = document.getElementById('passwordInput');
+            toggle?.addEventListener('click', () => {
+                const visible = password.type === 'text';
+                password.type = visible ? 'password' : 'text';
+                toggle.setAttribute('aria-pressed', String(!visible));
+                toggle.setAttribute('aria-label', visible ? 'Mostrar senha' : 'Ocultar senha');
+                toggle.querySelector('i')?.classList.toggle('bi-eye', visible);
+                toggle.querySelector('i')?.classList.toggle('bi-eye-slash', !visible);
+            });
+            form?.addEventListener('submit', () => {
+                form.setAttribute('aria-busy', 'true');
+                button?.classList.add('is-loading');
+                button?.setAttribute('disabled', 'disabled');
+            });
+        })();
+    </script>
 }
