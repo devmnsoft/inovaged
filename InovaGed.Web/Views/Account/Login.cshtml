@@ -1,271 +1,31 @@
 @model InovaGed.Web.Models.Auth.LoginVM
-@{
-    ViewData["Title"] = "Entrar";
-    Layout = "_LayoutAuth";
-
-    /*
-    Certificado digital ficará oculto por enquanto.
-            Mantive as variáveis para uso futuro, caso o bloco seja reativado.
-            */
-    var openCert = TempData["open_cert"] is bool b && b;
-    var certErr = TempData["cert_err"] as string;
-    var certOk = TempData["cert_ok"] as string;
-}
-
-
-
+@{ ViewData["Title"] = "Entrar"; Layout = "_LayoutAuth"; }
 <div class="login-page">
-    <div class="login-orb one"></div>
-    <div class="login-orb two"></div>
-    <div class="login-orb three"></div>
-
-    <div class="login-shell">
-        <aside class="login-info">
-            <div class="login-brand">
-                <div class="login-logo">IG</div>
-                <div>
-                    <h1>InovaGED</h1>
-                    <p>Gestão Eletrônica de Documentos</p>
-                </div>
-            </div>
-
-            <div class="login-hero">
-                <div class="login-hero-pill">
-                    <i class="bi bi-folder-check"></i>
-                    Plataforma GED para gestão segura de documentos
-                </div>
-
-                <h2>
-                    Gestão documental
-                    <span class="login-hero-highlight">segura, inteligente e centralizada.</span>
-                </h2>
-
-                <div class="ged-workspace">
-                    <div class="ged-doc-board">
-                        <div class="ged-ring"></div>
-                        <div class="ged-line-x"></div>
-                        <div class="ged-line-y"></div>
-
-                        <div class="ged-document-stack">
-                            <div class="ged-paper one"></div>
-                            <div class="ged-paper two"></div>
-                            <div class="ged-paper three"></div>
-                        </div>
-
-                        <div class="ged-folder-hero">
-                            <i class="bi bi-folder-check"></i>
-                        </div>
-
-                        <div class="ged-mini-card ged-card-doc">
-                            <i class="bi bi-file-earmark-text"></i>
-                            <span>Documentos</span>
-                        </div>
-
-                        <div class="ged-mini-card ged-card-index">
-                            <i class="bi bi-tags"></i>
-                            <span>Indexação</span>
-                        </div>
-
-                        <div class="ged-mini-card ged-card-archive">
-                            <i class="bi bi-archive"></i>
-                            <span>Arquivo</span>
-                        </div>
-
-                        <div class="ged-mini-card ged-card-audit">
-                            <i class="bi bi-clock-history"></i>
-                            <span>Histórico</span>
-                        </div>
-
-                        <div class="ged-mini-card ged-card-flow">
-                            <i class="bi bi-diagram-3"></i>
-                            <span>Fluxo GED</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="login-info-footer">
-                © @DateTime.Now.Year InovaGED  Solução de Gestão Eletrônica de Documentos<br />
-                LocDesk Locação de Equip. e Sol. em Info Ltda
-            </div>
-        </aside>
-
-        <main class="login-panel">
-            <div class="login-card">
-                <div class="login-card-topbar"></div>
-
-                <div class="login-card-body">
-                    <div class="login-card-title">
-                        <div class="login-title-icon">
-                            <i class="bi bi-person-lock"></i>
-                        </div>
-
-                        <h3>Bem-vindo de volta</h3>
-                        <p>Informe seu e-mail ou CPF e senha para acessar o ambiente GED.</p>
-                    </div>
-
-                    <form id="loginForm" asp-action="Login" method="post" novalidate>
-                        @Html.AntiForgeryToken()
-                        <input type="hidden" asp-for="ReturnUrl" />
-
-                        @*
-                            Tenant oculto por enquanto.
-                            IMPORTANTE:
-                            Troque "default" pelo valor real da coluna ged.tenant.code.
-                            Valores operacionais possiveis: "inovaged", "ophir" ou o codigo real cadastrado em ged.tenant.code.
-                        *@
-                        <input type="hidden" asp-for="TenantSlug" value="default" />
-
-                        <div class="mb-3">
-                            <label asp-for="Email" class="form-label">E-mail ou CPF</label>
-
-                            <div class="input-group">
-                                <span class="input-group-text">
-                                    <i class="bi bi-person-circle"></i>
-                                </span>
-
-                                <input asp-for="Email"
-                                       class="form-control"
-                                       placeholder="Digite seu e-mail ou CPF"
-                                       autocomplete="username"
-                                       inputmode="text" />
-                            </div>
-
-                            <span asp-validation-for="Email" class="text-danger small"></span>
-
-                            <div class="field-helper">
-                                <i class="bi bi-info-circle"></i>
-                                Utilize seu e-mail de acesso ou o CPF cadastrado no servidor.
-                            </div>
-                        </div>
-
-                        <div class="mb-2">
-                            <label asp-for="Password" class="form-label"></label>
-
-                            <div class="input-group">
-                                <span class="input-group-text">
-                                    <i class="bi bi-lock"></i>
-                                </span>
-
-                                <input asp-for="Password"
-                                       type="password"
-                                       class="form-control"
-                                       id="passwordInput"
-                                       placeholder="Senha"
-                                       autocomplete="current-password" />
-
-                                <button type="button"
-                                        class="btn password-toggle"
-                                        title="Mostrar/ocultar senha"
-                                        tabindex="-1"
-                                        onclick="togglePassword()">
-                                    <i class="bi bi-eye" id="passwordIcon"></i>
-                                </button>
-                            </div>
-
-                            <span asp-validation-for="Password" class="text-danger small"></span>
-
-                            <div class="field-helper">
-                                <i class="bi bi-key"></i>
-                                Sua senha é protegida e validada de forma segura.
-                            </div>
-                        </div>
-
-                        @if (!ViewData.ModelState.IsValid)
-                        {
-                            <div class="alert alert-danger auth-alert py-2 small mt-3 mb-0">
-                                <div class="d-flex align-items-start gap-2">
-                                    <i class="bi bi-exclamation-triangle mt-1"></i>
-                                    <div>@Html.ValidationSummary(excludePropertyErrors: true)</div>
-                                </div>
-                            </div>
-                        }
-
-                        <button id="loginBtn" type="submit" class="btn btn-login w-100 mt-3">
-                            <span class="btn-text">
-                                <i class="bi bi-box-arrow-in-right me-1"></i>
-                                Entrar no sistema
-                            </span>
-
-                            <span class="btn-wait">
-                                <span class="spinner-border spinner-border-sm me-2"></span>
-                                Entrando...
-                            </span>
-                        </button>
-
-                        <div class="login-actions">
-                            <a href="@Url.Action("ForgotPassword", "Account")">
-                                Esqueci minha senha
-                            </a>
-
-                            <span class="secure-note">
-                                <i class="bi bi-shield-lock"></i>
-                                Ambiente seguro
-                            </span>
-                        </div>
-                    </form>
-
-                    @*
-                        Acesso alternativo por certificado digital oculto por enquanto.
-                        Para reativar futuramente, remova o comentário deste bloco.
-
-                    <div class="section-divider">Acesso alternativo</div>
-
-                    <div class="cert-box">
-                        ...
-                    </div>
-                    *@
-
-                    <div class="footer-mini">
-                        InovaGED  Gestão Eletrônica de Documentos<br />
-                        LocDesk Locação de Equip. e Sol. em Info Ltda
-                    </div>
-                </div>
-            </div>
-        </main>
-    </div>
+  <div class="login-shell">
+    <aside class="login-info" aria-label="Apresentação do InovaGED">
+      <div class="login-brand"><span class="login-logo" aria-hidden="true">IG</span><div><h1>InovaGED</h1><p>Gestão Eletrônica de Documentos</p></div></div>
+      <div class="login-message"><i class="bi bi-folder-check" aria-hidden="true"></i><h2>Gestão documental segura, organizada e acessível.</h2><p>Documentos e processos em um ambiente institucional simples e confiável.</p></div>
+      <small>© @DateTime.Now.Year InovaGED</small>
+    </aside>
+    <main class="login-panel">
+      <div class="login-card">
+        <div class="login-mobile-brand"><span class="login-logo" aria-hidden="true">IG</span><strong>InovaGED</strong></div>
+        <h2>Bem-vindo</h2><p>Informe suas credenciais para acessar o sistema.</p>
+        <form id="loginForm" asp-action="Login" method="post" novalidate>
+          @Html.AntiForgeryToken()<input type="hidden" asp-for="ReturnUrl" /><input type="hidden" asp-for="TenantSlug" value="default" />
+          <div class="mb-3"><label asp-for="Email" class="form-label">E-mail ou CPF</label><input asp-for="Email" class="form-control" autocomplete="username" /><span asp-validation-for="Email" class="text-danger small"></span></div>
+          <div class="mb-2"><label asp-for="Password" class="form-label"></label><div class="input-group"><input asp-for="Password" type="password" class="form-control" id="passwordInput" autocomplete="current-password" /><button type="button" class="btn btn-outline-secondary password-toggle" aria-label="Mostrar ou ocultar senha" aria-pressed="false"><i class="bi bi-eye" aria-hidden="true"></i></button></div><span asp-validation-for="Password" class="text-danger small"></span></div>
+          @if (!ViewData.ModelState.IsValid) { <div class="alert alert-danger small mt-3" role="alert">@Html.ValidationSummary(excludePropertyErrors: true)</div> }
+          <button id="loginBtn" type="submit" class="btn btn-primary w-100 mt-3"><span class="btn-text"><i class="bi bi-box-arrow-in-right" aria-hidden="true"></i> Entrar</span><span class="btn-wait"><span class="spinner-border spinner-border-sm"></span> Entrando...</span></button>
+          <a class="forgot-link" href="@Url.Action("ForgotPassword", "Account")">Esqueci minha senha</a>
+        </form>
+      </div>
+    </main>
+  </div>
 </div>
-
 @section Scripts {
-    <partial name="_ValidationScriptsPartial" />
-
-    <script>
-        function togglePassword() {
-            const input = document.getElementById('passwordInput');
-            const icon = document.getElementById('passwordIcon');
-
-            if (!input || !icon) return;
-
-            if (input.type === 'password') {
-                input.type = 'text';
-                icon.classList.remove('bi-eye');
-                icon.classList.add('bi-eye-slash');
-            } else {
-                input.type = 'password';
-                icon.classList.remove('bi-eye-slash');
-                icon.classList.add('bi-eye');
-            }
-        }
-
-        function setBtnLoading(btn, loading) {
-            if (!btn) return;
-
-            if (loading) {
-                btn.classList.add("is-loading");
-                btn.setAttribute("disabled", "disabled");
-            } else {
-                btn.classList.remove("is-loading");
-                btn.removeAttribute("disabled");
-            }
-        }
-
-        document.addEventListener("DOMContentLoaded", () => {
-            const loginForm = document.getElementById("loginForm");
-            const loginBtn = document.getElementById("loginBtn");
-
-            loginForm?.addEventListener("submit", () => {
-                setBtnLoading(loginBtn, true);
-            });
-        });
-    </script>
+  <partial name="_ValidationScriptsPartial" />
+  <script>
+    (() => { const form=document.getElementById('loginForm'); const button=document.getElementById('loginBtn'); const toggle=document.querySelector('.password-toggle'); const password=document.getElementById('passwordInput'); toggle?.addEventListener('click',()=>{const visible=password.type==='text';password.type=visible?'password':'text';toggle.setAttribute('aria-pressed',String(!visible));toggle.querySelector('i')?.classList.toggle('bi-eye',visible);toggle.querySelector('i')?.classList.toggle('bi-eye-slash',!visible);}); form?.addEventListener('submit',()=>{button?.classList.add('is-loading');button?.setAttribute('disabled','disabled');}); })();
+  </script>
 }
