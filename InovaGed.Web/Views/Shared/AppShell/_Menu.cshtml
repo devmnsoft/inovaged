@@ -1,0 +1,17 @@
+@model InovaGed.Web.Models.AppShell.AppShellVM
+@{
+    var currentController = ViewContext.RouteData.Values["controller"]?.ToString() ?? string.Empty;
+}
+@foreach (var section in Model.Menu)
+{
+    <section class="sidebar-menu-section" aria-labelledby="menu-@section.Label.GetHashCode()">
+        <h2 class="sidebar-section-title" id="menu-@section.Label.GetHashCode()">@section.Label</h2>
+        @foreach (var item in section.Items)
+        {
+            var active = item.ActiveControllers?.Any(controller => controller.Equals(currentController, StringComparison.OrdinalIgnoreCase)) ?? false;
+            <a asp-controller="@item.Controller" asp-action="@item.Action" class="@(active ? "active" : null)" aria-current="@(active ? "page" : null)">
+                <i class="bi @item.Icon" aria-hidden="true"></i><span>@item.Label</span>
+            </a>
+        }
+    </section>
+}

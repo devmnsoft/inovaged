@@ -1,0 +1,15 @@
+@model InovaGed.Web.Models.AppShell.AppShellVM
+<header class="topbar app-topbar">
+    <button class="btn btn-sm btn-outline-secondary mobile-menu-button d-lg-none" type="button" data-bs-toggle="offcanvas" data-bs-target="#ocSidebar" aria-controls="ocSidebar" aria-label="Abrir menu"><i class="bi bi-list" aria-hidden="true"></i></button>
+    <div class="topbar-left">
+        <div class="page-title">@Model.PageTitle</div>
+        @if (!string.IsNullOrWhiteSpace(Model.PageSubtitle)) { <div class="page-subtitle">@Model.PageSubtitle</div> }
+    </div>
+    <div class="topbar-actions">
+        @if (Model.PrimaryAction is not null)
+        {
+            <a class="btn btn-sm btn-primary topbar-primary-action" asp-controller="@Model.PrimaryAction.Controller" asp-action="@Model.PrimaryAction.Action"><i class="bi @Model.PrimaryAction.Icon" aria-hidden="true"></i><span>@Model.PrimaryAction.Label</span></a>
+        }
+        <partial name="AppShell/_UserMenu" model="Model.User" />
+    </div>
+</header>
