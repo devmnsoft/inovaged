@@ -87,6 +87,57 @@ public sealed class SidebarRecoveryTests
     }
 }
 
+public sealed class RazorMenuRecoveryTests
+{
+    [Fact]
+    public void Menu_uses_a_for_loop_without_nested_code_blocks()
+    {
+        var menu = RecoverySource.Read(
+            "InovaGed.Web/Views/Shared/AppShell/_Menu.cshtml");
+
+        Assert.Contains(
+            "@for",
+            menu,
+            StringComparison.Ordinal);
+
+        Assert.DoesNotContain(
+            "menuSectionIndex++;",
+            menu.Split(
+                "@for",
+                StringSplitOptions.None)[0],
+            StringComparison.Ordinal);
+
+        Assert.DoesNotContain(
+            "@section.",
+            menu,
+            StringComparison.Ordinal);
+
+        Assert.DoesNotContain(
+            "GetHashCode()",
+            menu,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Menu_has_stable_accessible_section_ids()
+    {
+        var menu = RecoverySource.Read(
+            "InovaGed.Web/Views/Shared/AppShell/_Menu.cshtml");
+
+        Assert.Contains(
+            "sidebar-menu-section-",
+            menu);
+
+        Assert.Contains(
+            "aria-labelledby",
+            menu);
+
+        Assert.Contains(
+            "aria-current",
+            menu);
+    }
+}
+
 public sealed class TopbarRecoveryTests
 {
     [Fact]
