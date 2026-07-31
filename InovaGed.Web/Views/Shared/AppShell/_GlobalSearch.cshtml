@@ -1,11 +1,89 @@
 @model InovaGed.Web.Models.AppShell.AppShellVM
+
+@{
+    const string panelId = "workspace-global-search-panel";
+    const string inputId = "workspace-global-search-input";
+}
+
 <div class="global-search" data-global-search>
-    <button class="global-search-trigger" type="button" data-global-search-open aria-haspopup="dialog"><i class="bi bi-search"></i><span>Buscar no workspace</span><kbd>Ctrl K</kbd></button>
-    <div class="global-search-panel" role="dialog" aria-modal="false" aria-label="Busca global" hidden>
-        <label><i class="bi bi-search"></i><input type="search" data-global-search-input placeholder="Busque módulos e ações autorizadas" autocomplete="off" /><kbd>Esc</kbd></label>
-        <div class="global-search-results" data-global-search-results>
-            <p class="global-search-hint">Digite para localizar uma função do seu workspace.</p>
-            @foreach (var section in Model.Menu) { foreach (var item in section.Items) { <a asp-controller="@item.Controller" asp-action="@item.Action" data-search-entry="@item.Label @section.Label"><i class="bi @item.Icon"></i><span><strong>@item.Label</strong><small>@section.Label</small></span><i class="bi bi-arrow-return-left"></i></a> } }
+    <button class="global-search-trigger" type="button" data-global-search-open
+            aria-haspopup="dialog" aria-controls="@panelId" aria-expanded="false">
+        <i class="bi bi-search" aria-hidden="true"></i>
+        <span>Buscar no workspace</span>
+        <kbd>Ctrl K</kbd>
+    </button>
+
+    <div class="global-search-panel" id="@panelId" role="dialog" aria-modal="false"
+         aria-labelledby="workspace-global-search-title" hidden>
+        <div class="global-search-header">
+            <div>
+                <strong id="workspace-global-search-title">Busca global</strong>
+                <small>Encontre funções, documentos e itens autorizados.</small>
+            </div>
+            <button type="button" class="global-search-close" data-global-search-close
+                    aria-label="Fechar busca global">
+                <i class="bi bi-x-lg" aria-hidden="true"></i>
+            </button>
         </div>
+
+        <label class="global-search-input" for="@inputId">
+            <i class="bi bi-search" aria-hidden="true"></i>
+            <input id="@inputId" type="search" data-global-search-input
+                   placeholder="Digite ao menos 2 caracteres" autocomplete="off" spellcheck="false" />
+            <kbd>Esc</kbd>
+        </label>
+
+        <div class="global-search-status" data-global-search-status aria-live="polite">
+            Digite para buscar funções, documentos e itens autorizados.
+        </div>
+
+        <div class="global-search-results" data-global-search-results>
+            <section class="global-search-group" data-global-search-navigation>
+                <h3>Navegação</h3>
+                @for (var menuSectionIndex = 0; menuSectionIndex < Model.Menu.Count; menuSectionIndex++)
+                {
+                    var menuGroup = Model.Menu[menuSectionIndex];
+                    @for (var itemIndex = 0; itemIndex < menuGroup.Items.Count; itemIndex++)
+                    {
+                        var menuItem = menuGroup.Items[itemIndex];
+                        <a asp-controller="@menuItem.Controller" asp-action="@menuItem.Action"
+                           class="global-search-result" data-search-entry data-search-type="navigation"
+                           data-search-label="@menuItem.Label" data-search-group="@menuGroup.Label"
+                           data-search-description="@menuItem.Description"
+                           data-search-keywords="@string.Join(' ', menuItem.Keywords)"
+                           hidden>
+                            <span class="global-search-result-icon">
+                                <i class="bi @menuItem.Icon" aria-hidden="true"></i>
+                            </span>
+                            <span class="global-search-result-content">
+                                <strong>@menuItem.Label</strong>
+                                <small>@menuGroup.Label</small>
+                            </span>
+                            <i class="bi bi-arrow-return-left" aria-hidden="true"></i>
+                        </a>
+                    }
+                }
+            </section>
+
+            <section class="global-search-group" data-global-search-server-results hidden>
+                <h3>Resultados</h3>
+                <div data-global-search-server-list></div>
+            </section>
+
+            <div class="global-search-empty" data-global-search-empty hidden>
+                <img src="~/images/illustrations/empty-search.svg" width="160" height="120"
+                     loading="lazy" decoding="async" alt="" />
+                <strong>Nenhum resultado encontrado</strong>
+                <span>Tente outro termo ou abra a Busca Inteligente.</span>
+                <a asp-controller="SmartSearch" asp-action="Index"
+                   class="btn btn-sm btn-outline-primary">Abrir Busca Inteligente</a>
+            </div>
+        </div>
+
+        <footer class="global-search-footer">
+            <span>↑ ↓ para navegar</span>
+            <span>Enter para abrir</span>
+            <span>Esc para fechar</span>
+        </footer>
     </div>
 </div>

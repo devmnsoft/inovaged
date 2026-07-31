@@ -32,10 +32,12 @@ public sealed class UserShellContextService : IUserShellContextService
             : null;
 
         return new AppShellVM(
+            ModuleLabel(pageTitle),
             string.IsNullOrWhiteSpace(pageTitle) ? "InovaGED" : pageTitle,
             pageSubtitle,
             shellUser,
             BuildMenu(user),
+            BuildQuickActions(user),
             primaryAction);
     }
 
@@ -99,8 +101,45 @@ public sealed class UserShellContextService : IUserShellContextService
         return new[] { Section("Consulta", Item("Buscar Prontuários e Documentos", "HospitalDocuments", "Index", "bi-search-heart"), Item("Busca Inteligente", "SmartSearch", "Index", "bi-search")) };
     }
 
+    private static IReadOnlyList<AppQuickActionVM> BuildQuickActions(ClaimsPrincipal user)
+    {
+        if (AppMenuPolicy.IsFullAdmin(user))
+        {
+            return
+            [
+                new("upload", "Enviar Arquivos", "Abrir a central de uploads.", "GedUploads", "Index", "bi-cloud-arrow-up", true),
+                new("protocol", "Novo Protocolo", "Registrar um novo atendimento.", "Protocolo", "Novo", "bi-journal-plus", false),
+                new("loan", "Novo Empréstimo", "Registrar a movimentação autorizada.", "Loans", "New", "bi-arrow-left-right", false)
+            ];
+        }
+
+        if (AppMenuPolicy.IsArquivistaOphir(user))
+            return [new("loan", "Novo Empréstimo", "Solicitar um documento autorizado.", "Loans", "New", "bi-arrow-left-right", true)];
+
+        return [];
+    }
+
+    private static string ModuleLabel(string? pageTitle)
+    {
+        var title = pageTitle ?? string.Empty;
+        if (title.Contains("Protocolo", StringComparison.OrdinalIgnoreCase)) return "Atendimento";
+        if (title.Contains("Empréstimo", StringComparison.OrdinalIgnoreCase)) return "Arquivo Físico";
+        if (title.Contains("Usuário", StringComparison.OrdinalIgnoreCase) || title.Contains("Admin", StringComparison.OrdinalIgnoreCase)) return "Administração";
+        if (title.Contains("Documento", StringComparison.OrdinalIgnoreCase) || title.Contains("GED", StringComparison.OrdinalIgnoreCase) || title.Contains("Busca", StringComparison.OrdinalIgnoreCase)) return "Gestão Documental";
+        return "Visão Geral";
+    }
+
     private static AppMenuSectionVM Section(string label, params AppMenuItemVM[] items) => new(label, items);
-    private static AppMenuItemVM Item(string label, string controller, string action, string icon, params string[] alsoActive) => new(label, controller, action, icon, new[] { controller }.Concat(alsoActive).ToArray());
+    private static AppMenuItemVM Item(string label, string controller, string action, string icon, params string[] alsoActive) =>
+        new(
+            $"{controller}.{action}".ToLowerInvariant(),
+            label,
+            $"Abrir {label.ToLowerInvariant()}.",
+            controller,
+            action,
+            icon,
+            label.Split(' ', StringSplitOptions.RemoveEmptyEntries),
+            new[] { controller }.Concat(alsoActive).ToArray());
     private static string? FirstClaim(ClaimsPrincipal user, params string[] names) => names.Select(name => user.FindFirst(name)?.Value).FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
     private static bool RequiresSector(string role) => role.Equals(AppRoles.AdministradorOphir, StringComparison.OrdinalIgnoreCase) || role.Equals(AppRoles.ArquivistaOphir, StringComparison.OrdinalIgnoreCase);
     private static string Initials(string name) => string.Concat(name.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(part => char.ToUpperInvariant(part[0])));
