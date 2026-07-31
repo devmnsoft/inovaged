@@ -1,3 +1,5 @@
+using Xunit;
+
 namespace InovaGed.UiTests;
 
 public sealed class VisualImageComparerCSharp12ContractTests

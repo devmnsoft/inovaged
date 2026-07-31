@@ -1,3 +1,4 @@
+using System;
 using System.Diagnostics;
 using InovaGed.Application.Common.Context;
 using InovaGed.Application.WorkspaceSearch;
@@ -80,6 +81,6 @@ public sealed class WorkspaceSearchService : IWorkspaceSearchService
 
     private static bool IsSafe(WorkspaceSearchItem item) =>
         Uri.TryCreate(item.Url, UriKind.Relative, out _) &&
-        item.Url.StartsWith('/', StringComparison.Ordinal) &&
+        item.Url.StartsWith("/", StringComparison.Ordinal) &&
         !item.Url.StartsWith("//", StringComparison.Ordinal);
 }
