@@ -1,0 +1,11 @@
+@model InovaGed.Web.Models.AppShell.AppShellVM
+<div class="global-search" data-global-search>
+    <button class="global-search-trigger" type="button" data-global-search-open aria-haspopup="dialog"><i class="bi bi-search"></i><span>Buscar no workspace</span><kbd>Ctrl K</kbd></button>
+    <div class="global-search-panel" role="dialog" aria-modal="false" aria-label="Busca global" hidden>
+        <label><i class="bi bi-search"></i><input type="search" data-global-search-input placeholder="Busque módulos e ações autorizadas" autocomplete="off" /><kbd>Esc</kbd></label>
+        <div class="global-search-results" data-global-search-results>
+            <p class="global-search-hint">Digite para localizar uma função do seu workspace.</p>
+            @foreach (var section in Model.Menu) { foreach (var item in section.Items) { <a asp-controller="@item.Controller" asp-action="@item.Action" data-search-entry="@item.Label @section.Label"><i class="bi @item.Icon"></i><span><strong>@item.Label</strong><small>@section.Label</small></span><i class="bi bi-arrow-return-left"></i></a> } }
+        </div>
+    </div>
+</div>

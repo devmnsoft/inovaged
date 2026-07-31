@@ -55,6 +55,17 @@
       "maximumApplicationVersion": "04.1.24",
       "requiresMaintenanceWindow": false,
       "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_07_workspace_productivity",
+      "path": "database/migrations/2026_07_workspace_productivity.sql",
+      "module": "Workspace",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.31",
+      "requiresMaintenanceWindow": false,
+      "requiresVerifiedBackup": false
     }
   ]
 }

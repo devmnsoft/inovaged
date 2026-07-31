@@ -1,1 +1,12 @@
-
+:root {
+ --ig-primary-700:#1d4ed8;--ig-primary-600:#2563eb;--ig-primary-100:#dbeafe;--ig-primary-50:#eff6ff;
+ --ig-accent-700:#15803d;--ig-accent-500:#22c55e;--ig-accent-50:#f0fdf4;
+ --ig-page:#f4f7fb;--ig-surface:#fff;--ig-surface-soft:#f8fafc;--ig-surface-muted:#f1f5f9;
+ --ig-text:#0f172a;--ig-text-secondary:#475569;--ig-text-muted:#64748b;--ig-border:#e2e8f0;--ig-border-strong:#cbd5e1;
+ --ig-success:#16a34a;--ig-info:#0284c7;--ig-warning:#d97706;--ig-danger:#dc2626;
+ --ig-sidebar-width:280px;--ig-sidebar-collapsed-width:84px;--ig-topbar-height:68px;
+ --ig-space-1:.25rem;--ig-space-2:.5rem;--ig-space-3:.75rem;--ig-space-4:1rem;--ig-space-6:1.5rem;--ig-space-8:2rem;
+ --ig-radius-sm:.5rem;--ig-radius-md:.75rem;--ig-radius-lg:1rem;--ig-shadow-sm:0 1px 2px rgba(15,23,42,.05);--ig-shadow-md:0 12px 32px rgba(15,23,42,.08);
+ --ig-z-sticky:1020;--ig-z-overlay:1050;--ig-motion-fast:120ms;--ig-motion-normal:180ms;--ig-motion-slow:240ms;
+ --ig-font-sans:Inter,"Segoe UI",system-ui,-apple-system,sans-serif;
+}
