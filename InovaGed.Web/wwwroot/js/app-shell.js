@@ -1,10 +1,64 @@
 (() => {
- const shell=document.querySelector('.app-shell');
- const key='inovaged.workspace.sidebar';
- const applyCollapsed=collapsed=>{shell?.classList.toggle('sidebar-collapsed',collapsed);document.querySelectorAll('[data-sidebar-toggle]').forEach(b=>{b.setAttribute('aria-expanded',String(!collapsed));b.title=collapsed?'Expandir menu':'Recolher menu';});};
- applyCollapsed(localStorage.getItem(key)==='collapsed');
- document.querySelectorAll('[data-sidebar-toggle]').forEach(button=>button.addEventListener('click',()=>{const next=!shell.classList.contains('sidebar-collapsed');applyCollapsed(next);localStorage.setItem(key,next?'collapsed':'expanded');}));
- document.querySelectorAll('.sidebar-search').forEach(search=>{const input=search.querySelector('[data-menu-search]'),clear=search.querySelector('[data-menu-search-clear]'),scope=search.closest('.app-sidebar,.app-mobile-navigation');const filter=()=>{const query=input.value.trim().toLocaleLowerCase('pt-BR');let total=0;scope.querySelectorAll('[data-menu-section]').forEach(section=>{let count=0;section.querySelectorAll('[data-menu-item]').forEach(item=>{const show=!query||item.dataset.menuLabel.toLocaleLowerCase('pt-BR').includes(query);item.hidden=!show;if(show)count++;});section.hidden=count===0;total+=count;});scope.querySelector('[data-menu-empty]').hidden=total!==0;clear.hidden=!query;};input.addEventListener('input',filter);input.addEventListener('keydown',e=>{if(e.key==='Escape'){input.value='';filter();input.focus();}});clear.addEventListener('click',()=>{input.value='';filter();input.focus();});});
- const gs=document.querySelector('[data-global-search]');if(gs){const open=gs.querySelector('[data-global-search-open]'),panel=gs.querySelector('.global-search-panel'),input=gs.querySelector('[data-global-search-input]'),hint=gs.querySelector('.global-search-hint'),entries=[...gs.querySelectorAll('[data-search-entry]')];const close=()=>{panel.hidden=true;open.setAttribute('aria-expanded','false');};const show=()=>{panel.hidden=false;open.setAttribute('aria-expanded','true');setTimeout(()=>input.focus(),0);};const filter=()=>{const q=input.value.trim().toLocaleLowerCase('pt-BR');let count=0;entries.forEach(a=>{const visible=q.length>1&&a.dataset.searchEntry.toLocaleLowerCase('pt-BR').includes(q);a.hidden=!visible;if(visible)count++;});hint.textContent=q.length<2?'Digite ao menos 2 caracteres para pesquisar.':count?'Resultados autorizados':'Nenhum módulo ou ação encontrado.';};open.addEventListener('click',()=>panel.hidden?show():close());input.addEventListener('input',filter);document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();show();}if(e.key==='Escape'&&!panel.hidden){close();open.focus();}});document.addEventListener('click',e=>{if(!gs.contains(e.target))close();});filter();}
- const navigation=document.getElementById('ocSidebar'),opener=document.querySelector('[data-bs-target="#ocSidebar"]');if(navigation&&window.bootstrap){const offcanvas=bootstrap.Offcanvas.getOrCreateInstance(navigation);navigation.querySelectorAll('a[href]').forEach(link=>link.addEventListener('click',()=>offcanvas.hide()));navigation.addEventListener('hidden.bs.offcanvas',()=>opener?.focus());}
+    const shell = document.querySelector('.app-shell');
+    const storageKey = 'inovaged.workspace.sidebar';
+
+    const applyCollapsed = (collapsed) => {
+        shell?.classList.toggle('sidebar-collapsed', collapsed);
+        document.querySelectorAll('[data-sidebar-toggle]').forEach((button) => {
+            button.setAttribute('aria-expanded', String(!collapsed));
+            button.title = collapsed ? 'Expandir menu' : 'Recolher menu';
+        });
+    };
+
+    applyCollapsed(localStorage.getItem(storageKey) === 'collapsed');
+    document.querySelectorAll('[data-sidebar-toggle]').forEach((button) => {
+        button.addEventListener('click', () => {
+            const collapsed = !shell.classList.contains('sidebar-collapsed');
+            applyCollapsed(collapsed);
+            localStorage.setItem(storageKey, collapsed ? 'collapsed' : 'expanded');
+        });
+    });
+
+    document.querySelectorAll('.sidebar-search').forEach((search) => {
+        const input = search.querySelector('[data-menu-search]');
+        const clear = search.querySelector('[data-menu-search-clear]');
+        const scope = search.closest('.app-sidebar,.app-mobile-navigation');
+        const filter = () => {
+            const query = input.value.trim().toLocaleLowerCase('pt-BR');
+            let total = 0;
+            scope.querySelectorAll('[data-menu-section]').forEach((menuGroup) => {
+                let count = 0;
+                menuGroup.querySelectorAll('[data-menu-item]').forEach((menuItem) => {
+                    const show = !query || menuItem.dataset.menuLabel.toLocaleLowerCase('pt-BR').includes(query);
+                    menuItem.hidden = !show;
+                    if (show) count += 1;
+                });
+                menuGroup.hidden = count === 0;
+                total += count;
+            });
+            scope.querySelector('[data-menu-empty]').hidden = total !== 0;
+            clear.hidden = !query;
+        };
+        input.addEventListener('input', filter);
+        input.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                input.value = '';
+                filter();
+                input.focus();
+            }
+        });
+        clear.addEventListener('click', () => {
+            input.value = '';
+            filter();
+            input.focus();
+        });
+    });
+
+    const navigation = document.getElementById('ocSidebar');
+    const opener = document.querySelector('[data-bs-target="#ocSidebar"]');
+    if (navigation && window.bootstrap) {
+        const offcanvas = bootstrap.Offcanvas.getOrCreateInstance(navigation);
+        navigation.querySelectorAll('a[href]').forEach((link) => link.addEventListener('click', () => offcanvas.hide()));
+        navigation.addEventListener('hidden.bs.offcanvas', () => opener?.focus());
+    }
 })();

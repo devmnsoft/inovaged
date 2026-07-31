@@ -1,2 +1,27 @@
-@model InovaGed.Web.Models.AppShell.AppPrimaryActionVM
-<div class="dropdown quick-create"><button class="btn btn-primary" type="button" data-bs-toggle="dropdown" aria-expanded="false"><i class="bi bi-plus-lg"></i><span>Criar</span><i class="bi bi-chevron-down"></i></button><ul class="dropdown-menu dropdown-menu-end"><li><h6 class="dropdown-header">Nova atividade</h6></li><li><a class="dropdown-item" asp-controller="@Model.Controller" asp-action="@Model.Action"><i class="bi @Model.Icon"></i><span><strong>@Model.Label</strong><small>Abrir formulário</small></span></a></li><li><a class="dropdown-item" asp-controller="GedUploads" asp-action="Index"><i class="bi bi-cloud-arrow-up"></i><span><strong>Enviar arquivos</strong><small>Abrir central de uploads</small></span></a></li><li><a class="dropdown-item" asp-controller="Protocolo" asp-action="Novo"><i class="bi bi-journal-plus"></i><span><strong>Novo protocolo</strong><small>Registrar atendimento</small></span></a></li></ul></div>
+@model IReadOnlyList<InovaGed.Web.Models.AppShell.AppQuickActionVM>
+
+@if (Model.Count > 0)
+{
+    <div class="dropdown quick-create">
+        <button class="btn btn-primary" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+            <i class="bi bi-plus-lg" aria-hidden="true"></i>
+            <span>Criar</span>
+            <i class="bi bi-chevron-down" aria-hidden="true"></i>
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end">
+            <li><h2 class="dropdown-header">Criar nova atividade</h2></li>
+            @foreach (var actionItem in Model)
+            {
+                <li>
+                    <a class="dropdown-item" asp-controller="@actionItem.Controller" asp-action="@actionItem.Action">
+                        <i class="bi @actionItem.Icon" aria-hidden="true"></i>
+                        <span>
+                            <strong>@actionItem.Label</strong>
+                            <small>@actionItem.Description</small>
+                        </span>
+                    </a>
+                </li>
+            }
+        </ul>
+    </div>
+}
