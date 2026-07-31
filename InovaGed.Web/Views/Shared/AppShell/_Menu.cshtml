@@ -5,12 +5,16 @@
         ViewContext.RouteData.Values["controller"]
             ?.ToString()
         ?? string.Empty;
-
-    var menuSectionIndex = 0;
 }
 
-@foreach (var menuSection in Model.Menu)
+@for (
+    var menuSectionIndex = 0;
+    menuSectionIndex < Model.Menu.Count;
+    menuSectionIndex++)
 {
+    var menuSection =
+        Model.Menu[menuSectionIndex];
+
     var menuSectionId =
         $"sidebar-menu-section-{menuSectionIndex}";
 
@@ -44,8 +48,4 @@
             </a>
         }
     </section>
-
-    @{
-        menuSectionIndex++;
-    }
 }
