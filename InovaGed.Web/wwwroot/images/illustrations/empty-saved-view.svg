@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 160" role="img" aria-labelledby="title desc">
-<title id="title">Sem notificações</title><desc id="desc">Ilustração abstrata azul e verde do InovaGED Nexus.</desc>
+<title id="title">Sem visões salvas</title><desc id="desc">Ilustração abstrata azul e verde do InovaGED Nexus.</desc>
 <rect x="32" y="22" width="176" height="116" rx="18" fill="#F8FAFC" stroke="#DBEAFE" stroke-width="2"/>
 <path d="M55 51h62M55 69h95M55 87h76" fill="none" stroke="#CBD5E1" stroke-width="8" stroke-linecap="round"/>
 <rect x="55" y="106" width="64" height="13" rx="6.5" fill="#DBEAFE"/>
-<circle cx="171" cy="88" r="28" fill="#EFF6FF" stroke="#16A34A" stroke-width="3"/>
-<path d="M158 88l9 9 18-21" fill="none" stroke="#16A34A" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="171" cy="88" r="28" fill="#EFF6FF" stroke="#2563EB" stroke-width="3"/>
+<path d="M158 88l9 9 18-21" fill="none" stroke="#2563EB" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
