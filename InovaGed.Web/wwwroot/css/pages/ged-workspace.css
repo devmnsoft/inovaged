@@ -1,6 +1,6 @@
 /* Premium GED workspace: visual layer preserves legacy selectors and behavior. */
-.ged-page { position:relative; grid-template-columns:270px minmax(0,1fr)!important; gap:1rem!important; }
-.ged-page.with-document-panel { grid-template-columns:270px minmax(420px,1fr) minmax(340px,390px)!important; }
+.ged-page { --ged-folder-width:300px;--ged-preview-width:420px;position:relative;grid-template-columns:var(--ged-folder-width) 5px minmax(0,1fr)!important;gap:0!important; }
+.ged-page.with-document-panel { grid-template-columns:var(--ged-folder-width) 5px minmax(420px,1fr) 5px var(--ged-preview-width)!important; }
 .ged-folder-panel,.ged-main-panel,.ged-document-side-panel { border:1px solid var(--ig-border)!important; border-radius:var(--ig-radius-lg)!important; box-shadow:var(--ig-shadow-sm)!important; }
 .ged-folder-panel-header { min-height:68px; padding:1rem!important; }
 .ged-tree-row { position:relative; min-height:42px; border-radius:var(--ig-radius-sm); transition:background var(--ig-motion-fast),transform var(--ig-motion-fast); }
