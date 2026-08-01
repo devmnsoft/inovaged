@@ -178,7 +178,7 @@ builder.Services
     .AddInovaGedInfrastructure(builder.Configuration);
 builder.Services.AddSignalR();
 builder.Services.AddScoped<IDateTimeDisplayService, DateTimeDisplayService>();
-builder.Services.AddSingleton<IIconCatalog, IconCatalog>();
+builder.Services.AddSingleton<IAtlasIconRegistry, AtlasIconRegistry>();
 builder.Services.AddScoped<IUiModuleAvailabilityService, UiModuleAvailabilityService>();
 builder.Services.AddScoped<IUserShellContextService, UserShellContextService>();
 builder.Services.AddScoped<IWorkspaceSearchService, WorkspaceSearchService>();

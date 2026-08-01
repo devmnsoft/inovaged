@@ -8,7 +8,7 @@
     <div class="login-shell">
         <aside class="login-info" aria-labelledby="login-product-title">
             <div class="login-brand">
-                <span class="login-logo" aria-hidden="true">IG</span>
+                <img class="login-logo" src="~/images/brand/atlas-brand-mark.svg" width="40" height="40" alt="" aria-hidden="true" />
                 <div>
                     <h1 id="login-product-title">InovaGED</h1>
                     <p>Gestão Eletrônica de Documentos</p>
@@ -16,14 +16,14 @@
             </div>
 
             <div class="login-message">
-                <span class="login-eyebrow"><i class="bi bi-shield-check" aria-hidden="true"></i> Ambiente institucional</span>
+                <span class="login-eyebrow"><app-icon name="health" size="16" decorative="true" /> Ambiente institucional</span>
                 <h2>Gestão documental com mais controle, velocidade e segurança.</h2>
                 <p>Centralize documentos, automatize processos, acompanhe o histórico e encontre informações com rapidez em um único ambiente.</p>
-                <img class="login-workspace-illustration" src="~/images/illustrations/login-ged-workspace.svg" alt="" />
+                <atlas-illustration name="login-ged-workspace" size="hero" class="login-workspace-illustration" decorative="true" eager="true" />
                 <div class="login-capabilities" aria-label="Recursos da plataforma">
-                    <span><i class="bi bi-files"></i> Documentos</span><span><i class="bi bi-eye"></i> OCR</span>
-                    <span><i class="bi bi-tags"></i> Indexação</span><span><i class="bi bi-clock-history"></i> Histórico</span>
-                    <span><i class="bi bi-diagram-3"></i> Fluxos</span><span><i class="bi bi-shield-check"></i> Segurança</span>
+                    <span><app-icon name="documents" size="16" decorative="true" /> Documentos</span><span><app-icon name="ocr" size="16" decorative="true" /> OCR</span>
+                    <span><app-icon name="classification" size="16" decorative="true" /> Indexação</span><span><app-icon name="document-history" size="16" decorative="true" /> Histórico</span>
+                    <span><app-icon name="workspace" size="16" decorative="true" /> Fluxos</span><span><app-icon name="audit" size="16" decorative="true" /> Segurança</span>
                 </div>
             </div>
 
@@ -33,11 +33,11 @@
         <main class="login-panel">
             <div class="login-card">
                 <div class="login-mobile-brand">
-                    <span class="login-logo" aria-hidden="true">IG</span>
+                    <img class="login-logo" src="~/images/brand/atlas-brand-mark.svg" width="40" height="40" alt="" aria-hidden="true" />
                     <div><strong>InovaGED</strong><small>Gestão documental</small></div>
                 </div>
                 <header class="login-card-header">
-                    <span class="login-card-icon" aria-hidden="true"><i class="bi bi-person-lock"></i></span>
+                    <span class="login-card-icon" aria-hidden="true"><app-icon name="users" size="24" decorative="true" /></span>
                     <h2>Acesse seu ambiente</h2>
                     <p>Entre com seu e-mail ou CPF para continuar.</p>
                 </header>
@@ -50,7 +50,7 @@
                     <div class="mb-3">
                         <label asp-for="Email" class="form-label">E-mail ou CPF</label>
                         <div class="input-group">
-                            <span class="input-group-text" aria-hidden="true"><i class="bi bi-person"></i></span>
+                            <span class="input-group-text" aria-hidden="true"><app-icon name="users" size="18" decorative="true" /></span>
                             <input asp-for="Email" class="form-control" autocomplete="username" placeholder="Digite seu e-mail ou CPF" autofocus />
                         </div>
                         <span asp-validation-for="Email" class="text-danger small"></span>
@@ -59,9 +59,9 @@
                     <div class="mb-2">
                         <label asp-for="Password" class="form-label"></label>
                         <div class="input-group">
-                            <span class="input-group-text" aria-hidden="true"><i class="bi bi-lock"></i></span>
+                            <span class="input-group-text" aria-hidden="true"><app-icon name="roles" size="18" decorative="true" /></span>
                             <input asp-for="Password" type="password" class="form-control" id="passwordInput" autocomplete="current-password" placeholder="Digite sua senha" />
-                            <button type="button" class="btn btn-outline-secondary password-toggle" aria-label="Mostrar senha" aria-pressed="false"><i class="bi bi-eye" aria-hidden="true"></i></button>
+                            <button type="button" class="btn btn-outline-secondary password-toggle" aria-label="Mostrar senha" aria-pressed="false"><app-icon name="preview" size="18" decorative="true" /></button>
                         </div>
                         <span asp-validation-for="Password" class="text-danger small"></span>
                     </div>
@@ -69,18 +69,18 @@
                     @if (!ViewData.ModelState.IsValid)
                     {
                         <div class="alert alert-danger small mt-3" role="alert" aria-live="assertive">
-                            <i class="bi bi-exclamation-triangle me-1" aria-hidden="true"></i>
+                            <app-icon name="warning" size="18" class="me-1" decorative="true" />
                             @Html.ValidationSummary(excludePropertyErrors: true)
                         </div>
                     }
 
                     <button id="loginBtn" type="submit" class="btn btn-primary w-100 mt-3">
-                        <span class="btn-text"><i class="bi bi-box-arrow-in-right" aria-hidden="true"></i> Entrar no InovaGED</span>
+                        <span class="btn-text"><app-icon name="arrow-right" size="18" decorative="true" /> Entrar no InovaGED</span>
                         <span class="btn-wait"><span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Validando acesso...</span>
                     </button>
                     <a class="forgot-link" href="@Url.Action("ForgotPassword", "Account")">Esqueci minha senha</a>
                 </form>
-                <footer class="login-security"><i class="bi bi-shield-lock" aria-hidden="true"></i> Seus dados são protegidos durante o acesso.</footer>
+                <footer class="login-security"><app-icon name="audit" size="18" decorative="true" /> Seus dados são protegidos durante o acesso.</footer>
             </div>
         </main>
     </div>

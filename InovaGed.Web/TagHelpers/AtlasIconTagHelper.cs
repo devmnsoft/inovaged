@@ -1,0 +1,67 @@
+using InovaGed.Web.Services;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Razor.TagHelpers;
+using Microsoft.Extensions.Hosting;
+
+namespace InovaGed.Web.TagHelpers;
+
+[HtmlTargetElement("app-icon", Attributes = "name")]
+public sealed class AtlasIconTagHelper(
+    IAtlasIconRegistry registry,
+    IWebHostEnvironment environment,
+    ILogger<AtlasIconTagHelper> logger) : TagHelper
+{
+    public string Name { get; set; } = string.Empty;
+    public string? Label { get; set; }
+    public int Size { get; set; } = 20;
+    public string? Tone { get; set; }
+    public string? Variant { get; set; }
+    public string? Title { get; set; }
+    public bool Decorative { get; set; }
+
+    public override void Process(TagHelperContext context, TagHelperOutput output)
+    {
+        var found = registry.TryGet(Name, out var definition);
+        if (!found)
+        {
+            logger.LogWarning("Atlas icon not found: {IconName}", Name);
+            var fallback = environment.IsDevelopment() ? "missing" : "circle-question";
+            registry.TryGet(fallback, out definition!);
+            if (environment.IsDevelopment()) output.Attributes.SetAttribute("data-missing-icon", Name);
+        }
+
+        var existing = output.Attributes["class"]?.Value?.ToString();
+        var classes = new[]
+        {
+            "atlas-icon", existing, $"atlas-icon--{NormalizeSize(Size)}",
+            CssModifier(Tone), CssModifier(Variant ?? definition.Variant)
+        }.Where(value => !string.IsNullOrWhiteSpace(value));
+
+        output.TagName = "svg";
+        output.TagMode = TagMode.StartTagAndEndTag;
+        output.Attributes.SetAttribute("class", string.Join(' ', classes));
+        output.Attributes.SetAttribute("width", NormalizeSize(Size));
+        output.Attributes.SetAttribute("height", NormalizeSize(Size));
+        output.Attributes.SetAttribute("viewBox", "0 0 24 24");
+        output.Attributes.SetAttribute("focusable", "false");
+
+        var accessibleLabel = Label ?? Title;
+        if (Decorative || string.IsNullOrWhiteSpace(accessibleLabel))
+        {
+            output.Attributes.SetAttribute("aria-hidden", "true");
+        }
+        else
+        {
+            output.Attributes.SetAttribute("role", "img");
+            output.Attributes.SetAttribute("aria-label", accessibleLabel);
+        }
+
+        var titleMarkup = string.IsNullOrWhiteSpace(Title) ? string.Empty : $"<title>{System.Net.WebUtility.HtmlEncode(Title)}</title>";
+        output.Content.SetHtmlContent($"{titleMarkup}<use href=\"#{definition.SymbolId}\"></use>");
+    }
+
+    private static int NormalizeSize(int size) => size is >= 12 and <= 64 ? size : 20;
+    private static string? CssModifier(string? value) => string.IsNullOrWhiteSpace(value)
+        ? null
+        : $"atlas-icon--{new string(value.Where(character => char.IsLetterOrDigit(character) || character == '-').ToArray()).ToLowerInvariant()}";
+}
