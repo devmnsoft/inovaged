@@ -17,16 +17,13 @@
 
             <div class="login-message">
                 <span class="login-eyebrow"><i class="bi bi-shield-check" aria-hidden="true"></i> Ambiente institucional</span>
-                <h2>Informação organizada para decisões mais seguras.</h2>
-                <p>Centralize documentos, preserve o histórico e encontre o que precisa em uma experiência clara e confiável.</p>
-
-                <div class="login-document-illustration" aria-hidden="true">
-                    <div class="login-folder"><i class="bi bi-folder2-open"></i></div>
-                    <div class="login-paper login-paper--back"></div>
-                    <div class="login-paper login-paper--front">
-                        <span></span><span></span><span></span>
-                        <i class="bi bi-check2-circle"></i>
-                    </div>
+                <h2>Gestão documental com mais controle, velocidade e segurança.</h2>
+                <p>Centralize documentos, automatize processos, acompanhe o histórico e encontre informações com rapidez em um único ambiente.</p>
+                <img class="login-workspace-illustration" src="~/images/illustrations/login-ged-workspace.svg" alt="" />
+                <div class="login-capabilities" aria-label="Recursos da plataforma">
+                    <span><i class="bi bi-files"></i> Documentos</span><span><i class="bi bi-eye"></i> OCR</span>
+                    <span><i class="bi bi-tags"></i> Indexação</span><span><i class="bi bi-clock-history"></i> Histórico</span>
+                    <span><i class="bi bi-diagram-3"></i> Fluxos</span><span><i class="bi bi-shield-check"></i> Segurança</span>
                 </div>
             </div>
 
@@ -41,8 +38,8 @@
                 </div>
                 <header class="login-card-header">
                     <span class="login-card-icon" aria-hidden="true"><i class="bi bi-person-lock"></i></span>
-                    <h2>Bem-vindo</h2>
-                    <p>Informe suas credenciais para acessar o sistema.</p>
+                    <h2>Acesse seu ambiente</h2>
+                    <p>Entre com seu e-mail ou CPF para continuar.</p>
                 </header>
 
                 <form id="loginForm" asp-action="Login" method="post" novalidate aria-busy="false">
@@ -78,8 +75,8 @@
                     }
 
                     <button id="loginBtn" type="submit" class="btn btn-primary w-100 mt-3">
-                        <span class="btn-text"><i class="bi bi-box-arrow-in-right" aria-hidden="true"></i> Entrar</span>
-                        <span class="btn-wait"><span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Entrando...</span>
+                        <span class="btn-text"><i class="bi bi-box-arrow-in-right" aria-hidden="true"></i> Entrar no InovaGED</span>
+                        <span class="btn-wait"><span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Validando acesso...</span>
                     </button>
                     <a class="forgot-link" href="@Url.Action("ForgotPassword", "Account")">Esqueci minha senha</a>
                 </form>
@@ -91,25 +88,5 @@
 
 @section Scripts {
     <partial name="_ValidationScriptsPartial" />
-    <script>
-        (() => {
-            const form = document.getElementById('loginForm');
-            const button = document.getElementById('loginBtn');
-            const toggle = document.querySelector('.password-toggle');
-            const password = document.getElementById('passwordInput');
-            toggle?.addEventListener('click', () => {
-                const visible = password.type === 'text';
-                password.type = visible ? 'password' : 'text';
-                toggle.setAttribute('aria-pressed', String(!visible));
-                toggle.setAttribute('aria-label', visible ? 'Mostrar senha' : 'Ocultar senha');
-                toggle.querySelector('i')?.classList.toggle('bi-eye', visible);
-                toggle.querySelector('i')?.classList.toggle('bi-eye-slash', !visible);
-            });
-            form?.addEventListener('submit', () => {
-                form.setAttribute('aria-busy', 'true');
-                button?.classList.add('is-loading');
-                button?.setAttribute('disabled', 'disabled');
-            });
-        })();
-    </script>
+    <script src="~/js/login.js" asp-append-version="true"></script>
 }
