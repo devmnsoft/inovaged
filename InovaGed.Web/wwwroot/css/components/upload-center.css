@@ -1,0 +1,9 @@
+#bulkUploadModal .modal-dialog { width:min(600px,100%); max-width:none; height:100%; margin:0 0 0 auto; transform:translateX(24px); }
+#bulkUploadModal.show .modal-dialog { transform:none; }
+#bulkUploadModal .modal-content { min-height:100vh; border:0; border-left:1px solid var(--ig-border); border-radius:0; box-shadow:var(--ig-shadow-lg); }
+#bulkUploadModal .modal-header { position:sticky; top:0; z-index:3; padding:1.25rem 1.5rem; background:#fff; }
+#bulkUploadModal .modal-body { padding:1.25rem 1.5rem 7rem; }
+#bulkUploadModal .modal-footer { position:sticky; bottom:0; z-index:3; background:#fff; box-shadow:0 -8px 20px rgba(15,23,42,.05); }
+#bulkFileList tr { vertical-align:middle; }
+#bulkFileList .progress { height:7px; border-radius:999px; }
+@media(max-width:575.98px){#bulkUploadModal .modal-dialog{width:100%}#bulkUploadModal .modal-body{padding-inline:1rem}}

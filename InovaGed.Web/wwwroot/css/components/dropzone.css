@@ -1,0 +1,3 @@
+#bulkDropzone { min-height:170px; display:grid; place-content:center; border:2px dashed var(--ig-border-strong)!important; border-radius:var(--ig-radius-lg)!important; background:var(--ig-surface-soft); color:var(--ig-text-secondary); transition:border-color var(--ig-motion-normal),background var(--ig-motion-normal),transform var(--ig-motion-normal); }
+#bulkDropzone:hover,#bulkDropzone.is-dragover { border-color:var(--ig-primary-500)!important; background:var(--ig-primary-50); color:var(--ig-primary-700); transform:scale(1.005); }
+#bulkDropzone:focus-visible { outline:3px solid rgba(37,99,235,.25); outline-offset:3px; }

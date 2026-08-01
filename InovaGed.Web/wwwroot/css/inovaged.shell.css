@@ -92,7 +92,7 @@
 
 .sidebar-menu a:hover,
 .sidebar-logout:hover { background: #eff6ff; color: #1d4ed8; }
-.sidebar-menu a.active { background: #2563eb; color: #fff; font-weight: 700; }
+.sidebar-menu a.active { background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;font-weight:700;box-shadow:0 8px 18px rgba(37,99,235,.18); }
 .sidebar-menu a i,
 .sidebar-logout i { width: 1.2rem; flex: none; text-align: center; }
 
