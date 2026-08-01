@@ -3,6 +3,7 @@ using InovaGed.Application.Administration;
 using InovaGed.Application.Readiness;
 using InovaGed.Web.Models.Administration;
 using InovaGed.Web.Security;
+using InovaGed.Web.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -14,7 +15,8 @@ public sealed class AdministrationController : Controller
     private readonly IAdministrationDashboardService _service;
     private readonly IModuleReadinessService _readiness;
     private readonly IConfiguration _configuration;
-    public AdministrationController(IAdministrationDashboardService service, IModuleReadinessService readiness, IConfiguration configuration) { _service = service; _readiness = readiness; _configuration = configuration; }
+    private readonly IAtlasIconRegistry _atlasIcons;
+    public AdministrationController(IAdministrationDashboardService service, IModuleReadinessService readiness, IConfiguration configuration, IAtlasIconRegistry atlasIcons) { _service = service; _readiness = readiness; _configuration = configuration; _atlasIcons = atlasIcons; }
     public async Task<IActionResult> Index(CancellationToken ct)
     {
         var overview = await _service.GetOverviewAsync(CurrentTenant(), ct);
@@ -35,6 +37,9 @@ public sealed class AdministrationController : Controller
         var recommendations = overview.Recommendations.Select(item => new AdministrationRecommendationVM(item.Title, item.Reason, item.Guidance, item.Severity)).ToArray();
         return View("Index", new AdministrationDashboardVM(health, sections, recommendations));
     }
+    [HttpGet("/Administration/AtlasIcons")]
+    public IActionResult AtlasIcons() => View(_atlasIcons.GetAll());
+
     public async Task<IActionResult> Security(string? search, CancellationToken ct) => View("Section", new AdministrationPageVm { Section = "Segurança e Permissões", SecurityConfigurations = await _service.GetSecurityConfigurationsAsync(CurrentTenant(), ct), PermissionCatalog = await _service.GetPermissionCatalogAsync(search, ct) });
     public async Task<IActionResult> Identities(CancellationToken ct) => View("Section", new AdministrationPageVm { Section = "Identidades e CPF", IdentitySummary = await _service.GetIdentityMigrationSummaryAsync(CurrentTenant(), ct) });
     public async Task<IActionResult> Users(CancellationToken ct) => View("Section", new AdministrationPageVm { Section = "Usuários e Autoridades", Items = await _service.GetUsersAsync(CurrentTenant(), ct) });
