@@ -16,6 +16,11 @@
           href="~/lib/bootstrap-icons/font/bootstrap-icons.min.css" />
 
     <link href="~/css/inovaged.tokens.css" rel="stylesheet" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/atlas/inovaged.atlas.tokens.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/atlas/inovaged.atlas.illustrations.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/atlas/inovaged.atlas.components.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/atlas/inovaged.atlas.workspace.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/atlas/inovaged.atlas.icons.css" asp-append-version="true" />
     <link href="~/css/inovaged.base.css" rel="stylesheet" asp-append-version="true" />
     <link href="~/css/inovaged.shell.css" rel="stylesheet" asp-append-version="true" />
     <link href="~/css/inovaged.components.css" rel="stylesheet" asp-append-version="true" />
@@ -25,6 +30,7 @@
 </head>
 
 <body data-theme="inovaged-classic">
+    <partial name="Icons/_AtlasIconSprite" />
     <main class="auth-page-root">
         @RenderBody()
     </main>

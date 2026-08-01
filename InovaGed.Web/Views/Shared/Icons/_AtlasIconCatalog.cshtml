@@ -1,0 +1,7 @@
+@model IReadOnlyCollection<InovaGed.Web.Services.AtlasIconDefinition>
+<div class="atlas-icon-grid">
+@foreach (var icon in Model)
+{
+    <article class="atlas-icon-card"><app-icon name="@icon.Name" size="24" decorative="true" /><strong>@icon.Name</strong><span>@icon.Category</span></article>
+}
+</div>

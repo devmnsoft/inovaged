@@ -1,0 +1,23 @@
+@model IReadOnlyCollection<InovaGed.Web.Services.AtlasIconDefinition>
+@{ ViewData["Title"] = "Catálogo Atlas Icons"; ViewData["Subtitle"] = "Inventário visual do workspace"; }
+<section class="atlas-catalog" data-atlas-icon-catalog>
+    <header class="atlas-section-heading"><div><span class="atlas-eyebrow">Sistema visual</span><h1>Atlas Icons</h1><p>Consulte nomes, aliases, uso e leitura em cada tamanho suportado.</p></div><span class="atlas-count">@Model.Count ícones</span></header>
+    <label class="atlas-search"><app-icon name="search" decorative="true" size="20"/><span class="visually-hidden">Pesquisar ícones</span><input type="search" placeholder="Pesquisar por nome, categoria ou alias" data-atlas-icon-search /></label>
+    <div class="atlas-icon-grid">
+    @foreach (var icon in Model)
+    {
+        <article class="atlas-icon-card" data-atlas-icon-item data-search="@icon.Name @icon.Category @string.Join(' ', icon.Aliases)">
+            <div class="atlas-icon-sizes" aria-label="Amostras de @icon.Name">
+                @foreach (var iconSize in new[] { 16, 20, 24, 32 })
+                {
+                    <span><app-icon name="@icon.Name" size="@iconSize" decorative="true"/><small>@iconSize</small></span>
+                }
+            </div>
+            <h2>@icon.Name</h2><span class="atlas-chip">@icon.Category</span>
+            <dl><dt>Uso</dt><dd>@icon.Usage</dd><dt>Variante</dt><dd>@icon.Variant</dd><dt>Aliases</dt><dd>@(icon.Aliases.Count == 0 ? "—" : string.Join(", ", icon.Aliases))</dd></dl>
+        </article>
+    }
+    </div>
+    <div class="atlas-empty" hidden data-atlas-icon-empty><atlas-illustration name="empty-search" size="small" decorative="true"/><p>Nenhum ícone corresponde à pesquisa.</p></div>
+</section>
+@section Scripts { <script src="~/js/atlas/atlas-icons.js" asp-append-version="true"></script> }
