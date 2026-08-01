@@ -45,6 +45,15 @@
 }
 
 <div class="ged-page" data-requested-folder-id="@Model.RequestedFolderId" data-visual-folder-id="@Model.CurrentFolderId" data-listing-folder-id="@currentListingFolderId" data-upload-folder-id="@currentUploadFolderId">
+    <div id="gedGlobalDropOverlay" class="ged-global-drop-overlay" aria-hidden="true" role="dialog" aria-labelledby="gedDropTitle">
+        <div class="ged-global-drop-card">
+            <img src="~/images/illustrations/upload-dropzone.svg" alt="" />
+            <h2 id="gedDropTitle">Solte os arquivos para enviar</h2>
+            <p>Destino: <strong data-drop-folder-name>@uploadFolderLabel</strong></p>
+            <small>PDF, imagens, documentos Office e arquivos permitidos.</small>
+            <span>Soltar para adicionar · Esc para cancelar</span>
+        </div>
+    </div>
     <div id="pageAlertHost" class="mb-2">
         @if (Model.CurrentFolderIsVirtual)
         {
@@ -87,7 +96,7 @@
         <div class="ged-folder-panel-header">
             <div>
                 <div class="fw-semibold">Pastas</div>
-                <div class="small text-muted">Explorer documental</div>
+                <div class="small text-muted">Navegue pelo acervo</div>
             </div>
             <div class="d-flex gap-1">
                 <button type="button" class="btn btn-sm btn-light" id="btnReloadFolderTree" title="Recarregar"><i class="bi bi-arrow-clockwise"></i></button>
@@ -97,7 +106,7 @@
         <div class="ged-folder-search p-2 border-bottom">
             <div class="input-group input-group-sm">
                 <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
-                <input id="gedFolderSearch" class="form-control" placeholder="Buscar pasta" autocomplete="off" />
+                <input id="gedFolderSearch" class="form-control" placeholder="Pesquisar pasta" autocomplete="off" />
             </div>
         </div>
         <div class="ged-folder-tree ged-folder-scroll">
@@ -465,9 +474,15 @@
         <div class="ged-toolbar">
             <div class="ged-search-row">
                 <input type="hidden" id="currentFolderId" value="@Model.CurrentFolderId" />
-                <div class="input-group">
+                <div class="input-group ged-unified-search">
+                    <button id="gedSearchModeButton" class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false"><i class="bi bi-search"></i><span data-search-mode-label>Rápida</span></button>
+                    <ul class="dropdown-menu" aria-labelledby="gedSearchModeButton">
+                        <li><button class="dropdown-item js-search-mode" type="button" data-mode="quick"><i class="bi bi-lightning me-2"></i>Pesquisa rápida</button></li>
+                        <li><button class="dropdown-item js-search-mode" type="button" data-mode="smart"><i class="bi bi-stars me-2"></i>Pesquisa inteligente</button></li>
+                        <li><button class="dropdown-item js-search-mode" type="button" data-mode="advanced"><i class="bi bi-sliders me-2"></i>Pesquisa avançada</button></li>
+                    </ul>
                     <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
-                    <input id="legacySmartSearchInput" class="form-control" name="q" value="@Model.Query" placeholder="Busque por documento, prontuário, paciente, pasta, tipo, termo do OCR ou número..." />
+                    <input id="legacySmartSearchInput" class="form-control" name="q" value="@Model.Query" placeholder="Pesquisar nesta pasta" data-quick-placeholder="Pesquisar nesta pasta" data-smart-placeholder="Descreva o documento que deseja encontrar..." />
                     <button id="legacyBtnSmartSearchClear" class="btn btn-outline-secondary" type="button" title="Limpar busca"><i class="bi bi-x-lg"></i></button>
                     <button id="legacyBtnSmartFilters" class="btn btn-outline-secondary" type="button" title="Filtros avançados"><i class="bi bi-sliders"></i> Filtros</button>
                     <button id="legacyBtnSmartSearch" class="btn btn-primary" type="button"><i class="bi bi-search"></i> Pesquisar</button>
@@ -496,10 +511,14 @@
             </div>
         </div>
 
-        @await Html.PartialAsync("_DocumentsList", Model)
+        <div id="gedDocumentWorkspace" class="ged-document-workspace">
+            @await Html.PartialAsync("_DocumentsList", Model)
+        </div>
     </section>
 
-    <aside id="gedDocumentSidePanel" class="ged-document-side-panel d-none" aria-hidden="true" aria-live="polite" aria-label="Detalhes do documento"></aside>
+    <aside id="gedDocumentSidePanel" class="ged-document-side-panel d-none" aria-hidden="true" aria-live="polite" aria-label="Detalhes do documento">
+        <div class="ged-preview-empty"><img src="~/images/illustrations/document-preview-empty.svg" alt="" /><h2>Preview do documento</h2><p>Selecione um documento para visualizar, consultar detalhes, metadados, histórico e versões.</p></div>
+    </aside>
 </div>
 @Html.AntiForgeryToken()
 <div class="modal fade" id="moveDocumentsModal" tabindex="-1" aria-hidden="true">
@@ -981,6 +1000,11 @@
 
 <link rel="stylesheet" href="~/css/ged-explorer.css" asp-append-version="true" />
 <link rel="stylesheet" href="~/css/ged-smart-search.css" asp-append-version="true" />
+<link rel="stylesheet" href="~/css/pages/ged-workspace.css" asp-append-version="true" />
+<link rel="stylesheet" href="~/css/components/upload-center.css" asp-append-version="true" />
+<link rel="stylesheet" href="~/css/components/dropzone.css" asp-append-version="true" />
+<link rel="stylesheet" href="~/css/components/document-preview.css" asp-append-version="true" />
+<link rel="stylesheet" href="~/css/components/feedback.css" asp-append-version="true" />
 <style>
     .ged-page { display:grid; grid-template-columns:minmax(280px, 400px) minmax(0,1fr); gap:24px; align-items:start; }
     .ged-page.with-document-panel { grid-template-columns:minmax(280px, 400px) minmax(0,1fr) 430px; }
@@ -1196,6 +1220,11 @@
     <script src="~/js/ged-document-move.js" asp-append-version="true"></script>
     <script src="~/js/ged-queue-visualizer.js" asp-append-version="true"></script>
     <script src="~/js/ged-smart-search.js" asp-append-version="true"></script>
+    <script src="~/js/ged-workspace.js" asp-append-version="true"></script>
+    <script src="~/js/ged-drag-drop.js" asp-append-version="true"></script>
+    <script src="~/js/ged-document-selection.js" asp-append-version="true"></script>
+    <script src="~/js/ged-document-preview.js" asp-append-version="true"></script>
+    <script src="~/js/ged-filter-drawer.js" asp-append-version="true"></script>
 
 <script>
     (function () {

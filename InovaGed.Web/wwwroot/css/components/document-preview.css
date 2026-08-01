@@ -1,0 +1,4 @@
+.ged-document-side-panel { min-width:0; overflow:hidden; background:#fff; animation:previewIn var(--ig-motion-normal) var(--ig-ease-standard); }
+.ged-preview-empty { min-height:480px; display:grid; place-content:center; padding:2rem; text-align:center; color:var(--ig-text-secondary); }
+.ged-preview-empty img { width:190px; margin:0 auto 1rem; }.ged-preview-empty h2{font-size:1.1rem;color:var(--ig-text)}.ged-preview-empty p{max-width:290px;font-size:.84rem}
+@keyframes previewIn{from{opacity:0;transform:translateX(12px)}}@media(prefers-reduced-motion:reduce){.ged-document-side-panel{animation:none}}

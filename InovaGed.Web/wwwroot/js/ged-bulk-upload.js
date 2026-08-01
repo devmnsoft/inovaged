@@ -77,8 +77,21 @@
                 console.log('[BulkUpload] modal aberto', { selectedFiles: state.files.length, isUploading: state.uploading, isCheckingDuplicates: state.isCheckingDuplicates });
             });
             modal.addEventListener('hide.bs.modal', function (e) {
-                if (!state.uploading && hasBatchFailures() && !confirm('Existem arquivos com falha. Deseja fechar mesmo assim? Você poderá consultar o lote depois em Histórico de Uploads.')) {
+                if (modal.dataset.confirmedFailureClose === 'true') {
+                    delete modal.dataset.confirmedFailureClose;
+                    return;
+                }
+                if (!state.uploading && hasBatchFailures()) {
                     e.preventDefault();
+                    window.InovaGedConfirmDialog?.({
+                        title: 'Existem arquivos com falha',
+                        message: 'Ao fechar, você poderá consultar este lote posteriormente no histórico de uploads.',
+                        confirmText: 'Fechar mesmo assim'
+                    }).then(confirmed => {
+                        if (!confirmed) return;
+                        modal.dataset.confirmedFailureClose = 'true';
+                        getBootstrapOrNull()?.Modal.getOrCreateInstance(modal).hide();
+                    });
                 }
             });
             modal.addEventListener('hidden.bs.modal', function () {
@@ -730,9 +743,7 @@
     function confirmDuplicateUpload(message) {
         const modalEl = ensureDuplicateConfirmModal();
         const bs = getBootstrapOrNull();
-        if (!bs?.Modal) return Promise.resolve(confirm(`${message}
-
-Se continuar, será criado um novo documento mesmo havendo possível duplicidade.`));
+        if (!bs?.Modal) return Promise.resolve(false);
         modalEl.querySelector('[data-dup-confirm-message]').textContent = message;
         const check = modalEl.querySelector('#duplicateUploadAwareCheck');
         const confirmBtn = modalEl.querySelector('#btnConfirmDuplicateUpload');

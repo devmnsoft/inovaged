@@ -1,0 +1,33 @@
+/* Premium GED workspace: visual layer preserves legacy selectors and behavior. */
+.ged-page { position:relative; grid-template-columns:270px minmax(0,1fr)!important; gap:1rem!important; }
+.ged-page.with-document-panel { grid-template-columns:270px minmax(420px,1fr) minmax(340px,390px)!important; }
+.ged-folder-panel,.ged-main-panel,.ged-document-side-panel { border:1px solid var(--ig-border)!important; border-radius:var(--ig-radius-lg)!important; box-shadow:var(--ig-shadow-sm)!important; }
+.ged-folder-panel-header { min-height:68px; padding:1rem!important; }
+.ged-tree-row { position:relative; min-height:42px; border-radius:var(--ig-radius-sm); transition:background var(--ig-motion-fast),transform var(--ig-motion-fast); }
+.ged-tree-row:hover { background:var(--ig-surface-soft); }
+.ged-tree-row.active { background:var(--ig-primary-50)!important; color:var(--ig-primary-700); box-shadow:inset 3px 0 var(--ig-accent-500); }
+.ged-tree-row .dropdown { opacity:0; transition:opacity var(--ig-motion-fast); }
+.ged-tree-row:hover .dropdown,.ged-tree-row:focus-within .dropdown,.ged-tree-row.active .dropdown { opacity:1; }
+.ged-folder-header { min-height:92px; background:linear-gradient(180deg,#fff,var(--ig-surface-soft)); }
+.ged-folder-header-icon { background:var(--ig-primary-50)!important; color:var(--ig-primary-600)!important; }
+.ged-metrics-strip { row-gap:.4rem; }
+.ged-metric-pill { border-color:var(--ig-border)!important; background:#fff!important; }
+.ged-unified-search { min-height:46px; }
+.ged-unified-search [data-search-mode-label] { margin-left:.4rem; }
+.ged-filter-chip { transition:background var(--ig-motion-fast),color var(--ig-motion-fast),border-color var(--ig-motion-fast),transform var(--ig-motion-fast); }
+.ged-filter-chip:hover { transform:translateY(-1px); }
+.ged-filter-chip.active,.ged-filter-chip[aria-pressed="true"] { border-color:var(--ig-primary-600)!important; background:var(--ig-primary-600)!important; color:#fff!important; }
+.ged-document-workspace { min-height:360px; background:#fff; }
+.ged-global-drop-overlay { position:absolute; inset:0; z-index:1040; display:grid; place-items:center; padding:2rem; border:2px dashed var(--ig-primary-500); border-radius:var(--ig-radius-lg); background:rgba(239,246,255,.96); opacity:0; visibility:hidden; transform:scale(.99); transition:opacity var(--ig-motion-normal),transform var(--ig-motion-normal),visibility var(--ig-motion-normal); }
+.ged-global-drop-overlay.is-visible { opacity:1; visibility:visible; transform:scale(1); }
+.ged-global-drop-card { max-width:510px; text-align:center; }
+.ged-global-drop-card img { width:180px; height:auto; }
+.ged-global-drop-card h2 { margin:.75rem 0 .4rem; font-size:1.5rem; }
+.ged-global-drop-card p,.ged-global-drop-card small,.ged-global-drop-card span { display:block; color:var(--ig-text-secondary); }
+.ged-global-drop-card span { margin-top:1rem; font-weight:700; color:var(--ig-primary-700); }
+.ged-tree-node.is-dragging { opacity:.42; }
+.ged-tree-row.is-drop-target { background:var(--ig-accent-50)!important; outline:2px solid var(--ig-accent-500); }
+@media(max-width:1199.98px){.ged-page,.ged-page.with-document-panel{grid-template-columns:minmax(0,1fr)!important}.ged-folder-panel{position:relative!important;top:auto!important}.ged-document-side-panel{position:fixed!important;inset:66px 0 0 auto;width:min(430px,100vw);z-index:1035;background:#fff}}
+@media(max-width:767.98px){.ged-folder-panel{display:none}.ged-folder-header{align-items:flex-start!important}.ged-folder-actions{flex-wrap:wrap}.ged-metrics-strip{overflow-x:auto;flex-wrap:nowrap!important}.ged-toolbar .input-group{flex-wrap:wrap}.ged-unified-search .form-control{min-width:55%;}.ged-tree-row .dropdown{opacity:1}.ged-global-drop-overlay{position:fixed;inset:66px 0 0;border-radius:0}}
+@media(prefers-reduced-motion:reduce){.ged-global-drop-overlay,.ged-tree-row,.ged-filter-chip{transition:none!important}}
+.ged-selection-bar{position:fixed;z-index:1030;left:50%;bottom:1.5rem;display:flex;align-items:center;gap:1rem;padding:.65rem .75rem .65rem 1rem;border-radius:999px;background:var(--ig-text);color:#fff;box-shadow:var(--ig-shadow-lg);opacity:0;visibility:hidden;transform:translate(-50%,12px);transition:all var(--ig-motion-normal)}.ged-selection-bar.is-visible{opacity:1;visibility:visible;transform:translate(-50%,0)}

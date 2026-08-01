@@ -1,0 +1,3 @@
+.modal-content { border:1px solid var(--ig-border); border-radius:var(--ig-radius-lg); box-shadow:var(--ig-shadow-lg); }
+.modal-header,.modal-footer { border-color:var(--ig-border); }.popover{border-color:var(--ig-border);box-shadow:var(--ig-shadow-md)}
+.toast { border:1px solid var(--ig-border); border-radius:var(--ig-radius-md); box-shadow:var(--ig-shadow-md); }
