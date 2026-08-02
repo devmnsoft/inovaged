@@ -179,6 +179,8 @@ builder.Services
 builder.Services.AddSignalR();
 builder.Services.AddScoped<IDateTimeDisplayService, DateTimeDisplayService>();
 builder.Services.AddSingleton<IAtlasIconRegistry, AtlasIconRegistry>();
+builder.Services.AddSingleton<IAtlasIllustrationRegistry, AtlasIllustrationRegistry>();
+builder.Services.AddSingleton<IFileVisualResolver, FileVisualResolver>();
 builder.Services.AddScoped<IUiModuleAvailabilityService, UiModuleAvailabilityService>();
 builder.Services.AddScoped<IUserShellContextService, UserShellContextService>();
 builder.Services.AddScoped<IWorkspaceSearchService, WorkspaceSearchService>();
