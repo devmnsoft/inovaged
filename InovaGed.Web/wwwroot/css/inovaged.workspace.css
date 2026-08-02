@@ -110,3 +110,28 @@ body.is-resizing-workbench{cursor:col-resize;user-select:none}
 
 @media(max-width:991.98px){.ged-folder-panel,.ged-preview-panel,[data-ged-preview-panel]{max-width:none;width:100%}.ged-panel-resizer{display:none}.ged-preview-panel,[data-ged-preview-panel]{inset:0;position:fixed;z-index:var(--ig-z-overlay)}}
 @media(prefers-reduced-motion:reduce){.ged-panel-resizer{transition:none}}
+/* Operational workspace layers extend Atlas without introducing a parallel visual language. */
+.workspace-command-group { border-bottom: 1px solid var(--ig-border, #dbe4ee); padding-bottom: .5rem; margin-bottom: .5rem; }
+.workspace-command { align-items: center; background: transparent; border: 0; border-radius: .5rem; color: inherit; display: grid; gap: .75rem; grid-template-columns: 1.25rem 1fr auto; padding: .625rem .75rem; text-align: left; width: 100%; }
+.workspace-command:hover, .workspace-command:focus-visible { background: var(--ig-surface-subtle, #f2f7fb); outline: none; }
+.workspace-command span { display: grid; }
+.workspace-command small { color: var(--ig-text-muted, #64748b); }
+.workspace-command kbd { font-size: .6875rem; opacity: 0; }
+.workspace-command:focus-visible kbd { opacity: 1; }
+.workspace-guidance { align-items: center; background: #eef7ff; border: 1px solid #b9dcf7; border-radius: .625rem; color: #174d75; display: flex; gap: .75rem; margin-bottom: 1rem; padding: .75rem 1rem; }
+.workspace-guidance > i { font-size: 1.25rem; }
+.workspace-guidance p { margin: .125rem 0 0; }
+.workspace-guidance .btn:first-of-type { margin-left: auto; white-space: nowrap; }
+.workspace-undo { align-items: center; background: #132b3f; border-radius: .625rem; bottom: 1.25rem; box-shadow: 0 .75rem 2rem rgb(15 23 42 / 25%); color: white; display: grid; gap: .75rem; grid-template-columns: auto minmax(12rem, 1fr) auto auto; left: 50%; max-width: min(36rem, calc(100vw - 2rem)); padding: .75rem 1rem; position: fixed; transform: translateX(-50%); z-index: 1090; }
+.workspace-undo span { display: grid; }
+.workspace-undo small { color: #d9e7f2; }
+.workspace-undo .btn-link { color: #8ee0b3; font-weight: 700; }
+.workspace-undo .btn-close { filter: invert(1); }
+.workspace-connectivity { align-items: center; background: #fff6df; border: 1px solid #edc76b; border-radius: .5rem; bottom: 1rem; color: #654b0b; display: flex; gap: .625rem; left: 1rem; max-width: 32rem; padding: .75rem 1rem; position: fixed; z-index: 1100; }
+@media (max-width: 767.98px) {
+    .workspace-guidance { align-items: flex-start; flex-wrap: wrap; }
+    .workspace-guidance .btn:first-of-type { margin-left: 2rem; }
+    .workspace-undo { bottom: 4.75rem; grid-template-columns: auto 1fr auto; width: calc(100vw - 1rem); }
+    .workspace-undo .btn-close { display: none; }
+    .workspace-connectivity { bottom: 4.75rem; left: .5rem; right: .5rem; }
+}
