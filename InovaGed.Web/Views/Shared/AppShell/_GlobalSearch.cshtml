@@ -5,7 +5,11 @@
     const string inputId = "workspace-global-search-input";
 }
 
-<div class="global-search" data-global-search>
+<div class="global-search" data-global-search
+     data-workspace-commands-url="@Url.Action("Commands", "Workspace")"
+     data-workspace-module="@Model.ModuleLabel"
+     data-workspace-controller="@ViewContext.RouteData.Values["controller"]"
+     data-workspace-action="@ViewContext.RouteData.Values["action"]">
     <button class="global-search-trigger" type="button" data-global-search-open
             aria-haspopup="dialog" aria-controls="@panelId" aria-expanded="false">
         <i class="bi bi-search" aria-hidden="true"></i>
