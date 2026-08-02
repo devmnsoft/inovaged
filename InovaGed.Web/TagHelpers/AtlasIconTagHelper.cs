@@ -6,6 +6,7 @@ using Microsoft.Extensions.Hosting;
 namespace InovaGed.Web.TagHelpers;
 
 [HtmlTargetElement("app-icon", Attributes = "name")]
+[HtmlTargetElement("atlas-icon", Attributes = "name")]
 public sealed class AtlasIconTagHelper(
     IAtlasIconRegistry registry,
     IWebHostEnvironment environment,
@@ -18,6 +19,7 @@ public sealed class AtlasIconTagHelper(
     public string? Variant { get; set; }
     public string? Title { get; set; }
     public bool Decorative { get; set; }
+    public bool Filled { get; set; }
 
     public override void Process(TagHelperContext context, TagHelperOutput output)
     {
@@ -34,7 +36,7 @@ public sealed class AtlasIconTagHelper(
         var classes = new[]
         {
             "atlas-icon", existing, $"atlas-icon--{NormalizeSize(Size)}",
-            CssModifier(Tone), CssModifier(Variant ?? definition.Variant)
+            CssModifier(Tone), CssModifier(Filled ? "filled" : Variant ?? definition.Variant)
         }.Where(value => !string.IsNullOrWhiteSpace(value));
 
         output.TagName = "svg";
@@ -54,6 +56,11 @@ public sealed class AtlasIconTagHelper(
         {
             output.Attributes.SetAttribute("role", "img");
             output.Attributes.SetAttribute("aria-label", accessibleLabel);
+        }
+
+        if (!string.IsNullOrWhiteSpace(Title))
+        {
+            output.Attributes.SetAttribute("title", Title);
         }
 
         var titleMarkup = string.IsNullOrWhiteSpace(Title) ? string.Empty : $"<title>{System.Net.WebUtility.HtmlEncode(Title)}</title>";
