@@ -25,7 +25,7 @@
 
 <div class="card">
     <div class="card-header d-flex justify-content-between align-items-center">
-        <strong><i class="bi bi-diagram-3 me-1"></i>Workflow</strong>
+        <strong><app-icon class="me-1" name="folder-move" size="16" decorative="true" />Workflow</strong>
         <span class="badge @StatusBadge(Model.Status)">
             @StatusLabel(Model.Status)
         </span>
@@ -39,7 +39,7 @@
             {
                 <button class="btn btn-outline-primary"
                         onclick="openWorkflowModal('@Model.Id','@((int)DocumentStatus.InReview)','Enviar para análise', true)">
-                    <i class="bi bi-send me-1"></i> Enviar para análise
+                    <app-icon class="me-1" name="share" size="16" decorative="true" /> Enviar para análise
                 </button>
             }
 
@@ -47,12 +47,12 @@
             {
                 <button class="btn btn-outline-success"
                         onclick="openWorkflowModal('@Model.Id','@((int)DocumentStatus.InSignature)','Aprovar para assinatura', true)">
-                    <i class="bi bi-check2-circle me-1"></i> Aprovar (Assinatura)
+                    <app-icon class="me-1" name="check" size="16" decorative="true" /> Aprovar (Assinatura)
                 </button>
 
                 <button class="btn btn-outline-danger"
                         onclick="openWorkflowModal('@Model.Id','@((int)DocumentStatus.Draft)','Reprovar (voltar para rascunho)', true)">
-                    <i class="bi bi-arrow-counterclockwise me-1"></i> Reprovar
+                    <app-icon class="me-1" name="undo" size="16" decorative="true" /> Reprovar
                 </button>
             }
 
@@ -60,12 +60,12 @@
             {
                 <button class="btn btn-outline-success"
                         onclick="openWorkflowModal('@Model.Id','@((int)DocumentStatus.Published)','Publicar', false)">
-                    <i class="bi bi-megaphone me-1"></i> Publicar
+                    <app-icon class="me-1" name="notification" size="16" decorative="true" /> Publicar
                 </button>
 
                 <button class="btn btn-outline-secondary"
                         onclick="openWorkflowModal('@Model.Id','@((int)DocumentStatus.InReview)','Voltar para análise', true)">
-                    <i class="bi bi-arrow-left-circle me-1"></i> Voltar para análise
+                    <app-icon class="me-1" name="arrow-left" size="16" decorative="true" /> Voltar para análise
                 </button>
             }
 
@@ -73,14 +73,14 @@
             {
                 <button class="btn btn-outline-dark"
                         onclick="openWorkflowModal('@Model.Id','@((int)DocumentStatus.Archived)','Arquivar', true)">
-                    <i class="bi bi-archive me-1"></i> Arquivar
+                    <app-icon class="me-1" name="documents" size="16" decorative="true" /> Arquivar
                 </button>
             }
 
             <button class="btn btn-outline-secondary"
                     id="btnWorkflowHistory"
                     onclick="toggleWorkflowHistory('@Model.Id', this)">
-                <span class="btn-text"><i class="bi bi-clock-history me-1"></i> Ver histórico</span>
+                <span class="btn-text"><app-icon class="me-1" name="history" size="16" decorative="true" /> Ver histórico</span>
                 <span class="btn-loading d-none">
                     <span class="spinner-border spinner-border-sm me-1" role="status"></span>
                     Carregando...

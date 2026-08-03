@@ -60,12 +60,12 @@
         @if (Model.CurrentFolderIsVirtual)
         {
             <div class="alert alert-info" role="alert">
-                <i class="bi bi-info-circle me-1"></i>Destino selecionado: @uploadFolderLabel. O sistema validará o destino ao iniciar o upload.
+                <app-icon class="me-1" name="info" size="16" decorative="true" />Destino selecionado: @uploadFolderLabel. O sistema validará o destino ao iniciar o upload.
             </div>
         }
 
         <div id="gedUploadProblemBanner" class="alert alert-warning alert-dismissible fade show d-none" role="alert">
-            <i class="bi bi-exclamation-triangle me-1"></i>
+            <app-icon class="me-1" name="warning" size="16" decorative="true" />
             <span data-upload-problem-message>Seu último upload teve falhas.</span>
             <a class="alert-link ms-2" data-upload-problem-link href="/Ged/Uploads">Ver detalhes</a>
             <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Fechar"></button>
@@ -74,40 +74,42 @@
         @if (TempData["Success"] is string okMsg && !string.IsNullOrWhiteSpace(okMsg))
         {
             <div class="alert alert-success alert-dismissible fade show" role="alert">
-                <i class="bi bi-check-circle me-1"></i>@okMsg
+                <app-icon class="me-1" name="check" size="16" decorative="true" />@okMsg
                 <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Fechar"></button>
             </div>
         }
         @if (TempData["Error"] is string errMsg && !string.IsNullOrWhiteSpace(errMsg))
         {
             <div class="alert alert-danger alert-dismissible fade show" role="alert">
-                <i class="bi bi-exclamation-triangle me-1"></i>@errMsg
+                <app-icon class="me-1" name="warning" size="16" decorative="true" />@errMsg
                 <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Fechar"></button>
             </div>
         }
         @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
         {
             <div class="alert alert-warning" role="alert">
-                <i class="bi bi-database-exclamation me-1"></i>@Model.ErrorMessage
+                <app-icon class="me-1" name="database" size="16" decorative="true" />@Model.ErrorMessage
             </div>
         }
     </div>
 
+    <button type="button" class="ged-drawer-backdrop" data-ged-close-folders aria-label="Fechar painel de pastas"></button>
+
     <!-- COLUNA PASTAS -->
-    <aside class="ged-folder-panel">
+    <aside class="ged-folder-panel" id="gedFolderPanel" aria-label="Pastas">
         <div class="ged-folder-panel-header">
             <div>
                 <div class="fw-semibold">Pastas</div>
                 <div class="small text-muted">Navegue pelo acervo</div>
             </div>
             <div class="d-flex gap-1">
-                <button type="button" class="btn btn-sm btn-light" id="btnReloadFolderTree" title="Recarregar"><i class="bi bi-arrow-clockwise"></i></button>
-                <a class="btn btn-sm btn-outline-primary" asp-action="Folders" asp-controller="Ged" title="Gerenciar pastas"><i class="bi bi-gear"></i></a>
+                <button type="button" class="btn btn-sm btn-light" id="btnReloadFolderTree" title="Recarregar"><app-icon name="refresh" size="16" decorative="true" /></button>
+                <a class="btn btn-sm btn-outline-primary" asp-action="Folders" asp-controller="Ged" title="Gerenciar pastas"><app-icon name="settings" size="16" decorative="true" /></a>
             </div>
         </div>
         <div class="ged-folder-search p-2 border-bottom">
             <div class="input-group input-group-sm">
-                <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+                <span class="input-group-text bg-white"><app-icon name="search" size="16" decorative="true" /></span>
                 <input id="gedFolderSearch" class="form-control" placeholder="Pesquisar pasta" autocomplete="off" />
             </div>
         </div>
@@ -207,7 +209,7 @@
                                                     data-bs-toggle="dropdown"
                                                     aria-expanded="false"
                                                     title="Ações">
-                                                <i class="bi bi-three-dots-vertical"></i>
+                                                <app-icon name="more" size="16" decorative="true" />
                                             </button>
                                             <ul class="dropdown-menu dropdown-menu-end">
                                                 <li>
@@ -217,7 +219,7 @@
                                                             data-bs-target="#modalRenomearPastaExplorer"
                                                             data-id="@n.Id"
                                                             data-nome="@n.Name">
-                                                        <i class="bi bi-pencil me-1"></i> Renomear
+                                                        <app-icon class="me-1" name="edit" size="16" decorative="true" /> Renomear
                                                     </button>
                                                 </li>
                                                 @if (canMoveFolders && !n.IsVirtual && !isVirtual)
@@ -228,24 +230,24 @@
                                                                 data-folder-id="@n.Id"
                                                                 data-folder-name="@n.Name"
                                                                 data-parent-id="@(n.ParentId?.ToString() ?? "")">
-                                                            <i class="bi bi-arrows-move me-1"></i> Mover pasta
+                                                            <app-icon class="me-1" name="folder-move" size="16" decorative="true" /> Mover pasta
                                                         </button>
                                                     </li>
                                                 }
                                                 <li>
                                                     <button class="dropdown-item" type="button" data-bs-toggle="modal" data-bs-target="#modalNovaPasta" data-parent-id="@n.Id">
-                                                        <i class="bi bi-folder-plus me-1"></i> Nova subpasta
+                                                        <app-icon class="me-1" name="folder-add" size="16" decorative="true" /> Nova subpasta
                                                     </button>
                                                 </li>
                                                 <li>
                                                     <button class="dropdown-item" type="button" data-upload-folder-id="@(n.UploadFolderId == Guid.Empty ? n.Id : n.UploadFolderId)"
                                     data-listing-folder-id="@(n.ListingFolderId == Guid.Empty ? (n.UploadFolderId == Guid.Empty ? n.Id : n.UploadFolderId) : n.ListingFolderId)" data-folder-id="@n.Id" onclick="window.GedBulkUpload?.startUploadToFolder?.(this.dataset.uploadFolderId, [], '@n.Name', this.dataset.folderId, true)">
-                                                        <i class="bi bi-cloud-arrow-up me-1"></i> Enviar documentos
+                                                        <app-icon class="me-1" name="upload-cloud" size="16" decorative="true" /> Enviar documentos
                                                     </button>
                                                 </li>
                                                 <li>
                                                     <button class="dropdown-item js-copy-folder-path" type="button" data-folder-path="@(n.Path ?? BuildFolderPath(n.Id))">
-                                                        <i class="bi bi-clipboard me-1"></i> Copiar caminho
+                                                        <app-icon class="me-1" name="copy" size="16" decorative="true" /> Copiar caminho
                                                     </button>
                                                 </li>
                                                 <li><hr class="dropdown-divider" /></li>
@@ -256,7 +258,7 @@
                                                             data-bs-target="#modalExcluirPastaExplorer"
                                                             data-id="@n.Id"
                                                             data-nome="@n.Name">
-                                                        <i class="bi bi-trash me-1"></i> Excluir
+                                                        <app-icon class="me-1" name="delete" size="16" decorative="true" /> Excluir
                                                     </button>
                                                 </li>
                                             </ul>
@@ -298,7 +300,7 @@
                                data-is-virtual="true"
                                data-can-receive-documents="@(virtualRootCanReceive.ToString().ToLowerInvariant())"
                                data-folder-virtual="true">
-                                <i class="bi bi-house"></i> Raiz
+                                <app-icon name="folder-open" size="16" decorative="true" /> Raiz
                             </a>
                         </li>
                     </ul>
@@ -363,7 +365,7 @@
                                                     data-bs-toggle="dropdown"
                                                     aria-expanded="false"
                                                     title="Ações">
-                                                <i class="bi bi-three-dots-vertical"></i>
+                                                <app-icon name="more" size="16" decorative="true" />
                                             </button>
                                             <ul class="dropdown-menu dropdown-menu-end">
                                                 <li>
@@ -373,7 +375,7 @@
                                                             data-bs-target="#modalRenomearPastaExplorer"
                                                             data-id="@n.Id"
                                                             data-nome="@n.Name">
-                                                        <i class="bi bi-pencil me-1"></i> Renomear
+                                                        <app-icon class="me-1" name="edit" size="16" decorative="true" /> Renomear
                                                     </button>
                                                 </li>
                                                 @if (canMoveFolders && !n.IsVirtual && !isVirtual)
@@ -384,24 +386,24 @@
                                                                 data-folder-id="@n.Id"
                                                                 data-folder-name="@n.Name"
                                                                 data-parent-id="@(n.ParentId?.ToString() ?? "")">
-                                                            <i class="bi bi-arrows-move me-1"></i> Mover pasta
+                                                            <app-icon class="me-1" name="folder-move" size="16" decorative="true" /> Mover pasta
                                                         </button>
                                                     </li>
                                                 }
                                                 <li>
                                                     <button class="dropdown-item" type="button" data-bs-toggle="modal" data-bs-target="#modalNovaPasta" data-parent-id="@n.Id">
-                                                        <i class="bi bi-folder-plus me-1"></i> Nova subpasta
+                                                        <app-icon class="me-1" name="folder-add" size="16" decorative="true" /> Nova subpasta
                                                     </button>
                                                 </li>
                                                 <li>
                                                     <button class="dropdown-item" type="button" data-upload-folder-id="@(n.UploadFolderId == Guid.Empty ? n.Id : n.UploadFolderId)"
                                     data-listing-folder-id="@(n.ListingFolderId == Guid.Empty ? (n.UploadFolderId == Guid.Empty ? n.Id : n.UploadFolderId) : n.ListingFolderId)" data-folder-id="@n.Id" onclick="window.GedBulkUpload?.startUploadToFolder?.(this.dataset.uploadFolderId, [], '@n.Name', this.dataset.folderId, true)">
-                                                        <i class="bi bi-cloud-arrow-up me-1"></i> Enviar documentos
+                                                        <app-icon class="me-1" name="upload-cloud" size="16" decorative="true" /> Enviar documentos
                                                     </button>
                                                 </li>
                                                 <li>
                                                     <button class="dropdown-item js-copy-folder-path" type="button" data-folder-path="@(n.Path ?? BuildFolderPath(n.Id))">
-                                                        <i class="bi bi-clipboard me-1"></i> Copiar caminho
+                                                        <app-icon class="me-1" name="copy" size="16" decorative="true" /> Copiar caminho
                                                     </button>
                                                 </li>
                                                 <li><hr class="dropdown-divider" /></li>
@@ -412,7 +414,7 @@
                                                             data-bs-target="#modalExcluirPastaExplorer"
                                                             data-id="@n.Id"
                                                             data-nome="@n.Name">
-                                                        <i class="bi bi-trash me-1"></i> Excluir
+                                                        <app-icon class="me-1" name="delete" size="16" decorative="true" /> Excluir
                                                     </button>
                                                 </li>
                                             </ul>
@@ -436,16 +438,20 @@
     <section class="ged-main-panel">
         <div class="ged-folder-header">
             <div class="ged-folder-heading">
-                <div class="ged-folder-header-icon"><i class="bi bi-folder2-open"></i></div>
+                <button type="button" class="btn btn-outline-secondary btn-sm ged-folder-drawer-toggle" data-ged-open-folders aria-controls="gedFolderPanel" aria-expanded="false">
+                    <app-icon name="panel-left" size="16" decorative="true" />
+                    <span>Pastas</span>
+                </button>
+                <div class="ged-folder-header-icon"><app-icon name="folder-open" size="16" decorative="true" /></div>
                 <div class="min-w-0">
                     <h1 class="h5 mb-1 text-truncate" data-current-folder-title>@(!string.IsNullOrWhiteSpace(Model.CurrentFolderName) ? Model.CurrentFolderName : "Raiz")</h1>
-                    <div class="ged-breadcrumb text-truncate" data-current-folder-breadcrumb><i class="bi bi-diagram-3 me-1"></i>@breadcrumbText</div>
+                    <div class="ged-breadcrumb text-truncate" data-current-folder-breadcrumb><app-icon class="me-1" name="folder-move" size="16" decorative="true" />@breadcrumbText</div>
                     <div class="ged-metrics-strip">
                         <span class="ged-metric-pill"><strong id="documentsTotalKpi">@Model.Documents.Count</strong> Documentos</span>
                         <span class="ged-metric-pill"><strong id="selectedDocumentsKpi">0</strong> Selecionados</span>
                         <span class="ged-metric-pill"><strong id="documentsUnclassifiedKpi">@unclassifiedCount</strong> Não classificados</span>
                         <span class="ged-metric-pill"><strong id="documentsOcrKpi">@ocrAvailableCount</strong> Com OCR</span>
-                        <span class="ged-metric-pill"><strong id="documentsIncompleteKpi">@incompleteCount</strong> Incompletos <button type="button" class="btn btn-link btn-sm p-0 ged-help-popover" data-bs-toggle="popover" data-bs-trigger="focus" data-bs-placement="bottom" title="Documento incompleto" data-bs-content="Documento incompleto é um documento enviado parcialmente e que poderá receber novas partes futuramente. Exemplo: um documento de agendamento foi digitalizado pela metade hoje e a outra parte será enviada depois. Quando todas as partes forem anexadas, o sistema pode consolidar em uma versão final." aria-label="Ajuda sobre documentos incompletos"><i class="bi bi-question-circle"></i></button></span>
+                        <span class="ged-metric-pill"><strong id="documentsIncompleteKpi">@incompleteCount</strong> Incompletos <button type="button" class="btn btn-link btn-sm p-0 ged-help-popover" data-bs-toggle="popover" data-bs-trigger="focus" data-bs-placement="bottom" title="Documento incompleto" data-bs-content="Documento incompleto é um documento enviado parcialmente e que poderá receber novas partes futuramente. Exemplo: um documento de agendamento foi digitalizado pela metade hoje e a outra parte será enviada depois. Quando todas as partes forem anexadas, o sistema pode consolidar em uma versão final." aria-label="Ajuda sobre documentos incompletos"><app-icon name="circle-question" size="16" decorative="true" /></button></span>
                         <span class="ged-metric-pill"><strong id="documentsReadyConsolidateKpi">@readyToConsolidateCount</strong> Prontos para consolidar</span>
                         <span class="ged-metric-pill"><strong id="documentsConsolidatedKpi">@consolidatedCount</strong> Consolidados</span>
                         <span class="ged-metric-pill"><strong id="documentsPartialOcrKpi">@partialOcrCount</strong> OCR parcial</span>
@@ -456,14 +462,14 @@
             <div class="ged-folder-actions">
                 @if (Model.CanBulkUpload || Model.CurrentFolderId != null)
                 {
-                    <button type="button" id="btnOpenBulkUpload" class="btn btn-primary btn-sm"><i class="bi bi-cloud-arrow-up me-1"></i> Adicionar documentos</button>
+                    <button type="button" id="btnOpenBulkUpload" class="btn btn-primary btn-sm"><app-icon class="me-1" name="upload-cloud" size="16" decorative="true" /> Adicionar documentos</button>
                 }
-                <a class="btn btn-outline-secondary btn-sm" href="@Url.Action("Index", "Ged", new { folderId = Model.CurrentFolderId, q = Model.Query })"><i class="bi bi-arrow-clockwise me-1"></i> Atualizar</a>
+                <a class="btn btn-outline-secondary btn-sm" href="@Url.Action("Index", "Ged", new { folderId = Model.CurrentFolderId, q = Model.Query })"><app-icon class="me-1" name="refresh" size="16" decorative="true" /> Atualizar</a>
                 <div class="dropdown">
-                    <button class="btn btn-light btn-sm border" type="button" data-bs-toggle="dropdown" aria-label="Mais ações"><i class="bi bi-three-dots"></i></button>
+                    <button class="btn btn-light btn-sm border" type="button" data-bs-toggle="dropdown" aria-label="Mais ações"><app-icon name="more" size="16" decorative="true" /></button>
                     <ul class="dropdown-menu dropdown-menu-end">
-                        <li><a class="dropdown-item" asp-controller="Ged" asp-action="Kpi"><i class="bi bi-bar-chart-line me-2"></i>KPI GED</a></li>
-                        <li><button class="dropdown-item" type="button" data-bs-toggle="modal" data-bs-target="#modalFilaOcr"><i class="bi bi-list-task me-2"></i>Ver fila OCR</button></li>
+                        <li><a class="dropdown-item" asp-controller="Ged" asp-action="Kpi"><app-icon class="me-2" name="report" size="16" decorative="true" />KPI GED</a></li>
+                        <li><button class="dropdown-item" type="button" data-bs-toggle="modal" data-bs-target="#modalFilaOcr"><app-icon class="me-2" name="list" size="16" decorative="true" />Ver fila OCR</button></li>
                     </ul>
                 </div>
             </div>
@@ -472,11 +478,11 @@
         @await Html.PartialAsync("_SmartSearchPanel", Model)
 
         <div class="ged-quick-filter-row" aria-label="Filtros rápidos de documentos fracionados">
-            <button type="button" class="ged-filter-chip js-quick-partial-filter" data-filter="incomplete"><i class="bi bi-funnel"></i> Incompletos</button>
-            <button type="button" class="ged-filter-chip js-quick-partial-filter" data-filter="ready"><i class="bi bi-check2-circle"></i> Prontos</button>
-            <button type="button" class="ged-filter-chip js-quick-partial-filter" data-filter="consolidated"><i class="bi bi-layers"></i> Consolidados</button>
-            <button type="button" class="ged-filter-chip js-quick-partial-filter" data-filter="ocr-partial"><i class="bi bi-text-paragraph"></i> OCR parcial</button>
-            <button type="button" class="ged-filter-chip d-none" id="btnClearPartialFilters"><i class="bi bi-x-circle"></i> Limpar filtros</button>
+            <button type="button" class="ged-filter-chip js-quick-partial-filter" data-filter="incomplete"><app-icon name="filter" size="16" decorative="true" /> Incompletos</button>
+            <button type="button" class="ged-filter-chip js-quick-partial-filter" data-filter="ready"><app-icon name="check" size="16" decorative="true" /> Prontos</button>
+            <button type="button" class="ged-filter-chip js-quick-partial-filter" data-filter="consolidated"><app-icon name="document-version" size="16" decorative="true" /> Consolidados</button>
+            <button type="button" class="ged-filter-chip js-quick-partial-filter" data-filter="ocr-partial"><app-icon name="ocr" size="16" decorative="true" /> OCR parcial</button>
+            <button type="button" class="ged-filter-chip d-none" id="btnClearPartialFilters"><app-icon name="close" size="16" decorative="true" /> Limpar filtros</button>
             <span id="gedActiveQuickFilterChip" class="ged-filter-chip active d-none">Filtro: <span data-filter-label></span> <button type="button" class="btn btn-link btn-sm p-0 ms-1" id="btnClearQuickFilterChip" aria-label="Limpar filtro rápido">×</button></span>
         </div>
         <div id="gedFilteredEmptyState" class="alert alert-info d-none" role="status">Nenhum documento encontrado para este filtro.</div>
@@ -485,17 +491,17 @@
             <div class="ged-search-row">
                 <input type="hidden" id="currentFolderId" value="@Model.CurrentFolderId" />
                 <div class="input-group ged-unified-search">
-                    <button id="gedSearchModeButton" class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false"><i class="bi bi-search"></i><span data-search-mode-label>Rápida</span></button>
+                    <button id="gedSearchModeButton" class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false"><app-icon name="search" size="16" decorative="true" /><span data-search-mode-label>Rápida</span></button>
                     <ul class="dropdown-menu" aria-labelledby="gedSearchModeButton">
-                        <li><button class="dropdown-item js-search-mode" type="button" data-mode="quick"><i class="bi bi-lightning me-2"></i>Pesquisa rápida</button></li>
-                        <li><button class="dropdown-item js-search-mode" type="button" data-mode="smart"><i class="bi bi-stars me-2"></i>Pesquisa inteligente</button></li>
-                        <li><button class="dropdown-item js-search-mode" type="button" data-mode="advanced"><i class="bi bi-sliders me-2"></i>Pesquisa avançada</button></li>
+                        <li><button class="dropdown-item js-search-mode" type="button" data-mode="quick"><app-icon class="me-2" name="smart-search" size="16" decorative="true" />Pesquisa rápida</button></li>
+                        <li><button class="dropdown-item js-search-mode" type="button" data-mode="smart"><app-icon class="me-2" name="smart-search" size="16" decorative="true" />Pesquisa inteligente</button></li>
+                        <li><button class="dropdown-item js-search-mode" type="button" data-mode="advanced"><app-icon class="me-2" name="filter" size="16" decorative="true" />Pesquisa avançada</button></li>
                     </ul>
-                    <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+                    <span class="input-group-text bg-white"><app-icon name="search" size="16" decorative="true" /></span>
                     <input id="legacySmartSearchInput" class="form-control" name="q" value="@Model.Query" placeholder="Pesquisar nesta pasta" data-quick-placeholder="Pesquisar nesta pasta" data-smart-placeholder="Descreva o documento que deseja encontrar..." />
-                    <button id="legacyBtnSmartSearchClear" class="btn btn-outline-secondary" type="button" title="Limpar busca"><i class="bi bi-x-lg"></i></button>
-                    <button id="legacyBtnSmartFilters" class="btn btn-outline-secondary" type="button" title="Filtros avançados"><i class="bi bi-sliders"></i> Filtros</button>
-                    <button id="legacyBtnSmartSearch" class="btn btn-primary" type="button"><i class="bi bi-search"></i> Pesquisar</button>
+                    <button id="legacyBtnSmartSearchClear" class="btn btn-outline-secondary" type="button" title="Limpar busca"><app-icon name="close" size="16" decorative="true" /></button>
+                    <button id="legacyBtnSmartFilters" class="btn btn-outline-secondary" type="button" title="Filtros avançados"><app-icon name="filter" size="16" decorative="true" /> Filtros</button>
+                    <button id="legacyBtnSmartSearch" class="btn btn-primary" type="button"><app-icon name="search" size="16" decorative="true" /> Pesquisar</button>
                 </div>
                 <div id="legacySmartSearchSuggestions" class="ged-smart-suggestions"></div>
                 <div id="legacySmartSearchFilters" class="border rounded-3 p-2 mt-2 bg-light d-none">
@@ -509,14 +515,14 @@
                 </div>
             </div>
             <div class="ged-toolbar-actions dropdown">
-                <button class="btn btn-sm btn-outline-dark dropdown-toggle" type="button" data-bs-toggle="dropdown"><i class="bi bi-three-dots"></i> Mais ações</button>
+                <button class="btn btn-sm btn-outline-dark dropdown-toggle" type="button" data-bs-toggle="dropdown"><app-icon name="more" size="16" decorative="true" /> Mais ações</button>
                 <ul class="dropdown-menu dropdown-menu-end">
-                    <li><a class="dropdown-item" asp-controller="Ged" asp-action="Kpi"><i class="bi bi-bar-chart-line me-1"></i>KPI GED</a></li>
-                    <li><button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#modalFilaOcr"><i class="bi bi-list-task me-1"></i>Fila OCR</button></li>
-                    <li><a class="dropdown-item" href="/SmartSearch"><i class="bi bi-stars me-1"></i>Busca inteligente</a></li>
-                    <li><a class="dropdown-item" href="/Ged/Uploads"><i class="bi bi-clock-history me-1"></i>Histórico de uploads</a></li>
-                    <li><a class="dropdown-item" href="/Operations"><i class="bi bi-gear-wide-connected me-1"></i>Operações</a></li>
-                    <li><a class="dropdown-item" href="/Ged/Intelligence"><i class="bi bi-speedometer2 me-1"></i>BI GED</a></li>
+                    <li><a class="dropdown-item" asp-controller="Ged" asp-action="Kpi"><app-icon class="me-1" name="report" size="16" decorative="true" />KPI GED</a></li>
+                    <li><button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#modalFilaOcr"><app-icon class="me-1" name="list" size="16" decorative="true" />Fila OCR</button></li>
+                    <li><a class="dropdown-item" href="/SmartSearch"><app-icon class="me-1" name="smart-search" size="16" decorative="true" />Busca inteligente</a></li>
+                    <li><a class="dropdown-item" href="/Ged/Uploads"><app-icon class="me-1" name="history" size="16" decorative="true" />Histórico de uploads</a></li>
+                    <li><a class="dropdown-item" href="/Operations"><app-icon class="me-1" name="settings" size="16" decorative="true" />Operações</a></li>
+                    <li><a class="dropdown-item" href="/Ged/Intelligence"><app-icon class="me-1" name="dashboard" size="16" decorative="true" />BI GED</a></li>
                 </ul>
             </div>
         </div>
@@ -557,12 +563,12 @@
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title"><i class="bi bi-file-earmark-plus me-1"></i>Adicionar parte do documento</h5>
+                <h5 class="modal-title"><app-icon class="me-1" name="document-add" size="16" decorative="true" />Adicionar parte do documento</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
             </div>
             <div class="modal-body">
                 <div class="alert alert-warning small mb-3">
-                    <i class="bi bi-info-circle me-1"></i>Use esta opção quando o documento foi enviado parcialmente e será complementado futuramente.
+                    <app-icon class="me-1" name="info" size="16" decorative="true" />Use esta opção quando o documento foi enviado parcialmente e será complementado futuramente.
                 </div>
                 <input type="hidden" id="partDocumentId" />
                 <div class="mb-3">
@@ -591,7 +597,7 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
-                <button type="button" class="btn btn-warning" id="btnSubmitDocumentPart"><i class="bi bi-cloud-arrow-up me-1"></i>Enviar parte</button>
+                <button type="button" class="btn btn-warning" id="btnSubmitDocumentPart"><app-icon class="me-1" name="upload-cloud" size="16" decorative="true" />Enviar parte</button>
             </div>
         </div>
     </div>
@@ -601,7 +607,7 @@
     <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title"><i class="bi bi-files me-1"></i>Partes do documento</h5>
+                <h5 class="modal-title"><app-icon class="me-1" name="documents" size="16" decorative="true" />Partes do documento</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
             </div>
             <div class="modal-body">
@@ -616,7 +622,7 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Fechar</button>
-                <button type="button" class="btn btn-primary" id="btnConsolidateDocument" disabled><i class="bi bi-layers me-1"></i>Consolidar documento</button>
+                <button type="button" class="btn btn-primary" id="btnConsolidateDocument" disabled><app-icon class="me-1" name="document-version" size="16" decorative="true" />Consolidar documento</button>
             </div>
         </div>
     </div>
@@ -626,7 +632,7 @@
     <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title"><i class="bi bi-exclamation-triangle text-warning me-1"></i>Como funciona o Documento Incompleto?</h5>
+                <h5 class="modal-title"><app-icon class="text-warning me-1" name="warning" size="16" decorative="true" />Como funciona o Documento Incompleto?</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
             </div>
             <div class="modal-body">
@@ -648,7 +654,7 @@
     <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title"><i class="bi bi-diagram-3 me-1"></i>Fila de Processamento OCR</h5>
+                <h5 class="modal-title"><app-icon class="me-1" name="folder-move" size="16" decorative="true" />Fila de Processamento OCR</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
             </div>
             <div class="modal-body">
@@ -705,7 +711,7 @@
                 @Html.AntiForgeryToken()
                 <input type="hidden" name="ParentId" id="new-folder-parent-id" />
                 <div class="modal-header">
-                    <h5 class="modal-title"><i class="bi bi-folder-plus me-1"></i> Nova subpasta</h5>
+                    <h5 class="modal-title"><app-icon class="me-1" name="folder-add" size="16" decorative="true" /> Nova subpasta</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
                 </div>
                 <div class="modal-body">
@@ -714,7 +720,7 @@
                 </div>
                 <div class="modal-footer">
                     <button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">Cancelar</button>
-                    <button class="btn btn-primary" type="submit"><i class="bi bi-check2 me-1"></i> Criar</button>
+                    <button class="btn btn-primary" type="submit"><app-icon class="me-1" name="check" size="16" decorative="true" /> Criar</button>
                 </div>
             </form>
         </div>
@@ -730,7 +736,7 @@
                 <input type="hidden" name="id" id="exp-rename-id" />
                 <input type="hidden" name="folderId" value="@Model.CurrentFolderId" />
                 <div class="modal-header">
-                    <h5 class="modal-title"><i class="bi bi-pencil me-1"></i> Renomear pasta</h5>
+                    <h5 class="modal-title"><app-icon class="me-1" name="edit" size="16" decorative="true" /> Renomear pasta</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
                 </div>
                 <div class="modal-body">
@@ -744,7 +750,7 @@
                 </div>
                 <div class="modal-footer">
                     <button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">Cancelar</button>
-                    <button class="btn btn-primary" type="submit"><i class="bi bi-check2 me-1"></i> Salvar</button>
+                    <button class="btn btn-primary" type="submit"><app-icon class="me-1" name="check" size="16" decorative="true" /> Salvar</button>
                 </div>
             </form>
         </div>
@@ -760,7 +766,7 @@
                 @Html.AntiForgeryToken()
                 <input type="hidden" id="moveFolderId" />
                 <div class="modal-header">
-                    <h5 class="modal-title"><i class="bi bi-arrows-move me-1"></i> Mover pasta</h5>
+                    <h5 class="modal-title"><app-icon class="me-1" name="folder-move" size="16" decorative="true" /> Mover pasta</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
                 </div>
                 <div class="modal-body">
@@ -780,7 +786,7 @@
                 </div>
                 <div class="modal-footer">
                     <button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">Cancelar</button>
-                    <button class="btn btn-primary" type="submit" id="btnConfirmMoveFolder"><span class="btn-text"><i class="bi bi-check2 me-1"></i> Mover pasta</span><span class="btn-loading d-none">Movendo...</span></button>
+                    <button class="btn btn-primary" type="submit" id="btnConfirmMoveFolder"><span class="btn-text"><app-icon class="me-1" name="check" size="16" decorative="true" /> Mover pasta</span><span class="btn-loading d-none">Movendo...</span></button>
                 </div>
             </form>
         </div>
@@ -796,7 +802,7 @@
                 <input type="hidden" name="id" id="exp-del-id" />
                 <input type="hidden" name="folderId" value="@Model.CurrentFolderId" />
                 <div class="modal-header">
-                    <h5 class="modal-title text-danger"><i class="bi bi-trash me-1"></i> Excluir pasta</h5>
+                    <h5 class="modal-title text-danger"><app-icon class="me-1" name="delete" size="16" decorative="true" /> Excluir pasta</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
                 </div>
                 <div class="modal-body">
@@ -808,7 +814,7 @@
                 </div>
                 <div class="modal-footer">
                     <button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">Cancelar</button>
-                    <button class="btn btn-danger" type="submit"><i class="bi bi-trash me-1"></i> Excluir</button>
+                    <button class="btn btn-danger" type="submit"><app-icon class="me-1" name="delete" size="16" decorative="true" /> Excluir</button>
                 </div>
             </form>
         </div>
@@ -846,7 +852,7 @@
 
                     <div class="card border-warning-subtle mb-3">
                         <div class="card-body py-3">
-                            <div class="fw-semibold mb-2"><i class="bi bi-diagram-2 me-1"></i>Tipo de documento enviado</div>
+                            <div class="fw-semibold mb-2"><app-icon class="me-1" name="folder-move" size="16" decorative="true" />Tipo de documento enviado</div>
                             <div class="form-check mb-2">
                                 <input class="form-check-input js-upload-partial-mode" type="radio" name="uploadPartialMode" id="uploadDocumentComplete" value="complete" checked>
                                 <label class="form-check-label fw-semibold" for="uploadDocumentComplete">Documento completo</label>
@@ -855,12 +861,12 @@
                             <div class="form-check">
                                 <input class="form-check-input js-upload-partial-mode" type="radio" name="uploadPartialMode" id="uploadDocumentIncomplete" value="partial" @(canManagePartialDocuments ? null : "disabled")>
                                 <label class="form-check-label fw-semibold" for="uploadDocumentIncomplete">Documento incompleto</label>
-                                <button type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline" data-bs-toggle="popover" data-bs-trigger="hover focus" data-bs-placement="right" title="Documento fracionado" data-bs-content="Documento incompleto é um documento enviado parcialmente e que poderá receber novas partes futuramente. Exemplo: um documento de agendamento foi digitalizado pela metade hoje e a outra parte será enviada depois." aria-label="Ajuda sobre documento incompleto"><i class="bi bi-question-circle"></i></button>
+                                <button type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline" data-bs-toggle="popover" data-bs-trigger="hover focus" data-bs-placement="right" title="Documento fracionado" data-bs-content="Documento incompleto é um documento enviado parcialmente e que poderá receber novas partes futuramente. Exemplo: um documento de agendamento foi digitalizado pela metade hoje e a outra parte será enviada depois." aria-label="Ajuda sobre documento incompleto"><app-icon name="circle-question" size="16" decorative="true" /></button>
                                 <div class="form-text">Use quando o documento está sendo enviado em partes e será complementado futuramente.@(!canManagePartialDocuments ? " Permissão necessária: DOCUMENT_PART_MARK_INCOMPLETE ou DOCUMENT_PART_ADD." : "")</div>
                             </div>
                             <div id="uploadPartialFields" class="alert alert-warning mt-3 mb-0 d-none">
                                 <input type="hidden" name="isDocumentPart" id="uploadIsDocumentPart" value="false" />
-                                <div class="mb-2"><i class="bi bi-exclamation-triangle me-1"></i>Documento incompleto é um documento enviado parcialmente e que poderá receber novas partes futuramente. Exemplo: um documento de agendamento foi digitalizado pela metade hoje e a outra parte será enviada depois.</div>
+                                <div class="mb-2"><app-icon class="me-1" name="warning" size="16" decorative="true" />Documento incompleto é um documento enviado parcialmente e que poderá receber novas partes futuramente. Exemplo: um documento de agendamento foi digitalizado pela metade hoje e a outra parte será enviada depois.</div>
                                 <div class="row g-2">
                                     <div class="col-sm-4">
                                         <label class="form-label" for="uploadPartNumber">Parte número</label>
@@ -914,7 +920,7 @@
         <div id="bulkUploadMessage" class="d-none alert"></div>
         <div class="card border-warning-subtle mb-3">
             <div class="card-body py-3">
-                <div class="fw-semibold mb-2"><i class="bi bi-diagram-2 me-1"></i>Tipo de documento enviado</div>
+                <div class="fw-semibold mb-2"><app-icon class="me-1" name="folder-move" size="16" decorative="true" />Tipo de documento enviado</div>
                 <div class="form-check mb-2">
                     <input class="form-check-input" type="radio" name="bulkPartialMode" id="bulkUploadComplete" value="complete" checked>
                     <label class="form-check-label fw-semibold" for="bulkUploadComplete">Documento completo</label>
@@ -923,11 +929,11 @@
                 <div class="form-check">
                     <input class="form-check-input" type="radio" name="bulkPartialMode" id="bulkUploadIncomplete" value="partial" @(canManagePartialDocuments ? null : "disabled")>
                     <label class="form-check-label fw-semibold" for="bulkUploadIncomplete">Documento incompleto</label>
-                    <button type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline" data-bs-toggle="popover" data-bs-trigger="hover focus" data-bs-placement="right" title="Documento fracionado" data-bs-content="Documento incompleto é um documento enviado parcialmente e que poderá receber novas partes futuramente. Exemplo: um documento de agendamento foi digitalizado pela metade hoje e a outra parte será enviada depois." aria-label="Ajuda sobre documento incompleto"><i class="bi bi-question-circle"></i></button>
+                    <button type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline" data-bs-toggle="popover" data-bs-trigger="hover focus" data-bs-placement="right" title="Documento fracionado" data-bs-content="Documento incompleto é um documento enviado parcialmente e que poderá receber novas partes futuramente. Exemplo: um documento de agendamento foi digitalizado pela metade hoje e a outra parte será enviada depois." aria-label="Ajuda sobre documento incompleto"><app-icon name="circle-question" size="16" decorative="true" /></button>
                     <div class="form-text">Use quando o documento está sendo enviado em partes e será complementado futuramente.@(!canManagePartialDocuments ? " Permissão necessária: DOCUMENT_PART_MARK_INCOMPLETE ou DOCUMENT_PART_ADD." : "")</div>
                 </div>
                 <div id="bulkPartialFields" class="alert alert-warning row g-2 mt-3 mb-0 d-none">
-                    <div class="col-12 small"><i class="bi bi-exclamation-triangle me-1"></i>Documento incompleto é um documento enviado parcialmente e que poderá receber novas partes futuramente. Exemplo: um documento de agendamento foi digitalizado pela metade hoje e a outra parte será enviada depois.</div>
+                    <div class="col-12 small"><app-icon class="me-1" name="warning" size="16" decorative="true" />Documento incompleto é um documento enviado parcialmente e que poderá receber novas partes futuramente. Exemplo: um documento de agendamento foi digitalizado pela metade hoje e a outra parte será enviada depois.</div>
                     <div class="col-sm-4">
                         <label class="form-label" for="bulkPartialPartNumber">Parte número</label>
                         <input type="number" class="form-control" id="bulkPartialPartNumber" min="1" step="1" value="1">
@@ -948,7 +954,7 @@
             </div>
         </div>
         <div id="bulkDropzone" class="border border-2 border-secondary-subtle rounded p-4 text-center mb-3" style="border-style:dashed !important; cursor:pointer;">
-            <i class="bi bi-cloud-arrow-up fs-1 d-block mb-2"></i><strong>Arraste arquivos aqui ou clique para selecionar</strong>
+            <app-icon class="fs-1 d-block mb-2" name="upload-cloud" size="16" decorative="true" /><strong>Arraste arquivos aqui ou clique para selecionar</strong>
             <input id="bulkFileInput" type="file" multiple class="d-none" />
         </div>
         <div class="border rounded-3 p-3 mb-3 bg-light">
@@ -1015,196 +1021,7 @@
 <link rel="stylesheet" href="~/css/components/dropzone.css" asp-append-version="true" />
 <link rel="stylesheet" href="~/css/components/document-preview.css" asp-append-version="true" />
 <link rel="stylesheet" href="~/css/components/feedback.css" asp-append-version="true" />
-<style>
-    .ged-page { display:grid; grid-template-columns:minmax(280px, 400px) minmax(0,1fr); gap:24px; align-items:start; }
-    .ged-page.with-document-panel { grid-template-columns:minmax(280px, 400px) minmax(0,1fr) 430px; }
-    #pageAlertHost { grid-column:1 / -1; }
-    .ged-folder-panel, .ged-main-panel { background:#fff; border-radius:18px; border:1px solid rgba(15,23,42,.08); box-shadow:0 14px 35px rgba(15,23,42,.06); overflow:hidden; }
-    .ged-folder-panel { position:sticky; top:.75rem; }
-    .ged-folder-panel-header { display:flex; justify-content:space-between; align-items:center; gap:.75rem; padding:1rem; border-bottom:1px solid rgba(15,23,42,.08); background:linear-gradient(180deg,#fff,#f8fafc); }
-    .ged-folder-tree { max-height:calc(100vh - 220px); overflow:auto; padding:.75rem; }
-    .ged-tree { list-style:none; padding-left:.65rem; margin:0; }
-    .ged-tree-node { margin:1px 0; }
-    .ged-tree-row, .ged-tree-root { display:flex; align-items:center; gap:.55rem; min-height:36px; padding:.45rem .55rem; border-radius:10px; color:#1f2937; text-decoration:none; user-select:none; transition:background .16s ease,color .16s ease,box-shadow .16s ease; }
-    .ged-tree-row:hover, .ged-tree-root:hover { background:#f1f5f9; }
-    .ged-tree-row.active, .ged-tree-root.active { background:#eaf2ff; color:#0d6efd; border-left:3px solid #0d6efd; font-weight:600; }
-    .ged-tree-row .dropdown { opacity:.25; transition:opacity .16s ease; }
-    .ged-tree-row:hover .dropdown, .ged-tree-row.active .dropdown { opacity:1; }
-    .ged-tree-row .dropdown-menu { min-width:220px; border-radius:12px; box-shadow:0 16px 36px rgba(15,23,42,.14); }
-    .ged-tree-link { text-decoration:none; color:inherit; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .ged-tree-toggle { border:0; background:transparent; padding:0; width:18px; height:18px; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; color:#64748b; }
-    .ged-tree-toggle i { transition:transform .12s ease; }
-    .ged-tree-node.open > .ged-tree-row .ged-tree-toggle i { transform:rotate(90deg); }
-    .ged-tree-spacer { width:18px; height:18px; display:inline-block; }
-    .ged-tree-folder { width:18px; text-align:center; color:#f59e0b; }
-    .ged-drop-target > .ged-tree-row, .ged-drop-target.ged-tree-root, .js-folder-node.ged-drop-target { outline:2px dashed #0d6efd; outline-offset:2px; background:rgba(13,110,253,.08); }
-    .ged-folder-scroll { scrollbar-width:thin; scrollbar-color:rgba(13,110,253,.35) transparent; }
-    .ged-folder-header { display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; padding:16px 20px 10px; background:linear-gradient(135deg,#f8fbff,#fff); border-bottom:1px solid #eef2f7; }
-    .ged-folder-heading { display:flex; gap:.85rem; align-items:flex-start; min-width:0; }
-    .ged-folder-heading h1 { font-size:1.25rem; }
-    .ged-folder-actions { display:flex; gap:.5rem; align-items:center; flex-wrap:wrap; justify-content:flex-end; }
-    .ged-folder-header-icon { flex:0 0 auto; width:42px; height:42px; border-radius:12px; display:grid; place-items:center; background:#eaf2ff; color:#0d6efd; font-size:1.35rem; }
-    .ged-breadcrumb { color:#64748b; font-size:.84rem; }
-    .min-w-0 { min-width:0; }
-    .ged-metrics-strip { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
-    .ged-metric-pill { display:inline-flex; align-items:center; gap:.35rem; padding:4px 9px; border:1px solid #e5e7eb; border-radius:999px; background:#fff; font-size:.76rem; color:#475569; line-height:1; }
-    .ged-metric-pill strong { color:#0f172a; font-size:.84rem; }
-    .ged-toolbar { padding:.75rem 1rem; border-bottom:1px solid #eef2f7; background:#fff; }
-    .ged-toolbar-search { position:relative; }
-    .ged-toolbar .input-group { align-items:stretch; }
-    .ged-toolbar-actions { display:flex; flex-wrap:wrap; gap:.5rem; margin-top:.55rem; }
-    .ged-documents-list { background:#fff; border-top:1px solid #e5e7eb; }
-    .ged-documents-view-toolbar { min-height:46px; padding:8px 16px; background:#fff; border-top:1px solid #e5e7eb; border-bottom:1px solid #e5e7eb; display:flex; align-items:center; justify-content:space-between; gap:12px; }
-    .ged-toolbar-spacer { flex:1 1 auto; }
-    .ged-move-selected-inline { opacity:.72; transition:opacity .15s ease, box-shadow .15s ease, background .15s ease; }
-    .ged-move-selected-inline.has-selection { opacity:1; box-shadow:0 8px 20px rgba(37,99,235,.16); }
-    .ged-bulk-select { display:flex; align-items:center; gap:8px; color:#334155; font-size:.9rem; }
-    .ged-bulk-select .form-check-input { margin:0; }
-    .ged-bulk-select label { margin:0; font-weight:600; cursor:pointer; white-space:nowrap; }
-    .ged-selected-inline-info { color:#64748b; font-size:.82rem; }
-    .ged-view-actions { display:flex; align-items:center; gap:6px; }
-    .ged-operational-list { background:#fff; display:flex; flex-direction:column; }
-    .ged-operational-row { display:grid; grid-template-columns:34px 42px minmax(0, 1fr) auto; gap:12px; align-items:center; min-height:82px; padding:10px 16px; border-bottom:1px solid #edf2f7; background:#fff; transition:background-color .15s ease, box-shadow .15s ease, transform .15s ease; cursor:grab; }
-    .ged-operational-row:hover { background:#f8fbff; }
-    .ged-operational-row.is-selected { background:#eff6ff; box-shadow:inset 3px 0 0 #2563eb; }
-    .ged-operational-row.is-new, .document-row-new { background:#ecfdf5 !important; animation:gedNewDocPulse 2s ease; }
-    .ged-operational-row.is-incomplete { background:#fffbeb; }
-    .ged-operational-row.is-partial { box-shadow:inset 3px 0 0 #38bdf8; }
-    @@keyframes gedNewDocPulse { 0% { box-shadow:inset 4px 0 0 #10b981; } 100% { box-shadow:inset 4px 0 0 transparent; } }
-    .ged-operational-check { display:flex; justify-content:center; align-items:center; }
-    .ged-operational-check .form-check-input, .ged-documents-table .form-check-input { margin:0; }
-    .ged-operational-icon { width:38px; height:38px; border-radius:12px; display:grid; place-items:center; background:#eff6ff; color:#2563eb; font-size:1.05rem; flex-shrink:0; }
-    .ged-operational-content { min-width:0; display:flex; flex-direction:column; gap:3px; }
-    .ged-operational-title-line { display:flex; align-items:center; gap:8px; min-width:0; }
-    .ged-operational-title { color:#0f172a; font-size:.98rem; font-weight:750; line-height:1.18; text-decoration:none; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .ged-operational-title:hover { color:#0d6efd; text-decoration:underline; }
-    .ged-operational-file-line { color:#64748b; font-size:.82rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .ged-operational-meta-line { display:flex; align-items:center; gap:6px; color:#94a3b8; font-size:.74rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .ged-meta-item { display:inline-flex; align-items:center; min-width:0; }
-    .ged-meta-separator { color:#cbd5e1; }
-    .ged-operational-status-line { display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:2px; }
-    .ged-operational-status-line .badge { font-size:.70rem; font-weight:650; padding:.24rem .5rem; border-radius:999px; }
-    .ged-operational-quick-actions { display:flex; align-items:center; justify-content:flex-end; gap:6px; }
-    .ged-operational-quick-actions .btn, .ged-actions-btn { width:34px; height:34px; padding:0; border-radius:10px; display:inline-flex; justify-content:center; align-items:center; }
 
-    .ged-smart-list { background:#fff; }
-    .ged-smart-doc-row { display:grid; grid-template-columns:34px 46px minmax(0, 1fr) 150px 82px; gap:12px; align-items:center; min-height:68px; padding:9px 14px; border-bottom:1px solid #eef2f7; background:#fff; transition:background .15s ease, box-shadow .15s ease; cursor:grab; }
-    .ged-smart-doc-row:hover { background:#f8fbff; }
-    .ged-smart-doc-row.is-selected { background:#eff6ff; box-shadow:inset 3px 0 0 #2563eb; }
-    .ged-smart-doc-row.is-new, .ged-smart-doc-row.document-row-new { background:#ecfdf5 !important; animation:gedNewDocPulse 2s ease; }
-    .ged-smart-doc-row.is-incomplete { background:#fffbeb; }
-    .ged-smart-doc-row.is-partial { box-shadow:inset 3px 0 0 #38bdf8; }
-    .ged-smart-check { display:flex; align-items:center; justify-content:center; }
-    .ged-smart-check .form-check-input { margin:0; }
-    .ged-smart-type { width:38px; height:38px; border-radius:12px; display:grid; place-items:center; background:#eff6ff; color:#2563eb; font-size:1.05rem; position:relative; }
-    .ged-smart-type-label { position:absolute; bottom:3px; font-size:.48rem; font-weight:800; letter-spacing:.02em; line-height:1; }
-    .ged-smart-main { min-width:0; }
-    .ged-smart-title-line { display:flex; align-items:center; gap:8px; min-width:0; }
-    .ged-smart-title { color:#0f172a; font-weight:750; font-size:.95rem; text-decoration:none; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:420px; }
-    .ged-smart-title:hover { color:#0d6efd; text-decoration:underline; }
-    .ged-smart-inline-badges { display:flex; align-items:center; gap:5px; flex-wrap:nowrap; overflow:hidden; }
-    .ged-smart-inline-badges .badge { font-size:.68rem; font-weight:650; border-radius:999px; padding:.22rem .48rem; white-space:nowrap; }
-    .ged-smart-subtitle-line { margin-top:3px; color:#64748b; font-size:.78rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .ged-smart-upload { color:#475569; font-size:.78rem; white-space:nowrap; text-align:right; }
-    .ged-smart-actions { display:flex; justify-content:flex-end; gap:6px; }
-    .ged-smart-actions .btn, .ged-actions-btn { width:32px; height:32px; border-radius:10px; display:inline-flex; align-items:center; justify-content:center; padding:0; }
-    .ged-table-shell { background:#fff; border-top:1px solid #e5e7eb; overflow:hidden; }
-    .ged-table-scroll { width:100%; overflow-x:auto; scrollbar-width:thin; }
-    .ged-documents-table { width:100%; min-width:920px; border-collapse:separate; border-spacing:0; table-layout:fixed; }
-    .ged-documents-table thead th { position:sticky; top:0; z-index:2; background:#f8fafc; color:#64748b; font-size:.72rem; font-weight:800; text-transform:uppercase; letter-spacing:.045em; border-bottom:1px solid #e5e7eb; padding:10px 12px; white-space:nowrap; }
-    .ged-documents-table tbody td { padding:10px 12px; border-bottom:1px solid #eef2f7; vertical-align:middle; }
-    .ged-document-table-row { background:#fff; transition:background-color .15s ease, box-shadow .15s ease; cursor:grab; }
-    .ged-document-table-row:hover { background:#f8fbff; }
-    .ged-document-table-row.is-selected { background:#eff6ff; box-shadow:inset 3px 0 0 #2563eb; }
-    .ged-document-table-row.is-new { background:#ecfdf5; animation:gedNewDocPulse 2s ease; }
-    .ged-row-incomplete { background:#fffbeb; }
-    .ged-row-partial { box-shadow:inset 3px 0 0 #38bdf8; }
-    .ged-col-check { width:44px; text-align:center; }
-    .ged-col-status { width:260px; }
-    .ged-col-upload { width:165px; }
-    .ged-col-actions { width:72px; }
-    .ged-table-document-cell { display:flex; align-items:center; gap:10px; min-width:0; }
-    .ged-table-file-icon { width:38px; height:38px; border-radius:11px; display:grid; place-items:center; background:#eff6ff; color:#2563eb; font-size:1.05rem; flex:0 0 auto; }
-    .ged-table-document-text { min-width:0; }
-    .ged-table-title { display:block; color:#0f172a; font-size:.94rem; font-weight:700; line-height:1.2; text-decoration:none; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:520px; }
-    .ged-table-title:hover { color:#0d6efd; text-decoration:underline; }
-    .ged-table-file-name { color:#64748b; font-size:.8rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:520px; }
-    .ged-table-meta { color:#94a3b8; font-size:.72rem; display:flex; align-items:center; gap:5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .ged-document-badges { min-width:0; display:flex; flex-wrap:wrap; gap:4px; align-items:center; }
-    .ged-document-badges .badge, .ged-document-badges .ged-badge { font-size:.7rem; font-weight:650; border-radius:999px; padding:.25rem .5rem; line-height:1.1; }
-    .ged-upload-date { color:#475569; font-size:.8rem; white-space:nowrap; }
-    .ged-actions-menu .dropdown-item { display:flex; align-items:center; gap:.35rem; font-size:.88rem; }
-    .ged-badge { border-radius:999px; font-weight:650; padding:.26rem .5rem; font-size:.7rem; line-height:1; }
-    .ged-badge-info { background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd; }
-    .ged-badge-ok { background:#dcfce7; color:#166534; border:1px solid #bbf7d0; }
-    .ged-badge-muted { background:#f1f5f9; color:#475569; border:1px solid #e2e8f0; }
-    .ged-badge-warning { background:#fef3c7; color:#92400e; border:1px solid #fde68a; }
-    .ged-badge-danger { background:#fee2e2; color:#991b1b; border:1px solid #fecaca; }
-    .ged-empty-state { background:linear-gradient(180deg,#fff,#f8fbff); border-radius:0 0 18px 18px; }
-
-    .ged-selection-bar { min-height:46px; padding:8px 16px; background:#fff; border-bottom:1px solid #e5e7eb; display:flex; align-items:center; justify-content:space-between; }
-    .ged-selection-info { display:flex; align-items:center; gap:8px; }
-    .ged-selected-count { color:#64748b; font-size:.85rem; }
-    .ged-selection-actions { display:flex; align-items:center; gap:8px; }
-    .ged-incomplete-info, .ged-incomplete-explainer { margin:10px 16px; padding:12px 14px; border:1px solid #fde68a; background:#fffbeb; color:#92400e; border-radius:14px; display:flex; align-items:center; justify-content:space-between; gap:12px; font-size:.88rem; }
-    .ged-incomplete-info strong, .ged-incomplete-explainer strong { display:block; color:#78350f; }
-    .ged-filter-chip { display:inline-flex; align-items:center; border:1px solid #fde68a; background:#fff7ed; color:#92400e; border-radius:999px; padding:.25rem .55rem; font-size:.78rem; font-weight:700; }
-    .ged-help-popover { color:#64748b; line-height:1; text-decoration:none; }
-    .ged-badge-incomplete { background:#fef3c7 !important; color:#92400e !important; border:1px solid #fde68a; font-weight:700; }
-    .ged-doc-row { display:grid; grid-template-columns:34px 42px minmax(0, 1fr) auto; gap:12px; align-items:center; min-height:78px; padding:10px 16px; border-bottom:1px solid #edf2f7; background:#fff; transition:background-color .15s ease, box-shadow .15s ease; cursor:grab; }
-    .ged-doc-row:hover { background:#f8fbff; }
-    .ged-doc-row.is-selected { background:#eff6ff; box-shadow:inset 4px 0 0 #2563eb; }
-    .ged-doc-row.is-incomplete, .ged-smart-doc-row.is-incomplete, .ged-operational-row.is-incomplete { background:#fffdf5; box-shadow:inset 3px 0 0 #f59e0b; }
-    .ged-doc-row.is-incomplete:hover { background:#fffbeb; }
-    .ged-doc-select { display:flex; align-items:center; justify-content:center; align-self:center; }
-    .ged-doc-select .form-check-input { margin:0; width:18px; height:18px; cursor:pointer; }
-    .ged-doc-icon { width:38px; height:38px; border-radius:12px; display:grid; place-items:center; background:#eff6ff; color:#2563eb; font-size:1.05rem; }
-    .ged-doc-main { min-width:0; }
-    .ged-doc-title-line { display:flex; align-items:center; gap:8px; min-width:0; }
-    .ged-doc-title { color:#0f172a; font-size:.96rem; font-weight:750; text-decoration:none; line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .ged-doc-title:hover { color:#0d6efd; text-decoration:underline; }
-    .ged-doc-file { color:#64748b; font-size:.82rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:2px; }
-    .ged-doc-meta { display:flex; align-items:center; flex-wrap:wrap; gap:6px; margin-top:4px; }
-    .ged-doc-upload-date { color:#475569; font-size:.78rem; display:inline-flex; align-items:center; }
-    .ged-doc-actions { display:flex; align-items:center; justify-content:flex-end; gap:6px; }
-    .ged-doc-actions .btn, .ged-actions-btn { width:34px; height:34px; border-radius:10px; padding:0; display:inline-flex; align-items:center; justify-content:center; }
-    .ged-smart-doc-row { grid-template-columns:34px 42px minmax(0, 1fr) auto; min-height:78px; padding:10px 16px; }
-    .ged-smart-upload, .ged-smart-type-label { display:none; }
-    .ged-operational-check .form-check-input, .ged-smart-check .form-check-input, .ged-documents-table .form-check-input { width:18px; height:18px; cursor:pointer; }
-    .ged-operational-row.is-selected, .ged-document-table-row.is-selected { background:#eff6ff; box-shadow:inset 4px 0 0 #2563eb; }
-    .ged-operational-row.is-incomplete:hover, .ged-row-incomplete:hover { background:#fffbeb; }
-
-    .ged-empty-icon { width:74px; height:74px; border-radius:24px; display:grid; place-items:center; margin-inline:auto; color:#0d6efd; background:#eaf2ff; font-size:2.35rem; }
-    @@media (max-width: 1200px) {
-        .ged-folder-header { flex-direction:column; }
-        .ged-folder-actions { justify-content:flex-start; }
-    }
-    @@media (max-width: 768px) {
-        .ged-page { grid-template-columns:1fr; }
-        .ged-folder-panel { position:static; max-height:340px; }
-        .ged-folder-tree { max-height:220px; }
-        .ged-operational-row, .ged-smart-doc-row { grid-template-columns:30px 38px minmax(0, 1fr) 40px; gap:8px; padding:9px 10px; }
-        .ged-operational-title { font-size:.9rem; }
-        .ged-operational-status-line { gap:4px; }
-        .ged-operational-icon, .ged-smart-type { width:34px; height:34px; border-radius:9px; }
-        .ged-operational-quick-actions .btn:first-child { display:none; }
-        .ged-operational-meta-line { flex-wrap:wrap; white-space:normal; }
-    }
-    @@media (max-width: 575.98px) {
-        .ged-operational-row, .ged-smart-doc-row { grid-template-columns:28px minmax(0,1fr) 40px; gap:.65rem; padding:.65rem .75rem; }
-        .ged-operational-icon, .ged-smart-type, .ged-smart-upload { display:none; }
-        .ged-operational-content, .ged-smart-main { grid-column:2 / 3; }
-        .ged-operational-quick-actions, .ged-smart-actions { grid-column:3; justify-content:flex-end; }
-        .ged-documents-view-toolbar { align-items:flex-start; flex-direction:column; }
-        .ged-view-actions { width:100%; }
-        .ged-view-actions .btn { flex:1 1 0; }
-    }
-    @@media (max-width: 1199.98px) { .ged-page { grid-template-columns:360px minmax(0,1fr); } .ged-page.with-document-panel { grid-template-columns:360px minmax(0,1fr); } .ged-document-side-panel { grid-column:1 / -1; } .ged-folder-panel { position:static; } .ged-metrics-strip { gap:6px; } }
-    @@media (max-width: 768px) { .ged-page, .ged-page.with-document-panel { grid-template-columns:1fr; } }
-    .bulk-large-file-hint { color:#0369a1; }
-    .ged-how-partial-list li { margin-bottom:.9rem; }
-    .ged-how-partial-list span { color:#475569; }
-</style>
 
 <div class="modal fade" id="gedBulkReasonModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog">
@@ -1236,6 +1053,7 @@
     <script src="~/js/ged-document-preview.js" asp-append-version="true"></script>
     <script src="~/js/ged-panel-layout.js" asp-append-version="true"></script>
     <script src="~/js/ged-filter-drawer.js" asp-append-version="true"></script>
+    <script src="~/js/ged-explorer-controller.js" asp-append-version="true"></script>
 
 <script>
     (function () {
@@ -1715,7 +1533,7 @@
                 document.querySelectorAll('#gedDocumentsContainer [data-document-incomplete]').forEach(row => row.classList.remove('d-none'));
                 document.getElementById('gedIncompleteFilterChip')?.classList.add('d-none');
                 const btn = document.getElementById('btnFilterIncompleteDocs');
-                if (btn) btn.innerHTML = '<i class="bi bi-funnel me-1"></i>Ver incompletos';
+                if (btn) btn.innerHTML = '<app-icon class="me-1" name="filter" size="16" decorative="true" />Ver incompletos';
             }
 
             const clearSelectionBtn = e.target.closest('.js-clear-document-selection');
@@ -1788,7 +1606,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const statusLabel = maxTotal && parts.length >= maxTotal ? 'Partes completas — pronto para consolidar' : 'Documento incompleto';
             const ocrLabel = data.ocrSummary || `${data.partsWithOcr || 0} de ${parts.length} partes com OCR`;
             if (titleEl) titleEl.innerHTML = `<strong>Documento:</strong> ${escapeHtml(title || data.title || '')}<br><strong>Status:</strong> ${statusLabel}<br><strong>Partes recebidas:</strong> ${receivedLabel}<br><strong>OCR:</strong> ${escapeHtml(ocrLabel)}${(data.partsWithoutOcr || 0) > 0 ? '<div class="alert alert-warning py-2 mt-2 mb-0">Atenção: nem todas as partes possuem OCR. Você pode consolidar mesmo assim e reprocessar o OCR na versão final.</div>' : ''}`;
-            body.innerHTML = parts.map(p => `<tr><td>${escapeHtml(p.partNumber || '-')} / ${escapeHtml(p.totalParts || maxTotal || '-')}</td><td>${escapeHtml(p.fileName || '-')}</td><td>${escapeHtml(p.uploadedAtLabel || '')}</td><td>${escapeHtml(p.uploadedByName || '-')}</td><td><span class="badge ged-badge ged-badge-info">${escapeHtml(p.status || '-')}</span></td><td>${p.sizeBytes ? (Number(p.sizeBytes)/1024).toFixed(1)+' KB' : '-'}</td><td><span class="badge ${escapeHtml(p.ocrCss || 'bg-secondary')}">${escapeHtml(p.ocrLabel || 'Sem OCR')}</span></td><td class="text-end"><div class="btn-group btn-group-sm">${p.previewUrl ? `<a class="btn btn-light border" href="${escapeHtml(p.previewUrl)}" target="_blank" rel="noopener" title="Visualizar parte"><i class="bi bi-eye"></i></a>` : ''}${p.ocrUrl ? `<a class="btn btn-light border" href="${escapeHtml(p.ocrUrl)}" target="_blank" rel="noopener" title="Ver OCR"><i class="bi bi-body-text"></i></a>` : ''}${p.downloadUrl ? `<a class="btn btn-light border" href="${escapeHtml(p.downloadUrl)}" title="Baixar parte"><i class="bi bi-download"></i></a>` : ''}</div></td></tr>`).join('');
+            body.innerHTML = parts.map(p => `<tr><td>${escapeHtml(p.partNumber || '-')} / ${escapeHtml(p.totalParts || maxTotal || '-')}</td><td>${escapeHtml(p.fileName || '-')}</td><td>${escapeHtml(p.uploadedAtLabel || '')}</td><td>${escapeHtml(p.uploadedByName || '-')}</td><td><span class="badge ged-badge ged-badge-info">${escapeHtml(p.status || '-')}</span></td><td>${p.sizeBytes ? (Number(p.sizeBytes)/1024).toFixed(1)+' KB' : '-'}</td><td><span class="badge ${escapeHtml(p.ocrCss || 'bg-secondary')}">${escapeHtml(p.ocrLabel || 'Sem OCR')}</span></td><td class="text-end"><div class="btn-group btn-group-sm">${p.previewUrl ? `<a class="btn btn-light border" href="${escapeHtml(p.previewUrl)}" target="_blank" rel="noopener" title="Visualizar parte"><app-icon name="preview" size="16" decorative="true" /></a>` : ''}${p.ocrUrl ? `<a class="btn btn-light border" href="${escapeHtml(p.ocrUrl)}" target="_blank" rel="noopener" title="Ver OCR"><app-icon name="ocr" size="16" decorative="true" /></a>` : ''}${p.downloadUrl ? `<a class="btn btn-light border" href="${escapeHtml(p.downloadUrl)}" title="Baixar parte"><app-icon name="download" size="16" decorative="true" /></a>` : ''}</div></td></tr>`).join('');
             const complete = parts.length > 1 && (!maxTotal || parts.length >= maxTotal);
             if (consolidateBtn) consolidateBtn.disabled = !complete;
         } catch {

@@ -29,11 +29,26 @@ public sealed class AtlasGedIconContractTests
     }
 
     [Fact]
-    public void Primary_ged_explorer_partials_do_not_depend_on_bootstrap_icons()
+    public void Ged_views_do_not_depend_on_bootstrap_icons()
     {
-        var files = new[] { "_DocumentsList.cshtml", "_DocumentSmartList.cshtml", "_DocumentTable.cshtml" };
-        Assert.All(files, file => Assert.DoesNotContain("class=\"bi ",
-            File.ReadAllText(Path.Combine(Root, "InovaGed.Web/Views/Ged", file)), StringComparison.OrdinalIgnoreCase));
+        var folder = Path.Combine(Root, "InovaGed.Web/Views/Ged");
+        var bootstrapIcon = new Regex(@"\bbi-[a-z0-9-]+", RegexOptions.IgnoreCase);
+        Assert.All(Directory.GetFiles(folder, "*.cshtml", SearchOption.AllDirectories), path =>
+            Assert.DoesNotMatch(bootstrapIcon, File.ReadAllText(path)));
+    }
+
+    [Fact]
+    public void Ged_layout_has_one_canonical_stylesheet()
+    {
+        var workspace = File.ReadAllText(Path.Combine(Root, "InovaGed.Web/wwwroot/css/pages/ged-workspace.css"));
+        var components = File.ReadAllText(Path.Combine(Root, "InovaGed.Web/wwwroot/css/ged-explorer.css"));
+        var index = File.ReadAllText(Path.Combine(Root, "InovaGed.Web/Views/Ged/Index.cshtml"));
+
+        Assert.Contains(".ged-page", workspace);
+        Assert.Contains("container: ged-workspace / inline-size", workspace);
+        Assert.DoesNotContain(".ged-page", components);
+        Assert.DoesNotContain("<style", index, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("data-ged-open-folders", index);
     }
 
     private static string FindRoot()

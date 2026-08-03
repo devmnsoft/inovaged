@@ -91,7 +91,7 @@
     @if (showPreviousOcrNotice)
     {
         <div class="alert alert-info d-flex align-items-start gap-2" role="alert">
-            <i class="bi bi-info-circle mt-1"></i>
+            <app-icon class="mt-1" name="info" size="16" decorative="true" />
             <div>
                 <strong>OCR disponível em versão anterior.</strong>
                 A versão atual ainda não possui OCR disponível; por isso a listagem principal considera o status da versão atual.
@@ -102,7 +102,7 @@
     <div class="d-flex justify-content-between align-items-start mb-3">
         <div>
             <h3 class="mb-1">
-                <i class="bi bi-file-earmark-text me-1"></i> @Model.Title
+                <app-icon class="me-1" name="document" size="16" decorative="true" /> @Model.Title
             </h3>
 
             <div class="text-muted small d-flex flex-wrap gap-2 align-items-center">
@@ -113,7 +113,7 @@
                 @if (Model.IsConfidential)
                 {
                     <span class="badge bg-danger">
-                        <i class="bi bi-shield-lock me-1"></i> Confidencial
+                        <app-icon class="me-1" name="roles" size="16" decorative="true" /> Confidencial
                     </span>
                 }
 
@@ -127,7 +127,7 @@
                 @if (ocrSwitched)
                 {
                     <span class="badge bg-warning text-dark">
-                        <i class="bi bi-magic me-1"></i> Preview alternado para OCR
+                        <app-icon class="me-1" name="smart-search" size="16" decorative="true" /> Preview alternado para OCR
                     </span>
                 }
             </div>
@@ -135,11 +135,11 @@
 
         <div class="d-flex gap-2">
             <a class="btn btn-light" href="@Url.Action("Index", "Ged", new { folderId = Model.FolderId })">
-                <i class="bi bi-arrow-left me-1"></i> Voltar
+                <app-icon class="me-1" name="arrow-left" size="16" decorative="true" /> Voltar
             </a>
 
             <button type="button" class="btn btn-outline-primary" id="btnOpenClassifyTop">
-                <i class="bi bi-tags me-1"></i> Classificação
+                <app-icon class="me-1" name="classification" size="16" decorative="true" /> Classificação
             </button>
         </div>
     </div>
@@ -148,15 +148,15 @@
     {
         <div class="alert @(partialVersion?.IsDocumentIncomplete == true ? "alert-warning" : "alert-info") d-flex justify-content-between align-items-start gap-3">
             <div>
-                <h5 class="alert-heading mb-1"><i class="bi bi-exclamation-triangle me-1"></i>@partialStatusLabel</h5>
+                <h5 class="alert-heading mb-1"><app-icon class="me-1" name="warning" size="16" decorative="true" />@partialStatusLabel</h5>
                 <div>Este documento foi enviado parcialmente e ainda @(partialVersion?.IsDocumentIncomplete == true ? "aguarda novas partes" : "possui partes registradas para rastreabilidade").</div>
                 <div class="small mt-1"><strong>Partes:</strong> @partsLabel</div>
                 <div class="small mt-1">O OCR exibido refere-se à parte atualmente cadastrada. Após a consolidação, o OCR poderá ser reprocessado na versão final.</div>
             </div>
             <div class="d-flex gap-2 flex-wrap justify-content-end">
-                <a class="btn btn-sm btn-warning" href="@Url.Action("Index", "Ged", new { folderId = Model.FolderId })"><i class="bi bi-file-earmark-plus me-1"></i>Adicionar parte</a>
-                <a class="btn btn-sm btn-outline-primary" href="@Url.Action("Index", "Ged", new { folderId = Model.FolderId })"><i class="bi bi-files me-1"></i>Ver partes</a>
-                <a class="btn btn-sm btn-outline-secondary" href="@Url.Action("Index", "Ged", new { folderId = Model.FolderId })"><i class="bi bi-layers me-1"></i>Consolidar</a>
+                <a class="btn btn-sm btn-warning" href="@Url.Action("Index", "Ged", new { folderId = Model.FolderId })"><app-icon class="me-1" name="document-add" size="16" decorative="true" />Adicionar parte</a>
+                <a class="btn btn-sm btn-outline-primary" href="@Url.Action("Index", "Ged", new { folderId = Model.FolderId })"><app-icon class="me-1" name="documents" size="16" decorative="true" />Ver partes</a>
+                <a class="btn btn-sm btn-outline-secondary" href="@Url.Action("Index", "Ged", new { folderId = Model.FolderId })"><app-icon class="me-1" name="document-version" size="16" decorative="true" />Consolidar</a>
             </div>
         </div>
     }
@@ -169,7 +169,7 @@
             <div class="card-body">
                 <div class="document-parts-summary d-flex justify-content-between align-items-center gap-3 flex-wrap">
                     <div>
-                        <strong><i class="bi bi-files me-1"></i>Partes do documento</strong>
+                        <strong><app-icon class="me-1" name="documents" size="16" decorative="true" />Partes do documento</strong>
                         <div class="small text-muted">@(totalParts.HasValue ? $"{documentParts.Count} de {totalParts} partes recebidas" : $"{documentParts.Count} partes recebidas") · @partialOcrSummary</div>
                     </div>
                     <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#@collapseId" aria-expanded="false" aria-controls="@collapseId">Expandir partes</button>
@@ -228,7 +228,7 @@
 
             <div class="card">
                 <div class="card-header d-flex justify-content-between align-items-center">
-                    <strong id="gedPreviewTitle"><i class="bi bi-eye me-1"></i> Visualização</strong>
+                    <strong id="gedPreviewTitle"><app-icon class="me-1" name="preview" size="16" decorative="true" /> Visualização</strong>
 
                     <div class="d-flex align-items-center gap-2">
                         @if (selected is not null)
@@ -240,7 +240,7 @@
 
                             <a class="btn btn-sm btn-outline-secondary"
                                href="@Url.Action("Download", "Ged", new { id = selected.Id })">
-                                <i class="bi bi-download me-1"></i> Baixar
+                                <app-icon class="me-1" name="download" size="16" decorative="true" /> Baixar
                             </a>
                         }
                     </div>
@@ -261,13 +261,13 @@
             </div>
 
             <div class="card mt-3" id="partOcrCard">
-                <div class="card-header"><strong><i class="bi bi-body-text me-1"></i> OCR da parte selecionada</strong></div>
+                <div class="card-header"><strong><app-icon class="me-1" name="ocr" size="16" decorative="true" /> OCR da parte selecionada</strong></div>
                 <div class="card-body" id="partOcrHost">Selecione uma parte acima para consultar o OCR específico.</div>
             </div>
 
             <div class="card mt-3">
                 <div class="card-header d-flex justify-content-between align-items-center">
-                    <strong><i class="bi bi-layers me-1"></i> Versões</strong>
+                    <strong><app-icon class="me-1" name="document-version" size="16" decorative="true" /> Versões</strong>
 
                     <div class="d-flex gap-2 align-items-center">
                         <span class="text-muted small">
@@ -343,7 +343,7 @@
                                                         @if (ocrCompleted)
                                                         {
                                                             <span class="text-success small ms-1 js-ocr-done-icon">
-                                                                <i class="bi bi-check-circle"></i>
+                                                                <app-icon name="check" size="16" decorative="true" />
                                                             </span>
                                                         }
 
@@ -385,7 +385,7 @@
                                                     @if (!string.IsNullOrWhiteSpace(v.OcrErrorMessage))
                                                     {
                                                         <div class="text-danger small mt-1 js-ocr-error">
-                                                            <i class="bi bi-exclamation-triangle me-1"></i>
+                                                            <app-icon class="me-1" name="warning" size="16" decorative="true" />
                                                             @v.OcrErrorMessage
                                                         </div>
                                                     }
@@ -402,20 +402,20 @@
                                                     <a class="btn btn-sm btn-outline-secondary"
                                                        title="Visualizar esta versão"
                                                        href="@Url.Action("Details", "Ged", new { id = Model.Id, versionId = v.Id })">
-                                                        <i class="bi bi-eye"></i>
+                                                        <app-icon name="preview" size="16" decorative="true" />
                                                     </a>
 
                                                     <a class="btn btn-sm btn-outline-secondary"
                                                        title="Baixar"
                                                        href="@Url.Action("Download", "Ged", new { id = v.Id })">
-                                                        <i class="bi bi-download"></i>
+                                                        <app-icon name="download" size="16" decorative="true" />
                                                     </a>
 
                                                     <a class="btn btn-sm btn-outline-secondary"
                                                        title="Abrir OCR texto, se existir"
                                                        target="_blank"
                                                        href="@Url.Action("OcrText", "Ged", new { versionId = v.Id })">
-                                                        <i class="bi bi-filetype-txt"></i>
+                                                        <app-icon name="file-txt" size="16" decorative="true" />
                                                     </a>
 
                                                     <form method="post"
@@ -431,7 +431,7 @@
                                                                 title="Solicitar OCR"
                                                         @(ocrRunning ? "disabled" : "")>
                                                             <span class="btn-text">
-                                                                <i class="bi bi-text-paragraph"></i>
+                                                                <app-icon name="ocr" size="16" decorative="true" />
                                                             </span>
                                                             <span class="btn-loading d-none">
                                                                 <span class="spinner-border spinner-border-sm"></span>
@@ -450,7 +450,7 @@
                                                                 class="btn btn-sm btn-outline-warning"
                                                                 title="Reprocessar OCR forçando">
                                                             <span class="btn-text">
-                                                                <i class="bi bi-arrow-clockwise"></i>
+                                                                <app-icon name="refresh" size="16" decorative="true" />
                                                             </span>
                                                             <span class="btn-loading d-none">
                                                                 <span class="spinner-border spinner-border-sm"></span>
@@ -469,7 +469,7 @@
                                                                 class="btn btn-sm btn-outline-dark"
                                                                 title="Regerar preview">
                                                             <span class="btn-text">
-                                                                <i class="bi bi-arrow-repeat"></i>
+                                                                <app-icon name="refresh" size="16" decorative="true" />
                                                             </span>
                                                             <span class="btn-loading d-none">
                                                                 <span class="spinner-border spinner-border-sm"></span>
@@ -485,7 +485,7 @@
                         </div>
 
                         <div class="alert alert-info small mb-0 d-flex flex-wrap align-items-center justify-content-between gap-2">
-                            <span><i class="bi bi-info-circle me-1"></i>Quando o OCR for solicitado, a tela acompanhará o processamento automaticamente e avisará ao concluir.</span>
+                            <span><app-icon class="me-1" name="info" size="16" decorative="true" />Quando o OCR for solicitado, a tela acompanhará o processamento automaticamente e avisará ao concluir.</span>
                             <a class="btn btn-sm btn-outline-primary" href="/Ocr?Search=@Uri.EscapeDataString(Model.Title ?? string.Empty)">Abrir na Central OCR</a>
                         </div>
                     }
@@ -494,7 +494,7 @@
 
             <div class="card mt-3" id="classifyCard">
                 <div class="card-header d-flex justify-content-between align-items-center">
-                    <strong><i class="bi bi-tags me-1"></i> Classificação</strong>
+                    <strong><app-icon class="me-1" name="classification" size="16" decorative="true" /> Classificação</strong>
 
                     <div class="d-flex gap-2 align-items-center">
                         <button class="btn btn-sm btn-outline-secondary"
@@ -502,7 +502,7 @@
                                 onclick="toggleClassificationAudit('@Model.Id', this)"
                                 title="Mostrar ou ocultar histórico da classificação">
                             <span class="btn-text">
-                                <i class="bi bi-clock-history me-1"></i> Ver histórico
+                                <app-icon class="me-1" name="history" size="16" decorative="true" /> Ver histórico
                             </span>
                             <span class="btn-loading d-none">
                                 <span class="spinner-border spinner-border-sm me-1"></span>
@@ -511,7 +511,7 @@
                         </button>
 
                         <button class="btn btn-sm btn-outline-primary" type="button" id="btnOpenClassify">
-                            <i class="bi bi-pencil-square me-1"></i> Editar classificação
+                            <app-icon class="me-1" name="edit" size="16" decorative="true" /> Editar classificação
                         </button>
                     </div>
                 </div>
@@ -536,9 +536,9 @@
 
             <div class="card mb-3">
                 <div class="card-header d-flex justify-content-between align-items-center">
-                    <strong><i class="bi bi-info-circle me-1"></i> Painel do documento</strong>
+                    <strong><app-icon class="me-1" name="info" size="16" decorative="true" /> Painel do documento</strong>
                     <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#documentFlowCollapse" aria-expanded="false" aria-controls="documentFlowCollapse">
-                        <i class="bi bi-diagram-3 me-1"></i>Aba Fluxo
+                        <app-icon class="me-1" name="folder-move" size="16" decorative="true" />Aba Fluxo
                     </button>
                 </div>
                 <div class="card-body small text-muted">
@@ -549,7 +549,7 @@
             <div class="collapse" id="documentFlowCollapse">
             <div class="card">
                 <div class="card-header d-flex justify-content-between align-items-center">
-                    <strong><i class="bi bi-diagram-3 me-1"></i> Ciclo de Vida</strong>
+                    <strong><app-icon class="me-1" name="folder-move" size="16" decorative="true" /> Ciclo de Vida</strong>
                     <span class="badge @StatusBadge(Model.Status)">
                         @StatusLabel(Model.Status)
                     </span>
@@ -561,7 +561,7 @@
                         {
                             <button class="btn btn-outline-primary"
                                     onclick="openLifeModal('@Model.Id','@((int)DocumentStatus.InReview)','Enviar para análise', true)">
-                                <i class="bi bi-send me-1"></i> Enviar para análise
+                                <app-icon class="me-1" name="share" size="16" decorative="true" /> Enviar para análise
                             </button>
                         }
 
@@ -569,12 +569,12 @@
                         {
                             <button class="btn btn-outline-success"
                                     onclick="openLifeModal('@Model.Id','@((int)DocumentStatus.InSignature)','Aprovar para assinatura', true)">
-                                <i class="bi bi-check2-circle me-1"></i> Aprovar para assinatura
+                                <app-icon class="me-1" name="check" size="16" decorative="true" /> Aprovar para assinatura
                             </button>
 
                             <button class="btn btn-outline-danger"
                                     onclick="openLifeModal('@Model.Id','@((int)DocumentStatus.Draft)','Reprovar e voltar para rascunho', true)">
-                                <i class="bi bi-arrow-counterclockwise me-1"></i> Reprovar
+                                <app-icon class="me-1" name="undo" size="16" decorative="true" /> Reprovar
                             </button>
                         }
 
@@ -582,12 +582,12 @@
                         {
                             <button class="btn btn-outline-success"
                                     onclick="openLifeModal('@Model.Id','@((int)DocumentStatus.Published)','Publicar', false)">
-                                <i class="bi bi-megaphone me-1"></i> Publicar
+                                <app-icon class="me-1" name="notification" size="16" decorative="true" /> Publicar
                             </button>
 
                             <button class="btn btn-outline-secondary"
                                     onclick="openLifeModal('@Model.Id','@((int)DocumentStatus.InReview)','Voltar para análise', true)">
-                                <i class="bi bi-arrow-left-circle me-1"></i> Voltar para análise
+                                <app-icon class="me-1" name="arrow-left" size="16" decorative="true" /> Voltar para análise
                             </button>
                         }
 
@@ -595,7 +595,7 @@
                         {
                             <button class="btn btn-outline-dark"
                                     onclick="openLifeModal('@Model.Id','@((int)DocumentStatus.Archived)','Arquivar', true)">
-                                <i class="bi bi-archive me-1"></i> Arquivar
+                                <app-icon class="me-1" name="documents" size="16" decorative="true" /> Arquivar
                             </button>
                         }
 
@@ -603,7 +603,7 @@
                                 id="btnLifeHistory"
                                 onclick="toggleLifeHistory('@Model.Id', this)">
                             <span class="btn-text">
-                                <i class="bi bi-clock-history me-1"></i> Ver histórico
+                                <app-icon class="me-1" name="history" size="16" decorative="true" /> Ver histórico
                             </span>
                             <span class="btn-loading d-none">
                                 <span class="spinner-border spinner-border-sm me-1" role="status"></span>
@@ -618,7 +618,7 @@
 
             <div class="card mt-3">
                 <div class="card-header">
-                    <strong><i class="bi bi-gear me-1"></i> Workflow de Processo</strong>
+                    <strong><app-icon class="me-1" name="settings" size="16" decorative="true" /> Workflow de Processo</strong>
                 </div>
 
                 <div class="card-body">
@@ -643,7 +643,7 @@
                                 </select>
 
                                 <button type="submit" class="btn btn-outline-primary w-100">
-                                    <i class="bi bi-play-circle me-1"></i> Iniciar workflow
+                                    <app-icon class="me-1" name="upload-resume" size="16" decorative="true" /> Iniciar workflow
                                 </button>
 
                                 <div class="form-text mt-2">
@@ -698,7 +698,7 @@
                                 </div>
 
                                 <button type="submit" class="btn btn-outline-success w-100">
-                                    <i class="bi bi-shuffle me-1"></i> Aplicar transição
+                                    <app-icon class="me-1" name="document-move" size="16" decorative="true" /> Aplicar transição
                                 </button>
                             </form>
                         }
@@ -713,7 +713,7 @@
                         {
                             <hr />
                             <div class="fw-semibold mb-2">
-                                <i class="bi bi-clock-history me-1"></i> Histórico do processo
+                                <app-icon class="me-1" name="history" size="16" decorative="true" /> Histórico do processo
                             </div>
 
                             <div class="list-group">
@@ -747,7 +747,7 @@
 
             <div class="card mt-3">
                 <div class="card-header">
-                    <strong><i class="bi bi-info-circle me-1"></i> Metadados</strong>
+                    <strong><app-icon class="me-1" name="info" size="16" decorative="true" /> Metadados</strong>
                 </div>
 
                 <div class="card-body">
@@ -927,16 +927,15 @@
                 : type === 'info' ? 'alert-info'
                 : 'alert-success';
 
-            const icon = type === 'danger' ? 'bi-exclamation-triangle'
-                : type === 'warning' ? 'bi-exclamation-circle'
-                : type === 'info' ? 'bi-info-circle'
-                : 'bi-check-circle';
+            const icon = type === 'danger' || type === 'warning' ? 'warning'
+                : type === 'info' ? 'info'
+                : 'check';
 
             const el = document.createElement('div');
             el.className = `alert ${cls} shadow-sm mb-2`;
             el.innerHTML = `
                 <div class="d-flex align-items-center gap-2">
-                    <i class="bi ${icon}"></i>
+                    <svg class="atlas-icon atlas-icon--16" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><use href="#atlas-icon-${icon}"></use></svg>
                     <div>${message}</div>
                 </div>`;
 
@@ -1080,7 +1079,7 @@
                         el.innerHTML =
                             `<div class="alert alert-warning mb-0">
                                 <div class="fw-semibold">
-                                    <i class="bi bi-exclamation-triangle me-1"></i>
+                                    <app-icon class="me-1" name="warning" size="16" decorative="true" />
                                     Não foi possível carregar o histórico.
                                 </div>
                                 <div class="small text-muted mt-1">HTTP ${resp.status} ${resp.statusText}</div>
@@ -1269,7 +1268,7 @@
 
                 const text = btn?.querySelector('.btn-text');
                 if (text) {
-                    text.innerHTML = '<i class="bi bi-clock-history me-1"></i> Ver histórico';
+                    text.innerHTML = '<app-icon class="me-1" name="history" size="16" decorative="true" /> Ver histórico';
                 }
 
                 return;
@@ -1299,7 +1298,7 @@
 
                 const text = btn?.querySelector('.btn-text');
                 if (text) {
-                    text.innerHTML = '<i class="bi bi-clock-history me-1"></i> Ocultar histórico';
+                    text.innerHTML = '<app-icon class="me-1" name="history" size="16" decorative="true" /> Ocultar histórico';
                 }
             }
             finally {
@@ -1425,11 +1424,11 @@
                 : '';
 
             const done = st === 'COMPLETED'
-                ? `<span class="text-success small ms-1 js-ocr-done-icon"><i class="bi bi-check-circle"></i></span>`
+                ? `<span class="text-success small ms-1 js-ocr-done-icon"><app-icon name="check" size="16" decorative="true" /></span>`
                 : '';
 
             const error = errorMessage
-                ? `<div class="text-danger small mt-1 js-ocr-error"><i class="bi bi-exclamation-triangle me-1"></i>${errorMessage}</div>`
+                ? `<div class="text-danger small mt-1 js-ocr-error"><app-icon class="me-1" name="warning" size="16" decorative="true" />${errorMessage}</div>`
                 : '';
 
             const job = jobId
@@ -1591,7 +1590,7 @@
             const frame = document.querySelector('[data-preview-frame="1"]');
             if (frame && btn.dataset.previewUrl) frame.src = btn.dataset.previewUrl;
             const title = document.getElementById('gedPreviewTitle');
-            if (title) title.innerHTML = `<i class="bi bi-eye me-1"></i> Visualizando Parte ${esc(btn.dataset.partNumber || '')}${btn.dataset.totalParts ? ' de ' + esc(btn.dataset.totalParts) : ''} — ${esc(btn.dataset.fileName || '')}`;
+            if (title) title.innerHTML = `<app-icon class="me-1" name="preview" size="16" decorative="true" /> Visualizando Parte ${esc(btn.dataset.partNumber || '')}${btn.dataset.totalParts ? ' de ' + esc(btn.dataset.totalParts) : ''} — ${esc(btn.dataset.fileName || '')}`;
             document.querySelectorAll('.js-open-document-part-details.active').forEach(x => x.classList.remove('active','btn-primary'));
             btn.classList.add('active','btn-primary');
             loadPartOcr(btn);

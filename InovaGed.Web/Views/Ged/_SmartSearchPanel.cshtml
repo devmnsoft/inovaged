@@ -3,19 +3,19 @@
     <div class="card-body">
         <div class="d-flex align-items-start justify-content-between gap-3 flex-wrap mb-2">
             <div>
-                <h2 class="h6 mb-1"><i class="bi bi-stars text-primary me-1"></i>Busca inteligente do GED</h2>
+                <h2 class="h6 mb-1"><app-icon class="text-primary me-1" name="smart-search" size="16" decorative="true" />Busca inteligente do GED</h2>
                 <p class="text-muted small mb-0">Descreva o documento que procura usando paciente, prontuário, tipo, pasta, ano, idade ou termos do OCR.</p>
             </div>
-            <a class="btn btn-sm btn-outline-secondary" asp-controller="GedSearch" asp-action="Index"><i class="bi bi-sliders me-1"></i>Busca avançada</a>
+            <a class="btn btn-sm btn-outline-secondary" asp-controller="GedSearch" asp-action="Index"><app-icon class="me-1" name="filter" size="16" decorative="true" />Busca avançada</a>
         </div>
         <label class="form-label fw-semibold" for="smartSearchInput">Descreva o documento que procura</label>
         <div class="input-group input-group-lg ged-smart-box">
-            <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+            <span class="input-group-text bg-white"><app-icon name="search" size="16" decorative="true" /></span>
             <input id="smartSearchInput" class="form-control" name="q" value="@Model.Query" placeholder="Ex: exame do João, doença renal, 24 anos, em 2022" />
-            <button id="btnSmartSearchClear" class="btn btn-outline-secondary" type="button"><i class="bi bi-x-lg me-1"></i>Limpar</button>
-            <button id="btnSmartExamples" class="btn btn-outline-info" type="button"><i class="bi bi-lightbulb me-1"></i>Exemplos</button>
-            <button id="btnSmartFilters" class="btn btn-outline-secondary" type="button"><i class="bi bi-sliders me-1"></i>Busca avançada</button>
-            <button id="btnSmartSearch" class="btn btn-primary" type="button"><i class="bi bi-search me-1"></i>Buscar</button>
+            <button id="btnSmartSearchClear" class="btn btn-outline-secondary" type="button"><app-icon class="me-1" name="close" size="16" decorative="true" />Limpar</button>
+            <button id="btnSmartExamples" class="btn btn-outline-info" type="button"><app-icon class="me-1" name="smart-search" size="16" decorative="true" />Exemplos</button>
+            <button id="btnSmartFilters" class="btn btn-outline-secondary" type="button"><app-icon class="me-1" name="filter" size="16" decorative="true" />Busca avançada</button>
+            <button id="btnSmartSearch" class="btn btn-primary" type="button"><app-icon class="me-1" name="search" size="16" decorative="true" />Buscar</button>
         </div>
         <div id="smartSearchSuggestions" class="ged-smart-suggestions"></div>
         <div id="smartSearchExamples" class="ged-smart-examples d-none mt-2">

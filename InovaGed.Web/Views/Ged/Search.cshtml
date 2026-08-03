@@ -14,8 +14,8 @@
     }
 
     <div class="d-flex justify-content-between align-items-center mb-3">
-        <h4 class="mb-0"><i class="bi bi-search"></i> Pesquisa de Documentos</h4>
-        <a asp-action="Index" asp-controller="Ged" asp-route-folderId="@folderId" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Voltar</a>
+        <h4 class="mb-0"><app-icon name="search" size="16" decorative="true" /> Pesquisa de Documentos</h4>
+        <a asp-action="Index" asp-controller="Ged" asp-route-folderId="@folderId" class="btn btn-outline-secondary btn-sm"><app-icon name="arrow-left" size="16" decorative="true" /> Voltar</a>
     </div>
 
     <section class="card border-0 shadow-sm mb-4">
@@ -23,10 +23,10 @@
             <div class="ged-smart-box">
                 <input type="hidden" id="currentFolderId" value="@folderId" />
                 <div class="input-group input-group-lg">
-                    <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+                    <span class="input-group-text bg-white"><app-icon name="search" size="16" decorative="true" /></span>
                     <input id="smartSearchInput" class="form-control" value="@q" placeholder="Busque por documento, prontuário, paciente, pasta, tipo, termo do OCR ou número..." />
-                    <button id="btnSmartSearchClear" type="button" class="btn btn-outline-secondary"><i class="bi bi-x-lg"></i></button>
-                    <button id="btnSmartFilters" type="button" class="btn btn-outline-secondary"><i class="bi bi-sliders"></i></button>
+                    <button id="btnSmartSearchClear" type="button" class="btn btn-outline-secondary"><app-icon name="close" size="16" decorative="true" /></button>
+                    <button id="btnSmartFilters" type="button" class="btn btn-outline-secondary"><app-icon name="filter" size="16" decorative="true" /></button>
                     <button id="btnSmartSearch" type="button" class="btn btn-primary">Buscar</button>
                 </div>
                 <div id="smartSearchSuggestions" class="ged-smart-suggestions"></div>
@@ -54,7 +54,7 @@
     @if (Model == null || Model.Count == 0)
     {
         <div class="alert alert-light border text-muted">
-            <i class="bi bi-info-circle"></i>
+            <app-icon name="info" size="16" decorative="true" />
             Nenhum documento encontrado. Tente buscar por parte do nome, número, pasta, tipo ou termo do OCR.
             <ul class="mb-0 mt-2">
                 <li>Pesquise em todo GED.</li>

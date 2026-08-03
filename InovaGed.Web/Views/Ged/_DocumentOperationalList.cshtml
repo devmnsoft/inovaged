@@ -26,8 +26,8 @@
         : d.UploadedAtLocalFormatted;
 
     var iconClass = (d.FileName ?? string.Empty).EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)
-        ? "bi-file-earmark-pdf"
-        : "bi-file-earmark-text";
+        ? "file-pdf"
+        : "document";
 
     var rowClass = d.IsDocumentIncomplete
         ? " is-incomplete"
@@ -52,7 +52,7 @@
         </div>
 
         <div class="ged-operational-icon" aria-hidden="true">
-            <i class="bi @iconClass"></i>
+            <app-icon name="@iconClass" size="20" decorative="true" />
         </div>
 
         <div class="ged-operational-content">
@@ -68,19 +68,19 @@
                 @if (d.IsDocumentIncomplete)
                 {
                     <span class="badge ged-badge-incomplete" title="Este documento possui partes pendentes e poderá ser complementado futuramente.">
-                        <i class="bi bi-exclamation-triangle me-1"></i>Documento incompleto
+                        <app-icon class="me-1" name="warning" size="16" decorative="true" />Documento incompleto
                     </span>
                 }
             </div>
 
             <div class="ged-operational-file-line" title="@d.FileName">
-                <i class="bi bi-paperclip me-1"></i>
+                <app-icon class="me-1" name="document-link" size="16" decorative="true" />
                 @(!string.IsNullOrWhiteSpace(d.FileName) ? d.FileName : "Arquivo sem nome")
             </div>
 
             <div class="ged-operational-meta-line">
                 <span class="ged-meta-item">
-                    <i class="bi bi-folder2-open me-1"></i>@folderName
+                    <app-icon class="me-1" name="folder-open" size="16" decorative="true" />@folderName
                 </span>
 
                 <span class="ged-meta-separator">•</span>
@@ -90,7 +90,7 @@
                 <span class="ged-meta-separator">•</span>
 
                 <span class="ged-meta-item">
-                    <i class="bi bi-clock me-1"></i>Upload em @uploadLabel
+                    <app-icon class="me-1" name="history" size="16" decorative="true" />Upload em @uploadLabel
                 </span>
             </div>
 
@@ -106,7 +106,7 @@
                     data-version-id="@versionId"
                     title="Visualizar preview"
                     aria-label="Visualizar preview de @d.Title">
-                <i class="bi bi-eye"></i>
+                <app-icon name="preview" size="16" decorative="true" />
             </button>
 
             @await Html.PartialAsync("_DocumentActionsDropdown", new InovaGed.Web.Models.Ged.DocumentActionsVm { DocumentId = d.Id, Title = d.Title, FileName = d.FileName, VersionId = versionId, CurrentFolderId = Model.CurrentFolderId, IsOcrAvailable = d.IsOcrAvailable, IsPartialDocument = d.IsPartialDocument, IsDocumentIncomplete = d.IsDocumentIncomplete, PartialStatus = d.PartialStatus, PartialPartsCount = d.PartialPartsCount, PartialTotalParts = d.TotalParts ?? d.PartialTotalParts, CanAddPart = canAddDocumentPart, CanViewParts = canViewDocumentParts, CanConsolidate = canConsolidateDocumentParts, CanCancelPartial = canCancelDocumentParts, CanMarkAsIncomplete = canAddDocumentPart })
