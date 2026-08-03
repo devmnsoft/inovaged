@@ -2,6 +2,16 @@
 .toast-container { position: fixed; z-index: var(--ig-z-overlay); top: calc(var(--ig-topbar-height) + var(--ig-space-4)); right: var(--ig-space-4); display: grid; max-width: min(400px, calc(100vw - 32px)); gap: var(--ig-space-2); }
 .toast { overflow: hidden; border: 1px solid var(--ig-border); border-radius: var(--ig-radius-md); background: var(--ig-surface); box-shadow: var(--ig-shadow-md); }
 .modal-content, .atlas-drawer { border: 1px solid var(--ig-border); border-radius: var(--ig-radius-lg); background: var(--ig-surface); box-shadow: var(--ig-shadow-lg); }
+
+.atlas-drawer-backdrop { position: fixed; inset: 0; z-index: 1050; background: transparent; pointer-events: none; }
+.atlas-drawer { position: fixed; z-index: 1055; inset: 0 0 0 auto; width: min(32rem, 92vw); border-radius: var(--ig-radius-lg) 0 0 var(--ig-radius-lg); padding: 1.25rem; overflow: auto; }
+.atlas-drawer__header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-bottom: 1rem; border-bottom: 1px solid var(--ig-border); }
+.atlas-drawer__header h2 { margin: 0; color: var(--ig-text); font-size: 1.125rem; }
+.atlas-drawer__content { padding-block: 1rem; color: var(--ig-text); }
+.atlas-drawer__content label { display: block; margin-bottom: .5rem; font-weight: 650; }
+.atlas-drawer__content textarea { resize: vertical; min-height: 7rem; }
+.atlas-drawer__content small { display: block; margin-top: .35rem; }
+.atlas-drawer__actions { display: flex; justify-content: flex-end; gap: .75rem; margin-top: 1.25rem; }
 .modal-header, .modal-footer { border-color: var(--ig-border); }
 .ig-toast-region { position:fixed; z-index:var(--ig-z-overlay); top:calc(var(--ig-topbar-height) + var(--ig-space-4)); right:var(--ig-space-4); display:grid; width:min(400px,calc(100vw - 32px)); gap:var(--ig-space-2); pointer-events:none; }
 .ig-toast { display:grid; grid-template-columns:auto 1fr auto; align-items:start; gap:.75rem; padding:1rem; border:1px solid var(--ig-border); border-left:4px solid var(--ig-info); border-radius:var(--ig-radius-md); background:var(--ig-surface); box-shadow:var(--ig-shadow-md); pointer-events:auto; }
