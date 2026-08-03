@@ -3,6 +3,7 @@
 @using InovaGed.Web.Ocr
 @using InovaGed.Web.Security
 @inject Microsoft.Extensions.Configuration.IConfiguration Configuration
+@inject InovaGed.Web.Services.IFileVisualResolver FileVisualResolver
 
 @{
     var canAddDocumentPart = RolePolicyHelper.IsFullAdmin(User) || User.IsInRole(AppRoles.Arquivista) || User.IsInRole(AppRoles.ArquivistaOphir);
@@ -22,7 +23,7 @@
     var uploadLocal = OcrUiHelper.ToConfiguredLocalTime(uploadDateUtc, localTimeZoneId);
     var uploadLabel = string.IsNullOrWhiteSpace(d.UploadedAtLocalFormatted) ? uploadLocal.ToString(uploadDateFormat) : d.UploadedAtLocalFormatted;
     var fileName = !string.IsNullOrWhiteSpace(d.FileName) ? d.FileName : "Arquivo sem nome";
-    var iconClass = fileName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) ? "bi-file-earmark-pdf" : "bi-file-earmark-text";
+    var fileVisual = FileVisualResolver.Resolve(System.IO.Path.GetExtension(fileName), null);
     var rowClass = d.IsDocumentIncomplete ? " is-incomplete" : d.IsPartialDocument ? " is-partial" : string.Empty;
     var isConsolidated = string.Equals(d.PartialStatus, "CONSOLIDATED", StringComparison.OrdinalIgnoreCase) || d.ConsolidatedVersionId.HasValue;
     var isReadyToConsolidate = !isConsolidated && d.IsPartialDocument && !d.IsDocumentIncomplete && string.Equals(d.PartialStatus, "COMPLETE", StringComparison.OrdinalIgnoreCase);
@@ -52,8 +53,8 @@
                    aria-label="Selecionar @d.Title" />
         </div>
 
-        <div class="ged-doc-icon ged-smart-type" aria-hidden="true">
-            <i class="bi @iconClass"></i>
+        <div class="ged-doc-icon ged-smart-type @fileVisual.CssClass" aria-label="Tipo: @fileVisual.Label" title="@fileVisual.Label">
+            <app-icon name="@fileVisual.Icon" size="24" decorative="true" />
         </div>
 
         <div class="ged-doc-main ged-smart-main">
@@ -69,7 +70,7 @@
                 @if (d.IsDocumentIncomplete)
                 {
                     <span class="badge ged-badge-incomplete" title="Este documento possui partes pendentes e poderá ser complementado futuramente.">
-                        <i class="bi bi-exclamation-triangle me-1"></i>Documento incompleto
+                        <app-icon name="warning" size="14" decorative="true" /> Documento incompleto
                     </span>
                 }
             </div>
@@ -86,7 +87,7 @@
                     data-current-classification-id="@d.ClassificationId"
                     style="@classificationStyle"
                     title="Classificação rápida">
-                <i class="bi @(string.IsNullOrWhiteSpace(d.ClassificationIcon) ? "bi-tag" : d.ClassificationIcon)"></i>
+                <app-icon name="classification" size="16" decorative="true" />
                 <span>@classificationLabel</span>
                 @if (d.HasOcrClassificationSuggestion)
                 {
@@ -97,7 +98,7 @@
             <div class="ged-doc-meta ged-smart-inline-badges" aria-label="Indicadores do documento">
                 @await Html.PartialAsync("_DocumentBadges", DocumentBadgesVM.FromDocument(d))
                 <span class="ged-doc-upload-date" title="Upload em UTC: @uploadDateUtc.ToString("O")">
-                    <i class="bi bi-clock me-1"></i>Upload em @uploadLabel
+                    <app-icon name="upload-cloud" size="14" decorative="true" /> Upload em @uploadLabel
                 </span>
             </div>
         </div>
@@ -109,7 +110,7 @@
                     data-version-id="@versionId"
                     title="Visualizar preview"
                     aria-label="Visualizar preview de @d.Title">
-                <i class="bi bi-eye"></i>
+                <app-icon name="preview" size="16" decorative="true" />
             </button>
 
             @await Html.PartialAsync("_DocumentActionsDropdown", new InovaGed.Web.Models.Ged.DocumentActionsVm { DocumentId = d.Id, Title = d.Title, FileName = d.FileName, VersionId = versionId, CurrentFolderId = Model.CurrentFolderId, IsOcrAvailable = d.IsOcrAvailable, IsPartialDocument = d.IsPartialDocument, IsDocumentIncomplete = d.IsDocumentIncomplete, PartialStatus = d.PartialStatus, PartialPartsCount = d.PartialPartsCount, PartialTotalParts = d.TotalParts ?? d.PartialTotalParts, CanAddPart = canAddDocumentPart, CanViewParts = canViewDocumentParts, CanConsolidate = canConsolidateDocumentParts, CanCancelPartial = canCancelDocumentParts, CanMarkAsIncomplete = canAddDocumentPart })

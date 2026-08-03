@@ -25,7 +25,7 @@
     @if (!Model.Documents.Any())
     {
         <div class="ged-empty-state text-center p-5 text-muted">
-            <div class="ged-empty-icon mb-3"><i class="bi bi-folder2-open"></i></div>
+            <div class="ged-empty-icon mb-3"><app-icon name="folder-open" size="32" decorative="true" /></div>
             @if (!string.IsNullOrWhiteSpace(Model.Query))
             {
                 <h5 class="text-dark mb-2">Nenhum documento encontrado para '@Model.Query'.</h5>
@@ -44,10 +44,10 @@
             @if (string.IsNullOrWhiteSpace(Model.Query))
             {
                 <button type="button" id="btnOpenBulkUploadEmpty" class="btn btn-primary">
-                    <i class="bi bi-cloud-arrow-up me-1"></i> Adicionar documentos
+                    <app-icon name="upload-cloud" size="16" decorative="true" /> Adicionar documentos
                 </button>
             }
-            <div class="small text-muted mt-3"><i class="bi bi-lightbulb me-1"></i>Você também pode mover documentos de outra pasta para este destino.</div>
+            <div class="small text-muted mt-3"><app-icon name="help" size="14" decorative="true" /> Você também pode mover documentos de outra pasta para este destino.</div>
         </div>
     }
     else
@@ -61,8 +61,8 @@
                 </div>
                 <div class="d-flex align-items-center gap-2 flex-wrap justify-content-end">
                     <span id="gedIncompleteFilterChip" class="ged-filter-chip d-none">Filtro: documentos incompletos <button type="button" class="btn btn-link btn-sm p-0 ms-1" id="btnClearIncompleteFilter" aria-label="Limpar filtro de incompletos">×</button></span>
-                    <button type="button" class="btn btn-sm btn-warning" id="btnFilterIncompleteDocs"><i class="bi bi-funnel me-1"></i>Ver incompletos</button>
-                    <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#modalHowPartialDocumentsWork"><i class="bi bi-question-circle me-1"></i>Como funciona?</button>
+                    <button type="button" class="btn btn-sm btn-warning" id="btnFilterIncompleteDocs"><app-icon name="filter" size="14" decorative="true" /> Ver incompletos</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#modalHowPartialDocumentsWork"><app-icon name="help" size="14" decorative="true" /> Como funciona?</button>
                 </div>
             </div>
         }
@@ -89,11 +89,11 @@
                     class="btn btn-sm btn-outline-primary ged-move-selected-inline js-btn-move-selected"
                     id="btnMoveSelected"
                     disabled>
-                <i class="bi bi-folder-symlink me-1"></i>Mover
+                <app-icon name="document-move" size="14" decorative="true" /> Mover
             </button>
-            <button type="button" class="btn btn-sm btn-outline-warning js-bulk-mark-incomplete" disabled><i class="bi bi-exclamation-diamond me-1"></i>Incompleto</button>
-            <button type="button" class="btn btn-sm btn-outline-success js-bulk-mark-complete" disabled><i class="bi bi-check2-circle me-1"></i>Completo</button>
-            <button type="button" class="btn btn-sm btn-outline-danger js-bulk-delete" disabled><i class="bi bi-trash me-1"></i>Excluir</button>
+            <button type="button" class="btn btn-sm btn-outline-warning js-bulk-mark-incomplete" disabled><app-icon name="warning" size="14" decorative="true" /> Incompleto</button>
+            <button type="button" class="btn btn-sm btn-outline-success js-bulk-mark-complete" disabled><app-icon name="check" size="14" decorative="true" /> Completo</button>
+            <button type="button" class="btn btn-sm btn-outline-danger js-bulk-delete" disabled><app-icon name="delete" size="14" decorative="true" /> Excluir</button>
             <button type="button" class="btn btn-sm btn-outline-secondary js-clear-document-selection" disabled>Limpar seleção</button>
             </div>
 
@@ -102,14 +102,14 @@
                         class="btn btn-sm btn-primary js-doc-view-mode active"
                         data-view-mode="smart-list"
                         aria-pressed="true">
-                    <i class="bi bi-list-check me-1"></i>Smart
+                    <app-icon name="list" size="14" decorative="true" /> Smart
                 </button>
 
                 <button type="button"
                         class="btn btn-sm btn-outline-primary js-doc-view-mode"
                         data-view-mode="table"
                         aria-pressed="false">
-                    <i class="bi bi-table me-1"></i>Tabela
+                    <app-icon name="table" size="14" decorative="true" /> Tabela
                 </button>
             </div>
         </div>
@@ -126,7 +126,7 @@
 
         <div class="ged-load-more-row @(hasMoreDocuments ? "" : "d-none")">
             <button type="button" class="btn btn-sm btn-outline-primary js-ged-load-more" aria-label="Carregar mais documentos">
-                <i class="bi bi-plus-circle me-1"></i>Carregar mais
+                <app-icon name="document-add" size="14" decorative="true" /> Carregar mais
             </button>
             <span class="small text-muted ms-2">Exibindo @Model.Documents.Count de @totalDocuments documentos</span>
         </div>

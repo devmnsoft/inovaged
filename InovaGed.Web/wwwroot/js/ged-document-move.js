@@ -56,7 +56,8 @@
         let selectedIds = [];
         let mode = 'bulk';
 
-        const getSelected = () => Array.from(new Set(Array.from(document.querySelectorAll('.js-doc-select:checked')).map(x => x.value).filter(Boolean)));
+        const getSelected = () => window.GedSelection?.ids()
+            || Array.from(new Set(Array.from(document.querySelectorAll('.js-doc-select:checked')).map(x => x.value).filter(Boolean)));
         const escapeCssValue = (value) => window.CSS?.escape ? CSS.escape(value) : String(value).replace(/[^a-zA-Z0-9_-]/g, "\\$&");
         const host = document.getElementById('folderSearchResults');
         const empty = document.getElementById('folderSearchEmpty');
@@ -154,7 +155,11 @@
                 window.showAppToast?.('Selecione uma pasta de destino.', 'warning', 'Validação');
                 return;
             }
-            const confirmed = await window.showAppConfirm?.('Deseja mover este documento para a pasta selecionada?', 'Confirmar movimentação');
+            if (selectedIds.length > 200) {
+                showMoveModalMessage('O limite é de 200 documentos por movimentação. Reduza a seleção.', 'warning');
+                return;
+            }
+            const confirmed = await window.showAppConfirm?.(`Mover ${selectedIds.length} documento(s) para ${destinationFolderName.value || 'a pasta selecionada'}?`, 'Confirmar movimentação');
             if (!confirmed) return;
             const endpoint = mode === 'single' ? '/Ged/Documents/Move' : '/Ged/Documents/MoveBulk';
             const payload = mode === 'single'
@@ -162,7 +167,7 @@
                 : { documentIds: selectedIds, destinationFolderId: destinationFolderId.value, requestedFolderId: destinationFolderId.dataset.requestedFolderId || destinationFolderId.value, reason: reasonInput.value?.trim() || null, source: 'BULK' };
             setMoveLoading(true);
             try {
-                const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { RequestVerificationToken: token } : {}) }, body: JSON.stringify(payload) });
+                const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest', ...(token ? { RequestVerificationToken: token } : {}) }, body: JSON.stringify(payload) });
                 const payloadResp = await response.json().catch(() => null);
                 const message = payloadResp?.message || 'Não foi possível concluir a operação.';
                 if (!response.ok || payloadResp?.success === false) {
@@ -188,9 +193,9 @@
                     window.showAppToast?.(message || 'Documento movido com sucesso.', 'success', 'Movimentação concluída');
                 }
                 moveModal.hide();
+                window.GedSelection?.clear();
                 window.setTimeout(() => {
-                    if (window.GedFolderNavigation?.refreshCurrentFolder) window.GedFolderNavigation.refreshCurrentFolder();
-                    else window.location.reload();
+                    window.GedFolderNavigation?.refreshCurrentFolder?.();
                 }, 500);
             } catch {
                 showMoveModalMessage('Falha de comunicação com o servidor. Tente novamente.', 'danger');
@@ -233,17 +238,7 @@
             const confirm = e.target.closest('#btnConfirmMove');
             if (confirm) { e.preventDefault(); confirmMove(); }
         });
-        document.addEventListener('change', function (e) {
-            if (e.target.closest('.js-doc-select') || e.target.closest('#selectAllDocuments') || e.target.closest('#selectAllDocumentsTable')) {
-                if (e.target.matches('#selectAllDocuments, #selectAllDocumentsTable')) {
-                    document.querySelectorAll('#gedDocumentsContainer .js-doc-select').forEach(cb => { cb.checked = e.target.checked; });
-                }
-                if (e.target.matches('.js-doc-select')) {
-                    document.querySelectorAll(`#gedDocumentsContainer .js-doc-select[value=\"${escapeCssValue(e.target.value)}\"]`).forEach(cb => { cb.checked = e.target.checked; });
-                }
-                updateBulkUi();
-            }
-        });
+        document.addEventListener('ged:selection-changed', updateBulkUi);
 
         updateBulkUi(); updateConfirmButton();
     });
