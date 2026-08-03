@@ -44,7 +44,8 @@ public sealed class DocumentMoveService : IDocumentMoveService
             var items = new List<DocumentMoveResultDto>(documentIds.Count);
             foreach (var id in documentIds.Distinct()) items.Add(await MoveOneAsync(tenantId, userId, userName, id, destinationFolderId, reason, source, isAdmin, batchId, ct));
             var ok = items.Count(i => i.Success);
-            await _audit.WriteAsync(tenantId, userId, "MOVE_DOCUMENT_FOLDER_BULK", "DOCUMENT", batchId, "Documentos movidos em lote", null, null, new { batchId, total = items.Count, successCount = ok, failCount = items.Count - ok, destinationFolderId, reason, source = "BULK" }, ct);
+            await WriteAuditSafelyAsync(tenantId, userId, "MOVE_DOCUMENT_FOLDER_BULK", batchId,
+                "Documentos movidos em lote", new { batchId, total = items.Count, successCount = ok, failCount = items.Count - ok, destinationFolderId, reason, source }, ct);
             return Result<DocumentBulkMoveResultDto>.Ok(new DocumentBulkMoveResultDto { BatchId = batchId, Total = items.Count, SuccessCount = ok, FailCount = items.Count - ok, Items = items });
         }
         catch (Exception ex)
@@ -123,6 +124,7 @@ where h.tenant_id=@tenantId and h.document_id=@documentId and h.reg_status='A' o
     {
         await using var conn = await _db.OpenAsync(ct);
         await using var tx = await conn.BeginTransactionAsync(ct);
+        var committed = false;
 
         try
         {
@@ -132,12 +134,13 @@ select
     d.folder_id AS "FolderId",
     d.title AS "Title",
     d.status::text AS "Status",
-    d.reg_status AS "RegStatus",
-    false AS "IsConfidential"
+    d.visibility::text AS "Visibility",
+    d.security_level::text AS "SecurityLevel",
+    (upper(coalesce(d.visibility::text, '')) in ('PRIVATE', 'RESTRICTED', 'CONFIDENTIAL', 'SIGILOSO', 'RESTRITO')
+      or upper(coalesce(d.security_level::text, '')) not in ('', 'PUBLIC', 'NORMAL', 'LOW', '0')) AS "IsConfidential"
 from ged.document d
 where d.tenant_id = @tenantId
   and d.id = @documentId
-  and coalesce(d.reg_status, 'A') = 'A'
   and upper(d.status::text) <> 'DELETED'
 for update;
 """;
@@ -155,7 +158,8 @@ for update;
 
             if (!isAdmin && !await CanMoveAsync(conn, tenantId, userId, doc.IsConfidential, ct))
             {
-                await _audit.WriteAsync(tenantId, userId, "ACCESS_DENIED_MOVE_DOCUMENT", "DOCUMENT", documentId, "Tentativa não autorizada de mover documento", null, null, new { destinationFolderId, source, reason }, ct);
+                await WriteAuditSafelyAsync(tenantId, userId, "ACCESS_DENIED_MOVE_DOCUMENT", documentId,
+                    "Tentativa não autorizada de mover documento", new { destinationFolderId, source, reason }, ct);
                 return await RollbackAndReturnAsync(Denied(documentId, "Usuário sem permissão para mover este documento."), tx, ct);
             }
 
@@ -166,7 +170,7 @@ for update;
                     return await RollbackAndReturnAsync(Fail(documentId, "Pasta destino inválida."), tx, ct);
             }
 
-            var rowsAffected = await conn.ExecuteAsync(new CommandDefinition("update ged.document set folder_id=@destinationFolderId, updated_at=now(), updated_by=@userId where tenant_id=@tenantId and id=@documentId and coalesce(reg_status,'A')='A' and upper(status::text) <> 'DELETED'", new { tenantId, documentId, destinationFolderId = targetFolderId, userId }, transaction: tx, cancellationToken: ct));
+            var rowsAffected = await conn.ExecuteAsync(new CommandDefinition("update ged.document set folder_id=@destinationFolderId, updated_at=now(), updated_by=@userId where tenant_id=@tenantId and id=@documentId and upper(status::text) <> 'DELETED'", new { tenantId, documentId, destinationFolderId = targetFolderId, userId }, transaction: tx, cancellationToken: ct));
             if (rowsAffected != 1)
                 return await RollbackAndReturnAsync(Fail(documentId, "Não foi possível atualizar a pasta do documento."), tx, ct);
             await conn.ExecuteAsync(new CommandDefinition("insert into ged.document_folder_move_history (id, tenant_id, document_id, old_folder_id, new_folder_id, moved_by, moved_by_name, reason, batch_id, source, reg_status) values (@id,@tenantId,@documentId,@oldFolderId,@newFolderId,@movedBy,@movedByName,@reason,@batchId,@source,'A')", new { id = Guid.NewGuid(), tenantId, documentId, oldFolderId = doc.FolderId, newFolderId = targetFolderId, movedBy = userId, movedByName = userName, reason, batchId, source }, transaction: tx, cancellationToken: ct));
@@ -176,16 +180,40 @@ for update;
                 return await RollbackAndReturnAsync(Fail(documentId, "Não foi possível confirmar a pasta destino do documento."), tx, ct);
 
             await tx.CommitAsync(ct);
+            committed = true;
 
             _logger.LogInformation("Documento movido confirmado. Tenant={TenantId} User={UserId} Document={DocumentId} OldFolder={OldFolderId} NewFolder={DestinationFolderId} RowsAffected={RowsAffected}", tenantId, userId, documentId, doc.FolderId, targetFolderId, rowsAffected);
-            await _audit.WriteAsync(tenantId, userId, "MOVE_DOCUMENT_FOLDER", "DOCUMENT", documentId, "Documento movido de pasta", null, null, new { oldFolderId = doc.FolderId, newFolderId = targetFolderId, reason, source }, ct);
+            await WriteAuditSafelyAsync(tenantId, userId, "MOVE_DOCUMENT_FOLDER", documentId,
+                "Documento movido de pasta", new { oldFolderId = doc.FolderId, newFolderId = targetFolderId, reason, source, batchId }, ct);
             return new DocumentMoveResultDto { DocumentId = documentId, Success = true, Message = "Documento movido com sucesso.", OldFolderId = doc.FolderId, NewFolderId = targetFolderId };
         }
         catch (Exception ex)
         {
+            if (committed)
+            {
+                _logger.LogError(ex, "Falha posterior ao commit. Movimento permanece confirmado. Tenant={TenantId} Document={DocumentId}", tenantId, documentId);
+                return new DocumentMoveResultDto { DocumentId = documentId, Success = true, Message = "Documento movido com sucesso; auditoria pendente de recuperação.", NewFolderId = destinationFolderId == VirtualRootFolderId ? null : destinationFolderId };
+            }
             await tx.RollbackAsync(ct);
             _logger.LogError(ex, "Erro em MoveOneAsync Tenant={TenantId} User={UserId} Document={DocumentId} DestinationFolderId={DestinationFolderId}", tenantId, userId, documentId, destinationFolderId);
             return Fail(documentId, "Não foi possível concluir a movimentação do documento. Tente novamente.");
+        }
+    }
+
+    private async Task WriteAuditSafelyAsync(Guid tenantId, Guid userId, string action, Guid entityId,
+        string description, object details, CancellationToken ct)
+    {
+        try
+        {
+            await _audit.WriteAsync(tenantId, userId, action, action.Contains("BULK", StringComparison.Ordinal) ? "DOCUMENT_BATCH" : "DOCUMENT",
+                entityId, description, null, null, details, ct);
+        }
+        catch (Exception ex)
+        {
+            // Persistence has already succeeded (or this is an access-denied audit). Never
+            // report a false movement failure; the structured log is recoverable by correlation.
+            _logger.LogError(ex, "AUDIT_RECOVERY_REQUIRED CorrelationId={CorrelationId} Tenant={TenantId} User={UserId} Action={Action} Entity={EntityId}",
+                Guid.NewGuid(), tenantId, userId, action, entityId);
         }
     }
 
@@ -226,7 +254,8 @@ where ur.tenant_id = @tenantId
         public Guid? FolderId { get; set; }
         public string Title { get; set; } = string.Empty;
         public string Status { get; set; } = string.Empty;
-        public string RegStatus { get; set; } = string.Empty;
+        public string Visibility { get; set; } = string.Empty;
+        public string SecurityLevel { get; set; } = string.Empty;
         public bool IsConfidential { get; set; }
     }
 

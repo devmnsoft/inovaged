@@ -3,6 +3,7 @@
 @using InovaGed.Web.Ocr
 @using InovaGed.Web.Security
 @inject Microsoft.Extensions.Configuration.IConfiguration Configuration
+@inject InovaGed.Web.Services.IFileVisualResolver FileVisualResolver
 @{
     var canAddDocumentPart = RolePolicyHelper.IsFullAdmin(User) || User.IsInRole(AppRoles.Arquivista) || User.IsInRole(AppRoles.ArquivistaOphir);
     var canViewDocumentParts = User.Identity?.IsAuthenticated == true;
@@ -11,27 +12,6 @@
     var localTimeZoneId = Configuration["Localization:DefaultTimeZone"] ?? Configuration["App:LocalTimeZoneId"] ?? Configuration["TimeZoneId"] ?? "America/Belem";
     var uploadDateFormat = Configuration["Localization:DateTimeFormat"] ?? "dd/MM/yyyy HH:mm";
     var folderName = !string.IsNullOrWhiteSpace(Model.CurrentFolderName) ? Model.CurrentFolderName : "Raiz";
-
-    static string FileIcon(string? fileName)
-    {
-        var extension = System.IO.Path.GetExtension(fileName ?? string.Empty).TrimStart('.').ToLowerInvariant();
-        return extension switch
-        {
-            "pdf" => "file-pdf",
-            "doc" => "file-doc",
-            "docx" => "file-docx",
-            "xls" => "file-xls",
-            "xlsx" => "file-xlsx",
-            "ppt" => "file-ppt",
-            "pptx" => "file-pptx",
-            "csv" => "file-csv",
-            "txt" => "file-txt",
-            "zip" => "file-zip",
-            "dcm" or "dicom" => "file-dicom",
-            "png" or "jpg" or "jpeg" or "gif" or "webp" or "tif" or "tiff" => "file-image",
-            _ => "file-generic"
-        };
-    }
 
     static string FormatSize(long bytes)
     {
@@ -68,7 +48,7 @@
                         var uploadDateUtc = d.UploadedAtUtc == default ? d.CreatedAt : d.UploadedAtUtc;
                         var uploadLocal = OcrUiHelper.ToConfiguredLocalTime(uploadDateUtc, localTimeZoneId);
                         var uploadLabel = string.IsNullOrWhiteSpace(d.UploadedAtLocalFormatted) ? uploadLocal.ToString(uploadDateFormat) : d.UploadedAtLocalFormatted;
-                        var fileIcon = FileIcon(d.FileName);
+                        var fileVisual = FileVisualResolver.Resolve(System.IO.Path.GetExtension(d.FileName ?? string.Empty), null);
                         var rowClass = d.IsDocumentIncomplete ? "ged-row-incomplete" : (d.IsPartialDocument ? "ged-row-partial" : string.Empty);
                         var isConsolidated = string.Equals(d.PartialStatus, "CONSOLIDATED", StringComparison.OrdinalIgnoreCase) || d.ConsolidatedVersionId.HasValue;
                         var isReadyToConsolidate = !isConsolidated && d.IsPartialDocument && !d.IsDocumentIncomplete && string.Equals(d.PartialStatus, "COMPLETE", StringComparison.OrdinalIgnoreCase);
@@ -100,8 +80,8 @@
 
                             <td>
                                 <div class="ged-table-document-cell">
-                                    <div class="ged-table-file-icon" aria-hidden="true">
-                                        <app-icon name="@fileIcon" size="24" decorative="true" />
+                                    <div class="ged-table-file-icon @fileVisual.CssClass" aria-label="Tipo: @fileVisual.Label" title="@fileVisual.Label">
+                                        <app-icon name="@fileVisual.Icon" size="24" decorative="true" />
                                     </div>
                                     <div class="ged-table-document-text">
                                         <a class="ged-table-title"
@@ -150,7 +130,7 @@
 
                             <td class="ged-col-upload">
                                 <span class="ged-upload-date" title="Upload em UTC: @uploadDateUtc.ToString("O")">
-                                    <i class="bi bi-cloud-arrow-up me-1"></i>
+                                    <app-icon name="upload-cloud" size="14" decorative="true" />
                                     @uploadLabel
                                 </span>
                             </td>
@@ -165,7 +145,7 @@
                                             data-version-id="@versionId"
                                             title="Visualizar preview"
                                             aria-label="Visualizar preview de @d.Title">
-                                        <i class="bi bi-eye"></i>
+                                        <app-icon name="preview" size="16" decorative="true" />
                                     </button>
                                     @await Html.PartialAsync("_DocumentActionsDropdown", new InovaGed.Web.Models.Ged.DocumentActionsVm { DocumentId = d.Id, Title = d.Title, FileName = d.FileName, VersionId = versionId, CurrentFolderId = Model.CurrentFolderId, IsOcrAvailable = d.IsOcrAvailable, IsPartialDocument = d.IsPartialDocument, IsDocumentIncomplete = d.IsDocumentIncomplete, PartialStatus = d.PartialStatus, PartialPartsCount = d.PartialPartsCount, PartialTotalParts = d.TotalParts ?? d.PartialTotalParts, CanAddPart = canAddDocumentPart, CanViewParts = canViewDocumentParts, CanConsolidate = canConsolidateDocumentParts, CanCancelPartial = canCancelDocumentParts, CanMarkAsIncomplete = canAddDocumentPart })
                                 </div>

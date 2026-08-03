@@ -2,17 +2,7 @@
     const escCss = (value) => window.CSS?.escape ? CSS.escape(value) : String(value || '').replace(/[^a-zA-Z0-9_-]/g, '\\$&');
     let debounceTimer = null;
 
-    function updateSelectedState() {
-        const selected = new Set(Array.from(document.querySelectorAll('#gedDocumentsContainer .js-doc-select:checked')).map(x => x.value).filter(Boolean));
-        document.querySelectorAll('#gedDocumentsContainer [data-document-id]').forEach(row => row.classList.toggle('is-selected', selected.has(row.dataset.documentId)));
-        const count = selected.size;
-        document.querySelectorAll('#selectedDocumentsKpi').forEach(x => { x.textContent = String(count); });
-        document.querySelectorAll('#selectedDocumentsInlineInfo').forEach(x => { x.textContent = `${count} documento${count === 1 ? '' : 's'} selecionado${count === 1 ? '' : 's'}`; });
-        document.querySelectorAll('.ged-selection-bar').forEach(x => x.classList.toggle('has-selection', count > 0));
-        document.querySelectorAll('.js-btn-move-selected').forEach(btn => { btn.disabled = count === 0; });
-        document.querySelectorAll('.js-clear-document-selection').forEach(btn => { btn.disabled = count === 0; });
-        document.querySelectorAll('.js-move-selected-count').forEach(x => { x.textContent = `(${count})`; });
-    }
+    function updateSelectedState() { window.GedSelection?.reconcile({ preserve: true }); }
 
     async function loadMore() {
         const container = document.getElementById('gedDocumentsContainer');
@@ -60,17 +50,11 @@
         if (e.target.closest('.js-ged-load-more')) { e.preventDefault(); loadMore(); return; }
         if (e.target.closest('.js-clear-document-selection')) {
             e.preventDefault();
-            document.querySelectorAll('#gedDocumentsContainer .js-doc-select, #selectAllDocuments, #selectAllDocumentsTable').forEach(cb => { cb.checked = false; cb.indeterminate = false; });
-            updateSelectedState();
+            window.GedSelection?.clear();
             window.updateSelectedDocumentsState?.();
             return;
         }
         if (e.target.closest('.js-doc-select, .js-document-check, .dropdown, [data-bs-toggle="dropdown"]')) return;
-    });
-
-    document.addEventListener('change', (e) => {
-        if (e.target.matches('#gedDocumentsContainer .js-doc-select')) updateSelectedState();
-        if (e.target.matches('#selectAllDocuments, #selectAllDocumentsTable')) setTimeout(updateSelectedState, 0);
     });
 
     document.getElementById('btnSmartSearch')?.addEventListener('click', refreshBySearch);

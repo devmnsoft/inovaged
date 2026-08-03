@@ -190,7 +190,7 @@
         document.dispatchEvent(new CustomEvent('ged:documents-counters-updated', { detail: { total: count, ocrDone, noOcr, incomplete, unclassified } }));
         window.updateMoveSelectedButton?.();
     }
-    function selectedDocumentIds() { return Array.from(new Set(Array.from(document.querySelectorAll('.js-doc-select:checked')).map(x => x.value).filter(Boolean))); }
+    function selectedDocumentIds() { return window.GedSelection?.ids() || Array.from(new Set(Array.from(document.querySelectorAll('.js-doc-select:checked')).map(x => x.value).filter(Boolean))); }
     function getAntiForgeryToken() { return document.querySelector('input[name="__RequestVerificationToken"]')?.value || ''; }
     function getDraggedMoveType(e) {
         const explicitType = e.dataTransfer?.getData('application/x-ged-drag-type');
@@ -243,9 +243,27 @@
     }
 
     document.addEventListener('click', function (e) { const link = e.target.closest('.js-folder-node'); if (!link || e.target.closest('.dropdown, .ged-tree-toggle')) return; e.preventDefault(); setSelectedFolderFromNode(link); loadFolderDocuments(getListingFolderId(link), { visualFolderId: getVisualFolderId(link), listingFolderId: getListingFolderId(link), folderName: getFolderName(link), forceRefresh: true }).catch(err => console.error('[GED Navigation]', err)); });
-    document.addEventListener('dragstart', function (e) { const folder = e.target.closest('[data-drag-type="folder"][data-folder-id]'); if (folder && !e.target.closest('.dropdown, .ged-tree-toggle')) { e.dataTransfer?.setData('application/x-ged-drag-type', GedMoveType.FOLDER); e.dataTransfer?.setData('application/x-ged-folder', folder.dataset.folderId || ''); return; } const row = e.target.closest('[data-document-id]'); if (!row) return; const ids = selectedDocumentIds(); const id = row.dataset.documentId; if (!ids.includes(id)) row.querySelector('.js-doc-select')?.click(); e.dataTransfer?.setData('application/x-ged-drag-type', GedMoveType.DOCUMENTS); e.dataTransfer?.setData('application/x-ged-document', selectedDocumentIds().join(',')); });
+    document.addEventListener('dragstart', function (e) {
+        const folder = e.target.closest('[data-drag-type="folder"][data-folder-id]');
+        if (folder && !e.target.closest('.dropdown, .ged-tree-toggle')) {
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('application/x-ged-drag-type', GedMoveType.FOLDER);
+            e.dataTransfer.setData('application/x-ged-folder', folder.dataset.folderId || '');
+            return;
+        }
+        const row = e.target.closest('[data-document-id]');
+        if (!row || e.target.closest('input,button,a,select,textarea,.dropdown,[role="button"]')) { e.preventDefault(); return; }
+        const id = row.dataset.documentId;
+        if (!window.GedSelection?.has(id)) window.GedSelection?.replace([id]);
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('application/x-ged-drag-type', GedMoveType.DOCUMENTS);
+        e.dataTransfer.setData('application/x-ged-document', selectedDocumentIds().join(','));
+        row.classList.add('is-dragging');
+    });
     document.addEventListener('dragover', function (e) { const target = getFolderTarget(e); if (!target) return; e.preventDefault(); target.classList.add('ged-drop-target'); });
     document.addEventListener('dragleave', function (e) { getFolderTarget(e)?.classList.remove('ged-drop-target'); });
+    document.addEventListener('dragend', () => document.querySelectorAll('.is-dragging,.ged-drop-target').forEach(el => el.classList.remove('is-dragging', 'ged-drop-target')));
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') document.querySelectorAll('.is-dragging,.ged-drop-target').forEach(el => el.classList.remove('is-dragging', 'ged-drop-target')); });
     document.addEventListener('drop', handleFolderDrop, true);
     window.addEventListener('beforeunload', saveTreeState);
     window.addEventListener('popstate', function () { const url = new URL(location.href); const folderId = url.searchParams.get('folderId'); if (folderId) loadFolderDocuments(folderId, { visualFolderId: url.searchParams.get('visualFolderId') || folderId }, false); });
