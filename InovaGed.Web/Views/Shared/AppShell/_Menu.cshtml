@@ -41,8 +41,7 @@
                class="@(active ? "active" : null)"
                aria-current="@(active ? "page" : null)">
 
-                <i class="bi @item.Icon"
-                   aria-hidden="true"></i>
+                <app-icon name="@item.Icon" decorative="true" size="19" />
 
                 <span>@item.Label</span>
             </a>

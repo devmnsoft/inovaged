@@ -2,9 +2,9 @@
 <aside class="sidebar app-sidebar d-none d-lg-flex" aria-label="Navegação principal">
     <partial name="AppShell/_WorkspaceBrand" />
     <div class="sidebar-search" role="search">
-        <i class="bi bi-search" aria-hidden="true"></i>
+        <app-icon name="search" decorative="true" size="18" />
         <input type="search" data-menu-search placeholder="Pesquisar no menu" aria-label="Pesquisar no menu" autocomplete="off" />
-        <button type="button" data-menu-search-clear aria-label="Limpar pesquisa" hidden><i class="bi bi-x-lg" aria-hidden="true"></i></button>
+        <button type="button" data-menu-search-clear aria-label="Limpar pesquisa" hidden><app-icon name="close" decorative="true" size="16" /></button>
     </div>
     <nav class="sidebar-menu" aria-label="Módulos">
         <partial name="AppShell/_Menu" model="Model" />
@@ -14,9 +14,9 @@
         <div class="sidebar-section-title">Conta</div>
         <form asp-controller="Account" asp-action="Logout" method="post">
             @Html.AntiForgeryToken()
-            <button type="submit" class="sidebar-logout"><i class="bi bi-box-arrow-right" aria-hidden="true"></i><span>Sair</span></button>
+            <button type="submit" class="sidebar-logout"><app-icon name="arrow-right" decorative="true" size="18" /><span>Sair</span></button>
         </form>
     </div>
     <footer class="sidebar-footer">© @DateTime.UtcNow.Year InovaGED</footer>
-    <button class="sidebar-collapse" type="button" data-sidebar-toggle aria-expanded="true" title="Recolher menu"><i class="bi bi-layout-sidebar-inset" aria-hidden="true"></i><span>Recolher menu</span></button>
+    <button class="sidebar-collapse" type="button" data-sidebar-toggle aria-expanded="true" title="Recolher menu"><app-icon name="columns" decorative="true" size="18" /><span>Recolher menu</span></button>
 </aside>

@@ -4,9 +4,9 @@
 {
     <div class="dropdown quick-create">
         <button class="btn btn-primary" type="button" data-bs-toggle="dropdown" aria-expanded="false">
-            <i class="bi bi-plus-lg" aria-hidden="true"></i>
+            <app-icon name="document-add" decorative="true" size="18" />
             <span>Criar</span>
-            <i class="bi bi-chevron-down" aria-hidden="true"></i>
+            <app-icon name="chevron-down" decorative="true" size="16" />
         </button>
         <ul class="dropdown-menu dropdown-menu-end">
             <li><h2 class="dropdown-header">Criar nova atividade</h2></li>
@@ -14,7 +14,7 @@
             {
                 <li>
                     <a class="dropdown-item" asp-controller="@actionItem.Controller" asp-action="@actionItem.Action">
-                        <i class="bi @actionItem.Icon" aria-hidden="true"></i>
+                        <app-icon name="@actionItem.Icon" decorative="true" size="18" />
                         <span>
                             <strong>@actionItem.Label</strong>
                             <small>@actionItem.Description</small>
