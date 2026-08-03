@@ -173,8 +173,9 @@
                                     <div class="ged-tree-row @(isActive ? "active" : "")">
                                         @if (hasChildren)
                                         {
-                                            <button type="button" class="ged-tree-toggle" aria-label="Expandir/Recolher">
-                                                <i class="bi bi-caret-right-fill"></i>
+                                            <button type="button" class="ged-tree-toggle" aria-label="Expandir pasta" aria-expanded="false">
+                                                <app-icon class="ged-tree-caret-closed" name="chevron-right" size="16" decorative="true" />
+                                                <app-icon class="ged-tree-caret-open" name="chevron-down" size="16" decorative="true" />
                                             </button>
                                         }
                                         else
@@ -182,7 +183,10 @@
                                             <span class="ged-tree-spacer"></span>
                                         }
 
-                                        <i class="bi bi-folder2 ged-tree-folder"></i>
+                                        <span class="ged-tree-folder" aria-hidden="true">
+                                            <app-icon class="ged-tree-folder-closed" name="folder" size="18" decorative="true" />
+                                            <app-icon class="ged-tree-folder-open" name="folder-open" size="18" decorative="true" />
+                                        </span>
 
                                         <a class="js-folder-node ged-tree-link flex-grow-1" href="@href"
                                            draggable="@((canMoveFolders && !n.IsVirtual && !isVirtual) ? "true" : "false")"
@@ -326,8 +330,9 @@
                                     <div class="ged-tree-row @(isActive ? "active" : "")">
                                         @if (hasChildren)
                                         {
-                                            <button type="button" class="ged-tree-toggle" aria-label="Expandir/Recolher">
-                                                <i class="bi bi-caret-right-fill"></i>
+                                            <button type="button" class="ged-tree-toggle" aria-label="Expandir pasta" aria-expanded="false">
+                                                <app-icon class="ged-tree-caret-closed" name="chevron-right" size="16" decorative="true" />
+                                                <app-icon class="ged-tree-caret-open" name="chevron-down" size="16" decorative="true" />
                                             </button>
                                         }
                                         else
@@ -335,7 +340,10 @@
                                             <span class="ged-tree-spacer"></span>
                                         }
 
-                                        <i class="bi bi-folder2 ged-tree-folder"></i>
+                                        <span class="ged-tree-folder" aria-hidden="true">
+                                            <app-icon class="ged-tree-folder-closed" name="folder" size="18" decorative="true" />
+                                            <app-icon class="ged-tree-folder-open" name="folder-open" size="18" decorative="true" />
+                                        </span>
                                         <a class="js-folder-node ged-tree-link flex-grow-1" href="@href"
                                            draggable="@((canMoveFolders && !n.IsVirtual && !isVirtual) ? "true" : "false")"
                                            data-drag-type="folder"
@@ -1274,6 +1282,10 @@
             const children = li.querySelector(":scope > .ged-tree-children");
             if (!children) return;
 
+            const toggle = li.querySelector(":scope > .ged-tree-row .ged-tree-toggle");
+            toggle?.setAttribute("aria-expanded", String(open));
+            toggle?.setAttribute("aria-label", open ? "Recolher pasta" : "Expandir pasta");
+
             if (open) {
                 li.classList.add("open");
                 children.style.display = "block";
@@ -1302,6 +1314,37 @@
             setNodeOpen(li, !isOpen);
             e.preventDefault();
             e.stopPropagation();
+        });
+
+        document.addEventListener("keydown", (event) => {
+            const link = event.target.closest(".js-folder-node");
+            if (!link) return;
+            const row = link.closest(".ged-tree-row");
+            const li = link.closest(".ged-tree-node");
+            const visibleLinks = Array.from(document.querySelectorAll(".js-folder-node"))
+                .filter(item => item.offsetParent !== null);
+            const position = visibleLinks.indexOf(link);
+
+            if (event.key === "ArrowRight" && li?.dataset.hasChildren === "1") {
+                setNodeOpen(li, true);
+            } else if (event.key === "ArrowLeft" && li?.classList.contains("open")) {
+                setNodeOpen(li, false);
+            } else if (event.key === "Home") {
+                visibleLinks[0]?.focus();
+            } else if (event.key === "End") {
+                visibleLinks.at(-1)?.focus();
+            } else if (event.key === "ArrowDown") {
+                visibleLinks[Math.min(position + 1, visibleLinks.length - 1)]?.focus();
+            } else if (event.key === "ArrowUp") {
+                visibleLinks[Math.max(position - 1, 0)]?.focus();
+            } else if (event.key === "Enter") {
+                link.click();
+            } else {
+                return;
+            }
+
+            row?.scrollIntoView({ block: "nearest" });
+            event.preventDefault();
         });
 
         const active = document.querySelector(".ged-tree-row.active");

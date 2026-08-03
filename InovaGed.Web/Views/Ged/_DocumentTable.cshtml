@@ -11,6 +11,35 @@
     var localTimeZoneId = Configuration["Localization:DefaultTimeZone"] ?? Configuration["App:LocalTimeZoneId"] ?? Configuration["TimeZoneId"] ?? "America/Belem";
     var uploadDateFormat = Configuration["Localization:DateTimeFormat"] ?? "dd/MM/yyyy HH:mm";
     var folderName = !string.IsNullOrWhiteSpace(Model.CurrentFolderName) ? Model.CurrentFolderName : "Raiz";
+
+    static string FileIcon(string? fileName)
+    {
+        var extension = System.IO.Path.GetExtension(fileName ?? string.Empty).TrimStart('.').ToLowerInvariant();
+        return extension switch
+        {
+            "pdf" => "file-pdf",
+            "doc" => "file-doc",
+            "docx" => "file-docx",
+            "xls" => "file-xls",
+            "xlsx" => "file-xlsx",
+            "ppt" => "file-ppt",
+            "pptx" => "file-pptx",
+            "csv" => "file-csv",
+            "txt" => "file-txt",
+            "zip" => "file-zip",
+            "dcm" or "dicom" => "file-dicom",
+            "png" or "jpg" or "jpeg" or "gif" or "webp" or "tif" or "tiff" => "file-image",
+            _ => "file-generic"
+        };
+    }
+
+    static string FormatSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024d:0.#} KB";
+        if (bytes < 1024L * 1024 * 1024) return $"{bytes / (1024d * 1024):0.#} MB";
+        return $"{bytes / (1024d * 1024 * 1024):0.#} GB";
+    }
 }
 
 <div class="ged-documents-table-mode">
@@ -23,8 +52,11 @@
                             <input type="checkbox" class="form-check-input" id="selectAllDocumentsTable" aria-label="Selecionar todos os documentos na tabela" />
                         </th>
                         <th>Documento</th>
-                        <th class="ged-col-status">Status</th>
+                        <th class="ged-col-type">Tipo / classificação</th>
+                        <th class="ged-col-ocr">OCR</th>
+                        <th class="ged-col-status">Situação documental</th>
                         <th class="ged-col-upload">Upload em</th>
+                        <th class="ged-col-size">Tamanho</th>
                         <th class="ged-col-actions text-end">Ações</th>
                     </tr>
                 </thead>
@@ -36,7 +68,7 @@
                         var uploadDateUtc = d.UploadedAtUtc == default ? d.CreatedAt : d.UploadedAtUtc;
                         var uploadLocal = OcrUiHelper.ToConfiguredLocalTime(uploadDateUtc, localTimeZoneId);
                         var uploadLabel = string.IsNullOrWhiteSpace(d.UploadedAtLocalFormatted) ? uploadLocal.ToString(uploadDateFormat) : d.UploadedAtLocalFormatted;
-                        var iconClass = (d.FileName ?? string.Empty).EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) ? "bi-file-earmark-pdf" : "bi-file-earmark-text";
+                        var fileIcon = FileIcon(d.FileName);
                         var rowClass = d.IsDocumentIncomplete ? "ged-row-incomplete" : (d.IsPartialDocument ? "ged-row-partial" : string.Empty);
                         var isConsolidated = string.Equals(d.PartialStatus, "CONSOLIDATED", StringComparison.OrdinalIgnoreCase) || d.ConsolidatedVersionId.HasValue;
                         var isReadyToConsolidate = !isConsolidated && d.IsPartialDocument && !d.IsDocumentIncomplete && string.Equals(d.PartialStatus, "COMPLETE", StringComparison.OrdinalIgnoreCase);
@@ -69,7 +101,7 @@
                             <td>
                                 <div class="ged-table-document-cell">
                                     <div class="ged-table-file-icon" aria-hidden="true">
-                                        <i class="bi @iconClass"></i>
+                                        <app-icon name="@fileIcon" size="24" decorative="true" />
                                     </div>
                                     <div class="ged-table-document-text">
                                         <a class="ged-table-title"
@@ -83,27 +115,31 @@
                                             @(!string.IsNullOrWhiteSpace(d.FileName) ? d.FileName : "Arquivo sem nome")
                                         </div>
                                         @{
-                                            var classificationLabel = !string.IsNullOrWhiteSpace(d.ClassificationLabel) ? d.ClassificationLabel : (!isUnclassified ? d.TypeName : "Classificar");
-                                            var classificationStyle = !string.IsNullOrWhiteSpace(d.ClassificationColor) ? $"border-color:{d.ClassificationColor};color:{d.ClassificationColor};" : string.Empty;
+                                            var classificationLabel = !string.IsNullOrWhiteSpace(d.ClassificationLabel)
+                                                ? d.ClassificationLabel
+                                                : (!isUnclassified ? d.TypeName : "Não classificado");
                                         }
-                                        <button type="button"
-                                                class="ged-classification-tag js-open-classification-menu @(d.ClassificationId.HasValue ? "is-classified" : "is-empty")"
-                                                data-document-id="@d.Id"
-                                                data-current-classification-id="@d.ClassificationId"
-                                                style="@classificationStyle"
-                                                title="Classificação rápida">
-                                            <i class="bi @(string.IsNullOrWhiteSpace(d.ClassificationIcon) ? "bi-tag" : d.ClassificationIcon)"></i>
-                                            <span>@classificationLabel</span>
-                                        </button>
-                                        <div class="ged-table-meta">
-                                            <span>@(isUnclassified ? "Tipo não definido" : d.TypeName)</span>
-                                            <span>•</span>
-                                            <span>@folderName</span>
-                                            <span>•</span>
-                                            <span>Versão atual</span>
-                                        </div>
                                     </div>
                                 </div>
+                            </td>
+
+                            <td class="ged-col-type">
+                                <button type="button"
+                                        class="ged-classification-tag js-open-classification-menu @(d.ClassificationId.HasValue ? "is-classified" : "is-empty")"
+                                        data-document-id="@d.Id"
+                                        data-current-classification-id="@d.ClassificationId"
+                                        title="Aplicar classificação rápida">
+                                    <app-icon name="classification" size="16" decorative="true" />
+                                    <span>@classificationLabel</span>
+                                </button>
+                                <small class="d-block text-muted">@(isUnclassified ? "Tipo não definido" : d.TypeName)</small>
+                            </td>
+
+                            <td class="ged-col-ocr">
+                                <span class="ged-status-inline" title="@(d.IsOcrAvailable ? "Texto pesquisável disponível" : "OCR ainda não disponível")">
+                                    <app-icon name="@(d.IsOcrAvailable ? "ocr-success" : "ocr-pending")" size="16" decorative="true" />
+                                    <span>@(d.IsOcrAvailable ? "Concluído" : "Pendente")</span>
+                                </span>
                             </td>
 
                             <td class="ged-col-status">
@@ -118,6 +154,8 @@
                                     @uploadLabel
                                 </span>
                             </td>
+
+                            <td class="ged-col-size"><span title="@d.SizeBytes bytes">@FormatSize(d.SizeBytes)</span></td>
 
                             <td class="ged-col-actions text-end">
                                 <div class="ged-doc-actions">
