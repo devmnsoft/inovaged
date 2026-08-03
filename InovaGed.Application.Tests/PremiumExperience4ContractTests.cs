@@ -48,6 +48,37 @@ public sealed class PremiumExperience4ContractTests
         Assert.Contains("mouseenter", feedback);
     }
 
+    [Fact]
+    public void Atlas_31_required_semantic_icons_are_registered_and_have_distinct_symbols()
+    {
+        string[] required = ["dashboard", "workspace", "documents", "document-add", "document-search", "document-version", "document-history", "document-move", "document-link", "metadata", "classification", "retention", "destination", "smart-search", "filter", "sort", "saved-view", "upload-cloud", "upload-pause", "upload-resume", "upload-retry", "folder-add", "folder-move", "folder-favorite", "protocol", "protocol-add", "workflow", "loan", "return", "overdue", "signature", "certificate", "certificate-validation", "audit", "report", "health", "database", "roles", "users", "permissions", "assistant", "table", "list", "cards", "columns", "zoom-in", "zoom-out", "fullscreen", "copy", "print", "download", "arrow-left", "arrow-right", "warning", "error", "success", "information", "restricted-access", "dicom", "pacs", "ocr", "physical-archive", "location", "box", "label"];
+        var registry = new AtlasIconRegistry();
+        var sprite = XDocument.Load(Path.Combine(Root, "InovaGed.Web", "Views", "Shared", "Icons", "_AtlasIconSprite.cshtml"));
+        var symbols = sprite.Descendants().Where(element => element.Name.LocalName == "symbol").ToDictionary(element => element.Attribute("id")?.Value ?? "", StringComparer.OrdinalIgnoreCase);
+
+        foreach (var name in required)
+        {
+            Assert.True(registry.TryGet(name, out var definition), $"Icone não registrado: {name}");
+            Assert.True(symbols.ContainsKey(definition.SymbolId), $"Symbol ausente: {definition.SymbolId}");
+            Assert.Equal("0 0 24 24", symbols[definition.SymbolId].Attribute("viewBox")?.Value);
+        }
+
+        var geometries = required.Select(name => { registry.TryGet(name, out var definition); return string.Concat(symbols[definition.SymbolId].Nodes().Select(node => node.ToString(SaveOptions.DisableFormatting))); }).ToArray();
+        Assert.Equal(geometries.Length, geometries.Distinct(StringComparer.Ordinal).Count());
+    }
+
+    [Fact]
+    public void Atlas_31_feedback_and_login_do_not_regress_to_bootstrap_icons_or_native_dialogs()
+    {
+        string[] files = ["wwwroot/js/inovaged-feedback.js", "wwwroot/js/login.js", "Views/Account/Login.cshtml", "Views/Shared/Feedback/_ConfirmDialog.cshtml"];
+        foreach (var relative in files)
+        {
+            var content = File.ReadAllText(Path.Combine(Root, "InovaGed.Web", relative));
+            Assert.DoesNotContain("bi-", content, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotMatch(@"\b(alert|confirm|prompt)\s*\(", content);
+        }
+    }
+
     private static string FindRoot()
     {
         var current = new DirectoryInfo(AppContext.BaseDirectory);

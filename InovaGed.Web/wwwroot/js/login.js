@@ -16,8 +16,8 @@
         password.type = willShow ? 'text' : 'password';
         toggle.setAttribute('aria-pressed', String(willShow));
         toggle.setAttribute('aria-label', willShow ? 'Ocultar senha' : 'Mostrar senha');
-        toggle.querySelector('i')?.classList.toggle('bi-eye', !willShow);
-        toggle.querySelector('i')?.classList.toggle('bi-eye-slash', willShow);
+        const use = toggle.querySelector('use');
+        use?.setAttribute('href', willShow ? '#atlas-icon-restricted-access' : '#atlas-icon-preview');
         password.focus();
     });
 
