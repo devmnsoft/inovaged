@@ -1,17 +1,13 @@
 @model InovaGed.Web.Models.AppShell.AppShellVM
-<header class="topbar app-topbar">
-    <button class="btn btn-sm btn-outline-secondary mobile-menu-button d-lg-none" type="button" data-bs-toggle="offcanvas" data-bs-target="#ocSidebar" aria-controls="ocSidebar" aria-label="Abrir menu"><i class="bi bi-list" aria-hidden="true"></i></button>
-    <div class="topbar-left">
-        <span class="topbar-eyebrow">@Model.ModuleLabel</span>
-        <span class="topbar-context"><i class="bi bi-grid" aria-hidden="true"></i> @Model.PageTitle</span>
-        @if (!string.IsNullOrWhiteSpace(Model.PageSubtitle))
-        {
-            <small class="topbar-subtitle">@Model.PageSubtitle</small>
-        }
-    </div>
-    <div class="topbar-actions">
+<header class="atlas-topbar app-topbar">
+    <button class="atlas-icon-button mobile-menu-button d-lg-none" type="button" data-bs-toggle="offcanvas" data-bs-target="#ocSidebar" aria-controls="ocSidebar" aria-label="Abrir menu">
+        <app-icon name="menu" decorative="true" size="20" />
+    </button>
+    <partial name="AppShell/_WorkspaceIdentity" model="Model" />
+    <div class="atlas-topbar__actions">
         <partial name="AppShell/_GlobalSearch" model="Model" />
         <partial name="AppShell/_QuickCreate" model="Model.QuickActions" />
+        <partial name="AppShell/_UtilityActions" model="Model" />
         <partial name="AppShell/_UserMenu" model="Model.User" />
     </div>
 </header>
