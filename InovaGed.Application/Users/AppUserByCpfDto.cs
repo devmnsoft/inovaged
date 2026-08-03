@@ -16,4 +16,5 @@ public sealed record AppUserByCpfDto(
 public interface IAppUserRepository
 {
     Task<AppUserByCpfDto?> GetByCpfAsync(Guid tenantId, string cpf, CancellationToken ct);
+    Task<AppUserByCpfDto?> GetUniqueByCpfAsync(string cpf, CancellationToken ct);
 }

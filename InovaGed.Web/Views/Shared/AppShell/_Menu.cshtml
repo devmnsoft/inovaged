@@ -17,17 +17,22 @@
 
     var menuSectionId =
         $"sidebar-menu-section-{menuSectionIndex}";
+    var menuSectionPanelId = $"{menuSectionId}-items";
+    var sectionActive = menuSection.Items.Any(item =>
+        item.ActiveControllers?.Any(controller => controller.Equals(currentController, StringComparison.OrdinalIgnoreCase)) ?? false);
 
     <section class="sidebar-menu-section" data-menu-section
              aria-labelledby="@menuSectionId">
 
-        <h2 class="sidebar-section-title"
-            id="@menuSectionId">
-            @menuSection.Label
+        <h2 class="sidebar-section-title" id="@menuSectionId">
+            <button type="button" data-menu-section-toggle aria-expanded="@(sectionActive ? "true" : "false")"
+                    aria-controls="@menuSectionPanelId">
+                <span>@menuSection.Label</span><app-icon name="chevron-down" decorative="true" size="14" />
+            </button>
         </h2>
 
-        @foreach (var item in menuSection.Items)
-        {
+        <div id="@menuSectionPanelId" data-menu-section-items hidden="@(!sectionActive)">
+        @foreach (var item in menuSection.Items) {
             var active =
                 item.ActiveControllers?.Any(
                     controller =>
@@ -46,5 +51,6 @@
                 <span>@item.Label</span>
             </a>
         }
+        </div>
     </section>
 }

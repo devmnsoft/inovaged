@@ -47,6 +47,10 @@
 .sidebar-menu { min-height: 0; flex: 1; overflow: auto; padding: 0 var(--ig-space-3); }
 .sidebar-menu-section + .sidebar-menu-section { margin-top: var(--ig-space-3); }
 .sidebar-section-title { margin: 0; padding: var(--ig-space-2); color: var(--ig-text-muted); font-size: .68rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.sidebar-section-title button { display: flex; width: 100%; align-items: center; justify-content: space-between; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; letter-spacing: inherit; text-transform: inherit; }
+.sidebar-section-title button:focus-visible { border-radius: var(--ig-radius-sm); outline: 2px solid var(--ig-accent-500); outline-offset: 3px; }
+.sidebar-section-title button app-icon { transition: transform var(--ig-motion-fast) var(--ig-ease-standard); }
+.sidebar-section-title button[aria-expanded="false"] app-icon { transform: rotate(-90deg); }
 
 .sidebar-menu a,
 .sidebar-logout {

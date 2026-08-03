@@ -8,6 +8,19 @@
     const sidebarKey = 'inovaged.workspace.sidebar';
     const densityKey = 'inovaged.workspace.sidebar-density';
     const contextsKey = 'inovaged.workspace.contexts';
+    const menuSectionsKey = 'inovaged.workspace.menu-sections';
+
+    let storedSections;
+    try { storedSections = new Set(JSON.parse(localStorage.getItem(menuSectionsKey) || '[]')); }
+    catch { storedSections = new Set(); }
+    document.querySelectorAll('[data-menu-section]').forEach((section) => {
+        const toggle = section.querySelector('[data-menu-section-toggle]');
+        const panel = section.querySelector('[data-menu-section-items]');
+        if (!toggle || !panel) return;
+        const open = section.querySelector('[aria-current="page"]') !== null || storedSections.has(panel.id);
+        toggle.setAttribute('aria-expanded', String(open));
+        panel.hidden = !open;
+    });
 
     const applyCollapsed = (collapsed) => {
         shell.classList.toggle('sidebar-collapsed', collapsed);
@@ -50,6 +63,15 @@
         }
         const focusButton = event.target.closest('[data-focus-toggle]');
         if (focusButton) applyFocus(!shell.classList.contains('is-focus-mode'));
+        const sectionToggle = event.target.closest('[data-menu-section-toggle]');
+        if (sectionToggle) {
+            const panel = document.getElementById(sectionToggle.getAttribute('aria-controls'));
+            if (!panel) return;
+            panel.hidden = !panel.hidden;
+            sectionToggle.setAttribute('aria-expanded', String(!panel.hidden));
+            const openSections = [...document.querySelectorAll('[data-menu-section-items]:not([hidden])')].map((item) => item.id);
+            localStorage.setItem(menuSectionsKey, JSON.stringify(openSections));
+        }
     }, { signal });
 
     document.addEventListener('keydown', (event) => {
