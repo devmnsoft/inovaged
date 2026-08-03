@@ -1,0 +1,7 @@
+@model InovaGed.Web.Models.AppShell.AppShellVM
+@foreach (var utilityAction in Model.UtilityActions)
+{
+    <a class="atlas-icon-button" asp-controller="@utilityAction.Controller" asp-action="@utilityAction.Action" title="@utilityAction.Label" aria-label="@utilityAction.Label">
+        <app-icon name="@utilityAction.Icon" decorative="true" size="19" />
+    </a>
+}

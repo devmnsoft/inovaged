@@ -1,2 +1,50 @@
 @model InovaGed.Web.Models.AppShell.AppShellVM
-<section class="context-header" aria-labelledby="context-page-title"><div><nav aria-label="Breadcrumb"><ol class="context-breadcrumb"><li>InovaGED</li><li aria-current="page">@Model.PageTitle</li></ol></nav><h1 id="context-page-title">@Model.PageTitle</h1>@if (!string.IsNullOrWhiteSpace(Model.PageSubtitle)) { <p>@Model.PageSubtitle</p> }</div>@if (Model.PrimaryAction is not null) { <a class="btn btn-primary context-primary" asp-controller="@Model.PrimaryAction.Controller" asp-action="@Model.PrimaryAction.Action"><i class="bi @Model.PrimaryAction.Icon"></i> @Model.PrimaryAction.Label</a> }</section>
+<section class="atlas-context-header" aria-labelledby="context-page-title">
+    <div class="atlas-context-header__main">
+        <nav aria-label="Breadcrumb">
+            <ol class="atlas-breadcrumb">
+                @foreach (var breadcrumbItem in Model.Page.Breadcrumb)
+                {
+                    <li aria-current="@(breadcrumbItem == Model.Page.Breadcrumb.Last() ? "page" : null)">
+                        @if (!string.IsNullOrWhiteSpace(breadcrumbItem.Controller))
+                        {
+                            <a asp-controller="@breadcrumbItem.Controller" asp-action="@breadcrumbItem.Action">@breadcrumbItem.Label</a>
+                        }
+                        else
+                        {
+                            <span>@breadcrumbItem.Label</span>
+                        }
+                    </li>
+                }
+            </ol>
+        </nav>
+        <div class="atlas-context-header__identity">
+            <span class="atlas-context-header__icon"><app-icon name="@Model.Page.Icon" decorative="true" size="22" /></span>
+            <div>
+                <h1 id="context-page-title">@Model.Page.Title</h1>
+                @if (!string.IsNullOrWhiteSpace(Model.Page.Subtitle))
+                {
+                    <p>@Model.Page.Subtitle</p>
+                }
+            </div>
+        </div>
+        @if (Model.Page.Statuses.Count > 0)
+        {
+            <div class="atlas-context-header__statuses">
+                @foreach (var statusItem in Model.Page.Statuses.Take(3))
+                {
+                    <span class="atlas-status-chip atlas-status-chip--@statusItem.Tone">@statusItem.Label</span>
+                }
+            </div>
+        }
+    </div>
+    @if (Model.PrimaryAction is not null)
+    {
+        <div class="atlas-context-header__actions">
+            <a class="btn btn-primary" asp-controller="@Model.PrimaryAction.Controller" asp-action="@Model.PrimaryAction.Action">
+                <app-icon name="@Model.PrimaryAction.Icon" decorative="true" size="18" />
+                @Model.PrimaryAction.Label
+            </a>
+        </div>
+    }
+</section>

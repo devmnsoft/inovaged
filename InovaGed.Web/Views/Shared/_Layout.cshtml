@@ -6,6 +6,12 @@
     var shell = isAuthenticated
         ? ShellContext.Create(User, ViewData["Title"]?.ToString(), ViewData["Subtitle"]?.ToString())
         : null;
+    var workspaceVariant = ViewData["WorkspaceVariant"]?.ToString() ?? "standard";
+    var allowedWorkspaceVariants = new[] { "standard", "wide", "full", "workbench", "focus" };
+    if (!allowedWorkspaceVariants.Contains(workspaceVariant, StringComparer.OrdinalIgnoreCase))
+    {
+        workspaceVariant = "standard";
+    }
 }
 <!DOCTYPE html>
 <html lang="pt-br">
@@ -22,6 +28,7 @@
     <link rel="stylesheet" href="~/css/atlas/inovaged.atlas.icons.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/atlas/atlas-shell.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/atlas/atlas-navigation.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/atlas/atlas-command-palette.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/atlas/atlas-components.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/atlas/atlas-overlays.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/atlas/atlas-feedback.css" asp-append-version="true" />
@@ -40,8 +47,9 @@
             <div class="main app-main">
                 <partial name="AppShell/_Topbar" model="shell" />
                 <partial name="AppShell/_ContextHeader" model="shell" />
+                <div class="atlas-work-context-strip" data-work-context-strip aria-label="Contextos de trabalho abertos"></div>
                 <main id="main-content" class="content app-content" tabindex="-1">
-                    <div class="atlas-workspace-canvas atlas-workspace-canvas--full">
+                    <div class="atlas-workspace-canvas atlas-workspace-canvas--@workspaceVariant.ToLowerInvariant()">
                         @RenderBody()
                     </div>
                 </main>

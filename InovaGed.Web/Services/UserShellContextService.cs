@@ -31,13 +31,25 @@ public sealed class UserShellContextService : IUserShellContextService
             ? new AppPrimaryActionVM("Novo Documento", "Ged", "Create", "document-add")
             : null;
 
+        var moduleLabel = ModuleLabel(pageTitle);
+        var title = string.IsNullOrWhiteSpace(pageTitle) ? "InovaGED" : pageTitle;
+        var moduleCode = moduleLabel.ToLowerInvariant().Replace(' ', '-');
+
         return new AppShellVM(
-            ModuleLabel(pageTitle),
-            string.IsNullOrWhiteSpace(pageTitle) ? "InovaGED" : pageTitle,
-            pageSubtitle,
+            new AppBrandVM("InovaGED", "Workspace Documental", "GedDashboard", "Index"),
+            new AppEnvironmentVM(sector ?? "Workspace institucional", "Ambiente seguro"),
+            new AppPageContextVM(
+                moduleCode,
+                moduleLabel,
+                title,
+                pageSubtitle,
+                PageIcon(moduleLabel),
+                new[] { new AppBreadcrumbItemVM(moduleLabel), new AppBreadcrumbItemVM(title) },
+                Array.Empty<AppContextStatusVM>()),
             shellUser,
             BuildMenu(user),
             BuildQuickActions(user),
+            Array.Empty<AppUtilityActionVM>(),
             primaryAction);
     }
 
@@ -128,6 +140,15 @@ public sealed class UserShellContextService : IUserShellContextService
         if (title.Contains("Documento", StringComparison.OrdinalIgnoreCase) || title.Contains("GED", StringComparison.OrdinalIgnoreCase) || title.Contains("Busca", StringComparison.OrdinalIgnoreCase)) return "Gestão Documental";
         return "Visão Geral";
     }
+
+    private static string PageIcon(string moduleLabel) => moduleLabel switch
+    {
+        "Atendimento" => "protocol",
+        "Arquivo Físico" => "loan",
+        "Administração" => "settings",
+        "Gestão Documental" => "documents",
+        _ => "dashboard"
+    };
 
     private static AppMenuSectionVM Section(string label, params AppMenuItemVM[] items) => new(label, items);
     private static AppMenuItemVM Item(string label, string controller, string action, string icon, params string[] alsoActive) =>

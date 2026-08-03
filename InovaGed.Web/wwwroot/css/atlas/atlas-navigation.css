@@ -1,5 +1,95 @@
-/* Atlas navigation owns shell navigation states; no Bootstrap icon dependency. */
-.atlas-icon{width:1.125rem;height:1.125rem;display:inline-block;flex:none;fill:none;color:currentColor;vertical-align:-.15em}
-.sidebar-menu a .atlas-icon,.sidebar-logout .atlas-icon{width:1.2rem;height:1.2rem}
-.sidebar-menu a.active::before{background:var(--ig-accent-600)}
-.sidebar-menu a:focus-visible,.sidebar-collapse:focus-visible,.topbar button:focus-visible{outline:3px solid var(--ig-primary-100);outline-offset:2px}
+/* Atlas navigation owns desktop sidebar and mobile navigation. */
+.app-sidebar {
+    position: sticky;
+    top: 0;
+    display: flex;
+    width: var(--ig-sidebar-width);
+    height: 100dvh;
+    flex: 0 0 var(--ig-sidebar-width);
+    flex-direction: column;
+    border-right: 1px solid var(--ig-border);
+    background: var(--ig-surface);
+    transition: width var(--ig-motion-normal) var(--ig-ease-standard), flex-basis var(--ig-motion-normal) var(--ig-ease-standard);
+}
+
+.sidebar-brand {
+    display: flex;
+    min-height: 80px;
+    align-items: center;
+    gap: var(--ig-space-3);
+    padding: var(--ig-space-4);
+    color: var(--ig-text);
+    text-decoration: none;
+}
+
+.sidebar-brand-mark { width: 42px; height: 42px; flex: 0 0 auto; }
+.sidebar-brand-title { min-width: 0; }
+.sidebar-brand-title span { display: block; }
+.sidebar-brand-title .name { font-size: 1.05rem; }
+.sidebar-brand-title .subtitle { color: var(--ig-text-muted); font-size: .72rem; }
+.workspace-label { color: var(--ig-accent-700); font-size: .65rem; font-weight: 700; }
+
+.sidebar-search {
+    display: flex;
+    height: 40px;
+    align-items: center;
+    gap: var(--ig-space-2);
+    margin: 0 var(--ig-space-3) var(--ig-space-2);
+    padding: 0 var(--ig-space-3);
+    border: 1px solid var(--ig-border);
+    border-radius: var(--ig-radius-input);
+    background: var(--ig-surface-soft);
+    color: var(--ig-text-muted);
+}
+
+.sidebar-search input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; color: var(--ig-text); }
+.sidebar-search button { padding: 0; border: 0; background: transparent; color: inherit; }
+.sidebar-menu { min-height: 0; flex: 1; overflow: auto; padding: 0 var(--ig-space-3); }
+.sidebar-menu-section + .sidebar-menu-section { margin-top: var(--ig-space-3); }
+.sidebar-section-title { margin: 0; padding: var(--ig-space-2); color: var(--ig-text-muted); font-size: .68rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+
+.sidebar-menu a,
+.sidebar-logout {
+    position: relative;
+    display: flex;
+    width: 100%;
+    min-height: 42px;
+    align-items: center;
+    gap: var(--ig-space-3);
+    padding: var(--ig-space-2) var(--ig-space-3);
+    border: 0;
+    border-radius: var(--ig-radius-input);
+    background: transparent;
+    color: var(--ig-text-secondary);
+    font-size: .875rem;
+    text-align: left;
+    text-decoration: none;
+}
+
+.sidebar-menu a:hover,
+.sidebar-logout:hover { background: var(--ig-primary-50); color: var(--ig-primary-700); }
+.sidebar-menu a.active { background: var(--ig-primary-800); color: var(--ig-surface); font-weight: 700; box-shadow: var(--ig-shadow-sm); }
+.sidebar-menu a.active::before { position: absolute; left: var(--ig-space-1); width: 3px; height: 18px; border-radius: var(--ig-radius-sm); background: var(--ig-accent-500); content: ""; }
+.sidebar-account { padding: var(--ig-space-2) var(--ig-space-3); border-top: 1px solid var(--ig-border); }
+.sidebar-footer { padding: 0 var(--ig-space-4) var(--ig-space-2); color: var(--ig-text-muted); font-size: .68rem; }
+.sidebar-collapse { display: flex; min-height: 40px; align-items: center; gap: var(--ig-space-2); margin: 0 var(--ig-space-3) var(--ig-space-3); padding: var(--ig-space-2) var(--ig-space-3); border: 1px solid var(--ig-border); border-radius: var(--ig-radius-input); background: var(--ig-surface); color: var(--ig-text-secondary); }
+.sidebar-preferences { display: flex; margin: var(--ig-space-2) var(--ig-space-3); padding: var(--ig-space-1); border: 1px solid var(--ig-border); border-radius: var(--ig-radius-input); background: var(--ig-surface-soft); }
+.sidebar-preferences button { flex: 1; padding: var(--ig-space-1); border: 0; border-radius: var(--ig-radius-sm); background: transparent; color: var(--ig-text-muted); font-size: .68rem; }
+.sidebar-preferences button[aria-pressed="true"] { background: var(--ig-surface); color: var(--ig-primary-700); }
+.app-shell.sidebar-density-compact .sidebar-menu a { min-height: 38px; font-size: .82rem; }
+.app-shell.sidebar-density-compact .sidebar-menu-section + .sidebar-menu-section { margin-top: var(--ig-space-1); }
+.app-shell.sidebar-collapsed .app-sidebar { width: var(--ig-sidebar-collapsed-width); flex-basis: var(--ig-sidebar-collapsed-width); }
+.app-shell.sidebar-collapsed .sidebar-brand-title,
+.app-shell.sidebar-collapsed .sidebar-search input,
+.app-shell.sidebar-collapsed .sidebar-search button,
+.app-shell.sidebar-collapsed .sidebar-section-title,
+.app-shell.sidebar-collapsed .sidebar-menu a span,
+.app-shell.sidebar-collapsed .sidebar-account,
+.app-shell.sidebar-collapsed .sidebar-footer,
+.app-shell.sidebar-collapsed .sidebar-collapse span,
+.app-shell.sidebar-collapsed .sidebar-preferences { display: none; }
+.app-shell.sidebar-collapsed .sidebar-brand { justify-content: center; padding-inline: var(--ig-space-2); }
+.app-shell.sidebar-collapsed .sidebar-search { justify-content: center; margin-inline: var(--ig-space-3); padding: 0; }
+.app-shell.sidebar-collapsed .sidebar-menu a { justify-content: center; padding-inline: var(--ig-space-2); }
+.app-mobile-navigation { width: min(360px, 100vw); background: var(--ig-surface); }
+.sidebar-empty { padding: var(--ig-space-3); color: var(--ig-text-muted); font-size: .8rem; }

@@ -1,6 +1,7 @@
 @model InovaGed.Application.Ged.Dashboard.GedDashboardVm
 @{
   ViewData["Title"] = "Painel Operacional do GED";
+    ViewData["WorkspaceVariant"] = "full";
   var vm = Model ?? new InovaGed.Application.Ged.Dashboard.GedDashboardVm { PartialFailure = true };
   var recentLoans = vm.RecentLoanRequests ?? new List<InovaGed.Application.Ged.Dashboard.RecentLoanRequestDto>();
   var recentAudit = vm.RecentAuditEvents ?? new List<InovaGed.Application.Ged.Dashboard.RecentAuditEventDto>();

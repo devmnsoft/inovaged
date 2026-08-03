@@ -1,9 +1,9 @@
 @model InovaGed.Web.Models.AppShell.AppUserShellVM
 <div class="dropdown">
-    <button class="btn btn-sm btn-light border topbar-user-button" data-bs-toggle="dropdown" aria-expanded="false"><span class="topbar-user-avatar">@Model.Initials</span><span class="topbar-user-summary"><strong>@Model.DisplayName</strong><small>@Model.RoleLabel</small></span><i class="bi bi-chevron-down" aria-hidden="true"></i></button>
+    <button class="topbar-user-button" data-bs-toggle="dropdown" aria-expanded="false"><span class="topbar-user-avatar">@Model.Initials</span><span class="topbar-user-summary"><strong>@Model.DisplayName</strong><small>@Model.RoleLabel</small></span><app-icon name="chevron-down" decorative="true" size="16" /></button>
     <ul class="dropdown-menu dropdown-menu-end shadow-sm user-menu">
-        <li class="user-menu-details"><strong>@Model.DisplayName</strong><span>@Model.RoleLabel</span>@if (!string.IsNullOrWhiteSpace(Model.Sector)) { <span>Setor: @Model.Sector</span> } else if (Model.ShowSectorWarning) { <span class="text-warning"><i class="bi bi-exclamation-triangle" aria-hidden="true"></i> Setor não configurado</span> }</li>
+        <li class="user-menu-details"><strong>@Model.DisplayName</strong><span>@Model.RoleLabel</span>@if (!string.IsNullOrWhiteSpace(Model.Sector)) { <span>Setor: @Model.Sector</span> } else if (Model.ShowSectorWarning) { <span class="text-warning"><app-icon name="warning" decorative="true" size="16" /> Setor não configurado</span> }</li>
         <li><hr class="dropdown-divider" /></li>
-        <li><form asp-controller="Account" asp-action="Logout" method="post">@Html.AntiForgeryToken()<button class="dropdown-item" type="submit"><i class="bi bi-box-arrow-right" aria-hidden="true"></i> Sair</button></form></li>
+        <li><form asp-controller="Account" asp-action="Logout" method="post">@Html.AntiForgeryToken()<button class="dropdown-item" type="submit"><app-icon name="arrow-right" decorative="true" size="16" /> Sair</button></form></li>
     </ul>
 </div>
