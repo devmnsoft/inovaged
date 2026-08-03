@@ -16,11 +16,8 @@ public sealed class ParametersController : Controller
     private readonly ICurrentContext _ctx;
     private readonly ILogger<ParametersController> _logger;
 
-    private Guid TenantId => _ctx.TenantId == Guid.Empty
-        ? Guid.Parse("00000000-0000-0000-0000-000000000001")
-        : _ctx.TenantId;
-
-    private Guid UserId => _ctx.UserId == Guid.Empty ? Guid.Empty : _ctx.UserId;
+    private Guid TenantId => _ctx.TenantId;
+    private Guid UserId => _ctx.UserId;
 
     public ParametersController(IParameterRepository repo, ICurrentContext ctx, ILogger<ParametersController> logger)
     {

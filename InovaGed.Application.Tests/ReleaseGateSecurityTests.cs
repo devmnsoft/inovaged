@@ -50,6 +50,18 @@ public sealed class ReleaseGateSecurityTests
             Assert.True(services.Count(d => d.ServiceType.FullName == serviceName) <= 1, serviceName);
     }
 
+    [Fact]
+    public void VersionedSettings_DoNotContainDatabasePasswordsOrDefaultTenants()
+    {
+        var repo = FindRepositoryRoot();
+        var settings = File.ReadAllText(Path.Combine(repo, "InovaGed.Web", "appsettings.json"));
+        Assert.DoesNotContain("Password=", settings, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("00000000-0000-0000-0000-000000000001", settings, StringComparison.Ordinal);
+
+        var currentContext = File.ReadAllText(Path.Combine(repo, "InovaGed.Web", "Common", "Context", "CurrentContext.cs"));
+        Assert.DoesNotContain("Guid.Parse", currentContext, StringComparison.Ordinal);
+    }
+
     private static string FindRepositoryRoot()
     {
         var current = new DirectoryInfo(AppContext.BaseDirectory);

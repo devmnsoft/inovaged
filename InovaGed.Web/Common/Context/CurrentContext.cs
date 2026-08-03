@@ -20,13 +20,10 @@ public sealed class CurrentContext : ICurrentContext
     {
         get
         {
-            // Claim padrão recomendado: "tenant_id"
             var s = _http.HttpContext?.User?.FindFirstValue("tenant_id");
-            if (Guid.TryParse(s, out var id))
+            if (Guid.TryParse(s, out var id) && id != Guid.Empty)
                 return id;
-
-            // fallback opcional (remova em produção se quiser forçar login)
-            return Guid.Parse("00000000-0000-0000-0000-000000000001");
+            return Guid.Empty;
         }
     }
 

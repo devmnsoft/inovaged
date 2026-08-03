@@ -17,8 +17,6 @@ public sealed class CertAuthController : Controller
     private readonly IWebHostEnvironment _env;
     private readonly IConfiguration _cfg;
 
-    private static readonly Guid TenantDefault = Guid.Parse("00000000-0000-0000-0000-000000000001");
-
     public CertAuthController(
         ILogger<CertAuthController> logger,
         IAppUserRepository users,
@@ -85,8 +83,8 @@ public sealed class CertAuthController : Controller
         if (!string.Equals(cpfUser, v.ExtractedCpf, StringComparison.Ordinal))
             return BackToLoginWithCertError("CPF informado não corresponde ao CPF do certificado.", req.ReturnUrl);
 
-        var user = await _users.GetByCpfAsync(TenantDefault, cpfUser, ct);
-        if (user is null) return BackToLoginWithCertError("Usuário não encontrado para o CPF informado.", req.ReturnUrl);
+        var user = await _users.GetUniqueByCpfAsync(cpfUser, ct);
+        if (user is null) return BackToLoginWithCertError("Não foi possível vincular o certificado a um único ambiente autorizado.", req.ReturnUrl);
         if (!user.IsActive) return BackToLoginWithCertError("Usuário inativo.", req.ReturnUrl);
 
         var claims = new List<Claim>

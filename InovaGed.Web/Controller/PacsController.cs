@@ -3,23 +3,28 @@ using InovaGed.Infrastructure.Pacs;
 using InovaGed.Infrastructure.Storage;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
+using InovaGed.Application.Common.Context;
+using Microsoft.AspNetCore.Authorization;
 
 namespace InovaGed.Web.Controllers;
 
 [Route("[controller]")]
+[Authorize]
 public sealed class PacsController : Controller
 {
     private readonly ITicketRepository _repo;
     private readonly PacsIntegrationService _svc;
     private readonly StorageLocalOptions _storage;
 
-    private Guid TenantId => Guid.Parse("00000000-0000-0000-0000-000000000001");
+    private readonly ICurrentContext _context;
+    private Guid TenantId => _context.TenantId;
 
-    public PacsController(ITicketRepository repo, PacsIntegrationService svc, IOptions<StorageLocalOptions> storage)
+    public PacsController(ITicketRepository repo, PacsIntegrationService svc, IOptions<StorageLocalOptions> storage, ICurrentContext context)
     {
         _repo = repo;
         _svc = svc;
         _storage = storage.Value;
+        _context = context;
     }
 
     [HttpGet("")]

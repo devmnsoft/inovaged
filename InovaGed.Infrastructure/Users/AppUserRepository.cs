@@ -28,4 +28,18 @@ limit 1;";
         await using var conn = await _db.OpenAsync(ct);
         return await conn.QueryFirstOrDefaultAsync<AppUserByCpfDto>(sql, new { tenantId, cpf });
     }
+
+    public async Task<AppUserByCpfDto?> GetUniqueByCpfAsync(string cpf, CancellationToken ct)
+    {
+        const string sql = @"
+select id as Id, tenant_id as TenantId, name as Name, email as Email,
+       is_active as IsActive, password_plain as Cpf
+from ged.app_user
+where password_plain = @cpf
+order by tenant_id
+limit 2;";
+        await using var conn = await _db.OpenAsync(ct);
+        var matches = (await conn.QueryAsync<AppUserByCpfDto>(sql, new { cpf })).AsList();
+        return matches.Count == 1 ? matches[0] : null;
+    }
 }
