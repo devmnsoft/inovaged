@@ -28,7 +28,7 @@ public sealed class UserShellContextService : IUserShellContextService
             RequiresSector(role) && string.IsNullOrWhiteSpace(sector));
 
         var primaryAction = AppMenuPolicy.IsFullAdmin(user)
-            ? new AppPrimaryActionVM("Novo Documento", "Ged", "Create", "bi-file-earmark-plus")
+            ? new AppPrimaryActionVM("Novo Documento", "Ged", "Create", "document-add")
             : null;
 
         return new AppShellVM(
@@ -48,57 +48,57 @@ public sealed class UserShellContextService : IUserShellContextService
             return new[]
             {
                 Section("Visão Geral",
-                    Item("Dashboard", "GedDashboard", "Index", "bi-speedometer2"),
-                    Item("Central Operacional", "Operations", "Index", "bi-command"),
-                    Item("Qualidade Documental", "DocumentQuality", "Index", "bi-shield-check"),
-                    Item("Alertas e Tendências", "HospitalTrends", "Index", "bi-graph-up-arrow")),
+                    Item("Dashboard", "GedDashboard", "Index", "dashboard"),
+                    Item("Central Operacional", "Operations", "Index", "workspace"),
+                    Item("Qualidade Documental", "DocumentQuality", "Index", "check"),
+                    Item("Alertas e Tendências", "HospitalTrends", "Index", "activity")),
                 Section("Gestão Documental",
-                    Item("GED / Explorer", "Ged", "Index", "bi-folder2-open", "GedSearch"),
-                    Item("Busca Hospitalar", "HospitalDocuments", "Index", "bi-search-heart"),
-                    Item("Busca Inteligente", "SmartSearch", "Index", "bi-search"),
-                    Item("Inteligência Hospitalar", "HospitalIntelligence", "Index", "bi-activity"),
-                    Item("Uploads", "GedUploads", "Index", "bi-cloud-upload"),
-                    Item("Central OCR", "Ocr", "Index", "bi-filetype-pdf"),
-                    Item("Agendamento OCR", "Ocr", "AutoSchedule", "bi-calendar-check"),
-                    Item("Classificação", "GedClassification", "Queue", "bi-tags", "ClassificationDashboard"),
-                    Item("Pastas", "Ged", "Folders", "bi-folder"),
-                    Item("Temporalidade", "Temporalidade", "Index", "bi-hourglass-split")),
+                    Item("GED / Explorer", "Ged", "Index", "folder-open", "GedSearch"),
+                    Item("Busca Hospitalar", "HospitalDocuments", "Index", "document-search"),
+                    Item("Busca Inteligente", "SmartSearch", "Index", "smart-search"),
+                    Item("Inteligência Hospitalar", "HospitalIntelligence", "Index", "activity"),
+                    Item("Uploads", "GedUploads", "Index", "upload-cloud"),
+                    Item("Central OCR", "Ocr", "Index", "ocr"),
+                    Item("Agendamento OCR", "Ocr", "AutoSchedule", "recent"),
+                    Item("Classificação", "GedClassification", "Queue", "classification", "ClassificationDashboard"),
+                    Item("Pastas", "Ged", "Folders", "folder"),
+                    Item("Temporalidade", "Temporalidade", "Index", "recent")),
                 Section("Arquivo Físico",
-                    Item("Localizações", "Physical", "Locations", "bi-geo-alt"),
-                    Item("Caixas", "Physical", "Boxes", "bi-inbox"),
-                    Item("Etiquetas", "Labels", "Boxes", "bi-upc-scan")),
+                    Item("Localizações", "Physical", "Locations", "folder"),
+                    Item("Caixas", "Physical", "Boxes", "documents"),
+                    Item("Etiquetas", "Labels", "Boxes", "metadata")),
                 Section("Atendimento",
-                    Item("Empréstimos", "Loans", "Index", "bi-arrow-left-right", "Solicitacoes"),
-                    Item("Protocolo", "Protocolo", "Index", "bi-journal-check", "Protocols"),
-                    Item("Solicitar Protocolo", "ProtocolRequests", "New", "bi-send-plus"),
-                    Item("Minhas Solicitações", "ProtocolRequests", "My", "bi-list-check"),
-                    Item("Fila de Protocolos", "Protocols", "WorkQueue", "bi-inboxes")),
+                    Item("Empréstimos", "Loans", "Index", "loan", "Solicitacoes"),
+                    Item("Protocolo", "Protocolo", "Index", "protocol", "Protocols"),
+                    Item("Solicitar Protocolo", "ProtocolRequests", "New", "protocol-add"),
+                    Item("Minhas Solicitações", "ProtocolRequests", "My", "list"),
+                    Item("Fila de Protocolos", "Protocols", "WorkQueue", "documents")),
                 Section("Governança",
-                    Item("Assinaturas", "Signature", "Index", "bi-pen"),
-                    Item("Auditoria", "Audit", "Index", "bi-shield-lock"),
-                    Item("Relatórios", "Reports", "PcdFull", "bi-bar-chart"),
-                    Item("Continuidade e Portabilidade", "Continuity", "Overview", "bi-life-preserver")),
+                    Item("Assinaturas", "Signature", "Index", "signature"),
+                    Item("Auditoria", "Audit", "Index", "audit"),
+                    Item("Relatórios", "Reports", "PcdFull", "report"),
+                    Item("Continuidade e Portabilidade", "Continuity", "Overview", "health")),
                 Section("Administração",
-                    Item("Administração", "Administration", "Index", "bi-gear"),
-                    Item("Parâmetros", "Parameters", "Index", "bi-sliders"),
-                    Item("Usuários", "Users", "Index", "bi-people"),
-                    Item("Perfis e Permissões", "Security", "Roles", "bi-person-lock"),
-                    Item("Schema do Banco", "SchemaHealth", "Index", "bi-database-check"),
-                    Item("Logs", "SystemLogs", "Index", "bi-clock-history", "AuditDashboard"),
-                    Item("SystemHealth", "SystemHealth", "Index", "bi-heart-pulse"))
+                    Item("Administração", "Administration", "Index", "settings"),
+                    Item("Parâmetros", "Parameters", "Index", "settings"),
+                    Item("Usuários", "Users", "Index", "users"),
+                    Item("Perfis e Permissões", "Security", "Roles", "roles"),
+                    Item("Schema do Banco", "SchemaHealth", "Index", "database"),
+                    Item("Logs", "SystemLogs", "Index", "recent", "AuditDashboard"),
+                    Item("SystemHealth", "SystemHealth", "Index", "health"))
             };
         }
 
         if (AppMenuPolicy.IsAdministradorOphir(user))
-            return new[] { Section("Setor", Item("Documentos Hospitalares", "HospitalDocuments", "Index", "bi-search-heart"), Item("Pedidos do Setor", "Loans", "Index", "bi-arrow-left-right"), Item("Fila de Protocolos", "Protocols", "WorkQueue", "bi-inboxes"), Item("Usuários do meu setor", "Users", "Sector", "bi-people")) };
+            return new[] { Section("Setor", Item("Documentos Hospitalares", "HospitalDocuments", "Index", "document-search"), Item("Pedidos do Setor", "Loans", "Index", "loan"), Item("Fila de Protocolos", "Protocols", "WorkQueue", "documents"), Item("Usuários do meu setor", "Users", "Sector", "users")) };
 
         if (AppMenuPolicy.IsArquivistaOphir(user))
-            return new[] { Section("Solicitações", Item("Documentos Hospitalares", "HospitalDocuments", "Index", "bi-search-heart"), Item("Novo Pedido de Documento", "Loans", "New", "bi-file-earmark-plus"), Item("Meus Pedidos", "Loans", "Index", "bi-collection"), Item("Meus Protocolos", "ProtocolRequests", "My", "bi-list-check")) };
+            return new[] { Section("Solicitações", Item("Documentos Hospitalares", "HospitalDocuments", "Index", "document-search"), Item("Novo Pedido de Documento", "Loans", "New", "document-add"), Item("Meus Pedidos", "Loans", "Index", "documents"), Item("Meus Protocolos", "ProtocolRequests", "My", "list")) };
 
         if (AppMenuPolicy.IsHospitalUser(user))
-            return new[] { Section("Consulta", Item("Documentos Hospitalares", "HospitalDocuments", "Index", "bi-search-heart")) };
+            return new[] { Section("Consulta", Item("Documentos Hospitalares", "HospitalDocuments", "Index", "document-search")) };
 
-        return new[] { Section("Consulta", Item("Buscar Prontuários e Documentos", "HospitalDocuments", "Index", "bi-search-heart"), Item("Busca Inteligente", "SmartSearch", "Index", "bi-search")) };
+        return new[] { Section("Consulta", Item("Buscar Prontuários e Documentos", "HospitalDocuments", "Index", "document-search"), Item("Busca Inteligente", "SmartSearch", "Index", "smart-search")) };
     }
 
     private static IReadOnlyList<AppQuickActionVM> BuildQuickActions(ClaimsPrincipal user)
@@ -107,14 +107,14 @@ public sealed class UserShellContextService : IUserShellContextService
         {
             return
             [
-                new("upload", "Enviar Arquivos", "Abrir a central de uploads.", "GedUploads", "Index", "bi-cloud-arrow-up", true),
-                new("protocol", "Novo Protocolo", "Registrar um novo atendimento.", "Protocolo", "Novo", "bi-journal-plus", false),
-                new("loan", "Novo Empréstimo", "Registrar a movimentação autorizada.", "Loans", "New", "bi-arrow-left-right", false)
+                new("upload", "Enviar Arquivos", "Abrir a central de uploads.", "GedUploads", "Index", "upload-cloud", true),
+                new("protocol", "Novo Protocolo", "Registrar um novo atendimento.", "Protocolo", "Novo", "protocol-add", false),
+                new("loan", "Novo Empréstimo", "Registrar a movimentação autorizada.", "Loans", "New", "loan", false)
             ];
         }
 
         if (AppMenuPolicy.IsArquivistaOphir(user))
-            return [new("loan", "Novo Empréstimo", "Solicitar um documento autorizado.", "Loans", "New", "bi-arrow-left-right", true)];
+            return [new("loan", "Novo Empréstimo", "Solicitar um documento autorizado.", "Loans", "New", "loan", true)];
 
         return [];
     }
