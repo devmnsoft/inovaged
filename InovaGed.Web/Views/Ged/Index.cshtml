@@ -3,6 +3,7 @@
 @using InovaGed.Application.Classification
 @using InovaGed.Application.Ged.Folders
 @using System.Threading
+@using System.Threading.Tasks
 @using Microsoft.Extensions.Options
 @using InovaGed.Web.Security
 
@@ -141,7 +142,7 @@
                         return chain.Count == 0 ? string.Empty : string.Join(" > ", chain);
                     }
 
-                    void RenderTree(Guid parentId)
+                    async Task RenderTree(Guid parentId)
                     {
                         if (!byParent.TryGetValue(parentId, out var children) || children.Count == 0)
                             return;
@@ -264,7 +265,7 @@
 
                                     <div class="ged-tree-children" style="display:none;">
                                         @{
-                                            RenderTree(n.Id);
+                                            await RenderTree(n.Id);
                                         }
                                     </div>
                                 </li>
@@ -420,7 +421,7 @@
 
                                     <div class="ged-tree-children" style="display:none;">
                                         @{
-                                            RenderTree(n.Id);
+                                            await RenderTree(n.Id);
                                         }
                                     </div>
                                 </li>
