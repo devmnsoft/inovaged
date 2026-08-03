@@ -1,0 +1,25 @@
+@model InovaGed.Web.Models.Atlas.AtlasPageSectionVM
+@{
+    var rootClass = $"atlas-page-section{(Model.Divided ? " atlas-page-section--divided" : string.Empty)}{(string.IsNullOrWhiteSpace(Model.CssClass) ? string.Empty : $" {Model.CssClass}")}";
+}
+<section class="@rootClass">
+    @if (!string.IsNullOrWhiteSpace(Model.Title) || !string.IsNullOrWhiteSpace(Model.Description))
+    {
+        <header class="atlas-page-section__heading">
+            @if (!string.IsNullOrWhiteSpace(Model.Icon))
+            {
+                <svg class="atlas-icon" aria-hidden="true"><use href="#atlas-icon-@Model.Icon"></use></svg>
+            }
+            <div>
+                @if (!string.IsNullOrWhiteSpace(Model.Title))
+                {
+                    <h2>@Model.Title</h2>
+                }
+                @if (!string.IsNullOrWhiteSpace(Model.Description))
+                {
+                    <p>@Model.Description</p>
+                }
+            </div>
+        </header>
+    }
+</section>

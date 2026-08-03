@@ -186,3 +186,5 @@
 @media(max-width:991.98px){.global-search-trigger{width:42px;justify-content:center}.global-search-trigger span,.global-search-trigger kbd,.topbar-left{display:none}.context-header{padding:1rem}.context-primary{position:fixed;right:1rem;bottom:1rem;z-index:1010;box-shadow:var(--ig-shadow-md)}.app-content{padding:1rem}.app-mobile-navigation .offcanvas-body{display:block}}
 @media(max-width:575.98px){.global-search-panel{position:fixed;inset:68px .5rem auto;width:auto}.quick-create .btn span,.quick-create .btn .bi-chevron-down{display:none}.context-header h1{font-size:1.3rem}.context-header p{font-size:.8rem}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition-duration:.01ms!important;animation-duration:.01ms!important}}
+
+.sidebar,.app-sidebar{width:280px;flex-basis:280px}.app-shell.sidebar-collapsed .app-sidebar{width:76px;flex-basis:76px}.topbar,.app-topbar{height:68px;min-height:68px}.app-content{padding:0;background:var(--ig-page)}.context-header{min-height:84px;max-height:112px}.sidebar-brand-mark{background:var(--ig-primary-800);box-shadow:inset -7px -7px 0 var(--ig-accent-600)}
