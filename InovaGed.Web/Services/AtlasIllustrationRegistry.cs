@@ -25,7 +25,15 @@ public sealed class AtlasIllustrationRegistry : IAtlasIllustrationRegistry
             Define("notifications-empty", "notifications-empty-atlas.svg", "Notificações vazias"),
             Define("saved-views-empty", "saved-views-empty-atlas.svg", "Visões salvas vazias"),
             Define("work-queue-empty", "work-queue-empty-atlas.svg", "Fila vazia"),
-            Define("assistant-sources", "assistant-sources-atlas.svg", "Fontes do assistente")
+            Define("assistant-sources", "assistant-sources-atlas.svg", "Fontes do assistente"),
+            Define("classification-tree", "classification-tree-atlas.svg", "Plano de classificação", false, 480, 300),
+            Define("retention-timeline", "retention-timeline-atlas.svg", "Temporalidade e destinação", false, 480, 300),
+            Define("certificate-validation", "certificate-validation-atlas.svg", "Validação de certificado ICP-Brasil", false, 480, 300),
+            Define("physical-archive-location", "physical-archive-location-atlas.svg", "Localização do arquivo físico", false, 480, 300),
+            Define("loan-return-flow", "loan-return-flow-atlas.svg", "Empréstimo e devolução", false, 480, 300),
+            Define("audit-timeline", "audit-timeline-atlas.svg", "Trilha de auditoria", false, 480, 300),
+            Define("access-restricted", "access-restricted-atlas.svg", "Acesso restrito", false, 480, 300),
+            Define("dicom-workspace", "dicom-workspace-atlas.svg", "Estação DICOM sintética", false, 480, 300)
         }.ToDictionary(item => item.Name, StringComparer.OrdinalIgnoreCase);
 
     public bool TryGet(string name, out AtlasIllustrationDefinition definition) =>
