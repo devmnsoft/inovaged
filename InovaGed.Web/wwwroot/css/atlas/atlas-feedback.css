@@ -3,5 +3,10 @@
 .toast { overflow: hidden; border: 1px solid var(--ig-border); border-radius: var(--ig-radius-md); background: var(--ig-surface); box-shadow: var(--ig-shadow-md); }
 .modal-content, .atlas-drawer { border: 1px solid var(--ig-border); border-radius: var(--ig-radius-lg); background: var(--ig-surface); box-shadow: var(--ig-shadow-lg); }
 .modal-header, .modal-footer { border-color: var(--ig-border); }
+.ig-toast-region { position:fixed; z-index:var(--ig-z-overlay); top:calc(var(--ig-topbar-height) + var(--ig-space-4)); right:var(--ig-space-4); display:grid; width:min(400px,calc(100vw - 32px)); gap:var(--ig-space-2); pointer-events:none; }
+.ig-toast { display:grid; grid-template-columns:auto 1fr auto; align-items:start; gap:.75rem; padding:1rem; border:1px solid var(--ig-border); border-left:4px solid var(--ig-info); border-radius:var(--ig-radius-md); background:var(--ig-surface); box-shadow:var(--ig-shadow-md); pointer-events:auto; }
+.ig-toast--success { border-left-color:var(--ig-success); }.ig-toast--warning { border-left-color:var(--ig-warning); }.ig-toast--error { border-left-color:var(--ig-danger); }
+.ig-toast p { margin:.2rem 0 0; color:var(--ig-text-secondary); font-size:.875rem; }.ig-toast button { display:grid; place-items:center; width:2rem; height:2rem; border:0; border-radius:.45rem; background:transparent; color:var(--ig-text-secondary); }
+.atlas-dialog .modal-header { display:grid; grid-template-columns:auto 1fr auto; gap:.75rem; align-items:center; }.atlas-dialog__icon { display:grid; place-items:center; width:2.75rem; height:2.75rem; border-radius:.75rem; background:var(--ig-info-soft,#e8f2fc); color:var(--ig-info); }.atlas-dialog__consequence { padding:.75rem; border-left:3px solid var(--ig-warning); background:var(--ig-warning-soft,#fff8e5); color:var(--ig-text-secondary); }
 .popover { border-color: var(--ig-border); box-shadow: var(--ig-shadow-md); }
-@media (max-width: 767.98px) { .toast-container { inset: auto var(--ig-space-3) var(--ig-space-6); max-width: none; } }
+@media (max-width: 767.98px) { .toast-container,.ig-toast-region { inset:auto var(--ig-space-3) var(--ig-space-6); width:auto; max-width:none; } }

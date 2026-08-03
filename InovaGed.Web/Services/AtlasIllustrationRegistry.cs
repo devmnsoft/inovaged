@@ -33,7 +33,9 @@ public sealed class AtlasIllustrationRegistry : IAtlasIllustrationRegistry
             Define("loan-return-flow", "loan-return-flow-atlas.svg", "Empréstimo e devolução", false, 480, 300),
             Define("audit-timeline", "audit-timeline-atlas.svg", "Trilha de auditoria", false, 480, 300),
             Define("access-restricted", "access-restricted-atlas.svg", "Acesso restrito", false, 480, 300),
-            Define("dicom-workspace", "dicom-workspace-atlas.svg", "Estação DICOM sintética", false, 480, 300)
+            Define("dicom-workspace", "dicom-workspace-atlas.svg", "Estação DICOM sintética", false, 480, 300),
+            Define("empty-search-result", "empty-search-result-atlas.svg", "Busca sem correspondências e próxima ação", false, 480, 300),
+            Define("document-versioning", "document-versioning-atlas.svg", "Linha de versões documentais", false, 480, 300)
         }.ToDictionary(item => item.Name, StringComparer.OrdinalIgnoreCase);
 
     public bool TryGet(string name, out AtlasIllustrationDefinition definition) =>
