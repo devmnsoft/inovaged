@@ -1,0 +1,5 @@
+/* Atlas navigation owns shell navigation states; no Bootstrap icon dependency. */
+.atlas-icon{width:1.125rem;height:1.125rem;display:inline-block;flex:none;fill:none;color:currentColor;vertical-align:-.15em}
+.sidebar-menu a .atlas-icon,.sidebar-logout .atlas-icon{width:1.2rem;height:1.2rem}
+.sidebar-menu a.active::before{background:var(--ig-accent-600)}
+.sidebar-menu a:focus-visible,.sidebar-collapse:focus-visible,.topbar button:focus-visible{outline:3px solid var(--ig-primary-100);outline-offset:2px}

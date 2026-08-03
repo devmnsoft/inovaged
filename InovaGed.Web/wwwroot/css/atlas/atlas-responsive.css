@@ -1,0 +1,4 @@
+html,body{max-width:100%;overflow-x:hidden}
+@media(max-width:1199.98px){.atlas-workspace-canvas{padding-inline:18px}.global-search-trigger{max-width:340px}}
+@media(max-width:767.98px){.atlas-workspace-canvas{padding-inline:12px}.atlas-drawer{width:100vw;max-width:none}.context-header{min-height:84px}.context-header p{display:none}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
