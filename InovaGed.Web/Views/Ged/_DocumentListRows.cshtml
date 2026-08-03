@@ -21,7 +21,7 @@
         var uploadLocal = OcrUiHelper.ToConfiguredLocalTime(uploadDateUtc, localTimeZoneId);
         var uploadLabel = string.IsNullOrWhiteSpace(d.UploadedAtLocalFormatted) ? uploadLocal.ToString(uploadDateFormat) : d.UploadedAtLocalFormatted;
         var partialClass = d.IsDocumentIncomplete ? " ged-document-incomplete" : (d.IsPartialDocument ? " ged-document-partial" : string.Empty);
-        var iconClass = (d.FileName ?? string.Empty).EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) ? "bi-file-earmark-pdf" : "bi-file-earmark-text";
+        var iconClass = (d.FileName ?? string.Empty).EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) ? "file-pdf" : "document";
         var isReadyToConsolidate = d.IsPartialDocument && !d.IsDocumentIncomplete && string.Equals(d.PartialStatus, "COMPLETE", StringComparison.OrdinalIgnoreCase);
         var isConsolidated = string.Equals(d.PartialStatus, "CONSOLIDATED", StringComparison.OrdinalIgnoreCase) || d.ConsolidatedVersionId.HasValue;
         var hasPartialOcr = d.IsPartialDocument && d.HasAnyPartialOcr && !d.HasAllPartialOcr;
@@ -48,7 +48,7 @@
             </div>
 
             <div class="ged-document-icon" aria-hidden="true">
-                <i class="bi @iconClass"></i>
+                <app-icon name="@iconClass" size="20" decorative="true" />
             </div>
 
             <div class="ged-document-content">
@@ -74,7 +74,7 @@
                         data-current-classification-id="@d.ClassificationId"
                         style="@classificationStyle"
                         title="Classificação rápida">
-                    <i class="bi @(string.IsNullOrWhiteSpace(d.ClassificationIcon) ? "bi-tag" : d.ClassificationIcon)"></i>
+                    <app-icon name="classification" size="16" decorative="true" />
                     <span>@classificationLabel</span>
                 </button>
 
@@ -82,7 +82,7 @@
                     @await Html.PartialAsync("_DocumentBadges", DocumentBadgesVM.FromDocument(d))
 
                     <span class="ged-document-upload-date" title="Upload em UTC: @uploadDateUtc.ToString("O")">
-                        <i class="bi bi-clock me-1"></i>@uploadLabel
+                        <app-icon class="me-1" name="history" size="16" decorative="true" />@uploadLabel
                     </span>
                 </div>
                 @if (d.IsPartialDocument || d.IsDocumentIncomplete)
@@ -92,7 +92,7 @@
                         ? $"Documento enviado em partes · {d.PartialPartsCount}/{totalPartsLabel} partes recebidas"
                         : $"Documento enviado em partes · {d.PartialPartsCount} partes recebidas";
                     <div class="small text-muted mt-1">
-                        <i class="bi bi-files me-1"></i>@partialInfo · Última parte em @uploadLabel
+                        <app-icon class="me-1" name="documents" size="16" decorative="true" />@partialInfo · Última parte em @uploadLabel
                     </div>
                 }
             </div>

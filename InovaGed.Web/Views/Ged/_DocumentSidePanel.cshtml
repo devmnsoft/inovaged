@@ -26,7 +26,7 @@
                 <span class="badge @Model.OcrBadgeCss">@(string.IsNullOrWhiteSpace(Model.PartialOcrSummaryText) ? Model.OcrBadgeText : Model.PartialOcrSummaryText)</span>
                 @if (Model.IsDocumentIncomplete)
                 {
-                    <span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle me-1"></i>Documento incompleto</span>
+                    <span class="badge bg-warning text-dark"><app-icon class="me-1" name="warning" size="16" decorative="true" />Documento incompleto</span>
                 }
                 else if (Model.IsPartialDocument)
                 {
@@ -34,11 +34,11 @@
                 }
                 @if (!string.IsNullOrWhiteSpace(Model.Visibility) && Model.Visibility.Contains("CONFIDENT", StringComparison.OrdinalIgnoreCase))
                 {
-                    <span class="badge bg-danger"><i class="bi bi-shield-lock me-1"></i>Confidencial</span>
+                    <span class="badge bg-danger"><app-icon class="me-1" name="roles" size="16" decorative="true" />Confidencial</span>
                 }
             </div>
         </div>
-        <button type="button" class="btn btn-sm btn-light border js-close-document-panel js-close-side-panel" title="Fechar painel" aria-label="Fechar painel"><i class="bi bi-x-lg"></i></button>
+        <button type="button" class="btn btn-sm btn-light border js-close-document-panel js-close-side-panel" title="Fechar painel" aria-label="Fechar painel"><app-icon name="close" size="16" decorative="true" /></button>
     </div>
 </div>
 
@@ -57,7 +57,7 @@
         @if (Model.IsDocumentIncomplete)
         {
             <div class="ged-side-incomplete-alert">
-                <strong><i class="bi bi-exclamation-triangle me-1"></i>Este documento está incompleto e aguarda novas partes.</strong>
+                <strong><app-icon class="me-1" name="warning" size="16" decorative="true" />Este documento está incompleto e aguarda novas partes.</strong>
                 <div class="d-flex flex-wrap gap-2 mt-2">
                     @if (Model.CanAddPart)
                     {
@@ -93,9 +93,9 @@
     <section class="d-none" data-ged-tab-panel="preview">
         <div class="small fw-semibold mb-2" data-part-preview-title>Visualização do documento atual — @Model.FileName</div>
         <div class="ged-side-actions-bar">
-            <a class="btn btn-sm btn-outline-primary" href="@Model.PreviewUrl" target="_blank" rel="noopener"><i class="bi bi-box-arrow-up-right me-1"></i>Abrir em nova aba</a>
-            <a class="btn btn-sm btn-outline-secondary" href="@Model.DownloadUrl"><i class="bi bi-download me-1"></i>Baixar</a>
-            <button type="button" class="btn btn-sm btn-outline-secondary js-expand-side-panel" data-expanded-label="Restaurar"><i class="bi bi-arrows-fullscreen me-1"></i><span>Expandir</span></button>
+            <a class="btn btn-sm btn-outline-primary" href="@Model.PreviewUrl" target="_blank" rel="noopener"><app-icon class="me-1" name="preview" size="16" decorative="true" />Abrir em nova aba</a>
+            <a class="btn btn-sm btn-outline-secondary" href="@Model.DownloadUrl"><app-icon class="me-1" name="download" size="16" decorative="true" />Baixar</a>
+            <button type="button" class="btn btn-sm btn-outline-secondary js-expand-side-panel" data-expanded-label="Restaurar"><app-icon class="me-1" name="fullscreen" size="16" decorative="true" /><span>Expandir</span></button>
         </div>
         @if (!string.IsNullOrWhiteSpace(Model.PreviewUrl))
         {
@@ -145,7 +145,7 @@
                 var collapseId = $"documentPartsCollapse_{Model.DocumentId:N}";
                 <div class="document-parts-summary border rounded p-3 d-flex justify-content-between align-items-center gap-3 flex-wrap">
                     <div>
-                        <strong><i class="bi bi-files me-1"></i>Partes do documento</strong>
+                        <strong><app-icon class="me-1" name="documents" size="16" decorative="true" />Partes do documento</strong>
                         <div class="small text-muted">
                             @Model.PartialPartsCount@(Model.PartialTotalParts.HasValue ? $" de {Model.PartialTotalParts}" : "") partes recebidas · @(string.IsNullOrWhiteSpace(Model.PartialOcrSummaryText) ? $"OCR {Model.PartialPartsWithOcrCount}/{Model.PartialPartsCount}" : Model.PartialOcrSummaryText)
                         </div>
@@ -197,15 +197,15 @@
         <div class="ged-side-actions-bar mt-3">
             @if (Model.CanAddPart)
             {
-                <button type="button" class="btn btn-sm btn-warning js-add-document-part" data-document-id="@Model.DocumentId" data-document-title="@Model.Title"><i class="bi bi-file-earmark-plus me-1"></i>Adicionar parte</button>
+                <button type="button" class="btn btn-sm btn-warning js-add-document-part" data-document-id="@Model.DocumentId" data-document-title="@Model.Title"><app-icon class="me-1" name="document-add" size="16" decorative="true" />Adicionar parte</button>
             }
             @if (Model.CanConsolidate)
             {
-                <button type="button" class="btn btn-sm btn-outline-secondary js-consolidate-document" data-document-id="@Model.DocumentId" data-parts-with-ocr="@Model.PartialPartsWithOcrCount" data-parts-count="@Model.PartialPartsCount"><i class="bi bi-layers me-1"></i>Consolidar</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary js-consolidate-document" data-document-id="@Model.DocumentId" data-parts-with-ocr="@Model.PartialPartsWithOcrCount" data-parts-count="@Model.PartialPartsCount"><app-icon class="me-1" name="document-version" size="16" decorative="true" />Consolidar</button>
             }
             @if (Model.CanCancelPartial)
             {
-                <button type="button" class="btn btn-sm btn-outline-danger js-cancel-document-partial" data-document-id="@Model.DocumentId"><i class="bi bi-x-octagon me-1"></i>Cancelar fracionamento</button>
+                <button type="button" class="btn btn-sm btn-outline-danger js-cancel-document-partial" data-document-id="@Model.DocumentId"><app-icon class="me-1" name="error" size="16" decorative="true" />Cancelar fracionamento</button>
             }
         </div>
     </section>
@@ -239,22 +239,22 @@
 
     <section class="d-none" data-ged-tab-panel="actions">
         <div class="d-grid gap-2">
-            <a class="btn btn-outline-primary" href="@Model.PreviewUrl" target="_blank" rel="noopener"><i class="bi bi-file-earmark-richtext me-1"></i>Abrir</a>
-            <a class="btn btn-outline-secondary" href="@Model.DownloadUrl"><i class="bi bi-download me-1"></i>Baixar</a>
+            <a class="btn btn-outline-primary" href="@Model.PreviewUrl" target="_blank" rel="noopener"><app-icon class="me-1" name="document" size="16" decorative="true" />Abrir</a>
+            <a class="btn btn-outline-secondary" href="@Model.DownloadUrl"><app-icon class="me-1" name="download" size="16" decorative="true" />Baixar</a>
             @if (Model.CanMove)
             {
-                <button type="button" class="btn btn-outline-primary js-move-one js-move-document" data-document-id="@Model.DocumentId" data-document-title="@Model.Title"><i class="bi bi-folder-symlink me-1"></i>Mover</button>
+                <button type="button" class="btn btn-outline-primary js-move-one js-move-document" data-document-id="@Model.DocumentId" data-document-title="@Model.Title"><app-icon class="me-1" name="document-move" size="16" decorative="true" />Mover</button>
             }
             @if (Model.CanClassify)
             {
-                <a class="btn btn-outline-primary js-classify-document" href="@Model.DetailsUrl?openClassify=true" data-document-id="@Model.DocumentId"><i class="bi bi-tags me-1"></i>Classificar</a>
+                <a class="btn btn-outline-primary js-classify-document" href="@Model.DetailsUrl?openClassify=true" data-document-id="@Model.DocumentId"><app-icon class="me-1" name="classification" size="16" decorative="true" />Classificar</a>
             }
             @if (Model.CanRunOcr)
             {
                 <form method="post" action="@Url.Action("RunOcr", "Ged")" class="m-0 js-feedback-form">
                     @Html.AntiForgeryToken()
                     <input type="hidden" name="versionId" value="@Model.VersionId" />
-                    <button type="submit" class="btn btn-outline-primary w-100"><i class="bi bi-cpu me-1"></i>Executar OCR</button>
+                    <button type="submit" class="btn btn-outline-primary w-100"><app-icon class="me-1" name="ocr" size="16" decorative="true" />Executar OCR</button>
                 </form>
             }
             @if (Model.CanReprocessOcr)
@@ -262,26 +262,26 @@
                 <form method="post" action="@Url.Action("ReprocessOcr", "Ged")" class="m-0 js-feedback-form">
                     @Html.AntiForgeryToken()
                     <input type="hidden" name="versionId" value="@Model.VersionId" />
-                    <button type="submit" class="btn btn-outline-secondary w-100"><i class="bi bi-arrow-clockwise me-1"></i>Reprocessar OCR</button>
+                    <button type="submit" class="btn btn-outline-secondary w-100"><app-icon class="me-1" name="refresh" size="16" decorative="true" />Reprocessar OCR</button>
                 </form>
             }
             @if (Model.CanAddPart)
             {
-                <button type="button" class="btn btn-outline-warning js-add-document-part" data-document-id="@Model.DocumentId" data-document-title="@Model.Title"><i class="bi bi-file-earmark-plus me-1"></i>Adicionar parte</button>
+                <button type="button" class="btn btn-outline-warning js-add-document-part" data-document-id="@Model.DocumentId" data-document-title="@Model.Title"><app-icon class="me-1" name="document-add" size="16" decorative="true" />Adicionar parte</button>
             }
             @if (Model.CanViewParts)
             {
-                <button type="button" class="btn btn-outline-secondary" data-ged-side-switch="parts"><i class="bi bi-files me-1"></i>Ver partes</button>
+                <button type="button" class="btn btn-outline-secondary" data-ged-side-switch="parts"><app-icon class="me-1" name="documents" size="16" decorative="true" />Ver partes</button>
             }
             @if (Model.CanConsolidate)
             {
-                <button type="button" class="btn btn-outline-secondary js-consolidate-document" data-document-id="@Model.DocumentId"><i class="bi bi-layers me-1"></i>Consolidar</button>
+                <button type="button" class="btn btn-outline-secondary js-consolidate-document" data-document-id="@Model.DocumentId"><app-icon class="me-1" name="document-version" size="16" decorative="true" />Consolidar</button>
             }
             @if (Model.CanDelete)
             {
-                <button type="button" class="btn btn-outline-danger js-delete-document" data-document-id="@Model.DocumentId" data-document-title="@Model.Title" data-is-partial-document="@(Model.IsPartialDocument || Model.IsDocumentIncomplete ? "true" : "false")" data-partial-parts-count="@Model.PartialPartsCount"><i class="bi bi-trash me-1"></i>Excluir</button>
+                <button type="button" class="btn btn-outline-danger js-delete-document" data-document-id="@Model.DocumentId" data-document-title="@Model.Title" data-is-partial-document="@(Model.IsPartialDocument || Model.IsDocumentIncomplete ? "true" : "false")" data-partial-parts-count="@Model.PartialPartsCount"><app-icon class="me-1" name="delete" size="16" decorative="true" />Excluir</button>
             }
-            <button type="button" class="btn btn-outline-dark js-copy-document-reference" data-reference="GED:@Model.DocumentId:@Model.VersionId"><i class="bi bi-link-45deg me-1"></i>Copiar referência</button>
+            <button type="button" class="btn btn-outline-dark js-copy-document-reference" data-reference="GED:@Model.DocumentId:@Model.VersionId"><app-icon class="me-1" name="document-link" size="16" decorative="true" />Copiar referência</button>
         </div>
     </section>
 </div>

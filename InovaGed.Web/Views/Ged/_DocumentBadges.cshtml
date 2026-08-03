@@ -3,32 +3,32 @@
     var badges = new List<(string Css, string Icon, string Label, string Title)>();
 
     if (Model.IsRestricted)
-        badges.Add(("ged-badge-danger", "bi-shield-lock", "Restrito", "Acesso limitado por política de segurança"));
+        badges.Add(("ged-badge-danger", "roles", "Restrito", "Acesso limitado por política de segurança"));
     if (Model.IsPartial)
-        badges.Add(("ged-badge-warning", "bi-layers", "Parcial", "Documento composto por partes"));
+        badges.Add(("ged-badge-warning", "document-version", "Parcial", "Documento composto por partes"));
     if (Model.ShowOcrBadge)
     {
         var ocrReady = string.Equals(Model.OcrStatus, "COMPLETED", StringComparison.OrdinalIgnoreCase)
             || string.Equals(Model.OcrStatus, "AVAILABLE", StringComparison.OrdinalIgnoreCase);
         badges.Add(ocrReady
-            ? ("ged-badge-success", "bi-file-earmark-check", "OCR pronto", "Texto pesquisável disponível")
-            : ("ged-badge-muted", "bi-hourglass-split", "OCR pendente", "Extração de texto ainda não concluída"));
+            ? ("ged-badge-success", "ocr-success", "OCR pronto", "Texto pesquisável disponível")
+            : ("ged-badge-muted", "ocr-pending", "OCR pendente", "Extração de texto ainda não concluída"));
     }
     if (Model.ShowPreviewBadge && string.Equals(Model.PreviewStatus, "FAILED", StringComparison.OrdinalIgnoreCase))
-        badges.Add(("ged-badge-danger", "bi-file-earmark-x", "Preview falhou", "A visualização não pôde ser gerada"));
+        badges.Add(("ged-badge-danger", "error", "Preview falhou", "A visualização não pôde ser gerada"));
     if (Model.ShowClassificationBadge)
     {
         var classified = string.Equals(Model.ClassificationStatus, "CLASSIFIED", StringComparison.OrdinalIgnoreCase);
         badges.Add(classified
-            ? ("ged-badge-success", "bi-tags", "Classificado", "Classificação arquivística aplicada")
-            : ("ged-badge-muted", "bi-tag", "Sem classificação", "Classificação arquivística pendente"));
+            ? ("ged-badge-success", "classification", "Classificado", "Classificação arquivística aplicada")
+            : ("ged-badge-muted", "classification", "Sem classificação", "Classificação arquivística pendente"));
     }
     if (Model.ShowRetentionBadge)
         badges.Add(Model.IsOverdue
-            ? ("ged-badge-danger", "bi-calendar-x", "Vencido", "Prazo de temporalidade vencido")
-            : ("ged-badge-info", "bi-calendar-check", Model.RetentionStatus ?? "Temporalidade", "Situação da temporalidade"));
+            ? ("ged-badge-danger", "warning", "Vencido", "Prazo de temporalidade vencido")
+            : ("ged-badge-info", "check", Model.RetentionStatus ?? "Temporalidade", "Situação da temporalidade"));
     if (Model.ShowSignatureBadge && string.Equals(Model.SignatureStatus, "VALID", StringComparison.OrdinalIgnoreCase))
-        badges.Add(("ged-badge-success", "bi-patch-check", "Assinado", "Assinatura criptográfica validada"));
+        badges.Add(("ged-badge-success", "check", "Assinado", "Assinatura criptográfica validada"));
 
     var visibleBadges = badges.Take(3).ToArray();
     var overflowBadges = badges.Skip(3).ToArray();
@@ -36,7 +36,7 @@
 <div class="ged-document-badges" aria-label="Status do documento">
     @foreach (var badge in visibleBadges)
     {
-        <span class="badge ged-badge @badge.Css" title="@badge.Title"><i class="bi @badge.Icon" aria-hidden="true"></i>@badge.Label</span>
+        <span class="badge ged-badge @badge.Css" title="@badge.Title"><app-icon name="@badge.Icon" size="16" decorative="true" />@badge.Label</span>
     }
     @if (overflowBadges.Length > 0)
     {

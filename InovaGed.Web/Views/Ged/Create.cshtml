@@ -11,7 +11,7 @@
         <div class="text-muted">Esta rota existe para navegação. O upload principal fica em Documentos.</div>
     </div>
     <a class="btn btn-outline-secondary" asp-controller="Ged" asp-action="Index">
-        <i class="bi bi-arrow-left me-1"></i> Voltar
+        <app-icon class="me-1" name="arrow-left" size="16" decorative="true" /> Voltar
     </a>
 </div>
 
@@ -21,7 +21,7 @@
             Pasta selecionada: <strong>@(Model.FolderId?.ToString() ?? "Nenhuma")</strong>
         </p>
         <a class="btn btn-primary" asp-controller="Ged" asp-action="Index" asp-route-folderId="@Model.FolderId">
-            <i class="bi bi-cloud-upload me-1"></i> Ir para Upload
+            <app-icon class="me-1" name="upload-cloud" size="16" decorative="true" /> Ir para Upload
         </a>
     </div>
 </div>

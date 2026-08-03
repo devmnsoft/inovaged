@@ -4,69 +4,69 @@
 
 <div class="dropdown">
     <button class="btn btn-light border ged-actions-btn document-actions-btn" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Ações de @Model.Title" aria-label="Ações de @Model.Title">
-        <i class="bi bi-three-dots"></i>
+        <app-icon name="more" size="16" decorative="true" />
     </button>
     <ul class="dropdown-menu dropdown-menu-end ged-actions-menu">
-        <li><a class="dropdown-item js-view-document-details" asp-action="Details" asp-controller="Ged" asp-route-id="@Model.DocumentId" data-document-id="@Model.DocumentId" data-version-id="@Model.VersionId"><i class="bi bi-eye me-2"></i>Abrir detalhes</a></li>
-        <li><a class="dropdown-item js-preview-document" asp-action="Preview" asp-controller="Ged" asp-route-id="@Model.VersionId" target="_blank" rel="noopener" data-document-id="@Model.DocumentId" data-version-id="@Model.VersionId"><i class="bi bi-file-earmark-richtext me-2"></i>Preview</a></li>
+        <li><a class="dropdown-item js-view-document-details" asp-action="Details" asp-controller="Ged" asp-route-id="@Model.DocumentId" data-document-id="@Model.DocumentId" data-version-id="@Model.VersionId"><app-icon class="me-2" name="preview" size="16" decorative="true" />Abrir detalhes</a></li>
+        <li><a class="dropdown-item js-preview-document" asp-action="Preview" asp-controller="Ged" asp-route-id="@Model.VersionId" target="_blank" rel="noopener" data-document-id="@Model.DocumentId" data-version-id="@Model.VersionId"><app-icon class="me-2" name="document" size="16" decorative="true" />Preview</a></li>
         @if (Model.IsOcrAvailable && !string.IsNullOrWhiteSpace(Model.VersionId))
         {
-            <li><a class="dropdown-item js-view-ocr-document" asp-action="OcrText" asp-controller="Ged" asp-route-versionId="@Model.VersionId" target="_blank" rel="noopener" data-document-id="@Model.DocumentId" data-version-id="@Model.VersionId"><i class="bi bi-body-text me-2"></i>Ver OCR</a></li>
+            <li><a class="dropdown-item js-view-ocr-document" asp-action="OcrText" asp-controller="Ged" asp-route-versionId="@Model.VersionId" target="_blank" rel="noopener" data-document-id="@Model.DocumentId" data-version-id="@Model.VersionId"><app-icon class="me-2" name="ocr" size="16" decorative="true" />Ver OCR</a></li>
         }
         else
         {
-            <li><button type="button" class="dropdown-item disabled text-muted" disabled title="OCR ainda não disponível"><i class="bi bi-body-text me-2"></i>Ver OCR</button></li>
+            <li><button type="button" class="dropdown-item disabled text-muted" disabled title="OCR ainda não disponível"><app-icon class="me-2" name="ocr" size="16" decorative="true" />Ver OCR</button></li>
         }
         @if (Model.CanMove)
         {
-            <li><button type="button" class="dropdown-item js-move-one js-move-document" data-document-id="@Model.DocumentId" data-document-title="@Model.Title"><i class="bi bi-folder-symlink me-2"></i>Mover</button></li>
+            <li><button type="button" class="dropdown-item js-move-one js-move-document" data-document-id="@Model.DocumentId" data-document-title="@Model.Title"><app-icon class="me-2" name="document-move" size="16" decorative="true" />Mover</button></li>
         }
         @if (Model.CanClassify)
         {
-            <li><a class="dropdown-item js-classify-document" asp-action="Details" asp-controller="Ged" asp-route-id="@Model.DocumentId" asp-route-openClassify="true" data-document-id="@Model.DocumentId"><i class="bi bi-tags me-2"></i>Classificar</a></li>
+            <li><a class="dropdown-item js-classify-document" asp-action="Details" asp-controller="Ged" asp-route-id="@Model.DocumentId" asp-route-openClassify="true" data-document-id="@Model.DocumentId"><app-icon class="me-2" name="classification" size="16" decorative="true" />Classificar</a></li>
         }
-        <li><a class="dropdown-item" asp-action="Download" asp-controller="Ged" asp-route-id="@Model.VersionId"><i class="bi bi-download me-2"></i>Baixar</a></li>
-        <li><a class="dropdown-item" asp-controller="ProtocolRequests" asp-action="New" asp-route-documentId="@Model.DocumentId"><i class="bi bi-send-plus me-2"></i>Criar protocolo com este documento</a></li>
+        <li><a class="dropdown-item" asp-action="Download" asp-controller="Ged" asp-route-id="@Model.VersionId"><app-icon class="me-2" name="download" size="16" decorative="true" />Baixar</a></li>
+        <li><a class="dropdown-item" asp-controller="ProtocolRequests" asp-action="New" asp-route-documentId="@Model.DocumentId"><app-icon class="me-2" name="protocol-add" size="16" decorative="true" />Criar protocolo com este documento</a></li>
         @if (AppMenuPolicy.IsFullAdmin(User))
         {
-            <li><button class="dropdown-item js-share-document" type="button" data-document-id="@Model.DocumentId" data-version-id="@Model.VersionId" data-title="@Model.Title" data-file-name="@Model.FileName"><i class="bi bi-share me-2"></i>Compartilhar documento</button></li>
+            <li><button class="dropdown-item js-share-document" type="button" data-document-id="@Model.DocumentId" data-version-id="@Model.VersionId" data-title="@Model.Title" data-file-name="@Model.FileName"><app-icon class="me-2" name="share" size="16" decorative="true" />Compartilhar documento</button></li>
         }
 
         @if (Model.IsConsolidated)
         {
             <li><hr class="dropdown-divider" /></li>
-            <li><h6 class="dropdown-header text-primary"><i class="bi bi-layers me-1"></i>Documento consolidado</h6></li>
+            <li><h6 class="dropdown-header text-primary"><app-icon class="me-1" name="document-version" size="16" decorative="true" />Documento consolidado</h6></li>
             @if (Model.CanViewParts)
             {
-                <li><button type="button" class="dropdown-item js-view-document-parts" data-document-id="@Model.DocumentId" data-document-title="@Model.Title"><i class="bi bi-files me-2"></i>Ver partes originais</button></li>
+                <li><button type="button" class="dropdown-item js-view-document-parts" data-document-id="@Model.DocumentId" data-document-title="@Model.Title"><app-icon class="me-2" name="documents" size="16" decorative="true" />Ver partes originais</button></li>
             }
-            <li><a class="dropdown-item" asp-action="Preview" asp-controller="Ged" asp-route-id="@Model.VersionId" target="_blank" rel="noopener"><i class="bi bi-file-earmark-check me-2"></i>Ver versão consolidada</a></li>
+            <li><a class="dropdown-item" asp-action="Preview" asp-controller="Ged" asp-route-id="@Model.VersionId" target="_blank" rel="noopener"><app-icon class="me-2" name="check" size="16" decorative="true" />Ver versão consolidada</a></li>
         }
         else if (Model.ShouldShowPartialActions)
         {
             <li><hr class="dropdown-divider" /></li>
-            <li><h6 class="dropdown-header text-warning"><i class="bi bi-exclamation-triangle me-1"></i>Documento incompleto</h6></li>
+            <li><h6 class="dropdown-header text-warning"><app-icon class="me-1" name="warning" size="16" decorative="true" />Documento incompleto</h6></li>
             @if (Model.CanAddPart)
             {
-                <li><button type="button" class="dropdown-item js-add-document-part" data-document-id="@Model.DocumentId" data-document-title="@Model.Title"><i class="bi bi-file-earmark-plus me-2"></i>Adicionar parte</button></li>
+                <li><button type="button" class="dropdown-item js-add-document-part" data-document-id="@Model.DocumentId" data-document-title="@Model.Title"><app-icon class="me-2" name="document-add" size="16" decorative="true" />Adicionar parte</button></li>
             }
             @if (Model.CanViewParts)
             {
-                <li><button type="button" class="dropdown-item js-view-document-parts" data-document-id="@Model.DocumentId" data-document-title="@Model.Title"><i class="bi bi-files me-2"></i>Ver partes do documento</button></li>
+                <li><button type="button" class="dropdown-item js-view-document-parts" data-document-id="@Model.DocumentId" data-document-title="@Model.Title"><app-icon class="me-2" name="documents" size="16" decorative="true" />Ver partes do documento</button></li>
             }
             @if (Model.CanConsolidate && Model.IsCompletePartial)
             {
-                <li><button type="button" class="dropdown-item js-consolidate-document" data-document-id="@Model.DocumentId"><i class="bi bi-layers me-2"></i>Consolidar documento</button></li>
+                <li><button type="button" class="dropdown-item js-consolidate-document" data-document-id="@Model.DocumentId"><app-icon class="me-2" name="document-version" size="16" decorative="true" />Consolidar documento</button></li>
             }
             @if (Model.CanCancelPartial)
             {
-                <li><button type="button" class="dropdown-item text-danger js-cancel-document-partial" data-document-id="@Model.DocumentId"><i class="bi bi-x-octagon me-2"></i>Cancelar fracionamento</button></li>
+                <li><button type="button" class="dropdown-item text-danger js-cancel-document-partial" data-document-id="@Model.DocumentId"><app-icon class="me-2" name="error" size="16" decorative="true" />Cancelar fracionamento</button></li>
             }
         }
         else if (Model.CanMarkAsIncomplete)
         {
             <li><hr class="dropdown-divider" /></li>
-            <li><button type="button" class="dropdown-item js-mark-document-incomplete" data-document-id="@Model.DocumentId" data-document-title="@Model.Title"><i class="bi bi-exclamation-triangle me-2"></i>Marcar como documento incompleto</button></li>
+            <li><button type="button" class="dropdown-item js-mark-document-incomplete" data-document-id="@Model.DocumentId" data-document-title="@Model.Title"><app-icon class="me-2" name="warning" size="16" decorative="true" />Marcar como documento incompleto</button></li>
         }
 
         @if (Model.CanDelete)
@@ -77,7 +77,7 @@
                     @Html.AntiForgeryToken()
                     <input type="hidden" name="id" value="@Model.DocumentId" />
                     <input type="hidden" name="folderId" value="@Model.CurrentFolderId" />
-                    <button type="button" class="dropdown-item text-danger js-delete-document" data-document-id="@Model.DocumentId" data-folder-id="@Model.CurrentFolderId" data-document-title="@Model.Title" data-is-partial-document="@(Model.IsPartialDocument || Model.IsDocumentIncomplete ? "true" : "false")" data-partial-parts-count="@Model.PartialPartsCount"><i class="bi bi-trash me-2"></i>Excluir</button>
+                    <button type="button" class="dropdown-item text-danger js-delete-document" data-document-id="@Model.DocumentId" data-folder-id="@Model.CurrentFolderId" data-document-title="@Model.Title" data-is-partial-document="@(Model.IsPartialDocument || Model.IsDocumentIncomplete ? "true" : "false")" data-partial-parts-count="@Model.PartialPartsCount"><app-icon class="me-2" name="delete" size="16" decorative="true" />Excluir</button>
                 </form>
             </li>
         }

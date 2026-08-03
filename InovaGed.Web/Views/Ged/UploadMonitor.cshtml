@@ -5,12 +5,12 @@
 
 <div class="d-flex justify-content-between align-items-center mb-3">
     <div>
-        <h4 class="mb-0"><i class="bi bi-cloud-upload me-2"></i>Monitor de Uploads GED</h4>
+        <h4 class="mb-0"><app-icon class="me-2" name="upload-cloud" size="16" decorative="true" />Monitor de Uploads GED</h4>
         <div class="text-muted small">Lotes recentes, falhas recuperáveis, uploads travados e fila de OCR gerada por uploads.</div>
     </div>
     <form method="post" action="@Url.Action("CleanStale", "UploadMonitor")">
         @Html.AntiForgeryToken()
-        <button type="submit" class="btn btn-outline-warning"><i class="bi bi-tools me-1"></i>Limpar RECEIVING travados</button>
+        <button type="submit" class="btn btn-outline-warning"><app-icon class="me-1" name="settings" size="16" decorative="true" />Limpar RECEIVING travados</button>
     </form>
 </div>
 @if (TempData["Success"] is string ok) { <div class="alert alert-success">@ok</div> }

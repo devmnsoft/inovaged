@@ -12,10 +12,10 @@
     </div>
     <div class="d-flex gap-2">
         <a class="btn btn-outline-secondary" asp-controller="Ged" asp-action="Index">
-            <i class="bi bi-arrow-left me-1"></i> Voltar
+            <app-icon class="me-1" name="arrow-left" size="16" decorative="true" /> Voltar
         </a>
         <button class="btn btn-primary" type="button" data-bs-toggle="modal" data-bs-target="#modalNovaPasta">
-            <i class="bi bi-folder-plus me-1"></i> Nova pasta
+            <app-icon class="me-1" name="folder-add" size="16" decorative="true" /> Nova pasta
         </button>
     </div>
 </div>
@@ -33,7 +33,7 @@
     <div class="col-12 col-lg-5">
         <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center">
-                <span><i class="bi bi-diagram-3 me-1"></i> Árvore</span>
+                <span><app-icon class="me-1" name="folder-move" size="16" decorative="true" /> Árvore</span>
                 <span class="badge bg-light text-dark">@Model.Tree.Count</span>
             </div>
             <div class="card-body">
@@ -48,7 +48,7 @@
                         {
                             <li class="d-flex align-items-center justify-content-between py-1 border-bottom">
                                 <div class="d-flex align-items-center gap-2">
-                                    <i class="bi bi-folder"></i>
+                                    <app-icon name="folder" size="16" decorative="true" />
                                     <span>@f.Name</span>
                                 </div>
                                 <div class="btn-group btn-group-sm">
@@ -58,7 +58,7 @@
                                             data-bs-target="#modalRenomearPasta"
                                             data-id="@f.Id"
                                             data-nome="@f.Name">
-                                        <i class="bi bi-pencil"></i>
+                                        <app-icon name="edit" size="16" decorative="true" />
                                     </button>
 
                                     <button class="btn btn-outline-danger"
@@ -67,7 +67,7 @@
                                             data-bs-target="#modalExcluirPasta"
                                             data-id="@f.Id"
                                             data-nome="@f.Name">
-                                        <i class="bi bi-trash"></i>
+                                        <app-icon name="delete" size="16" decorative="true" />
                                     </button>
                                 </div>
                             </li>
@@ -81,7 +81,7 @@
     <div class="col-12 col-lg-7">
         <div class="card">
             <div class="card-header">
-                <i class="bi bi-info-circle me-1"></i> Observações
+                <app-icon class="me-1" name="info" size="16" decorative="true" /> Observações
             </div>
             <div class="card-body">
                 <ul class="mb-0">
@@ -101,7 +101,7 @@
             <form asp-controller="Ged" asp-action="CriarPasta" method="post">
                 @Html.AntiForgeryToken()
                 <div class="modal-header">
-                    <h5 class="modal-title"><i class="bi bi-folder-plus me-1"></i> Nova pasta</h5>
+                    <h5 class="modal-title"><app-icon class="me-1" name="folder-add" size="16" decorative="true" /> Nova pasta</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
                 </div>
                 <div class="modal-body">
@@ -124,7 +124,7 @@
                 </div>
                 <div class="modal-footer">
                     <button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">Cancelar</button>
-                    <button class="btn btn-primary" type="submit"><i class="bi bi-check2 me-1"></i> Criar</button>
+                    <button class="btn btn-primary" type="submit"><app-icon class="me-1" name="check" size="16" decorative="true" /> Criar</button>
                 </div>
             </form>
         </div>
@@ -139,7 +139,7 @@
                 @Html.AntiForgeryToken()
                 <input type="hidden" name="Id" id="rename-id" />
                 <div class="modal-header">
-                    <h5 class="modal-title"><i class="bi bi-pencil me-1"></i> Renomear pasta</h5>
+                    <h5 class="modal-title"><app-icon class="me-1" name="edit" size="16" decorative="true" /> Renomear pasta</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
                 </div>
                 <div class="modal-body">
@@ -153,7 +153,7 @@
                 </div>
                 <div class="modal-footer">
                     <button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">Cancelar</button>
-                    <button class="btn btn-primary" type="submit"><i class="bi bi-check2 me-1"></i> Salvar</button>
+                    <button class="btn btn-primary" type="submit"><app-icon class="me-1" name="check" size="16" decorative="true" /> Salvar</button>
                 </div>
             </form>
         </div>
@@ -168,7 +168,7 @@
                 @Html.AntiForgeryToken()
                 <input type="hidden" name="Id" id="del-id" />
                 <div class="modal-header">
-                    <h5 class="modal-title text-danger"><i class="bi bi-trash me-1"></i> Excluir pasta</h5>
+                    <h5 class="modal-title text-danger"><app-icon class="me-1" name="delete" size="16" decorative="true" /> Excluir pasta</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
                 </div>
                 <div class="modal-body">
@@ -180,7 +180,7 @@
                 </div>
                 <div class="modal-footer">
                     <button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">Cancelar</button>
-                    <button class="btn btn-danger" type="submit"><i class="bi bi-trash me-1"></i> Excluir</button>
+                    <button class="btn btn-danger" type="submit"><app-icon class="me-1" name="delete" size="16" decorative="true" /> Excluir</button>
                 </div>
             </form>
         </div>
