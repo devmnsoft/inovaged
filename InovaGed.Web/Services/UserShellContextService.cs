@@ -65,30 +65,39 @@ public sealed class UserShellContextService : IUserShellContextService
                     Item("Qualidade Documental", "DocumentQuality", "Index", "check"),
                     Item("Alertas e Tendências", "HospitalTrends", "Index", "activity")),
                 Section("Gestão Documental",
-                    Item("GED / Explorer", "Ged", "Index", "folder-open", "GedSearch"),
+                    Item("GED / Explorer", "Ged", "Index", "folder-open"),
                     Item("Busca Hospitalar", "HospitalDocuments", "Index", "document-search"),
                     Item("Busca Inteligente", "SmartSearch", "Index", "smart-search"),
                     Item("Inteligência Hospitalar", "HospitalIntelligence", "Index", "activity"),
                     Item("Uploads", "GedUploads", "Index", "upload-cloud"),
                     Item("Central OCR", "Ocr", "Index", "ocr"),
                     Item("Agendamento OCR", "Ocr", "AutoSchedule", "recent"),
-                    Item("Classificação", "GedClassification", "Queue", "classification", "ClassificationDashboard"),
-                    Item("Pastas", "Ged", "Folders", "folder"),
-                    Item("Temporalidade", "Temporalidade", "Index", "recent")),
+                    Item("Classificação", "GedClassification", "Queue", "classification")),
+                Section("Instrumentos Arquivísticos",
+                    Item("Plano de Classificação Documental - PCD", "ClassificationPlan", "Index", "classification"),
+                    Item("Tabela de Temporalidade - TTD", "Retention", "Index", "recent"),
+                    Item("Procedimentos Operacionais - POP", "Instruments", "Pop", "document-version"),
+                    Item("Versões e Publicações", "InstrumentVersions", "Index", "document-history", new Dictionary<string, string> { ["type"] = "PCD" }),
+                    Item("Casos de Temporalidade", "RetentionCase", "Index", "saved-view"),
+                    Item("Destinação Documental", "RetentionDestination", "Index", "document-move")),
                 Section("Arquivo Físico",
+                    Item("Lotes", "Batches", "Index", "cards"),
                     Item("Localizações", "Physical", "Locations", "folder"),
                     Item("Caixas", "Physical", "Boxes", "documents"),
-                    Item("Etiquetas", "Labels", "Boxes", "metadata")),
+                    Item("Etiquetas", "Labels", "Boxes", "metadata"),
+                    Item("Empréstimos", "Loans", "Index", "loan"),
+                    Item("Devoluções e Atrasos", "Loans", "Overdue", "recent")),
                 Section("Atendimento",
-                    Item("Empréstimos", "Loans", "Index", "loan", "Solicitacoes"),
-                    Item("Protocolo", "Protocolo", "Index", "protocol", "Protocols"),
+                    Item("Protocolos", "Protocolo", "Index", "protocol"),
                     Item("Solicitar Protocolo", "ProtocolRequests", "New", "protocol-add"),
                     Item("Minhas Solicitações", "ProtocolRequests", "My", "list"),
-                    Item("Fila de Protocolos", "Protocols", "WorkQueue", "documents")),
+                    Item("Fila de Protocolos", "Protocols", "WorkQueue", "documents"),
+                    Item("Workflows", "Workflow", "Index", "workspace")),
                 Section("Governança",
                     Item("Assinaturas", "Signature", "Index", "signature"),
                     Item("Auditoria", "Audit", "Index", "audit"),
                     Item("Relatórios", "Reports", "PcdFull", "report"),
+                    Item("Fontes de Autoridade", "AuthoritySources", "Index", "database"),
                     Item("Continuidade e Portabilidade", "Continuity", "Overview", "health")),
                 Section("Administração",
                     Item("Administração", "Administration", "Index", "settings"),
@@ -96,8 +105,8 @@ public sealed class UserShellContextService : IUserShellContextService
                     Item("Usuários", "Users", "Index", "users"),
                     Item("Perfis e Permissões", "Security", "Roles", "roles"),
                     Item("Schema do Banco", "SchemaHealth", "Index", "database"),
-                    Item("Logs", "SystemLogs", "Index", "recent", "AuditDashboard"),
-                    Item("SystemHealth", "SystemHealth", "Index", "health"))
+                    Item("PACS", "Pacs", "Index", "activity"),
+                    Item("Saúde do Sistema", "SystemHealth", "Index", "health"))
             };
         }
 
@@ -150,17 +159,22 @@ public sealed class UserShellContextService : IUserShellContextService
         _ => "dashboard"
     };
 
-    private static AppMenuSectionVM Section(string label, params AppMenuItemVM[] items) => new(label, items);
-    private static AppMenuItemVM Item(string label, string controller, string action, string icon, params string[] alsoActive) =>
+    private static AppMenuSectionVM Section(string label, params AppMenuItemVM[] items) =>
+        new(Slug(label), label, items.Select((item, index) => item with { Section = Slug(label), Order = index }).ToArray());
+
+    private static AppMenuItemVM Item(string label, string controller, string action, string icon, IDictionary<string, string>? routeValues = null) =>
         new(
-            $"{controller}.{action}".ToLowerInvariant(),
+            $"{controller}.{action}".ToLowerInvariant(), string.Empty,
             label,
             $"Abrir {label.ToLowerInvariant()}.",
-            controller,
-            action,
             icon,
-            label.Split(' ', StringSplitOptions.RemoveEmptyEntries),
-            new[] { controller }.Concat(alsoActive).ToArray());
+            controller, action, routeValues ?? new Dictionary<string, string>(),
+            null, null, 0, true,
+            new AppMenuRouteRuleVM(controller, action, routeValues),
+            label.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+    private static string Slug(string value) => string.Concat(value.Normalize(System.Text.NormalizationForm.FormD)
+        .Where(character => System.Globalization.CharUnicodeInfo.GetUnicodeCategory(character) != System.Globalization.UnicodeCategory.NonSpacingMark))
+        .ToLowerInvariant().Select(character => char.IsLetterOrDigit(character) ? character : '-')).Trim('-');
     private static string? FirstClaim(ClaimsPrincipal user, params string[] names) => names.Select(name => user.FindFirst(name)?.Value).FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
     private static bool RequiresSector(string role) => role.Equals(AppRoles.AdministradorOphir, StringComparison.OrdinalIgnoreCase) || role.Equals(AppRoles.ArquivistaOphir, StringComparison.OrdinalIgnoreCase);
     private static string Initials(string name) => string.Concat(name.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(part => char.ToUpperInvariant(part[0])));

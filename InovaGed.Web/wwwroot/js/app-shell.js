@@ -97,6 +97,12 @@
                     if (show) visible += 1;
                 });
                 menuGroup.hidden = visible === 0;
+                if (query && visible > 0) {
+                    const panel = menuGroup.querySelector('[data-menu-section-items]');
+                    const toggle = menuGroup.querySelector('[data-menu-section-toggle]');
+                    if (panel) panel.hidden = false;
+                    if (toggle) toggle.setAttribute('aria-expanded', 'true');
+                }
                 total += visible;
             });
             const empty = scope.querySelector('[data-menu-empty]');

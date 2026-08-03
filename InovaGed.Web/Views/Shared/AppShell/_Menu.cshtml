@@ -1,10 +1,12 @@
 @model InovaGed.Web.Models.AppShell.AppShellVM
 
 @{
-    var currentController =
-        ViewContext.RouteData.Values["controller"]
-            ?.ToString()
-        ?? string.Empty;
+    var currentController = ViewContext.RouteData.Values["controller"]?.ToString();
+    var currentAction = ViewContext.RouteData.Values["action"]?.ToString();
+    var currentRouteValues = ViewContext.RouteData.Values.ToDictionary(
+        pair => pair.Key,
+        pair => pair.Value?.ToString(),
+        StringComparer.OrdinalIgnoreCase);
 }
 
 @for (
@@ -15,11 +17,9 @@
     var menuSection =
         Model.Menu[menuSectionIndex];
 
-    var menuSectionId =
-        $"sidebar-menu-section-{menuSectionIndex}";
+    var menuSectionId = $"sidebar-menu-section-{menuSection.Id}";
     var menuSectionPanelId = $"{menuSectionId}-items";
-    var sectionActive = menuSection.Items.Any(item =>
-        item.ActiveControllers?.Any(controller => controller.Equals(currentController, StringComparison.OrdinalIgnoreCase)) ?? false);
+    var sectionActive = menuSection.Items.Any(item => item.ActiveRouteRule.Matches(currentController, currentAction, currentRouteValues));
 
     <section class="sidebar-menu-section" data-menu-section
              aria-labelledby="@menuSectionId">
@@ -33,16 +33,13 @@
 
         <div id="@menuSectionPanelId" data-menu-section-items hidden="@(!sectionActive)">
         @foreach (var item in menuSection.Items) {
-            var active =
-                item.ActiveControllers?.Any(
-                    controller =>
-                        controller.Equals(
-                            currentController,
-                            StringComparison.OrdinalIgnoreCase))
-                ?? false;
+            var active = item.ActiveRouteRule.Matches(currentController, currentAction, currentRouteValues);
 
             <a asp-controller="@item.Controller" data-menu-item data-menu-label="@item.Label"
                asp-action="@item.Action"
+               asp-all-route-data="@item.RouteValues"
+               data-menu-description="@item.Description"
+               title="@($"{item.Label} — {item.Description}")"
                class="@(active ? "active" : null)"
                aria-current="@(active ? "page" : null)">
 
