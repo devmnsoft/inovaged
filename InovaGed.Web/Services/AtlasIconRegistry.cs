@@ -122,7 +122,12 @@ public sealed class AtlasIconRegistry : IAtlasIconRegistry
         new("physical-archive", "atlas-icon-physical-archive", "Arquivo físico", "physical archive", "outline", Array.Empty<string>()),
         new("location", "atlas-icon-location", "Arquivo físico", "location", "outline", Array.Empty<string>()),
         new("box", "atlas-icon-box", "Arquivo físico", "box", "outline", Array.Empty<string>()),
-        new("label", "atlas-icon-label", "Arquivo físico", "label", "outline", Array.Empty<string>())
+        new("label", "atlas-icon-label", "Arquivo físico", "label", "outline", Array.Empty<string>()),
+        new("batch", "atlas-icon-batch", "Operações", "batch", "outline", Array.Empty<string>()),
+        new("authority", "atlas-icon-authority", "Governança", "authority", "outline", Array.Empty<string>()),
+        new("timeline", "atlas-icon-timeline", "Auditoria", "timeline", "outline", Array.Empty<string>()),
+        new("continuity", "atlas-icon-continuity", "Operações", "continuity", "outline", Array.Empty<string>()),
+        new("logout", "atlas-icon-logout", "Navegação", "logout", "outline", Array.Empty<string>())
     };
 
     private static readonly IReadOnlyDictionary<string, AtlasIconDefinition> Lookup = BuildLookup();

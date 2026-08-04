@@ -1,0 +1,37 @@
+@model InovaGed.Web.Models.Ged.GedExplorerVM
+<div id="pageAlertHost" class="mb-2">
+        @if (Model.CurrentFolderIsVirtual)
+        {
+            <div class="ig-alert ig-alert--info" role="alert">
+                <app-icon class="me-1" name="info" size="16" decorative="true" />Destino selecionado: @ViewData["UploadFolderLabel"]. O sistema validará o destino ao iniciar o upload.
+            </div>
+        }
+
+        <div id="gedUploadProblemBanner" class="ig-alert ig-alert--warning alert-dismissible fade show d-none" role="alert">
+            <app-icon class="me-1" name="warning" size="16" decorative="true" />
+            <span data-upload-problem-message>Seu último upload teve falhas.</span>
+            <a class="alert-link ms-2" data-upload-problem-link href="/Ged/Uploads">Ver detalhes</a>
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Fechar"></button>
+        </div>
+
+        @if (TempData["Success"] is string okMsg && !string.IsNullOrWhiteSpace(okMsg))
+        {
+            <div class="ig-alert ig-alert--success alert-dismissible fade show" role="alert">
+                <app-icon class="me-1" name="check" size="16" decorative="true" />@okMsg
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Fechar"></button>
+            </div>
+        }
+        @if (TempData["Error"] is string errMsg && !string.IsNullOrWhiteSpace(errMsg))
+        {
+            <div class="ig-alert ig-alert--error alert-dismissible fade show" role="alert">
+                <app-icon class="me-1" name="warning" size="16" decorative="true" />@errMsg
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Fechar"></button>
+            </div>
+        }
+        @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+        {
+            <div class="ig-alert ig-alert--warning" role="alert">
+                <app-icon class="me-1" name="database" size="16" decorative="true" />@Model.ErrorMessage
+            </div>
+        }
+    </div>

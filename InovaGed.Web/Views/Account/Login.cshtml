@@ -65,7 +65,7 @@
                     <div class="mb-2">
                         <label asp-for="Password" class="form-label"></label>
                         <div class="input-group">
-                            <span class="input-group-text" aria-hidden="true"><app-icon name="roles" size="18" decorative="true" /></span>
+                            <span class="input-group-text" aria-hidden="true"><app-icon name="permissions" size="18" decorative="true" /></span>
                             <input asp-for="Password" type="password" class="form-control" id="passwordInput" autocomplete="current-password" placeholder="Digite sua senha" />
                             <button type="button" class="btn btn-outline-secondary password-toggle" aria-label="Mostrar senha" aria-pressed="false"><app-icon name="preview" size="18" decorative="true" /></button>
                         </div>
@@ -74,7 +74,7 @@
 
                     @if (!ViewData.ModelState.IsValid)
                     {
-                        <div class="alert alert-danger small mt-3" role="alert" aria-live="assertive">
+                        <div class="ig-alert ig-alert--error small mt-3" role="alert" aria-live="assertive">
                             <app-icon name="warning" size="18" class="me-1" decorative="true" />
                             @Html.ValidationSummary(excludePropertyErrors: true)
                         </div>

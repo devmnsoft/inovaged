@@ -1,9 +1,13 @@
 /* GED Explorer workbench — canonical source for panel geometry and responsive layout. */
+.ged-workspace-container {
+    container: ged-workspace / inline-size;
+    min-width: 0;
+    max-width: 100%;
+}
 .ged-page {
     --ged-folder-width: clamp(290px, 22cqi, 340px);
     --ged-preview-width: clamp(380px, 29cqi, 430px);
     --ged-workspace-gap: 12px;
-    container: ged-workspace / inline-size;
     position: relative;
     display: grid;
     grid-template-columns: var(--ged-folder-width) minmax(0, 1fr);
@@ -12,7 +16,7 @@
     align-items: stretch;
     min-height: max(560px, calc(100dvh - 150px));
     padding: var(--ged-workspace-gap);
-    overflow: clip;
+    overflow: visible;
     background: var(--ig-surface-soft, #f5f7fb);
     border: 1px solid var(--ig-border, #dbe4ef);
     border-radius: var(--ig-radius-lg, 18px);
@@ -37,11 +41,11 @@
 }
 
 .ged-folder-panel,
-.ged-main-panel { height: calc(100dvh - 180px); }
+.ged-main-panel { height: clamp(560px, calc(100dvh - 180px), 980px); }
 .ged-folder-panel { display: flex; flex-direction: column; }
 .ged-folder-tree { flex: 1 1 auto; min-height: 0; overflow: auto; }
 .ged-main-panel { overflow: auto; }
-.ged-document-side-panel { height: calc(100dvh - 180px); }
+.ged-document-side-panel { height: clamp(560px, calc(100dvh - 180px), 980px); }
 
 .ged-page.with-document-panel {
     grid-template-columns: var(--ged-folder-width) minmax(420px, 1fr) var(--ged-preview-width);
@@ -139,4 +143,15 @@ body.ged-drawer-lock { overflow: hidden; }
 .ged-panel-resizer[data-ged-panel-resizer="right"] { right: calc(var(--ged-workspace-gap) + var(--ged-preview-width) - 6px); }
 @container ged-workspace (min-width: 1180px) {
     .ged-page.with-document-panel .ged-panel-resizer { position: absolute; top: var(--ged-workspace-gap); bottom: var(--ged-workspace-gap); }
+}
+
+@media (max-width: 575.98px) {
+  .ged-workspace-container { width: 100%; overflow-x: clip; }
+  .ged-toolbar, .ged-search-row, .ged-unified-search { min-width: 0; width: 100%; }
+  .ged-quick-filter-row { overflow-x: auto; flex-wrap: nowrap; scrollbar-width: thin; }
+  .ged-filter-chip { flex: 0 0 auto; min-height: 44px; }
+  .ged-document-table thead { display: none; }
+  .ged-document-table, .ged-document-table tbody, .ged-document-table tr, .ged-document-table td { display: block; width: 100%; }
+  .ged-document-table tr { margin-bottom: .75rem; padding: .75rem; border: 1px solid var(--ig-border, #dbe4ef); border-radius: 14px; background: #fff; }
+  .modal-dialog { margin: .5rem; }
 }
