@@ -9,11 +9,11 @@
     let dragDepth = 0;
 
     const containsFiles = (event) => Array.from(event.dataTransfer?.types || []).includes('Files');
-    const hideOverlay = () => { dragDepth = 0; overlay.classList.remove('is-visible'); overlay.setAttribute('aria-hidden', 'true'); };
+    const hideOverlay = () => { dragDepth = 0; overlay.classList.remove('is-visible'); overlay.setAttribute('aria-hidden', 'true'); overlay.hidden = true; };
     document.addEventListener('dragenter', (event) => {
         if (!containsFiles(event)) return;
         event.preventDefault(); dragDepth += 1;
-        overlay.classList.add('is-visible'); overlay.setAttribute('aria-hidden', 'false');
+        overlay.hidden = false; overlay.classList.add('is-visible'); overlay.setAttribute('aria-hidden', 'false');
     });
     document.addEventListener('dragover', (event) => { if (containsFiles(event)) event.preventDefault(); });
     document.addEventListener('dragleave', (event) => { if (!containsFiles(event)) return; dragDepth -= 1; if (dragDepth <= 0) hideOverlay(); });

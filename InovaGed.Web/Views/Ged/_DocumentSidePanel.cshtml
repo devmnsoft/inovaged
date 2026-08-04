@@ -104,7 +104,7 @@
             <div class="ged-document-preview" data-preview-state="ready">
                 <div class="ged-viewer-chrome"><span><i></i><i></i><i></i></span><strong>Leitor de documentos</strong><small>visualização protegida</small></div>
                 <div class="ged-preview-loading" role="status"><span class="spinner-border spinner-border-sm"></span><strong>Preparando visualização</strong><span>Otimizando o documento para leitura…</span></div>
-                <iframe class="ged-side-preview-frame" title="Preview de @Model.Title" src="@Model.PreviewUrl" loading="lazy" data-audit-on-load="FILE_PREVIEW"></iframe>
+                <iframe class="ged-side-preview-frame" title="Preview de @Model.Title" data-src="@Model.PreviewUrl" loading="lazy" data-audit-on-load="FILE_PREVIEW"></iframe>
                 <div class="ged-preview-error" hidden role="alert"><span class="ged-preview-empty-icon"><app-icon name="warning" size="26" decorative="true" /></span><strong>Não foi possível exibir o documento</strong><p>Abra em uma nova aba ou baixe o arquivo para continuar.</p></div>
             </div>
         }

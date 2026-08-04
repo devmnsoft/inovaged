@@ -332,7 +332,7 @@
       if (!r.ok || !data?.success) throw Object.assign(new Error(data?.message || 'Erro de busca'), { data });
       state.lastResult = data; state.lastQuery = q; state.page = data.page || state.page;
       state.items = reset ? (data.items || []) : [...state.items, ...(data.items || [])];
-      rememberSearch(q); renderResults(data); renderSummary(data); updateFilterSummary();
+      rememberSearch(q); renderResults(data, reset); renderSummary(data); updateFilterSummary();
       if (state.selectedItem && !state.items.some(x => String(x.versionId) === String(state.selectedItem.versionId))) resetPreviewPanel();
     } catch (err) {
       if (err.name !== 'AbortError') renderError(err.data?.message || 'Não foi possível executar a busca agora.', err.data?.correlationId);
@@ -352,11 +352,13 @@
     return p.toString();
   }
 
-  function renderResults(data) {
+  function renderResults(data, reset = true) {
     if (!state.items.length) return renderEmpty('Nenhum documento encontrado.');
     const total = data.totalResults ?? data.total ?? state.items.length;
     els.meta.textContent = `${number(total)} documentos encontrados · Exibindo ${number(state.items.length)} de ${number(total)}${data.elapsedMs ? ` · Busca executada em ${data.elapsedMs}ms` : ''}`;
-    els.results.innerHTML = state.items.map(renderResultCard).join('');
+    const incoming = data.items || [];
+    if (reset) els.results.innerHTML = incoming.map(renderResultCard).join('');
+    else els.results.insertAdjacentHTML('beforeend', incoming.map(renderResultCard).join(''));
     if (state.selectedItem) {
       const active = els.results.querySelector(`[data-version-id="${cssEscape(String(state.selectedItem.versionId))}"]`);
       active?.classList.add('active');
