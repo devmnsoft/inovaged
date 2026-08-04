@@ -18,7 +18,7 @@
 <div class="ged-side-header" data-document-id="@Model.DocumentId" data-version-id="@Model.VersionId">
     <div class="d-flex justify-content-between gap-3 align-items-start">
         <div class="min-w-0">
-            <div class="ged-side-kicker">Painel inteligente do documento</div>
+            <div class="ged-side-kicker"><span class="ged-side-live-dot"></span> Documento em foco</div>
             <div class="ged-side-title">@Model.Title</div>
             <div class="ged-side-file">@Model.FileName</div>
             <div class="ged-document-badges mt-2">
@@ -91,17 +91,21 @@
     </section>
 
     <section class="d-none" data-ged-tab-panel="preview">
-        <div class="ged-preview-context" data-part-preview-title><span>Visualização segura</span><strong>@Model.FileName</strong></div>
-        <div class="ged-side-actions-bar">
+        <div class="ged-preview-toolbar">
+          <div class="ged-preview-context" data-part-preview-title><span>Visualização segura</span><strong>@Model.FileName</strong></div>
+          <div class="ged-side-actions-bar">
             <a class="btn btn-sm btn-outline-primary" href="@Model.PreviewUrl" target="_blank" rel="noopener"><app-icon class="me-1" name="preview" size="16" decorative="true" />Abrir em nova aba</a>
             <a class="btn btn-sm btn-outline-secondary" href="@Model.DownloadUrl"><app-icon class="me-1" name="download" size="16" decorative="true" />Baixar</a>
             <button type="button" class="btn btn-sm btn-outline-secondary js-expand-side-panel" data-expanded-label="Restaurar"><app-icon class="me-1" name="fullscreen" size="16" decorative="true" /><span>Expandir</span></button>
+          </div>
         </div>
         @if (!string.IsNullOrWhiteSpace(Model.PreviewUrl))
         {
             <div class="ged-document-preview" data-preview-state="ready">
-                <div class="ged-preview-loading" aria-hidden="true"><span class="spinner-border spinner-border-sm"></span><span>Preparando visualização…</span></div>
+                <div class="ged-viewer-chrome"><span><i></i><i></i><i></i></span><strong>Leitor de documentos</strong><small>visualização protegida</small></div>
+                <div class="ged-preview-loading" role="status"><span class="spinner-border spinner-border-sm"></span><strong>Preparando visualização</strong><span>Otimizando o documento para leitura…</span></div>
                 <iframe class="ged-side-preview-frame" title="Preview de @Model.Title" src="@Model.PreviewUrl" loading="lazy" data-audit-on-load="FILE_PREVIEW"></iframe>
+                <div class="ged-preview-error" hidden role="alert"><span class="ged-preview-empty-icon"><app-icon name="warning" size="26" decorative="true" /></span><strong>Não foi possível exibir o documento</strong><p>Abra em uma nova aba ou baixe o arquivo para continuar.</p></div>
             </div>
         }
         else
