@@ -1,0 +1,9 @@
+<div class="ged-quick-filter-row" aria-label="Filtros rápidos de documentos fracionados">
+            <button type="button" class="ged-filter-chip js-quick-partial-filter" data-filter="incomplete"><app-icon name="filter" size="16" decorative="true" /> Incompletos</button>
+            <button type="button" class="ged-filter-chip js-quick-partial-filter" data-filter="ready"><app-icon name="check" size="16" decorative="true" /> Prontos</button>
+            <button type="button" class="ged-filter-chip js-quick-partial-filter" data-filter="consolidated"><app-icon name="document-version" size="16" decorative="true" /> Consolidados</button>
+            <button type="button" class="ged-filter-chip js-quick-partial-filter" data-filter="ocr-partial"><app-icon name="ocr" size="16" decorative="true" /> OCR parcial</button>
+            <button type="button" class="ged-filter-chip d-none" id="btnClearPartialFilters"><app-icon name="close" size="16" decorative="true" /> Limpar filtros</button>
+            <span id="gedActiveQuickFilterChip" class="ged-filter-chip active d-none">Filtro: <span data-filter-label></span> <button type="button" class="btn btn-link btn-sm p-0 ms-1" id="btnClearQuickFilterChip" aria-label="Limpar filtro rápido">×</button></span>
+        </div>
+        <div id="gedFilteredEmptyState" class="alert alert-info d-none" role="status">Nenhum documento encontrado para este filtro.</div>

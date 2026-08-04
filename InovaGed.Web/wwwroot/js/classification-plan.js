@@ -100,7 +100,7 @@
             const res = await fetch(form.action, { method: "POST", body: fd });
             const j = await res.json().catch(() => null);
             if (!res.ok || !j?.ok) {
-                alert(j?.error || "Falha ao salvar.");
+                window.InovaGedFeedback?.showError(j?.error || "Não foi possível salvar o plano. Revise os dados e tente novamente.", "Plano de classificação");
                 return;
             }
             bootstrap.Modal.getInstance(document.getElementById("cpEditModal")).hide();
@@ -126,7 +126,7 @@
             });
             const j = await res.json().catch(() => null);
             if (!res.ok || !j?.ok) {
-                alert(j?.error || "Falha ao mover.");
+                window.InovaGedFeedback?.showError(j?.error || "Não foi possível mover o item. Atualize a página e tente novamente.", "Plano de classificação");
                 location.reload();
             }
         }

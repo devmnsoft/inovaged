@@ -44,8 +44,10 @@
     var pendingOcrCount = runningOcrCount;
     var breadcrumbText = currentFolderNode?.Path ?? (!string.IsNullOrWhiteSpace(Model.CurrentFolderName) ? Model.CurrentFolderName : "Raiz");
     var canMoveFolders = RolePolicyHelper.IsFullAdmin(User);
+    ViewData["UploadFolderLabel"] = uploadFolderLabel;
 }
 
+<div class="ged-workspace-container">
 <div class="ged-page" data-requested-folder-id="@Model.RequestedFolderId" data-visual-folder-id="@Model.CurrentFolderId" data-listing-folder-id="@currentListingFolderId" data-upload-folder-id="@currentUploadFolderId">
     <div id="gedGlobalDropOverlay" class="ged-global-drop-overlay" aria-hidden="true" role="dialog" aria-labelledby="gedDropTitle">
         <div class="ged-global-drop-card">
@@ -56,42 +58,7 @@
             <span>Soltar para adicionar · Esc para cancelar</span>
         </div>
     </div>
-    <div id="pageAlertHost" class="mb-2">
-        @if (Model.CurrentFolderIsVirtual)
-        {
-            <div class="alert alert-info" role="alert">
-                <app-icon class="me-1" name="info" size="16" decorative="true" />Destino selecionado: @uploadFolderLabel. O sistema validará o destino ao iniciar o upload.
-            </div>
-        }
-
-        <div id="gedUploadProblemBanner" class="alert alert-warning alert-dismissible fade show d-none" role="alert">
-            <app-icon class="me-1" name="warning" size="16" decorative="true" />
-            <span data-upload-problem-message>Seu último upload teve falhas.</span>
-            <a class="alert-link ms-2" data-upload-problem-link href="/Ged/Uploads">Ver detalhes</a>
-            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Fechar"></button>
-        </div>
-
-        @if (TempData["Success"] is string okMsg && !string.IsNullOrWhiteSpace(okMsg))
-        {
-            <div class="alert alert-success alert-dismissible fade show" role="alert">
-                <app-icon class="me-1" name="check" size="16" decorative="true" />@okMsg
-                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Fechar"></button>
-            </div>
-        }
-        @if (TempData["Error"] is string errMsg && !string.IsNullOrWhiteSpace(errMsg))
-        {
-            <div class="alert alert-danger alert-dismissible fade show" role="alert">
-                <app-icon class="me-1" name="warning" size="16" decorative="true" />@errMsg
-                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Fechar"></button>
-            </div>
-        }
-        @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
-        {
-            <div class="alert alert-warning" role="alert">
-                <app-icon class="me-1" name="database" size="16" decorative="true" />@Model.ErrorMessage
-            </div>
-        }
-    </div>
+    @await Html.PartialAsync("_GedAlerts", Model)
 
     <button type="button" class="ged-drawer-backdrop" data-ged-close-folders aria-label="Fechar painel de pastas"></button>
 
@@ -445,7 +412,7 @@
                 <div class="ged-folder-header-icon"><app-icon name="folder-open" size="16" decorative="true" /></div>
                 <div class="min-w-0">
                     <h1 class="h5 mb-1 text-truncate" data-current-folder-title>@(!string.IsNullOrWhiteSpace(Model.CurrentFolderName) ? Model.CurrentFolderName : "Raiz")</h1>
-                    <div class="ged-breadcrumb text-truncate" data-current-folder-breadcrumb><app-icon class="me-1" name="folder-move" size="16" decorative="true" />@breadcrumbText</div>
+                    <div class="ged-breadcrumb text-truncate" data-current-folder-breadcrumb><app-icon class="me-1" name="location" size="16" decorative="true" />@breadcrumbText</div>
                     <div class="ged-metrics-strip">
                         <span class="ged-metric-pill"><strong id="documentsTotalKpi">@Model.Documents.Count</strong> Documentos</span>
                         <span class="ged-metric-pill"><strong id="selectedDocumentsKpi">0</strong> Selecionados</span>
@@ -469,7 +436,7 @@
                     <button class="btn btn-light btn-sm border" type="button" data-bs-toggle="dropdown" aria-label="Mais ações"><app-icon name="more" size="16" decorative="true" /></button>
                     <ul class="dropdown-menu dropdown-menu-end">
                         <li><a class="dropdown-item" asp-controller="Ged" asp-action="Kpi"><app-icon class="me-2" name="report" size="16" decorative="true" />KPI GED</a></li>
-                        <li><button class="dropdown-item" type="button" data-bs-toggle="modal" data-bs-target="#modalFilaOcr"><app-icon class="me-2" name="list" size="16" decorative="true" />Ver fila OCR</button></li>
+                        <li><button class="dropdown-item" type="button" data-bs-toggle="modal" data-bs-target="#modalFilaOcr"><app-icon class="me-2" name="ocr" size="16" decorative="true" />Ver fila OCR</button></li>
                     </ul>
                 </div>
             </div>
@@ -477,15 +444,7 @@
 
         @await Html.PartialAsync("_SmartSearchPanel", Model)
 
-        <div class="ged-quick-filter-row" aria-label="Filtros rápidos de documentos fracionados">
-            <button type="button" class="ged-filter-chip js-quick-partial-filter" data-filter="incomplete"><app-icon name="filter" size="16" decorative="true" /> Incompletos</button>
-            <button type="button" class="ged-filter-chip js-quick-partial-filter" data-filter="ready"><app-icon name="check" size="16" decorative="true" /> Prontos</button>
-            <button type="button" class="ged-filter-chip js-quick-partial-filter" data-filter="consolidated"><app-icon name="document-version" size="16" decorative="true" /> Consolidados</button>
-            <button type="button" class="ged-filter-chip js-quick-partial-filter" data-filter="ocr-partial"><app-icon name="ocr" size="16" decorative="true" /> OCR parcial</button>
-            <button type="button" class="ged-filter-chip d-none" id="btnClearPartialFilters"><app-icon name="close" size="16" decorative="true" /> Limpar filtros</button>
-            <span id="gedActiveQuickFilterChip" class="ged-filter-chip active d-none">Filtro: <span data-filter-label></span> <button type="button" class="btn btn-link btn-sm p-0 ms-1" id="btnClearQuickFilterChip" aria-label="Limpar filtro rápido">×</button></span>
-        </div>
-        <div id="gedFilteredEmptyState" class="alert alert-info d-none" role="status">Nenhum documento encontrado para este filtro.</div>
+        @await Html.PartialAsync("_GedQuickFilters")
 
         <div class="ged-toolbar">
             <div class="ged-search-row">
@@ -518,7 +477,7 @@
                 <button class="btn btn-sm btn-outline-dark dropdown-toggle" type="button" data-bs-toggle="dropdown"><app-icon name="more" size="16" decorative="true" /> Mais ações</button>
                 <ul class="dropdown-menu dropdown-menu-end">
                     <li><a class="dropdown-item" asp-controller="Ged" asp-action="Kpi"><app-icon class="me-1" name="report" size="16" decorative="true" />KPI GED</a></li>
-                    <li><button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#modalFilaOcr"><app-icon class="me-1" name="list" size="16" decorative="true" />Fila OCR</button></li>
+                    <li><button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#modalFilaOcr"><app-icon class="me-1" name="ocr" size="16" decorative="true" />Fila OCR</button></li>
                     <li><a class="dropdown-item" href="/SmartSearch"><app-icon class="me-1" name="smart-search" size="16" decorative="true" />Busca inteligente</a></li>
                     <li><a class="dropdown-item" href="/Ged/Uploads"><app-icon class="me-1" name="history" size="16" decorative="true" />Histórico de uploads</a></li>
                     <li><a class="dropdown-item" href="/Operations"><app-icon class="me-1" name="settings" size="16" decorative="true" />Operações</a></li>
@@ -535,6 +494,7 @@
     <aside id="gedDocumentSidePanel" class="ged-document-side-panel d-none" aria-hidden="true" aria-live="polite" aria-label="Detalhes do documento">
         <div class="ged-preview-empty"><img src="~/images/illustrations/document-preview-empty.svg" alt="" /><h2>Preview do documento</h2><p>Selecione um documento para visualizar, consultar detalhes, metadados, histórico e versões.</p></div>
     </aside>
+</div>
 </div>
 @Html.AntiForgeryToken()
 <div class="modal fade" id="moveDocumentsModal" tabindex="-1" aria-hidden="true">
@@ -1014,13 +974,9 @@
   </div>
 </div>
 
-<link rel="stylesheet" href="~/css/ged-explorer.css" asp-append-version="true" />
-<link rel="stylesheet" href="~/css/ged-smart-search.css" asp-append-version="true" />
-<link rel="stylesheet" href="~/css/pages/ged-workspace.css" asp-append-version="true" />
-<link rel="stylesheet" href="~/css/components/upload-center.css" asp-append-version="true" />
-<link rel="stylesheet" href="~/css/components/dropzone.css" asp-append-version="true" />
-<link rel="stylesheet" href="~/css/components/document-preview.css" asp-append-version="true" />
-<link rel="stylesheet" href="~/css/components/feedback.css" asp-append-version="true" />
+@section Styles {
+    @await Html.PartialAsync("_GedPageStyles")
+}
 
 
 <div class="modal fade" id="gedBulkReasonModal" tabindex="-1" aria-hidden="true">
@@ -1801,7 +1757,7 @@ window.GedSmartSearch?.init({
     scopeProvider: () => document.querySelector('[name="searchScope"]:checked')?.value || 'folder'
 });
 </script>
-
+    @await Html.PartialAsync("_GedPageScripts")
 }
 
 <div class="modal fade" id="modalShareDocument" tabindex="-1" aria-hidden="true">
@@ -1830,17 +1786,3 @@ window.GedSmartSearch?.init({
     </form>
   </div></div>
 </div>
-<script>
-(() => {
-const modalEl=document.getElementById('modalShareDocument'); const form=document.getElementById('shareDocumentForm'); const msg=document.getElementById('shareMessage'); const urlGroup=document.getElementById('shareUrlGroup'); const urlInput=document.getElementById('sharePublicUrl');
-function showMessage(text,type='warning',correlationId){ msg.className=`alert alert-${type} mt-3`; msg.textContent=correlationId?`${text} (Código: ${correlationId})`:text; }
-function resetShare(){ msg.className='alert mt-3 d-none'; msg.textContent=''; urlGroup.classList.add('d-none'); urlInput.value=''; form.reset(); document.getElementById('shareAllowPreview').checked=true; document.getElementById('shareAllowSearch').checked=true; syncType(); }
-function syncType(){ const permanent=document.getElementById('shareLinkType').value==='permanent'; const expires=document.getElementById('shareExpiresAt'); expires.disabled=permanent; expires.required=!permanent; if(permanent) expires.value=''; }
-document.addEventListener('click', e => { const btn=e.target.closest('.js-share-document'); if(!btn) return; resetShare(); document.getElementById('shareDocumentId').value=btn.dataset.documentId||''; document.getElementById('shareVersionId').value=btn.dataset.versionId||''; document.getElementById('shareDocumentTitle').textContent=btn.dataset.title||'Documento'; document.getElementById('shareDocumentFileName').textContent=btn.dataset.fileName||''; bootstrap.Modal.getOrCreateInstance(modalEl).show(); });
-document.getElementById('shareLinkType')?.addEventListener('change', syncType);
-form?.addEventListener('submit', async e => { e.preventDefault(); const documentId=document.getElementById('shareDocumentId').value; const isPermanent=document.getElementById('shareLinkType').value==='permanent'; const expiresLocal=document.getElementById('shareExpiresAt').value; if(!documentId){ showMessage('Documento inválido para compartilhamento.'); return; } if(!isPermanent && !expiresLocal){ showMessage('Informe a expiração do link temporário.'); return; } const token=form.querySelector('input[name="__RequestVerificationToken"]')?.value||''; const payload={ documentId, versionId: document.getElementById('shareVersionId').value||null, isPermanent, expiresAtUtc: expiresLocal?new Date(expiresLocal).toISOString():null, maxAccessCount: document.getElementById('shareMaxAccessCount').value?Number(document.getElementById('shareMaxAccessCount').value):null, allowPreview: document.getElementById('shareAllowPreview').checked, allowDownload: document.getElementById('shareAllowDownload').checked, allowSmartSearch: document.getElementById('shareAllowSearch').checked, recipientName: document.getElementById('shareRecipientName').value, recipientContact: document.getElementById('shareRecipientContact').value, description: document.getElementById('shareDescription').value, title: document.getElementById('shareDocumentTitle').textContent };
- const btn=document.getElementById('shareGenerateButton'); btn.disabled=true; showMessage('Gerando link seguro...','info'); try { const r=await fetch(form.action,{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json','RequestVerificationToken':token,'X-Requested-With':'XMLHttpRequest'},body:JSON.stringify(payload)}); const j=await r.json().catch(()=>({success:false,message:'Resposta inválida do servidor.'})); if(!r.ok||!j.success){ showMessage(j.message||'Falha ao gerar link seguro.','warning',j.correlationId); return; } urlInput.value=j.publicUrl; urlGroup.classList.remove('d-none'); showMessage('Link seguro gerado com sucesso.','success'); } catch(err){ showMessage('Falha de comunicação ao gerar o link seguro.','danger'); } finally { btn.disabled=false; } });
-document.getElementById('copyShareLink')?.addEventListener('click', async()=>{ if(!urlInput.value) return; await navigator.clipboard.writeText(urlInput.value); showMessage('Link copiado para a área de transferência.','success'); });
-syncType();
-})();
-</script>

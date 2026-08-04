@@ -9,7 +9,7 @@
         document.querySelectorAll('.ged-selection-bar').forEach(bar => { bar.dataset.hasSelection = count > 0 ? 'true' : 'false'; });
         document.querySelectorAll('[data-bulk-actions],.ged-selection-actions').forEach(el => { el.classList.toggle('d-none', count === 0); });
     }
-    function toast(msg, type) { window.showAppToast ? window.showAppToast(msg, type || 'info', 'GED') : alert(msg); }
+    function toast(msg, type) { window.InovaGedFeedback?.show(msg, type || 'info', 'GED'); }
     async function post(url, payload) {
         const headers = { 'Content-Type': 'application/json' };
         const t = token(); if (t) headers.RequestVerificationToken = t;
@@ -34,8 +34,9 @@
         const ids = selectedIds(); if (!ids.length) return toast('Selecione documentos.', 'warning');
         const el = document.getElementById('gedBulkReasonModal');
         if (!el || !window.bootstrap) {
-            const reason = prompt(kind === 'delete' ? 'Motivo da exclusão' : 'Motivo');
-            if (reason !== null) runSimple(kind, kind === 'delete' ? '/Ged/Bulk/Delete' : '/Ged/Bulk/MarkIncomplete', reason);
+            window.InovaGedFeedback?.requestReason({ title: kind === 'delete' ? 'Motivo da exclusão' : 'Informe o motivo' }).then(reason => {
+                if (reason) runSimple(kind, kind === 'delete' ? '/Ged/Bulk/Delete' : '/Ged/Bulk/MarkIncomplete', reason);
+            });
             return;
         }
         const isDelete = kind === 'delete';
@@ -61,14 +62,14 @@
         banner.querySelector('[data-upload-problem-link]').href = j?.batchId ? `/Ged/Uploads/${j.batchId}` : '/Ged/Uploads';
     }
     document.addEventListener('change', e => { if (e.target.matches('.js-doc-select,#selectAllDocuments,#selectAllDocumentsTable')) setTimeout(setButtons, 0); });
-    document.addEventListener('click', e => {
+    document.addEventListener('click', async e => {
         if (e.target.closest('.js-bulk-delete')) { e.preventDefault(); openReasonModal('delete'); }
         if (e.target.closest('.js-bulk-mark-incomplete')) { e.preventDefault(); openReasonModal('incomplete'); }
-        if (e.target.closest('.js-bulk-mark-complete')) { e.preventDefault(); if (confirm('Remover a marcação de incompleto dos documentos selecionados?')) runSimple('complete', '/Ged/Bulk/MarkComplete'); }
+        if (e.target.closest('.js-bulk-mark-complete')) { e.preventDefault(); if (await window.InovaGedFeedback.confirm({ title: 'Concluir documentos', message: 'Remover a marcação de incompleto dos documentos selecionados?', confirmText: 'Concluir' })) runSimple('complete', '/Ged/Bulk/MarkComplete'); }
         const incCreated = e.target.closest('.js-batch-created-incomplete');
-        if (incCreated) { const ids = (incCreated.dataset.documentIds || '').split(',').filter(Boolean); const reason = prompt('Motivo para marcar documentos criados como incompletos'); if (reason) post('/Ged/Bulk/MarkIncomplete', { documentIds: ids, reason }).then(j => toast(j.message, j.success ? 'success' : 'warning')); }
+        if (incCreated) { const ids = (incCreated.dataset.documentIds || '').split(',').filter(Boolean); const reason = await window.InovaGedFeedback.requestReason({ title: 'Marcar como incompletos' }); if (reason) post('/Ged/Bulk/MarkIncomplete', { documentIds: ids, reason }).then(j => toast(j.message, j.success ? 'success' : 'warning')); }
         const delCreated = e.target.closest('.js-batch-created-delete');
-        if (delCreated) { const ids = (delCreated.dataset.documentIds || '').split(',').filter(Boolean); const reason = prompt('Motivo da exclusão dos documentos criados neste lote'); if (reason) post('/Ged/Bulk/Delete', { documentIds: ids, reason }).then(j => toast(j.message, j.success ? 'success' : 'warning')); }
+        if (delCreated) { const ids = (delCreated.dataset.documentIds || '').split(',').filter(Boolean); const reason = await window.InovaGedFeedback.requestReason({ title: 'Excluir documentos do lote' }); if (reason) post('/Ged/Bulk/Delete', { documentIds: ids, reason }).then(j => toast(j.message, j.success ? 'success' : 'warning')); }
     });
     document.addEventListener('DOMContentLoaded', () => { setButtons(); lastProblem(); });
     window.GedBulkActions = { selectedIds, setButtons };
