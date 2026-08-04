@@ -280,3 +280,14 @@
 @keyframes gedPanelContentIn { from { opacity:0; transform:translateY(4px); } }
 @media (max-width:575.98px) { .ged-side-header{padding:15px}.ged-side-body{padding:12px}.ged-side-tabs{padding-inline:8px}.ged-metadata-list{grid-template-columns:1fr}.ged-metadata-list dt{padding-bottom:2px;border-bottom:0}.ged-metadata-list dd{padding-top:3px}.ged-document-side-panel.is-expanded{inset:0!important;border-radius:0!important}.ged-side-actions-bar .btn{flex:1 1 auto}.ged-document-preview,.ged-side-preview-frame{min-height:calc(100dvh - 250px);height:calc(100dvh - 250px)} }
 @media (prefers-reduced-motion:reduce) { .ged-tree-toggle,.ged-side-body>section,.ged-classification-tag,.ged-classify-button{animation:none!important;transition:none!important} }
+
+/* Unambiguous folder states: neutral closed, blue open, solid selected. */
+.ged-tree-folder{position:relative;color:#64748b;background:#f1f5f9;border:1px solid #e2e8f0}
+.ged-tree-row.is-leaf .ged-tree-folder{width:26px;height:26px;margin-inline:1px;border-radius:7px}
+.ged-tree-node.open>.ged-tree-row .ged-tree-folder{color:#1d4ed8;border-color:#bfdbfe;background:#eff6ff}
+.ged-tree-row.active .ged-tree-folder{color:#fff;border-color:#2563eb;background:#2563eb;box-shadow:0 5px 12px rgba(37,99,235,.22)}
+.ged-tree-row.active{background:linear-gradient(90deg,#eaf3ff,#f7fbff 82%)}
+.ged-tree-row .ged-folder-actions{flex:0 0 30px;margin-left:auto}
+.ged-tree-row:focus-within{outline:2px solid rgba(37,99,235,.25);outline-offset:1px}
+.ged-global-drop-overlay[hidden]{display:none!important}
+.ged-global-drop-card img{width:min(104px,24vw)!important;max-height:88px}.ged-global-drop-card{max-width:440px!important;padding:26px!important;border-radius:20px!important}

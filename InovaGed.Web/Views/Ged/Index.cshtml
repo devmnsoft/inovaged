@@ -49,7 +49,7 @@
 
 <div class="ged-workspace-container">
 <div class="ged-page" data-requested-folder-id="@Model.RequestedFolderId" data-visual-folder-id="@Model.CurrentFolderId" data-listing-folder-id="@currentListingFolderId" data-upload-folder-id="@currentUploadFolderId">
-    <div id="gedGlobalDropOverlay" class="ged-global-drop-overlay" aria-hidden="true" role="dialog" aria-labelledby="gedDropTitle">
+    <div id="gedGlobalDropOverlay" class="ged-global-drop-overlay" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="gedDropTitle" hidden>
         <div class="ged-global-drop-card">
             <img src="~/images/illustrations/upload-dropzone.svg" alt="" />
             <h2 id="gedDropTitle">Solte os arquivos para enviar</h2>
@@ -91,6 +91,7 @@
                     g => g.OrderBy(x => x.Name).ToList()
                     );
 
+                    var foldersById = Model.Folders.ToDictionary(x => x.Id);
                     var rootFolders = Model.Folders
                     .Where(x => x.ParentId == null)
                     .OrderBy(x => x.Name)
@@ -99,13 +100,12 @@
                     string BuildFolderPath(Guid folderId)
                     {
                         var chain = new List<string>();
-                        var current = Model.Folders.FirstOrDefault(x => x.Id == folderId);
+                        foldersById.TryGetValue(folderId, out var current);
                         while (current is not null)
                         {
                             chain.Add(current.Name);
-                            current = current.ParentId.HasValue
-                                ? Model.Folders.FirstOrDefault(x => x.Id == current.ParentId.Value)
-                                : null;
+                            current = current.ParentId.HasValue && foldersById.TryGetValue(current.ParentId.Value, out var parent)
+                                ? parent : null;
                         }
 
                         chain.Reverse();
@@ -141,7 +141,7 @@
                                     data-is-virtual="@(n.IsVirtual.ToString().ToLowerInvariant())"
                                     data-folder-virtual="@(n.IsVirtual ? "true" : "false")">
 
-                                    <div class="ged-tree-row @(isActive ? "active" : "")">
+                                    <div class="ged-tree-row @(isActive ? "active" : "") @(hasChildren ? "has-children" : "is-leaf")" aria-current="@(isActive ? "page" : null)">
                                         @if (hasChildren)
                                         {
                                             <button type="button" class="ged-tree-toggle" aria-label="Expandir pasta" aria-expanded="false">
@@ -172,11 +172,11 @@
 
                                         <!-- ✅ AÇÕES DA PASTA -->
                                         <div class="dropdown">
-                                            <button class="btn btn-sm btn-link text-muted p-0"
+                                            <button class="btn btn-sm btn-link text-muted p-0 ged-folder-actions"
                                                     type="button"
                                                     data-bs-toggle="dropdown"
                                                     aria-expanded="false"
-                                                    title="Ações">
+                                                    title="Ações de @n.Name" aria-label="Ações da pasta @n.Name">
                                                 <app-icon name="more" size="16" decorative="true" />
                                             </button>
                                             <ul class="dropdown-menu dropdown-menu-end">
@@ -298,7 +298,7 @@
                                     data-is-virtual="@(n.IsVirtual.ToString().ToLowerInvariant())"
                                     data-folder-virtual="@(n.IsVirtual ? "true" : "false")">
 
-                                    <div class="ged-tree-row @(isActive ? "active" : "")">
+                                    <div class="ged-tree-row @(isActive ? "active" : "") @(hasChildren ? "has-children" : "is-leaf")" aria-current="@(isActive ? "page" : null)">
                                         @if (hasChildren)
                                         {
                                             <button type="button" class="ged-tree-toggle" aria-label="Expandir pasta" aria-expanded="false">
@@ -328,11 +328,11 @@
 
                                         <!-- ✅ AÇÕES DA PASTA -->
                                         <div class="dropdown">
-                                            <button class="btn btn-sm btn-link text-muted p-0"
+                                            <button class="btn btn-sm btn-link text-muted p-0 ged-folder-actions"
                                                     type="button"
                                                     data-bs-toggle="dropdown"
                                                     aria-expanded="false"
-                                                    title="Ações">
+                                                    title="Ações de @n.Name" aria-label="Ações da pasta @n.Name">
                                                 <app-icon name="more" size="16" decorative="true" />
                                             </button>
                                             <ul class="dropdown-menu dropdown-menu-end">

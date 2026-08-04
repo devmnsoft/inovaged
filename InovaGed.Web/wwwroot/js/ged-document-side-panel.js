@@ -123,6 +123,13 @@
         panel.querySelectorAll('[data-ged-side-tab]').forEach(tab => tab.classList.toggle('active', tab.dataset.gedSideTab === tabName));
         panel.querySelectorAll('[data-ged-tab-panel]').forEach(body => body.classList.toggle('d-none', body.dataset.gedTabPanel !== tabName));
         const active = panel.querySelector(`[data-ged-tab-panel="${tabName}"]`);
+        if (tabName === 'preview') {
+            const frame = active?.querySelector('.ged-side-preview-frame[data-src]');
+            if (frame && !frame.src) {
+                frame.src = frame.dataset.src;
+                frame.removeAttribute('data-src');
+            }
+        }
         if (tabName === 'ocr' && active?.dataset.ocrLoaded !== 'true') {
             loadGedDocumentOcr(active.dataset.versionId || panel.querySelector('[data-version-id]')?.dataset.versionId);
         }
