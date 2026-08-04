@@ -38,7 +38,7 @@
                 }
             </div>
         </div>
-        <button type="button" class="btn btn-sm btn-light border js-close-document-panel js-close-side-panel" title="Fechar painel" aria-label="Fechar painel"><app-icon name="close" size="16" decorative="true" /></button>
+        <button type="button" class="ged-side-close js-close-document-panel js-close-side-panel" title="Fechar painel" aria-label="Fechar painel"><app-icon name="close" size="18" decorative="true" /></button>
     </div>
 </div>
 
@@ -91,7 +91,7 @@
     </section>
 
     <section class="d-none" data-ged-tab-panel="preview">
-        <div class="small fw-semibold mb-2" data-part-preview-title>Visualização do documento atual — @Model.FileName</div>
+        <div class="ged-preview-context" data-part-preview-title><span>Visualização segura</span><strong>@Model.FileName</strong></div>
         <div class="ged-side-actions-bar">
             <a class="btn btn-sm btn-outline-primary" href="@Model.PreviewUrl" target="_blank" rel="noopener"><app-icon class="me-1" name="preview" size="16" decorative="true" />Abrir em nova aba</a>
             <a class="btn btn-sm btn-outline-secondary" href="@Model.DownloadUrl"><app-icon class="me-1" name="download" size="16" decorative="true" />Baixar</a>
@@ -99,13 +99,19 @@
         </div>
         @if (!string.IsNullOrWhiteSpace(Model.PreviewUrl))
         {
-            <div class="ged-document-preview">
+            <div class="ged-document-preview" data-preview-state="ready">
+                <div class="ged-preview-loading" aria-hidden="true"><span class="spinner-border spinner-border-sm"></span><span>Preparando visualização…</span></div>
                 <iframe class="ged-side-preview-frame" title="Preview de @Model.Title" src="@Model.PreviewUrl" loading="lazy" data-audit-on-load="FILE_PREVIEW"></iframe>
             </div>
         }
         else
         {
-            <div class="alert alert-info">Preview indisponível para este documento.</div>
+            <div class="ged-preview-empty-state" role="status">
+                <span class="ged-preview-empty-icon"><app-icon name="document" size="28" decorative="true" /></span>
+                <strong>Visualização não disponível</strong>
+                <p>Este formato não pode ser exibido aqui. Baixe o arquivo para abri-lo no aplicativo adequado.</p>
+                <a class="btn btn-sm btn-outline-primary" href="@Model.DownloadUrl"><app-icon name="download" size="16" decorative="true" /> Baixar documento</a>
+            </div>
         }
     </section>
 
@@ -247,7 +253,7 @@
             }
             @if (Model.CanClassify)
             {
-                <a class="btn btn-outline-primary js-classify-document" href="@Model.DetailsUrl?openClassify=true" data-document-id="@Model.DocumentId"><app-icon class="me-1" name="classification" size="16" decorative="true" />Classificar</a>
+                <a class="btn ged-classify-button js-classify-document" href="@Model.DetailsUrl?openClassify=true" data-document-id="@Model.DocumentId"><app-icon name="classification" size="17" decorative="true" />Classificar</a>
             }
             @if (Model.CanRunOcr)
             {
