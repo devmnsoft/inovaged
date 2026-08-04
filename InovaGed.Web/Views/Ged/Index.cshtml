@@ -74,10 +74,11 @@
                 <a class="btn btn-sm btn-outline-primary" asp-action="Folders" asp-controller="Ged" title="Gerenciar pastas"><app-icon name="settings" size="16" decorative="true" /></a>
             </div>
         </div>
-        <div class="ged-folder-search p-2 border-bottom">
-            <div class="input-group input-group-sm">
-                <span class="input-group-text bg-white"><app-icon name="search" size="16" decorative="true" /></span>
-                <input id="gedFolderSearch" class="form-control" placeholder="Pesquisar pasta" autocomplete="off" />
+        <div class="ged-folder-search">
+            <div class="ged-folder-search-field">
+                <span class="ged-folder-search-icon"><app-icon name="search" size="16" decorative="true" /></span>
+                <input id="gedFolderSearch" class="form-control" placeholder="Buscar no acervo…" autocomplete="off" aria-label="Buscar pasta" />
+                <button type="button" class="ged-folder-search-clear" data-clear-folder-search aria-label="Limpar busca" title="Limpar busca"><app-icon name="close" size="14" decorative="true" /></button>
             </div>
         </div>
         <div class="ged-folder-tree ged-folder-scroll">
@@ -1025,12 +1026,24 @@
             if (e.target.closest(".js-folder-node") && treeScroll) sessionStorage.setItem(SCROLL_KEY, String(treeScroll.scrollTop));
         }, true);
         document.getElementById("btnReloadFolderTree")?.addEventListener("click", () => window.location.reload());
-        document.getElementById("gedFolderSearch")?.addEventListener("input", (e) => {
-            const q = (e.target.value || "").trim().toLowerCase();
+        const folderSearch = document.getElementById("gedFolderSearch");
+        const folderSearchClear = document.querySelector("[data-clear-folder-search]");
+        const filterFolderTree = (value) => {
+            const q = (value || "").trim().toLowerCase();
+            folderSearchClear?.classList.toggle("is-visible", q.length > 0);
+            document.querySelector(".ged-folder-search")?.classList.toggle("has-value", q.length > 0);
             document.querySelectorAll(".ged-tree-node").forEach(li => {
                 const name = (li.dataset.folderName || li.textContent || "").toLowerCase();
                 li.classList.toggle("d-none", q.length > 0 && !name.includes(q));
             });
+        };
+        folderSearch?.addEventListener("input", (e) => {
+            filterFolderTree(e.target.value);
+        });
+        folderSearchClear?.addEventListener("click", () => {
+            folderSearch.value = "";
+            filterFolderTree("");
+            folderSearch.focus();
         });
         document.addEventListener("click", async (e) => {
             const btn = e.target.closest(".js-copy-folder-path");

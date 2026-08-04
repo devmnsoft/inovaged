@@ -10,6 +10,8 @@
     const toggle = form.querySelector('.password-toggle');
     let submitting = false;
 
+    requestAnimationFrame(() => document.querySelector('.login-page')?.classList.add('is-ready'));
+
     toggle?.addEventListener('click', () => {
         const willShow = password?.type === 'password';
         if (!password) return;
@@ -38,6 +40,7 @@
         form.setAttribute('aria-busy', 'true');
         submitButton?.classList.add('is-loading');
         submitButton?.setAttribute('disabled', 'disabled');
+        document.querySelector('.login-card')?.classList.add('is-authenticating');
     });
 
     form.querySelector('input[autocomplete="username"]')?.focus({ preventScroll: true });
