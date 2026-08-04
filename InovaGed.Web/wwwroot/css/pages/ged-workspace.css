@@ -139,6 +139,14 @@
     .ged-folder-panel { transition: none; }
 }
 body.ged-drawer-lock { overflow: hidden; }
+.ged-main-panel{display:flex;flex-direction:column;background:linear-gradient(180deg,#fff 0,#fff 78%,#f8fafc 100%)}
+.ged-document-workspace{flex:1 1 auto;min-height:0}
+.ged-upload-dock{display:grid;grid-template-columns:auto minmax(220px,1fr) auto auto;align-items:center;gap:14px;flex:0 0 auto;margin:12px;padding:14px 15px;border:1px solid #d9e5f3;border-radius:16px;background:linear-gradient(115deg,#f8fbff,#fff 58%,#f2fbf7);box-shadow:0 8px 24px rgba(15,23,42,.06)}
+.ged-upload-dock-icon{width:46px;height:46px;display:grid;place-items:center;border:1px solid #bfdbfe;border-radius:14px;color:#1d4ed8;background:#eaf3ff;box-shadow:0 7px 16px rgba(37,99,235,.1)}
+.ged-upload-dock-copy{display:flex;min-width:0;flex-direction:column;gap:2px}.ged-upload-dock-eyebrow{color:#3970ad;font-size:.63rem;font-weight:800;letter-spacing:.09em;text-transform:uppercase}.ged-upload-dock-copy strong{overflow:hidden;color:#172033;font-size:.85rem;text-overflow:ellipsis;white-space:nowrap}.ged-upload-dock-copy small{color:#64748b;font-size:.7rem;line-height:1.4}
+.ged-upload-dock-meta{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}.ged-upload-dock-meta span{padding:5px 8px;border:1px solid #e2e8f0;border-radius:999px;color:#64748b;background:#fff;font-size:.62rem;white-space:nowrap}.ged-upload-dock .btn{display:inline-flex;align-items:center;gap:6px;min-height:42px;border-radius:12px;white-space:nowrap;box-shadow:0 7px 16px rgba(37,99,235,.17)}
+@container ged-workspace (max-width:1050px){.ged-upload-dock{grid-template-columns:auto minmax(0,1fr) auto}.ged-upload-dock-meta{display:none}}
+@container ged-workspace (max-width:620px){.ged-upload-dock{grid-template-columns:auto 1fr;margin:8px;padding:12px}.ged-upload-dock .btn{grid-column:1/-1;justify-content:center}.ged-upload-dock-copy small{display:none}}
 .ged-panel-resizer[data-ged-panel-resizer="left"] { left: calc(var(--ged-workspace-gap) + var(--ged-folder-width) - 6px); }
 .ged-panel-resizer[data-ged-panel-resizer="right"] { right: calc(var(--ged-workspace-gap) + var(--ged-preview-width) - 6px); }
 @container ged-workspace (min-width: 1180px) {

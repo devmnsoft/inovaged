@@ -1,4 +1,33 @@
-.ged-document-side-panel { min-width:0; overflow:hidden; background:#fff; animation:previewIn var(--ig-motion-normal) var(--ig-ease-standard); }
-.ged-preview-empty { min-height:480px; display:grid; place-content:center; padding:2rem; text-align:center; color:var(--ig-text-secondary); }
-.ged-preview-empty img { width:190px; margin:0 auto 1rem; }.ged-preview-empty h2{font-size:1.1rem;color:var(--ig-text)}.ged-preview-empty p{max-width:290px;font-size:.84rem}
-@keyframes previewIn{from{opacity:0;transform:translateX(12px)}}@media(prefers-reduced-motion:reduce){.ged-document-side-panel{animation:none}}
+/* Premium document reader. Loaded after the explorer stylesheet so this is the
+   single refinement layer for preview states and focus mode. */
+.ged-document-side-panel{isolation:isolate;background:#f4f7fb;border-color:#d8e2ef!important}
+.ged-side-header{padding:22px 22px 17px;background:linear-gradient(145deg,#fff 35%,#f2f7ff);box-shadow:0 1px 0 rgba(255,255,255,.8)}
+.ged-side-kicker{display:flex;align-items:center;gap:7px;color:#3867a8;letter-spacing:.12em}
+.ged-side-live-dot{width:7px;height:7px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 4px rgba(34,197,94,.12)}
+.ged-side-title{max-width:36rem;margin-top:10px;font-size:1.18rem;line-height:1.3}
+.ged-side-file{margin-top:5px;font-size:.76rem}.ged-document-badges{display:flex;flex-wrap:wrap;gap:6px}.ged-document-badges .badge{padding:5px 8px;border-radius:999px;font-size:.66rem}
+.ged-side-close{width:40px;height:40px;border-radius:13px;box-shadow:0 5px 14px rgba(15,23,42,.06)}
+.ged-side-close:focus-visible{outline:0;box-shadow:0 0 0 4px rgba(37,99,235,.15)}
+.ged-side-tabs{gap:7px;padding:10px 16px 9px;scroll-padding-inline:16px;scrollbar-width:thin;scrollbar-color:#cbd5e1 transparent}
+.ged-side-tabs::-webkit-scrollbar{display:block;height:3px}.ged-side-tabs::-webkit-scrollbar-thumb{border-radius:8px;background:#cbd5e1}
+.ged-side-tab{min-height:38px;padding:8px 12px!important;border-radius:10px!important;font-size:.76rem!important}
+.ged-side-tab.active{color:#174ea6!important;background:#edf5ff!important;box-shadow:inset 0 0 0 1px #d5e7ff}
+.ged-side-tab.active::after{right:13px;bottom:-10px;left:13px;height:3px;background:linear-gradient(90deg,#2563eb,#60a5fa)}
+.ged-side-body{padding:18px}.ged-preview-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;padding:10px 11px 10px 14px;border:1px solid #dde6f1;border-radius:14px;background:rgba(255,255,255,.92);box-shadow:0 5px 18px rgba(15,23,42,.045)}
+.ged-preview-context{min-width:0;margin:0}.ged-preview-context strong{max-width:220px}.ged-preview-toolbar .ged-side-actions-bar{flex:0 0 auto;flex-wrap:nowrap;margin:0;padding:3px;border-radius:11px;background:#f3f6fa}
+.ged-preview-toolbar .ged-side-actions-bar .btn{min-height:36px;margin:0;border-color:transparent;border-radius:9px;font-size:.7rem;white-space:nowrap}
+.ged-preview-toolbar .ged-side-actions-bar .btn:first-child{box-shadow:0 5px 12px rgba(37,99,235,.2)}
+.ged-preview-toolbar .btn:hover{transform:translateY(-1px)}.ged-preview-toolbar .btn:focus-visible{outline:0;box-shadow:0 0 0 3px rgba(37,99,235,.16)}
+.ged-document-preview{display:flex;flex-direction:column;min-height:500px;border-color:#d5dfeb;border-radius:16px;background:#e9eef5;box-shadow:0 16px 38px rgba(15,23,42,.11)}
+.ged-viewer-chrome{height:38px;display:flex;align-items:center;gap:10px;flex:0 0 auto;padding:0 13px;border-bottom:1px solid #dce4ed;color:#64748b;background:linear-gradient(#fff,#f7f9fc);font-size:.68rem}
+.ged-viewer-chrome>span{display:flex;gap:4px}.ged-viewer-chrome i{width:7px;height:7px;border-radius:50%;background:#cbd5e1}.ged-viewer-chrome i:first-child{background:#fca5a5}.ged-viewer-chrome i:nth-child(2){background:#fde68a}.ged-viewer-chrome i:nth-child(3){background:#86efac}.ged-viewer-chrome strong{color:#334155;font-size:.7rem}.ged-viewer-chrome small{margin-left:auto}
+.ged-side-preview-frame{flex:1 1 auto;height:clamp(500px,67vh,820px);min-height:500px;margin:0;background:#fff}
+.ged-preview-loading,.ged-preview-error{inset:38px 0 0;z-index:2}.ged-preview-loading strong{color:#334155}.ged-preview-error{position:absolute;display:grid;place-content:center;justify-items:center;gap:9px;padding:30px;color:#64748b;background:#f8fafc;text-align:center}.ged-preview-error[hidden]{display:none}.ged-preview-error p{margin:0}
+.ged-document-preview.is-loaded .ged-preview-loading{display:none}.ged-document-preview.is-error iframe,.ged-document-preview.is-error .ged-preview-loading{display:none}
+.ged-ocr-host{padding:22px;border-radius:15px;line-height:1.8;white-space:normal}.ged-ocr-text{max-height:calc(100dvh - 300px);overflow:auto;padding:20px;border:1px solid #e5eaf1;border-radius:12px;background:#fbfcfe;white-space:pre-wrap}
+.ged-metadata-list{grid-template-columns:minmax(125px,.75fr) minmax(0,1.25fr);border-radius:15px;box-shadow:0 8px 24px rgba(15,23,42,.04)}.ged-metadata-list dt,.ged-metadata-list dd{padding:12px 14px}
+.ged-history-item{padding:15px 15px 15px 25px;border-radius:14px;box-shadow:0 5px 14px rgba(15,23,42,.035)}.ged-history-item::before{left:12px;background:linear-gradient(#2563eb,#93c5fd)}
+.ged-document-side-panel.is-expanded{inset:18px!important;background:#f3f6fa!important;box-shadow:0 0 0 100vmax rgba(7,17,36,.66),0 32px 90px rgba(0,0,0,.35)!important;backdrop-filter:blur(10px)}
+.ged-document-side-panel.is-expanded .ged-side-body{padding:22px 3vw}.ged-document-side-panel.is-expanded .ged-preview-toolbar{max-width:1500px;margin-inline:auto}.ged-document-side-panel.is-expanded .ged-document-preview{max-width:1500px;margin-inline:auto}.ged-document-side-panel.is-expanded .ged-side-preview-frame{height:calc(100dvh - 245px)}
+@media(max-width:700px){.ged-preview-toolbar{align-items:stretch;flex-direction:column}.ged-preview-toolbar .ged-side-actions-bar{display:grid;grid-template-columns:1.4fr 1fr 1fr}.ged-preview-toolbar .ged-side-actions-bar .btn{justify-content:center;padding-inline:6px}.ged-preview-context strong{max-width:100%}.ged-side-body{padding:12px}.ged-viewer-chrome small{display:none}}
+@media(prefers-reduced-motion:reduce){.ged-preview-toolbar .btn{transition:none}}

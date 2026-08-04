@@ -490,6 +490,16 @@
         <div id="gedDocumentWorkspace" class="ged-document-workspace">
             @await Html.PartialAsync("_DocumentsList", Model)
         </div>
+        <section class="ged-upload-dock" aria-labelledby="gedUploadDockTitle">
+            <div class="ged-upload-dock-icon"><app-icon name="upload-cloud" size="24" decorative="true" /></div>
+            <div class="ged-upload-dock-copy">
+                <span class="ged-upload-dock-eyebrow">Central de envio · pasta atual</span>
+                <strong id="gedUploadDockTitle">Adicione documentos a <span data-drop-folder-name>@uploadFolderLabel</span></strong>
+                <small>Arraste arquivos para o workspace ou selecione no computador. O destino e as permissões são validados antes do envio.</small>
+            </div>
+            <div class="ged-upload-dock-meta" aria-label="Informações do envio"><span>PDF, imagens e Office</span><span>OCR após o envio</span></div>
+            <button type="button" class="btn btn-primary" data-ged-upload-dock><app-icon name="document-add" size="17" decorative="true" /> Selecionar arquivos</button>
+        </section>
     </section>
 
     <aside id="gedDocumentSidePanel" class="ged-document-side-panel d-none" aria-hidden="true" aria-live="polite" aria-label="Detalhes do documento">
