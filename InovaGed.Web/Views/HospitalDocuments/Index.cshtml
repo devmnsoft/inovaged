@@ -88,21 +88,34 @@
                     <button id="btnClosePreviewPanel" class="btn btn-sm btn-outline-secondary" type="button" aria-label="Limpar preview"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
                 </div>
 
-                <div class="hospital-preview-toolbar">
-                    <button id="btnExpandPreview" type="button" class="btn btn-sm btn-outline-primary js-expand-preview"><i class="bi bi-arrows-fullscreen" aria-hidden="true"></i> Expandir</button>
-                    <button id="btnFullscreenPreview" type="button" class="btn btn-sm btn-outline-secondary"><i class="bi bi-fullscreen" aria-hidden="true"></i> Tela cheia</button>
-                    <a id="btnOpenNewTab" class="btn btn-sm btn-primary disabled" target="_blank" rel="noopener" aria-disabled="true"><i class="bi bi-box-arrow-up-right" aria-hidden="true"></i> Abrir em nova aba</a>
-                    <button id="btnCopyReference" type="button" class="btn btn-sm btn-outline-secondary"><i class="bi bi-clipboard" aria-hidden="true"></i> Copiar referência</button>
+                <div class="hospital-preview-status-row" aria-live="polite">
+                    <span id="previewOcrBadge" class="hospital-badge subtle">OCR pendente</span>
+                    <span id="previewFileBadge" class="hospital-badge subtle">Arquivo não selecionado</span>
                 </div>
 
-                <ul class="nav nav-pills hospital-preview-tabs" role="tablist" aria-label="Áreas do painel do documento">
-                    <li class="nav-item" role="presentation"><button class="nav-link active" type="button" data-panel-tab="preview" role="tab">Preview</button></li>
+                <ul class="nav hospital-preview-tabs" role="tablist" aria-label="Áreas do painel do documento">
+                    <li class="nav-item" role="presentation"><button class="nav-link active" type="button" data-panel-tab="summary" role="tab">Resumo</button></li>
+                    <li class="nav-item" role="presentation"><button class="nav-link" type="button" data-panel-tab="preview" role="tab">Preview</button></li>
                     <li class="nav-item" role="presentation"><button class="nav-link" type="button" data-panel-tab="ocr" role="tab">OCR</button></li>
-                    <li class="nav-item" role="presentation"><button class="nav-link" type="button" data-panel-tab="meta" role="tab">Dados</button></li>
+                    <li class="nav-item" role="presentation"><button class="nav-link" type="button" data-panel-tab="meta" role="tab">Metadados</button></li>
+                    <li class="nav-item" role="presentation"><button class="nav-link" type="button" data-panel-tab="parts" role="tab">Partes</button></li>
+                    <li class="nav-item" role="presentation"><button class="nav-link" type="button" data-panel-tab="history" role="tab">Histórico</button></li>
+                    <li class="nav-item" role="presentation"><button class="nav-link" type="button" data-panel-tab="actions" role="tab">Ações</button></li>
                 </ul>
 
+                <div class="hospital-preview-toolbar" aria-label="Ações do preview">
+                    <a id="btnOpenNewTab" class="hospital-preview-action primary disabled" target="_blank" rel="noopener" aria-disabled="true"><i class="bi bi-box-arrow-up-right" aria-hidden="true"></i> Abrir em nova aba</a>
+                    <a id="btnDownloadPreview" class="hospital-preview-action disabled" aria-disabled="true"><i class="bi bi-download" aria-hidden="true"></i> Baixar</a>
+                    <button id="btnExpandPreview" type="button" class="hospital-preview-action js-expand-preview"><i class="bi bi-arrows-fullscreen" aria-hidden="true"></i> Expandir</button>
+                    <button id="btnFullscreenPreview" type="button" class="hospital-preview-action"><i class="bi bi-fullscreen" aria-hidden="true"></i> Tela cheia</button>
+                    <button id="btnCopyReference" type="button" class="hospital-preview-action"><i class="bi bi-clipboard" aria-hidden="true"></i> Copiar</button>
+                </div>
+
                 <div class="hospital-preview-body">
-                    <div id="previewContent" class="hospital-preview-tab-content active" data-panel-content="preview">
+                    <div id="summaryContent" class="hospital-preview-tab-content active" data-panel-content="summary">
+                        <div id="summaryPanelContent" class="hospital-preview-summary hospital-preview-empty">Selecione um documento para ver resumo, status e atalhos.</div>
+                    </div>
+                    <div id="previewContent" class="hospital-preview-tab-content" data-panel-content="preview">
                         <div id="previewEmptyState" class="hospital-preview-empty">
                             <i class="bi bi-file-earmark-text" aria-hidden="true"></i>
                             <strong>Selecione um documento para visualizar.</strong>
@@ -117,6 +130,15 @@
                     </div>
                     <div id="metaContent" class="hospital-preview-tab-content" data-panel-content="meta">
                         <div id="metaPanelContent" class="hospital-meta-list hospital-preview-empty">Nenhum documento selecionado.</div>
+                    </div>
+                    <div id="partsContent" class="hospital-preview-tab-content" data-panel-content="parts">
+                        <div id="partsPanelContent" class="hospital-preview-empty compact">Partes do documento aparecem aqui quando o item selecionado for parcial ou incompleto.</div>
+                    </div>
+                    <div id="historyContent" class="hospital-preview-tab-content" data-panel-content="history">
+                        <div id="historyPanelContent" class="hospital-preview-empty compact">Histórico resumido será carregado a partir dos metadados disponíveis na listagem.</div>
+                    </div>
+                    <div id="actionsContent" class="hospital-preview-tab-content" data-panel-content="actions">
+                        <div id="actionsPanelContent" class="hospital-action-list hospital-preview-empty compact">Selecione um documento para habilitar ações.</div>
                     </div>
                 </div>
             </aside>

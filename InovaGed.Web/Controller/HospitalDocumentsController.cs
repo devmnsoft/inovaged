@@ -58,6 +58,14 @@ public sealed class HospitalDocumentsController : Controller
         var normalizedFolder = string.IsNullOrWhiteSpace(folder) ? null : $"%{folder.Trim()}%";
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 5, 50);
+        var offset = (page - 1) * pageSize;
+        var searchCacheKey = $"HospitalDocuments:Search:v2:{tenantId}:{query.ToLowerInvariant()}:{normalizedType}:{normalizedOcrStatus}:{dateFrom?.Date:O}:{dateTo?.Date:O}:{normalizedFolder}:{ocrRequired}:{recentOnly}:{previewOnly}:{normalizedSort}:{page}:{pageSize}";
+        if (_cache.TryGetValue<HospitalDocumentSearchResultDto>(searchCacheKey, out var cachedSearch))
+        {
+            cachedSearch.ElapsedMs = sw.ElapsedMilliseconds;
+            Response.Headers["X-InovaGed-Cache"] = "hit";
+            return Json(cachedSearch);
+        }
 
 const string sql = """
 WITH base AS (
@@ -108,7 +116,6 @@ LIMIT @pageSize OFFSET @offset;
 """;
         try {
             await using var conn = await _db.OpenAsync(ct);
-            var offset = (page - 1) * pageSize;
             var parameters = new DynamicParameters();
             parameters.Add("tenantId", tenantId, DbType.Guid);
             parameters.Add("q", query, DbType.String);
@@ -125,13 +132,15 @@ LIMIT @pageSize OFFSET @offset;
             parameters.Add("sort", normalizedSort, DbType.String);
             parameters.Add("offset", offset, DbType.Int32);
             parameters.Add("pageSize", pageSize, DbType.Int32);
-            var rows = (await conn.QueryAsync<HospitalDocumentSearchRow>(new CommandDefinition(sql, parameters, cancellationToken: ct))).ToList();
+            var rows = (await conn.QueryAsync<HospitalDocumentSearchRow>(new CommandDefinition(sql, parameters, commandTimeout: 12, cancellationToken: ct))).ToList();
             var first = rows.FirstOrDefault();
             var total = first?.TotalRows ?? 0;
             var items = rows.Where(x => x.VersionId != EmptyGuid).Select(MapResult).ToList();
             var typeTotals = DeserializeTypeTotals(first?.TotalByType);
             var elapsedMs = sw.ElapsedMilliseconds;
             var result = new HospitalDocumentSearchResultDto { Success = true, Items = items, TotalResults = total, ReturnedCount = items.Count, TotalWithOcr = first?.TotalWithOcr ?? 0, TotalWithoutOcr = first?.TotalWithoutOcr ?? 0, TotalByType = typeTotals, ElapsedMs = elapsedMs, Query = query, Page = page, PageSize = pageSize, TotalPages = total == 0 ? 0 : (int)Math.Ceiling(total / (double)pageSize), HasMore = offset + rows.Count < total };
+            _cache.Set(searchCacheKey, result, new MemoryCacheEntryOptions { SlidingExpiration = TimeSpan.FromSeconds(20), AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(90) });
+            Response.Headers["X-InovaGed-Cache"] = "miss";
             _logger.LogInformation("Hospital document search executed. TenantId={TenantId} UserId={UserId} Query={Query} Type={Type} OcrStatus={OcrStatus} Filters={Filters} TotalResults={TotalResults} ElapsedMs={ElapsedMs} CorrelationId={CorrelationId}", tenantId, userId, query, normalizedType, normalizedOcrStatus, new { dateFrom, dateTo, folder, ocrRequired, recentOnly, previewOnly, sort = normalizedSort }, total, elapsedMs, correlationId);
             await _audit.WriteAsync(tenantId, userId, "VIEW", "HOSPITAL_DOCUMENT_SEARCH", null, "Busca hospitalar executada", HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers.UserAgent.ToString(), new { EventType = "INFO", tenantId, userId, query, type = normalizedType, filters = new { ocrStatus = normalizedOcrStatus, dateFrom, dateTo, folder, ocrRequired, recentOnly, previewOnly, sort = normalizedSort }, totalResults = total, elapsedMs, correlationId }, ct);
             return Json(result);
