@@ -172,9 +172,17 @@ public sealed class UserShellContextService : IUserShellContextService
             null, null, 0, true,
             new AppMenuRouteRuleVM(controller, action, routeValues),
             label.Split(' ', StringSplitOptions.RemoveEmptyEntries));
-    private static string Slug(string value) => string.Concat(value.Normalize(System.Text.NormalizationForm.FormD)
-        .Where(character => System.Globalization.CharUnicodeInfo.GetUnicodeCategory(character) != System.Globalization.UnicodeCategory.NonSpacingMark))
-        .ToLowerInvariant().Select(character => char.IsLetterOrDigit(character) ? character : '-')).Trim('-');
+    private static string Slug(string value)
+    {
+        var normalized = value.Normalize(System.Text.NormalizationForm.FormD);
+        var filtered = normalized
+            .Where(character => System.Globalization.CharUnicodeInfo.GetUnicodeCategory(character) != System.Globalization.UnicodeCategory.NonSpacingMark);
+        var slug = new string(filtered.ToArray())
+            .ToLowerInvariant()
+            .Select(character => char.IsLetterOrDigit(character) ? character : '-')
+            .ToArray();
+        return new string(slug).Trim('-');
+    }
     private static string? FirstClaim(ClaimsPrincipal user, params string[] names) => names.Select(name => user.FindFirst(name)?.Value).FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
     private static bool RequiresSector(string role) => role.Equals(AppRoles.AdministradorOphir, StringComparison.OrdinalIgnoreCase) || role.Equals(AppRoles.ArquivistaOphir, StringComparison.OrdinalIgnoreCase);
     private static string Initials(string name) => string.Concat(name.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(part => char.ToUpperInvariant(part[0])));
