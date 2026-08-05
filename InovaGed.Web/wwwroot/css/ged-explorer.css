@@ -291,3 +291,25 @@
 .ged-tree-row:focus-within{outline:2px solid rgba(37,99,235,.25);outline-offset:1px}
 .ged-global-drop-overlay[hidden]{display:none!important}
 .ged-global-drop-card img{width:min(104px,24vw)!important;max-height:88px}.ged-global-drop-card{max-width:440px!important;padding:26px!important;border-radius:20px!important}
+
+/* Folder tree clarity pass: single icon language and calmer action affordance. */
+.ged-tree-row,.ged-tree-root{min-width:0;}
+.ged-tree-folder{isolation:isolate;position:relative;width:30px;height:30px;flex:0 0 30px;border-radius:9px;color:#475569;background:linear-gradient(180deg,#f8fafc,#eef2f7);border:1px solid #d9e2ec;box-shadow:inset 0 1px rgba(255,255,255,.9);}
+.ged-tree-folder app-icon{display:block;line-height:0;}
+.ged-tree-row .ged-tree-folder-open{display:none!important}.ged-tree-row .ged-tree-folder-closed{display:block!important}
+.ged-tree-node.open>.ged-tree-row .ged-tree-folder-closed,.ged-tree-row.active .ged-tree-folder-closed{display:none!important}
+.ged-tree-node.open>.ged-tree-row .ged-tree-folder-open,.ged-tree-row.active .ged-tree-folder-open{display:block!important}
+.ged-tree-node.open>.ged-tree-row .ged-tree-folder{color:#1d4ed8;background:linear-gradient(180deg,#eff6ff,#dbeafe);border-color:#bfdbfe;}
+.ged-tree-row.active .ged-tree-folder,.ged-tree-root.active .ged-tree-folder{color:#fff;background:linear-gradient(135deg,#2563eb,#1d4ed8);border-color:#2563eb;box-shadow:0 8px 18px rgba(37,99,235,.24);}
+.ged-tree .ged-tree .ged-tree-folder{width:26px;height:26px;flex-basis:26px;border-radius:8px;transform:scale(.96);}
+.ged-tree-row.active,.ged-tree-root.active{border-color:#bfdbfe;background:linear-gradient(90deg,#eff6ff,#f8fbff 88%);box-shadow:inset 3px 0 #2563eb;}
+.ged-tree-row:hover:not(.active),.ged-tree-root:hover:not(.active){background:#f8fbff;border-color:#e2e8f0;}
+.ged-tree-toggle{color:#94a3b8}.ged-tree-node.open>.ged-tree-row .ged-tree-toggle{color:#2563eb;background:#eff6ff;}
+.ged-tree-row .dropdown{flex:0 0 32px;margin-left:4px;display:flex;justify-content:flex-end;}
+.ged-folder-actions,.ged-tree-row .dropdown-toggle{width:30px!important;height:30px!important;display:grid!important;place-items:center!important;border:1px solid transparent!important;border-radius:10px!important;color:#94a3b8!important;background:transparent!important;}
+.ged-folder-actions:hover,.ged-tree-row .dropdown-toggle:hover,.ged-tree-row:focus-within .ged-folder-actions{color:#1d4ed8!important;border-color:#bfdbfe!important;background:#eff6ff!important;}
+.ged-tree-link{font-weight:620;color:#334155}.ged-tree-row.active .ged-tree-link{color:#1e40af;font-weight:800}.ged-tree .ged-tree .ged-tree-link{font-size:.81rem;color:#475569}.ged-tree .ged-tree .ged-tree-row.active .ged-tree-link{color:#1d4ed8;}
+.ged-global-drop-overlay{position:fixed;inset:0;z-index:1095;display:grid;place-items:center;padding:24px;background:rgba(15,23,42,.34);backdrop-filter:blur(8px);opacity:0;pointer-events:none;transition:opacity .16s ease;}
+.ged-global-drop-overlay.is-visible:not([hidden]){opacity:1;pointer-events:auto;}
+.ged-global-drop-card{display:grid;justify-items:center;gap:8px;text-align:center;background:rgba(255,255,255,.96);border:1px solid rgba(191,219,254,.9);box-shadow:0 30px 80px rgba(15,23,42,.25);}
+.ged-global-drop-card h2{margin:4px 0 0;font-size:1.18rem;font-weight:850;color:#0f172a}.ged-global-drop-card p{margin:0;color:#475569}.ged-global-drop-card small{color:#64748b}.ged-global-drop-card span{display:inline-flex;margin-top:4px;padding:5px 10px;border-radius:999px;background:#eff6ff;color:#1d4ed8;font-size:.76rem;font-weight:800}

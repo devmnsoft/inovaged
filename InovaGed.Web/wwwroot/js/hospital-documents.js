@@ -13,7 +13,7 @@
     form: $('hospitalSearchForm'), input: $('searchInput'), clear: $('btnClearSearch'), type: $('typeFilter'), btnSearch: $('btnSearch'), suggestions: $('suggestions'),
     results: $('resultsList'), meta: $('resultsMeta'), summary: $('searchSummary'), activeFilters: $('activeFilters'), loadMore: $('btnLoadMore'), toggleView: $('btnToggleView'), exportCsv: $('btnExportCsv'), clearAll: $('btnClearAll'),
     advancedType: $('advancedType'), advancedOcrStatus: $('advancedOcrStatus'), dateFrom: $('dateFrom'), dateTo: $('dateTo'), folder: $('folderFilter'), ocrRequired: $('ocrRequired'), recentOnly: $('recentOnly'), previewOnly: $('previewOnly'), sort: $('sortFilter'), advancedSummary: $('advancedFilterSummary'), applyAdvanced: $('btnApplyAdvanced'), resetAdvanced: $('btnResetAdvanced'),
-    previewPanel: $('hospitalPreviewPanel'), previewTypeBadge: $('previewTypeBadge'), previewTitle: $('previewTitle'), previewSubtitle: $('previewSubtitle'), previewFrame: $('hospitalPreviewFrame'), previewLoading: $('previewLoading'), previewEmpty: $('previewEmptyState'), expandPreview: $('btnExpandPreview'), openNewTab: $('btnOpenNewTab'), copyReference: $('btnCopyReference'), closePreview: $('btnClosePreviewPanel'), fullscreenPreview: $('btnFullscreenPreview'),
+    previewPanel: $('hospitalPreviewPanel'), previewTypeBadge: $('previewTypeBadge'), previewTitle: $('previewTitle'), previewSubtitle: $('previewSubtitle'), previewFrame: $('hospitalPreviewFrame'), previewLoading: $('previewLoading'), previewEmpty: $('previewEmptyState'), expandPreview: $('btnExpandPreview'), openNewTab: $('btnOpenNewTab'), downloadPreview: $('btnDownloadPreview'), copyReference: $('btnCopyReference'), closePreview: $('btnClosePreviewPanel'), fullscreenPreview: $('btnFullscreenPreview'), previewOcrBadge: $('previewOcrBadge'), previewFileBadge: $('previewFileBadge'), summaryContent: $('summaryPanelContent'), partsContent: $('partsPanelContent'), historyContent: $('historyPanelContent'), actionsContent: $('actionsPanelContent'),
     ocrStatus: $('ocrPanelStatus'), ocrText: $('ocrPanelText'), metaContent: $('metaPanelContent'), autocompletePortal: $('hospitalAutocompletePortal')
   };
 
@@ -149,7 +149,7 @@
         e.stopPropagation();
         const card = actionButton.closest('.hospital-result-card[data-document-id]');
         if (card) setActiveResultCard(card);
-        openPreviewPanelSafe(readDocumentData(actionButton), 'ocr', 'OCR');
+        openPreviewPanelSafe(readDocumentData(actionButton).versionId ? readDocumentData(actionButton) : state.selectedItem, 'ocr', 'OCR');
       }
       return;
     }
@@ -436,7 +436,9 @@
       updatePreviewHeader(currentPreviewDocument);
       renderMeta(item);
       openPreviewShell();
-      activatePanelTab(tab);
+      renderPreviewSupportPanels(item);
+      activatePanelTab(tab === 'preview' ? 'preview' : tab);
+      if (tab === 'ocr') return true;
       return await loadPreviewFrame(previewUrl);
     } catch (err) {
       console.warn('[HospitalDocuments] erro em openPreviewPanel', err);
@@ -451,6 +453,12 @@
     els.previewTypeBadge.textContent = doc.type || 'Documento';
     els.openNewTab.href = doc.previewUrl || '';
     els.openNewTab.classList.toggle('disabled', !doc.previewUrl);
+    if (els.downloadPreview) {
+      els.downloadPreview.href = doc.previewUrl || '';
+      els.downloadPreview.classList.toggle('disabled', !doc.previewUrl);
+      els.downloadPreview.toggleAttribute('download', !!doc.previewUrl);
+      doc.previewUrl ? els.downloadPreview.removeAttribute('aria-disabled') : els.downloadPreview.setAttribute('aria-disabled', 'true');
+    }
     if (doc.previewUrl) els.openNewTab.removeAttribute('aria-disabled');
     else els.openNewTab.setAttribute('aria-disabled', 'true');
   }
@@ -577,6 +585,32 @@
     }
   }
 
+  function renderPreviewSupportPanels(item) {
+    const ocrLabel = ocrStatusLabel(item.ocrStatus, item.isOcrAvailable ?? item.hasOcr, item.hasOcrText);
+    if (els.previewOcrBadge) {
+      els.previewOcrBadge.textContent = ocrLabel;
+      els.previewOcrBadge.className = `hospital-badge ${((item.isOcrAvailable ?? item.hasOcr) && item.hasOcrText) ? 'ocr' : 'subtle'}`;
+    }
+    if (els.previewFileBadge) els.previewFileBadge.textContent = item.fileName || 'Arquivo';
+    if (els.summaryContent) {
+      els.summaryContent.classList.remove('hospital-preview-empty');
+      els.summaryContent.innerHTML = `<div class="hospital-summary-card"><span>Documento selecionado</span><strong>${escapeHtml(item.title || 'Documento sem título')}</strong><p>${escapeHtml(item.snippet ? String(item.snippet).replace(/<[^>]*>/g, '') : 'Resumo não disponível na listagem.')}</p></div><div class="hospital-summary-grid"><div><span>Arquivo</span><strong>${escapeHtml(item.fileName || '—')}</strong></div><div><span>Pasta</span><strong>${escapeHtml(item.folderPath || item.folderName || 'Sem pasta')}</strong></div><div><span>OCR</span><strong>${escapeHtml(ocrLabel)}</strong></div><div><span>Tipo</span><strong>${escapeHtml(item.friendlyType || item.type || 'Documento')}</strong></div></div>`;
+    }
+    if (els.partsContent) {
+      const partial = item.isDocumentIncomplete || item.isPartialDocument || item.partialStatus;
+      els.partsContent.classList.toggle('hospital-preview-empty', !partial);
+      els.partsContent.innerHTML = partial ? `<div class="hospital-summary-card warning"><span>Partes</span><strong>${escapeHtml(item.partialStatusLabel || item.partialStatus || 'Documento sem fracionamento ativo')}</strong><p>${item.isDocumentIncomplete ? 'Este documento está marcado como incompleto e pode receber novas partes no fluxo GED.' : 'Nenhuma ação de parte é necessária para este resultado hospitalar somente leitura.'}</p></div>` : 'Este documento não possui partes registradas na listagem.';
+    }
+    if (els.historyContent) {
+      els.historyContent.classList.remove('hospital-preview-empty');
+      els.historyContent.innerHTML = `<div class="hospital-timeline-item"><strong>Indexado para busca hospitalar</strong><span>${escapeHtml(item.createdAtFormatted || item.createdAt || 'Data não informada')}</span></div><div class="hospital-timeline-item"><strong>Preview sob demanda</strong><span>Arquivo carregado apenas ao selecionar o documento para preservar performance.</span></div>`;
+    }
+    if (els.actionsContent) {
+      els.actionsContent.classList.remove('hospital-preview-empty');
+      els.actionsContent.innerHTML = `<a class="hospital-preview-action primary" href="${escapeAttr(item.viewerUrl || '#')}" target="_blank" rel="noopener"><i class="bi bi-box-arrow-up-right"></i>Abrir dados</a><a class="hospital-preview-action" href="${escapeAttr(item.previewUrl || `/HospitalDocuments/Preview?versionId=${encodeURIComponent(item.versionId)}`)}" target="_blank" rel="noopener"><i class="bi bi-eye"></i>Abrir preview</a><button class="hospital-preview-action" type="button" data-action="ocr"><i class="bi bi-body-text"></i>Carregar OCR</button>`;
+    }
+  }
+
   function renderMeta(item) {
     els.metaContent.classList.remove('hospital-preview-empty');
     els.metaContent.innerHTML = [
@@ -599,8 +633,12 @@
     els.previewTitle.textContent = 'Selecione um documento';
     els.previewSubtitle.textContent = 'Clique em um resultado da busca para abrir o preview ao lado.';
     els.previewTypeBadge.textContent = 'Documento';
+    if (els.previewOcrBadge) els.previewOcrBadge.textContent = 'OCR pendente';
+    if (els.previewFileBadge) els.previewFileBadge.textContent = 'Arquivo não selecionado';
     els.openNewTab.removeAttribute('href');
     els.openNewTab.classList.add('disabled');
+    els.downloadPreview?.removeAttribute('href');
+    els.downloadPreview?.classList.add('disabled');
     els.openNewTab.setAttribute('aria-disabled', 'true');
     els.previewFrame.onload = null;
     els.previewFrame.onerror = null;
@@ -613,7 +651,11 @@
     els.ocrText.textContent = '';
     els.metaContent.classList.add('hospital-preview-empty');
     els.metaContent.textContent = 'Nenhum documento selecionado.';
-    activatePanelTab('preview');
+    if (els.summaryContent) { els.summaryContent.classList.add('hospital-preview-empty'); els.summaryContent.textContent = 'Selecione um documento para ver resumo, status e atalhos.'; }
+    if (els.partsContent) { els.partsContent.classList.add('hospital-preview-empty'); els.partsContent.textContent = 'Partes do documento aparecem aqui quando o item selecionado for parcial ou incompleto.'; }
+    if (els.historyContent) { els.historyContent.classList.add('hospital-preview-empty'); els.historyContent.textContent = 'Histórico resumido será carregado a partir dos metadados disponíveis na listagem.'; }
+    if (els.actionsContent) { els.actionsContent.classList.add('hospital-preview-empty'); els.actionsContent.textContent = 'Selecione um documento para habilitar ações.'; }
+    activatePanelTab('summary');
   }
 
   function resetPreviewPanel() { closePreviewPanel(); }
