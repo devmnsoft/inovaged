@@ -16,22 +16,51 @@ public sealed class SmartSearchController : Controller
     private readonly ICurrentUser _currentUser;
     private readonly ISmartSearchService _smartSearch;
     private readonly IDocumentChatService _documentChat;
+    private readonly IDocumentAssistantService _documentAssistant;
     private readonly ISearchStatisticsService _statistics;
     private readonly ISmartSearchRepository _repository;
     private readonly IGedSmartSearchDiagnosticsService _diagnostics;
     private readonly IAuditWriter _audit;
     private readonly ILogger<SmartSearchController> _logger;
 
-    public SmartSearchController(ICurrentUser currentUser, ISmartSearchService smartSearch, IDocumentChatService documentChat, ISearchStatisticsService statistics, ISmartSearchRepository repository, IGedSmartSearchDiagnosticsService diagnostics, IAuditWriter audit, ILogger<SmartSearchController> logger)
+    public SmartSearchController(ICurrentUser currentUser, ISmartSearchService smartSearch, IDocumentChatService documentChat, IDocumentAssistantService documentAssistant, ISearchStatisticsService statistics, ISmartSearchRepository repository, IGedSmartSearchDiagnosticsService diagnostics, IAuditWriter audit, ILogger<SmartSearchController> logger)
     {
         _currentUser = currentUser;
         _smartSearch = smartSearch;
         _documentChat = documentChat;
+        _documentAssistant = documentAssistant;
         _statistics = statistics;
         _repository = repository;
         _diagnostics = diagnostics;
         _audit = audit;
         _logger = logger;
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Ask([FromForm] string question, [FromForm] int page = 1, CancellationToken ct = default)
+    {
+        if (!_currentUser.IsAuthenticated) return Unauthorized(new { success = false, message = "Sua sessão expirou. Entre novamente." });
+        try
+        {
+            var response = await _documentAssistant.AskAsync(new DocumentAssistantQuery
+            {
+                TenantId = _currentUser.TenantId,
+                UserId = _currentUser.UserId,
+                IsAdmin = RolePolicyHelper.IsFullAdmin(User),
+                Question = question,
+                Page = page
+            }, ct);
+            await _audit.WriteAsync(_currentUser.TenantId, _currentUser.UserId, "VIEW", "DOCUMENT_ASSISTANT_QUERY", null, "Consulta ao assistente documental", HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers.UserAgent.ToString(), new { response.Total, response.Page, correlationId = HttpContext.TraceIdentifier }, ct);
+            return Json(new { success = true, response });
+        }
+        catch (ArgumentException ex) { return BadRequest(new { success = false, message = ex.Message }); }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { return new EmptyResult(); }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Falha no assistente documental. CorrelationId={CorrelationId}", HttpContext.TraceIdentifier);
+            return StatusCode(500, new { success = false, message = "Não foi possível consultar os documentos agora.", correlationId = HttpContext.TraceIdentifier });
+        }
     }
 
     [HttpGet]
