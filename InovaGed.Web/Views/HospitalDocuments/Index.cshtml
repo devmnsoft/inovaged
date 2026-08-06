@@ -10,16 +10,16 @@
     <section class="hospital-search-hero" aria-labelledby="hospitalSearchTitle">
         <div class="hospital-hero-grid">
             <div class="hospital-hero-main">
-                <span class="hospital-secure-badge"><i class="bi bi-shield-lock" aria-hidden="true"></i> Consulta segura somente leitura</span>
+                <span class="hospital-secure-badge"><app-icon name="security" size="16" decorative="true" /> Consulta segura somente leitura</span>
                 <h1 id="hospitalSearchTitle">Busca de Documentos Hospitalares</h1>
                 <p class="hospital-hero-subtitle">Localize documentos por nome, prontuário, termo do OCR, paciente, exame ou conteúdo textual.</p>
 
                 <form id="hospitalSearchForm" class="hospital-search-form" autocomplete="off">
                     <div class="hospital-search-input-wrap hospital-search-box-wrapper">
                         <label class="visually-hidden" for="searchInput">Termo de busca hospitalar</label>
-                        <i class="bi bi-search hospital-search-icon" aria-hidden="true"></i>
+                        <app-icon class="hospital-search-icon" name="search" size="18" decorative="true" />
                         <input id="searchInput" class="hospital-search-input" type="search" autocomplete="off" placeholder="Busque por nome, prontuário, APAC, carcinoma, exame, laudo ou trecho do OCR..." aria-describedby="searchHelp" aria-controls="suggestions" />
-                        <button id="btnClearSearch" class="hospital-input-clear" type="button" aria-label="Limpar busca"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
+                        <button id="btnClearSearch" class="hospital-input-clear" type="button" aria-label="Limpar busca"><app-icon name="close" size="14" decorative="true" /></button>
                         <div id="suggestions" class="hospital-suggestions hospital-suggestions-dropdown" role="listbox" aria-label="Sugestões de busca"></div>
                     </div>
 
@@ -32,7 +32,7 @@
                     </select>
 
                     <button id="btnSearch" type="submit" class="hospital-btn-primary"><span class="btn-label">Pesquisar</span></button>
-                    <button id="btnAdvancedFilters" class="hospital-btn-secondary" type="button" data-bs-toggle="offcanvas" data-bs-target="#advancedFiltersCanvas" aria-controls="advancedFiltersCanvas"><i class="bi bi-sliders" aria-hidden="true"></i> Filtros</button>
+                    <button id="btnAdvancedFilters" class="hospital-btn-secondary" type="button" data-bs-toggle="offcanvas" data-bs-target="#advancedFiltersCanvas" aria-controls="advancedFiltersCanvas"><app-icon name="filter" size="16" decorative="true" /> Filtros</button>
                 </form>
 
                 <div id="searchHelp" class="hospital-search-help">Digite uma informação e pressione Enter ou clique em Pesquisar.</div>
@@ -66,9 +66,9 @@
                             <p id="resultsMeta">Nenhuma busca executada ainda.</p>
                         </div>
                         <div class="hospital-panel-actions">
-                            <button id="btnToggleView" type="button" class="btn btn-sm btn-outline-secondary"><i class="bi bi-grid-3x3-gap" aria-hidden="true"></i> Lista/Card</button>
-                            <button id="btnExportCsv" type="button" class="btn btn-sm btn-outline-secondary"><i class="bi bi-filetype-csv" aria-hidden="true"></i> CSV</button>
-                            <button id="btnClearAll" type="button" class="btn btn-sm btn-outline-danger"><i class="bi bi-x-circle" aria-hidden="true"></i> Limpar</button>
+                            <button id="btnToggleView" type="button" class="btn btn-sm btn-outline-secondary"><app-icon name="list" size="15" decorative="true" /> Exibição</button>
+                            <button id="btnExportCsv" type="button" class="btn btn-sm btn-outline-secondary"><app-icon name="download" size="15" decorative="true" /> CSV</button>
+                            <button id="btnClearAll" type="button" class="btn btn-sm btn-outline-danger"><app-icon name="close" size="15" decorative="true" /> Limpar</button>
                         </div>
                     </div>
 
@@ -85,7 +85,7 @@
                         <h3 id="previewTitle">Selecione um documento</h3>
                         <p id="previewSubtitle">Clique em um resultado da busca para abrir o preview ao lado.</p>
                     </div>
-                    <button id="btnClosePreviewPanel" class="btn btn-sm btn-outline-secondary" type="button" aria-label="Limpar preview"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
+                    <button id="btnClosePreviewPanel" class="btn btn-sm btn-outline-secondary" type="button" aria-label="Limpar preview"><app-icon name="close" size="15" decorative="true" /></button>
                 </div>
 
                 <div class="hospital-preview-status-row" aria-live="polite">
@@ -104,20 +104,25 @@
                 </ul>
 
                 <div class="hospital-preview-toolbar" aria-label="Ações do preview">
-                    <a id="btnOpenNewTab" class="hospital-preview-action primary disabled" target="_blank" rel="noopener" aria-disabled="true"><i class="bi bi-box-arrow-up-right" aria-hidden="true"></i> Abrir em nova aba</a>
-                    <a id="btnDownloadPreview" class="hospital-preview-action disabled" aria-disabled="true"><i class="bi bi-download" aria-hidden="true"></i> Baixar</a>
-                    <button id="btnExpandPreview" type="button" class="hospital-preview-action js-expand-preview"><i class="bi bi-arrows-fullscreen" aria-hidden="true"></i> Expandir</button>
-                    <button id="btnFullscreenPreview" type="button" class="hospital-preview-action"><i class="bi bi-fullscreen" aria-hidden="true"></i> Tela cheia</button>
-                    <button id="btnCopyReference" type="button" class="hospital-preview-action"><i class="bi bi-clipboard" aria-hidden="true"></i> Copiar</button>
+                    <a id="btnOpenNewTab" class="hospital-preview-action primary disabled" target="_blank" rel="noopener" aria-disabled="true"><app-icon name="external-link" size="15" decorative="true" /> Abrir em nova aba</a>
+                    <a id="btnDownloadPreview" class="hospital-preview-action disabled" aria-disabled="true"><app-icon name="download" size="15" decorative="true" /> Baixar</a>
+                    <div class="dropdown hospital-more-actions">
+                        <button class="hospital-preview-action dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false"><app-icon name="more" size="15" decorative="true" /> Mais ações</button>
+                        <div class="dropdown-menu dropdown-menu-end">
+                            <button id="btnExpandPreview" type="button" class="dropdown-item js-expand-preview"><app-icon name="expand" size="15" decorative="true" /> Expandir</button>
+                            <button id="btnFullscreenPreview" type="button" class="dropdown-item"><app-icon name="fullscreen" size="15" decorative="true" /> Tela cheia</button>
+                            <button id="btnCopyReference" type="button" class="dropdown-item"><app-icon name="copy" size="15" decorative="true" /> Copiar referência</button>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="hospital-preview-body">
                     <div id="summaryContent" class="hospital-preview-tab-content active" data-panel-content="summary">
-                        <div id="summaryPanelContent" class="hospital-preview-summary hospital-preview-empty">Selecione um documento para ver resumo, status e atalhos.</div>
+                        <div id="summaryPanelContent" class="hospital-preview-summary hospital-preview-empty"><img src="~/images/illustrations/document-preview-empty.svg" alt="" /><strong>Nenhum documento selecionado</strong><span>Selecione um documento na lista para visualizar detalhes, OCR e metadados.</span></div>
                     </div>
                     <div id="previewContent" class="hospital-preview-tab-content" data-panel-content="preview">
                         <div id="previewEmptyState" class="hospital-preview-empty">
-                            <i class="bi bi-file-earmark-text" aria-hidden="true"></i>
+                            <app-icon name="document" size="26" decorative="true" />
                             <strong>Selecione um documento para visualizar.</strong>
                             <span>Clique em um resultado da busca para abrir o preview ao lado.</span>
                         </div>
@@ -147,7 +152,7 @@
 
     <div class="offcanvas offcanvas-end" tabindex="-1" id="advancedFiltersCanvas" aria-labelledby="advancedFiltersTitle">
         <div class="offcanvas-header">
-            <h5 id="advancedFiltersTitle" class="offcanvas-title"><i class="bi bi-funnel" aria-hidden="true"></i> Filtros avançados</h5>
+            <h5 id="advancedFiltersTitle" class="offcanvas-title"><app-icon name="filter" size="17" decorative="true" /> Filtros avançados</h5>
             <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Fechar"></button>
         </div>
         <div class="offcanvas-body">
