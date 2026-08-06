@@ -88,7 +88,7 @@ FROM ged.document d
 LEFT JOIN ged.document_search s ON s.tenant_id=d.tenant_id AND s.document_id=d.id
 LEFT JOIN ged.document_version v ON v.tenant_id=d.tenant_id AND v.id=s.version_id
 LEFT JOIN ged.folder f ON f.tenant_id=d.tenant_id AND f.id=d.folder_id
-LEFT JOIN LATERAL (SELECT vx.* FROM ged.document_version vx WHERE vx.tenant_id=d.tenant_id AND vx.document_id=d.id ORDER BY vx.version_number DESC, vx.created_at DESC LIMIT 1) latest_v ON true
+LEFT JOIN LATERAL (SELECT vx.id, vx.file_name, vx.content_type, vx.file_size_bytes, vx.is_partial_document, vx.partial_status FROM ged.document_version vx WHERE vx.tenant_id=d.tenant_id AND vx.document_id=d.id ORDER BY vx.version_number DESC, vx.created_at DESC LIMIT 1) latest_v ON true
 LEFT JOIN LATERAL (SELECT j.status FROM ged.ocr_job j WHERE j.tenant_id=d.tenant_id AND j.document_version_id=COALESCE(NULLIF(s.version_id,'00000000-0000-0000-0000-000000000000'::uuid),NULLIF(d.current_version_id,'00000000-0000-0000-0000-000000000000'::uuid),latest_v.id) ORDER BY j.requested_at DESC LIMIT 1) oj ON true
 WHERE d.tenant_id=@tenantId AND coalesce(d.reg_status,'A')='A' AND d.status<>'ARCHIVED'::ged.document_status_enum
 AND (d.code ILIKE @likeQuery OR d.title ILIKE @likeQuery OR COALESCE(d.description,'') ILIKE @likeQuery OR COALESCE(s.file_name,'') ILIKE @likeQuery OR COALESCE(s.ocr_text,'') ILIKE @likeQuery OR (s.search_vector IS NOT NULL AND s.search_vector @@ websearch_to_tsquery('portuguese', @q)))
@@ -176,7 +176,7 @@ max(d.created_at) AS "LatestIndexedAt"
 FROM ged.document d
 LEFT JOIN ged.document_search s ON s.tenant_id=d.tenant_id AND s.document_id=d.id
 LEFT JOIN ged.document_version v ON v.tenant_id=d.tenant_id AND v.id=s.version_id
-LEFT JOIN LATERAL (SELECT vx.* FROM ged.document_version vx WHERE vx.tenant_id=d.tenant_id AND vx.document_id=d.id ORDER BY vx.version_number DESC, vx.created_at DESC LIMIT 1) latest_v ON true
+LEFT JOIN LATERAL (SELECT vx.id, vx.file_name, vx.content_type FROM ged.document_version vx WHERE vx.tenant_id=d.tenant_id AND vx.document_id=d.id ORDER BY vx.version_number DESC, vx.created_at DESC LIMIT 1) latest_v ON true
 WHERE d.tenant_id=@tenantId AND coalesce(d.reg_status,'A')='A' AND d.status<>'ARCHIVED'::ged.document_status_enum;
 """;
         await using var conn = await _db.OpenAsync(ct);
@@ -219,7 +219,7 @@ FROM ged.document d
 LEFT JOIN ged.document_search s ON s.tenant_id=d.tenant_id AND s.document_id=d.id
 LEFT JOIN ged.document_version v ON v.tenant_id=d.tenant_id AND v.id=s.version_id
 LEFT JOIN ged.folder f ON f.tenant_id=d.tenant_id AND f.id=d.folder_id
-LEFT JOIN LATERAL (SELECT vx.* FROM ged.document_version vx WHERE vx.tenant_id=d.tenant_id AND vx.document_id=d.id ORDER BY vx.version_number DESC,vx.created_at DESC LIMIT 1) latest_v ON true
+LEFT JOIN LATERAL (SELECT vx.id, vx.file_name, vx.content_type, vx.file_size_bytes FROM ged.document_version vx WHERE vx.tenant_id=d.tenant_id AND vx.document_id=d.id ORDER BY vx.version_number DESC,vx.created_at DESC LIMIT 1) latest_v ON true
 LEFT JOIN LATERAL (SELECT j.status FROM ged.ocr_job j WHERE j.tenant_id=d.tenant_id AND j.document_version_id=COALESCE(NULLIF(s.version_id,'00000000-0000-0000-0000-000000000000'::uuid),NULLIF(d.current_version_id,'00000000-0000-0000-0000-000000000000'::uuid),latest_v.id) ORDER BY j.requested_at DESC LIMIT 1) oj ON true
 WHERE d.tenant_id=@TenantId::uuid AND coalesce(d.reg_status,'A')='A' AND d.status<>'ARCHIVED'::ged.document_status_enum
 AND (d.code ILIKE @Q::text OR d.title ILIKE @Q::text OR COALESCE(d.description,'') ILIKE @Q::text OR COALESCE(s.file_name,'') ILIKE @Q::text OR substring(COALESCE(s.ocr_text,'') from 1 for 4000) ILIKE @Q::text)
