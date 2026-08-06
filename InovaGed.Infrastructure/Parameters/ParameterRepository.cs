@@ -209,6 +209,19 @@ order by display_order, name;";
 
         var id = vm.Id ?? Guid.NewGuid();
 
+        if (!isCreate)
+        {
+            var owned = await conn.ExecuteScalarAsync<bool>(new CommandDefinition(
+                "select exists(select 1 from ged.parameter_item where tenant_id=@tenantId and id=@id and reg_status='A')",
+                new { tenantId, id }, tx, cancellationToken: ct));
+            if (!owned) throw new InvalidOperationException("Parâmetro não encontrado ou não pertence à organização atual.");
+        }
+        var duplicate = await conn.ExecuteScalarAsync<bool>(new CommandDefinition(@"
+select exists(select 1 from ged.parameter_item
+ where tenant_id=@tenantId and category_id=@categoryId and reg_status='A' and id<>@id
+ and (upper(code)=@code or lower(name)=lower(@name)));", new { tenantId, categoryId = vm.CategoryId, id, code = normalizedCode, name = vm.Name.Trim() }, tx, cancellationToken: ct));
+        if (duplicate) throw new ArgumentException("Já existe um parâmetro com esta chave ou nome na categoria selecionada.");
+
         const string beforeSql = @"select to_jsonb(t) from (select * from ged.parameter_item where tenant_id=@tenantId and id=@id) t;";
         const string upsertSql = @"
 insert into ged.parameter_item(
@@ -303,7 +316,8 @@ update ged.parameter_item
 set is_active=@active, updated_at=now(), updated_by=@userId
 where tenant_id=@tenantId and id=@id and reg_status='A';";
         await using var conn = await _db.OpenAsync(ct);
-        await conn.ExecuteAsync(new CommandDefinition(sql, new { tenantId, userId, id, active }, cancellationToken: ct));
+        var rows = await conn.ExecuteAsync(new CommandDefinition(sql, new { tenantId, userId, id, active }, cancellationToken: ct));
+        if (rows == 0) throw new InvalidOperationException("Parâmetro não encontrado.");
     }
 
     public async Task DeleteAsync(Guid tenantId, Guid userId, Guid id, string? reason, CancellationToken ct)

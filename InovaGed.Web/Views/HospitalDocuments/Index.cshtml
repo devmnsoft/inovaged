@@ -32,6 +32,7 @@
                     </select>
 
                     <button id="btnSearch" type="submit" class="hospital-btn-primary"><span class="btn-label">Pesquisar</span></button>
+                    <button id="btnOpenAssistant" class="hospital-btn-assistant" type="button" data-bs-toggle="offcanvas" data-bs-target="#documentAssistantCanvas"><app-icon name="sparkles" size="16" decorative="true" /> Busca inteligente</button>
                     <button id="btnAdvancedFilters" class="hospital-btn-secondary" type="button" data-bs-toggle="offcanvas" data-bs-target="#advancedFiltersCanvas" aria-controls="advancedFiltersCanvas"><app-icon name="filter" size="16" decorative="true" /> Filtros</button>
                 </form>
 
@@ -108,10 +109,16 @@
                     <a id="btnDownloadPreview" class="hospital-preview-action disabled" aria-disabled="true"><app-icon name="download" size="15" decorative="true" /> Baixar</a>
                     <div class="dropdown hospital-more-actions">
                         <button class="hospital-preview-action dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false"><app-icon name="more" size="15" decorative="true" /> Mais ações</button>
-                        <div class="dropdown-menu dropdown-menu-end">
+                        <div class="dropdown-menu dropdown-menu-end hospital-actions-menu">
+                            <h6 class="dropdown-header">Resultados</h6>
+                            <button id="btnActionsRefresh" type="button" class="dropdown-item"><app-icon name="refresh" size="15" decorative="true" /> Atualizar resultados</button>
+                            <button id="btnActionsClear" type="button" class="dropdown-item"><app-icon name="close" size="15" decorative="true" /> Limpar filtros</button>
+                            <button id="btnActionsAssistant" type="button" class="dropdown-item" data-bs-toggle="offcanvas" data-bs-target="#documentAssistantCanvas"><app-icon name="sparkles" size="15" decorative="true" /> Busca inteligente</button>
+                            <div class="dropdown-divider"></div><h6 class="dropdown-header">Documento selecionado</h6>
                             <button id="btnExpandPreview" type="button" class="dropdown-item js-expand-preview"><app-icon name="expand" size="15" decorative="true" /> Expandir</button>
                             <button id="btnFullscreenPreview" type="button" class="dropdown-item"><app-icon name="fullscreen" size="15" decorative="true" /> Tela cheia</button>
                             <button id="btnCopyReference" type="button" class="dropdown-item"><app-icon name="copy" size="15" decorative="true" /> Copiar referência</button>
+                            <button type="button" class="dropdown-item disabled" disabled title="Em breve"><app-icon name="share" size="15" decorative="true" /> Compartilhar internamente <small>Em breve</small></button>
                         </div>
                     </div>
                 </div>
@@ -173,6 +180,10 @@
     </div>
 
 
+    <div class="offcanvas offcanvas-end hospital-assistant-canvas" tabindex="-1" id="documentAssistantCanvas" aria-labelledby="documentAssistantTitle">
+      <div class="offcanvas-header"><div><span class="hospital-assistant-kicker">Assistente documental local</span><h2 id="documentAssistantTitle" class="offcanvas-title">Busca Inteligente</h2></div><button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Fechar"></button></div>
+      <div class="offcanvas-body"><div class="hospital-assistant-trust"><app-icon name="security" size="17" decorative="true" /><span>Respostas baseadas somente em documentos que você pode consultar. O assistente não inventa conteúdo.</span></div><div id="assistantConversation" class="hospital-assistant-conversation" aria-live="polite"><article class="assistant-message assistant"><strong>Como posso ajudar?</strong><p>Descreva o que procura. Vou interpretar período, OCR, tipo e termos documentais.</p></article></div><div class="hospital-assistant-suggestions" aria-label="Sugestões"><button type="button">Mostre documentos sem OCR</button><button type="button">Quais documentos estão sem classificação?</button><button type="button">Localize arquivos enviados em junho de 2026</button><button type="button">Explique por que estes resultados apareceram</button></div><form id="documentAssistantForm" class="hospital-assistant-compose"><label for="documentAssistantQuestion">Pergunte sobre os documentos</label><textarea id="documentAssistantQuestion" rows="3" placeholder="Ex.: Encontre documentos de internação do paciente…" required></textarea><div><button id="btnClearAssistant" class="btn btn-light" type="button">Limpar conversa</button><button class="btn btn-primary" type="submit"><app-icon name="send" size="15" decorative="true" /> Perguntar</button></div></form></div>
+    </div>
     <div id="hospitalAutocompletePortal" aria-live="polite"></div>
 
 
@@ -180,4 +191,5 @@
 
 @section Scripts {
     <script src="~/js/hospital-documents.js" asp-append-version="true"></script>
+    <script src="~/js/hospital-document-assistant.js" asp-append-version="true"></script>
 }

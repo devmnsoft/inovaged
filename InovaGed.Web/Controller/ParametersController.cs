@@ -27,21 +27,22 @@ public sealed class ParametersController : Controller
     }
 
     [HttpGet("")]
-    public async Task<IActionResult> Index(string? categoryCode, string? search, CancellationToken ct)
+    public async Task<IActionResult> Index(string? categoryCode, string? search, string status = "all", CancellationToken ct = default)
     {
         var categories = await _repo.ListCategoriesAsync(TenantId, ct);
-        categoryCode = string.IsNullOrWhiteSpace(categoryCode)
-            ? categories.FirstOrDefault()?.Code
-            : categoryCode.Trim().ToUpperInvariant();
+        categoryCode = string.IsNullOrWhiteSpace(categoryCode) ? null : categoryCode.Trim().ToUpperInvariant();
 
         var items = await _repo.ListItemsAsync(TenantId, categoryCode, search, ct);
+        status = status is "active" or "inactive" ? status : "all";
+        if (status != "all") items = items.Where(x => x.IsActive == (status == "active")).ToList();
 
         return View(new ParameterIndexVM
         {
             Categories = categories,
             Items = items,
             CategoryCode = categoryCode,
-            Search = search
+            Search = search,
+            Status = status
         });
     }
 
@@ -77,6 +78,26 @@ public sealed class ParametersController : Controller
 
         await LoadCombos(vm, ct);
         return View(vm);
+    }
+
+    [HttpGet("Details/{id:guid}")]
+    public async Task<IActionResult> Details(Guid id, CancellationToken ct)
+    {
+        var item = (await _repo.ListItemsAsync(TenantId, null, null, ct)).FirstOrDefault(x => x.Id == id);
+        return item is null ? NotFound(new { message = "Parâmetro não encontrado." }) : Json(item);
+    }
+
+    [HttpGet("Duplicate/{id:guid}")]
+    public async Task<IActionResult> Duplicate(Guid id, CancellationToken ct)
+    {
+        var vm = await _repo.GetItemAsync(TenantId, id, ct);
+        if (vm is null) return NotFound();
+        vm.Id = null;
+        vm.Code = null;
+        vm.Name = $"{vm.Name} (cópia)";
+        vm.IsDefault = false;
+        await LoadCombos(vm, ct);
+        return View("Edit", vm);
     }
 
     [HttpPost("Save")]
@@ -131,7 +152,7 @@ public sealed class ParametersController : Controller
             _logger.LogError(ex, "Erro ao salvar parâmetro");
             var message = ex.Message.Contains("ged.code_sequence", StringComparison.OrdinalIgnoreCase) || ex.Message.Contains("gerar o código", StringComparison.OrdinalIgnoreCase)
                 ? "Não foi possível gerar o código automático. Execute as migrations do sistema."
-                : ex.Message;
+                : ex is ArgumentException or InvalidOperationException ? ex.Message : $"Não foi possível salvar o parâmetro. Tente novamente. Referência: {HttpContext.TraceIdentifier}";
             ModelState.AddModelError(string.Empty, message);
             await LoadCombos(vm, ct);
             return View("Edit", vm);
@@ -142,8 +163,16 @@ public sealed class ParametersController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> SetActive(Guid id, bool active, string? categoryCode, CancellationToken ct)
     {
-        await _repo.SetActiveAsync(TenantId, UserId, id, active, ct);
-        TempData["Success"] = active ? "Parâmetro ativado." : "Parâmetro inativado.";
+        try
+        {
+            await _repo.SetActiveAsync(TenantId, UserId, id, active, ct);
+            TempData["Success"] = active ? "Parâmetro ativado." : "Parâmetro inativado.";
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro ao alterar status do parâmetro {ParameterId}", id);
+            TempData["Error"] = $"Não foi possível alterar o status. Referência: {HttpContext.TraceIdentifier}";
+        }
         return RedirectToAction(nameof(Index), new { categoryCode });
     }
 
@@ -158,7 +187,8 @@ public sealed class ParametersController : Controller
         }
         catch (Exception ex)
         {
-            TempData["Error"] = ex.Message;
+            _logger.LogError(ex, "Erro ao inativar parâmetro {ParameterId}", id);
+            TempData["Error"] = ex is InvalidOperationException ? ex.Message : $"Não foi possível inativar o parâmetro. Referência: {HttpContext.TraceIdentifier}";
         }
 
         return RedirectToAction(nameof(Index), new { categoryCode });
