@@ -57,5 +57,19 @@ public sealed class HospitalDocumentsPremiumUxContractTests
         Assert.Contains("X-InovaGed-Cache", controller);
         Assert.Contains("commandTimeout: 12", controller);
         Assert.Contains("SlidingExpiration = TimeSpan.FromSeconds(20)", controller);
+        Assert.DoesNotContain("SELECT vx.*", controller);
+    }
+
+    [Fact]
+    public void GedPreview_HasSingleScrollSurfaceAndAccessibleFocusMode()
+    {
+        var js = Read("InovaGed.Web/wwwroot/js/ged-document-side-panel.js");
+        var css = Read("InovaGed.Web/wwwroot/css/components/document-preview.css");
+
+        Assert.Contains("panel.dataset.activeTab = tabName", js);
+        Assert.Contains("aria-selected", js);
+        Assert.Contains("e.key !== 'Escape'", js);
+        Assert.Contains("[data-active-tab=\"preview\"] .ged-side-body", css);
+        Assert.Contains("body.ged-reader-focus-open", css);
     }
 }

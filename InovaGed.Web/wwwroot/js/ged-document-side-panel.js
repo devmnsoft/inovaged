@@ -104,6 +104,7 @@
             panel.hidden = true;
             panel.classList.add('d-none');
             panel.classList.remove('is-expanded');
+            document.body.classList.remove('ged-reader-focus-open');
             panel.setAttribute('aria-hidden', 'true');
             panel.innerHTML = '';
             delete panel.dataset.documentId;
@@ -120,7 +121,13 @@
         tabName = (tabName || 'summary').toLowerCase();
         const panel = getPanel();
         if (!panel || !tabName) return;
-        panel.querySelectorAll('[data-ged-side-tab]').forEach(tab => tab.classList.toggle('active', tab.dataset.gedSideTab === tabName));
+        panel.dataset.activeTab = tabName;
+        panel.querySelectorAll('[data-ged-side-tab]').forEach(tab => {
+            const active = tab.dataset.gedSideTab === tabName;
+            tab.classList.toggle('active', active);
+            tab.setAttribute('aria-selected', String(active));
+            tab.setAttribute('tabindex', active ? '0' : '-1');
+        });
         panel.querySelectorAll('[data-ged-tab-panel]').forEach(body => body.classList.toggle('d-none', body.dataset.gedTabPanel !== tabName));
         const active = panel.querySelector(`[data-ged-tab-panel="${tabName}"]`);
         if (tabName === 'preview') {
@@ -228,6 +235,7 @@
             const panel = getPanel();
             const btn = e.target.closest('.js-expand-side-panel');
             const expanded = panel?.classList.toggle('is-expanded');
+            document.body.classList.toggle('ged-reader-focus-open', expanded === true);
             const label = btn?.querySelector('span');
             if (label) label.textContent = expanded ? 'Restaurar' : 'Expandir';
             return;
@@ -313,6 +321,20 @@
                         : 'preview';
 
         openGedDocumentPanel(documentId, versionId, initialTab);
+    });
+
+    document.addEventListener('keydown', function (e) {
+        if (e.key !== 'Escape') return;
+        const panel = getPanel();
+        if (panel?.classList.contains('is-expanded')) {
+            panel.classList.remove('is-expanded');
+            document.body.classList.remove('ged-reader-focus-open');
+            const label = panel.querySelector('.js-expand-side-panel span');
+            if (label) label.textContent = 'Expandir';
+            panel.querySelector('.js-expand-side-panel')?.focus();
+            return;
+        }
+        if (panel && !panel.hidden) closeGedDocumentPanel();
     });
 
     window.openGedDocumentPanel = openGedDocumentPanel;
