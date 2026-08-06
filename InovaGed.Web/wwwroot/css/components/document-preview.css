@@ -50,3 +50,15 @@
 .ged-document-side-panel.is-expanded .ged-side-preview-frame{height:calc(100dvh - 214px);min-height:0}
 @keyframes gedPreviewShimmer{to{background-position:-220% 0}}
 @media(max-width:700px){.ged-side-title{font-size:1.08rem}.ged-document-side-panel.is-expanded{inset:0!important;border-radius:0!important}.ged-preview-toolbar{position:relative;top:auto}.ged-side-preview-frame{height:calc(100dvh - 300px);min-height:420px}}
+
+/* Preview is a four-zone reader: header, tabs and actions stay fixed while only
+   the document canvas owns vertical scrolling. */
+body.ged-reader-focus-open{overflow:hidden}
+.ged-document-side-panel[data-active-tab="preview"] .ged-side-body{display:flex;overflow:hidden;padding-bottom:18px}
+.ged-document-side-panel[data-active-tab="preview"] [data-ged-tab-panel="preview"]{display:flex;flex:1 1 auto;min-height:0;flex-direction:column}
+.ged-document-side-panel[data-active-tab="preview"] .ged-preview-toolbar{position:relative;top:auto;flex:0 0 auto}
+.ged-document-side-panel[data-active-tab="preview"] .ged-document-preview{flex:1 1 auto;min-height:0}
+.ged-document-side-panel[data-active-tab="preview"] .ged-side-preview-frame{height:100%;min-height:0}
+.ged-document-side-panel.is-expanded[data-active-tab="preview"] .ged-side-preview-frame{height:100%}
+.ged-document-side-panel.is-expanded .ged-side-close{position:relative;z-index:2}
+@media(max-width:700px){.ged-document-side-panel[data-active-tab="preview"] .ged-side-body{padding:10px}.ged-document-side-panel[data-active-tab="preview"] .ged-preview-toolbar{margin-bottom:10px}.ged-document-side-panel[data-active-tab="preview"] .ged-document-preview{min-height:360px}}
