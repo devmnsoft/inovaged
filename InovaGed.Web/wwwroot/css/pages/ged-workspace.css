@@ -163,3 +163,9 @@ body.ged-drawer-lock { overflow: hidden; }
   .ged-document-table tr { margin-bottom: .75rem; padding: .75rem; border: 1px solid var(--ig-border, #dbe4ef); border-radius: 14px; background: #fff; }
   .modal-dialog { margin: .5rem; }
 }
+
+/* Upload belongs to the workspace flow and must never cover document rows. */
+.ged-document-workspace{position:relative;z-index:1;min-height:0;overflow:visible}
+.ged-upload-dock{position:relative!important;inset:auto!important;z-index:1;flex:none;width:auto;margin:12px 12px 16px;isolation:isolate}
+.ged-upload-dock+ .ged-document-workspace{margin-top:0;clear:both}
+@media(max-width:620px){.ged-upload-dock{margin:8px 8px 14px}.ged-upload-dock-copy strong{white-space:normal}.ged-upload-dock-copy{overflow-wrap:anywhere}}

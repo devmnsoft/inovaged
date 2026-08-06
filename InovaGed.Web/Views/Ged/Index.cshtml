@@ -487,9 +487,6 @@
             </div>
         </div>
 
-        <div id="gedDocumentWorkspace" class="ged-document-workspace">
-            @await Html.PartialAsync("_DocumentsList", Model)
-        </div>
         <section class="ged-upload-dock" aria-labelledby="gedUploadDockTitle">
             <div class="ged-upload-dock-icon"><app-icon name="upload-cloud" size="24" decorative="true" /></div>
             <div class="ged-upload-dock-copy">
@@ -500,6 +497,10 @@
             <div class="ged-upload-dock-meta" aria-label="Informações do envio"><span>PDF, imagens e Office</span><span>OCR após o envio</span></div>
             <button type="button" class="btn btn-primary" data-ged-upload-dock><app-icon name="document-add" size="17" decorative="true" /> Selecionar arquivos</button>
         </section>
+        <div id="gedDocumentWorkspace" class="ged-document-workspace">
+            @await Html.PartialAsync("_DocumentsList", Model)
+        </div>
+
     </section>
 
     <aside id="gedDocumentSidePanel" class="ged-document-side-panel d-none" aria-hidden="true" aria-live="polite" aria-label="Detalhes do documento">
@@ -1411,7 +1412,7 @@
         window.updateSelectedDocumentsState = function () { updateSelectAllStates(); updateSelectedKpi(); window.updateMoveSelectedButton?.(); };
 
         if (!window.__gedDocumentsViewClickBound) {
-            document.addEventListener('click', function (e) {
+            document.addEventListener('click', async function (e) {
                 const btn = e.target.closest('.js-doc-view-mode');
                 if (!btn) return;
 
@@ -1439,7 +1440,7 @@
             }
         });
 
-        document.addEventListener('click', function (e) {
+        document.addEventListener('click', async function (e) {
             const filterLabels = { incomplete: 'Incompletos', ready: 'Prontos para consolidar', consolidated: 'Consolidados', 'ocr-partial': 'OCR parcial' };
             function matchesGedQuickFilter(row, filterName) {
                 if (filterName === 'ready') return row.dataset.documentReadyToConsolidate === 'true' || row.dataset.documentReadyConsolidate === 'true';
@@ -1593,7 +1594,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
-    document.addEventListener('click', function (e) {
+    document.addEventListener('click', async function (e) {
         const addBtn = e.target.closest('.js-add-document-part');
         if (addBtn && addPartModal) {
             e.preventDefault();
@@ -1620,7 +1621,9 @@ document.addEventListener('DOMContentLoaded', function () {
             e.preventDefault();
             const documentId = cancelBtn.dataset.documentId || '';
             if (!documentId) return;
-            const reason = prompt('Informe o motivo para cancelar o fracionamento (opcional):') || '';
+            const approved = await window.InovaGedFeedback.confirm({ title: 'Cancelar fracionamento', message: 'Deseja cancelar o fracionamento deste documento?', confirmText: 'Cancelar fracionamento', tone: 'danger' });
+            if (!approved) return;
+            const reason = '';
             const fd = new FormData(); fd.append('documentId', documentId); fd.append('reason', reason);
             fetch('/Ged/DocumentParts/Cancel', { method: 'POST', body: fd, headers: token ? { RequestVerificationToken: token } : {} })
                 .then(r => r.json().then(j => ({ ok: r.ok, j })))
@@ -1635,7 +1638,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const documentId = markBtn.dataset.documentId || '';
             const title = markBtn.dataset.documentTitle || 'documento selecionado';
             if (!documentId) return;
-            if (!confirm(`Marcar "${title}" como Documento incompleto? Ele ficará apto a receber novas partes futuramente.`)) return;
+            if (!await window.InovaGedFeedback.confirm({ title: 'Marcar documento incompleto', message: `Marcar "${title}" como documento incompleto? Ele ficará apto a receber novas partes futuramente.`, confirmText: 'Marcar incompleto' })) return;
             const fd = new FormData(); fd.append('documentId', documentId);
             fetch('/Ged/DocumentParts/MarkIncomplete', { method: 'POST', body: fd, headers: token ? { RequestVerificationToken: token } : {} })
                 .then(r => r.json().then(j => ({ ok: r.ok, j })))
@@ -1652,10 +1655,10 @@ document.addEventListener('DOMContentLoaded', function () {
             const sourceRow = document.querySelector(`[data-document-id="${window.CSS?.escape ? CSS.escape(documentId) : documentId}"]`);
             const partsWithOcr = Number(consolidateBtn?.dataset.partsWithOcr || sourceRow?.dataset.partialPartsWithOcr || 0);
             const partsCount = Number(consolidateBtn?.dataset.partsCount || sourceRow?.dataset.partialPartsCount || 0);
-            if (partsCount > 0 && partsWithOcr > 0 && partsWithOcr < partsCount) {
-                const choice = prompt(`Este documento possui OCR parcial: ${partsWithOcr} de ${partsCount} partes possui OCR. Após consolidar, o sistema poderá reprocessar o OCR da versão final.\n\nDigite 1 para Consolidar e reprocessar OCR, 2 para Consolidar sem reprocessar agora, ou deixe vazio para Cancelar.`);
-                if (choice !== '1' && choice !== '2') return;
-            } else if (!confirm('Revise o OCR de cada parte antes de consolidar. Deseja consolidar agora?')) return;
+            const consolidationMessage = partsCount > 0 && partsWithOcr > 0 && partsWithOcr < partsCount
+                ? `Este documento possui OCR parcial em ${partsWithOcr} de ${partsCount} partes. A versão final poderá ser reprocessada após a consolidação.`
+                : 'Revise o OCR de cada parte antes de consolidar. Deseja consolidar agora?';
+            if (!await window.InovaGedFeedback.confirm({ title: 'Consolidar documento', message: consolidationMessage, confirmText: 'Consolidar' })) return;
             const fd = new FormData(); fd.append('documentId', documentId);
             fetch('/Ged/DocumentParts/Consolidate', { method: 'POST', body: fd, headers: token ? { RequestVerificationToken: token } : {} })
                 .then(r => r.json().then(j => ({ ok: r.ok, j })))

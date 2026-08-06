@@ -1,165 +1,84 @@
 @model IReadOnlyList<InovaGed.Application.Ged.Physical.PhysicalLocationRowDto>
-
 @{
-    ViewData["Title"] = "Localizações Físicas";
-    ViewData["Subtitle"] = "Endereçamento técnico do acervo físico: prédio, sala, corredor, estante, prateleira e palete.";
-
+    ViewData["Title"] = "Localizações físicas";
     var q = (ViewBag.Q as string) ?? "";
     var total = Model?.Count ?? 0;
-    var semSala = Model?.Count(x => string.IsNullOrWhiteSpace(x.Room)) ?? 0;
-    var semObservacao = Model?.Count(x => string.IsNullOrWhiteSpace(x.Notes)) ?? 0;
+    var buildings = Model?.Select(x => x.Building).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().OrderBy(x => x).ToList() ?? new List<string>();
 }
+@section Styles { <link rel="stylesheet" href="~/css/pages/physical-locations.css" asp-append-version="true" /> }
 
-<div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
-    <div>
-        <div class="text-uppercase text-muted small fw-semibold">Guarda Física</div>
-        <h3 class="mb-1">Localizações Físicas</h3>
-        <div class="text-muted">Cadastre o endereço físico completo para rastrear caixas e documentos sem depender de controles paralelos.</div>
-    </div>
-
-    <div class="d-flex flex-wrap gap-2">
-        <a class="btn btn-outline-secondary" href="/Physical/PhysicalMap">
-            <i class="bi bi-map me-1"></i>Mapa de Guarda
-        </a>
-        <a class="btn btn-primary" href="/Physical/Locations/New">
-            <i class="bi bi-plus-lg me-1"></i>Nova Localização
-        </a>
-    </div>
-</div>
-
-@if (TempData["Ok"] is string ok && !string.IsNullOrWhiteSpace(ok))
-{
-    <div class="alert alert-success d-flex align-items-center gap-2 shadow-sm">
-        <i class="bi bi-check-circle-fill fs-5"></i>
-        <div>@ok</div>
-    </div>
-}
-@if (TempData["Err"] is string err && !string.IsNullOrWhiteSpace(err))
-{
-    <div class="alert alert-danger d-flex align-items-center gap-2 shadow-sm">
-        <i class="bi bi-exclamation-triangle-fill fs-5"></i>
-        <div>@err</div>
-    </div>
-}
-
-<div class="row g-3 mb-4">
-    <div class="col-12 col-md-4">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-body">
-                <div class="text-muted small">Total cadastrado</div>
-                <div class="display-6 fw-semibold">@total</div>
-                <div class="small text-muted">endereços físicos ativos</div>
-            </div>
-        </div>
-    </div>
-    <div class="col-12 col-md-4">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-body">
-                <div class="text-muted small">Pontos sem sala informada</div>
-                <div class="display-6 fw-semibold">@semSala</div>
-                <div class="small text-muted">revise para melhorar o mapa físico</div>
-            </div>
-        </div>
-    </div>
-    <div class="col-12 col-md-4">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-body">
-                <div class="text-muted small">Sem observação operacional</div>
-                <div class="display-6 fw-semibold">@semObservacao</div>
-                <div class="small text-muted">opcional, mas útil para auditoria e coleta</div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<form method="get" class="card border-0 shadow-sm mb-3">
-    <div class="card-body">
-        <div class="row g-2 align-items-end">
-            <div class="col-12 col-lg">
-                <label class="form-label fw-semibold">Pesquisar localização</label>
-                <input name="q" value="@q" class="form-control form-control-lg"
-                       placeholder="Formato: Arquivo Central, Sala 01, Estante A, Prateleira 03, Palete 02..." />
-                <div class="form-text">Use qualquer parte do endereço físico para localizar rapidamente.</div>
-            </div>
-            <div class="col-12 col-lg-auto d-flex gap-2">
-                <button class="btn btn-primary btn-lg" type="submit">
-                    <i class="bi bi-search me-1"></i>Pesquisar
-                </button>
-                <a class="btn btn-outline-secondary btn-lg" href="/Physical/Locations">
-                    <i class="bi bi-x-lg me-1"></i>Limpar
-                </a>
-            </div>
-        </div>
-    </div>
-</form>
-
-<div class="card border-0 shadow-sm">
-    <div class="card-header bg-white d-flex flex-wrap justify-content-between align-items-center gap-2 py-3">
+<div class="physical-locations-page" data-physical-locations>
+    <header class="physical-locations-hero">
         <div>
-            <strong>Endereços cadastrados</strong>
-            <div class="small text-muted">Cada alteração deve gerar rastreabilidade e apoiar a localização exata das caixas.</div>
+            <span class="physical-eyebrow"><app-icon name="location" size="15" decorative="true" /> Guarda física</span>
+            <h1>Localizações físicas</h1>
+            <p>Organize a rastreabilidade do acervo por prédio, sala e endereço de guarda, do recebimento à retirada.</p>
         </div>
-        <span class="badge text-bg-primary rounded-pill">@total resultado(s)</span>
-    </div>
+        <div class="physical-hero-actions">
+            <a class="btn btn-outline-secondary" href="/Physical/PhysicalMap"><app-icon name="map" size="17" decorative="true" /> Mapa de guarda</a>
+            <a class="btn btn-primary" href="/Physical/Locations/New"><app-icon name="add" size="17" decorative="true" /> Nova localização</a>
+        </div>
+    </header>
 
-    <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0">
-            <thead class="table-light">
-                <tr>
-                    <th>Endereço físico</th>
-                    <th>Detalhamento</th>
-                    <th>Observações</th>
-                    <th class="text-end" style="width: 220px;">Ações</th>
-                </tr>
-            </thead>
-            <tbody>
-                @if (total == 0)
-                {
-                    <tr>
-                        <td colspan="4" class="text-center py-5">
-                            <i class="bi bi-geo-alt display-5 text-muted d-block mb-2"></i>
-                            <div class="fw-semibold">Nenhuma localização encontrada</div>
-                            <div class="text-muted small mb-3">Cadastre o primeiro endereço físico para iniciar o controle de guarda.</div>
-                            <a class="btn btn-primary" href="/Physical/Locations/New">Cadastrar localização</a>
-                        </td>
-                    </tr>
-                }
-                else
-                {
-                    foreach (var r in Model)
-                    {
-                        <tr>
-                            <td>
-                                <div class="fw-semibold"><i class="bi bi-building me-1 text-primary"></i>@r.Building</div>
-                                <div class="small text-muted">Sala @(r.Room ?? "—")</div>
-                            </td>
-                            <td>
-                                <div class="d-flex flex-wrap gap-1">
-                                    <span class="badge text-bg-light border">Corredor @(r.Aisle ?? "—")</span>
-                                    <span class="badge text-bg-light border">Estante @(r.Rack ?? "—")</span>
-                                    <span class="badge text-bg-light border">Prateleira @(r.Shelf ?? "—")</span>
-                                    <span class="badge text-bg-light border">Palete @(r.Pallet ?? "—")</span>
-                                </div>
-                            </td>
-                            <td class="text-muted">@((string.IsNullOrWhiteSpace(r.Notes)) ? "Sem observações" : r.Notes)</td>
-                            <td class="text-end">
-                                <div class="btn-group" role="group" aria-label="Ações da localização">
-                                    <a class="btn btn-sm btn-outline-primary" href="/Physical/Locations/@r.Id" title="Editar localização">
-                                        <i class="bi bi-pencil"></i> Editar
-                                    </a>
-                                    <form method="post" action="/Physical/Locations/@r.Id/Delete" class="m-0"
-                                          onsubmit="return confirm('Confirma excluir esta localização? Esta ação deve ser usada apenas quando não houver caixas vinculadas.');">
-                                        @Html.AntiForgeryToken()
-                                        <button class="btn btn-sm btn-outline-danger" type="submit" title="Excluir localização">
-                                            <i class="bi bi-trash"></i>
-                                        </button>
-                                    </form>
-                                </div>
-                            </td>
-                        </tr>
-                    }
-                }
-            </tbody>
-        </table>
-    </div>
+    @if (TempData["Ok"] is string ok && !string.IsNullOrWhiteSpace(ok))
+    { <div class="alert alert-success physical-feedback" role="status"><app-icon name="check" size="18" decorative="true" /> @ok</div> }
+    @if (TempData["Err"] is string err && !string.IsNullOrWhiteSpace(err))
+    { <div class="alert alert-danger physical-feedback" role="alert"><app-icon name="warning" size="18" decorative="true" /> @err</div> }
+
+    <section class="physical-filter-card" aria-label="Busca e filtros">
+        <form method="get" class="physical-filter-grid">
+            <div class="physical-search-field">
+                <label for="physicalSearch">Buscar endereço</label>
+                <div class="physical-input-icon"><app-icon name="search" size="17" decorative="true" /><input id="physicalSearch" name="q" value="@q" class="form-control" placeholder="Prédio, sala, corredor, estante, prateleira ou palete" /></div>
+            </div>
+            <div>
+                <label for="buildingFilter">Prédio</label>
+                <select id="buildingFilter" class="form-select" data-building-filter><option value="">Todos os prédios</option>@foreach (var building in buildings) { <option value="@building">@building</option> }</select>
+            </div>
+            <div>
+                <label for="statusFilter">Status</label>
+                <select id="statusFilter" class="form-select"><option>Ativas</option></select>
+            </div>
+            <button class="btn btn-primary" type="submit"><app-icon name="search" size="16" decorative="true" /> Pesquisar</button>
+            @if (!string.IsNullOrWhiteSpace(q)) { <a class="btn btn-ghost" href="/Physical/Locations">Limpar</a> }
+        </form>
+    </section>
+
+    <div class="physical-list-heading"><div><h2>Endereços cadastrados</h2><p>Selecione uma localização para editar seus campos de forma segura.</p></div><span class="physical-count">@total resultado(s)</span></div>
+
+    @if (total == 0)
+    {
+        <section class="physical-empty-state">
+            <app-icon name="location" size="36" decorative="true" />
+            <h2>Nenhuma localização cadastrada</h2>
+            <p>Cadastre o primeiro endereço físico para rastrear caixas e documentos.</p>
+            <a class="btn btn-primary" href="/Physical/Locations/New">Cadastrar primeira localização</a>
+        </section>
+    }
+    else
+    {
+        <section class="physical-location-list" aria-label="Localizações cadastradas">
+        @foreach (var r in Model!)
+        {
+            <article class="physical-location-card" data-building="@r.Building">
+                <div class="physical-location-mark"><app-icon name="building" size="22" decorative="true" /></div>
+                <div class="physical-location-primary"><div class="physical-title-row"><h3>@r.Building</h3><span class="physical-status">Ativa</span></div><p><app-icon name="location" size="14" decorative="true" /> @(string.IsNullOrWhiteSpace(r.Room) ? "Sala não informada" : r.Room)</p></div>
+                <dl class="physical-address-grid">
+                    <div><dt>Corredor</dt><dd>@(r.Aisle ?? "—")</dd></div><div><dt>Estante</dt><dd>@(r.Rack ?? "—")</dd></div><div><dt>Prateleira</dt><dd>@(r.Shelf ?? "—")</dd></div><div><dt>Palete</dt><dd>@(r.Pallet ?? "—")</dd></div>
+                </dl>
+                <div class="physical-notes"><span>Observações</span><p>@(string.IsNullOrWhiteSpace(r.Notes) ? "Nenhuma observação operacional." : r.Notes)</p></div>
+                <div class="physical-card-actions">
+                    <a class="btn btn-sm btn-outline-primary" href="/Physical/Locations/@r.Id"><app-icon name="edit" size="15" decorative="true" /> Editar</a>
+                    <button class="btn btn-sm btn-ghost-danger" type="button" data-delete-location data-location-id="@r.Id" data-location-name="@r.Building, @r.Room"><app-icon name="delete" size="15" decorative="true" /><span>Excluir</span></button>
+                </div>
+            </article>
+        }
+        </section>
+    }
 </div>
+
+<div class="modal fade" id="deleteLocationModal" tabindex="-1" aria-labelledby="deleteLocationTitle" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered"><div class="modal-content physical-confirm-modal"><div class="modal-header"><div><span class="physical-eyebrow">Ação de segurança</span><h2 class="modal-title fs-5" id="deleteLocationTitle">Excluir localização?</h2></div><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button></div><div class="modal-body"><p>Você está prestes a excluir <strong data-delete-name></strong>. Continue somente se não houver caixas vinculadas.</p></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button><form method="post" data-delete-form>@Html.AntiForgeryToken()<button class="btn btn-danger" type="submit"><app-icon name="delete" size="16" decorative="true" /> Excluir localização</button></form></div></div></div>
+</div>
+
+@section Scripts { <script src="~/js/physical-locations.js" asp-append-version="true"></script> }

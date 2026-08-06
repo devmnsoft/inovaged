@@ -211,8 +211,8 @@
 
     if (els.expandPreview) {
       els.expandPreview.innerHTML = isPreviewExpanded
-        ? '<i class="bi bi-arrows-angle-contract" aria-hidden="true"></i> Restaurar'
-        : '<i class="bi bi-arrows-fullscreen" aria-hidden="true"></i> Expandir';
+        ? '<span aria-hidden="true">↙</span> Restaurar'
+        : '<span aria-hidden="true">↗</span> Expandir';
       els.expandPreview.setAttribute('aria-pressed', String(isPreviewExpanded));
     }
 
@@ -375,10 +375,10 @@
     return `<article class="hospital-result-card" data-item="${itemJson}" data-document-id="${documentId}" data-version-id="${versionId}" data-title="${escapeAttr(item.title || '')}" data-type="${escapeAttr(item.friendlyType || item.type || 'Documento')}" data-folder="${escapeAttr(item.folderPath || item.folderName || '')}" data-document-incomplete="${item.isDocumentIncomplete ? 'true' : 'false'}" tabindex="0">
       <div class="hospital-file-icon"><i class="bi ${iconFor(item)}"></i></div>
       <div class="hospital-result-main"><div class="hospital-result-title">${escapeHtml(item.title || 'Documento sem título')}</div>
-      <div class="hospital-result-file">${escapeHtml(item.fileName || '')}</div><div class="hospital-result-path"><i class="bi bi-folder2-open"></i> ${escapeHtml(item.folderPath || item.folderName || 'Sem pasta informada')}</div>
+      <div class="hospital-result-file">${escapeHtml(item.fileName || '')}</div><div class="hospital-result-path"><span class="hospital-inline-icon" aria-hidden="true">/</span> ${escapeHtml(item.folderPath || item.folderName || 'Sem pasta informada')}</div>
       <div class="hospital-badges"><span class="hospital-badge">${escapeHtml(item.code || 'Sem código')}</span><span class="hospital-badge">${escapeHtml(item.friendlyType || item.type || 'Documento')}</span><span class="hospital-badge ${(item.isOcrAvailable ?? item.hasOcr) ? 'ocr' : ''}">${ocrStatusLabel(item.ocrStatus, item.isOcrAvailable ?? item.hasOcr, item.hasOcrText)}</span><span class="hospital-badge match">${escapeHtml(item.matchSourceLabel || 'Relevância')}</span>${partialBadge}<span class="hospital-badge">${escapeHtml(item.createdAtFormatted || item.createdAt || '')}</span></div>
       <div class="hospital-snippet">${sanitizeSnippet(item.snippet || 'Documento encontrado pelos metadados informados.')}</div></div>
-      <div class="hospital-result-actions"><button class="btn btn-sm btn-primary js-open-preview-panel" data-result-action="preview" data-document-id="${documentId}" data-version-id="${versionId}" data-title="${escapeAttr(item.title || '')}" type="button"><i class="bi bi-eye"></i> Preview</button><button class="btn btn-sm btn-outline-primary" data-result-action="ocr" type="button"><i class="bi bi-body-text"></i> OCR</button><a class="btn btn-sm btn-outline-secondary" data-result-action="new-tab" href="${escapeAttr(item.viewerUrl || '#')}" target="_blank" rel="noopener"><i class="bi bi-box-arrow-up-right"></i> Dados</a></div>
+      <div class="hospital-result-actions"><button class="btn btn-sm btn-primary js-open-preview-panel" data-result-action="preview" data-document-id="${documentId}" data-version-id="${versionId}" data-title="${escapeAttr(item.title || '')}" type="button"><span class="hospital-inline-icon" aria-hidden="true">◉</span> Preview</button><button class="btn btn-sm btn-outline-primary" data-result-action="ocr" type="button"><span class="hospital-inline-icon" aria-hidden="true">OCR</span> OCR</button><a class="btn btn-sm btn-outline-secondary" data-result-action="new-tab" href="${escapeAttr(item.viewerUrl || '#')}" target="_blank" rel="noopener"><span class="hospital-inline-icon" aria-hidden="true">↗</span> Dados</a></div>
     </article>`;
   }
 
@@ -482,7 +482,7 @@
     els.previewLoading.classList.add('d-none');
     els.previewFrame.classList.add('d-none');
     els.previewEmpty.classList.remove('d-none');
-    els.previewEmpty.innerHTML = `<i class="bi bi-exclamation-triangle" aria-hidden="true"></i><strong>${escapeHtml(message || 'Falha ao carregar o preview.')}</strong><span>Tente abrir em nova aba ou selecione outro documento.</span>`;
+    els.previewEmpty.innerHTML = `<span class="hospital-inline-icon" aria-hidden="true">!</span><strong>${escapeHtml(message || 'Falha ao carregar o preview.')}</strong><span>Tente abrir em nova aba ou selecione outro documento.</span>`;
   }
 
   function isLoginFrame(frame) {
@@ -607,7 +607,7 @@
     }
     if (els.actionsContent) {
       els.actionsContent.classList.remove('hospital-preview-empty');
-      els.actionsContent.innerHTML = `<a class="hospital-preview-action primary" href="${escapeAttr(item.viewerUrl || '#')}" target="_blank" rel="noopener"><i class="bi bi-box-arrow-up-right"></i>Abrir dados</a><a class="hospital-preview-action" href="${escapeAttr(item.previewUrl || `/HospitalDocuments/Preview?versionId=${encodeURIComponent(item.versionId)}`)}" target="_blank" rel="noopener"><i class="bi bi-eye"></i>Abrir preview</a><button class="hospital-preview-action" type="button" data-action="ocr"><i class="bi bi-body-text"></i>Carregar OCR</button>`;
+      els.actionsContent.innerHTML = `<a class="hospital-preview-action primary" href="${escapeAttr(item.viewerUrl || '#')}" target="_blank" rel="noopener"><span class="hospital-inline-icon" aria-hidden="true">↗</span>Abrir dados</a><a class="hospital-preview-action" href="${escapeAttr(item.previewUrl || `/HospitalDocuments/Preview?versionId=${encodeURIComponent(item.versionId)}`)}" target="_blank" rel="noopener"><span class="hospital-inline-icon" aria-hidden="true">◉</span>Abrir preview</a><button class="hospital-preview-action" type="button" data-action="ocr"><span class="hospital-inline-icon" aria-hidden="true">OCR</span>Carregar OCR</button>`;
     }
   }
 
@@ -645,7 +645,7 @@
     els.previewFrame.removeAttribute('src');
     els.previewFrame.classList.add('d-none');
     els.previewLoading.classList.add('d-none');
-    els.previewEmpty.innerHTML = '<i class="bi bi-file-earmark-text" aria-hidden="true"></i><strong>Selecione um documento para visualizar.</strong><span>Clique em um resultado da busca para abrir o preview ao lado.</span>';
+    els.previewEmpty.innerHTML = '<img src="/images/illustrations/document-preview-empty.svg" alt=""><strong>Nenhum documento selecionado</strong><span>Selecione um documento na lista para visualizar detalhes, OCR e metadados.</span>';
     els.previewEmpty.classList.remove('d-none');
     els.ocrStatus.textContent = 'Selecione um documento para consultar o OCR.';
     els.ocrText.textContent = '';
