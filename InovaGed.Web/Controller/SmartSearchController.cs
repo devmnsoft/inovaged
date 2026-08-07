@@ -38,7 +38,7 @@ public sealed class SmartSearchController : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Ask([FromForm] string question, [FromForm] int page = 1, CancellationToken ct = default)
+    public async Task<IActionResult> Ask([FromForm] string question, [FromForm] string? conversationId, [FromForm] int page = 1, CancellationToken ct = default)
     {
         if (!_currentUser.IsAuthenticated) return Unauthorized(new { success = false, message = "Sua sessão expirou. Entre novamente." });
         try
@@ -49,9 +49,19 @@ public sealed class SmartSearchController : Controller
                 UserId = _currentUser.UserId,
                 IsAdmin = RolePolicyHelper.IsFullAdmin(User),
                 Question = question,
-                Page = page
+                Page = page,
+                ConversationId = conversationId,
+                SecurityContext = new DocumentAssistantSecurityContext
+                {
+                    TenantId = _currentUser.TenantId,
+                    UserId = _currentUser.UserId,
+                    CanReadOcr = User.IsInRole(AppRoles.Administrador) || User.HasClaim("permission", "GED.OCR.READ"),
+                    CanViewRestrictedDocuments = RolePolicyHelper.IsFullAdmin(User)
+                }
             }, ct);
             await _audit.WriteAsync(_currentUser.TenantId, _currentUser.UserId, "VIEW", "DOCUMENT_ASSISTANT_QUERY", null, "Consulta ao assistente documental", HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers.UserAgent.ToString(), new { response.Total, response.Page, correlationId = HttpContext.TraceIdentifier }, ct);
+            if (response.AppliedCriteria.IsSensitive)
+                await _audit.WriteAsync(_currentUser.TenantId, _currentUser.UserId, "VIEW", "DOCUMENT_ASSISTANT_SENSITIVE_QUERY", null, "Consulta sensível no assistente registrada sem armazenar o conteúdo", HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers.UserAgent.ToString(), new { response.Total, correlationId = HttpContext.TraceIdentifier }, ct);
             return Json(new { success = true, response });
         }
         catch (ArgumentException ex) { return BadRequest(new { success = false, message = ex.Message }); }
@@ -64,9 +74,10 @@ public sealed class SmartSearchController : Controller
     }
 
     [HttpGet]
-    public IActionResult Index()
+    public IActionResult Index([FromQuery] string? q)
     {
         if (!_currentUser.IsAuthenticated) return RedirectToAction("Login", "Account");
+        ViewBag.InitialQuestion = string.IsNullOrWhiteSpace(q) ? null : q.Trim()[..Math.Min(q.Trim().Length, 500)];
         return View();
     }
 

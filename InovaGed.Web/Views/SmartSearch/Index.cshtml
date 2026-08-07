@@ -7,7 +7,7 @@
 <main class="document-assistant" data-document-assistant data-endpoint="@Url.Action("Ask", "SmartSearch")">
     <header class="assistant-hero">
         <div><span class="assistant-eyebrow"><app-icon name="smart-search" size="16" decorative="true" /> Inteligência documental rastreável</span><h1>Assistente Documental Inteligente</h1><p>Converse com o acervo autorizado. Cada resposta indica critérios e documentos que sustentam o resultado.</p></div>
-        <div class="assistant-hero-actions"><a class="btn btn-outline-secondary" asp-action="Statistics"><app-icon name="report" size="16" decorative="true" /> Estatísticas</a><button class="btn btn-ghost" type="button" data-clear-conversation><app-icon name="delete" size="16" decorative="true" /> Limpar conversa</button></div>
+        <div class="assistant-hero-actions"><a class="btn btn-outline-secondary" asp-action="Statistics"><app-icon name="report" size="16" decorative="true" /> Estatísticas</a><button class="btn btn-outline-secondary" type="button" data-export-conversation disabled><app-icon name="download" size="16" decorative="true" /> Exportar</button><button class="btn btn-ghost" type="button" data-clear-conversation><app-icon name="delete" size="16" decorative="true" /> Limpar conversa</button></div>
     </header>
 
     <section class="assistant-trust" aria-label="Garantias da busca"><span><app-icon name="permissions" size="16" decorative="true" /> Respeita suas permissões</span><span><app-icon name="document" size="16" decorative="true" /> Respostas com fontes</span><span><app-icon name="search" size="16" decorative="true" /> Sem evidência, sem invenção</span></section>
@@ -25,7 +25,7 @@
             <form class="assistant-composer" data-assistant-form>
                 @Html.AntiForgeryToken()
                 <label for="assistantQuestion">Pergunte sobre os documentos</label>
-                <div class="assistant-compose-row"><textarea id="assistantQuestion" name="question" rows="2" maxlength="500" required placeholder="Ex.: mostre documentos sem OCR enviados este mês"></textarea><button class="btn btn-primary" type="submit" data-submit><app-icon name="search" size="18" decorative="true" /> <span>Consultar</span></button></div>
+                <div class="assistant-compose-row"><textarea id="assistantQuestion" name="question" rows="2" maxlength="500" required placeholder="Ex.: mostre documentos sem OCR enviados este mês">@ViewBag.InitialQuestion</textarea><button class="btn btn-primary" type="submit" data-submit><app-icon name="search" size="18" decorative="true" /> <span>Consultar</span></button></div>
                 <small>As respostas são baseadas somente em evidências encontradas no GED.</small>
             </form>
         </div>
