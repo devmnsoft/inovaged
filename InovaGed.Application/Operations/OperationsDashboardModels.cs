@@ -62,7 +62,7 @@ public sealed class OperationActionDto
     public string Message { get; set; } = string.Empty;
     public string ButtonText { get; set; } = string.Empty;
     public string Url { get; set; } = "#";
-    public string Icon { get; set; } = "bi-lightning-charge";
+    public string Icon { get; set; } = "activity";
     public string Severity { get; set; } = "medium";
     public int Priority { get; set; }
 }
