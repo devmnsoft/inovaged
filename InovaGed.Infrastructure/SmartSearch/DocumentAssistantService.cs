@@ -1,68 +1,96 @@
 using InovaGed.Application.SmartSearch;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace InovaGed.Infrastructure.SmartSearch;
 
-public sealed class DocumentAssistantService(ISmartSearchService search) : IDocumentAssistantService
+public sealed class DocumentAssistantService : IDocumentAssistantService
 {
+    private readonly ISmartSearchService _search;
+    private readonly IMemoryCache? _cache;
     private static readonly DocumentAssistantSuggestion[] DefaultSuggestions =
     [
         new() { Text = "Quais documentos estão sem OCR?", Category = "OCR" },
         new() { Text = "Mostre arquivos enviados este mês", Category = "Período" },
         new() { Text = "Encontre documentos sem classificação", Category = "Classificação" },
-        new() { Text = "Quais documentos precisam de revisão?", Category = "Qualidade" }
+        new() { Text = "Quais documentos estão prontos para auditoria?", Category = "Auditoria" },
+        new() { Text = "Quais documentos precisam de ação?", Category = "Qualidade" }
     ];
+
+    public DocumentAssistantService(ISmartSearchService search) : this(search, null) { }
+    public DocumentAssistantService(ISmartSearchService search, IMemoryCache? cache) { _search = search; _cache = cache; }
 
     public async Task<DocumentAssistantResponse> AskAsync(DocumentAssistantQuery query, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(query.Question))
             throw new ArgumentException("Escreva uma pergunta sobre os documentos.", nameof(query.Question));
 
-        var result = await search.SearchAsync(new SmartSearchRequest
+        var security = query.SecurityContext ?? new DocumentAssistantSecurityContext
         {
-            TenantId = query.TenantId,
-            UserId = query.UserId,
-            IsAdmin = query.IsAdmin,
-            Query = query.Question.Trim(),
-            FolderId = query.FolderId,
-            Page = Math.Max(1, query.Page),
-            PageSize = Math.Clamp(query.PageSize, 1, 20),
-            IncludeOcr = true,
-            IncludeMetadata = true,
-            Source = query.FolderId.HasValue ? "folder" : "DOCUMENT_ASSISTANT"
-        }, ct);
+            TenantId = query.TenantId, UserId = query.UserId, CanReadOcr = true,
+            CanViewRestrictedDocuments = query.IsAdmin
+        };
+        if (security.TenantId != query.TenantId || security.UserId != query.UserId)
+            throw new InvalidOperationException("O contexto de segurança não corresponde à sessão atual.");
 
+        var question = query.Question.Trim();
+        var cacheKey = $"assistant:{query.TenantId:N}:{query.UserId:N}:{query.Page}:{query.PageSize}:{query.FolderId}:{security.CanReadOcr}:{question.ToUpperInvariant()}";
+        if (_cache?.TryGetValue(cacheKey, out SmartSearchResult? cached) == true && cached is not null)
+            return BuildResponse(query, security, cached, question);
+
+        var result = await _search.SearchAsync(new SmartSearchRequest
+        {
+            TenantId = query.TenantId, UserId = query.UserId, IsAdmin = query.IsAdmin,
+            Query = question, FolderId = query.FolderId, Page = Math.Max(1, query.Page),
+            PageSize = Math.Clamp(query.PageSize, 1, 20), IncludeOcr = security.CanReadOcr,
+            IncludeMetadata = true, Source = query.FolderId.HasValue ? "folder" : "DOCUMENT_ASSISTANT"
+        }, ct);
+        _cache?.Set(cacheKey, result, TimeSpan.FromSeconds(30));
+        return BuildResponse(query, security, result, question);
+    }
+
+    private static DocumentAssistantResponse BuildResponse(DocumentAssistantQuery query, DocumentAssistantSecurityContext security, SmartSearchResult result, string question)
+    {
         var sources = result.Items.Select(item => new DocumentAssistantSource
         {
-            DocumentId = item.DocumentId,
-            VersionId = item.VersionId,
-            Title = item.Title,
-            FileName = item.FileName,
-            FolderName = item.FolderName,
-            DocumentType = item.DocumentType,
-            HasOcr = item.HasOcr,
-            OcrExcerpt = Limit(item.OcrSnippet, 280),
-            MatchReason = item.Reasons.Count == 0
-                ? "Correspondência encontrada nos metadados autorizados."
+            DocumentId = item.DocumentId, VersionId = item.VersionId, Title = item.Title,
+            FileName = item.FileName, FolderName = item.FolderName, DocumentType = item.DocumentType,
+            HasOcr = security.CanReadOcr && item.HasOcr,
+            OcrExcerpt = security.CanReadOcr ? Limit(item.OcrSnippet, 280) : null,
+            MatchReason = item.Reasons.Count == 0 ? "Correspondência encontrada nos metadados autorizados."
                 : string.Join("; ", item.Reasons.Take(3).Select(x => $"{x.Reason}: {x.Evidence}"))
         }).ToArray();
-
+        var conversationId = NormalizeConversationId(query.ConversationId);
+        var answer = sources.Length == 0
+            ? "Não encontrei evidências nos documentos aos quais você tem acesso. Tente informar tipo, setor, pessoa ou período."
+            : $"Encontrei {result.Total} documento(s) compatível(is). Confira as fontes antes de usar a informação.";
+        var messages = query.History.TakeLast(8).Concat([
+            new DocumentAssistantMessage { Role = "user", Content = question },
+            new DocumentAssistantMessage { Role = "assistant", Content = answer }
+        ]).ToArray();
+        var criteria = new DocumentAssistantCriteria
+        {
+            OriginalQuestion = question, DocumentType = result.Intent.DocumentType, From = result.Intent.From,
+            To = result.Intent.To, UsedOcr = security.CanReadOcr && result.SearchedOcr,
+            UsedMetadata = true, IsSensitive = result.Intent.ClinicalTerms.Count > 0 || !string.IsNullOrWhiteSpace(result.Intent.PatientName)
+        };
+        var actions = new List<DocumentAssistantAction>
+        {
+            new() { Label = "Usar como filtro", Kind = "filter", Url = $"/SmartSearch?q={Uri.EscapeDataString(question)}", Value = question },
+            new() { Label = "Exportar resposta", Kind = "export", Value = answer }
+        };
         return new DocumentAssistantResponse
         {
-            Answer = sources.Length == 0
-                ? "Não encontrei evidências nos documentos aos quais você tem acesso. Tente informar tipo, setor, paciente ou período."
-                : $"Encontrei {result.Total} documento(s) compatível(is). Confira as fontes antes de usar a informação.",
-            Criteria = string.IsNullOrWhiteSpace(result.Intent.Explanation)
-                ? "Título, arquivo, pasta, metadados e trechos limitados de OCR."
-                : result.Intent.Explanation,
-            Sources = sources,
-            Suggestions = DefaultSuggestions,
-            Total = result.Total,
-            Page = result.Page,
-            TotalPages = result.TotalPages
+            Answer = answer, Criteria = string.IsNullOrWhiteSpace(result.Intent.Explanation)
+                ? "Título, arquivo, pasta, metadados e trechos autorizados de OCR." : result.Intent.Explanation,
+            Sources = sources, Suggestions = DefaultSuggestions, Total = result.Total, Page = result.Page,
+            TotalPages = result.TotalPages, ConversationId = conversationId, AppliedCriteria = criteria,
+            Messages = messages, Actions = actions
         };
     }
 
-    private static string? Limit(string? text, int length) => string.IsNullOrWhiteSpace(text)
-        ? null
+    private static string NormalizeConversationId(string? value) =>
+        !string.IsNullOrWhiteSpace(value) && value.Length <= 64 && value.All(c => char.IsLetterOrDigit(c) || c is '-' or '_')
+            ? value : Guid.NewGuid().ToString("N");
+    private static string? Limit(string? text, int length) => string.IsNullOrWhiteSpace(text) ? null
         : text.Length <= length ? text : $"{text[..length].TrimEnd()}…";
 }

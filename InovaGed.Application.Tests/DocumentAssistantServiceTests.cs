@@ -44,6 +44,44 @@ public sealed class DocumentAssistantServiceTests
         Assert.False(search.Request.IsAdmin);
     }
 
+    [Fact]
+    public async Task AskAsync_HidesOcrWhenSecurityContextDoesNotAllowReadingIt()
+    {
+        var tenantId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var search = new RecordingSearchService(new SmartSearchResult
+        {
+            Total = 1,
+            Items = [new SmartSearchResultItem { DocumentId = Guid.NewGuid(), Title = "Restrito", HasOcr = true, OcrSnippet = "conteúdo clínico" }]
+        });
+        var response = await new DocumentAssistantService(search).AskAsync(new DocumentAssistantQuery
+        {
+            TenantId = tenantId, UserId = userId, Question = "localize",
+            SecurityContext = new DocumentAssistantSecurityContext { TenantId = tenantId, UserId = userId, CanReadOcr = false }
+        }, CancellationToken.None);
+        Assert.False(search.Request!.IncludeOcr);
+        Assert.False(response.Sources.Single().HasOcr);
+        Assert.Null(response.Sources.Single().OcrExcerpt);
+    }
+
+    [Fact]
+    public async Task AskAsync_ReturnsConversationCriteriaAndWorkingActions()
+    {
+        var search = new RecordingSearchService(new SmartSearchResult
+        {
+            Intent = new SmartSearchIntent { DocumentType = "PDF", ClinicalTerms = ["termo"] }
+        });
+        var response = await new DocumentAssistantService(search).AskAsync(new DocumentAssistantQuery
+        {
+            TenantId = Guid.NewGuid(), UserId = Guid.NewGuid(), Question = "PDF com termo"
+        }, CancellationToken.None);
+        Assert.NotEmpty(response.ConversationId);
+        Assert.Equal("PDF", response.AppliedCriteria.DocumentType);
+        Assert.True(response.AppliedCriteria.IsSensitive);
+        Assert.Contains(response.Actions, action => action.Kind == "filter" && action.Url!.StartsWith("/SmartSearch?q="));
+        Assert.Equal(["user", "assistant"], response.Messages.Select(message => message.Role));
+    }
+
     private sealed class RecordingSearchService(SmartSearchResult result) : ISmartSearchService
     {
         public SmartSearchRequest? Request { get; private set; }

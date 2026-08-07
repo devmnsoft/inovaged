@@ -15,6 +15,9 @@ public sealed class DocumentAssistantQuery
     public int Page { get; set; } = 1;
     public int PageSize { get; set; } = 10;
     public Guid? FolderId { get; set; }
+    public string? ConversationId { get; set; }
+    public IReadOnlyList<DocumentAssistantMessage> History { get; set; } = [];
+    public DocumentAssistantSecurityContext? SecurityContext { get; set; }
 }
 
 public sealed class DocumentAssistantResponse
@@ -27,6 +30,10 @@ public sealed class DocumentAssistantResponse
     public int Page { get; set; }
     public int TotalPages { get; set; }
     public bool HasEvidence => Sources.Count > 0;
+    public string ConversationId { get; set; } = string.Empty;
+    public DocumentAssistantCriteria AppliedCriteria { get; set; } = new();
+    public IReadOnlyList<DocumentAssistantMessage> Messages { get; set; } = [];
+    public IReadOnlyList<DocumentAssistantAction> Actions { get; set; } = [];
 }
 
 public sealed class DocumentAssistantSource
@@ -52,4 +59,39 @@ public sealed class DocumentAssistantConversationState
 {
     public string ConversationId { get; set; } = Guid.NewGuid().ToString("N");
     public List<string> Questions { get; set; } = [];
+}
+
+
+public sealed class DocumentAssistantMessage
+{
+    public string Role { get; set; } = "user";
+    public string Content { get; set; } = string.Empty;
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class DocumentAssistantCriteria
+{
+    public string OriginalQuestion { get; set; } = string.Empty;
+    public string? DocumentType { get; set; }
+    public DateTime? From { get; set; }
+    public DateTime? To { get; set; }
+    public bool UsedOcr { get; set; }
+    public bool UsedMetadata { get; set; }
+    public bool IsSensitive { get; set; }
+}
+
+public sealed class DocumentAssistantSecurityContext
+{
+    public Guid TenantId { get; set; }
+    public Guid UserId { get; set; }
+    public bool CanReadOcr { get; set; } = true;
+    public bool CanViewRestrictedDocuments { get; set; }
+}
+
+public sealed class DocumentAssistantAction
+{
+    public string Label { get; set; } = string.Empty;
+    public string Kind { get; set; } = string.Empty;
+    public string? Url { get; set; }
+    public string? Value { get; set; }
 }
