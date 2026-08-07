@@ -141,9 +141,9 @@ public sealed class OperationsController : Controller
         if (!page.ModuleReady)
         {
             var tech = IsTechnicalAdmin() ? "<div class=\"mt-3 d-flex gap-2 justify-content-center\"><a class=\"btn btn-sm btn-primary\" href=\"/SchemaHealth\">Abrir Schema Health</a><a class=\"btn btn-sm btn-outline-secondary\" href=\"/SystemHealth\">Ver Startup Guard</a></div>" : string.Empty;
-            return $"<div class=\"ops-empty\"><i class=\"bi bi-tools fs-2 d-block mb-2\"></i><strong>{E(page.Message ?? page.EmptyMessage)}</strong>{tech}</div>";
+            return $"<div class=\"ops-empty\">{Icon("settings", "ops-empty__icon")}<strong>{E(page.Message ?? page.EmptyMessage)}</strong>{tech}</div>";
         }
-        if (page.Items.Count == 0) return $"<div class=\"ops-empty\"><i class=\"bi bi-check2-circle fs-2 d-block mb-2 text-success\"></i>{E(page.EmptyMessage)}</div>";
+        if (page.Items.Count == 0) return $"<div class=\"ops-empty\">{Icon("check", "ops-empty__icon text-success")}{E(page.EmptyMessage)}</div>";
 
         var headers = type switch
         {
@@ -159,7 +159,11 @@ public sealed class OperationsController : Controller
         foreach (var h in headers) sb.Append("<th>").Append(E(h)).Append("</th>");
         sb.Append("</tr></thead><tbody>");
         foreach (var item in page.Items) sb.Append(RenderRow(type, item));
-        sb.Append("</tbody></table></div><div class=\"text-muted small mt-2\">Total: ").Append(page.Total).Append("</div>");
+        var pages = Math.Max(1, (int)Math.Ceiling(page.Total / (double)page.PageSize));
+        sb.Append("</tbody></table></div><nav class=\"ops-pagination\" aria-label=\"Paginação da fila\"><span class=\"text-muted small\">Total: ").Append(page.Total)
+          .Append(" · Página ").Append(page.Page).Append(" de ").Append(pages).Append("</span><div class=\"btn-group btn-group-sm\">")
+          .Append(PagerButton("Anterior", page.Page - 1, page.Page <= 1)).Append(PagerButton("Próxima", page.Page + 1, page.Page >= pages))
+          .Append("</div></nav>");
         return sb.ToString();
     }
 
@@ -188,6 +192,8 @@ public sealed class OperationsController : Controller
     private static string Css(string? severity) => severity is "critical" ? "danger" : severity is "high" ? "warning text-dark" : severity is "medium" ? "info text-dark" : "secondary";
     private static string Dt(DateTime? value) => value.HasValue ? WebUtility.HtmlEncode(value.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm")) : "-";
     private static string E(object? value) => WebUtility.HtmlEncode(value?.ToString() ?? "-");
+    private static string Icon(string name, string css = "") => $"<svg class=\"atlas-icon {E(css)}\" aria-hidden=\"true\"><use href=\"#atlas-icon-{E(name)}\"></use></svg>";
+    private static string PagerButton(string label, int page, bool disabled) => $"<button type=\"button\" class=\"btn btn-outline-secondary\" data-ops-page=\"{page}\" {(disabled ? "disabled" : string.Empty)}>{E(label)}</button>";
 
     private Task AuditAsync(string action, string summary, string module, object data, CancellationToken ct)
         => _audit.WriteAsync(_currentUser.TenantId, _currentUser.UserId, action, "OPERATIONS", null, summary, HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers.UserAgent.ToString(), new { module, filter = data, path = Request.Path.ToString(), correlationId = HttpContext.TraceIdentifier, timestamp = DateTimeOffset.UtcNow }, ct);

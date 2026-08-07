@@ -203,14 +203,14 @@ public sealed class OperationsDashboardService : IOperationsDashboardService
 
     private static string IconFor(string key) => key switch
     {
-        "ocrError" or "criticalAlerts" => "bi-exclamation-octagon",
-        "withoutOcr" => "bi-file-earmark-text",
-        "unclassified" => "bi-tags",
-        "readyToConsolidate" => "bi-intersect",
-        "loanOverdue" => "bi-clock-history",
-        "protocolWaiting" => "bi-inboxes",
-        "documentQuality" => "bi-shield-check",
-        _ => "bi-lightning-charge"
+        "ocrError" or "criticalAlerts" => "error",
+        "withoutOcr" => "document-search",
+        "unclassified" => "classification",
+        "readyToConsolidate" => "documents",
+        "loanOverdue" => "history",
+        "protocolWaiting" => "workflow",
+        "documentQuality" => "permissions",
+        _ => "activity"
     };
 
     private async Task<string> UnclassifiedCountSqlAsync(NpgsqlConnection conn, Scope scope, CancellationToken ct)

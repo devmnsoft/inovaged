@@ -4,6 +4,8 @@
     const toastEl = document.getElementById('opsToast');
     const toastBody = document.getElementById('opsToastBody');
     const toast = window.bootstrap && toastEl ? new bootstrap.Toast(toastEl, { delay: 3500 }) : null;
+    let queueRequest;
+    let filterTimer;
 
     function showToast(message, ok){
         if(!toast){ console.log(message); return; }
@@ -21,17 +23,20 @@
         return qs.toString();
     }
     function activeType(){ return document.querySelector('#operationsTabs .nav-link.active')?.dataset.type || 'ged'; }
-    async function loadQueue(type){
+    async function loadQueue(type, page = 1){
         type = type || activeType();
         const tab = document.querySelector(`#operationsTabs .nav-link[data-type="${type}"]`);
         if(tab && !tab.classList.contains('active')) bootstrap.Tab.getOrCreateInstance(tab).show();
         content.innerHTML = '<div class="ops-skeleton"></div>';
+        queueRequest?.abort();
+        queueRequest = new AbortController();
         try{
-            const res = await fetch(`/Operations/Queue?${params({ type })}`, { headers: { 'X-Requested-With':'XMLHttpRequest' }});
+            const res = await fetch(`/Operations/Queue?${params({ type, page })}`, { headers: { 'X-Requested-With':'XMLHttpRequest' }, signal: queueRequest.signal });
             const payload = await res.json();
             if(!payload.success){ content.innerHTML = `<div class="alert alert-danger">${payload.message || 'Não foi possível carregar esta fila.'}</div>`; showToast(payload.message || 'Falha ao carregar fila.', false); return; }
             content.innerHTML = payload.html || '<div class="ops-empty">Nenhum item encontrado.</div>';
         }catch(e){
+            if(e.name === 'AbortError') return;
             content.innerHTML = '<div class="alert alert-danger">Não foi possível carregar esta fila.</div>';
             showToast('Falha de comunicação ao carregar fila.', false);
         }
@@ -39,6 +44,8 @@
     document.querySelectorAll('#operationsTabs .nav-link').forEach(t => t.addEventListener('shown.bs.tab', () => loadQueue(t.dataset.type)));
     document.querySelectorAll('[data-card-target]').forEach(a => a.addEventListener('click', e => { const target = a.dataset.cardTarget; if(target){ e.preventDefault(); loadQueue(target); } }));
     form.addEventListener('submit', e => { e.preventDefault(); showToast('Filtros aplicados à fila ativa.'); loadQueue(); });
+    form.addEventListener('input', () => { clearTimeout(filterTimer); filterTimer = setTimeout(() => loadQueue(activeType()), 450); });
+    document.addEventListener('click', e => { const pager = e.target.closest('[data-ops-page]'); if(pager && !pager.disabled) loadQueue(activeType(), Number(pager.dataset.opsPage)); });
     document.addEventListener('click', e => { const action = e.target.closest('[data-ops-action]'); if(action){ showToast(`Abrindo ação: ${action.textContent.trim()}`); const token = form.querySelector('input[name="__RequestVerificationToken"]')?.value || ''; const body = new URLSearchParams({ module: activeType(), actionUrl: action.getAttribute('href') || '', actionLabel: action.textContent.trim() }); fetch('/Operations/ActionClicked', { method:'POST', headers:{ 'RequestVerificationToken': token, 'Content-Type':'application/x-www-form-urlencoded' }, body }).catch(() => {}); } });
     document.getElementById('btnRevalidate')?.addEventListener('click', async () => {
         const token = form.querySelector('input[name="__RequestVerificationToken"]')?.value || '';

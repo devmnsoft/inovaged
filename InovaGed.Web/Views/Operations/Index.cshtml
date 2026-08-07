@@ -26,7 +26,7 @@
     @if (Model.HasSchemaWarnings)
     {
         <div class="alert alert-warning d-flex flex-wrap align-items-center justify-content-between gap-3" role="status">
-            <div><i class="bi bi-exclamation-triangle me-2"></i><strong>Alguns módulos ainda não estão configurados.</strong> Execute o Schema Health para aplicar as migrations pendentes.</div>
+            <div><app-icon name="warning" decorative="true" size="18" css-class="me-2" /><strong>Alguns módulos ainda não estão configurados.</strong> Execute o Schema Health para aplicar as migrations pendentes.</div>
             @if (Model.IsGlobalScope)
             {
                 <div class="d-flex gap-2">
@@ -55,7 +55,7 @@
                 <div class="form-check"><input class="form-check-input" type="checkbox" name="onlyOverdue" value="true" id="onlyOverdue"><label class="form-check-label" for="onlyOverdue">Vencidos</label></div>
                 <div class="form-check"><input class="form-check-input" type="checkbox" name="onlyCritical" value="true" id="onlyCritical"><label class="form-check-label" for="onlyCritical">Críticos</label></div>
             </div>
-            <div class="col-md-2 ms-auto"><button class="btn btn-primary w-100" type="submit"><i class="bi bi-funnel"></i> Aplicar filtros</button></div>
+            <div class="col-md-2 ms-auto"><button class="btn btn-primary w-100" type="submit"><app-icon name="filter" decorative="true" size="17" /> Aplicar filtros</button></div>
         </div>
     </form>
 
@@ -68,7 +68,7 @@
                     foreach (var action in Model.NextActions)
                     {
                         <div class="list-group-item d-flex flex-wrap justify-content-between align-items-center gap-2">
-                            <div><i class="bi @action.Icon me-2"></i><span class="badge bg-@SeverityBadge(action.Severity) me-2">Prioridade @action.Priority</span>@action.Message</div>
+                            <div><app-icon name="@action.Icon" decorative="true" size="18" css-class="me-2" /><span class="badge bg-@SeverityBadge(action.Severity) me-2">Prioridade @action.Priority</span>@action.Message</div>
                             <a href="@action.Url" class="btn btn-sm btn-outline-primary" data-card-target="@(action.Url.TrimStart('#'))">@action.ButtonText</a>
                         </div>
                     }
