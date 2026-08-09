@@ -1,0 +1,19 @@
+@model IReadOnlyList<InovaGed.Web.Models.Atlas.AtlasMetricVm>
+<section class="atlas-prime-metrics" aria-label="Indicadores da página">
+    @foreach (var metric in Model)
+    {
+        var tag = metric.Url is null ? "article" : "a";
+        @if (tag == "a")
+        {
+            <a class="atlas-prime-metric atlas-prime-metric--@metric.Tone" href="@metric.Url">
+                <app-icon name="@metric.Icon" size="20" decorative="true" /><span>@metric.Label</span><strong>@metric.Value</strong><small>@metric.Hint</small>
+            </a>
+        }
+        else
+        {
+            <article class="atlas-prime-metric atlas-prime-metric--@metric.Tone">
+                <app-icon name="@metric.Icon" size="20" decorative="true" /><span>@metric.Label</span><strong>@metric.Value</strong><small>@metric.Hint</small>
+            </article>
+        }
+    }
+</section>

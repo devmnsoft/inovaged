@@ -1,0 +1,29 @@
+:root { --atlas-prime-shadow: 0 18px 45px rgba(16, 42, 67, .09); --atlas-prime-border: color-mix(in srgb, var(--atlas-color-border, #d8e1ea) 82%, transparent); }
+.atlas-prime-page { min-width: 0; display: grid; gap: 1.25rem; }
+.atlas-prime-header { position: relative; overflow: hidden; display: flex; align-items: flex-end; justify-content: space-between; gap: 1.5rem; padding: clamp(1.25rem, 3vw, 2.25rem); border: 1px solid var(--atlas-prime-border); border-radius: 1.25rem; background: radial-gradient(circle at 92% 10%, rgba(49, 130, 206, .14), transparent 34%), linear-gradient(145deg, #fff, #f7fafc); box-shadow: var(--atlas-prime-shadow); }
+.atlas-prime-header::after { content: ""; position: absolute; inset: auto -4rem -6rem auto; width: 13rem; aspect-ratio: 1; border: 1.5rem solid rgba(30, 96, 145, .05); border-radius: 50%; pointer-events: none; }
+.atlas-prime-header__identity { min-width: 0; max-width: 52rem; }
+.atlas-prime-header h1 { margin: .45rem 0 .35rem; color: #102a43; font-size: clamp(1.65rem, 3vw, 2.35rem); font-weight: 750; letter-spacing: -.035em; }
+.atlas-prime-header p { max-width: 48rem; margin: 0; color: #52667a; font-size: 1rem; }
+.atlas-prime-eyebrow { display: inline-flex; align-items: center; gap: .45rem; color: #176b87; font-size: .75rem; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+.atlas-prime-breadcrumb { display: flex; flex-wrap: wrap; gap: .45rem; margin-bottom: .7rem; font-size: .78rem; }
+.atlas-prime-breadcrumb > * + *::before { content: "/"; margin-right: .45rem; color: #9aabb9; }
+.atlas-prime-breadcrumb a { color: #52667a; text-decoration: none; }
+.atlas-prime-header__actions { z-index: 1; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .65rem; }
+.atlas-prime-header__actions .btn { display: inline-flex; align-items: center; gap: .45rem; white-space: nowrap; border-radius: .7rem; }
+.atlas-prime-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr)); gap: .85rem; }
+.atlas-prime-metric { display: grid; grid-template-columns: auto 1fr; gap: .25rem .65rem; min-width: 0; padding: 1rem; color: #243b53; text-decoration: none; border: 1px solid var(--atlas-prime-border); border-radius: 1rem; background: #fff; box-shadow: 0 8px 24px rgba(16, 42, 67, .055); transition: transform .16s ease, box-shadow .16s ease; }
+a.atlas-prime-metric:hover { color: #102a43; transform: translateY(-2px); box-shadow: var(--atlas-prime-shadow); }
+.atlas-prime-metric > .atlas-icon { grid-row: 1 / span 2; color: #287c97; }
+.atlas-prime-metric span { color: #627d98; font-size: .78rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.atlas-prime-metric strong { font-size: 1.65rem; line-height: 1.15; }
+.atlas-prime-metric small { grid-column: 1 / -1; margin-top: .25rem; color: #829ab1; }
+.atlas-prime-metric--critical { border-top: 3px solid #c53030; } .atlas-prime-metric--warning { border-top: 3px solid #d69e2e; } .atlas-prime-metric--success { border-top: 3px solid #25855a; }
+.atlas-prime-panel { overflow: hidden; border: 1px solid var(--atlas-prime-border); border-radius: 1rem; background: #fff; box-shadow: 0 10px 30px rgba(16, 42, 67, .06); }
+.atlas-prime-panel__header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem 1.15rem; border-bottom: 1px solid var(--atlas-prime-border); }
+.atlas-prime-panel__header h2 { margin: 0; color: #243b53; font-size: 1rem; font-weight: 750; }
+.atlas-prime-state { display: grid; justify-items: center; gap: .45rem; padding: 3rem 1.25rem; text-align: center; color: #627d98; }
+.atlas-prime-state strong { color: #243b53; font-size: 1rem; } .atlas-prime-state p { max-width: 32rem; margin: 0; }
+*:focus-visible { outline: 3px solid rgba(49, 130, 206, .42); outline-offset: 3px; }
+@media (max-width: 767.98px) { .atlas-prime-header { align-items: stretch; flex-direction: column; } .atlas-prime-header__actions { justify-content: stretch; } .atlas-prime-header__actions .btn { flex: 1; justify-content: center; } .atlas-prime-panel { overflow-x: clip; } }
+@media (prefers-reduced-motion: reduce) { .atlas-prime-metric { transition: none; } }

@@ -3,6 +3,7 @@ using InovaGed.Application.Common.Context;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Ged.Reports;
 using InovaGed.Web.Models.Reports;
+using InovaGed.Web.Models.Atlas;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -27,6 +28,38 @@ public sealed class ReportsController : Controller
 
     private Guid TenantId => _ctx.TenantId;
     private Guid UserId => _ctx.UserId;
+
+    [HttpGet]
+    public IActionResult Index()
+    {
+        var items = new List<ReportCatalogItem>
+        {
+            new("Documentos por status", "Visão consolidada de volumes, processamento e pendências do acervo.", "documents", "/Ged/Kpi", "Documentos"),
+            new("Documentos sem OCR", "Fila operacional de documentos que ainda não possuem texto pesquisável.", "ocr", "/Ged/Processing?status=pending", "OCR"),
+            new("OCR por status", "Acompanhe itens pendentes, em processamento, concluídos e com erro.", "activity", "/Ocr", "OCR"),
+            new("Documentos sem classificação", "Itens que precisam de tipologia ou classe documental.", "classification", "/ClassificationDashboard", "Classificação"),
+            new("Classificação por classe", "Plano de classificação completo com hierarquia institucional.", "classification", "/Reports/PcdFull", "Classificação", true),
+            new("Temporalidade a vencer e vencida", "Prazos de guarda e itens que exigem destinação.", "retention", "/Retention", "Temporalidade"),
+            new("Empréstimos e devoluções", "Movimentações físicas, vencimentos e documentos emprestados.", "loan", "/Reports/Loans", "Operação", true),
+            new("Auditoria por usuário e período", "Rastreabilidade das ações realizadas no sistema.", "audit", "/Audit", "Governança", true),
+            new("Workflows atrasados", "Tramitações que ultrapassaram o prazo definido.", "workflow", "/Operations?onlyOverdue=true", "Operação"),
+            new("Acessos negados", "Tentativas bloqueadas para acompanhamento de segurança.", "restricted-access", "/Audit?eventType=ACCESS_DENIED", "Governança", true),
+            new("Uploads com falha", "Lotes com arquivos rejeitados ou falhas de processamento.", "upload-cloud", "/Ged/UploadMonitor?status=failed", "Operação"),
+            new("Validação de assinaturas", "Integridade, cadeia de confiança e resultado das assinaturas.", "certificate-validation", "/Reports/SignatureValidation", "Governança", true)
+        };
+        var vm = new ReportsHubVm
+        {
+            Items = items,
+            Metrics =
+            [
+                new("Relatórios disponíveis", items.Count.ToString(), "catálogo operacional", "neutral", "report"),
+                new("Com exportação", items.Count(x => x.ExportAvailable).ToString(), "saída pronta para uso", "success", "download"),
+                new("Áreas cobertas", items.Select(x => x.Category).Distinct().Count().ToString(), "visões integradas", "neutral", "dashboard"),
+                new("Atenção operacional", items.Count(x => x.Category == "Operação" || x.Category == "OCR").ToString(), "filas para resolução", "warning", "warning", "/Operations")
+            ]
+        };
+        return View(vm);
+    }
 
     // =========================================================
     // PLC/PCD — GET /Reports/PcdFull
