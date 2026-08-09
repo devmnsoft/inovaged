@@ -637,6 +637,7 @@ builder.Services
 // Application Services
 // =======================================================
 builder.Services.AddScoped<DocumentAppService>();
+builder.Services.AddSingleton<IPocCatalogService, PocCatalogService>();
 
 // =======================================================
 // Build + Pipeline

@@ -1,0 +1,7 @@
+@model InovaGed.Web.Models.Poc.PocEvidencesVm
+@using InovaGed.Web.Models.Atlas
+@{ ViewData["Title"] = "Evidências da PoC"; var header = new AtlasPageHeaderVm("Catálogo de evidências", "Referências funcionais e técnicas prontas para verificação por cliente, gestor ou banca.", "audit", "Central de demonstração", new[] { new AtlasPageAction("Baixar manifesto JSON", "/Poc/Evidences/Manifest", "download", true) }, new (string, string?)[] { ("Central PoC", "/Poc"), ("Evidências", null) }); }
+<div class="atlas-prime-page poc-prime"><partial name="Atlas/_PageHeader" model="header" />
+<nav class="poc-prime__tabs" aria-label="Seções da Central PoC"><a href="/Poc">Visão geral</a><a href="/Poc/Checklist">Checklist 1–27</a><a href="/Poc/Demo">Roteiro de demo</a><a class="active" href="/Poc/Evidences" aria-current="page">Evidências</a></nav>
+<section class="poc-evidence-grid">@foreach (var item in Model.Items) { <article><div><span class="poc-status poc-status--@item.Status.ToString().ToLowerInvariant()">@item.Status</span><small>@item.ValidatedAt.ToString("dd/MM/yyyy HH:mm 'UTC'")</small></div><h2>@item.Module</h2><p>@item.Evidence</p><code>@item.TechnicalReference</code><a href="@item.Route">Ver evidência na tela <app-icon name="arrow-right" size="15" decorative="true" /></a></article> }</section></div>
+@section Styles { <link rel="stylesheet" href="~/css/pages/poc-prime.css" asp-append-version="true" /> }
