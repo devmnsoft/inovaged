@@ -1,0 +1,17 @@
+.reports-prime__toolbar { align-items: flex-end; flex-wrap: wrap; }
+.reports-prime__toolbar small { color: #829ab1; }
+.reports-prime__filters { display: flex; flex-wrap: wrap; gap: .6rem; }
+.reports-prime__search { display: flex; align-items: center; gap: .45rem; min-width: min(19rem, 100%); padding: 0 .75rem; border: 1px solid #cbd5df; border-radius: .65rem; background: #fff; }
+.reports-prime__search:focus-within { border-color: #3182ce; box-shadow: 0 0 0 3px rgba(49,130,206,.13); }
+.reports-prime__search input { min-width: 0; width: 100%; padding: .55rem 0; border: 0; outline: 0; background: transparent; }
+.reports-prime__filters select { padding: .55rem 2.2rem .55rem .75rem; border: 1px solid #cbd5df; border-radius: .65rem; background: #fff; }
+.reports-prime__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr)); gap: 1px; background: #e4ebf1; }
+.reports-prime__card { position: relative; display: grid; grid-template-columns: auto 1fr; align-content: start; gap: .35rem .8rem; min-width: 0; padding: 1.3rem; background: #fff; }
+.reports-prime__card-icon { grid-row: 1 / span 2; display: grid; place-items: center; width: 2.75rem; height: 2.75rem; color: #176b87; border-radius: .8rem; background: #e9f5f8; }
+.reports-prime__category { color: #627d98; font-size: .7rem; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+.reports-prime__card h3 { margin: 0; color: #243b53; font-size: 1rem; }
+.reports-prime__card p { grid-column: 1 / -1; min-height: 3rem; margin: .65rem 0; color: #627d98; font-size: .88rem; }
+.reports-prime__card-actions { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .65rem; margin-top: auto; }
+.reports-prime__card-actions .btn { display: inline-flex; align-items: center; gap: .4rem; border-radius: .6rem; }
+.reports-prime__availability { display: inline-flex; align-items: center; gap: .25rem; color: #25855a; font-size: .72rem; }.reports-prime__availability.muted { color: #829ab1; }
+@media (max-width: 767.98px) { .reports-prime__filters, .reports-prime__filters > *, .reports-prime__search { width: 100%; } .reports-prime__card p { min-height: 0; } }

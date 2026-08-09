@@ -1,0 +1,29 @@
+@model InovaGed.Web.Models.Atlas.AtlasPageHeaderVm
+<header class="atlas-prime-header">
+    <div class="atlas-prime-header__identity">
+        @if (Model.Breadcrumbs?.Count > 0)
+        {
+            <nav class="atlas-prime-breadcrumb" aria-label="Navegação estrutural">
+                @foreach (var item in Model.Breadcrumbs)
+                {
+                    if (!string.IsNullOrWhiteSpace(item.Url)) { <a href="@item.Url">@item.Label</a> }
+                    else { <span aria-current="page">@item.Label</span> }
+                }
+            </nav>
+        }
+        <span class="atlas-prime-eyebrow"><app-icon name="@Model.Icon" size="16" decorative="true" /> @Model.Eyebrow</span>
+        <h1>@Model.Title</h1>
+        <p>@Model.Subtitle</p>
+    </div>
+    @if (Model.Actions?.Count > 0)
+    {
+        <div class="atlas-prime-header__actions" aria-label="Ações da página">
+            @foreach (var action in Model.Actions)
+            {
+                <a class="btn @(action.Primary ? "btn-primary" : "btn-outline-secondary")" href="@action.Url">
+                    <app-icon name="@action.Icon" size="17" decorative="true" /> @action.Label
+                </a>
+            }
+        </div>
+    }
+</header>

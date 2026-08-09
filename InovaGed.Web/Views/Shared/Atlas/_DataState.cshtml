@@ -1,0 +1,6 @@
+@model InovaGed.Web.Models.Atlas.AtlasDataStateVm
+<div class="atlas-prime-state atlas-prime-state--@Model.Kind" role="status">
+    <app-icon name="@Model.Icon" size="32" decorative="true" />
+    <strong>@Model.Title</strong><p>@Model.Message</p>
+    @if (Model.Action is not null) { <a class="btn btn-outline-primary" href="@Model.Action.Url">@Model.Action.Label</a> }
+</div>

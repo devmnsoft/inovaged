@@ -1,0 +1,56 @@
+@model InovaGed.Web.Models.Reports.ReportsHubVm
+@using InovaGed.Web.Models.Atlas
+@{
+    ViewData["Title"] = "Relatórios";
+    ViewData["Subtitle"] = "Indicadores e evidências para gestão documental";
+    var pageHeader = new AtlasPageHeaderVm(
+        "Relatórios e inteligência operacional",
+        "Transforme dados do acervo em decisões, evidências de conformidade e filas de trabalho acionáveis.",
+        "report",
+        "Gestão e governança",
+        new[] { new AtlasPageAction("Abrir Central Operacional", "/Operations", "dashboard", true) },
+        new (string Label, string? Url)[] { ("Início", "/"), ("Relatórios", null) });
+}
+<div class="atlas-prime-page reports-prime" data-reports-page>
+    <partial name="Atlas/_PageHeader" model="pageHeader" />
+    <partial name="Atlas/_PageMetrics" model="Model.Metrics" />
+
+    <section class="atlas-prime-panel">
+        <div class="atlas-prime-panel__header reports-prime__toolbar">
+            <div><h2>Catálogo de relatórios</h2><small id="reportsResultCount">@Model.Items.Count visões disponíveis</small></div>
+            <div class="reports-prime__filters">
+                <label class="visually-hidden" for="reportSearch">Buscar relatório</label>
+                <span class="reports-prime__search"><app-icon name="search" size="17" decorative="true" /><input id="reportSearch" type="search" placeholder="Buscar relatório" autocomplete="off" /></span>
+                <label class="visually-hidden" for="reportCategory">Filtrar por área</label>
+                <select id="reportCategory">
+                    <option value="">Todas as áreas</option>
+                    @foreach (var category in Model.Items.Select(x => x.Category).Distinct().Order()) { <option value="@category">@category</option> }
+                </select>
+                <button id="clearReportFilters" class="btn btn-outline-secondary" type="button"><app-icon name="close" size="15" decorative="true" /> Limpar</button>
+            </div>
+        </div>
+        <div class="reports-prime__grid" id="reportsCatalog">
+            @foreach (var report in Model.Items)
+            {
+                <article class="reports-prime__card" data-report-card data-title="@report.Title.ToLowerInvariant() @report.Description.ToLowerInvariant()" data-category="@report.Category">
+                    <div class="reports-prime__card-icon"><app-icon name="@report.Icon" size="24" decorative="true" /></div>
+                    <span class="reports-prime__category">@report.Category</span>
+                    <h3>@report.Title</h3><p>@report.Description</p>
+                    <div class="reports-prime__card-actions">
+                        <a class="btn btn-primary" href="@report.Url">Abrir relatório <app-icon name="arrow-right" size="15" decorative="true" /></a>
+                        @if (report.ExportAvailable)
+                        { <span class="reports-prime__availability"><app-icon name="check" size="14" decorative="true" /> Exportação disponível na visão</span> }
+                        else
+                        { <span class="reports-prime__availability muted" title="Esta visão ainda não possui formato de exportação"><app-icon name="information" size="14" decorative="true" /> Consulta online</span> }
+                    </div>
+                </article>
+            }
+        </div>
+        <div id="reportsEmptyState" hidden>
+            <partial name="Atlas/_DataState" model="@(new AtlasDataStateVm("filtered", "Nenhum relatório encontrado", "Revise o termo ou limpe o filtro de área.", "search"))" />
+        </div>
+    </section>
+</div>
+
+@section Styles { <link rel="stylesheet" href="~/css/pages/reports-prime.css" asp-append-version="true" /> }
+@section Scripts { <script src="~/js/reports-prime.js" asp-append-version="true"></script> }
