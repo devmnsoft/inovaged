@@ -10,15 +10,14 @@ public sealed class ClassificationPlanController : Controller
     private readonly IClassificationPlanRepository _repo;
     private readonly ILogger<ClassificationPlanController> _logger;
 
-    // ✅ AJUSTE para o padrão real do seu projeto
-    // Opção 1: private readonly ICurrentContext _ctx;  => TenantId => _ctx.TenantId
-    // Opção 2: private readonly ICurrentUser _currentUser => TenantId => _currentUser.TenantId
-    private Guid TenantId => Guid.Parse("00000000-0000-0000-0000-000000000001");
-    private Guid UserId => Guid.Empty;
+    private readonly InovaGed.Application.Identity.ICurrentUser _currentUser;
+    private Guid TenantId => _currentUser.TenantId;
+    private Guid UserId => _currentUser.UserId;
 
-    public ClassificationPlanController(IClassificationPlanRepository repo, ILogger<ClassificationPlanController> logger)
+    public ClassificationPlanController(IClassificationPlanRepository repo, InovaGed.Application.Identity.ICurrentUser currentUser, ILogger<ClassificationPlanController> logger)
     {
         _repo = repo;
+        _currentUser = currentUser;
         _logger = logger;
     }
 
@@ -81,6 +80,7 @@ public sealed class ClassificationPlanController : Controller
     }
 
     [HttpPost("Move")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> Move([FromBody] MoveRequest req, CancellationToken ct)
     {
         try

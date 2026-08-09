@@ -82,19 +82,19 @@ public sealed class GedSmartSearchController : Controller
     }
 
     [HttpPost("ReindexDocument/{documentId:guid}")]
-    [IgnoreAntiforgeryToken]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> ReindexDocument(Guid documentId, CancellationToken ct) => await ReindexJsonAsync(() => _diagnostics.EnqueueReindexDocumentAsync(_currentUser.TenantId, documentId, ct));
 
     [HttpPost("ReindexAll")]
-    [IgnoreAntiforgeryToken]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> ReindexAll(CancellationToken ct) => await ReindexJsonAsync(() => _diagnostics.EnqueueReindexAllAsync(_currentUser.TenantId, ct));
 
     [HttpPost("ReindexMissing")]
-    [IgnoreAntiforgeryToken]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> ReindexMissing(CancellationToken ct) => await ReindexJsonAsync(() => _diagnostics.EnqueueReindexMissingAsync(_currentUser.TenantId, ct));
 
     [HttpPost("RebuildVectors")]
-    [IgnoreAntiforgeryToken]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> RebuildVectors(CancellationToken ct) => await ReindexJsonAsync(() => _diagnostics.RebuildVectorsAsync(_currentUser.TenantId, ct));
 
     private async Task<IActionResult> ReindexJsonAsync(Func<Task<int>> action)

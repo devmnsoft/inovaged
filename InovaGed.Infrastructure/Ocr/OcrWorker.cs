@@ -15,11 +15,6 @@ using Npgsql;
 
 namespace InovaGed.Infrastructure.Ocr;
 
-internal static class SystemUsers
-{
-    public static readonly Guid OcrWorker = Guid.Parse("00000000-0000-0000-0000-000000000999");
-}
-
 public sealed class OcrWorker : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
@@ -64,7 +59,13 @@ public sealed class OcrWorker : BackgroundService
                     continue;
                 }
 
-                var actorId = job.RequestedBy ?? SystemUsers.OcrWorker;
+                if (job.RequestedBy is null || job.RequestedBy == Guid.Empty)
+                {
+                    await jobs.MarkErrorAsync(job.Id, "OCR sem solicitante válido; reenvie o job com uma identidade tenant-aware.", stoppingToken);
+                    _logger.LogWarning("OCR JobId={JobId} recusado por ausência de solicitante.", job.Id);
+                    continue;
+                }
+                var actorId = job.RequestedBy.Value;
 
                 _logger.LogInformation(
                     "Processando OCR JobId={JobId}, VersionId={VersionId}, Actor={ActorId}",

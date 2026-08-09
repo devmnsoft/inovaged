@@ -31,6 +31,15 @@ select
   name as Name,
   description as Description,
   parent_id as ParentId,
+  activity_type as ActivityType,
+  sort_order as SortOrder,
+  current_term_text as CurrentTermText,
+  current_event as CurrentEvent,
+  intermediate_term_text as IntermediateTermText,
+  intermediate_event as IntermediateEvent,
+  normative_source as NormativeSource,
+  condition_or_exception as ConditionOrException,
+  review_status as ReviewStatus,
   retention_start_event::text as RetentionStartEvent,
   retention_active_days as RetentionActiveDays,
   retention_active_months as RetentionActiveMonths,
@@ -45,7 +54,7 @@ select
   retention_notes as RetentionNotes
 from ged.classification_plan
 where tenant_id=@tenant_id
-order by code;
+order by sort_order, code;
 ";
         var rows = await conn.QueryAsync<ClassificationPlanRow>(new CommandDefinition(sql, new { tenant_id = tenantId }, cancellationToken: ct));
         return rows.AsList();

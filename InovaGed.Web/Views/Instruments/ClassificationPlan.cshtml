@@ -40,6 +40,30 @@
                     <label class="form-label">Descrição</label>
                     <input name="Description" class="form-control" />
                 </div>
+                <div class="col-md-2">
+                    <label class="form-label">Atividade</label>
+                    <select name="ActivityType" class="form-select"><option>MEIO</option><option>FIM</option></select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Ordenação</label>
+                    <input name="SortOrder" type="number" class="form-control" value="0" />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Prazo/evento corrente</label>
+                    <div class="input-group"><input name="CurrentTermText" class="form-control" placeholder="Ex.: vigência + 5 anos" /><input name="CurrentEvent" class="form-control" placeholder="Evento" /></div>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Prazo/evento intermediário</label>
+                    <div class="input-group"><input name="IntermediateTermText" class="form-control" placeholder="Preserva * e último registro" /><input name="IntermediateEvent" class="form-control" placeholder="Evento" /></div>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Fonte normativa</label>
+                    <input name="NormativeSource" class="form-control" />
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Condição ou exceção</label>
+                    <input name="ConditionOrException" class="form-control" />
+                </div>
                 <div class="col-md-3">
                     <label class="form-label">Retenção Ativa (dias/meses/anos)</label>
                     <div class="d-flex gap-1">
