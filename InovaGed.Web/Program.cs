@@ -171,6 +171,7 @@ mvc.AddRazorRuntimeCompilation();
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICorrelationContext, CorrelationContext>();
+builder.Services.AddScoped<InovaGed.Application.PhysicalArchive.ILabelPrintRegistrar, InovaGed.Infrastructure.PhysicalArchive.LabelPrintRegistrar>();
 builder.Services.AddTransient<CorrelationIdHandler>();
 builder.Services.AddHttpClient("InovaGed").AddHttpMessageHandler<CorrelationIdHandler>();
 builder.Services.AddInovaGedObservability(builder.Configuration);

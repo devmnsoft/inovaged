@@ -3,14 +3,20 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using InovaGed.Application.Common.Database;
 using InovaGed.Web.Security;
+using InovaGed.Application.PhysicalArchive;
+using System.Text.Json;
+using QRCoder;
 
 namespace InovaGed.Web.Controllers;
 
 [Authorize(Policy = AppPolicies.FullAdminOnly)]
 public class LabelsController : GedControllerBase
 {
-    public LabelsController(IDbConnectionFactory dbFactory) : base(dbFactory)
+    private readonly ILabelPrintRegistrar _printRegistrar;
+
+    public LabelsController(IDbConnectionFactory dbFactory, ILabelPrintRegistrar printRegistrar) : base(dbFactory)
     {
+        _printRegistrar = printRegistrar;
     }
 
     [HttpGet]
@@ -103,9 +109,21 @@ where b.tenant_id=@tid
 
         if (b == null) return NotFound("Caixa não encontrada.");
 
-        await RegisterLabelPrintAsync(db, "BOX", boxId, null);
-
+        ViewBag.QrSvg = CreateQrSvg($"{Request.Scheme}://{Request.Host}/Physical/BoxContents?boxId={boxId}");
         return View(b);
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> PrintBoxLabel(Guid boxId, string? reprintReason, CancellationToken ct)
+    {
+        using var db = await OpenAsync();
+        var snapshot = await LoadBoxLabelAsync(db, boxId);
+        if (snapshot is null) return NotFound();
+        await RegisterAsync("BOX", boxId, "BOX_ATLAS_V1", snapshot, reprintReason, ct);
+        ViewBag.QrSvg = CreateQrSvg($"{Request.Scheme}://{Request.Host}/Physical/BoxContents?boxId={boxId}");
+        ViewBag.AutoPrint = true;
+        return View("BoxLabel", snapshot);
     }
 
     [HttpGet]
@@ -136,53 +154,51 @@ where d.tenant_id=@tid
 
         if (d == null) return NotFound("Documento não encontrado.");
 
-        await RegisterLabelPrintAsync(db, "DOCUMENT", null, docId);
-
+        ViewBag.QrSvg = CreateQrSvg($"{Request.Scheme}://{Request.Host}/Ged/Document/{docId}");
         return View(d);
     }
 
-    private async Task RegisterLabelPrintAsync(
-      System.Data.IDbConnection db,
-      string labelType,
-      Guid? boxId,
-      Guid? documentId)
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> PrintDocumentLabel(Guid docId, string? reprintReason, CancellationToken ct)
     {
-        await db.ExecuteAsync(@"
-insert into ged.label_print
-(
-    id,
-    tenant_id,
-    box_id,
-    document_id,
-    label_type,
-    printed_by,
-    printed_at,
-    ip_address,
-    user_agent,
-    data
-)
-values
-(
-    gen_random_uuid(),
-    @tenant_id,
-    @box_id,
-    @document_id,
-    @label_type,
-    @printed_by,
-    now(),
-    @ip_address,
-    @user_agent,
-    jsonb_build_object('source', 'LabelsController')
-);", new
-        {
-            tenant_id = TenantId,
-            box_id = boxId,
-            document_id = documentId,
-            label_type = labelType,
-            printed_by = UserId,
-            ip_address = HttpContext.Connection.RemoteIpAddress?.ToString(),
-            user_agent = Request.Headers.UserAgent.ToString()
-        });
+        using var db = await OpenAsync();
+        var snapshot = await LoadDocumentLabelAsync(db, docId);
+        if (snapshot is null) return NotFound();
+        await RegisterAsync("DOCUMENT", docId, "DOCUMENT_ATLAS_V1", snapshot, reprintReason, ct);
+        ViewBag.QrSvg = CreateQrSvg($"{Request.Scheme}://{Request.Host}/Ged/Document/{docId}");
+        ViewBag.AutoPrint = true;
+        return View("DocumentLabel", snapshot);
+    }
+
+    private async Task RegisterAsync(string type, Guid subjectId, string template, object snapshot, string? reason, CancellationToken ct)
+    {
+        if (UserId is not Guid userId) throw new UnauthorizedAccessException("Usuário autenticado obrigatório.");
+        await _printRegistrar.RegisterAsync(new LabelPrintRequest(
+            TenantId, userId, type, subjectId, template, JsonSerializer.Serialize(snapshot),
+            HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers.UserAgent.ToString(), reason), ct);
+    }
+
+    private async Task<dynamic?> LoadBoxLabelAsync(System.Data.IDbConnection db, Guid boxId)
+        => await db.QueryFirstOrDefaultAsync("""
+select b.id, b.box_no, b.label_code, b.notes, pl.location_code, pl.building, pl.room,
+       pl.aisle, pl.rack, pl.shelf, pl.pallet
+from ged.box b left join ged.physical_location pl on pl.tenant_id=b.tenant_id and pl.id=b.location_id and pl.reg_status='A'
+where b.tenant_id=@tid and b.id=@boxId and b.reg_status='A'
+""", new { tid = TenantId, boxId });
+
+    private async Task<dynamic?> LoadDocumentLabelAsync(System.Data.IDbConnection db, Guid docId)
+        => await db.QueryFirstOrDefaultAsync("""
+select d.id, d.code, d.title, d.status, bx.box_no, bx.label_code as box_label_code
+from ged.document d left join ged.batch_item bi on bi.tenant_id=d.tenant_id and bi.document_id=d.id and bi.reg_status='A'
+left join ged.box bx on bx.tenant_id=d.tenant_id and bx.id=bi.box_id and bx.reg_status='A'
+where d.tenant_id=@tid and d.id=@docId
+""", new { tid = TenantId, docId });
+
+    private static string CreateQrSvg(string content)
+    {
+        using var data = QRCodeGenerator.GenerateQrCode(content, QRCodeGenerator.ECCLevel.Q);
+        return new SvgQRCode(data).GetGraphic(4);
     }
 
     [HttpGet]

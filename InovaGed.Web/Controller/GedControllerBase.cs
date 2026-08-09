@@ -21,7 +21,7 @@ public abstract class GedControllerBase : Controller
         {
             var claim = User?.FindFirst("tenant_id")?.Value;
             if (Guid.TryParse(claim, out var tid)) return tid;
-            return Guid.Parse("00000000-0000-0000-0000-000000000001");
+            throw new UnauthorizedAccessException("A identidade autenticada não contém tenant válido.");
         }
     }
 

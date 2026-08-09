@@ -96,6 +96,9 @@
             @(Model.notes ?? "—")
         </div>
 
+        <div class="code-box" aria-label="QR Code de rastreio">
+            @Html.Raw((string)ViewBag.QrSvg)
+        </div>
         <div class="code-box">
             <strong>Link de rastreio:</strong><br />
             <span class="mono">@url</span>
@@ -107,12 +110,17 @@
         </div>
 
         <div class="footer">
-            Impressão registrada no sistema em ged.label_print.
+            A impressão só é auditada após confirmação.
         </div>
+        <form method="post" action="@Url.Action("PrintBoxLabel", "Labels")">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="boxId" value="@boxId" />
+            <label for="reprintReason">Motivo (obrigatório em reimpressões)</label>
+            <input id="reprintReason" name="reprintReason" maxlength="300" />
+            <button type="submit">Registrar e imprimir</button>
+        </form>
     </div>
 
-    <script>
-        window.print();
-    </script>
+    @if (ViewBag.AutoPrint == true) { <script>window.print();</script> }
 </body>
 </html>

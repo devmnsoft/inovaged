@@ -88,6 +88,9 @@
             @boxInfo
         </div>
 
+        <div class="code-box" aria-label="QR Code do documento">
+            @Html.Raw((string)ViewBag.QrSvg)
+        </div>
         <div class="code-box">
             <strong>Sistema:</strong><br />
             <span class="mono">@url</span>
@@ -99,12 +102,17 @@
         </div>
 
         <div class="footer">
-            Impressão registrada no sistema em ged.label_print.
+            A impressão só é auditada após confirmação.
         </div>
+        <form method="post" action="@Url.Action("PrintDocumentLabel", "Labels")">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="docId" value="@docId" />
+            <label for="reprintReason">Motivo (obrigatório em reimpressões)</label>
+            <input id="reprintReason" name="reprintReason" maxlength="300" />
+            <button type="submit">Registrar e imprimir</button>
+        </form>
     </div>
 
-    <script>
-        window.print();
-    </script>
+    @if (ViewBag.AutoPrint == true) { <script>window.print();</script> }
 </body>
 </html>
