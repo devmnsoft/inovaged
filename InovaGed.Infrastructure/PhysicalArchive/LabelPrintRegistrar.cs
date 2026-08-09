@@ -6,7 +6,7 @@ using InovaGed.Application.PhysicalArchive;
 
 namespace InovaGed.Infrastructure.PhysicalArchive;
 
-public sealed class LabelPrintRegistrar(IDbConnectionFactory dbFactory) : ILabelPrintRegistrar
+public sealed class LabelPrintRegistrar(IDbConnectionFactory dbFactory) : ILabelPrintRegistrar, ILabelPrintService
 {
     public async Task RegisterAsync(LabelPrintRequest request, CancellationToken cancellationToken = default)
     {
@@ -33,4 +33,20 @@ values
 """, new { request.TenantId, request.SubjectType, request.SubjectId, request.TemplateCode, request.SnapshotJson, Hash = hash, request.UserId, request.IpAddress, request.UserAgent, request.ReprintReason }, tx, cancellationToken: cancellationToken));
         await tx.CommitAsync(cancellationToken);
     }
+}
+
+public sealed class LabelTemplateService : ILabelTemplateService
+{
+    private static readonly IReadOnlyDictionary<string, LabelTemplate> Templates =
+        new Dictionary<string, LabelTemplate>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["BOX"] = new("BOX_ATLAS", "2", "BOX"),
+            ["DOCUMENT"] = new("DOCUMENT_ATLAS", "2", "DOCUMENT"),
+            ["BATCH"] = new("BATCH_ATLAS", "2", "BATCH")
+        };
+
+    public LabelTemplate GetCurrent(string subjectType) =>
+        Templates.TryGetValue(subjectType, out var template)
+            ? template
+            : throw new ArgumentOutOfRangeException(nameof(subjectType), "Tipo de etiqueta não suportado.");
 }

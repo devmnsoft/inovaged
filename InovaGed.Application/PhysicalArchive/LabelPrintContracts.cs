@@ -15,3 +15,21 @@ public interface ILabelPrintRegistrar
 {
     Task RegisterAsync(LabelPrintRequest request, CancellationToken cancellationToken = default);
 }
+
+/// <summary>Canonical boundary for auditable label printing.</summary>
+public interface ILabelPrintService
+{
+    Task RegisterAsync(LabelPrintRequest request, CancellationToken cancellationToken = default);
+}
+
+public sealed record LabelTemplate(string Code, string Version, string SubjectType);
+
+public interface ILabelTemplateService
+{
+    LabelTemplate GetCurrent(string subjectType);
+}
+
+public interface ILabelQrCodeService
+{
+    string CreateTrackingSvg(string authorizedTrackingUrl);
+}
