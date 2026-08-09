@@ -15,7 +15,10 @@ public sealed class BatchRowDto
         "TRIAGE" => "Triagem",
         "DIGITIZATION" => "Digitalização",
         "INDEXING" => "Indexação",
+        "CLASSIFICATION" => "Classificação",
         "ARCHIVED" => "Arquivado",
+        "COMPLETED" => "Concluído",
+        "CANCELLED" => "Cancelado",
         _ => Status
     };
 

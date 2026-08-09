@@ -26,8 +26,21 @@ public sealed class PhysicalCommands : IPhysicalCommands
         {
             if (tenantId == Guid.Empty) return Result<Guid>.Fail("TENANT", "Tenant inválido.");
             if (vm is null) return Result<Guid>.Fail("VM", "Dados inválidos.");
+            if (string.IsNullOrWhiteSpace(vm.UnitName) || string.IsNullOrWhiteSpace(vm.Building))
+                return Result<Guid>.Fail("LOCATION", "Imóvel/unidade e prédio são obrigatórios.");
 
             await using var conn = await _db.OpenAsync(ct);
+            var fullCode = BuildLocationCode(vm);
+            if (string.IsNullOrWhiteSpace(fullCode))
+                return Result<Guid>.Fail("LOCATION", "Informe ao menos unidade e um componente da localização.");
+
+            var duplicate = await conn.ExecuteScalarAsync<int>(new CommandDefinition("""
+select count(*)::int from ged.physical_location
+where tenant_id=@tenant_id and reg_status='A' and upper(full_location_code)=upper(@code)
+  and (@id is null or id<>@id);
+""", new { tenant_id = tenantId, code = fullCode, id = vm.Id }, cancellationToken: ct));
+            if (duplicate > 0)
+                return Result<Guid>.Fail("DUPLICATE", "Já existe uma localização ativa com este código neste tenant.");
 
             if (vm.Id is null || vm.Id == Guid.Empty)
             {
@@ -37,6 +50,8 @@ insert into ged.physical_location
     id,
     tenant_id,
     location_code,
+    unit_name,
+    full_location_code,
     property_name,
     address_street,
     address_number,
@@ -59,6 +74,8 @@ values
     gen_random_uuid(),
     @tenant_id,
     @location_code,
+    @unit_name,
+    @full_location_code,
     @property_name,
     @address_street,
     @address_number,
@@ -83,6 +100,8 @@ returning id;
                 {
                     tenant_id = tenantId,
                     location_code = NullIfWhite(vm.LocationCode),
+                    unit_name = NullIfWhite(vm.UnitName),
+                    full_location_code = fullCode,
                     property_name = NullIfWhite(vm.PropertyName),
                     address_street = NullIfWhite(vm.AddressStreet),
                     address_number = NullIfWhite(vm.AddressNumber),
@@ -101,6 +120,7 @@ returning id;
 
                 await _audit.WriteAsync(tenantId, userId, "CREATE", "physical_location", id,
                     "Localização física criada", null, null, new { vm.LocationCode, vm.Building, vm.Room }, ct);
+                await WriteLocationHistoryAsync(conn, tenantId, id, "CREATE", userId, null, fullCode, ct);
 
                 return Result<Guid>.Ok(id);
             }
@@ -108,6 +128,8 @@ returning id;
             const string upd = """
 update ged.physical_location
 set location_code=@location_code,
+    unit_name=@unit_name,
+    full_location_code=@full_location_code,
     property_name=@property_name,
     address_street=@address_street,
     address_number=@address_number,
@@ -121,10 +143,11 @@ set location_code=@location_code,
     rack=@rack,
     shelf=@shelf,
     pallet=@pallet,
-    notes=@notes
+    notes=@notes,
+    updated_at=now(), updated_by=@user_id
 where tenant_id=@tenant_id
   and id=@id
-  and reg_status='A';
+  ;
 """;
 
             var rows = await conn.ExecuteAsync(new CommandDefinition(upd, new
@@ -132,6 +155,9 @@ where tenant_id=@tenant_id
                 tenant_id = tenantId,
                 id = vm.Id,
                 location_code = NullIfWhite(vm.LocationCode),
+                unit_name = NullIfWhite(vm.UnitName),
+                full_location_code = fullCode,
+                user_id = userId,
                 property_name = NullIfWhite(vm.PropertyName),
                 address_street = NullIfWhite(vm.AddressStreet),
                 address_number = NullIfWhite(vm.AddressNumber),
@@ -152,6 +178,7 @@ where tenant_id=@tenant_id
 
             await _audit.WriteAsync(tenantId, userId, "UPDATE", "physical_location", vm.Id,
                 "Localização física atualizada", null, null, new { vm.LocationCode, vm.Building, vm.Room }, ct);
+            await WriteLocationHistoryAsync(conn, tenantId, vm.Id.Value, "UPDATE", userId, null, fullCode, ct);
 
             return Result<Guid>.Ok(vm.Id.Value);
         }
@@ -160,6 +187,27 @@ where tenant_id=@tenant_id
             _logger.LogError(ex, "PhysicalCommands.UpsertLocationAsync failed. Tenant={Tenant}", tenantId);
             return Result<Guid>.Fail("PHY", "Falha ao salvar localização física.");
         }
+    }
+
+    public async Task<Result> SetLocationActiveAsync(Guid tenantId, Guid id, bool active, Guid? userId, string? reason, CancellationToken ct)
+    {
+        await using var conn = await _db.OpenAsync(ct);
+        if (!active)
+        {
+            var used = await conn.ExecuteScalarAsync<int>(new CommandDefinition(
+                "select count(*)::int from ged.box where tenant_id=@tenant and location_id=@id and reg_status='A'",
+                new { tenant = tenantId, id }, cancellationToken: ct));
+            if (used > 0) return Result.Fail("INUSE", "Transfira ou inative as caixas antes de inativar a localização.");
+        }
+        var rows = await conn.ExecuteAsync(new CommandDefinition("""
+update ged.physical_location set reg_status=@status, updated_at=now(), updated_by=@user
+where tenant_id=@tenant and id=@id;
+""", new { tenant = tenantId, id, status = active ? "A" : "I", user = userId }, cancellationToken: ct));
+        if (rows == 0) return Result.Fail("NOTFOUND", "Localização não encontrada.");
+        await WriteLocationHistoryAsync(conn, tenantId, id, active ? "ACTIVATE" : "DEACTIVATE", userId, reason, null, ct);
+        await _audit.WriteAsync(tenantId, userId, active ? "ACTIVATE" : "DEACTIVATE", "physical_location", id,
+            active ? "Localização física ativada" : "Localização física inativada", null, null, new { reason }, ct);
+        return Result.Ok();
     }
 
     public async Task<Result> DeleteLocationAsync(Guid tenantId, Guid id, Guid? userId, CancellationToken ct)
@@ -235,6 +283,7 @@ insert into ged.box
     reg_status,
     created_at,
     updated_at
+    ,lifecycle_status,is_full,last_moved_at,last_moved_by
 )
 values
 (
@@ -248,6 +297,7 @@ values
     'A',
     now(),
     now()
+    ,@lifecycle_status,@is_full,now(),@user_id
 )
 returning id;
 """;
@@ -259,6 +309,7 @@ returning id;
                     label_code = vm.LabelCode.Trim(),
                     notes = NullIfWhite(vm.Notes),
                     location_id = vm.LocationId
+                    ,lifecycle_status = NormalizeBoxState(vm.LifecycleStatus), is_full = vm.IsFull, user_id = userId
                 }, cancellationToken: ct));
 
                 await _audit.WriteAsync(tenantId, userId, "CREATE", "box", id,
@@ -273,7 +324,9 @@ set label_code=@label_code,
     notes=@notes,
     location_id=@location_id,
     box_no=coalesce(@box_no, box_no),
-    updated_at=now()
+    updated_at=now(), lifecycle_status=@lifecycle_status, is_full=@is_full,
+    last_moved_at=case when location_id is distinct from @location_id then now() else last_moved_at end,
+    last_moved_by=case when location_id is distinct from @location_id then @user_id else last_moved_by end
 where tenant_id=@tenant_id
   and id=@id
   and reg_status='A';
@@ -287,6 +340,7 @@ where tenant_id=@tenant_id
                 label_code = vm.LabelCode.Trim(),
                 notes = NullIfWhite(vm.Notes),
                 location_id = vm.LocationId
+                ,lifecycle_status = NormalizeBoxState(vm.LifecycleStatus), is_full = vm.IsFull, user_id = userId
             }, cancellationToken: ct));
 
             if (rows == 0) return Result<Guid>.Fail("NOTFOUND", "Caixa não encontrada.");
@@ -352,6 +406,21 @@ where tenant_id=@tenant_id
         }
     }
 
+    public async Task<Result> SetBoxStateAsync(Guid tenantId, Guid id, string state, bool isFull, Guid? userId, string? reason, CancellationToken ct)
+    {
+        state = (state ?? "").Trim().ToUpperInvariant();
+        if (state is not ("OPEN" or "CLOSED" or "ARCHIVED")) return Result.Fail("STATE", "Situação da caixa inválida.");
+        await using var conn = await _db.OpenAsync(ct);
+        var rows = await conn.ExecuteAsync(new CommandDefinition("""
+update ged.box set lifecycle_status=@state, is_full=@full, updated_at=now(),
+ last_moved_at=now(), last_moved_by=@user where tenant_id=@tenant and id=@id and reg_status='A';
+""", new { tenant = tenantId, id, state, full = isFull, user = userId }, cancellationToken: ct));
+        if (rows == 0) return Result.Fail("NOTFOUND", "Caixa ativa não encontrada.");
+        await _audit.WriteAsync(tenantId, userId, "STATE_CHANGE", "box", id, "Situação operacional da caixa alterada",
+            null, null, new { state, isFull, reason }, ct);
+        return Result.Ok();
+    }
+
     public async Task<Result> AddDocumentToBoxAsync(Guid tenantId, Guid? userId, BoxContentMaintenanceVM vm, CancellationToken ct)
     {
         try
@@ -361,6 +430,8 @@ where tenant_id=@tenant_id
             if (vm.DocumentId == Guid.Empty) return Result.Fail("DOC", "Documento inválido.");
 
             await using var conn = await _db.OpenAsync(ct);
+            var eligibility = await ValidateDocumentAndBoxAsync(conn, tenantId, vm.DocumentId, vm.BoxId, vm.SpecialPermission, ct);
+            if (!eligibility.IsSuccess) return eligibility;
 
             const string findBatchSql = """
 select bi.batch_id
@@ -445,6 +516,7 @@ where tenant_id=@tenant_id
             if (tenantId == Guid.Empty) return Result.Fail("TENANT", "Tenant inválido.");
             if (vm.BoxId == Guid.Empty) return Result.Fail("BOX", "Caixa inválida.");
             if (vm.DocumentId == Guid.Empty) return Result.Fail("DOC", "Documento inválido.");
+            if (string.IsNullOrWhiteSpace(vm.Notes)) return Result.Fail("REASON", "Informe o motivo da remoção.");
 
             await using var conn = await _db.OpenAsync(ct);
 
@@ -511,8 +583,11 @@ where tenant_id=@tenant_id
             if (tenantId == Guid.Empty) return Result.Fail("TENANT", "Tenant inválido.");
             if (vm.BoxId == Guid.Empty) return Result.Fail("BOX", "Caixa de destino inválida.");
             if (vm.DocumentId == Guid.Empty) return Result.Fail("DOC", "Documento inválido.");
+            if (string.IsNullOrWhiteSpace(vm.Notes)) return Result.Fail("REASON", "Informe o motivo da transferência.");
 
             await using var conn = await _db.OpenAsync(ct);
+            var eligibility = await ValidateDocumentAndBoxAsync(conn, tenantId, vm.DocumentId, vm.BoxId, vm.SpecialPermission, ct);
+            if (!eligibility.IsSuccess) return eligibility;
 
             const string selectSql = """
 select batch_id, box_id
@@ -641,4 +716,38 @@ values
 
     private static string? NullIfWhite(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static string BuildLocationCode(PhysicalLocationFormVM vm)
+        => string.Join("-", new[] { vm.UnitName ?? vm.PropertyName, vm.Building, vm.Room, vm.Aisle,
+            vm.Rack, vm.Shelf, vm.Pallet, vm.LocationCode }.Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x!.Trim().ToUpperInvariant().Replace(' ', '_')));
+
+    private static string NormalizeBoxState(string? state)
+        => (state ?? "OPEN").Trim().ToUpperInvariant() is "CLOSED" or "ARCHIVED" ? state!.Trim().ToUpperInvariant() : "OPEN";
+
+    private static async Task<Result> ValidateDocumentAndBoxAsync(System.Data.IDbConnection conn, Guid tenantId,
+        Guid documentId, Guid boxId, bool specialPermission, CancellationToken ct)
+    {
+        var documentExists = await conn.ExecuteScalarAsync<int>(new CommandDefinition(
+            "select count(*)::int from ged.document where tenant_id=@tenant and id=@document and reg_status='A'",
+            new { tenant = tenantId, document = documentId }, cancellationToken: ct));
+        if (documentExists == 0) return Result.Fail("DOCUMENT", "Documento inexistente, excluído ou pertencente a outro tenant.");
+        var box = await conn.QuerySingleOrDefaultAsync<(string Status, bool Full)>(new CommandDefinition("""
+select lifecycle_status as Status, is_full as Full from ged.box
+where tenant_id=@tenant and id=@box and reg_status='A';
+""", new { tenant = tenantId, box = boxId }, cancellationToken: ct));
+        if (string.IsNullOrEmpty(box.Status)) return Result.Fail("BOX", "Caixa inexistente, inativa ou pertencente a outro tenant.");
+        if (!specialPermission && (box.Status != "OPEN" || box.Full))
+            return Result.Fail("BOX_LOCKED", "Caixas fechadas, arquivadas ou cheias exigem permissão especial para receber documentos.");
+        return Result.Ok();
+    }
+
+    private static async Task WriteLocationHistoryAsync(System.Data.IDbConnection conn, Guid tenantId, Guid locationId,
+        string action, Guid? userId, string? reason, string? code, CancellationToken ct)
+    {
+        await conn.ExecuteAsync(new CommandDefinition("""
+insert into ged.physical_location_history(tenant_id,location_id,action,new_data,reason,changed_by)
+values(@tenant,@location,@action,jsonb_build_object('full_location_code',@code),@reason,@user);
+""", new { tenant = tenantId, location = locationId, action, code, reason = NullIfWhite(reason), user = userId }, cancellationToken: ct));
+    }
 }

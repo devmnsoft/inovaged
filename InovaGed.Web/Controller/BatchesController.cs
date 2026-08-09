@@ -17,7 +17,7 @@ public sealed class BatchesController : Controller
 
     private static readonly HashSet<string> AllowedStatus = new(StringComparer.OrdinalIgnoreCase)
     {
-        "RECEIVED", "TRIAGE", "DIGITIZATION", "INDEXING", "ARCHIVED"
+        "RECEIVED", "TRIAGE", "DIGITIZATION", "INDEXING", "CLASSIFICATION", "ARCHIVED", "COMPLETED", "CANCELLED"
     };
 
     public BatchesController(
@@ -371,8 +371,11 @@ public sealed class BatchesController : Controller
             "RECEIVED" => "Recebido",
             "TRIAGE" => "Triagem",
             "DIGITIZATION" => "Digitalização",
-            "INDEXING" => "Indexação",
-            "ARCHIVED" => "Arquivado",
+        "INDEXING" => "Indexação",
+        "CLASSIFICATION" => "Classificação",
+        "ARCHIVED" => "Arquivado",
+        "COMPLETED" => "Concluído",
+        "CANCELLED" => "Cancelado",
             _ => status
         };
     }

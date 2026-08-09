@@ -27,6 +27,9 @@ public sealed class PhysicalQueries : IPhysicalQueries
 select
   id                   as "Id",
   location_code        as "LocationCode",
+  unit_name            as "UnitName",
+  full_location_code   as "FullLocationCode",
+  reg_status           as "RegStatus",
   property_name        as "PropertyName",
   address_street       as "AddressStreet",
   address_number       as "AddressNumber",
@@ -43,10 +46,10 @@ select
   notes                as "Notes"
 from ged.physical_location
 where tenant_id=@tenant_id
-  and reg_status='A'
   and (
     @q = ''
     or coalesce(location_code,'') ilike ('%'||@q||'%')
+    or coalesce(full_location_code,'') ilike ('%'||@q||'%')
     or coalesce(property_name,'') ilike ('%'||@q||'%')
     or coalesce(address_street,'') ilike ('%'||@q||'%')
     or coalesce(building,'') ilike ('%'||@q||'%')
@@ -81,6 +84,7 @@ order by coalesce(property_name,''), coalesce(location_code,''), id;
 select
   id               as "Id",
   location_code    as "LocationCode",
+  unit_name        as "UnitName",
   property_name    as "PropertyName",
   address_street   as "AddressStreet",
   address_number   as "AddressNumber",
@@ -98,7 +102,7 @@ select
 from ged.physical_location
 where tenant_id=@tenant_id
   and id=@id
-  and reg_status='A';
+  ;
 """;
 
             return await conn.QuerySingleOrDefaultAsync<PhysicalLocationFormVM>(
@@ -124,6 +128,11 @@ select
   b.box_no          as "BoxNo",
   b.label_code      as "LabelCode",
   b.notes           as "Notes",
+  b.lifecycle_status as "LifecycleStatus",
+  b.is_full          as "IsFull",
+  b.last_moved_at    as "LastMovedAt",
+  b.last_moved_by    as "LastMovedBy",
+  (select count(*)::int from ged.batch_item bi where bi.tenant_id=b.tenant_id and bi.box_id=b.id and bi.reg_status='A') as "DocumentCount",
   b.location_id     as "LocationId",
   pl.location_code  as "LocationCode",
   pl.building       as "LocationBuilding",
@@ -171,6 +180,8 @@ select
   box_no       as "BoxNo",
   label_code   as "LabelCode",
   notes        as "Notes",
+  lifecycle_status as "LifecycleStatus",
+  is_full as "IsFull",
   location_id  as "LocationId"
 from ged.box
 where tenant_id=@tenant_id
@@ -186,6 +197,17 @@ where tenant_id=@tenant_id
             _logger.LogError(ex, "PhysicalQueries.GetBoxAsync failed. Tenant={Tenant} Id={Id}", tenantId, id);
             return null;
         }
+    }
+
+    public async Task<IReadOnlyList<PhysicalLocationHistoryDto>> GetLocationHistoryAsync(Guid tenantId, Guid id, CancellationToken ct)
+    {
+        await using var conn = await _db.OpenAsync(ct);
+        var rows = await conn.QueryAsync<PhysicalLocationHistoryDto>(new CommandDefinition("""
+select changed_at as "ChangedAt", action as "Action", reason as "Reason", changed_by as "ChangedBy"
+from ged.physical_location_history where tenant_id=@tenant and location_id=@id and reg_status='A'
+order by changed_at desc;
+""", new { tenant = tenantId, id }, cancellationToken: ct));
+        return rows.AsList();
     }
 
     public async Task<IReadOnlyList<BoxContentItemDto>> GetBoxContentsAsync(Guid tenantId, Guid boxId, CancellationToken ct)

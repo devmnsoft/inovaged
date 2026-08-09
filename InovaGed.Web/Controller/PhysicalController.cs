@@ -44,6 +44,7 @@ public sealed class PhysicalController : Controller
     {
         var vm = await _queries.GetLocationAsync(_user.TenantId, id, ct);
         if (vm is null) return NotFound();
+        ViewBag.History = await _queries.GetLocationHistoryAsync(_user.TenantId, id, ct);
         return View("LocationForm", vm);
     }
 
@@ -69,6 +70,15 @@ public sealed class PhysicalController : Controller
     {
         var res = await _commands.DeleteLocationAsync(_user.TenantId, id, _user.UserId, ct);
         TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Localização removida." : res.ErrorMessage;
+        return RedirectToAction(nameof(Locations));
+    }
+
+    [HttpPost("Locations/{id:guid}/State")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SetLocationState(Guid id, bool active, string? reason, CancellationToken ct)
+    {
+        var res = await _commands.SetLocationActiveAsync(_user.TenantId, id, active, _user.UserId, reason, ct);
+        TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? (active ? "Localização ativada." : "Localização inativada.") : res.ErrorMessage;
         return RedirectToAction(nameof(Locations));
     }
 
@@ -120,6 +130,15 @@ public sealed class PhysicalController : Controller
     {
         var res = await _commands.DeleteBoxAsync(_user.TenantId, id, _user.UserId, ct);
         TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Caixa removida." : res.ErrorMessage;
+        return RedirectToAction(nameof(Boxes));
+    }
+
+    [HttpPost("Boxes/{id:guid}/State")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SetBoxState(Guid id, string state, bool isFull, string? reason, CancellationToken ct)
+    {
+        var res = await _commands.SetBoxStateAsync(_user.TenantId, id, state, isFull, _user.UserId, reason, ct);
+        TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Situação da caixa atualizada." : res.ErrorMessage;
         return RedirectToAction(nameof(Boxes));
     }
 

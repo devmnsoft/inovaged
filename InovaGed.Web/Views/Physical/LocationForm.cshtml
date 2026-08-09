@@ -39,6 +39,22 @@
 
         <div class="row g-3">
             <div class="col-md-4">
+                <label class="form-label">Imóvel / unidade</label>
+                <input asp-for="UnitName" class="form-control" required placeholder="Ex.: Unidade Centro" />
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Código da caixa/posição</label>
+                <input asp-for="LocationCode" class="form-control" placeholder="Ex.: CX-0042" />
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Logradouro</label>
+                <input asp-for="AddressStreet" class="form-control" placeholder="Rua, avenida..." />
+            </div>
+            <div class="col-md-3"><label class="form-label">Número</label><input asp-for="AddressNumber" class="form-control" /></div>
+            <div class="col-md-3"><label class="form-label">Bairro</label><input asp-for="AddressDistrict" class="form-control" /></div>
+            <div class="col-md-3"><label class="form-label">Cidade / UF</label><div class="input-group"><input asp-for="AddressCity" class="form-control" /><input asp-for="AddressState" class="form-control" maxlength="2" style="max-width:4rem" /></div></div>
+            <div class="col-md-3"><label class="form-label">CEP</label><input asp-for="AddressZip" class="form-control" /></div>
+            <div class="col-md-4">
                 <label class="form-label">Prédio</label>
                 <input asp-for="Building" class="form-control" placeholder="Formato: Prédio A" />
                 <span asp-validation-for="Building" class="text-danger small"></span>
@@ -96,6 +112,14 @@
         </button>
     </div>
 </form>
+
+@if (ViewBag.History is IReadOnlyList<InovaGed.Application.Ged.Physical.PhysicalLocationHistoryDto> history && history.Count > 0)
+{
+    <section class="card shadow-sm mt-4"><div class="card-header"><strong>Histórico de alterações</strong></div>
+    <div class="table-responsive"><table class="table mb-0"><thead><tr><th>Data/hora</th><th>Evento</th><th>Responsável</th><th>Justificativa</th></tr></thead><tbody>
+    @foreach (var h in history) { <tr><td>@h.ChangedAt.ToString("dd/MM/yyyy HH:mm")</td><td>@h.Action</td><td>@(h.ChangedBy?.ToString() ?? "Sistema")</td><td>@(h.Reason ?? "—")</td></tr> }
+    </tbody></table></div></section>
+}
 
 @section Scripts {
     <partial name="_ValidationScriptsPartial" />
