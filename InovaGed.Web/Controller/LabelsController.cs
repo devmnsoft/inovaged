@@ -5,7 +5,6 @@ using InovaGed.Application.Common.Database;
 using InovaGed.Web.Security;
 using InovaGed.Application.PhysicalArchive;
 using System.Text.Json;
-using QRCoder;
 
 namespace InovaGed.Web.Controllers;
 
@@ -13,10 +12,15 @@ namespace InovaGed.Web.Controllers;
 public class LabelsController : GedControllerBase
 {
     private readonly ILabelPrintRegistrar _printRegistrar;
+    private readonly ILabelTemplateService _templates;
+    private readonly ILabelQrCodeService _qrCodes;
 
-    public LabelsController(IDbConnectionFactory dbFactory, ILabelPrintRegistrar printRegistrar) : base(dbFactory)
+    public LabelsController(IDbConnectionFactory dbFactory, ILabelPrintRegistrar printRegistrar,
+        ILabelTemplateService templates, ILabelQrCodeService qrCodes) : base(dbFactory)
     {
         _printRegistrar = printRegistrar;
+        _templates = templates;
+        _qrCodes = qrCodes;
     }
 
     [HttpGet]
@@ -130,7 +134,7 @@ where b.tenant_id=@tid
 
         if (b == null) return NotFound("Caixa não encontrada.");
 
-        ViewBag.QrSvg = CreateQrSvg($"{Request.Scheme}://{Request.Host}/Physical/BoxContents?boxId={boxId}");
+        ViewBag.QrSvg = _qrCodes.CreateTrackingSvg($"{Request.Scheme}://{Request.Host}/Physical/BoxContents?boxId={boxId}");
         return View(b);
     }
 
@@ -141,8 +145,8 @@ where b.tenant_id=@tid
         using var db = await OpenAsync();
         var snapshot = await LoadBoxLabelAsync(db, boxId);
         if (snapshot is null) return NotFound();
-        await RegisterAsync("BOX", boxId, "BOX_ATLAS_V1", snapshot, reprintReason, ct);
-        ViewBag.QrSvg = CreateQrSvg($"{Request.Scheme}://{Request.Host}/Physical/BoxContents?boxId={boxId}");
+        await RegisterAsync("BOX", boxId, snapshot, reprintReason, ct);
+        ViewBag.QrSvg = _qrCodes.CreateTrackingSvg($"{Request.Scheme}://{Request.Host}/Physical/BoxContents?boxId={boxId}");
         ViewBag.AutoPrint = true;
         return View("BoxLabel", snapshot);
     }
@@ -175,7 +179,7 @@ where d.tenant_id=@tid
 
         if (d == null) return NotFound("Documento não encontrado.");
 
-        ViewBag.QrSvg = CreateQrSvg($"{Request.Scheme}://{Request.Host}/Ged/Document/{docId}");
+        ViewBag.QrSvg = _qrCodes.CreateTrackingSvg($"{Request.Scheme}://{Request.Host}/Ged/Document/{docId}");
         return View(d);
     }
 
@@ -186,17 +190,18 @@ where d.tenant_id=@tid
         using var db = await OpenAsync();
         var snapshot = await LoadDocumentLabelAsync(db, docId);
         if (snapshot is null) return NotFound();
-        await RegisterAsync("DOCUMENT", docId, "DOCUMENT_ATLAS_V1", snapshot, reprintReason, ct);
-        ViewBag.QrSvg = CreateQrSvg($"{Request.Scheme}://{Request.Host}/Ged/Document/{docId}");
+        await RegisterAsync("DOCUMENT", docId, snapshot, reprintReason, ct);
+        ViewBag.QrSvg = _qrCodes.CreateTrackingSvg($"{Request.Scheme}://{Request.Host}/Ged/Document/{docId}");
         ViewBag.AutoPrint = true;
         return View("DocumentLabel", snapshot);
     }
 
-    private async Task RegisterAsync(string type, Guid subjectId, string template, object snapshot, string? reason, CancellationToken ct)
+    private async Task RegisterAsync(string type, Guid subjectId, object snapshot, string? reason, CancellationToken ct)
     {
         if (UserId is not Guid userId) throw new UnauthorizedAccessException("Usuário autenticado obrigatório.");
+        var template = _templates.GetCurrent(type);
         await _printRegistrar.RegisterAsync(new LabelPrintRequest(
-            TenantId, userId, type, subjectId, template, JsonSerializer.Serialize(snapshot),
+            TenantId, userId, type, subjectId, $"{template.Code}_V{template.Version}", JsonSerializer.Serialize(snapshot),
             HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers.UserAgent.ToString(), reason), ct);
     }
 
@@ -226,12 +231,6 @@ from ged.document d left join ged.batch_item bi on bi.tenant_id=d.tenant_id and 
 left join ged.box bx on bx.tenant_id=d.tenant_id and bx.id=bi.box_id and bx.reg_status='A'
 where d.tenant_id=@tid and d.id=@docId
 """, new { tid = TenantId, docId });
-
-    private static string CreateQrSvg(string content)
-    {
-        using var data = QRCodeGenerator.GenerateQrCode(content, QRCodeGenerator.ECCLevel.Q);
-        return new SvgQRCode(data).GetGraphic(4);
-    }
 
     [HttpGet]
     public async Task<IActionResult> History(string? q)
