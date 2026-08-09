@@ -8,6 +8,15 @@ public sealed class ClassificationPlanRow
     public string Name { get; init; } = "";
     public string? Description { get; init; }
     public Guid? ParentId { get; init; }
+    public string ActivityType { get; init; } = "MEIO";
+    public int SortOrder { get; init; }
+    public string? CurrentTermText { get; init; }
+    public string? CurrentEvent { get; init; }
+    public string? IntermediateTermText { get; init; }
+    public string? IntermediateEvent { get; init; }
+    public string? NormativeSource { get; init; }
+    public string? ConditionOrException { get; init; }
+    public string ReviewStatus { get; init; } = "PENDENTE";
 
     public string RetentionStartEvent { get; init; } = "INCLUSAO"; // enum ged.retention_start_event
     public int RetentionActiveDays { get; init; }
@@ -29,6 +38,15 @@ public class ClassificationPlanCreateVM
     public string Name { get; set; } = "";
     public string? Description { get; set; }
     public Guid? ParentId { get; set; }
+    public string ActivityType { get; set; } = "MEIO";
+    public int SortOrder { get; set; }
+    public string? CurrentTermText { get; set; }
+    public string? CurrentEvent { get; set; }
+    public string? IntermediateTermText { get; set; }
+    public string? IntermediateEvent { get; set; }
+    public string? NormativeSource { get; set; }
+    public string? ConditionOrException { get; set; }
+    public string ReviewStatus { get; set; } = "PENDENTE";
 
     public string RetentionStartEvent { get; set; } = "INCLUSAO";
     public int RetentionActiveDays { get; set; }

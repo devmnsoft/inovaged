@@ -15,9 +15,6 @@ public sealed class RetentionDailyWorker : BackgroundService
     private readonly ILogger<RetentionDailyWorker> _logger;
     private readonly ISchemaCompatibilityState _schemaState;
 
-    // ✅ operacional: tenant padrão
-    private static readonly Guid DefaultTenantId = Guid.Parse("00000000-0000-0000-0000-000000000001");
-
     // ✅ operacional: janela "vence em breve"
     private const int DueSoonDays = 30;
 
@@ -46,14 +43,15 @@ public sealed class RetentionDailyWorker : BackgroundService
                 {
                     using var scope = _scopeFactory.CreateScope();
 
-                    // ✅ use a interface (recomendado)
                     var svc = scope.ServiceProvider.GetRequiredService<IRetentionRecalcService>();
-
-                    var rows = await svc.RunAsync(DefaultTenantId, DueSoonDays, stoppingToken);
-
-                    _logger.LogInformation(
-                        "RetentionDailyWorker execução OK. Tenant={TenantId} DueSoonDays={DueSoonDays} Rows={Rows}",
-                        DefaultTenantId, DueSoonDays, rows);
+                    var catalog = scope.ServiceProvider.GetRequiredService<ITenantCatalog>();
+                    foreach (var tenantId in await catalog.GetActiveTenantIdsAsync(stoppingToken))
+                    {
+                        var rows = await svc.RunAsync(tenantId, DueSoonDays, stoppingToken);
+                        _logger.LogInformation(
+                            "RetentionDailyWorker execução OK. Tenant={TenantId} DueSoonDays={DueSoonDays} Rows={Rows}",
+                            tenantId, DueSoonDays, rows);
+                    }
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
