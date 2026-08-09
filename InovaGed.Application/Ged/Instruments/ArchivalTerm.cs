@@ -9,12 +9,12 @@ public sealed record ArchivalTerm(string RawValue, string? Event)
     public string Evaluate(bool eventOccurred)
     {
         var value = RawValue?.Trim() ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(Event) && !eventOccurred)
+            return WaitingEvent;
         if (value.Length == 0 || value is "*" ||
             value.Contains("vigência", StringComparison.OrdinalIgnoreCase) ||
             value.Contains("último registro", StringComparison.OrdinalIgnoreCase))
             return RequiresReview;
-        if (!string.IsNullOrWhiteSpace(Event) && !eventOccurred)
-            return WaitingEvent;
         return value;
     }
 }
