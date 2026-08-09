@@ -22,11 +22,12 @@ public sealed class ClassificationPlanController : Controller
     }
 
     [HttpGet("")]
-    public async Task<IActionResult> Index(CancellationToken ct)
+    public async Task<IActionResult> Index(string? q, CancellationToken ct)
     {
         try
         {
-            var nodes = await _repo.ListTreeAsync(TenantId, ct);
+            var nodes = await _repo.ListTreeAsync(TenantId, ct, q);
+            ViewBag.Query = q;
             return View(nodes);
         }
         catch (Exception ex)
@@ -36,6 +37,14 @@ public sealed class ClassificationPlanController : Controller
             return View(Array.Empty<ClassificationNodeRow>());
         }
     }
+
+    [HttpGet("History/{id:guid}")]
+    public async Task<IActionResult> History(Guid id, CancellationToken ct)
+        => Json(await _repo.ListHistoryAsync(TenantId, id, ct));
+
+    [HttpGet("Compare")]
+    public async Task<IActionResult> Compare(Guid fromVersionId, Guid toVersionId, CancellationToken ct)
+        => Json(await _repo.CompareVersionsAsync(TenantId, fromVersionId, toVersionId, ct));
 
     [HttpGet("Edit")]
     public async Task<IActionResult> Edit(Guid? id, Guid? parentId, CancellationToken ct)

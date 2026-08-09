@@ -23,6 +23,17 @@
             <textarea class="form-control" name="Description" rows="2">@Model.Description</textarea>
         </div>
 
+        <div class="col-md-4"><label class="form-label">Atividade</label><select class="form-select" name="ActivityType"><option value="MEIO" selected="@(Model.ActivityType == "MEIO")">Meio</option><option value="FIM" selected="@(Model.ActivityType == "FIM")">Fim</option></select></div>
+        <div class="col-md-4"><label class="form-label">Ordem de exibição</label><input class="form-control" type="number" name="DisplayOrder" value="@Model.DisplayOrder" /></div>
+        <div class="col-md-4"><label class="form-label">Status de revisão</label><select class="form-select" name="ReviewStatus"><option>RASCUNHO</option><option>EM_REVISAO</option><option>APROVADO</option></select></div>
+        <div class="col-md-6"><label class="form-label">Prazo corrente (texto)</label><input class="form-control" name="CurrentRetentionText" value="@Model.CurrentRetentionText" placeholder="Ex.: vigência, *, 5 anos" /></div>
+        <div class="col-md-6"><label class="form-label">Evento inicial corrente</label><input class="form-control" name="CurrentStartEvent" value="@Model.CurrentStartEvent" placeholder="Ex.: último registro" /></div>
+        <div class="col-md-6"><label class="form-label">Prazo intermediário (texto)</label><input class="form-control" name="IntermediateRetentionText" value="@Model.IntermediateRetentionText" /></div>
+        <div class="col-md-6"><label class="form-label">Evento inicial intermediário</label><input class="form-control" name="IntermediateStartEvent" value="@Model.IntermediateStartEvent" /></div>
+        <div class="col-md-6"><label class="form-label">Fonte normativa</label><input class="form-control" name="NormativeSource" value="@Model.NormativeSource" /></div>
+        <div class="col-md-6"><label class="form-label">Sigilo</label><select class="form-select" name="ConfidentialityLevel"><option>PUBLICO</option><option>RESTRITO</option><option>CONFIDENCIAL</option><option>SECRETO</option></select></div>
+        <div class="col-12"><label class="form-label">Condição ou exceção</label><textarea class="form-control" name="ConditionException" rows="2">@Model.ConditionException</textarea></div>
+
         <div class="col-md-4">
             <label class="form-label">Evento inicial</label>
             <select class="form-select" name="RetentionStartEvent">
@@ -102,6 +113,6 @@
 
     <div class="d-flex justify-content-end gap-2">
         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
-        <button type="submit" class="btn btn-primary"><i class="bi bi-check2"></i> Salvar</button>
+        <button type="submit" class="btn btn-primary"><app-icon name="check"></app-icon> Salvar</button>
     </div>
 </form>

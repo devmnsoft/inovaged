@@ -28,7 +28,7 @@ public sealed class ClassificationPlanRepository : IClassificationPlanRepository
         _logger = logger;
     }
 
-    public async Task<IReadOnlyList<ClassificationNodeRow>> ListTreeAsync(Guid tenantId, CancellationToken ct)
+    public async Task<IReadOnlyList<ClassificationNodeRow>> ListTreeAsync(Guid tenantId, CancellationToken ct, string? search = null)
     {
         const string sql = @"
 select
@@ -50,12 +50,20 @@ select
   retention_notes as RetentionNotes
 from ged.classification_plan
 where tenant_id = @tenantId
-order by code;";
+  and (nullif(trim(@search), '') is null
+       or code ilike '%' || @search || '%'
+       or name ilike '%' || @search || '%'
+       or coalesce(description, '') ilike '%' || @search || '%'
+       or coalesce(current_retention_text, '') ilike '%' || @search || '%'
+       or coalesce(intermediate_retention_text, '') ilike '%' || @search || '%'
+       or final_destination::text ilike '%' || @search || '%'
+       or coalesce(confidentiality_level, '') ilike '%' || @search || '%')
+order by display_order, code;";
 
         try
         {
             await using var conn = await _db.OpenAsync(ct);
-            var rows = await conn.QueryAsync<ClassificationNodeRow>(new CommandDefinition(sql, new { tenantId }, cancellationToken: ct));
+            var rows = await conn.QueryAsync<ClassificationNodeRow>(new CommandDefinition(sql, new { tenantId, search }, cancellationToken: ct));
             return rows.ToList();
         }
         catch (Exception ex)
@@ -74,6 +82,11 @@ select
   code as Code,
   name as Name,
   description as Description,
+  activity_type as ActivityType, display_order as DisplayOrder,
+  current_retention_text as CurrentRetentionText, current_start_event as CurrentStartEvent,
+  intermediate_retention_text as IntermediateRetentionText, intermediate_start_event as IntermediateStartEvent,
+  normative_source as NormativeSource, condition_exception as ConditionException,
+  confidentiality_level as ConfidentialityLevel, review_status as ReviewStatus,
   retention_start_event::text as RetentionStartEvent,
   retention_active_days as RetentionActiveDays,
   retention_active_months as RetentionActiveMonths,
@@ -125,7 +138,10 @@ insert into ged.classification_plan (
   retention_active_days, retention_active_months, retention_active_years,
   retention_archive_days, retention_archive_months, retention_archive_years,
   final_destination, requires_digital_signature, is_confidential, is_active,
-  created_at, created_by, updated_at, updated_by, retention_notes
+  created_at, created_by, updated_at, updated_by, retention_notes,
+  activity_type, display_order, current_retention_text, current_start_event,
+  intermediate_retention_text, intermediate_start_event, normative_source,
+  condition_exception, confidentiality_level, review_status
 )
 values (
   @id, @tenantId, @code, @name, @description, @parentId,
@@ -134,7 +150,10 @@ values (
   @retArchiveDays, @retArchiveMonths, @retArchiveYears,
   @finalDestination::ged.final_destination,
   @requiresDigitalSignature, @isConfidential, @isActive,
-  now(), @userId, now(), @userId, @retentionNotes
+  now(), @userId, now(), @userId, @retentionNotes,
+  @activityType, @displayOrder, @currentRetentionText, @currentStartEvent,
+  @intermediateRetentionText, @intermediateStartEvent, @normativeSource,
+  @conditionException, @confidentialityLevel, @reviewStatus
 )
 on conflict (id) do update set
   code = excluded.code,
@@ -154,7 +173,12 @@ on conflict (id) do update set
   is_active = excluded.is_active,
   updated_at = now(),
   updated_by = @userId,
-  retention_notes = excluded.retention_notes;";
+  retention_notes = excluded.retention_notes,
+  activity_type = excluded.activity_type, display_order = excluded.display_order,
+  current_retention_text = excluded.current_retention_text, current_start_event = excluded.current_start_event,
+  intermediate_retention_text = excluded.intermediate_retention_text, intermediate_start_event = excluded.intermediate_start_event,
+  normative_source = excluded.normative_source, condition_exception = excluded.condition_exception,
+  confidentiality_level = excluded.confidentiality_level, review_status = excluded.review_status;";
 
         try
         {
@@ -179,6 +203,16 @@ on conflict (id) do update set
                 isConfidential = vm.IsConfidential,
                 isActive = vm.IsActive,
                 retentionNotes = vm.RetentionNotes,
+                activityType = vm.ActivityType,
+                displayOrder = vm.DisplayOrder,
+                currentRetentionText = vm.CurrentRetentionText,
+                currentStartEvent = vm.CurrentStartEvent,
+                intermediateRetentionText = vm.IntermediateRetentionText,
+                intermediateStartEvent = vm.IntermediateStartEvent,
+                normativeSource = vm.NormativeSource,
+                conditionException = vm.ConditionException,
+                confidentialityLevel = vm.ConfidentialityLevel,
+                reviewStatus = vm.ReviewStatus,
                 userId
             }, cancellationToken: ct));
 
@@ -189,6 +223,40 @@ on conflict (id) do update set
             _logger.LogError(ex, "UpsertAsync failed. Tenant={TenantId} Id={Id}", tenantId, id);
             throw;
         }
+    }
+
+    public async Task<IReadOnlyList<ClassificationHistoryRow>> ListHistoryAsync(Guid tenantId, Guid id, CancellationToken ct)
+    {
+        const string sql = """
+select h.id, h.changed_at as ChangedAt, h.changed_by as ChangedBy, h.change_reason as ChangeReason,
+       h.code, h.name, p.code as ParentCode
+from ged.classification_plan_history h
+left join ged.classification_plan p on p.tenant_id=h.tenant_id and p.id=h.parent_id
+where h.tenant_id=@tenantId and h.classification_id=@id
+order by h.changed_at desc;
+""";
+        await using var conn = await _db.OpenAsync(ct);
+        return (await conn.QueryAsync<ClassificationHistoryRow>(new CommandDefinition(sql, new { tenantId, id }, cancellationToken: ct))).ToList();
+    }
+
+    public async Task<IReadOnlyList<ClassificationVersionDiffRow>> CompareVersionsAsync(Guid tenantId, Guid fromVersionId, Guid toVersionId, CancellationToken ct)
+    {
+        const string sql = """
+with old as (select * from ged.classification_plan_version_item where tenant_id=@tenantId and version_id=@fromVersionId),
+new as (select * from ged.classification_plan_version_item where tenant_id=@tenantId and version_id=@toVersionId)
+select coalesce(old.code,new.code) as Code,
+ case when old.id is null then 'ADICIONADA' when new.id is null then 'REMOVIDA'
+      when row(old.name,old.current_retention_text,old.final_destination) is distinct from row(new.name,new.current_retention_text,new.final_destination) then 'ALTERADA'
+      else 'SEM_ALTERACAO' end as ChangeType,
+ old.name as PreviousName, new.name as CurrentName,
+ old.current_retention_text as PreviousRetention, new.current_retention_text as CurrentRetention,
+ old.final_destination::text as PreviousDestination, new.final_destination::text as CurrentDestination
+from old full join new using (classification_id)
+where old.id is null or new.id is null or row(old.name,old.current_retention_text,old.final_destination) is distinct from row(new.name,new.current_retention_text,new.final_destination)
+order by coalesce(old.code,new.code);
+""";
+        await using var conn = await _db.OpenAsync(ct);
+        return (await conn.QueryAsync<ClassificationVersionDiffRow>(new CommandDefinition(sql, new { tenantId, fromVersionId, toVersionId }, cancellationToken: ct))).ToList();
     }
 
     public async Task<Result> MoveAsync(Guid tenantId, Guid userId, Guid id, Guid? newParentId, CancellationToken ct)
@@ -396,7 +464,9 @@ insert into ged.classification_plan_version_item(
   requires_digital_signature,
   is_confidential,
   is_active,
-  retention_notes
+  retention_notes, activity_type, display_order, current_retention_text, current_start_event,
+  intermediate_retention_text, intermediate_start_event, normative_source, condition_exception,
+  confidentiality_level, review_status
 )
 select
   c.tenant_id,
@@ -413,7 +483,9 @@ select
   c.requires_digital_signature,
   c.is_confidential,
   c.is_active,
-  c.retention_notes
+  c.retention_notes, c.activity_type, c.display_order, c.current_retention_text, c.current_start_event,
+  c.intermediate_retention_text, c.intermediate_start_event, c.normative_source, c.condition_exception,
+  c.confidentiality_level, c.review_status
 from ged.classification_plan c
 left join ged.classification_plan p on p.tenant_id=c.tenant_id and p.id=c.parent_id
 where c.tenant_id=@tenantId;";

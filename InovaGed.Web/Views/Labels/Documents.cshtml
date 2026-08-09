@@ -15,16 +15,16 @@
     </div>
     <div class="d-flex flex-wrap gap-2">
         <a class="btn btn-outline-secondary" asp-controller="Labels" asp-action="History">
-            <i class="bi bi-clock-history me-1"></i>Histórico
+            <app-icon name="history"></app-icon>Histórico
         </a>
         <a class="btn btn-outline-secondary" asp-controller="Physical" asp-action="PhysicalMap">
-            <i class="bi bi-map me-1"></i>Mapa
+            <app-icon name="map"></app-icon>Mapa
         </a>
     </div>
 </div>
 
 <div class="alert alert-info d-flex align-items-start gap-2">
-    <i class="bi bi-info-circle-fill fs-5"></i>
+    <app-icon name="info"></app-icon>
     <div>
         Clique em <strong>Imprimir</strong> para abrir a etiqueta do documento. A emissão deve ser registrada no histórico de etiquetas.
     </div>
@@ -52,7 +52,7 @@
                 {
                     <tr>
                         <td colspan="5" class="text-center py-5">
-                            <i class="bi bi-file-earmark-text display-5 text-muted d-block mb-2"></i>
+                            <app-icon name="document"></app-icon>
                             <div class="fw-semibold">Nenhum documento encontrado</div>
                             <div class="text-muted small">Após cadastrar documentos, será possível imprimir etiquetas individuais.</div>
                         </td>
@@ -83,7 +83,7 @@
                                 <a class="btn btn-sm btn-primary"
                                    asp-controller="Labels" asp-action="DocumentLabel"
                                    asp-route-docId="@d.id" target="_blank">
-                                    <i class="bi bi-printer"></i> Imprimir
+                                    <app-icon name="print"></app-icon> Imprimir
                                 </a>
                             </td>
                         </tr>

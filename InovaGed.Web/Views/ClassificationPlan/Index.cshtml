@@ -16,19 +16,23 @@
     </div>
     <div class="d-flex gap-2">
         <a class="btn btn-outline-secondary" href="/ClassificationPlan/Versions">
-            <i class="bi bi-clock-history"></i> Versões
+            <app-icon name="history"></app-icon> Versões
         </a>
         <a class="btn btn-outline-secondary" target="_blank" href="/ClassificationPlan/PrintCurrent">
-            <i class="bi bi-printer"></i> Imprimir atual
+            <app-icon name="print"></app-icon> Imprimir atual
         </a>
         <button class="btn btn-primary" type="button" onclick="cp.openCreate(null)">
-            <i class="bi bi-plus-lg"></i> Nova classe
+            <app-icon name="plus"></app-icon> Nova classe
         </button>
     </div>
 </div>
 
 <div class="card">
     <div class="card-body">
+        <form method="get" class="row g-2 mb-4" role="search">
+            <div class="col-md-9"><label class="visually-hidden" for="classification-search">Buscar</label><input id="classification-search" class="form-control" name="q" value="@ViewBag.Query" placeholder="Código, nome, descrição, prazo, destino ou sigilo" /></div>
+            <div class="col-md-3 d-grid"><button class="btn btn-outline-primary" type="submit"><app-icon name="search"></app-icon> Buscar no plano</button></div>
+        </form>
         <div id="cpTree"></div>
     </div>
 </div>

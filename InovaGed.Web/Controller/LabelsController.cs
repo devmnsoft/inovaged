@@ -96,12 +96,33 @@ select
     pl.aisle,
     pl.rack,
     pl.shelf,
-    pl.pallet
+    pl.pallet,
+    mix.document_count,
+    mix.classification_count,
+    mix.retention_count,
+    mix.confidentiality_count,
+    mix.destination_count,
+    mix.period_start,
+    mix.period_end,
+    (coalesce(mix.classification_count,0)>1 or coalesce(mix.retention_count,0)>1 or
+     coalesce(mix.confidentiality_count,0)>1 or coalesce(mix.destination_count,0)>1 or
+     (mix.period_end::date-mix.period_start::date)>3650) as mixed_content
 from ged.box b
 left join ged.physical_location pl
   on pl.tenant_id=b.tenant_id
  and pl.id=b.location_id
  and pl.reg_status='A'
+left join lateral (
+ select count(distinct d.id) document_count, count(distinct cp.id) classification_count,
+        count(distinct cp.current_retention_text) retention_count,
+        count(distinct cp.confidentiality_level) confidentiality_count,
+        count(distinct cp.final_destination) destination_count,
+        min(d.created_at) period_start, max(d.created_at) period_end
+ from ged.batch_item bi join ged.document d on d.tenant_id=bi.tenant_id and d.id=bi.document_id
+ left join ged.document_classification dc on dc.tenant_id=d.tenant_id and dc.document_id=d.id and dc.reg_status='A'
+ left join ged.classification_plan cp on cp.tenant_id=dc.tenant_id and cp.id=dc.classification_plan_id
+ where bi.tenant_id=b.tenant_id and bi.box_id=b.id and bi.reg_status='A'
+) mix on true
 where b.tenant_id=@tid
   and b.id=@boxId
   and b.reg_status='A';
@@ -182,8 +203,19 @@ where d.tenant_id=@tid
     private async Task<dynamic?> LoadBoxLabelAsync(System.Data.IDbConnection db, Guid boxId)
         => await db.QueryFirstOrDefaultAsync("""
 select b.id, b.box_no, b.label_code, b.notes, pl.location_code, pl.building, pl.room,
-       pl.aisle, pl.rack, pl.shelf, pl.pallet
+       pl.aisle, pl.rack, pl.shelf, pl.pallet, mix.*,
+       (coalesce(mix.classification_count,0)>1 or coalesce(mix.retention_count,0)>1 or
+        coalesce(mix.confidentiality_count,0)>1 or coalesce(mix.destination_count,0)>1 or
+        (mix.period_end::date-mix.period_start::date)>3650) as mixed_content
 from ged.box b left join ged.physical_location pl on pl.tenant_id=b.tenant_id and pl.id=b.location_id and pl.reg_status='A'
+left join lateral (
+ select count(distinct d.id) document_count, count(distinct cp.id) classification_count,
+ count(distinct cp.current_retention_text) retention_count, count(distinct cp.confidentiality_level) confidentiality_count,
+ count(distinct cp.final_destination) destination_count, min(d.created_at) period_start, max(d.created_at) period_end
+ from ged.batch_item bi join ged.document d on d.tenant_id=bi.tenant_id and d.id=bi.document_id
+ left join ged.document_classification dc on dc.tenant_id=d.tenant_id and dc.document_id=d.id and dc.reg_status='A'
+ left join ged.classification_plan cp on cp.tenant_id=dc.tenant_id and cp.id=dc.classification_plan_id
+ where bi.tenant_id=b.tenant_id and bi.box_id=b.id and bi.reg_status='A') mix on true
 where b.tenant_id=@tid and b.id=@boxId and b.reg_status='A'
 """, new { tid = TenantId, boxId });
 
@@ -212,7 +244,7 @@ where d.tenant_id=@tid and d.id=@docId
         var rows = await db.QueryAsync(@"
 select
     lp.id,
-    lp.label_type,
+    lp.label_subject_type as label_type,
     lp.printed_at,
     u.name as printed_by_name,
     b.box_no,
@@ -220,21 +252,24 @@ select
     d.code as document_code,
     d.title as document_title,
     lp.ip_address,
-    lp.user_agent
-from ged.label_print lp
+    lp.user_agent,
+    lp.template_code,
+    lp.snapshot_sha256,
+    lp.reprint_reason
+from ged.label_print_history lp
 left join ged.app_user u
   on u.tenant_id=lp.tenant_id
  and u.id=lp.printed_by
 left join ged.box b
   on b.tenant_id=lp.tenant_id
- and b.id=lp.box_id
+ and b.id=lp.label_subject_id and lp.label_subject_type='BOX'
 left join ged.document d
   on d.tenant_id=lp.tenant_id
- and d.id=lp.document_id
+ and d.id=lp.label_subject_id and lp.label_subject_type='DOCUMENT'
 where lp.tenant_id=@tid
   and (
     @q = ''
-    or coalesce(lp.label_type,'') ilike ('%'||@q||'%')
+    or coalesce(lp.label_subject_type,'') ilike ('%'||@q||'%')
     or coalesce(b.label_code,'') ilike ('%'||@q||'%')
     or coalesce(b.box_no::text,'') ilike ('%'||@q||'%')
     or coalesce(d.code,'') ilike ('%'||@q||'%')

@@ -15,10 +15,10 @@
     </div>
     <div class="d-flex gap-2">
         <a class="btn btn-outline-secondary" href="/ClassificationPlan">
-            <i class="bi bi-diagram-3"></i> Voltar
+            <app-icon name="arrow-left"></app-icon> Voltar
         </a>
-        <button class="btn btn-primary" type="button" onclick="publishVersion()">
-            <i class="bi bi-cloud-arrow-up"></i> Publicar
+        <button class="btn btn-primary" type="button" data-bs-toggle="modal" data-bs-target="#publishModal">
+            <app-icon name="upload"></app-icon> Publicar
         </button>
     </div>
 </div>
@@ -26,6 +26,7 @@
 <form id="publishForm" method="post" action="/ClassificationPlan/Publish">
     @Html.AntiForgeryToken()
 </form>
+<div class="modal fade" id="publishModal" tabindex="-1" aria-labelledby="publishTitle" aria-hidden="true"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h2 class="modal-title fs-5" id="publishTitle">Publicar nova versão</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button></div><div class="modal-body"><label class="form-label" for="versionTitle">Título</label><input class="form-control" id="versionTitle" maxlength="150" required /><label class="form-label mt-3" for="versionNotes">Notas da versão</label><textarea class="form-control" id="versionNotes" rows="4"></textarea><div id="publishError" class="text-danger mt-3" role="alert"></div></div><div class="modal-footer"><button class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-primary" type="button" onclick="publishVersion()">Publicar snapshot</button></div></div></div></div>
 
 <div class="card">
     <div class="card-body table-responsive">
@@ -48,7 +49,7 @@
                         <td class="text-end">
                             <a class="btn btn-sm btn-outline-secondary" target="_blank"
                                href="/ClassificationPlan/PrintVersion?versionId=@v.Id">
-                                <i class="bi bi-printer"></i> Imprimir
+                                <app-icon name="print"></app-icon> Imprimir
                             </a>
                         </td>
                     </tr>
@@ -61,10 +62,10 @@
 @section Scripts {
     <script>
         async function publishVersion(){
-            const title = prompt("Título da versão (formato: PCD/TTD - V1):");
-            if(!title) return;
-
-            const notes = prompt("Notas (opcional):") || "";
+            const title = document.getElementById("versionTitle").value.trim();
+            const notes = document.getElementById("versionNotes").value.trim();
+            const error = document.getElementById("publishError");
+            if(!title) { error.textContent = "Informe o título da versão."; return; }
 
             const form = document.getElementById("publishForm");
             const fd = new FormData(form);
@@ -75,7 +76,7 @@
             const j = await r.json().catch(()=>null);
 
             if(!r.ok || !j?.ok){
-                alert(j?.error || "Falha ao publicar.");
+                error.textContent = j?.error || "Falha ao publicar.";
                 return;
             }
             location.reload();
