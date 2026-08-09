@@ -1,4 +1,4 @@
-﻿@model dynamic
+@model dynamic
 @{
     Layout = null;
 
@@ -95,6 +95,10 @@
             <strong>Observações:</strong>
             @(Model.notes ?? "—")
         </div>
+        @if (Model.mixed_content == true)
+        {
+            <div class="code-box" role="status"><strong>Conteúdo misto - revisar classificação/temporalidade</strong><br />Resumo seguro: @Model.document_count documento(s), @Model.classification_count classificação(ões), período de @Model.period_start?.ToString("MM/yyyy") a @Model.period_end?.ToString("MM/yyyy").</div>
+        }
 
         <div class="code-box" aria-label="QR Code de rastreio">
             @Html.Raw((string)ViewBag.QrSvg)

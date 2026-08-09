@@ -17,6 +17,12 @@ public sealed class LabelPrintRegistrar(IDbConnectionFactory dbFactory) : ILabel
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(request.SnapshotJson))).ToLowerInvariant();
         await using var db = await dbFactory.OpenAsync(cancellationToken);
         await using var tx = await db.BeginTransactionAsync(cancellationToken);
+        var priorPrints = await db.ExecuteScalarAsync<int>(new CommandDefinition("""
+select count(*) from ged.label_print_history
+where tenant_id=@TenantId and label_subject_type=@SubjectType and label_subject_id=@SubjectId;
+""", request, tx, cancellationToken: cancellationToken));
+        if (priorPrints > 0 && string.IsNullOrWhiteSpace(request.ReprintReason))
+            throw new InvalidOperationException("O motivo da reimpressão é obrigatório.");
         await db.ExecuteAsync(new CommandDefinition("""
 insert into ged.label_print_history
  (id, tenant_id, label_subject_type, label_subject_id, template_code, snapshot_json,

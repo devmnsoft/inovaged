@@ -1,4 +1,4 @@
-﻿@model IEnumerable<dynamic>
+@model IEnumerable<dynamic>
 
 @{
     ViewData["Title"] = "Histórico de Impressão de Etiquetas";
@@ -33,7 +33,7 @@
         </div>
 
         <button class="btn btn-primary" type="submit">
-            <i class="bi bi-search me-1"></i>Pesquisar
+            <app-icon name="search"></app-icon>Pesquisar
         </button>
 
         <a class="btn btn-outline-secondary" asp-action="History">Limpar</a>
@@ -54,6 +54,8 @@
                     <th>Referência</th>
                     <th>Usuário</th>
                     <th>IP</th>
+                    <th>Template / hash</th>
+                    <th>Motivo</th>
                 </tr>
             </thead>
 
@@ -84,6 +86,8 @@
                         <td class="text-muted small">
                             @(r.ip_address ?? "—")
                         </td>
+                        <td class="small"><strong>@r.template_code</strong><br /><code>@Convert.ToString(r.snapshot_sha256)?.Substring(0, 12)…</code></td>
+                        <td>@(r.reprint_reason ?? "Primeira impressão")</td>
                     </tr>
                 }
             </tbody>

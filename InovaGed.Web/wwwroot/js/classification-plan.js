@@ -38,9 +38,9 @@
                 const right = document.createElement("div");
                 right.className = "d-flex gap-1";
                 right.innerHTML = `
-          <button class="btn btn-sm btn-outline-secondary" type="button" title="Editar"><i class="bi bi-pencil"></i></button>
-          <button class="btn btn-sm btn-outline-primary" type="button" title="Criar filho"><i class="bi bi-plus-lg"></i></button>
-          <span class="btn btn-sm btn-outline-secondary" style="cursor:grab" title="Arraste"><i class="bi bi-grip-vertical"></i></span>
+          <button class="btn btn-sm btn-outline-secondary" type="button" title="Editar"><app-icon name="edit"></app-icon></button>
+          <button class="btn btn-sm btn-outline-primary" type="button" title="Criar filho"><app-icon name="plus"></app-icon></button>
+          <span class="btn btn-sm btn-outline-secondary cp-drag-handle" style="cursor:grab" title="Arraste"><app-icon name="drag"></app-icon></span>
         `;
 
                 right.children[0].addEventListener("click", () => cp.openEdit(getId(n)));
@@ -62,7 +62,7 @@
             new Sortable(ul, {
                 group: "cpTree",
                 animation: 150,
-                handle: ".bi-grip-vertical",
+                handle: ".cp-drag-handle",
                 onAdd: async function (evt) {
                     const movedId = evt.item.dataset.id;
                     const newParentId = evt.to.dataset.parentId || null;

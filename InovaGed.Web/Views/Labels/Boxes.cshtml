@@ -15,16 +15,16 @@
     </div>
     <div class="d-flex flex-wrap gap-2">
         <a class="btn btn-outline-secondary" asp-controller="Labels" asp-action="History">
-            <i class="bi bi-clock-history me-1"></i>Histórico
+            <app-icon name="history"></app-icon>Histórico
         </a>
         <a class="btn btn-outline-secondary" asp-controller="Physical" asp-action="Boxes">
-            <i class="bi bi-archive me-1"></i>Caixas
+            <app-icon name="archive"></app-icon>Caixas
         </a>
     </div>
 </div>
 
 <div class="alert alert-info d-flex align-items-start gap-2">
-    <i class="bi bi-info-circle-fill fs-5"></i>
+    <app-icon name="info"></app-icon>
     <div>
         Clique em <strong>Imprimir</strong> para abrir a etiqueta em uma nova aba. A emissão deve ficar registrada para auditoria e conferência futura.
     </div>
@@ -52,7 +52,7 @@
                 {
                     <tr>
                         <td colspan="5" class="text-center py-5">
-                            <i class="bi bi-qr-code display-5 text-muted d-block mb-2"></i>
+                            <app-icon name="qr-code"></app-icon>
                             <div class="fw-semibold">Nenhuma caixa encontrada</div>
                             <div class="text-muted small">Cadastre uma caixa antes de imprimir etiquetas.</div>
                         </td>
@@ -74,7 +74,7 @@
                                 }
                                 else
                                 {
-                                    <span><i class="bi bi-geo-alt-fill text-success me-1"></i>@b.location_code @b.building @b.room</span>
+                                    <span><app-icon name="location"></app-icon>@b.location_code @b.building @b.room</span>
                                 }
                             </td>
                             <td class="text-muted">@(b.notes ?? "Sem observações")</td>
@@ -84,7 +84,7 @@
                                     <a class="btn btn-sm btn-primary"
                                        asp-controller="Labels" asp-action="BoxLabel"
                                        asp-route-boxId="@b.id" target="_blank">
-                                        <i class="bi bi-printer"></i> Imprimir
+                                        <app-icon name="print"></app-icon> Imprimir
                                     </a>
                                     <a class="btn btn-sm btn-outline-secondary"
                                        asp-controller="Physical" asp-action="BoxContents"

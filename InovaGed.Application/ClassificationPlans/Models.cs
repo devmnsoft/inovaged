@@ -26,6 +26,16 @@ public sealed class ClassificationEditVM
     public string Code { get; set; } = "";
     public string Name { get; set; } = "";
     public string? Description { get; set; }
+    public string ActivityType { get; set; } = "MEIO";
+    public int DisplayOrder { get; set; }
+    public string CurrentRetentionText { get; set; } = "";
+    public string CurrentStartEvent { get; set; } = "";
+    public string IntermediateRetentionText { get; set; } = "";
+    public string IntermediateStartEvent { get; set; } = "";
+    public string? NormativeSource { get; set; }
+    public string? ConditionException { get; set; }
+    public string ConfidentialityLevel { get; set; } = "PUBLICO";
+    public string ReviewStatus { get; set; } = "RASCUNHO";
 
     public string RetentionStartEvent { get; set; } = "INCLUSAO";
     public int RetentionActiveDays { get; set; }
@@ -41,6 +51,13 @@ public sealed class ClassificationEditVM
     public bool IsActive { get; set; } = true;
     public string? RetentionNotes { get; set; }
 }
+
+public sealed record ClassificationHistoryRow(long Id, DateTimeOffset ChangedAt, Guid ChangedBy,
+    string ChangeReason, string Code, string Name, string? ParentCode);
+
+public sealed record ClassificationVersionDiffRow(string Code, string ChangeType, string? PreviousName,
+    string? CurrentName, string? PreviousRetention, string? CurrentRetention,
+    string? PreviousDestination, string? CurrentDestination);
 
 public sealed record ClassificationVersionRow(
     Guid Id,
