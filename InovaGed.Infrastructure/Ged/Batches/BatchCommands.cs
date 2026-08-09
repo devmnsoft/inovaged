@@ -17,7 +17,7 @@ public sealed class BatchCommands : IBatchCommands
 
     private static readonly HashSet<string> AllowedStatus = new(StringComparer.OrdinalIgnoreCase)
     {
-        "RECEIVED", "TRIAGE", "DIGITIZATION", "INDEXING", "ARCHIVED"
+        "RECEIVED", "TRIAGE", "DIGITIZATION", "INDEXING", "CLASSIFICATION", "ARCHIVED", "COMPLETED", "CANCELLED"
     };
 
     public BatchCommands(IDbConnectionFactory db, IAuditWriter audit, ILogger<BatchCommands> logger)
@@ -87,7 +87,7 @@ public sealed class BatchCommands : IBatchCommands
                 gen_random_uuid(),
                 @tenant_id,
                 n,
-                'RECEIVED'::ged.batch_status,
+                'RECEIVED',
                 now(),
                 @created_by,
                 @notes,
@@ -507,9 +507,15 @@ public sealed class BatchCommands : IBatchCommands
                 return Result.Fail("NOTFOUND", "Lote não encontrado.");
             }
 
+            if (StatusOrder(toStatus) < StatusOrder(fromStatus) && string.IsNullOrWhiteSpace(notes))
+            {
+                tx.Rollback();
+                return Result.Fail("REASON", "O retorno de etapa exige justificativa.");
+            }
+
             const string sql = """
             update ged.batch
-            set status = @status::ged.batch_status,
+            set status = @status,
                 notes = coalesce(@notes, notes),
                 updated_at = now(),
                 updated_by = @updated_by
@@ -574,10 +580,19 @@ public sealed class BatchCommands : IBatchCommands
             "TRIAGEM" or "TRIAGE" => "TRIAGE",
             "DIGITALIZACAO" or "DIGITALIZAÇÃO" or "DIGITIZACAO" or "DIGITIZATION" => "DIGITIZATION",
             "INDEXACAO" or "INDEXAÇÃO" or "INDEXING" => "INDEXING",
+            "CLASSIFICACAO" or "CLASSIFICAÇÃO" or "CLASSIFICATION" => "CLASSIFICATION",
             "ARQUIVADO" or "ARQUIVAMENTO" or "ARCHIVED" => "ARCHIVED",
+            "CONCLUIDO" or "CONCLUÍDO" or "COMPLETED" => "COMPLETED",
+            "CANCELADO" or "CANCELLED" => "CANCELLED",
             _ => x
         };
     }
+
+    private static int StatusOrder(string status) => status switch
+    {
+        "RECEIVED" => 0, "TRIAGE" => 1, "DIGITIZATION" => 2, "INDEXING" => 3,
+        "CLASSIFICATION" => 4, "ARCHIVED" => 5, "COMPLETED" => 6, "CANCELLED" => 7, _ => -1
+    };
 
     private static async Task<bool> BatchExistsAsync(IDbConnection conn, IDbTransaction tx, Guid tenantId, Guid batchId, CancellationToken ct)
     {
@@ -724,8 +739,8 @@ public sealed class BatchCommands : IBatchCommands
         (
             @tenant_id,
             @batch_id,
-            @from_status::ged.batch_status,
-            @to_status::ged.batch_status,
+            @from_status,
+            @to_status,
             now(),
             @changed_by,
             @notes,
@@ -1009,8 +1024,8 @@ public sealed class BatchCommands : IBatchCommands
         (
             @tenant_id,
             @batch_id,
-            @current_status::ged.batch_status,
-            @current_status::ged.batch_status,
+            @current_status,
+            @current_status,
             now(),
             @changed_by,
             @history_notes,
@@ -1180,8 +1195,8 @@ public sealed class BatchCommands : IBatchCommands
         (
             @tenant_id,
             @batch_id,
-            @current_status::ged.batch_status,
-            @current_status::ged.batch_status,
+            @current_status,
+            @current_status,
             now(),
             @changed_by,
             @notes,

@@ -11,9 +11,13 @@ public sealed class PhysicalLocationRowDto
     public string? Pallet { get; set; }
     public string? Notes { get; set; }
     public string? LocationCode { get; set; }
+    public string? PropertyName { get; set; }
+    public string? UnitName { get; set; }
+    public string? FullLocationCode { get; set; }
+    public string RegStatus { get; set; } = "A";
 
     public string LocationLabel
-        => string.Join(" / ", new[] { LocationCode, Building, Room, Aisle, Rack, Shelf, Pallet }
+        => string.Join(" / ", new[] { FullLocationCode ?? LocationCode, Building, Room, Aisle, Rack, Shelf, Pallet }
             .Where(x => !string.IsNullOrWhiteSpace(x)));
 }
 
@@ -48,6 +52,13 @@ public sealed class BoxRowDto
     public string? LocationRoom { get; set; }
     public string? LocationCode { get; set; }
     public string? Notes { get; set; }
+    public string LifecycleStatus { get; set; } = "OPEN";
+    public bool IsFull { get; set; }
+    public int DocumentCount { get; set; }
+    public DateTime? PeriodStart { get; set; }
+    public DateTime? PeriodEnd { get; set; }
+    public DateTime? LastMovedAt { get; set; }
+    public Guid? LastMovedBy { get; set; }
 
     public string LocationLabel
         => string.Join(" / ", new[] { LocationCode, LocationBuilding, LocationRoom }
@@ -61,6 +72,8 @@ public sealed class BoxFormVM
     public string LabelCode { get; set; } = "";
     public Guid? LocationId { get; set; }
     public string? Notes { get; set; }
+    public string LifecycleStatus { get; set; } = "OPEN";
+    public bool IsFull { get; set; }
 }
 
 public sealed class BoxContentItemDto
@@ -92,6 +105,15 @@ public sealed class BoxContentMaintenanceVM
     public Guid DocumentId { get; set; }
     public Guid? BatchId { get; set; }
     public string? Notes { get; set; }
+    public bool SpecialPermission { get; set; }
+}
+
+public sealed class PhysicalLocationHistoryDto
+{
+    public DateTime ChangedAt { get; set; }
+    public string Action { get; set; } = "";
+    public string? Reason { get; set; }
+    public Guid? ChangedBy { get; set; }
 }
 
 public sealed class PhysicalMapRowDto

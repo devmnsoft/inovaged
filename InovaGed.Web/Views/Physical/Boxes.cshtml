@@ -121,6 +121,7 @@
                 <tr>
                     <th>Caixa</th>
                     <th>Localização Física</th>
+                    <th>Conteúdo / situação</th>
                     <th>Observações</th>
                     <th class="text-end" style="width: 420px;">Ações</th>
                 </tr>
@@ -129,7 +130,7 @@
                 @if (total == 0)
                 {
                     <tr>
-                        <td colspan="4" class="text-center py-5">
+                        <td colspan="5" class="text-center py-5">
                             <i class="bi bi-archive display-5 text-muted d-block mb-2"></i>
                             <div class="fw-semibold">Nenhuma caixa encontrada</div>
                             <div class="text-muted small mb-3">Crie uma caixa e vincule-a a uma localização física.</div>
@@ -161,7 +162,8 @@
                                     </div>
                                 }
                             </td>
-                            <td class="text-muted">@(string.IsNullOrWhiteSpace(r.Notes) ? "Sem observações" : r.Notes)</td>
+                            <td><strong>@r.DocumentCount</strong> documento(s)<br/><span class="badge @(r.LifecycleStatus == "OPEN" ? "text-bg-success" : "text-bg-secondary")">@r.LifecycleStatus</span> @if(r.IsFull){<span class="badge text-bg-warning">Cheia</span>}</td>
+                            <td class="text-muted">@(string.IsNullOrWhiteSpace(r.Notes) ? "Sem observações" : r.Notes)<br/><small>Último movimento: @(r.LastMovedAt?.ToString("dd/MM/yyyy HH:mm") ?? "—")</small></td>
                             <td class="text-end">
                                 <div class="d-flex gap-1 flex-wrap justify-content-end">
                                     <a class="btn btn-sm btn-outline-primary" href="/Physical/BoxContents?boxId=@r.Id">

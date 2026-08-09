@@ -62,13 +62,14 @@
         {
             <article class="physical-location-card" data-building="@r.Building">
                 <div class="physical-location-mark"><app-icon name="building" size="22" decorative="true" /></div>
-                <div class="physical-location-primary"><div class="physical-title-row"><h3>@r.Building</h3><span class="physical-status">Ativa</span></div><p><app-icon name="location" size="14" decorative="true" /> @(string.IsNullOrWhiteSpace(r.Room) ? "Sala não informada" : r.Room)</p></div>
+                <div class="physical-location-primary"><div class="physical-title-row"><h3>@(r.UnitName ?? r.PropertyName ?? r.Building)</h3><span class="physical-status">@(r.RegStatus == "A" ? "Ativa" : "Inativa")</span></div><p><app-icon name="location" size="14" decorative="true" /> <code>@r.FullLocationCode</code></p><p>@r.Building · @(r.Room ?? "sala não informada")</p></div>
                 <dl class="physical-address-grid">
                     <div><dt>Corredor</dt><dd>@(r.Aisle ?? "—")</dd></div><div><dt>Estante</dt><dd>@(r.Rack ?? "—")</dd></div><div><dt>Prateleira</dt><dd>@(r.Shelf ?? "—")</dd></div><div><dt>Palete</dt><dd>@(r.Pallet ?? "—")</dd></div>
                 </dl>
                 <div class="physical-notes"><span>Observações</span><p>@(string.IsNullOrWhiteSpace(r.Notes) ? "Nenhuma observação operacional." : r.Notes)</p></div>
                 <div class="physical-card-actions">
                     <a class="btn btn-sm btn-outline-primary" href="/Physical/Locations/@r.Id"><app-icon name="edit" size="15" decorative="true" /> Editar</a>
+                    <form method="post" action="/Physical/Locations/@r.Id/State">@Html.AntiForgeryToken()<input type="hidden" name="active" value="@(r.RegStatus != "A" ? "true" : "false")" /><input type="hidden" name="reason" value="Alteração pela gestão de localizações" /><button class="btn btn-sm btn-outline-secondary" type="submit">@(r.RegStatus == "A" ? "Inativar" : "Ativar")</button></form>
                     <button class="btn btn-sm btn-ghost-danger" type="button" data-delete-location data-location-id="@r.Id" data-location-name="@r.Building, @r.Room"><app-icon name="delete" size="15" decorative="true" /><span>Excluir</span></button>
                 </div>
             </article>

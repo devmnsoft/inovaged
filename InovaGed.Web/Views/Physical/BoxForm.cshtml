@@ -44,7 +44,7 @@
                 <label class="form-label">Localização</label>
                 <select class="form-select" asp-for="LocationId">
                     <option value="">-- selecione --</option>
-                    @foreach (var loc in locations)
+                    @foreach (var loc in locations.Where(x => x.RegStatus == "A"))
                     {
                         var label = string.Join(" / ",
                         new[] { loc.Building, loc.Room, loc.Aisle, loc.Rack, loc.Shelf, loc.Pallet }
@@ -61,6 +61,8 @@
                 <textarea class="form-control" rows="3" asp-for="Notes"></textarea>
                 <span class="text-danger small" asp-validation-for="Notes"></span>
             </div>
+            <div class="col-md-6"><label class="form-label">Situação operacional</label><select asp-for="LifecycleStatus" class="form-select"><option value="OPEN">Aberta</option><option value="CLOSED">Fechada</option><option value="ARCHIVED">Arquivada</option></select></div>
+            <div class="col-md-6 d-flex align-items-end"><div class="form-check mb-2"><input asp-for="IsFull" class="form-check-input" /><label asp-for="IsFull" class="form-check-label">Caixa cheia</label></div></div>
         </div>
     </div>
 
