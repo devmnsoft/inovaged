@@ -100,6 +100,7 @@ public sealed class UserShellContextService : IUserShellContextService
                     Item("Fontes de Autoridade", "AuthoritySources", "Index", "database"),
                     Item("Continuidade e Portabilidade", "Continuity", "Overview", "health")),
                 Section("Administração",
+                    Item("Central de Demonstração", "Poc", "Index", "dashboard"),
                     Item("Administração", "Administration", "Index", "settings"),
                     Item("Parâmetros", "Parameters", "Index", "settings"),
                     Item("Usuários", "Users", "Index", "users"),

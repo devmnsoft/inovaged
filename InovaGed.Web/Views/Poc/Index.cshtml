@@ -1,0 +1,37 @@
+@model InovaGed.Web.Models.Poc.PocDashboardVm
+@using InovaGed.Web.Models.Atlas
+@using InovaGed.Web.Models.Poc
+@{
+    ViewData["Title"] = "Central de Demonstração InovaGED";
+    ViewData["Subtitle"] = "Cobertura funcional, evidências e roteiro guiado para a PoC";
+    var header = new AtlasPageHeaderVm("Central de Demonstração InovaGED", "Conduza uma apresentação verificável: cada capacidade leva à tela real, à ação funcional e à evidência correspondente.", "dashboard", "PoC e evidências",
+        new[] { new AtlasPageAction("Iniciar roteiro", "/Poc/Demo", "timeline", true), new AtlasPageAction("Ver checklist 1–27", "/Poc/Checklist", "list") },
+        new (string, string?)[] { ("Início", "/"), ("Central PoC", null) });
+    string Status(PocReadinessStatus status) => status switch { PocReadinessStatus.Ready => "Pronto", PocReadinessStatus.Partial => "Parcial", PocReadinessStatus.Pending => "Pendente", _ => "Erro" };
+}
+<div class="atlas-prime-page poc-prime" data-poc-page>
+    <partial name="Atlas/_PageHeader" model="header" />
+    <partial name="Atlas/_PageMetrics" model="Model.Metrics" />
+    <nav class="poc-prime__tabs" aria-label="Seções da Central PoC">
+        <a class="active" href="/Poc" aria-current="page">Visão geral</a><a href="/Poc/Checklist">Checklist 1–27</a><a href="/Poc/Demo">Roteiro de demo</a><a href="/Poc/Evidences">Evidências</a>
+    </nav>
+    <section class="atlas-prime-panel">
+        <div class="atlas-prime-panel__header"><div><h2>Capacidades demonstráveis</h2><small>Valide o módulo depois de executar o cenário na tela real.</small></div></div>
+        <div class="poc-module-grid">
+            @foreach (var module in Model.Modules)
+            {
+                <article class="poc-module-card" data-module="@module.Key">
+                    <div class="poc-module-card__top"><span class="poc-module-card__icon"><app-icon name="@module.Icon" size="23" decorative="true" /></span><span class="poc-status poc-status--@module.Status.ToString().ToLowerInvariant()">@Status(module.Status)</span></div>
+                    <h3>@module.Name</h3><p>@module.Description</p>
+                    <div class="poc-progress"><div><span>Atendimento</span><strong>@module.Coverage%</strong></div><progress max="100" value="@module.Coverage">@module.Coverage%</progress></div>
+                    <dl><div><dt>Evidência</dt><dd><app-icon name="audit" size="14" decorative="true" /> @module.Evidence</dd></div><div><dt>Última validação</dt><dd data-validation-date>@module.LastValidatedAt.ToString("dd/MM/yyyy HH:mm 'UTC'")</dd></div></dl>
+                    <div class="poc-module-card__actions"><a class="btn btn-primary" href="@module.QuickActionUrl">@module.QuickActionLabel <app-icon name="arrow-right" size="15" decorative="true" /></a><button class="btn btn-outline-secondary" type="button" data-validate-module="@module.Key"><app-icon name="check" size="15" decorative="true" /> Validar</button></div>
+                </article>
+            }
+        </div>
+    </section>
+    <form id="pocAntiforgery" hidden>@Html.AntiForgeryToken()</form>
+    <div class="poc-feedback" role="status" aria-live="polite" hidden></div>
+</div>
+@section Styles { <link rel="stylesheet" href="~/css/pages/poc-prime.css" asp-append-version="true" /> }
+@section Scripts { <script src="~/js/poc-prime.js" asp-append-version="true"></script> }
