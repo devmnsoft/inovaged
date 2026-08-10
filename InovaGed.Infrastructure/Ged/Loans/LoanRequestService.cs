@@ -10,13 +10,20 @@ public sealed class LoanRequestService : ILoanRequestService
 {
     private readonly ILoanQueries _queries;
     private readonly ILoanCommands _commands;
+    private readonly ILoanCollectionService _collections;
     private readonly IDbConnectionFactory _db;
     private readonly ILogger<LoanRequestService> _logger;
 
-    public LoanRequestService(ILoanQueries queries, ILoanCommands commands, IDbConnectionFactory db, ILogger<LoanRequestService> logger)
+    public LoanRequestService(
+        ILoanQueries queries,
+        ILoanCommands commands,
+        ILoanCollectionService collections,
+        IDbConnectionFactory db,
+        ILogger<LoanRequestService> logger)
     {
         _queries = queries;
         _commands = commands;
+        _collections = collections;
         _db = db;
         _logger = logger;
     }
@@ -62,19 +69,16 @@ where tenant_id=@TenantId and id=@LoanId and reg_status='A'", new { TenantId = t
         }
     }
 
-    public async Task<Result> RegisterCollectionAsync(Guid tenantId, Guid loanId, Guid userId, string kind, string message, CancellationToken ct)
+    public Task<Result> RegisterCollectionAsync(
+        Guid tenantId,
+        Guid loanId,
+        Guid userId,
+        string kind,
+        string message,
+        CancellationToken ct)
     {
-        try
-        {
-            await using var con = await _db.OpenAsync(ct);
-            await con.ExecuteAsync(new CommandDefinition("insert into ged.loan_collection_event(tenant_id,loan_id,event_at,kind,message,created_by) values(@TenantId,@LoanId,now(),@Kind,@Message,@UserId)", new { TenantId = tenantId, LoanId = loanId, Kind = kind, Message = message, UserId = userId }, cancellationToken: ct));
-            return Result.Ok();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "RegisterCollectionAsync failed");
-            return Result.Fail("ERROR", "Erro ao registrar cobrança.");
-        }
+        _ = kind; // Contrato legado preservado; a implementação canônica registra MANUAL_COLLECTION.
+        return _collections.CollectAsync(tenantId, loanId, userId, message, ct);
     }
 
     public async Task<int> PendingCountAsync(Guid tenantId, Guid? userId, LoanVisibilityScope scope, CancellationToken ct)
