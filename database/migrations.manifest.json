@@ -68,42 +68,9 @@
       "requiresVerifiedBackup": false
     },
     {
-      "id": "2026_08_labels_classification_evolution",
-      "path": "database/migrations/2026_08_labels_classification_evolution.sql",
-      "module": "ArchivalClassificationAndLabels",
-      "transactional": true,
-      "deploymentSafety": "Additive",
-      "minimumApplicationVersion": "04.1.31",
-      "maximumApplicationVersion": "04.1.99",
-      "requiresMaintenanceWindow": false,
-      "requiresVerifiedBackup": false
-    },
-    {
       "id": "2026_08_archival_intelligence_core_v1",
       "path": "database/migrations/2026_08_archival_intelligence_core_v1.sql",
       "module": "ArchivalIntelligence",
-      "transactional": true,
-      "deploymentSafety": "Additive",
-      "minimumApplicationVersion": "04.1.31",
-      "maximumApplicationVersion": "04.1.99",
-      "requiresMaintenanceWindow": false,
-      "requiresVerifiedBackup": false
-    },
-    {
-      "id": "2026_08_archival_labels_physical_inventory",
-      "path": "database/migrations/2026_08_archival_labels_physical_inventory.sql",
-      "module": "ArchivalLabelsPhysicalInventory",
-      "transactional": true,
-      "deploymentSafety": "Additive",
-      "minimumApplicationVersion": "04.1.31",
-      "maximumApplicationVersion": "04.1.99",
-      "requiresMaintenanceWindow": false,
-      "requiresVerifiedBackup": false
-    },
-    {
-      "id": "2026_08_loans_overdue_collections_reports",
-      "path": "database/migrations/2026_08_loans_overdue_collections_reports.sql",
-      "module": "LoansOperationsPremium",
       "transactional": true,
       "deploymentSafety": "Additive",
       "minimumApplicationVersion": "04.1.31",
@@ -123,6 +90,39 @@
       "requiresVerifiedBackup": false
     },
     {
+      "id": "2026_08_archival_schema_consolidation",
+      "path": "database/migrations/2026_08_archival_schema_consolidation.sql",
+      "module": "ArchivalSchema",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.99",
+      "requiresMaintenanceWindow": false,
+      "requiresVerifiedBackup": false
+    },
+    {
+      "id": "2026_08_labels_classification_evolution",
+      "path": "database/migrations/2026_08_labels_classification_evolution.sql",
+      "module": "ArchivalClassificationAndLabels",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.99",
+      "requiresMaintenanceWindow": false,
+      "requiresVerifiedBackup": false
+    },
+    {
+      "id": "2026_08_archival_labels_physical_inventory",
+      "path": "database/migrations/2026_08_archival_labels_physical_inventory.sql",
+      "module": "ArchivalLabelsPhysicalInventory",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.99",
+      "requiresMaintenanceWindow": false,
+      "requiresVerifiedBackup": false
+    },
+    {
       "id": "2026_08_physical_archive_operations",
       "path": "database/migrations/2026_08_physical_archive_operations.sql",
       "module": "PhysicalArchive",
@@ -134,15 +134,26 @@
       "requiresVerifiedBackup": false
     },
     {
-      "id": "2026_08_archival_schema_consolidation",
-      "path": "database/migrations/2026_08_archival_schema_consolidation.sql",
-      "module": "ArchivalSchema",
+      "id": "2026_08_loans_overdue_collections_reports",
+      "path": "database/migrations/2026_08_loans_overdue_collections_reports.sql",
+      "module": "LoansOperationsPremium",
       "transactional": true,
       "deploymentSafety": "Additive",
       "minimumApplicationVersion": "04.1.31",
       "maximumApplicationVersion": "04.1.99",
       "requiresMaintenanceWindow": false,
       "requiresVerifiedBackup": false
+    },
+    {
+      "id": "2026_08_10_archival_migration_hotfix",
+      "path": "database/migrations/2026_08_10_archival_migration_hotfix.sql",
+      "module": "ArchivalCompatibility",
+      "transactional": false,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.99",
+      "requiresMaintenanceWindow": false,
+      "requiresVerifiedBackup": true
     }
   ]
 }
