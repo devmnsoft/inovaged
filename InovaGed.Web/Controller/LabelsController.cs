@@ -4,7 +4,6 @@ using Microsoft.AspNetCore.Mvc;
 using InovaGed.Application.Common.Database;
 using InovaGed.Web.Security;
 using InovaGed.Application.PhysicalArchive;
-using System.Text.Json;
 
 namespace InovaGed.Web.Controllers;
 
@@ -14,13 +13,15 @@ public class LabelsController : GedControllerBase
     private readonly ILabelPrintRegistrar _printRegistrar;
     private readonly ILabelTemplateService _templates;
     private readonly ILabelQrCodeService _qrCodes;
+    private readonly ILabelPayloadBuilder _payloadBuilder;
 
     public LabelsController(IDbConnectionFactory dbFactory, ILabelPrintRegistrar printRegistrar,
-        ILabelTemplateService templates, ILabelQrCodeService qrCodes) : base(dbFactory)
+        ILabelTemplateService templates, ILabelQrCodeService qrCodes, ILabelPayloadBuilder payloadBuilder) : base(dbFactory)
     {
         _printRegistrar = printRegistrar;
         _templates = templates;
         _qrCodes = qrCodes;
+        _payloadBuilder = payloadBuilder;
     }
 
     [HttpGet]
@@ -147,7 +148,7 @@ where b.tenant_id=@tid
         if (snapshot is null) return NotFound();
         await RegisterAsync("BOX", boxId, snapshot, reprintReason, ct);
         ViewBag.QrSvg = _qrCodes.CreateTrackingSvg($"{Request.Scheme}://{Request.Host}/Physical/BoxContents?boxId={boxId}");
-        ViewBag.AutoPrint = true;
+        ViewBag.PrintRegistered = true;
         return View("BoxLabel", snapshot);
     }
 
@@ -192,7 +193,7 @@ where d.tenant_id=@tid
         if (snapshot is null) return NotFound();
         await RegisterAsync("DOCUMENT", docId, snapshot, reprintReason, ct);
         ViewBag.QrSvg = _qrCodes.CreateTrackingSvg($"{Request.Scheme}://{Request.Host}/Ged/Document/{docId}");
-        ViewBag.AutoPrint = true;
+        ViewBag.PrintRegistered = true;
         return View("DocumentLabel", snapshot);
     }
 
@@ -201,7 +202,7 @@ where d.tenant_id=@tid
         if (UserId is not Guid userId) throw new UnauthorizedAccessException("Usuário autenticado obrigatório.");
         var template = _templates.GetCurrent(type);
         await _printRegistrar.RegisterAsync(new LabelPrintRequest(
-            TenantId, userId, type, subjectId, $"{template.Code}_V{template.Version}", JsonSerializer.Serialize(snapshot),
+            TenantId, userId, type, subjectId, $"{template.Code}_V{template.Version}", _payloadBuilder.Build(snapshot),
             HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers.UserAgent.ToString(), reason), ct);
     }
 

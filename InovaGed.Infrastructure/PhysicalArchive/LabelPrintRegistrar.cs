@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Dapper;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.PhysicalArchive;
@@ -23,6 +24,19 @@ where tenant_id=@TenantId and label_subject_type=@SubjectType and label_subject_
 """, request, tx, cancellationToken: cancellationToken));
         if (priorPrints > 0 && string.IsNullOrWhiteSpace(request.ReprintReason))
             throw new InvalidOperationException("O motivo da reimpressão é obrigatório.");
+        var boxId = request.SubjectType.Equals("BOX", StringComparison.OrdinalIgnoreCase) ? request.SubjectId : (Guid?)null;
+        var documentId = request.SubjectType.Equals("DOCUMENT", StringComparison.OrdinalIgnoreCase) ? request.SubjectId : (Guid?)null;
+        await db.ExecuteAsync(new CommandDefinition("""
+insert into ged.label_print
+ (id, tenant_id, box_id, document_id, label_type, printed_by, ip_address, user_agent, data,
+  snapshot_json, payload_hash_sha256, template_version, reprint_reason, print_channel, reg_status)
+values
+ (gen_random_uuid(), @TenantId, @BoxId, @DocumentId, @SubjectType, @UserId, cast(@IpAddress as inet),
+  @UserAgent, cast(@SnapshotJson as jsonb), cast(@SnapshotJson as jsonb), @Hash, @TemplateCode,
+  nullif(@ReprintReason, ''), 'WEB', 'A');
+""", new { request.TenantId, BoxId = boxId, DocumentId = documentId, request.SubjectType, request.UserId,
+            request.IpAddress, request.UserAgent, request.SnapshotJson, Hash = hash, request.TemplateCode, request.ReprintReason },
+            tx, cancellationToken: cancellationToken));
         await db.ExecuteAsync(new CommandDefinition("""
 insert into ged.label_print_history
  (id, tenant_id, label_subject_type, label_subject_id, template_code, snapshot_json,
@@ -33,6 +47,16 @@ values
 """, new { request.TenantId, request.SubjectType, request.SubjectId, request.TemplateCode, request.SnapshotJson, Hash = hash, request.UserId, request.IpAddress, request.UserAgent, request.ReprintReason }, tx, cancellationToken: cancellationToken));
         await tx.CommitAsync(cancellationToken);
     }
+}
+
+public sealed class LabelPayloadBuilder : ILabelPayloadBuilder
+{
+    private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web)
+    {
+        WriteIndented = false
+    };
+
+    public string Build(object snapshot) => JsonSerializer.Serialize(snapshot, Options);
 }
 
 public sealed class LabelTemplateService : ILabelTemplateService

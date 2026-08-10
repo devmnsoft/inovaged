@@ -110,6 +110,39 @@
       "maximumApplicationVersion": "04.1.99",
       "requiresMaintenanceWindow": false,
       "requiresVerifiedBackup": false
+    },
+    {
+      "id": "2026_08_document_folder_move_history",
+      "path": "database/migrations/2026_08_document_folder_move_history.sql",
+      "module": "GedDocumentMovement",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.99",
+      "requiresMaintenanceWindow": false,
+      "requiresVerifiedBackup": false
+    },
+    {
+      "id": "2026_08_physical_archive_operations",
+      "path": "database/migrations/2026_08_physical_archive_operations.sql",
+      "module": "PhysicalArchive",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.99",
+      "requiresMaintenanceWindow": false,
+      "requiresVerifiedBackup": false
+    },
+    {
+      "id": "2026_08_archival_schema_consolidation",
+      "path": "database/migrations/2026_08_archival_schema_consolidation.sql",
+      "module": "ArchivalSchema",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.99",
+      "requiresMaintenanceWindow": false,
+      "requiresVerifiedBackup": false
     }
   ]
 }

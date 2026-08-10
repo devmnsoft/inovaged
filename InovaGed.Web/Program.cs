@@ -174,6 +174,7 @@ builder.Services.AddScoped<ICorrelationContext, CorrelationContext>();
 builder.Services.AddScoped<InovaGed.Application.PhysicalArchive.ILabelPrintRegistrar, InovaGed.Infrastructure.PhysicalArchive.LabelPrintRegistrar>();
 builder.Services.AddScoped<InovaGed.Application.PhysicalArchive.ILabelPrintService, InovaGed.Infrastructure.PhysicalArchive.LabelPrintRegistrar>();
 builder.Services.AddSingleton<InovaGed.Application.PhysicalArchive.ILabelTemplateService, InovaGed.Infrastructure.PhysicalArchive.LabelTemplateService>();
+builder.Services.AddSingleton<InovaGed.Application.PhysicalArchive.ILabelPayloadBuilder, InovaGed.Infrastructure.PhysicalArchive.LabelPayloadBuilder>();
 builder.Services.AddSingleton<InovaGed.Application.PhysicalArchive.ILabelQrCodeService, InovaGed.Web.Services.LabelQrCodeService>();
 builder.Services.AddTransient<CorrelationIdHandler>();
 builder.Services.AddHttpClient("InovaGed").AddHttpMessageHandler<CorrelationIdHandler>();
