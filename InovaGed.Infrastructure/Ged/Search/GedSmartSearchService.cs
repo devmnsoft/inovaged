@@ -142,7 +142,7 @@ WITH q AS (
     LEFT JOIN ged.folder f ON f.tenant_id=d.tenant_id AND f.id=d.folder_id
     LEFT JOIN ged.document_type dt ON dt.tenant_id=d.tenant_id AND dt.id=d.document_type_id
     LEFT JOIN ged.document_classification dc ON dc.tenant_id=d.tenant_id AND dc.document_id=d.id AND dc.reg_status='A'
-    LEFT JOIN ged.classification_plan cp ON cp.tenant_id=d.tenant_id AND cp.id=dc.classification_id
+    LEFT JOIN ged.classification_plan cp ON cp.tenant_id=d.tenant_id AND cp.id=COALESCE(dc.classification_id,d.classification_id)
     LEFT JOIN LATERAL (SELECT vx.id, vx.file_name FROM ged.document_version vx WHERE vx.tenant_id=d.tenant_id AND vx.document_id=d.id ORDER BY vx.version_number DESC NULLS LAST, vx.created_at DESC NULLS LAST LIMIT 1) latest_v ON true
     LEFT JOIN LATERAL (SELECT j.status FROM ged.ocr_job j WHERE j.tenant_id=d.tenant_id AND j.document_version_id=COALESCE(d.current_version_id, latest_v.id, ds.version_id) ORDER BY j.requested_at DESC LIMIT 1) oj ON true
     JOIN q ON q.tenant_id=d.tenant_id

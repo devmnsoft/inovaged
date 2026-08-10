@@ -2,6 +2,9 @@
 begin;
 create schema if not exists ged;
 
+-- Permite executar esta migration isoladamente sobre o dump legado.
+alter table if exists ged.document_classification add column if not exists classification_id uuid;
+
 alter table if exists ged.classification_plan
   add column if not exists activity_type varchar(10) not null default 'MEIO',
   add column if not exists current_retention_text text,
@@ -78,15 +81,16 @@ create or replace view ged.vw_physical_map as
 select b.tenant_id, b.id as box_id, b.box_no, b.label_code, b.location_id,
        concat_ws(' / ',p.unit_name,p.building,p.room,p.aisle,p.rack,p.shelf,p.pallet,p.location_code) as full_location,
        count(distinct bi.document_id) filter (where bi.reg_status='A') as document_count,
-       count(distinct dc.classification_plan_id) filter (where bi.reg_status='A') as classification_count,
+       count(distinct coalesce(dc.classification_id,d.classification_id)) filter (where bi.reg_status='A') as classification_count,
        count(distinct cp.current_retention_text) filter (where bi.reg_status='A') as retention_count,
        count(distinct cp.confidentiality_level) filter (where bi.reg_status='A') as confidentiality_count,
        count(distinct cp.final_destination) filter (where bi.reg_status='A') as destination_count
 from ged.box b
 left join ged.physical_location p on p.tenant_id=b.tenant_id and p.id=b.location_id
 left join ged.batch_item bi on bi.tenant_id=b.tenant_id and bi.box_id=b.id
-left join ged.document_classification dc on dc.tenant_id=bi.tenant_id and dc.document_id=bi.document_id and dc.reg_status='A'
-left join ged.classification_plan cp on cp.tenant_id=dc.tenant_id and cp.id=dc.classification_plan_id
+left join ged.document d on d.tenant_id=bi.tenant_id and d.id=bi.document_id
+left join ged.document_classification dc on dc.tenant_id=d.tenant_id and dc.document_id=d.id and dc.reg_status='A'
+left join ged.classification_plan cp on cp.tenant_id=d.tenant_id and cp.id=coalesce(dc.classification_id,d.classification_id)
 where b.reg_status='A'
 group by b.tenant_id,b.id,b.box_no,b.label_code,b.location_id,p.unit_name,p.building,p.room,p.aisle,p.rack,p.shelf,p.pallet,p.location_code;
 commit;

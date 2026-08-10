@@ -2,6 +2,9 @@
 -- Migration aditiva e idempotente: não remove nem sobrescreve dados existentes.
 begin;
 create schema if not exists ged;
+
+-- O dump legado já contém document_classification, porém sem o vínculo arquivístico.
+alter table if exists ged.document_classification add column if not exists classification_id uuid;
 do $$ begin
  create extension if not exists pgcrypto;
 exception when insufficient_privilege then
@@ -90,11 +93,13 @@ create table if not exists ged.classification_plan_version_item (
 );
 create table if not exists ged.document_classification (
  id uuid primary key default gen_random_uuid(), tenant_id uuid not null, document_id uuid not null,
- classification_plan_id uuid, classification_version_id uuid, confidence numeric(5,4),
+ classification_id uuid, classification_version_id uuid, confidence numeric(5,4),
  suggestion_factors jsonb not null default '{}'::jsonb, reclassification_reason text,
  source text, classified_by uuid, classified_at timestamptz not null default now(),
  reg_status char(1) not null default 'A'
 );
+alter table ged.document_classification add column if not exists classification_id uuid;
+alter table ged.document_classification add column if not exists reg_status char(1) not null default 'A';
 create table if not exists ged.document_classification_audit (
  id bigserial primary key, tenant_id uuid not null, document_id uuid not null,
  previous_classification_id uuid, new_classification_id uuid, previous_version_id uuid, new_version_id uuid,
@@ -284,7 +289,7 @@ select b.tenant_id, b.id box_id, b.box_no, b.label_code, b.location_id,
 from ged.batch_item bi
 join ged.document d on d.tenant_id=bi.tenant_id and d.id=bi.document_id
 left join ged.document_classification dc on dc.tenant_id=d.tenant_id and dc.document_id=d.id and dc.reg_status='A'
-left join ged.classification_plan cp on cp.tenant_id=dc.tenant_id and cp.id=dc.classification_plan_id
+left join ged.classification_plan cp on cp.tenant_id=d.tenant_id and cp.id=coalesce(dc.classification_id,d.classification_id)
 left join ged.batch bt on bt.tenant_id=bi.tenant_id and bt.id=bi.batch_id
 left join ged.box b on b.tenant_id=bi.tenant_id and b.id=bi.box_id and b.reg_status='A'
 left join ged.physical_location p on p.tenant_id=b.tenant_id and p.id=b.location_id and p.reg_status='A'

@@ -91,7 +91,7 @@ RETURNING id;
     /// <summary>
     /// Gera/atualiza a fila de temporalidade.
     /// - Usa documentos ativos (status <> 'DELETED')
-    /// - Resolve class_code pelo classification_plan (id = document.classification_id)
+    /// - Resolve class_code pela classificação mais específica, com fallback no documento
     /// - Aplica regra por class_code (retention_rule.class_code)
     /// - due_at = document.created_at + (current_days+intermediate_days)
     /// - Insere PENDING se não existir PENDING/IN_TERM ativo
@@ -114,9 +114,13 @@ docs AS (
     d.created_at,
     cp.code AS class_code
   FROM ged.document d
+  LEFT JOIN ged.document_classification dc
+    ON dc.tenant_id = d.tenant_id
+   AND dc.document_id = d.id
+   AND dc.reg_status = 'A'
   JOIN ged.classification_plan cp
     ON cp.tenant_id = d.tenant_id
-   AND cp.id = d.classification_id
+   AND cp.id = COALESCE(dc.classification_id, d.classification_id)
    AND cp.is_active = true
   WHERE d.tenant_id=@TenantId
     AND d.status <> 'DELETED'
@@ -202,9 +206,13 @@ JOIN ged.document d
   ON d.tenant_id = q.tenant_id
  AND d.id = q.document_id
  AND d.status <> 'DELETED'
+LEFT JOIN ged.document_classification dc
+  ON dc.tenant_id = d.tenant_id
+ AND dc.document_id = d.id
+ AND dc.reg_status = 'A'
 LEFT JOIN ged.classification_plan cp
   ON cp.tenant_id = d.tenant_id
- AND cp.id = d.classification_id
+ AND cp.id = COALESCE(dc.classification_id, d.classification_id)
  AND cp.is_active = true
 WHERE q.tenant_id=@TenantId AND q.reg_status='A'
   AND q.status='PENDING'

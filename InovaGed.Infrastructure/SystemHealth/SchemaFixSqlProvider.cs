@@ -785,6 +785,7 @@ create table if not exists ged.document_quality_result (
         AddColumn(fixes, "ged.box_location_history", "changed_at", "timestamptz not null default now()", "Acervo físico");
         AddColumn(fixes, "ged.classification_plan_history", "changed_at", "timestamptz not null default now()", "Classificação");
         AddColumn(fixes, "ged.document_classification_audit", "created_at", "timestamptz not null default now()", "Classificação");
+        AddColumn(fixes, "ged.document_classification", "classification_id", "uuid null", "Classificação");
         AddColumn(fixes, "ged.label_print", "tenant_id", "uuid null", "Etiquetas");
         AddColumn(fixes, "ged.label_print", "label_type", "varchar(30) null", "Etiquetas");
         AddColumn(fixes, "ged.label_print", "data", "jsonb null", "Etiquetas");
