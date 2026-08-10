@@ -39,10 +39,17 @@ create table if not exists ged.label_print_history (
 
 create table if not exists ged.box_location_history (
  id uuid primary key default gen_random_uuid(), tenant_id uuid not null,
- box_id uuid not null, previous_location_id uuid, new_location_id uuid,
- reason text not null, moved_by uuid not null, moved_at timestamptz not null default now(),
- inventory_session_id uuid, reg_status char(1) not null default 'A'
+ box_id uuid not null, old_location_id uuid, new_location_id uuid,
+ changed_at timestamptz not null default now(), changed_by uuid,
+ notes text, data jsonb, reg_status char(1) not null default 'A'
 );
+alter table ged.box_location_history add column if not exists old_location_id uuid;
+alter table ged.box_location_history add column if not exists new_location_id uuid;
+alter table ged.box_location_history add column if not exists changed_at timestamptz default now();
+alter table ged.box_location_history add column if not exists changed_by uuid;
+alter table ged.box_location_history add column if not exists notes text;
+alter table ged.box_location_history add column if not exists data jsonb;
+alter table ged.box_location_history add column if not exists reg_status char(1) default 'A';
 
 create table if not exists ged.physical_inventory_session (
  id uuid primary key default gen_random_uuid(), tenant_id uuid not null,
@@ -59,7 +66,7 @@ create table if not exists ged.physical_inventory_item (
 create index if not exists ix_label_print_history_subject
  on ged.label_print_history(tenant_id,label_subject_type,label_subject_id,printed_at desc);
 create index if not exists ix_box_location_history_box
- on ged.box_location_history(tenant_id,box_id,moved_at desc);
+ on ged.box_location_history(tenant_id,box_id,changed_at desc);
 create index if not exists ix_inventory_session_location
  on ged.physical_inventory_session(tenant_id,location_id,status,opened_at desc);
 create index if not exists ix_inventory_item_session

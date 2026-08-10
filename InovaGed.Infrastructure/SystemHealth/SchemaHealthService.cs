@@ -152,7 +152,10 @@ public sealed class SchemaHealthService : ISchemaHealthService
         ("document_quality_result", "has_lgpd_risk", "Qualidade Documental"), ("document_quality_result", "issues_json", "Qualidade Documental"),
         ("document_quality_result", "recommendations_json", "Qualidade Documental"), ("document_quality_result", "analyzed_at_utc", "Qualidade Documental"),
         ("document_folder_move_history", "moved_at", "Movimentação documental"),
-        ("label_print", "tenant_id", "Etiquetas"), ("label_print", "label_type", "Etiquetas"),
+        ("box_location_history", "changed_at", "Acervo físico"),
+        ("classification_plan_history", "changed_at", "Classificação"),
+        ("document_classification_audit", "created_at", "Classificação"),
+        ("label_print", "tenant_id", "Etiquetas"), ("label_print", "printed_at", "Etiquetas"), ("label_print", "label_type", "Etiquetas"),
         ("label_print", "data", "Etiquetas"), ("label_print", "snapshot_json", "Etiquetas"),
         ("label_print", "payload_hash_sha256", "Etiquetas"), ("label_print", "template_version", "Etiquetas"),
         ("physical_location", "location_code", "Acervo físico"), ("physical_location", "unit_name", "Acervo físico"),
@@ -273,6 +276,31 @@ where table_schema = 'ged';", cancellationToken: ct))).ToHashSet(StringComparer.
                 AddCheck(report, BuildColumnId(table, column), area, objectName, "Coluna", severity, ok, ok ? "Coluna encontrada." : missingMessage, $"Execute o SQL específico desta linha ou {ConsolidationMigration}.");
                 if (!ok) report.MissingColumns.Add(objectName);
             }
+
+            var batchEnumValues = (await conn.QueryAsync<string>(new CommandDefinition(@"
+select e.enumlabel
+from pg_enum e
+join pg_type t on t.oid=e.enumtypid
+join pg_namespace n on n.oid=t.typnamespace
+where n.nspname='ged' and t.typname='batch_status';", cancellationToken: ct))).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var requiredBatchStatuses = new[] { "PREPARATION", "CONFERENCE", "ARCHIVING", "FINALIZED", "CANCELLED" };
+            var batchEnumOk = requiredBatchStatuses.All(batchEnumValues.Contains);
+            AddCheck(report, "GED_ENUM_BATCH_STATUS", "Lotes arquivísticos", "ged.batch_status", "Enum", "Critical", batchEnumOk,
+                batchEnumOk ? "Enum de lotes contém os estados operacionais." : "Enum de lotes ausente ou incompleto.",
+                "Execute database/migrations/2026_08_10_archival_migration_hotfix.sql via psql.");
+
+            var loanFunctionOk = await conn.ExecuteScalarAsync<bool>(new CommandDefinition(
+                "select to_regprocedure('ged.loan_run_overdue(uuid)') is not null;", cancellationToken: ct));
+            AddCheck(report, "GED_FUNCTION_LOAN_RUN_OVERDUE", "Empréstimos", "ged.loan_run_overdue(uuid)", "Função", "Critical", loanFunctionOk,
+                loanFunctionOk ? "Rotina de vencidos encontrada." : "Rotina de vencidos ausente.",
+                "Execute database/migrations/2026_08_10_archival_migration_hotfix.sql via psql.");
+
+            var batchTriggerOk = await conn.ExecuteScalarAsync<bool>(new CommandDefinition(@"
+select exists(select 1 from pg_trigger where tgrelid=to_regclass('ged.batch')
+ and tgname='tr_batch_status_history' and not tgisinternal);", cancellationToken: ct));
+            AddCheck(report, "GED_TRIGGER_BATCH_STATUS_HISTORY", "Lotes arquivísticos", "ged.batch.tr_batch_status_history", "Trigger", "Critical", batchTriggerOk,
+                batchTriggerOk ? "Trigger de histórico de lotes encontrado." : "Trigger de histórico de lotes ausente.",
+                "Execute database/migrations/2026_08_10_archival_migration_hotfix.sql via psql.");
 
             if (existingTables.Contains("ged.document_search"))
             {

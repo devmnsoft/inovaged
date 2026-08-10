@@ -2955,7 +2955,8 @@ create index if not exists ix_folder_tenant_parent_name
 on ged.folder(tenant_id, parent_id, lower(name))
 where coalesce(reg_status, 'A') = 'A';
 
--- Evolução 04.1.6: inclusões finais padronizadas com \ir relativo a este arquivo.
+-- Migrations abaixo usam \ir, meta-comando que exige execução pelo cliente psql.
+-- Ordem arquivística: base, movimentação, consolidação, evoluções e hotfix final.
 \ir migrations/2026_07_identity_role_integrity.sql
 \ir migrations/2026_07_administration_security_governance.sql
 \ir migrations/2026_07_backup_continuity_portability.sql
@@ -2966,17 +2967,10 @@ where coalesce(reg_status, 'A') = 'A';
 \ir migrations/2026_07_signature_cms_operational_fix.sql
 \ir migrations/2026_07_signature_cms_rc3_status.sql
 \ir migrations/2026_08_archival_intelligence_core_v1.sql
+\ir migrations/2026_08_document_folder_move_history.sql
+\ir migrations/2026_08_archival_schema_consolidation.sql
 \ir migrations/2026_08_labels_classification_evolution.sql
 \ir migrations/2026_08_archival_labels_physical_inventory.sql
-
-\ir migrations/2026_08_loans_overdue_collections_reports.sql
-
--- Execução arquivística recomendada (a partir da raiz do repositório):
---   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/apply_all_required_migrations.sql
--- Os comandos \ir abaixo são meta-comandos exclusivos do cliente psql e resolvem caminhos
--- relativamente a este arquivo. Em clientes que não implementam \ir, execute diretamente:
---   database/migrations/2026_08_archival_schema_consolidation.sql
--- A consolidação é autossuficiente, aditiva e pode ser reaplicada com segurança.
-\ir migrations/2026_08_document_folder_move_history.sql
 \ir migrations/2026_08_physical_archive_operations.sql
-\ir migrations/2026_08_archival_schema_consolidation.sql
+\ir migrations/2026_08_loans_overdue_collections_reports.sql
+\ir migrations/2026_08_10_archival_migration_hotfix.sql

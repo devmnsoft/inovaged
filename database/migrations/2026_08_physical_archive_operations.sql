@@ -1,6 +1,4 @@
 -- Acervo fisico operacional. Evolui as tabelas canonicas; nao cria um modelo concorrente.
-begin;
-
 alter table ged.physical_location
   add column if not exists unit_name varchar(120),
   add column if not exists full_location_code varchar(500),
@@ -45,13 +43,14 @@ alter table ged.batch
   add column if not exists pending_notes text,
   add column if not exists updated_at timestamptz;
 
--- Alguns bancos antigos usam enum. Converte para texto antes de habilitar o ciclo ampliado.
-alter table ged.batch alter column status type varchar(30) using status::text;
-alter table ged.batch_history alter column from_status type varchar(30) using from_status::text;
-alter table ged.batch_history alter column to_status type varchar(30) using to_status::text;
+-- Preserve o tipo e o trigger legados. Valores de enum precisam ser confirmados antes do uso.
 do $$ begin
-  alter table ged.batch add constraint ck_batch_operational_status check
-    (status in ('RECEIVED','TRIAGE','DIGITIZATION','INDEXING','CLASSIFICATION','ARCHIVED','COMPLETED','CANCELLED'));
-exception when duplicate_object then null; end $$;
-
-commit;
+  if exists (select 1 from pg_type t join pg_namespace n on n.oid=t.typnamespace
+             where n.nspname='ged' and t.typname='batch_status') then
+    alter type ged.batch_status add value if not exists 'PREPARATION';
+    alter type ged.batch_status add value if not exists 'CONFERENCE';
+    alter type ged.batch_status add value if not exists 'ARCHIVING';
+    alter type ged.batch_status add value if not exists 'FINALIZED';
+    alter type ged.batch_status add value if not exists 'CANCELLED';
+  end if;
+end $$;

@@ -11,11 +11,13 @@ alter table if exists ged.loan_request add column if not exists previous_due_at 
 
 create table if not exists ged.loan_collection_event (
  id uuid primary key default gen_random_uuid(), tenant_id uuid not null, loan_request_id uuid not null,
+ event_type varchar(30) not null default 'COLLECTION',
  level text not null check(level in ('FIRST_NOTICE','SECOND_NOTICE','ESCALATED','FINAL_NOTICE')),
  channel text not null default 'INTERNAL', delivery_status text not null default 'PENDING_EXTERNAL',
  message text not null, created_by uuid null, created_at timestamptz not null default now(), reg_status char(1) not null default 'A'
 );
 alter table ged.loan_collection_event add column if not exists loan_request_id uuid;
+alter table ged.loan_collection_event add column if not exists event_type varchar(30) not null default 'COLLECTION';
 alter table ged.loan_collection_event add column if not exists level text;
 alter table ged.loan_collection_event add column if not exists channel text not null default 'INTERNAL';
 alter table ged.loan_collection_event add column if not exists delivery_status text not null default 'PENDING_EXTERNAL';
@@ -36,15 +38,25 @@ create index if not exists ix_loan_request_sector_period on ged.loan_request(ten
 create index if not exists ix_loan_collection_loan_created on ged.loan_collection_event(tenant_id,loan_request_id,created_at desc);
 create index if not exists ix_loan_report_run_tenant_started on ged.loan_report_run(tenant_id,started_at desc);
 
-create or replace function ged.loan_run_overdue(p_tenant_id uuid) returns integer language plpgsql as $$
-declare changed integer := 0;
+create or replace function ged.loan_run_overdue(p_tenant uuid) returns integer language plpgsql as $$
+declare
+ v_tenant_id uuid := p_tenant;
+ v_count integer := 0;
 begin
- if p_tenant_id is null then return 0; end if;
+ if v_tenant_id is null then return 0; end if;
  if exists(select 1 from pg_enum e join pg_type t on t.oid=e.enumtypid join pg_namespace n on n.oid=t.typnamespace where n.nspname='ged' and t.typname='loan_status' and e.enumlabel='OVERDUE') then
+  insert into ged.loan_collection_event(tenant_id,loan_request_id,event_type,level,message)
+  select lr.tenant_id,lr.id,'OVERDUE','FIRST_NOTICE','Empréstimo vencido identificado automaticamente.'
+    from ged.loan_request lr
+   where lr.tenant_id=v_tenant_id and lr.due_at<now() and coalesce(lr.reg_status,'A')='A'
+     and upper(lr.status::text) in ('APPROVED','DELIVERED','PREPARING_PHYSICAL','WAITING_PICKUP','DIGITAL_LINK_SENT')
+     and not exists (select 1 from ged.loan_collection_event e where e.tenant_id=lr.tenant_id
+                      and e.loan_request_id=lr.id and e.event_type='OVERDUE' and coalesce(e.reg_status,'A')='A');
   execute $q$update ged.loan_request set status='OVERDUE'::ged.loan_status,updated_at=now()
+    ,last_collection_at=now(),collection_count=coalesce(collection_count,0)+1,collection_level='FIRST_NOTICE'
    where tenant_id=$1 and due_at<now() and coalesce(reg_status,'A')='A'
-   and upper(status::text) in ('APPROVED','DELIVERED','PREPARING_PHYSICAL','WAITING_PICKUP','DIGITAL_LINK_SENT')$q$ using p_tenant_id;
-  get diagnostics changed = row_count;
+   and upper(status::text) in ('APPROVED','DELIVERED','PREPARING_PHYSICAL','WAITING_PICKUP','DIGITAL_LINK_SENT')$q$ using v_tenant_id;
+  get diagnostics v_count = row_count;
  end if;
- return changed;
+ return v_count;
 end $$;

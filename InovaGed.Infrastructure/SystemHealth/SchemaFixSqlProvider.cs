@@ -781,6 +781,10 @@ create table if not exists ged.document_quality_result (
     private static void AddColumnFixes(List<SchemaFixDto> fixes)
     {
         AddColumn(fixes, "ged.document_folder_move_history", "moved_at", "timestamptz not null default now()", "Movimentação documental");
+        AddColumn(fixes, "ged.label_print", "printed_at", "timestamptz not null default now()", "Etiquetas");
+        AddColumn(fixes, "ged.box_location_history", "changed_at", "timestamptz not null default now()", "Acervo físico");
+        AddColumn(fixes, "ged.classification_plan_history", "changed_at", "timestamptz not null default now()", "Classificação");
+        AddColumn(fixes, "ged.document_classification_audit", "created_at", "timestamptz not null default now()", "Classificação");
         AddColumn(fixes, "ged.label_print", "tenant_id", "uuid null", "Etiquetas");
         AddColumn(fixes, "ged.label_print", "label_type", "varchar(30) null", "Etiquetas");
         AddColumn(fixes, "ged.label_print", "data", "jsonb null", "Etiquetas");

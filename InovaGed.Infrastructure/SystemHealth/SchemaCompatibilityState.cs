@@ -33,6 +33,11 @@ public sealed class SchemaCompatibilityState : ISchemaCompatibilityState
         ["Retention"] = new(
             ["ged.retention_rule", "ged.retention_event"],
             []),
+        ["ArchivalOperations"] = new(
+            ["ged.label_print", "ged.document_folder_move_history", "ged.box_location_history", "ged.batch"],
+            ["ged.label_print.printed_at", "ged.label_print.label_type", "ged.label_print.snapshot_json",
+             "ged.label_print.payload_hash_sha256", "ged.document_folder_move_history.moved_at",
+             "ged.box_location_history.changed_at", "ged.batch.status"]),
         ["SystemSeed"] = new(
             ["ged.app_user", "ged.app_role", "ged.user_role"],
             ["ged.app_user.id", "ged.app_role.normalized_name"])
