@@ -38,7 +38,8 @@ create index if not exists ix_loan_request_sector_period on ged.loan_request(ten
 create index if not exists ix_loan_collection_loan_created on ged.loan_collection_event(tenant_id,loan_request_id,created_at desc);
 create index if not exists ix_loan_report_run_tenant_started on ged.loan_report_run(tenant_id,started_at desc);
 
-create or replace function ged.loan_run_overdue(p_tenant uuid) returns integer language plpgsql as $$
+drop function if exists ged.loan_run_overdue(uuid);
+create function ged.loan_run_overdue(p_tenant uuid) returns integer language plpgsql as $$
 declare
  v_tenant_id uuid := p_tenant;
  v_count integer := 0;
