@@ -7,36 +7,251 @@ using Microsoft.Extensions.Logging;
 
 namespace InovaGed.Infrastructure.Ged.Loans;
 
-public sealed class LoanCollectionService(IDbConnectionFactory db, IAuditWriter audit, ILogger<LoanCollectionService> logger) : ILoanCollectionService
+public sealed class LoanCollectionService : ILoanCollectionService
 {
-    public async Task<Result> CollectAsync(Guid tenantId, Guid loanId, Guid? actorId, string? message, CancellationToken ct)
+    private const int MaximumMessageLength = 2_000;
+
+    private readonly IDbConnectionFactory _db;
+    private readonly IAuditWriter _audit;
+    private readonly ILogger<LoanCollectionService> _logger;
+
+    public LoanCollectionService(
+        IDbConnectionFactory db,
+        IAuditWriter audit,
+        ILogger<LoanCollectionService> logger)
     {
-        if (tenantId == Guid.Empty || loanId == Guid.Empty) return Result.Fail("INVALID", "Empréstimo inválido.");
+        _db = db;
+        _audit = audit;
+        _logger = logger;
+    }
+
+    public async Task<Result> CollectAsync(
+        Guid tenantId,
+        Guid loanId,
+        Guid? actorId,
+        string? message,
+        CancellationToken ct)
+    {
+        if (tenantId == Guid.Empty)
+            return Result.Fail("INVALID_TENANT", "Tenant inválido.");
+
+        if (loanId == Guid.Empty)
+            return Result.Fail("INVALID_LOAN", "Empréstimo inválido.");
+
+        var normalizedMessage = NormalizeMessage(message);
+        var correlationId = Guid.NewGuid().ToString("N");
+
         try
         {
-            await using var conn = await db.OpenAsync(ct);
+            await using var conn = await _db.OpenAsync(ct);
             await using var tx = await conn.BeginTransactionAsync(ct);
-            var loan = await conn.QuerySingleOrDefaultAsync<(string Status, int Count)>(new CommandDefinition("select status::text as Status, coalesce(collection_count,0) as Count from ged.loan_request where tenant_id=@tenantId and id=@loanId and coalesce(reg_status,'A')='A' for update", new { tenantId, loanId }, tx, cancellationToken: ct));
-            if (string.IsNullOrEmpty(loan.Status)) return Result.Fail("NOT_FOUND", "Empréstimo não encontrado.");
-            if (new[] { "RETURNED", "REJECTED", "CANCELLED", "CANCELED" }.Contains(loan.Status.ToUpperInvariant())) return Result.Fail("CLOSED", "Não é possível cobrar um empréstimo encerrado.");
-            var level = loan.Count switch { 0 => "FIRST_NOTICE", 1 => "SECOND_NOTICE", 2 => "ESCALATED", _ => "FINAL_NOTICE" };
-            var text = string.IsNullOrWhiteSpace(message) ? $"Solicitamos a devolução do empréstimo. Nível: {level}." : message.Trim();
-            await conn.ExecuteAsync(new CommandDefinition("""
-insert into ged.loan_collection_event(tenant_id, loan_request_id, level, channel, delivery_status, message, created_by)
-values(@tenantId,@loanId,@level,'INTERNAL','PENDING_EXTERNAL',@text,@actorId);
-insert into ged.loan_request_message(tenant_id,loan_request_id,sender_user_id,sender_name,sender_role,message,message_type,is_internal)
-values(@tenantId,@loanId,@actorId,'Sistema de Cobrança','SYSTEM',@text,'COLLECTION',false),
-      (@tenantId,@loanId,@actorId,'Sistema de Cobrança','SYSTEM',@internal,'COLLECTION_INTERNAL',true);
-update ged.loan_request set collection_count=coalesce(collection_count,0)+1,last_collection_at=now(),collection_level=@level where tenant_id=@tenantId and id=@loanId;
-insert into ged.loan_request_history(tenant_id,loan_request_id,old_status,new_status,action,user_id,user_name,reason,internal_notes,metadata_json,correlation_id,reg_status)
-values(@tenantId,@loanId,@status,@status,'LOAN_COLLECTION',@actorId,'Sistema de Cobrança',@text,'Envio externo pendente',jsonb_build_object('level',@level,'channel','INTERNAL'),gen_random_uuid()::text,'A');
-""", new { tenantId, loanId, level, text, internal = $"Cobrança {level} registrada para acompanhamento do gestor.", actorId, status = loan.Status }, tx, cancellationToken: ct));
-            var legacy = await conn.ExecuteScalarAsync<string?>(new CommandDefinition("select to_regclass('ged.loan_history')::text", transaction: tx, cancellationToken: ct));
-            if (legacy is not null) await conn.ExecuteAsync(new CommandDefinition("insert into ged.loan_history(tenant_id,loan_id,event_time,event_type,by_user_id,notes,reg_date,reg_status) values(@tenantId,@loanId,now(),'COLLECTION',@actorId,@text,now(),'A')", new { tenantId, loanId, actorId, text }, tx, cancellationToken: ct));
+
+            const string selectLoanSql = """
+select status::text as Status,
+       coalesce(collection_count, 0) as CollectionCount
+from ged.loan_request
+where tenant_id = @TenantId
+  and id = @LoanId
+  and coalesce(reg_status, 'A') = 'A'
+for update;
+""";
+            var loan = await conn.QuerySingleOrDefaultAsync<LoanCollectionState>(
+                new CommandDefinition(
+                    selectLoanSql,
+                    new { TenantId = tenantId, LoanId = loanId },
+                    transaction: tx,
+                    cancellationToken: ct));
+
+            if (loan is null)
+            {
+                await tx.RollbackAsync(ct);
+                return Result.Fail("LOAN_NOT_FOUND", "Empréstimo não encontrado.");
+            }
+
+            var status = loan.Status.ToUpperInvariant();
+            if (status is "RETURNED" or "REJECTED" or "CANCELLED" or "CANCELED")
+            {
+                await tx.RollbackAsync(ct);
+                return Result.Fail("LOAN_CLOSED", "Não é possível cobrar um empréstimo encerrado.");
+            }
+
+            if (!IsCollectableStatus(status))
+            {
+                await tx.RollbackAsync(ct);
+                return Result.Fail("LOAN_STATUS_NOT_COLLECTABLE", "O estado atual do empréstimo não permite cobrança.");
+            }
+
+            var collectionLevel = GetCollectionLevel(loan.CollectionCount);
+            normalizedMessage ??= $"Solicitamos a devolução do empréstimo. Nível: {collectionLevel}.";
+
+            const string insertEventSql = """
+insert into ged.loan_collection_event
+(
+    tenant_id, loan_id, loan_request_id, event_at, created_at,
+    kind, event_type, level, channel, delivery_status,
+    message, created_by, reg_status
+)
+values
+(
+    @TenantId, @LoanId, @LoanId, now(), now(),
+    'MANUAL_COLLECTION', 'MANUAL_COLLECTION', @CollectionLevel, 'INTERNAL', 'PENDING_EXTERNAL',
+    @Message, @ActorId, 'A'
+);
+""";
+            var eventRows = await conn.ExecuteAsync(
+                new CommandDefinition(
+                    insertEventSql,
+                    new
+                    {
+                        TenantId = tenantId,
+                        LoanId = loanId,
+                        CollectionLevel = collectionLevel,
+                        Message = normalizedMessage,
+                        ActorId = actorId
+                    },
+                    transaction: tx,
+                    cancellationToken: ct));
+
+            const string updateLoanSql = """
+update ged.loan_request
+set collection_count = coalesce(collection_count, 0) + 1,
+    last_collection_at = now(),
+    collection_level = @CollectionLevel,
+    updated_at = now(),
+    updated_by = @ActorId
+where tenant_id = @TenantId
+  and id = @LoanId
+  and coalesce(reg_status, 'A') = 'A';
+""";
+            var affectedRows = await conn.ExecuteAsync(
+                new CommandDefinition(
+                    updateLoanSql,
+                    new { TenantId = tenantId, LoanId = loanId, CollectionLevel = collectionLevel, ActorId = actorId },
+                    transaction: tx,
+                    cancellationToken: ct));
+
+            const string insertHistorySql = """
+insert into ged.loan_request_history
+(
+    tenant_id, loan_request_id, old_status, new_status, action,
+    user_id, user_name, reason, internal_notes, metadata_json,
+    correlation_id, created_at, reg_status
+)
+values
+(
+    @TenantId, @LoanId, @Status, @Status, 'LOAN_COLLECTION',
+    @ActorId, 'Sistema de Cobrança', @Message, 'Envio externo pendente',
+    jsonb_build_object('level', @CollectionLevel, 'count', @CollectionCount, 'channel', 'INTERNAL'),
+    @CorrelationId, now(), 'A'
+);
+""";
+            var historyRows = await conn.ExecuteAsync(
+                new CommandDefinition(
+                    insertHistorySql,
+                    new
+                    {
+                        TenantId = tenantId,
+                        LoanId = loanId,
+                        Status = status,
+                        ActorId = actorId,
+                        Message = normalizedMessage,
+                        CollectionLevel = collectionLevel,
+                        CollectionCount = loan.CollectionCount + 1,
+                        CorrelationId = correlationId
+                    },
+                    transaction: tx,
+                    cancellationToken: ct));
+
+            if (eventRows != 1 || affectedRows != 1 || historyRows != 1)
+                throw new InvalidOperationException("A cobrança não atualizou todos os registros esperados.");
+
             await tx.CommitAsync(ct);
-            await audit.WriteAsync(tenantId, actorId, "LOAN_COLLECTION_REGISTERED", "loan_request", loanId, "Cobrança interna registrada", null, null, new { level, externalDelivery = "pending" }, ct);
+
+            var auditResult = await _audit.WriteAsync(
+                new AuditWriteCommand(
+                    TenantId: tenantId,
+                    UserId: actorId,
+                    Action: "LOAN_COLLECTION_REGISTERED",
+                    EntityName: "loan_request",
+                    EntityId: loanId,
+                    Summary: "Cobrança interna registrada.",
+                    IpAddress: null,
+                    UserAgent: null,
+                    CorrelationId: correlationId,
+                    Data: new
+                    {
+                        loanId,
+                        status,
+                        collectionLevel,
+                        collectionCount = loan.CollectionCount + 1,
+                        channel = "INTERNAL",
+                        deliveryStatus = "PENDING_EXTERNAL",
+                        outcome = "SUCCESS"
+                    },
+                    EventType: "INFO",
+                    Outcome: "SUCCESS"),
+                ct);
+
+            if (auditResult.IsFailure)
+            {
+                _logger.LogError(
+                    "Auditoria da cobrança falhou. Tenant={TenantId} Loan={LoanId} Code={Code}",
+                    tenantId,
+                    loanId,
+                    auditResult.Error?.Code);
+                return Result.Fail("LOAN_COLLECTION_AUDIT_ERROR", "A cobrança foi registrada, mas sua auditoria não pôde ser confirmada.");
+            }
+
             return Result.Ok();
         }
-        catch (Exception ex) { logger.LogError(ex, "Falha ao registrar cobrança. Tenant={TenantId} Loan={LoanId}", tenantId, loanId); return Result.Fail("COLLECTION", "Não foi possível registrar a cobrança."); }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Falha ao registrar cobrança. Tenant={TenantId} Loan={LoanId}",
+                tenantId,
+                loanId);
+
+            return Result.Fail(
+                "LOAN_COLLECTION_ERROR",
+                "Não foi possível registrar a cobrança do empréstimo.");
+        }
+    }
+
+    private static bool IsCollectableStatus(string status) => status is
+        "APPROVED" or
+        "DELIVERED" or
+        "OVERDUE" or
+        "PREPARING_PHYSICAL" or
+        "WAITING_PICKUP" or
+        "DIGITAL_LINK_SENT";
+
+    private static string GetCollectionLevel(int collectionCount) => collectionCount switch
+    {
+        <= 0 => "FIRST_NOTICE",
+        1 => "SECOND_NOTICE",
+        2 => "ESCALATED",
+        _ => "FINAL_NOTICE"
+    };
+
+    private static string? NormalizeMessage(string? message)
+    {
+        var normalized = message?.Trim();
+        if (string.IsNullOrWhiteSpace(normalized))
+            return null;
+
+        return normalized.Length <= MaximumMessageLength
+            ? normalized
+            : normalized[..MaximumMessageLength];
+    }
+
+    private sealed class LoanCollectionState
+    {
+        public string Status { get; init; } = string.Empty;
+        public int CollectionCount { get; init; }
     }
 }

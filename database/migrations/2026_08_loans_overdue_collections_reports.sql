@@ -17,6 +17,11 @@ create table if not exists ged.loan_collection_event (
  message text not null, created_by uuid null, created_at timestamptz not null default now(), reg_status char(1) not null default 'A'
 );
 alter table ged.loan_collection_event add column if not exists loan_request_id uuid;
+-- Mantém os nomes legados e os nomes ricos sincronizáveis. Bancos anteriores usam
+-- loan_id/event_at/kind; instalações novas usam também loan_request_id/created_at/event_type.
+alter table ged.loan_collection_event add column if not exists loan_id uuid;
+alter table ged.loan_collection_event add column if not exists event_at timestamptz not null default now();
+alter table ged.loan_collection_event add column if not exists kind varchar(30) not null default 'COLLECTION';
 alter table ged.loan_collection_event add column if not exists event_type varchar(30) not null default 'COLLECTION';
 alter table ged.loan_collection_event add column if not exists level text;
 alter table ged.loan_collection_event add column if not exists channel text not null default 'INTERNAL';
@@ -25,6 +30,13 @@ alter table ged.loan_collection_event add column if not exists message text;
 alter table ged.loan_collection_event add column if not exists created_by uuid;
 alter table ged.loan_collection_event add column if not exists created_at timestamptz not null default now();
 alter table ged.loan_collection_event add column if not exists reg_status char(1) not null default 'A';
+update ged.loan_collection_event
+   set loan_request_id = coalesce(loan_request_id, loan_id),
+       loan_id = coalesce(loan_id, loan_request_id),
+       created_at = coalesce(created_at, event_at),
+       event_at = coalesce(event_at, created_at),
+       event_type = coalesce(nullif(event_type, ''), kind, 'COLLECTION'),
+       kind = coalesce(nullif(kind, ''), event_type, 'COLLECTION');
 
 create table if not exists ged.loan_report_run (
  id uuid primary key default gen_random_uuid(), tenant_id uuid not null, run_by uuid null,
@@ -46,8 +58,8 @@ declare
 begin
  if v_tenant_id is null then return 0; end if;
  if exists(select 1 from pg_enum e join pg_type t on t.oid=e.enumtypid join pg_namespace n on n.oid=t.typnamespace where n.nspname='ged' and t.typname='loan_status' and e.enumlabel='OVERDUE') then
-  insert into ged.loan_collection_event(tenant_id,loan_request_id,event_type,level,message)
-  select lr.tenant_id,lr.id,'OVERDUE','FIRST_NOTICE','Empréstimo vencido identificado automaticamente.'
+  insert into ged.loan_collection_event(tenant_id,loan_id,loan_request_id,event_at,created_at,kind,event_type,level,message)
+  select lr.tenant_id,lr.id,lr.id,now(),now(),'OVERDUE','OVERDUE','FIRST_NOTICE','Empréstimo vencido identificado automaticamente.'
     from ged.loan_request lr
    where lr.tenant_id=v_tenant_id and lr.due_at<now() and coalesce(lr.reg_status,'A')='A'
      and upper(lr.status::text) in ('APPROVED','DELIVERED','PREPARING_PHYSICAL','WAITING_PICKUP','DIGITAL_LINK_SENT')
