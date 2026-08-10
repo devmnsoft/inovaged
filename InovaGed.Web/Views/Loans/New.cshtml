@@ -13,7 +13,7 @@
         <h2 class="mb-1">Solicitar documento</h2>
         <div class="text-muted">Descreva o que precisa. O responsável localizará o documento para você.</div>
     </div>
-    <a class="btn btn-light border" href="/Loans"><i class="bi bi-arrow-left me-1"></i>Cancelar</a>
+    <a class="btn btn-light border" href="/Loans"><app-icon name="arrow-left" size="16" decorative="true" />Cancelar</a>
 </div>
 
 @if (TempData["Err"] is not null)
@@ -52,19 +52,19 @@
             <div class="row g-3" role="radiogroup" aria-label="Forma de entrega">
                 <div class="col-md-4">
                     <button type="button" class="delivery-card btn w-100 text-start border rounded-3 p-3 h-100 @(delivery == "DIGITAL" ? "active" : "")" data-mode="DIGITAL" onclick="selectDeliveryMode('DIGITAL')">
-                        <div class="fw-bold"><i class="bi bi-link-45deg me-1"></i>Digital</div>
+                        <div class="fw-bold"><app-icon name="link-45deg" size="16" decorative="true" />Digital</div>
                         <div class="small text-muted">Quero receber um link seguro para visualizar o documento digitalizado.</div>
                     </button>
                 </div>
                 <div class="col-md-4">
                     <button type="button" class="delivery-card btn w-100 text-start border rounded-3 p-3 h-100 @(delivery == "PHYSICAL" ? "active" : "")" data-mode="PHYSICAL" onclick="selectDeliveryMode('PHYSICAL')">
-                        <div class="fw-bold"><i class="bi bi-archive me-1"></i>Físico</div>
+                        <div class="fw-bold"><app-icon name="archive" size="16" decorative="true" />Físico</div>
                         <div class="small text-muted">Preciso que o arquivo físico seja localizado e separado.</div>
                     </button>
                 </div>
                 <div class="col-md-4">
                     <button type="button" class="delivery-card btn w-100 text-start border rounded-3 p-3 h-100 @(delivery == "BOTH" ? "active" : "")" data-mode="BOTH" onclick="selectDeliveryMode('BOTH')">
-                        <div class="fw-bold"><i class="bi bi-files me-1"></i>Ambos</div>
+                        <div class="fw-bold"><app-icon name="files" size="16" decorative="true" />Ambos</div>
                         <div class="small text-muted">Preciso do digital e também do documento físico.</div>
                     </button>
                 </div>
@@ -103,7 +103,7 @@
             <h2 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#gedSearchPanel">Já sabe qual documento é? Clique para procurar no GED</button></h2>
             <div id="gedSearchPanel" class="accordion-collapse collapse" data-bs-parent="#optionalAccordion"><div class="accordion-body">
                 <p class="text-muted small">Opcional. Se não encontrar, você pode enviar a solicitação mesmo assim.</p>
-                <div class="input-group"><span class="input-group-text"><i class="bi bi-search"></i></span><input class="form-control" id="docSearch" placeholder="Buscar por título, prontuário, OCR, pasta ou arquivo" /><button class="btn btn-outline-primary" type="button" onclick="searchDocs()">Buscar</button></div>
+                <div class="input-group"><span class="input-group-text"><app-icon name="search" size="16" decorative="true" /></span><input class="form-control" id="docSearch" placeholder="Buscar por título, prontuário, OCR, pasta ou arquivo" /><button class="btn btn-outline-primary" type="button" onclick="searchDocs()">Buscar</button></div>
                 <div id="docResults" class="list-group mt-3"></div>
                 <div id="selectedDocs" class="mt-3"></div>
             </div></div>
@@ -129,7 +129,7 @@
     <div class="card shadow-sm sticky-bottom mb-3">
         <div class="card-body d-flex flex-wrap gap-2 justify-content-end bg-white">
             <a class="btn btn-outline-secondary btn-lg" href="/Loans">Cancelar</a>
-            <button id="submitBtn" class="btn btn-primary btn-lg" type="submit"><i class="bi bi-send me-1"></i>Enviar solicitação</button>
+            <button id="submitBtn" class="btn btn-primary btn-lg" type="submit"><app-icon name="send" size="16" decorative="true" />Enviar solicitação</button>
         </div>
     </div>
 </form>

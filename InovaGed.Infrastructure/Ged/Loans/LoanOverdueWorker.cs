@@ -1,5 +1,6 @@
 ﻿using InovaGed.Application.Ged.Loans;
-using InovaGed.Application.Identity;
+using Dapper;
+using InovaGed.Application.Common.Database;
 using InovaGed.Application.SystemHealth;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -46,17 +47,17 @@ public sealed class LoanOverdueWorker : BackgroundService
                 {
                     using var scope = _sp.CreateScope();
 
-                    var current = scope.ServiceProvider.GetRequiredService<ICurrentUser>();
-                    var commands = scope.ServiceProvider.GetRequiredService<ILoanCommands>();
-
-                    var tenantId = _options.TenantId != Guid.Empty ? _options.TenantId : current.TenantId;
-                    if (tenantId == Guid.Empty)
+                    var overdue = scope.ServiceProvider.GetRequiredService<ILoanOverdueService>();
+                    var db = scope.ServiceProvider.GetRequiredService<IDbConnectionFactory>();
+                    var tenants = new List<Guid>();
+                    if (_options.TenantId != Guid.Empty) tenants.Add(_options.TenantId);
+                    else
                     {
-                        _logger.LogWarning(
-                            "LoanOverdueWorker ignorado: TenantId não configurado. Configure Workers:LoanOverdue:TenantId ou desative com Workers:LoanOverdue:Enabled=false.");
-                        await Task.Delay(interval, stoppingToken);
-                        continue;
+                        await using var conn = await db.OpenAsync(stoppingToken);
+                        if (await conn.ExecuteScalarAsync<string?>(new CommandDefinition("select to_regclass('ged.tenant')::text", cancellationToken: stoppingToken)) is not null)
+                            tenants.AddRange(await conn.QueryAsync<Guid>(new CommandDefinition("select id from ged.tenant where coalesce(reg_status,'A')='A'", cancellationToken: stoppingToken)));
                     }
+                    if (tenants.Count == 0) { _logger.LogWarning("LoanOverdueWorker sem tenants ativos configurados."); await Task.Delay(interval, stoppingToken); continue; }
 
                     if (!await _schemaState.IsCompatibleAsync("LoansHistory", stoppingToken))
                     {
@@ -70,11 +71,13 @@ public sealed class LoanOverdueWorker : BackgroundService
                         continue;
                     }
 
-                    var res = await commands.RegisterOverdueEventsAsync(tenantId, current.UserId, stoppingToken);
-                    if (res.IsSuccess)
-                        _logger.LogInformation("Overdue registrados. Tenant={Tenant} Count={Count}", tenantId, res.Value);
-                    else
-                        _logger.LogWarning("Overdue falhou. Tenant={Tenant} Err={Err}", tenantId, res.ErrorMessage);
+                    var started = DateTimeOffset.UtcNow; var processed = 0; var failures = 0;
+                    foreach (var tenantId in tenants)
+                    {
+                        try { processed += await overdue.RunAsync(tenantId, null, stoppingToken); }
+                        catch (Exception ex) { failures++; _logger.LogError(ex, "Falha segura na rotina de vencidos do tenant."); }
+                    }
+                    _logger.LogInformation("LoanOverdueWorker concluído. Started={Started} Finished={Finished} Tenants={Tenants} Processed={Processed} Collected={Collected} Failures={Failures}", started, DateTimeOffset.UtcNow, tenants.Count, processed, 0, failures);
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
