@@ -22,6 +22,11 @@ public interface ILabelPrintService
     Task RegisterAsync(LabelPrintRequest request, CancellationToken cancellationToken = default);
 }
 
+public interface ILabelPayloadBuilder
+{
+    string Build(object snapshot);
+}
+
 public sealed record LabelTemplate(string Code, string Version, string SubjectType);
 
 public interface ILabelTemplateService

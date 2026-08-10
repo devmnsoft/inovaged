@@ -780,6 +780,19 @@ create table if not exists ged.document_quality_result (
 
     private static void AddColumnFixes(List<SchemaFixDto> fixes)
     {
+        AddColumn(fixes, "ged.document_folder_move_history", "moved_at", "timestamptz not null default now()", "Movimentação documental");
+        AddColumn(fixes, "ged.label_print", "tenant_id", "uuid null", "Etiquetas");
+        AddColumn(fixes, "ged.label_print", "label_type", "varchar(30) null", "Etiquetas");
+        AddColumn(fixes, "ged.label_print", "data", "jsonb null", "Etiquetas");
+        AddColumn(fixes, "ged.label_print", "snapshot_json", "jsonb null", "Etiquetas");
+        AddColumn(fixes, "ged.label_print", "payload_hash_sha256", "char(64) null", "Etiquetas");
+        AddColumn(fixes, "ged.label_print", "template_version", "varchar(60) null", "Etiquetas");
+        AddColumn(fixes, "ged.physical_location", "location_code", "text null", "Acervo físico");
+        AddColumn(fixes, "ged.physical_location", "unit_name", "text null", "Acervo físico");
+        AddColumn(fixes, "ged.box", "location_id", "uuid null", "Acervo físico");
+        AddColumn(fixes, "ged.box", "status", "varchar(30) not null default 'OPEN'", "Acervo físico");
+        AddColumn(fixes, "ged.batch", "status", "varchar(30) not null default 'RECEIVED'", "Lotes arquivísticos");
+        AddColumn(fixes, "ged.batch_item", "box_id", "uuid null", "Lotes arquivísticos");
         AddColumn(fixes, "ged.folder", "updated_at", "timestamptz null", "GED folders");
         AddColumn(fixes, "ged.folder", "updated_by", "uuid null", "GED folders");
         AddColumn(fixes, "ged.document", "reg_status", "char(1) not null default 'A'", "GED soft delete");

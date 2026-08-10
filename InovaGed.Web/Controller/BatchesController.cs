@@ -17,7 +17,7 @@ public sealed class BatchesController : Controller
 
     private static readonly HashSet<string> AllowedStatus = new(StringComparer.OrdinalIgnoreCase)
     {
-        "RECEIVED", "TRIAGE", "DIGITIZATION", "INDEXING", "CLASSIFICATION", "ARCHIVED", "COMPLETED", "CANCELLED"
+        "RECEIVED", "TRIAGE", "PREPARATION", "DIGITIZATION", "INDEXING", "CONFERENCE", "ARCHIVING", "FINALIZED", "CANCELLED"
     };
 
     public BatchesController(
@@ -357,9 +357,12 @@ public sealed class BatchesController : Controller
         {
             "RECEBIDO" or "RECEIVED" => "RECEIVED",
             "TRIAGEM" or "TRIAGE" => "TRIAGE",
+            "PREPARACAO" or "PREPARAÇÃO" or "PREPARATION" => "PREPARATION",
             "DIGITALIZACAO" or "DIGITALIZAÇÃO" or "DIGITIZACAO" or "DIGITIZATION" => "DIGITIZATION",
             "INDEXACAO" or "INDEXAÇÃO" or "INDEXING" => "INDEXING",
-            "ARQUIVADO" or "ARQUIVAMENTO" or "ARCHIVED" => "ARCHIVED",
+            "CONFERENCIA" or "CONFERÊNCIA" or "CONFERENCE" => "CONFERENCE",
+            "ARQUIVADO" or "ARQUIVAMENTO" or "ARCHIVED" or "ARCHIVING" => "ARCHIVING",
+            "FINALIZADO" or "COMPLETED" or "FINALIZED" => "FINALIZED",
             _ => s.ToUpperInvariant()
         };
     }
@@ -368,14 +371,15 @@ public sealed class BatchesController : Controller
     {
         return status switch
         {
-            "RECEIVED" => "Recebido",
+            "RECEIVED" => "Recebimento",
             "TRIAGE" => "Triagem",
+            "PREPARATION" => "Preparação",
             "DIGITIZATION" => "Digitalização",
-        "INDEXING" => "Indexação",
-        "CLASSIFICATION" => "Classificação",
-        "ARCHIVED" => "Arquivado",
-        "COMPLETED" => "Concluído",
-        "CANCELLED" => "Cancelado",
+            "INDEXING" => "Indexação",
+            "CONFERENCE" => "Conferência",
+            "ARCHIVING" => "Arquivamento",
+            "FINALIZED" => "Finalizado",
+            "CANCELLED" => "Cancelado",
             _ => status
         };
     }

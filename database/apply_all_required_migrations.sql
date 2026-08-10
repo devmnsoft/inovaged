@@ -2970,3 +2970,13 @@ where coalesce(reg_status, 'A') = 'A';
 \ir migrations/2026_08_archival_labels_physical_inventory.sql
 
 \ir migrations/2026_08_loans_overdue_collections_reports.sql
+
+-- Execução arquivística recomendada (a partir da raiz do repositório):
+--   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/apply_all_required_migrations.sql
+-- Os comandos \ir abaixo são meta-comandos exclusivos do cliente psql e resolvem caminhos
+-- relativamente a este arquivo. Em clientes que não implementam \ir, execute diretamente:
+--   database/migrations/2026_08_archival_schema_consolidation.sql
+-- A consolidação é autossuficiente, aditiva e pode ser reaplicada com segurança.
+\ir migrations/2026_08_document_folder_move_history.sql
+\ir migrations/2026_08_physical_archive_operations.sql
+\ir migrations/2026_08_archival_schema_consolidation.sql

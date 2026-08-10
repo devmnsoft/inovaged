@@ -17,7 +17,7 @@ public sealed class BatchCommands : IBatchCommands
 
     private static readonly HashSet<string> AllowedStatus = new(StringComparer.OrdinalIgnoreCase)
     {
-        "RECEIVED", "TRIAGE", "DIGITIZATION", "INDEXING", "CLASSIFICATION", "ARCHIVED", "COMPLETED", "CANCELLED"
+        "RECEIVED", "TRIAGE", "PREPARATION", "DIGITIZATION", "INDEXING", "CONFERENCE", "ARCHIVING", "FINALIZED", "CANCELLED"
     };
 
     public BatchCommands(IDbConnectionFactory db, IAuditWriter audit, ILogger<BatchCommands> logger)
@@ -513,6 +513,22 @@ public sealed class BatchCommands : IBatchCommands
                 return Result.Fail("REASON", "O retorno de etapa exige justificativa.");
             }
 
+            if (toStatus is "ARCHIVING" or "FINALIZED")
+            {
+                var pendingClassification = await conn.ExecuteScalarAsync<int>(new CommandDefinition("""
+select count(*)::int
+from ged.batch_item bi
+where bi.tenant_id=@tenant and bi.batch_id=@batch and bi.reg_status='A' and bi.removed_at is null
+  and not exists (select 1 from ged.document_classification dc
+                  where dc.tenant_id=bi.tenant_id and dc.document_id=bi.document_id and dc.reg_status='A');
+""", new { tenant = tenantId, batch = batchId }, tx, cancellationToken: ct));
+                if (pendingClassification > 0)
+                {
+                    tx.Rollback();
+                    return Result.Fail("CLASSIFICATION", "Classifique e indexe todos os documentos antes de arquivar ou finalizar o lote.");
+                }
+            }
+
             const string sql = """
             update ged.batch
             set status = @status,
@@ -578,11 +594,12 @@ public sealed class BatchCommands : IBatchCommands
         {
             "RECEBIDO" or "RECEIVED" => "RECEIVED",
             "TRIAGEM" or "TRIAGE" => "TRIAGE",
+            "PREPARACAO" or "PREPARAÇÃO" or "PREPARATION" => "PREPARATION",
             "DIGITALIZACAO" or "DIGITALIZAÇÃO" or "DIGITIZACAO" or "DIGITIZATION" => "DIGITIZATION",
             "INDEXACAO" or "INDEXAÇÃO" or "INDEXING" => "INDEXING",
-            "CLASSIFICACAO" or "CLASSIFICAÇÃO" or "CLASSIFICATION" => "CLASSIFICATION",
-            "ARQUIVADO" or "ARQUIVAMENTO" or "ARCHIVED" => "ARCHIVED",
-            "CONCLUIDO" or "CONCLUÍDO" or "COMPLETED" => "COMPLETED",
+            "CONFERENCIA" or "CONFERÊNCIA" or "CONFERENCE" => "CONFERENCE",
+            "ARQUIVADO" or "ARQUIVAMENTO" or "ARCHIVED" or "ARCHIVING" => "ARCHIVING",
+            "CONCLUIDO" or "CONCLUÍDO" or "COMPLETED" or "FINALIZADO" or "FINALIZED" => "FINALIZED",
             "CANCELADO" or "CANCELLED" => "CANCELLED",
             _ => x
         };
@@ -590,8 +607,9 @@ public sealed class BatchCommands : IBatchCommands
 
     private static int StatusOrder(string status) => status switch
     {
-        "RECEIVED" => 0, "TRIAGE" => 1, "DIGITIZATION" => 2, "INDEXING" => 3,
-        "CLASSIFICATION" => 4, "ARCHIVED" => 5, "COMPLETED" => 6, "CANCELLED" => 7, _ => -1
+        "RECEIVED" => 0, "TRIAGE" => 1, "PREPARATION" => 2, "DIGITIZATION" => 3,
+        "INDEXING" => 4, "CONFERENCE" => 5, "ARCHIVING" => 6, "FINALIZED" => 7,
+        "CANCELLED" => 8, _ => -1
     };
 
     private static async Task<bool> BatchExistsAsync(IDbConnection conn, IDbTransaction tx, Guid tenantId, Guid batchId, CancellationToken ct)

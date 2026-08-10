@@ -7,7 +7,7 @@ namespace InovaGed.Infrastructure.SystemHealth;
 
 public sealed class SchemaHealthService : ISchemaHealthService
 {
-    private const string ConsolidationMigration = "database/migrations/2026_06_ged_schema_consolidation.sql";
+    private const string ConsolidationMigration = "database/migrations/2026_08_archival_schema_consolidation.sql";
     private readonly IDbConnectionFactory _db;
     private readonly ILogger<SchemaHealthService> _logger;
     private readonly ISchemaFixSqlProvider _fixSqlProvider;
@@ -20,7 +20,11 @@ public sealed class SchemaHealthService : ISchemaHealthService
         "ged.document_partial_part", "ged.audit_log", "ged.app_audit_log",
         "ged.loan_request", "ged.loan_request_item",
         "ged.document_quality_run", "ged.document_quality_result", "ged.loan_request_history",
-        "ged.protocol_request", "ged.protocol_request_item", "ged.protocol_request_attachment", "ged.protocol_request_history"
+        "ged.protocol_request", "ged.protocol_request_item", "ged.protocol_request_attachment", "ged.protocol_request_history",
+        "ged.classification_plan", "ged.classification_plan_history", "ged.classification_plan_version",
+        "ged.classification_plan_version_item", "ged.document_classification", "ged.document_classification_audit",
+        "ged.label_print", "ged.physical_location", "ged.box", "ged.batch", "ged.batch_item",
+        "ged.box_content_history", "ged.box_location_history", "ged.document_folder_move_history"
     ];
 
     private static readonly string[] OptionalTables =
@@ -146,7 +150,14 @@ public sealed class SchemaHealthService : ISchemaHealthService
         ("document_quality_result", "is_partial_incomplete", "Qualidade Documental"), ("document_quality_result", "is_ready_to_consolidate", "Qualidade Documental"),
         ("document_quality_result", "is_consolidated", "Qualidade Documental"), ("document_quality_result", "has_possible_duplicate", "Qualidade Documental"),
         ("document_quality_result", "has_lgpd_risk", "Qualidade Documental"), ("document_quality_result", "issues_json", "Qualidade Documental"),
-        ("document_quality_result", "recommendations_json", "Qualidade Documental"), ("document_quality_result", "analyzed_at_utc", "Qualidade Documental")
+        ("document_quality_result", "recommendations_json", "Qualidade Documental"), ("document_quality_result", "analyzed_at_utc", "Qualidade Documental"),
+        ("document_folder_move_history", "moved_at", "Movimentação documental"),
+        ("label_print", "tenant_id", "Etiquetas"), ("label_print", "label_type", "Etiquetas"),
+        ("label_print", "data", "Etiquetas"), ("label_print", "snapshot_json", "Etiquetas"),
+        ("label_print", "payload_hash_sha256", "Etiquetas"), ("label_print", "template_version", "Etiquetas"),
+        ("physical_location", "location_code", "Acervo físico"), ("physical_location", "unit_name", "Acervo físico"),
+        ("box", "location_id", "Acervo físico"), ("box", "status", "Acervo físico"),
+        ("batch", "status", "Lotes arquivísticos"), ("batch_item", "box_id", "Lotes arquivísticos")
     ];
 
     private static readonly (string Name, string[] Alternatives, string Message)[] RecommendedIndexes =
