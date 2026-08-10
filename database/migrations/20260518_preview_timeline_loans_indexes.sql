@@ -51,7 +51,7 @@ CREATE INDEX IF NOT EXISTS ix_preview_status_tenant_status ON ged.preview_status
 CREATE INDEX IF NOT EXISTS ix_timeline_tenant_document_created_at ON ged.document_timeline (tenant_id, document_id, created_at DESC);
 
 CREATE INDEX IF NOT EXISTS ix_document_workflow_tenant_document ON ged.document_workflow (tenant_id, document_id);
-CREATE INDEX IF NOT EXISTS ix_document_workflow_history_tenant_document ON ged.document_workflow_history (tenant_id, document_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS ix_document_workflow_history_tenant_document ON ged.document_workflow_history (tenant_id, document_id, performed_at DESC);
 
 CREATE INDEX IF NOT EXISTS ix_loan_tenant_status_requested ON ged.loan (tenant_id, status, requested_at DESC);
 CREATE INDEX IF NOT EXISTS ix_loan_tenant_approver_status ON ged.loan (tenant_id, approver_user_id, status);

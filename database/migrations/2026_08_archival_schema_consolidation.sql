@@ -73,7 +73,7 @@ alter table ged.classification_plan add column if not exists reg_status char(1) 
 create table if not exists ged.classification_plan_history (
  id uuid primary key default gen_random_uuid(), tenant_id uuid not null, classification_plan_id uuid not null,
  action text not null, old_data jsonb, new_data jsonb, reason text, changed_by uuid,
- changed_at timestamptz not null default now(), reg_status char(1) not null default 'A'
+ created_at timestamptz not null default now(), reg_status char(1) not null default 'A'
 );
 create table if not exists ged.classification_plan_version (
  id uuid primary key default gen_random_uuid(), tenant_id uuid not null, version_no integer,
@@ -101,6 +101,7 @@ create table if not exists ged.document_classification_audit (
  reason text, impact_json jsonb not null default '{}'::jsonb, changed_by uuid,
  changed_at timestamptz not null default now(), reg_status char(1) not null default 'A'
 );
+alter table ged.document_classification_audit add column if not exists created_at timestamptz default now();
 
 create table if not exists ged.label_print (
  id uuid primary key default gen_random_uuid(), tenant_id uuid, box_id uuid, document_id uuid,
@@ -223,13 +224,15 @@ create table if not exists ged.batch_history (
 create table if not exists ged.box_content_history (
  id uuid primary key default gen_random_uuid(), tenant_id uuid not null, box_id uuid not null,
  document_id uuid not null, action varchar(30) not null, reason text, performed_by uuid,
- performed_at timestamptz not null default now(), batch_id uuid, reg_status char(1) not null default 'A'
+ changed_at timestamptz not null default now(), batch_id uuid, reg_status char(1) not null default 'A'
 );
+alter table ged.box_content_history add column if not exists changed_at timestamptz default now();
 create table if not exists ged.box_location_history (
  id uuid primary key default gen_random_uuid(), tenant_id uuid not null, box_id uuid not null,
  previous_location_id uuid, new_location_id uuid, reason text not null, moved_by uuid,
  moved_at timestamptz not null default now(), inventory_session_id uuid, reg_status char(1) not null default 'A'
 );
+alter table ged.box_location_history add column if not exists changed_at timestamptz default now();
 create table if not exists ged.physical_location_history (
  id uuid primary key default gen_random_uuid(), tenant_id uuid not null, location_id uuid not null,
  action varchar(30) not null, old_data jsonb, new_data jsonb, reason text, changed_by uuid,
@@ -253,8 +256,8 @@ create index if not exists ix_batch_item_batch on ged.batch_item(tenant_id,batch
 create index if not exists ix_batch_item_box on ged.batch_item(tenant_id,box_id);
 create index if not exists ix_batch_item_document on ged.batch_item(tenant_id,document_id);
 create unique index if not exists ux_batch_item_active_document on ged.batch_item(tenant_id,document_id) where reg_status='A' and removed_at is null;
-create index if not exists ix_box_content_history_box on ged.box_content_history(tenant_id,box_id,performed_at desc);
-create index if not exists ix_box_location_history_box on ged.box_location_history(tenant_id,box_id,moved_at desc);
+create index if not exists ix_box_content_history_box on ged.box_content_history(tenant_id,box_id,changed_at desc);
+create index if not exists ix_box_location_history_box on ged.box_location_history(tenant_id,box_id,changed_at desc);
 create index if not exists ix_classification_plan_tenant on ged.classification_plan(tenant_id,parent_id);
 create index if not exists ix_document_classification_document on ged.document_classification(tenant_id,document_id);
 

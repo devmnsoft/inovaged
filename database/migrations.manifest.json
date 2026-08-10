@@ -143,6 +143,17 @@
       "maximumApplicationVersion": "04.1.99",
       "requiresMaintenanceWindow": false,
       "requiresVerifiedBackup": false
+    },
+    {
+      "id": "2026_08_10_build_schema_hotfix",
+      "path": "database/migrations/2026_08_10_build_schema_hotfix.sql",
+      "module": "BuildSchemaStabilization",
+      "transactional": false,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.99",
+      "requiresMaintenanceWindow": false,
+      "requiresVerifiedBackup": false
     }
   ]
 }

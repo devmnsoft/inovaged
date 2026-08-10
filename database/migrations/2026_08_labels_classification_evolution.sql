@@ -37,8 +37,9 @@ create table if not exists ged.document_classification_audit (
  previous_classification_id uuid, new_classification_id uuid not null,
  previous_version_id uuid, new_version_id uuid, reason text,
  impact_json jsonb not null default '{}'::jsonb, changed_by uuid not null,
- changed_at timestamptz not null default now()
+ created_at timestamptz not null default now()
 );
+alter table ged.document_classification_audit add column if not exists created_at timestamptz default now();
 
 create table if not exists ged.label_print_history (
  id uuid primary key, tenant_id uuid not null, label_subject_type varchar(20) not null,
@@ -57,7 +58,7 @@ alter table if exists ged.label_print add column if not exists reprint_reason te
 
 create index if not exists ix_classification_plan_tenant_parent_order on ged.classification_plan(tenant_id,parent_id,display_order,code);
 create index if not exists ix_classification_plan_tenant_status on ged.classification_plan(tenant_id,is_active,review_status);
-create index if not exists ix_document_classification_audit_subject on ged.document_classification_audit(tenant_id,document_id,changed_at desc);
+create index if not exists ix_document_classification_audit_subject on ged.document_classification_audit(tenant_id,document_id,created_at desc);
 create index if not exists ix_label_print_history_subject on ged.label_print_history(tenant_id,label_subject_type,label_subject_id,printed_at desc);
 create unique index if not exists ux_label_print_history_hash on ged.label_print_history(tenant_id,id,snapshot_sha256);
 

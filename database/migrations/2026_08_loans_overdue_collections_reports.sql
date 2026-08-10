@@ -36,14 +36,14 @@ create index if not exists ix_loan_request_sector_period on ged.loan_request(ten
 create index if not exists ix_loan_collection_loan_created on ged.loan_collection_event(tenant_id,loan_request_id,created_at desc);
 create index if not exists ix_loan_report_run_tenant_started on ged.loan_report_run(tenant_id,started_at desc);
 
-create or replace function ged.loan_run_overdue(p_tenant_id uuid) returns integer language plpgsql as $$
+create or replace function ged.loan_run_overdue(p_tenant uuid) returns integer language plpgsql as $$
 declare changed integer := 0;
 begin
- if p_tenant_id is null then return 0; end if;
+ if p_tenant is null then return 0; end if;
  if exists(select 1 from pg_enum e join pg_type t on t.oid=e.enumtypid join pg_namespace n on n.oid=t.typnamespace where n.nspname='ged' and t.typname='loan_status' and e.enumlabel='OVERDUE') then
   execute $q$update ged.loan_request set status='OVERDUE'::ged.loan_status,updated_at=now()
    where tenant_id=$1 and due_at<now() and coalesce(reg_status,'A')='A'
-   and upper(status::text) in ('APPROVED','DELIVERED','PREPARING_PHYSICAL','WAITING_PICKUP','DIGITAL_LINK_SENT')$q$ using p_tenant_id;
+   and upper(status::text) in ('APPROVED','DELIVERED','PREPARING_PHYSICAL','WAITING_PICKUP','DIGITAL_LINK_SENT')$q$ using p_tenant;
   get diagnostics changed = row_count;
  end if;
  return changed;

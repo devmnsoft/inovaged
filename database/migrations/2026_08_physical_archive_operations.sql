@@ -45,13 +45,16 @@ alter table ged.batch
   add column if not exists pending_notes text,
   add column if not exists updated_at timestamptz;
 
--- Alguns bancos antigos usam enum. Converte para texto antes de habilitar o ciclo ampliado.
-alter table ged.batch alter column status type varchar(30) using status::text;
-alter table ged.batch_history alter column from_status type varchar(30) using from_status::text;
-alter table ged.batch_history alter column to_status type varchar(30) using to_status::text;
-do $$ begin
-  alter table ged.batch add constraint ck_batch_operational_status check
-    (status in ('RECEIVED','TRIAGE','DIGITIZATION','INDEXING','CLASSIFICATION','ARCHIVED','COMPLETED','CANCELLED'));
-exception when duplicate_object then null; end $$;
+-- O status e o trigger de histórico compartilham o enum: evolua-o sem alterar colunas.
+do $$
+declare value text;
+begin
+  if to_regtype('ged.batch_status') is not null then
+    foreach value in array array['RECEIVED','TRIAGE','PREPARATION','DIGITIZATION','INDEXING',
+      'CONFERENCE','ARCHIVING','FINALIZED','CANCELLED'] loop
+      execute format('alter type ged.batch_status add value if not exists %L', value);
+    end loop;
+  end if;
+end $$;
 
 commit;

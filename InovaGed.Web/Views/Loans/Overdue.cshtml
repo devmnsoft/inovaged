@@ -1,7 +1,7 @@
 @using InovaGed.Application.Ged.Loans
 @using InovaGed.Web.Models.Atlas
 @model IReadOnlyList<LoanRowDto>
-@{ ViewData["Title"]="Empréstimos vencidos"; var now=DateTime.UtcNow; var header=new AtlasPageHeaderVm{Title="Empréstimos vencidos",Subtitle="Cobrança, SLA e devolução em uma fila operacional",Eyebrow="Operação premium",Icon="clock"}; }
+@{ ViewData["Title"]="Empréstimos vencidos"; var now=DateTime.UtcNow; var header=new AtlasPageHeaderVm("Empréstimos vencidos", "Cobrança, SLA e devolução em uma fila operacional", "clock", "Operação premium", null, new (string, string?)[] { ("Empréstimos", "/Loans"), ("Vencidos", null) }); }
 <div class="atlas-prime-page"><partial name="Atlas/_PageHeader" model="header" />
 @if(TempData["Ok"] is string ok){<div class="callout callout-success" role="status">@ok</div>}@if(TempData["Err"] is string err){<div class="callout callout-danger" role="alert">@err</div>}
 <div class="row g-3 mb-3"><div class="col"><div class="card card-body"><small>Total vencidos</small><strong>@Model.Count</strong></div></div><div class="col"><div class="card card-body"><small>Hoje</small><strong>@Model.Count(x=>x.DueAt.Date==now.Date)</strong></div></div><div class="col"><div class="card card-body"><small>1–7 dias</small><strong>@Model.Count(x=>(now-x.DueAt).TotalDays>=1&&(now-x.DueAt).TotalDays<=7)</strong></div></div><div class="col"><div class="card card-body"><small>8–30 dias</small><strong>@Model.Count(x=>(now-x.DueAt).TotalDays>7&&(now-x.DueAt).TotalDays<=30)</strong></div></div><div class="col"><div class="card card-body"><small>Mais de 30</small><strong>@Model.Count(x=>(now-x.DueAt).TotalDays>30)</strong></div></div></div>

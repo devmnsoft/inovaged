@@ -2980,3 +2980,4 @@ where coalesce(reg_status, 'A') = 'A';
 \ir migrations/2026_08_document_folder_move_history.sql
 \ir migrations/2026_08_physical_archive_operations.sql
 \ir migrations/2026_08_archival_schema_consolidation.sql
+\ir migrations/2026_08_10_build_schema_hotfix.sql
