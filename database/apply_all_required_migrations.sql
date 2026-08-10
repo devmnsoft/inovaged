@@ -2969,9 +2969,11 @@ where coalesce(reg_status, 'A') = 'A';
 \ir migrations/2026_08_archival_intelligence_core_v1.sql
 \ir migrations/2026_08_document_folder_move_history.sql
 \ir migrations/2026_08_10_classification_plan_hotfix.sql
+\ir migrations/2026_08_10_final_schema_hotfix.sql
 \ir migrations/2026_08_archival_schema_consolidation.sql
 \ir migrations/2026_08_labels_classification_evolution.sql
 \ir migrations/2026_08_archival_labels_physical_inventory.sql
 \ir migrations/2026_08_physical_archive_operations.sql
 \ir migrations/2026_08_loans_overdue_collections_reports.sql
 \ir migrations/2026_08_10_archival_migration_hotfix.sql
+\ir migrations/2026_08_10_final_schema_hotfix.sql
