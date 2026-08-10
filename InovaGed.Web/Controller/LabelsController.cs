@@ -125,7 +125,7 @@ left join lateral (
         min(d.created_at) period_start, max(d.created_at) period_end
  from ged.batch_item bi join ged.document d on d.tenant_id=bi.tenant_id and d.id=bi.document_id
  left join ged.document_classification dc on dc.tenant_id=d.tenant_id and dc.document_id=d.id and dc.reg_status='A'
- left join ged.classification_plan cp on cp.tenant_id=dc.tenant_id and cp.id=dc.classification_plan_id
+ left join ged.classification_plan cp on cp.tenant_id=d.tenant_id and cp.id=coalesce(dc.classification_id,d.classification_id)
  where bi.tenant_id=b.tenant_id and bi.box_id=b.id and bi.reg_status='A'
 ) mix on true
 where b.tenant_id=@tid
@@ -220,7 +220,7 @@ left join lateral (
  count(distinct cp.final_destination) destination_count, min(d.created_at) period_start, max(d.created_at) period_end
  from ged.batch_item bi join ged.document d on d.tenant_id=bi.tenant_id and d.id=bi.document_id
  left join ged.document_classification dc on dc.tenant_id=d.tenant_id and dc.document_id=d.id and dc.reg_status='A'
- left join ged.classification_plan cp on cp.tenant_id=dc.tenant_id and cp.id=dc.classification_plan_id
+ left join ged.classification_plan cp on cp.tenant_id=d.tenant_id and cp.id=coalesce(dc.classification_id,d.classification_id)
  where bi.tenant_id=b.tenant_id and bi.box_id=b.id and bi.reg_status='A') mix on true
 where b.tenant_id=@tid and b.id=@boxId and b.reg_status='A'
 """, new { tid = TenantId, boxId });

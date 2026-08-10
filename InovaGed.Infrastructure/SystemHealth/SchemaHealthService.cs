@@ -155,6 +155,7 @@ public sealed class SchemaHealthService : ISchemaHealthService
         ("box_location_history", "changed_at", "Acervo físico"),
         ("classification_plan_history", "changed_at", "Classificação"),
         ("document_classification_audit", "created_at", "Classificação"),
+        ("document_classification", "classification_id", "Classificação"),
         ("label_print", "tenant_id", "Etiquetas"), ("label_print", "printed_at", "Etiquetas"), ("label_print", "label_type", "Etiquetas"),
         ("label_print", "data", "Etiquetas"), ("label_print", "snapshot_json", "Etiquetas"),
         ("label_print", "payload_hash_sha256", "Etiquetas"), ("label_print", "template_version", "Etiquetas"),

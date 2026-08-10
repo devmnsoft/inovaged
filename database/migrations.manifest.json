@@ -90,6 +90,17 @@
       "requiresVerifiedBackup": false
     },
     {
+      "id": "2026_08_10_classification_plan_hotfix",
+      "path": "database/migrations/2026_08_10_classification_plan_hotfix.sql",
+      "module": "ArchivalClassificationCompatibility",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.99",
+      "requiresMaintenanceWindow": false,
+      "requiresVerifiedBackup": true
+    },
+    {
       "id": "2026_08_archival_schema_consolidation",
       "path": "database/migrations/2026_08_archival_schema_consolidation.sql",
       "module": "ArchivalSchema",

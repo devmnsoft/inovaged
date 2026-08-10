@@ -25,7 +25,7 @@ alter table if exists ged.classification_plan_version_item add column if not exi
 alter table if exists ged.classification_plan_version_item add column if not exists review_status varchar(30);
 
 alter table if exists ged.document_classification add column if not exists classification_version_id uuid;
-alter table if exists ged.document_classification add column if not exists classification_plan_id uuid;
+alter table if exists ged.document_classification add column if not exists classification_id uuid;
 alter table if exists ged.document_classification add column if not exists confidence numeric(5,4);
 alter table if exists ged.document_classification add column if not exists suggestion_factors jsonb not null default '{}'::jsonb;
 alter table if exists ged.document_classification add column if not exists reclassification_reason text;
@@ -67,6 +67,6 @@ do $$ begin
  if to_regclass('ged.document_classification') is not null and not exists
    (select 1 from pg_constraint where conname='fk_document_classification_tenant_class') then
   alter table ged.document_classification add constraint fk_document_classification_tenant_class
-   foreign key (tenant_id,classification_plan_id) references ged.classification_plan(tenant_id,id) not valid;
+   foreign key (tenant_id,classification_id) references ged.classification_plan(tenant_id,id) not valid;
  end if;
 end $$;

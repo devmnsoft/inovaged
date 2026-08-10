@@ -2968,6 +2968,7 @@ where coalesce(reg_status, 'A') = 'A';
 \ir migrations/2026_07_signature_cms_rc3_status.sql
 \ir migrations/2026_08_archival_intelligence_core_v1.sql
 \ir migrations/2026_08_document_folder_move_history.sql
+\ir migrations/2026_08_10_classification_plan_hotfix.sql
 \ir migrations/2026_08_archival_schema_consolidation.sql
 \ir migrations/2026_08_labels_classification_evolution.sql
 \ir migrations/2026_08_archival_labels_physical_inventory.sql

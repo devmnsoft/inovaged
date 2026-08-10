@@ -45,9 +45,14 @@ WITH base AS (
    AND q.reg_status = 'A'
    AND q.status IN ('PENDING','IN_TERM')
 
+  LEFT JOIN ged.document_classification dc
+    ON dc.tenant_id = d.tenant_id
+   AND dc.document_id = d.id
+   AND dc.reg_status = 'A'
+
   LEFT JOIN ged.classification_plan cp
     ON cp.tenant_id = d.tenant_id
-   AND cp.id = d.classification_id
+   AND cp.id = COALESCE(dc.classification_id, d.classification_id)
    AND cp.is_active = true
 
   WHERE d.tenant_id = @TenantId
@@ -147,9 +152,13 @@ WITH base AS (
    AND q.document_id = d.id
    AND q.reg_status = 'A'
    AND q.status IN ('PENDING','IN_TERM')
+  LEFT JOIN ged.document_classification dc
+    ON dc.tenant_id = d.tenant_id
+   AND dc.document_id = d.id
+   AND dc.reg_status = 'A'
   LEFT JOIN ged.classification_plan cp
     ON cp.tenant_id = d.tenant_id
-   AND cp.id = d.classification_id
+   AND cp.id = COALESCE(dc.classification_id, d.classification_id)
    AND cp.is_active = true
   WHERE d.tenant_id=@TenantId
     AND d.status <> 'DELETED'

@@ -32,7 +32,7 @@ and (@UploadedBy::uuid is null or d.created_by=@UploadedBy::uuid)
 and (@OnlyWithOcr = false or coalesce(ds.ocr_text,'')<>'')
 and (@OnlyOcrError = false or upper(coalesce(ds.ocr_status::text,''))='ERROR')
 and (@Visibility::text is null or coalesce(d.visibility,'')=@Visibility::text)
-and (@OnlyUnclassified = false or dc.classification_id is null)
+and (@OnlyUnclassified = false or coalesce(dc.classification_id,d.classification_id) is null)
 and (@OnlyWithSuggestion = false or exists (select 1 from ged.document_classification_suggestion sug where sug.tenant_id=d.tenant_id and sug.document_id=d.id and sug.reg_status='A' and upper(sug.status)='PENDING'))
 and (@TermLike::text is null or lower(coalesce(d.title,'')) ilike lower(@TermLike::text) or lower(coalesce(d.original_file_name,'')) ilike lower(@TermLike::text) or lower(coalesce(ds.ocr_text,'')) ilike lower(@TermLike::text))";
 
@@ -52,7 +52,7 @@ and (@TermLike::text is null or lower(coalesce(d.title,'')) ilike lower(@TermLik
  left join ged.folder f on f.tenant_id=d.tenant_id and f.id=d.folder_id
  left join ged.document_type dt on dt.tenant_id=d.tenant_id and dt.id=d.document_type_id
  left join ged.document_classification dc on dc.tenant_id=d.tenant_id and dc.document_id=d.id and dc.reg_status='A'
- left join ged.classification_plan cp on cp.tenant_id=d.tenant_id and cp.id=dc.classification_id
+ left join ged.classification_plan cp on cp.tenant_id=d.tenant_id and cp.id=coalesce(dc.classification_id,d.classification_id)
  left join ged.app_user u on u.tenant_id=d.tenant_id and u.id=d.created_by
  {baseWhere}
  order by {orderBy} limit @PageSize::int offset @Offset::int";
