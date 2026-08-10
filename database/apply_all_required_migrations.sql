@@ -2968,3 +2968,5 @@ where coalesce(reg_status, 'A') = 'A';
 \ir migrations/2026_08_archival_intelligence_core_v1.sql
 \ir migrations/2026_08_labels_classification_evolution.sql
 \ir migrations/2026_08_archival_labels_physical_inventory.sql
+
+\ir migrations/2026_08_loans_overdue_collections_reports.sql

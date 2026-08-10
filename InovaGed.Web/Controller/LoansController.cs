@@ -26,6 +26,9 @@ public sealed class LoansController : Controller
     private readonly ILoanAccessService _loanAccess;
     private readonly ISmartSearchService _smartSearch;
     private readonly ISecureDocumentLinkService _secureLinks;
+    private readonly ILoanOverdueService _overdue;
+    private readonly ILoanCollectionService _collections;
+    private readonly ILoanReportService _reports;
 
     public LoansController(
         ILogger<LoansController> logger,
@@ -35,7 +38,10 @@ public sealed class LoansController : Controller
         IDbConnectionFactory db,
         ILoanAccessService loanAccess,
         ISmartSearchService smartSearch,
-        ISecureDocumentLinkService secureLinks)
+        ISecureDocumentLinkService secureLinks,
+        ILoanOverdueService overdue,
+        ILoanCollectionService collections,
+        ILoanReportService reports)
     {
         _logger = logger;
         _user = user;
@@ -45,6 +51,9 @@ public sealed class LoansController : Controller
         _loanAccess = loanAccess;
         _smartSearch = smartSearch;
         _secureLinks = secureLinks;
+        _overdue = overdue;
+        _collections = collections;
+        _reports = reports;
     }
 
     public override void OnActionExecuting(ActionExecutingContext context)
@@ -155,59 +164,90 @@ public sealed class LoansController : Controller
         }
     }
 
-    // =========================================================
-    // GET /Loans/RunOverdue
-    // (rotina: tenta função ged.loan_run_overdue; fallback se não existir)
-    // =========================================================
+    // Rotina mutável: somente POST e antiforgery.
     [Authorize(Policy = AppPolicies.LoansManage)]
-    [HttpGet("RunOverdue")]
+    [HttpPost("Overdue/Run")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> RunOverdue(CancellationToken ct)
     {
         try
         {
-            var tenantId = _user.TenantId;
-
-            var updated = 0;
-
-            TempData["Ok"] = $"Rotina OVERDUE executada. Eventos gerados/atualizados: {updated}";
-            return RedirectToAction(nameof(Overdue));
+            var updated = await _overdue.RunAsync(_user.TenantId, _user.UserId, ct);
+            TempData["Ok"] = $"Rotina de vencidos concluída. Processados: {updated}.";
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Loans.RunOverdue failed");
-            TempData["Err"] = "Erro ao executar rotina de vencidos.";
-            return RedirectToAction(nameof(Overdue));
+            _logger.LogError(ex, "Falha na rotina de vencidos. Tenant={TenantId}", _user.TenantId);
+            TempData["Err"] = "Não foi possível executar a rotina de vencidos.";
         }
+        return RedirectToAction(nameof(Overdue));
     }
 
-    // =========================================================
-    // POST /Loans/Overdue/Register
-    // (registra eventos OVERDUE no histórico via vw_loan_overdue)
-    // =========================================================
     [Authorize(Policy = AppPolicies.LoansManage)]
     [HttpPost("Overdue/Register")]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> RegisterOverdue(CancellationToken ct)
+    public Task<IActionResult> RegisterOverdue(CancellationToken ct) => RunOverdue(ct);
+
+    [Authorize(Policy = AppPolicies.LoansManage)]
+    [HttpPost("Overdue/Collect")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> CollectSelected(Guid[] ids, CancellationToken ct)
     {
-        try
+        var succeeded=0;
+        foreach(var id in ids.Distinct().Take(500))
         {
-            var tenantId = _user.TenantId;
-
-            var res = InovaGed.Domain.Primitives.Result<int>.Ok(0);
-
-            TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess
-                ? $"Eventos OVERDUE registrados: {res.Value}"
-                : res.ErrorMessage;
-
-            return RedirectToAction(nameof(Overdue));
+            if (!await CanOperateLoanAsync(id,ct)) continue;
+            if ((await _collections.CollectAsync(_user.TenantId,id,_user.UserId,null,ct)).IsSuccess) succeeded++;
         }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Loans.RegisterOverdue failed");
-            TempData["Err"] = "Erro ao registrar vencidos.";
-            return RedirectToAction(nameof(Overdue));
-        }
+        TempData["Ok"]=$"Cobranças registradas: {succeeded}.";
+        return RedirectToAction(nameof(Overdue));
     }
+
+    [Authorize(Policy = AppPolicies.LoansManage)]
+    [HttpPost("{id:guid}/Collect")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Collect(Guid id, string? message, CancellationToken ct)
+    {
+        if (!await CanOperateLoanAsync(id, ct)) return Forbid();
+        var result = await _collections.CollectAsync(_user.TenantId, id, _user.UserId, message, ct);
+        TempData[result.IsSuccess ? "Ok" : "Err"] = result.IsSuccess ? "Cobrança registrada." : result.ErrorMessage;
+        return RedirectToAction(nameof(Details), new { id });
+    }
+
+    [Authorize(Policy = AppPolicies.LoansManage)]
+    [HttpPost("{id:guid}/Renew")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Renew(Guid id, DateTimeOffset? newDueAt, string reason, CancellationToken ct)
+    {
+        if (!await CanOperateLoanAsync(id, ct)) return Forbid();
+        if (newDueAt is null || newDueAt <= DateTimeOffset.UtcNow || string.IsNullOrWhiteSpace(reason))
+        { TempData["Err"] = "Nova data futura e justificativa são obrigatórias."; return RedirectToAction(nameof(Details), new { id }); }
+        await using var conn = await _db.OpenAsync(ct); await using var tx = await conn.BeginTransactionAsync(ct);
+        var before = await conn.QuerySingleOrDefaultAsync<(string Status, DateTimeOffset DueAt)>(new CommandDefinition("select status::text as Status,due_at as DueAt from ged.loan_request where tenant_id=@tenantId and id=@id and coalesce(reg_status,'A')='A' for update", new { tenantId=_user.TenantId,id },tx,cancellationToken:ct));
+        if (string.IsNullOrEmpty(before.Status) || new[]{"RETURNED","REJECTED","CANCELLED","CANCELED"}.Contains(before.Status.ToUpperInvariant()))
+        { await tx.RollbackAsync(ct); TempData["Err"]="Empréstimo encerrado não pode ser renovado."; return RedirectToAction(nameof(Details),new{id}); }
+        await conn.ExecuteAsync(new CommandDefinition("""
+update ged.loan_request set previous_due_at=due_at,due_at=@due,sla_due_at=case when sla_due_at is null then null else @due end,renewed_at=now(),renewed_by=@userId,renewal_reason=@reason where tenant_id=@tenantId and id=@id;
+insert into ged.loan_request_history(tenant_id,loan_request_id,old_status,new_status,action,user_id,user_name,reason,metadata_json,correlation_id,reg_status) values(@tenantId,@id,@status,@status,'LOAN_RENEWED',@userId,'Gestor',@reason,jsonb_build_object('previousDueAt',@oldDue,'newDueAt',@due),gen_random_uuid()::text,'A');
+insert into ged.loan_request_message(tenant_id,loan_request_id,sender_user_id,sender_name,sender_role,message,message_type,is_internal) values(@tenantId,@id,@userId,'Gestor','MANAGER','Prazo renovado até '||to_char(@due,'DD/MM/YYYY HH24:MI')||'. Motivo: '||@reason,'RENEWAL',false);
+""",new{tenantId=_user.TenantId,id,due=newDueAt,userId=_user.UserId,reason=reason.Trim(),status=before.Status,oldDue=before.DueAt},tx,cancellationToken:ct));
+        await tx.CommitAsync(ct);
+        await _audit.WriteAsync(_user.TenantId,_user.UserId,"LOAN_RENEWED","loan_request",id,"Prazo de empréstimo renovado",null,null,new{previousDueAt=before.DueAt,newDueAt,reason},ct);
+        TempData["Ok"]="Prazo renovado com rastreabilidade."; return RedirectToAction(nameof(Details),new{id});
+    }
+
+    [Authorize(Policy = AppPolicies.LoansManage)]
+    [HttpGet("Reports")]
+    public async Task<IActionResult> Reports([FromQuery] LoanReportFilter filter, string? format, CancellationToken ct)
+    {
+        var report=await _reports.RunAsync(_user.TenantId,_user.UserId,filter,ct);
+        if (!string.Equals(format,"csv",StringComparison.OrdinalIgnoreCase)) return View(report);
+        var csv=new StringBuilder("Protocolo;Solicitante;Setor;Status;Entrega;Solicitado;Vencimento;Dias atraso;Cobranças\n");
+        foreach(var row in report.Rows) csv.AppendLine($"{row.ProtocolNo};{Csv(row.RequesterName)};{Csv(row.Sector)};{row.Status};{row.DeliveryMode};{row.RequestedAt:yyyy-MM-dd};{row.DueAt:yyyy-MM-dd};{row.DaysLate};{row.CollectionCount}");
+        return File(Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(csv.ToString())).ToArray(),"text/csv","relatorio-emprestimos.csv");
+    }
+
+    private static string Csv(string? value) => $"\"{(value ?? string.Empty).Replace("\"", "\"\"")}\"";
 
 
     [HttpGet("PendingCount")]
@@ -349,6 +389,7 @@ public sealed class LoansController : Controller
     public async Task<IActionResult> Return(Guid id, string? notes, string? internalNotes, bool notifyRequester, CancellationToken ct)
     {
         if (!await CanOperateLoanAsync(id, ct)) return Forbid();
+        if (string.IsNullOrWhiteSpace(notes)) { TempData["Err"] = "A observação da devolução é obrigatória."; return RedirectToAction(nameof(Details), new { id }); }
         notes = CombineNotes(notes, internalNotes, notifyRequester);
         var res = await _service.ReturnAsync(_user.TenantId, id, _user.UserId, notes, ct);
         TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Solicitação devolvida com sucesso." : res.ErrorMessage;

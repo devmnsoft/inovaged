@@ -438,7 +438,7 @@ where l.tenant_id = @TenantId
   and coalesce(l.reg_status, 'A') = 'A'
   and l.due_at is not null
   and l.due_at < now()
-  and upper(l.status::text) not in ('RETURNED','DEVOLVIDO','CANCELLED','CANCELADO','CANCELED','OVERDUE','VENCIDO')
+  and upper(l.status::text) in ('APPROVED','DELIVERED','PREPARING_PHYSICAL','WAITING_PICKUP','DIGITAL_LINK_SENT')
   and not exists (
       select 1
       from ged.loan_request_history h
@@ -470,7 +470,7 @@ where l.tenant_id = @TenantId
   and coalesce(l.reg_status, 'A') = 'A'
   and l.due_at is not null
   and l.due_at < now()
-  and upper(l.status::text) not in ('RETURNED','DEVOLVIDO','CANCELLED','CANCELADO','CANCELED','OVERDUE','VENCIDO')
+  and upper(l.status::text) in ('APPROVED','DELIVERED','PREPARING_PHYSICAL','WAITING_PICKUP','DIGITAL_LINK_SENT')
   and not exists (
     select 1
     from ged.loan_history h
@@ -504,7 +504,7 @@ where tenant_id = @TenantId
   and coalesce(reg_status, 'A') = 'A'
   and due_at is not null
   and due_at < now()
-  and upper(status::text) in ('DELIVERED','ENTREGUE','APPROVED','APROVADO');
+  and upper(status::text) in ('APPROVED','DELIVERED','PREPARING_PHYSICAL','WAITING_PICKUP','DIGITAL_LINK_SENT');
 """;
 
                 await conn.ExecuteAsync(
