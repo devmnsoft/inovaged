@@ -35,6 +35,7 @@ using InovaGed.Application.Signatures;
 using InovaGed.Infrastructure.Signatures;
 using InovaGed.Application.Cluster;
 using InovaGed.Infrastructure.Cluster;
+using InovaGed.Infrastructure.Tenants;
 
 namespace InovaGed.Infrastructure;
 
@@ -90,6 +91,7 @@ public static class InfrastructureServiceCollectionExtensions
                 ?? throw new InvalidOperationException("ConnectionStrings:DefaultConnection não configurada.");
             return new NpgsqlConnectionFactory(connectionString);
         });
+        services.TryAddScoped<ITenantCatalog, DatabaseTenantCatalog>();
 
         services.AddInfrastructureModule("Database", true, [], !string.IsNullOrWhiteSpace(configuration.GetConnectionString("DefaultConnection")), HealthStatus.Healthy);
         return services;
