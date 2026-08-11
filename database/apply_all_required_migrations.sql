@@ -1840,11 +1840,29 @@ UPDATE ged.document_search_index SET search_text = coalesce(search_text, '');
 UPDATE ged.document_search_index SET document_version_id = version_id WHERE document_version_id IS NULL AND version_id IS NOT NULL;
 UPDATE ged.document_search_index SET version_id = document_version_id WHERE version_id IS NULL AND document_version_id IS NOT NULL;
 
-DO $$ BEGIN
-    IF EXISTS (SELECT 1 FROM pg_extension WHERE extname='unaccent') THEN
-        UPDATE ged.document_search_index SET search_vector = to_tsvector('portuguese', unaccent(coalesce(search_text,''))) WHERE search_vector IS NULL;
+DO $$
+DECLARE
+    v_unaccent_schema text;
+BEGIN
+    SELECT n.nspname
+      INTO v_unaccent_schema
+      FROM pg_proc p
+      JOIN pg_namespace n ON n.oid = p.pronamespace
+     WHERE p.proname = 'unaccent'
+       AND pg_get_function_identity_arguments(p.oid) = 'text'
+     LIMIT 1;
+
+    IF v_unaccent_schema IS NOT NULL THEN
+        EXECUTE format(
+            'UPDATE ged.document_search_index
+                SET search_vector = to_tsvector(''portuguese'', %I.unaccent(coalesce(search_text,'''')))
+              WHERE search_vector IS NULL',
+            v_unaccent_schema
+        );
     ELSE
-        UPDATE ged.document_search_index SET search_vector = to_tsvector('portuguese', coalesce(search_text,'')) WHERE search_vector IS NULL;
+        UPDATE ged.document_search_index
+           SET search_vector = to_tsvector('portuguese', coalesce(search_text,''))
+         WHERE search_vector IS NULL;
     END IF;
 END $$;
 

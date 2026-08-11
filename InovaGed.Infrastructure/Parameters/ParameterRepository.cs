@@ -78,9 +78,11 @@ where i.tenant_id=@tenantId
   and (@categoryCode is null or c.code=@categoryCode)
   and (
       @search is null
-      or unaccent(lower(i.code)) like unaccent(lower('%' || @search || '%'))
-      or unaccent(lower(i.name)) like unaccent(lower('%' || @search || '%'))
-      or unaccent(lower(coalesce(i.description,''))) like unaccent(lower('%' || @search || '%'))
+      -- Parâmetros também precisam funcionar em instalações mínimas do
+      -- PostgreSQL: ILIKE é o fallback portátil quando unaccent não existe.
+      or i.code ilike ('%' || @search || '%')
+      or i.name ilike ('%' || @search || '%')
+      or coalesce(i.description,'') ilike ('%' || @search || '%')
   )
 order by c.display_order, i.display_order, i.name;";
 
