@@ -1,4 +1,24 @@
+@model InovaGed.Web.Models.Billing.BillingRulesPageVm
 @using InovaGed.Web.Models.Atlas
-@{ViewData["Title"]="Regras de faturamento";var header=new AtlasPageHeaderVm("Regras de extração","Regras locais, determinísticas e auditáveis usadas sobre o texto OCR.","settings","Faturamento",new[]{new AtlasPageAction("Voltar",Url.Action("Index","Billing")!,"arrow-left",false)});}
+@{ViewData["Title"]="Regras de faturamento";var header=new AtlasPageHeaderVm("Regras de extração","Configure precedência, escopo documental e captura determinística sobre o OCR.","settings","Faturamento",new[]{new AtlasPageAction("Voltar",Url.Action("Index","Billing")!,"arrow-left",false)});}
 <partial name="Atlas/_PageHeader" model="header" />
-<div class="row g-3">@foreach(var x in new[]{("Identificação fiscal","CPF, CNPJ, fornecedor, nota e série."),("Datas","Emissão, vencimento e competência."),("Valores e tributos","Bruto, líquido, ISS, INSS, PIS, COFINS, IR e CSLL."),("Contratos e serviços","Contrato, ordem, centro de custo, descrição e UST.")}){<div class="col-md-6"><div class="card border-0 shadow-sm h-100"><div class="card-body"><h5>@x.Item1</h5><p class="text-muted mb-0">@x.Item2</p></div></div></div>}</div>
+<div class="row g-4">
+ <div class="col-xl-4"><div class="card border-0 shadow-sm"><div class="card-body">
+  <h5 class="mb-3">@(Model.Form.Id == Guid.Empty ? "Nova regra" : "Editar regra")</h5>
+  <form asp-action="SaveRule" asp-controller="Billing" method="post">
+   <input asp-for="Form.Id" name="Id" type="hidden" />
+   <div asp-validation-summary="ModelOnly" class="text-danger small"></div>
+   <div class="mb-3"><label class="form-label">Nome</label><input asp-for="Form.Name" name="Name" class="form-control" /><span asp-validation-for="Form.Name" class="text-danger small"></span></div>
+   <div class="row g-2"><div class="col-6"><label class="form-label">Tipo</label><select asp-for="Form.DocumentKind" name="DocumentKind" class="form-select"><option value="*">Todos</option><option value="INVOICE">Nota fiscal</option><option value="BILLING_DOCUMENT">Fatura</option><option value="MEASUREMENT">Medição</option><option value="CONTRACT">Contrato</option><option value="RECEIPT">Recibo</option></select></div>
+   <div class="col-6"><label class="form-label">Campo destino</label><select asp-for="Form.TargetField" name="TargetField" class="form-select">@foreach(var f in new[]{"SupplierName","SupplierDocument","InvoiceNumber","InvoiceSeries","IssueDate","DueDate","CompetenceMonth","GrossAmount","NetAmount","TaxAmount","ContractNumber","PurchaseOrder","CostCenter","ServiceDescription","UstQuantity","UstUnitValue"}){<option value="@f">@f</option>}</select></div></div>
+   <div class="mt-3"><label class="form-label">Palavra-chave</label><input asp-for="Form.Keyword" name="Keyword" class="form-control" /><span asp-validation-for="Form.Keyword" class="text-danger small"></span></div>
+   <div class="mt-3"><label class="form-label">Regex (grupo 1 = valor)</label><textarea asp-for="Form.RegexPattern" name="RegexPattern" class="form-control font-monospace" rows="3"></textarea><span asp-validation-for="Form.RegexPattern" class="text-danger small"></span></div>
+   <div class="row g-2 mt-1"><div class="col-5"><label class="form-label">Prioridade</label><input asp-for="Form.Priority" name="Priority" class="form-control" /></div><div class="col-7 pt-4"><div class="form-check"><input asp-for="Form.IsRequired" name="IsRequired" class="form-check-input" /><label class="form-check-label">Obrigatória</label></div><div class="form-check"><input asp-for="Form.IsActive" name="IsActive" class="form-check-input" /><label class="form-check-label">Ativa</label></div></div></div>
+   <button class="btn btn-primary w-100 mt-3" type="submit">Salvar regra</button>
+  </form>
+ </div></div></div>
+ <div class="col-xl-8"><div class="row g-3">
+ @if(Model.Rules.Count==0){<div class="col-12"><div class="card border-0 shadow-sm"><div class="card-body text-center text-muted py-5">Nenhuma regra cadastrada. As heurísticas internas continuam ativas.</div></div></div>}
+ @foreach(var rule in Model.Rules){<div class="col-md-6"><div class="card border-0 shadow-sm h-100"><div class="card-body"><div class="d-flex justify-content-between"><span class="badge @(rule.IsActive?"bg-success":"bg-secondary")">@(rule.IsActive?"Ativa":"Inativa")</span><span class="text-muted small">Prioridade @rule.Priority</span></div><h5 class="mt-3 mb-1">@rule.Name</h5><p class="small text-muted mb-2">@rule.DocumentKind → <strong>@rule.TargetField</strong></p><div class="small text-break">@(rule.Keyword ?? rule.RegexPattern)</div><div class="d-flex gap-2 mt-3"><a asp-action="Rules" asp-route-edit="@rule.Id" class="btn btn-sm btn-outline-primary">Editar</a><form asp-action="DeleteRule" asp-route-id="@rule.Id" method="post"><button class="btn btn-sm btn-outline-danger" type="submit">Excluir</button></form></div></div></div></div>}
+ </div></div>
+</div>

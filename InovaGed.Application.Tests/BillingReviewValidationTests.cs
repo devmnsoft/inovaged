@@ -38,3 +38,20 @@ public sealed class BillingReviewValidationTests
         Assert.Contains(nameof(input.GrossAmount), errors[0].MemberNames);
     }
 }
+
+public sealed class BillingExtractionRuleValidationTests
+{
+    [Fact]
+    public void Requires_keyword_or_regex()
+    {
+        var input = new BillingExtractionRuleInput { Name = "Nota", DocumentKind = "INVOICE", TargetField = "InvoiceNumber" };
+        Assert.Contains(input.Validate(new(input)), x => x.MemberNames.Contains(nameof(input.Keyword)));
+    }
+
+    [Fact]
+    public void Rejects_invalid_regex()
+    {
+        var input = new BillingExtractionRuleInput { Name = "Nota", DocumentKind = "INVOICE", TargetField = "InvoiceNumber", RegexPattern = "(" };
+        Assert.Contains(input.Validate(new(input)), x => x.MemberNames.Contains(nameof(input.RegexPattern)));
+    }
+}

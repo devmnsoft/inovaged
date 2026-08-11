@@ -10,7 +10,8 @@ public sealed partial class BillingExtractionService : IBillingExtractionService
 {
     private readonly IDbConnectionFactory _db;
     private readonly IBillingCommands _commands;
-    public BillingExtractionService(IDbConnectionFactory db, IBillingCommands commands) { _db = db; _commands = commands; }
+    private readonly IBillingRuleService _rules;
+    public BillingExtractionService(IDbConnectionFactory db, IBillingCommands commands, IBillingRuleService rules) { _db = db; _commands = commands; _rules = rules; }
 
     public bool LooksFinancial(string text) => FinancialWords().IsMatch(text ?? "");
 
@@ -52,9 +53,60 @@ order by ds.updated_at desc nulls last limit 1
 """;
         var candidate = await conn.QuerySingleOrDefaultAsync<BillingExtractionCandidate>(new CommandDefinition(sql, new { tenantId, documentId }, cancellationToken: ct));
         if (candidate is null || !LooksFinancial(candidate.Text)) return null;
-        var extraction = Extract(candidate);
+        var extraction = await ExtractAsync(tenantId, candidate, ct);
         await _commands.SaveExtractionAsync(tenantId, extraction, ct);
         return extraction;
+    }
+
+    public async Task<BillingExtractionDto> ExtractAsync(Guid tenantId, BillingExtractionCandidate candidate, CancellationToken ct)
+    {
+        var result = Extract(candidate);
+        var rules = await _rules.ListAsync(tenantId, ct);
+        foreach (var rule in rules.Where(x => x.IsActive && (x.DocumentKind == "*" || x.DocumentKind.Equals(result.DocumentKind, StringComparison.OrdinalIgnoreCase))))
+        {
+            var keywordFound = string.IsNullOrWhiteSpace(rule.Keyword) || candidate.Text.Contains(rule.Keyword, StringComparison.OrdinalIgnoreCase);
+            if (!keywordFound)
+            {
+                if (rule.IsRequired) result.Warnings = [.. result.Warnings, $"Regra obrigatória não atendida: {rule.Name}."];
+                continue;
+            }
+            string? value = rule.Keyword;
+            if (!string.IsNullOrWhiteSpace(rule.RegexPattern))
+            {
+                var match = Regex.Match(candidate.Text, rule.RegexPattern, RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(250));
+                value = match.Success ? (match.Groups.Count > 1 ? match.Groups[1].Value : match.Value).Trim() : null;
+            }
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                if (rule.IsRequired) result.Warnings = [.. result.Warnings, $"Regra obrigatória sem valor: {rule.Name}."];
+                continue;
+            }
+            ApplyRuleValue(result, rule.TargetField, value);
+        }
+        return result;
+    }
+
+    private static void ApplyRuleValue(BillingExtractionDto result, string field, string value)
+    {
+        switch (field)
+        {
+            case "SupplierName": result.SupplierName = value; break;
+            case "SupplierDocument": result.SupplierDocument = value; break;
+            case "InvoiceNumber": result.InvoiceNumber = value; break;
+            case "InvoiceSeries": result.InvoiceSeries = value; break;
+            case "CompetenceMonth": result.CompetenceMonth = value; break;
+            case "ContractNumber": result.ContractNumber = value; break;
+            case "PurchaseOrder": result.PurchaseOrder = value; break;
+            case "CostCenter": result.CostCenter = value; break;
+            case "ServiceDescription": result.ServiceDescription = value; break;
+            case "GrossAmount": result.GrossAmount = Money(value); break;
+            case "NetAmount": result.NetAmount = Money(value); break;
+            case "TaxAmount": result.TaxAmount = Money(value); break;
+            case "UstQuantity": result.UstQuantity = Money(value); break;
+            case "UstUnitValue": result.UstUnitValue = Money(value); break;
+            case "IssueDate": result.IssueDate = Date(value); break;
+            case "DueDate": result.DueDate = Date(value); break;
+        }
     }
 
     private static string? Match(string text, Regex regex) { var m = regex.Match(text); return m.Success ? m.Groups[1].Value.Trim() : null; }
