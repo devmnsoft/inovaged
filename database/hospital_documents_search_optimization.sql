@@ -1,5 +1,10 @@
 -- Otimizações para busca hospitalar (PostgreSQL)
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
+DO $$ BEGIN
+  CREATE EXTENSION IF NOT EXISTS pg_trgm;
+EXCEPTION WHEN insufficient_privilege OR undefined_file THEN
+  RAISE NOTICE 'pg_trgm indisponível; índices hospitalares trigram serão ignorados.';
+WHEN others THEN RAISE NOTICE 'Não foi possível habilitar pg_trgm: %', SQLERRM;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_document_search_search_vector_gin
   ON ged.document_search USING gin (search_vector);
@@ -22,11 +27,16 @@ CREATE INDEX IF NOT EXISTS idx_document_version_tenant_document
 CREATE INDEX IF NOT EXISTS idx_document_version_tenant_id
   ON ged.document_version (tenant_id, id);
 
-CREATE INDEX IF NOT EXISTS idx_document_title_trgm
-  ON ged.document USING gin (title gin_trgm_ops);
-
-CREATE INDEX IF NOT EXISTS idx_document_code_trgm
-  ON ged.document USING gin (code gin_trgm_ops);
-
-CREATE INDEX IF NOT EXISTS idx_document_search_file_name_trgm
-  ON ged.document_search USING gin (file_name gin_trgm_ops);
+DO $$ DECLARE v_schema text;
+BEGIN
+  SELECT n.nspname INTO v_schema FROM pg_opclass oc
+  JOIN pg_am am ON am.oid=oc.opcmethod JOIN pg_namespace n ON n.oid=oc.opcnamespace
+  WHERE am.amname='gin' AND oc.opcname='gin_trgm_ops' LIMIT 1;
+  IF v_schema IS NOT NULL THEN
+    EXECUTE format('CREATE INDEX IF NOT EXISTS idx_document_title_trgm ON ged.document USING gin (title %I.gin_trgm_ops)', v_schema);
+    EXECUTE format('CREATE INDEX IF NOT EXISTS idx_document_code_trgm ON ged.document USING gin (code %I.gin_trgm_ops)', v_schema);
+    EXECUTE format('CREATE INDEX IF NOT EXISTS idx_document_search_file_name_trgm ON ged.document_search USING gin (file_name %I.gin_trgm_ops)', v_schema);
+  ELSE
+    RAISE NOTICE 'gin_trgm_ops indisponível; mantendo FTS/ILIKE.';
+  END IF;
+END $$;

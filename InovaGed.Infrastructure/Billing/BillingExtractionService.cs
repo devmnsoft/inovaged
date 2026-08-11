@@ -20,6 +20,7 @@ public sealed partial class BillingExtractionService : IBillingExtractionService
         var text = candidate.Text ?? "";
         var result = new BillingExtractionDto { DocumentId = candidate.DocumentId, DocumentVersionId = candidate.DocumentVersionId, ExtractionStatus = "PENDING_REVIEW", Confidence = 25 };
         result.SupplierDocument = Match(text, DocumentRegex());
+        result.SupplierName = Match(text, SupplierRegex());
         result.InvoiceNumber = Match(text, InvoiceRegex());
         result.InvoiceSeries = Match(text, SeriesRegex());
         result.CompetenceMonth = Match(text, CompetenceRegex());
@@ -36,7 +37,7 @@ public sealed partial class BillingExtractionService : IBillingExtractionService
         result.TaxAmount = new[] { result.IssAmount, result.InssAmount, result.PisAmount, result.CofinsAmount, result.IrAmount, result.CsllAmount }.Where(x => x.HasValue).Sum(x => x!.Value);
         result.IssueDate = Date(Match(text, IssueDateRegex())); result.DueDate = Date(Match(text, DueDateRegex()));
         result.DocumentKind = Kind(text);
-        var found = new object?[] { result.SupplierDocument, result.InvoiceNumber, result.GrossAmount, result.IssueDate, result.DueDate, result.ContractNumber }.Count(x => x is not null);
+        var found = new object?[] { result.SupplierDocument, result.SupplierName, result.InvoiceNumber, result.GrossAmount, result.IssueDate, result.DueDate, result.ContractNumber }.Count(x => x is not null);
         result.Confidence = Math.Min(95, 25 + found * 10);
         result.Warnings = new[] { result.SupplierDocument is null ? "CPF/CNPJ não identificado." : null, result.GrossAmount is null ? "Valor total não identificado." : null, result.DueDate is null ? "Vencimento não identificado." : null }.Where(x => x is not null).Cast<string>().ToArray();
         return result;
@@ -112,9 +113,19 @@ order by ds.updated_at desc nulls last limit 1
     private static string? Match(string text, Regex regex) { var m = regex.Match(text); return m.Success ? m.Groups[1].Value.Trim() : null; }
     private static decimal? Money(string? value) => decimal.TryParse(value?.Replace(".", "").Replace(',', '.'), NumberStyles.Number, CultureInfo.InvariantCulture, out var n) ? n : null;
     private static DateTime? Date(string? value) => DateTime.TryParseExact(value, new[] { "dd/MM/yyyy", "dd-MM-yyyy", "yyyy-MM-dd" }, CultureInfo.InvariantCulture, DateTimeStyles.None, out var d) ? d : null;
-    private static string Kind(string text) => Regex.IsMatch(text, "nota fiscal|nf-e", RegexOptions.IgnoreCase) ? "INVOICE" : Regex.IsMatch(text, "medição", RegexOptions.IgnoreCase) ? "MEASUREMENT" : Regex.IsMatch(text, "contrato", RegexOptions.IgnoreCase) ? "CONTRACT" : Regex.IsMatch(text, "recibo", RegexOptions.IgnoreCase) ? "RECEIPT" : "BILLING_DOCUMENT";
+    private static string Kind(string text) =>
+        Regex.IsMatch(text, "nota fiscal|nf-e", RegexOptions.IgnoreCase) ? "INVOICE" :
+        Regex.IsMatch(text, "boleto|linha digitável|código de barras", RegexOptions.IgnoreCase) ? "BANK_SLIP" :
+        Regex.IsMatch(text, "comprovante de pagamento|pagamento efetuado", RegexOptions.IgnoreCase) ? "PAYMENT_RECEIPT" :
+        Regex.IsMatch(text, "relatório de UST|quantidade de UST", RegexOptions.IgnoreCase) ? "UST_REPORT" :
+        Regex.IsMatch(text, "ordem de serviço", RegexOptions.IgnoreCase) ? "SERVICE_ORDER" :
+        Regex.IsMatch(text, "medição", RegexOptions.IgnoreCase) ? "MEASUREMENT" :
+        Regex.IsMatch(text, "contrato", RegexOptions.IgnoreCase) ? "CONTRACT" :
+        Regex.IsMatch(text, "recibo", RegexOptions.IgnoreCase) ? "RECEIPT" :
+        Regex.IsMatch(text, "fatura", RegexOptions.IgnoreCase) ? "BILL" : "BILLING_DOCUMENT";
 
     [GeneratedRegex(@"(?i)\b((?:\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2})|(?:\d{3}\.?\d{3}\.?\d{3}-?\d{2}))\b")] private static partial Regex DocumentRegex();
+    [GeneratedRegex(@"(?im)(?:fornecedor|prestador|raz[ãa]o social|benefici[áa]rio)\s*[:#-]?\s*([^\r\n]{3,120})")] private static partial Regex SupplierRegex();
     [GeneratedRegex(@"(?i)(?:nota\s*fiscal|nf-e|n[úu]mero\s*(?:da\s*)?nota)\s*(?:n[º°o.]|:|-)*\s*([A-Z0-9./-]+)")] private static partial Regex InvoiceRegex();
     [GeneratedRegex(@"(?i)s[ée]rie\s*[:#-]?\s*([A-Z0-9.-]+)")] private static partial Regex SeriesRegex();
     [GeneratedRegex(@"(?i)compet[êe]ncia\s*[:#-]?\s*(\d{2}/\d{4})")] private static partial Regex CompetenceRegex();

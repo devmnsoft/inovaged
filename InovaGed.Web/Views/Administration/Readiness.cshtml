@@ -1,9 +1,36 @@
 @model InovaGed.Web.Models.Administration.EnvironmentReadinessVM
-@{ var atlasHeader = new InovaGed.Web.Models.Atlas.AtlasPageHeaderVm("Prontidão do ambiente", "Saúde, segurança e recomendações acionáveis para operação.", "health", "Administração"); }
-<partial name="Atlas/_PageHeader" model="atlasHeader" />
-@{ ViewData["Title"] = "Prontidão do ambiente"; ViewData["Subtitle"] = "Banco, migrations, dependências, workers e módulos"; }
-<header class="ig-page-header"><div><span class="ig-eyebrow">Operações seguras</span><h1>Central de Prontidão Operacional</h1><p>Valide o ambiente antes de liberá-lo, sem expor segredos ou executar SQL pelo navegador.</p></div><a class="btn btn-outline-secondary" asp-action="Readiness">Revalidar ambiente</a></header>
-<div class="ig-kpi-grid"><article class="ig-kpi-card"><strong>@Model.Available</strong><span>Módulos disponíveis</span></article><article class="ig-kpi-card"><strong>@Model.Pending</strong><span>Pendências</span></article></div>
-<section class="ig-action-card"><span><strong>Implantação e Release</strong><small>Versão atual: @Model.Release.Version</small><small>Commit: @Model.Release.Commit</small><small>Deployment ID: @Model.Release.DeploymentId</small><small>Implantada em UTC: @(Model.Release.DeployedAtUtc?.ToString("u") ?? "não informado")</small><small>Schema: @Model.Release.Schema</small><small>Release anterior: @Model.Release.PreviousRelease</small><small>Rollback binário: @(Model.Release.RollbackAvailable ? "disponível, sujeito à compatibilidade do schema" : "indisponível")</small></span></section>
-<div class="ig-action-grid">@foreach (var readinessItem in Model.Modules) { <article class="ig-action-card @(readinessItem.Available ? string.Empty : "is-disabled")"><span><strong>@readinessItem.ModuleCode</strong><span class="ig-status">@readinessItem.Status</span><small>Versão esperada: 04.1.20</small><small>Versão encontrada: @(readinessItem.SchemaReady ? "compatível" : "pendente")</small><small>Verificado em @readinessItem.CheckedAtUtc.ToString("u")</small>@if (readinessItem.MissingObjects.Count > 0) { <details><summary>Ver objetos ausentes</summary><ul>@foreach (var missingObject in readinessItem.MissingObjects) { <li>@missingObject</li> }</ul></details> }@foreach (var recommendationItem in readinessItem.Recommendations) { <small>@recommendationItem</small> }</span></article> }</div>
-<p><a class="btn btn-primary" asp-action="ExportReadiness">Baixar relatório JSON</a></p>
+@using InovaGed.Web.Models.Atlas
+@section Styles { <link rel="stylesheet" href="~/css/pages/administration.css" asp-append-version="true" /> }
+@{
+    ViewData["Title"] = "Prontidão do ambiente";
+    ViewData["WorkspaceVariant"] = "wide";
+    var header = new AtlasPageHeaderVm("Prontidão do ambiente", "Banco, migrations, dependências e workers validados para uma operação segura.", "health", "Administração",
+        new[] { new AtlasPageAction("Revalidar", Url.Action("Readiness")!, "refresh", true), new AtlasPageAction("Exportar JSON", Url.Action("ExportReadiness")!, "download") },
+        new (string, string?)[] { ("Administração", Url.Action("Index")), ("Prontidão", null) });
+    var metrics = new AtlasMetricVm[] {
+        new("Disponíveis", Model.Available.ToString(), "módulos prontos", "success", "check"),
+        new("Pendências", Model.Pending.ToString(), "itens para atuação", Model.Pending > 0 ? "warning" : "success", "warning"),
+        new("Schema", Model.Release.Schema ?? "—", "versão de dados", "info", "database")
+    };
+}
+<div class="atlas-prime-page administration-prime">
+    <partial name="Atlas/_PageHeader" model="header" />
+    <partial name="Atlas/_PageMetrics" model="metrics" />
+    <section class="atlas-prime-panel admin-release" aria-labelledby="release-title">
+        <div class="atlas-prime-panel__header"><div><h2 id="release-title">Implantação atual</h2><small>Identificação segura do artefato e compatibilidade do schema.</small></div><span class="ig-status" data-status="@(Model.Release.RollbackAvailable ? "saudavel" : "atencao")">@(Model.Release.RollbackAvailable ? "Rollback disponível" : "Rollback indisponível")</span></div>
+        <dl class="admin-release__grid"><div><dt>Versão</dt><dd>@Model.Release.Version</dd></div><div><dt>Commit</dt><dd>@Model.Release.Commit</dd></div><div><dt>Deployment</dt><dd>@Model.Release.DeploymentId</dd></div><div><dt>Implantação UTC</dt><dd>@(Model.Release.DeployedAtUtc?.ToString("u") ?? "Não informado")</dd></div></dl>
+    </section>
+    <section class="atlas-prime-panel" aria-labelledby="modules-title">
+        <div class="atlas-prime-panel__header"><div><h2 id="modules-title">Saúde dos módulos</h2><small>Disponibilidade, objetos ausentes e recomendações operacionais.</small></div></div>
+        <div class="admin-readiness-grid">
+        @foreach (var item in Model.Modules) {
+            <article class="admin-readiness-card @(item.Available ? "is-ready" : "is-warning")">
+                <div class="admin-readiness-card__title"><strong>@item.ModuleCode</strong><span class="ig-status" data-status="@(item.Available ? "saudavel" : "atencao")">@item.Status</span></div>
+                <p>Schema @(item.SchemaReady ? "compatível" : "pendente") · verificado em @item.CheckedAtUtc.ToString("u")</p>
+                @if (item.MissingObjects.Count > 0) { <details><summary>@item.MissingObjects.Count objeto(s) ausente(s)</summary><ul>@foreach (var missing in item.MissingObjects) { <li><code>@missing</code></li> }</ul></details> }
+                @foreach (var recommendation in item.Recommendations) { <div class="admin-recommendation"><i class="bi bi-lightbulb"></i><span>@recommendation</span></div> }
+            </article>
+        }
+        </div>
+    </section>
+</div>

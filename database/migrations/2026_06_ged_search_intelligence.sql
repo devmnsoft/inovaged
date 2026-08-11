@@ -99,7 +99,7 @@ CREATE INDEX IF NOT EXISTS ix_document_search_index_tenant_folder ON ged.documen
 CREATE INDEX IF NOT EXISTS ix_document_search_index_tenant_year ON ged.document_search_index(tenant_id, extracted_year);
 CREATE INDEX IF NOT EXISTS ix_document_search_index_tenant_age ON ged.document_search_index(tenant_id, extracted_age);
 CREATE INDEX IF NOT EXISTS ix_document_search_index_vector ON ged.document_search_index USING GIN(search_vector);
-CREATE INDEX IF NOT EXISTS ix_document_search_index_text_trgm ON ged.document_search_index USING GIN(search_text gin_trgm_ops);
+-- Índice trigram opcional criado por 2026_08_11_search_pg_trgm_safe_index.sql.
 CREATE INDEX IF NOT EXISTS ix_search_query_log_tenant_created ON ged.search_query_log(tenant_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS ix_search_query_log_tenant_user ON ged.search_query_log(tenant_id, user_id);
 CREATE INDEX IF NOT EXISTS ix_search_query_log_query_hash ON ged.search_query_log(query_hash);

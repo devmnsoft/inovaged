@@ -2,7 +2,13 @@
 CREATE SCHEMA IF NOT EXISTS ged;
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE EXTENSION IF NOT EXISTS unaccent;
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
+DO $$ BEGIN
+    CREATE EXTENSION IF NOT EXISTS pg_trgm;
+EXCEPTION WHEN insufficient_privilege OR undefined_file THEN
+    RAISE NOTICE 'pg_trgm indisponível; busca continuará por FTS/ILIKE.';
+WHEN others THEN
+    RAISE NOTICE 'Não foi possível habilitar pg_trgm: %', SQLERRM;
+END $$;
 
 CREATE TABLE IF NOT EXISTS ged.search_synonym (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -105,7 +111,7 @@ ALTER TABLE ged.document_access_stat ADD COLUMN IF NOT EXISTS created_at timesta
 CREATE INDEX IF NOT EXISTS ix_search_synonym_tenant_term ON ged.search_synonym(tenant_id, lower(term));
 CREATE INDEX IF NOT EXISTS ix_search_synonym_tenant_synonym ON ged.search_synonym(tenant_id, lower(synonym));
 CREATE INDEX IF NOT EXISTS ix_document_search_index_vector ON ged.document_search_index USING GIN(search_vector);
-CREATE INDEX IF NOT EXISTS ix_document_search_index_text_trgm ON ged.document_search_index USING GIN(search_text gin_trgm_ops);
+-- O índice trigram opcional é criado pela migration segura, após descobrir o schema da opclass.
 CREATE INDEX IF NOT EXISTS ix_document_search_index_tenant ON ged.document_search_index(tenant_id);
 CREATE INDEX IF NOT EXISTS ix_document_search_index_document ON ged.document_search_index(document_id);
 CREATE INDEX IF NOT EXISTS ix_document_search_index_age ON ged.document_search_index(tenant_id, extracted_age);

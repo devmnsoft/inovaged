@@ -1299,8 +1299,8 @@ CREATE INDEX IF NOT EXISTS ix_search_synonym_tenant_synonym ON ged.search_synony
 CREATE INDEX IF NOT EXISTS ix_document_search_index_vector ON ged.document_search_index USING GIN(search_vector);
 DO $$
 BEGIN
-    IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm') THEN
-        EXECUTE 'CREATE INDEX IF NOT EXISTS ix_document_search_index_text_trgm ON ged.document_search_index USING GIN(search_text gin_trgm_ops)';
+    IF EXISTS (SELECT 1 FROM pg_opclass oc JOIN pg_am am ON am.oid=oc.opcmethod WHERE am.amname='gin' AND oc.opcname='gin_trgm_ops') THEN
+        EXECUTE format('CREATE INDEX IF NOT EXISTS ix_document_search_index_text_trgm ON ged.document_search_index USING GIN(search_text %I.gin_trgm_ops)', (SELECT n.nspname FROM pg_opclass oc JOIN pg_am am ON am.oid=oc.opcmethod JOIN pg_namespace n ON n.oid=oc.opcnamespace WHERE am.amname='gin' AND oc.opcname='gin_trgm_ops' LIMIT 1));
     ELSE
         RAISE NOTICE 'Índice trigram não criado: extensão pg_trgm ausente.';
     END IF;
@@ -1552,8 +1552,8 @@ CREATE INDEX IF NOT EXISTS ix_document_search_index_tenant_age ON ged.document_s
 CREATE INDEX IF NOT EXISTS ix_document_search_index_vector ON ged.document_search_index USING GIN(search_vector);
 DO $$
 BEGIN
-    IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm') THEN
-        EXECUTE 'CREATE INDEX IF NOT EXISTS ix_document_search_index_text_trgm ON ged.document_search_index USING GIN(search_text gin_trgm_ops)';
+    IF EXISTS (SELECT 1 FROM pg_opclass oc JOIN pg_am am ON am.oid=oc.opcmethod WHERE am.amname='gin' AND oc.opcname='gin_trgm_ops') THEN
+        EXECUTE format('CREATE INDEX IF NOT EXISTS ix_document_search_index_text_trgm ON ged.document_search_index USING GIN(search_text %I.gin_trgm_ops)', (SELECT n.nspname FROM pg_opclass oc JOIN pg_am am ON am.oid=oc.opcmethod JOIN pg_namespace n ON n.oid=oc.opcnamespace WHERE am.amname='gin' AND oc.opcname='gin_trgm_ops' LIMIT 1));
     ELSE
         RAISE NOTICE 'Índice trigram não criado: extensão pg_trgm ausente.';
     END IF;
@@ -1852,8 +1852,8 @@ CREATE INDEX IF NOT EXISTS ix_document_search_index_tenant_document ON ged.docum
 CREATE INDEX IF NOT EXISTS ix_document_search_index_tenant_folder ON ged.document_search_index(tenant_id, folder_id);
 CREATE INDEX IF NOT EXISTS ix_document_search_index_vector ON ged.document_search_index USING GIN(search_vector);
 DO $$ BEGIN
-    IF EXISTS (SELECT 1 FROM pg_extension WHERE extname='pg_trgm') THEN
-        EXECUTE 'CREATE INDEX IF NOT EXISTS ix_document_search_index_text_trgm ON ged.document_search_index USING GIN(search_text gin_trgm_ops)';
+    IF EXISTS (SELECT 1 FROM pg_opclass oc JOIN pg_am am ON am.oid=oc.opcmethod WHERE am.amname='gin' AND oc.opcname='gin_trgm_ops') THEN
+        EXECUTE format('CREATE INDEX IF NOT EXISTS ix_document_search_index_text_trgm ON ged.document_search_index USING GIN(search_text %I.gin_trgm_ops)', (SELECT n.nspname FROM pg_opclass oc JOIN pg_am am ON am.oid=oc.opcmethod JOIN pg_namespace n ON n.oid=oc.opcnamespace WHERE am.amname='gin' AND oc.opcname='gin_trgm_ops' LIMIT 1));
     END IF;
 END $$;
 
@@ -2983,3 +2983,4 @@ where coalesce(reg_status, 'A') = 'A';
 \ir migrations/2026_08_11_billing_extraction.sql
 \ir migrations/2026_08_11_billing_review_governance.sql
 \ir migrations/2026_08_11_billing_extraction_rules.sql
+\ir migrations/2026_08_11_search_pg_trgm_safe_index.sql
