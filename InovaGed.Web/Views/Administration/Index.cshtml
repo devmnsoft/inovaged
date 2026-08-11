@@ -1,4 +1,5 @@
 @model InovaGed.Web.Models.Administration.AdministrationDashboardVM
+@using InovaGed.Web.Models.Atlas
 @section Styles {
     <link rel="stylesheet" href="~/css/pages/administration.css" asp-append-version="true" />
 }
@@ -8,11 +9,21 @@
     ViewData["Subtitle"] = "Governança, segurança e saúde do ambiente";
 }
 
-<header class="ig-page-header">
-    <div><span class="ig-eyebrow">Governança institucional</span><h1>Administração</h1><p>Gerencie acessos, parâmetros e continuidade em um único espaço seguro.</p></div>
-    <a class="btn btn-outline-secondary" asp-action="Health"><i class="bi bi-heart-pulse" aria-hidden="true"></i> Ver saúde do sistema</a>
-</header>
-
-<partial name="_EnvironmentSummary" model="Model.Health" />
-<partial name="_ConfigurationRecommendations" model="Model.Recommendations" />
-<partial name="_AdministrationSections" model="Model.Sections" />
+@{
+    var header = new AtlasPageHeaderVm("Central de Administração", "Identidades, segurança, disponibilidade e conformidade em uma visão operacional.", "settings", "Governança institucional",
+        new[] { new AtlasPageAction("Prontidão do ambiente", Url.Action("Readiness")!, "check", true), new AtlasPageAction("Saúde do sistema", Url.Action("Health")!, "health") },
+        new (string, string?)[] { ("Início", "/"), ("Administração", null) });
+    var metrics = Model.Health.Take(4).Select(x => new AtlasMetricVm(x.Title, x.Value ?? "—", x.Message ?? "Estado atual", x.Status, x.Icon)).ToArray();
+}
+<div class="atlas-prime-page administration-prime">
+    <partial name="Atlas/_PageHeader" model="header" />
+    <partial name="Atlas/_PageMetrics" model="metrics" />
+    <section class="atlas-prime-panel" aria-labelledby="adminRecommendations">
+        <div class="atlas-prime-panel__header"><div><h2 id="adminRecommendations">Recomendações prioritárias</h2><small>Ações orientadas por severidade e impacto no ambiente.</small></div></div>
+        <partial name="_ConfigurationRecommendations" model="Model.Recommendations" />
+    </section>
+    <section class="atlas-prime-panel" aria-labelledby="adminAreas">
+        <div class="atlas-prime-panel__header"><div><h2 id="adminAreas">Áreas administrativas</h2><small>Acessos organizados por responsabilidade operacional.</small></div></div>
+        <partial name="_AdministrationSections" model="Model.Sections" />
+    </section>
+</div>
