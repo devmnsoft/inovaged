@@ -222,6 +222,17 @@
       "requiresVerifiedBackup": true
     },
     {
+      "id": "2026_08_11_search_pg_trgm_safe_index",
+      "path": "database/migrations/2026_08_11_search_pg_trgm_safe_index.sql",
+      "module": "SmartSearch",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.99",
+      "requiresMaintenanceWindow": false,
+      "requiresVerifiedBackup": false
+    },
+    {
       "id": "2026_08_11_billing_extraction_rules",
       "path": "database/migrations/2026_08_11_billing_extraction_rules.sql",
       "module": "BillingExtraction",

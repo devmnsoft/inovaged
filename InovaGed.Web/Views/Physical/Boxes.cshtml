@@ -1,8 +1,6 @@
 @model IReadOnlyList<InovaGed.Application.Ged.Physical.BoxRowDto>
-
-@{ var atlasHeader = new InovaGed.Web.Models.Atlas.AtlasPageHeaderVm("Caixas do acervo", "Localização, capacidade, conteúdo e rastreabilidade do arquivo físico.", "documents", "Guarda física"); }
-<partial name="Atlas/_PageHeader" model="atlasHeader" />
-<partial name="Atlas/_PageMetrics" model="@(new InovaGed.Web.Models.Atlas.AtlasMetricVm[] { new("Caixas totais", (Model?.Count ?? 0).ToString(), "acervo ativo", "info", "documents"), new("Com localização", (Model?.Count(x => !string.IsNullOrWhiteSpace(x.LocationLabel)) ?? 0).ToString(), "rastreáveis", "success", "check"), new("Sem localização", (Model?.Count(x => string.IsNullOrWhiteSpace(x.LocationLabel)) ?? 0).ToString(), "exigem endereçamento", "warning", "warning") })" />
+@using InovaGed.Web.Models.Atlas
+@section Styles { <link rel="stylesheet" href="~/css/pages/physical.css" asp-append-version="true" /> }
 @{
     ViewData["Title"] = "Caixas";
     ViewData["Subtitle"] = "Cadastro, endereçamento, rastreio e manutenção das caixas físicas.";
@@ -11,27 +9,12 @@
     var total = Model?.Count ?? 0;
     var semLocalizacao = Model?.Count(x => string.IsNullOrWhiteSpace(x.LocationLabel)) ?? 0;
     var comLocalizacao = total - semLocalizacao;
+    var atlasHeader = new AtlasPageHeaderVm("Caixas do acervo", "Localização, capacidade, conteúdo e rastreabilidade do arquivo físico.", "documents", "Guarda física",
+        new[] { new AtlasPageAction("Nova caixa", "/Physical/Boxes/New", "plus", true), new AtlasPageAction("Mapa físico", "/Physical/PhysicalMap", "map"), new AtlasPageAction("Inventário", "/Physical/BoxContents", "check") });
 }
-
-<div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
-    <div>
-        <div class="text-uppercase text-muted small fw-semibold">Guarda Física</div>
-        <h3 class="mb-1">Caixas</h3>
-        <div class="text-muted">Controle as caixas, seus endereços físicos, etiquetas, conteúdo e histórico de movimentação.</div>
-    </div>
-
-    <div class="d-flex flex-wrap gap-2">
-        <a class="btn btn-outline-secondary" href="/Physical/BoxContents">
-            <i class="bi bi-box-seam me-1"></i>Conteúdo da Caixa
-        </a>
-        <a class="btn btn-outline-secondary" href="/Physical/PhysicalMap">
-            <i class="bi bi-map me-1"></i>Mapa
-        </a>
-        <a class="btn btn-primary" href="/Physical/Boxes/New">
-            <i class="bi bi-plus-lg me-1"></i>Nova Caixa
-        </a>
-    </div>
-</div>
+<div class="atlas-prime-page physical-boxes-page">
+<partial name="Atlas/_PageHeader" model="atlasHeader" />
+<partial name="Atlas/_PageMetrics" model="@(new AtlasMetricVm[] { new("Caixas totais", total.ToString(), "acervo ativo", "info", "documents"), new("Com localização", comLocalizacao.ToString(), "rastreáveis", "success", "check"), new("Sem localização", semLocalizacao.ToString(), "exigem endereçamento", "warning", "warning") })" />
 
 @if (TempData["Ok"] is string ok && !string.IsNullOrWhiteSpace(ok))
 {
@@ -47,36 +30,6 @@
         <div>@err</div>
     </div>
 }
-
-<div class="row g-3 mb-4">
-    <div class="col-12 col-md-4">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-body">
-                <div class="text-muted small">Caixas cadastradas</div>
-                <div class="display-6 fw-semibold">@total</div>
-                <div class="small text-muted">registros ativos no acervo físico</div>
-            </div>
-        </div>
-    </div>
-    <div class="col-12 col-md-4">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-body">
-                <div class="text-muted small">Com localização</div>
-                <div class="display-6 fw-semibold">@comLocalizacao</div>
-                <div class="small text-muted">rastreáveis no mapa físico</div>
-            </div>
-        </div>
-    </div>
-    <div class="col-12 col-md-4">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-body">
-                <div class="text-muted small">Sem localização</div>
-                <div class="display-6 fw-semibold text-warning">@semLocalizacao</div>
-                <div class="small text-muted">precisam de endereçamento</div>
-            </div>
-        </div>
-    </div>
-</div>
 
 @if (semLocalizacao > 0)
 {
@@ -169,22 +122,22 @@
                             <td class="text-muted">@(string.IsNullOrWhiteSpace(r.Notes) ? "Sem observações" : r.Notes)<br/><small>Último movimento: @(r.LastMovedAt?.ToString("dd/MM/yyyy HH:mm") ?? "—")</small></td>
                             <td class="text-end">
                                 <div class="d-flex gap-1 flex-wrap justify-content-end">
-                                    <a class="btn btn-sm btn-outline-primary" href="/Physical/BoxContents?boxId=@r.Id">
+                                    <a class="btn btn-outline-primary" href="/Physical/BoxContents?boxId=@r.Id">
                                         <i class="bi bi-folder2-open"></i> Conteúdo
                                     </a>
-                                    <a class="btn btn-sm btn-outline-info" href="/Physical/BoxHistory?boxId=@r.Id">
+                                    <a class="btn btn-outline-info" href="/Physical/BoxHistory?boxId=@r.Id">
                                         <i class="bi bi-clock-history"></i> Rastreio
                                     </a>
-                                    <a class="btn btn-sm btn-outline-dark" href="/Labels/BoxLabel?boxId=@r.Id" target="_blank">
+                                    <a class="btn btn-outline-dark" href="/Labels/BoxLabel?boxId=@r.Id" target="_blank">
                                         <i class="bi bi-qr-code"></i> Etiqueta
                                     </a>
-                                    <a class="btn btn-sm btn-outline-secondary" href="/Physical/Boxes/@r.Id">
+                                    <a class="btn btn-outline-secondary" href="/Physical/Boxes/@r.Id">
                                         <i class="bi bi-pencil"></i> Editar
                                     </a>
                                     <form method="post" action="/Physical/Boxes/@r.Id/Delete" class="m-0"
                                           onsubmit="return confirm('Confirma excluir a caixa #@r.BoxNo? Use exclusão apenas quando não houver documentos vinculados.');">
                                         @Html.AntiForgeryToken()
-                                        <button class="btn btn-sm btn-outline-danger" type="submit" title="Excluir caixa">
+                                        <button class="btn btn-outline-danger" type="submit" title="Excluir caixa" aria-label="Excluir caixa @r.BoxNo">
                                             <i class="bi bi-trash"></i>
                                         </button>
                                     </form>
@@ -196,4 +149,5 @@
             </tbody>
         </table>
     </div>
+</div>
 </div>
