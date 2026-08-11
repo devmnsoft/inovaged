@@ -464,6 +464,8 @@ builder.Services.AddScoped<IBatchCommands, BatchCommands>();
 
 builder.Services.AddScoped<IPhysicalQueries, PhysicalQueries>();
 builder.Services.AddScoped<IPhysicalCommands, PhysicalCommands>();
+builder.Services.AddScoped<InovaGed.Application.Ged.Labels.ILabelQueries, InovaGed.Infrastructure.Ged.Labels.LabelQueries>();
+builder.Services.AddScoped<InovaGed.Application.Ged.Labels.ILabelCommands, InovaGed.Infrastructure.Ged.Labels.LabelCommands>();
 
 builder.Services.AddScoped<IPopProcedureCommands, PopProcedureCommands>();
 builder.Services.AddScoped<IPopProcedureQueries, PopProcedureQueries>();

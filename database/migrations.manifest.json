@@ -187,6 +187,17 @@
       "maximumApplicationVersion": "04.1.99",
       "requiresMaintenanceWindow": false,
       "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_08_11_loans_overdue_runtime_hotfix",
+      "path": "database/migrations/2026_08_11_loans_overdue_runtime_hotfix.sql",
+      "module": "LoansAndPhysicalRuntimeCompatibility",
+      "transactional": false,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.99",
+      "requiresMaintenanceWindow": false,
+      "requiresVerifiedBackup": true
     }
   ]
 }

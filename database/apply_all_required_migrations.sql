@@ -2978,3 +2978,4 @@ where coalesce(reg_status, 'A') = 'A';
 \ir migrations/2026_08_10_archival_migration_hotfix.sql
 \ir migrations/2026_08_10_final_schema_hotfix.sql
 \ir migrations/2026_08_11_runtime_schema_hotfix.sql
+\ir migrations/2026_08_11_loans_overdue_runtime_hotfix.sql
