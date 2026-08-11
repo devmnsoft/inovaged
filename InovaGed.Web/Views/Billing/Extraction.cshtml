@@ -1,0 +1,5 @@
+@using InovaGed.Web.Models.Atlas
+@{ViewData["Title"]="Executar extração";var header=new AtlasPageHeaderVm("Extração de faturamento","Informe o identificador do documento. O tenant é obtido exclusivamente da sessão autenticada.","ocr","Faturamento",new[]{new AtlasPageAction("Voltar",Url.Action("Index","Billing")!,"arrow-left",false)});}
+<partial name="Atlas/_PageHeader" model="header" />
+@if(TempData["Err"] is string err){<div class="alert alert-warning">@err</div>}
+<div class="card border-0 shadow-sm"><div class="card-body"><h5>Documento com OCR</h5><p class="text-muted">A extração local identifica CPF/CNPJ, nota, datas, valores, impostos, contrato, ordem de serviço e UST, sem enviar dados a serviços externos.</p><form method="post">@Html.AntiForgeryToken()<label class="form-label">ID do documento</label><div class="input-group"><input class="form-control" name="documentId" type="uuid" required /><button class="btn btn-primary">Extrair informações</button></div></form></div></div>

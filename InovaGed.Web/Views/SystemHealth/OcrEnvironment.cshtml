@@ -46,7 +46,24 @@
         <div class="alert alert-warning"><ul class="mb-0">@foreach (var warning in Model.Warnings) { <li>@warning</li> }</ul></div>
     }
 
-    <div class="table-responsive">
+    <div class="row g-3 mb-4">
+        @foreach (var dependency in Model.Checks)
+        {
+            <div class="col-12 col-md-6 col-xl-4">
+                <article class="card border-0 shadow-sm h-100 @(dependency.Success ? "border-start border-success border-4" : "border-start border-danger border-4")">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between gap-2"><h2 class="h6 mb-1">@dependency.Name</h2><span class="badge @(dependency.Success ? "text-bg-success" : "text-bg-danger")">@(dependency.Success ? "Disponível" : "Não encontrado")</span></div>
+                        <div class="small text-muted mb-2"><code>@dependency.ConfigKey</code></div>
+                        <div class="small text-break mb-2"><strong>Caminho:</strong> <code>@(string.IsNullOrWhiteSpace(dependency.Path) ? "não configurado" : dependency.Path)</code></div>
+                        @if (!string.IsNullOrWhiteSpace(dependency.Version)) { <div class="small text-success">@dependency.Version</div> }
+                        @if (!dependency.Success) { <div class="alert alert-warning small mt-2 mb-0"><strong>Como corrigir:</strong> @dependency.Suggestion</div> }
+                    </div>
+                </article>
+            </div>
+        }
+    </div>
+
+    <details class="card border-0 shadow-sm"><summary class="card-header fw-semibold">Detalhes técnicos dos checks</summary><div class="table-responsive">
         <table class="table table-sm table-bordered align-middle">
             <thead class="table-light"><tr><th>Dependência</th><th>Config key</th><th>Caminho</th><th>Existe?</th><th>Executa?</th><th>ExitCode</th><th>Versão/stdout</th><th>Erro/stderr</th><th>Sugestão</th></tr></thead>
             <tbody>
@@ -62,6 +79,6 @@
             }
             </tbody>
         </table>
-    </div>
+    </div></details>
     <textarea id="ocrDiagnosticJson" class="visually-hidden">@diagnosticText</textarea>
 </div>

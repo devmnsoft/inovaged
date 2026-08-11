@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Npgsql;
 
 namespace InovaGed.Infrastructure.Ged.Loans;
 
@@ -16,6 +17,7 @@ public sealed class LoanOverdueWorker : BackgroundService
     private readonly ISchemaCompatibilityState _schemaState;
     private readonly LoanOverdueWorkerOptions _options;
     private bool _loanHistoryWarningLogged;
+    private bool _runtimeSchemaWarningLogged;
 
     public LoanOverdueWorker(
         ILogger<LoanOverdueWorker> logger,
@@ -45,6 +47,12 @@ public sealed class LoanOverdueWorker : BackgroundService
             {
                 try
                 {
+                    if (_runtimeSchemaWarningLogged)
+                    {
+                        await Task.Delay(interval, stoppingToken);
+                        continue;
+                    }
+
                     using var scope = _sp.CreateScope();
 
                     var overdue = scope.ServiceProvider.GetRequiredService<ILoanOverdueService>();
@@ -82,6 +90,14 @@ public sealed class LoanOverdueWorker : BackgroundService
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
                     throw;
+                }
+                catch (PostgresException ex) when (ex.SqlState is PostgresErrorCodes.UndefinedColumn or PostgresErrorCodes.UndefinedTable or PostgresErrorCodes.UndefinedFunction)
+                {
+                    if (!_runtimeSchemaWarningLogged)
+                    {
+                        _logger.LogWarning("LoanOverdueWorker não executado: schema de empréstimos incompleto ({SqlState}, {DatabaseMessage}). Execute database/apply_all_required_migrations.sql. Novos ciclos serão ignorados até reiniciar a aplicação após a migração.", ex.SqlState, ex.MessageText);
+                        _runtimeSchemaWarningLogged = true;
+                    }
                 }
                 catch (Exception ex)
                 {

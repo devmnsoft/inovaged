@@ -1,5 +1,8 @@
 @model IReadOnlyList<InovaGed.Application.Ged.Physical.BoxRowDto>
 
+@{ var atlasHeader = new InovaGed.Web.Models.Atlas.AtlasPageHeaderVm("Caixas do acervo", "Localização, capacidade, conteúdo e rastreabilidade do arquivo físico.", "documents", "Guarda física"); }
+<partial name="Atlas/_PageHeader" model="atlasHeader" />
+<partial name="Atlas/_PageMetrics" model="@(new InovaGed.Web.Models.Atlas.AtlasMetricVm[] { new("Caixas totais", (Model?.Count ?? 0).ToString(), "acervo ativo", "info", "documents"), new("Com localização", (Model?.Count(x => !string.IsNullOrWhiteSpace(x.LocationLabel)) ?? 0).ToString(), "rastreáveis", "success", "check"), new("Sem localização", (Model?.Count(x => string.IsNullOrWhiteSpace(x.LocationLabel)) ?? 0).ToString(), "exigem endereçamento", "warning", "warning") })" />
 @{
     ViewData["Title"] = "Caixas";
     ViewData["Subtitle"] = "Cadastro, endereçamento, rastreio e manutenção das caixas físicas.";

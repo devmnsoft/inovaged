@@ -1,6 +1,8 @@
-﻿@using InovaGed.Application.Ged.Batches
+@using InovaGed.Application.Ged.Batches
 @model BatchCreateVM
 
+@{ var atlasHeader = new InovaGed.Web.Models.Atlas.AtlasPageHeaderVm("Novo lote", "Registre o recebimento e organize os documentos desde a origem.", "document-add", "Gestão documental"); }
+<partial name="Atlas/_PageHeader" model="atlasHeader" />
 @{
     ViewData["Title"] = "Novo lote de tratamento documental";
 }

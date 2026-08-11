@@ -49,10 +49,10 @@ public sealed class LoanCollectionService : ILoanCollectionService
             const string selectLoanSql = """
 select status::text as Status,
        coalesce(collection_count, 0) as CollectionCount
-from ged.loan_request
-where tenant_id = @TenantId
-  and id = @LoanId
-  and coalesce(reg_status, 'A') = 'A'
+from ged.loan_request l
+where l.tenant_id = @TenantId
+  and l.id = @LoanId
+  and coalesce(l.reg_status, 'A') = 'A'
 for update;
 """;
             var loan = await conn.QuerySingleOrDefaultAsync<LoanCollectionState>(
@@ -113,15 +113,15 @@ values
                     cancellationToken: ct));
 
             const string updateLoanSql = """
-update ged.loan_request
+update ged.loan_request l
 set collection_count = coalesce(collection_count, 0) + 1,
     last_collection_at = now(),
     collection_level = @CollectionLevel,
     updated_at = now(),
     updated_by = @ActorId
-where tenant_id = @TenantId
-  and id = @LoanId
-  and coalesce(reg_status, 'A') = 'A';
+where l.tenant_id = @TenantId
+  and l.id = @LoanId
+  and coalesce(l.reg_status, 'A') = 'A';
 """;
             var affectedRows = await conn.ExecuteAsync(
                 new CommandDefinition(

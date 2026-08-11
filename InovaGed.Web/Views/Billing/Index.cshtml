@@ -1,0 +1,20 @@
+@using InovaGed.Application.Billing
+@using InovaGed.Web.Models.Atlas
+@model IReadOnlyList<BillingExtractionDto>
+@{
+ ViewData["Title"]="Faturamento"; var k=(BillingKpis)ViewBag.Kpis; var f=(BillingFilter)ViewBag.Filter;
+ var header=new AtlasPageHeaderVm("Faturamento", "Extração e conferência de dados fiscais a partir do OCR documental.", "report", "Operação financeira",
+  new[]{new AtlasPageAction("Extrair documento", Url.Action("Extraction","Billing")!, "ocr", true),new AtlasPageAction("Regras",Url.Action("Rules","Billing")!,"settings",false)});
+ var metrics=new[]{new AtlasMetricVm("Extraídos",k.Extracted.ToString(),"documentos processados","info","documents"),new AtlasMetricVm("Pendentes",k.PendingReview.ToString(),"aguardando revisão","warning","history"),new AtlasMetricVm("Aprovados",k.Approved.ToString(),"revisados","success","check"),new AtlasMetricVm("Divergências",k.Divergent.ToString(),"exigem atenção","danger","warning"),new AtlasMetricVm("Valor identificado",k.TotalAmount.ToString("C"),"valor bruto acumulado","info","report"),new AtlasMetricVm("Sem OCR",k.WithoutOcr.ToString(),"não podem ser extraídos","warning","ocr")};
+}
+<partial name="Atlas/_PageHeader" model="header" />
+<partial name="Atlas/_PageMetrics" model="metrics" />
+@if(TempData["Ok"] is string ok){<div class="alert alert-success">@ok</div>} @if(TempData["Err"] is string err){<div class="alert alert-danger">@err</div>}
+<form method="get" class="card border-0 shadow-sm mb-3"><div class="card-body row g-2">
+ <div class="col-md"><input class="form-control" name="supplier" value="@f.Supplier" placeholder="Fornecedor" /></div><div class="col-md"><input class="form-control" name="supplierDocument" value="@f.SupplierDocument" placeholder="CNPJ / CPF" /></div>
+ <div class="col-md"><input class="form-control" name="competence" value="@f.Competence" placeholder="Competência MM/AAAA" /></div><div class="col-md"><select class="form-select" name="status"><option value="">Todos os status</option><option value="PENDING_REVIEW">Pendente</option><option value="APPROVED">Aprovado</option><option value="DIVERGENT">Divergente</option></select></div>
+ <div class="col-auto"><button class="btn btn-primary"><app-icon name="search" size="16" decorative="true" /> Filtrar</button></div></div></form>
+<div class="card border-0 shadow-sm"><div class="table-responsive"><table class="table table-hover align-middle text-nowrap mb-0"><thead><tr><th>Documento</th><th>Fornecedor</th><th>Nota</th><th>Competência</th><th>Valor</th><th>Confiança</th><th>Status</th><th></th></tr></thead><tbody>
+@if(Model.Count==0){<tr><td colspan="8" class="text-center py-5"><app-icon name="report" size="32" decorative="true" /><h5 class="mt-2">Nenhuma extração encontrada</h5><p class="text-muted">Execute a extração em um documento com OCR fiscal ou financeiro.</p></td></tr>}
+@foreach(var x in Model){<tr><td><strong>@x.DocumentTitle</strong><div class="small text-muted">@x.DocumentKind</div></td><td>@(x.SupplierName??"—")<div class="small text-muted">@x.SupplierDocument</div></td><td>@(x.InvoiceNumber??"—")</td><td>@(x.CompetenceMonth??"—")</td><td>@(x.GrossAmount?.ToString("C")??"—")</td><td>@x.Confidence.ToString("N0")%</td><td><span class="badge @(x.ExtractionStatus=="APPROVED"?"text-bg-success":x.ExtractionStatus=="DIVERGENT"?"text-bg-danger":"text-bg-warning")">@x.ExtractionStatus</span></td><td><a class="btn btn-sm btn-primary" asp-action="Details" asp-route-id="@x.Id">Ver</a></td></tr>}
+</tbody></table></div></div>

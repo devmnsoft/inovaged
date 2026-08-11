@@ -1,5 +1,7 @@
 @using InovaGed.Application.Ged.Physical
 @model IReadOnlyList<BoxHistoryRowDto>
+@{ var atlasHeader = new InovaGed.Web.Models.Atlas.AtlasPageHeaderVm("Rastreio da caixa", "Histórico de localização, conteúdo e conferências.", "history", "Guarda física"); }
+<partial name="Atlas/_PageHeader" model="atlasHeader" />
 @addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
 
 @{

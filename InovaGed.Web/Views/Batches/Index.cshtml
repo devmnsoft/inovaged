@@ -1,6 +1,9 @@
-﻿@using InovaGed.Application.Ged.Batches
+@using InovaGed.Application.Ged.Batches
 @model IReadOnlyList<BatchRowDto>
 
+@{ var atlasHeader = new InovaGed.Web.Models.Atlas.AtlasPageHeaderVm("Lotes de tratamento", "Acompanhe etapas, documentos e movimentações em uma visão operacional compacta.", "workflow", "Gestão documental"); }
+<partial name="Atlas/_PageHeader" model="atlasHeader" />
+<partial name="Atlas/_PageMetrics" model="@(new InovaGed.Web.Models.Atlas.AtlasMetricVm[] { new("Lotes", (Model?.Count ?? 0).ToString(), "registros na visão atual", "info", "workflow"), new("Documentos", (Model?.Sum(x => x.ItemsCount) ?? 0).ToString(), "itens vinculados", "success", "documents") })" />
 @{
     ViewData["Title"] = "Lotes de Tratamento Documental";
 
