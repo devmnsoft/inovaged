@@ -1,9 +1,20 @@
 @using InovaGed.Application.Billing
 @using InovaGed.Web.Models.Atlas
-@model BillingExtractionDto
-@{ViewData["Title"]="Revisar extração";var header=new AtlasPageHeaderVm("Revisão financeira","Corrija os campos reconhecidos e aprove ou marque divergência.","edit","Faturamento",new[]{new AtlasPageAction("Cancelar",Url.Action("Details","Billing",new{id=Model.Id})!,"close",false)});}
+@model BillingReviewInput
+@{ViewData["Title"]="Revisar extração";var header=new AtlasPageHeaderVm("Revisão financeira",Model.DocumentTitle,"edit","Faturamento",new[]{new AtlasPageAction("Cancelar",Url.Action("Details","Billing",new{id=Model.Id})!,"close",false)});}
 <partial name="Atlas/_PageHeader" model="header" />
-<form method="post" class="card border-0 shadow-sm"><div class="card-body row g-3">@Html.AntiForgeryToken()
-@foreach(var p in new[]{("SupplierName","Fornecedor",Model.SupplierName),("SupplierDocument","CPF / CNPJ",Model.SupplierDocument),("InvoiceNumber","Número da nota",Model.InvoiceNumber),("InvoiceSeries","Série",Model.InvoiceSeries),("CompetenceMonth","Competência",Model.CompetenceMonth),("ContractNumber","Contrato",Model.ContractNumber),("PurchaseOrder","Ordem de serviço / compra",Model.PurchaseOrder),("CostCenter","Centro de custo",Model.CostCenter),("ServiceDescription","Descrição do serviço",Model.ServiceDescription)}){<div class="col-md-6"><label class="form-label">@p.Item2</label><input class="form-control" name="@p.Item1" value="@p.Item3" /></div>}
-<div class="col-md-4"><label class="form-label">Valor bruto</label><input class="form-control" name="GrossAmount" value="@Model.GrossAmount" type="number" step=".01" /></div><div class="col-md-4"><label class="form-label">Valor líquido</label><input class="form-control" name="NetAmount" value="@Model.NetAmount" type="number" step=".01" /></div><div class="col-md-4"><label class="form-label">Impostos</label><input class="form-control" name="TaxAmount" value="@Model.TaxAmount" type="number" step=".01" /></div>
-<div class="col-12 form-check ms-2"><input class="form-check-input" type="checkbox" name="HasDivergence" value="true" id="divergence"><label class="form-check-label" for="divergence">Marcar divergência para tratamento</label></div></div><div class="card-footer text-end"><button class="btn btn-primary">Salvar revisão</button></div></form>
+<form method="post" class="card border-0 shadow-sm">
+<div class="card-body row g-3">@Html.AntiForgeryToken()
+<div asp-validation-summary="ModelOnly" class="alert alert-danger"></div>
+@foreach(var p in new[]{("SupplierName","Fornecedor"),("SupplierDocument","CPF / CNPJ"),("InvoiceNumber","Número da nota"),("InvoiceSeries","Série"),("CompetenceMonth","Competência (MM/AAAA)"),("ContractNumber","Contrato"),("PurchaseOrder","Ordem de serviço / compra"),("CostCenter","Centro de custo"),("ServiceDescription","Descrição do serviço")})
+{<div class="col-md-6"><label class="form-label" for="@p.Item1">@p.Item2</label>@Html.TextBox(p.Item1, null, new {@class="form-control"})@Html.ValidationMessage(p.Item1, null, new {@class="text-danger"})</div>}
+<div class="col-md-3"><label asp-for="IssueDate" class="form-label">Emissão</label><input asp-for="IssueDate" class="form-control" type="date" /><span asp-validation-for="IssueDate" class="text-danger"></span></div>
+<div class="col-md-3"><label asp-for="DueDate" class="form-label">Vencimento</label><input asp-for="DueDate" class="form-control" type="date" /><span asp-validation-for="DueDate" class="text-danger"></span></div>
+<div class="col-md-4"><label asp-for="GrossAmount" class="form-label">Valor bruto</label><input asp-for="GrossAmount" class="form-control" type="number" step=".01" /><span asp-validation-for="GrossAmount" class="text-danger"></span></div>
+<div class="col-md-4"><label asp-for="NetAmount" class="form-label">Valor líquido</label><input asp-for="NetAmount" class="form-control" type="number" step=".01" /><span asp-validation-for="NetAmount" class="text-danger"></span></div>
+<div class="col-md-4"><label asp-for="TaxAmount" class="form-label">Impostos</label><input asp-for="TaxAmount" class="form-control" type="number" step=".01" /><span asp-validation-for="TaxAmount" class="text-danger"></span></div>
+<div class="col-md-4"><label asp-for="UstQuantity" class="form-label">Quantidade UST</label><input asp-for="UstQuantity" class="form-control" type="number" step=".0001" /></div>
+<div class="col-md-4"><label asp-for="UstUnitValue" class="form-label">Valor unitário UST</label><input asp-for="UstUnitValue" class="form-control" type="number" step=".0001" /></div>
+<div class="col-12 form-check ms-2"><input asp-for="HasDivergence" class="form-check-input"><label asp-for="HasDivergence" class="form-check-label">Marcar divergência para tratamento (permite salvar campos fiscais incompletos)</label></div>
+</div><div class="card-footer text-end"><button class="btn btn-primary">Salvar revisão</button></div></form>
+@section Scripts { <partial name="_ValidationScriptsPartial" /> }
