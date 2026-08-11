@@ -37,12 +37,19 @@ public sealed class BillingController(ICurrentUser user, IBillingQueries queries
     public async Task<IActionResult> Details(Guid id, CancellationToken ct) => await queries.GetAsync(user.TenantId, id, ct) is { } item ? View(item) : NotFound();
 
     [HttpGet("Review/{id:guid}")]
-    public async Task<IActionResult> Review(Guid id, CancellationToken ct) => await queries.GetAsync(user.TenantId, id, ct) is { } item ? View(item) : NotFound();
+    public async Task<IActionResult> Review(Guid id, CancellationToken ct) => await queries.GetAsync(user.TenantId, id, ct) is { } item ? View(ToReviewInput(item)) : NotFound();
 
     [HttpPost("Review/{id:guid}")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Review(Guid id, BillingReviewInput input, [FromServices] IBillingCommands commands, CancellationToken ct)
     {
+        if (!ModelState.IsValid)
+        {
+            var existing = await queries.GetAsync(user.TenantId, id, ct);
+            if (existing is null) return NotFound();
+            input.Id = id; input.DocumentTitle = existing.DocumentTitle;
+            return View(input);
+        }
         var ok = await commands.ReviewAsync(user.TenantId, id, user.UserId, input, ct);
         TempData[ok ? "Ok" : "Err"] = ok ? "Revisão registrada com usuário, data e status." : "Extração não encontrada para este tenant.";
         return RedirectToAction(ok ? nameof(Details) : nameof(Index), ok ? new { id } : null);
@@ -50,4 +57,13 @@ public sealed class BillingController(ICurrentUser user, IBillingQueries queries
 
     [HttpGet("Rules")]
     public IActionResult Rules() => View();
+
+    private static BillingReviewInput ToReviewInput(BillingExtractionDto item) => new()
+    {
+        Id = item.Id, DocumentTitle = item.DocumentTitle, SupplierName = item.SupplierName, SupplierDocument = item.SupplierDocument,
+        InvoiceNumber = item.InvoiceNumber, InvoiceSeries = item.InvoiceSeries, IssueDate = item.IssueDate, DueDate = item.DueDate,
+        CompetenceMonth = item.CompetenceMonth, GrossAmount = item.GrossAmount, NetAmount = item.NetAmount, TaxAmount = item.TaxAmount,
+        ContractNumber = item.ContractNumber, PurchaseOrder = item.PurchaseOrder, CostCenter = item.CostCenter,
+        ServiceDescription = item.ServiceDescription, UstQuantity = item.UstQuantity, UstUnitValue = item.UstUnitValue
+    };
 }
