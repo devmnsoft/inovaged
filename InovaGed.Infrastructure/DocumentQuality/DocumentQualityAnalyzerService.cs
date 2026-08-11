@@ -501,6 +501,8 @@ select
  exists(select 1 from information_schema.columns where table_schema='ged' and table_name='document_search' and column_name='version_id') as "HasDocumentSearchVersionId",
  to_regclass('ged.document_partial_part') is not null as "HasPartialPartTable",
  to_regclass('ged.document_acl') is not null as "HasDocumentAcl",
+ exists(select 1 from information_schema.columns where table_schema='ged' and table_name='document_acl' and column_name='tenant_id') as "HasDocumentAclTenantId",
+ exists(select 1 from information_schema.columns where table_schema='ged' and table_name='document_acl' and column_name='reg_status') as "HasDocumentAclRegStatus",
  to_regclass('ged.document_metadata_value') is not null as "HasMetadataValue",
  to_regclass('ged.document_type_field') is not null as "HasTypeField"
 """, cancellationToken: ct));
@@ -530,7 +532,11 @@ left join lateral (
   where pp.tenant_id=d.tenant_id and pp.partial_group_id=v.partial_group_id and coalesce(pp.reg_status,'A')='A'
 ) ps on true
 """ : "left join lateral (select 0::int as parts_count, 0::int as parts_with_ocr) ps on true";
-        var aclExpr = s.HasDocumentAcl ? "exists(select 1 from ged.document_acl a where a.tenant_id=d.tenant_id and a.document_id=d.id and coalesce(a.reg_status,'A')='A')" : "false";
+        var aclTenantPredicate = s.HasDocumentAclTenantId ? " and a.tenant_id=d.tenant_id" : string.Empty;
+        var aclStatusPredicate = s.HasDocumentAclRegStatus ? " and coalesce(a.reg_status,'A')='A'" : string.Empty;
+        var aclExpr = s.HasDocumentAcl
+            ? $"exists(select 1 from ged.document_acl a where a.document_id=d.id{aclTenantPredicate}{aclStatusPredicate})"
+            : "false";
         var missingMetaExpr = s.HasMetadataValue && s.HasTypeField ? $"""
 exists (
   select 1 from ged.document_type_field tf
@@ -635,6 +641,8 @@ limit 1
         public bool HasDocumentSearchVersionId { get; set; }
         public bool HasPartialPartTable { get; set; }
         public bool HasDocumentAcl { get; set; }
+        public bool HasDocumentAclTenantId { get; set; }
+        public bool HasDocumentAclRegStatus { get; set; }
         public bool HasMetadataValue { get; set; }
         public bool HasTypeField { get; set; }
     }

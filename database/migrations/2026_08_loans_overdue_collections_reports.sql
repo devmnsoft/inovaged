@@ -1,6 +1,8 @@
 -- Empréstimos operacionais: vencimento, cobrança, renovação e relatórios (idempotente/aditivo).
 create schema if not exists ged;
 
+alter table if exists ged.loan_request add column if not exists reg_status char(1) not null default 'A';
+alter table if exists ged.loan_request_item add column if not exists reg_status char(1) not null default 'A';
 alter table if exists ged.loan_request add column if not exists last_collection_at timestamptz null;
 alter table if exists ged.loan_request add column if not exists collection_count integer not null default 0;
 alter table if exists ged.loan_request add column if not exists collection_level text null;
@@ -65,10 +67,10 @@ begin
      and upper(lr.status::text) in ('APPROVED','DELIVERED','PREPARING_PHYSICAL','WAITING_PICKUP','DIGITAL_LINK_SENT')
      and not exists (select 1 from ged.loan_collection_event e where e.tenant_id=lr.tenant_id
                       and e.loan_request_id=lr.id and e.event_type='OVERDUE' and coalesce(e.reg_status,'A')='A');
-  execute $q$update ged.loan_request set status='OVERDUE'::ged.loan_status,updated_at=now()
+  execute $q$update ged.loan_request lr set status='OVERDUE'::ged.loan_status,updated_at=now()
     ,last_collection_at=now(),collection_count=coalesce(collection_count,0)+1,collection_level='FIRST_NOTICE'
-   where tenant_id=$1 and due_at<now() and coalesce(reg_status,'A')='A'
-   and upper(status::text) in ('APPROVED','DELIVERED','PREPARING_PHYSICAL','WAITING_PICKUP','DIGITAL_LINK_SENT')$q$ using v_tenant_id;
+   where lr.tenant_id=$1 and lr.due_at<now() and coalesce(lr.reg_status,'A')='A'
+   and upper(lr.status::text) in ('APPROVED','DELIVERED','PREPARING_PHYSICAL','WAITING_PICKUP','DIGITAL_LINK_SENT')$q$ using v_tenant_id;
   get diagnostics v_count = row_count;
  end if;
  return v_count;

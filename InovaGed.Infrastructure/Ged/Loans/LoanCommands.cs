@@ -495,16 +495,16 @@ select to_regtype('ged.loan_status') is not null
             if (canUpdateOverdueStatus)
             {
                 const string updateSql = """
-update ged.loan_request
+update ged.loan_request lr
 set
     status = 'OVERDUE'::ged.loan_status,
     updated_at = now(),
     updated_by = @UserId
-where tenant_id = @TenantId
-  and coalesce(reg_status, 'A') = 'A'
-  and due_at is not null
-  and due_at < now()
-  and upper(status::text) in ('APPROVED','DELIVERED','PREPARING_PHYSICAL','WAITING_PICKUP','DIGITAL_LINK_SENT');
+where lr.tenant_id = @TenantId
+  and coalesce(lr.reg_status, 'A') = 'A'
+  and lr.due_at is not null
+  and lr.due_at < now()
+  and upper(lr.status::text) in ('APPROVED','DELIVERED','PREPARING_PHYSICAL','WAITING_PICKUP','DIGITAL_LINK_SENT');
 """;
 
                 await conn.ExecuteAsync(
