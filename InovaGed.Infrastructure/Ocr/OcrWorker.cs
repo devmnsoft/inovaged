@@ -292,7 +292,7 @@ public sealed class OcrWorker : BackgroundService
                         if (billing.LooksFinancial(extractedText))
                         {
                             var commands = scope.ServiceProvider.GetRequiredService<IBillingCommands>();
-                            var billingData = billing.Extract(new BillingExtractionCandidate(sourceVersion.DocumentId, ocrVersionId, extractedText));
+                            var billingData = await billing.ExtractAsync(job.TenantId, new BillingExtractionCandidate(sourceVersion.DocumentId, ocrVersionId, extractedText), stoppingToken);
                             await commands.SaveExtractionAsync(job.TenantId, billingData, stoppingToken);
                         }
                     }

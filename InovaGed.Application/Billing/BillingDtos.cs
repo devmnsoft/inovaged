@@ -115,3 +115,31 @@ public static class BrazilianTaxId
 }
 
 public sealed record BillingExtractionCandidate(Guid DocumentId, Guid? DocumentVersionId, string Text);
+
+public class BillingExtractionRuleInput : IValidatableObject
+{
+    public Guid Id { get; set; }
+    [Required, StringLength(160)] public string Name { get; set; } = "";
+    [Required, StringLength(60)] public string DocumentKind { get; set; } = "BILLING_DOCUMENT";
+    [Required, StringLength(60)] public string TargetField { get; set; } = "InvoiceNumber";
+    [StringLength(200)] public string? Keyword { get; set; }
+    [StringLength(1000)] public string? RegexPattern { get; set; }
+    [Range(1, 10000)] public int Priority { get; set; } = 100;
+    public bool IsRequired { get; set; }
+    public bool IsActive { get; set; } = true;
+
+    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+    {
+        if (string.IsNullOrWhiteSpace(Keyword) && string.IsNullOrWhiteSpace(RegexPattern))
+            yield return new ValidationResult("Informe uma palavra-chave ou expressão regular.", [nameof(Keyword), nameof(RegexPattern)]);
+        if (!string.IsNullOrWhiteSpace(RegexPattern))
+            try { _ = new Regex(RegexPattern, RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(250)); }
+            catch (ArgumentException) { yield return new ValidationResult("A expressão regular é inválida.", [nameof(RegexPattern)]); }
+    }
+}
+
+public sealed class BillingExtractionRuleDto : BillingExtractionRuleInput
+{
+    public DateTime CreatedAt { get; set; }
+    public DateTime? UpdatedAt { get; set; }
+}

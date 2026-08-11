@@ -465,6 +465,7 @@ builder.Services.AddScoped<IBatchQueries, BatchQueries>();
 builder.Services.AddScoped<IBillingQueries, BillingQueries>();
 builder.Services.AddScoped<IBillingCommands, BillingCommands>();
 builder.Services.AddScoped<IBillingExtractionService, BillingExtractionService>();
+builder.Services.AddScoped<IBillingRuleService, BillingRuleService>();
 builder.Services.AddScoped<IBatchCommands, BatchCommands>();
 
 builder.Services.AddScoped<IPhysicalQueries, PhysicalQueries>();

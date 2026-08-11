@@ -1,6 +1,7 @@
 using InovaGed.Application.Billing;
 using InovaGed.Application.Identity;
 using InovaGed.Web.Security;
+using InovaGed.Web.Models.Billing;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -8,7 +9,7 @@ namespace InovaGed.Web.Controllers;
 
 [Authorize(Policy = AppPolicies.FullAdminOnly)]
 [Route("Billing")]
-public sealed class BillingController(ICurrentUser user, IBillingQueries queries, IBillingExtractionService extraction) : Controller
+public sealed class BillingController(ICurrentUser user, IBillingQueries queries, IBillingExtractionService extraction, IBillingRuleService rules) : Controller
 {
     [HttpGet("")]
     [HttpGet("Documents")]
@@ -56,7 +57,31 @@ public sealed class BillingController(ICurrentUser user, IBillingQueries queries
     }
 
     [HttpGet("Rules")]
-    public IActionResult Rules() => View();
+    public async Task<IActionResult> Rules(Guid? edit, CancellationToken ct)
+    {
+        var items = await rules.ListAsync(user.TenantId, ct);
+        var form = edit.HasValue ? items.FirstOrDefault(x => x.Id == edit.Value) ?? new BillingExtractionRuleInput() : new BillingExtractionRuleInput();
+        return View(new BillingRulesPageVm(items, form));
+    }
+
+    [HttpPost("Rules")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SaveRule(BillingExtractionRuleInput input, CancellationToken ct)
+    {
+        if (!ModelState.IsValid)
+            return View("Rules", new BillingRulesPageVm(await rules.ListAsync(user.TenantId, ct), input));
+        await rules.SaveAsync(user.TenantId, user.UserId, input, ct);
+        TempData["Ok"] = "Regra de extração salva e disponível para os próximos OCRs.";
+        return RedirectToAction(nameof(Rules));
+    }
+
+    [HttpPost("Rules/{id:guid}/Delete")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> DeleteRule(Guid id, CancellationToken ct)
+    {
+        TempData[await rules.DeleteAsync(user.TenantId, user.UserId, id, ct) ? "Ok" : "Err"] = "Regra removida.";
+        return RedirectToAction(nameof(Rules));
+    }
 
     private static BillingReviewInput ToReviewInput(BillingExtractionDto item) => new()
     {

@@ -2982,3 +2982,4 @@ where coalesce(reg_status, 'A') = 'A';
 
 \ir migrations/2026_08_11_billing_extraction.sql
 \ir migrations/2026_08_11_billing_review_governance.sql
+\ir migrations/2026_08_11_billing_extraction_rules.sql
