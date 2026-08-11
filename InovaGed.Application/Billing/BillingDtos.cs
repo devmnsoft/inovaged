@@ -133,8 +133,19 @@ public class BillingExtractionRuleInput : IValidatableObject
         if (string.IsNullOrWhiteSpace(Keyword) && string.IsNullOrWhiteSpace(RegexPattern))
             yield return new ValidationResult("Informe uma palavra-chave ou expressão regular.", [nameof(Keyword), nameof(RegexPattern)]);
         if (!string.IsNullOrWhiteSpace(RegexPattern))
-            try { _ = new Regex(RegexPattern, RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(250)); }
-            catch (ArgumentException) { yield return new ValidationResult("A expressão regular é inválida.", [nameof(RegexPattern)]); }
+        {
+            bool regexIsValid = true;
+            try
+            {
+                _ = new Regex(RegexPattern, RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(250));
+            }
+            catch (ArgumentException)
+            {
+                regexIsValid = false;
+            }
+            if (!regexIsValid)
+                yield return new ValidationResult("A expressão regular é inválida.", [nameof(RegexPattern)]);
+        }
     }
 }
 
