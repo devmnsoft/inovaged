@@ -1,7 +1,16 @@
 -- Smart contextual search, guided loans and secure shared delivery
 create schema if not exists ged;
 create extension if not exists pgcrypto;
-create extension if not exists unaccent;
+do $$ begin
+    create extension if not exists unaccent;
+exception
+    when insufficient_privilege then
+        raise notice 'Sem permissão para unaccent; termos contextuais usarão normalização básica.';
+    when undefined_file then
+        raise notice 'unaccent indisponível; termos contextuais usarão normalização básica.';
+    when others then
+        raise notice 'Não foi possível habilitar unaccent: %. Termos contextuais usarão normalização básica.', sqlerrm;
+end $$;
 
 create table if not exists ged.search_context_term (
     id uuid primary key default gen_random_uuid(),
@@ -21,7 +30,9 @@ create index if not exists ix_search_context_term_synonyms_gin on ged.search_con
 create index if not exists ix_search_context_term_related_gin on ged.search_context_term using gin(related_terms);
 
 insert into ged.search_context_term(tenant_id, term, normalized_term, category, synonyms, related_terms, weight, is_sensitive)
-select t.id, s.term, lower(unaccent(coalesce(s.term,''))), s.category, s.synonyms, s.related_terms, s.weight, s.is_sensitive
+-- A normalização persistida é deliberadamente independente de extensões. A
+-- camada de busca expande/normaliza acentos e mantém ILIKE como fallback.
+select t.id, s.term, lower(coalesce(s.term,'')), s.category, s.synonyms, s.related_terms, s.weight, s.is_sensitive
 from (select distinct tenant_id as id from ged.app_user where tenant_id is not null) t
 cross join (values
 ('câncer de mama','clinical',array['neoplasia mamária','carcinoma mamário','tumor de mama','CA mama','cancer mama','oncologia mama','mastologia'],array['mama','oncologia','mastologia','laudo','exame','prontuário'],3,true),
@@ -32,7 +43,7 @@ cross join (values
 ('tomografia','document_type',array['TC','tomografia computadorizada'],array['exame','laudo'],1.5,false),
 ('prontuário','document_type',array['registro do paciente','ficha do paciente'],array['paciente','histórico clínico'],1.5,true)
 ) as s(term, category, synonyms, related_terms, weight, is_sensitive)
-where not exists (select 1 from ged.search_context_term x where x.tenant_id=t.id and x.normalized_term=lower(unaccent(s.term)) and x.reg_status='A');
+where not exists (select 1 from ged.search_context_term x where x.tenant_id=t.id and x.normalized_term=lower(s.term) and x.reg_status='A');
 
 
 do $$

@@ -1,4 +1,3 @@
-using System.Data;
 using Dapper;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Ged.Documents;
@@ -58,8 +57,15 @@ order by d.created_at desc nulls last limit 20
     public async Task<int> RebuildVectorsAsync(Guid tenantId, CancellationToken ct)
     {
         await using var cn = await _db.OpenAsync(ct);
-        var hasUnaccent = await HasExtensionAsync(cn, "unaccent", ct);
-        var expr = hasUnaccent ? "unaccent(coalesce(search_text,''))" : "coalesce(search_text,'')";
+        var unaccentSchema = await cn.ExecuteScalarAsync<string?>(new CommandDefinition("""
+select quote_ident(n.nspname)
+from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+where p.proname='unaccent' and pg_get_function_identity_arguments(p.oid)='text'
+limit 1
+""", cancellationToken: ct));
+        var expr = unaccentSchema is null
+            ? "coalesce(search_text,'')"
+            : $"{unaccentSchema}.unaccent(coalesce(search_text,''))";
         return await cn.ExecuteAsync(new CommandDefinition($"update ged.document_search_index set search_vector=to_tsvector('portuguese', {expr}), updated_at=now() where tenant_id=@tenantId", new { tenantId }, cancellationToken: ct, commandTimeout: 120));
     }
 
@@ -76,6 +82,4 @@ where d.tenant_id=@tenantId and coalesce(d.reg_status,'A')='A'
         return await cn.ExecuteAsync(new CommandDefinition(sql, new { tenantId }, cancellationToken: ct));
     }
 
-    private static Task<bool> HasExtensionAsync(IDbConnection cn, string extensionName, CancellationToken ct)
-        => cn.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from pg_extension where extname=@extensionName)", new { extensionName }, cancellationToken: ct));
 }
