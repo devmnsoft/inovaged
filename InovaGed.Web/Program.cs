@@ -11,6 +11,7 @@ using System.Security.Cryptography.X509Certificates;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using InovaGed.Application;
 using InovaGed.Application.Audit;
+using InovaGed.Application.Billing;
 using InovaGed.Application.Auditing;
 using InovaGed.Application.Auth;
 using InovaGed.Application.Classification;
@@ -55,6 +56,7 @@ using InovaGed.Application.WorkspaceSearch;
 using InovaGed.Application.Workspace.Commands;
 using InovaGed.Infrastructure;
 using InovaGed.Infrastructure.Audit;
+using InovaGed.Infrastructure.Billing;
 using InovaGed.Infrastructure.Auditing;
 using InovaGed.Infrastructure.Auth;
 using InovaGed.Infrastructure.Classification;
@@ -460,6 +462,9 @@ builder.Services.AddScoped<ISolicitacaoService, SolicitacaoService>();
 builder.Services.AddScoped<ISecureDocumentLinkService, SecureDocumentLinkService>();
 
 builder.Services.AddScoped<IBatchQueries, BatchQueries>();
+builder.Services.AddScoped<IBillingQueries, BillingQueries>();
+builder.Services.AddScoped<IBillingCommands, BillingCommands>();
+builder.Services.AddScoped<IBillingExtractionService, BillingExtractionService>();
 builder.Services.AddScoped<IBatchCommands, BatchCommands>();
 
 builder.Services.AddScoped<IPhysicalQueries, PhysicalQueries>();

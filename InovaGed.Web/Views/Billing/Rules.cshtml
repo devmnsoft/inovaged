@@ -1,0 +1,4 @@
+@using InovaGed.Web.Models.Atlas
+@{ViewData["Title"]="Regras de faturamento";var header=new AtlasPageHeaderVm("Regras de extração","Regras locais, determinísticas e auditáveis usadas sobre o texto OCR.","settings","Faturamento",new[]{new AtlasPageAction("Voltar",Url.Action("Index","Billing")!,"arrow-left",false)});}
+<partial name="Atlas/_PageHeader" model="header" />
+<div class="row g-3">@foreach(var x in new[]{("Identificação fiscal","CPF, CNPJ, fornecedor, nota e série."),("Datas","Emissão, vencimento e competência."),("Valores e tributos","Bruto, líquido, ISS, INSS, PIS, COFINS, IR e CSLL."),("Contratos e serviços","Contrato, ordem, centro de custo, descrição e UST.")}){<div class="col-md-6"><div class="card border-0 shadow-sm h-100"><div class="card-body"><h5>@x.Item1</h5><p class="text-muted mb-0">@x.Item2</p></div></div></div>}</div>

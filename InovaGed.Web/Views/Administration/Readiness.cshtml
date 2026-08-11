@@ -1,4 +1,6 @@
 @model InovaGed.Web.Models.Administration.EnvironmentReadinessVM
+@{ var atlasHeader = new InovaGed.Web.Models.Atlas.AtlasPageHeaderVm("Prontidão do ambiente", "Saúde, segurança e recomendações acionáveis para operação.", "health", "Administração"); }
+<partial name="Atlas/_PageHeader" model="atlasHeader" />
 @{ ViewData["Title"] = "Prontidão do ambiente"; ViewData["Subtitle"] = "Banco, migrations, dependências, workers e módulos"; }
 <header class="ig-page-header"><div><span class="ig-eyebrow">Operações seguras</span><h1>Central de Prontidão Operacional</h1><p>Valide o ambiente antes de liberá-lo, sem expor segredos ou executar SQL pelo navegador.</p></div><a class="btn btn-outline-secondary" asp-action="Readiness">Revalidar ambiente</a></header>
 <div class="ig-kpi-grid"><article class="ig-kpi-card"><strong>@Model.Available</strong><span>Módulos disponíveis</span></article><article class="ig-kpi-card"><strong>@Model.Pending</strong><span>Pendências</span></article></div>

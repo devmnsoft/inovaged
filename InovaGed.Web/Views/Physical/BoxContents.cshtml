@@ -1,5 +1,7 @@
 @model IReadOnlyList<InovaGed.Application.Ged.Physical.BoxContentItemDto>
 @using InovaGed.Application.Ged.Physical
+@{ var atlasHeader = new InovaGed.Web.Models.Atlas.AtlasPageHeaderVm("Conteúdo da caixa", "Documentos vinculados e operações de movimentação.", "documents", "Guarda física"); }
+<partial name="Atlas/_PageHeader" model="atlasHeader" />
 @addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
 
 @{

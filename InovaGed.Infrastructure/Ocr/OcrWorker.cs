@@ -2,6 +2,7 @@
 using Dapper;
 using InovaGed.Application;
 using InovaGed.Application.Classification;
+using InovaGed.Application.Billing;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Documents;
 using InovaGed.Application.Ocr;
@@ -282,6 +283,23 @@ public sealed class OcrWorker : BackgroundService
                         actorId,
                         extractedText,
                         stoppingToken);
+
+                    // Faturamento é derivado localmente do mesmo texto persistido pelo OCR. Uma falha
+                    // nesta projeção não invalida o OCR e será registrada como warning operacional.
+                    try
+                    {
+                        var billing = scope.ServiceProvider.GetRequiredService<IBillingExtractionService>();
+                        if (billing.LooksFinancial(extractedText))
+                        {
+                            var commands = scope.ServiceProvider.GetRequiredService<IBillingCommands>();
+                            var billingData = billing.Extract(new BillingExtractionCandidate(sourceVersion.DocumentId, ocrVersionId, extractedText));
+                            await commands.SaveExtractionAsync(job.TenantId, billingData, stoppingToken);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "OCR concluído, mas a projeção de faturamento não pôde ser atualizada. DocumentId={DocumentId}", sourceVersion.DocumentId);
+                    }
 
                     await jobs.MarkCompletedAsync(
                         job.Id,

@@ -39,7 +39,7 @@ public sealed class OcrEnvironmentValidator : IOcrEnvironmentValidator
             result.Warnings.Add("O OCRmyPDF está instalado dentro do perfil do usuário Administrator. Em ambiente IIS, o AppPool pode não ter acesso. Recomenda-se instalar em caminho global, por exemplo C:\\Tools\\Python311 ou C:\\Program Files\\Python311.");
 
         result.Checks.Add(await CheckExecutableAsync("OCRmyPDF", "Ocr:OcrMyPdfPath", _options.OcrMyPdfPath, new[] { "--version" }, env, ct));
-        result.Checks.Add(await CheckExecutableAsync("Python", "Ocr:PythonPath", _options.PythonPath, new[] { "--version" }, env, ct));
+        result.Checks.Add(await CheckPythonAsync(env, ct));
         result.Checks.Add(await CheckExecutableAsync("Tesseract", "Ocr:TesseractPath", _options.TesseractPath, new[] { "--version" }, env, ct));
         result.Checks.Add(CheckDirectory("TesseractDataPath", "Ocr:TesseractDataPath", _options.TesseractDataPath, "Configure a pasta tessdata do Tesseract."));
         result.Checks.Add(CheckFile("Tesseract idioma português", "Ocr:TesseractDataPath", Path.Combine(_options.TesseractDataPath ?? string.Empty, "por.traineddata"), "Instale/copiei por.traineddata para a pasta tessdata."));
@@ -72,6 +72,29 @@ public sealed class OcrEnvironmentValidator : IOcrEnvironmentValidator
             return Check(name, configKey, path, false, false, cmd, null, "Arquivo não encontrado ou caminho não configurado.", SuggestExecutable(path));
         var proc = await _runner.RunVersionAsync(path!, args, AppContext.BaseDirectory, env, TimeSpan.FromSeconds(10), ct);
         return Check(name, configKey, path, true, proc.Success, cmd, proc, proc.Success ? null : proc.ExceptionMessage ?? "Comando de versão falhou.", proc.Success ? null : SuggestExecutable(path));
+    }
+
+    private async Task<OcrEnvironmentCheckResult> CheckPythonAsync(IDictionary<string, string> env, CancellationToken ct)
+    {
+        if (!string.IsNullOrWhiteSpace(_options.PythonPath))
+            return await CheckExecutableAsync("Python", "Ocr:PythonPath", _options.PythonPath, new[] { "--version" }, env, ct);
+
+        foreach (var candidate in new[] { (Command: "python", Args: new[] { "--version" }), (Command: "py", Args: new[] { "-3", "--version" }) })
+        {
+            var check = await CheckExecutableAsync("Python", "Ocr:PythonPath", candidate.Command, candidate.Args, env, ct);
+            if (check.Success)
+            {
+                check.Message = $"Detectado automaticamente por '{candidate.Command} {string.Join(' ', candidate.Args.Take(candidate.Args.Length - 1))}'.".Trim();
+                check.Suggestion = "Para produção/IIS, configure Ocr:PythonPath com um caminho global explícito.";
+                return check;
+            }
+        }
+
+        return Check("Python", "Ocr:PythonPath", null, false, false, "python --version / py -3 --version", null,
+            "Python não foi encontrado no PATH do processo.",
+            OperatingSystem.IsWindows()
+                ? @"Instale Python para todos os usuários (por exemplo C:\Program Files\Python311), marque Add to PATH e configure Ocr:PythonPath. Evite perfis AppData de administradores."
+                : "Instale Python 3 globalmente e configure Ocr:PythonPath ou disponibilize python no PATH do serviço.");
     }
 
     private static OcrEnvironmentCheckResult Check(string name, string? key, string? path, bool exists, bool success, string? cmd, OcrProcessResult? proc, string? message, string? suggestion) => new() { Name = name, ConfigKey = key, Path = path, Required = true, Exists = exists, CanExecute = proc?.Success ?? success, Success = success, VersionCommand = cmd, ExitCode = proc?.ExitCode, StdOut = proc?.StdOut, StdErr = proc?.StdErr, ElapsedMs = proc?.ElapsedMs ?? 0, ProcessResult = proc, Message = message, Suggestion = suggestion };

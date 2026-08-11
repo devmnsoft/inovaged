@@ -1,5 +1,7 @@
-﻿@using InovaGed.Application.Ged.Batches
+@using InovaGed.Application.Ged.Batches
 
+@{ var atlasHeader = new InovaGed.Web.Models.Atlas.AtlasPageHeaderVm("Detalhes do lote", "Documentos, etapa atual e trilha completa de movimentações.", "workflow", "Gestão documental"); }
+<partial name="Atlas/_PageHeader" model="atlasHeader" />
 @{
     var header = ViewBag.Header as BatchRowDto;
     var items = ViewBag.Items as List<BatchItemDto> ?? new List<BatchItemDto>();

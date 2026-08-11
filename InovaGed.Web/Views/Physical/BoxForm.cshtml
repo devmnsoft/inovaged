@@ -1,4 +1,6 @@
-﻿@model InovaGed.Application.Ged.Physical.BoxFormVM
+@model InovaGed.Application.Ged.Physical.BoxFormVM
+@{ var atlasHeader = new InovaGed.Web.Models.Atlas.AtlasPageHeaderVm("Cadastro da caixa", "Identificação, capacidade e localização física.", "documents", "Guarda física"); }
+<partial name="Atlas/_PageHeader" model="atlasHeader" />
 @addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
 
 @{
