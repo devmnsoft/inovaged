@@ -1,7 +1,19 @@
 -- InovaGED - Busca Inteligente Conversacional (idempotente)
 CREATE SCHEMA IF NOT EXISTS ged;
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-CREATE EXTENSION IF NOT EXISTS unaccent;
+DO $$ BEGIN
+    CREATE EXTENSION IF NOT EXISTS pgcrypto;
+EXCEPTION WHEN insufficient_privilege THEN
+    RAISE NOTICE 'Sem permissão para pgcrypto; IDs dependerão da função disponível no banco.';
+WHEN others THEN
+    RAISE NOTICE 'pgcrypto indisponível: %', SQLERRM;
+END $$;
+DO $$ BEGIN
+    CREATE EXTENSION IF NOT EXISTS unaccent;
+EXCEPTION WHEN insufficient_privilege OR undefined_file THEN
+    RAISE NOTICE 'unaccent indisponível; busca continuará por FTS/ILIKE.';
+WHEN others THEN
+    RAISE NOTICE 'Não foi possível habilitar unaccent: %', SQLERRM;
+END $$;
 DO $$ BEGIN
     CREATE EXTENSION IF NOT EXISTS pg_trgm;
 EXCEPTION WHEN insufficient_privilege OR undefined_file THEN

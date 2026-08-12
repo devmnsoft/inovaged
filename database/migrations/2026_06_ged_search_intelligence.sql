@@ -1,15 +1,25 @@
 -- InovaGED - GED Smart Search Intelligence (idempotent, text-only)
 CREATE SCHEMA IF NOT EXISTS ged;
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
+DO $$ BEGIN
+    CREATE EXTENSION IF NOT EXISTS pgcrypto;
+EXCEPTION WHEN insufficient_privilege THEN
+    RAISE NOTICE 'Sem permissão para pgcrypto; IDs dependerão da função disponível no banco.';
+WHEN others THEN
+    RAISE NOTICE 'pgcrypto indisponível: %', SQLERRM;
+END $$;
 DO $$ BEGIN
     CREATE EXTENSION IF NOT EXISTS unaccent;
-EXCEPTION WHEN insufficient_privilege THEN
+EXCEPTION WHEN insufficient_privilege OR undefined_file THEN
     RAISE NOTICE 'unaccent extension was not created due to insufficient privileges; smart search will use fallback semantics.';
+WHEN others THEN
+    RAISE NOTICE 'unaccent extension is unavailable: %; smart search will use fallback semantics.', SQLERRM;
 END $$;
 DO $$ BEGIN
     CREATE EXTENSION IF NOT EXISTS pg_trgm;
-EXCEPTION WHEN insufficient_privilege THEN
+EXCEPTION WHEN insufficient_privilege OR undefined_file THEN
     RAISE NOTICE 'pg_trgm extension was not created due to insufficient privileges; smart search will use ILIKE fallback semantics.';
+WHEN others THEN
+    RAISE NOTICE 'pg_trgm extension is unavailable: %; smart search will use ILIKE fallback semantics.', SQLERRM;
 END $$;
 
 CREATE TABLE IF NOT EXISTS ged.search_synonym (
