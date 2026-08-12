@@ -242,6 +242,17 @@
       "maximumApplicationVersion": "04.1.99",
       "requiresMaintenanceWindow": false,
       "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_08_12_protocol_tramitation",
+      "path": "database/migrations/2026_08_12_protocol_tramitation.sql",
+      "module": "ProtocolTramitation",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.99",
+      "requiresMaintenanceWindow": false,
+      "requiresVerifiedBackup": true
     }
   ]
 }

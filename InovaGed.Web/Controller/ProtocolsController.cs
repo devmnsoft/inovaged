@@ -111,4 +111,27 @@ public sealed class ProtocolsController : Controller
         TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Solicitação de empréstimo/documento gerada." : res.ErrorMessage;
         return RedirectToAction(nameof(Details), new { id });
     }
+
+    [Authorize(Policy = AppPolicies.ProtocolManage)]
+    [HttpPost("{id:guid}/Forward")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Forward(Guid id, ProtocolForwardCommand command, CancellationToken ct)
+    {
+        if (!await _access.CanManageAsync(_user.TenantId, id, _user.UserId, User, ct)) return Forbid();
+        command.ProtocolId = id;
+        var res = await _service.ForwardAsync(_user.TenantId, _user.UserId, command, ct);
+        TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Protocolo encaminhado e registrado na linha do tempo." : res.ErrorMessage;
+        return RedirectToAction(nameof(Details), new { id });
+    }
+
+    [Authorize(Policy = AppPolicies.ProtocolManage)]
+    [HttpPost("{id:guid}/Receive")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Receive(Guid id, CancellationToken ct)
+    {
+        if (!await _access.CanManageAsync(_user.TenantId, id, _user.UserId, User, ct)) return Forbid();
+        var res = await _service.ReceiveAsync(_user.TenantId, id, _user.UserId, ct);
+        TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Recebimento confirmado." : res.ErrorMessage;
+        return RedirectToAction(nameof(Details), new { id });
+    }
 }
