@@ -171,6 +171,15 @@ public sealed class ProtocolHistoryVm
     public string? InternalNotes { get; set; }
 }
 
+public sealed class ProtocolForwardCommand
+{
+    public Guid ProtocolId { get; set; }
+    public Guid DestinationSectorId { get; set; }
+    public string DestinationSectorName { get; set; } = string.Empty;
+    public Guid? ResponsibleUserId { get; set; }
+    public string Reason { get; set; } = string.Empty;
+}
+
 public sealed class ProtocolLoanVm
 {
     public Guid Id { get; set; }
@@ -216,9 +225,14 @@ public interface IProtocolCommandService
     Task<Result> RespondAdjustmentAsync(Guid tenantId, Guid id, Guid userId, string response, CancellationToken ct);
     Task<Result> AddAttachmentAsync(Guid tenantId, Guid id, Guid userId, string fileName, string? contentType, long sizeBytes, string storagePath, CancellationToken ct);
     Task<Result<Guid>> CreateLoanAsync(Guid tenantId, Guid id, Guid userId, CancellationToken ct);
+    Task<Result> ForwardAsync(Guid tenantId, Guid userId, ProtocolForwardCommand command, CancellationToken ct);
+    Task<Result> ReceiveAsync(Guid tenantId, Guid id, Guid userId, CancellationToken ct);
 }
 
 public interface IProtocolRequestService : IProtocolQueryService, IProtocolCommandService { }
+public interface IProtocolQueries : IProtocolQueryService { }
+public interface IProtocolCommands : IProtocolCommandService { }
+public interface IProtocolService : IProtocolRequestService, IProtocolQueries, IProtocolCommands { }
 
 public interface IProtocolHistoryWriter
 {

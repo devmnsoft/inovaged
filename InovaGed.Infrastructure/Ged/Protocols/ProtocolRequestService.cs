@@ -11,7 +11,7 @@ using System.Text;
 
 namespace InovaGed.Infrastructure.Ged.Protocols;
 
-public sealed class ProtocolRequestService : IProtocolRequestService
+public sealed class ProtocolRequestService : IProtocolService
 {
     private readonly IDbConnectionFactory _db;
     private readonly IAuditWriter _audit;
@@ -87,6 +87,73 @@ values (gen_random_uuid(), @TenantId, @ProtocolId, @DocumentId, @DocumentVersion
     public Task<Result> RejectAsync(Guid tenantId, Guid id, Guid userId, string reason, string? internalNotes, CancellationToken ct) => RequireReasonTransitionAsync(tenantId, id, userId, ProtocolStatuses.Rejected, "PROTOCOL_REJECTED", reason, internalNotes, ct);
     public Task<Result> FinishAsync(Guid tenantId, Guid id, Guid userId, string reason, string? internalNotes, CancellationToken ct) => RequireReasonTransitionAsync(tenantId, id, userId, ProtocolStatuses.Finished, "PROTOCOL_FINISHED", reason, internalNotes, ct, finished: true);
     public Task<Result> RespondAdjustmentAsync(Guid tenantId, Guid id, Guid userId, string response, CancellationToken ct) => RequireReasonTransitionAsync(tenantId, id, userId, ProtocolStatuses.AdjustmentAnswered, "PROTOCOL_ADJUSTMENT_ANSWERED", response, null, ct);
+
+    public async Task<Result> ForwardAsync(Guid tenantId, Guid userId, ProtocolForwardCommand command, CancellationToken ct)
+    {
+        if (command.ProtocolId == Guid.Empty || command.DestinationSectorId == Guid.Empty || string.IsNullOrWhiteSpace(command.DestinationSectorName))
+            return Result.Fail("DESTINATION", "Informe o setor de destino.");
+        if (string.IsNullOrWhiteSpace(command.Reason)) return Result.Fail("REASON", "Informe o motivo do encaminhamento.");
+
+        try
+        {
+            await using var conn = await _db.OpenAsync(ct);
+            await using var tx = await conn.BeginTransactionAsync(ct);
+            var movementId = await conn.ExecuteScalarAsync<Guid?>(new CommandDefinition("""
+with current_protocol as (
+  select p.* from ged.protocol_request p
+  where p.tenant_id=@TenantId and p.id=@ProtocolId and p.reg_status='A'
+    and p.status not in ('FINISHED','CANCELLED','REJECTED')
+  for update
+), movement as (
+  insert into ged.protocol_tramitation
+    (id, tenant_id, protocol_request_id, origin_sector_id, origin_sector_name,
+     destination_sector_id, destination_sector_name, responsible_user_id,
+     forwarded_by, reason, status, forwarded_at, reg_status)
+  select gen_random_uuid(), @TenantId, p.id, p.assigned_sector_id, p.assigned_sector_name,
+         @DestinationSectorId, @DestinationSectorName, @ResponsibleUserId,
+         @UserId, @Reason, 'PENDING_RECEIPT', now(), 'A'
+  from current_protocol p returning id
+)
+update ged.protocol_request p
+set assigned_sector_id=@DestinationSectorId, assigned_sector_name=@DestinationSectorName,
+    assigned_user_id=@ResponsibleUserId, assigned_user_name=null, status='IN_REVIEW', updated_at=now()
+from movement m where p.tenant_id=@TenantId and p.id=@ProtocolId returning m.id;
+""", new { TenantId = tenantId, command.ProtocolId, command.DestinationSectorId, DestinationSectorName = command.DestinationSectorName.Trim(), command.ResponsibleUserId, UserId = userId, Reason = command.Reason.Trim() }, tx, cancellationToken: ct));
+            if (!movementId.HasValue) { await tx.RollbackAsync(ct); return Result.Fail("STATE", "Protocolo não encontrado ou já concluído."); }
+            await WriteHistoryAsync(conn, tx, tenantId, command.ProtocolId, null, ProtocolStatuses.InReview, "PROTOCOL_FORWARDED", userId, command.Reason, $"Destino: {command.DestinationSectorName.Trim()}", Guid.NewGuid().ToString("N"), ct);
+            await tx.CommitAsync(ct);
+            await AuditAsync(tenantId, userId, "PROTOCOL_FORWARDED", command.ProtocolId, "Protocolo encaminhado", new { movementId, command.DestinationSectorId }, ct);
+            return Result.Ok();
+        }
+        catch (Exception ex) { _logger.LogError(ex, "Erro ao encaminhar protocolo {Id}", command.ProtocolId); return Result.Fail("FORWARD", "Não foi possível encaminhar o protocolo."); }
+    }
+
+    public async Task<Result> ReceiveAsync(Guid tenantId, Guid id, Guid userId, CancellationToken ct)
+    {
+        try
+        {
+            await using var conn = await _db.OpenAsync(ct);
+            await using var tx = await conn.BeginTransactionAsync(ct);
+            var rows = await conn.ExecuteAsync(new CommandDefinition("""
+with received as (
+  update ged.protocol_tramitation
+  set status='RECEIVED', received_by=@UserId, received_at=now(), updated_at=now()
+  where id=(select id from ged.protocol_tramitation where tenant_id=@TenantId and protocol_request_id=@Id and status='PENDING_RECEIPT' and reg_status='A' order by forwarded_at desc limit 1 for update)
+  returning protocol_request_id
+)
+update ged.protocol_request p set assigned_user_id=@UserId,
+  assigned_user_name=coalesce(u.name,u.email,@UserId::text), updated_at=now()
+from received r left join ged.app_user u on u.tenant_id=@TenantId and u.id=@UserId
+where p.tenant_id=@TenantId and p.id=r.protocol_request_id;
+""", new { TenantId = tenantId, Id = id, UserId = userId }, tx, cancellationToken: ct));
+            if (rows == 0) { await tx.RollbackAsync(ct); return Result.Fail("STATE", "Não há tramitação pendente de recebimento."); }
+            await WriteHistoryAsync(conn, tx, tenantId, id, null, ProtocolStatuses.InReview, "PROTOCOL_RECEIVED", userId, "Recebimento confirmado", null, Guid.NewGuid().ToString("N"), ct);
+            await tx.CommitAsync(ct);
+            await AuditAsync(tenantId, userId, "PROTOCOL_RECEIVED", id, "Tramitação recebida", new { id }, ct);
+            return Result.Ok();
+        }
+        catch (Exception ex) { _logger.LogError(ex, "Erro ao receber protocolo {Id}", id); return Result.Fail("RECEIVE", "Não foi possível receber a tramitação."); }
+    }
 
     public async Task<Result> AddAttachmentAsync(Guid tenantId, Guid id, Guid userId, string fileName, string? contentType, long sizeBytes, string storagePath, CancellationToken ct)
     {
