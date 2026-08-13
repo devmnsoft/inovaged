@@ -180,3 +180,26 @@
 @media(max-width:991.98px){.login-story .login-live-flow{grid-template-columns:repeat(5,1fr)}.login-story .login-live-flow i{display:none}.login-story .login-capabilities{display:none}}
 @media(max-width:767.98px){.login-page{padding:0}.login-panel{min-height:100dvh;align-items:center}.login-card{padding:1.5rem;border:1px solid #e2e8f0;border-radius:20px;box-shadow:0 18px 45px rgba(15,23,42,.08)}.login-card::before{display:block;border-radius:20px 20px 0 0}}
 @media(prefers-reduced-motion:reduce){.login-story-label i{animation:none}}
+
+/* Lightweight GED/OCR pipeline. Fixed geometry prevents layout shift while the
+   document, recognition beam and classified result tell one coherent story. */
+.login-ocr-scene{position:relative;width:min(500px,94%);height:210px;margin:0 auto;color:#eaf6ff}
+.login-ocr-inbox{position:absolute;left:3%;top:72px;width:74px;height:88px;animation:loginOcrDocument 5.6s ease-in-out infinite}
+.login-ocr-sheet{position:absolute;inset:0;display:block;border-radius:9px;background:#f8fbff;box-shadow:0 15px 30px rgba(1,16,38,.25)}
+.login-ocr-sheet--back{transform:translate(-9px,-8px) rotate(-7deg);opacity:.5}.login-ocr-sheet--front{padding:18px 13px;transform:rotate(3deg)}
+.login-ocr-sheet--front i{display:block;width:100%;height:4px;margin-bottom:8px;border-radius:9px;background:#bfd6ef}.login-ocr-sheet--front i:nth-child(2){width:72%}.login-ocr-sheet--front b{position:absolute;right:8px;bottom:8px;color:#1765b4;font-size:.55rem;letter-spacing:.06em}
+.login-ocr-scanner{position:absolute;left:31%;top:42px;width:180px;height:142px;padding:40px 20px 15px;overflow:hidden;border:1px solid rgba(255,255,255,.28);border-radius:17px;background:linear-gradient(145deg,rgba(8,38,77,.9),rgba(19,91,119,.82));box-shadow:0 20px 38px rgba(1,17,40,.25),inset 0 1px rgba(255,255,255,.14)}
+.login-ocr-scanner__title{position:absolute;left:14px;top:12px;display:flex;align-items:center;gap:7px;font-size:.66rem;font-weight:750;letter-spacing:.03em}
+.login-ocr-text i{display:block;height:5px;margin:0 0 10px;border-radius:5px;background:rgba(207,235,255,.4)}.login-ocr-text i:nth-child(2){width:82%}.login-ocr-text i:nth-child(3){width:91%}.login-ocr-text i:nth-child(4){width:66%}
+.login-ocr-scanline{position:absolute;z-index:2;left:14px;right:14px;top:42px;height:2px;background:#7ee2bf;box-shadow:0 0 10px #5ee9bc,0 5px 20px rgba(126,226,191,.45);animation:loginOcrScan 2.8s ease-in-out infinite}
+.login-ocr-progress{position:absolute;left:20px;right:20px;bottom:13px;height:3px;overflow:hidden;border-radius:5px;background:rgba(255,255,255,.14)}.login-ocr-progress i{display:block;width:100%;height:100%;border-radius:inherit;background:#7ee2bf;transform-origin:left;animation:loginOcrProgress 2.8s ease-in-out infinite}
+.login-ocr-result{position:absolute;right:1%;top:76px;display:grid;grid-template-columns:38px 1fr 18px;align-items:center;gap:9px;width:165px;padding:11px;border:1px solid rgba(255,255,255,.27);border-radius:14px;background:rgba(4,33,68,.62);box-shadow:0 15px 32px rgba(1,17,40,.2);animation:loginOcrResult 2.8s ease-in-out infinite}.login-ocr-result__icon{display:grid;width:38px;height:38px;place-items:center;border-radius:10px;background:rgba(126,226,191,.15);color:#8af0c9}.login-ocr-result strong,.login-ocr-result small{display:block}.login-ocr-result strong{font-size:.69rem}.login-ocr-result small{margin-top:2px;color:#bcd4e9;font-size:.54rem}.login-ocr-result>svg{color:#86efac}
+.login-ocr-connector{position:absolute;top:111px;height:2px;overflow:hidden;background:rgba(255,255,255,.18)}.login-ocr-connector::after{content:"";display:block;width:45%;height:100%;background:#7ee2bf;animation:loginOcrFlow 2.8s linear infinite}.login-ocr-connector--in{left:18%;width:13%}.login-ocr-connector--out{left:67%;width:15%}.login-ocr-connector--out::after{animation-delay:.7s}
+@keyframes loginOcrDocument{0%,100%{transform:translateX(0) rotate(-2deg)}45%,55%{transform:translateX(18px) rotate(1deg)}}
+@keyframes loginOcrScan{0%,100%{transform:translateY(0);opacity:.45}50%{transform:translateY(78px);opacity:1}}
+@keyframes loginOcrProgress{0%,15%{transform:scaleX(.08)}75%,100%{transform:scaleX(1)}}
+@keyframes loginOcrResult{0%,45%{opacity:.55;transform:translateX(5px)}70%,100%{opacity:1;transform:none}}
+@keyframes loginOcrFlow{from{transform:translateX(-120%)}to{transform:translateX(260%)}}
+@media(max-width:1100px){.login-ocr-scene{height:185px;transform:scale(.88);transform-origin:center}.login-ocr-scanner{top:30px}.login-ocr-inbox,.login-ocr-result{top:62px}.login-ocr-connector{top:97px}}
+@media(max-width:991.98px){.login-ocr-result{right:0;width:145px}.login-ocr-scanner{left:27%;width:165px}.login-ocr-connector--out{left:65%}}
+@media(prefers-reduced-motion:reduce){.login-ocr-inbox,.login-ocr-scanline,.login-ocr-progress i,.login-ocr-result,.login-ocr-connector::after{animation:none}.login-ocr-scanline{top:92px}.login-ocr-progress i{transform:none}.login-ocr-result{opacity:1}}

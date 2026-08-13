@@ -22,12 +22,25 @@
                 <div class="login-story" aria-label="Jornada documental segura">
                   <div class="login-story-stage">
                     <span class="login-story-label"><i></i> Fluxo documental ativo</span>
-                    <div class="login-orbit" aria-hidden="true">
-                        <span class="login-orbit-document"><app-icon name="document" size="30" decorative="true" /></span>
-                        <span class="login-orbit-shield"><app-icon name="audit" size="20" decorative="true" /></span>
-                        <i class="login-orbit-path"></i>
+                    <div class="login-ocr-scene" aria-hidden="true">
+                        <div class="login-ocr-inbox">
+                            <span class="login-ocr-sheet login-ocr-sheet--back"></span>
+                            <span class="login-ocr-sheet login-ocr-sheet--front"><i></i><i></i><i></i><b>PDF</b></span>
+                        </div>
+                        <div class="login-ocr-scanner">
+                            <span class="login-ocr-scanner__title"><app-icon name="ocr" size="15" decorative="true" /> OCR inteligente</span>
+                            <span class="login-ocr-scanline"></span>
+                            <span class="login-ocr-text"><i></i><i></i><i></i><i></i></span>
+                            <span class="login-ocr-progress"><i></i></span>
+                        </div>
+                        <div class="login-ocr-result">
+                            <span class="login-ocr-result__icon"><app-icon name="classification" size="22" decorative="true" /></span>
+                            <span><strong>Classificado</strong><small>Indexado e protegido</small></span>
+                            <app-icon name="check" size="18" decorative="true" />
+                        </div>
+                        <span class="login-ocr-connector login-ocr-connector--in"></span>
+                        <span class="login-ocr-connector login-ocr-connector--out"></span>
                     </div>
-                    <atlas-illustration name="login-ged-workspace" size="hero" class="login-workspace-illustration" decorative="true" eager="true" />
                   </div>
                   <div class="login-live-flow" aria-label="Fluxo protegido: captura, OCR, classificação e auditoria">
                     <span><app-icon name="upload-cloud" size="18" decorative="true" /> Captura</span><i aria-hidden="true"></i>
