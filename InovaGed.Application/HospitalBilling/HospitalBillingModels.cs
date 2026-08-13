@@ -13,6 +13,19 @@ public sealed class HospitalBillingDocumentDto
     public decimal DeniedAmount { get; init; } public decimal RecoveredAmount { get; init; } public decimal Confidence { get; init; }
     public string Status { get; init; } = "PENDING_REVIEW"; public string? DenialReason { get; init; } public DateOnly? DueDate { get; init; }
     public string? DenialStatus { get; init; } public bool AppealFiled { get; init; } public string DivergenceAlerts { get; init; } = "[]";
+
+    public int? DaysUntilAppealDue => DueDate is { } due
+        ? due.DayNumber - DateOnly.FromDateTime(DateTime.UtcNow).DayNumber
+        : null;
+
+    public string AppealDeadlineStatus => DaysUntilAppealDue switch
+    {
+        null => "NO_DEADLINE",
+        < 0 => "OVERDUE",
+        <= 3 => "CRITICAL",
+        <= 7 => "ATTENTION",
+        _ => "ON_TIME"
+    };
 }
 public sealed record HospitalBillingDashboard(HospitalBillingKpis Kpis, IReadOnlyList<HospitalBillingDocumentDto> Documents);
 public sealed record HospitalBillingReportRow(string Label, int Documents, decimal Presented, decimal Approved, decimal Denied, decimal Recovered)
