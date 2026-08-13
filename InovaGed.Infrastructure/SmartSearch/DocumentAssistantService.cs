@@ -33,33 +33,47 @@ public sealed class DocumentAssistantService : IDocumentAssistantService
             throw new InvalidOperationException("O contexto de segurança não corresponde à sessão atual.");
 
         var question = query.Question.Trim();
-        var cacheKey = $"assistant:{query.TenantId:N}:{query.UserId:N}:{query.Page}:{query.PageSize}:{query.FolderId}:{security.CanReadOcr}:{question.ToUpperInvariant()}";
+        var conversationId = NormalizeConversationId(query.ConversationId);
+        var stateKey = $"assistant-state:{query.TenantId:N}:{query.UserId:N}:{conversationId}";
+        var effectiveQuestion = ResolveFollowUp(question, stateKey);
+        var cacheKey = $"assistant:{query.TenantId:N}:{query.UserId:N}:{query.Page}:{query.PageSize}:{query.FolderId}:{security.CanReadOcr}:{effectiveQuestion.ToUpperInvariant()}";
         if (_cache?.TryGetValue(cacheKey, out SmartSearchResult? cached) == true && cached is not null)
-            return BuildResponse(query, security, cached, question);
+            return BuildResponse(query, security, cached, question, conversationId, effectiveQuestion);
 
         var result = await _search.SearchAsync(new SmartSearchRequest
         {
             TenantId = query.TenantId, UserId = query.UserId, IsAdmin = query.IsAdmin,
-            Query = question, FolderId = query.FolderId, Page = Math.Max(1, query.Page),
+            Query = effectiveQuestion, FolderId = query.FolderId, Page = Math.Max(1, query.Page),
             PageSize = Math.Clamp(query.PageSize, 1, 20), IncludeOcr = security.CanReadOcr,
             IncludeMetadata = true, Source = query.FolderId.HasValue ? "folder" : "DOCUMENT_ASSISTANT"
         }, ct);
         _cache?.Set(cacheKey, result, TimeSpan.FromSeconds(30));
-        return BuildResponse(query, security, result, question);
+        _cache?.Set(stateKey, effectiveQuestion, TimeSpan.FromHours(2));
+        return BuildResponse(query, security, result, question, conversationId, effectiveQuestion);
     }
 
-    private static DocumentAssistantResponse BuildResponse(DocumentAssistantQuery query, DocumentAssistantSecurityContext security, SmartSearchResult result, string question)
+    private string ResolveFollowUp(string question, string stateKey)
+    {
+        if (_cache?.TryGetValue(stateKey, out string? previous) != true || string.IsNullOrWhiteSpace(previous)) return question;
+        var normalized = SmartSearchTextNormalizer.Normalize(question);
+        var isFollowUp = normalized.StartsWith("e ") || normalized.StartsWith("agora ") || normalized.StartsWith("apenas ")
+            || normalized.StartsWith("somente ") || normalized.Contains("desses") || normalized.Contains("tambem");
+        return isFollowUp ? $"{previous}. Refinar: {question}" : question;
+    }
+
+    private static DocumentAssistantResponse BuildResponse(DocumentAssistantQuery query, DocumentAssistantSecurityContext security, SmartSearchResult result, string question, string conversationId, string effectiveQuestion)
     {
         var sources = result.Items.Select(item => new DocumentAssistantSource
         {
             DocumentId = item.DocumentId, VersionId = item.VersionId, Title = item.Title,
             FileName = item.FileName, FolderName = item.FolderName, DocumentType = item.DocumentType,
             HasOcr = security.CanReadOcr && item.HasOcr,
+            Relevance = item.Score,
+            Badges = BuildBadges(item),
             OcrExcerpt = security.CanReadOcr ? Limit(item.OcrSnippet, 280) : null,
             MatchReason = item.Reasons.Count == 0 ? "Correspondência encontrada nos metadados autorizados."
                 : string.Join("; ", item.Reasons.Take(3).Select(x => $"{x.Reason}: {x.Evidence}"))
         }).ToArray();
-        var conversationId = NormalizeConversationId(query.ConversationId);
         var answer = sources.Length == 0
             ? "Não encontrei evidências nos documentos aos quais você tem acesso. Tente informar tipo, setor, pessoa ou período."
             : $"Encontrei {result.Total} documento(s) compatível(is). Confira as fontes antes de usar a informação.";
@@ -80,12 +94,29 @@ public sealed class DocumentAssistantService : IDocumentAssistantService
         };
         return new DocumentAssistantResponse
         {
-            Answer = answer, Criteria = string.IsNullOrWhiteSpace(result.Intent.Explanation)
-                ? "Título, arquivo, pasta, metadados e trechos autorizados de OCR." : result.Intent.Explanation,
+            Answer = answer, Criteria = effectiveQuestion == question
+                ? (string.IsNullOrWhiteSpace(result.Intent.Explanation)
+                    ? "Título, arquivo, pasta, metadados e trechos autorizados de OCR."
+                    : result.Intent.Explanation)
+                : $"Refinamento da pergunta anterior. {result.Intent.Explanation}",
             Sources = sources, Suggestions = DefaultSuggestions, Total = result.Total, Page = result.Page,
             TotalPages = result.TotalPages, ConversationId = conversationId, AppliedCriteria = criteria,
             Messages = messages, Actions = actions
         };
+    }
+
+    private static IReadOnlyList<string> BuildBadges(SmartSearchResultItem item)
+    {
+        var text = $"{item.Title} {item.DocumentType} {item.Classification} {string.Join(' ', item.Reasons.Select(x => x.Evidence))}".ToLowerInvariant();
+        var badges = new List<string> { item.HasOcr ? "OCR" : "Sem OCR" };
+        if (text.Contains("hospital")) badges.Add("Hospitalar");
+        if (text.Contains("fatur") || text.Contains("nota fiscal")) badges.Add("Faturamento");
+        if (text.Contains("glosa")) badges.Add("Glosa");
+        if (text.Contains("protocolo")) badges.Add("Protocolo");
+        if (text.Contains("caixa") || text.Contains("acervo")) badges.Add("Acervo físico");
+        if (text.Contains("temporalidade") || text.Contains("eliminação")) badges.Add("Temporalidade");
+        if (item.Score < 0.35m) badges.Add("Baixa confiança");
+        return badges.Distinct().ToArray();
     }
 
     private static string NormalizeConversationId(string? value) =>
