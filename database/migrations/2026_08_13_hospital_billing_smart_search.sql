@@ -16,6 +16,9 @@ create table if not exists ged.hospital_billing_document(
 create unique index if not exists ux_hospital_billing_tenant_document on ged.hospital_billing_document(tenant_id,document_id) where reg_status='A';
 create index if not exists ix_hospital_billing_work_queue on ged.hospital_billing_document(tenant_id,review_status,competence,created_at desc) where reg_status='A';
 create index if not exists ix_hospital_billing_denials on ged.hospital_billing_document(tenant_id,denial_status,denied_amount desc) where reg_status='A' and denied_amount>0;
+create index if not exists ix_hospital_billing_guide on ged.hospital_billing_document(tenant_id,guide_number) where reg_status='A' and guide_number is not null;
+create index if not exists ix_hospital_billing_authorization on ged.hospital_billing_document(tenant_id,authorization_number) where reg_status='A' and authorization_number is not null;
+create index if not exists ix_hospital_billing_cnes on ged.hospital_billing_document(tenant_id,cnes,competence) where reg_status='A' and cnes is not null;
 
 create table if not exists ged.smart_search_conversation(
  id uuid primary key default gen_random_uuid(), tenant_id uuid not null, user_id uuid not null, title text null, created_at timestamptz not null default now(), updated_at timestamptz not null default now(), reg_status char(1) not null default 'A');
