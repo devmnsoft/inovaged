@@ -15,10 +15,16 @@ public sealed class HospitalBillingDocumentDto
     public string? DenialStatus { get; init; } public bool AppealFiled { get; init; } public string DivergenceAlerts { get; init; } = "[]";
 }
 public sealed record HospitalBillingDashboard(HospitalBillingKpis Kpis, IReadOnlyList<HospitalBillingDocumentDto> Documents);
+public sealed record HospitalBillingReportRow(string Label, int Documents, decimal Presented, decimal Approved, decimal Denied, decimal Recovered)
+{
+    public decimal PendingRecovery => Math.Max(0, Denied - Recovered);
+}
+public sealed record HospitalBillingReports(IReadOnlyList<HospitalBillingReportRow> ByInsurer, IReadOnlyList<HospitalBillingReportRow> ByCompetence, IReadOnlyList<HospitalBillingReportRow> Denials);
 public sealed record HospitalBillingRuleDto(string DocumentType, string Icon, string[] Signals, string[] RequiredFields, string ReviewGuidance);
 public sealed record HospitalBillingRulesCatalog(IReadOnlyList<HospitalBillingRuleDto> Rules, string[] DivergenceChecks);
 public interface IHospitalBillingQueries
 {
     Task<HospitalBillingDashboard> DashboardAsync(Guid tenantId, HospitalBillingFilter filter, CancellationToken ct);
     Task<HospitalBillingDocumentDto?> GetAsync(Guid tenantId, Guid id, CancellationToken ct);
+    Task<HospitalBillingReports> ReportsAsync(Guid tenantId, CancellationToken ct);
 }

@@ -56,6 +56,8 @@ public sealed class HospitalBillingController(ICurrentUser user, IHospitalBillin
     ],
     ["Valor aprovado + glosado não pode superar o apresentado.", "Guia, autorização e competência devem corresponder ao documento-fonte.", "Confiança inferior a 70% exige revisão humana.", "Paciente permanece mascarado em filas e listagens."]));
     [HttpGet("Details/{id:guid}")] public async Task<IActionResult> Details(Guid id, CancellationToken ct) => await queries.GetAsync(user.TenantId, id, ct) is { } item ? View(item) : NotFound();
+    [HttpGet("Reports")]
+    public async Task<IActionResult> Reports(CancellationToken ct) => View(await queries.ReportsAsync(user.TenantId, ct));
 
     private static string Csv(string? value) => $"\"{(value ?? string.Empty).Replace("\"", "\"\"")}\"";
     private static string Number(decimal value) => value.ToString("0.00", CultureInfo.InvariantCulture);
