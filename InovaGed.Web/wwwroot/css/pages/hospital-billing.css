@@ -6,6 +6,7 @@
 .hospital-nav a:hover,.hospital-nav a:focus-visible{background:var(--bs-tertiary-bg);color:var(--bs-primary)}
 .hospital-nav a.is-active{background:color-mix(in srgb,var(--bs-primary) 12%,transparent);color:var(--bs-primary)}
 .hospital-nav a span{min-width:1.4rem;padding:.05rem .35rem;border-radius:999px;background:var(--bs-tertiary-bg);font-size:.75rem;text-align:center}
+.hospital-deadline{display:inline-flex;align-items:center;gap:.35rem;padding:.28rem .52rem;border-radius:999px;font-size:.76rem;font-weight:750;white-space:nowrap}.hospital-deadline.is-critical{background:rgba(var(--bs-danger-rgb),.12);color:var(--bs-danger-text-emphasis)}.hospital-deadline.is-warning{background:rgba(var(--bs-warning-rgb),.18);color:var(--bs-warning-text-emphasis)}.hospital-deadline.is-ok{background:rgba(var(--bs-success-rgb),.12);color:var(--bs-success-text-emphasis)}
 
 /* Financial reports */
 .hospital-report-intro{display:flex;gap:.8rem;align-items:flex-start;padding:1rem 1.15rem;margin-bottom:1rem;border:1px solid color-mix(in srgb,var(--atlas-primary,#3157d5) 20%,transparent);border-radius:1rem;background:color-mix(in srgb,var(--atlas-primary,#3157d5) 6%,var(--bs-body-bg));color:var(--bs-body-color)}
