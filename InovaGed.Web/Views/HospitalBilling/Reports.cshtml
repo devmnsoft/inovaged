@@ -1,0 +1,15 @@
+@using InovaGed.Application.HospitalBilling
+@using InovaGed.Web.Models.Atlas
+@model HospitalBillingReports
+@{ ViewData["Title"]="Relatórios hospitalares";
+var header=new AtlasPageHeaderVm("Relatórios hospitalares","Conciliação real por convênio, competência e motivo de glosa, sempre no escopo da organização.","report","Faturamento Hospitalar",new[]{new AtlasPageAction("Voltar ao painel",Url.Action("Index")!,"arrow-left",true),new AtlasPageAction("Exportar documentos",Url.Action("Export")!,"download")}); }
+@section Styles{<link rel="stylesheet" href="~/css/pages/hospital-billing.css" asp-append-version="true" />}
+<partial name="Atlas/_PageHeader" model="header"/>
+<div class="hospital-report-intro" role="note"><app-icon name="security" size="20" decorative="true"/><div><strong>Conferência financeira protegida</strong><p>Os totais consideram somente registros ativos do tenant autenticado. Nenhum dado de paciente é exibido.</p></div></div>
+<div class="hospital-report-grid">
+@foreach(var report in new[]{("Por convênio","Compara valores apresentados, aprovados, glosados e recuperados.",Model.ByInsurer),("Por competência","Evolução financeira por período de atendimento.",Model.ByCompetence),("Glosas e recuperação","Motivos com saldo ainda disponível para recuperação.",Model.Denials)}){
+<section class="card border-0 shadow-sm"><div class="card-header bg-transparent"><h2>@report.Item1</h2><p>@report.Item2</p></div><div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead><tr><th>Grupo</th><th>Docs.</th><th>Apresentado</th><th>Aprovado</th><th>Glosado</th><th>Recuperado</th><th>Saldo</th></tr></thead><tbody>
+@if(report.Item3.Count==0){<tr><td colspan="7"><div class="hospital-empty"><app-icon name="report" size="36" decorative="true"/><h3>Sem evidências para este relatório</h3><p>Os indicadores serão exibidos quando documentos hospitalares forem extraídos.</p></div></td></tr>}
+@foreach(var row in report.Item3){<tr><td><strong>@row.Label</strong></td><td>@row.Documents</td><td>@row.Presented.ToString("C")</td><td class="text-success">@row.Approved.ToString("C")</td><td class="text-danger">@row.Denied.ToString("C")</td><td class="text-success">@row.Recovered.ToString("C")</td><td><span class="badge @(row.PendingRecovery>0?"text-bg-warning":"text-bg-success")">@row.PendingRecovery.ToString("C")</span></td></tr>}
+</tbody></table></div></section>}
+</div>

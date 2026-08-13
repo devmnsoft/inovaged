@@ -6,3 +6,9 @@
 .hospital-nav a:hover,.hospital-nav a:focus-visible{background:var(--bs-tertiary-bg);color:var(--bs-primary)}
 .hospital-nav a.is-active{background:color-mix(in srgb,var(--bs-primary) 12%,transparent);color:var(--bs-primary)}
 .hospital-nav a span{min-width:1.4rem;padding:.05rem .35rem;border-radius:999px;background:var(--bs-tertiary-bg);font-size:.75rem;text-align:center}
+
+/* Financial reports */
+.hospital-report-intro{display:flex;gap:.8rem;align-items:flex-start;padding:1rem 1.15rem;margin-bottom:1rem;border:1px solid color-mix(in srgb,var(--atlas-primary,#3157d5) 20%,transparent);border-radius:1rem;background:color-mix(in srgb,var(--atlas-primary,#3157d5) 6%,var(--bs-body-bg));color:var(--bs-body-color)}
+.hospital-report-intro p{margin:.15rem 0 0;color:var(--bs-secondary-color)}
+.hospital-report-grid{display:grid;gap:1rem}.hospital-report-grid .card-header h2{font-size:1rem;margin:0}.hospital-report-grid .card-header p{margin:.2rem 0 0;color:var(--bs-secondary-color);font-size:.875rem}
+@media(max-width:767.98px){.hospital-report-grid table{min-width:760px}.hospital-report-intro{border-radius:.8rem}}
