@@ -1,9 +1,49 @@
 @model InovaGed.Web.Models.Administration.AdministrationPageVm
-@{ ViewData["Title"] = "Administração"; ViewData["Subtitle"] = Model.Section; }
-<partial name="_AdminNav" />
-<h1 class="h4 mb-3">@Model.Section</h1>
-@if (Model.IdentitySummary is not null) { <div class="row g-3"><div class="col-md-3"><div class="card"><div class="card-body"><span>Total de usuários</span><div class="fs-3 fw-bold">@Model.IdentitySummary.TotalUsers</div></div></div></div><div class="col-md-3"><div class="card"><div class="card-body"><span>CPFs migrados</span><div class="fs-3 fw-bold">@Model.IdentitySummary.AlreadyMigrated</div></div></div></div><div class="col-md-3"><div class="card"><div class="card-body"><span>Sem CPF</span><div class="fs-3 fw-bold">@Model.IdentitySummary.WithoutCpf</div></div></div></div><div class="col-md-3"><div class="card"><div class="card-body"><span>Dependência legada</span><div class="fs-3 fw-bold">@Model.IdentitySummary.LegacyDependent</div></div></div></div></div><div class="alert alert-info mt-3">CPFs completos não são exibidos. A migração usa hash HMAC com chave externa e valor protegido.</div> }
-@if (Model.SecurityConfigurations.Any() || Model.PermissionCatalog.Any()) { <h2 class="h5">Modos por tenant</h2><table class="table table-sm"><thead><tr><th>Tenant</th><th>Modo</th><th>Alterado em</th><th>Justificativa</th></tr></thead><tbody>@foreach(var c in Model.SecurityConfigurations){<tr><td>@c.TenantId</td><td><span class="badge bg-primary">@c.PermissionMode</span></td><td>@c.ChangedAt</td><td>@c.ChangeReason</td></tr>}</tbody></table><h2 class="h5">Catálogo de permissões</h2><table class="table table-sm"><thead><tr><th>Código</th><th>Descrição</th><th>Módulo</th><th>Roles</th><th>Usuários</th><th>Status</th></tr></thead><tbody>@foreach(var p in Model.PermissionCatalog){<tr><td>@p.Code</td><td>@p.Description</td><td>@p.Module</td><td>@p.Roles</td><td>@p.UsersAffected</td><td>@p.Status</td></tr>}</tbody></table> }
-@if (Model.Items.Any()) { <table class="table table-hover"><thead><tr><th>Nome</th><th>Status</th><th>Detalhe seguro</th><th>Tenant</th><th>Última atividade</th></tr></thead><tbody>@foreach(var i in Model.Items){<tr><td>@i.Name</td><td>@i.Status</td><td>@i.Detail</td><td>@i.Tenant</td><td>@i.LastActivity</td></tr>}</tbody></table> }
-@if (Model.Compliance.Any()) { <div class="list-group">@foreach(var c in Model.Compliance){<div class="list-group-item"><div class="d-flex justify-content-between"><strong>@c.Title</strong><span class="badge bg-secondary">@c.State</span></div><div class="small text-muted">@c.Code — @c.Evidence</div><div>@c.Guidance</div></div>}</div> }
-@if (!Model.Items.Any() && !Model.Compliance.Any() && !Model.PermissionCatalog.Any() && !Model.SecurityConfigurations.Any() && Model.IdentitySummary is null) { <div class="alert alert-warning">Não disponível: nenhuma estrutura compatível foi encontrada. Verifique o painel de Migrações e Compatibilidade.</div> }
+@using InovaGed.Web.Models.Atlas
+@section Styles { <link rel="stylesheet" href="~/css/pages/administration.css" asp-append-version="true" /> }
+@{
+    ViewData["Title"] = Model.Section;
+    ViewData["WorkspaceVariant"] = "wide";
+    var header = new AtlasPageHeaderVm(Model.Section, "Governança, rastreabilidade e controles operacionais reunidos em uma visão segura.", "settings", "Central de Administração", new[] { new AtlasPageAction("Visão geral", Url.Action("Index", "Administration")!, "arrow-left") }, new (string, string?)[] { ("Administração", Url.Action("Index", "Administration")), (Model.Section, null) });
+    var hasContent = Model.Items.Any() || Model.Compliance.Any() || Model.PermissionCatalog.Any() || Model.SecurityConfigurations.Any() || Model.IdentitySummary is not null;
+}
+<div class="atlas-prime-page administration-prime admin-section-page">
+    <partial name="Atlas/_PageHeader" model="header" />
+    <partial name="_AdminNav" />
+    @if (Model.IdentitySummary is not null)
+    {
+        <section class="admin-summary-grid" aria-label="Resumo de identidades">
+            <article class="admin-summary-card"><span class="admin-summary-card__icon"><app-icon name="users" size="20" decorative="true" /></span><div><small>Total de usuários</small><strong>@Model.IdentitySummary.TotalUsers</strong></div></article>
+            <article class="admin-summary-card"><span class="admin-summary-card__icon is-success"><app-icon name="check" size="20" decorative="true" /></span><div><small>CPFs migrados</small><strong>@Model.IdentitySummary.AlreadyMigrated</strong></div></article>
+            <article class="admin-summary-card"><span class="admin-summary-card__icon is-warning"><app-icon name="warning" size="20" decorative="true" /></span><div><small>Sem CPF</small><strong>@Model.IdentitySummary.WithoutCpf</strong></div></article>
+            <article class="admin-summary-card"><span class="admin-summary-card__icon is-danger"><app-icon name="history" size="20" decorative="true" /></span><div><small>Dependência legada</small><strong>@Model.IdentitySummary.LegacyDependent</strong></div></article>
+        </section>
+        <div class="ig-alert ig-alert--info" role="status"><app-icon name="security" size="19" decorative="true" /><div><strong>Privacidade protegida</strong><span>CPFs completos nunca são exibidos. A migração utiliza hash HMAC com chave externa e valor protegido.</span></div></div>
+    }
+    @if (Model.SecurityConfigurations.Any())
+    {
+        <section class="atlas-prime-panel" aria-labelledby="tenantModes"><div class="atlas-prime-panel__header"><div><h2 id="tenantModes">Modos de segurança por tenant</h2><small>Configurações vigentes e justificativas de alteração.</small></div></div>
+            <div class="atlas-table-wrap"><table class="table atlas-table"><thead><tr><th>Tenant</th><th>Modo</th><th>Alterado em</th><th>Justificativa</th></tr></thead><tbody>@foreach (var item in Model.SecurityConfigurations) { <tr><td data-label="Tenant"><strong>@item.TenantId</strong></td><td data-label="Modo"><span class="ig-status" data-status="saudavel">@item.PermissionMode</span></td><td data-label="Alterado em">@item.ChangedAt</td><td data-label="Justificativa" class="admin-safe-detail">@item.ChangeReason</td></tr> }</tbody></table></div>
+        </section>
+    }
+    @if (Model.PermissionCatalog.Any())
+    {
+        <section class="atlas-prime-panel" aria-labelledby="permissionCatalog"><div class="atlas-prime-panel__header"><div><h2 id="permissionCatalog">Catálogo de permissões</h2><small>Escopo, impacto e situação de cada autorização.</small></div></div>
+            <div class="atlas-table-wrap"><table class="table atlas-table"><thead><tr><th>Código</th><th>Descrição</th><th>Módulo</th><th>Perfis</th><th>Usuários</th><th>Status</th></tr></thead><tbody>@foreach (var item in Model.PermissionCatalog) { <tr><td data-label="Código"><code>@item.Code</code></td><td data-label="Descrição">@item.Description</td><td data-label="Módulo">@item.Module</td><td data-label="Perfis">@item.Roles</td><td data-label="Usuários">@item.UsersAffected</td><td data-label="Status"><span class="ig-status" data-status="saudavel">@item.Status</span></td></tr> }</tbody></table></div>
+        </section>
+    }
+    @if (Model.Items.Any())
+    {
+        <section class="atlas-prime-panel" aria-labelledby="adminItems"><div class="atlas-prime-panel__header"><div><h2 id="adminItems">Visão operacional</h2><small>Informações seguras e última atividade registrada.</small></div></div>
+            <div class="atlas-table-wrap"><table class="table atlas-table"><thead><tr><th>Nome</th><th>Status</th><th>Detalhe seguro</th><th>Tenant</th><th>Última atividade</th></tr></thead><tbody>@foreach (var item in Model.Items) { <tr><td data-label="Nome"><strong>@item.Name</strong></td><td data-label="Status"><span class="ig-status" data-status="saudavel">@item.Status</span></td><td data-label="Detalhe" class="admin-safe-detail" title="@item.Detail">@item.Detail</td><td data-label="Tenant">@item.Tenant</td><td data-label="Última atividade">@item.LastActivity</td></tr> }</tbody></table></div>
+        </section>
+    }
+    @if (Model.Compliance.Any())
+    {
+        <section class="atlas-prime-panel" aria-labelledby="complianceControls"><div class="atlas-prime-panel__header"><div><h2 id="complianceControls">Controles de conformidade</h2><small>Evidências e orientações para cada controle.</small></div></div><div class="admin-compliance-grid">@foreach (var item in Model.Compliance) { <article class="admin-compliance-card"><header><span class="admin-summary-card__icon"><app-icon name="audit" size="19" decorative="true" /></span><div><strong>@item.Title</strong><code>@item.Code</code></div><span class="ig-status" data-status="saudavel">@item.State</span></header><p>@item.Evidence</p><div class="admin-guidance"><app-icon name="info" size="17" decorative="true" /> @item.Guidance</div></article> }</div></section>
+    }
+    @if (!hasContent)
+    {
+        <section class="atlas-prime-panel admin-empty-state"><app-icon name="database" size="36" decorative="true" /><h2>Dados ainda não disponíveis</h2><p>Nenhuma estrutura compatível foi encontrada para esta área. Consulte Migrações e Compatibilidade para verificar a prontidão do ambiente.</p><a class="btn btn-primary" asp-controller="Administration" asp-action="Migrations"><app-icon name="settings" size="17" decorative="true" /> Verificar ambiente</a></section>
+    }
+</div>
