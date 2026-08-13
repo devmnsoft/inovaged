@@ -1,0 +1,6 @@
+@using InovaGed.Application.HospitalBilling
+@using InovaGed.Web.Models.Atlas
+@model HospitalBillingDocumentDto
+@{ViewData["Title"]="Detalhes do faturamento hospitalar";var header=new AtlasPageHeaderVm(Model.Title,"Revisão rastreável dos campos extraídos do documento hospitalar.","report","Faturamento Hospitalar",new[]{new AtlasPageAction("Voltar ao painel",Url.Action("Index")!,"arrow-left")});}
+<partial name="Atlas/_PageHeader" model="header"/>
+<div class="card border-0 shadow-sm"><div class="card-body"><div class="row g-4"><div class="col-md-4"><strong>Tipo</strong><p>@Model.DocumentType</p></div><div class="col-md-4"><strong>Convênio</strong><p>@(Model.Insurer??"Não identificado")</p></div><div class="col-md-4"><strong>Paciente</strong><p><app-icon name="security" size="15" decorative="true"/> @Model.MaskedPatient</p></div><div class="col-md-4"><strong>Guia / autorização</strong><p>@(Model.GuideNumber??"—") / @(Model.AuthorizationNumber??"—")</p></div><div class="col-md-4"><strong>Apresentado</strong><p>@Model.PresentedAmount.ToString("C")</p></div><div class="col-md-4"><strong>Glosado</strong><p>@Model.DeniedAmount.ToString("C")</p></div></div></div></div>

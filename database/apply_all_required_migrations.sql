@@ -3002,3 +3002,4 @@ where coalesce(reg_status, 'A') = 'A';
 \ir migrations/2026_08_11_billing_review_governance.sql
 \ir migrations/2026_08_11_billing_extraction_rules.sql
 \ir migrations/2026_08_11_search_pg_trgm_safe_index.sql
+\ir migrations/2026_08_13_hospital_billing_smart_search.sql

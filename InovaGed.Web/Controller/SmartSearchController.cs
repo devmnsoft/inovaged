@@ -36,6 +36,16 @@ public sealed class SmartSearchController : Controller
         _logger = logger;
     }
 
+    [HttpGet]
+    [ActionName("Ask")]
+    public IActionResult AskPage([FromQuery] string? q) => Index(q);
+
+    [HttpGet]
+    public IActionResult History() => View("Index");
+
+    [HttpGet]
+    public IActionResult Insights() => RedirectToAction(nameof(Statistics));
+
     [HttpPost]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Ask([FromForm] string question, [FromForm] string? conversationId, [FromForm] int page = 1, CancellationToken ct = default)
