@@ -71,8 +71,10 @@ public sealed class HospitalBillingController(ICurrentUser user, IHospitalBillin
         {
             "insurer" => new[] { ("Convênio", reports.ByInsurer) },
             "competence" => new[] { ("Competência", reports.ByCompetence) },
+            "provider" => new[] { ("Prestador", reports.ByProvider) },
+            "review-status" => new[] { ("Status de revisão", reports.ByReviewStatus) },
             "denials" => new[] { ("Motivo da glosa", reports.Denials) },
-            "all" => new[] { ("Convênio", reports.ByInsurer), ("Competência", reports.ByCompetence), ("Motivo da glosa", reports.Denials) },
+            "all" => new[] { ("Convênio", reports.ByInsurer), ("Competência", reports.ByCompetence), ("Prestador", reports.ByProvider), ("Status de revisão", reports.ByReviewStatus), ("Motivo da glosa", reports.Denials) },
             _ => Array.Empty<(string, IReadOnlyList<HospitalBillingReportRow>)>()
         };
         if (sections.Length == 0) return BadRequest("Relatório inválido.");
