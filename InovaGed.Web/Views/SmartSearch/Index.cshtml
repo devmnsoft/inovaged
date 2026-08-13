@@ -14,7 +14,7 @@
 
     <section class="assistant-shell">
         <aside class="assistant-suggestions"><h2>Perguntas sugeridas</h2><p>Use um ponto de partida ou escreva com suas palavras.</p><div class="assistant-chip-list">
-            @foreach (var suggestion in new[] { "Quais documentos estão sem OCR?", "Mostre arquivos enviados este mês", "Encontre documentos sem classificação", "Liste documentos com OCR disponível", "Quais documentos precisam de revisão?", "Buscar documentos por paciente, setor, período ou tipo" })
+            @foreach (var suggestion in new[] { "Quais documentos estão sem OCR?", "Quais documentos hospitalares têm glosa?", "Quais faturas do convênio estão pendentes de revisão?", "Procure documentos com competência julho de 2026", "Mostre documentos classificados para eliminação", "Quais caixas físicas estão sem localização?" })
             { <button type="button" class="assistant-chip" data-suggestion="@suggestion">@suggestion</button> }
         </div></aside>
 

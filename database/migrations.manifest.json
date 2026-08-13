@@ -253,6 +253,17 @@
       "maximumApplicationVersion": "04.1.99",
       "requiresMaintenanceWindow": false,
       "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_08_13_hospital_billing_smart_search",
+      "path": "database/migrations/2026_08_13_hospital_billing_smart_search.sql",
+      "module": "HospitalBillingSmartSearch",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.99",
+      "requiresMaintenanceWindow": false,
+      "requiresVerifiedBackup": true
     }
   ]
 }

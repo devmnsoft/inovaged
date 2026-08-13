@@ -57,6 +57,8 @@ using InovaGed.Application.Workspace.Commands;
 using InovaGed.Infrastructure;
 using InovaGed.Infrastructure.Audit;
 using InovaGed.Infrastructure.Billing;
+using InovaGed.Application.HospitalBilling;
+using InovaGed.Infrastructure.HospitalBilling;
 using InovaGed.Infrastructure.Auditing;
 using InovaGed.Infrastructure.Auth;
 using InovaGed.Infrastructure.Classification;
@@ -470,6 +472,7 @@ builder.Services.AddScoped<IBillingQueries, BillingQueries>();
 builder.Services.AddScoped<IBillingCommands, BillingCommands>();
 builder.Services.AddScoped<IBillingExtractionService, BillingExtractionService>();
 builder.Services.AddScoped<IBillingRuleService, BillingRuleService>();
+builder.Services.AddScoped<IHospitalBillingQueries, HospitalBillingQueries>();
 builder.Services.AddScoped<IBatchCommands, BatchCommands>();
 
 builder.Services.AddScoped<IPhysicalQueries, PhysicalQueries>();
