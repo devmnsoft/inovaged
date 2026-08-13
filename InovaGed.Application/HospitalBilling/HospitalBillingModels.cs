@@ -19,7 +19,12 @@ public sealed record HospitalBillingReportRow(string Label, int Documents, decim
 {
     public decimal PendingRecovery => Math.Max(0, Denied - Recovered);
 }
-public sealed record HospitalBillingReports(IReadOnlyList<HospitalBillingReportRow> ByInsurer, IReadOnlyList<HospitalBillingReportRow> ByCompetence, IReadOnlyList<HospitalBillingReportRow> Denials);
+public sealed record HospitalBillingReports(
+    IReadOnlyList<HospitalBillingReportRow> ByInsurer,
+    IReadOnlyList<HospitalBillingReportRow> ByCompetence,
+    IReadOnlyList<HospitalBillingReportRow> ByProvider,
+    IReadOnlyList<HospitalBillingReportRow> ByReviewStatus,
+    IReadOnlyList<HospitalBillingReportRow> Denials);
 public sealed record HospitalBillingRuleDto(string DocumentType, string Icon, string[] Signals, string[] RequiredFields, string ReviewGuidance);
 public sealed record HospitalBillingRulesCatalog(IReadOnlyList<HospitalBillingRuleDto> Rules, string[] DivergenceChecks);
 public interface IHospitalBillingQueries
