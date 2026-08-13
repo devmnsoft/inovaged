@@ -1,0 +1,11 @@
+@using InovaGed.Application.HospitalBilling
+@using InovaGed.Web.Models.Atlas
+@model HospitalBillingRulesCatalog
+@{ViewData["Title"]="Regras do faturamento hospitalar";var header=new AtlasPageHeaderVm("Regras de reconhecimento","Critérios transparentes para classificação, extração e revisão — sem respostas inventadas.","settings","Faturamento Hospitalar",new[]{new AtlasPageAction("Voltar ao painel",Url.Action("Index")!,"arrow-left")});}
+@section Styles{<link rel="stylesheet" href="~/css/pages/hospital-billing.css" asp-append-version="true" />}
+<partial name="Atlas/_PageHeader" model="header"/>
+<div class="alert alert-info d-flex gap-2" role="status"><app-icon name="security" size="20" decorative="true"/><div><strong>Extração assistida, decisão humana.</strong><br/>As regras identificam evidências no OCR. Campos ausentes permanecem não identificados e documentos de baixa confiança seguem para revisão.</div></div>
+<section class="hospital-rules-grid" aria-label="Tipos documentais reconhecidos">
+@foreach(var rule in Model.Rules){<article class="card border-0 shadow-sm hospital-rule-card"><app-icon name="@rule.Icon" size="28" decorative="true"/><h2>@rule.DocumentType</h2><h3>Sinais no documento</h3><div class="d-flex flex-wrap gap-1">@foreach(var signal in rule.Signals){<span class="badge text-bg-light">@signal</span>}</div><h3>Campos essenciais</h3><ul>@foreach(var field in rule.RequiredFields){<li>@field</li>}</ul><h3>Orientação</h3><p class="mb-0">@rule.ReviewGuidance</p></article>}
+</section>
+<section class="card border-0 shadow-sm mt-3"><div class="card-header bg-transparent"><h2>Controles de divergência</h2><p>Validações determinísticas aplicadas antes da aprovação.</p></div><div class="card-body"><ul class="mb-0">@foreach(var check in Model.DivergenceChecks){<li class="mb-2"><app-icon name="check" size="16" decorative="true"/> @check</li>}</ul></div></section>

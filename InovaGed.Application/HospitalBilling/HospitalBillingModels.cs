@@ -12,6 +12,8 @@ public sealed class HospitalBillingDocumentDto
     public string Status { get; init; } = "PENDING_REVIEW"; public string? DenialReason { get; init; } public DateOnly? DueDate { get; init; }
 }
 public sealed record HospitalBillingDashboard(HospitalBillingKpis Kpis, IReadOnlyList<HospitalBillingDocumentDto> Documents);
+public sealed record HospitalBillingRuleDto(string DocumentType, string Icon, string[] Signals, string[] RequiredFields, string ReviewGuidance);
+public sealed record HospitalBillingRulesCatalog(IReadOnlyList<HospitalBillingRuleDto> Rules, string[] DivergenceChecks);
 public interface IHospitalBillingQueries
 {
     Task<HospitalBillingDashboard> DashboardAsync(Guid tenantId, HospitalBillingFilter filter, CancellationToken ct);
