@@ -9,12 +9,12 @@ public sealed class HospitalBillingQueries(IDbConnectionFactory db) : IHospitalB
     public async Task<HospitalBillingDashboard> DashboardAsync(Guid tenantId, HospitalBillingFilter filter, CancellationToken ct)
     {
         await using var connection = await db.OpenAsync(ct);
-        const string where = """where h.tenant_id=@tenantId and h.reg_status='A' and (@Insurer is null or h.insurer ilike '%'||@Insurer||'%') and (@Competence is null or h.competence=@Competence) and (@Status is null or h.review_status=@Status) and (@HasDenial is null or (h.denied_amount>0)=@HasDenial)""";
-        var args = new { tenantId, filter.Insurer, filter.Competence, filter.Status, filter.HasDenial };
+        const string where = """where h.tenant_id=@tenantId and h.reg_status='A' and (@Insurer is null or h.insurer ilike '%'||@Insurer||'%') and (@Competence is null or h.competence=@Competence) and (@Status is null or h.review_status=@Status) and (@HasDenial is null or (h.denied_amount>0)=@HasDenial) and (@Term is null or concat_ws(' ',h.insurer,h.provider_name,h.provider_cnpj,h.cnes,h.guide_number,h.authorization_number,h.batch_number,h.invoice_number,h.procedure_name,h.procedure_code,h.denial_reason) ilike '%'||@Term||'%')""";
+        var args = new { tenantId, filter.Insurer, filter.Competence, filter.Status, filter.HasDenial, filter.Term };
         var documents = (await connection.QueryAsync<HospitalBillingDocumentDto>(new CommandDefinition($$"""
-select h.id "Id",h.document_id "DocumentId",coalesce(d.title,d.code,'Documento hospitalar') "Title",h.document_type "DocumentType",h.insurer "Insurer",h.provider_name "Provider",h.guide_number "GuideNumber",h.authorization_number "AuthorizationNumber",h.competence "Competence",
+select h.id "Id",h.document_id "DocumentId",coalesce(d.title,d.code,'Documento hospitalar') "Title",h.document_type "DocumentType",h.insurer "Insurer",h.provider_name "Provider",h.provider_cnpj "ProviderCnpj",h.cnes "Cnes",h.guide_number "GuideNumber",h.authorization_number "AuthorizationNumber",h.batch_number "BatchNumber",h.invoice_number "InvoiceNumber",h.competence "Competence",h.procedure_name "ProcedureName",h.procedure_code "ProcedureCode",
 case when nullif(h.patient_name,'') is null then 'Dado protegido' else left(h.patient_name,1)||repeat('*',greatest(length(h.patient_name)-2,3))||right(h.patient_name,1) end "MaskedPatient",
-h.presented_amount "PresentedAmount",h.approved_amount "ApprovedAmount",h.denied_amount "DeniedAmount",h.recovered_amount "RecoveredAmount",h.confidence "Confidence",h.review_status "Status",h.denial_reason "DenialReason",h.due_date "DueDate"
+h.presented_amount "PresentedAmount",h.approved_amount "ApprovedAmount",h.denied_amount "DeniedAmount",h.recovered_amount "RecoveredAmount",h.confidence "Confidence",h.review_status "Status",h.denial_reason "DenialReason",h.denial_status "DenialStatus",h.appeal_filed "AppealFiled",h.divergence_alerts::text "DivergenceAlerts",h.due_date "DueDate"
 from ged.hospital_billing_document h left join ged.document d on d.tenant_id=h.tenant_id and d.id=h.document_id {{where}} order by h.created_at desc limit 300
 """, args, cancellationToken: ct))).AsList();
         var kpis = await connection.QuerySingleAsync<HospitalBillingKpis>(new CommandDefinition("""

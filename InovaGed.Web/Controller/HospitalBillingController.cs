@@ -11,10 +11,10 @@ namespace InovaGed.Web.Controllers;
 public sealed class HospitalBillingController(ICurrentUser user, IHospitalBillingQueries queries) : Controller
 {
     [HttpGet("")][HttpGet("Dashboard")]
-    public async Task<IActionResult> Index(string? insurer, string? competence, string? status, bool? hasDenial, CancellationToken ct)
-    { var filter = new HospitalBillingFilter(insurer, competence, status, hasDenial); ViewBag.Filter = filter; return View(await queries.DashboardAsync(user.TenantId, filter, ct)); }
-    [HttpGet("Documents")] public Task<IActionResult> Documents(string? insurer, string? competence, string? status, bool? hasDenial, CancellationToken ct) => Index(insurer, competence, status, hasDenial, ct);
-    [HttpGet("Review")][HttpGet("Glosas")] public Task<IActionResult> WorkQueue(CancellationToken ct) => Index(null, null, Request.Path.Value!.EndsWith("Glosas", StringComparison.OrdinalIgnoreCase) ? null : "PENDING_REVIEW", Request.Path.Value!.EndsWith("Glosas", StringComparison.OrdinalIgnoreCase) ? true : null, ct);
+    public async Task<IActionResult> Index(string? insurer, string? competence, string? status, bool? hasDenial, string? term, CancellationToken ct)
+    { var filter = new HospitalBillingFilter(insurer, competence, status, hasDenial, term); ViewBag.Filter = filter; return View(await queries.DashboardAsync(user.TenantId, filter, ct)); }
+    [HttpGet("Documents")] public Task<IActionResult> Documents(string? insurer, string? competence, string? status, bool? hasDenial, string? term, CancellationToken ct) => Index(insurer, competence, status, hasDenial, term, ct);
+    [HttpGet("Review")][HttpGet("Glosas")] public Task<IActionResult> WorkQueue(CancellationToken ct) => Index(null, null, Request.Path.Value!.EndsWith("Glosas", StringComparison.OrdinalIgnoreCase) ? null : "PENDING_REVIEW", Request.Path.Value!.EndsWith("Glosas", StringComparison.OrdinalIgnoreCase) ? true : null, null, ct);
     [HttpGet("Rules")]
     public IActionResult Rules() => View(new HospitalBillingRulesCatalog(
     [
