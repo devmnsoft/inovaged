@@ -165,6 +165,22 @@ public sealed class SmartSearchController : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Feedback([FromForm] Guid documentId, [FromForm] string conversationId, [FromForm] bool helpful, CancellationToken ct)
+    {
+        if (!_currentUser.IsAuthenticated) return Unauthorized(new { success = false, message = "Sessão expirada." });
+        if (documentId == Guid.Empty || string.IsNullOrWhiteSpace(conversationId) || conversationId.Length > 64 ||
+            !conversationId.All(c => char.IsLetterOrDigit(c) || c is '-' or '_'))
+            return BadRequest(new { success = false, message = "Feedback inválido." });
+
+        await _repository.SaveFeedbackAsync(_currentUser.TenantId, _currentUser.UserId, documentId, conversationId, helpful, ct);
+        await _audit.WriteAsync(_currentUser.TenantId, _currentUser.UserId, "UPDATE", "SMART_SEARCH_FEEDBACK", documentId,
+            helpful ? "Resultado marcado como útil" : "Resultado marcado como não útil", HttpContext.Connection.RemoteIpAddress?.ToString(),
+            Request.Headers.UserAgent.ToString(), new { helpful, correlationId = HttpContext.TraceIdentifier }, ct);
+        return Json(new { success = true, message = "Obrigado. Seu feedback foi registrado." });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> AskDocument([FromForm] DocumentQuestionRequest request, CancellationToken ct)
     {
         if (!_currentUser.IsAuthenticated) return Unauthorized(new { success = false });

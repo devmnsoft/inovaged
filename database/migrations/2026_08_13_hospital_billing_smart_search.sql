@@ -27,4 +27,9 @@ create table if not exists ged.smart_search_message(
  intent_json jsonb null, sources_json jsonb not null default '[]', created_at timestamptz not null default now(), reg_status char(1) not null default 'A');
 create index if not exists ix_smart_search_conversation_user on ged.smart_search_conversation(tenant_id,user_id,updated_at desc) where reg_status='A';
 create index if not exists ix_smart_search_message_conversation on ged.smart_search_message(tenant_id,conversation_id,created_at) where reg_status='A';
+create table if not exists ged.smart_search_feedback(
+ id uuid primary key default gen_random_uuid(), tenant_id uuid not null, user_id uuid not null, document_id uuid not null,
+ conversation_key varchar(64) not null, helpful boolean not null, created_at timestamptz not null default now());
+create unique index if not exists ux_smart_search_feedback_context on ged.smart_search_feedback(tenant_id,user_id,document_id,conversation_key);
+create index if not exists ix_smart_search_feedback_quality on ged.smart_search_feedback(tenant_id,helpful,created_at desc);
 commit;
