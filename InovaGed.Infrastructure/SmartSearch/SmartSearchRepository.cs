@@ -180,6 +180,18 @@ values (@TenantId, @UserId, @QueryText, @QueryHash, cast(@InterpretedJson as jso
         catch (Exception ex) { _logger.LogDebug(ex, "Não foi possível registrar estatística de acesso."); }
     }
 
+    public async Task SaveFeedbackAsync(Guid tenantId, Guid userId, Guid documentId, string conversationId, bool helpful, CancellationToken ct)
+    {
+        const string sql = """
+insert into ged.smart_search_feedback(tenant_id,user_id,document_id,conversation_key,helpful,created_at)
+values (@tenantId,@userId,@documentId,@conversationId,@helpful,now())
+on conflict (tenant_id,user_id,document_id,conversation_key)
+do update set helpful=excluded.helpful,created_at=excluded.created_at
+""";
+        await using var conn = await _db.OpenAsync(ct);
+        await conn.ExecuteAsync(new CommandDefinition(sql, new { tenantId, userId, documentId, conversationId, helpful }, cancellationToken: ct));
+    }
+
     public async Task<SmartSearchStatistics> GetStatisticsAsync(Guid tenantId, CancellationToken ct)
     {
         const string sql = """

@@ -18,6 +18,7 @@ public interface ISmartSearchRepository
     Task<string?> GetDocumentOcrAsync(Guid tenantId, Guid documentId, CancellationToken ct);
     Task LogQueryAsync(SmartSearchRequest request, SmartSearchIntent intent, int resultsCount, long durationMs, CancellationToken ct);
     Task LogAccessAsync(Guid tenantId, Guid userId, Guid documentId, string source, string action, CancellationToken ct);
+    Task SaveFeedbackAsync(Guid tenantId, Guid userId, Guid documentId, string conversationId, bool helpful, CancellationToken ct);
     Task<SmartSearchStatistics> GetStatisticsAsync(Guid tenantId, CancellationToken ct);
     Task<int> ReindexAsync(Guid tenantId, Guid? documentId, CancellationToken ct);
 }
