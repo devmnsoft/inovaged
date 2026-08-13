@@ -15,11 +15,14 @@ public sealed class HospitalBillingController(ICurrentUser user, IHospitalBillin
 {
     [HttpGet("")][HttpGet("Dashboard")]
     public async Task<IActionResult> Index(string? insurer, string? competence, string? status, bool? hasDenial, string? term, CancellationToken ct)
-    { var filter = new HospitalBillingFilter(insurer, competence, status, hasDenial, term); ViewBag.Filter = filter; return View(await queries.DashboardAsync(user.TenantId, filter, ct)); }
-    [HttpGet("Documents")] public Task<IActionResult> Documents(string? insurer, string? competence, string? status, bool? hasDenial, string? term, CancellationToken ct) => Index(insurer, competence, status, hasDenial, term, ct);
+    { var filter = new HospitalBillingFilter(insurer, competence, status, hasDenial, term); ViewBag.Filter = filter; ViewBag.Mode ??= "dashboard"; return View(await queries.DashboardAsync(user.TenantId, filter, ct)); }
+    [HttpGet("Documents")]
+    public Task<IActionResult> Documents(string? insurer, string? competence, string? status, bool? hasDenial, string? term, CancellationToken ct)
+    { ViewBag.Mode = "documents"; return Index(insurer, competence, status, hasDenial, term, ct); }
     [HttpGet("Review")][HttpGet("Glosas")] public Task<IActionResult> WorkQueue(bool? hasDenial, CancellationToken ct)
     {
         var denialQueue = hasDenial == true || Request.Path.Value!.EndsWith("Glosas", StringComparison.OrdinalIgnoreCase);
+        ViewBag.Mode = denialQueue ? "denials" : "review";
         return Index(null, null, denialQueue ? null : "PENDING_REVIEW", denialQueue ? true : null, null, ct);
     }
     [HttpGet("Export")]
@@ -58,6 +61,32 @@ public sealed class HospitalBillingController(ICurrentUser user, IHospitalBillin
     [HttpGet("Details/{id:guid}")] public async Task<IActionResult> Details(Guid id, CancellationToken ct) => await queries.GetAsync(user.TenantId, id, ct) is { } item ? View(item) : NotFound();
     [HttpGet("Reports")]
     public async Task<IActionResult> Reports(CancellationToken ct) => View(await queries.ReportsAsync(user.TenantId, ct));
+
+    [HttpGet("Reports/Export")]
+    public async Task<IActionResult> ExportReports(string report = "all", CancellationToken ct = default)
+    {
+        var reports = await queries.ReportsAsync(user.TenantId, ct);
+        var normalized = report.Trim().ToLowerInvariant();
+        var sections = normalized switch
+        {
+            "insurer" => new[] { ("Convênio", reports.ByInsurer) },
+            "competence" => new[] { ("Competência", reports.ByCompetence) },
+            "denials" => new[] { ("Motivo da glosa", reports.Denials) },
+            "all" => new[] { ("Convênio", reports.ByInsurer), ("Competência", reports.ByCompetence), ("Motivo da glosa", reports.Denials) },
+            _ => Array.Empty<(string, IReadOnlyList<HospitalBillingReportRow>)>()
+        };
+        if (sections.Length == 0) return BadRequest("Relatório inválido.");
+
+        var csv = new StringBuilder("Relatorio;Grupo;Documentos;Apresentado;Aprovado;Glosado;Recuperado;Saldo pendente\r\n");
+        foreach (var (label, rows) in sections)
+            foreach (var row in rows)
+                csv.AppendJoin(';', Csv(label), Csv(row.Label), row.Documents.ToString(CultureInfo.InvariantCulture), Number(row.Presented), Number(row.Approved), Number(row.Denied), Number(row.Recovered), Number(row.PendingRecovery)).Append("\r\n");
+
+        await audit.WriteAsync(user.TenantId, user.UserId, "EXPORT", "HOSPITAL_BILLING_REPORT", null,
+            "Exportação de relatório gerencial hospitalar", HttpContext.Connection.RemoteIpAddress?.ToString(),
+            Request.Headers.UserAgent.ToString(), new { report = normalized, sections = sections.Length, rows = sections.Sum(x => x.Item2.Count) }, ct);
+        return File(new UTF8Encoding(true).GetBytes(csv.ToString()), "text/csv; charset=utf-8", $"relatorio-faturamento-hospitalar-{normalized}-{DateTime.UtcNow:yyyyMMdd-HHmm}.csv");
+    }
 
     private static string Csv(string? value) => $"\"{(value ?? string.Empty).Replace("\"", "\"\"")}\"";
     private static string Number(decimal value) => value.ToString("0.00", CultureInfo.InvariantCulture);
