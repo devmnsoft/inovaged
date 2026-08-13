@@ -47,6 +47,8 @@ public sealed class DocumentAssistantSource
     public string? OcrExcerpt { get; set; }
     public string MatchReason { get; set; } = string.Empty;
     public bool HasOcr { get; set; }
+    public decimal Relevance { get; set; }
+    public IReadOnlyList<string> Badges { get; set; } = [];
 }
 
 public sealed class DocumentAssistantSuggestion

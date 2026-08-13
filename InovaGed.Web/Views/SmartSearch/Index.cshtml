@@ -7,16 +7,16 @@
 <main class="document-assistant" data-document-assistant data-endpoint="@Url.Action("Ask", "SmartSearch")">
     <header class="assistant-hero">
         <div><span class="assistant-eyebrow"><app-icon name="smart-search" size="16" decorative="true" /> Inteligência documental rastreável</span><h1>Assistente Documental Inteligente</h1><p>Converse com o acervo autorizado. Cada resposta indica critérios e documentos que sustentam o resultado.</p></div>
-        <div class="assistant-hero-actions"><a class="btn btn-outline-secondary" asp-action="Statistics"><app-icon name="report" size="16" decorative="true" /> Estatísticas</a><button class="btn btn-outline-secondary" type="button" data-export-conversation disabled><app-icon name="download" size="16" decorative="true" /> Exportar</button><button class="btn btn-ghost" type="button" data-clear-conversation><app-icon name="delete" size="16" decorative="true" /> Limpar conversa</button></div>
+        <div class="assistant-hero-actions"><button class="btn btn-outline-secondary" type="button" data-toggle-history><app-icon name="history" size="16" decorative="true" /> Histórico</button><a class="btn btn-outline-secondary" asp-action="Statistics"><app-icon name="report" size="16" decorative="true" /> Insights</a><button class="btn btn-outline-secondary" type="button" data-export-conversation disabled><app-icon name="download" size="16" decorative="true" /> Exportar</button><button class="btn btn-ghost" type="button" data-clear-conversation><app-icon name="delete" size="16" decorative="true" /> Limpar conversa</button></div>
     </header>
 
     <section class="assistant-trust" aria-label="Garantias da busca"><span><app-icon name="permissions" size="16" decorative="true" /> Respeita suas permissões</span><span><app-icon name="document" size="16" decorative="true" /> Respostas com fontes</span><span><app-icon name="search" size="16" decorative="true" /> Sem evidência, sem invenção</span></section>
 
     <section class="assistant-shell">
-        <aside class="assistant-suggestions"><h2>Perguntas sugeridas</h2><p>Use um ponto de partida ou escreva com suas palavras.</p><div class="assistant-chip-list">
+        <aside class="assistant-suggestions"><section data-history-panel @(ViewBag.ShowHistory == true ? null : "hidden")><div class="d-flex align-items-center justify-content-between"><h2>Histórico local</h2><button class="btn btn-sm btn-ghost" type="button" data-clear-history aria-label="Limpar histórico"><app-icon name="delete" size="15" decorative="true" /></button></div><p>Consultas recentes salvas somente neste navegador.</p><div class="assistant-history-list" data-history-list></div></section><section><h2>Perguntas sugeridas</h2><p>Use um ponto de partida ou escreva com suas palavras.</p><div class="assistant-chip-list">
             @foreach (var suggestion in new[] { "Quais documentos estão sem OCR?", "Quais documentos hospitalares têm glosa?", "Quais faturas do convênio estão pendentes de revisão?", "Procure documentos com competência julho de 2026", "Mostre documentos classificados para eliminação", "Quais caixas físicas estão sem localização?" })
             { <button type="button" class="assistant-chip" data-suggestion="@suggestion">@suggestion</button> }
-        </div></aside>
+        </div></section></aside>
 
         <div class="assistant-conversation">
             <div class="assistant-feed" data-assistant-feed aria-live="polite">

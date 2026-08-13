@@ -41,7 +41,11 @@ public sealed class SmartSearchController : Controller
     public IActionResult AskPage([FromQuery] string? q) => Index(q);
 
     [HttpGet]
-    public IActionResult History() => View("Index");
+    public IActionResult History()
+    {
+        ViewBag.ShowHistory = true;
+        return View("Index");
+    }
 
     [HttpGet]
     public IActionResult Insights() => RedirectToAction(nameof(Statistics));
