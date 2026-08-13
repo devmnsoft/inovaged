@@ -23,4 +23,23 @@ select count(*)::int "Total",count(*) filter(where review_status='PENDING_REVIEW
         return new(kpis, documents);
     }
     public async Task<HospitalBillingDocumentDto?> GetAsync(Guid tenantId, Guid id, CancellationToken ct) => (await DashboardAsync(tenantId, new(), ct)).Documents.FirstOrDefault(x => x.Id == id);
+    public async Task<HospitalBillingReport> ReportAsync(Guid tenantId, string groupBy, CancellationToken ct)
+    {
+        var normalized = groupBy is "competence" or "denial" ? groupBy : "insurer";
+        var expression = normalized switch
+        {
+            "competence" => "coalesce(nullif(competence,''),'Sem competência')",
+            "denial" => "coalesce(nullif(denial_reason,''),'Motivo não identificado')",
+            _ => "coalesce(nullif(insurer,''),'Convênio não identificado')"
+        };
+        await using var connection = await db.OpenAsync(ct);
+        var rows = (await connection.QueryAsync<HospitalBillingReportRow>(new CommandDefinition($$"""
+select {{expression}} "Label",count(*)::int "Documents",count(*) filter(where denied_amount>0)::int "WithDenial",
+coalesce(sum(presented_amount),0) "Presented",coalesce(sum(approved_amount),0) "Approved",
+coalesce(sum(denied_amount),0) "Denied",coalesce(sum(recovered_amount),0) "Recovered"
+from ged.hospital_billing_document where tenant_id=@tenantId and reg_status='A'
+group by 1 order by "Denied" desc,"Presented" desc limit 200
+""", new { tenantId }, cancellationToken: ct))).AsList();
+        return new HospitalBillingReport(normalized, rows);
+    }
 }

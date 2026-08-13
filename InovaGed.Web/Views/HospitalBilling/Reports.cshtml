@@ -1,0 +1,17 @@
+@using InovaGed.Application.HospitalBilling
+@using InovaGed.Web.Models.Atlas
+@model HospitalBillingReport
+@{ ViewData["Title"]="Relatórios do faturamento hospitalar";
+var title=Model.GroupBy=="competence"?"Competência":Model.GroupBy=="denial"?"Motivo da glosa":"Convênio";
+var header=new AtlasPageHeaderVm("Relatórios hospitalares","Conciliação de valores apresentados, glosados e recuperados com escopo por tenant.","report","Faturamento Hospitalar",new[]{new AtlasPageAction("Exportar CSV",Url.Action("ExportReport",new{groupBy=Model.GroupBy})!,"download",true),new AtlasPageAction("Voltar ao painel",Url.Action("Index")!,"arrow-left")}); }
+@section Styles{<link rel="stylesheet" href="~/css/pages/hospital-billing.css" asp-append-version="true" />}
+<partial name="Atlas/_PageHeader" model="header"/>
+<nav class="hospital-report-tabs" aria-label="Tipo de relatório">
+ <a class="@(Model.GroupBy=="insurer"?"is-active":null)" asp-action="Reports" asp-route-groupBy="insurer">Por convênio</a>
+ <a class="@(Model.GroupBy=="competence"?"is-active":null)" asp-action="Reports" asp-route-groupBy="competence">Por competência</a>
+ <a class="@(Model.GroupBy=="denial"?"is-active":null)" asp-action="Reports" asp-route-groupBy="denial">Glosas e recuperação</a>
+</nav>
+<section class="card border-0 shadow-sm"><div class="card-header bg-transparent"><h2>Relatório por @title.ToLowerInvariant()</h2><p>Valores consolidados diretamente das evidências registradas no faturamento hospitalar.</p></div>
+<div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead><tr><th>@title</th><th>Documentos</th><th>Com glosa</th><th>Apresentado</th><th>Aprovado</th><th>Glosado</th><th>Recuperado</th><th>Taxa de recuperação</th></tr></thead><tbody>
+@if(Model.Rows.Count==0){<tr><td colspan="8"><div class="hospital-empty"><app-icon name="report" size="40" decorative="true"/><h3>Sem dados para consolidar</h3><p>Os indicadores aparecerão após a extração dos documentos hospitalares.</p></div></td></tr>}
+@foreach(var row in Model.Rows){var rate=row.Denied>0?row.Recovered/row.Denied*100:0;<tr><td><strong>@row.Label</strong></td><td>@row.Documents</td><td><span class="badge @(row.WithDenial>0?"text-bg-danger":"text-bg-light")">@row.WithDenial</span></td><td>@row.Presented.ToString("C")</td><td>@row.Approved.ToString("C")</td><td class="text-danger">@row.Denied.ToString("C")</td><td class="text-success">@row.Recovered.ToString("C")</td><td><strong>@rate.ToString("N1")%</strong></td></tr>}</tbody></table></div></section>

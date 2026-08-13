@@ -20,7 +20,19 @@ public sealed class HospitalBillingController(ICurrentUser user, IHospitalBillin
     [HttpGet("Review")][HttpGet("Glosas")] public Task<IActionResult> WorkQueue(bool? hasDenial, CancellationToken ct)
     {
         var denialQueue = hasDenial == true || Request.Path.Value!.EndsWith("Glosas", StringComparison.OrdinalIgnoreCase);
-        return Index(null, null, denialQueue ? null : "PENDING_REVIEW", denialQueue ? true : null, null, ct);
+        ViewBag.ActiveArea = denialQueue ? "glosas" : "review";
+        return DashboardView(new HospitalBillingFilter(null, null, denialQueue ? null : "PENDING_REVIEW", denialQueue ? true : null), ct);
+    }
+    [HttpGet("Reports")]
+    public async Task<IActionResult> Reports(string groupBy = "insurer", CancellationToken ct) => View(await queries.ReportAsync(user.TenantId, groupBy, ct));
+    [HttpGet("Reports/Export")]
+    public async Task<IActionResult> ExportReport(string groupBy = "insurer", CancellationToken ct)
+    {
+        var report = await queries.ReportAsync(user.TenantId, groupBy, ct);
+        var csv = new StringBuilder("Agrupamento;Documentos;Com glosa;Apresentado;Aprovado;Glosado;Recuperado\r\n");
+        foreach (var row in report.Rows) csv.AppendJoin(';', Csv(row.Label), row.Documents, row.WithDenial, Number(row.Presented), Number(row.Approved), Number(row.Denied), Number(row.Recovered)).Append("\r\n");
+        await audit.WriteAsync(user.TenantId, user.UserId, "EXPORT", "HOSPITAL_BILLING_REPORT", null, $"Exportação de relatório por {report.GroupBy}", HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers.UserAgent.ToString(), new { report.GroupBy, report.Rows.Count }, ct);
+        return File(new UTF8Encoding(true).GetBytes(csv.ToString()), "text/csv; charset=utf-8", $"relatorio-faturamento-{report.GroupBy}-{DateTime.UtcNow:yyyyMMdd}.csv");
     }
     [HttpGet("Export")]
     public async Task<IActionResult> Export(string? insurer, string? competence, string? status, bool? hasDenial, string? term, CancellationToken ct)
@@ -56,6 +68,9 @@ public sealed class HospitalBillingController(ICurrentUser user, IHospitalBillin
     ],
     ["Valor aprovado + glosado não pode superar o apresentado.", "Guia, autorização e competência devem corresponder ao documento-fonte.", "Confiança inferior a 70% exige revisão humana.", "Paciente permanece mascarado em filas e listagens."]));
     [HttpGet("Details/{id:guid}")] public async Task<IActionResult> Details(Guid id, CancellationToken ct) => await queries.GetAsync(user.TenantId, id, ct) is { } item ? View(item) : NotFound();
+
+    private async Task<IActionResult> DashboardView(HospitalBillingFilter filter, CancellationToken ct)
+    { ViewBag.Filter = filter; return View("Index", await queries.DashboardAsync(user.TenantId, filter, ct)); }
 
     private static string Csv(string? value) => $"\"{(value ?? string.Empty).Replace("\"", "\"\"")}\"";
     private static string Number(decimal value) => value.ToString("0.00", CultureInfo.InvariantCulture);
