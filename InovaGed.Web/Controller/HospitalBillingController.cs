@@ -58,7 +58,18 @@ public sealed class HospitalBillingController(ICurrentUser user, IHospitalBillin
         new("Recurso / protocolo", "protocol", ["recurso de glosa", "protocolo de envio"], ["Protocolo", "Lote", "Valor recuperado"], "Rastrear envio, prazo, resposta e recuperação financeira.")
     ],
     ["Valor aprovado + glosado não pode superar o apresentado.", "Guia, autorização e competência devem corresponder ao documento-fonte.", "Confiança inferior a 70% exige revisão humana.", "Paciente permanece mascarado em filas e listagens."]));
-    [HttpGet("Details/{id:guid}")] public async Task<IActionResult> Details(Guid id, CancellationToken ct) => await queries.GetAsync(user.TenantId, id, ct) is { } item ? View(item) : NotFound();
+    [HttpGet("Details/{id:guid}")] public async Task<IActionResult> Details(Guid id, CancellationToken ct) => await queries.GetDetailsAsync(user.TenantId, id, ct) is { } item ? View(item) : NotFound();
+    [HttpPost("Review")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SaveReview(HospitalBillingReviewRequest request, CancellationToken ct)
+    {
+        if (!ModelState.IsValid) { TempData["Error"] = "Revise os campos informados."; return RedirectToAction(nameof(Details), new { id = request.Id }); }
+        if (!await queries.ReviewAsync(user.TenantId, user.UserId, request, ct))
+        { TempData["Error"] = "Os valores são inconsistentes: aprovado + glosado não pode superar o apresentado, e recuperado não pode superar a glosa."; return RedirectToAction(nameof(Details), new { id = request.Id }); }
+        await audit.WriteAsync(user.TenantId, user.UserId, "UPDATE", "HOSPITAL_BILLING_REVIEW", request.Id, "Revisão hospitalar registrada", HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers.UserAgent.ToString(), new { request.Status, request.DenialStatus, request.ApprovedAmount, request.DeniedAmount, request.RecoveredAmount }, ct);
+        TempData["Success"] = "Revisão salva e incluída no histórico.";
+        return RedirectToAction(nameof(Details), new { id = request.Id });
+    }
     [HttpGet("Reports")]
     public async Task<IActionResult> Reports(CancellationToken ct) => View(await queries.ReportsAsync(user.TenantId, ct));
 
