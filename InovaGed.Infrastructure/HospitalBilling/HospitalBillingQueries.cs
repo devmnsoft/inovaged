@@ -23,6 +23,33 @@ select count(*)::int "Total",count(*) filter(where review_status='PENDING_REVIEW
         return new(kpis, documents);
     }
     public async Task<HospitalBillingDocumentDto?> GetAsync(Guid tenantId, Guid id, CancellationToken ct) => (await DashboardAsync(tenantId, new(), ct)).Documents.FirstOrDefault(x => x.Id == id);
+    public async Task<HospitalBillingDetails?> GetDetailsAsync(Guid tenantId, Guid id, CancellationToken ct)
+    {
+        var document = await GetAsync(tenantId, id, ct);
+        if (document is null) return null;
+        await using var connection = await db.OpenAsync(ct);
+        var history = (await connection.QueryAsync<HospitalBillingReviewHistoryDto>(new CommandDefinition("""
+select reviewed_at "ReviewedAt",review_status "Status",denial_status "DenialStatus",approved_amount "ApprovedAmount",denied_amount "DeniedAmount",recovered_amount "RecoveredAmount",notes "Notes"
+from ged.hospital_billing_review_history where tenant_id=@tenantId and hospital_billing_id=@id order by reviewed_at desc limit 100
+""", new { tenantId, id }, cancellationToken: ct))).AsList();
+        return new(document, history);
+    }
+    public async Task<bool> ReviewAsync(Guid tenantId, Guid userId, HospitalBillingReviewRequest request, CancellationToken ct)
+    {
+        await using var connection = await db.OpenAsync(ct);
+        await using var transaction = await connection.BeginTransactionAsync(ct);
+        var affected = await connection.ExecuteAsync(new CommandDefinition("""
+update ged.hospital_billing_document set review_status=@Status,denial_status=nullif(@DenialStatus,''),approved_amount=@ApprovedAmount,denied_amount=@DeniedAmount,recovered_amount=@RecoveredAmount,reviewed_by=@userId,reviewed_at=now(),updated_at=now()
+where tenant_id=@tenantId and id=@Id and reg_status='A' and @ApprovedAmount+@DeniedAmount<=presented_amount and @RecoveredAmount<=@DeniedAmount
+""", new { tenantId, userId, request.Id, request.Status, request.DenialStatus, request.ApprovedAmount, request.DeniedAmount, request.RecoveredAmount }, transaction, cancellationToken: ct));
+        if (affected == 0) { await transaction.RollbackAsync(ct); return false; }
+        await connection.ExecuteAsync(new CommandDefinition("""
+insert into ged.hospital_billing_review_history(tenant_id,hospital_billing_id,reviewed_by,review_status,denial_status,approved_amount,denied_amount,recovered_amount,notes)
+values(@tenantId,@Id,@userId,@Status,nullif(@DenialStatus,''),@ApprovedAmount,@DeniedAmount,@RecoveredAmount,nullif(trim(@Notes),''))
+""", new { tenantId, userId, request.Id, request.Status, request.DenialStatus, request.ApprovedAmount, request.DeniedAmount, request.RecoveredAmount, request.Notes }, transaction, cancellationToken: ct));
+        await transaction.CommitAsync(ct);
+        return true;
+    }
     public async Task<HospitalBillingReports> ReportsAsync(Guid tenantId, CancellationToken ct)
     {
         await using var connection = await db.OpenAsync(ct);

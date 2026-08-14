@@ -1,5 +1,7 @@
 namespace InovaGed.Application.HospitalBilling;
 
+using System.ComponentModel.DataAnnotations;
+
 public sealed record HospitalBillingFilter(string? Insurer = null, string? Competence = null, string? Status = null, bool? HasDenial = null, string? Term = null);
 public sealed record HospitalBillingKpis(int Total, int Pending, int Approved, int Divergent, int WithDenial, decimal Presented, decimal ApprovedAmount, decimal Denied, decimal InAppeal, decimal Recovered, int WithoutOcr, int LowConfidence);
 public sealed class HospitalBillingDocumentDto
@@ -38,11 +40,25 @@ public sealed record HospitalBillingReports(
     IReadOnlyList<HospitalBillingReportRow> ByProvider,
     IReadOnlyList<HospitalBillingReportRow> ByReviewStatus,
     IReadOnlyList<HospitalBillingReportRow> Denials);
+public sealed record HospitalBillingReviewHistoryDto(DateTime ReviewedAt, string Status, string? DenialStatus, decimal ApprovedAmount, decimal DeniedAmount, decimal RecoveredAmount, string? Notes);
+public sealed record HospitalBillingDetails(HospitalBillingDocumentDto Document, IReadOnlyList<HospitalBillingReviewHistoryDto> History);
+public sealed class HospitalBillingReviewRequest
+{
+    [Required] public Guid Id { get; set; }
+    [Required, RegularExpression("^(PENDING_REVIEW|APPROVED|DIVERGENT)$")] public string Status { get; set; } = "PENDING_REVIEW";
+    [RegularExpression("^(OPEN|IN_APPEAL|ANSWERED|RECOVERED|CLOSED)?$")] public string? DenialStatus { get; set; }
+    [Range(typeof(decimal), "0", "999999999999.99")] public decimal ApprovedAmount { get; set; }
+    [Range(typeof(decimal), "0", "999999999999.99")] public decimal DeniedAmount { get; set; }
+    [Range(typeof(decimal), "0", "999999999999.99")] public decimal RecoveredAmount { get; set; }
+    [StringLength(1000)] public string? Notes { get; set; }
+}
 public sealed record HospitalBillingRuleDto(string DocumentType, string Icon, string[] Signals, string[] RequiredFields, string ReviewGuidance);
 public sealed record HospitalBillingRulesCatalog(IReadOnlyList<HospitalBillingRuleDto> Rules, string[] DivergenceChecks);
 public interface IHospitalBillingQueries
 {
     Task<HospitalBillingDashboard> DashboardAsync(Guid tenantId, HospitalBillingFilter filter, CancellationToken ct);
     Task<HospitalBillingDocumentDto?> GetAsync(Guid tenantId, Guid id, CancellationToken ct);
+    Task<HospitalBillingDetails?> GetDetailsAsync(Guid tenantId, Guid id, CancellationToken ct);
+    Task<bool> ReviewAsync(Guid tenantId, Guid userId, HospitalBillingReviewRequest request, CancellationToken ct);
     Task<HospitalBillingReports> ReportsAsync(Guid tenantId, CancellationToken ct);
 }
