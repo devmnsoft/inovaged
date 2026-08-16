@@ -20,6 +20,7 @@ public sealed class SmartSearchRequest
 
 public sealed class SmartSearchIntent
 {
+    public SmartSearchIntentKind Kind { get; set; } = SmartSearchIntentKind.FindDocument;
     public string OriginalQuery { get; set; } = string.Empty;
     public string? PatientName { get; set; }
     public string? PersonName { get; set; }
@@ -41,6 +42,28 @@ public sealed class SmartSearchIntent
     public string? SearchMode { get; set; } = "Expanded";
     public string Explanation { get; set; } = string.Empty;
     public string ExpandedQuery { get; set; } = string.Empty;
+    public Dictionary<string, string> Entities { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public IReadOnlyList<string> SuggestedFilters { get; set; } = [];
+    public decimal Confidence { get; set; }
+}
+
+public enum SmartSearchIntentKind
+{
+    FindDocument,
+    WithoutOcr,
+    WithoutIndex,
+    BySupplier,
+    ByCompetence,
+    ByValue,
+    ByProtocol,
+    ByClassification,
+    ByRetention,
+    ByPhysicalBox,
+    Billing,
+    HospitalBilling,
+    Denials,
+    PendingReview,
+    LowExtractionConfidence
 }
 
 public sealed class SmartSearchResult
