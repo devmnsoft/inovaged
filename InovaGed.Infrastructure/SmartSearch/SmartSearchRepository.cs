@@ -33,8 +33,10 @@ public sealed class SmartSearchRepository : ISmartSearchRepository, InovaGed.App
         var hasSmartIndex = await ExistsAsync(conn, "ged.document_search_index", ct);
         var hasLegacyOcr = await ExistsAsync(conn, "ged.document_search", ct);
         var fallbackSql = hasLegacyOcr ? FallbackSql : DirectSql;
-        var sql = hasSmartIndex ? SmartIndexSql : fallbackSql;
-        var query = string.IsNullOrWhiteSpace(intent.ExpandedQuery) ? intent.OriginalQuery : intent.ExpandedQuery;
+        var useSmartIndex = hasSmartIndex && intent.Kind is not (SmartSearchIntentKind.WithoutOcr or SmartSearchIntentKind.WithoutIndex);
+        var sql = intent.Kind == SmartSearchIntentKind.WithoutIndex ? DirectSql : useSmartIndex ? SmartIndexSql : fallbackSql;
+        var isInventoryIntent = intent.Kind is SmartSearchIntentKind.WithoutOcr or SmartSearchIntentKind.WithoutIndex;
+        var query = isInventoryIntent ? string.Empty : string.IsNullOrWhiteSpace(intent.ExpandedQuery) ? intent.OriginalQuery : intent.ExpandedQuery;
         var p = new DynamicParameters();
         p.Add("tenantId", scope.TenantId, DbType.Guid);
         p.Add("query", query, DbType.String);
@@ -76,14 +78,16 @@ public sealed class SmartSearchRepository : ISmartSearchRepository, InovaGed.App
             intent.To = toUtc.Value;
         }
 
-        sql = sql.Replace("/*DATE_FILTERS*/", dateFilters.ToString());
+        sql = sql.Replace("/*DATE_FILTERS*/", dateFilters.ToString())
+            .Replace("/*INTENT_FILTER*/", BuildIntentFilter(intent.Kind, hasLegacyOcr, hasSmartIndex));
+        fallbackSql = fallbackSql.Replace("/*INTENT_FILTER*/", BuildIntentFilter(intent.Kind, hasLegacyOcr, hasSmartIndex));
         p.Add("offset", offset, DbType.Int32);
         p.Add("limit", pageSize, DbType.Int32);
 
         var rows = (await conn.QueryAsync<SearchRow>(new CommandDefinition(sql, p, cancellationToken: ct, commandTimeout: 30))).ToList();
         var indexCount = hasSmartIndex ? rows.Count : 0;
         var fallbackCount = 0;
-        if (hasSmartIndex)
+        if (useSmartIndex)
         {
             var fallbackRows = (await conn.QueryAsync<SearchRow>(new CommandDefinition(fallbackSql.Replace("/*DATE_FILTERS*/", dateFilters.ToString()), p, cancellationToken: ct, commandTimeout: 30))).ToList();
             fallbackCount = fallbackRows.Count;
@@ -261,6 +265,12 @@ ocr_text=excluded.ocr_text, search_text=excluded.search_text, search_vector=excl
         => (await conn.QueryAsync<TopRow>(new CommandDefinition(sql, new { tenantId }, cancellationToken: ct))).Select(x => new KeyValuePair<string, int>(string.IsNullOrWhiteSpace(x.K) ? "Não informado" : x.K, x.C)).ToList();
 
     private static string EscapeLike(string? value) => (value ?? string.Empty).Replace("%", "\\%").Replace("_", "\\_");
+    private static string BuildIntentFilter(SmartSearchIntentKind kind, bool hasLegacyOcr, bool hasSmartIndex) => kind switch
+    {
+        SmartSearchIntentKind.WithoutOcr when hasLegacyOcr => "and nullif(ds.ocr_text,'') is null\n",
+        SmartSearchIntentKind.WithoutIndex when hasSmartIndex => "and not exists (select 1 from ged.document_search_index ssi where ssi.tenant_id=d.tenant_id and ssi.document_id=d.id)\n",
+        _ => string.Empty
+    };
     private static bool Contains(string? source, string value) => (source ?? string.Empty).Contains(value, StringComparison.OrdinalIgnoreCase);
     private static string? TruncateSnippet(string? text, int max) => string.IsNullOrWhiteSpace(text) ? null : text.Length <= max ? text : text[..max] + "…";
     private static string MaskSensitive(string? text) => string.IsNullOrWhiteSpace(text) ? string.Empty : Regex.Replace(Regex.Replace(text, @"\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b", "***.***.***-**"), @"\b\d{15}\b", "***************");
@@ -294,7 +304,7 @@ coalesce((select count(*) * 20 from unnest(@tokens::text[]) t where idx.search_t
 from ged.document_search_index idx
 join ged.document d on d.tenant_id=idx.tenant_id and d.id=idx.document_id
 where idx.tenant_id=@tenantId and coalesce(d.reg_status,'A')='A' and (@folderId is null or d.folder_id=@folderId)
-/*DATE_FILTERS*/and (idx.search_vector @@ plainto_tsquery('portuguese', @query) or idx.search_text ilike @likeQuery or idx.file_name ilike @likeOriginalQuery or idx.title ilike @likeOriginalQuery or idx.document_id::text ilike @likeOriginalQuery or (@numericTerm is not null and (idx.file_name ilike @likeNumericTerm or idx.title ilike @likeNumericTerm or idx.search_text ilike @likeNumericTerm or idx.document_id::text ilike @likeNumericTerm)) or (@patientName is not null and idx.patient_name ilike @likePatientName) or exists (select 1 from unnest(@tokens::text[]) t where idx.search_text ilike '%'||t||'%'))
+/*DATE_FILTERS*//*INTENT_FILTER*/and (idx.search_vector @@ plainto_tsquery('portuguese', @query) or idx.search_text ilike @likeQuery or idx.file_name ilike @likeOriginalQuery or idx.title ilike @likeOriginalQuery or idx.document_id::text ilike @likeOriginalQuery or (@numericTerm is not null and (idx.file_name ilike @likeNumericTerm or idx.title ilike @likeNumericTerm or idx.search_text ilike @likeNumericTerm or idx.document_id::text ilike @likeNumericTerm)) or (@patientName is not null and idx.patient_name ilike @likePatientName) or exists (select 1 from unnest(@tokens::text[]) t where idx.search_text ilike '%'||t||'%') or @query = '')
 )
 select *, count(*) over()::int as "TotalRows" from ranked order by "Score" desc, "Title" limit @limit offset @offset
 """;
@@ -319,7 +329,7 @@ left join ged.document_search ds on ds.tenant_id=d.tenant_id and ds.document_id=
 left join ged.document_version v on v.tenant_id=d.tenant_id and (v.id=coalesce(ds.version_id, d.current_version_id) or v.id=d.current_version_id)
 left join ged.folder f on f.tenant_id=d.tenant_id and f.id=d.folder_id
 where d.tenant_id=@tenantId and coalesce(d.reg_status,'A')='A' and (@folderId is null or d.folder_id=@folderId)
-/*DATE_FILTERS*/and (concat_ws(' ', d.title, v.file_name, f.name, ds.ocr_text, d.id::text) ilike @likeQuery or concat_ws(' ', d.title, v.file_name, f.name, ds.ocr_text, d.id::text) ilike @likeOriginalQuery or (@numericTerm is not null and concat_ws(' ', d.title, v.file_name, ds.file_name, f.name, ds.ocr_text, d.id::text) ilike @likeNumericTerm) or exists (select 1 from unnest(@tokens::text[]) t where concat_ws(' ', d.title, v.file_name, f.name, ds.ocr_text, d.id::text) ilike '%'||t||'%') or @query = '')
+/*DATE_FILTERS*//*INTENT_FILTER*/and (concat_ws(' ', d.title, v.file_name, f.name, ds.ocr_text, d.id::text) ilike @likeQuery or concat_ws(' ', d.title, v.file_name, f.name, ds.ocr_text, d.id::text) ilike @likeOriginalQuery or (@numericTerm is not null and concat_ws(' ', d.title, v.file_name, ds.file_name, f.name, ds.ocr_text, d.id::text) ilike @likeNumericTerm) or exists (select 1 from unnest(@tokens::text[]) t where concat_ws(' ', d.title, v.file_name, f.name, ds.ocr_text, d.id::text) ilike '%'||t||'%') or @query = '')
 )
 select *, count(*) over()::int as "TotalRows" from base order by "Score" desc, "Title" limit @limit offset @offset
 """;
@@ -339,7 +349,7 @@ from ged.document d
 left join ged.document_version v on v.tenant_id=d.tenant_id and v.id=d.current_version_id
 left join ged.folder f on f.tenant_id=d.tenant_id and f.id=d.folder_id
 where d.tenant_id=@tenantId and coalesce(d.reg_status,'A')='A' and (@folderId is null or d.folder_id=@folderId)
-/*DATE_FILTERS*/and (concat_ws(' ', d.title, v.file_name, f.name, d.id::text) ilike @likeQuery or concat_ws(' ', d.title, v.file_name, f.name, d.id::text) ilike @likeOriginalQuery or (@numericTerm is not null and concat_ws(' ', d.title, v.file_name, f.name, d.id::text) ilike @likeNumericTerm) or exists (select 1 from unnest(@tokens::text[]) t where concat_ws(' ', d.title, v.file_name, f.name, d.id::text) ilike '%'||t||'%') or @query = '')
+/*DATE_FILTERS*//*INTENT_FILTER*/and (concat_ws(' ', d.title, v.file_name, f.name, d.id::text) ilike @likeQuery or concat_ws(' ', d.title, v.file_name, f.name, d.id::text) ilike @likeOriginalQuery or (@numericTerm is not null and concat_ws(' ', d.title, v.file_name, f.name, d.id::text) ilike @likeNumericTerm) or exists (select 1 from unnest(@tokens::text[]) t where concat_ws(' ', d.title, v.file_name, f.name, d.id::text) ilike '%'||t||'%') or @query = '')
 )
 select *, count(*) over()::int as "TotalRows" from base order by "Score" desc, "Title" limit @limit offset @offset
 """;

@@ -17,6 +17,9 @@ public sealed class SmartQueryParser : ISmartQueryParser, InovaGed.Application.G
     private static readonly Regex MedicalRecordRegex = new(@"prontu[aá]rio\s*[:\-]?\s*(?<number>\d{3,})", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex ProtocolRegex = new(@"protocolo\s*[:\-]?\s*(?<number>\d{3,})", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex StrongNumberRegex = new(@"\b\d{4,}\b", RegexOptions.Compiled);
+    private static readonly Regex SupplierRegex = new(@"fornecedor\s+(?<value>[^,.;]+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex MoneyRegex = new(@"(?:r\$\s*)?(?<value>\d{1,3}(?:\.\d{3})*(?:,\d{1,2})?)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex CompetenceRegex = new(@"compet[eê]ncia\s+(?<month>janeiro|fevereiro|mar[cç]o|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro|0?[1-9]|1[0-2])(?:\s+de)?\s+(?<year>20\d{2})", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex NameRegex = new(@"(?:paciente|do paciente|da paciente|do|da|de)\s+(?<name>[A-ZÁÉÍÓÚÂÊÔÃÕÇ][\p{L}'´`~-]+(?:\s+(?:da|de|do|dos|das|e|[A-ZÁÉÍÓÚÂÊÔÃÕÇ][\p{L}'´`~-]+)){0,5})", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly string[] DocumentWords = ["laudo", "exame", "prontuário", "prontuario", "resultado", "relatório", "relatorio", "receita", "ficha", "guia"];
     private static readonly string[] ExamWords = ["tomografia", "tc", "raio x", "raio-x", "rx", "radiografia", "ressonância", "ressonancia", "ultrassom", "ultrassonografia", "usg", "laboratorial", "laboratório", "laboratorio"];
@@ -45,6 +48,8 @@ public sealed class SmartQueryParser : ISmartQueryParser, InovaGed.Application.G
             From = DbDateTime.ToUtc(request.From),
             To = DbDateTime.ToUtc(request.To)
         };
+
+        InterpretOperationalIntent(normalized, query, intent);
 
 
         var monthYear = MonthYearRegex.Match(query);
@@ -153,8 +158,67 @@ public sealed class SmartQueryParser : ISmartQueryParser, InovaGed.Application.G
         intent.ExpandedTerms = intent.ClinicalTerms.ToList();
         intent.ExpandedQuery = string.Join(' ', intent.Keywords.Concat(intent.ClinicalTerms).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase));
         intent.Explanation = contextIntent.ClinicalTerms.Count > 0 ? contextIntent.Explanation : BuildExplanation(intent);
+        if (intent.Kind != SmartSearchIntentKind.FindDocument)
+            intent.Explanation = $"Intenção local: {IntentLabel(intent.Kind)}. " + intent.Explanation;
         return intent;
     }
+
+    private static void InterpretOperationalIntent(string normalized, string query, SmartSearchIntent intent)
+    {
+        intent.Kind = normalized switch
+        {
+            var q when q.Contains("sem ocr") => SmartSearchIntentKind.WithoutOcr,
+            var q when q.Contains("sem indice") || q.Contains("nao indexad") => SmartSearchIntentKind.WithoutIndex,
+            var q when q.Contains("baixa confianca") => SmartSearchIntentKind.LowExtractionConfidence,
+            var q when q.Contains("glosa") => SmartSearchIntentKind.Denials,
+            var q when q.Contains("fatura") && q.Contains("hospital") => SmartSearchIntentKind.HospitalBilling,
+            var q when q.Contains("fatura") || q.Contains("faturamento") || q.Contains("nota") && q.Contains("vence") => SmartSearchIntentKind.Billing,
+            var q when q.Contains("pendente") && q.Contains("revis") => SmartSearchIntentKind.PendingReview,
+            var q when q.Contains("temporalidade") || q.Contains("eliminacao") => SmartSearchIntentKind.ByRetention,
+            var q when q.Contains("caixa") && (q.Contains("fisica") || q.Contains("localizacao")) => SmartSearchIntentKind.ByPhysicalBox,
+            var q when q.Contains("fornecedor") => SmartSearchIntentKind.BySupplier,
+            var q when q.Contains("competencia") => SmartSearchIntentKind.ByCompetence,
+            var q when q.Contains("acima de") && (q.Contains("r$") || MoneyRegex.IsMatch(q)) => SmartSearchIntentKind.ByValue,
+            var q when q.Contains("protocolo") => SmartSearchIntentKind.ByProtocol,
+            var q when q.Contains("classificacao") => SmartSearchIntentKind.ByClassification,
+            _ => SmartSearchIntentKind.FindDocument
+        };
+
+        var supplier = SupplierRegex.Match(query);
+        if (supplier.Success) intent.Entities["supplier"] = supplier.Groups["value"].Value.Trim();
+        var competence = CompetenceRegex.Match(query);
+        if (competence.Success)
+        {
+            intent.Entities["competenceMonth"] = competence.Groups["month"].Value;
+            intent.Entities["competenceYear"] = competence.Groups["year"].Value;
+        }
+        if (intent.Kind == SmartSearchIntentKind.ByValue)
+        {
+            var matches = MoneyRegex.Matches(query);
+            if (matches.Count > 0) intent.Entities["minimumValue"] = matches[^1].Groups["value"].Value;
+        }
+        intent.SuggestedFilters = intent.Kind == SmartSearchIntentKind.FindDocument ? [] : [IntentLabel(intent.Kind)];
+        intent.Confidence = intent.Kind == SmartSearchIntentKind.FindDocument ? 0.55m : intent.Entities.Count > 0 ? 0.95m : 0.88m;
+    }
+
+    private static string IntentLabel(SmartSearchIntentKind kind) => kind switch
+    {
+        SmartSearchIntentKind.WithoutOcr => "documentos sem OCR",
+        SmartSearchIntentKind.WithoutIndex => "documentos sem índice",
+        SmartSearchIntentKind.BySupplier => "documentos por fornecedor",
+        SmartSearchIntentKind.ByCompetence => "documentos por competência",
+        SmartSearchIntentKind.ByValue => "documentos por valor",
+        SmartSearchIntentKind.ByProtocol => "documentos por protocolo",
+        SmartSearchIntentKind.ByClassification => "documentos por classificação",
+        SmartSearchIntentKind.ByRetention => "temporalidade documental",
+        SmartSearchIntentKind.ByPhysicalBox => "caixa física",
+        SmartSearchIntentKind.Billing => "faturamento",
+        SmartSearchIntentKind.HospitalBilling => "faturamento hospitalar",
+        SmartSearchIntentKind.Denials => "glosas",
+        SmartSearchIntentKind.PendingReview => "revisão pendente",
+        SmartSearchIntentKind.LowExtractionConfidence => "baixa confiança de extração",
+        _ => "busca documental"
+    };
 
     private async Task<IReadOnlyList<string>> LoadSynonymsAsync(Guid tenantId, IEnumerable<string> terms, CancellationToken ct)
     {
