@@ -275,6 +275,28 @@
       "maximumApplicationVersion": "04.1.99",
       "requiresMaintenanceWindow": false,
       "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_08_14_hospital_billing_review_history",
+      "path": "database/migrations/2026_08_14_hospital_billing_review_history.sql",
+      "module": "HospitalBilling",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.99",
+      "requiresMaintenanceWindow": false,
+      "requiresVerifiedBackup": false
+    },
+    {
+      "id": "2026_08_17_hospital_billing_workflow_audit",
+      "path": "database/migrations/2026_08_17_hospital_billing_workflow_audit.sql",
+      "module": "HospitalBilling",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.99",
+      "requiresMaintenanceWindow": false,
+      "requiresVerifiedBackup": false
     }
   ]
 }
