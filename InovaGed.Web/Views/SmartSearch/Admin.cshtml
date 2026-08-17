@@ -1,7 +1,7 @@
 @model InovaGed.Application.SmartSearch.SmartSearchAdminDashboard
 @using InovaGed.Web.Models.Atlas
 @{
-    var titles = new Dictionary<string,string> { ["Settings"]="Configurações", ["Synonyms"]="Sinônimos e termos", ["Intents"]="Intenções", ["Quality"]="Qualidade", ["Feedback"]="Feedbacks" };
+    var titles = new Dictionary<string,string> { ["Settings"]="Configurações", ["Synonyms"]="Sinônimos e termos", ["Intents"]="Intenções", ["Quality"]="Qualidade", ["Feedback"]="Feedbacks", ["Metrics"]="Métricas" };
     ViewData["Title"] = $"SmartSearch — {titles[Model.Section]}";
     ViewData["WorkspaceVariant"] = "wide";
     var header = new AtlasPageHeaderVm(titles[Model.Section], "Governança do assistente documental, com rastreabilidade por tenant e auditoria administrativa.", "smart-search", "SmartSearch administrativo",

@@ -243,6 +243,36 @@ group by c.id,c.title,c.updated_at order by c.updated_at desc limit 30
         }
     }
 
+    public async Task<IReadOnlyList<SmartSearchSavedSearch>> GetSavedSearchesAsync(Guid tenantId, Guid userId, CancellationToken ct)
+    {
+        const string sql = """
+select id as "Id", name as "Name", query_text as "Query", created_at as "CreatedAt"
+from ged.smart_search_saved_search
+where tenant_id=@tenantId and user_id=@userId and reg_status='A'
+order by updated_at desc limit 50
+""";
+        await using var conn = await _db.OpenAsync(ct);
+        return (await conn.QueryAsync<SmartSearchSavedSearch>(new CommandDefinition(sql, new { tenantId, userId }, cancellationToken: ct))).AsList();
+    }
+
+    public async Task SaveSearchAsync(Guid tenantId, Guid userId, string name, string query, CancellationToken ct)
+    {
+        const string sql = """
+insert into ged.smart_search_saved_search(tenant_id,user_id,name,query_text,created_at,updated_at,reg_status)
+values(@tenantId,@userId,@name,@query,now(),now(),'A')
+on conflict(tenant_id,user_id,query_hash) where reg_status='A'
+do update set name=excluded.name,query_text=excluded.query_text,updated_at=now()
+""";
+        await using var conn = await _db.OpenAsync(ct);
+        await conn.ExecuteAsync(new CommandDefinition(sql, new { tenantId, userId, name, query }, cancellationToken: ct));
+    }
+
+    public async Task DeleteSavedSearchAsync(Guid tenantId, Guid userId, Guid id, CancellationToken ct)
+    {
+        await using var conn = await _db.OpenAsync(ct);
+        await conn.ExecuteAsync(new CommandDefinition("update ged.smart_search_saved_search set reg_status='I',updated_at=now() where id=@id and tenant_id=@tenantId and user_id=@userId", new { id, tenantId, userId }, cancellationToken: ct));
+    }
+
     public async Task<SmartSearchStatistics> GetStatisticsAsync(Guid tenantId, CancellationToken ct)
     {
         const string sql = """
