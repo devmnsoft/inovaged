@@ -29,7 +29,8 @@ select count(*)::int "Total",count(*) filter(where review_status='PENDING_REVIEW
         if (document is null) return null;
         await using var connection = await db.OpenAsync(ct);
         var history = (await connection.QueryAsync<HospitalBillingReviewHistoryDto>(new CommandDefinition("""
-select reviewed_at "ReviewedAt",review_status "Status",denial_status "DenialStatus",approved_amount "ApprovedAmount",denied_amount "DeniedAmount",recovered_amount "RecoveredAmount",notes "Notes"
+select reviewed_at "ReviewedAt",reviewed_by "ReviewedBy",coalesce(previous_review_status,'PENDING_REVIEW') "PreviousStatus",review_status "Status",
+previous_denial_status "PreviousDenialStatus",denial_status "DenialStatus",approved_amount "ApprovedAmount",denied_amount "DeniedAmount",recovered_amount "RecoveredAmount",notes "Notes",changed_fields::text "ChangedFields"
 from ged.hospital_billing_review_history where tenant_id=@tenantId and hospital_billing_id=@id order by reviewed_at desc limit 100
 """, new { tenantId, id }, cancellationToken: ct))).AsList();
         return new(document, history);
@@ -39,14 +40,27 @@ from ged.hospital_billing_review_history where tenant_id=@tenantId and hospital_
         await using var connection = await db.OpenAsync(ct);
         await using var transaction = await connection.BeginTransactionAsync(ct);
         var affected = await connection.ExecuteAsync(new CommandDefinition("""
-update ged.hospital_billing_document set review_status=@Status,denial_status=nullif(@DenialStatus,''),approved_amount=@ApprovedAmount,denied_amount=@DeniedAmount,recovered_amount=@RecoveredAmount,reviewed_by=@userId,reviewed_at=now(),updated_at=now()
-where tenant_id=@tenantId and id=@Id and reg_status='A' and @ApprovedAmount+@DeniedAmount<=presented_amount and @RecoveredAmount<=@DeniedAmount
-""", new { tenantId, userId, request.Id, request.Status, request.DenialStatus, request.ApprovedAmount, request.DeniedAmount, request.RecoveredAmount }, transaction, cancellationToken: ct));
+with previous as (
+ select * from ged.hospital_billing_document where tenant_id=@tenantId and id=@Id and reg_status='A'
+ and @ApprovedAmount+@DeniedAmount<=presented_amount and @RecoveredAmount<=@DeniedAmount for update
+), history as (
+ insert into ged.hospital_billing_review_history(tenant_id,hospital_billing_id,reviewed_by,previous_review_status,review_status,previous_denial_status,denial_status,approved_amount,denied_amount,recovered_amount,notes,changed_fields)
+ select @tenantId,id,@userId,review_status,@Status,denial_status,nullif(@DenialStatus,''),@ApprovedAmount,@DeniedAmount,@RecoveredAmount,nullif(trim(@Notes),''),
+ jsonb_strip_nulls(jsonb_build_object(
+  'status',case when review_status is distinct from @Status then jsonb_build_object('from',review_status,'to',@Status) end,
+  'denialStatus',case when denial_status is distinct from nullif(@DenialStatus,'') then jsonb_build_object('from',denial_status,'to',nullif(@DenialStatus,'')) end,
+  'approvedAmount',case when approved_amount is distinct from @ApprovedAmount then jsonb_build_object('from',approved_amount,'to',@ApprovedAmount) end,
+  'deniedAmount',case when denied_amount is distinct from @DeniedAmount then jsonb_build_object('from',denied_amount,'to',@DeniedAmount) end,
+  'recoveredAmount',case when recovered_amount is distinct from @RecoveredAmount then jsonb_build_object('from',recovered_amount,'to',@RecoveredAmount) end,
+  'denialReason',case when denial_reason is distinct from nullif(trim(@DenialReason),'') then jsonb_build_object('from',denial_reason,'to',nullif(trim(@DenialReason),'')) end,
+  'appealDueDate',case when due_date is distinct from @AppealDueDate then jsonb_build_object('from',due_date,'to',@AppealDueDate) end))
+ from previous returning hospital_billing_id
+)
+update ged.hospital_billing_document h set review_status=@Status,denial_status=nullif(@DenialStatus,''),denial_reason=nullif(trim(@DenialReason),''),due_date=@AppealDueDate,
+ approved_amount=@ApprovedAmount,denied_amount=@DeniedAmount,recovered_amount=@RecoveredAmount,appeal_filed=(@DenialStatus='IN_APPEAL'),reviewed_by=@userId,reviewed_at=now(),updated_at=now()
+from history where h.tenant_id=@tenantId and h.id=history.hospital_billing_id
+""", new { tenantId, userId, request.Id, request.Status, request.DenialStatus, request.DenialReason, request.AppealDueDate, request.ApprovedAmount, request.DeniedAmount, request.RecoveredAmount, request.Notes }, transaction, cancellationToken: ct));
         if (affected == 0) { await transaction.RollbackAsync(ct); return false; }
-        await connection.ExecuteAsync(new CommandDefinition("""
-insert into ged.hospital_billing_review_history(tenant_id,hospital_billing_id,reviewed_by,review_status,denial_status,approved_amount,denied_amount,recovered_amount,notes)
-values(@tenantId,@Id,@userId,@Status,nullif(@DenialStatus,''),@ApprovedAmount,@DeniedAmount,@RecoveredAmount,nullif(trim(@Notes),''))
-""", new { tenantId, userId, request.Id, request.Status, request.DenialStatus, request.ApprovedAmount, request.DeniedAmount, request.RecoveredAmount, request.Notes }, transaction, cancellationToken: ct));
         await transaction.CommitAsync(ct);
         return true;
     }
@@ -57,7 +71,7 @@ values(@tenantId,@Id,@userId,@Status,nullif(@DenialStatus,''),@ApprovedAmount,@D
         var insurer = (await connection.QueryAsync<HospitalBillingReportRow>(new CommandDefinition($"select coalesce(nullif(insurer,''),'Não identificado') \"Label\",{select} from ged.hospital_billing_document where tenant_id=@tenantId and reg_status='A' group by 1 order by \"Presented\" desc", new { tenantId }, cancellationToken: ct))).AsList();
         var competence = (await connection.QueryAsync<HospitalBillingReportRow>(new CommandDefinition($"select coalesce(nullif(competence,''),'Sem competência') \"Label\",{select} from ged.hospital_billing_document where tenant_id=@tenantId and reg_status='A' group by 1 order by \"Label\" desc", new { tenantId }, cancellationToken: ct))).AsList();
         var provider = (await connection.QueryAsync<HospitalBillingReportRow>(new CommandDefinition($"select coalesce(nullif(provider_name,''),'Prestador não identificado') \"Label\",{select} from ged.hospital_billing_document where tenant_id=@tenantId and reg_status='A' group by 1 order by \"Presented\" desc", new { tenantId }, cancellationToken: ct))).AsList();
-        var reviewStatus = (await connection.QueryAsync<HospitalBillingReportRow>(new CommandDefinition($"select case review_status when 'PENDING_REVIEW' then 'Pendente de revisão' when 'APPROVED' then 'Aprovado' when 'DIVERGENT' then 'Divergente' else coalesce(nullif(review_status,''),'Sem status') end \"Label\",{select} from ged.hospital_billing_document where tenant_id=@tenantId and reg_status='A' group by 1 order by \"Presented\" desc", new { tenantId }, cancellationToken: ct))).AsList();
+        var reviewStatus = (await connection.QueryAsync<HospitalBillingReportRow>(new CommandDefinition($"select case review_status when 'PENDING_REVIEW' then 'Pendente de revisão' when 'APPROVED' then 'Aprovado' when 'DIVERGENT' then 'Divergente' when 'DENIED' then 'Glosado' when 'APPEAL_IN_REVIEW' then 'Recurso em análise' when 'RECOVERED' then 'Recuperado' when 'CLOSED' then 'Encerrado' else coalesce(nullif(review_status,''),'Sem status') end \"Label\",{select} from ged.hospital_billing_document where tenant_id=@tenantId and reg_status='A' group by 1 order by \"Presented\" desc", new { tenantId }, cancellationToken: ct))).AsList();
         var denials = (await connection.QueryAsync<HospitalBillingReportRow>(new CommandDefinition($"select coalesce(nullif(denial_reason,''),'Motivo não identificado') \"Label\",{select} from ged.hospital_billing_document where tenant_id=@tenantId and reg_status='A' and denied_amount>0 group by 1 order by \"Denied\" desc", new { tenantId }, cancellationToken: ct))).AsList();
         return new(insurer, competence, provider, reviewStatus, denials);
     }

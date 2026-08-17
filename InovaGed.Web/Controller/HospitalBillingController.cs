@@ -66,7 +66,7 @@ public sealed class HospitalBillingController(ICurrentUser user, IHospitalBillin
         if (!ModelState.IsValid) { TempData["Error"] = "Revise os campos informados."; return RedirectToAction(nameof(Details), new { id = request.Id }); }
         if (!await queries.ReviewAsync(user.TenantId, user.UserId, request, ct))
         { TempData["Error"] = "Os valores são inconsistentes: aprovado + glosado não pode superar o apresentado, e recuperado não pode superar a glosa."; return RedirectToAction(nameof(Details), new { id = request.Id }); }
-        await audit.WriteAsync(user.TenantId, user.UserId, "UPDATE", "HOSPITAL_BILLING_REVIEW", request.Id, "Revisão hospitalar registrada", HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers.UserAgent.ToString(), new { request.Status, request.DenialStatus, request.ApprovedAmount, request.DeniedAmount, request.RecoveredAmount }, ct);
+        await audit.WriteAsync(user.TenantId, user.UserId, "UPDATE", "HOSPITAL_BILLING_REVIEW", request.Id, "Revisão hospitalar registrada", HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers.UserAgent.ToString(), new { request.Status, request.DenialStatus, request.DenialReason, request.AppealDueDate, request.ApprovedAmount, request.DeniedAmount, request.RecoveredAmount }, ct);
         TempData["Success"] = "Revisão salva e incluída no histórico.";
         return RedirectToAction(nameof(Details), new { id = request.Id });
     }
