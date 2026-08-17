@@ -1,28 +1,33 @@
-﻿using InovaGed.Infrastructure.Pacs;
+﻿using InovaGed.Application.Common.Context;
+using InovaGed.Infrastructure.Pacs;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace InovaGed.Web.Controllers.Api;
 
 [ApiController]
 [Route("api/pacs")]
+[Authorize]
 public sealed class PacsApiController : ControllerBase
 {
     private readonly PacsIntegrationService _svc;
+    private readonly ICurrentContext _context;
 
-    // ajuste para seu current context de tenant, se já existir no projeto
-    private Guid TenantId => Guid.Parse("00000000-0000-0000-0000-000000000001");
-
-    public PacsApiController(PacsIntegrationService svc)
+    public PacsApiController(PacsIntegrationService svc, ICurrentContext context)
     {
         _svc = svc;
+        _context = context;
     }
 
     [HttpPost("tickets")]
-    [RequestSizeLimit(1024L * 1024 * 1024)] // 1GB (ajuste)
+    [RequestSizeLimit(150_000_000)]
     public async Task<IActionResult> Create([FromForm] PacsTicketUploadRequest req, CancellationToken ct)
     {
+        if (_context.TenantId == Guid.Empty)
+            return Forbid();
+
         var ticketId = await _svc.CreateTicketAndUploadAsync(
-            TenantId,
+            _context.TenantId,
             req.ProtocolCode,
             req.PatientName,
             req.PatientId,
