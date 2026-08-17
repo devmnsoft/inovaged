@@ -144,6 +144,31 @@ public sealed class SmartSearchStatistics
     public IReadOnlyList<KeyValuePair<string, int>> MostAccessedDocuments { get; set; } = [];
 }
 
+public sealed class SmartSearchAdminDashboard
+{
+    public string Section { get; set; } = "Settings";
+    public SmartSearchStatistics Statistics { get; set; } = new();
+    public IReadOnlyList<SmartSearchSynonymAdminRow> Synonyms { get; set; } = [];
+    public IReadOnlyList<SmartSearchFeedbackAdminRow> NegativeFeedback { get; set; } = [];
+}
+
+public sealed class SmartSearchSynonymAdminRow
+{
+    public Guid Id { get; set; }
+    public string Term { get; set; } = string.Empty;
+    public string Synonym { get; set; } = string.Empty;
+    public string Category { get; set; } = "business";
+    public decimal Weight { get; set; } = 1;
+    public bool Active { get; set; }
+}
+
+public sealed class SmartSearchFeedbackAdminRow
+{
+    public Guid DocumentId { get; set; }
+    public string ConversationKey { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
+}
+
 public sealed class UserDocumentScope
 {
     public Guid TenantId { get; set; }

@@ -243,6 +243,36 @@ ocr_text=excluded.ocr_text, search_text=excluded.search_text, search_vector=excl
         return await conn.ExecuteAsync(new CommandDefinition(sql, new { tenantId, documentId }, cancellationToken: ct, commandTimeout: 120));
     }
 
+    public async Task<SmartSearchAdminDashboard> GetAdminDashboardAsync(Guid tenantId, string section, CancellationToken ct)
+    {
+        await using var conn = await _db.OpenAsync(ct);
+        var model = new SmartSearchAdminDashboard { Section = section, Statistics = await GetStatisticsAsync(tenantId, ct) };
+        if (await ExistsAsync(conn, "ged.search_synonym", ct))
+            model.Synonyms = (await conn.QueryAsync<SmartSearchSynonymAdminRow>(new CommandDefinition("""
+select id as "Id", term as "Term", synonym as "Synonym", coalesce(category,'business') as "Category",
+       coalesce(weight,1) as "Weight", coalesce(reg_status,'A')='A' as "Active"
+from ged.search_synonym where tenant_id=@tenantId order by lower(term), lower(synonym) limit 250
+""", new { tenantId }, cancellationToken: ct))).ToList();
+        if (await ExistsAsync(conn, "ged.smart_search_feedback", ct))
+            model.NegativeFeedback = (await conn.QueryAsync<SmartSearchFeedbackAdminRow>(new CommandDefinition("""
+select document_id as "DocumentId", conversation_key as "ConversationKey", created_at as "CreatedAt"
+from ged.smart_search_feedback where tenant_id=@tenantId and helpful=false order by created_at desc limit 100
+""", new { tenantId }, cancellationToken: ct))).ToList();
+        return model;
+    }
+
+    public async Task SaveSynonymAsync(Guid tenantId, Guid? id, string term, string synonym, string category, decimal weight, bool active, CancellationToken ct)
+    {
+        const string sql = """
+insert into ged.search_synonym(id,tenant_id,term,synonym,category,weight,reg_status)
+values(coalesce(@id,gen_random_uuid()),@tenantId,@term,@synonym,@category,@weight,case when @active then 'A' else 'I' end)
+on conflict(id) do update set term=excluded.term,synonym=excluded.synonym,category=excluded.category,
+weight=excluded.weight,reg_status=excluded.reg_status where ged.search_synonym.tenant_id=@tenantId
+""";
+        await using var conn = await _db.OpenAsync(ct);
+        await conn.ExecuteAsync(new CommandDefinition(sql, new { tenantId, id, term, synonym, category, weight, active }, cancellationToken: ct));
+    }
+
     private static SmartSearchResultItem Map(SearchRow r, SmartSearchIntent intent)
     {
         var reasons = new List<SmartSearchResultReason>();
