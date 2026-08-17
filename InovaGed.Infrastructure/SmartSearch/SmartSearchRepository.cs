@@ -196,6 +196,53 @@ do update set helpful=excluded.helpful,created_at=excluded.created_at
         await conn.ExecuteAsync(new CommandDefinition(sql, new { tenantId, userId, documentId, conversationId, helpful }, cancellationToken: ct));
     }
 
+    public async Task SaveConversationTurnAsync(Guid tenantId, Guid userId, string conversationId, string question, DocumentAssistantResponse response, CancellationToken ct)
+    {
+        if (!Guid.TryParse(conversationId, out var id))
+            throw new ArgumentException("Identificador de conversa inválido.", nameof(conversationId));
+        const string sql = """
+insert into ged.smart_search_conversation(id,tenant_id,user_id,title,created_at,updated_at,reg_status)
+values(@id,@tenantId,@userId,left(@question,120),now(),now(),'A')
+on conflict(id) do update set updated_at=now()
+where ged.smart_search_conversation.tenant_id=@tenantId and ged.smart_search_conversation.user_id=@userId;
+insert into ged.smart_search_message(tenant_id,conversation_id,role,content,intent_json,sources_json,created_at,reg_status)
+select @tenantId,@id,'user',@question,null,'[]'::jsonb,now(),'A'
+where exists(select 1 from ged.smart_search_conversation where id=@id and tenant_id=@tenantId and user_id=@userId);
+insert into ged.smart_search_message(tenant_id,conversation_id,role,content,intent_json,sources_json,created_at,reg_status)
+select @tenantId,@id,'assistant',@answer,cast(@intent as jsonb),cast(@sources as jsonb),now(),'A'
+where exists(select 1 from ged.smart_search_conversation where id=@id and tenant_id=@tenantId and user_id=@userId);
+""";
+        await using var conn = await _db.OpenAsync(ct);
+        await conn.ExecuteAsync(new CommandDefinition(sql, new
+        {
+            id, tenantId, userId, question, response.Answer,
+            intent = JsonSerializer.Serialize(response.AppliedCriteria),
+            sources = JsonSerializer.Serialize(response.Sources.Select(x => new { x.DocumentId, x.Title, x.Relevance }))
+        }, cancellationToken: ct));
+    }
+
+    public async Task<IReadOnlyList<SmartSearchConversationSummary>> GetConversationHistoryAsync(Guid tenantId, Guid userId, CancellationToken ct)
+    {
+        const string sql = """
+select c.id as "Id", coalesce(nullif(c.title,''),'Conversa sem título') as "Title", c.updated_at as "UpdatedAt",
+       count(m.id)::int as "MessageCount"
+from ged.smart_search_conversation c
+left join ged.smart_search_message m on m.tenant_id=c.tenant_id and m.conversation_id=c.id and m.reg_status='A'
+where c.tenant_id=@tenantId and c.user_id=@userId and c.reg_status='A'
+group by c.id,c.title,c.updated_at order by c.updated_at desc limit 30
+""";
+        try
+        {
+            await using var conn = await _db.OpenAsync(ct);
+            return (await conn.QueryAsync<SmartSearchConversationSummary>(new CommandDefinition(sql, new { tenantId, userId }, cancellationToken: ct))).AsList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Histórico persistente do SmartSearch indisponível; verifique as migrations.");
+            return [];
+        }
+    }
+
     public async Task<SmartSearchStatistics> GetStatisticsAsync(Guid tenantId, CancellationToken ct)
     {
         const string sql = """

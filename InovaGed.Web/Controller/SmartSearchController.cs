@@ -73,6 +73,7 @@ public sealed class SmartSearchController : Controller
                     CanViewRestrictedDocuments = RolePolicyHelper.IsFullAdmin(User)
                 }
             }, ct);
+            await _repository.SaveConversationTurnAsync(_currentUser.TenantId, _currentUser.UserId, response.ConversationId, question.Trim(), response, ct);
             await _audit.WriteAsync(_currentUser.TenantId, _currentUser.UserId, "VIEW", "DOCUMENT_ASSISTANT_QUERY", null, "Consulta ao assistente documental", HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers.UserAgent.ToString(), new { response.Total, response.Page, correlationId = HttpContext.TraceIdentifier }, ct);
             if (response.AppliedCriteria.IsSensitive)
                 await _audit.WriteAsync(_currentUser.TenantId, _currentUser.UserId, "VIEW", "DOCUMENT_ASSISTANT_SENSITIVE_QUERY", null, "Consulta sensível no assistente registrada sem armazenar o conteúdo", HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers.UserAgent.ToString(), new { response.Total, correlationId = HttpContext.TraceIdentifier }, ct);
@@ -85,6 +86,14 @@ public sealed class SmartSearchController : Controller
             _logger.LogError(ex, "Falha no assistente documental. CorrelationId={CorrelationId}", HttpContext.TraceIdentifier);
             return StatusCode(500, new { success = false, message = "Não foi possível consultar os documentos agora.", correlationId = HttpContext.TraceIdentifier });
         }
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> HistoryData(CancellationToken ct)
+    {
+        if (!_currentUser.IsAuthenticated) return Unauthorized(new { success = false, items = Array.Empty<object>() });
+        var items = await _repository.GetConversationHistoryAsync(_currentUser.TenantId, _currentUser.UserId, ct);
+        return Json(new { success = true, items });
     }
 
     [HttpGet]

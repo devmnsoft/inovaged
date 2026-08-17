@@ -19,6 +19,8 @@ public interface ISmartSearchRepository
     Task LogQueryAsync(SmartSearchRequest request, SmartSearchIntent intent, int resultsCount, long durationMs, CancellationToken ct);
     Task LogAccessAsync(Guid tenantId, Guid userId, Guid documentId, string source, string action, CancellationToken ct);
     Task SaveFeedbackAsync(Guid tenantId, Guid userId, Guid documentId, string conversationId, bool helpful, CancellationToken ct);
+    Task SaveConversationTurnAsync(Guid tenantId, Guid userId, string conversationId, string question, DocumentAssistantResponse response, CancellationToken ct);
+    Task<IReadOnlyList<SmartSearchConversationSummary>> GetConversationHistoryAsync(Guid tenantId, Guid userId, CancellationToken ct);
     Task<SmartSearchStatistics> GetStatisticsAsync(Guid tenantId, CancellationToken ct);
     Task<int> ReindexAsync(Guid tenantId, Guid? documentId, CancellationToken ct);
     Task<SmartSearchAdminDashboard> GetAdminDashboardAsync(Guid tenantId, string section, CancellationToken ct);
