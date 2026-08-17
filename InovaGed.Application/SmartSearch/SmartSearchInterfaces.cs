@@ -21,6 +21,8 @@ public interface ISmartSearchRepository
     Task SaveFeedbackAsync(Guid tenantId, Guid userId, Guid documentId, string conversationId, bool helpful, CancellationToken ct);
     Task<SmartSearchStatistics> GetStatisticsAsync(Guid tenantId, CancellationToken ct);
     Task<int> ReindexAsync(Guid tenantId, Guid? documentId, CancellationToken ct);
+    Task<SmartSearchAdminDashboard> GetAdminDashboardAsync(Guid tenantId, string section, CancellationToken ct);
+    Task SaveSynonymAsync(Guid tenantId, Guid? id, string term, string synonym, string category, decimal weight, bool active, CancellationToken ct);
 }
 
 public interface IDocumentChatService

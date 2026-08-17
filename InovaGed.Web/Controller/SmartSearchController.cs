@@ -208,6 +208,41 @@ public sealed class SmartSearchController : Controller
         return View(model);
     }
 
+    [HttpGet]
+    public Task<IActionResult> Settings(CancellationToken ct) => AdminPageAsync("Settings", ct);
+    [HttpGet]
+    public Task<IActionResult> Synonyms(CancellationToken ct) => AdminPageAsync("Synonyms", ct);
+    [HttpGet]
+    public Task<IActionResult> Intents(CancellationToken ct) => AdminPageAsync("Intents", ct);
+    [HttpGet]
+    public Task<IActionResult> Quality(CancellationToken ct) => AdminPageAsync("Quality", ct);
+    [HttpGet]
+    [ActionName("Feedback")]
+    public Task<IActionResult> AdminFeedback(CancellationToken ct) => AdminPageAsync("Feedback", ct);
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SaveSynonym([FromForm] Guid? id, [FromForm] string term, [FromForm] string synonym,
+        [FromForm] string category, [FromForm] decimal weight = 1, [FromForm] bool active = false, CancellationToken ct = default)
+    {
+        if (!RolePolicyHelper.IsFullAdmin(User)) return Forbid();
+        term = (term ?? string.Empty).Trim(); synonym = (synonym ?? string.Empty).Trim(); category = (category ?? "business").Trim();
+        if (term.Length is < 2 or > 120 || synonym.Length is < 2 or > 120 || category.Length > 40 || weight is < 0.1m or > 10m)
+            ModelState.AddModelError(string.Empty, "Revise os termos e informe um peso entre 0,1 e 10.");
+        if (!ModelState.IsValid) return await AdminPageAsync("Synonyms", ct);
+        await _repository.SaveSynonymAsync(_currentUser.TenantId, id, term, synonym, category, weight, active, ct);
+        await _audit.WriteAsync(_currentUser.TenantId, _currentUser.UserId, "UPDATE", "SMART_SEARCH_SYNONYM", id, "Dicionário do SmartSearch atualizado", HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers.UserAgent.ToString(), new { category, active }, ct);
+        TempData["Success"] = "Sinônimo salvo e disponível para as próximas consultas.";
+        return RedirectToAction(nameof(Synonyms));
+    }
+
+    private async Task<IActionResult> AdminPageAsync(string section, CancellationToken ct)
+    {
+        if (!RolePolicyHelper.IsFullAdmin(User)) return Forbid();
+        var model = await _repository.GetAdminDashboardAsync(_currentUser.TenantId, section, ct);
+        return View("Admin", model);
+    }
+
     [HttpPost]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> ReindexMissing(CancellationToken ct)

@@ -1,0 +1,43 @@
+@model InovaGed.Application.SmartSearch.SmartSearchAdminDashboard
+@using InovaGed.Web.Models.Atlas
+@{
+    var titles = new Dictionary<string,string> { ["Settings"]="Configurações", ["Synonyms"]="Sinônimos e termos", ["Intents"]="Intenções", ["Quality"]="Qualidade", ["Feedback"]="Feedbacks" };
+    ViewData["Title"] = $"SmartSearch — {titles[Model.Section]}";
+    ViewData["WorkspaceVariant"] = "wide";
+    var header = new AtlasPageHeaderVm(titles[Model.Section], "Governança do assistente documental, com rastreabilidade por tenant e auditoria administrativa.", "smart-search", "SmartSearch administrativo",
+        new[] { new AtlasPageAction("Abrir assistente", Url.Action("Index")!, "search", true), new AtlasPageAction("Diagnóstico", Url.Action("Diagnostics")!, "health") },
+        new (string,string?)[] { ("Administração", "/Administration"), ("SmartSearch", null) });
+    var metrics = new[] {
+        new AtlasMetricVm("Consultas hoje", Model.Statistics.SearchesToday.ToString(), "Volume auditado", "info", "search"),
+        new AtlasMetricVm("Sem resultado", Model.Statistics.SearchesWithoutResult.ToString(), "Oportunidades de melhoria", Model.Statistics.SearchesWithoutResult > 0 ? "warning" : "success", "warning"),
+        new AtlasMetricVm("Cobertura OCR", $"{Model.Statistics.OcrAvailablePercent:0.#}%", "Fontes pesquisáveis", "success", "document"),
+        new AtlasMetricVm("Tempo médio", $"{Model.Statistics.AverageDurationMs} ms", "Últimos 30 dias", "info", "clock") };
+}
+@section Styles { <link rel="stylesheet" href="~/css/pages/smart-search-admin.css" asp-append-version="true" /> }
+<div class="atlas-prime-page smart-admin">
+  <partial name="Atlas/_PageHeader" model="header" />
+  <partial name="Atlas/_PageMetrics" model="metrics" />
+  <nav class="smart-admin__tabs" aria-label="Configurações do SmartSearch">
+    @foreach (var item in new[] { ("Settings","Configurações"), ("Synonyms","Sinônimos"), ("Intents","Intenções"), ("Quality","Qualidade"), ("Feedback","Feedbacks") }) {
+      <a class="@(Model.Section == item.Item1 ? "active" : null)" href="/SmartSearch/@item.Item1">@item.Item2</a>
+    }
+  </nav>
+  @if (TempData["Success"] is string success) { <div class="alert alert-success" role="status">@success</div> }
+  @if (!ViewData.ModelState.IsValid) { <div asp-validation-summary="All" class="alert alert-danger"></div> }
+
+  @if (Model.Section == "Synonyms") {
+    <section class="atlas-prime-panel"><div class="atlas-prime-panel__header"><div><h2>Dicionário do negócio</h2><small>Expanda consultas sem alterar o termo original ou expor dados pessoais.</small></div></div>
+      <form asp-action="SaveSynonym" method="post" class="smart-admin__form">@Html.AntiForgeryToken()
+        <label>Termo<input name="term" maxlength="120" required /></label><label>Sinônimo<input name="synonym" maxlength="120" required /></label><label>Categoria<select name="category"><option value="business">Negócio</option><option value="document">Documento</option><option value="billing">Faturamento</option><option value="clinical">Clínico sensível</option></select></label><label>Peso<input name="weight" type="number" min="0.1" max="10" step="0.1" value="1" required /></label><label class="smart-admin__check"><input name="active" type="checkbox" value="true" checked /> Ativo</label><button class="btn btn-primary" type="submit"><app-icon name="save" size="16" decorative="true" /> Salvar termo</button>
+      </form>
+      <div class="table-responsive"><table class="table align-middle"><thead><tr><th>Termo</th><th>Sinônimo</th><th>Categoria</th><th>Peso</th><th>Status</th></tr></thead><tbody>@foreach(var row in Model.Synonyms){<tr><td><strong>@row.Term</strong></td><td>@row.Synonym</td><td>@row.Category</td><td>@row.Weight</td><td><span class="badge @(row.Active ? "text-bg-success" : "text-bg-secondary")">@(row.Active ? "Ativo" : "Inativo")</span></td></tr>}</tbody></table></div>
+      @if (!Model.Synonyms.Any()) { <div class="smart-admin__empty"><app-icon name="search" size="28" decorative="true" /><strong>Nenhum sinônimo configurado</strong><span>Cadastre o primeiro termo para melhorar a recuperação documental.</span></div> }
+    </section>
+  } else if (Model.Section == "Feedback") {
+    <section class="atlas-prime-panel"><div class="atlas-prime-panel__header"><div><h2>Feedbacks negativos</h2><small>Fila de melhoria sem exibir a pergunta sensível do usuário.</small></div></div><div class="table-responsive"><table class="table"><thead><tr><th>Documento</th><th>Conversa mascarada</th><th>Registrado em</th><th>Ação</th></tr></thead><tbody>@foreach(var row in Model.NegativeFeedback){<tr><td><code>GED:@row.DocumentId.ToString()[..8]…</code></td><td>@(row.ConversationKey.Length > 8 ? row.ConversationKey[..8] + "…" : row.ConversationKey)</td><td>@row.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td><td><a class="btn btn-sm btn-outline-primary" href="/Ged/Details/@row.DocumentId">Revisar fonte</a></td></tr>}</tbody></table></div>@if(!Model.NegativeFeedback.Any()){<div class="smart-admin__empty"><strong>Nenhum feedback negativo pendente</strong><span>A fila de melhoria está em dia.</span></div>}</section>
+  } else {
+    <section class="atlas-prime-panel"><div class="atlas-prime-panel__header"><div><h2>@titles[Model.Section]</h2><small>Políticas vigentes do assistente documental.</small></div></div><div class="smart-admin__cards">
+      @foreach(var item in (Model.Section == "Intents" ? new[]{"Sem OCR e sem índice","Fornecedor, CNPJ e competência","Valor, vencimento e protocolo","Tramitação e classificação","Temporalidade e acervo físico","Faturamento, glosas e revisão"} : Model.Section == "Quality" ? new[]{"Respostas sempre com fontes","Consultas sem resultado monitoradas","Feedback negativo priorizado","OCR e índice acompanhados"} : new[]{"Escopo do usuário obrigatório","OCR sujeito à permissão","Dados pessoais mascarados","Auditoria de consultas sensíveis","Ranking por evidência","Filtros sugeridos automaticamente"})) { <article><app-icon name="check" size="18" decorative="true" /><strong>@item</strong><span>Ativo e aplicado por tenant.</span></article> }
+    </div></section>
+  }
+</div>
