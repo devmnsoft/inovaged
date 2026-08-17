@@ -27,14 +27,19 @@
     input.focus();
     form.requestSubmit();
   }));
-  const loadHistory = () => { try { return JSON.parse(localStorage.getItem(historyKey) || '[]'); } catch { return []; } };
-  const renderHistory = () => {
-    const items = loadHistory();
+  const loadLocalHistory = () => { try { return JSON.parse(localStorage.getItem(historyKey) || '[]'); } catch { return []; } };
+  const renderHistory = async () => {
+    let items = [];
+    try {
+      const result = await fetch(root.dataset.historyEndpoint, { headers: { Accept: 'application/json' } });
+      const payload = await result.json();
+      if (result.ok && payload.success) items = payload.items.map(item => ({ question: item.title, date: `${item.messageCount} mensagens · ${new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(item.updatedAt))}` }));
+    } catch { items = loadLocalHistory(); }
     historyList.innerHTML = items.length ? items.map(item => `<button type="button" data-history-question="${escapeHtml(item.question)}"><span>${escapeHtml(item.question)}</span><small>${escapeHtml(item.date)}</small></button>`).join('') : '<div class="assistant-history-empty">Nenhuma consulta recente.</div>';
     historyList.querySelectorAll('[data-history-question]').forEach(button => button.addEventListener('click', () => { input.value = button.dataset.historyQuestion; input.focus(); }));
   };
   const remember = question => {
-    const items = loadHistory().filter(item => item.question !== question);
+    const items = loadLocalHistory().filter(item => item.question !== question);
     items.unshift({ question, date: new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date()) });
     localStorage.setItem(historyKey, JSON.stringify(items.slice(0, 12))); renderHistory();
   };
@@ -55,7 +60,7 @@
   root.querySelector('[data-clear-saved]').addEventListener('click', () => { localStorage.removeItem(savedKey); renderSaved(); toast('Buscas salvas removidas.', 'success'); });
   renderSaved();
   root.querySelector('[data-toggle-history]').addEventListener('click', () => { historyPanel.hidden = !historyPanel.hidden; if (!historyPanel.hidden) renderHistory(); });
-  root.querySelector('[data-clear-history]').addEventListener('click', () => { localStorage.removeItem(historyKey); renderHistory(); toast('Histórico local removido.', 'success'); });
+  root.querySelector('[data-clear-history]').addEventListener('click', () => { renderHistory(); toast('Histórico atualizado.', 'success'); });
   renderHistory();
   root.querySelector('[data-clear-conversation]').addEventListener('click', () => {
     controller?.abort();

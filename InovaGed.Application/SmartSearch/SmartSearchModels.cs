@@ -169,6 +169,14 @@ public sealed class SmartSearchFeedbackAdminRow
     public DateTime CreatedAt { get; set; }
 }
 
+public sealed class SmartSearchConversationSummary
+{
+    public Guid Id { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public DateTime UpdatedAt { get; set; }
+    public int MessageCount { get; set; }
+}
+
 public sealed class UserDocumentScope
 {
     public Guid TenantId { get; set; }
