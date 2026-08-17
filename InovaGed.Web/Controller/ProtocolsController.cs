@@ -21,6 +21,22 @@ public sealed class ProtocolsController : Controller
     public ProtocolsController(ICurrentUser user, IProtocolRequestService service, IProtocolAccessService access, IFileStorage storage, ILogger<ProtocolsController> logger)
     { _user = user; _service = service; _access = access; _storage = storage; _logger = logger; }
 
+    [HttpGet("")]
+    public IActionResult Index() => RedirectToAction(nameof(WorkQueue));
+
+    [Authorize(Policy = AppPolicies.ProtocolRequest)]
+    [HttpGet("Create")]
+    public IActionResult Create(Guid? documentId) => RedirectToAction("New", "ProtocolRequests", new { documentId });
+
+    [HttpGet("Inbox")]
+    public IActionResult Inbox() => RedirectToAction(nameof(WorkQueue), new { onlyMine = true });
+
+    [HttpGet("Outbox")]
+    public IActionResult Outbox() => RedirectToAction("My", "ProtocolRequests");
+
+    [HttpGet("Movements")]
+    public IActionResult Movements() => RedirectToAction(nameof(WorkQueue), new { showAll = true });
+
     [Authorize(Policy = AppPolicies.ProtocolManage)]
     [HttpGet("WorkQueue")]
     public async Task<IActionResult> WorkQueue(ProtocolWorkQueueFilter filter, CancellationToken ct)

@@ -3,11 +3,14 @@ using InovaGed.Application.Common.Context;
 using InovaGed.Application.Retention;
 using InovaGed.Infrastructure.Retention;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
+using InovaGed.Web.Auth;
 using Microsoft.Extensions.Logging;
 
 namespace InovaGed.Web.Controllers;
 
 [Route("[controller]")]
+[Authorize(Policy = Policies.CanViewRetention)]
 public sealed class RetentionController : Controller
 {
     private readonly IRetentionJobRepository _repo;
@@ -41,6 +44,15 @@ public sealed class RetentionController : Controller
     }
 
     private Guid UserIdOrEmpty() => _ctx.UserId;
+
+    [HttpGet("Review")]
+    public IActionResult Review() => RedirectToAction(nameof(Queue), new { status = "DUE_SOON" });
+
+    [HttpGet("Disposal")]
+    public IActionResult Disposal() => RedirectToAction("Index", "RetentionDestination");
+
+    [HttpGet("Calendar")]
+    public IActionResult Calendar() => RedirectToAction(nameof(Queue));
 
     // GET /Retention
     [HttpGet("")]
@@ -117,8 +129,7 @@ public sealed class RetentionController : Controller
     // ✅ Export CSV dos selecionados
     // POST /Retention/ExportCsv  (JSON body)
     [HttpPost("ExportCsv")]
-    // Se quiser antiforgery depois, você vai precisar mandar o token no header do fetch.
-    // [ValidateAntiForgeryToken]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> ExportCsv([FromBody] ExportRequest req, CancellationToken ct)
     {
         try

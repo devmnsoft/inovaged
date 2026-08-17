@@ -53,6 +53,15 @@ public sealed class ClassificationController : Controller
         return RedirectToAction("Index", "Ged");
     }
 
+    [HttpGet("Plans")]
+    public IActionResult Plans() => RedirectToAction("Index", "ClassificationPlan");
+
+    [HttpGet("Types")]
+    public IActionResult Types() => RedirectToAction("Index", "ClassificationPlan", new { focus = "types" });
+
+    [HttpGet("Rules")]
+    public IActionResult Rules() => RedirectToAction("Index", "ClassificationPlan");
+
     [HttpGet("Panel")]
     public async Task<IActionResult> Panel(Guid documentId, CancellationToken ct)
     {

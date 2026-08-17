@@ -1,5 +1,6 @@
 ﻿@model IReadOnlyList<InovaGed.Application.Retention.RetentionQueueRow>
 @addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+@inject Microsoft.AspNetCore.Antiforgery.IAntiforgery Antiforgery
 
 @{
     ViewData["Title"] ??= "Central Operacional de Temporalidade";
@@ -246,7 +247,10 @@
         try {
             const res = await fetch('/Retention/ExportCsv', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'RequestVerificationToken': '@Antiforgery.GetAndStoreTokens(Context).RequestToken'
+                },
                 body: JSON.stringify({ documentIds: ids })
             });
 

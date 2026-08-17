@@ -27,6 +27,15 @@ public sealed class PhysicalController : Controller
         _commands = commands;
     }
 
+    [HttpGet("Inventory")]
+    public IActionResult Inventory() => RedirectToAction(nameof(PhysicalMap));
+
+    [HttpGet("Movements")]
+    public IActionResult Movements() => RedirectToAction(nameof(BoxHistory));
+
+    [HttpGet("Labels")]
+    public IActionResult Labels() => RedirectToAction(nameof(Boxes));
+
     [HttpGet("Locations")]
     public async Task<IActionResult> Locations(string? q, CancellationToken ct)
     {

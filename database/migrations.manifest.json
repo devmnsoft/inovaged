@@ -297,6 +297,17 @@
       "maximumApplicationVersion": "04.1.99",
       "requiresMaintenanceWindow": false,
       "requiresVerifiedBackup": false
+    },
+    {
+      "id": "2026_08_18_ged_operational_routes_audit",
+      "path": "database/migrations/2026_08_18_ged_operational_routes_audit.sql",
+      "module": "GedOperational",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.99",
+      "requiresMaintenanceWindow": false,
+      "requiresVerifiedBackup": true
     }
   ]
 }
