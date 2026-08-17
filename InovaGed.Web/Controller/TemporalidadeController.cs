@@ -1,4 +1,5 @@
-﻿using InovaGed.Application.Common.Context;
+using InovaGed.Application.Common.Context;
+using Microsoft.AspNetCore.Authorization;
 using InovaGed.Application.Retention;
 using InovaGed.Application.RetentionCases;
 using InovaGed.Infrastructure.Retention;
@@ -7,6 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace InovaGed.Web.Controllers;
 
 [Route("[controller]")]
+[Authorize]
 public sealed class TemporalidadeController : Controller
 {
     private readonly RetentionRecalculateService _svc;

@@ -1,10 +1,12 @@
-﻿using InovaGed.Application.ClassificationPlans;
+using InovaGed.Application.ClassificationPlans;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 
 namespace InovaGed.Web.Controllers;
 
 [Route("[controller]")]
+[Authorize]
 public sealed class ClassificationPlanController : Controller
 {
     private readonly IClassificationPlanRepository _repo;

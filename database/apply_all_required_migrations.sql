@@ -2979,6 +2979,8 @@ where coalesce(reg_status, 'A') = 'A';
 \ir migrations/2026_07_administration_security_governance.sql
 \ir migrations/2026_07_backup_continuity_portability.sql
 \ir migrations/2026_07_estabilizar_admin_continuity_ci.sql
+\ir migrations/2026_07_cluster_nodes_and_deployments.sql
+\ir migrations/2026_07_workspace_productivity.sql
 \ir migrations/2026_07_signature_cms_agent.sql
 \ir migrations/2026_07_signature_cms_agent_runtime.sql
 \ir migrations/2026_07_signature_cms_end_to_end.sql
@@ -2994,7 +2996,6 @@ where coalesce(reg_status, 'A') = 'A';
 \ir migrations/2026_08_physical_archive_operations.sql
 \ir migrations/2026_08_loans_overdue_collections_reports.sql
 \ir migrations/2026_08_10_archival_migration_hotfix.sql
-\ir migrations/2026_08_10_final_schema_hotfix.sql
 \ir migrations/2026_08_11_runtime_schema_hotfix.sql
 \ir migrations/2026_08_11_loans_overdue_runtime_hotfix.sql
 
@@ -3002,6 +3003,7 @@ where coalesce(reg_status, 'A') = 'A';
 \ir migrations/2026_08_11_billing_review_governance.sql
 \ir migrations/2026_08_11_billing_extraction_rules.sql
 \ir migrations/2026_08_11_search_pg_trgm_safe_index.sql
+\ir migrations/2026_08_12_protocol_tramitation.sql
 \ir migrations/2026_08_13_hospital_billing_smart_search.sql
 \ir migrations/2026_08_14_hospital_billing_review_history.sql
 \ir migrations/2026_08_17_hospital_billing_workflow_audit.sql

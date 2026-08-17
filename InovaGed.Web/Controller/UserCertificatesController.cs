@@ -2,21 +2,24 @@
 using Microsoft.AspNetCore.Mvc;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Ged.Users;
+using InovaGed.Application.Identity;
+using Microsoft.AspNetCore.Authorization;
 
 namespace InovaGed.Web.Controllers;
 
+[Authorize]
 public class UserCertificatesController : Controller
 {
     private readonly IDbConnectionFactory _db;
+    private readonly ICurrentUser _currentUser;
 
-    public UserCertificatesController(IDbConnectionFactory db)
+    public UserCertificatesController(IDbConnectionFactory db, ICurrentUser currentUser)
     {
         _db = db;
+        _currentUser = currentUser;
     }
 
-    private Guid TenantId =>
-        Guid.Parse(User.FindFirst("tenant_id")?.Value
-        ?? "00000000-0000-0000-0000-000000000001");
+    private Guid TenantId => _currentUser.TenantId;
 
     // LISTAR CERTIFICADOS DO USUÁRIO
     public async Task<IActionResult> Index(Guid userId)
@@ -57,6 +60,7 @@ public class UserCertificatesController : Controller
 
     // CREATE
     [HttpPost]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> Create(UserCertificateDto dto)
     {
         dto.Cpf = (dto.Cpf ?? "").Trim();
