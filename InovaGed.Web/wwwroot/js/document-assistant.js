@@ -14,7 +14,6 @@
   const transcript = [];
   const evidence = [];
   const historyKey = 'inovaged.assistant.history';
-  const savedKey = 'inovaged.assistant.saved';
   let lastQuestion = '';
   const historyPanel = root.querySelector('[data-history-panel]');
   const historyList = root.querySelector('[data-history-list]');
@@ -43,21 +42,29 @@
     items.unshift({ question, date: new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date()) });
     localStorage.setItem(historyKey, JSON.stringify(items.slice(0, 12))); renderHistory();
   };
-  const loadSaved = () => { try { return JSON.parse(localStorage.getItem(savedKey) || '[]'); } catch { return []; } };
-  const renderSaved = () => {
-    const items = loadSaved();
-    savedList.innerHTML = items.length ? items.map(question => `<button type="button" data-saved-question="${escapeHtml(question)}"><span>${escapeHtml(question)}</span><small>Executar novamente</small></button>`).join('') : '<div class="assistant-history-empty">Nenhuma busca salva.</div>';
+  const renderSaved = async () => {
+    let items = [];
+    try {
+      const result = await fetch(root.dataset.savedEndpoint, { headers: { Accept: 'application/json' } });
+      const payload = await result.json();
+      if (result.ok && payload.success) items = payload.items;
+    } catch { toast('Não foi possível carregar as buscas salvas.', 'warning'); }
+    savedList.innerHTML = items.length ? items.map(item => `<div class="assistant-saved-row"><button type="button" data-saved-question="${escapeHtml(item.query)}"><span>${escapeHtml(item.name)}</span><small>Executar novamente</small></button><button type="button" class="btn btn-sm btn-ghost" data-delete-saved="${item.id}" aria-label="Excluir busca ${escapeHtml(item.name)}">×</button></div>`).join('') : '<div class="assistant-history-empty">Nenhuma busca salva.</div>';
     savedList.querySelectorAll('[data-saved-question]').forEach(button => button.addEventListener('click', () => { input.value = button.dataset.savedQuestion; input.focus(); }));
+    savedList.querySelectorAll('[data-delete-saved]').forEach(button => button.addEventListener('click', async () => {
+      const body = new FormData(); body.set('__RequestVerificationToken', form.querySelector('[name="__RequestVerificationToken"]').value); body.set('id', button.dataset.deleteSaved);
+      const result = await fetch(root.dataset.deleteSavedEndpoint, { method: 'POST', body });
+      if (result.ok) { await renderSaved(); toast('Busca salva removida.', 'success'); }
+    }));
   };
-  saveButton.addEventListener('click', () => {
+  saveButton.addEventListener('click', async () => {
     if (!lastQuestion) return;
-    const items = loadSaved().filter(item => item !== lastQuestion);
-    items.unshift(lastQuestion);
-    localStorage.setItem(savedKey, JSON.stringify(items.slice(0, 10)));
-    renderSaved();
-    toast('Busca salva nos seus atalhos.', 'success');
+    const body = new FormData(); body.set('__RequestVerificationToken', form.querySelector('[name="__RequestVerificationToken"]').value); body.set('query', lastQuestion); body.set('name', lastQuestion.slice(0, 120));
+    const result = await fetch(root.dataset.saveEndpoint, { method: 'POST', body });
+    if (!result.ok) { toast('Não foi possível salvar a busca.', 'error'); return; }
+    await renderSaved(); toast('Busca salva na sua conta.', 'success');
   });
-  root.querySelector('[data-clear-saved]').addEventListener('click', () => { localStorage.removeItem(savedKey); renderSaved(); toast('Buscas salvas removidas.', 'success'); });
+  root.querySelector('[data-clear-saved]').addEventListener('click', () => { renderSaved(); toast('Buscas salvas atualizadas.', 'success'); });
   renderSaved();
   root.querySelector('[data-toggle-history]').addEventListener('click', () => { historyPanel.hidden = !historyPanel.hidden; if (!historyPanel.hidden) renderHistory(); });
   root.querySelector('[data-clear-history]').addEventListener('click', () => { renderHistory(); toast('Histórico atualizado.', 'success'); });

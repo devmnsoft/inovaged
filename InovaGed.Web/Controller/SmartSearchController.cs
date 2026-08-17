@@ -97,6 +97,30 @@ public sealed class SmartSearchController : Controller
     }
 
     [HttpGet]
+    public async Task<IActionResult> SavedSearches(CancellationToken ct)
+        => Json(new { success = true, items = await _repository.GetSavedSearchesAsync(_currentUser.TenantId, _currentUser.UserId, ct) });
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SaveSearch([FromForm] string query, [FromForm] string? name, CancellationToken ct)
+    {
+        query = (query ?? string.Empty).Trim();
+        name = string.IsNullOrWhiteSpace(name) ? query : name.Trim();
+        if (query.Length is < 2 or > 500 || name.Length > 120) return BadRequest(new { success = false, message = "Busca inválida." });
+        await _repository.SaveSearchAsync(_currentUser.TenantId, _currentUser.UserId, name, query, ct);
+        return Json(new { success = true, message = "Busca salva com segurança na sua conta." });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> DeleteSavedSearch([FromForm] Guid id, CancellationToken ct)
+    {
+        if (id == Guid.Empty) return BadRequest();
+        await _repository.DeleteSavedSearchAsync(_currentUser.TenantId, _currentUser.UserId, id, ct);
+        return Json(new { success = true });
+    }
+
+    [HttpGet]
     public IActionResult Index([FromQuery] string? q)
     {
         if (!_currentUser.IsAuthenticated) return RedirectToAction("Login", "Account");
@@ -205,6 +229,9 @@ public sealed class SmartSearchController : Controller
         var model = await _statistics.GetAsync(_currentUser.TenantId, ct);
         return View(model);
     }
+
+    [HttpGet]
+    public Task<IActionResult> Metrics(CancellationToken ct) => Statistics(ct);
 
     [HttpGet]
     public async Task<IActionResult> Diagnostics(CancellationToken ct)
