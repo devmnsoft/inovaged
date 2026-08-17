@@ -1,24 +1,28 @@
 ﻿using System.Text;
+using InovaGed.Application.Identity;
 using InovaGed.Application.RetentionCases;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 
 namespace InovaGed.Web.Controllers;
 
 [Route("RetentionCases")]
+[Authorize]
 public sealed class RetentionCaseController : Controller
 {
     private readonly IRetentionCaseRepository _repo;
     private readonly ILogger<RetentionCaseController> _logger;
+    private readonly ICurrentUser _currentUser;
 
-    // ✅ Ajuste para seu contexto real depois
-    private Guid TenantId => Guid.Parse("00000000-0000-0000-0000-000000000001");
-    private Guid UserId => Guid.Empty;
+    private Guid TenantId => _currentUser.TenantId;
+    private Guid UserId => _currentUser.UserId;
 
-    public RetentionCaseController(IRetentionCaseRepository repo, ILogger<RetentionCaseController> logger)
+    public RetentionCaseController(IRetentionCaseRepository repo, ILogger<RetentionCaseController> logger, ICurrentUser currentUser)
     {
         _repo = repo;
         _logger = logger;
+        _currentUser = currentUser;
     }
 
     [HttpGet("")]
@@ -38,6 +42,7 @@ public sealed class RetentionCaseController : Controller
     }
 
     [HttpPost("Create")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> Create([FromBody] CreateRetentionCaseRequest req, CancellationToken ct)
     {
         try
@@ -53,6 +58,7 @@ public sealed class RetentionCaseController : Controller
     }
 
     [HttpPost("DecideItem")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> DecideItem([FromBody] DecideItemRequest req, CancellationToken ct)
     {
         try
@@ -68,6 +74,7 @@ public sealed class RetentionCaseController : Controller
     }
 
     [HttpPost("Close")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> Close(Guid caseId, string status, CancellationToken ct)
     {
         try
@@ -93,6 +100,7 @@ public sealed class RetentionCaseController : Controller
     }
 
     [HttpPost("Execute")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> Execute(Guid caseId, CancellationToken ct,
     [FromServices] RetentionCaseExecutionService execSvc)
     {
