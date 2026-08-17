@@ -249,6 +249,7 @@
 </div>
 
 @section Scripts {
+@Html.AntiForgeryToken()
 <script>
     const confirmationText = @Html.Raw(JsonSerializer.Serialize(confirmationText, jsonOptions));
     const requireConfirmation = @JsonSerializer.Serialize(requireConfirmation);
@@ -257,6 +258,14 @@
     let currentSqlFix = null;
     let pendingApply = null;
     let applyAll = false;
+    const antiforgeryToken = document.querySelector('input[name="__RequestVerificationToken"]')?.value || '';
+
+    function jsonHeaders() {
+        return {
+            'Content-Type': 'application/json',
+            'RequestVerificationToken': antiforgeryToken
+        };
+    }
 
     function copyText(text) {
         navigator.clipboard.writeText(text || '').then(() => showToast('SQL copiado.'));
@@ -294,7 +303,7 @@
         const normalized = normalizeFix(fix);
         const response = await fetch('/SystemHealth/Schema/Preflight', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: jsonHeaders(),
             body: JSON.stringify({ checkId: normalized.id })
         });
         const result = await response.json();
@@ -343,7 +352,7 @@
         }
         const response = await fetch(url, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: jsonHeaders(),
             body: JSON.stringify(payload)
         });
         const result = await response.json();

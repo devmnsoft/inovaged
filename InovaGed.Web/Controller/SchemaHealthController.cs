@@ -71,6 +71,7 @@ public sealed class SchemaHealthController : Controller
 
     [Authorize(Policy = AppPolicies.SchemaRepair)]
     [HttpPost("ApplyFix")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> ApplyFix([FromBody] ApplySchemaFixRequest request, CancellationToken ct)
     {
         if (request is null || string.IsNullOrWhiteSpace(request.CheckId))
@@ -82,6 +83,7 @@ public sealed class SchemaHealthController : Controller
 
     [Authorize(Policy = AppPolicies.SchemaRepair)]
     [HttpPost("Preflight")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> Preflight([FromBody] ApplySchemaFixRequest request, CancellationToken ct)
     {
         if (request is null || string.IsNullOrWhiteSpace(request.CheckId))
@@ -98,6 +100,7 @@ public sealed class SchemaHealthController : Controller
 
     [Authorize(Policy = AppPolicies.SchemaRepair)]
     [HttpPost("ApplySafeFixes")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> ApplySafeFixes([FromBody] ApplySchemaFixRequest request, CancellationToken ct)
     {
         var result = await _schemaRepair.ApplySafeFixesAsync(request?.Confirmation ?? string.Empty, _currentUser.UserId, ct);
