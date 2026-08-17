@@ -8,12 +8,45 @@
         "Transforme dados do acervo em decisões, evidências de conformidade e filas de trabalho acionáveis.",
         "report",
         "Gestão e governança",
-        new[] { new AtlasPageAction("Abrir Central Operacional", "/Operations", "dashboard", true) },
+        new[] { new AtlasPageAction("Exportar documentos (CSV)", "/Reports/ExportDocumentsCsv", "download", true), new AtlasPageAction("Abrir Central Operacional", "/Operations", "dashboard") },
         new (string Label, string? Url)[] { ("Início", "/"), ("Relatórios", null) });
 }
 <div class="atlas-prime-page reports-prime" data-reports-page>
     <partial name="Atlas/_PageHeader" model="pageHeader" />
     <partial name="Atlas/_PageMetrics" model="Model.Metrics" />
+
+    <section class="atlas-prime-panel reports-prime__executive" aria-labelledby="executiveTitle">
+        <div class="atlas-prime-panel__header">
+            <div><h2 id="executiveTitle">Distribuição do acervo</h2><small>Documentos ativos por setor ou pasta · atualizado @Model.GeneratedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</small></div>
+            <span class="reports-prime__live"><span aria-hidden="true"></span> Dados do tenant atual</span>
+        </div>
+        @if (Model.DocumentsByArea.Count > 0)
+        {
+            <div class="table-responsive"><table class="table reports-prime__table">
+                <thead><tr><th>Setor / pasta</th><th class="text-end">Documentos</th><th>Participação</th></tr></thead>
+                <tbody>
+                @foreach (var row in Model.DocumentsByArea)
+                {
+                    var percentageLabel = $"{row.Percentage:N1}%";
+                    <tr><td><strong>@row.Label</strong></td><td class="text-end">@row.Total.ToString("N0")</td><td><progress class="reports-prime__bar" max="100" value="@row.Percentage" aria-label="Participação de @percentageLabel"></progress><small>@percentageLabel</small></td></tr>
+                }
+                </tbody>
+            </table></div>
+        }
+        else
+        {
+            <partial name="Atlas/_DataState" model="@(new AtlasDataStateVm("empty", "Acervo sem documentos", "Cadastre documentos para visualizar a distribuição executiva.", "documents"))" />
+        }
+    </section>
+
+    <section class="atlas-prime-panel reports-prime__export" aria-labelledby="exportTitle">
+        <div class="atlas-prime-panel__header"><div><h2 id="exportTitle">Exportação segura de documentos</h2><small>O tenant autenticado e os filtros abaixo são aplicados no servidor. Limite operacional: 50.000 linhas.</small></div></div>
+        <form method="get" action="/Reports/ExportDocumentsCsv" class="reports-prime__export-form">
+            <label>Status<select name="status"><option value="">Todos</option><option>ACTIVE</option><option>ARCHIVED</option><option>DRAFT</option></select></label>
+            <label>De<input type="date" name="from" /></label><label>Até<input type="date" name="to" /></label>
+            <button class="btn btn-primary" type="submit"><app-icon name="download" size="16" decorative="true" /> Exportar CSV</button>
+        </form>
+    </section>
 
     <section class="atlas-prime-panel">
         <div class="atlas-prime-panel__header reports-prime__toolbar">

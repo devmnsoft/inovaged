@@ -1,40 +1,47 @@
-﻿using Dapper;
+﻿using System.Globalization;
+using System.Text;
+using Dapper;
+using InovaGed.Application.Audit;
 using InovaGed.Application.Common.Context;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Ged.Reports;
 using InovaGed.Web.Models.Reports;
 using InovaGed.Web.Models.Atlas;
+using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize]
+[Authorize(Policy = AppPolicies.Relatorios)]
 public sealed class ReportsController : Controller
 {
     private readonly IDbConnectionFactory _db;
     private readonly ICurrentContext _ctx;
     private readonly IReportService _reportSvc;
+    private readonly IAuditWriter _audit;
 
     public ReportsController(
         IDbConnectionFactory db,
         ICurrentContext ctx,
-        IReportService reportSvc)
+        IReportService reportSvc,
+        IAuditWriter audit)
     {
         _db = db;
         _ctx = ctx;
         _reportSvc = reportSvc;
+        _audit = audit;
     }
 
     private Guid TenantId => _ctx.TenantId;
     private Guid UserId => _ctx.UserId;
 
     [HttpGet]
-    public IActionResult Index()
+    public async Task<IActionResult> Index(CancellationToken ct)
     {
         var items = new List<ReportCatalogItem>
         {
-            new("Documentos por status", "Visão consolidada de volumes, processamento e pendências do acervo.", "documents", "/Ged/Kpi", "Documentos"),
+            new("Documentos cadastrados", "Visão consolidada de volumes, processamento e pendências do acervo.", "documents", "/Ged/Kpi", "Documentos", true),
             new("Documentos sem OCR", "Fila operacional de documentos que ainda não possuem texto pesquisável.", "ocr", "/Ged/Processing?status=pending", "OCR"),
             new("OCR por status", "Acompanhe itens pendentes, em processamento, concluídos e com erro.", "activity", "/Ocr", "OCR"),
             new("Documentos sem classificação", "Itens que precisam de tipologia ou classe documental.", "classification", "/ClassificationDashboard", "Classificação"),
@@ -45,21 +52,88 @@ public sealed class ReportsController : Controller
             new("Workflows atrasados", "Tramitações que ultrapassaram o prazo definido.", "workflow", "/Operations?onlyOverdue=true", "Operação"),
             new("Acessos negados", "Tentativas bloqueadas para acompanhamento de segurança.", "restricted-access", "/Audit?eventType=ACCESS_DENIED", "Governança", true),
             new("Uploads com falha", "Lotes com arquivos rejeitados ou falhas de processamento.", "upload-cloud", "/Ged/UploadMonitor?status=failed", "Operação"),
+            new("Faturamento hospitalar e glosas", "Valores apresentados, aprovados, glosados e recuperados por convênio.", "billing", "/HospitalBilling/Reports", "Financeiro", true),
+            new("Acervo físico e ocupação", "Caixas, localizações, capacidade e alertas de lotação.", "archive", "/Physical/Boxes", "Acervo físico", true),
+            new("Protocolos e tramitações", "Pendências, responsáveis e prazos de tramitação.", "workflow", "/ProtocoloMelhorias/Relatorios", "Protocolo", true),
+            new("Uso do SmartSearch", "Buscas realizadas, perguntas sem resultado e feedbacks negativos.", "search", "/SmartSearch/Statistics", "Inteligência", true),
             new("Validação de assinaturas", "Integridade, cadeia de confiança e resultado das assinaturas.", "certificate-validation", "/Reports/SignatureValidation", "Governança", true)
         };
+        await using var conn = await _db.OpenAsync(ct);
+        var summary = await conn.QuerySingleAsync<ReportSummary>(
+            """
+            select count(*) filter (where d.reg_status = 'A') as TotalDocuments,
+                   count(*) filter (where d.reg_status = 'A' and exists (
+                       select 1 from ged.document_search ds where ds.tenant_id=d.tenant_id and ds.document_id=d.id
+                       and nullif(trim(ds.ocr_text),'') is not null)) as WithOcr,
+                   count(*) filter (where d.reg_status = 'A' and not exists (
+                       select 1 from ged.document_classification dc where dc.tenant_id=d.tenant_id and dc.document_id=d.id
+                       and dc.reg_status='A')) as WithoutClassification
+              from ged.document d where d.tenant_id=@tenant
+            """, new { tenant = TenantId });
+        var areas = (await conn.QueryAsync<ReportBreakdownDbRow>(
+            """
+            select coalesce(f.name, 'Sem setor/pasta') as Label, count(*)::bigint as Total
+              from ged.document d left join ged.folder f on f.tenant_id=d.tenant_id and f.id=d.folder_id
+             where d.tenant_id=@tenant and d.reg_status='A'
+             group by coalesce(f.name, 'Sem setor/pasta') order by count(*) desc, 1 limit 8
+            """, new { tenant = TenantId })).ToList();
+        var breakdown = areas.Select(x => new ReportBreakdownRow(x.Label, x.Total,
+            summary.TotalDocuments == 0 ? 0 : Math.Round(x.Total * 100m / summary.TotalDocuments, 1))).ToList();
         var vm = new ReportsHubVm
         {
             Items = items,
             Metrics =
             [
-                new("Relatórios disponíveis", items.Count.ToString(), "catálogo operacional", "neutral", "report"),
-                new("Com exportação", items.Count(x => x.ExportAvailable).ToString(), "saída pronta para uso", "success", "download"),
-                new("Áreas cobertas", items.Select(x => x.Category).Distinct().Count().ToString(), "visões integradas", "neutral", "dashboard"),
-                new("Atenção operacional", items.Count(x => x.Category == "Operação" || x.Category == "OCR").ToString(), "filas para resolução", "warning", "warning", "/Operations")
-            ]
+                new("Documentos", summary.TotalDocuments.ToString("N0"), "ativos no tenant", "neutral", "documents"),
+                new("Com OCR", summary.WithOcr.ToString("N0"), summary.TotalDocuments == 0 ? "0% do acervo" : $"{summary.WithOcr * 100m / summary.TotalDocuments:N1}% do acervo", "success", "ocr"),
+                new("Sem OCR", (summary.TotalDocuments-summary.WithOcr).ToString("N0"), "requer processamento", "warning", "warning", "/Ged/Processing?status=pending"),
+                new("Sem classificação", summary.WithoutClassification.ToString("N0"), "requer tratamento", "warning", "classification", "/ClassificationDashboard")
+            ],
+            DocumentsByArea = breakdown,
+            GeneratedAt = DateTimeOffset.UtcNow
         };
         return View(vm);
     }
+
+    [HttpGet]
+    public async Task<IActionResult> ExportDocumentsCsv(string? status, DateTime? from, DateTime? to, CancellationToken ct)
+    {
+        status = string.IsNullOrWhiteSpace(status) ? null : status.Trim().ToUpperInvariant();
+        if (from.HasValue && to.HasValue && from.Value.Date > to.Value.Date)
+            return BadRequest("O período informado é inválido.");
+        await using var conn = await _db.OpenAsync(ct);
+        var rows = await conn.QueryAsync<DocumentExportRow>(
+            """
+            select d.id as Id, coalesce(d.title,'Sem título') as Title, coalesce(d.status,'SEM_STATUS') as Status,
+                   coalesce(f.name,'Sem setor/pasta') as Area, d.created_at as CreatedAt
+              from ged.document d left join ged.folder f on f.tenant_id=d.tenant_id and f.id=d.folder_id
+             where d.tenant_id=@tenant and d.reg_status='A'
+               and (@status is null or upper(coalesce(d.status,''))=@status)
+               and (@from is null or d.created_at >= @from)
+               and (@to is null or d.created_at < @to + interval '1 day')
+             order by d.created_at desc, d.id limit 50000
+            """, new { tenant = TenantId, status, from = from?.Date, to = to?.Date });
+        var list = rows.ToList();
+        var csv = new StringBuilder("Documento;Título;Status;Setor/Pasta;Cadastrado em\r\n");
+        foreach (var row in list)
+            csv.AppendLine(string.Join(';', Csv(row.Id.ToString()), Csv(row.Title), Csv(row.Status), Csv(row.Area), Csv(row.CreatedAt.ToString("O", CultureInfo.InvariantCulture))));
+        await conn.ExecuteAsync(new CommandDefinition(
+            """
+            insert into ged.report_export_audit
+                (tenant_id,user_id,report_code,export_format,filters_json,row_count,contains_sensitive_data)
+            values (@tenant,@user,'DOCUMENTS','CSV',jsonb_build_object('status',@status,'from',@from,'to',@to),@count,false)
+            """, new { tenant = TenantId, user = UserId, status, from = from?.Date, to = to?.Date, count = list.Count }, cancellationToken: ct));
+        await _audit.WriteAsync(TenantId, UserId, "REPORT_PRINT", "report_export", null,
+            "Exportação CSV do relatório de documentos", null, null,
+            new { format = "CSV", report = "DOCUMENTS", count = list.Count, status, from, to }, ct);
+        var fileName = $"inovaged-documentos-{DateTime.UtcNow:yyyyMMdd-HHmm}.csv";
+        return File(new UTF8Encoding(true).GetBytes(csv.ToString()), "text/csv; charset=utf-8", fileName);
+    }
+
+    private static string Csv(string? value) => $"\"{(value ?? string.Empty).Replace("\"", "\"\"")}\"";
+    private sealed record ReportSummary(long TotalDocuments, long WithOcr, long WithoutClassification);
+    private sealed record ReportBreakdownDbRow(string Label, long Total);
+    private sealed record DocumentExportRow(Guid Id, string Title, string Status, string Area, DateTimeOffset CreatedAt);
 
     // =========================================================
     // PLC/PCD — GET /Reports/PcdFull
