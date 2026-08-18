@@ -71,7 +71,11 @@ public sealed class SmartSearchController : Controller
                     TenantId = _currentUser.TenantId,
                     UserId = _currentUser.UserId,
                     CanReadOcr = User.IsInRole(AppRoles.Administrador) || User.HasClaim("permission", "GED.OCR.READ"),
-                    CanViewRestrictedDocuments = RolePolicyHelper.IsFullAdmin(User)
+                    CanViewRestrictedDocuments = RolePolicyHelper.IsFullAdmin(User),
+                    CanClassifyDocuments = HasPermission("GED.CLASSIFY"),
+                    CanManageProtocols = HasPermission("PROTOCOL.MANAGE"),
+                    CanReviewHospitalBilling = HasPermission("HOSPITAL_BILLING.REVIEW"),
+                    CanViewPhysicalArchive = HasPermission("PHYSICAL_ARCHIVE.VIEW")
                 }
             }, ct);
             await _repository.SaveConversationTurnAsync(_currentUser.TenantId, _currentUser.UserId, response.ConversationId, question.Trim(), response, ct);
@@ -88,6 +92,9 @@ public sealed class SmartSearchController : Controller
             return StatusCode(500, new { success = false, message = "Não foi possível consultar os documentos agora.", correlationId = HttpContext.TraceIdentifier });
         }
     }
+
+    private bool HasPermission(string permission) =>
+        RolePolicyHelper.IsFullAdmin(User) || User.HasClaim("permission", permission);
 
     [HttpGet]
     public async Task<IActionResult> HistoryData(CancellationToken ct)

@@ -90,8 +90,23 @@ public sealed class DocumentAssistantService : IDocumentAssistantService
         var actions = new List<DocumentAssistantAction>
         {
             new() { Label = "Usar como filtro", Kind = "filter", Url = $"/SmartSearch?q={Uri.EscapeDataString(question)}", Value = question },
-            new() { Label = "Exportar resposta", Kind = "export", Value = answer }
+            new() { Label = "Exportar resultado", Kind = "export", Value = answer },
+            new() { Label = "Salvar busca", Kind = "save-search", Value = question },
+            new() { Label = "Ver documentos com OCR pendente", Kind = "search", Url = "/SmartSearch?q=Quais%20documentos%20est%C3%A3o%20sem%20OCR%3F" },
+            new() { Label = "Ver possíveis glosas", Kind = "search", Url = "/SmartSearch?q=Mostre%20faturas%20hospitalares%20com%20poss%C3%ADvel%20glosa" }
         };
+        var first = sources.FirstOrDefault();
+        if (first is not null)
+        {
+            if (security.CanClassifyDocuments)
+                actions.Add(ConfirmAction("Classificar este documento", "classify", $"/Ged/Details/{first.DocumentId}#classification", "Abra o documento e confirme a classificação sugerida antes de aplicá-la."));
+            if (security.CanManageProtocols)
+                actions.Add(ConfirmAction("Abrir protocolo", "protocol", $"/Protocols/Create?documentId={first.DocumentId}", "Deseja iniciar a abertura de protocolo para o primeiro resultado? Nenhum protocolo será criado sem sua confirmação na próxima tela."));
+            if (security.CanReviewHospitalBilling && first.Badges.Any(x => x is "Hospitalar" or "Faturamento" or "Glosa"))
+                actions.Add(ConfirmAction("Enviar para revisão de faturamento", "billing", $"/HospitalBilling/Review?documentId={first.DocumentId}", "Deseja abrir a revisão de faturamento? O envio somente ocorrerá após confirmação na tela de revisão."));
+            if (security.CanViewPhysicalArchive)
+                actions.Add(new DocumentAssistantAction { Label = "Localizar caixa física", Kind = "physical", Url = $"/Physical/Boxes?documentId={first.DocumentId}" });
+        }
         return new DocumentAssistantResponse
         {
             Answer = answer, Criteria = effectiveQuestion == question
@@ -104,6 +119,11 @@ public sealed class DocumentAssistantService : IDocumentAssistantService
             Messages = messages, Actions = actions
         };
     }
+
+    private static DocumentAssistantAction ConfirmAction(string label, string kind, string url, string message) => new()
+    {
+        Label = label, Kind = kind, Url = url, RequiresConfirmation = true, ConfirmationMessage = message
+    };
 
     private static IReadOnlyList<string> BuildBadges(SmartSearchResultItem item)
     {
