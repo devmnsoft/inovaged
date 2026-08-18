@@ -257,6 +257,26 @@ order by is_favorite desc, created_at desc limit 50
         return (await conn.QueryAsync<SmartSearchSavedSearch>(new CommandDefinition(sql, new { tenantId, userId }, cancellationToken: ct))).AsList();
     }
 
+    public async Task<IReadOnlyList<SmartSearchConversationMessage>> GetConversationMessagesAsync(Guid tenantId, Guid userId, Guid conversationId, CancellationToken ct)
+    {
+        const string sql = """
+select m.id as "MessageId", m.conversation_id as "ConversationId",
+       coalesce(m.role,'') as "Role", coalesce(m.content,'') as "Content",
+       coalesce(m.sources_json,'[]'::jsonb)::text as "EvidenceJson",
+       coalesce(m.intent_json,'{}'::jsonb)::text as "FiltersJson",
+       m.created_at as "CreatedAt"
+from ged.smart_search_message m
+join ged.smart_search_conversation c on c.id=m.conversation_id and c.tenant_id=m.tenant_id
+where m.tenant_id=@tenantId and c.user_id=@userId and c.id=@conversationId
+  and c.reg_status='A' and m.reg_status='A'
+order by m.created_at, m.id
+limit 200
+""";
+        await using var conn = await _db.OpenAsync(ct);
+        return (await conn.QueryAsync<SmartSearchConversationMessage>(new CommandDefinition(sql,
+            new { tenantId, userId, conversationId }, cancellationToken: ct))).AsList();
+    }
+
     public async Task SaveSearchAsync(Guid tenantId, Guid userId, string name, string query, CancellationToken ct)
     {
         const string sql = """
@@ -269,10 +289,10 @@ do update set name=excluded.name,query_text=excluded.query_text,updated_at=now()
         await conn.ExecuteAsync(new CommandDefinition(sql, new { tenantId, userId, name, query }, cancellationToken: ct));
     }
 
-    public async Task DeleteSavedSearchAsync(Guid tenantId, Guid userId, Guid id, CancellationToken ct)
+    public async Task<bool> DeleteSavedSearchAsync(Guid tenantId, Guid userId, Guid id, CancellationToken ct)
     {
         await using var conn = await _db.OpenAsync(ct);
-        await conn.ExecuteAsync(new CommandDefinition("update ged.smart_search_saved_search set reg_status='I',updated_at=now() where id=@id and tenant_id=@tenantId and user_id=@userId", new { id, tenantId, userId }, cancellationToken: ct));
+        return await conn.ExecuteAsync(new CommandDefinition("update ged.smart_search_saved_search set reg_status='I',updated_at=now() where id=@id and tenant_id=@tenantId and user_id=@userId and coalesce(reg_status,'A')='A'", new { id, tenantId, userId }, cancellationToken: ct)) == 1;
     }
 
     public async Task<bool> RenameSavedSearchAsync(Guid tenantId, Guid userId, Guid id, string name, CancellationToken ct)

@@ -21,12 +21,13 @@ public interface ISmartSearchRepository
     Task SaveFeedbackAsync(Guid tenantId, Guid userId, Guid documentId, string conversationId, bool helpful, CancellationToken ct);
     Task SaveConversationTurnAsync(Guid tenantId, Guid userId, string conversationId, string question, DocumentAssistantResponse response, CancellationToken ct);
     Task<IReadOnlyList<SmartSearchConversationSummary>> GetConversationHistoryAsync(Guid tenantId, Guid userId, CancellationToken ct);
+    Task<IReadOnlyList<SmartSearchConversationMessage>> GetConversationMessagesAsync(Guid tenantId, Guid userId, Guid conversationId, CancellationToken ct);
     Task<IReadOnlyList<SmartSearchSavedSearch>> GetSavedSearchesAsync(Guid tenantId, Guid userId, CancellationToken ct);
     Task SaveSearchAsync(Guid tenantId, Guid userId, string name, string query, CancellationToken ct);
     Task<bool> RenameSavedSearchAsync(Guid tenantId, Guid userId, Guid id, string name, CancellationToken ct);
     Task<bool> SetSavedSearchFavoriteAsync(Guid tenantId, Guid userId, Guid id, bool isFavorite, CancellationToken ct);
     Task<string?> RunSavedSearchAsync(Guid tenantId, Guid userId, Guid id, CancellationToken ct);
-    Task DeleteSavedSearchAsync(Guid tenantId, Guid userId, Guid id, CancellationToken ct);
+    Task<bool> DeleteSavedSearchAsync(Guid tenantId, Guid userId, Guid id, CancellationToken ct);
     Task<SmartSearchStatistics> GetStatisticsAsync(Guid tenantId, CancellationToken ct);
     Task<int> ReindexAsync(Guid tenantId, Guid? documentId, CancellationToken ct);
     Task<SmartSearchAdminDashboard> GetAdminDashboardAsync(Guid tenantId, string section, CancellationToken ct);
@@ -43,6 +44,18 @@ public sealed class SmartSearchSavedSearch
     public DateTime? LastRunAt { get; set; }
     public int RunCount { get; set; }
     public bool IsFavorite { get; set; }
+}
+
+/// <summary>Read model materialized directly by Dapper. Keep setters public and SQL aliases exact.</summary>
+public sealed class SmartSearchConversationMessage
+{
+    public Guid MessageId { get; set; }
+    public Guid ConversationId { get; set; }
+    public string Role { get; set; } = string.Empty;
+    public string Content { get; set; } = string.Empty;
+    public string EvidenceJson { get; set; } = "[]";
+    public string FiltersJson { get; set; } = "{}";
+    public DateTime CreatedAt { get; set; }
 }
 
 public interface IDocumentChatService
