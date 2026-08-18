@@ -6,6 +6,11 @@ namespace InovaGed.Infrastructure.HospitalBilling;
 
 public sealed class HospitalBillingQueries(IDbConnectionFactory db) : IHospitalBillingQueries
 {
+    private const string DocumentProjection = """
+h.id "Id",h.document_id "DocumentId",coalesce(d.title,d.code,'Documento hospitalar') "Title",h.document_type "DocumentType",h.insurer "Insurer",h.provider_name "Provider",h.provider_cnpj "ProviderCnpj",h.cnes "Cnes",h.guide_number "GuideNumber",h.authorization_number "AuthorizationNumber",h.batch_number "BatchNumber",h.invoice_number "InvoiceNumber",h.competence "Competence",h.procedure_name "ProcedureName",h.procedure_code "ProcedureCode",
+case when nullif(h.patient_name,'') is null then 'Dado protegido' else left(h.patient_name,1)||repeat('*',greatest(length(h.patient_name)-2,3))||right(h.patient_name,1) end "MaskedPatient",
+h.presented_amount "PresentedAmount",h.approved_amount "ApprovedAmount",h.denied_amount "DeniedAmount",h.recovered_amount "RecoveredAmount",h.confidence "Confidence",h.review_status "Status",h.denial_reason "DenialReason",h.denial_status "DenialStatus",h.appeal_filed "AppealFiled",h.has_ocr "HasOcr",h.divergence_alerts::text "DivergenceAlerts",h.due_date "DueDate"
+""";
     public async Task<HospitalBillingDashboard> DashboardAsync(Guid tenantId, HospitalBillingFilter filter, CancellationToken ct)
     {
         await using var connection = await db.OpenAsync(ct);
@@ -20,16 +25,26 @@ and (@HasDivergence is null or (h.review_status='DIVERGENT' or h.divergence_aler
 and (@Term is null or concat_ws(' ',h.insurer,h.provider_name,h.provider_cnpj,h.cnes,h.guide_number,h.authorization_number,h.batch_number,h.invoice_number,h.procedure_name,h.procedure_code,h.denial_reason,h.document_type) ilike '%'||@Term||'%')""";
         var args = new { tenantId, filter.Insurer, filter.Competence, filter.Status, filter.HasDenial, filter.Term, filter.Unit, filter.Patient, filter.DocumentType, filter.MinimumAmount, filter.MaximumAmount, filter.OcrPending, filter.HasDivergence };
         var documents = (await connection.QueryAsync<HospitalBillingDocumentDto>(new CommandDefinition($$"""
-select h.id "Id",h.document_id "DocumentId",coalesce(d.title,d.code,'Documento hospitalar') "Title",h.document_type "DocumentType",h.insurer "Insurer",h.provider_name "Provider",h.provider_cnpj "ProviderCnpj",h.cnes "Cnes",h.guide_number "GuideNumber",h.authorization_number "AuthorizationNumber",h.batch_number "BatchNumber",h.invoice_number "InvoiceNumber",h.competence "Competence",h.procedure_name "ProcedureName",h.procedure_code "ProcedureCode",
-case when nullif(h.patient_name,'') is null then 'Dado protegido' else left(h.patient_name,1)||repeat('*',greatest(length(h.patient_name)-2,3))||right(h.patient_name,1) end "MaskedPatient",
-h.presented_amount "PresentedAmount",h.approved_amount "ApprovedAmount",h.denied_amount "DeniedAmount",h.recovered_amount "RecoveredAmount",h.confidence "Confidence",h.review_status "Status",h.denial_reason "DenialReason",h.denial_status "DenialStatus",h.appeal_filed "AppealFiled",h.has_ocr "HasOcr",h.divergence_alerts::text "DivergenceAlerts",h.due_date "DueDate"
+select {{DocumentProjection}}
 from ged.hospital_billing_document h left join ged.document d on d.tenant_id=h.tenant_id and d.id=h.document_id {{where}} order by h.created_at desc limit 300
 """, args, cancellationToken: ct))).AsList();
         var kpis = await connection.QuerySingleAsync<HospitalBillingKpis>(new CommandDefinition("""
 select count(*)::int "Total",count(*) filter(where h.review_status='PENDING_REVIEW')::int "Pending",count(*) filter(where h.review_status='APPROVED')::int "Approved",count(*) filter(where h.review_status='DIVERGENT')::int "Divergent",count(*) filter(where h.denied_amount>0)::int "WithDenial",coalesce(sum(h.presented_amount),0) "Presented",coalesce(sum(h.approved_amount),0) "ApprovedAmount",coalesce(sum(h.denied_amount),0) "Denied",coalesce(sum(case when h.denial_status='IN_APPEAL' then h.denied_amount else 0 end),0) "InAppeal",coalesce(sum(h.recovered_amount),0) "Recovered",count(*) filter(where not h.has_ocr)::int "WithoutOcr",count(*) filter(where h.confidence<70)::int "LowConfidence" from ged.hospital_billing_document h """ + where, args, cancellationToken: ct));
         return new(kpis, documents);
     }
-    public async Task<HospitalBillingDocumentDto?> GetAsync(Guid tenantId, Guid id, CancellationToken ct) => (await DashboardAsync(tenantId, new(), ct)).Documents.FirstOrDefault(x => x.Id == id);
+    public Task<HospitalBillingDocumentDto?> GetAsync(Guid tenantId, Guid id, CancellationToken ct) =>
+        GetOneAsync(tenantId, "h.id=@value", id, ct);
+
+    public Task<HospitalBillingDocumentDto?> GetByDocumentIdAsync(Guid tenantId, Guid documentId, CancellationToken ct) =>
+        GetOneAsync(tenantId, "h.document_id=@value", documentId, ct);
+
+    private async Task<HospitalBillingDocumentDto?> GetOneAsync(Guid tenantId, string predicate, Guid value, CancellationToken ct)
+    {
+        if (tenantId == Guid.Empty || value == Guid.Empty) return null;
+        await using var connection = await db.OpenAsync(ct);
+        var sql = $"select {DocumentProjection} from ged.hospital_billing_document h left join ged.document d on d.tenant_id=h.tenant_id and d.id=h.document_id where h.tenant_id=@tenantId and h.reg_status='A' and {predicate} order by h.updated_at desc limit 1";
+        return await connection.QuerySingleOrDefaultAsync<HospitalBillingDocumentDto>(new CommandDefinition(sql, new { tenantId, value }, cancellationToken: ct));
+    }
     public async Task<HospitalBillingDetails?> GetDetailsAsync(Guid tenantId, Guid id, CancellationToken ct)
     {
         var document = await GetAsync(tenantId, id, ct);

@@ -19,11 +19,23 @@ public sealed class HospitalBillingController(ICurrentUser user, IHospitalBillin
     [HttpGet("Documents")]
     public Task<IActionResult> Documents(string? insurer, string? competence, string? status, bool? hasDenial, string? term, CancellationToken ct)
     { ViewBag.Mode = "documents"; return Index(insurer, competence, status, hasDenial, term, null, null, null, null, null, null, null, ct); }
-    [HttpGet("Review")][HttpGet("Glosas")] public Task<IActionResult> WorkQueue(bool? hasDenial, CancellationToken ct)
+    [HttpGet("Review")][HttpGet("Glosas")] public async Task<IActionResult> WorkQueue(Guid? documentId, bool? hasDenial, CancellationToken ct)
     {
+        if (documentId is { } sourceDocumentId && sourceDocumentId != Guid.Empty)
+        {
+            var billingDocument = await queries.GetByDocumentIdAsync(user.TenantId, sourceDocumentId, ct);
+            if (billingDocument is null)
+            {
+                TempData["Error"] = "O documento ainda não possui extração de faturamento hospitalar para revisão.";
+            }
+            else
+            {
+                return RedirectToAction(nameof(Details), new { id = billingDocument.Id });
+            }
+        }
         var denialQueue = hasDenial == true || Request.Path.Value!.EndsWith("Glosas", StringComparison.OrdinalIgnoreCase);
         ViewBag.Mode = denialQueue ? "denials" : "review";
-        return Index(null, null, denialQueue ? null : "PENDING_REVIEW", denialQueue ? true : null, null, null, null, null, null, null, null, null, ct);
+        return await Index(null, null, denialQueue ? null : "PENDING_REVIEW", denialQueue ? true : null, null, null, null, null, null, null, null, null, ct);
     }
     [HttpGet("Extractions")]
     public Task<IActionResult> Extractions(CancellationToken ct)
