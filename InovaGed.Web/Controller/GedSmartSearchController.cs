@@ -40,7 +40,7 @@ public sealed class GedSmartSearchController : Controller
     }
 
     [HttpPost("Smart")]
-    [IgnoreAntiforgeryToken]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> Smart([FromBody] GedSmartSearchPostRequest? body, [FromForm] string? query, [FromForm] Guid? folderId, [FromForm] string? scope, [FromForm] int pageSize = 20, CancellationToken ct = default)
     {
         if (!_currentUser.IsAuthenticated) return Unauthorized(new { success = false, message = "Sessão expirada." });

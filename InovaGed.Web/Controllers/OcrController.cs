@@ -141,7 +141,7 @@ public sealed class OcrController : Controller
         catch (Exception ex)
         {
             _logger.LogError(ex, "Erro ao executar OCR automático agora.");
-            if (WantsJson()) return StatusCode(500, new { success = false, message = "Não foi possível executar OCR automático agora.", details = ex.Message });
+            if (WantsJson()) return StatusCode(500, new { success = false, message = "Não foi possível executar OCR automático agora.", correlationId = HttpContext.TraceIdentifier });
             TempData["WarningMessage"] = "Não foi possível executar OCR automático agora.";
         }
         return RedirectToAction(nameof(AutoSchedule));

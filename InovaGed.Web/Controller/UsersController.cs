@@ -50,6 +50,7 @@ public sealed class UsersController : AppControllerBase
 
     [HttpPost("Unlock/{id:guid}")]
     [Authorize(Policy = AppPolicies.UsersGlobalManage)]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> Unlock(Guid id, CancellationToken ct)
     {
         var tenantId = _currentUser.TenantId;

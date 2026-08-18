@@ -662,6 +662,7 @@ public sealed class GedController : Controller
     }
 
     [HttpPost("/Ged/DocumentParts/FilterAudit")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> DocumentPartFilterAudit([FromBody] DocumentPartFilterAuditRequest? request, CancellationToken ct)
     {
         if (!_currentUser.IsAuthenticated) return Unauthorized();
