@@ -23,6 +23,9 @@ public interface ISmartSearchRepository
     Task<IReadOnlyList<SmartSearchConversationSummary>> GetConversationHistoryAsync(Guid tenantId, Guid userId, CancellationToken ct);
     Task<IReadOnlyList<SmartSearchSavedSearch>> GetSavedSearchesAsync(Guid tenantId, Guid userId, CancellationToken ct);
     Task SaveSearchAsync(Guid tenantId, Guid userId, string name, string query, CancellationToken ct);
+    Task<bool> RenameSavedSearchAsync(Guid tenantId, Guid userId, Guid id, string name, CancellationToken ct);
+    Task<bool> SetSavedSearchFavoriteAsync(Guid tenantId, Guid userId, Guid id, bool isFavorite, CancellationToken ct);
+    Task<string?> RunSavedSearchAsync(Guid tenantId, Guid userId, Guid id, CancellationToken ct);
     Task DeleteSavedSearchAsync(Guid tenantId, Guid userId, Guid id, CancellationToken ct);
     Task<SmartSearchStatistics> GetStatisticsAsync(Guid tenantId, CancellationToken ct);
     Task<int> ReindexAsync(Guid tenantId, Guid? documentId, CancellationToken ct);
@@ -30,7 +33,17 @@ public interface ISmartSearchRepository
     Task SaveSynonymAsync(Guid tenantId, Guid? id, string term, string synonym, string category, decimal weight, bool active, CancellationToken ct);
 }
 
-public sealed record SmartSearchSavedSearch(Guid Id, string Name, string Query, DateTimeOffset CreatedAt);
+public sealed class SmartSearchSavedSearch
+{
+    public Guid Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string Query { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
+    public DateTime? UpdatedAt { get; set; }
+    public DateTime? LastRunAt { get; set; }
+    public int RunCount { get; set; }
+    public bool IsFavorite { get; set; }
+}
 
 public interface IDocumentChatService
 {

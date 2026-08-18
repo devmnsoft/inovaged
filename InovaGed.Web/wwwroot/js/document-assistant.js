@@ -42,20 +42,28 @@
     items.unshift({ question, date: new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date()) });
     localStorage.setItem(historyKey, JSON.stringify(items.slice(0, 12))); renderHistory();
   };
+  const savedPost = async (endpoint, values) => {
+    const body = new FormData();
+    body.set('__RequestVerificationToken', form.querySelector('[name="__RequestVerificationToken"]').value);
+    Object.entries(values).forEach(([key, value]) => body.set(key, value));
+    const response = await fetch(endpoint, { method: 'POST', body });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.success) throw new Error(payload.message || 'Não foi possível concluir a ação.');
+    return payload;
+  };
   const renderSaved = async () => {
     let items = [];
     try {
       const result = await fetch(root.dataset.savedEndpoint, { headers: { Accept: 'application/json' } });
       const payload = await result.json();
-      if (result.ok && payload.success) items = payload.items;
-    } catch { toast('Não foi possível carregar as buscas salvas.', 'warning'); }
-    savedList.innerHTML = items.length ? items.map(item => `<div class="assistant-saved-row"><button type="button" data-saved-question="${escapeHtml(item.query)}"><span>${escapeHtml(item.name)}</span><small>Executar novamente</small></button><button type="button" class="btn btn-sm btn-ghost" data-delete-saved="${item.id}" aria-label="Excluir busca ${escapeHtml(item.name)}">×</button></div>`).join('') : '<div class="assistant-history-empty">Nenhuma busca salva.</div>';
-    savedList.querySelectorAll('[data-saved-question]').forEach(button => button.addEventListener('click', () => { input.value = button.dataset.savedQuestion; input.focus(); }));
-    savedList.querySelectorAll('[data-delete-saved]').forEach(button => button.addEventListener('click', async () => {
-      const body = new FormData(); body.set('__RequestVerificationToken', form.querySelector('[name="__RequestVerificationToken"]').value); body.set('id', button.dataset.deleteSaved);
-      const result = await fetch(root.dataset.deleteSavedEndpoint, { method: 'POST', body });
-      if (result.ok) { await renderSaved(); toast('Busca salva removida.', 'success'); }
-    }));
+      if (!result.ok || !payload.success) throw new Error(payload.message);
+      items = payload.items;
+    } catch (error) { toast(error.message || 'Não foi possível carregar as buscas salvas.', 'warning'); }
+    savedList.innerHTML = items.length ? items.map(item => `<div class="assistant-saved-row"><button type="button" data-run-saved="${item.id}"><span>${item.isFavorite ? '★ ' : ''}${escapeHtml(item.name)}</span><small>${item.runCount || 0} execuções${item.lastRunAt ? ` · última ${new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short' }).format(new Date(item.lastRunAt))}` : ''}</small></button><div class="assistant-saved-actions"><button type="button" class="btn btn-sm btn-ghost" data-favorite-saved="${item.id}" data-favorite="${!item.isFavorite}" aria-label="${item.isFavorite ? 'Desfavoritar' : 'Favoritar'}">★</button><button type="button" class="btn btn-sm btn-ghost" data-rename-saved="${item.id}" data-name="${escapeHtml(item.name)}" aria-label="Renomear">✎</button><button type="button" class="btn btn-sm btn-ghost" data-delete-saved="${item.id}" aria-label="Excluir">×</button></div></div>`).join('') : '<div class="assistant-history-empty"><strong>Nenhuma busca salva</strong><span>Faça uma consulta e use “Salvar busca” para criar seu primeiro atalho.</span></div>';
+    savedList.querySelectorAll('[data-run-saved]').forEach(button => button.addEventListener('click', async () => { try { const payload = await savedPost(root.dataset.runSavedEndpoint, { id: button.dataset.runSaved }); input.value = payload.query; await renderSaved(); form.requestSubmit(); } catch (error) { toast(error.message, 'error'); } }));
+    savedList.querySelectorAll('[data-favorite-saved]').forEach(button => button.addEventListener('click', async () => { try { await savedPost(root.dataset.favoriteSavedEndpoint, { id: button.dataset.favoriteSaved, isFavorite: button.dataset.favorite }); await renderSaved(); } catch (error) { toast(error.message, 'error'); } }));
+    savedList.querySelectorAll('[data-rename-saved]').forEach(button => button.addEventListener('click', async () => { const name = window.prompt('Novo nome da busca:', button.dataset.name); if (!name) return; try { await savedPost(root.dataset.renameSavedEndpoint, { id: button.dataset.renameSaved, name }); await renderSaved(); toast('Busca renomeada.', 'success'); } catch (error) { toast(error.message, 'error'); } }));
+    savedList.querySelectorAll('[data-delete-saved]').forEach(button => button.addEventListener('click', async () => { if (!window.confirm('Excluir esta busca salva? Esta ação não pode ser desfeita.')) return; try { await savedPost(root.dataset.deleteSavedEndpoint, { id: button.dataset.deleteSaved }); await renderSaved(); toast('Busca salva removida.', 'success'); } catch (error) { toast(error.message, 'error'); } }));
   };
   saveButton.addEventListener('click', async () => {
     if (!lastQuestion) return;
@@ -64,7 +72,6 @@
     if (!result.ok) { toast('Não foi possível salvar a busca.', 'error'); return; }
     await renderSaved(); toast('Busca salva na sua conta.', 'success');
   });
-  root.querySelector('[data-clear-saved]').addEventListener('click', () => { renderSaved(); toast('Buscas salvas atualizadas.', 'success'); });
   renderSaved();
   root.querySelector('[data-toggle-history]').addEventListener('click', () => { historyPanel.hidden = !historyPanel.hidden; if (!historyPanel.hidden) renderHistory(); });
   root.querySelector('[data-clear-history]').addEventListener('click', () => { renderHistory(); toast('Histórico atualizado.', 'success'); });

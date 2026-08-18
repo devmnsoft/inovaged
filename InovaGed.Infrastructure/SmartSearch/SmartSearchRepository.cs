@@ -246,10 +246,12 @@ group by c.id,c.title,c.updated_at order by c.updated_at desc limit 30
     public async Task<IReadOnlyList<SmartSearchSavedSearch>> GetSavedSearchesAsync(Guid tenantId, Guid userId, CancellationToken ct)
     {
         const string sql = """
-select id as "Id", name as "Name", query_text as "Query", created_at as "CreatedAt"
+select id as "Id", coalesce(name,'') as "Name", coalesce(query_text,'') as "Query",
+       created_at as "CreatedAt", updated_at as "UpdatedAt", last_run_at as "LastRunAt",
+       coalesce(run_count,0) as "RunCount", coalesce(is_favorite,false) as "IsFavorite"
 from ged.smart_search_saved_search
-where tenant_id=@tenantId and user_id=@userId and reg_status='A'
-order by updated_at desc limit 50
+where tenant_id = @tenantId and user_id = @userId and coalesce(reg_status,'A') = 'A'
+order by is_favorite desc, created_at desc limit 50
 """;
         await using var conn = await _db.OpenAsync(ct);
         return (await conn.QueryAsync<SmartSearchSavedSearch>(new CommandDefinition(sql, new { tenantId, userId }, cancellationToken: ct))).AsList();
@@ -271,6 +273,30 @@ do update set name=excluded.name,query_text=excluded.query_text,updated_at=now()
     {
         await using var conn = await _db.OpenAsync(ct);
         await conn.ExecuteAsync(new CommandDefinition("update ged.smart_search_saved_search set reg_status='I',updated_at=now() where id=@id and tenant_id=@tenantId and user_id=@userId", new { id, tenantId, userId }, cancellationToken: ct));
+    }
+
+    public async Task<bool> RenameSavedSearchAsync(Guid tenantId, Guid userId, Guid id, string name, CancellationToken ct)
+    {
+        await using var conn = await _db.OpenAsync(ct);
+        return await conn.ExecuteAsync(new CommandDefinition("update ged.smart_search_saved_search set name=@name,updated_at=now() where id=@id and tenant_id=@tenantId and user_id=@userId and coalesce(reg_status,'A')='A'", new { id, tenantId, userId, name }, cancellationToken: ct)) == 1;
+    }
+
+    public async Task<bool> SetSavedSearchFavoriteAsync(Guid tenantId, Guid userId, Guid id, bool isFavorite, CancellationToken ct)
+    {
+        await using var conn = await _db.OpenAsync(ct);
+        return await conn.ExecuteAsync(new CommandDefinition("update ged.smart_search_saved_search set is_favorite=@isFavorite,updated_at=now() where id=@id and tenant_id=@tenantId and user_id=@userId and coalesce(reg_status,'A')='A'", new { id, tenantId, userId, isFavorite }, cancellationToken: ct)) == 1;
+    }
+
+    public async Task<string?> RunSavedSearchAsync(Guid tenantId, Guid userId, Guid id, CancellationToken ct)
+    {
+        const string sql = """
+update ged.smart_search_saved_search
+set last_run_at=now(),run_count=coalesce(run_count,0)+1,updated_at=now()
+where id=@id and tenant_id=@tenantId and user_id=@userId and coalesce(reg_status,'A')='A'
+returning query_text
+""";
+        await using var conn = await _db.OpenAsync(ct);
+        return await conn.ExecuteScalarAsync<string?>(new CommandDefinition(sql, new { id, tenantId, userId }, cancellationToken: ct));
     }
 
     public async Task<SmartSearchStatistics> GetStatisticsAsync(Guid tenantId, CancellationToken ct)
