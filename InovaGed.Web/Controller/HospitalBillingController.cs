@@ -14,17 +14,20 @@ namespace InovaGed.Web.Controllers;
 public sealed class HospitalBillingController(ICurrentUser user, IHospitalBillingQueries queries, IAuditWriter audit) : Controller
 {
     [HttpGet("")][HttpGet("Dashboard")]
-    public async Task<IActionResult> Index(string? insurer, string? competence, string? status, bool? hasDenial, string? term, CancellationToken ct)
-    { var filter = new HospitalBillingFilter(insurer, competence, status, hasDenial, term); ViewBag.Filter = filter; ViewBag.Mode ??= "dashboard"; return View(await queries.DashboardAsync(user.TenantId, filter, ct)); }
+    public async Task<IActionResult> Index(string? insurer, string? competence, string? status, bool? hasDenial, string? term, string? unit, string? patient, string? documentType, decimal? minimumAmount, decimal? maximumAmount, bool? ocrPending, bool? hasDivergence, CancellationToken ct)
+    { var filter = new HospitalBillingFilter(insurer, competence, status, hasDenial, term, unit, patient, documentType, minimumAmount, maximumAmount, ocrPending, hasDivergence); ViewBag.Filter = filter; ViewBag.Mode ??= "dashboard"; return View(await queries.DashboardAsync(user.TenantId, filter, ct)); }
     [HttpGet("Documents")]
     public Task<IActionResult> Documents(string? insurer, string? competence, string? status, bool? hasDenial, string? term, CancellationToken ct)
-    { ViewBag.Mode = "documents"; return Index(insurer, competence, status, hasDenial, term, ct); }
+    { ViewBag.Mode = "documents"; return Index(insurer, competence, status, hasDenial, term, null, null, null, null, null, null, null, ct); }
     [HttpGet("Review")][HttpGet("Glosas")] public Task<IActionResult> WorkQueue(bool? hasDenial, CancellationToken ct)
     {
         var denialQueue = hasDenial == true || Request.Path.Value!.EndsWith("Glosas", StringComparison.OrdinalIgnoreCase);
         ViewBag.Mode = denialQueue ? "denials" : "review";
-        return Index(null, null, denialQueue ? null : "PENDING_REVIEW", denialQueue ? true : null, null, ct);
+        return Index(null, null, denialQueue ? null : "PENDING_REVIEW", denialQueue ? true : null, null, null, null, null, null, null, null, null, ct);
     }
+    [HttpGet("Extractions")]
+    public Task<IActionResult> Extractions(CancellationToken ct)
+    { ViewBag.Mode = "ocr"; return Index(null, null, null, null, null, null, null, null, null, null, true, null, ct); }
     [HttpGet("Export")]
     public async Task<IActionResult> Export(string? insurer, string? competence, string? status, bool? hasDenial, string? term, CancellationToken ct)
     {

@@ -9,17 +9,24 @@ public sealed class HospitalBillingQueries(IDbConnectionFactory db) : IHospitalB
     public async Task<HospitalBillingDashboard> DashboardAsync(Guid tenantId, HospitalBillingFilter filter, CancellationToken ct)
     {
         await using var connection = await db.OpenAsync(ct);
-        const string where = """where h.tenant_id=@tenantId and h.reg_status='A' and (@Insurer is null or h.insurer ilike '%'||@Insurer||'%') and (@Competence is null or h.competence=@Competence) and (@Status is null or h.review_status=@Status) and (@HasDenial is null or (h.denied_amount>0)=@HasDenial) and (@Term is null or concat_ws(' ',h.insurer,h.provider_name,h.provider_cnpj,h.cnes,h.guide_number,h.authorization_number,h.batch_number,h.invoice_number,h.procedure_name,h.procedure_code,h.denial_reason) ilike '%'||@Term||'%')""";
-        var args = new { tenantId, filter.Insurer, filter.Competence, filter.Status, filter.HasDenial, filter.Term };
+        const string where = """where h.tenant_id=@tenantId and h.reg_status='A'
+and (@Insurer is null or h.insurer ilike '%'||@Insurer||'%') and (@Competence is null or h.competence=@Competence)
+and (@Status is null or h.review_status=@Status) and (@HasDenial is null or (h.denied_amount>0)=@HasDenial)
+and (@Unit is null or h.provider_name ilike '%'||@Unit||'%' or h.cnes ilike '%'||@Unit||'%')
+and (@Patient is null or h.patient_name ilike '%'||@Patient||'%') and (@DocumentType is null or h.document_type=@DocumentType)
+and (@MinimumAmount is null or h.presented_amount>=@MinimumAmount) and (@MaximumAmount is null or h.presented_amount<=@MaximumAmount)
+and (@OcrPending is null or (not h.has_ocr)=@OcrPending)
+and (@HasDivergence is null or (h.review_status='DIVERGENT' or h.divergence_alerts<>'[]'::jsonb)=@HasDivergence)
+and (@Term is null or concat_ws(' ',h.insurer,h.provider_name,h.provider_cnpj,h.cnes,h.guide_number,h.authorization_number,h.batch_number,h.invoice_number,h.procedure_name,h.procedure_code,h.denial_reason,h.document_type) ilike '%'||@Term||'%')""";
+        var args = new { tenantId, filter.Insurer, filter.Competence, filter.Status, filter.HasDenial, filter.Term, filter.Unit, filter.Patient, filter.DocumentType, filter.MinimumAmount, filter.MaximumAmount, filter.OcrPending, filter.HasDivergence };
         var documents = (await connection.QueryAsync<HospitalBillingDocumentDto>(new CommandDefinition($$"""
 select h.id "Id",h.document_id "DocumentId",coalesce(d.title,d.code,'Documento hospitalar') "Title",h.document_type "DocumentType",h.insurer "Insurer",h.provider_name "Provider",h.provider_cnpj "ProviderCnpj",h.cnes "Cnes",h.guide_number "GuideNumber",h.authorization_number "AuthorizationNumber",h.batch_number "BatchNumber",h.invoice_number "InvoiceNumber",h.competence "Competence",h.procedure_name "ProcedureName",h.procedure_code "ProcedureCode",
 case when nullif(h.patient_name,'') is null then 'Dado protegido' else left(h.patient_name,1)||repeat('*',greatest(length(h.patient_name)-2,3))||right(h.patient_name,1) end "MaskedPatient",
-h.presented_amount "PresentedAmount",h.approved_amount "ApprovedAmount",h.denied_amount "DeniedAmount",h.recovered_amount "RecoveredAmount",h.confidence "Confidence",h.review_status "Status",h.denial_reason "DenialReason",h.denial_status "DenialStatus",h.appeal_filed "AppealFiled",h.divergence_alerts::text "DivergenceAlerts",h.due_date "DueDate"
+h.presented_amount "PresentedAmount",h.approved_amount "ApprovedAmount",h.denied_amount "DeniedAmount",h.recovered_amount "RecoveredAmount",h.confidence "Confidence",h.review_status "Status",h.denial_reason "DenialReason",h.denial_status "DenialStatus",h.appeal_filed "AppealFiled",h.has_ocr "HasOcr",h.divergence_alerts::text "DivergenceAlerts",h.due_date "DueDate"
 from ged.hospital_billing_document h left join ged.document d on d.tenant_id=h.tenant_id and d.id=h.document_id {{where}} order by h.created_at desc limit 300
 """, args, cancellationToken: ct))).AsList();
         var kpis = await connection.QuerySingleAsync<HospitalBillingKpis>(new CommandDefinition("""
-select count(*)::int "Total",count(*) filter(where review_status='PENDING_REVIEW')::int "Pending",count(*) filter(where review_status='APPROVED')::int "Approved",count(*) filter(where review_status='DIVERGENT')::int "Divergent",count(*) filter(where denied_amount>0)::int "WithDenial",coalesce(sum(presented_amount),0) "Presented",coalesce(sum(approved_amount),0) "ApprovedAmount",coalesce(sum(denied_amount),0) "Denied",coalesce(sum(case when denial_status='IN_APPEAL' then denied_amount else 0 end),0) "InAppeal",coalesce(sum(recovered_amount),0) "Recovered",count(*) filter(where not has_ocr)::int "WithoutOcr",count(*) filter(where confidence<70)::int "LowConfidence" from ged.hospital_billing_document where tenant_id=@tenantId and reg_status='A'
-""", new { tenantId }, cancellationToken: ct));
+select count(*)::int "Total",count(*) filter(where h.review_status='PENDING_REVIEW')::int "Pending",count(*) filter(where h.review_status='APPROVED')::int "Approved",count(*) filter(where h.review_status='DIVERGENT')::int "Divergent",count(*) filter(where h.denied_amount>0)::int "WithDenial",coalesce(sum(h.presented_amount),0) "Presented",coalesce(sum(h.approved_amount),0) "ApprovedAmount",coalesce(sum(h.denied_amount),0) "Denied",coalesce(sum(case when h.denial_status='IN_APPEAL' then h.denied_amount else 0 end),0) "InAppeal",coalesce(sum(h.recovered_amount),0) "Recovered",count(*) filter(where not h.has_ocr)::int "WithoutOcr",count(*) filter(where h.confidence<70)::int "LowConfidence" from ged.hospital_billing_document h """ + where, args, cancellationToken: ct));
         return new(kpis, documents);
     }
     public async Task<HospitalBillingDocumentDto?> GetAsync(Guid tenantId, Guid id, CancellationToken ct) => (await DashboardAsync(tenantId, new(), ct)).Documents.FirstOrDefault(x => x.Id == id);

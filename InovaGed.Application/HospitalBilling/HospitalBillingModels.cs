@@ -2,19 +2,24 @@ namespace InovaGed.Application.HospitalBilling;
 
 using System.ComponentModel.DataAnnotations;
 
-public sealed record HospitalBillingFilter(string? Insurer = null, string? Competence = null, string? Status = null, bool? HasDenial = null, string? Term = null);
+public sealed record HospitalBillingFilter(
+    string? Insurer = null, string? Competence = null, string? Status = null,
+    bool? HasDenial = null, string? Term = null, string? Unit = null,
+    string? Patient = null, string? DocumentType = null, decimal? MinimumAmount = null,
+    decimal? MaximumAmount = null, bool? OcrPending = null, bool? HasDivergence = null);
 public sealed record HospitalBillingKpis(int Total, int Pending, int Approved, int Divergent, int WithDenial, decimal Presented, decimal ApprovedAmount, decimal Denied, decimal InAppeal, decimal Recovered, int WithoutOcr, int LowConfidence);
 public sealed class HospitalBillingDocumentDto
 {
-    public Guid Id { get; init; } public Guid DocumentId { get; init; } public string Title { get; init; } = "Documento";
-    public string DocumentType { get; init; } = "Conta hospitalar"; public string? Insurer { get; init; } public string? Provider { get; init; }
-    public string? GuideNumber { get; init; } public string? AuthorizationNumber { get; init; } public string? Competence { get; init; }
-    public string? ProviderCnpj { get; init; } public string? Cnes { get; init; } public string? BatchNumber { get; init; }
-    public string? InvoiceNumber { get; init; } public string? ProcedureName { get; init; } public string? ProcedureCode { get; init; }
-    public string MaskedPatient { get; init; } = "Dado protegido"; public decimal PresentedAmount { get; init; } public decimal ApprovedAmount { get; init; }
-    public decimal DeniedAmount { get; init; } public decimal RecoveredAmount { get; init; } public decimal Confidence { get; init; }
-    public string Status { get; init; } = "PENDING_REVIEW"; public string? DenialReason { get; init; } public DateOnly? DueDate { get; init; }
-    public string? DenialStatus { get; init; } public bool AppealFiled { get; init; } public string DivergenceAlerts { get; init; } = "[]";
+    public Guid Id { get; set; } public Guid DocumentId { get; set; } public string Title { get; set; } = "Documento";
+    public string DocumentType { get; set; } = "Conta hospitalar"; public string? Insurer { get; set; } public string? Provider { get; set; }
+    public string? GuideNumber { get; set; } public string? AuthorizationNumber { get; set; } public string? Competence { get; set; }
+    public string? ProviderCnpj { get; set; } public string? Cnes { get; set; } public string? BatchNumber { get; set; }
+    public string? InvoiceNumber { get; set; } public string? ProcedureName { get; set; } public string? ProcedureCode { get; set; }
+    public string MaskedPatient { get; set; } = "Dado protegido"; public decimal PresentedAmount { get; set; } public decimal ApprovedAmount { get; set; }
+    public decimal DeniedAmount { get; set; } public decimal RecoveredAmount { get; set; } public decimal Confidence { get; set; }
+    public string Status { get; set; } = "PENDING_REVIEW"; public string? DenialReason { get; set; } public DateOnly? DueDate { get; set; }
+    public string? DenialStatus { get; set; } public bool AppealFiled { get; set; } public bool HasOcr { get; set; }
+    public string DivergenceAlerts { get; set; } = "[]";
 
     public int? DaysUntilAppealDue => DueDate is { } due
         ? due.DayNumber - DateOnly.FromDateTime(DateTime.UtcNow).DayNumber
