@@ -98,7 +98,23 @@ public sealed class SmartSearchController : Controller
 
     [HttpGet]
     public async Task<IActionResult> SavedSearches(CancellationToken ct)
-        => Json(new { success = true, items = await _repository.GetSavedSearchesAsync(_currentUser.TenantId, _currentUser.UserId, ct) });
+    {
+        if (!_currentUser.IsAuthenticated) return Unauthorized(new { success = false, message = "Sua sessão expirou." });
+        try
+        {
+            var items = await _repository.GetSavedSearchesAsync(_currentUser.TenantId, _currentUser.UserId, ct);
+            if (Request.Headers.Accept.ToString().Contains("application/json", StringComparison.OrdinalIgnoreCase)) return Json(new { success = true, items });
+            return View(items);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Falha ao carregar buscas salvas. Tenant={TenantId} User={UserId} CorrelationId={CorrelationId}", _currentUser.TenantId, _currentUser.UserId, HttpContext.TraceIdentifier);
+            if (Request.Headers.Accept.ToString().Contains("application/json", StringComparison.OrdinalIgnoreCase))
+                return StatusCode(503, new { success = false, items = Array.Empty<object>(), message = "Suas buscas salvas estão temporariamente indisponíveis.", correlationId = HttpContext.TraceIdentifier });
+            TempData["Error"] = "Não foi possível carregar suas buscas salvas agora. Tente novamente em instantes.";
+            return View(Array.Empty<SmartSearchSavedSearch>());
+        }
+    }
 
     [HttpPost]
     [ValidateAntiForgeryToken]
@@ -108,7 +124,40 @@ public sealed class SmartSearchController : Controller
         name = string.IsNullOrWhiteSpace(name) ? query : name.Trim();
         if (query.Length is < 2 or > 500 || name.Length > 120) return BadRequest(new { success = false, message = "Busca inválida." });
         await _repository.SaveSearchAsync(_currentUser.TenantId, _currentUser.UserId, name, query, ct);
+        await AuditSavedSearchAsync("CREATE", null, "Busca salva criada", new { name, queryLength = query.Length }, ct);
         return Json(new { success = true, message = "Busca salva com segurança na sua conta." });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> RenameSavedSearch([FromForm] Guid id, [FromForm] string name, CancellationToken ct)
+    {
+        name = (name ?? string.Empty).Trim();
+        if (id == Guid.Empty || name.Length is < 1 or > 120) return BadRequest(new { success = false, message = "Informe um nome válido." });
+        if (!await _repository.RenameSavedSearchAsync(_currentUser.TenantId, _currentUser.UserId, id, name, ct)) return NotFound(new { success = false, message = "Busca salva não encontrada." });
+        await AuditSavedSearchAsync("UPDATE", id, "Busca salva renomeada", new { name }, ct);
+        return Json(new { success = true, message = "Nome atualizado." });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> FavoriteSavedSearch([FromForm] Guid id, [FromForm] bool isFavorite, CancellationToken ct)
+    {
+        if (id == Guid.Empty) return BadRequest(new { success = false });
+        if (!await _repository.SetSavedSearchFavoriteAsync(_currentUser.TenantId, _currentUser.UserId, id, isFavorite, ct)) return NotFound(new { success = false });
+        await AuditSavedSearchAsync("UPDATE", id, isFavorite ? "Busca salva favoritada" : "Busca salva removida dos favoritos", new { isFavorite }, ct);
+        return Json(new { success = true });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> RunSavedSearch([FromForm] Guid id, CancellationToken ct)
+    {
+        if (id == Guid.Empty) return BadRequest(new { success = false });
+        var query = await _repository.RunSavedSearchAsync(_currentUser.TenantId, _currentUser.UserId, id, ct);
+        if (query is null) return NotFound(new { success = false, message = "Busca salva não encontrada." });
+        await AuditSavedSearchAsync("VIEW", id, "Busca salva executada", new { queryLength = query.Length }, ct);
+        return Json(new { success = true, query });
     }
 
     [HttpPost]
@@ -117,8 +166,13 @@ public sealed class SmartSearchController : Controller
     {
         if (id == Guid.Empty) return BadRequest();
         await _repository.DeleteSavedSearchAsync(_currentUser.TenantId, _currentUser.UserId, id, ct);
+        await AuditSavedSearchAsync("DELETE", id, "Busca salva excluída", null, ct);
         return Json(new { success = true });
     }
+
+    private Task AuditSavedSearchAsync(string action, Guid? id, string message, object? details, CancellationToken ct)
+        => _audit.WriteAsync(_currentUser.TenantId, _currentUser.UserId, action, "SMART_SEARCH_SAVED_SEARCH", id, message,
+            HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers.UserAgent.ToString(), details, ct);
 
     [HttpGet]
     public IActionResult Index([FromQuery] string? q)

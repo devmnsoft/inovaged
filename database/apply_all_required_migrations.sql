@@ -3010,5 +3010,6 @@ where coalesce(reg_status, 'A') = 'A';
 
 \ir migrations/2026_08_17_smart_search_administration_closure.sql
 \ir migrations/2026_08_18_ged_operational_routes_audit.sql
+\ir migrations/2026_08_18_smart_search_saved_search_evolution.sql
 
 \ir migrations/2026_08_19_executive_reports_performance.sql

@@ -1,0 +1,24 @@
+@model IReadOnlyList<InovaGed.Application.SmartSearch.SmartSearchSavedSearch>
+@{
+    ViewData["Title"] = "Buscas salvas";
+}
+<section class="container-fluid py-4">
+    <header class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+        <div><span class="text-primary fw-semibold">SmartSearch</span><h1 class="h3 mb-1">Buscas salvas</h1><p class="text-muted mb-0">Atalhos privados da sua conta, isolados por organização.</p></div>
+        <a class="btn btn-primary" asp-action="Index"><app-icon name="smart-search" size="16" decorative="true" /> Nova busca</a>
+    </header>
+    @if (TempData["Error"] is string error) { <div class="alert alert-warning" role="alert">@error</div> }
+    @if (Model.Count == 0)
+    {
+        <div class="card border-0 shadow-sm"><div class="card-body text-center py-5"><app-icon name="bookmark" size="40" decorative="true" /><h2 class="h5 mt-3">Nenhuma busca salva</h2><p class="text-muted">Faça uma consulta no SmartSearch e salve-a para encontrá-la aqui.</p><a class="btn btn-outline-primary" asp-action="Index">Abrir SmartSearch</a></div></div>
+    }
+    else
+    {
+        <div class="row g-3">
+        @foreach (var item in Model)
+        {
+            <div class="col-12 col-lg-6"><article class="card h-100 shadow-sm"><div class="card-body"><div class="d-flex justify-content-between gap-3"><div><h2 class="h5">@(item.IsFavorite ? "★ " : "")@item.Name</h2><p class="text-muted mb-2">@item.Query</p><small class="text-muted">@item.RunCount execução(ões) · criada em @item.CreatedAt.ToString("dd/MM/yyyy")</small></div><a class="btn btn-sm btn-primary align-self-start" asp-action="Index" asp-route-q="@item.Query"><app-icon name="search" size="15" decorative="true" /> Executar</a></div></div></article></div>
+        }
+        </div>
+    }
+</section>
