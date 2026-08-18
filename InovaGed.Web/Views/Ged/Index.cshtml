@@ -1472,7 +1472,8 @@
                 document.getElementById('btnClearPartialFilters')?.classList.remove('d-none');
                 updateGedFilterChip(filterName);
                 toggleGedFilteredEmptyState(visibleCount === 0, filterName);
-                fetch('/Ged/DocumentParts/FilterAudit', { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest', 'Content-Type': 'application/json' }, body: JSON.stringify({ filterName }) }).catch(() => {});
+                const auditToken = document.querySelector('input[name="__RequestVerificationToken"]')?.value || '';
+                fetch('/Ged/DocumentParts/FilterAudit', { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest', 'Content-Type': 'application/json', 'RequestVerificationToken': auditToken }, body: JSON.stringify({ filterName }) }).catch(() => {});
             }
             function clearGedQuickFilter() {
                 document.querySelectorAll('#gedDocumentsContainer [data-document-id]').forEach(row => row.classList.remove('d-none'));

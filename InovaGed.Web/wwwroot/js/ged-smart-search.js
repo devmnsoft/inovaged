@@ -377,7 +377,10 @@
             try {
                 const response = await fetch("/Ged/Search/Smart", {
                     method: "POST",
-                    headers: { "Content-Type": "application/json" },
+                    headers: {
+                        "Content-Type": "application/json",
+                        "RequestVerificationToken": document.querySelector('input[name="__RequestVerificationToken"]')?.value || ""
+                    },
                     body: JSON.stringify({ query: query, page: 1, pageSize: 20 })
                 });
 
