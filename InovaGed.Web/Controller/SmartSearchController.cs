@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace InovaGed.Web.Controllers;
 
 [Authorize(Policy = AppPolicies.HospitalDocumentsAccess)]
+[TypeFilter(typeof(SmartSearchExceptionFilter))]
 public sealed class SmartSearchController : Controller
 {
     private readonly ICurrentUser _currentUser;
@@ -97,6 +98,23 @@ public sealed class SmartSearchController : Controller
     }
 
     [HttpGet]
+    public async Task<IActionResult> Conversation(Guid id, CancellationToken ct)
+    {
+        if (!_currentUser.IsAuthenticated) return Unauthorized(new { success = false, items = Array.Empty<object>() });
+        if (id == Guid.Empty) return BadRequest(new { success = false, message = "Conversa inválida." });
+        try
+        {
+            var items = await _repository.GetConversationMessagesAsync(_currentUser.TenantId, _currentUser.UserId, id, ct);
+            return Json(new { success = true, items });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Falha ao carregar conversa do SmartSearch. Conversation={ConversationId} CorrelationId={CorrelationId}", id, HttpContext.TraceIdentifier);
+            return StatusCode(503, new { success = false, items = Array.Empty<object>(), message = "Não foi possível carregar esta conversa agora.", correlationId = HttpContext.TraceIdentifier });
+        }
+    }
+
+    [HttpGet]
     public async Task<IActionResult> SavedSearches(CancellationToken ct)
     {
         if (!_currentUser.IsAuthenticated) return Unauthorized(new { success = false, message = "Sua sessão expirou." });
@@ -165,7 +183,8 @@ public sealed class SmartSearchController : Controller
     public async Task<IActionResult> DeleteSavedSearch([FromForm] Guid id, CancellationToken ct)
     {
         if (id == Guid.Empty) return BadRequest();
-        await _repository.DeleteSavedSearchAsync(_currentUser.TenantId, _currentUser.UserId, id, ct);
+        if (!await _repository.DeleteSavedSearchAsync(_currentUser.TenantId, _currentUser.UserId, id, ct))
+            return NotFound(new { success = false, message = "Busca salva não encontrada." });
         await AuditSavedSearchAsync("DELETE", id, "Busca salva excluída", null, ct);
         return Json(new { success = true });
     }
