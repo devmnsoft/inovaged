@@ -88,6 +88,10 @@ public sealed class DocumentAssistantSecurityContext
     public Guid UserId { get; set; }
     public bool CanReadOcr { get; set; } = true;
     public bool CanViewRestrictedDocuments { get; set; }
+    public bool CanClassifyDocuments { get; set; }
+    public bool CanManageProtocols { get; set; }
+    public bool CanReviewHospitalBilling { get; set; }
+    public bool CanViewPhysicalArchive { get; set; }
 }
 
 public sealed class DocumentAssistantAction
@@ -96,4 +100,6 @@ public sealed class DocumentAssistantAction
     public string Kind { get; set; } = string.Empty;
     public string? Url { get; set; }
     public string? Value { get; set; }
+    public bool RequiresConfirmation { get; set; }
+    public string? ConfirmationMessage { get; set; }
 }
