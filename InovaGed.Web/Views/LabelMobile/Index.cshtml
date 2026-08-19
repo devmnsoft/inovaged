@@ -2,7 +2,7 @@
 <link rel="stylesheet" href="~/css/label-mobile.css" />
 <div class="lm-shell" data-label-mobile><header class="lm-header"><div><h1>Operação Mobile de Etiquetas</h1><small>@User.Identity?.Name</small></div><span class="lm-badge" data-online-status>Verificando…</span></header>
 <div class="lm-syncbar"><strong><span data-pending-count>0</span> pendentes</strong><span>Última sincronização: <span data-last-sync>Nunca</span></span></div>
-<div class="lm-grid">
+<div class="lm-grid"><a class="lm-card" href="/ArchiveWorkOrders?assignedTo=@(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value)"><b>OS</b><span>Minhas Ordens de Serviço</span></a>
 <a class="lm-card" asp-action="Scanner"><b>▣</b><span>Ler etiqueta</span></a><a class="lm-card" asp-action="Inventory"><b>✓</b><span>Inventário em campo</span></a>
 <a class="lm-card" asp-action="OfflineStatus" data-sync-now><b>↻</b><span>Sincronizar pendências</span></a><a class="lm-card" asp-action="Scanner" asp-route-mode="move"><b>⇢</b><span>Registrar movimentação</span></a>
 <a class="lm-card" asp-action="Scanner" asp-route-mode="evidence"><b>▧</b><span>Evidências</span></a><a class="lm-card" href="/LabelIntelligence/Divergences"><b>!</b><span>Alertas de divergência</span></a></div></div>
