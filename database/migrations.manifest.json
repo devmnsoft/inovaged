@@ -2,6 +2,17 @@
   "version": 1,
   "migrations": [
     {
+      "id": "2026_08_label_tracking_inventory",
+      "path": "database/migrations/2026_08_label_tracking_inventory.sql",
+      "module": "LabelTracking",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.99",
+      "requiresMaintenanceWindow": false,
+      "requiresVerifiedBackup": false
+    },
+    {
       "id": "2026_07_cluster_nodes_and_deployments",
       "path": "database/migrations/2026_07_cluster_nodes_and_deployments.sql",
       "module": "HighAvailability",
