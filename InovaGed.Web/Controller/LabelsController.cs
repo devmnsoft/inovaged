@@ -5,6 +5,8 @@ using InovaGed.Application.Common.Database;
 using InovaGed.Web.Security;
 using InovaGed.Application.PhysicalArchive;
 using InovaGed.Web.Models.Labels;
+using InovaGed.Application.Labels.Printing;
+using System.Text.Json;
 
 namespace InovaGed.Web.Controllers;
 
@@ -17,9 +19,12 @@ public class LabelsController : GedControllerBase
     private readonly ILabelPayloadBuilder _payloadBuilder;
     private readonly ILabelTemplateCatalogService _catalog;
     private readonly InovaGed.Application.Labels.ILabelTemplateManager _templateManager;
+    private readonly ILabelPrintJobService _printJobs;
+    private readonly ILabelPdfRenderService _pdf;
 
     public LabelsController(IDbConnectionFactory dbFactory, ILabelPrintRegistrar printRegistrar,
-        ILabelTemplateService templates, ILabelQrCodeService qrCodes, ILabelPayloadBuilder payloadBuilder, ILabelTemplateCatalogService catalog, InovaGed.Application.Labels.ILabelTemplateManager templateManager) : base(dbFactory)
+        ILabelTemplateService templates, ILabelQrCodeService qrCodes, ILabelPayloadBuilder payloadBuilder, ILabelTemplateCatalogService catalog, InovaGed.Application.Labels.ILabelTemplateManager templateManager,
+        ILabelPrintJobService printJobs, ILabelPdfRenderService pdf) : base(dbFactory)
     {
         _printRegistrar = printRegistrar;
         _templates = templates;
@@ -27,7 +32,64 @@ public class LabelsController : GedControllerBase
         _payloadBuilder = payloadBuilder;
         _catalog = catalog;
         _templateManager = templateManager;
+        _printJobs=printJobs; _pdf=pdf;
     }
+
+    [HttpGet]
+    public async Task<IActionResult> PrintQueue([FromQuery] LabelPrintJobFilter filter,CancellationToken ct)
+    { ViewBag.Filter=filter; return View(await _printJobs.ListAsync(TenantId,filter,ct)); }
+
+    [HttpGet]
+    public async Task<IActionResult> PrintJob(Guid id,CancellationToken ct)
+    { var job=await _printJobs.GetAsync(TenantId,id,ct); return job is null?NotFound():View("PrintJobDetails",job); }
+
+    [HttpGet]
+    public async Task<IActionResult> PrintPreview(Guid id,CancellationToken ct)
+    { var job=await _printJobs.GetAsync(TenantId,id,ct);if(job is null)return NotFound();if(UserId is not Guid uid)return Unauthorized();await _printJobs.MarkPreviewedAsync(TenantId,id,uid,ct);return View(job); }
+
+    [HttpPost,ValidateAntiForgeryToken]
+    public async Task<IActionResult> CreatePrintJob(CreatePrintJobInput input,CancellationToken ct)
+    {
+        if(UserId is not Guid uid)return Unauthorized();if(!ModelState.IsValid)return RedirectToAction(nameof(PrintWizard));
+        var template=await _catalog.GetTemplateAsync(TenantId,input.TemplateCode,ct);
+        if(!await _catalog.IsCompatibleAsync(TenantId,input.TemplateCode,input.SubjectType,ct))return BadRequest("Modelo incompatível.");
+        using var db=await OpenAsync();dynamic? subject=input.SubjectType=="BOX"?await LoadBoxLabelAsync(db,input.SubjectId!.Value):await LoadDocumentLabelAsync(db,input.SubjectId!.Value);if(subject is null)return NotFound();
+        var json=_payloadBuilder.Build(subject);var id=await _printJobs.CreateJobAsync(new(TenantId,uid,input.PrintMode,template.Code,template.Name,input.SubjectType,input.SubjectId,null,null,input.Copies,json,input.ReprintReason,HttpContext.Connection.RemoteIpAddress?.ToString(),Request.Headers.UserAgent),ct);
+        return RedirectToAction(nameof(PrintPreview),new{id});
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> BatchPrint(string subjectType="BOX",CancellationToken ct)
+    {
+        subjectType=subjectType.ToUpperInvariant();using var db=await OpenAsync();
+        ViewBag.SubjectType=subjectType;ViewBag.Templates=await _catalog.GetTemplatesAsync(TenantId,subjectType,null,ct);
+        ViewBag.Rows=subjectType=="DOCUMENT"?await db.QueryAsync("select d.id,d.code control_number,d.title subject,b.box_no,coalesce(pl.location_code,'') location,coalesce(cp.title,'') classification,d.status,exists(select 1 from ged.label_print_history h where h.tenant_id=d.tenant_id and h.label_subject_id=d.id) already_printed from ged.document d left join ged.batch_item bi on bi.tenant_id=d.tenant_id and bi.document_id=d.id and bi.reg_status='A' left join ged.box b on b.tenant_id=d.tenant_id and b.id=bi.box_id left join ged.physical_location pl on pl.tenant_id=b.tenant_id and pl.id=b.location_id left join ged.classification_plan cp on cp.tenant_id=d.tenant_id and cp.id=d.classification_id where d.tenant_id=@tid order by d.created_at desc limit 300",new{tid=TenantId}):await db.QueryAsync("select b.id,coalesce(b.label_code,b.box_no::text) control_number,coalesce(b.notes,'Caixa física') subject,b.box_no,coalesce(pl.location_code,'') location,'' classification,b.reg_status status,exists(select 1 from ged.label_print_history h where h.tenant_id=b.tenant_id and h.label_subject_id=b.id) already_printed from ged.box b left join ged.physical_location pl on pl.tenant_id=b.tenant_id and pl.id=b.location_id where b.tenant_id=@tid and b.reg_status='A' order by b.box_no limit 300",new{tid=TenantId});
+        return View(new CreateBatchPrintJobInput{SubjectType=subjectType});
+    }
+
+    [HttpPost,ValidateAntiForgeryToken]
+    public async Task<IActionResult> CreateBatchPrintJob(CreateBatchPrintJobInput input,CancellationToken ct)
+    {
+        if(UserId is not Guid uid)return Unauthorized();if(input.SubjectIds.Count==0)return BadRequest("Selecione ao menos um item.");
+        var template=await _catalog.GetTemplateAsync(TenantId,input.TemplateCode,ct);if(!await _catalog.IsCompatibleAsync(TenantId,input.TemplateCode,input.SubjectType,ct))return BadRequest("Modelo incompatível.");
+        using var db=await OpenAsync();var items=new List<LabelPrintBatchItem>();var order=0;
+        foreach(var sid in input.SubjectIds.Distinct()){dynamic? row=input.SubjectType=="BOX"?await LoadBoxLabelAsync(db,sid):await LoadDocumentLabelAsync(db,sid);if(row is null)return NotFound();items.Add(new(sid,input.SubjectType,null,null,_payloadBuilder.Build(row),order++));}
+        var id=await _printJobs.CreateBatchJobAsync(new(TenantId,uid,input.PrintMode,template.Code,template.Name,input.SubjectType,input.Copies,items,input.ReprintReason,HttpContext.Connection.RemoteIpAddress?.ToString(),Request.Headers.UserAgent),ct);return RedirectToAction(nameof(PrintPreview),new{id});
+    }
+
+    [HttpPost,ValidateAntiForgeryToken]
+    public async Task<IActionResult> MarkPrinted(Guid id,CancellationToken ct){if(UserId is not Guid uid)return Unauthorized();await _printJobs.MarkPrintedAsync(TenantId,id,uid,ct);TempData["Success"]="Impressão registrada para auditoria.";return RedirectToAction(nameof(PrintJob),new{id});}
+    [HttpPost,ValidateAntiForgeryToken]
+    public async Task<IActionResult> CancelPrintJob(Guid id,string reason,CancellationToken ct){if(UserId is not Guid uid)return Unauthorized();await _printJobs.CancelAsync(TenantId,id,uid,reason,ct);return RedirectToAction(nameof(PrintQueue));}
+    [HttpGet]
+    public async Task<IActionResult> GeneratePdf(Guid id,CancellationToken ct){var result=await _pdf.GeneratePdfAsync(TenantId,id,ct);return File(result.Content,result.ContentType,result.FileName);}
+
+    [HttpGet]
+    public async Task<IActionResult> Calibration(string templateCode="FACTORY_BOX_V1",CancellationToken ct){using var db=await OpenAsync();var model=await db.QuerySingleOrDefaultAsync<LabelCalibrationInput>(new CommandDefinition("select template_code TemplateCode,printer_name PrinterName,margin_top_mm MarginTopMm,margin_left_mm MarginLeftMm,scale_percent ScalePercent,label_width_mm LabelWidthMm,label_height_mm LabelHeightMm,gap_x_mm GapXMm,gap_y_mm GapYMm,labels_per_page LabelsPerPage from ged.label_print_calibration where tenant_id=@tid and template_code=@templateCode and reg_status='A' order by updated_at desc nulls last limit 1",new{tid=TenantId,templateCode},cancellationToken:ct));return View(model??new LabelCalibrationInput{TemplateCode=templateCode});}
+    [HttpPost,ValidateAntiForgeryToken]
+    public async Task<IActionResult> Calibration(LabelCalibrationInput input,CancellationToken ct){if(UserId is not Guid uid)return Unauthorized();if(!ModelState.IsValid)return View(input);using var db=await OpenAsync();await db.ExecuteAsync(new CommandDefinition("""insert into ged.label_print_calibration(tenant_id,template_code,printer_name,margin_top_mm,margin_left_mm,scale_percent,label_width_mm,label_height_mm,gap_x_mm,gap_y_mm,labels_per_page,created_by) values(@tid,@TemplateCode,nullif(@PrinterName,''),@MarginTopMm,@MarginLeftMm,@ScalePercent,@LabelWidthMm,@LabelHeightMm,@GapXMm,@GapYMm,@LabelsPerPage,@uid) on conflict(tenant_id,template_code,(coalesce(printer_name,'DEFAULT'))) where reg_status='A' do update set margin_top_mm=excluded.margin_top_mm,margin_left_mm=excluded.margin_left_mm,scale_percent=excluded.scale_percent,label_width_mm=excluded.label_width_mm,label_height_mm=excluded.label_height_mm,gap_x_mm=excluded.gap_x_mm,gap_y_mm=excluded.gap_y_mm,labels_per_page=excluded.labels_per_page,updated_by=@uid,updated_at=now()""",new{tid=TenantId,uid,input.TemplateCode,input.PrinterName,input.MarginTopMm,input.MarginLeftMm,input.ScalePercent,input.LabelWidthMm,input.LabelHeightMm,input.GapXMm,input.GapYMm,input.LabelsPerPage},cancellationToken:ct));TempData["Success"]="Calibração salva.";return RedirectToAction(nameof(Calibration),new{input.TemplateCode});}
+    [HttpGet]
+    public IActionResult TestSheet()=>View("PrintTestSheet",new LabelCalibrationInput());
 
     [HttpGet]
     public IActionResult Index() => View();
