@@ -1,0 +1,5 @@
+@model InovaGed.Application.PhysicalArchive.Productivity.ArchiveBillingPreview
+@{ViewData["Title"]="Produtividade e Medição do Acervo";}
+<h1>Produtividade e Medição do Acervo</h1><p>Acompanhe produção, UST, equipes, ordens executadas e pré-faturamento mensal.</p>
+<div class="row g-3 mb-4"><div class="col"><div class="card p-3"><small>Produção do mês</small><strong class="fs-3">@Model.TotalQuantity</strong></div></div><div class="col"><div class="card p-3"><small>Total de UST</small><strong class="fs-3">@Model.TotalUst</strong></div></div><div class="col"><div class="card p-3"><small>Valor previsto</small><strong class="fs-3">@Model.TotalAmount.ToString("C")</strong></div></div><div class="col"><div class="card p-3"><small>Pendências</small><strong class="fs-3">@Model.Pending</strong></div></div><div class="col"><div class="card p-3"><small>Status da competência</small><strong>@Model.Status</strong></div></div></div>
+<partial name="BillingPreview" model="Model" />
