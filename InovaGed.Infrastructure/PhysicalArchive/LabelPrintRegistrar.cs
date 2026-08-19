@@ -4,10 +4,11 @@ using System.Text.Json;
 using Dapper;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.PhysicalArchive;
+using InovaGed.Application.Labels.Intelligence;
 
 namespace InovaGed.Infrastructure.PhysicalArchive;
 
-public sealed class LabelPrintRegistrar(IDbConnectionFactory dbFactory) : ILabelPrintRegistrar, ILabelPrintService
+public sealed class LabelPrintRegistrar(IDbConnectionFactory dbFactory, ILabelCustodyService custody) : ILabelPrintRegistrar, ILabelPrintService
 {
     public async Task RegisterAsync(LabelPrintRequest request, CancellationToken cancellationToken = default)
     {
@@ -46,6 +47,9 @@ values
   @Hash, @UserId, cast(@IpAddress as inet), @UserAgent, nullif(@ReprintReason, ''));
 """, new { request.TenantId, request.SubjectType, request.SubjectId, request.TemplateCode, request.SnapshotJson, Hash = hash, request.UserId, request.IpAddress, request.UserAgent, request.ReprintReason }, tx, cancellationToken: cancellationToken));
         await tx.CommitAsync(cancellationToken);
+        await custody.RegisterEventAsync(new(request.TenantId,request.SubjectType,request.SubjectId,null,
+            priorPrints>0?"LABEL_REPRINTED":"LABEL_PRINTED",priorPrints>0?"Etiqueta reimpressa":"Etiqueta impressa",
+            request.ReprintReason,"label_print_history",null,null,null,request.UserId,request.IpAddress,request.UserAgent,request.SnapshotJson),cancellationToken);
     }
 }
 
