@@ -177,6 +177,8 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICorrelationContext, CorrelationContext>();
 builder.Services.AddScoped<InovaGed.Application.PhysicalArchive.ILabelPrintRegistrar, InovaGed.Infrastructure.PhysicalArchive.LabelPrintRegistrar>();
 builder.Services.AddScoped<InovaGed.Application.PhysicalArchive.ILabelPrintService, InovaGed.Infrastructure.PhysicalArchive.LabelPrintRegistrar>();
+builder.Services.AddScoped<InovaGed.Application.Labels.Printing.ILabelPrintJobService, InovaGed.Infrastructure.PhysicalArchive.LabelPrintJobService>();
+builder.Services.AddScoped<InovaGed.Application.Labels.Printing.ILabelPdfRenderService, InovaGed.Infrastructure.PhysicalArchive.LabelHtmlPdfRenderService>();
 builder.Services.AddSingleton<InovaGed.Application.PhysicalArchive.ILabelTemplateService, InovaGed.Infrastructure.PhysicalArchive.LabelTemplateService>();
 builder.Services.AddScoped<InovaGed.Application.PhysicalArchive.ILabelTemplateCatalogService, InovaGed.Infrastructure.PhysicalArchive.LabelTemplateCatalogService>();
 builder.Services.AddScoped<InovaGed.Infrastructure.PhysicalArchive.LabelTemplateManager>();
