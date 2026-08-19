@@ -1,0 +1,7 @@
+@{ViewData["Title"]="Ler etiqueta";}
+<link rel="stylesheet" href="~/css/label-mobile.css" />
+<div class="lm-shell" data-label-mobile data-inventory-id="@ViewBag.InventorySessionId" data-expected-location="@ViewBag.ExpectedLocation"><header class="lm-header"><h1>Ler etiqueta</h1><span class="lm-badge" data-online-status></span></header>
+<p>Aponte a câmera para o QR Code da etiqueta.</p><div class="lm-camera"><video data-scanner-video playsinline muted></video><div data-scanner-message>Toque em “Ativar câmera” para começar.</div></div>
+<div class="lm-actions"><button class="lm-button primary" type="button" data-camera-start>Ativar câmera</button><button class="lm-button" type="button" data-camera-stop>Parar câmera</button></div>
+<form data-manual-form class="lm-panel"><label>Código da etiqueta<input name="payload" required maxlength="2048" autocomplete="off" inputmode="text" /></label><label>Localização encontrada<input name="foundLocation" maxlength="200" /></label><button class="lm-button primary">Registrar manualmente</button></form><div class="lm-toast" data-scan-feedback hidden></div><p><span data-pending-count>0</span> leitura(s) pendente(s).</p></div>
+@Html.AntiForgeryToken()<script src="~/js/label-mobile-offline.js"></script><script src="~/js/label-mobile-scanner.js"></script>
