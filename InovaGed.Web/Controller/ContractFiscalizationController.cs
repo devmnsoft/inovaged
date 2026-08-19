@@ -1,18 +1,19 @@
 using System.Text;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Contracts.Fiscalization;
+using InovaGed.Application.Contracts.FiscalPortal;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace InovaGed.Web.Controllers;
 
 [Authorize,Route("ContractFiscalization")]
-public sealed class ContractFiscalizationController(IDbConnectionFactory db,IContractFiscalizationService fiscalization,IContractGlosaService glosas,IContractFiscalizationReportService reports):GedControllerBase(db)
+public sealed class ContractFiscalizationController(IDbConnectionFactory db,IContractFiscalizationService fiscalization,IContractGlosaService glosas,IContractFiscalizationReportService reports,IFiscalPortalPublicationService portal):GedControllerBase(db)
 {
  [HttpGet("")] public async Task<IActionResult>Index(DateOnly? competence,string?status,CancellationToken ct)=>View(await fiscalization.ListPeriodsAsync(TenantId,new(competence,status),ct));
  [HttpGet("Create")] public IActionResult Create()=>View(new CreateInput(DateOnly.FromDateTime(DateTime.Today),null,null,null,null,null,null));
  [HttpPost("Create"),ValidateAntiForgeryToken] public async Task<IActionResult>Create(CreateInput input,CancellationToken ct){if(UserId is not Guid u)return Forbid();if(!ModelState.IsValid)return View(input);var id=await fiscalization.CreatePeriodAsync(new(TenantId,input.CompetenceMonth,input.ContractNumber,input.ContractorName,input.ContractingUnit,input.FiscalUserId,input.ManagerUserId,u,input.Notes),ct);return RedirectToAction(nameof(Details),new{id});}
- [HttpGet("{id:guid}")] public async Task<IActionResult>Details(Guid id,CancellationToken ct){var model=await fiscalization.GetPeriodAsync(TenantId,id,ct);return model is null?NotFound():View(model);}
+ [HttpGet("{id:guid}")] public async Task<IActionResult>Details(Guid id,CancellationToken ct){var model=await fiscalization.GetPeriodAsync(TenantId,id,ct);if(model is null)return NotFound();ViewBag.PortalPublications=await portal.ListAsync(TenantId,new(id),ct);return View(model);}
  [HttpPost("{id:guid}/ImportProductivity"),ValidateAntiForgeryToken] public async Task<IActionResult>ImportProductivity(Guid id,CancellationToken ct){if(UserId is not Guid u)return Forbid();await fiscalization.ImportProductivityAsync(TenantId,id,u,ct);return RedirectToAction(nameof(Details),new{id});}
  [HttpGet("{id:guid}/Items")] public async Task<IActionResult>Items(Guid id,CancellationToken ct){ViewBag.PeriodId=id;return View(await fiscalization.ListItemsAsync(TenantId,id,ct));}
  [HttpPost("Items/{itemId:guid}/Approve"),ValidateAntiForgeryToken] public async Task<IActionResult>ApproveItem(Guid itemId,Guid periodId,string?notes,CancellationToken ct){if(UserId is not Guid u)return Forbid();await fiscalization.ApproveItemAsync(TenantId,itemId,u,notes,ct);return RedirectToAction(nameof(Details),new{id=periodId});}

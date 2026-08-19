@@ -1,0 +1,4 @@
+@using InovaGed.Application.Contracts.FiscalPortal
+@model IReadOnlyList<FiscalPortalPublicationItem>
+@{ViewData["Title"]="Publicações do Portal";}
+<link rel="stylesheet" href="~/css/fiscal-portal.css"/><main class="fp-shell"><section class="fp-hero"><div><span>PORTAL DO FISCAL</span><h1>Publicações</h1><p>Acompanhe o ciclo de revisão e aceite das competências.</p></div></section><section class="fp-card"><table class="fp-table"><thead><tr><th>Número</th><th>Fiscal</th><th>Status</th><th>Publicada</th><th>Validade</th><th></th></tr></thead><tbody>@foreach(var x in Model){<tr><td><strong>@x.PublicationNumber</strong></td><td>@x.FiscalName<br/><small>@x.FiscalEmail</small></td><td><span class="fp-badge @x.Status">@x.Status</span></td><td>@x.PublishedAt?.ToString("dd/MM/yyyy HH:mm")</td><td>@x.ExpiresAt?.ToString("dd/MM/yyyy HH:mm")</td><td><a class="fp-btn" asp-action="Details" asp-route-publicationId="@x.Id">Detalhes</a></td></tr>}</tbody></table></section></main>
