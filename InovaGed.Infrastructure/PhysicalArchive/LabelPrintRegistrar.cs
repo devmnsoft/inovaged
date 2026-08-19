@@ -20,7 +20,7 @@ public sealed class LabelPrintRegistrar(IDbConnectionFactory dbFactory) : ILabel
         await using var tx = await db.BeginTransactionAsync(cancellationToken);
         var priorPrints = await db.ExecuteScalarAsync<int>(new CommandDefinition("""
 select count(*) from ged.label_print_history
-where tenant_id=@TenantId and label_subject_type=@SubjectType and label_subject_id=@SubjectId;
+where tenant_id=@TenantId and label_subject_type=@SubjectType and label_subject_id=@SubjectId and template_code=@TemplateCode;
 """, request, tx, cancellationToken: cancellationToken));
         if (priorPrints > 0 && string.IsNullOrWhiteSpace(request.ReprintReason))
             throw new InvalidOperationException("O motivo da reimpressão é obrigatório.");
@@ -66,7 +66,9 @@ public sealed class LabelTemplateService : ILabelTemplateService
         {
             ["BOX"] = new("BOX_ATLAS", "2", "BOX"),
             ["DOCUMENT"] = new("DOCUMENT_ATLAS", "2", "DOCUMENT"),
-            ["BATCH"] = new("BATCH_ATLAS", "2", "BATCH")
+            ["BATCH"] = new("BATCH_ATLAS", "2", "BATCH"),
+            ["LOCDESK_FOLDER"] = new("LOCDESK_PASTA", "1", "DOCUMENT"),
+            ["LOCDESK_BOX"] = new("LOCDESK_CAIXA", "1", "BOX")
         };
 
     public LabelTemplate GetCurrent(string subjectType) =>

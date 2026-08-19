@@ -1,0 +1,21 @@
+@model InovaGed.Web.Models.Labels.LocDeskLabelRenderModel
+@{ var item = Model.Label; }
+<section class="locdesk-label @(item.LabelKind == "BOX" ? "locdesk-box-label" : "locdesk-folder-label")">
+ <header class="locdesk-label-header">
+  <div class="locdesk-logo"><partial name="_LocDeskLogoSvg" /></div>
+  <div class="locdesk-title-area"><h1>@item.ArchiveTitle</h1>
+   <div class="locdesk-control-row"><span>N° de Controle:</span><strong class="locdesk-red">@item.ControlNumber</strong></div>
+   <div class="locdesk-control-row"><span>Volume:</span><strong class="locdesk-red">@item.VolumeNumber / @item.VolumeTotal</strong></div>
+  </div>
+  <div class="locdesk-qr" role="img" aria-label="QR Code para rastreio">@Html.Raw(Model.QrSvg)</div>
+ </header>
+ <dl class="locdesk-fields">
+  @if (!string.IsNullOrWhiteSpace(item.ProcessNumber)){<div><dt>Processo nº:</dt><dd>@item.ProcessNumber</dd></div>}
+  <div><dt>Assunto:</dt><dd>@item.Subject</dd></div><div><dt>Detalhamento:</dt><dd>@item.Details</dd></div>
+  <div><dt>Atividade:</dt><dd>@item.Activity</dd></div><div><dt>Classificação:</dt><dd>@item.Classification</dd></div>
+  <div><dt>Suporte:</dt><dd>@item.Support</dd></div><div><dt>Período do Documento:</dt><dd>@item.DocumentPeriod</dd></div>
+  <div><dt>Fase Atual:</dt><dd>@item.CurrentPhase</dd></div><div><dt>Previsão Eliminação:</dt><dd>@item.EliminationForecast</dd></div>
+  <div><dt>Situação Eliminação:</dt><dd>@item.EliminationStatus</dd></div><div><dt>Nº LED:</dt><dd>@item.LedNumber</dd></div>
+  <div class="locdesk-location"><dt>LOCALIZAÇÃO:</dt><dd><strong>@item.Location</strong></dd></div>
+ </dl>
+</section>

@@ -29,7 +29,7 @@
             <input name="q"
                    value="@q"
                    class="form-control"
-                   placeholder="Buscar por usuário, caixa, documento ou tipo..." />
+                   placeholder="Buscar por controle, localização, assunto, classificação, template ou usuário..." />
         </div>
 
         <button class="btn btn-primary" type="submit">
@@ -79,7 +79,7 @@
                             </span>
                         </td>
 
-                        <td>@reference</td>
+                        <td><div>@reference</div>@if (r.control_number != null){<small><strong>Controle:</strong> @r.control_number · <strong>Local:</strong> @r.location</small>}</td>
 
                         <td>@(r.printed_by_name ?? "—")</td>
 

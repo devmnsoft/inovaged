@@ -1,0 +1,6 @@
+@model InovaGed.Web.Models.Labels.LocDeskLabelRenderModel
+@{ Layout = null; var labels = Model.Labels.Count > 0 ? Model.Labels : Enumerable.Repeat(Model.Label, Model.Label.Copies).ToList(); }
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Etiquetas LocDesk de Caixa</title><link rel="stylesheet" href="~/css/locdesk-labels.css"></head><body class="locdesk-print-body">
+<div class="print-toolbar"><a asp-action="LocDesk">Voltar para edição</a><button type="button" onclick="window.print()">Imprimir</button><span class="print-status">@(Model.PrintRegistered ? "Impressão registrada com sucesso." : "Pré-visualização — ainda não registrada")</span></div>
+@foreach(var page in labels.Chunk(2)){<main class="locdesk-box-sheet">@foreach(var label in page){<partial name="_LocDeskLabel" model="new InovaGed.Web.Models.Labels.LocDeskLabelRenderModel { Label=label, QrSvg=Model.QrSvg, PrintRegistered=Model.PrintRegistered }" />}</main>}
+</body></html>

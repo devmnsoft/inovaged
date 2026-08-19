@@ -81,6 +81,7 @@
                             <td class="small text-muted">@b.reg_date</td>
                             <td class="text-end">
                                 <div class="d-flex gap-1 flex-wrap justify-content-end">
+                                    <a class="btn btn-sm btn-dark" asp-controller="Labels" asp-action="LocDeskBox" asp-route-boxId="@b.id"><app-icon name="tag"></app-icon> Etiqueta LocDesk</a>
                                     <a class="btn btn-sm btn-primary"
                                        asp-controller="Labels" asp-action="BoxLabel"
                                        asp-route-boxId="@b.id" target="_blank">

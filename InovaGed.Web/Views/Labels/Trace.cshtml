@@ -1,0 +1,3 @@
+@model dynamic
+@{ ViewData["Title"]="Rastreio da etiqueta LocDesk"; }
+<div class="card border-0 shadow-sm"><div class="card-header bg-white"><h4>Etiqueta @Model.control_number</h4></div><dl class="card-body row mb-0"><dt class="col-sm-3">Tipo</dt><dd class="col-sm-9">@Model.label_kind</dd><dt class="col-sm-3">Volume</dt><dd class="col-sm-9">@Model.volume_number / @Model.volume_total</dd><dt class="col-sm-3">Assunto</dt><dd class="col-sm-9">@Model.subject</dd><dt class="col-sm-3">Classificação</dt><dd class="col-sm-9">@Model.classification</dd><dt class="col-sm-3">Localização</dt><dd class="col-sm-9"><strong>@Model.location</strong></dd><dt class="col-sm-3">Criação</dt><dd class="col-sm-9">@Model.created_at</dd></dl></div>
