@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using InovaGed.Application.Common.Database;
 using InovaGed.Web.Security;
 using InovaGed.Application.PhysicalArchive;
+using InovaGed.Web.Models.Labels;
 
 namespace InovaGed.Web.Controllers;
 
@@ -234,6 +235,166 @@ where d.tenant_id=@tid and d.id=@docId
 """, new { tid = TenantId, docId });
 
     [HttpGet]
+    public Task<IActionResult> LocDesk(CancellationToken ct)
+        => Task.FromResult<IActionResult>(View(new LocDeskLabelInputModel()));
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public Task<IActionResult> PreviewLocDesk(LocDeskLabelInputModel input, CancellationToken ct)
+    {
+        NormalizeLocDesk(input);
+        if (!ModelState.IsValid) return Task.FromResult<IActionResult>(View("LocDesk", input));
+        return Task.FromResult(RenderLocDesk(input, false));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> PrintLocDesk(LocDeskLabelInputModel input, CancellationToken ct)
+    {
+        NormalizeLocDesk(input);
+        if (!ModelState.IsValid) return View("LocDesk", input);
+        try
+        {
+            var subjectId = await EnsureLocDeskSubjectAsync(input, ct);
+            await RegisterLocDeskAsync(input, subjectId, input.ReprintReason, ct);
+            return RenderLocDesk(input, true);
+        }
+        catch (InvalidOperationException ex)
+        {
+            ModelState.AddModelError(nameof(input.ReprintReason), ex.Message);
+            return View("LocDesk", input);
+        }
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> PrintLocDeskBatch(LocDeskLabelBatchPrintModel input, CancellationToken ct)
+    {
+        if (input.Labels.Count == 0) { ModelState.AddModelError("", "Selecione ao menos uma etiqueta."); return View("LocDesk", new LocDeskLabelInputModel()); }
+        foreach (var label in input.Labels)
+        {
+            NormalizeLocDesk(label);
+            label.ReprintReason ??= input.ReprintReason;
+            if (!TryValidateModel(label)) return View("LocDesk", label);
+            var subjectId = await EnsureLocDeskSubjectAsync(label, ct);
+            await RegisterLocDeskAsync(label, subjectId, label.ReprintReason, ct);
+        }
+        var first = input.Labels[0];
+        var qr = CreateLocDeskQr(first, first.BoxId ?? first.DocumentId);
+        return View(first.LabelKind == LocDeskLabelKind.Box ? "LocDeskBoxLabel" : "LocDeskFolderLabel",
+            new LocDeskLabelRenderModel { Label = first, Labels = input.Labels, QrSvg = qr, PrintRegistered = true });
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> LocDeskBox(Guid boxId, CancellationToken ct) => await LocDeskBoxFromPhysical(boxId, ct);
+
+    [HttpGet]
+    public async Task<IActionResult> LocDeskBoxFromPhysical(Guid boxId, CancellationToken ct)
+    {
+        using var db = await OpenAsync();
+        var model = await db.QueryFirstOrDefaultAsync<LocDeskLabelInputModel>(new CommandDefinition("""
+select 'BOX' as LabelKind, b.id as BoxId, coalesce(nullif(b.label_code,''),lpad(b.box_no::text,4,'0')) as ControlNumber,
+ coalesce(pl.location_code, concat_ws('.',pl.building,pl.room,pl.aisle,pl.rack,pl.shelf,pl.pallet),'') as Location,
+ case when count(distinct d.id)=0 then coalesce(b.notes,'Caixa física') when count(distinct d.title)=1 then max(d.title) else 'Conteúdo misto - revisar classificação' end as Subject,
+ case when count(distinct cp.id)=1 then concat(max(cp.code),' - ',max(cp.title)) when count(distinct cp.id)>1 then 'Conteúdo misto' else '' end as Classification,
+ case when min(d.created_at)::date=max(d.created_at)::date then to_char(min(d.created_at),'YYYY') else concat(to_char(min(d.created_at),'YYYY'),' a ',to_char(max(d.created_at),'YYYY')) end as DocumentPeriod,
+ coalesce(max(cp.final_destination),'') as CurrentPhase
+from ged.box b left join ged.physical_location pl on pl.tenant_id=b.tenant_id and pl.id=b.location_id and pl.reg_status='A'
+left join ged.batch_item bi on bi.tenant_id=b.tenant_id and bi.box_id=b.id and bi.reg_status='A'
+left join ged.document d on d.tenant_id=bi.tenant_id and d.id=bi.document_id
+left join ged.document_classification dc on dc.tenant_id=d.tenant_id and dc.document_id=d.id and dc.reg_status='A'
+left join ged.classification_plan cp on cp.tenant_id=d.tenant_id and cp.id=coalesce(dc.classification_id,d.classification_id)
+where b.tenant_id=@tid and b.id=@boxId and b.reg_status='A'
+group by b.id,b.label_code,b.box_no,b.notes,pl.location_code,pl.building,pl.room,pl.aisle,pl.rack,pl.shelf,pl.pallet
+""", new { tid=TenantId, boxId }, cancellationToken:ct));
+        if (model is null) return NotFound("Caixa não encontrada.");
+        ApplyDefaults(model);
+        return View("LocDesk", model);
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> LocDeskFolder(Guid docId, CancellationToken ct) => await LocDeskFolderFromDocument(docId, ct);
+
+    [HttpGet]
+    public async Task<IActionResult> LocDeskFolderFromDocument(Guid docId, CancellationToken ct)
+    {
+        using var db = await OpenAsync();
+        var model = await db.QueryFirstOrDefaultAsync<LocDeskLabelInputModel>(new CommandDefinition("""
+select 'FOLDER' as LabelKind,d.id as DocumentId,b.id as BoxId,coalesce(nullif(d.code,''),left(d.id::text,8)) as ControlNumber,
+coalesce(d.title,'') as Subject,coalesce(concat(cp.code,' - ',cp.title),'') as Classification,
+coalesce(pl.location_code,concat_ws('.',pl.building,pl.room,pl.aisle,pl.rack,pl.shelf,pl.pallet),'') as Location,
+to_char(d.created_at,'YYYY') as DocumentPeriod,coalesce(cp.activity_type,'FIM') as Activity,coalesce(cp.final_destination,'') as CurrentPhase
+from ged.document d left join ged.batch_item bi on bi.tenant_id=d.tenant_id and bi.document_id=d.id and bi.reg_status='A'
+left join ged.box b on b.tenant_id=d.tenant_id and b.id=bi.box_id and b.reg_status='A'
+left join ged.physical_location pl on pl.tenant_id=b.tenant_id and pl.id=b.location_id and pl.reg_status='A'
+left join ged.document_classification dc on dc.tenant_id=d.tenant_id and dc.document_id=d.id and dc.reg_status='A'
+left join ged.classification_plan cp on cp.tenant_id=d.tenant_id and cp.id=coalesce(dc.classification_id,d.classification_id)
+where d.tenant_id=@tid and d.id=@docId limit 1
+""", new { tid=TenantId, docId }, cancellationToken:ct));
+        if (model is null) return NotFound("Documento não encontrado.");
+        ApplyDefaults(model);
+        return View("LocDesk", model);
+    }
+
+    private IActionResult RenderLocDesk(LocDeskLabelInputModel input, bool registered)
+    {
+        var qr = CreateLocDeskQr(input, input.BoxId ?? input.DocumentId);
+        var model = new LocDeskLabelRenderModel { Label=input, QrSvg=qr, PrintRegistered=registered };
+        return View(input.LabelKind == LocDeskLabelKind.Box ? "LocDeskBoxLabel" : "LocDeskFolderLabel", model);
+    }
+
+    private string CreateLocDeskQr(LocDeskLabelInputModel input, Guid? id)
+    {
+        var path = input.BoxId is Guid box ? $"/Physical/BoxContents?boxId={box}" : input.DocumentId is Guid doc ? $"/Ged/Document/{doc}" : $"/Labels/Trace/{id}";
+        return _qrCodes.CreateTrackingSvg($"{Request.Scheme}://{Request.Host}{path}");
+    }
+
+    private async Task<Guid> EnsureLocDeskSubjectAsync(LocDeskLabelInputModel input, CancellationToken ct)
+    {
+        if (input.LabelKind == LocDeskLabelKind.Box && input.BoxId is Guid box) return box;
+        if (input.LabelKind == LocDeskLabelKind.Folder && input.DocumentId is Guid doc) return doc;
+        if (UserId is not Guid userId) throw new UnauthorizedAccessException();
+        using var db = await OpenAsync();
+        var id = Guid.NewGuid();
+        var payload = _payloadBuilder.Build(input);
+        await db.ExecuteAsync(new CommandDefinition("""
+insert into ged.locdesk_label_draft(id,tenant_id,label_kind,archive_title,process_number,control_number,volume_number,volume_total,subject,details,activity,classification,support,document_period,current_phase,elimination_forecast,elimination_status,led_number,location,source_box_id,source_document_id,qr_payload,created_by)
+values(@id,@tid,@LabelKind,@ArchiveTitle,@ProcessNumber,@ControlNumber,@VolumeNumber,@VolumeTotal,@Subject,@Details,@Activity,@Classification,@Support,@DocumentPeriod,@CurrentPhase,@EliminationForecast,@EliminationStatus,@LedNumber,@Location,@BoxId,@DocumentId,cast(@payload as text),@userId)
+""", new { id,tid=TenantId,userId,payload,input.LabelKind,input.ArchiveTitle,input.ProcessNumber,input.ControlNumber,input.VolumeNumber,input.VolumeTotal,input.Subject,input.Details,input.Activity,input.Classification,input.Support,input.DocumentPeriod,input.CurrentPhase,input.EliminationForecast,input.EliminationStatus,input.LedNumber,input.Location,input.BoxId,input.DocumentId }, cancellationToken:ct));
+        return id;
+    }
+
+    private async Task RegisterLocDeskAsync(LocDeskLabelInputModel input, Guid subjectId, string? reason, CancellationToken ct)
+    {
+        if (UserId is not Guid userId) throw new UnauthorizedAccessException("Usuário autenticado obrigatório.");
+        var type = input.BoxId.HasValue ? "BOX" : input.DocumentId.HasValue ? "DOCUMENT" : "MANUAL_LABEL";
+        var template = input.LabelKind == LocDeskLabelKind.Box ? "LOCDESK_CAIXA_V1" : "LOCDESK_PASTA_V1";
+        await _printRegistrar.RegisterAsync(new LabelPrintRequest(TenantId,userId,type,subjectId,template,_payloadBuilder.Build(input),HttpContext.Connection.RemoteIpAddress?.ToString(),Request.Headers.UserAgent.ToString(),reason),ct);
+    }
+
+    private static void NormalizeLocDesk(LocDeskLabelInputModel input)
+    {
+        input.LabelKind = input.LabelKind?.Trim().ToUpperInvariant() ?? LocDeskLabelKind.Folder;
+        input.ControlNumber = input.ControlNumber?.Trim() ?? "";
+        if (long.TryParse(input.ControlNumber, out var value)) input.ControlNumber = value.ToString("D4");
+        input.ArchiveTitle = input.ArchiveTitle?.Trim() ?? "";
+    }
+    private static void ApplyDefaults(LocDeskLabelInputModel model)
+    {
+        model.ArchiveTitle = "ARQUIVO LOCDESCK ANANINDEUA"; model.VolumeNumber=1; model.VolumeTotal=1;
+        model.Details ??="0"; model.Activity=string.IsNullOrWhiteSpace(model.Activity)?"FIM":model.Activity; model.Support="1. Papel"; model.LedNumber="N/A"; model.Copies=1;
+        NormalizeLocDesk(model);
+    }
+
+    [HttpGet("/Labels/Trace/{id:guid}")]
+    public async Task<IActionResult> Trace(Guid id, CancellationToken ct)
+    {
+        using var db=await OpenAsync();
+        var draft=await db.QueryFirstOrDefaultAsync(new CommandDefinition("select * from ged.locdesk_label_draft where tenant_id=@tid and id=@id and reg_status='A'",new {tid=TenantId,id},cancellationToken:ct));
+        return draft is null ? NotFound() : View(draft);
+    }
+
+    [HttpGet]
     public async Task<IActionResult> History(string? q)
     {
         using var db = await OpenAsync();
@@ -255,7 +416,11 @@ select
     lp.user_agent,
     lp.template_code,
     lp.snapshot_sha256,
-    lp.reprint_reason
+    lp.reprint_reason,
+    lp.snapshot_json->>'controlNumber' as control_number,
+    lp.snapshot_json->>'location' as location,
+    lp.snapshot_json->>'subject' as locdesk_subject,
+    lp.snapshot_json->>'classification' as locdesk_classification
 from ged.label_print_history lp
 left join ged.app_user u
   on u.tenant_id=lp.tenant_id
@@ -275,6 +440,11 @@ where lp.tenant_id=@tid
     or coalesce(d.code,'') ilike ('%'||@q||'%')
     or coalesce(d.title,'') ilike ('%'||@q||'%')
     or coalesce(u.name,'') ilike ('%'||@q||'%')
+    or coalesce(lp.template_code,'') ilike ('%'||@q||'%')
+    or coalesce(lp.snapshot_json->>'controlNumber','') ilike ('%'||@q||'%')
+    or coalesce(lp.snapshot_json->>'location','') ilike ('%'||@q||'%')
+    or coalesce(lp.snapshot_json->>'subject','') ilike ('%'||@q||'%')
+    or coalesce(lp.snapshot_json->>'classification','') ilike ('%'||@q||'%')
   )
 order by lp.printed_at desc
 limit 500;", new { tid = TenantId, q });

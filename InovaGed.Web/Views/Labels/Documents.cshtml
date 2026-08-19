@@ -80,6 +80,7 @@
                             </td>
                             <td class="small text-muted">@d.created_at</td>
                             <td class="text-end">
+                                <a class="btn btn-sm btn-dark" asp-controller="Labels" asp-action="LocDeskFolder" asp-route-docId="@d.id"><app-icon name="tag"></app-icon> Etiqueta LocDesk</a>
                                 <a class="btn btn-sm btn-primary"
                                    asp-controller="Labels" asp-action="DocumentLabel"
                                    asp-route-docId="@d.id" target="_blank">
