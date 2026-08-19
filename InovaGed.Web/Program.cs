@@ -188,6 +188,10 @@ builder.Services.AddScoped<InovaGed.Infrastructure.PhysicalArchive.ArchiveReconc
 builder.Services.AddScoped<InovaGed.Application.PhysicalArchive.Reconciliation.IArchiveReconciliationService>(sp => sp.GetRequiredService<InovaGed.Infrastructure.PhysicalArchive.ArchiveReconciliationService>());
 builder.Services.AddScoped<InovaGed.Application.PhysicalArchive.Reconciliation.IArchiveReconciliationEngine>(sp => sp.GetRequiredService<InovaGed.Infrastructure.PhysicalArchive.ArchiveReconciliationService>());
 builder.Services.AddScoped<InovaGed.Application.PhysicalArchive.Reconciliation.IArchiveReconciliationFixService>(sp => sp.GetRequiredService<InovaGed.Infrastructure.PhysicalArchive.ArchiveReconciliationService>());
+builder.Services.AddScoped<InovaGed.Infrastructure.Contracts.Fiscalization.ContractFiscalizationService>();
+builder.Services.AddScoped<InovaGed.Application.Contracts.Fiscalization.IContractFiscalizationService>(sp=>sp.GetRequiredService<InovaGed.Infrastructure.Contracts.Fiscalization.ContractFiscalizationService>());
+builder.Services.AddScoped<InovaGed.Application.Contracts.Fiscalization.IContractGlosaService>(sp=>sp.GetRequiredService<InovaGed.Infrastructure.Contracts.Fiscalization.ContractFiscalizationService>());
+builder.Services.AddScoped<InovaGed.Application.Contracts.Fiscalization.IContractFiscalizationReportService>(sp=>sp.GetRequiredService<InovaGed.Infrastructure.Contracts.Fiscalization.ContractFiscalizationService>());
 builder.Services.AddScoped<InovaGed.Infrastructure.PhysicalArchive.ArchiveProductivityService>();
 builder.Services.AddScoped<InovaGed.Application.PhysicalArchive.Productivity.IArchiveServiceCatalogService>(sp=>sp.GetRequiredService<InovaGed.Infrastructure.PhysicalArchive.ArchiveProductivityService>());
 builder.Services.AddScoped<InovaGed.Application.PhysicalArchive.Productivity.IArchiveProductivityService>(sp=>sp.GetRequiredService<InovaGed.Infrastructure.PhysicalArchive.ArchiveProductivityService>());
