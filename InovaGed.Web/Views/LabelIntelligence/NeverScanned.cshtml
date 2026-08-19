@@ -1,0 +1,4 @@
+@model IReadOnlyList<InovaGed.Application.Labels.Intelligence.LabelNeverScannedItem>
+@{ViewData["Title"]="Etiquetas nunca lidas";}<link rel="stylesheet" href="~/css/label-intelligence.css" />
+@await Html.PartialAsync("_Header",("Impressas e nunca lidas","Esta etiqueta foi impressa, mas ainda não possui nenhuma leitura registrada."))
+<div class="li-toolbar"><a class="btn btn-outline-primary" asp-action="Export" asp-route-report="never-scanned">Exportar CSV</a><a class="btn btn-primary" href="/LabelTracking/Inventory/New">Criar inventário de conferência</a></div><div class="table-responsive li-panel"><table class="table align-middle"><thead><tr><th>Impressão</th><th>Objeto</th><th>Controle</th><th>Modelo</th><th>Localização</th></tr></thead><tbody>@foreach(var x in Model){<tr><td>@x.PrintedAt.ToString("g")</td><td>@x.SubjectType</td><td>@x.ControlNumber</td><td>@x.TemplateCode</td><td>@x.Location</td></tr>}</tbody></table></div>
