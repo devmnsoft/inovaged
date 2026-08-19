@@ -3015,3 +3015,4 @@ where coalesce(reg_status, 'A') = 'A';
 
 \ir migrations/2026_08_19_executive_reports_performance.sql
 \ir migrations/2026_08_label_tracking_inventory.sql
+\ir migrations/2026_08_contract_fiscalization_acceptance.sql
