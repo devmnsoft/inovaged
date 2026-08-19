@@ -82,6 +82,38 @@ public sealed class DocumentAssistantServiceTests
         Assert.Equal(["user", "assistant"], response.Messages.Select(message => message.Role));
     }
 
+    [Fact]
+    public async Task AskAsync_ReplacesNonGuidConversationIdWithPersistableIdentifier()
+    {
+        var response = await new DocumentAssistantService(new RecordingSearchService(new SmartSearchResult()))
+            .AskAsync(new DocumentAssistantQuery
+            {
+                TenantId = Guid.NewGuid(),
+                UserId = Guid.NewGuid(),
+                Question = "documentos pendentes",
+                ConversationId = "conversation-from-untrusted-client"
+            }, CancellationToken.None);
+
+        Assert.True(Guid.TryParse(response.ConversationId, out _));
+        Assert.NotEqual("conversation-from-untrusted-client", response.ConversationId);
+    }
+
+    [Fact]
+    public async Task AskAsync_NormalizesValidConversationIdForStablePersistence()
+    {
+        var conversationId = Guid.NewGuid();
+        var response = await new DocumentAssistantService(new RecordingSearchService(new SmartSearchResult()))
+            .AskAsync(new DocumentAssistantQuery
+            {
+                TenantId = Guid.NewGuid(),
+                UserId = Guid.NewGuid(),
+                Question = "documentos pendentes",
+                ConversationId = conversationId.ToString("D")
+            }, CancellationToken.None);
+
+        Assert.Equal(conversationId.ToString("N"), response.ConversationId);
+    }
+
     private sealed class RecordingSearchService(SmartSearchResult result) : ISmartSearchService
     {
         public SmartSearchRequest? Request { get; private set; }

@@ -140,8 +140,9 @@ public sealed class DocumentAssistantService : IDocumentAssistantService
     }
 
     private static string NormalizeConversationId(string? value) =>
-        !string.IsNullOrWhiteSpace(value) && value.Length <= 64 && value.All(c => char.IsLetterOrDigit(c) || c is '-' or '_')
-            ? value : Guid.NewGuid().ToString("N");
+        Guid.TryParse(value, out var conversationId)
+            ? conversationId.ToString("N")
+            : Guid.NewGuid().ToString("N");
     private static string? Limit(string? text, int length) => string.IsNullOrWhiteSpace(text) ? null
         : text.Length <= length ? text : $"{text[..length].TrimEnd()}…";
 }
