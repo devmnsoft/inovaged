@@ -184,6 +184,10 @@ builder.Services.AddScoped<InovaGed.Application.Labels.Tracking.ILabelReplacemen
 builder.Services.AddScoped<InovaGed.Application.Labels.Intelligence.ILabelIntelligenceService, InovaGed.Infrastructure.PhysicalArchive.LabelIntelligenceService>();
 builder.Services.AddScoped<InovaGed.Application.Labels.Intelligence.ILabelAlertService, InovaGed.Infrastructure.PhysicalArchive.LabelAlertService>();
 builder.Services.AddScoped<InovaGed.Application.Labels.Intelligence.ILabelCustodyService, InovaGed.Infrastructure.PhysicalArchive.LabelCustodyService>();
+builder.Services.AddScoped<InovaGed.Infrastructure.PhysicalArchive.ArchiveReconciliationService>();
+builder.Services.AddScoped<InovaGed.Application.PhysicalArchive.Reconciliation.IArchiveReconciliationService>(sp => sp.GetRequiredService<InovaGed.Infrastructure.PhysicalArchive.ArchiveReconciliationService>());
+builder.Services.AddScoped<InovaGed.Application.PhysicalArchive.Reconciliation.IArchiveReconciliationEngine>(sp => sp.GetRequiredService<InovaGed.Infrastructure.PhysicalArchive.ArchiveReconciliationService>());
+builder.Services.AddScoped<InovaGed.Application.PhysicalArchive.Reconciliation.IArchiveReconciliationFixService>(sp => sp.GetRequiredService<InovaGed.Infrastructure.PhysicalArchive.ArchiveReconciliationService>());
 builder.Services.AddScoped<InovaGed.Application.Labels.Printing.ILabelPdfRenderService, InovaGed.Infrastructure.PhysicalArchive.LabelHtmlPdfRenderService>();
 builder.Services.AddSingleton<InovaGed.Application.PhysicalArchive.ILabelTemplateService, InovaGed.Infrastructure.PhysicalArchive.LabelTemplateService>();
 builder.Services.AddScoped<InovaGed.Application.PhysicalArchive.ILabelTemplateCatalogService, InovaGed.Infrastructure.PhysicalArchive.LabelTemplateCatalogService>();
