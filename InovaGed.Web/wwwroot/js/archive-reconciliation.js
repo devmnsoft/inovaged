@@ -1,0 +1,1 @@
+document.querySelectorAll('[data-confirm-fix]').forEach(button=>button.addEventListener('click',event=>{if(!window.confirm('Esta correção altera dados do acervo. Revise antes de aplicar.'))event.preventDefault();}));
