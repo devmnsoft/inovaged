@@ -143,7 +143,7 @@ public class LabelsController : GedControllerBase
         if(subject is null) return NotFound();
         if(register) { if(UserId is not Guid uid) return Unauthorized(); var snapshot=new { printMode=input.PrintMode,templateCode=template.Code,templateName=template.Name,subjectType=input.SubjectType,subjectId=input.SubjectId,controlNumber=(string?)null,location=(string?)null,printedFields=subject };
             try { await _printRegistrar.RegisterAsync(new(TenantId,uid,input.SubjectType,input.SubjectId!.Value,template.Code,_payloadBuilder.Build(snapshot),HttpContext.Connection.RemoteIpAddress?.ToString(),Request.Headers.UserAgent.ToString(),input.ReprintReason),ct); } catch(InvalidOperationException ex) { ModelState.AddModelError(nameof(input.ReprintReason),ex.Message); ViewBag.Templates=await _catalog.GetTemplatesAsync(TenantId,input.SubjectType,input.PrintMode,ct); return View("PrintWizard",input); } }
-        ViewBag.QrSvg=_qrCodes.CreateTrackingSvg($"{Request.Scheme}://{Request.Host}/{(input.SubjectType==LabelSubjectType.Box?$"Physical/BoxContents?boxId={input.SubjectId}":$"Ged/Document/{input.SubjectId}")}"); ViewBag.PrintRegistered=register; ViewBag.Copies=input.Copies;
+        ViewBag.QrSvg=_qrCodes.CreateTrackingSvg($"{Request.Scheme}://{Request.Host}/LabelTracking/Trace?payloadOrCode={input.SubjectId}"); ViewBag.PrintRegistered=register; ViewBag.Copies=input.Copies;
         return View(template.ViewName,subject);
     }
 

@@ -3014,3 +3014,4 @@ where coalesce(reg_status, 'A') = 'A';
 \ir migrations/2026_08_18_smart_search_read_models_hardening.sql
 
 \ir migrations/2026_08_19_executive_reports_performance.sql
+\ir migrations/2026_08_label_tracking_inventory.sql
