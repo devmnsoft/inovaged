@@ -192,6 +192,11 @@ builder.Services.AddScoped<InovaGed.Infrastructure.Contracts.Fiscalization.Contr
 builder.Services.AddScoped<InovaGed.Application.Contracts.Fiscalization.IContractFiscalizationService>(sp=>sp.GetRequiredService<InovaGed.Infrastructure.Contracts.Fiscalization.ContractFiscalizationService>());
 builder.Services.AddScoped<InovaGed.Application.Contracts.Fiscalization.IContractGlosaService>(sp=>sp.GetRequiredService<InovaGed.Infrastructure.Contracts.Fiscalization.ContractFiscalizationService>());
 builder.Services.AddScoped<InovaGed.Application.Contracts.Fiscalization.IContractFiscalizationReportService>(sp=>sp.GetRequiredService<InovaGed.Infrastructure.Contracts.Fiscalization.ContractFiscalizationService>());
+builder.Services.AddScoped<InovaGed.Infrastructure.Contracts.FiscalPortal.FiscalPortalService>();
+builder.Services.AddScoped<InovaGed.Application.Contracts.FiscalPortal.IFiscalPortalPublicationService>(sp=>sp.GetRequiredService<InovaGed.Infrastructure.Contracts.FiscalPortal.FiscalPortalService>());
+builder.Services.AddScoped<InovaGed.Application.Contracts.FiscalPortal.IFiscalPortalManifestationService>(sp=>sp.GetRequiredService<InovaGed.Infrastructure.Contracts.FiscalPortal.FiscalPortalService>());
+builder.Services.AddScoped<InovaGed.Application.Contracts.FiscalPortal.IFiscalAcceptanceSignatureService>(sp=>sp.GetRequiredService<InovaGed.Infrastructure.Contracts.FiscalPortal.FiscalPortalService>());
+builder.Services.AddScoped<InovaGed.Application.Contracts.FiscalPortal.IFiscalPortalNotificationService>(sp=>sp.GetRequiredService<InovaGed.Infrastructure.Contracts.FiscalPortal.FiscalPortalService>());
 builder.Services.AddScoped<InovaGed.Infrastructure.PhysicalArchive.ArchiveProductivityService>();
 builder.Services.AddScoped<InovaGed.Application.PhysicalArchive.Productivity.IArchiveServiceCatalogService>(sp=>sp.GetRequiredService<InovaGed.Infrastructure.PhysicalArchive.ArchiveProductivityService>());
 builder.Services.AddScoped<InovaGed.Application.PhysicalArchive.Productivity.IArchiveProductivityService>(sp=>sp.GetRequiredService<InovaGed.Infrastructure.PhysicalArchive.ArchiveProductivityService>());

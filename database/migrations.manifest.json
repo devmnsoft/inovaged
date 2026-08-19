@@ -374,6 +374,17 @@
       "maximumApplicationVersion": "04.1.99",
       "requiresMaintenanceWindow": false,
       "requiresVerifiedBackup": false
+    },
+    {
+      "id": "2026_08_fiscal_portal_acceptance_signature",
+      "path": "database/migrations/2026_08_fiscal_portal_acceptance_signature.sql",
+      "module": "FiscalPortal",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.99",
+      "requiresMaintenanceWindow": false,
+      "requiresVerifiedBackup": false
     }
   ]
 }
