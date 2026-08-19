@@ -15,14 +15,72 @@ public class LabelsController : GedControllerBase
     private readonly ILabelTemplateService _templates;
     private readonly ILabelQrCodeService _qrCodes;
     private readonly ILabelPayloadBuilder _payloadBuilder;
+    private readonly ILabelTemplateCatalogService _catalog;
 
     public LabelsController(IDbConnectionFactory dbFactory, ILabelPrintRegistrar printRegistrar,
-        ILabelTemplateService templates, ILabelQrCodeService qrCodes, ILabelPayloadBuilder payloadBuilder) : base(dbFactory)
+        ILabelTemplateService templates, ILabelQrCodeService qrCodes, ILabelPayloadBuilder payloadBuilder, ILabelTemplateCatalogService catalog) : base(dbFactory)
     {
         _printRegistrar = printRegistrar;
         _templates = templates;
         _qrCodes = qrCodes;
         _payloadBuilder = payloadBuilder;
+        _catalog = catalog;
+    }
+
+    [HttpGet]
+    public IActionResult Index() => View();
+
+    [HttpGet]
+    public IActionResult PrintWizard(string? subjectType, Guid? subjectId, string? mode, string? templateCode, CancellationToken ct)
+    {
+        subjectType = subjectType?.ToUpperInvariant() ?? LabelSubjectType.Box;
+        mode = mode?.ToUpperInvariant() ?? LabelPrintMode.Factory;
+        var options = _catalog.GetTemplates(subjectType, mode);
+        if (string.IsNullOrWhiteSpace(templateCode) || !_catalog.IsCompatible(templateCode, subjectType) || !options.Any(x=>x.Code==templateCode)) templateCode=options.FirstOrDefault()?.Code ?? "";
+        ViewBag.Templates=options;
+        return View(new LabelPrintWizardInputModel { SubjectType=subjectType, SubjectId=subjectId, PrintMode=mode, TemplateCode=templateCode });
+    }
+
+    [HttpGet]
+    public IActionResult Templates(string? subjectType, string? mode, CancellationToken ct)
+        => Json(_catalog.GetTemplates(subjectType?.ToUpperInvariant() ?? LabelSubjectType.Box, mode?.ToUpperInvariant()));
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Preview(LabelPrintWizardInputModel input, CancellationToken ct) => await ProcessWizard(input, false, ct);
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Print(LabelPrintWizardInputModel input, CancellationToken ct) => await ProcessWizard(input, true, ct);
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> PrintBatch(LabelBatchPrintInputModel input, CancellationToken ct)
+    {
+        if (input.SubjectIds.Count==0) ModelState.AddModelError(nameof(input.SubjectIds),"Selecione ao menos uma etiqueta.");
+        if (!_catalog.IsCompatible(input.TemplateCode,input.SubjectType)) ModelState.AddModelError(nameof(input.TemplateCode),"O modelo selecionado não é compatível com o tipo de origem escolhido.");
+        if (!ModelState.IsValid) return PrintWizard(input.SubjectType,null,input.PrintMode,input.TemplateCode,ct);
+        foreach(var id in input.SubjectIds) {
+            var wizard=new LabelPrintWizardInputModel { SubjectType=input.SubjectType,SubjectId=id,PrintMode=input.PrintMode,TemplateCode=input.TemplateCode,Copies=input.Copies,ReprintReason=input.ReprintReason };
+            var result=await ProcessWizard(wizard,true,ct); if(result is NotFoundResult) return result;
+        }
+        TempData["Success"]=$"{input.SubjectIds.Count} etiqueta(s) registradas no lote.";
+        return RedirectToAction(nameof(History));
+    }
+
+    private async Task<IActionResult> ProcessWizard(LabelPrintWizardInputModel input, bool register, CancellationToken ct)
+    {
+        if (!LabelPrintMode.IsValid(input.PrintMode) || !_catalog.IsCompatible(input.TemplateCode,input.SubjectType)) ModelState.AddModelError(nameof(input.TemplateCode),"O modelo selecionado não é compatível com o tipo de origem escolhido.");
+        LabelTemplateOption? template=null; try { template=_catalog.GetTemplate(input.TemplateCode); } catch { ModelState.AddModelError(nameof(input.TemplateCode),"Modelo obrigatório."); }
+        if (!ModelState.IsValid || template is null) { ViewBag.Templates=_catalog.GetTemplates(input.SubjectType,input.PrintMode); return View("PrintWizard",input); }
+        if (input.PrintMode==LabelPrintMode.Custom) {
+            if(input.SubjectType==LabelSubjectType.Box && input.SubjectId is Guid box) return RedirectToAction(nameof(LocDeskBox),new {boxId=box});
+            if(input.SubjectType==LabelSubjectType.Document && input.SubjectId is Guid doc) return RedirectToAction(nameof(LocDeskFolder),new {docId=doc});
+            return View("LocDesk",input.CustomFields);
+        }
+        using var db=await OpenAsync(); object? subject=input.SubjectType==LabelSubjectType.Box ? await LoadBoxLabelAsync(db,input.SubjectId!.Value) : await LoadDocumentLabelAsync(db,input.SubjectId!.Value);
+        if(subject is null) return NotFound();
+        if(register) { if(UserId is not Guid uid) return Unauthorized(); var snapshot=new { printMode=input.PrintMode,templateCode=template.Code,templateName=template.Name,subjectType=input.SubjectType,subjectId=input.SubjectId,controlNumber=(string?)null,location=(string?)null,printedFields=subject };
+            try { await _printRegistrar.RegisterAsync(new(TenantId,uid,input.SubjectType,input.SubjectId!.Value,template.Code,_payloadBuilder.Build(snapshot),HttpContext.Connection.RemoteIpAddress?.ToString(),Request.Headers.UserAgent.ToString(),input.ReprintReason),ct); } catch(InvalidOperationException ex) { ModelState.AddModelError(nameof(input.ReprintReason),ex.Message); ViewBag.Templates=_catalog.GetTemplates(input.SubjectType,input.PrintMode); return View("PrintWizard",input); } }
+        ViewBag.QrSvg=_qrCodes.CreateTrackingSvg($"{Request.Scheme}://{Request.Host}/{(input.SubjectType==LabelSubjectType.Box?$"Physical/BoxContents?boxId={input.SubjectId}":$"Ged/Document/{input.SubjectId}")}"); ViewBag.PrintRegistered=register; ViewBag.Copies=input.Copies;
+        return View(template.ViewName,subject);
     }
 
     [HttpGet]
@@ -236,7 +294,7 @@ where d.tenant_id=@tid and d.id=@docId
 
     [HttpGet]
     public Task<IActionResult> LocDesk(CancellationToken ct)
-        => Task.FromResult<IActionResult>(View(new LocDeskLabelInputModel()));
+        => Task.FromResult<IActionResult>(RedirectToAction(nameof(PrintWizard), new { mode=LabelPrintMode.Custom, subjectType=LabelSubjectType.Document, templateCode=LabelTemplateCode.LocDeskFolder }));
 
     [HttpPost]
     [ValidateAntiForgeryToken]
@@ -395,12 +453,13 @@ values(@id,@tid,@LabelKind,@ArchiveTitle,@ProcessNumber,@ControlNumber,@VolumeNu
     }
 
     [HttpGet]
-    public async Task<IActionResult> History(string? q)
+    public async Task<IActionResult> History(string? q, string? mode, string? template, string? type)
     {
         using var db = await OpenAsync();
 
         q = (q ?? "").Trim();
         ViewBag.Q = q;
+        mode=(mode??"").Trim().ToUpperInvariant(); template=(template??"").Trim().ToUpperInvariant(); type=(type??"").Trim().ToUpperInvariant();
 
         var rows = await db.QueryAsync(@"
 select
@@ -415,6 +474,8 @@ select
     lp.ip_address,
     lp.user_agent,
     lp.template_code,
+    coalesce(lp.snapshot_json->>'printMode',case when lp.template_code like 'LOCDESK%' then 'CUSTOM' else 'FACTORY' end) as print_mode,
+    coalesce(lp.snapshot_json->>'templateName',case lp.template_code when 'FACTORY_BOX_V1' then 'Padrão do Sistema - Caixa' when 'FACTORY_DOCUMENT_V1' then 'Padrão do Sistema - Documento/Pasta' when 'LOCDESK_CAIXA_V1' then 'LocDesk - Caixa' when 'LOCDESK_PASTA_V1' then 'LocDesk - Pasta' else lp.template_code end) as template_name,
     lp.snapshot_sha256,
     lp.reprint_reason,
     lp.snapshot_json->>'controlNumber' as control_number,
@@ -432,6 +493,9 @@ left join ged.document d
   on d.tenant_id=lp.tenant_id
  and d.id=lp.label_subject_id and lp.label_subject_type='DOCUMENT'
 where lp.tenant_id=@tid
+  and (@type='' or lp.label_subject_type=@type)
+  and (@template='' or lp.template_code=@template)
+  and (@mode='' or @mode=coalesce(lp.snapshot_json->>'printMode',case when lp.template_code like 'LOCDESK%' then 'CUSTOM' else 'FACTORY' end))
   and (
     @q = ''
     or coalesce(lp.label_subject_type,'') ilike ('%'||@q||'%')
@@ -447,7 +511,7 @@ where lp.tenant_id=@tid
     or coalesce(lp.snapshot_json->>'classification','') ilike ('%'||@q||'%')
   )
 order by lp.printed_at desc
-limit 500;", new { tid = TenantId, q });
+limit 500;", new { tid = TenantId, q, mode, template, type });
 
         return View(rows);
     }

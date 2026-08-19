@@ -80,7 +80,8 @@
                             </td>
                             <td class="small text-muted">@d.created_at</td>
                             <td class="text-end">
-                                <a class="btn btn-sm btn-dark" asp-controller="Labels" asp-action="LocDeskFolder" asp-route-docId="@d.id"><app-icon name="tag"></app-icon> Etiqueta LocDesk</a>
+                                <a class="btn btn-sm btn-primary" asp-action="PrintWizard" asp-route-subjectType="DOCUMENT" asp-route-subjectId="@d.id" asp-route-mode="FACTORY" asp-route-templateCode="FACTORY_DOCUMENT_V1">Padrão de fábrica</a>
+                                <a class="btn btn-sm btn-dark" asp-action="PrintWizard" asp-route-subjectType="DOCUMENT" asp-route-subjectId="@d.id" asp-route-mode="CUSTOM" asp-route-templateCode="LOCDESK_PASTA_V1"><app-icon name="tag"></app-icon> Personalizado · LocDesk</a>
                                 <a class="btn btn-sm btn-primary"
                                    asp-controller="Labels" asp-action="DocumentLabel"
                                    asp-route-docId="@d.id" target="_blank">
