@@ -1,0 +1,3 @@
+@model InovaGed.Application.Labels.LabelTemplateEditCommand
+@{ViewData["Title"]="Editar modelo de etiqueta";}
+<div class="d-flex justify-content-between align-items-start mb-3"><div><h1 class="h3">@Model.Name</h1><p class="text-muted mb-0">Configure o modelo e valide a prévia antes de publicar.</p></div>@if(ViewBag.Template!=null){<a class="btn btn-outline-primary" asp-action="Preview" asp-route-id="@ViewBag.Template.Id">Abrir prévia</a>}</div><div class="alert alert-warning">Publique uma versão somente após validar a prévia de impressão.</div><form method="post"><partial name="_Form" model="Model"/></form>

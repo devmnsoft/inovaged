@@ -58,7 +58,7 @@
                     <th>Usuário</th>
                     <th>IP</th>
                     <th>Template / hash</th>
-                    <th>Motivo</th>
+                    <th>Motivo</th><th></th>
                 </tr>
             </thead>
 
@@ -91,7 +91,7 @@
                             @(r.ip_address ?? "—")
                         </td>
                         <td class="small"><strong>@r.template_code</strong><br /><code>@Convert.ToString(r.snapshot_sha256)?.Substring(0, 12)…</code></td>
-                        <td>@(r.reprint_reason ?? "Primeira impressão")</td>
+                        <td>@(r.reprint_reason ?? "Primeira impressão")</td><td><a class="btn btn-sm btn-outline-primary text-nowrap" asp-action="PrintDetails" asp-route-id="@r.id">Ver detalhes da impressão</a></td>
                     </tr>
                 }
             </tbody>

@@ -16,34 +16,36 @@ public class LabelsController : GedControllerBase
     private readonly ILabelQrCodeService _qrCodes;
     private readonly ILabelPayloadBuilder _payloadBuilder;
     private readonly ILabelTemplateCatalogService _catalog;
+    private readonly InovaGed.Application.Labels.ILabelTemplateManager _templateManager;
 
     public LabelsController(IDbConnectionFactory dbFactory, ILabelPrintRegistrar printRegistrar,
-        ILabelTemplateService templates, ILabelQrCodeService qrCodes, ILabelPayloadBuilder payloadBuilder, ILabelTemplateCatalogService catalog) : base(dbFactory)
+        ILabelTemplateService templates, ILabelQrCodeService qrCodes, ILabelPayloadBuilder payloadBuilder, ILabelTemplateCatalogService catalog, InovaGed.Application.Labels.ILabelTemplateManager templateManager) : base(dbFactory)
     {
         _printRegistrar = printRegistrar;
         _templates = templates;
         _qrCodes = qrCodes;
         _payloadBuilder = payloadBuilder;
         _catalog = catalog;
+        _templateManager = templateManager;
     }
 
     [HttpGet]
     public IActionResult Index() => View();
 
     [HttpGet]
-    public IActionResult PrintWizard(string? subjectType, Guid? subjectId, string? mode, string? templateCode, CancellationToken ct)
+    public async Task<IActionResult> PrintWizard(string? subjectType, Guid? subjectId, string? mode, string? templateCode, CancellationToken ct)
     {
         subjectType = subjectType?.ToUpperInvariant() ?? LabelSubjectType.Box;
         mode = mode?.ToUpperInvariant() ?? LabelPrintMode.Factory;
-        var options = _catalog.GetTemplates(subjectType, mode);
-        if (string.IsNullOrWhiteSpace(templateCode) || !_catalog.IsCompatible(templateCode, subjectType) || !options.Any(x=>x.Code==templateCode)) templateCode=options.FirstOrDefault()?.Code ?? "";
+        var options = await _catalog.GetTemplatesAsync(TenantId,subjectType,mode,ct);
+        if (string.IsNullOrWhiteSpace(templateCode) || !await _catalog.IsCompatibleAsync(TenantId,templateCode,subjectType,ct) || !options.Any(x=>x.Code==templateCode)) templateCode=options.FirstOrDefault()?.Code ?? "";
         ViewBag.Templates=options;
         return View(new LabelPrintWizardInputModel { SubjectType=subjectType, SubjectId=subjectId, PrintMode=mode, TemplateCode=templateCode });
     }
 
     [HttpGet]
-    public IActionResult Templates(string? subjectType, string? mode, CancellationToken ct)
-        => Json(_catalog.GetTemplates(subjectType?.ToUpperInvariant() ?? LabelSubjectType.Box, mode?.ToUpperInvariant()));
+    public async Task<IActionResult> Templates(string? subjectType, string? mode, CancellationToken ct)
+        => Json(await _catalog.GetTemplatesAsync(TenantId,subjectType?.ToUpperInvariant() ?? LabelSubjectType.Box,mode?.ToUpperInvariant(),ct));
 
     [HttpPost, ValidateAntiForgeryToken]
     public async Task<IActionResult> Preview(LabelPrintWizardInputModel input, CancellationToken ct) => await ProcessWizard(input, false, ct);
@@ -55,8 +57,8 @@ public class LabelsController : GedControllerBase
     public async Task<IActionResult> PrintBatch(LabelBatchPrintInputModel input, CancellationToken ct)
     {
         if (input.SubjectIds.Count==0) ModelState.AddModelError(nameof(input.SubjectIds),"Selecione ao menos uma etiqueta.");
-        if (!_catalog.IsCompatible(input.TemplateCode,input.SubjectType)) ModelState.AddModelError(nameof(input.TemplateCode),"O modelo selecionado não é compatível com o tipo de origem escolhido.");
-        if (!ModelState.IsValid) return PrintWizard(input.SubjectType,null,input.PrintMode,input.TemplateCode,ct);
+        if (!await _catalog.IsCompatibleAsync(TenantId,input.TemplateCode,input.SubjectType,ct)) ModelState.AddModelError(nameof(input.TemplateCode),"O modelo selecionado não é compatível com o tipo de origem escolhido.");
+        if (!ModelState.IsValid) return await PrintWizard(input.SubjectType,null,input.PrintMode,input.TemplateCode,ct);
         foreach(var id in input.SubjectIds) {
             var wizard=new LabelPrintWizardInputModel { SubjectType=input.SubjectType,SubjectId=id,PrintMode=input.PrintMode,TemplateCode=input.TemplateCode,Copies=input.Copies,ReprintReason=input.ReprintReason };
             var result=await ProcessWizard(wizard,true,ct); if(result is NotFoundResult) return result;
@@ -67,9 +69,9 @@ public class LabelsController : GedControllerBase
 
     private async Task<IActionResult> ProcessWizard(LabelPrintWizardInputModel input, bool register, CancellationToken ct)
     {
-        if (!LabelPrintMode.IsValid(input.PrintMode) || !_catalog.IsCompatible(input.TemplateCode,input.SubjectType)) ModelState.AddModelError(nameof(input.TemplateCode),"O modelo selecionado não é compatível com o tipo de origem escolhido.");
-        LabelTemplateOption? template=null; try { template=_catalog.GetTemplate(input.TemplateCode); } catch { ModelState.AddModelError(nameof(input.TemplateCode),"Modelo obrigatório."); }
-        if (!ModelState.IsValid || template is null) { ViewBag.Templates=_catalog.GetTemplates(input.SubjectType,input.PrintMode); return View("PrintWizard",input); }
+        if (!LabelPrintMode.IsValid(input.PrintMode) || !await _catalog.IsCompatibleAsync(TenantId,input.TemplateCode,input.SubjectType,ct)) ModelState.AddModelError(nameof(input.TemplateCode),"O modelo selecionado não é compatível com o tipo de origem escolhido.");
+        LabelTemplateOption? template=null; try { template=await _catalog.GetTemplateAsync(TenantId,input.TemplateCode,ct); } catch { ModelState.AddModelError(nameof(input.TemplateCode),"Modelo obrigatório."); }
+        if (!ModelState.IsValid || template is null) { ViewBag.Templates=await _catalog.GetTemplatesAsync(TenantId,input.SubjectType,input.PrintMode,ct); return View("PrintWizard",input); }
         if (input.PrintMode==LabelPrintMode.Custom) {
             if(input.SubjectType==LabelSubjectType.Box && input.SubjectId is Guid box) return RedirectToAction(nameof(LocDeskBox),new {boxId=box});
             if(input.SubjectType==LabelSubjectType.Document && input.SubjectId is Guid doc) return RedirectToAction(nameof(LocDeskFolder),new {docId=doc});
@@ -78,7 +80,7 @@ public class LabelsController : GedControllerBase
         using var db=await OpenAsync(); object? subject=input.SubjectType==LabelSubjectType.Box ? await LoadBoxLabelAsync(db,input.SubjectId!.Value) : await LoadDocumentLabelAsync(db,input.SubjectId!.Value);
         if(subject is null) return NotFound();
         if(register) { if(UserId is not Guid uid) return Unauthorized(); var snapshot=new { printMode=input.PrintMode,templateCode=template.Code,templateName=template.Name,subjectType=input.SubjectType,subjectId=input.SubjectId,controlNumber=(string?)null,location=(string?)null,printedFields=subject };
-            try { await _printRegistrar.RegisterAsync(new(TenantId,uid,input.SubjectType,input.SubjectId!.Value,template.Code,_payloadBuilder.Build(snapshot),HttpContext.Connection.RemoteIpAddress?.ToString(),Request.Headers.UserAgent.ToString(),input.ReprintReason),ct); } catch(InvalidOperationException ex) { ModelState.AddModelError(nameof(input.ReprintReason),ex.Message); ViewBag.Templates=_catalog.GetTemplates(input.SubjectType,input.PrintMode); return View("PrintWizard",input); } }
+            try { await _printRegistrar.RegisterAsync(new(TenantId,uid,input.SubjectType,input.SubjectId!.Value,template.Code,_payloadBuilder.Build(snapshot),HttpContext.Connection.RemoteIpAddress?.ToString(),Request.Headers.UserAgent.ToString(),input.ReprintReason),ct); } catch(InvalidOperationException ex) { ModelState.AddModelError(nameof(input.ReprintReason),ex.Message); ViewBag.Templates=await _catalog.GetTemplatesAsync(TenantId,input.SubjectType,input.PrintMode,ct); return View("PrintWizard",input); } }
         ViewBag.QrSvg=_qrCodes.CreateTrackingSvg($"{Request.Scheme}://{Request.Host}/{(input.SubjectType==LabelSubjectType.Box?$"Physical/BoxContents?boxId={input.SubjectId}":$"Ged/Document/{input.SubjectId}")}"); ViewBag.PrintRegistered=register; ViewBag.Copies=input.Copies;
         return View(template.ViewName,subject);
     }
@@ -298,11 +300,11 @@ where d.tenant_id=@tid and d.id=@docId
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public Task<IActionResult> PreviewLocDesk(LocDeskLabelInputModel input, CancellationToken ct)
+    public async Task<IActionResult> PreviewLocDesk(LocDeskLabelInputModel input, CancellationToken ct)
     {
         NormalizeLocDesk(input);
-        if (!ModelState.IsValid) return Task.FromResult<IActionResult>(View("LocDesk", input));
-        return Task.FromResult(RenderLocDesk(input, false));
+        if (!ModelState.IsValid) return View("LocDesk", input);
+        return await RenderLocDesk(input, false,ct);
     }
 
     [HttpPost]
@@ -315,7 +317,7 @@ where d.tenant_id=@tid and d.id=@docId
         {
             var subjectId = await EnsureLocDeskSubjectAsync(input, ct);
             await RegisterLocDeskAsync(input, subjectId, input.ReprintReason, ct);
-            return RenderLocDesk(input, true);
+            return await RenderLocDesk(input,true,ct);
         }
         catch (InvalidOperationException ex)
         {
@@ -340,7 +342,7 @@ where d.tenant_id=@tid and d.id=@docId
         var first = input.Labels[0];
         var qr = CreateLocDeskQr(first, first.BoxId ?? first.DocumentId);
         return View(first.LabelKind == LocDeskLabelKind.Box ? "LocDeskBoxLabel" : "LocDeskFolderLabel",
-            new LocDeskLabelRenderModel { Label = first, Labels = input.Labels, QrSvg = qr, PrintRegistered = true });
+            new LocDeskLabelRenderModel { Label = first, Labels = input.Labels, QrSvg = qr, PrintRegistered = true, Template=await LoadLocDeskTemplate(first,ct) });
     }
 
     [HttpGet]
@@ -394,11 +396,17 @@ where d.tenant_id=@tid and d.id=@docId limit 1
         return View("LocDesk", model);
     }
 
-    private IActionResult RenderLocDesk(LocDeskLabelInputModel input, bool registered)
+    private async Task<IActionResult> RenderLocDesk(LocDeskLabelInputModel input,bool registered,CancellationToken ct)
     {
         var qr = CreateLocDeskQr(input, input.BoxId ?? input.DocumentId);
-        var model = new LocDeskLabelRenderModel { Label=input, QrSvg=qr, PrintRegistered=registered };
+        var model = new LocDeskLabelRenderModel { Label=input,QrSvg=qr,PrintRegistered=registered,Template=await LoadLocDeskTemplate(input,ct) };
         return View(input.LabelKind == LocDeskLabelKind.Box ? "LocDeskBoxLabel" : "LocDeskFolderLabel", model);
+    }
+
+    private async Task<InovaGed.Application.Labels.LabelTemplateDetails?> LoadLocDeskTemplate(LocDeskLabelInputModel input,CancellationToken ct)
+    {
+        var code=input.LabelKind==LocDeskLabelKind.Box?LabelTemplateCode.LocDeskBox:LabelTemplateCode.LocDeskFolder;
+        try { var option=await _catalog.GetTemplateAsync(TenantId,code,ct); return option.Id is Guid id?await _templateManager.GetAsync(TenantId,id,ct):null; } catch(KeyNotFoundException){return null;}
     }
 
     private string CreateLocDeskQr(LocDeskLabelInputModel input, Guid? id)
@@ -427,7 +435,10 @@ values(@id,@tid,@LabelKind,@ArchiveTitle,@ProcessNumber,@ControlNumber,@VolumeNu
         if (UserId is not Guid userId) throw new UnauthorizedAccessException("Usuário autenticado obrigatório.");
         var type = input.BoxId.HasValue ? "BOX" : input.DocumentId.HasValue ? "DOCUMENT" : "MANUAL_LABEL";
         var template = input.LabelKind == LocDeskLabelKind.Box ? "LOCDESK_CAIXA_V1" : "LOCDESK_PASTA_V1";
-        await _printRegistrar.RegisterAsync(new LabelPrintRequest(TenantId,userId,type,subjectId,template,_payloadBuilder.Build(input),HttpContext.Connection.RemoteIpAddress?.ToString(),Request.Headers.UserAgent.ToString(),reason),ct);
+        var option=await _catalog.GetTemplateAsync(TenantId,template,ct);
+        var details=option.Id is Guid templateId?await _templateManager.GetAsync(TenantId,templateId,ct):null;
+        var snapshot=new { printMode=option.Mode,templateCode=option.Code,templateName=option.Name,templateVersion=details?.Template.Version??1,isDefault=option.IsDefault,configuration=details,input };
+        await _printRegistrar.RegisterAsync(new LabelPrintRequest(TenantId,userId,type,subjectId,template,_payloadBuilder.Build(snapshot),HttpContext.Connection.RemoteIpAddress?.ToString(),Request.Headers.UserAgent.ToString(),reason),ct);
     }
 
     private static void NormalizeLocDesk(LocDeskLabelInputModel input)
@@ -514,5 +525,16 @@ order by lp.printed_at desc
 limit 500;", new { tid = TenantId, q, mode, template, type });
 
         return View(rows);
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> PrintDetails(Guid id,CancellationToken ct)
+    {
+        using var db=await OpenAsync();
+        var row=await db.QuerySingleOrDefaultAsync(new CommandDefinition("""
+select lp.id,lp.printed_at,lp.ip_address,lp.user_agent,lp.template_code,lp.snapshot_sha256,lp.reprint_reason,lp.snapshot_json::text snapshot_json,lp.label_subject_type,lp.label_subject_id,u.name printed_by_name,coalesce(lp.snapshot_json->>'templateName',t.name,lp.template_code) template_name,coalesce((lp.snapshot_json->>'templateVersion')::int,t.version,1) template_version,coalesce(lp.snapshot_json->>'printMode',t.print_mode) print_mode,coalesce((lp.snapshot_json->>'isDefault')::boolean,t.is_default,false) was_default
+from ged.label_print_history lp left join ged.app_user u on u.tenant_id=lp.tenant_id and u.id=lp.printed_by left join ged.label_template t on t.code=lp.template_code and (t.tenant_id=lp.tenant_id or t.tenant_id is null) where lp.tenant_id=@tenantId and lp.id=@id
+""",new{tenantId=TenantId,id},cancellationToken:ct));
+        return row is null?NotFound():View(row);
     }
 }
