@@ -12,6 +12,16 @@ public sealed class AtlasIconTagHelper(
     IWebHostEnvironment environment,
     ILogger<AtlasIconTagHelper> logger) : TagHelper
 {
+    private static readonly IReadOnlyDictionary<string, string> Aliases =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["archive"] = "physical-archive", ["tag"] = "label",
+            ["bookmark"] = "favorite", ["alarm"] = "recent",
+            ["plus"] = "document-add", ["plus-lg"] = "document-add", ["eye"] = "preview",
+            ["bi-people"] = "users", ["bi-person-lock"] = "restricted-access",
+            ["bi-building"] = "physical-archive", ["bi-person-badge"] = "users"
+        };
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> WarnedIcons = new(StringComparer.OrdinalIgnoreCase);
     public string Name { get; set; } = string.Empty;
     public string? Label { get; set; }
     public int Size { get; set; } = 20;
@@ -23,10 +33,13 @@ public sealed class AtlasIconTagHelper(
 
     public override void Process(TagHelperContext context, TagHelperOutput output)
     {
-        var found = registry.TryGet(Name, out var definition);
+        var requestedName = Name.Trim();
+        var resolvedName = Aliases.TryGetValue(requestedName, out var alias) ? alias : requestedName;
+        var found = registry.TryGet(resolvedName, out var definition);
         if (!found)
         {
-            logger.LogWarning("Atlas icon not found: {IconName}", Name);
+            if (WarnedIcons.TryAdd(requestedName, 0))
+                logger.LogWarning("Atlas icon not found: {IconName}", requestedName);
             var fallback = environment.IsDevelopment() ? "missing" : "circle-question";
             registry.TryGet(fallback, out definition!);
             if (environment.IsDevelopment()) output.Attributes.SetAttribute("data-missing-icon", Name);

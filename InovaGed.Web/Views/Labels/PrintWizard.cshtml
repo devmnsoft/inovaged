@@ -8,45 +8,44 @@
         ?? new List<LabelTemplateOption>();
 }
 
-<style>
-    .steps {
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: .5rem;
-    }
+@section Styles {
+    <link rel="stylesheet" href="~/css/pages/labels-print-wizard.css" asp-append-version="true" />
+}
 
-    .step {
-        border-top: 4px solid #dbe4ee;
-        padding: .7rem;
-    }
+<div class="label-wizard-page">
+    <nav aria-label="breadcrumb"><ol class="breadcrumb mb-0"><li class="breadcrumb-item"><a asp-action="Index">Etiquetas</a></li><li class="breadcrumb-item active" aria-current="page">Nova impressão</li></ol></nav>
+    <header class="label-wizard-hero">
+        <div><span class="label-wizard-eyebrow"><i class="bi bi-printer"></i> Central de Etiquetas</span><h1>Nova impressão de etiqueta</h1><p>Escolha a origem, o modo de impressão e o modelo ideal para caixa, documento, pasta ou lote.</p></div>
+        <div class="label-wizard-hero__actions"><a asp-action="Index" class="btn btn-outline-secondary"><i class="bi bi-arrow-left"></i> Voltar à central</a><a asp-action="History" class="btn btn-outline-primary"><i class="bi bi-clock-history"></i> Histórico</a></div>
+    </header>
+    @if (ViewBag.CatalogMigrationWarning is string migrationWarning) { <div class="alert alert-warning" role="alert"><strong>Atenção:</strong> @migrationWarning</div> }
+    <div class="label-wizard-steps" aria-label="Etapas da impressão"><div class="label-wizard-step is-active"><strong>1</strong><span>Origem</span></div><div class="label-wizard-step is-active"><strong>2</strong><span>Modo</span></div><div class="label-wizard-step is-active"><strong>3</strong><span>Modelo</span></div><div class="label-wizard-step is-active"><strong>4</strong><span>Prévia</span></div></div>
 
-    .step.active {
-        border-color: #176b87;
-    }
+    <form method="post" class="label-wizard-layout">
+        @Html.AntiForgeryToken()
+        <main class="label-wizard-main">
+            <div asp-validation-summary="All" class="alert alert-danger"></div>
+            <section class="label-wizard-card"><header class="label-wizard-card__header"><h2><span>1</span> Origem</h2><p>Informe qual item receberá a etiqueta.</p></header><div class="label-wizard-card__body label-origin-grid"><div><label asp-for="SubjectType" class="form-label">Tipo de origem</label><select asp-for="SubjectType" class="form-select" id="subject"><option value="BOX">Caixa</option><option value="DOCUMENT">Documento/Pasta</option><option value="BATCH">Lote</option><option value="MANUAL_LABEL">Manual</option></select></div><div><label asp-for="SubjectId" class="form-label">Identificador do objeto</label><input asp-for="SubjectId" class="form-control" placeholder="Selecione nas listagens ou informe o identificador" /></div></div></section>
+            <section class="label-wizard-card"><header class="label-wizard-card__header"><h2><span>2</span> Modo de impressão</h2><p>Use o padrão homologado ou um modelo adaptado à operação.</p></header><div class="label-wizard-card__body label-mode-grid"><label class="label-mode-card"><input asp-for="PrintMode" type="radio" value="FACTORY" /><span class="label-mode-card__icon"><i class="bi bi-shield-check"></i></span><strong>Padrão de fábrica</strong><small>Modelo seguro e padronizado pelo InovaGED.</small></label><label class="label-mode-card"><input asp-for="PrintMode" type="radio" value="CUSTOM" /><span class="label-mode-card__icon"><i class="bi bi-sliders"></i></span><strong>Personalizado</strong><small>Modelos do cliente, como LocDesk, com campos adaptados à operação.</small></label></div></section>
+            <section class="label-wizard-card"><header class="label-wizard-card__header"><h2><span>3</span> Modelo</h2><p>Compare os modelos disponíveis para a origem e o modo escolhidos.</p></header><div class="label-wizard-card__body"><label asp-for="TemplateCode" class="form-label">Modelo selecionado</label><select asp-for="TemplateCode" class="form-select label-template-select">@foreach (var template in templates) { <option value="@template.Code">@template.Name — @template.Description</option> }</select><div class="label-template-grid mt-3">@foreach (var template in templates) { var isLocDesk = template.Code.StartsWith("LOCDESK", StringComparison.OrdinalIgnoreCase); var typeLabel = template.SubjectType == "BOX" ? "Caixa" : template.SubjectType == "BATCH" ? "Lote" : "Documento/Pasta"; <label class="label-template-card"><input asp-for="TemplateCode" type="radio" value="@template.Code" /><span class="label-template-card__badges"><span class="badge text-bg-light">@typeLabel</span><span class="badge text-bg-primary">@(template.Mode == "FACTORY" ? "Fábrica" : "Personalizado")</span>@if (isLocDesk) { <span class="badge text-bg-dark">LocDesk</span> }</span><strong>@template.Name</strong><small>@template.Description</small></label> }</div></div></section>
+            <section class="label-wizard-card"><header class="label-wizard-card__header"><h2><span>4</span> Configuração</h2><p>Defina quantidade e, quando necessário, justifique a reimpressão.</p></header><div class="label-wizard-card__body label-config-grid"><div><label asp-for="Copies" class="form-label">Cópias</label><input asp-for="Copies" class="form-control" min="1" /></div><div><label asp-for="ReprintReason" class="form-label">Motivo da reimpressão</label><input asp-for="ReprintReason" class="form-control" placeholder="Obrigatório quando esta etiqueta já foi impressa" /></div></div><footer class="label-wizard-actions"><a asp-action="Index" class="btn btn-lg btn-outline-secondary">Cancelar</a><button asp-action="Preview" class="btn btn-lg btn-outline-primary"><i class="bi bi-eye"></i> Pré-visualizar</button><button asp-action="Print" class="btn btn-lg btn-primary"><i class="bi bi-printer"></i> Registrar e imprimir</button><button asp-action="PrintBatch" class="btn btn-lg btn-outline-dark">Imprimir em lote</button></footer></section>
+        </main>
+        <aside class="label-wizard-preview"><section class="label-wizard-card label-wizard-preview__sticky"><header class="label-wizard-card__header"><h2>Prévia da etiqueta</h2><p>Resumo visual antes de gerar a impressão.</p></header><div class="label-wizard-card__body"><div class="label-preview-sheet"><div class="label-preview-mini"><div class="label-preview-brand"><i class="bi bi-box-seam"></i><strong>InovaGED</strong></div><span class="label-preview-kicker">Etiqueta de identificação</span><strong id="preview-template">@(templates.FirstOrDefault(t => t.Code == Model.TemplateCode)?.Name ?? "Selecione um modelo")</strong><div class="label-preview-lines"><span></span><span></span><span></span></div><div class="label-preview-footer"><i class="bi bi-qr-code"></i><small>Prévia ilustrativa</small></div></div></div><dl class="label-wizard-summary"><div><dt>Origem</dt><dd id="summary-subject">@Model.SubjectType</dd></div><div><dt>Modo</dt><dd id="summary-mode">@Model.PrintMode</dd></div><div><dt>Cópias</dt><dd id="summary-copies">@Model.Copies</dd></div></dl></div></section></aside>
+    </form>
+</div>
 
-    .mode-card {
-        border: 2px solid #dbe4ee;
-        border-radius: 1rem;
-        cursor: pointer;
-    }
-
-    .mode-card:has(input:checked) {
-        border-color: #176b87;
-        background: #f0f9ff;
-    }
-
-    @@media (max-width: 700px) {
-        .steps {
-            grid-template-columns: 1fr 1fr;
-        }
-    }
-</style>
-<div class="d-flex justify-content-between mb-3"><div><h1 class="h3 mb-1">Nova impressão</h1><p class="text-muted">Escolha como deseja imprimir esta etiqueta.</p></div><a asp-action="Index" class="btn btn-outline-secondary align-self-start">Voltar à central</a></div>
-@if (ViewBag.CatalogMigrationWarning is string migrationWarning) { <div class="alert alert-warning" role="alert"><strong>Atenção:</strong> @migrationWarning</div> }
-<div class="steps mb-4">@foreach(var s in new[]{("1","Origem"),("2","Modo"),("3","Modelo"),("4","Prévia e impressão")}){<div class="step active"><strong>@s.Item1</strong><div>@s.Item2</div></div>}</div>
-<form method="post" class="card border-0 shadow-sm"><div class="card-body p-4"><div asp-validation-summary="All" class="text-danger"></div>
-<h2 class="h5">1. Origem</h2><div class="row g-3 mb-4"><div class="col-md-4"><label asp-for="SubjectType" class="form-label">Tipo de origem</label><select asp-for="SubjectType" class="form-select" id="subject"><option value="BOX">Caixa</option><option value="DOCUMENT">Documento/Pasta</option><option value="BATCH">Lote</option><option value="MANUAL_LABEL">Manual</option></select></div><div class="col-md-8"><label asp-for="SubjectId" class="form-label">Identificador do objeto</label><input asp-for="SubjectId" class="form-control" placeholder="Selecione nas listagens ou informe o identificador" /></div></div>
-<h2 class="h5">2. Modo de impressão</h2><div class="row g-3 mb-4"><div class="col-md-6"><label class="mode-card p-3 d-block h-100"><input asp-for="PrintMode" type="radio" value="FACTORY" class="form-check-input me-2"/><strong>Padrão de fábrica</strong><p class="text-muted small mt-2 mb-0">Layout fixo, seguro e padronizado pelo InovaGED. Campos essenciais vêm do sistema.</p></label></div><div class="col-md-6"><label class="mode-card p-3 d-block h-100"><input asp-for="PrintMode" type="radio" value="CUSTOM" class="form-check-input me-2"/><strong>Personalizado</strong><p class="text-muted small mt-2 mb-0">Modelos adaptados à operação do cliente, como LocDesk, com campos editáveis.</p></label></div></div>
-<h2 class="h5">3. Modelo</h2><select asp-for="TemplateCode" class="form-select mb-4">@foreach(var t in templates){<option value="@t.Code">@t.Name — @t.Description</option>}</select>
-<h2 class="h5">4. Prévia e impressão</h2><div class="row g-3"><div class="col-md-3"><label asp-for="Copies" class="form-label">Cópias</label><input asp-for="Copies" class="form-control"/></div><div class="col-md-9"><label asp-for="ReprintReason" class="form-label">Motivo da reimpressão</label><input asp-for="ReprintReason" class="form-control" placeholder="Obrigatório quando esta etiqueta já foi impressa"/></div></div></div><div class="card-footer bg-white p-3 d-flex flex-wrap justify-content-end gap-2"><a asp-action="Index" class="btn btn-outline-secondary">Voltar</a><button asp-action="Preview" class="btn btn-outline-primary">Pré-visualizar</button><button asp-action="Print" class="btn btn-primary"><app-icon name="print"></app-icon> Registrar e imprimir</button><button asp-action="PrintBatch" class="btn btn-outline-dark">Imprimir em lote</button></div></form>
-<script>document.querySelectorAll('input[name="PrintMode"],#subject').forEach(x=>x.addEventListener('change',()=>{const u=new URL(location.href);u.searchParams.set('subjectType',document.querySelector('#subject').value);u.searchParams.set('mode',document.querySelector('input[name="PrintMode"]:checked').value);location.href=u;}));</script>
+@section Scripts {
+<script>
+(() => {
+    const subject = document.querySelector('#subject');
+    const modes = document.querySelectorAll('input[name="PrintMode"]');
+    const templateSelect = document.querySelector('.label-template-select');
+    const templateRadios = document.querySelectorAll('.label-template-card input');
+    const reloadCatalog = () => { const checked = document.querySelector('input[name="PrintMode"]:checked'); if (!checked) return; const url = new URL(location.href); url.searchParams.set('subjectType', subject.value); url.searchParams.set('mode', checked.value); location.href = url; };
+    subject?.addEventListener('change', reloadCatalog); modes.forEach(input => input.addEventListener('change', reloadCatalog));
+    templateRadios.forEach(input => input.addEventListener('change', () => { templateSelect.value = input.value; document.querySelector('#preview-template').textContent = input.closest('label').querySelector('strong').textContent; }));
+    templateSelect?.addEventListener('change', () => { const radio = [...templateRadios].find(x => x.value === templateSelect.value); if (radio) radio.checked = true; document.querySelector('#preview-template').textContent = templateSelect.options[templateSelect.selectedIndex]?.text.split(' — ')[0] ?? ''; });
+    document.querySelector('[name="Copies"]')?.addEventListener('input', event => document.querySelector('#summary-copies').textContent = event.target.value);
+})();
+</script>
+}

@@ -220,6 +220,10 @@ builder.Services.AddInovaGedObservability(builder.Configuration);
 builder.Services
     .AddInovaGedApplication(builder.Configuration)
     .AddInovaGedInfrastructure(builder.Configuration);
+// Controllers below depend on these repository contracts directly. Keep their
+// lifetimes aligned with the scoped database connection factory.
+builder.Services.AddScoped<InstrumentVersionRepository>();
+builder.Services.AddScoped<InovaGed.Application.Retention.IRetentionDestinationRepository, InovaGed.Infrastructure.Retention.RetentionDestinationRepository>();
 builder.Services.AddSignalR();
 builder.Services.AddScoped<IDateTimeDisplayService, DateTimeDisplayService>();
 builder.Services.AddSingleton<IAtlasIconRegistry, AtlasIconRegistry>();

@@ -419,8 +419,8 @@ where d.tenant_id=@tid and d.id=@docId
 select 'BOX' as LabelKind, b.id as BoxId, coalesce(nullif(b.label_code,''),lpad(b.box_no::text,4,'0')) as ControlNumber,
  coalesce(pl.location_code, concat_ws('.',pl.building,pl.room,pl.aisle,pl.rack,pl.shelf,pl.pallet),'') as Location,
  case when count(distinct d.id)=0 then coalesce(b.notes,'Caixa física') when count(distinct d.title)=1 then max(d.title) else 'Conteúdo misto - revisar classificação' end as Subject,
- case when count(distinct cp.id)=1 then concat(max(cp.code),' - ',max(cp.title)) when count(distinct cp.id)>1 then 'Conteúdo misto' else '' end as Classification,
- case when min(d.created_at)::date=max(d.created_at)::date then to_char(min(d.created_at),'YYYY') else concat(to_char(min(d.created_at),'YYYY'),' a ',to_char(max(d.created_at),'YYYY')) end as DocumentPeriod,
+ case when count(distinct cp.id)=1 then concat_ws(' - ',nullif(max(cp.code),''),nullif(max(cp.title),'')) when count(distinct cp.id)>1 then 'Conteúdo misto' else '' end as Classification,
+ case when count(distinct d.id)=0 then '' when min(d.created_at)::date=max(d.created_at)::date then to_char(min(d.created_at),'YYYY') else concat(to_char(min(d.created_at),'YYYY'),' a ',to_char(max(d.created_at),'YYYY')) end as DocumentPeriod,
  coalesce(max(cp.final_destination),'') as CurrentPhase
 from ged.box b left join ged.physical_location pl on pl.tenant_id=b.tenant_id and pl.id=b.location_id and pl.reg_status='A'
 left join ged.batch_item bi on bi.tenant_id=b.tenant_id and bi.box_id=b.id and bi.reg_status='A'

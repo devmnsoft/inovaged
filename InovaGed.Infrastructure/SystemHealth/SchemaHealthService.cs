@@ -153,6 +153,7 @@ public sealed class SchemaHealthService : ISchemaHealthService
         ("document_quality_result", "has_lgpd_risk", "Qualidade Documental"), ("document_quality_result", "issues_json", "Qualidade Documental"),
         ("document_quality_result", "recommendations_json", "Qualidade Documental"), ("document_quality_result", "analyzed_at_utc", "Qualidade Documental"),
         ("document_folder_move_history", "moved_at", "Movimentação documental"),
+        ("classification_plan", "title", "Classificação"),
         ("box_location_history", "changed_at", "Acervo físico"),
         ("classification_plan_history", "changed_at", "Classificação"),
         ("document_classification_audit", "created_at", "Classificação"),
@@ -277,7 +278,10 @@ where table_schema = 'ged';", cancellationToken: ct))).ToHashSet(StringComparer.
                 var ok = existingColumns.Contains($"{table}.{column}");
                 var severity = string.Equals(area, "OCR Auto Schedule", StringComparison.OrdinalIgnoreCase) ? "Warning" : "Critical";
                 var missingMessage = severity == "Warning" ? "Coluna de agendamento OCR ausente; a Central OCR funciona, mas a página de agendamento exige migration." : "Coluna crítica ausente.";
-                AddCheck(report, BuildColumnId(table, column), area, objectName, "Coluna", severity, ok, ok ? "Coluna encontrada." : missingMessage, $"Execute o SQL específico desta linha ou {ConsolidationMigration}.");
+                var columnFix = table == "classification_plan" && column == "title"
+                    ? "Execute database/migrations/2026_08_classification_plan_compat_hotfix.sql ou database/apply_all_required_migrations.sql."
+                    : $"Execute o SQL específico desta linha ou {ConsolidationMigration}.";
+                AddCheck(report, BuildColumnId(table, column), area, objectName, "Coluna", severity, ok, ok ? "Coluna encontrada." : missingMessage, columnFix);
                 if (!ok) report.MissingColumns.Add(objectName);
             }
 
