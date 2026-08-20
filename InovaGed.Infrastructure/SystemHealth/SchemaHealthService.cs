@@ -1,6 +1,8 @@
 using Dapper;
 using InovaGed.Application.Common.Database;
+using InovaGed.Application.Retention;
 using InovaGed.Application.SystemHealth;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace InovaGed.Infrastructure.SystemHealth;
@@ -11,6 +13,9 @@ public sealed class SchemaHealthService : ISchemaHealthService
     private readonly IDbConnectionFactory _db;
     private readonly ILogger<SchemaHealthService> _logger;
     private readonly ISchemaFixSqlProvider _fixSqlProvider;
+    private readonly IServiceProviderIsService _serviceRegistry;
+
+    private const string RetentionDestinationHotfix = "database/migrations/2026_08_retention_destination_di_schema_hotfix.sql";
 
     private static readonly string[] RequiredTables =
     [
@@ -45,6 +50,10 @@ public sealed class SchemaHealthService : ISchemaHealthService
         ("document", "current_version_id", "GED versions"), ("document", "created_at", "GED base"),
         ("document", "reg_status", "GED soft delete"), ("document", "deleted_at", "GED soft delete"),
         ("document", "deleted_by", "GED soft delete"), ("document", "deleted_reason", "GED soft delete"),
+        ("document", "classification_id", "Destinação de retenção"),
+        ("document", "retention_basis_at", "Destinação de retenção"),
+        ("document", "retention_due_at", "Destinação de retenção"),
+        ("document", "retention_status", "Destinação de retenção"),
         ("document_version", "uploaded_at_utc", "GED versions"), ("document_version", "reg_status", "GED soft delete"), ("document_version", "is_partial_document", "GED partial documents"),
         ("document_version", "partial_group_id", "GED partial documents"), ("document_version", "partial_part_number", "GED partial documents"),
         ("document_version", "partial_total_parts", "GED partial documents"), ("document_version", "partial_status", "GED partial documents"),
@@ -228,16 +237,25 @@ public sealed class SchemaHealthService : ISchemaHealthService
         ("ix_document_quality_run_status", [], "Índice de execuções de qualidade documental por tenant/status.")
     ];
 
-    public SchemaHealthService(IDbConnectionFactory db, ILogger<SchemaHealthService> logger, ISchemaFixSqlProvider fixSqlProvider)
+    public SchemaHealthService(
+        IDbConnectionFactory db,
+        ILogger<SchemaHealthService> logger,
+        ISchemaFixSqlProvider fixSqlProvider,
+        IServiceProviderIsService serviceRegistry)
     {
         _db = db;
         _logger = logger;
         _fixSqlProvider = fixSqlProvider;
+        _serviceRegistry = serviceRegistry;
     }
 
     public async Task<SchemaHealthReportDto> CheckAsync(CancellationToken ct)
     {
         var report = new SchemaHealthReportDto();
+
+        AddDiCheck<IPcdVersionResolver>(report);
+        AddDiCheck<IRetentionDestinationRepository>(report);
+        AddDiCheck<IRetentionAuditWriter>(report);
 
         try
         {
@@ -251,7 +269,9 @@ where table_schema = 'ged';", cancellationToken: ct))).ToHashSet(StringComparer.
             foreach (var table in RequiredTables)
             {
                 var ok = existingTables.Contains(table);
-                var tableFix = table.StartsWith("ged.label_template", StringComparison.OrdinalIgnoreCase)
+                var tableFix = string.Equals(table, "ged.classification_plan_version", StringComparison.OrdinalIgnoreCase)
+                    ? $"Execute {RetentionDestinationHotfix} ou database/apply_all_required_migrations.sql."
+                    : table.StartsWith("ged.label_template", StringComparison.OrdinalIgnoreCase)
                     ? "Execute database/migrations/2026_08_label_template_designer.sql ou database/apply_all_required_migrations.sql."
                     : string.Equals(table, "ged.loan_request_history", StringComparison.OrdinalIgnoreCase)
                     ? "Execute database/migrations/2026_06_loans_history.sql ou database/apply_all_required_migrations.sql."
@@ -278,7 +298,9 @@ where table_schema = 'ged';", cancellationToken: ct))).ToHashSet(StringComparer.
                 var ok = existingColumns.Contains($"{table}.{column}");
                 var severity = string.Equals(area, "OCR Auto Schedule", StringComparison.OrdinalIgnoreCase) ? "Warning" : "Critical";
                 var missingMessage = severity == "Warning" ? "Coluna de agendamento OCR ausente; a Central OCR funciona, mas a página de agendamento exige migration." : "Coluna crítica ausente.";
-                var columnFix = table == "classification_plan" && column == "title"
+                var columnFix = table == "document" && area == "Destinação de retenção"
+                    ? $"Execute {RetentionDestinationHotfix} ou database/apply_all_required_migrations.sql."
+                    : table == "classification_plan" && column == "title"
                     ? "Execute database/migrations/2026_08_classification_plan_compat_hotfix.sql ou database/apply_all_required_migrations.sql."
                     : $"Execute o SQL específico desta linha ou {ConsolidationMigration}.";
                 AddCheck(report, BuildColumnId(table, column), area, objectName, "Coluna", severity, ok, ok ? "Coluna encontrada." : missingMessage, columnFix);
@@ -412,6 +434,22 @@ limit 1;", cancellationToken: ct));
         report.Recommendations.Add("Pendências recomendadas são índices/performance; pendências opcionais são histórico/melhorias operacionais.");
 
         return report;
+    }
+
+    private void AddDiCheck<TService>(SchemaHealthReportDto report)
+    {
+        var serviceType = typeof(TService);
+        var registered = _serviceRegistry.IsService(serviceType);
+        AddCheck(
+            report,
+            $"DI_{serviceType.Name.ToUpperInvariant()}",
+            "Destinação de retenção",
+            serviceType.Name,
+            "DI",
+            "Critical",
+            registered,
+            registered ? $"{serviceType.Name} registrado no DI." : $"{serviceType.Name} não registrado no DI.",
+            "Revise os registros scoped do módulo de retenção em InovaGed.Web/Program.cs.");
     }
 
     private async Task EnrichFixesAsync(SchemaHealthReportDto report, CancellationToken ct)

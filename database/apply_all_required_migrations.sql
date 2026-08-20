@@ -2979,6 +2979,7 @@ where coalesce(reg_status, 'A') = 'A';
 -- Keep in sync with database/migrations/2026_08_label_template_designer.sql.
 \ir migrations/2026_08_label_template_designer.sql
 \ir migrations/2026_08_classification_plan_compat_hotfix.sql
+\ir migrations/2026_08_retention_destination_di_schema_hotfix.sql
 \ir migrations/2026_07_identity_role_integrity.sql
 \ir migrations/2026_07_administration_security_governance.sql
 \ir migrations/2026_07_backup_continuity_portability.sql
