@@ -51,7 +51,7 @@ select
   d.id,
   d.classification_id,
   c.code,
-  c.name,
+  coalesce(nullif(c.title, ''), nullif(c.description, ''), nullif(c.code, ''), 'Sem classificação'),
   d.retention_basis_at,
   d.retention_due_at,
   d.retention_status,

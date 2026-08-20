@@ -441,6 +441,7 @@ builder.Services.AddScoped<IRetentionRecalcService, RetentionRecalcService>();
 
 builder.Services.AddScoped<IRetentionQueueQueries, RetentionQueueQueries>();
 builder.Services.AddScoped<IRetentionAuditWriter, RetentionAuditWriter>();
+builder.Services.AddScoped<IPcdVersionResolver, PcdVersionResolver>();
 builder.Services.AddScoped<IRetentionQueueRepository, RetentionQueueRepository>();
 builder.Services.AddScoped<IRetentionQueueJob, RetentionQueueJob>();
 builder.Services.AddHostedService<RetentionDailyWorker>();
