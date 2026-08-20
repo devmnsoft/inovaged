@@ -1,7 +1,46 @@
 @model InovaGed.Web.Models.Labels.LabelPrintWizardInputModel
 @using InovaGed.Application.PhysicalArchive
-@{ ViewData["Title"]="Nova impressão de etiqueta"; var templates=(ViewBag.Templates as IReadOnlyList<LabelTemplateOption>)??[]; }
-<style>.steps{display:grid;grid-template-columns:repeat(4,1fr);gap:.5rem}.step{border-top:4px solid #dbe4ee;padding:.7rem}.step.active{border-color:#176b87}.mode-card{border:2px solid #dbe4ee;border-radius:1rem;cursor:pointer}.mode-card:has(input:checked){border-color:#176b87;background:#f0f9ff}@@media(max-width:700px){.steps{grid-template-columns:1fr 1fr}}</style>
+
+@{
+    ViewData["Title"] = "Nova impressão de etiqueta";
+    IReadOnlyList<LabelTemplateOption> templates =
+        ViewBag.Templates as IReadOnlyList<LabelTemplateOption>
+        ?? new List<LabelTemplateOption>();
+}
+
+<style>
+    .steps {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: .5rem;
+    }
+
+    .step {
+        border-top: 4px solid #dbe4ee;
+        padding: .7rem;
+    }
+
+    .step.active {
+        border-color: #176b87;
+    }
+
+    .mode-card {
+        border: 2px solid #dbe4ee;
+        border-radius: 1rem;
+        cursor: pointer;
+    }
+
+    .mode-card:has(input:checked) {
+        border-color: #176b87;
+        background: #f0f9ff;
+    }
+
+    @@media (max-width: 700px) {
+        .steps {
+            grid-template-columns: 1fr 1fr;
+        }
+    }
+</style>
 <div class="d-flex justify-content-between mb-3"><div><h1 class="h3 mb-1">Nova impressão</h1><p class="text-muted">Escolha como deseja imprimir esta etiqueta.</p></div><a asp-action="Index" class="btn btn-outline-secondary align-self-start">Voltar à central</a></div>
 @if (ViewBag.CatalogMigrationWarning is string migrationWarning) { <div class="alert alert-warning" role="alert"><strong>Atenção:</strong> @migrationWarning</div> }
 <div class="steps mb-4">@foreach(var s in new[]{("1","Origem"),("2","Modo"),("3","Modelo"),("4","Prévia e impressão")}){<div class="step active"><strong>@s.Item1</strong><div>@s.Item2</div></div>}</div>
