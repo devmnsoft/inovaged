@@ -31,7 +31,7 @@ public sealed class ContractFiscalizationController(IDbConnectionFactory db,ICon
  [HttpGet("{id:guid}/AnalyticalReport")] public async Task<IActionResult>AnalyticalReport(Guid id,CancellationToken ct)=>View(await reports.GenerateAnalyticalReportAsync(TenantId,id,ct));
  [HttpGet("{id:guid}/AcceptanceTerm")] public async Task<IActionResult>AcceptanceTerm(Guid id,CancellationToken ct)=>View(await reports.GenerateSyntheticReportAsync(TenantId,id,ct));
  [HttpGet("{id:guid}/DispatchSheet")] public async Task<IActionResult>DispatchSheet(Guid id,CancellationToken ct)=>View(await reports.GenerateSyntheticReportAsync(TenantId,id,ct));
- [HttpGet("{id:guid}/Export")] public async Task<IActionResult>Export(Guid id,string reportType="analytical",CancellationToken ct){var csv=await reports.ExportCsvAsync(TenantId,id,reportType,ct);return File(Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(csv)).ToArray(),"text/csv",$"fiscalizacao-{id:N}-{reportType}.csv");}
+ [HttpGet("{id:guid}/Export")] public async Task<IActionResult>Export(Guid id,CancellationToken ct,string reportType="analytical"){var csv=await reports.ExportCsvAsync(TenantId,id,reportType,ct);return File(Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(csv)).ToArray(),"text/csv",$"fiscalizacao-{id:N}-{reportType}.csv");}
  public sealed record CreateInput(DateOnly CompetenceMonth,string?ContractNumber,string?ContractorName,string?ContractingUnit,Guid?FiscalUserId,Guid?ManagerUserId,string?Notes);
  public sealed record GlosaInput(Guid PeriodId,Guid ItemId,string GlosaType,string Reason,decimal GlossedQuantity,decimal GlossedAmount);
  public sealed record EvidenceInput(Guid?ItemId,string EvidenceType,string Title,string?Description,string?ExternalUrl,string?SourceType,Guid?SourceId);
