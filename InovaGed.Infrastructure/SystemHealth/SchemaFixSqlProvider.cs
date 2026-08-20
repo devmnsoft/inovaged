@@ -799,6 +799,7 @@ create table if not exists ged.document_quality_result (
         AddColumn(fixes, "ged.document_folder_move_history", "moved_at", "timestamptz not null default now()", "Movimentação documental");
         AddColumn(fixes, "ged.label_print", "printed_at", "timestamptz not null default now()", "Etiquetas");
         AddColumn(fixes, "ged.box_location_history", "changed_at", "timestamptz not null default now()", "Acervo físico");
+        AddColumn(fixes, "ged.classification_plan", "title", "text null", "Classificação");
         AddColumn(fixes, "ged.classification_plan_history", "changed_at", "timestamptz not null default now()", "Classificação");
         AddColumn(fixes, "ged.document_classification_audit", "created_at", "timestamptz not null default now()", "Classificação");
         AddColumn(fixes, "ged.document_classification", "classification_id", "uuid null", "Classificação");
