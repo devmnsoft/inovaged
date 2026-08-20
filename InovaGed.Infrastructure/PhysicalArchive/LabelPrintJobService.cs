@@ -116,7 +116,78 @@ public sealed class LabelHtmlPdfRenderService(IDbConnectionFactory dbFactory,ILa
         var job=await jobs.GetAsync(tenantId,jobId,ct)??throw new KeyNotFoundException("Job não encontrado.");
         var labels=job.Items.Count==0?new[]{(job.ControlNumber,job.Location,job.PayloadJson)}:job.Items.Select(x=>(x.ControlNumber,x.Location,x.PayloadJson));
         var body=string.Join("",labels.SelectMany(x=>Enumerable.Range(0,job.Copies).Select(_=>$"<article class=\"label\"><strong>{WebUtility.HtmlEncode(x.ControlNumber??job.TemplateName)}</strong><span>{WebUtility.HtmlEncode(x.Location)}</span><small>{WebUtility.HtmlEncode(x.PayloadJson)}</small></article>")));
-        var html=$"""<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>{WebUtility.HtmlEncode(job.JobNumber)}</title><style>@page{{size:A4;margin:0}}body{{margin:0;font-family:Arial}}.page{{box-sizing:border-box;width:210mm;min-height:297mm;padding:10mm;display:grid;grid-template-columns:repeat(2,1fr);gap:4mm}}.label{{border:1px solid #111;padding:6mm;min-height:55mm;display:flex;flex-direction:column;gap:3mm;overflow:hidden}}small{{word-break:break-word;font-size:8pt}}@media print{{.no-print{{display:none}}}}</style></head><body><main class="page">{body}</main></body></html>""";
+        var encodedTitle = WebUtility.HtmlEncode(job.JobNumber);
+        var html = $$"""
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <title>{{encodedTitle}}</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 0;
+        }
+
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+            background: #fff;
+            font-family: Arial, Helvetica, sans-serif;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+
+        .page {
+            box-sizing: border-box;
+            width: 210mm;
+            min-height: 297mm;
+            padding: 10mm;
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 4mm;
+        }
+
+        .label {
+            border: 1px solid #111;
+            padding: 6mm;
+            min-height: 55mm;
+            display: flex;
+            flex-direction: column;
+            gap: 3mm;
+            overflow: hidden;
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }
+
+        .label strong {
+            font-size: 14pt;
+        }
+
+        .label span {
+            font-size: 10pt;
+        }
+
+        .label small {
+            word-break: break-word;
+            font-size: 8pt;
+        }
+
+        @media print {
+            .no-print {
+                display: none !important;
+            }
+        }
+    </style>
+</head>
+<body>
+    <main class="page">
+        {{body}}
+    </main>
+</body>
+</html>
+""";
         await using var db=await dbFactory.OpenAsync(ct);await db.ExecuteAsync(new CommandDefinition("update ged.label_print_job set status='PDF_GENERATED',pdf_path=@path,error_message=null where tenant_id=@tenantId and id=@jobId and status not in ('PRINTED','CANCELLED')",new{tenantId,jobId,path=$"label-jobs/{job.JobNumber}.html"},cancellationToken:ct));
         return new(Encoding.UTF8.GetBytes(html),"text/html; charset=utf-8",$"{job.JobNumber}.html",false);
     }
