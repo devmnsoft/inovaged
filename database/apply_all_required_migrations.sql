@@ -2978,6 +2978,8 @@ where coalesce(reg_status, 'A') = 'A';
 -- Required for Labels/PrintWizard and label template designer.
 -- Keep in sync with database/migrations/2026_08_label_template_designer.sql.
 \ir migrations/2026_08_label_template_designer.sql
+\ir migrations/2026_08_label_print_queue.sql
+\ir migrations/2026_08_locdesk_labels.sql
 \ir migrations/2026_08_classification_plan_compat_hotfix.sql
 \ir migrations/2026_08_retention_destination_di_schema_hotfix.sql
 \ir migrations/2026_07_identity_role_integrity.sql

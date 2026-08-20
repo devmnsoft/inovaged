@@ -81,6 +81,45 @@ public static class InfrastructureServiceCollectionExtensions
         return services;
     }
 
+    /// <summary>
+    /// Registers the database-backed services used by the critical administration,
+    /// labels, retention and physical archive routes. Keeping this composition here
+    /// makes missing constructor dependencies visible to every web host.
+    /// </summary>
+    public static IServiceCollection AddStabilityCriticalServices(this IServiceCollection services)
+    {
+        services.AddScoped<global::InovaGed.Application.Retention.IPcdVersionResolver, Retention.PcdVersionResolver>();
+        services.AddScoped<global::InovaGed.Application.Retention.IRetentionAuditWriter, Retention.RetentionAuditWriter>();
+        services.AddScoped<global::InovaGed.Application.Retention.IRetentionDestinationRepository, Retention.RetentionDestinationRepository>();
+
+        services.AddScoped<global::InovaGed.Application.Labels.Printing.ILabelPrintJobService, PhysicalArchive.LabelPrintJobService>();
+        services.AddScoped<global::InovaGed.Application.Labels.Printing.ILabelPdfRenderService, PhysicalArchive.LabelHtmlPdfRenderService>();
+        services.AddScoped<global::InovaGed.Application.Labels.Tracking.ILabelTrackingService, PhysicalArchive.LabelTrackingService>();
+        services.AddScoped<global::InovaGed.Application.Labels.Tracking.ILabelInventoryService, PhysicalArchive.LabelInventoryService>();
+        services.AddScoped<global::InovaGed.Application.PhysicalArchive.ILabelTemplateCatalogService, PhysicalArchive.LabelTemplateCatalogService>();
+
+        services.AddScoped<PhysicalArchive.ArchiveReconciliationService>();
+        services.AddScoped<global::InovaGed.Application.PhysicalArchive.Reconciliation.IArchiveReconciliationService>(sp => sp.GetRequiredService<PhysicalArchive.ArchiveReconciliationService>());
+        services.AddScoped<global::InovaGed.Application.PhysicalArchive.Reconciliation.IArchiveReconciliationEngine>(sp => sp.GetRequiredService<PhysicalArchive.ArchiveReconciliationService>());
+        services.AddScoped<global::InovaGed.Application.PhysicalArchive.Reconciliation.IArchiveReconciliationFixService>(sp => sp.GetRequiredService<PhysicalArchive.ArchiveReconciliationService>());
+
+        services.AddScoped<PhysicalArchive.ArchiveProductivityService>();
+        services.AddScoped<global::InovaGed.Application.PhysicalArchive.Productivity.IArchiveServiceCatalogService>(sp => sp.GetRequiredService<PhysicalArchive.ArchiveProductivityService>());
+        services.AddScoped<global::InovaGed.Application.PhysicalArchive.Productivity.IArchiveProductivityService>(sp => sp.GetRequiredService<PhysicalArchive.ArchiveProductivityService>());
+        services.AddScoped<global::InovaGed.Application.PhysicalArchive.Productivity.IArchiveBillingService>(sp => sp.GetRequiredService<PhysicalArchive.ArchiveProductivityService>());
+
+        services.AddScoped<PhysicalArchive.ArchiveWorkOrderService>();
+        services.AddScoped<global::InovaGed.Application.PhysicalArchive.WorkOrders.IArchiveWorkOrderService>(sp => sp.GetRequiredService<PhysicalArchive.ArchiveWorkOrderService>());
+        services.AddScoped<global::InovaGed.Application.PhysicalArchive.WorkOrders.IArchiveWorkOrderTaskService>(sp => sp.GetRequiredService<PhysicalArchive.ArchiveWorkOrderService>());
+        services.AddScoped<global::InovaGed.Application.PhysicalArchive.WorkOrders.IArchiveWorkOrderSlaService>(sp => sp.GetRequiredService<PhysicalArchive.ArchiveWorkOrderService>());
+
+        services.AddScoped<Contracts.Fiscalization.ContractFiscalizationService>();
+        services.AddScoped<global::InovaGed.Application.Contracts.Fiscalization.IContractFiscalizationService>(sp => sp.GetRequiredService<Contracts.Fiscalization.ContractFiscalizationService>());
+        services.AddScoped<global::InovaGed.Application.Contracts.Fiscalization.IContractGlosaService>(sp => sp.GetRequiredService<Contracts.Fiscalization.ContractFiscalizationService>());
+        services.AddScoped<global::InovaGed.Application.Contracts.Fiscalization.IContractFiscalizationReportService>(sp => sp.GetRequiredService<Contracts.Fiscalization.ContractFiscalizationService>());
+        return services;
+    }
+
     public static IServiceCollection AddDatabaseModule(
         this IServiceCollection services,
         IConfiguration configuration)

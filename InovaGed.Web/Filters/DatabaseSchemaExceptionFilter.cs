@@ -41,10 +41,13 @@ public sealed class DatabaseSchemaExceptionFilter : IExceptionFilter
             requestPath,
             correlationId);
 
+        var schemaObject = GetSchemaObject(pg);
         var isDocumentQualitySchemaPending = IsDocumentQualitySchemaException(pg);
         var friendlyMessage = isDocumentQualitySchemaPending
             ? "A funcionalidade de Qualidade Documental foi ativada, mas as tabelas ainda não foram criadas."
-            : FriendlyMessage;
+            : string.IsNullOrWhiteSpace(schemaObject)
+                ? FriendlyMessage
+                : $"A estrutura {schemaObject} ainda não existe ou está desatualizada. Execute {MigrationScript} ou acesse /SchemaHealth/FixScript.";
 
         if (IsAjaxOrApi(context.HttpContext.Request))
         {
@@ -55,7 +58,12 @@ public sealed class DatabaseSchemaExceptionFilter : IExceptionFilter
                 errorStep = ErrorStep,
                 sqlState = pg.SqlState,
                 correlationId,
-                migration = MigrationScript
+                schemaObject,
+                controller = controllerName,
+                action = actionName,
+                route = requestPath,
+                migration = MigrationScript,
+                schemaHealthUrl = "/SchemaHealth"
             })
             {
                 StatusCode = StatusCodes.Status500InternalServerError
@@ -81,6 +89,8 @@ public sealed class DatabaseSchemaExceptionFilter : IExceptionFilter
                 ["Action"] = actionName,
                 ["Path"] = requestPath,
                 ["Migration"] = MigrationScript,
+                ["SchemaObject"] = schemaObject,
+                ["SchemaHealthUrl"] = "/SchemaHealth",
                 ["CopyCommand"] = isDocumentQualitySchemaPending ? @"psql ""$DATABASE_URL"" -f database/apply_all_required_migrations.sql" : null,
                 ["Detail"] = _environment.IsDevelopment() ? pg.MessageText : null
             }
@@ -119,6 +129,26 @@ public sealed class DatabaseSchemaExceptionFilter : IExceptionFilter
         var text = $"{pg.MessageText} {pg.Detail} {pg.TableName} {pg.Where}";
         return text.Contains("document_quality_result", StringComparison.OrdinalIgnoreCase)
             || text.Contains("document_quality_run", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? GetSchemaObject(PostgresException pg)
+    {
+        var qualifiedTable = string.IsNullOrWhiteSpace(pg.TableName)
+            ? null
+            : string.IsNullOrWhiteSpace(pg.SchemaName) ? pg.TableName : $"{pg.SchemaName}.{pg.TableName}";
+        if (!string.IsNullOrWhiteSpace(pg.ColumnName))
+            return string.IsNullOrWhiteSpace(qualifiedTable) ? pg.ColumnName : $"{qualifiedTable}.{pg.ColumnName}";
+        if (!string.IsNullOrWhiteSpace(qualifiedTable))
+            return qualifiedTable;
+
+        // PostgreSQL does not always populate TableName/ColumnName for parse-time errors.
+        // MessageText is server-provided diagnostic text (not rendered as HTML).
+        var marker = pg.SqlState == "42P01" ? "relation \"" : "column \"";
+        var start = pg.MessageText.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        if (start < 0) return null;
+        start += marker.Length;
+        var end = pg.MessageText.IndexOf('"', start);
+        return end > start ? pg.MessageText[start..end] : null;
     }
 
     private static PostgresException? FindSchemaException(Exception exception)

@@ -9,6 +9,7 @@
     var action = ViewData["Action"]?.ToString();
     var path = ViewData["Path"]?.ToString();
     var migration = ViewData["Migration"]?.ToString() ?? "database/apply_all_required_migrations.sql";
+    var schemaObject = ViewData["SchemaObject"]?.ToString();
     var copyCommand = ViewData["CopyCommand"]?.ToString();
     var detail = ViewData["Detail"]?.ToString();
     var canOpenSchemaHealth = User is not null && RolePolicyHelper.IsFullAdmin(User);
@@ -49,6 +50,11 @@
                             <dt class="col-sm-4">SQL State</dt>
                             <dd class="col-sm-8"><code>@sqlState</code></dd>
                         }
+                        @if (!string.IsNullOrWhiteSpace(schemaObject))
+                        {
+                            <dt class="col-sm-4">Estrutura detectada</dt>
+                            <dd class="col-sm-8"><code>@schemaObject</code></dd>
+                        }
                         @if (!string.IsNullOrWhiteSpace(controller) || !string.IsNullOrWhiteSpace(action))
                         {
                             <dt class="col-sm-4">Origem</dt>
@@ -78,7 +84,7 @@
                         }
                         @if (canOpenSchemaHealth)
                         {
-                            <a class="btn btn-primary" href="/SystemHealth/Schema">Ver diagnóstico do schema</a>
+                            <a class="btn btn-primary" href="/SchemaHealth">Ver diagnóstico do schema</a>
                         }
                     </div>
                 </div>

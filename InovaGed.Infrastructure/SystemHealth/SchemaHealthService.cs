@@ -1,6 +1,13 @@
 using Dapper;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Retention;
+using InovaGed.Application.Labels.Printing;
+using InovaGed.Application.Labels.Tracking;
+using InovaGed.Application.PhysicalArchive;
+using InovaGed.Application.PhysicalArchive.Productivity;
+using InovaGed.Application.PhysicalArchive.Reconciliation;
+using InovaGed.Application.PhysicalArchive.WorkOrders;
+using InovaGed.Application.Contracts.Fiscalization;
 using InovaGed.Application.SystemHealth;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -13,7 +20,7 @@ public sealed class SchemaHealthService : ISchemaHealthService
     private readonly IDbConnectionFactory _db;
     private readonly ILogger<SchemaHealthService> _logger;
     private readonly ISchemaFixSqlProvider _fixSqlProvider;
-    private readonly IServiceProviderIsService _serviceRegistry;
+    private readonly IServiceProvider _services;
 
     private const string RetentionDestinationHotfix = "database/migrations/2026_08_retention_destination_di_schema_hotfix.sql";
 
@@ -30,6 +37,7 @@ public sealed class SchemaHealthService : ISchemaHealthService
         "ged.classification_plan_version_item", "ged.document_classification", "ged.document_classification_audit",
         "ged.label_print", "ged.physical_location", "ged.box", "ged.batch", "ged.batch_item",
         "ged.label_template", "ged.label_template_config", "ged.label_template_field", "ged.label_template_version",
+        "ged.label_print_job", "ged.label_print_job_item", "ged.label_print_history", "ged.locdesk_label_draft",
         "ged.box_content_history", "ged.box_location_history", "ged.document_folder_move_history"
     ];
 
@@ -241,21 +249,30 @@ public sealed class SchemaHealthService : ISchemaHealthService
         IDbConnectionFactory db,
         ILogger<SchemaHealthService> logger,
         ISchemaFixSqlProvider fixSqlProvider,
-        IServiceProviderIsService serviceRegistry)
+        IServiceProvider services)
     {
         _db = db;
         _logger = logger;
         _fixSqlProvider = fixSqlProvider;
-        _serviceRegistry = serviceRegistry;
+        _services = services;
     }
 
     public async Task<SchemaHealthReportDto> CheckAsync(CancellationToken ct)
     {
         var report = new SchemaHealthReportDto();
 
-        AddDiCheck<IPcdVersionResolver>(report);
-        AddDiCheck<IRetentionDestinationRepository>(report);
-        AddDiCheck<IRetentionAuditWriter>(report);
+        AddDiCheck<IPcdVersionResolver>(report, "RetentionDestinationRepository", "services.AddScoped<IPcdVersionResolver, PcdVersionResolver>()");
+        AddDiCheck<IRetentionDestinationRepository>(report, "RetentionDestinationController", "services.AddScoped<IRetentionDestinationRepository, RetentionDestinationRepository>()");
+        AddDiCheck<IRetentionAuditWriter>(report, "RetentionDestinationRepository", "services.AddScoped<IRetentionAuditWriter, RetentionAuditWriter>()");
+        AddDiCheck<ILabelTemplateCatalogService>(report, "LabelsController", "services.AddScoped<ILabelTemplateCatalogService, LabelTemplateCatalogService>()");
+        AddDiCheck<ILabelPrintJobService>(report, "LabelPrintJobsController", "services.AddScoped<ILabelPrintJobService, LabelPrintJobService>()");
+        AddDiCheck<ILabelPdfRenderService>(report, "LabelPrintJobsController", "services.AddScoped<ILabelPdfRenderService, LabelHtmlPdfRenderService>()");
+        AddDiCheck<ILabelTrackingService>(report, "LabelTrackingController", "services.AddScoped<ILabelTrackingService, LabelTrackingService>()");
+        AddDiCheck<ILabelInventoryService>(report, "LabelTrackingController", "services.AddScoped<ILabelInventoryService, LabelInventoryService>()");
+        AddDiCheck<IArchiveReconciliationService>(report, "ArchiveReconciliationController", "registrar IArchiveReconciliationService como Scoped");
+        AddDiCheck<IArchiveWorkOrderService>(report, "ArchiveWorkOrdersController", "registrar IArchiveWorkOrderService como Scoped");
+        AddDiCheck<IArchiveProductivityService>(report, "ArchiveProductivityController", "registrar IArchiveProductivityService como Scoped");
+        AddDiCheck<IContractFiscalizationService>(report, "ContractFiscalizationController", "registrar IContractFiscalizationService como Scoped");
 
         try
         {
@@ -436,20 +453,31 @@ limit 1;", cancellationToken: ct));
         return report;
     }
 
-    private void AddDiCheck<TService>(SchemaHealthReportDto report)
+    private void AddDiCheck<TService>(SchemaHealthReportDto report, string affectedClass, string registration)
     {
         var serviceType = typeof(TService);
-        var registered = _serviceRegistry.IsService(serviceType);
+        var registered = false;
+        string? error = null;
+        try
+        {
+            registered = _services.GetService(serviceType) is not null;
+        }
+        catch (Exception ex)
+        {
+            error = ex.GetBaseException().Message;
+        }
         AddCheck(
             report,
             $"DI_{serviceType.Name.ToUpperInvariant()}",
-            "Destinação de retenção",
+            "System Health > Dependency Injection",
             serviceType.Name,
             "DI",
             "Critical",
             registered,
-            registered ? $"{serviceType.Name} registrado no DI." : $"{serviceType.Name} não registrado no DI.",
-            "Revise os registros scoped do módulo de retenção em InovaGed.Web/Program.cs.");
+            registered
+                ? $"OK — {serviceType.Name} registrado e resolvido pelo container."
+                : $"{(error is null ? "Pendente" : "Erro")} — Serviço não registrado ou não resolvido no container: {serviceType.Name}. Classe afetada: {affectedClass}.{(error is null ? string.Empty : $" Detalhe: {error}")}",
+            $"Ação recomendada: {registration}. Registro central: InovaGed.Infrastructure/DependencyInjection.cs.");
     }
 
     private async Task EnrichFixesAsync(SchemaHealthReportDto report, CancellationToken ct)

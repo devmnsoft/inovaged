@@ -177,37 +177,16 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICorrelationContext, CorrelationContext>();
 builder.Services.AddScoped<InovaGed.Application.PhysicalArchive.ILabelPrintRegistrar, InovaGed.Infrastructure.PhysicalArchive.LabelPrintRegistrar>();
 builder.Services.AddScoped<InovaGed.Application.PhysicalArchive.ILabelPrintService, InovaGed.Infrastructure.PhysicalArchive.LabelPrintRegistrar>();
-builder.Services.AddScoped<InovaGed.Application.Labels.Printing.ILabelPrintJobService, InovaGed.Infrastructure.PhysicalArchive.LabelPrintJobService>();
-builder.Services.AddScoped<InovaGed.Application.Labels.Tracking.ILabelTrackingService, InovaGed.Infrastructure.PhysicalArchive.LabelTrackingService>();
-builder.Services.AddScoped<InovaGed.Application.Labels.Tracking.ILabelInventoryService, InovaGed.Infrastructure.PhysicalArchive.LabelInventoryService>();
 builder.Services.AddScoped<InovaGed.Application.Labels.Tracking.ILabelReplacementService, InovaGed.Infrastructure.PhysicalArchive.LabelReplacementService>();
 builder.Services.AddScoped<InovaGed.Application.Labels.Intelligence.ILabelIntelligenceService, InovaGed.Infrastructure.PhysicalArchive.LabelIntelligenceService>();
 builder.Services.AddScoped<InovaGed.Application.Labels.Intelligence.ILabelAlertService, InovaGed.Infrastructure.PhysicalArchive.LabelAlertService>();
 builder.Services.AddScoped<InovaGed.Application.Labels.Intelligence.ILabelCustodyService, InovaGed.Infrastructure.PhysicalArchive.LabelCustodyService>();
-builder.Services.AddScoped<InovaGed.Infrastructure.PhysicalArchive.ArchiveReconciliationService>();
-builder.Services.AddScoped<InovaGed.Application.PhysicalArchive.Reconciliation.IArchiveReconciliationService>(sp => sp.GetRequiredService<InovaGed.Infrastructure.PhysicalArchive.ArchiveReconciliationService>());
-builder.Services.AddScoped<InovaGed.Application.PhysicalArchive.Reconciliation.IArchiveReconciliationEngine>(sp => sp.GetRequiredService<InovaGed.Infrastructure.PhysicalArchive.ArchiveReconciliationService>());
-builder.Services.AddScoped<InovaGed.Application.PhysicalArchive.Reconciliation.IArchiveReconciliationFixService>(sp => sp.GetRequiredService<InovaGed.Infrastructure.PhysicalArchive.ArchiveReconciliationService>());
-builder.Services.AddScoped<InovaGed.Infrastructure.Contracts.Fiscalization.ContractFiscalizationService>();
-builder.Services.AddScoped<InovaGed.Application.Contracts.Fiscalization.IContractFiscalizationService>(sp=>sp.GetRequiredService<InovaGed.Infrastructure.Contracts.Fiscalization.ContractFiscalizationService>());
-builder.Services.AddScoped<InovaGed.Application.Contracts.Fiscalization.IContractGlosaService>(sp=>sp.GetRequiredService<InovaGed.Infrastructure.Contracts.Fiscalization.ContractFiscalizationService>());
-builder.Services.AddScoped<InovaGed.Application.Contracts.Fiscalization.IContractFiscalizationReportService>(sp=>sp.GetRequiredService<InovaGed.Infrastructure.Contracts.Fiscalization.ContractFiscalizationService>());
 builder.Services.AddScoped<InovaGed.Infrastructure.Contracts.FiscalPortal.FiscalPortalService>();
 builder.Services.AddScoped<InovaGed.Application.Contracts.FiscalPortal.IFiscalPortalPublicationService>(sp=>sp.GetRequiredService<InovaGed.Infrastructure.Contracts.FiscalPortal.FiscalPortalService>());
 builder.Services.AddScoped<InovaGed.Application.Contracts.FiscalPortal.IFiscalPortalManifestationService>(sp=>sp.GetRequiredService<InovaGed.Infrastructure.Contracts.FiscalPortal.FiscalPortalService>());
 builder.Services.AddScoped<InovaGed.Application.Contracts.FiscalPortal.IFiscalAcceptanceSignatureService>(sp=>sp.GetRequiredService<InovaGed.Infrastructure.Contracts.FiscalPortal.FiscalPortalService>());
 builder.Services.AddScoped<InovaGed.Application.Contracts.FiscalPortal.IFiscalPortalNotificationService>(sp=>sp.GetRequiredService<InovaGed.Infrastructure.Contracts.FiscalPortal.FiscalPortalService>());
-builder.Services.AddScoped<InovaGed.Infrastructure.PhysicalArchive.ArchiveProductivityService>();
-builder.Services.AddScoped<InovaGed.Application.PhysicalArchive.Productivity.IArchiveServiceCatalogService>(sp=>sp.GetRequiredService<InovaGed.Infrastructure.PhysicalArchive.ArchiveProductivityService>());
-builder.Services.AddScoped<InovaGed.Application.PhysicalArchive.Productivity.IArchiveProductivityService>(sp=>sp.GetRequiredService<InovaGed.Infrastructure.PhysicalArchive.ArchiveProductivityService>());
-builder.Services.AddScoped<InovaGed.Application.PhysicalArchive.Productivity.IArchiveBillingService>(sp=>sp.GetRequiredService<InovaGed.Infrastructure.PhysicalArchive.ArchiveProductivityService>());
-builder.Services.AddScoped<InovaGed.Infrastructure.PhysicalArchive.ArchiveWorkOrderService>();
-builder.Services.AddScoped<InovaGed.Application.PhysicalArchive.WorkOrders.IArchiveWorkOrderService>(sp=>sp.GetRequiredService<InovaGed.Infrastructure.PhysicalArchive.ArchiveWorkOrderService>());
-builder.Services.AddScoped<InovaGed.Application.PhysicalArchive.WorkOrders.IArchiveWorkOrderTaskService>(sp=>sp.GetRequiredService<InovaGed.Infrastructure.PhysicalArchive.ArchiveWorkOrderService>());
-builder.Services.AddScoped<InovaGed.Application.PhysicalArchive.WorkOrders.IArchiveWorkOrderSlaService>(sp=>sp.GetRequiredService<InovaGed.Infrastructure.PhysicalArchive.ArchiveWorkOrderService>());
-builder.Services.AddScoped<InovaGed.Application.Labels.Printing.ILabelPdfRenderService, InovaGed.Infrastructure.PhysicalArchive.LabelHtmlPdfRenderService>();
 builder.Services.AddSingleton<InovaGed.Application.PhysicalArchive.ILabelTemplateService, InovaGed.Infrastructure.PhysicalArchive.LabelTemplateService>();
-builder.Services.AddScoped<InovaGed.Application.PhysicalArchive.ILabelTemplateCatalogService, InovaGed.Infrastructure.PhysicalArchive.LabelTemplateCatalogService>();
 builder.Services.AddScoped<InovaGed.Infrastructure.PhysicalArchive.LabelTemplateManager>();
 builder.Services.AddScoped<InovaGed.Application.Labels.ILabelTemplateManager>(sp => sp.GetRequiredService<InovaGed.Infrastructure.PhysicalArchive.LabelTemplateManager>());
 builder.Services.AddScoped<InovaGed.Application.Labels.ILabelTemplateVersioningService>(sp => sp.GetRequiredService<InovaGed.Infrastructure.PhysicalArchive.LabelTemplateManager>());
@@ -219,11 +198,11 @@ builder.Services.AddHttpClient("InovaGed").AddHttpMessageHandler<CorrelationIdHa
 builder.Services.AddInovaGedObservability(builder.Configuration);
 builder.Services
     .AddInovaGedApplication(builder.Configuration)
-    .AddInovaGedInfrastructure(builder.Configuration);
+    .AddInovaGedInfrastructure(builder.Configuration)
+    .AddStabilityCriticalServices();
 // Controllers below depend on these repository contracts directly. Keep their
 // lifetimes aligned with the scoped database connection factory.
 builder.Services.AddScoped<InstrumentVersionRepository>();
-builder.Services.AddScoped<InovaGed.Application.Retention.IRetentionDestinationRepository, InovaGed.Infrastructure.Retention.RetentionDestinationRepository>();
 builder.Services.AddSignalR();
 builder.Services.AddScoped<IDateTimeDisplayService, DateTimeDisplayService>();
 builder.Services.AddSingleton<IAtlasIconRegistry, AtlasIconRegistry>();
@@ -440,8 +419,6 @@ builder.Services.AddScoped<RetentionRecalcService>();
 builder.Services.AddScoped<IRetentionRecalcService, RetentionRecalcService>();
 
 builder.Services.AddScoped<IRetentionQueueQueries, RetentionQueueQueries>();
-builder.Services.AddScoped<IRetentionAuditWriter, RetentionAuditWriter>();
-builder.Services.AddScoped<IPcdVersionResolver, PcdVersionResolver>();
 builder.Services.AddScoped<IRetentionQueueRepository, RetentionQueueRepository>();
 builder.Services.AddScoped<IRetentionQueueJob, RetentionQueueJob>();
 builder.Services.AddHostedService<RetentionDailyWorker>();
