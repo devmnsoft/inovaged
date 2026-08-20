@@ -100,6 +100,7 @@ public class LabelsController : GedControllerBase
         subjectType = subjectType?.ToUpperInvariant() ?? LabelSubjectType.Box;
         mode = mode?.ToUpperInvariant() ?? LabelPrintMode.Factory;
         var options = await _catalog.GetTemplatesAsync(TenantId,subjectType,mode,ct);
+        if (_catalog.IsTemporaryCatalog) ViewBag.CatalogMigrationWarning = "As migrations de modelos de etiqueta ainda não foram aplicadas. O sistema está usando catálogo temporário.";
         if (string.IsNullOrWhiteSpace(templateCode) || !await _catalog.IsCompatibleAsync(TenantId,templateCode,subjectType,ct) || !options.Any(x=>x.Code==templateCode)) templateCode=options.FirstOrDefault()?.Code ?? "";
         ViewBag.Templates=options;
         return View(new LabelPrintWizardInputModel { SubjectType=subjectType, SubjectId=subjectId, PrintMode=mode, TemplateCode=templateCode });

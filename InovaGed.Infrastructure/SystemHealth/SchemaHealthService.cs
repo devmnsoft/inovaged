@@ -24,6 +24,7 @@ public sealed class SchemaHealthService : ISchemaHealthService
         "ged.classification_plan", "ged.classification_plan_history", "ged.classification_plan_version",
         "ged.classification_plan_version_item", "ged.document_classification", "ged.document_classification_audit",
         "ged.label_print", "ged.physical_location", "ged.box", "ged.batch", "ged.batch_item",
+        "ged.label_template", "ged.label_template_config", "ged.label_template_field", "ged.label_template_version",
         "ged.box_content_history", "ged.box_location_history", "ged.document_folder_move_history"
     ];
 
@@ -249,7 +250,9 @@ where table_schema = 'ged';", cancellationToken: ct))).ToHashSet(StringComparer.
             foreach (var table in RequiredTables)
             {
                 var ok = existingTables.Contains(table);
-                var tableFix = string.Equals(table, "ged.loan_request_history", StringComparison.OrdinalIgnoreCase)
+                var tableFix = table.StartsWith("ged.label_template", StringComparison.OrdinalIgnoreCase)
+                    ? "Execute database/migrations/2026_08_label_template_designer.sql ou database/apply_all_required_migrations.sql."
+                    : string.Equals(table, "ged.loan_request_history", StringComparison.OrdinalIgnoreCase)
                     ? "Execute database/migrations/2026_06_loans_history.sql ou database/apply_all_required_migrations.sql."
                     : $"Execute o SQL específico desta linha ou {ConsolidationMigration}.";
                 AddCheck(report, BuildTableId(table), "GED", table, "Tabela", "Critical", ok, ok ? "Tabela crítica encontrada." : "Tabela crítica ausente.", tableFix);

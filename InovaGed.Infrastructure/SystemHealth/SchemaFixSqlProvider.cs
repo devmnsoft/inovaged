@@ -5,6 +5,18 @@ namespace InovaGed.Infrastructure.SystemHealth;
 public sealed class SchemaFixSqlProvider : ISchemaFixSqlProvider
 {
     private const string ConsolidatedScriptName = "dynamic-schema-repair";
+    private const string LabelTemplateSql = """
+create schema if not exists ged;
+create extension if not exists pgcrypto;
+create table if not exists ged.label_template(id uuid primary key default gen_random_uuid(),tenant_id uuid null,code varchar(80) not null,name text not null,description text null,print_mode varchar(30) not null,subject_type varchar(40) not null,view_name text not null,version integer not null default 1,is_system_template boolean not null default false,is_custom_template boolean not null default false,is_active boolean not null default true,is_default boolean not null default false,supports_batch boolean not null default true,allows_manual_fields boolean not null default false,display_order integer not null default 0,created_at timestamptz not null default now(),created_by uuid null,updated_at timestamptz null,updated_by uuid null,reg_status char(1) not null default 'A');
+create table if not exists ged.label_template_config(id uuid primary key default gen_random_uuid(),template_id uuid not null references ged.label_template(id),tenant_id uuid null,header_text text null,logo_svg text null,primary_color varchar(20),secondary_color varchar(20),border_color varchar(20),text_color varchar(20),accent_color varchar(20),page_size varchar(20) not null default 'A4',label_width_mm numeric(10,2),label_height_mm numeric(10,2),labels_per_page integer not null default 1,orientation varchar(20) not null default 'PORTRAIT',custom_css text,created_at timestamptz not null default now(),updated_at timestamptz,reg_status char(1) not null default 'A');
+create table if not exists ged.label_template_field(id uuid primary key default gen_random_uuid(),template_id uuid not null references ged.label_template(id),field_key varchar(100) not null,field_label text not null,field_type varchar(40) not null default 'TEXT',is_visible boolean not null default true,is_required boolean not null default false,is_editable boolean not null default true,default_value text,display_order integer not null default 0,css_class text,created_at timestamptz not null default now(),updated_at timestamptz,reg_status char(1) not null default 'A');
+create table if not exists ged.label_template_version(id uuid primary key default gen_random_uuid(),template_id uuid not null references ged.label_template(id),version_number integer not null,snapshot_json jsonb not null,published_by uuid,published_at timestamptz not null default now(),change_notes text,reg_status char(1) not null default 'A',unique(template_id,version_number));
+create unique index if not exists ux_label_template_tenant_code on ged.label_template(coalesce(tenant_id,'00000000-0000-0000-0000-000000000000'::uuid),code) where reg_status='A';
+insert into ged.label_template(tenant_id,code,name,description,print_mode,subject_type,view_name,is_system_template,is_custom_template,is_default,display_order) values
+(null,'FACTORY_BOX_V1','Padrão do Sistema - Caixa','Etiqueta padrão do InovaGED para caixas físicas.','FACTORY','BOX','BoxLabel',true,false,true,10),(null,'FACTORY_DOCUMENT_V1','Padrão do Sistema - Documento/Pasta','Etiqueta padrão do InovaGED para documentos e pastas.','FACTORY','DOCUMENT','DocumentLabel',true,false,true,20),(null,'LOCDESK_CAIXA_V1','LocDesk - Caixa','Modelo personalizado LocDesk para identificação de caixas físicas.','CUSTOM','BOX','LocDeskBoxLabel',false,true,true,30),(null,'LOCDESK_PASTA_V1','LocDesk - Pasta','Modelo personalizado LocDesk para identificação de pastas/documentos.','CUSTOM','DOCUMENT','LocDeskFolderLabel',false,true,true,40)
+on conflict(coalesce(tenant_id,'00000000-0000-0000-0000-000000000000'::uuid),code) where reg_status='A' do update set name=excluded.name,is_active=true,updated_at=now();
+""";
 
     private const string DocumentSearchTenantVersionIndexSql = """
 do $$
@@ -162,6 +174,10 @@ where status in ('ERROR', 'ABORTED', 'RETRYABLE');
     {
         var fixes = new List<SchemaFixDto>
         {
+            Table("GED_TABLE_LABEL_TEMPLATE", "ged.label_template", "Etiquetas", "Cria o designer e os quatro modelos mínimos. Migration: database/migrations/2026_08_label_template_designer.sql.", LabelTemplateSql),
+            Table("GED_TABLE_LABEL_TEMPLATE_CONFIG", "ged.label_template_config", "Etiquetas", "Cria as tabelas auxiliares do designer de etiquetas.", LabelTemplateSql),
+            Table("GED_TABLE_LABEL_TEMPLATE_FIELD", "ged.label_template_field", "Etiquetas", "Cria as tabelas auxiliares do designer de etiquetas.", LabelTemplateSql),
+            Table("GED_TABLE_LABEL_TEMPLATE_VERSION", "ged.label_template_version", "Etiquetas", "Cria as tabelas auxiliares do designer de etiquetas.", LabelTemplateSql),
             Table("GED_TABLE_CODE_SEQUENCE", "ged.code_sequence", "Code Generation", "Cria a tabela de sequência de códigos automáticos.", """
 create schema if not exists ged;
 create extension if not exists pgcrypto;

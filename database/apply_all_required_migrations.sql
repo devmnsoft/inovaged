@@ -2975,6 +2975,9 @@ where coalesce(reg_status, 'A') = 'A';
 
 -- Migrations abaixo usam \ir, meta-comando que exige execução pelo cliente psql.
 -- Ordem arquivística: base, movimentação, consolidação, evoluções e hotfix final.
+-- Required for Labels/PrintWizard and label template designer.
+-- Keep in sync with database/migrations/2026_08_label_template_designer.sql.
+\ir migrations/2026_08_label_template_designer.sql
 \ir migrations/2026_07_identity_role_integrity.sql
 \ir migrations/2026_07_administration_security_governance.sql
 \ir migrations/2026_07_backup_continuity_portability.sql
