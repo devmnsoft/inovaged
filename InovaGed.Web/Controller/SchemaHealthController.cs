@@ -12,6 +12,7 @@ namespace InovaGed.Web.Controllers;
 
 [Authorize(Policy = AppPolicies.SystemAdmin)]
 [Route("SystemHealth/Schema")]
+[Route("SchemaHealth")]
 public sealed class SchemaHealthController : Controller
 {
     private readonly ISchemaHealthService _schemaHealth;

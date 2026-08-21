@@ -19,7 +19,8 @@ public sealed class AtlasIconTagHelper(
             ["bookmark"] = "favorite", ["alarm"] = "recent",
             ["plus"] = "document-add", ["plus-lg"] = "document-add", ["eye"] = "preview",
             ["bi-people"] = "users", ["bi-person-lock"] = "restricted-access",
-            ["bi-building"] = "physical-archive", ["bi-person-badge"] = "users"
+            ["bi-building"] = "physical-archive", ["bi-person-badge"] = "users",
+            ["building"] = "physical-archive", ["qr"] = "search", ["scanner"] = "search"
         };
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> WarnedIcons = new(StringComparer.OrdinalIgnoreCase);
     public string Name { get; set; } = string.Empty;
