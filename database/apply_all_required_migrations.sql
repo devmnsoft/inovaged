@@ -2983,6 +2983,7 @@ where coalesce(reg_status, 'A') = 'A';
 \ir migrations/2026_08_label_print_queue.sql
 \ir migrations/2026_08_locdesk_labels.sql
 \ir migrations/2026_08_classification_plan_compat_hotfix.sql
+\ir migrations/2026_08_21_classification_plan_title_compat_hotfix.sql
 \ir migrations/2026_08_retention_destination_di_schema_hotfix.sql
 \ir migrations/2026_07_identity_role_integrity.sql
 \ir migrations/2026_07_administration_security_governance.sql

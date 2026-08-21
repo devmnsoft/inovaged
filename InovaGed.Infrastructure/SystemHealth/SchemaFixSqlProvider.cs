@@ -5,6 +5,26 @@ namespace InovaGed.Infrastructure.SystemHealth;
 public sealed class SchemaFixSqlProvider : ISchemaFixSqlProvider
 {
     private const string ConsolidatedScriptName = "dynamic-schema-repair";
+    private const string ClassificationPlanCompatibilitySql = """
+create schema if not exists ged;
+create extension if not exists pgcrypto;
+create table if not exists ged.classification_plan (
+    id uuid primary key default gen_random_uuid(), tenant_id uuid not null, parent_id uuid null,
+    code text null, title text null, description text null, final_destination text null,
+    created_at timestamptz not null default now(), reg_status char(1) not null default 'A'
+);
+alter table ged.classification_plan add column if not exists tenant_id uuid;
+alter table ged.classification_plan add column if not exists parent_id uuid;
+alter table ged.classification_plan add column if not exists code text;
+alter table ged.classification_plan add column if not exists title text;
+alter table ged.classification_plan add column if not exists description text;
+alter table ged.classification_plan add column if not exists final_destination text;
+alter table ged.classification_plan add column if not exists created_at timestamptz not null default now();
+alter table ged.classification_plan add column if not exists reg_status char(1) not null default 'A';
+update ged.classification_plan set title=coalesce(nullif(title,''),nullif(description,''),nullif(code,''),'Sem título') where title is null or title='';
+create index if not exists ix_classification_plan_tenant_status on ged.classification_plan(tenant_id,reg_status);
+create index if not exists ix_classification_plan_tenant_code on ged.classification_plan(tenant_id,code);
+""";
     private const string LabelTemplateSql = """
 create schema if not exists ged;
 create extension if not exists pgcrypto;
@@ -800,6 +820,10 @@ create table if not exists ged.document_quality_result (
         AddColumn(fixes, "ged.label_print", "printed_at", "timestamptz not null default now()", "Etiquetas");
         AddColumn(fixes, "ged.box_location_history", "changed_at", "timestamptz not null default now()", "Acervo físico");
         AddColumn(fixes, "ged.classification_plan", "title", "text null", "Classificação");
+        AddColumn(fixes, "ged.classification_plan", "code", "text null", "Classificação");
+        AddColumn(fixes, "ged.classification_plan", "description", "text null", "Classificação");
+        AddColumn(fixes, "ged.classification_plan", "final_destination", "text null", "Classificação");
+        AddColumn(fixes, "ged.document", "classification_id", "uuid null", "Classificação");
         AddColumn(fixes, "ged.classification_plan_history", "changed_at", "timestamptz not null default now()", "Classificação");
         AddColumn(fixes, "ged.document_classification_audit", "created_at", "timestamptz not null default now()", "Classificação");
         AddColumn(fixes, "ged.document_classification", "classification_id", "uuid null", "Classificação");
@@ -1165,12 +1189,16 @@ end $$;
             ObjectName = $"{table}.{column}",
             Area = area,
             Description = $"Adiciona a coluna {table}.{column} de forma idempotente.",
-            FixSql = $"alter table {table}\nadd column if not exists {column} {definition};\n",
+            FixSql = string.Equals(table, "ged.classification_plan", StringComparison.OrdinalIgnoreCase)
+                ? ClassificationPlanCompatibilitySql + Environment.NewLine
+                : $"alter table {table}\nadd column if not exists {column} {definition};\n",
             CanAutoFix = true,
             RiskLevel = "Low",
             FixType = "Column",
             Dependencies = [new SchemaObjectDependency { Type = "Table", Schema = "ged", Table = table.Replace("ged.", string.Empty, StringComparison.OrdinalIgnoreCase) }],
-            ScriptName = ConsolidatedScriptName
+            ScriptName = string.Equals(table, "ged.classification_plan", StringComparison.OrdinalIgnoreCase)
+                ? "database/migrations/2026_08_21_classification_plan_title_compat_hotfix.sql"
+                : ConsolidatedScriptName
         });
     }
 

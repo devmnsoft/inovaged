@@ -7,12 +7,21 @@ using InovaGed.Application.PhysicalArchive;
 using InovaGed.Web.Models.Labels;
 using InovaGed.Application.Labels.Printing;
 using System.Text.Json;
+using System.Data;
 
 namespace InovaGed.Web.Controllers;
 
 [Authorize(Policy = AppPolicies.FullAdminOnly)]
 public class LabelsController : GedControllerBase
 {
+    internal sealed record ClassificationPlanSchemaInfo(
+        bool HasCode,
+        bool HasTitle,
+        bool HasDescription,
+        bool HasFinalDestination,
+        bool DocumentHasClassificationId,
+        bool HasActivityType = false);
+
     private readonly ILabelPrintRegistrar _printRegistrar;
     private readonly ILabelTemplateService _templates;
     private readonly ILabelQrCodeService _qrCodes;
@@ -415,21 +424,27 @@ where d.tenant_id=@tid and d.id=@docId
     public async Task<IActionResult> LocDeskBoxFromPhysical(Guid boxId, CancellationToken ct)
     {
         using var db = await OpenAsync();
-        var model = await db.QueryFirstOrDefaultAsync<LocDeskLabelInputModel>(new CommandDefinition("""
+        var schema = await GetClassificationPlanSchemaInfoAsync(db, ct);
+        var classificationCodeExpr = BuildClassificationCodeExpression(schema);
+        var classificationTitleExpr = BuildClassificationTitleExpression(schema);
+        var finalDestinationExpr = BuildFinalDestinationExpression(schema);
+        var documentClassificationJoinExpr = BuildDocumentClassificationJoinExpression(schema);
+        var sql = $"""
 select 'BOX' as LabelKind, b.id as BoxId, coalesce(nullif(b.label_code,''),lpad(b.box_no::text,4,'0')) as ControlNumber,
  coalesce(pl.location_code, concat_ws('.',pl.building,pl.room,pl.aisle,pl.rack,pl.shelf,pl.pallet),'') as Location,
  case when count(distinct d.id)=0 then coalesce(b.notes,'Caixa física') when count(distinct d.title)=1 then max(d.title) else 'Conteúdo misto - revisar classificação' end as Subject,
- case when count(distinct cp.id)=1 then concat_ws(' - ',nullif(max(cp.code),''),nullif(max(cp.title),''),nullif(max(cp.description),'')) when count(distinct cp.id)>1 then 'Conteúdo misto' else '' end as Classification,
+ case when count(distinct cp.id)=1 then concat_ws(' - ',{classificationCodeExpr},{classificationTitleExpr}) when count(distinct cp.id)>1 then 'Conteúdo misto' else '' end as Classification,
  case when count(distinct d.id)=0 or count(d.created_at)=0 then '' when min(d.created_at)::date=max(d.created_at)::date then to_char(min(d.created_at),'YYYY') else coalesce(concat(to_char(min(d.created_at),'YYYY'),' a ',to_char(max(d.created_at),'YYYY')),'') end as DocumentPeriod,
- coalesce(max(cp.final_destination),'') as CurrentPhase
+ {finalDestinationExpr} as CurrentPhase
 from ged.box b left join ged.physical_location pl on pl.tenant_id=b.tenant_id and pl.id=b.location_id and pl.reg_status='A'
 left join ged.batch_item bi on bi.tenant_id=b.tenant_id and bi.box_id=b.id and bi.reg_status='A'
 left join ged.document d on d.tenant_id=bi.tenant_id and d.id=bi.document_id
 left join ged.document_classification dc on dc.tenant_id=d.tenant_id and dc.document_id=d.id and dc.reg_status='A'
-left join ged.classification_plan cp on cp.tenant_id=d.tenant_id and cp.id=coalesce(dc.classification_id,d.classification_id)
+left join ged.classification_plan cp on cp.tenant_id=d.tenant_id and cp.id={documentClassificationJoinExpr}
 where b.tenant_id=@tid and b.id=@boxId and b.reg_status='A'
 group by b.id,b.label_code,b.box_no,b.notes,pl.location_code,pl.building,pl.room,pl.aisle,pl.rack,pl.shelf,pl.pallet
-""", new { tid=TenantId, boxId }, cancellationToken:ct));
+""";
+        var model = await db.QueryFirstOrDefaultAsync<LocDeskLabelInputModel>(new CommandDefinition(sql, new { tid=TenantId, boxId }, cancellationToken:ct));
         if (model is null) return NotFound("Caixa não encontrada.");
         ApplyDefaults(model);
         return View("LocDesk", model);
@@ -442,22 +457,61 @@ group by b.id,b.label_code,b.box_no,b.notes,pl.location_code,pl.building,pl.room
     public async Task<IActionResult> LocDeskFolderFromDocument(Guid docId, CancellationToken ct)
     {
         using var db = await OpenAsync();
-        var model = await db.QueryFirstOrDefaultAsync<LocDeskLabelInputModel>(new CommandDefinition("""
+        var schema = await GetClassificationPlanSchemaInfoAsync(db, ct);
+        var classificationCodeExpr = BuildClassificationCodeExpression(schema, aggregate: false);
+        var classificationTitleExpr = BuildClassificationTitleExpression(schema, aggregate: false);
+        var finalDestinationExpr = BuildFinalDestinationExpression(schema, aggregate: false);
+        var documentClassificationJoinExpr = BuildDocumentClassificationJoinExpression(schema);
+        var activityExpr = schema.HasActivityType ? "coalesce(cp.activity_type,'FIM')" : "'FIM'";
+        var sql = $"""
 select 'FOLDER' as LabelKind,d.id as DocumentId,b.id as BoxId,coalesce(nullif(d.code,''),left(d.id::text,8)) as ControlNumber,
-coalesce(d.title,'') as Subject,coalesce(concat(cp.code,' - ',cp.title),'') as Classification,
+coalesce(d.title,'') as Subject,concat_ws(' - ',{classificationCodeExpr},{classificationTitleExpr}) as Classification,
 coalesce(pl.location_code,concat_ws('.',pl.building,pl.room,pl.aisle,pl.rack,pl.shelf,pl.pallet),'') as Location,
-to_char(d.created_at,'YYYY') as DocumentPeriod,coalesce(cp.activity_type,'FIM') as Activity,coalesce(cp.final_destination,'') as CurrentPhase
+to_char(d.created_at,'YYYY') as DocumentPeriod,{activityExpr} as Activity,{finalDestinationExpr} as CurrentPhase
 from ged.document d left join ged.batch_item bi on bi.tenant_id=d.tenant_id and bi.document_id=d.id and bi.reg_status='A'
 left join ged.box b on b.tenant_id=d.tenant_id and b.id=bi.box_id and b.reg_status='A'
 left join ged.physical_location pl on pl.tenant_id=b.tenant_id and pl.id=b.location_id and pl.reg_status='A'
 left join ged.document_classification dc on dc.tenant_id=d.tenant_id and dc.document_id=d.id and dc.reg_status='A'
-left join ged.classification_plan cp on cp.tenant_id=d.tenant_id and cp.id=coalesce(dc.classification_id,d.classification_id)
+left join ged.classification_plan cp on cp.tenant_id=d.tenant_id and cp.id={documentClassificationJoinExpr}
 where d.tenant_id=@tid and d.id=@docId limit 1
-""", new { tid=TenantId, docId }, cancellationToken:ct));
+""";
+        var model = await db.QueryFirstOrDefaultAsync<LocDeskLabelInputModel>(new CommandDefinition(sql, new { tid=TenantId, docId }, cancellationToken:ct));
         if (model is null) return NotFound("Documento não encontrado.");
         ApplyDefaults(model);
         return View("LocDesk", model);
     }
+
+    private async Task<ClassificationPlanSchemaInfo> GetClassificationPlanSchemaInfoAsync(IDbConnection db, CancellationToken ct)
+    {
+        const string sql = """
+select
+    exists (select 1 from information_schema.columns where table_schema='ged' and table_name='classification_plan' and column_name='code') as "HasCode",
+    exists (select 1 from information_schema.columns where table_schema='ged' and table_name='classification_plan' and column_name='title') as "HasTitle",
+    exists (select 1 from information_schema.columns where table_schema='ged' and table_name='classification_plan' and column_name='description') as "HasDescription",
+    exists (select 1 from information_schema.columns where table_schema='ged' and table_name='classification_plan' and column_name='final_destination') as "HasFinalDestination",
+    exists (select 1 from information_schema.columns where table_schema='ged' and table_name='document' and column_name='classification_id') as "DocumentHasClassificationId",
+    exists (select 1 from information_schema.columns where table_schema='ged' and table_name='classification_plan' and column_name='activity_type') as "HasActivityType"
+""";
+        return await db.QuerySingleAsync<ClassificationPlanSchemaInfo>(new CommandDefinition(sql, cancellationToken: ct));
+    }
+
+    internal static string BuildClassificationCodeExpression(ClassificationPlanSchemaInfo schema, bool aggregate = true)
+        => schema.HasCode ? $"nullif({(aggregate ? "max(cp.code)" : "cp.code")}, '')" : "null";
+
+    internal static string BuildClassificationTitleExpression(ClassificationPlanSchemaInfo schema, bool aggregate = true)
+    {
+        var parts = new List<string>();
+        if (schema.HasTitle) parts.Add($"nullif({(aggregate ? "max(cp.title)" : "cp.title")}, '')");
+        if (schema.HasDescription) parts.Add($"nullif({(aggregate ? "max(cp.description)" : "cp.description")}, '')");
+        if (schema.HasCode) parts.Add($"nullif({(aggregate ? "max(cp.code)" : "cp.code")}, '')");
+        return parts.Count == 0 ? "null" : $"coalesce({string.Join(", ", parts)})";
+    }
+
+    internal static string BuildFinalDestinationExpression(ClassificationPlanSchemaInfo schema, bool aggregate = true)
+        => schema.HasFinalDestination ? $"coalesce({(aggregate ? "max(cp.final_destination)" : "cp.final_destination")}, '')" : "''";
+
+    internal static string BuildDocumentClassificationJoinExpression(ClassificationPlanSchemaInfo schema)
+        => schema.DocumentHasClassificationId ? "coalesce(dc.classification_id, d.classification_id)" : "dc.classification_id";
 
     private async Task<IActionResult> RenderLocDesk(LocDeskLabelInputModel input,bool registered,CancellationToken ct)
     {
