@@ -23,6 +23,7 @@ public sealed class SchemaHealthService : ISchemaHealthService
     private readonly IServiceProvider _services;
 
     private const string RetentionDestinationHotfix = "database/migrations/2026_08_retention_destination_di_schema_hotfix.sql";
+    private const string AdministrationCompatibilityHotfix = "database/migrations/2026_08_21_administration_legacy_schema_compat.sql";
 
     private static readonly string[] RequiredTables =
     [
@@ -48,6 +49,10 @@ public sealed class SchemaHealthService : ISchemaHealthService
 
     private static readonly (string Table, string Column, string Area)[] RequiredColumns =
     [
+        ("app_user", "reg_status", "Administração"), ("app_user", "is_active", "Administração"),
+        ("app_user", "deleted_at_utc", "Administração"), ("app_user", "is_locked", "Administração"),
+        ("tenant", "reg_status", "Administração"), ("tenant", "is_active", "Administração"),
+        ("permission", "reg_status", "Administração"), ("app_role", "reg_status", "Administração"),
         ("code_sequence", "id", "Code Generation"), ("code_sequence", "tenant_id", "Code Generation"),
         ("code_sequence", "entity_name", "Code Generation"), ("code_sequence", "prefix", "Code Generation"),
         ("code_sequence", "current_value", "Code Generation"), ("code_sequence", "padding", "Code Generation"),
@@ -318,7 +323,9 @@ where table_schema = 'ged';", cancellationToken: ct))).ToHashSet(StringComparer.
                 var ok = existingColumns.Contains($"{table}.{column}");
                 var severity = string.Equals(area, "OCR Auto Schedule", StringComparison.OrdinalIgnoreCase) ? "Warning" : "Critical";
                 var missingMessage = severity == "Warning" ? "Coluna de agendamento OCR ausente; a Central OCR funciona, mas a página de agendamento exige migration." : "Coluna crítica ausente.";
-                var columnFix = table == "document" && area == "Destinação de retenção"
+                var columnFix = area == "Administração"
+                    ? $"Execute {AdministrationCompatibilityHotfix} ou database/apply_all_required_migrations.sql."
+                    : table == "document" && area == "Destinação de retenção"
                     ? $"Execute {RetentionDestinationHotfix} ou database/apply_all_required_migrations.sql."
                     : table == "classification_plan" && column is "title" or "code" or "description" or "final_destination"
                     ? $"A coluna ged.classification_plan.{column} está ausente. Execute database/migrations/2026_08_21_classification_plan_title_compat_hotfix.sql ou database/apply_all_required_migrations.sql."

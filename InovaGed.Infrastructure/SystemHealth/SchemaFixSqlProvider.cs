@@ -816,6 +816,14 @@ create table if not exists ged.document_quality_result (
 
     private static void AddColumnFixes(List<SchemaFixDto> fixes)
     {
+        AddColumn(fixes, "ged.app_user", "reg_status", "char(1) not null default 'A'", "Administração");
+        AddColumn(fixes, "ged.app_user", "is_active", "boolean not null default true", "Administração");
+        AddColumn(fixes, "ged.app_user", "deleted_at_utc", "timestamptz null", "Administração");
+        AddColumn(fixes, "ged.app_user", "is_locked", "boolean not null default false", "Administração");
+        AddColumn(fixes, "ged.tenant", "reg_status", "char(1) not null default 'A'", "Administração");
+        AddColumn(fixes, "ged.tenant", "is_active", "boolean not null default true", "Administração");
+        AddColumn(fixes, "ged.permission", "reg_status", "char(1) not null default 'A'", "Administração");
+        AddColumn(fixes, "ged.app_role", "reg_status", "char(1) not null default 'A'", "Administração");
         AddColumn(fixes, "ged.document_folder_move_history", "moved_at", "timestamptz not null default now()", "Movimentação documental");
         AddColumn(fixes, "ged.label_print", "printed_at", "timestamptz not null default now()", "Etiquetas");
         AddColumn(fixes, "ged.box_location_history", "changed_at", "timestamptz not null default now()", "Acervo físico");
