@@ -3,6 +3,26 @@
 
 -- Histórico de migrations / schema base
 CREATE SCHEMA IF NOT EXISTS ged;
+
+-- Compatibilidade administrativa (equivalente a
+-- database/migrations/2026_08_21_administration_legacy_schema_compat.sql).
+ALTER TABLE IF EXISTS ged.app_user ADD COLUMN IF NOT EXISTS reg_status char(1) NOT NULL DEFAULT 'A';
+ALTER TABLE IF EXISTS ged.app_user ADD COLUMN IF NOT EXISTS is_active boolean NOT NULL DEFAULT true;
+ALTER TABLE IF EXISTS ged.app_user ADD COLUMN IF NOT EXISTS deleted_at_utc timestamptz NULL;
+ALTER TABLE IF EXISTS ged.app_user ADD COLUMN IF NOT EXISTS is_locked boolean NOT NULL DEFAULT false;
+ALTER TABLE IF EXISTS ged.tenant ADD COLUMN IF NOT EXISTS reg_status char(1) NOT NULL DEFAULT 'A';
+ALTER TABLE IF EXISTS ged.tenant ADD COLUMN IF NOT EXISTS is_active boolean NOT NULL DEFAULT true;
+ALTER TABLE IF EXISTS ged.app_role ADD COLUMN IF NOT EXISTS reg_status char(1) NOT NULL DEFAULT 'A';
+ALTER TABLE IF EXISTS ged.permission ADD COLUMN IF NOT EXISTS reg_status char(1) NOT NULL DEFAULT 'A';
+DO $$ BEGIN
+    IF to_regclass('ged.app_user') IS NOT NULL
+       AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='ged' AND table_name='app_user' AND column_name='tenant_id') THEN
+        CREATE INDEX IF NOT EXISTS ix_app_user_tenant_reg_status ON ged.app_user(tenant_id, reg_status) WHERE reg_status='A';
+    END IF;
+    IF to_regclass('ged.tenant') IS NOT NULL THEN
+        CREATE INDEX IF NOT EXISTS ix_tenant_reg_status ON ged.tenant(reg_status) WHERE reg_status='A';
+    END IF;
+END $$;
 DO $$
 BEGIN
     CREATE EXTENSION IF NOT EXISTS pgcrypto;
