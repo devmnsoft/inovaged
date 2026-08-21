@@ -2977,7 +2977,9 @@ where coalesce(reg_status, 'A') = 'A';
 -- Ordem arquivística: base, movimentação, consolidação, evoluções e hotfix final.
 -- Required for Labels/PrintWizard and label template designer.
 -- Keep in sync with database/migrations/2026_08_label_template_designer.sql.
+-- Required blocks: label_template, classification_plan, classification_plan_version, retention_destination, label_print_job, locdesk_label_draft.
 \ir migrations/2026_08_label_template_designer.sql
+\ir migrations/2026_08_label_print_modes_and_templates.sql
 \ir migrations/2026_08_label_print_queue.sql
 \ir migrations/2026_08_locdesk_labels.sql
 \ir migrations/2026_08_classification_plan_compat_hotfix.sql

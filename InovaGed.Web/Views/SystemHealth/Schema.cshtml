@@ -76,6 +76,30 @@
         }
     </div>
 
+    <section class="card mb-3" aria-labelledby="quality-groups-title">
+        <div class="card-header" id="quality-groups-title">InovaGED Quality Gate — grupos técnicos</div>
+        <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+                <thead><tr><th>Grupo</th><th>Status</th><th>Mensagem</th><th>Impacto</th><th>Ação recomendada</th><th>Script recomendado</th></tr></thead>
+                <tbody>
+                @foreach (var group in new[] { "Banco de dados", "Migrations", "DI", "Razor", "Ícones", "Rotas", "Administração", "Etiquetas", "Retenção" })
+                {
+                    var matches = Model.Checks.Where(c => c.Area.Contains(group, StringComparison.OrdinalIgnoreCase) || c.ObjectName.Contains(group, StringComparison.OrdinalIgnoreCase)).ToList();
+                    var failed = matches.Any(c => !c.Success);
+                    <tr>
+                        <td><strong>@group</strong></td>
+                        <td><span class="badge @(failed ? "bg-danger" : matches.Count == 0 ? "bg-warning text-dark" : "bg-success")">@(failed ? "FAIL" : matches.Count == 0 ? "WARNING" : "PASS")</span></td>
+                        <td>@(failed ? matches.First(c => !c.Success).Message : matches.Count == 0 ? "Validação disponível no Environment Doctor." : "Checks concluídos sem falha.")</td>
+                        <td>@(failed ? "Pode impedir o funcionamento do módulo." : "Sem impacto crítico detectado.")</td>
+                        <td>@(failed ? matches.First(c => !c.Success).FixSuggestion : "Execute scripts/run-quality-gate.* antes do deploy.")</td>
+                        <td><code>@(failed && !string.IsNullOrWhiteSpace(matches.First(c => !c.Success).FixScriptName) ? matches.First(c => !c.Success).FixScriptName : "database/apply_all_required_migrations.sql")</code></td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </section>
+
     @if (Model.MissingTables.Count > 0)
     {
         <section class="card mb-3 border-danger">
