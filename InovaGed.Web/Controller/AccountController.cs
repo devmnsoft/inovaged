@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace InovaGed.Web.Controllers;
 
@@ -39,6 +40,7 @@ public sealed class AccountController : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
+    [EnableRateLimiting("commercial-write")]
     public async Task<IActionResult> Login(LoginVM vm, CancellationToken ct)
     {
         try
