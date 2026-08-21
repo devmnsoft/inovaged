@@ -118,6 +118,9 @@ using Microsoft.AspNetCore.Authentication.Certificate;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.RateLimiting;
+using System.Threading.RateLimiting;
+using InovaGed.Web.Services.Commercial;
 using InovaGed.Application.Preview;
 using InovaGed.Application.Security;
 using InovaGed.Application.SystemHealth;
@@ -174,6 +177,18 @@ mvc.AddRazorRuntimeCompilation();
 #endif
 
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<IPublicCommercialService, PublicCommercialService>();
+builder.Services.AddSingleton<IPaymentGateway, ManualPaymentGateway>();
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddFixedWindowLimiter("commercial-write", limiter =>
+    {
+        limiter.PermitLimit = 5;
+        limiter.Window = TimeSpan.FromMinutes(1);
+        limiter.QueueLimit = 0;
+    });
+});
 builder.Services.AddScoped<ICorrelationContext, CorrelationContext>();
 builder.Services.AddScoped<InovaGed.Application.PhysicalArchive.ILabelPrintRegistrar, InovaGed.Infrastructure.PhysicalArchive.LabelPrintRegistrar>();
 builder.Services.AddScoped<InovaGed.Application.PhysicalArchive.ILabelPrintService, InovaGed.Infrastructure.PhysicalArchive.LabelPrintRegistrar>();
@@ -699,6 +714,7 @@ app.UseMiddleware<SuspiciousRequestMiddleware>();
 app.UseStaticFiles();
 
 app.UseRouting();
+app.UseRateLimiter();
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseMiddleware<RequestTelemetryMiddleware>();
 
