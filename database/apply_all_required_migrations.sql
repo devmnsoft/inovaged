@@ -3051,3 +3051,6 @@ where coalesce(reg_status, 'A') = 'A';
 \ir migrations/2026_08_label_tracking_inventory.sql
 \ir migrations/2026_08_contract_fiscalization_acceptance.sql
 \ir migrations/2026_08_24_observability_incident_center.sql
+
+\ir migrations/2026_08_24_uat_go_live_readiness.sql
+\ir seeds/2026_08_uat_test_cases_seed.sql

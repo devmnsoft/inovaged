@@ -1,0 +1,5 @@
+@model IReadOnlyList<InovaGed.Application.Release.Uat.UatTestPlanItem>
+@{ViewData["Title"]="Planos de homologação";}
+<h1>Planos de homologação</h1><p>Organize a validação funcional por release.</p>
+<div class="table-responsive"><table class="table"><thead><tr><th>Código</th><th>Título</th><th>Release</th><th>Status</th><th>Casos</th><th></th></tr></thead><tbody>@foreach(var x in Model){<tr><td>@x.PlanCode</td><td>@x.Title</td><td>@x.ReleaseVersion</td><td><span class="badge bg-secondary">@x.Status</span></td><td>@x.CaseCount</td><td><a class="btn btn-sm btn-primary" href="/UatReadiness/Plan/@x.Id">Abrir</a></td></tr>}</tbody></table></div>
+<form method="post" action="/UatReadiness/Plan/Create" class="card card-body"><h2 class="h5">Novo plano</h2>@Html.AntiForgeryToken()<div class="row g-2"><div class="col"><input class="form-control" name="planCode" placeholder="Código" required></div><div class="col"><input class="form-control" name="title" placeholder="Título" required></div><div class="col"><input class="form-control" name="releaseVersion" placeholder="Release"></div><div class="col-auto"><button class="btn btn-success">Criar</button></div></div></form>
