@@ -38,14 +38,43 @@ namespace InovaGed.Infrastructure.Instruments
             WHERE tenant_id=@TenantId AND instrument_type=@Type::ged.instrument_type AND reg_status='A'
             ORDER BY version_no DESC;
             """;
-                var rows = await con.QueryAsync<InstrumentVersionRow>(new CommandDefinition(sql, new { TenantId = tenantId, Type = type }, cancellationToken: ct));
-                return rows.ToList();
+                var rows = await con.QueryAsync<InstrumentVersionDbRow>(new CommandDefinition(sql, new { TenantId = tenantId, Type = type }, cancellationToken: ct));
+                return rows.Select(x => new InstrumentVersionRow
+                {
+                    Id = x.Id,
+                    InstrumentType = x.InstrumentType ?? type,
+                    VersionNo = x.VersionNo,
+                    PublishedAt = ToDateTimeOffset(x.PublishedAt),
+                    PublishedByName = x.PublishedByName ?? string.Empty,
+                    HashSha256 = x.HashSha256 ?? string.Empty,
+                    Notes = x.Notes
+                }).ToList();
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "ListVersionsAsync failed Tenant={Tenant} Type={Type}", tenantId, type);
                 throw;
             }
+        }
+
+        private static DateTimeOffset ToDateTimeOffset(DateTime? value)
+        {
+            if (!value.HasValue) return DateTimeOffset.MinValue;
+            var date = value.Value.Kind == DateTimeKind.Unspecified
+                ? DateTime.SpecifyKind(value.Value, DateTimeKind.Utc)
+                : value.Value;
+            return new DateTimeOffset(date);
+        }
+
+        private sealed class InstrumentVersionDbRow
+        {
+            public Guid Id { get; set; }
+            public string? InstrumentType { get; set; }
+            public int VersionNo { get; set; }
+            public DateTime? PublishedAt { get; set; }
+            public string? PublishedByName { get; set; }
+            public string? HashSha256 { get; set; }
+            public string? Notes { get; set; }
         }
 
         public async Task<Guid> PublishNewVersionAsync(Guid tenantId, Guid? userId, string? userName, string type, string? notes, CancellationToken ct)

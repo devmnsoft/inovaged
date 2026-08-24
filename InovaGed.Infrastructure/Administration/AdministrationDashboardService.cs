@@ -65,7 +65,15 @@ order by changed_at desc
     public Task<IReadOnlyList<AdministrationListItem>> GetAuditEventsAsync(Guid? t,CancellationToken ct=default)=>List("audit_logs",t,ct);
     public Task<IReadOnlyList<AdministrationListItem>> GetTenantsAsync(Guid? t,bool g,CancellationToken ct=default)=>List("tenant",g?null:t,ct);
     public Task<IReadOnlyList<AdministrationListItem>> GetWorkersAsync(Guid? t,CancellationToken ct=default)=>List("worker_execution_status",t,ct);
-    public async Task<IReadOnlyList<AdministrationListItem>> GetHealthAsync(CancellationToken ct=default){ if(_schema is null) return Array.Empty<AdministrationListItem>(); var r=await _schema.CheckAsync(ct); return r.Checks.Take(100).Select(x=>new AdministrationListItem(x.ObjectName,x.Success ? "saudável" : "atenção",x.Message,x.Area)).ToList(); }
+    public async Task<IReadOnlyList<AdministrationListItem>> GetHealthAsync(CancellationToken ct=default)
+    {
+        if (_schema is null)
+            return [new AdministrationListItem("Schema", "indisponível", "Diagnóstico de schema temporariamente indisponível. Tente novamente.")];
+
+        var report = await _schema.CheckAsync(ct);
+        return report.Checks.Take(100).Select(x => new AdministrationListItem(
+            x.ObjectName, x.Success ? "saudável" : "atenção", x.Message, x.Area)).ToList();
+    }
     public Task<IReadOnlyList<AdministrationListItem>> GetSafeConfigurationsAsync(CancellationToken ct=default) => Task.FromResult<IReadOnlyList<AdministrationListItem>>(_cfg.AsEnumerable().Where(x=>x.Value is not null).Take(80).Select(x=>new AdministrationListItem(x.Key, IsSensitive(x.Key)?"Mascarado":"Configurado", IsSensitive(x.Key)?"********":x.Value!)).ToList());
     public Task<IReadOnlyList<AdministrationListItem>> GetMigrationsAsync(CancellationToken ct=default)=>List("schema_migration_history",null,ct);
     public async Task<IReadOnlyList<ComplianceControlItem>> GetComplianceAsync(Guid? tenantId,CancellationToken ct=default){ var s=await GetIdentityMigrationSummaryAsync(tenantId,ct); return new[]{new ComplianceControlItem("LGPD-CPF","CPF protegido",s.LegacyDependent==0?"atendido":"parcialmente atendido",$"{s.AlreadyMigrated} migrados; {s.LegacyDependent} pendentes.","Migrar identidades sem expor CPF completo."),new ComplianceControlItem("AUDIT-STRICT","Auditoria estrita","não verificado","StrictAudit não é alterado automaticamente.","Avaliar risco e ativar com justificativa.")}; }
