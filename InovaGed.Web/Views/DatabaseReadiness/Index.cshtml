@@ -1,7 +1,52 @@
 @model InovaGed.Application.SystemHealth.Migrations.DatabaseMigrationPlan
-@{ ViewData["Title"] = "Prontidão do Banco de Dados"; }
+
+@{
+    ViewData["Title"] = "Prontidão do Banco de Dados";
+
+    var kpis = new List<(string Label, string Value)>
+    {
+        ("Migrations obrigatórias", Model.Total.ToString()),
+        ("Aplicadas", Model.Applied.ToString()),
+        ("Pendentes", Model.Pending.ToString()),
+        ("Falhas anteriores", Model.Failed.ToString()),
+        ("Última execução", Model.Items.Where(x => x.AppliedAt.HasValue).MaxBy(x => x.AppliedAt)?.AppliedAt?.ToLocalTime().ToString("g") ?? "Nunca"),
+        ("Status geral", Model.Pending == 0 ? "Pronto" : "Ação necessária")
+    };
+}
+
 <div class="container-fluid py-4">
- <div class="d-flex flex-wrap justify-content-between gap-3 mb-4"><div><h1>Prontidão do Banco de Dados</h1><p class="text-muted">Valide, aplique e audite as migrations necessárias para manter o InovaGED estável.</p></div><div class="d-flex flex-wrap gap-2"><a class="btn btn-outline-secondary" href="/DatabaseReadiness">Atualizar diagnóstico</a><a class="btn btn-outline-primary" href="/DatabaseReadiness/DownloadConsolidatedScript">Baixar script consolidado</a><a class="btn btn-outline-primary" href="/DatabaseReadiness/Report">Ver histórico</a><a class="btn btn-outline-secondary" href="/SchemaHealth">Abrir SchemaHealth</a><form method="post" action="/DatabaseReadiness/ApplyRequired">@Html.AntiForgeryToken()<button class="btn btn-danger" disabled="@(Model.Pending == 0 ? "disabled" : null)">Aplicar pendentes</button></form></div></div>
- <div class="row g-3 mb-4">@foreach(var card in new[]{("Migrations obrigatórias",Model.Total.ToString()),("Aplicadas",Model.Applied.ToString()),("Pendentes",Model.Pending.ToString()),("Falhas anteriores",Model.Failed.ToString()),("Última execução",Model.Items.Where(x=>x.AppliedAt.HasValue).MaxBy(x=>x.AppliedAt)?.AppliedAt?.ToLocalTime().ToString("g")??"Nunca"),("Status geral",Model.Pending==0?"Pronto":"Ação necessária")}){<div class="col-md-4 col-xl-2"><div class="card h-100 shadow-sm"><div class="card-body"><small class="text-muted">@card.Item1</small><div class="h5 mt-2">@card.Item2</div></div></div></div>}</div>
- <partial name="Plan" model="Model" />
+    <div class="d-flex flex-wrap justify-content-between gap-3 mb-4">
+        <div>
+            <h1>Prontidão do Banco de Dados</h1>
+            <p class="text-muted">
+                Valide, aplique e audite as migrations necessárias para manter o InovaGED estável.
+            </p>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            <a class="btn btn-outline-secondary" href="/DatabaseReadiness">Atualizar diagnóstico</a>
+            <a class="btn btn-outline-primary" href="/DatabaseReadiness/DownloadConsolidatedScript">Baixar script consolidado</a>
+            <a class="btn btn-outline-primary" href="/DatabaseReadiness/Report">Ver histórico</a>
+            <a class="btn btn-outline-secondary" href="/SchemaHealth">Abrir SchemaHealth</a>
+            <form method="post" action="/DatabaseReadiness/ApplyRequired">
+                @Html.AntiForgeryToken()
+                <button class="btn btn-danger" disabled="@(Model.Pending == 0 ? "disabled" : null)">Aplicar pendentes</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-4">
+        @foreach (var kpi in kpis)
+        {
+            <div class="col-md-4 col-xl-2">
+                <div class="card h-100 shadow-sm">
+                    <div class="card-body">
+                        <small class="text-muted">@kpi.Label</small>
+                        <div class="h5 mt-2">@kpi.Value</div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+
+    <partial name="Plan" model="Model" />
 </div>
