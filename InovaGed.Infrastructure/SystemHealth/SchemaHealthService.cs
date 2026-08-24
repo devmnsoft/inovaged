@@ -24,6 +24,7 @@ public sealed class SchemaHealthService : ISchemaHealthService
 
     private const string RetentionDestinationHotfix = "database/migrations/2026_08_retention_destination_di_schema_hotfix.sql";
     private const string AdministrationCompatibilityHotfix = "database/migrations/2026_08_21_administration_legacy_schema_compat.sql";
+    private const string InstrumentVersionCompatibilityHotfix = "database/migrations/2026_08_21_instrument_version_compat_hotfix.sql";
 
     private static readonly string[] RequiredTables =
     [
@@ -39,7 +40,8 @@ public sealed class SchemaHealthService : ISchemaHealthService
         "ged.label_print", "ged.physical_location", "ged.box", "ged.batch", "ged.batch_item",
         "ged.label_template", "ged.label_template_config", "ged.label_template_field", "ged.label_template_version",
         "ged.label_print_job", "ged.label_print_job_item", "ged.label_print_history", "ged.locdesk_label_draft",
-        "ged.box_content_history", "ged.box_location_history", "ged.document_folder_move_history"
+        "ged.box_content_history", "ged.box_location_history", "ged.document_folder_move_history",
+        "ged.instrument_version"
     ];
 
     private static readonly string[] OptionalTables =
@@ -53,6 +55,11 @@ public sealed class SchemaHealthService : ISchemaHealthService
         ("app_user", "deleted_at_utc", "Administração"), ("app_user", "is_locked", "Administração"),
         ("tenant", "reg_status", "Administração"), ("tenant", "is_active", "Administração"),
         ("permission", "reg_status", "Administração"), ("app_role", "reg_status", "Administração"),
+        ("instrument_version", "is_published", "Versões de instrumentos"),
+        ("instrument_version", "published_at", "Versões de instrumentos"),
+        ("instrument_version", "published_by", "Versões de instrumentos"),
+        ("instrument_version", "notes", "Versões de instrumentos"),
+        ("instrument_version", "reg_status", "Versões de instrumentos"),
         ("code_sequence", "id", "Code Generation"), ("code_sequence", "tenant_id", "Code Generation"),
         ("code_sequence", "entity_name", "Code Generation"), ("code_sequence", "prefix", "Code Generation"),
         ("code_sequence", "current_value", "Code Generation"), ("code_sequence", "padding", "Code Generation"),
@@ -294,7 +301,9 @@ where table_schema = 'ged';", cancellationToken: ct))).ToHashSet(StringComparer.
             foreach (var table in RequiredTables)
             {
                 var ok = existingTables.Contains(table);
-                var tableFix = string.Equals(table, "ged.classification_plan_version", StringComparison.OrdinalIgnoreCase)
+                var tableFix = string.Equals(table, "ged.instrument_version", StringComparison.OrdinalIgnoreCase)
+                    ? $"Execute {InstrumentVersionCompatibilityHotfix} ou database/apply_all_required_migrations.sql."
+                    : string.Equals(table, "ged.classification_plan_version", StringComparison.OrdinalIgnoreCase)
                     ? $"Execute {RetentionDestinationHotfix} ou database/apply_all_required_migrations.sql."
                     : table.StartsWith("ged.label_template", StringComparison.OrdinalIgnoreCase)
                     ? "Execute database/migrations/2026_08_label_template_designer.sql ou database/apply_all_required_migrations.sql."
@@ -323,7 +332,9 @@ where table_schema = 'ged';", cancellationToken: ct))).ToHashSet(StringComparer.
                 var ok = existingColumns.Contains($"{table}.{column}");
                 var severity = string.Equals(area, "OCR Auto Schedule", StringComparison.OrdinalIgnoreCase) ? "Warning" : "Critical";
                 var missingMessage = severity == "Warning" ? "Coluna de agendamento OCR ausente; a Central OCR funciona, mas a página de agendamento exige migration." : "Coluna crítica ausente.";
-                var columnFix = area == "Administração"
+                var columnFix = area == "Versões de instrumentos"
+                    ? $"Execute {InstrumentVersionCompatibilityHotfix} ou database/apply_all_required_migrations.sql."
+                    : area == "Administração"
                     ? $"Execute {AdministrationCompatibilityHotfix} ou database/apply_all_required_migrations.sql."
                     : table == "document" && area == "Destinação de retenção"
                     ? $"Execute {RetentionDestinationHotfix} ou database/apply_all_required_migrations.sql."

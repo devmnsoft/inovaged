@@ -5,6 +5,25 @@ namespace InovaGed.Infrastructure.SystemHealth;
 public sealed class SchemaFixSqlProvider : ISchemaFixSqlProvider
 {
     private const string ConsolidatedScriptName = "dynamic-schema-repair";
+    private const string InstrumentVersionCompatibilitySql = """
+create schema if not exists ged;
+create extension if not exists pgcrypto;
+do $$ begin
+ if not exists(select 1 from pg_type t join pg_namespace n on n.oid=t.typnamespace where n.nspname='ged' and t.typname='instrument_type') then
+  create type ged.instrument_type as enum ('PCD','TTD','POP');
+ end if;
+end $$;
+create table if not exists ged.instrument_version(id uuid primary key default gen_random_uuid(),tenant_id uuid not null,instrument_type ged.instrument_type not null,version_no integer not null default 1,is_published boolean not null default false,published_at timestamptz null,published_by uuid null,notes text null,reg_date timestamptz not null default now(),reg_status char(1) not null default 'A');
+alter table ged.instrument_version add column if not exists is_published boolean not null default false;
+alter table ged.instrument_version add column if not exists published_at timestamptz null;
+alter table ged.instrument_version add column if not exists published_by uuid null;
+alter table ged.instrument_version add column if not exists notes text null;
+alter table ged.instrument_version add column if not exists reg_date timestamptz not null default now();
+alter table ged.instrument_version add column if not exists reg_status char(1) not null default 'A';
+update ged.instrument_version set is_published=true where published_at is not null and coalesce(is_published,false)=false;
+create index if not exists ix_instrument_version_tenant_type on ged.instrument_version(tenant_id,instrument_type,version_no desc);
+create index if not exists ix_instrument_version_published on ged.instrument_version(tenant_id,instrument_type,is_published,published_at desc) where coalesce(reg_status,'A')='A';
+""";
     private const string ClassificationPlanCompatibilitySql = """
 create schema if not exists ged;
 create extension if not exists pgcrypto;
@@ -194,6 +213,7 @@ where status in ('ERROR', 'ABORTED', 'RETRYABLE');
     {
         var fixes = new List<SchemaFixDto>
         {
+            Table("GED_TABLE_INSTRUMENT_VERSION", "ged.instrument_version", "Versões de instrumentos", "Aplica o hotfix idempotente database/migrations/2026_08_21_instrument_version_compat_hotfix.sql.", InstrumentVersionCompatibilitySql),
             Table("GED_TABLE_LABEL_TEMPLATE", "ged.label_template", "Etiquetas", "Cria o designer e os quatro modelos mínimos. Migration: database/migrations/2026_08_label_template_designer.sql.", LabelTemplateSql),
             Table("GED_TABLE_LABEL_TEMPLATE_CONFIG", "ged.label_template_config", "Etiquetas", "Cria as tabelas auxiliares do designer de etiquetas.", LabelTemplateSql),
             Table("GED_TABLE_LABEL_TEMPLATE_FIELD", "ged.label_template_field", "Etiquetas", "Cria as tabelas auxiliares do designer de etiquetas.", LabelTemplateSql),
@@ -816,6 +836,11 @@ create table if not exists ged.document_quality_result (
 
     private static void AddColumnFixes(List<SchemaFixDto> fixes)
     {
+        AddColumn(fixes, "ged.instrument_version", "is_published", "boolean not null default false", "Versões de instrumentos");
+        AddColumn(fixes, "ged.instrument_version", "published_at", "timestamptz null", "Versões de instrumentos");
+        AddColumn(fixes, "ged.instrument_version", "published_by", "uuid null", "Versões de instrumentos");
+        AddColumn(fixes, "ged.instrument_version", "notes", "text null", "Versões de instrumentos");
+        AddColumn(fixes, "ged.instrument_version", "reg_status", "char(1) not null default 'A'", "Versões de instrumentos");
         AddColumn(fixes, "ged.app_user", "reg_status", "char(1) not null default 'A'", "Administração");
         AddColumn(fixes, "ged.app_user", "is_active", "boolean not null default true", "Administração");
         AddColumn(fixes, "ged.app_user", "deleted_at_utc", "timestamptz null", "Administração");
