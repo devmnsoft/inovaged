@@ -1,0 +1,3 @@
+@model InovaGed.Application.SystemHealth.Migrations.DatabaseMigrationPlan
+@{ ViewData["Title"]="Relatório pós-migration"; }
+<div class="container-fluid py-4"><h1>Relatório pós-migration</h1>@if(TempData["MigrationResult"] is string message){<div class="alert alert-info">@message</div>}<p>Total: <strong>@Model.Total</strong> · Aplicadas: <strong>@Model.Applied</strong> · Pendentes: <strong>@Model.Pending</strong> · Falhas: <strong>@Model.Failed</strong></p><partial name="Plan" model="Model"/><a class="btn btn-secondary mt-3" href="/DatabaseReadiness">Voltar</a></div>

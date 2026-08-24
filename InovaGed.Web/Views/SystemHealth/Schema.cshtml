@@ -1,4 +1,5 @@
 @using System.Text.Json
+@using InovaGed.Application.SystemHealth.Migrations
 @model InovaGed.Application.SystemHealth.SchemaHealthReportDto
 @{
     ViewData["Title"] = "Diagnóstico do banco";
@@ -19,6 +20,7 @@
     var autoFixes = fixes.Where(c => c.CanAutoFix).ToList();
     var fullScriptText = string.Join("\n\n", fixes.Select(c => $"-- CheckId: {c.Id}\n-- Objeto: {c.ObjectName}\n{c.FixSql}"));
     var jsonOptions = new JsonSerializerOptions { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+    var migrationPlan = ViewData["MigrationPlan"] as DatabaseMigrationPlan;
 }
 
 <div class="container-fluid py-3 schema-health-page">
@@ -36,6 +38,11 @@
             <button type="button" class="btn btn-danger" onclick="openApplyAllModal()" @(!canApply || autoFixes.Count == 0 ? "disabled" : null)>Aplicar correções seguras</button>
         </div>
     </div>
+
+    @if (migrationPlan is not null)
+    {
+        <section class="card mb-3 border-primary"><div class="card-body d-flex flex-wrap justify-content-between align-items-center gap-3"><div><h2 class="h5">Migrations obrigatórias</h2><span class="me-3">Pendentes: <strong>@migrationPlan.Pending</strong></span><span class="me-3">Aplicadas: <strong>@migrationPlan.Applied</strong></span><span>Falhas: <strong>@migrationPlan.Failed</strong></span><p class="text-muted mb-0 mt-2">Ação recomendada: @(migrationPlan.Pending == 0 ? "Nenhuma; banco pronto." : "Revise e aplique as migrations pendentes.")</p></div><a class="btn btn-primary" href="/DatabaseReadiness">Abrir Prontidão do Banco</a></div></section>
+    }
 
     @if (!repairEnabled)
     {

@@ -4,12 +4,37 @@ using InovaGed.Environment.Doctor;
 using InovaGed.Environment.Doctor.Checks;
 using InovaGed.Environment.Doctor.Quality;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using InovaGed.Application.SystemHealth.Migrations;
+using InovaGed.Infrastructure;
 using Npgsql;
 using BclEnvironment = global::System.Environment;
 
 try
 {
     var command = args.FirstOrDefault() ?? "check";
+    if (command is "database-readiness" or "apply-required-migrations")
+    {
+        var root = FindRoot(BclEnvironment.CurrentDirectory);
+        var hostBuilder = Host.CreateApplicationBuilder();
+        hostBuilder.Configuration.AddConfiguration(Configuration());
+        hostBuilder.Services.AddDatabaseModule(hostBuilder.Configuration);
+        using var host = hostBuilder.Build();
+        using var scope = host.Services.CreateScope();
+        var runner = scope.ServiceProvider.GetRequiredService<IDatabaseMigrationRunner>();
+        if (command == "database-readiness")
+        {
+            var plan = await runner.GetPlanAsync(CancellationToken.None);
+            Console.WriteLine($"Migrations obrigatórias: {plan.Total} | Aplicadas: {plan.Applied} | Pendentes: {plan.Pending} | Falhas: {plan.Failed}");
+            foreach (var item in plan.Items) Console.WriteLine($"[{(item.Applied ? "APLICADA" : "PENDENTE")}] {item.Area}/{item.Name} SHA-256={item.ChecksumSha256 ?? "indisponível"}{(item.LastError is null ? "" : " | " + item.LastError)}");
+            return plan.Pending == 0 ? 0 : 1;
+        }
+        var result = await runner.ApplyRequiredAsync(null, "InovaGed.Environment.Doctor", CancellationToken.None);
+        foreach (var item in result.Items) Console.WriteLine($"[{(item.Success ? "OK" : "FALHA")}] {item.Name} ({item.DurationMs} ms){(item.ErrorMessage is null ? "" : " | " + item.ErrorMessage)}");
+        Console.WriteLine(result.Message);
+        return result.Success ? 0 : 2;
+    }
     if (command is "check" or "report")
     {
         var configuration = Configuration();
