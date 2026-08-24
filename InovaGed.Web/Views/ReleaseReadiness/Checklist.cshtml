@@ -1,0 +1,3 @@
+@model InovaGed.Web.Models.ReleaseReadiness.ReleaseReadinessViewModel
+@{ ViewData["Title"] = "Checklist · Prontidão da Release"; }
+<main class="container-fluid py-4"><partial name="_Header" model="Model"/><div class="card shadow-sm"><div class="card-body"><h2 class="h5">Checklist de homologação</h2><p>O checklist versionado contém o responsável, comando, rota e evidência exigida para cada área.</p><a class="btn btn-primary" href="/ReleaseReadiness/Report">Abrir relatório consolidado</a><a class="btn btn-outline-secondary ms-2" href="/DatabaseReadiness">Validar migrations</a></div></div></main>

@@ -1,6 +1,13 @@
 [
   "/",
   "/Administration",
+  "/ReleaseReadiness",
+  "/ReleaseReadiness/Modules",
+  "/ReleaseReadiness/Checklist",
+  "/ReleaseReadiness/Smoke",
+  "/ReleaseReadiness/Report",
+  "/DatabaseReadiness",
+  "/SystemIncidents",
   "/Administration/Users",
   "/Administration/Tenants",
   "/Administration/Workers",

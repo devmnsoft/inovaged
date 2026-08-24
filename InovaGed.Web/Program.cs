@@ -210,6 +210,8 @@ builder.Services.AddSingleton<IAtlasIllustrationRegistry, AtlasIllustrationRegis
 builder.Services.AddSingleton<IFileVisualResolver, FileVisualResolver>();
 builder.Services.AddSingleton<IUiMessageCatalog, UiMessageCatalog>();
 builder.Services.AddScoped<IUiModuleAvailabilityService, UiModuleAvailabilityService>();
+builder.Services.AddSingleton<IModuleAvailabilityService, ModuleAvailabilityService>();
+builder.Services.AddSingleton<IReleaseReadinessService, ReleaseReadinessService>();
 builder.Services.AddScoped<IUserShellContextService, UserShellContextService>();
 builder.Services.AddScoped<IWorkspaceSearchService, WorkspaceSearchService>();
 builder.Services.AddScoped<IWorkspaceCommandCatalog, WorkspaceCommandCatalog>();

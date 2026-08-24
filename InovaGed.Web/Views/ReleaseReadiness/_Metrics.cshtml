@@ -1,0 +1,7 @@
+@model InovaGed.Web.Models.ReleaseReadiness.ReleaseReadinessViewModel
+<div class="row g-3 mb-4">
+ <div class="col-sm-6 col-xl-3"><div class="card h-100 shadow-sm"><div class="card-body"><div class="text-muted">Status geral</div><div class="h3 mb-0 @(Model.IsReady ? "text-success" : "text-warning")">@(Model.IsReady ? "PRONTO" : "ATENÇÃO")</div></div></div></div>
+ <div class="col-sm-6 col-xl-3"><div class="card h-100 shadow-sm"><div class="card-body"><div class="text-muted">Módulos prontos</div><div class="h3 mb-0">@Model.Ready / @Model.Modules.Count</div></div></div></div>
+ <div class="col-sm-6 col-xl-3"><div class="card h-100 shadow-sm"><div class="card-body"><div class="text-muted">Em implantação</div><div class="h3 mb-0">@Model.InImplementation</div></div></div></div>
+ <div class="col-sm-6 col-xl-3"><div class="card h-100 shadow-sm"><div class="card-body"><div class="text-muted">Migrations pendentes</div><div class="h3 mb-0">@Model.PendingMigrations</div></div></div></div>
+</div>

@@ -105,6 +105,9 @@ public sealed class UserShellContextService : IUserShellContextService
                     Item("Parâmetros", "Parameters", "Index", "settings"),
                     Item("Usuários", "Users", "Index", "users"),
                     Item("Perfis e Permissões", "Security", "Roles", "roles"),
+                    Item("Prontidão da Release", "ReleaseReadiness", "Index", "check"),
+                    Item("Prontidão do Banco", "DatabaseReadiness", "Index", "database"),
+                    Item("Central de Incidentes", "SystemIncidents", "Index", "health"),
                     Item("Schema do Banco", "SchemaHealth", "Index", "database"),
                     Item("PACS", "Pacs", "Index", "activity"),
                     Item("Saúde do Sistema", "SystemHealth", "Index", "health"))

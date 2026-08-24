@@ -1,3 +1,4 @@
+@model InovaGed.Web.Models.ReleaseReadiness.ModuleUnderConstructionViewModel
 @{
     ViewData["Title"] = "Módulo em implantação";
 }
@@ -6,7 +7,14 @@
         <app-icon name="construction" size="48" decorative="true" />
         <h1 id="module-under-construction-title" class="h3 mt-3">Módulo em implantação</h1>
         <p class="text-muted mx-auto mb-0" style="max-width: 48rem">
-            Esta área já está prevista na arquitetura do InovaGED, mas ainda depende de fechamento técnico antes de uso operacional.
+            Esta área já está prevista na arquitetura do InovaGED, mas ainda depende de fechamento técnico antes do uso operacional.
         </p>
+        <dl class="row text-start mx-auto mt-4 mb-4" style="max-width: 42rem">
+            <dt class="col-sm-4">Status</dt><dd class="col-sm-8"><span class="badge bg-info text-dark">@Model.Status</span></dd>
+            <dt class="col-sm-4">Motivo</dt><dd class="col-sm-8">@Model.Reason</dd>
+            @if (!string.IsNullOrWhiteSpace(Model.TechnicalForecast)) { <dt class="col-sm-4">Previsão técnica</dt><dd class="col-sm-8">@Model.TechnicalForecast</dd> }
+            <dt class="col-sm-4">Ação recomendada</dt><dd class="col-sm-8">@Model.RecommendedAction</dd>
+        </dl>
+        <a class="btn btn-primary" href="/ReleaseReadiness">Abrir Prontidão da Release</a>
     </section>
 </main>

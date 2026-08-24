@@ -1,0 +1,3 @@
+@model InovaGed.Web.Models.ReleaseReadiness.ReleaseReadinessViewModel
+@{ ViewData["Title"] = "Smoke · Prontidão da Release"; }
+<main class="container-fluid py-4"><partial name="_Header" model="Model"/><div class="card shadow-sm"><div class="card-body"><h2 class="h5">Smoke de rotas críticas</h2><p class="text-muted">A execução HTTP autenticada é feita pelo Environment Doctor. Redirecionamentos de autenticação são aceitos; respostas 500 bloqueiam a release.</p><pre class="bg-dark text-light rounded p-3"><code>dotnet run --project InovaGed.Environment.Doctor -- route-smoke</code></pre></div></div></main>

@@ -1,0 +1,8 @@
+@model InovaGed.Web.Models.ReleaseReadiness.ReleaseReadinessViewModel
+<header class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
+    <div><span class="badge bg-primary mb-2">Release Candidate Readiness</span><h1 class="mb-2">Prontidão da Release</h1><p class="text-muted mb-0">Acompanhe o estado dos módulos, rotas, permissões, migrations, incidentes e critérios de aceite antes da homologação.</p></div>
+    <form method="post" action="/ReleaseReadiness/Refresh">@Html.AntiForgeryToken()<button class="btn btn-primary"><app-icon name="recent" decorative="true" /> Atualizar diagnóstico</button></form>
+</header>
+<nav class="nav nav-pills gap-2 mb-4" aria-label="Seções de prontidão">
+ <a class="nav-link" href="/ReleaseReadiness">Visão geral</a><a class="nav-link" href="/ReleaseReadiness/Modules">Módulos</a><a class="nav-link" href="/ReleaseReadiness/Checklist">Checklist</a><a class="nav-link" href="/ReleaseReadiness/Smoke">Smoke</a><a class="nav-link" href="/ReleaseReadiness/Report">Relatório</a>
+</nav>
