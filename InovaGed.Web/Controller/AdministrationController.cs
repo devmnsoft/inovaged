@@ -29,6 +29,7 @@ public sealed class AdministrationController : Controller
             new AdministrationActionVM("Continuidade", "Acompanhe backup, recuperação e portabilidade.", "bi-life-preserver", "Continuity", "Overview", AppPolicies.ContinuityView, "Continuidade", true, null),
             new AdministrationActionVM("Auditoria", "Consulte eventos administrativos e trilhas de acesso.", "bi-journal-check", "Administration", "Audit", AppPolicies.Administracao, "Auditoria", true, null),
             new AdministrationActionVM("Prontidão do ambiente", "Verifique banco, migrations, serviços, workers e módulos antes de liberar o ambiente.", "bi-clipboard2-pulse", "Administration", "Readiness", AppPolicies.Administracao, "Infraestrutura", true, null)
+            ,new AdministrationActionVM("Central de Incidentes", "Monitore erros, rotas instáveis e pendências técnicas do ambiente.", "bi-exclamation-triangle", "SystemIncidents", "Index", AppPolicies.Administracao, "Infraestrutura", true, null)
         };
         var sections = actions.GroupBy(action => action.Category)
             .Select(group => new AdministrationSectionVM(group.Key, $"Recursos de {group.Key.ToLowerInvariant()}.", group.ToArray()))
