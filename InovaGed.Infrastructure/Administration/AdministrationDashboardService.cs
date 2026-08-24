@@ -2,6 +2,7 @@ using Dapper;
 using InovaGed.Application.Administration;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.SystemHealth;
+using InovaGed.Infrastructure.Common.Dapper;
 using Microsoft.Extensions.Configuration;
 using Npgsql;
 
@@ -51,15 +52,32 @@ order by changed_at desc
         var rows = await c.QueryAsync<TenantSecurityConfigurationRow>(new CommandDefinition(sql, new { tenantId }, cancellationToken:ct));
         return rows.Select(x => new TenantSecurityConfiguration(
             TenantId: x.TenantId,
-            PermissionMode: ParsePermissionMode(x.PermissionMode),
-            ChangedAt: x.ChangedAt.HasValue
-                ? new DateTimeOffset(DateTime.SpecifyKind(x.ChangedAt.Value, DateTimeKind.Utc))
-                : DateTimeOffset.MinValue,
+            PermissionMode: DapperValueConverters.ParseEnumOrDefault(x.PermissionMode, PermissionMode.LEGACY),
+            ChangedAt: DapperValueConverters.ToDateTimeOffset(x.ChangedAt) ?? DateTimeOffset.MinValue,
             ChangedBy: x.ChangedBy,
             ChangeReason: x.ChangeReason,
             RegStatus: string.IsNullOrWhiteSpace(x.RegStatus) ? "A" : x.RegStatus!)).ToList();
     }
-    public async Task<IReadOnlyList<PermissionCatalogItem>> GetPermissionCatalogAsync(string? search, CancellationToken ct = default) { await using var c=await _db.OpenAsync(ct); if(!await Table(c,"permission",ct)) return Array.Empty<PermissionCatalogItem>(); var status=BuildStatusExpression(await GetAdminTableSchemaAsync(c,"permission",ct)); return (await c.QueryAsync<PermissionCatalogItem>(new CommandDefinition($"select code Code, coalesce(description,code) Description, coalesce(module,'Geral') Module, '' Roles, 0 UsersAffected, {status} Status, 'Banco' Origin, null::timestamptz LastChangedAt from ged.permission where (@search is null or code ilike '%'||@search||'%' or description ilike '%'||@search||'%') order by module, code limit 200", new{search}, cancellationToken:ct))).ToList(); }
+    public async Task<IReadOnlyList<PermissionCatalogItem>> GetPermissionCatalogAsync(string? search, CancellationToken ct = default)
+    {
+        await using var c=await _db.OpenAsync(ct);
+        if(!await Table(c,"permission",ct)) return Array.Empty<PermissionCatalogItem>();
+        var status=BuildStatusExpression(await GetAdminTableSchemaAsync(c,"permission",ct));
+        var rows=await c.QueryAsync<PermissionCatalogItemDbRow>(new CommandDefinition($"""
+select code as "Code", coalesce(description,code) as "Description",
+       coalesce(module,'Geral') as "Module", '' as "Roles", 0 as "UsersAffected",
+       {status} as "Status", 'Banco' as "Origin", null::timestamp as "LastChangedAt"
+from ged.permission
+where (@search is null or code ilike '%'||@search||'%' or description ilike '%'||@search||'%')
+order by module, code limit 200
+""",new{search},cancellationToken:ct));
+        return rows.Select(x=>new PermissionCatalogItem(
+            DapperValueConverters.TextOrDefault(x.Code,"Sem código"),
+            DapperValueConverters.TextOrDefault(x.Description,x.Code??"Sem descrição"),
+            DapperValueConverters.TextOrDefault(x.Module,"Geral"),x.Roles??string.Empty,x.UsersAffected,
+            DapperValueConverters.TextOrDefault(x.Status,"A"),DapperValueConverters.TextOrDefault(x.Origin,"Banco"),
+            DapperValueConverters.ToDateTimeOffset(x.LastChangedAt))).ToList();
+    }
     public async Task<IdentityMigrationSummary> GetIdentityMigrationSummaryAsync(Guid? tenantId, CancellationToken ct = default) { await using var c=await _db.OpenAsync(ct); var schema=await GetAdminTableSchemaAsync(c,"app_user",ct); var total=await SafeInt(c,"app_user",schema.HasDeletedAtUtc?"deleted_at_utc is null":schema.HasDeletedAt?"deleted_at is null":"1=1",tenantId,ct); var migrated=await SafeInt(c,"user_identity_document","document_type='CPF'",tenantId,ct); return new(total,0,migrated,0,Math.Max(0,total-migrated),0,0,Math.Max(0,total-migrated)); }
     public Task<IReadOnlyList<AdministrationListItem>> GetUsersAsync(Guid? t,CancellationToken ct=default)=>List("app_user",t,ct);
     public Task<IReadOnlyList<AdministrationListItem>> GetAuditEventsAsync(Guid? t,CancellationToken ct=default)=>List("audit_logs",t,ct);
@@ -107,9 +125,7 @@ limit 200
             Status: string.IsNullOrWhiteSpace(x.Status) ? "ATIVO" : x.Status!,
             Detail: string.IsNullOrWhiteSpace(x.Detail) ? "Sem detalhe" : x.Detail!,
             Tenant: x.Tenant,
-            LastActivity: x.LastActivity.HasValue
-                ? new DateTimeOffset(DateTime.SpecifyKind(x.LastActivity.Value, DateTimeKind.Utc))
-                : null)).ToList();
+            LastActivity: DapperValueConverters.ToDateTimeOffset(x.LastActivity))).ToList();
     }
     private static Task<bool> Table(NpgsqlConnection c,string t,CancellationToken ct)=>c.ExecuteScalarAsync<bool>(new CommandDefinition("select to_regclass(@n) is not null",new{n=$"ged.{t}"},cancellationToken:ct));
     private static Task<bool> Column(NpgsqlConnection c,string t,string col,CancellationToken ct)=>c.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from information_schema.columns where table_schema='ged' and table_name=@t and column_name=@col)",new{t,col},cancellationToken:ct));
@@ -124,7 +140,6 @@ limit 200
     private static string BuildStatusExpression(AdminTableSchema s)=>s.HasRegStatus?"coalesce(reg_status::text,'A')":s.HasStatus?"coalesce(status::text,'ATIVO')":s.HasIsActive?"case when is_active then 'ATIVO' else 'INATIVO' end":s.HasDeletedAtUtc?"case when deleted_at_utc is null then 'ATIVO' else 'EXCLUÍDO' end":s.HasDeletedAt?"case when deleted_at is null then 'ATIVO' else 'EXCLUÍDO' end":"'ATIVO'";
     private static string BuildDetailExpression(AdminTableSchema s){var p=new List<string>();if(s.HasEmail)p.Add("nullif(email::text,'')");if(s.HasCode)p.Add("nullif(code::text,'')");if(s.HasUserName)p.Add("nullif(user_name::text,'')");if(s.HasId)p.Add("id::text");return p.Count==0?"'Sem detalhe'":$"coalesce({string.Join(", ",p)}, 'Sem detalhe')";}
     private static string BuildLastActivityExpression(AdminTableSchema s)=>s.HasUpdatedAt?"updated_at":s.HasCreatedAt?"created_at":"null::timestamp";
-    private static PermissionMode ParsePermissionMode(string? value)=>Enum.TryParse<PermissionMode>(value,ignoreCase:true,out var mode)?mode:PermissionMode.LEGACY;
     private sealed class AdministrationListItemRow
     {
         public string? Name { get; set; }
@@ -141,6 +156,17 @@ limit 200
         public string? ChangedBy { get; set; }
         public string? ChangeReason { get; set; }
         public string? RegStatus { get; set; }
+    }
+    private sealed class PermissionCatalogItemDbRow
+    {
+        public string? Code { get; set; }
+        public string? Description { get; set; }
+        public string? Module { get; set; }
+        public string? Roles { get; set; }
+        public int UsersAffected { get; set; }
+        public string? Status { get; set; }
+        public string? Origin { get; set; }
+        public DateTime? LastChangedAt { get; set; }
     }
     private sealed record AdminTableSchema(bool HasTenantId,bool HasRegStatus,bool HasStatus,bool HasIsActive,bool HasDeletedAtUtc,bool HasDeletedAt,bool HasIsLocked,bool HasName,bool HasUserName,bool HasEmail,bool HasCode,bool HasId,bool HasCreatedAt,bool HasUpdatedAt);
     private static readonly HashSet<string> AllowedAdministrationTables=new(StringComparer.OrdinalIgnoreCase){"app_user","tenant","app_role","permission","audit_logs","permission_evaluation_log","worker_execution_status","ged_processing_jobs","schema_migration_history","user_identity_document"};
