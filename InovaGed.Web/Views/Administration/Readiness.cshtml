@@ -20,6 +20,9 @@
         <div class="atlas-prime-panel__header"><div><h2 id="release-title">Implantação atual</h2><small>Identificação segura do artefato e compatibilidade do schema.</small></div><span class="ig-status" data-status="@(Model.Release.RollbackAvailable ? "saudavel" : "atencao")">@(Model.Release.RollbackAvailable ? "Rollback disponível" : "Rollback indisponível")</span></div>
         <dl class="admin-release__grid"><div><dt>Versão</dt><dd>@Model.Release.Version</dd></div><div><dt>Commit</dt><dd>@Model.Release.Commit</dd></div><div><dt>Deployment</dt><dd>@Model.Release.DeploymentId</dd></div><div><dt>Implantação UTC</dt><dd>@(Model.Release.DeployedAtUtc?.ToString("u") ?? "Não informado")</dd></div></dl>
     </section>
+    <section class="atlas-prime-panel" aria-labelledby="uat-title">
+        <div class="atlas-prime-panel__header"><div><h2 id="uat-title">Homologação</h2><small>Plano atual, última execução, percentual aprovado, casos bloqueados e reprovados são consolidados na central UAT. Casos críticos impedem a recomendação de Go-Live.</small></div><a class="btn btn-primary" href="/UatReadiness">Abrir homologação</a></div>
+    </section>
     <section class="atlas-prime-panel" aria-labelledby="modules-title">
         <div class="atlas-prime-panel__header"><div><h2 id="modules-title">Saúde dos módulos</h2><small>Disponibilidade, objetos ausentes e recomendações operacionais.</small></div></div>
         <div class="admin-readiness-grid">

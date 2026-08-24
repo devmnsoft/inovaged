@@ -90,6 +90,10 @@ public static class InfrastructureServiceCollectionExtensions
     /// </summary>
     public static IServiceCollection AddStabilityCriticalServices(this IServiceCollection services)
     {
+        services.AddScoped<Release.Uat.UatService>();
+        services.AddScoped<global::InovaGed.Application.Release.Uat.IUatTestPlanService>(sp => sp.GetRequiredService<Release.Uat.UatService>());
+        services.AddScoped<global::InovaGed.Application.Release.Uat.IUatExecutionService>(sp => sp.GetRequiredService<Release.Uat.UatService>());
+        services.AddScoped<global::InovaGed.Application.Release.Uat.IReleaseEvidenceService>(sp => sp.GetRequiredService<Release.Uat.UatService>());
         services.AddScoped<global::InovaGed.Application.SystemHealth.Incidents.IExceptionClassifier, SystemHealth.Incidents.ExceptionClassifier>();
         services.AddScoped<SystemHealth.Incidents.SystemIncidentService>();
         services.AddScoped<global::InovaGed.Application.SystemHealth.Incidents.ISystemIncidentService>(sp => sp.GetRequiredService<SystemHealth.Incidents.SystemIncidentService>());

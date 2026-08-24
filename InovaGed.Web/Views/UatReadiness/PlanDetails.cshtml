@@ -1,0 +1,5 @@
+@model InovaGed.Application.Release.Uat.UatTestPlanDetails
+@{ViewData["Title"]=Model.Plan.Title;}
+<h1>@Model.Plan.Title</h1><p>@Model.Plan.PlanCode · @Model.Plan.ReleaseVersion · <span class="badge bg-secondary">@Model.Plan.Status</span></p>
+<form method="post" action="/UatReadiness/Run/Start">@Html.AntiForgeryToken()<input type="hidden" name="planId" value="@Model.Plan.Id"><button class="btn btn-primary">Iniciar execução</button></form>
+<div class="table-responsive mt-3"><table class="table"><thead><tr><th>Código</th><th>Módulo</th><th>Título</th><th>Pré-condição</th><th>Passos</th><th>Resultado esperado</th><th>Prioridade</th></tr></thead><tbody>@foreach(var x in Model.Cases){<tr><td>@x.CaseCode</td><td>@x.ModuleCode</td><td>@x.Title</td><td>@x.Preconditions</td><td>@x.Steps</td><td>@x.ExpectedResult</td><td>@x.Priority</td></tr>}</tbody></table></div>

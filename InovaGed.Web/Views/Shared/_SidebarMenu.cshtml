@@ -69,6 +69,7 @@
         <a asp-controller="Parameters" asp-action="Index" class="@ActiveAny("Parameters")"><i class="bi bi-sliders"></i><span>Parâmetros</span></a>
         <a asp-controller="SystemHealth" asp-action="Index" class="@ActiveAny("SystemHealth")"><i class="bi bi-heart-pulse"></i><span>Saúde do Sistema</span></a>
         <a asp-controller="Administration" asp-action="Readiness" class="@Active("Administration", "Readiness")"><i class="bi bi-clipboard2-check"></i><span>Prontidão do Ambiente</span></a>
+        <a href="/UatReadiness" class="@Active("UatReadiness", "Index")"><i class="bi bi-clipboard2-check"></i><span>Homologação e Go-Live</span></a>
     </details>
 }
 else if (isAdministradorOphir)
