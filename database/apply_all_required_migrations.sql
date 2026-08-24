@@ -1,8 +1,11 @@
+-- Este script é o modo manual consolidado.
+-- Preferencialmente use /DatabaseReadiness ou InovaGed.Environment.Doctor.
 -- InovaGED - Consolidação idempotente de schema GED/OCR/upload/logs/versionamento.
 -- Pode ser executado repetidas vezes. Não apaga dados e não sobrescreve registros reais.
 
 -- Histórico de migrations / schema base
 CREATE SCHEMA IF NOT EXISTS ged;
+\ir migrations/2026_08_24_database_readiness_migration_runner.sql
 
 -- Compatibilidade administrativa (equivalente a
 -- database/migrations/2026_08_21_administration_legacy_schema_compat.sql).

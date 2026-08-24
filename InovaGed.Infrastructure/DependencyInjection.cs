@@ -36,6 +36,8 @@ using InovaGed.Infrastructure.Signatures;
 using InovaGed.Application.Cluster;
 using InovaGed.Infrastructure.Cluster;
 using InovaGed.Infrastructure.Tenants;
+using InovaGed.Application.SystemHealth.Migrations;
+using InovaGed.Infrastructure.SystemHealth.Migrations;
 
 namespace InovaGed.Infrastructure;
 
@@ -131,6 +133,7 @@ public static class InfrastructureServiceCollectionExtensions
             return new NpgsqlConnectionFactory(connectionString);
         });
         services.TryAddScoped<ITenantCatalog, DatabaseTenantCatalog>();
+        services.AddScoped<IDatabaseMigrationRunner, DatabaseMigrationRunner>();
 
         services.AddInfrastructureModule("Database", true, [], !string.IsNullOrWhiteSpace(configuration.GetConnectionString("DefaultConnection")), HealthStatus.Healthy);
         return services;

@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using InovaGed.Application.Identity;
 using InovaGed.Application.SystemHealth;
+using InovaGed.Application.SystemHealth.Migrations;
 using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -21,6 +22,7 @@ public sealed class SchemaHealthController : Controller
     private readonly ICurrentUser _currentUser;
     private readonly IWebHostEnvironment _environment;
     private readonly IOptions<SchemaRepairOptions> _repairOptions;
+    private readonly IDatabaseMigrationRunner _migrationRunner;
 
     public SchemaHealthController(
         ISchemaHealthService schemaHealth,
@@ -28,7 +30,8 @@ public sealed class SchemaHealthController : Controller
         ISchemaFixSqlProvider fixSqlProvider,
         ICurrentUser currentUser,
         IWebHostEnvironment environment,
-        IOptions<SchemaRepairOptions> repairOptions)
+        IOptions<SchemaRepairOptions> repairOptions,
+        IDatabaseMigrationRunner migrationRunner)
     {
         _schemaHealth = schemaHealth;
         _schemaRepair = schemaRepair;
@@ -36,12 +39,14 @@ public sealed class SchemaHealthController : Controller
         _currentUser = currentUser;
         _environment = environment;
         _repairOptions = repairOptions;
+        _migrationRunner = migrationRunner;
     }
 
     [HttpGet("")]
     public async Task<IActionResult> Index(CancellationToken ct)
     {
         var report = await _schemaHealth.CheckAsync(ct);
+        ViewData["MigrationPlan"] = await _migrationRunner.GetPlanAsync(ct);
         PopulateRepairViewData();
         return View("~/Views/SystemHealth/Schema.cshtml", report);
     }
@@ -65,7 +70,8 @@ public sealed class SchemaHealthController : Controller
     [HttpGet("FixScript")]
     public async Task<IActionResult> FixScript(CancellationToken ct)
     {
-        var sql = await _schemaRepair.GenerateFixScriptAsync(ct);
+        var schemaSql = await _schemaRepair.GenerateFixScriptAsync(ct);
+        var sql = schemaSql + "\n\n" + await _migrationRunner.GetConsolidatedPendingScriptAsync(ct);
         var fileName = $"inovaged_schema_fix_{DateTime.UtcNow:yyyyMMdd_HHmmss}.sql";
         return File(Encoding.UTF8.GetBytes(sql), "text/plain; charset=utf-8", fileName);
     }

@@ -11,7 +11,7 @@
 
 @{
     var header = new AtlasPageHeaderVm("Central de Administração", "Identidades, segurança, disponibilidade e conformidade em uma visão operacional.", "settings", "Governança institucional",
-        new[] { new AtlasPageAction("Prontidão do ambiente", Url.Action("Readiness")!, "check", true), new AtlasPageAction("Saúde do sistema", Url.Action("Health")!, "health") },
+        new[] { new AtlasPageAction("Prontidão do Banco", "/DatabaseReadiness", "database", true), new AtlasPageAction("Prontidão do ambiente", Url.Action("Readiness")!, "check"), new AtlasPageAction("Saúde do sistema", Url.Action("Health")!, "health") },
         new (string, string?)[] { ("Início", "/"), ("Administração", null) });
     var metrics = Model.Health.Take(4).Select(x => new AtlasMetricVm(x.Title, x.Value ?? "—", x.Message ?? "Estado atual", x.Status, x.Icon)).ToArray();
 }

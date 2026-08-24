@@ -7,7 +7,7 @@ namespace InovaGed.Web.Filters;
 
 public sealed class DatabaseSchemaExceptionFilter : IExceptionFilter
 {
-    private const string FriendlyMessage = "A estrutura do banco de dados está desatualizada. Execute as migrations do sistema.";
+    private const string FriendlyMessage = "A estrutura de banco necessária para esta funcionalidade ainda não está aplicada. Acesse /DatabaseReadiness para aplicar as migrations pendentes.";
     private const string ErrorStep = "DatabaseSchema";
     private const string MigrationScript = "database/apply_all_required_migrations.sql";
 
@@ -47,7 +47,7 @@ public sealed class DatabaseSchemaExceptionFilter : IExceptionFilter
             ? "A funcionalidade de Qualidade Documental foi ativada, mas as tabelas ainda não foram criadas."
             : string.IsNullOrWhiteSpace(schemaObject)
                 ? FriendlyMessage
-                : $"A estrutura {schemaObject} ainda não existe ou está desatualizada. Execute {MigrationScript} ou acesse /SchemaHealth/FixScript.";
+                : $"A estrutura {schemaObject} ainda não existe ou está desatualizada. Acesse /DatabaseReadiness para aplicar as migrations pendentes.";
 
         if (IsAjaxOrApi(context.HttpContext.Request))
         {
@@ -63,7 +63,8 @@ public sealed class DatabaseSchemaExceptionFilter : IExceptionFilter
                 action = actionName,
                 route = requestPath,
                 migration = MigrationScript,
-                schemaHealthUrl = "/SchemaHealth"
+                schemaHealthUrl = "/SchemaHealth",
+                databaseReadinessUrl = "/DatabaseReadiness"
             })
             {
                 StatusCode = StatusCodes.Status500InternalServerError
@@ -91,6 +92,7 @@ public sealed class DatabaseSchemaExceptionFilter : IExceptionFilter
                 ["Migration"] = MigrationScript,
                 ["SchemaObject"] = schemaObject,
                 ["SchemaHealthUrl"] = "/SchemaHealth",
+                ["DatabaseReadinessUrl"] = "/DatabaseReadiness",
                 ["CopyCommand"] = isDocumentQualitySchemaPending ? @"psql ""$DATABASE_URL"" -f database/apply_all_required_migrations.sql" : null,
                 ["Detail"] = _environment.IsDevelopment() ? pg.MessageText : null
             }
