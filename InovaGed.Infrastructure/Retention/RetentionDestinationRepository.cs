@@ -97,51 +97,61 @@ where d.tenant_id=@tenantId
 
     public async Task<IReadOnlyList<DestinationBatchRow>> ListBatchesAsync(Guid tenantId, CancellationToken ct)
     {
-        const string sql = @"
+        const string sql = """
 select
-  id as Id,
-  destination as Destination,
-  status as Status,
-  pcd_version_id as PcdVersionId,
-  created_at as CreatedAt,
-  created_by as CreatedBy,
-  executed_at as ExecutedAt,
-  executed_by as ExecutedBy
+  id as "Id",
+  coalesce(destination, 'ELIMINAR') as "Destination",
+  coalesce(status, 'OPEN') as "Status",
+  pcd_version_id as "PcdVersionId",
+  created_at as "CreatedAt",
+  created_by as "CreatedBy",
+  executed_at as "ExecutedAt",
+  executed_by as "ExecutedBy"
 from ged.retention_destination_batch
 where tenant_id=@tenantId
 order by created_at desc
-limit 200;";
+limit 200
+""";
 
         await using var conn = await _db.OpenAsync(ct);
-        var list = await conn.QueryAsync<DestinationBatchRow>(sql, new { tenantId });
-        return list.ToList();
+        var rows = await conn.QueryAsync<DestinationBatchDbRow>(new CommandDefinition(sql, new { tenantId }, cancellationToken: ct));
+        return rows.Select(x => new DestinationBatchRow(
+            x.Id,
+            string.IsNullOrWhiteSpace(x.Destination) ? "ELIMINAR" : x.Destination,
+            string.IsNullOrWhiteSpace(x.Status) ? "OPEN" : x.Status,
+            x.PcdVersionId, ToDateTimeOffsetRequired(x.CreatedAt), x.CreatedBy,
+            ToDateTimeOffset(x.ExecutedAt), x.ExecutedBy)).ToList();
     }
 
     public async Task<IReadOnlyList<DestinationItemRow>> GetBatchItemsAsync(Guid tenantId, Guid batchId, CancellationToken ct)
     {
         // ✅ Ajuste title/code se necessário
-        const string sql = @"
+        const string sql = """
 select
-  i.batch_id as BatchId,
-  i.document_id as DocumentId,
-  d.code as DocCode,
-  d.title as DocTitle,
-  i.classification_code as ClassificationCode,
-  i.classification_name as ClassificationName,
-  i.retention_basis_at as BasisAt,
-  i.retention_due_at as DueAt,
-  i.retention_status as RetentionStatus,
-  i.hold_active as HoldActive,
-  i.hold_reason as HoldReason
+  i.batch_id as "BatchId",
+  i.document_id as "DocumentId",
+  d.code as "DocCode",
+  d.title as "DocTitle",
+  i.classification_code as "ClassificationCode",
+  i.classification_name as "ClassificationName",
+  i.retention_basis_at as "BasisAt",
+  i.retention_due_at as "DueAt",
+  i.retention_status as "RetentionStatus",
+  coalesce(i.hold_active, false) as "HoldActive",
+  i.hold_reason as "HoldReason"
 from ged.retention_destination_item i
 join ged.document d
   on d.tenant_id=i.tenant_id and d.id=i.document_id
 where i.tenant_id=@tenantId and i.batch_id=@batchId
-order by i.retention_due_at nulls last, d.created_at desc;";
+order by i.retention_due_at nulls last, d.created_at desc
+""";
 
         await using var conn = await _db.OpenAsync(ct);
-        var rows = await conn.QueryAsync<DestinationItemRow>(sql, new { tenantId, batchId });
-        return rows.ToList();
+        var rows = await conn.QueryAsync<DestinationItemDbRow>(new CommandDefinition(sql, new { tenantId, batchId }, cancellationToken: ct));
+        return rows.Select(x => new DestinationItemRow(
+            x.BatchId, x.DocumentId, x.DocCode, x.DocTitle, x.ClassificationCode,
+            x.ClassificationName, ToDateTimeOffset(x.BasisAt), ToDateTimeOffset(x.DueAt),
+            x.RetentionStatus, x.HoldActive, x.HoldReason)).ToList();
     }
 
     public async Task<string> ExportBatchCsvAsync(Guid tenantId, Guid userId, Guid batchId, CancellationToken ct)
@@ -247,5 +257,44 @@ where tenant_id=@tenantId and id=@batchId;";
             _logger.LogError(ex, "ExecuteBatchAsync failed. Tenant={TenantId} Batch={BatchId}", tenantId, batchId);
             throw;
         }
+    }
+
+    private static DateTimeOffset? ToDateTimeOffset(DateTime? value)
+    {
+        if (!value.HasValue) return null;
+        var date = value.Value.Kind == DateTimeKind.Unspecified
+            ? DateTime.SpecifyKind(value.Value, DateTimeKind.Utc)
+            : value.Value;
+        return new DateTimeOffset(date);
+    }
+
+    private static DateTimeOffset ToDateTimeOffsetRequired(DateTime? value) =>
+        ToDateTimeOffset(value) ?? DateTimeOffset.UtcNow;
+
+    private sealed class DestinationBatchDbRow
+    {
+        public Guid Id { get; set; }
+        public string? Destination { get; set; }
+        public string? Status { get; set; }
+        public Guid? PcdVersionId { get; set; }
+        public DateTime? CreatedAt { get; set; }
+        public Guid? CreatedBy { get; set; }
+        public DateTime? ExecutedAt { get; set; }
+        public Guid? ExecutedBy { get; set; }
+    }
+
+    private sealed class DestinationItemDbRow
+    {
+        public Guid BatchId { get; set; }
+        public Guid DocumentId { get; set; }
+        public string? DocCode { get; set; }
+        public string? DocTitle { get; set; }
+        public string? ClassificationCode { get; set; }
+        public string? ClassificationName { get; set; }
+        public DateTime? BasisAt { get; set; }
+        public DateTime? DueAt { get; set; }
+        public string? RetentionStatus { get; set; }
+        public bool HoldActive { get; set; }
+        public string? HoldReason { get; set; }
     }
 }

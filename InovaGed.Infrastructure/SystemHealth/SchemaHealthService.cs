@@ -275,6 +275,10 @@ public sealed class SchemaHealthService : ISchemaHealthService
     public async Task<SchemaHealthReportDto> CheckAsync(CancellationToken ct)
     {
         var report = new SchemaHealthReportDto();
+        var requestCancellationToken = ct;
+        using var diagnosticTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        diagnosticTimeout.CancelAfter(TimeSpan.FromSeconds(15));
+        ct = diagnosticTimeout.Token;
 
         AddDiCheck<IPcdVersionResolver>(report, "RetentionDestinationRepository", "services.AddScoped<IPcdVersionResolver, PcdVersionResolver>()");
         AddDiCheck<IRetentionDestinationRepository>(report, "RetentionDestinationController", "services.AddScoped<IRetentionDestinationRepository, RetentionDestinationRepository>()");
@@ -453,13 +457,28 @@ order by applied_at desc
 limit 1;", cancellationToken: ct));
             }
         }
+        catch (OperationCanceledException) when (requestCancellationToken.IsCancellationRequested)
+        {
+            _logger.LogInformation("Diagnóstico de schema cancelado pela requisição.");
+            AddCheck(report, "GED_DIAGNOSTIC_CANCELLED", "Banco", "Conexão/diagnóstico", "Cancelamento", "Warning", false,
+                "Diagnóstico de schema temporariamente indisponível. Tente novamente.",
+                "Execute o diagnóstico novamente quando a requisição estiver ativa.");
+        }
+        catch (OperationCanceledException ex)
+        {
+            _logger.LogWarning(ex, "Diagnóstico de schema excedeu o tempo limite de 15 segundos.");
+            AddCheck(report, "GED_DIAGNOSTIC_TIMEOUT", "Banco", "Conexão/diagnóstico", "Timeout", "Warning", false,
+                "Diagnóstico de schema temporariamente indisponível. Tente novamente.",
+                "Tente novamente e verifique a latência das consultas de metadados do banco.");
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Falha ao executar diagnóstico de schema do banco.");
             AddCheck(report, "GED_DIAGNOSTIC_DATABASE", "Banco", "Conexão/diagnóstico", "Erro", "Critical", false, "Falha ao consultar metadados do banco.", "Verifique a connection string e permissões de information_schema/pg_catalog.");
         }
 
-        await EnrichFixesAsync(report, ct);
+        if (!requestCancellationToken.IsCancellationRequested && !diagnosticTimeout.IsCancellationRequested)
+            await EnrichFixesAsync(report, requestCancellationToken);
 
         report.IsHealthy = !report.Checks.Any(c => !c.Success && c.Severity == "Critical");
         var hasRecommendedFailures = report.Checks.Any(c => !c.Success && c.Severity == "Warning");

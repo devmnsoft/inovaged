@@ -23,15 +23,15 @@ public sealed class InstrumentVersionRepository
         // instrument_type no teu banco é enum ged.instrument_type ('PCD','TTD','POP')
         var sql = $"""
 select
-  v.id,
-  v.tenant_id,
-  v.instrument_type::text as instrument_type,
-  v.version_no,
-  {isPublishedExpr} as is_published,
-  {publishedAtExpr} as published_at,
-  {publishedByExpr} as published_by,
-  u.name as published_by_name,
-  {notesExpr} as notes
+  v.id as "Id",
+  v.tenant_id as "TenantId",
+  v.instrument_type::text as "InstrumentType",
+  v.version_no as "VersionNo",
+  {isPublishedExpr} as "IsPublished",
+  {publishedAtExpr} as "PublishedAt",
+  {publishedByExpr} as "PublishedBy",
+  u.name as "PublishedByName",
+  {notesExpr} as "Notes"
 from ged.instrument_version v
 left join ged.app_user u on u.id = {publishedByExpr}
 where v.tenant_id = @tenantId
@@ -40,7 +40,12 @@ where v.tenant_id = @tenantId
 order by v.version_no desc, {publishedAtExpr} desc nulls last
 """;
 
-        return await conn.QueryAsync<InstrumentVersionRow>(new CommandDefinition(sql, new { tenantId, instrumentType }, cancellationToken: ct));
+        var rows = await conn.QueryAsync<InstrumentVersionDbRow>(new CommandDefinition(sql, new { tenantId, instrumentType }, cancellationToken: ct));
+        return rows.Select(x => new InstrumentVersionRow(
+            x.Id, x.TenantId,
+            string.IsNullOrWhiteSpace(x.InstrumentType) ? instrumentType : x.InstrumentType,
+            x.VersionNo, x.IsPublished, ToDateTimeOffset(x.PublishedAt), x.PublishedBy,
+            x.PublishedByName, x.Notes)).ToList();
     }
 
     // Publica uma nova versão: "snapshot" do instrumento + itens (PCD/TTD/POP)
@@ -119,24 +124,27 @@ b as (
   from ged.classification_plan_version_item
   where tenant_id=@tenantId and version_id=@toVersionId and reg_status='A'
 )
-select 'ADDED' as change, b.*
+select 'ADDED' as "Change", b.code as "Code", b.title as "Title", b.parent_code as "ParentCode", b.sort_order as "SortOrder"
 from b left join a on a.code=b.code
 where a.code is null
 
 union all
-select 'REMOVED' as change, a.*
+select 'REMOVED' as "Change", a.code as "Code", a.title as "Title", a.parent_code as "ParentCode", a.sort_order as "SortOrder"
 from a left join b on b.code=a.code
 where b.code is null
 
 union all
-select 'UPDATED' as change, b.*
+select 'UPDATED' as "Change", b.code as "Code", b.title as "Title", b.parent_code as "ParentCode", b.sort_order as "SortOrder"
 from b join a on a.code=b.code
 where (a.title, a.parent_code, a.sort_order) is distinct from (b.title, b.parent_code, b.sort_order)
 
-order by change, code;";
+order by "Change", "Code";";
 
-        var rows = (await conn.QueryAsync<InstrumentDiffRow>(sql, new { tenantId, fromVersionId, toVersionId })).ToList();
-        return new InstrumentDiffResult(rows);
+        var rows = await conn.QueryAsync<InstrumentDiffDbRow>(new CommandDefinition(
+            sql, new { tenantId, fromVersionId, toVersionId }, cancellationToken: ct));
+        return new InstrumentDiffResult(rows.Select(x => new InstrumentDiffRow(
+            x.Change ?? string.Empty, x.Code ?? string.Empty, x.Title ?? string.Empty,
+            x.ParentCode, x.SortOrder)).ToList());
     }
 
     private static async Task<InstrumentVersionSchema> GetInstrumentVersionSchemaAsync(IDbConnection conn, CancellationToken ct)
@@ -152,6 +160,37 @@ where table_schema = 'ged'
     }
 
     private sealed record InstrumentVersionSchema(bool TableExists, bool HasIsPublished, bool HasPublishedAt, bool HasPublishedBy, bool HasNotes, bool HasRegStatus, bool HasRegDate);
+
+    private static DateTimeOffset? ToDateTimeOffset(DateTime? value)
+    {
+        if (!value.HasValue) return null;
+        var date = value.Value.Kind == DateTimeKind.Unspecified
+            ? DateTime.SpecifyKind(value.Value, DateTimeKind.Utc)
+            : value.Value;
+        return new DateTimeOffset(date);
+    }
+
+    private sealed class InstrumentVersionDbRow
+    {
+        public Guid Id { get; set; }
+        public Guid TenantId { get; set; }
+        public string? InstrumentType { get; set; }
+        public int VersionNo { get; set; }
+        public bool IsPublished { get; set; }
+        public DateTime? PublishedAt { get; set; }
+        public Guid? PublishedBy { get; set; }
+        public string? PublishedByName { get; set; }
+        public string? Notes { get; set; }
+    }
+
+    private sealed class InstrumentDiffDbRow
+    {
+        public string? Change { get; set; }
+        public string? Code { get; set; }
+        public string? Title { get; set; }
+        public string? ParentCode { get; set; }
+        public int SortOrder { get; set; }
+    }
 }
 
 public sealed record InstrumentVersionRow(
