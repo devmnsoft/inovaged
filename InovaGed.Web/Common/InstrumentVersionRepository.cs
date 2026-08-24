@@ -114,32 +114,67 @@ where p.tenant_id=@tenantId and p.reg_status='A';",
         using var conn = await _db.OpenAsync(ct);
 
         // Fluxo focado em classificação (PCD/TTD):
-        var sql = @"
+        const string sql = """
 with a as (
-  select code, title, parent_code, sort_order
-  from ged.classification_plan_version_item
-  where tenant_id=@tenantId and version_id=@fromVersionId and reg_status='A'
+    select
+        code,
+        title,
+        parent_code,
+        sort_order
+    from ged.classification_plan_version_item
+    where tenant_id = @tenantId
+      and version_id = @fromVersionId
+      and reg_status = 'A'
 ),
 b as (
-  select code, title, parent_code, sort_order
-  from ged.classification_plan_version_item
-  where tenant_id=@tenantId and version_id=@toVersionId and reg_status='A'
+    select
+        code,
+        title,
+        parent_code,
+        sort_order
+    from ged.classification_plan_version_item
+    where tenant_id = @tenantId
+      and version_id = @toVersionId
+      and reg_status = 'A'
 )
-select 'ADDED' as "Change", b.code as "Code", b.title as "Title", b.parent_code as "ParentCode", b.sort_order as "SortOrder"
-from b left join a on a.code=b.code
+select
+    'ADDED' as "Change",
+    b.code as "Code",
+    b.title as "Title",
+    b.parent_code as "ParentCode",
+    b.sort_order as "SortOrder"
+from b
+left join a on a.code = b.code
 where a.code is null
 
 union all
-select 'REMOVED' as "Change", a.code as "Code", a.title as "Title", a.parent_code as "ParentCode", a.sort_order as "SortOrder"
-from a left join b on b.code=a.code
+
+select
+    'REMOVED' as "Change",
+    a.code as "Code",
+    a.title as "Title",
+    a.parent_code as "ParentCode",
+    a.sort_order as "SortOrder"
+from a
+left join b on b.code = a.code
 where b.code is null
 
 union all
-select 'UPDATED' as "Change", b.code as "Code", b.title as "Title", b.parent_code as "ParentCode", b.sort_order as "SortOrder"
-from b join a on a.code=b.code
-where (a.title, a.parent_code, a.sort_order) is distinct from (b.title, b.parent_code, b.sort_order)
 
-order by "Change", "Code";";
+select
+    'UPDATED' as "Change",
+    b.code as "Code",
+    b.title as "Title",
+    b.parent_code as "ParentCode",
+    b.sort_order as "SortOrder"
+from b
+join a on a.code = b.code
+where (a.title, a.parent_code, a.sort_order)
+      is distinct from
+      (b.title, b.parent_code, b.sort_order)
+
+order by "Change", "Code"
+""";
 
         var rows = await conn.QueryAsync<InstrumentDiffDbRow>(new CommandDefinition(
             sql, new { tenantId, fromVersionId, toVersionId }, cancellationToken: ct));

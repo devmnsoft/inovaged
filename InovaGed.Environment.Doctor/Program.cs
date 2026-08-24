@@ -16,7 +16,7 @@ try
     var command = args.FirstOrDefault() ?? "check";
     if (command is "database-readiness" or "apply-required-migrations")
     {
-        var root = FindRoot(BclEnvironment.CurrentDirectory);
+        var repositoryRoot = FindRoot(BclEnvironment.CurrentDirectory);
         var hostBuilder = Host.CreateApplicationBuilder();
         hostBuilder.Configuration.AddConfiguration(Configuration());
         hostBuilder.Services.AddDatabaseModule(hostBuilder.Configuration);
