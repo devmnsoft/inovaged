@@ -44,7 +44,11 @@ public sealed class SystemIncidentService : ISystemIncidentService, IRouteHealth
                 limit 1
                 for update
                 """,
-                new { Signature = signature, command.TenantId },
+                new
+                {
+                    Signature = signature,
+                    command.TenantId
+                },
                 tx,
                 cancellationToken: ct));
 
@@ -63,7 +67,11 @@ public sealed class SystemIncidentService : ISystemIncidentService, IRouteHealth
                         correlation_id = coalesce(@CorrelationId, correlation_id)
                     where id = @IncidentId
                     """,
-                    new { IncidentId = incidentId, command.CorrelationId },
+                    new
+                    {
+                        IncidentId = incidentId,
+                        command.CorrelationId
+                    },
                     tx,
                     cancellationToken: ct));
         }
@@ -73,16 +81,46 @@ public sealed class SystemIncidentService : ISystemIncidentService, IRouteHealth
                 new CommandDefinition(
                     """
                     insert into ged.system_incident(
-                        tenant_id, correlation_id, incident_type, severity, signature_hash,
-                        title, message, technical_message, recommended_action, recommended_script,
-                        controller, action, path, http_method, sql_state, database_object,
-                        exception_type, stack_trace, payload_json
+                        tenant_id,
+                        correlation_id,
+                        incident_type,
+                        severity,
+                        signature_hash,
+                        title,
+                        message,
+                        technical_message,
+                        recommended_action,
+                        recommended_script,
+                        controller,
+                        action,
+                        path,
+                        http_method,
+                        sql_state,
+                        database_object,
+                        exception_type,
+                        stack_trace,
+                        payload_json
                     )
                     values(
-                        @TenantId, @CorrelationId, @IncidentType, @Severity, @Signature,
-                        @Title, @Message, @TechnicalMessage, @RecommendedAction, @RecommendedScript,
-                        @Controller, @Action, @Path, @HttpMethod, @SqlState, @DatabaseObject,
-                        @ExceptionType, @StackTrace, cast(@PayloadJson as jsonb)
+                        @TenantId,
+                        @CorrelationId,
+                        @IncidentType,
+                        @Severity,
+                        @Signature,
+                        @Title,
+                        @Message,
+                        @TechnicalMessage,
+                        @RecommendedAction,
+                        @RecommendedScript,
+                        @Controller,
+                        @Action,
+                        @Path,
+                        @HttpMethod,
+                        @SqlState,
+                        @DatabaseObject,
+                        @ExceptionType,
+                        @StackTrace,
+                        cast(@PayloadJson as jsonb)
                     )
                     returning id
                     """,
@@ -246,7 +284,13 @@ public sealed class SystemIncidentService : ISystemIncidentService, IRouteHealth
                     resolution_notes = @Notes
                 where id = @IncidentId
                 """,
-                new { IncidentId = incidentId, UserId = userId, Status = status, Notes = notes },
+                new
+                {
+                    IncidentId = incidentId,
+                    UserId = userId,
+                    Status = status,
+                    Notes = notes
+                },
                 tx,
                 cancellationToken: ct));
 
@@ -254,10 +298,16 @@ public sealed class SystemIncidentService : ISystemIncidentService, IRouteHealth
             new CommandDefinition(
                 """
                 insert into ged.system_incident_event(
-                    incident_id, event_type, event_message, user_id
+                    incident_id,
+                    event_type,
+                    event_message,
+                    user_id
                 )
                 values(
-                    @IncidentId, @EventType, @Message, @UserId
+                    @IncidentId,
+                    @EventType,
+                    @Message,
+                    @UserId
                 )
                 """,
                 new
@@ -280,12 +330,26 @@ public sealed class SystemIncidentService : ISystemIncidentService, IRouteHealth
             new CommandDefinition(
                 """
                 insert into ged.route_health_snapshot(
-                    route_path, http_method, expected_status, actual_status, success,
-                    duration_ms, error_message, correlation_id, payload_json
+                    route_path,
+                    http_method,
+                    expected_status,
+                    actual_status,
+                    success,
+                    duration_ms,
+                    error_message,
+                    correlation_id,
+                    payload_json
                 )
                 values(
-                    @RoutePath, @HttpMethod, @ExpectedStatus, @ActualStatus, @Success,
-                    @DurationMs, @ErrorMessage, @CorrelationId, cast(@PayloadJson as jsonb)
+                    @RoutePath,
+                    @HttpMethod,
+                    @ExpectedStatus,
+                    @ActualStatus,
+                    @Success,
+                    @DurationMs,
+                    @ErrorMessage,
+                    @CorrelationId,
+                    cast(@PayloadJson as jsonb)
                 )
                 """,
                 new
