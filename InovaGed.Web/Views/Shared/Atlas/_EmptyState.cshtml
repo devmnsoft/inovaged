@@ -1,0 +1,10 @@
+@model InovaGed.Web.Models.Atlas.AtlasDataStateVm
+@{
+    var state = Model with
+    {
+        Title = string.IsNullOrWhiteSpace(Model.Title) ? "Nenhum registro encontrado" : Model.Title,
+        Message = string.IsNullOrWhiteSpace(Model.Message) ? "Quando houver dados disponíveis, eles aparecerão nesta área." : Model.Message,
+        Icon = string.IsNullOrWhiteSpace(Model.Icon) ? "inbox" : Model.Icon
+    };
+}
+<partial name="Atlas/_DataState" model="state" />
