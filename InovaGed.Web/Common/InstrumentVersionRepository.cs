@@ -1,5 +1,6 @@
 ﻿using Dapper;
 using InovaGed.Application.Common.Database;
+using InovaGed.Infrastructure.Common.Dapper;
 using Npgsql;
 using System.Data;
 
@@ -44,7 +45,7 @@ order by v.version_no desc, {publishedAtExpr} desc nulls last
         return rows.Select(x => new InstrumentVersionRow(
             x.Id, x.TenantId,
             string.IsNullOrWhiteSpace(x.InstrumentType) ? instrumentType : x.InstrumentType,
-            x.VersionNo, x.IsPublished, ToDateTimeOffset(x.PublishedAt), x.PublishedBy,
+            x.VersionNo, x.IsPublished, DapperValueConverters.ToDateTimeOffset(x.PublishedAt), x.PublishedBy,
             x.PublishedByName, x.Notes)).ToList();
     }
 
@@ -160,15 +161,6 @@ where table_schema = 'ged'
     }
 
     private sealed record InstrumentVersionSchema(bool TableExists, bool HasIsPublished, bool HasPublishedAt, bool HasPublishedBy, bool HasNotes, bool HasRegStatus, bool HasRegDate);
-
-    private static DateTimeOffset? ToDateTimeOffset(DateTime? value)
-    {
-        if (!value.HasValue) return null;
-        var date = value.Value.Kind == DateTimeKind.Unspecified
-            ? DateTime.SpecifyKind(value.Value, DateTimeKind.Utc)
-            : value.Value;
-        return new DateTimeOffset(date);
-    }
 
     private sealed class InstrumentVersionDbRow
     {

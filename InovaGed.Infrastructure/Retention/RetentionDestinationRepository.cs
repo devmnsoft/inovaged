@@ -2,6 +2,7 @@
 using Dapper;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Retention;
+using InovaGed.Infrastructure.Common.Dapper;
 using Microsoft.Extensions.Logging;
 
 namespace InovaGed.Infrastructure.Retention;
@@ -119,8 +120,8 @@ limit 200
             x.Id,
             string.IsNullOrWhiteSpace(x.Destination) ? "ELIMINAR" : x.Destination,
             string.IsNullOrWhiteSpace(x.Status) ? "OPEN" : x.Status,
-            x.PcdVersionId, ToDateTimeOffsetRequired(x.CreatedAt), x.CreatedBy,
-            ToDateTimeOffset(x.ExecutedAt), x.ExecutedBy)).ToList();
+            x.PcdVersionId, DapperValueConverters.ToDateTimeOffsetRequired(x.CreatedAt), x.CreatedBy,
+            DapperValueConverters.ToDateTimeOffset(x.ExecutedAt), x.ExecutedBy)).ToList();
     }
 
     public async Task<IReadOnlyList<DestinationItemRow>> GetBatchItemsAsync(Guid tenantId, Guid batchId, CancellationToken ct)
@@ -150,7 +151,7 @@ order by i.retention_due_at nulls last, d.created_at desc
         var rows = await conn.QueryAsync<DestinationItemDbRow>(new CommandDefinition(sql, new { tenantId, batchId }, cancellationToken: ct));
         return rows.Select(x => new DestinationItemRow(
             x.BatchId, x.DocumentId, x.DocCode, x.DocTitle, x.ClassificationCode,
-            x.ClassificationName, ToDateTimeOffset(x.BasisAt), ToDateTimeOffset(x.DueAt),
+            x.ClassificationName, DapperValueConverters.ToDateTimeOffset(x.BasisAt), DapperValueConverters.ToDateTimeOffset(x.DueAt),
             x.RetentionStatus, x.HoldActive, x.HoldReason)).ToList();
     }
 
@@ -258,18 +259,6 @@ where tenant_id=@tenantId and id=@batchId;";
             throw;
         }
     }
-
-    private static DateTimeOffset? ToDateTimeOffset(DateTime? value)
-    {
-        if (!value.HasValue) return null;
-        var date = value.Value.Kind == DateTimeKind.Unspecified
-            ? DateTime.SpecifyKind(value.Value, DateTimeKind.Utc)
-            : value.Value;
-        return new DateTimeOffset(date);
-    }
-
-    private static DateTimeOffset ToDateTimeOffsetRequired(DateTime? value) =>
-        ToDateTimeOffset(value) ?? DateTimeOffset.UtcNow;
 
     private sealed class DestinationBatchDbRow
     {
