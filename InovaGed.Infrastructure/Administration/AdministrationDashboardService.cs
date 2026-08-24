@@ -33,7 +33,32 @@ public sealed class AdministrationDashboardService : IAdministrationDashboardSer
         return new(metrics, rec);
     }
     public async Task<IReadOnlyList<TenantSecurityConfiguration>> GetSecurityConfigurationsAsync(Guid? tenantId, CancellationToken ct = default)
-    { await using var c = await _db.OpenAsync(ct); if (!await Table(c,"tenant_security_configuration",ct)) return Array.Empty<TenantSecurityConfiguration>(); return (await c.QueryAsync<TenantSecurityConfiguration>(new CommandDefinition("select tenant_id TenantId, permission_mode PermissionMode, changed_at ChangedAt, changed_by ChangedBy, change_reason ChangeReason, reg_status RegStatus from ged.tenant_security_configuration where (@tenantId is null or tenant_id=@tenantId) order by changed_at desc", new{tenantId}, cancellationToken:ct))).ToList(); }
+    {
+        await using var c = await _db.OpenAsync(ct);
+        if (!await Table(c,"tenant_security_configuration",ct)) return Array.Empty<TenantSecurityConfiguration>();
+        const string sql = """
+select
+    tenant_id as "TenantId",
+    coalesce(permission_mode::text, 'LEGACY') as "PermissionMode",
+    changed_at as "ChangedAt",
+    changed_by::text as "ChangedBy",
+    change_reason as "ChangeReason",
+    coalesce(reg_status::text, 'A') as "RegStatus"
+from ged.tenant_security_configuration
+where (@tenantId is null or tenant_id=@tenantId)
+order by changed_at desc
+""";
+        var rows = await c.QueryAsync<TenantSecurityConfigurationRow>(new CommandDefinition(sql, new { tenantId }, cancellationToken:ct));
+        return rows.Select(x => new TenantSecurityConfiguration(
+            TenantId: x.TenantId,
+            PermissionMode: ParsePermissionMode(x.PermissionMode),
+            ChangedAt: x.ChangedAt.HasValue
+                ? new DateTimeOffset(DateTime.SpecifyKind(x.ChangedAt.Value, DateTimeKind.Utc))
+                : DateTimeOffset.MinValue,
+            ChangedBy: x.ChangedBy,
+            ChangeReason: x.ChangeReason,
+            RegStatus: string.IsNullOrWhiteSpace(x.RegStatus) ? "A" : x.RegStatus!)).ToList();
+    }
     public async Task<IReadOnlyList<PermissionCatalogItem>> GetPermissionCatalogAsync(string? search, CancellationToken ct = default) { await using var c=await _db.OpenAsync(ct); if(!await Table(c,"permission",ct)) return Array.Empty<PermissionCatalogItem>(); var status=BuildStatusExpression(await GetAdminTableSchemaAsync(c,"permission",ct)); return (await c.QueryAsync<PermissionCatalogItem>(new CommandDefinition($"select code Code, coalesce(description,code) Description, coalesce(module,'Geral') Module, '' Roles, 0 UsersAffected, {status} Status, 'Banco' Origin, null::timestamptz LastChangedAt from ged.permission where (@search is null or code ilike '%'||@search||'%' or description ilike '%'||@search||'%') order by module, code limit 200", new{search}, cancellationToken:ct))).ToList(); }
     public async Task<IdentityMigrationSummary> GetIdentityMigrationSummaryAsync(Guid? tenantId, CancellationToken ct = default) { await using var c=await _db.OpenAsync(ct); var schema=await GetAdminTableSchemaAsync(c,"app_user",ct); var total=await SafeInt(c,"app_user",schema.HasDeletedAtUtc?"deleted_at_utc is null":schema.HasDeletedAt?"deleted_at is null":"1=1",tenantId,ct); var migrated=await SafeInt(c,"user_identity_document","document_type='CPF'",tenantId,ct); return new(total,0,migrated,0,Math.Max(0,total-migrated),0,0,Math.Max(0,total-migrated)); }
     public Task<IReadOnlyList<AdministrationListItem>> GetUsersAsync(Guid? t,CancellationToken ct=default)=>List("app_user",t,ct);
@@ -50,7 +75,34 @@ public sealed class AdministrationDashboardService : IAdministrationDashboardSer
     private async Task<AdministrationMetric> CountBlockedUsersAsync(NpgsqlConnection c,Guid? tenantId,CancellationToken ct){ if(!await Table(c,"app_user",ct)) return MissingMetric("blocked_users","Usuários bloqueados","app_user","bi-person-lock"); var s=await GetAdminTableSchemaAsync(c,"app_user",ct); if(!s.HasIsLocked) return new("blocked_users","Usuários bloqueados","Não disponível",AdministrationHealthState.Desconhecido,"Coluna is_locked ausente em ged.app_user.","Execute as migrations administrativas ou use schema compatível.","bi-person-lock"); var f=new List<string>{"coalesce(is_locked,false)=true"}; if(s.HasDeletedAtUtc) f.Add("deleted_at_utc is null"); else if(s.HasDeletedAt) f.Add("deleted_at is null"); var v=await SafeInt(c,"app_user",string.Join(" and ",f),tenantId,ct); return new("blocked_users","Usuários bloqueados",v.ToString(),AdministrationHealthState.Saudavel,null,null,"bi-person-lock"); }
     private async Task<AdministrationMetric> CountActiveTenantsAsync(NpgsqlConnection c,CancellationToken ct){ if(!await Table(c,"tenant",ct)) return MissingMetric("active_tenants","Tenants ativos","tenant","bi-building"); var s=await GetAdminTableSchemaAsync(c,"tenant",ct); var f=s.HasIsActive?"is_active=true":s.HasRegStatus?"coalesce(reg_status,'A')='A'":"1=1"; var v=await SafeInt(c,"tenant",f,null,ct); return new("active_tenants","Tenants ativos",v.ToString(),AdministrationHealthState.Saudavel,null,null,"bi-building"); }
     private async Task<int> SafeInt(NpgsqlConnection c,string table,string where,Guid? tenantId,CancellationToken ct){ if(!AllowedAdministrationTables.Contains(table)) throw new InvalidOperationException($"Tabela administrativa não permitida: {table}"); var hasTenant=await Column(c,table,"tenant_id",ct); return await c.ExecuteScalarAsync<int>(new CommandDefinition($"select count(*) from ged.{table} where {where} {(tenantId.HasValue&&hasTenant?" and tenant_id=@tenantId":"")}",new{tenantId},cancellationToken:ct)); }
-    private async Task<IReadOnlyList<AdministrationListItem>> List(string table,Guid? tenantId,CancellationToken ct){ await using var c=await _db.OpenAsync(ct); if(!await Table(c,table,ct)) return Array.Empty<AdministrationListItem>(); var s=await GetAdminTableSchemaAsync(c,table,ct); var filter=tenantId.HasValue&&s.HasTenantId?"and tenant_id=@tenantId":""; var sql=$"""select {BuildNameExpression(s)} as "Name", {BuildStatusExpression(s)} as "Status", {BuildDetailExpression(s)} as "Detail", {(s.HasTenantId?"tenant_id::text":"null")} as "Tenant", {BuildLastActivityExpression(s)} as "LastActivity" from ged.{table} where 1=1 {filter} limit 200"""; return (await c.QueryAsync<AdministrationListItem>(new CommandDefinition(sql,new{tenantId},cancellationToken:ct))).ToList(); }
+    private async Task<IReadOnlyList<AdministrationListItem>> List(string table,Guid? tenantId,CancellationToken ct)
+    {
+        await using var c=await _db.OpenAsync(ct);
+        if(!await Table(c,table,ct)) return Array.Empty<AdministrationListItem>();
+        var s=await GetAdminTableSchemaAsync(c,table,ct);
+        var filter=tenantId.HasValue&&s.HasTenantId?"and tenant_id=@tenantId":"";
+        var sql=$"""
+select
+    {BuildNameExpression(s)} as "Name",
+    {BuildStatusExpression(s)} as "Status",
+    {BuildDetailExpression(s)} as "Detail",
+    {(s.HasTenantId?"tenant_id::text":"null::text")} as "Tenant",
+    {BuildLastActivityExpression(s)} as "LastActivity"
+from ged.{table}
+where 1=1
+{filter}
+limit 200
+""";
+        var rows = await c.QueryAsync<AdministrationListItemRow>(new CommandDefinition(sql,new{tenantId},cancellationToken:ct));
+        return rows.Select(x => new AdministrationListItem(
+            Name: string.IsNullOrWhiteSpace(x.Name) ? "Sem identificação" : x.Name!,
+            Status: string.IsNullOrWhiteSpace(x.Status) ? "ATIVO" : x.Status!,
+            Detail: string.IsNullOrWhiteSpace(x.Detail) ? "Sem detalhe" : x.Detail!,
+            Tenant: x.Tenant,
+            LastActivity: x.LastActivity.HasValue
+                ? new DateTimeOffset(DateTime.SpecifyKind(x.LastActivity.Value, DateTimeKind.Utc))
+                : null)).ToList();
+    }
     private static Task<bool> Table(NpgsqlConnection c,string t,CancellationToken ct)=>c.ExecuteScalarAsync<bool>(new CommandDefinition("select to_regclass(@n) is not null",new{n=$"ged.{t}"},cancellationToken:ct));
     private static Task<bool> Column(NpgsqlConnection c,string t,string col,CancellationToken ct)=>c.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from information_schema.columns where table_schema='ged' and table_name=@t and column_name=@col)",new{t,col},cancellationToken:ct));
     private async Task<AdminTableSchema> GetAdminTableSchemaAsync(NpgsqlConnection c,string table,CancellationToken ct)
@@ -63,7 +115,25 @@ public sealed class AdministrationDashboardService : IAdministrationDashboardSer
     private static string BuildNameExpression(AdminTableSchema s){var p=new List<string>();if(s.HasName)p.Add("nullif(name::text,'')");if(s.HasUserName)p.Add("nullif(user_name::text,'')");if(s.HasEmail)p.Add("nullif(email::text,'')");if(s.HasCode)p.Add("nullif(code::text,'')");if(s.HasId)p.Add("id::text");return p.Count==0?"'Sem identificação'":$"coalesce({string.Join(", ",p)}, 'Sem identificação')";}
     private static string BuildStatusExpression(AdminTableSchema s)=>s.HasRegStatus?"coalesce(reg_status::text,'A')":s.HasStatus?"coalesce(status::text,'ATIVO')":s.HasIsActive?"case when is_active then 'ATIVO' else 'INATIVO' end":s.HasDeletedAtUtc?"case when deleted_at_utc is null then 'ATIVO' else 'EXCLUÍDO' end":s.HasDeletedAt?"case when deleted_at is null then 'ATIVO' else 'EXCLUÍDO' end":"'ATIVO'";
     private static string BuildDetailExpression(AdminTableSchema s){var p=new List<string>();if(s.HasEmail)p.Add("nullif(email::text,'')");if(s.HasCode)p.Add("nullif(code::text,'')");if(s.HasUserName)p.Add("nullif(user_name::text,'')");if(s.HasId)p.Add("id::text");return p.Count==0?"'Sem detalhe'":$"coalesce({string.Join(", ",p)}, 'Sem detalhe')";}
-    private static string BuildLastActivityExpression(AdminTableSchema s)=>s.HasUpdatedAt?"updated_at":s.HasCreatedAt?"created_at":"null::timestamptz";
+    private static string BuildLastActivityExpression(AdminTableSchema s)=>s.HasUpdatedAt?"updated_at":s.HasCreatedAt?"created_at":"null::timestamp";
+    private static PermissionMode ParsePermissionMode(string? value)=>Enum.TryParse<PermissionMode>(value,ignoreCase:true,out var mode)?mode:PermissionMode.LEGACY;
+    private sealed class AdministrationListItemRow
+    {
+        public string? Name { get; set; }
+        public string? Status { get; set; }
+        public string? Detail { get; set; }
+        public string? Tenant { get; set; }
+        public DateTime? LastActivity { get; set; }
+    }
+    private sealed class TenantSecurityConfigurationRow
+    {
+        public Guid TenantId { get; set; }
+        public string? PermissionMode { get; set; }
+        public DateTime? ChangedAt { get; set; }
+        public string? ChangedBy { get; set; }
+        public string? ChangeReason { get; set; }
+        public string? RegStatus { get; set; }
+    }
     private sealed record AdminTableSchema(bool HasTenantId,bool HasRegStatus,bool HasStatus,bool HasIsActive,bool HasDeletedAtUtc,bool HasDeletedAt,bool HasIsLocked,bool HasName,bool HasUserName,bool HasEmail,bool HasCode,bool HasId,bool HasCreatedAt,bool HasUpdatedAt);
     private static readonly HashSet<string> AllowedAdministrationTables=new(StringComparer.OrdinalIgnoreCase){"app_user","tenant","app_role","permission","audit_logs","permission_evaluation_log","worker_execution_status","ged_processing_jobs","schema_migration_history","user_identity_document"};
     private AdministrationMetric StorageMetric(){var p=_cfg["Storage:Local:RootPath"]; if(string.IsNullOrWhiteSpace(p)) return new("storage","Estado do storage","Não configurado",AdministrationHealthState.NaoConfigurado,"Storage:Local:RootPath ausente.","Configure por provedor seguro.","bi-hdd"); return new("storage","Estado do storage",Directory.Exists(p)?"Disponível":"Indisponível",Directory.Exists(p)?AdministrationHealthState.Saudavel:AdministrationHealthState.Indisponivel,null,"Validar volume e permissões.","bi-hdd");}
