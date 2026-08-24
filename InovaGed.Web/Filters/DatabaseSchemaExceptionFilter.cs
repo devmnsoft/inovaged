@@ -2,10 +2,11 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Controllers;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Npgsql;
+using InovaGed.Application.SystemHealth.Incidents;
 
 namespace InovaGed.Web.Filters;
 
-public sealed class DatabaseSchemaExceptionFilter : IExceptionFilter
+public sealed class DatabaseSchemaExceptionFilter : IAsyncExceptionFilter
 {
     private const string FriendlyMessage = "A estrutura de banco necessária para esta funcionalidade ainda não está aplicada. Acesse /DatabaseReadiness para aplicar as migrations pendentes.";
     private const string ErrorStep = "DatabaseSchema";
@@ -13,16 +14,22 @@ public sealed class DatabaseSchemaExceptionFilter : IExceptionFilter
 
     private readonly ILogger<DatabaseSchemaExceptionFilter> _logger;
     private readonly IHostEnvironment _environment;
+    private readonly IExceptionClassifier _classifier;
+    private readonly ISystemIncidentService _incidents;
 
     public DatabaseSchemaExceptionFilter(
         ILogger<DatabaseSchemaExceptionFilter> logger,
-        IHostEnvironment environment)
+        IHostEnvironment environment,
+        IExceptionClassifier classifier,
+        ISystemIncidentService incidents)
     {
         _logger = logger;
         _environment = environment;
+        _classifier = classifier;
+        _incidents = incidents;
     }
 
-    public void OnException(ExceptionContext context)
+    public async Task OnExceptionAsync(ExceptionContext context)
     {
         if (FindSchemaException(context.Exception) is not { } pg)
             return;
@@ -30,6 +37,22 @@ public sealed class DatabaseSchemaExceptionFilter : IExceptionFilter
         var (controllerName, actionName) = GetControllerAction(context);
         var correlationId = context.HttpContext.TraceIdentifier;
         var requestPath = context.HttpContext.Request.Path.Value;
+        var classification = _classifier.Classify(pg, context.HttpContext);
+        try
+        {
+            await _incidents.RegisterAsync(new(
+                classification.IncidentType, classification.Severity, classification.Title,
+                Message: "A estrutura de banco está desatualizada.", TechnicalMessage: pg.MessageText,
+                RecommendedAction: classification.RecommendedAction, RecommendedScript: MigrationScript,
+                CorrelationId: correlationId, Controller: controllerName, Action: actionName, Path: requestPath,
+                HttpMethod: context.HttpContext.Request.Method, SqlState: pg.SqlState,
+                DatabaseObject: classification.DatabaseObject, ExceptionType: pg.GetType().FullName,
+                StackTrace: pg.StackTrace), context.HttpContext.RequestAborted);
+        }
+        catch (Exception registrationError)
+        {
+            _logger.LogError(registrationError, "Não foi possível persistir o incidente de schema. CorrelationId={CorrelationId}", correlationId);
+        }
 
         _logger.LogError(
             pg,

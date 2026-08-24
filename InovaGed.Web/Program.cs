@@ -700,6 +700,7 @@ app.UseStaticFiles();
 
 app.UseRouting();
 app.UseMiddleware<CorrelationIdMiddleware>();
+app.UseMiddleware<IncidentCaptureMiddleware>();
 app.UseMiddleware<RequestTelemetryMiddleware>();
 
 app.UseAuthentication();
