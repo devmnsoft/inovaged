@@ -1,5 +1,5 @@
 @model InovaGed.Web.Models.Labels.LocDeskLabelRenderModel
 @{ Layout = null; }
 <!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Etiqueta LocDesk de Pasta</title><link rel="stylesheet" href="~/css/locdesk-labels.css"></head>
-<body class="locdesk-print-body"><div class="print-toolbar"><a asp-action="LocDesk">Voltar para edição</a><button type="button" onclick="window.print()">Imprimir</button><span class="print-status">@(Model.PrintRegistered ? "Impressão registrada com sucesso." : "Pré-visualização — ainda não registrada")</span></div>
+<body class="locdesk-print-body"><div class="print-toolbar"><a asp-action="LocDesk">Voltar para edição</a><button type="button" onclick="window.print()">Imprimir</button><span class="print-mode-note">Modo impressão: menus e controles serão ocultados.</span><span class="print-status">@(Model.PrintRegistered ? "Impressão registrada com sucesso." : "Pré-visualização — ainda não registrada")</span></div>
 <main class="print-sheet"><partial name="_LocDeskLabel" model="Model" /></main></body></html>

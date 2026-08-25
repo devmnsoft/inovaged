@@ -5,3 +5,4 @@
 .locdesk-label-header{background:var(--locdesk-secondary,#6fc7c8);border-color:var(--locdesk-border,#111)}
 .locdesk-title-area h1,.locdesk-fields dt{color:var(--locdesk-primary,#008a9a)}
 .locdesk-red{color:var(--locdesk-accent,#d60000)!important}
+.print-mode-note{padding:.35rem .65rem;border:1px solid rgba(255,255,255,.25);border-radius:99px;font-size:.78rem;color:#d9f4f7}.locdesk-label{box-shadow:0 16px 42px rgba(15,23,42,.16)}@media print{.print-mode-note{display:none!important}.locdesk-label{box-shadow:none}.locdesk-box-sheet{grid-template-columns:1fr 1fr}}

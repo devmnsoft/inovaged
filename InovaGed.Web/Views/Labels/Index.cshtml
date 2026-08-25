@@ -1,45 +1,14 @@
-@{
-    ViewData["Title"] = "Central de Impressão de Etiquetas";
-    ViewData["Subtitle"] = "Identificação, impressão e rastreabilidade do acervo";
-    ViewData["WorkspaceVariant"] = "wide";
-    var cards = new List<(string Icon, string Title, string Description, string Action, string Label, string? Url)>
-    {
-        ("box", "Etiqueta de caixa", "Selecione uma caixa física e use o padrão institucional ou um modelo personalizado.", "Boxes", "Selecionar caixa", null),
-        ("document", "Etiqueta de documento ou pasta", "Identifique documentos e pastas com QR Code e histórico auditável.", "Documents", "Selecionar documento", null),
-        ("print", "Impressão em lote", "Monte um lote, defina o modo de saída e registre cada etiqueta.", "BatchPrint", "Montar lote", null),
-        ("tag", "Fila de impressão", "Revise, gere o arquivo e acompanhe cada trabalho operacional.", "PrintQueue", "Abrir fila", null),
-        ("settings", "Calibração", "Ajuste margens, escala e dimensões para cada impressora.", "Calibration", "Calibrar", null),
-        ("history", "Histórico de impressões", "Consulte usuário, modelo, reimpressões, hash e snapshot.", "History", "Ver histórico", null),
-        ("search", "Rastreio de etiquetas", "Leia QR Codes, faça inventários e trate divergências.", "", "Abrir rastreio", "/LabelTracking"),
-        ("chart", "Inteligência de etiquetas", "Monitore KPIs, alertas, divergências e cadeia de custódia.", "", "Ver painel", "/LabelIntelligence")
-    };
-}
-
-<div class="ig-page ig-fade-in">
-    <section class="ig-page-hero" aria-labelledby="labels-title">
-        <div>
-            <span class="ig-eyebrow"><app-icon name="tag" size="16" decorative="true" /> InovaGED · rastreabilidade</span>
-            <h1 id="labels-title">Central de Etiquetas</h1>
-            <p>Crie, imprima e acompanhe identificações físicas com QR Code e cadeia de custódia.</p>
-        </div>
-        <a class="ig-button ig-button--primary" asp-action="PrintWizard"><app-icon name="print" size="18" decorative="true" /> Iniciar impressão</a>
-    </section>
-
-    <div class="ig-alert ig-alert--warning" role="status">
-        <span class="ig-alert__icon"><app-icon name="warning" size="20" decorative="true" /></span>
-        <div><strong>Valide o saneamento antes de imprimir</strong><p>Itens com divergência crítica exigem confirmação administrativa para preservar a rastreabilidade.</p></div>
-        <a class="ig-button ig-button--secondary" href="/ArchiveReconciliation/Issues">Ver inconsistências</a>
-    </div>
-
-    <section class="ig-action-grid" aria-label="Recursos de etiquetas">
-        @foreach (var card in cards)
-        {
-            <article class="ig-card ig-action-card">
-                <span class="ig-card__icon"><app-icon name="@card.Icon" size="22" decorative="true" /></span>
-                <h2>@card.Title</h2><p>@card.Description</p>
-                @if (card.Url is not null) { <a class="ig-link" href="@card.Url">@card.Label <app-icon name="arrow-right" size="16" decorative="true" /></a> }
-                else { <a class="ig-link" asp-action="@card.Action">@card.Label <app-icon name="arrow-right" size="16" decorative="true" /></a> }
-            </article>
-        }
-    </section>
-</div>
+@{ ViewData["Title"]="Central de Etiquetas"; ViewData["WorkspaceVariant"]="wide";
+var cards = new List<(string Icon,string Title,string Description,string Url,string Action,string Status)> {
+("print","Assistente de Impressão","Fluxo guiado para escolher tipo, modelo, dados e saída.",Url.Action("PrintWizard")!,"Iniciar impressão","Operacional"),
+("location","Etiqueta LocDesk","Prepare etiquetas personalizadas de caixas, pastas e documentos.",Url.Action("LocDesk")!,"Criar LocDesk","Homologado"),
+("history","Histórico de Impressões","Audite emissões, usuários, modelos e reimpressões.",Url.Action("History")!,"Consultar histórico","Auditável"),
+("box","Etiquetas de Caixas","Selecione caixas físicas e gere identificações rastreáveis.",Url.Action("Boxes")!,"Selecionar caixa","Disponível"),
+("document","Etiquetas de Documentos","Identifique documentos e pastas com QR Code.",Url.Action("Documents")!,"Selecionar documento","Disponível"),
+("qr-code","Rastreio QR","Localize a origem e acompanhe a cadeia de custódia.","/LabelTracking","Abrir rastreio","Online"),
+("tag","Modelos de Etiqueta","Ajuste modelos, dimensões e calibração de impressão.",Url.Action("Calibration")!,"Gerenciar modelos","Configurável"),
+("activity","Fila de Impressão","Acompanhe trabalhos, prévias e arquivos gerados.",Url.Action("PrintQueue")!,"Abrir fila","Monitorada") }; }
+@section Styles { <link rel="stylesheet" href="~/css/labels-premium.css" asp-append-version="true" /> }
+<div class="ig-label-page ig-fade-in"><section class="ig-page-hero" aria-labelledby="labels-title"><div><span class="ig-eyebrow"><app-icon name="tag" size="16" decorative="true" /> Operação e rastreabilidade</span><h1 id="labels-title">Central de Etiquetas</h1><p>Imprima, rastreie e audite etiquetas de caixas, documentos e padrões personalizados.</p></div><a class="ig-button ig-button--primary" asp-action="PrintWizard"><app-icon name="print" size="18" decorative="true" /> Iniciar impressão</a></section>
+<partial name="Atlas/_PremiumAlert" view-data='new Microsoft.AspNetCore.Mvc.ViewFeatures.ViewDataDictionary(ViewData) { { "Title", "Validação antes da impressão" }, { "Message", "Confirme os dados e a escala da pré-visualização. Toda reimpressão exige justificativa para preservar a auditoria." }, { "Tone", "info" } }' />
+<section class="ig-label-operation-grid" aria-label="Operações de etiquetas">@foreach(var card in cards){<partial name="Atlas/_LabelOperationCard" view-data='new Microsoft.AspNetCore.Mvc.ViewFeatures.ViewDataDictionary(ViewData) { { "Icon", card.Icon }, { "Title", card.Title }, { "Description", card.Description }, { "Url", card.Url }, { "Action", card.Action }, { "Status", card.Status } }' />}</section></div>

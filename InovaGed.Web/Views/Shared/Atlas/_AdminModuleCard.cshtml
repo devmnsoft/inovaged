@@ -1,0 +1,6 @@
+@model InovaGed.Web.Models.Administration.AdministrationActionVM
+<article class="ig-admin-module-card">
+    <span class="ig-admin-module-card__icon"><i class="bi @Model.Icon" aria-hidden="true"></i></span>
+    <div class="ig-admin-module-card__body"><div class="ig-admin-module-card__top"><h3>@Model.Title</h3><span class="ig-status-badge ig-status-badge--ok">Ativo</span></div><p>@Model.Description</p><small>Disponível conforme as permissões do seu perfil.</small></div>
+    <a class="ig-button ig-button--secondary" asp-controller="@Model.Controller" asp-action="@Model.Action">Abrir <span class="visually-hidden">@Model.Title</span><i class="bi bi-arrow-right" aria-hidden="true"></i></a>
+</article>

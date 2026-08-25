@@ -22,14 +22,17 @@ public sealed class AdministrationController : Controller
         var overview = await _service.GetOverviewAsync(CurrentTenant(), ct);
         var actions = new[]
         {
-            new AdministrationActionVM("Usuários", "Gerencie identidades, vínculos e acessos autorizados.", "bi-people", "Administration", "Users", AppPolicies.Administracao, "Pessoas e acessos", true, null),
-            new AdministrationActionVM("Perfis e permissões", "Revise políticas e o catálogo de permissões do ambiente.", "bi-shield-check", "Administration", "Security", AppPolicies.Administracao, "Perfis e permissões", true, null),
-            new AdministrationActionVM("Configurações seguras", "Consulte parâmetros operacionais sem expor segredos.", "bi-sliders", "Administration", "Settings", AppPolicies.Administracao, "Parâmetros", true, null),
-            new AdministrationActionVM("Saúde do sistema", "Acompanhe dependências, workers e serviços essenciais.", "bi-heart-pulse", "Administration", "Health", AppPolicies.Administracao, "Infraestrutura", true, null),
-            new AdministrationActionVM("Continuidade", "Acompanhe backup, recuperação e portabilidade.", "bi-life-preserver", "Continuity", "Overview", AppPolicies.ContinuityView, "Continuidade", true, null),
-            new AdministrationActionVM("Auditoria", "Consulte eventos administrativos e trilhas de acesso.", "bi-journal-check", "Administration", "Audit", AppPolicies.Administracao, "Auditoria", true, null),
-            new AdministrationActionVM("Prontidão do ambiente", "Verifique banco, migrations, serviços, workers e módulos antes de liberar o ambiente.", "bi-clipboard2-pulse", "Administration", "Readiness", AppPolicies.Administracao, "Infraestrutura", true, null)
-            ,new AdministrationActionVM("Central de Incidentes", "Monitore erros, rotas instáveis e pendências técnicas do ambiente.", "bi-exclamation-triangle", "SystemIncidents", "Index", AppPolicies.Administracao, "Infraestrutura", true, null)
+            new AdministrationActionVM("Usuários e Perfis", "Gerencie acessos, papéis e vínculos de usuários.", "bi-people", "Administration", "Users", AppPolicies.Administracao, "Governança e Segurança", true, null),
+            new AdministrationActionVM("Permissões e Segurança", "Revise políticas e o catálogo de permissões do ambiente.", "bi-shield-lock", "Administration", "Security", AppPolicies.Administracao, "Governança e Segurança", true, null),
+            new AdministrationActionVM("Tenants", "Acompanhe organizações, escopos e isolamento operacional.", "bi-buildings", "Administration", "Tenants", AppPolicies.Administracao, "Governança e Segurança", true, null),
+            new AdministrationActionVM("Banco e Migrations", "Valide compatibilidade do schema e prontidão de dados.", "bi-database-check", "Administration", "Migrations", AppPolicies.Administracao, "Ambiente e Banco de Dados", true, null),
+            new AdministrationActionVM("Saúde do Sistema", "Acompanhe dependências e serviços essenciais.", "bi-heart-pulse", "Administration", "Health", AppPolicies.Administracao, "Ambiente e Banco de Dados", true, null),
+            new AdministrationActionVM("Workers e Filas", "Monitore processamento assíncrono e atividade técnica.", "bi-activity", "Administration", "Workers", AppPolicies.Administracao, "Operação Técnica", true, null),
+            new AdministrationActionVM("Central de Incidentes", "Investigue erros, rotas instáveis e pendências técnicas.", "bi-exclamation-triangle", "SystemIncidents", "Index", AppPolicies.Administracao, "Operação Técnica", true, null),
+            new AdministrationActionVM("Release Readiness", "Confirme evidências antes da homologação e entrega.", "bi-rocket-takeoff", "Administration", "Readiness", AppPolicies.Administracao, "Homologação e Entrega", true, null),
+            new AdministrationActionVM("Continuidade", "Acompanhe backup, recuperação e portabilidade.", "bi-life-preserver", "Continuity", "Overview", AppPolicies.ContinuityView, "Homologação e Entrega", true, null),
+            new AdministrationActionVM("Configurações Seguras", "Consulte parâmetros operacionais sem expor segredos.", "bi-sliders", "Administration", "Settings", AppPolicies.Administracao, "Cadastros e Configurações", true, null),
+            new AdministrationActionVM("Auditoria", "Consulte eventos administrativos e trilhas de acesso.", "bi-journal-check", "Administration", "Audit", AppPolicies.Administracao, "Cadastros e Configurações", true, null)
         };
         var sections = actions.GroupBy(action => action.Category)
             .Select(group => new AdministrationSectionVM(group.Key, $"Recursos de {group.Key.ToLowerInvariant()}.", group.ToArray()))

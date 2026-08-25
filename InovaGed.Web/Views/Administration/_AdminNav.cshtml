@@ -1,6 +1,15 @@
+@{
+    var adminNavigation = new List<(string Action, string Icon, string Label)>
+    {
+        ("Index","dashboard","Visão geral"), ("Security","security","Segurança"), ("Identities","users","Identidades"),
+        ("Users","users","Usuários"), ("Audit","audit","Auditoria"), ("Tenants","database","Tenants"),
+        ("Workers","workflow","Workers"), ("Health","health","Saúde"), ("Settings","settings","Configurações"),
+        ("Migrations","history","Migrações"), ("Compliance","certificate-validation","Conformidade")
+    };
+}
 <nav class="admin-module-nav" aria-label="Módulos administrativos">
-@foreach (var item in new[]{("Index","dashboard","Visão geral"),("Security","security","Segurança"),("Identities","users","Identidades"),("Users","users","Usuários"),("Audit","audit","Auditoria"),("Tenants","database","Tenants"),("Workers","workflow","Workers"),("Health","health","Saúde"),("Settings","settings","Configurações"),("Migrations","history","Migrações"),("Compliance","certificate-validation","Conformidade")})
+@foreach (var item in adminNavigation)
 {
-    <a class="admin-module-nav__item" asp-controller="Administration" asp-action="@item.Item1"><app-icon name="@item.Item2" size="16" decorative="true" />@item.Item3</a>
+    <a class="admin-module-nav__item" asp-controller="Administration" asp-action="@item.Action"><app-icon name="@item.Icon" size="16" decorative="true" />@item.Label</a>
 }
 </nav>
