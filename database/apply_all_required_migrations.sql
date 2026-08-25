@@ -3055,3 +3055,4 @@ where coalesce(reg_status, 'A') = 'A';
 \ir migrations/2026_08_24_uat_go_live_readiness.sql
 \ir seeds/2026_08_uat_test_cases_seed.sql
 \ir migrations/2026_08_25_permission_catalog_compat_hotfix.sql
+\ir migrations/2026_08_25_admin_labels_legacy_schema_compat.sql

@@ -16,8 +16,8 @@ public sealed class ExceptionClassifier : IExceptionClassifier
             var obj=pg.TableName??pg.ColumnName??ExtractObject(pg.MessageText);
             return pg.SqlState switch
             {
-                "42P01"=>New(IncidentType.DatabaseSchemaMissingTable,IncidentSeverity.High,"Tabela de banco ausente","Acesse /DatabaseReadiness e aplique as migrations pendentes.",pg.SqlState,obj),
-                "42703"=>New(IncidentType.DatabaseSchemaMissingColumn,IncidentSeverity.High,"Coluna de banco ausente","Execute o hotfix de compatibilidade ou acesse /DatabaseReadiness.",pg.SqlState,obj),
+                "42P01"=>New(IncidentType.DatabaseSchemaMissingTable,IncidentSeverity.High,"Tabela de banco ausente","Aplique 2026_08_25_admin_labels_legacy_schema_compat.sql pela /DatabaseReadiness.",pg.SqlState,obj),
+                "42703"=>New(IncidentType.DatabaseSchemaMissingColumn,IncidentSeverity.High,"Coluna de banco ausente","Aplique 2026_08_25_admin_labels_legacy_schema_compat.sql pela /DatabaseReadiness.",pg.SqlState,obj),
                 "42601"=>New(IncidentType.DatabaseSqlSyntax,IncidentSeverity.High,"Erro de sintaxe SQL","Revise o SQL gerado dinamicamente.",pg.SqlState,obj),
                 _=>New(IncidentType.RouteFailure,IncidentSeverity.High,"Falha de banco na rota","Revise o diagnóstico e a saúde do banco.",pg.SqlState,obj)
             };
