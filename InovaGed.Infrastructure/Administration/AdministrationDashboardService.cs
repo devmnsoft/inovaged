@@ -62,14 +62,19 @@ order by changed_at desc
     {
         await using var c=await _db.OpenAsync(ct);
         if(!await Table(c,"permission",ct)) return Array.Empty<PermissionCatalogItem>();
-        var status=BuildStatusExpression(await GetAdminTableSchemaAsync(c,"permission",ct));
+        var schema=await GetAdminTableSchemaAsync(c,"permission",ct);
+        var code=BuildPermissionCodeExpression(schema);
+        var description=BuildPermissionDescriptionExpression(schema);
+        var module=BuildPermissionModuleExpression(schema);
+        var status=BuildStatusExpression(schema);
+        var searchPredicate=BuildPermissionSearchPredicate(schema);
         var rows=await c.QueryAsync<PermissionCatalogItemDbRow>(new CommandDefinition($"""
-select code as "Code", coalesce(description,code) as "Description",
-       coalesce(module,'Geral') as "Module", '' as "Roles", 0 as "UsersAffected",
+select {code} as "Code", {description} as "Description",
+       {module} as "Module", '' as "Roles", 0 as "UsersAffected",
        {status} as "Status", 'Banco' as "Origin", null::timestamp as "LastChangedAt"
 from ged.permission
-where (@search is null or code ilike '%'||@search||'%' or description ilike '%'||@search||'%')
-order by module, code limit 200
+where (@search is null or btrim(@search) = '' or {searchPredicate})
+order by "Module", "Code" limit 200
 """,new{search},cancellationToken:ct));
         return rows.Select(x=>new PermissionCatalogItem(
             DapperValueConverters.TextOrDefault(x.Code,"Sem código"),
@@ -134,12 +139,16 @@ limit 200
         if(!AllowedAdministrationTables.Contains(table)) throw new InvalidOperationException($"Tabela administrativa não permitida: {table}");
         const string sql="""select column_name from information_schema.columns where table_schema='ged' and table_name=@table""";
         var columns=(await c.QueryAsync<string>(new CommandDefinition(sql,new{table},cancellationToken:ct))).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        return new(columns.Contains("tenant_id"),columns.Contains("reg_status"),columns.Contains("status"),columns.Contains("is_active"),columns.Contains("deleted_at_utc"),columns.Contains("deleted_at"),columns.Contains("is_locked"),columns.Contains("name"),columns.Contains("user_name"),columns.Contains("email"),columns.Contains("code"),columns.Contains("id"),columns.Contains("created_at"),columns.Contains("updated_at"));
+        return new(columns.Contains("tenant_id"),columns.Contains("reg_status"),columns.Contains("status"),columns.Contains("is_active"),columns.Contains("deleted_at_utc"),columns.Contains("deleted_at"),columns.Contains("is_locked"),columns.Contains("name"),columns.Contains("user_name"),columns.Contains("email"),columns.Contains("code"),columns.Contains("id"),columns.Contains("created_at"),columns.Contains("updated_at"),columns.Contains("description"),columns.Contains("module"),columns.Contains("title"),columns.Contains("area"),columns.Contains("category"));
     }
     private static string BuildNameExpression(AdminTableSchema s){var p=new List<string>();if(s.HasName)p.Add("nullif(name::text,'')");if(s.HasUserName)p.Add("nullif(user_name::text,'')");if(s.HasEmail)p.Add("nullif(email::text,'')");if(s.HasCode)p.Add("nullif(code::text,'')");if(s.HasId)p.Add("id::text");return p.Count==0?"'Sem identificação'":$"coalesce({string.Join(", ",p)}, 'Sem identificação')";}
     private static string BuildStatusExpression(AdminTableSchema s)=>s.HasRegStatus?"coalesce(reg_status::text,'A')":s.HasStatus?"coalesce(status::text,'ATIVO')":s.HasIsActive?"case when is_active then 'ATIVO' else 'INATIVO' end":s.HasDeletedAtUtc?"case when deleted_at_utc is null then 'ATIVO' else 'EXCLUÍDO' end":s.HasDeletedAt?"case when deleted_at is null then 'ATIVO' else 'EXCLUÍDO' end":"'ATIVO'";
     private static string BuildDetailExpression(AdminTableSchema s){var p=new List<string>();if(s.HasEmail)p.Add("nullif(email::text,'')");if(s.HasCode)p.Add("nullif(code::text,'')");if(s.HasUserName)p.Add("nullif(user_name::text,'')");if(s.HasId)p.Add("id::text");return p.Count==0?"'Sem detalhe'":$"coalesce({string.Join(", ",p)}, 'Sem detalhe')";}
     private static string BuildLastActivityExpression(AdminTableSchema s)=>s.HasUpdatedAt?"updated_at":s.HasCreatedAt?"created_at":"null::timestamp";
+    private static string BuildPermissionCodeExpression(AdminTableSchema s)=>s.HasCode?"code::text":s.HasName?"name::text":s.HasId?"id::text":"'SEM_CODIGO'";
+    private static string BuildPermissionDescriptionExpression(AdminTableSchema s){var p=new List<string>();if(s.HasDescription)p.Add("nullif(description::text, '')");if(s.HasTitle)p.Add("nullif(title::text, '')");if(s.HasName)p.Add("nullif(name::text, '')");if(s.HasCode)p.Add("nullif(code::text, '')");if(s.HasId)p.Add("id::text");return p.Count==0?"'Permissão sem descrição'":$"coalesce({string.Join(", ",p)}, 'Permissão sem descrição')";}
+    private static string BuildPermissionModuleExpression(AdminTableSchema s){var p=new List<string>();if(s.HasModule)p.Add("nullif(module::text, '')");if(s.HasArea)p.Add("nullif(area::text, '')");if(s.HasCategory)p.Add("nullif(category::text, '')");return p.Count==0?"'Geral'":$"coalesce({string.Join(", ",p)}, 'Geral')";}
+    private static string BuildPermissionSearchPredicate(AdminTableSchema s){var p=new List<string>();if(s.HasCode)p.Add("code::text ilike '%' || @search || '%'");if(s.HasDescription)p.Add("description::text ilike '%' || @search || '%'");if(s.HasTitle)p.Add("title::text ilike '%' || @search || '%'");if(s.HasName)p.Add("name::text ilike '%' || @search || '%'");if(s.HasModule)p.Add("module::text ilike '%' || @search || '%'");if(s.HasArea)p.Add("area::text ilike '%' || @search || '%'");if(s.HasCategory)p.Add("category::text ilike '%' || @search || '%'");return p.Count==0?"1 = 1":"("+string.Join(" or ",p)+")";}
     private sealed class AdministrationListItemRow
     {
         public string? Name { get; set; }
@@ -168,7 +177,7 @@ limit 200
         public string? Origin { get; set; }
         public DateTime? LastChangedAt { get; set; }
     }
-    private sealed record AdminTableSchema(bool HasTenantId,bool HasRegStatus,bool HasStatus,bool HasIsActive,bool HasDeletedAtUtc,bool HasDeletedAt,bool HasIsLocked,bool HasName,bool HasUserName,bool HasEmail,bool HasCode,bool HasId,bool HasCreatedAt,bool HasUpdatedAt);
+    private sealed record AdminTableSchema(bool HasTenantId,bool HasRegStatus,bool HasStatus,bool HasIsActive,bool HasDeletedAtUtc,bool HasDeletedAt,bool HasIsLocked,bool HasName,bool HasUserName,bool HasEmail,bool HasCode,bool HasId,bool HasCreatedAt,bool HasUpdatedAt,bool HasDescription,bool HasModule,bool HasTitle,bool HasArea,bool HasCategory);
     private static readonly HashSet<string> AllowedAdministrationTables=new(StringComparer.OrdinalIgnoreCase){"app_user","tenant","app_role","permission","audit_logs","permission_evaluation_log","worker_execution_status","ged_processing_jobs","schema_migration_history","user_identity_document"};
     private AdministrationMetric StorageMetric(){var p=_cfg["Storage:Local:RootPath"]; if(string.IsNullOrWhiteSpace(p)) return new("storage","Estado do storage","Não configurado",AdministrationHealthState.NaoConfigurado,"Storage:Local:RootPath ausente.","Configure por provedor seguro.","bi-hdd"); return new("storage","Estado do storage",Directory.Exists(p)?"Disponível":"Indisponível",Directory.Exists(p)?AdministrationHealthState.Saudavel:AdministrationHealthState.Indisponivel,null,"Validar volume e permissões.","bi-hdd");}
     private static bool IsSensitive(string k)=>k.Contains("password",StringComparison.OrdinalIgnoreCase)||k.Contains("secret",StringComparison.OrdinalIgnoreCase)||k.Contains("token",StringComparison.OrdinalIgnoreCase)||k.Contains("connection",StringComparison.OrdinalIgnoreCase)||k.Contains("key",StringComparison.OrdinalIgnoreCase);

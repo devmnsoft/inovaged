@@ -6,6 +6,7 @@ $routes = @(
     "/Administration",
     "/Administration/Users",
     "/Administration/Tenants",
+    "/Administration/Security",
     "/Labels/PrintWizard",
     "/RetentionDestination",
     "/Instruments/Versions/PCD",
