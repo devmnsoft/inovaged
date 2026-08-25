@@ -1,0 +1,2 @@
+@model InovaGed.Web.Models.Atlas.AtlasPageToolbarVm
+<header class="ig-table-shell__toolbar"><div><strong>@Model.Title</strong>@if (Model.Description is not null) { <small class="d-block text-muted">@Model.Description</small> }</div>@if (Model.Actions?.Count > 0) { <div class="d-flex flex-wrap gap-2">@foreach (var action in Model.Actions) { <a class="ig-button @(action.Primary ? "ig-button--primary" : "ig-button--secondary")" href="@action.Url">@action.Label</a> }</div> }</header>
