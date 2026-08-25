@@ -1,0 +1,2 @@
+@{ var title = Convert.ToString(ViewData["Title"]) ?? "Registros"; var description = Convert.ToString(ViewData["Description"]); }
+<section class="ig-visual-card ig-premium-table-shell"><header><h2>@title</h2>@if (!string.IsNullOrWhiteSpace(description)) { <p>@description</p> }</header><div class="ig-premium-table-scroll">@Html.Raw(Convert.ToString(ViewData["Content"]))</div></section>

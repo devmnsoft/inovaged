@@ -1,0 +1,20 @@
+[
+  { "name": "administration-index", "path": "/Administration", "viewport": "desktop" },
+  { "name": "administration-users", "path": "/Administration/Users", "viewport": "desktop" },
+  { "name": "administration-tenants", "path": "/Administration/Tenants", "viewport": "desktop" },
+  { "name": "administration-security", "path": "/Administration/Security", "viewport": "desktop" },
+  { "name": "administration-migrations", "path": "/Administration/Migrations", "viewport": "desktop" },
+  { "name": "administration-workers", "path": "/Administration/Workers", "viewport": "desktop" },
+  { "name": "labels-index", "path": "/Labels", "viewport": "desktop" },
+  { "name": "labels-print-wizard", "path": "/Labels/PrintWizard", "viewport": "desktop" },
+  { "name": "labels-locdesk", "path": "/Labels/LocDesk", "viewport": "desktop" },
+  { "name": "labels-history", "path": "/Labels/History", "viewport": "desktop" },
+  { "name": "labels-boxes", "path": "/Labels/Boxes", "viewport": "desktop" },
+  { "name": "labels-documents", "path": "/Labels/Documents", "viewport": "desktop" },
+  { "name": "system-incidents", "path": "/SystemIncidents", "viewport": "desktop" },
+  { "name": "database-readiness", "path": "/DatabaseReadiness", "viewport": "desktop" },
+  { "name": "schema-health", "path": "/SchemaHealth", "viewport": "desktop" },
+  { "name": "administration-index-mobile", "path": "/Administration", "viewport": "mobile" },
+  { "name": "labels-print-wizard-mobile", "path": "/Labels/PrintWizard", "viewport": "mobile" },
+  { "name": "labels-locdesk-mobile", "path": "/Labels/LocDesk", "viewport": "mobile" }
+]

@@ -1,0 +1,2 @@
+@{ var title = Convert.ToString(ViewData["Title"]) ?? "Ação"; var description = Convert.ToString(ViewData["Description"]); var url = Convert.ToString(ViewData["Url"]) ?? "#"; var icon = Convert.ToString(ViewData["Icon"]) ?? "arrow-right"; }
+<article class="ig-visual-card ig-visual-action"><app-icon name="@icon" size="28" decorative="true" /><h2>@title</h2><p>@description</p><a class="ig-button ig-button--secondary" href="@url">Acessar</a></article>

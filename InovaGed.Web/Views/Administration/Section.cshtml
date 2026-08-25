@@ -4,12 +4,22 @@
 @{
     ViewData["Title"] = Model.Section;
     ViewData["WorkspaceVariant"] = "wide";
+    var search = Context.Request.Query["search"].ToString();
     var header = new AtlasPageHeaderVm(Model.Section, "Governança, rastreabilidade e controles operacionais reunidos em uma visão segura.", "settings", "Central de Administração", new[] { new AtlasPageAction("Visão geral", Url.Action("Index", "Administration")!, "arrow-left") }, new (string, string?)[] { ("Administração", Url.Action("Index", "Administration")), (Model.Section, null) });
     var hasContent = Model.Items.Any() || Model.Compliance.Any() || Model.PermissionCatalog.Any() || Model.SecurityConfigurations.Any() || Model.IdentitySummary is not null;
 }
 <div class="atlas-prime-page administration-prime admin-section-page">
     <partial name="Atlas/_PageHeader" model="header" />
     <partial name="_AdminNav" />
+    <form method="get" class="ig-visual-toolbar ig-admin-toolbar" role="search">
+        <div class="ig-visual-toolbar__field">
+            <label for="admin-search">Filtrar esta área</label>
+            <div class="ig-visual-search"><app-icon name="search" size="18" decorative="true" /><input id="admin-search" name="search" type="search" value="@search" placeholder="Nome, código, tenant ou status" /></div>
+        </div>
+        <button class="ig-button ig-button--primary" type="submit"><app-icon name="filter" size="17" decorative="true" /> Aplicar filtro</button>
+        <a class="ig-button ig-button--secondary" href="@Context.Request.Path">Limpar</a>
+        <p><app-icon name="info" size="16" decorative="true" /> Dados respeitam o tenant e as permissões do perfil conectado.</p>
+    </form>
     @if (Model.IdentitySummary is not null)
     {
         <section class="admin-summary-grid" aria-label="Resumo de identidades">
