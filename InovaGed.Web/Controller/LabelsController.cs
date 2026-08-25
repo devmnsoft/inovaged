@@ -589,6 +589,12 @@ values(@id,@tid,@LabelKind,@ArchiveTitle,@ProcessNumber,@ControlNumber,@VolumeNu
         ViewBag.Q = q;
         mode=(mode??"").Trim().ToUpperInvariant(); template=(template??"").Trim().ToUpperInvariant(); type=(type??"").Trim().ToUpperInvariant();
 
+        if (!await db.ExecuteScalarAsync<bool>("select to_regclass('ged.label_print_history') is not null"))
+        {
+            ViewBag.SchemaPending = true;
+            return View(Array.Empty<dynamic>());
+        }
+
         var rows = await db.QueryAsync(@"
 select
     lp.id,

@@ -22,9 +22,9 @@ public sealed class AdministrationDashboardService : IAdministrationDashboardSer
             await CountActiveTenantsAsync(c,ct),
             await Count(c,"roles","Roles cadastradas","app_role","1=1",null,ct,"bi-person-badge"),
             await Count(c,"permissions","Permissões cadastradas","permission","1=1",null,ct,"bi-key"),
-            await Count(c,"access_fail_24h","Falhas de acesso 24h","permission_evaluation_log","real_result=false and evaluated_at >= now() - interval '24 hours'",tenantId,ct,"bi-shield-exclamation"),
-            await Count(c,"workers_error","Workers com erro","worker_execution_status","status in ('ERROR','FAILED')",tenantId,ct,"bi-cpu"),
-            await Count(c,"queue_failed","Filas com falha","ged_processing_jobs","status in ('FAILED','ERROR')",tenantId,ct,"bi-list-x")
+            await CountEvaluationFailures(c,tenantId,ct),
+            await CountByStatus(c,"workers_error","Workers com erro","worker_execution_status",tenantId,ct,"bi-cpu"),
+            await CountByStatus(c,"queue_failed","Filas com falha","ged_processing_jobs",tenantId,ct,"bi-list-x")
         };
         metrics.Add(new("database","Estado do banco","Conectado",AdministrationHealthState.Saudavel,null,"Conectividade validada pela consulta administrativa.","bi-database-check"));
         metrics.Add(StorageMetric());
@@ -37,17 +37,19 @@ public sealed class AdministrationDashboardService : IAdministrationDashboardSer
     {
         await using var c = await _db.OpenAsync(ct);
         if (!await Table(c,"tenant_security_configuration",ct)) return Array.Empty<TenantSecurityConfiguration>();
-        const string sql = """
+        var columns=(await c.QueryAsync<string>(new CommandDefinition("select column_name from information_schema.columns where table_schema='ged' and table_name='tenant_security_configuration'",cancellationToken:ct))).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (!columns.Contains("tenant_id")) return Array.Empty<TenantSecurityConfiguration>();
+        var sql = $"""
 select
     tenant_id as "TenantId",
-    coalesce(permission_mode::text, 'LEGACY') as "PermissionMode",
-    changed_at as "ChangedAt",
-    changed_by::text as "ChangedBy",
-    change_reason as "ChangeReason",
-    coalesce(reg_status::text, 'A') as "RegStatus"
+    {InovaGed.Infrastructure.Common.Database.SchemaAwareSqlBuilder.ColumnOrLiteral(columns,"permission_mode","coalesce(permission_mode::text, 'LEGACY')","'LEGACY'")} as "PermissionMode",
+    {InovaGed.Infrastructure.Common.Database.SchemaAwareSqlBuilder.ColumnOrLiteral(columns,"changed_at","changed_at","null::timestamp")} as "ChangedAt",
+    {InovaGed.Infrastructure.Common.Database.SchemaAwareSqlBuilder.ColumnOrLiteral(columns,"changed_by","changed_by::text","null::text")} as "ChangedBy",
+    {InovaGed.Infrastructure.Common.Database.SchemaAwareSqlBuilder.ColumnOrLiteral(columns,"change_reason","change_reason::text","null::text")} as "ChangeReason",
+    {InovaGed.Infrastructure.Common.Database.SchemaAwareSqlBuilder.ColumnOrLiteral(columns,"reg_status","coalesce(reg_status::text, 'A')","'A'")} as "RegStatus"
 from ged.tenant_security_configuration
 where (@tenantId is null or tenant_id=@tenantId)
-order by changed_at desc
+order by {InovaGed.Infrastructure.Common.Database.SchemaAwareSqlBuilder.ColumnOrLiteral(columns,"changed_at","changed_at","tenant_id")} desc
 """;
         var rows = await c.QueryAsync<TenantSecurityConfigurationRow>(new CommandDefinition(sql, new { tenantId }, cancellationToken:ct));
         return rows.Select(x => new TenantSecurityConfiguration(
@@ -101,6 +103,8 @@ order by "Module", "Code" limit 200
     public Task<IReadOnlyList<AdministrationListItem>> GetMigrationsAsync(CancellationToken ct=default)=>List("schema_migration_history",null,ct);
     public async Task<IReadOnlyList<ComplianceControlItem>> GetComplianceAsync(Guid? tenantId,CancellationToken ct=default){ var s=await GetIdentityMigrationSummaryAsync(tenantId,ct); return new[]{new ComplianceControlItem("LGPD-CPF","CPF protegido",s.LegacyDependent==0?"atendido":"parcialmente atendido",$"{s.AlreadyMigrated} migrados; {s.LegacyDependent} pendentes.","Migrar identidades sem expor CPF completo."),new ComplianceControlItem("AUDIT-STRICT","Auditoria estrita","não verificado","StrictAudit não é alterado automaticamente.","Avaliar risco e ativar com justificativa.")}; }
     private async Task<AdministrationMetric> Count(NpgsqlConnection c,string code,string title,string table,string where,Guid? tenantId,CancellationToken ct,string icon){ if(!await Table(c,table,ct)) return new(code,title,"Não disponível",AdministrationHealthState.Desconhecido,$"Tabela ged.{table} ausente ou equivalente legado não identificado.","Verifique Migrações e Compatibilidade.",icon); var v=await SafeInt(c,table,where,tenantId,ct); return new(code,title,v.ToString(),AdministrationHealthState.Saudavel,null,null,icon); }
+    private async Task<AdministrationMetric> CountByStatus(NpgsqlConnection c,string code,string title,string table,Guid? tenantId,CancellationToken ct,string icon){if(!await Table(c,table,ct))return MissingMetric(code,title,table,icon);var s=await GetAdminTableSchemaAsync(c,table,ct);var where=s.HasStatus?"status::text in ('ERROR','FAILED')":s.HasRegStatus?"reg_status::text in ('ERROR','FAILED','E')":null;if(where is null)return new(code,title,"Não disponível",AdministrationHealthState.Desconhecido,$"Coluna de status ausente em ged.{table}.","Aplique a migration de compatibilidade.",icon);var v=await SafeInt(c,table,where,tenantId,ct);return new(code,title,v.ToString(),AdministrationHealthState.Saudavel,null,null,icon);}
+    private async Task<AdministrationMetric> CountEvaluationFailures(NpgsqlConnection c,Guid? tenantId,CancellationToken ct){const string table="permission_evaluation_log";if(!await Table(c,table,ct))return MissingMetric("access_fail_24h","Falhas de acesso 24h",table,"bi-shield-exclamation");var columns=(await c.QueryAsync<string>(new CommandDefinition("select column_name from information_schema.columns where table_schema='ged' and table_name=@table",new{table},cancellationToken:ct))).ToHashSet(StringComparer.OrdinalIgnoreCase);if(!columns.Contains("real_result"))return new("access_fail_24h","Falhas de acesso 24h","Não disponível",AdministrationHealthState.Desconhecido,"Coluna real_result ausente.","Aplique a migration de compatibilidade.","bi-shield-exclamation");var where=columns.Contains("evaluated_at")?"real_result=false and evaluated_at >= now() - interval '24 hours'":"real_result=false";var v=await SafeInt(c,table,where,tenantId,ct);return new("access_fail_24h","Falhas de acesso 24h",v.ToString(),AdministrationHealthState.Saudavel,null,null,"bi-shield-exclamation");}
     private static AdministrationMetric MissingMetric(string code,string title,string table,string icon)=>new(code,title,"Não disponível",AdministrationHealthState.Desconhecido,$"Tabela ged.{table} ausente ou equivalente legado não identificado.","Execute database/migrations/2026_08_21_administration_legacy_schema_compat.sql ou database/apply_all_required_migrations.sql.",icon);
     private async Task<AdministrationMetric> CountActiveUsersAsync(NpgsqlConnection c,Guid? tenantId,CancellationToken ct){ if(!await Table(c,"app_user",ct)) return MissingMetric("active_users","Usuários ativos","app_user","bi-people"); var s=await GetAdminTableSchemaAsync(c,"app_user",ct); var f=new List<string>(); if(s.HasIsActive) f.Add("is_active=true"); if(s.HasDeletedAtUtc) f.Add("deleted_at_utc is null"); else if(s.HasDeletedAt) f.Add("deleted_at is null"); if(s.HasRegStatus) f.Add("coalesce(reg_status,'A')='A'"); var v=await SafeInt(c,"app_user",f.Count==0?"1=1":string.Join(" and ",f),tenantId,ct); return new("active_users","Usuários ativos",v.ToString(),AdministrationHealthState.Saudavel,null,null,"bi-people"); }
     private async Task<AdministrationMetric> CountBlockedUsersAsync(NpgsqlConnection c,Guid? tenantId,CancellationToken ct){ if(!await Table(c,"app_user",ct)) return MissingMetric("blocked_users","Usuários bloqueados","app_user","bi-person-lock"); var s=await GetAdminTableSchemaAsync(c,"app_user",ct); if(!s.HasIsLocked) return new("blocked_users","Usuários bloqueados","Não disponível",AdministrationHealthState.Desconhecido,"Coluna is_locked ausente em ged.app_user.","Execute as migrations administrativas ou use schema compatível.","bi-person-lock"); var f=new List<string>{"coalesce(is_locked,false)=true"}; if(s.HasDeletedAtUtc) f.Add("deleted_at_utc is null"); else if(s.HasDeletedAt) f.Add("deleted_at is null"); var v=await SafeInt(c,"app_user",string.Join(" and ",f),tenantId,ct); return new("blocked_users","Usuários bloqueados",v.ToString(),AdministrationHealthState.Saudavel,null,null,"bi-person-lock"); }
@@ -178,7 +182,7 @@ limit 200
         public DateTime? LastChangedAt { get; set; }
     }
     private sealed record AdminTableSchema(bool HasTenantId,bool HasRegStatus,bool HasStatus,bool HasIsActive,bool HasDeletedAtUtc,bool HasDeletedAt,bool HasIsLocked,bool HasName,bool HasUserName,bool HasEmail,bool HasCode,bool HasId,bool HasCreatedAt,bool HasUpdatedAt,bool HasDescription,bool HasModule,bool HasTitle,bool HasArea,bool HasCategory);
-    private static readonly HashSet<string> AllowedAdministrationTables=new(StringComparer.OrdinalIgnoreCase){"app_user","tenant","app_role","permission","audit_logs","permission_evaluation_log","worker_execution_status","ged_processing_jobs","schema_migration_history","user_identity_document"};
+    private static readonly HashSet<string> AllowedAdministrationTables=new(StringComparer.OrdinalIgnoreCase){"app_user","tenant","app_role","permission","audit_logs","permission_evaluation_log","worker_execution_status","ged_processing_jobs","schema_migration_history","user_identity_document","tenant_security_configuration"};
     private AdministrationMetric StorageMetric(){var p=_cfg["Storage:Local:RootPath"]; if(string.IsNullOrWhiteSpace(p)) return new("storage","Estado do storage","Não configurado",AdministrationHealthState.NaoConfigurado,"Storage:Local:RootPath ausente.","Configure por provedor seguro.","bi-hdd"); return new("storage","Estado do storage",Directory.Exists(p)?"Disponível":"Indisponível",Directory.Exists(p)?AdministrationHealthState.Saudavel:AdministrationHealthState.Indisponivel,null,"Validar volume e permissões.","bi-hdd");}
     private static bool IsSensitive(string k)=>k.Contains("password",StringComparison.OrdinalIgnoreCase)||k.Contains("secret",StringComparison.OrdinalIgnoreCase)||k.Contains("token",StringComparison.OrdinalIgnoreCase)||k.Contains("connection",StringComparison.OrdinalIgnoreCase)||k.Contains("key",StringComparison.OrdinalIgnoreCase);
 }

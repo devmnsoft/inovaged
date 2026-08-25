@@ -1,4 +1,5 @@
 [
+  {"name": "2026_08_25_admin_labels_legacy_schema_compat", "path": "database/migrations/2026_08_25_admin_labels_legacy_schema_compat.sql", "area": "Compatibilidade Administração e Etiquetas", "required": true, "description": "Garante colunas auxiliares e fallbacks para bancos legados usados pelas telas administrativas e etiquetas."},
   {"name": "2026_08_25_permission_catalog_compat_hotfix", "path": "database/migrations/2026_08_25_permission_catalog_compat_hotfix.sql", "area": "Administração", "required": true, "description": "Garante colunas description e module no catálogo de permissões ou mantém compatibilidade em bancos legados."},
   {"name": "2026_08_24_observability_incident_center", "path": "database/migrations/2026_08_24_observability_incident_center.sql", "area": "Observabilidade", "required": true, "description": "Cria a central de incidentes, eventos agrupados e snapshots de rotas."},
   {"name": "2026_08_label_template_designer", "path": "database/migrations/2026_08_label_template_designer.sql", "area": "Etiquetas", "required": true, "description": "Cria modelos de etiqueta, templates LocDesk e tabelas auxiliares."},
