@@ -1,0 +1,2 @@
+@{ var icon = ViewData["Icon"]?.ToString() ?? "activity"; }
+<article class="ig-premium-action-card"><header><span class="ig-premium-action-card__icon"><app-icon name="@icon" size="23" decorative="true" /></span><span class="ig-status-badge ig-status-badge--ok">@ViewData["Status"]</span></header><h3>@ViewData["Title"]</h3><p>@ViewData["Description"]</p><a class="ig-button ig-button--secondary" href="@ViewData["Url"]">@ViewData["Action"] <app-icon name="arrow-right" size="16" decorative="true" /></a></article>

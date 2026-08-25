@@ -20,7 +20,8 @@
         <div class="label-wizard-hero__actions"><a asp-action="Index" class="btn btn-outline-secondary"><i class="bi bi-arrow-left"></i> Voltar à central</a><a asp-action="History" class="btn btn-outline-primary"><i class="bi bi-clock-history"></i> Histórico</a></div>
     </header>
     @if (ViewBag.CatalogMigrationWarning is string migrationWarning) { <div class="alert alert-warning" role="alert"><strong>Atenção:</strong> @migrationWarning</div> }
-    <div class="label-wizard-steps" aria-label="Etapas da impressão"><div class="label-wizard-step is-active"><strong>1</strong><span>Tipo</span></div><div class="label-wizard-step is-active"><strong>2</strong><span>Modelo</span></div><div class="label-wizard-step"><strong>3</strong><span>Dados</span></div><div class="label-wizard-step"><strong>4</strong><span>Pré-visualização</span></div><div class="label-wizard-step"><strong>5</strong><span>Impressão</span></div></div>
+    <partial name="Atlas/_PremiumStepper" view-data='new Microsoft.AspNetCore.Mvc.ViewFeatures.ViewDataDictionary(ViewData) { { "Steps", new List<string> { "Tipo", "Modelo", "Dados", "Prévia", "Impressão" } }, { "Current", 2 } }' />
+    <partial name="Atlas/_PremiumAlert" view-data='new Microsoft.AspNetCore.Mvc.ViewFeatures.ViewDataDictionary(ViewData) { { "Title", "Antes de continuar" }, { "Message", "Selecione o tipo e o modelo da etiqueta antes de gerar a impressão. A reimpressão exige justificativa para manter a rastreabilidade." }, { "Tone", "info" } }' />
 
     <form method="post" class="label-wizard-layout">
         @Html.AntiForgeryToken()

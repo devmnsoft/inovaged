@@ -10,6 +10,12 @@
         <nav class="ig-admin-hero__actions" aria-label="Ações administrativas rápidas"><a class="ig-button" asp-action="Health"><i class="bi bi-heart-pulse"></i> Saúde do Sistema</a><a class="ig-button" href="/DatabaseReadiness"><i class="bi bi-database-check"></i> Prontidão do Banco</a><a class="ig-button" asp-controller="SystemIncidents" asp-action="Index"><i class="bi bi-exclamation-triangle"></i> Central de Incidentes</a><a class="ig-button" asp-action="Readiness"><i class="bi bi-rocket-takeoff"></i> Release Readiness</a></nav>
     </section>
     <partial name="Atlas/_AdminStatusStrip" model="Model.Health" />
+    <section class="ig-admin-kpis" aria-label="Indicadores administrativos">
+        @foreach (var kpi in Model.Health.Take(8))
+        {
+            <partial name="Atlas/_PremiumKpiCard" view-data='new Microsoft.AspNetCore.Mvc.ViewFeatures.ViewDataDictionary(ViewData) { { "Icon", "activity" }, { "Label", kpi.Title }, { "Value", kpi.Value ?? "Não informado" }, { "Hint", kpi.Message } }' />
+        }
+    </section>
     @if (Model.Recommendations.Any())
     {
         <section class="atlas-prime-panel"><div class="atlas-prime-panel__header"><div><h2>Recomendações prioritárias</h2><small>Ações orientadas por severidade e impacto no ambiente.</small></div></div><partial name="_ConfigurationRecommendations" model="Model.Recommendations" /></section>
@@ -20,4 +26,5 @@
             <section class="ig-admin-group"><header><h2>@group.Title</h2><p>@group.Description</p></header><div class="ig-admin-module-grid">@foreach (var action in group.Actions) { <partial name="Atlas/_AdminModuleCard" model="action" /> }</div></section>
         }
     </section>
+    <section class="ig-admin-technical-note" role="note"><i class="bi bi-info-circle" aria-hidden="true"></i><div><strong>Orientação para administradores</strong><p>Revise alertas técnicos antes de migrations ou releases. Ações sensíveis permanecem protegidas pelas permissões do perfil e pela trilha de auditoria.</p></div><a class="ig-button ig-button--secondary" asp-action="Readiness">Abrir checklist de entrega</a></section>
 </div>
