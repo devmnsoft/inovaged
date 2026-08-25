@@ -1,0 +1,2 @@
+@{ var title=ViewData["Title"]?.ToString() ?? "Atenção necessária"; var message=ViewData["Message"]?.ToString(); var tone=ViewData["Tone"]?.ToString() ?? "info"; }
+<div class="ig-premium-alert ig-premium-alert--@tone" role="status"><app-icon name="info" size="20" decorative="true" /><div><strong>@title</strong><p>@message</p></div></div>

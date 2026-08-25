@@ -1,6 +1,6 @@
 @model InovaGed.Web.Models.Administration.AdministrationPageVm
 @using InovaGed.Web.Models.Atlas
-@section Styles { <link rel="stylesheet" href="~/css/pages/administration.css" asp-append-version="true" /> }
+@section Styles { <link rel="stylesheet" href="~/css/pages/administration.css" asp-append-version="true" /><link rel="stylesheet" href="~/css/administration-premium.css" asp-append-version="true" /> }
 @{
     ViewData["Title"] = Model.Section;
     ViewData["WorkspaceVariant"] = "wide";
@@ -44,6 +44,6 @@
     }
     @if (!hasContent)
     {
-        <section class="atlas-prime-panel admin-empty-state"><app-icon name="database" size="36" decorative="true" /><h2>Dados ainda não disponíveis</h2><p>Nenhuma estrutura compatível foi encontrada para esta área. Consulte Migrações e Compatibilidade para verificar a prontidão do ambiente.</p><a class="btn btn-primary" asp-controller="Administration" asp-action="Migrations"><app-icon name="settings" size="17" decorative="true" /> Verificar ambiente</a></section>
+        <section class="atlas-prime-panel admin-empty-state"><app-icon name="database" size="36" decorative="true" /><h2>Nenhum registro encontrado</h2><p>Quando houver dados disponíveis, eles aparecerão nesta área. Consulte Migrações e Compatibilidade para verificar a prontidão do ambiente.</p><a class="btn btn-primary" asp-controller="Administration" asp-action="Migrations"><app-icon name="settings" size="17" decorative="true" /> Verificar ambiente</a></section>
     }
 </div>

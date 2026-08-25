@@ -1,0 +1,9 @@
+@model IReadOnlyList<InovaGed.Web.Models.Administration.AdministrationHealthVM>
+<section class="ig-admin-status-strip" aria-label="Status do ambiente">
+    @foreach (var item in Model.Take(5))
+    {
+        var state = item.Status.Contains("Critical", StringComparison.OrdinalIgnoreCase) || item.Status.Contains("Error", StringComparison.OrdinalIgnoreCase) ? "critical" : item.Status.Contains("Warning", StringComparison.OrdinalIgnoreCase) ? "warning" : "ok";
+        <div class="ig-admin-status-item"><small>@item.Title</small><strong>@(item.Value ?? "Não informado")</strong><span class="ig-status-badge ig-status-badge--@state">@(state == "ok" ? "OK" : state == "warning" ? "Atenção" : "Crítico")</span></div>
+    }
+    <div class="ig-admin-status-item"><small>Última verificação</small><strong>@DateTimeOffset.Now.ToString("dd/MM/yyyy HH:mm")</strong><span class="ig-status-badge">Agora</span></div>
+</section>

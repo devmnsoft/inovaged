@@ -1,0 +1,2 @@
+@{ var title=ViewData["Title"]?.ToString() ?? "Pré-visualização da etiqueta"; }
+<section class="ig-label-preview-shell"><header><div><span class="ig-eyebrow">Escala visual</span><h2>@title</h2></div><span class="ig-status-badge">Prévia</span></header><div class="ig-label-preview-shell__canvas">@Html.Raw(ViewData["Content"])</div><footer><app-icon name="info" size="16" decorative="true" /> Cores, bordas e QR Code são preservados no modo de impressão.</footer></section>

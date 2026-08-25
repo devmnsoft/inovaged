@@ -1,29 +1,23 @@
 @model InovaGed.Web.Models.Administration.AdministrationDashboardVM
-@using InovaGed.Web.Models.Atlas
 @section Styles {
     <link rel="stylesheet" href="~/css/pages/administration.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/administration-premium.css" asp-append-version="true" />
 }
-@{
-    ViewData["Title"] = "Administração";
-    ViewData["WorkspaceVariant"] = "wide";
-    ViewData["Subtitle"] = "Governança, segurança e saúde do ambiente";
-}
-
-@{
-    var header = new AtlasPageHeaderVm("Central de Administração", "Identidades, segurança, disponibilidade e conformidade em uma visão operacional.", "settings", "Governança institucional",
-        new[] { new AtlasPageAction("Prontidão do Banco", "/DatabaseReadiness", "database", true), new AtlasPageAction("Prontidão do ambiente", Url.Action("Readiness")!, "check"), new AtlasPageAction("Saúde do sistema", Url.Action("Health")!, "health") },
-        new (string, string?)[] { ("Início", "/"), ("Administração", null) });
-    var metrics = Model.Health.Take(4).Select(x => new AtlasMetricVm(x.Title, x.Value ?? "—", x.Message ?? "Estado atual", x.Status, x.Icon)).ToArray();
-}
-<div class="atlas-prime-page administration-prime">
-    <partial name="Atlas/_PageHeader" model="header" />
-    <partial name="Atlas/_PageMetrics" model="metrics" />
-    <section class="atlas-prime-panel" aria-labelledby="adminRecommendations">
-        <div class="atlas-prime-panel__header"><div><h2 id="adminRecommendations">Recomendações prioritárias</h2><small>Ações orientadas por severidade e impacto no ambiente.</small></div></div>
-        <partial name="_ConfigurationRecommendations" model="Model.Recommendations" />
+@{ ViewData["Title"] = "Central Administrativa"; ViewData["WorkspaceVariant"] = "wide"; }
+<div class="ig-admin-executive">
+    <section class="ig-admin-hero" aria-labelledby="admin-title">
+        <div><span class="ig-eyebrow"><i class="bi bi-shield-check" aria-hidden="true"></i> Governança do GED</span><h1 id="admin-title">Central Administrativa</h1><p>Controle usuários, permissões, banco de dados, saúde do sistema e operação técnica do InovaGED.</p></div>
+        <nav class="ig-admin-hero__actions" aria-label="Ações administrativas rápidas"><a class="ig-button" asp-action="Health"><i class="bi bi-heart-pulse"></i> Saúde do Sistema</a><a class="ig-button" href="/DatabaseReadiness"><i class="bi bi-database-check"></i> Prontidão do Banco</a><a class="ig-button" asp-controller="SystemIncidents" asp-action="Index"><i class="bi bi-exclamation-triangle"></i> Central de Incidentes</a><a class="ig-button" asp-action="Readiness"><i class="bi bi-rocket-takeoff"></i> Release Readiness</a></nav>
     </section>
-    <section class="atlas-prime-panel" aria-labelledby="adminAreas">
-        <div class="atlas-prime-panel__header"><div><h2 id="adminAreas">Áreas administrativas</h2><small>Acessos organizados por responsabilidade operacional.</small></div></div>
-        <partial name="_AdministrationSections" model="Model.Sections" />
+    <partial name="Atlas/_AdminStatusStrip" model="Model.Health" />
+    @if (Model.Recommendations.Any())
+    {
+        <section class="atlas-prime-panel"><div class="atlas-prime-panel__header"><div><h2>Recomendações prioritárias</h2><small>Ações orientadas por severidade e impacto no ambiente.</small></div></div><partial name="_ConfigurationRecommendations" model="Model.Recommendations" /></section>
+    }
+    <section aria-labelledby="admin-areas-title"><div class="ig-section-heading"><div><h2 id="admin-areas-title">Áreas administrativas</h2><p>Recursos agrupados por responsabilidade, risco e momento operacional.</p></div></div>
+        @foreach (var group in Model.Sections)
+        {
+            <section class="ig-admin-group"><header><h2>@group.Title</h2><p>@group.Description</p></header><div class="ig-admin-module-grid">@foreach (var action in group.Actions) { <partial name="Atlas/_AdminModuleCard" model="action" /> }</div></section>
+        }
     </section>
 </div>
