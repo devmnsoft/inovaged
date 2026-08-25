@@ -1,0 +1,2 @@
+@model InovaGed.Web.Models.Atlas.AtlasAlertPanelVm
+<div class="ig-alert ig-alert--@Model.Tone" role="status"><span class="ig-alert__icon"><app-icon name="@Model.Icon" size="20" decorative="true" /></span><div><strong>@Model.Title</strong><p>@Model.Message</p></div>@if (Model.Action is not null) { <a class="ig-button ig-button--secondary" href="@Model.Action.Url">@Model.Action.Label</a> }</div>

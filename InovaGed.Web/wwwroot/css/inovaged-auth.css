@@ -1,0 +1,11 @@
+.auth-page-root { min-height: 100dvh; }
+.login-info { background: radial-gradient(circle at 80% 18%, rgba(23,199,232,.2), transparent 20rem), linear-gradient(145deg, var(--ig-primary), var(--ig-primary-soft) 68%, #09556a); }
+.login-info::after { background: var(--ig-accent-soft); }
+.login-eyebrow { color: #c8f7ff; }
+.login-card { border-color: var(--ig-border); border-radius: var(--ig-radius); box-shadow: var(--ig-shadow-soft); }
+.login-card::before { background: linear-gradient(90deg, var(--ig-accent), var(--ig-primary-soft)); }
+.login-card-icon { color: #087e9a; background: var(--ig-accent-soft); }
+#loginBtn { background: linear-gradient(135deg, var(--ig-primary-soft), var(--ig-primary)); box-shadow: 0 12px 24px rgba(11,31,58,.2); }
+#loginBtn:hover { box-shadow: 0 15px 30px rgba(11,31,58,.26); }
+.login-security { color: var(--ig-muted); }
+@media (max-width: 767.98px) { .login-panel { background: radial-gradient(circle at 100% 0, var(--ig-accent-soft), transparent 22rem), #f8fafc; } }

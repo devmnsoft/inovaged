@@ -1,0 +1,27 @@
+:root {
+    --ig-primary: #0b1f3a;
+    --ig-primary-soft: #12345c;
+    --ig-accent: #17c7e8;
+    --ig-accent-soft: rgba(23, 199, 232, .12);
+    --ig-bg: #f5f7fb;
+    --ig-surface: #ffffff;
+    --ig-border: #dfe7f1;
+    --ig-text: #172033;
+    --ig-muted: #64748b;
+    --ig-success: #16a34a;
+    --ig-warning: #f59e0b;
+    --ig-danger: #dc2626;
+    --ig-radius: 18px;
+    --ig-shadow-soft: 0 18px 45px rgba(15, 23, 42, .08);
+    --ig-shadow-focus: 0 0 0 4px rgba(23, 199, 232, .18);
+    --ig-motion: 180ms cubic-bezier(.2, .8, .2, 1);
+}
+
+* { scrollbar-color: #b7c6d8 transparent; scrollbar-width: thin; }
+body { color: var(--ig-text); background: var(--ig-bg); }
+:where(a, button, input, select, textarea, [tabindex]):focus-visible { outline: 3px solid var(--ig-accent); outline-offset: 3px; }
+::selection { color: var(--ig-primary); background: rgba(23, 199, 232, .25); }
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}

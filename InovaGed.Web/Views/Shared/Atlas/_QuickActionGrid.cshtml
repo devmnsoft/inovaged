@@ -1,0 +1,2 @@
+@model IReadOnlyList<InovaGed.Web.Models.Atlas.AtlasActionCardVm>
+<div class="ig-action-grid">@foreach (var action in Model) { <partial name="Atlas/_ActionCard" model="action" /> }</div>

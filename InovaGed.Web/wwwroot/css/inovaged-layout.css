@@ -1,0 +1,15 @@
+.app-shell { min-height: 100dvh; background: var(--ig-bg); }
+.app-sidebar { border-right: 1px solid rgba(223, 231, 241, .85); box-shadow: 8px 0 32px rgba(11, 31, 58, .035); }
+.app-topbar { border-bottom: 1px solid var(--ig-border); background: rgba(255, 255, 255, .9); box-shadow: 0 8px 28px rgba(15, 23, 42, .04); backdrop-filter: blur(14px); }
+.app-content { padding: clamp(1rem, 2vw, 2rem); }
+.atlas-workspace-canvas { width: 100%; margin-inline: auto; }
+.sidebar-menu a { position: relative; border-radius: 12px; transition: color var(--ig-motion), background var(--ig-motion), transform var(--ig-motion); }
+.sidebar-menu a:hover { transform: translateX(2px); background: var(--ig-accent-soft); }
+.sidebar-menu a.active::before { position: absolute; inset: 10px auto 10px -8px; width: 3px; border-radius: 4px; background: var(--ig-accent); box-shadow: 0 0 12px rgba(23, 199, 232, .5); content: ""; }
+.sidebar-section-title { color: #718096; letter-spacing: .075em; }
+.sidebar-collapse, .sidebar-logout { transition: background var(--ig-motion), color var(--ig-motion); }
+
+@media (max-width: 991.98px) {
+    .app-content { padding: 1rem; }
+    .atlas-workspace-canvas { max-width: 100%; }
+}

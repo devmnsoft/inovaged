@@ -1,0 +1,5 @@
+@model InovaGed.Web.Models.Atlas.AtlasPageHeaderVm
+<section class="ig-page-hero" aria-labelledby="ig-page-title">
+    <div><span class="ig-eyebrow"><app-icon name="@Model.Icon" size="16" decorative="true" /> @Model.Eyebrow</span><h1 id="ig-page-title">@Model.Title</h1><p>@Model.Subtitle</p></div>
+    @if (Model.Actions?.Count > 0) { <div class="d-flex flex-wrap gap-2">@foreach (var action in Model.Actions) { <a class="ig-button @(action.Primary ? "ig-button--primary" : "ig-button--secondary")" href="@action.Url"><app-icon name="@action.Icon" size="17" decorative="true" /> @action.Label</a> }</div> }
+</section>
