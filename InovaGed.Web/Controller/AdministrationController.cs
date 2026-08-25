@@ -44,17 +44,17 @@ public sealed class AdministrationController : Controller
     [HttpGet("/Administration/AtlasIcons")]
     public IActionResult AtlasIcons() => View(_atlasIcons.GetAll());
 
-    public async Task<IActionResult> Security(string? search, CancellationToken ct) => View("Section", new AdministrationPageVm { Section = "Segurança e Permissões", SecurityConfigurations = await _service.GetSecurityConfigurationsAsync(CurrentTenant(), ct), PermissionCatalog = await _service.GetPermissionCatalogAsync(search, ct) });
+    public async Task<IActionResult> Security(string? search, CancellationToken ct) => View("Security", new AdministrationPageVm { Section = "Segurança e Permissões", SecurityConfigurations = await _service.GetSecurityConfigurationsAsync(CurrentTenant(), ct), PermissionCatalog = await _service.GetPermissionCatalogAsync(search, ct) });
     public Task<IActionResult> Roles(string? search, CancellationToken ct) => Security(search, ct);
     public Task<IActionResult> Permissions(string? search, CancellationToken ct) => Security(search, ct);
     public async Task<IActionResult> Identities(CancellationToken ct) => View("Section", new AdministrationPageVm { Section = "Identidades e CPF", IdentitySummary = await _service.GetIdentityMigrationSummaryAsync(CurrentTenant(), ct) });
-    public async Task<IActionResult> Users(CancellationToken ct) => View("Section", new AdministrationPageVm { Section = "Usuários e Autoridades", Items = await _service.GetUsersAsync(CurrentTenant(), ct) });
+    public async Task<IActionResult> Users(CancellationToken ct) => View("Users", new AdministrationPageVm { Section = "Usuários e Autoridades", Items = await _service.GetUsersAsync(CurrentTenant(), ct) });
     public async Task<IActionResult> Audit(CancellationToken ct) => View("Section", new AdministrationPageVm { Section = "Auditoria e Acessos", Items = await _service.GetAuditEventsAsync(CurrentTenant(), ct) });
-    public async Task<IActionResult> Tenants(CancellationToken ct) => View("Section", new AdministrationPageVm { Section = "Tenants", Items = await _service.GetTenantsAsync(CurrentTenant(), AppMenuPolicy.IsFullAdmin(User), ct) });
-    public async Task<IActionResult> Workers(CancellationToken ct) => View("Section", new AdministrationPageVm { Section = "Workers e Filas", Items = await _service.GetWorkersAsync(CurrentTenant(), ct) });
+    public async Task<IActionResult> Tenants(CancellationToken ct) => View("Tenants", new AdministrationPageVm { Section = "Tenants", Items = await _service.GetTenantsAsync(CurrentTenant(), AppMenuPolicy.IsFullAdmin(User), ct) });
+    public async Task<IActionResult> Workers(CancellationToken ct) => View("Workers", new AdministrationPageVm { Section = "Workers e Filas", Items = await _service.GetWorkersAsync(CurrentTenant(), ct) });
     public async Task<IActionResult> Health(CancellationToken ct) => View("Section", new AdministrationPageVm { Section = "Saúde do Sistema", Items = await _service.GetHealthAsync(ct) });
     public async Task<IActionResult> Settings(CancellationToken ct) => View("Section", new AdministrationPageVm { Section = "Configurações Seguras", Items = await _service.GetSafeConfigurationsAsync(ct) });
-    public async Task<IActionResult> Migrations(CancellationToken ct) => View("Section", new AdministrationPageVm { Section = "Migrações e Compatibilidade", Items = await _service.GetMigrationsAsync(ct) });
+    public async Task<IActionResult> Migrations(CancellationToken ct) => View("Migrations", new AdministrationPageVm { Section = "Migrações e Compatibilidade", Items = await _service.GetMigrationsAsync(ct) });
     public async Task<IActionResult> Compliance(CancellationToken ct) => View("Section", new AdministrationPageVm { Section = "Conformidade e LGPD", Compliance = await _service.GetComplianceAsync(CurrentTenant(), ct) });
     [HttpGet("/Administration/Readiness")]
     public async Task<IActionResult> Readiness(CancellationToken ct)

@@ -1,0 +1,2 @@
+@{ var icon = ViewData["Icon"]?.ToString() ?? "activity"; var tone = ViewData["Tone"]?.ToString() ?? "neutral"; }
+<article class="ig-premium-kpi ig-premium-kpi--@tone"><span class="ig-premium-kpi__icon"><app-icon name="@icon" size="21" decorative="true" /></span><div><small>@ViewData["Label"]</small><strong>@(ViewData["Value"] ?? "—")</strong><span>@ViewData["Hint"]</span></div></article>

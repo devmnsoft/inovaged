@@ -1,0 +1,2 @@
+@{ var steps = ViewData["Steps"] as IReadOnlyList<string> ?? Array.Empty<string>(); var current = ViewData["Current"] is int value ? value : 1; }
+<ol class="ig-premium-stepper" aria-label="Etapas do processo">@for (var index = 0; index < steps.Count; index++) { var number = index + 1; <li class="@(number <= current ? "is-active" : null)" aria-current="@(number == current ? "step" : null)"><strong>@number</strong><span>@steps[index]</span></li> }</ol>
