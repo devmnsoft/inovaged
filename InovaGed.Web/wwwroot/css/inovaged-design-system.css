@@ -1,18 +1,24 @@
 :root {
     --ig-primary: #0b1f3a;
-    --ig-primary-soft: #12345c;
+    --ig-primary-2: #12345c;
+    --ig-primary-soft: var(--ig-primary-2);
     --ig-accent: #17c7e8;
     --ig-accent-soft: rgba(23, 199, 232, .12);
     --ig-bg: #f5f7fb;
     --ig-surface: #ffffff;
+    --ig-surface-soft: #f8fafc;
     --ig-border: #dfe7f1;
     --ig-text: #172033;
     --ig-muted: #64748b;
     --ig-success: #16a34a;
     --ig-warning: #f59e0b;
     --ig-danger: #dc2626;
+    --ig-info: #0284c7;
+    --ig-radius-sm: 10px;
     --ig-radius: 18px;
-    --ig-shadow-soft: 0 18px 45px rgba(15, 23, 42, .08);
+    --ig-radius-lg: 26px;
+    --ig-shadow-soft: 0 16px 40px rgba(15, 23, 42, .08);
+    --ig-shadow-card: 0 10px 28px rgba(15, 23, 42, .07);
     --ig-shadow-focus: 0 0 0 4px rgba(23, 199, 232, .18);
     --ig-motion: 180ms cubic-bezier(.2, .8, .2, 1);
 }
@@ -37,6 +43,21 @@ body { color: var(--ig-text); background: var(--ig-bg); }
 }
 .ig-visual-action{display:flex;flex-direction:column;align-items:flex-start;gap:.55rem;padding:1.2rem}.ig-visual-action h2{margin:0;font-size:1.05rem}.ig-visual-action p{flex:1;margin:0;color:var(--ig-muted)}
 
+/* Stable, product-wide primitives. Page CSS may compose these without falling back
+   to unstyled Bootstrap containers, cards or tables. */
+.ig-page-shell{display:grid;gap:1.25rem;width:100%;max-width:100%;margin-inline:auto}
+.ig-page-hero{position:relative;overflow:hidden;display:flex;align-items:center;justify-content:space-between;gap:1.5rem;padding:clamp(1.35rem,3vw,2.25rem);border-radius:var(--ig-radius-lg);color:#fff;background:radial-gradient(circle at 88% 5%,rgba(23,199,232,.3),transparent 34%),linear-gradient(135deg,var(--ig-primary),var(--ig-primary-2));box-shadow:var(--ig-shadow-soft)}
+.ig-page-hero h1{margin:.35rem 0;font-size:clamp(1.75rem,3vw,2.6rem)}.ig-page-hero p{max-width:54rem;margin:0;color:#dbeafe}
+.ig-card,.ig-kpi-card,.ig-action-card{border:1px solid var(--ig-border);border-radius:var(--ig-radius);background:var(--ig-surface);box-shadow:var(--ig-shadow-card)}
+.ig-toolbar{display:flex;align-items:end;flex-wrap:wrap;gap:.75rem;padding:1rem;border:1px solid var(--ig-border);border-radius:var(--ig-radius);background:var(--ig-surface);box-shadow:var(--ig-shadow-card)}
+.ig-table-shell{max-width:100%;overflow:hidden;border:1px solid var(--ig-border);border-radius:var(--ig-radius);background:var(--ig-surface);box-shadow:var(--ig-shadow-card)}.ig-table-shell__scroll{overflow-x:auto}
+.ig-table{width:100%;border-collapse:collapse}.ig-table th{background:var(--ig-surface-soft);color:var(--ig-muted);font-size:.75rem;letter-spacing:.035em;text-transform:uppercase}.ig-table th,.ig-table td{padding:.85rem 1rem;border-bottom:1px solid var(--ig-border)}
+.ig-empty-state{display:grid;place-items:center;gap:.35rem;padding:clamp(2rem,6vw,4rem);text-align:center}.ig-empty-state p{max-width:34rem;color:var(--ig-muted)}
+.ig-alert-panel{display:flex;align-items:flex-start;gap:.8rem;padding:1rem 1.15rem;border:1px solid #bae6fd;border-radius:var(--ig-radius-sm);background:#f0f9ff;color:#075985}
+.ig-page-footer-note{display:flex;align-items:flex-start;gap:.75rem;padding:1rem;color:var(--ig-muted);border-top:1px solid var(--ig-border);font-size:.875rem}
+.ig-btn-primary{color:#fff;background:var(--ig-primary);border-color:var(--ig-primary)}.ig-btn-primary:hover{color:#fff;background:var(--ig-primary-2)}
+@media(max-width:650px){.ig-page-hero{align-items:stretch;flex-direction:column}.ig-page-hero .ig-button,.ig-toolbar .ig-button{width:100%;justify-content:center}}
+
 /* Premium UI primitives shared by executive and operational workspaces. */
 .ig-premium-hero{position:relative;overflow:hidden;display:flex;align-items:center;justify-content:space-between;gap:2rem;padding:clamp(1.4rem,3vw,2.4rem);border-radius:1.4rem;color:#fff;background:radial-gradient(circle at 88% 8%,rgba(34,211,238,.3),transparent 32%),linear-gradient(135deg,#071b35,#123f68);box-shadow:0 22px 50px rgba(11,31,58,.2)}
 .ig-premium-hero h1{margin:.35rem 0;font-size:clamp(1.9rem,3vw,2.7rem)}.ig-premium-hero p{max-width:54rem;margin:0;color:#d8e8f7}.ig-premium-hero .ig-eyebrow{color:#bcecf5}
@@ -44,3 +65,7 @@ body { color: var(--ig-text); background: var(--ig-bg); }
 .ig-premium-action-card{display:flex;flex-direction:column;padding:1.15rem;border:1px solid var(--ig-border);border-radius:1rem;background:#fff}.ig-premium-action-card header{display:flex;justify-content:space-between}.ig-premium-action-card__icon{display:grid;place-items:center;width:2.8rem;height:2.8rem;border-radius:.8rem;background:var(--ig-accent-soft);color:#08758e}.ig-premium-action-card h3{margin:.8rem 0 .3rem;font-size:1rem}.ig-premium-action-card p{flex:1;color:var(--ig-muted)}
 .ig-premium-stepper{display:grid;grid-template-columns:repeat(5,1fr);padding:0;margin:0;list-style:none}.ig-premium-stepper li{position:relative;display:grid;justify-items:center;gap:.4rem;color:#7b8798;font-size:.78rem;font-weight:700}.ig-premium-stepper li:not(:last-child)::after{content:"";position:absolute;z-index:0;top:1rem;left:60%;width:80%;height:2px;background:#dce3eb}.ig-premium-stepper strong{z-index:1;display:grid;place-items:center;width:2rem;height:2rem;border-radius:50%;background:#e8edf3}.ig-premium-stepper .is-active{color:#08758e}.ig-premium-stepper .is-active strong,.ig-premium-stepper .is-active:not(:last-child)::after{color:#fff;background:#0891a8}
 @media(max-width:650px){.ig-premium-hero{align-items:flex-start;flex-direction:column}.ig-premium-stepper span{font-size:.66rem}}
+
+.ig-premium-alert__content{flex:1;min-width:0}.ig-premium-alert__content small{display:block;margin-top:.35rem}.ig-premium-alert>.ig-button{flex:none;align-self:center}
+.ig-premium-alert--success{border-color:#bbf7d0;background:#f0fdf4;color:#166534}.ig-premium-alert--warning,.ig-premium-alert--schema,.ig-premium-alert--migration{border-color:#fde68a;background:#fffbeb;color:#92400e}.ig-premium-alert--danger{border-color:#fecaca;background:#fef2f2;color:#991b1b}.ig-premium-alert--print{border-color:#a5f3fc;background:#ecfeff;color:#155e75}
+@media(max-width:650px){.ig-premium-alert{flex-wrap:wrap}.ig-premium-alert>.ig-button{width:100%;justify-content:center}}

@@ -1,2 +1,11 @@
-@{ var title=ViewData["Title"]?.ToString() ?? "Nenhum registro encontrado"; var description=ViewData["Description"]?.ToString() ?? "Quando houver dados disponíveis, eles aparecerão nesta área."; var icon=ViewData["Icon"]?.ToString() ?? "search"; }
-<div class="ig-premium-empty-state"><span><app-icon name="@icon" size="30" decorative="true" /></span><h3>@title</h3><p>@description</p></div>
+@{
+    var title = ViewData["Title"]?.ToString() ?? "Nenhum registro encontrado";
+    var description = ViewData["Description"]?.ToString() ?? "Quando houver dados disponíveis, eles aparecerão nesta área.";
+    var icon = ViewData["Icon"]?.ToString() ?? "search";
+    var actionLabel = ViewData["ActionLabel"]?.ToString();
+    var actionUrl = ViewData["ActionUrl"]?.ToString();
+}
+<div class="ig-premium-empty-state ig-empty-state">
+    <span><app-icon name="@icon" size="30" decorative="true" /></span><h3>@title</h3><p>@description</p>
+    @if (!string.IsNullOrWhiteSpace(actionUrl) && !string.IsNullOrWhiteSpace(actionLabel)) { <a class="ig-button ig-button--primary" href="@actionUrl">@actionLabel</a> }
+</div>

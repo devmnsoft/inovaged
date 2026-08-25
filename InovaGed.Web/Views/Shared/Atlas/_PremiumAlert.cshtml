@@ -1,2 +1,18 @@
-@{ var title=ViewData["Title"]?.ToString() ?? "Atenção necessária"; var message=ViewData["Message"]?.ToString(); var tone=ViewData["Tone"]?.ToString() ?? "info"; }
-<div class="ig-premium-alert ig-premium-alert--@tone" role="status"><app-icon name="info" size="20" decorative="true" /><div><strong>@title</strong><p>@message</p></div></div>
+@{
+    var title = ViewData["Title"]?.ToString() ?? "Atenção necessária";
+    var message = ViewData["Message"]?.ToString();
+    var tone = ViewData["Tone"]?.ToString()?.ToLowerInvariant() ?? "info";
+    var recommendation = ViewData["Recommendation"]?.ToString();
+    var actionLabel = ViewData["ActionLabel"]?.ToString();
+    var actionUrl = ViewData["ActionUrl"]?.ToString();
+    var icon = tone switch { "success" => "check", "warning" or "schema" or "migration" => "warning", "danger" => "alert-triangle", "print" => "printer", _ => "info" };
+}
+<div class="ig-premium-alert ig-alert-panel ig-premium-alert--@tone" role="status">
+    <app-icon name="@icon" size="20" decorative="true" />
+    <div class="ig-premium-alert__content">
+        <strong>@title</strong>
+        @if (!string.IsNullOrWhiteSpace(message)) { <p>@message</p> }
+        @if (!string.IsNullOrWhiteSpace(recommendation)) { <small><b>Ação recomendada:</b> @recommendation</small> }
+    </div>
+    @if (!string.IsNullOrWhiteSpace(actionUrl) && !string.IsNullOrWhiteSpace(actionLabel)) { <a class="ig-button ig-button--secondary" href="@actionUrl">@actionLabel</a> }
+</div>
