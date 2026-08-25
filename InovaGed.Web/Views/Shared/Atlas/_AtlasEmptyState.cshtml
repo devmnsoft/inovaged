@@ -1,0 +1,1 @@
+@{var title=ViewData["Title"]?.ToString()??"Nenhum registro encontrado.";var message=ViewData["Message"]?.ToString()??"Quando houver dados disponíveis, eles aparecerão nesta área.";}<div class="atlas-empty-state"><span class="atlas-empty-state__icon"><app-icon name="@(ViewData["Icon"]?.ToString()??"inbox")" size="30" decorative="true"/></span><h3>@title</h3><p>@message</p></div>

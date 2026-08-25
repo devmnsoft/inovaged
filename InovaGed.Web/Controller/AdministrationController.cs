@@ -32,7 +32,8 @@ public sealed class AdministrationController : Controller
             new AdministrationActionVM("Release Readiness", "Confirme evidências antes da homologação e entrega.", "bi-rocket-takeoff", "Administration", "Readiness", AppPolicies.Administracao, "Homologação e Entrega", true, null),
             new AdministrationActionVM("Continuidade", "Acompanhe backup, recuperação e portabilidade.", "bi-life-preserver", "Continuity", "Overview", AppPolicies.ContinuityView, "Homologação e Entrega", true, null),
             new AdministrationActionVM("Configurações Seguras", "Consulte parâmetros operacionais sem expor segredos.", "bi-sliders", "Administration", "Settings", AppPolicies.Administracao, "Cadastros e Configurações", true, null),
-            new AdministrationActionVM("Auditoria", "Consulte eventos administrativos e trilhas de acesso.", "bi-journal-check", "Administration", "Audit", AppPolicies.Administracao, "Cadastros e Configurações", true, null)
+            new AdministrationActionVM("Auditoria", "Consulte eventos administrativos e trilhas de acesso.", "bi-journal-check", "Administration", "Audit", AppPolicies.Administracao, "Cadastros e Configurações", true, null),
+            new AdministrationActionVM("Design System", "Padrões visuais, componentes e identidade da interface do InovaGED.", "bi-layout-text-window-reverse", "Administration", "DesignSystem", AppPolicies.Administracao, "Cadastros e Configurações", true, null)
         };
         var sections = actions.GroupBy(action => action.Category)
             .Select(group => new AdministrationSectionVM(group.Key, $"Recursos de {group.Key.ToLowerInvariant()}.", group.ToArray()))
@@ -43,6 +44,9 @@ public sealed class AdministrationController : Controller
     }
     [HttpGet("/Administration/AtlasIcons")]
     public IActionResult AtlasIcons() => View(_atlasIcons.GetAll());
+
+    [HttpGet("/Administration/DesignSystem")]
+    public IActionResult DesignSystem() => View();
 
     public async Task<IActionResult> Security(string? search, CancellationToken ct) => View("Security", new AdministrationPageVm { Section = "Segurança e Permissões", SecurityConfigurations = await _service.GetSecurityConfigurationsAsync(CurrentTenant(), ct), PermissionCatalog = await _service.GetPermissionCatalogAsync(search, ct) });
     public Task<IActionResult> Roles(string? search, CancellationToken ct) => Security(search, ct);

@@ -1,0 +1,1 @@
+@{var title=ViewData["Title"]?.ToString()??"Ferramentas";}<div class="atlas-toolbar"><div><strong>@title</strong><small class="d-block text-muted">@ViewData["Description"]</small></div>@if(ViewData["Content"] is Microsoft.AspNetCore.Html.IHtmlContent content){<div class="atlas-btn-group">@content</div>}</div>

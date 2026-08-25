@@ -5,11 +5,11 @@ public sealed class AtlasIconRegistry : IAtlasIconRegistry
     private static readonly IReadOnlyCollection<AtlasIconDefinition> Definitions = new AtlasIconDefinition[]
     {
         new("dashboard", "atlas-icon-dashboard", "Navegação", "dashboard", "outline", Array.Empty<string>()),
-        new("workspace", "atlas-icon-workspace", "Navegação", "workspace", "outline", Array.Empty<string>()),
+        new("workspace", "atlas-icon-workspace", "Navegação", "workspace", "outline", new[] { "layout", "layout-template" }),
         new("activity", "atlas-icon-activity", "Navegação", "activity", "outline", new[] { "operation", "rocket", "clipboard-check", "scan-line" }),
         new("recent", "atlas-icon-recent", "Navegação", "recent", "outline", Array.Empty<string>()),
         new("notification", "atlas-icon-notification", "Navegação", "notification", "outline", Array.Empty<string>()),
-        new("documents", "atlas-icon-documents", "Documentos", "documents", "outline", Array.Empty<string>()),
+        new("documents", "atlas-icon-documents", "Documentos", "documents", "outline", new[] { "inbox" }),
         new("document", "atlas-icon-document", "Documentos", "document", "outline", new[] { "file-text" }),
         new("document-add", "atlas-icon-document-add", "Documentos", "document add", "outline", Array.Empty<string>()),
         new("document-search", "atlas-icon-document-search", "Documentos", "document search", "outline", Array.Empty<string>()),
@@ -86,7 +86,7 @@ public sealed class AtlasIconRegistry : IAtlasIconRegistry
         new("edit", "atlas-icon-edit", "Ações", "edit", "outline", Array.Empty<string>()),
         new("delete", "atlas-icon-delete", "Ações", "delete", "outline", Array.Empty<string>()),
         new("copy", "atlas-icon-copy", "Ações", "copy", "outline", Array.Empty<string>()),
-        new("print", "atlas-icon-print", "Ações", "print", "outline", Array.Empty<string>()),
+        new("print", "atlas-icon-print", "Ações", "print", "outline", new[] { "printer" }),
         new("close", "atlas-icon-close", "Ações", "close", "outline", Array.Empty<string>()),
         new("chevron-down", "atlas-icon-chevron-down", "Ações", "chevron down", "outline", Array.Empty<string>()),
         new("chevron-right", "atlas-icon-chevron-right", "Ações", "chevron right", "outline", Array.Empty<string>()),

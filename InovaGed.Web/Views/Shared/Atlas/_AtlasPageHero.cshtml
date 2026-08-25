@@ -1,0 +1,2 @@
+@{ var title=ViewData["Title"]?.ToString()??"InovaGED";var subtitle=ViewData["Subtitle"]?.ToString()??"Experiência operacional padronizada pelo Atlas UI.";var icon=ViewData["Icon"]?.ToString()??"layout"; }
+<section class="atlas-page-hero" aria-labelledby="atlas-page-title"><div><span class="atlas-eyebrow"><app-icon name="@icon" size="16" decorative="true" /> Atlas UI</span><h1 id="atlas-page-title">@title</h1><p>@subtitle</p></div>@if(ViewData["Actions"] is Microsoft.AspNetCore.Html.IHtmlContent actions){<div class="atlas-page-hero__actions">@actions</div>}</section>
