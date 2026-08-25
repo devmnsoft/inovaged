@@ -22,6 +22,17 @@ body { color: var(--ig-text); background: var(--ig-bg); }
 :where(a, button, input, select, textarea, [tabindex]):focus-visible { outline: 3px solid var(--ig-accent); outline-offset: 3px; }
 ::selection { color: var(--ig-primary); background: rgba(23, 199, 232, .25); }
 
+.ig-visual-hero{position:relative;overflow:hidden;padding:clamp(1.4rem,3vw,2.4rem);border-radius:var(--ig-radius);background:linear-gradient(135deg,var(--ig-primary),#124c73);color:#fff;box-shadow:var(--ig-shadow-soft)}
+.ig-visual-card{border:1px solid var(--ig-border);border-radius:var(--ig-radius);background:var(--ig-surface);box-shadow:var(--ig-shadow-soft)}
+.ig-visual-kpi{display:grid;gap:.25rem;padding:1rem;border:1px solid var(--ig-border);border-radius:1rem;background:#fff}
+.ig-visual-toolbar{display:flex;align-items:end;gap:.75rem;padding:1rem;border:1px solid var(--ig-border);border-radius:1rem;background:#fff;box-shadow:0 8px 24px rgba(15,23,42,.04)}
+.ig-visual-toolbar__field{display:grid;gap:.35rem;min-width:min(24rem,100%)}.ig-visual-toolbar label{font-size:.75rem;font-weight:800;color:var(--ig-muted)}
+.ig-visual-toolbar p{display:flex;align-items:center;gap:.4rem;margin:0 0 .45rem auto;color:var(--ig-muted);font-size:.78rem}
+.ig-visual-search{display:flex;align-items:center;gap:.55rem;padding:0 .75rem;border:1px solid var(--ig-border);border-radius:.7rem;background:#fff}.ig-visual-search:focus-within{border-color:var(--ig-accent);box-shadow:var(--ig-shadow-focus)}.ig-visual-search input{width:100%;padding:.65rem 0;border:0;outline:0;background:transparent}
+.ig-visual-table{width:100%;border-collapse:separate;border-spacing:0}.ig-visual-empty{display:grid;place-items:center;padding:3rem;text-align:center;color:var(--ig-muted)}
+@media(max-width:760px){.ig-visual-toolbar{align-items:stretch;flex-direction:column}.ig-visual-toolbar__field,.ig-visual-toolbar .ig-button{width:100%}.ig-visual-toolbar p{margin:.25rem 0 0}}
+
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+.ig-visual-action{display:flex;flex-direction:column;align-items:flex-start;gap:.55rem;padding:1.2rem}.ig-visual-action h2{margin:0;font-size:1.05rem}.ig-visual-action p{flex:1;margin:0;color:var(--ig-muted)}

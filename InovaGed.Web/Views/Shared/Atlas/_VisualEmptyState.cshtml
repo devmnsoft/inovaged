@@ -1,0 +1,2 @@
+@{ var title = Convert.ToString(ViewData["Title"]) ?? "Nenhum registro encontrado"; var description = Convert.ToString(ViewData["Description"]) ?? "Os dados aparecerão aqui quando estiverem disponíveis."; var icon = Convert.ToString(ViewData["Icon"]) ?? "search"; }
+<div class="ig-visual-empty"><app-icon name="@icon" size="36" decorative="true" /><h3>@title</h3><p>@description</p></div>

@@ -1,0 +1,3 @@
+@{ var title = Convert.ToString(ViewData["Title"]) ?? "InovaGED"; var subtitle = Convert.ToString(ViewData["Subtitle"]); var icon = Convert.ToString(ViewData["Icon"]) ?? "info"; }
+<section class="ig-visual-hero"><span class="ig-eyebrow"><app-icon name="@icon" size="18" decorative="true" /> InovaGED</span><h1>@title</h1>@if (!string.IsNullOrWhiteSpace(subtitle)) { <p>@subtitle</p> }@Html.Raw(Convert.ToString(ViewData["Content"]))
+</section>

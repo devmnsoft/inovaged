@@ -1,0 +1,2 @@
+@{ var label = Convert.ToString(ViewData["Label"]) ?? "Indicador"; var value = Convert.ToString(ViewData["Value"]) ?? "0"; var icon = Convert.ToString(ViewData["Icon"]) ?? "activity"; }
+<article class="ig-visual-kpi"><app-icon name="@icon" size="20" decorative="true" /><small>@label</small><strong>@value</strong></article>
