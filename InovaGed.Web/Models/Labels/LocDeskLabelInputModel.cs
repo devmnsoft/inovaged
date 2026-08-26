@@ -4,9 +4,14 @@ namespace InovaGed.Web.Models.Labels;
 
 public sealed class LocDeskLabelInputModel : IValidatableObject
 {
+    public string TemplateCode { get; set; } = LabelTemplateCode.LocDeskFolder;
     public string LabelKind { get; set; } = LocDeskLabelKind.Folder;
     [Required, StringLength(160)] public string ArchiveTitle { get; set; } = "ARQUIVO LOCDESCK ANANINDEUA";
     [StringLength(100)] public string? ProcessNumber { get; set; }
+    [StringLength(160)] public string Contract { get; set; } = "Hosp. Ophir Loyola";
+    [StringLength(100)] public string? MedicalRecordNumber { get; set; }
+    [DataType(DataType.Date)] public DateTime? PeriodStart { get; set; }
+    [DataType(DataType.Date)] public DateTime? PeriodEnd { get; set; }
     [Required, StringLength(50)] public string ControlNumber { get; set; } = "0001";
     [Range(1, int.MaxValue)] public int VolumeNumber { get; set; } = 1;
     [Range(1, int.MaxValue)] public int VolumeTotal { get; set; } = 3;
@@ -29,7 +34,17 @@ public sealed class LocDeskLabelInputModel : IValidatableObject
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
         if (!LocDeskLabelKind.IsValid(LabelKind)) yield return new("Tipo de etiqueta inválido.", [nameof(LabelKind)]);
-        if (VolumeTotal < VolumeNumber) yield return new("O total de volumes deve ser igual ou maior que o volume atual.", [nameof(VolumeTotal)]);
+        if (VolumeTotal < VolumeNumber) yield return new("O volume atual não pode ser maior que o total de volumes.", [nameof(VolumeNumber), nameof(VolumeTotal)]);
+        if (PeriodStart > PeriodEnd) yield return new("O período inicial não pode ser maior que o período final.", [nameof(PeriodStart), nameof(PeriodEnd)]);
+        if (TemplateCode == LabelTemplateCode.LocDeskFolderHol)
+        {
+            if (string.IsNullOrWhiteSpace(ControlNumber)) yield return new("Informe o número de controle da etiqueta.", [nameof(ControlNumber)]);
+            if (string.IsNullOrWhiteSpace(Contract)) yield return new("Informe o contrato.", [nameof(Contract)]);
+            if (string.IsNullOrWhiteSpace(Subject)) yield return new("Informe o assunto do documento.", [nameof(Subject)]);
+            if (string.IsNullOrWhiteSpace(Activity)) yield return new("Informe a atividade.", [nameof(Activity)]);
+            if (string.IsNullOrWhiteSpace(Classification)) yield return new("Informe a classificação.", [nameof(Classification)]);
+            if (string.IsNullOrWhiteSpace(Support)) yield return new("Informe o suporte.", [nameof(Support)]);
+        }
         if (LabelKind == LocDeskLabelKind.Folder && string.IsNullOrWhiteSpace(Subject)) yield return new("Assunto é obrigatório para etiqueta de pasta.", [nameof(Subject)]);
         if (LabelKind == LocDeskLabelKind.Box && string.IsNullOrWhiteSpace(Location)) yield return new("Localização é obrigatória para etiqueta de caixa.", [nameof(Location)]);
     }
