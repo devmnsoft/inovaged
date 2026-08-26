@@ -1,17 +1,114 @@
 [
-  {"name": "2026_08_26_label_template_catalog_seed_fix", "path": "database/migrations/2026_08_26_label_template_catalog_seed_fix.sql", "area": "Etiquetas", "required": true, "description": "Seed de modelos padrão de etiqueta. Garante templates padrão do InovaGED e modelos LocDesk necessários para pré-visualização e impressão."},
-  {"name": "2026_08_26_smart_workflow_core", "path": "database/migrations/2026_08_26_smart_workflow_core.sql", "area": "Workflow Inteligente", "required": true, "description": "Cria tarefas, eventos, regras e snapshots com SLA e isolamento por tenant."},
-  {"name": "2026_08_26_smart_ged_assistant", "path": "database/migrations/2026_08_26_smart_ged_assistant.sql", "area": "Assistente Documental", "required": true, "description": "Cria sessões, mensagens, citações e sugestões de ação rastreáveis do assistente local."},
-  {"name": "2026_08_26_smart_ged_core", "path": "database/migrations/2026_08_26_smart_ged_core.sql", "area": "GED Inteligente", "required": true, "description": "Cria análises locais, sugestões revisáveis, qualidade documental e log da busca inteligente."},
-  {"name": "2026_08_25_admin_labels_legacy_schema_compat", "path": "database/migrations/2026_08_25_admin_labels_legacy_schema_compat.sql", "area": "Compatibilidade Administração e Etiquetas", "required": true, "description": "Garante colunas auxiliares e fallbacks para bancos legados usados pelas telas administrativas e etiquetas."},
-  {"name": "2026_08_25_permission_catalog_compat_hotfix", "path": "database/migrations/2026_08_25_permission_catalog_compat_hotfix.sql", "area": "Administração", "required": true, "description": "Garante colunas description e module no catálogo de permissões ou mantém compatibilidade em bancos legados."},
-  {"name": "2026_08_24_observability_incident_center", "path": "database/migrations/2026_08_24_observability_incident_center.sql", "area": "Observabilidade", "required": true, "description": "Cria a central de incidentes, eventos agrupados e snapshots de rotas."},
-  {"name": "2026_08_label_template_designer", "path": "database/migrations/2026_08_label_template_designer.sql", "area": "Etiquetas", "required": true, "description": "Cria modelos de etiqueta, templates LocDesk e tabelas auxiliares."},
-  {"name": "2026_08_21_classification_plan_title_compat_hotfix", "path": "database/migrations/2026_08_21_classification_plan_title_compat_hotfix.sql", "area": "Classificação", "required": true, "description": "Garante title/code/description/final_destination em classification_plan."},
-  {"name": "2026_08_21_administration_legacy_schema_compat", "path": "database/migrations/2026_08_21_administration_legacy_schema_compat.sql", "area": "Administração", "required": true, "description": "Garante colunas administrativas legadas."},
-  {"name": "2026_08_21_instrument_version_compat_hotfix", "path": "database/migrations/2026_08_21_instrument_version_compat_hotfix.sql", "area": "Instrumentos", "required": true, "description": "Garante instrument_version para PCD, TTD e POP."},
-  {"name": "2026_08_retention_destination_di_schema_hotfix", "path": "database/migrations/2026_08_retention_destination_di_schema_hotfix.sql", "area": "Retenção", "required": true, "description": "Garante estrutura mínima para destinação documental."},
-  {"name": "2026_08_label_print_queue", "path": "database/migrations/2026_08_label_print_queue.sql", "area": "Etiquetas", "required": true, "description": "Garante fila de impressão de etiquetas."},
-  {"name": "2026_08_locdesk_labels", "path": "database/migrations/2026_08_locdesk_labels.sql", "area": "Etiquetas", "required": true, "description": "Garante rascunhos e integração de etiquetas LocDesk."},
-  {"name": "2026_08_24_uat_go_live_readiness", "path": "database/migrations/2026_08_24_uat_go_live_readiness.sql", "area": "Homologação", "required": true, "description": "Cria planos, casos, execuções, resultados e evidências UAT."}
+  {
+    "name": "2026_08_26_label_template_catalog_seed_fix",
+    "path": "database/migrations/2026_08_26_label_template_catalog_seed_fix.sql",
+    "area": "Etiquetas",
+    "required": true,
+    "description": "Seed de modelos padrão de etiqueta. Garante templates padrão do InovaGED e modelos LocDesk necessários para pré-visualização e impressão."
+  },
+  {
+    "name": "2026_08_26_label_print_calibration",
+    "path": "database/migrations/2026_08_26_label_print_calibration.sql",
+    "area": "Etiquetas",
+    "required": true,
+    "description": "Adiciona calibração profissional por tenant, usuário e impressora para impressão fiel em milímetros."
+  },
+  {
+    "name": "2026_08_26_smart_workflow_core",
+    "path": "database/migrations/2026_08_26_smart_workflow_core.sql",
+    "area": "Workflow Inteligente",
+    "required": true,
+    "description": "Cria tarefas, eventos, regras e snapshots com SLA e isolamento por tenant."
+  },
+  {
+    "name": "2026_08_26_smart_ged_assistant",
+    "path": "database/migrations/2026_08_26_smart_ged_assistant.sql",
+    "area": "Assistente Documental",
+    "required": true,
+    "description": "Cria sessões, mensagens, citações e sugestões de ação rastreáveis do assistente local."
+  },
+  {
+    "name": "2026_08_26_smart_ged_core",
+    "path": "database/migrations/2026_08_26_smart_ged_core.sql",
+    "area": "GED Inteligente",
+    "required": true,
+    "description": "Cria análises locais, sugestões revisáveis, qualidade documental e log da busca inteligente."
+  },
+  {
+    "name": "2026_08_25_admin_labels_legacy_schema_compat",
+    "path": "database/migrations/2026_08_25_admin_labels_legacy_schema_compat.sql",
+    "area": "Compatibilidade Administração e Etiquetas",
+    "required": true,
+    "description": "Garante colunas auxiliares e fallbacks para bancos legados usados pelas telas administrativas e etiquetas."
+  },
+  {
+    "name": "2026_08_25_permission_catalog_compat_hotfix",
+    "path": "database/migrations/2026_08_25_permission_catalog_compat_hotfix.sql",
+    "area": "Administração",
+    "required": true,
+    "description": "Garante colunas description e module no catálogo de permissões ou mantém compatibilidade em bancos legados."
+  },
+  {
+    "name": "2026_08_24_observability_incident_center",
+    "path": "database/migrations/2026_08_24_observability_incident_center.sql",
+    "area": "Observabilidade",
+    "required": true,
+    "description": "Cria a central de incidentes, eventos agrupados e snapshots de rotas."
+  },
+  {
+    "name": "2026_08_label_template_designer",
+    "path": "database/migrations/2026_08_label_template_designer.sql",
+    "area": "Etiquetas",
+    "required": true,
+    "description": "Cria modelos de etiqueta, templates LocDesk e tabelas auxiliares."
+  },
+  {
+    "name": "2026_08_21_classification_plan_title_compat_hotfix",
+    "path": "database/migrations/2026_08_21_classification_plan_title_compat_hotfix.sql",
+    "area": "Classificação",
+    "required": true,
+    "description": "Garante title/code/description/final_destination em classification_plan."
+  },
+  {
+    "name": "2026_08_21_administration_legacy_schema_compat",
+    "path": "database/migrations/2026_08_21_administration_legacy_schema_compat.sql",
+    "area": "Administração",
+    "required": true,
+    "description": "Garante colunas administrativas legadas."
+  },
+  {
+    "name": "2026_08_21_instrument_version_compat_hotfix",
+    "path": "database/migrations/2026_08_21_instrument_version_compat_hotfix.sql",
+    "area": "Instrumentos",
+    "required": true,
+    "description": "Garante instrument_version para PCD, TTD e POP."
+  },
+  {
+    "name": "2026_08_retention_destination_di_schema_hotfix",
+    "path": "database/migrations/2026_08_retention_destination_di_schema_hotfix.sql",
+    "area": "Retenção",
+    "required": true,
+    "description": "Garante estrutura mínima para destinação documental."
+  },
+  {
+    "name": "2026_08_label_print_queue",
+    "path": "database/migrations/2026_08_label_print_queue.sql",
+    "area": "Etiquetas",
+    "required": true,
+    "description": "Garante fila de impressão de etiquetas."
+  },
+  {
+    "name": "2026_08_locdesk_labels",
+    "path": "database/migrations/2026_08_locdesk_labels.sql",
+    "area": "Etiquetas",
+    "required": true,
+    "description": "Garante rascunhos e integração de etiquetas LocDesk."
+  },
+  {
+    "name": "2026_08_24_uat_go_live_readiness",
+    "path": "database/migrations/2026_08_24_uat_go_live_readiness.sql",
+    "area": "Homologação",
+    "required": true,
+    "description": "Cria planos, casos, execuções, resultados e evidências UAT."
+  }
 ]

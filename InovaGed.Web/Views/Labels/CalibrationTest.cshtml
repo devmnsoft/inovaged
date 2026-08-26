@@ -1,0 +1,10 @@
+@model InovaGed.Web.Models.Labels.LabelCalibrationInput
+@{ Layout = "_PrintLayout"; ViewData["Title"] = "Teste de calibração InovaGED"; }
+<div class="label-print-toolbar no-print"><div class="label-print-actions"><button type="button" onclick="window.print()">Imprimir folha de teste</button><a asp-action="Calibration">Voltar à calibração</a></div></div>
+<main class="label-print-a4 label-print-calibration" aria-label="Folha A4 para calibração de impressão">
+    <div class="label-calibration-ruler" aria-label="Régua em milímetros">0 &nbsp; 10 &nbsp; 20 &nbsp; 30 &nbsp; 40 &nbsp; 50 mm</div>
+    <div class="label-calibration-center-x"></div><div class="label-calibration-center-y"></div>
+    <span class="label-calibration-square tl"></span><span class="label-calibration-square tr"></span>
+    <span class="label-calibration-square bl"></span><span class="label-calibration-square br"></span>
+    <h1 style="position:absolute;top:135mm;width:100%;text-align:center;font-size:6mm">Teste de calibração InovaGED</h1>
+</main>
