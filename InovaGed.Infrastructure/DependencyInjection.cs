@@ -40,6 +40,8 @@ using InovaGed.Application.SystemHealth.Migrations;
 using InovaGed.Infrastructure.SystemHealth.Migrations;
 using InovaGed.Application.SmartGed;
 using InovaGed.Infrastructure.SmartGed;
+using InovaGed.Application.SmartGed.Assistant;
+using InovaGed.Infrastructure.SmartGed.Assistant;
 
 namespace InovaGed.Infrastructure;
 
@@ -98,6 +100,9 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<IDocumentClassificationSuggestionService>(sp => sp.GetRequiredService<SmartGedService>());
         services.AddScoped<IDocumentRetentionSuggestionService>(sp => sp.GetRequiredService<SmartGedService>());
         services.AddScoped<ISmartGedSearchService>(sp => sp.GetRequiredService<SmartGedService>());
+        services.AddScoped<ISmartAssistantRetrievalService, LocalSmartAssistantRetrievalService>();
+        services.AddScoped<ISmartAssistantAnswerComposer, LocalSmartAssistantAnswerComposer>();
+        services.AddScoped<ISmartGedAssistantService, SmartGedAssistantService>();
         services.AddScoped<Release.Uat.UatService>();
         services.AddScoped<global::InovaGed.Application.Release.Uat.IUatTestPlanService>(sp => sp.GetRequiredService<Release.Uat.UatService>());
         services.AddScoped<global::InovaGed.Application.Release.Uat.IUatExecutionService>(sp => sp.GetRequiredService<Release.Uat.UatService>());

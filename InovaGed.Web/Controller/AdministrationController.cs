@@ -23,6 +23,7 @@ public sealed class AdministrationController : Controller
         var actions = new[]
         {
             new AdministrationActionVM("GED Inteligente", "Análise documental, classificação sugerida, temporalidade assistida e busca inteligente.", "bi-stars", "SmartGed", "Index", AppPolicies.Administracao, "Inteligência", true, null),
+new AdministrationActionVM("Assistente Documental", "Perguntas rastreáveis sobre acervo, documentos, etiquetas e temporalidade.", "bi-chat-dots", "SmartAssistant", "Index", AppPolicies.Administracao, "Inteligência", true, null),
             new AdministrationActionVM("Usuários e Perfis", "Gerencie acessos, papéis e vínculos de usuários.", "bi-people", "Administration", "Users", AppPolicies.Administracao, "Governança e Segurança", true, null),
             new AdministrationActionVM("Permissões e Segurança", "Revise políticas e o catálogo de permissões do ambiente.", "bi-shield-lock", "Administration", "Security", AppPolicies.Administracao, "Governança e Segurança", true, null),
             new AdministrationActionVM("Tenants", "Acompanhe organizações, escopos e isolamento operacional.", "bi-buildings", "Administration", "Tenants", AppPolicies.Administracao, "Governança e Segurança", true, null),

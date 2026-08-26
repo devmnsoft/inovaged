@@ -41,9 +41,10 @@
         <a asp-controller="GedClassification" asp-action="Queue" class="@ActiveAny("GedClassification", "ClassificationDashboard")"><i class="bi bi-tags"></i><span>Classificação</span></a>
         <a asp-controller="Disposition" asp-action="Index" class="@ActiveAny("Disposition")"><i class="bi bi-calendar-check"></i><span>Temporalidade</span></a>
     </details>
-    <details class="sidebar-group" open="@(ActiveAny("SmartGed") == "active" ? "open" : null)">
+    <details class="sidebar-group" open="@(ActiveAny("SmartGed", "SmartAssistant") == "active" ? "open" : null)">
         <summary>Inteligência</summary>
         <a asp-controller="SmartGed" asp-action="Index" class="@ActiveAny("SmartGed")"><i class="bi bi-stars"></i><span>GED Inteligente</span></a>
+        <a asp-controller="SmartAssistant" asp-action="Index" class="@ActiveAny("SmartAssistant")"><i class="bi bi-chat-dots"></i><span>Assistente Documental</span></a>
         <a asp-controller="SmartGed" asp-action="ReviewQueue" class="@Active("SmartGed", "ReviewQueue")"><i class="bi bi-inboxes"></i><span>Fila de revisão</span></a>
         <a asp-controller="SmartGed" asp-action="Search" class="@Active("SmartGed", "Search")"><i class="bi bi-search"></i><span>Busca inteligente</span></a>
     </details>
