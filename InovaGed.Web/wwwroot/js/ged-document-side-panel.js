@@ -54,6 +54,8 @@
         page.classList.remove('ged-side-panel-open');
         panel.hidden = false;
         panel.classList.remove('d-none');
+        panel.classList.add('is-open');
+        document.body.classList.add('ged-preview-open');
         panel.setAttribute('aria-hidden', 'false');
         panel.dataset.documentId = documentId || '';
         if (versionId) panel.dataset.versionId = versionId;
@@ -86,6 +88,8 @@
             panel.innerHTML = html;
             panel.hidden = false;
             panel.classList.remove('d-none');
+            panel.classList.add('is-open');
+            document.body.classList.add('ged-preview-open');
             panel.setAttribute('aria-hidden', 'false');
             panel.dataset.documentId = documentId;
             if (versionId) panel.dataset.versionId = versionId;
@@ -103,8 +107,10 @@
         if (panel) {
             panel.hidden = true;
             panel.classList.add('d-none');
+            panel.classList.remove('is-open');
             panel.classList.remove('is-expanded');
             document.body.classList.remove('ged-reader-focus-open');
+            document.body.classList.remove('ged-preview-open');
             panel.setAttribute('aria-hidden', 'true');
             panel.innerHTML = '';
             delete panel.dataset.documentId;

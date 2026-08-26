@@ -46,6 +46,11 @@
 .ged-folder-tree { flex: 1 1 auto; min-height: 0; overflow: auto; }
 .ged-main-panel { overflow: auto; }
 .ged-document-side-panel { height: clamp(560px, calc(100dvh - 180px), 980px); }
+.ged-preview-panel { position: relative; width: min(520px, 45vw); overflow-y: auto; overscroll-behavior: contain; }
+.ged-preview-close { display: inline-grid; place-items: center; width: 2.35rem; height: 2.35rem; flex: 0 0 auto; border: 1px solid var(--ig-border, #dbe4ef); border-radius: 999px; color: #475569; background: #fff; box-shadow: 0 5px 16px rgba(15,23,42,.1); }
+.ged-preview-close:hover,.ged-preview-close:focus-visible { color: #b42318; border-color: #fda29b; background: #fff5f4; }
+.ged-preview-panel > .ged-preview-close { position: absolute; z-index: 8; top: 1rem; right: 1rem; }
+.ged-preview-panel.is-open { display: block; }
 
 .ged-page.with-document-panel {
     grid-template-columns: var(--ged-folder-width) minmax(420px, 1fr) var(--ged-preview-width);
@@ -121,6 +126,7 @@
     .ged-page { min-height: calc(100dvh - 118px); border-radius: 12px; }
     .ged-main-panel { height: auto; min-height: calc(100dvh - 136px); }
     .ged-document-side-panel { inset: 0; width: 100vw; border-radius: 0; }
+    body.ged-preview-open { overflow: hidden; }
     .ged-folder-header { padding: 12px; }
     .ged-folder-actions { width: 100%; justify-content: flex-start; }
     .ged-folder-actions .btn { min-height: 44px; white-space: nowrap; }

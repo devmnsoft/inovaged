@@ -12,9 +12,11 @@ $routes = @(
     "/DatabaseReadiness",
     "/SystemIncidents",
     "/Labels",
+    "/Labels/Print",
     "/Labels/PrintWizard",
     "/Labels/History",
     "/Labels/LocDesk",
+    "/Ged",
     "/RetentionDestination",
     "/Instruments/Versions/PCD",
     "/SchemaHealth"
