@@ -43,7 +43,8 @@ public sealed class SchemaHealthService : ISchemaHealthService
         "ged.box_content_history", "ged.box_location_history", "ged.document_folder_move_history",
         "ged.instrument_version",
         "ged.document_ai_analysis", "ged.document_classification_suggestion", "ged.document_retention_suggestion",
-        "ged.document_quality_issue", "ged.smart_search_query_log"
+        "ged.document_quality_issue", "ged.smart_search_query_log",
+        "ged.smart_assistant_session", "ged.smart_assistant_message", "ged.smart_assistant_citation", "ged.smart_assistant_action_suggestion"
     ];
 
     private static readonly string[] OptionalTables =
@@ -315,6 +316,8 @@ where table_schema = 'ged';", cancellationToken: ct))).ToHashSet(StringComparer.
                     ? "Execute database/migrations/2026_08_label_template_designer.sql ou database/apply_all_required_migrations.sql."
                     : string.Equals(table, "ged.loan_request_history", StringComparison.OrdinalIgnoreCase)
                     ? "Execute database/migrations/2026_06_loans_history.sql ou database/apply_all_required_migrations.sql."
+                    : table.StartsWith("ged.smart_assistant_", StringComparison.OrdinalIgnoreCase)
+                    ? "Execute a migration do Assistente Documental em /DatabaseReadiness."
                     : $"Execute o SQL específico desta linha ou {ConsolidationMigration}.";
                 AddCheck(report, BuildTableId(table), "GED", table, "Tabela", "Critical", ok, ok ? "Tabela crítica encontrada." : "Tabela crítica ausente.", tableFix);
                 if (!ok) report.MissingTables.Add(table);

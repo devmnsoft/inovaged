@@ -3057,3 +3057,4 @@ where coalesce(reg_status, 'A') = 'A';
 \ir migrations/2026_08_25_permission_catalog_compat_hotfix.sql
 \ir migrations/2026_08_25_admin_labels_legacy_schema_compat.sql
 \ir migrations/2026_08_26_smart_ged_core.sql
+\ir migrations/2026_08_26_smart_ged_assistant.sql
