@@ -1,0 +1,7 @@
+@model InovaGed.Web.Models.AtlasFormFieldViewModel
+<div class="atlas-form-field">
+    <label class="form-label" for="@Model.Name">@Model.Label@if(Model.Required){<span aria-hidden="true"> *</span>}</label>
+    <input class="form-control" id="@Model.Name" name="@Model.Name" value="@Model.Value" type="@Model.Type" placeholder="@Model.Placeholder" required="@Model.Required" disabled="@Model.Disabled" readonly="@Model.ReadOnly" aria-describedby="@(Model.Name)-help @(Model.Name)-validation" />
+    @if(!string.IsNullOrWhiteSpace(Model.HelpText)){<small id="@(Model.Name)-help" class="form-text">@Model.HelpText</small>}
+    <span id="@(Model.Name)-validation" class="text-danger" data-valmsg-for="@Model.Name" data-valmsg-replace="true"></span>
+</div>

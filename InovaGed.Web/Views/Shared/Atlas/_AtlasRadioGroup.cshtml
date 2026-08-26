@@ -1,0 +1,2 @@
+@model InovaGed.Web.Models.AtlasFormFieldViewModel
+<fieldset class="atlas-choice-group"><legend class="form-label">@Model.Label</legend>@foreach(var option in Model.Options){<label class="atlas-choice"><input type="radio" name="@Model.Name" value="@option.Value" checked="@(option.Value == Model.Value)" disabled="@option.Disabled" required="@Model.Required"/><span><strong>@option.Label</strong>@if(!string.IsNullOrWhiteSpace(option.Description)){<small>@option.Description</small>}</span></label>}</fieldset>
