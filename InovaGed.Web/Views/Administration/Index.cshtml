@@ -1,30 +1,99 @@
 @model InovaGed.Web.Models.Administration.AdministrationDashboardVM
+@using InovaGed.Web.Models.Administration
+@{
+    ViewData["Title"] = "Central Administrativa";
+    ViewData["WorkspaceVariant"] = "wide";
+
+    AdministrationHealthVM? FindMetric(params string[] terms) => Model.Health.FirstOrDefault(metric => terms.Any(term => metric.Title.Contains(term, StringComparison.OrdinalIgnoreCase)));
+    string StateClass(AdministrationHealthVM? metric) => metric is null ? "unknown" : metric.Status.Contains("Saud", StringComparison.OrdinalIgnoreCase) ? "ok" : metric.Status.Contains("Cr", StringComparison.OrdinalIgnoreCase) || metric.Status.Contains("Erro", StringComparison.OrdinalIgnoreCase) || metric.Status.Contains("Indis", StringComparison.OrdinalIgnoreCase) ? "critical" : "warning";
+    string StateLabel(AdministrationHealthVM? metric) => metric is null ? "Não verificado" : StateClass(metric) == "ok" ? "OK" : StateClass(metric) == "critical" ? "Crítico" : "Atenção";
+
+    var environmentItems = new List<(string Label, AdministrationHealthVM? Metric, string Icon)>
+    {
+        ("Banco de dados", FindMetric("banco"), "database"),
+        ("Migrations", FindMetric("migration"), "activity"),
+        ("Incidentes críticos", FindMetric("incidente"), "warning"),
+        ("Workers", FindMetric("worker"), "activity"),
+        ("SchemaHealth", FindMetric("schema"), "health")
+    };
+    var requestedKpis = new List<(string Label, AdministrationHealthVM? Metric, string Icon, string Description)>
+    {
+        ("Usuários ativos", FindMetric("Usuários ativos"), "users", "Contas habilitadas no escopo atual."),
+        ("Tenants", FindMetric("Tenants ativos"), "building", "Organizações ativas no ambiente."),
+        ("Permissões cadastradas", FindMetric("Permissões cadastradas"), "key", "Catálogo de autorização disponível."),
+        ("Workers com erro", FindMetric("Workers com erro"), "activity", "Execuções assíncronas que exigem análise."),
+        ("Migrations pendentes", FindMetric("migration"), "activity", "Atualizações de banco aguardando validação."),
+        ("Incidentes críticos", FindMetric("incidente"), "warning", "Ocorrências de maior severidade abertas."),
+        ("Rotas monitoradas", FindMetric("rotas"), "health", "Endpoints cobertos pela observabilidade."),
+        ("Status geral", FindMetric("Estado do banco"), "shield", "Leitura consolidada do ambiente administrativo.")
+    };
+}
 @section Styles {
     <link rel="stylesheet" href="~/css/pages/administration.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/administration-premium.css" asp-append-version="true" />
 }
-@{ ViewData["Title"] = "Central Administrativa"; ViewData["WorkspaceVariant"] = "wide"; }
-<div class="ig-admin-executive">
-    <section class="ig-admin-hero" aria-labelledby="admin-title">
-        <div><span class="ig-eyebrow"><i class="bi bi-shield-check" aria-hidden="true"></i> Governança do GED</span><h1 id="admin-title">Central Administrativa</h1><p>Controle usuários, permissões, banco de dados, saúde do sistema e operação técnica do InovaGED.</p></div>
-        <nav class="ig-admin-hero__actions" aria-label="Ações administrativas rápidas"><a class="ig-button" asp-action="Health"><i class="bi bi-heart-pulse"></i> Saúde do Sistema</a><a class="ig-button" href="/DatabaseReadiness"><i class="bi bi-database-check"></i> Prontidão do Banco</a><a class="ig-button" asp-controller="SystemIncidents" asp-action="Index"><i class="bi bi-exclamation-triangle"></i> Central de Incidentes</a><a class="ig-button" asp-action="Readiness"><i class="bi bi-rocket-takeoff"></i> Release Readiness</a></nav>
+
+<div class="admin-executive-page">
+    <section class="admin-hero" aria-labelledby="admin-title">
+        <div class="admin-hero__content">
+            <span class="admin-hero__eyebrow"><app-icon name="shield" size="18" decorative="true" /> Governança e operação</span>
+            <span class="admin-hero__environment">Ambiente atual · acesso administrativo</span>
+            <h1 id="admin-title">Central Administrativa</h1>
+            <p>Controle usuários, permissões, banco de dados, saúde do sistema e operação técnica do InovaGED.</p>
+        </div>
+        <nav class="admin-hero-actions" aria-label="Ações administrativas rápidas">
+            <a asp-action="Health"><app-icon name="health" size="20" decorative="true" /><span>Saúde do Sistema</span></a>
+            <a href="/DatabaseReadiness"><app-icon name="database" size="20" decorative="true" /><span>Prontidão do Banco</span></a>
+            <a asp-controller="SystemIncidents" asp-action="Index"><app-icon name="warning" size="20" decorative="true" /><span>Central de Incidentes</span></a>
+            <a asp-action="DesignSystem"><app-icon name="layout-template" size="20" decorative="true" /><span>Design System</span></a>
+            <a asp-action="Readiness"><app-icon name="rocket" size="20" decorative="true" /><span>Release Readiness</span></a>
+        </nav>
     </section>
-    <partial name="Atlas/_AdminStatusStrip" model="Model.Health" />
-    <section class="ig-admin-kpis" aria-label="Indicadores administrativos">
-        @foreach (var kpi in Model.Health.Take(8))
+
+    <section class="admin-status-strip" aria-label="Status do ambiente">
+        @foreach (var item in environmentItems)
         {
-            <partial name="Atlas/_PremiumKpiCard" view-data='new Microsoft.AspNetCore.Mvc.ViewFeatures.ViewDataDictionary(ViewData) { { "Icon", "activity" }, { "Label", kpi.Title }, { "Value", kpi.Value ?? "Não informado" }, { "Hint", kpi.Message } }' />
+            <div class="admin-status-item"><app-icon name="@item.Icon" size="18" decorative="true" /><div><small>@item.Label</small><strong>@(item.Metric?.Value ?? "Não verificado")</strong></div><span class="admin-status-badge is-@StateClass(item.Metric)">@StateLabel(item.Metric)</span></div>
         }
+        <div class="admin-status-item"><app-icon name="recent" size="18" decorative="true" /><div><small>Última verificação</small><strong>@DateTimeOffset.Now.ToString("dd/MM/yyyy HH:mm")</strong></div><span class="admin-status-badge is-ok">Agora</span></div>
     </section>
+
+    <section class="admin-overview" aria-labelledby="admin-kpis-title">
+        <header class="admin-section-header"><div><span>Visão executiva</span><h2 id="admin-kpis-title">Indicadores administrativos</h2></div><p>Dados reais do ambiente; itens sem telemetria são identificados como não verificados.</p></header>
+        <div class="admin-kpi-grid">
+            @foreach (var kpi in requestedKpis)
+            {
+                <article class="admin-kpi-card"><div class="admin-kpi-card__top"><span class="admin-kpi-card__icon"><app-icon name="@kpi.Icon" size="21" decorative="true" /></span><span class="admin-status-badge is-@StateClass(kpi.Metric)">@StateLabel(kpi.Metric)</span></div><small>@kpi.Label</small><strong>@(kpi.Metric?.Value ?? "Não verificado")</strong><p>@(kpi.Metric?.Message ?? kpi.Description)</p></article>
+            }
+        </div>
+    </section>
+
+    <section class="admin-quick-actions" aria-labelledby="quick-actions-title">
+        <header class="admin-section-header"><div><span>Atalhos operacionais</span><h2 id="quick-actions-title">Ações rápidas</h2></div></header>
+        <div class="admin-quick-actions__grid"><a asp-action="Users"><app-icon name="users" size="20" decorative="true" />Gerenciar usuários</a><a asp-action="Security"><app-icon name="key" size="20" decorative="true" />Revisar permissões</a><a asp-action="Migrations"><app-icon name="database" size="20" decorative="true" />Validar migrations</a><a asp-action="Workers"><app-icon name="activity" size="20" decorative="true" />Monitorar workers</a></div>
+    </section>
+
+    @foreach (var group in Model.Sections)
+    {
+        <section class="admin-section" aria-labelledby="section-@group.Title.GetHashCode()">
+            <header class="admin-section-header"><div><span>Área administrativa</span><h2 id="section-@group.Title.GetHashCode()">@group.Title</h2></div><p>@group.Description</p></header>
+            <div class="admin-module-grid">
+                @foreach (var action in group.Actions)
+                {
+                    <article class="admin-module-card @(!action.Available ? "is-disabled" : null)">
+                        <div class="admin-module-icon"><i class="bi @action.Icon" aria-hidden="true"></i></div>
+                        <div class="admin-module-meta"><div><h3>@action.Title</h3><span class="admin-status-badge @(action.Available ? "is-ok" : "is-unknown")">@(action.Available ? "Disponível" : "Indisponível")</span></div><p>@action.Description</p><small>@(action.Available ? "Acesso controlado pelas permissões do perfil e registrado em auditoria." : action.UnavailableReason ?? "Rota não disponível neste ambiente.")</small></div>
+                        @if (action.Available) { <a class="admin-module-action" asp-controller="@action.Controller" asp-action="@action.Action">Abrir <app-icon name="arrow-right" size="16" decorative="true" /></a> } else { <span class="admin-module-action" aria-disabled="true">Indisponível</span> }
+                    </article>
+                }
+            </div>
+        </section>
+    }
+
     @if (Model.Recommendations.Any())
     {
-        <section class="atlas-prime-panel"><div class="atlas-prime-panel__header"><div><h2>Recomendações prioritárias</h2><small>Ações orientadas por severidade e impacto no ambiente.</small></div></div><partial name="_ConfigurationRecommendations" model="Model.Recommendations" /></section>
+        <section class="admin-alert-panel" aria-labelledby="technical-alerts-title"><header><app-icon name="warning" size="22" decorative="true" /><div><span>Observabilidade</span><h2 id="technical-alerts-title">Alertas técnicos e recomendações</h2></div></header><partial name="_ConfigurationRecommendations" model="Model.Recommendations" /></section>
     }
-    <section aria-labelledby="admin-areas-title"><div class="ig-section-heading"><div><h2 id="admin-areas-title">Áreas administrativas</h2><p>Recursos agrupados por responsabilidade, risco e momento operacional.</p></div></div>
-        @foreach (var group in Model.Sections)
-        {
-            <section class="ig-admin-group"><header><h2>@group.Title</h2><p>@group.Description</p></header><div class="ig-admin-module-grid">@foreach (var action in group.Actions) { <partial name="Atlas/_AdminModuleCard" model="action" /> }</div></section>
-        }
-    </section>
-    <section class="ig-admin-technical-note" role="note"><i class="bi bi-info-circle" aria-hidden="true"></i><div><strong>Orientação para administradores</strong><p>Revise alertas técnicos antes de migrations ou releases. Ações sensíveis permanecem protegidas pelas permissões do perfil e pela trilha de auditoria.</p></div><a class="ig-button ig-button--secondary" asp-action="Readiness">Abrir checklist de entrega</a></section>
+
+    <footer class="admin-guidance-footer"><app-icon name="information" size="22" decorative="true" /><div><strong>Orientação para administradores</strong><p>Revise os alertas técnicos antes de migrations ou releases. Ações sensíveis permanecem protegidas pelas permissões do perfil e pela trilha de auditoria.</p></div><a asp-action="Readiness">Abrir checklist de entrega</a></footer>
 </div>

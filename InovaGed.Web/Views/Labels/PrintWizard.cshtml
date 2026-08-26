@@ -9,6 +9,15 @@
     IReadOnlyList<InovaGed.Web.Models.SelectOptionViewModel> subjectOptions =
         ViewBag.SubjectOptions as IReadOnlyList<InovaGed.Web.Models.SelectOptionViewModel>
         ?? Array.Empty<InovaGed.Web.Models.SelectOptionViewModel>();
+
+    var stepperViewData = new Microsoft.AspNetCore.Mvc.ViewFeatures.ViewDataDictionary(ViewData);
+    stepperViewData["Steps"] = new List<string> { "Tipo", "Modelo", "Dados", "Prévia", "Impressão" };
+    stepperViewData["Current"] = 2;
+
+    var beforeContinueAlert = new Microsoft.AspNetCore.Mvc.ViewFeatures.ViewDataDictionary(ViewData);
+    beforeContinueAlert["AlertTitle"] = "Antes de continuar";
+    beforeContinueAlert["Message"] = "Selecione o tipo e o modelo da etiqueta antes de gerar a impressão. A reimpressão exige justificativa para manter a rastreabilidade.";
+    beforeContinueAlert["Tone"] = "info";
 }
 
 @section Styles {
@@ -23,8 +32,8 @@
         <div class="label-wizard-hero__actions"><a asp-action="Index" class="atlas-btn atlas-btn-secondary"><i class="bi bi-arrow-left"></i> Voltar à central</a><a asp-action="History" class="atlas-btn atlas-btn-secondary"><i class="bi bi-clock-history"></i> Histórico</a></div>
     </header>
     @if (ViewBag.CatalogMigrationWarning is string migrationWarning) { <div class="atlas-alert atlas-alert-warning" role="alert"><strong>Atenção:</strong> @migrationWarning</div> }
-    <partial name="Atlas/_AtlasStepper" view-data='new Microsoft.AspNetCore.Mvc.ViewFeatures.ViewDataDictionary(ViewData) { { "Steps", new List<string> { "Tipo", "Modelo", "Dados", "Prévia", "Impressão" } }, { "Current", 2 } }' />
-    <partial name="Atlas/_AtlasAlert" view-data='new Microsoft.AspNetCore.Mvc.ViewFeatures.ViewDataDictionary(ViewData) { { "Title", "Antes de continuar" }, { "Message", "Selecione o tipo e o modelo da etiqueta antes de gerar a impressão. A reimpressão exige justificativa para manter a rastreabilidade." }, { "Tone", "info" } }' />
+    <partial name="Atlas/_AtlasStepper" view-data="stepperViewData" />
+    <partial name="Atlas/_AtlasAlert" view-data="beforeContinueAlert" />
 
     <form method="post" class="label-wizard-layout">
         @Html.AntiForgeryToken()
