@@ -1,8 +1,12 @@
 @{
     ViewData["Title"] = "Assistente Documental Inteligente";
     ViewData["WorkspaceVariant"] = "wide";
+    ViewData["Subtitle"] = "Localize documentos por conteúdo, metadados, classificação, etiquetas e rastreabilidade.";
+    ViewData["Icon"] = "sparkles";
 }
 @section Styles { <link rel="stylesheet" href="~/css/pages/document-assistant.css" asp-append-version="true" /> }
+
+<div class="atlas-page mb-4"><partial name="Atlas/_AtlasPageHero" /></div>
 
 <main class="document-assistant" data-document-assistant data-endpoint="@Url.Action("Ask", "SmartSearch")" data-feedback-endpoint="@Url.Action("Feedback", "SmartSearch")" data-history-endpoint="@Url.Action("HistoryData", "SmartSearch")" data-saved-endpoint="@Url.Action("SavedSearches", "SmartSearch")" data-save-endpoint="@Url.Action("SaveSearch", "SmartSearch")" data-run-saved-endpoint="@Url.Action("RunSavedSearch", "SmartSearch")" data-rename-saved-endpoint="@Url.Action("RenameSavedSearch", "SmartSearch")" data-favorite-saved-endpoint="@Url.Action("FavoriteSavedSearch", "SmartSearch")" data-delete-saved-endpoint="@Url.Action("DeleteSavedSearch", "SmartSearch")">
     <header class="assistant-hero">

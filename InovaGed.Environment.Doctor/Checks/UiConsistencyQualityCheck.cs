@@ -21,6 +21,13 @@ public sealed partial class UiConsistencyQualityCheck : IQualityCheck
             AddMatches(relative, text, InlineTupleLoop(), "razor-inline-tuples", "@foreach contém array/tuplas inline.", issues);
             AddMatches(relative, text, UnescapedMedia(), "razor-media", "@media não escapado em Razor.", issues);
             AddMatches(relative, text, RawCard(), "raw-card", "Card simples sem wrapper Atlas/ig.", issues);
+            AddMatches(relative, text, RawButton(), "raw-button", "Botão sem classe Atlas ou Bootstrap padronizada.", issues);
+            AddMatches(relative, text, InlineStyle(), "inline-style", "Bloco CSS inline; consolidar em folha compartilhada.", issues);
+
+            if (IsOperationalView(relative) && !Path.GetFileName(relative).StartsWith('_')
+                && !text.Contains("AtlasPageHero", StringComparison.OrdinalIgnoreCase)
+                && !text.Contains("Atlas/_PageHeader", StringComparison.OrdinalIgnoreCase))
+                issues.Add(new(relative, "operational-hero", "View operacional sem AtlasPageHero.", 1));
 
             if (relative.Contains("/Views/Administration/", StringComparison.OrdinalIgnoreCase)
                 && !Path.GetFileName(relative).StartsWith('_')
@@ -72,6 +79,17 @@ public sealed partial class UiConsistencyQualityCheck : IQualityCheck
     private static partial Regex UnescapedMedia();
     [GeneratedRegex("class\\s*=\\s*[\\\"'][^\\\"']*\\bcard\\b(?![^\\\"']*(?:atlas|ig-))[^\\\"']*[\\\"']", RegexOptions.IgnoreCase)]
     private static partial Regex RawCard();
+
+    [GeneratedRegex("<button(?![^>]*class=[\"'][^\"']*(?:atlas-btn|btn)[^\"']*[\"'])", RegexOptions.IgnoreCase)]
+    private static partial Regex RawButton();
+    [GeneratedRegex("<style(?:\\s|>)", RegexOptions.IgnoreCase)]
+    private static partial Regex InlineStyle();
+
+    private static bool IsOperationalView(string relative)
+    {
+        string[] modules = ["/Views/Ged/", "/Views/GedDashboard/", "/Views/SmartSearch/", "/Views/Physical/", "/Views/Retention/", "/Views/RetentionDestination/", "/Views/RetentionCase/", "/Views/Instruments/", "/Views/SystemIncidents/", "/Views/DatabaseReadiness/", "/Views/UatReadiness/", "/Views/Loans/", "/Views/DocumentQuality/", "/Views/Protocols/"];
+        return modules.Any(relative.Contains);
+    }
 
     private sealed record UiIssue(string View, string Rule, string Message, int Line);
 }

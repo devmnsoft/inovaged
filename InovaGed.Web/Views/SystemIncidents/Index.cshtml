@@ -2,6 +2,8 @@
 
 @{
     ViewData["Title"] = "Central de Incidentes";
+    ViewData["Subtitle"] = "Acompanhe erros técnicos, rotas instáveis, pendências de schema e recomendações de correção.";
+    ViewData["Icon"] = "warning";
 
     var incidents = Model ?? Array.Empty<InovaGed.Application.SystemHealth.Incidents.SystemIncidentListItem>();
     var monthLimit = DateTimeOffset.UtcNow.AddMonths(-1);
@@ -20,6 +22,9 @@
     };
 }
 
+<div class="atlas-page mb-4">
+    <partial name="Atlas/_AtlasPageHero" />
+</div>
 <div class="container-fluid py-4">
     <div class="d-flex justify-content-between align-items-start mb-4">
         <div>
@@ -38,7 +43,7 @@
         @foreach (var kpi in kpis)
         {
             <div class="col-6 col-lg-3">
-                <div class="card shadow-sm h-100">
+                <div class="card atlas-card shadow-sm h-100">
                     <div class="card-body">
                         <small class="text-muted">@kpi.Label</small>
                         <div class="fs-2 fw-bold">@kpi.Value</div>
@@ -48,7 +53,7 @@
         }
     </div>
 
-    <form method="get" class="card card-body mb-4">
+    <form method="get" class="card atlas-card card-body mb-4">
         <div class="row g-2">
             <div class="col-md"><input name="Type" class="form-control" placeholder="Tipo" /></div>
             <div class="col-md"><input name="Severity" class="form-control" placeholder="Severidade" /></div>
@@ -61,7 +66,7 @@
 
     @if (!incidents.Any())
     {
-        <div class="card shadow-sm">
+        <div class="card atlas-card shadow-sm">
             <div class="card-body text-center py-5">
                 <h2 class="h5">Nenhum incidente encontrado</h2>
                 <p class="text-muted mb-0">
@@ -73,7 +78,7 @@
     else
     {
         <div class="atlas-table-shell table-responsive">
-            <table class="table atlas-table table-hover align-middle mb-0">
+            <table class="table atlas-table atlas-table table-hover align-middle mb-0">
                 <thead>
                     <tr>
                         <th>Severidade</th>

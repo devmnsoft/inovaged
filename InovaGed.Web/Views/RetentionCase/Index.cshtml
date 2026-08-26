@@ -1,6 +1,8 @@
-﻿@model IReadOnlyList<InovaGed.Application.RetentionCases.RetentionCaseRow>
+@model IReadOnlyList<InovaGed.Application.RetentionCases.RetentionCaseRow>
 @{
     ViewData["Title"] = "Casos de Destinação";
+    ViewData["Subtitle"] = "Acompanhe análise, aprovação e execução das decisões de destinação.";
+    ViewData["Icon"] = "retention";
     string? status = ViewBag.Status as string;
 }
 
@@ -13,6 +15,9 @@
      <div class="alert alert-success">@ok</div>
 }
 
+<div class="atlas-page mb-4">
+    <partial name="Atlas/_AtlasPageHero" />
+</div>
 <div class="d-flex justify-content-between align-items-start mb-3">
     <div>
         <h2 class="mb-0">Casos de Destinação</h2>
@@ -23,7 +28,7 @@
     </div>
 </div>
 
-<form method="get" class="card mb-3">
+<form method="get" class="card atlas-card mb-3">
     <div class="card-body">
         <div class="row g-2 align-items-end">
             <div class="col-md-4">
@@ -44,9 +49,9 @@
     </div>
 </form>
 
-<div class="card">
+<div class="card atlas-card">
     <div class="card-body table-responsive">
-        <table class="table table-striped align-middle">
+        <table class="table atlas-table table-striped align-middle">
             <thead>
                 <tr>
                     <th style="width:120px;">Nº</th>

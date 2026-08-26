@@ -2,11 +2,16 @@
 
 @{
     ViewData["Title"] = "Pesquisa de Documentos";
+    ViewData["Subtitle"] = "Localize documentos por conteúdo, metadados, classificação, etiquetas e rastreabilidade.";
+    ViewData["Icon"] = "search";
     var q = (string)(ViewBag.Query ?? "");
     var folderId = ViewBag.FolderId as Guid?;
     var scope = (string)(ViewBag.Scope ?? "folder");
 }
 
+<div class="atlas-page mb-4">
+    <partial name="Atlas/_AtlasPageHero" />
+</div>
 <div class="container-fluid mt-3">
     @if (!string.IsNullOrWhiteSpace(ViewBag.SearchError as string))
     {
@@ -18,7 +23,7 @@
         <a asp-action="Index" asp-controller="Ged" asp-route-folderId="@folderId" class="btn btn-outline-secondary btn-sm"><app-icon name="arrow-left" size="16" decorative="true" /> Voltar</a>
     </div>
 
-    <section class="card border-0 shadow-sm mb-4">
+    <section class="card atlas-card border-0 shadow-sm mb-4">
         <div class="card-body">
             <div class="ged-smart-box">
                 <input type="hidden" id="currentFolderId" value="@folderId" />

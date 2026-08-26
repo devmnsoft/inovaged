@@ -33,3 +33,7 @@ O estado **antes** está documentado pelos problemas da tabela e pelo relatório
 ## Impressão LocDesk
 
 O CSS de impressão permanece externo e conserva borda preta, logo, QR Code, campos alinhados e destaques vermelhos para controle e volume. O texto homologado **ARQUIVO LOCDESCK ANANINDEUA** não foi alterado. Toolbar e navegação continuam removidas somente em `@media print`.
+
+## Atlas UI Expansion — módulos operacionais (2026-08-26)
+
+As rotas operacionais encontradas foram adicionadas a `tools/visual-qa/routes.json`. A rota `/PostGoLive` não foi encontrada e não foi criada artificialmente. A captura automatizada ficou pendente porque o SDK .NET e uma sessão autenticada não estão disponíveis no ambiente atual; os artefatos existentes não foram substituídos por imagens sem conteúdo real.

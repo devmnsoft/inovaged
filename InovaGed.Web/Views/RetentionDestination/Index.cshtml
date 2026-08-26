@@ -1,6 +1,8 @@
-﻿@model IReadOnlyList<InovaGed.Application.Retention.DestinationBatchRow>
+@model IReadOnlyList<InovaGed.Application.Retention.DestinationBatchRow>
 @{
     ViewData["Title"] = "Lotes de Destinação";
+    ViewData["Subtitle"] = "Organize lotes de eliminação e guarda permanente com decisão rastreável.";
+    ViewData["Icon"] = "destination";
 }
 
 @if (TempData["Error"] is string err)
@@ -12,6 +14,9 @@
      <div class="alert alert-success">@ok</div>
 }
 
+<div class="atlas-page mb-4">
+    <partial name="Atlas/_AtlasPageHero" />
+</div>
 <div class="d-flex justify-content-between align-items-start mb-3">
     <div>
         <h2 class="mb-0">Lotes de Destinação</h2>
@@ -22,9 +27,9 @@
     </a>
 </div>
 
-<div class="card">
+<div class="card atlas-card">
     <div class="card-body table-responsive">
-        <table class="table table-striped align-middle">
+        <table class="table atlas-table table-striped align-middle">
             <thead>
                 <tr>
                     <th>Destino</th>

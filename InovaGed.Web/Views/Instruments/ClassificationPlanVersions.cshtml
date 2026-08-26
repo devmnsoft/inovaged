@@ -1,9 +1,14 @@
-﻿@model IReadOnlyList<InovaGed.Application.Ged.Instruments.ClassificationPlanVersionRow>
+@model IReadOnlyList<InovaGed.Application.Ged.Instruments.ClassificationPlanVersionRow>
 
 @{
     ViewData["Title"] = "Versões do PCD/TTD";
+    ViewData["Subtitle"] = "Gerencie versões publicadas, histórico de alterações e comparações dos instrumentos arquivísticos.";
+    ViewData["Icon"] = "classification";
 }
 
+<div class="atlas-page mb-4">
+    <partial name="Atlas/_AtlasPageHero" />
+</div>
 <div class="d-flex justify-content-between align-items-center mb-3">
     <h3 class="m-0">@ViewData["Title"]</h3>
     <a class="btn btn-outline-secondary" asp-controller="Instruments" asp-action="ClassificationPlan">Voltar</a>
@@ -18,7 +23,7 @@
      <div class="alert alert-danger">@TempData["Err"]</div>
 }
 
-<div class="card mb-3">
+<div class="card atlas-card mb-3">
     <div class="card-header">Publicar nova versão (Item 4)</div>
     <div class="card-body">
         <form asp-controller="Instruments" asp-action="PublishClassificationPlanVersion" method="post" class="row g-2">
@@ -38,10 +43,10 @@
     </div>
 </div>
 
-<div class="card">
+<div class="card atlas-card">
     <div class="card-header">Histórico de versões</div>
     <div class="card-body table-responsive">
-        <table class="table table-sm table-hover align-middle">
+        <table class="table atlas-table table-sm table-hover align-middle">
             <thead>
                 <tr><th>Versão</th><th>Título</th><th>Data</th><th>Ações</th></tr>
             </thead>

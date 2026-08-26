@@ -2,6 +2,8 @@
 
 @{
     ViewData["Title"] = "Prontidão do Banco de Dados";
+    ViewData["Subtitle"] = "Valide migrations obrigatórias, pendências e histórico antes de liberar o ambiente.";
+    ViewData["Icon"] = "database";
 
     var kpis = new List<(string Label, string Value)>
     {
@@ -14,6 +16,9 @@
     };
 }
 
+<div class="atlas-page mb-4">
+    <partial name="Atlas/_AtlasPageHero" />
+</div>
 <div class="container-fluid py-4">
     <div class="d-flex flex-wrap justify-content-between gap-3 mb-4">
         <div>
@@ -38,7 +43,7 @@
         @foreach (var kpi in kpis)
         {
             <div class="col-md-4 col-xl-2">
-                <div class="card h-100 shadow-sm">
+                <div class="card atlas-card h-100 shadow-sm">
                     <div class="card-body">
                         <small class="text-muted">@kpi.Label</small>
                         <div class="h5 mt-2">@kpi.Value</div>

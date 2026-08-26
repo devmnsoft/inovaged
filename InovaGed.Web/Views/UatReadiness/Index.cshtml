@@ -1,7 +1,12 @@
 @model InovaGed.Application.Release.Uat.UatSummary
-@{ViewData["Title"]="Homologação e Go-Live";}
-<style>.uat-hero{padding:2rem;border-radius:18px;background:linear-gradient(125deg,#102a43,#176b87);color:white}.uat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1rem;margin:1.5rem 0}.uat-card{background:white;border:1px solid #e3e8ee;border-radius:14px;padding:1.25rem;box-shadow:0 5px 18px #102a4312}.uat-card strong{font-size:1.8rem;display:block}.badge-uat{padding:.4rem .7rem;border-radius:999px;background:#e8f1f5;color:#174b63}</style>
-<header class="uat-hero"><h1>Homologação e Go-Live</h1><p>Execute testes, registre evidências e acompanhe a prontidão da entrega antes da homologação.</p></header>
+@{
+    ViewData["Title"] = "Homologação e Go-Live";
+    ViewData["Subtitle"] = "Execute testes, registre evidências e acompanhe a prontidão da entrega.";
+    ViewData["Icon"] = "clipboard-check";
+}
+<div class="atlas-page mb-4">
+    <partial name="Atlas/_AtlasPageHero" />
+</div>
 <p class="mt-3">A homologação assistida organiza os testes necessários para validar a entrega antes do uso operacional.</p>
-<div class="uat-grid"><div class="uat-card"><span>Casos totais</span><strong>@Model.TotalCases</strong></div><div class="uat-card"><span>Aprovados</span><strong>@Model.PassedCases</strong></div><div class="uat-card"><span>Reprovados</span><strong>@Model.FailedCases</strong></div><div class="uat-card"><span>Bloqueados</span><strong>@Model.BlockedCases</strong></div><div class="uat-card"><span>Pendentes</span><strong>@Model.PendingCases</strong></div><div class="uat-card"><span>Incidentes vinculados</span><strong>@Model.IncidentCount</strong></div><div class="uat-card"><span>Evidências anexadas</span><strong>@Model.EvidenceCount</strong></div><div class="uat-card"><span>Status da homologação</span><strong class="badge-uat">@Model.Status</strong></div></div>
+<div class="atlas-operation-grid"><div class="atlas-kpi-card"><span>Casos totais</span><strong>@Model.TotalCases</strong></div><div class="atlas-kpi-card"><span>Aprovados</span><strong>@Model.PassedCases</strong></div><div class="atlas-kpi-card"><span>Reprovados</span><strong>@Model.FailedCases</strong></div><div class="atlas-kpi-card"><span>Bloqueados</span><strong>@Model.BlockedCases</strong></div><div class="atlas-kpi-card"><span>Pendentes</span><strong>@Model.PendingCases</strong></div><div class="atlas-kpi-card"><span>Incidentes vinculados</span><strong>@Model.IncidentCount</strong></div><div class="atlas-kpi-card"><span>Evidências anexadas</span><strong>@Model.EvidenceCount</strong></div><div class="atlas-kpi-card"><span>Status da homologação</span><strong class="badge-uat">@Model.Status</strong></div></div>
 <a class="btn btn-primary" href="/UatReadiness/Plans">Plano de testes</a> <a class="btn btn-outline-primary" href="/UatReadiness/GoLiveChecklist">Checklist de Go-Live</a>
