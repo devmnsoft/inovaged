@@ -1,0 +1,2 @@
+@model InovaGed.Application.SmartWorkflow.SmartWorkflowDashboard
+@{ViewData["Title"]="Relatório de workflow";ViewData["Subtitle"]="Visão operacional de SLA e atendimento.";}<div class="atlas-page"><partial name="Atlas/_AtlasPageHero"/><div class="alert alert-info">Abertas: <strong>@Model.OpenTasks</strong> · Atrasadas: <strong>@Model.OverdueTasks</strong> · Críticas: <strong>@Model.CriticalTasks</strong> · Concluídas hoje: <strong>@Model.CompletedToday</strong></div><a href="/SmartWorkflow/Tasks" class="btn btn-primary">Detalhar tarefas</a></div>

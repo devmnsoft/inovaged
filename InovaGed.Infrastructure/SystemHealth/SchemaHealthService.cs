@@ -44,7 +44,8 @@ public sealed class SchemaHealthService : ISchemaHealthService
         "ged.instrument_version",
         "ged.document_ai_analysis", "ged.document_classification_suggestion", "ged.document_retention_suggestion",
         "ged.document_quality_issue", "ged.smart_search_query_log",
-        "ged.smart_assistant_session", "ged.smart_assistant_message", "ged.smart_assistant_citation", "ged.smart_assistant_action_suggestion"
+        "ged.smart_assistant_session", "ged.smart_assistant_message", "ged.smart_assistant_citation", "ged.smart_assistant_action_suggestion",
+        "ged.smart_workflow_task", "ged.smart_workflow_event", "ged.smart_workflow_rule", "ged.smart_workflow_dashboard_snapshot"
     ];
 
     private static readonly string[] OptionalTables =

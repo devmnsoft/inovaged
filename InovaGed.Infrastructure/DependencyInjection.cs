@@ -42,6 +42,8 @@ using InovaGed.Application.SmartGed;
 using InovaGed.Infrastructure.SmartGed;
 using InovaGed.Application.SmartGed.Assistant;
 using InovaGed.Infrastructure.SmartGed.Assistant;
+using InovaGed.Application.SmartWorkflow;
+using InovaGed.Infrastructure.SmartWorkflow;
 
 namespace InovaGed.Infrastructure;
 
@@ -103,6 +105,10 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<ISmartAssistantRetrievalService, LocalSmartAssistantRetrievalService>();
         services.AddScoped<ISmartAssistantAnswerComposer, LocalSmartAssistantAnswerComposer>();
         services.AddScoped<ISmartGedAssistantService, SmartGedAssistantService>();
+        services.AddScoped<SmartWorkflowService>();
+        services.AddScoped<ISmartWorkflowTaskService>(sp => sp.GetRequiredService<SmartWorkflowService>());
+        services.AddScoped<ISmartWorkflowNumberGenerator>(sp => sp.GetRequiredService<SmartWorkflowService>());
+        services.AddScoped<ISmartWorkflowRuleEngine, SmartWorkflowRuleEngine>();
         services.AddScoped<Release.Uat.UatService>();
         services.AddScoped<global::InovaGed.Application.Release.Uat.IUatTestPlanService>(sp => sp.GetRequiredService<Release.Uat.UatService>());
         services.AddScoped<global::InovaGed.Application.Release.Uat.IUatExecutionService>(sp => sp.GetRequiredService<Release.Uat.UatService>());
