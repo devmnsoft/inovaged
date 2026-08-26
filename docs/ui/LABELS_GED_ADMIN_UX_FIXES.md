@@ -29,3 +29,9 @@ O smoke test local cobre `/Labels/Print`, `/Labels/PrintWizard`, `/Labels/Histor
 - Aplicar migrations de etiquetas nos ambientes que ainda utilizam catálogo temporário.
 - Criar contrato persistido para status de impressão e filtros avançados de período/usuário.
 - A geração e o fechamento visual do preview devem ser homologados com dados e autenticação do ambiente alvo.
+
+## Histórico de impressões e LocDesk HOL (2026-08-26)
+
+`/Labels/History` passou a usar o workspace Atlas com hero, seis KPIs derivados exclusivamente dos registros retornados, filtros seguros, tabela responsiva, badges, ações e empty state. Foram adicionados filtros reais de período, tipo, modelo, modo e texto livre; filtros de usuário/status dedicados permanecem pendentes de contrato próprio no backend.
+
+O catálogo e o assistente agora distinguem LocDesk padrão, LocDesk Pasta HOL e LocDesk Caixa. O HOL usa view e folha de estilos próprias para preservar fidelidade e isolamento das regras de impressão.

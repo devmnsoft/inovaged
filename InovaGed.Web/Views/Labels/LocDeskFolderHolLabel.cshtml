@@ -1,0 +1,42 @@
+@model InovaGed.Web.Models.Labels.LocDeskLabelRenderModel
+@{ Layout = null; var item = Model.Label; }
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width" />
+    <title>LocDesk - Pasta HOL</title>
+    <link rel="stylesheet" href="~/css/locdesk-label.css" asp-append-version="true" />
+</head>
+<body class="locdesk-print-page">
+    <nav class="label-actions no-print" aria-label="Ações de impressão">
+        <a asp-action="LocDesk">Voltar para edição</a>
+        <button type="button" onclick="window.print()">Imprimir</button>
+        <span>@(Model.PrintRegistered ? "Impressão registrada com sucesso." : "Pré-visualização — ainda não registrada")</span>
+    </nav>
+    <main class="locdesk-hol-sheet">
+        <article class="locdesk-label locdesk-hol-label" aria-label="Etiqueta LocDesk do Hospital Ophir Loyola">
+            <header class="locdesk-hol-header">
+                <div class="locdesk-hol-brand">
+                    <img class="locdesk-hol-logo" src="~/img/locdesk-logo.svg" alt="LocDesk" />
+                    <small>ARQUIVO LOCDESCK ANANINDEUA</small>
+                </div>
+                <div class="locdesk-hol-contract"><span>Contrato:</span><strong>@item.Contract</strong></div>
+                <div class="locdesk-hol-control"><span>N° Controle: <strong class="locdesk-hol-red">@item.ControlNumber</strong></span><span>Vol.: <strong>@item.VolumeNumber/@item.VolumeTotal</strong></span></div>
+            </header>
+            <div class="locdesk-hol-body">
+                @foreach (var field in new (string Label, string? Value)[] {
+                    ("Assunto:", item.Subject), ("Detalhamento:", item.Details), ("Atividade:", item.Activity),
+                    ("Classificação:", item.Classification), ("Suporte:", item.Support),
+                    ("Período:", item.PeriodStart.HasValue || item.PeriodEnd.HasValue ? $"{item.PeriodStart:dd/MM/yyyy} A {item.PeriodEnd:dd/MM/yyyy}" : item.DocumentPeriod),
+                    ("Fase Atual:", item.CurrentPhase), ("Previsão Eliminação:", item.EliminationForecast),
+                    ("Situação Eliminação:", item.EliminationStatus), ("Nº LED:", item.LedNumber) })
+                {
+                    <div class="locdesk-hol-row"><strong class="locdesk-hol-label-title">@field.Label</strong><span class="locdesk-hol-label-value">@field.Value</span></div>
+                }
+                <div class="locdesk-hol-row locdesk-hol-location"><strong class="locdesk-hol-label-title">LOCALIZAÇÃO:</strong><span class="locdesk-hol-label-value">@item.Location</span></div>
+            </div>
+        </article>
+    </main>
+</body>
+</html>

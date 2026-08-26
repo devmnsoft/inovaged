@@ -15,7 +15,8 @@ public sealed class LabelTemplateCatalogService(IDbConnectionFactory dbFactory, 
         new("FACTORY_BOX_V1", "Padrão do Sistema - Caixa", "FACTORY", "BOX", "Etiqueta padrão do InovaGED para caixas físicas.", "BoxLabel", "1", true, false, true, null, true),
         new("FACTORY_DOCUMENT_V1", "Padrão do Sistema - Documento/Pasta", "FACTORY", "DOCUMENT", "Etiqueta padrão do InovaGED para documentos e pastas.", "DocumentLabel", "1", true, false, true, null, true),
         new("LOCDESK_CAIXA_V1", "LocDesk - Caixa", "CUSTOM", "BOX", "Modelo personalizado LocDesk para identificação de caixas físicas.", "LocDeskBoxLabel", "1", true, true, false, null, true),
-        new("LOCDESK_PASTA_V1", "LocDesk - Pasta", "CUSTOM", "DOCUMENT", "Modelo personalizado LocDesk para identificação de pastas/documentos.", "LocDeskFolderLabel", "1", true, true, false, null, true)
+        new("LOCDESK_PASTA_V1", "LocDesk - Pasta", "CUSTOM", "DOCUMENT", "Modelo personalizado LocDesk para identificação de pastas/documentos.", "LocDeskFolderLabel", "1", true, true, false, null, true),
+        new("LOCDESK_PASTA_HOL_V1", "LocDesk - Pasta HOL", "CUSTOM", "DOCUMENT", "Modelo LocDesk para pasta/documento do Hospital Ophir Loyola.", "LocDeskFolderHolLabel", "1", true, true, false, null, true)
     ];
 
     public bool IsTemporaryCatalog { get; private set; }

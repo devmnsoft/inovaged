@@ -176,7 +176,8 @@ public class LabelsController : GedControllerBase
         }
         if (input.PrintMode==LabelPrintMode.Custom) {
             if(input.SubjectType==LabelSubjectType.Box && input.SubjectId is Guid box) return RedirectToAction(nameof(LocDeskBox),new {boxId=box});
-            if(input.SubjectType==LabelSubjectType.Document && input.SubjectId is Guid doc) return RedirectToAction(nameof(LocDeskFolder),new {docId=doc});
+            if(input.SubjectType==LabelSubjectType.Document && input.SubjectId is Guid doc) return RedirectToAction(nameof(LocDeskFolder),new {docId=doc,templateCode=template.Code});
+            input.CustomFields.TemplateCode=template.Code;
             return View("LocDesk",input.CustomFields);
         }
         using var db=await OpenAsync();
@@ -445,8 +446,8 @@ group by b.id, b.batch_no, b.notes, b.reg_date
 """, new { tid = TenantId, batchId });
 
     [HttpGet]
-    public Task<IActionResult> LocDesk(CancellationToken ct)
-        => Task.FromResult<IActionResult>(RedirectToAction(nameof(PrintWizard), new { mode=LabelPrintMode.Custom, subjectType=LabelSubjectType.Document, templateCode=LabelTemplateCode.LocDeskFolder }));
+    public IActionResult LocDesk()
+        => View(CreateLocDeskPreviewDefaults());
 
     [HttpPost]
     [ValidateAntiForgeryToken]
@@ -529,10 +530,10 @@ group by b.id,b.label_code,b.box_no,b.notes,pl.location_code,pl.building,pl.room
     }
 
     [HttpGet]
-    public async Task<IActionResult> LocDeskFolder(Guid docId, CancellationToken ct) => await LocDeskFolderFromDocument(docId, ct);
+    public async Task<IActionResult> LocDeskFolder(Guid docId, string? templateCode, CancellationToken ct) => await LocDeskFolderFromDocument(docId, templateCode, ct);
 
     [HttpGet]
-    public async Task<IActionResult> LocDeskFolderFromDocument(Guid docId, CancellationToken ct)
+    public async Task<IActionResult> LocDeskFolderFromDocument(Guid docId, string? templateCode, CancellationToken ct)
     {
         using var db = await OpenAsync();
         var schema = await GetClassificationPlanSchemaInfoAsync(db, ct);
@@ -556,6 +557,7 @@ where d.tenant_id=@tid and d.id=@docId limit 1
         var model = await db.QueryFirstOrDefaultAsync<LocDeskLabelInputModel>(new CommandDefinition(sql, new { tid=TenantId, docId }, cancellationToken:ct));
         if (model is null) return NotFound("Documento não encontrado.");
         ApplyDefaults(model);
+        model.TemplateCode = templateCode == LabelTemplateCode.LocDeskFolderHol ? templateCode : LabelTemplateCode.LocDeskFolder;
         return View("LocDesk", model);
     }
 
@@ -595,12 +597,12 @@ select
     {
         var qr = CreateLocDeskQr(input, input.BoxId ?? input.DocumentId);
         var model = new LocDeskLabelRenderModel { Label=input,QrSvg=qr,PrintRegistered=registered,Template=await LoadLocDeskTemplate(input,ct) };
-        return View(input.LabelKind == LocDeskLabelKind.Box ? "LocDeskBoxLabel" : "LocDeskFolderLabel", model);
+        return View(LocDeskViewName(input), model);
     }
 
     private async Task<InovaGed.Application.Labels.LabelTemplateDetails?> LoadLocDeskTemplate(LocDeskLabelInputModel input,CancellationToken ct)
     {
-        var code=input.LabelKind==LocDeskLabelKind.Box?LabelTemplateCode.LocDeskBox:LabelTemplateCode.LocDeskFolder;
+        var code=ResolveLocDeskTemplateCode(input);
         try { var option=await _catalog.GetTemplateAsync(TenantId,code,ct); return option.Id is Guid id?await _templateManager.GetAsync(TenantId,id,ct):null; } catch(KeyNotFoundException){return null;}
     }
 
@@ -629,7 +631,7 @@ values(@id,@tid,@LabelKind,@ArchiveTitle,@ProcessNumber,@ControlNumber,@VolumeNu
     {
         if (UserId is not Guid userId) throw new UnauthorizedAccessException("Usuário autenticado obrigatório.");
         var type = input.BoxId.HasValue ? "BOX" : input.DocumentId.HasValue ? "DOCUMENT" : "MANUAL_LABEL";
-        var template = input.LabelKind == LocDeskLabelKind.Box ? "LOCDESK_CAIXA_V1" : "LOCDESK_PASTA_V1";
+        var template = ResolveLocDeskTemplateCode(input);
         var option=await _catalog.GetTemplateAsync(TenantId,template,ct);
         var details=option.Id is Guid templateId?await _templateManager.GetAsync(TenantId,templateId,ct):null;
         var snapshot=new { printMode=option.Mode,templateCode=option.Code,templateName=option.Name,templateVersion=details?.Template.Version??1,isDefault=option.IsDefault,configuration=details,input };
@@ -650,6 +652,40 @@ values(@id,@tid,@LabelKind,@ArchiveTitle,@ProcessNumber,@ControlNumber,@VolumeNu
         NormalizeLocDesk(model);
     }
 
+    private static string ResolveLocDeskTemplateCode(LocDeskLabelInputModel input) =>
+        input.LabelKind == LocDeskLabelKind.Box ? LabelTemplateCode.LocDeskBox :
+        input.TemplateCode == LabelTemplateCode.LocDeskFolderHol ? LabelTemplateCode.LocDeskFolderHol : LabelTemplateCode.LocDeskFolder;
+
+    private static string LocDeskViewName(LocDeskLabelInputModel input) => ResolveLocDeskTemplateCode(input) switch
+    {
+        LabelTemplateCode.LocDeskBox => "LocDeskBoxLabel",
+        LabelTemplateCode.LocDeskFolderHol => "LocDeskFolderHolLabel",
+        _ => "LocDeskFolderLabel"
+    };
+
+    private static LocDeskLabelInputModel CreateLocDeskPreviewDefaults() => new()
+    {
+        TemplateCode = LabelTemplateCode.LocDeskFolderHol,
+        Contract = "Hosp. Ophir Loyola",
+        MedicalRecordNumber = "100.334",
+        ControlNumber = "199",
+        VolumeNumber = 1,
+        VolumeTotal = 1,
+        Subject = "PRONTUÁRIO nº: 100.334",
+        Details = "DAME - ALTA MEDICA",
+        Activity = "FIM",
+        Classification = "HOL.132.3 - LAUDO DE PROCEDIMENTOS DIAGNÓSTICOS",
+        Support = "1. PAPEL",
+        PeriodStart = new DateTime(2017, 7, 15),
+        PeriodEnd = new DateTime(2017, 9, 25),
+        DocumentPeriod = "15/07/2017 A 25/09/2017",
+        CurrentPhase = "2. GUARDA INTERMEDIÁRIA",
+        EliminationForecast = "0. GUARDA PERMANENTE",
+        EliminationStatus = "0. GUARDA PERMANENTE",
+        LedNumber = "N/A",
+        Location = "LOC.AN.___.E___.P___"
+    };
+
     [HttpGet("/Labels/Trace/{id:guid}")]
     public async Task<IActionResult> Trace(Guid id, CancellationToken ct)
     {
@@ -659,12 +695,16 @@ values(@id,@tid,@LabelKind,@ArchiveTitle,@ProcessNumber,@ControlNumber,@VolumeNu
     }
 
     [HttpGet]
-    public async Task<IActionResult> History(string? q, string? mode, string? template, string? type)
+    public async Task<IActionResult> History(string? q, string? user, string? mode, string? template, string? type, DateTime? startDate, DateTime? endDate)
     {
         using var db = await OpenAsync();
 
         q = (q ?? "").Trim();
         ViewBag.Q = q;
+        user = (user ?? "").Trim();
+        ViewBag.User = user;
+        ViewBag.StartDate = startDate?.ToString("yyyy-MM-dd");
+        ViewBag.EndDate = endDate?.ToString("yyyy-MM-dd");
         mode=(mode??"").Trim().ToUpperInvariant(); template=(template??"").Trim().ToUpperInvariant(); type=(type??"").Trim().ToUpperInvariant();
 
         if (!await db.ExecuteScalarAsync<bool>("select to_regclass('ged.label_print_history') is not null"))
@@ -687,7 +727,7 @@ select
     lp.user_agent,
     lp.template_code,
     coalesce(lp.snapshot_json->>'printMode',case when lp.template_code like 'LOCDESK%' then 'CUSTOM' else 'FACTORY' end) as print_mode,
-    coalesce(lp.snapshot_json->>'templateName',case lp.template_code when 'FACTORY_BOX_V1' then 'Padrão do Sistema - Caixa' when 'FACTORY_DOCUMENT_V1' then 'Padrão do Sistema - Documento/Pasta' when 'LOCDESK_CAIXA_V1' then 'LocDesk - Caixa' when 'LOCDESK_PASTA_V1' then 'LocDesk - Pasta' else lp.template_code end) as template_name,
+    coalesce(lp.snapshot_json->>'templateName',case lp.template_code when 'FACTORY_BOX_V1' then 'Padrão do Sistema - Caixa' when 'FACTORY_DOCUMENT_V1' then 'Padrão do Sistema - Documento/Pasta' when 'LOCDESK_CAIXA_V1' then 'LocDesk - Caixa' when 'LOCDESK_PASTA_V1' then 'LocDesk - Pasta' when 'LOCDESK_PASTA_HOL_V1' then 'LocDesk - Pasta HOL' else lp.template_code end) as template_name,
     lp.snapshot_sha256,
     lp.reprint_reason,
     lp.snapshot_json->>'controlNumber' as control_number,
@@ -707,9 +747,12 @@ left join ged.document d
   on d.tenant_id=lp.tenant_id
  and d.id=lp.label_subject_id and lp.label_subject_type='DOCUMENT'
 where lp.tenant_id=@tid
+  and (@startDate is null or lp.printed_at >= @startDate)
+  and (@endDate is null or lp.printed_at < @endDate + interval '1 day')
   and (@type='' or lp.label_subject_type=@type)
   and (@template='' or lp.template_code=@template)
   and (@mode='' or @mode=coalesce(lp.snapshot_json->>'printMode',case when lp.template_code like 'LOCDESK%' then 'CUSTOM' else 'FACTORY' end))
+  and (@user='' or coalesce(u.name,'') ilike ('%'||@user||'%'))
   and (
     @q = ''
     or coalesce(lp.label_subject_type,'') ilike ('%'||@q||'%')
@@ -725,7 +768,7 @@ where lp.tenant_id=@tid
     or coalesce(lp.snapshot_json->>'classification','') ilike ('%'||@q||'%')
   )
 order by lp.printed_at desc
-limit 500;", new { tid = TenantId, q, mode, template, type });
+limit 500;", new { tid = TenantId, q, user, mode, template, type, startDate, endDate });
 
         return View(rows);
     }
