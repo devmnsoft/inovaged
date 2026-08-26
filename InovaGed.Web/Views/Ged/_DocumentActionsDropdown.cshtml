@@ -26,6 +26,9 @@
             <li><a class="dropdown-item js-classify-document" asp-action="Details" asp-controller="Ged" asp-route-id="@Model.DocumentId" asp-route-openClassify="true" data-document-id="@Model.DocumentId"><app-icon class="me-2" name="classification" size="16" decorative="true" />Classificar</a></li>
         }
         <li><a class="dropdown-item" asp-action="Download" asp-controller="Ged" asp-route-id="@Model.VersionId"><app-icon class="me-2" name="download" size="16" decorative="true" />Baixar</a></li>
+        <li><a class="dropdown-item" asp-controller="Labels" asp-action="PrintWizard" asp-route-subjectType="DOCUMENT" asp-route-subjectId="@Model.DocumentId" asp-route-mode="FACTORY" asp-route-templateCode="FACTORY_DOCUMENT_V1"><app-icon class="me-2" name="tag" size="16" decorative="true" />Gerar etiqueta</a></li>
+        <li><a class="dropdown-item" asp-controller="SmartGed" asp-action="Index" asp-route-documentId="@Model.DocumentId"><app-icon class="me-2" name="smart-search" size="16" decorative="true" />Ver inteligência</a></li>
+        <li><a class="dropdown-item" asp-controller="SmartWorkflow" asp-action="Index" asp-route-documentId="@Model.DocumentId"><app-icon class="me-2" name="workflow" size="16" decorative="true" />Criar tarefa</a></li>
         <li><a class="dropdown-item" asp-controller="ProtocolRequests" asp-action="New" asp-route-documentId="@Model.DocumentId"><app-icon class="me-2" name="protocol-add" size="16" decorative="true" />Criar protocolo com este documento</a></li>
         @if (AppMenuPolicy.IsFullAdmin(User))
         {

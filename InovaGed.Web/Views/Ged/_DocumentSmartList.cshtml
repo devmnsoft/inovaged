@@ -43,6 +43,8 @@
              data-partial-parts-count="@(d.TotalParts ?? d.PartialTotalParts ?? d.PartialPartsCount)"
              data-partial-parts-with-ocr="@d.PartialPartsWithOcrCount"
              data-document-unclassified="@(isUnclassified ? "true" : "false")"
+             data-document-sensitive="@(d.IsConfidential ? "true" : "false")"
+             data-document-search="@($"{d.Title} {fileName} {d.TypeName} {d.ClassificationLabel}".ToLowerInvariant())"
              data-uploaded-at-utc="@uploadDateUtc.ToString("O")">
 
         <div class="ged-doc-select ged-smart-check">
@@ -103,7 +105,7 @@
             </div>
         </div>
 
-        <div class="ged-doc-actions ged-smart-actions">
+        <div class="ged-doc-actions ged-smart-actions ged-document-actions">
             <button type="button"
                     class="btn btn-sm btn-light border js-preview-document"
                     data-document-id="@d.Id"
@@ -112,6 +114,8 @@
                     aria-label="Visualizar preview de @d.Title">
                 <app-icon name="preview" size="16" decorative="true" />
             </button>
+
+            <a class="ged-action-btn ged-action-secondary" asp-controller="Labels" asp-action="PrintWizard" asp-route-subjectType="DOCUMENT" asp-route-subjectId="@d.Id" asp-route-mode="FACTORY" asp-route-templateCode="FACTORY_DOCUMENT_V1" title="Gerar etiqueta" aria-label="Gerar etiqueta para @d.Title"><app-icon name="tag" size="16" decorative="true" /></a>
 
             @await Html.PartialAsync("_DocumentActionsDropdown", new InovaGed.Web.Models.Ged.DocumentActionsVm { DocumentId = d.Id, Title = d.Title, FileName = d.FileName, VersionId = versionId, CurrentFolderId = Model.CurrentFolderId, IsOcrAvailable = d.IsOcrAvailable, IsPartialDocument = d.IsPartialDocument, IsDocumentIncomplete = d.IsDocumentIncomplete, PartialStatus = d.PartialStatus, PartialPartsCount = d.PartialPartsCount, PartialTotalParts = d.TotalParts ?? d.PartialTotalParts, CanAddPart = canAddDocumentPart, CanViewParts = canViewDocumentParts, CanConsolidate = canConsolidateDocumentParts, CanCancelPartial = canCancelDocumentParts, CanMarkAsIncomplete = canAddDocumentPart })
         </div>

@@ -47,6 +47,19 @@
     ViewData["UploadFolderLabel"] = uploadFolderLabel;
 }
 
+<main class="ged-workspace-page">
+<section class="ged-workspace-hero" aria-labelledby="ged-workspace-title">
+    <div>
+        <span class="ged-workspace-eyebrow"><app-icon name="documents" size="17" decorative="true" /> Operação documental</span>
+        <h1 id="ged-workspace-title">Workspace GED</h1>
+        <p>Organize, visualize, classifique, acompanhe OCR, gere etiquetas e acesse a inteligência documental em um único ambiente.</p>
+    </div>
+    <nav class="ged-workspace-hero-actions" aria-label="Atalhos do workspace">
+        <a href="/SmartGed" class="ged-action-btn ged-action-secondary"><app-icon name="smart-search" size="17" decorative="true" /> Inteligência</a>
+        <a href="/SmartWorkflow" class="ged-action-btn ged-action-secondary"><app-icon name="workflow" size="17" decorative="true" /> Workflow</a>
+        <button type="button" class="ged-action-btn ged-action-primary" data-ged-upload-dock><app-icon name="upload-cloud" size="17" decorative="true" /> Enviar arquivos</button>
+    </nav>
+</section>
 <div class="ged-workspace-container">
 <div class="ged-page" data-requested-folder-id="@Model.RequestedFolderId" data-visual-folder-id="@Model.CurrentFolderId" data-listing-folder-id="@currentListingFolderId" data-upload-folder-id="@currentUploadFolderId">
     <div id="gedGlobalDropOverlay" class="ged-global-drop-overlay" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="gedDropTitle" data-upload-context="drag-files" hidden>
@@ -447,6 +460,19 @@
 
         @await Html.PartialAsync("_GedQuickFilters")
 
+        <section class="ged-filter-panel" aria-labelledby="ged-filter-title" data-ged-smart-filters>
+            <header><div><span>Refine a visualização</span><h2 id="ged-filter-title">Filtros inteligentes</h2></div><button type="button" class="ged-filter-reset" data-ged-filter-reset>Limpar filtros</button></header>
+            <div class="ged-filter-grid">
+                <label><span>Texto livre</span><input class="form-control" type="search" data-ged-filter-text placeholder="Título, arquivo ou classificação" /></label>
+                <label><span>Status OCR</span><select class="form-select" data-ged-filter-ocr><option value="all">Todos</option><option value="ready">OCR pronto</option><option value="pending">OCR pendente ou sem OCR</option></select></label>
+                <label><span>Classificação</span><select class="form-select" data-ged-filter-classification><option value="all">Todas</option><option value="unclassified">Sem classificação</option><option value="classified">Classificados</option></select></label>
+                <label><span>Período de upload</span><select class="form-select" data-ged-filter-period><option value="all">Todo o período</option><option value="7">Últimos 7 dias</option><option value="30">Últimos 30 dias</option><option value="90">Últimos 90 dias</option></select></label>
+                <label class="ged-filter-toggle"><input class="form-check-input" type="checkbox" data-ged-filter-label /><span>Com etiqueta</span><small>Disponível após sincronizar o histórico</small></label>
+                <label class="ged-filter-toggle"><input class="form-check-input" type="checkbox" data-ged-filter-sensitive /><span>Com dado sensível</span></label>
+            </div>
+            <p class="ged-filter-result" role="status" aria-live="polite" data-ged-filter-result></p>
+        </section>
+
         <div class="ged-toolbar">
             <div class="ged-search-row">
                 <input type="hidden" id="currentFolderId" value="@Model.CurrentFolderId" />
@@ -509,6 +535,7 @@
     </aside>
 </div>
 </div>
+</main>
 @Html.AntiForgeryToken()
 <div class="modal fade" id="moveDocumentsModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
@@ -855,7 +882,13 @@
                                     </div>
                                     <div class="col-12">
                                         <label class="form-label" for="uploadExistingPartialDocumentId">Vincular a documento incompleto existente (opcional)</label>
-                                        <input type="text" class="form-control" name="existingDocumentId" id="uploadExistingPartialDocumentId" placeholder="UUID do documento incompleto, quando esta for uma nova parte" />
+                                        <select class="form-select" name="existingDocumentId" id="uploadExistingPartialDocumentId">
+                                            <option value="">Nenhum — criar novo documento</option>
+                                            @foreach (var document in Model.Documents.Where(document => document.IsDocumentIncomplete))
+                                            {
+                                                <option value="@document.Id">@document.Title</option>
+                                            }
+                                        </select>
                                         <div class="form-text">Use apenas quando o arquivo enviado deve complementar um documento incompleto já cadastrado.</div>
                                     </div>
                                 </div>

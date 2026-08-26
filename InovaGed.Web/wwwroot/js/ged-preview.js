@@ -19,7 +19,11 @@
         if (event.target.closest('[data-ged-preview-close]')) {
             event.preventDefault();
             closePreview();
+            return;
         }
+        const isDrawer = window.matchMedia('(max-width: 1179px)').matches;
+        const clickedOpener = event.target.closest('.js-preview-document, .js-view-document-details');
+        if (isDrawer && preview.classList.contains('is-open') && !preview.contains(event.target) && !clickedOpener) closePreview();
     });
 
     document.addEventListener('keydown', event => {
