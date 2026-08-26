@@ -1,6 +1,8 @@
-﻿@model InovaGed.Application.Retention.RetentionDashboardVM
+@model InovaGed.Application.Retention.RetentionDashboardVM
 @{
     ViewData["Title"] = "Temporalidade";
+    ViewData["Subtitle"] = "Controle prazos arquivísticos, eventos condicionantes, revisão de regras e destinação documental com rastreabilidade.";
+    ViewData["Icon"] = "retention";
 }
 
 @if (TempData["Error"] is string err)
@@ -12,6 +14,9 @@
     <div class="alert alert-success">@ok</div>
 }
 
+<div class="atlas-page mb-4">
+    <partial name="Atlas/_AtlasPageHero" />
+</div>
 <div class="d-flex justify-content-between align-items-start mb-3">
     <div>
         <h2 class="mb-0">Temporalidade (PCD/TTD)</h2>
@@ -27,7 +32,7 @@
 
 <div class="row g-3">
     <div class="col-md-3">
-        <div class="card">
+        <div class="card atlas-card">
             <div class="card-body">
                 <div class="text-muted">Documentos classificados</div>
                 <div class="display-6">@Model.TotalClassified</div>
@@ -35,7 +40,7 @@
         </div>
     </div>
     <div class="col-md-3">
-        <div class="card border-warning">
+        <div class="card atlas-card border-warning">
             <div class="card-body">
                 <div class="text-muted">A vencer (30 dias)</div>
                 <div class="display-6">@Model.DueSoon</div>
@@ -43,7 +48,7 @@
         </div>
     </div>
     <div class="col-md-3">
-        <div class="card border-danger">
+        <div class="card atlas-card border-danger">
             <div class="card-body">
                 <div class="text-muted">Vencidos</div>
                 <div class="display-6">@Model.Overdue</div>
@@ -51,7 +56,7 @@
         </div>
     </div>
     <div class="col-md-3">
-        <div class="card border-secondary">
+        <div class="card atlas-card border-secondary">
             <div class="card-body">
                 <div class="text-muted">Sem classificação</div>
                 <div class="display-6">@Model.WithoutClassification</div>

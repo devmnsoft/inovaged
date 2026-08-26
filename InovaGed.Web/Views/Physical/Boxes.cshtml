@@ -4,6 +4,7 @@
 @{
     ViewData["Title"] = "Caixas";
     ViewData["Subtitle"] = "Cadastro, endereçamento, rastreio e manutenção das caixas físicas.";
+    ViewData["Icon"] = "box";
 
     var q = (ViewBag.Q as string) ?? "";
     var total = Model?.Count ?? 0;
@@ -12,6 +13,7 @@
     var atlasHeader = new AtlasPageHeaderVm("Caixas do acervo", "Localização, capacidade, conteúdo e rastreabilidade do arquivo físico.", "documents", "Guarda física",
         new[] { new AtlasPageAction("Nova caixa", "/Physical/Boxes/New", "plus", true), new AtlasPageAction("Mapa físico", "/Physical/PhysicalMap", "map"), new AtlasPageAction("Inventário", "/Physical/BoxContents", "check") });
 }
+<div class="atlas-page mb-4"><partial name="Atlas/_AtlasPageHero" /></div>
 <div class="atlas-prime-page physical-boxes-page">
 <partial name="Atlas/_PageHeader" model="atlasHeader" />
 <partial name="Atlas/_PageMetrics" model="@(new AtlasMetricVm[] { new("Caixas totais", total.ToString(), "acervo ativo", "info", "documents"), new("Com localização", comLocalizacao.ToString(), "rastreáveis", "success", "check"), new("Sem localização", semLocalizacao.ToString(), "exigem endereçamento", "warning", "warning") })" />
@@ -41,7 +43,7 @@
     </div>
 }
 
-<form method="get" class="card border-0 shadow-sm mb-3">
+<form method="get" class="card atlas-card border-0 shadow-sm mb-3">
     <div class="card-body">
         <div class="row g-2 align-items-end">
             <div class="col-12 col-lg">
@@ -62,7 +64,7 @@
     </div>
 </form>
 
-<div class="card border-0 shadow-sm">
+<div class="card atlas-card border-0 shadow-sm">
     <div class="card-header bg-white d-flex flex-wrap justify-content-between align-items-center gap-2 py-3">
         <div>
             <strong>Caixas do acervo</strong>
@@ -72,7 +74,7 @@
     </div>
 
     <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0">
+        <table class="table atlas-table table-hover align-middle mb-0">
             <thead class="table-light">
                 <tr>
                     <th>Caixa</th>
