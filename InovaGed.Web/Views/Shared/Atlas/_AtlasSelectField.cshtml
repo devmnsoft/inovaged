@@ -1,0 +1,11 @@
+@model InovaGed.Web.Models.AtlasFormFieldViewModel
+<div class="atlas-form-field">
+    <label class="form-label" for="@Model.Name">@Model.Label@if(Model.Required){<span aria-hidden="true"> *</span>}</label>
+    <select class="form-select" id="@Model.Name" name="@Model.Name" required="@Model.Required" disabled="@Model.Disabled" aria-describedby="@(Model.Name)-help @(Model.Name)-validation">
+        <option value="">@(!string.IsNullOrWhiteSpace(Model.Placeholder) ? Model.Placeholder : $"Selecione {Model.Label.ToLowerInvariant()}")</option>
+        @foreach(var option in Model.Options){<option value="@option.Value" selected="@(option.Value == Model.Value)" disabled="@option.Disabled">@option.Label</option>}
+    </select>
+    @if(!string.IsNullOrWhiteSpace(Model.HelpText)){<small id="@(Model.Name)-help" class="form-text">@Model.HelpText</small>}
+    @if(Model.Options.Count == 0){<div class="atlas-form-empty" role="status">Nenhuma opção disponível. Cadastre ou ajuste os filtros para continuar.</div>}
+    <span id="@(Model.Name)-validation" class="text-danger" data-valmsg-for="@Model.Name" data-valmsg-replace="true"></span>
+</div>
