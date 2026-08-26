@@ -1,4 +1,5 @@
 [
+  {"name": "2026_08_26_label_template_catalog_seed_fix", "path": "database/migrations/2026_08_26_label_template_catalog_seed_fix.sql", "area": "Etiquetas", "required": true, "description": "Seed de modelos padrão de etiqueta. Garante templates padrão do InovaGED e modelos LocDesk necessários para pré-visualização e impressão."},
   {"name": "2026_08_26_smart_workflow_core", "path": "database/migrations/2026_08_26_smart_workflow_core.sql", "area": "Workflow Inteligente", "required": true, "description": "Cria tarefas, eventos, regras e snapshots com SLA e isolamento por tenant."},
   {"name": "2026_08_26_smart_ged_assistant", "path": "database/migrations/2026_08_26_smart_ged_assistant.sql", "area": "Assistente Documental", "required": true, "description": "Cria sessões, mensagens, citações e sugestões de ação rastreáveis do assistente local."},
   {"name": "2026_08_26_smart_ged_core", "path": "database/migrations/2026_08_26_smart_ged_core.sql", "area": "GED Inteligente", "required": true, "description": "Cria análises locais, sugestões revisáveis, qualidade documental e log da busca inteligente."},

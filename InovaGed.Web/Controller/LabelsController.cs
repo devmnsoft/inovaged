@@ -161,10 +161,13 @@ public class LabelsController : GedControllerBase
         LabelTemplateOption? template = null;
         if (ModelState.IsValid)
         {
-            if (!await _catalog.IsCompatibleAsync(TenantId, input.TemplateCode, input.SubjectType, ct))
+            template = await _catalog.TryGetTemplateAsync(TenantId, input.TemplateCode, ct);
+            if (template is null)
+                ModelState.AddModelError(nameof(input.TemplateCode), "O modelo de etiqueta selecionado não foi encontrado. Atualize a lista de modelos ou aplique as migrations obrigatórias em Prontidão do Banco.");
+            else if (!string.Equals(template.SubjectType, input.SubjectType, StringComparison.OrdinalIgnoreCase))
                 ModelState.AddModelError(nameof(input.TemplateCode), "O modelo selecionado não é compatível com o tipo de origem escolhido.");
-            else
-                template = await _catalog.GetTemplateAsync(TenantId, input.TemplateCode, ct);
+            else if (!string.IsNullOrWhiteSpace(input.PrintMode) && !string.Equals(template.Mode, input.PrintMode, StringComparison.OrdinalIgnoreCase))
+                ModelState.AddModelError(nameof(input.TemplateCode), "O modelo selecionado não pertence ao modo de impressão escolhido.");
         }
         if (!ModelState.IsValid || template is null)
         {
@@ -212,6 +215,8 @@ public class LabelsController : GedControllerBase
     {
         var safeType = LabelSubjectType.IsValid(model.SubjectType) ? model.SubjectType : LabelSubjectType.Box;
         var safeMode = LabelPrintMode.IsValid(model.PrintMode) ? model.PrintMode : LabelPrintMode.Factory;
+        model.SubjectType = safeType;
+        model.PrintMode = safeMode;
         ViewBag.Templates = await _catalog.GetTemplatesAsync(TenantId, safeType, safeMode, ct);
         ViewBag.SubjectOptions = await LoadSubjectOptionsAsync(safeType, ct);
         ViewBag.Boxes = safeType == LabelSubjectType.Box ? ViewBag.SubjectOptions : Array.Empty<SelectOptionViewModel>();
