@@ -112,9 +112,16 @@ public class LabelsController : GedControllerBase
         var options = await _catalog.GetTemplatesAsync(TenantId,subjectType,mode,ct);
         if (_catalog.IsTemporaryCatalog) ViewBag.CatalogMigrationWarning = "As migrations de modelos de etiqueta ainda não foram aplicadas. O sistema está usando catálogo temporário.";
         if (string.IsNullOrWhiteSpace(templateCode) || !await _catalog.IsCompatibleAsync(TenantId,templateCode,subjectType,ct) || !options.Any(x=>x.Code==templateCode)) templateCode=options.FirstOrDefault()?.Code ?? "";
-        ViewBag.Templates=options;
-        ViewBag.SubjectOptions=await LoadSubjectOptionsAsync(subjectType,ct);
-        return View(new LabelPrintWizardInputModel { SubjectType=subjectType, SubjectId=subjectId, PrintMode=mode, TemplateCode=templateCode });
+        var model = new LabelPrintWizardInputModel { SubjectType=subjectType, SubjectId=subjectId, PrintMode=mode, TemplateCode=templateCode };
+        await PopulatePrintWizardLookupsAsync(model, ct);
+        return View(model);
+    }
+
+    [HttpGet]
+    public IActionResult Print()
+    {
+        TempData["Info"] = "Use o assistente para selecionar o tipo, o modelo e a origem da etiqueta antes de imprimir.";
+        return RedirectToAction(nameof(PrintWizard));
     }
 
     [HttpGet]
@@ -143,17 +150,44 @@ public class LabelsController : GedControllerBase
 
     private async Task<IActionResult> ProcessWizard(LabelPrintWizardInputModel input, bool register, CancellationToken ct)
     {
-        if (!LabelPrintMode.IsValid(input.PrintMode) || !await _catalog.IsCompatibleAsync(TenantId,input.TemplateCode,input.SubjectType,ct)) ModelState.AddModelError(nameof(input.TemplateCode),"O modelo selecionado não é compatível com o tipo de origem escolhido.");
-        LabelTemplateOption? template=null; try { template=await _catalog.GetTemplateAsync(TenantId,input.TemplateCode,ct); } catch { ModelState.AddModelError(nameof(input.TemplateCode),"Modelo obrigatório."); }
-        if (!ModelState.IsValid || template is null) { ViewBag.Templates=await _catalog.GetTemplatesAsync(TenantId,input.SubjectType,input.PrintMode,ct); ViewBag.SubjectOptions=await LoadSubjectOptionsAsync(input.SubjectType,ct); return View("PrintWizard",input); }
+        input.SubjectType = (input.SubjectType ?? string.Empty).Trim().ToUpperInvariant();
+        input.PrintMode = (input.PrintMode ?? string.Empty).Trim().ToUpperInvariant();
+        input.TemplateCode = (input.TemplateCode ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(input.TemplateCode)) ModelState.AddModelError(nameof(input.TemplateCode), "Selecione um modelo de etiqueta.");
+        if (!LabelSubjectType.IsValid(input.SubjectType)) ModelState.AddModelError(nameof(input.SubjectType), "Selecione um tipo de origem válido.");
+        if (input.SubjectType != LabelSubjectType.Manual && input.SubjectId is null) ModelState.AddModelError(nameof(input.SubjectId), "Selecione uma caixa, documento ou lote antes de imprimir.");
+        if (input.Copies <= 0) ModelState.AddModelError(nameof(input.Copies), "A quantidade de cópias deve ser maior que zero.");
+
+        LabelTemplateOption? template = null;
+        if (ModelState.IsValid)
+        {
+            if (!await _catalog.IsCompatibleAsync(TenantId, input.TemplateCode, input.SubjectType, ct))
+                ModelState.AddModelError(nameof(input.TemplateCode), "O modelo selecionado não é compatível com o tipo de origem escolhido.");
+            else
+                template = await _catalog.GetTemplateAsync(TenantId, input.TemplateCode, ct);
+        }
+        if (!ModelState.IsValid || template is null)
+        {
+            await PopulatePrintWizardLookupsAsync(input, ct);
+            return View("PrintWizard", input);
+        }
         if (input.PrintMode==LabelPrintMode.Custom) {
             if(input.SubjectType==LabelSubjectType.Box && input.SubjectId is Guid box) return RedirectToAction(nameof(LocDeskBox),new {boxId=box});
             if(input.SubjectType==LabelSubjectType.Document && input.SubjectId is Guid doc) return RedirectToAction(nameof(LocDeskFolder),new {docId=doc});
             return View("LocDesk",input.CustomFields);
         }
-        using var db=await OpenAsync(); object? subject=input.SubjectType==LabelSubjectType.Box ? await LoadBoxLabelAsync(db,input.SubjectId!.Value) : await LoadDocumentLabelAsync(db,input.SubjectId!.Value);
-        if(subject is null) return NotFound();
-        if(register) { if(UserId is not Guid uid) return Unauthorized(); var snapshot=new { printMode=input.PrintMode,templateCode=template.Code,templateName=template.Name,subjectType=input.SubjectType,subjectId=input.SubjectId,controlNumber=(string?)null,location=(string?)null,printedFields=subject };
+        using var db=await OpenAsync();
+        object? subject = input.SubjectType switch
+        {
+            LabelSubjectType.Box => await LoadBoxLabelAsync(db, input.SubjectId!.Value),
+            LabelSubjectType.Document => await LoadDocumentLabelAsync(db, input.SubjectId!.Value),
+            LabelSubjectType.Batch => await LoadBatchLabelAsync(db, input.SubjectId!.Value),
+            _ => null
+        };
+        if(subject is null) { ModelState.AddModelError(nameof(input.SubjectId), "Não foi possível localizar a origem selecionada."); await PopulatePrintWizardLookupsAsync(input, ct); return View("PrintWizard", input); }
+        var wasPrinted = await db.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from ged.label_print_history where tenant_id=@tid and label_subject_type=@type and label_subject_id=@id)", new { tid=TenantId, type=input.SubjectType, id=input.SubjectId }, cancellationToken:ct));
+        if (register && wasPrinted && string.IsNullOrWhiteSpace(input.ReprintReason)) { ModelState.AddModelError(nameof(input.ReprintReason), "Informe o motivo da reimpressão para preservar a rastreabilidade."); await PopulatePrintWizardLookupsAsync(input, ct); return View("PrintWizard", input); }
+        if(register) { if(UserId is not Guid uid) return Unauthorized(); var snapshot=new { printMode=input.PrintMode,templateCode=template.Code,templateName=template.Name,subjectType=input.SubjectType,subjectId=input.SubjectId,copies=input.Copies,controlNumber=(string?)null,location=(string?)null,printedFields=subject };
             try { await _printRegistrar.RegisterAsync(new(TenantId,uid,input.SubjectType,input.SubjectId!.Value,template.Code,_payloadBuilder.Build(snapshot),HttpContext.Connection.RemoteIpAddress?.ToString(),Request.Headers.UserAgent.ToString(),input.ReprintReason),ct); } catch(InvalidOperationException ex) { ModelState.AddModelError(nameof(input.ReprintReason),ex.Message); ViewBag.Templates=await _catalog.GetTemplatesAsync(TenantId,input.SubjectType,input.PrintMode,ct); ViewBag.SubjectOptions=await LoadSubjectOptionsAsync(input.SubjectType,ct); return View("PrintWizard",input); } }
         ViewBag.QrSvg=_qrCodes.CreateTrackingSvg($"{Request.Scheme}://{Request.Host}/LabelTracking/Trace?payloadOrCode={input.SubjectId}"); ViewBag.PrintRegistered=register; ViewBag.Copies=input.Copies;
         return View(template.ViewName,subject);
@@ -172,6 +206,19 @@ public class LabelsController : GedControllerBase
         if (sql is null) return Array.Empty<SelectOptionViewModel>();
         var rows = await db.QueryAsync<SelectOptionViewModel>(new CommandDefinition(sql,new {tid=TenantId},cancellationToken:ct));
         return rows.AsList();
+    }
+
+    private async Task PopulatePrintWizardLookupsAsync(LabelPrintWizardInputModel model, CancellationToken ct)
+    {
+        var safeType = LabelSubjectType.IsValid(model.SubjectType) ? model.SubjectType : LabelSubjectType.Box;
+        var safeMode = LabelPrintMode.IsValid(model.PrintMode) ? model.PrintMode : LabelPrintMode.Factory;
+        ViewBag.Templates = await _catalog.GetTemplatesAsync(TenantId, safeType, safeMode, ct);
+        ViewBag.SubjectOptions = await LoadSubjectOptionsAsync(safeType, ct);
+        ViewBag.Boxes = safeType == LabelSubjectType.Box ? ViewBag.SubjectOptions : Array.Empty<SelectOptionViewModel>();
+        ViewBag.Documents = safeType == LabelSubjectType.Document ? ViewBag.SubjectOptions : Array.Empty<SelectOptionViewModel>();
+        ViewBag.Batches = safeType == LabelSubjectType.Batch ? ViewBag.SubjectOptions : Array.Empty<SelectOptionViewModel>();
+        ViewBag.Warnings = _catalog.IsTemporaryCatalog ? new[] { "Catálogo temporário de modelos em uso." } : Array.Empty<string>();
+        if (_catalog.IsTemporaryCatalog) ViewBag.CatalogMigrationWarning = "As migrations de modelos de etiqueta ainda não foram aplicadas. O sistema está usando catálogo temporário.";
     }
 
     [HttpGet]
@@ -382,6 +429,15 @@ from ged.document d left join ged.batch_item bi on bi.tenant_id=d.tenant_id and 
 left join ged.box bx on bx.tenant_id=d.tenant_id and bx.id=bi.box_id and bx.reg_status='A'
 where d.tenant_id=@tid and d.id=@docId
 """, new { tid = TenantId, docId });
+
+    private async Task<dynamic?> LoadBatchLabelAsync(System.Data.IDbConnection db, Guid batchId)
+        => await db.QueryFirstOrDefaultAsync("""
+select b.id, b.batch_no, b.notes, b.reg_date, count(bi.id) as document_count
+from ged.batch b
+left join ged.batch_item bi on bi.tenant_id=b.tenant_id and bi.batch_id=b.id and bi.reg_status='A'
+where b.tenant_id=@tid and b.id=@batchId and b.reg_status='A'
+group by b.id, b.batch_no, b.notes, b.reg_date
+""", new { tid = TenantId, batchId });
 
     [HttpGet]
     public Task<IActionResult> LocDesk(CancellationToken ct)
@@ -633,6 +689,8 @@ select
     lp.snapshot_json->>'location' as location,
     lp.snapshot_json->>'subject' as locdesk_subject,
     lp.snapshot_json->>'classification' as locdesk_classification
+    ,coalesce(nullif(lp.snapshot_json->>'copies','')::int,1) as copies
+    ,'PRINTED' as print_status
 from ged.label_print_history lp
 left join ged.app_user u
   on u.tenant_id=lp.tenant_id

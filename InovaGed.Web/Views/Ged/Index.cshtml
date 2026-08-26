@@ -503,8 +503,9 @@
 
     </section>
 
-    <aside id="gedDocumentSidePanel" class="ged-document-side-panel d-none" aria-hidden="true" aria-live="polite" aria-label="Detalhes do documento">
-        <div class="ged-preview-empty"><img src="~/images/illustrations/document-preview-empty.svg" alt="" /><h2>Preview do documento</h2><p>Selecione um documento para visualizar, consultar detalhes, metadados, histórico e versões.</p></div>
+    <aside id="gedDocumentSidePanel" class="ged-document-side-panel ged-preview-panel d-none" data-ged-preview aria-hidden="true" aria-live="polite" aria-label="Preview e detalhes do documento">
+        <button type="button" class="ged-preview-close" aria-label="Fechar preview" data-ged-preview-close><app-icon name="close" size="18" decorative="true" /></button>
+        <div class="ged-preview-empty"><img src="~/images/illustrations/document-preview-empty.svg" alt="" /><h2>Preview do documento</h2><p>Selecione um documento para visualizar detalhes, metadados, histórico, versões e ações disponíveis.</p><button type="button" class="btn btn-sm btn-outline-secondary" data-ged-preview-close>Fechar preview</button></div>
     </aside>
 </div>
 </div>
@@ -1019,6 +1020,7 @@
     <script src="~/js/ged-drag-drop.js" asp-append-version="true"></script>
     <script src="~/js/ged-document-selection.js" asp-append-version="true"></script>
     <script src="~/js/ged-document-preview.js" asp-append-version="true"></script>
+    <script src="~/js/ged-preview.js" asp-append-version="true"></script>
     <script src="~/js/ged-panel-layout.js" asp-append-version="true"></script>
     <script src="~/js/ged-filter-drawer.js" asp-append-version="true"></script>
     <script src="~/js/ged-explorer-controller.js" asp-append-version="true"></script>
