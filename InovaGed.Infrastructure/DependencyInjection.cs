@@ -38,6 +38,8 @@ using InovaGed.Infrastructure.Cluster;
 using InovaGed.Infrastructure.Tenants;
 using InovaGed.Application.SystemHealth.Migrations;
 using InovaGed.Infrastructure.SystemHealth.Migrations;
+using InovaGed.Application.SmartGed;
+using InovaGed.Infrastructure.SmartGed;
 
 namespace InovaGed.Infrastructure;
 
@@ -90,6 +92,12 @@ public static class InfrastructureServiceCollectionExtensions
     /// </summary>
     public static IServiceCollection AddStabilityCriticalServices(this IServiceCollection services)
     {
+        services.AddScoped<IDocumentMetadataExtractor, LocalDocumentMetadataExtractor>();
+        services.AddScoped<SmartGedService>();
+        services.AddScoped<IDocumentIntelligenceService>(sp => sp.GetRequiredService<SmartGedService>());
+        services.AddScoped<IDocumentClassificationSuggestionService>(sp => sp.GetRequiredService<SmartGedService>());
+        services.AddScoped<IDocumentRetentionSuggestionService>(sp => sp.GetRequiredService<SmartGedService>());
+        services.AddScoped<ISmartGedSearchService>(sp => sp.GetRequiredService<SmartGedService>());
         services.AddScoped<Release.Uat.UatService>();
         services.AddScoped<global::InovaGed.Application.Release.Uat.IUatTestPlanService>(sp => sp.GetRequiredService<Release.Uat.UatService>());
         services.AddScoped<global::InovaGed.Application.Release.Uat.IUatExecutionService>(sp => sp.GetRequiredService<Release.Uat.UatService>());
