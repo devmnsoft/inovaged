@@ -1,5 +1,5 @@
 @{
-    var title = ViewData["Title"]?.ToString() ?? "Atenção necessária";
+    var title = ViewData["AlertTitle"]?.ToString() ?? "Atenção necessária";
     var message = ViewData["Message"]?.ToString();
     var tone = ViewData["Tone"]?.ToString()?.ToLowerInvariant() ?? "info";
     var recommendation = ViewData["Recommendation"]?.ToString();

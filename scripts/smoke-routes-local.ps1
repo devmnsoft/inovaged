@@ -7,6 +7,10 @@ $routes = @(
     "/Administration/Users",
     "/Administration/Tenants",
     "/Administration/Security",
+    "/Administration/Migrations",
+    "/Administration/DesignSystem",
+    "/DatabaseReadiness",
+    "/SystemIncidents",
     "/Labels",
     "/Labels/PrintWizard",
     "/Labels/History",
@@ -21,7 +25,7 @@ foreach ($route in $routes) {
     try {
         $response = Invoke-WebRequest -Uri "$BaseUrl$route" -UseBasicParsing -SkipCertificateCheck -MaximumRedirection 0 -ErrorAction Stop
         $body = [string]$response.Content
-        if ($response.StatusCode -ge 500 -or $body -match '42703|42P01|DatabaseSchemaException não tratada') {
+        if ($response.StatusCode -ge 500 -or $body -match '42703|42P01|DatabaseSchemaException não tratada|An item with the same key has already been added|Unknown Atlas icon|Ícone Atlas desconhecido') {
             throw "Falha de compatibilidade de schema detectada ($($response.StatusCode))."
         }
         Write-Host "$route -> $($response.StatusCode)"
