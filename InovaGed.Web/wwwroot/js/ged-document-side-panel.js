@@ -39,11 +39,11 @@
     }
 
     function getSidePanelLoadingHtml() {
-        return '<div class="ged-side-empty"><span class="spinner-border text-primary" aria-hidden="true"></span><h5>Carregando documento...</h5><p>Buscando resumo, preview, OCR e histórico sob demanda.</p></div>';
+        return '<button type="button" class="ged-preview-close" aria-label="Fechar preview" data-ged-preview-close><i class="bi bi-x-lg" aria-hidden="true"></i></button><div class="ged-side-empty"><span class="spinner-border text-primary" aria-hidden="true"></span><h5>Carregando documento...</h5><p>Buscando resumo, preview, OCR e histórico sob demanda.</p></div>';
     }
 
     function getSidePanelErrorHtml() {
-        return '<div class="alert alert-danger m-3">Não foi possível carregar o painel lateral do documento.</div>';
+        return '<button type="button" class="ged-preview-close" aria-label="Fechar preview" data-ged-preview-close><i class="bi bi-x-lg" aria-hidden="true"></i></button><div class="alert alert-danger m-3">Não foi possível carregar o painel lateral do documento.</div>';
     }
 
     function showPanelShell(documentId, versionId) {

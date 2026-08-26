@@ -17,6 +17,8 @@ $routes = @(
     "/Labels/History",
     "/Labels/LocDesk",
     "/Ged",
+    "/SmartGed",
+    "/SmartWorkflow",
     "/RetentionDestination",
     "/Instruments/Versions/PCD",
     "/SchemaHealth"
