@@ -1,0 +1,22 @@
+@page { size: A4; margin: 0; }
+html, body { margin: 0; padding: 0; background: #fff; color: #111; font-family: Arial, sans-serif; }
+.label-print-page { min-height: 100%; background: #fff; }
+.label-print-sheet, .label-print-preview { margin: 0 auto; background: #fff; }
+.label-print-a4 { box-sizing: border-box; width: 210mm; min-height: 297mm; background: #fff; }
+.label-print-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4mm; }
+.label-print-item { box-sizing: border-box; break-inside: avoid; page-break-inside: avoid; }
+.label-print-toolbar { padding: 12px; background: #f4f6f8; }
+.label-print-actions { display: flex; align-items: center; gap: 8px; }
+.label-print-calibration { position: relative; box-sizing: border-box; width: 210mm; height: 297mm; border: .2mm solid #111; }
+.label-calibration-center-x { position:absolute; left:105mm; top:0; height:297mm; border-left:.2mm dashed #333; }
+.label-calibration-center-y { position:absolute; top:148.5mm; left:0; width:210mm; border-top:.2mm dashed #333; }
+.label-calibration-square { position:absolute; width:20mm; height:20mm; border:.4mm solid #000; }
+.label-calibration-square.tl { top:10mm; left:10mm; } .label-calibration-square.tr { top:10mm; right:10mm; }
+.label-calibration-square.bl { bottom:10mm; left:10mm; } .label-calibration-square.br { bottom:10mm; right:10mm; }
+.label-calibration-ruler { position:absolute; top:5mm; left:5mm; width:200mm; height:5mm; border-top:.3mm solid #000; background:repeating-linear-gradient(90deg,#111 0 .2mm,transparent .2mm 5mm); }
+@media print {
+  .label-print-toolbar, .label-print-actions, .no-print, nav, .sidebar, .topbar, .breadcrumb, button { display:none !important; }
+  html, body, .label-print-page, .label-print-sheet, .label-print-preview { background:#fff !important; box-shadow:none !important; }
+  .label-print-a4 { margin:0; break-after:page; page-break-after:always; }
+  .label-print-a4:last-child { break-after:auto; page-break-after:auto; }
+}

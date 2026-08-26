@@ -25,7 +25,13 @@ public sealed class LabelCalibrationInput
     [StringLength(200)] public string? PrinterName { get; set; }
     [Range(0,100)] public decimal MarginTopMm { get; set; }
     [Range(0,100)] public decimal MarginLeftMm { get; set; }
+    [Range(0,100)] public decimal MarginRightMm { get; set; }
+    [Range(0,100)] public decimal MarginBottomMm { get; set; }
     [Range(50,150)] public decimal ScalePercent { get; set; }=100;
+    [Range(-100,100)] public decimal HorizontalOffsetMm { get; set; }
+    [Range(-100,100)] public decimal VerticalOffsetMm { get; set; }
+    [Required, StringLength(40)] public string PaperSize { get; set; }="A4";
+    public bool IsDefault { get; set; }
     [Range(10,210)] public decimal? LabelWidthMm { get; set; }=95;
     [Range(10,297)] public decimal? LabelHeightMm { get; set; }=55;
     [Range(0,50)] public decimal GapXMm { get; set; }=4;

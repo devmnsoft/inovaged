@@ -95,11 +95,22 @@ public class LabelsController : GedControllerBase
     public async Task<IActionResult> GeneratePdf(Guid id,CancellationToken ct){var result=await _pdf.GeneratePdfAsync(TenantId,id,ct);return File(result.Content,result.ContentType,result.FileName);}
 
     [HttpGet]
-    public async Task<IActionResult> Calibration(CancellationToken ct,string templateCode="FACTORY_BOX_V1"){using var db=await OpenAsync();var model=await db.QuerySingleOrDefaultAsync<LabelCalibrationInput>(new CommandDefinition("select template_code TemplateCode,printer_name PrinterName,margin_top_mm MarginTopMm,margin_left_mm MarginLeftMm,scale_percent ScalePercent,label_width_mm LabelWidthMm,label_height_mm LabelHeightMm,gap_x_mm GapXMm,gap_y_mm GapYMm,labels_per_page LabelsPerPage from ged.label_print_calibration where tenant_id=@tid and template_code=@templateCode and reg_status='A' order by updated_at desc nulls last limit 1",new{tid=TenantId,templateCode},cancellationToken:ct));return View(model??new LabelCalibrationInput{TemplateCode=templateCode});}
+    public async Task<IActionResult> Calibration(CancellationToken ct,string templateCode="FACTORY_BOX_V1"){using var db=await OpenAsync();var model=await db.QuerySingleOrDefaultAsync<LabelCalibrationInput>(new CommandDefinition("select template_code TemplateCode,printer_name PrinterName,paper_size PaperSize,margin_top_mm MarginTopMm,margin_right_mm MarginRightMm,margin_bottom_mm MarginBottomMm,margin_left_mm MarginLeftMm,scale_percent ScalePercent,horizontal_offset_mm HorizontalOffsetMm,vertical_offset_mm VerticalOffsetMm,is_default IsDefault,label_width_mm LabelWidthMm,label_height_mm LabelHeightMm,gap_x_mm GapXMm,gap_y_mm GapYMm,labels_per_page LabelsPerPage from ged.label_print_calibration where tenant_id=@tid and template_code=@templateCode and reg_status='A' order by is_default desc,updated_at desc nulls last limit 1",new{tid=TenantId,templateCode},cancellationToken:ct));return View(model??new LabelCalibrationInput{TemplateCode=templateCode});}
     [HttpPost,ValidateAntiForgeryToken]
-    public async Task<IActionResult> Calibration(LabelCalibrationInput input,CancellationToken ct){if(UserId is not Guid uid)return Unauthorized();if(!ModelState.IsValid)return View(input);using var db=await OpenAsync();await db.ExecuteAsync(new CommandDefinition("""insert into ged.label_print_calibration(tenant_id,template_code,printer_name,margin_top_mm,margin_left_mm,scale_percent,label_width_mm,label_height_mm,gap_x_mm,gap_y_mm,labels_per_page,created_by) values(@tid,@TemplateCode,nullif(@PrinterName,''),@MarginTopMm,@MarginLeftMm,@ScalePercent,@LabelWidthMm,@LabelHeightMm,@GapXMm,@GapYMm,@LabelsPerPage,@uid) on conflict(tenant_id,template_code,(coalesce(printer_name,'DEFAULT'))) where reg_status='A' do update set margin_top_mm=excluded.margin_top_mm,margin_left_mm=excluded.margin_left_mm,scale_percent=excluded.scale_percent,label_width_mm=excluded.label_width_mm,label_height_mm=excluded.label_height_mm,gap_x_mm=excluded.gap_x_mm,gap_y_mm=excluded.gap_y_mm,labels_per_page=excluded.labels_per_page,updated_by=@uid,updated_at=now()""",new{tid=TenantId,uid,input.TemplateCode,input.PrinterName,input.MarginTopMm,input.MarginLeftMm,input.ScalePercent,input.LabelWidthMm,input.LabelHeightMm,input.GapXMm,input.GapYMm,input.LabelsPerPage},cancellationToken:ct));TempData["Success"]="Calibração salva.";return RedirectToAction(nameof(Calibration),new{input.TemplateCode});}
+    public async Task<IActionResult> Calibration(LabelCalibrationInput input,CancellationToken ct){if(UserId is not Guid uid)return Unauthorized();if(!ModelState.IsValid)return View(input);using var db=await OpenAsync();await db.ExecuteAsync(new CommandDefinition("""insert into ged.label_print_calibration(tenant_id,user_id,template_code,printer_name,paper_size,margin_top_mm,margin_right_mm,margin_bottom_mm,margin_left_mm,scale_percent,horizontal_offset_mm,vertical_offset_mm,is_default,label_width_mm,label_height_mm,gap_x_mm,gap_y_mm,labels_per_page,created_by) values(@tid,@uid,@TemplateCode,nullif(@PrinterName,''),@PaperSize,@MarginTopMm,@MarginRightMm,@MarginBottomMm,@MarginLeftMm,@ScalePercent,@HorizontalOffsetMm,@VerticalOffsetMm,@IsDefault,@LabelWidthMm,@LabelHeightMm,@GapXMm,@GapYMm,@LabelsPerPage,@uid) on conflict(tenant_id,template_code,(coalesce(printer_name,'DEFAULT'))) where reg_status='A' do update set user_id=@uid,paper_size=excluded.paper_size,margin_top_mm=excluded.margin_top_mm,margin_right_mm=excluded.margin_right_mm,margin_bottom_mm=excluded.margin_bottom_mm,margin_left_mm=excluded.margin_left_mm,scale_percent=excluded.scale_percent,horizontal_offset_mm=excluded.horizontal_offset_mm,vertical_offset_mm=excluded.vertical_offset_mm,is_default=excluded.is_default,label_width_mm=excluded.label_width_mm,label_height_mm=excluded.label_height_mm,gap_x_mm=excluded.gap_x_mm,gap_y_mm=excluded.gap_y_mm,labels_per_page=excluded.labels_per_page,updated_by=@uid,updated_at=now()""",new{tid=TenantId,uid,input.TemplateCode,input.PrinterName,input.PaperSize,input.MarginTopMm,input.MarginRightMm,input.MarginBottomMm,input.MarginLeftMm,input.ScalePercent,input.HorizontalOffsetMm,input.VerticalOffsetMm,input.IsDefault,input.LabelWidthMm,input.LabelHeightMm,input.GapXMm,input.GapYMm,input.LabelsPerPage},cancellationToken:ct));TempData["Success"]="Calibração salva para esta impressora.";return RedirectToAction(nameof(Calibration),new{input.TemplateCode});}
+    [HttpPost,ValidateAntiForgeryToken]
+    public Task<IActionResult> SaveCalibration(LabelCalibrationInput input,CancellationToken ct)=>Calibration(input,ct);
     [HttpGet]
-    public IActionResult TestSheet()=>View("PrintTestSheet",new LabelCalibrationInput());
+    public IActionResult TestSheet()=>View("CalibrationTest",new LabelCalibrationInput());
+
+    [HttpGet]
+    public Task<IActionResult> Batch(CancellationToken ct,string subjectType="BOX")=>BatchPrint(ct,subjectType);
+
+    [HttpGet("/Labels/Printable/{printJobId:guid}")]
+    public Task<IActionResult> Printable(Guid printJobId,CancellationToken ct)=>PrintPreview(printJobId,ct);
+
+    [HttpGet]
+    public IActionResult PrintablePreview()=>RedirectToAction(nameof(PrintWizard));
 
     [HttpGet]
     public IActionResult Index() => View();
@@ -781,6 +792,22 @@ limit 500;", new { tid = TenantId, q, user, mode, template, type, startDate, end
 select lp.id,lp.printed_at,lp.ip_address,lp.user_agent,lp.template_code,lp.snapshot_sha256,lp.reprint_reason,lp.snapshot_json::text snapshot_json,lp.label_subject_type,lp.label_subject_id,u.name printed_by_name,coalesce(lp.snapshot_json->>'templateName',t.name,lp.template_code) template_name,coalesce((lp.snapshot_json->>'templateVersion')::int,t.version,1) template_version,coalesce(lp.snapshot_json->>'printMode',t.print_mode) print_mode,coalesce((lp.snapshot_json->>'isDefault')::boolean,t.is_default,false) was_default
 from ged.label_print_history lp left join ged.app_user u on u.tenant_id=lp.tenant_id and u.id=lp.printed_by left join ged.label_template t on t.code=lp.template_code and (t.tenant_id=lp.tenant_id or t.tenant_id is null) where lp.tenant_id=@tenantId and lp.id=@id
 """,new{tenantId=TenantId,id},cancellationToken:ct));
-        return row is null?NotFound():View(row);
+        return row is null?NotFound():View("HistoryDetails",row);
+    }
+
+    [HttpGet("/Labels/History/{id:guid}")]
+    public Task<IActionResult> HistoryDetails(Guid id,CancellationToken ct)=>PrintDetails(id,ct);
+
+    [HttpPost("/Labels/History/{id:guid}/Reprint"),ValidateAntiForgeryToken]
+    public async Task<IActionResult> Reprint(Guid id,string? justification,CancellationToken ct)
+    {
+        if(UserId is not Guid uid)return Unauthorized();
+        if(string.IsNullOrWhiteSpace(justification)){TempData["Error"]="Informe o motivo da reimpressão para manter a rastreabilidade.";return RedirectToAction(nameof(HistoryDetails),new{id});}
+        using var db=await OpenAsync();
+        var row=await db.QuerySingleOrDefaultAsync(new CommandDefinition("select label_subject_type,label_subject_id,template_code,snapshot_json::text snapshot_json from ged.label_print_history where tenant_id=@tid and id=@id",new{tid=TenantId,id},cancellationToken:ct));
+        if(row is null)return NotFound();
+        await _printRegistrar.RegisterAsync(new(TenantId,uid,(string)row.label_subject_type,(Guid)row.label_subject_id,(string)row.template_code,(string)row.snapshot_json,HttpContext.Connection.RemoteIpAddress?.ToString(),Request.Headers.UserAgent.ToString(),justification.Trim()),ct);
+        TempData["Success"]="Reimpressão registrada com rastreabilidade.";
+        return RedirectToAction(nameof(PrintWizard),new{subjectType=(string)row.label_subject_type,subjectId=(Guid)row.label_subject_id,templateCode=(string)row.template_code});
     }
 }
