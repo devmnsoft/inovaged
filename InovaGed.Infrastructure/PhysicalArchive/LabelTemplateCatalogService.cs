@@ -26,22 +26,31 @@ public sealed class LabelTemplateCatalogService(IDbConnectionFactory dbFactory, 
         var source = await GetSourceAsync(db, ct);
         var normalized = string.IsNullOrWhiteSpace(mode) ? null : mode;
         if (source is null)
-            return MinimumCatalog.Where(x => x.SubjectType == subjectType && (normalized is null || x.Mode == normalized)).ToList();
+            return FilterCatalog(MinimumCatalog, subjectType, normalized);
 
         var sql = BuildSelect(source, false) + BuildFilters(source, false) + BuildOrder(source);
-        return (await db.QueryAsync<LabelTemplateOption>(new CommandDefinition(sql,
-            new { tenantId, subjectType, mode = normalized }, cancellationToken: ct))).AsList();
+        var databaseTemplates = await db.QueryAsync<LabelTemplateOption>(new CommandDefinition(sql,
+            new { tenantId, subjectType, mode = normalized }, cancellationToken: ct));
+        return FilterCatalog(MergeWithMinimumCatalog(databaseTemplates), subjectType, normalized);
     }
 
-    public async Task<LabelTemplateOption> GetTemplateAsync(Guid tenantId, string templateCode, CancellationToken ct)
+    public async Task<LabelTemplateOption?> TryGetTemplateAsync(Guid tenantId, string templateCode, CancellationToken ct)
     {
+        if (string.IsNullOrWhiteSpace(templateCode)) return null;
         await using var db = await dbFactory.OpenAsync(ct);
         var source = await GetSourceAsync(db, ct);
-        if (source is null) return MinimumCatalog.FirstOrDefault(x => x.Code == templateCode) ?? throw NotFound();
-        var sql = BuildSelect(source, true) + BuildFilters(source, true) + " limit 1";
-        return await db.QuerySingleOrDefaultAsync<LabelTemplateOption>(new CommandDefinition(sql,
-            new { tenantId, templateCode }, cancellationToken: ct)) ?? throw NotFound();
+        if (source is not null)
+        {
+            var sql = BuildSelect(source, true) + BuildFilters(source, true) + " limit 1";
+            var fromDatabase = await db.QuerySingleOrDefaultAsync<LabelTemplateOption>(new CommandDefinition(sql,
+                new { tenantId, templateCode }, cancellationToken: ct));
+            if (fromDatabase is not null) return fromDatabase;
+        }
+        return MinimumCatalog.FirstOrDefault(x => string.Equals(x.Code, templateCode, StringComparison.OrdinalIgnoreCase));
     }
+
+    public async Task<LabelTemplateOption> GetTemplateAsync(Guid tenantId, string templateCode, CancellationToken ct) =>
+        await TryGetTemplateAsync(tenantId, templateCode, ct) ?? throw NotFound();
 
     public async Task<bool> IsCompatibleAsync(Guid tenantId, string templateCode, string subjectType, CancellationToken ct) =>
         (await GetTemplatesAsync(tenantId, subjectType, null, ct)).Any(x => x.Code == templateCode);
@@ -82,7 +91,7 @@ public sealed class LabelTemplateCatalogService(IDbConnectionFactory dbFactory, 
     {
         var c = source.Columns; var filters = new List<string> { "1=1" };
         if (c.Contains("tenant_id")) filters.Add("(tenant_id=@tenantId or tenant_id is null)");
-        if (single) filters.Add(c.Contains("template_code") ? "template_code=@templateCode" : "code=@templateCode");
+        if (single) filters.Add(BuildTemplateCodePredicate(source));
         else
         {
             if (c.Contains("subject_type")) filters.Add("subject_type=@subjectType");
@@ -92,6 +101,27 @@ public sealed class LabelTemplateCatalogService(IDbConnectionFactory dbFactory, 
         if (c.Contains("reg_status")) filters.Add("coalesce(reg_status,'A')='A'");
         return " where " + string.Join(" and ", filters);
     }
+
+    private static string BuildTemplateCodePredicate(CatalogSource source)
+    {
+        var predicates = new List<string>();
+        if (source.Columns.Contains("template_code")) predicates.Add("template_code::text = @templateCode");
+        if (source.Columns.Contains("code")) predicates.Add("code::text = @templateCode");
+        return predicates.Count == 0 ? "1 = 0" : "(" + string.Join(" or ", predicates) + ")";
+    }
+
+    private static IReadOnlyList<LabelTemplateOption> MergeWithMinimumCatalog(IEnumerable<LabelTemplateOption> databaseTemplates)
+    {
+        var result = new Dictionary<string, LabelTemplateOption>(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in MinimumCatalog) result[item.Code] = item;
+        foreach (var item in databaseTemplates)
+            if (!string.IsNullOrWhiteSpace(item.Code)) result[item.Code] = item;
+        return result.Values.ToList();
+    }
+
+    private static IReadOnlyList<LabelTemplateOption> FilterCatalog(IEnumerable<LabelTemplateOption> templates, string subjectType, string? mode) =>
+        templates.Where(x => string.Equals(x.SubjectType, subjectType, StringComparison.OrdinalIgnoreCase)
+            && (mode is null || string.Equals(x.Mode, mode, StringComparison.OrdinalIgnoreCase))).ToList();
 
     private static string BuildOrder(CatalogSource source)
     {

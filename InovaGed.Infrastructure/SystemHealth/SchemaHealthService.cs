@@ -336,6 +336,24 @@ select table_name || '.' || column_name
 from information_schema.columns
 where table_schema = 'ged';", cancellationToken: ct))).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
+            var labelTemplateCodeColumn = existingColumns.Contains("label_template.code") ? "code"
+                : existingColumns.Contains("label_template.template_code") ? "template_code" : null;
+            var databaseLabelTemplates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (existingTables.Contains("ged.label_template") && labelTemplateCodeColumn is not null)
+            {
+                var labelStatusFilter = existingColumns.Contains("label_template.reg_status") ? " where coalesce(reg_status,'A')='A'" : string.Empty;
+                var labelSql = $"select distinct {labelTemplateCodeColumn}::text from ged.label_template{labelStatusFilter}";
+                databaseLabelTemplates = (await conn.QueryAsync<string>(new CommandDefinition(labelSql, cancellationToken: ct)))
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            }
+            foreach (var templateCode in new[] { "FACTORY_BOX_V1", "FACTORY_DOCUMENT_V1", "LOCDESK_CAIXA_V1", "LOCDESK_PASTA_V1" })
+            {
+                var persisted = databaseLabelTemplates.Contains(templateCode);
+                AddCheck(report, $"GED_LABEL_TEMPLATE_{templateCode}", "Etiquetas", templateCode, "Seed", "Warning", persisted,
+                    persisted ? "Modelo padrão disponível no banco." : "Modelo ausente no banco; o catálogo mínimo em memória mantém a impressão disponível.",
+                    "Aplique database/migrations/2026_08_26_label_template_catalog_seed_fix.sql em /DatabaseReadiness.");
+            }
+
             foreach (var (table, column, area) in RequiredColumns)
             {
                 var objectName = $"ged.{table}.{column}";

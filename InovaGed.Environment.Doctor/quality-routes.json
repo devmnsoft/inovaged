@@ -26,5 +26,6 @@
   "/Loans",
   "/Poc",
   "/Protocols/WorkQueue",
-  "/DocumentQuality"
+  "/DocumentQuality",
+  "/Labels/Print"
 ]
