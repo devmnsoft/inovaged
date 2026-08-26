@@ -1,4 +1,5 @@
 [
+  {"name": "2026_08_26_smart_ged_core", "path": "database/migrations/2026_08_26_smart_ged_core.sql", "area": "GED Inteligente", "required": true, "description": "Cria análises locais, sugestões revisáveis, qualidade documental e log da busca inteligente."},
   {"name": "2026_08_25_admin_labels_legacy_schema_compat", "path": "database/migrations/2026_08_25_admin_labels_legacy_schema_compat.sql", "area": "Compatibilidade Administração e Etiquetas", "required": true, "description": "Garante colunas auxiliares e fallbacks para bancos legados usados pelas telas administrativas e etiquetas."},
   {"name": "2026_08_25_permission_catalog_compat_hotfix", "path": "database/migrations/2026_08_25_permission_catalog_compat_hotfix.sql", "area": "Administração", "required": true, "description": "Garante colunas description e module no catálogo de permissões ou mantém compatibilidade em bancos legados."},
   {"name": "2026_08_24_observability_incident_center", "path": "database/migrations/2026_08_24_observability_incident_center.sql", "area": "Observabilidade", "required": true, "description": "Cria a central de incidentes, eventos agrupados e snapshots de rotas."},
