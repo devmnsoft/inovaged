@@ -80,7 +80,7 @@ public sealed class ReportsController : Controller
         var summary = await conn.QuerySingleAsync<ReportSummaryDbRow>(
             $"select count(*) filter (where {activeExpression}) as \"TotalDocuments\", count(*) filter (where {activeExpression} and {ocrExpression}) as \"WithOcr\", count(*) filter (where {activeExpression} and not ({classificationExpression})) as \"WithoutClassification\" from ged.document d where d.tenant_id=@tenant",
             new { tenant = TenantId });
-        var areas = schema.HasFolders && schema.HasFolderId
+        var areas = schema.HasFolders && schema.HasFolderId && schema.HasFolderName
             ? (await conn.QueryAsync<ReportBreakdownDbRow>(
                 $"select coalesce(f.name, 'Sem setor/pasta') as \"Label\", count(*)::bigint as \"Total\" from ged.document d left join ged.folder f on f.tenant_id=d.tenant_id and f.id=d.folder_id where d.tenant_id=@tenant and {activeExpression} group by coalesce(f.name, 'Sem setor/pasta') order by count(*) desc, 1 limit 8",
                 new { tenant = TenantId })).ToList()
@@ -116,21 +116,46 @@ public sealed class ReportsController : Controller
         if (from.HasValue && to.HasValue && from.Value.Date > to.Value.Date)
             return BadRequest("O período informado é inválido.");
         await using var conn = await _db.OpenAsync(ct);
+        var schema = await ReadReportSchemaAsync(conn, ct);
+        if (!schema.HasDocuments)
+        {
+            TempData["Warning"] = "A exportação ainda não está disponível porque a estrutura documental precisa ser preparada.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        if (status is not null && !schema.HasDocumentStatus)
+        {
+            TempData["Warning"] = "O filtro por status não está disponível neste schema. Revise a preparação segura do banco.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var titleExpression = schema.HasDocumentTitle ? "coalesce(d.title,'Sem título')" : "'Sem título'";
+        var statusExpression = schema.HasDocumentStatus ? "coalesce(d.status,'SEM_STATUS')" : "'SEM_STATUS'";
+        var areaExpression = schema.HasFolders && schema.HasFolderId && schema.HasFolderName
+            ? "coalesce(f.name,'Sem setor/pasta')"
+            : "'Sem setor/pasta'";
+        var folderJoin = schema.HasFolders && schema.HasFolderId && schema.HasFolderName
+            ? "left join ged.folder f on f.tenant_id=d.tenant_id and f.id=d.folder_id"
+            : string.Empty;
+        var activeFilter = schema.HasDocumentRegStatus ? "and d.reg_status='A'" : string.Empty;
+        var statusFilter = schema.HasDocumentStatus ? "and (@status is null or upper(coalesce(d.status,''))=@status)" : string.Empty;
+        var dateFilter = schema.HasDocumentCreatedAt
+            ? "and (@from is null or d.created_at >= @from) and (@to is null or d.created_at < @to + interval '1 day')"
+            : string.Empty;
+        var orderExpression = schema.HasDocumentCreatedAt ? "d.created_at desc, d.id" : "d.id";
+        var createdAtExpression = schema.HasDocumentCreatedAt ? "d.created_at" : "null::timestamp";
         var rows = await conn.QueryAsync<DocumentExportRow>(
-            """
-            select d.id as Id, coalesce(d.title,'Sem título') as Title, coalesce(d.status,'SEM_STATUS') as Status,
-                   coalesce(f.name,'Sem setor/pasta') as Area, d.created_at as CreatedAt
-              from ged.document d left join ged.folder f on f.tenant_id=d.tenant_id and f.id=d.folder_id
-             where d.tenant_id=@tenant and d.reg_status='A'
-               and (@status is null or upper(coalesce(d.status,''))=@status)
-               and (@from is null or d.created_at >= @from)
-               and (@to is null or d.created_at < @to + interval '1 day')
-             order by d.created_at desc, d.id limit 50000
+            $"""
+            select d.id as "Id", {titleExpression} as "Title", {statusExpression} as "Status",
+                   {areaExpression} as "Area", {createdAtExpression} as "CreatedAt"
+              from ged.document d {folderJoin}
+             where d.tenant_id=@tenant {activeFilter} {statusFilter} {dateFilter}
+             order by {orderExpression} limit 50000
             """, new { tenant = TenantId, status, from = from?.Date, to = to?.Date });
         var list = rows.ToList();
         var csv = new StringBuilder("Documento;Título;Status;Setor/Pasta;Cadastrado em\r\n");
         foreach (var row in list)
-            csv.AppendLine(string.Join(';', Csv(row.Id.ToString()), Csv(row.Title), Csv(row.Status), Csv(row.Area), Csv(row.CreatedAt.ToString("O", CultureInfo.InvariantCulture))));
+            csv.AppendLine(string.Join(';', Csv(row.Id.ToString()), Csv(row.Title), Csv(row.Status), Csv(row.Area), Csv(row.CreatedAt?.ToString("O", CultureInfo.InvariantCulture))));
         if (await TableExistsAsync(conn, "ged.report_export_audit", ct))
             await conn.ExecuteAsync(new CommandDefinition(
             """
@@ -157,13 +182,17 @@ public sealed class ReportsController : Controller
                    to_regclass('ged.document_classification') is not null as "HasDocumentClassification",
                    exists(select 1 from information_schema.columns where table_schema='ged' and table_name='document' and column_name='folder_id') as "HasFolderId",
                    exists(select 1 from information_schema.columns where table_schema='ged' and table_name='document' and column_name='reg_status') as "HasDocumentRegStatus",
+                   exists(select 1 from information_schema.columns where table_schema='ged' and table_name='document' and column_name='title') as "HasDocumentTitle",
+                   exists(select 1 from information_schema.columns where table_schema='ged' and table_name='document' and column_name='status') as "HasDocumentStatus",
+                   exists(select 1 from information_schema.columns where table_schema='ged' and table_name='document' and column_name='created_at') as "HasDocumentCreatedAt",
+                   exists(select 1 from information_schema.columns where table_schema='ged' and table_name='folder' and column_name='name') as "HasFolderName",
                    exists(select 1 from information_schema.columns where table_schema='ged' and table_name='document_search' and column_name='ocr_text') as "HasOcrText"
             """, cancellationToken: ct));
 
-    private sealed class ReportSchemaDbRow { public bool HasDocuments { get; set; } public bool HasFolders { get; set; } public bool HasDocumentSearch { get; set; } public bool HasDocumentClassification { get; set; } public bool HasFolderId { get; set; } public bool HasDocumentRegStatus { get; set; } public bool HasOcrText { get; set; } }
+    private sealed class ReportSchemaDbRow { public bool HasDocuments { get; set; } public bool HasFolders { get; set; } public bool HasDocumentSearch { get; set; } public bool HasDocumentClassification { get; set; } public bool HasFolderId { get; set; } public bool HasDocumentRegStatus { get; set; } public bool HasDocumentTitle { get; set; } public bool HasDocumentStatus { get; set; } public bool HasDocumentCreatedAt { get; set; } public bool HasFolderName { get; set; } public bool HasOcrText { get; set; } }
     private sealed class ReportSummaryDbRow { public long TotalDocuments { get; set; } public long WithOcr { get; set; } public long WithoutClassification { get; set; } }
     private sealed class ReportBreakdownDbRow { public string Label { get; set; } = string.Empty; public long Total { get; set; } }
-    private sealed class DocumentExportRow { public Guid Id { get; set; } public string Title { get; set; } = string.Empty; public string Status { get; set; } = string.Empty; public string Area { get; set; } = string.Empty; public DateTime CreatedAt { get; set; } }
+    private sealed class DocumentExportRow { public Guid Id { get; set; } public string Title { get; set; } = string.Empty; public string Status { get; set; } = string.Empty; public string Area { get; set; } = string.Empty; public DateTime? CreatedAt { get; set; } }
 
     // =========================================================
     // PLC/PCD — GET /Reports/PcdFull
