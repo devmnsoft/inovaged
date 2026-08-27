@@ -41,42 +41,50 @@ public sealed class ReportsController : Controller
     {
         var items = new List<ReportCatalogItem>
         {
-            new("Documentos cadastrados", "Visão consolidada de volumes, processamento e pendências do acervo.", "documents", "/Ged/Kpi", "Documentos", true),
+            new("Documentos cadastrados", "Visão consolidada de volumes, processamento e pendências do acervo.", "documents", "/Reports/Documents", "Documentos", true),
             new("Documentos sem OCR", "Fila operacional de documentos que ainda não possuem texto pesquisável.", "ocr", "/Ged/Processing?status=pending", "OCR"),
             new("OCR por status", "Acompanhe itens pendentes, em processamento, concluídos e com erro.", "activity", "/Ocr", "OCR"),
             new("Documentos sem classificação", "Itens que precisam de tipologia ou classe documental.", "classification", "/ClassificationDashboard", "Classificação"),
             new("Classificação por classe", "Plano de classificação completo com hierarquia institucional.", "classification", "/Reports/PcdFull", "Classificação", true),
-            new("Temporalidade a vencer e vencida", "Prazos de guarda e itens que exigem destinação.", "retention", "/Retention", "Temporalidade"),
+            new("Temporalidade a vencer e vencida", "Prazos de guarda e itens que exigem destinação.", "retention", "/Reports/Retention", "Temporalidade"),
             new("Empréstimos e devoluções", "Movimentações físicas, vencimentos e documentos emprestados.", "loan", "/Reports/Loans", "Operação", true),
             new("Auditoria por usuário e período", "Rastreabilidade das ações realizadas no sistema.", "audit", "/Audit", "Governança", true),
-            new("Workflows atrasados", "Tramitações que ultrapassaram o prazo definido.", "workflow", "/Operations?onlyOverdue=true", "Operação"),
+            new("Workflows atrasados", "Tramitações que ultrapassaram o prazo definido.", "workflow", "/Reports/Workflow", "Operação"),
             new("Acessos negados", "Tentativas bloqueadas para acompanhamento de segurança.", "restricted-access", "/Audit?eventType=ACCESS_DENIED", "Governança", true),
             new("Uploads com falha", "Lotes com arquivos rejeitados ou falhas de processamento.", "upload-cloud", "/Ged/UploadMonitor?status=failed", "Operação"),
             new("Faturamento hospitalar e glosas", "Valores apresentados, aprovados, glosados e recuperados por convênio.", "billing", "/HospitalBilling/Reports", "Financeiro", true),
-            new("Acervo físico e ocupação", "Caixas, localizações, capacidade e alertas de lotação.", "archive", "/Physical/Boxes", "Acervo físico", true),
+            new("Acervo físico e ocupação", "Caixas, localizações, capacidade e alertas de lotação.", "archive", "/Reports/PhysicalArchive", "Acervo físico", true),
             new("Protocolos e tramitações", "Pendências, responsáveis e prazos de tramitação.", "workflow", "/ProtocoloMelhorias/Relatorios", "Protocolo", true),
             new("Uso do SmartSearch", "Buscas realizadas, perguntas sem resultado e feedbacks negativos.", "search", "/SmartSearch/Statistics", "Inteligência", true),
             new("Validação de assinaturas", "Integridade, cadeia de confiança e resultado das assinaturas.", "certificate-validation", "/Reports/SignatureValidation", "Governança", true)
         };
         await using var conn = await _db.OpenAsync(ct);
-        var summary = await conn.QuerySingleAsync<ReportSummary>(
-            """
-            select count(*) filter (where d.reg_status = 'A') as TotalDocuments,
-                   count(*) filter (where d.reg_status = 'A' and exists (
-                       select 1 from ged.document_search ds where ds.tenant_id=d.tenant_id and ds.document_id=d.id
-                       and nullif(trim(ds.ocr_text),'') is not null)) as WithOcr,
-                   count(*) filter (where d.reg_status = 'A' and not exists (
-                       select 1 from ged.document_classification dc where dc.tenant_id=d.tenant_id and dc.document_id=d.id
-                       and dc.reg_status='A')) as WithoutClassification
-              from ged.document d where d.tenant_id=@tenant
-            """, new { tenant = TenantId });
-        var areas = (await conn.QueryAsync<ReportBreakdownDbRow>(
-            """
-            select coalesce(f.name, 'Sem setor/pasta') as Label, count(*)::bigint as Total
-              from ged.document d left join ged.folder f on f.tenant_id=d.tenant_id and f.id=d.folder_id
-             where d.tenant_id=@tenant and d.reg_status='A'
-             group by coalesce(f.name, 'Sem setor/pasta') order by count(*) desc, 1 limit 8
-            """, new { tenant = TenantId })).ToList();
+        var schema = await ReadReportSchemaAsync(conn, ct);
+        if (!schema.HasDocuments)
+        {
+            return View(new ReportsHubVm
+            {
+                Items = items,
+                GeneratedAt = DateTimeOffset.UtcNow,
+                ReadinessWarning = "A estrutura documental ainda não está disponível. Execute a preparação segura do banco para habilitar os indicadores."
+            });
+        }
+
+        var ocrExpression = schema.HasDocumentSearch && schema.HasOcrText
+            ? "exists (select 1 from ged.document_search ds where ds.tenant_id=d.tenant_id and ds.document_id=d.id and nullif(trim(ds.ocr_text),'') is not null)"
+            : "false";
+        var classificationExpression = schema.HasDocumentClassification
+            ? "exists (select 1 from ged.document_classification dc where dc.tenant_id=d.tenant_id and dc.document_id=d.id and dc.reg_status='A')"
+            : "false";
+        var activeExpression = schema.HasDocumentRegStatus ? "d.reg_status = 'A'" : "true";
+        var summary = await conn.QuerySingleAsync<ReportSummaryDbRow>(
+            $"select count(*) filter (where {activeExpression}) as \"TotalDocuments\", count(*) filter (where {activeExpression} and {ocrExpression}) as \"WithOcr\", count(*) filter (where {activeExpression} and not ({classificationExpression})) as \"WithoutClassification\" from ged.document d where d.tenant_id=@tenant",
+            new { tenant = TenantId });
+        var areas = schema.HasFolders && schema.HasFolderId
+            ? (await conn.QueryAsync<ReportBreakdownDbRow>(
+                $"select coalesce(f.name, 'Sem setor/pasta') as \"Label\", count(*)::bigint as \"Total\" from ged.document d left join ged.folder f on f.tenant_id=d.tenant_id and f.id=d.folder_id where d.tenant_id=@tenant and {activeExpression} group by coalesce(f.name, 'Sem setor/pasta') order by count(*) desc, 1 limit 8",
+                new { tenant = TenantId })).ToList()
+            : new List<ReportBreakdownDbRow> { new() { Label = "Acervo documental", Total = summary.TotalDocuments } };
         var breakdown = areas.Select(x => new ReportBreakdownRow(x.Label, x.Total,
             summary.TotalDocuments == 0 ? 0 : Math.Round(x.Total * 100m / summary.TotalDocuments, 1))).ToList();
         var vm = new ReportsHubVm
@@ -94,6 +102,12 @@ public sealed class ReportsController : Controller
         };
         return View(vm);
     }
+
+    [HttpGet] public IActionResult Documents() => RedirectToAction(nameof(Index), new { focus = "documents" });
+    [HttpGet] public IActionResult Labels() => Redirect("/Labels/History");
+    [HttpGet] public IActionResult PhysicalArchive() => Redirect("/Physical/Boxes");
+    [HttpGet] public IActionResult Workflow() => Redirect("/SmartWorkflow");
+    [HttpGet] public IActionResult Retention() => Redirect("/ClassificationPlan/RetentionRules");
 
     [HttpGet]
     public async Task<IActionResult> ExportDocumentsCsv(string? status, DateTime? from, DateTime? to, CancellationToken ct)
@@ -117,13 +131,14 @@ public sealed class ReportsController : Controller
         var csv = new StringBuilder("Documento;Título;Status;Setor/Pasta;Cadastrado em\r\n");
         foreach (var row in list)
             csv.AppendLine(string.Join(';', Csv(row.Id.ToString()), Csv(row.Title), Csv(row.Status), Csv(row.Area), Csv(row.CreatedAt.ToString("O", CultureInfo.InvariantCulture))));
-        await conn.ExecuteAsync(new CommandDefinition(
+        if (await TableExistsAsync(conn, "ged.report_export_audit", ct))
+            await conn.ExecuteAsync(new CommandDefinition(
             """
             insert into ged.report_export_audit
                 (tenant_id,user_id,report_code,export_format,filters_json,row_count,contains_sensitive_data)
             values (@tenant,@user,'DOCUMENTS','CSV',jsonb_build_object('status',@status,'from',@from,'to',@to),@count,false)
             """, new { tenant = TenantId, user = UserId, status, from = from?.Date, to = to?.Date, count = list.Count }, cancellationToken: ct));
-        await _audit.WriteAsync(TenantId, UserId, "REPORT_PRINT", "report_export", null,
+        await _audit.WriteAsync(TenantId, UserId, "REPORT_EXPORTED", "report_export", null,
             "Exportação CSV do relatório de documentos", null, null,
             new { format = "CSV", report = "DOCUMENTS", count = list.Count, status, from, to }, ct);
         var fileName = $"inovaged-documentos-{DateTime.UtcNow:yyyyMMdd-HHmm}.csv";
@@ -131,9 +146,24 @@ public sealed class ReportsController : Controller
     }
 
     private static string Csv(string? value) => $"\"{(value ?? string.Empty).Replace("\"", "\"\"")}\"";
-    private sealed record ReportSummary(long TotalDocuments, long WithOcr, long WithoutClassification);
-    private sealed record ReportBreakdownDbRow(string Label, long Total);
-    private sealed record DocumentExportRow(Guid Id, string Title, string Status, string Area, DateTimeOffset CreatedAt);
+    private static async Task<bool> TableExistsAsync(System.Data.IDbConnection connection, string name, CancellationToken ct) =>
+        await connection.ExecuteScalarAsync<bool>(new CommandDefinition("select to_regclass(@name) is not null", new { name }, cancellationToken: ct));
+
+    private static async Task<ReportSchemaDbRow> ReadReportSchemaAsync(System.Data.IDbConnection connection, CancellationToken ct) =>
+        await connection.QuerySingleAsync<ReportSchemaDbRow>(new CommandDefinition("""
+            select to_regclass('ged.document') is not null as "HasDocuments",
+                   to_regclass('ged.folder') is not null as "HasFolders",
+                   to_regclass('ged.document_search') is not null as "HasDocumentSearch",
+                   to_regclass('ged.document_classification') is not null as "HasDocumentClassification",
+                   exists(select 1 from information_schema.columns where table_schema='ged' and table_name='document' and column_name='folder_id') as "HasFolderId",
+                   exists(select 1 from information_schema.columns where table_schema='ged' and table_name='document' and column_name='reg_status') as "HasDocumentRegStatus",
+                   exists(select 1 from information_schema.columns where table_schema='ged' and table_name='document_search' and column_name='ocr_text') as "HasOcrText"
+            """, cancellationToken: ct));
+
+    private sealed class ReportSchemaDbRow { public bool HasDocuments { get; set; } public bool HasFolders { get; set; } public bool HasDocumentSearch { get; set; } public bool HasDocumentClassification { get; set; } public bool HasFolderId { get; set; } public bool HasDocumentRegStatus { get; set; } public bool HasOcrText { get; set; } }
+    private sealed class ReportSummaryDbRow { public long TotalDocuments { get; set; } public long WithOcr { get; set; } public long WithoutClassification { get; set; } }
+    private sealed class ReportBreakdownDbRow { public string Label { get; set; } = string.Empty; public long Total { get; set; } }
+    private sealed class DocumentExportRow { public Guid Id { get; set; } public string Title { get; set; } = string.Empty; public string Status { get; set; } = string.Empty; public string Area { get; set; } = string.Empty; public DateTime CreatedAt { get; set; } }
 
     // =========================================================
     // PLC/PCD — GET /Reports/PcdFull

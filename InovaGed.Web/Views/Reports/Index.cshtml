@@ -13,6 +13,14 @@
 }
 <div class="atlas-prime-page reports-prime" data-reports-page>
     <partial name="Atlas/_PageHeader" model="pageHeader" />
+    @if (!string.IsNullOrWhiteSpace(Model.ReadinessWarning))
+    {
+        <div class="alert alert-warning atlas-prime-alert" role="alert">
+            <app-icon name="database" size="20" decorative="true" />
+            <div><strong>Relatórios aguardando preparação do banco</strong><p>@Model.ReadinessWarning</p></div>
+            <a class="btn btn-outline-primary" href="/DatabaseReadiness">Ver prontidão do banco</a>
+        </div>
+    }
     <partial name="Atlas/_PageMetrics" model="Model.Metrics" />
 
     <section class="atlas-prime-panel reports-prime__executive" aria-labelledby="executiveTitle">
