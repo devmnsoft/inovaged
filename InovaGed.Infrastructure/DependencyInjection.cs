@@ -44,6 +44,8 @@ using InovaGed.Application.SmartGed.Assistant;
 using InovaGed.Infrastructure.SmartGed.Assistant;
 using InovaGed.Application.SmartWorkflow;
 using InovaGed.Infrastructure.SmartWorkflow;
+using InovaGed.Application.Governance;
+using InovaGed.Infrastructure.Governance;
 
 namespace InovaGed.Infrastructure;
 
@@ -96,6 +98,12 @@ public static class InfrastructureServiceCollectionExtensions
     /// </summary>
     public static IServiceCollection AddStabilityCriticalServices(this IServiceCollection services)
     {
+        services.AddScoped<GovernanceService>();
+        services.AddScoped<IGovernanceDashboardService>(sp => sp.GetRequiredService<GovernanceService>());
+        services.AddScoped<IGovernanceAuditService>(sp => sp.GetRequiredService<GovernanceService>());
+        services.AddScoped<IGovernanceAlertService>(sp => sp.GetRequiredService<GovernanceService>());
+        services.AddScoped<IGovernanceEvidenceService>(sp => sp.GetRequiredService<GovernanceService>());
+        services.AddScoped<IGovernanceReportService>(sp => sp.GetRequiredService<GovernanceService>());
         services.AddScoped<IDocumentMetadataExtractor, LocalDocumentMetadataExtractor>();
         services.AddScoped<SmartGedService>();
         services.AddScoped<IDocumentIntelligenceService>(sp => sp.GetRequiredService<SmartGedService>());
