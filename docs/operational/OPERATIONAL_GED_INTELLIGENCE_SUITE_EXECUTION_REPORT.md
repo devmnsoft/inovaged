@@ -2,13 +2,14 @@
 
 ## Resumo
 
-A rodada consolidou a Central de Relatórios como ponto de acesso operacional e tornou sua página inicial tolerante a schema legado. As métricas continuam reais e isoladas por tenant; estruturas opcionais ausentes agora geram degradação segura ou um alerta acionável de Database Readiness.
+A rodada consolidou a Central de Relatórios como ponto de acesso operacional e tornou sua página inicial e a exportação documental tolerantes a schema legado. As métricas continuam reais e isoladas por tenant; tabelas ou colunas opcionais ausentes agora geram degradação segura ou um alerta acionável de Database Readiness.
 
 ## Arquivos principais alterados
 
 - `InovaGed.Web/Controller/ReportsController.cs`
 - `InovaGed.Web/Models/Reports/ReportsHubVm.cs`
 - `InovaGed.Web/Views/Reports/Index.cshtml`
+- `InovaGed.Application.Tests/OperationalReportsSchemaCompatibilityTests.cs`
 - `docs/operational/OPERATIONAL_GED_INTELLIGENCE_SUITE.md`
 - `docs/operational/OPERATIONAL_GED_INTELLIGENCE_SUITE_EXECUTION_REPORT.md`
 
@@ -22,6 +23,8 @@ Nenhuma. Não houve mudança destrutiva nem necessidade de persistência adicion
 - Detecção prévia das tabelas e colunas consumidas pela central.
 - Fallback sem dados inventados quando OCR, classificação ou pasta não existem.
 - Período de exportação validado e limite operacional mantido.
+- Introspecção de `title`, `status`, `created_at`, `folder_id` e `folder.name` antes da montagem da consulta CSV.
+- Filtro de status incompatível com schema legado devolve orientação amigável, sem executar SQL inválido.
 - Auditoria padronizada como `REPORT_EXPORTED`.
 - Registro auxiliar de exportação condicionado à existência de sua tabela.
 
@@ -35,7 +38,7 @@ O catálogo cobre GED, OCR, classificação, temporalidade, acervo, empréstimos
 
 ## Build e quality gates
 
-Os resultados finais, inclusive limitações do ambiente, foram registrados no commit desta entrega e no resumo final da execução. Neste container, o SDK `dotnet` não está instalado (`dotnet: command not found`), portanto clean, restore, builds, Environment Doctor e route smoke não puderam ser executados localmente.
+Os resultados finais, inclusive limitações do ambiente, foram registrados no commit desta entrega e no resumo final da execução. Neste container, o SDK `dotnet` não está instalado (`dotnet: command not found`), portanto clean, restore, builds, Environment Doctor e route smoke não puderam ser executados localmente. Foi acrescentado um contrato estático para a introspecção, isolamento por tenant, limite e auditoria da exportação.
 
 ## Git antes do pull
 
@@ -43,7 +46,7 @@ A árvore iniciou limpa na branch `work`. As alterações desta entrega foram re
 
 ## Pull, conflitos e build após pull
 
-O primeiro `git pull` foi executado após o commit `9d9a783`, mas a branch local `work` não possui upstream e o checkout não possui remoto configurado. O Git encerrou sem alterar a árvore e solicitou remoto e branch explícitos. Portanto, não houve merge nem conflito a resolver. O pull final de confirmação apresentou a mesma limitação de configuração.
+O primeiro `git pull` foi executado após o commit da entrega, mas a branch local `work` não possui upstream e o checkout não possui remoto configurado. O Git encerrou sem alterar a árvore e solicitou remoto e branch explícitos. Portanto, não houve merge nem conflito a resolver. O pull final de confirmação apresentou a mesma limitação de configuração.
 
 O build anterior e posterior ao pull não pôde iniciar porque o executável `dotnet` não existe neste container. Essa é uma limitação do ambiente, não um resultado de compilação aprovado; a validação permanece obrigatória em CI ou em estação com o SDK indicado por `global.json`.
 
