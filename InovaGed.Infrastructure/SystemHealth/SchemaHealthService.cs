@@ -36,6 +36,7 @@ public sealed class SchemaHealthService : ISchemaHealthService
         "ged.document_quality_run", "ged.document_quality_result", "ged.loan_request_history",
         "ged.protocol_request", "ged.protocol_request_item", "ged.protocol_request_attachment", "ged.protocol_request_history",
         "ged.classification_plan", "ged.classification_plan_history", "ged.classification_plan_version",
+        "ged.classification_node", "ged.retention_rule_v2", "ged.classification_plan_version_v2", "ged.classification_change_request",
         "ged.classification_plan_version_item", "ged.document_classification", "ged.document_classification_audit",
         "ged.label_print", "ged.physical_location", "ged.box", "ged.batch", "ged.batch_item",
         "ged.label_template", "ged.label_template_config", "ged.label_template_field", "ged.label_template_version",

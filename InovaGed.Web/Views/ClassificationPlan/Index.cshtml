@@ -1,58 +1,6 @@
-﻿@model IReadOnlyList<InovaGed.Application.ClassificationPlans.ClassificationNodeRow>
-@{
-    ViewData["Title"] = "PCD/TTD";
-    var nodesJson = System.Text.Json.JsonSerializer.Serialize(Model);
-}
-
-@if (TempData["Error"] is string err)
-{
-    <div class="alert alert-danger">@err</div>
-}
-
-<div class="d-flex align-items-center justify-content-between mb-3">
-    <div>
-        <h2 class="mb-0">PCD/TTD</h2>
-        <div class="text-muted">Arraste itens para mover na árvore. Publique versões para evidência e impressão.</div>
-    </div>
-    <div class="d-flex gap-2">
-        <a class="btn btn-outline-secondary" href="/ClassificationPlan/Versions">
-            <app-icon name="history"></app-icon> Versões
-        </a>
-        <a class="btn btn-outline-secondary" target="_blank" href="/ClassificationPlan/PrintCurrent">
-            <app-icon name="print"></app-icon> Imprimir atual
-        </a>
-        <button class="btn btn-primary" type="button" onclick="cp.openCreate(null)">
-            <app-icon name="plus"></app-icon> Nova classe
-        </button>
-    </div>
-</div>
-
-<div class="card">
-    <div class="card-body">
-        <form method="get" class="row g-2 mb-4" role="search">
-            <div class="col-md-9"><label class="visually-hidden" for="classification-search">Buscar</label><input id="classification-search" class="form-control" name="q" value="@ViewBag.Query" placeholder="Código, nome, descrição, prazo, destino ou sigilo" /></div>
-            <div class="col-md-3 d-grid"><button class="btn btn-outline-primary" type="submit"><app-icon name="search"></app-icon> Buscar no plano</button></div>
-        </form>
-        <div id="cpTree"></div>
-    </div>
-</div>
-
-<div class="modal fade" id="cpEditModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-scrollable">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Classe do Plano (PCD/TTD)</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
-            </div>
-            <div class="modal-body" id="cpEditBody">
-                <div class="text-muted">Carregando...</div>
-            </div>
-        </div>
-    </div>
-</div>
-
-@section Scripts {
-    <script src="/lib/sortablejs/Sortable.min.js"></script>
-    <script>window.__cp_nodes = @Html.Raw(nodesJson);</script>
-    <script src="~/js/classification-plan.js"></script>
-}
+@model InovaGed.Application.Classification.ClassificationPlanDashboard
+@{ViewData["Title"]="Plano de Classificação e Temporalidade";ViewData["WorkspaceVariant"]="wide";}
+@section Styles{<link rel="stylesheet" href="~/css/classification-plan.css" asp-append-version="true"/>}
+<div class="classification-page"><section class="classification-hero"><div><span>Arquivística · Instrumentos 2.0</span><h1>Plano de Classificação e Temporalidade</h1><p>Gerencie classes documentais, regras de guarda, eventos condicionantes, destinação final e versões dos instrumentos arquivísticos.</p></div><a class="btn btn-light" asp-action="Create">Nova classe</a></section>
+<div class="classification-kpis"><article><b>@Model.Classes</b><span>Classes cadastradas</span></article><article><b>@Model.ClassesWithoutRule</b><span>Classes sem regra</span></article><article><b>@Model.RulesInReview</b><span>Regras aguardando revisão</span></article><article><b>v@Model.PublishedVersion</b><span>Versão publicada</span></article><article><b>@Model.PendingChanges</b><span>Alterações pendentes</span></article><article><b>@Model.PermanentDestinations</b><span>Destinações permanentes</span></article></div>
+<div class="classification-actions"><a asp-action="Tree"><app-icon name="folder"/> <b>Árvore de classificação</b><span>Organize funções e atividades.</span></a><a asp-action="RetentionRules"><app-icon name="clock"/><b>Tabela de temporalidade</b><span>Defina fases, eventos e destino.</span></a><a asp-action="ReviewQueue"><app-icon name="clipboard-check"/><b>Revisão arquivística</b><span>Trate pendências sem publicar.</span></a><a asp-action="Import"><app-icon name="upload"/><b>Importação assistida</b><span>Valide CSV antes de confirmar.</span></a><a asp-action="Versions"><app-icon name="history"/><b>Versões publicadas</b><span>Snapshots imutáveis do plano.</span></a><a asp-action="Compare"><app-icon name="git-branch"/><b>Comparar versões</b><span>Veja inclusões, remoções e alterações.</span></a></div></div>
