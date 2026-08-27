@@ -1,5 +1,12 @@
 [
   {
+    "name": "2026_08_27_physical_archive_2",
+    "path": "database/migrations/2026_08_27_physical_archive_2.sql",
+    "area": "Acervo Físico",
+    "required": true,
+    "description": "Acervo Físico 2.0: caixas, localizações, movimentações, inventários, empréstimos e cadeia de custódia."
+  },
+  {
     "name": "2026_08_26_label_template_catalog_seed_fix",
     "path": "database/migrations/2026_08_26_label_template_catalog_seed_fix.sql",
     "area": "Etiquetas",

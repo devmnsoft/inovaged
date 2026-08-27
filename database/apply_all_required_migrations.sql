@@ -3063,3 +3063,5 @@ where coalesce(reg_status, 'A') = 'A';
 \ir migrations/2026_08_26_label_print_calibration.sql
 
 \ir migrations/2026_08_27_classification_retention_plan_2.sql
+
+\ir migrations/2026_08_27_physical_archive_2.sql

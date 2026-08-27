@@ -1,5 +1,6 @@
 using InovaGed.Application.Ged.Physical;
 using InovaGed.Application.Identity;
+using InovaGed.Application.PhysicalArchive2;
 using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -14,24 +15,81 @@ public sealed class PhysicalController : Controller
     private readonly ICurrentUser _user;
     private readonly IPhysicalQueries _queries;
     private readonly IPhysicalCommands _commands;
+    private readonly IPhysicalArchive2Service _archive;
 
     public PhysicalController(
         ILogger<PhysicalController> logger,
         ICurrentUser user,
         IPhysicalQueries queries,
-        IPhysicalCommands commands)
+        IPhysicalCommands commands,
+        IPhysicalArchive2Service archive)
     {
         _logger = logger;
         _user = user;
         _queries = queries;
         _commands = commands;
+        _archive = archive;
     }
 
+    [HttpGet("")]
+    [HttpGet("Dashboard")]
+    public async Task<IActionResult> Index(CancellationToken ct) => View(await _archive.DashboardAsync(_user.TenantId, ct));
+
     [HttpGet("Inventory")]
-    public IActionResult Inventory() => RedirectToAction(nameof(PhysicalMap));
+    public async Task<IActionResult> Inventory(CancellationToken ct)
+    {
+        ViewBag.Locations = await _archive.LocationsAsync(_user.TenantId, ct);
+        return View(await _archive.InventoriesAsync(_user.TenantId, ct));
+    }
+
+    [HttpGet("Inventory/{id:guid}")]
+    public async Task<IActionResult> InventoryDetails(Guid id, CancellationToken ct)
+    {
+        var model = await _archive.InventoryAsync(_user.TenantId, id, ct);
+        if (model is null) return NotFound();
+        ViewBag.Locations = await _archive.LocationsAsync(_user.TenantId, ct);
+        return View(model);
+    }
+
+    [HttpPost("Inventory/Start"), ValidateAntiForgeryToken]
+    public async Task<IActionResult> StartInventory(Guid? locationId, string title, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(title)) { TempData["Err"] = "Informe o título do inventário."; return RedirectToAction(nameof(Inventory)); }
+        var id = await _archive.StartInventoryAsync(_user.TenantId, locationId, title, _user.UserId, ct);
+        return RedirectToAction(nameof(InventoryDetails), new { id });
+    }
+
+    [HttpPost("Inventory/{id:guid}/Scan"), ValidateAntiForgeryToken]
+    public async Task<IActionResult> ScanInventory(Guid id, string code, Guid? foundLocationId, CancellationToken ct)
+    {
+        if (!string.IsNullOrWhiteSpace(code)) await _archive.ScanAsync(_user.TenantId, id, code, foundLocationId, _user.UserId, ct);
+        return RedirectToAction(nameof(InventoryDetails), new { id });
+    }
+
+    [HttpPost("Inventory/{id:guid}/Close"), ValidateAntiForgeryToken]
+    public async Task<IActionResult> CloseInventory(Guid id, string? notes, CancellationToken ct)
+    { await _archive.CloseInventoryAsync(_user.TenantId, id, _user.UserId, notes, ct); return RedirectToAction(nameof(InventoryDetails), new { id }); }
 
     [HttpGet("Movements")]
-    public IActionResult Movements() => RedirectToAction(nameof(BoxHistory));
+    public async Task<IActionResult> Movements(CancellationToken ct)
+    { ViewBag.Boxes=await _archive.BoxesAsync(_user.TenantId,ct);ViewBag.Locations=await _archive.LocationsAsync(_user.TenantId,ct);return View(await _archive.MovementsAsync(_user.TenantId,ct)); }
+
+    [HttpPost("Movements/Create"), ValidateAntiForgeryToken]
+    public async Task<IActionResult> CreateMovement(Guid boxId, Guid toLocationId, string movementType, string? reason, CancellationToken ct)
+    { await _archive.MoveAsync(_user.TenantId,boxId,toLocationId,movementType,reason,_user.UserId,_user.Email,ct);TempData["Ok"]="Movimentação registrada com cadeia de custódia.";return RedirectToAction(nameof(Movements)); }
+
+    [HttpGet("Loans")]
+    public async Task<IActionResult> Loans(CancellationToken ct){ViewBag.Boxes=await _archive.BoxesAsync(_user.TenantId,ct);return View(await _archive.LoansAsync(_user.TenantId,ct));}
+
+    [HttpPost("Loans/Create"), ValidateAntiForgeryToken]
+    public async Task<IActionResult> CreateLoan(Guid boxId,string requester,string? department,string? reason,DateTimeOffset? dueAt,CancellationToken ct)
+    {if(string.IsNullOrWhiteSpace(requester)){TempData["Err"]="Informe o solicitante.";return RedirectToAction(nameof(Loans));}await _archive.LoanAsync(_user.TenantId,boxId,requester,department,reason,dueAt,_user.UserId,ct);return RedirectToAction(nameof(Loans));}
+
+    [HttpPost("Loans/{id:guid}/Return"), ValidateAntiForgeryToken]
+    public async Task<IActionResult> ReturnLoan(Guid id,string? notes,CancellationToken ct){await _archive.ReturnLoanAsync(_user.TenantId,id,notes,_user.UserId,ct);return RedirectToAction(nameof(Loans));}
+
+    [HttpGet("Custody/{boxId:guid}")]
+    public async Task<IActionResult> Custody(Guid boxId,CancellationToken ct){ViewBag.BoxId=boxId;return View(await _archive.CustodyAsync(_user.TenantId,boxId,ct));}
 
     [HttpGet("Labels")]
     public IActionResult Labels() => RedirectToAction(nameof(Boxes));
