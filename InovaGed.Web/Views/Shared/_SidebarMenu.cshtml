@@ -41,6 +41,13 @@
         <a asp-controller="GedClassification" asp-action="Queue" class="@ActiveAny("GedClassification", "ClassificationDashboard")"><i class="bi bi-tags"></i><span>Classificação</span></a>
         <a asp-controller="Disposition" asp-action="Index" class="@ActiveAny("Disposition")"><i class="bi bi-calendar-check"></i><span>Temporalidade</span></a>
     </details>
+    <details class="sidebar-group" open="@(ActiveAny("ClassificationPlan") == "active" ? "open" : null)">
+        <summary>Arquivística</summary>
+        <a asp-controller="ClassificationPlan" asp-action="Tree" class="@Active("ClassificationPlan", "Tree")"><i class="bi bi-diagram-3"></i><span>Plano de Classificação</span></a>
+        <a asp-controller="ClassificationPlan" asp-action="RetentionRules" class="@Active("ClassificationPlan", "RetentionRules")"><i class="bi bi-clock"></i><span>Tabela de Temporalidade</span></a>
+        <a asp-controller="ClassificationPlan" asp-action="Versions" class="@Active("ClassificationPlan", "Versions")"><i class="bi bi-git"></i><span>Versões dos Instrumentos</span></a>
+        <a asp-controller="ClassificationPlan" asp-action="ReviewQueue" class="@Active("ClassificationPlan", "ReviewQueue")"><i class="bi bi-clipboard-check"></i><span>Revisão Arquivística</span></a>
+    </details>
     <details class="sidebar-group" open="@(ActiveAny("SmartGed", "SmartAssistant", "SmartWorkflow") == "active" ? "open" : null)">
         <summary>Inteligência</summary>
         <a asp-controller="SmartGed" asp-action="Index" class="@ActiveAny("SmartGed")"><i class="bi bi-stars"></i><span>GED Inteligente</span></a>

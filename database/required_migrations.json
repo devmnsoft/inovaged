@@ -110,5 +110,12 @@
     "area": "Homologação",
     "required": true,
     "description": "Cria planos, casos, execuções, resultados e evidências UAT."
+  },
+  {
+    "name": "2026_08_27_classification_retention_plan_2",
+    "path": "database/migrations/2026_08_27_classification_retention_plan_2.sql",
+    "area": "Arquivística",
+    "required": true,
+    "description": "Plano de classificação, temporalidade, versões e revisão 2.0."
   }
 ]

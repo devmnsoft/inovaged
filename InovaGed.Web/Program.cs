@@ -327,6 +327,10 @@ builder.Services.AddHostedService<InovaGed.Infrastructure.Setup.SystemSeedHosted
 // Classification Plan
 // =======================================================
 builder.Services.AddScoped<InovaGed.Application.ClassificationPlans.IClassificationPlanRepository, ClassificationPlanRepository>();
+builder.Services.AddScoped<InovaGed.Infrastructure.Classification.ClassificationPlanV2Service>();
+builder.Services.AddScoped<InovaGed.Application.Classification.IClassificationPlanService>(sp => sp.GetRequiredService<InovaGed.Infrastructure.Classification.ClassificationPlanV2Service>());
+builder.Services.AddScoped<InovaGed.Application.Classification.IRetentionRuleV2Service>(sp => sp.GetRequiredService<InovaGed.Infrastructure.Classification.ClassificationPlanV2Service>());
+builder.Services.AddScoped<InovaGed.Application.Classification.IClassificationVersionService>(sp => sp.GetRequiredService<InovaGed.Infrastructure.Classification.ClassificationPlanV2Service>());
 builder.Services.AddScoped<IClassificationPlanCommands, ClassificationPlanCommands>();
 builder.Services.AddScoped<IClassificationPlanQueries, ClassificationPlanQueries>();
 
