@@ -497,6 +497,7 @@ builder.Services.AddScoped<IBatchCommands, BatchCommands>();
 
 builder.Services.AddScoped<IPhysicalQueries, PhysicalQueries>();
 builder.Services.AddScoped<IPhysicalCommands, PhysicalCommands>();
+builder.Services.AddScoped<InovaGed.Application.PhysicalArchive2.IPhysicalArchive2Service, InovaGed.Infrastructure.PhysicalArchive2.PhysicalArchive2Service>();
 builder.Services.AddScoped<InovaGed.Application.Ged.Labels.ILabelQueries, InovaGed.Infrastructure.Ged.Labels.LabelQueries>();
 builder.Services.AddScoped<InovaGed.Application.Ged.Labels.ILabelCommands, InovaGed.Infrastructure.Ged.Labels.LabelCommands>();
 

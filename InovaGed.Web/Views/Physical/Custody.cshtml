@@ -1,0 +1,3 @@
+@model IReadOnlyList<InovaGed.Application.PhysicalArchive2.PhysicalActivity>
+@{ViewData["Title"]="Cadeia de custódia";}
+<link rel="stylesheet" href="~/css/physical-archive.css"/><main class="physical-page"><header class="physical-hero"><div><h1>Cadeia de custódia</h1><p>Histórico íntegro e cronológico da caixa.</p></div><a class="btn btn-light" href="/Physical/Boxes/@ViewBag.BoxId">Voltar à caixa</a></header><section class="physical-custody-timeline">@foreach(var x in Model){<article><span></span><div><time>@x.OccurredAt.ToLocalTime().ToString("g")</time><h2>@x.Title</h2><p>@x.Code · @x.Location</p><small>@x.Detail</small></div></article>}@if(Model.Count==0){<p class="physical-empty">Ainda não há eventos registrados para esta caixa.</p>}</section></main>

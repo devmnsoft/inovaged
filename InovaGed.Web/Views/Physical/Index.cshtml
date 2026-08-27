@@ -1,0 +1,10 @@
+@model InovaGed.Application.PhysicalArchive2.PhysicalArchiveDashboard
+@{ ViewData["Title"] = "Acervo Físico"; }
+<link rel="stylesheet" href="~/css/physical-archive.css" />
+<main class="physical-page">
+ <header class="physical-hero"><div><span class="physical-eyebrow">PHYSICAL ARCHIVE 2.0</span><h1>Acervo Físico</h1><p>Controle caixas, localizações, inventários, movimentações, empréstimos e cadeia de custódia do acervo documental.</p></div><a class="btn btn-light" href="/Physical/Boxes/New">Nova caixa</a></header>
+ <section class="physical-kpi-grid">
+  <article><strong>@Model.Boxes</strong><span>Caixas cadastradas</span></article><article><strong>@Model.LabelledBoxes</strong><span>Caixas com etiqueta</span></article><article><strong>@Model.UnlocatedBoxes</strong><span>Sem localização</span></article><article><strong>@Model.LoanedBoxes</strong><span>Em empréstimo</span></article><article><strong>@Model.OpenInventories</strong><span>Inventários abertos</span></article><article><strong>@Model.OverdueLoans</strong><span>Empréstimos vencidos</span></article><article><strong>@Model.MonthlyMovements</strong><span>Movimentações no mês</span></article><article><strong>@Model.PendingChecks</strong><span>Pendências de conferência</span></article>
+ </section>
+ <nav class="physical-action-grid"><a href="/Physical/Boxes"><b>Caixas</b><span>Cadastro, conteúdo e etiquetas</span></a><a href="/Physical/Locations"><b>Localizações</b><span>Endereçamento hierárquico</span></a><a href="/Physical/Inventory"><b>Inventário</b><span>Conferência por código ou QR</span></a><a href="/Physical/Movements"><b>Movimentações</b><span>Transferências rastreáveis</span></a><a href="/Physical/Loans"><b>Empréstimos</b><span>Saídas, prazos e devoluções</span></a><a href="/Physical/Boxes"><b>Cadeia de Custódia</b><span>Linha do tempo por caixa</span></a><a href="/Labels"><b>Etiquetas</b><span>Impressão e reimpressão</span></a><a href="/Reports"><b>Relatórios</b><span>Visão operacional</span></a></nav>
+</main>
