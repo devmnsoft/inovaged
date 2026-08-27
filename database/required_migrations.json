@@ -124,5 +124,12 @@
     "area": "Arquivística",
     "required": true,
     "description": "Plano de classificação, temporalidade, versões e revisão 2.0."
+  },
+  {
+    "name": "2026_08_27_document_governance_2",
+    "path": "database/migrations/2026_08_27_document_governance_2.sql",
+    "area": "Governança Documental",
+    "required": true,
+    "description": "Auditoria, LGPD, alertas, evidências, riscos e relatórios executivos."
   }
 ]

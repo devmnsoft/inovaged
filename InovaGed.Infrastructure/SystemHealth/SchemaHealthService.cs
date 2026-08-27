@@ -423,6 +423,14 @@ where schemaname = 'ged';", cancellationToken: ct))).ToList();
             AddCheck(report, "LOANS_SECURE_DOCUMENT_LINK", "Loans", "ged.secure_document_link", "Tabela", "Warning", existingTables.Contains("ged.secure_document_link"), "Links seguros de entrega digital disponíveis.", "Execute database/migrations/2026_06_fix_secure_document_link_sharing.sql.");
             AddCheck(report, "LOANS_SECURE_DOCUMENT_LINK_ACCESS", "Loans", "ged.secure_document_link_access", "Tabela", "Warning", existingTables.Contains("ged.secure_document_link_access"), "Auditoria de acessos a links seguros disponível.", "Execute database/migrations/2026_06_fix_secure_document_link_sharing.sql.");
 
+            foreach (var governanceTable in new[] { "governance_alert", "governance_evidence", "governance_report_log", "governance_risk_snapshot" })
+            {
+                var qualifiedName = $"ged.{governanceTable}";
+                AddCheck(report, BuildTableId(qualifiedName), "Governança Documental", qualifiedName, "Tabela", "Critical", existingTables.Contains(qualifiedName),
+                    existingTables.Contains(qualifiedName) ? "Estrutura de Governança Documental 2.0 disponível." : "Estrutura obrigatória de governança não encontrada.",
+                    "Execute database/migrations/2026_08_27_document_governance_2.sql.");
+            }
+
             foreach (var (name, alternatives, message) in RecommendedIndexes)
             {
                 var foundName = existingIndexes.Contains(name) ? name : alternatives.FirstOrDefault(existingIndexes.Contains);
