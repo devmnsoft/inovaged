@@ -1,0 +1,3 @@
+insert into ged.contract_service_catalog(service_code,description,display_order) values
+('DIGITALIZACAO_OCR','Digitalização com OCR e inserção no GED.',10),('INDEXACAO_DOCUMENTAL','Indexação documental.',20),('CLASSIFICACAO_ARQUIVISTICA','Classificação arquivística.',30),('TRATAMENTO_ARQUIVISTICO','Tratamento arquivístico completo.',40),('GUARDA_FISICA_ADMIN','Guarda física de documentos administrativos.',50),('GUARDA_DIGITAL','Guarda digital em nuvem.',60),('IMPRESSAO_ETIQUETA','Impressão de etiquetas.',70),('INVENTARIO_FISICO','Inventário físico de caixas.',80),('MOVIMENTACAO_CAIXA','Movimentação física de caixas.',90),('REVISAO_OCR','Revisão de OCR.',100),('REVISAO_TEMPORALIDADE','Revisão de temporalidade.',110)
+on conflict do nothing;

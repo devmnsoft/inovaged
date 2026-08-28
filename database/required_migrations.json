@@ -131,5 +131,12 @@
     "area": "Governança Documental",
     "required": true,
     "description": "Auditoria, LGPD, alertas, evidências, riscos e relatórios executivos."
+  },
+  {
+    "name": "2026_08_28_contract_measurement_2",
+    "path": "database/migrations/2026_08_28_contract_measurement_2.sql",
+    "area": "Medição Contratual",
+    "required": true,
+    "description": "Produtividade, UST, medição, evidências, glosas e aceite contratual."
   }
 ]
