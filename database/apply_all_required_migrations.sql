@@ -3070,3 +3070,4 @@ where coalesce(reg_status, 'A') = 'A';
 \ir seeds/2026_08_28_contract_service_catalog_seed.sql
 
 \ir migrations/2026_08_31_label_visual_designer_2.sql
+\ir migrations/2026_08_31_label_print_fidelity_2.sql
