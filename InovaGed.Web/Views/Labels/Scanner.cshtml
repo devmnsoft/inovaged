@@ -1,0 +1,7 @@
+@model IEnumerable<dynamic>
+@{ ViewData["Title"]="Scanner de etiquetas"; }
+<link rel="stylesheet" href="~/css/labels-traceability.css" asp-append-version="true"/><link rel="stylesheet" href="~/css/labels-scanner.css" asp-append-version="true"/>
+<main class="label-scanner-page"><section class="atlas-page-hero"><div><span>Rastreabilidade 2.0</span><h1>Scanner de etiquetas</h1><p>Leia com scanner USB ou cole uma URL, token seguro ou TraceCode.</p></div></section>
+<section class="atlas-card"><form id="labelScannerForm" asp-action="Resolve" method="post">@Html.AntiForgeryToken()<label for="code">Código da etiqueta</label><div class="label-scanner-input"><input id="code" name="code" required autocomplete="off" autofocus placeholder="LBL-2026-000001 ou /l/token"/><button class="atlas-btn atlas-btn-primary">Resolver</button></div><label for="location">Localização (opcional)</label><input id="location" name="location" autocomplete="off"/></form><div id="scannerResult" class="label-scanner-result" aria-live="polite"></div></section>
+<section class="atlas-table-shell"><h2>Leituras recentes</h2><table class="table"><thead><tr><th>Código</th><th>Resultado</th><th>Data</th></tr></thead><tbody>@foreach(var item in Model){<tr><td>@item.trace_code</td><td>@item.scan_result</td><td>@item.scanned_at</td></tr>}</tbody></table></section></main>
+@section Scripts{<script src="~/js/labels-scanner.js" asp-append-version="true"></script>}

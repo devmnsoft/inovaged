@@ -152,5 +152,12 @@
     "area": "Etiquetas",
     "required": true,
     "description": "Perfis de calibração, qualidade visual, folha A4 e fidelidade de impressão de etiquetas."
+  },
+  {
+    "name": "2026_08_31_label_traceability_2",
+    "path": "database/migrations/2026_08_31_label_traceability_2.sql",
+    "area": "Etiquetas",
+    "required": true,
+    "description": "Identidade rastreável, token QR seguro, leituras, substituições e qualidade visual."
   }
 ]

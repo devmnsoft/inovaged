@@ -5,12 +5,13 @@ using Dapper;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.PhysicalArchive;
 using InovaGed.Application.Labels.Intelligence;
+using InovaGed.Application.Labels;
 
 namespace InovaGed.Infrastructure.PhysicalArchive;
 
-public sealed class LabelPrintRegistrar(IDbConnectionFactory dbFactory, ILabelCustodyService custody) : ILabelPrintRegistrar, ILabelPrintService
+public sealed class LabelPrintRegistrar(IDbConnectionFactory dbFactory, ILabelCustodyService custody, ILabelTraceabilityService traceability) : ILabelPrintRegistrar, ILabelPrintService
 {
-    public async Task RegisterAsync(LabelPrintRequest request, CancellationToken cancellationToken = default)
+    public async Task<LabelTraceIssued> RegisterAsync(LabelPrintRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(request.SnapshotJson);
         if (request.TenantId == Guid.Empty || request.UserId == Guid.Empty)
@@ -27,15 +28,15 @@ where tenant_id=@TenantId and label_subject_type=@SubjectType and label_subject_
             throw new InvalidOperationException("O motivo da reimpressão é obrigatório.");
         var boxId = request.SubjectType.Equals("BOX", StringComparison.OrdinalIgnoreCase) ? request.SubjectId : (Guid?)null;
         var documentId = request.SubjectType.Equals("DOCUMENT", StringComparison.OrdinalIgnoreCase) ? request.SubjectId : (Guid?)null;
-        await db.ExecuteAsync(new CommandDefinition("""
+        var labelPrintId = await db.ExecuteScalarAsync<Guid>(new CommandDefinition("""
 insert into ged.label_print
  (id, tenant_id, box_id, document_id, label_type, printed_by, ip_address, user_agent, data,
   snapshot_json, payload_hash_sha256, template_version, reprint_reason, print_channel, reg_status)
 values
- (gen_random_uuid(), @TenantId, @BoxId, @DocumentId, @SubjectType, @UserId, cast(@IpAddress as inet),
+ (@Id, @TenantId, @BoxId, @DocumentId, @SubjectType, @UserId, cast(@IpAddress as inet),
   @UserAgent, cast(@SnapshotJson as jsonb), cast(@SnapshotJson as jsonb), @Hash, @TemplateCode,
-  nullif(@ReprintReason, ''), 'WEB', 'A');
-""", new { request.TenantId, BoxId = boxId, DocumentId = documentId, request.SubjectType, request.UserId,
+  nullif(@ReprintReason, ''), 'WEB', 'A') returning id;
+""", new { Id=Guid.NewGuid(), request.TenantId, BoxId = boxId, DocumentId = documentId, request.SubjectType, request.UserId,
             request.IpAddress, request.UserAgent, request.SnapshotJson, Hash = hash, request.TemplateCode, request.ReprintReason },
             tx, cancellationToken: cancellationToken));
         await db.ExecuteAsync(new CommandDefinition("""
@@ -47,9 +48,12 @@ values
   @Hash, @UserId, cast(@IpAddress as inet), @UserAgent, nullif(@ReprintReason, ''));
 """, new { request.TenantId, request.SubjectType, request.SubjectId, request.TemplateCode, request.SnapshotJson, Hash = hash, request.UserId, request.IpAddress, request.UserAgent, request.ReprintReason }, tx, cancellationToken: cancellationToken));
         await tx.CommitAsync(cancellationToken);
+        var issued = await traceability.IssueAsync(new(request.TenantId,labelPrintId,request.SubjectType,request.SubjectId,
+            request.TemplateCode,null,request.UserId,null,hash),cancellationToken);
         await custody.RegisterEventAsync(new(request.TenantId,request.SubjectType,request.SubjectId,null,
             priorPrints>0?"LABEL_REPRINTED":"LABEL_PRINTED",priorPrints>0?"Etiqueta reimpressa":"Etiqueta impressa",
             request.ReprintReason,"label_print_history",null,null,null,request.UserId,request.IpAddress,request.UserAgent,request.SnapshotJson),cancellationToken);
+        return issued;
     }
 }
 

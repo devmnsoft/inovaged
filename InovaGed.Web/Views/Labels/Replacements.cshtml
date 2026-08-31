@@ -1,0 +1,3 @@
+@model IEnumerable<dynamic>
+@{ViewData["Title"]="Substituições de etiquetas";}
+<link rel="stylesheet" href="~/css/labels-traceability.css"/><main class="label-replacement-page"><section class="atlas-page-hero"><div><span>Reimpressão controlada</span><h1>Substituições</h1><p>Vínculos auditáveis entre identidades antigas e novas.</p></div><a class="atlas-btn atlas-btn-primary" asp-action="ReplacementCreate">Nova substituição</a></section><div class="atlas-table-shell"><table class="table"><thead><tr><th>Antiga</th><th>Nova</th><th>Motivo</th><th>Status</th><th>Data</th></tr></thead><tbody>@foreach(var x in Model){<tr><td>@x.old_code</td><td>@x.new_code</td><td>@x.reason</td><td>@x.status</td><td>@x.requested_at</td></tr>}</tbody></table></div></main>

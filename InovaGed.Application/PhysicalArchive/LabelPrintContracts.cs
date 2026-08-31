@@ -13,13 +13,13 @@ public sealed record LabelPrintRequest(
 
 public interface ILabelPrintRegistrar
 {
-    Task RegisterAsync(LabelPrintRequest request, CancellationToken cancellationToken = default);
+    Task<InovaGed.Application.Labels.LabelTraceIssued> RegisterAsync(LabelPrintRequest request, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Canonical boundary for auditable label printing.</summary>
 public interface ILabelPrintService
 {
-    Task RegisterAsync(LabelPrintRequest request, CancellationToken cancellationToken = default);
+    Task<InovaGed.Application.Labels.LabelTraceIssued> RegisterAsync(LabelPrintRequest request, CancellationToken cancellationToken = default);
 }
 
 public interface ILabelPayloadBuilder

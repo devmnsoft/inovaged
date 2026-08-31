@@ -326,9 +326,10 @@ public class LabelsController : GedControllerBase
         if(subject is null) { ModelState.AddModelError(nameof(input.SubjectId), "Não foi possível localizar a origem selecionada."); await PopulatePrintWizardLookupsAsync(input, ct); return View("PrintWizard", input); }
         var wasPrinted = await db.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from ged.label_print_history where tenant_id=@tid and label_subject_type=@type and label_subject_id=@id)", new { tid=TenantId, type=input.SubjectType, id=input.SubjectId }, cancellationToken:ct));
         if (register && wasPrinted && string.IsNullOrWhiteSpace(input.ReprintReason)) { ModelState.AddModelError(nameof(input.ReprintReason), "Informe o motivo da reimpressão para preservar a rastreabilidade."); await PopulatePrintWizardLookupsAsync(input, ct); return View("PrintWizard", input); }
+        InovaGed.Application.Labels.LabelTraceIssued? issued=null;
         if(register) { if(UserId is not Guid uid) return Unauthorized(); var snapshot=new { printMode=input.PrintMode,templateCode=template.Code,templateName=template.Name,templateVersion=template.Version,isDesignerTemplate=template.Id is not null && !template.IsSystemTemplate,subjectType=input.SubjectType,subjectId=input.SubjectId,copies=input.Copies,controlNumber=(string?)null,location=(string?)null,printedFields=subject };
-            try { await _printRegistrar.RegisterAsync(new(TenantId,uid,input.SubjectType,input.SubjectId!.Value,template.Code,_payloadBuilder.Build(snapshot),HttpContext.Connection.RemoteIpAddress?.ToString(),Request.Headers.UserAgent.ToString(),input.ReprintReason),ct); } catch(InvalidOperationException ex) { ModelState.AddModelError(nameof(input.ReprintReason),ex.Message); ViewBag.Templates=await _catalog.GetTemplatesAsync(TenantId,input.SubjectType,input.PrintMode,ct); ViewBag.SubjectOptions=await LoadSubjectOptionsAsync(input.SubjectType,ct); return View("PrintWizard",input); } }
-        ViewBag.QrSvg=_qrCodes.CreateTrackingSvg($"{Request.Scheme}://{Request.Host}/LabelTracking/Trace?payloadOrCode={input.SubjectId}"); ViewBag.PrintRegistered=register; ViewBag.Copies=input.Copies;
+            try { issued=await _printRegistrar.RegisterAsync(new(TenantId,uid,input.SubjectType,input.SubjectId!.Value,template.Code,_payloadBuilder.Build(snapshot),HttpContext.Connection.RemoteIpAddress?.ToString(),Request.Headers.UserAgent.ToString(),input.ReprintReason),ct); } catch(InvalidOperationException ex) { ModelState.AddModelError(nameof(input.ReprintReason),ex.Message); ViewBag.Templates=await _catalog.GetTemplatesAsync(TenantId,input.SubjectType,input.PrintMode,ct); ViewBag.SubjectOptions=await LoadSubjectOptionsAsync(input.SubjectType,ct); return View("PrintWizard",input); } }
+        var qrPath=issued?.ShortUrl??$"/Labels/Trace/{input.SubjectId}"; ViewBag.TraceCode=issued?.Trace.TraceCode; ViewBag.QrSvg=_qrCodes.CreateTrackingSvg($"{Request.Scheme}://{Request.Host}{qrPath}"); ViewBag.PrintRegistered=register; ViewBag.Copies=input.Copies;
         return View(template.ViewName,subject);
     }
 
@@ -607,8 +608,8 @@ group by b.id, b.batch_no, b.notes, b.reg_date
         try
         {
             var subjectId = await EnsureLocDeskSubjectAsync(input, ct);
-            await RegisterLocDeskAsync(input, subjectId, input.ReprintReason, ct);
-            return await RenderLocDesk(input,true,ct);
+            var issued=await RegisterLocDeskAsync(input, subjectId, input.ReprintReason, ct);
+            return await RenderLocDesk(input,true,ct,issued);
         }
         catch (InvalidOperationException ex)
         {
@@ -733,9 +734,10 @@ select
     internal static string BuildDocumentClassificationJoinExpression(ClassificationPlanSchemaInfo schema)
         => schema.DocumentHasClassificationId ? "coalesce(dc.classification_id, d.classification_id)" : "dc.classification_id";
 
-    private async Task<IActionResult> RenderLocDesk(LocDeskLabelInputModel input,bool registered,CancellationToken ct)
+    private async Task<IActionResult> RenderLocDesk(LocDeskLabelInputModel input,bool registered,CancellationToken ct,InovaGed.Application.Labels.LabelTraceIssued? issued=null)
     {
-        var qr = CreateLocDeskQr(input, input.BoxId ?? input.DocumentId);
+        var qr = issued is null ? CreateLocDeskQr(input, input.BoxId ?? input.DocumentId) : _qrCodes.CreateTrackingSvg($"{Request.Scheme}://{Request.Host}{issued.ShortUrl}");
+        ViewBag.TraceCode=issued?.Trace.TraceCode;
         var model = new LocDeskLabelRenderModel { Label=input,QrSvg=qr,PrintRegistered=registered,Template=await LoadLocDeskTemplate(input,ct) };
         return View(LocDeskViewName(input), model);
     }
@@ -767,7 +769,7 @@ values(@id,@tid,@LabelKind,@ArchiveTitle,@ProcessNumber,@ControlNumber,@VolumeNu
         return id;
     }
 
-    private async Task RegisterLocDeskAsync(LocDeskLabelInputModel input, Guid subjectId, string? reason, CancellationToken ct)
+    private async Task<InovaGed.Application.Labels.LabelTraceIssued> RegisterLocDeskAsync(LocDeskLabelInputModel input, Guid subjectId, string? reason, CancellationToken ct)
     {
         if (UserId is not Guid userId) throw new UnauthorizedAccessException("Usuário autenticado obrigatório.");
         var type = input.BoxId.HasValue ? "BOX" : input.DocumentId.HasValue ? "DOCUMENT" : "MANUAL_LABEL";
@@ -775,7 +777,7 @@ values(@id,@tid,@LabelKind,@ArchiveTitle,@ProcessNumber,@ControlNumber,@VolumeNu
         var option=await _catalog.GetTemplateAsync(TenantId,template,ct);
         var details=option.Id is Guid templateId?await _templateManager.GetAsync(TenantId,templateId,ct):null;
         var snapshot=new { printMode=option.Mode,templateCode=option.Code,templateName=option.Name,templateVersion=details?.Template.Version??1,isDefault=option.IsDefault,configuration=details,input };
-        await _printRegistrar.RegisterAsync(new LabelPrintRequest(TenantId,userId,type,subjectId,template,_payloadBuilder.Build(snapshot),HttpContext.Connection.RemoteIpAddress?.ToString(),Request.Headers.UserAgent.ToString(),reason),ct);
+        return await _printRegistrar.RegisterAsync(new LabelPrintRequest(TenantId,userId,type,subjectId,template,_payloadBuilder.Build(snapshot),HttpContext.Connection.RemoteIpAddress?.ToString(),Request.Headers.UserAgent.ToString(),reason),ct);
     }
 
     private static void NormalizeLocDesk(LocDeskLabelInputModel input)
