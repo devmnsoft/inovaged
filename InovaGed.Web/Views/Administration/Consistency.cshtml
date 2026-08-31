@@ -1,0 +1,22 @@
+@model InovaGed.Application.Administration.ConsistencyAuditResult
+@{
+    ViewData["Title"] = "Relatório de inconsistências";
+    ViewData["Subtitle"] = "Diagnóstico somente leitura, isolado por tenant e sem correções automáticas.";
+    ViewData["Icon"] = "warning";
+}
+<link rel="stylesheet" href="~/css/consistency-check.css" asp-append-version="true" />
+<div class="atlas-page consistency-check">
+    <partial name="Atlas/_AtlasPageHero" />
+    <div class="consistency-check__notice"><atlas-icon name="information"></atlas-icon><span>Nenhum dado será alterado. Confirme o contexto antes de executar qualquer correção.</span></div>
+    <div class="consistency-check__grid">
+    @foreach (var issue in Model.Issues)
+    {
+        <article class="consistency-check__item">
+            <div><strong>@issue.Title</strong><p>@issue.Description</p></div>
+            @if (issue.Available) { <span class="consistency-check__count">@issue.Count</span> } else { <span class="consistency-check__unavailable">Schema indisponível</span> }
+            <a href="@issue.ModuleUrl">Revisar no módulo <atlas-icon name="arrow-right"></atlas-icon></a>
+        </article>
+    }
+    </div>
+    <small>Verificado em @Model.CheckedAt.ToString("dd/MM/yyyy HH:mm 'UTC'"). Nenhuma referência é exposta fora do tenant autenticado.</small>
+</div>

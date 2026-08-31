@@ -7,11 +7,49 @@
   var vm = Model ?? new InovaGed.Application.Ged.Dashboard.GedDashboardVm { PartialFailure = true };
   var recentLoans = vm.RecentLoanRequests ?? new List<InovaGed.Application.Ged.Dashboard.RecentLoanRequestDto>();
   var recentAudit = vm.RecentAuditEvents ?? new List<InovaGed.Application.Ged.Dashboard.RecentAuditEventDto>();
+  var dashboardCards = new List<InovaGed.Application.Ged.Dashboard.DashboardLinkVm>
+  {
+      new("Total de documentos ativos", vm.ActiveDocuments, "bi-files", "text-primary", "/Ged"),
+      new("Documentos sem classificação", vm.UnclassifiedDocuments, "bi-tags", "text-warning", "/Ged"),
+      new("Documentos confidenciais", vm.ConfidentialDocuments, "bi-shield-lock", "text-danger", "/Ged"),
+      new("OCR pendente", vm.OcrPending, "bi-hourglass-split", "text-secondary", "/Ocr"),
+      new("OCR processando", vm.OcrProcessing, "bi-cpu", "text-info", "/Ocr"),
+      new("OCR com erro", vm.OcrError, "bi-exclamation-triangle", "text-danger", "/Ocr"),
+      new("Solicitações pendentes", vm.LoanRequested, "bi-journal-arrow-up", "text-warning", "/Loans"),
+      new("Empréstimos vencidos", vm.LoanOverdue, "bi-calendar2-x", "text-danger", "/Loans/Overdue"),
+      new("Movimentações hoje", vm.FolderMovesToday, "bi-arrow-left-right", "text-info", "/Ged/Folders"),
+      new("Acessos negados 24h", vm.AccessDenied24h, "bi-shield-x", "text-danger", "/Audit/AccessDenied"),
+      new("Usuários bloqueados", vm.LockedUsers, "bi-person-lock", "text-danger", "/Users"),
+      new("Temporalidade vencida", vm.RetentionExpired, "bi-clock-history", "text-warning", "/Retention")
+  };
+  var operationalPending = new List<InovaGed.Application.Ged.Dashboard.DashboardLinkVm>
+  {
+      new("Documentos sem OCR", vm.OcrPending, "bi-file-earmark-text", "", "/Ocr"),
+      new("Documentos sem classificação", vm.UnclassifiedDocuments, "bi-tags", "", "/Ged"),
+      new("Etiquetas pendentes", null, "bi-printer", "", "/Labels/History"),
+      new("Caixas sem localização", null, "bi-box-seam", "", "/Physical/Boxes"),
+      new("Empréstimos vencidos", vm.LoanOverdue, "bi-calendar-x", "", "/Loans/Overdue"),
+      new("Tarefas atrasadas", null, "bi-list-check", "", "/SmartWorkflow"),
+      new("Alertas de governança", null, "bi-shield-exclamation", "", "/Governance/Alerts"),
+      new("Medições pendentes", null, "bi-receipt", "", "/ContractMeasurement"),
+      new("Publicações aguardando aceite", null, "bi-send", "", "/FiscalPortal")
+  };
 }
+<link rel="stylesheet" href="~/css/operational-dashboard.css" asp-append-version="true" />
 <div class="atlas-page mb-4">
     <partial name="Atlas/_AtlasPageHero" />
 </div>
 <div class="container-fluid py-3">
+  <partial name="Atlas/_GlobalQuickActions" />
+  <section class="operational-pending" aria-labelledby="operational-pending-title">
+    <h2 id="operational-pending-title">Pendências Operacionais</h2>
+    <div class="operational-pending__grid">
+      @foreach (var item in operationalPending)
+      {
+        <a href="@item.Url"><i class="bi @item.Icon" aria-hidden="true"></i><span>@item.Title</span>@if (item.Value.HasValue) { <strong>@item.Value.Value</strong> } else { <small>Abrir</small> }</a>
+      }
+    </div>
+  </section>
   <div class="d-flex justify-content-between align-items-center mb-3">
     <div>
       <h2 class="mb-1">Painel Operacional do GED</h2>
@@ -26,21 +64,8 @@
   }
 
   <div class="row g-3 mb-4">
-    @foreach (var c in new[] {
-      new {T="Total de documentos ativos",V=vm.ActiveDocuments,I="bi-files",C="text-primary",L="/Ged"},
-      new {T="Documentos sem classificação",V=vm.UnclassifiedDocuments,I="bi-tags",C="text-warning",L="/Ged"},
-      new {T="Documentos confidenciais",V=vm.ConfidentialDocuments,I="bi-shield-lock",C="text-danger",L="/Ged"},
-      new {T="OCR pendente",V=vm.OcrPending,I="bi-hourglass-split",C="text-secondary",L="/Ocr"},
-      new {T="OCR processando",V=vm.OcrProcessing,I="bi-cpu",C="text-info",L="/Ocr"},
-      new {T="OCR com erro",V=vm.OcrError,I="bi-exclamation-triangle",C="text-danger",L="/Ocr"},
-      new {T="Solicitações pendentes",V=vm.LoanRequested,I="bi-journal-arrow-up",C="text-warning",L="/Loans"},
-      new {T="Empréstimos vencidos",V=vm.LoanOverdue,I="bi-calendar2-x",C="text-danger",L="/Loans/Overdue"},
-      new {T="Movimentações hoje",V=vm.FolderMovesToday,I="bi-arrow-left-right",C="text-info",L="/Ged/Folders"},
-      new {T="Acessos negados 24h",V=vm.AccessDenied24h,I="bi-shield-x",C="text-danger",L="/Audit/AccessDenied"},
-      new {T="Usuários bloqueados",V=vm.LockedUsers,I="bi-person-lock",C="text-danger",L="/Users"},
-      new {T="Temporalidade vencida",V=vm.RetentionExpired,I="bi-clock-history",C="text-warning",L="/Retention"}
-    }) {
-      <div class="col-12 col-sm-6 col-xl-3"><a class="text-decoration-none" href="@c.L"><div class="card atlas-card h-100 shadow-sm"><div class="card-body"><div class="d-flex justify-content-between"><small class="text-muted">@c.T</small><i class="bi @c.I @c.C"></i></div><div class="display-6 fw-bold">@c.V</div></div></div></a></div>
+    @foreach (var card in dashboardCards) {
+      <div class="col-12 col-sm-6 col-xl-3"><a class="text-decoration-none" href="@card.Url"><div class="card atlas-card h-100 shadow-sm"><div class="card-body"><div class="d-flex justify-content-between"><small class="text-muted">@card.Title</small><i class="bi @card.Icon @card.CssClass"></i></div><div class="display-6 fw-bold">@card.Value</div></div></div></a></div>
     }
   </div>
 

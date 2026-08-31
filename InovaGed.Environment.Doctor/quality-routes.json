@@ -27,5 +27,19 @@
   "/Poc",
   "/Protocols/WorkQueue",
   "/DocumentQuality",
-  "/Labels/Print"
+  "/Labels/Print",
+  "/Dashboard",
+  "/Ged",
+  "/Physical",
+  "/ClassificationPlan",
+  "/SmartGed",
+  "/SmartAssistant",
+  "/SmartWorkflow",
+  "/Governance",
+  "/ContractMeasurement",
+  "/FiscalPortal",
+  "/GlobalSearch",
+  "/Administration/Consistency",
+  "/DatabaseReadiness",
+  "/SystemIncidents"
 ]

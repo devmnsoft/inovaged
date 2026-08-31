@@ -1,0 +1,13 @@
+<section class="atlas-quick-actions" aria-labelledby="global-quick-actions-title">
+    <h2 id="global-quick-actions-title">Ações rápidas</h2>
+    <div class="atlas-quick-actions__grid">
+        <a asp-controller="Ged" asp-action="CreateDocument"><atlas-icon name="document-add"></atlas-icon><span>Novo documento</span></a>
+        <a asp-controller="Labels" asp-action="PrintWizard"><atlas-icon name="print"></atlas-icon><span>Nova etiqueta</span></a>
+        <a asp-controller="Ged" asp-action="Index"><atlas-icon name="workspace"></atlas-icon><span>Abrir GED</span></a>
+        <a asp-controller="Physical" asp-action="Index"><atlas-icon name="folder"></atlas-icon><span>Abrir Acervo Físico</span></a>
+        <a asp-controller="SmartWorkflow" asp-action="Create"><atlas-icon name="workflow"></atlas-icon><span>Criar tarefa</span></a>
+        <a asp-controller="SmartAssistant" asp-action="Index"><atlas-icon name="assistant"></atlas-icon><span>Abrir Assistente</span></a>
+        <a asp-controller="Governance" asp-action="Index"><atlas-icon name="permissions"></atlas-icon><span>Abrir Governança</span></a>
+        <a asp-controller="Administration" asp-action="Index"><atlas-icon name="settings"></atlas-icon><span>Abrir Administração</span></a>
+    </div>
+</section>

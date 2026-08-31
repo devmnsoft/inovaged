@@ -1,0 +1,47 @@
+@model InovaGed.Web.Models.Search.GlobalSearchPageVm
+@{
+    ViewData["Title"] = "Busca global operacional";
+    ViewData["Subtitle"] = "Localize registros autorizados sem informar identificadores técnicos.";
+    ViewData["Icon"] = "search";
+}
+<link rel="stylesheet" href="~/css/global-search-page.css" asp-append-version="true" />
+<div class="atlas-page global-search-page">
+    <partial name="Atlas/_AtlasPageHero" />
+    <form method="get" asp-controller="GlobalSearch" asp-action="Index" class="global-search-page__toolbar" role="search">
+        <label for="operational-search">Termo de busca</label>
+        <div class="global-search-page__field">
+            <input id="operational-search" name="q" value="@Model.Query" type="search" minlength="2" maxlength="100" autocomplete="off" placeholder="Documento, caixa, etiqueta, tarefa ou protocolo" />
+            <button type="submit" class="atlas-button atlas-button--primary"><atlas-icon name="search"></atlas-icon> Buscar</button>
+        </div>
+        <div asp-validation-summary="ModelOnly" class="atlas-alert atlas-alert--warning"></div>
+    </form>
+
+    @if (Model.Query.Length < 2)
+    {
+        <div class="global-search-page__empty"><atlas-icon name="information"></atlas-icon><strong>Digite ao menos dois caracteres.</strong><span>A consulta sempre aplica o tenant e as permissões do usuário autenticado.</span></div>
+    }
+    else if (Model.Response.Total == 0)
+    {
+        <div class="global-search-page__empty"><atlas-icon name="search"></atlas-icon><strong>Nenhum resultado autorizado.</strong><span>Revise o termo ou tente a Busca Inteligente.</span></div>
+    }
+    else
+    {
+        <p class="global-search-page__summary">@Model.Response.Total resultado(s) em @Model.Response.Duration.TotalMilliseconds.ToString("0") ms.</p>
+        @foreach (var group in Model.Response.Groups)
+        {
+            <section class="global-search-page__group" aria-labelledby="group-@group.Code">
+                <h2 id="group-@group.Code">@group.Label</h2>
+                <div class="global-search-page__results">
+                    @foreach (var item in group.Items)
+                    {
+                        <a class="global-search-page__result" href="@item.Url">
+                            <atlas-icon name="@item.Icon"></atlas-icon>
+                            <span><strong>@item.Title</strong><small>@item.Subtitle</small><small>@item.Description</small></span>
+                            @if (!string.IsNullOrWhiteSpace(item.Badge)) { <em>@item.Badge</em> }
+                        </a>
+                    }
+                </div>
+            </section>
+        }
+    }
+</div>

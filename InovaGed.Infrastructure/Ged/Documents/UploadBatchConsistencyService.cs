@@ -14,7 +14,7 @@ public sealed class UploadBatchConsistencyService : IUploadBatchConsistencyServi
     public async Task<Result<UploadBatchConsistencyResult>> RecalculateAsync(Guid tenantId, Guid batchId, CancellationToken ct)
     {
         await using var conn = await _db.OpenAsync(ct);
-        var result = await conn.QuerySingleOrDefaultAsync<UploadBatchConsistencyResult>(new CommandDefinition("""
+        var row = await conn.QuerySingleOrDefaultAsync<UploadBatchConsistencyDbRow>(new CommandDefinition("""
 WITH c AS (
   SELECT count(*)::int total,
          count(*) FILTER (WHERE status='COMPLETED')::int success,
@@ -45,6 +45,32 @@ WITH c AS (
 )
 SELECT * FROM u;
 """, new { tenantId, batchId }, cancellationToken: ct));
-        return result is null ? Result<UploadBatchConsistencyResult>.Fail("NOT_FOUND", "Lote não encontrado.") : Result<UploadBatchConsistencyResult>.Ok(result);
+        if (row is null)
+            return Result<UploadBatchConsistencyResult>.Fail("NOT_FOUND", "Lote não encontrado.");
+
+        var result = new UploadBatchConsistencyResult
+        {
+            BatchId = row.BatchId,
+            TotalFiles = row.TotalFiles,
+            SuccessFiles = row.SuccessFiles,
+            FailedFiles = row.FailedFiles,
+            SkippedFiles = row.SkippedFiles,
+            Status = row.Status ?? "PROCESSING",
+            FinishedAt = row.FinishedAt.HasValue
+                ? new DateTimeOffset(DateTime.SpecifyKind(row.FinishedAt.Value, DateTimeKind.Utc))
+                : null
+        };
+        return Result<UploadBatchConsistencyResult>.Ok(result);
+    }
+
+    private sealed class UploadBatchConsistencyDbRow
+    {
+        public Guid BatchId { get; set; }
+        public int TotalFiles { get; set; }
+        public int SuccessFiles { get; set; }
+        public int FailedFiles { get; set; }
+        public int SkippedFiles { get; set; }
+        public string? Status { get; set; }
+        public DateTime? FinishedAt { get; set; }
     }
 }
