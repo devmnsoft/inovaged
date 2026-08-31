@@ -21,3 +21,6 @@ public sealed record AdministrationDashboardVM(
     IReadOnlyList<AdministrationRecommendationVM> Recommendations);
 
 public sealed record AdministrationRecommendationVM(string Title, string Reason, string Guidance, string Severity);
+
+public sealed record QualityCenterVM(DateTimeOffset? GeneratedAtUtc, string OverallStatus, IReadOnlyList<QualityCenterCheckVM> Checks, string? Notice);
+public sealed record QualityCenterCheckVM(string Name, string Status, string Message, string? Action);

@@ -4,7 +4,7 @@ public enum QualityStatus { Pass, Warning, Fail }
 public sealed record QualityFinding(string Check, QualityStatus Status, string Message, string? Impact = null, string? Action = null, string? Script = null, string? Resource = null);
 public sealed class QualityGateReport
 {
-    public string Name { get; init; } = "InovaGED Quality Gate";
+    public string Name { get; init; } = "Quality Gate 2.0 - Testes, Segurança, Performance e Regressão";
     public DateTimeOffset GeneratedAtUtc { get; init; } = DateTimeOffset.UtcNow;
     public string Environment { get; init; } = System.Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Not configured";
     public string ConnectionString { get; init; } = "Not configured";
