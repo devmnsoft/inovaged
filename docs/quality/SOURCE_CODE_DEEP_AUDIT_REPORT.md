@@ -23,3 +23,6 @@ Os 130 arquivos de migrations, manifesto e agregador foram inventariados por bus
 ## Rotas e riscos restantes
 
 O manifesto inclui respostas autenticadas/redirects esperadas. A validação HTTP real requer aplicação, PostgreSQL e SDK .NET, indisponíveis nesta execução. A busca operacional atualmente agrega providers registrados para navegação, documentos, protocolos, empréstimos e usuários; caixas, etiquetas, tarefas, incidentes, publicações e medições ainda requerem providers dedicados. A varredura encontrou outros DTOs materializados diretamente por Dapper e Razor legado inline fora dos fluxos alterados; devem ser migrados incrementalmente, com testes de compatibilidade, em vez de substituição indiscriminada.
+# Atualização - Quality Gate 2.0
+
+A etapa Quality Gate 2.0 automatizou as regressões de Razor e Dapper e acrescentou varreduras de segurança, tenant isolation e performance. Os relatórios agora alimentam o Centro de Qualidade Técnica em `/Administration/Quality` e o workflow dedicado executa restore, build, test e gate offline.

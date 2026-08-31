@@ -1,0 +1,26 @@
+name: Quality Gate 2.0
+on: [workflow_dispatch, pull_request]
+permissions: { contents: read }
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    steps: [ { uses: actions/checkout@v4 }, { uses: actions/setup-dotnet@v4, with: { dotnet-version: '8.0.x' } }, { run: 'dotnet restore InovaGed.sln' } ]
+  build:
+    needs: restore
+    runs-on: ubuntu-latest
+    steps: [ { uses: actions/checkout@v4 }, { uses: actions/setup-dotnet@v4, with: { dotnet-version: '8.0.x' } }, { run: 'dotnet build InovaGed.sln -v:minimal' } ]
+  test:
+    needs: build
+    runs-on: ubuntu-latest
+    steps: [ { uses: actions/checkout@v4 }, { uses: actions/setup-dotnet@v4, with: { dotnet-version: '8.0.x' } }, { run: 'dotnet test InovaGed.sln -v:minimal' } ]
+  quality-gate:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '8.0.x' }
+      - run: dotnet run --project InovaGed.Environment.Doctor -- quality-gate --no-db-required
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with: { name: quality-gate-2-report, path: artifacts/quality-gate/ }

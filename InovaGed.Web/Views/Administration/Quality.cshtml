@@ -1,0 +1,14 @@
+@model InovaGed.Web.Models.Administration.QualityCenterVM
+@{ ViewData["Title"] = "Qualidade Técnica"; ViewData["WorkspaceVariant"] = "wide"; }
+<main class="atlas-page admin-quality-page">
+  <partial name="Atlas/_AtlasPageHero" />
+  <section class="atlas-card p-4 mb-4" aria-labelledby="quality-summary">
+    <div class="d-flex justify-content-between align-items-center"><div><small>Quality Gate 2.0</small><h2 id="quality-summary">Status: @Model.OverallStatus</h2></div><app-icon name="shield-check" size="36" decorative="true" /></div>
+    <p>Última execução: @(Model.GeneratedAtUtc?.ToLocalTime().ToString("g") ?? "ainda não executado")</p>
+    @if (Model.Notice is not null) { <div class="alert alert-warning" role="status">@Model.Notice</div> }
+  </section>
+  <section class="atlas-card p-4"><h2>Build, rotas e verificações</h2>
+    @if (Model.Checks.Count == 0) { <div class="atlas-empty-state"><p>Nenhuma evidência disponível.</p><code>dotnet run --project InovaGed.Environment.Doctor -- quality-gate --no-db-required</code></div> }
+    else { <div class="table-responsive"><table class="table atlas-table"><thead><tr><th>Check</th><th>Status</th><th>Resultado</th><th>Próxima ação</th></tr></thead><tbody>@foreach (var check in Model.Checks) { <tr><td>@check.Name</td><td><span class="badge text-bg-secondary">@check.Status</span></td><td>@check.Message</td><td>@(check.Action ?? "—")</td></tr> }</tbody></table></div> }
+  </section>
+</main>

@@ -6,6 +6,7 @@ using InovaGed.Web.Security;
 using InovaGed.Web.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Text.Json;
 
 namespace InovaGed.Web.Controllers;
 
@@ -36,6 +37,7 @@ public sealed class AdministrationController : Controller
             new AdministrationActionVM("SchemaHealth", "Inspecione a integridade do schema e incompatibilidades conhecidas.", "bi-activity", "SchemaHealth", "Index", AppPolicies.Administracao, "Banco de Dados e Ambiente", true, null),
             new AdministrationActionVM("Workers e Filas", "Monitore processamento assíncrono e atividade técnica.", "bi-activity", "Administration", "Workers", AppPolicies.Administracao, "Operação e Observabilidade", true, null),
             new AdministrationActionVM("Central de Incidentes", "Investigue erros, rotas instáveis e pendências técnicas.", "bi-exclamation-triangle", "SystemIncidents", "Index", AppPolicies.Administracao, "Operação e Observabilidade", true, null),
+            new AdministrationActionVM("Qualidade Técnica", "Build, rotas, Razor, Dapper, segurança, migrations, tenant isolation e performance.", "shield-check", "Administration", "Quality", AppPolicies.Administracao, "Operação e Observabilidade", true, null),
             new AdministrationActionVM("Relatório de Inconsistências", "Detecte referências ausentes com isolamento por tenant e sem correções automáticas.", "list-check", "Administration", "Consistency", AppPolicies.Administracao, "Operação e Observabilidade", true, null),
             new AdministrationActionVM("Release Readiness", "Confirme evidências antes da homologação e entrega.", "bi-rocket-takeoff", "Administration", "Readiness", AppPolicies.Administracao, "Homologação e Entrega", true, null),
             new AdministrationActionVM("UAT e Go-Live", "Acompanhe planos de aceite, evidências e critérios de entrada em produção.", "bi-clipboard-check", "UatReadiness", "Index", AppPolicies.Administracao, "Homologação e Entrega", true, null),
@@ -56,6 +58,25 @@ public sealed class AdministrationController : Controller
 
     [HttpGet("/Administration/DesignSystem")]
     public IActionResult DesignSystem() => View();
+
+    [HttpGet("/Administration/Quality")]
+    public async Task<IActionResult> Quality(CancellationToken ct)
+    {
+        var reportPath = Path.GetFullPath(Path.Combine(_configuration["QualityGate:ReportPath"] ?? Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "artifacts", "quality-gate", "quality-gate-2-report.json")));
+        if (!System.IO.File.Exists(reportPath)) return View(new QualityCenterVM(null, "Não executado", [], "Execute o Quality Gate 2.0 para gerar a evidência automática."));
+        try
+        {
+            await using var stream = System.IO.File.OpenRead(reportPath);
+            using var report = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
+            var root = report.RootElement;
+            var checks = root.TryGetProperty("Checks", out var items)
+                ? items.EnumerateArray().Select(item => new QualityCenterCheckVM(item.GetProperty("Check").GetString() ?? "Check", item.GetProperty("Status").ToString(), item.GetProperty("Message").GetString() ?? "", item.TryGetProperty("Action", out var action) ? action.GetString() : null)).ToArray()
+                : [];
+            return View(new QualityCenterVM(root.TryGetProperty("GeneratedAtUtc", out var generated) ? generated.GetDateTimeOffset() : null, root.TryGetProperty("Status", out var status) ? status.ToString() : "Desconhecido", checks, null));
+        }
+        catch (JsonException) { return View(new QualityCenterVM(null, "Relatório inválido", [], "O relatório não é JSON válido; execute novamente o Quality Gate.")); }
+        catch (IOException) { return View(new QualityCenterVM(null, "Indisponível", [], "O relatório está temporariamente indisponível para leitura.")); }
+    }
 
     public async Task<IActionResult> Security(string? search, CancellationToken ct) => View("Security", new AdministrationPageVm { Section = "Segurança e Permissões", SecurityConfigurations = await _service.GetSecurityConfigurationsAsync(CurrentTenant(), ct), PermissionCatalog = await _service.GetPermissionCatalogAsync(search, ct) });
     public Task<IActionResult> Roles(string? search, CancellationToken ct) => Security(search, ct);
