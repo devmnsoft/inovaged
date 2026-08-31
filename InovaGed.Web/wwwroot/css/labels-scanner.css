@@ -1,0 +1,1 @@
+.label-scanner-page{display:grid;gap:1.25rem}.label-scanner-input{display:flex;gap:.75rem}.label-scanner-input input{flex:1;font-size:1.15rem}.label-scanner-result{display:flex;flex-wrap:wrap;gap:.75rem;margin-top:1rem;padding:1rem;border-radius:12px;background:#eef6ff}.label-scanner-result:empty{display:none}@media(max-width:640px){.label-scanner-input{flex-direction:column}}

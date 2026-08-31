@@ -194,6 +194,8 @@ builder.Services.AddScoped<InovaGed.Application.Labels.ILabelTemplateVersioningS
 builder.Services.AddScoped<InovaGed.Application.Labels.ILabelTemplateRenderer>(sp => sp.GetRequiredService<InovaGed.Infrastructure.PhysicalArchive.LabelTemplateManager>());
 builder.Services.AddSingleton<InovaGed.Application.PhysicalArchive.ILabelPayloadBuilder, InovaGed.Infrastructure.PhysicalArchive.LabelPayloadBuilder>();
 builder.Services.AddSingleton<InovaGed.Application.PhysicalArchive.ILabelQrCodeService, InovaGed.Web.Services.LabelQrCodeService>();
+builder.Services.AddSingleton<InovaGed.Application.Labels.ILabelTraceTokenService, InovaGed.Infrastructure.Labels.LabelTraceTokenService>();
+builder.Services.AddScoped<InovaGed.Application.Labels.ILabelTraceabilityService, InovaGed.Infrastructure.Labels.LabelTraceabilityService>();
 builder.Services.AddTransient<CorrelationIdHandler>();
 builder.Services.AddHttpClient("InovaGed").AddHttpMessageHandler<CorrelationIdHandler>();
 builder.Services.AddInovaGedObservability(builder.Configuration);

@@ -1,0 +1,12 @@
+@model InovaGed.Application.Labels.LabelTracePublicInfo
+@using InovaGed.Application.Labels
+@{ ViewData["Title"]="Conferência de etiqueta"; var status=Model?.Status??"UNKNOWN"; var message=status switch { LabelTraceStatus.Active=>"Etiqueta válida e ativa.",LabelTraceStatus.Replaced=>"Esta etiqueta foi substituída por uma versão mais recente.",LabelTraceStatus.Revoked=>"Esta etiqueta foi revogada e não deve ser usada.",LabelTraceStatus.Damaged=>"Esta etiqueta foi marcada como danificada.",LabelTraceStatus.Lost=>"Esta etiqueta foi marcada como extraviada.",_=>"Etiqueta não localizada ou link inválido."}; }
+<link rel="stylesheet" href="~/css/labels-traceability.css" asp-append-version="true" />
+<main class="label-trace-page label-trace-public">
+ <header><span class="label-trace-brand">InovaGED · Conferência institucional</span><h1>Validação de etiqueta</h1></header>
+ <section class="label-trace-status-card status-@status.ToLowerInvariant()">
+  <span class="label-trace-badge">@status</span><h2>@message</h2>
+  @if(Model is not null){<div class="label-trace-code">@Model.TraceCode</div><dl><div><dt>Tipo</dt><dd>@Model.SubjectType</dd></div><div><dt>Modelo</dt><dd>@Model.TemplateCode</dd></div><div><dt>Emissão</dt><dd>@Model.IssuedAt.ToString("dd/MM/yyyy HH:mm") UTC</dd></div></dl>}
+  <p class="label-trace-security">Este comprovante apresenta somente dados mínimos de conferência. Não compartilhe informações adicionais em etiquetas.</p>
+ </section>
+</main>

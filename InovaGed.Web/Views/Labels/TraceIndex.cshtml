@@ -1,0 +1,3 @@
+@model IEnumerable<dynamic>
+@{ViewData["Title"]="Rastreio de etiquetas";}
+<link rel="stylesheet" href="~/css/labels-traceability.css"/><main class="label-trace-page"><section class="atlas-page-hero"><div><span>Governança</span><h1>Etiquetas rastreáveis</h1><p>Identidades emitidas no tenant atual.</p></div></section><div class="atlas-table-shell"><table class="table"><thead><tr><th>TraceCode</th><th>Tipo</th><th>Modelo</th><th>Status</th><th>Emissão</th></tr></thead><tbody>@foreach(var x in Model){<tr><td><a asp-action="Trace" asp-route-token="@x.trace_code">@x.trace_code</a></td><td>@x.subject_type</td><td>@x.template_code</td><td><span class="atlas-status-badge">@x.status</span></td><td>@x.issued_at</td></tr>}</tbody></table></div></main>
