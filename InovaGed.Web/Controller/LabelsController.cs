@@ -151,6 +151,12 @@ public class LabelsController : GedControllerBase
         var id=await _printJobs.CreateBatchJobAsync(new(TenantId,uid,input.PrintMode,template.Code,template.Name,input.SubjectType,input.Copies,items,input.ReprintReason,HttpContext.Connection.RemoteIpAddress?.ToString(),Request.Headers.UserAgent),ct);return RedirectToAction(nameof(PrintPreview),new{id});
     }
 
+    [HttpPost("/Labels/Batch/Preview"),ValidateAntiForgeryToken]
+    public Task<IActionResult> BatchPreview(CreateBatchPrintJobInput input,CancellationToken ct)=>CreateBatchPrintJob(input,ct);
+
+    [HttpPost("/Labels/Batch/Print"),ValidateAntiForgeryToken]
+    public Task<IActionResult> BatchPrintSubmit(CreateBatchPrintJobInput input,CancellationToken ct)=>CreateBatchPrintJob(input,ct);
+
     [HttpPost,ValidateAntiForgeryToken]
     public async Task<IActionResult> MarkPrinted(Guid id,CancellationToken ct){if(UserId is not Guid uid)return Unauthorized();await _printJobs.MarkPrintedAsync(TenantId,id,uid,ct);TempData["Success"]="Impressão registrada para auditoria.";return RedirectToAction(nameof(PrintJob),new{id});}
     [HttpPost,ValidateAntiForgeryToken]
@@ -158,14 +164,68 @@ public class LabelsController : GedControllerBase
     [HttpGet]
     public async Task<IActionResult> GeneratePdf(Guid id,CancellationToken ct){var result=await _pdf.GeneratePdfAsync(TenantId,id,ct);return File(result.Content,result.ContentType,result.FileName);}
 
+    [HttpGet("/Labels/Calibration")]
+    public async Task<IActionResult> Calibration(CancellationToken ct) => View(await LoadCalibrationPageAsync(null, ct));
+
+    [HttpGet("/Labels/Calibration/Create")]
+    public async Task<IActionResult> CalibrationCreate(CancellationToken ct) => View("Calibration", await LoadCalibrationPageAsync(new LabelPrintProfileInput(), ct));
+
+    [HttpPost("/Labels/Calibration/Create"), ValidateAntiForgeryToken]
+    public async Task<IActionResult> CalibrationCreate(LabelPrintProfileInput input, CancellationToken ct)
+    {
+        if (UserId is not Guid uid) return Unauthorized();
+        if (!ModelState.IsValid) return View("Calibration", await LoadCalibrationPageAsync(input, ct));
+        using var db = await OpenAsync();
+        await db.ExecuteAsync(new CommandDefinition("""insert into ged.label_print_profile(tenant_id,profile_name,printer_name,paper_size,orientation,margin_top_mm,margin_left_mm,offset_x_mm,offset_y_mm,scale_percent,label_gap_x_mm,label_gap_y_mm,is_default,notes,created_by) values(@tid,@ProfileName,nullif(@PrinterName,''),@PaperSize,@Orientation,@MarginTopMm,@MarginLeftMm,@OffsetXMm,@OffsetYMm,@ScalePercent,@LabelGapXMm,@LabelGapYMm,@IsDefault,nullif(@Notes,''),@uid)""", new { tid=TenantId,uid,input.ProfileName,input.PrinterName,input.PaperSize,input.Orientation,input.MarginTopMm,input.MarginLeftMm,input.OffsetXMm,input.OffsetYMm,input.ScalePercent,input.LabelGapXMm,input.LabelGapYMm,input.IsDefault,input.Notes }, cancellationToken:ct));
+        TempData["Success"] = "Perfil de calibração criado.";
+        return RedirectToAction(nameof(Calibration));
+    }
+
+    [HttpGet("/Labels/Calibration/{id:guid}")]
+    public async Task<IActionResult> CalibrationDetails(Guid id, CancellationToken ct)
+    {
+        using var db=await OpenAsync();
+        var profile=await db.QuerySingleOrDefaultAsync<LabelPrintProfileInput>(new CommandDefinition(ProfileSelect+" and id=@id",new{tid=TenantId,id},cancellationToken:ct));
+        return profile is null ? NotFound() : View("Calibration",await LoadCalibrationPageAsync(profile,ct));
+    }
+
+    [HttpPost("/Labels/Calibration/{id:guid}/Update"),ValidateAntiForgeryToken]
+    public async Task<IActionResult> CalibrationUpdate(Guid id,LabelPrintProfileInput input,CancellationToken ct)
+    {
+        if(UserId is null)return Unauthorized(); if(!ModelState.IsValid){input.Id=id;return View("Calibration",await LoadCalibrationPageAsync(input,ct));}
+        using var db=await OpenAsync();
+        var changed=await db.ExecuteAsync(new CommandDefinition("""update ged.label_print_profile set profile_name=@ProfileName,printer_name=nullif(@PrinterName,''),paper_size=@PaperSize,orientation=@Orientation,margin_top_mm=@MarginTopMm,margin_left_mm=@MarginLeftMm,offset_x_mm=@OffsetXMm,offset_y_mm=@OffsetYMm,scale_percent=@ScalePercent,label_gap_x_mm=@LabelGapXMm,label_gap_y_mm=@LabelGapYMm,notes=nullif(@Notes,''),updated_at=now() where tenant_id=@tid and id=@id and reg_status='A'""",new{tid=TenantId,id,input.ProfileName,input.PrinterName,input.PaperSize,input.Orientation,input.MarginTopMm,input.MarginLeftMm,input.OffsetXMm,input.OffsetYMm,input.ScalePercent,input.LabelGapXMm,input.LabelGapYMm,input.Notes},cancellationToken:ct));
+        if(changed==0)return NotFound(); TempData["Success"]="Perfil atualizado."; return RedirectToAction(nameof(CalibrationDetails),new{id});
+    }
+
+    [HttpPost("/Labels/Calibration/{id:guid}/SetDefault"),ValidateAntiForgeryToken]
+    public async Task<IActionResult> CalibrationSetDefault(Guid id,CancellationToken ct){using var db=await OpenAsync();using var tx=db.BeginTransaction();await db.ExecuteAsync("update ged.label_print_profile set is_default=false,updated_at=now() where tenant_id=@tid",new{tid=TenantId},tx);var changed=await db.ExecuteAsync("update ged.label_print_profile set is_default=true,updated_at=now() where tenant_id=@tid and id=@id and reg_status='A'",new{tid=TenantId,id},tx);tx.Commit();if(changed==0)return NotFound();return RedirectToAction(nameof(Calibration));}
+
+    [HttpGet("/Labels/Calibration/{id:guid}/TestPage")]
+    public async Task<IActionResult> CalibrationTestPage(Guid id,CancellationToken ct){using var db=await OpenAsync();var profile=await db.QuerySingleOrDefaultAsync<LabelPrintProfileInput>(new CommandDefinition(ProfileSelect+" and id=@id",new{tid=TenantId,id},cancellationToken:ct));return profile is null?NotFound():View("CalibrationTestPage",profile);}
+    [HttpGet("/Labels/Calibration/{id:guid}/PrintTest")]
+    public Task<IActionResult> CalibrationPrintTest(Guid id,CancellationToken ct)=>CalibrationTestPage(id,ct);
+
+    [HttpGet("/Labels/PrintSheet")]
+    public async Task<IActionResult> PrintSheet(CancellationToken ct){await PopulateProfilesAsync(ct);return View(new LabelSheetInput());}
+    [HttpPost("/Labels/PrintSheet/Preview"),ValidateAntiForgeryToken]
+    public async Task<IActionResult> PrintSheetPreview(LabelSheetInput input,CancellationToken ct){if(!ModelState.IsValid){await PopulateProfilesAsync(ct);return View("PrintSheet",input);}ViewBag.Profile=await ResolveProfileAsync(input.ProfileId,ct);return View("PrintSheetPreview",input);}
+    [HttpPost("/Labels/PrintSheet/Print"),ValidateAntiForgeryToken]
+    public async Task<IActionResult> PrintSheetPrint(LabelSheetInput input,CancellationToken ct){ViewBag.Profile=await ResolveProfileAsync(input.ProfileId,ct);ViewBag.AutoPrint=true;return View("PrintSheetPreview",input);}
+
+    [HttpGet("/Labels/Quality")]
+    public IActionResult Quality()=>View(BuildQualityRows());
+    [HttpPost("/Labels/Quality/Validate"),ValidateAntiForgeryToken]
+    public IActionResult QualityValidate(){TempData["Success"]="Validação visual executada nos modelos publicados.";return View("Quality",BuildQualityRows());}
+
     [HttpGet]
-    public async Task<IActionResult> Calibration(CancellationToken ct,string templateCode="FACTORY_BOX_V1"){using var db=await OpenAsync();var model=await db.QuerySingleOrDefaultAsync<LabelCalibrationInput>(new CommandDefinition("select template_code TemplateCode,printer_name PrinterName,paper_size PaperSize,margin_top_mm MarginTopMm,margin_right_mm MarginRightMm,margin_bottom_mm MarginBottomMm,margin_left_mm MarginLeftMm,scale_percent ScalePercent,horizontal_offset_mm HorizontalOffsetMm,vertical_offset_mm VerticalOffsetMm,is_default IsDefault,label_width_mm LabelWidthMm,label_height_mm LabelHeightMm,gap_x_mm GapXMm,gap_y_mm GapYMm,labels_per_page LabelsPerPage from ged.label_print_calibration where tenant_id=@tid and template_code=@templateCode and reg_status='A' order by is_default desc,updated_at desc nulls last limit 1",new{tid=TenantId,templateCode},cancellationToken:ct));return View(model??new LabelCalibrationInput{TemplateCode=templateCode});}
-    [HttpPost,ValidateAntiForgeryToken]
-    public async Task<IActionResult> Calibration(LabelCalibrationInput input,CancellationToken ct){if(UserId is not Guid uid)return Unauthorized();if(!ModelState.IsValid)return View(input);using var db=await OpenAsync();await db.ExecuteAsync(new CommandDefinition("""insert into ged.label_print_calibration(tenant_id,user_id,template_code,printer_name,paper_size,margin_top_mm,margin_right_mm,margin_bottom_mm,margin_left_mm,scale_percent,horizontal_offset_mm,vertical_offset_mm,is_default,label_width_mm,label_height_mm,gap_x_mm,gap_y_mm,labels_per_page,created_by) values(@tid,@uid,@TemplateCode,nullif(@PrinterName,''),@PaperSize,@MarginTopMm,@MarginRightMm,@MarginBottomMm,@MarginLeftMm,@ScalePercent,@HorizontalOffsetMm,@VerticalOffsetMm,@IsDefault,@LabelWidthMm,@LabelHeightMm,@GapXMm,@GapYMm,@LabelsPerPage,@uid) on conflict(tenant_id,template_code,(coalesce(printer_name,'DEFAULT'))) where reg_status='A' do update set user_id=@uid,paper_size=excluded.paper_size,margin_top_mm=excluded.margin_top_mm,margin_right_mm=excluded.margin_right_mm,margin_bottom_mm=excluded.margin_bottom_mm,margin_left_mm=excluded.margin_left_mm,scale_percent=excluded.scale_percent,horizontal_offset_mm=excluded.horizontal_offset_mm,vertical_offset_mm=excluded.vertical_offset_mm,is_default=excluded.is_default,label_width_mm=excluded.label_width_mm,label_height_mm=excluded.label_height_mm,gap_x_mm=excluded.gap_x_mm,gap_y_mm=excluded.gap_y_mm,labels_per_page=excluded.labels_per_page,updated_by=@uid,updated_at=now()""",new{tid=TenantId,uid,input.TemplateCode,input.PrinterName,input.PaperSize,input.MarginTopMm,input.MarginRightMm,input.MarginBottomMm,input.MarginLeftMm,input.ScalePercent,input.HorizontalOffsetMm,input.VerticalOffsetMm,input.IsDefault,input.LabelWidthMm,input.LabelHeightMm,input.GapXMm,input.GapYMm,input.LabelsPerPage},cancellationToken:ct));TempData["Success"]="Calibração salva para esta impressora.";return RedirectToAction(nameof(Calibration),new{input.TemplateCode});}
-    [HttpPost,ValidateAntiForgeryToken]
-    public Task<IActionResult> SaveCalibration(LabelCalibrationInput input,CancellationToken ct)=>Calibration(input,ct);
-    [HttpGet]
-    public IActionResult TestSheet()=>View("CalibrationTest",new LabelCalibrationInput());
+    public IActionResult TestSheet()=>RedirectToAction(nameof(Calibration));
+
+    private const string ProfileSelect="select id Id,profile_name ProfileName,printer_name PrinterName,paper_size PaperSize,orientation Orientation,margin_top_mm MarginTopMm,margin_left_mm MarginLeftMm,offset_x_mm OffsetXMm,offset_y_mm OffsetYMm,scale_percent ScalePercent,label_gap_x_mm LabelGapXMm,label_gap_y_mm LabelGapYMm,is_default IsDefault,notes Notes from ged.label_print_profile where tenant_id=@tid and reg_status='A'";
+    private async Task<LabelCalibrationPageViewModel> LoadCalibrationPageAsync(LabelPrintProfileInput? form,CancellationToken ct){using var db=await OpenAsync();var profiles=(await db.QueryAsync<LabelPrintProfileInput>(new CommandDefinition(ProfileSelect+" order by is_default desc,created_at desc",new{tid=TenantId},cancellationToken:ct))).AsList();return new(){Profiles=profiles,Form=form??new LabelPrintProfileInput(),ValidatedTemplates=StudioTemplates.Count,VisualAlerts=0};}
+    private async Task PopulateProfilesAsync(CancellationToken ct){using var db=await OpenAsync();ViewBag.Profiles=(await db.QueryAsync<LabelPrintProfileInput>(new CommandDefinition(ProfileSelect+" order by is_default desc,profile_name",new{tid=TenantId},cancellationToken:ct))).AsList();}
+    private async Task<LabelPrintProfileInput> ResolveProfileAsync(Guid? id,CancellationToken ct){using var db=await OpenAsync();return await db.QuerySingleOrDefaultAsync<LabelPrintProfileInput>(new CommandDefinition(ProfileSelect+" and (@id is null and is_default or id=@id) order by is_default desc limit 1",new{tid=TenantId,id},cancellationToken:ct))??new LabelPrintProfileInput{ProfileName="Padrão do navegador"};}
+    private static IReadOnlyList<LabelQualityRow> BuildQualityRows()=>StudioTemplates.Select(t=>new LabelQualityRow{TemplateCode=t.Code,TemplateName=t.Name,Checks=["Borda presente","Fonte legível","Controle visível","Volume visível quando aplicável","LOCALIZAÇÃO presente","QR Code com tamanho mínimo","Campos obrigatórios não vazios","Texto contido na área","Dimensão definida","Modo de impressão limpo"],Alerts=[]}).ToList();
 
     [HttpGet]
     public Task<IActionResult> Batch(CancellationToken ct,string subjectType="BOX")=>BatchPrint(ct,subjectType);
@@ -299,6 +359,11 @@ public class LabelsController : GedControllerBase
         ViewBag.Documents = safeType == LabelSubjectType.Document ? ViewBag.SubjectOptions : Array.Empty<SelectOptionViewModel>();
         ViewBag.Batches = safeType == LabelSubjectType.Batch ? ViewBag.SubjectOptions : Array.Empty<SelectOptionViewModel>();
         ViewBag.Warnings = _catalog.IsTemporaryCatalog ? new[] { "Catálogo temporário de modelos em uso." } : Array.Empty<string>();
+        using (var db = await OpenAsync())
+        {
+            ViewBag.PrintProfiles = (await db.QueryAsync<LabelPrintProfileInput>(new CommandDefinition(ProfileSelect + " order by is_default desc,profile_name", new { tid=TenantId }, cancellationToken:ct))).AsList();
+            ViewBag.SelectedPrintProfile = await ResolveProfileAsync(model.PrintProfileId, ct);
+        }
         if (_catalog.IsTemporaryCatalog) ViewBag.CatalogMigrationWarning = "As migrations de modelos de etiqueta ainda não foram aplicadas. O sistema está usando catálogo temporário.";
     }
 

@@ -145,5 +145,12 @@
     "area": "Etiquetas",
     "required": true,
     "description": "Editor visual de etiquetas, campos em milímetros, validações, versões e auditoria."
+  },
+  {
+    "name": "2026_08_31_label_print_fidelity_2",
+    "path": "database/migrations/2026_08_31_label_print_fidelity_2.sql",
+    "area": "Etiquetas",
+    "required": true,
+    "description": "Perfis de calibração, qualidade visual, folha A4 e fidelidade de impressão de etiquetas."
   }
 ]
