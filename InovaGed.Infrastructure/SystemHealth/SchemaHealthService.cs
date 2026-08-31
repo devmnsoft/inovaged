@@ -42,6 +42,7 @@ public sealed class SchemaHealthService : ISchemaHealthService
         "ged.physical_movement", "ged.physical_inventory_session", "ged.physical_inventory_item",
         "ged.physical_loan", "ged.physical_custody_event", "ged.box", "ged.batch", "ged.batch_item",
         "ged.label_template", "ged.label_template_config", "ged.label_template_field", "ged.label_template_version",
+        "ged.label_template_design", "ged.label_template_design_field", "ged.label_template_design_version", "ged.label_template_design_validation",
         "ged.label_print_job", "ged.label_print_job_item", "ged.label_print_history", "ged.label_print_calibration", "ged.locdesk_label_draft",
         "ged.box_content_history", "ged.box_location_history", "ged.document_folder_move_history",
         "ged.instrument_version",

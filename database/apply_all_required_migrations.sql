@@ -3068,3 +3068,5 @@ where coalesce(reg_status, 'A') = 'A';
 \ir migrations/2026_08_27_document_governance_2.sql
 \ir migrations/2026_08_28_contract_measurement_2.sql
 \ir seeds/2026_08_28_contract_service_catalog_seed.sql
+
+\ir migrations/2026_08_31_label_visual_designer_2.sql

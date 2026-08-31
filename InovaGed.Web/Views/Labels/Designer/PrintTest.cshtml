@@ -1,0 +1,3 @@
+@model InovaGed.Web.Models.Labels.LabelDesignViewModel
+@{Layout=null;}
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8" /><title>Teste · @Model.TemplateName</title><link rel="stylesheet" href="~/css/labels-designer.css" asp-append-version="true" /></head><body class="label-designer-print-test"><partial name="~/Views/Labels/Designer/_Canvas.cshtml" model="Model" /><small>AMOSTRA DE TESTE</small><script>window.addEventListener('load',()=>window.print());</script></body></html>
