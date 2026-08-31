@@ -46,6 +46,8 @@ using InovaGed.Application.SmartWorkflow;
 using InovaGed.Infrastructure.SmartWorkflow;
 using InovaGed.Application.Governance;
 using InovaGed.Infrastructure.Governance;
+using InovaGed.Application.ContractMeasurement;
+using InovaGed.Infrastructure.ContractMeasurement;
 
 namespace InovaGed.Infrastructure;
 
@@ -99,6 +101,13 @@ public static class InfrastructureServiceCollectionExtensions
     public static IServiceCollection AddStabilityCriticalServices(this IServiceCollection services)
     {
         services.AddScoped<GovernanceService>();
+        services.AddScoped<ContractMeasurementService>();
+        services.AddScoped<IContractMeasurementDashboardService>(sp => sp.GetRequiredService<ContractMeasurementService>());
+        services.AddScoped<IContractServiceCatalogService>(sp => sp.GetRequiredService<ContractMeasurementService>());
+        services.AddScoped<IContractProductivityService>(sp => sp.GetRequiredService<ContractMeasurementService>());
+        services.AddScoped<IContractMeasurementPeriodService>(sp => sp.GetRequiredService<ContractMeasurementService>());
+        services.AddScoped<global::InovaGed.Application.ContractMeasurement.IContractGlosaService>(sp => sp.GetRequiredService<ContractMeasurementService>());
+        services.AddScoped<IContractMeasurementReportService>(sp => sp.GetRequiredService<ContractMeasurementService>());
         services.AddScoped<IGovernanceDashboardService>(sp => sp.GetRequiredService<GovernanceService>());
         services.AddScoped<IGovernanceAuditService>(sp => sp.GetRequiredService<GovernanceService>());
         services.AddScoped<IGovernanceAlertService>(sp => sp.GetRequiredService<GovernanceService>());

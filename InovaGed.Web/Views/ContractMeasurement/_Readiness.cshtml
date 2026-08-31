@@ -1,0 +1,2 @@
+@if(ViewData["ContractReadinessError"] is string message){<div class="contract-alert"><app-icon name="warning" size="20" decorative="true"/><div><strong>Módulo aguardando estrutura</strong><p>@message</p><a href="/DatabaseReadiness">Abrir Prontidão do Banco</a></div></div>}
+@if(TempData["Warning"] is string warning){<div class="contract-alert">@warning</div>}@if(TempData["Success"] is string success){<div class="contract-alert is-success">@success</div>}
