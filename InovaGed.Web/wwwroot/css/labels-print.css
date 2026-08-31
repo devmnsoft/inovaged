@@ -20,3 +20,21 @@ html, body { margin: 0; padding: 0; background: #fff; color: #111; font-family: 
   .label-print-a4 { margin:0; break-after:page; page-break-after:always; }
   .label-print-a4:last-child { break-after:auto; page-break-after:auto; }
 }
+
+@media print {
+  .no-print,
+  .site-header,
+  .sidebar,
+  .topbar,
+  .breadcrumb,
+  .label-print-toolbar,
+  .label-actions,
+  .atlas-page-hero { display: none !important; }
+  body { background: #fff !important; }
+  .label-print-page,
+  .locdesk-print-page { background:#fff !important; margin:0 !important; padding:0 !important; }
+  .locdesk-label,
+  .locdesk-hol-label { box-shadow:none !important; break-inside:avoid; page-break-inside:avoid; }
+  .label-print-sheet { border:0; box-shadow:none !important; }
+  svg, .label-qr, .locdesk-qr { print-color-adjust:exact; -webkit-print-color-adjust:exact; }
+}

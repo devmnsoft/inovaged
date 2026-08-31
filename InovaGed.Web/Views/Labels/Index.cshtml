@@ -1,14 +1,26 @@
-@{ ViewData["Title"]="Central de Etiquetas"; ViewData["WorkspaceVariant"]="wide";
-var cards = new List<(string Icon,string Title,string Description,string Url,string Action,string Status)> {
-("print","Assistente de Impressão","Fluxo guiado para escolher tipo, modelo, dados e saída.",Url.Action("PrintWizard")!,"Iniciar impressão","Operacional"),
-("location","Etiqueta LocDesk","Prepare etiquetas personalizadas de caixas, pastas e documentos.",Url.Action("LocDesk")!,"Criar LocDesk","Homologado"),
-("history","Histórico de Impressões","Audite emissões, usuários, modelos e reimpressões.",Url.Action("History")!,"Consultar histórico","Auditável"),
-("box","Etiquetas de Caixas","Selecione caixas físicas e gere identificações rastreáveis.",Url.Action("Boxes")!,"Selecionar caixa","Disponível"),
-("document","Etiquetas de Documentos","Identifique documentos e pastas com QR Code.",Url.Action("Documents")!,"Selecionar documento","Disponível"),
-("qr-code","Rastreio QR","Localize a origem e acompanhe a cadeia de custódia.","/LabelTracking","Abrir rastreio","Online"),
-("tag","Modelos de Etiqueta","Ajuste modelos, dimensões e calibração de impressão.",Url.Action("Calibration")!,"Gerenciar modelos","Configurável"),
-("activity","Fila de Impressão","Acompanhe trabalhos, prévias e arquivos gerados.",Url.Action("PrintQueue")!,"Abrir fila","Monitorada") }; }
+@{
+    ViewData["Title"] = "Central de Etiquetas";
+    ViewData["WorkspaceVariant"] = "wide";
+    var primaryCards = new List<(string Icon, string Title, string Description, string Url, string Action, string Status, string Hint)>
+    {
+        ("printer", "Nova impressão", "Assistente guiado para selecionar origem, modelo e saída.", Url.Action("PrintWizard")!, "Iniciar impressão", "Operacional", "Ideal para uma emissão individual."),
+        ("tag", "Etiqueta LocDesk", "Edite e confira modelos de pasta, caixa e o padrão HOL.", Url.Action("LocDesk")!, "Criar LocDesk", "Homologado", "Prévia fiel antes de imprimir."),
+        ("history", "Histórico de Impressões", "Audite emissões, usuários, modelos e reimpressões.", Url.Action("History")!, "Consultar histórico", "Auditável", "Rastreabilidade por usuário e origem."),
+        ("layers", "Impressão em Lote", "Organize várias etiquetas em uma única operação.", Url.Action("Batch")!, "Preparar lote", "Disponível", "Revise a seleção antes de gerar."),
+        ("sliders", "Calibração de Impressão", "Ajuste margens, escala e alinhamento da folha.", Url.Action("Calibration")!, "Calibrar", "Recomendado", "Faça um teste ao trocar de impressora.")
+    };
+    var secondaryCards = new List<(string Icon, string Title, string Description, string Url, string Action, string Status, string Hint)>
+    {
+        ("layout-template", "Modelos de Etiqueta", "Consulte os formatos disponíveis para cada origem.", Url.Action("PrintWizard")!, "Ver modelos", "Catálogo", "A disponibilidade respeita o tipo selecionado."),
+        ("qr-code", "Rastreio por QR Code", "Localize a origem vinculada a uma identificação.", "/LabelTracking", "Abrir rastreio", "Online", "Use a câmera ou informe o código."),
+        ("list-check", "Fila de Impressão", "Revise trabalhos preparados para impressão.", Url.Action("PrintQueue")!, "Abrir fila", "Monitorada", "Confirme dados antes do envio.")
+    };
+}
 @section Styles { <link rel="stylesheet" href="~/css/labels-premium.css" asp-append-version="true" /> }
-<div class="ig-label-page ig-fade-in"><section class="ig-page-hero" aria-labelledby="labels-title"><div><span class="ig-eyebrow"><app-icon name="tag" size="16" decorative="true" /> Operação e rastreabilidade</span><h1 id="labels-title">Central de Etiquetas</h1><p>Imprima, rastreie e audite etiquetas de caixas, documentos e padrões personalizados.</p></div><a class="ig-button ig-button--primary" asp-action="PrintWizard"><app-icon name="print" size="18" decorative="true" /> Iniciar impressão</a></section>
-<partial name="Atlas/_PremiumAlert" view-data='new Microsoft.AspNetCore.Mvc.ViewFeatures.ViewDataDictionary(ViewData) { { "AlertTitle", "Validação antes da impressão" }, { "Message", "Confirme os dados e a escala da pré-visualização. Toda reimpressão exige justificativa para preservar a auditoria." }, { "Tone", "info" } }' />
-<section class="ig-label-operation-grid" aria-label="Operações de etiquetas">@foreach(var card in cards){<partial name="Atlas/_LabelOperationCard" view-data='new Microsoft.AspNetCore.Mvc.ViewFeatures.ViewDataDictionary(ViewData) { { "Icon", card.Icon }, { "AlertTitle", card.Title }, { "Description", card.Description }, { "Url", card.Url }, { "Action", card.Action }, { "Status", card.Status } }' />}</section></div>
+<div class="labels-page">
+    <section class="labels-hero" aria-labelledby="labels-title"><div><span class="labels-eyebrow"><app-icon name="tag" size="16" decorative="true" /> Operação e rastreabilidade</span><h1 id="labels-title">Central de Etiquetas</h1><p>Imprima, rastreie, calibre e audite etiquetas de caixas, documentos, pastas e modelos personalizados.</p></div><a class="ig-button ig-button--primary" asp-action="PrintWizard"><app-icon name="printer" size="18" decorative="true" /> Nova impressão</a></section>
+    <partial name="Atlas/_PremiumAlert" view-data='new Microsoft.AspNetCore.Mvc.ViewFeatures.ViewDataDictionary(ViewData) { { "AlertTitle", "Antes de imprimir" }, { "Message", "Ajuste a calibração caso a etiqueta não fique alinhada na folha. A reimpressão exige justificativa para preservar a rastreabilidade." }, { "Tone", "info" } }' />
+    <section aria-labelledby="main-actions"><div class="labels-section-heading"><div><span>Operação</span><h2 id="main-actions">Ações principais</h2></div><p>Escolha o fluxo adequado para emitir ou auditar uma etiqueta.</p></div><div class="labels-action-grid labels-action-grid--primary">@foreach (var card in primaryCards) { <article class="labels-action-card"><div class="labels-action-card__top"><span class="labels-action-card__icon"><app-icon name="@card.Icon" size="25" decorative="true" /></span><span class="labels-status">@card.Status</span></div><h3>@card.Title</h3><p>@card.Description</p><a href="@card.Url" class="ig-button ig-button--secondary">@card.Action <app-icon name="arrow-right" size="15" decorative="true" /></a><small>@card.Hint</small></article> }</div></section>
+    <section aria-labelledby="support-actions"><div class="labels-section-heading"><div><span>Recursos</span><h2 id="support-actions">Ações complementares</h2></div></div><div class="labels-action-grid labels-action-grid--secondary">@foreach (var card in secondaryCards) { <article class="labels-action-card"><div class="labels-action-card__top"><span class="labels-action-card__icon"><app-icon name="@card.Icon" size="25" decorative="true" /></span><span class="labels-status">@card.Status</span></div><h3>@card.Title</h3><p>@card.Description</p><a href="@card.Url" class="ig-button ig-button--secondary">@card.Action <app-icon name="arrow-right" size="15" decorative="true" /></a><small>@card.Hint</small></article> }</div></section>
+    <div class="labels-dashboard-grid"><section class="labels-guidance"><span><app-icon name="information" size="22" decorative="true" /></span><div><h2>Impressão sem surpresas</h2><p>Use escala de 100%, desative cabeçalhos do navegador e valide a primeira folha. O modo de impressão remove menus, botões e sombras automaticamente.</p></div><a asp-action="Calibration">Imprimir teste de calibração</a></section><section class="labels-recent-empty"><span><app-icon name="history" size="24" decorative="true" /></span><div><h2>Últimas impressões</h2><p>Consulte o histórico para acompanhar as emissões recentes e suas evidências.</p></div><a asp-action="History">Abrir histórico</a></section></div>
+</div>
