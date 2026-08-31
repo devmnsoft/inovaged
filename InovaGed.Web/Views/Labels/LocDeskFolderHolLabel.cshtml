@@ -1,11 +1,28 @@
 @model InovaGed.Web.Models.Labels.LocDeskLabelRenderModel
-@{ Layout = null; var item = Model.Label; }
+@{
+    Layout = null;
+    var item = Model.Label;
+    var fields = new List<(string Label, string? Value)>
+    {
+        ("Assunto:", item.Subject),
+        ("Detalhamento:", item.Details),
+        ("Atividade:", item.Activity),
+        ("Classificação:", item.Classification),
+        ("Suporte:", item.Support),
+        ("Período:", item.PeriodStart.HasValue || item.PeriodEnd.HasValue ? $"{item.PeriodStart:dd/MM/yyyy} A {item.PeriodEnd:dd/MM/yyyy}" : item.DocumentPeriod),
+        ("Fase Atual:", item.CurrentPhase),
+        ("Previsão Eliminação:", item.EliminationForecast),
+        ("Situação Eliminação:", item.EliminationStatus),
+        ("Nº LED:", item.LedNumber)
+    };
+}
 <!doctype html>
 <html lang="pt-BR">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width" />
     <title>LocDesk - Pasta HOL</title>
+    <link rel="stylesheet" href="~/css/labels-print.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/locdesk-label.css" asp-append-version="true" />
 </head>
 <body class="locdesk-print-page">
@@ -22,19 +39,14 @@
                     <small>ARQUIVO LOCDESCK ANANINDEUA</small>
                 </div>
                 <div class="locdesk-hol-contract"><span>Contrato:</span><strong>@item.Contract</strong></div>
-                <div class="locdesk-hol-control"><span>N° Controle: <strong class="locdesk-hol-red">@item.ControlNumber</strong></span><span>Vol.: <strong>@item.VolumeNumber/@item.VolumeTotal</strong></span></div>
+                <div class="locdesk-hol-control"><span>N° Controle: <strong class="locdesk-hol-red locdesk-red">@item.ControlNumber</strong></span><span>Vol.: <strong class="locdesk-red">@item.VolumeNumber/@item.VolumeTotal</strong></span></div>
             </header>
             <div class="locdesk-hol-body">
-                @foreach (var field in new (string Label, string? Value)[] {
-                    ("Assunto:", item.Subject), ("Detalhamento:", item.Details), ("Atividade:", item.Activity),
-                    ("Classificação:", item.Classification), ("Suporte:", item.Support),
-                    ("Período:", item.PeriodStart.HasValue || item.PeriodEnd.HasValue ? $"{item.PeriodStart:dd/MM/yyyy} A {item.PeriodEnd:dd/MM/yyyy}" : item.DocumentPeriod),
-                    ("Fase Atual:", item.CurrentPhase), ("Previsão Eliminação:", item.EliminationForecast),
-                    ("Situação Eliminação:", item.EliminationStatus), ("Nº LED:", item.LedNumber) })
+                @foreach (var field in fields)
                 {
-                    <div class="locdesk-hol-row"><strong class="locdesk-hol-label-title">@field.Label</strong><span class="locdesk-hol-label-value">@field.Value</span></div>
+                    <div class="locdesk-hol-row"><strong class="locdesk-hol-label-title locdesk-hol-title">@field.Label</strong><span class="locdesk-hol-label-value locdesk-hol-value">@field.Value</span></div>
                 }
-                <div class="locdesk-hol-row locdesk-hol-location"><strong class="locdesk-hol-label-title">LOCALIZAÇÃO:</strong><span class="locdesk-hol-label-value">@item.Location</span></div>
+                <div class="locdesk-hol-row locdesk-hol-location"><strong class="locdesk-hol-label-title locdesk-hol-title">LOCALIZAÇÃO:</strong><span class="locdesk-hol-label-value locdesk-hol-value">@item.Location</span></div>
             </div>
         </article>
     </main>
