@@ -29,7 +29,7 @@
     <nav aria-label="breadcrumb"><ol class="breadcrumb mb-0"><li class="breadcrumb-item"><a asp-action="Index">Etiquetas</a></li><li class="breadcrumb-item active" aria-current="page">Nova impressão</li></ol></nav>
     <header class="label-wizard-hero atlas-page-hero">
         <div><span class="label-wizard-eyebrow"><i class="bi bi-printer"></i> Central de Etiquetas</span><h1>Nova impressão de etiqueta</h1><p>Escolha a origem, o modo de impressão e o modelo ideal para caixa, documento, pasta ou lote.</p></div>
-        <div class="label-wizard-hero__actions"><a asp-action="Index" class="atlas-btn atlas-btn-secondary"><i class="bi bi-arrow-left"></i> Voltar à central</a><a asp-action="History" class="atlas-btn atlas-btn-secondary"><i class="bi bi-clock-history"></i> Histórico</a></div>
+        <div class="label-wizard-hero__actions"><a asp-action="Templates" class="atlas-btn atlas-btn-secondary"><i class="bi bi-grid"></i> Ver modelos disponíveis</a><a asp-action="Index" class="atlas-btn atlas-btn-secondary"><i class="bi bi-arrow-left"></i> Voltar à central</a><a asp-action="History" class="atlas-btn atlas-btn-secondary"><i class="bi bi-clock-history"></i> Histórico</a></div>
     </header>
     @if (ViewBag.CatalogMigrationWarning is string migrationWarning) { <div class="atlas-alert atlas-alert-warning" role="alert"><strong>Atenção:</strong> @migrationWarning</div> }
     <partial name="Atlas/_AtlasStepper" view-data="stepperViewData" />

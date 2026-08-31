@@ -3,14 +3,14 @@
 @{ ViewData["Title"]="Etiquetas LocDesk"; ViewData["Subtitle"]="Geração, preenchimento e impressão de etiquetas";
 var previewFields = new List<KeyValuePair<string, string>> { new("Assunto:", "Subject"), new("Detalhamento:", "Details"), new("Atividade:", "Activity"), new("Classificação:", "Classification"), new("Suporte:", "Support"), new("Fase Atual:", "CurrentPhase"), new("Previsão Eliminação:", "EliminationForecast"), new("Situação Eliminação:", "EliminationStatus"), new("Nº LED:", "LedNumber"), new("LOCALIZAÇÃO:", "Location") }; }
 @section Styles { <link rel="stylesheet" href="~/css/labels-premium.css" asp-append-version="true" /><link rel="stylesheet" href="~/css/locdesk-label.css" asp-append-version="true" /> }
-<section class="locdesk-admin-hero atlas-page-hero mb-4"><div><span class="text-uppercase small opacity-75">Identificação e rastreabilidade</span><h1>Etiquetas LocDesk</h1><p>Escolha o modelo, preencha os campos arquivísticos e confira a etiqueta antes da impressão.</p></div><img src="~/img/locdesk-logo.svg" alt="LocDesk" /></section>
+<section class="locdesk-admin-hero atlas-page-hero mb-4"><div><span class="text-uppercase small opacity-75">Identificação e rastreabilidade</span><h1>Etiquetas LocDesk</h1><p>Escolha o modelo, preencha os campos arquivísticos e confira a etiqueta antes da impressão.</p><a class="atlas-btn atlas-btn-secondary" asp-action="Templates">Abrir Estúdio de Modelos</a></div><img src="~/img/locdesk-logo.svg" alt="LocDesk" /></section>
 <div class="locdesk-editor-layout">
 <form method="post" target="_blank" class="locdesk-form-card">
  @Html.AntiForgeryToken()
  <div class="locdesk-form-section"><h2>Modelo da etiqueta</h2><div class="locdesk-model-grid">
-  <label><input asp-for="TemplateCode" type="radio" value="@LabelTemplateCode.LocDeskFolder" data-kind="FOLDER" /><strong>LocDesk Padrão</strong><small>Pasta com QR e campos Ananindeua.</small></label>
+  <label><input asp-for="TemplateCode" type="radio" value="@LabelTemplateCode.LocDeskFolder" data-kind="FOLDER" /><strong>LocDesk Padrão - Pasta</strong><small>Pasta com QR e campos Ananindeua.</small></label>
   <label><input asp-for="TemplateCode" type="radio" value="@LabelTemplateCode.LocDeskFolderHol" data-kind="FOLDER" /><strong>LocDesk Pasta HOL</strong><small>Modelo oficial do Hospital Ophir Loyola.</small></label>
-  <label><input asp-for="TemplateCode" type="radio" value="@LabelTemplateCode.LocDeskBox" data-kind="BOX" /><strong>LocDesk Caixa</strong><small>Identificação de caixa física.</small></label>
+  <label><input asp-for="TemplateCode" type="radio" value="@LabelTemplateCode.LocDeskBox" data-kind="BOX" /><strong>LocDesk Padrão - Caixa</strong><small>Identificação de caixa física.</small></label>
  </div></div>
  <div asp-validation-summary="ModelOnly" class="atlas-alert atlas-alert-danger"></div><input asp-for="LabelKind" type="hidden" id="labelKind" /><input asp-for="BoxId" type="hidden" /><input asp-for="DocumentId" type="hidden" />
  <section class="locdesk-form-section"><h2>Identificação</h2><div class="row g-3">

@@ -11,7 +11,7 @@
     };
     var secondaryCards = new List<(string Icon, string Title, string Description, string Url, string Action, string Status, string Hint)>
     {
-        ("layout-template", "Modelos de Etiqueta", "Consulte os formatos disponíveis para cada origem.", Url.Action("PrintWizard")!, "Ver modelos", "Catálogo", "A disponibilidade respeita o tipo selecionado."),
+        ("layout-template", "Modelos de Etiqueta", "Consulte os formatos disponíveis para cada origem.", Url.Action("Templates")!, "Ver modelos", "Catálogo", "A disponibilidade respeita o tipo selecionado."),
         ("qr-code", "Rastreio por QR Code", "Localize a origem vinculada a uma identificação.", "/LabelTracking", "Abrir rastreio", "Online", "Use a câmera ou informe o código."),
         ("list-check", "Fila de Impressão", "Revise trabalhos preparados para impressão.", Url.Action("PrintQueue")!, "Abrir fila", "Monitorada", "Confirme dados antes do envio.")
     };

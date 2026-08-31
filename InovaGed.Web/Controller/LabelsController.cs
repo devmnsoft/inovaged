@@ -15,6 +15,18 @@ namespace InovaGed.Web.Controllers;
 [Authorize(Policy = AppPolicies.FullAdminOnly)]
 public class LabelsController : GedControllerBase
 {
+    private static readonly IReadOnlyList<LabelStudioTemplate> StudioTemplates = new List<LabelStudioTemplate>
+    {
+        Studio("FACTORY_BOX_V1", "Padrão do Sistema - Caixa", "Identificação institucional de caixas físicas.", "Caixa", "Fábrica", "BoxLabel", "1.0", "100 × 70 mm", true, false, "label-template-thumb-factory-box"),
+        Studio("FACTORY_DOCUMENT_V1", "Padrão do Sistema - Documento/Pasta", "Identificação institucional de documentos e pastas.", "Documento", "Fábrica", "DocumentLabel", "1.0", "100 × 70 mm", true, false, "label-template-thumb-factory-document"),
+        Studio("LOCDESK_CAIXA_V1", "LocDesk - Caixa", "Modelo arquivístico LocDesk para caixas.", "Caixa", "Personalizado", "LocDeskBoxLabel", "1.0", "174 × 110 mm", true, true, "label-template-thumb-locdesk-box"),
+        Studio("LOCDESK_PASTA_V1", "LocDesk - Pasta", "Modelo arquivístico LocDesk para pastas, com QR Code.", "Pasta", "Personalizado", "LocDeskFolderLabel", "1.0", "174 × 110 mm", true, true, "label-template-thumb-locdesk-folder"),
+        Studio("LOCDESK_PASTA_HOL_V1", "LocDesk - Pasta HOL", "Modelo oficial do Hospital Ophir Loyola.", "Pasta", "Personalizado", "LocDeskFolderHolLabel", "1.0", "174 × 110 mm", true, true, "label-template-thumb-locdesk-hol")
+    };
+
+    private static LabelStudioTemplate Studio(string code,string name,string description,string type,string mode,string view,string version,string dimensions,bool batch,bool manual,string thumb) =>
+        new(code,name,description,type,mode,view,version,dimensions,batch,manual,true,code==LabelTemplateCode.FactoryBox,thumb,
+            new[]{"Nº de Controle","Volume","Assunto","Detalhamento","Atividade","Classificação","Suporte","Período do Documento","Fase Atual","Previsão Eliminação","Situação Eliminação","Nº LED","LOCALIZAÇÃO"});
     internal sealed record ClassificationPlanSchemaInfo(
         bool HasCode,
         bool HasTitle,
@@ -43,6 +55,58 @@ public class LabelsController : GedControllerBase
         _catalog = catalog;
         _templateManager = templateManager;
         _printJobs=printJobs; _pdf=pdf;
+    }
+
+    [HttpGet("/Labels/Templates")]
+    public IActionResult Templates() => View(StudioTemplates);
+
+    [HttpGet("/Labels/Templates/{code}")]
+    public IActionResult TemplateDetails(string code)
+    {
+        var template = FindStudioTemplate(code);
+        return template is null ? NotFound() : View(template);
+    }
+
+    [HttpGet("/Labels/Templates/{code}/Preview")]
+    public IActionResult TemplatePreview(string code)
+    {
+        var template = FindStudioTemplate(code);
+        return template is null ? NotFound() : View("TemplatePreview", new LabelStudioPreviewViewModel(template, CreateStudioSample(code), false));
+    }
+
+    [HttpGet("/Labels/Templates/{code}/PrintSample")]
+    public IActionResult TemplatePrintSample(string code)
+    {
+        var template = FindStudioTemplate(code);
+        return template is null ? NotFound() : View("TemplatePreview", new LabelStudioPreviewViewModel(template, CreateStudioSample(code), true));
+    }
+
+    [HttpPost("/Labels/Templates/{code}/SetDefault"), ValidateAntiForgeryToken]
+    public async Task<IActionResult> SetStudioDefault(string code, CancellationToken ct)
+    {
+        if (FindStudioTemplate(code) is null) return NotFound();
+        using var db = await OpenAsync();
+        var id = await db.QueryFirstOrDefaultAsync<Guid?>(new CommandDefinition("select id from ged.label_template where code=@code and (tenant_id=@tenantId or tenant_id is null) and reg_status='A' order by tenant_id nulls last limit 1", new { code, tenantId=TenantId }, cancellationToken:ct));
+        if (id is null) return NotFound();
+        await _templateManager.SetDefaultAsync(TenantId, id.Value, ct);
+        TempData["Success"] = "Modelo definido como padrão.";
+        return RedirectToAction(nameof(TemplateDetails), new { code });
+    }
+
+    private static LabelStudioTemplate? FindStudioTemplate(string code) => StudioTemplates.FirstOrDefault(x => x.Code.Equals(code, StringComparison.OrdinalIgnoreCase));
+
+    private static LocDeskLabelInputModel CreateStudioSample(string code)
+    {
+        var sample = CreateLocDeskPreviewDefaults();
+        sample.TemplateCode = code;
+        if (code != LabelTemplateCode.LocDeskFolderHol)
+        {
+            sample.ArchiveTitle = "ARQUIVO LOCDESCK ANANINDEUA"; sample.ControlNumber = "0001"; sample.VolumeNumber = 1; sample.VolumeTotal = 3;
+            sample.Subject = "Fiscalização PJ - DPF's e documentos avulsos ref. RFF-F"; sample.Details = "Documentos avulsos"; sample.Classification = "321.2 - PESSOAS JURÍDICAS";
+            sample.Support = "1. Papel"; sample.DocumentPeriod = "até 2004"; sample.CurrentPhase = "4. Eliminação"; sample.EliminationForecast = "2025";
+            sample.EliminationStatus = "2. LED pendente de elaboração"; sample.Location = "LOC.AN.101.E1.P1";
+        }
+        return sample;
     }
 
     [HttpGet]
