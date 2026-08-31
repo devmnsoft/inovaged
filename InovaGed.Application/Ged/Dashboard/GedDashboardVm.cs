@@ -47,6 +47,7 @@ public sealed class GedDashboardVm
 }
 
 public sealed class DashboardMetricSlice { public string Label { get; set; } = string.Empty; public int Value { get; set; } }
+public sealed record DashboardLinkVm(string Title, int? Value, string Icon, string CssClass, string Url);
 public sealed class RecentDocumentMoveDto { public DateTime? MovedAt { get; set; } public string Document { get; set; } = "-"; public string OriginFolder { get; set; } = "-"; public string DestinationFolder { get; set; } = "-"; public string MovedBy { get; set; } = "-"; public string Justification { get; set; } = "-"; }
 public sealed class RecentLoanRequestDto { public DateTime? RequestedAt { get; set; } public string Requester { get; set; } = "-"; public string Document { get; set; } = "-"; public string Status { get; set; } = "-"; }
 public sealed class OverdueLoanDto { public string ProtocolNo { get; set; } = "-"; public string Borrower { get; set; } = "-"; public string Document { get; set; } = "-"; public DateTime? DueDate { get; set; } }

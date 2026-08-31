@@ -16,7 +16,8 @@ public sealed class AdministrationController : Controller
     private readonly IModuleReadinessService _readiness;
     private readonly IConfiguration _configuration;
     private readonly IAtlasIconRegistry _atlasIcons;
-    public AdministrationController(IAdministrationDashboardService service, IModuleReadinessService readiness, IConfiguration configuration, IAtlasIconRegistry atlasIcons) { _service = service; _readiness = readiness; _configuration = configuration; _atlasIcons = atlasIcons; }
+    private readonly IConsistencyAuditService _consistency;
+    public AdministrationController(IAdministrationDashboardService service, IModuleReadinessService readiness, IConfiguration configuration, IAtlasIconRegistry atlasIcons, IConsistencyAuditService consistency) { _service = service; _readiness = readiness; _configuration = configuration; _atlasIcons = atlasIcons; _consistency = consistency; }
     public async Task<IActionResult> Index(CancellationToken ct)
     {
         var overview = await _service.GetOverviewAsync(CurrentTenant(), ct);
@@ -35,6 +36,7 @@ public sealed class AdministrationController : Controller
             new AdministrationActionVM("SchemaHealth", "Inspecione a integridade do schema e incompatibilidades conhecidas.", "bi-activity", "SchemaHealth", "Index", AppPolicies.Administracao, "Banco de Dados e Ambiente", true, null),
             new AdministrationActionVM("Workers e Filas", "Monitore processamento assíncrono e atividade técnica.", "bi-activity", "Administration", "Workers", AppPolicies.Administracao, "Operação e Observabilidade", true, null),
             new AdministrationActionVM("Central de Incidentes", "Investigue erros, rotas instáveis e pendências técnicas.", "bi-exclamation-triangle", "SystemIncidents", "Index", AppPolicies.Administracao, "Operação e Observabilidade", true, null),
+            new AdministrationActionVM("Relatório de Inconsistências", "Detecte referências ausentes com isolamento por tenant e sem correções automáticas.", "list-check", "Administration", "Consistency", AppPolicies.Administracao, "Operação e Observabilidade", true, null),
             new AdministrationActionVM("Release Readiness", "Confirme evidências antes da homologação e entrega.", "bi-rocket-takeoff", "Administration", "Readiness", AppPolicies.Administracao, "Homologação e Entrega", true, null),
             new AdministrationActionVM("UAT e Go-Live", "Acompanhe planos de aceite, evidências e critérios de entrada em produção.", "bi-clipboard-check", "UatReadiness", "Index", AppPolicies.Administracao, "Homologação e Entrega", true, null),
             new AdministrationActionVM("Continuidade", "Acompanhe backup, recuperação e portabilidade.", "bi-life-preserver", "Continuity", "Overview", AppPolicies.ContinuityView, "Homologação e Entrega", true, null),
@@ -67,6 +69,13 @@ public sealed class AdministrationController : Controller
     public async Task<IActionResult> Settings(CancellationToken ct) => View("Section", new AdministrationPageVm { Section = "Configurações Seguras", Items = await _service.GetSafeConfigurationsAsync(ct) });
     public async Task<IActionResult> Migrations(CancellationToken ct) => View("Migrations", new AdministrationPageVm { Section = "Migrações e Compatibilidade", Items = await _service.GetMigrationsAsync(ct) });
     public async Task<IActionResult> Compliance(CancellationToken ct) => View("Section", new AdministrationPageVm { Section = "Conformidade e LGPD", Compliance = await _service.GetComplianceAsync(CurrentTenant(), ct) });
+    [HttpGet("/Administration/Consistency")]
+    public async Task<IActionResult> Consistency(CancellationToken ct)
+    {
+        var tenantId = CurrentTenant();
+        if (!tenantId.HasValue || tenantId.Value == Guid.Empty) return Forbid();
+        return View(await _consistency.CheckAsync(tenantId.Value, ct));
+    }
     [HttpGet("/Administration/Readiness")]
     public async Task<IActionResult> Readiness(CancellationToken ct)
     {

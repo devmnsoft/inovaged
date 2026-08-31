@@ -20,6 +20,7 @@ public sealed class GedDashboardController : Controller
     { _currentUser = currentUser; _service = service; _auditWriter = auditWriter; _logger = logger; }
 
     [HttpGet("")]
+    [HttpGet("/Dashboard")]
     public async Task<IActionResult> Index(CancellationToken ct = default)
     {
         if (!RolePolicyHelper.IsFullAdmin(User))
