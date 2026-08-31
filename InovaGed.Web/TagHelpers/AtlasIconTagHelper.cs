@@ -24,7 +24,9 @@ public sealed class AtlasIconTagHelper(
             ["map"] = "location", ["pin"] = "location", ["map-pin"] = "location",
             ["printer"] = "print", ["qr-code"] = "search", ["box"] = "physical-archive",
             ["file-text"] = "document", ["git-branch"] = "history", ["activity"] = "recent",
-            ["shield"] = "security", ["key"] = "restricted-access", ["alert-triangle"] = "warning"
+            ["shield"] = "security", ["key"] = "restricted-access", ["alert-triangle"] = "warning",
+            ["panels-top-left"] = "workspace", ["scan-line"] = "activity",
+            ["route"] = "timeline", ["refresh-cw"] = "refresh", ["shield-check"] = "permissions"
         };
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> WarnedIcons = new(StringComparer.OrdinalIgnoreCase);
     public string Name { get; set; } = string.Empty;
