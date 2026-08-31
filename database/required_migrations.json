@@ -138,5 +138,12 @@
     "area": "Medição Contratual",
     "required": true,
     "description": "Produtividade, UST, medição, evidências, glosas e aceite contratual."
+  },
+  {
+    "name": "2026_08_31_label_visual_designer_2",
+    "path": "database/migrations/2026_08_31_label_visual_designer_2.sql",
+    "area": "Etiquetas",
+    "required": true,
+    "description": "Editor visual de etiquetas, campos em milímetros, validações, versões e auditoria."
   }
 ]

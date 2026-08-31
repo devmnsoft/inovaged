@@ -266,7 +266,7 @@ public class LabelsController : GedControllerBase
         if(subject is null) { ModelState.AddModelError(nameof(input.SubjectId), "Não foi possível localizar a origem selecionada."); await PopulatePrintWizardLookupsAsync(input, ct); return View("PrintWizard", input); }
         var wasPrinted = await db.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from ged.label_print_history where tenant_id=@tid and label_subject_type=@type and label_subject_id=@id)", new { tid=TenantId, type=input.SubjectType, id=input.SubjectId }, cancellationToken:ct));
         if (register && wasPrinted && string.IsNullOrWhiteSpace(input.ReprintReason)) { ModelState.AddModelError(nameof(input.ReprintReason), "Informe o motivo da reimpressão para preservar a rastreabilidade."); await PopulatePrintWizardLookupsAsync(input, ct); return View("PrintWizard", input); }
-        if(register) { if(UserId is not Guid uid) return Unauthorized(); var snapshot=new { printMode=input.PrintMode,templateCode=template.Code,templateName=template.Name,subjectType=input.SubjectType,subjectId=input.SubjectId,copies=input.Copies,controlNumber=(string?)null,location=(string?)null,printedFields=subject };
+        if(register) { if(UserId is not Guid uid) return Unauthorized(); var snapshot=new { printMode=input.PrintMode,templateCode=template.Code,templateName=template.Name,templateVersion=template.Version,isDesignerTemplate=template.Id is not null && !template.IsSystemTemplate,subjectType=input.SubjectType,subjectId=input.SubjectId,copies=input.Copies,controlNumber=(string?)null,location=(string?)null,printedFields=subject };
             try { await _printRegistrar.RegisterAsync(new(TenantId,uid,input.SubjectType,input.SubjectId!.Value,template.Code,_payloadBuilder.Build(snapshot),HttpContext.Connection.RemoteIpAddress?.ToString(),Request.Headers.UserAgent.ToString(),input.ReprintReason),ct); } catch(InvalidOperationException ex) { ModelState.AddModelError(nameof(input.ReprintReason),ex.Message); ViewBag.Templates=await _catalog.GetTemplatesAsync(TenantId,input.SubjectType,input.PrintMode,ct); ViewBag.SubjectOptions=await LoadSubjectOptionsAsync(input.SubjectType,ct); return View("PrintWizard",input); } }
         ViewBag.QrSvg=_qrCodes.CreateTrackingSvg($"{Request.Scheme}://{Request.Host}/LabelTracking/Trace?payloadOrCode={input.SubjectId}"); ViewBag.PrintRegistered=register; ViewBag.Copies=input.Copies;
         return View(template.ViewName,subject);
@@ -803,6 +803,8 @@ select
     lp.template_code,
     coalesce(lp.snapshot_json->>'printMode',case when lp.template_code like 'LOCDESK%' then 'CUSTOM' else 'FACTORY' end) as print_mode,
     coalesce(lp.snapshot_json->>'templateName',case lp.template_code when 'FACTORY_BOX_V1' then 'Padrão do Sistema - Caixa' when 'FACTORY_DOCUMENT_V1' then 'Padrão do Sistema - Documento/Pasta' when 'LOCDESK_CAIXA_V1' then 'LocDesk - Caixa' when 'LOCDESK_PASTA_V1' then 'LocDesk - Pasta' when 'LOCDESK_PASTA_HOL_V1' then 'LocDesk - Pasta HOL' else lp.template_code end) as template_name,
+    lp.snapshot_json->>'templateVersion' as template_version,
+    coalesce((lp.snapshot_json->>'isDesignerTemplate')::boolean,false) as is_designer_template,
     lp.snapshot_sha256,
     lp.reprint_reason,
     lp.snapshot_json->>'controlNumber' as control_number,

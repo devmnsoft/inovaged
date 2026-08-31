@@ -1,0 +1,15 @@
+@model InovaGed.Web.Models.Labels.LabelDesignViewModel
+@{ var scale = 3.2m; }
+<div class="label-designer-canvas-shell">
+ <div class="label-designer-ruler label-designer-ruler--top" aria-hidden="true">0&nbsp;&nbsp;&nbsp;10&nbsp;&nbsp;&nbsp;20&nbsp;&nbsp;&nbsp;30&nbsp;&nbsp;&nbsp;40&nbsp;&nbsp;&nbsp;50 mm</div>
+ <div class="label-designer-ruler label-designer-ruler--side" aria-hidden="true">0<br />10<br />20<br />30<br />40<br />50</div>
+ <div class="label-designer-canvas" data-width="@Model.WidthMm" data-height="@Model.HeightMm" style="width:@(Model.WidthMm*scale)px;height:@(Model.HeightMm*scale)px" role="img" aria-label="Etiqueta @Model.TemplateName em escala aproximada">
+  <span class="label-designer-margin">margem segura</span>
+  @foreach(var field in Model.Fields.Where(x=>x.IsPrintable))
+  {
+   <div class="label-designer-field" data-key="@field.FieldKey" style="left:@(field.XMm*scale)px;top:@(field.YMm*scale)px;width:@(field.WidthMm*scale)px;height:@(field.HeightMm*scale)px;font-size:@field.FontSizePt pt;font-weight:@(field.FontWeight ?? "normal");text-align:@field.TextAlign.ToLowerInvariant();color:@(field.Color ?? "#172033")">
+    @(field.FieldType == "QRCODE" ? "▦ QR CODE" : field.FieldLabel)
+   </div>
+  }
+ </div>
+</div>

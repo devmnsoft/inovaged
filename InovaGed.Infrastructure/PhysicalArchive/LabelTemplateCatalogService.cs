@@ -26,19 +26,17 @@ public sealed class LabelTemplateCatalogService(IDbConnectionFactory dbFactory, 
         await using var db = await dbFactory.OpenAsync(ct);
         var source = await GetSourceAsync(db, ct);
         var normalized = string.IsNullOrWhiteSpace(mode) ? null : mode;
-        if (source is null)
-            return FilterCatalog(MinimumCatalog, subjectType, normalized);
-
-        var sql = BuildSelect(source, false) + BuildFilters(source, false) + BuildOrder(source);
-        var databaseTemplates = await db.QueryAsync<LabelTemplateOption>(new CommandDefinition(sql,
-            new { tenantId, subjectType, mode = normalized }, cancellationToken: ct));
-        return FilterCatalog(MergeWithMinimumCatalog(databaseTemplates), subjectType, normalized);
+        IReadOnlyList<LabelTemplateOption> databaseTemplates = source is null ? [] : (await db.QueryAsync<LabelTemplateOption>(new CommandDefinition(BuildSelect(source, false) + BuildFilters(source, false) + BuildOrder(source), new { tenantId, subjectType, mode = normalized }, cancellationToken: ct))).AsList();
+        var designerTemplates = await GetPublishedDesignerTemplatesAsync(db, tenantId, subjectType, normalized, ct);
+        return FilterCatalog(MergeWithMinimumCatalog(databaseTemplates.Concat(designerTemplates)), subjectType, normalized);
     }
 
     public async Task<LabelTemplateOption?> TryGetTemplateAsync(Guid tenantId, string templateCode, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(templateCode)) return null;
         await using var db = await dbFactory.OpenAsync(ct);
+        var designer = (await GetPublishedDesignerTemplatesAsync(db, tenantId, null, null, ct)).FirstOrDefault(x => string.Equals(x.Code, templateCode, StringComparison.OrdinalIgnoreCase));
+        if (designer is not null) return designer;
         var source = await GetSourceAsync(db, ct);
         if (source is not null)
         {
@@ -118,6 +116,21 @@ public sealed class LabelTemplateCatalogService(IDbConnectionFactory dbFactory, 
         foreach (var item in databaseTemplates)
             if (!string.IsNullOrWhiteSpace(item.Code)) result[item.Code] = item;
         return result.Values.ToList();
+    }
+
+    private static async Task<IReadOnlyList<LabelTemplateOption>> GetPublishedDesignerTemplatesAsync(Npgsql.NpgsqlConnection db, Guid tenantId, string? subjectType, string? mode, CancellationToken ct)
+    {
+        if (!await Schema.TableExistsAsync(db, "ged", "label_template_design", ct)) return [];
+        const string sql = """
+select distinct on (template_code) template_code Code,template_name Name,print_mode Mode,subject_type SubjectType,
+ coalesce(description,template_name) Description,coalesce(view_name,'DocumentLabel') ViewName,current_version::text Version,
+ false SupportsBatch,true AllowsManualFields,is_system_template IsSystemTemplate,id Id,false IsDefault
+from ged.label_template_design
+where (tenant_id=@tenantId or tenant_id is null) and status='PUBLISHED' and reg_status='A'
+ and (@subjectType is null or subject_type=@subjectType) and (@mode is null or print_mode=@mode)
+order by template_code,updated_at desc nulls last,tenant_id nulls last
+""";
+        return (await db.QueryAsync<LabelTemplateOption>(new CommandDefinition(sql,new{tenantId,subjectType,mode},cancellationToken:ct))).AsList();
     }
 
     private static IReadOnlyList<LabelTemplateOption> FilterCatalog(IEnumerable<LabelTemplateOption> templates, string subjectType, string? mode) =>
