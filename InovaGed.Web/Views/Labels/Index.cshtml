@@ -4,16 +4,18 @@
     var primaryCards = new List<(string Icon, string Title, string Description, string Url, string Action, string Status, string Hint)>
     {
         ("printer", "Nova impressão", "Assistente guiado para selecionar origem, modelo e saída.", Url.Action("PrintWizard")!, "Iniciar impressão", "Operacional", "Ideal para uma emissão individual."),
-        ("tag", "Etiqueta LocDesk", "Edite e confira modelos de pasta, caixa e o padrão HOL.", Url.Action("LocDesk")!, "Criar LocDesk", "Homologado", "Prévia fiel antes de imprimir."),
+        ("tag", "LocDesk", "Edite e confira modelos de pasta, caixa e o padrão HOL.", Url.Action("LocDesk")!, "Criar LocDesk", "Homologado", "Prévia fiel antes de imprimir."),
         ("history", "Histórico de Impressões", "Audite emissões, usuários, modelos e reimpressões.", Url.Action("History")!, "Consultar histórico", "Auditável", "Rastreabilidade por usuário e origem."),
         ("layers", "Impressão em Lote", "Organize várias etiquetas em uma única operação.", Url.Action("Batch")!, "Preparar lote", "Disponível", "Revise a seleção antes de gerar."),
         ("sliders", "Calibração de Impressão", "Ajuste margens, escala e alinhamento da folha.", Url.Action("Calibration")!, "Calibrar", "Recomendado", "Faça um teste ao trocar de impressora.")
     };
     var secondaryCards = new List<(string Icon, string Title, string Description, string Url, string Action, string Status, string Hint)>
     {
-        ("layout-template", "Modelos de Etiqueta", "Consulte os formatos disponíveis para cada origem.", Url.Action("Templates")!, "Ver modelos", "Catálogo", "A disponibilidade respeita o tipo selecionado."),
-        ("qr-code", "Rastreio por QR Code", "Localize a origem vinculada a uma identificação.", "/LabelTracking", "Abrir rastreio", "Online", "Use a câmera ou informe o código."),
-        ("list-check", "Fila de Impressão", "Revise trabalhos preparados para impressão.", Url.Action("PrintQueue")!, "Abrir fila", "Monitorada", "Confirme dados antes do envio.")
+        ("layout-template", "Estúdio de Modelos", "Compare miniaturas, versões e formatos homologados.", Url.Action("Templates")!, "Ver modelos", "Catálogo", "Escolha o modelo antes de iniciar a emissão."),
+        ("panels-top-left", "Designer Visual", "Duplique modelos oficiais e organize os campos de cópias editáveis.", "/Labels/Designer", "Abrir designer", "Versionado", "Publicações anteriores permanecem preservadas."),
+        ("scan-line", "Scanner QR", "Leia uma URL, token seguro ou TraceCode em qualquer dispositivo.", "/Labels/Scanner", "Abrir scanner", "Online", "A leitura não expõe dados sensíveis."),
+        ("route", "Rastreabilidade", "Consulte o ciclo de vida e o status de cada etiqueta.", "/Labels/Trace", "Rastrear", "Auditável", "Acompanhe etiquetas ativas, substituídas ou revogadas."),
+        ("shield-check", "Qualidade de Impressão", "Valide legibilidade, dimensões, QR Code e campos obrigatórios.", "/Labels/Quality", "Validar qualidade", "Quality gate", "Revise antes de consumir papel.")
     };
 }
 @section Styles { <link rel="stylesheet" href="~/css/labels-premium.css" asp-append-version="true" /> }
