@@ -1,0 +1,17 @@
+# QA — logos oficiais em impressão
+- [ ] Upload PNG funciona
+- [ ] Upload JPG funciona
+- [ ] Upload WEBP funciona
+- [ ] SVG bloqueado sem sanitização
+- [ ] Preview da logo aparece
+- [ ] Logo não deforma
+- [ ] Logo padrão do tenant funciona
+- [ ] Logo por template funciona
+- [ ] PrintWizard mostra logo selecionada
+- [ ] LocDesk Pasta usa logo selecionada
+- [ ] LocDesk Caixa usa logo selecionada
+- [ ] LocDesk HOL usa logo selecionada
+- [ ] Documento impresso usa logo selecionada
+- [ ] Não existe logo fake
+- [ ] Não existe SVG improvisado
+- [ ] Não existe texto simulando marca
