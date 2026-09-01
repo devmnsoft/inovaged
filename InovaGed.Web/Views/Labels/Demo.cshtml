@@ -1,0 +1,12 @@
+@model InovaGed.Web.Models.Labels.LabelsDemoViewModel
+@{ ViewData["Title"] = "Demonstração de Etiquetas"; ViewData["WorkspaceVariant"] = "wide"; }
+@section Styles { <link rel="stylesheet" href="~/css/labels-demo.css" asp-append-version="true" /> }
+<main class="labels-demo-page">
+ <header class="labels-demo-hero"><div><span>Labels Demo &amp; Visual Acceptance Pack RC4</span><h1>Demonstração de Etiquetas</h1><p>Veja os modelos disponíveis, gere amostras, valide impressão, confira QR Code e acompanhe a rastreabilidade das etiquetas.</p></div><nav aria-label="Ações da demonstração"><a class="ig-button ig-button--primary" asp-action="DemoSamples">Imprimir pacote de amostras</a><a class="ig-button ig-button--secondary" asp-action="DemoAcceptance">Checklist de aceite</a></nav></header>
+ <section class="labels-demo-flow" aria-label="Fluxo guiado"><strong>Demonstração em 3 passos</strong><ol><li>Compare os modelos</li><li>Imprima amostras</li><li>Confira o aceite visual</li></ol></section>
+ <section class="labels-demo-grid" aria-label="Modelos e recursos disponíveis">
+ @foreach (var card in Model.Cards) {
+  <article class="labels-demo-card"><div class="labels-demo-preview labels-demo-preview--@card.Accent" aria-hidden="true"><span>ARQUIVO LOCDESCK</span><b>@card.Name</b><i></i><i></i><i></i><em>QR</em></div><div class="labels-demo-card__content"><small>@card.Code</small><div class="labels-demo-card__heading"><h2>@card.Name</h2><span class="labels-demo-status labels-demo-status--ok">@card.Status</span></div><nav aria-label="Ações de @card.Name"><a href="@card.PreviewUrl">Ver preview</a><a href="@card.SampleUrl" target="_blank">Imprimir amostra</a><a asp-action="DemoAcceptance" asp-fragment="checklist">Abrir checklist</a></nav></div></article>
+ }
+ </section>
+</main>

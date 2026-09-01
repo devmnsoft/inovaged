@@ -5,7 +5,7 @@ public sealed class AtlasIconRegistry : IAtlasIconRegistry
     private static readonly IReadOnlyCollection<AtlasIconDefinition> Definitions = new AtlasIconDefinition[]
     {
         new("dashboard", "atlas-icon-dashboard", "Navegação", "dashboard", "outline", new[] { "layout-dashboard" }),
-        new("workspace", "atlas-icon-workspace", "Navegação", "workspace", "outline", new[] { "layout", "layout-template" }),
+        new("workspace", "atlas-icon-workspace", "Navegação", "workspace", "outline", new[] { "layout", "layout-template", "presentation" }),
         new("activity", "atlas-icon-activity", "Navegação", "activity", "outline", new[] { "operation", "rocket", "clipboard-check", "scan-line" }),
         new("recent", "atlas-icon-recent", "Navegação", "recent", "outline", Array.Empty<string>()),
         new("notification", "atlas-icon-notification", "Navegação", "notification", "outline", Array.Empty<string>()),
