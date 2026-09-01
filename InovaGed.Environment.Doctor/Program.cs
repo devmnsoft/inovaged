@@ -16,8 +16,8 @@ try
     var command = args.FirstOrDefault() ?? "check";
     if (command.Equals("labels-visual-quality", StringComparison.OrdinalIgnoreCase))
     {
-        var root = FindRoot(BclEnvironment.CurrentDirectory);
-        return LabelsVisualQualityCheck.Run(root, Console.Out, Console.Error);
+        var repositoryRoot = FindRoot(BclEnvironment.CurrentDirectory);
+        return LabelsVisualQualityCheck.Run(repositoryRoot, Console.Out, Console.Error);
     }
     if (command is "database-readiness" or "apply-required-migrations")
     {
