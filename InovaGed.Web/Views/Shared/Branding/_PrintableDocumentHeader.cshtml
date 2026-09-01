@@ -1,0 +1,7 @@
+@model InovaGed.Web.Models.Branding.PrintableDocumentHeaderViewModel
+<header class="printable-document-header">
+    @if (Model.PrimaryLogo is not null) { <partial name="Branding/_PrintLogo" model="Model.PrimaryLogo" /> }
+    <div><h1>@Model.Title</h1>@if (!string.IsNullOrWhiteSpace(Model.Subtitle)) { <p>@Model.Subtitle</p> }</div>
+    @if (Model.SecondaryLogo is not null) { <partial name="Branding/_PrintLogo" model="Model.SecondaryLogo" /> }
+</header>
+@if (!string.IsNullOrWhiteSpace(Model.Footer)) { <footer class="printable-document-footer">@Model.Footer</footer> }

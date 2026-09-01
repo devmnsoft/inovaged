@@ -1,5 +1,12 @@
 [
   {
+    "name": "2026_09_01_brand_logo_upload_print",
+    "path": "database/migrations/2026_09_01_brand_logo_upload_print.sql",
+    "area": "Identidade de impressão",
+    "required": true,
+    "description": "Logos oficiais por tenant e por modelo de etiqueta, preservadas para impressão."
+  },
+  {
     "name": "2026_08_27_physical_archive_2",
     "path": "database/migrations/2026_08_27_physical_archive_2.sql",
     "area": "Acervo Físico",

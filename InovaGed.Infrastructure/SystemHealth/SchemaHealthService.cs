@@ -53,7 +53,8 @@ public sealed class SchemaHealthService : ISchemaHealthService
         "ged.smart_assistant_session", "ged.smart_assistant_message", "ged.smart_assistant_citation", "ged.smart_assistant_action_suggestion",
         "ged.smart_workflow_task", "ged.smart_workflow_event", "ged.smart_workflow_rule", "ged.smart_workflow_dashboard_snapshot",
         "ged.contract_service_catalog", "ged.contract_productivity_entry", "ged.contract_measurement_period",
-        "ged.contract_measurement_item", "ged.contract_measurement_evidence", "ged.contract_glosa", "ged.contract_acceptance_event"
+        "ged.contract_measurement_item", "ged.contract_measurement_evidence", "ged.contract_glosa", "ged.contract_acceptance_event",
+        "ged.brand_asset", "ged.print_brand_profile", "ged.print_template_brand_binding"
     ];
 
     private static readonly string[] OptionalTables =

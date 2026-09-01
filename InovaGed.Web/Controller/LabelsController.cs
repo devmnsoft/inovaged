@@ -396,6 +396,7 @@ public class LabelsController : GedControllerBase
         {
             ViewBag.PrintProfiles = (await db.QueryAsync<LabelPrintProfileInput>(new CommandDefinition(ProfileSelect + " order by is_default desc,profile_name", new { tid=TenantId }, cancellationToken:ct))).AsList();
             ViewBag.SelectedPrintProfile = await ResolveProfileAsync(model.PrintProfileId, ct);
+            ViewBag.BrandAssets = (await db.QueryAsync<InovaGed.Web.Models.Branding.BrandAssetVm>(new CommandDefinition("select id,brand_name BrandName,asset_name AssetName,original_file_name OriginalFileName,content_type ContentType,file_extension FileExtension,file_size_bytes FileSizeBytes,storage_relative_path StorageRelativePath,is_default IsDefault,status,created_at CreatedAt from ged.brand_asset where tenant_id=@tid and status='ACTIVE' and reg_status='A' order by is_default desc,asset_name",new{tid=TenantId},cancellationToken:ct))).AsList();
         }
         if (_catalog.IsTemporaryCatalog) ViewBag.CatalogMigrationWarning = "As migrations de modelos de etiqueta ainda não foram aplicadas. O sistema está usando catálogo temporário.";
     }

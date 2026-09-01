@@ -1,0 +1,4 @@
+@model InovaGed.Web.Models.Branding.BrandAssetVm
+@{ ViewData["Title"]=Model.AssetName; }
+@section Styles { <link rel="stylesheet" href="~/css/print-branding.css" asp-append-version="true" /> }
+<main class="atlas-page"><h1>@Model.AssetName</h1><partial name="Branding/_PrintLogo" model="new InovaGed.Web.Models.Branding.PrintLogoViewModel { LogoUrl=Model.FileUrl,Alt=Model.AssetName,WidthMm=80 }"/><dl><dt>Marca</dt><dd>@Model.BrandName</dd><dt>Arquivo original</dt><dd>@Model.OriginalFileName</dd><dt>Formato</dt><dd>@Model.ContentType</dd><dt>Status</dt><dd>@Model.Status</dd></dl><a asp-action="Index">Voltar</a></main>
