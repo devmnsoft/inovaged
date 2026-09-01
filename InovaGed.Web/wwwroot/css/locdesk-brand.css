@@ -1,0 +1,5 @@
+/* Presentation only. The LocDesk mark is never drawn, recolored, filtered or distorted here. */
+.locdesk-brand-logo{display:block;max-width:100%;height:auto;object-fit:contain}
+.locdesk-brand-logo--label{width:180px}.locdesk-brand-logo--mini{width:120px}.locdesk-brand-logo--print{width:140px}
+.locdesk-brand-fallback{display:inline-block;color:inherit;font:700 1rem/1.2 system-ui,sans-serif;letter-spacing:normal}
+@media print{.locdesk-brand-logo{print-color-adjust:exact;-webkit-print-color-adjust:exact}}

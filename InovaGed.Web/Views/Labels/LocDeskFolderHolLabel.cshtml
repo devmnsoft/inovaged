@@ -24,6 +24,7 @@
     <title>LocDesk - Pasta HOL</title>
     <link rel="stylesheet" href="~/css/labels-print.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/locdesk-label.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/locdesk-brand.css" asp-append-version="true" />
 </head>
 <body class="locdesk-print-page">
     <nav class="label-actions no-print" aria-label="Ações de impressão">
@@ -35,7 +36,7 @@
         <article class="locdesk-label locdesk-hol-label" aria-label="Etiqueta LocDesk do Hospital Ophir Loyola">
             <header class="locdesk-hol-header">
                 <div class="locdesk-hol-brand">
-                    <img class="locdesk-hol-logo" src="~/images/logos/locdesk-logo.svg" alt="LocDesk — Inovações Tecnológicas" />
+                    <partial name="_LocDeskLogo" model='new InovaGed.Web.Models.Branding.LocDeskLogoViewModel { CssClass = "locdesk-hol-logo locdesk-brand-logo--print" }' />
                     <small>ARQUIVO LOCDESCK ANANINDEUA</small>
                 </div>
                 <div class="locdesk-hol-contract"><span>Contrato:</span><strong>@item.Contract</strong></div>
