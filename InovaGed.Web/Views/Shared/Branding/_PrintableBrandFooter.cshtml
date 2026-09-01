@@ -1,0 +1,2 @@
+@model InovaGed.Web.Models.Branding.PrintBrandingPreviewVm
+<footer class="printable-brand-footer"><div><strong>@Model.Branding.FooterText</strong><span>@Model.Branding.FooterExtraLine</span></div><div>@if(Model.Branding.ShowGeneratedAt){<span>Gerado em @DateTimeOffset.Now.ToString("dd/MM/yyyy HH:mm")</span>}@if(Model.Branding.ShowPageNumber){<span>Página 1 de 1</span>}</div></footer>
