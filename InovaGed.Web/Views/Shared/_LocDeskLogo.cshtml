@@ -1,0 +1,16 @@
+@using InovaGed.Web.Models.Branding
+@inject IWebHostEnvironment HostEnvironment
+@model LocDeskLogoViewModel
+@{
+    var cssClass = string.IsNullOrWhiteSpace(Model?.CssClass) ? "locdesk-brand-logo" : $"locdesk-brand-logo {Model.CssClass}";
+    var alt = Model?.Decorative == true ? string.Empty : (string.IsNullOrWhiteSpace(Model?.Alt) ? "LocDesk — Inovações Tecnológicas" : Model.Alt);
+    var logoExists = System.IO.File.Exists(System.IO.Path.Combine(HostEnvironment.WebRootPath, BrandAssets.LocDeskLogoPhysicalPath));
+}
+@if (logoExists)
+{
+    <img src="@BrandAssets.LocDeskLogoWebPath" alt="@alt" class="@cssClass" loading="@(Model?.Loading ?? "eager")" />
+}
+else
+{
+    <span class="locdesk-brand-fallback" role="img" aria-label="@alt">LocDesk</span>
+}

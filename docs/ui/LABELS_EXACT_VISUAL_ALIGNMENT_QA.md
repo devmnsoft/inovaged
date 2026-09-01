@@ -12,7 +12,7 @@ Este checklist é a fonte de aceite para comparação **lado a lado, em escala 1
 
 ## Roteiro de conferência
 
-- [ ] Comparar símbolo, lettering **LocDesk**, subtítulo **Inovações Tecnológicas**, cores, proporção e área de respiro com o asset aprovado `wwwroot/images/logos/locdesk-logo.svg`.
+- [ ] Comparar símbolo, lettering **LocDesk**, subtítulo **Inovações Tecnológicas**, cores, proporção e área de respiro com o asset aprovado `wwwroot/images/brands/locdesk/locdesk-logo-original.png`.
 - [ ] Confirmar a ordem: Nº de Controle, Volume, Assunto, Detalhamento, Atividade, Classificação, Suporte, Período do Documento, Fase Atual, Previsão Eliminação, Situação Eliminação, Nº LED e LOCALIZAÇÃO.
 - [ ] Confirmar que cada campo possui `label` visível e que nenhum identificador técnico é solicitado ao operador.
 - [ ] Alternar Pasta, Caixa e HOL e confirmar que o tipo enviado e a prévia correspondem ao modelo selecionado.
