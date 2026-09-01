@@ -18,30 +18,26 @@ html, body { margin: 0; padding: 0; background: #fff; color: #111; font-family: 
 .label-calibration-square.tl { top:10mm; left:10mm; } .label-calibration-square.tr { top:10mm; right:10mm; }
 .label-calibration-square.bl { bottom:10mm; left:10mm; } .label-calibration-square.br { bottom:10mm; right:10mm; }
 .label-calibration-ruler { position:absolute; top:5mm; left:5mm; width:200mm; height:5mm; border-top:.3mm solid #000; background:repeating-linear-gradient(90deg,#111 0 .2mm,transparent .2mm 5mm); }
+/* Labels Pixel Perfect RC3: single print contract shared by every label view. */
 @media print {
-  .label-print-toolbar, .label-print-actions, .no-print, .site-header, nav, .sidebar, .topbar, .breadcrumb, .label-actions, .atlas-page-hero, button { display:none !important; }
-  html, body, .label-print-page, .label-print-sheet, .label-print-preview { background:#fff !important; box-shadow:none !important; }
+  html, body { background:#fff !important; margin:0 !important; padding:0 !important; }
+  .no-print, .site-header, .app-header, .navbar, .sidebar, .topbar, .breadcrumb,
+  .label-actions, .label-print-actions, .label-print-toolbar, .print-toolbar, .atlas-page-hero,
+  .atlas-toolbar, .label-sheet-toolbar { display:none !important; }
+  .label-print-page, .locdesk-print-page, .locdesk-print-body, .label-sheet-print-page,
+  .label-print-sheet, .label-print-preview, .print-sheet, .locdesk-hol-sheet, .locdesk-box-sheet {
+    background:#fff !important; margin:0 !important; padding:0 !important; box-shadow:none !important;
+  }
+  .locdesk-label, .locdesk-hol-label, .label-sheet-label, .label-print-item {
+    box-shadow:none !important; page-break-inside:avoid; break-inside:avoid;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
+  }
   .label-print-a4 { margin:0; break-after:page; page-break-after:always; }
   .label-print-a4:last-child { break-after:auto; page-break-after:auto; }
-}
-
-@media print {
-  .no-print,
-  .site-header,
-  .sidebar,
-  .topbar,
-  .breadcrumb,
-  .label-print-toolbar,
-  .label-actions,
-  .atlas-page-hero { display: none !important; }
-  body { background: #fff !important; }
-  .label-print-page,
-  .locdesk-print-page,
-  .label-sheet-print-page { background:#fff !important; margin:0 !important; padding:0 !important; }
-  .locdesk-label,
-  .locdesk-hol-label,
-  .label-sheet-label { box-shadow:none !important; break-inside:avoid; page-break-inside:avoid; }
-  .label-print-sheet { border:0; box-shadow:none !important; }
-  .label-sheet-a4,.label-calibration-test-page{margin:0;box-shadow:none!important}.label-sheet-margin-guide{visibility:hidden}
-  svg, .label-qr, .locdesk-qr { print-color-adjust:exact; -webkit-print-color-adjust:exact; }
+  .locdesk-hol-label, .locdesk-standard-label { margin:0 auto; }
+  .print-sheet, .locdesk-box-sheet { page-break-after:always; }
+  .print-sheet:last-child, .locdesk-box-sheet:last-child { page-break-after:auto; }
+  .label-sheet-a4, .label-calibration-test-page { margin:0; box-shadow:none !important; }
+  .label-sheet-margin-guide { visibility:hidden; }
+  svg, .label-qr, .locdesk-qr { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
 }

@@ -1,0 +1,19 @@
+@model IReadOnlyList<InovaGed.Web.Models.Labels.LabelStudioTemplate>
+@{
+    ViewData["Title"] = "Revisão Visual das Etiquetas";
+    ViewData["WorkspaceVariant"] = "wide";
+}
+@section Styles { <link rel="stylesheet" href="~/css/labels-premium.css" asp-append-version="true" /><link rel="stylesheet" href="~/css/labels-visual-review.css" asp-append-version="true" /> }
+<div class="labels-page label-visual-page">
+    <section class="labels-hero atlas-page-hero"><div><span class="labels-eyebrow">Labels Pixel Perfect RC3</span><h1>Revisão Visual das Etiquetas</h1><p>Comparação dos modelos homologados na proporção física, antes da impressão real.</p></div><a class="ig-button ig-button--secondary" asp-action="Index">Voltar à central</a></section>
+    <div class="label-review-grid">
+    @foreach (var template in Model)
+    {
+        <article class="label-review-card">
+            <header><div><span class="labels-status">Visual aprovado</span><h2>@template.Name</h2><code>@template.Code</code></div><strong>@template.Dimensions</strong></header>
+            <div class="label-review-stage"><div class="label-review-paper @template.ThumbClass"><span>ARQUIVO LOCDESCK ANANINDEUA</span><b>@template.Name</b><i></i><i></i><i></i><strong>LOCALIZAÇÃO</strong></div></div>
+            <footer><a class="ig-button ig-button--secondary" asp-action="TemplatePreview" asp-route-code="@template.Code">Abrir preview</a><a class="ig-button ig-button--primary" asp-action="TemplatePrintSample" asp-route-code="@template.Code">Imprimir amostra</a><a class="ig-button ig-button--secondary" asp-action="Quality">Abrir qualidade</a></footer>
+        </article>
+    }
+    </div>
+</div>

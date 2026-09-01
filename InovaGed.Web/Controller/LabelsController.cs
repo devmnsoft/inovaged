@@ -239,6 +239,12 @@ public class LabelsController : GedControllerBase
     [HttpGet]
     public IActionResult Index() => View();
 
+    [HttpGet("/Labels/VisualReview")]
+    public IActionResult VisualReview() => View(StudioTemplates);
+
+    [HttpGet("/Labels/VisualChecklist")]
+    public IActionResult VisualChecklist() => View(BuildQualityRows());
+
     [HttpGet]
     public async Task<IActionResult> PrintWizard(string? subjectType, Guid? subjectId, string? mode, string? templateCode, CancellationToken ct)
     {
