@@ -166,5 +166,12 @@
     "area": "Etiquetas",
     "required": true,
     "description": "Identidade rastreável, token QR seguro, leituras, substituições e qualidade visual."
+  },
+  {
+    "name": "2026_09_01_print_branding_center_2",
+    "path": "database/migrations/2026_09_01_print_branding_center_2.sql",
+    "area": "Identidade visual de impressão",
+    "required": true,
+    "description": "Perfis visuais por cliente e contrato, vínculos por template e auditoria."
   }
 ]

@@ -8,6 +8,7 @@ public sealed class LabelPrintWizardInputModel : IValidatableObject
     public Guid? PrintProfileId { get; set; }
     public string LogoSelection { get; set; } = "TEMPLATE_DEFAULT";
     public Guid? SelectedLogoAssetId { get; set; }
+    public Guid? PrintBrandingProfileId { get; set; }
     public LocDeskLabelInputModel CustomFields { get; set; }=new();
     public IEnumerable<ValidationResult> Validate(ValidationContext c)
     {

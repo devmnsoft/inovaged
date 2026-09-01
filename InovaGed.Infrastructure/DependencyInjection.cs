@@ -48,6 +48,8 @@ using InovaGed.Application.Governance;
 using InovaGed.Infrastructure.Governance;
 using InovaGed.Application.ContractMeasurement;
 using InovaGed.Infrastructure.ContractMeasurement;
+using InovaGed.Application.Branding;
+using InovaGed.Infrastructure.Branding;
 
 namespace InovaGed.Infrastructure;
 
@@ -61,6 +63,10 @@ public static class InfrastructureServiceCollectionExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
+        services.AddScoped<PrintBrandingResolver>();
+        services.AddScoped<IPrintBrandingResolver>(sp => sp.GetRequiredService<PrintBrandingResolver>());
+        services.AddScoped<IPrintBrandingProfileService>(sp => sp.GetRequiredService<PrintBrandingResolver>());
+        services.AddScoped<IPrintBrandingBindingService>(sp => sp.GetRequiredService<PrintBrandingResolver>());
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 

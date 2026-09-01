@@ -3073,3 +3073,4 @@ where coalesce(reg_status, 'A') = 'A';
 \ir migrations/2026_08_31_label_print_fidelity_2.sql
 \ir migrations/2026_08_31_label_traceability_2.sql
 \ir migrations/2026_09_01_brand_logo_upload_print.sql
+\ir migrations/2026_09_01_print_branding_center_2.sql
