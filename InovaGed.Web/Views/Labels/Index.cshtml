@@ -11,6 +11,7 @@
     };
     var secondaryCards = new List<(string Icon, string Title, string Description, string Url, string Action, string Status, string Hint)>
     {
+        ("presentation", "Demonstração e Aceite Visual", "Acesse a vitrine final dos modelos, imprima amostras, confira o checklist visual e valide a rastreabilidade das etiquetas.", Url.Action("Demo")!, "Abrir demonstração", "RC4", "Pacote final para apresentação e homologação."),
         ("preview", "Revisão Visual das Etiquetas", "Compare lado a lado os cinco modelos homologados e abra suas amostras físicas.", Url.Action("VisualReview")!, "Revisar etiquetas", "RC3", "Confira bordas, tipografia, campos e impressão."),
         ("check-circle", "Checklist de Impressão", "Valide alinhamento, contraste, QR Code e limpeza do modo de impressão.", Url.Action("VisualChecklist")!, "Abrir checklist", "11 critérios", "Use antes da homologação na impressora real."),
         ("layout-template", "Estúdio de Modelos", "Compare miniaturas, versões e formatos homologados.", Url.Action("Templates")!, "Ver modelos", "Catálogo", "Escolha o modelo antes de iniciar a emissão."),

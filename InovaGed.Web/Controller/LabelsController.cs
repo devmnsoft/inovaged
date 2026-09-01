@@ -239,6 +239,32 @@ public class LabelsController : GedControllerBase
     [HttpGet]
     public IActionResult Index() => View();
 
+    [HttpGet("/Labels/Demo")]
+    public IActionResult Demo()
+    {
+        var samples = Url.Action(nameof(DemoSamples))!;
+        return View(new LabelsDemoViewModel(new List<LabelsDemoCard>
+        {
+            new("LocDesk Pasta Padrão", LabelTemplateCode.LocDeskFolder, "Homologado", Url.Action(nameof(TemplatePreview), new { code=LabelTemplateCode.LocDeskFolder })!, samples, "folder"),
+            new("LocDesk Caixa Padrão", LabelTemplateCode.LocDeskBox, "Homologado", Url.Action(nameof(TemplatePreview), new { code=LabelTemplateCode.LocDeskBox })!, samples, "box"),
+            new("LocDesk Pasta HOL", LabelTemplateCode.LocDeskFolderHol, "Homologado", Url.Action(nameof(TemplatePreview), new { code=LabelTemplateCode.LocDeskFolderHol })!, samples, "hol"),
+            new("Etiqueta Padrão de Caixa", LabelTemplateCode.FactoryBox, "Validado", Url.Action(nameof(TemplatePreview), new { code=LabelTemplateCode.FactoryBox })!, samples, "factory"),
+            new("Etiqueta Padrão de Documento", LabelTemplateCode.FactoryDocument, "Validado", Url.Action(nameof(TemplatePreview), new { code=LabelTemplateCode.FactoryDocument })!, samples, "document"),
+            new("Impressão em Lote", "LABEL_BATCH", "Operacional", Url.Action(nameof(Batch))!, samples, "batch"),
+            new("Calibração", "PRINT_CALIBRATION", "Validado", Url.Action(nameof(Calibration))!, samples, "calibration"),
+            new("Scanner QR", "QR_SCANNER", "Online", "/Labels/Scanner", samples, "scanner"),
+            new("Histórico", "PRINT_HISTORY", "Auditável", Url.Action(nameof(History))!, samples, "history"),
+            new("Rastreabilidade", "LABEL_TRACE", "Auditável", "/Labels/Trace", samples, "trace")
+        }));
+    }
+
+    [HttpGet("/Labels/Demo/Samples")]
+    public IActionResult DemoSamples() => View(new LabelsDemoSamplesViewModel(LabelsDemoData.Standard(), LabelsDemoData.Hol(),
+        _qrCodes.CreateTrackingSvg($"{Request.Scheme}://{Request.Host}/Labels/Demo")));
+
+    [HttpGet("/Labels/Demo/Acceptance")]
+    public IActionResult DemoAcceptance() => View();
+
     [HttpGet("/Labels/VisualReview")]
     public IActionResult VisualReview() => View(StudioTemplates);
 
