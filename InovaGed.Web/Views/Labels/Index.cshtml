@@ -11,6 +11,8 @@
     };
     var secondaryCards = new List<(string Icon, string Title, string Description, string Url, string Action, string Status, string Hint)>
     {
+        ("preview", "Revisão Visual das Etiquetas", "Compare lado a lado os cinco modelos homologados e abra suas amostras físicas.", Url.Action("VisualReview")!, "Revisar etiquetas", "RC3", "Confira bordas, tipografia, campos e impressão."),
+        ("check-circle", "Checklist de Impressão", "Valide alinhamento, contraste, QR Code e limpeza do modo de impressão.", Url.Action("VisualChecklist")!, "Abrir checklist", "11 critérios", "Use antes da homologação na impressora real."),
         ("layout-template", "Estúdio de Modelos", "Compare miniaturas, versões e formatos homologados.", Url.Action("Templates")!, "Ver modelos", "Catálogo", "Escolha o modelo antes de iniciar a emissão."),
         ("panels-top-left", "Designer Visual", "Duplique modelos oficiais e organize os campos de cópias editáveis.", "/Labels/Designer", "Abrir designer", "Versionado", "Publicações anteriores permanecem preservadas."),
         ("scan-line", "Scanner QR", "Leia uma URL, token seguro ou TraceCode em qualquer dispositivo.", "/Labels/Scanner", "Abrir scanner", "Online", "A leitura não expõe dados sensíveis."),

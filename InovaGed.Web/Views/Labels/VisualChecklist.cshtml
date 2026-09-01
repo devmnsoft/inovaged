@@ -1,0 +1,11 @@
+@model IReadOnlyList<InovaGed.Web.Models.Labels.LabelQualityRow>
+@{
+    ViewData["Title"] = "Checklist Visual das Etiquetas";
+    ViewData["WorkspaceVariant"] = "wide";
+    var criteria = new List<string> { "Cabeçalho", "Logo", "Borda", "Controle vermelho", "Volume vermelho", "Campos obrigatórios", "Localização", "QR Code", "Fonte", "Espaçamento", "Modo impressão" };
+}
+@section Styles { <link rel="stylesheet" href="~/css/labels-premium.css" asp-append-version="true" /><link rel="stylesheet" href="~/css/labels-visual-review.css" asp-append-version="true" /> }
+<div class="labels-page label-visual-page">
+ <section class="labels-hero atlas-page-hero"><div><span class="labels-eyebrow">Quality gate visual</span><h1>Checklist de Impressão</h1><p>Conferência estática RC3; a homologação final deve ser feita em papel, na escala de 100%.</p></div><nav><a class="ig-button ig-button--secondary" asp-action="VisualReview">Revisão visual</a><a class="ig-button ig-button--secondary" asp-action="Index">Voltar</a></nav></section>
+ <div class="label-checklist-grid">@foreach (var template in Model) { <article class="label-checklist-card"><header><div><h2>@template.TemplateName</h2><code>@template.TemplateCode</code></div><span class="visual-status visual-status--ok">OK</span></header><ul>@foreach (var criterion in criteria) { var attention = criterion == "QR Code" && template.TemplateCode == "LOCDESK_CAIXA_V1"; <li><span>@criterion</span><strong class="visual-status @(attention ? "visual-status--attention" : "visual-status--ok")">@(attention ? "Atenção" : "OK")</strong></li> }</ul></article> }</div>
+</div>
