@@ -30,7 +30,8 @@ public sealed class LogoSelectorController(IDbConnectionFactory factory) : GedCo
         using var db=await OpenAsync();
         var row=await db.QuerySingleOrDefaultAsync<LogoRow>(new CommandDefinition("select id,brand_name BrandName,asset_name AssetName,is_default IsDefault from ged.brand_asset where id=@id and tenant_id=@tenant and status='ACTIVE' and reg_status='A'",new{id=logoAssetId,tenant=TenantId},cancellationToken:ct));
         if(row is null)return NotFound();
-        return View("~/Views/Administration/BrandAssets/Preview.cshtml",new PrintLogoViewModel{LogoUrl=$"/Administration/BrandAssets/{row.Id}/File",Alt=row.AssetName,WidthMm=widthMm,HeightMm=heightMm,PreserveAspectRatio=preserveAspectRatio,FitMode=fitMode});
+        var source = $"/Administration/BrandAssets/{row.Id}/File";
+        return View("~/Views/Administration/BrandAssets/Preview.cshtml",new PrintLogoViewModel{AssetId=row.Id,LogoUrl=source,PrintImageSource=source,Alt=row.AssetName,WidthMm=widthMm,HeightMm=heightMm,PreserveAspectRatio=preserveAspectRatio,FitMode=fitMode,HasLogo=true,ImageLoaded=true});
     }
     private sealed class LogoRow { public Guid Id {get;set;} public string BrandName {get;set;}=""; public string AssetName {get;set;}=""; public bool IsDefault {get;set;} }
 }

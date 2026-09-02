@@ -4,10 +4,13 @@
     var officialLogo = new PrintLogoViewModel
     {
         LogoUrl = BrandAssets.LocDeskLogoWebPath,
+        PrintImageSource = BrandAssets.LocDeskLogoWebPath,
         Alt = Model?.Decorative == true ? string.Empty : "Logo oficial LocDesk",
         CssClass = Model?.CssClass,
         WidthMm = 38,
-        PreserveAspectRatio = true
+        PreserveAspectRatio = true,
+        HasLogo = true,
+        ImageLoaded = true
     };
 }
 @* Compatibilidade: nunca simula a marca; apenas mostra a imagem oficial existente. *@

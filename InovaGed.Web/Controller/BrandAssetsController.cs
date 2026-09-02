@@ -117,7 +117,11 @@ public sealed class BrandAssetsController(IDbConnectionFactory dbFactory, IWebHo
     public async Task<IActionResult> Archive(Guid id, string? reason, CancellationToken ct) { using var db=await OpenAsync(); var changed=await db.ExecuteAsync(new CommandDefinition("update ged.brand_asset set status='ARCHIVED',is_default=false,archived_at=now(),archived_by=@user,archive_reason=@reason where id=@id and tenant_id=@tenant and reg_status='A'",new{id,tenant=TenantId,user=UserId,reason},cancellationToken:ct)); return changed==0?NotFound():RedirectToAction(nameof(Index)); }
 
     [HttpGet("{id:guid}/Preview")]
-    public IActionResult Preview(Guid id) => View("~/Views/Administration/BrandAssets/Preview.cshtml", new PrintLogoViewModel { LogoUrl=Url.Action(nameof(File),new{id}),Alt="Preview da logo oficial" });
+    public IActionResult Preview(Guid id)
+    {
+        var source = Url.Action(nameof(File), new { id });
+        return View("~/Views/Administration/BrandAssets/Preview.cshtml", new PrintLogoViewModel { AssetId=id,LogoUrl=source,PrintImageSource=source,Alt="Preview da logo oficial",HasLogo=true,ImageLoaded=true });
+    }
 
     [HttpGet("{id:guid}/File")]
     public async Task<IActionResult> File(Guid id, CancellationToken ct) => await images.GetImageAsync(TenantId,id,ct) is { } image
