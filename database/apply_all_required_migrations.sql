@@ -3078,3 +3078,4 @@ where coalesce(reg_status, 'A') = 'A';
 -- Brand Logo Print Selector + SmartWorkflow Schema Fix (2026-09-02)
 \ir migrations/2026_09_02_brand_asset_resize_selector_fix.sql
 \ir migrations/2026_09_02_smart_workflow_schema_fix.sql
+\ir migrations/2026_09_02_logo_layout_studio_print.sql
