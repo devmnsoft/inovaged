@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace InovaGed.Web.Controllers;
 
-[Authorize(Policy = AppPolicies.Administracao)]
+[Authorize]
 [Route("Administration/BrandAssets")]
 public sealed class BrandAssetsController(IDbConnectionFactory dbFactory, IWebHostEnvironment environment, IConfiguration configuration) : GedControllerBase(dbFactory)
 {
@@ -22,6 +22,7 @@ public sealed class BrandAssetsController(IDbConnectionFactory dbFactory, IWebHo
 
     [HttpGet("")]
     [HttpGet("/BrandAssets")]
+    [Authorize(Policy = AppPolicies.Administracao)]
     public async Task<IActionResult> Index(CancellationToken ct)
     {
         using var db = await OpenAsync();
@@ -31,10 +32,12 @@ public sealed class BrandAssetsController(IDbConnectionFactory dbFactory, IWebHo
 
     [HttpGet("Create")]
     [HttpGet("/BrandAssets/Create")]
+    [Authorize(Policy = AppPolicies.Administracao)]
     public IActionResult Create() => View("~/Views/Administration/BrandAssets/Create.cshtml", new BrandAssetUploadInput());
 
     [HttpPost("Create")]
     [HttpPost("/BrandAssets/Create")]
+    [Authorize(Policy = AppPolicies.Administracao)]
     [ValidateAntiForgeryToken]
     [RequestFormLimits(MultipartBodyLengthLimit = 5_242_880)]
     public async Task<IActionResult> Create(BrandAssetUploadInput input, CancellationToken ct)
@@ -70,9 +73,11 @@ public sealed class BrandAssetsController(IDbConnectionFactory dbFactory, IWebHo
     }
 
     [HttpGet("{id:guid}")]
+    [Authorize(Policy = AppPolicies.Administracao)]
     public async Task<IActionResult> Details(Guid id, CancellationToken ct) => await FindAsync(id, ct) is { } asset ? View("~/Views/Administration/BrandAssets/Details.cshtml", asset) : NotFound();
 
     [HttpGet("{id:guid}/Edit")]
+    [Authorize(Policy = AppPolicies.Administracao)]
     public async Task<IActionResult> Edit(Guid id, CancellationToken ct)
     {
         var asset = await FindAsync(id, ct);
@@ -84,6 +89,7 @@ public sealed class BrandAssetsController(IDbConnectionFactory dbFactory, IWebHo
     }
 
     [HttpPost("{id:guid}/Edit"), ValidateAntiForgeryToken]
+    [Authorize(Policy = AppPolicies.Administracao)]
     public async Task<IActionResult> Edit(Guid id, BrandAssetEditInput input, CancellationToken ct)
     {
         if (id != input.Id) return BadRequest();
@@ -102,9 +108,11 @@ public sealed class BrandAssetsController(IDbConnectionFactory dbFactory, IWebHo
     }
 
     [HttpPost("{id:guid}/SetDefault"), ValidateAntiForgeryToken]
+    [Authorize(Policy = AppPolicies.Administracao)]
     public async Task<IActionResult> SetDefault(Guid id, CancellationToken ct) { using var db=await OpenAsync(); using var tx=db.BeginTransaction(); var exists=await db.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from ged.brand_asset where id=@id and tenant_id=@tenant and reg_status='A' and status='ACTIVE')",new{id,tenant=TenantId},tx,cancellationToken:ct)); if(!exists)return NotFound(); await db.ExecuteAsync(new CommandDefinition("update ged.brand_asset set is_default=(id=@id) where tenant_id=@tenant and reg_status='A'",new{id,tenant=TenantId},tx,cancellationToken:ct)); tx.Commit(); return RedirectToAction(nameof(Index)); }
 
     [HttpPost("{id:guid}/Archive"), ValidateAntiForgeryToken]
+    [Authorize(Policy = AppPolicies.Administracao)]
     public async Task<IActionResult> Archive(Guid id, string? reason, CancellationToken ct) { using var db=await OpenAsync(); var changed=await db.ExecuteAsync(new CommandDefinition("update ged.brand_asset set status='ARCHIVED',is_default=false,archived_at=now(),archived_by=@user,archive_reason=@reason where id=@id and tenant_id=@tenant and reg_status='A'",new{id,tenant=TenantId,user=UserId,reason},cancellationToken:ct)); return changed==0?NotFound():RedirectToAction(nameof(Index)); }
 
     [HttpGet("{id:guid}/Preview")]

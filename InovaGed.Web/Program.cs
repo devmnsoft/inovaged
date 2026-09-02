@@ -179,6 +179,7 @@ builder.Services.AddScoped<ICorrelationContext, CorrelationContext>();
 builder.Services.AddScoped<InovaGed.Application.PhysicalArchive.ILabelPrintRegistrar, InovaGed.Infrastructure.PhysicalArchive.LabelPrintRegistrar>();
 builder.Services.AddScoped<InovaGed.Application.PhysicalArchive.ILabelPrintService, InovaGed.Infrastructure.PhysicalArchive.LabelPrintRegistrar>();
 builder.Services.AddScoped<InovaGed.Web.Services.ILabelPrintLogoResolver, InovaGed.Web.Services.LabelPrintLogoResolver>();
+builder.Services.AddScoped<InovaGed.Web.Services.IPrintLogoImageSourceBuilder, InovaGed.Web.Services.PrintLogoImageSourceBuilder>();
 builder.Services.AddScoped<InovaGed.Application.Labels.Tracking.ILabelReplacementService, InovaGed.Infrastructure.PhysicalArchive.LabelReplacementService>();
 builder.Services.AddScoped<InovaGed.Application.Labels.Intelligence.ILabelIntelligenceService, InovaGed.Infrastructure.PhysicalArchive.LabelIntelligenceService>();
 builder.Services.AddScoped<InovaGed.Application.Labels.Intelligence.ILabelAlertService, InovaGed.Infrastructure.PhysicalArchive.LabelAlertService>();

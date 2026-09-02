@@ -344,7 +344,7 @@ public class LabelsController : GedControllerBase
             return View("PrintWizard", input);
         }
         if (input.PrintMode==LabelPrintMode.Custom) {
-            input.CustomFields.LogoSelection=input.LogoSelection; input.CustomFields.SelectedLogoAssetId=input.SelectedLogoAssetId; input.CustomFields.LogoWidthMm=input.SelectedLogoWidthMm; input.CustomFields.LogoHeightMm=input.SelectedLogoHeightMm; input.CustomFields.PreserveLogoAspectRatio=input.PreserveLogoAspectRatio; input.CustomFields.LogoFitMode=input.LogoFitMode;
+            input.CustomFields.LogoSelection=input.LogoSelection; input.CustomFields.SelectedLogoAssetId=input.SelectedLogoAssetId; input.CustomFields.LogoWidthMm=input.SelectedLogoWidthMm; input.CustomFields.LogoHeightMm=input.SelectedLogoHeightMm; input.CustomFields.PreserveLogoAspectRatio=input.PreserveLogoAspectRatio; input.CustomFields.LogoFitMode=input.LogoFitMode; input.CustomFields.LogoPosition=input.LogoPosition;
             if(input.SubjectType==LabelSubjectType.Box && input.SubjectId is Guid box) return RedirectToAction(nameof(LocDeskBox),new {boxId=box,input.LogoSelection,input.SelectedLogoAssetId,input.SelectedLogoWidthMm,input.SelectedLogoHeightMm,input.PreserveLogoAspectRatio,input.LogoFitMode});
             if(input.SubjectType==LabelSubjectType.Document && input.SubjectId is Guid doc) return RedirectToAction(nameof(LocDeskFolder),new {docId=doc,templateCode=template.Code,input.LogoSelection,input.SelectedLogoAssetId,input.SelectedLogoWidthMm,input.SelectedLogoHeightMm,input.PreserveLogoAspectRatio,input.LogoFitMode});
             input.CustomFields.TemplateCode=template.Code;
@@ -361,7 +361,7 @@ public class LabelsController : GedControllerBase
         if(subject is null) { ModelState.AddModelError(nameof(input.SubjectId), "Não foi possível localizar a origem selecionada."); await PopulatePrintWizardLookupsAsync(input, ct); return View("PrintWizard", input); }
         var wasPrinted = await db.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from ged.label_print_history where tenant_id=@tid and label_subject_type=@type and label_subject_id=@id)", new { tid=TenantId, type=input.SubjectType, id=input.SubjectId }, cancellationToken:ct));
         if (register && wasPrinted && string.IsNullOrWhiteSpace(input.ReprintReason)) { ModelState.AddModelError(nameof(input.ReprintReason), "Informe o motivo da reimpressão para preservar a rastreabilidade."); await PopulatePrintWizardLookupsAsync(input, ct); return View("PrintWizard", input); }
-        var printLogo=await _logoResolver.ResolveAsync(TenantId,template.Code,input.LogoSelection,input.SelectedLogoAssetId,input.SelectedLogoWidthMm,input.SelectedLogoHeightMm,input.PreserveLogoAspectRatio,input.LogoFitMode,null,ct);
+        var printLogo=await _logoResolver.ResolveAsync(TenantId,template.Code,input.LogoSelection,input.SelectedLogoAssetId,input.SelectedLogoWidthMm,input.SelectedLogoHeightMm,input.PreserveLogoAspectRatio,input.LogoFitMode,input.LogoPosition,input.LogoOffsetXmm,input.LogoOffsetYmm,ct);
         InovaGed.Application.Labels.LabelTraceIssued? issued=null;
         if(register) { if(UserId is not Guid uid) return Unauthorized(); var snapshot=new { printMode=input.PrintMode,templateCode=template.Code,templateName=template.Name,templateVersion=template.Version,isDesignerTemplate=template.Id is not null && !template.IsSystemTemplate,subjectType=input.SubjectType,subjectId=input.SubjectId,copies=input.Copies,controlNumber=(string?)null,location=(string?)null,logoAssetId=printLogo.AssetId,logoBrandName=printLogo.BrandName,logoWidthMm=printLogo.WidthMm,logoHeightMm=printLogo.HeightMm,logoFitMode=printLogo.FitMode,logoPosition=printLogo.Position,printedFields=subject };
             try { issued=await _printRegistrar.RegisterAsync(new(TenantId,uid,input.SubjectType,input.SubjectId!.Value,template.Code,_payloadBuilder.Build(snapshot),HttpContext.Connection.RemoteIpAddress?.ToString(),Request.Headers.UserAgent.ToString(),input.ReprintReason),ct); } catch(InvalidOperationException ex) { ModelState.AddModelError(nameof(input.ReprintReason),ex.Message); ViewBag.Templates=await _catalog.GetTemplatesAsync(TenantId,input.SubjectType,input.PrintMode,ct); ViewBag.SubjectOptions=await LoadSubjectOptionsAsync(input.SubjectType,ct); return View("PrintWizard",input); } }
@@ -778,7 +778,7 @@ select
     {
         var qr = issued is null ? CreateLocDeskQr(input, input.BoxId ?? input.DocumentId) : _qrCodes.CreateTrackingSvg($"{Request.Scheme}://{Request.Host}{issued.ShortUrl}");
         ViewBag.TraceCode=issued?.Trace.TraceCode;
-        var logo=await _logoResolver.ResolveAsync(TenantId,ResolveLocDeskTemplateCode(input),input.LogoSelection,input.SelectedLogoAssetId,input.LogoWidthMm,input.LogoHeightMm,input.PreserveLogoAspectRatio,input.LogoFitMode,input.LogoPosition,ct);
+        var logo=await _logoResolver.ResolveAsync(TenantId,ResolveLocDeskTemplateCode(input),input.LogoSelection,input.SelectedLogoAssetId,input.LogoWidthMm,input.LogoHeightMm,input.PreserveLogoAspectRatio,input.LogoFitMode,input.LogoPosition,0,0,ct);
         var model = new LocDeskLabelRenderModel { Label=input,QrSvg=qr,PrintRegistered=registered,Template=await LoadLocDeskTemplate(input,ct),PrintLogo=logo };
         return View(LocDeskViewName(input), model);
     }
