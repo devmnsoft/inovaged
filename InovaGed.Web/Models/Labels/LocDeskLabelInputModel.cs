@@ -30,6 +30,9 @@ public sealed class LocDeskLabelInputModel : IValidatableObject
     public Guid? DocumentId { get; set; }
     [StringLength(500)] public string? ReprintReason { get; set; }
     [Range(1, 500)] public int Copies { get; set; } = 1;
+    public string LogoSelection { get; set; } = "TEMPLATE_DEFAULT"; public Guid? SelectedLogoAssetId { get; set; }
+    [Range(10,90)] public decimal? LogoWidthMm { get; set; } [Range(5,60)] public decimal? LogoHeightMm { get; set; }
+    public bool PreserveLogoAspectRatio { get; set; }=true; [RegularExpression("CONTAIN|COVER|FILL")] public string LogoFitMode { get; set; }="CONTAIN"; public string LogoPosition { get; set; }="TOP_LEFT";
 
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {

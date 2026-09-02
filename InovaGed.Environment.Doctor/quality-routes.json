@@ -52,5 +52,10 @@
   "/GlobalSearch",
   "/Administration/Consistency",
   "/DatabaseReadiness",
-  "/SystemIncidents"
+  "/SystemIncidents",
+  "/Labels/Preview",
+  "/Labels/Branding",
+  "/Labels/LogoLayout",
+  "/Administration/BrandAssets",
+  "/Administration/BrandAssets/Create"
 ]

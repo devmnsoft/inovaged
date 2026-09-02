@@ -9,6 +9,7 @@ using InovaGed.Web.Models;
 using InovaGed.Application.Labels.Printing;
 using System.Text.Json;
 using System.Data;
+using InovaGed.Web.Services;
 
 namespace InovaGed.Web.Controllers;
 
@@ -43,10 +44,11 @@ public class LabelsController : GedControllerBase
     private readonly InovaGed.Application.Labels.ILabelTemplateManager _templateManager;
     private readonly ILabelPrintJobService _printJobs;
     private readonly ILabelPdfRenderService _pdf;
+    private readonly ILabelPrintLogoResolver _logoResolver;
 
     public LabelsController(IDbConnectionFactory dbFactory, ILabelPrintRegistrar printRegistrar,
         ILabelTemplateService templates, ILabelQrCodeService qrCodes, ILabelPayloadBuilder payloadBuilder, ILabelTemplateCatalogService catalog, InovaGed.Application.Labels.ILabelTemplateManager templateManager,
-        ILabelPrintJobService printJobs, ILabelPdfRenderService pdf) : base(dbFactory)
+        ILabelPrintJobService printJobs, ILabelPdfRenderService pdf, ILabelPrintLogoResolver logoResolver) : base(dbFactory)
     {
         _printRegistrar = printRegistrar;
         _templates = templates;
@@ -54,7 +56,7 @@ public class LabelsController : GedControllerBase
         _payloadBuilder = payloadBuilder;
         _catalog = catalog;
         _templateManager = templateManager;
-        _printJobs=printJobs; _pdf=pdf;
+        _printJobs=printJobs; _pdf=pdf; _logoResolver=logoResolver;
     }
 
     [HttpGet("/Labels/Templates")]
@@ -342,8 +344,9 @@ public class LabelsController : GedControllerBase
             return View("PrintWizard", input);
         }
         if (input.PrintMode==LabelPrintMode.Custom) {
-            if(input.SubjectType==LabelSubjectType.Box && input.SubjectId is Guid box) return RedirectToAction(nameof(LocDeskBox),new {boxId=box});
-            if(input.SubjectType==LabelSubjectType.Document && input.SubjectId is Guid doc) return RedirectToAction(nameof(LocDeskFolder),new {docId=doc,templateCode=template.Code});
+            input.CustomFields.LogoSelection=input.LogoSelection; input.CustomFields.SelectedLogoAssetId=input.SelectedLogoAssetId; input.CustomFields.LogoWidthMm=input.SelectedLogoWidthMm; input.CustomFields.LogoHeightMm=input.SelectedLogoHeightMm; input.CustomFields.PreserveLogoAspectRatio=input.PreserveLogoAspectRatio; input.CustomFields.LogoFitMode=input.LogoFitMode;
+            if(input.SubjectType==LabelSubjectType.Box && input.SubjectId is Guid box) return RedirectToAction(nameof(LocDeskBox),new {boxId=box,input.LogoSelection,input.SelectedLogoAssetId,input.SelectedLogoWidthMm,input.SelectedLogoHeightMm,input.PreserveLogoAspectRatio,input.LogoFitMode});
+            if(input.SubjectType==LabelSubjectType.Document && input.SubjectId is Guid doc) return RedirectToAction(nameof(LocDeskFolder),new {docId=doc,templateCode=template.Code,input.LogoSelection,input.SelectedLogoAssetId,input.SelectedLogoWidthMm,input.SelectedLogoHeightMm,input.PreserveLogoAspectRatio,input.LogoFitMode});
             input.CustomFields.TemplateCode=template.Code;
             return View("LocDesk",input.CustomFields);
         }
@@ -358,10 +361,11 @@ public class LabelsController : GedControllerBase
         if(subject is null) { ModelState.AddModelError(nameof(input.SubjectId), "Não foi possível localizar a origem selecionada."); await PopulatePrintWizardLookupsAsync(input, ct); return View("PrintWizard", input); }
         var wasPrinted = await db.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from ged.label_print_history where tenant_id=@tid and label_subject_type=@type and label_subject_id=@id)", new { tid=TenantId, type=input.SubjectType, id=input.SubjectId }, cancellationToken:ct));
         if (register && wasPrinted && string.IsNullOrWhiteSpace(input.ReprintReason)) { ModelState.AddModelError(nameof(input.ReprintReason), "Informe o motivo da reimpressão para preservar a rastreabilidade."); await PopulatePrintWizardLookupsAsync(input, ct); return View("PrintWizard", input); }
+        var printLogo=await _logoResolver.ResolveAsync(TenantId,template.Code,input.LogoSelection,input.SelectedLogoAssetId,input.SelectedLogoWidthMm,input.SelectedLogoHeightMm,input.PreserveLogoAspectRatio,input.LogoFitMode,null,ct);
         InovaGed.Application.Labels.LabelTraceIssued? issued=null;
-        if(register) { if(UserId is not Guid uid) return Unauthorized(); var snapshot=new { printMode=input.PrintMode,templateCode=template.Code,templateName=template.Name,templateVersion=template.Version,isDesignerTemplate=template.Id is not null && !template.IsSystemTemplate,subjectType=input.SubjectType,subjectId=input.SubjectId,copies=input.Copies,controlNumber=(string?)null,location=(string?)null,printedFields=subject };
+        if(register) { if(UserId is not Guid uid) return Unauthorized(); var snapshot=new { printMode=input.PrintMode,templateCode=template.Code,templateName=template.Name,templateVersion=template.Version,isDesignerTemplate=template.Id is not null && !template.IsSystemTemplate,subjectType=input.SubjectType,subjectId=input.SubjectId,copies=input.Copies,controlNumber=(string?)null,location=(string?)null,logoAssetId=printLogo.AssetId,logoBrandName=printLogo.BrandName,logoWidthMm=printLogo.WidthMm,logoHeightMm=printLogo.HeightMm,logoFitMode=printLogo.FitMode,logoPosition=printLogo.Position,printedFields=subject };
             try { issued=await _printRegistrar.RegisterAsync(new(TenantId,uid,input.SubjectType,input.SubjectId!.Value,template.Code,_payloadBuilder.Build(snapshot),HttpContext.Connection.RemoteIpAddress?.ToString(),Request.Headers.UserAgent.ToString(),input.ReprintReason),ct); } catch(InvalidOperationException ex) { ModelState.AddModelError(nameof(input.ReprintReason),ex.Message); ViewBag.Templates=await _catalog.GetTemplatesAsync(TenantId,input.SubjectType,input.PrintMode,ct); ViewBag.SubjectOptions=await LoadSubjectOptionsAsync(input.SubjectType,ct); return View("PrintWizard",input); } }
-        var qrPath=issued?.ShortUrl??$"/Labels/Trace/{input.SubjectId}"; ViewBag.TraceCode=issued?.Trace.TraceCode; ViewBag.QrSvg=_qrCodes.CreateTrackingSvg($"{Request.Scheme}://{Request.Host}{qrPath}"); ViewBag.PrintRegistered=register; ViewBag.Copies=input.Copies;
+        var qrPath=issued?.ShortUrl??$"/Labels/Trace/{input.SubjectId}"; ViewBag.TraceCode=issued?.Trace.TraceCode; ViewBag.QrSvg=_qrCodes.CreateTrackingSvg($"{Request.Scheme}://{Request.Host}{qrPath}"); ViewBag.PrintRegistered=register; ViewBag.Copies=input.Copies; ViewBag.PrintLogo=printLogo;
         return View(template.ViewName,subject);
     }
 
@@ -774,7 +778,8 @@ select
     {
         var qr = issued is null ? CreateLocDeskQr(input, input.BoxId ?? input.DocumentId) : _qrCodes.CreateTrackingSvg($"{Request.Scheme}://{Request.Host}{issued.ShortUrl}");
         ViewBag.TraceCode=issued?.Trace.TraceCode;
-        var model = new LocDeskLabelRenderModel { Label=input,QrSvg=qr,PrintRegistered=registered,Template=await LoadLocDeskTemplate(input,ct) };
+        var logo=await _logoResolver.ResolveAsync(TenantId,ResolveLocDeskTemplateCode(input),input.LogoSelection,input.SelectedLogoAssetId,input.LogoWidthMm,input.LogoHeightMm,input.PreserveLogoAspectRatio,input.LogoFitMode,input.LogoPosition,ct);
+        var model = new LocDeskLabelRenderModel { Label=input,QrSvg=qr,PrintRegistered=registered,Template=await LoadLocDeskTemplate(input,ct),PrintLogo=logo };
         return View(LocDeskViewName(input), model);
     }
 
@@ -928,7 +933,7 @@ left join ged.document d
  and d.id=lp.label_subject_id and lp.label_subject_type='DOCUMENT'
 where lp.tenant_id=@tid
   and (@startDate is null or lp.printed_at >= @startDate)
-  and (@endDate is null or lp.printed_at < @endDate + interval '1 day')
+  and (@endDateExclusive is null or lp.printed_at < @endDateExclusive)
   and (@type='' or lp.label_subject_type=@type)
   and (@template='' or lp.template_code=@template)
   and (@mode='' or @mode=coalesce(lp.snapshot_json->>'printMode',case when lp.template_code like 'LOCDESK%' then 'CUSTOM' else 'FACTORY' end))
@@ -948,7 +953,7 @@ where lp.tenant_id=@tid
     or coalesce(lp.snapshot_json->>'classification','') ilike ('%'||@q||'%')
   )
 order by lp.printed_at desc
-limit 500;", new { tid = TenantId, q, user, mode, template, type, startDate, endDate });
+limit 500;", new { tid = TenantId, q, user, mode, template, type, startDate=startDate?.Date, endDateExclusive=endDate?.Date.AddDays(1) });
 
         return View(rows);
     }

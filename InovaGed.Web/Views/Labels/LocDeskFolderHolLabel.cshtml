@@ -23,6 +23,7 @@
     <meta name="viewport" content="width=device-width" />
     <title>LocDesk - Pasta HOL</title>
     <link rel="stylesheet" href="~/css/labels-print.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/print-branding.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/locdesk-label.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/locdesk-brand.css" asp-append-version="true" />
 </head>
@@ -36,7 +37,7 @@
         <article class="locdesk-label locdesk-hol-label" aria-label="Etiqueta LocDesk do Hospital Ophir Loyola">
             <header class="locdesk-hol-header">
                 <div class="locdesk-hol-brand">
-                    <partial name="_LocDeskLogo" model='new InovaGed.Web.Models.Branding.LocDeskLogoViewModel { CssClass = "locdesk-hol-logo locdesk-brand-logo--print" }' />
+                    @if(Model.PrintLogo?.HasLogo == true){<partial name="Branding/_PrintLogo" model="Model.PrintLogo" />}
                     <small>ARQUIVO LOCDESCK ANANINDEUA</small>
                 </div>
                 <div class="locdesk-hol-contract"><span>Contrato:</span><strong>@item.Contract</strong></div>

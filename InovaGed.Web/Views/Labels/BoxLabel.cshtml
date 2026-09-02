@@ -70,6 +70,7 @@
 
 <body>
     <div class="label-card">
+        @if(ViewBag.PrintLogo is InovaGed.Web.Models.Branding.ResolvedPrintLogo logo && logo.HasLogo){<partial name="Branding/_PrintLogo" model="logo" />}
         <div class="title">CAIXA #@Model.box_no</div>
 
         <div class="line">

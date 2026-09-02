@@ -62,6 +62,7 @@
 
 <body>
     <div class="label-card">
+        @if(ViewBag.PrintLogo is InovaGed.Web.Models.Branding.ResolvedPrintLogo logo && logo.HasLogo){<partial name="Branding/_PrintLogo" model="logo" />}
         <div class="title">DOCUMENTO @Model.code</div>
 
         <div class="line">
