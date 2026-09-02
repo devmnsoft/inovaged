@@ -194,5 +194,12 @@
     "area": "Identidade visual de impressão",
     "required": true,
     "description": "Posicionamento fino, preview e validações de logos por modelo impresso."
+  },
+  {
+    "name": "2026_09_02_brand_assets_create_view_and_resize_fix",
+    "path": "database/migrations/2026_09_02_brand_assets_create_view_and_resize_fix.sql",
+    "area": "Identidade visual de impressão",
+    "required": true,
+    "description": "Corrige as views de logos e garante seleção, dimensões, proporção e posição por contexto."
   }
 ]

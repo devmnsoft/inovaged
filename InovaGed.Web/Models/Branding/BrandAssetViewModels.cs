@@ -8,6 +8,10 @@ public sealed class BrandAssetUploadInput
     [Required, StringLength(160)] public string AssetName { get; set; } = "";
     [Required] public IFormFile? File { get; set; }
     public bool IsDefault { get; set; }
+    [Range(10, 90)] public decimal DefaultWidthMm { get; set; } = 38;
+    [Range(5, 60)] public decimal? DefaultHeightMm { get; set; }
+    public bool PreserveAspectRatio { get; set; } = true;
+    [RegularExpression("CONTAIN|COVER|FILL")] public string FitMode { get; set; } = "CONTAIN";
     [StringLength(500)] public string? Notes { get; set; }
 }
 
