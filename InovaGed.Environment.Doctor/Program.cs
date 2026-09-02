@@ -19,6 +19,11 @@ try
         var repositoryRoot = FindRoot(BclEnvironment.CurrentDirectory);
         return LabelsVisualQualityCheck.Run(repositoryRoot, Console.Out, Console.Error);
     }
+    if (command.Equals("labels-logo-rendering", StringComparison.OrdinalIgnoreCase))
+    {
+        var repositoryRoot = FindRoot(BclEnvironment.CurrentDirectory);
+        return LabelsLogoRenderingCheck.Run(repositoryRoot, Console.Out, Console.Error);
+    }
     if (command is "database-readiness" or "apply-required-migrations")
     {
         var repositoryRoot = FindRoot(BclEnvironment.CurrentDirectory);

@@ -30,7 +30,7 @@
 <body class="locdesk-print-page">
     <nav class="label-actions no-print" aria-label="Ações de impressão">
         <a asp-action="LocDesk">Voltar para edição</a>
-        <button type="button" data-label-print-now>Imprimir agora</button>
+        <button type="button" data-label-print-now onclick="window.print(); return false;">Imprimir agora</button>
         <span>@(Model.PrintRegistered ? "Impressão registrada com sucesso." : "Pré-visualização — ainda não registrada")</span>
     </nav>
     @if(!string.IsNullOrWhiteSpace(Model.PrintLogoWarning)){<div class="label-logo-warning no-print" role="alert">@Model.PrintLogoWarning</div>}
