@@ -21,7 +21,8 @@ try
     }
     if (command.Equals("labels-logo-rendering", StringComparison.OrdinalIgnoreCase) ||
         command.Equals("labels-logo-propagation", StringComparison.OrdinalIgnoreCase) ||
-        command.Equals("labels-printwizard-actions", StringComparison.OrdinalIgnoreCase))
+        command.Equals("labels-printwizard-actions", StringComparison.OrdinalIgnoreCase) ||
+        command.Equals("labels-actions-quality", StringComparison.OrdinalIgnoreCase))
     {
         var repositoryRoot = FindRoot(BclEnvironment.CurrentDirectory);
         return LabelsLogoRenderingCheck.Run(repositoryRoot, Console.Out, Console.Error);

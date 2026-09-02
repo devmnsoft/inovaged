@@ -38,6 +38,14 @@ public static class LabelsLogoRenderingCheck
         Require(controller.Contains("Task<IActionResult> PrintPreview(LabelPrintWizardInputModel input", StringComparison.Ordinal), "POST PrintPreview do PrintWizard não existe.");
         Require(controller.Contains("BuildLabelRenderModelAsync(input", StringComparison.Ordinal), "As ações não usam o construtor único de renderização.");
         Require(controller.Contains("SelectedLogoAssetIdPresent", StringComparison.Ordinal), "Log seguro da seleção de logo não existe.");
+        Require(controller.Contains("new DynamicParameters()", StringComparison.Ordinal), "History deve usar DynamicParameters tipados.");
+        Require(!controller.Contains("@startDate is null", StringComparison.OrdinalIgnoreCase), "History ainda usa parâmetro nulo sem tipo no SQL.");
+        var logoController = Read("InovaGed.Web/Controller/LogoLayoutController.cs");
+        var logoView = Read("InovaGed.Web/Views/LogoLayout/Edit.cshtml");
+        Require(logoController.Contains("SaveGetFallback", StringComparison.Ordinal), "GET acidental de Save não possui fallback seguro.");
+        Require(logoView.Contains("method=\"post\"", StringComparison.Ordinal), "LogoLayout Save não usa POST.");
+        Require(logoView.Contains("AntiForgeryToken", StringComparison.Ordinal), "LogoLayout Save não envia antiforgery.");
+        Require(!logoView.Contains("href=\"/Labels/LogoLayout/@Model.TemplateCode/Save", StringComparison.Ordinal), "LogoLayout Save não pode ser link GET.");
         Require(File.Exists(Path.Combine(root, "InovaGed.Web/wwwroot/js/labels-print-page.js")), "labels-print-page.js não existe.");
         foreach (var field in new[] { "LogoWidthMm", "LogoHeightMm", "PreserveAspectRatio", "LogoFitMode", "LogoPosition", "LogoOffsetXmm", "LogoOffsetYmm" })
             Require(wizard.Contains($"asp-for=\"{field}\"", StringComparison.Ordinal), $"PrintWizard não envia {field}.");

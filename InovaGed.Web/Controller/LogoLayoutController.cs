@@ -38,9 +38,21 @@ public sealed class LogoLayoutController(IDbConnectionFactory factory) : GedCont
         var item=Catalog.FirstOrDefault(x=>x.Code.Equals(templateCode,StringComparison.OrdinalIgnoreCase)); if(string.IsNullOrEmpty(item.Code))return NotFound();
         if(!ModelState.IsValid)return View("Edit",await Load(item,ct,input)); using var db=await OpenAsync();
         if(!await HasTableAsync(db,"ged","print_logo_selection")){ModelState.AddModelError("","A migration do Logo Layout Studio ainda não foi aplicada.");return View("Edit",await Load(item,ct,input));}
-        if(input.LogoAssetId is Guid asset && !await db.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from ged.brand_asset where id=@asset and tenant_id=@tenant and status='ACTIVE' and reg_status='A')",new{asset,tenant=TenantId},cancellationToken:ct)))return BadRequest("A logo não está ativa ou não pertence a este cliente.");
+        if(input.LogoAssetId is Guid asset && !await db.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from ged.brand_asset where id=@asset and tenant_id=@tenant and status='ACTIVE' and reg_status='A')",new{asset,tenant=TenantId},cancellationToken:ct)))
+        {
+            ModelState.AddModelError(nameof(input.LogoAssetId), "A logo selecionada não está ativa ou não pertence a este cliente.");
+            return View("Edit", await Load(item, ct, input));
+        }
         await db.ExecuteAsync(new CommandDefinition("""insert into ged.print_logo_selection(tenant_id,context,context_key,logo_asset_id,width_mm,height_mm,preserve_aspect_ratio,fit_mode,position,position_x_mm,position_y_mm,margin_top_mm,margin_left_mm,apply_to_all_copies,enabled,created_by) values(@tenant,'LABEL_TEMPLATE',@key,@LogoAssetId,@WidthMm,@HeightMm,@PreserveAspectRatio,@FitMode,@Position,@PositionXMm,@PositionYMm,@MarginTopMm,@MarginLeftMm,@ApplyToAllCopies,@Enabled,@user) on conflict (tenant_id,context,context_key) where reg_status='A' do update set logo_asset_id=excluded.logo_asset_id,width_mm=excluded.width_mm,height_mm=excluded.height_mm,preserve_aspect_ratio=excluded.preserve_aspect_ratio,fit_mode=excluded.fit_mode,position=excluded.position,position_x_mm=excluded.position_x_mm,position_y_mm=excluded.position_y_mm,margin_top_mm=excluded.margin_top_mm,margin_left_mm=excluded.margin_left_mm,apply_to_all_copies=excluded.apply_to_all_copies,enabled=excluded.enabled,updated_at=now()""",new{tenant=TenantId,key=item.Code,input.LogoAssetId,input.WidthMm,input.HeightMm,input.PreserveAspectRatio,input.FitMode,input.Position,input.PositionXMm,input.PositionYMm,input.MarginTopMm,input.MarginLeftMm,input.ApplyToAllCopies,input.Enabled,user=UserId},cancellationToken:ct));
         TempData["Success"]="Configuração visual da logo salva."; return RedirectToAction(nameof(Edit),new{templateCode=item.Code});
+    }
+
+    [HttpGet("{templateCode}/Save")]
+    public IActionResult SaveGetFallback(string templateCode)
+    {
+        if (!Catalog.Any(x => x.Code.Equals(templateCode, StringComparison.OrdinalIgnoreCase))) return NotFound();
+        TempData["Warning"] = "Use o botão Salvar configuração para gravar os ajustes da logo.";
+        return RedirectToAction(nameof(Edit), new { templateCode });
     }
 
     [HttpPost("{templateCode}/Preview"),ValidateAntiForgeryToken]
