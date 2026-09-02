@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using Dapper;
 using InovaGed.Application.Common.Database;
+using InovaGed.Application.Branding;
 using InovaGed.Web.Models.Branding;
 using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authorization;
@@ -10,7 +11,7 @@ namespace InovaGed.Web.Controllers;
 
 [Authorize]
 [Route("Administration/BrandAssets")]
-public sealed class BrandAssetsController(IDbConnectionFactory dbFactory, IWebHostEnvironment environment, IConfiguration configuration) : GedControllerBase(dbFactory)
+public sealed class BrandAssetsController(IDbConnectionFactory dbFactory, IWebHostEnvironment environment, IConfiguration configuration, IBrandAssetImageService images) : GedControllerBase(dbFactory)
 {
     private static readonly Dictionary<string, (string ContentType, byte[][] Signatures)> Allowed = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -119,7 +120,21 @@ public sealed class BrandAssetsController(IDbConnectionFactory dbFactory, IWebHo
     public IActionResult Preview(Guid id) => View("~/Views/Administration/BrandAssets/Preview.cshtml", new PrintLogoViewModel { LogoUrl=Url.Action(nameof(File),new{id}),Alt="Preview da logo oficial" });
 
     [HttpGet("{id:guid}/File")]
-    public async Task<IActionResult> File(Guid id, CancellationToken ct) { var asset=await FindAsync(id,ct); if(asset is null||!string.Equals(asset.Status,"ACTIVE",StringComparison.OrdinalIgnoreCase))return NotFound("Logo não encontrada."); var root=Path.GetFullPath(environment.WebRootPath).TrimEnd(Path.DirectorySeparatorChar)+Path.DirectorySeparatorChar; var path=Path.GetFullPath(Path.Combine(root,asset.StorageRelativePath.Replace('/',Path.DirectorySeparatorChar))); if(!path.StartsWith(root,StringComparison.Ordinal)||!System.IO.File.Exists(path))return NotFound("Logo não encontrada."); return PhysicalFile(path,asset.ContentType,enableRangeProcessing:true); }
+    public async Task<IActionResult> File(Guid id, CancellationToken ct) => await images.GetImageAsync(TenantId,id,ct) is { } image
+        ? File(image.Bytes,image.ContentType)
+        : NotFound("Logo não encontrada.");
+
+    [HttpGet("{id:guid}/Diagnostics")]
+    [Authorize(Policy = AppPolicies.Administracao)]
+    public async Task<IActionResult> Diagnostics(Guid id, CancellationToken ct)
+    {
+        var asset = await FindAsync(id,ct);
+        if (asset is null) return NotFound();
+        var image = await images.GetImageAsync(TenantId,id,ct);
+        ViewBag.ImageFound = image is not null;
+        ViewBag.DataUriAvailable = !string.IsNullOrWhiteSpace(image?.DataUri);
+        return View("~/Views/Administration/BrandAssets/Diagnostics.cshtml", asset);
+    }
 
     private async Task<BrandAssetVm?> FindAsync(Guid id,CancellationToken ct) { using var db=await OpenAsync(); return await db.QuerySingleOrDefaultAsync<BrandAssetVm>(new CommandDefinition("select id,brand_name BrandName,asset_name AssetName,original_file_name OriginalFileName,content_type ContentType,file_extension FileExtension,file_size_bytes FileSizeBytes,storage_relative_path StorageRelativePath,width_px WidthPx,height_px HeightPx,is_default IsDefault,status,created_at CreatedAt,default_width_mm DefaultWidthMm,default_height_mm DefaultHeightMm,preserve_aspect_ratio PreserveAspectRatio,fit_mode FitMode,default_position DefaultPosition,alt_text AltText from ged.brand_asset where id=@id and tenant_id=@tenant and reg_status='A'",new{id,tenant=TenantId},cancellationToken:ct)); }
 }

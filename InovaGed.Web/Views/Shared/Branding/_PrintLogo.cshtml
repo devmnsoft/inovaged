@@ -1,5 +1,5 @@
 @model InovaGed.Web.Models.Branding.IPrintLogo
-@if (Model is not null && Model.HasLogo)
+@if (Model is not null && Model.HasLogo && Model.ImageLoaded && !string.IsNullOrWhiteSpace(Model.PrintImageSource ?? Model.LogoUrl))
 {
     var imageSource = !string.IsNullOrWhiteSpace(Model.PrintImageSource) ? Model.PrintImageSource : Model.LogoUrl;
     if (!string.IsNullOrWhiteSpace(imageSource))
