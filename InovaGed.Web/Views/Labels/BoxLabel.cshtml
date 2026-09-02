@@ -70,7 +70,7 @@
     <link rel="stylesheet" href="~/css/print-branding.css" asp-append-version="true" />
 </head>
 
-<body><nav class="label-print-toolbar no-print"><a href="/Labels/PrintWizard">Voltar e editar</a><button type="button" data-label-print-now>Imprimir agora</button></nav>@if(ViewBag.PrintLogoWarning is string warning){<div class="label-logo-warning no-print" role="alert">@warning</div>}
+<body><nav class="label-print-toolbar no-print"><a href="/Labels/PrintWizard">Voltar e editar</a><button type="button" data-label-print-now onclick="window.print(); return false;">Imprimir agora</button></nav>@if(ViewBag.PrintLogoWarning is string warning){<div class="label-logo-warning no-print" role="alert">@warning</div>}
     <div class="label-card">
         @if(ViewBag.PrintLogo is InovaGed.Web.Models.Branding.ResolvedPrintLogo logo && logo.HasLogo){<partial name="Branding/_PrintLogo" model="logo" />}
         <div class="title">CAIXA #@Model.box_no</div>

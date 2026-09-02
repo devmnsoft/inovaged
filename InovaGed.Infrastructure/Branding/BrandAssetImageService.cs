@@ -43,8 +43,27 @@ public sealed class BrandAssetImageService(IDbConnectionFactory factory, IHostEn
         if (string.IsNullOrWhiteSpace(relativePath) || Path.IsPathRooted(relativePath)) return null;
         var root = Path.GetFullPath(Path.Combine(environment.ContentRootPath, "wwwroot"))
             .TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
-        var path = Path.GetFullPath(Path.Combine(root, relativePath.Replace('/', Path.DirectorySeparatorChar)));
-        return path.StartsWith(root, StringComparison.Ordinal) ? path : null;
+        var normalized = NormalizeStorageRelativePath(relativePath);
+        if (normalized is null) return null;
+        var path = Path.GetFullPath(Path.Combine(root, normalized.Replace('/', Path.DirectorySeparatorChar)));
+        return path.StartsWith(root, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)
+            ? path
+            : null;
+    }
+
+    // Older releases persisted values such as "~/wwwroot\\uploads\\...".  Keep
+    // those records readable, but never turn an absolute or traversing value into
+    // a filesystem path.
+    internal static string? NormalizeStorageRelativePath(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var normalized = value.Trim().Replace('\\', '/');
+        if (Path.IsPathRooted(normalized) || normalized.Length > 1 && normalized[1] == ':') return null;
+        while (normalized.StartsWith("~/", StringComparison.Ordinal)) normalized = normalized[2..];
+        normalized = normalized.TrimStart('/');
+        if (normalized.StartsWith("wwwroot/", StringComparison.OrdinalIgnoreCase)) normalized = normalized[8..];
+        if (normalized.Split('/', StringSplitOptions.RemoveEmptyEntries).Any(segment => segment is "." or "..")) return null;
+        return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
     }
 
     private sealed class AssetRow
