@@ -187,5 +187,12 @@
     "area": "Identidade visual de impressão",
     "required": true,
     "description": "Perfis visuais por cliente e contrato, vínculos por template e auditoria."
+  },
+  {
+    "name": "2026_09_02_logo_layout_studio_print",
+    "path": "database/migrations/2026_09_02_logo_layout_studio_print.sql",
+    "area": "Identidade visual de impressão",
+    "required": true,
+    "description": "Posicionamento fino, preview e validações de logos por modelo impresso."
   }
 ]

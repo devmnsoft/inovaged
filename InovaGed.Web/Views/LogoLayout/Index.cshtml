@@ -1,0 +1,9 @@
+@model IReadOnlyList<InovaGed.Web.Models.Labels.LogoLayoutCard>
+@{ ViewData["Title"]="Ajuste Visual da Logo"; }
+<link rel="stylesheet" href="~/css/logo-layout-studio.css" asp-append-version="true" />
+<main class="logo-layout-page atlas-page-shell">
+ <header class="logo-layout-hero"><span>LOGO LAYOUT STUDIO</span><h1>Ajuste Visual da Logo</h1><p>Configure posição, tamanho e encaixe da logo que será usada nas etiquetas e documentos impressos.</p></header>
+ <div class="logo-layout-grid">
+ @foreach(var card in Model){<article class="logo-layout-card"><div class="logo-layout-card__thumb"><strong>@card.Kind</strong><small>@card.Dimensions</small>@if(card.LogoUrl is not null){<span class="logo-layout-logo-frame"><img src="@card.LogoUrl" alt="Logo atualmente aplicada" /></span>}else{<span class="logo-layout-empty">Sem logo configurada</span>}</div><h2>@card.Name</h2><p>@card.Status</p><div class="logo-layout-actions"><a class="atlas-btn atlas-btn-primary" href="/Labels/LogoLayout/@card.Code">Ajustar</a><a class="atlas-btn atlas-btn-secondary" href="/Labels/LogoLayout/@card.Code/PrintTest">Testar impressão</a></div></article>}
+ </div>
+</main>
