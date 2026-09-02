@@ -24,7 +24,7 @@ public sealed class BrandAssetsController(IDbConnectionFactory dbFactory, IWebHo
     public async Task<IActionResult> Index(CancellationToken ct)
     {
         using var db = await OpenAsync();
-        var rows = await db.QueryAsync<BrandAssetVm>(new CommandDefinition("select id,brand_name BrandName,asset_name AssetName,original_file_name OriginalFileName,content_type ContentType,file_extension FileExtension,file_size_bytes FileSizeBytes,storage_relative_path StorageRelativePath,is_default IsDefault,status,created_at CreatedAt from ged.brand_asset where tenant_id=@tenant and reg_status='A' order by is_default desc,created_at desc", new { tenant = TenantId }, cancellationToken: ct));
+        var rows = await db.QueryAsync<BrandAssetVm>(new CommandDefinition("select id,brand_name BrandName,asset_name AssetName,original_file_name OriginalFileName,content_type ContentType,file_extension FileExtension,file_size_bytes FileSizeBytes,storage_relative_path StorageRelativePath,width_px WidthPx,height_px HeightPx,is_default IsDefault,status,created_at CreatedAt,default_width_mm DefaultWidthMm,default_height_mm DefaultHeightMm,preserve_aspect_ratio PreserveAspectRatio,fit_mode FitMode,default_position DefaultPosition,alt_text AltText from ged.brand_asset where tenant_id=@tenant and reg_status='A' order by is_default desc,created_at desc", new { tenant = TenantId }, cancellationToken: ct));
         return View(rows.AsList());
     }
 
@@ -67,6 +67,35 @@ public sealed class BrandAssetsController(IDbConnectionFactory dbFactory, IWebHo
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> Details(Guid id, CancellationToken ct) => await FindAsync(id, ct) is { } asset ? View(asset) : NotFound();
 
+    [HttpGet("{id:guid}/Edit")]
+    public async Task<IActionResult> Edit(Guid id, CancellationToken ct)
+    {
+        var asset = await FindAsync(id, ct);
+        if (asset is null) return NotFound();
+        return View(new BrandAssetEditInput { Id=asset.Id, BrandName=asset.BrandName, AssetName=asset.AssetName,
+            DefaultWidthMm=asset.DefaultWidthMm, DefaultHeightMm=asset.DefaultHeightMm,
+            PreserveAspectRatio=asset.PreserveAspectRatio, FitMode=asset.FitMode,
+            DefaultPosition=asset.DefaultPosition, IsDefault=asset.IsDefault, AltText=asset.AltText });
+    }
+
+    [HttpPost("{id:guid}/Edit"), ValidateAntiForgeryToken]
+    public async Task<IActionResult> Edit(Guid id, BrandAssetEditInput input, CancellationToken ct)
+    {
+        if (id != input.Id) return BadRequest();
+        if (!ModelState.IsValid) return View(input);
+        using var db = await OpenAsync(); using var tx = db.BeginTransaction();
+        if (input.IsDefault) await db.ExecuteAsync(new CommandDefinition("update ged.brand_asset set is_default=false where tenant_id=@tenant and reg_status='A'",new{tenant=TenantId},tx,cancellationToken:ct));
+        var changed = await db.ExecuteAsync(new CommandDefinition("""
+            update ged.brand_asset set brand_name=@BrandName,asset_name=@AssetName,default_width_mm=@DefaultWidthMm,
+              default_height_mm=@DefaultHeightMm,preserve_aspect_ratio=@PreserveAspectRatio,fit_mode=@FitMode,
+              default_position=@DefaultPosition,alt_text=@AltText,is_default=@IsDefault,updated_at=now()
+            where id=@Id and tenant_id=@TenantId and status='ACTIVE' and reg_status='A'
+            """,new{input.BrandName,input.AssetName,input.DefaultWidthMm,input.DefaultHeightMm,input.PreserveAspectRatio,input.FitMode,input.DefaultPosition,input.AltText,input.IsDefault,Id=id,TenantId},tx,cancellationToken:ct));
+        if (changed == 0) return NotFound();
+        tx.Commit(); TempData["Success"]="Configuração de impressão da logo atualizada.";
+        return RedirectToAction(nameof(Index));
+    }
+
     [HttpPost("{id:guid}/SetDefault"), ValidateAntiForgeryToken]
     public async Task<IActionResult> SetDefault(Guid id, CancellationToken ct) { using var db=await OpenAsync(); using var tx=db.BeginTransaction(); var exists=await db.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from ged.brand_asset where id=@id and tenant_id=@tenant and reg_status='A' and status='ACTIVE')",new{id,tenant=TenantId},tx,cancellationToken:ct)); if(!exists)return NotFound(); await db.ExecuteAsync(new CommandDefinition("update ged.brand_asset set is_default=(id=@id) where tenant_id=@tenant and reg_status='A'",new{id,tenant=TenantId},tx,cancellationToken:ct)); tx.Commit(); return RedirectToAction(nameof(Index)); }
 
@@ -79,5 +108,5 @@ public sealed class BrandAssetsController(IDbConnectionFactory dbFactory, IWebHo
     [HttpGet("{id:guid}/File")]
     public async Task<IActionResult> File(Guid id, CancellationToken ct) { var asset=await FindAsync(id,ct); if(asset is null)return NotFound("Logo não encontrada."); var root=Path.GetFullPath(environment.WebRootPath); var path=Path.GetFullPath(Path.Combine(root,asset.StorageRelativePath.Replace('/',Path.DirectorySeparatorChar))); if(!path.StartsWith(root,StringComparison.Ordinal)||!System.IO.File.Exists(path))return NotFound("Logo não encontrada."); return PhysicalFile(path,asset.ContentType,enableRangeProcessing:true); }
 
-    private async Task<BrandAssetVm?> FindAsync(Guid id,CancellationToken ct) { using var db=await OpenAsync(); return await db.QuerySingleOrDefaultAsync<BrandAssetVm>(new CommandDefinition("select id,brand_name BrandName,asset_name AssetName,original_file_name OriginalFileName,content_type ContentType,file_extension FileExtension,file_size_bytes FileSizeBytes,storage_relative_path StorageRelativePath,is_default IsDefault,status,created_at CreatedAt from ged.brand_asset where id=@id and tenant_id=@tenant and reg_status='A'",new{id,tenant=TenantId},cancellationToken:ct)); }
+    private async Task<BrandAssetVm?> FindAsync(Guid id,CancellationToken ct) { using var db=await OpenAsync(); return await db.QuerySingleOrDefaultAsync<BrandAssetVm>(new CommandDefinition("select id,brand_name BrandName,asset_name AssetName,original_file_name OriginalFileName,content_type ContentType,file_extension FileExtension,file_size_bytes FileSizeBytes,storage_relative_path StorageRelativePath,width_px WidthPx,height_px HeightPx,is_default IsDefault,status,created_at CreatedAt,default_width_mm DefaultWidthMm,default_height_mm DefaultHeightMm,preserve_aspect_ratio PreserveAspectRatio,fit_mode FitMode,default_position DefaultPosition,alt_text AltText from ged.brand_asset where id=@id and tenant_id=@tenant and reg_status='A'",new{id,tenant=TenantId},cancellationToken:ct)); }
 }

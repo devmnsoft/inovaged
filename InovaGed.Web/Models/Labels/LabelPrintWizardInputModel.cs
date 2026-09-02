@@ -8,6 +8,10 @@ public sealed class LabelPrintWizardInputModel : IValidatableObject
     public Guid? PrintProfileId { get; set; }
     public string LogoSelection { get; set; } = "TEMPLATE_DEFAULT";
     public Guid? SelectedLogoAssetId { get; set; }
+    [Range(10,90)] public decimal? SelectedLogoWidthMm { get; set; }
+    [Range(5,60)] public decimal? SelectedLogoHeightMm { get; set; }
+    public bool PreserveLogoAspectRatio { get; set; } = true;
+    [RegularExpression("CONTAIN|COVER|FILL")] public string LogoFitMode { get; set; } = "CONTAIN";
     public Guid? PrintBrandingProfileId { get; set; }
     public LocDeskLabelInputModel CustomFields { get; set; }=new();
     public IEnumerable<ValidationResult> Validate(ValidationContext c)

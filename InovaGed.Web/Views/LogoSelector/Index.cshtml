@@ -1,0 +1,5 @@
+@model IReadOnlyList<InovaGed.Web.Models.Branding.BrandAssetVm>
+@{ ViewData["Title"]="Selecionar logo"; var returnUrl=(string)ViewBag.ReturnUrl; }
+@section Styles { <link rel="stylesheet" href="~/css/brand-assets.css" asp-append-version="true" /> }
+<main class="atlas-page"><section class="atlas-page-hero brand-assets-hero"><div><small>Impressão</small><h1>Selecionar logo</h1><p>Escolha uma arte oficial do seu tenant ou envie uma nova.</p></div><a class="atlas-btn atlas-btn-primary" href="/Administration/BrandAssets/Create?returnUrl=@Uri.EscapeDataString(returnUrl)">Enviar nova logo</a></section>
+@if(!Model.Any()){<div class="atlas-empty-state">Nenhuma logo ativa cadastrada.</div>}else{<div class="brand-assets-grid">@foreach(var asset in Model){<a class="atlas-action-card brand-asset-card" href="@($"{returnUrl}?selectedLogoAssetId={asset.Id}")"><div class="brand-asset-preview"><img src="@asset.FileUrl" alt="@asset.AssetName" /></div><strong>@asset.AssetName</strong><span>@asset.BrandName</span>@if(asset.IsDefault){<span class="atlas-status-badge">Padrão</span>}</a>}</div>}</main>
