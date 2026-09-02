@@ -46,10 +46,12 @@ public class LabelsController : GedControllerBase
     private readonly ILabelPrintJobService _printJobs;
     private readonly ILabelPdfRenderService _pdf;
     private readonly ILabelPrintLogoResolver _logoResolver;
+    private readonly ILogger<LabelsController> _logger;
 
     public LabelsController(IDbConnectionFactory dbFactory, ILabelPrintRegistrar printRegistrar,
         ILabelTemplateService templates, ILabelQrCodeService qrCodes, ILabelPayloadBuilder payloadBuilder, ILabelTemplateCatalogService catalog, InovaGed.Application.Labels.ILabelTemplateManager templateManager,
-        ILabelPrintJobService printJobs, ILabelPdfRenderService pdf, ILabelPrintLogoResolver logoResolver) : base(dbFactory)
+        ILabelPrintJobService printJobs, ILabelPdfRenderService pdf, ILabelPrintLogoResolver logoResolver,
+        ILogger<LabelsController> logger) : base(dbFactory)
     {
         _printRegistrar = printRegistrar;
         _templates = templates;
@@ -57,7 +59,7 @@ public class LabelsController : GedControllerBase
         _payloadBuilder = payloadBuilder;
         _catalog = catalog;
         _templateManager = templateManager;
-        _printJobs=printJobs; _pdf=pdf; _logoResolver=logoResolver;
+        _printJobs=printJobs; _pdf=pdf; _logoResolver=logoResolver; _logger=logger;
     }
 
     [HttpGet("/Labels/Templates")]
@@ -301,14 +303,28 @@ public class LabelsController : GedControllerBase
     [HttpPost, ValidateAntiForgeryToken]
     public async Task<IActionResult> Preview(LabelPrintWizardInputModel input, CancellationToken ct)
     {
-        HttpContext.RequestServices.GetRequiredService<ILogger<LabelsController>>().LogInformation(
-            "Labels preview logo selection: TemplateCode={TemplateCode}, SelectedLogoAssetIdPresent={SelectedLogoAssetIdPresent}",
-            input.TemplateCode, input.SelectedLogoAssetId.HasValue);
+        LogLogoSelection(nameof(Preview), input);
         return await BuildLabelRenderModelAsync(input, isRealPrint: false, ct);
     }
 
     [HttpPost, ValidateAntiForgeryToken]
-    public async Task<IActionResult> Print(LabelPrintWizardInputModel input, CancellationToken ct) => await BuildLabelRenderModelAsync(input, isRealPrint: true, ct);
+    public async Task<IActionResult> PrintPreview(LabelPrintWizardInputModel input, CancellationToken ct)
+    {
+        LogLogoSelection(nameof(PrintPreview), input);
+        return await BuildLabelRenderModelAsync(input, isRealPrint: false, ct);
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Print(LabelPrintWizardInputModel input, CancellationToken ct)
+    {
+        LogLogoSelection(nameof(Print), input);
+        return await BuildLabelRenderModelAsync(input, isRealPrint: true, ct);
+    }
+
+    private void LogLogoSelection(string action, LabelPrintWizardInputModel input) =>
+        _logger.LogInformation(
+            "Label render logo selection: Action={Action}, TemplateCode={TemplateCode}, SelectedLogoAssetIdPresent={SelectedLogoAssetIdPresent}",
+            action, input.TemplateCode, input.SelectedLogoAssetId.HasValue);
 
     [HttpPost, ValidateAntiForgeryToken]
     public async Task<IActionResult> PrintBatch(LabelBatchPrintInputModel input, CancellationToken ct)
@@ -371,7 +387,7 @@ public class LabelsController : GedControllerBase
         if (register && wasPrinted && string.IsNullOrWhiteSpace(input.ReprintReason)) { ModelState.AddModelError(nameof(input.ReprintReason), "Informe o motivo da reimpressão para preservar a rastreabilidade."); await PopulatePrintWizardLookupsAsync(input, ct); return View("PrintWizard", input); }
         var resolvedLogo=await _logoResolver.ResolveAsync(TenantId,template.Code,input.LogoSelection,input.SelectedLogoAssetId,input.LogoWidthMm,input.LogoHeightMm,input.PreserveAspectRatio,input.LogoFitMode,input.LogoPosition,input.LogoOffsetXmm??0,input.LogoOffsetYmm??0,ct);
         var printLogo=PrintLogoViewModelMapper.FromResolved(resolvedLogo);
-        HttpContext.RequestServices.GetRequiredService<ILogger<LabelsController>>().LogInformation(
+        _logger.LogInformation(
             "Labels {Operation}: TemplateCode={TemplateCode}; SelectedLogoAssetId preenchido={HasSelectedLogo}; HasLogo={HasLogo}; ImageLoaded={ImageLoaded}; DataUri={HasDataUri}",
             register ? "Print" : "Preview", template.Code, input.SelectedLogoAssetId.HasValue,
             printLogo.HasLogo, printLogo.ImageLoaded,

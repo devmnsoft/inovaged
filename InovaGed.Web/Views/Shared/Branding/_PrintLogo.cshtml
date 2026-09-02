@@ -1,12 +1,15 @@
 @model InovaGed.Web.Models.Branding.PrintLogoViewModel
-@{ var imageSource = Model?.PrintImageSource; }
-@if (Model is not null && Model.HasLogo && Model.ImageLoaded && !string.IsNullOrWhiteSpace(imageSource))
+@if (Model is not null && Model.HasLogo && Model.ImageLoaded &&
+    !string.IsNullOrWhiteSpace(Model.PrintImageSource) &&
+    Model.PrintImageSource.StartsWith("data:image/", StringComparison.OrdinalIgnoreCase))
 {
     var width = Model.WidthMm <= 0 ? 38 : Model.WidthMm;
-    var height = Model.HeightMm is > 0 ? $"height:{Model.HeightMm.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}mm;" : "height:auto;";
     var fitMode = string.IsNullOrWhiteSpace(Model.FitMode) ? "contain" : Model.FitMode.ToLowerInvariant();
-    var fit = Model.PreserveAspectRatio ? fitMode : "fill";
-    <span class="print-logo-frame print-logo-fit-@fit" style="width:@(width.ToString(System.Globalization.CultureInfo.InvariantCulture))mm;@height">
-        <img src="@Model.PrintImageSource" alt="@Model.Alt" class="print-brand-logo @Model.CssClass" />
+    var heightStyle = Model.HeightMm.HasValue && Model.HeightMm.Value > 0
+        ? $"height:{Model.HeightMm.Value:0.##}mm;"
+        : "height:auto;";
+    <span class="print-logo-frame print-logo-fit-@fitMode"
+          style="width:@width.ToString("0.##")mm;@heightStyle">
+        <img src="@Model.PrintImageSource" alt="@Model.Alt" class="print-brand-logo" />
     </span>
 }

@@ -2,3 +2,10 @@
 @media(max-width:991.98px){.label-wizard-layout{grid-template-columns:1fr}.label-wizard-preview{order:-1}.label-wizard-preview__sticky{position:static}}
 @media(max-width:700px){.label-wizard-hero{flex-direction:column}.label-wizard-steps,.label-mode-grid,.label-template-grid,.label-origin-grid,.label-config-grid{grid-template-columns:1fr}.label-wizard-actions{justify-content:stretch}.label-wizard-actions>*{flex:1 1 100%}}
 .label-preview-locdesk-logo{display:block;width:7rem;height:3.8rem;object-fit:contain}.label-preview-locdesk-logo[hidden],.label-preview-factory-brand[hidden]{display:none}.label-preview-factory-brand{display:flex;align-items:center;gap:.45rem}
+
+/* RC10: status e ações permanecem claros nas duas colunas do fluxo. */
+.label-logo-status { display:flex; justify-content:space-between; gap:1rem; margin-top:1rem; padding:.75rem 1rem; border-radius:.75rem; background:#eef6ff; color:#17324d; }
+.label-preview-actions { display:grid; gap:.65rem; margin-top:1rem; }
+.label-preview-actions .btn { width:100%; min-height:2.75rem; }
+.label-preview-paper { background:#f8fafc; padding:1.25rem; }
+@media (min-width: 1200px) { .label-wizard-layout { grid-template-columns:minmax(0, 1.35fr) minmax(22rem, .65fr); } }
