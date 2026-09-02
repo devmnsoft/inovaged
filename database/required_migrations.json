@@ -1,5 +1,19 @@
 [
   {
+    "name": "2026_09_02_brand_asset_resize_selector_fix",
+    "path": "database/migrations/2026_09_02_brand_asset_resize_selector_fix.sql",
+    "area": "Identidade de impressão",
+    "required": true,
+    "description": "Adiciona dimensões em milímetros, encaixe seguro e seleção de logo por contexto."
+  },
+  {
+    "name": "2026_09_02_smart_workflow_schema_fix",
+    "path": "database/migrations/2026_09_02_smart_workflow_schema_fix.sql",
+    "area": "Workflow Inteligente",
+    "required": true,
+    "description": "Hotfix idempotente que garante as quatro tabelas exigidas pelo startup e pelo módulo SmartWorkflow."
+  },
+  {
     "name": "2026_09_01_brand_logo_upload_print",
     "path": "database/migrations/2026_09_01_brand_logo_upload_print.sql",
     "area": "Identidade de impressão",

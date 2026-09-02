@@ -24,6 +24,30 @@ public sealed class BrandAssetVm
     public bool IsDefault { get; set; }
     public string Status { get; set; } = "ACTIVE";
     public DateTimeOffset CreatedAt { get; set; }
+    public int? WidthPx { get; set; }
+    public int? HeightPx { get; set; }
+    public decimal DefaultWidthMm { get; set; } = 38;
+    public decimal? DefaultHeightMm { get; set; }
+    public bool PreserveAspectRatio { get; set; } = true;
+    public string FitMode { get; set; } = "CONTAIN";
+    public string DefaultPosition { get; set; } = "TOP_LEFT";
+    public string? AltText { get; set; }
+    public string FileUrl => $"/Administration/BrandAssets/{Id}/File";
+}
+
+public sealed class BrandAssetEditInput
+{
+    public Guid Id { get; set; }
+    [Required, StringLength(160)] public string BrandName { get; set; } = "";
+    [Required, StringLength(160)] public string AssetName { get; set; } = "";
+    [Range(10, 90)] public decimal DefaultWidthMm { get; set; } = 38;
+    [Range(5, 60)] public decimal? DefaultHeightMm { get; set; }
+    public bool PreserveAspectRatio { get; set; } = true;
+    [RegularExpression("CONTAIN|COVER|FILL")] public string FitMode { get; set; } = "CONTAIN";
+    [RegularExpression("TOP_LEFT|TOP_CENTER|TOP_RIGHT|CENTER|BOTTOM_LEFT|BOTTOM_CENTER|BOTTOM_RIGHT")] public string DefaultPosition { get; set; } = "TOP_LEFT";
+    public bool IsDefault { get; set; }
+    [StringLength(500)] public string? Notes { get; set; }
+    [StringLength(300)] public string? AltText { get; set; }
     public string FileUrl => $"/Administration/BrandAssets/{Id}/File";
 }
 
@@ -35,6 +59,7 @@ public sealed class PrintLogoViewModel
     public decimal WidthMm { get; set; } = 38;
     public decimal? HeightMm { get; set; }
     public bool PreserveAspectRatio { get; set; } = true;
+    public string FitMode { get; set; } = "CONTAIN";
 }
 
 public sealed class PrintableDocumentHeaderViewModel

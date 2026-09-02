@@ -1,0 +1,23 @@
+@model InovaGed.Web.Models.Branding.BrandAssetEditInput
+@{ ViewData["Title"] = "Configurar logo para impressão"; }
+@section Styles { <link rel="stylesheet" href="~/css/brand-assets.css" asp-append-version="true" /><link rel="stylesheet" href="~/css/print-branding.css" asp-append-version="true" /> }
+<main class="atlas-page">
+ <section class="atlas-page-hero brand-assets-hero"><div><small>Identidade visual</small><h1>Configurar logo para impressão</h1><p>Ajuste dimensões físicas e encaixe sem alterar a arte oficial.</p></div></section>
+ <form method="post" class="atlas-card mt-4" id="logo-edit"><input asp-for="Id" type="hidden" />@Html.AntiForgeryToken()
+  <div asp-validation-summary="All" class="atlas-alert atlas-alert-danger"></div>
+  <div class="brand-editor-grid"><div>
+   <label asp-for="BrandName">Empresa/Marca</label><input asp-for="BrandName" class="form-control" />
+   <label asp-for="AssetName">Nome da logo</label><input asp-for="AssetName" class="form-control" />
+   <label asp-for="DefaultWidthMm">Largura padrão (mm)</label><input asp-for="DefaultWidthMm" class="form-control" type="number" min="10" max="90" step="0.1" />
+   <label asp-for="DefaultHeightMm">Altura padrão (mm)</label><input asp-for="DefaultHeightMm" class="form-control" type="number" min="5" max="60" step="0.1" />
+   <label><input asp-for="PreserveAspectRatio" /> Manter proporção</label>
+   <label asp-for="FitMode">Modo de encaixe</label><select asp-for="FitMode" class="form-select" id="fit-mode"><option value="CONTAIN">CONTAIN — preservar sem cortar</option><option value="COVER">COVER — preencher, pode cortar</option><option value="FILL">FILL — forçar dimensões</option></select>
+   <div id="fill-warning" class="atlas-alert atlas-alert-warning" hidden>FILL pode deformar a logo. Prefira CONTAIN com proporção preservada.</div>
+   <label asp-for="DefaultPosition">Posição padrão</label><select asp-for="DefaultPosition" class="form-select"><option value="TOP_LEFT">Superior esquerda</option><option value="TOP_CENTER">Superior centro</option><option value="TOP_RIGHT">Superior direita</option><option value="CENTER">Centro</option><option value="BOTTOM_LEFT">Inferior esquerda</option><option value="BOTTOM_CENTER">Inferior centro</option><option value="BOTTOM_RIGHT">Inferior direita</option></select>
+   <label asp-for="AltText">Texto alternativo</label><input asp-for="AltText" class="form-control" />
+   <label><input asp-for="IsDefault" /> Usar como padrão</label>
+  </div><div><h2>Preview real</h2><span class="print-logo-frame print-logo-fit-contain" id="live-frame"><img src="@Model.FileUrl" alt="Preview da logo" class="print-brand-logo" /></span></div></div>
+  <footer><a asp-action="Index" class="atlas-btn atlas-btn-secondary">Cancelar</a><button type="submit" class="atlas-btn atlas-btn-primary">Salvar configuração</button></footer>
+ </form>
+</main>
+@section Scripts { <partial name="_ValidationScriptsPartial" /><script src="~/js/brand-asset-editor.js" asp-append-version="true"></script> }

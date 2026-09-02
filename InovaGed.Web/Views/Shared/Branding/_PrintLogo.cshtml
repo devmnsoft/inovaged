@@ -1,9 +1,10 @@
 @model InovaGed.Web.Models.Branding.PrintLogoViewModel
 @if (!string.IsNullOrWhiteSpace(Model.LogoUrl))
 {
-    var height = Model.HeightMm.HasValue ? $"height:{Model.HeightMm.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}mm;" : "";
-    var fit = Model.PreserveAspectRatio ? "object-fit:contain;" : "";
-    <span class="print-brand-logo-frame" style="width:@(Model.WidthMm.ToString(System.Globalization.CultureInfo.InvariantCulture))mm;@height">
-        <img src="@Model.LogoUrl" alt="@Model.Alt" class="print-brand-logo @Model.CssClass" style="@fit" />
+    var width = Model.WidthMm <= 0 ? 38 : Model.WidthMm;
+    var height = Model.HeightMm is > 0 ? $"height:{Model.HeightMm.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}mm;" : "height:auto;";
+    var fit = Model.PreserveAspectRatio ? Model.FitMode.ToLowerInvariant() : "fill";
+    <span class="print-logo-frame print-logo-fit-@fit" style="width:@(width.ToString(System.Globalization.CultureInfo.InvariantCulture))mm;@height">
+        <img src="@Model.LogoUrl" alt="@Model.Alt" class="print-brand-logo @Model.CssClass" />
     </span>
 }

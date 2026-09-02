@@ -3074,3 +3074,7 @@ where coalesce(reg_status, 'A') = 'A';
 \ir migrations/2026_08_31_label_traceability_2.sql
 \ir migrations/2026_09_01_brand_logo_upload_print.sql
 \ir migrations/2026_09_01_print_branding_center_2.sql
+
+-- Brand Logo Print Selector + SmartWorkflow Schema Fix (2026-09-02)
+\ir migrations/2026_09_02_brand_asset_resize_selector_fix.sql
+\ir migrations/2026_09_02_smart_workflow_schema_fix.sql
