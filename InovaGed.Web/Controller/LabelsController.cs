@@ -9,6 +9,7 @@ using InovaGed.Web.Models;
 using InovaGed.Application.Labels.Printing;
 using System.Text.Json;
 using System.Data;
+using System.Text;
 using InovaGed.Web.Services;
 using InovaGed.Web.Models.Branding;
 
@@ -956,7 +957,7 @@ values(@id,@tid,@LabelKind,@ArchiveTitle,@ProcessNumber,@ControlNumber,@VolumeNu
             return View(Array.Empty<dynamic>());
         }
 
-        var rows = await db.QueryAsync(@"
+        var sql = new StringBuilder(@"
 select
     lp.id,
     lp.label_subject_type as label_type,
@@ -992,28 +993,34 @@ left join ged.document d
   on d.tenant_id=lp.tenant_id
  and d.id=lp.label_subject_id and lp.label_subject_type='DOCUMENT'
 where lp.tenant_id=@tid
-  and (@startDate is null or lp.printed_at >= @startDate)
-  and (@endDateExclusive is null or lp.printed_at < @endDateExclusive)
-  and (@type='' or lp.label_subject_type=@type)
-  and (@template='' or lp.template_code=@template)
-  and (@mode='' or @mode=coalesce(lp.snapshot_json->>'printMode',case when lp.template_code like 'LOCDESK%' then 'CUSTOM' else 'FACTORY' end))
-  and (@user='' or coalesce(u.name,'') ilike ('%'||@user||'%'))
-  and (
-    @q = ''
-    or coalesce(lp.label_subject_type,'') ilike ('%'||@q||'%')
-    or coalesce(b.label_code,'') ilike ('%'||@q||'%')
-    or coalesce(b.box_no::text,'') ilike ('%'||@q||'%')
-    or coalesce(d.code,'') ilike ('%'||@q||'%')
-    or coalesce(d.title,'') ilike ('%'||@q||'%')
-    or coalesce(u.name,'') ilike ('%'||@q||'%')
-    or coalesce(lp.template_code,'') ilike ('%'||@q||'%')
-    or coalesce(lp.snapshot_json->>'controlNumber','') ilike ('%'||@q||'%')
-    or coalesce(lp.snapshot_json->>'location','') ilike ('%'||@q||'%')
-    or coalesce(lp.snapshot_json->>'subject','') ilike ('%'||@q||'%')
-    or coalesce(lp.snapshot_json->>'classification','') ilike ('%'||@q||'%')
-  )
-order by lp.printed_at desc
-limit 500;", new { tid = TenantId, q, user, mode, template, type, startDate=startDate?.Date, endDateExclusive=endDate?.Date.AddDays(1) });
+");
+        var parameters = new DynamicParameters();
+        parameters.Add("tid", TenantId, DbType.Guid);
+        if (startDate.HasValue) { sql.AppendLine("and lp.printed_at >= @startDate"); parameters.Add("startDate", startDate.Value.Date, DbType.DateTime); }
+        if (endDate.HasValue) { sql.AppendLine("and lp.printed_at < @endDateExclusive"); parameters.Add("endDateExclusive", endDate.Value.Date.AddDays(1), DbType.DateTime); }
+        if (!string.IsNullOrWhiteSpace(type)) { sql.AppendLine("and lp.label_subject_type = @type"); parameters.Add("type", type, DbType.String); }
+        if (!string.IsNullOrWhiteSpace(template)) { sql.AppendLine("and lp.template_code = @template"); parameters.Add("template", template, DbType.String); }
+        if (!string.IsNullOrWhiteSpace(mode)) { sql.AppendLine("and @mode = coalesce(lp.snapshot_json->>'printMode', case when lp.template_code like 'LOCDESK%' then 'CUSTOM' else 'FACTORY' end)"); parameters.Add("mode", mode, DbType.String); }
+        if (!string.IsNullOrWhiteSpace(user)) { sql.AppendLine("and coalesce(u.name,'') ilike @user"); parameters.Add("user", $"%{user}%", DbType.String); }
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            sql.AppendLine(@"and (
+    coalesce(lp.label_subject_type,'') ilike @q
+    or coalesce(b.label_code,'') ilike @q
+    or coalesce(b.box_no::text,'') ilike @q
+    or coalesce(d.code,'') ilike @q
+    or coalesce(d.title,'') ilike @q
+    or coalesce(u.name,'') ilike @q
+    or coalesce(lp.template_code,'') ilike @q
+    or coalesce(lp.snapshot_json->>'controlNumber','') ilike @q
+    or coalesce(lp.snapshot_json->>'location','') ilike @q
+    or coalesce(lp.snapshot_json->>'subject','') ilike @q
+    or coalesce(lp.snapshot_json->>'classification','') ilike @q
+  )");
+            parameters.Add("q", $"%{q}%", DbType.String);
+        }
+        sql.AppendLine("order by lp.printed_at desc limit 500;");
+        var rows = await db.QueryAsync(sql.ToString(), parameters);
 
         return View(rows);
     }
