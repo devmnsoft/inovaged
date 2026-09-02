@@ -3079,3 +3079,6 @@ where coalesce(reg_status, 'A') = 'A';
 \ir migrations/2026_09_02_brand_asset_resize_selector_fix.sql
 \ir migrations/2026_09_02_smart_workflow_schema_fix.sql
 \ir migrations/2026_09_02_logo_layout_studio_print.sql
+
+-- BrandAssets Runtime Fix + Logo Selector Resize UX
+\ir migrations/2026_09_02_brand_assets_create_view_and_resize_fix.sql

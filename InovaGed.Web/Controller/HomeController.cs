@@ -29,6 +29,16 @@ public class HomeController : Controller
         return Redirect(target);
     }
 
+    [HttpGet("/status")]
+    [HttpGet("/Home/Status")]
+    [AllowAnonymous]
+    public IActionResult ApplicationStatus() => Ok(new
+    {
+        status = "ok",
+        application = "InovaGED",
+        timestamp = DateTimeOffset.UtcNow
+    });
+
     [AllowAnonymous]
     [Route("Home/Error")]
     public IActionResult Error()
