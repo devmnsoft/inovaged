@@ -8,13 +8,13 @@ public sealed class LabelPrintWizardInputModel : IValidatableObject
     public Guid? PrintProfileId { get; set; }
     public string LogoSelection { get; set; } = "TEMPLATE_DEFAULT";
     public Guid? SelectedLogoAssetId { get; set; }
-    [Range(10,90)] public decimal? SelectedLogoWidthMm { get; set; }
-    [Range(5,60)] public decimal? SelectedLogoHeightMm { get; set; }
-    public bool PreserveLogoAspectRatio { get; set; } = true;
+    [Range(10,90)] public decimal? LogoWidthMm { get; set; }
+    [Range(5,60)] public decimal? LogoHeightMm { get; set; }
+    public bool PreserveAspectRatio { get; set; } = true;
     [RegularExpression("CONTAIN|COVER|FILL")] public string LogoFitMode { get; set; } = "CONTAIN";
     [RegularExpression("TOP_LEFT|TOP_CENTER|TOP_RIGHT|CENTER|BOTTOM_LEFT|BOTTOM_CENTER|BOTTOM_RIGHT")] public string LogoPosition { get; set; } = "TOP_LEFT";
-    [Range(-100,100)] public decimal LogoOffsetXmm { get; set; }
-    [Range(-100,100)] public decimal LogoOffsetYmm { get; set; }
+    [Range(-100,100)] public decimal? LogoOffsetXmm { get; set; }
+    [Range(-100,100)] public decimal? LogoOffsetYmm { get; set; }
     public Guid? PrintBrandingProfileId { get; set; }
     public LocDeskLabelInputModel CustomFields { get; set; }=new();
     public IEnumerable<ValidationResult> Validate(ValidationContext c)

@@ -19,7 +19,7 @@ public sealed class BrandAssetImageService(IDbConnectionFactory factory, IHostEn
             select id, brand_name as BrandName, content_type as ContentType,
                    storage_relative_path as StorageRelativePath, width_px as WidthPx, height_px as HeightPx
             from ged.brand_asset
-            where id=@assetId and tenant_id=@tenantId and status='ACTIVE' and reg_status='A'
+            where id=@assetId and (tenant_id=@tenantId or tenant_id is null) and status='ACTIVE' and reg_status='A'
             """, new { tenantId, assetId }, cancellationToken: ct));
         if (asset is null || !AllowedContentTypes.Contains(asset.ContentType)) return null;
 
