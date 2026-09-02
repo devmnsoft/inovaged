@@ -3082,3 +3082,6 @@ where coalesce(reg_status, 'A') = 'A';
 
 -- BrandAssets Runtime Fix + Logo Selector Resize UX
 \ir migrations/2026_09_02_brand_assets_create_view_and_resize_fix.sql
+
+-- Labels Branding Fix RC5
+\ir migrations/2026_09_02_label_history_branding_fix.sql

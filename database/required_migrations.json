@@ -201,5 +201,12 @@
     "area": "Identidade visual de impressão",
     "required": true,
     "description": "Corrige as views de logos e garante seleção, dimensões, proporção e posição por contexto."
+  },
+  {
+    "name": "2026_09_02_label_history_branding_fix",
+    "path": "database/migrations/2026_09_02_label_history_branding_fix.sql",
+    "area": "Etiquetas",
+    "required": true,
+    "description": "Corrige auditoria da identidade visual utilizada na impressão de etiquetas."
   }
 ]

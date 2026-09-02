@@ -1,4 +1,5 @@
 using InovaGed.Application.Labels;
+using InovaGed.Web.Models.Branding;
 namespace InovaGed.Web.Models.Labels;
 public sealed class LocDeskLabelRenderModel
 {
@@ -7,4 +8,5 @@ public sealed class LocDeskLabelRenderModel
     public bool PrintRegistered { get; init; }
     public LabelTemplateDetails? Template { get; init; }
     public IReadOnlyList<LocDeskLabelInputModel> Labels { get; init; } = [];
+    public ResolvedPrintLogo? PrintLogo { get; init; }
 }

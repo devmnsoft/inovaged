@@ -55,7 +55,8 @@ public sealed class BrandAssetEditInput
     public string FileUrl => $"/Administration/BrandAssets/{Id}/File";
 }
 
-public sealed class PrintLogoViewModel
+public interface IPrintLogo { string? LogoUrl { get; } string Alt { get; } decimal WidthMm { get; } decimal? HeightMm { get; } bool PreserveAspectRatio { get; } string FitMode { get; } bool HasLogo { get; } }
+public sealed class PrintLogoViewModel : IPrintLogo
 {
     public string? LogoUrl { get; set; }
     public string Alt { get; set; } = "Logo oficial";
@@ -64,7 +65,9 @@ public sealed class PrintLogoViewModel
     public decimal? HeightMm { get; set; }
     public bool PreserveAspectRatio { get; set; } = true;
     public string FitMode { get; set; } = "CONTAIN";
+    public bool HasLogo => !string.IsNullOrWhiteSpace(LogoUrl);
 }
+public sealed record ResolvedPrintLogo(Guid? AssetId,string? BrandName,string? LogoUrl,string Alt,decimal WidthMm,decimal? HeightMm,bool PreserveAspectRatio,string FitMode,string Position,decimal OffsetXmm,decimal OffsetYmm,bool HasLogo) : IPrintLogo;
 
 public sealed class PrintableDocumentHeaderViewModel
 {
