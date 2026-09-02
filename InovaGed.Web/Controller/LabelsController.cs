@@ -10,6 +10,7 @@ using InovaGed.Application.Labels.Printing;
 using System.Text.Json;
 using System.Data;
 using InovaGed.Web.Services;
+using InovaGed.Web.Models.Branding;
 
 namespace InovaGed.Web.Controllers;
 
