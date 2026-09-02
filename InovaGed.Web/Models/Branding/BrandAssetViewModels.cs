@@ -55,7 +55,7 @@ public sealed class BrandAssetEditInput
     public string FileUrl => $"/Administration/BrandAssets/{Id}/File";
 }
 
-public interface IPrintLogo { string? LogoUrl { get; } string? PrintImageSource { get; } string Alt { get; } decimal WidthMm { get; } decimal? HeightMm { get; } bool PreserveAspectRatio { get; } string FitMode { get; } bool HasLogo { get; } }
+public interface IPrintLogo { string? LogoUrl { get; } string? PrintImageSource { get; } string Alt { get; } decimal WidthMm { get; } decimal? HeightMm { get; } bool PreserveAspectRatio { get; } string FitMode { get; } bool HasLogo { get; } bool ImageLoaded { get; } }
 public sealed class PrintLogoViewModel : IPrintLogo
 {
     public string? LogoUrl { get; set; }
@@ -66,9 +66,10 @@ public sealed class PrintLogoViewModel : IPrintLogo
     public decimal? HeightMm { get; set; }
     public bool PreserveAspectRatio { get; set; } = true;
     public string FitMode { get; set; } = "CONTAIN";
-    public bool HasLogo => !string.IsNullOrWhiteSpace(LogoUrl);
+    public bool HasLogo => !string.IsNullOrWhiteSpace(LogoUrl) || !string.IsNullOrWhiteSpace(PrintImageSource);
+    public bool ImageLoaded => HasLogo;
 }
-public sealed record ResolvedPrintLogo(Guid? AssetId,string? BrandName,string? LogoUrl,string? PrintImageSource,string Alt,decimal WidthMm,decimal? HeightMm,bool PreserveAspectRatio,string FitMode,string Position,decimal OffsetXmm,decimal OffsetYmm,bool HasLogo) : IPrintLogo;
+public sealed record ResolvedPrintLogo(Guid? AssetId,string? BrandName,string? LogoUrl,string? PrintImageSource,string Alt,decimal WidthMm,decimal? HeightMm,bool PreserveAspectRatio,string FitMode,string Position,decimal OffsetXmm,decimal OffsetYmm,bool HasLogo,bool ImageLoaded,string? LoadError) : IPrintLogo;
 
 public sealed class PrintableDocumentHeaderViewModel
 {

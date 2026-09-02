@@ -1,0 +1,9 @@
+@model InovaGed.Web.Models.Branding.BrandAssetVm
+@{ ViewData["Title"] = "Diagnóstico da logo"; }
+<main class="atlas-page">
+    <section class="atlas-page-hero brand-assets-hero"><div><small>Diagnóstico seguro</small><h1>@Model.AssetName</h1><p>Validação do arquivo usado na biblioteca, na pré-visualização e na impressão.</p></div></section>
+    <section class="atlas-table-shell">
+        <dl><dt>AssetId</dt><dd>@Model.Id</dd><dt>Marca</dt><dd>@Model.BrandName</dd><dt>Content-Type</dt><dd>@Model.ContentType</dd><dt>Extensão</dt><dd>@Model.FileExtension</dd><dt>Tamanho</dt><dd>@Model.FileSizeBytes bytes</dd><dt>Dimensões</dt><dd>@(Model.WidthPx?.ToString() ?? "?") × @(Model.HeightPx?.ToString() ?? "?") px</dd><dt>Arquivo encontrado</dt><dd>@(ViewBag.ImageFound ? "Sim" : "Não")</dd><dt>URL gerada</dt><dd>@Model.FileUrl</dd><dt>Data URI disponível</dt><dd>@(ViewBag.DataUriAvailable ? "Sim" : "Não")</dd></dl>
+        <a class="atlas-btn atlas-btn-secondary" asp-action="Details" asp-route-id="@Model.Id">Voltar</a>
+    </section>
+</main>

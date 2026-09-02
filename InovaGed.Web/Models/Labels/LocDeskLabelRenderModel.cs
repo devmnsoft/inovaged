@@ -9,4 +9,5 @@ public sealed class LocDeskLabelRenderModel
     public LabelTemplateDetails? Template { get; init; }
     public IReadOnlyList<LocDeskLabelInputModel> Labels { get; init; } = [];
     public ResolvedPrintLogo? PrintLogo { get; init; }
+    public string? PrintLogoWarning { get; init; }
 }
