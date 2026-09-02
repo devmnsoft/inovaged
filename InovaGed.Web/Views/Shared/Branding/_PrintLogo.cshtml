@@ -4,7 +4,8 @@
 {
     var width = Model.WidthMm <= 0 ? 38 : Model.WidthMm;
     var height = Model.HeightMm is > 0 ? $"height:{Model.HeightMm.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}mm;" : "height:auto;";
-    var fit = Model.PreserveAspectRatio ? Model.FitMode.ToLowerInvariant() : "fill";
+    var fitMode = string.IsNullOrWhiteSpace(Model.FitMode) ? "contain" : Model.FitMode.ToLowerInvariant();
+    var fit = Model.PreserveAspectRatio ? fitMode : "fill";
     <span class="print-logo-frame print-logo-fit-@fit" style="width:@(width.ToString(System.Globalization.CultureInfo.InvariantCulture))mm;@height">
         <img src="@Model.PrintImageSource" alt="@Model.Alt" class="print-brand-logo @Model.CssClass" />
     </span>

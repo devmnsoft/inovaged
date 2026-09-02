@@ -19,7 +19,7 @@ try
         var repositoryRoot = FindRoot(BclEnvironment.CurrentDirectory);
         return LabelsVisualQualityCheck.Run(repositoryRoot, Console.Out, Console.Error);
     }
-    if (command.Equals("labels-logo-rendering", StringComparison.OrdinalIgnoreCase))
+    if ((command.Equals("labels-logo-rendering", StringComparison.OrdinalIgnoreCase) || command.Equals("labels-logo-propagation", StringComparison.OrdinalIgnoreCase)))
     {
         var repositoryRoot = FindRoot(BclEnvironment.CurrentDirectory);
         return LabelsLogoRenderingCheck.Run(repositoryRoot, Console.Out, Console.Error);

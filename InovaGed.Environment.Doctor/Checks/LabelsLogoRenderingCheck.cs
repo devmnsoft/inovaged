@@ -10,6 +10,7 @@ public static class LabelsLogoRenderingCheck
 
         const string partialPath = "InovaGed.Web/Views/Shared/Branding/_PrintLogo.cshtml";
         var partial = Read(partialPath);
+        Require(partial.Contains("PrintLogoViewModel", StringComparison.Ordinal), "_PrintLogo deve receber PrintLogoViewModel.");
         Require(partial.Contains("src=\"@Model.PrintImageSource\"", StringComparison.Ordinal), "_PrintLogo deve usar exclusivamente PrintImageSource.");
         Require(!partial.Contains("src=\"\"", StringComparison.Ordinal), "_PrintLogo contém src vazio.");
         Require(partial.Contains("Model.ImageLoaded", StringComparison.Ordinal), "_PrintLogo deve impedir imagem não carregada.");
@@ -28,6 +29,10 @@ public static class LabelsLogoRenderingCheck
         var selected = wizard.IndexOf("asp-for=\"SelectedLogoAssetId\"", StringComparison.Ordinal);
         Require(formStart >= 0 && selected > formStart && selected < formEnd, "SelectedLogoAssetId não está dentro do formulário principal.");
         Require(File.Exists(Path.Combine(root, "InovaGed.Web/wwwroot/js/labels-print-page.js")), "labels-print-page.js não existe.");
+        foreach (var field in new[] { "LogoWidthMm", "LogoHeightMm", "PreserveAspectRatio", "LogoFitMode", "LogoPosition", "LogoOffsetXmm", "LogoOffsetYmm" })
+            Require(wizard.Contains($"asp-for=\"{field}\"", StringComparison.Ordinal), $"PrintWizard não envia {field}.");
+        var locDeskPartial = Read("InovaGed.Web/Views/Shared/_LocDeskLogo.cshtml");
+        Require(locDeskPartial.Contains("PrintLogoViewModel", StringComparison.Ordinal) && locDeskPartial.Contains("Branding/_PrintLogo", StringComparison.Ordinal), "_LocDeskLogo não encaminha PrintLogoViewModel.");
 
         foreach (var failure in failures) error.WriteLine($"[FALHA] {failure}");
         if (failures.Count != 0) return 2;

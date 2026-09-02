@@ -1,4 +1,4 @@
-﻿using Dapper;
+using Dapper;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using InovaGed.Application.Common.Database;
@@ -298,10 +298,16 @@ public class LabelsController : GedControllerBase
         => Json(await _catalog.GetTemplatesAsync(TenantId,subjectType?.ToUpperInvariant() ?? LabelSubjectType.Box,mode?.ToUpperInvariant(),ct));
 
     [HttpPost, ValidateAntiForgeryToken]
-    public async Task<IActionResult> Preview(LabelPrintWizardInputModel input, CancellationToken ct) => await ProcessWizard(input, false, ct);
+    public async Task<IActionResult> Preview(LabelPrintWizardInputModel input, CancellationToken ct)
+    {
+        HttpContext.RequestServices.GetRequiredService<ILogger<LabelsController>>().LogInformation(
+            "Labels preview logo selection: TemplateCode={TemplateCode}, SelectedLogoAssetIdPresent={SelectedLogoAssetIdPresent}",
+            input.TemplateCode, input.SelectedLogoAssetId.HasValue);
+        return await BuildLabelRenderModelAsync(input, isRealPrint: false, ct);
+    }
 
     [HttpPost, ValidateAntiForgeryToken]
-    public async Task<IActionResult> Print(LabelPrintWizardInputModel input, CancellationToken ct) => await ProcessWizard(input, true, ct);
+    public async Task<IActionResult> Print(LabelPrintWizardInputModel input, CancellationToken ct) => await BuildLabelRenderModelAsync(input, isRealPrint: true, ct);
 
     [HttpPost, ValidateAntiForgeryToken]
     public async Task<IActionResult> PrintBatch(LabelBatchPrintInputModel input, CancellationToken ct)
@@ -311,14 +317,15 @@ public class LabelsController : GedControllerBase
         if (!ModelState.IsValid) return await PrintWizard(input.SubjectType,null,input.PrintMode,input.TemplateCode,ct);
         foreach(var id in input.SubjectIds) {
             var wizard=new LabelPrintWizardInputModel { SubjectType=input.SubjectType,SubjectId=id,PrintMode=input.PrintMode,TemplateCode=input.TemplateCode,Copies=input.Copies,ReprintReason=input.ReprintReason };
-            var result=await ProcessWizard(wizard,true,ct); if(result is NotFoundResult) return result;
+            var result=await BuildLabelRenderModelAsync(wizard,true,ct); if(result is NotFoundResult) return result;
         }
         TempData["Success"]=$"{input.SubjectIds.Count} etiqueta(s) registradas no lote.";
         return RedirectToAction(nameof(History));
     }
 
-    private async Task<IActionResult> ProcessWizard(LabelPrintWizardInputModel input, bool register, CancellationToken ct)
+    private async Task<IActionResult> BuildLabelRenderModelAsync(LabelPrintWizardInputModel input, bool isRealPrint, CancellationToken ct)
     {
+        var register = isRealPrint;
         input.SubjectType = (input.SubjectType ?? string.Empty).Trim().ToUpperInvariant();
         input.PrintMode = (input.PrintMode ?? string.Empty).Trim().ToUpperInvariant();
         input.TemplateCode = (input.TemplateCode ?? string.Empty).Trim();
@@ -344,9 +351,9 @@ public class LabelsController : GedControllerBase
             return View("PrintWizard", input);
         }
         if (input.PrintMode==LabelPrintMode.Custom) {
-            input.CustomFields.LogoSelection=input.LogoSelection; input.CustomFields.SelectedLogoAssetId=input.SelectedLogoAssetId; input.CustomFields.LogoWidthMm=input.SelectedLogoWidthMm; input.CustomFields.LogoHeightMm=input.SelectedLogoHeightMm; input.CustomFields.PreserveLogoAspectRatio=input.PreserveLogoAspectRatio; input.CustomFields.LogoFitMode=input.LogoFitMode; input.CustomFields.LogoPosition=input.LogoPosition;
-            if(input.SubjectType==LabelSubjectType.Box && input.SubjectId is Guid box) return RedirectToAction(nameof(LocDeskBox),new {boxId=box,input.LogoSelection,input.SelectedLogoAssetId,input.SelectedLogoWidthMm,input.SelectedLogoHeightMm,input.PreserveLogoAspectRatio,input.LogoFitMode});
-            if(input.SubjectType==LabelSubjectType.Document && input.SubjectId is Guid doc) return RedirectToAction(nameof(LocDeskFolder),new {docId=doc,templateCode=template.Code,input.LogoSelection,input.SelectedLogoAssetId,input.SelectedLogoWidthMm,input.SelectedLogoHeightMm,input.PreserveLogoAspectRatio,input.LogoFitMode});
+            input.CustomFields.LogoSelection=input.LogoSelection; input.CustomFields.SelectedLogoAssetId=input.SelectedLogoAssetId; input.CustomFields.LogoWidthMm=input.LogoWidthMm; input.CustomFields.LogoHeightMm=input.LogoHeightMm; input.CustomFields.PreserveLogoAspectRatio=input.PreserveAspectRatio; input.CustomFields.LogoFitMode=input.LogoFitMode; input.CustomFields.LogoPosition=input.LogoPosition;
+            if(input.SubjectType==LabelSubjectType.Box && input.SubjectId is Guid box) return RedirectToAction(nameof(LocDeskBox),new { boxId=box, input.LogoSelection, input.SelectedLogoAssetId, input.LogoWidthMm, input.LogoHeightMm, PreserveLogoAspectRatio=input.PreserveAspectRatio, input.LogoFitMode });
+            if(input.SubjectType==LabelSubjectType.Document && input.SubjectId is Guid doc) return RedirectToAction(nameof(LocDeskFolder),new { docId=doc, templateCode=template.Code, input.LogoSelection, input.SelectedLogoAssetId, input.LogoWidthMm, input.LogoHeightMm, PreserveLogoAspectRatio=input.PreserveAspectRatio, input.LogoFitMode });
             input.CustomFields.TemplateCode=template.Code;
             return View("LocDesk",input.CustomFields);
         }
@@ -361,7 +368,7 @@ public class LabelsController : GedControllerBase
         if(subject is null) { ModelState.AddModelError(nameof(input.SubjectId), "Não foi possível localizar a origem selecionada."); await PopulatePrintWizardLookupsAsync(input, ct); return View("PrintWizard", input); }
         var wasPrinted = await db.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from ged.label_print_history where tenant_id=@tid and label_subject_type=@type and label_subject_id=@id)", new { tid=TenantId, type=input.SubjectType, id=input.SubjectId }, cancellationToken:ct));
         if (register && wasPrinted && string.IsNullOrWhiteSpace(input.ReprintReason)) { ModelState.AddModelError(nameof(input.ReprintReason), "Informe o motivo da reimpressão para preservar a rastreabilidade."); await PopulatePrintWizardLookupsAsync(input, ct); return View("PrintWizard", input); }
-        var resolvedLogo=await _logoResolver.ResolveAsync(TenantId,template.Code,input.LogoSelection,input.SelectedLogoAssetId,input.SelectedLogoWidthMm,input.SelectedLogoHeightMm,input.PreserveLogoAspectRatio,input.LogoFitMode,input.LogoPosition,input.LogoOffsetXmm,input.LogoOffsetYmm,ct);
+        var resolvedLogo=await _logoResolver.ResolveAsync(TenantId,template.Code,input.LogoSelection,input.SelectedLogoAssetId,input.LogoWidthMm,input.LogoHeightMm,input.PreserveAspectRatio,input.LogoFitMode,input.LogoPosition,input.LogoOffsetXmm??0,input.LogoOffsetYmm??0,ct);
         var printLogo=PrintLogoViewModelMapper.FromResolved(resolvedLogo);
         HttpContext.RequestServices.GetRequiredService<ILogger<LabelsController>>().LogInformation(
             "Labels {Operation}: TemplateCode={TemplateCode}; SelectedLogoAssetId preenchido={HasSelectedLogo}; HasLogo={HasLogo}; ImageLoaded={ImageLoaded}; DataUri={HasDataUri}",
@@ -684,10 +691,16 @@ group by b.id, b.batch_no, b.notes, b.reg_date
     }
 
     [HttpGet]
-    public async Task<IActionResult> LocDeskBox(Guid boxId, CancellationToken ct) => await LocDeskBoxFromPhysical(boxId, ct);
+    public async Task<IActionResult> LocDeskBox(Guid boxId, Guid? selectedLogoAssetId, string? logoSelection,
+        decimal? logoWidthMm, decimal? logoHeightMm, bool preserveLogoAspectRatio = true,
+        string? logoFitMode = null, CancellationToken ct = default)
+        => await LocDeskBoxFromPhysical(boxId, selectedLogoAssetId, logoSelection, logoWidthMm,
+            logoHeightMm, preserveLogoAspectRatio, logoFitMode, ct);
 
     [HttpGet]
-    public async Task<IActionResult> LocDeskBoxFromPhysical(Guid boxId, CancellationToken ct)
+    public async Task<IActionResult> LocDeskBoxFromPhysical(Guid boxId, Guid? selectedLogoAssetId = null,
+        string? logoSelection = null, decimal? logoWidthMm = null, decimal? logoHeightMm = null,
+        bool preserveLogoAspectRatio = true, string? logoFitMode = null, CancellationToken ct = default)
     {
         using var db = await OpenAsync();
         var schema = await GetClassificationPlanSchemaInfoAsync(db, ct);
@@ -713,14 +726,23 @@ group by b.id,b.label_code,b.box_no,b.notes,pl.location_code,pl.building,pl.room
         var model = await db.QueryFirstOrDefaultAsync<LocDeskLabelInputModel>(new CommandDefinition(sql, new { tid=TenantId, boxId }, cancellationToken:ct));
         if (model is null) return NotFound("Caixa não encontrada.");
         ApplyDefaults(model);
+        ApplyWizardLogo(model, selectedLogoAssetId, logoSelection, logoWidthMm, logoHeightMm,
+            preserveLogoAspectRatio, logoFitMode);
         return View("LocDesk", model);
     }
 
     [HttpGet]
-    public async Task<IActionResult> LocDeskFolder(Guid docId, string? templateCode, CancellationToken ct) => await LocDeskFolderFromDocument(docId, templateCode, ct);
+    public async Task<IActionResult> LocDeskFolder(Guid docId, string? templateCode, Guid? selectedLogoAssetId,
+        string? logoSelection, decimal? logoWidthMm, decimal? logoHeightMm,
+        bool preserveLogoAspectRatio = true, string? logoFitMode = null, CancellationToken ct = default)
+        => await LocDeskFolderFromDocument(docId, templateCode, selectedLogoAssetId, logoSelection,
+            logoWidthMm, logoHeightMm, preserveLogoAspectRatio, logoFitMode, ct);
 
     [HttpGet]
-    public async Task<IActionResult> LocDeskFolderFromDocument(Guid docId, string? templateCode, CancellationToken ct)
+    public async Task<IActionResult> LocDeskFolderFromDocument(Guid docId, string? templateCode,
+        Guid? selectedLogoAssetId = null, string? logoSelection = null, decimal? logoWidthMm = null,
+        decimal? logoHeightMm = null, bool preserveLogoAspectRatio = true, string? logoFitMode = null,
+        CancellationToken ct = default)
     {
         using var db = await OpenAsync();
         var schema = await GetClassificationPlanSchemaInfoAsync(db, ct);
@@ -744,8 +766,21 @@ where d.tenant_id=@tid and d.id=@docId limit 1
         var model = await db.QueryFirstOrDefaultAsync<LocDeskLabelInputModel>(new CommandDefinition(sql, new { tid=TenantId, docId }, cancellationToken:ct));
         if (model is null) return NotFound("Documento não encontrado.");
         ApplyDefaults(model);
+        ApplyWizardLogo(model, selectedLogoAssetId, logoSelection, logoWidthMm, logoHeightMm,
+            preserveLogoAspectRatio, logoFitMode);
         model.TemplateCode = templateCode == LabelTemplateCode.LocDeskFolderHol ? templateCode : LabelTemplateCode.LocDeskFolder;
         return View("LocDesk", model);
+    }
+
+    private static void ApplyWizardLogo(LocDeskLabelInputModel model, Guid? assetId, string? selection,
+        decimal? widthMm, decimal? heightMm, bool preserveAspectRatio, string? fitMode)
+    {
+        model.SelectedLogoAssetId = assetId;
+        model.LogoSelection = assetId.HasValue ? "SELECTED" : selection ?? model.LogoSelection;
+        model.LogoWidthMm = widthMm;
+        model.LogoHeightMm = heightMm;
+        model.PreserveLogoAspectRatio = preserveAspectRatio;
+        if (!string.IsNullOrWhiteSpace(fitMode)) model.LogoFitMode = fitMode;
     }
 
     private async Task<ClassificationPlanSchemaInfo> GetClassificationPlanSchemaInfoAsync(IDbConnection db, CancellationToken ct)
