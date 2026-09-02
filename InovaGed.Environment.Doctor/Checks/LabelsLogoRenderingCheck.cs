@@ -28,6 +28,16 @@ public static class LabelsLogoRenderingCheck
         var formEnd = formStart >= 0 ? wizard.IndexOf("</form>", formStart, StringComparison.Ordinal) : -1;
         var selected = wizard.IndexOf("asp-for=\"SelectedLogoAssetId\"", StringComparison.Ordinal);
         Require(formStart >= 0 && selected > formStart && selected < formEnd, "SelectedLogoAssetId não está dentro do formulário principal.");
+        Require(wizard.Contains("id=\"label-print-form\"", StringComparison.Ordinal), "PrintWizard não identifica o formulário principal.");
+        foreach (var action in new[] { "Preview", "PrintPreview", "Print" })
+        {
+            Require(wizard.Contains($"type=\"submit\" formaction=\"@Url.Action(\"{action}\", \"Labels\")\"", StringComparison.Ordinal),
+                $"Botão {action} não é submit com formaction explícito.");
+        }
+        var controller = Read("InovaGed.Web/Controller/LabelsController.cs");
+        Require(controller.Contains("Task<IActionResult> PrintPreview(LabelPrintWizardInputModel input", StringComparison.Ordinal), "POST PrintPreview do PrintWizard não existe.");
+        Require(controller.Contains("BuildLabelRenderModelAsync(input", StringComparison.Ordinal), "As ações não usam o construtor único de renderização.");
+        Require(controller.Contains("SelectedLogoAssetIdPresent", StringComparison.Ordinal), "Log seguro da seleção de logo não existe.");
         Require(File.Exists(Path.Combine(root, "InovaGed.Web/wwwroot/js/labels-print-page.js")), "labels-print-page.js não existe.");
         foreach (var field in new[] { "LogoWidthMm", "LogoHeightMm", "PreserveAspectRatio", "LogoFitMode", "LogoPosition", "LogoOffsetXmm", "LogoOffsetYmm" })
             Require(wizard.Contains($"asp-for=\"{field}\"", StringComparison.Ordinal), $"PrintWizard não envia {field}.");

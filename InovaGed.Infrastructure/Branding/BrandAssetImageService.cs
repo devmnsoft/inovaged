@@ -1,12 +1,12 @@
 using Dapper;
 using InovaGed.Application.Branding;
 using InovaGed.Application.Common.Database;
-using Microsoft.Extensions.Hosting;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace InovaGed.Infrastructure.Branding;
 
-public sealed class BrandAssetImageService(IDbConnectionFactory factory, IHostEnvironment environment,
+public sealed class BrandAssetImageService(IDbConnectionFactory factory, IWebHostEnvironment environment,
     ILogger<BrandAssetImageService> logger) : IBrandAssetImageService
 {
     private static readonly HashSet<string> AllowedContentTypes = new(StringComparer.OrdinalIgnoreCase)
@@ -41,7 +41,7 @@ public sealed class BrandAssetImageService(IDbConnectionFactory factory, IHostEn
     private string? ResolveSafePath(string relativePath)
     {
         if (string.IsNullOrWhiteSpace(relativePath) || Path.IsPathRooted(relativePath)) return null;
-        var root = Path.GetFullPath(Path.Combine(environment.ContentRootPath, "wwwroot"))
+        var root = Path.GetFullPath(environment.WebRootPath)
             .TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
         var normalized = NormalizeStorageRelativePath(relativePath);
         if (normalized is null) return null;
