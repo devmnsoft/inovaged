@@ -361,7 +361,8 @@ public class LabelsController : GedControllerBase
         if(subject is null) { ModelState.AddModelError(nameof(input.SubjectId), "Não foi possível localizar a origem selecionada."); await PopulatePrintWizardLookupsAsync(input, ct); return View("PrintWizard", input); }
         var wasPrinted = await db.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from ged.label_print_history where tenant_id=@tid and label_subject_type=@type and label_subject_id=@id)", new { tid=TenantId, type=input.SubjectType, id=input.SubjectId }, cancellationToken:ct));
         if (register && wasPrinted && string.IsNullOrWhiteSpace(input.ReprintReason)) { ModelState.AddModelError(nameof(input.ReprintReason), "Informe o motivo da reimpressão para preservar a rastreabilidade."); await PopulatePrintWizardLookupsAsync(input, ct); return View("PrintWizard", input); }
-        var printLogo=await _logoResolver.ResolveAsync(TenantId,template.Code,input.LogoSelection,input.SelectedLogoAssetId,input.SelectedLogoWidthMm,input.SelectedLogoHeightMm,input.PreserveLogoAspectRatio,input.LogoFitMode,input.LogoPosition,input.LogoOffsetXmm,input.LogoOffsetYmm,ct);
+        var resolvedLogo=await _logoResolver.ResolveAsync(TenantId,template.Code,input.LogoSelection,input.SelectedLogoAssetId,input.SelectedLogoWidthMm,input.SelectedLogoHeightMm,input.PreserveLogoAspectRatio,input.LogoFitMode,input.LogoPosition,input.LogoOffsetXmm,input.LogoOffsetYmm,ct);
+        var printLogo=PrintLogoViewModelMapper.FromResolved(resolvedLogo);
         HttpContext.RequestServices.GetRequiredService<ILogger<LabelsController>>().LogInformation(
             "Labels {Operation}: TemplateCode={TemplateCode}; SelectedLogoAssetId preenchido={HasSelectedLogo}; HasLogo={HasLogo}; ImageLoaded={ImageLoaded}; DataUri={HasDataUri}",
             register ? "Print" : "Preview", template.Code, input.SelectedLogoAssetId.HasValue,
@@ -783,7 +784,8 @@ select
     {
         var qr = issued is null ? CreateLocDeskQr(input, input.BoxId ?? input.DocumentId) : _qrCodes.CreateTrackingSvg($"{Request.Scheme}://{Request.Host}{issued.ShortUrl}");
         ViewBag.TraceCode=issued?.Trace.TraceCode;
-        var logo=await _logoResolver.ResolveAsync(TenantId,ResolveLocDeskTemplateCode(input),input.LogoSelection,input.SelectedLogoAssetId,input.LogoWidthMm,input.LogoHeightMm,input.PreserveLogoAspectRatio,input.LogoFitMode,input.LogoPosition,0,0,ct);
+        var resolvedLogo=await _logoResolver.ResolveAsync(TenantId,ResolveLocDeskTemplateCode(input),input.LogoSelection,input.SelectedLogoAssetId,input.LogoWidthMm,input.LogoHeightMm,input.PreserveLogoAspectRatio,input.LogoFitMode,input.LogoPosition,0,0,ct);
+        var logo=PrintLogoViewModelMapper.FromResolved(resolvedLogo);
         ViewBag.IsPrintPage=registered;
         var model = new LocDeskLabelRenderModel { Label=input,QrSvg=qr,PrintRegistered=registered,Template=await LoadLocDeskTemplate(input,ct),PrintLogo=logo,PrintLogoWarning=logo.HasLogo&&!logo.ImageLoaded?logo.LoadError:null };
         return View(LocDeskViewName(input), model);
