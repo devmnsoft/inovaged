@@ -276,7 +276,8 @@ builder.Services.AddScoped<IOperationsDashboardService, OperationsDashboardServi
 
 builder.Services.Configure<DocumentQualityOptions>(builder.Configuration.GetSection("DocumentQuality"));
 builder.Services.AddScoped<IDocumentQualityAnalyzerService, DocumentQualityAnalyzerService>();
-builder.Services.AddHostedService<DocumentQualitySchedulerWorker>();
+if (builder.Configuration.GetValue("DocumentQuality:Enabled", true))
+    builder.Services.AddHostedService<DocumentQualitySchedulerWorker>();
 
 
 builder.Services.AddScoped<IPreviewStatusRepository, PreviewStatusRepository>();
@@ -355,8 +356,10 @@ builder.Services.AddScoped<IGedProcessingJobRepository, GedProcessingJobReposito
 builder.Services.AddScoped<IUploadBatchService, UploadBatchService>();
 builder.Services.AddScoped<IUploadBatchConsistencyService, UploadBatchConsistencyService>();
 builder.Services.AddScoped<IUploadChunkService, UploadChunkService>();
-builder.Services.AddHostedService<StaleUploadBatchItemWorker>();
-builder.Services.AddHostedService<GedProcessingWorker>();
+if (builder.Configuration.GetValue("Workers:StaleUploadBatchItem:Enabled", true))
+    builder.Services.AddHostedService<StaleUploadBatchItemWorker>();
+if (builder.Configuration.GetValue("Workers:GedProcessing:Enabled", true))
+    builder.Services.AddHostedService<GedProcessingWorker>();
 builder.Services.AddScoped<IGedAccessPolicyService, GedAccessPolicyService>();
 builder.Services.AddScoped<IGedSearchService, GedSearchService>();
 builder.Services.AddScoped<IGedSmartSearchService, GedSmartSearchService>();
@@ -408,7 +411,8 @@ builder.Services.AddScoped<IOcrAutoSchedulerService, OcrAutoSchedulerService>();
 builder.Services.AddScoped<OcrDashboardService>();
 builder.Services.AddScoped<IOcrDashboardService>(sp => sp.GetRequiredService<OcrDashboardService>());
 builder.Services.AddScoped<IOcrStatusResolver>(sp => sp.GetRequiredService<OcrDashboardService>());
-builder.Services.AddHostedService<OcrAutoSchedulerWorker>();
+if (builder.Configuration.GetValue("OcrAutoSchedule:Enabled", true))
+    builder.Services.AddHostedService<OcrAutoSchedulerWorker>();
 if (builder.Configuration.GetValue<bool>("OcrWorker:Enabled"))
 {
     builder.Services.AddHostedService<OcrWorker>();
@@ -692,6 +696,10 @@ builder.Services.AddSingleton<IPocCatalogService, PocCatalogService>();
 // =======================================================
 // Build + Pipeline
 // =======================================================
+var configuredHttpsPort = builder.Configuration.GetValue<int?>("HttpsRedirection:HttpsPort");
+if (configuredHttpsPort.HasValue)
+    builder.Services.Configure<Microsoft.AspNetCore.HttpsPolicy.HttpsRedirectionOptions>(options => options.HttpsPort = configuredHttpsPort.Value);
+
 var app = builder.Build();
 
 app.ValidateInovaGedStartupConfiguration();
@@ -705,7 +713,14 @@ if (!app.Environment.IsDevelopment())
 
 app.UseStatusCodePagesWithReExecute("/Home/Status/{0}");
 
-app.UseHttpsRedirection();
+if (builder.Configuration.GetValue("HttpsRedirection:Enabled", true))
+{
+    var httpsPort = builder.Configuration.GetValue<int?>("HttpsRedirection:HttpsPort");
+    if (!httpsPort.HasValue)
+        app.Logger.LogWarning("HTTPS redirection enabled, but HttpsPort is not configured.");
+
+    app.UseHttpsRedirection();
+}
 app.UseMiddleware<SuspiciousRequestMiddleware>();
 app.UseStaticFiles();
 
@@ -783,10 +798,13 @@ static async Task ValidateDatabaseSchemaOnStartupAsync(WebApplication app)
     }
     catch (Exception ex) when (!app.Configuration.GetValue("Database:FailFastOnInvalidSchema", false))
     {
+        var runtimeDependencyError = ex.ToString().Contains("System.Diagnostics.DiagnosticSource", StringComparison.OrdinalIgnoreCase);
         var disableWorkers = app.Configuration.GetValue("Database:DisableWorkersWhenSchemaInvalid", true);
         scope.ServiceProvider.GetRequiredService<ISchemaCompatibilityState>()
             .MarkInvalid(Array.Empty<string>(), Array.Empty<string>(), ex.Message, disableWorkers);
-        logger.LogError(ex, "Falha ou inconsistência durante validação de schema no startup. A aplicação continuará por configuração, mas telas críticas podem ser bloqueadas.");
+        logger.LogError(ex, runtimeDependencyError
+            ? "RuntimeDependencyError: System.Diagnostics.DiagnosticSource 9.0.0.0 ausente. Refaça o publish completo; migrations não corrigem esta falha."
+            : "Falha ou inconsistência durante validação de schema no startup. A aplicação continuará por configuração, mas telas críticas podem ser bloqueadas.");
         if (disableWorkers)
             logger.LogWarning("Workers desativados temporariamente por schema inválido.");
     }

@@ -521,6 +521,7 @@ limit 1;", cancellationToken: ct));
             const string message = "Falha de dependência runtime no servidor. A DLL System.Diagnostics.DiagnosticSource 9.0.0.0 não foi encontrada na publicação. Refaça restore/build/publish completo ou publique self-contained.";
             report.Status = SchemaHealthStatus.RuntimeDependencyError;
             report.ErrorMessage = message;
+            SetDiagnosticSourceDetails(report);
             _logger.LogError(ex, "{RuntimeDependencyMessage}", message);
             AddCheck(report, "GED_RUNTIME_DIAGNOSTIC_SOURCE", "Runtime", "System.Diagnostics.DiagnosticSource", "Dependência", "Critical", false, message, "Refaça restore/build/publish completo ou publique self-contained; não copie DLL avulsa.");
         }
@@ -529,6 +530,7 @@ limit 1;", cancellationToken: ct));
             const string message = "Falha de dependência runtime no servidor. A DLL System.Diagnostics.DiagnosticSource 9.0.0.0 não foi encontrada na publicação. Refaça restore/build/publish completo ou publique self-contained.";
             report.Status = SchemaHealthStatus.RuntimeDependencyError;
             report.ErrorMessage = message;
+            SetDiagnosticSourceDetails(report);
             _logger.LogError(ex, "{RuntimeDependencyMessage}", message);
             AddCheck(report, "GED_RUNTIME_DIAGNOSTIC_SOURCE", "Runtime", "System.Diagnostics.DiagnosticSource", "Dependência", "Critical", false, message, "Refaça restore/build/publish completo ou publique self-contained; não execute migrations para corrigir DLL.");
         }
@@ -545,6 +547,8 @@ limit 1;", cancellationToken: ct));
             report.ErrorMessage = report.Status == SchemaHealthStatus.RuntimeDependencyError
                 ? "Falha de dependência runtime no servidor. A DLL System.Diagnostics.DiagnosticSource 9.0.0.0 não foi encontrada na publicação. Refaça restore/build/publish completo ou publique self-contained."
                 : "Falha inesperada ao executar o diagnóstico de schema.";
+            if (report.Status == SchemaHealthStatus.RuntimeDependencyError)
+                SetDiagnosticSourceDetails(report);
             _logger.LogError(ex, "Falha ao executar diagnóstico de schema do banco.");
             AddCheck(report, "GED_DIAGNOSTIC_UNEXPECTED", "Banco", "Conexão/diagnóstico", "Erro", "Critical", false, report.ErrorMessage, report.Status == SchemaHealthStatus.RuntimeDependencyError ? "Refaça restore/build/publish completo ou publique self-contained; não execute migrations para corrigir DLL." : "Consulte a exceção registrada antes de escolher uma ação corretiva.");
         }
@@ -583,6 +587,13 @@ limit 1;", cancellationToken: ct));
         }
 
         return false;
+    }
+
+    private static void SetDiagnosticSourceDetails(SchemaHealthReportDto report)
+    {
+        report.Dependency = "System.Diagnostics.DiagnosticSource";
+        report.RequiredVersion = "9.0.0.0";
+        report.ProbableCause = "publish incompleto ou PackageReference ausente";
     }
 
     private void AddDiCheck<TService>(SchemaHealthReportDto report, string affectedClass, string registration)

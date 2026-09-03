@@ -23,6 +23,9 @@ public sealed class SchemaHealthReportDto
 {
     public SchemaHealthStatus Status { get; set; } = SchemaHealthStatus.UnexpectedError;
     public string? ErrorMessage { get; set; }
+    public string? Dependency { get; set; }
+    public string? RequiredVersion { get; set; }
+    public string? ProbableCause { get; set; }
     public bool IsHealthy { get; set; }
     public List<SchemaCheckItemDto> Checks { get; set; } = new();
     public List<string> MissingTables { get; set; } = new();
