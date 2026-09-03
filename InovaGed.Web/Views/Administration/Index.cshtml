@@ -1,7 +1,7 @@
 @model InovaGed.Web.Models.Administration.AdministrationDashboardVM
 @using InovaGed.Web.Models.Administration
 @{
-    ViewData["Title"] = "Central Administrativa";
+    ViewData["Title"] = "Administração do Sistema";
     ViewData["WorkspaceVariant"] = "wide";
 
     AdministrationHealthVM? FindMetric(params string[] terms) => Model.Health.FirstOrDefault(metric => terms.Any(term => metric.Title.Contains(term, StringComparison.OrdinalIgnoreCase)));
@@ -38,8 +38,8 @@
         <div class="admin-hero__content">
             <span class="admin-hero__eyebrow"><app-icon name="shield" size="18" decorative="true" /> Governança e operação</span>
             <span class="admin-hero__environment">Ambiente atual · acesso administrativo</span>
-            <h1 id="admin-title">Central Administrativa</h1>
-            <p>Controle usuários, permissões, banco de dados, saúde do sistema e operação técnica do InovaGED.</p>
+            <h1 id="admin-title">Administração do Sistema</h1>
+            <p>Gerencie segurança, usuários, configurações, auditoria, modelos, identidade visual, banco de dados e operação do InovaGED.</p>
         </div>
         <nav class="admin-hero-actions" aria-label="Ações administrativas rápidas">
             <a asp-action="Health"><app-icon name="health" size="20" decorative="true" /><span>Saúde do Sistema</span></a>

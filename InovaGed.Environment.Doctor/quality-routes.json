@@ -59,5 +59,12 @@
   "/Labels/Branding",
   "/Labels/LogoLayout",
   "/Administration/BrandAssets",
-  "/Administration/BrandAssets/Create"
+  "/Administration/BrandAssets/Create",
+  "/Physical/Dashboard",
+  "/ClassificationPlan/Tree",
+  "/ClassificationPlan/RetentionRules",
+  "/ClassificationPlan/Versions",
+  "/ClassificationPlan/Import",
+  "/ClassificationPlan/Compare",
+  "/ClassificationPlan/ReviewQueue"
 ]

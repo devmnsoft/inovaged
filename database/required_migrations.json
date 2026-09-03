@@ -215,5 +215,12 @@
     "area": "Etiquetas",
     "required": true,
     "description": "Compatibilidade idempotente das colunas de canal, modo, versão e identidade visual no registro e histórico de impressão."
+  },
+  {
+    "name": "2026_09_03_physical_archive_reg_status_compat_fix",
+    "path": "database/migrations/2026_09_03_physical_archive_reg_status_compat_fix.sql",
+    "area": "Acervo físico",
+    "required": true,
+    "description": "Adiciona reg_status de forma idempotente às tabelas do acervo físico; o dashboard permanece compatível antes da aplicação."
   }
 ]

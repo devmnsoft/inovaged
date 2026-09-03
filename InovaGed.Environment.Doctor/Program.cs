@@ -14,6 +14,11 @@ using BclEnvironment = global::System.Environment;
 try
 {
     var command = args.FirstOrDefault() ?? "check";
+    if (command.Equals("ui-runtime-rc15", StringComparison.OrdinalIgnoreCase))
+    {
+        var repositoryRoot = FindRoot(BclEnvironment.CurrentDirectory);
+        return UiRuntimeRc15QualityCheck.Run(repositoryRoot, Console.Out, Console.Error);
+    }
     if (command.Equals("labels-printlocdesk-quality", StringComparison.OrdinalIgnoreCase))
     {
         var repositoryRoot = FindRoot(BclEnvironment.CurrentDirectory);

@@ -1,6 +1,7 @@
 (() => {
   const forms = document.querySelectorAll('form[method="post"]');
   forms.forEach(form => form.addEventListener('submit', event => {
+    if (form.matches('[data-label-form]')) return;
     if (!form.checkValidity()) return;
     if (form.dataset.atlasSubmitting === 'true') { event.preventDefault(); return; }
     form.dataset.atlasSubmitting = 'true';
