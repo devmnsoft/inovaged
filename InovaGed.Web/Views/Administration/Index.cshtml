@@ -19,13 +19,11 @@
     var requestedKpis = new List<(string Label, AdministrationHealthVM? Metric, string Icon, string Description)>
     {
         ("Usuários ativos", FindMetric("Usuários ativos"), "users", "Contas habilitadas no escopo atual."),
-        ("Tenants", FindMetric("Tenants ativos"), "building", "Organizações ativas no ambiente."),
-        ("Permissões cadastradas", FindMetric("Permissões cadastradas"), "key", "Catálogo de autorização disponível."),
-        ("Workers com erro", FindMetric("Workers com erro"), "activity", "Execuções assíncronas que exigem análise."),
-        ("Migrations pendentes", FindMetric("migration"), "activity", "Atualizações de banco aguardando validação."),
-        ("Incidentes críticos", FindMetric("incidente"), "warning", "Ocorrências de maior severidade abertas."),
-        ("Rotas monitoradas", FindMetric("rotas"), "health", "Endpoints cobertos pela observabilidade."),
-        ("Status geral", FindMetric("Estado do banco"), "shield", "Leitura consolidada do ambiente administrativo.")
+        ("Perfis configurados", FindMetric("Perfis", "Papéis"), "shield", "Perfis de acesso configurados."),
+        ("Permissões", FindMetric("Permissões cadastradas"), "key", "Regras de autorização disponíveis."),
+        ("Migrations pendentes", FindMetric("migration"), "database", "Atualizações de banco aguardando validação."),
+        ("Incidentes abertos", FindMetric("incidente"), "warning", "Ocorrências abertas para investigação."),
+        ("Módulos monitorados", FindMetric("rotas", "módulos"), "health", "Áreas cobertas pela observabilidade.")
     };
 }
 @section Styles {
@@ -39,13 +37,13 @@
             <span class="admin-hero__eyebrow"><app-icon name="shield" size="18" decorative="true" /> Governança e operação</span>
             <span class="admin-hero__environment">Ambiente atual · acesso administrativo</span>
             <h1 id="admin-title">Administração do Sistema</h1>
-            <p>Gerencie segurança, usuários, configurações, auditoria, modelos, identidade visual, banco de dados e operação do InovaGED.</p>
+            <p>Gerencie usuários, permissões, configurações, banco de dados, etiquetas, identidade visual e qualidade operacional do InovaGED.</p>
         </div>
         <nav class="admin-hero-actions" aria-label="Ações administrativas rápidas">
-            <a asp-action="Health"><app-icon name="health" size="20" decorative="true" /><span>Saúde do Sistema</span></a>
-            <a href="/DatabaseReadiness"><app-icon name="database" size="20" decorative="true" /><span>Prontidão do Banco</span></a>
+            <a asp-controller="SchemaHealth" asp-action="Index"><app-icon name="health" size="20" decorative="true" /><span>SchemaHealth</span></a>
+            <a href="/DatabaseReadiness"><app-icon name="database" size="20" decorative="true" /><span>DatabaseReadiness</span></a>
             <a asp-controller="SystemIncidents" asp-action="Index"><app-icon name="warning" size="20" decorative="true" /><span>Central de Incidentes</span></a>
-            <a asp-action="DesignSystem"><app-icon name="layout-template" size="20" decorative="true" /><span>Design System</span></a>
+            <a asp-action="Quality"><app-icon name="layout-template" size="20" decorative="true" /><span>Quality Gate</span></a>
             <a asp-action="Readiness"><app-icon name="rocket" size="20" decorative="true" /><span>Release Readiness</span></a>
         </nav>
     </section>
@@ -63,7 +61,7 @@
         <div class="admin-kpi-grid">
             @foreach (var kpi in requestedKpis)
             {
-                <article class="admin-kpi-card"><div class="admin-kpi-card__top"><span class="admin-kpi-card__icon"><app-icon name="@kpi.Icon" size="21" decorative="true" /></span><span class="admin-status-badge is-@StateClass(kpi.Metric)">@StateLabel(kpi.Metric)</span></div><small>@kpi.Label</small><strong>@(kpi.Metric?.Value ?? "Não verificado")</strong><p>@(kpi.Metric?.Message ?? kpi.Description)</p></article>
+                <article class="admin-kpi-card"><div class="admin-kpi-card__top"><span class="admin-kpi-card__icon"><app-icon name="@kpi.Icon" size="21" decorative="true" /></span><span class="admin-status-badge is-@StateClass(kpi.Metric)">@StateLabel(kpi.Metric)</span></div><small>@kpi.Label</small><strong>@(kpi.Metric?.Value ?? "0")</strong><p>@(kpi.Metric?.Message ?? kpi.Description)</p></article>
             }
         </div>
     </section>

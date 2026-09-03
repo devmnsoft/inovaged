@@ -14,6 +14,11 @@ using BclEnvironment = global::System.Environment;
 try
 {
     var command = args.FirstOrDefault() ?? "check";
+    if (command.Equals("ui-visual-rc16", StringComparison.OrdinalIgnoreCase))
+    {
+        var repositoryRoot = FindRoot(BclEnvironment.CurrentDirectory);
+        return UiVisualRc16QualityCheck.Run(repositoryRoot, Console.Out, Console.Error);
+    }
     if (command.Equals("ui-runtime-rc15", StringComparison.OrdinalIgnoreCase))
     {
         var repositoryRoot = FindRoot(BclEnvironment.CurrentDirectory);

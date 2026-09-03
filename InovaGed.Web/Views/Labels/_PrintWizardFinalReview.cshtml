@@ -1,0 +1,28 @@
+@model InovaGed.Web.Models.Labels.LabelPrintWizardInputModel
+@{
+    var printProfiles = ViewBag.PrintProfiles as IReadOnlyList<InovaGed.Web.Models.Labels.LabelPrintProfileInput> ?? Array.Empty<InovaGed.Web.Models.Labels.LabelPrintProfileInput>();
+    var selectedProfile = ViewBag.SelectedPrintProfile as InovaGed.Web.Models.Labels.LabelPrintProfileInput;
+    var profileName = selectedProfile?.ProfileName ?? "Padrão do navegador";
+    var margin = selectedProfile is null ? "0 mm / 0 mm" : $"{selectedProfile.MarginTopMm} mm / {selectedProfile.MarginLeftMm} mm";
+    var offset = selectedProfile is null ? "0 mm / 0 mm" : $"{selectedProfile.OffsetXMm} mm / {selectedProfile.OffsetYMm} mm";
+    var scale = selectedProfile is null ? "100%" : $"{selectedProfile.ScalePercent}%";
+    var logoSize = $"{(Model.LogoWidthMm ?? 38)} mm × {(Model.LogoHeightMm.HasValue ? $"{Model.LogoHeightMm} mm" : "altura automática")}";
+    var isReprint = !string.IsNullOrWhiteSpace(Model.ReprintReason);
+}
+<section class="label-wizard-card label-final-review" aria-labelledby="final-review-title">
+    <header class="label-wizard-card__header label-final-review__header">
+        <span class="label-final-review__step" aria-hidden="true">4</span>
+        <div><span class="label-final-review__eyebrow">Última etapa</span><h2 id="final-review-title">Conferência final</h2><p>Revise quantidade, calibração, logo e rastreabilidade antes de gerar a impressão.</p></div>
+        <span class="label-final-review__ready"><i class="bi bi-shield-check" aria-hidden="true"></i> Pronto para conferir</span>
+    </header>
+    <div class="label-wizard-card__body">
+        <div class="label-final-review__grid">
+            <article class="label-review-tile label-review-tile--quantity"><header><span><i class="bi bi-printer" aria-hidden="true"></i></span><div><small>Quantidade</small><h3>Cópias</h3></div></header><label asp-for="Copies" class="form-label">Quantidade selecionada</label><input asp-for="Copies" class="form-control" type="number" min="1" max="500" required /><span asp-validation-for="Copies" class="text-danger"></span><p>Confirme a quantidade antes de enviar a impressão.</p></article>
+            <article class="label-review-tile"><header><span><i class="bi bi-sliders" aria-hidden="true"></i></span><div><small>Ajuste físico</small><h3>Calibração</h3></div></header><label asp-for="PrintProfileId" class="form-label">Perfil aplicado</label><select asp-for="PrintProfileId" class="form-select"><option value="">Padrão do navegador</option>@foreach (var profile in printProfiles) { <option value="@profile.Id">@profile.ProfileName @(profile.IsDefault ? "(padrão)" : "")</option> }</select><dl class="label-review-facts"><div><dt>Perfil</dt><dd>@profileName</dd></div><div><dt>Margem</dt><dd>@margin</dd></div><div><dt>Deslocamento</dt><dd>@offset</dd></div><div><dt>Escala</dt><dd>@scale</dd></div></dl></article>
+            <article class="label-review-tile"><header><span><i class="bi bi-image" aria-hidden="true"></i></span><div><small>Identidade visual</small><h3>Logo</h3></div></header><span class="label-review-status" id="final-logo-status">@(Model.SelectedLogoAssetId.HasValue ? "Logo carregada" : "Sem logo personalizada")</span><dl class="label-review-facts"><div><dt>Logo aplicada</dt><dd id="final-logo-name">@(Model.SelectedLogoAssetId.HasValue ? "Ativo selecionado" : "Padrão do modelo")</dd></div><div><dt>Tamanho</dt><dd>@logoSize</dd></div><div><dt>Encaixe</dt><dd>@(Model.LogoFitMode ?? "CONTAIN")</dd></div></dl></article>
+            <article class="label-review-tile"><header><span><i class="bi bi-qr-code" aria-hidden="true"></i></span><div><small>Evidência</small><h3>Rastreabilidade</h3></div></header><span class="label-review-status is-success">Registro habilitado</span><dl class="label-review-facts"><div><dt>QR Code</dt><dd>Token seguro</dd></div><div><dt>Histórico</dt><dd>Registro automático</dd></div><div><dt>Reimpressão</dt><dd>@(isReprint ? "Justificada" : "Não identificada")</dd></div><div><dt>TraceCode</dt><dd>Gerado na emissão</dd></div></dl></article>
+        </div>
+        <div class="label-reprint-reason"><label asp-for="ReprintReason" class="form-label">Motivo da reimpressão <span>quando aplicável</span></label><textarea asp-for="ReprintReason" class="form-control" rows="4" placeholder="Descreva por que uma nova via precisa ser emitida" aria-describedby="reprint-help"></textarea><small id="reprint-help" class="form-text">A justificativa preserva a rastreabilidade de reimpressões.</small><span asp-validation-for="ReprintReason" class="text-danger"></span></div>
+    </div>
+    <footer class="label-final-actionbar"><a asp-action="Index" class="btn btn-light"><i class="bi bi-arrow-left" aria-hidden="true"></i> Voltar</a><div><button type="submit" class="btn btn-outline-primary" formaction="@Url.Action("Preview", "Labels")" formmethod="post">Pré-visualizar etiqueta</button><button type="submit" class="btn btn-primary" formaction="@Url.Action("PrintPreview", "Labels")" formmethod="post">Visualizar impressão</button><button type="submit" class="btn btn-success" formaction="@Url.Action("Print", "Labels")" formmethod="post"><i class="bi bi-printer" aria-hidden="true"></i> Imprimir</button><a asp-action="History" class="btn btn-light"><i class="bi bi-clock-history" aria-hidden="true"></i> Histórico</a></div></footer>
+</section>
