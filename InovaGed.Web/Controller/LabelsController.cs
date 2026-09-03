@@ -408,7 +408,15 @@ public class LabelsController : GedControllerBase
             printLogo.PrintImageSource?.StartsWith("data:image/", StringComparison.OrdinalIgnoreCase) == true);
         InovaGed.Application.Labels.LabelTraceIssued? issued=null;
         if(register) { if(UserId is not Guid uid) return Unauthorized(); var snapshot=new { printMode=input.PrintMode,templateCode=template.Code,templateName=template.Name,templateVersion=template.Version,isDesignerTemplate=template.Id is not null && !template.IsSystemTemplate,subjectType=input.SubjectType,subjectId=input.SubjectId,copies=input.Copies,controlNumber=(string?)null,location=(string?)null,logoAssetId=printLogo.AssetId,logoBrandName=printLogo.BrandName,logoWidthMm=printLogo.WidthMm,logoHeightMm=printLogo.HeightMm,logoFitMode=printLogo.FitMode,logoPosition=printLogo.Position,printedFields=subject };
-            try { issued=await _printRegistrar.RegisterAsync(new(TenantId,uid,input.SubjectType,input.SubjectId!.Value,template.Code,_payloadBuilder.Build(snapshot),HttpContext.Connection.RemoteIpAddress?.ToString(),Request.Headers.UserAgent.ToString(),input.ReprintReason),ct); } catch(InvalidOperationException ex) { ModelState.AddModelError(nameof(input.ReprintReason),ex.Message); ViewBag.Templates=await _catalog.GetTemplatesAsync(TenantId,input.SubjectType,input.PrintMode,ct); ViewBag.SubjectOptions=await LoadSubjectOptionsAsync(input.SubjectType,ct); return View("PrintWizard",input); } }
+            var templateVersion = int.TryParse(template.Version, out var parsedTemplateVersion) ? parsedTemplateVersion : (int?)null;
+            var printRequest = new LabelPrintRequest(TenantId,uid,input.SubjectType,input.SubjectId!.Value,template.Code,_payloadBuilder.Build(snapshot),HttpContext.Connection.RemoteIpAddress?.ToString(),Request.Headers.UserAgent.ToString(),input.ReprintReason)
+            {
+                PrintChannel = "WEB", PrintMode = input.PrintMode, TemplateVersion = templateVersion,
+                LogoAssetId = printLogo.AssetId, LogoBrandName = printLogo.BrandName,
+                LogoWidthMm = printLogo.WidthMm, LogoHeightMm = printLogo.HeightMm,
+                LogoFitMode = printLogo.FitMode, LogoPosition = printLogo.Position
+            };
+            try { issued=await _printRegistrar.RegisterAsync(printRequest,ct); } catch(InvalidOperationException ex) { ModelState.AddModelError(nameof(input.ReprintReason),ex.Message); ViewBag.Templates=await _catalog.GetTemplatesAsync(TenantId,input.SubjectType,input.PrintMode,ct); ViewBag.SubjectOptions=await LoadSubjectOptionsAsync(input.SubjectType,ct); return View("PrintWizard",input); } }
         var qrPath=issued?.ShortUrl??$"/Labels/Trace/{input.SubjectId}"; ViewBag.TraceCode=issued?.Trace.TraceCode; ViewBag.QrSvg=_qrCodes.CreateTrackingSvg($"{Request.Scheme}://{Request.Host}{qrPath}"); ViewBag.PrintRegistered=register; ViewBag.IsPrintPage=register; ViewBag.Copies=input.Copies; ViewBag.PrintLogo=printLogo; ViewBag.PrintLogoWarning=printLogo.HasLogo&&!printLogo.ImageLoaded?printLogo.LoadError:null;
         return View(template.ViewName,subject);
     }
@@ -903,13 +911,18 @@ values(@id,@tid,@LabelKind,@ArchiveTitle,@ProcessNumber,@ControlNumber,@VolumeNu
         var option=await _catalog.GetTemplateAsync(TenantId,template,ct);
         var details=option.Id is Guid templateId?await _templateManager.GetAsync(TenantId,templateId,ct):null;
         var snapshot=new { printMode=option.Mode,templateCode=option.Code,templateName=option.Name,templateVersion=details?.Template.Version??1,isDefault=option.IsDefault,configuration=details,input };
+        var resolvedLogo = await _logoResolver.ResolveAsync(
+            TenantId, template, input.LogoSelection, input.SelectedLogoAssetId, input.LogoWidthMm,
+            input.LogoHeightMm, input.PreserveLogoAspectRatio, input.LogoFitMode, input.LogoPosition, 0, 0, ct);
         return await _printRegistrar.RegisterAsync(new LabelPrintRequest(
             TenantId, userId, type, subjectId, template, _payloadBuilder.Build(snapshot),
-            HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers.UserAgent.ToString(), reason,
-            PrintMode: option.Mode, TemplateVersion: details?.Template.Version,
-            LogoAssetId: input.SelectedLogoAssetId, LogoWidthMm: input.LogoWidthMm,
-            LogoHeightMm: input.LogoHeightMm, LogoFitMode: input.LogoFitMode,
-            LogoPosition: input.LogoPosition), ct);
+            HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers.UserAgent.ToString(), reason)
+        {
+            PrintChannel = "WEB", PrintMode = option.Mode, TemplateVersion = details?.Template.Version,
+            LogoAssetId = resolvedLogo.AssetId, LogoBrandName = resolvedLogo.BrandName,
+            LogoWidthMm = resolvedLogo.WidthMm, LogoHeightMm = resolvedLogo.HeightMm,
+            LogoFitMode = resolvedLogo.FitMode, LogoPosition = resolvedLogo.Position
+        }, ct);
     }
 
     private static void NormalizeLocDesk(LocDeskLabelInputModel input)

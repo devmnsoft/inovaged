@@ -9,18 +9,21 @@ public sealed record LabelPrintRequest(
     string SnapshotJson,
     string? IpAddress,
     string? UserAgent,
-    string? ReprintReason,
-    string PrintChannel = "WEB",
-    string? PrintMode = null,
-    int? TemplateVersion = null,
-    Guid? LogoAssetId = null,
-    string? LogoBrandName = null,
-    decimal? LogoWidthMm = null,
-    decimal? LogoHeightMm = null,
-    string? LogoFitMode = null,
-    string? LogoPosition = null,
-    Guid? CalibrationProfileId = null,
-    string? TraceCode = null);
+    string? ReprintReason)
+{
+    // Keep print metadata out of the positional constructor so existing callers remain source-compatible.
+    public string PrintChannel { get; init; } = "WEB";
+    public string? PrintMode { get; init; }
+    public int? TemplateVersion { get; init; }
+    public Guid? LogoAssetId { get; init; }
+    public string? LogoBrandName { get; init; }
+    public decimal? LogoWidthMm { get; init; }
+    public decimal? LogoHeightMm { get; init; }
+    public string? LogoFitMode { get; init; }
+    public string? LogoPosition { get; init; }
+    public Guid? CalibrationProfileId { get; init; }
+    public string? TraceCode { get; init; }
+}
 
 public interface ILabelPrintRegistrar
 {
