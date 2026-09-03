@@ -11,7 +11,7 @@ public sealed class LabelsLogoRenderingContractTests
     {
         var partial = Read("InovaGed.Web/Views/Shared/Branding/_PrintLogo.cshtml");
         Assert.Contains("Model.ImageLoaded", partial);
-        Assert.Contains("!string.IsNullOrWhiteSpace", partial);
+        Assert.Contains("ImageDataUriValidator.IsValidImageDataUri", partial);
         Assert.Contains("PrintImageSource", partial);
 
         var wizard = Read("InovaGed.Web/Views/Labels/PrintWizard.cshtml");

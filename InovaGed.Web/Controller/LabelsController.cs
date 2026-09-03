@@ -2,6 +2,7 @@ using Dapper;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using InovaGed.Application.Common.Database;
+using InovaGed.Application.Branding;
 using InovaGed.Web.Security;
 using InovaGed.Application.PhysicalArchive;
 using InovaGed.Web.Models.Labels;
@@ -869,6 +870,11 @@ select
         ViewBag.TraceCode=issued?.Trace.TraceCode;
         var resolvedLogo=await _logoResolver.ResolveAsync(TenantId,ResolveLocDeskTemplateCode(input),input.LogoSelection,input.SelectedLogoAssetId,input.LogoWidthMm,input.LogoHeightMm,input.PreserveLogoAspectRatio,input.LogoFitMode,input.LogoPosition,0,0,ct);
         var logo=PrintLogoViewModelMapper.FromResolved(resolvedLogo);
+        _logger.LogInformation(
+            "LABEL_LOGO_RENDER Action={Action} Template={TemplateCode} SelectedLogo={SelectedLogo} HasLogo={HasLogo} ImageLoaded={ImageLoaded} DataUri={DataUri}",
+            registered ? nameof(PrintLocDesk) : nameof(PreviewLocDesk), ResolveLocDeskTemplateCode(input),
+            input.SelectedLogoAssetId.HasValue, logo.HasLogo, logo.ImageLoaded,
+            ImageDataUriValidator.IsValidImageDataUri(logo.PrintImageSource));
         ViewBag.IsPrintPage=registered;
         var template = await LoadLocDeskTemplate(input, ct);
         var warning = logo.HasLogo && !logo.ImageLoaded ? logo.LoadError : null;

@@ -1,4 +1,9 @@
 User-agent: *
+Disallow: /Administration
+Disallow: /Labels
+Disallow: /Ged
+Disallow: /Physical
+Disallow: /api
 Disallow: /Account/
 Disallow: /Users/
 Disallow: /SystemHealth/
