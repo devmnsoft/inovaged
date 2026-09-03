@@ -326,8 +326,9 @@ public class LabelsController : GedControllerBase
 
     private void LogLogoSelection(string action, LabelPrintWizardInputModel input) =>
         _logger.LogInformation(
-            "Label render logo selection: Action={Action}, TemplateCode={TemplateCode}, SelectedLogoAssetIdPresent={SelectedLogoAssetIdPresent}",
-            action, input.TemplateCode, input.SelectedLogoAssetId.HasValue);
+            "LABEL_ACTION_SUBMITTED Action={Action} ClientActionId={ClientActionId} TemplateCode={TemplateCode} SubjectType={SubjectType} SelectedLogo={SelectedLogo} User={UserId}",
+            action, input.ClientActionId, input.TemplateCode, input.SubjectType,
+            input.SelectedLogoAssetId.HasValue, User.Identity?.Name ?? "anonymous");
 
     [HttpPost, ValidateAntiForgeryToken]
     public async Task<IActionResult> PrintBatch(LabelBatchPrintInputModel input, CancellationToken ct)
@@ -689,6 +690,7 @@ group by b.id, b.batch_no, b.notes, b.reg_date
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> PreviewLocDesk(LocDeskLabelInputModel input, CancellationToken ct)
     {
+        LogLocDeskAction(nameof(PreviewLocDesk), input);
         NormalizeLocDesk(input);
         if (!ModelState.IsValid) return View("LocDesk", input);
         return await RenderLocDesk(input, false,ct);
@@ -698,6 +700,7 @@ group by b.id, b.batch_no, b.notes, b.reg_date
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> PrintLocDesk(LocDeskLabelInputModel input, CancellationToken ct)
     {
+        LogLocDeskAction(nameof(PrintLocDesk), input);
         NormalizeLocDesk(input);
         if (!ModelState.IsValid) return View("LocDesk", input);
         try
@@ -718,6 +721,13 @@ group by b.id, b.batch_no, b.notes, b.reg_date
             return View("LocDesk", input);
         }
     }
+
+
+    private void LogLocDeskAction(string action, LocDeskLabelInputModel input) =>
+        _logger.LogInformation(
+            "LABEL_ACTION_SUBMITTED Action={Action} ClientActionId={ClientActionId} TemplateCode={TemplateCode} SubjectType={SubjectType} SelectedLogo={SelectedLogo} User={UserId}",
+            action, input.ClientActionId, input.TemplateCode, input.LabelKind,
+            input.SelectedLogoAssetId.HasValue, User.Identity?.Name ?? "anonymous");
 
     [HttpPost]
     [ValidateAntiForgeryToken]

@@ -100,6 +100,11 @@ public sealed class GedProcessingWorker : BackgroundService
         {
             await repo.CancelAsync(job.TenantId, job.Id, "Worker cancelado", CancellationToken.None);
         }
+        catch (Exception ex) when (IsDiagnosticSourceFailure(ex))
+        {
+            _logger.LogCritical(ex, "RUNTIME_DEPENDENCY_ERROR Worker=GedProcessingWorker Dependency=System.Diagnostics.DiagnosticSource JobId={JobId}; o job não será marcado como falho e o worker tentará novamente após backoff.", job.Id);
+            await Task.Delay(TimeSpan.FromMinutes(5), ct);
+        }
         catch (Exception ex)
         {
             var delay = TimeSpan.FromSeconds(Math.Min(300, Math.Pow(2, Math.Max(1, job.AttemptCount)) * 15));
@@ -107,4 +112,7 @@ public sealed class GedProcessingWorker : BackgroundService
             _logger.LogError(ex, "PROCESSING_JOB_FAILED JobId={JobId} Tenant={TenantId} Type={JobType} RetryDelaySeconds={RetryDelaySeconds}", job.Id, job.TenantId, job.JobType, delay.TotalSeconds);
         }
     }
+
+    private static bool IsDiagnosticSourceFailure(Exception ex) =>
+        ex.ToString().Contains("System.Diagnostics.DiagnosticSource", StringComparison.OrdinalIgnoreCase);
 }

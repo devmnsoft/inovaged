@@ -29,7 +29,8 @@ try
         var repositoryRoot = FindRoot(BclEnvironment.CurrentDirectory);
         return LabelsPrintLocDeskQualityCheck.Run(repositoryRoot, Console.Out, Console.Error);
     }
-    if (command.Equals("server-labels-iis-quality", StringComparison.OrdinalIgnoreCase))
+    if (command.Equals("server-labels-iis-quality", StringComparison.OrdinalIgnoreCase) ||
+        command.Equals("rc20-server-labels-ui-security", StringComparison.OrdinalIgnoreCase))
     {
         var repositoryRoot = FindRoot(BclEnvironment.CurrentDirectory);
         return ServerLabelsIisQualityCheck.Run(repositoryRoot, Console.Out, Console.Error);
