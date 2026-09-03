@@ -3,6 +3,7 @@ namespace InovaGed.Web.Models.Branding;
 /// <summary>The presentation-only representation used by every Razor logo partial.</summary>
 public sealed class PrintLogoViewModel : IPrintLogo
 {
+    public static PrintLogoViewModel Empty => new();
     public Guid? AssetId { get; init; }
     public string? BrandName { get; init; }
     public string? LogoUrl { get; init; }

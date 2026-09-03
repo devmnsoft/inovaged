@@ -23,6 +23,15 @@ public static class LabelsLogoRenderingCheck
             Require(text.Contains("data-label-print-now", StringComparison.Ordinal), $"{view} não possui o botão de impressão.");
             Require(text.Contains("window.print()", StringComparison.Ordinal) || text.Contains("labels-print-page.js", StringComparison.Ordinal), $"{view} não aciona window.print.");
         }
+        var labelsViews = Directory.GetFiles(Path.Combine(root, "InovaGed.Web/Views/Labels"), "*.cshtml", SearchOption.AllDirectories);
+        foreach (var view in labelsViews)
+        {
+            var text = File.ReadAllText(view);
+            Require(!text.Contains("new LocDeskLabelRenderModel", StringComparison.Ordinal), $"{Path.GetFileName(view)} instancia LocDeskLabelRenderModel no Razor.");
+            Require(!text.Contains("new InovaGed.Web.Models.Labels.LocDeskLabelRenderModel", StringComparison.Ordinal), $"{Path.GetFileName(view)} instancia LocDeskLabelRenderModel qualificado no Razor.");
+        }
+        var renderModel = Read("InovaGed.Web/Models/Labels/LocDeskLabelRenderModel.cs");
+        Require(!renderModel.Contains("required ", StringComparison.Ordinal), "LocDeskLabelRenderModel ainda depende de required members.");
 
         var wizard = Read("InovaGed.Web/Views/Labels/PrintWizard.cshtml");
         var formStart = wizard.IndexOf("<form method=\"post\"", StringComparison.Ordinal);
