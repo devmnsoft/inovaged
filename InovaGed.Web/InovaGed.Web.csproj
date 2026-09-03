@@ -16,6 +16,8 @@
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Razor.RuntimeCompilation" />
     <PackageReference Include="Npgsql" />
     <PackageReference Include="QRCoder" />
+    <!-- Direct reference on the executable guarantees this runtime asset is published. -->
+    <PackageReference Include="System.Diagnostics.DiagnosticSource" />
   </ItemGroup>
 
   <ItemGroup>

@@ -12,6 +12,7 @@ using InovaGed.Application.Contracts.Fiscalization;
 using InovaGed.Application.SystemHealth;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 
 namespace InovaGed.Infrastructure.SystemHealth;
 
@@ -508,31 +509,80 @@ limit 1;", cancellationToken: ct));
         }
         catch (OperationCanceledException ex)
         {
+            report.Status = SchemaHealthStatus.DatabaseUnavailable;
+            report.ErrorMessage = "O banco PostgreSQL não respondeu dentro do tempo limite do diagnóstico.";
             _logger.LogWarning(ex, "Diagnóstico de schema excedeu o tempo limite de 15 segundos.");
             AddCheck(report, "GED_DIAGNOSTIC_TIMEOUT", "Banco", "Conexão/diagnóstico", "Timeout", "Warning", false,
                 "Diagnóstico de schema temporariamente indisponível. Tente novamente.",
                 "Tente novamente e verifique a latência das consultas de metadados do banco.");
         }
+        catch (FileNotFoundException ex) when (IsDiagnosticSourceFailure(ex))
+        {
+            const string message = "Falha de dependência runtime no servidor. A DLL System.Diagnostics.DiagnosticSource 9.0.0.0 não foi encontrada na publicação. Refaça restore/build/publish completo ou publique self-contained.";
+            report.Status = SchemaHealthStatus.RuntimeDependencyError;
+            report.ErrorMessage = message;
+            _logger.LogError(ex, "{RuntimeDependencyMessage}", message);
+            AddCheck(report, "GED_RUNTIME_DIAGNOSTIC_SOURCE", "Runtime", "System.Diagnostics.DiagnosticSource", "Dependência", "Critical", false, message, "Refaça restore/build/publish completo ou publique self-contained; não copie DLL avulsa.");
+        }
+        catch (NpgsqlException ex) when (IsDiagnosticSourceFailure(ex))
+        {
+            const string message = "Falha de dependência runtime no servidor. A DLL System.Diagnostics.DiagnosticSource 9.0.0.0 não foi encontrada na publicação. Refaça restore/build/publish completo ou publique self-contained.";
+            report.Status = SchemaHealthStatus.RuntimeDependencyError;
+            report.ErrorMessage = message;
+            _logger.LogError(ex, "{RuntimeDependencyMessage}", message);
+            AddCheck(report, "GED_RUNTIME_DIAGNOSTIC_SOURCE", "Runtime", "System.Diagnostics.DiagnosticSource", "Dependência", "Critical", false, message, "Refaça restore/build/publish completo ou publique self-contained; não execute migrations para corrigir DLL.");
+        }
+        catch (NpgsqlException ex)
+        {
+            report.Status = SchemaHealthStatus.DatabaseUnavailable;
+            report.ErrorMessage = "Banco PostgreSQL indisponível ou conexão recusada.";
+            _logger.LogError(ex, "Falha de disponibilidade/conexão ao executar diagnóstico de schema.");
+            AddCheck(report, "GED_DIAGNOSTIC_DATABASE", "Banco", "Conexão/diagnóstico", "Disponibilidade", "Critical", false, report.ErrorMessage, "Verifique serviço PostgreSQL, rede, credenciais e o banco dedicado configurado.");
+        }
         catch (Exception ex)
         {
+            report.Status = IsDiagnosticSourceFailure(ex) ? SchemaHealthStatus.RuntimeDependencyError : SchemaHealthStatus.UnexpectedError;
+            report.ErrorMessage = report.Status == SchemaHealthStatus.RuntimeDependencyError
+                ? "Falha de dependência runtime no servidor. A DLL System.Diagnostics.DiagnosticSource 9.0.0.0 não foi encontrada na publicação. Refaça restore/build/publish completo ou publique self-contained."
+                : "Falha inesperada ao executar o diagnóstico de schema.";
             _logger.LogError(ex, "Falha ao executar diagnóstico de schema do banco.");
-            AddCheck(report, "GED_DIAGNOSTIC_DATABASE", "Banco", "Conexão/diagnóstico", "Erro", "Critical", false, "Falha ao consultar metadados do banco.", "Verifique a connection string e permissões de information_schema/pg_catalog.");
+            AddCheck(report, "GED_DIAGNOSTIC_UNEXPECTED", "Banco", "Conexão/diagnóstico", "Erro", "Critical", false, report.ErrorMessage, report.Status == SchemaHealthStatus.RuntimeDependencyError ? "Refaça restore/build/publish completo ou publique self-contained; não execute migrations para corrigir DLL." : "Consulte a exceção registrada antes de escolher uma ação corretiva.");
         }
 
         if (!requestCancellationToken.IsCancellationRequested && !diagnosticTimeout.IsCancellationRequested)
             await EnrichFixesAsync(report, requestCancellationToken);
 
         report.IsHealthy = !report.Checks.Any(c => !c.Success && c.Severity == "Critical");
+        if (report.IsHealthy && report.Status == SchemaHealthStatus.UnexpectedError)
+            report.Status = SchemaHealthStatus.Healthy;
+        else if (report.Status == SchemaHealthStatus.UnexpectedError && (report.MissingTables.Count > 0 || report.MissingColumns.Count > 0))
+            report.Status = SchemaHealthStatus.SchemaOutdated;
         var hasRecommendedFailures = report.Checks.Any(c => !c.Success && c.Severity == "Warning");
-        report.Recommendations.Add(report.IsHealthy
-            ? (hasRecommendedFailures
+        report.Recommendations.Add(report.Status switch
+        {
+            SchemaHealthStatus.RuntimeDependencyError => report.ErrorMessage!,
+            SchemaHealthStatus.DatabaseUnavailable => "Restabeleça a conexão com o banco dedicado e execute novamente o diagnóstico; migrations não corrigem indisponibilidade.",
+            SchemaHealthStatus.UnexpectedError => "Consulte a exceção registrada e corrija a causa antes de aplicar qualquer migration.",
+            _ when report.IsHealthy => hasRecommendedFailures
                 ? "Schema funcional com recomendações de performance."
-                : "Schema compatível: tabelas e colunas críticas necessárias ao GED/OCR/upload/logs foram encontradas.")
-            : $"Execute o script consolidado {ConsolidationMigration} ou o master database/apply_all_required_migrations.sql.");
+                : "Schema compatível: tabelas e colunas críticas necessárias ao GED/OCR/upload/logs foram encontradas.",
+            _ => $"Execute o script consolidado {ConsolidationMigration} ou o master database/apply_all_required_migrations.sql."
+        });
         report.Recommendations.Add("Use 'Copiar SQL de correção' para obter o comando psql recomendado e reabra /SystemHealth/Schema após aplicar.");
         report.Recommendations.Add("Pendências recomendadas são índices/performance; pendências opcionais são histórico/melhorias operacionais.");
 
         return report;
+    }
+
+    private static bool IsDiagnosticSourceFailure(Exception exception)
+    {
+        for (Exception? current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is FileNotFoundException && current.Message.Contains("System.Diagnostics.DiagnosticSource", StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
     }
 
     private void AddDiCheck<TService>(SchemaHealthReportDto report, string affectedClass, string registration)
