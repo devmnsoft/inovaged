@@ -14,6 +14,7 @@ public static class LabelsLogoRenderingCheck
         Require(partial.Contains("src=\"@Model.PrintImageSource\"", StringComparison.Ordinal), "_PrintLogo deve usar exclusivamente PrintImageSource.");
         Require(!partial.Contains("src=\"\"", StringComparison.Ordinal), "_PrintLogo contém src vazio.");
         Require(partial.Contains("Model.ImageLoaded", StringComparison.Ordinal), "_PrintLogo deve impedir imagem não carregada.");
+        Require(partial.Contains("StartsWith(\"data:image/\"", StringComparison.Ordinal), "_PrintLogo deve aceitar somente Data URI de imagem.");
 
         foreach (var view in new[] { "LocDeskFolderLabel.cshtml", "LocDeskBoxLabel.cshtml", "LocDeskFolderHolLabel.cshtml" })
         {
@@ -37,6 +38,7 @@ public static class LabelsLogoRenderingCheck
         var controller = Read("InovaGed.Web/Controller/LabelsController.cs");
         Require(controller.Contains("Task<IActionResult> PrintPreview(LabelPrintWizardInputModel input", StringComparison.Ordinal), "POST PrintPreview do PrintWizard não existe.");
         Require(controller.Contains("BuildLabelRenderModelAsync(input", StringComparison.Ordinal), "As ações não usam o construtor único de renderização.");
+        Require(!controller.Contains("return RedirectToAction(nameof(LocDeskBox)", StringComparison.Ordinal), "O fluxo LocDesk ainda perde o POST em redirecionamento.");
         Require(controller.Contains("SelectedLogoAssetIdPresent", StringComparison.Ordinal), "Log seguro da seleção de logo não existe.");
         Require(controller.Contains("new DynamicParameters()", StringComparison.Ordinal), "History deve usar DynamicParameters tipados.");
         Require(!controller.Contains("@startDate is null", StringComparison.OrdinalIgnoreCase), "History ainda usa parâmetro nulo sem tipo no SQL.");

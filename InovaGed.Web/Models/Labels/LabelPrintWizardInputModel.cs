@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using Microsoft.AspNetCore.Mvc.Rendering;
 namespace InovaGed.Web.Models.Labels;
 public sealed class LabelPrintWizardInputModel : IValidatableObject
 {
@@ -11,12 +12,13 @@ public sealed class LabelPrintWizardInputModel : IValidatableObject
     [Range(10,90)] public decimal? LogoWidthMm { get; set; }
     [Range(5,60)] public decimal? LogoHeightMm { get; set; }
     public bool PreserveAspectRatio { get; set; } = true;
-    [RegularExpression("CONTAIN|COVER|FILL")] public string LogoFitMode { get; set; } = "CONTAIN";
-    [RegularExpression("TOP_LEFT|TOP_CENTER|TOP_RIGHT|CENTER|BOTTOM_LEFT|BOTTOM_CENTER|BOTTOM_RIGHT")] public string LogoPosition { get; set; } = "TOP_LEFT";
+    [RegularExpression("CONTAIN|COVER|FILL")] public string? LogoFitMode { get; set; } = "CONTAIN";
+    [RegularExpression("TOP_LEFT|TOP_CENTER|TOP_RIGHT|CENTER|BOTTOM_LEFT|BOTTOM_CENTER|BOTTOM_RIGHT")] public string? LogoPosition { get; set; } = "TOP_LEFT";
     [Range(-100,100)] public decimal? LogoOffsetXmm { get; set; }
     [Range(-100,100)] public decimal? LogoOffsetYmm { get; set; }
     public Guid? PrintBrandingProfileId { get; set; }
     public LocDeskLabelInputModel CustomFields { get; set; }=new();
+    public IEnumerable<SelectListItem> LogoOptions { get; set; } = Array.Empty<SelectListItem>();
     public IEnumerable<ValidationResult> Validate(ValidationContext c)
     {
         if (string.IsNullOrWhiteSpace(TemplateCode)) yield return new("Selecione um modelo de etiqueta.", [nameof(TemplateCode)]);

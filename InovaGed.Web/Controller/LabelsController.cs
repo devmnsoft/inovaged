@@ -370,10 +370,22 @@ public class LabelsController : GedControllerBase
         }
         if (input.PrintMode==LabelPrintMode.Custom) {
             input.CustomFields.LogoSelection=input.LogoSelection; input.CustomFields.SelectedLogoAssetId=input.SelectedLogoAssetId; input.CustomFields.LogoWidthMm=input.LogoWidthMm; input.CustomFields.LogoHeightMm=input.LogoHeightMm; input.CustomFields.PreserveLogoAspectRatio=input.PreserveAspectRatio; input.CustomFields.LogoFitMode=input.LogoFitMode; input.CustomFields.LogoPosition=input.LogoPosition;
-            if(input.SubjectType==LabelSubjectType.Box && input.SubjectId is Guid box) return RedirectToAction(nameof(LocDeskBox),new { boxId=box, input.LogoSelection, input.SelectedLogoAssetId, input.LogoWidthMm, input.LogoHeightMm, PreserveLogoAspectRatio=input.PreserveAspectRatio, input.LogoFitMode });
-            if(input.SubjectType==LabelSubjectType.Document && input.SubjectId is Guid doc) return RedirectToAction(nameof(LocDeskFolder),new { docId=doc, templateCode=template.Code, input.LogoSelection, input.SelectedLogoAssetId, input.LogoWidthMm, input.LogoHeightMm, PreserveLogoAspectRatio=input.PreserveAspectRatio, input.LogoFitMode });
-            input.CustomFields.TemplateCode=template.Code;
-            return View("LocDesk",input.CustomFields);
+            IActionResult? loaded = input.SubjectType switch
+            {
+                LabelSubjectType.Box when input.SubjectId is Guid box => await LocDeskBoxFromPhysical(box, input.SelectedLogoAssetId, input.LogoSelection, input.LogoWidthMm, input.LogoHeightMm, input.PreserveAspectRatio, input.LogoFitMode, ct),
+                LabelSubjectType.Document when input.SubjectId is Guid doc => await LocDeskFolderFromDocument(doc, template.Code, input.SelectedLogoAssetId, input.LogoSelection, input.LogoWidthMm, input.LogoHeightMm, input.PreserveAspectRatio, input.LogoFitMode, ct),
+                _ => null
+            };
+            if (loaded is not ViewResult { Model: LocDeskLabelInputModel locDesk }) return loaded ?? NotFound();
+            locDesk.TemplateCode=template.Code;
+            locDesk.LogoPosition=input.LogoPosition ?? "TOP_LEFT";
+            InovaGed.Application.Labels.LabelTraceIssued? locDeskIssued=null;
+            if (register)
+            {
+                try { locDeskIssued=await RegisterLocDeskAsync(locDesk, input.SubjectId!.Value, input.ReprintReason, ct); }
+                catch (InvalidOperationException ex) { ModelState.AddModelError(nameof(input.ReprintReason), ex.Message); await PopulatePrintWizardLookupsAsync(input,ct); return View("PrintWizard",input); }
+            }
+            return await RenderLocDesk(locDesk,register,ct,locDeskIssued);
         }
         using var db=await OpenAsync();
         object? subject = input.SubjectType switch
@@ -431,7 +443,9 @@ public class LabelsController : GedControllerBase
         {
             ViewBag.PrintProfiles = (await db.QueryAsync<LabelPrintProfileInput>(new CommandDefinition(ProfileSelect + " order by is_default desc,profile_name", new { tid=TenantId }, cancellationToken:ct))).AsList();
             ViewBag.SelectedPrintProfile = await ResolveProfileAsync(model.PrintProfileId, ct);
-            ViewBag.BrandAssets = (await db.QueryAsync<InovaGed.Web.Models.Branding.BrandAssetVm>(new CommandDefinition("select id,brand_name BrandName,asset_name AssetName,original_file_name OriginalFileName,content_type ContentType,file_extension FileExtension,file_size_bytes FileSizeBytes,storage_relative_path StorageRelativePath,is_default IsDefault,status,created_at CreatedAt from ged.brand_asset where tenant_id=@tid and status='ACTIVE' and reg_status='A' order by is_default desc,asset_name",new{tid=TenantId},cancellationToken:ct))).AsList();
+            var brandAssets = (await db.QueryAsync<InovaGed.Web.Models.Branding.BrandAssetVm>(new CommandDefinition("select id,brand_name BrandName,asset_name AssetName,original_file_name OriginalFileName,content_type ContentType,file_extension FileExtension,file_size_bytes FileSizeBytes,storage_relative_path StorageRelativePath,is_default IsDefault,status,created_at CreatedAt from ged.brand_asset where tenant_id=@tid and status='ACTIVE' and reg_status='A' order by is_default desc,asset_name",new{tid=TenantId},cancellationToken:ct))).AsList();
+            ViewBag.BrandAssets = brandAssets;
+            model.LogoOptions = brandAssets.Select(asset => new Microsoft.AspNetCore.Mvc.Rendering.SelectListItem($"{asset.AssetName} — {asset.BrandName}", asset.Id.ToString(), asset.Id == model.SelectedLogoAssetId)).ToList();
             ViewBag.PrintBrandingProfiles = await db.ExecuteScalarAsync<bool>(new CommandDefinition("select to_regclass('ged.print_branding_profile') is not null", cancellationToken:ct))
                 ? (await db.QueryAsync<InovaGed.Web.Models.Branding.PrintBrandingProfileVm>(new CommandDefinition("select id,profile_name ProfileName,is_default IsDefault,status from ged.print_branding_profile where tenant_id=@tid and status='ACTIVE' and reg_status='A' order by is_default desc,profile_name",new{tid=TenantId},cancellationToken:ct))).AsList()
                 : new List<InovaGed.Web.Models.Branding.PrintBrandingProfileVm>();

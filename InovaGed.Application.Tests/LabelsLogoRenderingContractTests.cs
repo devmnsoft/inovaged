@@ -1,5 +1,7 @@
 namespace InovaGed.Application.Tests;
 
+using InovaGed.Web.Models.Branding;
+
 public sealed class LabelsLogoRenderingContractTests
 {
     private static readonly string Root = FindRoot();
@@ -26,6 +28,35 @@ public sealed class LabelsLogoRenderingContractTests
         }
         Assert.Contains("window.print();", Read("InovaGed.Web/wwwroot/js/labels-print-page.js"));
         Assert.Contains(".no-print", Read("InovaGed.Web/wwwroot/css/labels-print.css"));
+    }
+
+    [Fact]
+    public void Loaded_logo_is_mapped_to_an_embedded_image_source()
+    {
+        var resolved = new ResolvedPrintLogo(Guid.NewGuid(), "Marca", null,
+            "data:image/png;base64,AQID", "Logo oficial", 38, null, true,
+            "CONTAIN", "TOP_LEFT", 0, 0, true, true, null);
+
+        var result = PrintLogoViewModelMapper.FromResolved(resolved);
+
+        Assert.True(result.HasLogo);
+        Assert.True(result.ImageLoaded);
+        Assert.StartsWith("data:image/", result.PrintImageSource);
+    }
+
+    [Fact]
+    public void Missing_logo_file_is_mapped_without_a_broken_image_source()
+    {
+        var resolved = new ResolvedPrintLogo(Guid.NewGuid(), "Marca", null, null,
+            "Logo oficial", 38, null, true, "CONTAIN", "TOP_LEFT", 0, 0,
+            true, false, "A logo selecionada não pôde ser carregada.");
+
+        var result = PrintLogoViewModelMapper.FromResolved(resolved);
+
+        Assert.True(result.HasLogo);
+        Assert.False(result.ImageLoaded);
+        Assert.Null(result.PrintImageSource);
+        Assert.False(string.IsNullOrWhiteSpace(result.LoadError));
     }
 
     private static string Read(string path) => File.ReadAllText(Path.Combine(Root,path));
