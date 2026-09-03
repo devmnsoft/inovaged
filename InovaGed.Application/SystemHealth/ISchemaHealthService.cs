@@ -21,12 +21,23 @@ public interface ISchemaRepairService
 
 public sealed class SchemaHealthReportDto
 {
+    public SchemaHealthStatus Status { get; set; } = SchemaHealthStatus.UnexpectedError;
+    public string? ErrorMessage { get; set; }
     public bool IsHealthy { get; set; }
     public List<SchemaCheckItemDto> Checks { get; set; } = new();
     public List<string> MissingTables { get; set; } = new();
     public List<string> MissingColumns { get; set; } = new();
     public List<string> Recommendations { get; set; } = new();
     public SchemaMigrationHistoryDto? LastMigration { get; set; }
+}
+
+public enum SchemaHealthStatus
+{
+    Healthy,
+    SchemaOutdated,
+    DatabaseUnavailable,
+    RuntimeDependencyError,
+    UnexpectedError
 }
 
 public sealed class SchemaMigrationHistoryDto

@@ -751,7 +751,7 @@ static async Task ValidateDatabaseSchemaOnStartupAsync(WebApplication app)
         var service = scope.ServiceProvider.GetRequiredService<ISchemaHealthService>();
         var report = await service.CheckAsync(CancellationToken.None);
         var schemaState = scope.ServiceProvider.GetRequiredService<ISchemaCompatibilityState>();
-        if (report.IsHealthy)
+        if (report.Status == SchemaHealthStatus.Healthy)
         {
             schemaState.MarkCompatible();
             logger.LogInformation("Validação de schema concluída: banco compatível com checks críticos.");
@@ -761,6 +761,13 @@ static async Task ValidateDatabaseSchemaOnStartupAsync(WebApplication app)
         var missingTables = string.Join(", ", report.MissingTables);
         var missingColumns = string.Join(", ", report.MissingColumns);
         var disableWorkers = app.Configuration.GetValue("Database:DisableWorkersWhenSchemaInvalid", true);
+        if (report.Status != SchemaHealthStatus.SchemaOutdated)
+        {
+            var operationalMessage = report.ErrorMessage ?? $"Validação de schema falhou com status {report.Status}.";
+            schemaState.MarkInvalid(Array.Empty<string>(), Array.Empty<string>(), operationalMessage, workersDisabled: false);
+            logger.LogError("Validação de schema não concluída. Status={Status} Mensagem={Message}. Nenhum script de migration será sugerido.", report.Status, operationalMessage);
+            return;
+        }
         var message = "Schema do banco desatualizado. Execute database/apply_all_required_migrations.sql antes de iniciar módulos críticos.";
         schemaState.MarkInvalid(report.MissingTables, report.MissingColumns, message, disableWorkers);
         logger.LogError("Schema do banco desatualizado. MissingTables=[{MissingTables}] MissingColumns=[{MissingColumns}] ScriptSugerido={Script}",
