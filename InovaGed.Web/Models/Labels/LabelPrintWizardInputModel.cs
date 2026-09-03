@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc.Rendering;
 namespace InovaGed.Web.Models.Labels;
 public sealed class LabelPrintWizardInputModel : IValidatableObject
 {
+    public Guid? ClientActionId { get; set; }
     [Required] public string SubjectType { get; set; }=""; public Guid? SubjectId { get; set; }
     [Required] public string PrintMode { get; set; }=LabelPrintMode.Factory; [Required] public string TemplateCode { get; set; }="";
     [Range(1,500)] public int Copies { get; set; }=1; [StringLength(500)] public string? ReprintReason { get; set; }

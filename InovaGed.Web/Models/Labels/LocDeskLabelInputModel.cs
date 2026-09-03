@@ -4,6 +4,7 @@ namespace InovaGed.Web.Models.Labels;
 
 public sealed class LocDeskLabelInputModel : IValidatableObject
 {
+    public Guid? ClientActionId { get; set; }
     public string TemplateCode { get; set; } = LabelTemplateCode.LocDeskFolder;
     public string LabelKind { get; set; } = LocDeskLabelKind.Folder;
     [Required, StringLength(160)] public string ArchiveTitle { get; set; } = "ARQUIVO LOCDESCK ANANINDEUA";

@@ -404,6 +404,11 @@ public sealed class OcrWorker : BackgroundService
 
                     _logger.LogError(ex, "Erro classificado ao processar OCR. JobId={JobId} Code={Code}", job.Id, ex.Code);
                 }
+                catch (Exception ex) when (IsDiagnosticSourceFailure(ex))
+                {
+                    _logger.LogCritical(ex, "RUNTIME_DEPENDENCY_ERROR Worker=OcrWorker Dependency=System.Diagnostics.DiagnosticSource JobId={JobId}; o job não será marcado como falho e o worker tentará novamente após backoff.", job.Id);
+                    await Task.Delay(TimeSpan.FromMinutes(5), stoppingToken);
+                }
                 catch (Exception ex)
                 {
                     await jobs.MarkErrorAsync(job.Id, ex.Message, stoppingToken);
@@ -455,6 +460,9 @@ public sealed class OcrWorker : BackgroundService
 
         _logger.LogInformation("OCR Worker finalizado.");
     }
+
+    private static bool IsDiagnosticSourceFailure(Exception ex) =>
+        ex.ToString().Contains("System.Diagnostics.DiagnosticSource", StringComparison.OrdinalIgnoreCase);
 
     private static async Task DelayAfterWorkerFailureAsync(CancellationToken ct)
     {

@@ -19,13 +19,13 @@ public sealed class SuspiciousRequestMiddleware
     private static readonly HashSet<string> SensitiveSegments = new(StringComparer.OrdinalIgnoreCase)
     {
         ".git", ".svn", ".vscode", "vendor", "node_modules", "phpunit", "cgi-bin", "php-cgi",
-        "actuator", "webshell", "graphql", "telescope", "server-status", "@vite"
+        "actuator", "webshell", "graphql", "telescope", "server-status", "@vite", "mcp", "sse", "boaform", "_vti_pvt", "_layouts", "wp-includes", "wp-admin"
     };
 
     private static readonly HashSet<string> SensitiveFiles = new(StringComparer.OrdinalIgnoreCase)
     {
         ".env", ".ds_store", "web.config", "config.json", "manager.html", "package.json", "composer.json",
-        "trace.axd", "shell.aspx", "shell.asp", "telerik.web.ui.dialoghandler.aspx"
+        "trace.axd", "shell.aspx", "shell.asp", "telerik.web.ui.dialoghandler.aspx", "xmlrpc.php", "terraform.tfvars", "docker-compose.yml", ".gitlab-ci.yml"
     };
 
     private readonly RequestDelegate _next;
@@ -171,7 +171,7 @@ public sealed class SuspiciousRequestMiddleware
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(result.NormalizedPath)));
 
         _logger.LogWarning(
-            "SECURITY_SUSPICIOUS_REQUEST Ip={Ip} Method={Method} PathSummary={PathSummary} PathHash={PathHash} PathLength={PathLength} QuerySummary={QuerySummary} UserAgentSummary={UserAgentSummary} Category={Category} Action={Action} TimestampUtc={TimestampUtc:o} CorrelationId={CorrelationId}",
+            "SUSPICIOUS_REQUEST_BLOCKED RemoteIp={Ip} Method={Method} Path={PathSummary} PathHash={PathHash} PathLength={PathLength} QuerySummary={QuerySummary} UserAgentSummary={UserAgentSummary} Rule={Category} Action={Action} TimestampUtc={TimestampUtc:o} CorrelationId={CorrelationId}",
             context.Connection.RemoteIpAddress?.ToString(),
             context.Request.Method,
             pathSummary,

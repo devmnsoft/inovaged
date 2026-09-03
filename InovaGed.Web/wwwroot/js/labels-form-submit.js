@@ -16,7 +16,7 @@
             // Traditional submissions opened in a new tab leave this page alive. Restore promptly
             // after the browser has captured formaction/formmethod; an error response then cannot
             // leave the source page stuck in a loading state.
-            window.setTimeout(function () { restore(submitter); }, 1000);
+            window.setTimeout(function () { restore(submitter); }, 12000);
         });
         window.addEventListener('pageshow', function () { restore(activeSubmitter); });
     });

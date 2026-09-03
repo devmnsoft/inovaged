@@ -3,6 +3,8 @@ Disallow: /Administration
 Disallow: /Labels
 Disallow: /Ged
 Disallow: /Physical
+Disallow: /SchemaHealth
+Disallow: /DatabaseReadiness
 Disallow: /api
 Disallow: /Account/
 Disallow: /Users/
