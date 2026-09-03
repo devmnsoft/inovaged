@@ -32,7 +32,7 @@ public class HomeController : Controller
     [HttpGet("/status")]
     [HttpGet("/Home/Status")]
     [AllowAnonymous]
-    public IActionResult ApplicationStatus() => Ok(new
+    public IActionResult Status() => Ok(new
     {
         status = "ok",
         application = "InovaGED",
@@ -51,7 +51,7 @@ public class HomeController : Controller
 
     [AllowAnonymous]
     [Route("Home/Status/{statusCode:int}")]
-    public IActionResult Status(int statusCode)
+    public IActionResult StatusPage(int statusCode)
     {
         ViewBag.StatusCode = statusCode;
         return View("Status");

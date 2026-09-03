@@ -14,6 +14,11 @@ using BclEnvironment = global::System.Environment;
 try
 {
     var command = args.FirstOrDefault() ?? "check";
+    if (command.Equals("labels-printlocdesk-quality", StringComparison.OrdinalIgnoreCase))
+    {
+        var repositoryRoot = FindRoot(BclEnvironment.CurrentDirectory);
+        return LabelsPrintLocDeskQualityCheck.Run(repositoryRoot, Console.Out, Console.Error);
+    }
     if (command.Equals("labels-visual-quality", StringComparison.OrdinalIgnoreCase))
     {
         var repositoryRoot = FindRoot(BclEnvironment.CurrentDirectory);

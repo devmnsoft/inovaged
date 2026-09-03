@@ -12,6 +12,7 @@ using System.Data;
 using System.Text;
 using InovaGed.Web.Services;
 using InovaGed.Web.Models.Branding;
+using Npgsql;
 
 namespace InovaGed.Web.Controllers;
 
@@ -701,6 +702,12 @@ group by b.id, b.batch_no, b.notes, b.reg_date
             ModelState.AddModelError(nameof(input.ReprintReason), ex.Message);
             return View("LocDesk", input);
         }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UndefinedColumn)
+        {
+            _logger.LogError(ex, "Schema de impressão desatualizado em PrintLocDesk. SqlState={SqlState}", ex.SqlState);
+            ModelState.AddModelError(string.Empty, "Não foi possível registrar a impressão porque o banco está desatualizado. Execute as migrations obrigatórias em DatabaseReadiness.");
+            return View("LocDesk", input);
+        }
     }
 
     [HttpPost]
@@ -896,7 +903,13 @@ values(@id,@tid,@LabelKind,@ArchiveTitle,@ProcessNumber,@ControlNumber,@VolumeNu
         var option=await _catalog.GetTemplateAsync(TenantId,template,ct);
         var details=option.Id is Guid templateId?await _templateManager.GetAsync(TenantId,templateId,ct):null;
         var snapshot=new { printMode=option.Mode,templateCode=option.Code,templateName=option.Name,templateVersion=details?.Template.Version??1,isDefault=option.IsDefault,configuration=details,input };
-        return await _printRegistrar.RegisterAsync(new LabelPrintRequest(TenantId,userId,type,subjectId,template,_payloadBuilder.Build(snapshot),HttpContext.Connection.RemoteIpAddress?.ToString(),Request.Headers.UserAgent.ToString(),reason),ct);
+        return await _printRegistrar.RegisterAsync(new LabelPrintRequest(
+            TenantId, userId, type, subjectId, template, _payloadBuilder.Build(snapshot),
+            HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers.UserAgent.ToString(), reason,
+            PrintMode: option.Mode, TemplateVersion: details?.Template.Version,
+            LogoAssetId: input.SelectedLogoAssetId, LogoWidthMm: input.LogoWidthMm,
+            LogoHeightMm: input.LogoHeightMm, LogoFitMode: input.LogoFitMode,
+            LogoPosition: input.LogoPosition), ct);
     }
 
     private static void NormalizeLocDesk(LocDeskLabelInputModel input)
