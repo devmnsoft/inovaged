@@ -9,17 +9,26 @@ public sealed class PhysicalArchive2Service(IDbConnectionFactory factory) : IPhy
     public async Task<PhysicalArchiveDashboard> DashboardAsync(Guid t, CancellationToken ct)
     {
         await using var db=await factory.OpenAsync(ct);
-        var r=await db.QuerySingleAsync<DashboardRow>(new CommandDefinition("""
-select (select count(*) from ged.physical_box where tenant_id=@t and reg_status='A') as "Boxes",
-(select count(*) from ged.physical_box where tenant_id=@t and reg_status='A' and label_code is not null) as "LabelledBoxes",
-(select count(*) from ged.physical_box where tenant_id=@t and reg_status='A' and location_id is null) as "UnlocatedBoxes",
-(select count(*) from ged.physical_box where tenant_id=@t and reg_status='A' and status='LOANED') as "LoanedBoxes",
-(select count(*) from ged.physical_inventory_session where tenant_id=@t and reg_status='A' and status='OPEN') as "OpenInventories",
-(select count(*) from ged.physical_loan where tenant_id=@t and reg_status='A' and status='OPEN' and due_at<now()) as "OverdueLoans",
-(select count(*) from ged.physical_movement where tenant_id=@t and reg_status='A' and performed_at>=date_trunc('month',now())) as "MonthlyMovements",
-(select count(*) from ged.physical_inventory_item where tenant_id=@t and reg_status='A' and result in ('PENDING','MISSING','WRONG_LOCATION')) as "PendingChecks"
+        var tables = new[] { "physical_location", "physical_box", "physical_box_document", "physical_movement", "physical_inventory_session", "physical_inventory_item", "physical_loan", "physical_custody_event" };
+        var active = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var table in tables)
+            active[table] = await HasColumnAsync(db, "ged", table, "reg_status", ct) ? " and reg_status='A'" : string.Empty;
+        var r=await db.QuerySingleAsync<DashboardRow>(new CommandDefinition($"""
+select (select count(*) from ged.physical_box where tenant_id=@t{active["physical_box"]}) as "Boxes",
+(select count(*) from ged.physical_box where tenant_id=@t{active["physical_box"]} and label_code is not null) as "LabelledBoxes",
+(select count(*) from ged.physical_box where tenant_id=@t{active["physical_box"]} and location_id is null) as "UnlocatedBoxes",
+(select count(*) from ged.physical_box where tenant_id=@t{active["physical_box"]} and status='LOANED') as "LoanedBoxes",
+(select count(*) from ged.physical_inventory_session where tenant_id=@t{active["physical_inventory_session"]} and status='OPEN') as "OpenInventories",
+(select count(*) from ged.physical_loan where tenant_id=@t{active["physical_loan"]} and status='OPEN' and due_at<now()) as "OverdueLoans",
+(select count(*) from ged.physical_movement where tenant_id=@t{active["physical_movement"]} and performed_at>=date_trunc('month',now())) as "MonthlyMovements",
+(select count(*) from ged.physical_inventory_item where tenant_id=@t{active["physical_inventory_item"]} and result in ('PENDING','MISSING','WRONG_LOCATION')) as "PendingChecks"
 """,new{t},cancellationToken:ct));
         return new(r.Boxes,r.LabelledBoxes,r.UnlocatedBoxes,r.LoanedBoxes,r.OpenInventories,r.OverdueLoans,r.MonthlyMovements,r.PendingChecks);
+    }
+    private static async Task<bool> HasColumnAsync(System.Data.IDbConnection connection,string schema,string table,string column,CancellationToken ct)
+    {
+        const string sql="select exists(select 1 from information_schema.columns where table_schema=@schema and table_name=@table and column_name=@column)";
+        return await connection.ExecuteScalarAsync<bool>(new CommandDefinition(sql,new{schema,table,column},cancellationToken:ct));
     }
     public async Task<IReadOnlyList<PhysicalOption>> BoxesAsync(Guid t,CancellationToken ct){await using var db=await factory.OpenAsync(ct);var code=await ResolvePhysicalBoxCodeExpressionAsync(db,ct);var rows=await db.QueryAsync<OptionRow>(new CommandDefinition($"select id as Id,{code} as Code,coalesce(title,{code}) as Name from ged.physical_box where tenant_id=@t and reg_status='A' order by {code}",new{t},cancellationToken:ct));return rows.Select(x=>new PhysicalOption(x.Id,x.Code,x.Name)).ToList();}
     public Task<IReadOnlyList<PhysicalOption>> LocationsAsync(Guid t,CancellationToken ct)=>Options("select id as Id,location_code as Code,name as Name from ged.physical_location where tenant_id=@t and reg_status='A' and is_active order by location_code",t,ct);

@@ -3088,3 +3088,6 @@ where coalesce(reg_status, 'A') = 'A';
 
 -- Labels PrintLocDesk Schema Fix + Buttons Recovery RC14
 \ir migrations/2026_09_03_label_print_channel_compat_fix.sql
+
+-- UI/UX Stabilization RC15 - Physical Archive schema compatibility
+\ir migrations/2026_09_03_physical_archive_reg_status_compat_fix.sql
