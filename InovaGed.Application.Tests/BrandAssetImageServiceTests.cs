@@ -5,6 +5,18 @@ namespace InovaGed.Application.Tests;
 public sealed class BrandAssetImageServiceTests
 {
     [Theory]
+    [InlineData("data:image/png;base64,AQID", true)]
+    [InlineData("DATA:IMAGE/JPEG;BASE64,AQID", true)]
+    [InlineData(null, false)]
+    [InlineData("", false)]
+    [InlineData("data:,", false)]
+    [InlineData("/data:,", false)]
+    [InlineData("/uploads/logo.png", false)]
+    [InlineData("data:image/png;base64,", false)]
+    public void Print_image_source_requires_non_empty_image_base64_data_uri(string? source, bool expected)
+        => Assert.Equal(expected, InovaGed.Application.Branding.ImageDataUriValidator.IsValidImageDataUri(source));
+
+    [Theory]
     [InlineData("uploads/branding/tenant/logo.png", "uploads/branding/tenant/logo.png")]
     [InlineData("wwwroot\\uploads\\branding\\tenant\\logo.png", "uploads/branding/tenant/logo.png")]
     [InlineData("~/wwwroot/uploads/branding/tenant/logo.png", "uploads/branding/tenant/logo.png")]

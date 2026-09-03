@@ -8,8 +8,8 @@ public sealed class LabelsLogoAndPhysicalSchemaContractTests
     public void Print_logo_partial_never_renders_an_empty_source()
     {
         var partial = Read("InovaGed.Web/Views/Shared/Branding/_PrintLogo.cshtml");
-        Assert.Contains("!string.IsNullOrWhiteSpace(imageSource)", partial, StringComparison.Ordinal);
-        Assert.Contains("Model.PrintImageSource", partial, StringComparison.Ordinal);
+        Assert.Contains("ImageDataUriValidator.IsValidImageDataUri(source)", partial, StringComparison.Ordinal);
+        Assert.Contains("Model?.PrintImageSource", partial, StringComparison.Ordinal);
         Assert.DoesNotContain("src=\"@Model.LogoUrl\"", partial, StringComparison.Ordinal);
     }
 

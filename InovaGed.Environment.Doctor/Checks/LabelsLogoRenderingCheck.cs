@@ -11,10 +11,10 @@ public static class LabelsLogoRenderingCheck
         const string partialPath = "InovaGed.Web/Views/Shared/Branding/_PrintLogo.cshtml";
         var partial = Read(partialPath);
         Require(partial.Contains("PrintLogoViewModel", StringComparison.Ordinal), "_PrintLogo deve receber PrintLogoViewModel.");
-        Require(partial.Contains("src=\"@Model.PrintImageSource\"", StringComparison.Ordinal), "_PrintLogo deve usar exclusivamente PrintImageSource.");
+        Require(partial.Contains("src=\"@source\"", StringComparison.Ordinal), "_PrintLogo deve usar exclusivamente a fonte validada.");
         Require(!partial.Contains("src=\"\"", StringComparison.Ordinal), "_PrintLogo contém src vazio.");
         Require(partial.Contains("Model.ImageLoaded", StringComparison.Ordinal), "_PrintLogo deve impedir imagem não carregada.");
-        Require(partial.Contains("StartsWith(\"data:image/\"", StringComparison.Ordinal), "_PrintLogo deve aceitar somente Data URI de imagem.");
+        Require(partial.Contains("IsValidImageDataUri", StringComparison.Ordinal), "_PrintLogo deve aceitar somente Data URI de imagem validada.");
 
         foreach (var view in new[] { "LocDeskFolderLabel.cshtml", "LocDeskBoxLabel.cshtml", "LocDeskFolderHolLabel.cshtml" })
         {

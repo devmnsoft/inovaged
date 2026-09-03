@@ -1,7 +1,10 @@
 @model InovaGed.Web.Models.Branding.PrintLogoViewModel
-@if (Model is not null && Model.HasLogo && Model.ImageLoaded &&
-    !string.IsNullOrWhiteSpace(Model.PrintImageSource) &&
-    Model.PrintImageSource.StartsWith("data:image/", StringComparison.OrdinalIgnoreCase))
+@using InovaGed.Application.Branding
+@{
+    var source = Model?.PrintImageSource;
+    var hasValidDataUri = ImageDataUriValidator.IsValidImageDataUri(source);
+}
+@if (Model is not null && Model.HasLogo && Model.ImageLoaded && hasValidDataUri)
 {
     var width = Model.WidthMm <= 0 ? 38 : Model.WidthMm;
     var fitMode = string.IsNullOrWhiteSpace(Model.FitMode) ? "contain" : Model.FitMode.ToLowerInvariant();
@@ -10,6 +13,6 @@
         : "height:auto;";
     <span class="print-logo-frame print-logo-fit-@fitMode"
           style="width:@width.ToString("0.##")mm;@heightStyle">
-        <img src="@Model.PrintImageSource" alt="@Model.Alt" class="print-brand-logo" />
+        <img src="@source" alt="@Model.Alt" class="print-brand-logo" />
     </span>
 }

@@ -18,12 +18,14 @@ public sealed class SuspiciousRequestMiddleware
 {
     private static readonly HashSet<string> SensitiveSegments = new(StringComparer.OrdinalIgnoreCase)
     {
-        ".git", ".svn", "vendor", "node_modules", "phpunit", "cgi-bin", "actuator", "webshell"
+        ".git", ".svn", ".vscode", "vendor", "node_modules", "phpunit", "cgi-bin", "php-cgi",
+        "actuator", "webshell", "graphql", "telescope", "server-status", "@vite"
     };
 
     private static readonly HashSet<string> SensitiveFiles = new(StringComparer.OrdinalIgnoreCase)
     {
-        ".env", "web.config", "package.json", "composer.json", "shell.aspx", "shell.asp", "telerik.web.ui.dialoghandler.aspx"
+        ".env", ".ds_store", "web.config", "config.json", "manager.html", "package.json", "composer.json",
+        "trace.axd", "shell.aspx", "shell.asp", "telerik.web.ui.dialoghandler.aspx"
     };
 
     private readonly RequestDelegate _next;

@@ -47,6 +47,18 @@ public sealed class SuspiciousRequestMiddlewareTests
     [InlineData("/%2eenv")]
     [InlineData("/%2e%67%69%74/config")]
     [InlineData("/relat%C3%B3rios/.env")]
+    [InlineData("/.vscode/settings.json")]
+    [InlineData("/.DS_Store")]
+    [InlineData("/php-cgi/php-cgi.exe")]
+    [InlineData("/graphql")]
+    [InlineData("/api/graphql")]
+    [InlineData("/telescope")]
+    [InlineData("/actuator/env")]
+    [InlineData("/server-status")]
+    [InlineData("/trace.axd")]
+    [InlineData("/@vite/client")]
+    [InlineData("/config.json")]
+    [InlineData("/manager.html")]
     public async Task SensitivePaths_AreBlockedWithoutCallingNext(string path)
     {
         var called = false;

@@ -31,7 +31,11 @@ public sealed class BrandAssetImageService(IDbConnectionFactory factory, IWebHos
         }
         var bytes = await File.ReadAllBytesAsync(path, ct);
         if (bytes.Length == 0) return null;
-        var dataUri = $"data:{asset.ContentType};base64,{Convert.ToBase64String(bytes)}";
+        if (!asset.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase)) return null;
+        var base64 = Convert.ToBase64String(bytes);
+        if (string.IsNullOrWhiteSpace(base64)) return null;
+        var dataUri = $"data:{asset.ContentType};base64,{base64}";
+        if (!ImageDataUriValidator.IsValidImageDataUri(dataUri)) return null;
         return new(asset.Id, asset.BrandName, asset.ContentType, asset.StorageRelativePath, bytes, dataUri, asset.WidthPx, asset.HeightPx);
     }
 
