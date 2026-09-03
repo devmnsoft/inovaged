@@ -718,8 +718,9 @@ group by b.id, b.batch_no, b.notes, b.reg_date
         }
         var first = input.Labels[0];
         var qr = CreateLocDeskQr(first, first.BoxId ?? first.DocumentId);
+        var template = await LoadLocDeskTemplate(first, ct);
         return View(first.LabelKind == LocDeskLabelKind.Box ? "LocDeskBoxLabel" : "LocDeskFolderLabel",
-            new LocDeskLabelRenderModel { Label = first, Labels = input.Labels, QrSvg = qr, PrintRegistered = true, Template=await LoadLocDeskTemplate(first,ct) });
+            LocDeskLabelDemoFactory.Create(first, qr, true, template, labels: input.Labels));
     }
 
     [HttpGet]
@@ -854,7 +855,9 @@ select
         var resolvedLogo=await _logoResolver.ResolveAsync(TenantId,ResolveLocDeskTemplateCode(input),input.LogoSelection,input.SelectedLogoAssetId,input.LogoWidthMm,input.LogoHeightMm,input.PreserveLogoAspectRatio,input.LogoFitMode,input.LogoPosition,0,0,ct);
         var logo=PrintLogoViewModelMapper.FromResolved(resolvedLogo);
         ViewBag.IsPrintPage=registered;
-        var model = new LocDeskLabelRenderModel { Label=input,QrSvg=qr,PrintRegistered=registered,Template=await LoadLocDeskTemplate(input,ct),PrintLogo=logo,PrintLogoWarning=logo.HasLogo&&!logo.ImageLoaded?logo.LoadError:null };
+        var template = await LoadLocDeskTemplate(input, ct);
+        var warning = logo.HasLogo && !logo.ImageLoaded ? logo.LoadError : null;
+        var model = LocDeskLabelDemoFactory.Create(input, qr, registered, template, logo, warning);
         return View(LocDeskViewName(input), model);
     }
 
@@ -921,28 +924,8 @@ values(@id,@tid,@LabelKind,@ArchiveTitle,@ProcessNumber,@ControlNumber,@VolumeNu
         _ => "LocDeskFolderLabel"
     };
 
-    private static LocDeskLabelInputModel CreateLocDeskPreviewDefaults() => new()
-    {
-        TemplateCode = LabelTemplateCode.LocDeskFolderHol,
-        Contract = "Hosp. Ophir Loyola",
-        MedicalRecordNumber = "100.334",
-        ControlNumber = "199",
-        VolumeNumber = 1,
-        VolumeTotal = 1,
-        Subject = "PRONTUÁRIO nº: 100.334",
-        Details = "DAME - ALTA MEDICA",
-        Activity = "FIM",
-        Classification = "HOL.132.3 - LAUDO DE PROCEDIMENTOS DIAGNÓSTICOS",
-        Support = "1. PAPEL",
-        PeriodStart = new DateTime(2017, 7, 15),
-        PeriodEnd = new DateTime(2017, 9, 25),
-        DocumentPeriod = "15/07/2017 A 25/09/2017",
-        CurrentPhase = "2. GUARDA INTERMEDIÁRIA",
-        EliminationForecast = "0. GUARDA PERMANENTE",
-        EliminationStatus = "0. GUARDA PERMANENTE",
-        LedNumber = "N/A",
-        Location = "LOC.AN.___.E___.P___"
-    };
+    private static LocDeskLabelInputModel CreateLocDeskPreviewDefaults() =>
+        LocDeskLabelDemoFactory.CreateHolDemo().Label;
 
     [HttpGet("/Labels/Trace/{id:guid}")]
     public async Task<IActionResult> Trace(Guid id, CancellationToken ct)
