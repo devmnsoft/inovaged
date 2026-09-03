@@ -50,8 +50,11 @@ public sealed class GedProcessingWorker : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Falha no loop do GedProcessingWorker; o worker continuará após backoff.");
-                await Task.Delay(TimeSpan.FromSeconds(15), stoppingToken);
+                var runtimeDependencyError = IsDiagnosticSourceFailure(ex);
+                _logger.LogError(ex, runtimeDependencyError
+                    ? "RuntimeDependencyError no GedProcessingWorker: System.Diagnostics.DiagnosticSource ausente; novo ciclo em 5 minutos."
+                    : "Falha no loop do GedProcessingWorker; o worker continuará após backoff.");
+                await Task.Delay(runtimeDependencyError ? TimeSpan.FromMinutes(5) : TimeSpan.FromSeconds(15), stoppingToken);
             }
         }
     }

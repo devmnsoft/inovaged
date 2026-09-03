@@ -45,7 +45,10 @@ public sealed class StaleUploadBatchItemWorker : BackgroundService
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Falha na rotina MarkStaleReceivingItemsAsError.");
+                    var runtimeDependencyError = ex.ToString().Contains("System.Diagnostics.DiagnosticSource", StringComparison.OrdinalIgnoreCase);
+                    _logger.LogError(ex, runtimeDependencyError
+                        ? "RuntimeDependencyError no StaleUploadBatchItemWorker: System.Diagnostics.DiagnosticSource ausente; o timer aplicará backoff de 5 minutos."
+                        : "Falha na rotina MarkStaleReceivingItemsAsError.");
                 }
             }
         }
