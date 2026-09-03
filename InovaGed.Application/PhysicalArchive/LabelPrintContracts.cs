@@ -9,7 +9,18 @@ public sealed record LabelPrintRequest(
     string SnapshotJson,
     string? IpAddress,
     string? UserAgent,
-    string? ReprintReason);
+    string? ReprintReason,
+    string PrintChannel = "WEB",
+    string? PrintMode = null,
+    int? TemplateVersion = null,
+    Guid? LogoAssetId = null,
+    string? LogoBrandName = null,
+    decimal? LogoWidthMm = null,
+    decimal? LogoHeightMm = null,
+    string? LogoFitMode = null,
+    string? LogoPosition = null,
+    Guid? CalibrationProfileId = null,
+    string? TraceCode = null);
 
 public interface ILabelPrintRegistrar
 {

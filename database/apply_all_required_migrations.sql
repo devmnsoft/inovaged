@@ -3085,3 +3085,6 @@ where coalesce(reg_status, 'A') = 'A';
 
 -- Labels Branding Fix RC5
 \ir migrations/2026_09_02_label_history_branding_fix.sql
+
+-- Labels PrintLocDesk Schema Fix + Buttons Recovery RC14
+\ir migrations/2026_09_03_label_print_channel_compat_fix.sql
