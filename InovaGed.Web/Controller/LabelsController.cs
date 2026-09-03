@@ -962,7 +962,7 @@ values(@id,@tid,@LabelKind,@ArchiveTitle,@ProcessNumber,@ControlNumber,@VolumeNu
     }
 
     [HttpGet]
-    public async Task<IActionResult> History(string? q, string? user, string? mode, string? template, string? type, DateTime? startDate, DateTime? endDate)
+    public async Task<IActionResult> History(string? q, string? user, string? mode, string? template, string? type, string? status, DateTime? startDate, DateTime? endDate)
     {
         using var db = await OpenAsync();
 
@@ -972,6 +972,7 @@ values(@id,@tid,@LabelKind,@ArchiveTitle,@ProcessNumber,@ControlNumber,@VolumeNu
         ViewBag.User = user;
         ViewBag.StartDate = startDate?.ToString("yyyy-MM-dd");
         ViewBag.EndDate = endDate?.ToString("yyyy-MM-dd");
+        status=(status??"").Trim().ToUpperInvariant(); ViewBag.Status = status;
         mode=(mode??"").Trim().ToUpperInvariant(); template=(template??"").Trim().ToUpperInvariant(); type=(type??"").Trim().ToUpperInvariant();
 
         if (!await db.ExecuteScalarAsync<bool>("select to_regclass('ged.label_print_history') is not null"))
@@ -1002,7 +1003,9 @@ select
     lp.snapshot_json->>'controlNumber' as control_number,
     lp.snapshot_json->>'location' as location,
     lp.snapshot_json->>'subject' as locdesk_subject,
-    lp.snapshot_json->>'classification' as locdesk_classification
+    lp.snapshot_json->>'classification' as locdesk_classification,
+    lp.label_subject_id as subject_id,
+    coalesce(nullif(lp.snapshot_json->>'selectedLogoAssetId',''), nullif(lp.snapshot_json->>'logoAssetId','')) is not null as has_logo
     ,coalesce(nullif(lp.snapshot_json->>'copies','')::int,1) as copies
     ,'PRINTED' as print_status
 from ged.label_print_history lp
@@ -1024,6 +1027,8 @@ where lp.tenant_id=@tid
         if (!string.IsNullOrWhiteSpace(type)) { sql.AppendLine("and lp.label_subject_type = @type"); parameters.Add("type", type, DbType.String); }
         if (!string.IsNullOrWhiteSpace(template)) { sql.AppendLine("and lp.template_code = @template"); parameters.Add("template", template, DbType.String); }
         if (!string.IsNullOrWhiteSpace(mode)) { sql.AppendLine("and @mode = coalesce(lp.snapshot_json->>'printMode', case when lp.template_code like 'LOCDESK%' then 'CUSTOM' else 'FACTORY' end)"); parameters.Add("mode", mode, DbType.String); }
+        if (status == "REPRINTED") sql.AppendLine("and nullif(trim(lp.reprint_reason), '') is not null");
+        else if (status == "PRINTED") sql.AppendLine("and nullif(trim(lp.reprint_reason), '') is null");
         if (!string.IsNullOrWhiteSpace(user)) { sql.AppendLine("and coalesce(u.name,'') ilike @user"); parameters.Add("user", $"%{user}%", DbType.String); }
         if (!string.IsNullOrWhiteSpace(q))
         {
