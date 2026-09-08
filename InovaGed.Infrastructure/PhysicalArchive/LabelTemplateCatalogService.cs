@@ -122,13 +122,15 @@ public sealed class LabelTemplateCatalogService(IDbConnectionFactory dbFactory, 
     {
         if (!await Schema.TableExistsAsync(db, "ged", "label_template_design", ct)) return [];
         const string sql = """
-select distinct on (template_code) template_code Code,template_name Name,print_mode Mode,subject_type SubjectType,
+select distinct on (template_key) template_key Code,template_name Name,print_mode Mode,
+ case subject_type when 'Box' then 'BOX' when 'Document' then 'DOCUMENT' when 'LocDeskFolder' then 'DOCUMENT' when 'LocDeskBox' then 'BOX' else upper(subject_type) end SubjectType,
  coalesce(description,template_name) Description,coalesce(view_name,'DocumentLabel') ViewName,current_version::text Version,
  false SupportsBatch,true AllowsManualFields,is_system_template IsSystemTemplate,id Id,false IsDefault
 from ged.label_template_design
-where (tenant_id=@tenantId or tenant_id is null) and status='PUBLISHED' and reg_status='A'
- and (@subjectType is null or subject_type=@subjectType) and (@mode is null or print_mode=@mode)
-order by template_code,updated_at desc nulls last,tenant_id nulls last
+where (tenant_id=@tenantId or tenant_id is null) and status='PUBLISHED' and reg_status in ('A','ACTIVE')
+ and (@subjectType is null or case subject_type when 'Box' then 'BOX' when 'Document' then 'DOCUMENT' when 'LocDeskFolder' then 'DOCUMENT' when 'LocDeskBox' then 'BOX' else upper(subject_type) end=@subjectType)
+ and (@mode is null or print_mode=@mode)
+order by template_key,updated_at desc nulls last,tenant_id nulls last
 """;
         return (await db.QueryAsync<LabelTemplateOption>(new CommandDefinition(sql,new{tenantId,subjectType,mode},cancellationToken:ct))).AsList();
     }

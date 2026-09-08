@@ -222,5 +222,12 @@
     "area": "Acervo físico",
     "required": true,
     "description": "Adiciona reg_status de forma idempotente às tabelas do acervo físico; o dashboard permanece compatível antes da aplicação."
+  },
+  {
+    "name": "2026_09_08_label_canvas_designer_rc22",
+    "path": "database/migrations/2026_09_08_label_canvas_designer_rc22.sql",
+    "area": "Etiquetas",
+    "required": true,
+    "description": "Cria o designer canvas RC22, versões, auditoria, índices e templates iniciais sem substituir modelos clássicos."
   }
 ]

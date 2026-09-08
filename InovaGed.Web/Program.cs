@@ -198,6 +198,9 @@ builder.Services.AddSingleton<InovaGed.Application.PhysicalArchive.ILabelPayload
 builder.Services.AddSingleton<InovaGed.Application.PhysicalArchive.ILabelQrCodeService, InovaGed.Web.Services.LabelQrCodeService>();
 builder.Services.AddSingleton<InovaGed.Application.Labels.ILabelTraceTokenService, InovaGed.Infrastructure.Labels.LabelTraceTokenService>();
 builder.Services.AddScoped<InovaGed.Application.Labels.ILabelTraceabilityService, InovaGed.Infrastructure.Labels.LabelTraceabilityService>();
+builder.Services.AddScoped<InovaGed.Application.Labels.Canvas.ILabelCanvasDesignService, InovaGed.Infrastructure.Labels.LabelCanvasDesignRepository>();
+builder.Services.AddSingleton<InovaGed.Application.Labels.Canvas.ILabelCanvasFieldCatalogService, InovaGed.Infrastructure.Labels.LabelCanvasFieldCatalogService>();
+builder.Services.AddSingleton<InovaGed.Application.Labels.Canvas.ILabelCanvasRenderService, InovaGed.Infrastructure.Labels.LabelCanvasRenderService>();
 builder.Services.AddTransient<CorrelationIdHandler>();
 builder.Services.AddHttpClient("InovaGed").AddHttpMessageHandler<CorrelationIdHandler>();
 builder.Services.AddInovaGedObservability(builder.Configuration);
@@ -572,6 +575,10 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy(AppPolicies.UsersSectorManage, p => RequireAny(p, AppRoles.Admin, AppRoles.Administrador, AppRoles.AdministradorOphir));
     options.AddPolicy(AppPolicies.SystemLogs, p => RequireAny(p, fullAdmin));
     options.AddPolicy(AppPolicies.SchemaRepair, p => RequireAny(p, fullAdmin));
+    var labelDesigners = new[] { AppRoles.Admin, AppRoles.Administrador, AppRoles.AdministradorOphir };
+    foreach (var policy in new[] { AppPolicies.LabelDesignerRead, AppPolicies.LabelDesignerCreate, AppPolicies.LabelDesignerUpdate,
+        AppPolicies.LabelDesignerPublish, AppPolicies.LabelDesignerDelete, AppPolicies.LabelDesignerPreview, AppPolicies.LabelDesignerPrintTest })
+        options.AddPolicy(policy, p => RequireAny(p, labelDesigners));
     foreach (var policy in new[] { "SignatureView", "SignatureInternalCreate", "SignatureCmsCreate", "SignatureValidate", "SignatureDownload", "SignatureEvidenceView", "SignatureAdmin" })
         options.AddPolicy(policy, p => RequireAny(p, fullAdmin.Concat(gedAccess).ToArray()));
 

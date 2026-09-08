@@ -33,6 +33,13 @@ public static class AppPolicies
     public const string LogsAccess = SystemLogs;
     public const string SchemaRepair = "SchemaRepair";
     public const string OperationsAccess = "OperationsAccess";
+    public const string LabelDesignerRead = "labels.designer.read";
+    public const string LabelDesignerCreate = "labels.designer.create";
+    public const string LabelDesignerUpdate = "labels.designer.update";
+    public const string LabelDesignerPublish = "labels.designer.publish";
+    public const string LabelDesignerDelete = "labels.designer.delete";
+    public const string LabelDesignerPreview = "labels.designer.preview";
+    public const string LabelDesignerPrintTest = "labels.designer.print_test";
 
     public const string ContinuityView = "ContinuityView";
     public const string ContinuityManage = "ContinuityManage";

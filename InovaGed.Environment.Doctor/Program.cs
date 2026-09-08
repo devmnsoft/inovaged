@@ -40,6 +40,25 @@ try
         var repositoryRoot = FindRoot(BclEnvironment.CurrentDirectory);
         return LabelsVisualQualityCheck.Run(repositoryRoot, Console.Out, Console.Error);
     }
+    if (command.Equals("labels-canvas-designer", StringComparison.OrdinalIgnoreCase))
+    {
+        var repositoryRoot = FindRoot(BclEnvironment.CurrentDirectory);
+        var configuration=Configuration();
+        if(args.Contains("--apply",StringComparer.OrdinalIgnoreCase))
+        {
+            var applyConnection=configuration.GetConnectionString("DefaultConnection")??configuration.GetConnectionString("Postgres");
+            if(string.IsNullOrWhiteSpace(applyConnection)){Console.Error.WriteLine("[FALHA] Banco não configurado.");return 2;}
+            try
+            {
+                var sql=await File.ReadAllTextAsync(Path.Combine(repositoryRoot,"database","migrations","2026_09_08_label_canvas_designer_rc22.sql"));
+                await using var db=new NpgsqlConnection(applyConnection);await db.OpenAsync();await using var transaction=await db.BeginTransactionAsync();
+                await using var commandSql=new NpgsqlCommand(sql,db,transaction){CommandTimeout=300};await commandSql.ExecuteNonQueryAsync();await transaction.CommitAsync();Console.WriteLine("[OK] 2026_09_08_label_canvas_designer_rc22 aplicada.");
+            }
+            catch(PostgresException exception){Console.Error.WriteLine($"[FALHA] {exception.SqlState}: {exception.MessageText} (posição {exception.Position})");return 2;}
+        }
+        var connection=configuration.GetConnectionString("DefaultConnection")??configuration.GetConnectionString("Postgres");
+        return await LabelsCanvasDesignerQualityCheck.RunAsync(repositoryRoot,connection,Console.Out,Console.Error,CancellationToken.None);
+    }
     if (command.Equals("labels-logo-rendering", StringComparison.OrdinalIgnoreCase) ||
         command.Equals("labels-logo-propagation", StringComparison.OrdinalIgnoreCase) ||
         command.Equals("labels-printwizard-actions", StringComparison.OrdinalIgnoreCase) ||

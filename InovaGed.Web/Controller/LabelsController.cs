@@ -14,6 +14,7 @@ using System.Text;
 using InovaGed.Web.Services;
 using InovaGed.Web.Models.Branding;
 using Npgsql;
+using InovaGed.Application.Labels.Canvas;
 
 namespace InovaGed.Web.Controllers;
 
@@ -50,10 +51,13 @@ public class LabelsController : GedControllerBase
     private readonly ILabelPdfRenderService _pdf;
     private readonly ILabelPrintLogoResolver _logoResolver;
     private readonly ILogger<LabelsController> _logger;
+    private readonly ILabelCanvasDesignService _canvasDesigns;
+    private readonly ILabelCanvasRenderService _canvasRenderer;
 
     public LabelsController(IDbConnectionFactory dbFactory, ILabelPrintRegistrar printRegistrar,
         ILabelTemplateService templates, ILabelQrCodeService qrCodes, ILabelPayloadBuilder payloadBuilder, ILabelTemplateCatalogService catalog, InovaGed.Application.Labels.ILabelTemplateManager templateManager,
         ILabelPrintJobService printJobs, ILabelPdfRenderService pdf, ILabelPrintLogoResolver logoResolver,
+        ILabelCanvasDesignService canvasDesigns, ILabelCanvasRenderService canvasRenderer,
         ILogger<LabelsController> logger) : base(dbFactory)
     {
         _printRegistrar = printRegistrar;
@@ -62,7 +66,7 @@ public class LabelsController : GedControllerBase
         _payloadBuilder = payloadBuilder;
         _catalog = catalog;
         _templateManager = templateManager;
-        _printJobs=printJobs; _pdf=pdf; _logoResolver=logoResolver; _logger=logger;
+        _printJobs=printJobs; _pdf=pdf; _logoResolver=logoResolver; _canvasDesigns=canvasDesigns; _canvasRenderer=canvasRenderer; _logger=logger;
     }
 
     [HttpGet("/Labels/Templates")]
@@ -371,6 +375,8 @@ public class LabelsController : GedControllerBase
             await PopulatePrintWizardLookupsAsync(input, ct);
             return View("PrintWizard", input);
         }
+        if (string.Equals(template.ViewName,"CanvasLabel",StringComparison.OrdinalIgnoreCase))
+            return await RenderCanvasTemplateAsync(input,template,register,ct);
         if (input.PrintMode==LabelPrintMode.Custom) {
             input.CustomFields.LogoSelection=input.LogoSelection; input.CustomFields.SelectedLogoAssetId=input.SelectedLogoAssetId; input.CustomFields.LogoWidthMm=input.LogoWidthMm; input.CustomFields.LogoHeightMm=input.LogoHeightMm; input.CustomFields.PreserveLogoAspectRatio=input.PreserveAspectRatio; input.CustomFields.LogoFitMode=input.LogoFitMode; input.CustomFields.LogoPosition=input.LogoPosition;
             IActionResult? loaded = input.SubjectType switch
@@ -421,6 +427,66 @@ public class LabelsController : GedControllerBase
             try { issued=await _printRegistrar.RegisterAsync(printRequest,ct); } catch(InvalidOperationException ex) { ModelState.AddModelError(nameof(input.ReprintReason),ex.Message); ViewBag.Templates=await _catalog.GetTemplatesAsync(TenantId,input.SubjectType,input.PrintMode,ct); ViewBag.SubjectOptions=await LoadSubjectOptionsAsync(input.SubjectType,ct); return View("PrintWizard",input); } }
         var qrPath=issued?.ShortUrl??$"/Labels/Trace/{input.SubjectId}"; ViewBag.TraceCode=issued?.Trace.TraceCode; ViewBag.QrSvg=_qrCodes.CreateTrackingSvg($"{Request.Scheme}://{Request.Host}{qrPath}"); ViewBag.PrintRegistered=register; ViewBag.IsPrintPage=register; ViewBag.Copies=input.Copies; ViewBag.PrintLogo=printLogo; ViewBag.PrintLogoWarning=printLogo.HasLogo&&!printLogo.ImageLoaded?printLogo.LoadError:null;
         return View(template.ViewName,subject);
+    }
+
+    private async Task<IActionResult> RenderCanvasTemplateAsync(LabelPrintWizardInputModel input,LabelTemplateOption template,bool register,CancellationToken ct)
+    {
+        var design=await _canvasDesigns.GetAsync(TenantId,template.Code,ct);
+        if(design is null||!design.Status.Equals("PUBLISHED",StringComparison.OrdinalIgnoreCase))
+        {
+            ModelState.AddModelError(nameof(input.TemplateCode),"O template canvas não está publicado ou não foi encontrado.");
+            await PopulatePrintWizardLookupsAsync(input,ct);return View("PrintWizard",input);
+        }
+        using var db=await OpenAsync();
+        object? subject=input.SubjectType switch
+        {
+            LabelSubjectType.Box=>await LoadBoxLabelAsync(db,input.SubjectId!.Value),
+            LabelSubjectType.Document=>await LoadDocumentLabelAsync(db,input.SubjectId!.Value),
+            LabelSubjectType.Batch=>await LoadBatchLabelAsync(db,input.SubjectId!.Value),
+            _=>null
+        };
+        if(subject is null){ModelState.AddModelError(nameof(input.SubjectId),"Não foi possível localizar a origem selecionada.");await PopulatePrintWizardLookupsAsync(input,ct);return View("PrintWizard",input);}
+        var values=CanvasValues(subject,input.SubjectType,input.SubjectId!.Value);var calibration=await ResolveProfileAsync(input.PrintProfileId,ct);
+        values["printedBy"]=User.Identity?.Name??"Usuário InovaGED";values["qrPayload"]=$"{Request.Scheme}://{Request.Host}/Labels/Trace/{input.SubjectId}";values["__copies"]=input.Copies;
+        values["__marginTopMm"]=calibration.MarginTopMm;values["__marginLeftMm"]=calibration.MarginLeftMm;values["__offsetXmm"]=calibration.OffsetXMm;values["__offsetYmm"]=calibration.OffsetYMm;values["__scalePercent"]=calibration.ScalePercent;values["__gapXmm"]=calibration.LabelGapXMm;values["__gapYmm"]=calibration.LabelGapYMm;
+        var rendered=_canvasRenderer.Render(design,values,register);
+        if(rendered.Validation.HasErrors)
+        {
+            ModelState.AddModelError(nameof(input.TemplateCode),"O template canvas publicado contém erros críticos. Solicite a revisão do administrador.");
+            await PopulatePrintWizardLookupsAsync(input,ct);return View("PrintWizard",input);
+        }
+        if(register)
+        {
+            if(UserId is not Guid userId)return Unauthorized();
+            var snapshot=new{layoutSource="CANVAS",isDesignerTemplate=true,templateCode=design.TemplateKey,templateName=design.TemplateName,templateVersion=design.CurrentVersion,snapshotHash=rendered.SnapshotHash,subjectType=input.SubjectType,subjectId=input.SubjectId,printMode=input.PrintMode,printChannel="WEB",copies=input.Copies,calibration=new{input.PrintProfileId,calibration.MarginTopMm,calibration.MarginLeftMm,calibration.OffsetXMm,calibration.OffsetYMm,calibration.ScalePercent,calibration.LabelGapXMm,calibration.LabelGapYMm},printedFields=values};
+            var request=new LabelPrintRequest(TenantId,userId,input.SubjectType,input.SubjectId.Value,design.TemplateKey,_payloadBuilder.Build(snapshot),HttpContext.Connection.RemoteIpAddress?.ToString(),Request.Headers.UserAgent.ToString(),input.ReprintReason)
+            {PrintChannel="WEB",PrintMode=input.PrintMode,TemplateVersion=design.CurrentVersion,CalibrationProfileId=input.PrintProfileId,TraceCode=Convert.ToString(values.GetValueOrDefault("traceCode"))};
+            try
+            {
+                var issued=await _printRegistrar.RegisterAsync(request,ct);values["traceCode"]=issued.Trace.TraceCode;values["qrPayload"]=$"{Request.Scheme}://{Request.Host}{issued.ShortUrl}";rendered=_canvasRenderer.Render(design,values,true);
+            }
+            catch(InvalidOperationException exception){ModelState.AddModelError(nameof(input.ReprintReason),exception.Message);await PopulatePrintWizardLookupsAsync(input,ct);return View("PrintWizard",input);}
+        }
+        return Content(rendered.Html,"text/html; charset=utf-8");
+    }
+
+    private static Dictionary<string,object?> CanvasValues(object source,string subjectType,Guid subjectId)
+    {
+        var values=new Dictionary<string,object?>(StringComparer.OrdinalIgnoreCase);
+        if(source is IDictionary<string,object> dictionary)foreach(var pair in dictionary)values[pair.Key]=pair.Value;
+        else foreach(var property in source.GetType().GetProperties())values[property.Name]=property.GetValue(source);
+        object? Pick(params string[] keys)=>keys.Select(key=>values.GetValueOrDefault(key)).FirstOrDefault(value=>value is not null&&Convert.ToString(value)?.Length>0);
+        if(subjectType.Equals(LabelSubjectType.Box,StringComparison.OrdinalIgnoreCase))
+        {
+            values["boxCode"]=Pick("label_code","LabelCode","code")??subjectId.ToString("N");values["boxNumber"]=Pick("box_no","BoxNo");values["location"]=Pick("location_code","LocationCode","building");values["sector"]=Pick("room","Room");values["periodStart"]=Pick("period_start","PeriodStart");values["periodEnd"]=Pick("period_end","PeriodEnd");values["documentCount"]=Pick("document_count","DocumentCount");
+        }
+        else
+        {
+            values["documentCode"]=Pick("code","Code")??subjectId.ToString("N");values["documentTitle"]=Pick("title","Title");values["location"]=Pick("box_label_code","BoxLabelCode");values["boxNumber"]=Pick("box_no","BoxNo");
+        }
+        if(!values.ContainsKey("controlNumber")||values["controlNumber"] is null)values["controlNumber"]=Pick("box_no","BoxNo","code","Code");
+        if(!values.ContainsKey("traceCode")||values["traceCode"] is null)values["traceCode"]=Pick("label_code","LabelCode","code","Code")??subjectId.ToString("N");
+        return values;
     }
 
     private async Task<IReadOnlyList<SelectOptionViewModel>> LoadSubjectOptionsAsync(string subjectType, CancellationToken ct)
@@ -1014,6 +1080,7 @@ select
     coalesce(lp.snapshot_json->>'templateName',case lp.template_code when 'FACTORY_BOX_V1' then 'Padrão do Sistema - Caixa' when 'FACTORY_DOCUMENT_V1' then 'Padrão do Sistema - Documento/Pasta' when 'LOCDESK_CAIXA_V1' then 'LocDesk - Caixa' when 'LOCDESK_PASTA_V1' then 'LocDesk - Pasta' when 'LOCDESK_PASTA_HOL_V1' then 'LocDesk - Pasta HOL' else lp.template_code end) as template_name,
     lp.snapshot_json->>'templateVersion' as template_version,
     coalesce((lp.snapshot_json->>'isDesignerTemplate')::boolean,false) as is_designer_template,
+    coalesce(lp.snapshot_json->>'layoutSource',case when coalesce((lp.snapshot_json->>'isDesignerTemplate')::boolean,false) then 'CANVAS' else 'CLASSIC' end) as layout_source,
     lp.snapshot_sha256,
     lp.reprint_reason,
     lp.snapshot_json->>'controlNumber' as control_number,

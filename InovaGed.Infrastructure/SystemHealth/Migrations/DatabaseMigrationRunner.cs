@@ -84,7 +84,7 @@ public sealed class DatabaseMigrationRunner(IDbConnectionFactory db, IHostEnviro
         {
             watch.Stop();
             await transaction.RollbackAsync(CancellationToken.None);
-            var safeError = ex is PostgresException pg ? $"{pg.SqlState}: {pg.MessageText}" : ex.Message;
+            var safeError = ex is PostgresException pg ? $"{pg.SqlState}: {pg.MessageText}{(pg.Position<=0?"":$" (posição {pg.Position})")}" : ex.Message;
             await connection.ExecuteAsync(new CommandDefinition(InsertHistorySql, new { entry.Name, Path = entry.Path, Checksum = checksum, UserId = userId, UserName = userName, Success = false, Duration = (int)watch.ElapsedMilliseconds, Error = safeError }, cancellationToken: ct));
             return Failure(entry.Name, entry.Path, safeError, (int)watch.ElapsedMilliseconds);
         }
