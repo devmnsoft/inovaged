@@ -30,14 +30,26 @@ public sealed class LabelCanvasFieldCatalogService : ILabelCanvasFieldCatalogSer
                 ("classification","Classificação"),("folderName","Pasta"),("createdAt","Criado em"),
                 ("uploadedBy","Enviado por"),("ocrStatus","Situação do OCR"),("retentionStatus","Situação de temporalidade"),
                 ("traceCode","Código de rastreio"),("qrPayload","Conteúdo do QR Code")),
+            ["Folder"] = Fields("Folder", ("documentCode","Código da pasta"),("documentTitle","Título da pasta"),("classification","Classificação"),("location","Localização"),("traceCode","Código de rastreio"),("qrPayload","Conteúdo do QR Code")),
+            ["MedicalRecord"] = Fields("MedicalRecord", ("recordNumber","Número do prontuário"),("patientName","Nome do paciente"),("classification","Classificação"),("location","Localização"),("traceCode","Código de rastreio"),("qrPayload","Conteúdo do QR Code")),
+            ["Process"] = Fields("Process", ("processNumber","Número do processo"),("documentTitle","Assunto do processo"),("classification","Classificação"),("location","Localização"),("traceCode","Código de rastreio"),("qrPayload","Conteúdo do QR Code")),
             ["PhysicalLocation"] = Fields("PhysicalLocation", ("location","Localização"),("sector","Setor"),("traceCode","Código de rastreio"),("qrPayload","Conteúdo do QR Code")),
             ["Classification"] = Fields("Classification", ("classification","Classificação"),("retentionStatus","Temporalidade"),("traceCode","Código de rastreio")),
             ["Loan"] = Fields("Loan", ("controlNumber","Nº Controle"),("location","Localização"),("currentPhase","Situação do empréstimo"),("printedBy","Responsável"),("qrPayload","Conteúdo do QR Code")),
             ["Protocol"] = Fields("Protocol", ("processNumber","Número do protocolo"),("subject","Assunto"),("createdAt","Criado em"),("traceCode","Código de rastreio"),("qrPayload","Conteúdo do QR Code"))
         };
 
+    private static readonly (string Key,string Label)[] BrandingFields =
+    [
+        ("clientName","Cliente"),("contractName","Contrato"),("organizationName","Organização"),
+        ("headerTitle","Título do cabeçalho"),("headerSubtitle","Subtítulo do cabeçalho"),
+        ("headerExtraLine","Linha adicional do cabeçalho"),("footerText","Rodapé"),("footerExtraLine","Linha adicional do rodapé"),
+        ("primaryLogo","Logo principal"),("secondaryLogo","Logo secundária")
+    ];
+
     private static IReadOnlyList<LabelCanvasFieldDto> Fields(string subject, params (string Key, string Label)[] values) =>
-        values.Select(x => new LabelCanvasFieldDto(x.Key, x.Label, x.Key.EndsWith("At", StringComparison.Ordinal) ? "date" : "text", subject)).ToArray();
+        BrandingFields.Concat(values).GroupBy(x=>x.Key,StringComparer.OrdinalIgnoreCase).Select(x=>x.First())
+            .Select(x => new LabelCanvasFieldDto(x.Key, x.Label, x.Key.EndsWith("At", StringComparison.Ordinal) ? "date" : x.Key.Contains("Logo",StringComparison.Ordinal) ? "image" : "text", subject)).ToArray();
 
     public IReadOnlyList<LabelCanvasFieldDto> GetFields(string subjectType) =>
         Catalog.TryGetValue(subjectType ?? "", out var fields) ? fields : [];
@@ -59,7 +71,7 @@ public sealed class LabelCanvasFieldCatalogService : ILabelCanvasFieldCatalogSer
         if (profile.Contains("Caixa", StringComparison.OrdinalIgnoreCase))
             return new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
             {
-                ["archiveTitle"]="ARQUIVO LOCDESCK ANANINDEUA", ["boxCode"]="CX-2026-0042", ["boxNumber"]="42",
+                ["archiveTitle"]="ARQUIVO CENTRAL", ["headerTitle"]="ARQUIVO CENTRAL", ["clientName"]="Cliente de demonstração", ["contractName"]="Contrato de demonstração", ["organizationName"]="Unidade documental", ["boxCode"]="CX-2026-0042", ["boxNumber"]="42",
                 ["controlNumber"]="042", ["sector"]="Arquivo Central", ["classification"]="ADM.120",
                 ["periodStart"]="01/01/2024", ["periodEnd"]="31/12/2025", ["retentionStatus"]="Guarda intermediária",
                 ["custodyStatus"]="No acervo", ["documentCount"]="87", ["location"]="LOC.AN.02.E03.P004",
@@ -67,7 +79,9 @@ public sealed class LabelCanvasFieldCatalogService : ILabelCanvasFieldCatalogSer
             };
         return new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
         {
+            ["headerTitle"]="ARQUIVO CENTRAL", ["clientName"]="Cliente de demonstração", ["contractName"]="Contrato de demonstração", ["organizationName"]="Unidade documental",
             ["documentCode"]="DOC-2026-00199", ["documentTitle"]="Prontuário clínico", ["documentType"]="Prontuário",
+            ["recordNumber"]="PR-2026-00199", ["patientName"]="Pessoa de demonstração", ["processNumber"]="PROC-2026-00199",
             ["classification"]="HOL.132.3", ["folderName"]="Pacientes 2017", ["createdAt"]="15/07/2017",
             ["uploadedBy"]="Equipe GED", ["ocrStatus"]="Concluído", ["retentionStatus"]="Guarda permanente",
             ["traceCode"]="DOC-2026-00199", ["qrPayload"]="https://inovaged.local/Labels/Trace/DOC-2026-00199"

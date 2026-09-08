@@ -1,6 +1,7 @@
 using System.Text.Json;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Labels.Canvas;
+using InovaGed.Application.Branding;
 using InovaGed.Web.Models.Labels;
 using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authorization;
@@ -11,6 +12,7 @@ namespace InovaGed.Web.Controllers;
 [Authorize(Policy = AppPolicies.LabelDesignerRead)]
 public sealed class LabelDesignerController(IDbConnectionFactory dbFactory, ILabelCanvasDesignService designs,
     ILabelCanvasRenderService renderer, ILabelCanvasFieldCatalogService fieldCatalog,
+    IPrintBrandingProfileService brandingProfiles,
     ILogger<LabelDesignerController> logger) : GedControllerBase(dbFactory)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { PropertyNameCaseInsensitive = true };
@@ -24,11 +26,11 @@ public sealed class LabelDesignerController(IDbConnectionFactory dbFactory, ILab
 
     [HttpGet("/Labels/Designer/New")]
     [Authorize(Policy=AppPolicies.LabelDesignerCreate)]
-    public IActionResult New()
+    public async Task<IActionResult> New(CancellationToken ct)
     {
-        var document=NewDocument("Document","Documento GED",100,70);
-        var design=new LabelCanvasDesignDto { Id=Guid.Empty,TenantId=TenantId,TemplateName="Novo modelo de etiqueta",TemplateKind="GED",SubjectType="Document",PaperKind="A4",WidthMm=100,HeightMm=70,Orientation="portrait",Status="DRAFT",DesignJson=JsonSerializer.Serialize(document,JsonOptions),CurrentVersion=1,CreatedAt=DateTime.UtcNow };
-        return View("~/Views/Labels/Designer/Edit.cshtml",Page(design,true));
+        var document=NewDocument("Document","Genérico",100,70);
+        var design=new LabelCanvasDesignDto { Id=Guid.Empty,TenantId=TenantId,TemplateName="Novo modelo de etiqueta",TemplateKind="CANVAS",SubjectType="Document",PaperKind="A4",WidthMm=100,HeightMm=70,Orientation="portrait",Status="DRAFT",DesignJson=JsonSerializer.Serialize(document,JsonOptions),CurrentVersion=1,HeaderTitleFallback="ARQUIVO CENTRAL",LabelContext="GENERIC",CreatedAt=DateTime.UtcNow };
+        return View("~/Views/Labels/Designer/Edit.cshtml",await PageAsync(design,true,ct));
     }
 
     [HttpPost("/Labels/Designer/New"),ValidateAntiForgeryToken]
@@ -42,7 +44,7 @@ public sealed class LabelDesignerController(IDbConnectionFactory dbFactory, ILab
     [HttpGet("/Labels/Designer/Edit/{templateKey}")]
     [HttpGet("/Labels/Designer/{templateKey}/Edit")]
     public async Task<IActionResult> Edit(string templateKey,CancellationToken ct)
-    { var design=await designs.GetAsync(TenantId,templateKey,ct); return design is null?NotFound():View("~/Views/Labels/Designer/Edit.cshtml",Page(design)); }
+    { var design=await designs.GetAsync(TenantId,templateKey,ct); return design is null?NotFound():View("~/Views/Labels/Designer/Edit.cshtml",await PageAsync(design,false,ct)); }
 
     [HttpPost("/Labels/Designer/Edit/{templateKey}")]
     [HttpPost("/Labels/Designer/{templateKey}/Save")]
@@ -56,7 +58,7 @@ public sealed class LabelDesignerController(IDbConnectionFactory dbFactory, ILab
 
     [HttpGet("/Labels/Designer/{templateKey}")]
     public async Task<IActionResult> Details(string templateKey,CancellationToken ct)
-    { var design=await designs.GetAsync(TenantId,templateKey,ct); return design is null?NotFound():View("~/Views/Labels/Designer/Details.cshtml",Page(design)); }
+    { var design=await designs.GetAsync(TenantId,templateKey,ct); return design is null?NotFound():View("~/Views/Labels/Designer/Details.cshtml",await PageAsync(design,false,ct)); }
 
     [HttpPost("/Labels/Designer/Validate/{templateKey}")]
     [HttpPost("/Labels/Designer/{templateKey}/Validate")]
@@ -155,11 +157,11 @@ public sealed class LabelDesignerController(IDbConnectionFactory dbFactory, ILab
     [HttpGet("/Labels/Designer/Fields")]
     public IActionResult Fields(string subjectType)=>Ok(fieldCatalog.GetFields(subjectType));
 
-    private LabelCanvasDesignerPageViewModel Page(LabelCanvasDesignDto design,bool isNew=false){var fields=fieldCatalog.GetFields(design.SubjectType);return new(design,fields,renderer.Validate(design.DesignJson,fields.Select(x=>x.Key).ToHashSet(StringComparer.OrdinalIgnoreCase)),null,isNew);}
+    private async Task<LabelCanvasDesignerPageViewModel> PageAsync(LabelCanvasDesignDto design,bool isNew,CancellationToken ct){var fields=fieldCatalog.GetFields(design.SubjectType);return new(design,fields,renderer.Validate(design.DesignJson,fields.Select(x=>x.Key).ToHashSet(StringComparer.OrdinalIgnoreCase)),null,isNew,await brandingProfiles.ListAsync(TenantId,ct));}
     private async Task<IActionResult> ExecuteWrite(Func<Task<IActionResult>> action,string operation,string templateKey)
     {try{return await action();}catch(KeyNotFoundException e){logger.LogWarning(e,"Template {TemplateKey} não encontrado ao {Operation}.",templateKey,operation);return NotFound(new{ok=false,message=e.Message});}catch(ArgumentException e){logger.LogWarning(e,"Entrada inválida ao {Operation} {TemplateKey}.",operation,templateKey);return BadRequest(new{ok=false,message=e.Message});}catch(InvalidOperationException e){logger.LogWarning(e,"Operação recusada ao {Operation} {TemplateKey}.",operation,templateKey);return BadRequest(new{ok=false,message=e.Message});}catch(Exception e){logger.LogError(e,"Erro ao {Operation} o template {TemplateKey}.",operation,templateKey);return StatusCode(500,new{ok=false,message="Não foi possível concluir a operação. Tente novamente."});}}
-    private static LabelCanvasSaveRequest CopyWithKey(LabelCanvasSaveRequest x,string key)=>new(){TemplateKey=key,TemplateName=x.TemplateName,Description=x.Description,TemplateKind=x.TemplateKind,SubjectType=x.SubjectType,PaperKind=x.PaperKind,WidthMm=x.WidthMm,HeightMm=x.HeightMm,Orientation=x.Orientation,DesignJson=x.DesignJson,ChangeSummary=x.ChangeSummary};
+    private static LabelCanvasSaveRequest CopyWithKey(LabelCanvasSaveRequest x,string key)=>new(){TemplateKey=key,TemplateName=x.TemplateName,Description=x.Description,TemplateKind=x.TemplateKind,SubjectType=x.SubjectType,PaperKind=x.PaperKind,WidthMm=x.WidthMm,HeightMm=x.HeightMm,Orientation=x.Orientation,DesignJson=x.DesignJson,DefaultBrandingProfileId=x.DefaultBrandingProfileId,BrandingBindingKey=x.BrandingBindingKey,ClientNameFallback=x.ClientNameFallback,ContractNameFallback=x.ContractNameFallback,OrganizationNameFallback=x.OrganizationNameFallback,HeaderTitleFallback=x.HeaderTitleFallback,HeaderSubtitleFallback=x.HeaderSubtitleFallback,LabelContext=x.LabelContext,ChangeSummary=x.ChangeSummary};
     private string? Ip()=>HttpContext.Connection.RemoteIpAddress?.ToString();private string? Agent()=>Request.Headers.UserAgent.ToString();
     private static string SampleProfile(LabelCanvasDesignDto design)=>design.SubjectType.Equals("LocDeskFolder",StringComparison.OrdinalIgnoreCase)?"HOL":design.SubjectType.Contains("Box",StringComparison.OrdinalIgnoreCase)?"Caixa GED":"Documento GED";
-    private static LabelCanvasDocumentDto NewDocument(string subject,string profile,decimal width,decimal height)=>new(){Canvas=new(){WidthMm=width,HeightMm=height,Paper="A4",Orientation="portrait",GridMm=2,SafeMarginMm=3},Bindings=new(){SubjectType=subject,SampleDataProfile=profile},Elements=[new(){Id="title",Type="text",Name="Título",XMm=5,YMm=5,WidthMm=70,HeightMm=9,Text="NOVA ETIQUETA",ZIndex=1,Style=new(){FontSizePt=10,FontWeight="700",Align="center"},Validation=new(){Required=true}}]};
+    private static LabelCanvasDocumentDto NewDocument(string subject,string profile,decimal width,decimal height)=>new(){Canvas=new(){WidthMm=width,HeightMm=height,Paper="A4",Orientation="portrait",GridMm=2,SafeMarginMm=3},Bindings=new(){SubjectType=subject,SampleDataProfile=profile},Elements=[new(){Id="title",Type="field",Name="Título do cabeçalho",XMm=5,YMm=5,WidthMm=70,HeightMm=9,ZIndex=1,Binding=new(){Field="headerTitle",Fallback="ARQUIVO CENTRAL"},Style=new(){FontSizePt=10,FontWeight="700",Align="center"},Validation=new(){Required=true}}]};
 }

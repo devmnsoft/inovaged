@@ -105,7 +105,7 @@ public sealed class LabelCanvasRenderService(ILogger<LabelCanvasRenderService> l
         else if(e.Type=="barcode") html.Append("<div class=\"label-barcode\" style=\"height:70%\"></div><small>").Append(WebUtility.HtmlEncode(value)).Append("</small>");
         else if(e.Type is "logo" or "image")
         {
-            var source=e.Binding?.Asset;
+            var source=!string.IsNullOrWhiteSpace(e.Binding?.Field)?value:e.Binding?.Asset;
             if(IsSafeImageSource(source)) html.Append("<img alt=\"").Append(WebUtility.HtmlEncode(e.Name)).Append("\" src=\"").Append(WebUtility.HtmlEncode(source)).Append("\" style=\"width:100%;height:100%;object-fit:contain\">");
             else html.Append("<strong>").Append(WebUtility.HtmlEncode(e.Binding?.Fallback ?? e.Name)).Append("</strong>");
         }

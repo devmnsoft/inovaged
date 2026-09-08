@@ -53,11 +53,13 @@ public class LabelsController : GedControllerBase
     private readonly ILogger<LabelsController> _logger;
     private readonly ILabelCanvasDesignService _canvasDesigns;
     private readonly ILabelCanvasRenderService _canvasRenderer;
+    private readonly IPrintBrandingResolver _printBrandingResolver;
 
     public LabelsController(IDbConnectionFactory dbFactory, ILabelPrintRegistrar printRegistrar,
         ILabelTemplateService templates, ILabelQrCodeService qrCodes, ILabelPayloadBuilder payloadBuilder, ILabelTemplateCatalogService catalog, InovaGed.Application.Labels.ILabelTemplateManager templateManager,
         ILabelPrintJobService printJobs, ILabelPdfRenderService pdf, ILabelPrintLogoResolver logoResolver,
         ILabelCanvasDesignService canvasDesigns, ILabelCanvasRenderService canvasRenderer,
+        IPrintBrandingResolver printBrandingResolver,
         ILogger<LabelsController> logger) : base(dbFactory)
     {
         _printRegistrar = printRegistrar;
@@ -66,7 +68,7 @@ public class LabelsController : GedControllerBase
         _payloadBuilder = payloadBuilder;
         _catalog = catalog;
         _templateManager = templateManager;
-        _printJobs=printJobs; _pdf=pdf; _logoResolver=logoResolver; _canvasDesigns=canvasDesigns; _canvasRenderer=canvasRenderer; _logger=logger;
+        _printJobs=printJobs; _pdf=pdf; _logoResolver=logoResolver; _canvasDesigns=canvasDesigns; _canvasRenderer=canvasRenderer; _printBrandingResolver=printBrandingResolver; _logger=logger;
     }
 
     [HttpGet("/Labels/Templates")]
@@ -447,6 +449,17 @@ public class LabelsController : GedControllerBase
         };
         if(subject is null){ModelState.AddModelError(nameof(input.SubjectId),"Não foi possível localizar a origem selecionada.");await PopulatePrintWizardLookupsAsync(input,ct);return View("PrintWizard",input);}
         var values=CanvasValues(subject,input.SubjectType,input.SubjectId!.Value);var calibration=await ResolveProfileAsync(input.PrintProfileId,ct);
+        var branding=await _printBrandingResolver.ResolveAsync(TenantId,PrintBrandingContext.LabelTemplate,design.BrandingBindingKey??design.TemplateKey,input.PrintBrandingProfileId??design.DefaultBrandingProfileId,input.SelectedLogoAssetId,ct);
+        values["clientName"]=branding.ClientName??design.ClientNameFallback;
+        values["contractName"]=branding.ContractName??design.ContractNameFallback;
+        values["organizationName"]=branding.OrganizationName??design.OrganizationNameFallback;
+        values["headerTitle"]=branding.HeaderTitle??design.HeaderTitleFallback??"ARQUIVO CENTRAL";
+        values["headerSubtitle"]=branding.HeaderSubtitle??design.HeaderSubtitleFallback;
+        values["headerExtraLine"]=branding.HeaderExtraLine;
+        values["footerText"]=branding.FooterText;
+        values["footerExtraLine"]=branding.FooterExtraLine;
+        values["primaryLogo"]=branding.PrimaryLogoAssetId is Guid primaryLogo?$"/Administration/BrandAssets/{primaryLogo}/File":null;
+        values["secondaryLogo"]=branding.SecondaryLogoAssetId is Guid secondaryLogo?$"/Administration/BrandAssets/{secondaryLogo}/File":null;
         values["printedBy"]=User.Identity?.Name??"Usuário InovaGED";values["qrPayload"]=$"{Request.Scheme}://{Request.Host}/Labels/Trace/{input.SubjectId}";values["__copies"]=input.Copies;
         values["__marginTopMm"]=calibration.MarginTopMm;values["__marginLeftMm"]=calibration.MarginLeftMm;values["__offsetXmm"]=calibration.OffsetXMm;values["__offsetYmm"]=calibration.OffsetYMm;values["__scalePercent"]=calibration.ScalePercent;values["__gapXmm"]=calibration.LabelGapXMm;values["__gapYmm"]=calibration.LabelGapYMm;
         var rendered=_canvasRenderer.Render(design,values,register);
@@ -458,7 +471,7 @@ public class LabelsController : GedControllerBase
         if(register)
         {
             if(UserId is not Guid userId)return Unauthorized();
-            var snapshot=new{layoutSource="CANVAS",isDesignerTemplate=true,templateCode=design.TemplateKey,templateName=design.TemplateName,templateVersion=design.CurrentVersion,snapshotHash=rendered.SnapshotHash,subjectType=input.SubjectType,subjectId=input.SubjectId,printMode=input.PrintMode,printChannel="WEB",copies=input.Copies,calibration=new{input.PrintProfileId,calibration.MarginTopMm,calibration.MarginLeftMm,calibration.OffsetXMm,calibration.OffsetYMm,calibration.ScalePercent,calibration.LabelGapXMm,calibration.LabelGapYMm},printedFields=values};
+            var snapshot=new{layoutSource="CANVAS",isDesignerTemplate=true,templateCode=design.TemplateKey,templateName=design.TemplateName,templateVersion=design.CurrentVersion,snapshotHash=rendered.SnapshotHash,subjectType=input.SubjectType,subjectId=input.SubjectId,printMode=input.PrintMode,printChannel="WEB",copies=input.Copies,branding=new{profileId=branding.ProfileId,profileName=branding.ProfileName,clientName=values["clientName"],contractName=values["contractName"],organizationName=values["organizationName"],headerTitle=values["headerTitle"],headerSubtitle=values["headerSubtitle"],primaryLogoAssetId=branding.PrimaryLogoAssetId,secondaryLogoAssetId=branding.SecondaryLogoAssetId},calibration=new{input.PrintProfileId,calibration.MarginTopMm,calibration.MarginLeftMm,calibration.OffsetXMm,calibration.OffsetYMm,calibration.ScalePercent,calibration.LabelGapXMm,calibration.LabelGapYMm},printedFields=values};
             var request=new LabelPrintRequest(TenantId,userId,input.SubjectType,input.SubjectId.Value,design.TemplateKey,_payloadBuilder.Build(snapshot),HttpContext.Connection.RemoteIpAddress?.ToString(),Request.Headers.UserAgent.ToString(),input.ReprintReason)
             {PrintChannel="WEB",PrintMode=input.PrintMode,TemplateVersion=design.CurrentVersion,CalibrationProfileId=input.PrintProfileId,TraceCode=Convert.ToString(values.GetValueOrDefault("traceCode"))};
             try
@@ -1088,7 +1101,10 @@ select
     lp.snapshot_json->>'subject' as locdesk_subject,
     lp.snapshot_json->>'classification' as locdesk_classification,
     lp.label_subject_id as subject_id,
-    coalesce(nullif(lp.snapshot_json->>'selectedLogoAssetId',''), nullif(lp.snapshot_json->>'logoAssetId','')) is not null as has_logo
+    coalesce(nullif(lp.snapshot_json#>>'{branding,primaryLogoAssetId}',''),nullif(lp.snapshot_json->>'selectedLogoAssetId',''), nullif(lp.snapshot_json->>'logoAssetId','')) is not null as has_logo,
+    lp.snapshot_json#>>'{branding,profileName}' as branding_profile_name,
+    lp.snapshot_json#>>'{branding,clientName}' as branding_client_name,
+    lp.snapshot_json#>>'{branding,contractName}' as branding_contract_name
     ,coalesce(nullif(lp.snapshot_json->>'copies','')::int,1) as copies
     ,'PRINTED' as print_status
 from ged.label_print_history lp
@@ -1127,6 +1143,9 @@ where lp.tenant_id=@tid
     or coalesce(lp.snapshot_json->>'location','') ilike @q
     or coalesce(lp.snapshot_json->>'subject','') ilike @q
     or coalesce(lp.snapshot_json->>'classification','') ilike @q
+    or coalesce(lp.snapshot_json#>>'{branding,profileName}','') ilike @q
+    or coalesce(lp.snapshot_json#>>'{branding,clientName}','') ilike @q
+    or coalesce(lp.snapshot_json#>>'{branding,contractName}','') ilike @q
   )");
             parameters.Add("q", $"%{q}%", DbType.String);
         }

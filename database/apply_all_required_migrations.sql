@@ -3091,3 +3091,7 @@ where coalesce(reg_status, 'A') = 'A';
 
 -- UI/UX Stabilization RC15 - Physical Archive schema compatibility
 \ir migrations/2026_09_03_physical_archive_reg_status_compat_fix.sql
+
+-- Labels Canvas Designer RC22 + multi-cliente RC23
+\ir migrations/2026_09_08_label_canvas_designer_rc22.sql
+\ir migrations/2026_09_08_label_canvas_multi_client_rc23.sql

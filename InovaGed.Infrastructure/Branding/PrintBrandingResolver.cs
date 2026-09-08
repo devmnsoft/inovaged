@@ -7,6 +7,14 @@ namespace InovaGed.Infrastructure.Branding;
 public sealed class PrintBrandingResolver(IDbConnectionFactory factory) : IPrintBrandingResolver, IPrintBrandingProfileService, IPrintBrandingBindingService
 {
     public Task<ResolvedPrintBranding> GetAsync(Guid tenantId, Guid profileId, CancellationToken ct) => ResolveAsync(tenantId, "", "", profileId, null, ct);
+    public async Task<IReadOnlyList<ResolvedPrintBranding>> ListAsync(Guid tenantId, CancellationToken ct)
+    {
+        using var db=factory.CreateConnection();db.Open();
+        if(!await db.ExecuteScalarAsync<bool>(new CommandDefinition("select to_regclass('ged.print_branding_profile') is not null",cancellationToken:ct)))return [];
+        const string sql="select id,profile_name,client_name,contract_name,organization_name,primary_logo_asset_id,secondary_logo_asset_id,header_title,header_subtitle,header_extra_line,footer_text,footer_extra_line,primary_logo_width_mm,secondary_logo_width_mm,show_generated_at,show_page_number from ged.print_branding_profile where tenant_id=@tenantId and status='ACTIVE' and reg_status='A' order by is_default desc,profile_name";
+        var rows=(await db.QueryAsync<DbRow>(new CommandDefinition(sql,new{tenantId},cancellationToken:ct))).AsList();
+        return rows.Select(row=>new ResolvedPrintBranding{HasBranding=true,Message="Identidade visual disponível.",ProfileId=row.Id,ProfileName=row.ProfileName,ClientName=row.ClientName,ContractName=row.ContractName,OrganizationName=row.OrganizationName,PrimaryLogoAssetId=row.PrimaryLogoAssetId,SecondaryLogoAssetId=row.SecondaryLogoAssetId,HeaderTitle=row.HeaderTitle,HeaderSubtitle=row.HeaderSubtitle,HeaderExtraLine=row.HeaderExtraLine,FooterText=row.FooterText,FooterExtraLine=row.FooterExtraLine,PrimaryLogoWidthMm=row.PrimaryLogoWidthMm,SecondaryLogoWidthMm=row.SecondaryLogoWidthMm,ShowGeneratedAt=row.ShowGeneratedAt,ShowPageNumber=row.ShowPageNumber}).ToArray();
+    }
     public Task<ResolvedPrintBranding> ResolveBindingAsync(Guid tenantId, string context, string bindingKey, CancellationToken ct) => ResolveAsync(tenantId, context, bindingKey, null, null, ct);
 
     public async Task<ResolvedPrintBranding> ResolveAsync(Guid tenantId, string context, string bindingKey, Guid? selectedProfileId, Guid? selectedLogoAssetId, CancellationToken ct)
@@ -19,7 +27,7 @@ public sealed class PrintBrandingResolver(IDbConnectionFactory factory) : IPrint
             if (valid) return new ResolvedPrintBranding { HasBranding=true, Message="Logo selecionada manualmente.", PrimaryLogoAssetId=selectedLogoAssetId };
         }
         const string sql = """
-            select p.id, p.profile_name, p.primary_logo_asset_id, p.secondary_logo_asset_id,
+            select p.id, p.profile_name, p.client_name, p.contract_name, p.organization_name, p.primary_logo_asset_id, p.secondary_logo_asset_id,
                    p.header_title, p.header_subtitle, p.header_extra_line, p.footer_text, p.footer_extra_line,
                    p.primary_logo_width_mm, p.secondary_logo_width_mm, p.show_generated_at, p.show_page_number
               from ged.print_branding_profile p
@@ -28,7 +36,7 @@ public sealed class PrintBrandingResolver(IDbConnectionFactory factory) : IPrint
              order by (p.id=@selected) desc, (p.id=(select b.profile_id from ged.print_branding_binding b where b.tenant_id=@tenant and b.binding_context=@context and b.binding_key=@key and b.enabled and b.reg_status='A' limit 1)) desc, p.is_default desc limit 1
             """;
         var row = await db.QuerySingleOrDefaultAsync<DbRow>(new CommandDefinition(sql,new{tenant=tenantId,selected=selectedProfileId,context,key=bindingKey},cancellationToken:ct));
-        return row is null ? new() : new ResolvedPrintBranding { HasBranding=true, Message="Identidade visual resolvida.", ProfileId=row.Id,ProfileName=row.ProfileName,PrimaryLogoAssetId=row.PrimaryLogoAssetId,SecondaryLogoAssetId=row.SecondaryLogoAssetId,HeaderTitle=row.HeaderTitle,HeaderSubtitle=row.HeaderSubtitle,HeaderExtraLine=row.HeaderExtraLine,FooterText=row.FooterText,FooterExtraLine=row.FooterExtraLine,PrimaryLogoWidthMm=row.PrimaryLogoWidthMm,SecondaryLogoWidthMm=row.SecondaryLogoWidthMm,ShowGeneratedAt=row.ShowGeneratedAt,ShowPageNumber=row.ShowPageNumber };
+        return row is null ? new() : new ResolvedPrintBranding { HasBranding=true, Message="Identidade visual resolvida.", ProfileId=row.Id,ProfileName=row.ProfileName,ClientName=row.ClientName,ContractName=row.ContractName,OrganizationName=row.OrganizationName,PrimaryLogoAssetId=row.PrimaryLogoAssetId,SecondaryLogoAssetId=row.SecondaryLogoAssetId,HeaderTitle=row.HeaderTitle,HeaderSubtitle=row.HeaderSubtitle,HeaderExtraLine=row.HeaderExtraLine,FooterText=row.FooterText,FooterExtraLine=row.FooterExtraLine,PrimaryLogoWidthMm=row.PrimaryLogoWidthMm,SecondaryLogoWidthMm=row.SecondaryLogoWidthMm,ShowGeneratedAt=row.ShowGeneratedAt,ShowPageNumber=row.ShowPageNumber };
     }
-    private sealed class DbRow { public Guid Id {get;set;} public string ProfileName {get;set;}=""; public Guid? PrimaryLogoAssetId {get;set;} public Guid? SecondaryLogoAssetId {get;set;} public string? HeaderTitle {get;set;} public string? HeaderSubtitle {get;set;} public string? HeaderExtraLine {get;set;} public string? FooterText {get;set;} public string? FooterExtraLine {get;set;} public decimal PrimaryLogoWidthMm {get;set;} public decimal SecondaryLogoWidthMm {get;set;} public bool ShowGeneratedAt {get;set;} public bool ShowPageNumber {get;set;} }
+    private sealed class DbRow { public Guid Id {get;set;} public string ProfileName {get;set;}=""; public string? ClientName {get;set;} public string? ContractName {get;set;} public string? OrganizationName {get;set;} public Guid? PrimaryLogoAssetId {get;set;} public Guid? SecondaryLogoAssetId {get;set;} public string? HeaderTitle {get;set;} public string? HeaderSubtitle {get;set;} public string? HeaderExtraLine {get;set;} public string? FooterText {get;set;} public string? FooterExtraLine {get;set;} public decimal PrimaryLogoWidthMm {get;set;} public decimal SecondaryLogoWidthMm {get;set;} public bool ShowGeneratedAt {get;set;} public bool ShowPageNumber {get;set;} }
 }

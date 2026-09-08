@@ -19,6 +19,14 @@ public sealed class LabelCanvasDesignDto
     public string DesignJson { get; init; } = "{}";
     public int CurrentVersion { get; init; } = 1;
     public bool IsSystemTemplate { get; init; }
+    public Guid? DefaultBrandingProfileId { get; init; }
+    public string? BrandingBindingKey { get; init; }
+    public string? ClientNameFallback { get; init; }
+    public string? ContractNameFallback { get; init; }
+    public string? OrganizationNameFallback { get; init; }
+    public string? HeaderTitleFallback { get; init; }
+    public string? HeaderSubtitleFallback { get; init; }
+    public string LabelContext { get; init; } = "GENERIC";
     public Guid? CreatedBy { get; init; }
     public DateTime CreatedAt { get; init; }
     public Guid? UpdatedBy { get; init; }
@@ -112,6 +120,14 @@ public sealed class LabelCanvasSaveRequest
     public decimal HeightMm { get; init; }
     public string Orientation { get; init; } = "portrait";
     public string DesignJson { get; init; } = "{}";
+    public Guid? DefaultBrandingProfileId { get; init; }
+    public string? BrandingBindingKey { get; init; }
+    public string? ClientNameFallback { get; init; }
+    public string? ContractNameFallback { get; init; }
+    public string? OrganizationNameFallback { get; init; }
+    public string? HeaderTitleFallback { get; init; }
+    public string? HeaderSubtitleFallback { get; init; }
+    public string LabelContext { get; init; } = "GENERIC";
     public string? ChangeSummary { get; init; }
 }
 

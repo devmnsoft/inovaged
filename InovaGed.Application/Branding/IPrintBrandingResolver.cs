@@ -17,6 +17,9 @@ public sealed class ResolvedPrintBranding
     public string Message { get; init; } = "Nenhuma identidade visual configurada. A impressão seguirá sem logo.";
     public Guid? ProfileId { get; init; }
     public string? ProfileName { get; init; }
+    public string? ClientName { get; init; }
+    public string? ContractName { get; init; }
+    public string? OrganizationName { get; init; }
     public Guid? PrimaryLogoAssetId { get; init; }
     public Guid? SecondaryLogoAssetId { get; init; }
     public string? HeaderTitle { get; init; }
