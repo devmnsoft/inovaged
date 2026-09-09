@@ -56,12 +56,35 @@ from ged.label_template_design_version where template_design_id=@id and status='
         if(!working.Status.Equals("DRAFT",StringComparison.OrdinalIgnoreCase)||working.TenantId!=tenantId)throw new InvalidOperationException("Não existe revisão própria em andamento.");
         var published=await GetPublishedAsync(tenantId,templateKey,null,cancellationToken)??throw new InvalidOperationException("Novo rascunho deve ser excluído, não cancelado.");
         await using var db=await dbFactory.OpenAsync(cancellationToken);await using var tx=await db.BeginTransactionAsync(cancellationToken);
-        const string sql="""update ged.label_template_design set template_name=@TemplateName,description=@Description,template_kind=@TemplateKind,
-subject_type=@SubjectType,paper_kind=@PaperKind,paper_size=@PaperKind,width_mm=@WidthMm,height_mm=@HeightMm,orientation=@Orientation,
-design_json=cast(@DesignJson as jsonb),default_branding_profile_id=@DefaultBrandingProfileId,branding_binding_key=@BrandingBindingKey,
-client_name_fallback=@ClientNameFallback,contract_name_fallback=@ContractNameFallback,organization_name_fallback=@OrganizationNameFallback,
-header_title_fallback=@HeaderTitleFallback,header_subtitle_fallback=@HeaderSubtitleFallback,label_context=@LabelContext,status='PUBLISHED',
-current_version=@CurrentVersion,updated_by=@userId,updated_at=now() where id=@Id and tenant_id=@tenantId and status='DRAFT'""";
+        const string sql = """
+update ged.label_template_design
+set
+    template_name = @TemplateName,
+    description = @Description,
+    template_kind = @TemplateKind,
+    subject_type = @SubjectType,
+    paper_kind = @PaperKind,
+    paper_size = @PaperKind,
+    width_mm = @WidthMm,
+    height_mm = @HeightMm,
+    orientation = @Orientation,
+    design_json = cast(@DesignJson as jsonb),
+    default_branding_profile_id = @DefaultBrandingProfileId,
+    branding_binding_key = @BrandingBindingKey,
+    client_name_fallback = @ClientNameFallback,
+    contract_name_fallback = @ContractNameFallback,
+    organization_name_fallback = @OrganizationNameFallback,
+    header_title_fallback = @HeaderTitleFallback,
+    header_subtitle_fallback = @HeaderSubtitleFallback,
+    label_context = @LabelContext,
+    status = 'PUBLISHED',
+    current_version = @CurrentVersion,
+    updated_by = @userId,
+    updated_at = now()
+where id = @Id
+  and tenant_id = @tenantId
+  and status = 'DRAFT'
+""";
         var p=new DynamicParameters(published);p.Add("userId",userId);p.Add("tenantId",tenantId);
         if(await db.ExecuteAsync(new CommandDefinition(sql,p,tx,cancellationToken:cancellationToken))!=1)throw new InvalidOperationException("Não foi possível cancelar a revisão.");
         await InsertEventAsync(db,tx,tenantId,userId,working.Id,"CANCEL_REVISION",$"Revisão cancelada; versão {published.CurrentVersion} restaurada.",new{baseVersion=published.CurrentVersion},ipAddress,userAgent,cancellationToken);
@@ -195,9 +218,28 @@ update ged.label_template_design set status='PUBLISHED',current_version=@version
     public async Task DeleteDraftAsync(Guid tenantId,Guid userId,string templateKey,string? ipAddress,string? userAgent,CancellationToken cancellationToken=default)
     {
         ValidateIdentity(tenantId,userId);await using var db=await dbFactory.OpenAsync(cancellationToken);await using var tx=await db.BeginTransactionAsync(cancellationToken);
-        var id=await db.ExecuteScalarAsync<Guid?>(new CommandDefinition("""update ged.label_template_design d set reg_status='INACTIVE',archived_at=now(),updated_by=@userId,updated_at=now()
-where d.tenant_id=@tenantId and upper(d.template_key)=upper(@templateKey) and d.status='DRAFT' and not d.is_system_template and d.reg_status in ('A','ACTIVE')
-and not exists(select 1 from ged.label_template_design_version v where v.template_design_id=d.id and v.status='PUBLISHED' and v.reg_status in ('A','ACTIVE')) returning d.id""",new{tenantId,userId,templateKey},tx,cancellationToken:cancellationToken));
+        const string sql = """
+update ged.label_template_design d
+set
+    reg_status = 'INACTIVE',
+    archived_at = now(),
+    updated_by = @userId,
+    updated_at = now()
+where d.tenant_id = @tenantId
+  and upper(d.template_key) = upper(@templateKey)
+  and d.status = 'DRAFT'
+  and not d.is_system_template
+  and d.reg_status in ('A','ACTIVE')
+  and not exists (
+      select 1
+      from ged.label_template_design_version v
+      where v.template_design_id = d.id
+        and v.status = 'PUBLISHED'
+        and v.reg_status in ('A','ACTIVE')
+  )
+returning d.id
+""";
+        var id=await db.ExecuteScalarAsync<Guid?>(new CommandDefinition(sql,new{tenantId,userId,templateKey},tx,cancellationToken:cancellationToken));
         if(id is null)throw new InvalidOperationException("Rascunhos com versão publicada não podem ser excluídos; cancele a revisão.");
         await InsertEventAsync(db,tx,tenantId,userId,id.Value,"DELETE_DRAFT","Rascunho excluído.",null,ipAddress,userAgent,cancellationToken);await tx.CommitAsync(cancellationToken);
     }

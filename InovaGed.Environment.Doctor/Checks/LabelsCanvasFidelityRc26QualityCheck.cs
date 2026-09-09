@@ -13,9 +13,10 @@ public static class LabelsCanvasFidelityRc26QualityCheck
         var coordinator=Read("InovaGed.Infrastructure","Labels","LabelCanvasPrintCoordinator.cs");
         var renderer=Read("InovaGed.Infrastructure","Labels","LabelCanvasRenderService.cs");
         var migration=Read("database","migrations","2026_09_09_label_canvas_trace_finalization_rc26.sql");
+        var compactRepository=repository.Replace(" ","").Replace("\r","").Replace("\n","").Replace("\t","");
         Check(contracts.Contains("LabelCanvasVersionSnapshotDto")&&reader.Contains("LAYOUT_LEGACY"),"Snapshot publicado usa envelope com fallback legado");
         Check(repository.Contains("snapshot_json::text SnapshotJson")&&repository.Contains("LabelCanvasVersionSnapshotReader.Read"),"Versões não dependem de metadata mutável");
-        Check(repository.Contains("CancelRevisionAsync")&&repository.Contains("not exists(select 1 from ged.label_template_design_version"),"Lifecycle de revisão protegido");
+        Check(repository.Contains("CancelRevisionAsync")&&compactRepository.Contains("notexists(select1fromged.label_template_design_version"),"Lifecycle de revisão protegido");
         Check(reader.Contains("ComputeVersionHash")&&reader.Contains("VERSION_ENVELOPE_V2"),"VersionHash do envelope");
         Check(contracts.Contains("LabelCanvasExecutionMode")&&!coordinator.Contains("Cliente de demonstração\";"),"Produção separada de demo");
         Check(coordinator.Contains("Snapshot replay exige")&&coordinator.Contains("frozenQr"),"Replay congelado preserva QR");
