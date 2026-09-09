@@ -12,7 +12,7 @@ namespace InovaGed.Web.Controllers;
 [Authorize(Policy = AppPolicies.LabelDesignerRead)]
 public sealed class LabelDesignerController(IDbConnectionFactory dbFactory, ILabelCanvasDesignService designs,
     ILabelCanvasRenderService renderer, ILabelCanvasFieldCatalogService fieldCatalog,
-    IPrintBrandingProfileService brandingProfiles,
+    IPrintBrandingProfileService brandingProfiles, IPrintBrandingResolver brandingResolver,
     ILogger<LabelDesignerController> logger) : GedControllerBase(dbFactory)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { PropertyNameCaseInsensitive = true };
@@ -26,10 +26,14 @@ public sealed class LabelDesignerController(IDbConnectionFactory dbFactory, ILab
 
     [HttpGet("/Labels/Designer/New")]
     [Authorize(Policy=AppPolicies.LabelDesignerCreate)]
-    public async Task<IActionResult> New(CancellationToken ct)
+    public async Task<IActionResult> New(string? baseTemplate,CancellationToken ct)
     {
+        var source=string.IsNullOrWhiteSpace(baseTemplate)?null:await designs.GetAsync(TenantId,baseTemplate,ct);
         var document=NewDocument("Document","Genérico",100,70);
-        var design=new LabelCanvasDesignDto { Id=Guid.Empty,TenantId=TenantId,TemplateName="Novo modelo de etiqueta",TemplateKind="CANVAS",SubjectType="Document",PaperKind="A4",WidthMm=100,HeightMm=70,Orientation="portrait",Status="DRAFT",DesignJson=JsonSerializer.Serialize(document,JsonOptions),CurrentVersion=1,HeaderTitleFallback="ARQUIVO CENTRAL",LabelContext="GENERIC",CreatedAt=DateTime.UtcNow };
+        var design=source is null
+            ?new LabelCanvasDesignDto { Id=Guid.Empty,TenantId=TenantId,TemplateName="Novo modelo de etiqueta",TemplateKind="CANVAS",SubjectType="Document",PaperKind="A4",WidthMm=100,HeightMm=70,Orientation="portrait",Status="DRAFT",DesignJson=JsonSerializer.Serialize(document,JsonOptions),CurrentVersion=1,HeaderTitleFallback="ARQUIVO CENTRAL",LabelContext="GENERIC",CreatedAt=DateTime.UtcNow }
+            :new LabelCanvasDesignDto { Id=Guid.Empty,TenantId=TenantId,TemplateName=$"Novo modelo baseado em {source.TemplateName}",TemplateKind=source.TemplateKind,SubjectType=source.SubjectType,PaperKind=source.PaperKind,WidthMm=source.WidthMm,HeightMm=source.HeightMm,Orientation=source.Orientation,Status="DRAFT",DesignJson=source.DesignJson,CurrentVersion=1,DefaultBrandingProfileId=source.DefaultBrandingProfileId,BrandingBindingKey=source.BrandingBindingKey,ClientNameFallback=source.ClientNameFallback,ContractNameFallback=source.ContractNameFallback,OrganizationNameFallback=source.OrganizationNameFallback,HeaderTitleFallback=source.HeaderTitleFallback,HeaderSubtitleFallback=source.HeaderSubtitleFallback,LabelContext=source.LabelContext,CreatedAt=DateTime.UtcNow};
+        ViewBag.BaseTemplate=baseTemplate;
         return View("~/Views/Labels/Designer/Edit.cshtml",await PageAsync(design,true,ct));
     }
 
@@ -74,9 +78,9 @@ public sealed class LabelDesignerController(IDbConnectionFactory dbFactory, ILab
     [HttpGet("/Labels/Designer/Preview/{templateKey}")]
     [HttpGet("/Labels/Designer/{templateKey}/Preview")]
     [Authorize(Policy=AppPolicies.LabelDesignerPreview)]
-    public async Task<IActionResult> Preview(string templateKey,string? profile,CancellationToken ct)
+    public async Task<IActionResult> Preview(string templateKey,string? profile,Guid? brandingProfileId,CancellationToken ct)
     {
-        var design=await designs.GetAsync(TenantId,templateKey,ct);if(design is null)return NotFound();var selected=profile??SampleProfile(design);var rendered=renderer.Render(design,fieldCatalog.GetSampleData(selected));
+        var design=await designs.GetAsync(TenantId,templateKey,ct);if(design is null)return NotFound();var selected=profile??SampleProfile(design);var preview=await ResolveDesignerPreviewValuesAsync(design,selected,brandingProfileId,ct);var rendered=renderer.Render(design,preview.Values);
         await designs.RecordEventAsync(TenantId,UserId,design.Id,"PREVIEW_TEMPLATE","Preview gerado.",new{profile=selected,rendered.SnapshotHash},Ip(),Agent(),ct);
         return View("~/Views/Labels/Designer/Preview.cshtml",new LabelCanvasDesignerPageViewModel(design,fieldCatalog.GetFields(design.SubjectType),rendered.Validation,rendered.Html));
     }
@@ -84,10 +88,19 @@ public sealed class LabelDesignerController(IDbConnectionFactory dbFactory, ILab
     [HttpGet("/Labels/Designer/TestPrint/{templateKey}")]
     [HttpGet("/Labels/Designer/{templateKey}/PrintTest")]
     [Authorize(Policy=AppPolicies.LabelDesignerPrintTest)]
-    public async Task<IActionResult> TestPrint(string templateKey,string? profile,CancellationToken ct)
+    public async Task<IActionResult> TestPrint(string templateKey,string? profile,Guid? brandingProfileId,CancellationToken ct)
     {
-        var design=await designs.GetAsync(TenantId,templateKey,ct);if(design is null)return NotFound();var rendered=renderer.Render(design,fieldCatalog.GetSampleData(profile??SampleProfile(design)),true);
+        var design=await designs.GetAsync(TenantId,templateKey,ct);if(design is null)return NotFound();var preview=await ResolveDesignerPreviewValuesAsync(design,profile??SampleProfile(design),brandingProfileId,ct);var rendered=renderer.Render(design,preview.Values,true);
         await designs.RecordEventAsync(TenantId,UserId,design.Id,"TEST_PRINT","Impressão de teste gerada.",new{rendered.SnapshotHash},Ip(),Agent(),ct);return Content(rendered.Html,"text/html; charset=utf-8");
+    }
+
+    [HttpPost("/Labels/Designer/LivePreview"),ValidateAntiForgeryToken]
+    [Authorize(Policy=AppPolicies.LabelDesignerPreview)]
+    public async Task<IActionResult> LivePreview([FromBody] LabelCanvasSaveRequest request,CancellationToken ct)
+    {
+        var design=new LabelCanvasDesignDto{Id=Guid.Empty,TenantId=TenantId,TemplateKey=request.TemplateKey,TemplateName=request.TemplateName,TemplateKind=request.TemplateKind,SubjectType=request.SubjectType,PaperKind=request.PaperKind,WidthMm=request.WidthMm,HeightMm=request.HeightMm,Orientation=request.Orientation,Status="DRAFT",DesignJson=request.DesignJson,DefaultBrandingProfileId=request.DefaultBrandingProfileId,BrandingBindingKey=request.BrandingBindingKey,ClientNameFallback=request.ClientNameFallback,ContractNameFallback=request.ContractNameFallback,OrganizationNameFallback=request.OrganizationNameFallback,HeaderTitleFallback=request.HeaderTitleFallback,HeaderSubtitleFallback=request.HeaderSubtitleFallback,LabelContext=request.LabelContext,CreatedAt=DateTime.UtcNow};
+        var preview=await ResolveDesignerPreviewValuesAsync(design,SampleProfile(design),request.DefaultBrandingProfileId,ct);var rendered=renderer.Render(design,preview.Values);
+        return Ok(new{ok=!rendered.Validation.HasErrors,html=rendered.Html,validation=rendered.Validation,branding=new{preview.Branding.ProfileId,preview.Branding.ProfileName,preview.Branding.ClientName,preview.Branding.ContractName,preview.Branding.OrganizationName}});
     }
 
     [HttpGet("/Labels/Designer/Publish/{templateKey}")]
@@ -158,6 +171,15 @@ public sealed class LabelDesignerController(IDbConnectionFactory dbFactory, ILab
     public IActionResult Fields(string subjectType)=>Ok(fieldCatalog.GetFields(subjectType));
 
     private async Task<LabelCanvasDesignerPageViewModel> PageAsync(LabelCanvasDesignDto design,bool isNew,CancellationToken ct){var fields=fieldCatalog.GetFields(design.SubjectType);return new(design,fields,renderer.Validate(design.DesignJson,fields.Select(x=>x.Key).ToHashSet(StringComparer.OrdinalIgnoreCase)),null,isNew,await brandingProfiles.ListAsync(TenantId,ct));}
+    private async Task<(Dictionary<string,object?> Values,ResolvedPrintBranding Branding)> ResolveDesignerPreviewValuesAsync(LabelCanvasDesignDto design,string sampleProfile,Guid? brandingProfileId,CancellationToken ct)
+    {
+        var values=fieldCatalog.GetSampleData(sampleProfile).ToDictionary(x=>x.Key,x=>x.Value,StringComparer.OrdinalIgnoreCase);
+        var branding=await brandingResolver.ResolveAsync(TenantId,PrintBrandingContext.LabelTemplate,design.BrandingBindingKey??design.TemplateKey,brandingProfileId??design.DefaultBrandingProfileId,null,ct);
+        values["clientName"]=branding.ClientName??design.ClientNameFallback??values.GetValueOrDefault("clientName");values["contractName"]=branding.ContractName??design.ContractNameFallback??values.GetValueOrDefault("contractName");values["organizationName"]=branding.OrganizationName??design.OrganizationNameFallback??values.GetValueOrDefault("organizationName");
+        values["headerTitle"]=branding.HeaderTitle??design.HeaderTitleFallback??values.GetValueOrDefault("headerTitle")??"ARQUIVO CENTRAL";values["headerSubtitle"]=branding.HeaderSubtitle??design.HeaderSubtitleFallback;values["headerExtraLine"]=branding.HeaderExtraLine;values["footerText"]=branding.FooterText;values["footerExtraLine"]=branding.FooterExtraLine;
+        values["primaryLogo"]=branding.PrimaryLogoAssetId is Guid primary?$"/Administration/BrandAssets/{primary}/File":null;values["secondaryLogo"]=branding.SecondaryLogoAssetId is Guid secondary?$"/Administration/BrandAssets/{secondary}/File":null;
+        return(values,branding);
+    }
     private async Task<IActionResult> ExecuteWrite(Func<Task<IActionResult>> action,string operation,string templateKey)
     {try{return await action();}catch(KeyNotFoundException e){logger.LogWarning(e,"Template {TemplateKey} não encontrado ao {Operation}.",templateKey,operation);return NotFound(new{ok=false,message=e.Message});}catch(ArgumentException e){logger.LogWarning(e,"Entrada inválida ao {Operation} {TemplateKey}.",operation,templateKey);return BadRequest(new{ok=false,message=e.Message});}catch(InvalidOperationException e){logger.LogWarning(e,"Operação recusada ao {Operation} {TemplateKey}.",operation,templateKey);return BadRequest(new{ok=false,message=e.Message});}catch(Exception e){logger.LogError(e,"Erro ao {Operation} o template {TemplateKey}.",operation,templateKey);return StatusCode(500,new{ok=false,message="Não foi possível concluir a operação. Tente novamente."});}}
     private static LabelCanvasSaveRequest CopyWithKey(LabelCanvasSaveRequest x,string key)=>new(){TemplateKey=key,TemplateName=x.TemplateName,Description=x.Description,TemplateKind=x.TemplateKind,SubjectType=x.SubjectType,PaperKind=x.PaperKind,WidthMm=x.WidthMm,HeightMm=x.HeightMm,Orientation=x.Orientation,DesignJson=x.DesignJson,DefaultBrandingProfileId=x.DefaultBrandingProfileId,BrandingBindingKey=x.BrandingBindingKey,ClientNameFallback=x.ClientNameFallback,ContractNameFallback=x.ContractNameFallback,OrganizationNameFallback=x.OrganizationNameFallback,HeaderTitleFallback=x.HeaderTitleFallback,HeaderSubtitleFallback=x.HeaderSubtitleFallback,LabelContext=x.LabelContext,ChangeSummary=x.ChangeSummary};

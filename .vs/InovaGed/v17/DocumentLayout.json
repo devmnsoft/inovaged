@@ -1,0 +1,78 @@
+{
+  "Version": 1,
+  "WorkspaceRootPath": "C:\\MNSOFT\\inovaged\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{4B1E5FC7-C32D-450C-E1CC-D390B78A2B6B}|InovaGed.Infrastructure\\InovaGed.Infrastructure.csproj|c:\\mnsoft\\inovaged\\inovaged.infrastructure\\branding\\brandassetimageservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{4B1E5FC7-C32D-450C-E1CC-D390B78A2B6B}|InovaGed.Infrastructure\\InovaGed.Infrastructure.csproj|solutionrelative:inovaged.infrastructure\\branding\\brandassetimageservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{E02E6C3E-7F5D-404B-824C-FA56AC64FFED}|InovaGed.Web\\InovaGed.Web.csproj|c:\\mnsoft\\inovaged\\inovaged.web\\appsettings.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}",
+      "RelativeMoniker": "D:0:0:{E02E6C3E-7F5D-404B-824C-FA56AC64FFED}|InovaGed.Web\\InovaGed.Web.csproj|solutionrelative:inovaged.web\\appsettings.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{E02E6C3E-7F5D-404B-824C-FA56AC64FFED}|InovaGed.Web\\InovaGed.Web.csproj|c:\\mnsoft\\inovaged\\inovaged.web\\controller\\labelscontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{E02E6C3E-7F5D-404B-824C-FA56AC64FFED}|InovaGed.Web\\InovaGed.Web.csproj|solutionrelative:inovaged.web\\controller\\labelscontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    }
+  ],
+  "DocumentGroupContainers": [
+    {
+      "Orientation": 0,
+      "VerticalTabListWidth": 256,
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 2,
+          "Children": [
+            {
+              "$type": "Bookmark",
+              "Name": "ST:128:0:{1fc202d4-d401-403c-9834-5b218574bb67}"
+            },
+            {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{1c4feeaa-4718-4aa9-859d-94ce25d182ba}"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "BrandAssetImageService.cs",
+              "DocumentMoniker": "C:\\MNSOFT\\inovaged\\InovaGed.Infrastructure\\Branding\\BrandAssetImageService.cs",
+              "RelativeDocumentMoniker": "InovaGed.Infrastructure\\Branding\\BrandAssetImageService.cs",
+              "ToolTip": "C:\\MNSOFT\\inovaged\\InovaGed.Infrastructure\\Branding\\BrandAssetImageService.cs",
+              "RelativeToolTip": "InovaGed.Infrastructure\\Branding\\BrandAssetImageService.cs",
+              "ViewState": "AgIAABMAAAAAAAAAAAAUwB0AAAAYAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-09-03T16:01:08.946Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "appsettings.json",
+              "DocumentMoniker": "C:\\MNSOFT\\inovaged\\InovaGed.Web\\appsettings.json",
+              "RelativeDocumentMoniker": "InovaGed.Web\\appsettings.json",
+              "ToolTip": "C:\\MNSOFT\\inovaged\\InovaGed.Web\\appsettings.json",
+              "RelativeToolTip": "InovaGed.Web\\appsettings.json",
+              "ViewState": "AgIAABkBAAAAAAAAAAAAADoBAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001642|",
+              "WhenOpened": "2026-09-03T14:45:02.646Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "LabelsController.cs",
+              "DocumentMoniker": "C:\\MNSOFT\\inovaged\\InovaGed.Web\\Controller\\LabelsController.cs",
+              "RelativeDocumentMoniker": "InovaGed.Web\\Controller\\LabelsController.cs",
+              "ToolTip": "C:\\MNSOFT\\inovaged\\InovaGed.Web\\Controller\\LabelsController.cs",
+              "RelativeToolTip": "InovaGed.Web\\Controller\\LabelsController.cs",
+              "ViewState": "AgIAAFkCAAAAAAAAAAAawF4DAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-09-02T18:53:18.771Z",
+              "EditorCaption": ""
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

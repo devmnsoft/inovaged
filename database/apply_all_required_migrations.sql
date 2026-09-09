@@ -3095,3 +3095,4 @@ where coalesce(reg_status, 'A') = 'A';
 -- Labels Canvas Designer RC22 + multi-cliente RC23
 \ir migrations/2026_09_08_label_canvas_designer_rc22.sql
 \ir migrations/2026_09_08_label_canvas_multi_client_rc23.sql
+\ir migrations/2026_09_08_smart_assistant_actions_rc25.sql

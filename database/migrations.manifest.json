@@ -418,6 +418,17 @@
       "maximumApplicationVersion": "04.1.99",
       "requiresMaintenanceWindow": false,
       "requiresVerifiedBackup": false
+    },
+    {
+      "id": "2026_09_08_smart_assistant_actions_rc25",
+      "path": "database/migrations/2026_09_08_smart_assistant_actions_rc25.sql",
+      "module": "SmartAssistant",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.99",
+      "requiresMaintenanceWindow": false,
+      "requiresVerifiedBackup": false
     }
   ]
 }

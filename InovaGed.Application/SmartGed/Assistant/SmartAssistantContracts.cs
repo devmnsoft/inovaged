@@ -10,16 +10,22 @@ public interface ISmartGedAssistantService
  Task ReviewActionAsync(Guid tenantId, Guid actionId, Guid userId, bool accept, string? notes, CancellationToken ct);
 }
 public interface ISmartAssistantRetrievalService { Task<SmartAssistantRetrievalResult> RetrieveAsync(SmartAssistantRetrievalQuery query, CancellationToken ct); }
+public interface ISmartAssistantStructuredRetrievalService { Task<SmartAssistantStructuredResult> RetrieveAsync(SmartAssistantStructuredQuery query, CancellationToken ct); }
 public interface ISmartAssistantAnswerComposer { Task<SmartAssistantAnswerDraft> ComposeAsync(SmartAssistantAnswerInput input, CancellationToken ct); }
 public interface ISmartAssistantIntentResolver { SmartAssistantIntentResult Resolve(string question,IReadOnlyList<SmartAssistantConversationMessage> history); }
 public interface ISmartAssistantEvidenceRanker { IReadOnlyList<SmartAssistantEvidence> Rank(string question,IEnumerable<SmartAssistantEvidence> evidence,int limit); }
 public sealed record SmartAssistantQuestionCommand(Guid TenantId, Guid UserId, Guid SessionId, string Question);
 public sealed record SmartAssistantConversationMessage(string Role,string Content);
-public sealed record SmartAssistantIntentResult(string Intent,IReadOnlyDictionary<string,string> Filters,decimal Confidence);
+public sealed record SmartAssistantConversationContext(Guid? LastDocumentId=null,string? LastDocumentCode=null,Guid? LastBoxId=null,string? LastBoxCode=null,string? LastTemplateKey=null,Guid? LastBrandingProfileId=null,string? LastClientName=null,string? LastContractName=null);
+public sealed record SmartAssistantIntentResult(string Intent,IReadOnlyDictionary<string,string> Filters,decimal Confidence,string? Aggregation=null,SmartAssistantConversationContext? Context=null);
 public sealed record SmartAssistantRetrievalQuery(Guid TenantId, string Question, int Limit = 8,Guid? UserId=null,Guid? SessionId=null,IReadOnlyList<SmartAssistantConversationMessage>? ConversationHistory=null,SmartAssistantIntentResult? ResolvedIntent=null,int MaxExcerptCharacters=600);
+public sealed record SmartAssistantStructuredQuery(Guid TenantId,string Question,SmartAssistantIntentResult Intent,int Limit=20);
+public sealed record SmartAssistantStructuredRow(string SourceType,Guid? SourceId,string Title,IReadOnlyDictionary<string,string> Facts,string? Url=null);
+public sealed record SmartAssistantStructuredResult(IReadOnlyDictionary<string,string> SummaryFacts,IReadOnlyList<SmartAssistantStructuredRow> Rows,int? TotalCount,IReadOnlyDictionary<string,int> Metrics,IReadOnlyList<string> Warnings)
+{ public static SmartAssistantStructuredResult Empty { get; }=new(new Dictionary<string,string>(),[],null,new Dictionary<string,int>(),[]); }
 public sealed record SmartAssistantEvidence(string SourceType, Guid? SourceId, string Title, string Excerpt, string? Url, decimal Confidence,IReadOnlyDictionary<string,string>? Facts=null,string? RankReason=null);
-public sealed record SmartAssistantRetrievalResult(IReadOnlyList<SmartAssistantEvidence> Evidence, IReadOnlyList<string> Warnings,string ResolvedIntent="GENERAL_GED_SEARCH",long DurationMs=0);
-public sealed record SmartAssistantAnswerInput(string Question, SmartAssistantRetrievalResult Retrieval,SmartAssistantIntentResult? Intent=null,IReadOnlyList<SmartAssistantConversationMessage>? ConversationHistory=null);
+public sealed record SmartAssistantRetrievalResult(IReadOnlyList<SmartAssistantEvidence> Evidence, IReadOnlyList<string> Warnings,string ResolvedIntent="GENERAL_GED_SEARCH",long DurationMs=0,SmartAssistantStructuredResult? Structured=null);
+public sealed record SmartAssistantAnswerInput(string Question, SmartAssistantRetrievalResult Retrieval,SmartAssistantIntentResult? Intent=null,IReadOnlyList<SmartAssistantConversationMessage>? ConversationHistory=null,SmartAssistantStructuredResult? Structured=null);
 public sealed record SmartAssistantActionDraft(string ActionType, string Title, string? Description, string? TargetType, Guid? TargetId,string? Url=null);
 public sealed record SmartAssistantAnswerDraft(string Content, decimal Confidence, string Status, IReadOnlyList<SmartAssistantActionDraft> Actions, IReadOnlyList<string> Warnings);
 public sealed record SmartAssistantCitation(Guid Id, string SourceType, Guid? SourceId, string Title, string Excerpt, string? Url, decimal Confidence);

@@ -125,6 +125,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<IDocumentClassificationSuggestionService>(sp => sp.GetRequiredService<SmartGedService>());
         services.AddScoped<IDocumentRetentionSuggestionService>(sp => sp.GetRequiredService<SmartGedService>());
         services.AddScoped<ISmartGedSearchService>(sp => sp.GetRequiredService<SmartGedService>());
+        services.AddScoped<ISmartAssistantStructuredRetrievalService, SmartAssistantStructuredRetrievalService>();
         services.AddScoped<ISmartAssistantRetrievalService, LocalSmartAssistantRetrievalService>();
         services.AddScoped<ISmartAssistantAnswerComposer, LocalSmartAssistantAnswerComposer>();
         services.AddSingleton<ISmartAssistantIntentResolver, LocalSmartAssistantIntentResolver>();

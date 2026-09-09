@@ -7,7 +7,7 @@ using InovaGed.Application.SmartGed.Assistant;
 
 namespace InovaGed.Infrastructure.SmartGed.Assistant;
 
-public sealed class LocalSmartAssistantRetrievalService(IDbConnectionFactory db,ISmartAssistantIntentResolver intents,ISmartAssistantEvidenceRanker ranker) : ISmartAssistantRetrievalService
+public sealed class LocalSmartAssistantRetrievalService(IDbConnectionFactory db,ISmartAssistantIntentResolver intents,ISmartAssistantEvidenceRanker ranker,ISmartAssistantStructuredRetrievalService structuredRetrieval) : ISmartAssistantRetrievalService
 {
  private static readonly ConcurrentDictionary<string,(DateTimeOffset Expires,HashSet<string> Columns)> SchemaCache=new(StringComparer.OrdinalIgnoreCase);
  private static readonly Source[] Sources=
@@ -32,10 +32,12 @@ public sealed class LocalSmartAssistantRetrievalService(IDbConnectionFactory db,
  public async Task<SmartAssistantRetrievalResult> RetrieveAsync(SmartAssistantRetrievalQuery query,CancellationToken ct)
  {
   var watch=Stopwatch.StartNew();var intent=query.ResolvedIntent??intents.Resolve(query.Question,query.ConversationHistory??[]);
-  await using var conn=await db.OpenAsync(ct);var evidence=new List<SmartAssistantEvidence>();var warnings=new List<string>();var words=Terms(query.Question,intent.Filters).ToArray();
+  var structured=await structuredRetrieval.RetrieveAsync(new(query.TenantId,query.Question,intent,20),ct);
+  await using var conn=await db.OpenAsync(ct);var evidence=structured.Rows.Select(x=>new SmartAssistantEvidence(x.SourceType,x.SourceId,Mask(x.Title),Mask(string.Join(" · ",x.Facts.Where(f=>!string.IsNullOrWhiteSpace(f.Value)).Select(f=>$"{f.Key}: {f.Value}"))),x.Url,88,x.Facts,"consulta estruturada")).ToList();var warnings=new List<string>(structured.Warnings);var words=Terms(query.Question,intent.Filters).ToArray();
   foreach(var source in Sources.Where(x=>x.Intents.Contains(intent.Intent,StringComparer.OrdinalIgnoreCase)).Take(5))
   {
    var columns=await Columns(conn,source.Table,ct);var searchable=source.Columns.Where(columns.Contains).ToArray();
+   if(source.Table=="document_ai_analysis"&&columns.Contains("extracted_summary"))searchable=searchable.Where(x=>x!="extracted_text").ToArray();
    if(!columns.Contains("tenant_id")||!columns.Contains("id")||searchable.Length==0){warnings.Add($"Fonte ged.{source.Table} indisponível para consulta segura.");continue;}
    var title=searchable[0];var searchableText="concat_ws(' ',"+string.Join(',',searchable.Select(Quote))+")";var target=source.TargetId is not null&&columns.Contains(source.TargetId)?Quote(source.TargetId):"id";
    var active=columns.Contains("reg_status")?" and coalesce(reg_status::text,'A') in ('A','ACTIVE')":"";var predicates=words.Length==0?"true":string.Join(" or ",words.Select((_,i)=>$"{searchableText} ilike @p{i}"));
@@ -45,7 +47,7 @@ public sealed class LocalSmartAssistantRetrievalService(IDbConnectionFactory db,
    try{var rows=await conn.QueryAsync<EvidenceRow>(new CommandDefinition(sql,p,cancellationToken:ct));evidence.AddRange(rows.Select(r=>new SmartAssistantEvidence(source.Type,r.TargetId,Mask(r.Title),Mask(r.Excerpt),Url(source,r.TargetId),55,new Dictionary<string,string>{{"fonte",source.Type},{"título",Mask(r.Title)},{"detalhes",Mask(r.Excerpt)}})));}
    catch(Exception){warnings.Add($"Fonte ged.{source.Table} não pôde ser consultada com o schema atual.");}
   }
-  watch.Stop();return new(ranker.Rank(query.Question,evidence,query.Limit),warnings.Distinct().Take(4).ToArray(),intent.Intent,watch.ElapsedMilliseconds);
+  watch.Stop();var deduplicated=evidence.GroupBy(x=>$"{x.SourceType}|{x.SourceId}|{x.Title}",StringComparer.OrdinalIgnoreCase).Select(x=>x.OrderByDescending(e=>e.Confidence).First());return new(ranker.Rank(query.Question,deduplicated,query.Limit),warnings.Distinct().Take(4).ToArray(),intent.Intent,watch.ElapsedMilliseconds,structured);
  }
 
  private static async Task<HashSet<string>> Columns(System.Data.Common.DbConnection conn,string table,CancellationToken ct)

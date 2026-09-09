@@ -123,17 +123,32 @@ public sealed class LabelTemplateCatalogService(IDbConnectionFactory dbFactory, 
         if (!await Schema.TableExistsAsync(db, "ged", "label_template_design", ct)) return [];
         const string sql = """
 select distinct on (template_key) template_key Code,template_name Name,print_mode Mode,
- case subject_type when 'Box' then 'BOX' when 'Document' then 'DOCUMENT' when 'LocDeskFolder' then 'DOCUMENT' when 'LocDeskBox' then 'BOX' else upper(subject_type) end SubjectType,
+ subject_type SubjectType,
  coalesce(description,template_name) Description,coalesce(view_name,'DocumentLabel') ViewName,current_version::text Version,
- false SupportsBatch,true AllowsManualFields,is_system_template IsSystemTemplate,id Id,false IsDefault
+ true SupportsBatch,true AllowsManualFields,is_system_template IsSystemTemplate,id Id,false IsDefault
 from ged.label_template_design
 where (tenant_id=@tenantId or tenant_id is null) and status='PUBLISHED' and reg_status in ('A','ACTIVE')
- and (@subjectType is null or case subject_type when 'Box' then 'BOX' when 'Document' then 'DOCUMENT' when 'LocDeskFolder' then 'DOCUMENT' when 'LocDeskBox' then 'BOX' else upper(subject_type) end=@subjectType)
  and (@mode is null or print_mode=@mode)
 order by template_key,updated_at desc nulls last,tenant_id nulls last
 """;
-        return (await db.QueryAsync<LabelTemplateOption>(new CommandDefinition(sql,new{tenantId,subjectType,mode},cancellationToken:ct))).AsList();
+        return (await db.QueryAsync<LabelTemplateOption>(new CommandDefinition(sql,new{tenantId,mode},cancellationToken:ct)))
+            .Select(x => x with
+            {
+                SubjectType = NormalizeDesignerSubjectType(x.SubjectType),
+                SupportsBatch = true
+            })
+            .Where(x => subjectType is null || string.Equals(x.SubjectType, subjectType, StringComparison.OrdinalIgnoreCase))
+            .ToList();
     }
+
+    public static string NormalizeDesignerSubjectType(string? subjectType) => subjectType?.Trim().ToUpperInvariant() switch
+    {
+        "BOX" or "LOCDESKBOX" => "BOX",
+        "DOCUMENT" or "FOLDER" or "MEDICALRECORD" or "PROCESS" or "LOCDESKFOLDER" => "DOCUMENT",
+        "BATCH" => "BATCH",
+        { Length: > 0 } value => value,
+        _ => "DOCUMENT"
+    };
 
     private static IReadOnlyList<LabelTemplateOption> FilterCatalog(IEnumerable<LabelTemplateOption> templates, string subjectType, string? mode) =>
         templates.Where(x => string.Equals(x.SubjectType, subjectType, StringComparison.OrdinalIgnoreCase)

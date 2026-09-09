@@ -53,12 +53,13 @@ public class LabelsController : GedControllerBase
     private readonly ILogger<LabelsController> _logger;
     private readonly ILabelCanvasDesignService _canvasDesigns;
     private readonly ILabelCanvasRenderService _canvasRenderer;
+    private readonly ILabelCanvasValueResolver _canvasValues;
     private readonly IPrintBrandingResolver _printBrandingResolver;
 
     public LabelsController(IDbConnectionFactory dbFactory, ILabelPrintRegistrar printRegistrar,
         ILabelTemplateService templates, ILabelQrCodeService qrCodes, ILabelPayloadBuilder payloadBuilder, ILabelTemplateCatalogService catalog, InovaGed.Application.Labels.ILabelTemplateManager templateManager,
         ILabelPrintJobService printJobs, ILabelPdfRenderService pdf, ILabelPrintLogoResolver logoResolver,
-        ILabelCanvasDesignService canvasDesigns, ILabelCanvasRenderService canvasRenderer,
+        ILabelCanvasDesignService canvasDesigns, ILabelCanvasRenderService canvasRenderer, ILabelCanvasValueResolver canvasValues,
         IPrintBrandingResolver printBrandingResolver,
         ILogger<LabelsController> logger) : base(dbFactory)
     {
@@ -68,7 +69,7 @@ public class LabelsController : GedControllerBase
         _payloadBuilder = payloadBuilder;
         _catalog = catalog;
         _templateManager = templateManager;
-        _printJobs=printJobs; _pdf=pdf; _logoResolver=logoResolver; _canvasDesigns=canvasDesigns; _canvasRenderer=canvasRenderer; _printBrandingResolver=printBrandingResolver; _logger=logger;
+        _printJobs=printJobs; _pdf=pdf; _logoResolver=logoResolver; _canvasDesigns=canvasDesigns; _canvasRenderer=canvasRenderer; _canvasValues=canvasValues; _printBrandingResolver=printBrandingResolver; _logger=logger;
     }
 
     [HttpGet("/Labels/Templates")]
@@ -151,6 +152,10 @@ public class LabelsController : GedControllerBase
     {
         subjectType=subjectType.ToUpperInvariant();using var db=await OpenAsync();
         ViewBag.SubjectType=subjectType;ViewBag.Templates=await _catalog.GetTemplatesAsync(TenantId,subjectType,null,ct);
+        ViewBag.PrintProfiles=(await db.QueryAsync<LabelPrintProfileInput>(new CommandDefinition(ProfileSelect+" order by is_default desc,profile_name",new{tid=TenantId},cancellationToken:ct))).AsList();
+        ViewBag.PrintBrandingProfiles=await db.ExecuteScalarAsync<bool>(new CommandDefinition("select to_regclass('ged.print_branding_profile') is not null",cancellationToken:ct))
+            ?(await db.QueryAsync<PrintBrandingProfileVm>(new CommandDefinition("select id,profile_name ProfileName,is_default IsDefault,status from ged.print_branding_profile where tenant_id=@tid and status='ACTIVE' and reg_status='A' order by is_default desc,profile_name",new{tid=TenantId},cancellationToken:ct))).AsList()
+            :new List<PrintBrandingProfileVm>();
         ViewBag.Rows=subjectType=="DOCUMENT"?await db.QueryAsync("select d.id,d.code control_number,d.title subject,b.box_no,coalesce(pl.location_code,'') location,coalesce(cp.title,'') classification,d.status,exists(select 1 from ged.label_print_history h where h.tenant_id=d.tenant_id and h.label_subject_id=d.id) already_printed from ged.document d left join ged.batch_item bi on bi.tenant_id=d.tenant_id and bi.document_id=d.id and bi.reg_status='A' left join ged.box b on b.tenant_id=d.tenant_id and b.id=bi.box_id left join ged.physical_location pl on pl.tenant_id=b.tenant_id and pl.id=b.location_id left join ged.classification_plan cp on cp.tenant_id=d.tenant_id and cp.id=d.classification_id where d.tenant_id=@tid order by d.created_at desc limit 300",new{tid=TenantId}):await db.QueryAsync("select b.id,coalesce(b.label_code,b.box_no::text) control_number,coalesce(b.notes,'Caixa física') subject,b.box_no,coalesce(pl.location_code,'') location,'' classification,b.reg_status status,exists(select 1 from ged.label_print_history h where h.tenant_id=b.tenant_id and h.label_subject_id=b.id) already_printed from ged.box b left join ged.physical_location pl on pl.tenant_id=b.tenant_id and pl.id=b.location_id where b.tenant_id=@tid and b.reg_status='A' order by b.box_no limit 300",new{tid=TenantId});
         return View(new CreateBatchPrintJobInput{SubjectType=subjectType});
     }
@@ -161,7 +166,35 @@ public class LabelsController : GedControllerBase
         if(UserId is not Guid uid)return Unauthorized();if(input.SubjectIds.Count==0)return BadRequest("Selecione ao menos um item.");
         var template=await _catalog.GetTemplateAsync(TenantId,input.TemplateCode,ct);if(!await _catalog.IsCompatibleAsync(TenantId,input.TemplateCode,input.SubjectType,ct))return BadRequest("Modelo incompatível.");
         using var db=await OpenAsync();var items=new List<LabelPrintBatchItem>();var order=0;
-        foreach(var sid in input.SubjectIds.Distinct()){dynamic? row=input.SubjectType=="BOX"?await LoadBoxLabelAsync(db,sid):await LoadDocumentLabelAsync(db,sid);if(row is null)return NotFound();items.Add(new(sid,input.SubjectType,null,null,_payloadBuilder.Build(row),order++));}
+        if(string.Equals(template.ViewName,"CanvasLabel",StringComparison.OrdinalIgnoreCase))
+        {
+            var design=await _canvasDesigns.GetAsync(TenantId,template.Code,ct);
+            if(design is null||!design.Status.Equals("PUBLISHED",StringComparison.OrdinalIgnoreCase))return BadRequest("O template Canvas precisa estar publicado.");
+            var branding=await _printBrandingResolver.ResolveAsync(TenantId,PrintBrandingContext.LabelTemplate,design.BrandingBindingKey??design.TemplateKey,input.PrintBrandingProfileId??design.DefaultBrandingProfileId,null,ct);
+            var calibration=await ResolveProfileAsync(input.PrintProfileId,ct);
+            foreach(var sid in input.SubjectIds.Distinct())
+            {
+                var operational=await _canvasValues.ResolveAsync(TenantId,design.SubjectType,input.SubjectType,sid,ct);
+                if(operational.Count==0)return NotFound();
+                var values=operational.ToDictionary(x=>x.Key,x=>x.Value,StringComparer.OrdinalIgnoreCase);
+                values.Add("clientName",branding.ClientName??design.ClientNameFallback);
+                values.Add("contractName",branding.ContractName??design.ContractNameFallback);
+                values.Add("organizationName",branding.OrganizationName??design.OrganizationNameFallback);
+                values.Add("headerTitle",branding.HeaderTitle??design.HeaderTitleFallback??"ARQUIVO CENTRAL");
+                values.Add("headerSubtitle",branding.HeaderSubtitle??design.HeaderSubtitleFallback);
+                values.Add("headerExtraLine",branding.HeaderExtraLine);values.Add("footerText",branding.FooterText);values.Add("footerExtraLine",branding.FooterExtraLine);
+                values.Add("primaryLogo",branding.PrimaryLogoAssetId is Guid primary?$"/Administration/BrandAssets/{primary}/File":null);
+                values.Add("secondaryLogo",branding.SecondaryLogoAssetId is Guid secondary?$"/Administration/BrandAssets/{secondary}/File":null);
+                values.Add("printedBy",User.Identity?.Name??"Usuário InovaGED");values["qrPayload"]=$"{Request.Scheme}://{Request.Host}/Labels/Trace/{sid}";
+                values.Add("__copies",input.Copies);values.Add("__marginTopMm",calibration.MarginTopMm);values.Add("__marginLeftMm",calibration.MarginLeftMm);
+                values.Add("__offsetXmm",calibration.OffsetXMm);values.Add("__offsetYmm",calibration.OffsetYMm);values.Add("__scalePercent",calibration.ScalePercent);
+                values.Add("__gapXmm",calibration.LabelGapXMm);values.Add("__gapYmm",calibration.LabelGapYMm);
+                /* snapshot abaixo preserva este dicionário por item */
+                var snapshot=new{layoutSource="CANVAS",isDesignerTemplate=true,templateCode=design.TemplateKey,templateName=design.TemplateName,templateVersion=design.CurrentVersion,snapshotHash=_canvasRenderer.ComputeSnapshotHash(design.DesignJson),subjectType=input.SubjectType,subjectId=sid,printMode=input.PrintMode,printChannel="BATCH",copies=input.Copies,branding=new{profileId=branding.ProfileId,profileName=branding.ProfileName,clientName=values["clientName"],contractName=values["contractName"],organizationName=values["organizationName"],primaryLogoAssetId=branding.PrimaryLogoAssetId,secondaryLogoAssetId=branding.SecondaryLogoAssetId},calibration=new{input.PrintProfileId,calibration.MarginTopMm,calibration.MarginLeftMm,calibration.OffsetXMm,calibration.OffsetYMm,calibration.ScalePercent,calibration.LabelGapXMm,calibration.LabelGapYMm},printedFields=values};
+                items.Add(new(sid,input.SubjectType,Convert.ToString(values.GetValueOrDefault("controlNumber")??values.GetValueOrDefault("boxCode")??values.GetValueOrDefault("documentCode")),Convert.ToString(values.GetValueOrDefault("location")),_payloadBuilder.Build(snapshot),order++));
+            }
+        }
+        else foreach(var sid in input.SubjectIds.Distinct()){dynamic? row=input.SubjectType=="BOX"?await LoadBoxLabelAsync(db,sid):await LoadDocumentLabelAsync(db,sid);if(row is null)return NotFound();items.Add(new(sid,input.SubjectType,null,null,_payloadBuilder.Build(row),order++));}
         var id=await _printJobs.CreateBatchJobAsync(new(TenantId,uid,input.PrintMode,template.Code,template.Name,input.SubjectType,input.Copies,items,input.ReprintReason,HttpContext.Connection.RemoteIpAddress?.ToString(),Request.Headers.UserAgent),ct);return RedirectToAction(nameof(PrintPreview),new{id});
     }
 
@@ -439,16 +472,9 @@ public class LabelsController : GedControllerBase
             ModelState.AddModelError(nameof(input.TemplateCode),"O template canvas não está publicado ou não foi encontrado.");
             await PopulatePrintWizardLookupsAsync(input,ct);return View("PrintWizard",input);
         }
-        using var db=await OpenAsync();
-        object? subject=input.SubjectType switch
-        {
-            LabelSubjectType.Box=>await LoadBoxLabelAsync(db,input.SubjectId!.Value),
-            LabelSubjectType.Document=>await LoadDocumentLabelAsync(db,input.SubjectId!.Value),
-            LabelSubjectType.Batch=>await LoadBatchLabelAsync(db,input.SubjectId!.Value),
-            _=>null
-        };
-        if(subject is null){ModelState.AddModelError(nameof(input.SubjectId),"Não foi possível localizar a origem selecionada.");await PopulatePrintWizardLookupsAsync(input,ct);return View("PrintWizard",input);}
-        var values=CanvasValues(subject,input.SubjectType,input.SubjectId!.Value);var calibration=await ResolveProfileAsync(input.PrintProfileId,ct);
+        var resolvedValues=await _canvasValues.ResolveAsync(TenantId,design.SubjectType,input.SubjectType,input.SubjectId!.Value,ct);
+        if(resolvedValues.Count==0){ModelState.AddModelError(nameof(input.SubjectId),"Não foi possível localizar a origem selecionada.");await PopulatePrintWizardLookupsAsync(input,ct);return View("PrintWizard",input);}
+        var values=resolvedValues.ToDictionary(x=>x.Key,x=>x.Value,StringComparer.OrdinalIgnoreCase);var calibration=await ResolveProfileAsync(input.PrintProfileId,ct);
         var branding=await _printBrandingResolver.ResolveAsync(TenantId,PrintBrandingContext.LabelTemplate,design.BrandingBindingKey??design.TemplateKey,input.PrintBrandingProfileId??design.DefaultBrandingProfileId,input.SelectedLogoAssetId,ct);
         values["clientName"]=branding.ClientName??design.ClientNameFallback;
         values["contractName"]=branding.ContractName??design.ContractNameFallback;
@@ -481,25 +507,6 @@ public class LabelsController : GedControllerBase
             catch(InvalidOperationException exception){ModelState.AddModelError(nameof(input.ReprintReason),exception.Message);await PopulatePrintWizardLookupsAsync(input,ct);return View("PrintWizard",input);}
         }
         return Content(rendered.Html,"text/html; charset=utf-8");
-    }
-
-    private static Dictionary<string,object?> CanvasValues(object source,string subjectType,Guid subjectId)
-    {
-        var values=new Dictionary<string,object?>(StringComparer.OrdinalIgnoreCase);
-        if(source is IDictionary<string,object> dictionary)foreach(var pair in dictionary)values[pair.Key]=pair.Value;
-        else foreach(var property in source.GetType().GetProperties())values[property.Name]=property.GetValue(source);
-        object? Pick(params string[] keys)=>keys.Select(key=>values.GetValueOrDefault(key)).FirstOrDefault(value=>value is not null&&Convert.ToString(value)?.Length>0);
-        if(subjectType.Equals(LabelSubjectType.Box,StringComparison.OrdinalIgnoreCase))
-        {
-            values["boxCode"]=Pick("label_code","LabelCode","code")??subjectId.ToString("N");values["boxNumber"]=Pick("box_no","BoxNo");values["location"]=Pick("location_code","LocationCode","building");values["sector"]=Pick("room","Room");values["periodStart"]=Pick("period_start","PeriodStart");values["periodEnd"]=Pick("period_end","PeriodEnd");values["documentCount"]=Pick("document_count","DocumentCount");
-        }
-        else
-        {
-            values["documentCode"]=Pick("code","Code")??subjectId.ToString("N");values["documentTitle"]=Pick("title","Title");values["location"]=Pick("box_label_code","BoxLabelCode");values["boxNumber"]=Pick("box_no","BoxNo");
-        }
-        if(!values.ContainsKey("controlNumber")||values["controlNumber"] is null)values["controlNumber"]=Pick("box_no","BoxNo","code","Code");
-        if(!values.ContainsKey("traceCode")||values["traceCode"] is null)values["traceCode"]=Pick("label_code","LabelCode","code","Code")??subjectId.ToString("N");
-        return values;
     }
 
     private async Task<IReadOnlyList<SelectOptionViewModel>> LoadSubjectOptionsAsync(string subjectType, CancellationToken ct)

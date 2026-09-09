@@ -236,5 +236,12 @@
     "area": "Etiquetas",
     "required": true,
     "description": "Evolui o Canvas para modelos neutros multi-cliente integrados ao PrintBranding oficial."
+  },
+  {
+    "name": "2026_09_08_smart_assistant_actions_rc25",
+    "path": "database/migrations/2026_09_08_smart_assistant_actions_rc25.sql",
+    "area": "Smart Assistant",
+    "required": true,
+    "description": "Preserva o tipo semântico das ações e adiciona URL interna segura para navegação sugerida."
   }
 ]

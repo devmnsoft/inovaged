@@ -179,7 +179,18 @@ public interface ILabelCanvasRenderService
 {
     LabelCanvasValidationResult Validate(string designJson, IReadOnlySet<string>? allowedFields = null);
     LabelCanvasRenderResult Render(LabelCanvasDesignDto design, IReadOnlyDictionary<string, object?> values, bool printMode = false);
+    LabelCanvasRenderResult RenderBatch(LabelCanvasDesignDto design, IReadOnlyList<IReadOnlyDictionary<string, object?>> values, bool printMode = false);
     string ComputeSnapshotHash(string designJson);
+}
+
+public interface ILabelCanvasValueResolver
+{
+    Task<IReadOnlyDictionary<string, object?>> ResolveAsync(
+        Guid tenantId,
+        string designerSubjectType,
+        string operationalSubjectType,
+        Guid subjectId,
+        CancellationToken cancellationToken = default);
 }
 
 public interface ILabelCanvasFieldCatalogService

@@ -109,11 +109,25 @@ values(gen_random_uuid(),@tenantId,@type,@subjectId,@template,cast(@json as json
     private sealed class ItemRow {public Guid id{get;set;}public Guid? subject_id{get;set;}public string subject_type{get;set;}="";public string? control_number{get;set;}public string? location{get;set;}public string payload_json{get;set;}="";}
 }
 
-public sealed class LabelHtmlPdfRenderService(IDbConnectionFactory dbFactory,ILabelPrintJobService jobs) : ILabelPdfRenderService
+public sealed class LabelHtmlPdfRenderService(IDbConnectionFactory dbFactory,ILabelPrintJobService jobs,
+    InovaGed.Application.Labels.Canvas.ILabelCanvasDesignService canvasDesigns,
+    InovaGed.Application.Labels.Canvas.ILabelCanvasRenderService canvasRenderer) : ILabelPdfRenderService
 {
     public async Task<LabelPdfResult> GeneratePdfAsync(Guid tenantId,Guid jobId,CancellationToken ct)
     {
         var job=await jobs.GetAsync(tenantId,jobId,ct)??throw new KeyNotFoundException("Job não encontrado.");
+        var canvas=await canvasDesigns.GetAsync(tenantId,job.TemplateCode,ct);
+        if(canvas is not null)
+        {
+            var payloads=job.Items.Count==0?[job.PayloadJson]:job.Items.Select(x=>x.PayloadJson).ToArray();
+            var values=payloads.Select(ReadPrintedFields).Where(x=>x.Count>0).Cast<IReadOnlyDictionary<string,object?>>().ToList();
+            if(values.Count>0)
+            {
+                var rendered=canvasRenderer.RenderBatch(canvas,values,false);
+                await MarkGeneratedAsync(job,rendered.Html,ct);
+                return new(Encoding.UTF8.GetBytes(rendered.Html),"text/html; charset=utf-8",$"{job.JobNumber}.html",false);
+            }
+        }
         var labels=job.Items.Count==0?new[]{(job.ControlNumber,job.Location,job.PayloadJson)}:job.Items.Select(x=>(x.ControlNumber,x.Location,x.PayloadJson));
         var body=string.Join("",labels.SelectMany(x=>Enumerable.Range(0,job.Copies).Select(_=>$"<article class=\"label\"><strong>{WebUtility.HtmlEncode(x.ControlNumber??job.TemplateName)}</strong><span>{WebUtility.HtmlEncode(x.Location)}</span><small>{WebUtility.HtmlEncode(x.PayloadJson)}</small></article>")));
         var encodedTitle = WebUtility.HtmlEncode(job.JobNumber);
@@ -188,7 +202,30 @@ public sealed class LabelHtmlPdfRenderService(IDbConnectionFactory dbFactory,ILa
 </body>
 </html>
 """;
-        await using var db=await dbFactory.OpenAsync(ct);await db.ExecuteAsync(new CommandDefinition("update ged.label_print_job set status='PDF_GENERATED',pdf_path=@path,error_message=null where tenant_id=@tenantId and id=@jobId and status not in ('PRINTED','CANCELLED')",new{tenantId,jobId,path=$"label-jobs/{job.JobNumber}.html"},cancellationToken:ct));
+        await MarkGeneratedAsync(job,html,ct);
         return new(Encoding.UTF8.GetBytes(html),"text/html; charset=utf-8",$"{job.JobNumber}.html",false);
+    }
+
+    private async Task MarkGeneratedAsync(LabelPrintJobDetails job,string html,CancellationToken ct)
+    {
+        await using var db=await dbFactory.OpenAsync(ct);
+        await db.ExecuteAsync(new CommandDefinition("update ged.label_print_job set status='PDF_GENERATED',pdf_path=@path,error_message=null where tenant_id=@tenantId and id=@jobId and status not in ('PRINTED','CANCELLED')",new{tenantId=job.TenantId,jobId=job.Id,path=$"label-jobs/{job.JobNumber}.html"},cancellationToken:ct));
+    }
+
+    private static Dictionary<string,object?> ReadPrintedFields(string payload)
+    {
+        var result=new Dictionary<string,object?>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            using var document=System.Text.Json.JsonDocument.Parse(payload);
+            if(!document.RootElement.TryGetProperty("printedFields",out var fields)||fields.ValueKind!=System.Text.Json.JsonValueKind.Object)return result;
+            foreach(var property in fields.EnumerateObject())result[property.Name]=property.Value.ValueKind switch
+            {
+                System.Text.Json.JsonValueKind.String=>property.Value.GetString(),System.Text.Json.JsonValueKind.Number=>property.Value.GetRawText(),
+                System.Text.Json.JsonValueKind.True=>true,System.Text.Json.JsonValueKind.False=>false,System.Text.Json.JsonValueKind.Null=>null,_=>property.Value.GetRawText()
+            };
+        }
+        catch(System.Text.Json.JsonException){ }
+        return result;
     }
 }

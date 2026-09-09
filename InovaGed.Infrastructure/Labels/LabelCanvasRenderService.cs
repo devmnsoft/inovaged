@@ -67,26 +67,33 @@ public sealed class LabelCanvasRenderService(ILogger<LabelCanvasRenderService> l
     }
 
     public LabelCanvasRenderResult Render(LabelCanvasDesignDto design, IReadOnlyDictionary<string, object?> values, bool printMode = false)
+        => RenderBatch(design, [values], printMode);
+
+    public LabelCanvasRenderResult RenderBatch(LabelCanvasDesignDto design, IReadOnlyList<IReadOnlyDictionary<string, object?>> values, bool printMode = false)
     {
         var validation=Validate(design.DesignJson);
         LabelCanvasDocumentDto document;
         try { document=JsonSerializer.Deserialize<LabelCanvasDocumentDto>(design.DesignJson,Json) ?? new(); }
         catch(JsonException) { document=new(); }
-        var offsetX=DecimalValue(values,"__offsetXmm",0);var offsetY=DecimalValue(values,"__offsetYmm",0);var scale=DecimalValue(values,"__scalePercent",100)/100m;
-        var marginTop=DecimalValue(values,"__marginTopMm",0);var marginLeft=DecimalValue(values,"__marginLeftMm",0);var gapX=DecimalValue(values,"__gapXmm",4);var gapY=DecimalValue(values,"__gapYmm",4);
+        var settings=values.FirstOrDefault() ?? new Dictionary<string,object?>();
+        var offsetX=DecimalValue(settings,"__offsetXmm",0);var offsetY=DecimalValue(settings,"__offsetYmm",0);var scale=DecimalValue(settings,"__scalePercent",100)/100m;
+        var marginTop=DecimalValue(settings,"__marginTopMm",0);var marginLeft=DecimalValue(settings,"__marginLeftMm",0);var gapX=DecimalValue(settings,"__gapXmm",4);var gapY=DecimalValue(settings,"__gapYmm",4);
         var html=new StringBuilder();
         html.Append("<!doctype html><html lang=\"pt-BR\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>")
             .Append(WebUtility.HtmlEncode(design.TemplateName)).Append("</title><style>")
             .Append("*{box-sizing:border-box}html,body{margin:0;background:#eef1f6;font-family:Arial,sans-serif}.label-sheet{align-content:start;display:grid;gap:").Append(Mm(gapY)).Append("mm ").Append(Mm(gapX)).Append("mm;justify-content:center;min-height:100vh;padding:12mm}.label-sheet.two-up{grid-template-columns:repeat(2,max-content)}.label-canvas-output{background:#fff;position:relative;overflow:hidden;box-shadow:0 4mm 12mm #1a243322;transform:translate(").Append(Mm(offsetX)).Append("mm,").Append(Mm(offsetY)).Append("mm) scale(").Append(Mm(scale)).Append(");transform-origin:top left}.label-element{position:absolute;overflow:hidden;white-space:pre-wrap}.label-qr svg{width:100%;height:100%;display:block}.label-barcode{background:repeating-linear-gradient(90deg,#111 0,#111 1px,#fff 1px,#fff 3px)}@media print{@page{size:A4 portrait;margin:0}.label-sheet{padding:").Append(Mm(marginTop)).Append("mm 0 0 ").Append(Mm(marginLeft)).Append("mm;background:#fff;min-height:0}.label-canvas-output{box-shadow:none;break-inside:avoid}}")
             .Append("</style></head><body>");
-        var copies=values.TryGetValue("__copies",out var rawCopies)&&int.TryParse(Convert.ToString(rawCopies),out var requested)?Math.Clamp(requested,1,100):1;
         html.Append("<main class=\"label-sheet").Append(document.Canvas.WidthMm<=100?" two-up":"").Append("\">");
-        for(var copy=0;copy<copies;copy++)
+        foreach(var itemValues in values)
         {
-            html.Append("<section class=\"label-canvas-output\" data-template-key=\"").Append(WebUtility.HtmlEncode(design.TemplateKey)).Append("\" data-snapshot-hash=\"").Append(ComputeSnapshotHash(design.DesignJson))
-                .Append("\" style=\"width:").Append(Mm(document.Canvas.WidthMm)).Append("mm;height:").Append(Mm(document.Canvas.HeightMm)).Append("mm\">");
-            foreach(var element in document.Elements.Where(x=>x.Visible).OrderBy(x=>x.ZIndex))AppendElement(html,element,values);
-            html.Append("</section>");
+            var copies=itemValues.TryGetValue("__copies",out var rawCopies)&&int.TryParse(Convert.ToString(rawCopies),out var requested)?Math.Clamp(requested,1,100):1;
+            for(var copy=0;copy<copies;copy++)
+            {
+                html.Append("<section class=\"label-canvas-output\" data-template-key=\"").Append(WebUtility.HtmlEncode(design.TemplateKey)).Append("\" data-snapshot-hash=\"").Append(ComputeSnapshotHash(design.DesignJson))
+                    .Append("\" style=\"width:").Append(Mm(document.Canvas.WidthMm)).Append("mm;height:").Append(Mm(document.Canvas.HeightMm)).Append("mm\">");
+                foreach(var element in document.Elements.Where(x=>x.Visible).OrderBy(x=>x.ZIndex))AppendElement(html,element,itemValues);
+                html.Append("</section>");
+            }
         }
         html.Append("</main>");
         if(printMode) html.Append("<script>addEventListener('load',()=>window.print())</script>");

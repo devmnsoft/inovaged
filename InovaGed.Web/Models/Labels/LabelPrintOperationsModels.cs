@@ -16,6 +16,8 @@ public sealed class CreateBatchPrintJobInput
     [Required] public string PrintMode { get; set; }="FACTORY";
     [Required] public string TemplateCode { get; set; }="";
     [Range(1,500)] public int Copies { get; set; }=1;
+    public Guid? PrintProfileId { get; set; }
+    public Guid? PrintBrandingProfileId { get; set; }
     public List<Guid> SubjectIds { get; set; }=[];
     [StringLength(500)] public string? ReprintReason { get; set; }
 }

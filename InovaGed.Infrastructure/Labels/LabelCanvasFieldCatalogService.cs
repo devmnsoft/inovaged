@@ -4,6 +4,14 @@ namespace InovaGed.Infrastructure.Labels;
 
 public sealed class LabelCanvasFieldCatalogService : ILabelCanvasFieldCatalogService
 {
+    private static readonly (string Key,string Label)[] BrandingFields =
+    [
+        ("clientName","Cliente"),("contractName","Contrato"),("organizationName","Organização"),
+        ("headerTitle","Título do cabeçalho"),("headerSubtitle","Subtítulo do cabeçalho"),
+        ("headerExtraLine","Linha adicional do cabeçalho"),("footerText","Rodapé"),("footerExtraLine","Linha adicional do rodapé"),
+        ("primaryLogo","Logo principal"),("secondaryLogo","Logo secundária")
+    ];
+
     private static readonly IReadOnlyDictionary<string, IReadOnlyList<LabelCanvasFieldDto>> Catalog =
         new Dictionary<string, IReadOnlyList<LabelCanvasFieldDto>>(StringComparer.OrdinalIgnoreCase)
         {
@@ -39,14 +47,6 @@ public sealed class LabelCanvasFieldCatalogService : ILabelCanvasFieldCatalogSer
             ["Protocol"] = Fields("Protocol", ("processNumber","Número do protocolo"),("subject","Assunto"),("createdAt","Criado em"),("traceCode","Código de rastreio"),("qrPayload","Conteúdo do QR Code"))
         };
 
-    private static readonly (string Key,string Label)[] BrandingFields =
-    [
-        ("clientName","Cliente"),("contractName","Contrato"),("organizationName","Organização"),
-        ("headerTitle","Título do cabeçalho"),("headerSubtitle","Subtítulo do cabeçalho"),
-        ("headerExtraLine","Linha adicional do cabeçalho"),("footerText","Rodapé"),("footerExtraLine","Linha adicional do rodapé"),
-        ("primaryLogo","Logo principal"),("secondaryLogo","Logo secundária")
-    ];
-
     private static IReadOnlyList<LabelCanvasFieldDto> Fields(string subject, params (string Key, string Label)[] values) =>
         BrandingFields.Concat(values).GroupBy(x=>x.Key,StringComparer.OrdinalIgnoreCase).Select(x=>x.First())
             .Select(x => new LabelCanvasFieldDto(x.Key, x.Label, x.Key.EndsWith("At", StringComparison.Ordinal) ? "date" : x.Key.Contains("Logo",StringComparison.Ordinal) ? "image" : "text", subject)).ToArray();
@@ -72,7 +72,7 @@ public sealed class LabelCanvasFieldCatalogService : ILabelCanvasFieldCatalogSer
             return new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
             {
                 ["archiveTitle"]="ARQUIVO CENTRAL", ["headerTitle"]="ARQUIVO CENTRAL", ["clientName"]="Cliente de demonstração", ["contractName"]="Contrato de demonstração", ["organizationName"]="Unidade documental", ["boxCode"]="CX-2026-0042", ["boxNumber"]="42",
-                ["controlNumber"]="042", ["sector"]="Arquivo Central", ["classification"]="ADM.120",
+                ["controlNumber"]="042", ["sector"]="Arquivo Central", ["classification"]="ADM.120 - DOCUMENTAÇÃO ADMINISTRATIVA",
                 ["periodStart"]="01/01/2024", ["periodEnd"]="31/12/2025", ["retentionStatus"]="Guarda intermediária",
                 ["custodyStatus"]="No acervo", ["documentCount"]="87", ["location"]="LOC.AN.02.E03.P004",
                 ["traceCode"]="CX-2026-0042", ["qrPayload"]="https://inovaged.local/Labels/Trace/CX-2026-0042"
@@ -80,9 +80,9 @@ public sealed class LabelCanvasFieldCatalogService : ILabelCanvasFieldCatalogSer
         return new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
         {
             ["headerTitle"]="ARQUIVO CENTRAL", ["clientName"]="Cliente de demonstração", ["contractName"]="Contrato de demonstração", ["organizationName"]="Unidade documental",
-            ["documentCode"]="DOC-2026-00199", ["documentTitle"]="Prontuário clínico", ["documentType"]="Prontuário",
+            ["documentCode"]="DOC-2026-00199", ["documentTitle"]="Documento administrativo", ["documentType"]="Documento",
             ["recordNumber"]="PR-2026-00199", ["patientName"]="Pessoa de demonstração", ["processNumber"]="PROC-2026-00199",
-            ["classification"]="HOL.132.3", ["folderName"]="Pacientes 2017", ["createdAt"]="15/07/2017",
+            ["classification"]="ADM.120 - DOCUMENTAÇÃO ADMINISTRATIVA", ["folderName"]="Documentação administrativa", ["location"]="Arquivo Central", ["documentPeriod"]="01/01/2026 A 31/12/2026", ["createdAt"]="08/09/2026",
             ["uploadedBy"]="Equipe GED", ["ocrStatus"]="Concluído", ["retentionStatus"]="Guarda permanente",
             ["traceCode"]="DOC-2026-00199", ["qrPayload"]="https://inovaged.local/Labels/Trace/DOC-2026-00199"
         };
