@@ -34,7 +34,38 @@ public sealed class LabelCanvasDesignDto
     public DateTime? UpdatedAt { get; init; }
     public Guid? PublishedBy { get; init; }
     public DateTime? PublishedAt { get; init; }
+    public bool HasPublishedVersion { get; init; }
+    public int? PublishedVersionNo { get; init; }
+    public bool IsRevision => Status.Equals("DRAFT", StringComparison.OrdinalIgnoreCase) && HasPublishedVersion;
+    public string? LayoutHash { get; init; }
+    public string? VersionHash { get; init; }
     public bool CanEdit => !IsSystemTemplate && Status.Equals("DRAFT", StringComparison.OrdinalIgnoreCase);
+}
+
+public sealed class LabelCanvasVersionSnapshotDto
+{
+    public string TemplateKey { get; init; } = "";
+    public string TemplateName { get; init; } = "";
+    public string? Description { get; init; }
+    public string TemplateKind { get; init; } = "CANVAS";
+    public string SubjectType { get; init; } = "Document";
+    public string PaperKind { get; init; } = "A4";
+    public decimal WidthMm { get; init; }
+    public decimal HeightMm { get; init; }
+    public string Orientation { get; init; } = "portrait";
+    public Guid? DefaultBrandingProfileId { get; init; }
+    public string? BrandingBindingKey { get; init; }
+    public string? ClientNameFallback { get; init; }
+    public string? ContractNameFallback { get; init; }
+    public string? OrganizationNameFallback { get; init; }
+    public string? HeaderTitleFallback { get; init; }
+    public string? HeaderSubtitleFallback { get; init; }
+    public string LabelContext { get; init; } = "GENERIC";
+    public string DesignJson { get; init; } = "{}";
+    public int VersionNo { get; init; }
+    public string? LayoutHash { get; init; }
+    public string? VersionHash { get; init; }
+    public string HashScope { get; init; } = "VERSION_ENVELOPE_V2";
 }
 
 public sealed class LabelCanvasDocumentDto
@@ -186,6 +217,7 @@ public interface ILabelCanvasDesignService
     Task<LabelCanvasDesignDto?> GetAsync(Guid tenantId, string templateKey, CancellationToken cancellationToken = default);
     Task<LabelCanvasDesignDto?> GetPublishedAsync(Guid tenantId, string templateKey, int? versionNo = null, CancellationToken cancellationToken = default);
     Task<LabelCanvasDesignDto> BeginRevisionAsync(Guid tenantId, Guid userId, string templateKey, string? ipAddress, string? userAgent, CancellationToken cancellationToken = default);
+    Task<LabelCanvasDesignDto> CancelRevisionAsync(Guid tenantId, Guid userId, string templateKey, string? ipAddress, string? userAgent, CancellationToken cancellationToken = default);
     Task<LabelCanvasDesignDto> CreateDraftAsync(Guid tenantId, Guid userId, LabelCanvasSaveRequest request, string? ipAddress, string? userAgent, CancellationToken cancellationToken = default);
     Task<LabelCanvasDesignDto> SaveDraftAsync(Guid tenantId, Guid userId, LabelCanvasSaveRequest request, string? ipAddress, string? userAgent, CancellationToken cancellationToken = default);
     Task<LabelCanvasDesignDto> PublishAsync(Guid tenantId, Guid userId, LabelCanvasPublishRequest request, string? ipAddress, string? userAgent, CancellationToken cancellationToken = default);
@@ -197,6 +229,8 @@ public interface ILabelCanvasDesignService
     Task<LabelCanvasDesignDto> RestoreVersionAsync(Guid tenantId, Guid userId, string templateKey, Guid versionId, string? ipAddress, string? userAgent, CancellationToken cancellationToken = default);
     Task RecordEventAsync(Guid tenantId, Guid? userId, Guid designId, string eventType, string? message, object? payload, string? ipAddress, string? userAgent, CancellationToken cancellationToken = default);
 }
+
+public enum LabelCanvasExecutionMode { Production, Preview, Demo, SnapshotReplay }
 
 public static class LabelCanvasSubjectTypeMapper
 {
@@ -222,6 +256,7 @@ public sealed record LabelCanvasCalibration(
 
 public sealed class LabelCanvasPrintContext
 {
+    public LabelCanvasExecutionMode ExecutionMode { get; init; } = LabelCanvasExecutionMode.Production;
     public Guid TenantId { get; init; }
     public string TemplateKey { get; init; } = "";
     public string SubjectType { get; init; } = "Document";

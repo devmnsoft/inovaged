@@ -40,7 +40,10 @@ public sealed class PrintBrandingController(IDbConnectionFactory factory, IPrint
         var result=InstitutionalCatalog.ToList();
         if(await HasTableAsync(db,"ged","label_template_design"))
         {
-            var canvas=await db.QueryAsync<(string Context,string Key,string Description)>(new CommandDefinition("select distinct on (template_key) 'LABEL_TEMPLATE' Context,template_key Key,template_name||' · Canvas '||subject_type Description from ged.label_template_design where (tenant_id=@tenant or tenant_id is null) and status='PUBLISHED' and reg_status in ('A','ACTIVE') order by template_key,tenant_id nulls last,updated_at desc nulls last",new{tenant=TenantId},cancellationToken:ct));
+            var canvas=await db.QueryAsync<(string Context,string Key,string Description)>(new CommandDefinition("""select distinct on (d.template_key) 'LABEL_TEMPLATE' Context,d.template_key Key,
+coalesce(v.snapshot_json->>'templateName',d.template_name)||' · Canvas '||coalesce(v.snapshot_json->>'subjectType',d.subject_type) Description
+from ged.label_template_design d join lateral(select snapshot_json from ged.label_template_design_version x where x.template_design_id=d.id and x.status='PUBLISHED' and x.reg_status in ('A','ACTIVE') order by x.version_no desc limit 1)v on true
+where (d.tenant_id=@tenant or d.tenant_id is null) and d.reg_status in ('A','ACTIVE') order by d.template_key,d.tenant_id nulls last,d.updated_at desc nulls last""",new{tenant=TenantId},cancellationToken:ct));
             foreach(var item in canvas)if(!result.Any(x=>x.Context==item.Context&&x.Key==item.Key))result.Add(item);
         }
         return result;

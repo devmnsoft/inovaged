@@ -4,10 +4,31 @@ public static class LabelPrintJobStatus
 {
     public const string Pending = "PENDING";
     public const string Previewed = "PREVIEWED";
+    public const string ReadyToPrint = "READY_TO_PRINT";
     public const string PdfGenerated = "PDF_GENERATED";
     public const string Printed = "PRINTED";
     public const string Cancelled = "CANCELLED";
     public const string Error = "ERROR";
+}
+
+public sealed class LabelCanvasPrintSnapshotDto
+{
+    public string LayoutSource { get; init; } = "CANVAS";
+    public string TemplateKey { get; init; } = "";
+    public string TemplateName { get; init; } = "";
+    public int TemplateVersion { get; init; }
+    public string LayoutHash { get; init; } = "";
+    public string VersionHash { get; init; } = "";
+    public string SubjectType { get; init; } = "";
+    public Guid SubjectId { get; init; }
+    public object? Branding { get; init; }
+    public object? Calibration { get; init; }
+    public IReadOnlyDictionary<string,object?> ResolvedValues { get; init; } = new Dictionary<string,object?>();
+    public string? TraceCode { get; init; }
+    public string? QrPayload { get; init; }
+    public int Copies { get; init; } = 1;
+    public string ArtifactHash { get; init; } = "";
+    public DateTime CreatedAt { get; init; }
 }
 
 public sealed record LabelPrintJobCreateCommand(Guid TenantId, Guid RequestedBy, string PrintMode,

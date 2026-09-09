@@ -17,6 +17,8 @@ public sealed class LabelCanvasPrintCoordinator(
         Validate(context);
         var design=await designs.GetPublishedAsync(context.TenantId,context.TemplateKey,context.TemplateVersion,cancellationToken)
             ??throw new KeyNotFoundException("O template Canvas não possui versão publicada.");
+        if(context.ExecutionMode==LabelCanvasExecutionMode.SnapshotReplay && (context.ResolvedValues is null||context.BrandingSnapshot is null||context.CalibrationSnapshot is null))
+            throw new InvalidOperationException("Snapshot replay exige valores, branding e calibração congelados.");
         var source=context.ResolvedValues??await valueResolver.ResolveAsync(context.TenantId,design.SubjectType,context.OperationalSubjectType,context.SubjectId,cancellationToken);
         if(source.Count==0)throw new KeyNotFoundException("Não foi possível localizar a origem da etiqueta.");
         var branding=context.BrandingSnapshot??await ResolveBrandingAsync(context,design,cancellationToken);
@@ -59,22 +61,26 @@ select id ProfileId,margin_top_mm MarginTopMm,margin_left_mm MarginLeftMm,offset
 from ged.label_print_profile where tenant_id=@tenantId and reg_status='A' and ((@profileId is not null and id=@profileId) or (@profileId is null and is_default))
 order by is_default desc limit 1
 """;
-        return await db.QuerySingleOrDefaultAsync<LabelCanvasCalibration>(new CommandDefinition(sql,new{tenantId,profileId},cancellationToken:ct))??DefaultCalibration(profileId);
+        var calibration=await db.QuerySingleOrDefaultAsync<LabelCanvasCalibration>(new CommandDefinition(sql,new{tenantId,profileId},cancellationToken:ct));
+        if(calibration is null&&profileId.HasValue)throw new InvalidOperationException("Perfil de impressão inválido.");
+        return calibration??DefaultCalibration(null);
     }
 
     private static Dictionary<string,object?> BuildValues(LabelCanvasPrintContext context,LabelCanvasDesignDto design,IReadOnlyDictionary<string,object?> source,ResolvedPrintBranding branding,LabelCanvasCalibration calibration)
     {
         var values=source.ToDictionary(x=>x.Key,x=>x.Value,StringComparer.OrdinalIgnoreCase);
-        values["clientName"]=branding.ClientName??design.ClientNameFallback??"Cliente de demonstração";
-        values["contractName"]=branding.ContractName??design.ContractNameFallback??"Contrato de gestão documental";
-        values["organizationName"]=branding.OrganizationName??design.OrganizationNameFallback??"Arquivo Central";
-        values["headerTitle"]=branding.HeaderTitle??design.HeaderTitleFallback??"ARQUIVO CENTRAL";values["headerSubtitle"]=branding.HeaderSubtitle??design.HeaderSubtitleFallback;
+        var demo=context.ExecutionMode is LabelCanvasExecutionMode.Demo or LabelCanvasExecutionMode.Preview;
+        values["clientName"]=branding.ClientName??design.ClientNameFallback??(demo?"Cliente de demonstração":null);
+        values["contractName"]=branding.ContractName??design.ContractNameFallback??(demo?"Contrato de demonstração":null);
+        values["organizationName"]=branding.OrganizationName??design.OrganizationNameFallback??(demo?"Unidade documental":null);
+        values["headerTitle"]=branding.HeaderTitle??design.HeaderTitleFallback;values["headerSubtitle"]=branding.HeaderSubtitle??design.HeaderSubtitleFallback;
         values["headerExtraLine"]=branding.HeaderExtraLine;values["footerText"]=branding.FooterText;values["footerExtraLine"]=branding.FooterExtraLine;
         values["primaryLogo"]=branding.PrimaryLogoAssetId is Guid primary?$"/Administration/BrandAssets/{primary}/File":null;
         values["secondaryLogo"]=branding.SecondaryLogoAssetId is Guid secondary?$"/Administration/BrandAssets/{secondary}/File":null;
         values["printedBy"]=context.PrintedBy;values["traceCode"]=context.RegisteredTraceCode??values.GetValueOrDefault("traceCode");
+        var frozenQr=values.GetValueOrDefault("qrPayload")?.ToString();
         var relative=context.RegisteredTraceUrl??SafeOriginUrl(context.OperationalSubjectType,context.SubjectId);
-        values["qrPayload"]=CombineUrl(context.AbsoluteBaseUrl,relative);values["__copies"]=Math.Clamp(context.Copies,1,100);
+        values["qrPayload"]=context.ExecutionMode==LabelCanvasExecutionMode.SnapshotReplay&&!string.IsNullOrWhiteSpace(frozenQr)?frozenQr:CombineUrl(context.AbsoluteBaseUrl,relative);values["__copies"]=Math.Clamp(context.Copies,1,100);
         values["__marginTopMm"]=calibration.MarginTopMm;values["__marginLeftMm"]=calibration.MarginLeftMm;values["__offsetXmm"]=calibration.OffsetXMm;values["__offsetYmm"]=calibration.OffsetYMm;values["__scalePercent"]=calibration.ScalePercent;values["__gapXmm"]=calibration.GapXMm;values["__gapYmm"]=calibration.GapYMm;
         return values;
     }
