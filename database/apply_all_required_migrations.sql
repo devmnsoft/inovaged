@@ -3096,3 +3096,4 @@ where coalesce(reg_status, 'A') = 'A';
 \ir migrations/2026_09_08_label_canvas_designer_rc22.sql
 \ir migrations/2026_09_08_label_canvas_multi_client_rc23.sql
 \ir migrations/2026_09_08_smart_assistant_actions_rc25.sql
+\ir migrations/2026_09_09_label_canvas_production_rc25.sql

@@ -50,17 +50,16 @@ public sealed class LabelCanvasValueResolver(IDbConnectionFactory dbFactory) : I
         location ??= Empty;
         version ??= Empty;
         box ??= Empty;
-        var shortId = subjectId.ToString("N")[..8].ToUpperInvariant();
         var result = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
         var isBox = designerSubjectType.Equals("Box", StringComparison.OrdinalIgnoreCase) || designerSubjectType.Equals("LocDeskBox", StringComparison.OrdinalIgnoreCase);
 
         if (isBox)
         {
-            result["boxCode"] = First(entity, "label_code", "box_code", "code") ?? $"CX-{shortId}";
-            result["boxNumber"] = First(entity, "box_no", "number") ?? shortId;
+            result["boxCode"] = First(entity, "label_code", "box_code", "code");
+            result["boxNumber"] = First(entity, "box_no", "number");
             result["controlNumber"] = result["boxNumber"];
-            result["archiveTitle"] = First(entity, "title", "name", "notes") ?? "Caixa física";
-            result["subject"] = First(entity, "title", "notes") ?? "Caixa física";
+            result["archiveTitle"] = First(entity, "title", "name", "notes");
+            result["subject"] = First(entity, "title", "notes");
             result["sector"] = First(location, "sector", "name");
             result["classification"] = First(entity, "classification", "classification_code");
             result["periodStart"] = First(entity, "period_start", "start_date");
@@ -71,8 +70,8 @@ public sealed class LabelCanvasValueResolver(IDbConnectionFactory dbFactory) : I
         }
         else
         {
-            var code = First(entity, "code", "document_code", "protocol_number") ?? $"DOC-{shortId}";
-            var title = First(entity, "title", "name", "subject") ?? "Documento";
+            var code = First(entity, "code", "document_code", "protocol_number");
+            var title = First(entity, "title", "name", "subject");
             result["documentCode"] = code;
             result["controlNumber"] = code;
             result["documentTitle"] = title;
@@ -85,15 +84,15 @@ public sealed class LabelCanvasValueResolver(IDbConnectionFactory dbFactory) : I
             result["uploadedBy"] = First(entity, "uploaded_by_name", "created_by_name");
             result["ocrStatus"] = First(version, "ocr_status") ?? First(entity, "ocr_status");
             result["retentionStatus"] = First(entity, "retention_status", "retention_phase");
-            result["processNumber"] = First(entity, "process_number", "protocol_number", "code") ?? $"PROC-{shortId}";
-            result["recordNumber"] = First(entity, "record_number", "medical_record_number", "code") ?? $"PR-{shortId}";
+            result["processNumber"] = First(entity, "process_number", "protocol_number", "code");
+            result["recordNumber"] = First(entity, "record_number", "medical_record_number", "code");
             result["patientName"] = First(entity, "patient_name", "person_name", "holder_name");
             result["documentPeriod"] = First(entity, "document_period", "period");
         }
 
         result["location"] = First(location, "location_code", "code", "name", "title") ?? First(entity, "location", "location_code");
-        result["traceCode"] = First(entity, "trace_code", "label_code", "code") ?? shortId;
-        result["qrPayload"] = $"/Labels/Trace/{Uri.EscapeDataString(Convert.ToString(result["traceCode"]) ?? shortId)}";
+        result["traceCode"] = First(entity, "trace_code", "label_code", "code") ?? subjectId.ToString("D");
+        result["qrPayload"] = null;
         return result;
     }
 

@@ -243,5 +243,12 @@
     "area": "Smart Assistant",
     "required": true,
     "description": "Preserva o tipo semântico das ações e adiciona URL interna segura para navegação sugerida."
+  },
+  {
+    "name": "2026_09_09_label_canvas_production_rc25",
+    "path": "database/migrations/2026_09_09_label_canvas_production_rc25.sql",
+    "area": "Etiquetas",
+    "required": true,
+    "description": "Publica os cinco modelos Canvas neutros com envelope imutável e ativa o schemaVersion 2."
   }
 ]

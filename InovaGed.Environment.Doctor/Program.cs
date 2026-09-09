@@ -81,6 +81,17 @@ try
         }
         return await Rc25CanvasAssistantQualityCheck.RunAsync(repositoryRoot,connection,Console.Out,Console.Error,CancellationToken.None);
     }
+    if(command.Equals("labels-canvas-production-rc25",StringComparison.OrdinalIgnoreCase))
+    {
+        var repositoryRoot=FindRoot(BclEnvironment.CurrentDirectory);var configuration=Configuration();var connection=configuration.GetConnectionString("DefaultConnection")??configuration.GetConnectionString("Postgres");
+        if(args.Contains("--apply",StringComparer.OrdinalIgnoreCase))
+        {
+            if(string.IsNullOrWhiteSpace(connection)){Console.Error.WriteLine("[FALHA] Banco não configurado.");return 2;}
+            try{var sql=await File.ReadAllTextAsync(Path.Combine(repositoryRoot,"database","migrations","2026_09_09_label_canvas_production_rc25.sql"));await using var db=new NpgsqlConnection(connection);await db.OpenAsync();await using var transaction=await db.BeginTransactionAsync();await using var migrationCommand=new NpgsqlCommand(sql,db,transaction){CommandTimeout=300};await migrationCommand.ExecuteNonQueryAsync();await transaction.CommitAsync();Console.WriteLine("[OK] 2026_09_09_label_canvas_production_rc25 aplicada.");}
+            catch(PostgresException exception){Console.Error.WriteLine($"[FALHA] {exception.SqlState}: {exception.MessageText} (posição {exception.Position})");return 2;}
+        }
+        return await LabelsCanvasProductionRc25QualityCheck.RunAsync(repositoryRoot,connection,Console.Out,Console.Error,CancellationToken.None);
+    }
     if (command.Equals("labels-logo-rendering", StringComparison.OrdinalIgnoreCase) ||
         command.Equals("labels-logo-propagation", StringComparison.OrdinalIgnoreCase) ||
         command.Equals("labels-printwizard-actions", StringComparison.OrdinalIgnoreCase) ||

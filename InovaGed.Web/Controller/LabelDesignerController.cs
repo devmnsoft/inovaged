@@ -116,6 +116,14 @@ public sealed class LabelDesignerController(IDbConnectionFactory dbFactory, ILab
         return await ExecuteWrite(async()=>{var published=await designs.PublishAsync(TenantId,userId,normalized,Ip(),Agent(),ct);return Ok(new{ok=true,message=$"Versão {published.CurrentVersion} publicada.",redirectUrl=Url.Action(nameof(Details),new{templateKey})});},"publicar",templateKey);
     }
 
+    [HttpPost("/Labels/Designer/Revision/{templateKey}"),ValidateAntiForgeryToken]
+    [Authorize(Policy=AppPolicies.LabelDesignerUpdate)]
+    public async Task<IActionResult> BeginRevision(string templateKey,CancellationToken ct)
+    {
+        if(UserId is not Guid userId)return Unauthorized();
+        return await ExecuteWrite(async()=>{var draft=await designs.BeginRevisionAsync(TenantId,userId,templateKey,Ip(),Agent(),ct);return Ok(new{ok=true,message=$"Revisão baseada na versão {draft.CurrentVersion} criada.",redirectUrl=Url.Action(nameof(Edit),new{templateKey})});},"criar revisão",templateKey);
+    }
+
     [HttpGet("/Labels/Designer/Duplicate/{templateKey}")]
     public Task<IActionResult> Duplicate(string templateKey,CancellationToken ct)=>Details(templateKey,ct);
 
@@ -164,7 +172,7 @@ public sealed class LabelDesignerController(IDbConnectionFactory dbFactory, ILab
     [Authorize(Policy=AppPolicies.LabelDesignerCreate)]
     public async Task<IActionResult> Restore(string templateKey,Guid versionId,CancellationToken ct)
     {
-        if(UserId is not Guid userId)return Unauthorized();return await ExecuteWrite(async()=>{var draft=await designs.RestoreVersionAsync(TenantId,userId,templateKey,versionId,Ip(),Agent(),ct);return Ok(new{ok=true,message="Versão restaurada como novo rascunho.",redirectUrl=Url.Action(nameof(Edit),new{templateKey=draft.TemplateKey})});},"restaurar",templateKey);
+        if(UserId is not Guid userId)return Unauthorized();return await ExecuteWrite(async()=>{var draft=await designs.RestoreVersionAsync(TenantId,userId,templateKey,versionId,Ip(),Agent(),ct);return Ok(new{ok=true,message="Versão restaurada na revisão da mesma chave.",redirectUrl=Url.Action(nameof(Edit),new{templateKey=draft.TemplateKey})});},"restaurar",templateKey);
     }
 
     [HttpGet("/Labels/Designer/Fields")]

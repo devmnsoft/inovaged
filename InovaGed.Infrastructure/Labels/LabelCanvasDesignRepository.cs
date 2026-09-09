@@ -2,6 +2,7 @@ using System.Data;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using Dapper;
 using InovaGed.Application.Common.Database;
@@ -31,6 +32,62 @@ public sealed class LabelCanvasDesignRepository(
         await using var db=await dbFactory.OpenAsync(cancellationToken);
         const string sql="select "+SelectColumns+" from ged.label_template_design where (tenant_id=@tenantId or tenant_id is null) and upper(template_key)=upper(@templateKey) and reg_status in ('A','ACTIVE') order by tenant_id nulls last limit 1";
         return await db.QuerySingleOrDefaultAsync<LabelCanvasDesignDto>(new CommandDefinition(sql,new{tenantId,templateKey},cancellationToken:cancellationToken));
+    }
+
+    public async Task<LabelCanvasDesignDto?> GetPublishedAsync(Guid tenantId,string templateKey,int? versionNo=null,CancellationToken cancellationToken=default)
+    {
+        if(string.IsNullOrWhiteSpace(templateKey))return null;
+        await using var db=await dbFactory.OpenAsync(cancellationToken);
+        const string sql="""
+select d.id Id,d.tenant_id TenantId,d.template_key TemplateKey,d.template_name TemplateName,d.description Description,
+ d.template_kind TemplateKind,d.subject_type SubjectType,d.paper_kind PaperKind,d.width_mm WidthMm,d.height_mm HeightMm,
+ d.orientation Orientation,'PUBLISHED' Status,v.design_json::text DesignJson,v.version_no CurrentVersion,d.is_system_template IsSystemTemplate,
+ d.default_branding_profile_id DefaultBrandingProfileId,d.branding_binding_key BrandingBindingKey,d.client_name_fallback ClientNameFallback,
+ d.contract_name_fallback ContractNameFallback,d.organization_name_fallback OrganizationNameFallback,d.header_title_fallback HeaderTitleFallback,
+ d.header_subtitle_fallback HeaderSubtitleFallback,d.label_context LabelContext,d.created_by CreatedBy,d.created_at CreatedAt,
+ d.updated_by UpdatedBy,d.updated_at UpdatedAt,v.published_by PublishedBy,v.published_at PublishedAt
+from ged.label_template_design d
+join lateral (
+ select x.* from ged.label_template_design_version x
+ where x.template_design_id=d.id and x.status='PUBLISHED' and x.reg_status in ('A','ACTIVE')
+   and (@versionNo is null or x.version_no=@versionNo)
+ order by x.version_no desc limit 1
+) v on true
+where (d.tenant_id=@tenantId or d.tenant_id is null) and upper(d.template_key)=upper(@templateKey)
+ and d.reg_status in ('A','ACTIVE')
+order by d.tenant_id nulls last limit 1
+""";
+        return await db.QuerySingleOrDefaultAsync<LabelCanvasDesignDto>(new CommandDefinition(sql,new{tenantId,templateKey,versionNo},cancellationToken:cancellationToken));
+    }
+
+    public async Task<LabelCanvasDesignDto> BeginRevisionAsync(Guid tenantId,Guid userId,string templateKey,string? ipAddress,string? userAgent,CancellationToken cancellationToken=default)
+    {
+        ValidateIdentity(tenantId,userId);
+        var working=await GetAsync(tenantId,templateKey,cancellationToken)??throw new KeyNotFoundException("Template não encontrado.");
+        if(working.Status.Equals("DRAFT",StringComparison.OrdinalIgnoreCase)&&working.TenantId==tenantId)return working;
+        var published=await GetPublishedAsync(tenantId,templateKey,null,cancellationToken)??throw new InvalidOperationException("O template ainda não possui versão publicada.");
+        if(working.TenantId is null)
+        {
+            var created=await CreateDraftAsync(tenantId,userId,SaveRequest(published,$"Nova revisão baseada na v{published.CurrentVersion}."),ipAddress,userAgent,cancellationToken);
+            await using var copyDb=await dbFactory.OpenAsync(cancellationToken);await using var copyTx=await copyDb.BeginTransactionAsync(cancellationToken);
+            const string copySql="""
+insert into ged.label_template_design_version(id,tenant_id,template_design_id,version_no,version_number,status,design_json,snapshot_json,change_summary,notes,created_by,created_at,published_by,published_at,snapshot_hash,reg_status)
+select gen_random_uuid(),@tenantId,@createdId,v.version_no,v.version_number,v.status,v.design_json,v.snapshot_json,v.change_summary,v.notes,v.created_by,v.created_at,v.published_by,v.published_at,v.snapshot_hash,v.reg_status
+from ged.label_template_design_version v where v.template_design_id=@sourceId and v.status='PUBLISHED' and v.reg_status in ('A','ACTIVE')
+on conflict do nothing;
+update ged.label_template_design set current_version=@version,status='DRAFT',updated_at=now() where id=@createdId and tenant_id=@tenantId;
+""";
+            await copyDb.ExecuteAsync(new CommandDefinition(copySql,new{tenantId,createdId=created.Id,sourceId=working.Id,version=published.CurrentVersion},copyTx,cancellationToken:cancellationToken));
+            await InsertEventAsync(copyDb,copyTx,tenantId,userId,created.Id,"BEGIN_REVISION",$"Revisão iniciada sobre a versão global {published.CurrentVersion}.",new{sourceId=working.Id,baseVersion=published.CurrentVersion},ipAddress,userAgent,cancellationToken);
+            await copyTx.CommitAsync(cancellationToken);
+            return (await GetAsync(tenantId,templateKey,cancellationToken))!;
+        }
+        await using var db=await dbFactory.OpenAsync(cancellationToken);await using var tx=await db.BeginTransactionAsync(cancellationToken);
+        var updated=await db.ExecuteScalarAsync<Guid?>(new CommandDefinition("update ged.label_template_design set status='DRAFT',design_json=cast(@json as jsonb),current_version=@version,updated_by=@userId,updated_at=now() where id=@id and tenant_id=@tenantId and reg_status in ('A','ACTIVE') returning id",new{json=published.DesignJson,version=published.CurrentVersion,userId,id=working.Id,tenantId},tx,cancellationToken:cancellationToken));
+        if(updated is null)throw new InvalidOperationException("Não foi possível iniciar a revisão.");
+        await InsertEventAsync(db,tx,tenantId,userId,working.Id,"BEGIN_REVISION",$"Revisão iniciada sobre a versão {published.CurrentVersion}.",new{baseVersion=published.CurrentVersion},ipAddress,userAgent,cancellationToken);
+        await tx.CommitAsync(cancellationToken);
+        return (await GetAsync(tenantId,templateKey,cancellationToken))!;
     }
 
     public async Task<LabelCanvasDesignDto> CreateDraftAsync(Guid tenantId,Guid userId,LabelCanvasSaveRequest request,string? ipAddress,string? userAgent,CancellationToken cancellationToken=default)
@@ -94,17 +151,21 @@ where tenant_id=@tenantId and upper(template_key)=upper(@TemplateKey) and status
         }
         var allowed=fields.GetFields(design.SubjectType).Select(x=>x.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);var validation=renderer.Validate(design.DesignJson,allowed);
         if(validation.HasErrors)throw ValidationException(validation);if(validation.HasWarnings&&!request.ConfirmWarnings)throw new InvalidOperationException("A publicação possui alertas. Revise-os ou confirme a publicação consciente.");
+        var previous=await GetPublishedAsync(tenantId,request.TemplateKey,null,cancellationToken);
         await using var db=await dbFactory.OpenAsync(cancellationToken);await using var tx=await db.BeginTransactionAsync(cancellationToken);
         try
         {
             var version=await db.ExecuteScalarAsync<int>(new CommandDefinition("select coalesce(max(version_no),0)+1 from ged.label_template_design_version where template_design_id=@id",new{id=design.Id},tx,cancellationToken:cancellationToken));
             var hash=renderer.ComputeSnapshotHash(design.DesignJson);
+            var generatedSummary=SummarizeDifference(previous?.DesignJson,design.DesignJson);
+            var summary=string.IsNullOrWhiteSpace(request.ChangeSummary)?generatedSummary:$"{request.ChangeSummary} {generatedSummary}";
+            var snapshot=BuildVersionSnapshot(design,design.DesignJson);
             const string insert="""
 insert into ged.label_template_design_version(id,tenant_id,template_design_id,version_no,version_number,status,design_json,snapshot_json,change_summary,notes,created_by,created_at,published_by,published_at,snapshot_hash,reg_status)
-values(gen_random_uuid(),@tenantId,@id,@version,@version,'PUBLISHED',cast(@json as jsonb),cast(@json as jsonb),@summary,@summary,@userId,now(),@userId,now(),@hash,'ACTIVE');
+values(gen_random_uuid(),@tenantId,@id,@version,@version,'PUBLISHED',cast(@json as jsonb),cast(@snapshot as jsonb),@summary,@summary,@userId,now(),@userId,now(),@hash,'ACTIVE');
 update ged.label_template_design set status='PUBLISHED',current_version=@version,published_by=@userId,published_at=now(),updated_by=@userId,updated_at=now() where id=@id and tenant_id=@tenantId;
 """;
-            await db.ExecuteAsync(new CommandDefinition(insert,new{tenantId,id=design.Id,version,json=design.DesignJson,summary=request.ChangeSummary,userId,hash},tx,cancellationToken:cancellationToken));
+            await db.ExecuteAsync(new CommandDefinition(insert,new{tenantId,id=design.Id,version,json=design.DesignJson,snapshot,summary,userId,hash},tx,cancellationToken:cancellationToken));
             await InsertEventAsync(db,tx,tenantId,userId,design.Id,"PUBLISH_TEMPLATE",request.ChangeSummary??$"Versão {version} publicada.",new{version,hash,validation.Issues},ipAddress,userAgent,cancellationToken);
             await tx.CommitAsync(cancellationToken);
             return (await GetAsync(tenantId,request.TemplateKey,cancellationToken))!;
@@ -157,7 +218,15 @@ where v.template_design_id=@id and v.reg_status in ('A','ACTIVE') order by v.ver
         =>await CreateFromVersionAsync(tenantId,userId,templateKey,versionId,"Cópia da versão","DUPLICATE_VERSION",ipAddress,userAgent,cancellationToken);
 
     public async Task<LabelCanvasDesignDto> RestoreVersionAsync(Guid tenantId,Guid userId,string templateKey,Guid versionId,string? ipAddress,string? userAgent,CancellationToken cancellationToken=default)
-        =>await CreateFromVersionAsync(tenantId,userId,templateKey,versionId,"Restauração","RESTORE_VERSION",ipAddress,userAgent,cancellationToken);
+    {
+        var source=await GetAsync(tenantId,templateKey,cancellationToken)??throw new KeyNotFoundException("Template não encontrado.");
+        await using var db=await dbFactory.OpenAsync(cancellationToken);
+        var json=await db.ExecuteScalarAsync<string?>(new CommandDefinition("select design_json::text from ged.label_template_design_version where id=@versionId and template_design_id=@id and status='PUBLISHED' and reg_status in ('A','ACTIVE')",new{versionId,id=source.Id},cancellationToken:cancellationToken))??throw new KeyNotFoundException("Versão não encontrada.");
+        var draft=await BeginRevisionAsync(tenantId,userId,templateKey,ipAddress,userAgent,cancellationToken);
+        var saved=await SaveDraftAsync(tenantId,userId,SaveRequest(draft,"Versão publicada restaurada na revisão atual.",json),ipAddress,userAgent,cancellationToken);
+        await RecordEventAsync(tenantId,userId,saved.Id,"RESTORE_VERSION","Versão restaurada na revisão da mesma chave.",new{versionId},ipAddress,userAgent,cancellationToken);
+        return saved;
+    }
 
     private async Task<LabelCanvasDesignDto> CreateFromVersionAsync(Guid tenantId,Guid userId,string templateKey,Guid versionId,string suffix,string eventType,string? ipAddress,string? userAgent,CancellationToken cancellationToken)
     {
@@ -175,7 +244,29 @@ where v.template_design_id=@id and v.reg_status in ('A','ACTIVE') order by v.ver
 
     private LabelCanvasValidationResult ValidateDesign(LabelCanvasSaveRequest request){var allowed=fields.GetFields(request.SubjectType).Select(x=>x.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);return renderer.Validate(request.DesignJson,allowed);}
     private static LabelCanvasDesignDto VersionDesign(LabelCanvasDesignDto source,string json,int version)=>new(){Id=source.Id,TenantId=source.TenantId,TemplateKey=source.TemplateKey,TemplateName=source.TemplateName,Description=source.Description,TemplateKind=source.TemplateKind,SubjectType=source.SubjectType,PaperKind=source.PaperKind,WidthMm=source.WidthMm,HeightMm=source.HeightMm,Orientation=source.Orientation,Status="PUBLISHED",DesignJson=json,CurrentVersion=version,IsSystemTemplate=true,DefaultBrandingProfileId=source.DefaultBrandingProfileId,BrandingBindingKey=source.BrandingBindingKey,ClientNameFallback=source.ClientNameFallback,ContractNameFallback=source.ContractNameFallback,OrganizationNameFallback=source.OrganizationNameFallback,HeaderTitleFallback=source.HeaderTitleFallback,HeaderSubtitleFallback=source.HeaderSubtitleFallback,LabelContext=source.LabelContext,CreatedBy=source.CreatedBy,CreatedAt=source.CreatedAt,PublishedBy=source.PublishedBy,PublishedAt=source.PublishedAt};
-    private static LabelCanvasSaveRequest SaveRequest(LabelCanvasDesignDto design,string? summary)=>new(){TemplateKey=design.TemplateKey,TemplateName=design.TemplateName,Description=design.Description,TemplateKind=design.TemplateKind,SubjectType=design.SubjectType,PaperKind=design.PaperKind,WidthMm=design.WidthMm,HeightMm=design.HeightMm,Orientation=design.Orientation,DesignJson=design.DesignJson,DefaultBrandingProfileId=design.DefaultBrandingProfileId,BrandingBindingKey=design.BrandingBindingKey,ClientNameFallback=design.ClientNameFallback,ContractNameFallback=design.ContractNameFallback,OrganizationNameFallback=design.OrganizationNameFallback,HeaderTitleFallback=design.HeaderTitleFallback,HeaderSubtitleFallback=design.HeaderSubtitleFallback,LabelContext=design.LabelContext,ChangeSummary=summary};
+    private static LabelCanvasSaveRequest SaveRequest(LabelCanvasDesignDto design,string? summary,string? designJson=null)=>new(){TemplateKey=design.TemplateKey,TemplateName=design.TemplateName,Description=design.Description,TemplateKind=design.TemplateKind,SubjectType=design.SubjectType,PaperKind=design.PaperKind,WidthMm=design.WidthMm,HeightMm=design.HeightMm,Orientation=design.Orientation,DesignJson=designJson??design.DesignJson,DefaultBrandingProfileId=design.DefaultBrandingProfileId,BrandingBindingKey=design.BrandingBindingKey,ClientNameFallback=design.ClientNameFallback,ContractNameFallback=design.ContractNameFallback,OrganizationNameFallback=design.OrganizationNameFallback,HeaderTitleFallback=design.HeaderTitleFallback,HeaderSubtitleFallback=design.HeaderSubtitleFallback,LabelContext=design.LabelContext,ChangeSummary=summary};
+    private static string BuildVersionSnapshot(LabelCanvasDesignDto design,string designJson)=>JsonSerializer.Serialize(new
+    {
+        templateKey=design.TemplateKey,templateName=design.TemplateName,subjectType=design.SubjectType,paperKind=design.PaperKind,
+        widthMm=design.WidthMm,heightMm=design.HeightMm,orientation=design.Orientation,
+        defaultBrandingProfileId=design.DefaultBrandingProfileId,brandingBindingKey=design.BrandingBindingKey,
+        fallbacks=new{clientName=design.ClientNameFallback,contractName=design.ContractNameFallback,organizationName=design.OrganizationNameFallback,headerTitle=design.HeaderTitleFallback,headerSubtitle=design.HeaderSubtitleFallback},
+        designJson=JsonNode.Parse(designJson)
+    },new JsonSerializerOptions(JsonSerializerDefaults.Web));
+    internal static string SummarizeDifference(string? previousJson,string currentJson)
+    {
+        if(string.IsNullOrWhiteSpace(previousJson))return "Publicação inicial.";
+        try
+        {
+            var previous=JsonSerializer.Deserialize<LabelCanvasDocumentDto>(previousJson,new JsonSerializerOptions(JsonSerializerDefaults.Web){PropertyNameCaseInsensitive=true})??new();
+            var current=JsonSerializer.Deserialize<LabelCanvasDocumentDto>(currentJson,new JsonSerializerOptions(JsonSerializerDefaults.Web){PropertyNameCaseInsensitive=true})??new();
+            var before=previous.Elements.ToDictionary(x=>x.Id,StringComparer.OrdinalIgnoreCase);var after=current.Elements.ToDictionary(x=>x.Id,StringComparer.OrdinalIgnoreCase);
+            var added=after.Keys.Count(x=>!before.ContainsKey(x));var removed=before.Keys.Count(x=>!after.ContainsKey(x));var moved=after.Values.Count(x=>before.TryGetValue(x.Id,out var old)&&(old.XMm!=x.XMm||old.YMm!=x.YMm||old.WidthMm!=x.WidthMm||old.HeightMm!=x.HeightMm||old.RotationDeg!=x.RotationDeg));
+            var binding=after.Values.Count(x=>before.TryGetValue(x.Id,out var old)&&JsonSerializer.Serialize(old.Binding)!=JsonSerializer.Serialize(x.Binding));var style=after.Values.Count(x=>before.TryGetValue(x.Id,out var old)&&JsonSerializer.Serialize(old.Style)!=JsonSerializer.Serialize(x.Style));
+            return $"Diferenças: {added} adicionado(s), {removed} removido(s), {moved} movido(s), {binding} binding(s) alterado(s), {style} estilo(s) alterado(s).";
+        }
+        catch(JsonException){return "Diferenças não calculadas para snapshot legado.";}
+    }
     private static DynamicParameters Parameters(LabelCanvasSaveRequest request,Guid tenantId,Guid userId,Guid id){var p=new DynamicParameters(request);p.Add("id",id,DbType.Guid);p.Add("tenantId",tenantId,DbType.Guid);p.Add("userId",userId,DbType.Guid);return p;}
     private static void ValidateIdentity(Guid tenantId,Guid userId){if(tenantId==Guid.Empty||userId==Guid.Empty)throw new InvalidOperationException("Tenant e usuário autenticado são obrigatórios.");}
     private static void ValidateRequest(LabelCanvasSaveRequest request){ArgumentNullException.ThrowIfNull(request);if(!Regex.IsMatch(request.TemplateKey??"","^[A-Za-z0-9_]{3,120}$"))throw new ArgumentException("A chave deve conter apenas letras, números e sublinhado.");if(string.IsNullOrWhiteSpace(request.TemplateName)||request.TemplateName.Length>200)throw new ArgumentException("Informe um nome de até 200 caracteres.");if(request.WidthMm is <=0 or >1000||request.HeightMm is <=0 or >1000)throw new ArgumentException("Dimensões inválidas.");if(string.IsNullOrWhiteSpace(request.SubjectType))throw new ArgumentException("Tipo de assunto obrigatório.");}

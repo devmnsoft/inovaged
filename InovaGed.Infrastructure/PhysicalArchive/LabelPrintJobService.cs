@@ -110,23 +110,22 @@ values(gen_random_uuid(),@tenantId,@type,@subjectId,@template,cast(@json as json
 }
 
 public sealed class LabelHtmlPdfRenderService(IDbConnectionFactory dbFactory,ILabelPrintJobService jobs,
-    InovaGed.Application.Labels.Canvas.ILabelCanvasDesignService canvasDesigns,
-    InovaGed.Application.Labels.Canvas.ILabelCanvasRenderService canvasRenderer) : ILabelPdfRenderService
+    InovaGed.Application.Labels.Canvas.ILabelCanvasPrintCoordinator canvasCoordinator) : ILabelPdfRenderService
 {
     public async Task<LabelPdfResult> GeneratePdfAsync(Guid tenantId,Guid jobId,CancellationToken ct)
     {
         var job=await jobs.GetAsync(tenantId,jobId,ct)??throw new KeyNotFoundException("Job não encontrado.");
-        var canvas=await canvasDesigns.GetAsync(tenantId,job.TemplateCode,ct);
-        if(canvas is not null)
+        var sources=job.Items.Count==0
+            ?new[]{new{job.SubjectId,job.SubjectType,job.PayloadJson}}
+            :job.Items.Select(x=>new{x.SubjectId,x.SubjectType,x.PayloadJson}).ToArray();
+        var snapshots=sources.Select(x=>ReadCanvasSnapshot(x.PayloadJson,x.SubjectId,x.SubjectType)).ToArray();
+        if(snapshots.Any(x=>x.IsCanvas))
         {
-            var payloads=job.Items.Count==0?[job.PayloadJson]:job.Items.Select(x=>x.PayloadJson).ToArray();
-            var values=payloads.Select(ReadPrintedFields).Where(x=>x.Count>0).Cast<IReadOnlyDictionary<string,object?>>().ToList();
-            if(values.Count>0)
-            {
-                var rendered=canvasRenderer.RenderBatch(canvas,values,false);
-                await MarkGeneratedAsync(job,rendered.Html,ct);
-                return new(Encoding.UTF8.GetBytes(rendered.Html),"text/html; charset=utf-8",$"{job.JobNumber}.html",false);
-            }
+            if(snapshots.Any(x=>!x.IsCanvas||x.SubjectId is null||x.Values.Count==0))throw new InvalidOperationException("O job Canvas não possui snapshot individual íntegro.");
+            var contexts=snapshots.Select(x=>new InovaGed.Application.Labels.Canvas.LabelCanvasPrintContext{TenantId=tenantId,TemplateKey=job.TemplateCode,OperationalSubjectType=x.SubjectType,SubjectId=x.SubjectId!.Value,TemplateVersion=x.TemplateVersion,Copies=x.Copies??job.Copies,ResolvedValues=x.Values,BrandingSnapshot=x.Branding,CalibrationSnapshot=x.Calibration}).ToArray();
+            var rendered=await canvasCoordinator.PrepareBatchAsync(contexts,false,ct);
+            await MarkGeneratedAsync(job,rendered.Html,ct);
+            return new(Encoding.UTF8.GetBytes(rendered.Html),"text/html; charset=utf-8",$"{job.JobNumber}.html",false);
         }
         var labels=job.Items.Count==0?new[]{(job.ControlNumber,job.Location,job.PayloadJson)}:job.Items.Select(x=>(x.ControlNumber,x.Location,x.PayloadJson));
         var body=string.Join("",labels.SelectMany(x=>Enumerable.Range(0,job.Copies).Select(_=>$"<article class=\"label\"><strong>{WebUtility.HtmlEncode(x.ControlNumber??job.TemplateName)}</strong><span>{WebUtility.HtmlEncode(x.Location)}</span><small>{WebUtility.HtmlEncode(x.PayloadJson)}</small></article>")));
@@ -212,20 +211,42 @@ public sealed class LabelHtmlPdfRenderService(IDbConnectionFactory dbFactory,ILa
         await db.ExecuteAsync(new CommandDefinition("update ged.label_print_job set status='PDF_GENERATED',pdf_path=@path,error_message=null where tenant_id=@tenantId and id=@jobId and status not in ('PRINTED','CANCELLED')",new{tenantId=job.TenantId,jobId=job.Id,path=$"label-jobs/{job.JobNumber}.html"},cancellationToken:ct));
     }
 
-    private static Dictionary<string,object?> ReadPrintedFields(string payload)
+    private static CanvasJobSnapshot ReadCanvasSnapshot(string payload,Guid? fallbackId,string fallbackType)
     {
         var result=new Dictionary<string,object?>(StringComparer.OrdinalIgnoreCase);
         try
         {
             using var document=System.Text.Json.JsonDocument.Parse(payload);
-            if(!document.RootElement.TryGetProperty("printedFields",out var fields)||fields.ValueKind!=System.Text.Json.JsonValueKind.Object)return result;
+            var root=document.RootElement;var canvas=root.TryGetProperty("layoutSource",out var layout)&&layout.GetString()?.Equals("CANVAS",StringComparison.OrdinalIgnoreCase)==true;
+            if(!canvas)return new(false,fallbackId,fallbackType,null,null,result,null,null);
+            if(root.TryGetProperty("printedFields",out var fields)&&fields.ValueKind==System.Text.Json.JsonValueKind.Object)
             foreach(var property in fields.EnumerateObject())result[property.Name]=property.Value.ValueKind switch
             {
                 System.Text.Json.JsonValueKind.String=>property.Value.GetString(),System.Text.Json.JsonValueKind.Number=>property.Value.GetRawText(),
                 System.Text.Json.JsonValueKind.True=>true,System.Text.Json.JsonValueKind.False=>false,System.Text.Json.JsonValueKind.Null=>null,_=>property.Value.GetRawText()
             };
+            var subjectId=root.TryGetProperty("subjectId",out var id)&&id.TryGetGuid(out var parsedId)?parsedId:fallbackId;
+            var subjectType=root.TryGetProperty("subjectType",out var type)?type.GetString()??fallbackType:fallbackType;
+            var version=root.TryGetProperty("templateVersion",out var v)&&v.TryGetInt32(out var parsedVersion)?parsedVersion:(int?)null;
+            var copies=root.TryGetProperty("copies",out var c)&&c.TryGetInt32(out var parsedCopies)?parsedCopies:(int?)null;
+            var branding=ReadBranding(root);var calibration=ReadCalibration(root);
+            return new(true,subjectId,subjectType,version,copies,result,branding,calibration);
         }
         catch(System.Text.Json.JsonException){ }
-        return result;
+        return new(false,fallbackId,fallbackType,null,null,result,null,null);
     }
+    private static InovaGed.Application.Branding.ResolvedPrintBranding? ReadBranding(System.Text.Json.JsonElement root)
+    {
+        if(!root.TryGetProperty("branding",out var b)||b.ValueKind!=System.Text.Json.JsonValueKind.Object)return null;
+        return new(){HasBranding=true,ProfileId=GuidValue(b,"profileId"),ProfileName=StringValue(b,"profileName"),ClientName=StringValue(b,"clientName"),ContractName=StringValue(b,"contractName"),OrganizationName=StringValue(b,"organizationName"),PrimaryLogoAssetId=GuidValue(b,"primaryLogoAssetId"),SecondaryLogoAssetId=GuidValue(b,"secondaryLogoAssetId")};
+    }
+    private static InovaGed.Application.Labels.Canvas.LabelCanvasCalibration? ReadCalibration(System.Text.Json.JsonElement root)
+    {
+        if(!root.TryGetProperty("calibration",out var c)||c.ValueKind!=System.Text.Json.JsonValueKind.Object)return null;
+        return new(GuidValue(c,"profileId"),DecimalValue(c,"marginTopMm"),DecimalValue(c,"marginLeftMm"),DecimalValue(c,"offsetXMm"),DecimalValue(c,"offsetYMm"),DecimalValue(c,"scalePercent",100),DecimalValue(c,"gapXMm",4),DecimalValue(c,"gapYMm",4));
+    }
+    private static string? StringValue(System.Text.Json.JsonElement value,string name)=>value.TryGetProperty(name,out var x)&&x.ValueKind==System.Text.Json.JsonValueKind.String?x.GetString():null;
+    private static Guid? GuidValue(System.Text.Json.JsonElement value,string name)=>value.TryGetProperty(name,out var x)&&x.ValueKind==System.Text.Json.JsonValueKind.String&&Guid.TryParse(x.GetString(),out var id)?id:null;
+    private static decimal DecimalValue(System.Text.Json.JsonElement value,string name,decimal fallback=0)=>value.TryGetProperty(name,out var x)&&x.TryGetDecimal(out var number)?number:fallback;
+    private sealed record CanvasJobSnapshot(bool IsCanvas,Guid? SubjectId,string SubjectType,int? TemplateVersion,int? Copies,Dictionary<string,object?> Values,InovaGed.Application.Branding.ResolvedPrintBranding? Branding,InovaGed.Application.Labels.Canvas.LabelCanvasCalibration? Calibration);
 }

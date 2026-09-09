@@ -1,5 +1,6 @@
 using Dapper;
 using InovaGed.Application.Common.Database;
+using InovaGed.Application.Labels.Canvas;
 using InovaGed.Application.PhysicalArchive;
 using InovaGed.Infrastructure.Common.Database;
 using Microsoft.Extensions.Logging;
@@ -122,33 +123,27 @@ public sealed class LabelTemplateCatalogService(IDbConnectionFactory dbFactory, 
     {
         if (!await Schema.TableExistsAsync(db, "ged", "label_template_design", ct)) return [];
         const string sql = """
-select distinct on (template_key) template_key Code,template_name Name,print_mode Mode,
+select distinct on (d.template_key) d.template_key Code,d.template_name Name,d.print_mode Mode,
  subject_type SubjectType,
- coalesce(description,template_name) Description,coalesce(view_name,'DocumentLabel') ViewName,current_version::text Version,
- true SupportsBatch,true AllowsManualFields,is_system_template IsSystemTemplate,id Id,false IsDefault
-from ged.label_template_design
-where (tenant_id=@tenantId or tenant_id is null) and status='PUBLISHED' and reg_status in ('A','ACTIVE')
- and (@mode is null or print_mode=@mode)
-order by template_key,updated_at desc nulls last,tenant_id nulls last
+ coalesce(d.description,d.template_name) Description,coalesce(d.view_name,'DocumentLabel') ViewName,v.version_no::text Version,
+ true SupportsBatch,true AllowsManualFields,d.is_system_template IsSystemTemplate,d.id Id,false IsDefault
+from ged.label_template_design d
+join lateral (select version_no from ged.label_template_design_version x where x.template_design_id=d.id and x.status='PUBLISHED' and x.reg_status in ('A','ACTIVE') order by x.version_no desc limit 1) v on true
+where (d.tenant_id=@tenantId or d.tenant_id is null) and d.reg_status in ('A','ACTIVE')
+ and (@mode is null or d.print_mode=@mode)
+order by d.template_key,d.tenant_id nulls last,d.updated_at desc nulls last
 """;
         return (await db.QueryAsync<LabelTemplateOption>(new CommandDefinition(sql,new{tenantId,mode},cancellationToken:ct)))
             .Select(x => x with
             {
-                SubjectType = NormalizeDesignerSubjectType(x.SubjectType),
+                SubjectType = LabelCanvasSubjectTypeMapper.ToOperational(x.SubjectType),
                 SupportsBatch = true
             })
             .Where(x => subjectType is null || string.Equals(x.SubjectType, subjectType, StringComparison.OrdinalIgnoreCase))
             .ToList();
     }
 
-    public static string NormalizeDesignerSubjectType(string? subjectType) => subjectType?.Trim().ToUpperInvariant() switch
-    {
-        "BOX" or "LOCDESKBOX" => "BOX",
-        "DOCUMENT" or "FOLDER" or "MEDICALRECORD" or "PROCESS" or "LOCDESKFOLDER" => "DOCUMENT",
-        "BATCH" => "BATCH",
-        { Length: > 0 } value => value,
-        _ => "DOCUMENT"
-    };
+    public static string NormalizeDesignerSubjectType(string? subjectType) => LabelCanvasSubjectTypeMapper.ToOperational(subjectType);
 
     private static IReadOnlyList<LabelTemplateOption> FilterCatalog(IEnumerable<LabelTemplateOption> templates, string subjectType, string? mode) =>
         templates.Where(x => string.Equals(x.SubjectType, subjectType, StringComparison.OrdinalIgnoreCase)

@@ -55,12 +55,13 @@ public class LabelsController : GedControllerBase
     private readonly ILabelCanvasRenderService _canvasRenderer;
     private readonly ILabelCanvasValueResolver _canvasValues;
     private readonly IPrintBrandingResolver _printBrandingResolver;
+    private readonly ILabelCanvasPrintCoordinator _canvasPrintCoordinator;
 
     public LabelsController(IDbConnectionFactory dbFactory, ILabelPrintRegistrar printRegistrar,
         ILabelTemplateService templates, ILabelQrCodeService qrCodes, ILabelPayloadBuilder payloadBuilder, ILabelTemplateCatalogService catalog, InovaGed.Application.Labels.ILabelTemplateManager templateManager,
         ILabelPrintJobService printJobs, ILabelPdfRenderService pdf, ILabelPrintLogoResolver logoResolver,
         ILabelCanvasDesignService canvasDesigns, ILabelCanvasRenderService canvasRenderer, ILabelCanvasValueResolver canvasValues,
-        IPrintBrandingResolver printBrandingResolver,
+        IPrintBrandingResolver printBrandingResolver, ILabelCanvasPrintCoordinator canvasPrintCoordinator,
         ILogger<LabelsController> logger) : base(dbFactory)
     {
         _printRegistrar = printRegistrar;
@@ -69,7 +70,7 @@ public class LabelsController : GedControllerBase
         _payloadBuilder = payloadBuilder;
         _catalog = catalog;
         _templateManager = templateManager;
-        _printJobs=printJobs; _pdf=pdf; _logoResolver=logoResolver; _canvasDesigns=canvasDesigns; _canvasRenderer=canvasRenderer; _canvasValues=canvasValues; _printBrandingResolver=printBrandingResolver; _logger=logger;
+        _printJobs=printJobs; _pdf=pdf; _logoResolver=logoResolver; _canvasDesigns=canvasDesigns; _canvasRenderer=canvasRenderer; _canvasValues=canvasValues; _printBrandingResolver=printBrandingResolver; _canvasPrintCoordinator=canvasPrintCoordinator; _logger=logger;
     }
 
     [HttpGet("/Labels/Templates")]
@@ -134,7 +135,17 @@ public class LabelsController : GedControllerBase
 
     [HttpGet]
     public async Task<IActionResult> PrintPreview(Guid id,CancellationToken ct)
-    { var job=await _printJobs.GetAsync(TenantId,id,ct);if(job is null)return NotFound();if(UserId is not Guid uid)return Unauthorized();await _printJobs.MarkPreviewedAsync(TenantId,id,uid,ct);return View(job); }
+    {
+        var job=await _printJobs.GetAsync(TenantId,id,ct);if(job is null)return NotFound();if(UserId is not Guid uid)return Unauthorized();
+        await _printJobs.MarkPreviewedAsync(TenantId,id,uid,ct);
+        var template=await _catalog.TryGetTemplateAsync(TenantId,job.TemplateCode,ct);
+        if(string.Equals(template?.ViewName,"CanvasLabel",StringComparison.OrdinalIgnoreCase))
+        {
+            var rendered=await _pdf.GeneratePdfAsync(TenantId,id,ct);
+            return Content(Encoding.UTF8.GetString(rendered.Content),"text/html; charset=utf-8");
+        }
+        return View(job);
+    }
 
     [HttpPost,ValidateAntiForgeryToken]
     public async Task<IActionResult> CreatePrintJob(CreatePrintJobInput input,CancellationToken ct)
@@ -142,6 +153,17 @@ public class LabelsController : GedControllerBase
         if(UserId is not Guid uid)return Unauthorized();if(!ModelState.IsValid)return RedirectToAction(nameof(PrintWizard));
         var template=await _catalog.GetTemplateAsync(TenantId,input.TemplateCode,ct);
         if(!await _catalog.IsCompatibleAsync(TenantId,input.TemplateCode,input.SubjectType,ct))return BadRequest("Modelo incompatível.");
+        if(string.Equals(template.ViewName,"CanvasLabel",StringComparison.OrdinalIgnoreCase))
+        {
+            var context=new LabelCanvasPrintContext{TenantId=TenantId,TemplateKey=template.Code,OperationalSubjectType=input.SubjectType,SubjectId=input.SubjectId!.Value,BrandingProfileId=input.PrintBrandingProfileId,PrintProfileId=input.PrintProfileId,SelectedLogoAssetId=input.SelectedLogoAssetId,Copies=input.Copies,PrintedBy=User.Identity?.Name,AbsoluteBaseUrl=$"{Request.Scheme}://{Request.Host}"};
+            var prepared=await _canvasPrintCoordinator.PrepareAsync(context,false,ct);
+            if(prepared.Validation.HasErrors)return BadRequest("O template Canvas possui valores obrigatórios não resolvidos.");
+            var snapshot=_payloadBuilder.Build(prepared.CreateSnapshot(context,"JOB"));
+            var control=Convert.ToString(prepared.Values.GetValueOrDefault("boxCode")??prepared.Values.GetValueOrDefault("documentCode"));
+            var location=Convert.ToString(prepared.Values.GetValueOrDefault("location"));
+            var canvasJob=await _printJobs.CreateJobAsync(new(TenantId,uid,input.PrintMode,template.Code,template.Name,input.SubjectType,input.SubjectId,control,location,input.Copies,snapshot,input.ReprintReason,HttpContext.Connection.RemoteIpAddress?.ToString(),Request.Headers.UserAgent),ct);
+            return RedirectToAction(nameof(PrintPreview),new{id=canvasJob});
+        }
         using var db=await OpenAsync();dynamic? subject=input.SubjectType=="BOX"?await LoadBoxLabelAsync(db,input.SubjectId!.Value):await LoadDocumentLabelAsync(db,input.SubjectId!.Value);if(subject is null)return NotFound();
         var json=_payloadBuilder.Build(subject);var id=await _printJobs.CreateJobAsync(new(TenantId,uid,input.PrintMode,template.Code,template.Name,input.SubjectType,input.SubjectId,null,null,input.Copies,json,input.ReprintReason,HttpContext.Connection.RemoteIpAddress?.ToString(),Request.Headers.UserAgent),ct);
         return RedirectToAction(nameof(PrintPreview),new{id});
@@ -168,30 +190,12 @@ public class LabelsController : GedControllerBase
         using var db=await OpenAsync();var items=new List<LabelPrintBatchItem>();var order=0;
         if(string.Equals(template.ViewName,"CanvasLabel",StringComparison.OrdinalIgnoreCase))
         {
-            var design=await _canvasDesigns.GetAsync(TenantId,template.Code,ct);
-            if(design is null||!design.Status.Equals("PUBLISHED",StringComparison.OrdinalIgnoreCase))return BadRequest("O template Canvas precisa estar publicado.");
-            var branding=await _printBrandingResolver.ResolveAsync(TenantId,PrintBrandingContext.LabelTemplate,design.BrandingBindingKey??design.TemplateKey,input.PrintBrandingProfileId??design.DefaultBrandingProfileId,null,ct);
-            var calibration=await ResolveProfileAsync(input.PrintProfileId,ct);
             foreach(var sid in input.SubjectIds.Distinct())
             {
-                var operational=await _canvasValues.ResolveAsync(TenantId,design.SubjectType,input.SubjectType,sid,ct);
-                if(operational.Count==0)return NotFound();
-                var values=operational.ToDictionary(x=>x.Key,x=>x.Value,StringComparer.OrdinalIgnoreCase);
-                values.Add("clientName",branding.ClientName??design.ClientNameFallback);
-                values.Add("contractName",branding.ContractName??design.ContractNameFallback);
-                values.Add("organizationName",branding.OrganizationName??design.OrganizationNameFallback);
-                values.Add("headerTitle",branding.HeaderTitle??design.HeaderTitleFallback??"ARQUIVO CENTRAL");
-                values.Add("headerSubtitle",branding.HeaderSubtitle??design.HeaderSubtitleFallback);
-                values.Add("headerExtraLine",branding.HeaderExtraLine);values.Add("footerText",branding.FooterText);values.Add("footerExtraLine",branding.FooterExtraLine);
-                values.Add("primaryLogo",branding.PrimaryLogoAssetId is Guid primary?$"/Administration/BrandAssets/{primary}/File":null);
-                values.Add("secondaryLogo",branding.SecondaryLogoAssetId is Guid secondary?$"/Administration/BrandAssets/{secondary}/File":null);
-                values.Add("printedBy",User.Identity?.Name??"Usuário InovaGED");values["qrPayload"]=$"{Request.Scheme}://{Request.Host}/Labels/Trace/{sid}";
-                values.Add("__copies",input.Copies);values.Add("__marginTopMm",calibration.MarginTopMm);values.Add("__marginLeftMm",calibration.MarginLeftMm);
-                values.Add("__offsetXmm",calibration.OffsetXMm);values.Add("__offsetYmm",calibration.OffsetYMm);values.Add("__scalePercent",calibration.ScalePercent);
-                values.Add("__gapXmm",calibration.LabelGapXMm);values.Add("__gapYmm",calibration.LabelGapYMm);
-                /* snapshot abaixo preserva este dicionário por item */
-                var snapshot=new{layoutSource="CANVAS",isDesignerTemplate=true,templateCode=design.TemplateKey,templateName=design.TemplateName,templateVersion=design.CurrentVersion,snapshotHash=_canvasRenderer.ComputeSnapshotHash(design.DesignJson),subjectType=input.SubjectType,subjectId=sid,printMode=input.PrintMode,printChannel="BATCH",copies=input.Copies,branding=new{profileId=branding.ProfileId,profileName=branding.ProfileName,clientName=values["clientName"],contractName=values["contractName"],organizationName=values["organizationName"],primaryLogoAssetId=branding.PrimaryLogoAssetId,secondaryLogoAssetId=branding.SecondaryLogoAssetId},calibration=new{input.PrintProfileId,calibration.MarginTopMm,calibration.MarginLeftMm,calibration.OffsetXMm,calibration.OffsetYMm,calibration.ScalePercent,calibration.LabelGapXMm,calibration.LabelGapYMm},printedFields=values};
-                items.Add(new(sid,input.SubjectType,Convert.ToString(values.GetValueOrDefault("controlNumber")??values.GetValueOrDefault("boxCode")??values.GetValueOrDefault("documentCode")),Convert.ToString(values.GetValueOrDefault("location")),_payloadBuilder.Build(snapshot),order++));
+                var context=new LabelCanvasPrintContext{TenantId=TenantId,TemplateKey=template.Code,OperationalSubjectType=input.SubjectType,SubjectId=sid,BrandingProfileId=input.PrintBrandingProfileId,PrintProfileId=input.PrintProfileId,Copies=input.Copies,PrintedBy=User.Identity?.Name,AbsoluteBaseUrl=$"{Request.Scheme}://{Request.Host}"};
+                var prepared=await _canvasPrintCoordinator.PrepareAsync(context,false,ct);
+                if(prepared.Validation.HasErrors)return BadRequest($"A etiqueta de {sid} possui valores obrigatórios não resolvidos.");
+                items.Add(new(sid,input.SubjectType,Convert.ToString(prepared.Values.GetValueOrDefault("controlNumber")??prepared.Values.GetValueOrDefault("boxCode")??prepared.Values.GetValueOrDefault("documentCode")),Convert.ToString(prepared.Values.GetValueOrDefault("location")),_payloadBuilder.Build(prepared.CreateSnapshot(context,"BATCH")),order++));
             }
         }
         else foreach(var sid in input.SubjectIds.Distinct()){dynamic? row=input.SubjectType=="BOX"?await LoadBoxLabelAsync(db,sid):await LoadDocumentLabelAsync(db,sid);if(row is null)return NotFound();items.Add(new(sid,input.SubjectType,null,null,_payloadBuilder.Build(row),order++));}
@@ -466,30 +470,11 @@ public class LabelsController : GedControllerBase
 
     private async Task<IActionResult> RenderCanvasTemplateAsync(LabelPrintWizardInputModel input,LabelTemplateOption template,bool register,CancellationToken ct)
     {
-        var design=await _canvasDesigns.GetAsync(TenantId,template.Code,ct);
-        if(design is null||!design.Status.Equals("PUBLISHED",StringComparison.OrdinalIgnoreCase))
-        {
-            ModelState.AddModelError(nameof(input.TemplateCode),"O template canvas não está publicado ou não foi encontrado.");
-            await PopulatePrintWizardLookupsAsync(input,ct);return View("PrintWizard",input);
-        }
-        var resolvedValues=await _canvasValues.ResolveAsync(TenantId,design.SubjectType,input.SubjectType,input.SubjectId!.Value,ct);
-        if(resolvedValues.Count==0){ModelState.AddModelError(nameof(input.SubjectId),"Não foi possível localizar a origem selecionada.");await PopulatePrintWizardLookupsAsync(input,ct);return View("PrintWizard",input);}
-        var values=resolvedValues.ToDictionary(x=>x.Key,x=>x.Value,StringComparer.OrdinalIgnoreCase);var calibration=await ResolveProfileAsync(input.PrintProfileId,ct);
-        var branding=await _printBrandingResolver.ResolveAsync(TenantId,PrintBrandingContext.LabelTemplate,design.BrandingBindingKey??design.TemplateKey,input.PrintBrandingProfileId??design.DefaultBrandingProfileId,input.SelectedLogoAssetId,ct);
-        values["clientName"]=branding.ClientName??design.ClientNameFallback;
-        values["contractName"]=branding.ContractName??design.ContractNameFallback;
-        values["organizationName"]=branding.OrganizationName??design.OrganizationNameFallback;
-        values["headerTitle"]=branding.HeaderTitle??design.HeaderTitleFallback??"ARQUIVO CENTRAL";
-        values["headerSubtitle"]=branding.HeaderSubtitle??design.HeaderSubtitleFallback;
-        values["headerExtraLine"]=branding.HeaderExtraLine;
-        values["footerText"]=branding.FooterText;
-        values["footerExtraLine"]=branding.FooterExtraLine;
-        values["primaryLogo"]=branding.PrimaryLogoAssetId is Guid primaryLogo?$"/Administration/BrandAssets/{primaryLogo}/File":null;
-        values["secondaryLogo"]=branding.SecondaryLogoAssetId is Guid secondaryLogo?$"/Administration/BrandAssets/{secondaryLogo}/File":null;
-        values["printedBy"]=User.Identity?.Name??"Usuário InovaGED";values["qrPayload"]=$"{Request.Scheme}://{Request.Host}/Labels/Trace/{input.SubjectId}";values["__copies"]=input.Copies;
-        values["__marginTopMm"]=calibration.MarginTopMm;values["__marginLeftMm"]=calibration.MarginLeftMm;values["__offsetXmm"]=calibration.OffsetXMm;values["__offsetYmm"]=calibration.OffsetYMm;values["__scalePercent"]=calibration.ScalePercent;values["__gapXmm"]=calibration.LabelGapXMm;values["__gapYmm"]=calibration.LabelGapYMm;
-        var rendered=_canvasRenderer.Render(design,values,register);
-        if(rendered.Validation.HasErrors)
+        var context=new LabelCanvasPrintContext{TenantId=TenantId,TemplateKey=template.Code,OperationalSubjectType=input.SubjectType,SubjectId=input.SubjectId!.Value,BrandingProfileId=input.PrintBrandingProfileId,PrintProfileId=input.PrintProfileId,SelectedLogoAssetId=input.SelectedLogoAssetId,Copies=input.Copies,RegisterTrace=register,ReprintReason=input.ReprintReason,PrintedBy=User.Identity?.Name,AbsoluteBaseUrl=$"{Request.Scheme}://{Request.Host}"};
+        LabelCanvasPreparedRender prepared;
+        try{prepared=await _canvasPrintCoordinator.PrepareAsync(context,register,ct);}
+        catch(KeyNotFoundException exception){ModelState.AddModelError(nameof(input.SubjectId),exception.Message);await PopulatePrintWizardLookupsAsync(input,ct);return View("PrintWizard",input);}
+        if(prepared.Validation.HasErrors)
         {
             ModelState.AddModelError(nameof(input.TemplateCode),"O template canvas publicado contém erros críticos. Solicite a revisão do administrador.");
             await PopulatePrintWizardLookupsAsync(input,ct);return View("PrintWizard",input);
@@ -497,16 +482,17 @@ public class LabelsController : GedControllerBase
         if(register)
         {
             if(UserId is not Guid userId)return Unauthorized();
-            var snapshot=new{layoutSource="CANVAS",isDesignerTemplate=true,templateCode=design.TemplateKey,templateName=design.TemplateName,templateVersion=design.CurrentVersion,snapshotHash=rendered.SnapshotHash,subjectType=input.SubjectType,subjectId=input.SubjectId,printMode=input.PrintMode,printChannel="WEB",copies=input.Copies,branding=new{profileId=branding.ProfileId,profileName=branding.ProfileName,clientName=values["clientName"],contractName=values["contractName"],organizationName=values["organizationName"],headerTitle=values["headerTitle"],headerSubtitle=values["headerSubtitle"],primaryLogoAssetId=branding.PrimaryLogoAssetId,secondaryLogoAssetId=branding.SecondaryLogoAssetId},calibration=new{input.PrintProfileId,calibration.MarginTopMm,calibration.MarginLeftMm,calibration.OffsetXMm,calibration.OffsetYMm,calibration.ScalePercent,calibration.LabelGapXMm,calibration.LabelGapYMm},printedFields=values};
-            var request=new LabelPrintRequest(TenantId,userId,input.SubjectType,input.SubjectId.Value,design.TemplateKey,_payloadBuilder.Build(snapshot),HttpContext.Connection.RemoteIpAddress?.ToString(),Request.Headers.UserAgent.ToString(),input.ReprintReason)
-            {PrintChannel="WEB",PrintMode=input.PrintMode,TemplateVersion=design.CurrentVersion,CalibrationProfileId=input.PrintProfileId,TraceCode=Convert.ToString(values.GetValueOrDefault("traceCode"))};
+            var request=new LabelPrintRequest(TenantId,userId,input.SubjectType,input.SubjectId.Value,prepared.Design.TemplateKey,_payloadBuilder.Build(prepared.CreateSnapshot(context,"WEB")),HttpContext.Connection.RemoteIpAddress?.ToString(),Request.Headers.UserAgent.ToString(),input.ReprintReason)
+            {PrintChannel="WEB",PrintMode=input.PrintMode,TemplateVersion=prepared.TemplateVersion,CalibrationProfileId=input.PrintProfileId,TraceCode=Convert.ToString(prepared.Values.GetValueOrDefault("traceCode"))};
             try
             {
-                var issued=await _printRegistrar.RegisterAsync(request,ct);values["traceCode"]=issued.Trace.TraceCode;values["qrPayload"]=$"{Request.Scheme}://{Request.Host}{issued.ShortUrl}";rendered=_canvasRenderer.Render(design,values,true);
+                var issued=await _printRegistrar.RegisterAsync(request,ct);
+                context=new LabelCanvasPrintContext{TenantId=context.TenantId,TemplateKey=context.TemplateKey,OperationalSubjectType=context.OperationalSubjectType,SubjectId=context.SubjectId,BrandingProfileId=context.BrandingProfileId,PrintProfileId=context.PrintProfileId,SelectedLogoAssetId=context.SelectedLogoAssetId,Copies=context.Copies,RegisterTrace=true,ReprintReason=context.ReprintReason,TemplateVersion=prepared.TemplateVersion,RegisteredTraceCode=issued.Trace.TraceCode,RegisteredTraceUrl=issued.ShortUrl,AbsoluteBaseUrl=context.AbsoluteBaseUrl,PrintedBy=context.PrintedBy,ResolvedValues=prepared.Values};
+                prepared=await _canvasPrintCoordinator.PrepareAsync(context,true,ct);
             }
             catch(InvalidOperationException exception){ModelState.AddModelError(nameof(input.ReprintReason),exception.Message);await PopulatePrintWizardLookupsAsync(input,ct);return View("PrintWizard",input);}
         }
-        return Content(rendered.Html,"text/html; charset=utf-8");
+        return Content(prepared.Html,"text/html; charset=utf-8");
     }
 
     private async Task<IReadOnlyList<SelectOptionViewModel>> LoadSubjectOptionsAsync(string subjectType, CancellationToken ct)

@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using InovaGed.Application.Branding;
 
 namespace InovaGed.Application.Labels.Canvas;
 
@@ -38,7 +39,7 @@ public sealed class LabelCanvasDesignDto
 
 public sealed class LabelCanvasDocumentDto
 {
-    public int SchemaVersion { get; set; } = 1;
+    public int SchemaVersion { get; set; } = 2;
     public LabelCanvasSettingsDto Canvas { get; set; } = new();
     public List<LabelCanvasElementDto> Elements { get; set; } = [];
     public LabelCanvasBindingsDto Bindings { get; set; } = new();
@@ -73,10 +74,12 @@ public sealed class LabelCanvasElementDto
     public int ZIndex { get; set; }
     public bool Locked { get; set; }
     public bool Visible { get; set; } = true;
+    public string? GroupId { get; set; }
     public string? Text { get; set; }
     public LabelCanvasStyleDto Style { get; set; } = new();
     public LabelCanvasBindingDto? Binding { get; set; }
     public LabelCanvasElementValidationDto Validation { get; set; } = new();
+    public LabelCanvasVisibilityConditionDto VisibilityCondition { get; set; } = new();
     public List<LabelCanvasElementDto>? Children { get; set; }
 }
 
@@ -92,6 +95,12 @@ public sealed class LabelCanvasStyleDto
     public decimal BorderRadiusMm { get; set; }
     public decimal PaddingMm { get; set; }
     public bool Wrap { get; set; } = true;
+    public string FontStyle { get; set; } = "normal";
+    public string TextDecoration { get; set; } = "none";
+    public decimal LineHeight { get; set; } = 1.2m;
+    public decimal LetterSpacing { get; set; }
+    public decimal Opacity { get; set; } = 1m;
+    public string VerticalAlign { get; set; } = "top";
 }
 
 public sealed class LabelCanvasBindingDto
@@ -99,6 +108,18 @@ public sealed class LabelCanvasBindingDto
     public string? Field { get; set; }
     public string? Asset { get; set; }
     public string? Fallback { get; set; }
+    public string? Prefix { get; set; }
+    public string? Suffix { get; set; }
+    public string Format { get; set; } = "NONE";
+    public string EmptyBehavior { get; set; } = "FALLBACK";
+    public int? PadLength { get; set; }
+}
+
+public sealed class LabelCanvasVisibilityConditionDto
+{
+    public string Operator { get; set; } = "ALWAYS";
+    public string? Field { get; set; }
+    public string? Value { get; set; }
 }
 
 public sealed class LabelCanvasElementValidationDto
@@ -163,6 +184,8 @@ public interface ILabelCanvasDesignService
 {
     Task<IReadOnlyList<LabelCanvasDesignDto>> ListAsync(Guid tenantId, CancellationToken cancellationToken = default);
     Task<LabelCanvasDesignDto?> GetAsync(Guid tenantId, string templateKey, CancellationToken cancellationToken = default);
+    Task<LabelCanvasDesignDto?> GetPublishedAsync(Guid tenantId, string templateKey, int? versionNo = null, CancellationToken cancellationToken = default);
+    Task<LabelCanvasDesignDto> BeginRevisionAsync(Guid tenantId, Guid userId, string templateKey, string? ipAddress, string? userAgent, CancellationToken cancellationToken = default);
     Task<LabelCanvasDesignDto> CreateDraftAsync(Guid tenantId, Guid userId, LabelCanvasSaveRequest request, string? ipAddress, string? userAgent, CancellationToken cancellationToken = default);
     Task<LabelCanvasDesignDto> SaveDraftAsync(Guid tenantId, Guid userId, LabelCanvasSaveRequest request, string? ipAddress, string? userAgent, CancellationToken cancellationToken = default);
     Task<LabelCanvasDesignDto> PublishAsync(Guid tenantId, Guid userId, LabelCanvasPublishRequest request, string? ipAddress, string? userAgent, CancellationToken cancellationToken = default);
@@ -173,6 +196,76 @@ public interface ILabelCanvasDesignService
     Task<LabelCanvasDesignDto> DuplicateVersionAsync(Guid tenantId, Guid userId, string templateKey, Guid versionId, string? ipAddress, string? userAgent, CancellationToken cancellationToken = default);
     Task<LabelCanvasDesignDto> RestoreVersionAsync(Guid tenantId, Guid userId, string templateKey, Guid versionId, string? ipAddress, string? userAgent, CancellationToken cancellationToken = default);
     Task RecordEventAsync(Guid tenantId, Guid? userId, Guid designId, string eventType, string? message, object? payload, string? ipAddress, string? userAgent, CancellationToken cancellationToken = default);
+}
+
+public static class LabelCanvasSubjectTypeMapper
+{
+    public static string ToOperational(string? subjectType) => subjectType?.Trim().ToUpperInvariant() switch
+    {
+        "BOX" or "LOCDESKBOX" => "BOX",
+        "DOCUMENT" or "FOLDER" or "MEDICALRECORD" or "PROCESS" or "LOCDESKFOLDER" => "DOCUMENT",
+        "BATCH" => "BATCH",
+        { Length: > 0 } value => value,
+        _ => "DOCUMENT"
+    };
+}
+
+public sealed record LabelCanvasCalibration(
+    Guid? ProfileId,
+    decimal MarginTopMm,
+    decimal MarginLeftMm,
+    decimal OffsetXMm,
+    decimal OffsetYMm,
+    decimal ScalePercent,
+    decimal GapXMm,
+    decimal GapYMm);
+
+public sealed class LabelCanvasPrintContext
+{
+    public Guid TenantId { get; init; }
+    public string TemplateKey { get; init; } = "";
+    public string SubjectType { get; init; } = "Document";
+    public string OperationalSubjectType { get; init; } = "DOCUMENT";
+    public Guid SubjectId { get; init; }
+    public Guid? BrandingProfileId { get; init; }
+    public Guid? PrintProfileId { get; init; }
+    public Guid? SelectedLogoAssetId { get; init; }
+    public int Copies { get; init; } = 1;
+    public bool RegisterTrace { get; init; }
+    public string? ReprintReason { get; init; }
+    public int? TemplateVersion { get; init; }
+    public string? RegisteredTraceCode { get; init; }
+    public string? RegisteredTraceUrl { get; init; }
+    public string? AbsoluteBaseUrl { get; init; }
+    public string? PrintedBy { get; init; }
+    public IReadOnlyDictionary<string, object?>? ResolvedValues { get; init; }
+    public ResolvedPrintBranding? BrandingSnapshot { get; init; }
+    public LabelCanvasCalibration? CalibrationSnapshot { get; init; }
+}
+
+public sealed record LabelCanvasPreparedRender(
+    LabelCanvasDesignDto Design,
+    int TemplateVersion,
+    IReadOnlyDictionary<string, object?> Values,
+    ResolvedPrintBranding Branding,
+    LabelCanvasCalibration Calibration,
+    string Html,
+    string SnapshotHash,
+    LabelCanvasValidationResult Validation)
+{
+    public IReadOnlyDictionary<string,object?> CreateSnapshot(LabelCanvasPrintContext context,string printChannel)=>new Dictionary<string,object?>
+    {
+        ["layoutSource"]="CANVAS",["isDesignerTemplate"]=true,["templateCode"]=Design.TemplateKey,["templateName"]=Design.TemplateName,
+        ["templateVersion"]=TemplateVersion,["snapshotHash"]=SnapshotHash,["subjectType"]=context.OperationalSubjectType,["subjectId"]=context.SubjectId,
+        ["printChannel"]=printChannel,["copies"]=context.Copies,["branding"]=new{profileId=Branding.ProfileId,profileName=Branding.ProfileName,clientName=Values.GetValueOrDefault("clientName"),contractName=Values.GetValueOrDefault("contractName"),organizationName=Values.GetValueOrDefault("organizationName"),headerTitle=Values.GetValueOrDefault("headerTitle"),headerSubtitle=Values.GetValueOrDefault("headerSubtitle"),headerExtraLine=Values.GetValueOrDefault("headerExtraLine"),footerText=Values.GetValueOrDefault("footerText"),footerExtraLine=Values.GetValueOrDefault("footerExtraLine"),primaryLogoAssetId=Branding.PrimaryLogoAssetId,secondaryLogoAssetId=Branding.SecondaryLogoAssetId},
+        ["calibration"]=Calibration,["printedFields"]=Values,["traceCode"]=Values.TryGetValue("traceCode",out var trace)?trace:null
+    };
+}
+
+public interface ILabelCanvasPrintCoordinator
+{
+    Task<LabelCanvasPreparedRender> PrepareAsync(LabelCanvasPrintContext context, bool printMode = false, CancellationToken cancellationToken = default);
+    Task<LabelCanvasPreparedRender> PrepareBatchAsync(IReadOnlyList<LabelCanvasPrintContext> contexts, bool printMode = false, CancellationToken cancellationToken = default);
 }
 
 public interface ILabelCanvasRenderService
