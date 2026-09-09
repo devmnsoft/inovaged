@@ -83,22 +83,27 @@ public sealed class LabelCanvasRenderService(ILogger<LabelCanvasRenderService> l
         var settings=values.FirstOrDefault() ?? new Dictionary<string,object?>();
         var offsetX=DecimalValue(settings,"__offsetXmm",0);var offsetY=DecimalValue(settings,"__offsetYmm",0);var scale=DecimalValue(settings,"__scalePercent",100)/100m;
         var marginTop=DecimalValue(settings,"__marginTopMm",0);var marginLeft=DecimalValue(settings,"__marginLeftMm",0);var gapX=DecimalValue(settings,"__gapXmm",4);var gapY=DecimalValue(settings,"__gapYmm",4);
+        var expanded=values.SelectMany(v=>Enumerable.Repeat(v,v.TryGetValue("__copies",out var raw)&&int.TryParse(Convert.ToString(raw),out var count)?Math.Clamp(count,1,100):1)).ToArray();
+        LabelCanvasSheetLayout sheet;
+        try{sheet=LabelCanvasSheetLayoutCalculator.Calculate(new(design.PaperKind,design.Orientation,null,null,document.Canvas.WidthMm,document.Canvas.HeightMm,marginTop,0,0,marginLeft,gapX,gapY,scale*100m,expanded.Length));}
+        catch(ArgumentException exception){validation.Issues.Add(new(LabelCanvasSheetLayoutCalculator.DoesNotFitError,"ERROR",exception.Message));sheet=new(0,0,0,document.Canvas.WidthMm*scale,document.Canvas.HeightMm*scale,0,0,0,LabelCanvasSheetLayoutCalculator.DoesNotFitError);}
+        if(!sheet.IsValid)validation.Issues.Add(new(LabelCanvasSheetLayoutCalculator.DoesNotFitError,"ERROR","Este modelo não cabe no perfil de impressão selecionado."));
         var html=new StringBuilder();
         html.Append("<!doctype html><html lang=\"pt-BR\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>")
             .Append(WebUtility.HtmlEncode(design.TemplateName)).Append("</title><style>")
-            .Append("*{box-sizing:border-box}html,body{margin:0;background:#eef1f6;font-family:Arial,sans-serif}.label-sheet{align-content:start;display:grid;gap:").Append(Mm(gapY)).Append("mm ").Append(Mm(gapX)).Append("mm;justify-content:center;min-height:100vh;padding:12mm}.label-sheet.two-up{grid-template-columns:repeat(2,max-content)}.label-canvas-output{background:#fff;position:relative;overflow:hidden;box-shadow:0 4mm 12mm #1a243322;transform:translate(").Append(Mm(offsetX)).Append("mm,").Append(Mm(offsetY)).Append("mm) scale(").Append(Mm(scale)).Append(");transform-origin:top left}.label-element{position:absolute;overflow:hidden;white-space:pre-wrap}.label-qr svg,.label-barcode svg{width:100%;height:100%;display:block}@media print{@page{size:A4 portrait;margin:0}.label-sheet{padding:").Append(Mm(marginTop)).Append("mm 0 0 ").Append(Mm(marginLeft)).Append("mm;background:#fff;min-height:0}.label-canvas-output{box-shadow:none;break-inside:avoid}}")
+            .Append("*{box-sizing:border-box}html,body{margin:0;background:#eef1f6;font-family:Arial,sans-serif}.label-page{width:").Append(Mm(sheet.PaperWidthMm)).Append("mm;height:").Append(Mm(sheet.PaperHeightMm)).Append("mm;padding:").Append(Mm(marginTop)).Append("mm 0 0 ").Append(Mm(marginLeft)).Append("mm;display:grid;grid-template-columns:repeat(").Append(Math.Max(1,sheet.Columns)).Append(",").Append(Mm(sheet.EffectiveLabelWidth)).Append("mm);grid-auto-rows:").Append(Mm(sheet.EffectiveLabelHeight)).Append("mm;gap:").Append(Mm(gapY)).Append("mm ").Append(Mm(gapX)).Append("mm;align-content:start;break-after:page;background:#fff}.label-physical-slot{width:").Append(Mm(sheet.EffectiveLabelWidth)).Append("mm;height:").Append(Mm(sheet.EffectiveLabelHeight)).Append("mm;overflow:hidden}.label-canvas-output{background:#fff;position:relative;overflow:hidden;box-shadow:0 4mm 12mm #1a243322;transform:translate(").Append(Mm(offsetX)).Append("mm,").Append(Mm(offsetY)).Append("mm) scale(").Append(Mm(scale)).Append(");transform-origin:top left}.label-element{position:absolute;overflow:hidden;white-space:pre-wrap}.label-qr svg,.label-barcode svg{width:100%;height:100%;display:block}@media print{@page{size:").Append(WebUtility.HtmlEncode(design.PaperKind)).Append(' ').Append(WebUtility.HtmlEncode(design.Orientation)).Append(";margin:0}.label-canvas-output{box-shadow:none}}")
             .Append("</style></head><body>");
-        html.Append("<main class=\"label-sheet").Append(document.Canvas.WidthMm<=100?" two-up":"").Append("\">");
-        foreach(var itemValues in values)
+        html.Append("<main class=\"label-sheet\">");
+        var labelsPerPage=Math.Max(1,sheet.LabelsPerPage);
+        for(var index=0;index<expanded.Length;index++)
         {
-            var copies=itemValues.TryGetValue("__copies",out var rawCopies)&&int.TryParse(Convert.ToString(rawCopies),out var requested)?Math.Clamp(requested,1,100):1;
-            for(var copy=0;copy<copies;copy++)
-            {
+            if(index%labelsPerPage==0)html.Append("<section class=\"label-page\">");
+            var itemValues=expanded[index];html.Append("<div class=\"label-physical-slot\">");
                 html.Append("<section class=\"label-canvas-output\" data-template-key=\"").Append(WebUtility.HtmlEncode(design.TemplateKey)).Append("\" data-snapshot-hash=\"").Append(ComputeSnapshotHash(design.DesignJson))
                     .Append("\" style=\"width:").Append(Mm(document.Canvas.WidthMm)).Append("mm;height:").Append(Mm(document.Canvas.HeightMm)).Append("mm\">");
                 foreach(var element in document.Elements.Where(x=>x.Visible&&IsVisible(x,itemValues)).OrderBy(x=>x.ZIndex))AppendElement(html,element,itemValues);
-                html.Append("</section>");
-            }
+                html.Append("</section></div>");
+            if(index%labelsPerPage==labelsPerPage-1||index==expanded.Length-1)html.Append("</section>");
         }
         html.Append("</main>");
         if(printMode) html.Append("<script>addEventListener('load',()=>window.print())</script>");
@@ -204,6 +209,7 @@ public sealed class LabelCanvasRenderService(ILogger<LabelCanvasRenderService> l
 
 public static class LabelCanvasSafeImageSource
 {
+    public const int MaxInlineImageBytes = 1024 * 1024;
     public static bool IsSafe(string? source)
     {
         if(string.IsNullOrWhiteSpace(source))return false;
@@ -213,7 +219,7 @@ public static class LabelCanvasSafeImageSource
         try
         {
             var bytes=Convert.FromBase64String(match.Groups[2].Value);var kind=match.Groups[1].Value.ToLowerInvariant();
-            return kind switch
+            return bytes.Length<=MaxInlineImageBytes && kind switch
             {
                 "png"=>bytes.Length>=8&&bytes.AsSpan(0,8).SequenceEqual(new byte[]{137,80,78,71,13,10,26,10}),
                 "jpeg"=>bytes.Length>=3&&bytes[0]==0xff&&bytes[1]==0xd8&&bytes[2]==0xff,
