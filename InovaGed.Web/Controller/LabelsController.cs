@@ -290,6 +290,9 @@ public class LabelsController : GedControllerBase
     [HttpGet]
     public IActionResult Index() => View();
 
+    [HttpGet("/Labels/Guide")]
+    public IActionResult Guide() => View();
+
     [HttpGet("/Labels/Demo")]
     public IActionResult Demo()
     {

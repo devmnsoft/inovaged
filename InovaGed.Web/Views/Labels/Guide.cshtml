@@ -1,0 +1,23 @@
+@{ ViewData["Title"]="Guia de Etiquetas"; ViewData["WorkspaceVariant"]="wide"; }
+@section Styles { <link rel="stylesheet" href="~/css/labels-studio.css" asp-append-version="true" /> }
+<main class="label-guide">
+ <header class="label-guide-hero"><div><small>Manual do usuário</small><h1>Guia de Etiquetas</h1><p>Aprenda a imprimir, criar modelos e acompanhar etiquetas sem precisar conhecer termos técnicos.</p></div><a class="ig-button ig-button--secondary" asp-action="Index">Voltar à central</a></header>
+ <section class="label-guide-example"><h2>Quero criar uma etiqueta para uma caixa</h2><ol><li>Escolha “Caixa”</li><li>Escolha um modelo</li><li>Escolha o cliente</li><li>Confira a prévia</li><li>Imprima</li></ol></section>
+ <section class="label-guide-grid" aria-label="Conteúdo do guia">
+ @{ var topics = new[]{
+ ("O que são etiquetas no InovaGED","Identificam caixas, documentos, pastas, prontuários e processos com dados confiáveis."),
+ ("Como imprimir uma etiqueta","Abra Nova impressão e avance pelas cinco etapas até a conferência."),
+ ("Como criar um modelo","Escolha a finalidade e um ponto de partida; depois organize os elementos visualmente."),
+ ("Como personalizar o cliente","Selecione um perfil visual para aplicar cliente, contrato, organização e logos oficiais."),
+ ("Como inserir campos dinâmicos","Na aba Campos, arraste o dado desejado. Ele será preenchido no momento da impressão."),
+ ("Como usar QR Code","Adicione QR Code e vincule o conteúdo de rastreabilidade recomendado."),
+ ("Como usar código de barras","Adicione Código de barras para leitores compatíveis com Code 128."),
+ ("Como publicar um modelo","Valide o checklist, descreva a alteração e publique uma versão imutável."),
+ ("Como criar uma nova revisão","A revisão preserva a versão publicada enquanto você prepara mudanças."),
+ ("Como imprimir em lote","Selecione vários registros, modelo, cópias e revise antes de gerar."),
+ ("Como calibrar a impressão","Imprima a folha de teste em escala 100% e corrija alinhamento somente se necessário."),
+ ("Como funciona a rastreabilidade","Histórico, justificativas de reimpressão e QR preservam a trilha de auditoria."),
+ ("Como corrigir problemas comuns","Confira modelo, origem, escala 100%, papel, margens, logo e conexão antes de tentar novamente.")}; var n=0; }
+ @foreach(var topic in topics){n++;<article class="label-guide-card"><span>@n</span><h2>@topic.Item1</h2><p>@topic.Item2</p></article>}
+ </section>
+</main>

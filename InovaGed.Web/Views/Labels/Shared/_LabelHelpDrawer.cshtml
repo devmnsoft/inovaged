@@ -1,0 +1,20 @@
+@{
+    var context = Convert.ToString(ViewData["LabelHelpContext"])?.ToUpperInvariant() ?? "CENTRAL";
+    var help = context switch {
+        "PRINT" => ("Imprimir etiquetas", "Siga as cinco etapas. Confira a prévia e o checklist antes de imprimir."),
+        "DESIGNER" => ("Criar e editar modelos", "Adicione conteúdo à esquerda, organize a etiqueta no centro e edite o elemento à direita."),
+        "BRANDING" => ("Identidade visual", "Cadastre perfis oficiais para aplicar cliente, contrato, organização e logos."),
+        "CALIBRATION" => ("Calibrar impressão", "Use uma folha de teste ao trocar de impressora, papel ou escala."),
+        "BATCH" => ("Imprimir em lote", "Selecione vários registros, revise a quantidade e gere uma única operação."),
+        "HISTORY" => ("Histórico e rastreabilidade", "Reimpressões exigem justificativa. O QR permite conferir a situação da etiqueta."),
+        _ => ("Central de Etiquetas", "Comece por uma das quatro ações principais. Configurações ficam recolhidas para não atrapalhar a operação.")
+    };
+}
+<button type="button" class="label-help-trigger" data-label-help-open aria-controls="label-help-drawer" aria-expanded="false"><app-icon name="help-circle" size="17" decorative="true" /> Ajuda</button>
+<div class="label-help-backdrop" data-label-help-close hidden></div>
+<aside id="label-help-drawer" class="label-help-drawer" aria-labelledby="label-help-title" aria-hidden="true" tabindex="-1">
+ <header><div><small>Ajuda contextual</small><h2 id="label-help-title">@help.Item1</h2></div><button type="button" data-label-help-close aria-label="Fechar ajuda"><app-icon name="x" size="18" decorative="true" /></button></header>
+ <p>@help.Item2</p>
+ @if(context=="DESIGNER"){<button type="button" class="ig-button ig-button--secondary" data-designer-tour-start>Rever introdução</button><details><summary>Atalhos</summary><ul><li>Ctrl+S — salvar</li><li>Ctrl+Z / Ctrl+Y — desfazer/refazer</li><li>Ctrl+C / Ctrl+V — copiar/colar</li><li>Delete — excluir</li><li>Setas — mover</li></ul></details>}
+ <a class="ig-button ig-button--primary" asp-controller="Labels" asp-action="Guide">Ver guia completo</a>
+</aside>
