@@ -28,32 +28,38 @@ public sealed class LabelDesignerController(IDbConnectionFactory dbFactory, ILab
         {
             var list = await designs.ListAsync(TenantId, ct);
             var profiles = await brandingProfiles.ListAsync(TenantId, ct);
-            var profilesDict = profiles.ToDictionary(p => p.ProfileId, p => p);
+            var validProfiles = profiles.Where(p => p.ProfileId is not null && p.ProfileId != Guid.Empty).ToList();
+            var duplicateProfileIds = validProfiles.GroupBy(p => p.ProfileId!.Value).Where(g => g.Count() > 1).Select(g => g.Key).ToList();
+            if (duplicateProfileIds.Count > 0)
+                logger.LogWarning("Foram encontrados {Count} identificadores de perfil de branding duplicados ao listar modelos de etiqueta.", duplicateProfileIds.Count);
+            var profilesDict = validProfiles.GroupBy(p => p.ProfileId!.Value).ToDictionary(g => g.Key, g => g.First());
             
             var vm = list.Select(d =>
             {
                 var profile = d.DefaultBrandingProfileId.HasValue && profilesDict.TryGetValue(d.DefaultBrandingProfileId.Value, out var p) ? p : null;
-                var clientName = profile?.ClientName ?? d.ClientNameFallback;
-                if (string.IsNullOrWhiteSpace(clientName)) clientName = "Sistema";
-                
-                var brandingName = profile?.ProfileName;
-                if (string.IsNullOrWhiteSpace(brandingName)) brandingName = "Genérico";
-                
-                var health = d.Status == "DRAFT" ? "Atenção" : "Pronto";
+                var isLegacy = d.LabelContext.Equals("LEGACY", StringComparison.OrdinalIgnoreCase);
+                var clientName = FirstNonEmpty(profile?.ClientName, d.ClientNameFallback);
+                clientName ??= isLegacy ? "Compatibilidade" : d.IsSystemTemplate ? "Modelo padrão" : "Sem identidade definida";
+
+                var brandingName = FirstNonEmpty(profile?.ProfileName);
+                brandingName ??= profile is not null || d.IsSystemTemplate ? "Padrão automático" : "Sem perfil definido";
                 
                 return new LabelTemplateListItemViewModel
                 {
                     TemplateKey = d.TemplateKey,
                     Name = d.TemplateName,
-                    Purpose = d.SubjectType,
+                    Purpose = FriendlyPurpose(d.SubjectType),
                     ClientName = clientName,
                     BrandingProfileName = brandingName,
                     Status = d.Status,
                     Version = d.CurrentVersion.ToString(),
                     Dimensions = $"{Math.Round(d.WidthMm)} × {Math.Round(d.HeightMm)} mm",
-                    Health = health,
-                    IsSystem = false,
-                    IsLegacy = false
+                    Health = d.Status.Equals("DRAFT", StringComparison.OrdinalIgnoreCase) ? "Em edição" : "Pronto",
+                    IsSystem = d.IsSystemTemplate,
+                    IsLegacy = isLegacy,
+                    UpdatedAt = d.UpdatedAt ?? d.CreatedAt,
+                    CanEdit = d.CanEdit,
+                    BrandingProfileId = profile?.ProfileId
                 };
             }).ToList();
             
@@ -66,6 +72,26 @@ public sealed class LabelDesignerController(IDbConnectionFactory dbFactory, ILab
             return View("~/Views/Labels/Designer/Index.cshtml", new List<LabelTemplateListItemViewModel>());
         }
     }
+
+    private static string? FirstNonEmpty(params string?[] values) =>
+        values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim();
+
+    private static string FriendlyPurpose(string? purpose) => purpose?.Trim().ToUpperInvariant() switch
+    {
+        "BOX" => "Caixa",
+        "DOCUMENT" => "Documento",
+        "FOLDER" => "Pasta",
+        "MEDICALRECORD" => "Prontuário",
+        "PROCESS" => "Processo",
+        "MANUALLABEL" => "Etiqueta avulsa",
+        "LOCDESKFOLDER" => "Pasta antiga",
+        "LOCDESKBOX" => "Caixa antiga",
+        "PHYSICALLOCATION" => "Localização física",
+        "CLASSIFICATION" => "Classificação",
+        "LOAN" => "Empréstimo",
+        "PROTOCOL" => "Protocolo",
+        _ => "Uso geral"
+    };
 
     [HttpGet("/Labels/Designer/New")]
     [Authorize(Policy=AppPolicies.LabelDesignerCreate)]

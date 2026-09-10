@@ -1,7 +1,158 @@
-@model IReadOnlyList<InovaGed.Application.Labels.Canvas.LabelCanvasDesignDto>
-@{ViewData["Title"]="Modelos de etiqueta";ViewData["LabelHelpContext"]="DESIGNER";string Purpose(string x)=>x switch{"Box"=>"Caixa","Document"=>"Documento","Folder"=>"Pasta","MedicalRecord"=>"Prontuário","Process"=>"Processo","LocDeskFolder"=>"Pasta antiga","LocDeskBox"=>"Caixa antiga",_=>"Uso geral"};}
-@section Styles {<link rel="stylesheet" href="~/css/labels-designer.css" asp-append-version="true"/><link rel="stylesheet" href="~/css/labels-studio.css" asp-append-version="true"/>}
-<main class="label-designer-page"><header class="label-designer-hero"><div><small>Modelos de etiqueta</small><h1>Seus modelos</h1><p>Crie, edite e publique layouts sem expor configurações técnicas.</p></div><div class="designer-actions"><partial name="~/Views/Labels/Shared/_LabelHelpDrawer.cshtml"/><a class="ig-button ig-button--secondary" asp-controller="Labels" asp-action="Index">Voltar</a><a class="ig-button ig-button--primary" asp-action="New">Novo modelo</a></div></header>
-<section class="designer-filters"><label><span class="visually-hidden">Buscar modelo</span><input type="search" placeholder="Buscar modelo..." data-model-search/></label><nav aria-label="Filtros"><button class="is-active" data-model-filter="all">Todos</button><button data-model-filter="draft">Rascunhos</button><button data-model-filter="published">Publicados</button><button data-model-filter="mine">Meus modelos</button><button data-model-filter="system">Modelos do sistema</button><button data-model-filter="legacy">Antigos</button></nav></section>
-@foreach(var group in new[]{("mine","Meus modelos",Model.Where(x=>!x.IsSystemTemplate&&x.LabelContext!="LEGACY")),("system","Modelos padrão",Model.Where(x=>x.IsSystemTemplate&&x.LabelContext!="LEGACY")),("legacy","Modelos antigos",Model.Where(x=>x.LabelContext=="LEGACY"))}){<section class="label-designer-table" data-model-group="@group.Item1"><header><h2>@group.Item2</h2></header><div class="table-responsive"><table class="table"><thead><tr><th>Modelo</th><th>Finalidade</th><th>Cliente</th><th>Status</th><th>Última alteração</th><th>Ações</th></tr></thead><tbody>@foreach(var item in group.Item3){<tr data-model-row data-status="@item.Status.ToLowerInvariant()" data-name="@item.TemplateName.ToLowerInvariant()"><td><strong>@item.TemplateName</strong><small>@item.WidthMm × @item.HeightMm mm</small></td><td>@Purpose(item.SubjectType)</td><td>@(item.LabelContext=="LEGACY"?"Compatibilidade":"Perfil visual")</td><td><span class="designer-status is-@item.Status.ToLowerInvariant()">@(item.Status=="DRAFT"?"Rascunho":$"Publicado · versão {item.CurrentVersion}")</span></td><td>@(item.UpdatedAt??item.CreatedAt).ToString("dd/MM/yyyy HH:mm")</td><td><a asp-action="Edit" asp-route-templateKey="@item.TemplateKey">@(item.CanEdit?"Editar":"Visualizar")</a><details class="row-more"><summary aria-label="Mais ações">···</summary><a asp-action="Preview" asp-route-templateKey="@item.TemplateKey">Prévia</a><a asp-action="Versions" asp-route-templateKey="@item.TemplateKey">Versões</a></details></td></tr>}</tbody></table></div></section>}</main>
-@section Scripts {<script src="~/js/labels-help.js" asp-append-version="true"></script><script>document.querySelectorAll('[data-model-filter]').forEach(b=>b.onclick=()=>{document.querySelectorAll('[data-model-filter]').forEach(x=>x.classList.toggle('is-active',x===b));document.querySelectorAll('[data-model-group]').forEach(g=>g.hidden=b.dataset.modelFilter!=='all'&&b.dataset.modelFilter!==g.dataset.modelGroup&&!(b.dataset.modelFilter==='draft'||b.dataset.modelFilter==='published'));document.querySelectorAll('[data-model-row]').forEach(r=>r.hidden=(b.dataset.modelFilter==='draft'||b.dataset.modelFilter==='published')&&r.dataset.status!==b.dataset.modelFilter)});document.querySelector('[data-model-search]')?.addEventListener('input',e=>document.querySelectorAll('[data-model-row]').forEach(r=>r.hidden=!r.dataset.name.includes(e.target.value.toLowerCase())));</script>}
+@using InovaGed.Web.Models.Labels
+@using InovaGed.Web.Security
+@using Microsoft.AspNetCore.Authorization
+@model IReadOnlyList<LabelTemplateListItemViewModel>
+@inject IAuthorizationService AuthorizationService
+@{
+    ViewData["Title"] = "Modelos de etiqueta";
+    ViewData["LabelHelpContext"] = "DESIGNER";
+    var canCreate = (await AuthorizationService.AuthorizeAsync(User, AppPolicies.LabelDesignerCreate)).Succeeded;
+    var isAdministrator = (await AuthorizationService.AuthorizeAsync(User, AppPolicies.Administracao)).Succeeded;
+    var groups = new[]
+    {
+        (Key: "mine", Title: "Meus modelos", Items: Model.Where(x => !x.IsSystem && !x.IsLegacy)),
+        (Key: "system", Title: "Modelos padrão", Items: Model.Where(x => x.IsSystem && !x.IsLegacy)),
+        (Key: "legacy", Title: "Modelos antigos", Items: Model.Where(x => x.IsLegacy))
+    };
+}
+@section Styles {
+    <link rel="stylesheet" href="~/css/labels-designer.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/labels-studio.css" asp-append-version="true" />
+}
+
+<main class="label-designer-page">
+    <header class="label-designer-hero">
+        <div>
+            <small>Modelos de etiqueta</small>
+            <h1>Seus modelos</h1>
+            <p>Crie, edite e publique layouts sem expor configurações técnicas.</p>
+        </div>
+        <div class="designer-actions">
+            <partial name="~/Views/Labels/Shared/_LabelHelpDrawer.cshtml" />
+            <a class="ig-button ig-button--secondary" asp-controller="Labels" asp-action="Index">Voltar</a>
+            @if (canCreate)
+            {
+                <a class="ig-button ig-button--primary" asp-action="New">Novo modelo</a>
+            }
+        </div>
+    </header>
+
+    @if (ViewBag.SchemaPending == true && isAdministrator)
+    {
+        <div class="alert alert-warning" role="alert">
+            Não foi possível carregar os modelos de etiqueta. Verifique a prontidão do banco.
+        </div>
+    }
+
+    @if (Model.Count == 0)
+    {
+        <section class="label-designer-table">
+            <p>Nenhum modelo de etiqueta encontrado.</p>
+            @if (canCreate)
+            {
+                <a class="ig-button ig-button--primary" asp-action="New">Novo modelo</a>
+            }
+        </section>
+    }
+    else
+    {
+        <section class="designer-filters">
+            <label>
+                <span class="visually-hidden">Buscar modelo</span>
+                <input type="search" placeholder="Buscar por nome, cliente, finalidade ou perfil..." data-model-search />
+            </label>
+            <nav aria-label="Filtros">
+                <button class="is-active" data-model-filter="all">Todos</button>
+                <button data-model-filter="draft">Rascunhos</button>
+                <button data-model-filter="published">Publicados</button>
+                <button data-model-filter="mine">Meus modelos</button>
+                <button data-model-filter="system">Modelos padrão</button>
+                <button data-model-filter="legacy">Antigos</button>
+            </nav>
+        </section>
+
+        @foreach (var group in groups)
+        {
+            <section class="label-designer-table" data-model-group="@group.Key">
+                <header><h2>@group.Title</h2></header>
+                <div class="table-responsive">
+                    <table class="table">
+                        <thead><tr><th>Modelo</th><th>Finalidade</th><th>Cliente</th><th>Status</th><th>Versão</th><th>Dimensões</th><th>Última alteração</th><th>Ações</th></tr></thead>
+                        <tbody>
+                        @foreach (var item in group.Items)
+                        {
+                            var normalizedStatus = item.Status.ToLowerInvariant();
+                            var search = $"{item.Name} {item.ClientName} {item.Purpose} {item.BrandingProfileName}".ToLowerInvariant();
+                            <tr data-model-row
+                                data-status="@normalizedStatus"
+                                data-name="@item.Name.ToLowerInvariant()"
+                                data-client="@item.ClientName.ToLowerInvariant()"
+                                data-system="@item.IsSystem.ToString().ToLowerInvariant()"
+                                data-legacy="@item.IsLegacy.ToString().ToLowerInvariant()"
+                                data-search="@search">
+                                <td><strong>@item.Name</strong><small>@item.Health</small></td>
+                                <td>@item.Purpose</td>
+                                <td><strong>@item.ClientName</strong><small>@item.BrandingProfileName</small></td>
+                                <td><span class="designer-status is-@normalizedStatus">@(normalizedStatus == "draft" ? "Rascunho" : $"Publicado · versão {item.Version}")</span></td>
+                                <td>@item.Version</td>
+                                <td>@item.Dimensions</td>
+                                <td>@item.UpdatedAt?.ToString("dd/MM/yyyy HH:mm")</td>
+                                <td>
+                                    <a asp-action="Edit" asp-route-templateKey="@item.TemplateKey">@(item.CanEdit ? "Editar" : "Visualizar")</a>
+                                    <details class="row-more">
+                                        <summary aria-label="Mais ações">···</summary>
+                                        <a asp-action="Preview" asp-route-templateKey="@item.TemplateKey">Prévia</a>
+                                        <a asp-action="Versions" asp-route-templateKey="@item.TemplateKey">Versões</a>
+                                    </details>
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        }
+        <p data-model-empty hidden>Nenhum modelo corresponde aos filtros.</p>
+    }
+</main>
+
+@section Scripts {
+    <script src="~/js/labels-help.js" asp-append-version="true"></script>
+    <script>
+        (() => {
+            const rows = [...document.querySelectorAll('[data-model-row]')];
+            const groups = [...document.querySelectorAll('[data-model-group]')];
+            const empty = document.querySelector('[data-model-empty]');
+            const search = document.querySelector('[data-model-search]');
+            let filter = 'all';
+
+            const refresh = () => {
+                const term = (search?.value || '').trim().toLocaleLowerCase();
+                let visibleCount = 0;
+                rows.forEach(row => {
+                    const system = row.dataset.system === 'true';
+                    const legacy = row.dataset.legacy === 'true';
+                    const matchesFilter = filter === 'all'
+                        || (filter === 'draft' && row.dataset.status === 'draft')
+                        || (filter === 'published' && row.dataset.status === 'published')
+                        || (filter === 'mine' && !system && !legacy)
+                        || (filter === 'system' && system && !legacy)
+                        || (filter === 'legacy' && legacy);
+                    const visible = matchesFilter && row.dataset.search.includes(term);
+                    row.hidden = !visible;
+                    if (visible) visibleCount++;
+                });
+                groups.forEach(group => group.hidden = !group.querySelector('[data-model-row]:not([hidden])'));
+                if (empty) empty.hidden = visibleCount !== 0;
+            };
+
+            document.querySelectorAll('[data-model-filter]').forEach(button => button.addEventListener('click', () => {
+                filter = button.dataset.modelFilter;
+                document.querySelectorAll('[data-model-filter]').forEach(item => item.classList.toggle('is-active', item === button));
+                refresh();
+            }));
+            search?.addEventListener('input', refresh);
+            refresh();
+        })();
+    </script>
+}
