@@ -19,6 +19,11 @@ try
         var repositoryRoot=FindRoot(BclEnvironment.CurrentDirectory);
         return LabelsCanvasFidelityRc26QualityCheck.Run(repositoryRoot,Console.Out,Console.Error);
     }
+    if(command.Equals("labels-studio-ux-rc27",StringComparison.OrdinalIgnoreCase))
+    {
+        var repositoryRoot=FindRoot(BclEnvironment.CurrentDirectory);
+        return LabelsStudioUxRc27QualityCheck.Run(repositoryRoot,Console.Out,Console.Error);
+    }
     if (command.Equals("ui-visual-rc16", StringComparison.OrdinalIgnoreCase))
     {
         var repositoryRoot = FindRoot(BclEnvironment.CurrentDirectory);

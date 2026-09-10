@@ -1,3 +1,4 @@
+@{ ViewData["LabelHelpContext"]="HISTORY"; }
 @model IEnumerable<dynamic>
 @{
     ViewData["Title"] = "Histórico de Impressões";
@@ -39,3 +40,6 @@
     </tbody></table></div></section>
     <footer class="labels-history-guidance"><app-icon name="information" size="20" decorative="true" /><p><strong>Rastreabilidade preservada.</strong> Reimpressões exigem justificativa e cada emissão mantém usuário, origem, modelo e evidência técnica.</p><a asp-action="Index">Abrir Central de Etiquetas</a></footer>
 </div>
+
+<partial name="~/Views/Labels/Shared/_LabelHelpDrawer.cshtml" />
+<script src="~/js/labels-help.js" asp-append-version="true"></script>
