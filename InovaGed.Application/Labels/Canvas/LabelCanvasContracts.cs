@@ -3,6 +3,22 @@ using InovaGed.Application.Branding;
 
 namespace InovaGed.Application.Labels.Canvas;
 
+public static class LabelCanvasDimensionPolicy
+{
+    public const decimal MinWidthMm = 20m;
+    public const decimal MaxWidthMm = 500m;
+    public const decimal MinHeightMm = 20m;
+    public const decimal MaxHeightMm = 500m;
+    public const decimal LegacyMismatchToleranceMm = 0.01m;
+}
+
+public sealed class LabelCanvasRequestException(string code, string message, IReadOnlyDictionary<string, string>? errors = null)
+    : ArgumentException(message)
+{
+    public string Code { get; } = code;
+    public IReadOnlyDictionary<string, string> Errors { get; } = errors ?? new Dictionary<string, string>();
+}
+
 public sealed class LabelCanvasDesignDto
 {
     public Guid Id { get; init; }
