@@ -6,7 +6,7 @@ namespace InovaGed.Infrastructure.PhysicalArchive;
 
 public sealed class LabelTemplateService : ILabelTemplateService
 {
-<<<<<<< HEAD
+ 
     private static readonly IReadOnlyDictionary<string, LabelTemplate> Templates =
         new Dictionary<string, LabelTemplate>(StringComparer.OrdinalIgnoreCase)
         {
@@ -15,11 +15,8 @@ public sealed class LabelTemplateService : ILabelTemplateService
             ["BATCH"] = new("BATCH_ATLAS", "2", "BATCH")
         };
 
-    public LabelTemplate GetCurrent(string subjectType) =>
-        Templates.TryGetValue(subjectType, out var template)
-            ? template
-            : throw new ArgumentOutOfRangeException(nameof(subjectType), "Tipo de etiqueta não suportado.");
-=======
+    
+ 
     private static readonly IReadOnlyDictionary<string, LabelTemplate> CurrentTemplates =
         new Dictionary<string, LabelTemplate>(StringComparer.OrdinalIgnoreCase)
         {
@@ -34,5 +31,5 @@ public sealed class LabelTemplateService : ILabelTemplateService
             ? template
             : throw new InvalidOperationException($"Não existe template de impressão publicado para o tipo '{subjectType}'.");
     }
->>>>>>> 8bdbe44e2116af826540e6b80059583e26a043ab
+ 
 }
