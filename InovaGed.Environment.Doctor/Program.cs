@@ -14,6 +14,10 @@ using BclEnvironment = global::System.Environment;
 try
 {
     var command = args.FirstOrDefault() ?? "check";
+    if(command.Equals("labels-designer-dimension-rc29-4",StringComparison.OrdinalIgnoreCase))
+    {
+        return LabelsDesignerDimensionRc294QualityCheck.Run(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);
+    }
     if(command.Equals("labels-canvas-fidelity-rc26",StringComparison.OrdinalIgnoreCase))
     {
         var repositoryRoot=FindRoot(BclEnvironment.CurrentDirectory);

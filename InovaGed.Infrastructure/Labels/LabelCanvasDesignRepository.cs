@@ -319,7 +319,26 @@ where v.template_design_id=@id and v.reg_status in ('A','ACTIVE') order by v.ver
     }
     private static DynamicParameters Parameters(LabelCanvasSaveRequest request,Guid tenantId,Guid userId,Guid id){var p=new DynamicParameters(request);p.Add("id",id,DbType.Guid);p.Add("tenantId",tenantId,DbType.Guid);p.Add("userId",userId,DbType.Guid);return p;}
     private static void ValidateIdentity(Guid tenantId,Guid userId){if(tenantId==Guid.Empty||userId==Guid.Empty)throw new InvalidOperationException("Tenant e usuário autenticado são obrigatórios.");}
-    private static void ValidateRequest(LabelCanvasSaveRequest request){ArgumentNullException.ThrowIfNull(request);if(!Regex.IsMatch(request.TemplateKey??"","^[A-Za-z0-9_]{3,120}$"))throw new ArgumentException("A chave deve conter apenas letras, números e sublinhado.");if(string.IsNullOrWhiteSpace(request.TemplateName)||request.TemplateName.Length>200)throw new ArgumentException("Informe um nome de até 200 caracteres.");if(request.WidthMm is <=0 or >1000||request.HeightMm is <=0 or >1000)throw new ArgumentException("Dimensões inválidas.");if(string.IsNullOrWhiteSpace(request.SubjectType))throw new ArgumentException("Tipo de assunto obrigatório.");}
+    private static void ValidateRequest(LabelCanvasSaveRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if(!Regex.IsMatch(request.TemplateKey??"","^[A-Za-z0-9_]{3,120}$"))throw new LabelCanvasRequestException("INVALID_TEMPLATE_KEY","A chave deve conter apenas letras, números e sublinhado.",new Dictionary<string,string>{{"templateKey","Informe um identificador técnico válido."}});
+        if(string.IsNullOrWhiteSpace(request.TemplateName)||request.TemplateName.Length>200)throw new LabelCanvasRequestException("INVALID_TEMPLATE_NAME","Informe um nome de até 200 caracteres.",new Dictionary<string,string>{{"templateName","Informe um nome de até 200 caracteres."}});
+        var errors=new Dictionary<string,string>();
+        if(request.WidthMm<=0)errors["widthMm"]="A largura da etiqueta deve ser maior que zero.";
+        else if(request.WidthMm<LabelCanvasDimensionPolicy.MinWidthMm||request.WidthMm>LabelCanvasDimensionPolicy.MaxWidthMm)errors["widthMm"]=$"A largura deve estar entre {LabelCanvasDimensionPolicy.MinWidthMm} e {LabelCanvasDimensionPolicy.MaxWidthMm} mm.";
+        if(request.HeightMm<=0)errors["heightMm"]="A altura da etiqueta deve ser maior que zero.";
+        else if(request.HeightMm<LabelCanvasDimensionPolicy.MinHeightMm||request.HeightMm>LabelCanvasDimensionPolicy.MaxHeightMm)errors["heightMm"]=$"A altura deve estar entre {LabelCanvasDimensionPolicy.MinHeightMm} e {LabelCanvasDimensionPolicy.MaxHeightMm} mm.";
+        if(errors.Count>0)throw new LabelCanvasRequestException("INVALID_DIMENSIONS","Revise o tamanho da etiqueta.",errors);
+        if(string.IsNullOrWhiteSpace(request.SubjectType))throw new LabelCanvasRequestException("INVALID_SUBJECT_TYPE","Tipo de assunto obrigatório.",new Dictionary<string,string>{{"subjectType","Selecione a finalidade do modelo."}});
+        if(!LabelPaperOptions.IsSupported(request.PaperKind))throw new LabelCanvasRequestException("INVALID_PAPER_KIND","Papel não suportado.",new Dictionary<string,string>{{"paperKind","Selecione um papel suportado."}});
+        if(request.Orientation is not ("portrait" or "landscape"))throw new LabelCanvasRequestException("INVALID_ORIENTATION","Orientação inválida.",new Dictionary<string,string>{{"orientation","Selecione retrato ou paisagem."}});
+        LabelCanvasDocumentDto document;
+        try{document=JsonSerializer.Deserialize<LabelCanvasDocumentDto>(request.DesignJson,new JsonSerializerOptions(JsonSerializerDefaults.Web){PropertyNameCaseInsensitive=true})??throw new JsonException();}
+        catch(JsonException){throw new LabelCanvasRequestException("INVALID_DESIGN_JSON","O conteúdo visual do modelo é inválido.");}
+        if(Math.Abs(document.Canvas.WidthMm-request.WidthMm)>LabelCanvasDimensionPolicy.LegacyMismatchToleranceMm||Math.Abs(document.Canvas.HeightMm-request.HeightMm)>LabelCanvasDimensionPolicy.LegacyMismatchToleranceMm)
+            throw new LabelCanvasRequestException("DIMENSION_MISMATCH","As dimensões dos metadados e do canvas não coincidem.",new Dictionary<string,string>{{"widthMm","Sincronize a largura com o canvas."},{"heightMm","Sincronize a altura com o canvas."}});
+    }
     private static InvalidOperationException ValidationException(LabelCanvasValidationResult validation)=>new("Corrija os erros críticos: "+string.Join("; ",validation.Issues.Where(x=>x.Severity=="ERROR").Take(5).Select(x=>x.Message)));
     private sealed record VersionSnapshot(string DesignJson,string? SnapshotJson,int VersionNo,string? SnapshotHash,Guid? PublishedBy,DateTime? PublishedAt);
     private static async Task InsertEventAsync(System.Data.Common.DbConnection db,System.Data.Common.DbTransaction? tx,Guid tenantId,Guid? userId,Guid id,string eventType,string? message,object? payload,string? ipAddress,string? userAgent,CancellationToken ct)
