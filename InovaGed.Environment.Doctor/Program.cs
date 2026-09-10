@@ -24,6 +24,10 @@ try
         var repositoryRoot=FindRoot(BclEnvironment.CurrentDirectory);
         return LabelsStudioUxRc27QualityCheck.Run(repositoryRoot,Console.Out,Console.Error);
     }
+    if(command.Equals("labels-studio-pro-rc28",StringComparison.OrdinalIgnoreCase))
+    {
+        return LabelsStudioProRc28QualityCheck.Run(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);
+    }
     if (command.Equals("ui-visual-rc16", StringComparison.OrdinalIgnoreCase))
     {
         var repositoryRoot = FindRoot(BclEnvironment.CurrentDirectory);

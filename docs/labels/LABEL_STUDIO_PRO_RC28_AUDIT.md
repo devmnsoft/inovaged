@@ -1,0 +1,27 @@
+# Auditoria direcionada RC28
+
+- JÁ IMPLEMENTADO — Central RC27 com quatro ações principais e legados recolhidos.
+- JÁ IMPLEMENTADO — Engine do designer com drag/drop, marquee, multiseleção, resize, rotação, snap, guides, histórico e autosave.
+- JÁ IMPLEMENTADO — Renderer possui validação real e bloqueio de bindings não permitidos.
+- JÁ IMPLEMENTADO — Publicação preserva snapshots, hashes, revisão e CancelRevision.
+- INCOMPLETO — Abas da biblioteca só alteravam classe; não filtravam seções nem atualizavam ARIA.
+- INCOMPLETO — Configuração do modelo tinha acionador sem handler.
+- DUPLICIDADE UX — Novo modelo apresentava finalidade e starter em dois fluxos simultâneos.
+- BUG REAL — Starter de rastreabilidade apontava para HOL_PRONTUARIO_CANVAS_V1.
+- BUG REAL — Checklist inicial afirmava tamanho válido sem usar o resultado do renderer.
+- CAMPO TÉCNICO EXPOSTO — TemplateKey, binding, contexto e z-index apareciam no fluxo comum.
+- AÇÃO SEM HANDLER — Configurações avançadas não abria o painel correspondente.
+- INCOMPLETO — PrintWizard exibia as cinco seções ao mesmo tempo e mantinha Current fixo.
+- BUG REAL — Troca de finalidade recarregava a página completa.
+- BUG REAL — Prévia acionava submit oculto para iframe em vez de endpoint dedicado.
+- DUPLICIDADE UX — Select e cards de modelo competiam visualmente.
+- INCOMPLETO — Etiqueta avulsa não tinha instância persistida nem validação de campos permitidos.
+- CAMPO TÉCNICO EXPOSTO — Batch mostrava FACTORY/CUSTOM.
+- INCOMPLETO — Batch não antecipava justificativa de reimpressão nem resumo do lote.
+- INCOMPLETO — Calibração expunha ajustes finos antes do fluxo básico.
+- BUG REAL — Opções de papel divergiam entre designer, calibração e calculadora.
+- INCOMPLETO — Guia não tinha busca nem estrutura orientada a problemas.
+- RISCO DE REGRESSÃO — Views Razor alteradas não podem usar `?? []`.
+- RISCO DE REGRESSÃO — Quick preview não pode registrar history, job ou trace definitivo.
+- RISCO DE REGRESSÃO — Pipeline Canvas não pode receber geometria de logo irrelevante do wizard.
+- RISCO DE REGRESSÃO — Toda leitura/gravação manual deve incluir tenant_id.

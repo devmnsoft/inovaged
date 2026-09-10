@@ -207,7 +207,20 @@ public sealed class LabelCanvasValidationResult
 }
 
 public sealed record LabelCanvasValidationIssue(string Code, string Severity, string Message, string? ElementId = null);
-public sealed record LabelCanvasFieldDto(string Key, string Label, string DataType, string SubjectType, string? Example = null);
+public sealed record LabelCanvasFieldDto(string Key, string Label, string DataType, string SubjectType, string? Example = null, string? Category = null, string? Description = null);
+
+public enum LabelCanvasStarterKind { Blank, Institutional, IdentificationQr, Classification, Traceability }
+public sealed record LabelCanvasStarterRequest(string SubjectType, LabelCanvasStarterKind StarterKind, decimal WidthMm, decimal HeightMm, Guid? BrandingProfileId, string PaperKind = "A4");
+public interface ILabelCanvasStarterTemplateService
+{
+    LabelCanvasDocumentDto Create(LabelCanvasStarterRequest request);
+}
+
+public static class LabelPaperOptions
+{
+    public static readonly IReadOnlyList<string> Supported = new[] { "A4", "A5", "LETTER", "CUSTOM" };
+    public static bool IsSupported(string? value) => Supported.Contains(value ?? "", StringComparer.OrdinalIgnoreCase);
+}
 public sealed record LabelCanvasVersionDto(Guid Id, int VersionNo, string Status, string? ChangeSummary, Guid? CreatedBy, DateTime CreatedAt, Guid? PublishedBy, DateTime? PublishedAt, string? SnapshotHash, string? CreatedByName = null, string? PublishedByName = null);
 public sealed record LabelCanvasRenderResult(string Html, string SnapshotHash, LabelCanvasValidationResult Validation);
 
@@ -239,6 +252,7 @@ public static class LabelCanvasSubjectTypeMapper
         "BOX" or "LOCDESKBOX" => "BOX",
         "DOCUMENT" or "FOLDER" or "MEDICALRECORD" or "PROCESS" or "LOCDESKFOLDER" => "DOCUMENT",
         "BATCH" => "BATCH",
+        "MANUALLABEL" or "MANUAL_LABEL" => "MANUAL_LABEL",
         { Length: > 0 } value => value,
         _ => "DOCUMENT"
     };

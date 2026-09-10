@@ -11,3 +11,8 @@ artifacts/diagnostics/
 artifacts/environment-doctor/
 TestResults/
 playwright-report/
+
+# IDE-local state
+.vs/
+*.suo
+*.user

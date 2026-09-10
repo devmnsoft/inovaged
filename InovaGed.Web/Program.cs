@@ -201,8 +201,10 @@ builder.Services.AddScoped<InovaGed.Application.Labels.ILabelTraceabilityService
 builder.Services.AddScoped<InovaGed.Application.Labels.Canvas.ILabelCanvasDesignService, InovaGed.Infrastructure.Labels.LabelCanvasDesignRepository>();
 builder.Services.AddSingleton<InovaGed.Application.Labels.Canvas.ILabelCanvasFieldCatalogService, InovaGed.Infrastructure.Labels.LabelCanvasFieldCatalogService>();
 builder.Services.AddSingleton<InovaGed.Application.Labels.Canvas.ILabelCanvasRenderService, InovaGed.Infrastructure.Labels.LabelCanvasRenderService>();
+builder.Services.AddSingleton<InovaGed.Application.Labels.Canvas.ILabelCanvasStarterTemplateService, InovaGed.Infrastructure.Labels.LabelCanvasStarterTemplateService>();
 builder.Services.AddScoped<InovaGed.Application.Labels.Canvas.ILabelCanvasValueResolver, InovaGed.Infrastructure.Labels.LabelCanvasValueResolver>();
 builder.Services.AddScoped<InovaGed.Application.Labels.Canvas.ILabelCanvasPrintCoordinator, InovaGed.Infrastructure.Labels.LabelCanvasPrintCoordinator>();
+builder.Services.AddScoped<InovaGed.Application.Labels.Canvas.IManualLabelInstanceService, InovaGed.Infrastructure.Labels.ManualLabelInstanceService>();
 builder.Services.AddTransient<CorrelationIdHandler>();
 builder.Services.AddHttpClient("InovaGed").AddHttpMessageHandler<CorrelationIdHandler>();
 builder.Services.AddInovaGedObservability(builder.Configuration);
