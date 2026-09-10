@@ -149,7 +149,8 @@ public class LabelsController : GedControllerBase
         if(string.Equals(template?.ViewName,"CanvasLabel",StringComparison.OrdinalIgnoreCase))
         {
             var rendered=await _pdf.GeneratePdfAsync(TenantId,id,ct);
-            return Content(Encoding.UTF8.GetString(rendered.Content),"text/html; charset=utf-8");
+            ViewBag.CanvasHtml=Encoding.UTF8.GetString(rendered.Content);
+            return View("CanvasPrintPreview",job);
         }
         return View(job);
     }

@@ -28,6 +28,10 @@ try
     {
         return LabelsStudioProRc28QualityCheck.Run(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);
     }
+    if(command.Equals("labels-branding-center-rc29-1",StringComparison.OrdinalIgnoreCase))
+    {
+        return LabelsBrandingCenterRc291QualityCheck.Run(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);
+    }
     if (command.Equals("ui-visual-rc16", StringComparison.OrdinalIgnoreCase))
     {
         var repositoryRoot = FindRoot(BclEnvironment.CurrentDirectory);
