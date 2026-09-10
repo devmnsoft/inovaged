@@ -13,4 +13,7 @@ public class LabelTemplateListItemViewModel
     public string Health { get; set; } = string.Empty;
     public bool IsSystem { get; set; }
     public bool IsLegacy { get; set; }
+    public DateTime? UpdatedAt { get; set; }
+    public bool CanEdit { get; set; }
+    public Guid? BrandingProfileId { get; set; }
 }
