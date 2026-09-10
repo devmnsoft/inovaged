@@ -22,7 +22,7 @@ public sealed class LabelPrintRegistrar(
     [
         "print_channel", "print_mode", "template_version", "logo_asset_id", "logo_brand_name",
         "logo_width_mm", "logo_height_mm", "logo_fit_mode", "logo_position",
-        "calibration_profile_id", "trace_code"
+        "calibration_profile_id", "trace_code", "client_action_id"
     ];
 
     public async Task<LabelTraceIssued> RegisterAsync(LabelPrintRequest request, CancellationToken cancellationToken = default)
@@ -37,6 +37,28 @@ public sealed class LabelPrintRegistrar(
         var historyColumns = await Schema.GetColumnsAsync(db, "ged", "label_print_history", cancellationToken);
         LogLegacyColumns("ged.label_print", printColumns);
         LogLegacyColumns("ged.label_print_history", historyColumns);
+
+        // Idempotency: avoid double print on duplicate clientActionId
+        if (request.ClientActionId is Guid actionId && printColumns.Contains("client_action_id"))
+        {
+            var existing = await db.QuerySingleOrDefaultAsync<ExistingPrintRow>(new CommandDefinition("""
+select p.id, t.trace_code TraceCode, t.short_url ShortUrl, t.payload_hash PayloadHash
+from ged.label_print p
+left join ged.label_trace_identity t on t.tenant_id = p.tenant_id and t.label_print_id = p.id
+where p.tenant_id = @TenantId and p.client_action_id = @actionId and p.reg_status = 'A'
+limit 1
+""", new { request.TenantId, actionId }, cancellationToken: cancellationToken));
+
+            if (existing is not null)
+            {
+                logger.LogInformation("Idempotência aplicada para ClientActionId={ActionId} no tenant {TenantId}.", actionId, request.TenantId);
+                return new LabelTraceIssued(
+                    new LabelTracePublicInfo(existing.Id, existing.TraceCode ?? "", request.SubjectType, request.TemplateCode, request.TemplateVersion, LabelTraceStatus.Active, DateTime.UtcNow, request.TenantId),
+                    "",
+                    existing.ShortUrl ?? $"/Labels/Trace/{existing.TraceCode}",
+                    existing.Id);
+            }
+        }
 
         await using var tx = await db.BeginTransactionAsync(cancellationToken);
         var priorPrints = await db.ExecuteScalarAsync<int>(new CommandDefinition("""
@@ -60,7 +82,32 @@ where tenant_id=@TenantId and label_subject_type=@SubjectType and label_subject_
         await custody.RegisterEventAsync(new(request.TenantId, request.SubjectType, request.SubjectId, null,
             priorPrints > 0 ? "LABEL_REPRINTED" : "LABEL_PRINTED", priorPrints > 0 ? "Etiqueta reimpressa" : "Etiqueta impressa",
             request.ReprintReason, "label_print_history", null, null, null, request.UserId, request.IpAddress, request.UserAgent, request.SnapshotJson), cancellationToken);
-        return issued;
+
+        return new LabelTraceIssued(issued.Trace, issued.Token, issued.ShortUrl, labelPrintId);
+    }
+
+    public async Task UpdateFinalSnapshotAsync(Guid tenantId, Guid labelPrintId, string snapshotJson, string? traceCode, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(snapshotJson);
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(snapshotJson))).ToLowerInvariant();
+        await using var db = await dbFactory.OpenAsync(cancellationToken);
+        await db.ExecuteAsync(new CommandDefinition("""
+update ged.label_print
+set snapshot_json = cast(@snapshotJson as jsonb),
+    data = cast(@snapshotJson as jsonb),
+    payload_hash_sha256 = @hash,
+    trace_code = coalesce(nullif(@traceCode, ''), trace_code)
+where tenant_id = @tenantId and id = @labelPrintId;
+
+update ged.label_print_history
+set snapshot_json = cast(@snapshotJson as jsonb),
+    snapshot_sha256 = @hash
+where tenant_id = @tenantId and id = @labelPrintId;
+
+update ged.label_trace_identity
+set payload_hash = @hash
+where tenant_id = @tenantId and label_print_id = @labelPrintId;
+""", new { tenantId, labelPrintId, snapshotJson, hash, traceCode }, cancellationToken: cancellationToken));
     }
 
     private void LogLegacyColumns(string table, IReadOnlySet<string> columns)
@@ -79,7 +126,7 @@ where tenant_id=@TenantId and label_subject_type=@SubjectType and label_subject_
             request.SnapshotJson, Hash = hash, request.TemplateCode, request.ReprintReason,
             request.PrintChannel, request.PrintMode, request.TemplateVersion, request.LogoAssetId,
             request.LogoBrandName, request.LogoWidthMm, request.LogoHeightMm, request.LogoFitMode,
-            request.LogoPosition, request.CalibrationProfileId, request.TraceCode
+            request.LogoPosition, request.CalibrationProfileId, request.TraceCode, request.ClientActionId
         });
         return values;
     }
@@ -95,7 +142,7 @@ where tenant_id=@TenantId and label_subject_type=@SubjectType and label_subject_
     private static string BuildHistoryInsert(IReadOnlySet<string> available)
     {
         var columns = new List<string> { "id", "tenant_id", "label_subject_type", "label_subject_id", "template_code", "snapshot_json", "snapshot_sha256", "printed_by", "ip_address", "user_agent", "reprint_reason" };
-        var values = new List<string> { "gen_random_uuid()", "@TenantId", "@SubjectType", "@SubjectId", "@TemplateCode", "cast(@SnapshotJson as jsonb)", "@Hash", "@UserId", "cast(@IpAddress as inet)", "@UserAgent", "nullif(@ReprintReason, '')" };
+        var values = new List<string> { "@Id", "@TenantId", "@SubjectType", "@SubjectId", "@TemplateCode", "cast(@SnapshotJson as jsonb)", "@Hash", "@UserId", "cast(@IpAddress as inet)", "@UserAgent", "nullif(@ReprintReason, '')" };
         AddOptional(available, columns, values);
         return $"insert into ged.label_print_history ({string.Join(", ", columns)}) values ({string.Join(", ", values)});";
     }
@@ -107,7 +154,8 @@ where tenant_id=@TenantId and label_subject_type=@SubjectType and label_subject_
             ["print_channel"] = "@PrintChannel", ["print_mode"] = "@PrintMode", ["template_version"] = "@TemplateVersion",
             ["logo_asset_id"] = "@LogoAssetId", ["logo_brand_name"] = "@LogoBrandName", ["logo_width_mm"] = "@LogoWidthMm",
             ["logo_height_mm"] = "@LogoHeightMm", ["logo_fit_mode"] = "@LogoFitMode", ["logo_position"] = "@LogoPosition",
-            ["calibration_profile_id"] = "@CalibrationProfileId", ["trace_code"] = "@TraceCode"
+            ["calibration_profile_id"] = "@CalibrationProfileId", ["trace_code"] = "@TraceCode",
+            ["client_action_id"] = "@ClientActionId"
         };
         foreach (var (column, value) in optionalValues.Where(item => available.Contains(item.Key)))
         {
@@ -115,23 +163,12 @@ where tenant_id=@TenantId and label_subject_type=@SubjectType and label_subject_
             values.Add(value);
         }
     }
-}
 
-public sealed class LabelPayloadBuilder : ILabelPayloadBuilder
-{
-    private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web) { WriteIndented = false };
-    public string Build(object snapshot) => JsonSerializer.Serialize(snapshot, Options);
-}
-
-public sealed class LabelTemplateService : ILabelTemplateService
-{
-    private static readonly IReadOnlyDictionary<string, LabelTemplate> Templates = new Dictionary<string, LabelTemplate>(StringComparer.OrdinalIgnoreCase)
+    private sealed class ExistingPrintRow
     {
-        ["BOX"] = new("BOX_ATLAS", "2", "BOX"), ["DOCUMENT"] = new("DOCUMENT_ATLAS", "2", "DOCUMENT"),
-        ["BATCH"] = new("BATCH_ATLAS", "2", "BATCH"), ["LOCDESK_FOLDER"] = new("LOCDESK_PASTA", "1", "DOCUMENT"),
-        ["LOCDESK_BOX"] = new("LOCDESK_CAIXA", "1", "BOX")
-    };
-
-    public LabelTemplate GetCurrent(string subjectType) => Templates.TryGetValue(subjectType, out var template)
-        ? template : throw new ArgumentOutOfRangeException(nameof(subjectType), "Tipo de etiqueta não suportado.");
+        public Guid Id { get; init; }
+        public string? TraceCode { get; init; }
+        public string? ShortUrl { get; init; }
+        public string? PayloadHash { get; init; }
+    }
 }

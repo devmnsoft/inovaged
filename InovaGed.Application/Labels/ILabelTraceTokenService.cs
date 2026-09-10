@@ -34,7 +34,7 @@ public sealed record LabelTracePublicInfo(Guid Id, string TraceCode, string Subj
 public sealed record LabelTraceIssueCommand(Guid TenantId, Guid? LabelPrintId, string SubjectType, Guid? SubjectId,
     string TemplateCode, int? TemplateVersion, Guid? IssuedBy, string? IssuedByName, string? PayloadHash);
 
-public sealed record LabelTraceIssued(LabelTracePublicInfo Trace, string Token, string ShortUrl);
+public sealed record LabelTraceIssued(LabelTracePublicInfo Trace, string Token, string ShortUrl, Guid? LabelPrintId = null);
 
 public interface ILabelTraceabilityService
 {

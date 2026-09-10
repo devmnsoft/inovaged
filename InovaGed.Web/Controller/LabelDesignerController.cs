@@ -24,8 +24,47 @@ public sealed class LabelDesignerController(IDbConnectionFactory dbFactory, ILab
     [HttpGet("/Labels/Designer")]
     public async Task<IActionResult> Index(CancellationToken ct)
     {
-        try { return View("~/Views/Labels/Designer/Index.cshtml", await designs.ListAsync(TenantId, ct)); }
-        catch (Exception exception) { logger.LogError(exception,"Não foi possível listar templates canvas."); ViewBag.SchemaPending=true; return View("~/Views/Labels/Designer/Index.cshtml",Array.Empty<LabelCanvasDesignDto>()); }
+        try
+        {
+            var list = await designs.ListAsync(TenantId, ct);
+            var profiles = await brandingProfiles.ListAsync(TenantId, ct);
+            var profilesDict = profiles.ToDictionary(p => p.ProfileId, p => p);
+            
+            var vm = list.Select(d =>
+            {
+                var profile = d.DefaultBrandingProfileId.HasValue && profilesDict.TryGetValue(d.DefaultBrandingProfileId.Value, out var p) ? p : null;
+                var clientName = profile?.ClientName ?? d.ClientNameFallback;
+                if (string.IsNullOrWhiteSpace(clientName)) clientName = "Sistema";
+                
+                var brandingName = profile?.ProfileName;
+                if (string.IsNullOrWhiteSpace(brandingName)) brandingName = "Genérico";
+                
+                var health = d.Status == "DRAFT" ? "Atenção" : "Pronto";
+                
+                return new LabelTemplateListItemViewModel
+                {
+                    TemplateKey = d.TemplateKey,
+                    Name = d.TemplateName,
+                    Purpose = d.SubjectType,
+                    ClientName = clientName,
+                    BrandingProfileName = brandingName,
+                    Status = d.Status,
+                    Version = d.CurrentVersion.ToString(),
+                    Dimensions = $"{Math.Round(d.WidthMm)} × {Math.Round(d.HeightMm)} mm",
+                    Health = health,
+                    IsSystem = false,
+                    IsLegacy = false
+                };
+            }).ToList();
+            
+            return View("~/Views/Labels/Designer/Index.cshtml", vm);
+        }
+        catch (Exception exception)
+        {
+            logger.LogError(exception, "Não foi possível listar templates canvas.");
+            ViewBag.SchemaPending = true;
+            return View("~/Views/Labels/Designer/Index.cshtml", new List<LabelTemplateListItemViewModel>());
+        }
     }
 
     [HttpGet("/Labels/Designer/New")]
@@ -136,6 +175,59 @@ public sealed class LabelDesignerController(IDbConnectionFactory dbFactory, ILab
     {
         if(UserId is not Guid userId)return Unauthorized();
         return await ExecuteWrite(async()=>{var draft=await designs.BeginRevisionAsync(TenantId,userId,templateKey,Ip(),Agent(),ct);return Ok(new{ok=true,message=$"Revisão baseada na versão {draft.CurrentVersion} criada.",redirectUrl=Url.Action(nameof(Edit),new{templateKey})});},"criar revisão",templateKey);
+    }
+
+    [HttpGet("/Labels/Designer/{templateKey}/Thumbnail")]
+    [ResponseCache(Duration = 3600, Location = ResponseCacheLocation.Client)]
+    public async Task<IActionResult> Thumbnail(string templateKey, CancellationToken ct)
+    {
+        var design = await designs.GetAsync(TenantId, templateKey, ct);
+        if (design is null) return NotFound();
+        var preview = await ResolveDesignerPreviewValuesAsync(design, SampleProfile(design), design.DefaultBrandingProfileId, ct);
+        var rendered = renderer.Render(design, preview.Values, false);
+        return Content(rendered.Html, "text/html; charset=utf-8");
+    }
+
+    [HttpPost("/Labels/Designer/DuplicateForClient/{templateKey}")]
+    [HttpPost("/Labels/Designer/{templateKey}/DuplicateForClient")]
+    [ValidateAntiForgeryToken]
+    [Authorize(Policy=AppPolicies.LabelDesignerCreate)]
+    public async Task<IActionResult> DuplicateForClient(string templateKey, [FromBody] JsonElement? payload, CancellationToken ct)
+    {
+        if (UserId is not Guid userId) return Unauthorized();
+        string? name = null;
+        if (payload is {ValueKind:JsonValueKind.Object} && payload.Value.TryGetProperty("name", out var value)) name = value.GetString();
+        
+        return await ExecuteWrite(async () =>
+        {
+            var draft = await designs.DuplicateAsync(TenantId, userId, templateKey, name, Ip(), Agent(), ct);
+            
+            // Clear previous brand data
+            var request = new LabelCanvasSaveRequest
+            {
+                TemplateKey = draft.TemplateKey,
+                TemplateName = draft.TemplateName,
+                TemplateKind = draft.TemplateKind,
+                SubjectType = draft.SubjectType,
+                PaperKind = draft.PaperKind,
+                WidthMm = draft.WidthMm,
+                HeightMm = draft.HeightMm,
+                Orientation = draft.Orientation,
+                DesignJson = draft.DesignJson,
+                DefaultBrandingProfileId = null, // clear branding
+                BrandingBindingKey = null,
+                ClientNameFallback = null,
+                ContractNameFallback = null,
+                OrganizationNameFallback = null,
+                HeaderTitleFallback = null,
+                HeaderSubtitleFallback = null,
+                LabelContext = draft.LabelContext,
+                ChangeSummary = "Duplicado para outro cliente"
+            };
+            await designs.SaveDraftAsync(TenantId, userId, request, Ip(), Agent(), ct);
+
+            return Ok(new{ok=true,message="Cópia criada.",redirectUrl=Url.Action(nameof(Edit),new{templateKey=draft.TemplateKey})});
+        }, "duplicar para cliente", templateKey);
     }
 
     [HttpGet("/Labels/Designer/Duplicate/{templateKey}")]

@@ -14,6 +14,9 @@ public static class LabelCanvasSheetLayoutCalculator
 {
     public const string DoesNotFitError = "LABEL_DOES_NOT_FIT_PAPER";
 
+    public static LabelCanvasSheetLayout Calculate(string paperSize, string orientation, decimal labelWidthMm, decimal labelHeightMm, int labelCount = 1) =>
+        Calculate(new LabelCanvasSheetLayoutRequest(paperSize, orientation, null, null, labelWidthMm, labelHeightMm, 0, 0, 0, 0, 0, 0, 100, labelCount));
+
     public static LabelCanvasSheetLayout Calculate(LabelCanvasSheetLayoutRequest input)
     {
         ArgumentNullException.ThrowIfNull(input);

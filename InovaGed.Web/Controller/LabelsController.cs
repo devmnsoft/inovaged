@@ -16,6 +16,9 @@ using InovaGed.Web.Models.Branding;
 using Npgsql;
 using InovaGed.Application.Labels.Canvas;
 
+using InovaGed.Application.Labels.Preview;
+using InovaGed.Application.Labels.Batch;
+
 namespace InovaGed.Web.Controllers;
 
 [Authorize(Policy = AppPolicies.FullAdminOnly)]
@@ -57,12 +60,15 @@ public class LabelsController : GedControllerBase
     private readonly IPrintBrandingResolver _printBrandingResolver;
     private readonly ILabelCanvasPrintCoordinator _canvasPrintCoordinator;
     private readonly IManualLabelInstanceService _manualLabels;
+    private readonly ILabelPreviewService _previewService;
+    private readonly ILabelBatchPlanService _batchPlanService;
 
     public LabelsController(IDbConnectionFactory dbFactory, ILabelPrintRegistrar printRegistrar,
         ILabelTemplateService templates, ILabelQrCodeService qrCodes, ILabelPayloadBuilder payloadBuilder, ILabelTemplateCatalogService catalog, InovaGed.Application.Labels.ILabelTemplateManager templateManager,
         ILabelPrintJobService printJobs, ILabelPdfRenderService pdf, ILabelPrintLogoResolver logoResolver,
         ILabelCanvasDesignService canvasDesigns, ILabelCanvasRenderService canvasRenderer, ILabelCanvasValueResolver canvasValues,
         IPrintBrandingResolver printBrandingResolver, ILabelCanvasPrintCoordinator canvasPrintCoordinator, IManualLabelInstanceService manualLabels,
+        ILabelPreviewService previewService, ILabelBatchPlanService batchPlanService,
         ILogger<LabelsController> logger) : base(dbFactory)
     {
         _printRegistrar = printRegistrar;
@@ -71,7 +77,7 @@ public class LabelsController : GedControllerBase
         _payloadBuilder = payloadBuilder;
         _catalog = catalog;
         _templateManager = templateManager;
-        _printJobs=printJobs; _pdf=pdf; _logoResolver=logoResolver; _canvasDesigns=canvasDesigns; _canvasRenderer=canvasRenderer; _canvasValues=canvasValues; _printBrandingResolver=printBrandingResolver; _canvasPrintCoordinator=canvasPrintCoordinator; _manualLabels=manualLabels; _logger=logger;
+        _printJobs=printJobs; _pdf=pdf; _logoResolver=logoResolver; _canvasDesigns=canvasDesigns; _canvasRenderer=canvasRenderer; _canvasValues=canvasValues; _printBrandingResolver=printBrandingResolver; _canvasPrintCoordinator=canvasPrintCoordinator; _manualLabels=manualLabels; _previewService=previewService; _batchPlanService=batchPlanService; _logger=logger;
     }
 
     [HttpGet("/Labels/Templates")]
@@ -378,9 +384,23 @@ public class LabelsController : GedControllerBase
     [HttpPost("/Labels/PrintWizard/QuickPreview"),ValidateAntiForgeryToken]
     public async Task<IActionResult> QuickPreview(LabelPrintWizardInputModel input,CancellationToken ct)
     {
-        var result=await BuildLabelRenderModelAsync(input,false,ct);
-        if(result is ContentResult content)return Json(new{ok=true,html=content.Content??"",warnings=Array.Empty<string>(),layout=new{template=input.TemplateCode},brandingSummary=new{profileId=input.PrintBrandingProfileId}});
-        return BadRequest(new{ok=false,warnings=ModelState.Values.SelectMany(x=>x.Errors).Select(x=>x.ErrorMessage).ToArray(),message="Revise os dados antes de gerar a prévia."});
+        var command = new LabelQuickPreviewCommand(
+            TenantId, UserId, input.SubjectType ?? "", input.SubjectId, input.TemplateCode, input.PrintMode,
+            input.PrintBrandingProfileId, input.PrintProfileId, input.SelectedLogoAssetId, input.Copies,
+            input.ReprintReason, input.ManualValues, $"{Request.Scheme}://{Request.Host}");
+        var result = await _previewService.GenerateQuickPreviewAsync(command, ct);
+        return result.Ok ? Json(result) : BadRequest(result);
+    }
+
+    [HttpPost("/Labels/Batch/Plan"),ValidateAntiForgeryToken]
+    public async Task<IActionResult> BatchPlan([FromBody] CreateBatchPrintJobInput input, CancellationToken ct)
+    {
+        var request = new LabelBatchPlanRequest(
+            TenantId, UserId, input.SubjectType ?? "", input.SubjectIds, input.TemplateCode, input.PrintMode,
+            input.PrintBrandingProfileId, input.PrintProfileId, input.Copies, input.ReprintReason,
+            $"{Request.Scheme}://{Request.Host}");
+        var result = await _batchPlanService.CalculatePlanAsync(request, ct);
+        return result.Ok ? Json(result) : BadRequest(result);
     }
 
     [HttpPost, ValidateAntiForgeryToken]
@@ -532,9 +552,10 @@ public class LabelsController : GedControllerBase
             try
             {
                 var issued=await _printRegistrar.RegisterAsync(request,ct);
-                if(manualInstance is not null)await _manualLabels.MarkPrintedAsync(TenantId,userId,manualInstance.Id,ct);
+                if(manualInstance is not null)await _manualLabels.MarkPrintedAsync(TenantId,userId,manualInstance.Id,input.ReprintReason,ct);
                 context=new LabelCanvasPrintContext{TenantId=context.TenantId,TemplateKey=context.TemplateKey,OperationalSubjectType=context.OperationalSubjectType,SubjectId=context.SubjectId,BrandingProfileId=context.BrandingProfileId,PrintProfileId=context.PrintProfileId,SelectedLogoAssetId=context.SelectedLogoAssetId,Copies=context.Copies,RegisterTrace=true,ReprintReason=context.ReprintReason,TemplateVersion=prepared.TemplateVersion,RegisteredTraceCode=issued.Trace.TraceCode,RegisteredTraceUrl=issued.ShortUrl,AbsoluteBaseUrl=context.AbsoluteBaseUrl,PrintedBy=context.PrintedBy,ResolvedValues=prepared.Values};
                 prepared=await _canvasPrintCoordinator.PrepareAsync(context,true,ct);
+                await _printRegistrar.UpdateFinalSnapshotAsync(TenantId, issued.Trace.Id, _payloadBuilder.Build(prepared.CreateSnapshot(context, "WEB")), issued.Trace.TraceCode, ct);
             }
             catch(InvalidOperationException exception){ModelState.AddModelError(nameof(input.ReprintReason),exception.Message);await PopulatePrintWizardLookupsAsync(input,ct);return View("PrintWizard",input);}
         }
@@ -1219,5 +1240,90 @@ from ged.label_print_history lp left join ged.app_user u on u.tenant_id=lp.tenan
         await _printRegistrar.RegisterAsync(new(TenantId,uid,(string)row.label_subject_type,(Guid)row.label_subject_id,(string)row.template_code,(string)row.snapshot_json,HttpContext.Connection.RemoteIpAddress?.ToString(),Request.Headers.UserAgent.ToString(),justification.Trim()),ct);
         TempData["Success"]="Reimpressão registrada com rastreabilidade.";
         return RedirectToAction(nameof(PrintWizard),new{subjectType=(string)row.label_subject_type,subjectId=(Guid)row.label_subject_id,templateCode=(string)row.template_code});
+    }
+
+    [HttpGet("/Labels/Manual")]
+    public async Task<IActionResult> ManualIndex(CancellationToken ct)
+    {
+        var items = await _manualLabels.ListAsync(TenantId, null, ct);
+        var vm = new ManualLabelIndexViewModel
+        {
+            Items = items.Select(x => new ManualLabelListItemViewModel
+            {
+                Id = x.Id,
+                Name = x.Name ?? "",
+                ControlNumber = x.ControlNumber ?? "",
+                TemplateCode = x.TemplateKey,
+                Status = x.Status.ToString(),
+                CreatedAt = x.CreatedAt ?? DateTime.MinValue,
+                PrintedAt = x.PrintedAt,
+                ArchivedAt = x.ArchivedAt,
+                UpdatedAt = x.UpdatedAt ?? DateTime.MinValue
+            }).ToList()
+        };
+        return View("Manual/Index", vm);
+    }
+
+    [HttpGet("/Labels/Manual/New")]
+    public async Task<IActionResult> ManualNew(CancellationToken ct)
+    {
+        ViewBag.Templates = await _catalog.GetTemplatesAsync(TenantId, LabelSubjectType.Manual, null, ct);
+        return View("Manual/Edit", new ManualLabelEditViewModel());
+    }
+
+    [HttpPost("/Labels/Manual/New"), ValidateAntiForgeryToken]
+    public async Task<IActionResult> ManualNew(ManualLabelEditViewModel input, CancellationToken ct)
+    {
+        if (UserId is not Guid uid) return Unauthorized();
+        if (!ModelState.IsValid)
+        {
+            ViewBag.Templates = await _catalog.GetTemplatesAsync(TenantId, LabelSubjectType.Manual, null, ct);
+            return View("Manual/Edit", input);
+        }
+        var design = await _canvasDesigns.GetPublishedAsync(TenantId, input.TemplateCode, null, ct);
+        if (design is null) return NotFound();
+        
+        // Dictionary<string, string> needs to be cast to IReadOnlyDictionary<string, string?>
+        IReadOnlyDictionary<string, string?> manualValues = input.Values.ToDictionary(k => k.Key, v => (string?)v.Value, StringComparer.OrdinalIgnoreCase);
+
+        var draft = await _manualLabels.SaveDraftAsync(TenantId, uid, design, manualValues, input.BrandingProfileId, ct);
+        TempData["Success"] = "Rascunho criado com sucesso.";
+        return RedirectToAction(nameof(ManualEdit), new { id = draft.Id });
+    }
+
+    [HttpGet("/Labels/Manual/{id:guid}/Edit")]
+    public async Task<IActionResult> ManualEdit(Guid id, CancellationToken ct)
+    {
+        return View("Manual/Edit", new ManualLabelEditViewModel { Id = id });
+    }
+
+    [HttpPost("/Labels/Manual/{id:guid}/Edit"), ValidateAntiForgeryToken]
+    public async Task<IActionResult> ManualEdit(Guid id, ManualLabelEditViewModel input, CancellationToken ct)
+    {
+        return RedirectToAction(nameof(ManualIndex));
+    }
+
+    [HttpGet("/Labels/Manual/{id:guid}")]
+    public async Task<IActionResult> ManualDetails(Guid id, CancellationToken ct)
+    {
+        return View("Manual/Details", new ManualLabelDetailsViewModel { Id = id });
+    }
+
+    [HttpPost("/Labels/Manual/{id:guid}/Archive"), ValidateAntiForgeryToken]
+    public async Task<IActionResult> ManualArchive(Guid id, CancellationToken ct)
+    {
+        if (UserId is not Guid uid) return Unauthorized();
+        await _manualLabels.ArchiveAsync(TenantId, uid, id, ct);
+        TempData["Success"] = "Etiqueta arquivada com sucesso.";
+        return RedirectToAction(nameof(ManualIndex));
+    }
+
+    [HttpPost("/Labels/Manual/{id:guid}/Duplicate"), ValidateAntiForgeryToken]
+    public async Task<IActionResult> ManualDuplicate(Guid id, CancellationToken ct)
+    {
+        if (UserId is not Guid uid) return Unauthorized();
+        var newDraft = await _manualLabels.DuplicateAsync(TenantId, uid, id, ct);
+        TempData["Success"] = "Cópia criada com sucesso.";
+        return RedirectToAction(nameof(ManualEdit), new { id = newDraft.Id });
     }
 }

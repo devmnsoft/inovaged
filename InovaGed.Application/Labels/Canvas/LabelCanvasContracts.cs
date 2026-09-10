@@ -207,9 +207,9 @@ public sealed class LabelCanvasValidationResult
 }
 
 public sealed record LabelCanvasValidationIssue(string Code, string Severity, string Message, string? ElementId = null);
-public sealed record LabelCanvasFieldDto(string Key, string Label, string DataType, string SubjectType, string? Example = null, string? Category = null, string? Description = null);
+public sealed record LabelCanvasFieldDto(string Key, string Label, string DataType, string SubjectType, string? Example = null, string? Category = null, string? Description = null, bool IsEditableInManualMode = false);
 
-public enum LabelCanvasStarterKind { Blank, Institutional, IdentificationQr, Classification, Traceability }
+public enum LabelCanvasStarterKind { Blank, Institutional, IdentificationQr, Classification, Traceability, ManualLabel }
 public sealed record LabelCanvasStarterRequest(string SubjectType, LabelCanvasStarterKind StarterKind, decimal WidthMm, decimal HeightMm, Guid? BrandingProfileId, string PaperKind = "A4");
 public interface ILabelCanvasStarterTemplateService
 {

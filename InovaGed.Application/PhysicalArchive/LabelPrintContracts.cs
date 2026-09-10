@@ -23,17 +23,20 @@ public sealed record LabelPrintRequest(
     public string? LogoPosition { get; init; }
     public Guid? CalibrationProfileId { get; init; }
     public string? TraceCode { get; init; }
+    public Guid? ClientActionId { get; init; }
 }
 
 public interface ILabelPrintRegistrar
 {
     Task<InovaGed.Application.Labels.LabelTraceIssued> RegisterAsync(LabelPrintRequest request, CancellationToken cancellationToken = default);
+    Task UpdateFinalSnapshotAsync(Guid tenantId, Guid labelPrintId, string snapshotJson, string? traceCode, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Canonical boundary for auditable label printing.</summary>
 public interface ILabelPrintService
 {
     Task<InovaGed.Application.Labels.LabelTraceIssued> RegisterAsync(LabelPrintRequest request, CancellationToken cancellationToken = default);
+    Task UpdateFinalSnapshotAsync(Guid tenantId, Guid labelPrintId, string snapshotJson, string? traceCode, CancellationToken cancellationToken = default);
 }
 
 public interface ILabelPayloadBuilder
