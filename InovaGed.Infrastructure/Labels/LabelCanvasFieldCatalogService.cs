@@ -49,7 +49,20 @@ public sealed class LabelCanvasFieldCatalogService : ILabelCanvasFieldCatalogSer
 
     private static IReadOnlyList<LabelCanvasFieldDto> Fields(string subject, params (string Key, string Label)[] values) =>
         BrandingFields.Concat(values).GroupBy(x=>x.Key,StringComparer.OrdinalIgnoreCase).Select(x=>x.First())
-            .Select(x => new LabelCanvasFieldDto(x.Key, x.Label, x.Key.EndsWith("At", StringComparison.Ordinal) ? "date" : x.Key.Contains("Logo",StringComparison.Ordinal) ? "image" : "text", subject)).ToArray();
+            .Select(x => new LabelCanvasFieldDto(x.Key, x.Label, x.Key.EndsWith("At", StringComparison.Ordinal) ? "date" : x.Key.Contains("Logo",StringComparison.Ordinal) ? "image" : "text", subject,
+                Example(x.Key), Category(x.Key), $"{x.Label} disponível para preenchimento automático na impressão.")).ToArray();
+
+    private static string Category(string key) => key switch
+    {
+        "clientName" or "contractName" or "organizationName" or "primaryLogo" or "secondaryLogo" => "Cliente",
+        "classification" => "Classificação",
+        "periodStart" or "periodEnd" or "retentionStatus" or "documentPeriod" => "Temporalidade",
+        "location" or "sector" => "Localização",
+        "traceCode" or "qrPayload" => "Rastreabilidade",
+        "createdAt" or "printedBy" or "uploadedBy" => "Sistema",
+        _ => "Identificação"
+    };
+    private static string? Example(string key) => key switch { "classification"=>"ADM.120 - Documentação administrativa", "location"=>"Arquivo Central · Estante 03", "traceCode"=>"CX-2026-0042", _=>null };
 
     public IReadOnlyList<LabelCanvasFieldDto> GetFields(string subjectType) =>
         Catalog.TryGetValue(subjectType ?? "", out var fields) ? fields : [];

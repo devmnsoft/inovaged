@@ -20,6 +20,7 @@ public sealed class LabelPrintWizardInputModel : IValidatableObject
     public Guid? PrintBrandingProfileId { get; set; }
     public LocDeskLabelInputModel CustomFields { get; set; }=new();
     public IEnumerable<SelectListItem> LogoOptions { get; set; } = Array.Empty<SelectListItem>();
+    public Dictionary<string,string?> ManualValues { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public IEnumerable<ValidationResult> Validate(ValidationContext c)
     {
         if (string.IsNullOrWhiteSpace(TemplateCode)) yield return new("Selecione um modelo de etiqueta.", [nameof(TemplateCode)]);

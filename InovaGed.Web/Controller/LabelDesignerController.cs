@@ -6,12 +6,16 @@ using InovaGed.Web.Models.Labels;
 using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Globalization;
+using System.Text;
+using System.Text.RegularExpressions;
 
 namespace InovaGed.Web.Controllers;
 
 [Authorize(Policy = AppPolicies.LabelDesignerRead)]
 public sealed class LabelDesignerController(IDbConnectionFactory dbFactory, ILabelCanvasDesignService designs,
     ILabelCanvasRenderService renderer, ILabelCanvasFieldCatalogService fieldCatalog,
+    ILabelCanvasStarterTemplateService starters,
     IPrintBrandingProfileService brandingProfiles, IPrintBrandingResolver brandingResolver,
     ILogger<LabelDesignerController> logger) : GedControllerBase(dbFactory)
 {
@@ -26,23 +30,33 @@ public sealed class LabelDesignerController(IDbConnectionFactory dbFactory, ILab
 
     [HttpGet("/Labels/Designer/New")]
     [Authorize(Policy=AppPolicies.LabelDesignerCreate)]
-    public async Task<IActionResult> New(string? baseTemplate,CancellationToken ct)
+    public async Task<IActionResult> New(CancellationToken ct)
     {
-        var source=string.IsNullOrWhiteSpace(baseTemplate)?null:await designs.GetAsync(TenantId,baseTemplate,ct);
-        var document=NewDocument("Document","Genérico",100,70);
-        var design=source is null
-            ?new LabelCanvasDesignDto { Id=Guid.Empty,TenantId=TenantId,TemplateName="Novo modelo de etiqueta",TemplateKind="CANVAS",SubjectType="Document",PaperKind="A4",WidthMm=100,HeightMm=70,Orientation="portrait",Status="DRAFT",DesignJson=JsonSerializer.Serialize(document,JsonOptions),CurrentVersion=1,HeaderTitleFallback="ARQUIVO CENTRAL",LabelContext="GENERIC",CreatedAt=DateTime.UtcNow }
-            :new LabelCanvasDesignDto { Id=Guid.Empty,TenantId=TenantId,TemplateName=$"Novo modelo baseado em {source.TemplateName}",TemplateKind=source.TemplateKind,SubjectType=source.SubjectType,PaperKind=source.PaperKind,WidthMm=source.WidthMm,HeightMm=source.HeightMm,Orientation=source.Orientation,Status="DRAFT",DesignJson=source.DesignJson,CurrentVersion=1,DefaultBrandingProfileId=source.DefaultBrandingProfileId,BrandingBindingKey=source.BrandingBindingKey,ClientNameFallback=source.ClientNameFallback,ContractNameFallback=source.ContractNameFallback,OrganizationNameFallback=source.OrganizationNameFallback,HeaderTitleFallback=source.HeaderTitleFallback,HeaderSubtitleFallback=source.HeaderSubtitleFallback,LabelContext=source.LabelContext,CreatedAt=DateTime.UtcNow};
-        ViewBag.BaseTemplate=baseTemplate;
-        return View("~/Views/Labels/Designer/Edit.cshtml",await PageAsync(design,true,ct));
+        return View("~/Views/Labels/Designer/New.cshtml",new LabelCanvasNewModelInput{BrandingProfiles=await brandingProfiles.ListAsync(TenantId,ct)});
     }
 
     [HttpPost("/Labels/Designer/New"),ValidateAntiForgeryToken]
     [Authorize(Policy=AppPolicies.LabelDesignerCreate)]
-    public async Task<IActionResult> New([FromBody] LabelCanvasSaveRequest request,CancellationToken ct)
+    public async Task<IActionResult> New(LabelCanvasNewModelInput input,CancellationToken ct)
     {
         if(UserId is not Guid userId)return Unauthorized();
-        return await ExecuteWrite(async()=>{var created=await designs.CreateDraftAsync(TenantId,userId,request,Ip(),Agent(),ct);return Ok(new{ok=true,message="Rascunho criado.",templateKey=created.TemplateKey,redirectUrl=Url.Action(nameof(Edit),new{templateKey=created.TemplateKey})});},"criar",request.TemplateKey);
+        if(!Enum.TryParse<LabelCanvasStarterKind>(input.StarterKind.Replace("_", ""),true,out var kind))ModelState.AddModelError(nameof(input.StarterKind),"Escolha um layout inicial válido.");
+        var allowedSubjects=new[]{"Box","Document","Folder","MedicalRecord","Process","ManualLabel"};
+        if(!allowedSubjects.Contains(input.SubjectType,StringComparer.OrdinalIgnoreCase))ModelState.AddModelError(nameof(input.SubjectType),"Escolha uma finalidade válida.");
+        if(!LabelPaperOptions.IsSupported(input.PaperKind))ModelState.AddModelError(nameof(input.PaperKind),"Escolha um papel suportado.");
+        if(!ModelState.IsValid){input.BrandingProfiles=await brandingProfiles.ListAsync(TenantId,ct);return View("~/Views/Labels/Designer/New.cshtml",input);}
+        var key=await UniqueKeyAsync(input.Name,ct);
+        var document=starters.Create(new(input.SubjectType,kind,input.WidthMm,input.HeightMm,input.BrandingProfileId,input.PaperKind));
+        var request=new LabelCanvasSaveRequest{TemplateKey=key,TemplateName=input.Name.Trim(),TemplateKind="CANVAS",SubjectType=input.SubjectType,PaperKind=input.PaperKind,WidthMm=input.WidthMm,HeightMm=input.HeightMm,DesignJson=JsonSerializer.Serialize(document,JsonOptions),DefaultBrandingProfileId=input.BrandingProfileId,LabelContext="GENERIC",ChangeSummary="Modelo criado pelo assistente inicial."};
+        var created=await designs.CreateDraftAsync(TenantId,userId,request,Ip(),Agent(),ct);
+        return RedirectToAction(nameof(Edit),new{templateKey=created.TemplateKey});
+    }
+
+    private async Task<string> UniqueKeyAsync(string name,CancellationToken ct)
+    {
+        var normalized=name.Normalize(NormalizationForm.FormD);var chars=normalized.Where(c=>CharUnicodeInfo.GetUnicodeCategory(c)!=UnicodeCategory.NonSpacingMark).ToArray();
+        var baseKey=Regex.Replace(new string(chars).ToUpperInvariant(),"[^A-Z0-9]+","_").Trim('_');if(string.IsNullOrWhiteSpace(baseKey))baseKey="MODELO_ETIQUETA";baseKey=baseKey[..Math.Min(baseKey.Length,70)];
+        var key=baseKey;for(var suffix=2;await designs.GetAsync(TenantId,key,ct) is not null;suffix++)key=$"{baseKey}_{suffix}";return key;
     }
 
     [HttpGet("/Labels/Designer/Edit/{templateKey}")]

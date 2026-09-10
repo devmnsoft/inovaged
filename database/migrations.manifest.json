@@ -440,6 +440,17 @@
       "maximumApplicationVersion": "04.1.99",
       "requiresMaintenanceWindow": false,
       "requiresVerifiedBackup": false
+    },
+    {
+      "id": "2026_09_10_label_studio_pro_rc28",
+      "path": "database/migrations/2026_09_10_label_studio_pro_rc28.sql",
+      "module": "Labels",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.99",
+      "requiresMaintenanceWindow": false,
+      "requiresVerifiedBackup": false
     }
   ]
 }

@@ -1,23 +1,11 @@
-@{ ViewData["Title"]="Guia de Etiquetas"; ViewData["WorkspaceVariant"]="wide"; }
-@section Styles { <link rel="stylesheet" href="~/css/labels-studio.css" asp-append-version="true" /> }
-<main class="label-guide">
- <header class="label-guide-hero"><div><small>Manual do usuário</small><h1>Guia de Etiquetas</h1><p>Aprenda a imprimir, criar modelos e acompanhar etiquetas sem precisar conhecer termos técnicos.</p></div><a class="ig-button ig-button--secondary" asp-action="Index">Voltar à central</a></header>
- <section class="label-guide-example"><h2>Quero criar uma etiqueta para uma caixa</h2><ol><li>Escolha “Caixa”</li><li>Escolha um modelo</li><li>Escolha o cliente</li><li>Confira a prévia</li><li>Imprima</li></ol></section>
- <section class="label-guide-grid" aria-label="Conteúdo do guia">
- @{ var topics = new[]{
- ("O que são etiquetas no InovaGED","Identificam caixas, documentos, pastas, prontuários e processos com dados confiáveis."),
- ("Como imprimir uma etiqueta","Abra Nova impressão e avance pelas cinco etapas até a conferência."),
- ("Como criar um modelo","Escolha a finalidade e um ponto de partida; depois organize os elementos visualmente."),
- ("Como personalizar o cliente","Selecione um perfil visual para aplicar cliente, contrato, organização e logos oficiais."),
- ("Como inserir campos dinâmicos","Na aba Campos, arraste o dado desejado. Ele será preenchido no momento da impressão."),
- ("Como usar QR Code","Adicione QR Code e vincule o conteúdo de rastreabilidade recomendado."),
- ("Como usar código de barras","Adicione Código de barras para leitores compatíveis com Code 128."),
- ("Como publicar um modelo","Valide o checklist, descreva a alteração e publique uma versão imutável."),
- ("Como criar uma nova revisão","A revisão preserva a versão publicada enquanto você prepara mudanças."),
- ("Como imprimir em lote","Selecione vários registros, modelo, cópias e revise antes de gerar."),
- ("Como calibrar a impressão","Imprima a folha de teste em escala 100% e corrija alinhamento somente se necessário."),
- ("Como funciona a rastreabilidade","Histórico, justificativas de reimpressão e QR preservam a trilha de auditoria."),
- ("Como corrigir problemas comuns","Confira modelo, origem, escala 100%, papel, margens, logo e conexão antes de tentar novamente.")}; var n=0; }
- @foreach(var topic in topics){n++;<article class="label-guide-card"><span>@n</span><h2>@topic.Item1</h2><p>@topic.Item2</p></article>}
- </section>
-</main>
+@{ ViewData["Title"]="Guia de Etiquetas";ViewData["WorkspaceVariant"]="wide";var topics=new[]{
+("Imprimir","Emitir uma etiqueta confiável","Abra Nova impressão, escolha origem, modelo e identidade, configure as cópias e confira.","Uma prévia igual ao resultado final e histórico após a emissão.","Se a prévia não abrir, revise origem e modelo."),
+("Criar modelo","Montar uma apresentação reutilizável","Escolha finalidade, layout inicial neutro, identidade e tamanho; confirme e use o editor.","Um rascunho com chave técnica automática.","Publique somente depois de corrigir erros da verificação."),
+("Cliente e logo","Aplicar a identidade correta","Cadastre o perfil visual, vincule cliente, contrato e logos e selecione-o no fluxo.","Identidade resolvida pelo servidor para o cliente atual.","Em modelos visuais, posição e tamanho da logo pertencem ao modelo."),
+("QR e rastreabilidade","Permitir conferência e auditoria","Use o campo QR de rastreabilidade, confira a prévia e emita.","O token definitivo nasce somente na impressão.","A prévia nunca cria histórico ou token definitivo."),
+("Lote","Emitir várias etiquetas juntas","Filtre, selecione registros visíveis, configure e confira quantidades e até três amostras.","Um job rastreável sem centenas de prévias.","Itens já impressos exigem justificativa."),
+("Calibração","Corrigir o alinhamento físico","Escolha impressora e papel, imprima o teste, informe X/Y e salve o perfil.","O perfil ficará disponível na etapa Impressão.","Se saiu 2 mm à direita, reduza o deslocamento horizontal em 2 mm."),
+("Problemas","Diagnosticar uma impressão incorreta","Confira papel, escala 100%, perfil, modelo, origem e identidade.","Uma correção específica sem alterar o modelo desnecessariamente.","Não compense geometria do modelo com ajustes de logo do assistente.")};}
+@section Styles {<link rel="stylesheet" href="~/css/labels-studio.css" asp-append-version="true"/>}
+<main class="label-guide"><header class="label-guide-hero"><div><small>Manual do usuário</small><h1>Guia de Etiquetas</h1><p>Encontre uma tarefa sem precisar conhecer termos técnicos.</p></div><a class="ig-button ig-button--secondary" asp-action="Index">Voltar à central</a></header><label class="label-guide-search">O que você quer fazer?<input type="search" data-guide-search placeholder="Ex.: minha etiqueta saiu deslocada"/></label><nav class="label-guide-shortcuts" aria-label="Atalhos">@foreach(var topic in topics){<a href="#topic-@topic.Item1.ToLowerInvariant().Replace(" ","-")">@topic.Item1</a>}</nav><section class="label-guide-grid" data-guide-topics>@foreach(var topic in topics){<article class="label-guide-card" id="topic-@topic.Item1.ToLowerInvariant().Replace(" ","-")" data-guide-topic><h2>@topic.Item1</h2><h3>Objetivo</h3><p>@topic.Item2</p><h3>Passos</h3><p>@topic.Item3</p><h3>O que esperar</h3><p>@topic.Item4</p><details><summary>Problemas comuns</summary><p>@topic.Item5</p></details></article>}</section></main>
+@section Scripts {<script>document.querySelector('[data-guide-search]')?.addEventListener('input',function(){const value=this.value.toLowerCase();document.querySelectorAll('[data-guide-topic]').forEach(x=>x.hidden=!x.textContent.toLowerCase().includes(value));});</script>}

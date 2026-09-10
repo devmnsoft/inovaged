@@ -33,7 +33,7 @@ public static class LabelCanvasSheetLayoutCalculator
     private static int Fit(decimal available,decimal item,decimal gap) => item<=0||available<item?0:1+(int)Math.Floor((available-item)/(item+gap));
     private static (decimal Width,decimal Height) ResolvePaper(LabelCanvasSheetLayoutRequest input) => input.PaperSize.Trim().ToUpperInvariant() switch
     {
-        "A4" => (210m,297m), "A5" => (148m,210m),
+        "A4" => (210m,297m), "A5" => (148m,210m), "LETTER" => (215.9m,279.4m),
         "CUSTOM" when input.PaperWidthMm>0&&input.PaperHeightMm>0 => (input.PaperWidthMm.Value,input.PaperHeightMm.Value),
         "CUSTOM" => throw new ArgumentException("CUSTOM exige dimensões físicas suficientes."),
         _ => throw new ArgumentException("Tamanho de papel não suportado.")

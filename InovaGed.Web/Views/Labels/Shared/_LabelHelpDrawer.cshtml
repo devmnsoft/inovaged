@@ -1,11 +1,20 @@
 @{
     var context = Convert.ToString(ViewData["LabelHelpContext"])?.ToUpperInvariant() ?? "CENTRAL";
     var help = context switch {
-        "PRINT" => ("Imprimir etiquetas", "Siga as cinco etapas. Confira a prévia e o checklist antes de imprimir."),
-        "DESIGNER" => ("Criar e editar modelos", "Adicione conteúdo à esquerda, organize a etiqueta no centro e edite o elemento à direita."),
+        "PRINT" or "PRINT_STEP_ORIGIN" => ("Escolher a origem", "Selecione a finalidade e o registro. Etiqueta avulsa não exige um registro existente."),
+        "PRINT_STEP_TEMPLATE" => ("Escolher o modelo", "Os cards mostram somente modelos compatíveis com a finalidade."),
+        "PRINT_STEP_BRANDING" => ("Escolher a identidade", "Aplique cliente, contrato, organização e logo pelo perfil visual."),
+        "PRINT_STEP_SETTINGS" => ("Configurar a impressão", "Defina cópias e o perfil da impressora. A geometria da logo pertence ao modelo visual."),
+        "PRINT_STEP_REVIEW" => ("Conferir e emitir", "Confira a prévia real. Somente a emissão registra histórico e rastreabilidade."),
+        "DESIGNER" or "DESIGNER_LIBRARY" => ("Biblioteca", "Adicione elementos, campos disponíveis e blocos sem misturar as categorias."),
+        "DESIGNER_CANVAS" => ("Área da etiqueta", "Arraste, redimensione e alinhe os elementos na etiqueta."),
+        "DESIGNER_INSPECTOR" => ("Editar elemento", "O inspetor mostra somente propriedades aplicáveis ao tipo selecionado."),
+        "DESIGNER_PUBLISH" => ("Publicar", "Corrija erros, confira alertas e descreva a alteração para criar uma versão imutável."),
         "BRANDING" => ("Identidade visual", "Cadastre perfis oficiais para aplicar cliente, contrato, organização e logos."),
-        "CALIBRATION" => ("Calibrar impressão", "Use uma folha de teste ao trocar de impressora, papel ou escala."),
-        "BATCH" => ("Imprimir em lote", "Selecione vários registros, revise a quantidade e gere uma única operação."),
+        "CALIBRATION" or "CALIBRATION_BASIC" => ("Calibrar impressão", "Escolha impressora e papel e imprima uma folha de teste."),
+        "CALIBRATION_ADVANCED" => ("Ajustes finos", "Informe deslocamentos somente depois de medir a página de teste."),
+        "BATCH" or "BATCH_SELECTION" => ("Selecionar o lote", "A busca e os filtros controlam quais registros ficam visíveis e selecionáveis."),
+        "BATCH_REVIEW" => ("Conferir o lote", "Revise totais, reimpressões e até três amostras antes de criar o job."),
         "HISTORY" => ("Histórico e rastreabilidade", "Reimpressões exigem justificativa. O QR permite conferir a situação da etiqueta."),
         _ => ("Central de Etiquetas", "Comece por uma das quatro ações principais. Configurações ficam recolhidas para não atrapalhar a operação.")
     };
@@ -15,6 +24,6 @@
 <aside id="label-help-drawer" class="label-help-drawer" aria-labelledby="label-help-title" aria-hidden="true" tabindex="-1">
  <header><div><small>Ajuda contextual</small><h2 id="label-help-title">@help.Item1</h2></div><button type="button" data-label-help-close aria-label="Fechar ajuda"><app-icon name="x" size="18" decorative="true" /></button></header>
  <p>@help.Item2</p>
- @if(context=="DESIGNER"){<button type="button" class="ig-button ig-button--secondary" data-designer-tour-start>Rever introdução</button><details><summary>Atalhos</summary><ul><li>Ctrl+S — salvar</li><li>Ctrl+Z / Ctrl+Y — desfazer/refazer</li><li>Ctrl+C / Ctrl+V — copiar/colar</li><li>Delete — excluir</li><li>Setas — mover</li></ul></details>}
+ @if(context.StartsWith("DESIGNER",StringComparison.OrdinalIgnoreCase)){<button type="button" class="ig-button ig-button--secondary" data-designer-tour-start>Rever introdução</button><details><summary>Atalhos</summary><ul><li>Ctrl+S — salvar</li><li>Ctrl+Z / Ctrl+Y — desfazer/refazer</li><li>Ctrl+C / Ctrl+V — copiar/colar</li><li>Alt + arrastar — duplicar</li><li>Delete — excluir</li><li>Setas — mover</li></ul></details>}
  <a class="ig-button ig-button--primary" asp-controller="Labels" asp-action="Guide">Ver guia completo</a>
 </aside>
