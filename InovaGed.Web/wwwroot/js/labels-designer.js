@@ -110,7 +110,7 @@
   libraryTabs.forEach((tab,index)=>{tab.setAttribute('role','tab');tab.addEventListener('click',()=>activateLibrary(tab));tab.addEventListener('keydown',event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();const next=event.key==='Home'?0:event.key==='End'?libraryTabs.length-1:(index+(event.key==='ArrowRight'?1:-1)+libraryTabs.length)%libraryTabs.length;libraryTabs[next].focus();activateLibrary(libraryTabs[next]);});});activateLibrary(libraryTabs[0]);
   const settings=$('[data-model-settings]'),settingsButton=$('[data-model-settings-open]');settingsButton?.addEventListener('click',()=>{settings?.showModal();settings?.querySelector('input,select')?.focus();});
   const validationDialog=$('[data-validation-dialog]');$('[data-validation-open]')?.addEventListener('click',()=>validationDialog?.showModal());
-  const favoriteStorage='inovaged.labels.designer.fieldFavorites.v1';
+  const favoriteStorage='inovaged.labels.designer.favoriteFields.v1';
   let favorites=new Set(JSON.parse(localStorage.getItem(favoriteStorage)||'[]'));
   const renderFavorites=()=>{
     const host=$('[data-field-favorites]'),list=host?.querySelector('div');if(!host||!list)return;
