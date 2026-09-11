@@ -35,5 +35,24 @@ public sealed class LabelCanvasDesignerTests
         Assert.True(File.Exists(Path.Combine(root,"InovaGed.Web","wwwroot","css","labels-designer.css")));Assert.True(File.Exists(Path.Combine(root,"InovaGed.Web","wwwroot","js","labels-designer.js")));
     }
 
+    [Fact]
+    public void Designer_view_is_componentized_and_hides_technical_settings()
+    {
+        var root=FindRoot();var view=File.ReadAllText(Path.Combine(root,"InovaGed.Web","Views","Labels","Designer","Edit.cshtml"));
+        foreach(var partial in new[]{"_DesignerToolbar","_DesignerLibrary","_DesignerWorkspace","_DesignerInspector","_DesignerDialogs"})Assert.Contains(partial,view);
+        Assert.DoesNotContain("brandingBindingKey",view);Assert.DoesNotContain("labelContext",view);Assert.Contains("canvas-workspace",view);
+    }
+
+    [Fact]
+    public void Diff_detects_semantic_element_changes_deterministically()
+    {
+        var service=new LabelCanvasDiffService();
+        const string before="""{"schemaVersion":1,"canvas":{"widthMm":100},"elements":[{"id":"a","name":"Código","type":"field","xMm":1,"yMm":2,"widthMm":20,"heightMm":5,"binding":{"field":"code"}},{"id":"removed","name":"Antigo","type":"text"}]}""";
+        const string after="""{"schemaVersion":1,"canvas":{"widthMm":100},"elements":[{"id":"a","name":"Código","type":"field","xMm":3,"yMm":2,"widthMm":25,"heightMm":5,"binding":{"field":"classification"}},{"id":"added","name":"Novo","type":"qr"}]}""";
+        var result=service.Compare(before,after);
+        Assert.Equal("added",Assert.Single(result.Added).ElementId);Assert.Equal("removed",Assert.Single(result.Removed).ElementId);
+        var changed=Assert.Single(result.Changed);Assert.Equal(new[]{"POSITION","SIZE","BINDING"},changed.Changes);
+    }
+
     private static string FindRoot(){var current=new DirectoryInfo(AppContext.BaseDirectory);while(current is not null&&!File.Exists(Path.Combine(current.FullName,"InovaGed.sln")))current=current.Parent;return current?.FullName??throw new DirectoryNotFoundException();}
 }

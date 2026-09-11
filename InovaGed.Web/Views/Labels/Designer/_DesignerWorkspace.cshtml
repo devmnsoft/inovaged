@@ -1,0 +1,12 @@
+@model InovaGed.Web.Models.Labels.LabelCanvasDesignerPageViewModel
+<section class="canvas-stage-panel">
+    <div class="preview-subject"><span>Prévia: <strong data-preview-subject>Dados de exemplo</strong></span><button type="button" data-action="live-preview">Trocar</button></div>
+    <nav class="canvas-view-tools" aria-label="Visualização">
+        <label><input type="checkbox" data-snap checked /> Alinhamento inteligente</label>
+        <button type="button" data-zoom-action="out" aria-label="Reduzir zoom">−</button><button type="button" data-zoom-action="100">100%</button><button type="button" data-zoom-action="in" aria-label="Ampliar zoom">+</button><button type="button" data-zoom-action="fit">Ajustar</button>
+        <button type="button" data-action="toggle-grid">Grade</button><button type="button" data-action="toggle-ruler">Régua</button>
+        <input type="range" min="40" max="180" step="10" value="100" data-zoom aria-label="Zoom" hidden /><output hidden>100%</output>
+    </nav>
+    <div class="canvas-stage" data-stage><div class="canvas-ruler ruler-x" data-ruler-x></div><div class="canvas-ruler ruler-y" data-ruler-y></div><div class="label-canvas" data-canvas tabindex="0" aria-label="Área de edição da etiqueta"><div class="smart-guides" data-guides></div><div class="selection-marquee" data-marquee hidden></div><div class="safe-margin" data-safe-margin><span>margem segura</span></div></div></div>
+    <partial name="_DesignerStatusBar" model="Model" />
+</section>
