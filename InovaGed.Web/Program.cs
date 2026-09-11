@@ -202,6 +202,7 @@ builder.Services.AddScoped<InovaGed.Application.Labels.Canvas.ILabelCanvasDesign
 builder.Services.AddSingleton<InovaGed.Application.Labels.Canvas.ILabelCanvasFieldCatalogService, InovaGed.Infrastructure.Labels.LabelCanvasFieldCatalogService>();
 builder.Services.AddSingleton<InovaGed.Application.Labels.Canvas.ILabelCanvasRenderService, InovaGed.Infrastructure.Labels.LabelCanvasRenderService>();
 builder.Services.AddSingleton<InovaGed.Application.Labels.Canvas.ILabelCanvasStarterTemplateService, InovaGed.Infrastructure.Labels.LabelCanvasStarterTemplateService>();
+builder.Services.AddSingleton<InovaGed.Application.Labels.Canvas.ILabelCanvasDiffService, InovaGed.Infrastructure.Labels.LabelCanvasDiffService>();
 builder.Services.AddScoped<InovaGed.Application.Labels.Canvas.ILabelCanvasValueResolver, InovaGed.Infrastructure.Labels.LabelCanvasValueResolver>();
 builder.Services.AddScoped<InovaGed.Application.Labels.Canvas.ILabelCanvasPrintCoordinator, InovaGed.Infrastructure.Labels.LabelCanvasPrintCoordinator>();
 builder.Services.AddScoped<InovaGed.Application.Labels.Canvas.IManualLabelInstanceService, InovaGed.Infrastructure.Labels.ManualLabelInstanceService>();

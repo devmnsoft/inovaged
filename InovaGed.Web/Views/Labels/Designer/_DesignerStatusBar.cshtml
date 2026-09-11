@@ -1,0 +1,2 @@
+@model InovaGed.Web.Models.Labels.LabelCanvasDesignerPageViewModel
+<footer class="canvas-statusbar"><span data-selection-status>Nenhum elemento selecionado</span><span>Grade <b data-grid-value>2 mm</b></span><button type="button" data-validation-open aria-live="polite">@(Model.Validation.HasErrors ? $"{Model.Validation.Issues.Count} problemas" : "Pronto")</button></footer>

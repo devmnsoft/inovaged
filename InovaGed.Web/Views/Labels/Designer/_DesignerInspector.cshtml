@@ -1,0 +1,21 @@
+@model InovaGed.Web.Models.Labels.LabelCanvasDesignerPageViewModel
+<aside class="properties-panel" aria-label="Propriedades do elemento">
+    <header><span>Editar elemento</span><h2>Propriedades</h2></header>
+    <div class="empty-properties" data-empty-properties><strong>Selecione um elemento da etiqueta para editar.</strong><p>Arraste para mover, clique para selecionar e use Shift+clique para selecionar vários.</p></div>
+    <div class="property-form" data-property-form hidden>
+        <div class="inspector-selection-heading"><app-icon name="edit" size="18" decorative="true" /><div><strong data-inspector-name>Elemento</strong><small data-inspector-type>Conteúdo</small></div></div>
+        <div class="property-actions"><button type="button" data-action="duplicate-element">Duplicar</button><button type="button" data-action="toggle-lock">Bloquear</button><button type="button" data-action="delete-element" class="is-danger">Excluir</button></div>
+        <details class="inspector-group" open><summary>Conteúdo</summary><fieldset><legend class="visually-hidden">Conteúdo</legend>
+            <label>Nome<input data-prop="name" /></label><label data-property-for="text field">Texto<textarea data-prop="text" rows="2"></textarea></label>
+            <label data-property-for="field qr barcode">Campo<select data-prop="binding.field"><option value="">Sem vínculo</option>@foreach(var field in Model.Fields){<option value="@field.Key">@field.Label</option>}</select></label>
+            <div class="property-grid" data-property-for="field"><label>Prefixo<input data-prop="binding.prefix" /></label><label>Sufixo<input data-prop="binding.suffix" /></label></div>
+        </fieldset></details>
+        <details class="inspector-group"><summary>Aparência</summary><fieldset><legend class="visually-hidden">Aparência</legend>
+            <label data-property-for="text field">Fonte<select data-prop="style.fontFamily"><option>Arial</option><option>Helvetica</option><option>Verdana</option><option>Times New Roman</option></select></label>
+            <div class="property-grid"><label data-property-for="text field">Tamanho (pt)<input type="number" min="5" max="72" step=".5" data-prop="style.fontSizePt" /></label><label>Opacidade<input type="number" min="0" max="1" step=".05" data-prop="style.opacity" /></label><label>Cor<input type="color" data-prop="style.color" /></label><label data-property-for="rect">Fundo<input type="color" data-prop="style.backgroundColor" /></label></div>
+            <label data-property-for="line rect">Borda<select data-prop="style.border"><option value="none">Sem borda</option><option value="1px solid #111111">Linha fina</option><option value="1px dashed #111111">Tracejada</option><option value="2px solid #111111">Linha forte</option></select></label>
+        </fieldset></details>
+        <details class="inspector-group"><summary>Layout</summary><fieldset><legend class="visually-hidden">Layout</legend><div class="property-grid"><label>Posição horizontal<input type="number" step=".1" data-prop="xMm" /></label><label>Posição vertical<input type="number" step=".1" data-prop="yMm" /></label><label>Largura<input type="number" step=".1" min="1" data-prop="widthMm" /></label><label>Altura<input type="number" step=".1" min="1" data-prop="heightMm" /></label><label>Rotação<input type="number" step="1" data-prop="rotationDeg" /></label><label>Camada<input type="number" step="1" data-prop="zIndex" /></label></div></fieldset></details>
+        <details class="inspector-group"><summary>Comportamento</summary><fieldset><legend class="visually-hidden">Comportamento</legend><label class="check"><input type="checkbox" data-prop="visible" /> Visível</label><label class="check"><input type="checkbox" data-prop="locked" /> Bloqueado</label><label class="check"><input type="checkbox" data-prop="validation.required" /> Obrigatório</label></fieldset></details>
+    </div>
+</aside>

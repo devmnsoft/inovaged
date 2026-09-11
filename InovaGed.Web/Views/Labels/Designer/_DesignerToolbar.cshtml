@@ -1,0 +1,26 @@
+@model InovaGed.Web.Models.Labels.LabelCanvasDesignerPageViewModel
+@{ var canEdit = Model.IsNew || Model.Design.CanEdit; }
+<header class="canvas-toolbar">
+    <a class="tool-link" asp-action="Index" aria-label="Voltar"><app-icon name="arrow-left" size="16" decorative="true" /><span>Voltar</span></a>
+    <div class="canvas-template-heading">
+        <strong>@(Model.IsNew ? "Novo modelo" : Model.Design.TemplateName)</strong>
+        <small><span class="designer-status is-@Model.Design.Status.ToLowerInvariant()">@(Model.Design.Status == "DRAFT" ? $"Revisão da v{Model.Design.CurrentVersion}" : $"Publicado · v{Model.Design.CurrentVersion}")</span></small>
+        <small data-save-status role="status" aria-live="polite">Salvo</small>
+    </div>
+    <div class="toolbar-cluster toolbar-history">
+        <button type="button" data-action="undo" aria-label="Desfazer"><app-icon name="undo" size="17" decorative="true" /></button>
+        <button type="button" data-action="redo" aria-label="Refazer"><app-icon name="refresh" size="17" decorative="true" /></button>
+    </div>
+    <div class="toolbar-cluster toolbar-primary">
+        <button type="button" data-action="live-preview">Prévia</button>
+        <button type="button" data-action="save" @(canEdit ? null : "disabled")>Salvar</button>
+        @if (!Model.IsNew) { <button type="button" data-action="publish" @(Model.Design.CanEdit ? null : "disabled")>Publicar</button> }
+        <details class="designer-more"><summary aria-label="Mais opções">Mais</summary><nav>
+            <button type="button" data-focus-mode aria-pressed="false">Modo foco</button>
+            @if (!Model.IsNew && Model.Design.Status == "PUBLISHED" && !Model.Design.IsSystemTemplate) { <button type="button" data-action="revision">Criar nova revisão</button> }
+            @if (!Model.IsNew) { <button type="button" data-action="duplicate">Duplicar modelo</button><a asp-action="Versions" asp-route-templateKey="@Model.Design.TemplateKey">Atividade e versões</a> }
+            <button type="button" data-model-settings-open aria-haspopup="dialog">Configurações do modelo</button>
+        </nav></details>
+        <partial name="~/Views/Labels/Shared/_LabelHelpDrawer.cshtml" />
+    </div>
+</header>

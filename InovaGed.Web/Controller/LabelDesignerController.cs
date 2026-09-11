@@ -15,7 +15,7 @@ namespace InovaGed.Web.Controllers;
 [Authorize(Policy = AppPolicies.LabelDesignerRead)]
 public sealed class LabelDesignerController(IDbConnectionFactory dbFactory, ILabelCanvasDesignService designs,
     ILabelCanvasRenderService renderer, ILabelCanvasFieldCatalogService fieldCatalog,
-    ILabelCanvasStarterTemplateService starters,
+    ILabelCanvasStarterTemplateService starters, ILabelCanvasDiffService diffService,
     IPrintBrandingProfileService brandingProfiles, IPrintBrandingResolver brandingResolver,
     ILogger<LabelDesignerController> logger) : GedControllerBase(dbFactory)
 {
@@ -284,6 +284,15 @@ public sealed class LabelDesignerController(IDbConnectionFactory dbFactory, ILab
     [HttpGet("/Labels/Designer/{templateKey}/Versions")]
     public async Task<IActionResult> Versions(string templateKey,CancellationToken ct)
     {var design=await designs.GetAsync(TenantId,templateKey,ct);return design is null?NotFound():View("~/Views/Labels/Designer/Versions.cshtml",new LabelCanvasVersionsPageViewModel(design,await designs.GetVersionsAsync(TenantId,templateKey,ct)));}
+
+    [HttpGet("/Labels/Designer/{templateKey}/Compare/{versionNo:int}")]
+    public async Task<IActionResult> Compare(string templateKey, int versionNo, CancellationToken ct)
+    {
+        var current = await designs.GetAsync(TenantId, templateKey, ct);
+        var published = await designs.GetPublishedAsync(TenantId, templateKey, versionNo, ct);
+        if (current is null || published is null) return NotFound();
+        return Ok(diffService.Compare(published.DesignJson, current.DesignJson));
+    }
 
     [HttpGet("/Labels/Designer/Versions/{templateKey}/Preview/{versionId:guid}")]
     [Authorize(Policy=AppPolicies.LabelDesignerPreview)]

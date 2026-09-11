@@ -1,0 +1,4 @@
+@using InovaGed.Application.Branding
+@model InovaGed.Web.Models.Labels.LabelCanvasDesignerPageViewModel
+@{ var profiles=Model.BrandingProfiles??Array.Empty<ResolvedPrintBranding>(); }
+<details><summary>Identidade</summary><div class="canvas-meta"><label>Perfil visual<select data-meta="defaultBrandingProfileId"><option value="">Padrão do tenant</option>@foreach(var profile in profiles){<option value="@profile.ProfileId" selected="@(profile.ProfileId==Model.Design.DefaultBrandingProfileId)">@profile.ProfileName — @(profile.ClientName??"sem cliente")</option>}</select></label></div><p>Logo, cliente, contrato e organização são atualizados pela identidade escolhida.</p></details>
