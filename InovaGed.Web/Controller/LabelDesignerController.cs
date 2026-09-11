@@ -54,6 +54,8 @@ public sealed class LabelDesignerController(IDbConnectionFactory dbFactory, ILab
                     Status = d.Status,
                     Version = d.CurrentVersion.ToString(),
                     Dimensions = $"{Math.Round(d.WidthMm)} × {Math.Round(d.HeightMm)} mm",
+                    WidthMm = d.WidthMm,
+                    HeightMm = d.HeightMm,
                     Health = d.Status.Equals("DRAFT", StringComparison.OrdinalIgnoreCase) ? "Em edição" : "Pronto",
                     IsSystem = d.IsSystemTemplate,
                     IsLegacy = isLegacy,

@@ -10,6 +10,8 @@ public class LabelTemplateListItemViewModel
     public string Status { get; set; } = string.Empty;
     public string Version { get; set; } = string.Empty;
     public string Dimensions { get; set; } = string.Empty;
+    public decimal WidthMm { get; set; }
+    public decimal HeightMm { get; set; }
     public string Health { get; set; } = string.Empty;
     public bool IsSystem { get; set; }
     public bool IsLegacy { get; set; }

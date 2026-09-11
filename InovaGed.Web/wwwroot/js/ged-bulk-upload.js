@@ -57,21 +57,38 @@
         const list = document.getElementById('bulkClassificationOptions');
         if (!input || !list || input.dataset.bound === 'true') return;
         input.dataset.bound = 'true';
-        let timer;
+        let timer, controller, active = -1, items = [];
+        const close = () => { list.classList.add('d-none'); input.setAttribute('aria-expanded', 'false'); active = -1; input.removeAttribute('aria-activedescendant'); };
+        const choose = item => {
+            input.value = [item.code, item.name].filter(Boolean).join(' — ');
+            document.getElementById('bulkClassificationId').value = item.id;
+            close(); input.focus();
+        };
+        const draw = () => {
+            list.innerHTML = items.length ? items.map((x, index) => `<button type="button" id="bulk-classification-${index}" class="list-group-item list-group-item-action text-start${index === active ? ' active' : ''}" role="option" aria-selected="${index === active}"><strong class="d-block">${escapeHtml(x.code || x.name)}</strong><span class="d-block">${escapeHtml(x.name)}</span>${x.description ? `<small class="d-block ${index === active ? '' : 'text-muted'}">${escapeHtml(x.description)}</small>` : ''}</button>`).join('') : '<p class="list-group-item mb-0 text-muted">Nenhuma classificação encontrada.</p>';
+            list.classList.remove('d-none'); input.setAttribute('aria-expanded', 'true');
+            [...list.querySelectorAll('[role="option"]')].forEach((option, index) => option.addEventListener('click', () => choose(items[index])));
+        };
         input.addEventListener('input', () => {
             document.getElementById('bulkClassificationId').value = '';
             clearTimeout(timer);
             timer = setTimeout(async () => {
-                const response = await fetch(`/Ged/ClassificationOptions?query=${encodeURIComponent(input.value)}`, { headers: { Accept: 'application/json' } }).catch(() => null);
+                controller?.abort(); controller = new AbortController();
+                const response = await fetch(`/Ged/ClassificationOptions?query=${encodeURIComponent(input.value)}`, { headers: { Accept: 'application/json' }, signal: controller.signal }).catch(() => null);
                 if (!response?.ok) return;
-                const items = await response.json().catch(() => []);
-                list.innerHTML = items.map(x => `<option value="${escapeHtml([x.code, x.name].filter(Boolean).join(' — '))}" data-id="${x.id}">${escapeHtml(x.description || '')}</option>`).join('');
+                items = await response.json().catch(() => []); active = -1; draw();
             }, 300);
         });
-        input.addEventListener('change', () => {
-            const option = Array.from(list.options).find(x => x.value === input.value);
-            document.getElementById('bulkClassificationId').value = option?.dataset.id || '';
+        input.addEventListener('keydown', event => {
+            if (event.key === 'Escape') return close();
+            if (!items.length || !['ArrowDown', 'ArrowUp', 'Enter'].includes(event.key)) return;
+            event.preventDefault();
+            if (event.key === 'Enter' && active >= 0) return choose(items[active]);
+            active = event.key === 'ArrowDown' ? Math.min(active + 1, items.length - 1) : Math.max(active - 1, 0);
+            input.setAttribute('aria-activedescendant', `bulk-classification-${active}`); draw();
         });
+        input.addEventListener('focus', () => { if (items.length) draw(); });
+        document.addEventListener('click', event => { if (!list.contains(event.target) && event.target !== input) close(); });
     }
 
     function bindBulkUploadEvents() {
