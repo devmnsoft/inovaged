@@ -69,13 +69,24 @@
                 <button data-model-filter="system">Modelos padrão</button>
                 <button data-model-filter="legacy">Antigos</button>
             </nav>
+            <div class="btn-group btn-group-sm" aria-label="Modo de visualização"><button type="button" data-designer-view="cards">Cards</button><button type="button" data-designer-view="list">Lista</button></div>
         </section>
 
         @foreach (var group in groups)
         {
             <section class="label-designer-table" data-model-group="@group.Key">
                 <header><h2>@group.Title</h2></header>
-                <div class="table-responsive">
+                <div class="row g-3" data-designer-cards>
+                    @foreach (var item in group.Items)
+                    {
+                        var normalizedStatus = item.Status.ToLowerInvariant();
+                        var search = $"{item.Name} {item.ClientName} {item.Purpose} {item.BrandingProfileName}".ToLowerInvariant();
+                        <article class="col-md-6 col-xl-4 designer-card" data-model-row data-status="@normalizedStatus" data-system="@item.IsSystem.ToString().ToLowerInvariant()" data-legacy="@item.IsLegacy.ToString().ToLowerInvariant()" data-search="@search">
+                            <div class="card h-100"><div class="card-body"><div class="ratio ratio-16x9 bg-light rounded mb-3"><iframe loading="lazy" title="Prévia de @item.Name" src="@Url.Action("Preview", new { templateKey = item.TemplateKey })"></iframe></div><h3 class="h6">@item.Name</h3><p class="small text-muted mb-2">@item.ClientName · @item.Purpose</p><p class="small">@item.Dimensions · versão @item.Version · @(normalizedStatus == "draft" ? "Rascunho" : "Publicado")</p><div class="d-flex flex-wrap gap-2 small"><a asp-action="Edit" asp-route-templateKey="@item.TemplateKey">Editar</a><a asp-action="Preview" asp-route-templateKey="@item.TemplateKey">Prévia</a><a asp-action="Versions" asp-route-templateKey="@item.TemplateKey">Versões</a></div></div></div>
+                        </article>
+                    }
+                </div>
+                <div class="table-responsive d-none" data-designer-list>
                     <table class="table">
                         <thead><tr><th>Modelo</th><th>Finalidade</th><th>Cliente</th><th>Status</th><th>Versão</th><th>Dimensões</th><th>Última alteração</th><th>Ações</th></tr></thead>
                         <tbody>
@@ -124,6 +135,7 @@
             const groups = [...document.querySelectorAll('[data-model-group]')];
             const empty = document.querySelector('[data-model-empty]');
             const search = document.querySelector('[data-model-search]');
+            const viewKey = 'inovaged.labels.designer.indexView.v1';
             let filter = 'all';
 
             const refresh = () => {
@@ -152,6 +164,14 @@
                 refresh();
             }));
             search?.addEventListener('input', refresh);
+            const setView = mode => {
+                document.querySelectorAll('[data-designer-cards]').forEach(x => x.classList.toggle('d-none', mode !== 'cards'));
+                document.querySelectorAll('[data-designer-list]').forEach(x => x.classList.toggle('d-none', mode !== 'list'));
+                document.querySelectorAll('[data-designer-view]').forEach(x => x.classList.toggle('is-active', x.dataset.designerView === mode));
+                localStorage.setItem(viewKey, mode);
+            };
+            document.querySelectorAll('[data-designer-view]').forEach(x => x.addEventListener('click', () => setView(x.dataset.designerView)));
+            setView(localStorage.getItem(viewKey) || 'cards');
             refresh();
         })();
     </script>

@@ -923,7 +923,15 @@
         <div id="bulkUploadFolderNotice" class="alert @(uploadFolderIsVirtual ? "alert-warning" : "alert-info") py-2">
             <strong>Destino selecionado:</strong> @uploadFolderLabel. O sistema validará o destino ao iniciar o upload.
         </div>
-        <div id="bulkUploadMessage" class="d-none alert"></div>
+        <div id="bulkUploadMessage" class="d-none alert" role="status" aria-live="polite"></div>
+        <section class="mb-3" aria-labelledby="bulkMetadataTitle">
+            <h6 id="bulkMetadataTitle" class="mb-2">Metadados do envio</h6>
+            <label class="form-label" for="bulkClassificationSearch">Classificação documental <span class="text-muted fw-normal">(opcional)</span></label>
+            <input type="search" class="form-control" id="bulkClassificationSearch" list="bulkClassificationOptions" autocomplete="off" placeholder="Pesquise pelo código, nome ou descrição" aria-describedby="bulkClassificationHelp" />
+            <input type="hidden" id="bulkClassificationId" />
+            <datalist id="bulkClassificationOptions"></datalist>
+            <div id="bulkClassificationHelp" class="form-text">A classificação escolhida será aplicada aos documentos enviados. Você também poderá classificar individualmente após o envio.</div>
+        </section>
         <div class="card border-warning-subtle mb-3">
             <div class="card-body py-3">
                 <div class="fw-semibold mb-2"><app-icon class="me-1" name="folder-move" size="16" decorative="true" />Tipo de documento enviado</div>
@@ -990,13 +998,14 @@
             </div>
             <div class="modal-body">
                 <div class="mb-2"><strong>Arquivo:</strong> <span id="uploadErrorFileName">-</span></div>
-                <div class="mb-2"><strong>Motivo:</strong><div id="uploadErrorMessage" class="text-danger">-</div></div>
+                <div class="mb-2"><strong>Mensagem:</strong><div id="uploadErrorMessage" class="text-danger">-</div></div>
                 <div class="mb-2"><strong>Etapa:</strong> <span id="uploadErrorStep">-</span></div>
+                <div class="mb-2"><strong>Código:</strong> <span id="uploadErrorCode">-</span></div>
                 <div class="mb-2"><strong>Status HTTP:</strong> <span id="uploadErrorHttpStatus">-</span></div>
                 <div class="mb-2"><strong>Detalhe técnico:</strong><pre id="uploadErrorLog" class="bg-light border rounded p-2 small" style="max-height: 260px; overflow:auto; white-space: pre-wrap;">-</pre></div>
-                <div class="mb-2"><strong>CorrelationId:</strong> <span id="uploadErrorCorrelationId">-</span></div>
+                <div class="mb-2"><strong>Código de atendimento:</strong> <code id="uploadErrorCorrelationId">-</code></div>
             </div>
-            <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Fechar</button></div>
+            <div class="modal-footer"><button type="button" class="btn btn-outline-primary" id="btnCopyUploadCorrelation">Copiar código</button><button type="button" class="btn btn-outline-warning d-none" id="btnRetryUploadFromDetails">Tentar novamente</button><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Fechar</button></div>
         </div>
     </div>
 </div>

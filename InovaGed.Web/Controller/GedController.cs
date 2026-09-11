@@ -275,7 +275,7 @@ public sealed class GedController : Controller
         catch (Exception ex)
         {
             _logger.LogError(ex, "Erro no BulkUploadSingle. Tenant={TenantId} User={UserId} Folder={FolderId} Batch={BatchId} CorrelationId={CorrelationId}", _currentUser.TenantId, _currentUser.UserId, folderId, batchId, correlationId);
-            return StatusCode(500, JsonError("Erro interno ao enviar arquivo.", "Servidor", ex.Message, true, correlationId));
+            return StatusCode(500, JsonError("Não foi possível concluir o envio. Tente novamente e, se o problema persistir, informe o código de atendimento ao suporte.", "Servidor", "UPLOAD_SERVER_ERROR", true, correlationId));
         }
         finally
         {
@@ -291,6 +291,16 @@ public sealed class GedController : Controller
                     _currentUser.TenantId, _currentUser.UserId, folderId, batchId, fileIndex, totalFiles, file?.FileName, file?.Length, file?.ContentType, duplicateStrategy, runOcr, generatePreview, sw.ElapsedMilliseconds, HttpContext.Connection.Id, correlationId);
             }
         }
+    }
+
+    [HttpGet("/Ged/ClassificationOptions")]
+    public async Task<IActionResult> ClassificationOptions(string? query, CancellationToken ct)
+    {
+        if (!_currentUser.IsAuthenticated) return Unauthorized();
+        var normalized = (query ?? string.Empty).Trim();
+        var items = await _clsQ.ListTypesAsync(_currentUser.TenantId, ct);
+        return Ok(items.Where(x => normalized.Length == 0 || x.Name.Contains(normalized, StringComparison.OrdinalIgnoreCase))
+            .Take(30).Select(x => new { id = x.Id, code = string.Empty, name = x.Name, description = string.Empty }));
     }
 
 

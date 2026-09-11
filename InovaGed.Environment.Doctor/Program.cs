@@ -14,6 +14,10 @@ using BclEnvironment = global::System.Environment;
 try
 {
     var command = args.FirstOrDefault() ?? "check";
+    if(command.Equals("ged-upload-reliability-rc31-1",StringComparison.OrdinalIgnoreCase))
+        return GedUploadReliabilityRc311QualityCheck.Run(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);
+    if(command.Equals("labels-design-studio-enterprise-rc31",StringComparison.OrdinalIgnoreCase))
+        return LabelsDesignStudioEnterpriseRc31QualityCheck.Run(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);
     if(command.Equals("labels-designer-dimension-rc29-4",StringComparison.OrdinalIgnoreCase))
     {
         return LabelsDesignerDimensionRc294QualityCheck.Run(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);

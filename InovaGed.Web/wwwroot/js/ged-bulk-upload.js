@@ -5,6 +5,7 @@
     const BULK_UPLOAD_STORAGE_KEY = 'InovaGED:bulkUpload:v2';
     const CURRENT_BATCH_STORAGE_KEY = 'inovaged.uploadBatch.current';
     const ValidationStep = 'Validação de extensão';
+    const FAILURE_STATUSES = new Set(['error', 'aborted', 'timeout', 'cancelled']);
     const state = { files: [], uploading: false, isStarting: false, isFinishing: false, activeUploads: 0, maxConcurrency: MAX_PARALLEL_UPLOADS, completed: 0, failed: 0, skipped: 0, isCheckingDuplicates: false, duplicateCheckKey: null, duplicateCheckPromise: null, duplicateCheckResult: null, lastDuplicateSignature: null, batchId: null, requestedFolderId: null, resolvedFolderId: null, listingFolderId: null, folderName: null, createdDocuments: [], useLegacyUploadFallback: false, duplicateStrategy: null, duplicateCheckScope: 'CURRENT_FOLDER', uploadAbortController: null, chunkOptions: { enabled: true, thresholdBytes: 50 * 1024 * 1024, chunkSizeBytes: 10 * 1024 * 1024, timeoutMs: 1800 * 1000 } };
 
     function getBootstrapOrNull() {
@@ -15,14 +16,62 @@
         return window.bootstrap;
     }
 
+    function isFailureStatus(status) {
+        return FAILURE_STATUSES.has(String(status || '').toLowerCase());
+    }
+
+    function isUploadFailure(item) {
+        return !!item && (isFailureStatus(item.status) || (item.status !== 'success' && !!item.errorMessage));
+    }
+
+    function selectedClassificationId() {
+        const value = document.getElementById('bulkClassificationId')?.value?.trim();
+        return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value || '') ? value : null;
+    }
+
+    function isValidDocumentId(value) {
+        return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value || '');
+    }
+
+    function buildDocumentQuickActions(fileItem) {
+        const id = fileItem?.serverDocumentId;
+        if (!isValidDocumentId(id)) return '';
+        const encoded = encodeURIComponent(id);
+        const classificationLabel = selectedClassificationId() ? 'Revisar classificação' : 'Classificar';
+        return `<span class="d-inline-flex flex-wrap gap-2 small"><a target="_blank" rel="noopener" href="/Ged/Details?id=${encoded}">Abrir</a><a target="_blank" rel="noopener" href="/Ged/Details?id=${encoded}&openClassify=true">${classificationLabel}</a><a target="_blank" rel="noopener" href="/Labels/PrintWizard?subjectType=DOCUMENT&subjectId=${encoded}">Etiqueta</a></span>`;
+    }
+
     function initBulkUpload() {
         const dz = document.getElementById('bulkDropzone');
         const fi = getFileInput();
         if (!dz || !fi) return;
         bindBulkUploadEvents();
+        bindClassificationSearch();
         loadChunkOptions();
         recoverBulkUploadUiState();
         checkLastProblemUpload();
+    }
+
+    function bindClassificationSearch() {
+        const input = document.getElementById('bulkClassificationSearch');
+        const list = document.getElementById('bulkClassificationOptions');
+        if (!input || !list || input.dataset.bound === 'true') return;
+        input.dataset.bound = 'true';
+        let timer;
+        input.addEventListener('input', () => {
+            document.getElementById('bulkClassificationId').value = '';
+            clearTimeout(timer);
+            timer = setTimeout(async () => {
+                const response = await fetch(`/Ged/ClassificationOptions?query=${encodeURIComponent(input.value)}`, { headers: { Accept: 'application/json' } }).catch(() => null);
+                if (!response?.ok) return;
+                const items = await response.json().catch(() => []);
+                list.innerHTML = items.map(x => `<option value="${escapeHtml([x.code, x.name].filter(Boolean).join(' — '))}" data-id="${x.id}">${escapeHtml(x.description || '')}</option>`).join('');
+            }, 300);
+        });
+        input.addEventListener('change', () => {
+            const option = Array.from(list.options).find(x => x.value === input.value);
+            document.getElementById('bulkClassificationId').value = option?.dataset.id || '';
+        });
     }
 
     function bindBulkUploadEvents() {
@@ -129,12 +178,19 @@
 
         const retryBtn = e.target.closest('#btnBulkRetryFailed');
         if (retryBtn) { e.preventDefault(); retryFailedFiles(); return; }
+        const retryFileBtn = e.target.closest('.js-retry-upload-file');
+        if (retryFileBtn) { e.preventDefault(); retryFailedFiles(retryFileBtn.getAttribute('data-file-id')); return; }
 
         const clearAllBtn = e.target.closest('#btnBulkClear');
         if (clearAllBtn) { e.preventDefault(); clearSelectedFiles(); return; }
 
         const detailsBtn = e.target.closest('.js-show-upload-error');
         if (detailsBtn) { e.preventDefault(); showUploadErrorDetails(detailsBtn.getAttribute('data-file-id')); return; }
+
+        const copyCodeBtn = e.target.closest('#btnCopyUploadCorrelation');
+        if (copyCodeBtn) { e.preventDefault(); const code = document.getElementById('uploadErrorCorrelationId')?.textContent; if (code && code !== '-') navigator.clipboard?.writeText(code); return; }
+        const retryDetailsBtn = e.target.closest('#btnRetryUploadFromDetails');
+        if (retryDetailsBtn) { e.preventDefault(); getBootstrapOrNull()?.Modal.getInstance(document.getElementById('uploadErrorDetailsModal'))?.hide(); retryFailedFiles(retryDetailsBtn.dataset.fileId); return; }
 
         const pauseBtn = e.target.closest('.js-pause-upload-file');
         if (pauseBtn) { e.preventDefault(); pauseUploadFile(pauseBtn.getAttribute('data-file-id')); return; }
@@ -442,7 +498,7 @@
 
     function resetBulkUploadState(options = {}) {
         const keepFailed = options.keepFailed === true;
-        state.files = keepFailed ? state.files.filter(x => x.status === 'error') : [];
+        state.files = keepFailed ? state.files.filter(isUploadFailure) : [];
         state.batchId = null;
         state.requestedFolderId = null;
         state.resolvedFolderId = null;
@@ -519,16 +575,15 @@
             return `<button type="button" class="btn btn-outline-primary btn-sm js-resume-upload-file" data-file-id="${fileItem.id}">Retomar</button>`;
         }
         if (fileItem.status === 'success') {
-            const openDoc = fileItem.serverDocumentId
-                ? `<a class="btn btn-link btn-sm p-0 me-2" target="_blank" href="/Ged/Details/${fileItem.serverDocumentId}">Abrir documento</a>`
-                : '';
-            return `${openDoc}<button type="button" class="btn btn-outline-secondary btn-sm js-clear-upload-row" data-file-id="${fileItem.id}">Remover da lista</button>`;
+            return `${buildDocumentQuickActions(fileItem)}<button type="button" class="btn btn-link btn-sm py-0 js-clear-upload-row" data-file-id="${fileItem.id}">Remover</button>`;
         }
         const removeBtn = `<button type="button" class="btn btn-outline-danger btn-sm js-remove-upload-file" data-file-id="${fileItem.id}">Remover</button>`;
-        const detailsBtn = fileItem.status === 'error'
+        const detailsBtn = isUploadFailure(fileItem)
             ? `<button type="button" class="btn btn-link btn-sm p-0 ms-2 js-show-upload-error" data-file-id="${fileItem.id}">Ver detalhes</button>`
             : '';
-        return `${removeBtn}${detailsBtn}`;
+        const retryBtn = isUploadFailure(fileItem) && fileItem.canRetry !== false
+            ? `<button type="button" class="btn btn-link btn-sm p-0 ms-2 js-retry-upload-file" data-file-id="${fileItem.id}">Tentar novamente</button>` : '';
+        return `${removeBtn}${detailsBtn}${retryBtn}`;
     }
 
     function renderFileList() {
@@ -607,11 +662,14 @@
         document.getElementById('uploadErrorFileName').textContent = item.originalName || '-';
         document.getElementById('uploadErrorMessage').textContent = item.errorMessage || item.message || 'Erro não informado.';
         document.getElementById('uploadErrorStep').textContent = item.errorStep || 'Envio/validação';
+        document.getElementById('uploadErrorCode').textContent = item.errorCode || item.code || '-';
         document.getElementById('uploadErrorLog').textContent = item.errorLog || 'Nenhum detalhe técnico adicional foi retornado pelo servidor.';
         const correlationEl = document.getElementById('uploadErrorCorrelationId');
         if (correlationEl) correlationEl.textContent = item.correlationId || '-';
         const httpStatusEl = document.getElementById('uploadErrorHttpStatus');
         if (httpStatusEl) httpStatusEl.textContent = item.httpStatus ? `HTTP ${item.httpStatus}` : '-';
+        const retryButton = document.getElementById('btnRetryUploadFromDetails');
+        if (retryButton) { retryButton.dataset.fileId = item.id; retryButton.classList.toggle('d-none', item.canRetry === false); }
 
         const modalEl = document.getElementById('uploadErrorDetailsModal');
         const bs = getBootstrapOrNull();
@@ -852,7 +910,7 @@
             if (state.files.some(x => ['waiting', 'uploading', 'retrying', 'duplicate'].includes(x.status))) throw new Error('Ainda há arquivos pendentes ou em retentativa. Aguarde a conclusão antes de finalizar.');
             const finished = await finishUploadBatch();
             const success = finished?.success ?? state.files.filter(x => x.status === 'success').length;
-            const error = finished?.failed ?? state.files.filter(x => x.status === 'error').length;
+            const error = finished?.failed ?? state.files.filter(isUploadFailure).length;
             if (finished?.resolvedFolderId) state.resolvedFolderId = finished.resolvedFolderId;
             if (finished?.folderName) state.folderName = finished.folderName;
             if (Array.isArray(finished?.createdDocuments) && finished.createdDocuments.length) state.createdDocuments = finished.createdDocuments;
@@ -903,7 +961,7 @@
         state.isStarting = true;
         const token = document.querySelector('input[name="__RequestVerificationToken"]')?.value;
         const selected = getSelectedUploadFolder();
-        const payload = { requestedFolderId: selected?.folderId, folderId: selected?.uploadFolderId, uploadFolderId: selected?.uploadFolderId, totalFiles: state.files.length, options: { runOcr: false, generatePreview: false, duplicateStrategy: state.duplicateStrategy || null, markAsIncomplete: document.getElementById('bulkUploadIncomplete')?.checked === true, incompleteReason: document.getElementById('bulkPartialNotes')?.value || null } };
+        const payload = { requestedFolderId: selected?.folderId, folderId: selected?.uploadFolderId, uploadFolderId: selected?.uploadFolderId, totalFiles: state.files.length, options: { runOcr: false, generatePreview: false, classificationId: selectedClassificationId(), duplicateStrategy: state.duplicateStrategy || null, markAsIncomplete: document.getElementById('bulkUploadIncomplete')?.checked === true, incompleteReason: document.getElementById('bulkPartialNotes')?.value || null } };
         console.log('[BulkUpload] sending folder', { requestedFolderId: payload.requestedFolderId, uploadFolderId: payload.uploadFolderId });
         const r = await fetch('/Ged/UploadBatch/Start', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { RequestVerificationToken: token } : {}) }, body: JSON.stringify(payload) });
         const j = await r.json().catch(() => ({ success: false, message: 'Resposta inválida ao iniciar lote.' }));
@@ -1002,6 +1060,7 @@
             fd.append('totalFiles', String(totalFiles || state.files.length || 0));
             fd.append('runOcr', 'false');
             fd.append('generatePreview', 'false');
+            if (selectedClassificationId()) fd.append('classificationId', selectedClassificationId());
             fd.append('notes', document.getElementById('bulkPartialNotes')?.value || '');
             fd.append('markAsIncomplete', document.getElementById('bulkUploadIncomplete')?.checked === true ? 'true' : 'false');
             fd.append('incompleteReason', document.getElementById('bulkPartialNotes')?.value || '');
@@ -1069,9 +1128,10 @@
                 fileItem.status = 'error';
                 fileItem.message = payload?.message || 'Não foi possível enviar o arquivo.';
                 fileItem.errorMessage = payload?.message || 'Não foi possível enviar o arquivo.';
-                fileItem.errorLog = payload?.errorLog || payload?.detail || responseText || null;
+                fileItem.errorLog = payload?.details || payload?.detail || null;
                 fileItem.errorStep = payload?.errorStep || 'Servidor';
-                fileItem.httpStatus = xhr.status;
+                fileItem.errorCode = payload?.code || 'UPLOAD_FAILED';
+                fileItem.httpStatus = payload?.httpStatus || xhr.status;
                 fileItem.correlationId = payload?.correlationId || null;
                 fileItem.canRetry = payload?.canRetry !== false;
                 renderFileList();
@@ -1079,10 +1139,11 @@
                 resolve('error');
             };
             xhr.ontimeout = async () => {
-                fileItem.status = 'aborted';
+                fileItem.status = 'timeout';
                 fileItem.message = 'Tempo limite excedido ao enviar o arquivo.';
                 fileItem.errorMessage = 'Tempo limite excedido ao enviar o arquivo.';
                 fileItem.errorStep = 'Timeout';
+                fileItem.errorCode = 'TIMEOUT';
                 fileItem.errorLog = 'O upload excedeu o tempo limite configurado no navegador.';
                 fileItem.canRetry = true;
                 if ((fileItem.size || 0) > 15 * 1024 * 1024) {
@@ -1099,6 +1160,7 @@
                 fileItem.errorMessage = 'Falha de comunicação com o servidor.';
                 fileItem.errorLog = 'XMLHttpRequest network error';
                 fileItem.errorStep = 'Rede';
+                fileItem.errorCode = 'NETWORK_ERROR';
                 fileItem.httpStatus = null;
                 fileItem.canRetry = true;
                 if (attempt < 3) {
@@ -1147,9 +1209,11 @@
             const token = document.querySelector('input[name="__RequestVerificationToken"]')?.value;
             await fetch(`/Ged/UploadChunk/Cancel/${item.uploadId}`, { method: 'POST', headers: token ? { RequestVerificationToken: token } : {} }).catch(() => null);
         }
-        item.status = 'error';
+        item.status = 'cancelled';
         item.message = 'Upload cancelado.';
         item.errorMessage = 'Upload cancelado pelo usuário.';
+        item.errorStep = 'Cancelamento';
+        item.errorCode = 'UPLOAD_CANCELLED';
         item.canRetry = true;
         renderFileList();
     }
@@ -1235,7 +1299,7 @@
             uploadName: fileItem.uploadName,
             runOcr: false,
             generatePreview: false,
-            metadata: { markAsIncomplete: document.getElementById('bulkUploadIncomplete')?.checked === true, incompleteReason: document.getElementById('bulkPartialNotes')?.value || null }
+            metadata: { classificationId: selectedClassificationId(), markAsIncomplete: document.getElementById('bulkUploadIncomplete')?.checked === true, incompleteReason: document.getElementById('bulkPartialNotes')?.value || null }
         };
         const r = await fetch('/Ged/UploadChunk/Start', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { RequestVerificationToken: token } : {}) }, body: JSON.stringify(payload) });
         const j = await r.json().catch(() => ({ success: false, message: 'Resposta inválida ao iniciar upload em partes.' }));
@@ -1277,8 +1341,8 @@
         return m > 0 ? `${m}m ${s}s` : `${s}s`;
     }
 
-    function retryFailedFiles() {
-        const failed = state.files.filter(x => x.status === 'error' || x.status === 'aborted');
+    function retryFailedFiles(fileId) {
+        const failed = state.files.filter(x => isUploadFailure(x) && (!fileId || x.id === fileId));
         if (!failed.length) {
             showAppToast('Não há arquivos com erro para tentar novamente.', 'info', 'Nada para reenviar');
             return;
@@ -1310,7 +1374,7 @@
 
     function updateUploadSummary() {
         const c = { total: state.files.length, success: 0, error: 0, ignored: 0, duplicate: 0, waiting: 0 };
-        state.files.forEach(f => { if (f.status in c) c[f.status]++; });
+        state.files.forEach(f => { if (isUploadFailure(f)) c.error++; else if (f.status in c) c[f.status]++; });
         const el = document.getElementById('bulkSummary');
         if (el) el.textContent = `Total: ${c.total} | Aguardando: ${c.waiting} | Enviados: ${c.success} | Falhas: ${c.error} | Ignorados: ${c.ignored} | Duplicados: ${c.duplicate}${state.useLegacyUploadFallback ? ' | Fallback legado ativo' : ''}`;
         updateFooterActions();
@@ -1325,8 +1389,8 @@
         const btnLog = document.getElementById('btnBulkViewLog');
 
         const hasFolder = !isMissingFolderId(getCurrentFolderId());
-        const waitingOrDuplicate = state.files.some(x => x.status === 'waiting' || x.status === 'duplicate' || (x.status === 'error' && x.canRetry !== false));
-        const hasError = state.files.some(x => x.status === 'error');
+        const waitingOrDuplicate = state.files.some(x => x.status === 'waiting' || x.status === 'duplicate' || (isUploadFailure(x) && x.canRetry !== false));
+        const hasError = state.files.some(isUploadFailure);
         const hasSuccess = state.files.some(x => x.status === 'success' || x.status === 'ignored');
         const hasAnyFinished = hasSuccess || hasError;
 
@@ -1452,13 +1516,13 @@
 
 
     function hasBatchFailures() {
-        return state.files.some(x => ['error', 'aborted'].includes(x.status)) || state.failed > 0;
+        return state.files.some(isUploadFailure) || state.failed > 0;
     }
 
     function persistCurrentUploadBatch(status) {
         if (!state.batchId) return;
         try {
-            const failedCount = state.files.filter(x => ['error', 'aborted'].includes(x.status)).length || state.failed || 0;
+            const failedCount = state.files.filter(isUploadFailure).length || state.failed || 0;
             const successCount = state.files.filter(x => x.status === 'success').length || state.completed || 0;
             localStorage.setItem(CURRENT_BATCH_STORAGE_KEY, JSON.stringify({
                 batchId: state.batchId,
@@ -1504,7 +1568,7 @@
                 resolvedFolderId: state.resolvedFolderId,
                 folderName: state.folderName,
                 updatedAt: new Date().toISOString(),
-                files: state.files.map(f => ({ id: f.id, name: f.originalName, uploadName: f.uploadName, size: f.size, status: f.status, progress: f.progress, message: f.message, canRetry: f.canRetry, uploadClientId: f.uploadClientId, serverDocumentId: f.serverDocumentId, serverVersionId: f.serverVersionId, correlationId: f.correlationId }))
+                files: state.files.map(f => ({ id: f.id, name: f.originalName, status: f.status, code: f.errorCode || null, message: f.errorMessage || f.message || null, errorStep: f.errorStep || null, canRetry: f.canRetry, correlationId: f.correlationId || null, httpStatus: f.httpStatus || null }))
             };
             localStorage.setItem(BULK_UPLOAD_STORAGE_KEY, JSON.stringify(snapshot));
         } catch (err) { console.warn('[BulkUpload] não foi possível salvar estado local', err); }
@@ -1520,7 +1584,12 @@
             state.requestedFolderId = snapshot.requestedFolderId || null;
             state.resolvedFolderId = snapshot.resolvedFolderId || null;
             state.folderName = snapshot.folderName || null;
-            showBulkUploadMessage('Estado do último lote recuperado. Selecione novamente os arquivos locais para reenviar itens pendentes sem perder o histórico.', 'info');
+            const recoveredFailures = snapshot.files.filter(isUploadFailure);
+            if (recoveredFailures.length) {
+                state.files = recoveredFailures.map(f => ({ ...f, originalName: f.name, file: null, progress: 0, canRetry: false }));
+                showBulkUploadMessage('Este lote possui arquivos que não foram enviados.', 'danger');
+                renderFileList(); updateUploadSummary();
+            } else showBulkUploadMessage('Estado do último lote recuperado.', 'info');
         } catch (err) { console.warn('[BulkUpload] não foi possível recuperar estado local', err); }
     }
 
@@ -1548,19 +1617,39 @@
         updateFooterActions();
     }
 
-    function showBulkUploadMessage(m, t) { const el = document.getElementById('bulkUploadMessage'); if (!el) return; el.className = `alert alert-${t}`; el.textContent = m; el.classList.remove('d-none'); }
+    function showBulkUploadMessage(m, t) { const el = document.getElementById('bulkUploadMessage'); if (!el) return; const type = t === 'error' ? 'danger' : ['danger','warning','success','info'].includes(t) ? t : 'info'; el.className = `alert alert-${type}`; el.setAttribute('role', type === 'danger' ? 'alert' : 'status'); el.setAttribute('aria-live', type === 'danger' ? 'assertive' : 'polite'); el.textContent = m; el.classList.remove('d-none'); }
     function clearBulkUploadMessage() { const el = document.getElementById('bulkUploadMessage'); if (!el) return; el.className = 'd-none alert'; el.textContent = ''; }
-    function showAppToast(message, type, title) { window.showAppToast?.(message, type, title); }
+    function showAppToast(message, type, title) { window.showAppToast?.(message, type === 'error' ? 'danger' : type, title); }
+    function normalizeUploadError(xhrOrResponse, payload) {
+        const httpStatus = Number(xhrOrResponse?.status || 0) || null;
+        const byStatus = {
+            401: ['SESSION_EXPIRED', 'Sua sessão expirou.', 'Autenticação', false],
+            403: ['FORBIDDEN', 'Você não possui permissão para enviar documentos nesta pasta.', 'Autorização', false],
+            413: ['FILE_TOO_LARGE', 'O arquivo excede o tamanho aceito pelo servidor. Use o envio em partes quando disponível ou reduza o arquivo.', 'Validação de tamanho', false],
+            429: ['UPLOAD_BUSY', 'O servidor está processando muitos envios. O arquivo será reenviado em alguns segundos.', 'Concorrência', true]
+        };
+        const mapped = byStatus[httpStatus];
+        return {
+            success: false,
+            code: payload?.code || mapped?.[0] || (httpStatus ? 'UNEXPECTED_SERVER_RESPONSE' : 'NETWORK_ERROR'),
+            message: mapped?.[1] || payload?.message || 'O servidor retornou uma resposta inesperada.',
+            errorStep: payload?.errorStep || mapped?.[2] || 'Resposta do servidor',
+            canRetry: payload?.canRetry ?? mapped?.[3] ?? (httpStatus !== 401 && httpStatus !== 403 && httpStatus !== 413),
+            correlationId: payload?.correlationId || xhrOrResponse?.getResponseHeader?.('x-correlation-id') || null,
+            httpStatus,
+            detail: payload?.details || payload?.detail || null
+        };
+    }
+
     function parseUploadResponse(xhr) {
         const contentType = xhr.getResponseHeader('content-type') || '';
         const text = xhr.responseText || '';
-        if (xhr.status === 401 || xhr.status === 403) return { success: false, status: 'error', message: 'Sua sessão expirou. Faça login novamente.', errorStep: 'Autenticação', errorLog: `HTTP ${xhr.status}`, canRetry: false };
-        if (xhr.status === 429) return { success: false, status: 'error', message: 'Há muitos uploads simultâneos. O sistema vai tentar novamente em alguns segundos.', errorStep: 'Concorrência', errorLog: text.substring(0, 1000), canRetry: true };
+        if ([401, 403, 413, 429].includes(xhr.status)) return normalizeUploadError(xhr, null);
         if (xhr.status === 503) return { success: false, status: 'error', message: 'Servidor temporariamente indisponível durante o upload.', errorStep: 'IIS/Servidor', errorLog: text.substring(0, 1000), canRetry: true };
         if (text.includes('/Account/Login') || text.includes('<html') || text.includes('<!DOCTYPE html') || (!contentType.includes('application/json') && text.trimStart().startsWith('<'))) {
-            return { success: false, status: 'error', message: 'A sessão expirou ou o servidor retornou uma página HTML em vez de JSON.', errorStep: 'Resposta inválida', errorLog: text.substring(0, 1000), canRetry: false };
+            return normalizeUploadError(xhr, null);
         }
-        try { return JSON.parse(text || '{}'); } catch { return { success: false, status: 'error', message: 'Resposta inválida do servidor.', errorStep: 'Parse JSON', errorLog: text.substring(0, 1000), canRetry: true }; }
+        try { const payload = JSON.parse(text || '{}'); return payload?.success === true ? payload : { ...payload, ...normalizeUploadError(xhr, payload) }; } catch { return normalizeUploadError(xhr, null); }
     }
 
     function sleep(ms) {
