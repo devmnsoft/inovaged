@@ -69,6 +69,11 @@
                 <button data-model-filter="system">Modelos padrão</button>
                 <button data-model-filter="legacy">Antigos</button>
             </nav>
+            <div class="d-flex flex-wrap gap-2">
+                <select class="form-select form-select-sm" data-purpose-filter aria-label="Filtrar por finalidade"><option value="">Todas as finalidades</option>@foreach(var value in Model.Select(x=>x.Purpose).Distinct().Order()){<option value="@value.ToLowerInvariant()">@value</option>}</select>
+                <select class="form-select form-select-sm" data-client-filter aria-label="Filtrar por cliente"><option value="">Todos os clientes</option>@foreach(var value in Model.Select(x=>x.ClientName).Distinct().Order()){<option value="@value.ToLowerInvariant()">@value</option>}</select>
+                <select class="form-select form-select-sm" data-status-filter aria-label="Filtrar por status"><option value="">Todos os status</option><option value="draft">Rascunho</option><option value="published">Publicado</option></select>
+            </div>
             <div class="btn-group btn-group-sm" aria-label="Modo de visualização"><button type="button" data-designer-view="cards">Cards</button><button type="button" data-designer-view="list">Lista</button></div>
         </section>
 
@@ -81,8 +86,9 @@
                     {
                         var normalizedStatus = item.Status.ToLowerInvariant();
                         var search = $"{item.Name} {item.ClientName} {item.Purpose} {item.BrandingProfileName}".ToLowerInvariant();
-                        <article class="col-md-6 col-xl-4 designer-card" data-model-row data-status="@normalizedStatus" data-system="@item.IsSystem.ToString().ToLowerInvariant()" data-legacy="@item.IsLegacy.ToString().ToLowerInvariant()" data-search="@search">
-                            <div class="card h-100"><div class="card-body"><div class="ratio ratio-16x9 bg-light rounded mb-3"><iframe loading="lazy" title="Prévia de @item.Name" src="@Url.Action("Preview", new { templateKey = item.TemplateKey })"></iframe></div><h3 class="h6">@item.Name</h3><p class="small text-muted mb-2">@item.ClientName · @item.Purpose</p><p class="small">@item.Dimensions · versão @item.Version · @(normalizedStatus == "draft" ? "Rascunho" : "Publicado")</p><div class="d-flex flex-wrap gap-2 small"><a asp-action="Edit" asp-route-templateKey="@item.TemplateKey">Editar</a><a asp-action="Preview" asp-route-templateKey="@item.TemplateKey">Prévia</a><a asp-action="Versions" asp-route-templateKey="@item.TemplateKey">Versões</a></div></div></div>
+                        var aspectRatio = (item.WidthMm / item.HeightMm).ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
+                        <article class="col-md-6 col-xl-4 designer-card" data-model-row data-status="@normalizedStatus" data-purpose="@item.Purpose.ToLowerInvariant()" data-client="@item.ClientName.ToLowerInvariant()" data-system="@item.IsSystem.ToString().ToLowerInvariant()" data-legacy="@item.IsLegacy.ToString().ToLowerInvariant()" data-search="@search">
+                            <div class="card h-100"><div class="card-body"><div class="bg-light rounded mb-3 overflow-hidden" style="aspect-ratio:@aspectRatio"><iframe class="w-100 h-100 border-0" loading="lazy" title="Miniatura de @item.Name" data-thumbnail-src="@Url.Action("Thumbnail", new { templateKey = item.TemplateKey })"></iframe></div><h3 class="h6">@item.Name</h3><p class="small text-muted mb-2">@item.ClientName · @item.Purpose</p><p class="small">@item.Dimensions · versão @item.Version · @(normalizedStatus == "draft" ? "Rascunho" : "Publicado")</p><div class="d-flex flex-wrap gap-2 small"><a asp-action="Edit" asp-route-templateKey="@item.TemplateKey">Editar</a><a asp-action="Preview" asp-route-templateKey="@item.TemplateKey">Prévia</a><a asp-action="Versions" asp-route-templateKey="@item.TemplateKey">Versões</a></div></div></div>
                         </article>
                     }
                 </div>
@@ -135,6 +141,9 @@
             const groups = [...document.querySelectorAll('[data-model-group]')];
             const empty = document.querySelector('[data-model-empty]');
             const search = document.querySelector('[data-model-search]');
+            const purpose = document.querySelector('[data-purpose-filter]');
+            const client = document.querySelector('[data-client-filter]');
+            const status = document.querySelector('[data-status-filter]');
             const viewKey = 'inovaged.labels.designer.indexView.v1';
             let filter = 'all';
 
@@ -150,7 +159,10 @@
                         || (filter === 'mine' && !system && !legacy)
                         || (filter === 'system' && system && !legacy)
                         || (filter === 'legacy' && legacy);
-                    const visible = matchesFilter && row.dataset.search.includes(term);
+                    const visible = matchesFilter && row.dataset.search.includes(term)
+                        && (!purpose?.value || row.dataset.purpose === purpose.value)
+                        && (!client?.value || row.dataset.client === client.value)
+                        && (!status?.value || row.dataset.status === status.value);
                     row.hidden = !visible;
                     if (visible) visibleCount++;
                 });
@@ -164,6 +176,13 @@
                 refresh();
             }));
             search?.addEventListener('input', refresh);
+            [purpose, client, status].forEach(select => select?.addEventListener('change', refresh));
+            const thumbnails = [...document.querySelectorAll('[data-thumbnail-src]')];
+            const loadThumbnail = frame => { if (!frame.src) frame.src = frame.dataset.thumbnailSrc; };
+            if ('IntersectionObserver' in window) {
+                const observer = new IntersectionObserver(entries => entries.forEach(entry => { if (entry.isIntersecting) { loadThumbnail(entry.target); observer.unobserve(entry.target); } }), { rootMargin: '240px' });
+                thumbnails.forEach(frame => observer.observe(frame));
+            } else thumbnails.forEach(loadThumbnail);
             const setView = mode => {
                 document.querySelectorAll('[data-designer-cards]').forEach(x => x.classList.toggle('d-none', mode !== 'cards'));
                 document.querySelectorAll('[data-designer-list]').forEach(x => x.classList.toggle('d-none', mode !== 'list'));

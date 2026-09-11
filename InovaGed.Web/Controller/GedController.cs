@@ -298,9 +298,53 @@ public sealed class GedController : Controller
     {
         if (!_currentUser.IsAuthenticated) return Unauthorized();
         var normalized = (query ?? string.Empty).Trim();
-        var items = await _clsQ.ListTypesAsync(_currentUser.TenantId, ct);
-        return Ok(items.Where(x => normalized.Length == 0 || x.Name.Contains(normalized, StringComparison.OrdinalIgnoreCase))
-            .Take(30).Select(x => new { id = x.Id, code = string.Empty, name = x.Name, description = string.Empty }));
+        const string sql = """
+with recursive tree as (
+    select n.id, n.parent_id, n.code, n.title, n.description, n.is_active, 0 as level
+      from ged.classification_node n
+     where n.tenant_id = @tenantId and n.reg_status = 'A' and n.parent_id is null
+    union all
+    select n.id, n.parent_id, n.code, n.title, n.description, n.is_active, tree.level + 1
+      from ged.classification_node n
+      join tree on tree.id = n.parent_id
+     where n.tenant_id = @tenantId and n.reg_status = 'A'
+)
+select tree.id as "Id", tree.code as "Code", tree.title as "Name", tree.description as "Description", tree.level as "Level",
+       parent.title as "ParentName", tree.is_active as "IsActive"
+  from tree
+  left join ged.classification_node parent
+    on parent.id = tree.parent_id and parent.tenant_id = @tenantId and parent.reg_status = 'A'
+ where nullif(@query, '') is null
+    or tree.code ilike '%' || @query || '%'
+    or tree.title ilike '%' || @query || '%'
+    or coalesce(tree.description, '') ilike '%' || @query || '%'
+ order by tree.is_active desc, tree.code, tree.title
+ limit 30;
+""";
+        await using var connection = await _db.OpenAsync(ct);
+        var items = await connection.QueryAsync<ClassificationOptionRow>(
+            new CommandDefinition(sql, new { tenantId = _currentUser.TenantId, query = normalized }, cancellationToken: ct));
+        return Ok(items.Select(x => new
+        {
+            x.Id,
+            x.Code,
+            x.Name,
+            x.Description,
+            x.Level,
+            x.ParentName,
+            x.IsActive
+        }));
+    }
+
+    private sealed class ClassificationOptionRow
+    {
+        public Guid Id { get; init; }
+        public string Code { get; init; } = "";
+        public string Name { get; init; } = "";
+        public string? Description { get; init; }
+        public int Level { get; init; }
+        public string? ParentName { get; init; }
+        public bool IsActive { get; init; }
     }
 
 

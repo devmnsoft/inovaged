@@ -927,9 +927,11 @@
         <section class="mb-3" aria-labelledby="bulkMetadataTitle">
             <h6 id="bulkMetadataTitle" class="mb-2">Metadados do envio</h6>
             <label class="form-label" for="bulkClassificationSearch">Classificação documental <span class="text-muted fw-normal">(opcional)</span></label>
-            <input type="search" class="form-control" id="bulkClassificationSearch" list="bulkClassificationOptions" autocomplete="off" placeholder="Pesquise pelo código, nome ou descrição" aria-describedby="bulkClassificationHelp" />
+            <div class="position-relative">
+              <input type="search" class="form-control" id="bulkClassificationSearch" autocomplete="off" placeholder="Pesquise pelo código, nome ou descrição" aria-describedby="bulkClassificationHelp" role="combobox" aria-autocomplete="list" aria-controls="bulkClassificationOptions" aria-expanded="false" />
+              <div id="bulkClassificationOptions" class="list-group position-absolute top-100 start-0 end-0 shadow d-none" role="listbox" style="z-index:1080;max-height:18rem;overflow:auto"></div>
+            </div>
             <input type="hidden" id="bulkClassificationId" />
-            <datalist id="bulkClassificationOptions"></datalist>
             <div id="bulkClassificationHelp" class="form-text">A classificação escolhida será aplicada aos documentos enviados. Você também poderá classificar individualmente após o envio.</div>
         </section>
         <div class="card border-warning-subtle mb-3">
