@@ -273,6 +273,27 @@ public sealed class LabelDesignerController(IDbConnectionFactory dbFactory, ILab
         return await ExecuteWrite(async()=>{var copy=await designs.DuplicateAsync(TenantId,userId,templateKey,name,Ip(),Agent(),ct);return Ok(new{ok=true,message="Modelo duplicado como rascunho.",templateKey=copy.TemplateKey,redirectUrl=Url.Action(nameof(Edit),new{templateKey=copy.TemplateKey})});},"duplicar",templateKey);
     }
 
+    [HttpPost("/Labels/Designer/{templateKey}/DuplicateConflict"),ValidateAntiForgeryToken]
+    [Authorize(Policy=AppPolicies.LabelDesignerCreate)]
+    public async Task<IActionResult> DuplicateConflict(string templateKey,[FromBody] LabelCanvasSaveRequest local,CancellationToken ct)
+    {
+        if(UserId is not Guid userId)return Unauthorized();
+        return await ExecuteWrite(async()=>
+        {
+            var copy=await designs.DuplicateAsync(TenantId,userId,templateKey,$"{local.TemplateName} — cópia recuperada",Ip(),Agent(),ct);
+            local=CopyWithKey(local,copy.TemplateKey,copy.LockVersion);
+            var saved=await designs.SaveDraftAsync(TenantId,userId,local,Ip(),Agent(),ct);
+            return Ok(new{ok=true,message="Cópia criada com suas alterações.",templateKey=saved.TemplateKey,redirectUrl=Url.Action(nameof(Edit),new{templateKey=saved.TemplateKey})});
+        },"recuperar conflito",templateKey);
+    }
+
+    [HttpPost("/Labels/Designer/{templateKey}/CompareConflict"),ValidateAntiForgeryToken]
+    public async Task<IActionResult> CompareConflict(string templateKey,[FromBody] LabelCanvasSaveRequest local,CancellationToken ct)
+    {
+        var server=await designs.GetAsync(TenantId,templateKey,ct);if(server is null)return NotFound();
+        return Ok(diffService.Compare(server.DesignJson,local.DesignJson));
+    }
+
     [HttpGet("/Labels/Designer/DeleteDraft/{templateKey}")]
     public Task<IActionResult> DeleteDraft(string templateKey,CancellationToken ct)=>Details(templateKey,ct);
 
@@ -335,7 +356,7 @@ public sealed class LabelDesignerController(IDbConnectionFactory dbFactory, ILab
     }
     private async Task<IActionResult> ExecuteWrite(Func<Task<IActionResult>> action,string operation,string templateKey)
     {try{return await action();}catch(LabelCanvasConflictException e){logger.LogWarning("Conflito otimista ao {Operation} {TemplateKey}.",operation,templateKey);return Conflict(new{ok=false,code="DESIGN_CONFLICT",message=e.Message});}catch(KeyNotFoundException e){logger.LogWarning(e,"Template {TemplateKey} não encontrado ao {Operation}.",templateKey,operation);return NotFound(new{ok=false,message=e.Message});}catch(LabelCanvasRequestException e){logger.LogWarning("LABEL_CANVAS_SAVE_REJECTED TemplateKey={TemplateKey} Operation={Operation} Code={Code}: {Message}",templateKey,operation,e.Code,e.Message);return BadRequest(new{ok=false,code=e.Code,message=e.Message,errors=e.Errors});}catch(ArgumentException e){logger.LogWarning(e,"Entrada inválida ao {Operation} {TemplateKey}.",operation,templateKey);return BadRequest(new{ok=false,code="INVALID_REQUEST",message=e.Message,errors=new Dictionary<string,string>()});}catch(InvalidOperationException e){logger.LogWarning(e,"Operação recusada ao {Operation} {TemplateKey}.",operation,templateKey);return BadRequest(new{ok=false,message=e.Message});}catch(Exception e){logger.LogError(e,"Erro ao {Operation} o template {TemplateKey}.",operation,templateKey);return StatusCode(500,new{ok=false,message="Não foi possível concluir a operação. Tente novamente."});}}
-    private static LabelCanvasSaveRequest CopyWithKey(LabelCanvasSaveRequest x,string key)=>new(){ExpectedLockVersion=x.ExpectedLockVersion,TemplateKey=key,TemplateName=x.TemplateName,Description=x.Description,TemplateKind=x.TemplateKind,SubjectType=x.SubjectType,PaperKind=x.PaperKind,WidthMm=x.WidthMm,HeightMm=x.HeightMm,Orientation=x.Orientation,DesignJson=x.DesignJson,DefaultBrandingProfileId=x.DefaultBrandingProfileId,BrandingBindingKey=x.BrandingBindingKey,ClientNameFallback=x.ClientNameFallback,ContractNameFallback=x.ContractNameFallback,OrganizationNameFallback=x.OrganizationNameFallback,HeaderTitleFallback=x.HeaderTitleFallback,HeaderSubtitleFallback=x.HeaderSubtitleFallback,LabelContext=x.LabelContext,ChangeSummary=x.ChangeSummary};
+    private static LabelCanvasSaveRequest CopyWithKey(LabelCanvasSaveRequest x,string key,long? expectedLockVersion=null)=>new(){ExpectedLockVersion=expectedLockVersion??x.ExpectedLockVersion,TemplateKey=key,TemplateName=x.TemplateName,Description=x.Description,TemplateKind=x.TemplateKind,SubjectType=x.SubjectType,PaperKind=x.PaperKind,WidthMm=x.WidthMm,HeightMm=x.HeightMm,Orientation=x.Orientation,DesignJson=x.DesignJson,DefaultBrandingProfileId=x.DefaultBrandingProfileId,BrandingBindingKey=x.BrandingBindingKey,ClientNameFallback=x.ClientNameFallback,ContractNameFallback=x.ContractNameFallback,OrganizationNameFallback=x.OrganizationNameFallback,HeaderTitleFallback=x.HeaderTitleFallback,HeaderSubtitleFallback=x.HeaderSubtitleFallback,LabelContext=x.LabelContext,ChangeSummary=x.ChangeSummary};
     private string? Ip()=>HttpContext.Connection.RemoteIpAddress?.ToString();private string? Agent()=>Request.Headers.UserAgent.ToString();
     private static string SampleProfile(LabelCanvasDesignDto design)=>design.SubjectType.Equals("LocDeskFolder",StringComparison.OrdinalIgnoreCase)?"HOL":design.SubjectType.Contains("Box",StringComparison.OrdinalIgnoreCase)?"Caixa GED":"Documento GED";
     private static LabelCanvasDocumentDto NewDocument(string subject,string profile,decimal width,decimal height)=>new(){Canvas=new(){WidthMm=width,HeightMm=height,Paper="A4",Orientation="portrait",GridMm=2,SafeMarginMm=3},Bindings=new(){SubjectType=subject,SampleDataProfile=profile},Elements=[new(){Id="title",Type="field",Name="Título do cabeçalho",XMm=5,YMm=5,WidthMm=70,HeightMm=9,ZIndex=1,Binding=new(){Field="headerTitle",Fallback="ARQUIVO CENTRAL"},Style=new(){FontSizePt=10,FontWeight="700",Align="center"},Validation=new(){Required=true}}]};

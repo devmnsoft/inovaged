@@ -11,6 +11,7 @@ using InovaGed.Application.Labels.Printing;
 using System.Text.Json;
 using System.Data;
 using System.Text;
+using System.Security.Cryptography;
 using InovaGed.Web.Services;
 using InovaGed.Web.Models.Branding;
 using Npgsql;
@@ -178,7 +179,7 @@ public class LabelsController : GedControllerBase
     }
 
     [HttpGet]
-    public async Task<IActionResult> BatchPrint(CancellationToken ct,string subjectType="BOX")
+    public async Task<IActionResult> BatchPrint(CancellationToken ct,string subjectType="BOX",string? selectionToken=null)
     {
         subjectType=subjectType.ToUpperInvariant();using var db=await OpenAsync();
         ViewBag.SubjectType=subjectType;ViewBag.Templates=await _catalog.GetTemplatesAsync(TenantId,subjectType,null,ct);
@@ -186,7 +187,19 @@ public class LabelsController : GedControllerBase
         ViewBag.PrintBrandingProfiles=await db.ExecuteScalarAsync<bool>(new CommandDefinition("select to_regclass('ged.print_branding_profile') is not null",cancellationToken:ct))
             ?(await db.QueryAsync<PrintBrandingProfileVm>(new CommandDefinition("select id,profile_name ProfileName,is_default IsDefault,status from ged.print_branding_profile where tenant_id=@tid and status='ACTIVE' and reg_status='A' order by is_default desc,profile_name",new{tid=TenantId},cancellationToken:ct))).AsList()
             :new List<PrintBrandingProfileVm>();
-        ViewBag.Rows=subjectType=="DOCUMENT"?await db.QueryAsync("select d.id,d.code control_number,d.title subject,b.box_no,coalesce(pl.location_code,'') location,coalesce(cp.title,'') classification,d.status,exists(select 1 from ged.label_print_history h where h.tenant_id=d.tenant_id and h.label_subject_id=d.id) already_printed from ged.document d left join ged.batch_item bi on bi.tenant_id=d.tenant_id and bi.document_id=d.id and bi.reg_status='A' left join ged.box b on b.tenant_id=d.tenant_id and b.id=bi.box_id left join ged.physical_location pl on pl.tenant_id=b.tenant_id and pl.id=b.location_id left join ged.classification_plan cp on cp.tenant_id=d.tenant_id and cp.id=d.classification_id where d.tenant_id=@tid order by d.created_at desc limit 300",new{tid=TenantId}):await db.QueryAsync("select b.id,coalesce(b.label_code,b.box_no::text) control_number,coalesce(b.notes,'Caixa física') subject,b.box_no,coalesce(pl.location_code,'') location,'' classification,b.reg_status status,exists(select 1 from ged.label_print_history h where h.tenant_id=b.tenant_id and h.label_subject_id=b.id) already_printed from ged.box b left join ged.physical_location pl on pl.tenant_id=b.tenant_id and pl.id=b.location_id where b.tenant_id=@tid and b.reg_status='A' order by b.box_no limit 300",new{tid=TenantId});
+        var selectedIds=new HashSet<Guid>();
+        if(!string.IsNullOrWhiteSpace(selectionToken)&&UserId is Guid selectionUser)
+        {
+            var hash=Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(selectionToken))).ToLowerInvariant();
+            selectedIds=(await db.QueryAsync<Guid>(new CommandDefinition("""
+select i.subject_id from ged.label_print_selection s join ged.label_print_selection_item i on i.selection_id=s.id
+where s.tenant_id=@tid and s.user_id=@userId and s.token_hash=@hash and s.subject_type=@subjectType
+ and s.reg_status='A' and s.expires_at>now();
+""",new{tid=TenantId,userId=selectionUser,hash,subjectType},cancellationToken:ct))).ToHashSet();
+            if(selectedIds.Count==0)TempData["Error"]="A seleção expirou ou não pertence ao usuário atual.";
+        }
+        ViewBag.SelectedIds=selectedIds;
+        ViewBag.Rows=subjectType=="DOCUMENT"?await db.QueryAsync("select d.id,d.code control_number,d.title subject,b.box_no,coalesce(pl.location_code,'') location,coalesce(cp.title,'') classification,d.status,exists(select 1 from ged.label_print_history h where h.tenant_id=d.tenant_id and h.label_subject_id=d.id) already_printed from ged.document d left join ged.batch_item bi on bi.tenant_id=d.tenant_id and bi.document_id=d.id and bi.reg_status='A' left join ged.box b on b.tenant_id=d.tenant_id and b.id=bi.box_id left join ged.physical_location pl on pl.tenant_id=b.tenant_id and pl.id=b.location_id left join ged.classification_plan cp on cp.tenant_id=d.tenant_id and cp.id=d.classification_id where d.tenant_id=@tid and coalesce(d.reg_status,'A')='A' and (@hasSelection=false or d.id=any(@selectedIds)) order by d.created_at desc limit 300",new{tid=TenantId,hasSelection=selectedIds.Count>0,selectedIds=selectedIds.ToArray()}):await db.QueryAsync("select b.id,coalesce(b.label_code,b.box_no::text) control_number,coalesce(b.notes,'Caixa física') subject,b.box_no,coalesce(pl.location_code,'') location,'' classification,b.reg_status status,exists(select 1 from ged.label_print_history h where h.tenant_id=b.tenant_id and h.label_subject_id=b.id) already_printed from ged.box b left join ged.physical_location pl on pl.tenant_id=b.tenant_id and pl.id=b.location_id where b.tenant_id=@tid and b.reg_status='A' order by b.box_no limit 300",new{tid=TenantId});
         return View(new CreateBatchPrintJobInput{SubjectType=subjectType});
     }
 

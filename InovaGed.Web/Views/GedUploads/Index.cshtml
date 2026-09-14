@@ -2,7 +2,6 @@
 @{
     ViewData["Title"] = "Entradas documentais";
     var today = DateTimeOffset.Now.Date;
-    string StatusLabel(string value) => value switch { "PROCESSING" => "Em processamento", "COMPLETED" => "Concluído", "PARTIAL_ERROR" => "Concluído com pendências", "ERROR" => "Com erro", "CANCELLED" => "Cancelado", _ => "Em processamento" };
     ViewData["WorkspaceVariant"] = "wide";
 }
 <div class="container-fluid py-3">
@@ -41,7 +40,7 @@
                         <td>@(b.UserName ?? "Usuário não identificado")</td>
                         <td>@(b.FolderName ?? "-")</td>
                         <td>@b.TotalFiles</td><td class="text-success fw-semibold">@b.SuccessFiles</td><td class="text-danger fw-semibold">@b.FailedFiles</td><td>@b.SkippedFiles</td><td>@b.DuplicateFiles</td><td>@b.AbortedFiles</td>
-                        <td><span class="badge bg-secondary">@StatusLabel(b.Status)</span></td>
+                        <td><span class="badge bg-secondary">@b.OperationalStatus</span></td>
                         <td>@(b.DurationMs.HasValue ? $"{b.DurationMs.Value / 1000.0:n1}s" : "-")</td>
                         <td class="text-nowrap">
                             <a class="btn btn-sm btn-outline-primary" asp-action="Details" asp-route-batchId="@b.Id">Abrir</a>

@@ -14,6 +14,10 @@ using BclEnvironment = global::System.Environment;
 try
 {
     var command = args.FirstOrDefault() ?? "check";
+    if(command.Equals("ged-intake-operational-rc34",StringComparison.OrdinalIgnoreCase))
+        return GedIntakeOperationalRc34QualityCheck.Run(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);
+    if(command.Equals("labels-studio-operational-rc34",StringComparison.OrdinalIgnoreCase))
+        return LabelsStudioOperationalRc34QualityCheck.Run(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);
     if(command.Equals("ged-intake-control-tower-rc33",StringComparison.OrdinalIgnoreCase))
         return GedIntakeControlTowerRc33QualityCheck.Run(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);
     if(command.Equals("labels-collaboration-governance-rc33",StringComparison.OrdinalIgnoreCase))

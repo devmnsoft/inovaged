@@ -31,6 +31,15 @@ public sealed class GedUploadBatchRowVM
     public long? DurationMs { get; set; }
     public bool HasRetryableItems { get; set; }
     public string? CorrelationId { get; set; }
+    public string OperationalStatus => Status switch
+    {
+        "PROCESSING" or "PENDING" => "Em processamento",
+        "COMPLETED" => "Concluído",
+        "PARTIAL_ERROR" => "Concluído com pendências",
+        "ERROR" => "Com erro",
+        "CANCELLED" => "Cancelado",
+        _ => "Situação indisponível"
+    };
 }
 
 public sealed class GedUploadBatchItemVM
@@ -47,4 +56,20 @@ public sealed class GedUploadBatchItemVM
     public long? ElapsedMs { get; set; }
     public string? CorrelationId { get; set; }
     public string? ProcessingWarning { get; set; }
+    public string IntakeReviewStatus { get; set; } = "PENDING";
+    public string OperationalStatus => Status switch
+    {
+        "PROCESSING" or "PENDING" or "UPLOADING" => "Em processamento",
+        "COMPLETED" or "SUCCESS" => "Concluído",
+        "DUPLICATE" => "Ignorado por duplicidade",
+        "ERROR" or "RETRYABLE" => "Com erro",
+        "ABORTED" => "Cancelado",
+        _ => "Situação indisponível"
+    };
+    public string ReviewLabel => IntakeReviewStatus switch
+    {
+        "REVIEWED" => "Conferido",
+        "NEEDS_CORRECTION" => "Precisa de correção",
+        _ => "Pendente"
+    };
 }

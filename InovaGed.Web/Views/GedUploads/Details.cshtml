@@ -1,6 +1,6 @@
 @model InovaGed.Web.Models.Ged.GedUploadBatchDetailVM
 @{
-    ViewData["Title"] = "Detalhe do upload";
+    ViewData["Title"] = "Conferência da entrada";
     var failed = Model.Items.Count(i => i.Status == "ERROR" || i.Status == "RETRYABLE" || i.Status == "ABORTED");
     var duplicated = Model.Items.Count(i => i.Status == "DUPLICATE");
     var aborted = Model.Items.Count(i => i.Status == "ABORTED");
@@ -10,8 +10,9 @@
 <div class="container-fluid py-3">
     <div class="d-flex align-items-center justify-content-between mb-3">
         <div>
-            <h1 class="h4 mb-1">Detalhe do lote</h1>
-            <div class="text-muted small">@Model.Batch.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm") · @Model.Batch.Status · Usuário: @(Model.Batch.UserName ?? "Usuário não identificado") · CorrelationId: <code>@Model.Batch.CorrelationId</code></div>
+            <h1 class="h4 mb-1">Conferência da entrada</h1>
+            <div class="text-muted small">Revise documentos, processamento, classificação e pendências.</div>
+            <div class="text-muted small">@Model.Batch.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm") · @Model.Batch.OperationalStatus · Usuário: @(Model.Batch.UserName ?? "Usuário não identificado")</div>
         </div>
         <div class="btn-group flex-wrap">
             <a class="btn btn-outline-secondary" asp-controller="Ged" asp-action="Index">Voltar ao GED</a>
@@ -34,6 +35,10 @@
     </div>
 
     <div class="mb-2 d-flex gap-2 flex-wrap align-items-center">
+        <strong data-selected-summary>0 selecionados</strong>
+        <button class="btn btn-sm btn-primary js-review-reviewed" data-batch-id="@Model.Batch.Id">Marcar conferido</button>
+        <button class="btn btn-sm btn-outline-primary js-open-classification" data-batch-id="@Model.Batch.Id">Classificar</button>
+        <a class="btn btn-sm btn-outline-primary js-label-selection" asp-controller="Labels" asp-action="BatchPrint" asp-route-subjectType="DOCUMENT">Gerar etiquetas</a>
         <button class="btn btn-sm btn-outline-warning js-batch-created-incomplete" data-batch-id="@Model.Batch.Id">Marcar documentos criados como incompletos</button>
         <button class="btn btn-sm btn-outline-warning js-batch-selected-incomplete" data-batch-id="@Model.Batch.Id">Marcar selecionados como incompletos</button>
         <button class="btn btn-sm btn-outline-danger js-batch-created-delete" data-batch-id="@Model.Batch.Id">Excluir documentos criados neste lote</button>
@@ -54,7 +59,7 @@
 
     <div class="card shadow-sm"><div class="table-responsive">
         <table class="table table-sm align-middle mb-0" id="uploadItemsTable">
-            <thead class="table-light"><tr><th><input type="checkbox" id="checkAllUploadDocs" /></th><th>Arquivo original</th><th>Status</th><th>Mensagem de erro</th><th>Etapa</th><th>Documento criado</th><th>Tamanho</th><th>Duração</th><th>CorrelationId</th><th>Ações</th></tr></thead>
+            <thead class="table-light sticky-top"><tr><th><input type="checkbox" id="checkAllUploadDocs" /></th><th>Arquivo</th><th>Processamento</th><th>Classificação</th><th>Conferência</th><th>Pendência</th><th>Documento</th><th>Tamanho</th><th>Duração</th><th>Ações</th></tr></thead>
             <tbody>
             @foreach (var i in Model.Items)
             {
@@ -62,13 +67,14 @@
                 <tr class="@(isFailure ? "table-warning" : "")" data-status="@i.Status" data-created="@(i.DocumentId.HasValue ? "true" : "false")" data-retry="@(i.CanRetry ? "true" : "false")">
                     <td>@if (i.DocumentId.HasValue) { <input type="checkbox" class="js-upload-doc-check" value="@i.DocumentId" /> }</td>
                     <td>@i.OriginalFileName</td>
-                    <td><span class="badge bg-secondary">@i.Status</span></td>
+                    <td><span class="badge bg-secondary">@i.OperationalStatus</span></td>
+                    <td>@(i.DocumentId.HasValue ? "Pendente" : "Não aplicável")</td>
+                    <td><span class="badge bg-light text-dark">@i.ReviewLabel</span></td>
                     <td class="text-danger">@(i.ErrorMessage ?? i.ProcessingWarning ?? "-")</td>
                     <td>@(i.ErrorStep ?? "-")</td>
                     <td>@if (i.DocumentId.HasValue) { <a asp-controller="Ged" asp-action="Details" asp-route-id="@i.DocumentId">Abrir documento</a> } else { <span>-</span> }</td>
                     <td>@(i.SizeBytes.HasValue ? $"{i.SizeBytes.Value:n0}" : "-")</td>
                     <td>@(i.ElapsedMs.HasValue ? $"{i.ElapsedMs.Value}ms" : "-")</td>
-                    <td><code>@i.CorrelationId</code></td>
                     <td class="text-nowrap"><button class="btn btn-sm btn-outline-secondary js-copy-error" data-error="@(i.ErrorMessage ?? i.ProcessingWarning)" data-correlation="@i.CorrelationId">Copiar erro</button></td>
                 </tr>
             }
@@ -76,25 +82,44 @@
         </table>
     </div></div>
 </div>
+<dialog class="modal-dialog rounded border-0 shadow" data-correction-dialog>
+ <form method="dialog" class="p-4" style="min-width:min(92vw,32rem)"><h2 class="h5">Marcar como precisa de correção</h2>
+ <label class="form-label" for="correctionReason">Motivo</label><textarea id="correctionReason" class="form-control" rows="4" required></textarea>
+ <div class="d-flex justify-content-end gap-2 mt-3"><button class="btn btn-outline-secondary" value="cancel">Cancelar</button><button class="btn btn-primary" value="confirm">Confirmar</button></div></form>
+</dialog>
+<dialog class="modal-dialog rounded border-0 shadow" data-classification-dialog>
+ <form method="dialog" class="p-4" style="min-width:min(92vw,36rem)"><h2 class="h5">Classificar documentos</h2>
+ <label class="form-label" for="classificationSearch">Classificação</label><input id="classificationSearch" class="form-control" type="search" placeholder="Busque por código ou título" autocomplete="off" />
+ <select id="classificationChoice" class="form-select mt-2" size="6" aria-label="Resultados de classificação"></select>
+ <div class="d-flex justify-content-end gap-2 mt-3"><button class="btn btn-outline-secondary" value="cancel">Cancelar</button><button class="btn btn-primary" value="confirm">Aplicar classificação</button></div></form>
+</dialog>
 <form id="uploadDetailTokenForm">@Html.AntiForgeryToken()</form>
 @section Scripts { <script src="~/js/ged-bulk-actions.js" asp-append-version="true"></script><script>
-const token = () => document.querySelector('#uploadDetailTokenForm input[name="__RequestVerificationToken"]')?.value;
-const selectedDocs = () => Array.from(document.querySelectorAll('.js-upload-doc-check:checked')).map(x => x.value);
-async function postJson(url, body) { const r = await fetch(url, { method:'POST', headers: { 'Content-Type':'application/json', ...(token() ? { RequestVerificationToken: token() } : {}) }, body: JSON.stringify(body || {}) }); return await r.json().catch(()=>({ success:false, message:'Resposta inválida.' })); }
-document.getElementById('checkAllUploadDocs')?.addEventListener('change', e => document.querySelectorAll('.js-upload-doc-check').forEach(x => x.checked = e.target.checked));
-document.getElementById('uploadFilters')?.addEventListener('click', e => { const b=e.target.closest('[data-filter]'); if(!b) return; document.querySelectorAll('#uploadFilters .nav-link').forEach(x=>x.classList.remove('active')); b.classList.add('active'); const f=b.dataset.filter; document.querySelectorAll('#uploadItemsTable tbody tr').forEach(tr => { const show = f==='all' || tr.dataset.status===f || (f==='failures' && ['ERROR','ABORTED','RETRYABLE'].includes(tr.dataset.status)) || (f==='created' && tr.dataset.created==='true') || (f==='retry' && tr.dataset.retry==='true'); tr.classList.toggle('d-none', !show); }); });
-document.addEventListener('click', async e => {
- const retry = e.target.closest('.js-upload-retry');
- if (retry) { const j = await postJson(`/Ged/Uploads/${retry.dataset.batchId}/RetryFailed`); window.showAppToast?.(j.message || 'Selecione novamente os arquivos que falharam se o navegador não mantiver o conteúdo local.', j.success?'success':'warning','Uploads'); if(j.success) location.reload(); }
- const ack = e.target.closest('.js-upload-ack');
- if (ack) { const j = await postJson(`/Ged/Uploads/${ack.dataset.batchId}/Acknowledge`, { notes:'Reconhecido na tela de detalhe do lote.' }); window.showAppToast?.(j.message || 'Atualizado.', j.success?'success':'danger','Uploads'); }
- const cancel = e.target.closest('.js-upload-cancel');
- if (cancel && confirm('Fechar/cancelar este lote?')) { const j = await postJson(`/Ged/Uploads/${cancel.dataset.batchId}/Cancel`); window.showAppToast?.(j.message || 'Lote atualizado.', j.success?'success':'danger','Uploads'); if(j.success) location.reload(); }
- const del = e.target.closest('.js-batch-created-delete,.js-batch-selected-delete');
- if (del) { const only = del.classList.contains('js-batch-selected-delete') ? selectedDocs() : null; if(only && !only.length) return alert('Selecione documentos.'); if(confirm('Excluir logicamente os documentos do lote?')) { const j=await postJson(`/Ged/Uploads/${del.dataset.batchId}/DeleteCreatedDocuments`, { reason:'Reinício do upload após falha parcial', onlySelectedDocumentIds: only }); window.showAppToast?.(j.message || 'Ação concluída.', j.success?'success':'warning','Uploads'); } }
- const inc = e.target.closest('.js-batch-created-incomplete,.js-batch-selected-incomplete');
- if (inc) { const only = inc.classList.contains('js-batch-selected-incomplete') ? selectedDocs() : null; if(only && !only.length) return alert('Selecione documentos.'); const reason=prompt('Motivo:', 'Upload precisa de conferência/complementação'); if(reason) { const j=await postJson(`/Ged/Uploads/${inc.dataset.batchId}/MarkCreatedIncomplete`, { reason, onlySelectedDocumentIds: only }); window.showAppToast?.(j.message || 'Ação concluída.', j.success?'success':'warning','Uploads'); } }
- const copy = e.target.closest('.js-copy-error');
- if (copy) navigator.clipboard?.writeText(`Erro: ${copy.dataset.error || ''}\nCorrelationId: ${copy.dataset.correlation || ''}`);
+const token=()=>document.querySelector('#uploadDetailTokenForm input[name="__RequestVerificationToken"]')?.value;
+const selectedDocs=()=>Array.from(document.querySelectorAll('.js-upload-doc-check:checked')).map(x=>x.value);
+const toast=(message,type='warning')=>window.showAppToast?.(message,type,'Entradas documentais');
+async function postJson(url,body){const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json',...(token()?{RequestVerificationToken:token()}:{})},body:JSON.stringify(body||{})});const j=await r.json().catch(()=>({success:false,message:'Resposta inválida.'}));if(!r.ok)j.success=false;return j;}
+const requireSelection=()=>{const ids=selectedDocs();if(!ids.length)toast('Selecione pelo menos um documento.');return ids;};
+const refreshSummary=()=>document.querySelector('[data-selected-summary]').textContent=`${selectedDocs().length} selecionados`;
+document.getElementById('checkAllUploadDocs')?.addEventListener('change',e=>{document.querySelectorAll('.js-upload-doc-check').forEach(x=>x.checked=e.target.checked);refreshSummary();});
+document.querySelectorAll('.js-upload-doc-check').forEach(x=>x.addEventListener('change',refreshSummary));
+document.getElementById('uploadFilters')?.addEventListener('click',e=>{const b=e.target.closest('[data-filter]');if(!b)return;document.querySelectorAll('#uploadFilters .nav-link').forEach(x=>x.classList.remove('active'));b.classList.add('active');const f=b.dataset.filter;document.querySelectorAll('#uploadItemsTable tbody tr').forEach(tr=>tr.classList.toggle('d-none',!(f==='all'||tr.dataset.status===f||(f==='failures'&&['ERROR','ABORTED','RETRYABLE'].includes(tr.dataset.status))||(f==='created'&&tr.dataset.created==='true')||(f==='retry'&&tr.dataset.retry==='true'))));});
+const confirmAction=options=>window.InovaGedFeedback?.confirm(options)??Promise.resolve(false);
+async function review(batchId,status,reason){const ids=requireSelection();if(!ids.length)return;const j=await postJson(`/Ged/Uploads/${batchId}/Review`,{documentIds:ids,status,reason});toast(j.message||'Conferência atualizada.',j.success?'success':'danger');if(j.success)location.reload();}
+let classifyBatchId='';let searchAbort;
+async function loadClassifications(q=''){searchAbort?.abort();searchAbort=new AbortController();const r=await fetch(`/Ged/Classifications/QuickList?q=${encodeURIComponent(q)}`,{signal:searchAbort.signal});const j=await r.json();const select=document.getElementById('classificationChoice');select.replaceChildren(...(j.items||[]).map(item=>{const o=document.createElement('option');o.value=item.id;o.textContent=`${item.name}${item.description?' — '+item.description:''}`;return o;}));}
+let searchTimer;document.getElementById('classificationSearch')?.addEventListener('input',e=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>loadClassifications(e.target.value).catch(()=>{}),250);});
+document.querySelector('[data-classification-dialog]')?.addEventListener('close',async e=>{if(e.target.returnValue!=='confirm')return;const ids=requireSelection(),choice=document.getElementById('classificationChoice');if(!ids.length||!choice.value)return toast('Escolha uma classificação.');const accepted=await confirmAction({title:'Aplicar classificação',message:`Aplicar ${choice.selectedOptions[0].textContent} a ${ids.length} documento(s)?`,confirmText:'Aplicar'});if(!accepted)return;const j=await postJson(`/Ged/Uploads/${classifyBatchId}/BulkClassify`,{documentIds:ids,classificationId:choice.value});toast(j.failed?`${j.succeeded} classificados; ${j.failed} com pendência.`:'Classificação aplicada.',j.failed?'warning':'success');if(!j.failed)location.reload();});
+document.addEventListener('click',async e=>{
+ const retry=e.target.closest('.js-upload-retry');if(retry){const j=await postJson(`/Ged/Uploads/${retry.dataset.batchId}/RetryFailed`);toast(j.message,j.success?'success':'warning');if(j.success)location.reload();return;}
+ const ack=e.target.closest('.js-upload-ack');if(ack){const j=await postJson(`/Ged/Uploads/${ack.dataset.batchId}/Acknowledge`,{notes:'Reconhecido na conferência da entrada.'});toast(j.message,j.success?'success':'danger');return;}
+ const reviewed=e.target.closest('.js-review-reviewed');if(reviewed){await review(reviewed.dataset.batchId,'REVIEWED');return;}
+ const classify=e.target.closest('.js-open-classification');if(classify){if(!requireSelection().length)return;classifyBatchId=classify.dataset.batchId;await loadClassifications();document.querySelector('[data-classification-dialog]').showModal();return;}
+ const labels=e.target.closest('.js-label-selection');if(labels){e.preventDefault();const ids=requireSelection();if(!ids.length)return;const j=await postJson(`/Ged/Uploads/@Model.Batch.Id/LabelSelection`,{documentIds:ids});if(j.success&&j.redirectUrl)location.href=j.redirectUrl;else toast(j.message||'Não foi possível preparar as etiquetas.','danger');return;}
+ const cancel=e.target.closest('.js-upload-cancel');if(cancel){if(await confirmAction({title:'Fechar lote',message:'Deseja cancelar o processamento deste lote?',confirmText:'Fechar lote'})){const j=await postJson(`/Ged/Uploads/${cancel.dataset.batchId}/Cancel`);toast(j.message,j.success?'success':'danger');if(j.success)location.reload();}return;}
+ const del=e.target.closest('.js-batch-created-delete,.js-batch-selected-delete');if(del){const only=del.classList.contains('js-batch-selected-delete')?requireSelection():null;if(only&&!only.length)return;if(await confirmAction({title:'Excluir documentos',message:'Os documentos não serão removidos fisicamente. A exclusão será lógica e auditável.',confirmText:'Excluir logicamente',danger:true})){const j=await postJson(`/Ged/Uploads/${del.dataset.batchId}/DeleteCreatedDocuments`,{reason:'Reinício do upload após falha parcial',onlySelectedDocumentIds:only});toast(j.message,j.success?'success':'warning');}return;}
+ const inc=e.target.closest('.js-batch-created-incomplete,.js-batch-selected-incomplete');if(inc){const only=inc.classList.contains('js-batch-selected-incomplete')?requireSelection():Array.from(document.querySelectorAll('.js-upload-doc-check')).map(x=>x.value);if(!only.length)return;const dialog=document.querySelector('[data-correction-dialog]');dialog.dataset.batchId=inc.dataset.batchId;dialog.dataset.ids=JSON.stringify(only);dialog.showModal();return;}
+ const copy=e.target.closest('.js-copy-error');if(copy)navigator.clipboard?.writeText(`Erro: ${copy.dataset.error||''}\nCorrelationId: ${copy.dataset.correlation||''}`);
 });
+document.querySelector('[data-correction-dialog]')?.addEventListener('close',async e=>{if(e.target.returnValue!=='confirm')return;const reason=document.getElementById('correctionReason').value.trim();if(!reason)return toast('Informe o motivo da correção.');await review(e.target.dataset.batchId,'NEEDS_CORRECTION',reason);});
 </script> }
