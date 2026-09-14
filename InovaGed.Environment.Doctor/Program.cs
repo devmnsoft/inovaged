@@ -14,6 +14,9 @@ using BclEnvironment = global::System.Environment;
 try
 {
     var command = args.FirstOrDefault() ?? "check";
+    if(command.Equals("labels-print-state-machine-rc39",StringComparison.OrdinalIgnoreCase)) return Rc39QualityChecks.PrintStateMachine(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);
+    if(command.Equals("labels-print-operations-ux-rc39",StringComparison.OrdinalIgnoreCase)) return Rc39QualityChecks.PrintOperationsUx(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);
+    if(command.Equals("labels-traceability-ux-rc39",StringComparison.OrdinalIgnoreCase)) return Rc39QualityChecks.TraceabilityUx(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);
     if(command.Equals("labels-reuse-portability-rc38",StringComparison.OrdinalIgnoreCase)) return Rc38QualityChecks.ReusePortability(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);
     if(command.Equals("labels-print-operations-rc38",StringComparison.OrdinalIgnoreCase)) return Rc38QualityChecks.PrintOperations(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);
     if(command.Equals("labels-designer-ux-rc38",StringComparison.OrdinalIgnoreCase)) return Rc38QualityChecks.DesignerUx(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);

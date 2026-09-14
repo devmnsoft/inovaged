@@ -2,13 +2,123 @@ namespace InovaGed.Environment.Doctor.Checks;
 
 public static class Rc38QualityChecks
 {
-    public static int ReusePortability(string root,TextWriter output,TextWriter error)
+    public static int ReusePortability(string root, TextWriter output, TextWriter error)
     {
-        var contract=Read(root,"InovaGed.Application/Labels/Canvas/LabelCanvasContracts.cs");var service=Read(root,"InovaGed.Infrastructure/Labels/LabelCanvasComponentPresetService.cs");var package=Read(root,"InovaGed.Infrastructure/Labels/LabelTemplatePackageService.cs");var controller=Read(root,"InovaGed.Web/Controller/LabelDesignerController.cs");
-        return Run(output,error,"Reuso e portabilidade RC38",new(){["service e CRUD"]=contract.Contains("ILabelCanvasComponentPresetService")&&service.Contains("DuplicateAsync")&&service.Contains("ArchiveAsync"),["tenant + soft archive"]=service.Contains("tenant_id=@tenantId")&&service.Contains("reg_status='I'"),["IDs não persistidos"]=service.Contains("element.Remove(\"id\")")&&controller.Contains("crypto.randomUUID",StringComparison.OrdinalIgnoreCase)==false,["export/import versionados"]=package.Contains("PackageVersion")&&controller.Contains("/Labels/Designer/{templateKey}/Export")&&controller.Contains("/Labels/Designer/Import"),["URL insegura rejeitada"]=package.Contains("\"javascript\"")&&service.Contains("UNSAFE_ASSET")});
+        var contract = Read(root, "InovaGed.Application/Labels/Canvas/LabelCanvasContracts.cs");
+        var service = Read(root, "InovaGed.Infrastructure/Labels/LabelCanvasComponentPresetService.cs");
+        var package = Read(root, "InovaGed.Infrastructure/Labels/LabelTemplatePackageService.cs");
+        var controller = Read(root, "InovaGed.Web/Controller/LabelDesignerController.cs");
+
+        var checks = new Dictionary<string, bool>
+        {
+            ["service e CRUD"] =
+                contract.Contains("ILabelCanvasComponentPresetService") &&
+                service.Contains("DuplicateAsync") &&
+                service.Contains("ArchiveAsync"),
+
+            ["tenant + soft archive"] =
+                service.Contains("tenant_id=@tenantId") &&
+                service.Contains("reg_status='I'"),
+
+            ["IDs não persistidos"] =
+                service.Contains("element.Remove(\"id\")") &&
+                !controller.Contains("crypto.randomUUID", StringComparison.OrdinalIgnoreCase),
+
+            ["export/import versionados"] =
+                package.Contains("PackageVersion") &&
+                controller.Contains("/Labels/Designer/{templateKey}/Export") &&
+                controller.Contains("/Labels/Designer/Import"),
+
+            ["URL insegura rejeitada"] =
+                package.Contains("\"javascript\"") &&
+                service.Contains("UNSAFE_ASSET")
+        };
+
+        return Run(
+            output,
+            error,
+            "Reuso e portabilidade RC38",
+            checks);
     }
-    public static int PrintOperations(string root,TextWriter output,TextWriter error){var view=Read(root,"InovaGed.Web/Views/Labels/PrintWizard.cshtml");var js=Read(root,"InovaGed.Web/wwwroot/js/labels-printwizard.js");var controller=Read(root,"InovaGed.Web/Controller/LabelsController.cs");return Run(output,error,"Impressão RC38",new(){["stepper preservado"]=view.Contains("label-stepper"),["preview cancelável e puro"]=js.Contains("AbortController")&&js.Contains("previewSchemaBlocked"),["ClientActionId preservado"]=controller.Contains("ClientActionId"),["conferência"]=view.Contains("Confer",StringComparison.OrdinalIgnoreCase)});}
-    public static int DesignerUx(string root,TextWriter output,TextWriter error){var library=Read(root,"InovaGed.Web/Views/Labels/Designer/_DesignerLibrary.cshtml");var js=Read(root,"InovaGed.Web/wwwroot/js/labels-designer.js");return Run(output,error,"Designer UX RC38",new(){["tabs acessíveis"]=library.Contains("role=\"tab\"")&&library.Contains("aria-controls"),["blocos backend"]=js.Contains("ComponentPresets"),["multiseleção e status"]=js.Contains("selected.size")&&js.Contains("data-save-status"),["layers e zIndex"]=js.Contains("renderLayers")&&js.Contains("zIndex"),["atalhos e guias"]=js.Contains("event.ctrlKey&&key==='s'")&&js.Contains("showGuides")});}
-    private static string Read(string root,string relative)=>File.ReadAllText(Path.Combine(root,relative));
-    private static int Run(TextWriter output,TextWriter error,string name,IReadOnlyDictionary<string,bool> checks){foreach(var item in checks)output.WriteLine($"[{(item.Value?"OK":"FALHA")}] {item.Key}");if(checks.Values.All(x=>x))return 0;error.WriteLine($"[FALHA] {name} incompleto.");return 2;}
+
+    public static int PrintOperations(string root, TextWriter output, TextWriter error)
+    {
+        var view = Read(root, "InovaGed.Web/Views/Labels/PrintWizard.cshtml");
+        var js = Read(root, "InovaGed.Web/wwwroot/js/labels-printwizard.js");
+        var controller = Read(root, "InovaGed.Web/Controller/LabelsController.cs");
+
+        var checks = new Dictionary<string, bool>
+        {
+            ["stepper preservado"] = view.Contains("label-stepper"),
+
+            ["preview cancelável e puro"] =
+                js.Contains("AbortController") &&
+                js.Contains("previewSchemaBlocked"),
+
+            ["ClientActionId preservado"] = controller.Contains("ClientActionId"),
+            ["conferência"] = view.Contains("Confer", StringComparison.OrdinalIgnoreCase)
+        };
+
+        return Run(
+            output,
+            error,
+            "Impressão RC38",
+            checks);
+    }
+
+    public static int DesignerUx(string root, TextWriter output, TextWriter error)
+    {
+        var library = Read(root, "InovaGed.Web/Views/Labels/Designer/_DesignerLibrary.cshtml");
+        var js = Read(root, "InovaGed.Web/wwwroot/js/labels-designer.js");
+
+        var checks = new Dictionary<string, bool>
+        {
+            ["tabs acessíveis"] =
+                library.Contains("role=\"tab\"") &&
+                library.Contains("aria-controls"),
+
+            ["blocos backend"] = js.Contains("ComponentPresets"),
+
+            ["multiseleção e status"] =
+                js.Contains("selected.size") &&
+                js.Contains("data-save-status"),
+
+            ["layers e zIndex"] =
+                js.Contains("renderLayers") &&
+                js.Contains("zIndex"),
+
+            ["atalhos e guias"] =
+                js.Contains("event.ctrlKey&&key==='s'") &&
+                js.Contains("showGuides")
+        };
+
+        return Run(
+            output,
+            error,
+            "Designer UX RC38",
+            checks);
+    }
+
+    private static string Read(string root, string relative) =>
+        File.ReadAllText(Path.Combine(root, relative));
+
+    private static int Run(
+        TextWriter output,
+        TextWriter error,
+        string name,
+        IReadOnlyDictionary<string, bool> checks)
+    {
+        foreach (var item in checks)
+        {
+            output.WriteLine($"[{(item.Value ? "OK" : "FALHA")}] {item.Key}");
+        }
+
+        if (checks.Values.All(value => value))
+        {
+            return 0;
+        }
+
+        error.WriteLine($"[FALHA] {name} incompleto.");
+        return 2;
+    }
 }

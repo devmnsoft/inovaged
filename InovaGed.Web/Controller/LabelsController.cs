@@ -135,7 +135,13 @@ public class LabelsController : GedControllerBase
 
     [HttpGet]
     public async Task<IActionResult> PrintQueue([FromQuery] LabelPrintJobFilter filter,CancellationToken ct)
-    { ViewBag.Filter=filter; return View(await _printJobs.ListAsync(TenantId,filter,ct)); }
+    {
+        filter.Page=Math.Max(1,filter.Page);
+        filter.PageSize=Math.Clamp(filter.PageSize,1,100);
+        ViewBag.Filter=filter;
+        ViewBag.Metrics=await _printJobs.GetMetricsAsync(TenantId,filter,ct);
+        return View(await _printJobs.ListAsync(TenantId,filter,ct));
+    }
 
     [HttpGet]
     public async Task<IActionResult> PrintJob(Guid id,CancellationToken ct)
@@ -170,11 +176,11 @@ public class LabelsController : GedControllerBase
             var snapshot=_payloadBuilder.Build(prepared.CreateSnapshot(context,"JOB"));
             var control=Convert.ToString(prepared.Values.GetValueOrDefault("boxCode")??prepared.Values.GetValueOrDefault("documentCode"));
             var location=Convert.ToString(prepared.Values.GetValueOrDefault("location"));
-            var canvasJob=await _printJobs.CreateJobAsync(new(TenantId,uid,input.PrintMode,template.Code,template.Name,input.SubjectType,input.SubjectId,control,location,input.Copies,snapshot,input.ReprintReason,HttpContext.Connection.RemoteIpAddress?.ToString(),Request.Headers.UserAgent),ct);
+            var canvasJob=await _printJobs.CreateJobAsync(new(TenantId,uid,input.PrintMode,template.Code,template.Name,input.SubjectType,input.SubjectId,control,location,input.Copies,snapshot,input.ReprintReason,HttpContext.Connection.RemoteIpAddress?.ToString(),Request.Headers.UserAgent,input.ClientActionId),ct);
             return RedirectToAction(nameof(PrintPreview),new{id=canvasJob});
         }
         using var db=await OpenAsync();dynamic? subject=input.SubjectType=="BOX"?await LoadBoxLabelAsync(db,input.SubjectId!.Value):await LoadDocumentLabelAsync(db,input.SubjectId!.Value);if(subject is null)return NotFound();
-        var json=_payloadBuilder.Build(subject);var id=await _printJobs.CreateJobAsync(new(TenantId,uid,input.PrintMode,template.Code,template.Name,input.SubjectType,input.SubjectId,null,null,input.Copies,json,input.ReprintReason,HttpContext.Connection.RemoteIpAddress?.ToString(),Request.Headers.UserAgent),ct);
+        var json=_payloadBuilder.Build(subject);var id=await _printJobs.CreateJobAsync(new(TenantId,uid,input.PrintMode,template.Code,template.Name,input.SubjectType,input.SubjectId,null,null,input.Copies,json,input.ReprintReason,HttpContext.Connection.RemoteIpAddress?.ToString(),Request.Headers.UserAgent,input.ClientActionId),ct);
         return RedirectToAction(nameof(PrintPreview),new{id});
     }
 
@@ -220,7 +226,7 @@ where s.tenant_id=@tid and s.user_id=@userId and s.token_hash=@hash and s.subjec
             }
         }
         else foreach(var sid in input.SubjectIds.Distinct()){dynamic? row=input.SubjectType=="BOX"?await LoadBoxLabelAsync(db,sid):await LoadDocumentLabelAsync(db,sid);if(row is null)return NotFound();items.Add(new(sid,input.SubjectType,null,null,_payloadBuilder.Build(row),order++));}
-        var id=await _printJobs.CreateBatchJobAsync(new(TenantId,uid,input.PrintMode,template.Code,template.Name,input.SubjectType,input.Copies,items,input.ReprintReason,HttpContext.Connection.RemoteIpAddress?.ToString(),Request.Headers.UserAgent),ct);return RedirectToAction(nameof(PrintPreview),new{id});
+        var id=await _printJobs.CreateBatchJobAsync(new(TenantId,uid,input.PrintMode,template.Code,template.Name,input.SubjectType,input.Copies,items,input.ReprintReason,HttpContext.Connection.RemoteIpAddress?.ToString(),Request.Headers.UserAgent,input.ClientActionId),ct);return RedirectToAction(nameof(PrintPreview),new{id});
     }
 
     [HttpPost("/Labels/Batch/Preview"),ValidateAntiForgeryToken]
@@ -233,6 +239,10 @@ where s.tenant_id=@tid and s.user_id=@userId and s.token_hash=@hash and s.subjec
     public async Task<IActionResult> MarkPrinted(Guid id,CancellationToken ct){if(UserId is not Guid uid)return Unauthorized();await _printJobs.MarkPrintedAsync(TenantId,id,uid,ct);TempData["Success"]="Impressão registrada para auditoria.";return RedirectToAction(nameof(PrintJob),new{id});}
     [HttpPost,ValidateAntiForgeryToken]
     public async Task<IActionResult> CancelPrintJob(Guid id,string reason,CancellationToken ct){if(UserId is not Guid uid)return Unauthorized();await _printJobs.CancelAsync(TenantId,id,uid,reason,ct);return RedirectToAction(nameof(PrintQueue));}
+    [HttpPost,ValidateAntiForgeryToken]
+    public async Task<IActionResult> RetryPrintJob(Guid id,CancellationToken ct){if(UserId is not Guid uid)return Unauthorized();await _printJobs.RetryAsync(TenantId,id,uid,ct);return RedirectToAction(nameof(PrintJob),new{id});}
+    [HttpPost,ValidateAntiForgeryToken]
+    public async Task<IActionResult> ReprintExact(Guid id,Guid clientActionId,string reason,CancellationToken ct){if(UserId is not Guid uid)return Unauthorized();var newId=await _printJobs.ReprintExactAsync(TenantId,id,uid,clientActionId,reason,ct);return RedirectToAction(nameof(PrintPreview),new{id=newId});}
     [HttpGet]
     public async Task<IActionResult> GeneratePdf(Guid id,CancellationToken ct){var result=await _pdf.GeneratePdfAsync(TenantId,id,ct);return File(result.Content,result.ContentType,result.FileName);}
 
