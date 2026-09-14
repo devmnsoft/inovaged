@@ -19,6 +19,8 @@ public sealed class LabelCanvasRequestException(string code, string message, IRe
     public IReadOnlyDictionary<string, string> Errors { get; } = errors ?? new Dictionary<string, string>();
 }
 
+public sealed class LabelCanvasConflictException() : InvalidOperationException("Este modelo foi alterado por outra pessoa.");
+
 public sealed class LabelCanvasDesignDto
 {
     public Guid Id { get; init; }
@@ -55,6 +57,7 @@ public sealed class LabelCanvasDesignDto
     public bool IsRevision => Status.Equals("DRAFT", StringComparison.OrdinalIgnoreCase) && HasPublishedVersion;
     public string? LayoutHash { get; init; }
     public string? VersionHash { get; init; }
+    public long LockVersion { get; init; } = 1;
     public bool CanEdit => !IsSystemTemplate && Status.Equals("DRAFT", StringComparison.OrdinalIgnoreCase);
 }
 
@@ -178,6 +181,7 @@ public sealed class LabelCanvasElementValidationDto
 
 public sealed class LabelCanvasSaveRequest
 {
+    public long? ExpectedLockVersion { get; init; }
     public string TemplateKey { get; init; } = "";
     public string TemplateName { get; init; } = "";
     public string? Description { get; init; }

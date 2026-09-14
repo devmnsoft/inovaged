@@ -11,7 +11,7 @@
     <div class="d-flex align-items-center justify-content-between mb-3">
         <div>
             <h1 class="h4 mb-1">Detalhe do lote</h1>
-            <div class="text-muted small">@Model.Batch.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm") · @Model.Batch.Status · Usuário: @(Model.Batch.UserName ?? Model.Batch.CreatedBy.ToString()) · CorrelationId: <code>@Model.Batch.CorrelationId</code></div>
+            <div class="text-muted small">@Model.Batch.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm") · @Model.Batch.Status · Usuário: @(Model.Batch.UserName ?? "Usuário não identificado") · CorrelationId: <code>@Model.Batch.CorrelationId</code></div>
         </div>
         <div class="btn-group flex-wrap">
             <a class="btn btn-outline-secondary" asp-controller="Ged" asp-action="Index">Voltar ao GED</a>
@@ -65,7 +65,7 @@
                     <td><span class="badge bg-secondary">@i.Status</span></td>
                     <td class="text-danger">@(i.ErrorMessage ?? i.ProcessingWarning ?? "-")</td>
                     <td>@(i.ErrorStep ?? "-")</td>
-                    <td>@if (i.DocumentId.HasValue) { <a asp-controller="Ged" asp-action="Details" asp-route-id="@i.DocumentId">@i.DocumentId</a> } else { <span>-</span> }</td>
+                    <td>@if (i.DocumentId.HasValue) { <a asp-controller="Ged" asp-action="Details" asp-route-id="@i.DocumentId">Abrir documento</a> } else { <span>-</span> }</td>
                     <td>@(i.SizeBytes.HasValue ? $"{i.SizeBytes.Value:n0}" : "-")</td>
                     <td>@(i.ElapsedMs.HasValue ? $"{i.ElapsedMs.Value}ms" : "-")</td>
                     <td><code>@i.CorrelationId</code></td>
