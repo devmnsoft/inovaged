@@ -28,6 +28,30 @@ public sealed class LabelIntelligenceRc41Tests
         Assert.Equal(fallback,service.Recommend(tenant,"A5",40,20,null,profiles)!.ProfileId);
     }
 
+    [Fact] public void print_profile_recommendation_orders_by_named_score()
+    {
+        var service = new LabelPrintProfileRecommendationService();
+        var compatible = Guid.NewGuid();
+        var exact = Guid.NewGuid();
+        var profiles = new[]
+        {
+            new LabelPrintProfileCandidate(compatible, "A4 genérico", null, "A4", 100, 70, 100, false, false),
+            new LabelPrintProfileCandidate(exact, "Zebra A4", "Zebra", "A4", 100, 70, 100, false, false)
+        };
+
+        Assert.Equal(exact, service.Recommend(Guid.NewGuid(), "A4", 100, 70, "Zebra", profiles)!.ProfileId);
+    }
+
+    [Fact] public void print_profile_recommendation_exact_match_wins() =>
+        exact_profile_is_prioritized_and_default_is_fallback();
+
+    [Fact] public void print_profile_recommendation_default_is_fallback()
+    {
+        var fallback = Guid.NewGuid();
+        var profiles = new[] { new LabelPrintProfileCandidate(fallback, "Padrão", null, "LETTER", 50, 30, 100, true, false) };
+        Assert.Equal(fallback, new LabelPrintProfileRecommendationService().Recommend(Guid.NewGuid(), "A5", 40, 20, null, profiles)!.ProfileId);
+    }
+
     [Theory] [InlineData("EQUALS","Urgente","urgente",true)] [InlineData("CONTAINS","Administrativo central","central",true)] [InlineData("IS_EMPTY","","",true)]
     public void conditions_are_whitelisted(string op,string actual,string expected,bool result) => Assert.Equal(result,LabelConditionPolicy.Evaluate(op,actual,expected));
     [Fact] public void condition_rejects_unknown_operator()=>Assert.Throws<ArgumentException>(()=>LabelConditionPolicy.Evaluate("SCRIPT",null,null));

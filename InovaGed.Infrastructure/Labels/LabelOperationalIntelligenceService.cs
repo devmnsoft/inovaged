@@ -108,7 +108,7 @@ public sealed class LabelPrintProfileRecommendationService : ILabelPrintProfileR
             var printer=!string.IsNullOrWhiteSpace(printerName)&&p.PrinterName?.Equals(printerName,StringComparison.OrdinalIgnoreCase)==true;
             var compatible=paper&&dimensions; var score=compatible?(printer?100:80):(p.IsTenantDefault?30:0); if(compatible&&p.UsedSuccessfullyBefore)score+=5;
             var reason=compatible&&p.UsedSuccessfullyBefore?"Usado anteriormente com este modelo e tamanho.":printer&&compatible?"Impressora, papel e dimensões são compatíveis.":compatible?"Papel e dimensões são compatíveis.":"Perfil padrão do tenant.";
-            return (p,score=Math.Min(score,100),reason,compatible);
+            return (p: p, score: Math.Min(score, 100), reason: reason, compatible: compatible);
         }).Where(x=>x.compatible||x.p.IsTenantDefault).OrderByDescending(x=>x.score).Select(x=>new LabelPrintProfileRecommendation(x.p.Id,x.p.Name,x.score,x.reason)).FirstOrDefault();
     }
 }
