@@ -287,8 +287,9 @@ public sealed class LabelDesignerController(IDbConnectionFactory dbFactory, ILab
         },"recuperar conflito",templateKey);
     }
 
-    [HttpPost("/Labels/Designer/{templateKey}/CompareConflict"),ValidateAntiForgeryToken]
-    [HttpPost("/Labels/Designer/{templateKey}/CompareLocal"),ValidateAntiForgeryToken]
+    [HttpPost("/Labels/Designer/{templateKey}/CompareConflict")]
+    [HttpPost("/Labels/Designer/{templateKey}/CompareLocal")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> CompareConflict(string templateKey,[FromBody] LabelCanvasSaveRequest local,CancellationToken ct)
     {
         var server=await designs.GetAsync(TenantId,templateKey,ct);if(server is null)return NotFound();
