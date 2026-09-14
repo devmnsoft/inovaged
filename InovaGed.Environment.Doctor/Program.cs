@@ -14,6 +14,10 @@ using BclEnvironment = global::System.Environment;
 try
 {
     var command = args.FirstOrDefault() ?? "check";
+    if(command.Equals("labels-operations-workspace-rc40",StringComparison.OrdinalIgnoreCase)) return Rc40QualityChecks.Operations(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);
+    if(command.Equals("labels-calibration-center-rc40",StringComparison.OrdinalIgnoreCase)) return Rc40QualityChecks.Calibration(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);
+    if(command.Equals("labels-traceability-center-rc40",StringComparison.OrdinalIgnoreCase)) return Rc40QualityChecks.Traceability(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);
+    if(command.Equals("labels-batch-resilience-rc40",StringComparison.OrdinalIgnoreCase)) return Rc40QualityChecks.Batch(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);
     if(command.Equals("labels-print-state-machine-rc39",StringComparison.OrdinalIgnoreCase)) return Rc39QualityChecks.PrintStateMachine(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);
     if(command.Equals("labels-print-operations-ux-rc39",StringComparison.OrdinalIgnoreCase)) return Rc39QualityChecks.PrintOperationsUx(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);
     if(command.Equals("labels-traceability-ux-rc39",StringComparison.OrdinalIgnoreCase)) return Rc39QualityChecks.TraceabilityUx(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);

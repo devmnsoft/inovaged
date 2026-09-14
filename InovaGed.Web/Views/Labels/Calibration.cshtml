@@ -1,7 +1,7 @@
 @{ ViewData["LabelHelpContext"]="CALIBRATION"; }
 @model InovaGed.Web.Models.Labels.LabelCalibrationPageViewModel
 @{ ViewData["Title"]="Centro de Calibração"; var editing=Model.Form.Id.HasValue; }
-@section Styles { <link rel="stylesheet" href="~/css/labels-premium.css" asp-append-version="true" /><link rel="stylesheet" href="~/css/labels-print.css" asp-append-version="true" /> }
+@section Styles { <link rel="stylesheet" href="~/css/labels-premium.css" asp-append-version="true" /><link rel="stylesheet" href="~/css/labels-print.css" asp-append-version="true" /><link rel="stylesheet" href="~/css/labels-operations-rc40.css" asp-append-version="true" /> }
 <main class="label-fidelity-page">
  <header class="atlas-page-hero"><div><span class="labels-eyebrow">Configuração guiada</span><h1>Centro de Calibração</h1><p>Ajuste margens, deslocamento, escala e perfil de impressão para garantir que as etiquetas saiam alinhadas no papel.</p></div><div><a class="ig-button ig-button--secondary" asp-action="PrintSheet">Prévia A4</a><a class="ig-button ig-button--secondary" asp-action="Quality">Qualidade visual</a></div></header>
  <section class="label-calibration-kpis" aria-label="Indicadores"><article><small>Perfil padrão</small><strong>@(Model.Profiles.FirstOrDefault(x=>x.IsDefault)?.ProfileName ?? "Não definido")</strong></article><article><small>Total de perfis</small><strong>@Model.Profiles.Count</strong></article><article><small>Última calibração</small><strong>@(Model.Profiles.Count>0?"Disponível":"Não registrada")</strong></article><article><small>Modelos validados</small><strong>@Model.ValidatedTemplates</strong></article><article><small>Alertas visuais</small><strong>@Model.VisualAlerts</strong></article><article><small>Teste de impressão</small><strong>@(Model.Profiles.Count>0?"Pronto":"Crie um perfil")</strong></article></section>
@@ -13,3 +13,11 @@
 
 <partial name="~/Views/Labels/Shared/_LabelHelpDrawer.cshtml" />
 <script src="~/js/labels-help.js" asp-append-version="true"></script>
+<section class="label-fidelity-card calibration-assistant" data-calibration-wizard>
+ <header><h2>Assistente de calibração</h2><p>Selecione, imprima, meça, calcule e valide novamente.</p></header>
+ <ol class="label-stepper"><li>1. Impressora e papel</li><li>2. Imprimir padrão</li><li>3. Informar medição</li><li>4. Calcular ajuste</li><li>5. Validar novamente</li></ol>
+ <div class="calibration-visual" aria-label="Representação geométrica do papel, margens, área imprimível e primeira etiqueta"><div class="calibration-paper"><div class="calibration-margin"><div class="calibration-label"><span class="crosshair">+</span><strong>50 × 50 mm</strong></div></div></div></div>
+ <div class="row g-3"><div class="col-md"><label for="measuredMm">Medida real do quadrado (mm)</label><input id="measuredMm" class="form-control" inputmode="decimal" placeholder="48,2" data-measured-mm></div><div class="col-md"><label>Escala atual</label><output class="form-control">@Model.Form.ScalePercent.ToString("N2")%</output></div><div class="col-md"><label>Escala sugerida</label><output class="form-control" data-suggested-scale>—</output></div></div>
+ <p class="text-muted">Se esta caixa mede 50 mm, a escala está correta.</p><div class="alert alert-warning" data-calibration-message hidden></div><button type="button" class="ig-button ig-button--primary" data-calculate-scale>Calcular ajuste</button>
+</section>
+<script src="~/js/labels-calibration-rc40.js" asp-append-version="true"></script>
