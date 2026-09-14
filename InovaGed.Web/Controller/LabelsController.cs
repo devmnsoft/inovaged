@@ -19,6 +19,7 @@ using InovaGed.Application.Labels.Canvas;
 
 using InovaGed.Application.Labels.Preview;
 using InovaGed.Application.Labels.Batch;
+using InovaGed.Application.Labels.Intelligence;
 
 namespace InovaGed.Web.Controllers;
 
@@ -63,16 +64,17 @@ public class LabelsController : GedControllerBase
     private readonly IManualLabelInstanceService _manualLabels;
     private readonly ILabelPreviewService _previewService;
     private readonly ILabelBatchPlanService _batchPlanService;
+    private readonly ILabelPreflightService _preflight;
 
     public LabelsController(IDbConnectionFactory dbFactory, ILabelPrintRegistrar printRegistrar,
         ILabelTemplateService templates, ILabelQrCodeService qrCodes, ILabelPayloadBuilder payloadBuilder, ILabelTemplateCatalogService catalog, InovaGed.Application.Labels.ILabelTemplateManager templateManager,
         ILabelPrintJobService printJobs, ILabelPdfRenderService pdf, ILabelPrintLogoResolver logoResolver,
         ILabelCanvasDesignService canvasDesigns, ILabelCanvasRenderService canvasRenderer, ILabelCanvasValueResolver canvasValues,
         IPrintBrandingResolver printBrandingResolver, ILabelCanvasPrintCoordinator canvasPrintCoordinator, IManualLabelInstanceService manualLabels,
-        ILabelPreviewService previewService, ILabelBatchPlanService batchPlanService,
+        ILabelPreviewService previewService, ILabelBatchPlanService batchPlanService, ILabelPreflightService preflight,
         ILogger<LabelsController> logger) : base(dbFactory)
     {
-        _printRegistrar = printRegistrar;
+        _printRegistrar = printRegistrar; _preflight = preflight;
         _templates = templates;
         _qrCodes = qrCodes;
         _payloadBuilder = payloadBuilder;
@@ -432,6 +434,15 @@ where s.tenant_id=@tid and s.user_id=@userId and s.token_hash=@hash and s.subjec
         {
             return Conflict(new { success=false, ok=false, code=LabelSchemaUpdateRequiredException.Code, message="A prévia está temporariamente indisponível porque o módulo de etiquetas precisa de uma atualização do banco.", canRetry=false });
         }
+    }
+
+    [HttpPost("/Labels/PrintWizard/Preflight"),ValidateAntiForgeryToken]
+    public async Task<IActionResult> Preflight(LabelPrintWizardInputModel input,CancellationToken ct)
+    {
+        if(input.SubjectId is not Guid subjectId)return BadRequest(new{message="Selecione um registro real para a conferência."});
+        var result=await _preflight.CheckAsync(new(TenantId,UserId,input.TemplateCode,input.SubjectType,subjectId,
+            input.PrintBrandingProfileId,input.PrintProfileId,null,null,input.Copies),ct);
+        return Json(new{result.CanPrint,errors=result.Errors.Select(x=>x.Message),warnings=result.Warnings.Select(x=>x.Message),recommendations=result.Recommendations.Select(x=>x.Message)});
     }
 
     [HttpPost("/Labels/Batch/Plan"),ValidateAntiForgeryToken]

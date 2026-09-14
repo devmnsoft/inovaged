@@ -204,6 +204,9 @@ builder.Services.AddScoped<InovaGed.Application.Labels.Canvas.ILabelTemplatePack
 builder.Services.AddScoped<InovaGed.Application.Labels.Canvas.ILabelCanvasSchemaCapabilities, InovaGed.Infrastructure.Labels.LabelCanvasSchemaCapabilities>();
 builder.Services.AddSingleton<InovaGed.Application.Labels.Canvas.ILabelCanvasFieldCatalogService, InovaGed.Infrastructure.Labels.LabelCanvasFieldCatalogService>();
 builder.Services.AddSingleton<InovaGed.Application.Labels.Canvas.ILabelCanvasRenderService, InovaGed.Infrastructure.Labels.LabelCanvasRenderService>();
+builder.Services.AddScoped<InovaGed.Application.Labels.Intelligence.ILabelPreflightService, InovaGed.Infrastructure.Labels.LabelOperationalIntelligenceService>();
+builder.Services.AddSingleton<InovaGed.Application.Labels.Intelligence.ILabelTemplateRecommendationService, InovaGed.Infrastructure.Labels.LabelTemplateRecommendationService>();
+builder.Services.AddSingleton<InovaGed.Application.Labels.Intelligence.ILabelPrintProfileRecommendationService, InovaGed.Infrastructure.Labels.LabelPrintProfileRecommendationService>();
 builder.Services.AddSingleton<InovaGed.Application.Labels.Canvas.ILabelCanvasStarterTemplateService, InovaGed.Infrastructure.Labels.LabelCanvasStarterTemplateService>();
 builder.Services.AddSingleton<InovaGed.Application.Labels.Canvas.ILabelCanvasDiffService, InovaGed.Infrastructure.Labels.LabelCanvasDiffService>();
 builder.Services.AddScoped<InovaGed.Application.Labels.Canvas.ILabelCanvasValueResolver, InovaGed.Infrastructure.Labels.LabelCanvasValueResolver>();
