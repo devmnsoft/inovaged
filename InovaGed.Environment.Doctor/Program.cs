@@ -14,6 +14,10 @@ using BclEnvironment = global::System.Environment;
 try
 {
     var command = args.FirstOrDefault() ?? "check";
+    if(command.Equals("labels-smart-preflight-rc41",StringComparison.OrdinalIgnoreCase)) return Rc41QualityChecks.SmartPreflight(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);
+    if(command.Equals("labels-template-recommendation-rc41",StringComparison.OrdinalIgnoreCase)) return Rc41QualityChecks.Recommendation(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);
+    if(command.Equals("labels-designer-assist-rc41",StringComparison.OrdinalIgnoreCase)) return Rc41QualityChecks.DesignerAssist(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);
+    if(command.Equals("labels-publish-quality-rc41",StringComparison.OrdinalIgnoreCase)) return Rc41QualityChecks.PublishQuality(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);
     if(command.Equals("labels-operations-workspace-rc40",StringComparison.OrdinalIgnoreCase)) return Rc40QualityChecks.Operations(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);
     if(command.Equals("labels-calibration-center-rc40",StringComparison.OrdinalIgnoreCase)) return Rc40QualityChecks.Calibration(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);
     if(command.Equals("labels-traceability-center-rc40",StringComparison.OrdinalIgnoreCase)) return Rc40QualityChecks.Traceability(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);

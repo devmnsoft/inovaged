@@ -13,8 +13,8 @@ public sealed class LabelCanvasRenderService(ILogger<LabelCanvasRenderService> l
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { PropertyNameCaseInsensitive = true };
     private static readonly HashSet<string> Types = ["text","field","qr","barcode","logo","image","line","rect","group","table","separator"];
-    private static readonly HashSet<string> Formats = ["NONE","UPPERCASE","LOWERCASE","DATE_DDMMYYYY","DATE_MMYYYY","NUMBER","PAD_LEFT"];
-    private static readonly HashSet<string> VisibilityOperators = ["ALWAYS","HAS_VALUE","EQUALS","NOT_EQUALS"];
+    private static readonly HashSet<string> Formats = ["NONE","UPPERCASE","LOWERCASE","DATE_DDMMYYYY","DATE_MMYYYY","DATETIME_DDMMYYYY_HHMM","NUMBER","CURRENCY","CODE","MASK","TITLECASE","TRUNCATE","PAD_LEFT"];
+    private static readonly HashSet<string> VisibilityOperators = ["ALWAYS","HAS_VALUE","EQUALS","NOT_EQUALS","CONTAINS","NOT_CONTAINS","IS_EMPTY","IS_NOT_EMPTY"];
 
     public string ComputeSnapshotHash(string designJson) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(designJson ?? ""))).ToLowerInvariant();
@@ -165,7 +165,13 @@ public sealed class LabelCanvasRenderService(ILogger<LabelCanvasRenderService> l
         "UPPERCASE"=>raw.ToUpperInvariant(),"LOWERCASE"=>raw.ToLowerInvariant(),
         "DATE_DDMMYYYY"=>DateTime.TryParse(raw,CultureInfo.CurrentCulture,DateTimeStyles.None,out var date)?date.ToString("dd/MM/yyyy"):raw,
         "DATE_MMYYYY"=>DateTime.TryParse(raw,CultureInfo.CurrentCulture,DateTimeStyles.None,out var month)?month.ToString("MM/yyyy"):raw,
+        "DATETIME_DDMMYYYY_HHMM"=>DateTime.TryParse(raw,CultureInfo.CurrentCulture,DateTimeStyles.None,out var dateTime)?dateTime.ToString("dd/MM/yyyy HH:mm"):raw,
         "NUMBER"=>decimal.TryParse(raw,NumberStyles.Any,CultureInfo.CurrentCulture,out var number)?number.ToString("N0",CultureInfo.CurrentCulture):raw,
+        "CURRENCY"=>decimal.TryParse(raw,NumberStyles.Any,CultureInfo.CurrentCulture,out var currency)?currency.ToString("C",CultureInfo.CurrentCulture):raw,
+        "TITLECASE"=>CultureInfo.CurrentCulture.TextInfo.ToTitleCase(raw.ToLower(CultureInfo.CurrentCulture)),
+        "TRUNCATE"=>binding?.PadLength is int max&&max>0&&raw.Length>max?raw[..Math.Min(max,500)]:raw,
+        "CODE"=>new string(raw.Where(char.IsLetterOrDigit).ToArray()).ToUpperInvariant(),
+        "MASK"=>binding?.PadLength is int visible&&visible>0&&raw.Length>visible?new string('•',raw.Length-visible)+raw[^visible..]:raw,
         "PAD_LEFT"=>raw.PadLeft(Math.Clamp(binding?.PadLength??0,0,100),'0'),_=>raw
     };
     private static bool IsVisible(LabelCanvasElementDto element,IReadOnlyDictionary<string,object?> values)
@@ -173,7 +179,7 @@ public sealed class LabelCanvasRenderService(ILogger<LabelCanvasRenderService> l
         if((element.Binding?.EmptyBehavior??"").Equals("HIDE",StringComparison.OrdinalIgnoreCase)&&!string.IsNullOrWhiteSpace(element.Binding?.Field)&&(!values.TryGetValue(element.Binding.Field,out var bound)||string.IsNullOrWhiteSpace(Convert.ToString(bound))))return false;
         var condition=element.VisibilityCondition??new();var op=(condition.Operator??"ALWAYS").ToUpperInvariant();
         if(op=="ALWAYS")return true;var actual=!string.IsNullOrWhiteSpace(condition.Field)&&values.TryGetValue(condition.Field,out var raw)?Convert.ToString(raw)??"":"";
-        return op switch{"HAS_VALUE"=>!string.IsNullOrWhiteSpace(actual),"EQUALS"=>string.Equals(actual,condition.Value,StringComparison.OrdinalIgnoreCase),"NOT_EQUALS"=>!string.Equals(actual,condition.Value,StringComparison.OrdinalIgnoreCase),_=>false};
+        return op switch{"HAS_VALUE" or "IS_NOT_EMPTY"=>!string.IsNullOrWhiteSpace(actual),"IS_EMPTY"=>string.IsNullOrWhiteSpace(actual),"EQUALS"=>string.Equals(actual,condition.Value,StringComparison.OrdinalIgnoreCase),"NOT_EQUALS"=>!string.Equals(actual,condition.Value,StringComparison.OrdinalIgnoreCase),"CONTAINS"=>actual.Contains(condition.Value??"",StringComparison.OrdinalIgnoreCase),"NOT_CONTAINS"=>!actual.Contains(condition.Value??"",StringComparison.OrdinalIgnoreCase),_=>false};
     }
     private static void ValidateRuntime(LabelCanvasDocumentDto document,IReadOnlyDictionary<string,object?> values,LabelCanvasValidationResult validation)
     {
@@ -184,16 +190,19 @@ public sealed class LabelCanvasRenderService(ILogger<LabelCanvasRenderService> l
             if(element.Type=="qr"&&empty)validation.Issues.Add(new("QR_RUNTIME_PAYLOAD","ERROR","O QR Code não possui payload válido.",element.Id));
             if(element.Type is ("logo" or "image")&&element.Validation.Required&&!IsSafeImageSource(!string.IsNullOrWhiteSpace(element.Binding?.Field)?value:element.Binding?.Asset))validation.Issues.Add(new("REQUIRED_LOGO","ERROR",$"A imagem obrigatória “{element.Name}” não foi resolvida.",element.Id));
             if(element.Validation.MaxCharacters is int maximum&&value.Length>maximum)validation.Issues.Add(new("RUNTIME_MAX_CHARACTERS",element.Validation.Required?"ERROR":"WARNING",$"O valor de “{element.Name}” ultrapassa {maximum} caracteres.",element.Id));
+            if(element.Type is "text" or "field" && TextMayOverflow(element,value))validation.Issues.Add(new("RUNTIME_TEXT_OVERFLOW","WARNING",$"O conteúdo real de “{element.Name}” excede a área disponível.",element.Id));
         }
     }
 
     internal static bool IsSafeImageSource(string? source)=>LabelCanvasSafeImageSource.IsSafe(source);
     private static bool TextMayOverflow(LabelCanvasElementDto element)
+        => TextMayOverflow(element, element.Text ?? "");
+    private static bool TextMayOverflow(LabelCanvasElementDto element, string text)
     {
         var availableWidth=Math.Max(1m,element.WidthMm-(element.Style.PaddingMm*2));var availableHeight=Math.Max(1m,element.HeightMm-(element.Style.PaddingMm*2));
         var characterWidth=Math.Max(0.5m,element.Style.FontSizePt*0.3528m*0.52m);var lineHeight=Math.Max(1m,element.Style.FontSizePt*0.3528m*1.2m);
-        if(!element.Style.Wrap)return (element.Text?.Length??0)*characterWidth>availableWidth;
-        var charactersPerLine=Math.Max(1,(int)Math.Floor(availableWidth/characterWidth));var lines=(int)Math.Ceiling((element.Text?.Length??0)/(decimal)charactersPerLine);
+        if(!element.Style.Wrap)return text.Length*characterWidth>availableWidth;
+        var charactersPerLine=Math.Max(1,(int)Math.Floor(availableWidth/characterWidth));var lines=(int)Math.Ceiling(text.Length/(decimal)charactersPerLine);
         return lines*lineHeight>availableHeight;
     }
     private static string Mm(decimal value)=>value.ToString("0.##",CultureInfo.InvariantCulture);
