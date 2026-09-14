@@ -94,8 +94,13 @@ and (coalesce(@SubjectType,'')='' or j.subject_type=@SubjectType) and (coalesce(
 and (coalesce(@Status,'')='' or j.status=@Status)
 and (@IsReprint is null or (j.reprint_reason is not null)=@IsReprint)
 and (coalesce(@Search,'')='' or j.job_number ilike '%'||@Search||'%' or j.control_number ilike '%'||@Search||'%' or j.template_code ilike '%'||@Search||'%' or j.template_name ilike '%'||@Search||'%')
-order by j.requested_at desc limit @PageSize offset @Offset
-""",new{tenantId,f.From,f.To,f.UserId,f.TemplateCode,f.SubjectType,f.ControlNumber,f.Status,f.IsReprint,f.Search,PageSize=Math.Clamp(f.PageSize,1,100),Offset=(Math.Max(1,f.Page)-1)*Math.Clamp(f.PageSize,1,100)},cancellationToken:ct))).AsList();
+order by
+ case when @Sort='oldest' then j.requested_at end asc,
+ case when @Sort='status' then j.status end asc,
+ case when @Sort='template' then coalesce(j.template_name,j.template_code) end asc,
+ j.requested_at desc
+limit @PageSize offset @Offset
+""",new{tenantId,f.From,f.To,f.UserId,f.TemplateCode,f.SubjectType,f.ControlNumber,f.Status,f.IsReprint,f.Search,Sort=NormalizeSort(f.Sort),PageSize=Math.Clamp(f.PageSize,1,100),Offset=(Math.Max(1,f.Page)-1)*Math.Clamp(f.PageSize,1,100)},cancellationToken:ct))).AsList();
     }
 
     public async Task<LabelPrintQueueMetrics> GetMetricsAsync(Guid tenantId,LabelPrintJobFilter f,CancellationToken ct)
@@ -179,11 +184,22 @@ from ged.label_print_job_item where tenant_id=@tenantId and job_id=@jobId and re
 """,new{id,tenantId,jobId},tx,cancellationToken:ct));
         await tx.CommitAsync(ct);return id;
     }
+    public async Task<LabelArtifactIntegrityResult> VerifyArtifactAsync(Guid tenantId,Guid jobId,CancellationToken ct)
+    {
+        await using var db=await dbFactory.OpenAsync(ct);
+        var artifact=await db.QuerySingleOrDefaultAsync<IntegrityRow>(new CommandDefinition("select artifact_bytes Bytes,artifact_sha256 Sha256 from ged.label_print_job where tenant_id=@tenantId and id=@jobId and reg_status='A'",new{tenantId,jobId},cancellationToken:ct));
+        if(artifact?.Bytes is null||string.IsNullOrWhiteSpace(artifact.Sha256))return new(false,"Artefato indisponível para verificação.");
+        var calculated=Convert.ToHexString(SHA256.HashData(artifact.Bytes)).ToLowerInvariant();
+        var valid=CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(calculated),Encoding.ASCII.GetBytes(artifact.Sha256.ToLowerInvariant()));
+        return new(valid,valid?"Artefato íntegro.":"Falha de integridade.");
+    }
     private async Task SetStatus(Guid tenantId,Guid jobId,string set,IReadOnlyList<string> allowed,CancellationToken ct,object? extra=null){await using var db=await dbFactory.OpenAsync(ct);var parameters=new DynamicParameters(new{tenantId,jobId,allowed});if(extra is not null)parameters.AddDynamicParams(extra);var n=await db.ExecuteAsync(new CommandDefinition($"update ged.label_print_job set {set} where tenant_id=@tenantId and id=@jobId and reg_status='A' and status=any(@allowed)",parameters,cancellationToken:ct));if(n==0){var job=await GetAsync(tenantId,jobId,ct);if(job is null)throw new KeyNotFoundException("Job não encontrado.");throw new InvalidOperationException($"Transição não permitida para o estado {LabelPrintStatusDisplay.Humanize(job.Status)}.");}}
     private static Task<Guid?> FindByClientActionAsync(System.Data.IDbConnection db,Guid tenantId,Guid requestedBy,Guid clientActionId,CancellationToken ct)=>db.QuerySingleOrDefaultAsync<Guid?>(new CommandDefinition("select id from ged.label_print_job where tenant_id=@tenantId and requested_by=@requestedBy and client_action_id=@clientActionId and reg_status='A'",new{tenantId,requestedBy,clientActionId},cancellationToken:ct));
     private static async Task RequireReprintReason(System.Data.IDbConnection db,Guid tenantId,string type,Guid id,string template,string? reason,CancellationToken ct,System.Data.IDbTransaction? tx=null){var n=await db.ExecuteScalarAsync<int>(new CommandDefinition("select count(*) from ged.label_print_history where tenant_id=@tenantId and label_subject_type=@type and label_subject_id=@id and template_code=@template",new{tenantId,type,id,template},tx,cancellationToken:ct));if(n>0&&string.IsNullOrWhiteSpace(reason))throw new InvalidOperationException("Esta etiqueta já foi impressa anteriormente. Para reimprimir, informe o motivo.");}
     private static void Validate(Guid tenant,Guid user,int copies,string json){if(tenant==Guid.Empty||user==Guid.Empty)throw new InvalidOperationException("Tenant e usuário são obrigatórios.");if(copies is <1 or >500)throw new InvalidOperationException("Quantidade de cópias inválida.");ArgumentException.ThrowIfNullOrWhiteSpace(json);}
     private static string JobNumber()=>$"LBL-{DateTime.UtcNow:yyyyMMddHHmmss}-{Random.Shared.Next(1000,9999)}";
+    private static string NormalizeSort(string? sort)=>sort is "oldest" or "status" or "template"?sort:"newest";
+    private sealed class IntegrityRow { public byte[]? Bytes{get;set;} public string? Sha256{get;set;} }
     private sealed class JobRow { public Guid Id{get;set;} public Guid TenantId{get;set;} public string JobNumber{get;set;}="";public string PrintMode{get;set;}="";public string TemplateCode{get;set;}="";public string? TemplateName{get;set;}public string SubjectType{get;set;}="";public Guid? SubjectId{get;set;}public string? ControlNumber{get;set;}public string? Location{get;set;}public int Copies{get;set;}public string Status{get;set;}="";public string PayloadJson{get;set;}="";public string? PdfPath{get;set;}public string? ErrorMessage{get;set;}public Guid? RequestedBy{get;set;}public DateTime RequestedAt{get;set;}public Guid? PrintedBy{get;set;}public DateTime? PrintedAt{get;set;}public string? CancelReason{get;set;}public string? ReprintReason{get;set;}public string? RequestedByName{get;set;}public string? ArtifactSha256{get;set;}public string? ArtifactContentType{get;set;}public long? ArtifactSizeBytes{get;set;}public DateTime? ArtifactGeneratedAt{get;set;}public string? OperationType{get;set;} }
     private sealed class PrintRow {public Guid? subject_id{get;set;}public Guid? batch_id{get;set;}public string subject_type{get;set;}="";public string template_code{get;set;}="";public string print_mode{get;set;}="";public string payload_json{get;set;}="";public string? control_number{get;set;}public string? location{get;set;}public string? requested_ip{get;set;}public string? requested_user_agent{get;set;}public string? reprint_reason{get;set;}public string? pdf_path{get;set;}public string status{get;set;}="";}
     private sealed class ItemRow {public Guid id{get;set;}public Guid? subject_id{get;set;}public string subject_type{get;set;}="";public string? control_number{get;set;}public string? location{get;set;}public string payload_json{get;set;}="";public string status{get;set;}="PENDING";}

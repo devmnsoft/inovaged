@@ -140,12 +140,14 @@ public class LabelsController : GedControllerBase
         filter.PageSize=Math.Clamp(filter.PageSize,1,100);
         ViewBag.Filter=filter;
         ViewBag.Metrics=await _printJobs.GetMetricsAsync(TenantId,filter,ct);
-        return View(await _printJobs.ListAsync(TenantId,filter,ct));
+        var jobs=await _printJobs.ListAsync(TenantId,filter,ct);
+        ViewBag.JobActions=jobs.ToDictionary(x=>x.Id,x=>LabelPrintJobPresentation.Actions(x.Status,x.Status is LabelPrintJobStatus.PdfGenerated or LabelPrintJobStatus.Printed));
+        return View(jobs);
     }
 
     [HttpGet]
     public async Task<IActionResult> PrintJob(Guid id,CancellationToken ct)
-    { var job=await _printJobs.GetAsync(TenantId,id,ct); return job is null?NotFound():View("PrintJobDetails",job); }
+    { var job=await _printJobs.GetAsync(TenantId,id,ct); if(job is null)return NotFound();ViewBag.Actions=LabelPrintJobPresentation.Actions(job.Status,job.ArtifactGeneratedAt.HasValue);ViewBag.Timeline=LabelPrintJobPresentation.Timeline(job);return View("PrintJobDetails",job); }
 
     [HttpGet]
     public async Task<IActionResult> PrintPreview(Guid id,CancellationToken ct)
@@ -243,6 +245,8 @@ where s.tenant_id=@tid and s.user_id=@userId and s.token_hash=@hash and s.subjec
     public async Task<IActionResult> RetryPrintJob(Guid id,CancellationToken ct){if(UserId is not Guid uid)return Unauthorized();await _printJobs.RetryAsync(TenantId,id,uid,ct);return RedirectToAction(nameof(PrintJob),new{id});}
     [HttpPost,ValidateAntiForgeryToken]
     public async Task<IActionResult> ReprintExact(Guid id,Guid clientActionId,string reason,CancellationToken ct){if(UserId is not Guid uid)return Unauthorized();var newId=await _printJobs.ReprintExactAsync(TenantId,id,uid,clientActionId,reason,ct);return RedirectToAction(nameof(PrintPreview),new{id=newId});}
+    [HttpPost,ValidateAntiForgeryToken]
+    public async Task<IActionResult> VerifyArtifact(Guid id,CancellationToken ct){var result=await _printJobs.VerifyArtifactAsync(TenantId,id,ct);TempData[result.IsValid?"Success":"Error"]=result.Message;return RedirectToAction(nameof(PrintJob),new{id});}
     [HttpGet]
     public async Task<IActionResult> GeneratePdf(Guid id,CancellationToken ct){var result=await _pdf.GeneratePdfAsync(TenantId,id,ct);return File(result.Content,result.ContentType,result.FileName);}
 
@@ -319,7 +323,14 @@ where s.tenant_id=@tid and s.user_id=@userId and s.token_hash=@hash and s.subjec
     public IActionResult PrintablePreview()=>RedirectToAction(nameof(PrintWizard));
 
     [HttpGet]
-    public IActionResult Index() => View();
+    public async Task<IActionResult> Index(CancellationToken ct)
+    {
+        var filter=new LabelPrintJobFilter();
+        ViewBag.Metrics=await _printJobs.GetMetricsAsync(TenantId,filter,ct);
+        using var db=await OpenAsync();
+        ViewBag.PublishedTemplates=await db.ExecuteScalarAsync<int>(new CommandDefinition("select count(*) from ged.label_template where (tenant_id=@tid or tenant_id is null) and is_active=true and reg_status='A'",new{tid=TenantId},cancellationToken:ct));
+        return View();
+    }
 
     [HttpGet("/Labels/Guide")]
     public IActionResult Guide() => View();
@@ -357,14 +368,14 @@ where s.tenant_id=@tid and s.user_id=@userId and s.token_hash=@hash and s.subjec
     public IActionResult VisualChecklist() => View(BuildQualityRows());
 
     [HttpGet]
-    public async Task<IActionResult> PrintWizard(string? subjectType, Guid? subjectId, string? mode, string? templateCode, CancellationToken ct)
+    public async Task<IActionResult> PrintWizard(string? subjectType, Guid? subjectId, string? mode, string? templateCode, string? reprintReason, CancellationToken ct)
     {
         subjectType = subjectType?.ToUpperInvariant() ?? LabelSubjectType.Box;
         mode = mode?.ToUpperInvariant() ?? LabelPrintMode.Factory;
         var options = await _catalog.GetTemplatesAsync(TenantId,subjectType,mode,ct);
         if (_catalog.IsTemporaryCatalog) ViewBag.CatalogMigrationWarning = "As migrations de modelos de etiqueta ainda não foram aplicadas. O sistema está usando catálogo temporário.";
         if (string.IsNullOrWhiteSpace(templateCode) || !await _catalog.IsCompatibleAsync(TenantId,templateCode,subjectType,ct) || !options.Any(x=>x.Code==templateCode)) templateCode=options.FirstOrDefault()?.Code ?? "";
-        var model = new LabelPrintWizardInputModel { SubjectType=subjectType, SubjectId=subjectId, PrintMode=mode, TemplateCode=templateCode };
+        var model = new LabelPrintWizardInputModel { SubjectType=subjectType, SubjectId=subjectId, PrintMode=mode, TemplateCode=templateCode, ReprintReason=reprintReason };
         await PopulatePrintWizardLookupsAsync(model, ct);
         return View(model);
     }
