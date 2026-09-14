@@ -14,6 +14,8 @@ using BclEnvironment = global::System.Environment;
 try
 {
     var command = args.FirstOrDefault() ?? "check";
+    if(command.Equals("labels-controller-safety-rc35",StringComparison.OrdinalIgnoreCase))
+        return LabelsControllerSafetyRc35QualityCheck.Run(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);
     if(command.Equals("labels-semantic-diff-rc34-1",StringComparison.OrdinalIgnoreCase))
         return LabelsSemanticDiffRc341QualityCheck.Run(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);
     if(command.Equals("ged-intake-operational-rc34",StringComparison.OrdinalIgnoreCase))
