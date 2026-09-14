@@ -14,6 +14,9 @@ using BclEnvironment = global::System.Environment;
 try
 {
     var command = args.FirstOrDefault() ?? "check";
+    if(command.Equals("labels-studio-complete-rc37",StringComparison.OrdinalIgnoreCase)) return Rc37QualityChecks.LabelsStudio(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);
+    if(command.Equals("labels-print-experience-rc37",StringComparison.OrdinalIgnoreCase)) return Rc37QualityChecks.PrintExperience(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);
+    if(command.Equals("ged-intake-design-rc37",StringComparison.OrdinalIgnoreCase)) return Rc37QualityChecks.GedIntake(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);
     if(command.Equals("label-schema-readiness-rc36",StringComparison.OrdinalIgnoreCase)) return Rc36QualityChecks.LabelSchema(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);
     if(command.Equals("labels-experience-rc36",StringComparison.OrdinalIgnoreCase)) return Rc36QualityChecks.LabelsExperience(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);
     if(command.Equals("database-readiness-ux-rc36",StringComparison.OrdinalIgnoreCase)) return Rc36QualityChecks.DatabaseReadinessUx(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);

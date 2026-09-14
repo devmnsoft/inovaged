@@ -2,6 +2,8 @@ using System.Text.Json;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Labels.Canvas;
 using InovaGed.Application.Branding;
+using InovaGed.Application.Security;
+using Dapper;
 using InovaGed.Web.Models.Labels;
 using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authorization;
@@ -16,6 +18,7 @@ namespace InovaGed.Web.Controllers;
 public sealed class LabelDesignerController(IDbConnectionFactory dbFactory, ILabelCanvasDesignService designs,
     ILabelCanvasRenderService renderer, ILabelCanvasFieldCatalogService fieldCatalog,
     ILabelCanvasStarterTemplateService starters, ILabelCanvasDiffService diffService, ILabelCanvasSchemaCapabilities schemaCapabilities,
+    ILabelCanvasValueResolver valueResolver, IGedAccessPolicyService accessPolicy,
     IPrintBrandingProfileService brandingProfiles, IPrintBrandingResolver brandingResolver,
     ILogger<LabelDesignerController> logger) : GedControllerBase(dbFactory)
 {
@@ -191,6 +194,82 @@ public sealed class LabelDesignerController(IDbConnectionFactory dbFactory, ILab
         return Ok(new{ok=!rendered.Validation.HasErrors,html=rendered.Html,validation=rendered.Validation,branding=new{preview.Branding.ProfileId,preview.Branding.ProfileName,preview.Branding.ClientName,preview.Branding.ContractName,preview.Branding.OrganizationName}});
     }
 
+    [HttpGet("/Labels/Designer/{templateKey}/PreviewSubjects")]
+    [Authorize(Policy=AppPolicies.LabelDesignerPreview)]
+    public async Task<IActionResult> PreviewSubjects(string templateKey, string? q, int limit = 20, CancellationToken ct = default)
+    {
+        if (UserId is not Guid userId) return Unauthorized();
+        var design = await designs.GetAsync(TenantId, templateKey, ct);
+        if (design is null) return NotFound();
+        if (!await accessPolicy.CanAccessGedAsync(TenantId, userId, User, ct)) return Forbid();
+        limit = Math.Clamp(limit, 1, 20);
+        var term = string.IsNullOrWhiteSpace(q) ? null : $"%{q.Trim()}%";
+        var isAdmin = await accessPolicy.IsAdminAsync(TenantId, userId, User, ct);
+        var isBox = LabelCanvasSubjectTypeMapper.ToOperational(design.SubjectType) == "BOX";
+        await using var db = await DbFactory.OpenAsync(ct);
+        var sql = isBox ? """
+select b.id Id,
+       coalesce(to_jsonb(b)->>'label_code',to_jsonb(b)->>'box_code',to_jsonb(b)->>'code',to_jsonb(b)->>'box_no',b.id::text) Reference,
+       coalesce(to_jsonb(b)->>'title',to_jsonb(b)->>'description',to_jsonb(b)->>'name','Caixa') PrimaryText,
+       coalesce(to_jsonb(b)->>'location',to_jsonb(b)->>'notes') SecondaryText
+  from ged.box b
+ where b.tenant_id=@tenantId and coalesce(to_jsonb(b)->>'reg_status','A') in ('A','ACTIVE')
+   and (@isAdmin or to_jsonb(b)->>'created_by'=@userIdText)
+   and (@term is null or concat_ws(' ',to_jsonb(b)->>'label_code',to_jsonb(b)->>'box_code',to_jsonb(b)->>'code',to_jsonb(b)->>'box_no',to_jsonb(b)->>'title',to_jsonb(b)->>'description') ilike @term)
+ order by coalesce(to_jsonb(b)->>'updated_at',to_jsonb(b)->>'created_at') desc nulls last limit @limit
+""" : """
+select d.id Id,
+       coalesce(to_jsonb(d)->>'code',to_jsonb(d)->>'document_code',to_jsonb(d)->>'protocol_number',d.id::text) Reference,
+       coalesce(to_jsonb(d)->>'title',to_jsonb(d)->>'name','Documento') PrimaryText,
+       coalesce(to_jsonb(v)->>'file_name',to_jsonb(d)->>'description') SecondaryText
+  from ged.document d
+  left join ged.document_version v on v.id=d.current_version_id and v.tenant_id=d.tenant_id
+ where d.tenant_id=@tenantId and coalesce(to_jsonb(d)->>'reg_status','A') in ('A','ACTIVE')
+   and (@isAdmin or to_jsonb(d)->>'created_by'=@userIdText)
+   and (@term is null or concat_ws(' ',to_jsonb(d)->>'title',to_jsonb(d)->>'name',to_jsonb(v)->>'file_name',to_jsonb(d)->>'code',to_jsonb(d)->>'document_code',to_jsonb(d)->>'protocol_number') ilike @term)
+ order by coalesce(to_jsonb(d)->>'updated_at',to_jsonb(d)->>'created_at') desc nulls last limit @limit
+""";
+        var items = (await db.QueryAsync<LabelCanvasPreviewSubjectDto>(new CommandDefinition(sql,
+            new { tenantId=TenantId, userIdText=userId.ToString(), isAdmin, term, limit }, cancellationToken:ct))).AsList();
+        return Ok(new { items });
+    }
+
+    [HttpPost("/Labels/Designer/{templateKey}/PreviewSubject"), ValidateAntiForgeryToken]
+    [Authorize(Policy=AppPolicies.LabelDesignerPreview)]
+    public async Task<IActionResult> PreviewSubject(string templateKey, [FromBody] LabelCanvasPreviewSubjectRequest request, CancellationToken ct)
+    {
+        if (UserId is not Guid userId) return Unauthorized();
+        var design = await designs.GetAsync(TenantId, templateKey, ct);
+        if (design is null) return NotFound();
+        if (!await accessPolicy.CanAccessGedAsync(TenantId, userId, User, ct)) return Forbid();
+        if (request.SubjectId == Guid.Empty || string.IsNullOrWhiteSpace(request.DesignJson) || request.DesignJson.Length > 1_000_000) return BadRequest(new { message="Dados da prévia inválidos." });
+        var operational = LabelCanvasSubjectTypeMapper.ToOperational(design.SubjectType);
+        // The same conservative ACL used by the search is checked again to prevent ID probing.
+        var allowed = await PreviewSubjectAccessibleAsync(operational, request.SubjectId, userId, ct);
+        if (!allowed) return Forbid();
+        var values = await valueResolver.ResolveAsync(TenantId, design.SubjectType, operational, request.SubjectId, ct);
+        if (values.Count == 0) return NotFound(new { message="Registro não encontrado ou sem acesso." });
+        var transient = CopyDesign(design, request.DesignJson);
+        var preview = await ResolveDesignerPreviewValuesAsync(transient, values, request.BrandingProfileId, ct);
+        var rendered = renderer.Render(transient, preview.Values);
+        return Ok(new { ok=!rendered.Validation.HasErrors, html=rendered.Html, validation=rendered.Validation, branding=new { preview.Branding.ProfileName, preview.Branding.ClientName } });
+    }
+
+    [HttpPost("/Labels/Designer/StarterPreview"), ValidateAntiForgeryToken]
+    [Authorize(Policy=AppPolicies.LabelDesignerPreview)]
+    public async Task<IActionResult> StarterPreview([FromBody] LabelCanvasStarterPreviewRequest request, CancellationToken ct)
+    {
+        if (!Enum.TryParse<LabelCanvasStarterKind>(request.StarterKind.Replace("_", ""), true, out var kind) ||
+            request.WidthMm is < LabelCanvasDimensionPolicy.MinWidthMm or > LabelCanvasDimensionPolicy.MaxWidthMm ||
+            request.HeightMm is < LabelCanvasDimensionPolicy.MinHeightMm or > LabelCanvasDimensionPolicy.MaxHeightMm)
+            return BadRequest(new { message="Layout ou dimensões inválidos." });
+        var document = starters.Create(new(request.SubjectType, kind, request.WidthMm, request.HeightMm, request.BrandingProfileId));
+        var design = new LabelCanvasDesignDto { Id=Guid.Empty, TenantId=TenantId, TemplateKey="STARTER_PREVIEW", TemplateName="Prévia", SubjectType=request.SubjectType, WidthMm=request.WidthMm, HeightMm=request.HeightMm, DesignJson=JsonSerializer.Serialize(document,JsonOptions), DefaultBrandingProfileId=request.BrandingProfileId, CreatedAt=DateTime.UtcNow };
+        var preview = await ResolveDesignerPreviewValuesAsync(design, SampleProfile(design), request.BrandingProfileId, ct);
+        var rendered = renderer.Render(design, preview.Values);
+        return Ok(new { ok=!rendered.Validation.HasErrors, html=rendered.Html, validation=rendered.Validation });
+    }
+
     [HttpGet("/Labels/Designer/Publish/{templateKey}")]
     public Task<IActionResult> Publish(string templateKey,CancellationToken ct)=>Details(templateKey,ct);
 
@@ -356,12 +435,25 @@ public sealed class LabelDesignerController(IDbConnectionFactory dbFactory, ILab
     private async Task<(Dictionary<string,object?> Values,ResolvedPrintBranding Branding)> ResolveDesignerPreviewValuesAsync(LabelCanvasDesignDto design,string sampleProfile,Guid? brandingProfileId,CancellationToken ct)
     {
         var values=fieldCatalog.GetSampleData(sampleProfile).ToDictionary(x=>x.Key,x=>x.Value,StringComparer.OrdinalIgnoreCase);
+        return await ResolveDesignerPreviewValuesAsync(design,values,brandingProfileId,ct);
+    }
+    private async Task<(Dictionary<string,object?> Values,ResolvedPrintBranding Branding)> ResolveDesignerPreviewValuesAsync(LabelCanvasDesignDto design,IReadOnlyDictionary<string,object?> source,Guid? brandingProfileId,CancellationToken ct)
+    {
+        var values=source.ToDictionary(x=>x.Key,x=>x.Value,StringComparer.OrdinalIgnoreCase);
         var branding=await brandingResolver.ResolveAsync(TenantId,PrintBrandingContext.LabelTemplate,design.BrandingBindingKey??design.TemplateKey,brandingProfileId??design.DefaultBrandingProfileId,null,ct);
         values["clientName"]=branding.ClientName??design.ClientNameFallback??values.GetValueOrDefault("clientName");values["contractName"]=branding.ContractName??design.ContractNameFallback??values.GetValueOrDefault("contractName");values["organizationName"]=branding.OrganizationName??design.OrganizationNameFallback??values.GetValueOrDefault("organizationName");
         values["headerTitle"]=branding.HeaderTitle??design.HeaderTitleFallback??values.GetValueOrDefault("headerTitle")??"ARQUIVO CENTRAL";values["headerSubtitle"]=branding.HeaderSubtitle??design.HeaderSubtitleFallback;values["headerExtraLine"]=branding.HeaderExtraLine;values["footerText"]=branding.FooterText;values["footerExtraLine"]=branding.FooterExtraLine;
         values["primaryLogo"]=branding.PrimaryLogoAssetId is Guid primary?$"/Administration/BrandAssets/{primary}/File":null;values["secondaryLogo"]=branding.SecondaryLogoAssetId is Guid secondary?$"/Administration/BrandAssets/{secondary}/File":null;
         return(values,branding);
     }
+    private async Task<bool> PreviewSubjectAccessibleAsync(string operational,Guid subjectId,Guid userId,CancellationToken ct)
+    {
+        var isAdmin=await accessPolicy.IsAdminAsync(TenantId,userId,User,ct);
+        var table=operational=="BOX"?"box":"document";
+        await using var db=await DbFactory.OpenAsync(ct);
+        return await db.ExecuteScalarAsync<bool>(new CommandDefinition($"select exists(select 1 from ged.{table} e where e.tenant_id=@tenantId and e.id=@subjectId and coalesce(to_jsonb(e)->>'reg_status','A') in ('A','ACTIVE') and (@isAdmin or to_jsonb(e)->>'created_by'=@userIdText))",new{tenantId=TenantId,subjectId,isAdmin,userIdText=userId.ToString()},cancellationToken:ct));
+    }
+    private static LabelCanvasDesignDto CopyDesign(LabelCanvasDesignDto d,string designJson)=>new(){Id=d.Id,TenantId=d.TenantId,TemplateKey=d.TemplateKey,TemplateName=d.TemplateName,Description=d.Description,TemplateKind=d.TemplateKind,SubjectType=d.SubjectType,PaperKind=d.PaperKind,WidthMm=d.WidthMm,HeightMm=d.HeightMm,Orientation=d.Orientation,Status=d.Status,DesignJson=designJson,CurrentVersion=d.CurrentVersion,IsSystemTemplate=d.IsSystemTemplate,DefaultBrandingProfileId=d.DefaultBrandingProfileId,BrandingBindingKey=d.BrandingBindingKey,ClientNameFallback=d.ClientNameFallback,ContractNameFallback=d.ContractNameFallback,OrganizationNameFallback=d.OrganizationNameFallback,HeaderTitleFallback=d.HeaderTitleFallback,HeaderSubtitleFallback=d.HeaderSubtitleFallback,LabelContext=d.LabelContext,CreatedAt=d.CreatedAt,LockVersion=d.LockVersion};
     private async Task<IActionResult> ExecuteWrite(Func<Task<IActionResult>> action,string operation,string templateKey)
     {try{return await action();}catch(LabelSchemaUpdateRequiredException e){logger.LogWarning("LABEL_SCHEMA_UPDATE_REQUIRED ao {Operation} {TemplateKey}.",operation,templateKey);return Conflict(new{ok=false,code=LabelSchemaUpdateRequiredException.Code,message=e.Message});}catch(LabelCanvasConflictException e){logger.LogWarning("Conflito otimista ao {Operation} {TemplateKey}.",operation,templateKey);return Conflict(new{ok=false,code="DESIGN_CONFLICT",message=e.Message});}catch(KeyNotFoundException e){logger.LogWarning(e,"Template {TemplateKey} não encontrado ao {Operation}.",templateKey,operation);return NotFound(new{ok=false,message=e.Message});}catch(LabelCanvasRequestException e){logger.LogWarning("LABEL_CANVAS_SAVE_REJECTED TemplateKey={TemplateKey} Operation={Operation} Code={Code}: {Message}",templateKey,operation,e.Code,e.Message);return BadRequest(new{ok=false,code=e.Code,message=e.Message,errors=e.Errors});}catch(ArgumentException e){logger.LogWarning(e,"Entrada inválida ao {Operation} {TemplateKey}.",operation,templateKey);return BadRequest(new{ok=false,code="INVALID_REQUEST",message=e.Message,errors=new Dictionary<string,string>()});}catch(InvalidOperationException e){logger.LogWarning(e,"Operação recusada ao {Operation} {TemplateKey}.",operation,templateKey);return BadRequest(new{ok=false,message=e.Message});}catch(Exception e){logger.LogError(e,"Erro ao {Operation} o template {TemplateKey}.",operation,templateKey);return StatusCode(500,new{ok=false,message="Não foi possível concluir a operação. Tente novamente."});}}
     private static LabelCanvasSaveRequest CopyWithKey(LabelCanvasSaveRequest x,string key,long? expectedLockVersion=null)=>new(){ExpectedLockVersion=expectedLockVersion??x.ExpectedLockVersion,TemplateKey=key,TemplateName=x.TemplateName,Description=x.Description,TemplateKind=x.TemplateKind,SubjectType=x.SubjectType,PaperKind=x.PaperKind,WidthMm=x.WidthMm,HeightMm=x.HeightMm,Orientation=x.Orientation,DesignJson=x.DesignJson,DefaultBrandingProfileId=x.DefaultBrandingProfileId,BrandingBindingKey=x.BrandingBindingKey,ClientNameFallback=x.ClientNameFallback,ContractNameFallback=x.ContractNameFallback,OrganizationNameFallback=x.OrganizationNameFallback,HeaderTitleFallback=x.HeaderTitleFallback,HeaderSubtitleFallback=x.HeaderSubtitleFallback,LabelContext=x.LabelContext,ChangeSummary=x.ChangeSummary};

@@ -12,6 +12,16 @@
         <button type="button" data-action="redo" aria-label="Refazer"><app-icon name="refresh" size="17" decorative="true" /></button>
     </div>
     <div class="toolbar-cluster toolbar-primary">
+        @if (!Model.IsNew) {
+        <div class="preview-data-picker" data-preview-data>
+            <label for="preview-data-mode">Dados da prévia</label>
+            <select id="preview-data-mode" data-preview-mode aria-controls="preview-real-search"><option value="sample">Dados de exemplo</option><option value="real">Registro real</option></select>
+            <div id="preview-real-search" data-preview-real hidden>
+                <input type="search" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="preview-subject-results" placeholder="Buscar registro" data-preview-search />
+                <div id="preview-subject-results" role="listbox" data-preview-results></div>
+            </div>
+        </div>
+        }
         <button type="button" data-action="live-preview">Prévia</button>
         @if (!Model.IsNew && Model.Design.Status == "DRAFT" && Model.Design.CurrentVersion > 0) { <button type="button" data-action="compare">Comparar alterações</button> }
         <button type="button" data-action="save" @(canEdit ? null : "disabled")>Salvar</button>

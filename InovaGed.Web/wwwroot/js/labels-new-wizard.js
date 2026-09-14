@@ -7,6 +7,10 @@
   const next = form.querySelector('[data-wizard-next]');
   const submit = form.querySelector('[data-wizard-submit]');
   const error = form.querySelector('[data-wizard-error]');
+  const token = form.querySelector('input[name="__RequestVerificationToken"]')?.value || '';
+  const starterFrame=form.querySelector('[data-starter-preview]'),starterStatus=form.querySelector('[data-starter-preview-status]');
+  let starterController;
+  const refreshStarter=async()=>{const kind=form.querySelector('[name="StarterKind"]:checked')?.value,subject=form.querySelector('[name="SubjectType"]:checked')?.value;if(!kind||!subject||!starterFrame)return;starterController?.abort();starterController=new AbortController();starterStatus.textContent='Atualizando prévia…';try{const response=await fetch('/Labels/Designer/StarterPreview',{method:'POST',signal:starterController.signal,headers:{'Content-Type':'application/json','RequestVerificationToken':token},body:JSON.stringify({subjectType:subject,starterKind:kind,widthMm:Number(form.elements.WidthMm.value),heightMm:Number(form.elements.HeightMm.value),brandingProfileId:form.elements.BrandingProfileId.value||null})});const data=await response.json();if(!response.ok)throw new Error(data.message);starterFrame.srcdoc=data.html||'';starterStatus.textContent=data.ok?'Prévia atualizada.':'O layout possui alertas.';}catch(ex){if(ex.name!=='AbortError')starterStatus.textContent=ex.message||'Não foi possível gerar a prévia.';}};
   let current = 0;
   const selectedText = name => form.querySelector(`[name="${name}"]:checked`)?.closest('label')?.querySelector('strong')?.textContent?.trim() || 'Não informado';
   const show = index => {
@@ -27,6 +31,7 @@
   back.addEventListener('click', () => show(current - 1));
   indicators.forEach((item, index) => item.addEventListener('click', () => { if (index < current || valid()) show(index); }));
   form.addEventListener('submit', event => { if (!valid()) event.preventDefault(); else submit.disabled = true; });
-  form.querySelector('[data-label-size]')?.addEventListener('change', function () { if (this.value === 'custom') return; [form.elements.WidthMm.value, form.elements.HeightMm.value] = this.value.split(','); });
+  form.querySelector('[data-label-size]')?.addEventListener('change', function () { if (this.value === 'custom') return; [form.elements.WidthMm.value, form.elements.HeightMm.value] = this.value.split(','); refreshStarter(); });
+  form.querySelectorAll('[name="StarterKind"],[name="SubjectType"],#BrandingProfileId,#WidthMm,#HeightMm').forEach(control=>control.addEventListener('change',refreshStarter));
   show(0);
 })();

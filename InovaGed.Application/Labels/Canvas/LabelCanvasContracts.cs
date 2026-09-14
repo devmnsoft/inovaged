@@ -218,6 +218,24 @@ public sealed class LabelCanvasPreviewRequest
     public IReadOnlyDictionary<string, object?>? SampleData { get; init; }
 }
 
+public sealed record LabelCanvasPreviewSubjectDto(Guid Id, string Reference, string PrimaryText, string? SecondaryText);
+
+public sealed class LabelCanvasPreviewSubjectRequest
+{
+    public Guid SubjectId { get; init; }
+    public string DesignJson { get; init; } = "{}";
+    public Guid? BrandingProfileId { get; init; }
+}
+
+public sealed class LabelCanvasStarterPreviewRequest
+{
+    public string SubjectType { get; init; } = "Document";
+    public string StarterKind { get; init; } = "Blank";
+    public decimal WidthMm { get; init; } = 100;
+    public decimal HeightMm { get; init; } = 70;
+    public Guid? BrandingProfileId { get; init; }
+}
+
 public sealed class LabelCanvasValidationResult
 {
     public List<LabelCanvasValidationIssue> Issues { get; init; } = [];
