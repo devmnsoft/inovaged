@@ -15,7 +15,7 @@
 }
 <main class="canvas-designer" data-designer data-can-edit="@canEdit.ToString().ToLowerInvariant()"
       data-new="@Model.IsNew.ToString().ToLowerInvariant()" data-save-url="@endpoint"
-      data-template-key="@Model.Design.TemplateKey">
+      data-template-key="@Model.Design.TemplateKey" data-lock-version="@Model.Design.LockVersion">
     @Html.AntiForgeryToken()
     <script type="application/json" id="designer-json">@Html.Raw(safeJson)</script>
     <script type="application/json" id="field-catalog">@Html.Raw(JsonSerializer.Serialize(Model.Fields, new JsonSerializerOptions(JsonSerializerDefaults.Web)))</script>

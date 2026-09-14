@@ -1,16 +1,30 @@
 @model InovaGed.Web.Models.Ged.GedUploadHistoryVM
 @{
-    ViewData["Title"] = "Histórico de uploads";
+    ViewData["Title"] = "Entradas documentais";
+    var today = DateTimeOffset.Now.Date;
+    string StatusLabel(string value) => value switch { "PROCESSING" => "Em processamento", "COMPLETED" => "Concluído", "PARTIAL_ERROR" => "Concluído com pendências", "ERROR" => "Com erro", "CANCELLED" => "Cancelado", _ => "Em processamento" };
     ViewData["WorkspaceVariant"] = "wide";
 }
 <div class="container-fluid py-3">
     <div class="d-flex align-items-center justify-content-between mb-3">
         <div>
-            <h1 class="h4 mb-1">Histórico de uploads</h1>
-            <div class="text-muted small">Consulte lotes concluídos, falhas, duplicados, ignorados e itens passíveis de retentativa.</div>
+            <h1 class="h4 mb-1">Entradas documentais</h1>
+            <div class="text-muted small">Acompanhe o envio, processamento e conferência dos documentos recebidos.</div>
         </div>
         <a class="btn btn-outline-secondary" asp-controller="Ged" asp-action="Index"><i class="bi bi-arrow-left me-1"></i>Voltar ao GED</a>
     </div>
+    <div class="row g-2 mb-3" aria-label="Indicadores das entradas documentais">
+        <div class="col-6 col-lg-3"><div class="card card-body py-2"><small class="text-muted">Enviados hoje</small><strong>@Model.Batches.Where(x => x.CreatedAt.ToLocalTime().Date == today).Sum(x => x.TotalFiles)</strong></div></div>
+        <div class="col-6 col-lg-3"><div class="card card-body py-2"><small class="text-muted">Com falha</small><strong>@Model.Batches.Sum(x => x.FailedFiles)</strong></div></div>
+        <div class="col-6 col-lg-3"><div class="card card-body py-2"><small class="text-muted">Aguardando conferência</small><strong>@Model.Batches.Where(x => x.Status is "PROCESSING" or "PARTIAL_ERROR").Sum(x => x.SuccessFiles)</strong></div></div>
+        <div class="col-6 col-lg-3"><div class="card card-body py-2"><small class="text-muted">Prontos</small><strong>@Model.Batches.Where(x => x.Status == "COMPLETED").Sum(x => x.SuccessFiles)</strong></div></div>
+    </div>
+    <div class="card card-body py-2 mb-3"><div class="row g-2">
+      <div class="col-md-5"><label class="form-label small" for="entrySearch">Buscar arquivo, documento, pasta ou atendimento</label><input id="entrySearch" class="form-control form-control-sm" type="search" /></div>
+      <div class="col-md-3"><label class="form-label small" for="entryStatus">Status</label><select id="entryStatus" class="form-select form-select-sm"><option value="">Todos</option><option value="PROCESSING">Em processamento</option><option value="COMPLETED">Concluído</option><option value="PARTIAL_ERROR">Com pendências</option><option value="ERROR">Com erro</option><option value="CANCELLED">Cancelado</option></select></div>
+      <div class="col-md-2"><label class="form-label small" for="entryFrom">De</label><input id="entryFrom" class="form-control form-control-sm" type="date" /></div>
+      <div class="col-md-2"><label class="form-label small" for="entryTo">Até</label><input id="entryTo" class="form-control form-control-sm" type="date" /></div>
+    </div></div>
     <div class="card shadow-sm">
         <div class="table-responsive">
             <table class="table table-sm align-middle mb-0">
@@ -22,15 +36,15 @@
                 <tbody>
                 @foreach (var b in Model.Batches)
                 {
-                    <tr class="@(b.FailedFiles > 0 ? "table-warning" : "")">
+                    <tr class="@(b.FailedFiles > 0 ? "table-warning" : "")" data-entry-row data-status="@b.Status" data-date="@b.CreatedAt.ToString("yyyy-MM-dd")" data-search="@($"{b.UserName} {b.FolderName} {b.Status}".ToLowerInvariant())">
                         <td>@b.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
-                        <td>@(b.UserName ?? b.CreatedBy.ToString())</td>
+                        <td>@(b.UserName ?? "Usuário não identificado")</td>
                         <td>@(b.FolderName ?? "-")</td>
                         <td>@b.TotalFiles</td><td class="text-success fw-semibold">@b.SuccessFiles</td><td class="text-danger fw-semibold">@b.FailedFiles</td><td>@b.SkippedFiles</td><td>@b.DuplicateFiles</td><td>@b.AbortedFiles</td>
-                        <td><span class="badge bg-secondary">@b.Status</span></td>
+                        <td><span class="badge bg-secondary">@StatusLabel(b.Status)</span></td>
                         <td>@(b.DurationMs.HasValue ? $"{b.DurationMs.Value / 1000.0:n1}s" : "-")</td>
                         <td class="text-nowrap">
-                            <a class="btn btn-sm btn-outline-primary" asp-action="Details" asp-route-batchId="@b.Id">Ver detalhes</a>
+                            <a class="btn btn-sm btn-outline-primary" asp-action="Details" asp-route-batchId="@b.Id">Abrir</a>
                             @if (b.HasRetryableItems)
                             {
                                 <button class="btn btn-sm btn-outline-warning js-upload-retry" data-batch-id="@b.Id">Reenviar falhas</button>
@@ -50,6 +64,7 @@
 <form id="uploadHistoryTokenForm">@Html.AntiForgeryToken()</form>
 @section Scripts {
 <script>
+const applyFilters=()=>{const q=document.getElementById('entrySearch').value.trim().toLowerCase(),status=document.getElementById('entryStatus').value,from=document.getElementById('entryFrom').value,to=document.getElementById('entryTo').value;document.querySelectorAll('[data-entry-row]').forEach(row=>row.classList.toggle('d-none',!!((q&&!row.dataset.search.includes(q))||(status&&row.dataset.status!==status)||(from&&row.dataset.date<from)||(to&&row.dataset.date>to))));};['entrySearch','entryStatus','entryFrom','entryTo'].forEach(id=>document.getElementById(id)?.addEventListener('input',applyFilters));
 document.addEventListener('click', async e => {
  const btn = e.target.closest('.js-upload-retry'); if (!btn) return;
  const token = document.querySelector('#uploadHistoryTokenForm input[name="__RequestVerificationToken"]')?.value;
