@@ -9,17 +9,29 @@ namespace InovaGed.Infrastructure.PhysicalArchive;
 
 public sealed class LabelPrintJobService(IDbConnectionFactory dbFactory) : ILabelPrintJobService
 {
+    private static readonly LabelPrintStateMachine StateMachine = new();
+
     public async Task<Guid> CreateJobAsync(LabelPrintJobCreateCommand x, CancellationToken ct)
     {
         Validate(x.TenantId, x.RequestedBy, x.Copies, x.PayloadJson);
         await using var db = await dbFactory.OpenAsync(ct);
         if (x.SubjectId.HasValue) await RequireReprintReason(db, x.TenantId, x.SubjectType, x.SubjectId.Value, x.TemplateCode, x.ReprintReason, ct);
+        if (x.ClientActionId is Guid actionId)
+        {
+            var existing = await FindByClientActionAsync(db, x.TenantId, x.RequestedBy, actionId, ct);
+            if (existing.HasValue) return existing.Value;
+        }
+
         var id=Guid.NewGuid();
-        await db.ExecuteAsync(new CommandDefinition("""
-insert into ged.label_print_job(id,tenant_id,job_number,print_mode,template_code,template_name,subject_type,subject_id,control_number,location,copies,status,payload_json,reprint_reason,requested_by,requested_ip,requested_user_agent)
-values(@id,@TenantId,@number,@PrintMode,@TemplateCode,@TemplateName,@SubjectType,@SubjectId,@ControlNumber,@Location,@Copies,'PENDING',cast(@PayloadJson as jsonb),nullif(@ReprintReason,''),@RequestedBy,cast(@IpAddress as inet),@UserAgent)
-""",new{id,x.TenantId,number=JobNumber(),x.PrintMode,x.TemplateCode,x.TemplateName,x.SubjectType,x.SubjectId,x.ControlNumber,x.Location,x.Copies,x.PayloadJson,x.ReprintReason,x.RequestedBy,x.IpAddress,x.UserAgent},cancellationToken:ct));
-        return id;
+        var inserted = await db.QuerySingleOrDefaultAsync<Guid?>(new CommandDefinition("""
+insert into ged.label_print_job(id,tenant_id,job_number,print_mode,template_code,template_name,subject_type,subject_id,control_number,location,copies,status,payload_json,reprint_reason,requested_by,requested_ip,requested_user_agent,client_action_id,operation_type)
+values(@id,@TenantId,@number,@PrintMode,@TemplateCode,@TemplateName,@SubjectType,@SubjectId,@ControlNumber,@Location,@Copies,'PENDING',cast(@PayloadJson as jsonb),nullif(@ReprintReason,''),@RequestedBy,cast(@IpAddress as inet),@UserAgent,@ClientActionId,@OperationType)
+on conflict (tenant_id,requested_by,client_action_id) where client_action_id is not null and reg_status='A' do nothing
+returning id
+""",new{id,x.TenantId,number=JobNumber(),x.PrintMode,x.TemplateCode,x.TemplateName,x.SubjectType,x.SubjectId,x.ControlNumber,x.Location,x.Copies,x.PayloadJson,x.ReprintReason,x.RequestedBy,x.IpAddress,x.UserAgent,x.ClientActionId,x.OperationType},cancellationToken:ct));
+        if (inserted.HasValue) return inserted.Value;
+        return await FindByClientActionAsync(db, x.TenantId, x.RequestedBy, x.ClientActionId!.Value, ct)
+            ?? throw new InvalidOperationException("Não foi possível recuperar a impressão idempotente.");
     }
 
     public async Task<Guid> CreateBatchJobAsync(LabelPrintBatchJobCreateCommand x, CancellationToken ct)
@@ -27,12 +39,19 @@ values(@id,@TenantId,@number,@PrintMode,@TemplateCode,@TemplateName,@SubjectType
         Validate(x.TenantId,x.RequestedBy,x.Copies,"{}");
         if(x.Items.Count==0) throw new InvalidOperationException("Selecione ao menos um item para impressão.");
         await using var db=await dbFactory.OpenAsync(ct); await using var tx=await db.BeginTransactionAsync(ct);
+        if(x.ClientActionId is Guid actionId)
+        {
+            var existing=await db.QuerySingleOrDefaultAsync<Guid?>(new CommandDefinition("select id from ged.label_print_job where tenant_id=@TenantId and requested_by=@RequestedBy and client_action_id=@actionId and reg_status='A'",new{x.TenantId,x.RequestedBy,actionId},tx,cancellationToken:ct));
+            if(existing.HasValue){await tx.RollbackAsync(ct);return existing.Value;}
+        }
         foreach(var item in x.Items.Where(i=>i.SubjectId.HasValue)) await RequireReprintReason(db,x.TenantId,item.SubjectType,item.SubjectId!.Value,x.TemplateCode,x.ReprintReason,ct,tx);
         var id=Guid.NewGuid(); var payload=$"{{\"itemCount\":{x.Items.Count}}}";
-        await db.ExecuteAsync(new CommandDefinition("""
-insert into ged.label_print_job(id,tenant_id,job_number,print_mode,template_code,template_name,subject_type,batch_id,copies,status,payload_json,reprint_reason,requested_by,requested_ip,requested_user_agent)
-values(@id,@TenantId,@number,@PrintMode,@TemplateCode,@TemplateName,@SubjectType,@id,@Copies,'PENDING',cast(@payload as jsonb),nullif(@ReprintReason,''),@RequestedBy,cast(@IpAddress as inet),@UserAgent)
-""",new{id,x.TenantId,number=JobNumber(),x.PrintMode,x.TemplateCode,x.TemplateName,x.SubjectType,x.Copies,payload,x.ReprintReason,x.RequestedBy,x.IpAddress,x.UserAgent},tx,cancellationToken:ct));
+        var inserted=await db.QuerySingleOrDefaultAsync<Guid?>(new CommandDefinition("""
+insert into ged.label_print_job(id,tenant_id,job_number,print_mode,template_code,template_name,subject_type,batch_id,copies,status,payload_json,reprint_reason,requested_by,requested_ip,requested_user_agent,client_action_id)
+values(@id,@TenantId,@number,@PrintMode,@TemplateCode,@TemplateName,@SubjectType,@id,@Copies,'PENDING',cast(@payload as jsonb),nullif(@ReprintReason,''),@RequestedBy,cast(@IpAddress as inet),@UserAgent,@ClientActionId)
+on conflict (tenant_id,requested_by,client_action_id) where client_action_id is not null and reg_status='A' do nothing returning id
+""",new{id,x.TenantId,number=JobNumber(),x.PrintMode,x.TemplateCode,x.TemplateName,x.SubjectType,x.Copies,payload,x.ReprintReason,x.RequestedBy,x.IpAddress,x.UserAgent,x.ClientActionId},tx,cancellationToken:ct));
+        if(!inserted.HasValue){await tx.RollbackAsync(ct);return await FindByClientActionAsync(db,x.TenantId,x.RequestedBy,x.ClientActionId!.Value,ct)??throw new InvalidOperationException("Não foi possível recuperar o lote idempotente.");}
         foreach(var item in x.Items) await db.ExecuteAsync(new CommandDefinition("""
 insert into ged.label_print_job_item(tenant_id,job_id,subject_type,subject_id,control_number,location,payload_json,display_order)
 values(@TenantId,@id,@SubjectType,@SubjectId,@ControlNumber,@Location,cast(@PayloadJson as jsonb),@DisplayOrder)
@@ -47,7 +66,9 @@ values(@TenantId,@id,@SubjectType,@SubjectId,@ControlNumber,@Location,cast(@Payl
 select j.id,j.tenant_id TenantId,j.job_number JobNumber,j.print_mode PrintMode,j.template_code TemplateCode,j.template_name TemplateName,
 j.subject_type SubjectType,j.subject_id SubjectId,j.control_number ControlNumber,j.location,j.copies,j.status,j.payload_json::text PayloadJson,
 j.pdf_path PdfPath,j.error_message ErrorMessage,j.requested_by RequestedBy,j.requested_at RequestedAt,j.printed_by PrintedBy,
-j.printed_at PrintedAt,j.cancel_reason CancelReason,j.reprint_reason ReprintReason,u.name RequestedByName
+j.printed_at PrintedAt,j.cancel_reason CancelReason,j.reprint_reason ReprintReason,u.name RequestedByName,
+j.artifact_sha256 ArtifactSha256,j.artifact_content_type ArtifactContentType,j.artifact_size_bytes ArtifactSizeBytes,
+j.artifact_generated_at ArtifactGeneratedAt,j.operation_type OperationType
 from ged.label_print_job j left join ged.app_user u on u.tenant_id=j.tenant_id and u.id=j.requested_by
 where j.tenant_id=@tenantId and j.id=@jobId and j.reg_status='A'
 """,new{tenantId,jobId},cancellationToken:ct));
@@ -56,7 +77,7 @@ where j.tenant_id=@tenantId and j.id=@jobId and j.reg_status='A'
 select id,subject_id SubjectId,subject_type SubjectType,control_number ControlNumber,location,payload_json::text PayloadJson,status,display_order DisplayOrder,printed_at PrintedAt,error_message ErrorMessage
 from ged.label_print_job_item where tenant_id=@tenantId and job_id=@jobId and reg_status='A' order by display_order
 """,new{tenantId,jobId},cancellationToken:ct))).AsList();
-        return new(row.Id,row.TenantId,row.JobNumber,row.PrintMode,row.TemplateCode,row.TemplateName,row.SubjectType,row.SubjectId,row.ControlNumber,row.Location,row.Copies,row.Status,row.PayloadJson,row.PdfPath,row.ErrorMessage,row.RequestedBy,row.RequestedAt,row.PrintedBy,row.PrintedAt,row.CancelReason,row.ReprintReason,row.RequestedByName,items);
+        return new(row.Id,row.TenantId,row.JobNumber,row.PrintMode,row.TemplateCode,row.TemplateName,row.SubjectType,row.SubjectId,row.ControlNumber,row.Location,row.Copies,row.Status,row.PayloadJson,row.PdfPath,row.ErrorMessage,row.RequestedBy,row.RequestedAt,row.PrintedBy,row.PrintedAt,row.CancelReason,row.ReprintReason,row.RequestedByName,items,row.ArtifactSha256,row.ArtifactContentType,row.ArtifactSizeBytes,row.ArtifactGeneratedAt,row.OperationType);
     }
 
     public async Task<IReadOnlyList<LabelPrintJobListItem>> ListAsync(Guid tenantId,LabelPrintJobFilter f,CancellationToken ct)
@@ -70,20 +91,45 @@ from ged.label_print_job j left join ged.app_user u on u.tenant_id=j.tenant_id a
 where j.tenant_id=@tenantId and j.reg_status='A' and (@From is null or j.requested_at>=@From) and (@To is null or j.requested_at<@To + interval '1 day')
 and (@UserId is null or j.requested_by=@UserId) and (coalesce(@TemplateCode,'')='' or j.template_code=@TemplateCode)
 and (coalesce(@SubjectType,'')='' or j.subject_type=@SubjectType) and (coalesce(@ControlNumber,'')='' or j.control_number ilike '%'||@ControlNumber||'%')
-and (coalesce(@Status,'')='' or j.status=@Status) order by j.requested_at desc limit 500
-""",new{tenantId,f.From,f.To,f.UserId,f.TemplateCode,f.SubjectType,f.ControlNumber,f.Status},cancellationToken:ct))).AsList();
+and (coalesce(@Status,'')='' or j.status=@Status)
+and (@IsReprint is null or (j.reprint_reason is not null)=@IsReprint)
+and (coalesce(@Search,'')='' or j.job_number ilike '%'||@Search||'%' or j.control_number ilike '%'||@Search||'%' or j.template_code ilike '%'||@Search||'%' or j.template_name ilike '%'||@Search||'%')
+order by j.requested_at desc limit @PageSize offset @Offset
+""",new{tenantId,f.From,f.To,f.UserId,f.TemplateCode,f.SubjectType,f.ControlNumber,f.Status,f.IsReprint,f.Search,PageSize=Math.Clamp(f.PageSize,1,100),Offset=(Math.Max(1,f.Page)-1)*Math.Clamp(f.PageSize,1,100)},cancellationToken:ct))).AsList();
     }
 
-    public Task MarkPreviewedAsync(Guid tenantId,Guid jobId,Guid userId,CancellationToken ct)=>SetStatus(tenantId,jobId,"status='PREVIEWED'",new[]{LabelPrintJobStatus.Pending,LabelPrintJobStatus.Previewed},ct);
+    public async Task<LabelPrintQueueMetrics> GetMetricsAsync(Guid tenantId,LabelPrintJobFilter f,CancellationToken ct)
+    {
+        await using var db=await dbFactory.OpenAsync(ct);
+        return await db.QuerySingleAsync<LabelPrintQueueMetrics>(new CommandDefinition("""
+select count(*) filter(where status in ('PENDING','PREVIEWED'))::int Awaiting,
+count(*) filter(where status='READY_TO_PRINT')::int Ready,
+count(*) filter(where status='PRINTED' and printed_at>=current_date)::int PrintedToday,
+count(*) filter(where status='ERROR')::int Errors,
+count(*) filter(where reprint_reason is not null)::int Reprints,
+count(*)::int Total
+from ged.label_print_job
+where tenant_id=@tenantId and reg_status='A'
+and (@From is null or requested_at>=@From) and (@To is null or requested_at<@To + interval '1 day')
+""",new{tenantId,f.From,f.To},cancellationToken:ct));
+    }
+
+    public async Task MarkPreviewedAsync(Guid tenantId,Guid jobId,Guid userId,CancellationToken ct)
+    {
+        var job=await GetAsync(tenantId,jobId,ct)??throw new KeyNotFoundException("Job não encontrado.");
+        if(job.Status==LabelPrintJobStatus.Previewed)return;
+        StateMachine.EnsureTransition(job.Status,LabelPrintJobStatus.Previewed);
+        await SetStatus(tenantId,jobId,"status='PREVIEWED',error_message=null",new[]{LabelPrintJobStatus.Pending},ct);
+    }
     public async Task MarkPrintedAsync(Guid tenantId,Guid jobId,Guid userId,CancellationToken ct)
     {
         if(userId==Guid.Empty)throw new InvalidOperationException("Usuário autenticado obrigatório.");
         await using var db=await dbFactory.OpenAsync(ct); await using var tx=await db.BeginTransactionAsync(ct);
         var job=await db.QuerySingleOrDefaultAsync<PrintRow>(new CommandDefinition("select * from ged.label_print_job where tenant_id=@tenantId and id=@jobId and reg_status='A' for update",new{tenantId,jobId},tx,cancellationToken:ct))??throw new KeyNotFoundException("Job não encontrado.");
-        if(job.status is LabelPrintJobStatus.Cancelled or LabelPrintJobStatus.Printed) throw new InvalidOperationException("Este job não pode mais ser impresso.");
+        StateMachine.EnsureTransition(job.status,LabelPrintJobStatus.Printed);
         var items=(await db.QueryAsync<ItemRow>(new CommandDefinition("select * from ged.label_print_job_item where tenant_id=@tenantId and job_id=@jobId and reg_status='A' order by display_order",new{tenantId,jobId},tx,cancellationToken:ct))).AsList();
         if(items.Count==0) items.Add(new ItemRow { id=Guid.NewGuid(),subject_id=job.subject_id,subject_type=job.subject_type,control_number=job.control_number,location=job.location,payload_json=job.payload_json });
-        foreach(var item in items)
+        foreach(var item in items.Where(item=>item.status!=LabelPrintJobStatus.Printed))
         {
             var hash=Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(item.payload_json))).ToLowerInvariant();
             await db.ExecuteAsync(new CommandDefinition("""
@@ -91,7 +137,7 @@ insert into ged.label_print_history(id,tenant_id,label_subject_type,label_subjec
 values(gen_random_uuid(),@tenantId,@type,@subjectId,@template,cast(@json as jsonb),@hash,@userId,cast(@ip as inet),@agent,nullif(@reason,''),@jobId,@itemId,@mode,@path)
 """,new{tenantId,type=item.subject_type,subjectId=item.subject_id,template=job.template_code,json=item.payload_json,hash,userId,ip=job.requested_ip,agent=job.requested_user_agent,reason=job.reprint_reason,jobId,itemId=items.Count==1&&job.batch_id is null?(Guid?)null:item.id,mode=job.print_mode,path=job.pdf_path},tx,cancellationToken:ct));
         }
-        await db.ExecuteAsync(new CommandDefinition("update ged.label_print_job_item set status='PRINTED',printed_at=now() where tenant_id=@tenantId and job_id=@jobId and reg_status='A'; update ged.label_print_job set status='PRINTED',printed_by=@userId,printed_at=now() where tenant_id=@tenantId and id=@jobId",new{tenantId,jobId,userId},tx,cancellationToken:ct));
+        await db.ExecuteAsync(new CommandDefinition("update ged.label_print_job_item set status='PRINTED',printed_at=now() where tenant_id=@tenantId and job_id=@jobId and reg_status='A' and status<>'PRINTED'; update ged.label_print_job set status='PRINTED',printed_by=@userId,printed_at=now() where tenant_id=@tenantId and id=@jobId",new{tenantId,jobId,userId},tx,cancellationToken:ct));
         await tx.CommitAsync(ct);
     }
     public async Task CancelAsync(Guid tenantId,Guid jobId,Guid userId,string reason,CancellationToken ct)
@@ -100,13 +146,47 @@ values(gen_random_uuid(),@tenantId,@type,@subjectId,@template,cast(@json as json
         await using var db=await dbFactory.OpenAsync(ct); var count=await db.ExecuteAsync(new CommandDefinition("update ged.label_print_job set status='CANCELLED',cancelled_by=@userId,cancelled_at=now(),cancel_reason=@reason where tenant_id=@tenantId and id=@jobId and status not in ('PRINTED','CANCELLED')",new{tenantId,jobId,userId,reason},cancellationToken:ct));
         if(count==0)throw new InvalidOperationException("Job não encontrado ou já finalizado.");
     }
-    private async Task SetStatus(Guid tenantId,Guid jobId,string set,IReadOnlyList<string> allowed,CancellationToken ct){await using var db=await dbFactory.OpenAsync(ct);var n=await db.ExecuteAsync(new CommandDefinition($"update ged.label_print_job set {set},error_message=null where tenant_id=@tenantId and id=@jobId and status=any(@allowed)",new{tenantId,jobId,allowed},cancellationToken:ct));if(n==0&&await GetAsync(tenantId,jobId,ct) is null)throw new KeyNotFoundException("Job não encontrado.");}
+    public Task MarkErrorAsync(Guid tenantId,Guid jobId,string message,CancellationToken ct)
+    {
+        if(string.IsNullOrWhiteSpace(message))throw new InvalidOperationException("Informe a falha operacional.");
+        return SetStatus(tenantId,jobId,"status='ERROR',error_message=@message",new[]{LabelPrintJobStatus.Pending,LabelPrintJobStatus.Previewed,LabelPrintJobStatus.ReadyToPrint,LabelPrintJobStatus.PdfGenerated},ct,new{message});
+    }
+    public Task RetryAsync(Guid tenantId,Guid jobId,Guid userId,CancellationToken ct)
+    {
+        if(userId==Guid.Empty)throw new InvalidOperationException("Usuário autenticado obrigatório.");
+        return SetStatus(tenantId,jobId,"status='PENDING'",new[]{LabelPrintJobStatus.Error},ct);
+    }
+    public async Task<Guid> ReprintExactAsync(Guid tenantId,Guid jobId,Guid userId,Guid clientActionId,string reason,CancellationToken ct)
+    {
+        if(userId==Guid.Empty)throw new InvalidOperationException("Usuário autenticado obrigatório.");
+        if(string.IsNullOrWhiteSpace(reason))throw new InvalidOperationException("Informe o motivo da reimpressão.");
+        await using var db=await dbFactory.OpenAsync(ct);await using var tx=await db.BeginTransactionAsync(ct);
+        var existing=await db.QuerySingleOrDefaultAsync<Guid?>(new CommandDefinition("select id from ged.label_print_job where tenant_id=@tenantId and requested_by=@userId and client_action_id=@clientActionId and reg_status='A'",new{tenantId,userId,clientActionId},tx,cancellationToken:ct));
+        if(existing.HasValue){await tx.RollbackAsync(ct);return existing.Value;}
+        var id=Guid.NewGuid();
+        var created=await db.QuerySingleOrDefaultAsync<Guid?>(new CommandDefinition("""
+insert into ged.label_print_job(id,tenant_id,job_number,print_mode,template_code,template_name,subject_type,subject_id,batch_id,control_number,location,copies,status,payload_json,reprint_reason,requested_by,client_action_id,operation_type)
+select @id,j.tenant_id,@number,j.print_mode,j.template_code,j.template_name,j.subject_type,j.subject_id,
+case when j.batch_id is null then null else @id end,j.control_number,j.location,j.copies,'PENDING',j.payload_json,@reason,@userId,@clientActionId,'REPRINT_EXACT'
+from ged.label_print_job j where j.tenant_id=@tenantId and j.id=@jobId and j.status='PRINTED' and j.reg_status='A'
+on conflict (tenant_id,requested_by,client_action_id) where client_action_id is not null and reg_status='A' do nothing returning id
+""",new{id,tenantId,jobId,userId,clientActionId,reason,number=JobNumber()},tx,cancellationToken:ct));
+        if(!created.HasValue){await tx.RollbackAsync(ct);return await FindByClientActionAsync(db,tenantId,userId,clientActionId,ct)??throw new InvalidOperationException("Somente impressões concluídas podem ser reimpressas exatamente.");}
+        await db.ExecuteAsync(new CommandDefinition("""
+insert into ged.label_print_job_item(id,tenant_id,job_id,subject_type,subject_id,control_number,location,payload_json,status,display_order)
+select gen_random_uuid(),tenant_id,@id,subject_type,subject_id,control_number,location,payload_json,'PENDING',display_order
+from ged.label_print_job_item where tenant_id=@tenantId and job_id=@jobId and reg_status='A'
+""",new{id,tenantId,jobId},tx,cancellationToken:ct));
+        await tx.CommitAsync(ct);return id;
+    }
+    private async Task SetStatus(Guid tenantId,Guid jobId,string set,IReadOnlyList<string> allowed,CancellationToken ct,object? extra=null){await using var db=await dbFactory.OpenAsync(ct);var parameters=new DynamicParameters(new{tenantId,jobId,allowed});if(extra is not null)parameters.AddDynamicParams(extra);var n=await db.ExecuteAsync(new CommandDefinition($"update ged.label_print_job set {set} where tenant_id=@tenantId and id=@jobId and reg_status='A' and status=any(@allowed)",parameters,cancellationToken:ct));if(n==0){var job=await GetAsync(tenantId,jobId,ct);if(job is null)throw new KeyNotFoundException("Job não encontrado.");throw new InvalidOperationException($"Transição não permitida para o estado {LabelPrintStatusDisplay.Humanize(job.Status)}.");}}
+    private static Task<Guid?> FindByClientActionAsync(System.Data.IDbConnection db,Guid tenantId,Guid requestedBy,Guid clientActionId,CancellationToken ct)=>db.QuerySingleOrDefaultAsync<Guid?>(new CommandDefinition("select id from ged.label_print_job where tenant_id=@tenantId and requested_by=@requestedBy and client_action_id=@clientActionId and reg_status='A'",new{tenantId,requestedBy,clientActionId},cancellationToken:ct));
     private static async Task RequireReprintReason(System.Data.IDbConnection db,Guid tenantId,string type,Guid id,string template,string? reason,CancellationToken ct,System.Data.IDbTransaction? tx=null){var n=await db.ExecuteScalarAsync<int>(new CommandDefinition("select count(*) from ged.label_print_history where tenant_id=@tenantId and label_subject_type=@type and label_subject_id=@id and template_code=@template",new{tenantId,type,id,template},tx,cancellationToken:ct));if(n>0&&string.IsNullOrWhiteSpace(reason))throw new InvalidOperationException("Esta etiqueta já foi impressa anteriormente. Para reimprimir, informe o motivo.");}
     private static void Validate(Guid tenant,Guid user,int copies,string json){if(tenant==Guid.Empty||user==Guid.Empty)throw new InvalidOperationException("Tenant e usuário são obrigatórios.");if(copies is <1 or >500)throw new InvalidOperationException("Quantidade de cópias inválida.");ArgumentException.ThrowIfNullOrWhiteSpace(json);}
     private static string JobNumber()=>$"LBL-{DateTime.UtcNow:yyyyMMddHHmmss}-{Random.Shared.Next(1000,9999)}";
-    private sealed class JobRow { public Guid Id{get;set;} public Guid TenantId{get;set;} public string JobNumber{get;set;}="";public string PrintMode{get;set;}="";public string TemplateCode{get;set;}="";public string? TemplateName{get;set;}public string SubjectType{get;set;}="";public Guid? SubjectId{get;set;}public string? ControlNumber{get;set;}public string? Location{get;set;}public int Copies{get;set;}public string Status{get;set;}="";public string PayloadJson{get;set;}="";public string? PdfPath{get;set;}public string? ErrorMessage{get;set;}public Guid? RequestedBy{get;set;}public DateTime RequestedAt{get;set;}public Guid? PrintedBy{get;set;}public DateTime? PrintedAt{get;set;}public string? CancelReason{get;set;}public string? ReprintReason{get;set;}public string? RequestedByName{get;set;} }
+    private sealed class JobRow { public Guid Id{get;set;} public Guid TenantId{get;set;} public string JobNumber{get;set;}="";public string PrintMode{get;set;}="";public string TemplateCode{get;set;}="";public string? TemplateName{get;set;}public string SubjectType{get;set;}="";public Guid? SubjectId{get;set;}public string? ControlNumber{get;set;}public string? Location{get;set;}public int Copies{get;set;}public string Status{get;set;}="";public string PayloadJson{get;set;}="";public string? PdfPath{get;set;}public string? ErrorMessage{get;set;}public Guid? RequestedBy{get;set;}public DateTime RequestedAt{get;set;}public Guid? PrintedBy{get;set;}public DateTime? PrintedAt{get;set;}public string? CancelReason{get;set;}public string? ReprintReason{get;set;}public string? RequestedByName{get;set;}public string? ArtifactSha256{get;set;}public string? ArtifactContentType{get;set;}public long? ArtifactSizeBytes{get;set;}public DateTime? ArtifactGeneratedAt{get;set;}public string? OperationType{get;set;} }
     private sealed class PrintRow {public Guid? subject_id{get;set;}public Guid? batch_id{get;set;}public string subject_type{get;set;}="";public string template_code{get;set;}="";public string print_mode{get;set;}="";public string payload_json{get;set;}="";public string? control_number{get;set;}public string? location{get;set;}public string? requested_ip{get;set;}public string? requested_user_agent{get;set;}public string? reprint_reason{get;set;}public string? pdf_path{get;set;}public string status{get;set;}="";}
-    private sealed class ItemRow {public Guid id{get;set;}public Guid? subject_id{get;set;}public string subject_type{get;set;}="";public string? control_number{get;set;}public string? location{get;set;}public string payload_json{get;set;}="";}
+    private sealed class ItemRow {public Guid id{get;set;}public Guid? subject_id{get;set;}public string subject_type{get;set;}="";public string? control_number{get;set;}public string? location{get;set;}public string payload_json{get;set;}="";public string status{get;set;}="PENDING";}
 }
 
 public sealed class LabelHtmlPdfRenderService(IDbConnectionFactory dbFactory,ILabelPrintJobService jobs,
@@ -114,20 +194,26 @@ public sealed class LabelHtmlPdfRenderService(IDbConnectionFactory dbFactory,ILa
 {
     public async Task<LabelPdfResult> GeneratePdfAsync(Guid tenantId,Guid jobId,CancellationToken ct)
     {
+        await using(var artifactDb=await dbFactory.OpenAsync(ct))
+        {
+            var artifact=await artifactDb.QuerySingleOrDefaultAsync<ArtifactRow>(new CommandDefinition("select artifact_bytes Content,artifact_content_type ContentType,job_number JobNumber from ged.label_print_job where tenant_id=@tenantId and id=@jobId and reg_status='A' and artifact_bytes is not null",new{tenantId,jobId},cancellationToken:ct));
+            if(artifact is not null)return new(artifact.Content,artifact.ContentType,$"{artifact.JobNumber}.html",false);
+        }
         var job=await jobs.GetAsync(tenantId,jobId,ct)??throw new KeyNotFoundException("Job não encontrado.");
+        var printableItems=job.Items.Where(item=>item.Status!=LabelPrintJobStatus.Printed).ToArray();
         var sources=job.Items.Count==0
             ?new[]{new{job.SubjectId,job.SubjectType,job.PayloadJson}}
-            :job.Items.Select(x=>new{x.SubjectId,x.SubjectType,x.PayloadJson}).ToArray();
+            :printableItems.Select(x=>new{x.SubjectId,x.SubjectType,x.PayloadJson}).ToArray();
         var snapshots=sources.Select(x=>ReadCanvasSnapshot(x.PayloadJson,x.SubjectId,x.SubjectType)).ToArray();
         if(snapshots.Any(x=>x.IsCanvas))
         {
             if(snapshots.Any(x=>!x.IsCanvas||x.SubjectId is null||x.Values.Count==0))throw new InvalidOperationException("O job Canvas não possui snapshot individual íntegro.");
             var contexts=snapshots.Select(x=>new InovaGed.Application.Labels.Canvas.LabelCanvasPrintContext{TenantId=tenantId,TemplateKey=job.TemplateCode,OperationalSubjectType=x.SubjectType,SubjectId=x.SubjectId!.Value,TemplateVersion=x.TemplateVersion,Copies=x.Copies??job.Copies,ResolvedValues=x.Values,BrandingSnapshot=x.Branding,CalibrationSnapshot=x.Calibration}).ToArray();
             var rendered=await canvasCoordinator.PrepareBatchAsync(contexts,false,ct);
-            await MarkGeneratedAsync(job,rendered.Html,ct);
+            await MarkGeneratedAsync(job,rendered.Html,"text/html; charset=utf-8",ct);
             return new(Encoding.UTF8.GetBytes(rendered.Html),"text/html; charset=utf-8",$"{job.JobNumber}.html",false);
         }
-        var labels=job.Items.Count==0?new[]{(job.ControlNumber,job.Location,job.PayloadJson)}:job.Items.Select(x=>(x.ControlNumber,x.Location,x.PayloadJson));
+        var labels=job.Items.Count==0?new[]{(job.ControlNumber,job.Location,job.PayloadJson)}:printableItems.Select(x=>(x.ControlNumber,x.Location,x.PayloadJson));
         var body=string.Join("",labels.SelectMany(x=>Enumerable.Range(0,job.Copies).Select(_=>$"<article class=\"label\"><strong>{WebUtility.HtmlEncode(x.ControlNumber??job.TemplateName)}</strong><span>{WebUtility.HtmlEncode(x.Location)}</span><small>{WebUtility.HtmlEncode(x.PayloadJson)}</small></article>")));
         var encodedTitle = WebUtility.HtmlEncode(job.JobNumber);
         var html = $$"""
@@ -201,14 +287,18 @@ public sealed class LabelHtmlPdfRenderService(IDbConnectionFactory dbFactory,ILa
 </body>
 </html>
 """;
-        await MarkGeneratedAsync(job,html,ct);
+        await MarkGeneratedAsync(job,html,"text/html; charset=utf-8",ct);
         return new(Encoding.UTF8.GetBytes(html),"text/html; charset=utf-8",$"{job.JobNumber}.html",false);
     }
 
-    private async Task MarkGeneratedAsync(LabelPrintJobDetails job,string html,CancellationToken ct)
+    private async Task MarkGeneratedAsync(LabelPrintJobDetails job,string html,string contentType,CancellationToken ct)
     {
-        await using var db=await dbFactory.OpenAsync(ct);
-        await db.ExecuteAsync(new CommandDefinition("update ged.label_print_job set status='PDF_GENERATED',pdf_path=@path,error_message=null where tenant_id=@tenantId and id=@jobId and status not in ('PRINTED','CANCELLED')",new{tenantId=job.TenantId,jobId=job.Id,path=$"label-jobs/{job.JobNumber}.html"},cancellationToken:ct));
+        var bytes=Encoding.UTF8.GetBytes(html);var hash=Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+        await using var db=await dbFactory.OpenAsync(ct);await using var tx=await db.BeginTransactionAsync(ct);
+        _=await db.ExecuteAsync(new CommandDefinition("update ged.label_print_job set status='READY_TO_PRINT' where tenant_id=@tenantId and id=@jobId and status='PREVIEWED' and payload_json is not null",new{tenantId=job.TenantId,jobId=job.Id},tx,cancellationToken:ct));
+        var generated=await db.ExecuteAsync(new CommandDefinition("update ged.label_print_job set status='PDF_GENERATED',pdf_path=@path,error_message=null,artifact_sha256=@hash,artifact_content_type=@contentType,artifact_size_bytes=@size,artifact_generated_at=now(),artifact_bytes=@bytes where tenant_id=@tenantId and id=@jobId and status='READY_TO_PRINT'",new{tenantId=job.TenantId,jobId=job.Id,path=$"label-jobs/{job.JobNumber}.html",hash,contentType,size=(long)bytes.Length,bytes},tx,cancellationToken:ct));
+        if(generated==0){await tx.RollbackAsync(ct);throw new InvalidOperationException("Confira a prévia antes de preparar o artefato.");}
+        await tx.CommitAsync(ct);
     }
 
     private static CanvasJobSnapshot ReadCanvasSnapshot(string payload,Guid? fallbackId,string fallbackType)
@@ -249,4 +339,5 @@ public sealed class LabelHtmlPdfRenderService(IDbConnectionFactory dbFactory,ILa
     private static Guid? GuidValue(System.Text.Json.JsonElement value,string name)=>value.TryGetProperty(name,out var x)&&x.ValueKind==System.Text.Json.JsonValueKind.String&&Guid.TryParse(x.GetString(),out var id)?id:null;
     private static decimal DecimalValue(System.Text.Json.JsonElement value,string name,decimal fallback=0)=>value.TryGetProperty(name,out var x)&&x.TryGetDecimal(out var number)?number:fallback;
     private sealed record CanvasJobSnapshot(bool IsCanvas,Guid? SubjectId,string SubjectType,int? TemplateVersion,int? Copies,Dictionary<string,object?> Values,InovaGed.Application.Branding.ResolvedPrintBranding? Branding,InovaGed.Application.Labels.Canvas.LabelCanvasCalibration? Calibration);
+    private sealed class ArtifactRow {public byte[] Content{get;set;}=[];public string ContentType{get;set;}="application/octet-stream";public string JobNumber{get;set;}="";}
 }

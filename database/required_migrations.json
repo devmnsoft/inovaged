@@ -264,5 +264,12 @@
     "area": "Etiquetas / Entrada documental",
     "required": true,
     "description": "Adiciona seleção temporária para impressão em lote e presets reutilizáveis do Label Studio."
+  },
+  {
+    "name": "2026_09_14_label_print_governance_rc39",
+    "path": "database/migrations/2026_09_14_label_print_governance_rc39.sql",
+    "area": "Etiquetas / Governança de impressão",
+    "required": true,
+    "description": "Adiciona idempotência por ação, operação auditável e armazenamento imutável dos metadados e bytes do artefato."
   }
 ]

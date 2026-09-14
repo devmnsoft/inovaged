@@ -3,6 +3,7 @@ namespace InovaGed.Web.Models.Labels;
 
 public sealed class CreatePrintJobInput
 {
+    public Guid? ClientActionId { get; set; }
     [Required] public string SubjectType { get; set; }="BOX";
     [Required] public Guid? SubjectId { get; set; }
     [Required] public string PrintMode { get; set; }="FACTORY";
@@ -15,6 +16,7 @@ public sealed class CreatePrintJobInput
 }
 public sealed class CreateBatchPrintJobInput
 {
+    public Guid? ClientActionId { get; set; }
     [Required] public string SubjectType { get; set; }="BOX";
     [Required] public string PrintMode { get; set; }="FACTORY";
     [Required] public string TemplateCode { get; set; }="";
