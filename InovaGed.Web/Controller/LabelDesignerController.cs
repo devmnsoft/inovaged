@@ -15,7 +15,7 @@ namespace InovaGed.Web.Controllers;
 [Authorize(Policy = AppPolicies.LabelDesignerRead)]
 public sealed class LabelDesignerController(IDbConnectionFactory dbFactory, ILabelCanvasDesignService designs,
     ILabelCanvasRenderService renderer, ILabelCanvasFieldCatalogService fieldCatalog,
-    ILabelCanvasStarterTemplateService starters, ILabelCanvasDiffService diffService,
+    ILabelCanvasStarterTemplateService starters, ILabelCanvasDiffService diffService, ILabelCanvasSchemaCapabilities schemaCapabilities,
     IPrintBrandingProfileService brandingProfiles, IPrintBrandingResolver brandingResolver,
     ILogger<LabelDesignerController> logger) : GedControllerBase(dbFactory)
 {
@@ -24,6 +24,9 @@ public sealed class LabelDesignerController(IDbConnectionFactory dbFactory, ILab
     [HttpGet("/Labels/Designer")]
     public async Task<IActionResult> Index(CancellationToken ct)
     {
+        var capability = await schemaCapabilities.GetAsync(ct);
+        if (!capability.HasLabelTemplateDesign)
+            return View("~/Views/Labels/Designer/Index.cshtml", new LabelDesignerIndexViewModel([], false, "Uma atualização de estrutura do banco é necessária para habilitar edição colaborativa de modelos.", false));
         try
         {
             var list = await designs.ListAsync(TenantId, ct);
@@ -65,13 +68,12 @@ public sealed class LabelDesignerController(IDbConnectionFactory dbFactory, ILab
                 };
             }).ToList();
             
-            return View("~/Views/Labels/Designer/Index.cshtml", vm);
+            return View("~/Views/Labels/Designer/Index.cshtml", new LabelDesignerIndexViewModel(vm, capability.HasLockVersion, capability.HasLockVersion ? null : "Uma atualização de estrutura do banco é necessária para habilitar edição colaborativa de modelos.", capability.HasLockVersion));
         }
         catch (Exception exception)
         {
             logger.LogError(exception, "Não foi possível listar templates canvas.");
-            ViewBag.SchemaPending = true;
-            return View("~/Views/Labels/Designer/Index.cshtml", new List<LabelTemplateListItemViewModel>());
+            throw;
         }
     }
 
@@ -99,6 +101,8 @@ public sealed class LabelDesignerController(IDbConnectionFactory dbFactory, ILab
     [Authorize(Policy=AppPolicies.LabelDesignerCreate)]
     public async Task<IActionResult> New(CancellationToken ct)
     {
+        if (!(await schemaCapabilities.GetAsync(ct)).HasLockVersion)
+            return Conflict(new { success=false, code=LabelSchemaUpdateRequiredException.Code, message=LabelSchemaUpdateRequiredException.FriendlyMessage });
         return View("~/Views/Labels/Designer/New.cshtml",new LabelCanvasNewModelInput{BrandingProfiles=await brandingProfiles.ListAsync(TenantId,ct)});
     }
 
@@ -107,6 +111,8 @@ public sealed class LabelDesignerController(IDbConnectionFactory dbFactory, ILab
     public async Task<IActionResult> New(LabelCanvasNewModelInput input,CancellationToken ct)
     {
         if(UserId is not Guid userId)return Unauthorized();
+        if (!(await schemaCapabilities.GetAsync(ct)).HasLockVersion)
+            return Conflict(new { success=false, code=LabelSchemaUpdateRequiredException.Code, message=LabelSchemaUpdateRequiredException.FriendlyMessage });
         if(!Enum.TryParse<LabelCanvasStarterKind>(input.StarterKind.Replace("_", ""),true,out var kind))ModelState.AddModelError(nameof(input.StarterKind),"Escolha um layout inicial válido.");
         var allowedSubjects=new[]{"Box","Document","Folder","MedicalRecord","Process","ManualLabel"};
         if(!allowedSubjects.Contains(input.SubjectType,StringComparer.OrdinalIgnoreCase))ModelState.AddModelError(nameof(input.SubjectType),"Escolha uma finalidade válida.");
@@ -357,7 +363,7 @@ public sealed class LabelDesignerController(IDbConnectionFactory dbFactory, ILab
         return(values,branding);
     }
     private async Task<IActionResult> ExecuteWrite(Func<Task<IActionResult>> action,string operation,string templateKey)
-    {try{return await action();}catch(LabelCanvasConflictException e){logger.LogWarning("Conflito otimista ao {Operation} {TemplateKey}.",operation,templateKey);return Conflict(new{ok=false,code="DESIGN_CONFLICT",message=e.Message});}catch(KeyNotFoundException e){logger.LogWarning(e,"Template {TemplateKey} não encontrado ao {Operation}.",templateKey,operation);return NotFound(new{ok=false,message=e.Message});}catch(LabelCanvasRequestException e){logger.LogWarning("LABEL_CANVAS_SAVE_REJECTED TemplateKey={TemplateKey} Operation={Operation} Code={Code}: {Message}",templateKey,operation,e.Code,e.Message);return BadRequest(new{ok=false,code=e.Code,message=e.Message,errors=e.Errors});}catch(ArgumentException e){logger.LogWarning(e,"Entrada inválida ao {Operation} {TemplateKey}.",operation,templateKey);return BadRequest(new{ok=false,code="INVALID_REQUEST",message=e.Message,errors=new Dictionary<string,string>()});}catch(InvalidOperationException e){logger.LogWarning(e,"Operação recusada ao {Operation} {TemplateKey}.",operation,templateKey);return BadRequest(new{ok=false,message=e.Message});}catch(Exception e){logger.LogError(e,"Erro ao {Operation} o template {TemplateKey}.",operation,templateKey);return StatusCode(500,new{ok=false,message="Não foi possível concluir a operação. Tente novamente."});}}
+    {try{return await action();}catch(LabelSchemaUpdateRequiredException e){logger.LogWarning("LABEL_SCHEMA_UPDATE_REQUIRED ao {Operation} {TemplateKey}.",operation,templateKey);return Conflict(new{ok=false,code=LabelSchemaUpdateRequiredException.Code,message=e.Message});}catch(LabelCanvasConflictException e){logger.LogWarning("Conflito otimista ao {Operation} {TemplateKey}.",operation,templateKey);return Conflict(new{ok=false,code="DESIGN_CONFLICT",message=e.Message});}catch(KeyNotFoundException e){logger.LogWarning(e,"Template {TemplateKey} não encontrado ao {Operation}.",templateKey,operation);return NotFound(new{ok=false,message=e.Message});}catch(LabelCanvasRequestException e){logger.LogWarning("LABEL_CANVAS_SAVE_REJECTED TemplateKey={TemplateKey} Operation={Operation} Code={Code}: {Message}",templateKey,operation,e.Code,e.Message);return BadRequest(new{ok=false,code=e.Code,message=e.Message,errors=e.Errors});}catch(ArgumentException e){logger.LogWarning(e,"Entrada inválida ao {Operation} {TemplateKey}.",operation,templateKey);return BadRequest(new{ok=false,code="INVALID_REQUEST",message=e.Message,errors=new Dictionary<string,string>()});}catch(InvalidOperationException e){logger.LogWarning(e,"Operação recusada ao {Operation} {TemplateKey}.",operation,templateKey);return BadRequest(new{ok=false,message=e.Message});}catch(Exception e){logger.LogError(e,"Erro ao {Operation} o template {TemplateKey}.",operation,templateKey);return StatusCode(500,new{ok=false,message="Não foi possível concluir a operação. Tente novamente."});}}
     private static LabelCanvasSaveRequest CopyWithKey(LabelCanvasSaveRequest x,string key,long? expectedLockVersion=null)=>new(){ExpectedLockVersion=expectedLockVersion??x.ExpectedLockVersion,TemplateKey=key,TemplateName=x.TemplateName,Description=x.Description,TemplateKind=x.TemplateKind,SubjectType=x.SubjectType,PaperKind=x.PaperKind,WidthMm=x.WidthMm,HeightMm=x.HeightMm,Orientation=x.Orientation,DesignJson=x.DesignJson,DefaultBrandingProfileId=x.DefaultBrandingProfileId,BrandingBindingKey=x.BrandingBindingKey,ClientNameFallback=x.ClientNameFallback,ContractNameFallback=x.ContractNameFallback,OrganizationNameFallback=x.OrganizationNameFallback,HeaderTitleFallback=x.HeaderTitleFallback,HeaderSubtitleFallback=x.HeaderSubtitleFallback,LabelContext=x.LabelContext,ChangeSummary=x.ChangeSummary};
     private string? Ip()=>HttpContext.Connection.RemoteIpAddress?.ToString();private string? Agent()=>Request.Headers.UserAgent.ToString();
     private static string SampleProfile(LabelCanvasDesignDto design)=>design.SubjectType.Equals("LocDeskFolder",StringComparison.OrdinalIgnoreCase)?"HOL":design.SubjectType.Contains("Box",StringComparison.OrdinalIgnoreCase)?"Caixa GED":"Documento GED";

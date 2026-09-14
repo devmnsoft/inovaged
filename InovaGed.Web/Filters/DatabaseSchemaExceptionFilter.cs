@@ -65,8 +65,13 @@ public sealed class DatabaseSchemaExceptionFilter : IAsyncExceptionFilter
             correlationId);
 
         var schemaObject = GetSchemaObject(pg);
+        var isLabelSchemaPending = pg.SqlState == "42703" &&
+            ($"{pg.MessageText} {pg.Detail} {pg.TableName} {pg.ColumnName} {requestPath}").Contains("lock_version", StringComparison.OrdinalIgnoreCase)
+            || (pg.SqlState == "42703" && requestPath?.Contains("/Labels", StringComparison.OrdinalIgnoreCase) == true);
         var isDocumentQualitySchemaPending = IsDocumentQualitySchemaException(pg);
-        var friendlyMessage = isDocumentQualitySchemaPending
+        var friendlyMessage = isLabelSchemaPending
+            ? "O módulo de etiquetas precisa de uma atualização do banco."
+            : isDocumentQualitySchemaPending
             ? "A funcionalidade de Qualidade Documental foi ativada, mas as tabelas ainda não foram criadas."
             : string.IsNullOrWhiteSpace(schemaObject)
                 ? FriendlyMessage
@@ -74,6 +79,12 @@ public sealed class DatabaseSchemaExceptionFilter : IAsyncExceptionFilter
 
         if (IsAjaxOrApi(context.HttpContext.Request))
         {
+            if (isLabelSchemaPending)
+            {
+                context.Result = new ObjectResult(new { success=false, code="SCHEMA_UPDATE_REQUIRED", message="O módulo de etiquetas precisa de uma atualização do banco.", canRetry=false, correlationId }) { StatusCode=StatusCodes.Status409Conflict };
+                context.ExceptionHandled = true;
+                return;
+            }
             context.Result = new ObjectResult(new
             {
                 success = false,
@@ -100,20 +111,20 @@ public sealed class DatabaseSchemaExceptionFilter : IAsyncExceptionFilter
         context.Result = new ViewResult
         {
             ViewName = "~/Views/Shared/DatabaseSchemaError.cshtml",
-            StatusCode = StatusCodes.Status500InternalServerError,
+            StatusCode = isLabelSchemaPending ? StatusCodes.Status409Conflict : StatusCodes.Status500InternalServerError,
             ViewData = new Microsoft.AspNetCore.Mvc.ViewFeatures.ViewDataDictionary(
                 new Microsoft.AspNetCore.Mvc.ModelBinding.EmptyModelMetadataProvider(),
                 context.ModelState)
             {
                 ["Title"] = isDocumentQualitySchemaPending ? "Schema de Qualidade Documental pendente" : "Banco de dados desatualizado",
                 ["Message"] = friendlyMessage,
-                ["SqlState"] = pg.SqlState,
+                ["SqlState"] = isLabelSchemaPending ? null : pg.SqlState,
                 ["CorrelationId"] = correlationId,
                 ["Controller"] = controllerName,
                 ["Action"] = actionName,
                 ["Path"] = requestPath,
                 ["Migration"] = MigrationScript,
-                ["SchemaObject"] = schemaObject,
+                ["SchemaObject"] = isLabelSchemaPending ? null : schemaObject,
                 ["SchemaHealthUrl"] = "/SchemaHealth",
                 ["DatabaseReadinessUrl"] = "/DatabaseReadiness",
                 ["CopyCommand"] = isDocumentQualitySchemaPending ? @"psql ""$DATABASE_URL"" -f database/apply_all_required_migrations.sql" : null,

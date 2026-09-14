@@ -55,6 +55,7 @@
     async function lastProblem() {
         const banner = document.getElementById('gedUploadProblemBanner'); if (!banner) return;
         const remembered = localStorage.getItem('ged:lastUploadBatchId');
+        if (window.__gedLastProblemChecked) return; window.__gedLastProblemChecked = true;
         const r = await fetch('/Ged/Uploads/LastProblem').catch(() => null); if (!r) return;
         const j = await r.json().catch(() => null); if (!j?.hasProblem && !remembered) return;
         banner.classList.remove('d-none');

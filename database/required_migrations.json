@@ -250,5 +250,19 @@
     "area": "Etiquetas",
     "required": true,
     "description": "Publica os cinco modelos Canvas neutros com envelope imutável e ativa o schemaVersion 2."
+  },
+  {
+    "name": "2026_09_11_rc33_collaboration_and_intake",
+    "path": "database/migrations/2026_09_11_rc33_collaboration_and_intake.sql",
+    "area": "Etiquetas / Governança documental",
+    "required": true,
+    "description": "Adiciona concorrência otimista aos modelos de etiquetas e estrutura de conferência documental."
+  },
+  {
+    "name": "2026_09_14_rc34_operational_closure",
+    "path": "database/migrations/2026_09_14_rc34_operational_closure.sql",
+    "area": "Etiquetas / Entrada documental",
+    "required": true,
+    "description": "Adiciona seleção temporária para impressão em lote e presets reutilizáveis do Label Studio."
   }
 ]

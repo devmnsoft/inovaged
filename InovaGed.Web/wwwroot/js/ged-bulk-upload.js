@@ -1557,6 +1557,8 @@
     }
 
     async function checkLastProblemUpload() {
+        if (window.__gedLastProblemChecked) return;
+        window.__gedLastProblemChecked = true;
         const banner = document.getElementById('gedUploadProblemBanner');
         if (!banner) return;
         try {

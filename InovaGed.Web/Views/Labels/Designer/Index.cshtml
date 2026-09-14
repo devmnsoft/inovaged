@@ -1,7 +1,7 @@
 @using InovaGed.Web.Models.Labels
 @using InovaGed.Web.Security
 @using Microsoft.AspNetCore.Authorization
-@model IReadOnlyList<LabelTemplateListItemViewModel>
+@model LabelDesignerIndexViewModel
 @inject IAuthorizationService AuthorizationService
 @{
     ViewData["Title"] = "Modelos de etiqueta";
@@ -10,9 +10,9 @@
     var isAdministrator = (await AuthorizationService.AuthorizeAsync(User, AppPolicies.Administracao)).Succeeded;
     var groups = new[]
     {
-        (Key: "mine", Title: "Meus modelos", Items: Model.Where(x => !x.IsSystem && !x.IsLegacy)),
-        (Key: "system", Title: "Modelos padrão", Items: Model.Where(x => x.IsSystem && !x.IsLegacy)),
-        (Key: "legacy", Title: "Modelos antigos", Items: Model.Where(x => x.IsLegacy))
+        (Key: "mine", Title: "Meus modelos", Items: Model.Items.Where(x => !x.IsSystem && !x.IsLegacy)),
+        (Key: "system", Title: "Modelos padrão", Items: Model.Items.Where(x => x.IsSystem && !x.IsLegacy)),
+        (Key: "legacy", Title: "Modelos antigos", Items: Model.Items.Where(x => x.IsLegacy))
     };
 }
 @section Styles {
@@ -30,21 +30,21 @@
         <div class="designer-actions">
             <partial name="~/Views/Labels/Shared/_LabelHelpDrawer.cshtml" />
             <a class="ig-button ig-button--secondary" asp-controller="Labels" asp-action="Index">Voltar</a>
-            @if (canCreate)
+            @if (canCreate && Model.SchemaActionAllowed)
             {
                 <a class="ig-button ig-button--primary" asp-action="New">Novo modelo</a>
             }
         </div>
     </header>
 
-    @if (ViewBag.SchemaPending == true && isAdministrator)
+    @if (!Model.SchemaReady)
     {
         <div class="alert alert-warning" role="alert">
-            Não foi possível carregar os modelos de etiqueta. Verifique a prontidão do banco.
+            <strong>Módulo de etiquetas precisa ser atualizado</strong><p class="mb-1">@Model.SchemaMessage</p>@if (isAdministrator) { <a class="btn btn-sm btn-warning" href="/DatabaseReadiness">Ver atualizações do banco</a> } else { <span>Entre em contato com o administrador.</span> }
         </div>
     }
 
-    @if (Model.Count == 0)
+    @if (Model.SchemaReady && Model.Items.Count == 0)
     {
         <section class="label-designer-table">
             <p>Nenhum modelo de etiqueta encontrado.</p>
@@ -54,7 +54,7 @@
             }
         </section>
     }
-    else
+    else if (Model.SchemaReady)
     {
         <section class="designer-filters">
             <label>
@@ -70,8 +70,8 @@
                 <button data-model-filter="legacy">Antigos</button>
             </nav>
             <div class="d-flex flex-wrap gap-2">
-                <select class="form-select form-select-sm" data-purpose-filter aria-label="Filtrar por finalidade"><option value="">Todas as finalidades</option>@foreach(var value in Model.Select(x=>x.Purpose).Distinct().Order()){<option value="@value.ToLowerInvariant()">@value</option>}</select>
-                <select class="form-select form-select-sm" data-client-filter aria-label="Filtrar por cliente"><option value="">Todos os clientes</option>@foreach(var value in Model.Select(x=>x.ClientName).Distinct().Order()){<option value="@value.ToLowerInvariant()">@value</option>}</select>
+                <select class="form-select form-select-sm" data-purpose-filter aria-label="Filtrar por finalidade"><option value="">Todas as finalidades</option>@foreach(var value in Model.Items.Select(x=>x.Purpose).Distinct().Order()){<option value="@value.ToLowerInvariant()">@value</option>}</select>
+                <select class="form-select form-select-sm" data-client-filter aria-label="Filtrar por cliente"><option value="">Todos os clientes</option>@foreach(var value in Model.Items.Select(x=>x.ClientName).Distinct().Order()){<option value="@value.ToLowerInvariant()">@value</option>}</select>
                 <select class="form-select form-select-sm" data-status-filter aria-label="Filtrar por status"><option value="">Todos os status</option><option value="draft">Rascunho</option><option value="published">Publicado</option></select>
             </div>
             <div class="btn-group btn-group-sm" aria-label="Modo de visualização"><button type="button" data-designer-view="cards">Cards</button><button type="button" data-designer-view="list">Lista</button></div>
