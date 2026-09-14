@@ -3,14 +3,14 @@
 <aside class="component-panel" aria-label="Biblioteca do editor">
     <header><span>Adicionar conteúdo</span><h2>Biblioteca</h2></header>
     <nav class="library-tabs" role="tablist" aria-label="Biblioteca">
-        <button type="button" class="is-active" data-library-tab="elements">Elementos</button>
-        <button type="button" data-library-tab="fields">Campos</button>
-        <button type="button" data-library-tab="blocks">Blocos</button>
-        <button type="button" data-library-tab="layers">Camadas</button>
+        <button type="button" class="is-active" id="library-tab-elements" role="tab" aria-selected="true" aria-controls="library-panel-elements" data-library-tab="elements">Elementos</button>
+        <button type="button" id="library-tab-fields" role="tab" aria-selected="false" aria-controls="library-panel-fields" data-library-tab="fields">Campos</button>
+        <button type="button" id="library-tab-blocks" role="tab" aria-selected="false" aria-controls="library-panel-blocks" data-library-tab="blocks">Blocos</button>
+        <button type="button" id="library-tab-layers" role="tab" aria-selected="false" aria-controls="library-panel-layers" data-library-tab="layers">Camadas</button>
     </nav>
     <div class="component-search" data-library-section="fields"><input type="search" placeholder="Buscar por nome, categoria ou exemplo" aria-label="Buscar campo" data-component-search /></div>
     <div class="component-list">
-        @foreach (var item in new[] { ("text", "edit", "Texto"), ("line", "columns", "Linha"), ("rect", "cards", "Forma"), ("image", "preview", "Imagem"), ("logo", "image", "Logo"), ("qr", "label", "QR Code"), ("barcode", "metadata", "Código de barras") }) {
+        @foreach (var item in new[] { ("text", "edit", "Texto"), ("line", "columns", "Linha"), ("rect", "cards", "Forma"), ("image", "preview", "Imagem"), ("logo", "preview", "Logo"), ("qr", "label", "QR Code"), ("barcode", "metadata", "Código de barras") }) {
             <button type="button" draggable="true" data-add="@item.Item1" data-label="@item.Item3" title="Adicionar @item.Item3" @(canEdit ? null : "disabled")><i><app-icon name="@item.Item2" size="18" decorative="true" /></i><span>@item.Item3</span></button>
         }
         <section class="field-favorites" data-field-favorites data-library-section="fields" hidden><h3>Favoritos</h3><div></div></section>
@@ -19,12 +19,13 @@
             @foreach (var field in group) {
                 <div class="field-library-row" data-library-section="fields" data-field-search="@field.Label @field.Description @field.Category @field.Example">
                     <button type="button" draggable="true" data-add="field" data-label="@field.Label" data-field-key="@field.Key" @(canEdit ? null : "disabled")><i><app-icon name="metadata" size="18" decorative="true" /></i><span>@field.Label<small>@field.Example</small></span></button>
-                    <button type="button" class="field-favorite" data-favorite-field="@field.Key" aria-label="Favoritar @field.Label" aria-pressed="false"><app-icon name="star" size="15" decorative="true" /></button>
+                    <button type="button" class="field-favorite" data-favorite-field="@field.Key" aria-label="Favoritar @field.Label" aria-pressed="false"><app-icon name="favorite" size="15" decorative="true" /></button>
                 </div>
             }
         }
-        <h3 data-library-section="blocks">Padrões</h3>
+        <h3 id="library-panel-blocks" role="tabpanel" aria-labelledby="library-tab-blocks" data-library-section="blocks">Padrões</h3>
         @foreach (var preset in new[] { "Cabeçalho institucional", "Identificação", "Classificação", "Temporalidade", "Localização", "Rastreabilidade", "Cliente/Contrato" }) { <button type="button" data-preset="@preset" @(canEdit ? null : "disabled")><i><app-icon name="cards" size="18" decorative="true" /></i><span>@preset</span></button> }
+        <section data-library-section="blocks" data-custom-blocks aria-live="polite"><h3>Meus blocos</h3><p data-custom-blocks-status>Carregando blocos…</p><div data-custom-blocks-list></div></section>
     </div>
     <partial name="_DesignerLayers" model="Model" />
 </aside>

@@ -14,6 +14,9 @@ using BclEnvironment = global::System.Environment;
 try
 {
     var command = args.FirstOrDefault() ?? "check";
+    if(command.Equals("labels-reuse-portability-rc38",StringComparison.OrdinalIgnoreCase)) return Rc38QualityChecks.ReusePortability(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);
+    if(command.Equals("labels-print-operations-rc38",StringComparison.OrdinalIgnoreCase)) return Rc38QualityChecks.PrintOperations(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);
+    if(command.Equals("labels-designer-ux-rc38",StringComparison.OrdinalIgnoreCase)) return Rc38QualityChecks.DesignerUx(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);
     if(command.Equals("labels-studio-complete-rc37",StringComparison.OrdinalIgnoreCase)) return Rc37QualityChecks.LabelsStudio(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);
     if(command.Equals("labels-print-experience-rc37",StringComparison.OrdinalIgnoreCase)) return Rc37QualityChecks.PrintExperience(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);
     if(command.Equals("ged-intake-design-rc37",StringComparison.OrdinalIgnoreCase)) return Rc37QualityChecks.GedIntake(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);

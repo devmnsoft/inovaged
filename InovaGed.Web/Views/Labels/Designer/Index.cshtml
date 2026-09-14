@@ -32,6 +32,7 @@
             <a class="ig-button ig-button--secondary" asp-controller="Labels" asp-action="Index">Voltar</a>
             @if (canCreate && Model.SchemaActionAllowed)
             {
+                <button type="button" class="ig-button ig-button--secondary" data-import-open>Importar modelo</button>
                 <a class="ig-button ig-button--primary" asp-action="New">Novo modelo</a>
             }
         </div>
@@ -88,7 +89,7 @@
                         var search = $"{item.Name} {item.ClientName} {item.Purpose} {item.BrandingProfileName}".ToLowerInvariant();
                         var aspectRatio = (item.WidthMm / item.HeightMm).ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
                         <article class="col-md-6 col-xl-4 designer-card" data-model-row data-status="@normalizedStatus" data-purpose="@item.Purpose.ToLowerInvariant()" data-client="@item.ClientName.ToLowerInvariant()" data-system="@item.IsSystem.ToString().ToLowerInvariant()" data-legacy="@item.IsLegacy.ToString().ToLowerInvariant()" data-search="@search">
-                            <div class="card h-100"><div class="card-body"><div class="bg-light rounded mb-3 overflow-hidden" style="aspect-ratio:@aspectRatio"><iframe class="w-100 h-100 border-0" loading="lazy" title="Miniatura de @item.Name" data-thumbnail-src="@Url.Action("Thumbnail", new { templateKey = item.TemplateKey })"></iframe></div><h3 class="h6">@item.Name</h3><p class="small text-muted mb-2">@item.ClientName · @item.Purpose</p><p class="small">@item.Dimensions · versão @item.Version · @(normalizedStatus == "draft" ? "Rascunho" : "Publicado")</p><div class="d-flex flex-wrap gap-2 small"><a asp-action="Edit" asp-route-templateKey="@item.TemplateKey">Editar</a><a asp-action="Preview" asp-route-templateKey="@item.TemplateKey">Prévia</a><a asp-action="Versions" asp-route-templateKey="@item.TemplateKey">Versões</a></div></div></div>
+                            <div class="card h-100"><div class="card-body"><div class="bg-light rounded mb-3 overflow-hidden" style="aspect-ratio:@aspectRatio"><iframe class="w-100 h-100 border-0" loading="lazy" title="Miniatura de @item.Name" data-thumbnail-src="@Url.Action("Thumbnail", new { templateKey = item.TemplateKey })"></iframe></div><h3 class="h6">@item.Name</h3><p class="small text-muted mb-2">@item.ClientName · @item.Purpose</p><p class="small">@item.Dimensions · versão @item.Version · @(normalizedStatus == "draft" ? "Rascunho" : "Publicado")</p><div class="d-flex flex-wrap gap-2 small"><a asp-action="Edit" asp-route-templateKey="@item.TemplateKey">Editar</a><details class="row-more"><summary aria-label="Mais ações">···</summary><a asp-action="Preview" asp-route-templateKey="@item.TemplateKey">Prévia</a><a asp-action="Versions" asp-route-templateKey="@item.TemplateKey">Versões</a><a asp-action="Export" asp-route-templateKey="@item.TemplateKey">Exportar</a></details></div></div></div>
                         </article>
                     }
                 </div>
@@ -120,6 +121,7 @@
                                         <summary aria-label="Mais ações">···</summary>
                                         <a asp-action="Preview" asp-route-templateKey="@item.TemplateKey">Prévia</a>
                                         <a asp-action="Versions" asp-route-templateKey="@item.TemplateKey">Versões</a>
+                                        <a asp-action="Export" asp-route-templateKey="@item.TemplateKey">Exportar</a>
                                     </details>
                                 </td>
                             </tr>
@@ -132,6 +134,7 @@
         <p data-model-empty hidden>Nenhum modelo corresponde aos filtros.</p>
     }
 </main>
+@if(canCreate){<dialog data-import-dialog><form method="dialog"><button aria-label="Fechar">×</button></form><h2>Importar modelo</h2><p>Selecione um pacote JSON. Nada será criado antes da confirmação.</p><form data-import-form>@Html.AntiForgeryToken()<input type="file" name="file" accept="application/json,.json" required /><button type="submit" class="ig-button ig-button--primary">Validar pacote</button></form><section data-import-preview hidden aria-live="polite"><h3 data-import-name></h3><dl><dt>Finalidade</dt><dd data-import-purpose></dd><dt>Tamanho</dt><dd data-import-size></dd><dt>Elementos</dt><dd data-import-elements></dd></dl><p data-import-error role="alert"></p><button type="button" class="ig-button ig-button--primary" data-import-confirm>Confirmar importação</button></section></dialog>}
 
 @section Scripts {
     <script src="~/js/labels-help.js" asp-append-version="true"></script>
@@ -192,6 +195,11 @@
             document.querySelectorAll('[data-designer-view]').forEach(x => x.addEventListener('click', () => setView(x.dataset.designerView)));
             setView(localStorage.getItem(viewKey) || 'cards');
             refresh();
+            const dialog=document.querySelector('[data-import-dialog]'),form=document.querySelector('[data-import-form]'),preview=document.querySelector('[data-import-preview]');let selectedFile;
+            document.querySelector('[data-import-open]')?.addEventListener('click',()=>dialog.showModal());
+            const sendImport=async confirm=>{const body=new FormData();body.append('file',selectedFile);body.append('confirm',String(confirm));const response=await fetch('/Labels/Designer/Import',{method:'POST',headers:{RequestVerificationToken:form.querySelector('[name="__RequestVerificationToken"]').value},body});const data=await response.json();if(!response.ok)throw new Error(data.message||'Não foi possível validar o pacote.');return data;};
+            form?.addEventListener('submit',async event=>{event.preventDefault();selectedFile=form.file.files[0];if(!selectedFile)return;preview.hidden=false;preview.querySelector('[data-import-error]').textContent='Validando…';try{const data=await sendImport(false);preview.querySelector('[data-import-name]').textContent=data.name;preview.querySelector('[data-import-purpose]').textContent=data.purpose;preview.querySelector('[data-import-size]').textContent=data.size;preview.querySelector('[data-import-elements]').textContent=data.elementCount;preview.querySelector('[data-import-error]').textContent='Pacote válido. Revise os dados antes de confirmar.';}catch(error){preview.querySelector('[data-import-error]').textContent=error.message;}});
+            document.querySelector('[data-import-confirm]')?.addEventListener('click',async event=>{event.currentTarget.disabled=true;try{const data=await sendImport(true);location.href=data.redirectUrl;}catch(error){preview.querySelector('[data-import-error]').textContent=error.message;event.currentTarget.disabled=false;}});
         })();
     </script>
 }

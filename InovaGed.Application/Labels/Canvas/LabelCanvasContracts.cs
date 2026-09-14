@@ -390,6 +390,33 @@ public interface ILabelCanvasSchemaCapabilities
     Task<LabelCanvasSchemaCapabilitySnapshot> GetAsync(CancellationToken cancellationToken = default);
 }
 
+public sealed record LabelCanvasComponentPresetDto(Guid Id, string Name, string Category, int SchemaVersion,
+    int ElementCount, DateTime CreatedAt, DateTime? UpdatedAt);
+public sealed record LabelCanvasComponentPresetDetailsDto(Guid Id, string Name, string Category, int SchemaVersion,
+    int ElementCount, DateTime CreatedAt, DateTime? UpdatedAt, string ElementsJson);
+public sealed record LabelCanvasComponentPresetCreateRequest(string Name, string Category, string ElementsJson, int SchemaVersion = 2);
+
+public interface ILabelCanvasComponentPresetService
+{
+    Task<IReadOnlyList<LabelCanvasComponentPresetDto>> ListAsync(Guid tenantId, CancellationToken cancellationToken = default);
+    Task<LabelCanvasComponentPresetDetailsDto?> GetAsync(Guid tenantId, Guid id, CancellationToken cancellationToken = default);
+    Task<LabelCanvasComponentPresetDetailsDto> CreateAsync(Guid tenantId, Guid userId, LabelCanvasComponentPresetCreateRequest request, CancellationToken cancellationToken = default);
+    Task<LabelCanvasComponentPresetDto> RenameAsync(Guid tenantId, Guid userId, Guid id, string name, CancellationToken cancellationToken = default);
+    Task<LabelCanvasComponentPresetDetailsDto> DuplicateAsync(Guid tenantId, Guid userId, Guid id, string? name = null, CancellationToken cancellationToken = default);
+    Task ArchiveAsync(Guid tenantId, Guid userId, Guid id, CancellationToken cancellationToken = default);
+}
+
+public sealed record LabelTemplatePackageTemplate(string Name, string? Description, string SubjectType, string PaperKind,
+    decimal WidthMm, decimal HeightMm, string Orientation);
+public sealed record LabelTemplatePackage(int PackageVersion, int SchemaVersion, LabelTemplatePackageTemplate Template,
+    LabelCanvasDocumentDto Design);
+
+public interface ILabelTemplatePackageService
+{
+    LabelTemplatePackage Export(LabelCanvasDesignDto design);
+    LabelTemplatePackage Validate(string packageJson, ILabelCanvasFieldCatalogService fields);
+}
+
 public sealed class LabelSchemaUpdateRequiredException : InvalidOperationException
 {
     public const string Code = "LABEL_SCHEMA_UPDATE_REQUIRED";

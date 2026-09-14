@@ -18,6 +18,7 @@ namespace InovaGed.Web.Controllers;
 public sealed class LabelDesignerController(IDbConnectionFactory dbFactory, ILabelCanvasDesignService designs,
     ILabelCanvasRenderService renderer, ILabelCanvasFieldCatalogService fieldCatalog,
     ILabelCanvasStarterTemplateService starters, ILabelCanvasDiffService diffService, ILabelCanvasSchemaCapabilities schemaCapabilities,
+    ILabelCanvasComponentPresetService componentPresets, ILabelTemplatePackageService packages,
     ILabelCanvasValueResolver valueResolver, IGedAccessPolicyService accessPolicy,
     IPrintBrandingProfileService brandingProfiles, IPrintBrandingResolver brandingResolver,
     ILogger<LabelDesignerController> logger) : GedControllerBase(dbFactory)
@@ -99,6 +100,54 @@ public sealed class LabelDesignerController(IDbConnectionFactory dbFactory, ILab
         "PROTOCOL" => "Protocolo",
         _ => "Uso geral"
     };
+
+    [HttpGet("/Labels/Designer/{templateKey}/Export")]
+    public async Task<IActionResult> Export(string templateKey,CancellationToken ct)
+    {
+        var design=await designs.GetAsync(TenantId,templateKey,ct);if(design is null)return NotFound();
+        var package=packages.Export(design);var bytes=JsonSerializer.SerializeToUtf8Bytes(package,JsonOptions);
+        var safe=Regex.Replace(design.TemplateName.Normalize(NormalizationForm.FormD),"[^a-zA-Z0-9_-]+","-").Trim('-').ToLowerInvariant();
+        return File(bytes,"application/json",$"modelo-etiqueta-{(string.IsNullOrWhiteSpace(safe)?"modelo":safe)}.json");
+    }
+
+    [HttpPost("/Labels/Designer/Import"),ValidateAntiForgeryToken,RequestSizeLimit(1_000_000)]
+    [Authorize(Policy=AppPolicies.LabelDesignerCreate)]
+    public async Task<IActionResult> Import(IFormFile? file,bool confirm=false,CancellationToken ct=default)
+    {
+        if(UserId is not Guid userId)return Unauthorized();
+        if(file is null||file.Length==0||file.Length>1_000_000)return BadRequest(new{message="Selecione um pacote JSON de até 1 MB."});
+        try
+        {
+            using var reader=new StreamReader(file.OpenReadStream(),Encoding.UTF8);var json=await reader.ReadToEndAsync(ct);var package=packages.Validate(json,fieldCatalog);
+            if(!confirm)return Ok(new{valid=true,name=package.Template.Name,purpose=FriendlyPurpose(package.Template.SubjectType),size=$"{package.Template.WidthMm} × {package.Template.HeightMm} mm",elementCount=package.Design.Elements.Count,warnings=Array.Empty<string>()});
+            var key=await UniqueKeyAsync(package.Template.Name,ct);var request=new LabelCanvasSaveRequest{TemplateKey=key,TemplateName=package.Template.Name.Trim(),Description=package.Template.Description,SubjectType=package.Template.SubjectType,PaperKind=package.Template.PaperKind,WidthMm=package.Template.WidthMm,HeightMm=package.Template.HeightMm,Orientation=package.Template.Orientation,DesignJson=JsonSerializer.Serialize(package.Design,JsonOptions),LabelContext="GENERIC",ChangeSummary="Modelo importado de pacote versionado."};
+            var created=await designs.CreateDraftAsync(TenantId,userId,request,Ip(),Agent(),ct);return Ok(new{ok=true,templateKey=created.TemplateKey,redirectUrl=Url.Action(nameof(Edit),new{templateKey=created.TemplateKey})});
+        }
+        catch(LabelCanvasRequestException exception){return BadRequest(new{code=exception.Code,message=exception.Message});}
+    }
+
+    [HttpGet("/Labels/Designer/ComponentPresets")]
+    public async Task<IActionResult> ComponentPresets(CancellationToken ct)
+    {
+        var capability=await schemaCapabilities.GetAsync(ct);if(!capability.HasComponentPreset)return Ok(new{available=false,message="Atualização do banco necessária para blocos personalizados.",items=Array.Empty<object>()});
+        return Ok(new{available=true,items=await componentPresets.ListAsync(TenantId,ct)});
+    }
+
+    [HttpGet("/Labels/Designer/ComponentPresets/{id:guid}")]
+    public async Task<IActionResult> ComponentPreset(Guid id,CancellationToken ct)=>await componentPresets.GetAsync(TenantId,id,ct) is { } preset?Ok(preset):NotFound();
+
+    [HttpPost("/Labels/Designer/ComponentPresets"),ValidateAntiForgeryToken]
+    [Authorize(Policy=AppPolicies.LabelDesignerUpdate)]
+    public async Task<IActionResult> CreateComponentPreset([FromBody]LabelCanvasComponentPresetCreateRequest request,CancellationToken ct)
+    {if(UserId is not Guid userId)return Unauthorized();try{return Ok(await componentPresets.CreateAsync(TenantId,userId,request,ct));}catch(LabelCanvasRequestException ex){return BadRequest(new{code=ex.Code,message=ex.Message});}catch(LabelSchemaUpdateRequiredException ex){return Conflict(new{code=LabelSchemaUpdateRequiredException.Code,message=ex.Message});}}
+
+    public sealed record RenamePresetRequest(string Name);
+    [HttpPost("/Labels/Designer/ComponentPresets/{id:guid}/Rename"),ValidateAntiForgeryToken,Authorize(Policy=AppPolicies.LabelDesignerUpdate)]
+    public async Task<IActionResult> RenameComponentPreset(Guid id,[FromBody]RenamePresetRequest request,CancellationToken ct){if(UserId is not Guid userId)return Unauthorized();return Ok(await componentPresets.RenameAsync(TenantId,userId,id,request.Name,ct));}
+    [HttpPost("/Labels/Designer/ComponentPresets/{id:guid}/Duplicate"),ValidateAntiForgeryToken,Authorize(Policy=AppPolicies.LabelDesignerUpdate)]
+    public async Task<IActionResult> DuplicateComponentPreset(Guid id,[FromBody]RenamePresetRequest? request,CancellationToken ct){if(UserId is not Guid userId)return Unauthorized();return Ok(await componentPresets.DuplicateAsync(TenantId,userId,id,request?.Name,ct));}
+    [HttpPost("/Labels/Designer/ComponentPresets/{id:guid}/Archive"),ValidateAntiForgeryToken,Authorize(Policy=AppPolicies.LabelDesignerUpdate)]
+    public async Task<IActionResult> ArchiveComponentPreset(Guid id,CancellationToken ct){if(UserId is not Guid userId)return Unauthorized();await componentPresets.ArchiveAsync(TenantId,userId,id,ct);return Ok(new{ok=true});}
 
     [HttpGet("/Labels/Designer/New")]
     [Authorize(Policy=AppPolicies.LabelDesignerCreate)]
