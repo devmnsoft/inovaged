@@ -488,7 +488,13 @@ where s.tenant_id=@tid and s.user_id=@userId and s.token_hash=@hash and s.subjec
     {
         if (input.SubjectIds.Count==0) ModelState.AddModelError(nameof(input.SubjectIds),"Selecione ao menos uma etiqueta.");
         if (!await _catalog.IsCompatibleAsync(TenantId,input.TemplateCode,input.SubjectType,ct)) ModelState.AddModelError(nameof(input.TemplateCode),"O modelo selecionado não é compatível com o tipo de origem escolhido.");
-        if (!ModelState.IsValid) return await PrintWizard(input.SubjectType,null,input.PrintMode,input.TemplateCode,ct);
+        if (!ModelState.IsValid) return await PrintWizard(
+            subjectType: input.SubjectType,
+            subjectId: null,
+            mode: input.PrintMode,
+            templateCode: input.TemplateCode,
+            reprintReason: input.ReprintReason,
+            ct: ct);
         foreach(var id in input.SubjectIds) {
             var wizard=new LabelPrintWizardInputModel { SubjectType=input.SubjectType,SubjectId=id,PrintMode=input.PrintMode,TemplateCode=input.TemplateCode,Copies=input.Copies,ReprintReason=input.ReprintReason };
             var result=await BuildLabelRenderModelAsync(wizard,true,ct); if(result is NotFoundResult) return result;
@@ -505,7 +511,8 @@ where s.tenant_id=@tid and s.user_id=@userId and s.token_hash=@hash and s.subjec
         input.TemplateCode = (input.TemplateCode ?? string.Empty).Trim();
         if (string.IsNullOrWhiteSpace(input.TemplateCode)) ModelState.AddModelError(nameof(input.TemplateCode), "Selecione um modelo de etiqueta.");
         if (!LabelSubjectType.IsValid(input.SubjectType)) ModelState.AddModelError(nameof(input.SubjectType), "Selecione um tipo de origem válido.");
-        if (input.SubjectType != LabelSubjectType.Manual && input.SubjectId is null) ModelState.AddModelError(nameof(input.SubjectId), "Selecione uma caixa, documento ou lote antes de imprimir.");
+        if (RequiresSubjectId(input.SubjectType) && (!input.SubjectId.HasValue || input.SubjectId.Value == Guid.Empty))
+            ModelState.AddModelError(nameof(input.SubjectId), "Selecione o registro que será etiquetado.");
         if (input.Copies <= 0) ModelState.AddModelError(nameof(input.Copies), "A quantidade de cópias deve ser maior que zero.");
 
         LabelTemplateOption? template = null;
@@ -577,6 +584,9 @@ where s.tenant_id=@tid and s.user_id=@userId and s.token_hash=@hash and s.subjec
         var qrPath=issued?.ShortUrl??$"/Labels/Trace/{input.SubjectId}"; ViewBag.TraceCode=issued?.Trace.TraceCode; ViewBag.QrSvg=_qrCodes.CreateTrackingSvg($"{Request.Scheme}://{Request.Host}{qrPath}"); ViewBag.PrintRegistered=register; ViewBag.IsPrintPage=register; ViewBag.Copies=input.Copies; ViewBag.PrintLogo=printLogo; ViewBag.PrintLogoWarning=printLogo.HasLogo&&!printLogo.ImageLoaded?printLogo.LoadError:null;
         return View(template.ViewName,subject);
     }
+
+    private static bool RequiresSubjectId(string? subjectType) =>
+        !string.Equals(subjectType, LabelSubjectType.Manual, StringComparison.OrdinalIgnoreCase);
 
     private async Task<IActionResult> RenderCanvasTemplateAsync(LabelPrintWizardInputModel input,LabelTemplateOption template,bool register,CancellationToken ct)
     {
