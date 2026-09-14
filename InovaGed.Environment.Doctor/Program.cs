@@ -14,6 +14,9 @@ using BclEnvironment = global::System.Environment;
 try
 {
     var command = args.FirstOrDefault() ?? "check";
+    if(command.Equals("label-schema-readiness-rc36",StringComparison.OrdinalIgnoreCase)) return Rc36QualityChecks.LabelSchema(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);
+    if(command.Equals("labels-experience-rc36",StringComparison.OrdinalIgnoreCase)) return Rc36QualityChecks.LabelsExperience(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);
+    if(command.Equals("database-readiness-ux-rc36",StringComparison.OrdinalIgnoreCase)) return Rc36QualityChecks.DatabaseReadinessUx(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);
     if(command.Equals("labels-controller-safety-rc35",StringComparison.OrdinalIgnoreCase))
         return LabelsControllerSafetyRc35QualityCheck.Run(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);
     if(command.Equals("labels-semantic-diff-rc34-1",StringComparison.OrdinalIgnoreCase))

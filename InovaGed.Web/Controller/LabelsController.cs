@@ -398,12 +398,19 @@ where s.tenant_id=@tid and s.user_id=@userId and s.token_hash=@hash and s.subjec
     [HttpPost("/Labels/PrintWizard/QuickPreview"),ValidateAntiForgeryToken]
     public async Task<IActionResult> QuickPreview(LabelPrintWizardInputModel input,CancellationToken ct)
     {
-        var command = new LabelQuickPreviewCommand(
-            TenantId, UserId, input.SubjectType ?? "", input.SubjectId, input.TemplateCode, input.PrintMode,
-            input.PrintBrandingProfileId, input.PrintProfileId, input.SelectedLogoAssetId, input.Copies,
-            input.ReprintReason, input.ManualValues, $"{Request.Scheme}://{Request.Host}");
-        var result = await _previewService.GenerateQuickPreviewAsync(command, ct);
-        return result.Ok ? Json(result) : BadRequest(result);
+        try
+        {
+            var command = new LabelQuickPreviewCommand(
+                TenantId, UserId, input.SubjectType ?? "", input.SubjectId, input.TemplateCode, input.PrintMode,
+                input.PrintBrandingProfileId, input.PrintProfileId, input.SelectedLogoAssetId, input.Copies,
+                input.ReprintReason, input.ManualValues, $"{Request.Scheme}://{Request.Host}");
+            var result = await _previewService.GenerateQuickPreviewAsync(command, ct);
+            return result.Ok ? Json(result) : BadRequest(result);
+        }
+        catch (LabelSchemaUpdateRequiredException)
+        {
+            return Conflict(new { success=false, ok=false, code=LabelSchemaUpdateRequiredException.Code, message="A prévia está temporariamente indisponível porque o módulo de etiquetas precisa de uma atualização do banco.", canRetry=false });
+        }
     }
 
     [HttpPost("/Labels/Batch/Plan"),ValidateAntiForgeryToken]

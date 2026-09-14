@@ -15,22 +15,38 @@ public sealed class LabelCanvasDesignRepository(
     IDbConnectionFactory dbFactory,
     ILabelCanvasRenderService renderer,
     ILabelCanvasFieldCatalogService fields,
+    ILabelCanvasSchemaCapabilities schemaCapabilities,
     ILogger<LabelCanvasDesignRepository> logger) : ILabelCanvasDesignService
 {
-    private const string SelectColumns = "id Id,tenant_id TenantId,template_key TemplateKey,template_name TemplateName,description Description,template_kind TemplateKind,subject_type SubjectType,paper_kind PaperKind,width_mm WidthMm,height_mm HeightMm,orientation Orientation,status Status,design_json::text DesignJson,current_version CurrentVersion,is_system_template IsSystemTemplate,default_branding_profile_id DefaultBrandingProfileId,branding_binding_key BrandingBindingKey,client_name_fallback ClientNameFallback,contract_name_fallback ContractNameFallback,organization_name_fallback OrganizationNameFallback,header_title_fallback HeaderTitleFallback,header_subtitle_fallback HeaderSubtitleFallback,label_context LabelContext,created_by CreatedBy,created_at CreatedAt,updated_by UpdatedBy,updated_at UpdatedAt,published_by PublishedBy,published_at PublishedAt,lock_version LockVersion,exists(select 1 from ged.label_template_design_version pv where pv.template_design_id=label_template_design.id and pv.status='PUBLISHED' and pv.reg_status in ('A','ACTIVE')) HasPublishedVersion,(select max(pv.version_no) from ged.label_template_design_version pv where pv.template_design_id=label_template_design.id and pv.status='PUBLISHED' and pv.reg_status in ('A','ACTIVE')) PublishedVersionNo";
+    private const string SelectColumnsBeforeLock = "id Id,tenant_id TenantId,template_key TemplateKey,template_name TemplateName,description Description,template_kind TemplateKind,subject_type SubjectType,paper_kind PaperKind,width_mm WidthMm,height_mm HeightMm,orientation Orientation,status Status,design_json::text DesignJson,current_version CurrentVersion,is_system_template IsSystemTemplate,default_branding_profile_id DefaultBrandingProfileId,branding_binding_key BrandingBindingKey,client_name_fallback ClientNameFallback,contract_name_fallback ContractNameFallback,organization_name_fallback OrganizationNameFallback,header_title_fallback HeaderTitleFallback,header_subtitle_fallback HeaderSubtitleFallback,label_context LabelContext,created_by CreatedBy,created_at CreatedAt,updated_by UpdatedBy,updated_at UpdatedAt,published_by PublishedBy,published_at PublishedAt,";
+    private const string SelectColumnsAfterLock = ",exists(select 1 from ged.label_template_design_version pv where pv.template_design_id=label_template_design.id and pv.status='PUBLISHED' and pv.reg_status in ('A','ACTIVE')) HasPublishedVersion,(select max(pv.version_no) from ged.label_template_design_version pv where pv.template_design_id=label_template_design.id and pv.status='PUBLISHED' and pv.reg_status in ('A','ACTIVE')) PublishedVersionNo";
+
+    private async Task<string> ReadProjectionAsync(CancellationToken cancellationToken)
+    {
+        var capability = await schemaCapabilities.GetAsync(cancellationToken);
+        if (!capability.HasLabelTemplateDesign) throw new LabelSchemaUpdateRequiredException();
+        return SelectColumnsBeforeLock + (capability.HasLockVersion ? "lock_version as LockVersion" : "1::bigint as LockVersion") + SelectColumnsAfterLock;
+    }
+
+    private async Task RequireWritableSchemaAsync(CancellationToken cancellationToken)
+    {
+        if (!(await schemaCapabilities.GetAsync(cancellationToken)).HasLockVersion) throw new LabelSchemaUpdateRequiredException();
+    }
 
     public async Task<IReadOnlyList<LabelCanvasDesignDto>> ListAsync(Guid tenantId, CancellationToken cancellationToken = default)
     {
+        var projection=await ReadProjectionAsync(cancellationToken);
         await using var db=await dbFactory.OpenAsync(cancellationToken);
-        const string sql="select "+SelectColumns+" from ged.label_template_design where (tenant_id=@tenantId or tenant_id is null) and reg_status in ('A','ACTIVE') order by status='DRAFT' desc,coalesce(updated_at,created_at) desc,template_name";
+        var sql="select "+projection+" from ged.label_template_design where (tenant_id=@tenantId or tenant_id is null) and reg_status in ('A','ACTIVE') order by status='DRAFT' desc,coalesce(updated_at,created_at) desc,template_name";
         return (await db.QueryAsync<LabelCanvasDesignDto>(new CommandDefinition(sql,new{tenantId},cancellationToken:cancellationToken))).AsList();
     }
 
     public async Task<LabelCanvasDesignDto?> GetAsync(Guid tenantId,string templateKey,CancellationToken cancellationToken=default)
     {
         if(string.IsNullOrWhiteSpace(templateKey))return null;
+        var projection=await ReadProjectionAsync(cancellationToken);
         await using var db=await dbFactory.OpenAsync(cancellationToken);
-        const string sql="select "+SelectColumns+" from ged.label_template_design where (tenant_id=@tenantId or tenant_id is null) and upper(template_key)=upper(@templateKey) and reg_status in ('A','ACTIVE') order by tenant_id nulls last limit 1";
+        var sql="select "+projection+" from ged.label_template_design where (tenant_id=@tenantId or tenant_id is null) and upper(template_key)=upper(@templateKey) and reg_status in ('A','ACTIVE') order by tenant_id nulls last limit 1";
         return await db.QuerySingleOrDefaultAsync<LabelCanvasDesignDto>(new CommandDefinition(sql,new{tenantId,templateKey},cancellationToken:cancellationToken));
     }
 
@@ -51,6 +67,7 @@ from ged.label_template_design_version where template_design_id=@id and status='
 
     public async Task<LabelCanvasDesignDto> CancelRevisionAsync(Guid tenantId,Guid userId,string templateKey,string? ipAddress,string? userAgent,CancellationToken cancellationToken=default)
     {
+        await RequireWritableSchemaAsync(cancellationToken);
         ValidateIdentity(tenantId,userId);
         var working=await GetAsync(tenantId,templateKey,cancellationToken)??throw new KeyNotFoundException("Template não encontrado.");
         if(!working.Status.Equals("DRAFT",StringComparison.OrdinalIgnoreCase)||working.TenantId!=tenantId)throw new InvalidOperationException("Não existe revisão própria em andamento.");
@@ -93,6 +110,7 @@ where id = @Id
 
     public async Task<LabelCanvasDesignDto> BeginRevisionAsync(Guid tenantId,Guid userId,string templateKey,string? ipAddress,string? userAgent,CancellationToken cancellationToken=default)
     {
+        await RequireWritableSchemaAsync(cancellationToken);
         ValidateIdentity(tenantId,userId);
         var working=await GetAsync(tenantId,templateKey,cancellationToken)??throw new KeyNotFoundException("Template não encontrado.");
         if(working.Status.Equals("DRAFT",StringComparison.OrdinalIgnoreCase)&&working.TenantId==tenantId)return working;
@@ -123,6 +141,7 @@ update ged.label_template_design set current_version=@version,status='DRAFT',upd
 
     public async Task<LabelCanvasDesignDto> CreateDraftAsync(Guid tenantId,Guid userId,LabelCanvasSaveRequest request,string? ipAddress,string? userAgent,CancellationToken cancellationToken=default)
     {
+        await RequireWritableSchemaAsync(cancellationToken);
         ValidateIdentity(tenantId,userId); ValidateRequest(request);
         var validation=ValidateDesign(request);
         if(validation.HasErrors)throw ValidationException(validation);
@@ -144,6 +163,7 @@ values(@id,@tenantId,@TemplateKey,@TemplateKey,@TemplateName,@Description,@Templ
 
     public async Task<LabelCanvasDesignDto> SaveDraftAsync(Guid tenantId,Guid userId,LabelCanvasSaveRequest request,string? ipAddress,string? userAgent,CancellationToken cancellationToken=default)
     {
+        await RequireWritableSchemaAsync(cancellationToken);
         ValidateIdentity(tenantId,userId);ValidateRequest(request);var validation=ValidateDesign(request);if(validation.HasErrors)throw ValidationException(validation);
         var current=await GetAsync(tenantId,request.TemplateKey,cancellationToken);
         if(current is { TenantId:null } && current.CanEdit)
@@ -176,6 +196,7 @@ where tenant_id=@tenantId and upper(template_key)=upper(@TemplateKey) and status
 
     public async Task<LabelCanvasDesignDto> PublishAsync(Guid tenantId,Guid userId,LabelCanvasPublishRequest request,string? ipAddress,string? userAgent,CancellationToken cancellationToken=default)
     {
+        await RequireWritableSchemaAsync(cancellationToken);
         ValidateIdentity(tenantId,userId);if(string.IsNullOrWhiteSpace(request.TemplateKey))throw new ArgumentException("Template obrigatório.",nameof(request));
         var design=await GetAsync(tenantId,request.TemplateKey,cancellationToken)??throw new KeyNotFoundException("Template não encontrado.");
         if(!design.CanEdit)throw new InvalidOperationException("Somente templates próprios em rascunho podem ser publicados.");
@@ -211,6 +232,7 @@ update ged.label_template_design set status='PUBLISHED',current_version=@version
 
     public async Task<LabelCanvasDesignDto> DuplicateAsync(Guid tenantId,Guid userId,string templateKey,string? newName,string? ipAddress,string? userAgent,CancellationToken cancellationToken=default)
     {
+        await RequireWritableSchemaAsync(cancellationToken);
         var source=await GetAsync(tenantId,templateKey,cancellationToken)??throw new KeyNotFoundException("Template não encontrado.");
         var suffix=DateTime.UtcNow.ToString("yyyyMMddHHmmss");var baseKey=Regex.Replace(templateKey.ToUpperInvariant(),"[^A-Z0-9_]+","_").Trim('_');var key=$"{baseKey}_COPY_{suffix}";
         var document=JsonSerializer.Deserialize<LabelCanvasDocumentDto>(source.DesignJson,new JsonSerializerOptions(JsonSerializerDefaults.Web){PropertyNameCaseInsensitive=true})??new();
@@ -222,6 +244,7 @@ update ged.label_template_design set status='PUBLISHED',current_version=@version
 
     public async Task DeleteDraftAsync(Guid tenantId,Guid userId,string templateKey,string? ipAddress,string? userAgent,CancellationToken cancellationToken=default)
     {
+        await RequireWritableSchemaAsync(cancellationToken);
         ValidateIdentity(tenantId,userId);await using var db=await dbFactory.OpenAsync(cancellationToken);await using var tx=await db.BeginTransactionAsync(cancellationToken);
         const string sql = """
 update ged.label_template_design d
@@ -276,6 +299,7 @@ where v.template_design_id=@id and v.reg_status in ('A','ACTIVE') order by v.ver
 
     public async Task<LabelCanvasDesignDto> RestoreVersionAsync(Guid tenantId,Guid userId,string templateKey,Guid versionId,string? ipAddress,string? userAgent,CancellationToken cancellationToken=default)
     {
+        await RequireWritableSchemaAsync(cancellationToken);
         var selected=await GetVersionDesignAsync(tenantId,templateKey,versionId,cancellationToken)??throw new KeyNotFoundException("Versão não encontrada.");
         await BeginRevisionAsync(tenantId,userId,templateKey,ipAddress,userAgent,cancellationToken);
         var saved=await SaveDraftAsync(tenantId,userId,SaveRequest(selected,"Versão publicada restaurada na revisão atual."),ipAddress,userAgent,cancellationToken);

@@ -360,3 +360,21 @@ public interface ILabelCanvasFieldCatalogService
     IReadOnlyList<LabelCanvasFieldDto> GetFields(string subjectType);
     IReadOnlyDictionary<string, object?> GetSampleData(string profile);
 }
+
+public sealed record LabelCanvasSchemaCapabilitySnapshot(
+    bool HasLabelTemplateDesign,
+    bool HasLockVersion,
+    bool HasComponentPreset,
+    bool HasPrintSelection);
+
+public interface ILabelCanvasSchemaCapabilities
+{
+    Task<LabelCanvasSchemaCapabilitySnapshot> GetAsync(CancellationToken cancellationToken = default);
+}
+
+public sealed class LabelSchemaUpdateRequiredException : InvalidOperationException
+{
+    public const string Code = "LABEL_SCHEMA_UPDATE_REQUIRED";
+    public const string FriendlyMessage = "O módulo de etiquetas precisa de uma atualização de banco antes de permitir alterações.";
+    public LabelSchemaUpdateRequiredException() : base(FriendlyMessage) { }
+}
