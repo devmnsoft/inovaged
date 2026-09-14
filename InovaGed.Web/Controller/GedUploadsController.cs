@@ -10,6 +10,7 @@ using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Npgsql;
+using System.Security.Cryptography;
 
 namespace InovaGed.Web.Controllers;
 
@@ -24,9 +25,11 @@ public sealed class GedUploadsController : Controller
     private readonly IAuditWriter _audit;
     private readonly IGedBulkDocumentActionService _bulkActions;
     private readonly IUploadBatchConsistencyService _consistency;
+    private readonly IDocumentIntakeReviewService _reviews;
+    private readonly IDocumentBulkClassificationService _classifications;
     private readonly ILogger<GedUploadsController> _logger;
 
-    public GedUploadsController(ICurrentUser currentUser, IDbConnectionFactory db, IUploadBatchService batches, IGedAccessPolicyService accessPolicy, IAuditWriter audit, IGedBulkDocumentActionService bulkActions, IUploadBatchConsistencyService consistency, ILogger<GedUploadsController> logger)
+    public GedUploadsController(ICurrentUser currentUser, IDbConnectionFactory db, IUploadBatchService batches, IGedAccessPolicyService accessPolicy, IAuditWriter audit, IGedBulkDocumentActionService bulkActions, IUploadBatchConsistencyService consistency, IDocumentIntakeReviewService reviews, IDocumentBulkClassificationService classifications, ILogger<GedUploadsController> logger)
     {
         _currentUser = currentUser;
         _db = db;
@@ -35,6 +38,8 @@ public sealed class GedUploadsController : Controller
         _audit = audit;
         _bulkActions = bulkActions;
         _consistency = consistency;
+        _reviews = reviews;
+        _classifications = classifications;
         _logger = logger;
     }
 
@@ -91,6 +96,10 @@ WHERE b.tenant_id=@tenantId AND b.id=@batchId AND coalesce(b.reg_status,'A')='A'
             if (batch is null) return NotFound();
             if (!canViewTenant && batch.CreatedBy != _currentUser.UserId) return Forbid();
             var items = await LoadItemsAsync(conn, batchId, ct);
+            var reviewMap = await _reviews.GetForDocumentsAsync(_currentUser.TenantId,
+                items.Where(x => x.DocumentId.HasValue).Select(x => x.DocumentId!.Value).ToArray(), ct);
+            foreach (var item in items.Where(x => x.DocumentId.HasValue))
+                if (reviewMap.TryGetValue(item.DocumentId!.Value, out var review)) item.IntakeReviewStatus = review.Status;
             await _audit.WriteAsync(_currentUser.TenantId, _currentUser.UserId, "UPLOAD_BATCH_DETAIL_VIEW", "UPLOAD_BATCH", batchId, "Detalhe de upload visualizado", null, null, null, ct);
             return View(new GedUploadBatchDetailVM { Batch = batch, Items = items });
         }
@@ -201,6 +210,62 @@ ORDER BY b.created_at DESC LIMIT 1;
         return Json(new { success = result.Success, data = result.Value, message = result.Success ? "Lote recalculado." : result.Error?.Message });
     }
 
+    [HttpPost("{batchId:guid}/Review")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Review(Guid batchId, [FromBody] IntakeReviewRequest request, CancellationToken ct)
+    {
+        if (!await CanAccessBatchAsync(batchId, ct)) return Forbid();
+        var ids = await LoadBatchDocumentIdsAsync(batchId, request.DocumentIds, ct);
+        if (ids.Count == 0) return BadRequest(new { success = false, message = "Selecione pelo menos um documento." });
+        if (request.Status == DocumentIntakeReviewStatus.NeedsCorrection && string.IsNullOrWhiteSpace(request.Reason))
+            return BadRequest(new { success = false, message = "Informe o motivo da correção." });
+        foreach (var id in ids)
+        {
+            if (request.Status == DocumentIntakeReviewStatus.Reviewed)
+                await _reviews.MarkReviewedAsync(_currentUser.TenantId, _currentUser.UserId, id, request.Reason, ct);
+            else if (request.Status == DocumentIntakeReviewStatus.NeedsCorrection)
+                await _reviews.MarkNeedsCorrectionAsync(_currentUser.TenantId, _currentUser.UserId, id, request.Reason!, ct);
+            else if (request.Status == DocumentIntakeReviewStatus.Pending)
+                await _reviews.ResetPendingAsync(_currentUser.TenantId, _currentUser.UserId, id, ct);
+            else return BadRequest(new { success = false, message = "Situação de conferência inválida." });
+        }
+        return Json(new { success = true, requested = ids.Count, succeeded = ids.Count, failed = 0,
+            message = ids.Count == 1 ? "Conferência atualizada." : $"Conferência atualizada em {ids.Count} documentos." });
+    }
+
+    [HttpPost("{batchId:guid}/BulkClassify")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> BulkClassify(Guid batchId, [FromBody] BulkClassifyRequest request, CancellationToken ct)
+    {
+        if (!await CanAccessBatchAsync(batchId, ct)) return Forbid();
+        var ids = await LoadBatchDocumentIdsAsync(batchId, request.DocumentIds, ct);
+        if (ids.Count == 0) return BadRequest(new { success = false, message = "Selecione pelo menos um documento." });
+        var result = await _classifications.ApplyAsync(_currentUser.TenantId, _currentUser.UserId, ids, request.ClassificationId, ct);
+        return Json(new { success = result.Failed == 0, result.Requested, result.Succeeded, result.Failed, result.Items });
+    }
+
+    [HttpPost("{batchId:guid}/LabelSelection")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> CreateLabelSelection(Guid batchId, [FromBody] LabelSelectionRequest request, CancellationToken ct)
+    {
+        if (!await CanAccessBatchAsync(batchId, ct)) return Forbid();
+        var ids = await LoadBatchDocumentIdsAsync(batchId, request.DocumentIds, ct);
+        if (ids.Count == 0) return BadRequest(new { success = false, message = "Selecione pelo menos um documento válido." });
+        var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token))).ToLowerInvariant();
+        await using var connection = await _db.OpenAsync(ct);
+        await using var transaction = connection.BeginTransaction();
+        var selectionId = await connection.ExecuteScalarAsync<Guid>(new CommandDefinition("""
+insert into ged.label_print_selection(tenant_id,user_id,token_hash,subject_type,expires_at)
+values(@tenantId,@userId,@hash,'DOCUMENT',now()+interval '20 minutes') returning id;
+""", new { tenantId = _currentUser.TenantId, userId = _currentUser.UserId, hash }, transaction, cancellationToken: ct));
+        await connection.ExecuteAsync(new CommandDefinition("""
+insert into ged.label_print_selection_item(selection_id,subject_id) select @selectionId,unnest(@ids::uuid[]);
+""", new { selectionId, ids = ids.ToArray() }, transaction, cancellationToken: ct));
+        await transaction.CommitAsync(ct);
+        return Json(new { success = true, count = ids.Count, redirectUrl = Url.Action("BatchPrint", "Labels", new { subjectType = "DOCUMENT", selectionToken = token }) });
+    }
+
     [HttpGet("{batchId:guid}/ExportCsv")]
     public async Task<IActionResult> ExportCsv(Guid batchId, CancellationToken ct)
     {
@@ -217,6 +282,9 @@ ORDER BY b.created_at DESC LIMIT 1;
     private sealed class LastProblemRow { public Guid BatchId { get; set; } public Guid? FolderId { get; set; } public string? FolderName { get; set; } public int FailedCount { get; set; } public int SuccessCount { get; set; } public int SkippedCount { get; set; } public int Total { get; set; } public DateTimeOffset CreatedAt { get; set; } }
     public sealed class AcknowledgeRequest { public string? Notes { get; set; } }
     public sealed class BatchDocumentActionRequest { public string? Reason { get; set; } public IReadOnlyList<Guid>? OnlySelectedDocumentIds { get; set; } }
+    public sealed class IntakeReviewRequest { public IReadOnlyList<Guid> DocumentIds { get; set; } = []; public string Status { get; set; } = ""; public string? Reason { get; set; } }
+    public sealed class BulkClassifyRequest { public IReadOnlyList<Guid> DocumentIds { get; set; } = []; public Guid ClassificationId { get; set; } }
+    public sealed class LabelSelectionRequest { public IReadOnlyList<Guid> DocumentIds { get; set; } = []; }
 
     private async Task<bool> CanAccessBatchAsync(Guid batchId, CancellationToken ct)
     {
