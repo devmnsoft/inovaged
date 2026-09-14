@@ -13,6 +13,7 @@
     </div>
     <div class="toolbar-cluster toolbar-primary">
         <button type="button" data-action="live-preview">Prévia</button>
+        @if (!Model.IsNew && Model.Design.Status == "DRAFT" && Model.Design.CurrentVersion > 0) { <button type="button" data-action="compare">Comparar alterações</button> }
         <button type="button" data-action="save" @(canEdit ? null : "disabled")>Salvar</button>
         @if (!Model.IsNew) { <button type="button" data-action="publish" @(Model.Design.CanEdit ? null : "disabled")>Publicar</button> }
         <details class="designer-more"><summary aria-label="Mais opções">Mais</summary><nav>

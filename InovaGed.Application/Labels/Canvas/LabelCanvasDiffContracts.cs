@@ -9,7 +9,18 @@ public sealed record LabelCanvasDiffResult(
     bool TemplateMetadataChanged,
     IReadOnlyList<LabelCanvasDiffElement> Added,
     IReadOnlyList<LabelCanvasDiffElement> Removed,
-    IReadOnlyList<LabelCanvasElementChange> Changed);
+    IReadOnlyList<LabelCanvasElementChange> Changed,
+    IReadOnlyList<string>? MetadataChanges = null);
+
+public static class LabelCanvasMetadataChangeKind
+{
+    public const string CanvasSize = "CANVAS_SIZE";
+    public const string Paper = "PAPER";
+    public const string Orientation = "ORIENTATION";
+    public const string Grid = "GRID";
+    public const string SafeMargin = "SAFE_MARGIN";
+    public const string Bindings = "BINDINGS";
+}
 
 public sealed record LabelCanvasDiffElement(string ElementId, string Name, string Type);
 public sealed record LabelCanvasElementChange(string ElementId, string Name, IReadOnlyList<string> Changes);
