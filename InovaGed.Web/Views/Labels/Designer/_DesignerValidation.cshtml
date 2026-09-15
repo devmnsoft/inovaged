@@ -1,2 +1,7 @@
 @model InovaGed.Web.Models.Labels.LabelCanvasDesignerPageViewModel
-<dialog class="designer-validation" data-validation-dialog aria-labelledby="validation-title"><form method="dialog"><header><h2 id="validation-title">Verificação do modelo</h2><button value="cancel">Fechar</button></header></form><ul data-validation-list aria-live="polite">@if(Model.Validation.Issues.Count==0){<li class="is-ok">Nenhum problema encontrado.</li>}@foreach(var issue in Model.Validation.Issues){<li class="is-@issue.Severity.ToLowerInvariant()" data-element-id="@issue.ElementId"><button type="button">@(issue.Severity=="ERROR"?"Erro":issue.Severity=="WARNING"?"Atenção":"Informação") · @issue.Message</button></li>}</ul></dialog>
+<dialog class="designer-validation" data-validation-dialog aria-labelledby="validation-title">
+    <form method="dialog"><header><div><small>QUALIDADE ANTES DE PUBLICAR</small><h2 id="validation-title">Verificação do modelo</h2></div><button value="cancel" aria-label="Fechar verificação">Fechar</button></header></form>
+    <p class="validation-intro">Revise os pontos encontrados no mesmo espaço em que você cria a etiqueta.</p>
+    <div class="validation-summary" data-validation-summary aria-live="polite"><span>Verificando o modelo…</span></div>
+    <div data-validation-list aria-live="polite" aria-busy="false"></div>
+</dialog>

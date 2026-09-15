@@ -11,10 +11,10 @@
         <button type="button" data-action="undo" aria-label="Desfazer"><app-icon name="undo" size="17" decorative="true" /></button>
         <button type="button" data-action="redo" aria-label="Refazer"><app-icon name="refresh" size="17" decorative="true" /></button>
     </div>
-    <div class="toolbar-cluster designer-modes" role="group" aria-label="Modo do designer">
-        <button type="button" class="is-active" data-designer-mode="design" aria-pressed="true">Design</button>
-        <button type="button" data-designer-mode="preview" aria-pressed="false">Prévia</button>
-        <button type="button" data-designer-mode="verification" aria-pressed="false">Verificação</button>
+    <div class="toolbar-cluster designer-modes" role="tablist" aria-label="Modo do designer">
+        <button type="button" role="tab" class="is-active" data-designer-mode="design" aria-selected="true" tabindex="0">Design</button>
+        <button type="button" role="tab" data-designer-mode="preview" aria-selected="false" tabindex="-1">Prévia</button>
+        <button type="button" role="tab" data-designer-mode="verification" aria-selected="false" tabindex="-1">Verificação</button>
     </div>
     <div class="toolbar-cluster toolbar-primary">
         @if (!Model.IsNew) {

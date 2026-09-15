@@ -14,6 +14,7 @@ using BclEnvironment = global::System.Environment;
 try
 {
     var command = args.FirstOrDefault() ?? "check";
+    if(command.Equals("labels-smart-preflight-rc42",StringComparison.OrdinalIgnoreCase)) return Rc42QualityChecks.DesignerPreflight(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);
     if(command.Equals("labels-smart-preflight-rc41",StringComparison.OrdinalIgnoreCase)) return Rc41QualityChecks.SmartPreflight(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);
     if(command.Equals("labels-template-recommendation-rc41",StringComparison.OrdinalIgnoreCase)) return Rc41QualityChecks.Recommendation(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);
     if(command.Equals("labels-designer-assist-rc41",StringComparison.OrdinalIgnoreCase)) return Rc41QualityChecks.DesignerAssist(FindRoot(BclEnvironment.CurrentDirectory),Console.Out,Console.Error);
