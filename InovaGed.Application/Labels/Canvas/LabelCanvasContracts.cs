@@ -223,6 +223,36 @@ public sealed class LabelCanvasPublishRequest
     public string TemplateKey { get; init; } = "";
     public string? ChangeSummary { get; init; }
     public bool ConfirmWarnings { get; init; }
+    public string? WarningJustification { get; init; }
+    public long? ExpectedLockVersion { get; init; }
+    public int ApprovedTestSamples { get; init; }
+    public decimal? MediaWidthMm { get; init; }
+    public decimal? MediaHeightMm { get; init; }
+}
+
+public static class LabelPublicationSeverity
+{
+    public const string Blocker = "BLOCKER";
+    public const string Warning = "WARNING";
+    public const string Information = "INFORMATION";
+}
+
+public sealed record LabelPublicationCheck(string Code, string Severity, string Category, string Message,
+    string? ElementId = null, string? SuggestedAction = null);
+
+public sealed record LabelPublicationChecklist(IReadOnlyList<LabelPublicationCheck> Items)
+{
+    public int Blockers => Items.Count(x => x.Severity == LabelPublicationSeverity.Blocker);
+    public int Warnings => Items.Count(x => x.Severity == LabelPublicationSeverity.Warning);
+    public int Information => Items.Count(x => x.Severity == LabelPublicationSeverity.Information);
+    public int ReadinessPercent => Math.Clamp(100 - Blockers * 25 - Warnings * 5, 0, 100);
+    public bool CanPublish => Blockers == 0;
+}
+
+public interface ILabelPublicationChecklistService
+{
+    LabelPublicationChecklist Evaluate(LabelCanvasDesignDto design, LabelCanvasPublishRequest request,
+        IReadOnlySet<string> allowedFields);
 }
 
 public sealed class LabelCanvasPreviewRequest

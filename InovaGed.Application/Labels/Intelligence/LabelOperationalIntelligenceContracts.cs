@@ -44,7 +44,16 @@ public interface ILabelPreflightService
 {
     Task<LabelPreflightResult> CheckAsync(LabelPreflightRequest request, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<LabelPreflightResult>> CheckBatchAsync(IReadOnlyList<LabelPreflightRequest> requests, CancellationToken cancellationToken = default);
+    Task<LabelBatchPreflightResult> CheckBatchDetailedAsync(LabelBatchPreflightRequest request, IProgress<LabelBatchPreflightProgress>? progress = null, CancellationToken cancellationToken = default);
 }
+
+public sealed record LabelBatchPreflightRequest(IReadOnlyList<LabelPreflightRequest> Items, int MaxSelection = 200,
+    int MaxConcurrency = 4);
+public sealed record LabelBatchPreflightProgress(int Completed, int Total);
+public sealed record LabelBatchPreflightItem(Guid SubjectId, string Status, LabelPreflightResult Result);
+public sealed record LabelBatchPreflightSummary(int Total, int Ready, int WithWarnings, int Blocked,
+    int ReadinessPercent, TimeSpan Duration, DateTimeOffset ValidatedAt);
+public sealed record LabelBatchPreflightResult(IReadOnlyList<LabelBatchPreflightItem> Items, LabelBatchPreflightSummary Summary);
 
 public sealed record LabelTemplateRecommendationCandidate(string TemplateKey, string SubjectType, string PaperKind,
     bool Published, bool Healthy, bool RequiredBindingsAvailable, bool BrandingCompatible = false,
