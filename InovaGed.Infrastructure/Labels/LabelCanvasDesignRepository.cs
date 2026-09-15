@@ -14,6 +14,7 @@ namespace InovaGed.Infrastructure.Labels;
 public sealed class LabelCanvasDesignRepository(
     IDbConnectionFactory dbFactory,
     ILabelCanvasRenderService renderer,
+    ILabelPublicationChecklistService publicationChecklist,
     ILabelCanvasFieldCatalogService fields,
     ILabelCanvasSchemaCapabilities schemaCapabilities,
     ILogger<LabelCanvasDesignRepository> logger) : ILabelCanvasDesignService
@@ -206,12 +207,21 @@ where tenant_id=@tenantId and upper(template_key)=upper(@TemplateKey) and status
             design=await CreateDraftAsync(tenantId,userId,SaveRequest(seed,"Modelo inicial preparado para publicação."),ipAddress,userAgent,cancellationToken);
             await RecordEventAsync(tenantId,userId,design.Id,"MATERIALIZE_SEED","Modelo inicial materializado como rascunho do tenant.",new{sourceId=seed.Id},ipAddress,userAgent,cancellationToken);
         }
-        var allowed=fields.GetFields(design.SubjectType).Select(x=>x.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);var validation=renderer.Validate(design.DesignJson,allowed);
-        if(validation.HasErrors)throw ValidationException(validation);if(validation.HasWarnings&&!request.ConfirmWarnings)throw new InvalidOperationException("A publicação possui alertas. Revise-os ou confirme a publicação consciente.");
+        bool hasApprovedSample;
+        await using(var evidenceDb=await dbFactory.OpenAsync(cancellationToken))
+            hasApprovedSample=await evidenceDb.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from ged.label_template_design_event where tenant_id=@tenantId and template_design_id=@id and event_type='TEST_LAB_APPROVED' and payload_json->>'designHash'=@designHash)",new{tenantId,id=design.Id,designHash=renderer.ComputeSnapshotHash(design.DesignJson)},cancellationToken:cancellationToken));
+        var verifiedRequest=new LabelCanvasPublishRequest{TemplateKey=request.TemplateKey,ChangeSummary=request.ChangeSummary,ConfirmWarnings=request.ConfirmWarnings,WarningJustification=request.WarningJustification,ExpectedLockVersion=request.ExpectedLockVersion,ApprovedTestSamples=hasApprovedSample?1:0,MediaWidthMm=request.MediaWidthMm,MediaHeightMm=request.MediaHeightMm};
+        var allowed=fields.GetFields(design.SubjectType).Select(x=>x.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var checklist=publicationChecklist.Evaluate(design,verifiedRequest,allowed);
+        if(!checklist.CanPublish)throw new InvalidOperationException("A publicação foi bloqueada: "+string.Join(" ",checklist.Items.Where(x=>x.Severity==LabelPublicationSeverity.Blocker).Select(x=>x.Message)));
+        if(checklist.Warnings>0&&(!request.ConfirmWarnings||string.IsNullOrWhiteSpace(request.WarningJustification)))
+            throw new InvalidOperationException("Os alertas exigem confirmação explícita e justificativa.");
         var previous=await GetPublishedAsync(tenantId,request.TemplateKey,null,cancellationToken);
         await using var db=await dbFactory.OpenAsync(cancellationToken);await using var tx=await db.BeginTransactionAsync(cancellationToken);
         try
         {
+            var claimed=await db.ExecuteScalarAsync<long?>(new CommandDefinition("update ged.label_template_design set lock_version=lock_version+1 where id=@id and tenant_id=@tenantId and status='DRAFT' and reg_status in ('A','ACTIVE') and lock_version=@expected returning lock_version",new{id=design.Id,tenantId,expected=request.ExpectedLockVersion},tx,cancellationToken:cancellationToken));
+            if(claimed is null)throw new LabelCanvasConflictException();
             var version=await db.ExecuteScalarAsync<int>(new CommandDefinition("select coalesce(max(version_no),0)+1 from ged.label_template_design_version where template_design_id=@id",new{id=design.Id},tx,cancellationToken:cancellationToken));
             var generatedSummary=SummarizeDifference(previous?.DesignJson,design.DesignJson);
             var summary=string.IsNullOrWhiteSpace(request.ChangeSummary)?generatedSummary:$"{request.ChangeSummary} {generatedSummary}";
@@ -223,7 +233,7 @@ values(gen_random_uuid(),@tenantId,@id,@version,@version,'PUBLISHED',cast(@json 
 update ged.label_template_design set status='PUBLISHED',current_version=@version,published_by=@userId,published_at=now(),updated_by=@userId,updated_at=now() where id=@id and tenant_id=@tenantId;
 """;
             await db.ExecuteAsync(new CommandDefinition(insert,new{tenantId,id=design.Id,version,json=design.DesignJson,snapshot,summary,userId,hash},tx,cancellationToken:cancellationToken));
-            await InsertEventAsync(db,tx,tenantId,userId,design.Id,"PUBLISH_TEMPLATE",request.ChangeSummary??$"Versão {version} publicada.",new{version,hash,validation.Issues},ipAddress,userAgent,cancellationToken);
+            await InsertEventAsync(db,tx,tenantId,userId,design.Id,"PUBLISH_TEMPLATE",request.ChangeSummary??$"Versão {version} publicada.",new{version,hash,request.WarningJustification,checklist.ReadinessPercent,checklist.Items},ipAddress,userAgent,cancellationToken);
             await tx.CommitAsync(cancellationToken);
             return (await GetAsync(tenantId,request.TemplateKey,cancellationToken))!;
         }

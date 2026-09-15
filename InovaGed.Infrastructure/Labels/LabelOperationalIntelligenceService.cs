@@ -53,9 +53,35 @@ public sealed class LabelOperationalIntelligenceService(ILabelCanvasDesignServic
 
     public async Task<IReadOnlyList<LabelPreflightResult>> CheckBatchAsync(IReadOnlyList<LabelPreflightRequest> requests, CancellationToken cancellationToken = default)
     {
-        var output = new List<LabelPreflightResult>(requests.Count);
-        foreach (var request in requests) output.Add(await CheckAsync(request, cancellationToken));
-        return output;
+        var detailed = await CheckBatchDetailedAsync(new(requests), cancellationToken: cancellationToken);
+        return detailed.Items.Select(x => x.Result).ToArray();
+    }
+
+    public async Task<LabelBatchPreflightResult> CheckBatchDetailedAsync(LabelBatchPreflightRequest request,
+        IProgress<LabelBatchPreflightProgress>? progress = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (request.Items.Count is < 1 || request.Items.Count > Math.Clamp(request.MaxSelection, 1, 500))
+            throw new ArgumentOutOfRangeException(nameof(request), "A seleção deve respeitar o limite configurado.");
+        var started = DateTimeOffset.UtcNow;
+        var output = new LabelBatchPreflightItem[request.Items.Count];
+        var completed = 0;
+        await Parallel.ForEachAsync(Enumerable.Range(0, request.Items.Count),
+            new ParallelOptions { MaxDegreeOfParallelism = Math.Clamp(request.MaxConcurrency, 1, 8), CancellationToken = cancellationToken },
+            async (index, ct) =>
+            {
+                var item = request.Items[index];
+                var result = await CheckAsync(item, ct);
+                var status = !result.CanPrint ? "BLOCKED" : result.Warnings.Count > 0 ? "READY_WITH_WARNING" : "READY";
+                output[index] = new(item.SubjectId, status, result);
+                progress?.Report(new(Interlocked.Increment(ref completed), request.Items.Count));
+            });
+        var blocked = output.Count(x => x.Status == "BLOCKED");
+        var warnings = output.Count(x => x.Status == "READY_WITH_WARNING");
+        var ready = output.Length - blocked - warnings;
+        var readiness = output.Length == 0 ? 0 : (int)Math.Round((ready + warnings) * 100m / output.Length);
+        return new(output, new(output.Length, ready, warnings, blocked, readiness,
+            DateTimeOffset.UtcNow - started, DateTimeOffset.UtcNow));
     }
 
     private static LabelPreflightItem ToItem(LabelCanvasValidationIssue issue) => new(issue.Code,

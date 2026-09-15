@@ -335,6 +335,10 @@ select d.id Id,
             if (canPublish) ready++;
             results.Add(new { subjectId, html=rendered.Html, canPublish, issues });
         }
+        if (ready > 0)
+            await designs.RecordEventAsync(TenantId, userId, design.Id, "TEST_LAB_APPROVED",
+                $"{ready} amostra(s) apta(s) no Laboratório de Testes.",
+                new { designHash=renderer.ComputeSnapshotHash(request.DesignJson), tested=results.Count, ready }, Ip(), Agent(), ct);
         return Ok(new { tested=results.Count, ready, results });
     }
 
@@ -362,7 +366,7 @@ select d.id Id,
     [Authorize(Policy=AppPolicies.LabelDesignerPublish)]
     public async Task<IActionResult> Publish(string templateKey,[FromBody] LabelCanvasPublishRequest? request,CancellationToken ct)
     {
-        if(UserId is not Guid userId)return Unauthorized();request??=new LabelCanvasPublishRequest();var normalized=new LabelCanvasPublishRequest{TemplateKey=templateKey,ChangeSummary=request.ChangeSummary,ConfirmWarnings=request.ConfirmWarnings};
+        if(UserId is not Guid userId)return Unauthorized();request??=new LabelCanvasPublishRequest();var normalized=new LabelCanvasPublishRequest{TemplateKey=templateKey,ChangeSummary=request.ChangeSummary,ConfirmWarnings=request.ConfirmWarnings,WarningJustification=request.WarningJustification,ExpectedLockVersion=request.ExpectedLockVersion,ApprovedTestSamples=request.ApprovedTestSamples,MediaWidthMm=request.MediaWidthMm,MediaHeightMm=request.MediaHeightMm};
         return await ExecuteWrite(async()=>{var published=await designs.PublishAsync(TenantId,userId,normalized,Ip(),Agent(),ct);return Ok(new{ok=true,message=$"Versão {published.CurrentVersion} publicada.",redirectUrl=Url.Action(nameof(Details),new{templateKey})});},"publicar",templateKey);
     }
 
