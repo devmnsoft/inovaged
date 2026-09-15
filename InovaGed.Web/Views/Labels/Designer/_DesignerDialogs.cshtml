@@ -14,3 +14,11 @@
 <aside data-onboarding hidden aria-label="Primeiros passos"><h2>Comece seu modelo</h2><ol><li>Adicione campos</li><li>Organize o layout</li><li>Teste com dados reais</li><li>Publique</li></ol><button type="button" data-hide-onboarding>Não mostrar novamente</button></aside>
 <dialog data-conflict-dialog aria-labelledby="conflict-title"><form method="dialog"><h2 id="conflict-title">Este modelo foi atualizado</h2><p>Outra pessoa salvou alterações enquanto você estava editando.</p><p>Suas alterações locais estão preservadas até você escolher como resolver.</p><div><button value="cancel">Cancelar</button><button value="compare">Comparar alterações</button><button value="reload">Recarregar versão atual</button><button value="duplicate" class="ig-button ig-button--primary">Criar cópia com minhas alterações</button></div></form></dialog>
 <aside data-diff-drawer hidden aria-label="Comparar versão"><div><h2 data-diff-title>Alterações desta revisão</h2><button type="button" data-close-diff>Fechar</button></div><p data-diff-summary></p><div data-diff-list></div></aside>
+<aside class="designer-test-lab" data-test-lab hidden role="dialog" aria-modal="true" aria-labelledby="test-lab-title" tabindex="-1">
+    <header><div><small>VALIDAÇÃO COM DADOS REAIS</small><h2 id="test-lab-title">Laboratório de testes</h2><p>Teste esta etiqueta com registros reais antes de publicá-la.</p></div><button type="button" data-test-lab-close>Fechar</button></header>
+    <label>Buscar registros<input type="search" data-test-lab-search placeholder="Código, título ou descrição" autocomplete="off" aria-controls="test-lab-options" /></label>
+    <div id="test-lab-options" data-test-lab-options role="listbox" aria-label="Registros encontrados"></div>
+    <p data-test-lab-limit>Selecione até 5 registros.</p><div data-test-lab-selected></div>
+    <button type="button" class="ig-button ig-button--primary" data-test-lab-run disabled>Executar testes</button>
+    <section data-test-lab-summary aria-live="polite"></section><div data-test-lab-results></div>
+</aside>

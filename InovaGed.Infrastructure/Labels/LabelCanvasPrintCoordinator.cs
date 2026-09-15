@@ -19,7 +19,7 @@ public sealed class LabelCanvasPrintCoordinator(
             ??throw new KeyNotFoundException("O template Canvas não possui versão publicada.");
         if(context.ExecutionMode==LabelCanvasExecutionMode.SnapshotReplay && (context.ResolvedValues is null||context.BrandingSnapshot is null||context.CalibrationSnapshot is null))
             throw new InvalidOperationException("Snapshot replay exige valores, branding e calibração congelados.");
-        var source=context.ResolvedValues??await valueResolver.ResolveAsync(context.TenantId,design.SubjectType,context.OperationalSubjectType,context.SubjectId,cancellationToken);
+        var source=context.ResolvedValues??await valueResolver.ResolveAsync(context.TenantId,design.SubjectType,context.OperationalSubjectType,context.SubjectId!.Value,cancellationToken);
         if(source.Count==0)throw new KeyNotFoundException("Não foi possível localizar a origem da etiqueta.");
         var branding=context.BrandingSnapshot??await ResolveBrandingAsync(context,design,cancellationToken);
         var calibration=context.CalibrationSnapshot??await ResolveCalibrationAsync(context.TenantId,context.PrintProfileId,cancellationToken);
@@ -85,9 +85,9 @@ order by is_default desc limit 1
         return values;
     }
 
-    internal static string SafeOriginUrl(string operationalSubjectType,Guid subjectId)=>LabelCanvasSubjectTypeMapper.ToOperational(operationalSubjectType)=="BOX"?$"/Physical/Boxes/{subjectId}":$"/Ged/Details/{subjectId}";
+    internal static string SafeOriginUrl(string operationalSubjectType,Guid? subjectId)=>subjectId is not Guid persistedId?"":LabelCanvasSubjectTypeMapper.ToOperational(operationalSubjectType)=="BOX"?$"/Physical/Boxes/{persistedId}":$"/Ged/Details/{persistedId}";
     private static string CombineUrl(string? baseUrl,string path)=>string.IsNullOrWhiteSpace(baseUrl)?path:$"{baseUrl.TrimEnd('/')}/{path.TrimStart('/')}";
     private static LabelCanvasCalibration DefaultCalibration(Guid? id)=>new(id,0,0,0,0,100,4,4);
-    private static void Validate(LabelCanvasPrintContext context){if(context.TenantId==Guid.Empty)throw new InvalidOperationException("Tenant obrigatório.");if(context.SubjectId==Guid.Empty)throw new ArgumentException("Origem obrigatória.");ArgumentException.ThrowIfNullOrWhiteSpace(context.TemplateKey);}
+    private static void Validate(LabelCanvasPrintContext context){if(context.TenantId==Guid.Empty)throw new InvalidOperationException("Tenant obrigatório.");if(context.ResolvedValues is null&&(!context.SubjectId.HasValue||context.SubjectId.Value==Guid.Empty))throw new ArgumentException("Origem obrigatória.");ArgumentException.ThrowIfNullOrWhiteSpace(context.TemplateKey);}
     private static ResolvedPrintBranding CopyBranding(ResolvedPrintBranding source,Guid? primaryLogo)=>new(){HasBranding=source.HasBranding||primaryLogo.HasValue,Message=source.Message,ProfileId=source.ProfileId,ProfileName=source.ProfileName,ClientName=source.ClientName,ContractName=source.ContractName,OrganizationName=source.OrganizationName,PrimaryLogoAssetId=primaryLogo,SecondaryLogoAssetId=source.SecondaryLogoAssetId,HeaderTitle=source.HeaderTitle,HeaderSubtitle=source.HeaderSubtitle,HeaderExtraLine=source.HeaderExtraLine,FooterText=source.FooterText,FooterExtraLine=source.FooterExtraLine,PrimaryLogoWidthMm=source.PrimaryLogoWidthMm,SecondaryLogoWidthMm=source.SecondaryLogoWidthMm,ShowGeneratedAt=source.ShowGeneratedAt,ShowPageNumber=source.ShowPageNumber};
 }
