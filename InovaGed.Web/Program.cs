@@ -215,6 +215,7 @@ builder.Services.AddScoped<InovaGed.Application.Labels.Canvas.ILabelCanvasPrintC
 builder.Services.AddScoped<InovaGed.Application.Labels.Canvas.IManualLabelInstanceService, InovaGed.Infrastructure.Labels.ManualLabelInstanceService>();
 builder.Services.AddScoped<InovaGed.Application.Labels.Preview.ILabelPreviewService, InovaGed.Infrastructure.Labels.LabelPreviewService>();
 builder.Services.AddScoped<InovaGed.Application.Labels.Batch.ILabelBatchPlanService, InovaGed.Infrastructure.Labels.LabelBatchPlanService>();
+builder.Services.AddSingleton<InovaGed.Application.Labels.Automation.ILabelAutomationRuleEngine, InovaGed.Infrastructure.Labels.LabelAutomationRuleEngine>();
 builder.Services.AddTransient<CorrelationIdHandler>();
 builder.Services.AddHttpClient("InovaGed").AddHttpMessageHandler<CorrelationIdHandler>();
 builder.Services.AddInovaGedObservability(builder.Configuration);
