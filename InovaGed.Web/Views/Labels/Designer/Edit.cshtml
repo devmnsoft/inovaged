@@ -19,13 +19,13 @@
     @Html.AntiForgeryToken()
     <script type="application/json" id="designer-json">@Html.Raw(safeJson)</script>
     <script type="application/json" id="field-catalog">@Html.Raw(JsonSerializer.Serialize(Model.Fields, new JsonSerializerOptions(JsonSerializerDefaults.Web)))</script>
-    <partial name="_DesignerToolbar" model="Model" />
+    <partial name="~/Views/Labels/Designer/_DesignerToolbar.cshtml" model="Model" />
     <section class="canvas-workspace">
-        <partial name="_DesignerLibrary" model="Model" />
-        <partial name="_DesignerWorkspace" model="Model" />
-        <partial name="_DesignerInspector" model="Model" />
+        <partial name="~/Views/Labels/Designer/_DesignerLibrary.cshtml" model="Model" />
+        <partial name="~/Views/Labels/Designer/_DesignerWorkspace.cshtml" model="Model" />
+        <partial name="~/Views/Labels/Designer/_DesignerInspector.cshtml" model="Model" />
     </section>
-    <partial name="_DesignerDialogs" model="Model" />
+    <partial name="~/Views/Labels/Designer/_DesignerDialogs.cshtml" model="Model" />
 </main>
 @section Scripts {
     <script src="~/js/labels-help.js" asp-append-version="true"></script>

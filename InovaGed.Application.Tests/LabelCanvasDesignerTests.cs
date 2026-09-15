@@ -39,8 +39,26 @@ public sealed class LabelCanvasDesignerTests
     public void Designer_view_is_componentized_and_hides_technical_settings()
     {
         var root=FindRoot();var view=File.ReadAllText(Path.Combine(root,"InovaGed.Web","Views","Labels","Designer","Edit.cshtml"));
-        foreach(var partial in new[]{"_DesignerToolbar","_DesignerLibrary","_DesignerWorkspace","_DesignerInspector","_DesignerDialogs"})Assert.Contains(partial,view);
+        foreach(var partial in new[]{"_DesignerToolbar","_DesignerLibrary","_DesignerWorkspace","_DesignerInspector","_DesignerDialogs"})Assert.Contains($"~/Views/Labels/Designer/{partial}.cshtml",view);
         Assert.DoesNotContain("brandingBindingKey",view);Assert.DoesNotContain("labelContext",view);Assert.Contains("canvas-workspace",view);
+    }
+
+    [Fact]
+    public void Designer_nested_partials_use_publish_safe_absolute_paths()
+    {
+        var root=FindRoot();
+        var expected=new Dictionary<string,string[]>
+        {
+            ["_DesignerWorkspace.cshtml"]=["_DesignerStatusBar"],
+            ["_DesignerLibrary.cshtml"]=["_DesignerLayers"],
+            ["_DesignerDialogs.cshtml"]=["_DesignerModelSettings","_DesignerValidation"],
+            ["_DesignerModelSettings.cshtml"]=["_DesignerBranding"]
+        };
+        foreach(var (file,partials) in expected)
+        {
+            var view=File.ReadAllText(Path.Combine(root,"InovaGed.Web","Views","Labels","Designer",file));
+            foreach(var partial in partials) Assert.Contains($"~/Views/Labels/Designer/{partial}.cshtml",view);
+        }
     }
 
     [Fact]
