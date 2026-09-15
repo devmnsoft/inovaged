@@ -141,7 +141,7 @@ public class LabelsController : GedControllerBase
         filter.Page=Math.Max(1,filter.Page);
         filter.PageSize=Math.Clamp(filter.PageSize,1,100);
         ViewBag.Filter=filter;
-        ViewBag.Metrics=await _printJobs.GetMetricsAsync(TenantId,filter,ct);
+        ViewBag.Metrics=await LoadMetricsAsync(filter,ct);
         var jobs=await _printJobs.ListAsync(TenantId,filter,ct);
         ViewBag.JobActions=jobs.ToDictionary(x=>x.Id,x=>LabelPrintJobPresentation.Actions(x.Status,x.Status is LabelPrintJobStatus.PdfGenerated or LabelPrintJobStatus.Printed));
         return View(jobs);
@@ -331,10 +331,37 @@ where s.tenant_id=@tid and s.user_id=@userId and s.token_hash=@hash and s.subjec
     public async Task<IActionResult> Index(CancellationToken ct)
     {
         var filter=new LabelPrintJobFilter();
-        ViewBag.Metrics=await _printJobs.GetMetricsAsync(TenantId,filter,ct);
+        ViewBag.Metrics=await LoadMetricsAsync(filter,ct);
         using var db=await OpenAsync();
         ViewBag.PublishedTemplates=await db.ExecuteScalarAsync<int>(new CommandDefinition("select count(*) from ged.label_template where (tenant_id=@tid or tenant_id is null) and is_active=true and reg_status='A'",new{tid=TenantId},cancellationToken:ct));
         return View();
+    }
+
+    private async Task<LabelPrintQueueMetrics> LoadMetricsAsync(LabelPrintJobFilter filter, CancellationToken ct)
+    {
+        try
+        {
+            var metrics = await _printJobs.GetMetricsAsync(TenantId, filter, ct);
+            ViewBag.MetricsAvailable = true;
+            return metrics;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (PostgresException ex) when (ex.SqlState is PostgresErrorCodes.UndefinedTable or PostgresErrorCodes.UndefinedColumn)
+        {
+            // Schema obrigatório ausente deve continuar visível para os mecanismos de readiness/migration.
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Falha em métrica auxiliar. Tenant={TenantId} CorrelationId={CorrelationId} Operation={Operation}",
+                TenantId, HttpContext.TraceIdentifier, "LABEL_METRICS");
+            ViewBag.MetricsAvailable = false;
+            return new LabelPrintQueueMetrics(0, 0, 0, 0, 0, 0);
+        }
     }
 
     [HttpGet("/Labels/Guide")]
