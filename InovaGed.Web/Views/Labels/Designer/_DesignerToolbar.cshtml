@@ -1,20 +1,20 @@
 @model InovaGed.Web.Models.Labels.LabelCanvasDesignerPageViewModel
 @{ var canEdit = Model.IsNew || Model.Design.CanEdit; }
 <header class="canvas-toolbar">
-    <a class="tool-link" asp-action="Index" aria-label="Voltar"><app-icon name="arrow-left" size="16" decorative="true" /><span>Voltar</span></a>
+    <a class="tool-link" asp-action="Index" aria-label="Voltar para modelos"><app-icon name="arrow-left" size="16" decorative="true" /><span>Voltar para modelos</span></a>
     <div class="canvas-template-heading">
         <strong>@(Model.IsNew ? "Novo modelo" : Model.Design.TemplateName)</strong>
         <small><span class="designer-status is-@Model.Design.Status.ToLowerInvariant()">@(Model.Design.Status == "DRAFT" ? $"Revisão da v{Model.Design.CurrentVersion}" : $"Publicado · v{Model.Design.CurrentVersion}")</span></small>
-        <small data-save-status role="status" aria-live="polite">Salvo</small>
+        <small data-save-status role="status" aria-live="polite">Nenhuma alteração</small>
     </div>
     <div class="toolbar-cluster toolbar-history">
         <button type="button" data-action="undo" aria-label="Desfazer"><app-icon name="undo" size="17" decorative="true" /></button>
         <button type="button" data-action="redo" aria-label="Refazer"><app-icon name="refresh" size="17" decorative="true" /></button>
     </div>
     <div class="toolbar-cluster designer-modes" role="tablist" aria-label="Modo do designer">
-        <button type="button" role="tab" class="is-active" data-designer-mode="design" aria-selected="true" tabindex="0">Design</button>
-        <button type="button" role="tab" data-designer-mode="preview" aria-selected="false" tabindex="-1">Prévia</button>
-        <button type="button" role="tab" data-designer-mode="verification" aria-selected="false" tabindex="-1">Verificação</button>
+        <button type="button" role="tab" class="is-active" data-designer-mode="design" aria-selected="true" tabindex="0">Editar modelo</button>
+        <button type="button" role="tab" data-designer-mode="preview" aria-selected="false" tabindex="-1">Visualizar com dados</button>
+        <button type="button" role="tab" data-designer-mode="verification" aria-selected="false" tabindex="-1">Verificar problemas</button>
     </div>
     <div class="toolbar-cluster toolbar-primary">
         @if (!Model.IsNew) {
@@ -27,8 +27,8 @@
             </div>
         </div>
         }
-        <button type="button" data-action="live-preview">Prévia</button>
-        @if (!Model.IsNew) { <button type="button" data-dataset-open>Testar modelo</button> }
+        <button type="button" data-action="live-preview">Visualizar com dados</button>
+        @if (!Model.IsNew) { <button type="button" data-dataset-open>Testar com diferentes registros</button> }
         <details class="designer-more"><summary>Organizar</summary><nav aria-label="Assistência de layout">
             <button type="button" data-assist-layout="align">Alinhar automaticamente</button>
             <button type="button" data-assist-layout="horizontal">Distribuir horizontalmente</button>
@@ -37,7 +37,7 @@
             <button type="button" data-assist-layout="center">Centralizar conteúdo</button>
         </nav></details>
         @if (!Model.IsNew && Model.Design.Status == "DRAFT" && Model.Design.CurrentVersion > 0) { <button type="button" data-action="compare">Comparar alterações</button> }
-        <button type="button" data-action="save" @(canEdit ? null : "disabled")>Salvar</button>
+        <button type="button" data-action="save" @(canEdit ? null : "disabled")>Salvar rascunho</button>
         @if (!Model.IsNew) { <button type="button" data-action="publish" @(Model.Design.CanEdit ? null : "disabled")>Publicar</button> }
         <details class="designer-more"><summary aria-label="Mais opções">Mais</summary><nav>
             <button type="button" data-focus-mode aria-pressed="false">Modo foco</button>
