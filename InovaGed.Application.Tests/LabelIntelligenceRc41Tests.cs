@@ -19,14 +19,7 @@ public sealed class LabelIntelligenceRc41Tests
 
     [Fact] public void recommendation_requires_tenant_scope() => Assert.Throws<ArgumentException>(() =>
         new LabelTemplateRecommendationService().Recommend(new(Guid.Empty,"Box","A4",[])));
-
-    [Fact] public void exact_profile_is_prioritized_and_default_is_fallback()
-    {
-        var service=new LabelPrintProfileRecommendationService(),tenant=Guid.NewGuid(),exact=Guid.NewGuid(),fallback=Guid.NewGuid();
-        var profiles=new[]{new LabelPrintProfileCandidate(fallback,"Padrão",null,"LETTER",50,30,100,true,false),new LabelPrintProfileCandidate(exact,"Zebra A4","Zebra","A4",100,70,101.2m,false,true)};
-        Assert.Equal(exact,service.Recommend(tenant,"A4",100,70,"Zebra",profiles)!.ProfileId);
-        Assert.Equal(fallback,service.Recommend(tenant,"A5",40,20,null,profiles)!.ProfileId);
-    }
+ 
 
     [Fact] public void print_profile_recommendation_orders_by_named_score()
     {
@@ -42,8 +35,7 @@ public sealed class LabelIntelligenceRc41Tests
         Assert.Equal(exact, service.Recommend(Guid.NewGuid(), "A4", 100, 70, "Zebra", profiles)!.ProfileId);
     }
 
-    [Fact] public void print_profile_recommendation_exact_match_wins() =>
-        exact_profile_is_prioritized_and_default_is_fallback();
+    
 
     [Fact] public void print_profile_recommendation_default_is_fallback()
     {
