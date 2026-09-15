@@ -3,13 +3,30 @@ using System.Security.Cryptography;
 using System.Text;
 using Dapper;
 using InovaGed.Application.Common.Database;
+using InovaGed.Application.Common.Time;
 using InovaGed.Application.Labels.Printing;
+using Microsoft.Extensions.Logging;
 
 namespace InovaGed.Infrastructure.PhysicalArchive;
 
-public sealed class LabelPrintJobService(IDbConnectionFactory dbFactory) : ILabelPrintJobService
+public sealed class LabelPrintJobService(
+    IDbConnectionFactory dbFactory,
+    IClock clock,
+    ITenantTimeZoneService tenantTimeZone,
+    ILogger<LabelPrintJobService> logger) : ILabelPrintJobService
 {
     private static readonly LabelPrintStateMachine StateMachine = new();
+    internal const string MetricsSql = """
+select count(*) filter(where status in ('PENDING','PREVIEWED'))::int Awaiting,
+count(*) filter(where status='READY_TO_PRINT')::int Ready,
+count(*) filter(where status='PRINTED' and printed_at>=@TodayStartUtc and printed_at<@TomorrowStartUtc)::int PrintedToday,
+count(*) filter(where status='ERROR')::int Errors,
+count(*) filter(where reprint_reason is not null)::int Reprints,
+count(*)::int Total
+from ged.label_print_job
+where tenant_id=@TenantId and reg_status='A'
+and (@FromUtc is null or requested_at>=@FromUtc) and (@ToExclusiveUtc is null or requested_at<@ToExclusiveUtc)
+""";
 
     public async Task<Guid> CreateJobAsync(LabelPrintJobCreateCommand x, CancellationToken ct)
     {
@@ -82,13 +99,14 @@ from ged.label_print_job_item where tenant_id=@tenantId and job_id=@jobId and re
 
     public async Task<IReadOnlyList<LabelPrintJobListItem>> ListAsync(Guid tenantId,LabelPrintJobFilter f,CancellationToken ct)
     {
+        var boundaries = BuildMetricsBoundaries(clock.UtcNow, tenantTimeZone.Resolve(null), f.From, f.To);
         await using var db=await dbFactory.OpenAsync(ct);
         return (await db.QueryAsync<LabelPrintJobListItem>(new CommandDefinition("""
 select j.id,j.job_number JobNumber,j.print_mode PrintMode,j.template_code TemplateCode,j.template_name TemplateName,j.subject_type SubjectType,
 j.control_number ControlNumber,j.copies,j.status,j.requested_at RequestedAt,j.printed_at PrintedAt,u.name RequestedByName,j.reprint_reason ReprintReason,
 case when j.batch_id is null then 1 else (select count(*) from ged.label_print_job_item i where i.tenant_id=j.tenant_id and i.job_id=j.id and i.reg_status='A') end::int ItemCount
 from ged.label_print_job j left join ged.app_user u on u.tenant_id=j.tenant_id and u.id=j.requested_by
-where j.tenant_id=@tenantId and j.reg_status='A' and (@From is null or j.requested_at>=@From) and (@To is null or j.requested_at<@To + interval '1 day')
+where j.tenant_id=@tenantId and j.reg_status='A' and (@FromUtc is null or j.requested_at>=@FromUtc) and (@ToExclusiveUtc is null or j.requested_at<@ToExclusiveUtc)
 and (@UserId is null or j.requested_by=@UserId) and (coalesce(@TemplateCode,'')='' or j.template_code=@TemplateCode)
 and (coalesce(@SubjectType,'')='' or j.subject_type=@SubjectType) and (coalesce(@ControlNumber,'')='' or j.control_number ilike '%'||@ControlNumber||'%')
 and (coalesce(@Status,'')='' or j.status=@Status)
@@ -100,24 +118,49 @@ order by
  case when @Sort='template' then coalesce(j.template_name,j.template_code) end asc,
  j.requested_at desc
 limit @PageSize offset @Offset
-""",new{tenantId,f.From,f.To,f.UserId,f.TemplateCode,f.SubjectType,f.ControlNumber,f.Status,f.IsReprint,f.Search,Sort=NormalizeSort(f.Sort),PageSize=Math.Clamp(f.PageSize,1,100),Offset=(Math.Max(1,f.Page)-1)*Math.Clamp(f.PageSize,1,100)},cancellationToken:ct))).AsList();
+""",new{tenantId,boundaries.FromUtc,boundaries.ToExclusiveUtc,f.UserId,f.TemplateCode,f.SubjectType,f.ControlNumber,f.Status,f.IsReprint,f.Search,Sort=NormalizeSort(f.Sort),PageSize=Math.Clamp(f.PageSize,1,100),Offset=(Math.Max(1,f.Page)-1)*Math.Clamp(f.PageSize,1,100)},cancellationToken:ct))).AsList();
     }
 
     public async Task<LabelPrintQueueMetrics> GetMetricsAsync(Guid tenantId,LabelPrintJobFilter f,CancellationToken ct)
     {
+        var started = System.Diagnostics.Stopwatch.StartNew();
+        var boundaries = BuildMetricsBoundaries(clock.UtcNow, tenantTimeZone.Resolve(null), f.From, f.To);
         await using var db=await dbFactory.OpenAsync(ct);
-        return await db.QuerySingleAsync<LabelPrintQueueMetrics>(new CommandDefinition("""
-select count(*) filter(where status in ('PENDING','PREVIEWED'))::int Awaiting,
-count(*) filter(where status='READY_TO_PRINT')::int Ready,
-count(*) filter(where status='PRINTED' and printed_at>=current_date)::int PrintedToday,
-count(*) filter(where status='ERROR')::int Errors,
-count(*) filter(where reprint_reason is not null)::int Reprints,
-count(*)::int Total
-from ged.label_print_job
-where tenant_id=@tenantId and reg_status='A'
-and (@From is null or requested_at>=@From) and (@To is null or requested_at<@To + interval '1 day')
-""",new{tenantId,f.From,f.To},cancellationToken:ct));
+        try
+        {
+            return await db.QuerySingleAsync<LabelPrintQueueMetrics>(new CommandDefinition(MetricsSql,new
+            {
+                TenantId=tenantId,
+                boundaries.TodayStartUtc,
+                boundaries.TomorrowStartUtc,
+                boundaries.FromUtc,
+                boundaries.ToExclusiveUtc
+            },cancellationToken:ct));
+        }
+        finally
+        {
+            logger.LogInformation("LABEL_METRICS completed. Tenant={TenantId} DurationMs={DurationMs}", tenantId, started.ElapsedMilliseconds);
+        }
     }
+
+    internal static LabelMetricsBoundaries BuildMetricsBoundaries(DateTimeOffset nowUtc, TimeZoneInfo timeZone, DateTime? from, DateTime? to)
+    {
+        var localToday = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(nowUtc, timeZone).DateTime);
+        return new(
+            LocalDateStartUtc(localToday, timeZone),
+            LocalDateStartUtc(localToday.AddDays(1), timeZone),
+            from.HasValue ? LocalDateStartUtc(DateOnly.FromDateTime(from.Value), timeZone) : null,
+            to.HasValue ? LocalDateStartUtc(DateOnly.FromDateTime(to.Value).AddDays(1), timeZone) : null);
+    }
+
+    private static DateTimeOffset LocalDateStartUtc(DateOnly date, TimeZoneInfo timeZone)
+    {
+        var local = DateTime.SpecifyKind(date.ToDateTime(TimeOnly.MinValue), DateTimeKind.Unspecified);
+        return new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(local, timeZone), TimeSpan.Zero);
+    }
+
+    internal sealed record LabelMetricsBoundaries(DateTimeOffset TodayStartUtc, DateTimeOffset TomorrowStartUtc,
+        DateTimeOffset? FromUtc, DateTimeOffset? ToExclusiveUtc);
 
     public async Task MarkPreviewedAsync(Guid tenantId,Guid jobId,Guid userId,CancellationToken ct)
     {
