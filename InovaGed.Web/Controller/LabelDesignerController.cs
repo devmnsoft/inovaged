@@ -207,11 +207,11 @@ public sealed class LabelDesignerController(IDbConnectionFactory dbFactory, ILab
     [HttpPost("/Labels/Designer/Validate/{templateKey}")]
     [HttpPost("/Labels/Designer/{templateKey}/Validate")]
     [ValidateAntiForgeryToken]
+    [Authorize(Policy=AppPolicies.LabelDesignerPreview)]
     public async Task<IActionResult> ValidateDesign(string templateKey,[FromBody] LabelCanvasSaveRequest? request,CancellationToken ct)
     {
         var design=await designs.GetAsync(TenantId,templateKey,ct);if(design is null)return NotFound();
         var json=request?.DesignJson??design.DesignJson;var allowed=fieldCatalog.GetFields(request?.SubjectType??design.SubjectType).Select(x=>x.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);var validation=renderer.Validate(json,allowed);
-        await designs.RecordEventAsync(TenantId,UserId,design.Id,validation.HasErrors?"VALIDATION_FAILED":"VALIDATION_PASSED",validation.HasErrors?"A validação encontrou erros.":"Layout validado.",validation,Ip(),Agent(),ct);
         return Ok(validation);
     }
 
