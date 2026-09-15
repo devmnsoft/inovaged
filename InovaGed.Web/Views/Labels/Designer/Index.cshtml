@@ -10,9 +10,8 @@
     var isAdministrator = (await AuthorizationService.AuthorizeAsync(User, AppPolicies.Administracao)).Succeeded;
     var groups = new[]
     {
-        (Key: "mine", Title: "Meus modelos", Items: Model.Items.Where(x => !x.IsSystem && !x.IsLegacy)),
-        (Key: "system", Title: "Modelos padrão", Items: Model.Items.Where(x => x.IsSystem && !x.IsLegacy)),
-        (Key: "legacy", Title: "Modelos antigos", Items: Model.Items.Where(x => x.IsLegacy))
+        (Key: "mine", Title: "Modelos personalizados", Items: Model.Items.Where(x => !x.IsSystem)),
+        (Key: "system", Title: "Padrões de fábrica", Items: Model.Items.Where(x => x.IsSystem && !x.IsLegacy))
     };
 }
 @section Styles {
@@ -24,8 +23,8 @@
     <header class="label-designer-hero">
         <div>
             <small>Modelos de etiqueta</small>
-            <h1>Seus modelos</h1>
-            <p>Crie, edite e publique layouts sem expor configurações técnicas.</p>
+            <h1>Meus modelos</h1>
+            <p>Veja uma prévia, abra seus modelos no Canvas ou personalize um padrão de fábrica.</p>
         </div>
         <div class="designer-actions">
             <partial name="~/Views/Labels/Shared/_LabelHelpDrawer.cshtml" />
@@ -33,7 +32,7 @@
             @if (canCreate && Model.SchemaActionAllowed)
             {
                 <button type="button" class="ig-button ig-button--secondary" data-import-open>Importar modelo</button>
-                <a class="ig-button ig-button--primary" asp-action="New">Novo modelo</a>
+                <a class="ig-button ig-button--primary" asp-action="New">Criar modelo no editor visual</a>
             }
         </div>
     </header>
@@ -51,7 +50,7 @@
             <p>Nenhum modelo de etiqueta encontrado.</p>
             @if (canCreate)
             {
-                <a class="ig-button ig-button--primary" asp-action="New">Novo modelo</a>
+                <a class="ig-button ig-button--primary" asp-action="New">Criar primeiro modelo</a>
             }
         </section>
     }
@@ -89,7 +88,7 @@
                         var search = $"{item.Name} {item.ClientName} {item.Purpose} {item.BrandingProfileName}".ToLowerInvariant();
                         var aspectRatio = (item.WidthMm / item.HeightMm).ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
                         <article class="col-md-6 col-xl-4 designer-card" data-model-row data-status="@normalizedStatus" data-purpose="@item.Purpose.ToLowerInvariant()" data-client="@item.ClientName.ToLowerInvariant()" data-system="@item.IsSystem.ToString().ToLowerInvariant()" data-legacy="@item.IsLegacy.ToString().ToLowerInvariant()" data-search="@search">
-                            <div class="card h-100"><div class="card-body"><div class="bg-light rounded mb-3 overflow-hidden" style="aspect-ratio:@aspectRatio"><iframe class="w-100 h-100 border-0" loading="lazy" title="Miniatura de @item.Name" data-thumbnail-src="@Url.Action("Thumbnail", new { templateKey = item.TemplateKey })"></iframe></div><h3 class="h6">@item.Name</h3><p class="small text-muted mb-2">@item.ClientName · @item.Purpose</p><p class="small">@item.Dimensions · versão @item.Version · @(normalizedStatus == "draft" ? "Rascunho" : "Publicado")</p><div class="d-flex flex-wrap gap-2 small"><a asp-action="Edit" asp-route-templateKey="@item.TemplateKey">Editar</a><details class="row-more"><summary aria-label="Mais ações">···</summary><a asp-action="Preview" asp-route-templateKey="@item.TemplateKey">Prévia</a><a asp-action="Versions" asp-route-templateKey="@item.TemplateKey">Versões</a><a asp-action="Export" asp-route-templateKey="@item.TemplateKey">Exportar</a></details></div></div></div>
+                            <div class="card h-100"><div class="card-body"><div class="designer-thumbnail" style="aspect-ratio:@aspectRatio"><iframe loading="lazy" title="Miniatura de @item.Name" data-thumbnail-src="@Url.Action("Thumbnail", new { templateKey = item.TemplateKey })"></iframe></div><h3 class="h6">@item.Name</h3><p class="small text-muted mb-2">@item.Purpose · @item.Dimensions</p><p class="small">@(normalizedStatus == "draft" ? "Rascunho" : "Publicado") · versão @item.Version<br /><span>Alterado em @(item.UpdatedAt?.ToString("dd/MM/yyyy HH:mm") ?? "data indisponível")</span></p><div class="designer-card-actions">@if(item.IsSystem){<a class="ig-button ig-button--primary" asp-action="Details" asp-route-templateKey="@item.TemplateKey">Duplicar e personalizar</a>}else if(item.CanEdit){<a class="ig-button ig-button--primary" asp-action="Edit" asp-route-templateKey="@item.TemplateKey">Abrir editor visual (Canvas)</a>}else{<a class="ig-button ig-button--primary" asp-action="Details" asp-route-templateKey="@item.TemplateKey">Criar nova versão</a>}<a asp-action="Preview" asp-route-templateKey="@item.TemplateKey">Visualizar</a><details class="row-more"><summary>Mais ações</summary><a asp-action="Versions" asp-route-templateKey="@item.TemplateKey">Histórico de versões</a><a asp-action="Export" asp-route-templateKey="@item.TemplateKey">Exportar</a></details></div></div></div>
                         </article>
                     }
                 </div>
