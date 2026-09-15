@@ -1,7 +1,7 @@
 @model InovaGed.Web.Models.Labels.LabelCanvasDesignerPageViewModel
 @{ var canEdit = Model.IsNew || Model.Design.CanEdit; }
 <aside class="component-panel" aria-label="Biblioteca do editor">
-    <header><span>Adicionar conteúdo</span><h2>Biblioteca</h2></header>
+    <header><span>Biblioteca</span><h2>Adicionar elementos</h2></header>
     <nav class="library-tabs" role="tablist" aria-label="Biblioteca">
         <button type="button" class="is-active" id="library-tab-elements" role="tab" aria-selected="true" aria-controls="library-panel-elements" data-library-tab="elements">Elementos</button>
         <button type="button" id="library-tab-fields" role="tab" aria-selected="false" aria-controls="library-panel-fields" data-library-tab="fields">Campos</button>
@@ -27,5 +27,5 @@
         @foreach (var preset in new[] { "Cabeçalho institucional", "Identificação", "Classificação", "Temporalidade", "Localização", "Rastreabilidade", "Cliente/Contrato" }) { <button type="button" data-preset="@preset" @(canEdit ? null : "disabled")><i><app-icon name="cards" size="18" decorative="true" /></i><span>@preset</span></button> }
         <section data-library-section="blocks" data-custom-blocks aria-live="polite"><h3>Meus blocos</h3><p data-custom-blocks-status>Carregando blocos…</p><div data-custom-blocks-list></div></section>
     </div>
-    <partial name="_DesignerLayers" model="Model" />
+    <partial name="~/Views/Labels/Designer/_DesignerLayers.cshtml" model="Model" />
 </aside>
