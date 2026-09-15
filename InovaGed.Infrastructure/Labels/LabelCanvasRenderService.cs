@@ -56,6 +56,11 @@ public sealed class LabelCanvasRenderService(ILogger<LabelCanvasRenderService> l
             if (element.Type is "logo" or "image" && !string.IsNullOrWhiteSpace(element.Binding?.Asset) && !IsSafeImageSource(element.Binding.Asset)) result.Issues.Add(new("INVALID_ASSET", "ERROR", "A imagem vinculada não possui uma origem válida.", element.Id));
             if(element.Binding is not null&&!Formats.Contains((element.Binding.Format??"NONE").ToUpperInvariant()))result.Issues.Add(new("UNSAFE_FORMAT","ERROR","O formato do binding não é suportado.",element.Id));
             if(!VisibilityOperators.Contains((element.VisibilityCondition?.Operator??"ALWAYS").ToUpperInvariant()))result.Issues.Add(new("UNSAFE_VISIBILITY","ERROR","A condição de visibilidade não é suportada.",element.Id));
+            var conditional=element.ConditionalAppearance;
+            if(conditional.Enabled&&(!VisibilityOperators.Contains((conditional.Operator??"").ToUpperInvariant())||string.IsNullOrWhiteSpace(conditional.Field)))
+                result.Issues.Add(new("UNSAFE_CONDITIONAL_APPEARANCE","ERROR","A condição de aparência não é suportada.",element.Id));
+            if(conditional.Enabled&&!IsSafeConditionalAppearance(conditional))
+                result.Issues.Add(new("UNSAFE_CONDITIONAL_STYLE","ERROR","A aparência condicional contém uma propriedade não permitida.",element.Id));
         }
         for (var i = 0; i < document.Elements.Count; i++)
         for (var j = i + 1; j < document.Elements.Count; j++)
@@ -114,7 +119,8 @@ public sealed class LabelCanvasRenderService(ILogger<LabelCanvasRenderService> l
 
     private static void AppendElement(StringBuilder html,LabelCanvasElementDto e,IReadOnlyDictionary<string,object?> values)
     {
-        var style=$"left:{Mm(e.XMm)}mm;top:{Mm(e.YMm)}mm;width:{Mm(e.WidthMm)}mm;height:{Mm(e.HeightMm)}mm;transform:rotate({Mm(e.RotationDeg)}deg);z-index:{e.ZIndex};font-family:{SafeFont(e.Style.FontFamily)};font-size:{Mm(e.Style.FontSizePt)}pt;font-weight:{SafeWeight(e.Style.FontWeight)};font-style:{SafeFontStyle(e.Style.FontStyle)};text-decoration:{SafeTextDecoration(e.Style.TextDecoration)};line-height:{Mm(Math.Clamp(e.Style.LineHeight,.5m,3m))};letter-spacing:{Mm(Math.Clamp(e.Style.LetterSpacing,-2m,10m))}px;opacity:{Mm(Math.Clamp(e.Style.Opacity,0m,1m))};display:flex;align-items:{SafeVerticalAlign(e.Style.VerticalAlign)};text-align:{SafeAlign(e.Style.Align)};color:{SafeColor(e.Style.Color,"#111111")};background:{SafeColor(e.Style.BackgroundColor,"transparent")};border:{SafeBorder(e.Style.Border)};border-radius:{Mm(e.Style.BorderRadiusMm)}mm;padding:{Mm(e.Style.PaddingMm)}mm;";
+        var conditional=ResolveConditionalAppearance(e,values);
+        var style=$"left:{Mm(e.XMm)}mm;top:{Mm(e.YMm)}mm;width:{Mm(e.WidthMm)}mm;height:{Mm(e.HeightMm)}mm;transform:rotate({Mm(e.RotationDeg)}deg);z-index:{e.ZIndex};font-family:{SafeFont(e.Style.FontFamily)};font-size:{Mm(e.Style.FontSizePt)}pt;font-weight:{SafeWeight(conditional?.FontWeight??e.Style.FontWeight)};font-style:{SafeFontStyle(e.Style.FontStyle)};text-decoration:{SafeTextDecoration(e.Style.TextDecoration)};line-height:{Mm(Math.Clamp(e.Style.LineHeight,.5m,3m))};letter-spacing:{Mm(Math.Clamp(e.Style.LetterSpacing,-2m,10m))}px;opacity:{Mm(Math.Clamp(e.Style.Opacity,0m,1m))};display:flex;align-items:{SafeVerticalAlign(e.Style.VerticalAlign)};text-align:{SafeAlign(e.Style.Align)};color:{SafeColor(conditional?.Color??e.Style.Color,"#111111")};background:{SafeColor(conditional?.BackgroundColor??e.Style.BackgroundColor,"transparent")};border:{SafeBorder(conditional?.Border??e.Style.Border)};border-radius:{Mm(e.Style.BorderRadiusMm)}mm;padding:{Mm(e.Style.PaddingMm)}mm;";
         var value=ResolveValue(e,values);
         if(e.Validation.ShowOnlyWhenValue&&string.IsNullOrWhiteSpace(value))return;
         html.Append("<div class=\"label-element label-").Append(WebUtility.HtmlEncode(e.Type)).Append("\" data-element-id=\"").Append(WebUtility.HtmlEncode(e.Id)).Append("\" style=\"").Append(style).Append("\">");
@@ -181,6 +187,18 @@ public sealed class LabelCanvasRenderService(ILogger<LabelCanvasRenderService> l
         if(op=="ALWAYS")return true;var actual=!string.IsNullOrWhiteSpace(condition.Field)&&values.TryGetValue(condition.Field,out var raw)?Convert.ToString(raw)??"":"";
         return op switch{"HAS_VALUE" or "IS_NOT_EMPTY"=>!string.IsNullOrWhiteSpace(actual),"IS_EMPTY"=>string.IsNullOrWhiteSpace(actual),"EQUALS"=>string.Equals(actual,condition.Value,StringComparison.OrdinalIgnoreCase),"NOT_EQUALS"=>!string.Equals(actual,condition.Value,StringComparison.OrdinalIgnoreCase),"CONTAINS"=>actual.Contains(condition.Value??"",StringComparison.OrdinalIgnoreCase),"NOT_CONTAINS"=>!actual.Contains(condition.Value??"",StringComparison.OrdinalIgnoreCase),_=>false};
     }
+    private static LabelCanvasConditionalAppearanceDto? ResolveConditionalAppearance(LabelCanvasElementDto element,IReadOnlyDictionary<string,object?> values)
+    {
+        var rule=element.ConditionalAppearance;
+        if(!rule.Enabled||!IsSafeConditionalAppearance(rule)||string.IsNullOrWhiteSpace(rule.Field)||!values.TryGetValue(rule.Field,out var actual))return null;
+        try{return InovaGed.Application.Labels.Intelligence.LabelConditionPolicy.Evaluate(rule.Operator,actual,rule.Value)?rule:null;}
+        catch(ArgumentException){return null;}
+    }
+    private static bool IsSafeConditionalAppearance(LabelCanvasConditionalAppearanceDto rule)
+        => (string.IsNullOrWhiteSpace(rule.FontWeight)||rule.FontWeight is "400" or "500" or "600" or "700" or "bold")
+           && (string.IsNullOrWhiteSpace(rule.Color)||SafeColor(rule.Color,"")==rule.Color)
+           && (string.IsNullOrWhiteSpace(rule.BackgroundColor)||SafeColor(rule.BackgroundColor,"")==rule.BackgroundColor)
+           && (string.IsNullOrWhiteSpace(rule.Border)||SafeBorder(rule.Border)==rule.Border);
     private static void ValidateRuntime(LabelCanvasDocumentDto document,IReadOnlyDictionary<string,object?> values,LabelCanvasValidationResult validation)
     {
         foreach(var element in document.Elements.Where(x=>x.Visible&&IsVisible(x,values)))

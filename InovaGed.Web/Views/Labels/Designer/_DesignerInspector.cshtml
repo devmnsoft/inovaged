@@ -11,6 +11,17 @@
             <div class="property-grid" data-property-for="field"><label>Prefixo<input data-prop="binding.prefix" /></label><label>Sufixo<input data-prop="binding.suffix" /></label></div>
             <label data-property-for="field">Formato<select data-prop="binding.format"><option value="NONE">Texto</option><option value="UPPERCASE">Maiúsculas</option><option value="LOWERCASE">Minúsculas</option><option value="TITLECASE">Iniciais maiúsculas</option><option value="DATE_DDMMYYYY">Data (dd/MM/yyyy)</option><option value="DATETIME_DDMMYYYY_HHMM">Data e hora</option><option value="NUMBER">Número</option><option value="CURRENCY">Moeda</option><option value="CODE">Código</option><option value="MASK">Máscara</option><option value="TRUNCATE">Truncar</option></select></label>
         </fieldset></details>
+        <details class="inspector-group"><summary>Aparência condicional</summary><fieldset><legend class="visually-hidden">Aparência condicional segura</legend>
+            <label class="check"><input type="checkbox" data-prop="conditionalAppearance.enabled" /> Usar aparência condicional</label>
+            <p>Quando a condição for atendida, aplique somente estilos seguros suportados na impressão.</p>
+            <label>Campo<select data-prop="conditionalAppearance.field"><option value="">Selecione</option>@foreach(var field in Model.Fields){<option value="@field.Key">@field.Label</option>}</select></label>
+            <label>Condição<select data-prop="conditionalAppearance.operator"><option value="EQUALS">é igual a</option><option value="NOT_EQUALS">é diferente de</option><option value="CONTAINS">contém</option><option value="NOT_CONTAINS">não contém</option><option value="IS_EMPTY">está vazio</option><option value="IS_NOT_EMPTY">não está vazio</option></select></label>
+            <label>Valor<input data-prop="conditionalAppearance.value" /></label>
+            <label>Predefinição<select data-conditional-preset><option value="HIGHLIGHT">Destaque</option><option value="WARNING">Atenção</option><option value="NEUTRAL">Neutro</option><option value="CUSTOM">Personalizado seguro</option></select></label>
+            <div class="property-grid"><label>Texto<input type="color" data-prop="conditionalAppearance.color" /></label><label>Fundo<input type="color" data-prop="conditionalAppearance.backgroundColor" /></label></div>
+            <label class="check"><input type="checkbox" data-conditional-bold /> Negrito</label>
+            <label>Borda<select data-prop="conditionalAppearance.border"><option value="none">Sem borda</option><option value="1px solid #111111">Linha fina</option><option value="1px dashed #111111">Tracejada</option><option value="2px solid #111111">Linha forte</option></select></label>
+        </fieldset></details>
         <details class="inspector-group"><summary>Aparência</summary><fieldset><legend class="visually-hidden">Aparência</legend>
             <label data-property-for="text field">Fonte<select data-prop="style.fontFamily"><option>Arial</option><option>Helvetica</option><option>Verdana</option><option>Times New Roman</option></select></label>
             <div class="property-grid"><label data-property-for="text field">Tamanho (pt)<input type="number" min="5" max="72" step=".5" data-prop="style.fontSizePt" /></label><label>Opacidade<input type="number" min="0" max="1" step=".05" data-prop="style.opacity" /></label><label>Cor<input type="color" data-prop="style.color" /></label><label data-property-for="rect">Fundo<input type="color" data-prop="style.backgroundColor" /></label></div>
