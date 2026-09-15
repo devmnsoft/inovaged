@@ -169,7 +169,10 @@ public class LabelsController : GedControllerBase
     [HttpPost,ValidateAntiForgeryToken]
     public async Task<IActionResult> CreatePrintJob(CreatePrintJobInput input,CancellationToken ct)
     {
-        if(UserId is not Guid uid)return Unauthorized();if(!ModelState.IsValid)return RedirectToAction(nameof(PrintWizard));
+        if(UserId is not Guid uid)return Unauthorized();
+        if (!input.SubjectId.HasValue || input.SubjectId.Value == Guid.Empty)
+            ModelState.AddModelError(nameof(input.SubjectId), "Selecione o registro que será etiquetado.");
+        if(!ModelState.IsValid)return RedirectToAction(nameof(PrintWizard));
         var template=await _catalog.GetTemplateAsync(TenantId,input.TemplateCode,ct);
         if(!await _catalog.IsCompatibleAsync(TenantId,input.TemplateCode,input.SubjectType,ct))return BadRequest("Modelo incompatível.");
         if(string.Equals(template.ViewName,"CanvasLabel",StringComparison.OrdinalIgnoreCase))
@@ -376,7 +379,7 @@ where s.tenant_id=@tid and s.user_id=@userId and s.token_hash=@hash and s.subjec
         mode = mode?.ToUpperInvariant() ?? LabelPrintMode.Factory;
         var options = await _catalog.GetTemplatesAsync(TenantId,subjectType,mode,ct);
         if (_catalog.IsTemporaryCatalog) ViewBag.CatalogMigrationWarning = "As migrations de modelos de etiqueta ainda não foram aplicadas. O sistema está usando catálogo temporário.";
-        if (string.IsNullOrWhiteSpace(templateCode) || !await _catalog.IsCompatibleAsync(TenantId,templateCode,subjectType,ct) || !options.Any(x=>x.Code==templateCode)) templateCode=options.FirstOrDefault()?.Code ?? "";
+        if (string.IsNullOrWhiteSpace(templateCode) || !await _catalog.IsCompatibleAsync(TenantId,templateCode,subjectType,ct) || !options.Any(x=>x.Code==templateCode)) templateCode="";
         var model = new LabelPrintWizardInputModel { SubjectType=subjectType, SubjectId=subjectId, PrintMode=mode, TemplateCode=templateCode, ReprintReason=reprintReason };
         await PopulatePrintWizardLookupsAsync(model, ct);
         return View(model);
@@ -442,7 +445,7 @@ where s.tenant_id=@tid and s.user_id=@userId and s.token_hash=@hash and s.subjec
         if(input.SubjectId is not Guid subjectId)return BadRequest(new{message="Selecione um registro real para a conferência."});
         var result=await _preflight.CheckAsync(new(TenantId,UserId,input.TemplateCode,input.SubjectType,subjectId,
             input.PrintBrandingProfileId,input.PrintProfileId,null,null,input.Copies),ct);
-        return Json(new{result.CanPrint,errors=result.Errors.Select(x=>x.Message),warnings=result.Warnings.Select(x=>x.Message),recommendations=result.Recommendations.Select(x=>x.Message)});
+        return Json(new{result.CanPrint,items=result.Items.Select(x=>new{x.Severity,x.Category,x.Title,x.Message,x.ElementId,x.SuggestedAction,x.CanAutoFix,x.AutoFixKey}),errors=result.Errors.Select(x=>x.Message),warnings=result.Warnings.Select(x=>x.Message),recommendations=result.Recommendations.Select(x=>x.Message)});
     }
 
     [HttpPost("/Labels/Batch/Plan"),ValidateAntiForgeryToken]
