@@ -227,6 +227,13 @@ public sealed class LabelCanvasPreviewSubjectRequest
     public Guid? BrandingProfileId { get; init; }
 }
 
+public sealed class LabelCanvasTestLabRequest
+{
+    public IReadOnlyList<Guid> SubjectIds { get; init; } = [];
+    public string DesignJson { get; init; } = "{}";
+    public Guid? BrandingProfileId { get; init; }
+}
+
 public sealed class LabelCanvasStarterPreviewRequest
 {
     public string SubjectType { get; init; } = "Document";
@@ -313,7 +320,7 @@ public sealed class LabelCanvasPrintContext
     public string TemplateKey { get; init; } = "";
     public string SubjectType { get; init; } = "Document";
     public string OperationalSubjectType { get; init; } = "DOCUMENT";
-    public Guid SubjectId { get; init; }
+    public Guid? SubjectId { get; init; }
     public Guid? BrandingProfileId { get; init; }
     public Guid? PrintProfileId { get; init; }
     public Guid? SelectedLogoAssetId { get; init; }

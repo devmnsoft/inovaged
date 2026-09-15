@@ -16,17 +16,32 @@ public sealed class LabelRc411HotfixContractTests
     public void subject_required_rejects_null_subject_id()
     {
         var source = Read("InovaGed.Web", "Controller", "LabelsController.cs");
-        Assert.Contains("RequiresSubjectId(input.SubjectType)", source);
+        Assert.Contains("LabelSubjectType.RequiresPersistedSubject(input.SubjectType)", source);
         Assert.Contains("!input.SubjectId.HasValue || input.SubjectId.Value == Guid.Empty", source);
         Assert.Contains("Selecione o registro que será etiquetado.", source);
+    }
+
+    [Fact]
+    public void preflight_materializes_authenticated_user_and_subject_guids()
+    {
+        var source = Read("InovaGed.Web", "Controller", "LabelsController.cs");
+        var start = source.IndexOf("Task<IActionResult> Preflight", StringComparison.Ordinal);
+        var method = source[start..source.IndexOf("Task<IActionResult> BatchPlan", start, StringComparison.Ordinal)];
+        Assert.Contains("UserId is not Guid userId", method);
+        Assert.Contains("var subjectId = input.SubjectId.Value", method);
+        Assert.Contains("new(TenantId,userId,input.TemplateCode,input.SubjectType,subjectId", method);
+        Assert.DoesNotContain("Guid.Empty)", method.Split("CheckAsync", StringSplitOptions.None).Last());
     }
 
     [Fact]
     public void manual_label_allows_null_subject_id()
     {
         var source = Read("InovaGed.Web", "Controller", "LabelsController.cs");
-        Assert.Contains("!string.Equals(subjectType, LabelSubjectType.Manual", source);
+        var subjectTypes = Read("InovaGed.Web", "Models", "Labels", "LabelSubjectType.cs");
+        Assert.Contains("RequiresPersistedSubject", subjectTypes);
+        Assert.Contains("is Box or Document or Batch", subjectTypes);
         Assert.DoesNotContain("input.SubjectId ?? Guid.Empty", source);
+        Assert.DoesNotContain("input.SubjectId=Guid.NewGuid()", source);
     }
 
     [Fact]

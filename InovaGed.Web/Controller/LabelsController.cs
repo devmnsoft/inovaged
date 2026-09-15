@@ -442,8 +442,19 @@ where s.tenant_id=@tid and s.user_id=@userId and s.token_hash=@hash and s.subjec
     [HttpPost("/Labels/PrintWizard/Preflight"),ValidateAntiForgeryToken]
     public async Task<IActionResult> Preflight(LabelPrintWizardInputModel input,CancellationToken ct)
     {
-        if(input.SubjectId is not Guid subjectId)return BadRequest(new{message="Selecione um registro real para a conferência."});
-        var result=await _preflight.CheckAsync(new(TenantId,UserId,input.TemplateCode,input.SubjectType,subjectId,
+        if (UserId is not Guid userId) return Unauthorized();
+        input.SubjectType = LabelSubjectType.Normalize(input.SubjectType);
+        if (!LabelSubjectType.IsValid(input.SubjectType))
+            return BadRequest(new { message="Selecione um tipo de origem válido." });
+        if (!LabelSubjectType.RequiresPersistedSubject(input.SubjectType))
+            return Json(new { canPrint=true, items=Array.Empty<object>(), errors=Array.Empty<string>(), warnings=Array.Empty<string>(), recommendations=Array.Empty<string>() });
+        if (!input.SubjectId.HasValue || input.SubjectId.Value == Guid.Empty)
+        {
+            ModelState.AddModelError(nameof(input.SubjectId), "Selecione o registro que será etiquetado.");
+            return BadRequest(new { message="Selecione o registro que será etiquetado." });
+        }
+        var subjectId = input.SubjectId.Value;
+        var result=await _preflight.CheckAsync(new(TenantId,userId,input.TemplateCode,input.SubjectType,subjectId,
             input.PrintBrandingProfileId,input.PrintProfileId,null,null,input.Copies),ct);
         return Json(new{result.CanPrint,items=result.Items.Select(x=>new{x.Severity,x.Category,x.Title,x.Message,x.ElementId,x.SuggestedAction,x.CanAutoFix,x.AutoFixKey}),errors=result.Errors.Select(x=>x.Message),warnings=result.Warnings.Select(x=>x.Message),recommendations=result.Recommendations.Select(x=>x.Message)});
     }
@@ -514,7 +525,7 @@ where s.tenant_id=@tid and s.user_id=@userId and s.token_hash=@hash and s.subjec
         input.TemplateCode = (input.TemplateCode ?? string.Empty).Trim();
         if (string.IsNullOrWhiteSpace(input.TemplateCode)) ModelState.AddModelError(nameof(input.TemplateCode), "Selecione um modelo de etiqueta.");
         if (!LabelSubjectType.IsValid(input.SubjectType)) ModelState.AddModelError(nameof(input.SubjectType), "Selecione um tipo de origem válido.");
-        if (RequiresSubjectId(input.SubjectType) && (!input.SubjectId.HasValue || input.SubjectId.Value == Guid.Empty))
+        if (LabelSubjectType.RequiresPersistedSubject(input.SubjectType) && (!input.SubjectId.HasValue || input.SubjectId.Value == Guid.Empty))
             ModelState.AddModelError(nameof(input.SubjectId), "Selecione o registro que será etiquetado.");
         if (input.Copies <= 0) ModelState.AddModelError(nameof(input.Copies), "A quantidade de cópias deve ser maior que zero.");
 
@@ -588,9 +599,6 @@ where s.tenant_id=@tid and s.user_id=@userId and s.token_hash=@hash and s.subjec
         return View(template.ViewName,subject);
     }
 
-    private static bool RequiresSubjectId(string? subjectType) =>
-        !string.Equals(subjectType, LabelSubjectType.Manual, StringComparison.OrdinalIgnoreCase);
-
     private async Task<IActionResult> RenderCanvasTemplateAsync(LabelPrintWizardInputModel input,LabelTemplateOption template,bool register,CancellationToken ct)
     {
         IReadOnlyDictionary<string,object?>? manualValues=null;ManualLabelInstance? manualInstance=null;
@@ -599,9 +607,9 @@ where s.tenant_id=@tid and s.user_id=@userId and s.token_hash=@hash and s.subjec
             var design=await _canvasDesigns.GetPublishedAsync(TenantId,template.Code,null,ct);if(design is null)return NotFound();var validation=_manualLabels.Validate(design,input.ManualValues);
             if(validation.HasErrors){foreach(var issue in validation.Issues)ModelState.AddModelError(nameof(input.ManualValues),issue.Message);await PopulatePrintWizardLookupsAsync(input,ct);return View("PrintWizard",input);}
             manualValues=input.ManualValues.ToDictionary(x=>x.Key,x=>(object?)x.Value,StringComparer.OrdinalIgnoreCase);
-            if(register){if(UserId is not Guid manualUser)return Unauthorized();manualInstance=await _manualLabels.SaveDraftAsync(TenantId,manualUser,design,input.ManualValues,input.PrintBrandingProfileId,ct);input.SubjectId=manualInstance.Id;}else input.SubjectId=Guid.NewGuid();
+            if(register){if(UserId is not Guid manualUser)return Unauthorized();manualInstance=await _manualLabels.SaveDraftAsync(TenantId,manualUser,design,input.ManualValues,input.PrintBrandingProfileId,ct);input.SubjectId=manualInstance.Id;}
         }
-        var context=new LabelCanvasPrintContext{ExecutionMode=register?LabelCanvasExecutionMode.Production:LabelCanvasExecutionMode.Preview,TenantId=TenantId,TemplateKey=template.Code,OperationalSubjectType=input.SubjectType,SubjectId=input.SubjectId!.Value,BrandingProfileId=input.PrintBrandingProfileId,PrintProfileId=input.PrintProfileId,SelectedLogoAssetId=input.SelectedLogoAssetId,Copies=input.Copies,RegisterTrace=register,ReprintReason=input.ReprintReason,PrintedBy=User.Identity?.Name,AbsoluteBaseUrl=$"{Request.Scheme}://{Request.Host}",ResolvedValues=manualValues};
+        var context=new LabelCanvasPrintContext{ExecutionMode=register?LabelCanvasExecutionMode.Production:LabelCanvasExecutionMode.Preview,TenantId=TenantId,TemplateKey=template.Code,OperationalSubjectType=input.SubjectType,SubjectId=input.SubjectId,BrandingProfileId=input.PrintBrandingProfileId,PrintProfileId=input.PrintProfileId,SelectedLogoAssetId=input.SelectedLogoAssetId,Copies=input.Copies,RegisterTrace=register,ReprintReason=input.ReprintReason,PrintedBy=User.Identity?.Name,AbsoluteBaseUrl=$"{Request.Scheme}://{Request.Host}",ResolvedValues=manualValues};
         LabelCanvasPreparedRender prepared;
         try{prepared=await _canvasPrintCoordinator.PrepareAsync(context,register,ct);}
         catch(KeyNotFoundException exception){ModelState.AddModelError(nameof(input.SubjectId),exception.Message);await PopulatePrintWizardLookupsAsync(input,ct);return View("PrintWizard",input);}

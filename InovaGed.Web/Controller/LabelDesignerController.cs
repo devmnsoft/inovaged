@@ -1,6 +1,7 @@
 using System.Text.Json;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Labels.Canvas;
+using InovaGed.Application.Labels.Intelligence;
 using InovaGed.Application.Branding;
 using InovaGed.Application.Security;
 using Dapper;
@@ -20,7 +21,7 @@ public sealed class LabelDesignerController(IDbConnectionFactory dbFactory, ILab
     ILabelCanvasStarterTemplateService starters, ILabelCanvasDiffService diffService, ILabelCanvasSchemaCapabilities schemaCapabilities,
     ILabelCanvasComponentPresetService componentPresets, ILabelTemplatePackageService packages,
     ILabelCanvasValueResolver valueResolver, IGedAccessPolicyService accessPolicy,
-    IPrintBrandingProfileService brandingProfiles, IPrintBrandingResolver brandingResolver,
+    IPrintBrandingProfileService brandingProfiles, IPrintBrandingResolver brandingResolver, ILabelPreflightService preflight,
     ILogger<LabelDesignerController> logger) : GedControllerBase(dbFactory)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { PropertyNameCaseInsensitive = true };
@@ -302,6 +303,39 @@ select d.id Id,
         var preview = await ResolveDesignerPreviewValuesAsync(transient, values, request.BrandingProfileId, ct);
         var rendered = renderer.Render(transient, preview.Values);
         return Ok(new { ok=!rendered.Validation.HasErrors, html=rendered.Html, validation=rendered.Validation, branding=new { preview.Branding.ProfileName, preview.Branding.ClientName } });
+    }
+
+    [HttpPost("/Labels/Designer/{templateKey}/TestLab"), ValidateAntiForgeryToken]
+    [Authorize(Policy=AppPolicies.LabelDesignerPreview)]
+    public async Task<IActionResult> TestLab(string templateKey, [FromBody] LabelCanvasTestLabRequest request, CancellationToken ct)
+    {
+        if (UserId is not Guid userId) return Unauthorized();
+        var design = await designs.GetAsync(TenantId, templateKey, ct);
+        if (design is null) return NotFound();
+        if (!await accessPolicy.CanAccessGedAsync(TenantId, userId, User, ct)) return Forbid();
+        var subjectIds = request.SubjectIds.Where(id => id != Guid.Empty).Distinct().ToArray();
+        if (subjectIds.Length is < 1 or > 5 || string.IsNullOrWhiteSpace(request.DesignJson) || request.DesignJson.Length > 1_000_000)
+            return BadRequest(new { message="Selecione de 1 a 5 registros para testar." });
+        var operational = LabelCanvasSubjectTypeMapper.ToOperational(design.SubjectType);
+        var transient = CopyDesign(design, request.DesignJson);
+        var results = new List<object>(subjectIds.Length);
+        var ready = 0;
+        foreach (var subjectId in subjectIds)
+        {
+            if (!await PreviewSubjectAccessibleAsync(operational, subjectId, userId, ct)) return Forbid();
+            var values = await valueResolver.ResolveAsync(TenantId, design.SubjectType, operational, subjectId, ct);
+            if (values.Count == 0) return NotFound(new { message="Registro não encontrado ou sem acesso." });
+            var preview = await ResolveDesignerPreviewValuesAsync(transient, values, request.BrandingProfileId, ct);
+            var rendered = renderer.Render(transient, preview.Values);
+            var checkedResult = await preflight.CheckAsync(new(TenantId, userId, design.TemplateKey, operational, subjectId,
+                request.BrandingProfileId, DesignJson:request.DesignJson, AllowDraftPreview:true), ct);
+            var issues = rendered.Validation.Issues.Select(issue => new { issue.Code, issue.Severity, issue.Message, issue.ElementId })
+                .Concat(checkedResult.Items.Select(issue => new { issue.Code, issue.Severity, issue.Message, issue.ElementId })).ToArray();
+            var canPublish = !issues.Any(x => x.Severity == LabelPreflightSeverity.Error);
+            if (canPublish) ready++;
+            results.Add(new { subjectId, html=rendered.Html, canPublish, issues });
+        }
+        return Ok(new { tested=results.Count, ready, results });
     }
 
     [HttpPost("/Labels/Designer/StarterPreview"), ValidateAntiForgeryToken]
