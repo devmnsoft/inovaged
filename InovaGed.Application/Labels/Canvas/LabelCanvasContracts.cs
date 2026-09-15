@@ -130,6 +130,7 @@ public sealed class LabelCanvasElementDto
     public LabelCanvasBindingDto? Binding { get; set; }
     public LabelCanvasElementValidationDto Validation { get; set; } = new();
     public LabelCanvasVisibilityConditionDto VisibilityCondition { get; set; } = new();
+    public LabelCanvasConditionalAppearanceDto ConditionalAppearance { get; set; } = new();
     public List<LabelCanvasElementDto>? Children { get; set; }
 }
 
@@ -170,6 +171,20 @@ public sealed class LabelCanvasVisibilityConditionDto
     public string Operator { get; set; } = "ALWAYS";
     public string? Field { get; set; }
     public string? Value { get; set; }
+}
+
+/// <summary>Declarative appearance rule restricted to renderer-supported styles.</summary>
+public sealed class LabelCanvasConditionalAppearanceDto
+{
+    public bool Enabled { get; set; }
+    public string Operator { get; set; } = "EQUALS";
+    public string? Field { get; set; }
+    public string? Value { get; set; }
+    public string Preset { get; set; } = "HIGHLIGHT";
+    public string? FontWeight { get; set; }
+    public string? Color { get; set; }
+    public string? BackgroundColor { get; set; }
+    public string? Border { get; set; }
 }
 
 public sealed class LabelCanvasElementValidationDto

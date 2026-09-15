@@ -28,6 +28,7 @@
         </div>
         }
         <button type="button" data-action="live-preview">Prévia</button>
+        @if (!Model.IsNew) { <button type="button" data-dataset-open>Testar modelo</button> }
         <details class="designer-more"><summary>Organizar</summary><nav aria-label="Assistência de layout">
             <button type="button" data-assist-layout="align">Alinhar automaticamente</button>
             <button type="button" data-assist-layout="horizontal">Distribuir horizontalmente</button>
@@ -41,7 +42,7 @@
         <details class="designer-more"><summary aria-label="Mais opções">Mais</summary><nav>
             <button type="button" data-focus-mode aria-pressed="false">Modo foco</button>
             @if (!Model.IsNew && Model.Design.Status == "PUBLISHED" && !Model.Design.IsSystemTemplate) { <button type="button" data-action="revision">Criar nova revisão</button> }
-            @if (!Model.IsNew) { <button type="button" data-action="duplicate">Duplicar modelo</button><button type="button" data-compatibility-open>Compatibilidade</button><button type="button" data-dataset-open>Testar modelo</button><a asp-action="Versions" asp-route-templateKey="@Model.Design.TemplateKey">Atividade e versões</a> }
+            @if (!Model.IsNew) { <button type="button" data-action="duplicate">Duplicar modelo</button><button type="button" data-compatibility-open>Compatibilidade</button><a asp-action="Versions" asp-route-templateKey="@Model.Design.TemplateKey">Atividade e versões</a> }
             <button type="button" data-model-settings-open aria-haspopup="dialog">Configurações do modelo</button>
         </nav></details>
         <partial name="~/Views/Labels/Shared/_LabelHelpDrawer.cshtml" />
