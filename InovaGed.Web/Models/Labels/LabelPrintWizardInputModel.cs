@@ -26,7 +26,7 @@ public sealed class LabelPrintWizardInputModel : IValidatableObject
         if (string.IsNullOrWhiteSpace(TemplateCode)) yield return new("Selecione um modelo de etiqueta.", [nameof(TemplateCode)]);
         if (!LabelPrintMode.IsValid(PrintMode)) yield return new("Selecione um modo de impressão.", [nameof(PrintMode)]);
         if (!LabelSubjectType.IsValid(SubjectType)) yield return new("Selecione um tipo de origem válido.", [nameof(SubjectType)]);
-        if (SubjectType != LabelSubjectType.Manual && SubjectId is null) yield return new("Selecione uma caixa, documento ou lote antes de imprimir.", [nameof(SubjectId)]);
+        if (SubjectType != LabelSubjectType.Manual && (!SubjectId.HasValue || SubjectId.Value == Guid.Empty)) yield return new("Selecione uma caixa, documento ou lote antes de imprimir.", [nameof(SubjectId)]);
         if (Copies <= 0) yield return new("A quantidade de cópias deve ser maior que zero.", [nameof(Copies)]);
     }
 }

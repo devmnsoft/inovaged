@@ -14,15 +14,15 @@ public sealed class LabelOperationalIntelligenceService(ILabelCanvasDesignServic
     public async Task<LabelPreflightResult> CheckAsync(LabelPreflightRequest request, CancellationToken cancellationToken = default)
     {
         if (request.TenantId == Guid.Empty || request.UserId == Guid.Empty)
-            return Result(new("IDENTITY_REQUIRED", LabelPreflightSeverity.Error, "Acesso não confirmado", "Não foi possível confirmar o tenant e o usuário desta operação."));
+            return Result(new("IDENTITY_REQUIRED", LabelPreflightSeverity.Error, "Acesso não confirmado", "Não foi possível confirmar o tenant e o usuário desta operação.", Category: LabelPreflightCategory.Subject));
         if (request.Copies is < 1 or > 500)
-            return Result(new("COPIES_OUT_OF_RANGE", LabelPreflightSeverity.Error, "Quantidade inválida", "Escolha entre 1 e 500 cópias.", SuggestedAction: "print"));
+            return Result(new("COPIES_OUT_OF_RANGE", LabelPreflightSeverity.Error, "Quantidade inválida", "Escolha entre 1 e 500 cópias.", SuggestedAction: "print", Category: LabelPreflightCategory.Printing));
 
         var design = request.AllowDraftPreview
             ? await designs.GetAsync(request.TenantId, request.TemplateKey, cancellationToken)
             : await designs.GetPublishedAsync(request.TenantId, request.TemplateKey, cancellationToken: cancellationToken);
         if (design is null)
-            return Result(new("TEMPLATE_UNAVAILABLE", LabelPreflightSeverity.Error, "Modelo indisponível", "Selecione um modelo publicado e acessível.", SuggestedAction: "template"));
+            return Result(new("TEMPLATE_UNAVAILABLE", LabelPreflightSeverity.Error, "Modelo indisponível", "Selecione um modelo publicado e acessível.", SuggestedAction: "template", Category: LabelPreflightCategory.Layout));
 
         IReadOnlyDictionary<string, object?> resolved;
         try
@@ -32,7 +32,7 @@ public sealed class LabelOperationalIntelligenceService(ILabelCanvasDesignServic
         }
         catch (KeyNotFoundException)
         {
-            return Result(new("SUBJECT_UNAVAILABLE", LabelPreflightSeverity.Error, "Registro indisponível", "O registro não existe ou não está acessível para este usuário.", SuggestedAction: "subject"));
+            return Result(new("SUBJECT_UNAVAILABLE", LabelPreflightSeverity.Error, "Registro indisponível", "O registro não existe ou não está acessível para este usuário.", SuggestedAction: "subject", Category: LabelPreflightCategory.Subject));
         }
 
         var effective = string.IsNullOrWhiteSpace(request.DesignJson) ? design : CopyWithJson(design, request.DesignJson!);
@@ -43,11 +43,11 @@ public sealed class LabelOperationalIntelligenceService(ILabelCanvasDesignServic
             .DistinctBy(x => (x.Code, x.ElementId, x.Message))
             .Select(ToItem).ToList();
         if (!string.IsNullOrWhiteSpace(request.PaperKind) && !request.PaperKind.Equals(effective.PaperKind, StringComparison.OrdinalIgnoreCase))
-            issues.Add(new("PAPER_MISMATCH", LabelPreflightSeverity.Warning, "Papel diferente do modelo", $"O modelo foi preparado para {effective.PaperKind}, mas {request.PaperKind} foi selecionado.", SuggestedAction: "printer"));
+            issues.Add(new("PAPER_MISMATCH", LabelPreflightSeverity.Warning, "Papel diferente do modelo", $"O modelo foi preparado para {effective.PaperKind}, mas {request.PaperKind} foi selecionado.", SuggestedAction: "printer", Category: LabelPreflightCategory.Printing));
         if (request.CalibrationProfileId is null)
-            issues.Add(new("CALIBRATION_RECOMMENDED", LabelPreflightSeverity.Recommendation, "Confira a calibração", "Use um perfil compatível com o tamanho da etiqueta antes de imprimir.", SuggestedAction: "calibration"));
+            issues.Add(new("CALIBRATION_RECOMMENDED", LabelPreflightSeverity.Recommendation, "Confira a calibração", "Use um perfil compatível com o tamanho da etiqueta antes de imprimir.", SuggestedAction: "calibration", Category: LabelPreflightCategory.Calibration));
         if (string.IsNullOrWhiteSpace(request.PrinterName))
-            issues.Add(new("PRINTER_NOT_SELECTED", LabelPreflightSeverity.Information, "Impressora ainda não selecionada", "A impressora poderá ser escolhida na etapa de impressão.", SuggestedAction: "printer"));
+            issues.Add(new("PRINTER_NOT_SELECTED", LabelPreflightSeverity.Information, "Impressora ainda não selecionada", "A impressora poderá ser escolhida na etapa de impressão.", SuggestedAction: "printer", Category: LabelPreflightCategory.Printing));
         return new LabelPreflightResult { Items = issues };
     }
 
@@ -60,9 +60,20 @@ public sealed class LabelOperationalIntelligenceService(ILabelCanvasDesignServic
 
     private static LabelPreflightItem ToItem(LabelCanvasValidationIssue issue) => new(issue.Code,
         issue.Severity == "ERROR" ? LabelPreflightSeverity.Error : LabelPreflightSeverity.Warning,
-        issue.Severity == "ERROR" ? "Correção obrigatória" : "Atenção antes de imprimir", issue.Message,
+        issue.Code == "TEXT_OVERFLOW" ? "Conteúdo não cabe nesta área" : issue.Severity == "ERROR" ? "Correção obrigatória" : "Atenção antes de imprimir",
+        HumanMessage(issue),
         issue.ElementId, issue.ElementId is null ? "template" : "designer",
-        issue.Code is "TEXT_OVERFLOW" or "SAFE_MARGIN", issue.Code == "TEXT_OVERFLOW" ? "safe-auto-fit" : issue.Code == "SAFE_MARGIN" ? "fit-safe-margin" : null);
+        issue.Code is "TEXT_OVERFLOW" or "SAFE_MARGIN", issue.Code == "TEXT_OVERFLOW" ? "safe-auto-fit" : issue.Code == "SAFE_MARGIN" ? "fit-safe-margin" : null,
+        issue.Code is "TEXT_OVERFLOW" or "SAFE_MARGIN" or "LABEL_OVERFLOW" ? LabelPreflightCategory.Layout : LabelPreflightCategory.Content);
+    private static string HumanMessage(LabelCanvasValidationIssue issue) => issue.Code switch
+    {
+        "FIELD_REQUIRED_EMPTY" => "Um campo obrigatório está vazio. Escolha outro registro ou complete o conteúdo.",
+        "LABEL_OVERFLOW" => "O conteúdo ultrapassa a área da etiqueta.",
+        "TEXT_OVERFLOW" => "O conteúdo não cabe nesta área. Reduza a fonte, aumente a área ou permita quebra de linha.",
+        "SAFE_MARGIN" => "O elemento está fora da margem segura da etiqueta.",
+        "CALIBRATION_MISMATCH" => "O perfil de calibração selecionado foi criado para outro tamanho.",
+        _ => issue.Message
+    };
     private static LabelPreflightResult Result(LabelPreflightItem item) => new() { Items = [item] };
     private static LabelCanvasDesignDto CopyWithJson(LabelCanvasDesignDto d, string json) => new()
     {

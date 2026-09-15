@@ -11,6 +11,11 @@
         <button type="button" data-action="undo" aria-label="Desfazer"><app-icon name="undo" size="17" decorative="true" /></button>
         <button type="button" data-action="redo" aria-label="Refazer"><app-icon name="refresh" size="17" decorative="true" /></button>
     </div>
+    <div class="toolbar-cluster designer-modes" role="group" aria-label="Modo do designer">
+        <button type="button" class="is-active" data-designer-mode="design" aria-pressed="true">Design</button>
+        <button type="button" data-designer-mode="preview" aria-pressed="false">Prévia</button>
+        <button type="button" data-designer-mode="verification" aria-pressed="false">Verificação</button>
+    </div>
     <div class="toolbar-cluster toolbar-primary">
         @if (!Model.IsNew) {
         <div class="preview-data-picker" data-preview-data>

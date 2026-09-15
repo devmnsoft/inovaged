@@ -10,13 +10,24 @@ public static class LabelPreflightSeverity
     public const string Recommendation = "RECOMMENDATION";
 }
 
+public static class LabelPreflightCategory
+{
+    public const string Content = "CONTENT";
+    public const string Layout = "LAYOUT";
+    public const string Branding = "BRANDING";
+    public const string Subject = "SUBJECT";
+    public const string Printing = "PRINTING";
+    public const string Calibration = "CALIBRATION";
+}
+
 public sealed record LabelPreflightRequest(Guid TenantId, Guid UserId, string TemplateKey,
     string SubjectType, Guid SubjectId, Guid? BrandingProfileId = null, Guid? CalibrationProfileId = null,
     string? PrinterName = null, string? PaperKind = null, int Copies = 1, string? DesignJson = null,
     bool AllowDraftPreview = false);
 
 public sealed record LabelPreflightItem(string Code, string Severity, string Title, string Message,
-    string? ElementId = null, string? SuggestedAction = null, bool CanAutoFix = false, string? AutoFixKey = null);
+    string? ElementId = null, string? SuggestedAction = null, bool CanAutoFix = false, string? AutoFixKey = null,
+    string Category = LabelPreflightCategory.Content);
 
 public sealed class LabelPreflightResult
 {
