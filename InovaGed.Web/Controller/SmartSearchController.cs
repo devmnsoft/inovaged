@@ -365,6 +365,10 @@ public sealed class SmartSearchController : Controller
                 correlationId
             });
         }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { success = false, code = "INVALID_SEARCH", message = ex.Message, correlationId = HttpContext.TraceIdentifier });
+        }
         catch (Exception ex) when (IsPostgresSchemaException(ex))
         {
             var correlationId = HttpContext.TraceIdentifier;

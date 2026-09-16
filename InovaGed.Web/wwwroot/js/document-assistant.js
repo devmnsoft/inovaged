@@ -32,6 +32,14 @@
   const clearInput = root.querySelector('[data-clear-input]');
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const toast = (message, type = 'info') => window.showAppToast?.(message, type);
+  const readJsonResponse = async response => {
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      if (response.status === 401 || response.redirected) throw new Error('Sua sessão expirou. Entre novamente para continuar.');
+      throw new Error('O servidor retornou uma resposta inesperada. Atualize a página e tente novamente.');
+    }
+    return response.json();
+  };
 
   const closeAutocomplete = () => { autocomplete.hidden = true; autocomplete.innerHTML = ''; input.setAttribute('aria-expanded', 'false'); };
   const loadSuggestions = async () => {
@@ -44,8 +52,9 @@
       const url = new URL(root.dataset.suggestEndpoint, window.location.origin); url.searchParams.set('q', query);
       const response = await fetch(url, { signal: suggestController.signal, headers: { Accept: 'application/json' } });
       if (response.status === 401) throw new Error('SESSION_EXPIRED');
-      const payload = await response.json();
+      const payload = await readJsonResponse(response);
       if (sequence !== suggestSequence || input.value.trim() !== query) return;
+      if (!response.ok || !payload.success) throw new Error(payload.message || 'Sugestões indisponíveis.');
       const items = payload.items || [];
       autocomplete.innerHTML = items.map(item => `<button type="button" role="option" data-suggest-value="${escapeHtml(item.text)}"><small>${escapeHtml(item.category || 'Sugestão')}</small><span>${escapeHtml(item.text)}</span></button>`).join('');
       autocomplete.hidden = !items.length; input.setAttribute('aria-expanded', String(items.length > 0));
@@ -99,7 +108,7 @@
     body.set('__RequestVerificationToken', form.querySelector('[name="__RequestVerificationToken"]').value);
     Object.entries(values).forEach(([key, value]) => body.set(key, value));
     const response = await fetch(endpoint, { method: 'POST', body });
-    const payload = await response.json().catch(() => ({}));
+    const payload = await readJsonResponse(response);
     if (!response.ok || !payload.success) throw new Error(payload.message || 'Não foi possível concluir a ação.');
     return payload;
   };
@@ -112,7 +121,7 @@
       items = payload.items;
     } catch (error) { toast(error.message || 'Não foi possível carregar as buscas salvas.', 'warning'); }
     savedList.innerHTML = items.length ? items.map(item => `<div class="assistant-saved-row"><button type="button" data-run-saved="${item.id}"><span>${item.isFavorite ? '★ ' : ''}${escapeHtml(item.name)}</span><small>${item.runCount || 0} execuções${item.lastRunAt ? ` · última ${new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short' }).format(new Date(item.lastRunAt))}` : ''}</small></button><div class="assistant-saved-actions"><button type="button" class="btn btn-sm btn-ghost" data-favorite-saved="${item.id}" data-favorite="${!item.isFavorite}" aria-label="${item.isFavorite ? 'Desfavoritar' : 'Favoritar'}">★</button><button type="button" class="btn btn-sm btn-ghost" data-rename-saved="${item.id}" data-name="${escapeHtml(item.name)}" aria-label="Renomear">✎</button><button type="button" class="btn btn-sm btn-ghost" data-delete-saved="${item.id}" aria-label="Excluir">×</button></div></div>`).join('') : '<div class="assistant-history-empty"><strong>Nenhuma busca salva</strong><span>Faça uma consulta e use “Salvar busca” para criar seu primeiro atalho.</span></div>';
-    savedList.querySelectorAll('[data-run-saved]').forEach(button => button.addEventListener('click', async () => { try { const payload = await savedPost(root.dataset.runSavedEndpoint, { id: button.dataset.runSaved }); input.value = payload.query; await renderSaved(); form.requestSubmit(); } catch (error) { toast(error.message, 'error'); } }));
+    savedList.querySelectorAll('[data-run-saved]').forEach(button => button.addEventListener('click', async () => { try { const payload = await savedPost(root.dataset.runSavedEndpoint, { id: button.dataset.runSaved }); currentState = { terms: payload.query, documentType: null, unit: null, classification: null, year: null, dateField: 'created', sort: 'relevance' }; renderScope(); input.value = payload.query; await renderSaved(); form.requestSubmit(); } catch (error) { toast(error.message, 'error'); } }));
     savedList.querySelectorAll('[data-favorite-saved]').forEach(button => button.addEventListener('click', async () => { try { await savedPost(root.dataset.favoriteSavedEndpoint, { id: button.dataset.favoriteSaved, isFavorite: button.dataset.favorite }); await renderSaved(); } catch (error) { toast(error.message, 'error'); } }));
     savedList.querySelectorAll('[data-rename-saved]').forEach(button => button.addEventListener('click', () => {
       const row = button.closest('.assistant-saved-row');
@@ -135,7 +144,7 @@
   saveDialog.querySelectorAll('[data-close-dialog]').forEach(button => button.addEventListener('click', () => saveDialog.close()));
   saveDialog.querySelector('[data-save-form]').addEventListener('submit', async event => {
     event.preventDefault();
-    try { await savedPost(root.dataset.saveEndpoint, { query: lastQuestion, name: event.target.elements.name.value }); saveDialog.close(); await renderSaved(); toast('Pesquisa salva na sua conta.', 'success'); }
+    try { await savedPost(root.dataset.saveEndpoint, { query: buildQuery() || lastQuestion, name: event.target.elements.name.value }); saveDialog.close(); await renderSaved(); toast('Pesquisa salva na sua conta.', 'success'); }
     catch (error) { toast(error.message, 'error'); }
   });
   renderSaved();
@@ -181,33 +190,50 @@
     const question = input.value.trim();
     lastSubmittedQuestion = question;
     if (!question) { input.focus(); toast('Escreva uma pergunta para consultar o acervo.', 'warning'); return; }
+    if (question.length > 500) { input.focus(); toast('A consulta deve ter no máximo 500 caracteres.', 'warning'); return; }
     if (!currentState.terms) currentState.terms = question;
     controller?.abort();
     controller = new AbortController();
+    const activeController = controller;
     const revision = ++requestRevision;
     feed.querySelector('.assistant-welcome')?.remove();
     feed.classList.toggle('is-refreshing', feed.children.length > 0);
     closeAutocomplete();
-    feed.insertAdjacentHTML('beforeend', `<article class="assistant-message user"><span>Você</span><p>${escapeHtml(question)}</p></article><div class="assistant-skeleton" data-loading><i></i><i></i><i></i><span>Consultando fontes autorizadas…</span></div>`);
+    const loading = document.createElement('div');
+    loading.className = 'assistant-skeleton';
+    loading.dataset.loadingRevision = String(revision);
+    loading.innerHTML = '<i></i><i></i><i></i><span>Consultando fontes autorizadas…</span>';
+    feed.insertAdjacentHTML('beforeend', `<article class="assistant-message user"><span>Você</span><p>${escapeHtml(question)}</p></article>`);
+    feed.appendChild(loading);
     input.value = '';
     updateClearInput();
     submit.disabled = true;
     feed.scrollTop = feed.scrollHeight;
     try {
       const body = new FormData(form); body.set('question', question); body.set('conversationId', conversationId);
-      const response = await fetch(root.dataset.endpoint, { method: 'POST', body, signal: controller.signal, headers: { 'RequestVerificationToken': form.querySelector('[name="__RequestVerificationToken"]').value } });
-      const json = await response.json();
+      const response = await fetch(root.dataset.endpoint, { method: 'POST', body, signal: activeController.signal, headers: { 'RequestVerificationToken': form.querySelector('[name="__RequestVerificationToken"]').value } });
+      const json = await readJsonResponse(response);
+      if (revision !== requestRevision) return;
       if (response.status === 401) throw new Error('Sua sessão expirou. Entre novamente para continuar.');
       if (!response.ok || !json.success) throw new Error(json.message || 'A consulta não pôde ser concluída.');
-      if (revision !== requestRevision) return;
       render(json.response);
       lastQuestion = question;
       saveButton.disabled = false;
       remember(question);
     } catch (error) {
-      if (error.name !== 'AbortError') feed.insertAdjacentHTML('beforeend', `<article class="assistant-message error"><span>Não consegui concluir</span><p>${escapeHtml(error.message)}</p><button type="button" class="btn btn-sm btn-outline-danger" data-retry-search>Tentar novamente</button></article>`);
-      feed.querySelector('[data-retry-search]')?.addEventListener('click', () => { input.value = lastSubmittedQuestion; form.requestSubmit(); });
-    } finally { feed.querySelector('[data-loading]')?.remove(); feed.classList.remove('is-refreshing'); submit.disabled = false; feed.scrollTop = feed.scrollHeight; }
+      if (revision !== requestRevision || error.name === 'AbortError') return;
+      input.value = question;
+      updateClearInput();
+      feed.insertAdjacentHTML('beforeend', `<article class="assistant-message error"><span>Não consegui concluir</span><p>${escapeHtml(error.message)}</p><button type="button" class="btn btn-sm btn-outline-danger" data-retry-search="${revision}">Tentar novamente</button></article>`);
+      feed.querySelector(`[data-retry-search="${revision}"]`)?.addEventListener('click', () => form.requestSubmit());
+    } finally {
+      loading.remove();
+      if (revision === requestRevision) {
+        feed.classList.remove('is-refreshing');
+        submit.disabled = false;
+        feed.scrollTop = feed.scrollHeight;
+      }
+    }
   });
 
   function render(response) {
