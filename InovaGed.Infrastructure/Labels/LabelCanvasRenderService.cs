@@ -32,8 +32,17 @@ public sealed class LabelCanvasRenderService(ILogger<LabelCanvasRenderService> l
         }
         if (document is null) { result.Issues.Add(new("EMPTY_DESIGN", "ERROR", "O layout está vazio.")); return result; }
         if (document.SchemaVersion is < 1 or > 2) result.Issues.Add(new("SCHEMA_VERSION", "ERROR", "O template deve usar schemaVersion 1 ou 2."));
-        if (string.IsNullOrWhiteSpace(document.Bindings.SubjectType)) result.Issues.Add(new("SUBJECT_TYPE", "ERROR", "O tipo de assunto é obrigatório."));
-        if (document.Canvas.WidthMm <= 0 || document.Canvas.HeightMm <= 0) result.Issues.Add(new("CANVAS_SIZE", "ERROR", "As dimensões do canvas devem ser maiores que zero."));
+        if (document.Bindings is null) result.Issues.Add(new("MISSING_BINDINGS", "ERROR", "O layout não informa o contexto de dados."));
+        else if (string.IsNullOrWhiteSpace(document.Bindings.SubjectType)) result.Issues.Add(new("SUBJECT_TYPE", "ERROR", "O tipo de assunto é obrigatório."));
+        if (document.Canvas is null) result.Issues.Add(new("MISSING_CANVAS", "ERROR", "O layout não informa as configurações do canvas."));
+        else if (document.Canvas.WidthMm <= 0 || document.Canvas.HeightMm <= 0) result.Issues.Add(new("CANVAS_SIZE", "ERROR", "As dimensões do canvas devem ser maiores que zero."));
+        if (document.Elements is null) result.Issues.Add(new("MISSING_ELEMENTS", "ERROR", "O layout não informa a coleção de elementos."));
+        if (document.Canvas is null || document.Elements is null) return result;
+        if (document.Elements.Any(element=>element is null))
+        {
+            result.Issues.Add(new("NULL_ELEMENT", "ERROR", "A coleção de elementos contém um item nulo."));
+            return result;
+        }
         var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var element in document.Elements)
         {

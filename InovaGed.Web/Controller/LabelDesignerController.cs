@@ -250,9 +250,19 @@ public sealed class LabelDesignerController(IDbConnectionFactory dbFactory, ILab
     }
 
     [HttpPost("/Labels/Designer/LivePreview"),ValidateAntiForgeryToken]
+    [Consumes("application/json")]
+    [RequestSizeLimit(1_100_000)]
     [Authorize(Policy=AppPolicies.LabelDesignerPreview)]
-    public async Task<IActionResult> LivePreview([FromBody] LabelCanvasSaveRequest request,CancellationToken ct)
+    public async Task<IActionResult> LivePreview([FromBody] LabelCanvasSaveRequest? request,CancellationToken ct)
     {
+        if(!ModelState.IsValid)return InvalidSaveRequest("O corpo da requisição não corresponde ao formato esperado.");
+        if(request is null)return InvalidSaveRequest("Envie os dados atuais do canvas para gerar a prévia.");
+        var requestError=ValidatePreviewRequest(request);
+        if(requestError is not null)return requestError;
+        var allowedFields=fieldCatalog.GetFields(request.SubjectType).Select(field=>field.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var structuralValidation=renderer.Validate(request.DesignJson,allowedFields);
+        if(structuralValidation.HasErrors)
+            return BadRequest(new{ok=false,code="INVALID_DESIGN",message="Corrija a estrutura do modelo antes de gerar a prévia.",validation=structuralValidation});
         var design=new LabelCanvasDesignDto{Id=Guid.Empty,TenantId=TenantId,TemplateKey=request.TemplateKey,TemplateName=request.TemplateName,TemplateKind=request.TemplateKind,SubjectType=request.SubjectType,PaperKind=request.PaperKind,WidthMm=request.WidthMm,HeightMm=request.HeightMm,Orientation=request.Orientation,Status="DRAFT",DesignJson=request.DesignJson,DefaultBrandingProfileId=request.DefaultBrandingProfileId,BrandingBindingKey=request.BrandingBindingKey,ClientNameFallback=request.ClientNameFallback,ContractNameFallback=request.ContractNameFallback,OrganizationNameFallback=request.OrganizationNameFallback,HeaderTitleFallback=request.HeaderTitleFallback,HeaderSubtitleFallback=request.HeaderSubtitleFallback,LabelContext=request.LabelContext,CreatedAt=DateTime.UtcNow};
         var preview=await ResolveDesignerPreviewValuesAsync(design,SampleProfile(design),request.DefaultBrandingProfileId,ct);var rendered=renderer.Render(design,preview.Values);
         return Ok(new{ok=!rendered.Validation.HasErrors,html=rendered.Html,validation=rendered.Validation,branding=new{preview.Branding.ProfileId,preview.Branding.ProfileName,preview.Branding.ClientName,preview.Branding.ContractName,preview.Branding.OrganizationName}});
@@ -567,6 +577,19 @@ select d.id Id,
             x=>string.IsNullOrWhiteSpace(x.Key)?"request":char.ToLowerInvariant(x.Key[0])+x.Key[1..],
             x=>x.Value!.Errors.First().ErrorMessage is { Length:>0 } detail?detail:"Valor inválido.");
         return BadRequest(new{ok=false,code="INVALID_REQUEST",message,errors});
+    }
+    private IActionResult? ValidatePreviewRequest(LabelCanvasSaveRequest request)
+    {
+        var errors=new Dictionary<string,string>();
+        if(string.IsNullOrWhiteSpace(request.TemplateName))errors["templateName"]="Informe o nome do modelo.";
+        if(string.IsNullOrWhiteSpace(request.SubjectType))errors["subjectType"]="Selecione a finalidade do modelo.";
+        if(!LabelPaperOptions.IsSupported(request.PaperKind))errors["paperKind"]="Selecione um papel suportado.";
+        if(request.Orientation is not ("portrait" or "landscape"))errors["orientation"]="Selecione retrato ou paisagem.";
+        if(request.WidthMm is < LabelCanvasDimensionPolicy.MinWidthMm or > LabelCanvasDimensionPolicy.MaxWidthMm)errors["widthMm"]=$"A largura deve estar entre {LabelCanvasDimensionPolicy.MinWidthMm} e {LabelCanvasDimensionPolicy.MaxWidthMm} mm.";
+        if(request.HeightMm is < LabelCanvasDimensionPolicy.MinHeightMm or > LabelCanvasDimensionPolicy.MaxHeightMm)errors["heightMm"]=$"A altura deve estar entre {LabelCanvasDimensionPolicy.MinHeightMm} e {LabelCanvasDimensionPolicy.MaxHeightMm} mm.";
+        if(string.IsNullOrWhiteSpace(request.DesignJson))errors["designJson"]="Envie a estrutura visual do modelo.";
+        else if(request.DesignJson.Length>1_000_000)errors["designJson"]="O conteúdo visual excede o limite de 1 MB.";
+        return errors.Count==0?null:BadRequest(new{ok=false,code="INVALID_REQUEST",message="Revise os dados da prévia.",errors});
     }
     private static LabelCanvasSaveRequest CopyWithKey(LabelCanvasSaveRequest x,string key,long? expectedLockVersion=null)
     {

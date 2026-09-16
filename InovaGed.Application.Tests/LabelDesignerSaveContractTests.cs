@@ -3,6 +3,7 @@ using InovaGed.Application.Labels.Canvas;
 using InovaGed.Infrastructure.Labels;
 using InovaGed.Web.Controllers;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace InovaGed.Application.Tests;
 
@@ -43,6 +44,32 @@ public sealed class LabelDesignerSaveContractTests
         const string json="""{"schemaVersion":2,"canvas":{"widthMm":100,"heightMm":70},"elements":[],"bindings":{"subjectType":"Document"}}""";
         var request=new LabelCanvasSaveRequest{TemplateKey="VALID_KEY",TemplateName="Modelo",SubjectType="Document",PaperKind="A4",WidthMm=100,HeightMm=70,Orientation="portrait",DesignJson=json};
         method.Invoke(null,[request]);
+    }
+
+    [Theory]
+    [InlineData("null", "EMPTY_DESIGN")]
+    [InlineData("{\"schemaVersion\":2,\"canvas\":null,\"elements\":[],\"bindings\":{}}", "MISSING_CANVAS")]
+    [InlineData("{\"schemaVersion\":2,\"canvas\":{},\"elements\":null,\"bindings\":{}}", "MISSING_ELEMENTS")]
+    [InlineData("{\"schemaVersion\":2,\"canvas\":{},\"elements\":[null],\"bindings\":{}}", "NULL_ELEMENT")]
+    [InlineData("{\"schemaVersion\":2,\"canvas\":{},\"elements\":[],\"bindings\":null}", "MISSING_BINDINGS")]
+    public void Renderer_reports_null_design_members_instead_of_throwing(string json,string expectedCode)
+    {
+        var renderer=new LabelCanvasRenderService(NullLogger<LabelCanvasRenderService>.Instance);
+        var validation=renderer.Validate(json);
+        Assert.Contains(validation.Issues,issue=>issue.Code==expectedCode&&issue.Severity=="ERROR");
+    }
+
+    [Fact]
+    public void Live_preview_body_is_nullable_and_guarded_before_property_access()
+    {
+        var action=typeof(LabelDesignerController).GetMethod(nameof(LabelDesignerController.LivePreview))!;
+        Assert.Equal(NullabilityState.Nullable,new NullabilityInfoContext().Create(action.GetParameters()[0]).ReadState);
+        var source=File.ReadAllText(Path.Combine(FindRoot(),"InovaGed.Web","Controller","LabelDesignerController.cs"));
+        var start=source.IndexOf("IActionResult> LivePreview",StringComparison.Ordinal);
+        var end=source.IndexOf("PreviewSubjects(",start,StringComparison.Ordinal);
+        var section=source[start..end];
+        Assert.True(section.IndexOf("if(request is null)",StringComparison.Ordinal)<section.IndexOf("request.TemplateKey",StringComparison.Ordinal));
+        Assert.Contains("renderer.Validate(request.DesignJson",section);
     }
 
     [Fact]
