@@ -1,16 +1,16 @@
 @{
-    ViewData["Title"] = "Assistente Documental Inteligente";
+    ViewData["Title"] = "Busca inteligente";
     ViewData["WorkspaceVariant"] = "wide";
-    ViewData["Subtitle"] = "Localize documentos por conteúdo, metadados, classificação, etiquetas e rastreabilidade.";
+    ViewData["Subtitle"] = "Pesquise por assunto, nome, protocolo ou conteúdo dos documentos.";
     ViewData["Icon"] = "sparkles";
 }
 @section Styles { <link rel="stylesheet" href="~/css/pages/document-assistant.css" asp-append-version="true" /> }
 
 <div class="atlas-page mb-4"><partial name="Atlas/_AtlasPageHero" /></div>
 
-<main class="document-assistant" data-document-assistant data-endpoint="@Url.Action("Ask", "SmartSearch")" data-feedback-endpoint="@Url.Action("Feedback", "SmartSearch")" data-history-endpoint="@Url.Action("HistoryData", "SmartSearch")" data-saved-endpoint="@Url.Action("SavedSearches", "SmartSearch")" data-save-endpoint="@Url.Action("SaveSearch", "SmartSearch")" data-run-saved-endpoint="@Url.Action("RunSavedSearch", "SmartSearch")" data-rename-saved-endpoint="@Url.Action("RenameSavedSearch", "SmartSearch")" data-favorite-saved-endpoint="@Url.Action("FavoriteSavedSearch", "SmartSearch")" data-delete-saved-endpoint="@Url.Action("DeleteSavedSearch", "SmartSearch")">
+<main class="document-assistant" data-document-assistant data-endpoint="@Url.Action("Ask", "SmartSearch")" data-feedback-endpoint="@Url.Action("Feedback", "SmartSearch")" data-history-endpoint="@Url.Action("HistoryData", "SmartSearch")" data-saved-endpoint="@Url.Action("SavedSearches", "SmartSearch")" data-save-endpoint="@Url.Action("SaveSearch", "SmartSearch")" data-run-saved-endpoint="@Url.Action("RunSavedSearch", "SmartSearch")" data-rename-saved-endpoint="@Url.Action("RenameSavedSearch", "SmartSearch")" data-favorite-saved-endpoint="@Url.Action("FavoriteSavedSearch", "SmartSearch")" data-delete-saved-endpoint="@Url.Action("DeleteSavedSearch", "SmartSearch")" data-suggest-endpoint="@Url.Action("Suggest", "SmartSearch")">
     <header class="assistant-hero">
-        <div><span class="assistant-eyebrow"><app-icon name="smart-search" size="16" decorative="true" /> Inteligência documental rastreável</span><h1>Assistente Documental Inteligente</h1><p>Converse com o acervo autorizado. Cada resposta indica critérios e documentos que sustentam o resultado.</p></div>
+        <div><span class="assistant-eyebrow"><app-icon name="smart-search" size="16" decorative="true" /> Inteligência documental rastreável</span><h1>Busca inteligente</h1><p>Pesquise por assunto, nome, protocolo ou conteúdo dos documentos. Cada resultado explica onde a correspondência foi encontrada.</p></div>
         <div class="assistant-hero-actions"><button class="btn btn-outline-secondary" type="button" data-toggle-history><app-icon name="history" size="16" decorative="true" /> Histórico</button><button class="btn btn-outline-secondary" type="button" data-save-search disabled><app-icon name="bookmark" size="16" decorative="true" /> Salvar busca</button><a class="btn btn-outline-secondary" asp-action="Statistics"><app-icon name="report" size="16" decorative="true" /> Insights</a><button class="btn btn-outline-secondary" type="button" data-export-conversation disabled><app-icon name="download" size="16" decorative="true" /> Exportar</button><button class="btn btn-ghost" type="button" data-clear-conversation><app-icon name="delete" size="16" decorative="true" /> Limpar conversa</button></div>
     </header>
 
@@ -28,9 +28,9 @@
             </div>
             <form class="assistant-composer" data-assistant-form>
                 @Html.AntiForgeryToken()
-                <label for="assistantQuestion">Pergunte sobre os documentos</label>
-                <div class="assistant-compose-row"><textarea id="assistantQuestion" name="question" rows="2" maxlength="500" required placeholder="Ex.: mostre documentos sem OCR enviados este mês">@ViewBag.InitialQuestion</textarea><button class="btn btn-primary" type="submit" data-submit><app-icon name="search" size="18" decorative="true" /> <span>Consultar</span></button></div>
-                <small>As respostas são baseadas somente em evidências encontradas no GED.</small>
+                <label for="assistantQuestion">O que você deseja encontrar?</label>
+                <div class="assistant-compose-row"><textarea id="assistantQuestion" name="question" rows="2" maxlength="500" required placeholder="Ex.: contratos de manutenção de 2025" aria-describedby="assistantSearchHelp" aria-autocomplete="list" aria-controls="assistantAutocomplete">@ViewBag.InitialQuestion</textarea><button class="btn btn-primary" type="submit" data-submit><app-icon name="search" size="18" decorative="true" /> <span>Consultar</span></button></div>
+                <div id="assistantAutocomplete" class="assistant-autocomplete" role="listbox" hidden></div><div class="assistant-interpretation" data-interpretation hidden><strong>Interpretamos sua busca como…</strong><div data-interpretation-chips></div><button type="button" class="btn btn-sm btn-ghost" data-remove-interpretation>Pesquisar somente pelo texto</button></div><small id="assistantSearchHelp">Use aspas para frases exatas e informe protocolos preservando barras, hífens e zeros.</small><details class="assistant-how"><summary>Como pesquisar</summary><p>Experimente <strong>“contrato de manutenção”</strong>, <strong>protocolo 001234/2026</strong> ou <strong>ofícios de 2025</strong>. Filtros interpretados sempre serão mostrados antes de serem reutilizados.</p></details>
             </form>
         </div>
     </section>

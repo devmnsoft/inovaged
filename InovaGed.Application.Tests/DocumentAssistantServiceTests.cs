@@ -118,6 +118,6 @@ public sealed class DocumentAssistantServiceTests
     {
         public SmartSearchRequest? Request { get; private set; }
         public Task<SmartSearchResult> SearchAsync(SmartSearchRequest request, CancellationToken ct) { Request = request; return Task.FromResult(result); }
-        public Task<IReadOnlyList<SmartSearchSuggestion>> SuggestAsync(Guid tenantId, string? term, CancellationToken ct) => Task.FromResult<IReadOnlyList<SmartSearchSuggestion>>([]);
+        public Task<IReadOnlyList<SmartSearchSuggestion>> SuggestAsync(Guid tenantId, Guid userId, string? term, CancellationToken ct) => Task.FromResult<IReadOnlyList<SmartSearchSuggestion>>([]);
     }
 }

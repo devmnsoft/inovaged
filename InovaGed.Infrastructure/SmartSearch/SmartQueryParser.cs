@@ -14,13 +14,16 @@ public sealed class SmartQueryParser : ISmartQueryParser, InovaGed.Application.G
     private static readonly Regex AgeRangeRegex = new(@"(?:entre|de)\s*(?<from>\d{1,3})\s*(?:a|e|até|ate)\s*(?<to>\d{1,3})\s*anos?", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex YearRegex = new(@"\b(?<year>19\d{2}|20\d{2})\b", RegexOptions.Compiled);
     private static readonly Regex MonthYearRegex = new(@"\b(?<month>0?[1-9]|1[0-2])/(?<year>19\d{2}|20\d{2})\b", RegexOptions.Compiled);
+    private static readonly Regex MonthNameYearRegex = new(@"\b(?<month>janeiro|fevereiro|mar[cç]o|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)(?:\s+de)?\s+(?<year>19\d{2}|20\d{2})\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex MedicalRecordRegex = new(@"prontu[aá]rio\s*[:\-]?\s*(?<number>\d{3,})", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-    private static readonly Regex ProtocolRegex = new(@"protocolo\s*[:\-]?\s*(?<number>\d{3,})", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex ProtocolRegex = new(@"(?:protocolo|c[oó]digo)\s*[:\-]?\s*(?<number>[0-9][0-9./\-]*[0-9])", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex ExactPhraseRegex = new("\"(?<phrase>[^\"]{2,120})\"", RegexOptions.Compiled);
     private static readonly Regex StrongNumberRegex = new(@"\b\d{4,}\b", RegexOptions.Compiled);
     private static readonly Regex SupplierRegex = new(@"fornecedor\s+(?<value>[^,.;]+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex MoneyRegex = new(@"(?:r\$\s*)?(?<value>\d{1,3}(?:\.\d{3})*(?:,\d{1,2})?)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex CompetenceRegex = new(@"compet[eê]ncia\s+(?<month>janeiro|fevereiro|mar[cç]o|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro|0?[1-9]|1[0-2])(?:\s+de)?\s+(?<year>20\d{2})", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex NameRegex = new(@"(?:paciente|do paciente|da paciente|do|da|de)\s+(?<name>[A-ZÁÉÍÓÚÂÊÔÃÕÇ][\p{L}'´`~-]+(?:\s+(?:da|de|do|dos|das|e|[A-ZÁÉÍÓÚÂÊÔÃÕÇ][\p{L}'´`~-]+)){0,5})", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly string[] MonthNames = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
     private static readonly string[] DocumentWords = ["laudo", "exame", "prontuário", "prontuario", "resultado", "relatório", "relatorio", "receita", "ficha", "guia"];
     private static readonly string[] ExamWords = ["tomografia", "tc", "raio x", "raio-x", "rx", "radiografia", "ressonância", "ressonancia", "ultrassom", "ultrassonografia", "usg", "laboratorial", "laboratório", "laboratorio"];
     private static readonly string[] ClinicalWords = ["avc", "acidente vascular cerebral", "derrame", "diabetes", "diabete", "dm", "doença renal", "doenca renal", "renal", "rim", "rins", "nefrologia", "câncer", "cancer", "neoplasia", "tumor", "cardíaco", "cardiaco", "coração", "coracao", "cardiologia", "pneumonia", "hipertensão", "hipertensao", "gestação", "gestacao", "trauma", "fratura", "infecção", "infeccao"];
@@ -41,12 +44,14 @@ public sealed class SmartQueryParser : ISmartQueryParser, InovaGed.Application.G
         query = (query ?? string.Empty).Trim();
         var normalized = Normalize(query);
         var contextIntent = await _contextParser.ParseAsync(tenantId, query, ct);
+        var exactPhrases = ExactPhraseRegex.Matches(query).Select(match => match.Groups["phrase"].Value.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         var intent = new SmartSearchIntent
         {
             OriginalQuery = query,
             DocumentType = request.DocumentType,
             From = DbDateTime.ToUtc(request.From),
-            To = DbDateTime.ToUtc(request.To)
+            To = DbDateTime.ToUtc(request.To),
+            ExactPhrases = exactPhrases
         };
 
         InterpretOperationalIntent(normalized, query, intent);
@@ -58,6 +63,18 @@ public sealed class SmartQueryParser : ISmartQueryParser, InovaGed.Application.G
             intent.Year = monthYearValue;
             intent.From = DbDateTime.StartOfDayUtc(new DateTime(monthYearValue, month, 1, 0, 0, 0, DateTimeKind.Utc));
             intent.To = intent.From.Value.AddMonths(1);
+        }
+
+        var monthNameYear = MonthNameYearRegex.Match(query);
+        if (monthNameYear.Success && int.TryParse(monthNameYear.Groups["year"].Value, out var namedYear))
+        {
+            var monthNumber = Array.FindIndex(MonthNames, value => Normalize(value) == Normalize(monthNameYear.Groups["month"].Value)) + 1;
+            if (monthNumber > 0)
+            {
+                intent.Year = namedYear;
+                intent.From = new DateTime(namedYear, monthNumber, 1, 0, 0, 0, DateTimeKind.Utc);
+                intent.To = intent.From.Value.AddMonths(1);
+            }
         }
 
         var mr = MedicalRecordRegex.Match(query);
@@ -156,7 +173,7 @@ public sealed class SmartQueryParser : ISmartQueryParser, InovaGed.Application.G
 
         intent.Keywords = BuildKeywords(query, intent).Concat(contextIntent.RequiredTerms).Concat(contextIntent.NumericTokens).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         intent.ExpandedTerms = intent.ClinicalTerms.ToList();
-        intent.ExpandedQuery = string.Join(' ', intent.Keywords.Concat(intent.ClinicalTerms).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase));
+        intent.ExpandedQuery = string.Join(' ', intent.ExactPhrases.Concat(intent.Keywords).Concat(intent.ClinicalTerms).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase));
         intent.Explanation = contextIntent.ClinicalTerms.Count > 0 ? contextIntent.Explanation : BuildExplanation(intent);
         if (intent.Kind != SmartSearchIntentKind.FindDocument)
             intent.Explanation = $"Intenção local: {IntentLabel(intent.Kind)}. " + intent.Explanation;
