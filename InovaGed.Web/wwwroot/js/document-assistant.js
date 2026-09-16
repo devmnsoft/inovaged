@@ -280,3 +280,49 @@
   root.querySelector('[data-create-collection-form]')?.addEventListener('submit', async event => { event.preventDefault(); const dialog = event.target.closest('dialog'); const payload = await savedPost(root.dataset.createCollectionEndpoint, { name: event.target.querySelector('input').value }); await addToCollection(payload.id, dialog); });
   async function addToCollection(id, dialog) { const values = { id }; [...selected].forEach((value, index) => values[`documentIds[${index}]`] = value); const payload = await savedPost(root.dataset.addCollectionEndpoint, values); dialog.close(); toast(`${payload.result.added} documento(s) adicionado(s); ${payload.result.skipped} ignorado(s).`, 'success'); }
 })();
+
+// Scoped document questions: deliberately separate from conversational search and never persisted.
+(() => {
+  'use strict';
+  const root = document.querySelector('[data-document-assistant]');
+  if (!root) return;
+  const workspace = root.querySelector('[data-evidence-workspace]');
+  const searchFeed = root.querySelector('[data-assistant-feed]');
+  const composer = root.querySelector('[data-assistant-form]');
+  const result = root.querySelector('[data-evidence-result]');
+  const panel = root.querySelector('[data-evidence-panel]');
+  const form = root.querySelector('[data-evidence-form]');
+  const collection = root.querySelector('[data-evidence-collection]');
+  const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  let evidenceController;
+  const selectedIds = () => [...root.querySelectorAll('[data-select-document]:checked')].map(x => x.dataset.selectDocument);
+  const currentQuery = () => root.querySelector('[data-scope-chips]')?.querySelector('.assistant-filter-chip')?.textContent.replace(/^Termos:\s*/, '').trim() || '';
+  const updateLabels = () => { root.querySelector('[data-selected-scope]').textContent = `${selectedIds().length} selecionado(s)`; root.querySelector('[data-current-search-scope]').textContent = currentQuery() || 'Nenhuma pesquisa executada'; };
+  async function loadCollections() { try { const response = await fetch(root.dataset.collectionsEndpoint, { headers:{ Accept:'application/json' } }); const data = await response.json(); collection.innerHTML = '<option value="">Selecione</option>' + (data.items || []).map(x => `<option value="${x.id}">${escapeHtml(x.name)} (${x.itemCount})</option>`).join(''); } catch { collection.innerHTML = '<option value="">Coleções indisponíveis</option>'; } }
+  root.querySelectorAll('[data-search-mode]').forEach(button => button.addEventListener('click', () => {
+    const ask = button.dataset.searchMode === 'ask';
+    root.querySelectorAll('[data-search-mode]').forEach(x => { const active = x === button; x.classList.toggle('is-active', active); x.setAttribute('aria-pressed', active); });
+    workspace.hidden = !ask; searchFeed.hidden = ask; composer.hidden = ask; updateLabels(); if (ask) { loadCollections(); form.querySelector('textarea').focus(); }
+  }));
+  root.addEventListener('change', event => { if (event.target.matches('[data-select-document]')) updateLabels(); });
+  root.querySelector('[data-cancel-evidence]').addEventListener('click', () => { evidenceController?.abort(); result.innerHTML = '<div class="evidence-summary" role="status"><strong>Análise cancelada</strong><p>A pergunta e o escopo foram preservados.</p></div>'; });
+  form.addEventListener('submit', async event => {
+    event.preventDefault(); const question = form.querySelector('textarea').value.trim(); const scope = form.elements.evidenceScope.value; const ids = selectedIds();
+    if (scope === 'searchResults' && !currentQuery()) { result.innerHTML = '<div class="evidence-summary"><strong>Execute uma pesquisa antes de usar este escopo.</strong></div>'; return; }
+    if (scope === 'selectedDocuments' && !ids.length) { result.innerHTML = '<div class="evidence-summary"><strong>Selecione documentos nos resultados antes de perguntar.</strong></div>'; return; }
+    if (scope === 'collection' && !collection.value) { result.innerHTML = '<div class="evidence-summary"><strong>Selecione uma coleção de trabalho.</strong></div>'; return; }
+    evidenceController?.abort(); evidenceController = new AbortController(); root.querySelector('[data-cancel-evidence]').hidden = false;
+    result.innerHTML = '<div class="assistant-skeleton"><i></i><i></i><i></i><span>Recuperando documentos autorizados e evidências…</span></div>'; panel.hidden = true;
+    try {
+      const response = await fetch(root.dataset.evidenceEndpoint, { method:'POST', signal:evidenceController.signal, headers:{ 'Content-Type':'application/json', RequestVerificationToken: composer.querySelector('[name="__RequestVerificationToken"]').value }, body:JSON.stringify({ question, scope:{ searchResults:0, selectedDocuments:1, collection:2 }[scope], searchQuery:currentQuery(), documentIds:ids, collectionId:collection.value || null, maxDocuments:20, maxPassages:12 }) });
+      const data = await response.json(); if (!response.ok || !data.success) throw new Error(data.message || 'Não foi possível analisar as evidências.'); render(data.response);
+    } catch (error) { result.innerHTML = error.name === 'AbortError' ? '<div class="evidence-summary"><strong>Análise cancelada</strong><p>A pergunta foi preservada.</p></div>' : `<div class="evidence-summary"><strong>Falha na análise</strong><p>${escapeHtml(error.message)}</p><p>A busca tradicional continua disponível.</p></div>`; }
+    finally { root.querySelector('[data-cancel-evidence]').hidden = true; }
+  });
+  function render(response) {
+    const limitations = (response.limitations || []).map(x => `<li>${escapeHtml(x)}</li>`).join('');
+    const sources = (response.sources || []).map(source => `<article class="evidence-source"><h3>${escapeHtml(source.title)}</h3><p>Versão ${escapeHtml(source.versionNumber ?? source.versionId ?? 'não identificada')} · ${source.extractedByOcr ? 'Conteúdo extraído por OCR' : 'Sem OCR disponível'}</p>${source.passages.map(p => `<blockquote>${escapeHtml(p.text)}</blockquote><p><small>${escapeHtml(p.locationLabel)} · Página não identificada</small></p><button type="button" class="btn btn-sm btn-outline-primary" data-view-evidence data-source='${escapeHtml(JSON.stringify({ title:source.title, version:source.versionNumber ?? source.versionId, passage:p.text, location:p.locationLabel, documentId:source.documentId }))}'>Ver trecho</button> <a class="btn btn-sm btn-primary" href="/Ged/Details/${source.documentId}#ocr">Abrir fonte</a>`).join('')}</article>`).join('');
+    result.innerHTML = `<section class="evidence-summary" data-status="${escapeHtml(response.status)}"><h2>${escapeHtml(response.heading)}</h2><p>${escapeHtml(response.message)}</p><p><strong>Escopo:</strong> ${escapeHtml(response.scopeLabel)} · ${response.consideredDocuments} de ${response.availableDocuments} documento(s) considerados</p>${response.coveragePartial ? '<strong>⚠ Cobertura parcial</strong>' : ''}${limitations ? `<ul>${limitations}</ul>` : ''}</section><section class="evidence-source-list"><h2>Fontes consideradas (${response.sources.length})</h2>${sources}</section>`;
+    result.querySelectorAll('[data-view-evidence]').forEach(button => button.addEventListener('click', () => { result.querySelectorAll('[data-view-evidence]').forEach(x => x.setAttribute('aria-current','false')); button.setAttribute('aria-current','true'); const x = JSON.parse(button.dataset.source); panel.innerHTML = `<button type="button" class="btn-close" data-close-evidence aria-label="Fechar painel"></button><h2>${escapeHtml(x.title)}</h2><p>Versão ${escapeHtml(x.version ?? 'não identificada')} · Conteúdo extraído por OCR</p><blockquote>${escapeHtml(x.passage)}</blockquote><small>${escapeHtml(x.location)} · Página não identificada</small><p><a class="btn btn-primary" href="/Ged/Details/${x.documentId}#ocr">Abrir documento original</a></p>`; panel.hidden = false; panel.querySelector('[data-close-evidence]').addEventListener('click', () => { panel.hidden = true; button.focus(); }); panel.querySelector('[data-close-evidence]').focus(); }));
+  }
+})();

@@ -391,6 +391,7 @@ builder.Services.AddScoped<IGedSmartSearchRepository, SmartSearchRepository>();
 builder.Services.AddScoped<ISmartSearchService, SmartSearchService>();
 builder.Services.AddScoped<ISmartSearchRefinementService, SmartSearchRefinementService>();
 builder.Services.AddScoped<IDocumentAssistantService, DocumentAssistantService>();
+builder.Services.AddScoped<IDocumentEvidenceService, DocumentEvidenceService>();
 builder.Services.AddScoped<IDocumentChatService, DocumentChatService>();
 builder.Services.AddScoped<ISearchStatisticsService, SearchStatisticsService>();
 builder.Services.AddScoped<IGedSearchSuggestionService, GedSearchSuggestionService>();
