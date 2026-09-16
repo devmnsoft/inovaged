@@ -406,6 +406,123 @@ weight=excluded.weight,reg_status=excluded.reg_status where ged.search_synonym.t
         await conn.ExecuteAsync(new CommandDefinition(sql, new { tenantId, id, term, synonym, category, weight, active }, cancellationToken: ct));
     }
 
+    public async Task<IReadOnlyList<SmartSearchRelatedDocument>> GetRelatedDocumentsAsync(Guid tenantId, Guid userId, Guid documentId, bool isAdmin, CancellationToken ct)
+    {
+        const string sql = """
+select d.id as "DocumentId", coalesce(d.title,'Documento') as "Title",
+       r.relationship_type as "RelationType",
+       coalesce(nullif(r.evidence_summary,''), 'Relação documental cadastrada') as "Origin", true as "IsFormal"
+from ged.document_relationship r
+join ged.document d on d.tenant_id=r.tenant_id
+ and d.id=case when r.document_id=@documentId then r.related_document_id else r.document_id end
+where r.tenant_id=@tenantId and (r.document_id=@documentId or r.related_document_id=@documentId)
+  and coalesce(r.reg_status,'A')='A' and coalesce(d.reg_status,'A')='A'
+order by r.created_at_utc desc limit 20
+""";
+        await using var conn = await _db.OpenAsync(ct);
+        return (await conn.QueryAsync<SmartSearchRelatedDocument>(new CommandDefinition(sql, new { tenantId, userId, documentId, isAdmin }, cancellationToken: ct))).AsList();
+    }
+
+    public async Task<IReadOnlyList<SmartSearchComparisonDocument>> CompareDocumentsAsync(Guid tenantId, Guid userId, IReadOnlyCollection<Guid> documentIds, bool includeText, bool isAdmin, CancellationToken ct)
+    {
+        const string sql = """
+select d.id as "DocumentId", coalesce(d.current_version_id,v.id) as "VersionId",
+       coalesce(nullif(d.title,''),v.file_name,'Documento') as "Title", v.file_name as "FileName",
+       dt.name as "DocumentType", coalesce(cp.name,cp.code) as "Classification", f.name as "Unit",
+       null::text as "Protocol", d.status::text as "Status", d.created_at as "CreatedAt",
+       case when v.id is null then null else (select count(*)::int from ged.document_version vx where vx.tenant_id=d.tenant_id and vx.document_id=d.id and coalesce(vx.created_at,vx.created_at_utc) <= coalesce(v.created_at,v.created_at_utc)) end as "VersionNumber",
+       case when @includeText then left(ds.ocr_text,20000) else null end as "ExtractedText",
+       nullif(ds.ocr_text,'') is not null as "HasExtractedText"
+from ged.document d
+left join ged.document_version v on v.tenant_id=d.tenant_id and v.id=d.current_version_id
+left join ged.document_type dt on dt.tenant_id=d.tenant_id and dt.id=d.document_type_id
+left join ged.document_classification dc on dc.tenant_id=d.tenant_id and dc.document_id=d.id and dc.reg_status='A'
+left join ged.classification_plan cp on cp.tenant_id=d.tenant_id and cp.id=coalesce(dc.classification_id,d.classification_id)
+left join ged.folder f on f.tenant_id=d.tenant_id and f.id=d.folder_id
+left join ged.document_search ds on ds.tenant_id=d.tenant_id and ds.document_id=d.id and ds.version_id=coalesce(d.current_version_id,v.id)
+where d.tenant_id=@tenantId and d.id=any(@documentIds) and coalesce(d.reg_status,'A')='A'
+order by array_position(@documentIds,d.id)
+""";
+        await using var conn = await _db.OpenAsync(ct);
+        return (await conn.QueryAsync<SmartSearchComparisonDocument>(new CommandDefinition(sql, new { tenantId, userId, documentIds = documentIds.ToArray(), includeText, isAdmin }, cancellationToken: ct, commandTimeout: 20))).AsList();
+    }
+
+    public async Task<IReadOnlyList<SmartSearchCollection>> GetCollectionsAsync(Guid tenantId, Guid userId, CancellationToken ct)
+    {
+        const string sql = """
+select c.id as "Id", c.name as "Name", c.created_at as "CreatedAt", c.updated_at as "UpdatedAt", count(i.document_id)::int as "ItemCount"
+from ged.smart_search_collection c left join ged.smart_search_collection_item i on i.collection_id=c.id and i.tenant_id=c.tenant_id and i.reg_status='A'
+where c.tenant_id=@tenantId and c.user_id=@userId and c.reg_status='A'
+group by c.id,c.name,c.created_at,c.updated_at order by c.updated_at desc limit 50
+""";
+        await using var conn = await _db.OpenAsync(ct);
+        return (await conn.QueryAsync<SmartSearchCollection>(new CommandDefinition(sql, new { tenantId, userId }, cancellationToken: ct))).AsList();
+    }
+
+    public async Task<SmartSearchCollection?> GetCollectionAsync(Guid tenantId, Guid userId, Guid id, CancellationToken ct)
+    {
+        await using var conn = await _db.OpenAsync(ct);
+        var collection = await conn.QuerySingleOrDefaultAsync<SmartSearchCollection>(new CommandDefinition("select id as \"Id\",name as \"Name\",created_at as \"CreatedAt\",updated_at as \"UpdatedAt\" from ged.smart_search_collection where id=@id and tenant_id=@tenantId and user_id=@userId and reg_status='A'", new { id, tenantId, userId }, cancellationToken: ct));
+        if (collection is null) return null;
+        const string itemsSql = """
+select i.document_id as "DocumentId", i.version_id as "VersionId", i.reference_mode as "ReferenceMode",
+       coalesce(nullif(d.title,''),v.file_name,'Documento') as "Title", i.added_at as "AddedAt"
+from ged.smart_search_collection_item i
+join ged.document d on d.id=i.document_id and d.tenant_id=i.tenant_id and d.reg_status='A'
+left join ged.document_version v on v.id=coalesce(i.version_id,d.current_version_id) and v.tenant_id=d.tenant_id
+where i.collection_id=@id and i.tenant_id=@tenantId and i.reg_status='A' order by i.added_at desc limit 200
+""";
+        collection.Items = (await conn.QueryAsync<SmartSearchCollectionItem>(new CommandDefinition(itemsSql, new { id, tenantId }, cancellationToken: ct))).AsList();
+        collection.ItemCount = collection.Items.Count;
+        return collection;
+    }
+
+    public async Task<Guid> CreateCollectionAsync(Guid tenantId, Guid userId, string name, CancellationToken ct)
+    {
+        await using var conn = await _db.OpenAsync(ct);
+        return await conn.ExecuteScalarAsync<Guid>(new CommandDefinition("insert into ged.smart_search_collection(tenant_id,user_id,name) values(@tenantId,@userId,@name) returning id", new { tenantId, userId, name }, cancellationToken: ct));
+    }
+
+    public async Task<bool> RenameCollectionAsync(Guid tenantId, Guid userId, Guid id, string name, CancellationToken ct)
+    {
+        await using var conn = await _db.OpenAsync(ct);
+        return await conn.ExecuteAsync(new CommandDefinition("update ged.smart_search_collection set name=@name,updated_at=now(),revision=revision+1 where id=@id and tenant_id=@tenantId and user_id=@userId and reg_status='A'", new { tenantId, userId, id, name }, cancellationToken: ct)) == 1;
+    }
+
+    public async Task<bool> ArchiveCollectionAsync(Guid tenantId, Guid userId, Guid id, CancellationToken ct)
+    {
+        await using var conn = await _db.OpenAsync(ct);
+        return await conn.ExecuteAsync(new CommandDefinition("update ged.smart_search_collection set reg_status='I',updated_at=now(),revision=revision+1 where id=@id and tenant_id=@tenantId and user_id=@userId and reg_status='A'", new { tenantId, userId, id }, cancellationToken: ct)) == 1;
+    }
+
+    public async Task<SmartSearchCollectionMutation> AddCollectionItemsAsync(Guid tenantId, Guid userId, Guid id, IReadOnlyCollection<Guid> documentIds, CancellationToken ct)
+    {
+        var requested = documentIds.Distinct().Take(50).ToArray();
+        const string sql = """
+with owned as (select id from ged.smart_search_collection where id=@id and tenant_id=@tenantId and user_id=@userId and reg_status='A'),
+allowed as (select d.id,d.current_version_id from ged.document d,owned where d.tenant_id=@tenantId and d.id=any(@documentIds) and d.reg_status='A'),
+inserted as (insert into ged.smart_search_collection_item(tenant_id,collection_id,document_id,version_id,reference_mode,added_by)
+ select @tenantId,@id,id,null,'CURRENT',@userId from allowed
+ on conflict(tenant_id,collection_id,document_id) do update set reg_status='A',removed_at=null,added_at=now(),added_by=@userId returning document_id)
+update ged.smart_search_collection set updated_at=now(),revision=revision+1 where id=@id and tenant_id=@tenantId and user_id=@userId
+returning (select count(*) from inserted)::int
+""";
+        await using var conn = await _db.OpenAsync(ct);
+        var added = await conn.ExecuteScalarAsync<int?>(new CommandDefinition(sql, new { tenantId, userId, id, documentIds = requested }, cancellationToken: ct)) ?? 0;
+        return new SmartSearchCollectionMutation { Requested = requested.Length, Added = added, Skipped = requested.Length - added };
+    }
+
+    public async Task<bool> RemoveCollectionItemAsync(Guid tenantId, Guid userId, Guid id, Guid documentId, CancellationToken ct)
+    {
+        const string sql = """
+update ged.smart_search_collection_item i set reg_status='I',removed_at=now()
+where i.tenant_id=@tenantId and i.collection_id=@id and i.document_id=@documentId and i.reg_status='A'
+and exists(select 1 from ged.smart_search_collection c where c.id=i.collection_id and c.tenant_id=i.tenant_id and c.user_id=@userId and c.reg_status='A')
+""";
+        await using var conn = await _db.OpenAsync(ct);
+        return await conn.ExecuteAsync(new CommandDefinition(sql, new { tenantId, userId, id, documentId }, cancellationToken: ct)) == 1;
+    }
+
     private static SmartSearchResultItem Map(SearchRow r, SmartSearchIntent intent)
     {
         var reasons = new List<SmartSearchResultReason>();

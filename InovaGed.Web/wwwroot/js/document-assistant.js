@@ -19,6 +19,10 @@
   let suggestTimer;
   let suggestController;
   let suggestSequence = 0;
+  let requestRevision = 0;
+  let currentState = { terms: '', documentType: null, unit: null, classification: null, year: null, dateField: 'created', sort: 'relevance' };
+  const stateHistory = [];
+  const selected = new Set();
   const autocomplete = root.querySelector('#assistantAutocomplete');
   const interpretation = root.querySelector('[data-interpretation]');
   const interpretationChips = root.querySelector('[data-interpretation-chips]');
@@ -147,8 +151,10 @@
     const question = input.value.trim();
     lastSubmittedQuestion = question;
     if (!question) { input.focus(); toast('Escreva uma pergunta para consultar o acervo.', 'warning'); return; }
+    if (!currentState.terms) currentState.terms = question;
     controller?.abort();
     controller = new AbortController();
+    const revision = ++requestRevision;
     feed.querySelector('.assistant-welcome')?.remove();
     feed.classList.toggle('is-refreshing', feed.children.length > 0);
     closeAutocomplete();
@@ -162,6 +168,7 @@
       const json = await response.json();
       if (response.status === 401) throw new Error('Sua sessão expirou. Entre novamente para continuar.');
       if (!response.ok || !json.success) throw new Error(json.message || 'A consulta não pôde ser concluída.');
+      if (revision !== requestRevision) return;
       render(json.response);
       lastQuestion = question;
       saveButton.disabled = false;
@@ -180,6 +187,10 @@
     if (criteria.usedOcr) chips.push(['Conteúdo', 'OCR autorizado']);
     interpretationChips.innerHTML = chips.map(([label, value]) => `<span class="assistant-filter-chip"><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}</span>`).join('');
     interpretation.hidden = chips.length === 0;
+    currentState.documentType = criteria.documentType || currentState.documentType;
+    if (criteria.from) currentState.year = new Date(criteria.from).getUTCFullYear();
+    renderScope();
+    clearSelection();
     const responseSources = response.sources || [];
     responseSources.forEach(source => {
       if (!evidence.some(item => item.documentId === source.documentId)) evidence.push(source);
@@ -187,7 +198,7 @@
     const sources = responseSources.map((source, index) => {
       const badges = source.badges || [];
       const relevanceLabel = index === 0 ? 'Mais relevante' : `Resultado ${index + 1}`;
-      return `<article class="assistant-source"><div class="assistant-source-heading"><span class="assistant-source-rank" aria-label="Posição no ranking">#${index + 1}</span><div><span class="assistant-source-type">${escapeHtml(source.documentType || 'Documento')}</span><div class="assistant-source-badges">${badges.map(badge => `<span>${escapeHtml(badge)}</span>`).join('')}</div><h3>${escapeHtml(source.title)}</h3><p>${escapeHtml(source.fileName || '')}${source.folderName ? ` · ${escapeHtml(source.folderName)}` : ''}</p></div><span class="assistant-relevance">${relevanceLabel}</span></div>${source.ocrExcerpt ? `<blockquote>${escapeHtml(source.ocrExcerpt)}</blockquote>` : '<p class="assistant-no-ocr">Trecho OCR não disponível nesta fonte.</p>'}<details><summary>Por que apareceu?</summary><p>${escapeHtml(source.matchReason)}</p></details><nav aria-label="Ações do documento"><a class="btn btn-sm btn-primary" href="/Ged/Details/${source.documentId}">Abrir documento</a>${source.hasOcr ? `<a class="btn btn-sm btn-outline-secondary" href="/Ged/Details/${source.documentId}#ocr">Abrir OCR</a>` : ''}<button class="btn btn-sm btn-ghost" type="button" data-copy="${source.documentId}">Copiar referência</button></nav><div class="assistant-feedback" data-feedback-box><span>Este resultado foi útil?</span><button type="button" data-feedback="true" data-document-id="${source.documentId}" aria-label="Marcar resultado como útil">Sim</button><button type="button" data-feedback="false" data-document-id="${source.documentId}" aria-label="Marcar resultado como não útil">Não</button></div></article>`;
+      return `<article class="assistant-source" data-result-id="${source.documentId}"><div class="assistant-source-heading"><label class="assistant-select"><input type="checkbox" data-select-document="${source.documentId}" aria-label="Selecionar ${escapeHtml(source.title)}"><span class="assistant-source-rank" aria-label="Posição no ranking">#${index + 1}</span></label><div><span class="assistant-source-type">${escapeHtml(source.documentType || 'Documento')}</span><div class="assistant-source-badges">${badges.map(badge => `<span>${escapeHtml(badge)}</span>`).join('')}</div><h3>${escapeHtml(source.title)}</h3><p>${escapeHtml(source.fileName || '')}${source.folderName ? ` · ${escapeHtml(source.folderName)}` : ''}${source.versionId ? ` · Versão encontrada: ${escapeHtml(source.versionId)}` : ''}</p></div><span class="assistant-relevance">${relevanceLabel}</span></div>${source.ocrExcerpt ? `<blockquote>${escapeHtml(source.ocrExcerpt)}</blockquote>` : '<p class="assistant-no-ocr">Trecho OCR não disponível nesta fonte.</p>'}<details><summary>Por que apareceu?</summary><p>${escapeHtml(source.matchReason)}</p></details><details data-related-box><summary data-load-related="${source.documentId}">Documentos relacionados</summary><div data-related-content>Abra para carregar vínculos autorizados.</div></details><nav aria-label="Ações do documento"><a class="btn btn-sm btn-primary" href="/Ged/Details/${source.documentId}">Abrir documento</a>${source.hasOcr ? `<a class="btn btn-sm btn-outline-secondary" href="/Ged/Details/${source.documentId}#ocr">Abrir OCR</a>` : ''}<button class="btn btn-sm btn-ghost" type="button" data-copy="${source.documentId}">Copiar referência</button></nav><div class="assistant-feedback" data-feedback-box><span>Este resultado foi útil?</span><button type="button" data-feedback="true" data-document-id="${source.documentId}" aria-label="Marcar resultado como útil">Sim</button><button type="button" data-feedback="false" data-document-id="${source.documentId}" aria-label="Marcar resultado como não útil">Não</button></div></article>`;
     }).join('');
     conversationId = response.conversationId || conversationId;
     sessionStorage.setItem('inovaged.assistant.conversation', conversationId);
@@ -204,6 +215,7 @@
     feed.insertAdjacentHTML('beforeend', `<article class="assistant-message bot"><span>Assistente documental</span><p>${escapeHtml(response.answer)}</p><div class="assistant-criteria"><strong>Filtros entendidos</strong><p>${escapeHtml(response.criteria)}</p></div>${operationalActions ? `<div class="assistant-answer-actions"><strong>Ações sugeridas</strong><div class="d-flex flex-wrap gap-2 mt-2">${operationalActions}</div><small>Ações operacionais exigem confirmação antes de qualquer alteração.</small></div>` : ''}${evidenceState}${refinements ? `<div class="assistant-refinements"><strong>Refinar esta pergunta</strong><div class="assistant-chip-list">${refinements}</div></div>` : ''}</article>`);
     feed.querySelectorAll('[data-refine]').forEach(button => { if (button.dataset.bound) return; button.dataset.bound = 'true'; button.addEventListener('click', () => { input.value = button.dataset.refine; input.focus(); form.requestSubmit(); }); });
     feed.querySelectorAll('[data-copy]').forEach(button => { if (button.dataset.bound) return; button.dataset.bound = 'true'; button.addEventListener('click', async () => { await navigator.clipboard.writeText(`GED:${button.dataset.copy}`); toast('Referência copiada.', 'success'); }); });
+    bindResultTools();
     feed.querySelectorAll('[data-export-conversation]').forEach(button => button.addEventListener('click', () => exportButton.click()));
     feed.querySelectorAll('[data-save-search]').forEach(button => button.addEventListener('click', () => saveButton.click()));
     feed.querySelectorAll('[data-confirm-action]').forEach(link => link.addEventListener('click', event => {
@@ -216,4 +228,55 @@
       const box = button.closest('[data-feedback-box]'); box.classList.add('is-complete'); box.innerHTML = '<span>Feedback registrado. Obrigado.</span>'; toast('Feedback registrado.', 'success');
     }); });
   }
+
+  const scope = root.querySelector('[data-search-scope]');
+  const scopeChips = root.querySelector('[data-scope-chips]');
+  const refineForm = root.querySelector('[data-refine-form]');
+  const refinementStatus = root.querySelector('[data-refinement-status]');
+  const bulkBar = root.querySelector('[data-bulk-bar]');
+  const token = () => form.querySelector('[name="__RequestVerificationToken"]').value;
+  function renderScope() {
+    const fields = [['Termos', currentState.terms], ['Tipo', currentState.documentType], ['Unidade', currentState.unit], ['Classe', currentState.classification], ['Período', currentState.year], ['Campo de data', currentState.dateField === 'created' ? 'Cadastro' : currentState.dateField], ['Ordenação', currentState.sort]];
+    scopeChips.innerHTML = fields.filter(x => x[1]).map(([label, value]) => `<span class="assistant-filter-chip"><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}</span>`).join('');
+    scope.hidden = !currentState.terms;
+  }
+  function buildQuery() {
+    return [currentState.terms, currentState.documentType && `tipo ${currentState.documentType}`, currentState.unit && `unidade ${currentState.unit}`, currentState.classification && `classe ${currentState.classification}`, currentState.year].filter(Boolean).join(' ');
+  }
+  root.querySelector('[data-search-within]')?.addEventListener('click', () => { refineForm.hidden = false; refineForm.querySelector('input').focus(); });
+  root.querySelector('[data-new-search]')?.addEventListener('click', () => { stateHistory.push({ ...currentState }); currentState = { terms: '', documentType: null, unit: null, classification: null, year: null, dateField: 'created', sort: 'relevance' }; renderScope(); refineForm.hidden = true; input.value = ''; input.focus(); refinementStatus.textContent = 'Nova pesquisa: os filtros anteriores foram limpos.'; });
+  root.querySelector('[data-clear-filters]')?.addEventListener('click', () => { stateHistory.push({ ...currentState }); currentState = { ...currentState, documentType: null, unit: null, classification: null, year: null }; renderScope(); refinementStatus.textContent = 'Filtros removidos; termos mantidos.'; root.querySelector('[data-undo-refinement]').disabled = false; });
+  root.querySelector('[data-undo-refinement]')?.addEventListener('click', event => { if (!stateHistory.length) return; currentState = stateHistory.pop(); renderScope(); event.currentTarget.disabled = !stateHistory.length; refinementStatus.textContent = 'Último refinamento desfeito.'; input.value = buildQuery(); form.requestSubmit(); });
+  refineForm?.addEventListener('submit', async event => {
+    event.preventDefault(); const command = refineForm.querySelector('input').value.trim(); if (!command) return;
+    const response = await fetch(root.dataset.refineEndpoint, { method: 'POST', signal: controller?.signal, headers: { 'Content-Type': 'application/json', RequestVerificationToken: token() }, body: JSON.stringify({ command, state: currentState }) });
+    const payload = await response.json(); if (!response.ok || !payload.success) { toast(payload.message || 'Não foi possível interpretar o refinamento.', 'error'); return; }
+    const result = payload.result; refinementStatus.textContent = result.description;
+    const options = root.querySelector('[data-refinement-options]'); options.innerHTML = (result.options || []).map(x => `<button type="button" class="assistant-chip" data-refinement-command="${escapeHtml(x.command)}">${escapeHtml(x.label)}</button>`).join('');
+    options.querySelectorAll('[data-refinement-command]').forEach(x => x.addEventListener('click', () => { refineForm.querySelector('input').value = x.dataset.refinementCommand; refineForm.requestSubmit(); }));
+    if (!result.supported || result.ambiguous) return;
+    stateHistory.push({ ...currentState }); currentState = result.state; renderScope(); root.querySelector('[data-undo-refinement]').disabled = false; refineForm.querySelector('input').value = ''; input.value = buildQuery(); form.requestSubmit();
+  });
+  function clearSelection() { selected.clear(); feed.querySelectorAll('[data-select-document]').forEach(x => { x.checked = false; }); updateBulk(); }
+  function updateBulk() { bulkBar.hidden = selected.size === 0; bulkBar.querySelector('[data-selection-count]').textContent = selected.size; bulkBar.querySelector('[data-compare]').disabled = selected.size < 2 || selected.size > 3; }
+  root.querySelector('[data-clear-selection]')?.addEventListener('click', clearSelection);
+  function bindResultTools() {
+    feed.querySelectorAll('[data-select-document]').forEach(box => { if (box.dataset.bound) return; box.dataset.bound = 'true'; box.addEventListener('change', () => { if (box.checked && selected.size >= 3) { box.checked = false; toast('Selecione no máximo três documentos.', 'warning'); return; } box.checked ? selected.add(box.dataset.selectDocument) : selected.delete(box.dataset.selectDocument); box.closest('.assistant-source').classList.toggle('is-selected', box.checked); updateBulk(); }); });
+    feed.querySelectorAll('[data-related-box]').forEach(details => { if (details.dataset.bound) return; details.dataset.bound = 'true'; details.addEventListener('toggle', async () => { if (!details.open || details.dataset.loaded) return; details.dataset.loaded = 'true'; const content = details.querySelector('[data-related-content]'); try { const url = new URL(root.dataset.relatedEndpoint, location.origin); url.searchParams.set('documentId', details.querySelector('[data-load-related]').dataset.loadRelated); const response = await fetch(url); const data = await response.json(); if (!response.ok) throw new Error(); content.innerHTML = data.items?.length ? data.items.map(x => `<a href="/Ged/Details/${x.documentId}"><strong>${escapeHtml(x.title)}</strong><small>${escapeHtml(x.origin)} · ${escapeHtml(x.relationType)}</small></a>`).join('') : '<p>Nenhum vínculo documental autorizado encontrado.</p>'; } catch { content.innerHTML = '<p>Relacionados indisponíveis. A busca principal continua disponível.</p>'; } }); });
+  }
+  root.querySelector('[data-compare]')?.addEventListener('click', () => openComparison(false));
+  root.querySelector('[data-compare-text]')?.addEventListener('click', () => openComparison(true));
+  async function openComparison(includeText) {
+    const dialog = root.querySelector('[data-comparison-dialog]'); const content = dialog.querySelector('[data-comparison-content]'); content.innerHTML = '<p>Carregando comparação…</p>'; dialog.showModal();
+    try { const response = await fetch(root.dataset.compareEndpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', RequestVerificationToken: token() }, body: JSON.stringify({ documentIds: [...selected], includeText }) }); const data = await response.json(); if (!response.ok) throw new Error(data.message); const rows = [['Título','title'],['Protocolo','protocol'],['Tipo','documentType'],['Classe','classification'],['Unidade','unit'],['Data','createdAt'],['Situação','status'],['Versão','versionNumber']]; content.innerHTML = `<div class="assistant-comparison-scroll"><table><thead><tr><th>Campo</th>${data.items.map(x => `<th>${escapeHtml(x.title)}</th>`).join('')}</tr></thead><tbody>${rows.map(([label,key]) => `<tr><th>${label}</th>${data.items.map(x => `<td>${escapeHtml(x[key] ?? '—')}</td>`).join('')}</tr>`).join('')}</tbody></table></div>${includeText ? renderTextDiff(data.items) : ''}`; } catch (error) { content.innerHTML = `<p class="text-danger">${escapeHtml(error.message || 'Comparação indisponível.')}</p>`; }
+  }
+  function renderTextDiff(items) {
+    if (items.some(x => !x.hasExtractedText)) return '<p class="assistant-history-empty">Comparação sem texto extraído para um ou mais documentos.</p>';
+    const lineSets = items.map(x => new Set(String(x.extractedText).split(/\r?\n/).map(y => y.trim()).filter(Boolean)));
+    const base = lineSets[0];
+    return items.map((item, index) => { const lines = [...lineSets[index]].slice(0, 300); const marked = lines.map(line => index === 0 ? (lineSets.slice(1).every(set => set.has(line)) ? `<span>${escapeHtml(line)}</span>` : `<del>${escapeHtml(line)}</del>`) : (base.has(line) ? `<span>${escapeHtml(line)}</span>` : `<ins>${escapeHtml(line)}</ins>`)).join('\n'); return `<section><h3>${escapeHtml(item.title)} — versão ${escapeHtml(item.versionNumber ?? 'não disponível')}</h3><pre>${marked || 'Comparação sem texto extraído.'}</pre></section>`; }).join('');
+  }
+  root.querySelector('[data-add-collection]')?.addEventListener('click', async () => { const dialog = root.querySelector('[data-collection-dialog]'); dialog.showModal(); const response = await fetch(root.dataset.collectionsEndpoint); const data = await response.json(); dialog.querySelector('[data-collection-list]').innerHTML = data.items?.length ? data.items.map(x => `<button type="button" class="assistant-collection-option" data-collection-id="${x.id}"><strong>${escapeHtml(x.name)}</strong><span>${x.itemCount} item(ns)</span></button>`).join('') : '<p class="assistant-history-empty">Coleção vazia: crie a primeira abaixo.</p>'; dialog.querySelectorAll('[data-collection-id]').forEach(x => x.addEventListener('click', () => addToCollection(x.dataset.collectionId, dialog))); });
+  root.querySelector('[data-create-collection-form]')?.addEventListener('submit', async event => { event.preventDefault(); const dialog = event.target.closest('dialog'); const payload = await savedPost(root.dataset.createCollectionEndpoint, { name: event.target.querySelector('input').value }); await addToCollection(payload.id, dialog); });
+  async function addToCollection(id, dialog) { const values = { id }; [...selected].forEach((value, index) => values[`documentIds[${index}]`] = value); const payload = await savedPost(root.dataset.addCollectionEndpoint, values); dialog.close(); toast(`${payload.result.added} documento(s) adicionado(s); ${payload.result.skipped} ignorado(s).`, 'success'); }
 })();
