@@ -16,7 +16,8 @@ public sealed class BrowserTestMatrix
             ("Login", "/Account/Login"), ("Dashboard", "/GedDashboard"),
             ("GED", "/Ged"), ("HospitalSearch", "/HospitalDocuments"),
             ("Administration", "/Administration"), ("Loans", "/Loans"),
-            ("Protocols", "/Protocols"), ("Continuity", "/Continuity")
+            ("Protocols", "/Protocols"), ("Continuity", "/Continuity"),
+            ("SmartSearch", "/SmartSearch")
         };
         var viewports = new (int Width, int Height)[]
         {

@@ -29,6 +29,7 @@
   const historyPanel = root.querySelector('[data-history-panel]');
   const historyList = root.querySelector('[data-history-list]');
   const savedList = root.querySelector('[data-saved-list]');
+  const clearInput = root.querySelector('[data-clear-input]');
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const toast = (message, type = 'info') => window.showAppToast?.(message, type);
 
@@ -51,16 +52,31 @@
       autocomplete.querySelectorAll('[data-suggest-value]').forEach(button => button.addEventListener('click', () => { input.value = button.dataset.suggestValue; closeAutocomplete(); input.focus(); }));
     } catch (error) { if (error.name !== 'AbortError' && error.message === 'SESSION_EXPIRED') toast('Sua sessão expirou. Entre novamente para continuar.', 'warning'); }
   };
-  input.addEventListener('input', () => { clearTimeout(suggestTimer); suggestTimer = setTimeout(loadSuggestions, 300); });
-  input.addEventListener('keydown', event => { if (event.key === 'Escape') closeAutocomplete(); });
+  const updateClearInput = () => { clearInput.hidden = !input.value; };
+  input.addEventListener('input', () => { updateClearInput(); clearTimeout(suggestTimer); suggestTimer = setTimeout(loadSuggestions, 300); });
+  input.addEventListener('keydown', event => {
+    const options = [...autocomplete.querySelectorAll('[role="option"]')];
+    const active = options.indexOf(document.activeElement);
+    if (event.key === 'Escape') { closeAutocomplete(); input.focus(); }
+    if (event.key === 'ArrowDown' && options.length) { event.preventDefault(); options[active < options.length - 1 ? active + 1 : 0].focus(); }
+  });
+  autocomplete.addEventListener('keydown', event => {
+    const options = [...autocomplete.querySelectorAll('[role="option"]')];
+    const active = options.indexOf(document.activeElement);
+    if (event.key === 'ArrowDown') { event.preventDefault(); options[(active + 1) % options.length].focus(); }
+    if (event.key === 'ArrowUp') { event.preventDefault(); active <= 0 ? input.focus() : options[active - 1].focus(); }
+    if (event.key === 'Escape') { closeAutocomplete(); input.focus(); }
+  });
+  clearInput.addEventListener('click', () => { input.value = ''; updateClearInput(); closeAutocomplete(); input.focus(); });
+  updateClearInput();
   document.addEventListener('click', event => { if (!autocomplete.contains(event.target) && event.target !== input) closeAutocomplete(); });
   root.querySelector('[data-remove-interpretation]')?.addEventListener('click', () => { interpretation.hidden = true; interpretationChips.innerHTML = ''; input.value = lastSubmittedQuestion; input.focus(); });
 
 
   root.querySelectorAll('[data-suggestion]').forEach(button => button.addEventListener('click', () => {
     input.value = button.dataset.suggestion;
+    updateClearInput();
     input.focus();
-    form.requestSubmit();
   }));
   const loadLocalHistory = () => { try { return JSON.parse(localStorage.getItem(historyKey) || '[]'); } catch { return []; } };
   const renderHistory = async () => {
@@ -98,15 +114,29 @@
     savedList.innerHTML = items.length ? items.map(item => `<div class="assistant-saved-row"><button type="button" data-run-saved="${item.id}"><span>${item.isFavorite ? '★ ' : ''}${escapeHtml(item.name)}</span><small>${item.runCount || 0} execuções${item.lastRunAt ? ` · última ${new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short' }).format(new Date(item.lastRunAt))}` : ''}</small></button><div class="assistant-saved-actions"><button type="button" class="btn btn-sm btn-ghost" data-favorite-saved="${item.id}" data-favorite="${!item.isFavorite}" aria-label="${item.isFavorite ? 'Desfavoritar' : 'Favoritar'}">★</button><button type="button" class="btn btn-sm btn-ghost" data-rename-saved="${item.id}" data-name="${escapeHtml(item.name)}" aria-label="Renomear">✎</button><button type="button" class="btn btn-sm btn-ghost" data-delete-saved="${item.id}" aria-label="Excluir">×</button></div></div>`).join('') : '<div class="assistant-history-empty"><strong>Nenhuma busca salva</strong><span>Faça uma consulta e use “Salvar busca” para criar seu primeiro atalho.</span></div>';
     savedList.querySelectorAll('[data-run-saved]').forEach(button => button.addEventListener('click', async () => { try { const payload = await savedPost(root.dataset.runSavedEndpoint, { id: button.dataset.runSaved }); input.value = payload.query; await renderSaved(); form.requestSubmit(); } catch (error) { toast(error.message, 'error'); } }));
     savedList.querySelectorAll('[data-favorite-saved]').forEach(button => button.addEventListener('click', async () => { try { await savedPost(root.dataset.favoriteSavedEndpoint, { id: button.dataset.favoriteSaved, isFavorite: button.dataset.favorite }); await renderSaved(); } catch (error) { toast(error.message, 'error'); } }));
-    savedList.querySelectorAll('[data-rename-saved]').forEach(button => button.addEventListener('click', async () => { const name = window.prompt('Novo nome da busca:', button.dataset.name); if (!name) return; try { await savedPost(root.dataset.renameSavedEndpoint, { id: button.dataset.renameSaved, name }); await renderSaved(); toast('Busca renomeada.', 'success'); } catch (error) { toast(error.message, 'error'); } }));
-    savedList.querySelectorAll('[data-delete-saved]').forEach(button => button.addEventListener('click', async () => { if (!window.confirm('Excluir esta busca salva? Esta ação não pode ser desfeita.')) return; try { await savedPost(root.dataset.deleteSavedEndpoint, { id: button.dataset.deleteSaved }); await renderSaved(); toast('Busca salva removida.', 'success'); } catch (error) { toast(error.message, 'error'); } }));
+    savedList.querySelectorAll('[data-rename-saved]').forEach(button => button.addEventListener('click', () => {
+      const row = button.closest('.assistant-saved-row');
+      row.innerHTML = `<form data-inline-rename><label class="visually-hidden" for="rename-${button.dataset.renameSaved}">Novo nome</label><input id="rename-${button.dataset.renameSaved}" maxlength="120" required value="${escapeHtml(button.dataset.name)}"><button class="btn btn-sm btn-primary" type="submit">Salvar</button><button class="btn btn-sm btn-ghost" type="button" data-cancel-rename>Cancelar</button></form>`;
+      row.querySelector('input').select(); row.querySelector('[data-cancel-rename]').addEventListener('click', renderSaved);
+      row.querySelector('form').addEventListener('submit', async event => { event.preventDefault(); try { await savedPost(root.dataset.renameSavedEndpoint, { id: button.dataset.renameSaved, name: event.target.querySelector('input').value }); await renderSaved(); toast('Pesquisa renomeada.', 'success'); } catch (error) { toast(error.message, 'error'); } });
+    }));
+    savedList.querySelectorAll('[data-delete-saved]').forEach(button => button.addEventListener('click', async () => {
+      if (button.dataset.confirmed !== 'true') { button.dataset.confirmed = 'true'; button.textContent = 'Confirmar'; button.setAttribute('aria-label', 'Confirmar exclusão'); return; }
+      try { await savedPost(root.dataset.deleteSavedEndpoint, { id: button.dataset.deleteSaved }); await renderSaved(); toast('Pesquisa salva removida.', 'success'); } catch (error) { toast(error.message, 'error'); }
+    }));
   };
-  saveButton.addEventListener('click', async () => {
+  const saveDialog = root.querySelector('[data-save-dialog]');
+  saveButton.addEventListener('click', () => {
     if (!lastQuestion) return;
-    const body = new FormData(); body.set('__RequestVerificationToken', form.querySelector('[name="__RequestVerificationToken"]').value); body.set('query', lastQuestion); body.set('name', lastQuestion.slice(0, 120));
-    const result = await fetch(root.dataset.saveEndpoint, { method: 'POST', body });
-    if (!result.ok) { toast('Não foi possível salvar a busca.', 'error'); return; }
-    await renderSaved(); toast('Busca salva na sua conta.', 'success');
+    saveDialog.querySelector('[name="name"]').value = lastQuestion.slice(0, 120);
+    saveDialog.querySelector('[data-save-summary]').innerHTML = `<strong>Consulta</strong><p>${escapeHtml(buildQuery() || lastQuestion)}</p><small>Períodos informados por ano serão reavaliados com o mesmo ano fixo.</small>`;
+    saveDialog.showModal(); saveDialog.querySelector('[name="name"]').select();
+  });
+  saveDialog.querySelectorAll('[data-close-dialog]').forEach(button => button.addEventListener('click', () => saveDialog.close()));
+  saveDialog.querySelector('[data-save-form]').addEventListener('submit', async event => {
+    event.preventDefault();
+    try { await savedPost(root.dataset.saveEndpoint, { query: lastQuestion, name: event.target.elements.name.value }); saveDialog.close(); await renderSaved(); toast('Pesquisa salva na sua conta.', 'success'); }
+    catch (error) { toast(error.message, 'error'); }
   });
   renderSaved();
   root.querySelector('[data-toggle-history]').addEventListener('click', () => { historyPanel.hidden = !historyPanel.hidden; if (!historyPanel.hidden) renderHistory(); });
@@ -160,6 +190,7 @@
     closeAutocomplete();
     feed.insertAdjacentHTML('beforeend', `<article class="assistant-message user"><span>Você</span><p>${escapeHtml(question)}</p></article><div class="assistant-skeleton" data-loading><i></i><i></i><i></i><span>Consultando fontes autorizadas…</span></div>`);
     input.value = '';
+    updateClearInput();
     submit.disabled = true;
     feed.scrollTop = feed.scrollHeight;
     try {
@@ -196,9 +227,9 @@
       if (!evidence.some(item => item.documentId === source.documentId)) evidence.push(source);
     });
     const sources = responseSources.map((source, index) => {
-      const badges = source.badges || [];
       const relevanceLabel = index === 0 ? 'Mais relevante' : `Resultado ${index + 1}`;
-      return `<article class="assistant-source" data-result-id="${source.documentId}"><div class="assistant-source-heading"><label class="assistant-select"><input type="checkbox" data-select-document="${source.documentId}" aria-label="Selecionar ${escapeHtml(source.title)}"><span class="assistant-source-rank" aria-label="Posição no ranking">#${index + 1}</span></label><div><span class="assistant-source-type">${escapeHtml(source.documentType || 'Documento')}</span><div class="assistant-source-badges">${badges.map(badge => `<span>${escapeHtml(badge)}</span>`).join('')}</div><h3>${escapeHtml(source.title)}</h3><p>${escapeHtml(source.fileName || '')}${source.folderName ? ` · ${escapeHtml(source.folderName)}` : ''}${source.versionId ? ` · Versão encontrada: ${escapeHtml(source.versionId)}` : ''}</p></div><span class="assistant-relevance">${relevanceLabel}</span></div>${source.ocrExcerpt ? `<blockquote>${escapeHtml(source.ocrExcerpt)}</blockquote>` : '<p class="assistant-no-ocr">Trecho OCR não disponível nesta fonte.</p>'}<details><summary>Por que apareceu?</summary><p>${escapeHtml(source.matchReason)}</p></details><details data-related-box><summary data-load-related="${source.documentId}">Documentos relacionados</summary><div data-related-content>Abra para carregar vínculos autorizados.</div></details><nav aria-label="Ações do documento"><a class="btn btn-sm btn-primary" href="/Ged/Details/${source.documentId}">Abrir documento</a>${source.hasOcr ? `<a class="btn btn-sm btn-outline-secondary" href="/Ged/Details/${source.documentId}#ocr">Abrir OCR</a>` : ''}<button class="btn btn-sm btn-ghost" type="button" data-copy="${source.documentId}">Copiar referência</button></nav><div class="assistant-feedback" data-feedback-box><span>Este resultado foi útil?</span><button type="button" data-feedback="true" data-document-id="${source.documentId}" aria-label="Marcar resultado como útil">Sim</button><button type="button" data-feedback="false" data-document-id="${source.documentId}" aria-label="Marcar resultado como não útil">Não</button></div></article>`;
+      const preview = escapeHtml(JSON.stringify({ id: source.documentId, title: source.title, type: source.documentType || 'Documento', file: source.fileName || '', folder: source.folderName || '', version: source.versionId || '', excerpt: source.ocrExcerpt || '', reason: source.matchReason || '' }));
+      return `<article class="assistant-source" data-result-id="${source.documentId}"><div class="assistant-source-heading"><label class="assistant-select"><input type="checkbox" data-select-document="${source.documentId}" aria-label="Selecionar ${escapeHtml(source.title)}"><span class="assistant-source-rank" aria-label="Posição no ranking">#${index + 1}</span></label><div><span class="assistant-source-type">${escapeHtml(source.documentType || 'Documento')}</span><h3><a href="/Ged/Details/${source.documentId}">${escapeHtml(source.title)}</a></h3><p>${escapeHtml(source.fileName || '')}${source.folderName ? ` · ${escapeHtml(source.folderName)}` : ''}${source.versionId ? ` · Versão ${escapeHtml(source.versionId)}` : ''}</p></div><span class="assistant-relevance">${relevanceLabel}</span></div>${source.ocrExcerpt ? `<blockquote>${escapeHtml(source.ocrExcerpt)}</blockquote>` : '<p class="assistant-no-ocr">Trecho extraído não disponível nesta fonte.</p>'}<details><summary>Por que apareceu?</summary><p>${escapeHtml(source.matchReason)}</p></details><nav aria-label="Ações do documento"><button class="btn btn-sm btn-outline-primary" type="button" data-preview='${preview}'>Visualizar</button><a class="btn btn-sm btn-primary" href="/Ged/Details/${source.documentId}">Abrir documento</a><details class="assistant-result-more"><summary class="btn btn-sm btn-ghost">Mais ações</summary><div>${source.hasOcr ? `<a href="/Ged/Details/${source.documentId}#ocr">Abrir texto extraído</a>` : ''}<button type="button" data-copy="${source.documentId}">Copiar referência</button></div></details></nav><div class="assistant-feedback" data-feedback-box><span>Este resultado foi útil?</span><button type="button" data-feedback="true" data-document-id="${source.documentId}">Sim</button><button type="button" data-feedback="false" data-document-id="${source.documentId}">Não</button></div></article>`;
     }).join('');
     conversationId = response.conversationId || conversationId;
     sessionStorage.setItem('inovaged.assistant.conversation', conversationId);
@@ -208,7 +239,8 @@
       if (action.kind === 'export') return `<button type="button" class="btn btn-sm btn-outline-secondary" data-export-conversation>${escapeHtml(action.label)}</button>`;
       if (action.kind === 'save-search') return `<button type="button" class="btn btn-sm btn-outline-secondary" data-save-search>${escapeHtml(action.label)}</button>`;
       if (!action.url) return '';
-      return `<a class="btn btn-sm ${action.requiresConfirmation ? 'btn-outline-warning' : 'btn-outline-primary'}" href="${escapeHtml(action.url)}"${action.requiresConfirmation ? ` data-confirm-action="${escapeHtml(action.confirmationMessage || 'Confirme para continuar.')}` : ''}>${escapeHtml(action.label)}</a>`;
+      if (action.requiresConfirmation) return '';
+      return `<a class="btn btn-sm btn-outline-primary" href="${escapeHtml(action.url)}">${escapeHtml(action.label)}</a>`;
     }).join('');
     const refinements = (response.suggestions || []).slice(0, 4).map(suggestion => `<button type="button" class="assistant-chip" data-refine="${escapeHtml(suggestion.text)}">${escapeHtml(suggestion.text)}</button>`).join('');
     const evidenceState = sources ? `<div class="assistant-sources"><h2>Fontes encontradas (${response.total})</h2>${sources}</div>` : '<div class="assistant-evidence-empty" role="status"><strong>Nenhuma evidência encontrada</strong><p>Não vou formular uma resposta sem fonte. Ajuste o período, o tipo documental ou os termos.</p></div>';
@@ -216,11 +248,9 @@
     feed.querySelectorAll('[data-refine]').forEach(button => { if (button.dataset.bound) return; button.dataset.bound = 'true'; button.addEventListener('click', () => { input.value = button.dataset.refine; input.focus(); form.requestSubmit(); }); });
     feed.querySelectorAll('[data-copy]').forEach(button => { if (button.dataset.bound) return; button.dataset.bound = 'true'; button.addEventListener('click', async () => { await navigator.clipboard.writeText(`GED:${button.dataset.copy}`); toast('Referência copiada.', 'success'); }); });
     bindResultTools();
+    bindPreviews();
     feed.querySelectorAll('[data-export-conversation]').forEach(button => button.addEventListener('click', () => exportButton.click()));
     feed.querySelectorAll('[data-save-search]').forEach(button => button.addEventListener('click', () => saveButton.click()));
-    feed.querySelectorAll('[data-confirm-action]').forEach(link => link.addEventListener('click', event => {
-      if (!window.confirm(link.dataset.confirmAction)) event.preventDefault();
-    }));
     feed.querySelectorAll('[data-feedback]').forEach(button => { if (button.dataset.bound) return; button.dataset.bound = 'true'; button.addEventListener('click', async () => {
       const body = new FormData(); body.set('__RequestVerificationToken', form.querySelector('[name="__RequestVerificationToken"]').value); body.set('documentId', button.dataset.documentId); body.set('conversationId', conversationId); body.set('helpful', button.dataset.feedback);
       const result = await fetch(root.dataset.feedbackEndpoint, { method: 'POST', body, headers: { 'RequestVerificationToken': form.querySelector('[name="__RequestVerificationToken"]').value } });
@@ -239,6 +269,7 @@
     const fields = [['Termos', currentState.terms], ['Tipo', currentState.documentType], ['Unidade', currentState.unit], ['Classe', currentState.classification], ['Período', currentState.year], ['Campo de data', currentState.dateField === 'created' ? 'Cadastro' : currentState.dateField], ['Ordenação', currentState.sort]];
     scopeChips.innerHTML = fields.filter(x => x[1]).map(([label, value]) => `<span class="assistant-filter-chip"><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}</span>`).join('');
     scope.hidden = !currentState.terms;
+    root.querySelector('[data-filter-count]').textContent = fields.filter(x => x[1] && x[0] !== 'Termos' && x[0] !== 'Ordenação').length;
   }
   function buildQuery() {
     return [currentState.terms, currentState.documentType && `tipo ${currentState.documentType}`, currentState.unit && `unidade ${currentState.unit}`, currentState.classification && `classe ${currentState.classification}`, currentState.year].filter(Boolean).join(' ');
@@ -259,6 +290,34 @@
   });
   function clearSelection() { selected.clear(); feed.querySelectorAll('[data-select-document]').forEach(x => { x.checked = false; }); updateBulk(); }
   function updateBulk() { bulkBar.hidden = selected.size === 0; bulkBar.querySelector('[data-selection-count]').textContent = selected.size; bulkBar.querySelector('[data-compare]').disabled = selected.size < 2 || selected.size > 3; }
+  const previewPanel = root.querySelector('[data-document-preview]');
+  let previewTrigger;
+  function bindPreviews() {
+    feed.querySelectorAll('[data-preview]').forEach(button => { if (button.dataset.bound) return; button.dataset.bound = 'true'; button.addEventListener('click', () => {
+      previewTrigger = button; const item = JSON.parse(button.dataset.preview);
+      previewPanel.querySelector('[data-preview-content]').innerHTML = `<header><div><span class="assistant-source-type">Visualização rápida · ${escapeHtml(item.type)}</span><h2>${escapeHtml(item.title)}</h2><p>${escapeHtml(item.file)}${item.folder ? ` · ${escapeHtml(item.folder)}` : ''}${item.version ? ` · Versão ${escapeHtml(item.version)}` : ''}</p></div><button type="button" class="btn-close" data-close-preview aria-label="Fechar visualização"></button></header><section><h3>Trecho extraído</h3>${item.excerpt ? `<blockquote>${escapeHtml(item.excerpt)}</blockquote>` : '<p>Não há trecho extraído disponível.</p>'}<details><summary>Por que apareceu?</summary><p>${escapeHtml(item.reason)}</p></details></section><footer><a class="btn btn-primary" href="/Ged/Details/${item.id}">Abrir documento original</a></footer>`;
+      previewPanel.hidden = false; document.body.classList.add('assistant-preview-open'); previewPanel.querySelector('[data-close-preview]').focus();
+      previewPanel.querySelector('[data-close-preview]').addEventListener('click', closePreview);
+    }); });
+  }
+  function closePreview() { previewPanel.hidden = true; document.body.classList.remove('assistant-preview-open'); previewTrigger?.focus(); }
+  previewPanel.addEventListener('keydown', event => { if (event.key === 'Escape') closePreview(); });
+
+  const drawer = root.querySelector('[data-filter-drawer]');
+  const drawerBackdrop = root.querySelector('.assistant-drawer-backdrop');
+  const openFilters = root.querySelector('[data-open-filters]');
+  const closeFilters = () => { drawer.classList.remove('is-open'); drawerBackdrop.hidden = true; openFilters.setAttribute('aria-expanded', 'false'); openFilters.focus(); };
+  openFilters.addEventListener('click', () => { drawer.classList.add('is-open'); drawerBackdrop.hidden = false; openFilters.setAttribute('aria-expanded', 'true'); drawer.querySelector('button, a')?.focus(); });
+  root.querySelectorAll('[data-close-filters]').forEach(button => button.addEventListener('click', closeFilters));
+  drawer.addEventListener('keydown', event => { if (event.key === 'Escape') closeFilters(); });
+
+  const densityKey = 'inovaged.smartsearch.density';
+  const setDensity = value => {
+    const density = value === 'compact' ? 'compact' : 'comfortable'; root.dataset.density = density; localStorage.setItem(densityKey, density);
+    root.querySelectorAll('[data-density-value]').forEach(button => { const active = button.dataset.densityValue === density; button.classList.toggle('is-active', active); button.setAttribute('aria-pressed', String(active)); });
+  };
+  root.querySelectorAll('[data-density-value]').forEach(button => button.addEventListener('click', () => setDensity(button.dataset.densityValue)));
+  setDensity(localStorage.getItem(densityKey));
   root.querySelector('[data-clear-selection]')?.addEventListener('click', clearSelection);
   function bindResultTools() {
     feed.querySelectorAll('[data-select-document]').forEach(box => { if (box.dataset.bound) return; box.dataset.bound = 'true'; box.addEventListener('change', () => { if (box.checked && selected.size >= 3) { box.checked = false; toast('Selecione no máximo três documentos.', 'warning'); return; } box.checked ? selected.add(box.dataset.selectDocument) : selected.delete(box.dataset.selectDocument); box.closest('.assistant-source').classList.toggle('is-selected', box.checked); updateBulk(); }); });
