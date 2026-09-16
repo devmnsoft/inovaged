@@ -17,6 +17,17 @@ public sealed class SmartSearchService : ISmartSearchService
 
     public async Task<SmartSearchResult> SearchAsync(SmartSearchRequest request, CancellationToken ct)
     {
+        ArgumentNullException.ThrowIfNull(request);
+        request.Query = (request.Query ?? string.Empty).Trim();
+        if (request.Query.Length is < 2 or > 500)
+            throw new ArgumentException("Informe uma consulta entre 2 e 500 caracteres.", nameof(request));
+        if (request.From.HasValue && request.To.HasValue && request.From.Value >= request.To.Value)
+            throw new ArgumentException("O início do período deve ser anterior ao fim.", nameof(request));
+        if (!string.Equals(request.DateField, "created", StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("Campo de data inválido. Use a data de cadastro.", nameof(request));
+        request.Sort = (request.Sort ?? string.Empty).Trim().ToLowerInvariant();
+        if (request.Sort is not ("relevance" or "newest" or "oldest" or "title"))
+            throw new ArgumentException("Ordenação inválida.", nameof(request));
         request.Page = Math.Max(1, request.Page);
         request.PageSize = Math.Clamp(request.PageSize <= 0 ? 20 : request.PageSize, 1, 50);
         request.From = DbDateTime.ToUtc(request.From);

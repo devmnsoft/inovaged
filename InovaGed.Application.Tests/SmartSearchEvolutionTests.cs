@@ -91,6 +91,47 @@ public sealed class SmartSearchEvolutionTests
         }
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("x")]
+    public async Task Search_RejectsInvalidQueryBeforeAccessingDatabase(string query)
+    {
+        var service = new SmartSearchService(null!, null!);
+
+        var error = await Assert.ThrowsAsync<ArgumentException>(() => service.SearchAsync(new SmartSearchRequest { Query = query }, CancellationToken.None));
+
+        Assert.Contains("2 e 500", error.Message);
+    }
+
+    [Fact]
+    public async Task Search_RejectsInvalidPeriodBeforeAccessingDatabase()
+    {
+        var service = new SmartSearchService(null!, null!);
+        var instant = new DateTime(2026, 9, 16, 0, 0, 0, DateTimeKind.Utc);
+
+        var error = await Assert.ThrowsAsync<ArgumentException>(() => service.SearchAsync(new SmartSearchRequest
+        {
+            Query = "contratos", From = instant, To = instant
+        }, CancellationToken.None));
+
+        Assert.Contains("início do período", error.Message);
+    }
+
+    [Theory]
+    [InlineData("random")]
+    [InlineData("score desc")]
+    public async Task Search_RejectsUnknownSortBeforeAccessingDatabase(string sort)
+    {
+        var service = new SmartSearchService(null!, null!);
+
+        var error = await Assert.ThrowsAsync<ArgumentException>(() => service.SearchAsync(new SmartSearchRequest
+        {
+            Query = "contratos", Sort = sort
+        }, CancellationToken.None));
+
+        Assert.Contains("Ordenação inválida", error.Message);
+    }
+
     private static SmartQueryParser CreateParser() => new(new UnusedDb(), new EmptyContextParser());
 
     private sealed class EmptyContextParser : ISmartSearchContextParser
