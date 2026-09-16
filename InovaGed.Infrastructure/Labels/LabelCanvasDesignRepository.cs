@@ -375,6 +375,14 @@ where v.template_design_id=@id and v.reg_status in ('A','ACTIVE') order by v.ver
         LabelCanvasDocumentDto document;
         try{document=JsonSerializer.Deserialize<LabelCanvasDocumentDto>(request.DesignJson,new JsonSerializerOptions(JsonSerializerDefaults.Web){PropertyNameCaseInsensitive=true})??throw new JsonException();}
         catch(JsonException){throw new LabelCanvasRequestException("INVALID_DESIGN_JSON","O conteúdo visual do modelo é inválido.");}
+        if(document.Canvas is null)
+            throw new LabelCanvasRequestException("MISSING_CANVAS","O documento visual não informa as configurações do canvas.",new Dictionary<string,string>{{"designJson","Inclua as configurações do canvas."}});
+        if(document.Bindings is null)
+            throw new LabelCanvasRequestException("MISSING_BINDINGS","O documento visual não informa o contexto de dados.",new Dictionary<string,string>{{"designJson","Inclua o contexto de dados do modelo."}});
+        if(document.Elements is null)
+            throw new LabelCanvasRequestException("MISSING_ELEMENTS","O documento visual não informa a coleção de elementos.",new Dictionary<string,string>{{"designJson","Envie elements como uma lista; ela pode estar vazia em um rascunho."}});
+        if(document.Elements.Any(element=>element is null))
+            throw new LabelCanvasRequestException("NULL_ELEMENT","A lista de elementos contém um item nulo.",new Dictionary<string,string>{{"designJson","Remova o item nulo e tente novamente."}});
         if(Math.Abs(document.Canvas.WidthMm-request.WidthMm)>LabelCanvasDimensionPolicy.LegacyMismatchToleranceMm||Math.Abs(document.Canvas.HeightMm-request.HeightMm)>LabelCanvasDimensionPolicy.LegacyMismatchToleranceMm)
             throw new LabelCanvasRequestException("DIMENSION_MISMATCH","As dimensões dos metadados e do canvas não coincidem.",new Dictionary<string,string>{{"widthMm","Sincronize a largura com o canvas."},{"heightMm","Sincronize a altura com o canvas."}});
     }
