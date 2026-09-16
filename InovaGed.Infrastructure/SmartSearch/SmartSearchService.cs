@@ -30,8 +30,8 @@ public sealed class SmartSearchService : ISmartSearchService
         return result;
     }
 
-    public Task<IReadOnlyList<SmartSearchSuggestion>> SuggestAsync(Guid tenantId, string? term, CancellationToken ct)
-        => _repository.SuggestAsync(tenantId, term, ct);
+    public Task<IReadOnlyList<SmartSearchSuggestion>> SuggestAsync(Guid tenantId, Guid userId, string? term, CancellationToken ct)
+        => _repository.SuggestAsync(tenantId, userId, term, ct);
 }
 
 public sealed class DocumentChatService : IDocumentChatService

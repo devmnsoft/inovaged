@@ -264,7 +264,7 @@ public sealed class SmartSearchController : Controller
     public async Task<IActionResult> Suggest([FromQuery] string? q, CancellationToken ct)
     {
         if (!_currentUser.IsAuthenticated) return Unauthorized(new { success = false, items = Array.Empty<object>() });
-        var items = await _smartSearch.SuggestAsync(_currentUser.TenantId, q, ct);
+        var items = await _smartSearch.SuggestAsync(_currentUser.TenantId, _currentUser.UserId, q, ct);
         return Json(new { success = true, items });
     }
 

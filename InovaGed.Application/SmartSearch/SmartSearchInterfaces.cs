@@ -3,7 +3,7 @@ namespace InovaGed.Application.SmartSearch;
 public interface ISmartSearchService
 {
     Task<SmartSearchResult> SearchAsync(SmartSearchRequest request, CancellationToken ct);
-    Task<IReadOnlyList<SmartSearchSuggestion>> SuggestAsync(Guid tenantId, string? term, CancellationToken ct);
+    Task<IReadOnlyList<SmartSearchSuggestion>> SuggestAsync(Guid tenantId, Guid userId, string? term, CancellationToken ct);
 }
 
 public interface ISmartQueryParser
@@ -14,7 +14,7 @@ public interface ISmartQueryParser
 public interface ISmartSearchRepository
 {
     Task<SmartSearchResult> SearchAsync(SmartSearchIntent intent, UserDocumentScope scope, SmartSearchRequest request, CancellationToken ct);
-    Task<IReadOnlyList<SmartSearchSuggestion>> SuggestAsync(Guid tenantId, string? term, CancellationToken ct);
+    Task<IReadOnlyList<SmartSearchSuggestion>> SuggestAsync(Guid tenantId, Guid userId, string? term, CancellationToken ct);
     Task<string?> GetDocumentOcrAsync(Guid tenantId, Guid documentId, CancellationToken ct);
     Task LogQueryAsync(SmartSearchRequest request, SmartSearchIntent intent, int resultsCount, long durationMs, CancellationToken ct);
     Task LogAccessAsync(Guid tenantId, Guid userId, Guid documentId, string source, string action, CancellationToken ct);

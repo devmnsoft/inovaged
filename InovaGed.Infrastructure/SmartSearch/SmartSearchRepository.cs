@@ -56,6 +56,9 @@ public sealed class SmartSearchRepository : ISmartSearchRepository, InovaGed.App
         p.Add("clinicalTerms", intent.ClinicalTerms.ToArray());
         p.Add("medicalRecordNumber", intent.MedicalRecordNumber, DbType.String);
         p.Add("protocolNumber", intent.ProtocolNumber, DbType.String);
+        p.Add("likeProtocolNumber", string.IsNullOrWhiteSpace(intent.ProtocolNumber) ? null : $"%{EscapeLike(intent.ProtocolNumber)}%", DbType.String);
+        p.Add("exactPhrase", intent.ExactPhrases.FirstOrDefault(), DbType.String);
+        p.Add("likeExactPhrase", intent.ExactPhrases.Count == 0 ? null : $"%{EscapeLike(intent.ExactPhrases[0])}%", DbType.String);
         p.Add("age", intent.Age, DbType.Int32);
         p.Add("ageFrom", intent.AgeFrom, DbType.Int32);
         p.Add("ageTo", intent.AgeTo, DbType.Int32);
@@ -79,8 +82,9 @@ public sealed class SmartSearchRepository : ISmartSearchRepository, InovaGed.App
         }
 
         sql = sql.Replace("/*DATE_FILTERS*/", dateFilters.ToString())
-            .Replace("/*INTENT_FILTER*/", BuildIntentFilter(intent.Kind, hasLegacyOcr, hasSmartIndex));
-        fallbackSql = fallbackSql.Replace("/*INTENT_FILTER*/", BuildIntentFilter(intent.Kind, hasLegacyOcr, hasSmartIndex));
+            .Replace("/*INTENT_FILTER*/", BuildIntentFilter(intent.Kind, hasLegacyOcr, hasSmartIndex))
+            .Replace("/*ORDER_BY*/", BuildOrderBy(request.Sort));
+        fallbackSql = fallbackSql.Replace("/*INTENT_FILTER*/", BuildIntentFilter(intent.Kind, hasLegacyOcr, hasSmartIndex)).Replace("/*ORDER_BY*/", BuildOrderBy(request.Sort));
         p.Add("offset", offset, DbType.Int32);
         p.Add("limit", pageSize, DbType.Int32);
 
@@ -126,7 +130,7 @@ public sealed class SmartSearchRepository : ISmartSearchRepository, InovaGed.App
         };
     }
 
-    public async Task<IReadOnlyList<SmartSearchSuggestion>> SuggestAsync(Guid tenantId, string? term, CancellationToken ct)
+    public async Task<IReadOnlyList<SmartSearchSuggestion>> SuggestAsync(Guid tenantId, Guid userId, string? term, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(term) || term.Trim().Length < 2) return [];
         const string sql = """
@@ -137,12 +141,18 @@ union all
 select synonym as "Text", coalesce(category,'Sinônimo') as "Category"
 from ged.search_synonym
 where tenant_id = @tenantId and coalesce(reg_status,'A')='A' and (term ilike @like or synonym ilike @like)
+union all
+select query_text as "Text", 'Pesquisas salvas' as "Category"
+from ged.smart_search_saved_search
+where tenant_id=@tenantId and user_id=@userId and coalesce(reg_status,'A')='A'
+  and (name ilike @like or query_text ilike @like)
+order by 2, 1
 limit 12
 """;
         try
         {
             await using var conn = await _db.OpenAsync(ct);
-            return (await conn.QueryAsync<SmartSearchSuggestion>(new CommandDefinition(sql, new { tenantId, like = $"%{EscapeLike(term)}%" }, cancellationToken: ct))).ToList();
+            return (await conn.QueryAsync<SmartSearchSuggestion>(new CommandDefinition(sql, new { tenantId, userId, like = $"%{EscapeLike(term)}%" }, cancellationToken: ct))).ToList();
         }
         catch { return []; }
     }
@@ -399,6 +409,8 @@ weight=excluded.weight,reg_status=excluded.reg_status where ged.search_synonym.t
     private static SmartSearchResultItem Map(SearchRow r, SmartSearchIntent intent)
     {
         var reasons = new List<SmartSearchResultReason>();
+        if (!string.IsNullOrWhiteSpace(intent.ProtocolNumber) && Contains(r.Title + " " + r.FileName, intent.ProtocolNumber)) reasons.Add(new() { Reason = "Protocolo exato", Evidence = intent.ProtocolNumber, Weight = 500 });
+        foreach (var phrase in intent.ExactPhrases.Where(phrase => Contains(r.Title + " " + r.SearchText, phrase))) reasons.Add(new() { Reason = "Frase exata", Evidence = phrase, Weight = 240 });
         if (!string.IsNullOrWhiteSpace(intent.PatientName) && Contains(r.PatientName + " " + r.SearchText, intent.PatientName)) reasons.Add(new() { Reason = "Nome parecido", Evidence = intent.PatientName!, Weight = 40 });
         if (intent.Year.HasValue && r.Year == intent.Year) reasons.Add(new() { Reason = "Ano/período compatível", Evidence = intent.Year.Value.ToString(), Weight = 15 });
         if (intent.Age.HasValue && r.Age.HasValue && Math.Abs(r.Age.Value - intent.Age.Value) <= 1) reasons.Add(new() { Reason = "Idade aproximada", Evidence = r.Age.Value.ToString(), Weight = 10 });
@@ -408,7 +420,7 @@ weight=excluded.weight,reg_status=excluded.reg_status where ged.search_synonym.t
         foreach (var term in intent.Keywords.Take(4).Where(t => Contains(r.FolderName, t))) reasons.Add(new() { Reason = "Pasta relacionada ao contexto", Evidence = term, Weight = 30 });
         if (!string.IsNullOrWhiteSpace(intent.DocumentType) && Contains(r.DocumentType + " " + r.Title + " " + r.FileName, intent.DocumentType)) reasons.Add(new() { Reason = "Tipo documental compatível", Evidence = intent.DocumentType!, Weight = 15 });
         if (r.HasOcr) reasons.Add(new() { Reason = "OCR disponível", Evidence = "Trecho curto apresentado", Weight = 5 });
-        return new SmartSearchResultItem { DocumentId = r.DocumentId, VersionId = r.VersionId, Title = r.Title, FileName = r.FileName, FolderName = r.FolderName, DocumentType = r.DocumentType, Classification = r.Classification, ClassificationName = r.Classification, PatientName = r.PatientName, Age = r.Age, Year = r.Year, OcrSnippet = MaskSensitive(TruncateSnippet(r.Snippet, 260)), Score = r.Score, HasOcr = r.HasOcr, Reasons = reasons };
+        return new SmartSearchResultItem { DocumentId = r.DocumentId, VersionId = r.VersionId, Title = r.Title, FileName = r.FileName, FolderName = r.FolderName, DocumentType = r.DocumentType, Classification = r.Classification, ClassificationName = r.Classification, PatientName = r.PatientName, Age = r.Age, Year = r.Year, OcrSnippet = MaskSensitive(SelectSnippet(r.Snippet, intent, 260)), Score = r.Score, HasOcr = r.HasOcr, Reasons = reasons };
     }
 
     private static async Task<bool> ExistsAsync(IDbConnection conn, string regclass, CancellationToken ct)
@@ -425,7 +437,22 @@ weight=excluded.weight,reg_status=excluded.reg_status where ged.search_synonym.t
         _ => string.Empty
     };
     private static bool Contains(string? source, string value) => (source ?? string.Empty).Contains(value, StringComparison.OrdinalIgnoreCase);
-    private static string? TruncateSnippet(string? text, int max) => string.IsNullOrWhiteSpace(text) ? null : text.Length <= max ? text : text[..max] + "…";
+    private static string BuildOrderBy(string? sort) => (sort ?? string.Empty).ToLowerInvariant() switch
+    {
+        "newest" => "\"Year\" desc nulls last, \"Title\", \"DocumentId\"",
+        "oldest" => "\"Year\" asc nulls last, \"Title\", \"DocumentId\"",
+        "title" => "lower(\"Title\"), \"DocumentId\"",
+        _ => "\"Score\" desc, lower(\"Title\"), \"DocumentId\""
+    };
+    private static string? SelectSnippet(string? text, SmartSearchIntent intent, int max)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
+        var terms = intent.ExactPhrases.Concat(intent.Keywords).Concat(intent.ClinicalTerms).Where(x => x.Length >= 2);
+        var index = terms.Select(term => text.IndexOf(term, StringComparison.OrdinalIgnoreCase)).Where(i => i >= 0).DefaultIfEmpty(0).Min();
+        var start = Math.Max(0, index - max / 3);
+        var length = Math.Min(max, text.Length - start);
+        return $"{(start > 0 ? "…" : string.Empty)}{text.Substring(start, length).ReplaceLineEndings(" ").Trim()}{(start + length < text.Length ? "…" : string.Empty)}";
+    }
     private static string MaskSensitive(string? text) => string.IsNullOrWhiteSpace(text) ? string.Empty : Regex.Replace(Regex.Replace(text, @"\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b", "***.***.***-**"), @"\b\d{15}\b", "***************");
     private static string RedactSensitive(string text) => MaskSensitive(text);
     private static string Sha256(string text) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text ?? string.Empty))).ToLowerInvariant();
@@ -441,7 +468,10 @@ case when @ageFrom is not null and idx.extracted_age between @ageFrom and @ageTo
 case when @documentType is not null and coalesce(idx.document_type, idx.title, idx.file_name, '') ilike '%'||@documentType||'%' then 15 else 0 end +
 case when @examType is not null and idx.search_text ilike '%'||@examType||'%' then 15 else 0 end +
 case when @medicalRecordNumber is not null and idx.search_text ilike '%'||@medicalRecordNumber||'%' then 50 else 0 end +
-case when @protocolNumber is not null and idx.search_text ilike '%'||@protocolNumber||'%' then 50 else 0 end +
+case when @protocolNumber is not null and (idx.title ilike @likeProtocolNumber or idx.file_name ilike @likeProtocolNumber) then 500 else 0 end +
+case when @protocolNumber is not null and idx.search_text ilike @likeProtocolNumber then 180 else 0 end +
+case when @exactPhrase is not null and idx.title ilike @likeExactPhrase then 240 else 0 end +
+case when @exactPhrase is not null and idx.search_text ilike @likeExactPhrase then 110 else 0 end +
 case when @numericTerm is not null and coalesce(idx.file_name,'') ilike @likeNumericTerm then 150 else 0 end +
 case when coalesce(idx.file_name,'') ilike @likeOriginalQuery then 120 else 0 end +
 case when coalesce(idx.title,'') ilike @likeOriginalQuery then 100 else 0 end +
@@ -459,7 +489,7 @@ join ged.document d on d.tenant_id=idx.tenant_id and d.id=idx.document_id
 where idx.tenant_id=@tenantId and coalesce(d.reg_status,'A')='A' and (@folderId is null or d.folder_id=@folderId)
 /*DATE_FILTERS*//*INTENT_FILTER*/and (idx.search_vector @@ plainto_tsquery('portuguese', @query) or idx.search_text ilike @likeQuery or idx.file_name ilike @likeOriginalQuery or idx.title ilike @likeOriginalQuery or idx.document_id::text ilike @likeOriginalQuery or (@numericTerm is not null and (idx.file_name ilike @likeNumericTerm or idx.title ilike @likeNumericTerm or idx.search_text ilike @likeNumericTerm or idx.document_id::text ilike @likeNumericTerm)) or (@patientName is not null and idx.patient_name ilike @likePatientName) or exists (select 1 from unnest(@tokens::text[]) t where idx.search_text ilike '%'||t||'%') or @query = '')
 )
-select *, count(*) over()::int as "TotalRows" from ranked order by "Score" desc, "Title" limit @limit offset @offset
+select *, count(*) over()::int as "TotalRows" from ranked order by /*ORDER_BY*/ limit @limit offset @offset
 """;
 
     private const string FallbackSql = """
@@ -484,7 +514,7 @@ left join ged.folder f on f.tenant_id=d.tenant_id and f.id=d.folder_id
 where d.tenant_id=@tenantId and coalesce(d.reg_status,'A')='A' and (@folderId is null or d.folder_id=@folderId)
 /*DATE_FILTERS*//*INTENT_FILTER*/and (concat_ws(' ', d.title, v.file_name, f.name, ds.ocr_text, d.id::text) ilike @likeQuery or concat_ws(' ', d.title, v.file_name, f.name, ds.ocr_text, d.id::text) ilike @likeOriginalQuery or (@numericTerm is not null and concat_ws(' ', d.title, v.file_name, ds.file_name, f.name, ds.ocr_text, d.id::text) ilike @likeNumericTerm) or exists (select 1 from unnest(@tokens::text[]) t where concat_ws(' ', d.title, v.file_name, f.name, ds.ocr_text, d.id::text) ilike '%'||t||'%') or @query = '')
 )
-select *, count(*) over()::int as "TotalRows" from base order by "Score" desc, "Title" limit @limit offset @offset
+select *, count(*) over()::int as "TotalRows" from base order by /*ORDER_BY*/ limit @limit offset @offset
 """;
 
 
@@ -504,7 +534,7 @@ left join ged.folder f on f.tenant_id=d.tenant_id and f.id=d.folder_id
 where d.tenant_id=@tenantId and coalesce(d.reg_status,'A')='A' and (@folderId is null or d.folder_id=@folderId)
 /*DATE_FILTERS*//*INTENT_FILTER*/and (concat_ws(' ', d.title, v.file_name, f.name, d.id::text) ilike @likeQuery or concat_ws(' ', d.title, v.file_name, f.name, d.id::text) ilike @likeOriginalQuery or (@numericTerm is not null and concat_ws(' ', d.title, v.file_name, f.name, d.id::text) ilike @likeNumericTerm) or exists (select 1 from unnest(@tokens::text[]) t where concat_ws(' ', d.title, v.file_name, f.name, d.id::text) ilike '%'||t||'%') or @query = '')
 )
-select *, count(*) over()::int as "TotalRows" from base order by "Score" desc, "Title" limit @limit offset @offset
+select *, count(*) over()::int as "TotalRows" from base order by /*ORDER_BY*/ limit @limit offset @offset
 """;
 
     private sealed class TopRow

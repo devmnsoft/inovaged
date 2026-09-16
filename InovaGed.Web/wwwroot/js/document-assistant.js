@@ -15,11 +15,43 @@
   const evidence = [];
   const historyKey = 'inovaged.assistant.history';
   let lastQuestion = '';
+  let lastSubmittedQuestion = '';
+  let suggestTimer;
+  let suggestController;
+  let suggestSequence = 0;
+  const autocomplete = root.querySelector('#assistantAutocomplete');
+  const interpretation = root.querySelector('[data-interpretation]');
+  const interpretationChips = root.querySelector('[data-interpretation-chips]');
   const historyPanel = root.querySelector('[data-history-panel]');
   const historyList = root.querySelector('[data-history-list]');
   const savedList = root.querySelector('[data-saved-list]');
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const toast = (message, type = 'info') => window.showAppToast?.(message, type);
+
+  const closeAutocomplete = () => { autocomplete.hidden = true; autocomplete.innerHTML = ''; input.setAttribute('aria-expanded', 'false'); };
+  const loadSuggestions = async () => {
+    const query = input.value.trim();
+    if (query.length < 2) { closeAutocomplete(); return; }
+    suggestController?.abort();
+    suggestController = new AbortController();
+    const sequence = ++suggestSequence;
+    try {
+      const url = new URL(root.dataset.suggestEndpoint, window.location.origin); url.searchParams.set('q', query);
+      const response = await fetch(url, { signal: suggestController.signal, headers: { Accept: 'application/json' } });
+      if (response.status === 401) throw new Error('SESSION_EXPIRED');
+      const payload = await response.json();
+      if (sequence !== suggestSequence || input.value.trim() !== query) return;
+      const items = payload.items || [];
+      autocomplete.innerHTML = items.map(item => `<button type="button" role="option" data-suggest-value="${escapeHtml(item.text)}"><small>${escapeHtml(item.category || 'Sugestão')}</small><span>${escapeHtml(item.text)}</span></button>`).join('');
+      autocomplete.hidden = !items.length; input.setAttribute('aria-expanded', String(items.length > 0));
+      autocomplete.querySelectorAll('[data-suggest-value]').forEach(button => button.addEventListener('click', () => { input.value = button.dataset.suggestValue; closeAutocomplete(); input.focus(); }));
+    } catch (error) { if (error.name !== 'AbortError' && error.message === 'SESSION_EXPIRED') toast('Sua sessão expirou. Entre novamente para continuar.', 'warning'); }
+  };
+  input.addEventListener('input', () => { clearTimeout(suggestTimer); suggestTimer = setTimeout(loadSuggestions, 300); });
+  input.addEventListener('keydown', event => { if (event.key === 'Escape') closeAutocomplete(); });
+  document.addEventListener('click', event => { if (!autocomplete.contains(event.target) && event.target !== input) closeAutocomplete(); });
+  root.querySelector('[data-remove-interpretation]')?.addEventListener('click', () => { interpretation.hidden = true; interpretationChips.innerHTML = ''; input.value = lastSubmittedQuestion; input.focus(); });
+
 
   root.querySelectorAll('[data-suggestion]').forEach(button => button.addEventListener('click', () => {
     input.value = button.dataset.suggestion;
@@ -113,10 +145,13 @@
   form.addEventListener('submit', async event => {
     event.preventDefault();
     const question = input.value.trim();
+    lastSubmittedQuestion = question;
     if (!question) { input.focus(); toast('Escreva uma pergunta para consultar o acervo.', 'warning'); return; }
     controller?.abort();
     controller = new AbortController();
     feed.querySelector('.assistant-welcome')?.remove();
+    feed.classList.toggle('is-refreshing', feed.children.length > 0);
+    closeAutocomplete();
     feed.insertAdjacentHTML('beforeend', `<article class="assistant-message user"><span>Você</span><p>${escapeHtml(question)}</p></article><div class="assistant-skeleton" data-loading><i></i><i></i><i></i><span>Consultando fontes autorizadas…</span></div>`);
     input.value = '';
     submit.disabled = true;
@@ -125,24 +160,33 @@
       const body = new FormData(form); body.set('question', question); body.set('conversationId', conversationId);
       const response = await fetch(root.dataset.endpoint, { method: 'POST', body, signal: controller.signal, headers: { 'RequestVerificationToken': form.querySelector('[name="__RequestVerificationToken"]').value } });
       const json = await response.json();
+      if (response.status === 401) throw new Error('Sua sessão expirou. Entre novamente para continuar.');
       if (!response.ok || !json.success) throw new Error(json.message || 'A consulta não pôde ser concluída.');
       render(json.response);
       lastQuestion = question;
       saveButton.disabled = false;
       remember(question);
     } catch (error) {
-      if (error.name !== 'AbortError') feed.insertAdjacentHTML('beforeend', `<article class="assistant-message error"><span>Não consegui concluir</span><p>${escapeHtml(error.message)}</p></article>`);
-    } finally { feed.querySelector('[data-loading]')?.remove(); submit.disabled = false; feed.scrollTop = feed.scrollHeight; }
+      if (error.name !== 'AbortError') feed.insertAdjacentHTML('beforeend', `<article class="assistant-message error"><span>Não consegui concluir</span><p>${escapeHtml(error.message)}</p><button type="button" class="btn btn-sm btn-outline-danger" data-retry-search>Tentar novamente</button></article>`);
+      feed.querySelector('[data-retry-search]')?.addEventListener('click', () => { input.value = lastSubmittedQuestion; form.requestSubmit(); });
+    } finally { feed.querySelector('[data-loading]')?.remove(); feed.classList.remove('is-refreshing'); submit.disabled = false; feed.scrollTop = feed.scrollHeight; }
   });
 
   function render(response) {
+    const criteria = response.appliedCriteria || {};
+    const chips = [];
+    if (criteria.documentType) chips.push(['Tipo', criteria.documentType]);
+    if (criteria.from || criteria.to) chips.push(['Período de cadastro', `${criteria.from ? new Date(criteria.from).toLocaleDateString('pt-BR') : 'início'} – ${criteria.to ? new Date(criteria.to).toLocaleDateString('pt-BR') : 'hoje'}`]);
+    if (criteria.usedOcr) chips.push(['Conteúdo', 'OCR autorizado']);
+    interpretationChips.innerHTML = chips.map(([label, value]) => `<span class="assistant-filter-chip"><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}</span>`).join('');
+    interpretation.hidden = chips.length === 0;
     const responseSources = response.sources || [];
     responseSources.forEach(source => {
       if (!evidence.some(item => item.documentId === source.documentId)) evidence.push(source);
     });
     const sources = responseSources.map((source, index) => {
       const badges = source.badges || [];
-      const relevance = Number(source.relevance); const relevanceLabel = Number.isFinite(relevance) ? `${Math.min(100, relevance <= 1 ? relevance * 100 : relevance).toFixed(0)}% relevante` : 'Relevância calculada';
+      const relevanceLabel = index === 0 ? 'Mais relevante' : `Resultado ${index + 1}`;
       return `<article class="assistant-source"><div class="assistant-source-heading"><span class="assistant-source-rank" aria-label="Posição no ranking">#${index + 1}</span><div><span class="assistant-source-type">${escapeHtml(source.documentType || 'Documento')}</span><div class="assistant-source-badges">${badges.map(badge => `<span>${escapeHtml(badge)}</span>`).join('')}</div><h3>${escapeHtml(source.title)}</h3><p>${escapeHtml(source.fileName || '')}${source.folderName ? ` · ${escapeHtml(source.folderName)}` : ''}</p></div><span class="assistant-relevance">${relevanceLabel}</span></div>${source.ocrExcerpt ? `<blockquote>${escapeHtml(source.ocrExcerpt)}</blockquote>` : '<p class="assistant-no-ocr">Trecho OCR não disponível nesta fonte.</p>'}<details><summary>Por que apareceu?</summary><p>${escapeHtml(source.matchReason)}</p></details><nav aria-label="Ações do documento"><a class="btn btn-sm btn-primary" href="/Ged/Details/${source.documentId}">Abrir documento</a>${source.hasOcr ? `<a class="btn btn-sm btn-outline-secondary" href="/Ged/Details/${source.documentId}#ocr">Abrir OCR</a>` : ''}<button class="btn btn-sm btn-ghost" type="button" data-copy="${source.documentId}">Copiar referência</button></nav><div class="assistant-feedback" data-feedback-box><span>Este resultado foi útil?</span><button type="button" data-feedback="true" data-document-id="${source.documentId}" aria-label="Marcar resultado como útil">Sim</button><button type="button" data-feedback="false" data-document-id="${source.documentId}" aria-label="Marcar resultado como não útil">Não</button></div></article>`;
     }).join('');
     conversationId = response.conversationId || conversationId;

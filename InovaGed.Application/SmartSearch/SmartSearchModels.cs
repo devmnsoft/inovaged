@@ -16,6 +16,8 @@ public sealed class SmartSearchRequest
     public bool IncludeStatistics { get; set; } = true;
     public bool IsAdmin { get; set; }
     public string? Source { get; set; } = "SMART_SEARCH";
+    public string Sort { get; set; } = "relevance";
+    public string DateField { get; set; } = "created";
 }
 
 public sealed class SmartSearchIntent
@@ -39,6 +41,7 @@ public sealed class SmartSearchIntent
     public DateTime? To { get; set; }
     public bool IsApproxDate { get; set; }
     public List<string> Keywords { get; set; } = [];
+    public List<string> ExactPhrases { get; set; } = [];
     public string? SearchMode { get; set; } = "Expanded";
     public string Explanation { get; set; } = string.Empty;
     public string ExpandedQuery { get; set; } = string.Empty;
