@@ -3,11 +3,11 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
 using Dapper;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Labels.Canvas;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 
 namespace InovaGed.Infrastructure.Labels;
 
@@ -159,6 +159,18 @@ values(@id,@tenantId,@TemplateKey,@TemplateKey,@TemplateName,@Description,@Templ
             await tx.CommitAsync(cancellationToken);
             return (await GetAsync(tenantId,request.TemplateKey,cancellationToken))!;
         }
+        catch(PostgresException exception) when (exception.SqlState==PostgresErrorCodes.UniqueViolation && exception.ConstraintName=="ux_label_template_design_tenant_key")
+        {
+            await tx.RollbackAsync(cancellationToken);
+            // A repeated form POST uses the same opaque key. Recover only its own equivalent result;
+            // an unrelated collision remains an internal failure and is never blamed on user input.
+            var existing=await GetAsync(tenantId,request.TemplateKey,cancellationToken);
+            if(existing is not null&&existing.TenantId==tenantId&&existing.CreatedBy==userId&&
+               existing.TemplateName==request.TemplateName&&existing.SubjectType==request.SubjectType&&
+               existing.WidthMm==request.WidthMm&&existing.HeightMm==request.HeightMm)return existing;
+            logger.LogError(exception,"Colisão inesperada da chave interna do template canvas.");
+            throw new InvalidOperationException("Não foi possível reservar a identidade interna do modelo.",exception);
+        }
         catch(Exception exception){await tx.RollbackAsync(cancellationToken);logger.LogError(exception,"Falha ao criar o template canvas {TemplateKey}.",request.TemplateKey);throw;}
     }
 
@@ -244,7 +256,7 @@ update ged.label_template_design set status='PUBLISHED',current_version=@version
     {
         await RequireWritableSchemaAsync(cancellationToken);
         var source=await GetAsync(tenantId,templateKey,cancellationToken)??throw new KeyNotFoundException("Template não encontrado.");
-        var suffix=DateTime.UtcNow.ToString("yyyyMMddHHmmss");var baseKey=Regex.Replace(templateKey.ToUpperInvariant(),"[^A-Z0-9_]+","_").Trim('_');var key=$"{baseKey}_COPY_{suffix}";
+        var key=LabelTemplateKeyPolicy.Generate();
         var document=JsonSerializer.Deserialize<LabelCanvasDocumentDto>(source.DesignJson,new JsonSerializerOptions(JsonSerializerDefaults.Web){PropertyNameCaseInsensitive=true})??new();
         var request=new LabelCanvasSaveRequest{TemplateKey=key,TemplateName=string.IsNullOrWhiteSpace(newName)?source.TemplateName+" - Cópia":newName.Trim(),Description=source.Description,TemplateKind=source.TemplateKind,SubjectType=source.SubjectType,PaperKind=source.PaperKind,WidthMm=source.WidthMm,HeightMm=source.HeightMm,Orientation=source.Orientation,DesignJson=JsonSerializer.Serialize(document,new JsonSerializerOptions(JsonSerializerDefaults.Web)),DefaultBrandingProfileId=source.DefaultBrandingProfileId,BrandingBindingKey=source.BrandingBindingKey,ClientNameFallback=source.ClientNameFallback,ContractNameFallback=source.ContractNameFallback,OrganizationNameFallback=source.OrganizationNameFallback,HeaderTitleFallback=source.HeaderTitleFallback,HeaderSubtitleFallback=source.HeaderSubtitleFallback,LabelContext=source.LabelContext};
         var created=await CreateDraftAsync(tenantId,userId,request,ipAddress,userAgent,cancellationToken);
@@ -320,7 +332,7 @@ where v.template_design_id=@id and v.reg_status in ('A','ACTIVE') order by v.ver
     private async Task<LabelCanvasDesignDto> CreateFromVersionAsync(Guid tenantId,Guid userId,string templateKey,Guid versionId,string suffix,string eventType,string? ipAddress,string? userAgent,CancellationToken cancellationToken)
     {
         var source=await GetVersionDesignAsync(tenantId,templateKey,versionId,cancellationToken)??throw new KeyNotFoundException("Versão não encontrada.");
-        var key=$"{Regex.Replace(templateKey.ToUpperInvariant(),"[^A-Z0-9_]+","_").Trim('_')}_COPY_{DateTime.UtcNow:yyyyMMddHHmmss}";
+        var key=LabelTemplateKeyPolicy.Generate();
         var request=SaveRequest(source,$"{suffix} criada como novo rascunho.");
         var saved=await CreateDraftAsync(tenantId,userId,new LabelCanvasSaveRequest{TemplateKey=key,TemplateName=$"{source.TemplateName} - {suffix}",Description=source.Description,TemplateKind=source.TemplateKind,SubjectType=source.SubjectType,PaperKind=source.PaperKind,WidthMm=source.WidthMm,HeightMm=source.HeightMm,Orientation=source.Orientation,DesignJson=source.DesignJson,DefaultBrandingProfileId=source.DefaultBrandingProfileId,BrandingBindingKey=source.BrandingBindingKey,ClientNameFallback=source.ClientNameFallback,ContractNameFallback=source.ContractNameFallback,OrganizationNameFallback=source.OrganizationNameFallback,HeaderTitleFallback=source.HeaderTitleFallback,HeaderSubtitleFallback=source.HeaderSubtitleFallback,LabelContext=source.LabelContext,ChangeSummary=request.ChangeSummary},ipAddress,userAgent,cancellationToken);
         await RecordEventAsync(tenantId,userId,saved.Id,eventType,$"{suffix} criada como novo rascunho.",new{sourceId=source.Id,versionId},ipAddress,userAgent,cancellationToken);
@@ -361,7 +373,7 @@ where v.template_design_id=@id and v.reg_status in ('A','ACTIVE') order by v.ver
     private static void ValidateRequest(LabelCanvasSaveRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
-        if(!Regex.IsMatch(request.TemplateKey??"","^[A-Za-z0-9_]{3,120}$"))throw new LabelCanvasRequestException("INVALID_TEMPLATE_KEY","A chave deve conter apenas letras, números e sublinhado.",new Dictionary<string,string>{{"templateKey","Informe um identificador técnico válido."}});
+        if(!LabelTemplateKeyPolicy.IsValid(request.TemplateKey))throw new LabelCanvasRequestException("INVALID_TEMPLATE_KEY",$"A chave interna deve ter de {LabelTemplateKeyPolicy.MinLength} a {LabelTemplateKeyPolicy.MaxLength} caracteres e conter apenas letras, números e sublinhado.");
         if(string.IsNullOrWhiteSpace(request.TemplateName)||request.TemplateName.Length>200)throw new LabelCanvasRequestException("INVALID_TEMPLATE_NAME","Informe um nome de até 200 caracteres.",new Dictionary<string,string>{{"templateName","Informe um nome de até 200 caracteres."}});
         var errors=new Dictionary<string,string>();
         if(request.WidthMm<=0)errors["widthMm"]="A largura da etiqueta deve ser maior que zero.";

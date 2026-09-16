@@ -15,5 +15,7 @@ public sealed class LabelCanvasNewModelInput
     [System.ComponentModel.DataAnnotations.Range(20,500)] public decimal HeightMm { get; set; } = 70;
     public Guid? BrandingProfileId { get; set; }
     public string PaperKind { get; set; } = "A4";
+    // Stable across a failed/repeated POST. It is never presented as an operational identifier.
+    public Guid CreationToken { get; set; } = Guid.NewGuid();
     public IReadOnlyList<ResolvedPrintBranding> BrandingProfiles { get; set; } = Array.Empty<ResolvedPrintBranding>();
 }

@@ -32,4 +32,9 @@
     submit.disabled = true;
     submit.textContent = 'Criando modelo…';
   });
+  // Browser validation failures do not navigate, so keep the action usable.
+  window.addEventListener('pageshow', () => {
+    submit.disabled = false;
+    submit.textContent = 'Criar e abrir editor visual';
+  });
 })();
