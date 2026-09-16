@@ -9,7 +9,6 @@ using InovaGed.Web.Models.Labels;
 using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -121,7 +120,7 @@ public sealed class LabelDesignerController(IDbConnectionFactory dbFactory, ILab
         {
             using var reader=new StreamReader(file.OpenReadStream(),Encoding.UTF8);var json=await reader.ReadToEndAsync(ct);var package=packages.Validate(json,fieldCatalog);
             if(!confirm)return Ok(new{valid=true,name=package.Template.Name,purpose=FriendlyPurpose(package.Template.SubjectType),size=$"{package.Template.WidthMm} × {package.Template.HeightMm} mm",elementCount=package.Design.Elements.Count,warnings=Array.Empty<string>()});
-            var key=await UniqueKeyAsync(package.Template.Name,ct);var request=new LabelCanvasSaveRequest{TemplateKey=key,TemplateName=package.Template.Name.Trim(),Description=package.Template.Description,SubjectType=package.Template.SubjectType,PaperKind=package.Template.PaperKind,WidthMm=package.Template.WidthMm,HeightMm=package.Template.HeightMm,Orientation=package.Template.Orientation,DesignJson=JsonSerializer.Serialize(package.Design,JsonOptions),LabelContext="GENERIC",ChangeSummary="Modelo importado de pacote versionado."};
+            var key=LabelTemplateKeyPolicy.Generate();var request=new LabelCanvasSaveRequest{TemplateKey=key,TemplateName=package.Template.Name.Trim(),Description=package.Template.Description,SubjectType=package.Template.SubjectType,PaperKind=package.Template.PaperKind,WidthMm=package.Template.WidthMm,HeightMm=package.Template.HeightMm,Orientation=package.Template.Orientation,DesignJson=JsonSerializer.Serialize(package.Design,JsonOptions),LabelContext="GENERIC",ChangeSummary="Modelo importado de pacote versionado."};
             var created=await designs.CreateDraftAsync(TenantId,userId,request,Ip(),Agent(),ct);return Ok(new{ok=true,templateKey=created.TemplateKey,redirectUrl=Url.Action(nameof(Edit),new{templateKey=created.TemplateKey})});
         }
         catch(LabelCanvasRequestException exception){return BadRequest(new{code=exception.Code,message=exception.Message});}
@@ -171,19 +170,30 @@ public sealed class LabelDesignerController(IDbConnectionFactory dbFactory, ILab
         if(!allowedSubjects.Contains(input.SubjectType,StringComparer.OrdinalIgnoreCase))ModelState.AddModelError(nameof(input.SubjectType),"Escolha uma finalidade válida.");
         if(!LabelPaperOptions.IsSupported(input.PaperKind))ModelState.AddModelError(nameof(input.PaperKind),"Escolha um papel suportado.");
         if(!ModelState.IsValid){input.BrandingProfiles=await brandingProfiles.ListAsync(TenantId,ct);return View("~/Views/Labels/Designer/New.cshtml",input);}
-        var key=await UniqueKeyAsync(input.Name,ct);
+        if(input.CreationToken==Guid.Empty)ModelState.AddModelError("", "A solicitação de criação expirou. Revise os dados e tente novamente.");
+        if(input.Name.Any(char.IsControl))ModelState.AddModelError(nameof(input.Name),"O nome não pode conter caracteres de controle.");
+        if(!ModelState.IsValid){input.BrandingProfiles=await brandingProfiles.ListAsync(TenantId,ct);return View("~/Views/Labels/Designer/New.cshtml",input);}
+        var key=LabelTemplateKeyPolicy.Generate(input.CreationToken);
+        var existing=await designs.GetAsync(TenantId,key,ct);
+        if(existing is not null)return RedirectToAction(nameof(Edit),new{templateKey=existing.TemplateKey});
         var document=starters.Create(new(input.SubjectType,kind,input.WidthMm,input.HeightMm,input.BrandingProfileId,input.PaperKind));
         var request=new LabelCanvasSaveRequest{TemplateKey=key,TemplateName=input.Name.Trim(),TemplateKind="CANVAS",SubjectType=input.SubjectType,PaperKind=input.PaperKind,WidthMm=input.WidthMm,HeightMm=input.HeightMm,DesignJson=JsonSerializer.Serialize(document,JsonOptions),DefaultBrandingProfileId=input.BrandingProfileId,LabelContext="GENERIC",ChangeSummary="Modelo criado pelo assistente inicial."};
-        var created=await designs.CreateDraftAsync(TenantId,userId,request,Ip(),Agent(),ct);
-        return RedirectToAction(nameof(Edit),new{templateKey=created.TemplateKey});
+        try
+        {
+            var created=await designs.CreateDraftAsync(TenantId,userId,request,Ip(),Agent(),ct);
+            return RedirectToAction(nameof(Edit),new{templateKey=created.TemplateKey});
+        }
+        catch(LabelCanvasRequestException exception)
+        {
+            logger.LogWarning("LABEL_CANVAS_CREATE_REJECTED Code={Code} TraceId={TraceId}",exception.Code,HttpContext.TraceIdentifier);
+            foreach(var error in exception.Errors)ModelState.AddModelError(MapCreateField(error.Key),error.Value);
+            if(exception.Errors.Count==0)ModelState.AddModelError("",exception.Message);
+            input.BrandingProfiles=await brandingProfiles.ListAsync(TenantId,ct);
+            return View("~/Views/Labels/Designer/New.cshtml",input);
+        }
     }
 
-    private async Task<string> UniqueKeyAsync(string name,CancellationToken ct)
-    {
-        var normalized=name.Normalize(NormalizationForm.FormD);var chars=normalized.Where(c=>CharUnicodeInfo.GetUnicodeCategory(c)!=UnicodeCategory.NonSpacingMark).ToArray();
-        var baseKey=Regex.Replace(new string(chars).ToUpperInvariant(),"[^A-Z0-9]+","_").Trim('_');if(string.IsNullOrWhiteSpace(baseKey))baseKey="MODELO_ETIQUETA";baseKey=baseKey[..Math.Min(baseKey.Length,70)];
-        var key=baseKey;for(var suffix=2;await designs.GetAsync(TenantId,key,ct) is not null;suffix++)key=$"{baseKey}_{suffix}";return key;
-    }
+    private static string MapCreateField(string field)=>field switch{"templateName"=>nameof(LabelCanvasNewModelInput.Name),"subjectType"=>nameof(LabelCanvasNewModelInput.SubjectType),"paperKind"=>nameof(LabelCanvasNewModelInput.PaperKind),"widthMm"=>nameof(LabelCanvasNewModelInput.WidthMm),"heightMm"=>nameof(LabelCanvasNewModelInput.HeightMm),_=>string.Empty};
 
     [HttpGet("/Labels/Designer/Edit/{templateKey}")]
     [HttpGet("/Labels/Designer/{templateKey}/Edit")]
