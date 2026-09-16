@@ -389,6 +389,7 @@ builder.Services.AddScoped<IGedOcrMetadataExtractor, DocumentOcrMetadataExtracto
 builder.Services.AddScoped<ISmartSearchRepository, SmartSearchRepository>();
 builder.Services.AddScoped<IGedSmartSearchRepository, SmartSearchRepository>();
 builder.Services.AddScoped<ISmartSearchService, SmartSearchService>();
+builder.Services.AddScoped<ISmartSearchRefinementService, SmartSearchRefinementService>();
 builder.Services.AddScoped<IDocumentAssistantService, DocumentAssistantService>();
 builder.Services.AddScoped<IDocumentChatService, DocumentChatService>();
 builder.Services.AddScoped<ISearchStatisticsService, SearchStatisticsService>();

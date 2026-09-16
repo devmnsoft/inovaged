@@ -23,8 +23,9 @@ public sealed class SmartSearchController : Controller
     private readonly IGedSmartSearchDiagnosticsService _diagnostics;
     private readonly IAuditWriter _audit;
     private readonly ILogger<SmartSearchController> _logger;
+    private readonly ISmartSearchRefinementService _refinement;
 
-    public SmartSearchController(ICurrentUser currentUser, ISmartSearchService smartSearch, IDocumentChatService documentChat, IDocumentAssistantService documentAssistant, ISearchStatisticsService statistics, ISmartSearchRepository repository, IGedSmartSearchDiagnosticsService diagnostics, IAuditWriter audit, ILogger<SmartSearchController> logger)
+    public SmartSearchController(ICurrentUser currentUser, ISmartSearchService smartSearch, IDocumentChatService documentChat, IDocumentAssistantService documentAssistant, ISearchStatisticsService statistics, ISmartSearchRepository repository, IGedSmartSearchDiagnosticsService diagnostics, IAuditWriter audit, ILogger<SmartSearchController> logger, ISmartSearchRefinementService refinement)
     {
         _currentUser = currentUser;
         _smartSearch = smartSearch;
@@ -35,6 +36,7 @@ public sealed class SmartSearchController : Controller
         _diagnostics = diagnostics;
         _audit = audit;
         _logger = logger;
+        _refinement = refinement;
     }
 
     [HttpGet]
@@ -207,6 +209,99 @@ public sealed class SmartSearchController : Controller
         ViewBag.InitialQuestion = string.IsNullOrWhiteSpace(q) ? null : q.Trim()[..Math.Min(q.Trim().Length, 500)];
         return View();
     }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public IActionResult Refine([FromBody] SmartSearchRefinementRequest request)
+    {
+        if (request.State is null || string.IsNullOrWhiteSpace(request.Command) || request.Command.Length > 300)
+            return BadRequest(new { success = false, message = "Informe um refinamento válido." });
+        return Json(new { success = true, result = _refinement.Apply(request.State, request.Command) });
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Related(Guid documentId, CancellationToken ct)
+    {
+        if (documentId == Guid.Empty) return BadRequest(new { success = false });
+        var items = await _repository.GetRelatedDocumentsAsync(_currentUser.TenantId, _currentUser.UserId, documentId, RolePolicyHelper.IsFullAdmin(User), ct);
+        return Json(new { success = true, items });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Compare([FromBody] SmartSearchCompareRequest request, CancellationToken ct)
+    {
+        var ids = request.DocumentIds?.Distinct().ToArray() ?? [];
+        if (ids.Length is < 2 or > 3) return BadRequest(new { success = false, message = "Selecione de dois a três documentos." });
+        var items = await _repository.CompareDocumentsAsync(_currentUser.TenantId, _currentUser.UserId, ids, request.IncludeText, RolePolicyHelper.IsFullAdmin(User), ct);
+        if (items.Count != ids.Length) return StatusCode(403, new { success = false, message = "Um ou mais documentos estão indisponíveis ou fora do seu acesso." });
+        await _audit.WriteAsync(_currentUser.TenantId, _currentUser.UserId, "VIEW", "SMART_SEARCH_COMPARISON", null, "Comparação de documentos", HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers.UserAgent.ToString(), new { count = ids.Length, request.IncludeText }, ct);
+        return Json(new { success = true, items, textLimit = 20000 });
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Collections(Guid? id, CancellationToken ct)
+    {
+        if (id.HasValue)
+        {
+            var collection = await _repository.GetCollectionAsync(_currentUser.TenantId, _currentUser.UserId, id.Value, ct);
+            return collection is null ? NotFound(new { success = false, message = "Coleção não encontrada." }) : Json(new { success = true, collection });
+        }
+        return Json(new { success = true, items = await _repository.GetCollectionsAsync(_currentUser.TenantId, _currentUser.UserId, ct) });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> CreateCollection([FromForm] string name, CancellationToken ct)
+    {
+        name = (name ?? string.Empty).Trim();
+        if (name.Length is < 1 or > 120) return BadRequest(new { success = false, message = "Informe um nome de até 120 caracteres." });
+        var id = await _repository.CreateCollectionAsync(_currentUser.TenantId, _currentUser.UserId, name, ct);
+        await AuditCollectionAsync("CREATE", id, "Coleção privada criada", new { name }, ct);
+        return Json(new { success = true, id });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> AddToCollection([FromForm] Guid id, [FromForm] Guid[] documentIds, CancellationToken ct)
+    {
+        if (id == Guid.Empty || documentIds.Length is < 1 or > 50) return BadRequest(new { success = false, message = "Seleção inválida." });
+        var result = await _repository.AddCollectionItemsAsync(_currentUser.TenantId, _currentUser.UserId, id, documentIds, ct);
+        await AuditCollectionAsync("UPDATE", id, "Documentos adicionados à coleção", new { result.Requested, result.Added, result.Skipped }, ct);
+        return Json(new { success = true, result });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> RenameCollection([FromForm] Guid id, [FromForm] string name, CancellationToken ct)
+    {
+        name = (name ?? string.Empty).Trim();
+        if (id == Guid.Empty || name.Length is < 1 or > 120) return BadRequest(new { success = false, message = "Nome inválido." });
+        if (!await _repository.RenameCollectionAsync(_currentUser.TenantId, _currentUser.UserId, id, name, ct)) return NotFound();
+        await AuditCollectionAsync("UPDATE", id, "Coleção renomeada", new { name }, ct);
+        return Json(new { success = true });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> RemoveFromCollection([FromForm] Guid id, [FromForm] Guid documentId, CancellationToken ct)
+    {
+        if (!await _repository.RemoveCollectionItemAsync(_currentUser.TenantId, _currentUser.UserId, id, documentId, ct)) return NotFound();
+        await AuditCollectionAsync("UPDATE", id, "Referência removida da coleção", new { documentId }, ct);
+        return Json(new { success = true });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ArchiveCollection([FromForm] Guid id, CancellationToken ct)
+    {
+        if (!await _repository.ArchiveCollectionAsync(_currentUser.TenantId, _currentUser.UserId, id, ct)) return NotFound();
+        await AuditCollectionAsync("DELETE", id, "Coleção arquivada", null, ct);
+        return Json(new { success = true });
+    }
+
+    private Task AuditCollectionAsync(string action, Guid id, string message, object? details, CancellationToken ct) =>
+        _audit.WriteAsync(_currentUser.TenantId, _currentUser.UserId, action, "SMART_SEARCH_COLLECTION", id, message, HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers.UserAgent.ToString(), details, ct);
 
     [HttpPost]
     [ValidateAntiForgeryToken]
@@ -391,4 +486,16 @@ public sealed class SmartSearchController : Controller
         var sqlState = ex.GetType().GetProperty("SqlState")?.GetValue(ex) as string;
         return sqlState is "42P01" or "42703";
     }
+}
+
+public sealed class SmartSearchRefinementRequest
+{
+    public string Command { get; set; } = string.Empty;
+    public SmartSearchQueryState? State { get; set; }
+}
+
+public sealed class SmartSearchCompareRequest
+{
+    public Guid[]? DocumentIds { get; set; }
+    public bool IncludeText { get; set; }
 }

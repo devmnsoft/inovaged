@@ -42,6 +42,55 @@ public sealed class SmartSearchEvolutionTests
         Assert.Equal(typeof(bool), type.GetProperty(nameof(SmartSearchSavedSearch.IsFavorite))!.PropertyType);
     }
 
+    [Fact]
+    public void Refinement_ReplacesYearWithoutDroppingOtherFilters()
+    {
+        var service = new SmartSearchRefinementService();
+        var result = service.Apply(new SmartSearchQueryState
+        {
+            Terms = "contratos de manutenção", Year = 2025, Unit = "financeira", DocumentType = "Contrato"
+        }, "Agora de 2024");
+
+        Assert.True(result.Supported);
+        Assert.False(result.Ambiguous);
+        Assert.Equal("replace-filter", result.Intent);
+        Assert.Equal(2024, result.State.Year);
+        Assert.Equal("financeira", result.State.Unit);
+        Assert.Equal("Contrato", result.State.DocumentType);
+        Assert.Contains("2025 para 2024", result.Description);
+    }
+
+    [Fact]
+    public void Refinement_RemovesOnlyExplicitUnitFilter()
+    {
+        var service = new SmartSearchRefinementService();
+        var result = service.Apply(new SmartSearchQueryState { Terms = "contratos", Year = 2025, Unit = "financeira" }, "Retirar o filtro de unidade");
+
+        Assert.True(result.Supported);
+        Assert.Null(result.State.Unit);
+        Assert.Equal(2025, result.State.Year);
+        Assert.Equal("contratos", result.State.Terms);
+    }
+
+    [Fact]
+    public void Refinement_DoesNotClaimUnsupportedCommand()
+    {
+        var result = new SmartSearchRefinementService().Apply(new SmartSearchQueryState { Terms = "contratos" }, "avalie o risco jurídico");
+        Assert.False(result.Supported);
+        Assert.Equal("unsupported", result.Intent);
+        Assert.Equal("contratos", result.State.Terms);
+    }
+
+    [Fact]
+    public void CollectionReadModels_AreSafeForDapperMaterialization()
+    {
+        foreach (var type in new[] { typeof(SmartSearchCollection), typeof(SmartSearchCollectionItem), typeof(SmartSearchComparisonDocument), typeof(SmartSearchRelatedDocument) })
+        {
+            Assert.NotNull(type.GetConstructor(Type.EmptyTypes));
+            foreach (var property in type.GetProperties()) Assert.True(property.SetMethod?.IsPublic, $"{type.Name}.{property.Name}");
+        }
+    }
+
     private static SmartQueryParser CreateParser() => new(new UnusedDb(), new EmptyContextParser());
 
     private sealed class EmptyContextParser : ISmartSearchContextParser
