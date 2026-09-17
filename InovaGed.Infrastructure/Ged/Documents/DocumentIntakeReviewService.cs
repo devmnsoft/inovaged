@@ -22,8 +22,8 @@ public sealed class DocumentIntakeReviewService(IDbConnectionFactory db, IAuditW
         if (ids.Length == 0) return new Dictionary<Guid, DocumentIntakeReviewDto>();
         await using var connection = await db.OpenAsync(ct);
         var existing = (await connection.QueryAsync<IntakeReviewRow>(new CommandDefinition("""
-select d.id as \"DocumentId\", coalesce(r.status, 'PENDING') as \"Status\",
-       r.reviewed_by as \"ReviewedBy\", r.reviewed_at as \"ReviewedAt\", r.notes as \"Notes\"
+select d.id as DocumentId, coalesce(r.status, 'PENDING') as Status,
+       r.reviewed_by as ReviewedBy, r.reviewed_at as ReviewedAt, r.notes as Notes
 from ged.document d
 left join ged.document_intake_review r on r.tenant_id=d.tenant_id and r.document_id=d.id and r.reg_status='A'
 where d.tenant_id=@tenantId and d.id=any(@ids) and coalesce(d.reg_status,'A')='A';
@@ -31,7 +31,7 @@ where d.tenant_id=@tenantId and d.id=any(@ids) and coalesce(d.reg_status,'A')='A
             .Select(x => x.ToDto())
             .ToDictionary(x => x.DocumentId);
         foreach (var id in ids)
-            if (!existing.ContainsKey(id)) throw new KeyNotFoundException("Documento não encontrado ou inacessível.");
+            if (!existing.ContainsKey(id)) throw new KeyNotFoundException("Documento nao encontrado ou inacessivel.");
         return existing;
     }
 
@@ -42,7 +42,7 @@ where d.tenant_id=@tenantId and d.id=any(@ids) and coalesce(d.reg_status,'A')='A
     public Task<DocumentIntakeReviewDto> MarkNeedsCorrectionAsync(Guid tenantId, Guid userId,
         Guid documentId, string reason, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(reason)) throw new ArgumentException("O motivo é obrigatório.", nameof(reason));
+        if (string.IsNullOrWhiteSpace(reason)) throw new ArgumentException("O motivo e obrigatorio.", nameof(reason));
         return ChangeAsync(tenantId, userId, documentId, DocumentIntakeReviewStatus.NeedsCorrection,
             reason.Trim(), "INTAKE_NEEDS_CORRECTION", ct);
     }
@@ -65,21 +65,16 @@ where d.tenant_id=@tenantId and d.id=@documentId and coalesce(d.reg_status,'A')=
 on conflict (tenant_id, document_id) where reg_status='A' do update
 set status=excluded.status, reviewed_by=excluded.reviewed_by,
     reviewed_at=excluded.reviewed_at, notes=excluded.notes
-returning document_id as \"DocumentId\", status as \"Status\", reviewed_by as \"ReviewedBy\",
-          reviewed_at as \"ReviewedAt\", notes as \"Notes\";
+returning document_id as DocumentId, status as Status, reviewed_by as ReviewedBy,
+          reviewed_at as ReviewedAt, notes as Notes;
 """, new { tenantId, userId, documentId, status, notes }, cancellationToken: ct));
-        if (row is null) throw new KeyNotFoundException("Documento não encontrado ou inacessível.");
+        if (row is null) throw new KeyNotFoundException("Documento nao encontrado ou inacessivel.");
         var result = row.ToDto();
         await audit.WriteAsync(tenantId, userId, auditEvent, "DOCUMENT_INTAKE_REVIEW", documentId,
-            "Conferência documental atualizada", null, null, new { status }, ct);
+            "Conferencia documental atualizada", null, null, new { status }, ct);
         return result;
     }
 
-    /// <summary>
-    /// Dapper cannot materialize <see cref="DocumentIntakeReviewDto"/> directly:
-    /// the public record uses Guid?/DateTimeOffset? and has no parameterless constructor,
-    /// while Npgsql exposes reviewed_at as DateTime and nullables from LEFT JOIN.
-    /// </summary>
     private sealed class IntakeReviewRow
     {
         public Guid DocumentId { get; set; }
