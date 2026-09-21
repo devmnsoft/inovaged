@@ -87,6 +87,10 @@ public sealed class LabelAutomationRuleEngine : ILabelAutomationRuleEngine
         if (rule.Id == Guid.Empty || rule.TenantId == Guid.Empty || rule.TemplateId == Guid.Empty) throw new ArgumentException("Regra, tenant e modelo são obrigatórios.", nameof(rule));
         if (string.IsNullOrWhiteSpace(rule.Name) || rule.Copies is < 1 or > MaximumCopies || rule.PublishedVersion < 1 || rule.Version < 1) throw new ArgumentException("Regra de automação inválida.", nameof(rule));
         if (rule.EffectiveUntil < rule.EffectiveFrom) throw new ArgumentException("Vigência da regra inválida.", nameof(rule));
+        if (rule.Conditions.Conditions.Any(condition =>
+                condition.Operator is not LabelConditionOperator.IsEmpty and not LabelConditionOperator.IsNotEmpty
+                && string.IsNullOrWhiteSpace(condition.Value)))
+            throw new ArgumentException("Condições que comparam valores exigem um operando.", nameof(rule));
     }
 
     private static string Explain(LabelAutomationRule rule) =>
