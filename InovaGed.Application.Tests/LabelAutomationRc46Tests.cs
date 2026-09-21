@@ -52,6 +52,49 @@ public sealed class LabelAutomationRc46Tests
         Assert.Empty(new LabelAutomationRuleEngine().Evaluate(Event(), [rule]).Matches);
     }
 
+    [Theory]
+    [InlineData(LabelConditionOperator.Equals)]
+    [InlineData(LabelConditionOperator.NotEquals)]
+    [InlineData(LabelConditionOperator.Contains)]
+    [InlineData(LabelConditionOperator.StartsWith)]
+    [InlineData(LabelConditionOperator.GreaterThan)]
+    [InlineData(LabelConditionOperator.LessThan)]
+    public void Value_comparison_conditions_reject_a_missing_operand(LabelConditionOperator @operator)
+    {
+        var rule = Rule() with
+        {
+            Conditions = new(LabelConditionJoin.All, [new("department", @operator)])
+        };
+
+        Assert.Throws<ArgumentException>(() => new LabelAutomationRuleEngine().Evaluate(Event(), [rule]));
+    }
+
+    [Fact]
+    public void Value_comparison_conditions_reject_a_whitespace_operand()
+    {
+        var rule = Rule() with
+        {
+            Conditions = new(LabelConditionJoin.All, [new("department", LabelConditionOperator.Contains, "  ")])
+        };
+
+        Assert.Throws<ArgumentException>(() => new LabelAutomationRuleEngine().Evaluate(Event(), [rule]));
+    }
+
+    [Theory]
+    [InlineData(LabelConditionOperator.IsEmpty)]
+    [InlineData(LabelConditionOperator.IsNotEmpty)]
+    public void Empty_value_conditions_do_not_require_an_operand(LabelConditionOperator @operator)
+    {
+        var rule = Rule() with
+        {
+            Conditions = new(LabelConditionJoin.All, [new("missing", @operator)])
+        };
+
+        var exception = Record.Exception(() => new LabelAutomationRuleEngine().Evaluate(Event(), [rule]));
+
+        Assert.Null(exception);
+    }
+
     private static LabelAutomationEvent Event() => new(Tenant, Guid.Parse("30000000-0000-0000-0000-000000000001"),
         LabelAutomationEventType.BoxClosed, LabelAutomationEntityType.Box, Entity, 3, "corr-46",
         new Dictionary<string, object?> { ["department"] = "Arquivo Médico", ["confidential"] = true }, Now);
