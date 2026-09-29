@@ -298,8 +298,16 @@ order by d.created_at desc limit 20;
         {
             await using var conn = await _db.OpenAsync(ct);
             await using var tx = await conn.BeginTransactionAsync(ct);
-            var oldStatus = await conn.ExecuteScalarAsync<string?>(new CommandDefinition("select status from ged.protocol_request where tenant_id=@TenantId and id=@Id and reg_status='A'", new { TenantId = tenantId, Id = id }, tx, cancellationToken: ct));
+            // for update serializa submissão dupla/concorrente sobre o mesmo protocolo.
+            var oldStatus = await conn.ExecuteScalarAsync<string?>(new CommandDefinition("select status from ged.protocol_request where tenant_id=@TenantId and id=@Id and reg_status='A' for update", new { TenantId = tenantId, Id = id }, tx, cancellationToken: ct));
             if (oldStatus is null) { await tx.RollbackAsync(ct); return Result.Fail("NOTFOUND", "Protocolo não encontrado."); }
+            // Idempotência: auto-transição (mesmo estado destino) é no-op — sem UPDATE e sem linha de histórico duplicada.
+            if (string.Equals(oldStatus, newStatus, StringComparison.OrdinalIgnoreCase))
+            {
+                await tx.RollbackAsync(ct);
+                _logger.LogInformation("Transição de protocolo {Id} ignorada (já está em {Status}). Ação={Action}", id, oldStatus, action);
+                return Result.Ok();
+            }
             var rows = await conn.ExecuteAsync(new CommandDefinition("""
 update ged.protocol_request p
 set status=@NewStatus, updated_at=now(), finished_at=case when @Finished then now() else finished_at end,
@@ -320,14 +328,33 @@ where p.tenant_id=@TenantId and p.id=@Id and p.reg_status='A' and u.tenant_id=@T
     private async Task<string> GenerateProtocolNoAsync(System.Data.Common.DbConnection conn, System.Data.Common.DbTransaction tx, Guid tenantId, CancellationToken ct)
     {
         var year = DateTimeOffset.UtcNow.Year;
-        var value = await conn.ExecuteScalarAsync<long>(new CommandDefinition("""
-insert into ged.code_sequence(tenant_id, module, year, current_value, updated_at)
-values(@TenantId, 'PROTOCOL', @Year, 1, now())
-on conflict(tenant_id, module, year)
-do update set current_value = ged.code_sequence.current_value + 1, updated_at = now()
+        // Forma real de ged.code_sequence: (id, tenant_id, entity_name, prefix, current_value, padding, created_at, updated_at, reg_status).
+        // Não existe unique em (tenant_id, entity_name), então usa lock por transação + branch insert/update.
+        var entityName = $"PROTOCOL-{year}";
+        var current = await conn.ExecuteScalarAsync<long?>(new CommandDefinition("""
+select current_value from ged.code_sequence
+where tenant_id=@TenantId and entity_name=@EntityName and reg_status='A'
+order by id for update;
+""", new { TenantId = tenantId, EntityName = entityName }, tx, cancellationToken: ct));
+        long value;
+        if (current is null)
+        {
+            value = await conn.ExecuteScalarAsync<long>(new CommandDefinition("""
+insert into ged.code_sequence(tenant_id, entity_name, prefix, current_value, padding, created_at, updated_at, reg_status)
+values(@TenantId, @EntityName, 'PROT', 1, 6, now(), now(), 'A')
 returning current_value;
-""", new { TenantId = tenantId, Year = year }, tx, cancellationToken: ct));
-        return $"PROT-{year}-{value:000000}";
+""", new { TenantId = tenantId, EntityName = entityName }, tx, cancellationToken: ct));
+        }
+        else
+        {
+            value = await conn.ExecuteScalarAsync<long>(new CommandDefinition("""
+update ged.code_sequence
+set current_value=current_value+1, updated_at=now()
+where tenant_id=@TenantId and entity_name=@EntityName and reg_status='A' and current_value=@Current
+returning current_value;
+""", new { TenantId = tenantId, EntityName = entityName, Current = current.Value }, tx, cancellationToken: ct));
+        }
+        return $"PROT-{year}-{value:D6}";
     }
 
     private async Task WriteHistoryAsync(System.Data.Common.DbConnection conn, System.Data.Common.DbTransaction tx, Guid tenantId, Guid id, string? oldStatus, string? newStatus, string action, Guid userId, string? reason, string? internalNotes, string correlationId, CancellationToken ct)

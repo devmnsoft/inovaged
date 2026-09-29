@@ -15,6 +15,8 @@
             "OVERDUE" => "text-bg-danger",
             "DUE_SOON" => "text-bg-warning",
             "SEM_CLASSIFICACAO" => "text-bg-secondary",
+            "BLOCKED" => "text-bg-dark",
+            "ANALYSIS" => "text-bg-info",
             _ => "text-bg-success" // OK
         };
     }
@@ -27,6 +29,8 @@
             "OVERDUE" => "Vencido",
             "DUE_SOON" => "A vencer",
             "SEM_CLASSIFICACAO" => "Sem classificação",
+            "BLOCKED" => "Bloqueado",
+            "ANALYSIS" => "Em análise",
             _ => "OK"
         };
     }
@@ -97,6 +101,17 @@
     <div class="alert alert-danger">@err</div>
 }
 
+<!-- ✅ C3: explicacao dos estados da central (a vencer / vencido / bloqueado / em analise) -->
+<div class="alert alert-light border small mb-3">
+    <div class="fw-semibold mb-1"><i class="bi bi-info-circle me-1"></i> Como ler esta central</div>
+    <ul class="mb-0 ps-3">
+        <li><span class="badge text-bg-warning">A vencer</span> prazo final da classe (base da contagem + dias da regra TTD) vence nas faixas de 30/60/90 dias.</li>
+        <li><span class="badge text-bg-danger">Vencido</span> prazo final ultrapassado. O documento NAO é eliminado automaticamente pelo mero vencimento: permanece na fila até decisão registrada (caso/termo ou lote de destinação executado).</li>
+        <li><span class="badge text-bg-dark">Bloqueado</span> impedimento legal (hold) ativo: nenhuma destinação é executada enquanto o hold não for liberado.</li>
+        <li><span class="badge text-bg-info">Em análise</span> documento vinculado a caso de destinação aberto, aguardando decisão/termo assinado.</li>
+    </ul>
+</div>
+
 <!-- ✅ Tabs de bucket -->
 <ul class="nav nav-tabs mb-3">
     <li class="nav-item">
@@ -122,6 +137,16 @@
     <li class="nav-item">
         <a class="nav-link @Active("all")" href="/Temporalidade?bucket=all">
             <i class="bi bi-card-list me-1"></i> Todos
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link @Active("blocked")" href="/Temporalidade?bucket=blocked">
+            <i class="bi bi-lock-fill me-1"></i> Bloqueados
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link @Active("analysis")" href="/Temporalidade?bucket=analysis">
+            <i class="bi bi-search me-1"></i> Em análise
         </a>
     </li>
 </ul>
@@ -160,8 +185,10 @@
                         <th style="width:40px"></th>
                         <th>Documento</th>
                         <th>Classe</th>
+                        <th>Base</th>
                         <th>Vencimento</th>
                         <th>Status</th>
+                        <th>Bloqueio</th>
                         <th>Destino sugerido</th>
                         <th class="text-end">Ações</th>
                     </tr>
@@ -170,7 +197,7 @@
                     @if (Model.Items == null || Model.Items.Count == 0)
                     {
                         <tr>
-                            <td colspan="7" class="text-muted py-4">
+                            <td colspan="9" class="text-muted py-4">
                                 Nenhum item encontrado para este bucket.
                             </td>
                         </tr>
@@ -203,6 +230,8 @@
                                     }
                                 </td>
 
+                                <td>@(i.BasisAt?.ToString("dd/MM/yyyy") ?? "—")</td>
+
                                 <td>@(i.DueAt?.ToString("dd/MM/yyyy") ?? "—")</td>
 
                                 <td>
@@ -210,6 +239,17 @@
                                     @if (i.DaysToDue.HasValue)
                                     {
                                         <span class="text-muted small ms-2">(@i.DaysToDue dias)</span>
+                                    }
+                                </td>
+
+                                <td>
+                                    @if (string.IsNullOrWhiteSpace(i.BlockReason))
+                                    {
+                                        <span class="text-muted">—</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="small">@i.BlockReason</span>
                                     }
                                 </td>
 

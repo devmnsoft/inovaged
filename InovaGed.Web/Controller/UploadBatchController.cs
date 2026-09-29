@@ -192,11 +192,15 @@ public sealed class UploadBatchController : Controller
         var result = await _batches.FinishAsync(_currentUser.TenantId, _currentUser.UserId, request.BatchId, ct);
         if (!result.Success) return BadRequest(Error(result.Error?.Message ?? "Falha ao finalizar lote.", result.Error?.Code ?? "Batch", true, HttpContext.TraceIdentifier));
         var status = result.Value!;
+        // Sem falso sucesso: lote finalizado com zero documentos criados (e nada pendente) deve reportar success=false.
+        var zeroSuccess = status.Total > 0 && status.Success == 0 && status.Pending == 0;
         return Ok(new
         {
-            success = true,
+            success = !zeroSuccess,
             status,
-            message = "Lote finalizado.",
+            message = zeroSuccess
+                ? "Lote finalizado sem nenhum documento criado. Revise os erros por arquivo e utilize Reenviar falhas."
+                : "Lote finalizado.",
             requestedFolderId = status.RequestedFolderId,
             folderId = status.ResolvedFolderId,
             resolvedFolderId = status.ResolvedFolderId,

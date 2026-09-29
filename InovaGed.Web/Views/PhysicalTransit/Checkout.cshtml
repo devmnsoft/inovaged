@@ -1,0 +1,145 @@
+@using InovaGed.Application.PhysicalArchive2
+@{
+    ViewData["Title"] = "Registrar saída física de prontuários";
+    var sectors = ViewBag.Sectors as IReadOnlyList<TransitSectorOption> ?? (IReadOnlyList<TransitSectorOption>)Enumerable.Empty<TransitSectorOption>();
+    var catalog = ViewBag.Catalog as IReadOnlyList<TransitCatalogItem> ?? (IReadOnlyList<TransitCatalogItem>)Enumerable.Empty<TransitCatalogItem>();
+    var q = ViewBag.Q as string;
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <div>
+        <h1 class="h3 mb-1">Registrar Saída Física</h1>
+        <p class="text-muted mb-0">Saída de 1 a 100 prontuários para um setor, com responsável pelo transporte.</p>
+    </div>
+    <a class="btn btn-outline-secondary" asp-action="Index">← Voltar para o painel</a>
+</div>
+<partial name="_TempAlerts" />
+
+<details class="mb-3 bg-light rounded p-3">
+    <summary class="fw-semibold">Como usar</summary>
+    <ol class="small mb-0 ps-3">
+        <li>Busque e marque os prontuários que vão sair (máximo 100 por lote).</li>
+        <li>Preencha o <strong>setor destino</strong> e o <strong>responsável pelo transporte</strong> (nome ou matrícula). O prazo de devolução é opcional.</li>
+        <li>Ao confirmar, o sistema gera o lote e a <strong>cautela</strong> (página imprimível). Um prontuário que já está em trânsito não pode sair novamente.</li>
+        <li>No detalhe do lote é possível registrar <strong>devolução parcial ou total</strong> e <strong>extravio</strong> com justificativa obrigatória.</li>
+    </ol>
+</details>
+
+<div class="row g-3">
+    <div class="col-lg-5">
+        <form id="checkoutForm" method="post" action="/PhysicalTransit/Checkout">
+            @Html.AntiForgeryToken()
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-white fw-semibold">Dados da saída</div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label" for="sectorId">Setor destino <span class="text-danger">*</span></label>
+                        <select id="sectorId" name="sectorId" class="form-select" required>
+                            <option value="">Selecione o setor…</option>
+                            @foreach (var s in sectors)
+                            {
+                                <option value="@s.Id">@s.Name</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="carrierName">Responsável pelo transporte (nome ou matrícula) <span class="text-danger">*</span></label>
+                        <input id="carrierName" name="carrierName" class="form-control" maxlength="200" required placeholder="Nome completo ou número de matrícula" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="carrierId">Matrícula (opcional)</label>
+                        <input id="carrierId" name="carrierId" class="form-control" maxlength="50" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="dueAt">Prazo de devolução (opcional)</label>
+                        <input id="dueAt" name="dueAt" type="datetime-local" class="form-control" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="reason">Motivo (opcional)</label>
+                        <textarea id="reason" name="reason" class="form-control" rows="2" maxlength="500"></textarea>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center gap-2">
+                        <span class="text-muted small" id="selCount">0 selecionado(s)</span>
+                        <button type="submit" class="btn btn-primary" id="checkoutBtn" disabled>Confirmar saída</button>
+                    </div>
+                </div>
+            </div>
+        </form>
+    </div>
+    <div class="col-lg-7">
+        <div class="card shadow-sm h-100">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <span class="fw-semibold">Prontuários</span>
+                <form method="get" action="/PhysicalTransit/Checkout" class="d-flex gap-2">
+                    <input type="search" name="q" value="@q" class="form-control form-control-sm" placeholder="Buscar por código ou título" aria-label="Buscar prontuário" />
+                    <button type="submit" class="btn btn-sm btn-outline-primary">Buscar</button>
+                </form>
+            </div>
+            <div class="card-body p-0" style="max-height:520px;overflow-y:auto">
+                <table class="table align-middle mb-0">
+                    <thead class="sticky-top bg-white">
+                        <tr>
+                            <th style="width:36px" class="text-center"><input type="checkbox" id="selAll" class="form-check-input" title="Marcar/desmarcar todos" aria-label="Marcar todos" /></th>
+                            <th>Código</th><th>Título</th><th>Situação</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @if (catalog.Count == 0)
+                    {
+                        <tr><td colspan="4" class="text-center text-muted py-4">Nenhum prontuário encontrado. Ajuste a busca.</td></tr>
+                    }
+                    @foreach (var d in catalog)
+                    {
+                        <tr>
+                            <td class="text-center">
+                                <input type="checkbox" class="form-check-input docSel" value="@d.Id" @(d.IsOut ? "disabled" : "") aria-label="@d.Code" />
+                            </td>
+                            <td class="fw-semibold">@d.Code</td>
+                            <td>@d.Title</td>
+                            <td>
+                                @if (d.IsOut)
+                                {
+                                    <span class="badge text-bg-info">em trânsito</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    var form = document.getElementById('checkoutForm');
+    var boxes = Array.prototype.slice.call(document.querySelectorAll('.docSel:not(:disabled)'));
+    var countEl = document.getElementById('selCount');
+    var btn = document.getElementById('checkoutBtn');
+    var selAll = document.getElementById('selAll');
+    function checkedCount() { return boxes.filter(function (b) { return b.checked; }).length; }
+    function update() {
+        var n = checkedCount();
+        countEl.textContent = n + ' selecionado(s) — máximo 100';
+        btn.disabled = n === 0 || n > 100;
+        selAll.checked = n > 0 && n === boxes.length;
+    }
+    boxes.forEach(function (b) {
+        b.addEventListener('change', function () {
+            if (checkedCount() > 100) { b.checked = false; alert('Máximo de 100 prontuários por lote de saída.'); }
+            update();
+        });
+    });
+    selAll.addEventListener('change', function () { boxes.forEach(function (b) { b.checked = selAll.checked; }); update(); });
+    form.addEventListener('submit', function () {
+        form.querySelectorAll('[data-dyn]').forEach(function (e) { e.remove(); });
+        boxes.filter(function (b) { return b.checked; }).forEach(function (b) {
+            var h = document.createElement('input');
+            h.type = 'hidden'; h.name = 'documentIds'; h.value = b.value; h.setAttribute('data-dyn', '1');
+            form.appendChild(h);
+        });
+    });
+    update();
+})();
+</script>

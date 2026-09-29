@@ -1,0 +1,40 @@
+@*
+    Navegacao unificada das telas de protocolo (B7):
+    Minhas Solicitacoes | Fila de Atendimento | Em Transito | Devolucoes | Historico.
+    O estado ativo e definido pelo ViewBag.ProtocolTab; sem o valor, o estado e
+    inferido da rota atual para manter as URLs existentes funcionando.
+*@
+@{
+    string active = (ViewBag.ProtocolTab as string) ?? "";
+    if (active.Length == 0)
+    {
+        var c = (ViewContext.RouteData.Values["controller"] as string) ?? "";
+        var a = (ViewContext.RouteData.Values["action"] as string) ?? "";
+        var status = ViewContext.HttpContext?.Request?.Query["status"].ToString() ?? "";
+        if (c == "ProtocolRequests" && a == "My") active = "minhas";
+        else if (c == "Protocols" && a == "WorkQueue") active = "fila";
+        else if (c == "PhysicalTransit")
+        {
+            if (string.Equals(status, "OPEN", StringComparison.OrdinalIgnoreCase)) active = "transito";
+            else if (string.Equals(status, "CLOSED", StringComparison.OrdinalIgnoreCase)) active = "devolugoes";
+            else active = "historico";
+        }
+    }
+}
+<ul class="nav nav-tabs mb-3" role="tablist" aria-label="Telas de protocolo">
+    <li class="nav-item" role="presentation">
+        <a class="nav-link @(active == "minhas" ? "active" : "")" href="/ProtocolRequests/My">Minhas Solicitações</a>
+    </li>
+    <li class="nav-item" role="presentation">
+        <a class="nav-link @(active == "fila" ? "active" : "")" href="/Protocols/WorkQueue">Fila de Atendimento</a>
+    </li>
+    <li class="nav-item" role="presentation">
+        <a class="nav-link @(active == "transito" ? "active" : "")" href="/PhysicalTransit?status=OPEN">Em Trânsito</a>
+    </li>
+    <li class="nav-item" role="presentation">
+        <a class="nav-link @(active == "devolugoes" ? "active" : "")" href="/PhysicalTransit?status=CLOSED">Devoluções</a>
+    </li>
+    <li class="nav-item" role="presentation">
+        <a class="nav-link @(active == "historico" ? "active" : "")" href="/PhysicalTransit">Histórico</a>
+    </li>
+</ul>

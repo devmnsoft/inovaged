@@ -1,0 +1,185 @@
+@using InovaGed.Application.PhysicalArchive2
+@model TransitBatchDetails
+@{
+    ViewData["Title"] = "Lote " + Model.Batch.Number;
+    var canManage = ViewBag.CanManage as bool? ?? false;
+    var b = Model.Batch;
+
+    string Situacao(string s) => s switch { "OPEN" => "Em trânsito", "OVERDUE" => "Vencido", "RETURNED" => "Devolvido", "LOST" => "Extraviado", "CLOSED" => "Encerrado", _ => s };
+    string Badge(string s) => s switch { "OPEN" => "bg-primary", "OVERDUE" => "bg-danger", "RETURNED" => "bg-success", "LOST" => "bg-warning text-dark", "CLOSED" => "bg-secondary", _ => "bg-secondary" };
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <div>
+        <h1 class="h3 mb-1">Lote @b.Number</h1>
+        <p class="text-muted mb-0">Aberto por @(b.CreatorName ?? "—") em @b.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a class="btn btn-outline-secondary" asp-action="Index">← Voltar</a>
+        <a class="btn btn-outline-primary" asp-action="Cautela" asp-route-id="@b.Id" target="_blank">Imprimir cautela</a>
+    </div>
+</div>
+<partial name="_TempAlerts" />
+
+<div class="row g-3 mb-3">
+    <div class="col-md-3 col-sm-6">
+        <div class="card shadow-sm h-100"><div class="card-body py-2">
+            <div class="text-muted small">Setor destino</div>
+            <div class="fw-semibold">@b.SectorName</div>
+        </div></div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="card shadow-sm h-100"><div class="card-body py-2">
+            <div class="text-muted small">Transporte</div>
+            <div class="fw-semibold">@(string.IsNullOrEmpty(b.CarrierName) ? "—" : b.CarrierName + (string.IsNullOrEmpty(b.CarrierId) ? "" : $" ({b.CarrierId})"))</div>
+        </div></div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="card shadow-sm h-100"><div class="card-body py-2">
+            <div class="text-muted small">Prazo de devolução</div>
+            <div class="fw-semibold">@(b.DueAt?.ToLocalTime().ToString("dd/MM/yyyy HH:mm") ?? "—")</div>
+        </div></div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="card shadow-sm h-100"><div class="card-body py-2">
+            <div class="text-muted small">Situação</div>
+            <span class="badge text-white @(Badge(b.Status)) fs-6">@Situacao(b.Status)</span>
+        </div></div>
+    </div>
+</div>
+
+@if (b.Overdue)
+{
+    <div class="alert alert-warning" role="alert">
+        Este lote está <strong>vencido</strong> desde @(b.DueAt?.ToLocalTime().ToString("dd/MM/yyyy HH:mm")). Regularize a devolução dos itens em aberto.
+    </div>
+}
+
+<div class="card shadow-sm">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <span class="fw-semibold">Itens do lote</span>
+        @if (canManage && b.Status == "OPEN")
+        {
+            <span class="text-muted small">Marque os itens devolvidos e confirme abaixo (devolução parcial permitida).</span>
+        }
+    </div>
+    <div class="table-responsive">
+        <table class="table align-middle mb-0">
+            <thead>
+                <tr>
+                    <th style="width:36px" class="text-center"><span class="visually-hidden">Selecionar</span></th>
+                    <th>Prontuário</th><th>Título</th><th>Situação</th><th>Saída em</th><th>Prazo</th><th>Encerrado em</th><th class="text-end">Ações</th>
+                </tr>
+            </thead>
+            <tbody>
+            @foreach (var it in Model.Items)
+            {
+                var open = it.Status == "OPEN" || it.Status == "OVERDUE";
+                <tr>
+                    <td class="text-center">
+                        @if (canManage && b.Status == "OPEN" && open)
+                        {
+                            <input type="checkbox" class="form-check-input itemSel" name="loanIds" value="@it.Id" checked aria-label="@it.DocCode" />
+                        }
+                        else
+                        {
+                            <input type="checkbox" class="form-check-input" disabled aria-hidden="true" tabindex="-1" />
+                        }
+                    </td>
+                    <td class="fw-semibold">
+                        @it.DocCode
+                        @if (it.DocumentId.HasValue)
+                        {
+                            <a class="ms-2 btn btn-sm btn-link p-0 align-baseline" asp-action="History" asp-route-documentId="@it.DocumentId" title="Histórico completo de custódia do prontuário">histórico ↗</a>
+                        }
+                    </td>
+                    <td>@it.DocTitle</td>
+                    <td>
+                        <span class="badge text-white @(Badge(it.Status))">@Situacao(it.Status)</span>
+                        @if (it.Status == "LOST" && !string.IsNullOrEmpty(it.LostReason))
+                        {
+                            <div class="small text-muted mt-1">Motivo: @it.LostReason</div>
+                        }
+                    </td>
+                    <td class="text-nowrap">@it.LoanedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                    <td class="text-nowrap">@(it.DueAt?.ToLocalTime().ToString("dd/MM/yyyy HH:mm") ?? "—")</td>
+                    <td class="text-nowrap">
+                        @if (it.ReturnedAt.HasValue)
+                        {
+                            @it.ReturnedAt.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+                            @if (it.Status == "LOST")
+                            {
+                                <span class="text-muted small">(extravio)</span>
+                            }
+                        }
+                        else
+                        {
+                            <span class="text-muted">—</span>
+                        }
+                    </td>
+                    <td class="text-end">
+                        @if (canManage && b.Status == "OPEN" && open)
+                        {
+                            <details class="d-inline-block">
+                                <summary class="btn btn-sm btn-outline-danger p-1">Extravio</summary>
+                                <div style="min-width:280px;position:relative;z-index:5">
+                                    <form method="post" asp-action="MarkLost" asp-route-id="@it.Id">
+                                        @Html.AntiForgeryToken()
+                                        <label class="form-label small mb-1" for="justif-@it.Id">Justificativa obrigatória <span class="text-danger">*</span></label>
+                                        <textarea class="form-control form-control-sm mb-1" id="justif-@it.Id" name="justification" rows="2" required minlength="5" maxlength="500"></textarea>
+                                        <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Confirmar extravio deste prontuário? A operação não pode ser desfeita.');">Confirmar extravio</button>
+                                    </form>
+                                </div>
+                            </details>
+                        }
+                        else
+                        {
+                            <span class="text-muted">—</span>
+                        }
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+    @if (canManage && b.Status == "OPEN")
+    {
+        <div class="card-footer bg-white">
+            <form id="returnForm" method="post" asp-action="BatchReturn" asp-route-id="@b.Id" class="d-flex gap-2 align-items-center flex-wrap w-100">
+                @Html.AntiForgeryToken()
+                <input type="text" name="notes" class="form-control form-control-sm" placeholder="Observações da devolução (opcional)" style="min-width:280px" maxlength="500" aria-label="Observações da devolução" />
+                <button type="submit" class="btn btn-success btn-sm" id="returnSelBtn">Registrar devolução dos selecionados</button>
+                <button type="button" class="btn btn-outline-success btn-sm" id="returnAllBtn">Registrar devolução de todos os abertos</button>
+            </form>
+        </div>
+    }
+</div>
+
+<script>
+(function () {
+    var form = document.getElementById('returnForm');
+    if (!form) return;
+    var items = Array.prototype.slice.call(document.querySelectorAll('.itemSel'));
+    var selBtn = document.getElementById('returnSelBtn');
+    var allBtn = document.getElementById('returnAllBtn');
+    function prepare(checkAll) {
+        if (checkAll) items.forEach(function (i) { i.checked = true; });
+        var chosen = items.filter(function (i) { return i.checked; });
+        if (!chosen.length) { alert('Nenhum item em aberto selecionado.'); return false; }
+        form.querySelectorAll('[data-dyn]').forEach(function (e) { e.remove(); });
+        chosen.forEach(function (i) {
+            var h = document.createElement('input');
+            h.type = 'hidden'; h.name = 'loanIds'; h.value = i.value; h.setAttribute('data-dyn', '1');
+            form.appendChild(h);
+        });
+        return true;
+    }
+    function go(checkAll) {
+        if (!prepare(checkAll)) return;
+        if (!confirm('Registrar a devolução dos itens selecionados?')) return;
+        form.submit();
+    }
+    if (selBtn) selBtn.addEventListener('click', function () { go(false); });
+    if (allBtn) allBtn.addEventListener('click', function () { go(true); });
+})();
+</script>

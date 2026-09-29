@@ -1,0 +1,149 @@
+@using InovaGed.Application.PhysicalArchive2
+@model IReadOnlyList<TransitBatchRow>
+@{
+    ViewData["Title"] = "Trânsito Físico de Prontuários";
+    var sectors = ViewBag.Sectors as IReadOnlyList<TransitSectorOption> ?? (IReadOnlyList<TransitSectorOption>)Enumerable.Empty<TransitSectorOption>();
+    var counts = ViewBag.Counts as TransitCounts ?? new TransitCounts(0, 0, 0, 0);
+    var canManage = ViewBag.CanManage as bool? ?? false;
+    var filterSector = ViewBag.SectorId as Guid?;
+    var filterStatus = ViewBag.Status as string;
+    var filterQ = ViewBag.Q as string;
+
+    string Situacao(string s) => s switch { "OPEN" => "Em trânsito", "OVERDUE" => "Vencido", "CLOSED" => "Encerrado", _ => s };
+    string Badge(string s) => s switch { "OPEN" => "bg-primary", "OVERDUE" => "bg-danger", "CLOSED" => "bg-success", _ => "bg-secondary" };
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <div>
+        <h1 class="h3 mb-1">Trânsito Físico de Prontuários</h1>
+        <p class="text-muted mb-0">Saídas e devoluções de prontuários físicos entre o arquivo central (DAME) e os setores do hospital.</p>
+    </div>
+    @if (canManage)
+    {
+        <a class="btn btn-primary" asp-action="Checkout">Registrar saída</a>
+    }
+</div>
+<partial name="_TempAlerts" />
+<partial name="_ProtocolTabs" />
+
+<div class="row g-3 mb-3">
+    <div class="col-md-3 col-sm-6">
+        <div class="card shadow-sm h-100"><div class="card-body py-2">
+            <div class="text-muted small">Lotes abertos</div>
+            <div class="fs-4 fw-semibold">@counts.OpenBatches</div>
+        </div></div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="card shadow-sm h-100"><div class="card-body py-2">
+            <div class="text-muted small">Prontuários em trânsito</div>
+            <div class="fs-4 fw-semibold">@counts.OpenItems</div>
+        </div></div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="card shadow-sm h-100"><div class="card-body py-2">
+            <div class="text-muted small">Vencidos</div>
+            <div class="fs-4 fw-semibold text-danger">@counts.OverdueItems</div>
+        </div></div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="card shadow-sm h-100"><div class="card-body py-2">
+            <div class="text-muted small">Devolvidos hoje</div>
+            <div class="fs-4 fw-semibold text-success">@counts.ReturnedToday</div>
+        </div></div>
+    </div>
+</div>
+
+@if (counts.OverdueItems > 0)
+{
+    <div class="alert alert-warning" role="alert">
+        Há @counts.OverdueItems prontuário(s) em trânsito além do prazo. <a asp-action="Index" asp-route-status="OVERDUE" class="alert-link">Ver vencidos</a>
+    </div>
+}
+
+<form method="get" class="card shadow-sm mb-3">
+    <div class="card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col-lg-3 col-md-4">
+                <label class="form-label" for="sectorId">Setor destino</label>
+                <select id="sectorId" name="sectorId" class="form-select">
+                    <option value="">Todos os setores</option>
+                    @foreach (var s in sectors)
+                    {
+                        <option value="@s.Id" selected="@(filterSector.HasValue && filterSector.Value == s.Id)">@s.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-lg-3 col-md-4">
+                <label class="form-label" for="status">Situação</label>
+                <select id="status" name="status" class="form-select">
+                    <option value="">Todas</option>
+                    <option value="OPEN" selected="@(filterStatus == "OPEN")">Em trânsito</option>
+                    <option value="OVERDUE" selected="@(filterStatus == "OVERDUE")">Vencidos</option>
+                    <option value="CLOSED" selected="@(filterStatus == "CLOSED")">Encerrados</option>
+                </select>
+            </div>
+            <div class="col-lg-4 col-md-4">
+                <label class="form-label" for="q">Busca</label>
+                <input id="q" name="q" value="@filterQ" class="form-control" placeholder="Nº do lote, setor ou responsável" />
+            </div>
+            <div class="col-12 d-flex gap-2 flex-wrap">
+                <button type="submit" class="btn btn-outline-primary">Aplicar filtros</button>
+                <a class="btn btn-outline-secondary" asp-action="Index" asp-route-status="" asp-route-sectorid="" asp-route-q="">Limpar</a>
+            </div>
+        </div>
+    </div>
+</form>
+
+<div class="card shadow-sm">
+    <div class="card-header bg-white fw-semibold">Lotes de saída</div>
+    <div class="table-responsive">
+        <table class="table align-middle mb-0">
+            <thead>
+                <tr><th>Lote</th><th>Setor destino</th><th>Transporte</th><th>Itens</th><th>Saída em</th><th>Prazo</th><th>Situação</th><th class="text-end">Ações</th></tr>
+            </thead>
+            <tbody>
+            @if (Model.Count == 0)
+            {
+                <tr><td colspan="8" class="text-center text-muted py-4">Nenhum lote encontrado com os filtros atuais.</td></tr>
+            }
+            @foreach (var b in Model)
+            {
+                <tr>
+                    <td class="fw-semibold">@b.Number</td>
+                    <td>@b.SectorName</td>
+                    <td>@(string.IsNullOrEmpty(b.CarrierName) ? "—" : b.CarrierName + (string.IsNullOrEmpty(b.CarrierId) ? "" : $" ({b.CarrierId})"))</td>
+                    <td>
+                        @b.ItemsReturned/@b.ItemsTotal devolvidos
+                        @if (b.ItemsLost > 0)
+                        {
+                            <span class="badge text-bg-warning ms-1">@b.ItemsLost extravio(s)</span>
+                        }
+                    </td>
+                    <td class="text-nowrap">@b.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                    <td class="text-nowrap">
+                        @if (b.DueAt.HasValue)
+                        {
+                            @b.DueAt.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+                            @if (b.Overdue)
+                            {
+                                <span class="badge text-bg-danger ms-1">vencido</span>
+                            }
+                        }
+                        else
+                        {
+                            <span class="text-muted">—</span>
+                        }
+                    </td>
+                    <td><span class="badge text-white @(Badge(b.Status))">@Situacao(b.Status)</span></td>
+                    <td class="text-end">
+                        <div class="btn-group btn-group-sm">
+                            <a class="btn btn-outline-primary" asp-action="BatchDetail" asp-route-id="@b.Id">Detalhes</a>
+                            <a class="btn btn-outline-secondary" asp-action="Cautela" asp-route-id="@b.Id" target="_blank">Cautela</a>
+                        </div>
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+</div>

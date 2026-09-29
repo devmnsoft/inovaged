@@ -1,0 +1,56 @@
+@using InovaGed.Application.PhysicalArchive2
+@model TransitDocumentHistory
+@{
+    ViewData["Title"] = "Histórico de custódia";
+
+    string Evento(string e) => e switch
+    {
+        "PHYSICAL_CHECKOUT" => "Saída registrada",
+        "PHYSICAL_CHECKIN" => "Devolução registrada",
+        "PHYSICAL_LOAN_LOST" => "Extravio registrado",
+        "BATCH_OPENED" => "Lote aberto",
+        "BATCH_CLOSED" => "Lote encerrado",
+        _ => e
+    };
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <div>
+        <h1 class="h3 mb-1">Histórico de Custódia</h1>
+        @if (Model.Doc != null)
+        {
+            <p class="text-muted mb-0">Prontuário <strong>@Model.Doc.Code</strong> · @Model.Doc.Title</p>
+        }
+        else
+        {
+            <p class="text-muted mb-0">Registro físico</p>
+        }
+    </div>
+    <a class="btn btn-outline-secondary" asp-action="Index">← Voltar</a>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-header bg-white fw-semibold">Linha do tempo (mais recente primeiro)</div>
+    <div class="table-responsive">
+        <table class="table align-middle mb-0">
+            <thead>
+                <tr><th>Data/Hora</th><th>Evento</th><th>Detalhe</th><th>Autor</th></tr>
+            </thead>
+            <tbody>
+            @if (Model.Events.Count == 0)
+            {
+                <tr><td colspan="4" class="text-center text-muted py-4">Nenhum evento de custódia registrado para este prontuário.</td></tr>
+            }
+            @foreach (var e in Model.Events)
+            {
+                <tr>
+                    <td class="text-nowrap">@e.OccurredAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</td>
+                    <td><span class="badge text-bg-primary">@Evento(e.EventType)</span></td>
+                    <td>@(string.IsNullOrEmpty(e.Description) ? "—" : e.Description)</td>
+                    <td>@(string.IsNullOrEmpty(e.ActorName) ? "—" : e.ActorName)</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+</div>

@@ -3,6 +3,7 @@ using InovaGed.Application.Identity;
 using InovaGed.Application.RetentionCases;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using InovaGed.Web.Security;
 using Microsoft.Extensions.Logging;
 
 namespace InovaGed.Web.Controllers;
@@ -41,6 +42,7 @@ public sealed class RetentionCaseController : Controller
         return View(data.Value);
     }
 
+    [Authorize(Policy = AppPolicies.RetentionManage)]
     [HttpPost("Create")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Create([FromBody] CreateRetentionCaseRequest req, CancellationToken ct)
@@ -53,10 +55,11 @@ public sealed class RetentionCaseController : Controller
         catch (Exception ex)
         {
             _logger.LogError(ex, "Create case failed");
-            return BadRequest(new { ok = false, error = ex.Message });
+            return BadRequest(new { ok = false, error = "Não foi possível criar o caso de destinação. Tente novamente ou contate o suporte." });
         }
     }
 
+    [Authorize(Policy = AppPolicies.RetentionManage)]
     [HttpPost("DecideItem")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> DecideItem([FromBody] DecideItemRequest req, CancellationToken ct)
@@ -69,10 +72,11 @@ public sealed class RetentionCaseController : Controller
         catch (Exception ex)
         {
             _logger.LogError(ex, "Decide item failed");
-            return BadRequest(new { ok = false, error = ex.Message });
+            return BadRequest(new { ok = false, error = "Não foi possível registrar a decisão do item. Tente novamente ou contate o suporte." });
         }
     }
 
+    [Authorize(Policy = AppPolicies.RetentionManage)]
     [HttpPost("Close")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Close(Guid caseId, string status, CancellationToken ct)
@@ -86,7 +90,7 @@ public sealed class RetentionCaseController : Controller
         catch (Exception ex)
         {
             _logger.LogError(ex, "Close case failed");
-            TempData["Error"] = ex.Message;
+            TempData["Error"] = "Não foi possível encerrar o caso de destinação. Tente novamente ou contate o suporte.";
             return RedirectToAction("Details", new { id = caseId });
         }
     }
@@ -99,6 +103,7 @@ public sealed class RetentionCaseController : Controller
         return View("Print", data.Value);
     }
 
+    [Authorize(Policy = AppPolicies.RetentionManage)]
     [HttpPost("Execute")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Execute(Guid caseId, CancellationToken ct,
@@ -113,7 +118,7 @@ public sealed class RetentionCaseController : Controller
         catch (Exception ex)
         {
             _logger.LogError(ex, "Execute case failed");
-            TempData["Error"] = ex.Message;
+            TempData["Error"] = "Não foi possível executar o caso de destinação. Tente novamente ou contate o suporte.";
             return RedirectToAction("Details", new { id = caseId });
         }
     }

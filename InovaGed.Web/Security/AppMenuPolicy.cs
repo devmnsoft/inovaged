@@ -97,6 +97,12 @@ public static class AppMenuPolicy
             .Any(c => NormalizeRole(c.Value) == target);
     }
 
+    public static bool CanSeePhysicalTransit(ClaimsPrincipal user)
+        => IsAdmin(user) || HasRole(user, AppRoles.Administrador) || IsAdministradorOphir(user) || IsArquivistaOphir(user);
+
+    public static bool CanManagePhysicalTransit(ClaimsPrincipal user)
+        => IsAdmin(user) || HasRole(user, AppRoles.Administrador) || IsAdministradorOphir(user);
+
     public static string NormalizeRole(string? value)
         => (value ?? string.Empty).Trim().Replace(" ", string.Empty).Replace("_", string.Empty).Replace("-", string.Empty).ToUpperInvariant();
 }

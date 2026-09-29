@@ -96,6 +96,7 @@ public sealed class UserShellContextService : IUserShellContextService
                     Item("Solicitar Protocolo", "ProtocolRequests", "New", "protocol-add"),
                     Item("Minhas Solicitações", "ProtocolRequests", "My", "list"),
                     Item("Fila de Protocolos", "Protocols", "WorkQueue", "documents"),
+                    Item("Trânsito Físico", "PhysicalTransit", "Index", "recent"),
                     Item("Workflows", "Workflow", "Index", "workspace")),
                 Section("Governança",
                     Item("Assinaturas", "Signature", "Index", "signature"),
@@ -116,10 +117,10 @@ public sealed class UserShellContextService : IUserShellContextService
         }
 
         if (AppMenuPolicy.IsAdministradorOphir(user))
-            return new[] { Section("Setor", Item("Documentos Hospitalares", "HospitalDocuments", "Index", "document-search"), Item("Pedidos do Setor", "Loans", "Index", "loan"), Item("Fila de Protocolos", "Protocols", "WorkQueue", "documents"), Item("Usuários do meu setor", "Users", "Sector", "users")) };
+            return new[] { Section("Setor", Item("Documentos Hospitalares", "HospitalDocuments", "Index", "document-search"), Item("Pedidos do Setor", "Loans", "Index", "loan"), Item("Fila de Protocolos", "Protocols", "WorkQueue", "documents"), Item("Trânsito Físico", "PhysicalTransit", "Index", "recent"), Item("Usuários do meu setor", "Users", "Sector", "users")) };
 
         if (AppMenuPolicy.IsArquivistaOphir(user))
-            return new[] { Section("Solicitações", Item("Documentos Hospitalares", "HospitalDocuments", "Index", "document-search"), Item("Novo Pedido de Documento", "Loans", "New", "document-add"), Item("Meus Pedidos", "Loans", "Index", "documents"), Item("Meus Protocolos", "ProtocolRequests", "My", "list")) };
+            return new[] { Section("Solicitações", Item("Documentos Hospitalares", "HospitalDocuments", "Index", "document-search"), Item("Novo Pedido de Documento", "Loans", "New", "document-add"), Item("Meus Pedidos", "Loans", "Index", "documents"), Item("Meus Protocolos", "ProtocolRequests", "My", "list"), Item("Trânsito Físico", "PhysicalTransit", "Index", "recent")) };
 
         if (AppMenuPolicy.IsHospitalUser(user))
             return new[] { Section("Consulta", Item("Documentos Hospitalares", "HospitalDocuments", "Index", "document-search")) };

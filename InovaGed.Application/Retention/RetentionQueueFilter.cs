@@ -39,7 +39,10 @@ public sealed class RetentionQueueRow
      
     // ✅ NOVO
     public string? SuggestedDestination { get; set; }
-     
+
+    // C1: base da contagem e motivo de bloqueio exibidos na central de temporalidade
+    public DateTimeOffset? BasisAt { get; set; }
+    public string? BlockReason { get; set; }
 }
 
 public interface IRetentionQueueQueries

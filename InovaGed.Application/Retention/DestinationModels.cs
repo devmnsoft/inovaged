@@ -29,7 +29,8 @@ public sealed record DestinationItemRow(
     DateTimeOffset? DueAt,
     string? RetentionStatus,
     bool HoldActive,
-    string? HoldReason
+    string? HoldReason,
+    string? BlockReason = null
 );
 
 public interface IRetentionDestinationRepository
@@ -40,8 +41,14 @@ public interface IRetentionDestinationRepository
 
     Task<string> ExportBatchCsvAsync(Guid tenantId, Guid userId, Guid batchId, CancellationToken ct);
 
-    Task ExecuteBatchAsync(Guid tenantId, Guid userId, Guid batchId, CancellationToken ct);
+    Task<ExecuteBatchResult> ExecuteBatchAsync(Guid tenantId, Guid userId, Guid batchId, CancellationToken ct);
 }
+
+/// <summary>
+/// Resultado da execução de um lote de destinação (Bloco C/C2).
+/// Blocked &gt; 0 indica itens que NÃO executaram por empréstimo/movimentação/protocolo/hold ativo.
+/// </summary>
+public sealed record ExecuteBatchResult(bool AlreadyExecuted, int Executed, int Blocked);
 
 public interface IPcdVersionResolver
 {

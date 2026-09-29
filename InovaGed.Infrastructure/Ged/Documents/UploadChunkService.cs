@@ -81,7 +81,7 @@ public sealed class UploadChunkService : IUploadChunkService
 INSERT INTO ged.upload_session (id, tenant_id, user_id, batch_id, batch_item_id, folder_id, requested_folder_id, original_file_name, content_type, total_size_bytes, chunk_size_bytes, total_chunks, received_chunks, status, temp_path, metadata_json, created_at, updated_at, correlation_id)
 VALUES (@uploadId, @tenantId, @userId, @batchId, @itemId, @folderId, @requestedFolderId, @fileName, @contentType, @totalSizeBytes, @chunkSize, @totalChunks, 0, 'OPEN', @tempPath, CAST(@metadataJson AS jsonb), now(), now(), @correlationId);
 INSERT INTO ged.upload_batch_item (id, tenant_id, batch_id, folder_id, requested_folder_id, upload_session_id, original_file_name, content_type, size_bytes, status, started_at, attempt, correlation_id)
-SELECT @itemId, @tenantId, @batchId, @folderId, @requestedFolderId, @fileName, @contentType, @totalSizeBytes, 'RECEIVING', now(), 1, @correlationId
+SELECT @itemId, @tenantId, @batchId, @folderId, @requestedFolderId, @uploadId, @fileName, @contentType, @totalSizeBytes, 'RECEIVING', now(), 1, @correlationId
 WHERE @batchId IS NOT NULL;
 UPDATE ged.upload_batch SET status='PROCESSING', started_at=COALESCE(started_at, now()) WHERE tenant_id=@tenantId AND id=@batchId AND status='OPEN';
 """;

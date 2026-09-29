@@ -528,6 +528,7 @@ builder.Services.AddScoped<IBatchCommands, BatchCommands>();
 builder.Services.AddScoped<IPhysicalQueries, PhysicalQueries>();
 builder.Services.AddScoped<IPhysicalCommands, PhysicalCommands>();
 builder.Services.AddScoped<InovaGed.Application.PhysicalArchive2.IPhysicalArchive2Service, InovaGed.Infrastructure.PhysicalArchive2.PhysicalArchive2Service>();
+builder.Services.AddScoped<InovaGed.Application.PhysicalArchive2.IPhysicalTransitService, InovaGed.Infrastructure.PhysicalArchive2.PhysicalTransitService>();
 builder.Services.AddScoped<InovaGed.Application.Ged.Labels.ILabelQueries, InovaGed.Infrastructure.Ged.Labels.LabelQueries>();
 builder.Services.AddScoped<InovaGed.Application.Ged.Labels.ILabelCommands, InovaGed.Infrastructure.Ged.Labels.LabelCommands>();
 
@@ -608,6 +609,9 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy(AppPolicies.ProtocolRequest, p => RequireAny(p, protocolRequest));
     options.AddPolicy(AppPolicies.ProtocolView, p => RequireAny(p, protocolView));
     options.AddPolicy(AppPolicies.ProtocolManage, p => RequireAny(p, protocolManage));
+    options.AddPolicy(AppPolicies.RetentionManage, p => RequireAny(p, AppRoles.Admin, AppRoles.AdministradorOphir, AppRoles.ArquivistaOphir));
+    options.AddPolicy(AppPolicies.PhysicalTransitView, p => RequireAny(p, AppRoles.Admin, AppRoles.Administrador, AppRoles.AdministradorOphir, AppRoles.ArquivistaOphir));
+    options.AddPolicy(AppPolicies.PhysicalTransitManage, p => RequireAny(p, AppRoles.Admin, AppRoles.Administrador, AppRoles.AdministradorOphir));
     options.AddPolicy(AppPolicies.ProtocolAdmin, p => RequireAny(p, protocolAdmin));
 
     // Policies legadas mantidas como aliases compatíveis para controllers/views existentes.

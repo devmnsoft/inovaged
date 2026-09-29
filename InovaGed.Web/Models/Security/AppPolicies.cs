@@ -23,6 +23,9 @@ public static class AppPolicies
     public const string ProtocolView = "ProtocolView";
     public const string ProtocolManage = "ProtocolManage";
     public const string ProtocolAdmin = "ProtocolAdmin";
+    public const string RetentionManage = "RetentionManage";
+    public const string PhysicalTransitView = "PhysicalTransitView";
+    public const string PhysicalTransitManage = "PhysicalTransitManage";
     public const string SystemAdmin = "SystemAdmin";
     public const string SystemHealth = "SystemHealth";
     public const string ParametersAdmin = "ParametersAdmin";

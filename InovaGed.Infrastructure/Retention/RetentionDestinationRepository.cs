@@ -139,7 +139,8 @@ select
   i.retention_due_at as "DueAt",
   i.retention_status as "RetentionStatus",
   coalesce(i.hold_active, false) as "HoldActive",
-  i.hold_reason as "HoldReason"
+  i.hold_reason as "HoldReason",
+  i.block_reason as "BlockReason"
 from ged.retention_destination_item i
 join ged.document d
   on d.tenant_id=i.tenant_id and d.id=i.document_id
@@ -152,7 +153,7 @@ order by i.retention_due_at nulls last, d.created_at desc
         return rows.Select(x => new DestinationItemRow(
             x.BatchId, x.DocumentId, x.DocCode, x.DocTitle, x.ClassificationCode,
             x.ClassificationName, DapperValueConverters.ToDateTimeOffset(x.BasisAt), DapperValueConverters.ToDateTimeOffset(x.DueAt),
-            x.RetentionStatus, x.HoldActive, x.HoldReason)).ToList();
+            x.RetentionStatus, x.HoldActive, x.HoldReason, x.BlockReason)).ToList();
     }
 
     public async Task<string> ExportBatchCsvAsync(Guid tenantId, Guid userId, Guid batchId, CancellationToken ct)
@@ -172,7 +173,7 @@ order by i.retention_due_at nulls last, d.created_at desc
         }
 
         var sb = new StringBuilder();
-        sb.AppendLine("batch_id,document_id,doc_code,doc_title,class_code,class_name,basis_at,due_at,status,hold_active,hold_reason");
+        sb.AppendLine("batch_id,document_id,doc_code,doc_title,class_code,class_name,basis_at,due_at,status,hold_active,hold_reason,block_reason");
 
         foreach (var r in items)
         {
@@ -186,7 +187,8 @@ order by i.retention_due_at nulls last, d.created_at desc
               .Append(Esc(r.DueAt?.ToString("yyyy-MM-dd HH:mm"))).Append(',')
               .Append(Esc(r.RetentionStatus)).Append(',')
               .Append(Esc(r.HoldActive ? "true" : "false")).Append(',')
-              .Append(Esc(r.HoldReason))
+              .Append(Esc(r.HoldReason)).Append(',')
+              .Append(Esc(r.BlockReason))
               .AppendLine();
         }
 
@@ -201,22 +203,58 @@ where tenant_id=@tenantId and id=@batchId and status='OPEN';";
         return sb.ToString();
     }
 
-    public async Task ExecuteBatchAsync(Guid tenantId, Guid userId, Guid batchId, CancellationToken ct)
+    public async Task<ExecuteBatchResult> ExecuteBatchAsync(Guid tenantId, Guid userId, Guid batchId, CancellationToken ct)
     {
-        // Regra: NÃO executa itens com HOLD ativo.
-        // Execução aqui = marcar no documento o destino (formato: status=ELIMINADO)
-        // ✅ Ajuste a coluna real do seu documento (formato: doc_status, reg_status, is_deleted_logical etc.)
+        // RN Bloco C (C2): re-verificacao AO VIVO dos bloqueios por item antes de executar.
+        // Bloqueios: hold legal (coluna do documento ou retencao_hold ativo), emprestimo fisico
+        // em aberto, caixa em transito (movimentacao fisica via physical_box_document +
+        // physical_loan por caixa) e protocolo pendente vinculado ao documento.
+        // Itens bloqueados NAO executam; o motivo fica persistido no item (block_reason/blocked_at)
+        // e auditado por documento. A execucao apenas marca o destino no documento.
 
         const string sqlBatch = @"
-select status, destination
+select status
 from ged.retention_destination_batch
 where tenant_id=@tenantId and id=@batchId
 limit 1;";
 
         const string sqlItems = @"
-select document_id
-from ged.retention_destination_item
-where tenant_id=@tenantId and batch_id=@batchId and hold_active=false;";
+select
+  i.id as itemid,
+  i.document_id as docid,
+  coalesce(i.hold_active,false) as holdsnap,
+  coalesce(d.retention_hold,false) as dochold,
+  exists(select 1 from ged.retention_hold hh
+         where hh.tenant_id=i.tenant_id and hh.document_id=i.document_id and hh.is_active=true) as holdtable,
+  exists(select 1 from ged.physical_loan pl
+         where pl.tenant_id=i.tenant_id and pl.document_id=i.document_id
+           and pl.reg_status='A' and pl.status in ('OPEN','OVERDUE')) as loanopen,
+  exists(select 1
+         from ged.physical_box_document pbd
+         join ged.physical_loan pl2 on pl2.tenant_id=pbd.tenant_id and pl2.box_id=pbd.box_id
+         where pbd.tenant_id=i.tenant_id and pbd.document_id=i.document_id and pbd.reg_status='A'
+           and pl2.reg_status='A' and pl2.status in ('OPEN','OVERDUE')) as boxtransit,
+  exists(select 1 from ged.protocols pr
+         where pr.tenant_id=i.tenant_id and pr.document_id=i.document_id) as protolink,
+  exists(select 1
+         from ged.protocol_request_item pri
+         join ged.protocol_request prr on prr.id=pri.protocol_request_id and prr.tenant_id=i.tenant_id
+         where pri.tenant_id=i.tenant_id and pri.document_id=i.document_id
+           and pri.reg_status='A' and prr.reg_status='A'
+           and upper(coalesce(prr.status,'')) not in ('FINISHED','COMPLETED','CLOSED','CANCELED','CANCELLED','ARQUIVADO')) as protopending
+from ged.retention_destination_item i
+join ged.document d on d.tenant_id=i.tenant_id and d.id=i.document_id
+where i.tenant_id=@tenantId and i.batch_id=@batchId;";
+
+        const string sqlClearBlock = @"
+update ged.retention_destination_item
+set block_reason=null, blocked_at=null
+where tenant_id=@tenantId and id=@itemId;";
+
+        const string sqlSetBlock = @"
+update ged.retention_destination_item
+set block_reason=@reason, blocked_at=now()
+where tenant_id=@tenantId and id=@itemId;";
 
         const string sqlUpdateDoc = @"
 update ged.document
@@ -229,7 +267,8 @@ where tenant_id=@tenantId and id = any(@ids);";
 update ged.retention_destination_batch
 set status='EXECUTED',
     executed_at=now(),
-    executed_by=@userId
+    executed_by=@userId,
+    notes = coalesce(notes,'') || @suffix
 where tenant_id=@tenantId and id=@batchId;";
 
         try
@@ -237,21 +276,60 @@ where tenant_id=@tenantId and id=@batchId;";
             await using var conn = await _db.OpenAsync(ct);
             await using var tx = conn.BeginTransaction();
 
-            var b = await conn.QueryFirstOrDefaultAsync<(string status, string destination)>(sqlBatch, new { tenantId, batchId }, tx);
-            if (b.status is null) throw new InvalidOperationException("Batch não encontrado.");
-            if (b.status == "CANCELED") throw new InvalidOperationException("Batch cancelado.");
-            if (b.status == "EXECUTED") return;
+            var bstatus = await conn.ExecuteScalarAsync<string>(sqlBatch, new { tenantId, batchId }, tx);
+            if (bstatus is null) throw new InvalidOperationException("Batch não encontrado.");
+            if (bstatus == "CANCELED") throw new InvalidOperationException("Batch cancelado.");
+            if (bstatus == "EXECUTED") return new ExecuteBatchResult(true, 0, 0);
 
-            var ids = (await conn.QueryAsync<Guid>(sqlItems, new { tenantId, batchId }, tx)).ToArray();
-            if (ids.Length == 0) throw new InvalidOperationException("Nenhum item executável (todos em HOLD?).");
+            var items = (await conn.QueryAsync<(
+                    long ItemId, Guid DocId, bool HoldSnap, bool DocHold, bool HoldTable,
+                    bool LoanOpen, bool BoxTransit, bool ProtoLink, bool ProtoPending)>(
+                    sqlItems, new { tenantId, batchId }, tx)).ToList();
 
-            await conn.ExecuteAsync(sqlUpdateDoc, new { tenantId, userId, ids }, tx);
-            await conn.ExecuteAsync(sqlMarkBatch, new { tenantId, batchId, userId }, tx);
+            var execIds = new List<Guid>();
+            var blocked = new List<(long ItemId, Guid DocId, string Reason)>();
+
+            foreach (var it in items)
+            {
+                var reasons = new List<string>();
+                if (it.HoldSnap || it.DocHold || it.HoldTable) reasons.Add("Impedimento legal (hold ativo)");
+                if (it.LoanOpen) reasons.Add("Empréstimo físico em aberto");
+                if (it.BoxTransit) reasons.Add("Movimentação física em aberto (caixa em trânsito)");
+                if (it.ProtoLink || it.ProtoPending) reasons.Add("Protocolo pendente vinculado ao documento");
+
+                if (reasons.Count == 0) execIds.Add(it.DocId);
+                else blocked.Add((it.ItemId, it.DocId, string.Join("; ", reasons)));
+            }
+
+            // Evidencia persistida: limpa bloqueio antigo nos agora executaveis, grava motivo nos bloqueados.
+            foreach (var it in items.Where(x => execIds.Contains(x.DocId)))
+                await conn.ExecuteAsync(sqlClearBlock, new { tenantId, itemId = it.ItemId }, tx);
+
+            foreach (var bk in blocked)
+                await conn.ExecuteAsync(sqlSetBlock, new { tenantId, itemId = bk.ItemId, reason = bk.Reason }, tx);
+
+            if (execIds.Count > 0)
+            {
+                await conn.ExecuteAsync(sqlUpdateDoc, new { tenantId, userId, ids = execIds.Distinct().ToArray() }, tx);
+                await conn.ExecuteAsync(sqlMarkBatch, new
+                {
+                    tenantId,
+                    batchId,
+                    userId,
+                    suffix = blocked.Count > 0 ? $" | Execucao parcial: {execIds.Count} executado(s), {blocked.Count} bloqueado(s)." : ""
+                }, tx);
+            }
 
             await tx.CommitAsync(ct);
 
-            foreach (var docId in ids)
-                await _audit.WriteAsync(tenantId, userId, docId, "BATCH_EXECUTED", $"batch={batchId}", ct);
+            // Auditoria por documento: WriteDocAsync grava em ged.document_audit (data jsonb com batch + motivo).
+            // WriteAsync e so stub de log e nao persiste.
+            foreach (var docId in execIds.Distinct())
+                await _audit.WriteDocAsync(tenantId, userId, null, docId, "BATCH_EXECUTED", new { batch = batchId.ToString() }, ct);
+            foreach (var bk in blocked)
+                await _audit.WriteDocAsync(tenantId, userId, null, bk.DocId, "BATCH_BLOCKED", new { batch = batchId.ToString(), motivo = bk.Reason }, ct);
+
+            return new ExecuteBatchResult(false, execIds.Count, blocked.Count);
         }
         catch (Exception ex)
         {
@@ -285,5 +363,6 @@ where tenant_id=@tenantId and id=@batchId;";
         public string? RetentionStatus { get; set; }
         public bool HoldActive { get; set; }
         public string? HoldReason { get; set; }
+        public string? BlockReason { get; set; }
     }
 }

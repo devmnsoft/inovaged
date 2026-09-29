@@ -3,6 +3,7 @@ using InovaGed.Application.Identity;
 using InovaGed.Application.Retention;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using InovaGed.Web.Security;
 using Microsoft.Extensions.Logging;
 
 namespace InovaGed.Web.Controllers;
@@ -32,6 +33,7 @@ public sealed class RetentionDestinationController : Controller
         return View(list);
     }
 
+    [Authorize(Policy = AppPolicies.RetentionManage)]
     [HttpPost("Create")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Create(DestinationCreateRequest req, CancellationToken ct)
@@ -45,7 +47,7 @@ public sealed class RetentionDestinationController : Controller
         catch (Exception ex)
         {
             _logger.LogError(ex, "Create batch failed");
-            TempData["Error"] = ex.Message;
+            TempData["Error"] = "Não foi possível criar o lote de destinação. Tente novamente ou contate o suporte.";
             return RedirectToAction("Index");
         }
     }
@@ -75,20 +77,36 @@ public sealed class RetentionDestinationController : Controller
         }
     }
 
+    [Authorize(Policy = AppPolicies.RetentionManage)]
     [HttpPost("Execute")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Execute(Guid batchId, CancellationToken ct)
     {
         try
         {
-            await _repo.ExecuteBatchAsync(TenantId, UserId, batchId, ct);
-            TempData["Success"] = "Lote executado (itens sem HOLD).";
+            var r = await _repo.ExecuteBatchAsync(TenantId, UserId, batchId, ct);
+            if (r.AlreadyExecuted)
+            {
+                TempData["Success"] = "Lote já estava executado.";
+            }
+            else if (r.Executed > 0 && r.Blocked > 0)
+            {
+                TempData["Success"] = $"Execução parcial: {r.Executed} executado(s), {r.Blocked} bloqueado(s) por empréstimo/movimentação/protocolo/hold ativo. Motivos visíveis na coluna Bloqueio.";
+            }
+            else if (r.Blocked > 0)
+            {
+                TempData["Error"] = $"Nenhum item executado: {r.Blocked} bloqueado(s) (empréstimo físico, movimentação, protocolo pendente ou hold legal). Libere os bloqueios e execute novamente.";
+            }
+            else
+            {
+                TempData["Success"] = $"Lote executado: {r.Executed} documento(s).";
+            }
             return RedirectToAction("Details", new { batchId });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Execute batch failed");
-            TempData["Error"] = ex.Message;
+            TempData["Error"] = "Não foi possível executar o lote de destinação. Tente novamente ou contate o suporte.";
             return RedirectToAction("Details", new { batchId });
         }
     }

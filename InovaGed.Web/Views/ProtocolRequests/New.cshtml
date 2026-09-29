@@ -4,6 +4,14 @@
 }
 <h1 class="h3 mb-3">Solicitar Protocolo</h1>
 <p class="text-muted">Número gerado automaticamente ao salvar.</p>
+@if (TempData["Ok"] is string ok && !string.IsNullOrWhiteSpace(ok)) { <div class="alert alert-success">@ok</div> }
+@if (TempData["Err"] is string err && !string.IsNullOrWhiteSpace(err)) { <div class="alert alert-danger">@err</div> }
+@if (TempData["FileErrs"] is List<InovaGed.Web.Common.ProtocolFileResult> fileErrs && fileErrs.Count > 0)
+{
+    <div class="alert alert-warning"><strong>@(fileErrs.Count) anexo(s) não foram anexados:</strong>
+        <ul class="mb-0 small">@foreach (var fe in fileErrs) { <li><b>@fe.FileName</b> — @fe.Step: @fe.Reason (@(fe.CanRetry ? "pode tentar novamente" : "contate o suporte"))</li> }</ul>
+    </div>
+}
 <form asp-action="New" method="post" enctype="multipart/form-data" id="protocolForm">
     @Html.AntiForgeryToken()
     <div class="row g-3">
@@ -74,6 +82,6 @@ function addManual(){
  const li=document.createElement('li'); li.className='list-group-item'; li.innerHTML=`<span class="badge bg-secondary me-1">Documento físico/manual</span>${desc}`; document.getElementById('addedItems').appendChild(li);
  Object.values(fields).forEach(id=>document.getElementById(id).value='');
 }
-@if (Model.PreselectedDocumentId.HasValue) { <text>addGed('@Model.PreselectedDocumentId.Value', 'Documento GED pré-selecionado', '', '');</text> }
+@if (Model?.PreselectedDocumentId.HasValue == true) { <text>addGed('@Model.PreselectedDocumentId.Value', 'Documento GED pré-selecionado', '', '');</text> }
 </script>
 }

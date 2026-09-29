@@ -167,17 +167,94 @@ WHERE due.due_at IS NOT NULL
 
             var now = DateTimeOffset.UtcNow;
 
-            string where = (bucket ?? "overdue").Trim().ToLowerInvariant() switch
-            {
-                "overdue" => "q.due_at < @Now",
-                "due30" => "q.due_at >= @Now AND q.due_at < (@Now + interval '30 days')",
-                "due60" => "q.due_at >= @Now AND q.due_at < (@Now + interval '60 days')",
-                "due90" => "q.due_at >= @Now AND q.due_at < (@Now + interval '90 days')",
-                _ => "1=1"
-            };
+            // C3: buckets blocked/analysis leem direto do documento (hold ativo / caso aberto);
+            // os demais continuam sobre a fila (retention_queue PENDING).
+            var key = (bucket ?? "overdue").Trim().ToLowerInvariant();
+            string sql;
 
-            // ✅ Agora traz dados do documento + plano para a view funcionar (Code/Title/Class...)
-            var sql = $"""
+            if (key == "blocked")
+            {
+                sql = """
+SELECT
+  d.id AS id,
+  d.id AS documentid,
+
+  COALESCE(d.code,'') AS code,
+  COALESCE(d.title,'') AS title,
+
+  COALESCE(cp.code,'') AS classificationcode,
+  COALESCE(cp.name,'') AS classificationname,
+
+  d.retention_due_at AS dueat,
+  'BLOCKED' AS status,
+  CAST(EXTRACT(DAY FROM (d.retention_due_at - now())) AS int) AS daystodue,
+
+  cp.final_destination::text AS suggesteddestination,
+  d.retention_basis_at AS basisat,
+  COALESCE(d.retention_hold_reason,
+           (SELECT hh.reason FROM ged.retention_hold hh
+             WHERE hh.tenant_id=d.tenant_id AND hh.document_id=d.id AND hh.is_active=true
+             ORDER BY hh.created_at DESC LIMIT 1),
+           'Hold ativo (impedimento legal)') AS blockreason,
+
+  now() AS generatedat
+FROM ged.document d
+LEFT JOIN ged.classification_plan cp
+  ON cp.tenant_id=d.tenant_id AND cp.id=d.classification_id AND cp.is_active=true
+WHERE d.tenant_id=@TenantId
+  AND d.status <> 'DELETED'
+  AND (COALESCE(d.retention_hold,false)=true
+       OR EXISTS(SELECT 1 FROM ged.retention_hold hh
+                 WHERE hh.tenant_id=d.tenant_id AND hh.document_id=d.id AND hh.is_active=true))
+ORDER BY d.retention_due_at NULLS LAST, d.code;
+""";
+            }
+            else if (key == "analysis")
+            {
+                sql = """
+SELECT
+  d.id AS id,
+  d.id AS documentid,
+
+  COALESCE(d.code,'') AS code,
+  COALESCE(d.title,'') AS title,
+
+  COALESCE(cp.code,'') AS classificationcode,
+  COALESCE(cp.name,'') AS classificationname,
+
+  d.retention_due_at AS dueat,
+  'ANALYSIS' AS status,
+  CAST(EXTRACT(DAY FROM (d.retention_due_at - now())) AS int) AS daystodue,
+
+  cp.final_destination::text AS suggesteddestination,
+  d.retention_basis_at AS basisat,
+  'Caso de destinacao aberto (aguardando decisao/termo)' AS blockreason,
+
+  now() AS generatedat
+FROM ged.document d
+LEFT JOIN ged.classification_plan cp
+  ON cp.tenant_id=d.tenant_id AND cp.id=d.classification_id AND cp.is_active=true
+WHERE d.tenant_id=@TenantId
+  AND d.status <> 'DELETED'
+  AND d.disposition_case_id IS NOT NULL
+  AND EXISTS(SELECT 1 FROM ged.retention_case c WHERE c.id=d.disposition_case_id AND c.status='OPEN')
+ORDER BY d.created_at DESC;
+""";
+            }
+            else
+            {
+                string where = key switch
+                {
+                    "overdue" => "q.due_at < @Now",
+                    "due30" => "q.due_at >= @Now AND q.due_at < (@Now + interval '30 days')",
+                    "due60" => "q.due_at >= @Now AND q.due_at < (@Now + interval '60 days')",
+                    "due90" => "q.due_at >= @Now AND q.due_at < (@Now + interval '90 days')",
+                    _ => "1=1"
+                };
+
+                // ✅ Agora traz dados do documento + plano para a view funcionar (Code/Title/Class...)
+                // C1: adiciona base da contagem + motivo de bloqueio (exibidos na central).
+                sql = $"""
 SELECT
   q.id AS id,
   q.document_id AS documentid,
@@ -199,6 +276,11 @@ SELECT
   CAST(EXTRACT(DAY FROM (q.due_at - now())) AS int) AS daystodue,
 
   cp.final_destination::text AS suggesteddestination,
+  d.retention_basis_at AS basisat,
+  COALESCE(d.retention_hold_reason,
+           (SELECT hh.reason FROM ged.retention_hold hh
+             WHERE hh.tenant_id=d.tenant_id AND hh.document_id=d.id AND hh.is_active=true
+             ORDER BY hh.created_at DESC LIMIT 1)) AS blockreason,
 
   q.generated_at AS generatedat
 FROM ged.retention_queue q
@@ -219,6 +301,7 @@ WHERE q.tenant_id=@TenantId AND q.reg_status='A'
   AND {where}
 ORDER BY q.due_at ASC NULLS LAST, d.title;
 """;
+            }
 
             var rows = await con.QueryAsync<RetentionQueueRow>(
                 new CommandDefinition(sql, new { TenantId = tenantId, Now = now }, cancellationToken: ct));

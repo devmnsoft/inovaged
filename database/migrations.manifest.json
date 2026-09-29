@@ -484,6 +484,50 @@
       "maximumApplicationVersion": "04.1.99",
       "requiresMaintenanceWindow": false,
       "requiresVerifiedBackup": false
+    },
+    {
+      "id": "20260603_upload_chunk",
+      "path": "database/migrations/20260603_upload_chunk.sql",
+      "module": "GedUploadChunk",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.99",
+      "requiresMaintenanceWindow": false,
+      "requiresVerifiedBackup": false
+    },
+    {
+      "id": "2026_09_29_ged_upload_chunk_compatibility",
+      "path": "database/migrations/2026_09_29_ged_upload_chunk_compatibility.sql",
+      "module": "GedUploadChunk",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.99",
+      "requiresMaintenanceWindow": false,
+      "requiresVerifiedBackup": false
+    },
+    {
+      "id": "2026_09_30_ged_physical_transit",
+      "path": "database/migrations/2026_09_30_ged_physical_transit.sql",
+      "module": "GedPhysicalTransit",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.99",
+      "requiresMaintenanceWindow": false,
+      "requiresVerifiedBackup": false
+    },
+    {
+      "id": "2026_10_01_ged_retention_c2",
+      "path": "database/migrations/2026_10_01_ged_retention_c2.sql",
+      "module": "GedRetentionTemporal",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.99",
+      "requiresMaintenanceWindow": false,
+      "requiresVerifiedBackup": false
     }
   ]
 }

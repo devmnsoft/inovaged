@@ -10,6 +10,12 @@
 </div>
 @if (TempData["Ok"] is not null) { <div class="alert alert-success">@TempData["Ok"]</div> }
 @if (TempData["Err"] is not null) { <div class="alert alert-danger">@TempData["Err"]</div> }
+@if (TempData["FileErrs"] is List<InovaGed.Web.Common.ProtocolFileResult> fileErrs && fileErrs.Count > 0)
+{
+    <div class="alert alert-warning"><strong>@(fileErrs.Count) anexo(s) não foram anexados ao protocolo:</strong>
+      <ul class="mb-0 small">@foreach (var fe in fileErrs) { <li><b>@fe.FileName</b> — @fe.Step: @fe.Reason (@(fe.CanRetry ? "pode tentar novamente" : "contate o suporte"))</li> }</ul>
+    </div>
+}
 @if (Model.HasDocumentsWithoutOcr) { <div class="alert alert-warning">Este protocolo possui documentos sem OCR. Você pode continuar a análise ou solicitar OCR.</div> }
 <div class="row g-3">
   <div class="col-lg-8">

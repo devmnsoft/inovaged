@@ -78,11 +78,13 @@ public sealed class ProtocolRequestsController : Controller
 
     [HttpPost("New")]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> New(ProtocolRequestCreateVm vm, List<IFormFile>? attachments, CancellationToken ct)
+    public async Task<IActionResult> New(ProtocolRequestCreateVm? vm, List<IFormFile>? attachments, CancellationToken ct)
     {
+        vm ??= new ProtocolRequestCreateVm();
+        var validFiles = (attachments ?? new List<IFormFile>()).Where(f => f is not null && f.Length > 0).ToList();
         try
         {
-            vm.PendingAttachmentsCount = attachments?.Count(a => a.Length > 0) ?? 0;
+            vm.PendingAttachmentsCount = validFiles.Count;
             var res = await _service.CreateAsync(_user.TenantId, _user.UserId, vm, ct);
             if (!res.IsSuccess)
             {
@@ -90,25 +92,21 @@ public sealed class ProtocolRequestsController : Controller
                 return View(vm);
             }
 
-            if (attachments is not null)
-            {
-                foreach (var file in attachments.Where(f => f.Length > 0))
-                {
-                    var safe = Path.GetFileName(file.FileName);
-                    var path = $"protocols/{_user.TenantId:N}/{res.Value:N}/{Guid.NewGuid():N}_{safe}";
-                    await using var stream = file.OpenReadStream();
-                    await _storage.SaveDerivedAsync(path, stream, file.ContentType ?? "application/octet-stream", ct);
-                    await _service.AddAttachmentAsync(_user.TenantId, res.Value, _user.UserId, safe, file.ContentType, file.Length, path, ct);
-                }
-            }
+            var fileErrors = await Common.ProtocolAttachmentSaver.SaveAttachmentsAsync(
+                _storage, _service, _user.TenantId, res.Value, _user.UserId, validFiles, _logger, ct);
 
             TempData["Ok"] = "Protocolo aberto com sucesso.";
+            if (fileErrors.Count > 0)
+            {
+                TempData["FileErrs"] = fileErrors;
+                TempData["Ok"] = $"Protocolo aberto com sucesso, porém {fileErrors.Count} arquivo(s) não puderam ser anexados.";
+            }
             return RedirectToAction("Details", "Protocols", new { id = res.Value });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Erro ao abrir protocolo");
-            TempData["Err"] = "Erro ao abrir protocolo.";
+            TempData["Err"] = "Erro ao abrir protocolo. Tente novamente; se persistir, contate o suporte.";
             return View(vm);
         }
     }

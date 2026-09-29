@@ -1,0 +1,95 @@
+@model IReadOnlyList<InovaGed.Application.Retention.DestinationItemRow>
+@{
+    ViewData["Title"] = "Lote de Destinação";
+    var batchId = ViewBag.BatchId as Guid? ?? Guid.Empty;
+}
+@if (TempData["Error"] is string err)
+{
+    <div class="alert alert-danger">@err</div>
+}
+@if (TempData["Success"] is string ok)
+{
+    <div class="alert alert-success">@ok</div>
+}
+
+<div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+        <h2 class="mb-0">Itens do Lote de Destinação</h2>
+        <div class="text-muted">Documentos selecionados para destino final (eliminação, transferência ou guarda permanente).</div>
+    </div>
+    <div class="d-flex gap-2">
+        <a class="btn btn-outline-secondary" href="/Retention/Destination">
+            <i class="bi bi-arrow-left"></i> Voltar aos lotes
+        </a>
+        <a class="btn btn-outline-primary" href="/Retention/Destination/ExportCsv?batchId=@batchId">
+            <i class="bi bi-download"></i> Exportar CSV
+        </a>
+    </div>
+</div>
+
+<div class="card atlas-card">
+    <div class="card-body table-responsive">
+        <table class="table atlas-table table-striped align-middle">
+            <thead>
+                <tr>
+                    <th>Documento</th>
+                    <th>Código</th>
+                    <th>Classificação</th>
+                    <th>Base de contagem</th>
+                    <th>Prazo final</th>
+                    <th>Status</th>
+                    <th>Retenção</th>
+                    <th>Bloqueio</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (Model is null || !Model.Any())
+                {
+                    <tr><td colspan="8" class="text-center text-muted py-3">Nenhum item neste lote.</td></tr>
+                }
+                @foreach (var i in Model)
+                {
+                    <tr>
+                        <td>@(i.DocTitle ?? "—")</td>
+                        <td>@(i.DocCode ?? "—")</td>
+                        <td>@(string.IsNullOrWhiteSpace(i.ClassificationCode) ? (i.ClassificationName ?? "—") : $"{i.ClassificationCode} · {i.ClassificationName}")</td>
+                        <td>@(i.BasisAt?.ToString("dd/MM/yyyy") ?? "—")</td>
+                        <td>@(i.DueAt?.ToString("dd/MM/yyyy") ?? "—")</td>
+                        <td>@(i.RetentionStatus ?? "—")</td>
+                        <td>
+                            @if (i.HoldActive)
+                            {
+                                <span class="badge bg-warning text-dark" title="@i.HoldReason">HOLD</span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-success">LIVRE</span>
+                            }
+                        </td>
+                        <td>
+                            @if (string.IsNullOrWhiteSpace(i.BlockReason))
+                            {
+                                <span class="text-muted">—</span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-danger me-1">BLOQUEADO</span>
+                                <span class="small">@i.BlockReason</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    <div class="card-footer d-flex justify-content-between align-items-center">
+        <span class="text-muted small">A execução do lote não elimina fisicamente nenhum documento sem autorização registrada.</span>
+        <form method="post" asp-action="Execute" id="executeBatchForm" onsubmit="return confirm('Executar este lote de destinação? Esta ação registra quem executou e quando.');">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="batchId" value="@batchId" />
+            <button type="submit" class="btn btn-primary">
+                <i class="bi bi-play-circle"></i> Executar lote
+            </button>
+        </form>
+    </div>
+</div>

@@ -1,0 +1,12 @@
+@if (TempData["Ok"] is string __ok && !string.IsNullOrWhiteSpace(__ok))
+{
+    <div class="alert alert-success alert-dismissible fade show" role="alert">@__ok<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Fechar"></button></div>
+}
+@if (TempData["Warn"] is string __warn && !string.IsNullOrWhiteSpace(__warn))
+{
+    <div class="alert alert-warning alert-dismissible fade show" role="alert">@__warn<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Fechar"></button></div>
+}
+@if (TempData["Err"] is string __err && !string.IsNullOrWhiteSpace(__err))
+{
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">@__err<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Fechar"></button></div>
+}

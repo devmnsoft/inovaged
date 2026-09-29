@@ -77,11 +77,13 @@ WHERE d.tenant_id = @tenantId
             }
 
             // 3) Cria 1 caso OPEN (operacional) e itens para esses docs
-            // Ajuste campos/colunas conforme seu schema real do retention_case
+            // C1: a tabela exige id (uuid sem default) e title (NOT NULL).
             var createCaseSql = @"
-INSERT INTO ged.retention_case (tenant_id, case_no, status, created_at, created_by)
-VALUES (@tenantId,
+INSERT INTO ged.retention_case (id, tenant_id, case_no, title, status, created_at, created_by)
+VALUES (gen_random_uuid(),
+        @tenantId,
         COALESCE((SELECT max(case_no) FROM ged.retention_case WHERE tenant_id=@tenantId),0) + 1,
+        'Recalculo operacional de temporalidade ' || to_char(now(), 'DD/MM/YYYY HH24:MI'),
         'OPEN',
         now(),
         @userId)
@@ -91,18 +93,27 @@ RETURNING id;";
                 new CommandDefinition(createCaseSql, new { tenantId, userId }, tx, cancellationToken: ct));
 
             // Itens (um por documento)
+            // C1: retention_case_item usa a coluna decision (nao existe "status") e nao tem
+            // created_at/created_by; enriquece com codigo/titulo/classe/prazos como evidencia da regra.
             var createItemSql = @"
 INSERT INTO ged.retention_case_item
-(tenant_id, case_id, document_id, suggested_destination, status, created_at, created_by)
+(tenant_id, case_id, document_id, doc_code, doc_title, classification_code, classification_name,
+ retention_due_at, retention_status, suggested_destination, decision)
 SELECT
   d.tenant_id,
   @caseId,
   d.id,
+  d.code,
+  d.title,
+  c.code,
+  coalesce(nullif(c.title, ''), nullif(c.description, ''), nullif(c.code, ''), 'Sem classificacao'),
+  d.retention_due_at,
+  d.retention_status,
   COALESCE(d.disposition_status,'REVIEW_REQUIRED'),
-  'PENDING',
-  now(),
-  @userId
+  'PENDING'
 FROM ged.document d
+LEFT JOIN ged.classification_plan c
+  ON c.tenant_id=d.tenant_id AND c.id=d.classification_id
 WHERE d.tenant_id = @tenantId
   AND d.id = ANY(@docIds);";
 

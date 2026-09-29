@@ -1,0 +1,65 @@
+@using InovaGed.Application.PhysicalArchive2
+@model TransitBatchDetails
+@{
+    ViewData["Title"] = "Cautela — Lote " + Model.Batch.Number;
+    var b = Model.Batch;
+}
+
+<main style="max-width:840px;margin:24px auto;background:#fff;padding:32px;border:1px solid #dee2e6;border-radius:8px">
+    <div class="d-flex justify-content-end gap-2 mb-3 no-print">
+        <button type="button" class="btn btn-primary" onclick="window.print()">Imprimir</button>
+        <a class="btn btn-outline-secondary" asp-action="BatchDetail" asp-route-id="@b.Id">Voltar</a>
+    </div>
+
+    <h2 class="text-center mb-1" style="font-size:1.35rem;font-weight:700">CAUTELA DE RETIRADA DE PRONTUÁRIOS</h2>
+    <p class="text-center small mb-4">InovaGED — Arquivo Central · Documento de controle de trânsito físico</p>
+
+    <table class="table table-bordered align-middle mb-3">
+        <tbody>
+            <tr><th scope="row" style="width:230px;background:#f8f9fa">Lote</th><td class="fw-bold">@b.Number</td></tr>
+            <tr><th scope="row" style="background:#f8f9fa">Emitido em</th><td>@b.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</td></tr>
+            <tr><th scope="row" style="background:#f8f9fa">Setor destino</th><td>@b.SectorName</td></tr>
+            <tr><th scope="row" style="background:#f8f9fa">Responsável pelo transporte</th><td>@(string.IsNullOrEmpty(b.CarrierName) ? "—" : b.CarrierName + (string.IsNullOrEmpty(b.CarrierId) ? "" : $" — matrícula {b.CarrierId}"))</td></tr>
+            <tr><th scope="row" style="background:#f8f9fa">Prazo de devolução</th><td>@(b.DueAt?.ToLocalTime().ToString("dd/MM/yyyy HH:mm") ?? "Sem prazo definido")</td></tr>
+            <tr><th scope="row" style="background:#f8f9fa">Total de prontuários</th><td>@Model.Items.Count</td></tr>
+        </tbody>
+    </table>
+
+    <table class="table table-bordered align-middle small mb-3">
+        <thead>
+            <tr><th scope="col" style="width:56px;background:#f8f9fa">#</th><th scope="col" style="width:260px;background:#f8f9fa">Código do prontuário</th><th scope="col" style="background:#f8f9fa">Título</th></tr>
+        </thead>
+        <tbody>
+        @{ var n = 0; }
+        @foreach (var it in Model.Items)
+        {
+            n++;
+            <tr><td>@n</td><td class="fw-semibold">@it.DocCode</td><td>@it.DocTitle</td></tr>
+        }
+        </tbody>
+    </table>
+
+    <p class="small mb-5">
+        A cautela deve ser assinada pelas duas partes na retirada. A devolução (total ou parcial) somente será registrada na presença desta cautela assinada.
+        Itens extraviados devem ser comunicados imediatamente ao arquivo central, com justificativa registrada no sistema.
+    </p>
+
+    <table class="border-0" style="margin-top:72px">
+        <tbody>
+            <tr>
+                <td style="width:50%;border-top:1px solid #333;padding-top:6px;text-align:center">Responsável pela saída<br /><small>(arquivo central)</small></td>
+                <td style="width:4%"></td>
+                <td style="width:46%;border-top:1px solid #333;padding-top:6px;text-align:center">Recebedor<br /><small>(setor destino)</small></td>
+            </tr>
+        </tbody>
+    </table>
+
+    <p class="text-center text-muted small mb-0">Documento gerado automaticamente pelo InovaGED em @DateTime.Now.ToString("dd/MM/yyyy HH:mm").</p>
+
+    <style>
+        @@media print {
+            .no-print { display: none !important; }
+            main { margin: 0 !important; padding: 0 !important; border: none !important; }
+        }
+    </style>
+</main>

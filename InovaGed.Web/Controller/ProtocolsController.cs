@@ -101,19 +101,35 @@ public sealed class ProtocolsController : Controller
     public async Task<IActionResult> RespondAdjustment(Guid id, string response, List<IFormFile>? attachments, CancellationToken ct)
     {
         if (!await _access.CanViewAsync(_user.TenantId, id, _user.UserId, User, ct)) return Forbid();
-        var res = await _service.RespondAdjustmentAsync(_user.TenantId, id, _user.UserId, response, ct);
-        if (res.IsSuccess && attachments is not null)
+
+        // Validação prévia dos arquivos antes da transição irreversível de estado (nomes sanitizados na gravação).
+        var validFiles = (attachments ?? new List<IFormFile>()).Where(f => f is not null && f.Length > 0).ToList();
+        foreach (var file in validFiles)
         {
-            foreach (var file in attachments.Where(f => f.Length > 0))
-            {
-                var safe = Path.GetFileName(file.FileName);
-                var path = $"protocols/{_user.TenantId:N}/{id:N}/{Guid.NewGuid():N}_{safe}";
-                await using var stream = file.OpenReadStream();
-                await _storage.SaveDerivedAsync(path, stream, file.ContentType ?? "application/octet-stream", ct);
-                await _service.AddAttachmentAsync(_user.TenantId, id, _user.UserId, safe, file.ContentType, file.Length, path, ct);
-            }
+            var safe = Common.ProtocolAttachmentSaver.SanitizeFileName(file.FileName);
+            if (!string.Equals(safe, Path.GetFileName(file.FileName ?? string.Empty), StringComparison.Ordinal))
+                _logger.LogInformation("RespondAdjustment {Id}: nome do anexo será ajustado: '{Orig}' -> '{Safe}'.", id, file.FileName, safe);
         }
-        TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Ajuste respondido." : res.ErrorMessage;
+
+        var res = await _service.RespondAdjustmentAsync(_user.TenantId, id, _user.UserId, response, ct);
+        var fileErrors = res.IsSuccess
+            ? await Common.ProtocolAttachmentSaver.SaveAttachmentsAsync(_storage, _service, _user.TenantId, id, _user.UserId, validFiles, _logger, ct)
+            : new List<Common.ProtocolFileResult>();
+
+        if (!res.IsSuccess)
+        {
+            TempData["Err"] = res.ErrorMessage;
+        }
+        else if (fileErrors.Count > 0)
+        {
+            // Sem falso sucesso: o ajuste foi registrado, mas informa explicitamente as falhas por arquivo.
+            TempData["Ok"] = $"Ajuste respondido, porém {fileErrors.Count} arquivo(s) não puderam ser anexados.";
+            TempData["FileErrs"] = fileErrors;
+        }
+        else
+        {
+            TempData["Ok"] = "Ajuste respondido.";
+        }
         return RedirectToAction(nameof(Details), new { id });
     }
 

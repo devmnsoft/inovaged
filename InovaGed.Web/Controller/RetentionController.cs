@@ -5,6 +5,7 @@ using InovaGed.Infrastructure.Retention;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using InovaGed.Web.Auth;
+using InovaGed.Web.Security;
 using Microsoft.Extensions.Logging;
 
 namespace InovaGed.Web.Controllers;
@@ -66,6 +67,7 @@ public sealed class RetentionController : Controller
     }
 
     // POST /Retention/Recalculate
+    [Authorize(Policy = AppPolicies.RetentionManage)]
     [HttpPost("Recalculate")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Recalculate(CancellationToken ct)

@@ -4,6 +4,7 @@ using InovaGed.Application.Retention;
 using InovaGed.Application.RetentionCases;
 using InovaGed.Infrastructure.Retention;
 using Microsoft.AspNetCore.Mvc;
+using InovaGed.Web.Security;
 
 namespace InovaGed.Web.Controllers;
 
@@ -70,6 +71,12 @@ public sealed class TemporalidadeController : Controller
             "a_vencer_90" => "due90",
 
             "all" => "all",
+            "blocked" => "blocked",
+            "bloqueados" => "blocked",
+            "bloqueado" => "blocked",
+            "analysis" => "analysis",
+            "analise" => "analysis",
+            "em_analise" => "analysis",
             _ => "overdue"
         };
     }
@@ -97,6 +104,7 @@ public sealed class TemporalidadeController : Controller
     /// - Mantém o bucket atual ao voltar
     /// - Usa TenantId/UserId do contexto
     /// </summary>
+    [Authorize(Policy = AppPolicies.RetentionManage)]
     [ValidateAntiForgeryToken]
     [HttpPost("Recalculate")]
     public async Task<IActionResult> Recalculate([FromForm] string? bucket, CancellationToken ct)
@@ -120,7 +128,7 @@ public sealed class TemporalidadeController : Controller
         catch (Exception ex)
         {
             _logger.LogError(ex, "Manual Recalculate failed Tenant={Tenant}", _ctx.TenantId);
-            TempData["Err"] = ex.Message;
+            TempData["Err"] = "Não foi possível recalcular a temporalidade agora. Tente novamente em instantes ou contate o suporte.";
             return RedirectToAction(nameof(Index), new { bucket = b });
         }
     }
@@ -128,6 +136,7 @@ public sealed class TemporalidadeController : Controller
     /// <summary>
     /// ✅ Gera/atualiza a fila (se você tiver processo separado de geração)
     /// </summary>
+    [Authorize(Policy = AppPolicies.RetentionManage)]
     [HttpPost("GenerateNow")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> GenerateNow([FromForm] string? bucket, CancellationToken ct)
@@ -149,7 +158,7 @@ public sealed class TemporalidadeController : Controller
         catch (Exception ex)
         {
             _logger.LogError(ex, "GenerateNow failed Tenant={Tenant}", _ctx.TenantId);
-            TempData["Err"] = "Falha ao gerar fila. Ver logs.";
+            TempData["Err"] = "Não foi possível gerar/atualizar a fila de temporalidade. Tente novamente em instantes ou contate o suporte.";
         }
 
         return RedirectToAction(nameof(Index), new { bucket = b });
@@ -158,6 +167,7 @@ public sealed class TemporalidadeController : Controller
     /// <summary>
     /// ✅ Cria Caso de Destinação a partir dos itens selecionados e redireciona para gerar Termo
     /// </summary>
+    [Authorize(Policy = AppPolicies.RetentionManage)]
     [HttpPost("CreateTerm")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> CreateTerm(
@@ -195,7 +205,7 @@ public sealed class TemporalidadeController : Controller
         catch (Exception ex)
         {
             _logger.LogError(ex, "CreateTerm failed Tenant={Tenant}", _ctx.TenantId);
-            TempData["Err"] = "Falha ao criar Caso/Termo. Ver logs.";
+            TempData["Err"] = "Não foi possível criar o caso/termo de destinação. Tente novamente ou contate o suporte.";
             return RedirectToAction(nameof(Index), new { bucket = b });
         }
     }
@@ -213,4 +223,6 @@ public sealed class TemporalidadeIndexVM
     public bool IsDue60 => string.Equals(Bucket, "due60", StringComparison.OrdinalIgnoreCase);
     public bool IsDue90 => string.Equals(Bucket, "due90", StringComparison.OrdinalIgnoreCase);
     public bool IsAll => string.Equals(Bucket, "all", StringComparison.OrdinalIgnoreCase);
+    public bool IsBlocked => string.Equals(Bucket, "blocked", StringComparison.OrdinalIgnoreCase);
+    public bool IsAnalysis => string.Equals(Bucket, "analysis", StringComparison.OrdinalIgnoreCase);
 }
