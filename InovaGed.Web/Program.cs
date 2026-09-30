@@ -511,6 +511,7 @@ builder.Services.AddScoped<IProtocolService>(sp => sp.GetRequiredService<Protoco
 builder.Services.AddScoped<IProtocolQueries>(sp => sp.GetRequiredService<ProtocolRequestService>());
 builder.Services.AddScoped<IProtocolCommands>(sp => sp.GetRequiredService<ProtocolRequestService>());
 builder.Services.AddScoped<InovaGed.Application.Ged.Protocols.IProtocolAccessService, InovaGed.Infrastructure.Ged.Protocols.ProtocolAccessService>();
+builder.Services.AddScoped<InovaGed.Application.Ged.Protocols.IProtocoloCentralService, InovaGed.Infrastructure.Ged.Protocols.ProtocoloCentralService>();
 builder.Services.AddScoped<IProtocolHistoryWriter, ProtocolHistoryWriter>();
 builder.Services.AddScoped<ILoanAccessService, LoanAccessService>();
 builder.Services.AddScoped<InovaGed.Application.Ged.Loans.IProtocolAccessService, InovaGed.Infrastructure.Ged.Loans.ProtocolAccessService>();

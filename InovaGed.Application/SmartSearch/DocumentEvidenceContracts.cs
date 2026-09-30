@@ -20,6 +20,8 @@ public sealed class DocumentEvidenceQuery
 public sealed class DocumentEvidenceResponse
 {
     public string Heading { get; set; } = "Trechos encontrados para sua pergunta";
+    public string? Answer { get; set; }
+    public bool UsedArtificialIntelligence { get; set; }
     public string Message { get; set; } = string.Empty;
     public DocumentQuestionStatus Status { get; set; }
     public string ScopeLabel { get; set; } = string.Empty;

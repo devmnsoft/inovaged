@@ -47,7 +47,7 @@ where c.tenant_id = @tenantId
     public async Task<(RetentionCaseRow Case, IReadOnlyList<RetentionCaseItemRow> Items)?> GetAsync(Guid tenantId, Guid caseId, CancellationToken ct)
     {
         const string sqlCase = @"
-select id as Id, case_no as CaseNo, title as Title, status as Status, created_at as CreatedAt
+select id as Id, case_no as CaseNo, title as Title, status as Status, execution_outcome as ExecutionOutcome, created_at as CreatedAt
 from ged.retention_case
 where tenant_id=@tenantId and id=@caseId
 limit 1;
@@ -67,6 +67,9 @@ select
   i.suggested_destination as SuggestedDestination,
   i.decision as Decision,
   i.decision_notes as DecisionNotes,
+  i.execution_status as ExecutionStatus,
+  i.execution_block_reason as ExecutionBlockReason,
+  i.execution_block_source as ExecutionBlockSource,
   i.decided_at as DecidedAt
 from ged.retention_case_item i
 where i.tenant_id=@tenantId and i.case_id=@caseId
@@ -74,10 +77,35 @@ order by i.retention_due_at nulls last, i.doc_title;
 ";
 
         await using var conn = await _db.OpenAsync(ct);
-        var c = await conn.QueryFirstOrDefaultAsync<RetentionCaseRow>(sqlCase, new { tenantId, caseId });
+        RetentionCaseRow? c;
+        try
+        {
+            c = await conn.QueryFirstOrDefaultAsync<RetentionCaseRow>(sqlCase, new { tenantId, caseId });
+        }
+        catch (Npgsql.PostgresException ex) when (ex.SqlState == "42703")
+        {
+            c = await conn.QueryFirstOrDefaultAsync<RetentionCaseRow>(@"
+select id as Id, case_no as CaseNo, title as Title, status as Status, created_at as CreatedAt
+from ged.retention_case where tenant_id=@tenantId and id=@caseId limit 1;", new { tenantId, caseId });
+        }
         if (c is null) return null;
 
-        var items = await conn.QueryAsync<RetentionCaseItemRow>(sqlItems, new { tenantId, caseId });
+        IEnumerable<RetentionCaseItemRow> items;
+        try
+        {
+            items = await conn.QueryAsync<RetentionCaseItemRow>(sqlItems, new { tenantId, caseId });
+        }
+        catch (Npgsql.PostgresException ex) when (ex.SqlState == "42703")
+        {
+            items = await conn.QueryAsync<RetentionCaseItemRow>(@"
+select i.id as Id, i.case_id as CaseId, i.document_id as DocumentId, i.doc_code as DocCode, i.doc_title as DocTitle,
+  i.classification_code as ClassificationCode, i.classification_name as ClassificationName, i.retention_due_at as RetentionDueAt,
+  i.retention_status as RetentionStatus, i.suggested_destination as SuggestedDestination, i.decision as Decision,
+  i.decision_notes as DecisionNotes, i.decided_at as DecidedAt
+from ged.retention_case_item i
+where i.tenant_id=@tenantId and i.case_id=@caseId
+order by i.retention_due_at nulls last, i.doc_title;", new { tenantId, caseId });
+        }
         return (c, items.ToList());
     }
 
@@ -185,7 +213,7 @@ where tenant_id=@tenantId and id=@itemId;
 
     public async Task CloseCaseAsync(Guid tenantId, Guid userId, Guid caseId, string newStatus, CancellationToken ct)
     {
-        if (newStatus is not ("APPROVED" or "REJECTED" or "EXECUTED" or "CANCELED"))
+        if (newStatus is not ("APPROVED" or "REJECTED" or "EXECUTED" or "PARTIALLY_EXECUTED" or "CANCELED"))
             throw new ArgumentException("Status inválido.");
 
         const string sql = @"

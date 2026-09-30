@@ -67,7 +67,7 @@
     <details class="sidebar-group" open="@(ActiveAny("Loans", "Solicitacoes", "Protocolo", "Protocols", "ProtocolRequests", "PhysicalTransit") == "active" ? "open" : null)">
         <summary>Atendimento</summary>
         <a asp-controller="Loans" asp-action="Index" class="@ActiveAny("Loans", "Solicitacoes")"><i class="bi bi-arrow-left-right"></i><span>Empréstimos</span></a>
-        <a asp-controller="Protocolo" asp-action="Index" class="@ActiveAny("Protocolo", "Protocols")"><i class="bi bi-journal-check"></i><span>Protocolos</span></a>
+        <a asp-controller="Protocolo" asp-action="Index" class="@ActiveAny("Protocolo")"><i class="bi bi-journal-check"></i><span>Central de tramitação</span></a>
         <a asp-controller="ProtocolRequests" asp-action="My" class="@ActiveAny("ProtocolRequests")"><i class="bi bi-send"></i><span>Solicitações</span></a>
         <a asp-controller="PhysicalTransit" asp-action="Index" class="@ActiveAny("PhysicalTransit")"><i class="bi bi-box-seam"></i><span>Trânsito Físico</span></a>
     </details>

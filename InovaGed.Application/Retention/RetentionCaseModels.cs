@@ -6,6 +6,7 @@ public sealed class RetentionCaseRow
     public int CaseNo { get; set; }
     public string? Title { get; set; }
     public string? Status { get; set; }
+    public string? ExecutionOutcome { get; set; }
     public DateTime CreatedAt { get; set; }
 }
 
@@ -23,6 +24,9 @@ public sealed class RetentionCaseItemRow
     public string SuggestedDestination { get; init; } = "";
     public string Decision { get; init; } = "";
     public string? DecisionNotes { get; init; }
+    public string? ExecutionStatus { get; init; }
+    public string? ExecutionBlockReason { get; init; }
+    public string? ExecutionBlockSource { get; init; }
     public DateTime? DecidedAt { get; init; }               // normalmente é nullable
 
     // ✅ importante pro Dapper

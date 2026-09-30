@@ -13,15 +13,33 @@ public sealed class PhysicalArchive2Service(IDbConnectionFactory factory) : IPhy
         var active = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var table in tables)
             active[table] = await HasColumnAsync(db, "ged", table, "reg_status", ct) ? " and reg_status='A'" : string.Empty;
+        var boxHasStatus = await HasColumnAsync(db, "ged", "physical_box", "status", ct);
+        var boxHasHolder = await HasColumnAsync(db, "ged", "physical_box", "current_holder", ct);
+        var boxHasLabel = await HasColumnAsync(db, "ged", "physical_box", "label_code", ct);
+        var boxHasLocation = await HasColumnAsync(db, "ged", "physical_box", "location_id", ct);
+        var sessionHasStatus = await HasColumnAsync(db, "ged", "physical_inventory_session", "status", ct);
+        var loanHasStatus = await HasColumnAsync(db, "ged", "physical_loan", "status", ct);
+        var loanHasDue = await HasColumnAsync(db, "ged", "physical_loan", "due_at", ct);
+        var itemHasResult = await HasColumnAsync(db, "ged", "physical_inventory_item", "result", ct);
+        var movementHasPerformed = await HasColumnAsync(db, "ged", "physical_movement", "performed_at", ct);
+        var labelledPred = boxHasLabel ? " and label_code is not null" : " and false";
+        var unlocatedPred = boxHasLocation ? " and location_id is null" : " and false";
+        var loanedPred = boxHasStatus ? " and status='LOANED'" : boxHasHolder ? " and current_holder is not null" : " and false";
+        var openInvPred = sessionHasStatus ? " and status='OPEN'" : string.Empty;
+        var overduePred = loanHasDue
+            ? (loanHasStatus ? " and status='OPEN' and due_at<now()" : " and due_at<now()")
+            : " and false";
+        var monthPred = movementHasPerformed ? " and performed_at>=date_trunc('month',now())" : string.Empty;
+        var pendingPred = itemHasResult ? " and result in ('PENDING','MISSING','WRONG_LOCATION')" : string.Empty;
         var r=await db.QuerySingleAsync<DashboardRow>(new CommandDefinition($"""
-select (select count(*) from ged.physical_box where tenant_id=@t{active["physical_box"]}) as "Boxes",
-(select count(*) from ged.physical_box where tenant_id=@t{active["physical_box"]} and label_code is not null) as "LabelledBoxes",
-(select count(*) from ged.physical_box where tenant_id=@t{active["physical_box"]} and location_id is null) as "UnlocatedBoxes",
-(select count(*) from ged.physical_box where tenant_id=@t{active["physical_box"]} and status='LOANED') as "LoanedBoxes",
-(select count(*) from ged.physical_inventory_session where tenant_id=@t{active["physical_inventory_session"]} and status='OPEN') as "OpenInventories",
-(select count(*) from ged.physical_loan where tenant_id=@t{active["physical_loan"]} and status='OPEN' and due_at<now()) as "OverdueLoans",
-(select count(*) from ged.physical_movement where tenant_id=@t{active["physical_movement"]} and performed_at>=date_trunc('month',now())) as "MonthlyMovements",
-(select count(*) from ged.physical_inventory_item where tenant_id=@t{active["physical_inventory_item"]} and result in ('PENDING','MISSING','WRONG_LOCATION')) as "PendingChecks"
+select (select count(*) from ged.physical_box where tenant_id=@t{active["physical_box"]}) as \"Boxes\",
+(select count(*) from ged.physical_box where tenant_id=@t{active["physical_box"]}{labelledPred}) as \"LabelledBoxes\",
+(select count(*) from ged.physical_box where tenant_id=@t{active["physical_box"]}{unlocatedPred}) as \"UnlocatedBoxes\",
+(select count(*) from ged.physical_box where tenant_id=@t{active["physical_box"]}{loanedPred}) as \"LoanedBoxes\",
+(select count(*) from ged.physical_inventory_session where tenant_id=@t{active["physical_inventory_session"]}{openInvPred}) as \"OpenInventories\",
+(select count(*) from ged.physical_loan where tenant_id=@t{active["physical_loan"]}{overduePred}) as \"OverdueLoans\",
+(select count(*) from ged.physical_movement where tenant_id=@t{active["physical_movement"]}{monthPred}) as \"MonthlyMovements\",
+(select count(*) from ged.physical_inventory_item where tenant_id=@t{active["physical_inventory_item"]}{pendingPred}) as \"PendingChecks\"
 """,new{t},cancellationToken:ct));
         return new(r.Boxes,r.LabelledBoxes,r.UnlocatedBoxes,r.LoanedBoxes,r.OpenInventories,r.OverdueLoans,r.MonthlyMovements,r.PendingChecks);
     }

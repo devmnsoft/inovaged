@@ -3097,3 +3097,17 @@ where coalesce(reg_status, 'A') = 'A';
 \ir migrations/2026_09_08_label_canvas_multi_client_rc23.sql
 \ir migrations/2026_09_08_smart_assistant_actions_rc25.sql
 \ir migrations/2026_09_09_label_canvas_production_rc25.sql
+
+-- Migrations do manifesto que ainda não estavam neste consolidado.
+-- Incluídas no fim, sem reordenar os \ir anteriores.
+\ir migrations/2026_08_label_mobile_offline_evidence.sql
+\ir migrations/2026_08_fiscal_portal_acceptance_signature.sql
+\ir migrations/2026_09_10_label_studio_pro_rc28.sql
+\ir migrations/2026_09_10_label_studio_operational_rc29.sql
+\ir migrations/2026_09_11_rc33_collaboration_and_intake.sql
+\ir migrations/2026_09_14_label_print_governance_rc39.sql
+\ir migrations/20260603_upload_chunk.sql
+\ir migrations/2026_09_29_ged_upload_chunk_compatibility.sql
+\ir migrations/2026_09_30_ged_physical_transit.sql
+\ir migrations/2026_10_01_ged_retention_c2.sql
+\ir migrations/2026_09_30_protocol_custody_center.sql

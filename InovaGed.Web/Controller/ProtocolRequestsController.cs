@@ -95,18 +95,20 @@ public sealed class ProtocolRequestsController : Controller
             var fileErrors = await Common.ProtocolAttachmentSaver.SaveAttachmentsAsync(
                 _storage, _service, _user.TenantId, res.Value, _user.UserId, validFiles, _logger, ct);
 
-            TempData["Ok"] = "Protocolo aberto com sucesso.";
+            var stored = validFiles.Count - fileErrors.Count;
+            TempData["Ok"] = ProtocolCustodyRules.AttachmentSummary(validFiles.Count, stored, fileErrors.Count);
             if (fileErrors.Count > 0)
             {
                 TempData["FileErrs"] = fileErrors;
-                TempData["Ok"] = $"Protocolo aberto com sucesso, porém {fileErrors.Count} arquivo(s) não puderam ser anexados.";
+                TempData["Err"] = ProtocolCustodyRules.AttachmentSummary(validFiles.Count, stored, fileErrors.Count);
             }
             return RedirectToAction("Details", "Protocols", new { id = res.Value });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Erro ao abrir protocolo");
-            TempData["Err"] = "Erro ao abrir protocolo. Tente novamente; se persistir, contate o suporte.";
+            var atendimento = Guid.NewGuid().ToString("N")[..12];
+            _logger.LogError(ex, "Erro ao abrir protocolo. Atendimento={Atendimento}", atendimento);
+            TempData["Err"] = $"Erro ao abrir protocolo. Atendimento: {atendimento}.";
             return View(vm);
         }
     }

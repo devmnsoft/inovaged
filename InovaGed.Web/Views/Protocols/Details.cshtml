@@ -13,10 +13,13 @@
 @if (TempData["FileErrs"] is List<InovaGed.Web.Common.ProtocolFileResult> fileErrs && fileErrs.Count > 0)
 {
     <div class="alert alert-warning"><strong>@(fileErrs.Count) anexo(s) não foram anexados ao protocolo:</strong>
-      <ul class="mb-0 small">@foreach (var fe in fileErrs) { <li><b>@fe.FileName</b> — @fe.Step: @fe.Reason (@(fe.CanRetry ? "pode tentar novamente" : "contate o suporte"))</li> }</ul>
+      <ul class="mb-0 small">@foreach (var fe in fileErrs) { <li><b>@fe.FileName</b> — etapa @fe.Step: @fe.Reason. Atendimento @fe.CorrelationId. @(fe.CanRetry ? "Ação: enviar o arquivo novamente." : "Ação: contate o suporte com o atendimento.")</li> }</ul>
     </div>
 }
-@if (Model.HasDocumentsWithoutOcr) { <div class="alert alert-warning">Este protocolo possui documentos sem OCR. Você pode continuar a análise ou solicitar OCR.</div> }
+@if (Model.HasDocumentsWithoutOcr) { <div class="alert alert-warning">OCR pendente em um ou mais documentos. A análise pode continuar.</div> }
+@if (Model.HasOcrFailure) { <div class="alert alert-danger">Há falha de OCR. Revise o documento antes de tratar o texto como completo.</div> }
+@if (Model.HasIncompleteDocument) { <div class="alert alert-warning">Há documento incompleto (parte de um conjunto). Isso é distinto de OCR pendente ou de falha de OCR.</div> }
+@if (!string.IsNullOrWhiteSpace(Model.PendingMovementStatus)) { <div class="alert alert-info">Movimentação: @InovaGed.Application.Ged.Protocols.ProtocolCustodyRules.Label(Model.PendingMovementStatus)</div> }
 <div class="row g-3">
   <div class="col-lg-8">
     <div class="card shadow-sm mb-3"><div class="card-header fw-semibold">Cabeçalho</div><div class="card-body row g-2 small">
@@ -30,13 +33,15 @@
           @if (item.IsManual) { <span class="badge bg-secondary">Documento físico/manual</span> } else { <span class="badge bg-primary">GED</span> }
           <b>@(item.DocumentTitle ?? item.Description ?? item.ReferenceCode)</b>
           <div class="small text-muted">Tipo/Classificação: @(item.Classification ?? item.DocumentType ?? "-") • Referência: @(item.ReferenceCode ?? item.DocumentCode ?? "-")</div>
-          @if (!item.IsManual) { <div class="small">OCR: <span class="badge @(item.HasOcr ? "bg-success" : "bg-warning text-dark")">@(item.HasOcr ? "Disponível" : item.OcrStatus ?? "Pendente")</span> @if (item.PartialTotalParts.HasValue && item.PartialTotalParts > 1) { <span>OCR parcial @item.PartialPartNumber/@item.PartialTotalParts</span> } @if (!item.HasOcr) { <a class="btn btn-sm btn-outline-secondary ms-2" asp-controller="Ocr" asp-action="Index">Executar OCR</a> }</div> }
+          @if (!item.IsManual) { <div class="small">OCR: <span class="badge bg-secondary">@(item.OcrFailed ? "Falha de OCR" : item.OcrIncomplete ? "Documento incompleto" : item.HasOcr ? "OCR disponível" : "OCR pendente")</span> @if (!item.HasOcr) { <a class="btn btn-sm btn-outline-secondary ms-2" asp-controller="Ocr" asp-action="Index">Revisar OCR</a> }</div> }
           @if (item.IsManual) { <div class="small">Localização: @item.PhysicalLocation • Caixa: @item.BoxCode • Paciente: @item.PatientName • Prontuário: @item.MedicalRecordNumber</div> }
           @if (item.DocumentId.HasValue) { <a class="btn btn-sm btn-outline-primary mt-1" asp-controller="Ged" asp-action="Details" asp-route-id="@item.DocumentId">Abrir GED</a> }
         </div>
       }
       <h6>Anexos</h6>
-      @foreach (var a in Model.Attachments) { <div class="small border rounded p-2 mb-1"><i class="bi bi-paperclip"></i> @a.FileName (@a.SizeBytes bytes) — @a.UploadedByName em @a.UploadedAt.ToString("dd/MM/yyyy HH:mm")</div> }
+      @foreach (var a in Model.Attachments) { <div class="small border rounded p-2 mb-1"><i class="bi bi-paperclip"></i> @a.FileName (@a.SizeBytes bytes) — @a.UploadedByName em @a.UploadedAt.ToString("dd/MM/yyyy HH:mm")
+        @if (!string.IsNullOrWhiteSpace(a.StorageState) && a.StorageState != "STORED") { <div>Anexo @a.StorageState na etapa @(a.FailureStage ?? "-"): @(a.FailureReason ?? "pendente"). @(string.IsNullOrWhiteSpace(a.CorrelationId) ? "" : "Atendimento " + a.CorrelationId)</div> }
+      </div> }
     </div></div>
     <div class="card shadow-sm"><div class="card-header fw-semibold">Histórico</div><div class="card-body">
       <div class="timeline">
@@ -48,7 +53,11 @@
     <div class="card shadow-sm mb-3"><div class="card-header fw-semibold">Ações contextuais</div><div class="card-body d-grid gap-2">
       @if (canManage) {
         <form asp-action="Assume" asp-route-id="@Model.Header.Id" method="post">@Html.AntiForgeryToken()<input name="notes" class="form-control mb-2" placeholder="Observação opcional" /><button class="btn btn-outline-primary w-100">Assumir / Analisar</button></form>
-        <form asp-action="Receive" asp-route-id="@Model.Header.Id" method="post">@Html.AntiForgeryToken()<button class="btn btn-outline-success w-100"><i class="bi bi-inbox" aria-hidden="true"></i> Confirmar recebimento</button></form>
+        <form asp-action="Receive" asp-route-id="@Model.Header.Id" method="post">@Html.AntiForgeryToken()<input type="hidden" name="movementId" value="@Model.PendingMovementId" /><button class="btn btn-outline-success w-100"><i class="bi bi-inbox" aria-hidden="true"></i> Receber movimentação</button></form>
+        <form asp-action="ReturnCustody" asp-route-id="@Model.Header.Id" method="post">@Html.AntiForgeryToken()<input name="reason" class="form-control mb-2" placeholder="Observação da devolução de custódia" required /><button class="btn btn-outline-warning w-100">Devolver custódia</button></form>
+        <form asp-action="ConfirmReturn" asp-route-id="@Model.Header.Id" method="post">@Html.AntiForgeryToken()<input type="hidden" name="movementId" value="@Model.PendingMovementId" /><button class="btn btn-outline-success w-100">Confirmar retorno</button></form>
+        <form asp-action="Reverse" asp-route-id="@Model.Header.Id" method="post">@Html.AntiForgeryToken()<input name="justification" class="form-control mb-2" placeholder="Justificativa do estorno" required /><button class="btn btn-outline-danger w-100">Estornar última movimentação</button></form>
+        <form asp-action="Reopen" asp-route-id="@Model.Header.Id" method="post">@Html.AntiForgeryToken()<input name="justification" class="form-control mb-2" placeholder="Justificativa da reabertura" required /><button class="btn btn-outline-dark w-100">Reabrir processo</button></form>
         <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#forwardModal"><i class="bi bi-send" aria-hidden="true"></i> Encaminhar</button>
         <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#actionModal" data-action="Approve" data-title="Aprovar">Aprovar</button>
         <button class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#actionModal" data-action="ReturnForAdjustment" data-title="Devolver para ajuste">Devolver para ajuste</button>
@@ -62,6 +71,6 @@
     <div class="card shadow-sm"><div class="card-header fw-semibold">Empréstimos vinculados</div><div class="card-body small">@foreach(var l in Model.Loans){<div><a asp-controller="Loans" asp-action="Details" asp-route-id="@l.Id">Loan @l.ProtocolNo</a> — @l.Status</div>} @if(!Model.Loans.Any()){<span class="text-muted">Nenhum empréstimo vinculado.</span>}</div></div>
   </div>
 </div>
-<div class="modal fade" id="forwardModal" tabindex="-1" aria-labelledby="forwardTitle" aria-hidden="true"><div class="modal-dialog"><div class="modal-content"><form asp-action="Forward" asp-route-id="@Model.Header.Id" method="post">@Html.AntiForgeryToken()<div class="modal-header"><h5 class="modal-title" id="forwardTitle">Encaminhar protocolo</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button></div><div class="modal-body"><label class="form-label" for="destinationSectorId">Setor de destino</label><input id="destinationSectorId" name="DestinationSectorId" type="text" class="form-control" required placeholder="UUID do setor" /><label class="form-label mt-2" for="destinationSectorName">Nome do setor</label><input id="destinationSectorName" name="DestinationSectorName" class="form-control" maxlength="160" required /><label class="form-label mt-2" for="forwardReason">Motivo</label><textarea id="forwardReason" name="Reason" class="form-control" maxlength="1000" required></textarea></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-primary">Confirmar encaminhamento</button></div></form></div></div></div>
+<div class="modal fade" id="forwardModal" tabindex="-1" aria-labelledby="forwardTitle" aria-hidden="true"><div class="modal-dialog"><div class="modal-content"><form asp-action="Forward" asp-route-id="@Model.Header.Id" method="post">@Html.AntiForgeryToken()<div class="modal-header"><h5 class="modal-title" id="forwardTitle">Encaminhar protocolo</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button></div><div class="modal-body"><label class="form-label" for="destinationSectorId">Identificador do setor de destino</label><input id="destinationSectorId" name="DestinationSectorId" type="text" class="form-control" required placeholder="Identificador resolvido no servidor" /><p class="small text-muted mt-2">O nome do setor, o responsável e a origem são resolvidos no servidor. O texto enviado pelo formulário não define o destino.</p><label class="form-label mt-2" for="forwardReason">Motivo</label><textarea id="forwardReason" name="Reason" class="form-control" maxlength="1000" required></textarea></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-primary">Confirmar encaminhamento</button></div></form></div></div></div>
 <div class="modal fade" id="actionModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content"><form id="criticalForm" method="post">@Html.AntiForgeryToken()<div class="modal-header"><h5 class="modal-title" id="modalTitle">Ação</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><label class="form-label">Parecer / motivo / conclusão</label><textarea name="reason" class="form-control" required></textarea><label class="form-label mt-2">Observação interna</label><textarea name="internalNotes" class="form-control"></textarea></div><div class="modal-footer"><button class="btn btn-primary">Confirmar</button></div></form></div></div></div>
 @section Scripts {<script>document.getElementById('actionModal')?.addEventListener('show.bs.modal',e=>{const b=e.relatedTarget;document.getElementById('modalTitle').innerText=b.dataset.title;document.getElementById('criticalForm').action=`/Protocols/@Model.Header.Id/${b.dataset.action}`;});</script>}

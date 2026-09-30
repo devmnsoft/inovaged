@@ -1,0 +1,49 @@
+@model InovaGed.Application.Ged.Protocols.ProtocoloBatchPreview
+@{
+    ViewData["Title"] = "Manifesto de tramitação";
+}
+<div class="d-flex justify-content-between mb-3">
+    <h1 class="h4">@Model.AcaoLabel</h1>
+    <button class="btn btn-outline-secondary" type="button" onclick="window.print()">Imprimir</button>
+</div>
+<p>Quantidade: @Model.Itens.Count. Elegíveis: @Model.Elegiveis. Impedidos: @Model.Impedidos.</p>
+<dl class="row">
+    <dt class="col-sm-3">Destino</dt><dd class="col-sm-9">@(Model.Destino ?? "Definido por item")</dd>
+    <dt class="col-sm-3">Responsável</dt><dd class="col-sm-9">@(Model.Responsavel ?? "Resolvido no recebimento")</dd>
+    <dt class="col-sm-3">Prazo</dt><dd class="col-sm-9">@(Model.Prazo?.ToString("dd/MM/yyyy HH:mm") ?? "—")</dd>
+    <dt class="col-sm-3">Observação</dt><dd class="col-sm-9">@Model.Observacao</dd>
+</dl>
+<table class="table">
+    <thead><tr><th>Protocolo</th><th>Resultado</th><th>Mensagem</th></tr></thead>
+    <tbody>
+    @foreach (var item in Model.Itens)
+    {
+        <tr>
+            <td>@(item.Numero ?? item.ProtocoloId.ToString())</td>
+            <td>@(item.Impedido ? "Impedido" : item.Aplicado ? "Aplicado" : "Elegível")</td>
+            <td>@item.Mensagem</td>
+        </tr>
+    }
+    </tbody>
+</table>
+@if (Model.Elegiveis > 0 && Model.Itens.All(i => !i.Aplicado))
+{
+    <form method="post" asp-action="Lote">
+        @Html.AntiForgeryToken()
+        <input type="hidden" name="acao" value="@Model.Acao" />
+        <input type="hidden" name="destinoSetorId" value="@Model.DestinoSetorId" />
+        <input type="hidden" name="confirmar" value="1" />
+        <input type="hidden" name="observacao" value="@Model.Observacao" />
+        <p>A confirmação revalida cada item. Itens impedidos não serão alterados. O lote só fica concluído quando todos os aplicáveis alcançarem o resultado esperado.</p>
+        @foreach (var item in Model.Itens.Where(i => !i.Impedido))
+        {
+            <input type="hidden" name="ids" value="@item.ProtocoloId" />
+        }
+        <button class="btn btn-primary">Confirmar @Model.Elegiveis item(ns)</button>
+        <a class="btn btn-outline-secondary" asp-action="Index">Voltar sem gravar</a>
+    </form>
+}
+else
+{
+    <a class="btn btn-outline-secondary" asp-action="Index">Voltar à central</a>
+}

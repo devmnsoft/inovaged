@@ -9,7 +9,28 @@
 </div>
 <h1 class="h3 mb-3">Fila de Manuseio / Processamento</h1>
 <partial name="_ProtocolTabs" />
-<form class="row g-2 mb-3" method="get"><div class="col-md-3"><input asp-for="Filter.Q" name="Q" class="form-control" placeholder="Buscar" /></div><div class="col-md-2"><select asp-for="Filter.Status" name="Status" class="form-select"><option value="">Status</option><option>REQUESTED</option><option>IN_REVIEW</option><option>RETURNED_FOR_ADJUSTMENT</option><option>ADJUSTMENT_ANSWERED</option><option>APPROVED</option><option>REJECTED</option><option>FINISHED</option></select></div><div class="col-md-2"><select asp-for="Filter.Priority" name="Priority" class="form-select"><option value="">Prioridade</option><option>NORMAL</option><option>LOW</option><option>HIGH</option><option>URGENT</option></select></div><div class="col-md-2 form-check pt-2"><input asp-for="Filter.OnlyMine" name="OnlyMine" class="form-check-input" /> <label class="form-check-label">Somente meus</label></div><div class="col-md-2 form-check pt-2"><input asp-for="Filter.Overdue" name="Overdue" class="form-check-input" /> <label class="form-check-label">Vencidos</label></div><div class="col-md-1"><button class="btn btn-primary">Filtrar</button></div></form>
-<div class="card atlas-card shadow-sm"><div class="table-responsive"><table class="table atlas-table table-hover mb-0"><thead><tr><th>Protocolo</th><th>Título</th><th>Solicitante</th><th>Origem</th><th>Destino</th><th>Status</th><th>Prioridade</th><th>Prazo</th><th>Responsável</th><th>Ações</th></tr></thead><tbody>
-@foreach (var x in Model.Rows) { <tr class="@(x.IsOverdue ? "table-warning" : "")"><td class="fw-semibold">@x.ProtocolNo</td><td>@x.Title</td><td>@x.RequesterName</td><td>@x.RequesterSectorName</td><td>@x.AssignedSectorName</td><td>@x.StatusLabel</td><td>@x.Priority</td><td>@(x.DueAt?.ToString("dd/MM/yyyy HH:mm") ?? "-")</td><td>@(x.AssignedUserName ?? "-")</td><td><a class="btn btn-sm btn-outline-primary" asp-action="Details" asp-route-id="@x.Id">Ver detalhes</a></td></tr> }
+<div class="d-flex flex-wrap gap-2 mb-3">
+    <a class="btn btn-outline-secondary" asp-action="WorkQueue" asp-route-Queue="receber">A receber</a>
+    <a class="btn btn-outline-secondary" asp-action="WorkQueue" asp-route-Queue="tramitar">A tramitar</a>
+    <a class="btn btn-outline-secondary" asp-action="WorkQueue" asp-route-Queue="enviados">Enviados</a>
+    <a class="btn btn-outline-secondary" asp-action="WorkQueue" asp-route-Queue="devolucoes">Devoluções pendentes</a>
+    <a class="btn btn-outline-secondary" asp-action="WorkQueue" asp-route-Queue="geral">Geral</a>
+    <a class="btn btn-outline-primary" asp-controller="Protocolo" asp-action="Index">Central institucional</a>
+</div>
+<form class="row g-2 mb-3" method="get">
+    <div class="col-md-2"><label class="form-label" for="queue">Visão</label><select id="queue" name="Queue" class="form-select"><option value="">Todas</option><option value="receber">A receber</option><option value="tramitar">A tramitar</option><option value="enviados">Enviados</option><option value="devolucoes">Devoluções pendentes</option><option value="geral">Geral</option></select></div>
+    <div class="col-md-2"><label class="form-label" for="q">Protocolo</label><input id="q" asp-for="Filter.Q" name="Q" class="form-control" /></div>
+    <div class="col-md-2"><label class="form-label" for="doc">Código / prontuário</label><input id="doc" name="DocumentCode" value="@Model.Filter.DocumentCode" class="form-control" /></div>
+    <div class="col-md-2"><label class="form-label" for="interessado">Interessado</label><input id="interessado" name="Interessado" value="@Model.Filter.Interessado" class="form-control" /></div>
+    <div class="col-md-2"><label class="form-label" for="status">Situação</label><select id="status" asp-for="Filter.Status" name="Status" class="form-select"><option value="">Status</option><option>REQUESTED</option><option>IN_REVIEW</option><option>RETURNED_FOR_ADJUSTMENT</option><option>ADJUSTMENT_ANSWERED</option><option>APPROVED</option><option>REJECTED</option><option>FINISHED</option></select></div>
+    <div class="col-md-2 form-check pt-4"><input asp-for="Filter.Overdue" name="Overdue" class="form-check-input" /> <label class="form-check-label">Prazo vencido</label></div>
+    <div class="col-md-1"><button class="btn btn-primary">Filtrar</button></div>
+</form>
+<form method="post" asp-action="ReceiveMany">
+@Html.AntiForgeryToken()
+<div class="card atlas-card shadow-sm"><div class="table-responsive"><table class="table atlas-table table-hover mb-0"><thead><tr><th>Seleção</th><th>Protocolo</th><th>Título</th><th>Solicitante</th><th>Origem</th><th>Destino</th><th>Processo</th><th>Movimentação</th><th>Prazo</th><th>Responsável</th><th>Ações</th></tr></thead><tbody>
+@if (!Model.Rows.Any()) { <tr><td colspan="11" class="text-center text-muted py-4">Nenhuma solicitação nesta visão.</td></tr> }
+@foreach (var x in Model.Rows) { <tr class="@(x.IsOverdue ? "table-warning" : "")"><td><input type="checkbox" name="ids" value="@x.Id" aria-label="Selecionar @x.ProtocolNo" /></td><td class="fw-semibold">@x.ProtocolNo</td><td>@x.Title</td><td>@x.RequesterName</td><td>@x.RequesterSectorName</td><td>@x.AssignedSectorName</td><td>@x.StatusLabel</td><td>@x.MovementLabel</td><td>@(x.DueAt?.ToString("dd/MM/yyyy HH:mm") ?? "-")@(x.IsOverdue ? " — prazo vencido" : "")</td><td>@(x.AssignedUserName ?? "-")</td><td><a class="btn btn-sm btn-outline-primary" asp-action="Details" asp-route-id="@x.Id">Ver detalhes</a></td></tr> }
 </tbody></table></div></div>
+<button class="btn btn-outline-success mt-2" type="submit">Receber selecionados</button>
+</form>

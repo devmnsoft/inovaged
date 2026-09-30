@@ -106,18 +106,35 @@ select exists (
         return await conn.ExecuteScalarAsync<bool>(new CommandDefinition(sql, parameters, cancellationToken: ct));
     }
 
+    public Task<(Guid? Id, string? Name)> ResolveOperationalSectorAsync(Guid tenantId, Guid? userId, CancellationToken ct)
+        => ResolveSectorAsync(tenantId, userId, ct);
+
     private async Task<(Guid? Id, string? Name)> ResolveSectorAsync(Guid tenantId, Guid? userId, CancellationToken ct)
     {
         if (!userId.HasValue || userId == Guid.Empty) return (null, null);
         await using var conn = await _db.OpenAsync(ct);
-        var row = await conn.QuerySingleOrDefaultAsync<(Guid? Id, string? Name)>(new CommandDefinition("""
-select s.id as Id, nullif(coalesce(s.setor, s.lotacao, ''), '') as Name
+        var linked = await conn.QuerySingleOrDefaultAsync<(Guid? Id, string? Name)>(new CommandDefinition("""
+select ps.id as Id, ps.nome as Name
+from ged.protocolo_usuario_setor us
+join ged.protocolo_setor ps on ps.tenant_id=us.tenant_id and ps.id=us.setor_id
+where us.tenant_id=@TenantId and us.usuario_id=@UserId
+  and us.reg_status='A' and us.ativo=true
+  and ps.reg_status='A' and ps.ativo=true
+order by us.principal desc, us.created_at
+limit 1;
+""", new { TenantId = tenantId, UserId = userId }, cancellationToken: ct));
+        if (linked.Id.HasValue) return linked;
+
+        // O cadastro legado guarda o nome do setor no servidor. O identificador devolvido é o do setor, nunca o do servidor.
+        return await conn.QuerySingleOrDefaultAsync<(Guid? Id, string? Name)>(new CommandDefinition("""
+select ps.id as Id, ps.nome as Name
 from ged.app_user u
-left join ged.servidor s on s.tenant_id=u.tenant_id and s.id=u.servidor_id
+join ged.servidor s on s.tenant_id=u.tenant_id and s.id=u.servidor_id
+join ged.protocolo_setor ps on ps.tenant_id=u.tenant_id and ps.reg_status='A' and ps.ativo=true
+  and upper(btrim(ps.nome)) = upper(btrim(coalesce(s.setor, s.lotacao, '')))
 where u.tenant_id=@TenantId and u.id=@UserId
 limit 1;
 """, new { TenantId = tenantId, UserId = userId }, cancellationToken: ct));
-        return row;
     }
 
     private static bool IsFullAdmin(ClaimsPrincipal user) => HasRole(user, "ADMIN") || HasRole(user, "ADMINISTRADOR");

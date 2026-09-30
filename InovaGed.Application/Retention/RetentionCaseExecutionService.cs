@@ -29,8 +29,8 @@ public sealed class RetentionCaseExecutionService
 
         var (c, items) = data.Value;
 
-        if (!string.Equals(c.Status, "APPROVED", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("Somente casos APPROVED podem ser executados.");
+        if (c.Status is not ("APPROVED" or "PARTIALLY_EXECUTED"))
+            throw new InvalidOperationException("Somente casos aprovados ou com execução parcial podem ser executados.");
 
         // Executa só os itens APPROVE
         var approvedItems = items.Where(x => x.Decision == "APPROVE").ToList();
@@ -43,7 +43,14 @@ public sealed class RetentionCaseExecutionService
         var result = await _execRepo.ExecuteCaseAsync(tenantId, userId, caseId, ct);
 
         // Auditoria
-        await _audit.WriteAsync(tenantId, userId, caseId, "CASE_EXECUTED", $"ExecutedItems={result.ExecutedItems} BlockedItems={result.BlockedItems}", ct);
+        var auditAction = result.Outcome switch
+        {
+            "COMPLETE" => "CASE_EXECUTED",
+            "PARTIAL" => "CASE_PARTIALLY_EXECUTED",
+            "BLOCKED" => "CASE_EXECUTION_BLOCKED",
+            _ => "CASE_EXECUTION_NONE"
+        };
+        await _audit.WriteAsync(tenantId, userId, caseId, auditAction, $"Outcome={result.Outcome}; ExecutedItems={result.ExecutedItems}; BlockedItems={result.BlockedItems}", ct);
 
         _logger.LogInformation("Execute retention case END. Tenant={TenantId} Case={CaseId} Executed={Executed} Blocked={Blocked}",
             tenantId, caseId, result.ExecutedItems, result.BlockedItems);

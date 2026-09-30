@@ -122,8 +122,7 @@ public sealed class ProtocolsController : Controller
         }
         else if (fileErrors.Count > 0)
         {
-            // Sem falso sucesso: o ajuste foi registrado, mas informa explicitamente as falhas por arquivo.
-            TempData["Ok"] = $"Ajuste respondido, porém {fileErrors.Count} arquivo(s) não puderam ser anexados.";
+            TempData["Err"] = ProtocolCustodyRules.AttachmentSummary(validFiles.Count, validFiles.Count - fileErrors.Count, fileErrors.Count);
             TempData["FileErrs"] = fileErrors;
         }
         else
@@ -151,19 +150,82 @@ public sealed class ProtocolsController : Controller
     {
         if (!await _access.CanManageAsync(_user.TenantId, id, _user.UserId, User, ct)) return Forbid();
         command.ProtocolId = id;
+        var scope = await _access.BuildScopeAsync(_user.TenantId, _user.UserId, User, ct);
+        command.IsAdmin = scope.CanSeeAll;
         var res = await _service.ForwardAsync(_user.TenantId, _user.UserId, command, ct);
-        TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Protocolo encaminhado e registrado na linha do tempo." : res.ErrorMessage;
+        TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Encaminhado. O destino ainda precisa receber." : res.ErrorMessage;
         return RedirectToAction(nameof(Details), new { id });
     }
 
     [Authorize(Policy = AppPolicies.ProtocolManage)]
     [HttpPost("{id:guid}/Receive")]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Receive(Guid id, CancellationToken ct)
+    public async Task<IActionResult> Receive(Guid id, Guid? movementId, CancellationToken ct)
     {
-        if (!await _access.CanManageAsync(_user.TenantId, id, _user.UserId, User, ct)) return Forbid();
-        var res = await _service.ReceiveAsync(_user.TenantId, id, _user.UserId, ct);
+        if (!await _access.CanViewAsync(_user.TenantId, id, _user.UserId, User, ct)) return Forbid();
+        var scope = await _access.BuildScopeAsync(_user.TenantId, _user.UserId, User, ct);
+        var res = await _service.ReceiveMovementAsync(_user.TenantId, id, movementId, _user.UserId, scope.CanSeeAll, ct);
         TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Recebimento confirmado." : res.ErrorMessage;
         return RedirectToAction(nameof(Details), new { id });
+    }
+
+    [Authorize(Policy = AppPolicies.ProtocolManage)]
+    [HttpPost("{id:guid}/ReturnCustody")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ReturnCustody(Guid id, string reason, CancellationToken ct)
+    {
+        if (!await _access.CanViewAsync(_user.TenantId, id, _user.UserId, User, ct)) return Forbid();
+        var scope = await _access.BuildScopeAsync(_user.TenantId, _user.UserId, User, ct);
+        var res = await _service.ReturnCustodyAsync(_user.TenantId, id, _user.UserId, scope.CanSeeAll, reason, ct);
+        TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? res.ErrorMessage ?? "Devolução registrada." : res.ErrorMessage;
+        if (res.IsSuccess) TempData["Ok"] = "Devolução pendente de confirmação. Isto não é devolução para ajuste.";
+        return RedirectToAction(nameof(Details), new { id });
+    }
+
+    [Authorize(Policy = AppPolicies.ProtocolManage)]
+    [HttpPost("{id:guid}/ConfirmReturn")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ConfirmReturn(Guid id, Guid? movementId, CancellationToken ct)
+    {
+        if (!await _access.CanViewAsync(_user.TenantId, id, _user.UserId, User, ct)) return Forbid();
+        var scope = await _access.BuildScopeAsync(_user.TenantId, _user.UserId, User, ct);
+        var res = await _service.ConfirmReturnAsync(_user.TenantId, id, movementId, _user.UserId, scope.CanSeeAll, ct);
+        TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Retorno confirmado." : res.ErrorMessage;
+        return RedirectToAction(nameof(Details), new { id });
+    }
+
+    [Authorize(Policy = AppPolicies.ProtocolManage)]
+    [HttpPost("{id:guid}/Reverse")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Reverse(Guid id, string justification, CancellationToken ct)
+    {
+        if (!await _access.CanViewAsync(_user.TenantId, id, _user.UserId, User, ct)) return Forbid();
+        var scope = await _access.BuildScopeAsync(_user.TenantId, _user.UserId, User, ct);
+        var res = await _service.ReverseLastAsync(_user.TenantId, id, _user.UserId, scope.CanSeeAll, justification, ct);
+        TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Estorno registrado. O evento original permanece no histórico." : res.ErrorMessage;
+        return RedirectToAction(nameof(Details), new { id });
+    }
+
+    [Authorize(Policy = AppPolicies.ProtocolManage)]
+    [HttpPost("{id:guid}/Reopen")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Reopen(Guid id, string justification, CancellationToken ct)
+    {
+        var scope = await _access.BuildScopeAsync(_user.TenantId, _user.UserId, User, ct);
+        if (!scope.CanSeeAll) return Forbid();
+        var res = await _service.ReopenAsync(_user.TenantId, id, _user.UserId, true, justification, ct);
+        TempData[res.IsSuccess ? "Ok" : "Err"] = res.IsSuccess ? "Processo reaberto. Documentos e temporalidade não foram alterados." : res.ErrorMessage;
+        return RedirectToAction(nameof(Details), new { id });
+    }
+
+    [Authorize(Policy = AppPolicies.ProtocolManage)]
+    [HttpPost("ReceiveMany")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ReceiveMany(Guid[] ids, CancellationToken ct)
+    {
+        var scope = await _access.BuildScopeAsync(_user.TenantId, _user.UserId, User, ct);
+        var outcome = await _service.ReceiveManyAsync(_user.TenantId, _user.UserId, scope.CanSeeAll, ids ?? Array.Empty<Guid>(), ct);
+        TempData[outcome.Partial || !outcome.AnyApplied ? "Err" : "Ok"] = outcome.Message;
+        return RedirectToAction(nameof(WorkQueue), new { Queue = "receber" });
     }
 }

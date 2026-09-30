@@ -112,11 +112,10 @@ insert into ged.loan_request
   digital_delivery_enabled,
   physical_delivery_enabled
 )
-values
-(
+select
   gen_random_uuid(),
   @TenantId,
-  (select coalesce(max(protocol_no),0)+1 from ged.loan_request where tenant_id=@TenantId),
+  n.protocol_no,
   'REQUESTED'::ged.loan_status,
   @RequesterId,
   @RequesterName,
@@ -125,7 +124,7 @@ values
   @RequestedAt,
   @DueAt,
   'A',
-  'REQ-' || to_char(now(),'YYYYMMDD') || '-' || lpad(((select coalesce(max(protocol_no),0)+1 from ged.loan_request where tenant_id=@TenantId))::text, 6, '0'),
+  'REQ-' || to_char(now(),'YYYYMMDD') || '-' || lpad(n.protocol_no::text, 6, '0'),
   'DOCUMENT_REQUEST',
   @DeliveryMode,
   @RequestDescription,
@@ -139,7 +138,7 @@ values
   @SlaHours,
   @DigitalEnabled,
   @PhysicalEnabled
-)
+from (select ged.next_loan_protocol_no(@TenantId) as protocol_no) n
 returning id;
 """;
 

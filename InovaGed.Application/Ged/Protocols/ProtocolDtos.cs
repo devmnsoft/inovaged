@@ -79,6 +79,9 @@ public sealed class ProtocolWorkQueueFilter
     public bool Overdue { get; set; }
     public bool ReturnedForAdjustment { get; set; }
     public bool ShowAll { get; set; }
+    public string? Queue { get; set; }
+    public string? DocumentCode { get; set; }
+    public string? Interessado { get; set; }
     public int Page { get; set; } = 1;
     public int PageSize { get; set; } = 20;
 }
@@ -107,6 +110,8 @@ public sealed class ProtocolRequestRowVm
     public int ItemsCount { get; set; }
     public int AttachmentsCount { get; set; }
     public bool IsOverdue { get; set; }
+    public string? MovementStatus { get; set; }
+    public string MovementLabel => ProtocolCustodyRules.Label(MovementStatus);
 }
 
 public sealed class ProtocolWorkQueueVm
@@ -123,7 +128,11 @@ public sealed class ProtocolRequestDetailsVm
     public List<ProtocolAttachmentVm> Attachments { get; set; } = new();
     public List<ProtocolHistoryVm> History { get; set; } = new();
     public List<ProtocolLoanVm> Loans { get; set; } = new();
-    public bool HasDocumentsWithoutOcr => Items.Any(i => i.DocumentId.HasValue && !i.HasOcr);
+    public Guid? PendingMovementId { get; set; }
+    public string? PendingMovementStatus { get; set; }
+    public bool HasDocumentsWithoutOcr => Items.Any(i => i.DocumentId.HasValue && !i.HasOcr && !i.OcrFailed);
+    public bool HasOcrFailure => Items.Any(i => i.OcrFailed);
+    public bool HasIncompleteDocument => Items.Any(i => i.OcrIncomplete);
 }
 
 public sealed class ProtocolItemVm
@@ -147,6 +156,9 @@ public sealed class ProtocolItemVm
     public int? PartialPartNumber { get; set; }
     public int? PartialTotalParts { get; set; }
     public bool HasOcr { get; set; }
+    public bool OcrFailed => string.Equals(OcrStatus, "FAILED", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(OcrStatus, "ERROR", StringComparison.OrdinalIgnoreCase);
+    public bool OcrIncomplete => PartialTotalParts is > 1 && (PartialPartNumber ?? 0) < PartialTotalParts;
 }
 
 public sealed class ProtocolAttachmentVm
@@ -157,6 +169,11 @@ public sealed class ProtocolAttachmentVm
     public long? SizeBytes { get; set; }
     public string? UploadedByName { get; set; }
     public DateTimeOffset UploadedAt { get; set; }
+    public string StorageState { get; set; } = "STORED";
+    public string? FailureStage { get; set; }
+    public string? FailureReason { get; set; }
+    public string? CorrelationId { get; set; }
+    public int AttemptCount { get; set; } = 1;
 }
 
 public sealed class ProtocolHistoryVm
@@ -178,6 +195,7 @@ public sealed class ProtocolForwardCommand
     public string DestinationSectorName { get; set; } = string.Empty;
     public Guid? ResponsibleUserId { get; set; }
     public string Reason { get; set; } = string.Empty;
+    public bool IsAdmin { get; set; }
 }
 
 public sealed class ProtocolLoanVm
@@ -204,6 +222,7 @@ public interface IProtocolAccessService
     Task<ProtocolVisibilityScope> BuildScopeAsync(Guid tenantId, Guid? userId, ClaimsPrincipal user, CancellationToken ct);
     Task<bool> CanViewAsync(Guid tenantId, Guid protocolRequestId, Guid? userId, ClaimsPrincipal user, CancellationToken ct);
     Task<bool> CanManageAsync(Guid tenantId, Guid protocolRequestId, Guid? userId, ClaimsPrincipal user, CancellationToken ct);
+    Task<(Guid? Id, string? Name)> ResolveOperationalSectorAsync(Guid tenantId, Guid? userId, CancellationToken ct);
 }
 
 public interface IProtocolQueryService
@@ -227,6 +246,13 @@ public interface IProtocolCommandService
     Task<Result<Guid>> CreateLoanAsync(Guid tenantId, Guid id, Guid userId, CancellationToken ct);
     Task<Result> ForwardAsync(Guid tenantId, Guid userId, ProtocolForwardCommand command, CancellationToken ct);
     Task<Result> ReceiveAsync(Guid tenantId, Guid id, Guid userId, CancellationToken ct);
+    Task<Result> ReceiveMovementAsync(Guid tenantId, Guid protocolId, Guid? movementId, Guid userId, bool isAdmin, CancellationToken ct);
+    Task<Result> ReturnCustodyAsync(Guid tenantId, Guid id, Guid userId, bool isAdmin, string reason, CancellationToken ct);
+    Task<Result> ConfirmReturnAsync(Guid tenantId, Guid id, Guid? movementId, Guid userId, bool isAdmin, CancellationToken ct);
+    Task<Result> ReverseLastAsync(Guid tenantId, Guid id, Guid userId, bool isAdmin, string justification, CancellationToken ct);
+    Task<Result> ReopenAsync(Guid tenantId, Guid id, Guid userId, bool isAdmin, string justification, CancellationToken ct);
+    Task<ProtocolBatchOutcome> ReceiveManyAsync(Guid tenantId, Guid userId, bool isAdmin, IReadOnlyList<Guid> protocolIds, CancellationToken ct);
+    Task<Result> RecordAttachmentFailureAsync(Guid tenantId, Guid id, Guid userId, string fileName, string? contentType, long sizeBytes, string stage, string reason, string correlationId, CancellationToken ct);
 }
 
 public interface IProtocolRequestService : IProtocolQueryService, IProtocolCommandService { }

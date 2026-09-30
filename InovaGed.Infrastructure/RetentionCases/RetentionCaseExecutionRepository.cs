@@ -1,5 +1,6 @@
 ﻿using Dapper;
 using InovaGed.Application.Common.Database;
+using InovaGed.Application.Ged.Protocols;
 using InovaGed.Application.RetentionCases;
 using Microsoft.Extensions.Logging;
 
@@ -46,18 +47,21 @@ order by i.id;
         const string sqlMarkBlocked = @"
 update ged.retention_case_item
 set
-  decision = 'REJECT',
-  decision_notes = coalesce(decision_notes,'') || @reason,
-  decided_at = coalesce(decided_at, now()),
-  decided_by = coalesce(decided_by, @userId)
-where tenant_id=@tenantId and id=@itemId;
+  execution_status = 'BLOCKED',
+  execution_block_reason = @reason,
+  execution_block_source = @source,
+  decision_notes = coalesce(decision_notes,'') || @reason
+where tenant_id=@tenantId and id=@itemId and decision='APPROVE';
 ";
 
         const string sqlExecItem = @"
 update ged.retention_case_item
 set executed_at = now(),
-    executed_by = @userId
-where tenant_id=@tenantId and id=@itemId;
+    executed_by = @userId,
+    execution_status = 'EXECUTED',
+    execution_block_reason = null,
+    execution_block_source = null
+where tenant_id=@tenantId and id=@itemId and decision='APPROVE' and executed_at is null;
 ";
 
         const string sqlUpdateDoc = @"
@@ -75,7 +79,21 @@ where tenant_id=@tenantId and id=@documentId;
             await using var conn = await _db.OpenAsync(ct);
             await using var tx = conn.BeginTransaction();
 
+            var caseStatus = await conn.ExecuteScalarAsync<string?>(
+                "select status from ged.retention_case where tenant_id=@tenantId and id=@caseId for update",
+                new { tenantId, caseId }, tx);
+            if (caseStatus is not ("APPROVED" or "PARTIALLY_EXECUTED"))
+                throw new InvalidOperationException("O caso não está aprovado para execução.");
+
             var rows = (await conn.QueryAsync(sqlFetch, new { tenantId, caseId }, tx)).ToList();
+            var hasPhysical = await conn.ExecuteScalarAsync<bool>("select to_regclass('ged.physical_loan') is not null", transaction: tx);
+            var hasLoanRequest = await conn.ExecuteScalarAsync<bool>("select to_regclass('ged.loan_request') is not null", transaction: tx);
+            var hasProtocolMove = await conn.ExecuteScalarAsync<bool>("select to_regclass('ged.protocolo_tramitacao') is not null", transaction: tx);
+            var hasRequestMove = await conn.ExecuteScalarAsync<bool>("""
+select exists(
+  select 1 from information_schema.columns
+  where table_schema='ged' and table_name='protocol_tramitation' and column_name='item_id')
+""", transaction: tx);
 
             int executed = 0, blocked = 0;
 
@@ -88,25 +106,75 @@ where tenant_id=@tenantId and id=@documentId;
                 bool reqSign = r.reqsign ?? false;
                 bool confidential = r.confidential ?? false;
 
-                // Bloqueio conservador (pode relaxar por permissão depois)
+                string? source = null;
+                string? reason = null;
                 if (hold)
                 {
-                    blocked++;
-                    await conn.ExecuteAsync(sqlMarkBlocked, new { tenantId, itemId, userId, reason = "\n[BLOCK] Documento em HOLD." }, tx);
-                    continue;
+                    source = "HOLD";
+                    reason = "\n[BLOQUEIO HOLD] Documento em retenção operacional. Regularize o HOLD antes de executar a destinação.";
+                }
+                else if (confidential)
+                {
+                    source = "SIGILO";
+                    reason = "\n[BLOQUEIO SIGILO] Documento sigiloso. A proteção permanece até validação autorizada.";
+                }
+                else if (reqSign)
+                {
+                    source = "ASSINATURA";
+                    reason = "\n[BLOQUEIO ASSINATURA] A classe exige assinatura digital. Conclua a assinatura antes da destinação.";
+                }
+                else if (hasPhysical && await conn.ExecuteScalarAsync<bool>("""
+select exists(
+  select 1 from ged.physical_loan l
+  where l.tenant_id=@tenantId and l.document_id=@docId and l.reg_status='A'
+    and l.returned_at is null
+    and upper(coalesce(l.status,'')) not in ('RETURNED','CANCELLED','DEVOLVIDO','CANCELADO'))
+""", new { tenantId, docId }, tx))
+                {
+                    source = "EMPRESTIMO_FISICO";
+                    reason = "\n[BLOQUEIO EMPRÉSTIMO FÍSICO] Há custódia física em aberto para este documento. Confirme o retorno antes de reavaliar a destinação.";
+                }
+                else if (hasLoanRequest && await conn.ExecuteScalarAsync<bool>("""
+select exists(
+  select 1 from ged.loan_request lr
+  where lr.tenant_id=@tenantId and lr.document_id=@docId and lr.reg_status='A'
+    and lr.status in ('REQUESTED','APPROVED','DELIVERED','OVERDUE'))
+""", new { tenantId, docId }, tx))
+                {
+                    source = "EMPRESTIMO_SOLICITACAO";
+                    reason = "\n[BLOQUEIO EMPRÉSTIMO] Há solicitação de empréstimo em aberto vinculada a este documento. Conclua ou cancele o empréstimo.";
+                }
+                else if (hasProtocolMove && await conn.ExecuteScalarAsync<bool>("""
+select exists(
+  select 1
+  from ged.protocolo_documento_ged g
+  join ged.protocolo_tramitacao t on t.tenant_id=g.tenant_id and t.protocolo_id=g.protocolo_id and t.reg_status='A' and t.ativa=true
+    and t.situacao_movimentacao in ('AGUARDANDO_RECEBIMENTO','DEVOLUCAO_PENDENTE')
+  where g.tenant_id=@tenantId and g.ged_document_id=@docId and g.reg_status='A'
+    and (t.protocolo_documento_id is null or t.protocolo_documento_id=g.protocolo_documento_id))
+""", new { tenantId, docId }, tx))
+                {
+                    source = "MOVIMENTACAO_PROTOCOLO";
+                    reason = "\n[BLOQUEIO MOVIMENTAÇÃO] Este documento está em tramitação física/institucional pendente. Receba ou confirme o retorno antes da destinação.";
+                }
+                else if (hasRequestMove && await conn.ExecuteScalarAsync<bool>("""
+select exists(
+  select 1
+  from ged.protocol_request_item i
+  join ged.protocol_tramitation t on t.tenant_id=i.tenant_id and t.protocol_request_id=i.protocol_request_id and t.reg_status='A'
+    and t.status in ('PENDING_RECEIPT','RETURN_PENDING')
+    and (t.item_id is null or t.item_id=i.id)
+  where i.tenant_id=@tenantId and i.document_id=@docId and i.reg_status='A')
+""", new { tenantId, docId }, tx))
+                {
+                    source = "MOVIMENTACAO_SOLICITACAO";
+                    reason = "\n[BLOQUEIO SOLICITAÇÃO] O item documental está em movimentação pendente da solicitação. A decisão arquivística permanece; regularize a custódia.";
                 }
 
-                if (confidential)
+                if (source is not null)
                 {
                     blocked++;
-                    await conn.ExecuteAsync(sqlMarkBlocked, new { tenantId, itemId, userId, reason = "\n[BLOCK] Documento sigiloso (requer fluxo/perm.)." }, tx);
-                    continue;
-                }
-
-                if (reqSign)
-                {
-                    blocked++;
-                    await conn.ExecuteAsync(sqlMarkBlocked, new { tenantId, itemId, userId, reason = "\n[BLOCK] Classe exige assinatura digital (validar pendências)." }, tx);
+                    await conn.ExecuteAsync(sqlMarkBlocked, new { tenantId, itemId, reason, source }, tx);
                     continue;
                 }
 
@@ -124,19 +192,29 @@ where tenant_id=@tenantId and id=@documentId;
                 executed++;
             }
 
-            // Se executou ao menos um item, marca o caso como EXECUTED (ou mantém APPROVED e só registra execução)
-            const string sqlMarkCase = @"
+            var outcome = ProtocolCustodyRules.RetentionOutcome(executed, blocked);
+            var nextStatus = ProtocolCustodyRules.RetentionCaseStatus(outcome);
+            if (nextStatus is null)
+            {
+                await conn.ExecuteAsync(@"
 update ged.retention_case
-set status = case when status='APPROVED' then 'EXECUTED' else status end,
-    closed_at = coalesce(closed_at, now()),
-    closed_by = coalesce(closed_by, @userId)
-where tenant_id=@tenantId and id=@caseId;";
-
-            await conn.ExecuteAsync(sqlMarkCase, new { tenantId, caseId, userId }, tx);
+set execution_outcome=@outcome
+where tenant_id=@tenantId and id=@caseId;", new { tenantId, caseId, outcome }, tx);
+            }
+            else
+            {
+                await conn.ExecuteAsync(@"
+update ged.retention_case
+set status=@status,
+    execution_outcome=@outcome,
+    closed_at = case when @status='EXECUTED' then coalesce(closed_at, now()) else closed_at end,
+    closed_by = case when @status='EXECUTED' then coalesce(closed_by, @userId) else closed_by end
+where tenant_id=@tenantId and id=@caseId;", new { tenantId, caseId, userId, status = nextStatus, outcome }, tx);
+            }
 
             await tx.CommitAsync(ct);
 
-            return new ExecuteCaseResult(executed, blocked);
+            return new ExecuteCaseResult(executed, blocked, outcome);
         }
         catch (Exception ex)
         {

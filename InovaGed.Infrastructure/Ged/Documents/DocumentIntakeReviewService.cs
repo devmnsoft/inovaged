@@ -21,15 +21,17 @@ public sealed class DocumentIntakeReviewService(IDbConnectionFactory db, IAuditW
         var ids = documentIds.Where(x => x != Guid.Empty).Distinct().Take(500).ToArray();
         if (ids.Length == 0) return new Dictionary<Guid, DocumentIntakeReviewDto>();
         await using var connection = await db.OpenAsync(ct);
-        var existing = (await connection.QueryAsync<DocumentIntakeReviewDto>(new CommandDefinition("""
-select d.id as DocumentId, coalesce(r.status, 'PENDING') as Status,
-       r.reviewed_by as ReviewedBy, r.reviewed_at as ReviewedAt, r.notes as Notes
+        var existing = (await connection.QueryAsync<IntakeReviewRow>(new CommandDefinition("""
+select d.id as \"DocumentId\", coalesce(r.status, 'PENDING') as \"Status\",
+       r.reviewed_by as \"ReviewedBy\", r.reviewed_at as \"ReviewedAt\", r.notes as \"Notes\"
 from ged.document d
 left join ged.document_intake_review r on r.tenant_id=d.tenant_id and r.document_id=d.id and r.reg_status='A'
 where d.tenant_id=@tenantId and d.id=any(@ids) and coalesce(d.reg_status,'A')='A';
-""", new { tenantId, ids }, cancellationToken: ct))).ToDictionary(x => x.DocumentId);
+""", new { tenantId, ids }, cancellationToken: ct)))
+            .Select(x => x.ToDto())
+            .ToDictionary(x => x.DocumentId);
         foreach (var id in ids)
-            if (!existing.ContainsKey(id)) throw new KeyNotFoundException("Documento não encontrado ou inacessível.");
+            if (!existing.ContainsKey(id)) throw new KeyNotFoundException("Documento n\u00e3o encontrado ou inacess\u00edvel.");
         return existing;
     }
 
@@ -40,7 +42,7 @@ where d.tenant_id=@tenantId and d.id=any(@ids) and coalesce(d.reg_status,'A')='A
     public Task<DocumentIntakeReviewDto> MarkNeedsCorrectionAsync(Guid tenantId, Guid userId,
         Guid documentId, string reason, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(reason)) throw new ArgumentException("O motivo é obrigatório.", nameof(reason));
+        if (string.IsNullOrWhiteSpace(reason)) throw new ArgumentException("O motivo \u00e9 obrigat\u00f3rio.", nameof(reason));
         return ChangeAsync(tenantId, userId, documentId, DocumentIntakeReviewStatus.NeedsCorrection,
             reason.Trim(), "INTAKE_NEEDS_CORRECTION", ct);
     }
@@ -53,7 +55,7 @@ where d.tenant_id=@tenantId and d.id=any(@ids) and coalesce(d.reg_status,'A')='A
         string status, string? notes, string auditEvent, CancellationToken ct)
     {
         await using var connection = await db.OpenAsync(ct);
-        var result = await connection.QuerySingleOrDefaultAsync<DocumentIntakeReviewDto>(new CommandDefinition("""
+        var row = await connection.QuerySingleOrDefaultAsync<IntakeReviewRow>(new CommandDefinition("""
 insert into ged.document_intake_review(tenant_id, document_id, status, reviewed_by, reviewed_at, notes)
 select @tenantId, d.id, @status,
        case when @status='PENDING' then null else @userId end,
@@ -63,12 +65,29 @@ where d.tenant_id=@tenantId and d.id=@documentId and coalesce(d.reg_status,'A')=
 on conflict (tenant_id, document_id) where reg_status='A' do update
 set status=excluded.status, reviewed_by=excluded.reviewed_by,
     reviewed_at=excluded.reviewed_at, notes=excluded.notes
-returning document_id as DocumentId, status as Status, reviewed_by as ReviewedBy,
-          reviewed_at as ReviewedAt, notes as Notes;
+returning document_id as \"DocumentId\", status as \"Status\", reviewed_by as \"ReviewedBy\",
+          reviewed_at as \"ReviewedAt\", notes as \"Notes\";
 """, new { tenantId, userId, documentId, status, notes }, cancellationToken: ct));
-        if (result is null) throw new KeyNotFoundException("Documento não encontrado ou inacessível.");
+        if (row is null) throw new KeyNotFoundException("Documento n\u00e3o encontrado ou inacess\u00edvel.");
+        var result = row.ToDto();
         await audit.WriteAsync(tenantId, userId, auditEvent, "DOCUMENT_INTAKE_REVIEW", documentId,
-            "Conferência documental atualizada", null, null, new { status }, ct);
+            "Confer\u00eancia documental atualizada", null, null, new { status }, ct);
         return result;
+    }
+
+    private sealed class IntakeReviewRow
+    {
+        public Guid DocumentId { get; set; }
+        public string Status { get; set; } = DocumentIntakeReviewStatus.Pending;
+        public Guid? ReviewedBy { get; set; }
+        public DateTime? ReviewedAt { get; set; }
+        public string? Notes { get; set; }
+
+        public DocumentIntakeReviewDto ToDto() => new(
+            DocumentId,
+            string.IsNullOrWhiteSpace(Status) ? DocumentIntakeReviewStatus.Pending : Status,
+            ReviewedBy,
+            ReviewedAt is null ? null : new DateTimeOffset(DateTime.SpecifyKind(ReviewedAt.Value, DateTimeKind.Utc)),
+            Notes);
     }
 }

@@ -55,9 +55,11 @@ public static class ProtocolAttachmentSaver
             catch (Exception ex)
             {
                 await TryCompensateAsync(storage, path, protocolId, logger, ex);
-                logger.LogError(ex, "Falha ao armazenar anexo do protocolo {Protocol} ({File}).", protocolId, original);
-                results.Add(new ProtocolFileResult(original, "Armazenamento do arquivo",
-                    "Não foi possível salvar o arquivo. Revise o nome/tamanho e tente enviar novamente.", true, Guid.NewGuid().ToString("N")));
+                var correlation = Guid.NewGuid().ToString("N");
+                logger.LogError(ex, "Falha ao armazenar anexo do protocolo {Protocol} ({File}). Correlation={Correlation}", protocolId, original, correlation);
+                const string reason = "Não foi possível salvar o arquivo. Revise o nome/tamanho e tente enviar novamente.";
+                await service.RecordAttachmentFailureAsync(tenantId, protocolId, userId, original, contentType, file.Length, "Armazenamento do arquivo", reason, correlation, ct);
+                results.Add(new ProtocolFileResult(original, "Armazenamento do arquivo", reason, true, correlation));
                 continue;
             }
 
@@ -69,18 +71,22 @@ public static class ProtocolAttachmentSaver
             catch (Exception ex)
             {
                 await TryCompensateAsync(storage, path, protocolId, logger, ex);
-                logger.LogError(ex, "Falha ao registrar anexo do protocolo {Protocol} ({File}).", protocolId, original);
-                results.Add(new ProtocolFileResult(original, "Registro no protocolo",
-                    "O arquivo foi gravado, mas não pôde ser vinculado ao protocolo. Tente enviar novamente.", true, Guid.NewGuid().ToString("N")));
+                var correlation = Guid.NewGuid().ToString("N");
+                logger.LogError(ex, "Falha ao registrar anexo do protocolo {Protocol} ({File}). Correlation={Correlation}", protocolId, original, correlation);
+                const string reason = "O arquivo foi gravado, mas não pôde ser vinculado ao protocolo. Tente enviar novamente.";
+                await service.RecordAttachmentFailureAsync(tenantId, protocolId, userId, safe, contentType, file.Length, "Registro no protocolo", reason, correlation, ct);
+                results.Add(new ProtocolFileResult(original, "Registro no protocolo", reason, true, correlation));
                 continue;
             }
 
             if (!res.IsSuccess)
             {
                 await TryCompensateAsync(storage, path, protocolId, logger, null);
-                logger.LogWarning("Anexo do protocolo {Protocol} rejeitado ({File}): {Msg}", protocolId, original, res.ErrorMessage);
-                results.Add(new ProtocolFileResult(original, "Registro no protocolo",
-                    res.ErrorMessage ?? "Não foi possível vincular o arquivo ao protocolo.", false, Guid.NewGuid().ToString("N")));
+                var correlation = Guid.NewGuid().ToString("N");
+                var reason = res.ErrorMessage ?? "Não foi possível vincular o arquivo ao protocolo.";
+                logger.LogWarning("Anexo do protocolo {Protocol} rejeitado ({File}): {Msg}. Correlation={Correlation}", protocolId, original, reason, correlation);
+                await service.RecordAttachmentFailureAsync(tenantId, protocolId, userId, safe, contentType, file.Length, "Registro no protocolo", reason, correlation, ct);
+                results.Add(new ProtocolFileResult(original, "Registro no protocolo", reason, false, correlation));
             }
         }
 

@@ -50,8 +50,8 @@
                     <td>@(i.RetentionDueAt.ToString("dd/MM/yyyy") ?? "—")</td>
                     <td>@i.RetentionStatus</td>
                     <td>@i.SuggestedDestination</td>
-                    <td>@i.Decision</td>
-                    <td>@i.DecisionNotes</td>
+                    <td>@i.Decision / @(i.ExecutionStatus ?? "não executado")</td>
+                    <td>@(string.IsNullOrWhiteSpace(i.ExecutionBlockReason) ? i.DecisionNotes : i.ExecutionBlockReason)</td>
                 </tr>
             }
         </tbody>
