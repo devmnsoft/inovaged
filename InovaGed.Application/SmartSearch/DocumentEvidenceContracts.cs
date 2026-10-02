@@ -29,7 +29,14 @@ public sealed class DocumentEvidenceResponse
     public int ConsideredDocuments { get; set; }
     public bool CoveragePartial { get; set; }
     public IReadOnlyList<DocumentEvidenceSource> Sources { get; set; } = [];
+    public IReadOnlyList<DocumentEvidenceClaim> Claims { get; set; } = [];
     public IReadOnlyList<string> Limitations { get; set; } = [];
+}
+
+public sealed class DocumentEvidenceClaim
+{
+    public string Text { get; set; } = string.Empty;
+    public IReadOnlyList<string> References { get; set; } = [];
 }
 
 public sealed class DocumentEvidenceSource
