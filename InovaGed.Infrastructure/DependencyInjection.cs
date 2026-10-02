@@ -50,6 +50,8 @@ using InovaGed.Application.ContractMeasurement;
 using InovaGed.Infrastructure.ContractMeasurement;
 using InovaGed.Application.Branding;
 using InovaGed.Infrastructure.Branding;
+using InovaGed.Application.ArtificialIntelligence;
+using InovaGed.Infrastructure.ArtificialIntelligence;
 
 namespace InovaGed.Infrastructure;
 
@@ -80,6 +82,9 @@ public static class InfrastructureServiceCollectionExtensions
             .AddInfrastructureHealthModule(configuration)
             .AddContinuityModule(configuration)
             .AddDigitalSignatureModule(configuration);
+
+        services.AddOptions<DocumentAiOptions>().Bind(configuration.GetSection(DocumentAiOptions.SectionName));
+        services.AddHttpClient<IDocumentAiGateway, DocumentAiGateway>();
 
         services.AddOptions<NodeIdentityOptions>()
             .Bind(configuration.GetSection("Cluster"))
