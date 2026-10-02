@@ -3,7 +3,8 @@ using System.Text.Json;
 namespace InovaGed.Application.ArtificialIntelligence;
 
 public enum AiTask { AskCollection, Summarize, ExtractMetadata, SuggestClassification, SupportProtocol, CompareDocuments }
-public enum AiFailureKind { None, Disabled, CredentialMissing, InvalidCredential, ModelUnavailable, QuotaExceeded, RateLimited, Cancelled, Timeout, InvalidOutput, ProviderUnavailable, Internal }
+public enum AiFailureKind { None, Disabled, CredentialMissing, InvalidCredential, ModelUnavailable, QuotaExceeded, IdempotencyConflict, RateLimited, Cancelled, Timeout, InvalidOutput, ProviderUnavailable, Internal }
+public sealed class AiIdempotencyConflictException(string message) : InvalidOperationException(message) { }
 
 public sealed record AiCapabilities(bool Text, bool Image, bool StructuredOutput, bool Streaming, bool Embeddings);
 public sealed record AiUsage(long? InputTokens, long? OutputTokens, long? TotalTokens);
@@ -67,12 +68,17 @@ public sealed record AiEffectivePolicy(
     long ConsumedTokens, long ReservedTokens);
 
 public sealed record AiExecutionLease(Guid ExecutionId, bool IsOwner, AiExecutionState State, AiResult? ExistingResult = null);
+public sealed record AiExecutionStatus(Guid ExecutionId, Guid TenantId, Guid UserId, AiTask Task,
+    AiExecutionState State, DateTimeOffset CreatedAt, DateTimeOffset? CompletedAt, AiResult? Result);
 
 /// <summary>Persistent tenant policy and distributed execution/quota boundary.</summary>
 public interface IAiGovernanceStore
 {
     Task<AiEffectivePolicy?> GetEffectivePolicyAsync(Guid tenantId, AiTask task, CancellationToken ct);
     Task<AiExecutionLease> ReserveAsync(AiRequest request, string provider, string model, long policyRevision, long estimatedTokens, CancellationToken ct);
-    Task MarkRunningAsync(Guid executionId, CancellationToken ct);
+    /// <summary>Atomically confirms that the lease is still valid and its policy revision is current.</summary>
+    Task<bool> MarkRunningAsync(Guid executionId, CancellationToken ct);
     Task CompleteAsync(Guid executionId, AiResult result, long reservedTokens, TimeSpan duration, CancellationToken ct);
+    Task<AiExecutionStatus?> GetExecutionAsync(Guid tenantId, Guid userId, Guid executionId, CancellationToken ct);
+    Task<int> ExpireReservationsAsync(CancellationToken ct);
 }

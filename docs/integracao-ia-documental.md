@@ -10,7 +10,7 @@ O gateway não executa protocolo, eliminação, HOLD, temporalidade ou emprésti
 
 A configuração global `DocumentAi` começa com `Enabled=false`, autoriza provedores/modelos e estabelece máximos. Chaves existem somente nas variáveis `GROQ_API_KEY`, `GEMINI_API_KEY` e `DEEPSEEK_API_KEY`; a UI mostra apenas “configurada/ausente”. Nunca grave segredos em banco, logs ou frontend.
 
-A migration `2026_10_02_document_ai_governance.sql` cria a política explícita por tenant. Ausência de registro bloqueia antes da rede. **Administração → IA por cliente** grava habilitação, tarefas, provedor/modelo e limites menores. Uma alteração incrementa a revisão. O gateway exige coincidência exata entre política efetiva e allowlist global, sem fallback. Tenant e usuário vêm de `ICurrentUser`, não do navegador.
+A migration aplicada `2026_10_02_document_ai_governance.sql` cria a política explícita por tenant; ela não deve ser reescrita. O hardening incremental está em `2026_10_03_document_ai_governance_hardening.sql`. Ausência de registro bloqueia antes da rede. **Administração → IA por cliente** reapresenta os valores salvos, permite habilitar cada tarefa e aceita somente provedor/modelo estruturado do catálogo global e limites que não o excedam. A revisão implementa concorrência otimista. Tenant e usuário vêm de `ICurrentUser`, não do navegador.
 
 `BaseUrl` exige HTTPS e host oficial (`api.groq.com`, `generativelanguage.googleapis.com` ou `api.deepseek.com`) ou host explicitamente confiável.
 
@@ -26,15 +26,15 @@ O modelo precisa constar em `AllowedModels` e `StructuredOutputModels`; capacida
 
 ## Execuções, cota e recuperação
 
-`ai_execution` registra tenant/usuário, tarefa, provedor/modelo, referências de documento/versão, correlação, revisão, idempotência, estado, duração e uso — nunca conteúdo integral ou segredo. A unicidade `(tenant_id, idempotency_key)` evita execução local duplicada.
+`ai_execution` registra tenant/usuário, tarefa, provedor/modelo, referências, fingerprint da entrada, correlação, revisão, período da reserva, idempotência, estado, duração e uso — nunca OCR integral ou segredo. A unicidade `(tenant_id, user_id, task, idempotency_key)` e o tratamento do conflito de inserção garantem uma execução local; reutilizar a chave com outro fingerprint é conflito explícito.
 
-A reserva usa transação e atualização condicional em `ai_monthly_usage`, segura entre instâncias. Limite de entrada é ocorrência distinta da cota. O acerto libera reserva e contabiliza uso reportado. Timeout após envio vira `RemoteOutcomeUnknown` e não é reenviado automaticamente. `ged.expire_ai_reservations()` libera reservas abandonadas; execução que chegou a `Running` expira como incerta. Não se promete cobrança única pelo provedor.
+A reserva usa transação e atualização condicional em `ai_monthly_usage`, revalidando revisão, tarefa, provedor e modelo. `MarkRunningAsync` só marca o envio se a política ainda for a mesma. O acerto é condicional e único, usa o período gravado mesmo após virada do mês e, quando o provedor omite uso, contabiliza conservadoramente a reserva como estimativa — nunca como zero comprovado. Resultados estruturados ficam em armazenamento privado por 30 dias e a consulta exige tenant e usuário; o endpoint hospitalar também revalida documento/versão. Timeout ou cancelamento depois do envio vira `RemoteOutcomeUnknown` e não é reenviado automaticamente. O Operations Worker chama `ged.expire_ai_reservations()`; reserva sem envio expira, enquanto envio sem desfecho fica incerto.
 
 ## Resposta fundamentada e resumo
 
 `DocumentEvidenceService` combina cobertura de recuperação e síntese, interpreta `answered`, `partial_coverage` e `insufficient_evidence`, rejeita combinações contraditórias, limita afirmações/texto/referências, descarta referência desconhecida e informa redução. Fontes convencionais permanecem visíveis. Após a chamada, acesso e versão são revalidados. Uma referência é evidência para revisão humana, não prova semântica automática.
 
-No visualizador hospitalar, **Resumir documento** processa a versão aberta e apresenta assunto, fatos explícitos, datas, pendências, limitações de OCR, correlação e acesso ao texto original. Sem OCR há erro compreensível. Acima de 120.000 caracteres o servidor recusa sem truncar; processamento em partes permanece pendente. Cancelamento é visível e o original não é alterado.
+No visualizador hospitalar, **Resumir documento** autoriza antes de ler o OCR e revalida acesso, situação e versão depois da chamada. Fatos, datas e pendências exigem trecho literal, validado pelo servidor contra o OCR enviado, e a interface oferece abertura da fonte. Sem OCR há erro compreensível. Acima de 120.000 caracteres o servidor recusa sem truncar; processamento em partes permanece pendente. Cancelamento é visível e o original não é alterado.
 
 ## Homologação
 
@@ -49,14 +49,14 @@ No visualizador hospitalar, **Resumir documento** processa a versão aberta e ap
 
 ## Estado verificável desta entrega
 
-- **Implementado:** política persistente fail-closed por tenant; painel do administrador do cliente; execução/idempotência; cota concorrente; estados incerto/cancelado/rejeitado; resumo revisável; validação rigorosa de schema; cobertura e revalidação de fonte/versão.
-- **Verificado estaticamente:** nenhuma chave/conteúdo integral persistido; falha de IA não remove fontes convencionais; resumo não grava metadados.
+- **Implementado:** política fail-closed; painel por cliente com catálogo/tarefas/revisão; fingerprint e concorrência da primeira reserva; liquidação idempotente no período original; estados de envio e recuperação; retenção/consulta privada; expiração no worker; autorização antes do OCR e depois do provedor; resumo com evidências literais validadas.
+- **Verificado estaticamente:** nenhum OCR ou segredo é persistido; falha de IA não remove fontes convencionais; resumo não grava metadados.
 - **Bloqueado:** `dotnet` não existe no ambiente, portanto restore/build/testes .NET não foram executados. Não há PostgreSQL descartável nem credenciais; integração real, autorização HTTP, concorrência e screenshot autenticado não foram executados. Consulta oficial online retornou HTTP 401.
-- **Pendente específico:** preenchimento/classificação assistidos e aplicação parcial pelo serviço canônico com token de concorrência; worker para expiração; resumo em partes/fila; teste de conexão global; painel global multi-tenant. Protocolo, comparação, imagens e embeddings permanecem no backlog.
+- **Pendente específico:** preenchimento/classificação assistidos e aplicação parcial pelo serviço canônico com token de concorrência; resumo em partes/fila; teste de conexão global; painel global multi-tenant. Protocolo assistido, comparação, imagens e embeddings permanecem no backlog.
 
 ## Evidências desta execução
 
-- Baseline: branch `work`, commit `0edc08999a5a3c4e81eea3e070a29bf27329938f`, árvore limpa.
+- Baseline reconfirmado: branch `work`, referência `7f26eb2d8bb5a9e48bd06745c23cb68fc7ce1bff` (merge da PR #550), árvore inicialmente limpa.
 - `dotnet --info`: bloqueado (`dotnet: command not found`).
 - Consulta às documentações oficiais: bloqueada (`HTTP 401 Unauthorized`).
 - Nenhuma chamada real foi tentada: não havia credenciais fornecidas.
