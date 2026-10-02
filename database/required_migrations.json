@@ -278,5 +278,12 @@
     "area": "Etiquetas / Governanca de impressao",
     "required": true,
     "description": "Adiciona idempotencia por acao, operacao auditavel e armazenamento imutavel do artefato."
+  },
+  {
+    "name": "2026_10_02_document_ai_governance",
+    "path": "database/migrations/2026_10_02_document_ai_governance.sql",
+    "area": "IA documental",
+    "required": true,
+    "description": "Adiciona política fail-closed por tenant, reserva atômica de cota e execuções idempotentes sem armazenar conteúdo."
   }
 ]

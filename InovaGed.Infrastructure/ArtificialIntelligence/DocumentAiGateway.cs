@@ -22,6 +22,8 @@ public sealed class DocumentAiGateway : IDocumentAiGateway
     private readonly DocumentAiOptions _options;
     private readonly ILogger<DocumentAiGateway> _logger;
     public IReadOnlyDictionary<string, AiCapabilities> Capabilities => Catalog;
+    internal string ActiveProvider => _options.Provider.Trim();
+    internal string? ModelFor(AiTask task) => _options.TaskModels.TryGetValue(task.ToString(), out var model) ? model : null;
 
     public DocumentAiGateway(HttpClient http, IOptions<DocumentAiOptions> options, ILogger<DocumentAiGateway> logger)
     { _http = http; _options = options.Value; _logger = logger; }
@@ -36,6 +38,10 @@ public sealed class DocumentAiGateway : IDocumentAiGateway
         var taskName = request.Task.ToString();
         if (!_options.TaskModels.TryGetValue(taskName, out var model) || string.IsNullOrWhiteSpace(model) || !settings.AllowedModels.Contains(model, StringComparer.Ordinal))
             return Fail(provider, model ?? "", AiFailureKind.ModelUnavailable, "Modelo não permitido para esta tarefa.", correlationId);
+        if (request.OutputSchema is not null && !settings.StructuredOutputModels.Contains(model, StringComparer.Ordinal))
+            return Fail(provider, model, AiFailureKind.ModelUnavailable, "O modelo não foi homologado para saída estruturada.", correlationId);
+        if (request.OutputSchema is not null && !JsonSchemaSubsetValidator.IsSupportedSchema(request.OutputSchema.RootElement, out var schemaError))
+            return Fail(provider, model, AiFailureKind.InvalidOutput, schemaError, correlationId);
         if (request.Context.Any(x => x.Data is not null) && !capabilities.Image)
             return Fail(provider, model, AiFailureKind.InvalidOutput, "O adaptador configurado aceita somente texto; conteúdo binário não foi enviado.", correlationId);
         if (!TryValidateEndpoint(provider, settings.BaseUrl, out var endpointError))
@@ -146,6 +152,23 @@ public sealed class DocumentAiGateway : IDocumentAiGateway
 
 internal static class JsonSchemaSubsetValidator
 {
+    private static readonly HashSet<string> Supported = new(StringComparer.Ordinal)
+    { "type", "enum", "required", "properties", "additionalProperties", "items", "minLength", "maxLength", "minItems", "maxItems", "minimum", "maximum" };
+
+    public static bool IsSupportedSchema(JsonElement schema, out string error)
+    {
+        error = "O schema solicitado contém uma palavra-chave não suportada.";
+        if (schema.ValueKind != JsonValueKind.Object) return false;
+        foreach (var property in schema.EnumerateObject())
+        {
+            if (!Supported.Contains(property.Name)) return false;
+            if (property.Name == "properties" && property.Value.ValueKind == JsonValueKind.Object)
+                foreach (var child in property.Value.EnumerateObject()) if (!IsSupportedSchema(child.Value, out error)) return false;
+            if (property.Name == "items" && !IsSupportedSchema(property.Value, out error)) return false;
+        }
+        error = string.Empty; return true;
+    }
+
     public static bool IsValid(JsonElement value, JsonElement schema)
     {
         if (schema.TryGetProperty("type", out var type) && !MatchesType(value, type)) return false;
@@ -159,6 +182,22 @@ internal static class JsonSchemaSubsetValidator
                 foreach (var property in value.EnumerateObject()) if (properties.TryGetProperty(property.Name, out var childSchema) && !IsValid(property.Value, childSchema)) return false;
         }
         if (value.ValueKind == JsonValueKind.Array && schema.TryGetProperty("items", out var items) && value.EnumerateArray().Any(x => !IsValid(x, items))) return false;
+        if (value.ValueKind == JsonValueKind.String)
+        {
+            var length = value.GetString()?.Length ?? 0;
+            if (schema.TryGetProperty("minLength", out var minLength) && (!minLength.TryGetInt32(out var min) || length < min)) return false;
+            if (schema.TryGetProperty("maxLength", out var maxLength) && (!maxLength.TryGetInt32(out var max) || length > max)) return false;
+        }
+        if (value.ValueKind == JsonValueKind.Array)
+        {
+            if (schema.TryGetProperty("minItems", out var minItems) && (!minItems.TryGetInt32(out var min) || value.GetArrayLength() < min)) return false;
+            if (schema.TryGetProperty("maxItems", out var maxItems) && (!maxItems.TryGetInt32(out var max) || value.GetArrayLength() > max)) return false;
+        }
+        if (value.ValueKind == JsonValueKind.Number)
+        {
+            if (schema.TryGetProperty("minimum", out var minimum) && (!value.TryGetDecimal(out var number) || !minimum.TryGetDecimal(out var min) || number < min)) return false;
+            if (schema.TryGetProperty("maximum", out var maximum) && (!value.TryGetDecimal(out var maximumNumber) || !maximum.TryGetDecimal(out var max) || maximumNumber > max)) return false;
+        }
         return true;
     }
     private static bool MatchesType(JsonElement value, JsonElement type) => type.ValueKind == JsonValueKind.Array

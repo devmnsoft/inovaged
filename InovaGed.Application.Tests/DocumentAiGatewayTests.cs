@@ -60,6 +60,27 @@ public sealed class DocumentAiGatewayTests
     }
 
     [Fact]
+    public async Task Unsupported_schema_keyword_is_rejected_before_network()
+    {
+        using var key = EnvironmentVariable.Set("GROQ_API_KEY", "test-only");
+        var handler = new CountingHandler();
+        using var schema = System.Text.Json.JsonDocument.Parse("""{"type":"string","pattern":"secret"}""");
+        var result = await Create(Enabled("Groq"), handler).ExecuteAsync(new AiRequest(Guid.NewGuid(), Guid.NewGuid(), AiTask.Summarize, "resuma", [], schema), default);
+        Assert.Equal(AiFailureKind.InvalidOutput, result.Failure);
+        Assert.Equal(0, handler.Calls);
+    }
+
+    [Fact]
+    public async Task String_and_array_limits_are_enforced_locally()
+    {
+        using var key = EnvironmentVariable.Set("GROQ_API_KEY", "test-only");
+        var handler = new CountingHandler("""{"choices":[{"finish_reason":"stop","message":{"content":"{\"items\":[\"too long\",\"second\"]}"}}]}""");
+        using var schema = System.Text.Json.JsonDocument.Parse("""{"type":"object","additionalProperties":false,"required":["items"],"properties":{"items":{"type":"array","maxItems":1,"items":{"type":"string","maxLength":3}}}}""");
+        var result = await Create(Enabled("Groq"), handler).ExecuteAsync(new AiRequest(Guid.NewGuid(), Guid.NewGuid(), AiTask.Summarize, "resuma", [], schema), default);
+        Assert.Equal(AiFailureKind.InvalidOutput, result.Failure);
+    }
+
+    [Fact]
     public async Task User_cancellation_is_propagated_instead_of_becoming_timeout()
     {
         using var key = EnvironmentVariable.Set("GROQ_API_KEY", "test-only");
@@ -81,7 +102,7 @@ public sealed class DocumentAiGatewayTests
     {
         var options = new DocumentAiOptions { Enabled = true, Provider = provider };
         options.TaskModels["Summarize"] = "test-model";
-        options.Providers[provider] = new AiProviderOptions { Enabled = true, BaseUrl = provider == "Gemini" ? "https://generativelanguage.googleapis.com/v1beta" : provider == "Groq" ? "https://api.groq.com/openai/v1" : "https://api.deepseek.com", AllowedModels = ["test-model"] };
+        options.Providers[provider] = new AiProviderOptions { Enabled = true, BaseUrl = provider == "Gemini" ? "https://generativelanguage.googleapis.com/v1beta" : provider == "Groq" ? "https://api.groq.com/openai/v1" : "https://api.deepseek.com", AllowedModels = ["test-model"], StructuredOutputModels = ["test-model"] };
         return options;
     }
 

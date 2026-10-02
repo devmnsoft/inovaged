@@ -54,4 +54,25 @@ public sealed class AiProviderOptions
     public bool Enabled { get; set; }
     public string BaseUrl { get; set; } = string.Empty;
     public List<string> AllowedModels { get; set; } = [];
+    /// <summary>Models for which this adapter/provider combination was explicitly homologated with strict JSON schema.</summary>
+    public List<string> StructuredOutputModels { get; set; } = [];
+}
+
+public enum AiExecutionState { Reserved, Running, Completed, Rejected, Failed, Cancelled, RemoteOutcomeUnknown, Expired }
+
+public sealed record AiEffectivePolicy(
+    Guid TenantId, long Revision, bool Enabled, IReadOnlyCollection<AiTask> Tasks,
+    IReadOnlyCollection<string> Providers, IReadOnlyDictionary<AiTask, string> Models,
+    long MonthlyTokenLimit, int MaximumInputCharacters, DateTimeOffset PeriodStart,
+    long ConsumedTokens, long ReservedTokens);
+
+public sealed record AiExecutionLease(Guid ExecutionId, bool IsOwner, AiExecutionState State, AiResult? ExistingResult = null);
+
+/// <summary>Persistent tenant policy and distributed execution/quota boundary.</summary>
+public interface IAiGovernanceStore
+{
+    Task<AiEffectivePolicy?> GetEffectivePolicyAsync(Guid tenantId, AiTask task, CancellationToken ct);
+    Task<AiExecutionLease> ReserveAsync(AiRequest request, string provider, string model, long policyRevision, long estimatedTokens, CancellationToken ct);
+    Task MarkRunningAsync(Guid executionId, CancellationToken ct);
+    Task CompleteAsync(Guid executionId, AiResult result, long reservedTokens, TimeSpan duration, CancellationToken ct);
 }

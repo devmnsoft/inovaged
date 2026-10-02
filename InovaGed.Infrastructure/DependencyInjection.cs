@@ -84,7 +84,9 @@ public static class InfrastructureServiceCollectionExtensions
             .AddDigitalSignatureModule(configuration);
 
         services.AddOptions<DocumentAiOptions>().Bind(configuration.GetSection(DocumentAiOptions.SectionName));
-        services.AddHttpClient<IDocumentAiGateway, DocumentAiGateway>();
+        services.AddHttpClient<DocumentAiGateway>();
+        services.AddScoped<IAiGovernanceStore, PostgresAiGovernanceStore>();
+        services.AddScoped<IDocumentAiGateway, GovernedDocumentAiGateway>();
 
         services.AddOptions<NodeIdentityOptions>()
             .Bind(configuration.GetSection("Cluster"))

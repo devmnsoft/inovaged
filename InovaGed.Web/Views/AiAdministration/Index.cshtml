@@ -1,0 +1,24 @@
+@model InovaGed.Web.Controllers.AiPolicyVm
+@{ ViewData["Title"] = "Inteligência artificial por cliente"; }
+<main class="container py-4" aria-labelledby="ai-title">
+ <a asp-controller="Administration" asp-action="Index">← Administração</a>
+ <h1 id="ai-title" class="mt-3">Inteligência artificial por cliente</h1>
+ <p class="text-muted">Habilite tarefas revisáveis e limites. Sem política explícita, nenhum conteúdo é enviado a provedores externos.</p>
+ @if(TempData["Success"] is string message){<div class="alert alert-success" role="status">@message</div>}
+ <div class="row g-3 mb-4">
+  <div class="col-md-3"><div class="card card-body"><small>Consumo mensal</small><strong>@Model.ConsumedTokens tokens</strong></div></div>
+  <div class="col-md-3"><div class="card card-body"><small>Reservado</small><strong>@Model.ReservedTokens tokens</strong></div></div>
+  <div class="col-md-3"><div class="card card-body"><small>Falhas</small><strong>@Model.Failures</strong></div></div>
+  <div class="col-md-3"><div class="card card-body"><small>Credencial</small><strong>@(Model.CredentialConfigured?"Configurada":"Ausente")</strong></div></div>
+ </div>
+ <form asp-action="Save" method="post" class="card card-body" data-ai-policy-form>
+  @Html.AntiForgeryToken()
+  <div class="form-check form-switch mb-3"><input class="form-check-input" type="checkbox" name="enabled" value="true" checked="@Model.Enabled"><label class="form-check-label">Permitir tarefas assistidas para este cliente</label></div>
+  <div class="row g-3"><div class="col-md-6"><label class="form-label" for="provider">Provedor autorizado</label><select id="provider" name="provider" class="form-select"><option>Groq</option><option>Gemini</option><option>DeepSeek</option></select></div>
+  <div class="col-md-6"><label class="form-label" for="model">Modelo homologado</label><input id="model" name="model" maxlength="160" required class="form-control" aria-describedby="model-help"><small id="model-help">O modelo também deve estar na lista global e homologado para JSON estruturado.</small></div>
+  <div class="col-md-6"><label class="form-label" for="quota">Cota mensal de tokens</label><input id="quota" name="monthlyTokenLimit" type="number" min="0" max="10000000" value="@Model.MonthlyTokenLimit" class="form-control"></div>
+  <div class="col-md-6"><label class="form-label" for="input-limit">Limite de caracteres por entrada</label><input id="input-limit" name="maximumInputCharacters" type="number" min="1000" max="500000" value="@Model.MaximumInputCharacters" class="form-control"></div></div>
+  <div class="alert alert-warning mt-3">Sugestões nunca alteram o cadastro automaticamente. O usuário deve revisar e confirmar cada campo.</div>
+  <button class="btn btn-primary align-self-start" type="submit">Salvar política</button>
+ </form>
+</main>
