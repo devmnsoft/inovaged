@@ -3111,3 +3111,5 @@ where coalesce(reg_status, 'A') = 'A';
 \ir migrations/2026_09_30_ged_physical_transit.sql
 \ir migrations/2026_10_01_ged_retention_c2.sql
 \ir migrations/2026_09_30_protocol_custody_center.sql
+\ir migrations/2026_10_02_document_ai_governance.sql
+\ir migrations/2026_10_03_document_ai_governance_hardening.sql

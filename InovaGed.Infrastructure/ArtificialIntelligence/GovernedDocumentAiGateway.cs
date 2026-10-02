@@ -31,15 +31,23 @@ public sealed class GovernedDocumentAiGateway : IDocumentAiGateway
         if (inputCharacters > policy.MaximumInputCharacters)
             return Failure(AiFailureKind.InvalidOutput, "A entrada excede o limite da política do cliente.", provider, model);
 
-        var reservation = Math.Max(1, (inputCharacters + 3L) / 4L);
+        // This is deliberately conservative: input plus the globally configured maximum output is
+        // reserved by the provider boundary. It is an estimate, never presented as exact usage.
+        var reservation = Math.Max(1, (inputCharacters + 2L) / 3L) + 1_000;
         AiExecutionLease lease;
         try { lease = await _governance.ReserveAsync(request, provider, model, policy.Revision, reservation, cancellationToken); }
+        catch (AiIdempotencyConflictException ex) { return Failure(AiFailureKind.IdempotencyConflict, ex.Message, provider, model); }
         catch (InvalidOperationException ex) { return Failure(AiFailureKind.QuotaExceeded, ex.Message, provider, model); }
         if (!lease.IsOwner)
             return lease.ExistingResult ?? Failure(AiFailureKind.RateLimited, "Esta solicitação já está em processamento; consulte a execução existente.", provider, model, lease.ExecutionId.ToString("N"));
 
         var watch = Stopwatch.StartNew();
-        await _governance.MarkRunningAsync(lease.ExecutionId, cancellationToken);
+        if (!await _governance.MarkRunningAsync(lease.ExecutionId, cancellationToken))
+        {
+            var blocked = Failure(AiFailureKind.Disabled, "A política foi alterada antes do envio; nenhum conteúdo foi enviado.", provider, model, lease.ExecutionId.ToString("N"));
+            await _governance.CompleteAsync(lease.ExecutionId, blocked, reservation, TimeSpan.Zero, CancellationToken.None);
+            return blocked;
+        }
         AiResult result;
         try { result = await _provider.ExecuteAsync(request, cancellationToken); }
         catch (OperationCanceledException)

@@ -1,6 +1,7 @@
 using InovaGed.Application;
 using InovaGed.Application.Continuity;
 using InovaGed.Infrastructure;
+using InovaGed.Application.ArtificialIntelligence;
 
 var builder = Host.CreateApplicationBuilder(args);
 builder.Services.AddWindowsService();
@@ -19,6 +20,8 @@ public sealed class OperationsWorker(IServiceScopeFactory scopes, IConfiguration
         {
             using var scope = scopes.CreateScope();
             await scope.ServiceProvider.GetRequiredService<IBackupOrchestrator>().ProcessDueJobsAsync(workerId, stoppingToken);
+            var expired = await scope.ServiceProvider.GetRequiredService<IAiGovernanceStore>().ExpireReservationsAsync(stoppingToken);
+            if (expired > 0) logger.LogInformation("Reservas de IA expiradas/reconciliadas: {Count}.", expired);
             await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
         }
     }
