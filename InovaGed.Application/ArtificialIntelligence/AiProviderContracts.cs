@@ -3,7 +3,7 @@ using System.Text.Json;
 namespace InovaGed.Application.ArtificialIntelligence;
 
 public enum AiTask { AskCollection, Summarize, ExtractMetadata, SuggestClassification, SupportProtocol, CompareDocuments }
-public enum AiFailureKind { None, Disabled, CredentialMissing, InvalidCredential, ModelUnavailable, QuotaExceeded, RateLimited, Timeout, InvalidOutput, ProviderUnavailable, Internal }
+public enum AiFailureKind { None, Disabled, CredentialMissing, InvalidCredential, ModelUnavailable, QuotaExceeded, RateLimited, Cancelled, Timeout, InvalidOutput, ProviderUnavailable, Internal }
 
 public sealed record AiCapabilities(bool Text, bool Image, bool StructuredOutput, bool Streaming, bool Embeddings);
 public sealed record AiUsage(long? InputTokens, long? OutputTokens, long? TotalTokens);
@@ -44,6 +44,9 @@ public sealed class DocumentAiOptions
     public int TimeoutSeconds { get; set; } = 30;
     public int MaximumInputCharacters { get; set; } = 50_000;
     public int MaximumOutputTokens { get; set; } = 1_000;
+    public int MaximumOutputCharacters { get; set; } = 100_000;
+    /// <summary>Additional HTTPS hosts approved by global administration. Official provider hosts are always trusted.</summary>
+    public List<string> TrustedEndpointHosts { get; set; } = [];
 }
 
 public sealed class AiProviderOptions
