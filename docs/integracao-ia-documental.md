@@ -2,56 +2,61 @@
 
 ## Escopo e segurança
 
-A integração é uma camada opcional sobre a recuperação autorizada do SmartSearch. `DocumentEvidenceService` continua selecionando o tenant, revalidando os documentos e produzindo os trechos; somente esses trechos são enviados ao provedor. Se IA estiver desabilitada, sem credencial ou sem evidência, a consulta convencional permanece disponível. Conteúdo documental é tratado como dado não confiável e jamais como instrução operacional.
+A IA é opcional e subordinada ao GED. O SmartSearch recupera fontes já autorizadas; somente trechos/versões selecionados são enviados. Conteúdo documental é dado não confiável, nunca instrução. Se política, credencial ou provedor falhar, GED, OCR e pesquisa convencional continuam disponíveis.
 
-O gateway não oferece comandos de protocolo, classificação, temporalidade, empréstimo ou eliminação. As tarefas `ExtractMetadata`, `SuggestClassification`, `SupportProtocol` e `CompareDocuments` são contratos para sugestões futuras/revisáveis; persistência e decisões continuam nos serviços canônicos e exigem confirmação humana. Não foi criada migration.
+O gateway não executa protocolo, eliminação, HOLD, temporalidade ou empréstimo. Resumo e sugestões são revisáveis e não alteram o original.
 
-## Configuração segura
+## Configuração segura e política efetiva
 
-Configure `DocumentAi` por configuração protegida do servidor. Comece com `Enabled=false`, habilite explicitamente um provedor global, relacione cada tarefa a um modelo em `TaskModels` e inclua esse modelo em `AllowedModels`. A lista vazia falha de modo seguro e evita nomes de modelo antigos fixados no código.
+A configuração global `DocumentAi` começa com `Enabled=false`, autoriza provedores/modelos e estabelece máximos. Chaves existem somente nas variáveis `GROQ_API_KEY`, `GEMINI_API_KEY` e `DEEPSEEK_API_KEY`; a UI mostra apenas “configurada/ausente”. Nunca grave segredos em banco, logs ou frontend.
 
-As chaves são lidas somente no processo do servidor:
+A migration `2026_10_02_document_ai_governance.sql` cria a política explícita por tenant. Ausência de registro bloqueia antes da rede. **Administração → IA por cliente** grava habilitação, tarefas, provedor/modelo e limites menores. Uma alteração incrementa a revisão. O gateway exige coincidência exata entre política efetiva e allowlist global, sem fallback. Tenant e usuário vêm de `ICurrentUser`, não do navegador.
 
-- `GROQ_API_KEY`
-- `GEMINI_API_KEY`
-- `DEEPSEEK_API_KEY`
+`BaseUrl` exige HTTPS e host oficial (`api.groq.com`, `generativelanguage.googleapis.com` ou `api.deepseek.com`) ou host explicitamente confiável.
 
-Não coloque valores em `appsettings`, banco, logs ou frontend. A configuração não implementa fallback: uma chamada usa apenas o provedor selecionado. Restrições por tenant ainda devem ser conectadas ao cadastro administrativo antes de habilitação multitenant em produção; até lá, mantenha o recurso globalmente desabilitado quando tenants tiverem políticas distintas. Esta configuração global **não constitui autorização de um cliente**.
+## Contratos dos provedores
 
-`BaseUrl` precisa usar HTTPS e um host oficial (`api.groq.com`, `generativelanguage.googleapis.com` ou `api.deepseek.com`). Hosts adicionais somente são aceitos após inclusão explícita pela administração global em `DocumentAi:TrustedEndpointHosts`; URL com credenciais, query ou fragmento é rejeitada antes da leitura da chave e antes da rede.
+Referências oficiais usadas no desenho (a consulta automatizada recebeu HTTP 401 em 2 de outubro de 2026; repita em homologação):
 
-Exemplo conceitual (sem credenciais): habilite `DocumentAi:Enabled`, `DocumentAi:Providers:<provedor>:Enabled`, preencha `DocumentAi:TaskModels:AskCollection` e autorize o mesmo identificador em `AllowedModels` por variável de ambiente ou secret store do ambiente.
+- [Groq API](https://console.groq.com/docs/api-reference) e [Structured Outputs](https://console.groq.com/docs/structured-outputs).
+- [Gemini text generation](https://ai.google.dev/gemini-api/docs/text-generation) e [Structured output](https://ai.google.dev/gemini-api/docs/structured-output).
+- [DeepSeek chat completion](https://api-docs.deepseek.com/api/create-chat-completion) e [JSON output](https://api-docs.deepseek.com/guides/json_mode).
 
-## Contratos verificados
+O modelo precisa constar em `AllowedModels` e `StructuredOutputModels`; capacidade genérica do provedor não basta. O validador local aceita somente `type`, `required`, `enum`, `properties`, `additionalProperties`, `items`, `minLength`, `maxLength`, `minItems`, `maxItems`, `minimum` e `maximum`. Palavra-chave desconhecida é rejeitada, não ignorada. Tipos incorretos, JSON malformado, saída vazia/truncada e estrutura incompatível viram `InvalidOutput`.
 
-Contratos implementados com os seguintes documentos oficiais como referência (a consulta automatizada no ambiente de entrega recebeu HTTP 401 em 2 de outubro de 2026, portanto a validação online deve ser repetida na homologação):
+## Execuções, cota e recuperação
 
-- Groq: API compatível com OpenAI em `POST /openai/v1/chat/completions`, autenticação Bearer. Consulte [API Reference](https://console.groq.com/docs/api-reference) e [Structured Outputs](https://console.groq.com/docs/structured-outputs).
-- Gemini: `POST /v1beta/models/{model}:generateContent`, chave no cabeçalho `x-goog-api-key`; saída JSON é solicitada por `responseMimeType`. Consulte [Text generation](https://ai.google.dev/gemini-api/docs/text-generation) e [Structured output](https://ai.google.dev/gemini-api/docs/structured-output).
-- DeepSeek: `POST /chat/completions`, autenticação Bearer e modo JSON por `response_format`. Consulte [Chat completion](https://api-docs.deepseek.com/api/create-chat-completion) e [JSON output](https://api-docs.deepseek.com/guides/json_mode).
+`ai_execution` registra tenant/usuário, tarefa, provedor/modelo, referências de documento/versão, correlação, revisão, idempotência, estado, duração e uso — nunca conteúdo integral ou segredo. A unicidade `(tenant_id, idempotency_key)` evita execução local duplicada.
 
-Capacidades comerciais do provedor e do modelo não são capacidades do adaptador. O catálogo exposto pela aplicação é deliberadamente conservador: os três adaptadores implementam texto e saída estruturada; não anunciam imagem, streaming nem embeddings. Em particular, bytes enviados ao adaptador Gemini textual são rejeitados antes da rede, em vez de descartados. A homologação deve ainda conferir se o modelo selecionado oferece o modo estruturado usado na tarefa.
+A reserva usa transação e atualização condicional em `ai_monthly_usage`, segura entre instâncias. Limite de entrada é ocorrência distinta da cota. O acerto libera reserva e contabiliza uso reportado. Timeout após envio vira `RemoteOutcomeUnknown` e não é reenviado automaticamente. `ged.expire_ai_reservations()` libera reservas abandonadas; execução que chegou a `Running` expira como incerta. Não se promete cobrança única pelo provedor.
 
-Quando a tarefa fornece `OutputSchema`, Gemini recebe `responseJsonSchema`, Groq recebe `json_schema` estrito e DeepSeek recebe o modo JSON. Em todos os casos o resultado é validado localmente (tipos, obrigatórios, enumerações, itens e propriedades adicionais declaradas); JSON apenas sintaticamente válido não basta. Escolhas/candidatos ausentes, bloqueio, recusa e término por limite de tokens são rejeitados. Partes textuais do Gemini são concatenadas. A entrada completa e a resposta têm limites independentes.
+## Resposta fundamentada e resumo
+
+`DocumentEvidenceService` combina cobertura de recuperação e síntese, interpreta `answered`, `partial_coverage` e `insufficient_evidence`, rejeita combinações contraditórias, limita afirmações/texto/referências, descarta referência desconhecida e informa redução. Fontes convencionais permanecem visíveis. Após a chamada, acesso e versão são revalidados. Uma referência é evidência para revisão humana, não prova semântica automática.
+
+No visualizador hospitalar, **Resumir documento** processa a versão aberta e apresenta assunto, fatos explícitos, datas, pendências, limitações de OCR, correlação e acesso ao texto original. Sem OCR há erro compreensível. Acima de 120.000 caracteres o servidor recusa sem truncar; processamento em partes permanece pendente. Cancelamento é visível e o original não é alterado.
 
 ## Homologação
 
-1. Use tenant e usuário descartáveis e documentos fictícios sem dados pessoais.
-2. Teste conexão sem acervo e confirme que chave inválida, 429, modelo ausente e timeout são classificados sem expor payload.
-3. Para cada provedor/modelo permitido, teste pergunta sem resposta, negação, datas, documento extenso, OCR ruim e instrução maliciosa dentro do documento.
-4. Confirme as referências contra documento e versão e verifique a autorização novamente após remover acesso.
-5. Meça tokens reportados, duração e qualidade em português. Testes simulados não homologam o serviço real.
-6. Não habilite extração, classificação, protocolo ou comparação em UI até haver orquestradores com schemas, revisão humana, auditoria e cotas por tenant/usuário.
+1. Aplique a migration em PostgreSQL descartável; valide instalação limpa e upgrade.
+2. Crie política para tenant descartável e confirme: sem política/desabilitado = zero chamadas; outro tenant = 404/403.
+3. Dispare o mesmo idempotency key simultaneamente e confirme uma execução; concorra reservas próximas da cota.
+4. Simule 429, credencial inválida, JSON incorreto, timeout e cancelamento; confira estado, correlação e reserva.
+5. Revogue acesso ou troque versão durante uma chamada e confirme descarte.
+6. Use documentos fictícios para cada provedor/modelo homologado. Mocks não homologam integração real.
+7. Verifique teclado, foco, loading, cancelado, parcial, erro, responsividade e original intacto.
+8. Execute regressão de upload, protocolo, custódia e temporalidade.
 
-## Estado da entrega
+## Estado verificável desta entrega
 
-- **Verificado por inspeção e testes unitários adicionados:** falha segura quando desabilitada; lista explícita de modelos; capacidades efetivamente implementadas; bloqueio de endpoint arbitrário e binário; limite sobre entrada completa e resposta; cancelamento distinto de timeout; saída truncada/malformada/fora do schema rejeitada; correlação; segredos apenas em variáveis de ambiente. A pergunta ao acervo solicita afirmações estruturadas, aceita somente referências emitidas pelo servidor e revalida os documentos depois da chamada.
-- **Bloqueado neste ambiente:** `dotnet` não está instalado, portanto restore/build/testes não foram executados aqui. A consulta automatizada às documentações oficiais também retornou HTTP 401. Esses checks precisam ser repetidos em CI/homologação; a descrição acima não é homologação dos provedores.
-- **Parcial:** pergunta ao acervo com síntese, fontes e cobertura; uso retornado pelos provedores; proteção contra prompt injection. A validade estrutural e a presença de uma fonte não provam semanticamente cada afirmação, que permanece sujeita à revisão humana. O provedor não é chamado novamente automaticamente, mas idempotência persistente, retentativas e cotas distribuídas não estão implementadas.
-- **Não implementado/não homologado:** chamadas reais (o ambiente não forneceu credenciais); política e cotas persistentes por tenant/usuário; registro persistente de execução; painel administrativo/consumo; resumo documental; preenchimento/classificação assistidos; filas longas; protocolo, comparação, multimodalidade e embeddings. Esses recursos não devem ser anunciados como disponíveis em produção.
+- **Implementado:** política persistente fail-closed por tenant; painel do administrador do cliente; execução/idempotência; cota concorrente; estados incerto/cancelado/rejeitado; resumo revisável; validação rigorosa de schema; cobertura e revalidação de fonte/versão.
+- **Verificado estaticamente:** nenhuma chave/conteúdo integral persistido; falha de IA não remove fontes convencionais; resumo não grava metadados.
+- **Bloqueado:** `dotnet` não existe no ambiente, portanto restore/build/testes .NET não foram executados. Não há PostgreSQL descartável nem credenciais; integração real, autorização HTTP, concorrência e screenshot autenticado não foram executados. Consulta oficial online retornou HTTP 401.
+- **Pendente específico:** preenchimento/classificação assistidos e aplicação parcial pelo serviço canônico com token de concorrência; worker para expiração; resumo em partes/fila; teste de conexão global; painel global multi-tenant. Protocolo, comparação, imagens e embeddings permanecem no backlog.
 
-## Evidências e comandos desta entrega
+## Evidências desta execução
 
-- Baseline confirmado antes das alterações: branch `work`, commit `25b3b95c52ab09a31268e21d7f3af49aaf27ea25`, árvore limpa.
-- `dotnet test InovaGed.Application.Tests/InovaGed.Application.Tests.csproj --no-restore --filter FullyQualifiedName~DocumentAiGatewayTests`: bloqueado (`dotnet: command not found`).
-- Nenhuma chamada real foi tentada porque não havia ferramenta .NET nem credenciais fornecidas. Nenhum teste de PostgreSQL ou validação visual foi executado; não há jornada nova completa para fotografar neste incremento.
+- Baseline: branch `work`, commit `0edc08999a5a3c4e81eea3e070a29bf27329938f`, árvore limpa.
+- `dotnet --info`: bloqueado (`dotnet: command not found`).
+- Consulta às documentações oficiais: bloqueada (`HTTP 401 Unauthorized`).
+- Nenhuma chamada real foi tentada: não havia credenciais fornecidas.

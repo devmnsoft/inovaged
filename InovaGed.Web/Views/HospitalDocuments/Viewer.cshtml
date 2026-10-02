@@ -142,6 +142,20 @@
 
         <aside class="viewer-side">
             <section class="side-section">
+                <div class="side-title">Resumo assistido <span class="badge bg-warning text-dark">Sugestão</span></div>
+                <p class="small text-muted">Como usar: gere, confira cada informação no original e abra o trecho OCR correspondente. O documento não será alterado.</p>
+                <form data-document-summary action="@Url.Action("Summarize","HospitalDocuments")" method="post">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="versionId" value="@Model.VersionId" />
+                    <input type="hidden" name="idempotencyKey" />
+                    <button type="submit" class="btn btn-primary">Resumir documento</button>
+                    <button type="button" class="btn btn-outline-secondary" data-cancel-summary hidden>Cancelar</button>
+                </form>
+                <div data-summary-status class="small mt-2" role="status" aria-live="polite"></div>
+                <div data-summary-result class="mt-3" hidden></div>
+            </section>
+
+            <section class="side-section">
                 <div class="side-title">Dados do documento</div>
 
                 <div class="meta-list">
@@ -187,3 +201,4 @@
         </aside>
     </div>
 </div>
+<script src="~/js/document-summary.js" asp-append-version="true"></script>

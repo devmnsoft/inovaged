@@ -15,6 +15,8 @@ using Microsoft.Net.Http.Headers;
 using Microsoft.Extensions.Caching.Memory;
 using System.Diagnostics;
 using System.Text.Json;
+using InovaGed.Application.ArtificialIntelligence;
+using System.Security.Cryptography;
 
 namespace InovaGed.Web.Controllers;
 
@@ -29,9 +31,35 @@ public sealed class HospitalDocumentsController : Controller
     private readonly IAuditWriter _audit;
     private readonly ILogger<HospitalDocumentsController> _logger;
     private readonly IMemoryCache _cache;
+    private readonly IDocumentAiGateway _documentAi;
 
-    public HospitalDocumentsController(IDbConnectionFactory db, ICurrentUser currentUser, IFileStorage storage, IPreviewGenerator preview, IAuditWriter audit, ILogger<HospitalDocumentsController> logger, IMemoryCache cache)
-    { _db = db; _currentUser = currentUser; _storage = storage; _preview = preview; _audit = audit; _logger = logger; _cache = cache; }
+    public HospitalDocumentsController(IDbConnectionFactory db, ICurrentUser currentUser, IFileStorage storage, IPreviewGenerator preview, IAuditWriter audit, ILogger<HospitalDocumentsController> logger, IMemoryCache cache, IDocumentAiGateway documentAi)
+    { _db = db; _currentUser = currentUser; _storage = storage; _preview = preview; _audit = audit; _logger = logger; _cache = cache; _documentAi = documentAi; }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Summarize(Guid versionId, string idempotencyKey, CancellationToken ct)
+    {
+        if (!_currentUser.IsAuthenticated) return Unauthorized();
+        if (!Guid.TryParse(idempotencyKey, out _)) return BadRequest(new { success=false, message="Identificador da solicitação inválido." });
+        const string sql="""
+select d.id "DocumentId",d.title "Title",v.id "VersionId",v.version_number "VersionNumber",s.ocr_text "Text"
+from ged.document_version v join ged.document d on d.id=v.document_id and d.tenant_id=v.tenant_id
+left join ged.document_search s on s.tenant_id=d.tenant_id and s.document_id=d.id and s.version_id=v.id
+where v.tenant_id=@tenantId and v.id=@versionId and coalesce(d.reg_status,'A')='A'
+""";
+        await using var c=await _db.OpenAsync(ct); var document=await c.QuerySingleOrDefaultAsync<SummaryDocument>(new CommandDefinition(sql,new{tenantId=_currentUser.TenantId,versionId},cancellationToken:ct));
+        if(document is null) return NotFound(); if(string.IsNullOrWhiteSpace(document.Text)) return UnprocessableEntity(new{success=false,message="Esta versão não possui texto OCR para resumir."});
+        if(document.Text.Length>120000) return UnprocessableEntity(new{success=false,message="Documento extenso: encaminhe para processamento em partes; nenhum conteúdo foi truncado."});
+        using var schema=JsonDocument.Parse("""{"type":"object","additionalProperties":false,"required":["subject","facts","dates","pending","limitations"],"properties":{"subject":{"type":"string","minLength":1,"maxLength":500},"facts":{"type":"array","maxItems":12,"items":{"type":"string","minLength":1,"maxLength":800}},"dates":{"type":"array","maxItems":10,"items":{"type":"string","minLength":1,"maxLength":300}},"pending":{"type":"array","maxItems":10,"items":{"type":"string","minLength":1,"maxLength":500}},"limitations":{"type":"array","maxItems":10,"items":{"type":"string","minLength":1,"maxLength":500}}}}""");
+        var reference=$"{document.DocumentId:N}/{document.VersionId:N}/texto-extraido";
+        var result=await _documentAi.ExecuteAsync(new(_currentUser.TenantId,_currentUser.UserId,AiTask.Summarize,"Produza resumo documental em português: assunto, fatos explícitos, datas e pendências. Não invente informações. Todo item deriva exclusivamente da fonte informada.",[new(reference,document.Text)],schema,idempotencyKey),ct);
+        if(!result.Success) return StatusCode(result.Failure==AiFailureKind.Disabled?403:422,new{success=false,message=result.Limitation,correlationId=result.CorrelationId,state=result.Failure.ToString()});
+        var current=await c.ExecuteScalarAsync<Guid?>(new CommandDefinition("select current_version_id from ged.document where tenant_id=@tenantId and id=@documentId",new{tenantId=_currentUser.TenantId,documentId=document.DocumentId},cancellationToken:ct));
+        if(current!=document.VersionId) return Conflict(new{success=false,message="A versão atual mudou durante o resumo; o resultado foi descartado."});
+        await _audit.WriteAsync(_currentUser.TenantId,_currentUser.UserId,"AI_SUMMARY","DOCUMENT",document.DocumentId,"Resumo documental revisável gerado",HttpContext.Connection.RemoteIpAddress?.ToString(),Request.Headers.UserAgent.ToString(),new{document.VersionId,result.Provider,result.Model,result.CorrelationId},ct);
+        return Json(new{success=true,document.Title,document.VersionNumber,source=reference,data=result.StructuredData?.RootElement,correlationId=result.CorrelationId,reviewRequired=true});
+    }
+    private sealed class SummaryDocument { public Guid DocumentId{get;set;} public Guid VersionId{get;set;} public int VersionNumber{get;set;} public string Title{get;set;}=""; public string Text{get;set;}=""; }
 
     [HttpGet]
     public async Task<IActionResult> Index(CancellationToken ct)
