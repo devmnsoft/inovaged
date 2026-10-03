@@ -1998,6 +1998,9 @@ check (
 create index if not exists ix_upload_batch_item_tenant_batch_status
 on ged.upload_batch_item(tenant_id, batch_id, status);
 
+-- Fix cirúrgico: a coluna can_retry precisa existir antes do índice (defeito de baseline no consolidado).
+alter table ged.upload_batch_item add column if not exists can_retry boolean not null default false;
+
 create index if not exists ix_upload_batch_item_retryable
 on ged.upload_batch_item(tenant_id, batch_id, status, can_retry)
 where status in ('ERROR', 'ABORTED', 'RETRYABLE');
@@ -3113,3 +3116,4 @@ where coalesce(reg_status, 'A') = 'A';
 \ir migrations/2026_09_30_protocol_custody_center.sql
 \ir migrations/2026_10_02_document_ai_governance.sql
 \ir migrations/2026_10_03_document_ai_governance_hardening.sql
+\ir migrations/2026_10_04_document_ai_execution_sources.sql

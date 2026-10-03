@@ -1,4 +1,7 @@
-@model InovaGed.Web.Controllers.AiPolicyVm
+﻿@model InovaGed.Web.Controllers.AiPolicyVm
+@functions{
+    static string PageClass(int page,int active)=>page==active?"page-item active":"page-item";
+}
 @{ ViewData["Title"] = "Inteligência artificial por cliente"; }
 <main class="container py-4" aria-labelledby="ai-title">
  <a asp-controller="Administration" asp-action="Index">← Administração</a>
@@ -8,8 +11,21 @@
  <div class="row g-3 mb-4">
   <div class="col-md-3"><div class="card card-body"><small>Consumo mensal</small><strong>@Model.ConsumedTokens tokens</strong></div></div>
   <div class="col-md-3"><div class="card card-body"><small>Reservado</small><strong>@Model.ReservedTokens tokens</strong></div></div>
-  <div class="col-md-3"><div class="card card-body"><small>Falhas</small><strong>@Model.Failures</strong></div></div>
+  <div class="col-md-3"><div class="card card-body"><small>Reportado pelo provedor</small><strong>@Model.Usage.ReportedTotal tokens</strong></div></div>
+  <div class="col-md-3"><div class="card card-body"><small>Liquidado por estimativa</small><strong>@Model.Usage.EstimatedTotal tokens</strong><br><span class="text-muted small">de @Model.Usage.SettledTotal liquidados em @Model.Usage.Executions execuções · falhas: @Model.Failures</span></div></div>
   <div class="col-md-3"><div class="card card-body"><small>Credencial</small><strong>@(Model.CredentialConfigured?"Configurada":"Ausente")</strong></div></div>
+ </div>
+ <div class="card card-body mb-4" data-ai-executions-panel>
+  <div class="d-flex justify-content-between align-items-center mb-2">
+   <h2 class="h5 mb-0">Últimas execuções</h2>
+   <nav aria-label="Paginação de execuções"><ul class="pagination pagination-sm mb-0">
+    @for(var p=1;p<=Model.ExecutionsTotalPages;p++){<li class="@PageClass(p,Model.ExecutionsPage)"><a class="page-link" asp-action="Index" asp-route-page="@p">@p</a></li>}
+   </ul></nav>
+  </div>
+  @if(Model.Executions.Count==0){<p class="text-muted mb-0">Nenhuma execução registrada para este cliente.</p>}
+  else{<table class="table table-sm align-middle mb-0" data-ai-executions-table><thead><tr><th>Criado em</th><th>Tarefa</th><th>Estado</th><th>Tokens reportados</th><th>Tokens liquidados</th><th>Origem do consumo</th><th>Correlação</th></tr></thead><tbody>
+   @foreach(var e in Model.Executions){<tr><td>@e.CreatedAt.ToString("dd/MM/yyyy HH:mm")</td><td>@e.Task</td><td><span class="badge text-bg-secondary">@e.State</span></td><td>@e.ReportedTotalTokens</td><td>@e.SettledTokens</td><td>@(e.IsEstimated?"Estimado (sem medição do provedor)":"Medido")</td><td class="text-truncate" style="max-width:180px" title="@e.CorrelationId">@e.CorrelationId</td></tr>}
+  </tbody></table>}
  </div>
  <form asp-action="Save" method="post" class="card card-body" data-ai-policy-form>
   @Html.AntiForgeryToken()
@@ -17,7 +33,7 @@
   <div class="form-check form-switch mb-3"><input class="form-check-input" type="checkbox" name="enabled" value="true" checked="@Model.Enabled"><label class="form-check-label">Permitir tarefas assistidas para este cliente</label></div>
   <div class="row g-3"><div class="col-md-6"><label class="form-label" for="provider">Provedor autorizado</label><select id="provider" name="provider" class="form-select">@foreach(var item in Model.ProviderCatalog){<option value="@item.Key" selected="@(item.Key.Equals(Model.SelectedProvider,StringComparison.OrdinalIgnoreCase))">@item.Key</option>}</select></div>
   <div class="col-md-6"><label class="form-label" for="model">Modelo homologado</label><select id="model" name="model" required class="form-select" aria-describedby="model-help">@foreach(var item in Model.ProviderCatalog.SelectMany(x=>x.Value.StructuredOutputModels).Distinct()){<option selected="@(item==Model.SelectedModel)">@item</option>}</select><small id="model-help">Somente modelos globais homologados para saída estruturada.</small></div>
-  <fieldset class="col-12"><legend class="h6">Tarefas habilitadas individualmente</legend>@foreach(var task in Enum.GetNames<InovaGed.Application.ArtificialIntelligence.AiTask>()){<label class="form-check form-check-inline"><input class="form-check-input" type="checkbox" name="tasks" value="@task" checked="@Model.SelectedTasks.Contains(task)"> @task</label>}</fieldset>
+  <fieldset class="col-12"><legend class="h6">Tarefas habilitadas individualmente</legend>@foreach(var task in InovaGed.Application.ArtificialIntelligence.AiTaskCatalog.Supported){<label class="form-check form-check-inline"><input class="form-check-input" type="checkbox" name="tasks" value="@task" checked="@Model.SelectedTasks.Contains(task.ToString())"> @task</label>}<div class="form-text">Somente tarefas revisáveis por humanos e já implementadas aparecem aqui.</div></fieldset>
   <div class="col-md-6"><label class="form-label" for="quota">Cota mensal de tokens</label><input id="quota" name="monthlyTokenLimit" type="number" min="0" max="10000000" value="@Model.MonthlyTokenLimit" class="form-control"></div>
   <div class="col-md-6"><label class="form-label" for="input-limit">Limite de caracteres por entrada</label><input id="input-limit" name="maximumInputCharacters" type="number" min="1000" max="500000" value="@Model.MaximumInputCharacters" class="form-control"></div></div>
   <div class="alert alert-warning mt-3">Sugestões nunca alteram o cadastro automaticamente. O usuário deve revisar e confirmar cada campo.</div>

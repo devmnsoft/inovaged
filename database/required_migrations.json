@@ -292,5 +292,12 @@
     "area": "IA documental",
     "required": true,
     "description": "Corrige concorrência, fingerprint, período da reserva, liquidação única, recuperação e retenção privada de resultados derivados."
+  },
+  {
+    "name": "2026_10_04_document_ai_execution_sources",
+    "path": "database/migrations/2026_10_04_document_ai_execution_sources.sql",
+    "area": "IA documental",
+    "required": true,
+    "description": "Modela as fontes (documento+versão) verificáveis da execução com backfill idempotente e corrige expiração/liquidação: nunca enviado não consome, enviado expira como uso estimado, sem duplicar consumo."
   }
 ]

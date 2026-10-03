@@ -12,17 +12,29 @@ public sealed class AbacAuthorizationService : IAbacAuthorizationService
     public async Task<bool> CanAccessDocumentAsync(Guid tenantId, Guid userId, Guid documentId, string action, IReadOnlyDictionary<string, string> attributes, CancellationToken ct)
     {
         await using var conn = await _db.OpenAsync(ct);
-        // Regra ABAC base: classificação + setor + horário comercial.
+        // Regra ABAC base: permissão por papel (com escopo de tenant) + classificação + horário comercial.
         var classification = attributes.TryGetValue("classification", out var c) ? c : "PUBLIC";
         var sector = attributes.TryGetValue("sector", out var s) ? s : string.Empty;
         var hour = DateTime.UtcNow.Hour;
 
+        // Ações lógicas mapeadas para códigos reais do catálogo ged.permission.
+        var permissionCode = action.Trim().ToUpperInvariant() switch
+        {
+            "VIEW" or "DOCUMENTS.VIEW" => "Documents.View",
+            "EDIT" or "UPDATE" or "MANAGE" => "GED.DOCUMENTS",
+            _ => action.Trim()
+        };
+
         var hasDirectPermission = await conn.ExecuteScalarAsync<bool>(new CommandDefinition(@"
 select exists(
     select 1
-    from ged.permissions p
-    where p.tenant_id=@tenantId and p.user_id=@userId and p.action=@action
-)", new { tenantId, userId, action }, cancellationToken: ct));
+    from ged.role_permission rp
+    join ged.role ro on ro.id = rp.role_id
+    join ged.app_role ar on ar.id = ro.id
+    join ged.user_role ur on ur.role_id = ar.id
+    join ged.permission p on p.code = rp.permission_code and coalesce(p.reg_status,'A')='A'
+    where ur.user_id = @userId and rp.reg_status = 'A' and rp.tenant_id = @tenantId and p.code = @permissionCode
+)", new { tenantId, userId, permissionCode }, cancellationToken: ct));
 
         if (!hasDirectPermission) return false;
         if (classification.Equals("SENSITIVE", StringComparison.OrdinalIgnoreCase) && (hour < 6 || hour > 20)) return false;

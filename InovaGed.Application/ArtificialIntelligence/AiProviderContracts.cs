@@ -9,6 +9,8 @@ public sealed class AiIdempotencyConflictException(string message) : InvalidOper
 public sealed record AiCapabilities(bool Text, bool Image, bool StructuredOutput, bool Streaming, bool Embeddings);
 public sealed record AiUsage(long? InputTokens, long? OutputTokens, long? TotalTokens);
 public sealed record AiContextItem(string Reference, string Text, string? MediaType = null, byte[]? Data = null);
+/// <summary>Server-resolved document/version pair that authorizes an execution.</summary>
+public sealed record AiExecutionSource(Guid DocumentId, Guid VersionId);
 public sealed record AiRequest(
     Guid TenantId,
     Guid UserId,
@@ -16,7 +18,13 @@ public sealed record AiRequest(
     string Instructions,
     IReadOnlyList<AiContextItem> Context,
     JsonDocument? OutputSchema = null,
-    string? IdempotencyKey = null);
+    string? IdempotencyKey = null,
+    IReadOnlyList<AiExecutionSource>? Sources = null,
+    Func<CancellationToken, Task>? OnRequestSent = null)
+{
+    /// <summary>Sources registered server-side. Never trusted from the client.</summary>
+    public IReadOnlyList<AiExecutionSource> SourceDocuments => Sources ?? [];
+}
 public sealed record AiResult(
     bool Success,
     string? Text,
@@ -26,13 +34,23 @@ public sealed record AiResult(
     string Model,
     AiFailureKind Failure = AiFailureKind.None,
     string? Limitation = null,
-    string? CorrelationId = null);
+    string? CorrelationId = null,
+    bool ProviderReached = false);
 
 /// <summary>Server-side gateway. Callers must supply only tenant-authorized context.</summary>
 public interface IDocumentAiGateway
 {
     Task<AiResult> ExecuteAsync(AiRequest request, CancellationToken cancellationToken);
     IReadOnlyDictionary<string, AiCapabilities> Capabilities { get; }
+    /// <summary>Globally configured and clamped maximum output tokens, used to size quota reservations.</summary>
+    int MaxOutputTokens { get; }
+}
+
+/// <summary>Tasks actually implemented end-to-end (suggestion plus human review). Exposed to administration.</summary>
+public static class AiTaskCatalog
+{
+    public static readonly AiTask[] Supported = [AiTask.Summarize, AiTask.ExtractMetadata, AiTask.SuggestClassification];
+    public static bool IsSupported(AiTask task) => task is AiTask.Summarize or AiTask.ExtractMetadata or AiTask.SuggestClassification;
 }
 
 public sealed class DocumentAiOptions
@@ -69,7 +87,11 @@ public sealed record AiEffectivePolicy(
 
 public sealed record AiExecutionLease(Guid ExecutionId, bool IsOwner, AiExecutionState State, AiResult? ExistingResult = null);
 public sealed record AiExecutionStatus(Guid ExecutionId, Guid TenantId, Guid UserId, AiTask Task,
-    AiExecutionState State, DateTimeOffset CreatedAt, DateTimeOffset? CompletedAt, AiResult? Result);
+    AiExecutionState State, DateTimeOffset CreatedAt, DateTimeOffset? CompletedAt, AiResult? Result,
+    IReadOnlyList<AiExecutionSource>? Sources = null, DateTimeOffset? ResultExpiresAt = null);
+
+/// <summary>Recovery view over executions whose local or remote outcome still needs attention.</summary>
+public sealed record AiRecoveryHealth(int RemoteOutcomeUnknown, int Expired, int PendingExpired);
 
 /// <summary>Persistent tenant policy and distributed execution/quota boundary.</summary>
 public interface IAiGovernanceStore
@@ -78,7 +100,10 @@ public interface IAiGovernanceStore
     Task<AiExecutionLease> ReserveAsync(AiRequest request, string provider, string model, long policyRevision, long estimatedTokens, CancellationToken ct);
     /// <summary>Atomically confirms that the lease is still valid and its policy revision is current.</summary>
     Task<bool> MarkRunningAsync(Guid executionId, CancellationToken ct);
+    /// <summary>Stamps the real send instant. Idempotent; only applies while the execution is Running and unsettled.</summary>
+    Task<bool> MarkSentAsync(Guid executionId, CancellationToken ct);
     Task CompleteAsync(Guid executionId, AiResult result, long reservedTokens, TimeSpan duration, CancellationToken ct);
     Task<AiExecutionStatus?> GetExecutionAsync(Guid tenantId, Guid userId, Guid executionId, CancellationToken ct);
     Task<int> ExpireReservationsAsync(CancellationToken ct);
+    Task<AiRecoveryHealth> GetRecoveryHealthAsync(CancellationToken ct);
 }

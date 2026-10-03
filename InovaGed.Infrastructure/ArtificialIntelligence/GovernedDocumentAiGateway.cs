@@ -14,6 +14,7 @@ public sealed class GovernedDocumentAiGateway : IDocumentAiGateway
     public GovernedDocumentAiGateway(DocumentAiGateway provider, IAiGovernanceStore governance)
     { _provider = provider; _governance = governance; }
     public IReadOnlyDictionary<string, AiCapabilities> Capabilities => _provider.Capabilities;
+    public int MaxOutputTokens => _provider.MaxOutputTokens;
 
     public async Task<AiResult> ExecuteAsync(AiRequest request, CancellationToken cancellationToken)
     {
@@ -33,7 +34,7 @@ public sealed class GovernedDocumentAiGateway : IDocumentAiGateway
 
         // This is deliberately conservative: input plus the globally configured maximum output is
         // reserved by the provider boundary. It is an estimate, never presented as exact usage.
-        var reservation = Math.Max(1, (inputCharacters + 2L) / 3L) + 1_000;
+        var reservation = Math.Max(1L, (inputCharacters + 2L) / 3L) + _provider.MaxOutputTokens;
         AiExecutionLease lease;
         try { lease = await _governance.ReserveAsync(request, provider, model, policy.Revision, reservation, cancellationToken); }
         catch (AiIdempotencyConflictException ex) { return Failure(AiFailureKind.IdempotencyConflict, ex.Message, provider, model); }
@@ -48,8 +49,11 @@ public sealed class GovernedDocumentAiGateway : IDocumentAiGateway
             await _governance.CompleteAsync(lease.ExecutionId, blocked, reservation, TimeSpan.Zero, CancellationToken.None);
             return blocked;
         }
+        // The governance store stamps sent_at at the exact send instant; every earlier failure path
+        // settles with zero consumption instead of a fixed over-reservation.
+        var governed = request with { OnRequestSent = ct => _governance.MarkSentAsync(lease.ExecutionId, ct) };
         AiResult result;
-        try { result = await _provider.ExecuteAsync(request, cancellationToken); }
+        try { result = await _provider.ExecuteAsync(governed, cancellationToken); }
         catch (OperationCanceledException)
         {
             result = Failure(AiFailureKind.Cancelled, "A solicitação foi cancelada.", provider, model, lease.ExecutionId.ToString("N"));
@@ -57,7 +61,9 @@ public sealed class GovernedDocumentAiGateway : IDocumentAiGateway
             throw;
         }
         await _governance.CompleteAsync(lease.ExecutionId, result, reservation, watch.Elapsed, CancellationToken.None);
-        return result;
+        // The database keeps the provider correlation for its own audit trail; polling by this user
+        // must address the execution id that identifies the lease in the governance store.
+        return result with { CorrelationId = lease.ExecutionId.ToString("N") };
     }
 
     private static AiResult Failure(AiFailureKind kind, string message, string provider = "", string model = "", string? correlation = null) =>

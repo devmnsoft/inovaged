@@ -33,6 +33,7 @@ public sealed class DocumentAiGatewayTests
     [Fact]
     public async Task Complete_input_including_instructions_is_limited_before_send()
     {
+        using var key = AiKeyScope.Set("GROQ_API_KEY", "test-only");
         var handler = new CountingHandler(); var options = Enabled("Groq"); options.MaximumInputCharacters = 1_000;
         var result = await Create(options, handler).ExecuteAsync(new AiRequest(Guid.NewGuid(), Guid.NewGuid(), AiTask.Summarize, new string('x', 1_001), []), default);
         Assert.Equal(AiFailureKind.QuotaExceeded, result.Failure);
@@ -42,7 +43,7 @@ public sealed class DocumentAiGatewayTests
     [Fact]
     public async Task Truncated_completion_is_rejected()
     {
-        using var key = EnvironmentVariable.Set("GROQ_API_KEY", "test-only");
+        using var key = AiKeyScope.Set("GROQ_API_KEY", "test-only");
         var handler = new CountingHandler("""{"choices":[{"finish_reason":"length","message":{"content":"parcial"}}]}""");
         var result = await Create(Enabled("Groq"), handler).ExecuteAsync(new AiRequest(Guid.NewGuid(), Guid.NewGuid(), AiTask.Summarize, "resuma", []), default);
         Assert.Equal(AiFailureKind.InvalidOutput, result.Failure);
@@ -52,7 +53,7 @@ public sealed class DocumentAiGatewayTests
     [Fact]
     public async Task Syntactically_valid_json_outside_schema_is_rejected()
     {
-        using var key = EnvironmentVariable.Set("GROQ_API_KEY", "test-only");
+        using var key = AiKeyScope.Set("GROQ_API_KEY", "test-only");
         var handler = new CountingHandler("""{"choices":[{"finish_reason":"stop","message":{"content":"{\"status\":123,\"extra\":true}"}}]}""");
         using var schema = System.Text.Json.JsonDocument.Parse("""{"type":"object","required":["status"],"additionalProperties":false,"properties":{"status":{"type":"string","enum":["ok"]}}}""");
         var result = await Create(Enabled("Groq"), handler).ExecuteAsync(new AiRequest(Guid.NewGuid(), Guid.NewGuid(), AiTask.Summarize, "resuma", [], schema), default);
@@ -62,7 +63,7 @@ public sealed class DocumentAiGatewayTests
     [Fact]
     public async Task Unsupported_schema_keyword_is_rejected_before_network()
     {
-        using var key = EnvironmentVariable.Set("GROQ_API_KEY", "test-only");
+        using var key = AiKeyScope.Set("GROQ_API_KEY", "test-only");
         var handler = new CountingHandler();
         using var schema = System.Text.Json.JsonDocument.Parse("""{"type":"string","pattern":"secret"}""");
         var result = await Create(Enabled("Groq"), handler).ExecuteAsync(new AiRequest(Guid.NewGuid(), Guid.NewGuid(), AiTask.Summarize, "resuma", [], schema), default);
@@ -73,7 +74,7 @@ public sealed class DocumentAiGatewayTests
     [Fact]
     public async Task String_and_array_limits_are_enforced_locally()
     {
-        using var key = EnvironmentVariable.Set("GROQ_API_KEY", "test-only");
+        using var key = AiKeyScope.Set("GROQ_API_KEY", "test-only");
         var handler = new CountingHandler("""{"choices":[{"finish_reason":"stop","message":{"content":"{\"items\":[\"too long\",\"second\"]}"}}]}""");
         using var schema = System.Text.Json.JsonDocument.Parse("""{"type":"object","additionalProperties":false,"required":["items"],"properties":{"items":{"type":"array","maxItems":1,"items":{"type":"string","maxLength":3}}}}""");
         var result = await Create(Enabled("Groq"), handler).ExecuteAsync(new AiRequest(Guid.NewGuid(), Guid.NewGuid(), AiTask.Summarize, "resuma", [], schema), default);
@@ -83,7 +84,7 @@ public sealed class DocumentAiGatewayTests
     [Fact]
     public async Task User_cancellation_is_propagated_instead_of_becoming_timeout()
     {
-        using var key = EnvironmentVariable.Set("GROQ_API_KEY", "test-only");
+        using var key = AiKeyScope.Set("GROQ_API_KEY", "test-only");
         using var cts = new CancellationTokenSource(); cts.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Create(Enabled("Groq"), new WaitingHandler()).ExecuteAsync(new AiRequest(Guid.NewGuid(), Guid.NewGuid(), AiTask.Summarize, "resuma", []), cts.Token));
     }
@@ -140,11 +141,11 @@ public sealed class DocumentAiGatewayTests
     private sealed class WaitingHandler : HttpMessageHandler
     { protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) { await Task.Delay(Timeout.Infinite, cancellationToken); throw new InvalidOperationException(); } }
 
-    private sealed class EnvironmentVariable : IDisposable
+    private sealed class AiKeyScope : IDisposable
     {
         private readonly string _name; private readonly string? _previous;
-        private EnvironmentVariable(string name, string value) { _name = name; _previous = Environment.GetEnvironmentVariable(name); Environment.SetEnvironmentVariable(name, value); }
-        public static EnvironmentVariable Set(string name, string value) => new(name, value);
-        public void Dispose() => Environment.SetEnvironmentVariable(_name, _previous);
+        private AiKeyScope(string name, string value) { _name = name; _previous = System.Environment.GetEnvironmentVariable(name); System.Environment.SetEnvironmentVariable(name, value); }
+        public static AiKeyScope Set(string name, string value) => new(name, value);
+        public void Dispose() => System.Environment.SetEnvironmentVariable(_name, _previous);
     }
 }

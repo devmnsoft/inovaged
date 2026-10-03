@@ -16,6 +16,8 @@ using Microsoft.Extensions.Caching.Memory;
 using System.Diagnostics;
 using System.Text.Json;
 using InovaGed.Application.ArtificialIntelligence;
+using InovaGed.Application.Classification;
+using InovaGed.Application.Retention;
 using InovaGed.Application.Security;
 using System.Security.Cryptography;
 
@@ -35,9 +37,11 @@ public sealed class HospitalDocumentsController : Controller
     private readonly IDocumentAiGateway _documentAi;
     private readonly IAbacAuthorizationService _documentAuthorization;
     private readonly IAiGovernanceStore _aiGovernance;
+    private readonly IDocumentClassificationCommands _classificationCommands;
+    private readonly RetentionRecalcService _retentionRecalc;
 
-    public HospitalDocumentsController(IDbConnectionFactory db, ICurrentUser currentUser, IFileStorage storage, IPreviewGenerator preview, IAuditWriter audit, ILogger<HospitalDocumentsController> logger, IMemoryCache cache, IDocumentAiGateway documentAi, IAbacAuthorizationService documentAuthorization, IAiGovernanceStore aiGovernance)
-    { _db = db; _currentUser = currentUser; _storage = storage; _preview = preview; _audit = audit; _logger = logger; _cache = cache; _documentAi = documentAi; _documentAuthorization = documentAuthorization; _aiGovernance = aiGovernance; }
+    public HospitalDocumentsController(IDbConnectionFactory db, ICurrentUser currentUser, IFileStorage storage, IPreviewGenerator preview, IAuditWriter audit, ILogger<HospitalDocumentsController> logger, IMemoryCache cache, IDocumentAiGateway documentAi, IAbacAuthorizationService documentAuthorization, IAiGovernanceStore aiGovernance, IDocumentClassificationCommands classificationCommands, RetentionRecalcService retentionRecalc)
+    { _db = db; _currentUser = currentUser; _storage = storage; _preview = preview; _audit = audit; _logger = logger; _cache = cache; _documentAi = documentAi; _documentAuthorization = documentAuthorization; _aiGovernance = aiGovernance; _classificationCommands = classificationCommands; _retentionRecalc = retentionRecalc; }
 
     [HttpPost, ValidateAntiForgeryToken]
     public async Task<IActionResult> Summarize(Guid versionId, string idempotencyKey, CancellationToken ct)
@@ -57,25 +61,179 @@ where v.tenant_id=@tenantId and v.id=@versionId and coalesce(d.reg_status,'A')='
         if(document.Text.Length>120000) return UnprocessableEntity(new{success=false,message="Documento extenso: encaminhe para processamento em partes; nenhum conteúdo foi truncado."});
         using var schema=JsonDocument.Parse("""{"type":"object","additionalProperties":false,"required":["subject","facts","dates","pending","limitations"],"properties":{"subject":{"type":"string","minLength":1,"maxLength":500},"facts":{"type":"array","maxItems":12,"items":{"type":"object","additionalProperties":false,"required":["text","evidence"],"properties":{"text":{"type":"string","minLength":1,"maxLength":800},"evidence":{"type":"string","minLength":1,"maxLength":500}}}},"dates":{"type":"array","maxItems":10,"items":{"type":"object","additionalProperties":false,"required":["text","evidence"],"properties":{"text":{"type":"string","minLength":1,"maxLength":300},"evidence":{"type":"string","minLength":1,"maxLength":500}}}},"pending":{"type":"array","maxItems":10,"items":{"type":"object","additionalProperties":false,"required":["text","evidence"],"properties":{"text":{"type":"string","minLength":1,"maxLength":500},"evidence":{"type":"string","minLength":1,"maxLength":500}}}},"limitations":{"type":"array","maxItems":10,"items":{"type":"string","minLength":1,"maxLength":500}}}}""");
         var reference=$"{document.DocumentId:N}/{document.VersionId:N}/texto-extraido";
-        var result=await _documentAi.ExecuteAsync(new(_currentUser.TenantId,_currentUser.UserId,AiTask.Summarize,"Produza resumo documental em português. Para cada fato, data e pendência, inclua evidence como trecho literal da fonte. Não invente páginas, localização ou informação.",[new(reference,document.Text)],schema,idempotencyKey),ct);
+        // Sources are resolved and registered server-side; the client never supplies the version.
+        var result=await _documentAi.ExecuteAsync(new(_currentUser.TenantId,_currentUser.UserId,AiTask.Summarize,"Produza resumo documental em português. Para cada fato, data e pendência, inclua evidence como trecho literal da fonte. Não invente páginas, localização ou informação.",[new(reference,document.Text)],schema,idempotencyKey,Sources:[new AiExecutionSource(document.DocumentId,document.VersionId)]),ct);
         if(!result.Success) return StatusCode(result.Failure==AiFailureKind.Disabled?403:422,new{success=false,message=result.Limitation,correlationId=result.CorrelationId,state=result.Failure.ToString()});
         if(result.StructuredData is null||!EvidenceBelongsToSource(result.StructuredData.RootElement,document.Text))return UnprocessableEntity(new{success=false,message="O provedor retornou evidência que não pôde ser validada na versão consultada.",correlationId=result.CorrelationId});
-        var current=await c.ExecuteScalarAsync<Guid?>(new CommandDefinition("select current_version_id from ged.document where tenant_id=@tenantId and id=@documentId and coalesce(reg_status,'A')='A' and status<>'ARCHIVED'::ged.document_status_enum",new{tenantId=_currentUser.TenantId,documentId=document.DocumentId},cancellationToken:ct));
-        if(current!=document.VersionId||!await CanSummarizeAsync(document,ct)){await AuditDeniedAsync(document.DocumentId,versionId,ct);return Conflict(new{success=false,message="O acesso, a situação ou a versão mudou durante o resumo; o resultado foi descartado."});}
+        // Revalidate against the current document row (state and confidentiality), not the pre-call snapshot.
+        var current=await c.QuerySingleOrDefaultAsync<CurrentDocument>(new CommandDefinition("select current_version_id \"CurrentVersion\",coalesce(is_confidential,false) \"Confidential\" from ged.document where tenant_id=@tenantId and id=@documentId and coalesce(reg_status,'A')='A' and status<>'ARCHIVED'::ged.document_status_enum",new{tenantId=_currentUser.TenantId,documentId=document.DocumentId},cancellationToken:ct));
+        if(current is null||current.CurrentVersion!=document.VersionId||!await CanViewAsync(document.DocumentId,current.Confidential,ct)){await AuditDeniedAsync(document.DocumentId,versionId,ct);return Conflict(new{success=false,message="O acesso, a situação ou a versão mudou durante o resumo; o resultado foi descartado."});}
         await _audit.WriteAsync(_currentUser.TenantId,_currentUser.UserId,"AI_SUMMARY","DOCUMENT",document.DocumentId,"Resumo documental revisável gerado",HttpContext.Connection.RemoteIpAddress?.ToString(),Request.Headers.UserAgent.ToString(),new{document.VersionId,result.Provider,result.Model,result.CorrelationId},ct);
         return Json(new{success=true,document.Title,document.VersionNumber,source=reference,data=result.StructuredData?.RootElement,correlationId=result.CorrelationId,reviewRequired=true});
     }
     [HttpGet]
-    public async Task<IActionResult> AiExecution(Guid executionId,Guid versionId,CancellationToken ct)
+    public async Task<IActionResult> AiExecution(Guid executionId,Guid? versionId,CancellationToken ct)
     {
         if(!_currentUser.IsAuthenticated)return Unauthorized();
-        await using var c=await _db.OpenAsync(ct);var document=await c.QuerySingleOrDefaultAsync<SummaryDocument>(new CommandDefinition("select d.id \"DocumentId\",v.id \"VersionId\",coalesce(d.is_confidential,false) \"Confidential\" from ged.document_version v join ged.document d on d.id=v.document_id and d.tenant_id=v.tenant_id where d.tenant_id=@tenantId and v.id=@versionId and coalesce(d.reg_status,'A')='A' and d.status<>'ARCHIVED'::ged.document_status_enum",new{tenantId=_currentUser.TenantId,versionId},cancellationToken:ct));
-        if(document is null||!await CanSummarizeAsync(document,ct)){await AuditDeniedAsync(document?.DocumentId??Guid.Empty,versionId,ct);return Forbid();}
-        var execution=await _aiGovernance.GetExecutionAsync(_currentUser.TenantId,_currentUser.UserId,executionId,ct);return execution is null?NotFound():Json(new{success=true,execution.ExecutionId,state=execution.State.ToString(),execution.CreatedAt,execution.CompletedAt,result=execution.Result});
+        var execution=await _aiGovernance.GetExecutionAsync(_currentUser.TenantId,_currentUser.UserId,executionId,ct);
+        if(execution is null)return NotFound();
+        var sources=execution.Sources??[];
+        if(sources.Count==0)return await LegacyExecutionAsync(execution,versionId,ct);
+        if(versionId is null||!sources.Any(s=>s.VersionId==versionId))return Conflict(new{success=false,message="A execução está vinculada às fontes registradas; informe uma versão de origem desta execução."});
+        var sourceVersions=sources.Select(s=>s.VersionId).Distinct().ToArray();
+        const string sql="""
+select v.id "VersionId",d.id "DocumentId",coalesce(nullif(d.title,''),'Documento sem título') "Title",v.version_number "VersionNumber",coalesce(d.is_confidential,false) "Confidential"
+from ged.document_version v join ged.document d on d.id=v.document_id and d.tenant_id=v.tenant_id
+where v.tenant_id=@tenantId and v.id=any(@sourceVersions) and coalesce(d.reg_status,'A')='A' and d.status<>'ARCHIVED'::ged.document_status_enum
+""";
+        await using var c=await _db.OpenAsync(ct);
+        var rows=(await c.QueryAsync<AiSourceRow>(new CommandDefinition(sql,new{tenantId=_currentUser.TenantId,sourceVersions},cancellationToken:ct))).ToDictionary(x=>x.VersionId);
+        foreach(var source in sources)
+        {
+            // Every registered source must still exist and the requester must still hold VIEW on its
+            // current confidentiality state. Denying any one of them denies the result as a whole.
+            if(!rows.TryGetValue(source.VersionId,out var row)||row.DocumentId!=source.DocumentId||!await CanViewAsync(source.DocumentId,row.Confidential,ct)){await AuditDeniedAsync(source.DocumentId,source.VersionId,ct);return Forbid();}
+        }
+        return Json(new{success=true,execution.ExecutionId,state=execution.State.ToString(),execution.CreatedAt,execution.CompletedAt,resultExpiresAt=execution.ResultExpiresAt,
+            sources=sources.Select(s=>new{s.DocumentId,s.VersionId,Title=rows[s.VersionId].Title,VersionNumber=rows[s.VersionId].VersionNumber}),
+            result=execution.Result});
     }
+    private async Task<IActionResult> LegacyExecutionAsync(AiExecutionStatus execution,Guid? versionId,CancellationToken ct)
+    {
+        if(versionId is null)return NotFound();
+        await using var c=await _db.OpenAsync(ct);var document=await c.QuerySingleOrDefaultAsync<SummaryDocument>(new CommandDefinition("select d.id \"DocumentId\",v.id \"VersionId\",coalesce(d.is_confidential,false) \"Confidential\" from ged.document_version v join ged.document d on d.id=v.document_id and d.tenant_id=v.tenant_id where d.tenant_id=@tenantId and v.id=@versionId and coalesce(d.reg_status,'A')='A' and d.status<>'ARCHIVED'::ged.document_status_enum",new{tenantId=_currentUser.TenantId,versionId},cancellationToken:ct));
+        if(document is null||!await CanSummarizeAsync(document,ct)){await AuditDeniedAsync(document?.DocumentId??Guid.Empty,versionId.Value,ct);return Forbid();}
+        return Json(new{success=true,execution.ExecutionId,state=execution.State.ToString(),execution.CreatedAt,execution.CompletedAt,result=execution.Result});
+    }
+    private sealed class AiSourceRow { public Guid VersionId{get;set;} public Guid DocumentId{get;set;} public string Title{get;set;}=""; public int VersionNumber{get;set;} public bool Confidential{get;set;} }
+    private sealed class CurrentDocument { public Guid CurrentVersion{get;set;} public bool Confidential{get;set;} }
     private static bool EvidenceBelongsToSource(JsonElement root,string source){foreach(var name in new[]{"facts","dates","pending"}){if(!root.TryGetProperty(name,out var items))return false;foreach(var item in items.EnumerateArray()){var evidence=item.GetProperty("evidence").GetString();if(string.IsNullOrWhiteSpace(evidence)||!source.Contains(evidence,StringComparison.OrdinalIgnoreCase))return false;}}return true;}
-    private Task<bool> CanSummarizeAsync(SummaryDocument document,CancellationToken ct)=>_documentAuthorization.CanAccessDocumentAsync(_currentUser.TenantId,_currentUser.UserId,document.DocumentId,"VIEW",new Dictionary<string,string>{{"classification",document.Confidential?"SENSITIVE":"PUBLIC"}},ct);
-    private Task AuditDeniedAsync(Guid documentId,Guid versionId,CancellationToken ct)=>_audit.WriteAsync(_currentUser.TenantId,_currentUser.UserId,"AI_ACCESS_DENIED","DOCUMENT",documentId,"Acesso a processamento de IA negado",HttpContext.Connection.RemoteIpAddress?.ToString(),Request.Headers.UserAgent.ToString(),new{versionId,reason="authorization_or_state_changed"},ct);
+    private Task<bool> CanSummarizeAsync(SummaryDocument document,CancellationToken ct)=>CanViewAsync(document.DocumentId,document.Confidential,ct);
+    private Task<bool> CanViewAsync(Guid documentId,bool confidential,CancellationToken ct)=>_documentAuthorization.CanAccessDocumentAsync(_currentUser.TenantId,_currentUser.UserId,documentId,"VIEW",new Dictionary<string,string>{{"classification",confidential?"SENSITIVE":"PUBLIC"}},ct);
+    private Task<bool> CanEditAsync(Guid documentId,bool confidential,CancellationToken ct)=>_documentAuthorization.CanAccessDocumentAsync(_currentUser.TenantId,_currentUser.UserId,documentId,"EDIT",new Dictionary<string,string>{{"classification",confidential?"SENSITIVE":"PUBLIC"}},ct);
+    private Task AuditDeniedAsync(Guid documentId,Guid versionId,CancellationToken ct,string reason="authorization_or_state_changed")=>_audit.WriteAsync(_currentUser.TenantId,_currentUser.UserId,"AI_ACCESS_DENIED","DOCUMENT",documentId,"Acesso a processamento de IA negado",HttpContext.Connection.RemoteIpAddress?.ToString(),Request.Headers.UserAgent.ToString(),new{versionId,reason},ct);
+
+    // ── Bloco B: preenchimento assistido (sugestão por campo + aplicação canônica com revalidação) ──
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> SuggestMetadata(Guid versionId,string idempotencyKey,CancellationToken ct)
+    {
+        if(!_currentUser.IsAuthenticated)return Unauthorized();
+        if(!Guid.TryParse(idempotencyKey,out _))return BadRequest(new{success=false,message="Identificador da solicitação inválido."});
+        await using var c=await _db.OpenAsync(ct);
+        var document=await LoadSuggestionDocumentAsync(c,versionId,ct);
+        if(document is null)return NotFound();
+        if(!await CanViewAsync(document.DocumentId,document.Confidential,ct)){await AuditDeniedAsync(document.DocumentId,versionId,ct,"authorization_missing");return Forbid();}
+        document.Text=await c.ExecuteScalarAsync<string?>(new CommandDefinition("select ocr_text from ged.document_search where tenant_id=@tenantId and document_id=@documentId and version_id=@versionId",new{tenantId=_currentUser.TenantId,documentId=document.DocumentId,versionId},cancellationToken:ct))??"";
+        if(string.IsNullOrWhiteSpace(document.Text))return UnprocessableEntity(new{success=false,message="Esta versão não possui texto OCR para sugerir preenchimento."});
+        if(document.Text.Length>120000)return UnprocessableEntity(new{success=false,message="Documento extenso: encaminhe para processamento em partes; nenhum conteúdo foi truncado."});
+        using var schema=JsonDocument.Parse("""{"type":"object","additionalProperties":false,"required":["fields"],"properties":{"fields":{"type":"object","additionalProperties":false,"required":["title","description","isConfidential"],"properties":{"title":{"type":"object","additionalProperties":false,"required":["value","evidence"],"properties":{"value":{"type":"string","minLength":1,"maxLength":300},"evidence":{"type":"string","minLength":1,"maxLength":500}}},"description":{"type":"object","additionalProperties":false,"required":["value","evidence"],"properties":{"value":{"type":"string","minLength":1,"maxLength":2000},"evidence":{"type":"string","minLength":1,"maxLength":500}}},"isConfidential":{"type":"object","additionalProperties":false,"required":["value","evidence"],"properties":{"value":{"type":"boolean"},"evidence":{"type":"string","minLength":1,"maxLength":500}}}}}}}""");
+        var reference=$"{document.DocumentId:N}/{document.VersionId:N}/texto-extraido";
+        var result=await _documentAi.ExecuteAsync(new(_currentUser.TenantId,_currentUser.UserId,AiTask.ExtractMetadata,"Sugira metadados deste documento em português. Responda com title (título curto do documento), description (resumo objetivo) e isConfidential (true quando houver dados sensíveis de saúde ou informações restritas). Para cada campo, inclua evidence como trecho literal do texto extraído que sustenta o valor. Não invente informação.",[new(reference,document.Text)],schema,idempotencyKey,Sources:[new AiExecutionSource(document.DocumentId,document.VersionId)]),ct);
+        if(!result.Success)return StatusCode(result.Failure==AiFailureKind.Disabled?403:422,new{success=false,message=result.Limitation,correlationId=result.CorrelationId,state=result.Failure.ToString()});
+        if(result.StructuredData is null)return UnprocessableEntity(new{success=false,message="O provedor não retornou dados estruturados.",correlationId=result.CorrelationId});
+        var fields=result.StructuredData.RootElement.GetProperty("fields");
+        var suggestedTitle=(fields.GetProperty("title").GetProperty("value").GetString()??"").Trim();
+        var suggestedDescription=(fields.GetProperty("description").GetProperty("value").GetString()??"").Trim();
+        var suggestedConfidential=fields.GetProperty("isConfidential").GetProperty("value").GetBoolean();
+        if(string.IsNullOrWhiteSpace(suggestedTitle)||string.IsNullOrWhiteSpace(suggestedDescription))return UnprocessableEntity(new{success=false,message="O provedor retornou campos vazios na sugestão.",correlationId=result.CorrelationId});
+        foreach(var name in new[]{"title","description","isConfidential"}){var evidence=fields.GetProperty(name).GetProperty("evidence").GetString();if(string.IsNullOrWhiteSpace(evidence)||!document.Text.Contains(evidence,StringComparison.OrdinalIgnoreCase))return UnprocessableEntity(new{success=false,message="O provedor retornou evidência que não pôde ser validada na versão consultada.",correlationId=result.CorrelationId});}
+        return Json(new{success=true,title=document.Title,versionNumber=document.VersionNumber,source=reference,correlationId=result.CorrelationId,reviewRequired=true,updatedAt=document.UpdatedAt,current=new{title=document.Title,description=document.Description,isConfidential=document.Confidential},suggested=new{suggestedTitle,suggestedDescription,isConfidential=suggestedConfidential},evidence=new{title=fields.GetProperty("title").GetProperty("evidence").GetString(),description=fields.GetProperty("description").GetProperty("evidence").GetString(),isConfidential=fields.GetProperty("isConfidential").GetProperty("evidence").GetString()}});
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> ApplyMetadataSuggestion(Guid documentId,Guid versionId,DateTime expectedUpdatedAt,bool? titleSet,string? title,bool? descriptionSet,string? description,bool? isConfidentialSet,bool? isConfidential,CancellationToken ct)
+    {
+        if(!_currentUser.IsAuthenticated)return Unauthorized();
+        await using var c=await _db.OpenAsync(ct);
+        var row=await LoadApplyRowAsync(c,documentId,ct);
+        if(row is null)return NotFound();
+        if(!await CanEditAsync(documentId,row.Confidential,ct)){await AuditDeniedAsync(documentId,versionId,ct,"edit_permission_missing");return Forbid();}
+        if(row.CurrentVersion!=versionId)return Conflict(new{success=false,message="A versão atual do documento mudou; revalide a sugestão antes de aplicar."});
+        if(row.UpdatedAt is null||Math.Abs((expectedUpdatedAt.ToUniversalTime()-row.UpdatedAt.Value.ToUniversalTime()).TotalMilliseconds)>25)return Conflict(new{success=false,message="O documento foi alterado por outra edição; recarregue e revalide antes de aplicar."});
+        var applyTitle=titleSet==true?(title??"").Trim():null;
+        var applyDescription=descriptionSet==true?(description??"").Trim():null;
+        if(applyTitle is not null&&applyTitle.Length==0)return BadRequest(new{success=false,message="Informe um título para aplicar ou mantenha o valor atual."});
+        if(applyTitle is not null&&applyTitle.Length>300)return BadRequest(new{success=false,message="Título acima do limite de 300 caracteres."});
+        if(applyDescription is not null&&applyDescription.Length>2000)return BadRequest(new{success=false,message="Descrição acima do limite de 2000 caracteres."});
+        var changedTitle=applyTitle is not null&&applyTitle!=row.Title;
+        var changedDescription=applyDescription is not null&&applyDescription!=row.Description;
+        var changedConfidential=isConfidentialSet.HasValue&&isConfidentialSet.Value!=row.Confidential;
+        if(!changedTitle&&!changedDescription&&!changedConfidential)return Json(new{success=true,alreadyApplied=true});
+        var affected=await c.ExecuteAsync(new CommandDefinition(@"update ged.document set title=@Title,description=@Description,is_confidential=@Confidential,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@DocumentId and updated_at=@Expected",new{TenantId=_currentUser.TenantId,DocumentId=documentId,Expected=expectedUpdatedAt.ToUniversalTime(),UserId=_currentUser.UserId,Title=applyTitle??row.Title,Description=applyDescription??row.Description,Confidential=isConfidentialSet??row.Confidential},cancellationToken:ct));
+        if(affected==0)return Conflict(new{success=false,message="O documento mudou durante a gravação; revalide a sugestão e tente novamente."});
+        var newTitle=applyTitle??row.Title;var newDescription=applyDescription??row.Description;var newConfidential=isConfidentialSet??row.Confidential;
+        await _audit.WriteAsync(_currentUser.TenantId,_currentUser.UserId,"AI_METADATA_APPLY","DOCUMENT",documentId,"Metadados documentais aplicados a partir de sugestão de IA",HttpContext.Connection.RemoteIpAddress?.ToString(),Request.Headers.UserAgent.ToString(),new{versionId,before=new{title=row.Title,description=row.Description,isConfidential=row.Confidential},after=new{title=newTitle,description=newDescription,isConfidential=newConfidential},reviewer=_currentUser.UserId},ct);
+        return Json(new{success=true,alreadyApplied=false,title=newTitle,description=newDescription,isConfidential=newConfidential});
+    }
+
+    // ── Bloco B: classificação assistida (classes reais/ativas + confirmação humana via serviço canônico) ──
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> SuggestClassification(Guid versionId,string idempotencyKey,CancellationToken ct)
+    {
+        if(!_currentUser.IsAuthenticated)return Unauthorized();
+        if(!Guid.TryParse(idempotencyKey,out _))return BadRequest(new{success=false,message="Identificador da solicitação inválido."});
+        await using var c=await _db.OpenAsync(ct);
+        var document=await LoadSuggestionDocumentAsync(c,versionId,ct);
+        if(document is null)return NotFound();
+        if(!await CanViewAsync(document.DocumentId,document.Confidential,ct)){await AuditDeniedAsync(document.DocumentId,versionId,ct,"authorization_missing");return Forbid();}
+        var types=(await c.QueryAsync<TypeOption>(new CommandDefinition("select id \"Id\",name \"Name\" from ged.document_type where tenant_id=@tenantId and coalesce(reg_status,'A')='A' order by name limit 100",new{tenantId=_currentUser.TenantId},cancellationToken:ct))).ToList();
+        if(types.Count==0)return UnprocessableEntity(new{success=false,message="Nenhum tipo documental ativo está cadastrado neste tenant."});
+        var sourceText=await c.ExecuteScalarAsync<string?>(new CommandDefinition("select ocr_text from ged.document_search where tenant_id=@tenantId and document_id=@documentId and version_id=@versionId",new{tenantId=_currentUser.TenantId,documentId=document.DocumentId,versionId},cancellationToken:ct))??"";
+        var truncated=sourceText.Length>120000;
+        if(truncated)sourceText=sourceText[..120000];
+        var contextText=!string.IsNullOrWhiteSpace(sourceText)?$"Título: {document.Title}\nDescrição: {document.Description}\n\nTexto extraído (OCR): {sourceText}{(truncated?"\n[Trecho final do texto não incluído na análise.]":"")}":$"Título: {document.Title}\nDescrição: {document.Description}";
+        using var schema=JsonDocument.Parse("""{"type":"object","additionalProperties":false,"required":["typeName","confidence","evidence"],"properties":{"typeName":{"type":"string","minLength":1,"maxLength":200},"confidence":{"type":"number","minimum":0,"maximum":1},"evidence":{"type":"string","minLength":1,"maxLength":500}}}""");
+        var reference=$"{document.DocumentId:N}/{document.VersionId:N}/texto-extraido";
+        var result=await _documentAi.ExecuteAsync(new(_currentUser.TenantId,_currentUser.UserId,AiTask.SuggestClassification,$"Classifique este documento em exatamente um dos tipos documentais disponíveis: {string.Join(", ",types.Select(t=>t.Name))}. Responda com typeName exatamente igual ao nome do tipo listado, ou NENHUM quando nenhum se aplicar. Inclua confidence entre 0 e 1 e evidence como trecho literal do conteúdo apresentado que sustenta a escolha. Não invente informação.",[new(reference,contextText)],schema,idempotencyKey,Sources:[new AiExecutionSource(document.DocumentId,document.VersionId)]),ct);
+        if(!result.Success)return StatusCode(result.Failure==AiFailureKind.Disabled?403:422,new{success=false,message=result.Limitation,correlationId=result.CorrelationId,state=result.Failure.ToString()});
+        if(result.StructuredData is null)return UnprocessableEntity(new{success=false,message="O provedor não retornou dados estruturados.",correlationId=result.CorrelationId});
+        var root=result.StructuredData.RootElement;
+        var suggestedType=(root.GetProperty("typeName").GetString()??"").Trim();
+        var confidence=root.GetProperty("confidence").GetDouble();
+        var evidence=(root.GetProperty("evidence").GetString()??"").Trim();
+        if(string.IsNullOrWhiteSpace(suggestedType)||string.IsNullOrWhiteSpace(evidence)||!contextText.Contains(evidence,StringComparison.OrdinalIgnoreCase))return UnprocessableEntity(new{success=false,message="O provedor retornou evidência que não pôde ser validada no conteúdo consultado.",correlationId=result.CorrelationId});
+        var match=types.FirstOrDefault(t=>string.Equals(t.Name,suggestedType,StringComparison.OrdinalIgnoreCase));
+        var noMatch=suggestedType.Equals("NENHUM",StringComparison.OrdinalIgnoreCase);
+        if(match is null&&!noMatch)return UnprocessableEntity(new{success=false,message="O tipo sugerido não existe no catálogo de tipos documentais ativos.",correlationId=result.CorrelationId});
+        return Json(new{success=true,title=document.Title,versionNumber=document.VersionNumber,source=reference,correlationId=result.CorrelationId,reviewRequired=true,updatedAt=document.UpdatedAt,currentTypeId=document.CurrentTypeId,currentTypeName=document.CurrentTypeName,suggested=new{typeName=match?.Name??"NENHUM",confidence,evidence},types=types.Select(t=>new{t.Id,t.Name})});
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> ApplyClassification(Guid documentId,Guid versionId,Guid typeId,DateTime expectedUpdatedAt,CancellationToken ct)
+    {
+        if(!_currentUser.IsAuthenticated)return Unauthorized();
+        await using var c=await _db.OpenAsync(ct);
+        var row=await LoadApplyRowAsync(c,documentId,ct);
+        if(row is null)return NotFound();
+        if(!await CanEditAsync(documentId,row.Confidential,ct)){await AuditDeniedAsync(documentId,versionId,ct,"edit_permission_missing");return Forbid();}
+        if(row.CurrentVersion!=versionId)return Conflict(new{success=false,message="A versão atual do documento mudou; revalide a sugestão antes de aplicar."});
+        if(row.UpdatedAt is null||Math.Abs((expectedUpdatedAt.ToUniversalTime()-row.UpdatedAt.Value.ToUniversalTime()).TotalMilliseconds)>25)return Conflict(new{success=false,message="O documento foi alterado por outra edição; recarregue e revalide antes de aplicar."});
+        if(typeId==Guid.Empty)return BadRequest(new{success=false,message="Selecione um tipo documental ativo para classificar."});
+        var activeTypeName=await c.ExecuteScalarAsync<string?>(new CommandDefinition("select name from ged.document_type where tenant_id=@tenantId and id=@typeId and coalesce(reg_status,'A')='A'",new{tenantId=_currentUser.TenantId,typeId},cancellationToken:ct));
+        if(string.IsNullOrWhiteSpace(activeTypeName))return BadRequest(new{success=false,message="O tipo documental informado não está ativo neste tenant."});
+        try{await _classificationCommands.SaveManualAsync(_currentUser.TenantId,documentId,typeId,_currentUser.UserId,[],new Dictionary<string,string>(),ct);}
+        catch(Exception ex){_logger.LogError(ex,"Erro ao aplicar classificação assistida. Tenant={TenantId} Document={DocumentId}",_currentUser.TenantId,documentId);return StatusCode(500,new{success=false,message="Não foi possível aplicar a classificação; nenhum dado foi gravado."});}
+        await _audit.WriteAsync(_currentUser.TenantId,_currentUser.UserId,"AI_CLASSIFICATION_APPLY","DOCUMENT",documentId,"Classificação aplicada a partir de sugestão de IA",HttpContext.Connection.RemoteIpAddress?.ToString(),Request.Headers.UserAgent.ToString(),new{versionId,before=new{typeId=row.PreviousTypeId,typeName=row.PreviousTypeName},after=new{typeId,typeName=activeTypeName},reviewer=_currentUser.UserId},ct);
+        var retentionRecalculated=true;
+        try{await _retentionRecalc.RunOneAsync(_currentUser.TenantId,documentId,dueSoonDays:30,ct);}
+        catch(Exception ex){retentionRecalculated=false;_logger.LogError(ex,"Temporalidade não recalculada após classificação assistida. Tenant={TenantId} Document={DocumentId}",_currentUser.TenantId,documentId);}
+        return Json(new{success=true,retentionRecalculated,message=retentionRecalculated?"Classificação aplicada pelo fluxo assistido e temporalidade recalculada.":"Classificação aplicada, mas a temporalidade não foi recalculada automaticamente. Verifique os logs."});
+    }
+
+    private Task<SuggestionDocument?> LoadSuggestionDocumentAsync(IDbConnection c,Guid versionId,CancellationToken ct)=>c.QuerySingleOrDefaultAsync<SuggestionDocument>(new CommandDefinition("""
+select d.id "DocumentId",v.id "VersionId",v.version_number "VersionNumber",d.updated_at "UpdatedAt",coalesce(nullif(d.title,''),'') "Title",coalesce(nullif(d.description,''),'') "Description",coalesce(d.is_confidential,false) "Confidential",d.type_id "CurrentTypeId",t.name "CurrentTypeName"
+from ged.document_version v join ged.document d on d.id=v.document_id and d.tenant_id=v.tenant_id
+left join ged.document_type t on t.id=d.type_id and t.tenant_id=d.tenant_id
+where v.tenant_id=@tenantId and v.id=@versionId and coalesce(d.reg_status,'A')='A' and d.status<>'ARCHIVED'::ged.document_status_enum
+""",new{tenantId=_currentUser.TenantId,versionId},cancellationToken:ct));
+    private Task<ApplyDocumentRow?> LoadApplyRowAsync(IDbConnection c,Guid documentId,CancellationToken ct)=>c.QuerySingleOrDefaultAsync<ApplyDocumentRow>(new CommandDefinition("""
+select d.current_version_id "CurrentVersion",d.updated_at "UpdatedAt",coalesce(nullif(d.title,''),'') "Title",coalesce(nullif(d.description,''),'') "Description",coalesce(d.is_confidential,false) "Confidential",d.type_id "PreviousTypeId",t.name "PreviousTypeName"
+from ged.document d left join ged.document_type t on t.id=d.type_id and t.tenant_id=d.tenant_id
+where d.tenant_id=@tenantId and d.id=@documentId and coalesce(d.reg_status,'A')='A' and d.status<>'ARCHIVED'::ged.document_status_enum
+""",new{tenantId=_currentUser.TenantId,documentId},cancellationToken:ct));
+    private sealed class SuggestionDocument { public Guid DocumentId{get;set;} public Guid VersionId{get;set;} public int VersionNumber{get;set;} public DateTime? UpdatedAt{get;set;} public string Title{get;set;}=""; public string Description{get;set;}=""; public bool Confidential{get;set;} public Guid? CurrentTypeId{get;set;} public string CurrentTypeName{get;set;}=""; public string Text{get;set;}=""; }
+    private sealed class ApplyDocumentRow { public Guid CurrentVersion{get;set;} public DateTime? UpdatedAt{get;set;} public string Title{get;set;}=""; public string Description{get;set;}=""; public bool Confidential{get;set;} public Guid? PreviousTypeId{get;set;} public string PreviousTypeName{get;set;}=""; }
+    private sealed class TypeOption { public Guid Id{get;set;} public string Name{get;set;}=""; }
     private sealed class SummaryDocument { public Guid DocumentId{get;set;} public Guid VersionId{get;set;} public int VersionNumber{get;set;} public string Title{get;set;}=""; public string Text{get;set;}=""; public bool Confidential{get;set;} }
 
     [HttpGet]
