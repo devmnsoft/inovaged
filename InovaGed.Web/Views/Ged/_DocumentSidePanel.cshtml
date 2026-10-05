@@ -88,6 +88,7 @@
             <dt>Tamanho</dt><dd>@Model.SizeBytesFormatted</dd>
             <dt>Extensão</dt><dd>@Model.Extension</dd>
         </dl>
+        <partial name="_DocumentAiAssist" model="new InovaGed.Web.Models.DocumentAiAssistVm(Model.DocumentId, Model.VersionId)" />
     </section>
 
     <section class="d-none" data-ged-tab-panel="preview">

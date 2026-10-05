@@ -12,8 +12,8 @@ public interface IDocumentClassificationCommands
         Guid documentId,
         Guid? documentTypeId,
         Guid? userId,
-        IReadOnlyList<string> tags,
-        IReadOnlyDictionary<string, string> metadata,
+        IReadOnlyList<string>? tags,
+        IReadOnlyDictionary<string, string>? metadata,
         CancellationToken ct);
 
     Task ApplySuggestionAsync(

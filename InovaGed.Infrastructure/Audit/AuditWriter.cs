@@ -348,6 +348,7 @@ select exists (
             "AI_SUMMARY" => "AI_SUMMARY",
             "AI_METADATA_APPLY" => "AI_METADATA_APPLY",
             "AI_CLASSIFICATION_APPLY" => "AI_CLASSIFICATION_APPLY",
+            "AI_ARCHIVAL_APPLY" => "AI_ARCHIVAL_APPLY",
             "AI_ACCESS_DENIED" => "AI_ACCESS_DENIED",
 
             _ => "VIEW"

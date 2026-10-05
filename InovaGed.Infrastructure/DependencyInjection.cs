@@ -86,7 +86,9 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddOptions<DocumentAiOptions>().Bind(configuration.GetSection(DocumentAiOptions.SectionName));
         services.AddHttpClient<DocumentAiGateway>();
         services.AddScoped<IAiGovernanceStore, PostgresAiGovernanceStore>();
+        services.AddScoped<IAssistedDocumentStore, PostgresAssistedDocumentStore>();
         services.AddScoped<IDocumentAiGateway, GovernedDocumentAiGateway>();
+        services.AddScoped<IDocumentAiAssistService, DocumentAiAssistService>();
 
         services.AddOptions<NodeIdentityOptions>()
             .Bind(configuration.GetSection("Cluster"))

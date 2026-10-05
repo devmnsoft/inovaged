@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace InovaGed.Application.ArtificialIntelligence;
 
-public enum AiTask { AskCollection, Summarize, ExtractMetadata, SuggestClassification, SupportProtocol, CompareDocuments }
+public enum AiTask { AskCollection, Summarize, ExtractMetadata, SuggestClassification, SupportProtocol, CompareDocuments, SuggestArchivalClassification }
 public enum AiFailureKind { None, Disabled, CredentialMissing, InvalidCredential, ModelUnavailable, QuotaExceeded, IdempotencyConflict, RateLimited, Cancelled, Timeout, InvalidOutput, ProviderUnavailable, Internal }
 public sealed class AiIdempotencyConflictException(string message) : InvalidOperationException(message) { }
 
@@ -35,7 +35,8 @@ public sealed record AiResult(
     AiFailureKind Failure = AiFailureKind.None,
     string? Limitation = null,
     string? CorrelationId = null,
-    bool ProviderReached = false);
+    bool ProviderReached = false,
+    Guid? ExecutionId = null);
 
 /// <summary>Server-side gateway. Callers must supply only tenant-authorized context.</summary>
 public interface IDocumentAiGateway
@@ -46,11 +47,40 @@ public interface IDocumentAiGateway
     int MaxOutputTokens { get; }
 }
 
-/// <summary>Tasks actually implemented end-to-end (suggestion plus human review). Exposed to administration.</summary>
+/// <summary>Tasks implemented and safe to enable per tenant. Unavailable members stay visible with an explicit reason.</summary>
 public static class AiTaskCatalog
 {
-    public static readonly AiTask[] Supported = [AiTask.Summarize, AiTask.ExtractMetadata, AiTask.SuggestClassification];
-    public static bool IsSupported(AiTask task) => task is AiTask.Summarize or AiTask.ExtractMetadata or AiTask.SuggestClassification;
+    public static readonly AiTask[] Supported =
+    [
+        AiTask.AskCollection,
+        AiTask.Summarize,
+        AiTask.ExtractMetadata,
+        AiTask.SuggestClassification,
+        AiTask.SuggestArchivalClassification
+    ];
+
+    public static readonly AiTask[] Unavailable = [AiTask.SupportProtocol, AiTask.CompareDocuments];
+
+    public static bool IsSupported(AiTask task) => Supported.Contains(task);
+
+    public static string Label(AiTask task) => task switch
+    {
+        AiTask.AskCollection => "Pergunte ao acervo",
+        AiTask.Summarize => "Resumir documento",
+        AiTask.ExtractMetadata => "Sugerir preenchimento",
+        AiTask.SuggestClassification => "Sugerir tipo documental",
+        AiTask.SuggestArchivalClassification => "Sugerir classificação arquivística",
+        AiTask.SupportProtocol => "Protocolo assistido",
+        AiTask.CompareDocuments => "Comparar documentos",
+        _ => task.ToString()
+    };
+
+    public static string? UnavailableReason(AiTask task) => task switch
+    {
+        AiTask.SupportProtocol => "Protocolo assistido permanece fora deste incremento. A configuração não o habilita.",
+        AiTask.CompareDocuments => "Comparação assistida permanece fora deste incremento. A configuração não a habilita.",
+        _ => null
+    };
 }
 
 public sealed class DocumentAiOptions
@@ -85,10 +115,11 @@ public sealed record AiEffectivePolicy(
     long MonthlyTokenLimit, int MaximumInputCharacters, DateTimeOffset PeriodStart,
     long ConsumedTokens, long ReservedTokens);
 
-public sealed record AiExecutionLease(Guid ExecutionId, bool IsOwner, AiExecutionState State, AiResult? ExistingResult = null);
+public sealed record AiExecutionLease(Guid ExecutionId, bool IsOwner, AiExecutionState State, AiResult? ExistingResult = null, bool ResultExpired = false, bool ResultMalformed = false);
 public sealed record AiExecutionStatus(Guid ExecutionId, Guid TenantId, Guid UserId, AiTask Task,
     AiExecutionState State, DateTimeOffset CreatedAt, DateTimeOffset? CompletedAt, AiResult? Result,
-    IReadOnlyList<AiExecutionSource>? Sources = null, DateTimeOffset? ResultExpiresAt = null);
+    IReadOnlyList<AiExecutionSource>? Sources = null, DateTimeOffset? ResultExpiresAt = null,
+    AiSourceIntegrity SourceIntegrity = AiSourceIntegrity.Missing, bool ResultMalformed = false);
 
 /// <summary>Recovery view over executions whose local or remote outcome still needs attention.</summary>
 public sealed record AiRecoveryHealth(int RemoteOutcomeUnknown, int Expired, int PendingExpired);
@@ -104,6 +135,8 @@ public interface IAiGovernanceStore
     Task<bool> MarkSentAsync(Guid executionId, CancellationToken ct);
     Task CompleteAsync(Guid executionId, AiResult result, long reservedTokens, TimeSpan duration, CancellationToken ct);
     Task<AiExecutionStatus?> GetExecutionAsync(Guid tenantId, Guid userId, Guid executionId, CancellationToken ct);
+    /// <summary>Persists legacy references only after the caller proved each document and version.</summary>
+    Task MigrateVerifiedLegacySourcesAsync(Guid tenantId, Guid userId, Guid executionId, IReadOnlyList<AiExecutionSource> sources, CancellationToken ct);
     Task<int> ExpireReservationsAsync(CancellationToken ct);
     Task<AiRecoveryHealth> GetRecoveryHealthAsync(CancellationToken ct);
 }

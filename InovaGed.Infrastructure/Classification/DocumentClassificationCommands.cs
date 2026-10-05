@@ -130,8 +130,8 @@ LIMIT 1;";
         Guid documentId,
         Guid? documentTypeId,
         Guid? userId,
-        IReadOnlyList<string> tags,
-        IReadOnlyDictionary<string, string> metadata,
+        IReadOnlyList<string>? tags,
+        IReadOnlyDictionary<string, string>? metadata,
         CancellationToken ct)
     {
         await using var con = await _db.OpenAsync(ct);
@@ -457,6 +457,7 @@ DO UPDATE SET
         string method,
         CancellationToken ct)
     {
+        if (tags is null) return;
         const string deleteSql = @"
 DELETE FROM ged.document_tag
 WHERE tenant_id = @TenantId

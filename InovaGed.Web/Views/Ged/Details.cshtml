@@ -533,6 +533,10 @@
         </div>
 
         <div class="col-lg-4">
+            @if (selected is not null)
+            {
+                <partial name="_DocumentAiAssist" model="new InovaGed.Web.Models.DocumentAiAssistVm(Model.Id, selected.Id)" />
+            }
 
             <div class="card mb-3">
                 <div class="card-header d-flex justify-content-between align-items-center">
@@ -882,6 +886,8 @@
 </div>
 
 @section Scripts {
+    <script src="~/js/document-summary.js" asp-append-version="true"></script>
+    <script src="~/js/document-assist.js" asp-append-version="true"></script>
     <div data-ocr-realtime="1"></div>
     <script src="~/js/ged-realtime-react.js" asp-append-version="true" defer></script>
     <script src="~/js/ged-ocr-status.js" asp-append-version="true"></script>

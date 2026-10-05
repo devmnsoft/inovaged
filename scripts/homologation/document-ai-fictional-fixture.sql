@@ -1,0 +1,19 @@
+-- Fixture ficticia para homologacao local da IA documental.
+-- Nao faz parte das migrations obrigatorias.
+-- Nao aplique em producao e nao importe dump, paciente, credencial ou documento real.
+-- Os identificadores abaixo sao exemplos. O roteiro HTTP le os GUIDs pelas variaveis
+-- INOVAGED_AI_HTTP_DOCUMENT_ID e INOVAGED_AI_HTTP_VERSION_ID depois que o operador
+-- criar, no banco descartavel, um documento sem conteudo sensivel.
+--
+-- Perfis minimos, todos ficticios:
+--   leitor: Documents.View, sem GED.DOCUMENTS e sem Security.Manage
+--   editor: GED.DOCUMENTS, sem Security.Manage
+--   sigilo: Security.Manage
+--   outro tenant: nenhum acesso ao documento do primeiro tenant
+--
+-- O texto do documento deve ser inventado, por exemplo:
+--   "Laudo ficticio de homologacao. O paciente de teste nao existe."
+--
+-- Este arquivo nao cria linhas sozinho porque o esquema de identidade e custodia
+-- exige chaves locais que variam entre bases descartaveis.
+select 'fixture documental de IA nao aplicada automaticamente'::text as notice;

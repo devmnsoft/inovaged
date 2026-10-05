@@ -61,7 +61,20 @@ public sealed class PostgresAiGovernanceStoreBehaviorTests : IAsyncLifetime
         if (PgGate.UnavailableReason is not null) return Task.CompletedTask;
         _conn = new NpgsqlConnection(PgGate.Dsn()); _conn.Open();
         using var cmd = _conn.CreateCommand();
-        cmd.CommandText = "truncate ged.ai_execution, ged.ai_monthly_usage, ged.ai_tenant_policy";
+        cmd.CommandText = """
+do $cleanup$
+declare tables text := 'ged.ai_execution, ged.ai_monthly_usage, ged.ai_tenant_policy';
+begin
+  if to_regclass('ged.ai_retention_recalc_pending') is not null then
+    tables := 'ged.ai_retention_recalc_pending, ' || tables;
+  end if;
+  if to_regclass('ged.ai_suggestion_application') is not null then
+    tables := 'ged.ai_suggestion_application, ' || tables;
+  end if;
+  execute 'truncate ' || tables;
+end
+$cleanup$;
+""";
         cmd.ExecuteNonQuery();
         return Task.CompletedTask;
     }
@@ -167,6 +180,8 @@ public sealed class PostgresAiGovernanceStoreBehaviorTests : IAsyncLifetime
         await store.CompleteAsync(lease.ExecutionId, SuccessResult(usageTotal: 120, text: "resumo final"), 500, TimeSpan.FromMilliseconds(1234), CancellationToken.None);
         Assert.Equal(new Monthly(0, 120), await Usage(tenant));
         Assert.Equal(120L, await One<long>("select settled_tokens from ged.ai_execution where id=@id", new { id = lease.ExecutionId }));
+        Assert.Equal(expiresUtc, await One<DateTime>("select (result_expires_at at time zone 'UTC')::timestamp from ged.ai_execution where id=@id", new { id = lease.ExecutionId }));
+        Assert.Null(await Scalar<DateTime?>("select usage_reconciled_at::timestamp from ged.ai_execution where id=@id", new { id = lease.ExecutionId }));
     }
 
     [PgGatedFact]
@@ -184,12 +199,19 @@ public sealed class PostgresAiGovernanceStoreBehaviorTests : IAsyncLifetime
         Assert.Equal(new Monthly(0, 500), await Usage(tenant));
         Assert.True(await Scalar<bool>("select usage_estimated from ged.ai_execution where id=@id", new { id = lease.ExecutionId }));
 
-        // The provider answer finally arrives: reconcile state and metering, do not charge a second time.
+        // Real usage arrives after the estimate was settled: adjust the original period once.
         await store.CompleteAsync(lease.ExecutionId, SuccessResult(usageTotal: 120, text: "resumo tardio"), 500, TimeSpan.FromMilliseconds(30_000), CancellationToken.None);
         Assert.Equal("Completed", await One<string>("select state from ged.ai_execution where id=@id", new { id = lease.ExecutionId }));
-        Assert.Equal(new Monthly(0, 500), await Usage(tenant));
+        Assert.Equal(new Monthly(0, 120), await Usage(tenant));
         Assert.Equal(500L, await One<long>("select settled_tokens from ged.ai_execution where id=@id", new { id = lease.ExecutionId }));
         Assert.Equal(120L, await One<long>("select reported_total_tokens from ged.ai_execution where id=@id", new { id = lease.ExecutionId }));
+        Assert.Equal(-380L, await One<long>("select reconciled_delta from ged.ai_execution where id=@id", new { id = lease.ExecutionId }));
+        Assert.NotNull(await Scalar<DateTime?>("select usage_reconciled_at::timestamp from ged.ai_execution where id=@id", new { id = lease.ExecutionId }));
+
+        await store.CompleteAsync(lease.ExecutionId, SuccessResult(usageTotal: 80, text: "segunda resposta"), 500, TimeSpan.FromMilliseconds(30_000), CancellationToken.None);
+        Assert.Equal(new Monthly(0, 120), await Usage(tenant));
+        Assert.Equal(-380L, await One<long>("select reconciled_delta from ged.ai_execution where id=@id", new { id = lease.ExecutionId }));
+        Assert.Equal("resumo tardio", (await store.GetExecutionAsync(tenant, user, lease.ExecutionId, CancellationToken.None))!.Result!.Text);
     }
 
     [PgGatedFact]
@@ -207,6 +229,75 @@ public sealed class PostgresAiGovernanceStoreBehaviorTests : IAsyncLifetime
         await store.CompleteAsync(lease.ExecutionId, SuccessResult(usageTotal: 120, text: "chegou depois"), 500, TimeSpan.FromMilliseconds(30_000), CancellationToken.None);
         Assert.Equal("Completed", await One<string>("select state from ged.ai_execution where id=@id", new { id = lease.ExecutionId }));
         Assert.Equal(new Monthly(0, 0), await Usage(tenant)); // it never left this host: zero forever
+        Assert.Null(await Scalar<long?>("select reconciled_delta from ged.ai_execution where id=@id", new { id = lease.ExecutionId }));
+    }
+
+    [PgGatedFact]
+    public async Task Completed_result_survives_a_later_failure_and_does_not_extend_retention()
+    {
+        var tenant = await SeedTenant(limit: 5000); var user = Guid.NewGuid(); var store = Store;
+        var lease = await store.ReserveAsync(Request(tenant, user, Key()), "Groq", "test-model", 1, 200, CancellationToken.None);
+        Assert.True(await store.MarkRunningAsync(lease.ExecutionId, CancellationToken.None));
+        Assert.True(await store.MarkSentAsync(lease.ExecutionId, CancellationToken.None));
+        await store.CompleteAsync(lease.ExecutionId, SuccessResult(usageTotal: 40, text: "conclusao valida"), 200, TimeSpan.FromMilliseconds(10), CancellationToken.None);
+        var expires = await One<DateTime>("select (result_expires_at at time zone 'UTC')::timestamp from ged.ai_execution where id=@id", new { id = lease.ExecutionId });
+
+        await store.CompleteAsync(lease.ExecutionId, new AiResult(false, "falha antiga", null, new AiUsage(1, 1, 2), "Groq", "test-model", AiFailureKind.Internal, "repeticao antiga", ProviderReached: true), 200, TimeSpan.FromMilliseconds(99), CancellationToken.None);
+        Assert.Equal("Completed", await One<string>("select state from ged.ai_execution where id=@id", new { id = lease.ExecutionId }));
+        Assert.Equal("None", await One<string>("select failure_kind from ged.ai_execution where id=@id", new { id = lease.ExecutionId }));
+        Assert.Equal(expires, await One<DateTime>("select (result_expires_at at time zone 'UTC')::timestamp from ged.ai_execution where id=@id", new { id = lease.ExecutionId }));
+        Assert.Equal(new Monthly(0, 40), await Usage(tenant));
+        Assert.Contains("conclusao valida", await One<string>("select result_json::text from ged.ai_execution where id=@id", new { id = lease.ExecutionId }));
+    }
+
+    [PgGatedFact]
+    public async Task Concurrent_late_usage_adjusts_the_estimate_only_once()
+    {
+        var tenant = await SeedTenant(limit: 5000); var user = Guid.NewGuid(); var store = Store;
+        var lease = await store.ReserveAsync(Request(tenant, user, Key()), "Groq", "test-model", 1, 500, CancellationToken.None);
+        Assert.True(await store.MarkRunningAsync(lease.ExecutionId, CancellationToken.None));
+        Assert.True(await store.MarkSentAsync(lease.ExecutionId, CancellationToken.None));
+        await BackdateExpiration(lease.ExecutionId);
+        Assert.Equal(1, await store.ExpireReservationsAsync(CancellationToken.None));
+
+        await Task.WhenAll(
+            store.CompleteAsync(lease.ExecutionId, SuccessResult(usageTotal: 120, text: "a"), 500, TimeSpan.FromMilliseconds(1), CancellationToken.None),
+            store.CompleteAsync(lease.ExecutionId, SuccessResult(usageTotal: 80, text: "b"), 500, TimeSpan.FromMilliseconds(1), CancellationToken.None));
+
+        var consumed = (await Usage(tenant)).Consumed;
+        Assert.Contains(consumed, new long[] { 120, 80 });
+        Assert.Equal(consumed - 500, await One<long>("select reconciled_delta from ged.ai_execution where id=@id", new { id = lease.ExecutionId }));
+        await store.CompleteAsync(lease.ExecutionId, SuccessResult(usageTotal: 10, text: "c"), 500, TimeSpan.FromMilliseconds(1), CancellationToken.None);
+        Assert.Equal(consumed, (await Usage(tenant)).Consumed);
+    }
+
+    [PgGatedFact]
+    public async Task Expired_and_malformed_results_are_not_replayed()
+    {
+        var tenant = await SeedTenant(limit: 5000); var user = Guid.NewGuid(); var store = Store;
+        var key = Key();
+        var request = Request(tenant, user, key);
+        var lease = await store.ReserveAsync(request, "Groq", "test-model", 1, 100, CancellationToken.None);
+        Assert.True(await store.MarkRunningAsync(lease.ExecutionId, CancellationToken.None));
+        await store.CompleteAsync(lease.ExecutionId, SuccessResult(text: "vigente"), 100, TimeSpan.FromMilliseconds(1), CancellationToken.None);
+        await Run("update ged.ai_execution set result_expires_at=now()-interval '1 minute' where id=@id", new { id = lease.ExecutionId });
+
+        var expired = await store.ReserveAsync(request, "Groq", "test-model", 1, 100, CancellationToken.None);
+        Assert.False(expired.IsOwner);
+        Assert.True(expired.ResultExpired);
+        Assert.Null(expired.ExistingResult);
+        Assert.Equal(lease.ExecutionId, expired.ExecutionId);
+
+        await Run("update ged.ai_execution set result_expires_at=now()+interval '1 day', result_json='[]'::jsonb where id=@id", new { id = lease.ExecutionId });
+        var malformedLease = await store.ReserveAsync(request, "Groq", "test-model", 1, 100, CancellationToken.None);
+        Assert.False(malformedLease.IsOwner);
+        Assert.True(malformedLease.ResultMalformed);
+        Assert.Null(malformedLease.ExistingResult);
+
+        var status = await store.GetExecutionAsync(tenant, user, lease.ExecutionId, CancellationToken.None);
+        Assert.NotNull(status);
+        Assert.True(status!.ResultMalformed);
+        Assert.Null(status.Result);
     }
 
     [PgGatedFact]
@@ -377,6 +468,25 @@ public sealed class GovernedDocumentAiGatewayReservationTests
     }
 
     [Fact]
+    public async Task Expired_or_malformed_replay_does_not_call_the_provider()
+    {
+        var handler = new TextHandler();
+        var store = new FakeStore { NextLease = new AiExecutionLease(Guid.NewGuid(), false, AiExecutionState.Completed, ResultExpired: true) };
+        var options = GroqOptions(maxOutputTokens: 1000);
+        using var keys = AiKeyScope.Set("GROQ_API_KEY", "test-only");
+        var gateway = new GovernedDocumentAiGateway(new DocumentAiGateway(new HttpClient(handler), Options.Create(options), NullLogger<DocumentAiGateway>.Instance), store);
+        var expired = await gateway.ExecuteAsync(new AiRequest(Guid.NewGuid(), Guid.NewGuid(), AiTask.Summarize, "resuma", []), default);
+        Assert.Equal(0, handler.Calls);
+        Assert.Equal(AiFailureKind.InvalidOutput, expired.Failure);
+        Assert.Contains("expirou", expired.Limitation, StringComparison.OrdinalIgnoreCase);
+
+        store.NextLease = new AiExecutionLease(Guid.NewGuid(), false, AiExecutionState.Completed, ResultMalformed: true);
+        var malformed = await gateway.ExecuteAsync(new AiRequest(Guid.NewGuid(), Guid.NewGuid(), AiTask.Summarize, "resuma", []), default);
+        Assert.Equal(0, handler.Calls);
+        Assert.Contains("malformado", malformed.Limitation, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task MaxOutputTokens_is_clamped_to_the_safe_band_and_used_in_reservations()
     {
         var store = new FakeStore(); var options = GroqOptions(maxOutputTokens: 1);
@@ -402,8 +512,12 @@ public sealed class GovernedDocumentAiGatewayReservationTests
 
     private sealed class TextHandler : HttpMessageHandler
     {
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
-            Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"choices":[{"finish_reason":"stop","message":{"content":"resumo"}}]}""") });
+        public int Calls { get; private set; }
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Calls++;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"choices":[{"finish_reason":"stop","message":{"content":"resumo"}}]}""") });
+        }
     }
 
     private sealed class FakeStore : IAiGovernanceStore
@@ -413,12 +527,17 @@ public sealed class GovernedDocumentAiGatewayReservationTests
         public AiResult? LastCompletion { get; private set; }
         public Task<AiEffectivePolicy?> GetEffectivePolicyAsync(Guid tenantId, AiTask task, CancellationToken ct) =>
             Task.FromResult<AiEffectivePolicy?>(new AiEffectivePolicy(tenantId, 1, true, [task], ["Groq"], new Dictionary<AiTask, string> { [task] = "test-model" }, 1_000_000, 50_000, DateTimeOffset.UtcNow, 0, 0));
+        public AiExecutionLease? NextLease { get; set; }
         public Task<AiExecutionLease> ReserveAsync(AiRequest request, string provider, string model, long policyRevision, long estimatedTokens, CancellationToken ct)
-        { LastReservation = estimatedTokens; return Task.FromResult(new AiExecutionLease(Guid.NewGuid(), true, AiExecutionState.Reserved)); }
+        {
+            LastReservation = estimatedTokens;
+            return Task.FromResult(NextLease ?? new AiExecutionLease(Guid.NewGuid(), true, AiExecutionState.Reserved));
+        }
         public Task<bool> MarkRunningAsync(Guid executionId, CancellationToken ct) => Task.FromResult(true);
         public Task<bool> MarkSentAsync(Guid executionId, CancellationToken ct) { SentStamps++; return Task.FromResult(true); }
         public Task CompleteAsync(Guid executionId, AiResult result, long reservedTokens, TimeSpan duration, CancellationToken ct) { LastCompletion = result; return Task.CompletedTask; }
         public Task<AiExecutionStatus?> GetExecutionAsync(Guid tenantId, Guid userId, Guid executionId, CancellationToken ct) => Task.FromResult<AiExecutionStatus?>(null);
+        public Task MigrateVerifiedLegacySourcesAsync(Guid tenantId, Guid userId, Guid executionId, IReadOnlyList<AiExecutionSource> sources, CancellationToken ct) => Task.CompletedTask;
         public Task<int> ExpireReservationsAsync(CancellationToken ct) => Task.FromResult(0);
         public Task<AiRecoveryHealth> GetRecoveryHealthAsync(CancellationToken ct) => Task.FromResult(new AiRecoveryHealth(0, 0, 0));
     }

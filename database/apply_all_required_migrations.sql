@@ -3117,3 +3117,4 @@ where coalesce(reg_status, 'A') = 'A';
 \ir migrations/2026_10_02_document_ai_governance.sql
 \ir migrations/2026_10_03_document_ai_governance_hardening.sql
 \ir migrations/2026_10_04_document_ai_execution_sources.sql
+\ir migrations/2026_10_05_document_ai_application_integrity.sql

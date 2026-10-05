@@ -106,7 +106,7 @@ LIMIT 1;
             if (string.IsNullOrWhiteSpace(label)) return BadRequest(new { success = false, message = "Classificação não encontrada." });
         }
 
-        await _commands.SaveManualAsync(_currentUser.TenantId, id, newId, _currentUser.UserId, Array.Empty<string>(), new Dictionary<string, string>(), ct);
+        await _commands.SaveManualAsync(_currentUser.TenantId, id, newId, _currentUser.UserId, null, null, ct);
 
         await _audit.WriteAsync(
             _currentUser.TenantId,

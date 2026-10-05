@@ -28,9 +28,10 @@ public sealed class PostgresAiGovernanceStore(IDbConnectionFactory db) : IAiGove
         try {
             await c.ExecuteAsync(new CommandDefinition("insert into ged.ai_execution(id,tenant_id,user_id,task,provider,model,idempotency_key,input_fingerprint,policy_revision,state,reserved_tokens,reservation_period,document_refs,source_documents,expires_at) values(@id,@TenantId,@UserId,@task,@provider,@model,@IdempotencyKey,@fingerprint,@revision,'Reserved',@estimatedTokens,@period,cast(@documents as jsonb),cast(@sources as jsonb),now()+interval '10 minutes')",new{id,request.TenantId,request.UserId,task=request.Task.ToString(),provider,model,request.IdempotencyKey,fingerprint,revision,estimatedTokens,period,documents=JsonSerializer.Serialize(request.Context.Select(x=>x.Reference)),sources=SerializeSources(request.SourceDocuments)},tx,cancellationToken:ct));
         } catch(PostgresException e) when(e.SqlState==PostgresErrorCodes.UniqueViolation) {
-            await tx.RollbackAsync(ct); await using var read=await db.OpenAsync(ct); var existing=await read.QuerySingleAsync<ExecutionRow>(new CommandDefinition("select id \"ExecutionId\",state \"State\",input_fingerprint \"Fingerprint\",result_json::text \"ResultJson\" from ged.ai_execution where tenant_id=@TenantId and user_id=@UserId and task=@task and idempotency_key=@IdempotencyKey",new{request.TenantId,request.UserId,task=request.Task.ToString(),request.IdempotencyKey},cancellationToken:ct));
+            await tx.RollbackAsync(ct); await using var read=await db.OpenAsync(ct); var existing=await read.QuerySingleAsync<ExecutionRow>(new CommandDefinition("select id \"ExecutionId\",state \"State\",input_fingerprint \"Fingerprint\",case when result_expires_at is null or result_expires_at>now() then result_json::text end \"ResultJson\",(result_expires_at is not null and result_expires_at<=now()) \"ResultExpired\" from ged.ai_execution where tenant_id=@TenantId and user_id=@UserId and task=@task and idempotency_key=@IdempotencyKey",new{request.TenantId,request.UserId,task=request.Task.ToString(),request.IdempotencyKey},cancellationToken:ct));
             if(!CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(existing.Fingerprint),Encoding.ASCII.GetBytes(fingerprint)))throw new AiIdempotencyConflictException("A chave de idempotência já foi usada com conteúdo diferente.");
-            return new(existing.ExecutionId,false,Enum.Parse<AiExecutionState>(existing.State,true),DeserializeResult(existing.ResultJson));
+            var replay=ReadStoredResult(existing.ResultJson);
+            return new(existing.ExecutionId,false,Enum.Parse<AiExecutionState>(existing.State,true),existing.ResultExpired?null:replay.Result,existing.ResultExpired,replay.Malformed);
         }
         await c.ExecuteAsync(new CommandDefinition("insert into ged.ai_monthly_usage(tenant_id,period_start) values(@TenantId,@period) on conflict do nothing",new{request.TenantId,period},tx,cancellationToken:ct));
         var reserved=await c.ExecuteScalarAsync<bool>(new CommandDefinition("update ged.ai_monthly_usage u set reserved_tokens=reserved_tokens+@estimatedTokens,updated_at=now() from ged.ai_tenant_policy p where u.tenant_id=@TenantId and u.period_start=@period and p.tenant_id=u.tenant_id and p.enabled and p.revision=@revision and p.allowed_tasks ? @task and p.allowed_providers ? @provider and p.task_models->>@task=@model and u.consumed_tokens+u.reserved_tokens+@estimatedTokens<=p.monthly_token_limit returning true",new{request.TenantId,period,estimatedTokens,revision,task=request.Task.ToString(),provider,model},tx,cancellationToken:ct));
@@ -46,17 +47,21 @@ public sealed class PostgresAiGovernanceStore(IDbConnectionFactory db) : IAiGove
 
     public async Task CompleteAsync(Guid executionId,AiResult result,long reservedTokens,TimeSpan duration,CancellationToken ct)
     {
-        await using var c=await db.OpenAsync(ct);await using var tx=await c.BeginTransactionAsync(ct);var state=result.Success?"Completed":result.Failure switch{AiFailureKind.Timeout=>"RemoteOutcomeUnknown",AiFailureKind.Cancelled=>"RemoteOutcomeUnknown",AiFailureKind.InvalidOutput=>"Rejected",_=>"Failed"};
+        await using var c=await db.OpenAsync(ct);await using var tx=await c.BeginTransactionAsync(ct);
+        var state=result.Success?"Completed":result.Failure switch{AiFailureKind.Timeout=>"RemoteOutcomeUnknown",AiFailureKind.Cancelled=>"RemoteOutcomeUnknown",AiFailureKind.InvalidOutput=>"Rejected",_=>"Failed"};
         // Missing metering is unknown, not asserted as zero: a reached provider settles the reservation
         // as estimated usage; a request that never left this host settles at zero.
         var used=result.Usage?.TotalTokens is >0?result.Usage.TotalTokens.Value:result.ProviderReached?reservedTokens:0;
-        var row=await c.QuerySingleOrDefaultAsync<SettlementRow>(new CommandDefinition("select tenant_id \"TenantId\",reservation_period \"Period\",reserved_tokens \"Reserved\",settled_at \"SettledAt\" from ged.ai_execution where id=@executionId for update",new{executionId},tx,cancellationToken:ct));
+        var row=await c.QuerySingleOrDefaultAsync<SettlementRow>(new CommandDefinition("""
+select tenant_id "TenantId",reservation_period "Period",reserved_tokens "Reserved",settled_at "SettledAt",state "State",
+       settled_tokens "Settled",usage_estimated "UsageEstimated",sent_at "SentAt",usage_reconciled_at "ReconciledAt",
+       (result_json is not null) "HasResult",result_expires_at "ResultExpiresAt"
+from ged.ai_execution where id=@executionId for update
+""",new{executionId},tx,cancellationToken:ct));
         if(row is null){await tx.CommitAsync(ct);return;}
         if(row.SettledAt is not null)
         {
-            // Late response: the reservation was already settled (typically by expiration). Reconcile the
-            // outcome and reported metering without touching monthly consumption a second time.
-            await c.ExecuteAsync(new CommandDefinition("update ged.ai_execution set state=@state,completed_at=now(),duration_ms=@duration,reported_input_tokens=@input,reported_output_tokens=@output,reported_total_tokens=@reported,result_json=cast(@resultJson as jsonb),result_expires_at=now()+interval '30 days',failure_kind=@failure,limitation=@limitation,correlation_id=@correlation where id=@executionId",new{executionId,state,duration=(long)duration.TotalMilliseconds,input=result.Usage?.InputTokens,output=result.Usage?.OutputTokens,reported=result.Usage?.TotalTokens,resultJson=SerializeResult(result),failure=result.Failure.ToString(),result.Limitation,correlation=result.CorrelationId},tx,cancellationToken:ct));
+            await ReconcileLateAsync(c,tx,executionId,row,result,state,duration,ct);
             await tx.CommitAsync(ct);return;
         }
         await c.ExecuteAsync(new CommandDefinition("update ged.ai_execution set state=@state,completed_at=now(),duration_ms=@duration,reported_input_tokens=@input,reported_output_tokens=@output,reported_total_tokens=@reported,settled_tokens=@used,usage_estimated=@estimated,result_json=cast(@resultJson as jsonb),result_expires_at=now()+interval '30 days',failure_kind=@failure,limitation=@limitation,correlation_id=@correlation,settled_at=now() where id=@executionId",new{executionId,state,duration=(long)duration.TotalMilliseconds,input=result.Usage?.InputTokens,output=result.Usage?.OutputTokens,reported=result.Usage?.TotalTokens,used,estimated=result.Usage?.TotalTokens is null,resultJson=SerializeResult(result),failure=result.Failure.ToString(),result.Limitation,correlation=result.CorrelationId},tx,cancellationToken:ct));
@@ -64,20 +69,107 @@ public sealed class PostgresAiGovernanceStore(IDbConnectionFactory db) : IAiGove
         await tx.CommitAsync(ct);
     }
 
-    public async Task<AiExecutionStatus?> GetExecutionAsync(Guid tenantId,Guid userId,Guid executionId,CancellationToken ct){await using var c=await db.OpenAsync(ct);var r=await c.QuerySingleOrDefaultAsync<StatusRow>(new CommandDefinition("select id \"ExecutionId\",tenant_id \"TenantId\",user_id \"UserId\",task \"Task\",state \"State\",created_at \"CreatedAt\",completed_at \"CompletedAt\",result_expires_at \"ResultExpiresAt\",source_documents::text \"SourcesJson\",case when result_expires_at>now() then result_json::text end \"ResultJson\" from ged.ai_execution where id=@executionId and tenant_id=@tenantId and user_id=@userId",new{tenantId,userId,executionId},cancellationToken:ct));return r is null?null:new(r.ExecutionId,r.TenantId,r.UserId,Enum.Parse<AiTask>(r.Task,true),Enum.Parse<AiExecutionState>(r.State,true),r.CreatedAt,r.CompletedAt,DeserializeResult(r.ResultJson),DeserializeSources(r.SourcesJson),r.ResultExpiresAt);}
+    private static async Task ReconcileLateAsync(System.Data.IDbConnection c,System.Data.IDbTransaction tx,Guid executionId,SettlementRow row,AiResult result,string incomingState,TimeSpan duration,CancellationToken ct)
+    {
+        var protectCompletion=string.Equals(row.State,"Completed",StringComparison.Ordinal);
+        var storeResult=result.Success&&!row.HasResult;
+        var nextState=protectCompletion&&!result.Success?row.State:result.Success?"Completed":incomingState;
+        var refreshExpiry=result.Success&&storeResult&&!row.HasResult;
+        await c.ExecuteAsync(new CommandDefinition("""
+update ged.ai_execution set
+    state=@state,
+    completed_at=coalesce(completed_at,now()),
+    duration_ms=coalesce(duration_ms,@duration),
+    reported_input_tokens=case when @protect and not @success then reported_input_tokens else coalesce(@input,reported_input_tokens) end,
+    reported_output_tokens=case when @protect and not @success then reported_output_tokens else coalesce(@output,reported_output_tokens) end,
+    reported_total_tokens=case when @protect and not @success then reported_total_tokens else coalesce(@reported,reported_total_tokens) end,
+    result_json=case when @storeResult and result_json is null then cast(@resultJson as jsonb) else result_json end,
+    result_expires_at=case when @refreshExpiry then now()+interval '30 days' else result_expires_at end,
+    failure_kind=case when @protect and not @success then failure_kind else @failure end,
+    limitation=case when @protect and not @success then limitation else @limitation end,
+    correlation_id=coalesce(correlation_id,@correlation)
+where id=@executionId
+""",new{executionId,state=nextState,duration=(long)duration.TotalMilliseconds,input=result.Usage?.InputTokens,output=result.Usage?.OutputTokens,reported=result.Usage?.TotalTokens,storeResult,refreshExpiry,resultJson=SerializeResult(result),protect=protectCompletion,success=result.Success,failure=result.Failure.ToString(),result.Limitation,correlation=result.CorrelationId},tx,cancellationToken:ct));
+        var reported=result.Usage?.TotalTokens;
+        if(reported is null||!row.UsageEstimated||row.SentAt is null||row.ReconciledAt is not null)return;
+        var delta=reported.Value-row.Settled;
+        var adjusted=await c.ExecuteAsync(new CommandDefinition("update ged.ai_monthly_usage set consumed_tokens=greatest(0,consumed_tokens+@delta),updated_at=now() where tenant_id=@TenantId and period_start=@Period",new{delta,row.TenantId,row.Period},tx,cancellationToken:ct));
+        if(adjusted==0)return;
+        await c.ExecuteAsync(new CommandDefinition("update ged.ai_execution set usage_reconciled_at=now(),reconciled_delta=@delta where id=@executionId and usage_reconciled_at is null",new{executionId,delta},tx,cancellationToken:ct));
+    }
+
+    public async Task<AiExecutionStatus?> GetExecutionAsync(Guid tenantId,Guid userId,Guid executionId,CancellationToken ct)
+    {
+        await using var c=await db.OpenAsync(ct);
+        var r=await c.QuerySingleOrDefaultAsync<StatusRow>(new CommandDefinition("""
+select id "ExecutionId",tenant_id "TenantId",user_id "UserId",task "Task",state "State",created_at "CreatedAt",completed_at "CompletedAt",
+       result_expires_at "ResultExpiresAt",source_documents::text "SourcesJson",document_refs::text "RefsJson",
+       case when result_expires_at>now() then result_json::text end "ResultJson"
+from ged.ai_execution where id=@executionId and tenant_id=@tenantId and user_id=@userId
+""",new{tenantId,userId,executionId},cancellationToken:ct));
+        if(r is null)return null;
+        var read=AiExecutionSourceCodec.Read(r.SourcesJson,r.RefsJson);
+        var stored=ReadStoredResult(r.ResultJson);
+        return new(r.ExecutionId,r.TenantId,r.UserId,Enum.Parse<AiTask>(r.Task,true),Enum.Parse<AiExecutionState>(r.State,true),r.CreatedAt,r.CompletedAt,stored.Malformed?null:stored.Result,read.Sources,r.ResultExpiresAt,read.Integrity,stored.Malformed);
+    }
+
+    public async Task MigrateVerifiedLegacySourcesAsync(Guid tenantId,Guid userId,Guid executionId,IReadOnlyList<AiExecutionSource> sources,CancellationToken ct)
+    {
+        if(sources.Count==0)return;
+        await using var c=await db.OpenAsync(ct);
+        await c.ExecuteAsync(new CommandDefinition("update ged.ai_execution set source_documents=cast(@sources as jsonb) where id=@executionId and tenant_id=@tenantId and user_id=@userId and source_documents='[]'::jsonb",new{executionId,tenantId,userId,sources=SerializeSources(sources)},cancellationToken:ct));
+    }
     public async Task<int> ExpireReservationsAsync(CancellationToken ct){await using var c=await db.OpenAsync(ct);return await c.ExecuteScalarAsync<int>(new CommandDefinition("select ged.expire_ai_reservations()",cancellationToken:ct));}
     public async Task<AiRecoveryHealth> GetRecoveryHealthAsync(CancellationToken ct){await using var c=await db.OpenAsync(ct);var r=await c.QuerySingleOrDefaultAsync<HealthRow>(new CommandDefinition("select count(*) filter (where state='RemoteOutcomeUnknown') \"RemoteOutcomeUnknown\",count(*) filter (where state='Expired') \"Expired\",count(*) filter (where state in ('Reserved','Running') and expires_at<now()) \"PendingExpired\" from ged.ai_execution",cancellationToken:ct));return new(r.RemoteOutcomeUnknown,r.Expired,r.PendingExpired);}
     private static string Fingerprint(AiRequest r,string p,string m,long revision){var canonical=JsonSerializer.Serialize(new{r.TenantId,r.UserId,Task=r.Task.ToString(),r.Instructions,Context=r.Context.Select(x=>new{x.Reference,x.Text,x.MediaType,Data=x.Data is null?null:Convert.ToHexString(SHA256.HashData(x.Data))}),Provider=p,Model=m,revision,Schema=r.OutputSchema?.RootElement.GetRawText()});return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();}
     private static string SerializeSources(IReadOnlyList<AiExecutionSource> sources)=>JsonSerializer.Serialize(sources.Select(x=>new{documentId=x.DocumentId.ToString("N"),versionId=x.VersionId.ToString("N")}));
     private static IReadOnlyList<AiExecutionSource> DeserializeSources(string? json){if(string.IsNullOrWhiteSpace(json))return [];try{var list=JsonSerializer.Deserialize<List<SourceRef>>(json)??[];return list.SelectMany(x=>{if(!Guid.TryParse(x.documentId,out var d)||!Guid.TryParse(x.versionId,out var v))return System.Array.Empty<AiExecutionSource>();return new[] { new AiExecutionSource(d,v) };}).ToArray();}catch(JsonException){return [];}}
     private static string SerializeResult(AiResult r)=>JsonSerializer.Serialize(new StoredResult(r.Success,r.Text,r.StructuredData?.RootElement.GetRawText(),r.Usage,r.Provider,r.Model,r.Failure,r.Limitation,r.CorrelationId));
-    private static AiResult? DeserializeResult(string? json){if(string.IsNullOrWhiteSpace(json))return null;var r=JsonSerializer.Deserialize<StoredResult>(json);return r is null?null:new(r.Success,r.Text,r.Structured is null?null:JsonDocument.Parse(r.Structured),r.Usage,r.Provider,r.Model,r.Failure,r.Limitation,r.CorrelationId);}
+    private readonly record struct StoredRead(AiResult? Result, bool Malformed);
+    private static StoredRead ReadStoredResult(string? json)
+    {
+        if(string.IsNullOrWhiteSpace(json))return new(null,false);
+        try
+        {
+            using var document=JsonDocument.Parse(json);
+            var root=document.RootElement;
+            if(root.ValueKind!=JsonValueKind.Object)return new(null,true);
+            var success=root.TryGetProperty("Success",out var successElement)&&successElement.ValueKind==JsonValueKind.True;
+            var text=ReadString(root,"Text");
+            JsonDocument? structured=null;
+            if(root.TryGetProperty("Structured",out var structuredElement)&&structuredElement.ValueKind==JsonValueKind.String)
+            {
+                var raw=structuredElement.GetString();
+                if(!string.IsNullOrWhiteSpace(raw))structured=JsonDocument.Parse(raw);
+            }
+            var failure=ReadFailure(root);
+            if(failure is null)return new(null,true);
+            var usage=ReadUsage(root);
+            return new(new AiResult(success,text,structured,usage,ReadString(root,"Provider")??"",ReadString(root,"Model")??"",failure.Value,ReadString(root,"Limitation"),ReadString(root,"CorrelationId")),false);
+        }
+        catch(JsonException){return new(null,true);}
+    }
+    private static string? ReadString(JsonElement root,string name)=>root.TryGetProperty(name,out var value)&&value.ValueKind==JsonValueKind.String?value.GetString():null;
+    private static AiFailureKind? ReadFailure(JsonElement root)
+    {
+        if(!root.TryGetProperty("Failure",out var value))return AiFailureKind.None;
+        if(value.ValueKind==JsonValueKind.Number&&value.TryGetInt32(out var number)&&Enum.IsDefined(typeof(AiFailureKind),number))return (AiFailureKind)number;
+        if(value.ValueKind==JsonValueKind.String&&Enum.TryParse<AiFailureKind>(value.GetString(),true,out var parsed)&&Enum.IsDefined(parsed))return parsed;
+        return null;
+    }
+    private static AiUsage? ReadUsage(JsonElement root)
+    {
+        if(!root.TryGetProperty("Usage",out var usage)||usage.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)return null;
+        if(usage.ValueKind!=JsonValueKind.Object)return null;
+        return new(ReadLong(usage,"InputTokens"),ReadLong(usage,"OutputTokens"),ReadLong(usage,"TotalTokens"));
+    }
+    private static long? ReadLong(JsonElement root,string name)=>root.TryGetProperty(name,out var value)&&value.ValueKind==JsonValueKind.Number&&value.TryGetInt64(out var number)?number:null;
     private sealed record StoredResult(bool Success,string? Text,string? Structured,AiUsage? Usage,string Provider,string Model,AiFailureKind Failure,string? Limitation,string? CorrelationId);
     // Parameter names must match the serialized source_documents keys exactly (System.Text.Json is case-sensitive).
     private sealed record SourceRef(string? documentId,string? versionId);
     private sealed class PolicyRow{public Guid TenantId{get;set;}public long Revision{get;set;}public bool Enabled{get;set;}public string TasksJson{get;set;}="[]";public string ProvidersJson{get;set;}="[]";public string ModelsJson{get;set;}="{}";public long MonthlyTokenLimit{get;set;}public int MaximumInputCharacters{get;set;}public DateTimeOffset PeriodStart{get;set;}public long ConsumedTokens{get;set;}public long ReservedTokens{get;set;}}
-    private sealed class ExecutionRow{public Guid ExecutionId{get;set;}public string State{get;set;}="";public string Fingerprint{get;set;}="";public string? ResultJson{get;set;}}
-    private sealed class SettlementRow{public Guid TenantId{get;set;}public DateTime Period{get;set;}public long Reserved{get;set;}public DateTime? SettledAt{get;set;}}
-    private sealed class StatusRow{public Guid ExecutionId{get;set;}public Guid TenantId{get;set;}public Guid UserId{get;set;}public string Task{get;set;}="";public string State{get;set;}="";public DateTimeOffset CreatedAt{get;set;}public DateTimeOffset? CompletedAt{get;set;}public DateTimeOffset? ResultExpiresAt{get;set;}public string? SourcesJson{get;set;}public string? ResultJson{get;set;}}
+    private sealed class ExecutionRow{public Guid ExecutionId{get;set;}public string State{get;set;}="";public string Fingerprint{get;set;}="";public string? ResultJson{get;set;}public bool ResultExpired{get;set;}}
+    private sealed class SettlementRow{public Guid TenantId{get;set;}public DateTime Period{get;set;}public long Reserved{get;set;}public DateTime? SettledAt{get;set;}public string State{get;set;}="";public long Settled{get;set;}public bool UsageEstimated{get;set;}public DateTime? SentAt{get;set;}public DateTime? ReconciledAt{get;set;}public bool HasResult{get;set;}public DateTime? ResultExpiresAt{get;set;}}
+    private sealed class StatusRow{public Guid ExecutionId{get;set;}public Guid TenantId{get;set;}public Guid UserId{get;set;}public string Task{get;set;}="";public string State{get;set;}="";public DateTimeOffset CreatedAt{get;set;}public DateTimeOffset? CompletedAt{get;set;}public DateTimeOffset? ResultExpiresAt{get;set;}public string? SourcesJson{get;set;}public string? RefsJson{get;set;}public string? ResultJson{get;set;}}
     private sealed class HealthRow{public int RemoteOutcomeUnknown{get;set;}public int Expired{get;set;}public int PendingExpired{get;set;}}
 }
