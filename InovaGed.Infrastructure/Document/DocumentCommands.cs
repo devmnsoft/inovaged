@@ -224,25 +224,25 @@ on conflict do nothing;",
     public async Task ApplyClassificationAsync(Guid tenantId, Guid userId, Guid documentId, Guid classificationId, CancellationToken ct)
     {
         const string sql = @"
-update ged.document
+update ged.document d
 set classification_id = @classificationId,
-    classification_version_id = (
-      select v.id
-      from ged.classification_plan_version v
-      where v.tenant_id = @tenantId
-      order by v.version_no desc
-      limit 1
-    ),
+    classification_version_id = v.id,
     updated_at = now(),
     updated_by = @userId
-where tenant_id = @tenantId
-  and id = @documentId;";
+from ged.classification_plan_version v
+where d.tenant_id = @tenantId
+  and d.id = @documentId
+  and v.tenant_id = @tenantId
+  and v.id = (select id from ged.classification_plan_version where tenant_id = @tenantId order by version_no desc limit 1)
+  and exists (
+    select 1 from ged.classification_plan_version_item i
+    where i.tenant_id = @tenantId and i.version_id = v.id and i.classification_id = @classificationId and coalesce(i.is_active, true));";
 
         try
         {
             await using var conn = await _db.OpenAsync(ct);
             var rows = await conn.ExecuteAsync(new CommandDefinition(sql, new { tenantId, userId, documentId, classificationId }, cancellationToken: ct));
-            if (rows == 0) throw new InvalidOperationException("Documento não encontrado para aplicar classificação.");
+            if (rows == 0) throw new InvalidOperationException("A classe não pertence à versão vigente do plano ou o documento não foi encontrado.");
         }
         catch (Exception ex)
         {

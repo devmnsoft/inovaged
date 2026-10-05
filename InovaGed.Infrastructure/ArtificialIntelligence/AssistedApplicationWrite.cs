@@ -6,9 +6,11 @@ using Npgsql;
 
 namespace InovaGed.Infrastructure.ArtificialIntelligence;
 
-/// <summary>One transaction for the canonical change, the review record and the audit.</summary>
+/// <summary>One transaction for the canonical change, the review, the audit and the durable retention work.</summary>
 internal static class AssistedApplicationWrite
 {
+    private const string PendingReason = "Recálculo de temporalidade pendente após a gravação da classificação.";
+
     public static async Task<AssistedWriteResult> ExecuteAsync(
         IDbConnection connection,
         AssistedApplicationRecord application,
@@ -27,14 +29,13 @@ for update
 """, new { application.TenantId, application.DocumentId }, transaction, cancellationToken: ct));
         if (locked is null) { await transaction.RollbackAsync(ct); return new("NotFound", "Documento não encontrado.", null, null); }
 
-        var existingId = await connection.ExecuteScalarAsync<Guid?>(new CommandDefinition("""
-select id from ged.ai_suggestion_application
-where tenant_id=@TenantId and execution_id=@ExecutionId and decision_fingerprint=@DecisionFingerprint
-""", new { application.TenantId, application.ExecutionId, application.DecisionFingerprint }, transaction, cancellationToken: ct));
-        if (existingId is not null)
+        var existing = await FindAsync(connection, transaction, application, ct);
+        if (existing is not null)
         {
-            await transaction.CommitAsync(ct);
-            return new("AlreadyApplied", "Esta revisão já foi registrada. Nenhuma auditoria ou gravação adicional foi feita.", locked.Token, existingId);
+            var replay = await ReplayAsync(connection, transaction, application, existing, locked.Token, ct);
+            if (replay.Code == "AlreadyApplied") await transaction.CommitAsync(ct);
+            else await transaction.RollbackAsync(ct);
+            return replay;
         }
 
         if (mutate)
@@ -53,11 +54,12 @@ where tenant_id=@TenantId and execution_id=@ExecutionId and decision_fingerprint
         }
 
         var applicationId = Guid.NewGuid();
+        var pendingId = application.QueueRetention && mutate ? Guid.NewGuid() : (Guid?)null;
         try
         {
             await connection.ExecuteAsync(new CommandDefinition("""
-insert into ged.ai_suggestion_application(id,tenant_id,execution_id,document_id,version_id,task,reviewer_id,decision_fingerprint,decision_json,outcome,partial)
-values(@Id,@TenantId,@ExecutionId,@DocumentId,@VersionId,@Task,@ReviewerId,@DecisionFingerprint,cast(@DecisionJson as jsonb),@Outcome,@Partial)
+insert into ged.ai_suggestion_application(id,tenant_id,execution_id,document_id,version_id,task,reviewer_id,decision_fingerprint,decision_json,outcome,partial,operation_key)
+values(@Id,@TenantId,@ExecutionId,@DocumentId,@VersionId,@Task,@ReviewerId,@DecisionFingerprint,cast(@DecisionJson as jsonb),@Outcome,@Partial,@OperationKey)
 """, new
             {
                 Id = applicationId,
@@ -70,7 +72,8 @@ values(@Id,@TenantId,@ExecutionId,@DocumentId,@VersionId,@Task,@ReviewerId,@Deci
                 application.DecisionFingerprint,
                 application.DecisionJson,
                 application.Outcome,
-                application.Partial
+                Partial = pendingId is not null,
+                application.OperationKey
             }, transaction, cancellationToken: ct));
 
             await connection.ExecuteAsync(new CommandDefinition("""
@@ -89,16 +92,61 @@ values(gen_random_uuid(),@TenantId,@UserId,'',@Action,'INFO','DocumentAiAssist',
                 Message = application.AuditMessage
             }, transaction, cancellationToken: ct));
 
+            if (pendingId is Guid durableId)
+            {
+                await connection.ExecuteAsync(new CommandDefinition("""
+insert into ged.ai_retention_recalc_pending(id,tenant_id,document_id,application_id,reason,attempts)
+values(@Id,@TenantId,@DocumentId,@ApplicationId,@Reason,0)
+""", new { Id = durableId, application.TenantId, application.DocumentId, ApplicationId = applicationId, Reason = PendingReason }, transaction, cancellationToken: ct));
+            }
+
             var token = await connection.ExecuteScalarAsync<long>(new CommandDefinition("select xmin::text::bigint from ged.document where tenant_id=@TenantId and id=@DocumentId", new { application.TenantId, application.DocumentId }, transaction, cancellationToken: ct));
             await transaction.CommitAsync(ct);
-            return new(mutate ? "Applied" : "Recorded", null, token, applicationId);
+            return new(mutate ? "Applied" : "Recorded", null, token, applicationId, pendingId is not null, pendingId is not null, pendingId, mutate ? "Applied" : "Recorded");
         }
         catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
         {
             await transaction.RollbackAsync(ct);
-            return new("AlreadyApplied", "Esta revisão já foi registrada. Nenhuma auditoria ou gravação adicional foi feita.", locked.Token, null);
+            var raced = await FindAsync(connection, null, application, ct);
+            if (raced is null) return new("AlreadyApplied", "Esta revisão já foi registrada. Nenhuma auditoria ou gravação adicional foi feita.", locked.Token, null);
+            return await ReplayAsync(connection, null, application, raced, locked.Token, ct);
         }
     }
 
+    private static async Task<ExistingRow?> FindAsync(IDbConnection connection, IDbTransaction? transaction, AssistedApplicationRecord application, CancellationToken ct)
+    {
+        if (!string.IsNullOrWhiteSpace(application.OperationKey))
+        {
+            var byKey = await connection.QuerySingleOrDefaultAsync<ExistingRow>(new CommandDefinition("""
+select id "Id", decision_fingerprint "Fingerprint", decision_json::text "DecisionJson", outcome "Outcome", partial "Partial"
+from ged.ai_suggestion_application
+where tenant_id=@TenantId and operation_key=@OperationKey
+""", new { application.TenantId, application.OperationKey }, transaction, cancellationToken: ct));
+            if (byKey is not null) return byKey;
+        }
+        return await connection.QuerySingleOrDefaultAsync<ExistingRow>(new CommandDefinition("""
+select id "Id", decision_fingerprint "Fingerprint", decision_json::text "DecisionJson", outcome "Outcome", partial "Partial"
+from ged.ai_suggestion_application
+where tenant_id=@TenantId and execution_id=@ExecutionId and decision_fingerprint=@DecisionFingerprint
+""", new { application.TenantId, application.ExecutionId, application.DecisionFingerprint }, transaction, cancellationToken: ct));
+    }
+
+    private static async Task<AssistedWriteResult> ReplayAsync(IDbConnection connection, IDbTransaction? transaction, AssistedApplicationRecord application, ExistingRow existing, long token, CancellationToken ct)
+    {
+        if (!ReviewIdentity.Equivalent(existing.Fingerprint, existing.DecisionJson, application.DecisionFingerprint, application.DecisionJson))
+            return new("DecisionConflict", "A mesma revisão já foi registrada com outra decisão. Gere uma nova sugestão para revisar de novo.", token, existing.Id, existing.Partial, false, null, existing.Outcome);
+        var pending = await connection.QuerySingleOrDefaultAsync<PendingRow>(new CommandDefinition("""
+select attempts "Attempts", resolved_at is null "Open"
+from ged.ai_retention_recalc_pending
+where tenant_id=@TenantId and application_id=@ApplicationId
+order by created_at desc
+limit 1
+""", new { application.TenantId, ApplicationId = existing.Id }, transaction, cancellationToken: ct));
+        var open = pending?.Open == true;
+        return new("AlreadyApplied", null, token, existing.Id, open || existing.Partial && open, open, null, existing.Outcome, pending?.Attempts ?? 0);
+    }
+
     private sealed class LockRow { public Guid Id { get; set; } public long Token { get; set; } }
+    private sealed class ExistingRow { public Guid Id { get; set; } public string Fingerprint { get; set; } = ""; public string DecisionJson { get; set; } = ""; public string Outcome { get; set; } = ""; public bool Partial { get; set; } }
+    private sealed class PendingRow { public int Attempts { get; set; } public bool Open { get; set; } }
 }

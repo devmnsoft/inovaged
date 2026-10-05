@@ -306,5 +306,12 @@
     "area": "IA documental",
     "required": true,
     "description": "Registra a revisão da sugestão, a pendência de temporalidade e a reconciliação única do consumo tardio."
+  },
+  {
+    "name": "2026_10_06_document_ai_review_recovery",
+    "path": "database/migrations/2026_10_06_document_ai_review_recovery.sql",
+    "area": "IA documental",
+    "required": true,
+    "description": "Identifica a revisão de forma estável e torna recuperável o recálculo de temporalidade gravado na mesma transação."
   }
 ]

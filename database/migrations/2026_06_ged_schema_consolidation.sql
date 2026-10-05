@@ -400,6 +400,19 @@ CREATE TABLE IF NOT EXISTS ged.app_user (
     reg_status char(1) NOT NULL DEFAULT 'A'
 );
 
+CREATE TABLE IF NOT EXISTS ged.app_role (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id uuid NULL,
+    name text NOT NULL DEFAULT '',
+    normalized_name text NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS ged.user_role (
+    user_id uuid NOT NULL,
+    role_id uuid NOT NULL,
+    PRIMARY KEY (user_id, role_id)
+);
+
 -- Histórico de migrations: registro idempotente dos scripts aplicados.
 CREATE TABLE IF NOT EXISTS ged.schema_migration_history (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

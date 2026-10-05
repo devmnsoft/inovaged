@@ -350,6 +350,7 @@ select exists (
             "AI_CLASSIFICATION_APPLY" => "AI_CLASSIFICATION_APPLY",
             "AI_ARCHIVAL_APPLY" => "AI_ARCHIVAL_APPLY",
             "AI_ACCESS_DENIED" => "AI_ACCESS_DENIED",
+            "AI_RETENTION_RETRY" => "AI_RETENTION_RETRY",
 
             _ => "VIEW"
         };

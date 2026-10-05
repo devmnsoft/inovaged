@@ -77,9 +77,11 @@
       if (Number(form.dataset.sequence) !== sequence) return;
       if (applied.status === 409) throw new Error(applied.payload.message || 'Conflito de edição. Recarregue o documento.');
       if (!applied.ok || !applied.payload.success) throw new Error(applied.payload.message || 'A gravação não foi confirmada.');
+      const pending = applied.payload.retentionPending === true || applied.payload.partial === true;
       status.textContent = applied.payload.message || 'Revisão gravada.';
-      result.innerHTML = `<p class="mb-0"><strong>${escape(applied.payload.partial ? 'Conclusão parcial' : applied.payload.alreadyApplied ? 'Sem efeito duplicado' : 'Gravação confirmada')}</strong></p><p class="small mb-0">${escape(applied.payload.message || '')}</p>`;
+      result.innerHTML = `<p class="mb-0"><strong>${escape(pending ? 'Conclusão parcial' : applied.payload.alreadyApplied ? 'Sem efeito duplicado' : 'Gravação confirmada')}</strong></p><p class="small mb-0">${escape(applied.payload.message || '')}</p>`;
       focus(result);
+      document.querySelectorAll('[data-ai-review-history]').forEach(node => node.dispatchEvent(new CustomEvent('ai-history-refresh')));
     } catch (error) {
       if (error.name === 'AbortError') status.textContent = 'Aplicação cancelada. Confirme o estado do documento antes de tentar de novo.';
       else status.textContent = error.message;
@@ -125,4 +127,73 @@
       : `<label class="small d-block mt-2">Valor corrigido <input class="form-control form-control-sm" data-corrected-value maxlength="${item.name === 'title' ? 300 : 2000}" value="${escape(item.suggested || '')}" /></label>`;
     return `<fieldset class="border rounded-3 p-3 mb-3" data-field="${escape(item.name)}" data-suggested="${escape(item.sufficient ? item.suggested : '')}"><legend class="float-none w-auto px-2 fs-6">${escape(item.label)}</legend><dl class="row small mb-2"><dt class="col-4">Atual</dt><dd class="col-8">${escape(currentValue)}</dd><dt class="col-4">Sugerido</dt><dd class="col-8">${escape(suggested)}</dd><dt class="col-4">Evidência</dt><dd class="col-8">${escape(item.evidence || '—')}</dd></dl><p class="small text-muted">${escape(item.note || '')}</p><div class="d-flex flex-wrap gap-3"><label class="small"><input type="radio" name="choice-${scope}-${escape(item.name)}" value="rejected" data-choice checked /> Manter atual</label><label class="small"><input type="radio" name="choice-${scope}-${escape(item.name)}" value="accepted" data-choice ${item.sufficient ? '' : 'disabled'} /> Aceitar sugestão</label><label class="small"><input type="radio" name="choice-${scope}-${escape(item.name)}" value="corrected" data-choice /> Corrigir</label></div>${control}</fieldset>`;
   };
+
+  const historySessions = new WeakMap();
+  const bindHistory = section => {
+    if (historySessions.has(section)) return historySessions.get(section);
+    const session = { page: 1, sequence: 0, controller: null };
+    const load = async () => {
+      session.controller?.abort();
+      session.controller = new AbortController();
+      const sequence = ++session.sequence;
+      const status = section.querySelector('[data-history-status]');
+      const list = section.querySelector('[data-history-list]');
+      const pendingStatus = section.querySelector('[data-pending-status]');
+      const pendingList = section.querySelector('[data-pending-list]');
+      if (status) status.textContent = 'Carregando histórico…';
+      const query = `documentId=${encodeURIComponent(section.dataset.documentId)}&page=${session.page}&pageSize=10`;
+      try {
+        const history = await fetch(`${section.dataset.historyUrl}?${query}`, { signal: session.controller.signal, headers: { Accept: 'application/json' } });
+        const historyPayload = await readJson(history);
+        if (!section.isConnected || sequence !== session.sequence) return;
+        if (!history.ok || !historyPayload.success) throw new Error(historyPayload.message || 'Não foi possível consultar o histórico.');
+        const items = historyPayload.items || [];
+        if (status) status.textContent = items.length ? `Página ${historyPayload.page}. ${historyPayload.total} registro(s).` : 'Nenhuma revisão registrada para este documento.';
+        if (list) list.innerHTML = items.map(item => `<article class="border rounded-3 p-2 mb-2"><p class="mb-1"><strong>${escape(item.situation)}</strong></p><p class="small mb-1">${escape(item.task)} · versão ${escape(item.versionId || '—')} · ${escape(item.at || '')}</p><p class="small mb-1">Revisor ${escape(item.reviewerId || '—')} · decisão ${escape(item.outcome || '—')} · recálculo ${escape(item.retentionState || 'ausente')}${item.aiResultExpired ? ' · resultado da IA expirado' : ''}</p><ul class="small mb-0">${(item.fields || []).map(field => `<li>${escape(field.label)}: ${escape(field.effect)}${field.value ? ' · ' + escape(field.value) : ''}</li>`).join('')}</ul>${item.lastError ? `<p class="small text-muted mb-0">Último erro: ${escape(item.lastError)}</p>` : ''}</article>`).join('');
+        const pending = await fetch(`${section.dataset.pendingUrl}?${query}`, { signal: session.controller.signal, headers: { Accept: 'application/json' } });
+        const pendingPayload = await readJson(pending);
+        if (!section.isConnected || sequence !== session.sequence) return;
+        if (!pending.ok || !pendingPayload.success) throw new Error(pendingPayload.message || 'Não foi possível consultar as pendências.');
+        const rows = pendingPayload.items || [];
+        if (pendingStatus) pendingStatus.textContent = rows.length ? '' : 'Nenhuma pendência de temporalidade para este documento.';
+        if (pendingList) pendingList.innerHTML = rows.map(item => `<article class="border rounded-3 p-2 mb-2"><p class="small mb-1">Documento ${escape(item.documentId)} · ${escape(item.createdAt)} · ${escape(item.state)}</p><p class="small mb-1">Tentativas: ${escape(item.attempts)}${item.lastError ? ' · erro ' + escape(item.lastError) : ''}${item.resolvedAt ? ' · resolvida em ' + escape(item.resolvedAt) : ''}</p>${item.state === 'resolvida' ? '' : `<button type="button" class="btn btn-outline-primary btn-sm" data-retry-pending="${escape(item.id)}">Tentar recálculo novamente</button>`}</article>`).join('');
+      } catch (error) {
+        if (!section.isConnected || sequence !== session.sequence || error.name === 'AbortError') return;
+        if (status) status.textContent = error.message;
+      }
+    };
+    section.addEventListener('ai-history-refresh', () => { session.page = 1; load(); });
+    section.querySelector('[data-history-refresh]')?.addEventListener('click', () => load());
+    section.querySelector('[data-history-prev]')?.addEventListener('click', () => { session.page = Math.max(1, session.page - 1); load(); });
+    section.querySelector('[data-history-next]')?.addEventListener('click', () => { session.page += 1; load(); });
+    section.addEventListener('click', async event => {
+      const button = event.target.closest?.('[data-retry-pending]');
+      if (!button) return;
+      button.disabled = true;
+      const body = new FormData();
+      body.append('documentId', section.dataset.documentId);
+      body.append('pendingId', button.dataset.retryPending);
+      body.append('__RequestVerificationToken', tokenOf(section));
+      const status = section.querySelector('[data-pending-status]');
+      try {
+        const response = await fetch(section.dataset.retryUrl, { method: 'POST', body });
+        const payload = await readJson(response);
+        if (!section.isConnected) return;
+        if (status) status.textContent = payload.message || 'Resposta recebida.';
+        await load();
+      } catch (error) {
+        if (status) status.textContent = error.message;
+      } finally { button.disabled = false; }
+    });
+    historySessions.set(section, session);
+    load();
+    return session;
+  };
+  const scanHistory = root => {
+    const scope = root || document;
+    if (scope.matches?.('[data-ai-review-history]')) bindHistory(scope);
+    scope.querySelectorAll?.('[data-ai-review-history]')?.forEach(bindHistory);
+  };
+  scanHistory(document);
+  new MutationObserver(mutations => mutations.forEach(mutation => mutation.addedNodes.forEach(node => { if (node.nodeType === 1) scanHistory(node); }))).observe(document.documentElement, { childList: true, subtree: true });
 })();

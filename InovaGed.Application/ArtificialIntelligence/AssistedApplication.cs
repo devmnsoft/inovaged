@@ -17,16 +17,51 @@ public sealed record AssistedApplicationRecord(
     string AuditDetailsJson,
     string? Ip,
     string? UserAgent,
-    string? CorrelationId);
+    string? CorrelationId,
+    bool QueueRetention = false,
+    string? OperationKey = null);
 
-public sealed record AssistedWriteResult(string Code, string? Message, long? ConcurrencyToken, Guid? ApplicationId);
+public sealed record AssistedWriteResult(string Code, string? Message, long? ConcurrencyToken, Guid? ApplicationId, bool Partial = false, bool RetentionPending = false, Guid? PendingId = null, string? Outcome = null, int RetentionAttempts = 0);
+
+public sealed record StoredReview(Guid Id, string Fingerprint, string DecisionJson, string Outcome, bool Partial, bool RetentionPending, int RetentionAttempts, DateTimeOffset? RetentionResolvedAt);
+
+public sealed record RetentionClaim(Guid Id, Guid DocumentId, Guid? ApplicationId, int Attempts);
+
+public sealed record RetentionPendingItem(Guid Id, Guid DocumentId, DateTimeOffset CreatedAt, string State, int Attempts, string? LastError, DateTimeOffset? ResolvedAt);
+
+public sealed class ReviewHistoryRow
+{
+    public DateTimeOffset CreatedAt { get; set; }
+    public Guid Id { get; set; }
+    public string Kind { get; set; } = "";
+    public string Task { get; set; } = "";
+    public Guid DocumentId { get; set; }
+    public Guid? VersionId { get; set; }
+    public Guid? ReviewerId { get; set; }
+    public string? Outcome { get; set; }
+    public bool Partial { get; set; }
+    public string? DecisionJson { get; set; }
+    public DateTimeOffset? ResultExpiresAt { get; set; }
+    public string? ExecutionState { get; set; }
+    public Guid? PendingId { get; set; }
+    public DateTimeOffset? ResolvedAt { get; set; }
+    public int Attempts { get; set; }
+    public string? LastError { get; set; }
+    public long Total { get; set; }
+}
 
 public interface IAssistedDocumentStore
 {
     Task<AssistedWriteResult> ApplyMetadataAsync(AssistedApplicationRecord application, long concurrencyToken, string title, string? description, bool confidential, bool mutate, CancellationToken ct);
     Task<AssistedWriteResult> ApplyDocumentTypeAsync(AssistedApplicationRecord application, long concurrencyToken, Guid typeId, bool mutate, CancellationToken ct);
     Task<AssistedWriteResult> ApplyArchivalClassAsync(AssistedApplicationRecord application, long concurrencyToken, Guid classificationId, bool mutate, CancellationToken ct);
-    Task RecordRetentionPendingAsync(Guid tenantId, Guid documentId, Guid? applicationId, string reason, CancellationToken ct);
+    Task<StoredReview?> FindReviewAsync(Guid tenantId, string operationKey, CancellationToken ct);
+    Task<RetentionClaim?> ClaimRetentionAsync(Guid tenantId, Guid pendingId, Guid claimToken, CancellationToken ct);
+    Task<bool> ResolveRetentionAsync(Guid tenantId, Guid pendingId, Guid claimToken, CancellationToken ct);
+    Task FailRetentionAsync(Guid tenantId, Guid pendingId, Guid claimToken, string error, CancellationToken ct);
+    Task<IReadOnlyList<ReviewHistoryRow>> ListReviewsAsync(Guid tenantId, Guid documentId, int offset, int limit, CancellationToken ct);
+    Task<IReadOnlyList<RetentionPendingItem>> ListRetentionAsync(Guid tenantId, Guid documentId, bool includeResolved, int offset, int limit, CancellationToken ct);
+    Task<RetentionPendingItem?> GetRetentionAsync(Guid tenantId, Guid pendingId, CancellationToken ct);
 }
 
 public enum AiSourceIntegrity { Resolved, LegacyFormat, Missing, Corrupted }
@@ -65,17 +100,25 @@ public static class AiExecutionSourceCodec
             foreach (var item in document.RootElement.EnumerateArray())
             {
                 if (item.ValueKind != System.Text.Json.JsonValueKind.Object
-                    || !item.TryGetProperty("documentId", out var documentId)
-                    || !item.TryGetProperty("versionId", out var versionId)
-                    || !Guid.TryParse(documentId.GetString(), out var documentGuid)
-                    || !Guid.TryParse(versionId.GetString(), out var versionGuid))
+                    || !TryIdentifier(item, "documentId", out var documentGuid)
+                    || !TryIdentifier(item, "versionId", out var versionGuid)
+                    || documentGuid == versionGuid
+                    || list.Any(x => x.VersionId == versionGuid && x.DocumentId != documentGuid))
                 { state = ParseState.Corrupted; return []; }
                 list.Add(new AiExecutionSource(documentGuid, versionGuid));
             }
             state = ParseState.Values;
             return list;
         }
-        catch (System.Text.Json.JsonException) { state = ParseState.Corrupted; return []; }
+        catch (Exception ex) when (ex is System.Text.Json.JsonException or InvalidOperationException) { state = ParseState.Corrupted; return []; }
+    }
+
+    private static bool TryIdentifier(System.Text.Json.JsonElement item, string name, out Guid value)
+    {
+        value = Guid.Empty;
+        if (!item.TryGetProperty(name, out var element) || element.ValueKind != System.Text.Json.JsonValueKind.String) return false;
+        var text = element.GetString();
+        return !string.IsNullOrWhiteSpace(text) && Guid.TryParse(text, out value) && value != Guid.Empty;
     }
 
     private static IReadOnlyList<AiExecutionSource> ParseLegacyRefs(string? json, out ParseState state)
@@ -90,14 +133,14 @@ public static class AiExecutionSourceCodec
             var list = new List<AiExecutionSource>();
             foreach (var item in document.RootElement.EnumerateArray())
             {
-                var text = item.ValueKind == System.Text.Json.JsonValueKind.String ? item.GetString() : null;
-                if (!TryLegacyReference(text, out var source)) { state = ParseState.Corrupted; return []; }
+                if (item.ValueKind != System.Text.Json.JsonValueKind.String || !TryLegacyReference(item.GetString(), out var source) || source.DocumentId == source.VersionId || list.Any(x => x.VersionId == source.VersionId && x.DocumentId != source.DocumentId))
+                { state = ParseState.Corrupted; return []; }
                 list.Add(source);
             }
             state = ParseState.Values;
             return list;
         }
-        catch (System.Text.Json.JsonException) { state = ParseState.Corrupted; return []; }
+        catch (Exception ex) when (ex is System.Text.Json.JsonException or InvalidOperationException) { state = ParseState.Corrupted; return []; }
     }
 
     public static bool TryLegacyReference(string? text, out AiExecutionSource source)

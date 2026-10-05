@@ -449,6 +449,19 @@ CREATE TABLE IF NOT EXISTS ged.app_user (
     reg_status char(1) NOT NULL DEFAULT 'A'
 );
 
+CREATE TABLE IF NOT EXISTS ged.app_role (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id uuid NULL,
+    name text NOT NULL DEFAULT '',
+    normalized_name text NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS ged.user_role (
+    user_id uuid NOT NULL,
+    role_id uuid NOT NULL,
+    PRIMARY KEY (user_id, role_id)
+);
+
 -- Histórico de migrations: registro idempotente dos scripts aplicados.
 CREATE TABLE IF NOT EXISTS ged.schema_migration_history (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -2056,6 +2069,8 @@ add column if not exists user_notes text null;
 alter table ged.upload_batch
 add column if not exists problem_seen boolean not null default false;
 
+alter table ged.upload_batch add column if not exists created_by uuid null;
+
 create index if not exists ix_upload_batch_last_problem_user
 on ged.upload_batch(tenant_id, created_by, created_at desc)
 where coalesce(reg_status,'A')='A';
@@ -2893,25 +2908,18 @@ add column if not exists requester_user_id uuid null;
 alter table if exists ged.protocol_request
 add column if not exists assigned_user_id uuid null;
 
-create index if not exists ix_loan_request_tenant_assigned_sector_name
-on ged.loan_request(tenant_id, assigned_sector_name)
-where coalesce(reg_status, 'A') = 'A';
-
-create index if not exists ix_loan_request_tenant_current_sector_name
-on ged.loan_request(tenant_id, current_sector_name)
-where coalesce(reg_status, 'A') = 'A';
-
-create index if not exists ix_loan_request_tenant_requester_sector_name
-on ged.loan_request(tenant_id, requester_sector_name)
-where coalesce(reg_status, 'A') = 'A';
-
-create index if not exists ix_loan_request_tenant_created_by
-on ged.loan_request(tenant_id, created_by)
-where coalesce(reg_status, 'A') = 'A';
-
-create index if not exists ix_loan_request_tenant_requester_id
-on ged.loan_request(tenant_id, requester_user_id)
-where coalesce(reg_status, 'A') = 'A';
+do $$
+begin
+    if to_regclass('ged.loan_request') is null then
+        raise notice 'ged.loan_request ausente; índices de setor não criados. A tabela continua definida em gedscript.sql.';
+        return;
+    end if;
+    execute 'create index if not exists ix_loan_request_tenant_assigned_sector_name on ged.loan_request(tenant_id, assigned_sector_name) where coalesce(reg_status, ''A'') = ''A''';
+    execute 'create index if not exists ix_loan_request_tenant_current_sector_name on ged.loan_request(tenant_id, current_sector_name) where coalesce(reg_status, ''A'') = ''A''';
+    execute 'create index if not exists ix_loan_request_tenant_requester_sector_name on ged.loan_request(tenant_id, requester_sector_name) where coalesce(reg_status, ''A'') = ''A''';
+    execute 'create index if not exists ix_loan_request_tenant_created_by on ged.loan_request(tenant_id, created_by) where coalesce(reg_status, ''A'') = ''A''';
+    execute 'create index if not exists ix_loan_request_tenant_requester_id on ged.loan_request(tenant_id, requester_user_id) where coalesce(reg_status, ''A'') = ''A''';
+end $$;
 
 create index if not exists ix_protocol_request_tenant_assigned_sector_name
 on ged.protocol_request(tenant_id, assigned_sector_name)
@@ -3005,8 +3013,6 @@ where coalesce(reg_status, 'A') = 'A';
 -- Keep in sync with database/migrations/2026_08_label_template_designer.sql.
 -- Required blocks: label_template, classification_plan, classification_plan_version, retention_destination, label_print_job, locdesk_label_draft.
 \ir migrations/2026_08_label_template_designer.sql
-\ir migrations/2026_08_label_print_modes_and_templates.sql
-\ir migrations/2026_08_label_print_queue.sql
 \ir migrations/2026_08_locdesk_labels.sql
 \ir migrations/2026_08_classification_plan_compat_hotfix.sql
 \ir migrations/2026_08_21_classification_plan_title_compat_hotfix.sql
@@ -3019,11 +3025,14 @@ where coalesce(reg_status, 'A') = 'A';
 \ir migrations/2026_07_cluster_nodes_and_deployments.sql
 \ir migrations/2026_07_workspace_productivity.sql
 \ir migrations/2026_07_signature_cms_agent.sql
-\ir migrations/2026_07_signature_cms_agent_runtime.sql
 \ir migrations/2026_07_signature_cms_end_to_end.sql
+\ir migrations/2026_07_signature_cms_agent_runtime.sql
 \ir migrations/2026_07_signature_cms_operational_fix.sql
 \ir migrations/2026_07_signature_cms_rc3_status.sql
 \ir migrations/2026_08_archival_intelligence_core_v1.sql
+-- Modos e fila de etiqueta dependem de ged.label_print_history, criada no núcleo acima.
+\ir migrations/2026_08_label_print_modes_and_templates.sql
+\ir migrations/2026_08_label_print_queue.sql
 \ir migrations/2026_08_document_folder_move_history.sql
 \ir migrations/2026_08_10_classification_plan_hotfix.sql
 \ir migrations/2026_08_10_final_schema_hotfix.sql
@@ -3118,3 +3127,4 @@ where coalesce(reg_status, 'A') = 'A';
 \ir migrations/2026_10_03_document_ai_governance_hardening.sql
 \ir migrations/2026_10_04_document_ai_execution_sources.sql
 \ir migrations/2026_10_05_document_ai_application_integrity.sql
+\ir migrations/2026_10_06_document_ai_review_recovery.sql

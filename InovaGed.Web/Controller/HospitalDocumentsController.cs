@@ -70,6 +70,18 @@ public sealed class HospitalDocumentsController : Controller
         FromAssist(await _assist.ApplyArchivalClassAsync(new ApplyCatalogCommand(documentId, versionId, executionId, concurrencyToken, classificationId), Caller(), ct));
 
     [HttpGet]
+    public async Task<IActionResult> ReviewHistory(Guid documentId, int page = 1, int pageSize = 20, CancellationToken ct = default) =>
+        FromAssist(await _assist.ListReviewsAsync(documentId, page, pageSize, Caller(), ct));
+
+    [HttpGet]
+    public async Task<IActionResult> RetentionPending(Guid documentId, int page = 1, int pageSize = 20, CancellationToken ct = default) =>
+        FromAssist(await _assist.ListRetentionAsync(documentId, page, pageSize, Caller(), ct));
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> RetryRetention(Guid documentId, Guid pendingId, CancellationToken ct) =>
+        FromAssist(await _assist.RetryRetentionAsync(documentId, pendingId, Caller(), ct));
+
+    [HttpGet]
     public async Task<IActionResult> Index(CancellationToken ct)
     {
         await RegisterHospitalAccessAuditAsync("index", ct);

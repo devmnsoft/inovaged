@@ -75,9 +75,16 @@ CREATE INDEX IF NOT EXISTS ix_signing_session_tenant_status ON ged.signing_sessi
 CREATE INDEX IF NOT EXISTS ix_signing_session_tenant_version ON ged.signing_session(tenant_id, document_version_id);
 CREATE UNIQUE INDEX IF NOT EXISTS ux_signing_session_content_token ON ged.signing_session(tenant_id, content_download_token_hash) WHERE content_download_token_hash IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS ux_signing_session_nonce_active ON ged.signing_session(tenant_id, nonce_hash) WHERE reg_status = 'A';
-CREATE INDEX IF NOT EXISTS ix_document_signature_tenant_version ON ged.document_signature(tenant_id, document_version_id);
-CREATE INDEX IF NOT EXISTS ix_document_signature_tenant_document_version ON ged.document_signature(tenant_id, document_id, document_version_id);
-CREATE INDEX IF NOT EXISTS ix_document_signature_thumbprint ON ged.document_signature(tenant_id, certificate_thumbprint);
+DO $$
+BEGIN
+    IF to_regclass('ged.document_signature') IS NULL THEN
+        RAISE NOTICE 'ged.document_signature ausente; índices adiados para a criação em 2026_07_signature_cms_end_to_end.sql.';
+        RETURN;
+    END IF;
+    EXECUTE 'CREATE INDEX IF NOT EXISTS ix_document_signature_tenant_version ON ged.document_signature(tenant_id, document_version_id)';
+    EXECUTE 'CREATE INDEX IF NOT EXISTS ix_document_signature_tenant_document_version ON ged.document_signature(tenant_id, document_id, document_version_id)';
+    EXECUTE 'CREATE INDEX IF NOT EXISTS ix_document_signature_thumbprint ON ged.document_signature(tenant_id, certificate_thumbprint)';
+END $$;
 CREATE INDEX IF NOT EXISTS ix_signature_validation_check_signature ON ged.signature_validation_check(tenant_id, signature_id);
 
 -- Evolução 04.1 runtime complement: tokens de uso único, idempotência, replay e evidências.

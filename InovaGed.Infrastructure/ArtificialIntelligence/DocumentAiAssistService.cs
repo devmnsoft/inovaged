@@ -1,6 +1,4 @@
 using System.Data;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using Dapper;
 using InovaGed.Application.ArtificialIntelligence;
@@ -79,30 +77,28 @@ public sealed class DocumentAiAssistService(
         await using var connection = await db.OpenAsync(ct);
         var document = await LoadByDocumentAsync(connection, caller.TenantId, command.DocumentId, ct);
         if (document is null) return Fail(404, "Documento não encontrado.");
-        if (document.VersionId != command.VersionId) return Fail(409, "A versão atual do documento mudou; revalide a sugestão antes de aplicar.");
         if (!await CanAsync(caller, document, "EDIT", ct)) return await DenyAsync(caller, document, command.VersionId, "edit_permission_missing", ct);
-        var bound = await BindAsync(connection, caller, command.ExecutionId, command.DocumentId, command.VersionId, AiTask.ExtractMetadata, ct);
-        if (bound.Error is not null) return bound.Error;
-        document.Text = await OcrAsync(connection, caller.TenantId, document, ct);
-        var suggestions = bound.Execution!.Result?.StructuredData is { } structured && structured.RootElement.TryGetProperty("fields", out var fields) && fields.ValueKind == JsonValueKind.Object ? MetadataSuggestionReader.Read(fields, document.Text) : [];
-        var title = suggestions.FirstOrDefault(x => x.Name == "title");
-        var description = suggestions.FirstOrDefault(x => x.Name == "description");
-        var secrecy = suggestions.FirstOrDefault(x => x.Name == "isConfidential");
         if (command.TitleSet && string.IsNullOrWhiteSpace(command.Title)) return Fail(400, "Informe um título para aplicar ou mantenha o valor atual.");
         if (command.TitleSet && command.Title!.Trim().Length > 300) return Fail(400, "Título acima do limite de 300 caracteres.");
         if (command.DescriptionSet && (command.Description?.Length ?? 0) > 2000) return Fail(400, "Descrição acima do limite de 2000 caracteres.");
+        var newTitle = command.TitleSet ? command.Title!.Trim() : document.Title;
+        var newDescription = command.DescriptionSet ? (command.Description ?? "").Trim() : document.Description;
+        var decisionJson = ReviewIdentity.MetadataJson(command.TitleSet, command.TitleSet ? newTitle : null, command.DescriptionSet, command.DescriptionSet ? newDescription : null, command.IsConfidentialSet, command.IsConfidential, command.ConfidentialityJustification);
+        var replay = await ReplayIfRecordedAsync(caller, command.ExecutionId, command.DocumentId, command.VersionId, AiTask.ExtractMetadata, decisionJson, ct);
+        if (replay is not null) return replay;
+        if (document.VersionId != command.VersionId) return Fail(409, "A versão atual do documento mudou; revalide a sugestão antes de aplicar.");
+        var bound = await BindAsync(connection, caller, command.ExecutionId, command.DocumentId, command.VersionId, AiTask.ExtractMetadata, ct);
+        if (bound.Error is not null) return bound.Error;
         var canChangeSecrecy = await CanAsync(caller, document, "Security.Manage", ct);
         var decision = ConfidentialityDecision.Resolve(document.Confidential, command.IsConfidentialSet, command.IsConfidential, canChangeSecrecy);
         if (decision.Error is not null) return decision.Error.Contains("permissão", StringComparison.OrdinalIgnoreCase) ? await DenyAsync(caller, document, command.VersionId, "secrecy_permission_missing", ct) : Fail(400, decision.Error);
         if (decision.Changed && string.IsNullOrWhiteSpace(command.ConfidentialityJustification)) return Fail(400, "Informe a justificativa da alteração de sigilo.");
-        var newTitle = command.TitleSet ? command.Title!.Trim() : document.Title;
-        var newDescription = command.DescriptionSet ? (command.Description ?? "").Trim() : document.Description;
         var newConfidential = decision.Applied ?? document.Confidential;
         var mutate = newTitle != document.Title || newDescription != document.Description || newConfidential != document.Confidential;
-        var review = new { title = Review("title", title, command.TitleSet, command.TitleSet ? newTitle : null), description = Review("description", description, command.DescriptionSet, command.DescriptionSet ? newDescription : null), isConfidential = new { suggested = secrecy?.Flag, corrected = command.IsConfidentialSet && command.IsConfidential != secrecy?.Flag ? command.IsConfidential : null, applied = command.IsConfidentialSet ? newConfidential : (bool?)null, rejected = !command.IsConfidentialSet, previous = document.Confidential, justification = command.ConfidentialityJustification } };
-        var record = Record(caller, command.ExecutionId, document, AiTask.ExtractMetadata, review, mutate ? "Applied" : "Recorded", "AI_METADATA_APPLY", "Metadados documentais revisados a partir de sugestão de IA", new { versionId = command.VersionId, before = new { document.Title, document.Description, isConfidential = document.Confidential }, review, after = new { title = newTitle, description = newDescription, isConfidential = newConfidential }, reviewer = caller.UserId, justification = command.ConfidentialityJustification });
+        var record = Record(caller, command.ExecutionId, document, AiTask.ExtractMetadata, decisionJson, mutate ? "Applied" : "Recorded", false, "AI_METADATA_APPLY", "Metadados documentais revisados a partir de sugestão de IA", new { versionId = command.VersionId, before = new { document.Title, document.Description, isConfidential = document.Confidential }, decision = JsonSerializer.Deserialize<JsonElement>(decisionJson), after = new { title = newTitle, description = newDescription, isConfidential = newConfidential }, reviewer = caller.UserId });
         var written = await documents.ApplyMetadataAsync(record, command.ConcurrencyToken, newTitle, newDescription, newConfidential, mutate, ct);
-        return FromWrite(written, new { success = true, alreadyApplied = written.Code == "AlreadyApplied", partial = false, concurrencyToken = written.ConcurrencyToken, title = newTitle, description = newDescription, isConfidential = newConfidential, message = written.Code == "AlreadyApplied" ? "Esta revisão já estava registrada." : mutate ? "Metadados gravados." : "Nenhum valor mudou. A revisão foi registrada uma única vez." });
+        if (written.Code is "AlreadyApplied" or "DecisionConflict") return FromReview(written);
+        return FromWrite(written, new { success = true, alreadyApplied = false, partial = false, retentionPending = false, retentionRecalculated = false, concurrencyToken = written.ConcurrencyToken, applicationId = written.ApplicationId, title = newTitle, description = newDescription, isConfidential = newConfidential, message = mutate ? "Metadados gravados." : "Nenhum valor mudou. A revisão foi registrada uma única vez." });
     }
 
     public async Task<AssistResponse> SuggestDocumentTypeAsync(Guid versionId, string idempotencyKey, AssistCaller caller, CancellationToken ct)
@@ -160,37 +156,30 @@ where i.tenant_id=@tenantId and i.classification_id=@id and coalesce(i.is_active
         await using var connection = await db.OpenAsync(ct);
         var document = await LoadByDocumentAsync(connection, caller.TenantId, command.DocumentId, ct);
         if (document is null) return Fail(404, "Documento não encontrado.");
-        if (document.VersionId != command.VersionId) return Fail(409, "A versão atual do documento mudou; revalide a sugestão antes de aplicar.");
         if (!await CanAsync(caller, document, "EDIT", ct)) return await DenyAsync(caller, document, command.VersionId, "edit_permission_missing", ct);
+        var decisionJson = ReviewIdentity.CatalogJson(task.ToString(), command.SelectedId);
+        var replay = await ReplayIfRecordedAsync(caller, command.ExecutionId, command.DocumentId, command.VersionId, task, decisionJson, ct);
+        if (replay is not null) return replay;
+        if (document.VersionId != command.VersionId) return Fail(409, "A versão atual do documento mudou; revalide a sugestão antes de aplicar.");
         var bound = await BindAsync(connection, caller, command.ExecutionId, command.DocumentId, command.VersionId, task, ct);
         if (bound.Error is not null) return bound.Error;
-        var selectedName = command.SelectedId is null || command.SelectedId == Guid.Empty ? null : await connection.ExecuteScalarAsync<string?>(new CommandDefinition(nameSql, new { tenantId = caller.TenantId, id = command.SelectedId }, cancellationToken: ct));
+        string? selectedName = null;
+        try
+        {
+            selectedName = command.SelectedId is null || command.SelectedId == Guid.Empty ? null : await connection.ExecuteScalarAsync<string?>(new CommandDefinition(nameSql, new { tenantId = caller.TenantId, id = command.SelectedId }, cancellationToken: ct));
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UndefinedTable) { return Fail(422, "O catálogo do plano de classificação não está disponível neste ambiente."); }
         if (command.SelectedId is not null && command.SelectedId != Guid.Empty && string.IsNullOrWhiteSpace(selectedName)) return Fail(400, "O item escolhido não pertence ao catálogo autorizado vigente.");
-        var mutate = command.SelectedId is not null && command.SelectedId != Guid.Empty && command.SelectedId != (task == AiTask.SuggestArchivalClassification ? document.ClassificationId : document.TypeId);
-        var review = new { suggested = bound.Execution!.Result?.Text, selectedId = command.SelectedId, selectedName, rejected = command.SelectedId is null || command.SelectedId == Guid.Empty, applied = mutate || command.SelectedId == (task == AiTask.SuggestArchivalClassification ? document.ClassificationId : document.TypeId) ? command.SelectedId : null };
-        var record = Record(caller, command.ExecutionId, document, task, review, mutate ? "Applied" : "Recorded", auditAction, auditMessage, new { command.VersionId, review, reviewer = caller.UserId });
+        var currentId = task == AiTask.SuggestArchivalClassification ? document.ClassificationId : document.TypeId;
+        var mutate = command.SelectedId is not null && command.SelectedId != Guid.Empty && command.SelectedId != currentId;
+        var record = Record(caller, command.ExecutionId, document with { VersionId = command.VersionId }, task, decisionJson, mutate ? "Applied" : "Recorded", mutate, auditAction, auditMessage, new { command.VersionId, selectedId = command.SelectedId, selectedName, reviewer = caller.UserId });
         AssistedWriteResult written;
         try { written = await write(record, command.ConcurrencyToken, command.SelectedId ?? Guid.Empty, mutate, ct); }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UndefinedTable) { return Fail(422, "O catálogo do plano de classificação não está disponível neste ambiente."); }
         catch (Exception) { return Fail(500, "A gravação foi revertida. Nenhum dado desta tentativa permanece aplicado."); }
-        if (written.Code is "Conflict" or "NotFound") return FromWrite(written, null);
-        if (written.Code == "AlreadyApplied" || !mutate) return Ok(new { success = true, alreadyApplied = written.Code == "AlreadyApplied", partial = false, retentionRecalculated = false, retentionPending = false, concurrencyToken = written.ConcurrencyToken, message = written.Code == "AlreadyApplied" ? "Esta revisão já estava registrada, sem nova auditoria nem novo recálculo." : "Nenhuma alteração de cadastro foi necessária. A revisão foi registrada." });
-        var recalculated = true;
-        var pendingRecorded = false;
-        try { await retention.RunOneAsync(caller.TenantId, command.DocumentId, 30, ct); }
-        catch (Exception)
-        {
-            recalculated = false;
-            try
-            {
-                await documents.RecordRetentionPendingAsync(caller.TenantId, command.DocumentId, written.ApplicationId, "Recálculo de temporalidade falhou depois da gravação da sugestão.", ct);
-                pendingRecorded = true;
-            }
-            catch (Exception) { pendingRecorded = false; }
-        }
-        var partialMessage = pendingRecorded
-            ? "Conclusão parcial: a classificação foi gravada, mas o recálculo da temporalidade falhou. A pendência ficou registrada para recuperação. HOLD, empréstimos e impedimentos não foram alterados."
-            : "Conclusão parcial: a classificação foi gravada, mas o recálculo da temporalidade falhou e a pendência não pôde ser registrada. Repita o recálculo pelo serviço de temporalidade. HOLD, empréstimos e impedimentos não foram alterados.";
-        return Ok(new { success = true, alreadyApplied = false, partial = !recalculated, retentionRecalculated = recalculated, retentionPending = pendingRecorded, concurrencyToken = written.ConcurrencyToken, message = recalculated ? "Gravação concluída e temporalidade recalculada. HOLD, empréstimos e impedimentos foram preservados." : partialMessage });
+        if (written.Code is "Conflict" or "NotFound" or "DecisionConflict" or "AlreadyApplied") return written.Code is "Conflict" or "NotFound" ? FromWrite(written, null) : FromReview(written);
+        if (!mutate || written.PendingId is null) return Ok(new { success = true, alreadyApplied = false, partial = false, retentionRecalculated = false, retentionPending = false, retentionState = "nao-aplicavel", concurrencyToken = written.ConcurrencyToken, applicationId = written.ApplicationId, message = "Nenhuma alteração de cadastro foi necessária. A revisão foi registrada." });
+        return await FinishRetentionAsync(caller, command.DocumentId, written, ct);
     }
 
     private async Task<AssistResponse> SuggestAsync(Guid versionId, string idempotencyKey, AssistCaller caller, AiTask task, string schemaJson, bool requireOcr, bool truncate, string instructions, Func<IDbConnection, WorkDocument, AiResult, long, Task<AssistResponse>> project, CancellationToken ct)
@@ -272,10 +261,164 @@ where v.tenant_id=@tenantId and v.id=any(@ids) and coalesce(d.reg_status,'A')='A
         return (execution.Sources.Select(x => rows[x.VersionId]).ToArray(), null);
     }
 
-    private AssistedApplicationRecord Record(AssistCaller caller, Guid executionId, WorkDocument document, AiTask task, object review, string outcome, string action, string message, object details) =>
-        new(caller.TenantId, executionId, document.DocumentId, document.VersionId, task.ToString(), caller.UserId, Fingerprint(executionId, document.DocumentId, document.VersionId, review), JsonSerializer.Serialize(review), outcome, false, action, message, JsonSerializer.Serialize(details), caller.Ip, caller.UserAgent, executionId.ToString("N"));
+    private AssistedApplicationRecord Record(AssistCaller caller, Guid executionId, WorkDocument document, AiTask task, string decisionJson, string outcome, bool queueRetention, string action, string message, object details) =>
+        new(caller.TenantId, executionId, document.DocumentId, document.VersionId, task.ToString(), caller.UserId, ReviewIdentity.Fingerprint(decisionJson), decisionJson, outcome, queueRetention, action, message, JsonSerializer.Serialize(details), caller.Ip, caller.UserAgent, executionId.ToString("N"), queueRetention, ReviewIdentity.OperationKey(caller.TenantId, executionId, document.DocumentId, document.VersionId, caller.UserId, task.ToString()));
 
-    private static object Review(string name, MetadataFieldSuggestion? suggestion, bool selected, string? applied) => new { name, suggested = suggestion?.Sufficient == true ? suggestion.Text : null, corrected = selected && applied != suggestion?.Text ? applied : null, applied = selected ? applied : null, rejected = !selected };
+    private async Task<AssistResponse?> ReplayIfRecordedAsync(AssistCaller caller, Guid executionId, Guid documentId, Guid versionId, AiTask task, string decisionJson, CancellationToken ct)
+    {
+        var existing = await documents.FindReviewAsync(caller.TenantId, ReviewIdentity.OperationKey(caller.TenantId, executionId, documentId, versionId, caller.UserId, task.ToString()), ct);
+        if (existing is null) return null;
+        var fingerprint = ReviewIdentity.Fingerprint(decisionJson);
+        if (!ReviewIdentity.Equivalent(existing.Fingerprint, existing.DecisionJson, fingerprint, decisionJson))
+            return Fail(409, "A mesma revisão já foi registrada com outra decisão. Gere uma nova sugestão para revisar de novo.");
+        return FromStored(existing);
+    }
+
+    private async Task<AssistResponse> FinishRetentionAsync(AssistCaller caller, Guid documentId, AssistedWriteResult written, CancellationToken ct)
+    {
+        var claimToken = Guid.NewGuid();
+        RetentionClaim? claim = null;
+        try
+        {
+            claim = await documents.ClaimRetentionAsync(caller.TenantId, written.PendingId!.Value, claimToken, ct);
+            if (claim is null)
+                return Ok(new { success = true, alreadyApplied = false, partial = true, retentionRecalculated = false, retentionPending = true, retentionState = "em processamento", concurrencyToken = written.ConcurrencyToken, applicationId = written.ApplicationId, message = "A classificação foi gravada. O recálculo de temporalidade está em processamento e permanece recuperável. HOLD, empréstimos e impedimentos não foram alterados." });
+            await retention.RunOneAsync(caller.TenantId, documentId, 30, ct);
+            var resolved = await documents.ResolveRetentionAsync(caller.TenantId, claim.Id, claimToken, CancellationToken.None);
+            var recovered = resolved && claim.Attempts > 1;
+            return Ok(new { success = true, alreadyApplied = false, partial = false, retentionRecalculated = true, retentionPending = false, retentionState = recovered ? "recuperada" : "concluida", concurrencyToken = written.ConcurrencyToken, applicationId = written.ApplicationId, message = recovered ? "Pendência de temporalidade recuperada. HOLD, empréstimos e impedimentos foram preservados." : "Gravação concluída e temporalidade recalculada. HOLD, empréstimos e impedimentos foram preservados." });
+        }
+        catch (OperationCanceledException)
+        {
+            if (claim is not null) await documents.FailRetentionAsync(caller.TenantId, claim.Id, claimToken, "temporalidade:cancelada", CancellationToken.None);
+            return Ok(new { success = true, alreadyApplied = false, partial = true, retentionRecalculated = false, retentionPending = true, retentionState = "pendente", concurrencyToken = written.ConcurrencyToken, applicationId = written.ApplicationId, message = "Conclusão parcial: a classificação permanece gravada e o recálculo ficou pendente após o cancelamento. HOLD, empréstimos e impedimentos não foram alterados." });
+        }
+        catch (Exception ex)
+        {
+            var code = ex is PostgresException pg ? "temporalidade:" + pg.SqlState : "temporalidade:falha";
+            if (claim is not null) await documents.FailRetentionAsync(caller.TenantId, claim.Id, claimToken, code, CancellationToken.None);
+            return Ok(new { success = true, alreadyApplied = false, partial = true, retentionRecalculated = false, retentionPending = true, retentionState = "pendente", concurrencyToken = written.ConcurrencyToken, applicationId = written.ApplicationId, message = "Conclusão parcial: a classificação foi gravada e a pendência de temporalidade permanece para recuperação. HOLD, empréstimos e impedimentos não foram alterados." });
+        }
+    }
+
+    public async Task<AssistResponse> ListReviewsAsync(Guid documentId, int page, int pageSize, AssistCaller caller, CancellationToken ct)
+    {
+        if (!caller.Authenticated) return new(401, new { success = false, message = "Autenticação obrigatória." });
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 50);
+        await using var connection = await db.OpenAsync(ct);
+        var document = await LoadByDocumentAsync(connection, caller.TenantId, documentId, ct);
+        if (document is null) return Fail(404, "Documento não encontrado.");
+        if (!await CanAsync(caller, document, "VIEW", ct)) return await DenyAsync(caller, document, document.VersionId, "authorization_missing", ct);
+        var rows = await documents.ListReviewsAsync(caller.TenantId, documentId, (page - 1) * pageSize, pageSize, ct);
+        var total = rows.Count == 0 ? 0 : rows[0].Total;
+        return Ok(new
+        {
+            success = true,
+            page,
+            pageSize,
+            total,
+            items = rows.Select(row =>
+            {
+                var expired = row.ResultExpiresAt is null || row.ResultExpiresAt <= DateTimeOffset.UtcNow || string.Equals(row.ExecutionState, "Expired", StringComparison.OrdinalIgnoreCase);
+                var pendingOpen = row.PendingId is not null && row.ResolvedAt is null;
+                var pendingResolved = row.PendingId is not null && row.ResolvedAt is not null;
+                JsonElement? suggestion = null;
+                return new
+                {
+                    row.Id,
+                    kind = row.Kind,
+                    situation = ReviewIdentity.Situation(row.Kind, row.Outcome, pendingOpen, pendingResolved, row.Attempts, expired),
+                    task = row.Task,
+                    row.DocumentId,
+                    row.VersionId,
+                    at = row.CreatedAt,
+                    reviewerId = row.ReviewerId,
+                    outcome = row.Outcome,
+                    aiResultExpired = expired,
+                    retentionState = row.PendingId is null ? "ausente" : pendingOpen ? "pendente" : "resolvida",
+                    attempts = row.PendingId is null ? (int?)null : row.Attempts,
+                    lastError = row.LastError,
+                    fields = row.Kind == "application" ? ReviewIdentity.Fields(row.DecisionJson, false, suggestion) : []
+                };
+            })
+        });
+    }
+
+    public async Task<AssistResponse> ListRetentionAsync(Guid documentId, int page, int pageSize, AssistCaller caller, CancellationToken ct)
+    {
+        if (!caller.Authenticated) return new(401, new { success = false, message = "Autenticação obrigatória." });
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 50);
+        await using var connection = await db.OpenAsync(ct);
+        var document = await LoadByDocumentAsync(connection, caller.TenantId, documentId, ct);
+        if (document is null) return Fail(404, "Documento não encontrado.");
+        if (!await CanAsync(caller, document, "VIEW", ct)) return await DenyAsync(caller, document, document.VersionId, "authorization_missing", ct);
+        var rows = await documents.ListRetentionAsync(caller.TenantId, documentId, true, (page - 1) * pageSize, pageSize, ct);
+        return Ok(new { success = true, page, pageSize, items = rows });
+    }
+
+    public async Task<AssistResponse> RetryRetentionAsync(Guid documentId, Guid pendingId, AssistCaller caller, CancellationToken ct)
+    {
+        if (!caller.Authenticated) return new(401, new { success = false, message = "Autenticação obrigatória." });
+        await using var connection = await db.OpenAsync(ct);
+        var document = await LoadByDocumentAsync(connection, caller.TenantId, documentId, ct);
+        if (document is null) return Fail(404, "Documento não encontrado.");
+        if (!await CanAsync(caller, document, "EDIT", ct)) return await DenyAsync(caller, document, document.VersionId, "edit_permission_missing", ct);
+        var pending = await documents.GetRetentionAsync(caller.TenantId, pendingId, ct);
+        if (pending is null || pending.DocumentId != documentId) return Fail(404, "Pendência não encontrada.");
+        if (pending.ResolvedAt is not null)
+        {
+            await audit.WriteAsync(caller.TenantId, caller.UserId, "AI_RETENTION_RETRY", "DOCUMENT", documentId, "Recuperação de temporalidade já estava concluída", caller.Ip, caller.UserAgent, new { pendingId, pending.State, pending.Attempts }, ct);
+            return Ok(new { success = true, retentionPending = false, retentionRecalculated = true, retentionState = "resolvida", partial = false, message = "A pendência já estava resolvida." });
+        }
+        var claimToken = Guid.NewGuid();
+        var claim = await documents.ClaimRetentionAsync(caller.TenantId, pendingId, claimToken, ct);
+        if (claim is null)
+        {
+            await audit.WriteAsync(caller.TenantId, caller.UserId, "AI_RETENTION_RETRY", "DOCUMENT", documentId, "Recuperação de temporalidade já em processamento", caller.Ip, caller.UserAgent, new { pendingId, state = "em processamento" }, ct);
+            return Ok(new { success = true, retentionPending = true, retentionRecalculated = false, retentionState = "em processamento", partial = true, message = "O recálculo já está em processamento." });
+        }
+        try
+        {
+            await retention.RunOneAsync(caller.TenantId, documentId, 30, ct);
+            await documents.ResolveRetentionAsync(caller.TenantId, claim.Id, claimToken, CancellationToken.None);
+            await audit.WriteAsync(caller.TenantId, caller.UserId, "AI_RETENTION_RETRY", "DOCUMENT", documentId, "Recuperação de temporalidade concluída", caller.Ip, caller.UserAgent, new { pendingId, claim.Attempts, state = "resolvida" }, ct);
+            return Ok(new { success = true, retentionPending = false, retentionRecalculated = true, retentionState = claim.Attempts > 1 ? "recuperada" : "concluida", partial = false, attempts = claim.Attempts, message = "Pendência de temporalidade recuperada. HOLD, empréstimos e impedimentos foram preservados." });
+        }
+        catch (Exception ex)
+        {
+            var code = ex is OperationCanceledException ? "temporalidade:cancelada" : ex is PostgresException pg ? "temporalidade:" + pg.SqlState : "temporalidade:falha";
+            await documents.FailRetentionAsync(caller.TenantId, claim.Id, claimToken, code, CancellationToken.None);
+            await audit.WriteAsync(caller.TenantId, caller.UserId, "AI_RETENTION_RETRY", "DOCUMENT", documentId, "Recuperação de temporalidade permanece pendente", caller.Ip, caller.UserAgent, new { pendingId, claim.Attempts, error = code }, ct);
+            return Ok(new { success = false, retentionPending = true, retentionRecalculated = false, retentionState = "pendente", partial = true, attempts = claim.Attempts, message = "A nova tentativa não concluiu o recálculo. A pendência continua recuperável." });
+        }
+    }
+
+    private static AssistResponse FromStored(StoredReview existing)
+    {
+        var pending = existing.RetentionPending;
+        var concluded = !pending && string.Equals(existing.Outcome, "Applied", StringComparison.OrdinalIgnoreCase);
+        var message = pending
+            ? "Esta revisão já estava registrada. O recálculo de temporalidade ainda está pendente."
+            : concluded
+                ? "Esta revisão já estava registrada. O recálculo vinculado está concluído. Nenhum efeito foi duplicado."
+                : "Esta revisão já estava registrada, sem nova auditoria nem novo recálculo.";
+        return Ok(new { success = true, alreadyApplied = true, partial = pending, retentionPending = pending, retentionRecalculated = concluded && !pending, retentionState = pending ? "pendente" : concluded ? "concluida" : "nao-aplicavel", applicationId = existing.Id, attempts = existing.RetentionAttempts, message });
+    }
+
+    private static AssistResponse FromReview(AssistedWriteResult written)
+    {
+        if (written.Code == "DecisionConflict") return Fail(409, written.Message ?? "A mesma revisão já foi registrada com outra decisão.");
+        var pending = written.RetentionPending;
+        var concluded = !pending && string.Equals(written.Outcome, "Applied", StringComparison.OrdinalIgnoreCase);
+        var message = pending
+            ? "Esta revisão já estava registrada. O recálculo de temporalidade ainda está pendente."
+            : concluded
+                ? "Esta revisão já estava registrada. O recálculo vinculado está concluído. Nenhum efeito foi duplicado."
+                : "Esta revisão já estava registrada, sem nova auditoria nem novo recálculo.";
+        return Ok(new { success = true, alreadyApplied = true, partial = pending, retentionPending = pending, retentionRecalculated = concluded && !pending, retentionState = pending ? "pendente" : concluded ? "concluida" : "nao-aplicavel", concurrencyToken = written.ConcurrencyToken, applicationId = written.ApplicationId, attempts = written.RetentionAttempts, message });
+    }
 
     private async Task<bool> CanAsync(AssistCaller caller, WorkDocument document, string action, CancellationToken ct) =>
         await authorization.CanAccessDocumentAsync(caller.TenantId, caller.UserId, document.DocumentId, action, new Dictionary<string, string> { ["classification"] = document.Confidential ? "SENSITIVE" : "PUBLIC" }, ct);
@@ -299,7 +442,6 @@ where v.tenant_id=@tenantId and v.id=any(@ids) and coalesce(d.reg_status,'A')='A
     private static string Reference(WorkDocument document) => $"{document.DocumentId:N}/{document.VersionId:N}/texto-extraido";
     private static object Sources(WorkDocument document) => new[] { new { document.DocumentId, document.VersionId, document.Title, document.VersionNumber } };
     private static string Label(string name) => name switch { "title" => "Título", "description" => "Descrição", "isConfidential" => "Sigilo", _ => name };
-    private static string Fingerprint(Guid executionId, Guid documentId, Guid versionId, object review) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new { executionId, documentId, versionId, review })))).ToLowerInvariant();
     private static bool SummaryEvidenceIsLiteral(JsonElement root, string source) { foreach (var name in new[] { "facts", "dates", "pending" }) { if (!root.TryGetProperty(name, out var items)) return false; foreach (var item in items.EnumerateArray()) { var evidence = item.GetProperty("evidence").GetString(); if (string.IsNullOrWhiteSpace(evidence) || !source.Contains(evidence, StringComparison.OrdinalIgnoreCase)) return false; } } return true; }
     private static async Task<string> OcrAsync(IDbConnection connection, Guid tenantId, WorkDocument document, CancellationToken ct) =>
         await connection.ExecuteScalarAsync<string?>(new CommandDefinition("select ocr_text from ged.document_search where tenant_id=@tenantId and document_id=@documentId and version_id=@versionId", new { tenantId, documentId = document.DocumentId, versionId = document.VersionId }, cancellationToken: ct)) ?? "";

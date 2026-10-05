@@ -118,6 +118,38 @@ public sealed class DocumentAiGatewayTests
     }
 
     [Fact]
+    public async Task Deterministic_provider_answers_from_the_fixture_and_never_calls_http()
+    {
+        using var gate = AiKeyScope.Set("INOVAGED_AI_DETERMINISTIC", "1");
+        var handler = new CountingHandler();
+        var options = new DocumentAiOptions { Enabled = true, Provider = "Deterministic" };
+        var sent = false;
+        var text = "TITULO: Laudo ficticio\nDESCRICAO: Texto de homologacao\nSIGILOSO\nTIPO: Contrato\nCLASSE: 01.02";
+        var request = new AiRequest(Guid.NewGuid(), Guid.NewGuid(), AiTask.ExtractMetadata, "extrair", [new("fonte", text)], OnRequestSent: _ => { sent = true; return Task.CompletedTask; });
+        var result = await Create(options, handler).ExecuteAsync(request, default);
+        Assert.True(result.Success);
+        Assert.True(result.ProviderReached);
+        Assert.True(sent);
+        Assert.Equal(0, handler.Calls);
+        Assert.Contains("Laudo ficticio", result.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("http", result.Provider, StringComparison.OrdinalIgnoreCase);
+        var archival = await Create(options, handler).ExecuteAsync(request with { Task = AiTask.SuggestArchivalClassification }, default);
+        Assert.Contains("01.02", archival.Text, StringComparison.Ordinal);
+        Assert.Equal(0, handler.Calls);
+    }
+
+    [Fact]
+    public async Task Deterministic_provider_stays_disabled_without_the_local_gate()
+    {
+        using var gate = AiKeyScope.Set("INOVAGED_AI_DETERMINISTIC", "");
+        var handler = new CountingHandler();
+        var result = await Create(new DocumentAiOptions { Enabled = true, Provider = "Deterministic" }, handler).ExecuteAsync(new AiRequest(Guid.NewGuid(), Guid.NewGuid(), AiTask.Summarize, "resuma", [new("fonte", "texto")]), default);
+        Assert.Equal(AiFailureKind.Disabled, result.Failure);
+        Assert.False(result.ProviderReached);
+        Assert.Equal(0, handler.Calls);
+    }
+
+    [Fact]
     public async Task Model_must_be_explicitly_allowed_before_any_external_call()
     {
         var handler = new CountingHandler();

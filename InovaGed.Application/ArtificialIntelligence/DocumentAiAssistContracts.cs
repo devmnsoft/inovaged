@@ -16,4 +16,7 @@ public interface IDocumentAiAssistService
     Task<AssistResponse> ApplyDocumentTypeAsync(ApplyCatalogCommand command, AssistCaller caller, CancellationToken ct);
     Task<AssistResponse> SuggestArchivalClassAsync(Guid versionId, string idempotencyKey, AssistCaller caller, CancellationToken ct);
     Task<AssistResponse> ApplyArchivalClassAsync(ApplyCatalogCommand command, AssistCaller caller, CancellationToken ct);
+    Task<AssistResponse> ListReviewsAsync(Guid documentId, int page, int pageSize, AssistCaller caller, CancellationToken ct);
+    Task<AssistResponse> ListRetentionAsync(Guid documentId, int page, int pageSize, AssistCaller caller, CancellationToken ct);
+    Task<AssistResponse> RetryRetentionAsync(Guid documentId, Guid pendingId, AssistCaller caller, CancellationToken ct);
 }

@@ -42,25 +42,18 @@ add column if not exists requester_user_id uuid null;
 alter table if exists ged.protocol_request
 add column if not exists assigned_user_id uuid null;
 
-create index if not exists ix_loan_request_tenant_assigned_sector_name
-on ged.loan_request(tenant_id, assigned_sector_name)
-where coalesce(reg_status, 'A') = 'A';
-
-create index if not exists ix_loan_request_tenant_current_sector_name
-on ged.loan_request(tenant_id, current_sector_name)
-where coalesce(reg_status, 'A') = 'A';
-
-create index if not exists ix_loan_request_tenant_requester_sector_name
-on ged.loan_request(tenant_id, requester_sector_name)
-where coalesce(reg_status, 'A') = 'A';
-
-create index if not exists ix_loan_request_tenant_created_by
-on ged.loan_request(tenant_id, created_by)
-where coalesce(reg_status, 'A') = 'A';
-
-create index if not exists ix_loan_request_tenant_requester_id
-on ged.loan_request(tenant_id, requester_user_id)
-where coalesce(reg_status, 'A') = 'A';
+do $$
+begin
+    if to_regclass('ged.loan_request') is null then
+        raise notice 'ged.loan_request ausente; índices de setor não criados. A tabela continua definida em gedscript.sql.';
+        return;
+    end if;
+    execute 'create index if not exists ix_loan_request_tenant_assigned_sector_name on ged.loan_request(tenant_id, assigned_sector_name) where coalesce(reg_status, ''A'') = ''A''';
+    execute 'create index if not exists ix_loan_request_tenant_current_sector_name on ged.loan_request(tenant_id, current_sector_name) where coalesce(reg_status, ''A'') = ''A''';
+    execute 'create index if not exists ix_loan_request_tenant_requester_sector_name on ged.loan_request(tenant_id, requester_sector_name) where coalesce(reg_status, ''A'') = ''A''';
+    execute 'create index if not exists ix_loan_request_tenant_created_by on ged.loan_request(tenant_id, created_by) where coalesce(reg_status, ''A'') = ''A''';
+    execute 'create index if not exists ix_loan_request_tenant_requester_id on ged.loan_request(tenant_id, requester_user_id) where coalesce(reg_status, ''A'') = ''A''';
+end $$;
 
 create index if not exists ix_protocol_request_tenant_assigned_sector_name
 on ged.protocol_request(tenant_id, assigned_sector_name)

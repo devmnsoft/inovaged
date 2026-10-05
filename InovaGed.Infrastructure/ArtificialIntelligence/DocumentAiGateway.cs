@@ -35,6 +35,8 @@ public sealed class DocumentAiGateway : IDocumentAiGateway
         // providerReached flips to true only after the request actually left this host; every check
         // above (policy, schema, credentials, prompt size) fails without remote consumption.
         var provider = _options.Provider.Trim();
+        if (provider.Equals("Deterministic", StringComparison.OrdinalIgnoreCase))
+            return await DeterministicAsync(request, correlationId, cancellationToken);
         if (!_options.Enabled || string.IsNullOrEmpty(provider)) return Fail(provider, "", AiFailureKind.Disabled, "A IA está desabilitada.", correlationId, false);
         if (!Catalog.TryGetValue(provider, out var capabilities) || !_options.Providers.TryGetValue(provider, out var settings) || !settings.Enabled)
             return Fail(provider, "", AiFailureKind.Disabled, "O provedor não está autorizado pela configuração.", correlationId, false);
@@ -71,6 +73,44 @@ public sealed class DocumentAiGateway : IDocumentAiGateway
         catch (OperationCanceledException) { return Fail(provider, model, AiFailureKind.Timeout, "O provedor excedeu o tempo limite; o processamento remoto pode ter ocorrido.", correlationId, true); }
         catch (InvalidDataException) { return Fail(provider, model, AiFailureKind.InvalidOutput, "A resposta excedeu o limite seguro configurado.", correlationId, true); }
         catch (Exception ex) { _logger.LogWarning(ex, "Falha do provedor documental {Provider}; CorrelationId={CorrelationId}; payload não registrado.", provider, correlationId); return Fail(provider, model, AiFailureKind.Internal, "Falha interna na integração de IA.", correlationId, true); }
+    }
+
+    private async Task<AiResult> DeterministicAsync(AiRequest request, string correlationId, CancellationToken cancellationToken)
+    {
+        if (!string.Equals(Environment.GetEnvironmentVariable("INOVAGED_AI_DETERMINISTIC"), "1", StringComparison.Ordinal))
+            return Fail("Deterministic", "deterministic-v1", AiFailureKind.Disabled, "O provedor determinístico só é ativado na homologação local.", correlationId, false);
+        if (!_options.Enabled) return Fail("Deterministic", "deterministic-v1", AiFailureKind.Disabled, "A IA está desabilitada.", correlationId, false);
+        if (request.OnRequestSent is not null) await request.OnRequestSent(cancellationToken);
+        var text = string.Join("\n", request.Context.Select(x => x.Text));
+        var evidence = text.Length == 0 ? "" : text[..Math.Min(40, text.Length)];
+        if (evidence.Length == 0 && request.Task == AiTask.Summarize)
+            return Fail("Deterministic", "deterministic-v1", AiFailureKind.InvalidOutput, "O texto fictício não sustenta a sugestão.", correlationId, true);
+        object? body = request.Task switch
+        {
+            AiTask.Summarize => new { subject = "Resumo de homologação", facts = new[] { new { text = "Trecho reconhecido", evidence } }, dates = Array.Empty<object>(), pending = Array.Empty<object>(), limitations = new[] { "Provedor determinístico de teste." } },
+            AiTask.ExtractMetadata => new { fields = new { title = Field(text, "TITULO:", evidence), description = Field(text, "DESCRICAO:", evidence), isConfidential = new { sufficient = text.Contains("SIGILOSO", StringComparison.Ordinal), value = true, evidence = text.Contains("SIGILOSO", StringComparison.Ordinal) ? "SIGILOSO" : "" } } },
+            AiTask.SuggestClassification => text.Contains("TIPO:", StringComparison.Ordinal) ? new { outcome = "suggested", typeName = Marker(text, "TIPO:"), evidence, justification = "catálogo de teste" } : new { outcome = "insufficient", typeName = "", evidence = "", justification = "" },
+            AiTask.SuggestArchivalClassification => text.Contains("CLASSE:", StringComparison.Ordinal) ? new { outcome = "suggested", classCode = Marker(text, "CLASSE:"), evidence, justification = "plano de teste" } : new { outcome = "insufficient", classCode = "", evidence = "", justification = "" },
+            _ => null
+        };
+        if (body is null) return Fail("Deterministic", "deterministic-v1", AiFailureKind.InvalidOutput, "O provedor determinístico não cobre esta tarefa.", correlationId, true);
+        var json = JsonSerializer.Serialize(body);
+        return new(true, json, JsonDocument.Parse(json), new AiUsage(8, 8, 16), "Deterministic", "deterministic-v1", AiFailureKind.None, "Provedor determinístico de teste. Não homologa Groq, Gemini ou DeepSeek.", correlationId, true);
+    }
+
+    private static object Field(string text, string marker, string evidence)
+    {
+        var present = text.Contains(marker, StringComparison.Ordinal);
+        return new { sufficient = present, value = present ? Marker(text, marker) : "", evidence = present ? evidence : "" };
+    }
+
+    private static string Marker(string text, string name)
+    {
+        var start = text.IndexOf(name, StringComparison.Ordinal);
+        if (start < 0) return "";
+        var value = text[(start + name.Length)..];
+        var end = value.IndexOfAny(['\r', '\n']);
+        return (end < 0 ? value : value[..end]).Trim();
     }
 
     private HttpRequestMessage BuildRequest(string provider, string baseUrl, string model, string key, string prompt, JsonDocument? schema)
