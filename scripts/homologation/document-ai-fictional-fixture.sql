@@ -37,7 +37,7 @@ select 'dddddddd-dddd-dddd-dddd-dddddddddd01',u.id,true,u.id<>'bbbbbbbb-bbbb-bbb
 from ged.app_user u where u.id in ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbb003','bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbb004','bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbb005')
 and not exists(select 1 from ged.document_acl a where a.document_id='dddddddd-dddd-dddd-dddd-dddddddddd01' and a.user_id=u.id);
 insert into ged.ai_tenant_policy(tenant_id,enabled,allowed_tasks,allowed_providers,task_models,monthly_token_limit)
-values ('00000000-0000-0000-0000-000000000001',true,'["Summarize","ExtractMetadata","SuggestClassification","SuggestArchivalClassification"]','["Deterministic"]','{"Summarize":"deterministic-v1","ExtractMetadata":"deterministic-v1","SuggestClassification":"deterministic-v1","SuggestArchivalClassification":"deterministic-v1"}',1000000) on conflict(tenant_id) do nothing;
+values ('00000000-0000-0000-0000-000000000001',true,'["Summarize","ExtractMetadata","SuggestClassification","SuggestArchivalClassification","SupportProtocol"]','["Deterministic"]','{"Summarize":"deterministic-v1","ExtractMetadata":"deterministic-v1","SuggestClassification":"deterministic-v1","SuggestArchivalClassification":"deterministic-v1","SupportProtocol":"deterministic-v1"}',1000000) on conflict(tenant_id) do update set allowed_tasks=excluded.allowed_tasks, task_models=excluded.task_models;
 insert into ged.classification_plan_version(id,tenant_id,version_no,title)
 values ('cccccccc-cccc-cccc-cccc-cccccccccc02','00000000-0000-0000-0000-000000000001',1,'Plano ficticio local') on conflict(id) do nothing;
 insert into ged.classification_plan(id,tenant_id,code,name,title,retention_active_days,final_destination)

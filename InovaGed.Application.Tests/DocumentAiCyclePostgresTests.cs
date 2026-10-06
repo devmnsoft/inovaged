@@ -98,7 +98,7 @@ public sealed class DocumentAiCyclePostgresTests : IAsyncLifetime
     public async Task Archival_apply_conflicts_when_the_class_is_not_in_the_current_plan_version()
     {
         var fx = await Seed();
-        await _admin!.ExecuteAsync("insert into ged.classification_plan_version(id,tenant_id,version_no) values(@id,@tenant,2)", new { id = fx.NextPlanVersionId, tenant = fx.TenantId });
+        await _admin!.ExecuteAsync("insert into ged.classification_plan_version(id,tenant_id,version_no,title) values(@id,@tenant,2,'V2')", new { id = fx.NextPlanVersionId, tenant = fx.TenantId });
         var written = await Store().ApplyArchivalClassAsync(Record(fx, "Applied", true), fx.Token, fx.ClassId, true, CancellationToken.None);
         Assert.Equal("Conflict", written.Code);
         Assert.Null(await One<Guid?>("select classification_id from ged.document where id=@id", new { id = fx.DocumentId }));
@@ -208,18 +208,19 @@ create trigger {trigger} before update on ged.ai_retention_recalc_pending for ea
     {
         var fx = new Fixture(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
         await _admin!.ExecuteAsync("""
-insert into ged.tenant(id,name) values(@TenantId,'ciclo') on conflict (id) do nothing;
+insert into ged.tenant(id,name,code) values(@TenantId,'ciclo',@TenantId::text) on conflict (id) do nothing;
+insert into ged.app_user(id,tenant_id,name,email,password_hash) values(@ReviewerId,@TenantId,'Reviewer',@ReviewerId::text || '@test.local','hash') on conflict (id) do nothing;
 insert into ged.ai_execution(id,tenant_id,user_id,task,provider,model,idempotency_key,input_fingerprint,policy_revision,state,reserved_tokens,reservation_period,expires_at,source_documents,document_refs)
 values(@ExecutionId,@TenantId,@ReviewerId,'SuggestArchivalClassification','test','test',@ExecutionId::text,'fingerprint',1,'Completed',1,current_date,now()+interval '1 day','[]'::jsonb,'[]'::jsonb);
-insert into ged.document(id,tenant_id,title,description,is_confidential,current_version_id,retention_hold,created_at,reg_status,status)
-values(@DocumentId,@TenantId,'Antes','Antes',false,@VersionId,true,now(),'A','ACTIVE');
-insert into ged.document_version(id,tenant_id,document_id,version_number) values(@VersionId,@TenantId,@DocumentId,1),(@LaterVersionId,@TenantId,@DocumentId,2);
-insert into ged.document_type(id,tenant_id,name,reg_status) values(@TypeId,@TenantId,'Contrato','A');
-insert into ged.classification_plan(id,tenant_id,retention_start_event,retention_active_days,retention_active_months,retention_active_years,retention_archive_days,retention_archive_months,retention_archive_years)
-values(@ClassId,@TenantId,'ABERTURA',0,0,1,0,0,0);
-insert into ged.classification_plan_version(id,tenant_id,version_no) values(@PlanVersionId,@TenantId,1);
-insert into ged.classification_plan_version_item(tenant_id,version_id,classification_id,code,name,is_active) values(@TenantId,@PlanVersionId,@ClassId,'01.02','Classe',true);
-insert into ged.loan_request(id,tenant_id,document_id,notes,reg_status) values(@LoanId,@TenantId,@DocumentId,'LOAN','A');
+insert into ged.document(id,tenant_id,code,title,description,is_confidential,current_version_id,retention_hold,created_at,reg_status,status)
+values(@DocumentId,@TenantId,'DOC-CYCLE','Antes','Antes',false,@VersionId,true,now(),'A','ACTIVE');
+insert into ged.document_version(id,tenant_id,document_id,version_number,file_name,file_extension,file_size_bytes,storage_path) values(@VersionId,@TenantId,@DocumentId,1,'doc1.pdf','.pdf',1024,'docs/doc1.pdf'),(@LaterVersionId,@TenantId,@DocumentId,2,'doc2.pdf','.pdf',2048,'docs/doc2.pdf');
+insert into ged.document_type(id,tenant_id,code,name,reg_status) values(@TypeId,@TenantId,'DT-' || substr(@TypeId::text, 1, 8),'Contrato','A');
+insert into ged.classification_plan(id,tenant_id,code,name,retention_start_event,retention_active_days,retention_active_months,retention_active_years,retention_archive_days,retention_archive_months,retention_archive_years)
+values(@ClassId,@TenantId,'CP-' || substr(@ClassId::text, 1, 8),'Classe Geral','ABERTURA',0,0,1,0,0,0);
+insert into ged.classification_plan_version(id,tenant_id,version_no,title) values(@PlanVersionId,@TenantId,1,'V1');
+insert into ged.classification_plan_version_item(tenant_id,version_id,classification_id,code,name,is_active,retention_start_event,retention_active_days,retention_active_months,retention_active_years,retention_archive_days,retention_archive_months,retention_archive_years,final_destination,requires_digital_signature,is_confidential) values(@TenantId,@PlanVersionId,@ClassId,'01.02','Classe',true,'ABERTURA',0,0,1,0,0,0,'ELIMINAR',false,false);
+insert into ged.loan_request(id,tenant_id,document_id,requester_id,requested_at,due_at,status,notes,reg_status) values(@LoanId,@TenantId,@DocumentId,@ReviewerId,now(),now()+interval '7 days','REQUESTED','LOAN','A');
 """, fx);
         fx.Token = await One<long>("select xmin::text::bigint from ged.document where id=@id", new { id = fx.DocumentId });
         return fx;

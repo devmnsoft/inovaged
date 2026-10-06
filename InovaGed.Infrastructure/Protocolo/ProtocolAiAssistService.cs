@@ -43,6 +43,29 @@ public sealed class ProtocolAiAssistService(
         return new System.Security.Claims.ClaimsPrincipal(identity);
     }
 
+    private async Task<bool> CanOperateProtocolAsync(System.Data.Common.DbConnection conn, Guid tenantId, Guid protocolId, Guid userId, CancellationToken ct)
+    {
+        var principal = GetPrincipal();
+        if (principal.IsInRole("ADMIN") || principal.IsInRole("ADMINISTRADOR") || principal.IsInRole("ADMINISTRADOROPHIR"))
+            return true;
+
+        const string sql = """
+SELECT EXISTS (
+    SELECT 1
+    FROM ged.protocolo p
+    JOIN ged.protocolo_usuario_setor us ON us.tenant_id=p.tenant_id AND us.setor_id=p.setor_atual_id AND us.usuario_id=@userId AND us.ativo=true AND COALESCE(us.reg_status,'A')='A'
+    JOIN ged.protocolo_setor s ON s.tenant_id=p.tenant_id AND s.id=p.setor_atual_id AND s.ativo=true AND COALESCE(s.reg_status,'A')='A'
+    WHERE p.tenant_id=@tenantId AND p.id=@protocolId AND p.reg_status='A'
+) OR EXISTS (
+    SELECT 1
+    FROM ged.user_role ur
+    JOIN ged.role r ON r.id=ur.role_id AND r.tenant_id=@tenantId
+    WHERE ur.user_id=@userId AND r.code IN ('ADMIN', 'ADMINISTRADOR', 'ADMINISTRADOROPHIR')
+);
+""";
+        return await conn.ExecuteScalarAsync<bool>(new CommandDefinition(sql, new { tenantId, protocolId, userId }, cancellationToken: ct));
+    }
+
     public async Task<ProtocolAiAssistResultDto> AssistAsync(ProtocolAiAssistRequest request, CancellationToken ct)
     {
         if (!currentUser.IsAuthenticated)
@@ -203,6 +226,7 @@ WHERE g.tenant_id=@tenantId AND g.protocolo_id=@protocoloId AND g.reg_status='A'
         // 6. Interpretar saída estruturada
         string summaryText = "Processo institucional em tramitação.";
         string suggestedSubject = proto.Assunto;
+        string suggestedDescription = !string.IsNullOrWhiteSpace(proto.Descricao) ? proto.Descricao : "Análise processual com base nas peças instrutórias.";
         string dispatchDraft = "Encaminho os presentes autos para manifestação da área técnica.";
         var pendingItems = new List<ProtocolAiPendingItemDto>();
         var limitations = new List<string> { "Decisões de tramitação, despacho e assunto exigem revisão humana." };
@@ -214,6 +238,8 @@ WHERE g.tenant_id=@tenantId AND g.protocolo_id=@protocoloId AND g.reg_status='A'
                 summaryText = sProp.GetString() ?? summaryText;
             if (root.TryGetProperty("suggestedSubject", out var subProp) && subProp.ValueKind == JsonValueKind.String)
                 suggestedSubject = subProp.GetString() ?? suggestedSubject;
+            if (root.TryGetProperty("suggestedDescription", out var descProp) && descProp.ValueKind == JsonValueKind.String)
+                suggestedDescription = descProp.GetString() ?? suggestedDescription;
             if (root.TryGetProperty("dispatchDraft", out var dProp) && dProp.ValueKind == JsonValueKind.String)
                 dispatchDraft = dProp.GetString() ?? dispatchDraft;
             if (root.TryGetProperty("limitations", out var limProp) && limProp.ValueKind == JsonValueKind.Array)
@@ -240,10 +266,32 @@ WHERE g.tenant_id=@tenantId AND g.protocolo_id=@protocoloId AND g.reg_status='A'
             }
         }
 
+        var executionId = aiResult.ExecutionId ?? Guid.NewGuid();
+        var execExists = await conn.ExecuteScalarAsync<bool>(new CommandDefinition(
+            "SELECT EXISTS(SELECT 1 FROM ged.ai_execution WHERE tenant_id=@tenantId AND id=@executionId)",
+            new { tenantId, executionId }, cancellationToken: ct));
+
+        if (!execExists)
+        {
+            var fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{tenantId}:{userId}:SupportProtocol:{idempotencyKey}"))).ToLowerInvariant()[..64];
+            var sourcesJson = JsonSerializer.Serialize(aiSources.Select(s => new { document_id = s.DocumentId, version_id = s.VersionId }));
+            await conn.ExecuteAsync(new CommandDefinition("""
+INSERT INTO ged.ai_execution (
+    id, tenant_id, user_id, task, provider, model, idempotency_key, input_fingerprint,
+    policy_revision, state, reservation_period, document_refs, source_documents, expires_at, created_at
+) VALUES (
+    @executionId, @tenantId, @userId, 'SupportProtocol', 'Deterministic', 'deterministic-v1',
+    @idempotencyKey, @fingerprint, 1, 'Completed', date_trunc('month', now())::date,
+    '[]'::jsonb, cast(@sourcesJson as jsonb),
+    now() + interval '1 day', now()
+) ON CONFLICT DO NOTHING
+""", new { executionId, tenantId, userId, idempotencyKey, fingerprint, sourcesJson }, cancellationToken: ct));
+        }
+
         return new ProtocolAiAssistResultDto
         {
             Success = true,
-            ExecutionId = aiResult.ExecutionId ?? Guid.NewGuid(),
+            ExecutionId = executionId,
             State = "Completed",
             CorrelationId = aiResult.CorrelationId,
             ReviewRequired = true,
@@ -252,9 +300,11 @@ WHERE g.tenant_id=@tenantId AND g.protocolo_id=@protocoloId AND g.reg_status='A'
             CurrentSubject = proto.Assunto,
             CurrentSector = proto.SetorAtualNome,
             CurrentStatus = proto.Status,
+            CurrentDescription = proto.Descricao,
             Summary = summaryText,
             PendingItems = pendingItems,
             SuggestedSubject = suggestedSubject,
+            SuggestedDescription = suggestedDescription,
             DispatchDraft = dispatchDraft,
             Sources = sourcesList,
             Coverage = new ProtocolAiCoverageDto
@@ -281,23 +331,29 @@ WHERE g.tenant_id=@tenantId AND g.protocolo_id=@protocoloId AND g.reg_status='A'
 
         await using var conn = await db.OpenAsync(ct);
 
-        // 1. Checar acesso
+        // 1. Checar acesso de visualização e operação no setor atual
         var canView = await protocolAccess.CanViewProtocolAsync(tenantId, request.ProtocoloId, userId, GetPrincipal(), ct);
         if (!canView)
             throw new UnauthorizedAccessException("Acesso não autorizado ao protocolo.");
 
-        // 2. Checar concorrência
-        var proto = await conn.QuerySingleOrDefaultAsync<ProtocolRow>("SELECT id AS \"Id\", assunto AS \"Assunto\", updated_at AS \"UpdatedAt\", created_at AS \"CreatedAt\" FROM ged.protocolo WHERE tenant_id=@tenantId AND id=@protocoloId AND reg_status='A'", new { tenantId, protocoloId = request.ProtocoloId });
+        var canOperate = await CanOperateProtocolAsync(conn, tenantId, request.ProtocoloId, userId, ct);
+        if (!canOperate)
+            throw new UnauthorizedAccessException("Usuário não possui vínculo ativo com o setor responsável pelo protocolo.");
+
+        // 2. Checar concorrência e status de fechamento
+        var proto = await conn.QuerySingleOrDefaultAsync<ProtocolRow>("SELECT id AS \"Id\", assunto AS \"Assunto\", descricao AS \"Descricao\", status AS \"Status\", updated_at AS \"UpdatedAt\", created_at AS \"CreatedAt\" FROM ged.protocolo WHERE tenant_id=@tenantId AND id=@protocoloId AND reg_status='A'", new { tenantId, protocoloId = request.ProtocoloId });
         if (proto is null)
             throw new KeyNotFoundException("Protocolo não encontrado.");
 
+        var closedStatuses = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "FINALIZADO", "ARQUIVADO", "CANCELADO", "DEFERIDO", "INDEFERIDO" };
+        if (closedStatuses.Contains(proto.Status ?? string.Empty))
+            throw new InvalidOperationException($"O protocolo está em status encerrado ({proto.Status}) e não pode ser alterado.");
+
         var currentToken = ((DateTimeOffset)(proto.UpdatedAt ?? proto.CreatedAt)).ToUnixTimeMilliseconds();
-        if (request.ConcurrencyToken > 0 && Math.Abs(currentToken - request.ConcurrencyToken) > 1000)
-            throw new InvalidOperationException("Conflito de concorrência: o protocolo foi alterado por outro usuário.");
 
         // 3. Idempotência e replay
         var fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{request.ExecutionId}:{request.Subject.Trim()}:{request.Accepted}"))).ToLowerInvariant();
-        var existing = await conn.QuerySingleOrDefaultAsync<RevisionRow>("SELECT id AS \"Id\", decision_fingerprint AS \"DecisionFingerprint\" FROM ged.protocolo_ai_revisao WHERE tenant_id=@tenantId AND execution_id=@executionId", new { tenantId, executionId = request.ExecutionId });
+        var existing = await conn.QuerySingleOrDefaultAsync<RevisionRow>("SELECT id AS \"Id\", decision_fingerprint AS \"DecisionFingerprint\" FROM ged.protocolo_ai_revisao WHERE tenant_id=@tenantId AND execution_id=@executionId AND task='SUGGEST_SUBJECT'", new { tenantId, executionId = request.ExecutionId });
         if (existing is not null)
         {
             if (existing.DecisionFingerprint == fingerprint)
@@ -315,17 +371,27 @@ WHERE g.tenant_id=@tenantId AND g.protocolo_id=@protocoloId AND g.reg_status='A'
             throw new InvalidOperationException("Conflito: esta execução já possui outra decisão humana registrada.");
         }
 
+        if (request.ConcurrencyToken > 0 && Math.Abs(currentToken - request.ConcurrencyToken) > 1000)
+            throw new InvalidOperationException("Conflito de concorrência: o protocolo foi alterado por outro usuário.");
+
         // 4. Transação atômica de gravação
         await using var tx = await conn.BeginTransactionAsync(ct);
         try
         {
             if (request.Accepted)
             {
-                await conn.ExecuteAsync("UPDATE ged.protocolo SET assunto=@subject, updated_at=now(), updated_by=@userId WHERE tenant_id=@tenantId AND id=@protocoloId AND reg_status='A'", new { tenantId, protocoloId = request.ProtocoloId, subject = request.Subject.Trim(), userId }, tx);
+                if (!string.IsNullOrWhiteSpace(request.Description))
+                {
+                    await conn.ExecuteAsync("UPDATE ged.protocolo SET assunto=@subject, descricao=@description, updated_at=now(), updated_by=@userId WHERE tenant_id=@tenantId AND id=@protocoloId AND reg_status='A'", new { tenantId, protocoloId = request.ProtocoloId, subject = request.Subject.Trim(), description = request.Description.Trim(), userId }, tx);
+                }
+                else
+                {
+                    await conn.ExecuteAsync("UPDATE ged.protocolo SET assunto=@subject, updated_at=now(), updated_by=@userId WHERE tenant_id=@tenantId AND id=@protocoloId AND reg_status='A'", new { tenantId, protocoloId = request.ProtocoloId, subject = request.Subject.Trim(), userId }, tx);
+                }
             }
 
             var revisionId = Guid.NewGuid();
-            var appliedJson = JsonSerializer.Serialize(new { subject = request.Subject.Trim(), accepted = request.Accepted });
+            var appliedJson = JsonSerializer.Serialize(new { subject = request.Subject.Trim(), description = request.Description?.Trim(), accepted = request.Accepted });
 
             const string insertRevisionSql = """
 INSERT INTO ged.protocolo_ai_revisao (
@@ -386,23 +452,29 @@ INSERT INTO ged.protocolo_ai_revisao (
 
         await using var conn = await db.OpenAsync(ct);
 
-        // 1. Checar acesso
+        // 1. Checar acesso de visualização e operação no setor atual
         var canView = await protocolAccess.CanViewProtocolAsync(tenantId, request.ProtocoloId, userId, GetPrincipal(), ct);
         if (!canView)
             throw new UnauthorizedAccessException("Acesso não autorizado ao protocolo.");
 
+        var canOperate = await CanOperateProtocolAsync(conn, tenantId, request.ProtocoloId, userId, ct);
+        if (!canOperate)
+            throw new UnauthorizedAccessException("Usuário não possui vínculo ativo com o setor responsável pelo protocolo.");
+
         // 2. Checar concorrência e setor atual
-        var proto = await conn.QuerySingleOrDefaultAsync<ProtocolRow>("SELECT id AS \"Id\", setor_atual_id AS \"SetorAtualId\", updated_at AS \"UpdatedAt\", created_at AS \"CreatedAt\" FROM ged.protocolo WHERE tenant_id=@tenantId AND id=@protocoloId AND reg_status='A'", new { tenantId, protocoloId = request.ProtocoloId });
+        var proto = await conn.QuerySingleOrDefaultAsync<ProtocolRow>("SELECT id AS \"Id\", status AS \"Status\", setor_atual_id AS \"SetorAtualId\", updated_at AS \"UpdatedAt\", created_at AS \"CreatedAt\" FROM ged.protocolo WHERE tenant_id=@tenantId AND id=@protocoloId AND reg_status='A'", new { tenantId, protocoloId = request.ProtocoloId });
         if (proto is null)
             throw new KeyNotFoundException("Protocolo não encontrado.");
 
+        var closedStatuses = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "FINALIZADO", "ARQUIVADO", "CANCELADO", "DEFERIDO", "INDEFERIDO" };
+        if (closedStatuses.Contains(proto.Status ?? string.Empty))
+            throw new InvalidOperationException($"O protocolo está em status encerrado ({proto.Status}) e não pode ser alterado.");
+
         var currentToken = ((DateTimeOffset)(proto.UpdatedAt ?? proto.CreatedAt)).ToUnixTimeMilliseconds();
-        if (request.ConcurrencyToken > 0 && Math.Abs(currentToken - request.ConcurrencyToken) > 1000)
-            throw new InvalidOperationException("Conflito de concorrência: o protocolo foi alterado por outro usuário.");
 
         // 3. Idempotência e replay
         var fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{request.ExecutionId}:{request.DraftText.Trim()}:{request.Accepted}"))).ToLowerInvariant();
-        var existing = await conn.QuerySingleOrDefaultAsync<RevisionRow>("SELECT id AS \"Id\", decision_fingerprint AS \"DecisionFingerprint\" FROM ged.protocolo_ai_revisao WHERE tenant_id=@tenantId AND execution_id=@executionId", new { tenantId, executionId = request.ExecutionId });
+        var existing = await conn.QuerySingleOrDefaultAsync<RevisionRow>("SELECT id AS \"Id\", decision_fingerprint AS \"DecisionFingerprint\" FROM ged.protocolo_ai_revisao WHERE tenant_id=@tenantId AND execution_id=@executionId AND task='PREPARE_DISPATCH_DRAFT'", new { tenantId, executionId = request.ExecutionId });
         if (existing is not null)
         {
             if (existing.DecisionFingerprint == fingerprint)
@@ -419,6 +491,13 @@ INSERT INTO ged.protocolo_ai_revisao (
             }
             throw new InvalidOperationException("Conflito: esta execução já possui outra decisão humana registrada.");
         }
+
+        var hasRelatedRevision = await conn.ExecuteScalarAsync<bool>(
+            "SELECT EXISTS(SELECT 1 FROM ged.protocolo_ai_revisao WHERE tenant_id=@tenantId AND execution_id=@executionId AND protocolo_id=@protocoloId)",
+            new { tenantId, executionId = request.ExecutionId, protocoloId = request.ProtocoloId });
+
+        if (!hasRelatedRevision && request.ConcurrencyToken > 0 && Math.Abs(currentToken - request.ConcurrencyToken) > 1000)
+            throw new InvalidOperationException("Conflito de concorrência: o protocolo foi alterado por outro usuário.");
 
         // 4. Transação de gravação: minuta salva como rascunho de observação/despacho
         await using var tx = await conn.BeginTransactionAsync(ct);

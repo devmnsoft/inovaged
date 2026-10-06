@@ -1,4 +1,4 @@
-﻿using System.Net;
+using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -96,17 +96,20 @@ public sealed class DocumentAiGateway : IDocumentAiGateway
             AiTask.SuggestArchivalClassification => text.Contains("CLASSE:", StringComparison.Ordinal) ? new { outcome = "suggested", classCode = Marker(text, "CLASSE:"), evidence, justification = "plano de teste" } : new { outcome = "insufficient", classCode = "", evidence = "", justification = "" },
             AiTask.SupportProtocol => new
             {
-                summary = text.Length > 0 ? "Processo institucional instruÃ­do com peÃ§as documentais autorizadas e histÃ³rico de movimentaÃ§Ãµes." : "Processo sem peÃ§as documentais anexadas ou texto OCR disponÃ­vel.",
+                summary = text.Length > 0 ? "Processo institucional instruído com peças documentais autorizadas e histórico de movimentações." : "Processo sem peças documentais anexadas ou texto OCR disponível.",
                 pending = new[]
                 {
-                    new { item = "ConferÃªncia formal de requisitos e peÃ§as instrutÃ³rias", status = text.Length > 0 ? "CONFIRMADO" : "CONFERENCIA_HUMANA", evidence = evidence, requiresHumanCheck = text.Length == 0 },
-                    new { item = "ValidaÃ§Ã£o de assinatura fÃ­sica ou digital do requerente", status = "CONFERENCIA_HUMANA", evidence = "Folha de rosto / Termo de autuaÃ§Ã£o", requiresHumanCheck = true }
+                    new { item = "Conferência formal de requisitos e peças instrutórias", status = text.Length > 0 ? "CONFIRMADO" : "CONFERENCIA_HUMANA", evidence = evidence, requiresHumanCheck = text.Length == 0 },
+                    new { item = "Validação de assinatura física ou digital do requerente", status = "CONFERENCIA_HUMANA", evidence = "Folha de rosto / Termo de autuação", requiresHumanCheck = true }
                 },
                 suggestedSubject = text.Contains("TITULO:", StringComparison.Ordinal)
                     ? $"Processo Administrativo - {Marker(text, "TITULO:")}"
-                    : (text.Contains("ASSUNTO:", StringComparison.Ordinal) ? Marker(text, "ASSUNTO:") : "Processo de RegularizaÃ§Ã£o e AnÃ¡lise Institucional"),
-                dispatchDraft = "Encaminho os presentes autos Ã  unidade responsÃ¡vel para exame tÃ©cnico de mÃ©rito, observadas as peÃ§as instrutÃ³rias juntadas aos autos.",
-                limitations = new[] { "Provedor determinÃ­stico de teste.", "DecisÃµes de tramitaÃ§Ã£o, assunto e despacho exigem revisÃ£o e comando humano explÃ­cito." }
+                    : (text.Contains("ASSUNTO:", StringComparison.Ordinal) ? Marker(text, "ASSUNTO:") : "Processo de Regularização e Análise Institucional"),
+                suggestedDescription = text.Contains("DESCRICAO:", StringComparison.Ordinal)
+                    ? Marker(text, "DESCRICAO:")
+                    : "Análise processual institucional realizada com base nas peças e documentos juntados.",
+                dispatchDraft = "Encaminho os presentes autos à unidade responsável para exame técnico de mérito, observadas as peças instrutórias juntadas aos autos.",
+                limitations = new[] { "Provedor determinístico de teste.", "Decisões de tramitação, assunto e despacho exigem revisão e comando humano explícito." }
             },
             _ => null
         };

@@ -56,9 +56,11 @@ public sealed class ProtocolAiAssistResultDto
     public string CurrentSubject { get; set; } = string.Empty;
     public string? CurrentSector { get; set; }
     public string? CurrentStatus { get; set; }
+    public string? CurrentDescription { get; set; }
     public string? Summary { get; set; }
     public IReadOnlyList<ProtocolAiPendingItemDto> PendingItems { get; set; } = Array.Empty<ProtocolAiPendingItemDto>();
     public string? SuggestedSubject { get; set; }
+    public string? SuggestedDescription { get; set; }
     public string? DispatchDraft { get; set; }
     public IReadOnlyList<ProtocolAiSourceDto> Sources { get; set; } = Array.Empty<ProtocolAiSourceDto>();
     public ProtocolAiCoverageDto Coverage { get; set; } = new();
@@ -72,6 +74,7 @@ public sealed class ProtocolAiApplySubjectRequest
     public Guid ExecutionId { get; set; }
     public long ConcurrencyToken { get; set; }
     public string Subject { get; set; } = string.Empty;
+    public string? Description { get; set; }
     public bool Accepted { get; set; } = true;
     public string? Notes { get; set; }
 }

@@ -117,6 +117,7 @@ public static class InfrastructureServiceCollectionExtensions
     /// </summary>
     public static IServiceCollection AddStabilityCriticalServices(this IServiceCollection services)
     {
+        services.AddScoped<IAbacAuthorizationService, AbacAuthorizationService>();
         services.AddScoped<IDocumentIntakeReviewService, DocumentIntakeReviewService>();
         services.AddScoped<IDocumentBulkClassificationService, DocumentBulkClassificationService>();
         services.AddScoped<GovernanceService>();

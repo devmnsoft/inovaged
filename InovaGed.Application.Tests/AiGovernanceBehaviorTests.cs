@@ -72,7 +72,7 @@ begin
   if to_regclass('ged.ai_suggestion_application') is not null then
     tables := 'ged.ai_suggestion_application, ' || tables;
   end if;
-  execute 'truncate ' || tables;
+  execute 'truncate ' || tables || ' cascade';
 end
 $cleanup$;
 """;

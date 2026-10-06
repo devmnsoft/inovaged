@@ -162,41 +162,41 @@ create table if not exists ged.ai_execution (
         var num = "PROT-" + Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
 
         // 1. Tenant, User, Setor e Vínculo
-        await _admin!.ExecuteAsync("insert into ged.tenant(id,name) values(@tenant,'Tenant AI') on conflict do nothing", new { tenant });
-        await _admin!.ExecuteAsync("insert into ged.app_user(id,tenant_id,name,email,is_active) values(@user,@tenant,'Revisor AI','revisor@inovaged.local',true) on conflict do nothing", new { user, tenant });
+        await _admin!.ExecuteAsync("insert into ged.tenant(id,name,code) values(@tenant,'Tenant AI',@tenant::text) on conflict do nothing", new { tenant });
+        await _admin!.ExecuteAsync("insert into ged.app_user(id,tenant_id,name,email,password_hash,is_active) values(@user,@tenant,'Revisor AI','revisor@inovaged.local','hash',true) on conflict do nothing", new { user, tenant });
         await _admin!.ExecuteAsync("insert into ged.protocolo_setor(id,tenant_id,nome,sigla,ativo,reg_status) values(@setor,@tenant,'Gabinete','GAB',true,'A')", new { setor, tenant });
         await _admin!.ExecuteAsync("insert into ged.protocolo_usuario_setor(id,tenant_id,usuario_id,setor_id,ativo,reg_status) values(@id,@tenant,@user,@setor,true,'A')", new { id = Guid.NewGuid(), tenant, user, setor });
 
         var role = Guid.NewGuid();
-        await _admin!.ExecuteAsync("insert into ged.app_role(id,tenant_id) values(@role,@tenant)", new { role, tenant });
-        await _admin!.ExecuteAsync("insert into ged.role(id,tenant_id) values(@role,@tenant)", new { role, tenant });
+        await _admin!.ExecuteAsync("insert into ged.app_role(id,tenant_id,name,normalized_name) values(@role,@tenant,'Role AI','ROLE_AI')", new { role, tenant });
+        await _admin!.ExecuteAsync("insert into ged.role(id,tenant_id,code,name,reg_status) values(@role,@tenant,'ROLE_AI','Role AI','A')", new { role, tenant });
         await _admin!.ExecuteAsync("insert into ged.user_role(user_id,role_id) values(@user,@role)", new { user, role });
-        await _admin!.ExecuteAsync("insert into ged.permission(code,reg_status) values('Documents.View','A'),('GED.DOCUMENTS','A') on conflict do nothing");
+        await _admin!.ExecuteAsync("insert into ged.permission(code,name,reg_status) values('Documents.View','View Docs','A'),('GED.DOCUMENTS','GED Docs','A') on conflict do nothing");
         await _admin!.ExecuteAsync("insert into ged.role_permission(role_id,tenant_id,permission_code,reg_status) values(@role,@tenant,'Documents.View','A'),(@role,@tenant,'GED.DOCUMENTS','A')", new { role, tenant });
 
         // 2. Protocolo institucional
         await _admin!.ExecuteAsync("""
-insert into ged.protocolo(id,tenant_id,numero,assunto,descricao,status,prioridade,setor_atual_id,created_at,updated_at,reg_status)
-values(@proto,@tenant,@num,'Assunto Original de Teste','Descrição detalhada do processo institucional','TRAMITANDO','NORMAL',@setor,now(),now(),'A')
+insert into ged.protocolo(id,tenant_id,numero,assunto,descricao,status,prioridade,setor_atual_id,setor_origem_id,created_at,updated_at,reg_status)
+values(@proto,@tenant,@num,'Assunto Original de Teste','Descrição detalhada do processo institucional','TRAMITANDO','NORMAL',@setor,@setor,now(),now(),'A')
 """, new { proto, tenant, num, setor });
 
         // 3. Documento GED com Versão e OCR
         await _admin!.ExecuteAsync("""
-insert into ged.document(id,tenant_id,title,is_confidential,current_version_id,reg_status,created_at)
-values(@doc,@tenant,'Ofício 123',false,@version,'A',now())
+insert into ged.document(id,tenant_id,code,title,is_confidential,current_version_id,reg_status,created_at)
+values(@doc,@tenant,'DOC-TEST','Ofício 123',false,@version,'A',now())
 """, new { doc, tenant, version });
         await _admin!.ExecuteAsync("""
-insert into ged.document_version(id,tenant_id,document_id,version_number)
-values(@version,@tenant,@doc,1)
+insert into ged.document_version(id,tenant_id,document_id,version_number,file_name,file_extension,file_size_bytes,storage_path)
+values(@version,@tenant,@doc,1,'doc.pdf','.pdf',1024,'docs/doc.pdf')
 """, new { version, tenant, doc });
         await _admin!.ExecuteAsync("""
-insert into ged.document_search(document_id,tenant_id,ocr_text,indexed_at)
-values(@doc,@tenant,'Texto integral do ofício requisitando parecer técnico institucional.',now())
-""", new { doc, tenant });
+insert into ged.document_search(document_id,tenant_id,version_id,ocr_text,search_vector)
+values(@doc,@tenant,@version,'Texto integral do ofício requisitando parecer técnico institucional.',to_tsvector('portuguese','Texto integral do ofício requisitando parecer técnico institucional.'))
+""", new { doc, tenant, version });
 
         // 4. Vínculo do Documento GED ao Protocolo
         await _admin!.ExecuteAsync("""
-insert into ged.protocolo_documento_ged(id,tenant_id,protocolo_id,ged_document_id,vinculado_por,vinculado_em,reg_status)
+insert into ged.protocolo_documento_ged(id,tenant_id,protocolo_id,ged_document_id,criado_por,created_at,reg_status)
 values(@id,@tenant,@proto,@doc,@user,now(),'A')
 """, new { id = Guid.NewGuid(), tenant, proto, doc, user });
 
@@ -274,7 +274,7 @@ values(@id,@tenant,@proto,@doc,@user,now(),'A')
 
         // Usuário do mesmo tenant mas sem vínculo ao setor e sem papel admin
         var unauthorizedUser = Guid.NewGuid();
-        await _admin!.ExecuteAsync("insert into ged.app_user(id,tenant_id,name,email,is_active) values(@user,@tenant,'Sem Acesso','noaccess@inovaged.local',true)", new { user = unauthorizedUser, tenant = fx.TenantId });
+        await _admin!.ExecuteAsync("insert into ged.app_user(id,tenant_id,name,email,password_hash,is_active) values(@user,@tenant,'Sem Acesso','noaccess@inovaged.local','hash',true)", new { user = unauthorizedUser, tenant = fx.TenantId });
         var currentNoAccess = new TestCurrentUser { TenantId = fx.TenantId, UserId = unauthorizedUser, Roles = ["User"] };
         var serviceNoAccess = CreateService(currentNoAccess);
 

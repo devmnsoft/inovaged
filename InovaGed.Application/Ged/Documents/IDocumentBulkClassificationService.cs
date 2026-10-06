@@ -1,6 +1,6 @@
 namespace InovaGed.Application.Ged.Documents;
 
-public sealed record DocumentBulkClassificationItem(Guid DocumentId, bool Success, string Message);
+public sealed record DocumentBulkClassificationItem(Guid DocumentId, bool Success, string Message, string Status = "APPLIED");
 public sealed record DocumentBulkClassificationResult(int Requested, int Succeeded, int Failed,
     IReadOnlyList<DocumentBulkClassificationItem> Items);
 

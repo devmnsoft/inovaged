@@ -1191,6 +1191,14 @@
       "transactional": true,
       "deploymentSafety": "Additive",
       "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_10_09_signature_validation_check_compat_hardening",
+      "path": "database/migrations/2026_10_09_signature_validation_check_compat_hardening.sql",
+      "module": "Signatures",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
     }
   ]
 }
